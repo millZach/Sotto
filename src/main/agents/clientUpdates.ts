@@ -2,7 +2,7 @@ import { PROVIDER_LABELS, type AgentHostSnapshot, type AgentState, type Provider
 import { clientVersionOf, compareClientVersions, isComparableVersion } from './clientVersions'
 import type { AgentHost } from './host'
 import { compareMuseVersions } from './museClientInstall'
-import { CLIENT_CHECK_INTERVAL_MS, locateClient as locateClientOnDisk, type ProviderClients } from './providerClients'
+import { CLIENT_CHECK_INTERVAL_MS, CLIENT_RETRY_AFTER_FAILURE_MS, locateClient as locateClientOnDisk, type ProviderClients } from './providerClients'
 
 /** Where a client's last update left it, carried over a new reading: its state and what that run said. */
 function outcomeOf(before: ProviderClientUpdate): Partial<ProviderClientUpdate> {
@@ -73,8 +73,10 @@ export class ClientUpdates {
   private clientCheckOwed = false
   /** The release each behind client was at when the user pressed Not now: only a newer one brings the card back. */
   private dismissedReleases = new Map<ProviderId, string>()
-  /** The check every machine runs every five minutes while Sotto is open (ADR-0042). */
+  /** The check every machine runs every hour while Sotto is open (ADR-0042). */
   private clientCheckTimer: ReturnType<typeof setInterval> | null = null
+  /** The check every five minutes while a registry or feed has not answered for some client, beside the hourly one. */
+  private clientRetryTimer: ReturnType<typeof setInterval> | null = null
 
   constructor(private readonly context: ClientUpdatesContext) {}
 
@@ -91,6 +93,22 @@ export class ClientUpdates {
   stopChecking(): void {
     if (this.clientCheckTimer) clearInterval(this.clientCheckTimer)
     this.clientCheckTimer = null
+    this.retryUntilAnswered(false)
+  }
+  /**
+   * A check whose registry or feed gave no version for some client is asked again every five minutes, the pace every
+   * check ran at before the hour, until a check answers for them all; the hourly check carries on beside it. Only a
+   * machine that runs the hourly check retries.
+   */
+  private retryUntilAnswered(unanswered: boolean): void {
+    if (!unanswered) {
+      if (this.clientRetryTimer) clearInterval(this.clientRetryTimer)
+      this.clientRetryTimer = null
+      return
+    }
+    if (this.clientRetryTimer || !this.clientCheckTimer || this.disposed) return
+    this.clientRetryTimer = setInterval(() => { void this.backgroundClientCheck() }, CLIENT_RETRY_AFTER_FAILURE_MS)
+    this.clientRetryTimer.unref?.()
   }
   letGoOfLine(): void {
     // Updates still waiting in the line never start; whoever waits for one is told rather than left waiting.
@@ -126,13 +144,14 @@ export class ClientUpdates {
     const previous = this.state.clientUpdates ?? []
     const moves = new Map(this.clientLineMoves)
     const readings: ProviderClientUpdate[] = []
+    let unanswered = false
     for (const provider of this.state.host.providers ?? []) {
       if (provider.connection !== 'connected') continue
       const installed = clientVersionOf(provider.version)
       if (!installed) continue
       const executable = await this.clientPath(provider.id)
       const before = previous.find(item => item.id === provider.id)
-      let reading = await this.context.clients.check(provider.id, installed, executable, process.env, { afresh })
+      let reading = await this.context.clients.check(provider.id, installed, executable, process.env, { afresh, unanswered: () => { unanswered = true } })
       // A registry that did not answer says nothing new: the release last read for the same install still stands, so a
       // check that failed and one that came back with the same release do not read as a new release.
       if (reading.published === undefined && before?.published !== undefined && before.installed === reading.installed) {
@@ -143,6 +162,7 @@ export class ClientUpdates {
       readings.push(before && (lined || (before.state !== 'idle' && outcomeHolds(before, reading))) ? withOutcome(reading, before) : reading)
     }
     if (this.disposed) return
+    this.retryUntilAnswered(unanswered)
     // The update line runs while this check waits on the registry and the disk: whatever it said about a client
     // meanwhile (its step, how it ended) is newer than what the check started from, and wins. How it ended gives way to
     // a newer release the check found, while waiting or running never does. A client the line installed meanwhile was
@@ -170,9 +190,9 @@ export class ClientUpdates {
     }
   }
   /**
-   * The check every machine runs every five minutes (ADR-0042). It installs nothing, and the user's setting turning
-   * checks off stops it. A tick is let go while an update runs, which reads the new version itself, and while the last
-   * check is still waiting on the registry: the next tick asks again.
+   * The check every machine runs every hour, and every five minutes while a registry has not answered (ADR-0042). It
+   * installs nothing, and the user's setting turning checks off stops it. A tick is let go while an update runs, which
+   * reads the new version itself, and while the last check is still waiting on the registry: the next tick asks again.
    */
   private async backgroundClientCheck(): Promise<void> {
     if (this.clientChecks > 0) return

@@ -2,7 +2,7 @@
 import { createHash } from 'node:crypto'
 import { i18n } from '@lingui/core'
 import { describe, expect, it, vi } from 'vitest'
-import { compareOwlHostTarget, HostUpdates, publishedAnswer, type HostUpdateCandidate, type HostUpdateClients, type HostUpdateHosts, type HostUpdateThreads } from '../../../src/main/hosts/hostUpdate'
+import { ARCHIVE_RETRY_MS, compareOwlHostTarget, HostUpdates, publishedAnswer, type HostUpdateCandidate, type HostUpdateClients, type HostUpdateHosts, type HostUpdateThreads } from '../../../src/main/hosts/hostUpdate'
 import type { SshHostUpdateOperation, SshHostUpdateOptions, SshHostUpdateResult } from '../../../src/main/hosts/sshLauncher'
 import { SshFailure } from '../../../src/main/hosts/sshFailure'
 import type { HostUpdateState } from '../../../src/shared/hostUpdates'
@@ -643,6 +643,37 @@ describe('the version this computer is downloading (ADR-0077 decision 6)', () =>
     updates.pending(WAITING)
     await vi.waitFor(() => expect(one()).toMatchObject({ to: WAITING }))
     updates.dispose()
+  })
+
+  it('asks again in four minutes when the releases page did not answer, without waiting for the hourly update check', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const { updates, releases, one } = aimed([archive(WAITING), `${archive(WAITING)}.sha256`])
+      releases.probe.mockImplementationOnce(async (url: string) => { releases.asked.push(url); return undefined as unknown as boolean })
+      updates.pending(WAITING)
+      await vi.waitFor(() => expect(releases.asked).toHaveLength(1))
+      await vi.waitFor(() => expect(updates.checking()).toEqual([]))
+      expect(updates.state()).toEqual([])
+      vi.advanceTimersByTime(ARCHIVE_RETRY_MS - 1_000)
+      expect(releases.asked).toHaveLength(1)
+      vi.advanceTimersByTime(1_000)
+      await vi.waitFor(() => expect(one()).toMatchObject({ to: WAITING, phase: 'needs' }))
+      expect(releases.asked).toEqual([archive(WAITING), archive(WAITING), `${archive(WAITING)}.sha256`])
+      updates.dispose()
+    } finally { vi.useRealTimers() }
+  })
+
+  it('leaves an archive the releases page answered 404 for to the next update check', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const { updates, releases } = aimed([])
+      updates.pending(WAITING)
+      await vi.waitFor(() => expect(releases.asked).toEqual([archive(WAITING)]))
+      await vi.waitFor(() => expect(updates.checking()).toEqual([]))
+      vi.advanceTimersByTime(ARCHIVE_RETRY_MS * 2)
+      expect(releases.asked).toHaveLength(1)
+      updates.dispose()
+    } finally { vi.useRealTimers() }
   })
 
   it('aims an older host at the waiting version too, and keeps a started update on the version it began with', async () => {

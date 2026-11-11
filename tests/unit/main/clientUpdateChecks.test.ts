@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentControl } from '../../../src/main/agents/control'
-import { CLIENT_CHECK_INTERVAL_MS, CLIENT_PACKAGES, ProviderClients, type RunResult } from '../../../src/main/agents/providerClients'
+import { CLIENT_CHECK_INTERVAL_MS, CLIENT_PACKAGES, CLIENT_RETRY_AFTER_FAILURE_MS, ProviderClients, type RunResult } from '../../../src/main/agents/providerClients'
 import { E2EAgentHost } from '../../../src/main/e2e/agentEffects'
 import type { AgentHostSnapshot, ProviderClientUpdate, ProviderId } from '../../../src/shared/agents'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
@@ -13,9 +13,10 @@ import { createAgentControl } from '../../fixtures/agentControlFixture'
 import { deferred } from '../../fixtures/deferred'
 
 /**
- * ADR-0042: every machine checks its clients every five minutes while Sotto stays open, so a client published meanwhile
- * is noticed without a restart. The check installs nothing, follows the user's setting, and publishes only when a reading
- * moved. ADR-0077: a new version of Sotto has this computer check afresh, keeping what an update already run said.
+ * ADR-0042: every machine checks its clients every hour while Sotto stays open (every five minutes until November 10,
+ * 2026), so a client published meanwhile is noticed without a restart. The check installs nothing, follows the user's
+ * setting, and publishes only when a reading moved. ADR-0077: a new version of Sotto has this computer check afresh,
+ * keeping what an update already run said.
  */
 const roots: string[] = []
 afterEach(async () => {
@@ -102,7 +103,7 @@ async function tick(npm: ReturnType<typeof registry>, count: number): Promise<vo
   await vi.waitFor(() => { expect(npm.state.asked).toBe(before + count) })
 }
 
-describe('the five-minute client check', () => {
+describe('the hourly client check', () => {
   it('finds a client published while Sotto stays open, asking the registry afresh, and installs nothing', async () => {
     const { control, npm, publishes } = await coordinator()
     try {
@@ -189,11 +190,68 @@ describe('the five-minute client check', () => {
     const { control, npm } = await coordinator()
     expect(vi.getTimerCount()).toBeGreaterThan(0)
     control.dispose()
-    // Nothing is left to fire: the five-minute check went with the rest.
+    // Nothing is left to fire: the hourly check went with the rest.
     expect(vi.getTimerCount()).toBe(0)
     const before = npm.state.located
     vi.advanceTimersByTime(CLIENT_CHECK_INTERVAL_MS * 2)
     expect(npm.state.located).toBe(before)
+  })
+})
+
+/**
+ * Zach's pick, November 10, 2026: every machine asks once an hour for each connected client, where every five minutes
+ * made 288 requests a day for each. A registry that does not answer is asked again at the old pace until it does.
+ */
+describe('how often the registry is asked', () => {
+  const MINUTE = 60 * 1000
+  /** Moves the clock on in five-minute steps, letting any check a step starts finish before the next. */
+  async function pass(control: AgentControl, ms: number): Promise<void> {
+    for (let gone = 0; gone < ms; gone += 5 * MINUTE) {
+      vi.advanceTimersByTime(5 * MINUTE)
+      await settled(control)
+    }
+  }
+
+  it('asks once an hour for each connected client: 24 times a day, where every five minutes made 288', async () => {
+    expect(CLIENT_CHECK_INTERVAL_MS).toBe(60 * MINUTE)
+    const { control, npm } = await coordinator()
+    try {
+      const before = npm.state.asked
+      await pass(control, 24 * 60 * MINUTE)
+      expect((npm.state.asked - before) / IDS.length).toBe(24)
+    } finally { control.dispose() }
+  })
+
+  it('asks again every five minutes while the registry does not answer, and goes back to the hour once it does', async () => {
+    expect(CLIENT_RETRY_AFTER_FAILURE_MS).toBe(5 * MINUTE)
+    const { control, npm } = await coordinator()
+    try {
+      npm.state.down = true
+      await tick(npm, 3)
+      await settled(control)
+      const failed = npm.state.asked
+      await pass(control, 5 * MINUTE)
+      expect(npm.state.asked).toBe(failed + 3)
+      npm.state.down = false
+      npm.published.codex = '0.158.0'
+      await pass(control, 5 * MINUTE)
+      expect(npm.state.asked).toBe(failed + 6)
+      expect(reading(control, 'codex')).toMatchObject({ published: '0.158.0', behind: true })
+      // Answered: nothing more is asked before the next hourly check.
+      await pass(control, 40 * MINUTE)
+      expect(npm.state.asked).toBe(failed + 6)
+    } finally { control.dispose() }
+  })
+
+  it('stops asking again when Sotto stops', async () => {
+    const { control, npm } = await coordinator()
+    const quiet = vi.getTimerCount()
+    npm.state.down = true
+    await tick(npm, 3)
+    await settled(control)
+    expect(vi.getTimerCount()).toBe(quiet + 1)
+    control.dispose()
+    expect(vi.getTimerCount()).toBe(0)
   })
 })
 
@@ -268,7 +326,7 @@ describe('a check and the update line at once', () => {
       npm.published.codex = '0.158.0'
       await control.command({ type: 'check-client-updates' })
       expect(reading(control, 'codex')).toMatchObject({ installed: '0.155.1', behind: true })
-      // A five-minute check starts and waits on the registry before the install.
+      // An hourly check starts and waits on the registry before the install.
       const hold = deferred(); npm.state.holdNext = hold.promise
       await tick(npm, 1)
       await control.command({ type: 'queue-client-updates', providers: ['codex'] })

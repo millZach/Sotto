@@ -12,11 +12,20 @@ import { owlFeaturesForTrack, type OwlFeatureStates } from '../../shared/owlFeat
  */
 export const UPDATE_STARTUP_DELAY_MS = 15_000
 /**
- * After that Sotto asks every few minutes, the same cadence as T3 Code, so a
- * release published while the app is open is offered within minutes rather
- * than hours. Each check is one small request for the feed's manifest.
+ * After that Sotto asks once an hour (Zach's pick, November 10, 2026), so a
+ * release published while the app is open is offered within the hour without a
+ * press, and Check now still asks at once. Each check is two requests: the
+ * release feed (16 KB, not compressed) and then the release's manifest (under
+ * 1 KB). That is 24 checks a day where every four minutes made 360.
  */
-export const UPDATE_CHECK_INTERVAL_MS = 4 * 60 * 1_000
+export const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1_000
+/**
+ * A check that fails, as when the computer wakes before its connection does, is
+ * tried again after four minutes, the pace every check ran at before the hour,
+ * rather than going quiet until the next one. Each failure waits four minutes
+ * again, and the first check that answers ends it.
+ */
+export const UPDATE_RETRY_AFTER_FAILURE_MS = 4 * 60 * 1_000
 
 const MAX_PROBLEM_LENGTH = 240
 
@@ -74,6 +83,7 @@ export interface UpdateServiceDependencies {
   readonly now?: () => number
   readonly startupDelayMs?: number
   readonly intervalMs?: number
+  readonly retryAfterFailureMs?: number
   /** Both return their own cancellation, so tests never touch real timers. */
   readonly scheduleTimeout?: (callback: () => void, delayMs: number) => () => void
   readonly scheduleInterval?: (callback: () => void, intervalMs: number) => () => void
@@ -127,7 +137,7 @@ export function describeProblem(error: unknown): string | null {
 
 /**
  * The version this computer has been offered, is downloading or has downloaded, which Update all aims a host at
- * (ADR-0077 decision 6). A check under way keeps the version before it, so the check every few minutes does not take a
+ * (ADR-0077 decision 6). A check under way keeps the version before it, so the hourly check does not take a
  * host off the card and put it back; a check that finds nothing newer, or fails with nothing offered, ends it.
  */
 export function waitingVersion(phase: UpdatePhase, before: string | undefined): string | undefined {
@@ -181,6 +191,7 @@ export class UpdateService {
   private readonly owlFeatures: OwlFeatureStates
   private readonly startupDelayMs: number
   private readonly intervalMs: number
+  private readonly retryAfterFailureMs: number
   private readonly scheduleTimeout: (callback: () => void, delayMs: number) => () => void
   private readonly scheduleInterval: (callback: () => void, intervalMs: number) => () => void
   private adapter: UpdaterAdapter | null = null
@@ -197,6 +208,8 @@ export class UpdateService {
   /** Set by an `error` event that arrives while the installer is being started. */
   private installRefusal: { problem: string | null } | null = null
   private cancelTimers: Array<() => void> = []
+  /** Cancels the check a failure scheduled, while one waits. */
+  private cancelRetry: (() => void) | null = null
   private started = false
   private disposed = false
 
@@ -206,11 +219,15 @@ export class UpdateService {
     this.owlFeatures = Object.freeze({ ...features, watcher: dependencies.owlFeatures?.watcher ?? dependencies.watcherEnabled ?? features.watcher })
     this.startupDelayMs = dependencies.startupDelayMs ?? UPDATE_STARTUP_DELAY_MS
     this.intervalMs = dependencies.intervalMs ?? UPDATE_CHECK_INTERVAL_MS
+    this.retryAfterFailureMs = dependencies.retryAfterFailureMs ?? UPDATE_RETRY_AFTER_FAILURE_MS
     this.scheduleTimeout = dependencies.scheduleTimeout ?? defaultScheduleTimeout
     this.scheduleInterval = dependencies.scheduleInterval ?? defaultScheduleInterval
   }
 
-  /** One check shortly after launch, then one per interval, each still gated on the setting. */
+  /**
+   * One check shortly after launch, then one per interval, and one four minutes after any check that failed, each still
+   * gated on the setting.
+   */
   start(): void {
     if (this.disposed || this.started) return
     this.started = true
@@ -346,8 +363,9 @@ export class UpdateService {
   dispose(): void {
     if (this.disposed) return
     this.disposed = true
-    const cancels = this.cancelTimers
+    const cancels = this.cancelRetry === null ? this.cancelTimers : [...this.cancelTimers, this.cancelRetry]
     this.cancelTimers = []
+    this.cancelRetry = null
     for (const cancel of cancels) {
       try {
         cancel()
@@ -394,12 +412,42 @@ export class UpdateService {
     // A check that completed without offering a version found nothing newer.
     if (this.currentPhase() === 'checking') this.setPhase({ phase: 'up-to-date' })
     this.previousOffer = null
+    // A check that answered ends the retry a failure scheduled. An error event can still have failed this one.
+    const phase = this.phase
+    if (phase.phase !== 'failed' && !(phase.phase === 'available' && phase.failedStep === 'check')) this.stopRetry()
     return this.status()
   }
 
   private recordCheckFailure(problem: string | null): void {
     problem ??= t`The update check could not be completed. Check the connection and try again.`
     this.setPhase(this.previousOffer === null ? { phase: 'failed', problem } : { ...this.previousOffer, problem, failedStep: 'check' })
+    this.retrySoon()
+  }
+
+  /**
+   * A failed check, automatic or pressed, is asked again in four minutes rather than at the next hourly check, once
+   * `start` has run. The retry is an automatic check, so it obeys the setting, and a retry already waiting is not doubled.
+   */
+  private retrySoon(): void {
+    if (!this.started || this.disposed || this.cancelRetry !== null) return
+    try {
+      this.cancelRetry = this.scheduleTimeout(() => {
+        this.cancelRetry = null
+        void this.check('automatic')
+      }, this.retryAfterFailureMs)
+    } catch {
+      // A scheduler that refuses leaves the next hourly check to ask.
+    }
+  }
+
+  private stopRetry(): void {
+    const cancel = this.cancelRetry
+    this.cancelRetry = null
+    try {
+      cancel?.()
+    } catch {
+      // An uncancelled retry only checks once more.
+    }
   }
 
   private ensureAdapter(): UpdaterAdapter | null {

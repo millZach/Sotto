@@ -79,6 +79,11 @@ export interface HostUpdatesOptions {
 }
 /** What the releases page said of a host archive and its checksum: not yet, both there, not both there, or no answer. */
 type ArchiveAnswer = 'checking' | 'published' | 'missing' | 'unknown'
+/**
+ * How soon the releases page is asked again about a host archive it gave no answer for, rather than at Sotto's next
+ * hourly update check: four minutes, the pace that check ran at before the hour (ADR-0077, amended November 10, 2026).
+ */
+export const ARCHIVE_RETRY_MS = 4 * 60 * 1000
 interface Entry {
   id: string; name: string; hostId: string; from: string; owned: boolean; installPath: string; dataDirectory: string; boot?: boolean | undefined
   /** The version this update installs: set while it is offered, and kept from the moment it starts. */
@@ -195,6 +200,8 @@ export class HostUpdates {
   /** Each saved host's system as the archive name its download asked for says, `linux-x64`, when its launch did not say. */
   private readonly systems = new Map<string, string>()
   private readonly probing = new AbortController()
+  /** The next ask of the releases page about archives it gave no answer for, while one waits. */
+  private archiveRetry: ReturnType<typeof setTimeout> | undefined
   /** Installed updates holding their restart for the host's client update line, each told on every change to look again. */
   private readonly restarts = new Set<() => void>()
   constructor(private readonly options: HostUpdatesOptions) {
@@ -276,6 +283,8 @@ export class HostUpdates {
     for (const off of this.off) off()
     for (const entry of this.entries.values()) if (!entry.installing) entry.run?.abort()
     this.probing.abort()
+    clearTimeout(this.archiveRetry)
+    this.archiveRetry = undefined
     this.restarts.clear()
     this.listeners.clear()
   }
@@ -576,8 +585,23 @@ export class HostUpdates {
     void this.archivePublished(version, system).then(found => {
       if (this.probing.signal.aborted || this.archives.get(key) !== 'checking') return
       this.archives.set(key, found === undefined ? 'unknown' : found ? 'published' : 'missing')
+      if (found === undefined) this.askAgainSoon()
       this.sync()
     })
+  }
+  /**
+   * A releases page that gave no answer is asked again in four minutes about every archive it left unanswered, while
+   * that version still waits. One that answered 404 is asked at the next update check, within the hour.
+   */
+  private askAgainSoon(): void {
+    if (this.archiveRetry !== undefined || this.probing.signal.aborted) return
+    this.archiveRetry = setTimeout(() => {
+      this.archiveRetry = undefined
+      if (this.probing.signal.aborted) return
+      for (const [key, answer] of this.archives) if (answer === 'unknown') this.archives.delete(key)
+      this.sync()
+    }, ARCHIVE_RETRY_MS)
+    this.archiveRetry.unref?.()
   }
   private async archivePublished(version: string, system: string): Promise<boolean | undefined> {
     const probe = this.options.probe ?? probeHere, signal = this.probing.signal
