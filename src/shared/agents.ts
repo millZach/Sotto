@@ -404,7 +404,7 @@ export const agentModelSchema = z.object({ id: providerEntityId, provider: id, p
    * The adapter puts them in that order (`orderReasoningEfforts`); a provider that lists them highest
    * first, as Grok does, is turned round there and nowhere else.
    */
-  reasoningEfforts: z.array(z.string()).optional(), defaultReasoningEffort: z.string().optional(),
+  ownServer: z.literal(true).optional(), hiddenFromMenu: z.literal(true).optional(), reasoningEfforts: z.array(z.string()).optional(), defaultReasoningEffort: z.string().optional(),
   runtimeModes: z.array(agentRuntimeModeSchema).optional(), supportsImages: z.boolean().optional(),
   /**
    * Offered in place of `runtimeModes` by a provider whose permission modes are its own, not Sotto's four.
@@ -1866,10 +1866,10 @@ export function defaultThreadModelId(configuration: AgentConfiguration, models: 
     const provider = configuration.reasoning
     const nativeModelId = configuration.reasoningModel || accounts.find(account => account.provider === provider)?.defaultModelId
     if (nativeModelId) return publicProviderEntityId(provider, 'model', nativeModelId)
-    const candidates = models.filter(model => model.providerId === provider)
+    const candidates = models.filter(model => model.providerId === provider && !model.hiddenFromMenu)
     return (candidates.find(model => model.ready) ?? candidates[0])?.id ?? ''
   }
-  const ready = models.filter(model => model.ready)
+  const ready = models.filter(model => model.ready && !model.hiddenFromMenu)
   return (ready.find(model => model.providerId === configuration.provider) ?? ready[0])?.id ?? ''
 }
 /**

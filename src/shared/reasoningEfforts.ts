@@ -21,7 +21,7 @@ export function effortLevel(id: string): string {
  * A level's name in English, for words Sotto writes for an agent to read, such as a Council's verdict sent to a thread:
  * the names the window shows (`effortNames.ts`), and a level Sotto does not know as the provider names it, capitalised.
  */
-const EFFORT_WORDS: Readonly<Record<string, string>> = { none: 'None', minimal: 'Minimal', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'XHigh', max: 'Max', ultracode: 'Ultracode' }
+const EFFORT_WORDS: Readonly<Record<string, string>> = { default: 'Default', off: 'Off', none: 'None', minimal: 'Minimal', low: 'Low', medium: 'Medium', high: 'High', xhigh: 'XHigh', max: 'Max', ultracode: 'Ultracode' }
 export function effortWords(id: string): string {
   return EFFORT_WORDS[effortLevel(id)] ?? id.charAt(0).toUpperCase() + id.slice(1)
 }
@@ -30,7 +30,7 @@ export function effortWords(id: string): string {
  * The levels whose place is known. Anything else keeps its place beside the provider's own neighbours. Ultracode is
  * above Max (ADR-0148), so a default of Ultracode lands on another provider's highest level.
  */
-const EFFORT_RANK: Readonly<Record<string, number>> = { none: 0, minimal: 1, low: 2, medium: 3, high: 4, xhigh: 5, extrahigh: 5, max: 6, ultracode: 7 }
+const EFFORT_RANK: Readonly<Record<string, number>> = { off: 0, none: 0, minimal: 1, low: 2, medium: 3, high: 4, xhigh: 5, extrahigh: 5, max: 6, ultra: 7, ultracode: 8 }
 
 /** A level's place among the levels Sotto knows, least thorough first, or undefined for one it does not know. */
 export function effortRank(id: string): number | undefined {
@@ -49,4 +49,26 @@ export function orderReasoningEfforts(ids: readonly string[]): string[] {
   const unique = [...new Set(ids)]
   const ranks = unique.map(id => EFFORT_RANK[effortKey(id)]).filter((rank): rank is number => rank !== undefined)
   return ranks.length > 1 && ranks[0]! > ranks.at(-1)! ? unique.reverse() : unique
+}
+
+
+/** A neutral initial choice never turns thinking off. Default resets the model; otherwise prefer its usual middle level. */
+export function defaultModelEffort(offered: readonly string[]): string | undefined {
+  return ['default', 'medium', 'high'].find(level => offered.includes(level))
+    ?? offered.find(level => level !== 'off' && level !== 'none')
+}
+
+/** Model-owned levels have named positions; Default is a reset, never a numeric stop. Ties choose less thinking. */
+export function nearestModelEffort(current: string | undefined, offered: readonly string[]): string | undefined {
+  if (!offered.length) return undefined
+  if (current && offered.includes(current)) return current
+  const rank = current === undefined || current === 'default' ? undefined : effortRank(current)
+  const levels = offered.filter(level => effortRank(level) !== undefined)
+  // A toggle with no numeric thinking levels preserves thinking through Default, unless Off was explicitly picked.
+  if (rank === undefined || (offered.includes('default') && levels.every(level => level === 'off' || level === 'none'))) return defaultModelEffort(offered)
+  return levels.reduce<string | undefined>((best, level) => {
+    if (!best) return level
+    const distance = Math.abs(effortRank(level)! - rank), previous = Math.abs(effortRank(best)! - rank)
+    return distance < previous || (distance === previous && effortRank(level)! < effortRank(best)!) ? level : best
+  }, undefined) ?? defaultModelEffort(offered)
 }

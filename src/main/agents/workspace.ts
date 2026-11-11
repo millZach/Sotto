@@ -1582,6 +1582,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         await this.saveLinks()
         this.publish()
       })
+      // Told again now they are linked: Watcher takes a read only for a pull request a thread already has (#2430).
+      for (const view of found) this.observePullRequest(view)
     })().catch(() => undefined)
   }
   /** The words of a thread's newest turn's replies, read from its last turn alone. */
@@ -1977,6 +1979,32 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       if (after && link) { this.linkPullRequestRecord(command.threadId, after, link.source); await this.saveLinks() }
       this.invalidateGitStatus(command.threadId)
     }), () => ({ snapshot: this.workspaceSnapshot(), notice: `${PULL_REQUEST_ACTION_DONE[command.action]}.` }))
+  }
+  /**
+   * The pull request a thread's READY TO MERGE names (`ready_to_merge`, #2430), linked to it once GitHub says it is open, so
+   * Sotto holds it in the merge train and its pull request news reaches Watcher even when neither the thread's branch nor
+   * its turns named it: one opened from another branch, by a subagent, or in another repository. The worker named it as
+   * its own; GitHub only confirms it exists. One already linked is brought up to what GitHub says, such as a draft made
+   * ready since, and keeps how it was first made; the branch's own is left to its Git read. GitHub's answer is told after
+   * the link, since Watcher takes a read only for a pull request a thread already has. Never rejects.
+   */
+  async linkReadyPullRequest(threadId: string, url: string): Promise<void> {
+    const thread = this.threadById(threadId), service = this.gitPullRequests
+    if (!thread || !service || this.stopping || !this.visible(thread)) return
+    try {
+      const view = await service.view(this.threadRepositoryFolder(threadId, 'pull requests'), url)
+      if (this.stopping) return
+      await this.onLane(threadId, async () => {
+        const current = this.threadById(threadId)
+        if (!current) return
+        const link = current.pullRequests?.find(item => pullRequestKey(item.url) === pullRequestKey(view.url))
+        if (!link && (view.state !== 'open' || this.knowsPullRequest(current, view.url))) return
+        if (!this.linkPullRequestRecord(threadId, view, link?.source ?? 'linked')) return
+        await this.saveLinks()
+        this.publish()
+      })
+      this.observePullRequest(view)
+    } catch { /* GitHub could not be asked: the READY TO MERGE goes all the same, and says where the train stands. */ }
   }
   /** Link pull request: a GitHub URL or `#42`, read through gh first so the link names a pull request that exists. */
   linkThreadPullRequest(threadId: string, reference: string): Promise<{ snapshot: AgentHostSnapshot; link: GitPullRequestLink }> {

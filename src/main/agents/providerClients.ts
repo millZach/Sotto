@@ -29,12 +29,22 @@ export const CLIENT_PACKAGES: Readonly<Partial<Record<ProviderId, string>>> = {
   pi: '@earendil-works/pi-coding-agent',
 }
 const REGISTRY = 'https://registry.npmjs.org'
-/** How often each machine asks again while Sotto stays open, so a client published meanwhile is noticed (ADR-0042). */
-export const CLIENT_CHECK_INTERVAL_MS = 5 * 60 * 1000
 /**
- * How long an answer from the registry or Muse's channel feed is reused. Shorter than the check interval, so no
- * five-minute check ever reads an answer kept from the one before; it spares the registry only the checks that come
- * together, as when several providers connect at once. An explicit check asks afresh whatever is kept.
+ * How often each machine asks again while Sotto stays open, so a client published meanwhile is noticed within the hour
+ * (ADR-0042, amended November 10, 2026): 24 checks a day for each connected client where every five minutes made 288.
+ */
+export const CLIENT_CHECK_INTERVAL_MS = 60 * 60 * 1000
+/**
+ * How soon a client whose registry or feed gave no version is asked again, rather than at the next hourly check: 5, 10
+ * and then 20 minutes later, and after those only at the hourly check until it answers. Only the clients that went
+ * unanswered are asked. Its first answer gives its next failure all three again, so a client whose registry never
+ * answers is asked three times more a day than one whose registry does, and the others not once more.
+ */
+export const CLIENT_RETRY_DELAYS_MS: readonly number[] = Object.freeze([5 * 60 * 1000, 10 * 60 * 1000, 20 * 60 * 1000])
+/**
+ * How long an answer from the registry or Muse's channel feed is reused. The hourly check and its retries ask afresh, so
+ * this spares the registry only the checks that come together, as when several providers connect at once, and a check
+ * on connect never reads an answer more than a few minutes old. An explicit check asks afresh whatever is kept.
  */
 const PUBLISHED_CACHE_MS = 4 * 60 * 1000
 const REGISTRY_TIMEOUT_MS = 10_000
@@ -773,18 +783,22 @@ export class ProviderClients {
 
   /**
    * One client's reading. `installed` is the version the adapter connected to; without one nothing is claimed. `afresh`
-   * asks the registry or channel feed rather than reusing an answer it gave a few minutes ago.
+   * asks the registry or channel feed rather than reusing an answer it gave a few minutes ago. `unanswered` hears when
+   * the registry or feed was asked and gave no version, which the reading itself does not say.
    */
   async check(provider: ProviderId, installed: string, executable: string | undefined,
-    environment: NodeJS.ProcessEnv = process.env, options: { readonly afresh?: boolean } = {}): Promise<ProviderClientUpdate> {
+    environment: NodeJS.ProcessEnv = process.env, options: { readonly afresh?: boolean; readonly unanswered?: () => void } = {}): Promise<ProviderClientUpdate> {
     if (provider === 'hermes') return { id: provider, installed, behind: false, channel: 'unknown', canInstall: false, checkedAt: new Date(this.now()).toISOString(), state: 'idle' }
     const install = await detectClientInstall(provider, executable, environment, this.platform)
     const museChannel = provider === 'muse' ? await museReleaseChannel(executable, environment) : undefined
     // A native Claude Code is compared with what its own updater can install, and an npm one with npm's `latest` (ADR-0165).
     const claudeChannel = provider === 'claude' && install.channel === 'self-update' ? await claudeReleaseChannel(environment, this.claudeManagedFolder) : undefined
-    const latest = install.channel === 'devin-app' || provider === 'muse' && museChannel === undefined ? undefined
+    // Devin ships inside its app and a Muse with no channel has none to ask, so neither is asked anything.
+    const asks = install.channel !== 'devin-app' && !(provider === 'muse' && museChannel === undefined)
+    const latest = !asks ? undefined
       : claudeChannel ? await this.publishedClaudeNativeVersion(claudeChannel, options.afresh === true)
       : await this.publishedVersion(provider, museChannel, options.afresh === true)
+    if (asks && latest === undefined) options.unanswered?.()
     const behind = provider === 'muse'
       ? Boolean(latest && (compareMuseVersions(installed, latest) ?? 0) < 0)
       : provider === 'cursor' ? Boolean(latest && parseCursorVersion(installed) && compareCursorVersions(installed, latest) < 0)

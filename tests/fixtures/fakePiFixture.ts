@@ -11,8 +11,8 @@ import { parseProviderRecords, writeProviderAction } from './providerRecords'
 export const piFixtureSkips: AdapterContractSkips = {
   permissions: 'Pi runs with Full access and has no permission requests.',
   backgroundWork: 'Pi reports no work a turn leaves running.',
-  questions: 'Pi has no question route over ACP; the model asks in its reply (ADR-0201).',
-  restart: 'A resumed Pi session replays nothing; Sotto’s event store holds the history (ADR-0201).',
+  questions: 'Pi has no question route over ACP; the model asks in its reply (ADR-0202).',
+  restart: 'A resumed Pi session replays nothing; Sotto’s event store holds the history (ADR-0202).',
   liveSettings: 'Pi offers Full access only; model and effort changes have their own checks.',
   settingsConfirmation: 'Pi has no second permission mode.',
 }

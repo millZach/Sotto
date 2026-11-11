@@ -26,7 +26,7 @@ export function claimRoomFocus(room: AppRoom | null): boolean {
   return true
 }
 
-type ManagementNavigation = Exclude<AppNavigation, 'onboarding'>
+type ManagementNavigation = AppNavigation
 
 /** Where each page shortcut goes, and the room it lights when the page is one of the switch's (ADR-0158). */
 export const PAGE_SHORTCUT_PAGES: Readonly<Record<PageShortcutId, { readonly destination: ManagementNavigation; readonly room: AppRoom | null }>> = {
@@ -146,7 +146,7 @@ export interface PageShortcutsInput {
 export function usePageShortcuts({ settings, platform, navigation, navigate }: PageShortcutsInput): void {
   const { watcher, usage, dictation } = usePageShortcutGates()
   useEffect(() => {
-    if (settings?.onboardingComplete !== true || navigation === 'onboarding') return
+    if (settings?.onboardingComplete !== true) return
     const gates = { watcher, usage, dictation }
     const chords = PAGE_SHORTCUT_IDS.map(id => claimedPageChord(settings, id, platform, gates))
     if (chords.every(chord => chord === null)) return

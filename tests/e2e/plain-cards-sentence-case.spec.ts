@@ -6,7 +6,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test'
 import { populatedHistory, withSotto } from '../fixtures/designCaptureProfile'
 import { evidenceDirectory } from '../fixtures/evidence'
 import { pageBoundProblems } from './support/designCapture'
-import { openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { openPage, openThreads, setupNote, type LaunchedSotto } from './support/sottoLaunch'
 import { resizeContentWindow } from './support/sottoWindow'
 
 // #1830 and #1829, from the desktop UI review: a card says its status in words, with no coloured stripe down its left
@@ -62,17 +62,20 @@ test.describe('plain cards and sentence-case labels (#1830, #1829)', () => {
   test.describe.configure({ mode: 'serial', timeout: 5 * 60_000 })
   test.beforeAll(async () => { await mkdir(shots, { recursive: true }) })
 
-  test('first-run setup opens on "Step 1 of N" with no eyebrow over its heading', async () => {
+  test('first-run setup opens on its welcome note, counted "1 of N", with no eyebrow over its heading', async () => {
     for (const { appearance, motion, name } of LOOKS) {
       await withSotto({ onboardingComplete: false, appearance, motion }, async (launched) => {
         const { page } = launched
-        await expect(page.getByRole('heading', { level: 1, name: /talk to your computer and your coding agents/i })).toBeVisible()
-        await expect(page.locator('.onboarding-progress__text')).toHaveText(/^Step 1 of \d+$/u)
+        // Setup is a walk of notes over the Threads page (ADR-0200); its first note counts the stops in words.
+        const note = setupNote(page)
+        await expect(note.getByRole('heading', { name: /talk to your computer and your coding agents/i })).toBeVisible()
+        await expect(note.locator('.setup-walk__count')).toHaveText(/^1 of \d+$/u)
         await expect(page.getByText('Welcome to Sotto', { exact: true })).toHaveCount(0)
         expect(await capitalised(page)).toEqual([])
         for (const [width, height] of SIZES) {
           await resize(launched, width, height)
-          await shoot(page, `setup-welcome-${name}-${width}x${height}.png`)
+          // The Threads page under the note is design-capture-threads' to check, and the note's fit first-run-setup-fit's.
+          await shoot(page, `setup-welcome-${name}-${width}x${height}.png`, { bounds: false })
         }
       })
     }

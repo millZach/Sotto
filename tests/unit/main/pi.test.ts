@@ -21,6 +21,18 @@ it('offers only keyless servers and keeps the verified version as a floor', () =
   expect(comparePiVersions('1.6.0', PI_CLI_VERSION)).toBeGreaterThan(0)
 })
 
+it('keeps unticked models for existing threads and marks them out of new model choices', () => {
+  const choices = piCatalog([{ ...server, keptModelIds: ['kept'], models: [
+    { ...server.models[0]!, id: 'kept' }, { ...server.models[0]!, id: 'old' },
+  ] }])
+  expect(choices).toMatchObject([
+    { id: 'own-test/kept', ownServer: true },
+    { id: 'own-test/old', ownServer: true, hiddenFromMenu: true },
+  ])
+  expect(choices[0]).not.toHaveProperty('hiddenFromMenu')
+  expect(JSON.parse(piModels([{ ...server, keptModelIds: [] }])).providers['own-test'].models).toHaveLength(1)
+})
+
 it('isolates each thread’s configuration and keeps bearer tokens out of its files', async () => {
   const root = await mkdtemp(join(tmpdir(), 'sotto-pi-config-'))
   try {

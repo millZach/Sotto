@@ -28,7 +28,7 @@ import { ProviderUnavailable } from './providerProblem'
 import { adapterItemCount, ProviderSnapshotPublisher } from './providerSnapshotPublisher'
 import { AdapterThreadChanges, restOf } from './adapterThreadChanges'
 import type { ActivityChangesListener, ActivityChangesSubscription } from './threadChanges'
-import { SessionReaper } from './sessionReaper'
+import { SessionReaper, busyHolds, type HeldSession } from './sessionReaper'
 import { markSendStage } from './sendStages'
 import { settledThinking, thinkingSettledAs } from './thinkingActivity'
 import { ThreadMessageLog } from './threadMessageLog'
@@ -131,7 +131,7 @@ export interface PiOptions {
   /** Extra arguments ahead of `--mode`: a test's fake client process. */
   executableArgs?: readonly string[]
   environment?: NodeJS.ProcessEnv
-  /** Sotto's Pi folder (ADR-0201): `<userData>/pi` by default. */
+  /** Sotto's Pi folder (ADR-0202): `<userData>/pi` by default. */
   homeDirectory?: string
   /** The user's own model servers, read at connect and again when the record changes. */
   servers?: () => Promise<readonly OwnServer[]>
@@ -204,9 +204,13 @@ export class PiHost implements ProviderHost {
       ...(options.sessionIdleMs === undefined ? {} : { idleAfterMs: options.sessionIdleMs }),
       isWatched: id => this.observed.has(id),
       isBusy: id => this.busy(id),
+      whyBusy: id => busyHolds({ busy: this.working(id), request: this.asking(id) }),
       stop: id => this.stopSession(id),
     })
   }
+
+  /** The sessions the reaper tracks, why each is held, and its process, read only on request (#2398). */
+  heldSessions(): HeldSession[] { return this.reaper.held(id => this.connections.get(id)?.rpc.pid) }
 
   // ---- What the adapter publishes ------------------------------------------------------------------------------------
 
@@ -231,7 +235,7 @@ export class PiHost implements ProviderHost {
    */
   private changed(id: string): void { this.threadChanges.mark(id) }
   private emit(streaming = false): void { this.publisher.publish(streaming); this.stopOutdated() }
-  /** Sotto's Pi folder, which every process runs as `PI_CODING_AGENT_DIR` (ADR-0201). */
+  /** Sotto's Pi folder, which every process runs as `PI_CODING_AGENT_DIR` (ADR-0202). */
   get folder(): string { return this.homeDirectory }
   isConnected(): boolean { return this.state.connected }
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
@@ -304,7 +308,7 @@ export class PiHost implements ProviderHost {
   }
 
   /**
-   * Watcher is outside this first version. Refuse its profile before a Pi process starts (ADR-0201).
+   * Watcher is outside this first version. Refuse its profile before a Pi process starts (ADR-0202).
    */
   private async refuseWatcher(id: string): Promise<void> {
     const generation = this.generation
@@ -380,7 +384,7 @@ export class PiHost implements ProviderHost {
       this.servers = await this.options.servers?.() ?? []
       this.assertGeneration(generation)
       const models = piCatalog(this.servers)
-      if (!models.length) throw new ProviderUnavailable('signed-out', 'Pi runs your own model servers, and none it can run is saved yet. Add one under Your own model servers, then connect again. Your threads are kept.', version)
+      if (!models.length) throw new ProviderUnavailable('signed-out', 'Pi runs your own model servers, and none it can run is saved yet. Add one under APIs and your own model servers, then connect again. Your threads are kept.', version)
       this.executable = executable
       this.readModelConfig()
       const [aliases, projects] = await Promise.all([this.aliasStore.read(), this.projectStore.read()])
@@ -482,11 +486,12 @@ export class PiHost implements ProviderHost {
   // ---- Sessions ------------------------------------------------------------------------------------------------------
 
   /** A thread being created or sent to, a prompt in flight, a session opening or an unanswered request hold a session open. */
-  private busy(id: string): boolean {
+  private busy(id: string): boolean { return this.working(id) || this.asking(id) }
+  private working(id: string): boolean {
     const turn = this.turns.get(id)
     return this.dispatching.has(id) || this.loading.has(id) || this.stopping.has(id) || (turn !== undefined && !turn.ended)
-      || (this.threads.get(id)?.requests.length ?? 0) > 0
   }
+  private asking(id: string): boolean { return (this.threads.get(id)?.requests.length ?? 0) > 0 }
   /** This thread's session, opened on its own process when it has none. */
   private open(id: string): Promise<Connection> {
     const stopping = this.stopping.get(id)
@@ -511,7 +516,7 @@ export class PiHost implements ProviderHost {
     if (this.stale(connection)) this.outdated.add(id)
     try {
       this.assertGeneration(generation)
-      // A resumed session replays nothing (ADR-0201): the thread's history stays Sotto's, and the session continues.
+      // A resumed session replays nothing (ADR-0202): the thread's history stays Sotto's, and the session continues.
       await connection.rpc.request('get_state', {}, value => { this.readSettings(connection, value) })
       if (generation !== this.generation || this.connections.get(id) !== connection) throw new PiUncertain('Pi’s connection changed while the thread was opening.')
       await this.applySettings(alias, connection)

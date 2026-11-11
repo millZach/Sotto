@@ -8,6 +8,6 @@ import { ULTRACODE } from './ultracode'
  * Max is not lit either. The iPhone keeps the same rule (`EffortWords.isTop`).
  */
 export function isTopEffort(levels: readonly string[], level: string): boolean {
-  if (levels.length < 2 || level === '') return false
+  if (levels.length < 2 || level === '' || level === 'default' || level === 'none' || level === 'off') return false
   return levels[levels.length - 1] === level || (level === 'max' && levels.includes(ULTRACODE))
 }

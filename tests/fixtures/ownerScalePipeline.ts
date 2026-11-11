@@ -29,14 +29,15 @@ import { DesktopHostRouter, type DesktopHostConnection } from '../../src/main/ho
 import { HostUpdates } from '../../src/main/hosts/hostUpdate'
 import { emptyDesktopState } from '../../src/main/hosts/inactiveLocalHost'
 import type { AgentActivity } from '../../src/shared/agentActivity'
-import { EMPTY_AGENT_HOST, publicProviderEntityId, type AgentHostSnapshot, type AgentModel, type AgentRequest, type AgentState, type AgentThread } from '../../src/shared/agents'
+import { defaultAgentConfiguration, EMPTY_AGENT_HOST, publicProviderEntityId, type AgentHostSnapshot, type AgentModel, type AgentRequest, type AgentState, type AgentThread } from '../../src/shared/agents'
 import { hostEntityKey, parseHostEntityKey } from '../../src/shared/clientIdentity'
 import type { HeldProviders } from '../../src/shared/heldProviders'
 import { requestDraftProvider, type RequestDraft, type RequestDraftOwner, type RequestDraftTarget } from '../../src/shared/requestDrafts'
-import type { WatcherThreadTarget } from '../../src/shared/watcher'
+import type { WatcherIdentity, WatcherRecord, WatcherThreadTarget } from '../../src/shared/watcher'
 import type { WatcherRoomListChange, WatcherRoomState, WatcherRoomUpdate } from '../../src/shared/watcherRoom'
 import { FakeProviderHost } from './fakeProviderHost'
-import { addWatcherHistory, ownerRequestDrafts, ownerScaleCounts, type OwnerScale, type OwnerScaleCounts } from './ownerScale'
+import { addWatcherHistory, HOST_SCALE, hostScaleFollowupReceipts, hostScaleLedgers, hostScaleSkillCatalog, ownerRequestDrafts, ownerScaleCounts,
+  pairedDesktopWatcherWork, type OwnerScale, type OwnerScaleCounts } from './ownerScale'
 import { syntheticModelCatalog } from './modelCatalog'
 import { StreamingAdapter } from './streamingAdapter'
 import { testCredentials } from './testCredentials'
@@ -161,6 +162,18 @@ export interface OwnerScalePipelineOptions {
   storeWriter?: (store: ThreadStore) => ThreadStoreWriter
   /** The built store worker the thread store writes and reads on (`builtStoreWorker`); absent, it writes on main. */
   storeWorker?: string | undefined
+  /**
+   * What a running host holds besides its threads, at forge's sizes (`HOST_SCALE`, November 10, 2026 audit): skill lists
+   * read for six threads, the delivery ledgers at their limit and follow-up receipts, saved before main starts as a host
+   * restarting finds them, and `desktop`'s Watcher's work on this computer in Watcher's record. Absent, none of it, as
+   * every budget that builds main here expects.
+   */
+  host?: OwnerScaleHost | undefined
+}
+
+/** The paired desktop a host-scale main holds Watcher's work for: its pairing's client ID and its own Watcher. */
+export interface OwnerScaleHost {
+  readonly desktop: { readonly clientId: string; readonly master: WatcherIdentity }
 }
 
 export interface ThreadChangesReport {
@@ -388,7 +401,13 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
   state.threads.push(thread('asking-0', undefined, [{ id: 'question-1', kind: 'question', text: 'Synthetic question', options: [], questions: QUESTIONS }]))
   for (let index = state.threads.length; index < counts.threads; index++) state.threads.push(thread(`idle-${index}`, index % 10 === 0 ? records(`idle-${index}`, 40) : undefined))
   for (const project of state.projects) await mkdir(project.path, { recursive: true })
+  // A host's provider lists each thread's skills when a client asks, as Claude's does.
+  if (options.host) state.capabilities.skills = true
   const adapter = new SendingAdapter(state)
+  if (options.host) Object.assign(adapter, { listThreadSkills: async (session: string) => {
+    const projectId = state.threads.find(item => item.id === session)?.projectId
+    return hostScaleSkillCatalog(session, state.projects.find(project => project.id === projectId)?.path ?? root)
+  } })
   const shadows = new ShadowThreadMaps(options.verifyThreadChanges ?? verifyingThreadChanges(), options.uncounted ?? (work => work()), options.touched)
   shadows.tapAdapterChanges(adapter)
   const claude = new SottoThreadHost('claude', adapter, registry)
@@ -412,6 +431,15 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
   shadows.tap(workspace, 'workspace publication')
   shadows.verifyPublication(workspace)
   await workspace.initialize()
+  if (options.host) {
+    // The ledgers a host that has sent many prompts restarts with, on this computer's idle threads: the coordinator's saved
+    // state with only them set, and the follow-up queue's receipts. Each thread's binding is made as the identity wrapper
+    // makes it when it first lists the thread, so its Sotto ID is known before the coordinator reads them.
+    const threadIds = state.threads.filter(item => item.id.startsWith('idle-')).map(item => registry.bind('claude', item.id, item.projectId).threadId)
+    await writeFile(join(root, 'agents.json'), JSON.stringify({ configuration: defaultAgentConfiguration(), activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false,
+      outbox: [], ...hostScaleLedgers(threadIds) }), 'utf8')
+    await writeFile(join(root, 'followups.json'), JSON.stringify({ items: [], receipts: hostScaleFollowupReceipts(threadIds) }), 'utf8')
+  }
   const credentials = await testCredentials(root, { mode: 'unavailable' })
   // Usage is an Owl feature: it reads every one of the workspace's thread changes, beside the coordinator (runtime.ts).
   const usage = owl ? new UsageService({ directory: root, host: workspace, acceptedPromptIdentities: identities => workspace.recordedUserMessages(identities) }) : undefined
@@ -534,6 +562,22 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
     const streamed: WatcherThreadTarget[] = streamIds.map(threadId => ({ hostId: localHostId, threadId }))
     const targets: WatcherThreadTarget[] = [...localIds.slice(counts.watches).map(threadId => ({ hostId: localHostId, threadId })),
       ...remoteThreads.map(item => ({ hostId: REMOTE_HOST_ID, threadId: item.id }))]
+    // On a host, the paired desktop's Watcher's work, the threads that stream first among those that took part, so their
+    // progress is in what that desktop is shown of it (`remoteProjection`).
+    const host = options.host
+    const pairedWork = host ? (record: WatcherRecord): void => {
+      const taking = [...streamIds, ...localIds].slice(0, HOST_SCALE.pairedTargets).map(threadId => ({ hostId: localHostId, threadId }))
+      const work = pairedDesktopWatcherWork(taking, { requests: HOST_SCALE.pairedRequests, operations: HOST_SCALE.pairedOperations }, host.desktop)
+      record.requests.push(...work.requests)
+      record.operations.push(...work.operations)
+      ;(record.remoteMasters ??= []).push({ clientId: host.desktop.clientId, masterHostId: host.desktop.master.target.hostId,
+        creationOperationId: host.desktop.master.creationOperationId, createdAt: host.desktop.master.createdAt })
+    } : undefined
+    // Clients asked for some threads' skills, which the coordinator keeps for as long as it runs.
+    if (host) for (const threadId of [...streamIds, idOf(openSession), ...localIds].slice(0, HOST_SCALE.skillCatalogs)) {
+      const read = await control.command({ type: 'refresh-thread-skills', threadId })
+      if (read.skillCatalogs?.find(item => item.threadId === threadId)?.status !== 'ready') throw new Error('A thread\'s skills were not listed.')
+    }
     if (watcher) {
       // Watcher open on this computer, with the owner's record: standing watches, requests with the threads that took
       // part, and the operations Watcher sent them, every one long answered.
@@ -547,6 +591,13 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
       await control.watcherRecords.update(record => { addWatcherHistory(record, targets, counts, undefined, streamed) })
       // Older closed work moves to Watcher's archive (#1759), as it would have long before a record grew this long.
       await watcher.archiveSettled()
+      if (pairedWork) {
+        // forge's host kept every one of the laptop's requests in its live record (the audit, finding 1), where Watcher's
+        // archive would take all but the newest 200 closed ones (`archivableWatcherRequests`). Why forge's did not was not
+        // traced, so this host's archive takes nothing more rather than a reason being guessed.
+        control.watcherRecords.archiveWork = async () => 0
+        await control.watcherRecords.update(pairedWork)
+      }
       // Watcher's own conversation, as long as its record makes it (#1759): its thread is bound to a provider session
       // holding the user's messages and Watcher's replies, and the window shows it below, as the open Watcher pane does.
       const current = watcher.state().current!
@@ -572,6 +623,7 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
         record.watches = watched.map((threadId, index) => ({ id: `00000000-0000-4000-8000-${index.toString(16).padStart(12, '0')}`,
           target: { hostId: localHostId, threadId }, createdAt: AT, generation: 0 }))
         addWatcherHistory(record, targets, counts, { hostId: localHostId, threadId: 'earlier-watcher' }, streamed)
+        pairedWork?.(record)
       })
     }
     // The window shows one thread and watches the streams, as after the owner opened it.

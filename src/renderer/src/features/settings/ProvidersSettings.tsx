@@ -17,7 +17,7 @@ import { ProviderModelList } from '../../agents/ProviderModelList'
 import { CursorConnection, useCursorSignIn } from '../../agents/CursorConnection'
 import { OwnModelServers, useOwnServersBridge } from '../../agents/OwnModelServers'
 import { useTransientFlag, writeClipboard } from '../../agents/richActions'
-import { localHostId, localProviders } from '../onboarding/localAgents'
+import { localHostId, localProviders } from '../../agents/localAgents'
 import { PROVIDER_INSTALL_GUIDES } from '../../../../shared/hostProviders'
 import { signsInHere, type LocalSignInProvider, type LocalSignInRequest } from '../../../../shared/localProviderSignIn'
 import { HostProviderSignIn } from './HostProviderSignIn'
@@ -39,10 +39,10 @@ const CLIENT_NAMES: Record<ProviderId, string> = { codex: 'Codex', claude: 'Clau
  */
 function updateChecks(held: ReadonlySet<ProviderId>): string {
   const muse = !held.has('muse'), cursor = !held.has('cursor')
-  if (muse && cursor) return i18n._(msg`Checks each client's published version when it connects and every five minutes. Muse uses its own release feed and Cursor its install script; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates.`)
-  if (muse) return i18n._(msg`Checks each client's published version when it connects and every five minutes. Muse uses its own release feed; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates.`)
-  if (cursor) return i18n._(msg`Checks each client's published version when it connects and every five minutes. Cursor uses its install script; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates.`)
-  return i18n._(msg`Asks the npm registry for each client’s latest version when it connects and every five minutes. Only the package name is sent.`)
+  if (muse && cursor) return i18n._(msg`Checks each client's published version when it connects and every hour. Muse uses its own release feed and Cursor its install script; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates.`)
+  if (muse) return i18n._(msg`Checks each client's published version when it connects and every hour. Muse uses its own release feed; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates.`)
+  if (cursor) return i18n._(msg`Checks each client's published version when it connects and every hour. Cursor uses its install script; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates.`)
+  return i18n._(msg`Asks the npm registry for each client’s latest version when it connects and every hour. Only the package name is sent.`)
 }
 /** What the Providers page says when Cursor's install guide does not open. */
 const CURSOR_GUIDE_FAILED = msg`Cursor’s install guide could not be opened. Try again.`
@@ -409,7 +409,7 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
         {provider === 'cursor' && <details className="provider-support"><summary>{t`Threads with Cursor`}</summary><p className="tt-paragraph"><Trans>Replies, images, approvals, Cursor’s questions and plans, and reasoning effort, on every model your Cursor plan lists. Change models and permissions in a thread.</Trans></p><p className="tt-paragraph"><Trans>Cursor threads get Sotto’s browser, visual, pull request babysitting and delegation tools, and skills, and Watcher runs on Cursor. Cursor has no fork of its own and cannot be steered, so a message sent while it works waits for the turn to end; Fork from here starts the new thread from a handover. Cursor reports no token counts, so it is not in Usage. Cursor keeps its own history, and runs Auto’s checks on its servers.</Trans></p></details>}
         {provider === 'opencode' && <details className="provider-support"><summary>{t`Threads with OpenCode`}</summary><p className="tt-paragraph">{t`Replies, images, steering, approvals, questions and reasoning effort, on each model's own source. Change models and permissions in a thread.`}</p><p className="tt-paragraph">{t`Sotto's browser tools, Watcher and skills are unavailable. OpenCode does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text.`}</p></details>}
         {provider === 'pi' && <details className="provider-support"><summary>{t`Threads with Pi`}</summary><p className="tt-paragraph">{t`Replies stream as Pi writes. Threads keep their conversation after a restart, show tool calls and context use, and can be stopped. Models come from your saved servers without a key.`}</p><p className="tt-paragraph">{t`Pi sign-ins, steering, compaction, native forks, skills, Watcher, remote hosts and phones are not available yet.`}</p></details>}
-        {provider === 'deepseek' && <details className="provider-support"><summary>{t`Threads with DeepSeek`}</summary><p className="tt-paragraph">{t`Replies, approvals and reasoning effort, on the keyless model servers you saved under Your own model servers. Change models and permissions in a thread. Replies arrive whole rather than word by word, and questions come in the reply itself.`}</p><p className="tt-paragraph">{t`DeepSeek threads get Sotto's browser, visual, pull request babysitting and delegation tools. Images, steering, skills, Watcher and Usage counts are unavailable, and DeepSeek does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text.`}</p></details>}
+        {provider === 'deepseek' && <details className="provider-support"><summary>{t`Threads with DeepSeek`}</summary><p className="tt-paragraph">{t`Replies, approvals and reasoning effort, on the keyless model servers you saved under APIs and your own model servers. Change models and permissions in a thread. Replies arrive whole rather than word by word, and questions come in the reply itself.`}</p><p className="tt-paragraph">{t`DeepSeek threads get Sotto's browser, visual, pull request babysitting and delegation tools. Images, steering, skills, Watcher and Usage counts are unavailable, and DeepSeek does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text.`}</p></details>}
       </div>
     </>
   }
@@ -481,7 +481,7 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
   }
 
   return <div className="providers-settings">
-    {/* Your own model servers sit above the provider list, apart from any one provider (ADR-0124, layout B). */}
+    {/* APIs and your own model servers sit above the provider list, apart from any one provider (ADR-0124, layout B). */}
     {ownServers ? <OwnModelServers bridge={ownServers} /> : null}
     {signInFor && window.sotto?.providerSignIn ? <HostProviderSignIn place={t({ message: 'This computer', comment: 'The computer Sotto runs on, named where a paired host would be.' })} provider={signInFor}
       signIn={step => window.sotto!.providerSignIn!.signIn(step as LocalSignInRequest)} onClose={closeSignIn} /> : null}

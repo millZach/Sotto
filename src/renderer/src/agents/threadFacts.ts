@@ -668,6 +668,49 @@ export function holdSettledRows(open: readonly ProjectFolder[], settled: readonl
   return { open: [...folders.values()].sort(byActivity), placed }
 }
 
+/** The open part of the sidebar grouped by status (ADR-0201): what is working, then everything else open. */
+export interface StatusGroups {
+  /** Working now: a turn, compaction or background work running, on a provider Sotto can reach. */
+  readonly working: readonly ThreadRow[]
+  /** Recent: every other open thread, the ones standing in Needs you included, which point up to its card. */
+  readonly recent: readonly ThreadRow[]
+}
+
+/**
+ * The open folders' rows in the iPhone's groups and order (ADR-0201, from `FocusThreads` in SottoCore): Working now holds
+ * rows working on a reachable provider, and Recent the rest; a thread out of reach says Disconnected in Recent rather than
+ * Working in the group above, as the iPhone's does. Inside each, rows on a reachable provider come first, then the one
+ * that last moved: its last message or the start of its running turn, whichever is later (`ThreadGroups.latest`), so a
+ * reply streaming in does not reorder the group on every update. Needs you stays the card above the groups (Zach's pick, November 10, 2026), so its
+ * threads keep their rows here, in Recent. Snoozed and Settled are not here: they keep their shelves. `pinned` keeps a
+ * row in the group it was in, whatever its thread does meanwhile: a held gap's (ADR-0167), whose place must not move.
+ */
+export type StatusGroupName = keyof StatusGroups
+export function groupByStatus(open: readonly ProjectFolder[], pinned?: ReadonlyMap<string, StatusGroupName>): StatusGroups {
+  const rows = open.flatMap(item => item.rows)
+  // Each row's time read once, not on every comparison.
+  const moved = new Map(rows.map(row => {
+    const { lastMessageAt, runningTurnStartedAt } = threadSummaryOf(row.thread)
+    const times = [parse(lastMessageAt), parse(runningTurnStartedAt)].filter(Number.isFinite)
+    return [row, times.length ? Math.max(...times) : Number.NaN]
+  }))
+  const order = (first: ThreadRow, second: ThreadRow): number => Number(second.connected) - Number(first.connected)
+    || byActivity({ activityAt: moved.get(first)!, id: first.thread.id }, { activityAt: moved.get(second)!, id: second.thread.id })
+  const groupOf = (row: ThreadRow): StatusGroupName => pinned?.get(row.thread.id) ?? (row.state === 'working' && row.connected ? 'working' : 'recent')
+  return {
+    working: rows.filter(row => groupOf(row) === 'working').sort(order),
+    recent: rows.filter(row => groupOf(row) === 'recent').sort(order),
+  }
+}
+
+/**
+ * The Snoozed shelf's rows as one flat list, newest activity first, for the sidebar by status (ADR-0201, Zach's call of
+ * November 10, 2026). Settled keeps its project folders, where Restore project lives.
+ */
+export function snoozedShelfRows(folders: readonly ProjectFolder[]): ThreadRow[] {
+  return folders.flatMap(item => item.rows).sort((first, second) => byActivity({ activityAt: first.activityAt, id: first.thread.id }, { activityAt: second.activityAt, id: second.thread.id }))
+}
+
 /**
  * Project folders for the sidebar. Open folders hold each unsettled project's open threads;
  * Settled holds whole settled projects plus individually settled threads under their own project.

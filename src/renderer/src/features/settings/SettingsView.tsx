@@ -14,7 +14,7 @@ import { describeSetting, findSettingControl, findSettings, isSettingsSection, r
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { msg, t as tNow } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
-import { AppWindow, Network, AudioLines, ChevronRight, ClipboardPaste, Cloud, Command, Download, Eye, FolderGit2, Gauge, GitBranch, Globe, History, Keyboard, Landmark, MessageSquareText, MessagesSquare, Mic, Palette, Power, RotateCcw, Server, Settings2, ShieldCheck, Shrink, Smartphone, Sparkles, Timer } from 'lucide-react'
+import { AppWindow, Network, AudioLines, ChevronRight, ClipboardPaste, Cloud, Command, Download, Eye, FolderGit2, Gauge, PanelLeft, GitBranch, Globe, History, Keyboard, Landmark, MessageSquareText, MessagesSquare, Mic, Palette, Power, RotateCcw, Server, Settings2, ShieldCheck, Shrink, Smartphone, Sparkles, Timer } from 'lucide-react'
 
 import {
   TRANSCRIPTION_PRIVACY_NOTICE,
@@ -80,7 +80,7 @@ import { WorkerCapacitySettings, WorkerMachineSettings } from './WorkerMachineSe
 import { PerformanceSettings } from '../performance/PerformanceSettings'
 import { WatcherOwl } from '../../watcher/WatcherOwl'
 import type { MediaDevicesAdapter } from '../../audio/useAudioInputDevices'
-import type { MicrophoneTestController } from '../onboarding/microphoneTest'
+import type { MicrophoneTestController } from '../../audio/microphoneTest'
 import { MicrophoneSettings } from './MicrophoneSettings'
 
 
@@ -612,6 +612,12 @@ export function SettingsView({
               <Card className="settings-section" id="settings-agents" {...panelProps('settings-agents')}>
                 <div className="settings-section__heading"><h2><Trans>Threads</Trans></h2><p className="tt-paragraph"><Trans>New threads, replies, the browser &amp; visuals</Trans></p></div>
                 <AgentSetupFields />
+                {/* ADR-0201: status groups are the default; folders stay a choice. */}
+                <SettingsGroup title={t`Sidebar`} icon={PanelLeft}>
+                  <Field label={t`Group threads in the sidebar`} description={settings.threadListGrouping === 'status'
+                    ? t`Working now and Recent under Needs you, as on the iPhone. Each thread names its project.`
+                    : t`A folder for each project, with its threads inside.`}><SegmentedControl setting="thread-grouping" label={t`Group threads in the sidebar`} value={settings.threadListGrouping} onChange={value => void save({ threadListGrouping: value as AppSettings['threadListGrouping'] })} options={[{ value: 'status', label: t`By status` }, { value: 'project', label: t`By project` }]} /></Field>
+                </SettingsGroup>
                 <SettingsGroup title={t`Working copy`} icon={FolderGit2}>
                   <Field setting="thread-working-copy" label={t`New threads work in`} description={t`Project defaults below can override this. Existing threads keep their folder.`}><Select value={settings.threadWorkingCopyDefault} onChange={event => void save({ threadWorkingCopyDefault: event.currentTarget.value as AppSettings['threadWorkingCopyDefault'] })}><option value="shared">{t`Project folder`}</option><option value="independent">{t`New worktree`}</option></Select></Field>
                   <ProjectThreadDefaults settings={settings} onSave={save} />

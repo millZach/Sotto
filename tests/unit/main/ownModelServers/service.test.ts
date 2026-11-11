@@ -8,7 +8,7 @@ import { addressSuffix, OWN_SERVERS_FILE, OwnServers, type OwnServerEvent, type 
 import { openCodeProviders } from '../../../../src/main/ownModelServers/providerBlock'
 import { hermesServers } from '../../../../src/main/agents/hermesRuntime'
 import {
-  OWN_SERVER_WORDS, OWN_SERVERS_ADD, OWN_SERVERS_CHECK, OWN_SERVERS_CHECK_SAVED, OWN_SERVERS_LIST, OWN_SERVERS_REMOVE, type CheckResult, type OwnServer,
+  OWN_SERVERS_CATALOGUE, OWN_SERVERS_CHOOSE, OWN_SERVERS_REPLACE_KEY, OWN_SERVER_WORDS, OWN_SERVERS_ADD, OWN_SERVERS_CHECK, OWN_SERVERS_CHECK_SAVED, OWN_SERVERS_LIST, OWN_SERVERS_REMOVE, type CheckResult, type OwnServer,
 } from '../../../../src/shared/ownModelServers'
 import { ipcRegistry } from '../../../fixtures/ipcHarness'
 
@@ -479,7 +479,7 @@ describe('the bridge', () => {
 
   it('rejects a list it could not read with fixed words, so the window can offer to try again', async () => {
     const { ipc, main, invoke } = ipcRegistry()
-    const failing = { list: async () => { throw new Error(`EISDIR ${directory} ${KEY}`) }, check: vi.fn(), add: vi.fn(), checkSaved: vi.fn(), remove: vi.fn() }
+    const failing = { catalogue: vi.fn(), chooseModels: vi.fn(), replaceKey: vi.fn(), list: async () => { throw new Error(`EISDIR ${directory} ${KEY}`) }, check: vi.fn(), add: vi.fn(), checkSaved: vi.fn(), remove: vi.fn() }
     registerOwnServersIpc(ipc, failing, () => [main])
     const error = await invoke(OWN_SERVERS_LIST).then(() => undefined, (rejected: unknown) => rejected as Error)
     expect(error?.message).toBe(OWN_SERVERS_UNREAD)
@@ -491,7 +491,7 @@ describe('the bridge', () => {
     const { ipc, main, invoke, widgetEvent } = ipcRegistry()
     const close = registerOwnServersIpc(ipc, service, () => [main])
     try {
-      expect([...ipc.handlers.keys()].sort()).toEqual([OWN_SERVERS_ADD, OWN_SERVERS_CHECK, OWN_SERVERS_CHECK_SAVED, OWN_SERVERS_LIST, OWN_SERVERS_REMOVE].sort())
+      expect([...ipc.handlers.keys()].sort()).toEqual([OWN_SERVERS_CATALOGUE, OWN_SERVERS_CHOOSE, OWN_SERVERS_REPLACE_KEY, OWN_SERVERS_ADD, OWN_SERVERS_CHECK, OWN_SERVERS_CHECK_SAVED, OWN_SERVERS_LIST, OWN_SERVERS_REMOVE].sort())
       const added = await invoke(OWN_SERVERS_ADD, [{ name: 'Spark', address: 'spark-head:8888', key: KEY, models: [model] }])
       expect(added).toMatchObject({ status: 'ok', server: { id: 'own-test0', keyed: true } })
       expect(await invoke(OWN_SERVERS_LIST)).toHaveLength(1)

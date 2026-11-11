@@ -12,7 +12,8 @@ export function piModelRoute(modelId: string): { serverId: string; model: string
 
 export function piCatalog(servers: readonly OwnServer[]): AgentModel[] {
   return servers.filter(server => !server.keyed).flatMap(server => server.models.map(model => ({
-    id: `${server.id}/${model.id}`, provider: 'Pi', name: model.name, source: server.name,
+    id: `${server.id}/${model.id}`, provider: 'Pi', ownServer: true, name: model.name, source: server.name,
+    ...(server.keptModelIds && !server.keptModelIds.includes(model.id) ? { hiddenFromMenu: true as const } : {}),
     runtimeModes: [...PI_RUNTIME_MODES], ready: true,
     ...(model.images ? { supportsImages: true } : {}),
     ...(model.thinking ? { reasoningEfforts: [...PI_EFFORTS], defaultReasoningEffort: 'medium' } : {}),
