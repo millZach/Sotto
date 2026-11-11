@@ -266,7 +266,7 @@ import {
   isTrustedMainE2ESender,
   snapshotE2EState,
 } from './e2e/e2eBoundary'
-import { E2E_SNAPSHOT_CHANNEL, E2E_TRIGGER_SHORTCUT_CHANNEL, E2E_BROWSER_AGENT_CHANNEL, E2E_HOST_SETUP_TOOL_CHANNEL, E2E_VISUAL_TOOL_CHANNEL, E2E_MEDIA_TOOL_CHANNEL, E2E_DELEGATION_TOOL_CHANNEL, e2eBrowserAgentSchema, e2eHostSetupToolSchema, e2eVisualToolSchema, e2eDelegationToolSchema, e2eAgentEventSchema } from '../shared/e2e'
+import { E2E_COMPUTER_NAME, E2E_SNAPSHOT_CHANNEL, E2E_TRIGGER_SHORTCUT_CHANNEL, E2E_BROWSER_AGENT_CHANNEL, E2E_HOST_SETUP_TOOL_CHANNEL, E2E_VISUAL_TOOL_CHANNEL, E2E_MEDIA_TOOL_CHANNEL, E2E_DELEGATION_TOOL_CHANNEL, e2eBrowserAgentSchema, e2eHostSetupToolSchema, e2eVisualToolSchema, e2eDelegationToolSchema, e2eAgentEventSchema } from '../shared/e2e'
 import { AGENT_STATE, AGENT_E2E, AGENT_THREAD_DETAIL } from '../shared/agents'
 import { AgentCredentials } from './agents/credentials'
 import { migrateDesktopKey } from './settings/migrateDesktopKey'
@@ -1452,6 +1452,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const phoneAccess = new PhoneAccess({ featureUsed: feature => productEvents.featureUsed(feature), directory: userDataPath, listener: { sottoVersion: hostVersion, delegation: delegationEnabled },
     service: startupSettings.localHostEnabled ? hostService : undefined,
     tailscale: e2eConfiguration === null ? new TailscaleCli() : e2eTailscale(userDataPath),
+    // An E2E run names no real machine, so a capture or a check reads the same on every computer.
+    ...(e2eConfiguration === null ? {} : { hostname: () => E2E_COMPUTER_NAME }),
     settings: () => workingCopySettings, policy: authority,
     openExternal: async url => { if (e2eConfiguration === null) await shell.openExternal(url) },
     log: logOperational,

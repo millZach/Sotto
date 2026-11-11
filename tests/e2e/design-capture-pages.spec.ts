@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-import { E2E_TRANSCRIPT } from '../../src/shared/e2e'
+import { E2E_COMPUTER_NAME, E2E_TRANSCRIPT } from '../../src/shared/e2e'
 import { populatedHistory, withSotto } from '../fixtures/designCaptureProfile'
 import { assertDictateState, assertFocusPresentation, captureFullSurface, capturePage, captureSection, startSettingsAtHeading } from './support/designCapture'
 import { openJournalRow, openPage, reachSetupStop, setupForwardButton, setupNote, skipSetup } from './support/sottoLaunch'
@@ -26,6 +26,8 @@ test.describe('authoritative design-review captures', () => {
       await assertFocusPresentation(start)
       await start.click()
       await expect(setupNote(page).getByRole('heading', { name: 'Sign in to a coding agent' })).toBeVisible()
+      // Reaching this stop connects the agent; capture once the note says so, not the frame before.
+      await expect(setupNote(page)).toContainText('An agent is ready.')
       await capturePage(page, 'setup-agents.png', { category: 'setup', state: 'agents' })
 
       await reachSetupStop(page, 'microphone')
@@ -43,6 +45,7 @@ test.describe('authoritative design-review captures', () => {
 
       await reachSetupStop(page, 'tailscale')
       await expect(setupNote(page).getByRole('heading', { name: 'Tailscale joins your devices' })).toBeVisible()
+      await expect(setupNote(page)).toContainText('Tailscale is not installed on this computer.')
       await capturePage(page, 'setup-tailscale.png', { category: 'setup', state: 'tailscale' })
 
       await reachSetupStop(page, 'computers')
@@ -51,6 +54,8 @@ test.describe('authoritative design-review captures', () => {
 
       await reachSetupStop(page, 'iphone')
       await expect(setupNote(page).getByRole('heading', { name: 'Answer threads from your iPhone' })).toBeVisible()
+      // Pairing names the pinned computer, never the machine taking the capture.
+      await expect(page.getByText(E2E_COMPUTER_NAME, { exact: true })).toBeVisible()
       await capturePage(page, 'setup-iphone.png', { category: 'setup', state: 'iphone' })
 
       await reachSetupStop(page, 'end')
