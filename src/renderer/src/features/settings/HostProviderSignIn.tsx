@@ -6,7 +6,6 @@ import { Trans, useLingui } from '@lingui/react/macro'
 import { writeClipboard } from '../../agents/richActions'
 import { isCompositionKey } from '../../agents/composerKeys'
 import { PROVIDER_LABELS } from '../../../../shared/agents'
-import type { HostsBridge, HostStatus } from '../../../../shared/hosts'
 import { PASTED_CODE_MAX, type HostProviderId, type ProviderSignInView } from '../../../../shared/hostProviders'
 import { Button } from '../../components/Button'
 import { HostsModal } from './HostsModal'
@@ -26,18 +25,29 @@ function spelled(code: string): string {
   return [...code].map(character => character === '-' ? dash : character).join(' ')
 }
 
+/** One step of a sign-in, as the dialog asks for it; the caller sends it to the machine the sign-in runs on. */
+export type ProviderSignInStep =
+  | { readonly type: 'start'; readonly provider: HostProviderId }
+  | { readonly type: 'read' | 'cancel' | 'open'; readonly signInId: string }
+  | { readonly type: 'code'; readonly signInId: string; readonly code: string }
+
 /**
- * Sign in to a provider on a host, from this computer (ADR-0037). The provider's own client runs on the host; the user
- * finishes in this computer's browser, either by entering the code shown here (Codex, Grok Build), by pasting back the
- * code the page shows (Claude Code), or on a page that needs neither and finishes by itself (Cursor). Cancel and Escape
- * stop the sign-in on the host; nothing is kept on this computer.
+ * Sign in to a provider on a host, from this computer (ADR-0037), or on this computer itself from Settings › Providers
+ * (ADR-0200). The provider's own client runs on that machine; the user finishes in this computer's browser, either by
+ * entering the code shown here (Codex, Grok Build), by pasting back the code the page shows (Claude Code), or on a page
+ * that needs neither and finishes by itself (Cursor). Cancel and Escape stop the sign-in there; nothing is kept here.
+ * `place` is the machine's name as Sotto shows it: a host's saved name, or This computer.
  */
-export function HostProviderSignIn({ host, provider, bridge, onClose }: {
-  readonly host: HostStatus; readonly provider: HostProviderId; readonly bridge: HostsBridge; readonly onClose: () => void
+export function HostProviderSignIn({ place, provider, signIn, onClose }: {
+  readonly place: string; readonly provider: HostProviderId; readonly signIn: (step: ProviderSignInStep) => Promise<ProviderSignInView | null>; readonly onClose: () => void
 }): ReactNode {
   const { t } = useLingui()
   const name = PROVIDER_LABELS[provider]
-  const hostName = host.name
+  const hostName = place
+  // The newest sender, so a caller that builds one each render does not restart the sign-in.
+  const sender = useRef(signIn)
+  sender.current = signIn
+  const [send] = useState(() => (step: ProviderSignInStep) => sender.current(step))
   const [view, setView] = useState<ProviderSignInView | null>(null)
   const [error, setError] = useState<LaterWords | null>(null)
   const [opened, setOpened] = useState(false)
@@ -56,13 +66,13 @@ export function HostProviderSignIn({ host, provider, bridge, onClose }: {
   useEffect(() => {
     let alive = true
     setView(null); setError(null); setOpened(false); setCode(''); setCodeError(null)
-    bridge.signIn({ type: 'start', id: host.id, provider }).then(started => {
+    send({ type: 'start', provider }).then(started => {
       if (alive) { setView(started); return }
-      if (started && running(started)) void bridge.signIn({ type: 'cancel', id: host.id, signInId: started.id }).catch(() => undefined)
+      if (started && running(started)) void send({ type: 'cancel', signInId: started.id }).catch(() => undefined)
     }, failure => { if (alive) setError(clean(failure, msg`${name} could not start signing in on ${hostName}. Nothing was changed. Try again.`)) })
     return () => { alive = false }
-  }, [attempt, bridge, host.id, hostName, name, provider])
-  useEffect(() => () => { const last = current.current; if (last && running(last)) void bridge.signIn({ type: 'cancel', id: host.id, signInId: last.id }).catch(() => undefined) }, [bridge, host.id])
+  }, [attempt, send, hostName, name, provider])
+  useEffect(() => () => { const last = current.current; if (last && running(last)) void send({ type: 'cancel', signInId: last.id }).catch(() => undefined) }, [send])
 
   // While it runs, follow it: a device code is finished on the page, and a pasted code by the client on the host.
   // A host that fails to answer twice in a row is said to have stopped answering, rather than left waiting for ever.
@@ -71,7 +81,7 @@ export function HostProviderSignIn({ host, provider, bridge, onClose }: {
     if (!signInId || !stage || !running(view) || error) return
     let alive = true, missed = 0
     const timer = setInterval(() => {
-      void bridge.signIn({ type: 'read', id: host.id, signInId }).then(next => {
+      void send({ type: 'read', signInId }).then(next => {
         if (!alive) return
         missed = 0
         setView(next ?? { id: signInId, provider, shape: view!.shape, stage: 'ended' })
@@ -81,7 +91,7 @@ export function HostProviderSignIn({ host, provider, bridge, onClose }: {
       })
     }, READ_EVERY_MS)
     return () => { alive = false; clearInterval(timer) }
-  }, [bridge, error, host.id, hostName, name, provider, signInId, stage])
+  }, [send, error, hostName, name, provider, signInId, stage])
 
   useEffect(() => { if (!copied) return; const timer = setTimeout(() => setCopied(null), 1500); return () => clearTimeout(timer) }, [copied])
   useEffect(() => { if (opened) field.current?.focus() }, [opened])
@@ -98,14 +108,14 @@ export function HostProviderSignIn({ host, provider, bridge, onClose }: {
   const open = async (): Promise<void> => {
     if (!view) return
     setBusy(true)
-    try { await bridge.signIn({ type: 'open', id: host.id, signInId: view.id }); setOpened(true) }
+    try { await send({ type: 'open', signInId: view.id }); setOpened(true) }
     catch (failure) { setError(clean(failure, msg`The sign-in page could not open. Nothing was changed. Try again.`)) }
     finally { setBusy(false) }
   }
   const finish = async (): Promise<void> => {
     if (!view || !code.trim() || busy) return
     setBusy(true); setCodeError(null)
-    try { const next = await bridge.signIn({ type: 'code', id: host.id, signInId: view.id, code: code.trim() }); setCode(''); if (next) setView(next) }
+    try { const next = await send({ type: 'code', signInId: view.id, code: code.trim() }); setCode(''); if (next) setView(next) }
     catch (failure) { setCodeError(clean(failure, msg`The code could not be sent. Nothing was changed. Try again.`)) }
     finally { setBusy(false) }
   }

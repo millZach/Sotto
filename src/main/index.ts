@@ -298,6 +298,7 @@ import { USAGE_RENDERER_ARGUMENT } from '../shared/usageDashboard'
 import { OPENCODE_HOSTS_RENDERER_ARGUMENT, OPENCODE_RENDERER_ARGUMENT } from '../shared/opencodeSignIn'
 import { registerOpenCodeSignInIpc } from './agents/opencodeSignInIpc'
 import { registerCursorSignInIpc } from './agents/cursorSignInIpc'
+import { registerLocalProviderSignInIpc } from './agents/localProviderSignInIpc'
 import { CURSOR_RENDERER_ARGUMENT } from '../shared/cursorSignIn'
 import { OWN_SERVERS_RENDERER_ARGUMENT } from '../shared/ownModelServers'
 import { OwnServers, type OwnServerEvent, type OwnServersOpenCode, type OwnServersDeepSeek, type OwnServersHermes } from './ownModelServers/service'
@@ -1128,6 +1129,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     historyEnabled: () => agentHistoryEnabled,
     gitStatus: { fetchIntervalMs: () => workingCopySettings.gitFetchIntervalSeconds * 1000, foreground: windowInFront, visible: windowShowing, ...(ghStandIn ? { ghStandIn } : {}), log: event => { logOperational(event) } },
     babysitting: babysittingRetired ? { retired: true } : { agentTool: () => workingCopySettings.babysitPullRequests },
+    // An end-to-end run starts no real client's sign-in: this computer's own sign-ins find no client there (ADR-0200).
+    ...(e2eConfiguration !== null ? { signInCommand: async () => undefined } : {}),
     // A journey's Cursor sign-in page is written down for the spec to read, never opened in a browser.
     openExternal: url => cursorFixtureRoot ? appendFile(join(cursorFixtureRoot, 'opened-pages.txt'), `${url}
 `, 'utf8') : shell.openExternal(url),
@@ -2475,6 +2478,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       const unsubscribeMainCheckout = localRuntime.mainCheckout?.subscribe(state => { windows.sendToMain(MAIN_CHECKOUT_CHANGED, state) })
       // OpenCode's sign-in (#1104): only while its Owl feature is on, so stable registers nothing.
       const cleanupOpenCodeSignIn = registerOpenCodeSignInIpc(ipcMain, heldProviders.has('opencode') ? undefined : localRuntime.opencodeSignIn, () => windows.getTrustedRenderers())
+      // Signing Codex, Claude Code or Grok Build in from its row in Settings › Providers (ADR-0200).
+      const cleanupProviderSignIn = registerLocalProviderSignInIpc(ipcMain, localRuntime.providerSignIn, () => windows.getTrustedRenderers())
       // Cursor's sign-in from its tile (ADR-0128): only while its Owl feature is on, so stable registers nothing.
       const cleanupCursorSignIn = registerCursorSignInIpc(ipcMain, heldProviders.has('cursor') ? undefined : localRuntime.cursorSignIn, () => windows.getTrustedRenderers())
       // The user's own model servers (ADR-0124): only while their Owl feature is on, so stable registers nothing.
@@ -2765,6 +2770,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         cleanupPopup()
         cleanupOpenCodeSignIn()
         cleanupCursorSignIn()
+        cleanupProviderSignIn()
         cleanupOwnServers()
         cleanupOwnServerCleanup()
         worktreeCleanup?.dispose()
