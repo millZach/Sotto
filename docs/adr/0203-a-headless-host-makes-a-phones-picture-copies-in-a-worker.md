@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted November 10, 2026, by Zach's pick on a question card: "Bundle a decoder in the host". **Number provisional until merge** (docs/agents/domain.md); 0201 is claimed by two open pull requests. Issue #2395, second part; the first is pull request #2422.
+Accepted November 10, 2026, by Zach's pick on a question card: "Bundle a decoder in the host". Issue #2395, second part; the first is pull request #2422.
+
+Renumbered from ADR-0202 on November 11, 2026, after the Pi provider decision ([ADR-0202](0202-pi-is-a-thread-provider.md), #2421) merged with the same number first (#2470). The decision is unchanged.
 
 Amends [ADR-0170](0170-a-thread-shows-the-pictures-its-agent-made-as-tiles.md) decision 35, which said only the desktop makes the copy. Records the headless host's first compiled-in libraries, under [ADR-0018](0018-terminals-run-on-node-pty.md)'s rule: no production dependency is added. Adds no host feature: a headless host now lists `thread-media-edge`, which ADR-0170 added.
 

@@ -1,6 +1,6 @@
 /**
  * How large a picture a headless host sends to a phone's tile that asks at a longest edge (`thread-media-edge`,
- * ADR-0202), made the way a headless host makes it: `ReducedPictures` over a `PictureMaker` running the built picture
+ * ADR-0203), made the way a headless host makes it: `ReducedPictures` over a `PictureMaker` running the built picture
  * worker in its own process, against the whole picture. It is `picture-edge.mjs`'s run for the desktop, with the host's
  * maker in place of Electron's, and runs under plain Node after the host is built:
  *

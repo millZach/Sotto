@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * A headless host's copy of a picture for a phone's tile (ADR-0202): fitted and rounded as the desktop's maker fits it,
+ * A headless host's copy of a picture for a phone's tile (ADR-0203): fitted and rounded as the desktop's maker fits it,
  * each box of pixels averaged, a PNG only when something shows through, and Sotto's own JPEG writer's output readable by
  * jpeg-js and close to what it was given. Pictures are made in the test, a few pixels each.
  */

@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * The headless host's side of its picture worker process (ADR-0202): what it sends the worker and what it keeps from it,
+ * The headless host's side of its picture worker process (ADR-0203): what it sends the worker and what it keeps from it,
  * how it lets an idle worker end, stops one that does not answer, and gives up on one that keeps failing. The workers
  * here are a few lines each, written for the test; the real worker's copies are `headlessPictureEdge.test.ts`'s.
  */
