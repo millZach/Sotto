@@ -119,6 +119,11 @@ test.describe('Teams', () => {
         const code = page.locator('.teams-code__text')
         await expect(code).toContainText(/^sotto-team:laptop-russh2j5\.tail5728ca\.ts\.net:8445:[A-Z0-9]{8}$/u)
         await captureWindow(app, resolve(evidence, `tab-code-${appearance}-1280x800.png`))
+        // Copy code puts the code on main's clipboard and says so. The built window has no clipboard permission of its own.
+        await page.getByRole('button', { name: 'Copy code' }).click()
+        await expect(page.getByRole('button', { name: 'Copied' })).toBeVisible()
+        expect((await page.evaluate(() => window.sottoE2E!.snapshot())).clipboardText).toBe(await code.textContent())
+        await captureWindow(app, resolve(evidence, `tab-code-copied-${appearance}-1280x800.png`))
         await page.getByRole('button', { name: 'Cancel code' }).click()
         await expect(code).toHaveCount(0)
         // A project left out stays left out, and takes back its tick.
