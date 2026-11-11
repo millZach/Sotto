@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest'
-import { watcherCardLine, watcherNewsText, watcherWaitingCardWords } from '../../../src/main/agents/watcherNews'
+import { watcherCardLine, watcherNewsText, watcherPermissionCardLine, watcherWaitingCardWords } from '../../../src/main/agents/watcherNews'
 import type { WatcherEvent } from '../../../src/shared/watcherNews'
 import { watcherCardWordsSchema } from '../../../src/shared/watcher'
 import type { AgentRequest } from '../../../src/shared/agents'
@@ -21,6 +21,20 @@ it('gives a question card\'s headline, choices and prototype pages, never a page
   expect(watcherWaitingCardWords({ kind: 'question', text: 'Merge now?', options: [choice('Merge'), choice('Wait')] })).toEqual({ question: 'Merge now?', choices: ['Merge', 'Wait'] })
   // A permission request's words can carry a command's arguments, so none go.
   expect(watcherWaitingCardWords({ kind: 'permission', text: 'GH_TOKEN=secret gh pr merge', options: [] })).toBeUndefined()
+})
+
+// November 10, 2026 (#2433): VellCAD's permission cards reached Watcher as "waits on the user" and nothing else, so it could not
+// tell Zach what they asked. Zach's pick: the tool and the model's own summary, never the command.
+it('says which tool a permission card asks for and its summary, never its command, path or fields (#2433)', () => {
+  const card = (context: AgentRequest['context']): AgentRequest => ({ id: 'perm', kind: 'permission', text: 'GH_TOKEN=secret gh pr merge 12', options: [], ...context ? { context } : {} })
+  const line = watcherPermissionCardLine(card({ toolName: 'Bash', command: 'GH_TOKEN=secret gh pr merge 12', cwd: '/home/someone/project', summary: 'Merges the pull request', target: '/home/someone/secret.txt', details: 'token: secret' }))!
+  expect(line).toBe('It asks to use "Bash". Its summary, in the worker\'s words: "Merges the pull request".')
+  expect(line).not.toContain('secret'); expect(line).not.toContain('someone')
+  // No summary yet: the tool alone. Neither: nothing, as before.
+  expect(watcherPermissionCardLine(card({ toolName: 'Edit', target: '/home/someone/a.ts' }))).toBe('It asks to use "Edit".')
+  expect(watcherPermissionCardLine(card({ command: 'rm -rf build' }))).toBeUndefined()
+  expect(watcherPermissionCardLine(card(undefined))).toBeUndefined()
+  expect(watcherPermissionCardLine({ kind: 'question', context: { toolName: 'Bash' } })).toBeUndefined()
 })
 
 it('keeps a card\'s words short: the question, eight choices and how many more (#2230)', () => {
