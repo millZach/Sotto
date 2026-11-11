@@ -39,11 +39,14 @@ function fixture(start = true, progress?: WatcherWakeOptions['progress'], option
     ordinaryBatch: SHORT_BATCH, ...options })
   cleanups.push(() => wakes.close())
   if (start) wakes.start()
+  // How many timers have run, so a test can see a pass that keeps running at one instant; such a run stops at 1,000.
+  let fired = 0
   const advance = async (ms: number) => {
     const end = clock + ms
     while (true) {
       const timer = [...timers].sort((a, b) => a.at - b.at).find(timer => timer.at <= end)
-      if (!timer) break
+      if (!timer || fired > 1_000) break
+      fired++
       clock = timer.at; timers.delete(timer); timer.callback(); await wakes.drained()
     }
     clock = end; await wakes.drained()
@@ -53,7 +56,7 @@ function fixture(start = true, progress?: WatcherWakeOptions['progress'], option
     thread.pullRequests ??= [{ url: prUrl, number: 9, title: 'Synthetic pull request', state: 'open', draft: false, source: 'linked', linkedAt: centerTime }]
     wakes.pullRequest({ url: prUrl, head: 'head', observedAt: new Date(clock).toISOString(), availability: 'available', checks: state, checkCount: 1 })
   }
-  return { canDeliver, wakes, record, snapshot, thread, timers, delivered, deliver, remember, failed, advance, checks, now: () => clock }
+  return { canDeliver, wakes, record, snapshot, thread, timers, delivered, deliver, remember, failed, advance, checks, now: () => clock, scheduled: () => fired }
 }
 const prUrl = 'https://github.com/synthetic/project/pull/9'
 /** The same checks read as a paired host reports it, which needs no link in the roster and so survives a restart's first observation. */
@@ -1217,7 +1220,7 @@ it('counts background work and the roster\'s working sub-agents once where they 
   expect(f.wakes.news().find(event => event.kind === 'turn-finished')!.backgroundWorkCount).toBe(3)
 })
 
-it('wakes no one for a held busy finish once a new turn begins, owes it no work-settled news, and lets the next finish stand for it', async () => {
+it('wakes no one for a held busy finish once a new turn begins, owes it no work-settled news, and carries it with the next finish', async () => {
   const f = fixture()
   f.thread.backgroundWork = [backgroundTask(1)]; finish(f.thread); f.wakes.observe(); await f.advance(2_000)
   f.thread.status = 'running'; f.thread.lastTurn = { id: 'turn-2', status: 'running' }; f.thread.backgroundWork = []; f.wakes.observe()
@@ -1225,9 +1228,10 @@ it('wakes no one for a held busy finish once a new turn begins, owes it no work-
   // The thread is working again, so its old finish wakes no one (#2434).
   expect(f.delivered).toEqual([])
   f.thread.status = 'idle'; f.thread.lastTurn = { id: 'turn-2', status: 'completed' }; f.wakes.observe(); await f.advance(2_000)
-  // The next turn's finish wakes Watcher and says all the first one would have.
+  // The next turn's finish wakes Watcher, and the first rides with it in the same wake-up.
+  expect(f.delivered).toHaveLength(1)
   expect(f.delivered.flatMap(news => news.events).filter(event => event.kind !== 'evidence-changed').map(event => [event.kind, event.turnId]))
-    .toEqual([['turn-finished', 'turn-2']])
+    .toEqual([['turn-finished', 'turn-1'], ['turn-finished', 'turn-2']])
 })
 
 function restarted(f: ReturnType<typeof fixture>, restoredEvents?: WatcherWakeOptions['restoredEvents']) {
@@ -2216,6 +2220,29 @@ it('carries a held busy finish whose thread moved on with the next wake, even af
   expect(f.delivered).toHaveLength(1)
   f.thread.requests.push(question('later')); f.wakes.observe(); await f.advance(WATCHER_BATCH_MS)
   expect(f.delivered.at(-1)!.events.find(event => event.kind === 'turn-finished')?.turnId).toBe('turn-1')
+})
+
+it('lets a moved-on busy finish ride with any wake, ordinary ones too (#2434)', async () => {
+  const f = fixture(), second = secondWorker(f)
+  f.thread.monitoring = [monitor(1)]; finish(f.thread); f.wakes.observe(); await f.advance(WATCHER_BATCH_MS)
+  f.thread.status = 'running'; f.thread.lastTurn = { id: 'turn-2', status: 'running' }; f.wakes.observe(); await f.advance(WATCHER_BATCH_MS)
+  expect(f.delivered).toEqual([])
+  // Another thread's ordinary finish wakes Watcher, and the moved-on finish goes with it.
+  finish(second); f.wakes.observe(); await f.advance(WATCHER_BATCH_MS)
+  expect(f.delivered).toHaveLength(1)
+  expect(f.delivered[0]!.events.filter(event => event.kind === 'turn-finished').map(event => `${event.target.threadId} ${event.turnId}`).sort())
+    .toEqual([`${f.thread.id} turn-1`, `${second.id} turn-1`].sort())
+})
+
+it('sets no deadline for a moved-on busy finish, so no pass runs again and again once twenty minutes are past (#2434)', async () => {
+  const f = fixture()
+  f.thread.monitoring = [monitor(1)]; finish(f.thread); f.wakes.observe(); await f.advance(WATCHER_BATCH_MS)
+  f.thread.status = 'running'; f.thread.lastTurn = { id: 'turn-2', status: 'running' }; f.wakes.observe()
+  const before = f.scheduled()
+  // Twenty quiet minutes of the new turn wake Watcher for that, and the finish rides with it; the passes stay few.
+  await f.advance(WATCHER_QUIET_MS + WATCHER_BATCH_MS)
+  expect(f.scheduled() - before).toBeLessThan(50)
+  expect(f.delivered.flatMap(news => news.events).filter(event => event.kind === 'turn-finished').map(event => event.turnId)).toEqual(['turn-1'])
 })
 
 it('says a busy finish waits for work-settled news only unless its thread begins another turn', () => {
