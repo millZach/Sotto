@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 
 /**
- * The Node version the suite's counts are taken on: the one in `.node-version`, which every workflow installs
+ * The Node version the suite's counts are taken on: the one in `.node-version`, which every workflow that installs Node pins
  * (`tests/unit/release/nodeVersion.test.ts` holds them to it). Another major runs main's code in another order: under
  * Node 26 a send publishes once more than under Node 24, so the owner-scale work budget read as over budget on a
  * machine whose default Node was 26, with nothing wrong in `main` (#2339).

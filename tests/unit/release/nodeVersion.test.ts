@@ -33,8 +33,11 @@ describe('the pinned Node version', () => {
     expect(workflows.flatMap(name => namedNodeVersions(readFileSync(join('.github/workflows', name), 'utf8')))).toContain(PINNED_NODE)
   })
 
-  it.each(workflows)('is the only one %s installs', name => {
-    const versions = namedNodeVersions(readFileSync(join('.github/workflows', name), 'utf8'))
+  it.each(workflows)('is the only one %s installs, at every step that installs Node', name => {
+    const workflow = readFileSync(join('.github/workflows', name), 'utf8')
+    const versions = namedNodeVersions(workflow)
     expect(versions.filter(version => version !== PINNED_NODE && version !== 'file:.node-version'), `${name} installs another Node than .node-version`).toEqual([])
+    // A setup-node step that names no version installs whatever the runner has.
+    expect(versions, `${name} has a setup-node step that names no version`).toHaveLength([...workflow.matchAll(/^\s*(?:-\s*)?uses:\s*actions\/setup-node@/gmu)].length)
   })
 })
