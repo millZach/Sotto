@@ -163,7 +163,12 @@ describe('independent thread providers', () => {
   })
   it('aggregates colliding native IDs and routes durable threads independently of the default provider', async () => {
     const f = await fixture(); const snapshot = await f.host.connect()
-    expect(snapshot.providers?.map(provider => provider.connection)).toEqual(['connected', 'connected', 'connected', 'disconnected', 'disconnected', 'disconnected', 'disconnected', 'disconnected', 'disconnected'])
+    const connections = {
+      codex: 'connected', claude: 'connected', grok: 'connected',
+      devin: 'disconnected', muse: 'disconnected', opencode: 'disconnected', cursor: 'disconnected',
+      deepseek: 'disconnected', hermes: 'disconnected', pi: 'disconnected',
+    } satisfies Record<ProviderId, 'connected' | 'disconnected'>
+    expect(snapshot.providers?.map(provider => [provider.id, provider.connection])).toEqual(Object.entries(connections))
     expect(new Set(snapshot.models.map(model => model.id)).size).toBe(3)
     expect(new Set(snapshot.projects.map(project => project.id)).size).toBe(3)
     expect(new Set(snapshot.threads.map(thread => thread.id)).size).toBe(6)
