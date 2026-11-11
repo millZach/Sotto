@@ -15,7 +15,8 @@ async function event(page: Page, value: Parameters<NonNullable<SottoE2EBridge['a
   await page.evaluate(async data => { await (globalThis as unknown as BrowserGlobals).sottoE2E.agentEvent?.(data) }, value)
 }
 async function onboard(page: Page): Promise<void> {
-  // Setup connects this computer's installed provider before opening Threads.
+  // Setup's agents stop, which the walk passes on its way to the microphone stop, connects this computer's installed
+  // provider before Threads opens.
   await completeFirstRunSetup(page, { microphone: 'test' })
   await openThreads(page)
 }

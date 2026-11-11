@@ -4,7 +4,7 @@ import { E2E_TRANSCRIPT, type E2EScenario } from '../../../shared/e2e'
 import { rankCloudSpeechModels } from '../../../shared/cloudSpeechModels'
 import type { AudioRecorderOptions, AudioRecordingResult } from '../audio/audioRecorder'
 import { TranscriptionError } from '../transcription/localTranscriber'
-import { BrowserMicrophoneTest, type MicrophoneTestController } from '../features/onboarding/microphoneTest'
+import { BrowserMicrophoneTest, type MicrophoneTestController } from '../audio/microphoneTest'
 import {
   createProductionDictationController,
   type AppControllerFactory,
