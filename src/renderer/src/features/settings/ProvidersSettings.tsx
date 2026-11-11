@@ -39,10 +39,10 @@ const CLIENT_NAMES: Record<ProviderId, string> = { codex: 'Codex', claude: 'Clau
  */
 function updateChecks(held: ReadonlySet<ProviderId>): string {
   const muse = !held.has('muse'), cursor = !held.has('cursor')
-  if (muse && cursor) return i18n._(msg`Checks each client's published version when it connects and every five minutes. Muse uses its own release feed and Cursor its install script; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates.`)
-  if (muse) return i18n._(msg`Checks each client's published version when it connects and every five minutes. Muse uses its own release feed; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates.`)
-  if (cursor) return i18n._(msg`Checks each client's published version when it connects and every five minutes. Cursor uses its install script; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates.`)
-  return i18n._(msg`Asks the npm registry for each client’s latest version when it connects and every five minutes. Only the package name is sent.`)
+  if (muse && cursor) return i18n._(msg`Checks each client's published version when it connects and every hour. Muse uses its own release feed and Cursor its install script; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates.`)
+  if (muse) return i18n._(msg`Checks each client's published version when it connects and every hour. Muse uses its own release feed; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates.`)
+  if (cursor) return i18n._(msg`Checks each client's published version when it connects and every hour. Cursor uses its install script; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates.`)
+  return i18n._(msg`Asks the npm registry for each client’s latest version when it connects and every hour. Only the package name is sent.`)
 }
 /** What the Providers page says when Cursor's install guide does not open. */
 const CURSOR_GUIDE_FAILED = msg`Cursor’s install guide could not be opened. Try again.`

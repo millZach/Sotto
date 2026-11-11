@@ -79,6 +79,13 @@ export interface HostUpdatesOptions {
 }
 /** What the releases page said of a host archive and its checksum: not yet, both there, not both there, or no answer. */
 type ArchiveAnswer = 'checking' | 'published' | 'missing' | 'unknown'
+/**
+ * How soon the releases page is asked again about a host archive it did not have or gave no answer for, rather than at
+ * Sotto's next hourly update check: 4, 8 and then 16 minutes later while that version still waits, and after those only
+ * at the next check (ADR-0077, amended November 10, 2026). A release's host archives are uploaded just after the
+ * desktop's files, so a 404 right after a new version is found is ordinary.
+ */
+export const ARCHIVE_RETRY_DELAYS_MS: readonly number[] = Object.freeze([4 * 60 * 1000, 8 * 60 * 1000, 16 * 60 * 1000])
 interface Entry {
   id: string; name: string; hostId: string; from: string; owned: boolean; installPath: string; dataDirectory: string; boot?: boolean | undefined
   /** The version this update installs: set while it is offered, and kept from the moment it starts. */
@@ -195,6 +202,10 @@ export class HostUpdates {
   /** Each saved host's system as the archive name its download asked for says, `linux-x64`, when its launch did not say. */
   private readonly systems = new Map<string, string>()
   private readonly probing = new AbortController()
+  /** The next early ask of the releases page about archives it did not show, while one waits. */
+  private archiveRetry: ReturnType<typeof setTimeout> | undefined
+  /** How many early asks each archive of the waiting version has had while the page did not show it, by `<version> <system>`. */
+  private readonly archiveRetries = new Map<string, number>()
   /** Installed updates holding their restart for the host's client update line, each told on every change to look again. */
   private readonly restarts = new Set<() => void>()
   constructor(private readonly options: HostUpdatesOptions) {
@@ -212,6 +223,8 @@ export class HostUpdates {
     for (const [key, answer] of this.archives) if (answer === 'unknown' || answer === 'missing') this.archives.delete(key)
     const before = this.waiting
     this.waiting = version !== undefined && HOST_VERSION_PATTERN.test(version) && behind(this.options.version, version) ? version : undefined
+    // Early asks count for the waiting version only; another version starts with all of them.
+    for (const key of this.archiveRetries.keys()) if (this.waiting === undefined || !key.startsWith(`${this.waiting} `)) this.archiveRetries.delete(key)
     // The version this computer was downloading went away or changed: an update still downloading it stops, as Cancel
     // update would, and is offered again for the new target. One the host has begun to unpack finishes, and says so.
     if (before !== undefined && this.waiting !== before) {
@@ -276,6 +289,8 @@ export class HostUpdates {
     for (const off of this.off) off()
     for (const entry of this.entries.values()) if (!entry.installing) entry.run?.abort()
     this.probing.abort()
+    clearTimeout(this.archiveRetry)
+    this.archiveRetry = undefined
     this.restarts.clear()
     this.listeners.clear()
   }
@@ -576,8 +591,42 @@ export class HostUpdates {
     void this.archivePublished(version, system).then(found => {
       if (this.probing.signal.aborted || this.archives.get(key) !== 'checking') return
       this.archives.set(key, found === undefined ? 'unknown' : found ? 'published' : 'missing')
+      if (found) this.archiveRetries.delete(key)
+      else this.askAgainSoon()
       this.sync()
     })
+  }
+  /**
+   * The releases page is asked again about each archive of the waiting version it answered 404 for or gave no answer
+   * for, 4, 8 and then 16 minutes later, and after those at the next update check, within the hour. Each archive counts
+   * its own: the wait is the one owed to the archive with the most early asks left.
+   */
+  private askAgainSoon(): void {
+    if (this.archiveRetry !== undefined || this.probing.signal.aborted) return
+    let asked: number | undefined
+    for (const key of this.unshown()) {
+      const count = this.archiveRetries.get(key) ?? 0
+      if (count < ARCHIVE_RETRY_DELAYS_MS.length) asked = Math.min(asked ?? count, count)
+    }
+    if (asked === undefined) return
+    this.archiveRetry = setTimeout(() => {
+      this.archiveRetry = undefined
+      if (this.probing.signal.aborted) return
+      for (const key of [...this.unshown()]) {
+        const count = this.archiveRetries.get(key) ?? 0
+        if (count >= ARCHIVE_RETRY_DELAYS_MS.length) continue
+        this.archiveRetries.set(key, count + 1)
+        this.archives.delete(key)
+      }
+      this.sync()
+    }, ARCHIVE_RETRY_DELAYS_MS[asked])
+    this.archiveRetry.unref?.()
+  }
+  /** The archives of the waiting version the releases page did not show: a 404, or no answer. */
+  private *unshown(): Generator<string> {
+    const waiting = this.waiting
+    if (waiting === undefined) return
+    for (const [key, answer] of this.archives) if ((answer === 'missing' || answer === 'unknown') && key.startsWith(`${waiting} `)) yield key
   }
   private async archivePublished(version: string, system: string): Promise<boolean | undefined> {
     const probe = this.options.probe ?? probeHere, signal = this.probing.signal
