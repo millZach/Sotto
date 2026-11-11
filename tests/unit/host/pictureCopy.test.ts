@@ -75,6 +75,27 @@ describe('a headless host\'s picture copy', () => {
     expect(() => pictureCopy(`data:image/png;base64,${header.toString('base64')}`, 640)).toThrow('Too many pixels')
   })
 
+  it('sends whole a PNG with a second header, an interlaced PNG and a picture with a colour profile, before decoding (review)', () => {
+    const whole = writePng(picture(64, 64, () => [9, 9, 9, 255]), { colorType: 6 })
+    const url = (bytes: Buffer, kind = 'png'): string => `data:image/${kind};base64,${bytes.toString('base64')}`
+    expect(pictureCopy(url(whole), 32)).not.toBeNull()
+    // pngjs takes its size from the last header it reads: a second one after the first, saying 5000 by 4000, is refused.
+    const second = Buffer.from(whole.subarray(8, 33))
+    second.writeUInt32BE(5000, 8); second.writeUInt32BE(4000, 12)
+    expect(() => pictureCopy(url(Buffer.concat([whole.subarray(0, 33), second, whole.subarray(33)])), 32)).toThrow('More than one header')
+    // Interlaced: pngjs would inflate it with no limit.
+    const interlaced = Buffer.from(whole); interlaced[28] = 1
+    expect(() => pictureCopy(url(interlaced), 32)).toThrow('Interlaced')
+    // A colour profile, which a copy of the bare pixels would lose.
+    const profile = Buffer.from('Display P3\0\0' + 'x'.repeat(20), 'latin1')
+    const iccp = Buffer.alloc(12 + profile.length); iccp.writeUInt32BE(profile.length, 0); iccp.write('iCCP', 4, 'latin1'); profile.copy(iccp, 8)
+    expect(() => pictureCopy(url(Buffer.concat([whole.subarray(0, 33), iccp, whole.subarray(33)])), 32)).toThrow('Colour profile')
+    const jpeg = encodeJpeg(picture(64, 64, () => [200, 40, 90, 255]), 85)
+    expect(pictureCopy(url(jpeg, 'jpeg'), 32)).not.toBeNull()
+    const app2 = Buffer.concat([Buffer.from([0xff, 0xe2, 0, 2 + 14 + 8]), Buffer.from('ICC_PROFILE\0\x01\x01', 'latin1'), Buffer.alloc(8)])
+    expect(() => pictureCopy(url(Buffer.concat([jpeg.subarray(0, 2), app2, jpeg.subarray(2)]), 'jpeg'), 32)).toThrow('Colour profile')
+  })
+
   it('writes JPEGs jpeg-js reads back at their size and close to what they were given, at any size', () => {
     for (const [width, height] of [[1, 1], [17, 9], [15, 33], [640, 400], [641, 401]] as const) {
       const given = picture(width, height, (x, y) => [Math.round(x * 255 / width), Math.round(y * 255 / height), 128, 255])

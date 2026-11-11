@@ -136,6 +136,29 @@ the phases on one thread, the median of six runs after a first that compiles the
 The photo's grain makes it the slowest thing jpeg-js decodes here; forge's real pictures took a median of 76 ms whole in
 the first part's run. A copy is made once a picture and edge: a tile scrolled back into view is sent the kept one.
 
+### The headless host's maker over forge's kept pictures
+
+`scripts/perf-bench/headless-picture-edge.mjs` runs `ReducedPictures` over a `PictureMaker` and the built picture
+worker, as a headless host does, on every picture forge's host keeps, after the review's fixes (November 11, 2026). It
+reads sizes, counts and times only.
+
+| | Before | After, headless host | Desktop's maker, above |
+|---|---:|---:|---:|
+| Pictures | 2,982: 2,394 JPEG, 588 PNG | | 2,861 |
+| Median sent to a tile | 389.8 KB | 58.3 KB | 55.0 KB |
+| All of them | 1,429.0 MB | 225.1 MB | 174.1 MB |
+| Sent whole | all | 165: 140 carry a colour profile, 7 already within 640, 18 no smaller or unreadable | 15 |
+| Time to make a copy | none | median 80 ms, longest 592 ms, in the worker | median 10.2 ms on main |
+
+The median is under the issue's 60 KB; 1,423 of the 2,982 copies are over it. The total is larger than the desktop's
+mostly because the 140 pictures with a colour profile go whole (below) and Sotto's JPEG writer uses the standard's
+tables. forge's folder had gained 121 pictures since the desktop's run.
+
+```sh
+npm run build:host
+node scripts/perf-bench/headless-picture-edge.mjs ~/.sotto/thread-media 0 640
+```
+
 ### Three choices the numbers made
 
 - **Sotto writes the JPEG itself.** jpeg-js's own encoder writes colour at full resolution: the photo's copy came out
@@ -158,8 +181,8 @@ the first part's run. A copy is made once a picture and edge: a tile scrolled ba
 
 - **Scaling.** Electron resizes with Skia's filter; the host averages each box of pixels that lands on one pixel of the
   copy. Softer on fine lines and small text, and about the same size.
-- **Colour profiles.** jpeg-js reads none, so a picture tagged with a profile other than sRGB shows its colours as
-  stored. Electron converts them.
+- **Colour profiles.** Neither library reads one, so a PNG or JPEG that carries a profile is sent whole rather than
+  shown in other colours: 140 of forge's 2,982 pictures. Electron converts them, so the desktop sends those as copies.
 - **A damaged JPEG** is sent whole for the phone to show as it can; Electron might have made a copy of what it could read.
 - **JPEG coding.** Sotto's writer uses the standard's Huffman tables, not tables fitted to each picture, so its copies
   are a few per cent larger than libjpeg's at the same quality.
@@ -175,7 +198,4 @@ the first part's run. A copy is made once a picture and edge: a tile scrolled ba
 - **The desktop's window.** Its thumbnails are unchanged; they now share their 32 MiB with the copies made for phones.
 - **Windows and macOS.** The maker's sizes come from Electron's encoder on Linux; Windows and macOS use the same Skia
   code, and were not run.
-- **forge's own pictures through the headless host's maker.** The first part ran the desktop's maker over all of
-  them; this part's brief kept to synthetic pictures, so the headless table above is of those. The same run through
-  `pictureCopy` would read `~/.sotto/thread-media` as the desktop's run did.
 - **A headless host on macOS or Windows.** The worker is plain Node and was run on Linux only.

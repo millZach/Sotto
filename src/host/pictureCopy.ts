@@ -71,13 +71,52 @@ function decodedPng(bytes: Buffer): Pixels {
   if (bytes.length < 33 || !bytes.subarray(0, 8).equals(PNG_SIGNATURE) || bytes.toString('latin1', 12, 16) !== 'IHDR') throw new Error('Not a PNG')
   const width = bytes.readUInt32BE(16), height = bytes.readUInt32BE(20)
   if (width < 1 || height < 1 || width * height > PICTURE_COPY_MAX_PIXELS) throw new Error('Too many pixels')
+  // An interlaced PNG is inflated by pngjs with no limit on what comes out, so a small file could fill the worker's
+  // memory: it is sent whole, as the desktop would show it.
+  if (bytes[28] !== 0) throw new Error('Interlaced')
+  pngChunksChecked(bytes)
   const decoded = readPng(bytes)
   return { width: decoded.width, height: decoded.height, data: decoded.data }
+}
+
+/**
+ * Walks a PNG's chunks before anything is decoded. pngjs takes the size from the last header it reads, so a second
+ * header could carry a size past `PICTURE_COPY_MAX_PIXELS` after the first passed: a PNG with more than one is refused.
+ * One that carries a colour profile (`iCCP`) is refused too, since the copy keeps the pixels as they are and would show
+ * other colours than the picture does; it is sent whole.
+ */
+function pngChunksChecked(bytes: Buffer): void {
+  let headers = 0
+  for (let at = 8; at + 8 <= bytes.length;) {
+    const length = bytes.readUInt32BE(at), type = bytes.toString('latin1', at + 4, at + 8)
+    if (type === 'IHDR') headers++
+    else if (type === 'iCCP') throw new Error('Colour profile')
+    else if (type === 'IEND') break
+    at += 12 + length
+  }
+  if (headers !== 1) throw new Error('More than one header')
+}
+
+/** Whether a JPEG carries a colour profile (an APP2 `ICC_PROFILE` segment) before its image data. */
+function jpegHasProfile(bytes: Buffer): boolean {
+  for (let at = 2; at + 4 <= bytes.length;) {
+    if (bytes[at] !== 0xff) return false
+    const marker = bytes[at + 1]!
+    // Start of scan or end of image: no segment past here describes the picture.
+    if (marker === 0xda || marker === 0xd9) return false
+    if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) { at += 2; continue }
+    const length = bytes.readUInt16BE(at + 2)
+    if (marker === 0xe2 && bytes.toString('latin1', at + 4, at + 16) === 'ICC_PROFILE\0') return true
+    at += 2 + length
+  }
+  return false
 }
 
 function decodedJpeg(bytes: Buffer): Pixels {
   // A damaged JPEG is not guessed at: it is sent whole for the phone's own decoder to show as it can. jpeg-js reads the
   // size from the frame header and refuses one past the limit before it makes room for the pixels.
+  // A JPEG with a colour profile is sent whole, as a PNG with one is.
+  if (jpegHasProfile(bytes)) throw new Error('Colour profile')
   const decoded = decodeJpeg(bytes, { useTArray: true, formatAsRGBA: true, tolerantDecoding: false,
     maxResolutionInMP: PICTURE_COPY_MAX_PIXELS / 1_000_000, maxMemoryUsageInMB: 256 })
   if (decoded.width < 1 || decoded.height < 1) throw new Error('No pixels')

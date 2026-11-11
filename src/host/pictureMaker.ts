@@ -38,6 +38,8 @@ export class PictureMaker {
   private readonly waiting = new Map<number, (copy: string | null) => void>()
   private next = 1
   private timer: NodeJS.Timeout | undefined
+  /** Whether the timer running is the deadline for an answer, not the idle wait. */
+  private awaitingAnswer = false
   private closed = false
   private failedStarts = 0
   private copies = 0
@@ -63,7 +65,8 @@ export class PictureMaker {
     return new Promise(resolve => {
       this.waiting.set(id, resolve)
       worker.send({ id, dataUrl, edge } satisfies PictureRequest, error => { if (error) this.lose(worker, true) })
-      this.watch()
+      // A picture asked for while others wait keeps their deadline: only an answer starts the clock again.
+      if (!this.awaitingAnswer) this.watch()
     })
   }
 
@@ -107,8 +110,10 @@ export class PictureMaker {
   private watch(): void {
     if (this.timer) clearTimeout(this.timer)
     this.timer = undefined
+    this.awaitingAnswer = false
     if (this.closed || !this.worker) return
     // A worker that does not answer in time counts as one that failed, so one that hangs on every picture is not started forever.
+    this.awaitingAnswer = this.waiting.size > 0
     this.timer = this.waiting.size
       ? setTimeout(() => { this.options.log?.('picture-worker-stopped'); void this.stop(true) }, this.options.limitMs ?? PICTURE_WORKER_LIMIT_MS)
       : setTimeout(() => { void this.stop() }, this.options.idleMs ?? PICTURE_WORKER_IDLE_MS)
@@ -136,6 +141,7 @@ export class PictureMaker {
     this.worker = undefined
     if (this.timer) clearTimeout(this.timer)
     this.timer = undefined
+    this.awaitingAnswer = false
     if (failed) this.failed()
     for (const settle of this.waiting.values()) settle(null)
     this.waiting.clear()

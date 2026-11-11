@@ -7,7 +7,7 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { PictureMaker, PICTURES_WAITING_MAX } from '../../../src/host/pictureMaker'
 
 const roots: string[] = []
@@ -79,6 +79,26 @@ describe('the picture worker, from the host\'s side', () => {
     expect(pictures.running).toBe(false)
     await expect(fourth).resolves.toBeNull()
     expect(events).toHaveLength(4)
+  })
+
+  it('keeps the first picture’s deadline when more are asked for while it waits (review)', async () => {
+    const worker = await workerFile()
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const events: string[] = []
+      const pictures = maker(worker.path, { limitMs: 1_000, log: event => { events.push(event) } })
+      const settled: string[] = []
+      const first = pictures.reduce(PNG, 640).then(copy => { settled.push('first'); return copy })
+      vi.advanceTimersByTime(900)
+      const second = pictures.reduce(PNG, 640).then(copy => { settled.push('second'); return copy })
+      // A second after the first was asked for, with no answer, the worker is stopped and both go whole. Had the second
+      // started the clock again, nothing would have gone until 1.9 seconds.
+      vi.advanceTimersByTime(100)
+      await expect(first).resolves.toBeNull()
+      await expect(second).resolves.toBeNull()
+      expect(settled).toEqual(['first', 'second'])
+      expect(events).toEqual(['picture-worker-stopped'])
+    } finally { vi.useRealTimers() }
   })
 
   it('sends every picture whole when no worker was built', async () => {
