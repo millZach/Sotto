@@ -19,14 +19,15 @@ export interface WatcherOpenPullRequest { readonly summary: WatcherPullRequestSu
   readonly train?: { readonly since: string; readonly ready?: { readonly head: string; readonly at: string } } }
 
 /**
- * Where a pull request's required checks stand, as the train reads them: passed once every check passed, or once only
- * checks no merge waits on are still running; running while any other check runs, since without the rules' counts a
- * running check may be required; unknown when Sotto's read says nothing.
+ * Where a pull request's checks stand, as the train reads them: passed once every check passed, running while any check
+ * runs, required or not (#2432, Zach's pick on November 11, 2026: the iPhone journeys are optional in the ruleset and ran
+ * for over an hour after "required checks passed"), and unknown when Sotto's read says nothing. The field keeps its name,
+ * `requiredChecks`, for the tools that read it.
  */
-export function requiredChecksOf(pr: Pick<WatcherOpenPullRequest, 'summary' | 'pending'>): WatcherMergeQueueItem['requiredChecks'] {
+export function mergeTrainChecksOf(pr: Pick<WatcherOpenPullRequest, 'summary' | 'pending'>): WatcherMergeQueueItem['requiredChecks'] {
   const checks = pr.summary.checks
   if (checks === 'passed' || checks === 'failed') return checks
-  if (checks === 'pending') return pr.pending?.required === 0 ? 'passed' : 'running'
+  if (checks === 'pending') return pr.pending !== undefined && pr.pending.required + pr.pending.optional === 0 ? 'passed' : 'running'
   return 'unknown'
 }
 
@@ -34,7 +35,7 @@ export function requiredChecksOf(pr: Pick<WatcherOpenPullRequest, 'summary' | 'p
  * The merge queue, which is Watcher's merge train (#2229): every open pull request of a watched thread that is not a draft
  * and that has joined the train, by its checks passing (#1274) or its thread's READY TO MERGE, in the order it joined,
  * oldest first, by number when two joined at once. It stays in the train while its checks run again after a push, so the
- * train says whose required checks are running, which a merge now would land in the middle of. One not known to be a
+ * train says whose checks are running, which a merge now would land in the middle of. One not known to be a
  * draft or not is left out, and so is one whose summary is stale (#2102) until Sotto reads it again.
  */
 export function watcherMergeQueue(threads: readonly { readonly target: WatcherThreadTarget; readonly title: string; readonly open: readonly WatcherOpenPullRequest[] }[]): WatcherMergeQueueItem[] {
@@ -43,7 +44,7 @@ export function watcherMergeQueue(threads: readonly { readonly target: WatcherTh
     if (pr.summary.state !== 'open' || pr.summary.stale === true || pr.draft !== false || since === undefined) return []
     const ready = pr.train?.ready
     const url = pr.url ?? pr.summary.url
-    return [{ target: thread.target, title: thread.title, pullRequest: pr.summary, ...url !== undefined ? { url } : {}, inTrainSince: since, requiredChecks: requiredChecksOf(pr),
+    return [{ target: thread.target, title: thread.title, pullRequest: pr.summary, ...url !== undefined ? { url } : {}, inTrainSince: since, requiredChecks: mergeTrainChecksOf(pr),
       ...pr.checksPassedAt && pr.summary.checks === 'passed' ? { checksPassedAt: pr.checksPassedAt } : {},
       ...pr.head ? { head: pr.head } : {}, ...pr.pending ? { checksRunning: pr.pending } : {},
       ...ready ? { readyToMerge: { head: ready.head, at: ready.at, ...pr.head ? { onHead: pr.head === ready.head } : {} } } : {} }]
@@ -65,9 +66,9 @@ export const BASE_BRANCH_COMMITS_READ = 10
 export interface BaseBranchChecks { readonly branch: string; readonly head: string; readonly state: 'passed' | 'failed' | 'pending' | 'unknown'; readonly newest?: string }
 
 /**
- * What holds a GO MERGE for `url` (#2229): the other pull requests of the same repository in the train whose required
- * checks are running, which the merge would land in the middle of, and the base branch when its newest finished checks
- * failed (AGENTS.md: a red run on main is fixed before anything else merges; #2431). Nothing holds it when both are clear; a
+ * What holds a GO MERGE for `url` (#2229): the other pull requests of the same repository in the train whose checks,
+ * required or not (#2432), are running, which the merge would land in the middle of, and the base branch when its newest
+ * finished checks failed (AGENTS.md: a red run on main is fixed before anything else merges; #2431). Nothing holds it when both are clear; a
  * base branch GitHub could not be asked about holds nothing, and the GO MERGE says so.
  */
 export function mergeTurnHolds(queue: readonly WatcherMergeQueueItem[], url: string, base: BaseBranchChecks | undefined): { readonly running: readonly WatcherMergeQueueItem[]; readonly baseFailed?: BaseBranchChecks } {
@@ -76,8 +77,8 @@ export function mergeTurnHolds(queue: readonly WatcherMergeQueueItem[], url: str
     const address = item.url !== undefined ? pullRequestAddress(item.url) : null
     return going !== null && address !== null && address.owner.toLowerCase() === going.owner.toLowerCase() && address.name.toLowerCase() === going.name.toLowerCase()
   }
-  // A check that failed early leaves the rest running: required checks still running hold the turn whatever else failed.
-  const running = queue.filter(item => (item.requiredChecks === 'running' || (item.checksRunning?.required ?? 0) > 0) && sameRepository(item) && pullRequestKey(item.url!) !== goingKey)
+  // A check that failed early leaves the rest running: checks still running, required or not (#2432), hold the turn whatever else failed.
+  const running = queue.filter(item => (item.requiredChecks === 'running' || (item.checksRunning?.required ?? 0) + (item.checksRunning?.optional ?? 0) > 0) && sameRepository(item) && pullRequestKey(item.url!) !== goingKey)
   return { running, ...base?.state === 'failed' ? { baseFailed: base } : {} }
 }
 
