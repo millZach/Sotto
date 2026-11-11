@@ -310,6 +310,11 @@ msgstr ""
 msgid "{installed} is installed. Sotto could not read the published version. Check again to try."
 msgstr ""
 
+#. {installed} is a version number; hermes update is a terminal command.
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "{installed} is installed. Sotto does not check for new Hermes versions. Run hermes update in a terminal to update it, then reconnect Hermes."
+msgstr ""
+
 #. {installed} is a version number; {error} is the reason the update gave.
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "{installed} is installed. The last update did not finish: {error}"
