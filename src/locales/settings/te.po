@@ -2843,6 +2843,10 @@ msgstr ""
 msgid "Get Tailscale to see the machines on your tailnet here."
 msgstr ""
 
+#: src/renderer/src/features/settings/PhonesSettings.tsx
+msgid "Get the iPhone beta"
+msgstr ""
+
 #. A Settings page, named in its rail and its heading. Other messages name it as "Settings > Git & worktrees".
 #: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/SettingsView.tsx
@@ -3132,6 +3136,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Install guide"
+msgstr ""
+
+#: src/renderer/src/features/settings/PhonesSettings.tsx
+msgid "Install the beta"
 msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
@@ -4266,6 +4274,10 @@ msgstr ""
 msgid "Opened {page} in your browser."
 msgstr ""
 
+#: src/renderer/src/features/settings/PhonesSettings.tsx
+msgid "Opened in your browser"
+msgstr ""
+
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "OpenRouter key"
 msgstr ""
@@ -4498,6 +4510,14 @@ msgstr ""
 msgid "Phones paired with {name}"
 msgstr ""
 
+#: src/renderer/src/features/settings/PhonesSettings.tsx
+msgid "Phones reach this computer over Tailscale, which is not installed here, and Sotto could not turn this back off. Turn it off, get Tailscale above, then turn it on."
+msgstr ""
+
+#: src/renderer/src/features/settings/PhonesSettings.tsx
+msgid "Phones reach this computer over Tailscale, which is not installed here, so this stayed off. Get Tailscale above, then turn it on."
+msgstr ""
+
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
 msgid "Phones starting…"
 msgstr ""
@@ -4512,6 +4532,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "Pick a machine Sotto can reach over SSH, then add it yourself or have an agent set it up."
+msgstr ""
+
+#: src/renderer/src/features/settings/HostDialog.tsx
+msgid "Pick a machine Sotto can reach over SSH, then add it."
 msgstr ""
 
 #: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
@@ -5647,6 +5671,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "Sotto does this"
+msgstr ""
+
+#: src/renderer/src/features/settings/PhonesSettings.tsx
+msgid "Sotto for iPhone is in beta on TestFlight. Install TestFlight on the iPhone first."
 msgstr ""
 
 #: src/renderer/src/features/settings/HostProviderSignIn.tsx
@@ -7805,6 +7833,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/TailscaleConnect.tsx
 msgid "Your browser did not open. Go to tailscale.com/download to get Tailscale."
+msgstr ""
+
+#: src/renderer/src/features/settings/PhonesSettings.tsx
+msgid "Your browser did not open. On your iPhone, go to {betaAddress} instead."
 msgstr ""
 
 #: src/renderer/src/features/settings/TailscaleConnect.tsx

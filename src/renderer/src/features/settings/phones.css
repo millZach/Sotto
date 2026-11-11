@@ -5,6 +5,11 @@
 .phones-needs-host { align-items: center; margin-top: 0; }
 .phones-needs-host > p { flex: 1; min-width: 0; }
 .phones-needs-host > .tt-button { flex: 0 0 auto; }
+/* Install the beta: the first row of the card, before the switch, since the app comes before a phone can pair (ADR-0200). */
+.phones-beta { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; padding: 6px 0 14px; border-bottom: 2px solid var(--tt-card-inset); }
+.phones-beta .phones-step__copy { flex: 1 1 240px; }
+.phones-beta__opened { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+.phones-beta__opened > svg { flex: none; color: var(--tt-success); }
 .phones-switch { padding-top: 6px; }
 /* On Settings › Hosts & phones the switch, the checks and Pair a phone are rows of one card (ADR-0110, #1831); a remote
    host's Phones dialog lays the same parts out its own way below. */

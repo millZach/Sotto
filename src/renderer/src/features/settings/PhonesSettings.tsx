@@ -1,17 +1,19 @@
 import { isCompositionKey } from '../../agents/composerKeys'
 import React, { useEffect, useId, useRef, useState, type ReactNode } from 'react'
-import { AlertTriangle, Check, Copy, Info } from 'lucide-react'
+import { AlertTriangle, Check, Copy, ExternalLink, Info } from 'lucide-react'
 import { i18n } from '@lingui/core'
 import { msg } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
-import { type PhonesBridge, type PhonesCommand, type PhonesState } from '../../../../shared/phones'
+import type { HostsBridge } from '../../../../shared/hosts'
+import { IPHONE_BETA_URL, type PhonesBridge, type PhonesCommand, type PhonesState } from '../../../../shared/phones'
 import type { SettingsPatch } from '../../../../shared/settings'
 import { Button } from '../../components/Button'
 import { ConfirmationDialog } from '../../components/ConfirmationDialog'
 import { Field } from '../../components/Field'
 import { Toggle } from '../../components/Toggle'
 import { writeClipboard } from '../../agents/richActions'
-import { countdown, PhoneRow, StepMark, type Step } from './phoneParts'
+import { countdown, PhoneRow, StepMark, usePhoneAccessSwitch, type Step } from './phoneParts'
+import { useTailscale } from './TailscaleConnect'
 import { shownWords, type LaterWords } from './laterWords'
 import './hosts.css'
 import './phones.css'
@@ -58,18 +60,22 @@ function NameField({ name, defaultName, onSave }: { readonly name: string; reado
   </Field>
 }
 
-export function PhonesSettings({ phoneAccess, phoneAccessName, onUpdateSettings, onOpenHosts, bridge = window.sotto?.phones }: {
+export function PhonesSettings({ phoneAccess, phoneAccessName, onUpdateSettings, onOpenHosts, bridge = window.sotto?.phones, hostsBridge = window.sotto?.hosts }: {
   readonly phoneAccess: boolean
   readonly phoneAccessName: string
   readonly onUpdateSettings: (patch: SettingsPatch) => Promise<boolean>
   /** Brings Run the local host, above on the same page, into view with focus on it. */
   readonly onOpenHosts: () => void
   readonly bridge?: PhonesBridge | undefined
+  /** Reads Tailscale on this computer, as the Tailscale row above on the same page does. */
+  readonly hostsBridge?: HostsBridge | undefined
 }): ReactNode {
   const { t } = useLingui()
   const [state, setState] = useState<PhonesState | null>(null)
   const [error, setError] = useState<LaterWords | null>(null)
-  const [accessSaveFailed, setAccessSaveFailed] = useState(false)
+  const [beta, setBeta] = useState<'idle' | 'opened' | 'failed'>('idle')
+  const tailscale = useTailscale(hostsBridge)
+  const access = usePhoneAccessSwitch(phoneAccess, state, onUpdateSettings, { tailscaleMissing: tailscale.summary?.state === 'missing', readTailscale: hostsBridge ? () => hostsBridge.tailscale() : undefined })
   const [copied, setCopied] = useState(false)
   const [removeId, setRemoveId] = useState<string | null>(null)
   const [announcement, setAnnouncement] = useState<LaterWords>('')
@@ -116,6 +122,13 @@ export function PhonesSettings({ phoneAccess, phoneAccessName, onUpdateSettings,
     try { await writeClipboard(address); setCopied(true); setTimeout(() => setCopied(false), 1500) }
     catch { setError(msg`The address could not be copied. Select it and copy it instead.`) }
   }
+
+  // Opens the iPhone app's TestFlight page in the browser, as first-run setup's iPhone step does (ADR-0063, ADR-0200).
+  const openBeta = async (): Promise<void> => {
+    const opened = await window.sotto?.openExternalLink?.(IPHONE_BETA_URL).catch(() => null)
+    setBeta(opened?.ok === true ? 'opened' : 'failed')
+  }
+  const betaAddress = IPHONE_BETA_URL.replace(/^https:\/\//u, '')
 
   const localHostRunning = state?.localHostRunning ?? true
   const on = state?.phase === 'on' && state.enabled
@@ -169,11 +182,21 @@ export function PhonesSettings({ phoneAccess, phoneAccessName, onUpdateSettings,
     {/* One card, as on every other Settings page (ADR-0110, #1831): the switch, its three checks as rows, and Pair a phone
         as a row with its button. */}
     <div className="hosts-card phones-card">
+    <div className="phones-beta" data-setting="iphone-beta">
+      <div className="phones-step__copy"><b>{t`Install the beta`}</b>
+        <p className="tt-paragraph">{t`Sotto for iPhone is in beta on TestFlight. Install TestFlight on the iPhone first.`}</p>
+        {beta === 'opened' ? <p className="phones-beta__opened tt-paragraph" role="status"><Check size={14} aria-hidden="true" />{t`Opened in your browser`}</p> : null}
+        {beta === 'failed' ? <p className="tt-field__error tt-paragraph" role="alert"><Trans>Your browser did not open. On your iPhone, go to {betaAddress} instead.</Trans></p> : null}
+      </div>
+      <Button variant="secondary" onClick={() => void openBeta()}><ExternalLink size={15} aria-hidden="true" />{t`Get the iPhone beta`}</Button>
+    </div>
     <div className="phones-switch">
       <Toggle setting="phone-access" label={t`Let phones connect`} checked={phoneAccess} disabled={!bridge || (!localHostRunning && !phoneAccess)}
-        onCheckedChange={enabled => { setError(null); void onUpdateSettings({ phoneAccess: enabled }).then(saved => setAccessSaveFailed(!saved)) }}
+        onCheckedChange={enabled => { setError(null); access.turn(enabled) }}
         description={t`Adds this computer to Tailscale Serve, on port 8443 or 10000, while this is on and Sotto is open. Only phones you pair can connect.`} />
-      {accessSaveFailed ? <p className="tt-field__error tt-paragraph" role="alert"><Trans>Phone access could not be saved. Nothing was changed. Try again.</Trans></p> : null}
+      {access.needsTailscale === 'off' ? <p className="tt-field__error tt-paragraph" role="alert"><Trans>Phones reach this computer over Tailscale, which is not installed here, so this stayed off. Get Tailscale above, then turn it on.</Trans></p> : null}
+      {access.needsTailscale === 'still-on' ? <p className="tt-field__error tt-paragraph" role="alert"><Trans>Phones reach this computer over Tailscale, which is not installed here, and Sotto could not turn this back off. Turn it off, get Tailscale above, then turn it on.</Trans></p> : null}
+      {access.saveFailed ? <p className="tt-field__error tt-paragraph" role="alert"><Trans>Phone access could not be saved. Nothing was changed. Try again.</Trans></p> : null}
     </div>
     <ol className="phones-steps" aria-label={t({ message: 'Setup', comment: 'The steps that set up phone access.' })} aria-busy={starting || undefined}>
       <li data-step={tailscaleStep}>

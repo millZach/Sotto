@@ -58,7 +58,7 @@ import { looserModeStopped, nativePermissionModes, permissionModeDrift, stricter
 import { stoppedWork } from '../../stoppedWork'
 import { ClaudeSubagentModels } from './claudeSubagentModels'
 import { ClaudeMonitoring } from './claudeMonitoring'
-import { SessionReaper } from '../../sessionReaper'
+import { SessionReaper, busyHolds, type HeldSession } from '../../sessionReaper'
 import { markCompactionActivity } from '../../compactionActivity'
 import { markTurnActivity } from '../../turnActivity'
 import { CLAUDE_RESUME_FAILED, CLAUDE_RESUME_FAILED_SESSION } from '../../../../shared/threadFailures'
@@ -602,6 +602,8 @@ export class ClaudeStreamJsonHost implements ProviderHost {
       ...(options.sessionIdleMs !== undefined ? { idleAfterMs: options.sessionIdleMs } : {}),
       isWatched: id => this.keptLive(id),
       isBusy: id => this.busy(id),
+      whyBusy: id => busyHolds({ busy: this.working(id), request: !!this.threads.get(id)?.requests.length, background: this.inBackground(id), compaction: compactionPending(this.aliases[id]?.compaction) }),
+      whyWatched: () => this.liveSessions ? 'live-session' : 'watched',
       stop: id => this.stopSession(id),
     })
   }
@@ -610,9 +612,20 @@ export class ClaudeStreamJsonHost implements ProviderHost {
    * session open: stopping the CLI would end the workflow, subagent or command the thread is still running.
    */
   private busy(id: string): boolean {
+    return this.working(id) || !!this.threads.get(id)?.requests.length || this.inBackground(id) || compactionPending(this.aliases[id]?.compaction)
+  }
+  /** A turn, a start, a command mid-dispatch or a rollback: the parts of `busy` that are not a request, background work or a compaction. */
+  private working(id: string): boolean {
+    return this.dispatching.has(id) || this.starting.has(id) || this.threads.get(id)?.status === 'running' || !!this.aliases[id]?.rollbackPending
+  }
+  /** A live watch or background work the CLI runs for the thread. */
+  private inBackground(id: string): boolean {
     const thread = this.threads.get(id)
-    return this.dispatching.has(id) || this.starting.has(id) || !!thread && (thread.status === 'running' || thread.requests.length > 0 || !!thread.monitoring?.length || !!thread.backgroundWork?.length)
-      || compactionPending(this.aliases[id]?.compaction) || !!this.aliases[id]?.rollbackPending
+    return !!thread && (!!thread.monitoring?.length || !!thread.backgroundWork?.length)
+  }
+  /** The sessions the reaper tracks, why each is held, and each CLI's process (#2398). */
+  heldSessions(): HeldSession[] {
+    return this.reaper.held(id => this.runtimes.get(id)?.protocol.pid ?? this.spares.get(id)?.runtime?.protocol.pid)
   }
   /**
    * End this thread's CLI and flush its transcript cursor, the way disconnecting does (ADR-0015). Nothing

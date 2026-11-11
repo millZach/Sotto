@@ -384,10 +384,14 @@ struct WatcherReaderPlace: Equatable {
     ///   - newest: the bottom of the last message or the words on their way, or nil while the page has none; `end`, the
     ///     bottom of the page.
     ///   - top: the top of what the page shows, under the status bar; `dockTop`, the top of the box.
-    static func followAim(newest: CGFloat?, end: CGFloat, top: CGFloat, dockTop: CGFloat) -> FollowAim? {
+    ///   - wordsShown: how much of the newest words must show above what sits under them for the end to win, `slack`
+    ///     unless the caller says otherwise. The Duo folded passes 0: its page is so short with the keyboard up that
+    ///     keeping `slack` of the words put the card waiting on the user under the box, where a thread's last item and
+    ///     Watcher's held sideways end above it (the Duo design climb's round 8).
+    static func followAim(newest: CGFloat?, end: CGFloat, top: CGFloat, dockTop: CGFloat, wordsShown: CGFloat = slack) -> FollowAim? {
         let room = dockTop - top
         guard dockTop < .greatestFiniteMagnitude / 2, room > endGap else { return nil }
-        if let newest, end - newest > room - endGap - slack, let y = newestAnchor(top: top, dockTop: dockTop) {
+        if let newest, end - newest > room - endGap - wordsShown, let y = newestAnchor(top: top, dockTop: dockTop) {
             return FollowAim(mark: .newest, y: y)
         }
         return FollowAim(mark: .end, y: (room - endGap) / room)
