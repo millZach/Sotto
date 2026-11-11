@@ -92,6 +92,7 @@ struct NewThreadSheet: View {
         .environment(\.sottoOnSheet, true)
         .presentationDragIndicator(.visible)
         .interactiveDismissDisabled(busy)
+        .preference(key: DuoSheetHeld.self, value: busy)
         .onAppear { model.creationFeedback = nil; startOnTheOnlyComputer() }
         .onChange(of: modelID) { _, _ in resetOptions() }
     }

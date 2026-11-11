@@ -1112,8 +1112,8 @@ struct ThreadListRow: View, Equatable {
         let flush = folded && timeEndsLine
         // A thread waiting on the user gives the time it last changed, when it asked, as its Needs you card does; one at
         // work gives how long its turn has run. A waiting row once said "22m" beside its card's "3m" (the Duo design
-        // climb's round 6).
-        let started = kind == .needs ? row.thread.summary?.lastMessageAt
+        // climb's round 6). On the Duo alone.
+        let started = kind == .needs && duo != .none ? row.thread.summary?.lastMessageAt
             : row.thread.summary?.runningTurnStartedAt ?? row.thread.summary?.lastMessageAt
         // On the Duo every row gives one short time, "2m", as the sidebar and the overview's cards do (round 4's pick B).
         let ago = wakeTime ?? (side || duo != .none ? Words.agoShort(started) : Words.ago(started))
@@ -1712,6 +1712,8 @@ struct DuoSheetLayer: View {
     /// that runs to the screen's foot reaches the difference further down.
     @State private var layerFoot: CGFloat = 0
     @State private var screenFoot: CGFloat = 0
+    /// Whether the sheet's content holds it open (`DuoSheetHeld`), as `interactiveDismissDisabled` holds iOS's own sheet.
+    @State private var held = false
     /// The height of the grabber's strip over the sheet's content. A sheet that draws its own ground carries it up behind
     /// the grabber by this much (`NewThreadSheet`).
     static let grabber: CGFloat = 16
@@ -1733,7 +1735,7 @@ struct DuoSheetLayer: View {
                 Rectangle().fill(scheme == .dark ? AnyShapeStyle(ThemeRole(.canvas, amount: 0.86)) : AnyShapeStyle(Self.lightScrim))
                     .ignoresSafeArea()
                     .contentShape(Rectangle())
-                    .onTapGesture { shown.close() }
+                    .onTapGesture { if !held { shown.close() } }
                     .accessibilityHidden(true)
                     .transition(.opacity)
                 GeometryReader { proxy in
@@ -1763,7 +1765,7 @@ struct DuoSheetLayer: View {
                 .accessibilityHidden(true)
         }
         .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.38, dampingFraction: 0.9), value: host.shown?.id)
-        .onChange(of: host.shown?.id) { _, _ in fit = nil; drag = 0 }
+        .onChange(of: host.shown?.id) { _, _ in fit = nil; drag = 0; held = false }
     }
     private func sheet(_ shown: DuoSheetHost.Shown, toFoot: Bool) -> some View {
         let foot = toFoot ? Self.footCorner : Radius.xl
@@ -1776,8 +1778,8 @@ struct DuoSheetLayer: View {
                 .gesture(DragGesture()
                     .onChanged { drag = $0.translation.height }
                     .onEnded { value in
-                        if value.translation.height > 90 || value.predictedEndTranslation.height > 260 { shown.close() }
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.9)) { drag = 0 }
+                        if !held, value.translation.height > 90 || value.predictedEndTranslation.height > 260 { shown.close() }
+                        withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.9)) { drag = 0 }
                     })
                 .accessibilityHidden(true)
                 // Over a ground the content carries up behind it.
@@ -1790,13 +1792,22 @@ struct DuoSheetLayer: View {
                 .ignoresSafeArea(.container, edges: toFoot ? .bottom : [])
         }
         .onPreferenceChange(RequestSheetFit.self) { fit = $0 }
+        .onPreferenceChange(DuoSheetHeld.self) { held = $0 }
         .background { SheetBackdrop(wash: shown.wash) }
         .clipShape(shape)
         .overlay(shape.strokeBorder(Palette.hairline, lineWidth: 1))
-        .shadow(color: .black.opacity(0.28), radius: 24, y: 8)
+        // Drawn once rather than on every frame the sheet moves (ADR-0051: no SwiftUI `.shadow`).
+        .softShadow(shape, color: .black.opacity(0.28), radius: 24, y: 8)
         .environment(\.sottoOnSheet, true)
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isModal)
-        .accessibilityAction(.escape) { shown.close() }
+        .accessibilityAction(.escape) { if !held { shown.close() } }
     }
+}
+
+/// Whether a sheet's content holds Sotto's own sheet open, so the scrim, the grabber's drag and VoiceOver's escape leave
+/// it standing, as `interactiveDismissDisabled` holds iOS's: New thread while it creates the thread.
+struct DuoSheetHeld: PreferenceKey {
+    static let defaultValue = false
+    static func reduce(value: inout Bool, nextValue: () -> Bool) { value = value || nextValue() }
 }

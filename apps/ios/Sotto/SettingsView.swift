@@ -187,7 +187,13 @@ private struct TextSizePanel: View {
                 }
             }
             .padding(duo.isFolded ? 1 : 4)
-            .background { RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Palette.fillSofter) }
+            .background {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Palette.fillSofter)
+                    // Off the Duo the track still runs under every letter; on the Duo each step draws its own piece.
+                    if duo == .none { Rectangle().fill(Palette.hairline).frame(height: 2).padding(.horizontal, 30) }
+                }
+            }
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Text size")
         } under: {
@@ -233,14 +239,14 @@ private struct TextSizeStep: View {
         .accessibilityIdentifier(size == .larger ? "setting-larger-text" : "setting-text-\(size.rawValue)")
         // The track runs from the first letter to the last and breaks around each one, where one line under them all ran
         // through the letters and left them looking struck through (the Duo design climb's round 6). It stays still while
-        // the step is pressed.
+        // the step is pressed. On the Duo alone.
         .background {
-            HStack(spacing: 0) {
+            if duo != .none { HStack(spacing: 0) {
                 Rectangle().fill(Palette.hairline).frame(height: 2).opacity(size == PhoneTextSize.allCases.first ? 0 : 1)
                 Color.clear.frame(width: points + Space.s3, height: 2)
                 Rectangle().fill(Palette.hairline).frame(height: 2).opacity(size == PhoneTextSize.allCases.last ? 0 : 1)
             }
-            .accessibilityHidden(true)
+            .accessibilityHidden(true) }
         }
     }
 }
