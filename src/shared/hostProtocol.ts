@@ -391,8 +391,8 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * `preview`, and is answered a copy of the picture no larger than that on its longest side, made with the host's own image
  * tools and kept within its thumbnails' budget in bytes (ADR-0170, November 10 amendment). A picture already that small, a
  * GIF, and one the tools cannot read are answered whole. A request without `edge` is answered whole, as before; one with
- * it from a client that did not accept the feature is refused. Listed only by a host with image tools: the desktop's phone
- * listener, never a headless host.
+ * it from a client that did not accept the feature is refused. Listed only by a host that can make the copy: the desktop's
+ * phone listener with Electron's image tools, and a headless host with its picture worker (ADR-0202).
  * `next-prompts`: the host builds its threads' next prompts (ADR-0132, ADR-0173) and pushes them to a desktop whose hello
  * accepted it, once that desktop says with `next-prompts-wanted` that it wants them: every one held then as `next-prompts`,
  * and each change after as `next-prompt`. It asks its providers only while a desktop wants them. Listed only while its

@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
+import { isBuiltin } from 'node:module'
 import { join, resolve } from 'node:path'
 import process from 'node:process'
 import { pathToFileURL } from 'node:url'
@@ -36,6 +37,9 @@ export const NOTICE_COMPONENTS = Object.freeze([
   packageComponent('@lingui/core', '6.10.1', 'MIT', 'Tomáš Ehrlich; Crowdin'),
   packageComponent('@lingui/react', '6.10.1', 'MIT', 'Tomáš Ehrlich; Crowdin'),
   packageComponent('zod', '4.6.7', 'MIT', 'Colin McDonnell'),
+  // Compiled into the headless host's picture worker, so they ship in the host archive (ADR-0202).
+  packageComponent('jpeg-js', '0.4.4', 'BSD-3-Clause', 'Eugene Ware; notmasteryet'),
+  packageComponent('pngjs', '7.0.0', 'MIT', 'Luke Page and Original Contributors; Kuba Niegowski'),
   packageComponent('@anthropic-ai/claude-agent-sdk', '0.3.270', 'SEE LICENSE IN README.md', 'Anthropic PBC'),
   packageComponent('@xterm/xterm', '6.0.0', 'MIT', 'The xterm.js authors; SourceLair Private Company; Christopher Jeffrey'),
   packageComponent('@xterm/addon-fit', '0.11.0', 'MIT', 'The xterm.js authors'),
@@ -271,8 +275,9 @@ export async function verifyThirdPartyNotices(options = {}) {
   const hostInventoryPath = join(hostOutDir, 'external-dependencies.json')
   if (existsSync(hostInventoryPath)) {
     const inventory = JSON.parse(await readFile(hostInventoryPath, 'utf8'))
+    // A builtin is Node's, however it is spelled: pngjs's `require('zlib')` reaches the same module as `node:zlib`.
     for (const name of [...inventory.imports, ...inventory.dynamicImports]) {
-      if (!name.startsWith('node:') && !names.has(name)) fail(`host dependency is not inventoried: ${name}`)
+      if (!name.startsWith('node:') && !isBuiltin(name) && !names.has(name)) fail(`host dependency is not inventoried: ${name}`)
     }
     const bundledPath = join(hostOutDir, 'bundled-dependencies.json')
     for (const name of JSON.parse(await readFile(bundledPath, 'utf8')).packages) {
@@ -315,6 +320,10 @@ export async function verifyThirdPartyNotices(options = {}) {
     'Copyright (c) 2016, Daniel Imms',
     'Copyright (c) 2017 [Node.js API collaborators]',
     'Copyright (c) 2026 T3 Tools Inc.',
+    '## Headless host picture decoder licenses',
+    'Copyright (c) 2014, Eugene Ware',
+    'Copyright 2011 notmasteryet',
+    'pngjs original work Copyright (c) 2015 Luke Page & Original Contributors',
     'Copyright 2022 The Figtree Project Authors (https://github.com/erikdkennedy/figtree)',
   ]) if (!notices.includes(requiredText)) fail(`missing required license text: ${requiredText}`)
 

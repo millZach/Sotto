@@ -120,11 +120,19 @@ export function verifyExternalDependencyInventories(
 // an explicit platform build/ABI strategy; never copy the desktop's node-pty into this archive.
 // `node:zlib` compresses a desktop's socket messages (ADR-0025, October 18 amendment).
 // The host launches Git on a worker thread too (node:events, node:worker_threads), as the desktop does.
+// The unprefixed four are pngjs's own `require('zlib')`-style spellings, kept verbatim by Rollup
+// in the picture worker it is compiled into (ADR-0202). Sorted, as the build writes them.
 export const HOST_EXTERNAL_IMPORTS = Object.freeze([
+  'assert', 'buffer',
   'node:child_process', 'node:crypto', 'node:events', 'node:fs', 'node:fs/promises', 'node:http', 'node:net',
   'node:os', 'node:path', 'node:sqlite', 'node:string_decoder', 'node:timers/promises',
-  'node:url', 'node:util', 'node:worker_threads', 'node:zlib', 'zod',
+  'node:url', 'node:util', 'node:worker_threads', 'node:zlib', 'util', 'zlib', 'zod',
 ])
+
+// What the host's bundle compiles in from node_modules, all pure JavaScript and each in
+// THIRD_PARTY_NOTICES.md: the picture worker's JPEG decoder and PNG reader and writer (ADR-0202).
+// Sorted, as the build writes them. A new name here is an ADR first, as a runtime dependency is.
+export const HOST_BUNDLED_PACKAGES = Object.freeze(['jpeg-js', 'pngjs'])
 
 export function verifyHostExternalDependencies(inventory, packagedDependencies, availableBuiltinModules = builtinModules) {
   if (inventory?.version !== 1 || inventory.scope !== 'host' ||

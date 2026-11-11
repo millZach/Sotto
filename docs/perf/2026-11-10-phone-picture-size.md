@@ -3,7 +3,8 @@
 The November 10 audit found the iPhone fetching each picture whole to show it 640 pixels wide (finding 5, #2395). This
 note measures the fix: the `thread-media-edge` host feature, which lets a phone's tile ask for a picture at its own edge
 and has the desktop answer a copy made with the maker its window's thumbnails use ([ADR-0170](../adr/0170-a-thread-shows-the-pictures-its-agent-made-as-tiles.md),
-November 10 amendment).
+November 10 amendment), and a headless host answer one made in its picture worker
+([ADR-0202](../adr/0202-a-headless-host-makes-a-phones-picture-copies-in-a-worker.md)).
 
 ## The short answer
 
@@ -12,9 +13,11 @@ November 10 amendment).
   come to 174 MB against 1,431 MB. The issue asked for under 60 KB at the median.
 - **Pictures made at forge's median size come at a sixteenth to a twenty-sixth of it,** over the real listener. A
   GIF still comes whole, so it keeps its frames.
-- **A phone paired to a headless host gains nothing yet.** A headless host runs under plain Node, which reads no
-  picture, so it does not list the feature and its phones fetch whole pictures as before. forge's own host is one, and
-  its phones are the ones the audit measured. What it would cost to give one image tools is below.
+- **A phone paired straight to a headless host now gets copies too,** about the size a desktop's are: the same
+  screenshot as 17.4 KB where it was 439.7 KB, the photo as 29.3 KB where it was 445.2 KB, over a real headless host's
+  listener. forge's own host is one, and its phones are the ones the audit measured. The host makes them in a worker
+  process with jpeg-js, pngjs and a JPEG writer of Sotto's own: 50 to 130 ms a picture the first time it is asked for,
+  none of it on the host's thread, and its own memory back when the worker ends (below).
 
 ## Before and after
 
@@ -69,24 +72,97 @@ maker, on forge: no desktop holds these pictures, and a phone paired to forge's 
   WebP not made into copies, and the copies kept to a budget in bytes.
 - SottoCore's `PhotoTests`: the tile's request carries `edge: 640`, the viewer's none, an edge the computer does not
   take is never sent, and the hello accepts the feature.
+- `headlessPictureEdge.test.ts`, in the default suite: a real headless host lists the feature with a picture worker and
+  not without one; a phone that names 640 is sent at most a tenth of the screenshot and the photo, as JPEGs; the drawing
+  stays a PNG; a GIF and a JPEG that will not decode come whole, not refused; the worker's own count of copies answered
+  from a process other than the host's is exactly the three it could make, so none was made on the host's thread; and
+  two phones asking for one picture together get one copy made once.
+- `pictureCopy.test.ts`: the host's fitting and rounding match the desktop's, box averaging and see-through weighting on
+  pixels of known values, a PNG only when something shows through, a picture past the limit refused from its header,
+  and Sotto's JPEG writer read back by jpeg-js at every size from 1x1 up, with colour sampled two by two.
+- `pictureMaker.test.ts`: only PNGs and JPEGs reach the worker, the waiting limit, an idle worker ending, a stuck one
+  stopped, and none started after three failures.
+- `hostArchive.test.ts`: the host archive compiles in exactly jpeg-js and pngjs, and refuses one more or one fewer.
 
 ## Commands
 
 ```sh
 # The listener's table (Node 24, as CI):
 SOTTO_PERF_BENCH=1 npx vitest run tests/integration/socketPictureEdge.test.ts --disable-console-intercept
+# A headless host's table, the worker's answers and the phases:
+SOTTO_PERF_BENCH=1 npx vitest run tests/integration/headlessPictureEdge.test.ts --disable-console-intercept
 # The desktop's maker over a folder of pictures, every one (0), at 640; under xvfb-run on a machine with no screen:
 xvfb-run -a npx electron scripts/perf-bench/picture-edge.mjs ~/.sotto/thread-media 0 640
 ```
 
-## A headless host, not changed
+## A headless host
 
-A headless host would need a picture decoder and a JPEG encoder of its own. Node has neither, and the Electron maker
-cannot run there. As a measure of what one compiled into the host's bundle would cost, not a proposal: decoding with
-`jpeg-js` and `pngjs`, scaling to 640 by nearest pixel and writing a JPEG at 85 took a median of 76 ms a picture on a
-seeded sample of 60 of forge's pictures, the longest 182 ms, all of it on the host's one thread unless moved to a worker,
-for a median of 57.6 KB. Electron's maker takes 10 ms for a better scaling. Whether a headless host gets image tools,
-which ones and where they run is a decision for its own ADR (ADR-0170, decision 35).
+### Before: nothing to make a copy with
+
+A headless host runs under plain Node, which reads no picture, and the Electron maker cannot run there, so until
+ADR-0202 it listed no `thread-media-edge` and sent every phone every picture whole. As a measure of what a decoder
+compiled into the host's bundle would cost, the first part timed `jpeg-js` and `pngjs` on a seeded sample of 60 of
+forge's pictures: decoding, scaling to 640 by nearest pixel and writing a JPEG at 85 took a median of 76 ms a picture,
+the longest 182 ms, for a median of 57.6 KB.
+
+### After: the picture worker
+
+`tests/integration/headlessPictureEdge.test.ts`, in the default suite. A real headless host (`startHeadlessHost`) over
+its real listener, its own thread media store holding the pictures, made in the test the size of forge's as above, and
+its picture worker built as `scripts/build-host.mjs` builds it. A phone that accepts the feature asks at 640; one that
+does not is sent the whole picture, which is "before".
+
+| Picture | Whole, KB | At 640 from a headless host, KB | Fraction | From the desktop (sharp stand-in), KB |
+|---|---:|---:|---:|---:|
+| Screenshot, 1600x1000 PNG | 439.7 | 17.4 | 1/25 | 16.6 |
+| Photo, 1920x1200 JPEG | 445.2 | 29.3 | 1/15 | 27.2 |
+| GIF, two 640x400 frames | 535.5 | 535.5 | whole | 535.5 |
+| Drawing that shows through, 1200x800 PNG | 1,109.1 | 286.6 | 1/3.8, a PNG | 298.9 |
+| A JPEG cut off a third of the way | 144.9 | 144.9 | whole, not refused | not measured |
+
+The built host itself (`npm run build:host`, then `out/host/index.js` loaded and started with a fixture provider, by
+hand, not in the suite) lists the feature on its own, finding `pictureWorker.js` beside it, and sends the screenshot as
+17.4 KB and the photo as 29.3 KB, the same bytes.
+
+How long it takes, on forge under Node 24.22.1, with `SOTTO_PERF_BENCH=1` (the worker's answers through `PictureMaker`;
+the phases on one thread, the median of six runs after a first that compiles the code):
+
+| Picture | Decode, ms | Scale, ms | Encode, ms | Worker's first answer, ms | Worker again, ms |
+|---|---:|---:|---:|---:|---:|
+| Screenshot PNG | 19.4 | 18.2 | 12.7 | 93.1 (the worker's start in it) | 49.2 |
+| Photo JPEG | 88.2 | 25.3 | 13.3 | 151.2 | 130.0 |
+| Drawing PNG | 15.3 | 14.2 | 14.7 | 64.9 | 52.4 |
+
+The photo's grain makes it the slowest thing jpeg-js decodes here; forge's real pictures took a median of 76 ms whole in
+the first part's run. A copy is made once a picture and edge: a tile scrolled back into view is sent the kept one.
+
+### Three choices the numbers made
+
+- **Sotto writes the JPEG itself.** jpeg-js's own encoder writes colour at full resolution: the photo's copy came out
+  46.6 KB as sent, a ninth of the picture and over the guard's tenth, where libjpeg at 85 with colour at half
+  resolution makes 23.1 KB of the same pixels before base64 (20.9 KB with tables fitted to the picture).
+  `src/host/jpegEncoder.ts` writes baseline JPEG from the standard's tables at half-resolution colour, as Electron's
+  writer does: 21.9 KB before base64, 29.3 KB as sent, read back at 34.9 dB by libjpeg and 34.8 dB by jpeg-js against
+  the pixels it was given. On the unit tests' gradients it keeps what libjpeg's own writer keeps at 85: 29.6 dB against
+  29.6 on the steepest, 48.1 against 47.9 at 640x400.
+- **The worker is a process, not a thread.** jpeg-js decodes into many small allocations. Six copies, then the worker
+  ended, three times over, on a 1920x1200 JPEG and PNG: with a worker thread the host's own process held 154, 180 and 182
+  MB more than before it after each; with a worker process, 10, 17 and 17 MB. A process gives its memory back when it
+  ends; a thread's goes to the host's allocator, which keeps it. (`MALLOC_ARENA_MAX=1` changed nothing, so it is not
+  glibc's per-thread arenas.) Starting a process costs about 40 ms, once after each idle spell.
+- **Pictures past 4K are sent whole.** A worker making a copy of a 1920x1200 JPEG peaks about 92 MB above where it
+  started, a 3840x2160 JPEG 223 MB, a 4618x3464 one 470 MB. The host decodes up to 3840x2160 and sends anything larger
+  whole, as before; the iPhone's own photos are at most 2576 pixels on the long side.
+
+### Where it differs from the desktop's copy
+
+- **Scaling.** Electron resizes with Skia's filter; the host averages each box of pixels that lands on one pixel of the
+  copy. Softer on fine lines and small text, and about the same size.
+- **Colour profiles.** jpeg-js reads none, so a picture tagged with a profile other than sRGB shows its colours as
+  stored. Electron converts them.
+- **A damaged JPEG** is sent whole for the phone to show as it can; Electron might have made a copy of what it could read.
+- **JPEG coding.** Sotto's writer uses the standard's Huffman tables, not tables fitted to each picture, so its copies
+  are a few per cent larger than libjpeg's at the same quality.
 
 ## Not measured
 
@@ -99,3 +175,7 @@ which ones and where they run is a decision for its own ADR (ADR-0170, decision 
 - **The desktop's window.** Its thumbnails are unchanged; they now share their 32 MiB with the copies made for phones.
 - **Windows and macOS.** The maker's sizes come from Electron's encoder on Linux; Windows and macOS use the same Skia
   code, and were not run.
+- **forge's own pictures through the headless host's maker.** The first part ran the desktop's maker over all of
+  them; this part's brief kept to synthetic pictures, so the headless table above is of those. The same run through
+  `pictureCopy` would read `~/.sotto/thread-media` as the desktop's run did.
+- **A headless host on macOS or Windows.** The worker is plain Node and was run on Linux only.
