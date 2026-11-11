@@ -26,7 +26,7 @@ import { foldAgentThreadDetailUpdates, isAgentThreadDetailDelta } from '../share
 import { resolveModel } from '../shared/modelCatalog'
 import { version as packageVersion } from '../../package.json'
 import { REMOTE_PERMISSION_DENIED } from '../main/agents/authority'
-import { commandFromProtocolV1, managementCommandRefusal } from '../shared/hostProtocol'
+import { commandFromProtocolV1, managementCommandRefusal, PHONE_UNREAD_SHELL_PARTS } from '../shared/hostProtocol'
 import { REMOTE_OPENCODE_SIGN_IN_OPERATIONS, REMOTE_SIGN_IN_OPERATIONS, remoteCommandRefusal, remoteHostUpdateRefusal, remoteUsageRefusal } from './remoteCommands'
 import type { HostSelfUpdate } from './selfUpdate'
 import { usageLocalClearResultSchema, usageLocalHostReadSchema, usageProvidersBeforeMuse, usageReadBeforeHistory, usageReadBeforeMuse, type UsageLocalHostRead } from '../shared/usageDashboard'
@@ -632,6 +632,17 @@ export async function startSocketServer(options: SocketServerOptions) {
     phoneShells.set(state, made = changed ? { ...state, host: { ...state.host, threads } } : state)
     return made
   }
+  /**
+   * A phone's shell without the parts no phone reads (`PHONE_UNREAD_SHELL_PARTS`, November 10, 2026, #2392). They went
+   * whole in every hello, read, answer and push: 131 KB of a 209 KB push on a host with many threads' skills read. Taken
+   * out last, since the composer's draft for this peer is worked out from `threadDrafts` on the way.
+   */
+  const withoutUnreadParts = <State extends AgentState>(state: State): State => {
+    if (!PHONE_UNREAD_SHELL_PARTS.some(part => state[part] !== undefined)) return state
+    const sent = { ...state }
+    for (const part of PHONE_UNREAD_SHELL_PARTS) delete sent[part]
+    return sent
+  }
   /** One phone's view of `original`, which is never edited here, so one read can serve every phone in a publish. */
   /** `whole` is set only by a `settled-threads` read, which pages through the threads a phone's list leaves out. */
   const shell = (peer: Peer, read: AgentState = service.shell(), whole = false) => {
@@ -664,7 +675,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     // terminal out, so a client that still accepts `terminals` reads an empty one. Nothing offers the feature.
     const listed = peer.retiredTerminals ? { ...shell, terminals: [] as [] } : shell
     const kept = peer.settledOnRequest && !whole ? withoutHeldBack(peer, listed) : listed
-    return peer.usableModels ? withUsableModels(kept, read, phoneState) : kept
+    const usable = peer.usableModels ? withUsableModels(kept, read, phoneState) : kept
+    return isPhonePeer(peer) ? withoutUnreadParts(usable) : usable
   }
   /**
    * `state` with its catalog cut to the models a phone can use (`usable-models`): the ready ones, and any that is not but

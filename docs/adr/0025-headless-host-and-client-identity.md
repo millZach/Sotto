@@ -346,6 +346,12 @@ Only the main window is sent appends. Main's detail stream asks each listener wh
 
 Nothing a provider or model receives changes. This is what main sends its own window; the history the providers are given, and what a thread can do, are as they were.
 
+## November 10 amendment: a phone's shell leaves out the parts no phone reads
+
+A shell carries the host's whole state, and a phone was sent all of it though it reads little of it. On forge's host on November 10, 2026 a shell to a phone was 209 KB: each thread's skill list (`skillCatalogs`, 115 KB, one list for every thread whose skills were read since the host started), the drafts a send made obsolete (`obsoleteDrafts`, 13 KB), the provider clients' updates (`clientUpdates`), and every thread's draft with its save evidence (`threadDrafts`, `threadDraftPersistence`). No iPhone or Android build has ever read any of the five, and each is optional in version 1. They went in every hello, every `shell` read, every command's answer and every push, uncompressed: an iPhone on a working thread was sent 6.76 MB in a minute (`docs/perf/2026-11-10-performance-and-data-audit.md`, finding 2).
+
+A host now leaves those five parts out of every shell it sends a phone (`PHONE_UNREAD_SHELL_PARTS` in `src/shared/hostProtocol.ts`). They are taken out last, after the composer's draft for that phone is worked out from the host's drafts, so the draft a phone is shown is unchanged. A desktop's shell keeps every part. A phone is whatever the listener does not know as a desktop, as for the October 26 amendment. `tests/unit/shared/phoneShellParts.test.ts` holds each part of a shell to the list a phone is sent or the list it is not, and fails when the iPhone's or the Android client's source names a part on the second, so a new part is a decision and a part a phone starts to read comes back in the same change. The measurements are in `docs/perf/2026-11-10-phone-shell-parts.md`. What a phone does read still goes whole in every push; sending those parts only when they change is #2393.
+
 ## Amendment: a team link is not a paired client (November 3, 2026)
 
 [ADR-0186](0186-a-team-link-joins-two-owners-computers-over-a-closed-list.md) admits another owner's computer by a code on a listener of its own. Its token never opens a host session, and this record's client kinds do not cover it.
