@@ -4,7 +4,7 @@ import { DESIGN_CAPTURE_BUILT_IN_THEMES, DESIGN_CAPTURE_DEFAULT_THEME, DESIGN_CA
 import { E2E_TRANSCRIPT } from '../../src/shared/e2e'
 import { populatedHistory, withSotto } from '../fixtures/designCaptureProfile'
 import { appThemes, assertDictateState, assertFocusPresentation, assertRenderedRoom, captureFullSurface, capturePage, captureSection, setAppearance, setMainWindowWidth, startSettingsAtHeading } from './support/designCapture'
-import { openJournalRow, openPage } from './support/sottoLaunch'
+import { openJournalRow, openPage, reachSetupStop, setupNote } from './support/sottoLaunch'
 
 const captureEnabled = process.env.SOTTO_DESIGN_CAPTURE === '1'
 
@@ -14,16 +14,14 @@ test.describe('authoritative design-review captures', () => {
 
   test('light room, accents, System and the minimum width', async () => {
     await withSotto({ onboardingComplete: false, appearance: 'light' }, async ({ page }) => {
-      const onboarding = page.locator('.onboarding-shell')
-      const forward = page.locator('.onboarding-actions').getByRole('button', { name: /^(Continue|Skip for now)$/ })
+      // First-run setup's speech model stop (ADR-0200), the window with its note over Settings › Dictation.
       await assertRenderedRoom(page, 'light')
-      await page.getByRole('button', { name: 'Get started' }).click()
-      await forward.click()
-      await page.getByRole('button', { name: /test microphone/i }).click()
-      await expect(page.getByText('Sotto heard you. Your microphone works.')).toBeVisible()
-      await forward.click()
-      await expect(page.getByRole('heading', { name: 'Choose a speech model' })).toBeVisible()
-      await captureSection(page, onboarding, 'onboarding-step-4-speech-model-light.png', { theme: 'light' })
+      await reachSetupStop(page, 'microphone')
+      await page.locator('.settings-microphone-test').getByRole('button', { name: 'Test microphone', exact: true }).click()
+      await expect(setupNote(page)).toContainText('Sotto heard you. Your microphone works.')
+      await reachSetupStop(page, 'speech-model')
+      await expect(setupNote(page).getByRole('heading', { name: 'Choose a speech model' })).toBeVisible()
+      await capturePage(page, 'setup-speech-model-light.png', { category: 'setup', state: 'speech-model', theme: 'light' })
     })
 
     await withSotto({ memory: true, onboardingComplete: true, history: populatedHistory, appearance: 'light' }, async ({ page }) => {
