@@ -3179,24 +3179,37 @@ export class WatcherService implements WatcherControlHooks {
     const current = this.view().current
     return (current && this.localThread(current.target.threadId)?.lastTurn?.id) ?? null
   }
+  /** Notes the turn a fence came in, the first time only: a receipt read again, as a paired host's reconciliation does, keeps it. */
   private noteStandingFence(scopeId: string, target: WatcherThreadTarget): void {
     const fence = JSON.stringify([scopeId, key(target)])
-    this.standingFences.delete(fence); this.standingFences.set(fence, this.watcherNativeTurn())
+    if (this.standingFences.has(fence)) return
+    this.standingFences.set(fence, this.watcherNativeTurn())
     while (this.standingFences.size > ROLE_STARTS_KEPT * 10) this.standingFences.delete(this.standingFences.keys().next().value!)
   }
   /** Whether a Stop's or settle's fence on this scope and thread came in an earlier turn of Watcher's than this one (#2435). */
   private standingFenceOver(scopeId: string, target: WatcherThreadTarget): boolean {
     const fence = JSON.stringify([scopeId, key(target)])
     if (!this.standingFences.has(fence)) return true
+    // One noted when Watcher's turn was unknown is over once a turn is known: Watcher acts from inside one.
     const fencedIn = this.standingFences.get(fence), now = this.watcherNativeTurn()
-    return fencedIn !== null && now !== null && fencedIn !== now
+    return now !== null && fencedIn !== now
+  }
+  /**
+   * The standing scope a watched thread's sends go under in this turn of Watcher's: the prompt turn's, or, once a Stop or
+   * settle stopped that in an earlier turn of Watcher's, one for this turn alone (#2435). Sends and fences both use it.
+   */
+  private currentStandingScope(record: WatcherRecord, watchId: string, target: WatcherThreadTarget, promptTurnId: string): { scope: WatcherRecord['requests'][number]; created: boolean } {
+    const standing = standingScope(record, record.current!.target, watchId, promptTurnId)
+    if (standing.created || !standing.scope.participants.some(item => key(item.target) === key(target) && item.automationStopped)
+      || !this.standingFenceOver(standing.scope.id, target)) return standing
+    return standingScope(record, record.current!.target, watchId, `${promptTurnId}:${digest([this.watcherNativeTurn()]).slice(0, 16)}`)
   }
   private fenceStandingTurn(record: WatcherRecord, target: WatcherThreadTarget): void {
     const watch = record.watches?.find(item => key(item.target) === key(target)), current = record.current
     if (!watch || !current || this.options.workerHost) return
     const master = this.localThread(current.target.threadId)
     if (!master) return
-    const { scope, created } = standingScope(record, current.target, watch.id, this.promptTurn(record, current.target).id)
+    const { scope, created } = this.currentStandingScope(record, watch.id, target, this.promptTurn(record, current.target).id)
     if (created) record.requests.push(scope)
     let participant = scope.participants.find(item => key(item.target) === key(target))
     if (!participant) {
@@ -4852,14 +4865,10 @@ export class WatcherService implements WatcherControlHooks {
           return { operation: retry, retry: true, archivedWork }
         }
         // Four prompts per Watcher turn and assignment. A stopped scope stays stopped; a later turn gets a new scope.
-        let standing = standingScope(record, record.current!.target, offeredWatch.id, turnOf()!.id)
         // A Stop or settle holds the watch for the rest of the turn of Watcher's it came in, not until the user's next message
         // to Watcher opens another prompt turn (#2435): a later turn sends under a scope of its own, which a paired host has
         // no stopped participation for either. The news names the watch, so it and this admission agree.
-        if (!standing.created && standing.scope.participants.some(item => key(item.target) === key(offeredWatch.target) && item.automationStopped)
-          && this.standingFenceOver(standing.scope.id, offeredWatch.target)) {
-          standing = standingScope(record, record.current!.target, offeredWatch.id, `${turnOf()!.id}:${digest([this.watcherNativeTurn()]).slice(0, 16)}`)
-        }
+        const standing = this.currentStandingScope(record, offeredWatch.id, offeredWatch.target, turnOf()!.id)
         request = standing.scope
         if (standing.created) newStandingRequest = request
         input = { ...input, requestId: request.id }

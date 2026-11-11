@@ -336,6 +336,14 @@ it('holds a watched thread after a Stop for the rest of that Watcher turn only, 
   f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
   const after = await send()
   expect(after, JSON.stringify(after)).toMatchObject({ status: 'ok' })
+  await f.finish(target.threadId)
+  // A Stop in this turn holds the scope this turn sends under, for this turn, and the turn after sends again.
+  expect(await f.call('stop_thread', { requestId: watch.id, retryKey: randomUUID(), target })).toMatchObject({ status: 'ok' })
+  await f.finish(target.threadId)
+  await vi.waitFor(async () => expect(await send()).toMatchObject({ status: 'refused', code: 'REQUEST_NOT_ACTIVE' }))
+  master.lastTurn = { id: 'synthetic-third-turn', status: 'running' }
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  expect(await send()).toMatchObject({ status: 'ok' })
 })
 
 it('shares four prompts across ordinary and standing origins without renewing for steer, late turn IDs or restart', async () => {
