@@ -12,6 +12,8 @@ Accepted October 31, 2026, by Zach's picks on `docs/prototypes/inline-media-prot
 
 **Amended November 9, 2026: pictures in steps** (below), by Zach's picks on the prototype kept as the tag `prototype/pictures-in-steps`. A tool's pictures, a picture the agent viewed and a turn's written files sit small in the lines of the steps that made them; only what an agent showed through `sotto_media` and an image the user asked for stand as tiles. Decision 4's tiles now hold those two alone.
 
+**Amended November 10, 2026: a picture at the size a phone shows it** (below), from the November 10 audit (#2395). A phone's tile may ask for a picture at its own size, and the desktop answers a copy made with decision 4's maker; decision 5's whole picture is still what a phone's viewer gets, and what every phone gets from a headless host.
+
 Amends [ADR-0031](0031-images-are-staged-once-and-carried-by-handle.md): a second store, kept the same way, holds the pictures an agent made. Leaves [ADR-0056](0056-an-agent-can-draw-a-visual-in-its-thread.md)'s visuals as they are.
 
 ## Context
@@ -128,6 +130,16 @@ Zach, on November 9: "Sotto takes up your entire thread with images, so I would 
 
 **32. The capture switch is unchanged.** Decisions 22 to 24 still say whether Sotto keeps a tool's pictures, a viewed picture and a turn's written files; on, they now sit in their steps rather than standing as tiles.
 
+## A picture at the size a phone shows it, November 10, 2026
+
+The November 10 audit (`docs/perf/2026-11-10-performance-and-data-audit.md`, finding 5) found the iPhone fetching each picture whole to show it 640 pixels wide, as decision 5 says: on forge, a median of 398 KB as sent for a tile. Zach chose to file and fix every finding, each in its own pull request, straight to stable. The measurements are `docs/perf/2026-11-10-phone-picture-size.md`.
+
+**33. A phone's tile asks for a picture at its own size.** `thread-media-edge` is a new host feature. A phone whose hello accepts it adds `edge`, 320, 640 or 1280, to `thread-media` and to `preview`, and is answered a copy no larger than that on its longest side. The edges are a closed few, so no phone makes a host decode a picture again at every size or keep a copy of each. The iPhone's tiles, the pictures in its steps' lines and a sent photo's thumbnail ask at 640, its thumbnail edge; its full-screen viewer, Mark up and a GIF that plays still ask for the whole picture. A request without `edge`, every request from an older phone, and every request from the Android client, is answered whole as before.
+
+**34. The copy is decision 4's thumbnail, made for the phone.** The desktop makes it with the maker its window's thumbnails use, Electron's image tools, at the same JPEG quality, and keeps it beside them in their 32 MiB, letting the one read longest ago go first: one budget in bytes holds both, never a count. A tile looks as it did: a picture with anything that shows through stays a PNG, since a JPEG has nothing to show through and Electron turns it black; a GIF is answered whole, so it keeps its frames and the phone shows its first frame still and plays it as before; a JPEG carrying camera details is answered whole, since they can say to turn the picture and Electron does not, where the phone does; and a picture already that small, or one Electron cannot read, such as a WebP, is answered as it is.
+
+**35. Only the desktop makes the copy.** A headless host has no image tools: it runs under plain Node, which reads no picture, and decision 4 has the desktop make a remote host's thumbnails so that it needs none. So a headless host lists no `thread-media-edge`, and a phone paired to one still fetches whole pictures. Giving a headless host image tools, a native library or one compiled into its bundle, is a decision of its own.
+
 ## Consequences
 
 - A thread's pictures cost disk, at most 1 GiB, while history is kept. Deleting a thread does not let its pictures go at once; they go as newer ones take their place, or all at once when history is turned off.
@@ -150,3 +162,5 @@ Zach, on November 9: "Sotto takes up your entire thread with images, so I would 
 - A step holds at most eight handles, so a line's count says at most +5 for one step; a folded turn's can say more.
 - A line that hides two or more videos plays only the first of them from its count. It takes five videos in one line, which only a turn that wrote five makes.
 - A GIF a turn wrote plays in its tile no longer on the iPhone, since it sits in its step; it opens still in the full-screen viewer there.
+- A phone's copy costs the desktop's main thread about 10 ms a picture on forge's pictures, once a picture and edge while it stays kept, and a phone's copies take room in the budget the window's thumbnails use, so a session that shows a phone a long picture thread keeps fewer of the window's.
+- A phone paired to a headless host, forge's among them, gains nothing from decisions 33 and 34 until that host has image tools.

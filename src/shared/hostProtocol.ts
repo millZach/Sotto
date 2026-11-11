@@ -387,6 +387,12 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * for a video an activity record names (ADR-0170, part 4): one 8 MiB part of it, read from the file it names while that
  * is still the file, and null otherwise. It takes the socket's preview guard, as `thread-media` does. Listed with
  * `thread-media`.
+ * `thread-media-edge`: a client whose hello accepts it may name `edge`, one of `HOST_PICTURE_EDGES`, in `thread-media` and
+ * `preview`, and is answered a copy of the picture no larger than that on its longest side, made with the host's own image
+ * tools and kept within its thumbnails' budget in bytes (ADR-0170, November 10 amendment). A picture already that small, a
+ * GIF, and one the tools cannot read are answered whole. A request without `edge` is answered whole, as before; one with
+ * it from a client that did not accept the feature is refused. Listed only by a host with image tools: the desktop's phone
+ * listener, never a headless host.
  * `next-prompts`: the host builds its threads' next prompts (ADR-0132, ADR-0173) and pushes them to a desktop whose hello
  * accepted it, once that desktop says with `next-prompts-wanted` that it wants them: every one held then as `next-prompts`,
  * and each change after as `next-prompt`. It asks its providers only while a desktop wants them. Listed only while its
@@ -399,7 +405,7 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * pushes. Answering a waiting request needs a desktop that may answer; the rest needs a desktop. Listed only while the
  * host's `paired-host-browser` and `quiet-browser` Owl features are on, and only to desktops.
  */
-export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'git-pull-request-list', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-file-links', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view', 'provider-cursor', 'watcher-cursor', 'usage-background-refresh', 'client-update-not-listed', 'thread-prompts', 'file-staging', 'watcher-phone-photos', 'attachment-files', 'project-origins', 'watcher-phone-machines', 'host-delegation', 'thread-delete', 'delegation-views', 'branch-moves', 'bring-changes-back', 'delegation-relay', 'watcher-check-queue', 'watcher-check-stop', 'check-queue-views', 'project-setup', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts', 'watcher-phone-files', 'pull-request-confirmation', 'watcher-new-owner', 'thread-move', 'worker-swarms', 'every-agent-picture', 'thread-move-source', 'thread-move-keep', 'changed-thread-records', 'thread-media', 'thread-media-video', 'next-prompts', 'watcher-phone-composer', 'watcher-phone-settings-later', 'reply-thread-records', 'provider-mode-lists', 'settled-threads-on-request', 'usable-models', 'product-events', 'watcher-tell', 'command-changed-thread-records', 'step-window', 'thread-snooze', 'watcher-ready', 'browser', 'provider-deepseek', 'video-staging', 'provider-pi'] as const
+export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'git-pull-request-list', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-file-links', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view', 'provider-cursor', 'watcher-cursor', 'usage-background-refresh', 'client-update-not-listed', 'thread-prompts', 'file-staging', 'watcher-phone-photos', 'attachment-files', 'project-origins', 'watcher-phone-machines', 'host-delegation', 'thread-delete', 'delegation-views', 'branch-moves', 'bring-changes-back', 'delegation-relay', 'watcher-check-queue', 'watcher-check-stop', 'check-queue-views', 'project-setup', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts', 'watcher-phone-files', 'pull-request-confirmation', 'watcher-new-owner', 'thread-move', 'worker-swarms', 'every-agent-picture', 'thread-move-source', 'thread-move-keep', 'changed-thread-records', 'thread-media', 'thread-media-video', 'next-prompts', 'watcher-phone-composer', 'watcher-phone-settings-later', 'reply-thread-records', 'provider-mode-lists', 'settled-threads-on-request', 'usable-models', 'product-events', 'watcher-tell', 'command-changed-thread-records', 'step-window', 'thread-snooze', 'watcher-ready', 'browser', 'provider-deepseek', 'video-staging', 'thread-media-edge', 'provider-pi'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
 /**
  * The features a headless host's tailnet listener offers only to a client the launch script recorded as a desktop
@@ -587,6 +593,18 @@ export const hostAttachmentFileSchema = z.object({
   data: z.string().min(1).max(Math.ceil(HOST_FILE_PART_BYTES / 3) * 4).regex(/^[A-Za-z0-9+/]*={0,2}$/u),
 }).strict().nullable()
 export type HostAttachmentFile = z.infer<typeof hostAttachmentFileSchema>
+/**
+ * The longest edges, in pixels, a client that accepts `thread-media-edge` may ask a picture at: a closed few, so no client
+ * makes a host decode a picture over and over at every size, or keep a copy for each. The iPhone's tile asks at 640.
+ */
+export const HOST_PICTURE_EDGES = [320, 640, 1280] as const
+const pictureEdge = z.literal(HOST_PICTURE_EDGES).optional()
+/** `thread-media` over the socket: with `edge`, from a client that accepts `thread-media-edge`, a copy no larger than that. */
+export const hostThreadMediaRequestSchema = agentThreadMediaRequestSchema.extend({ edge: pictureEdge }).strict()
+export type HostThreadMediaRequest = z.infer<typeof hostThreadMediaRequestSchema>
+/** `preview` over the socket, with `edge` as `thread-media` takes it. */
+export const hostPreviewRequestSchema = agentAttachmentPreviewRequestSchema.extend({ edge: pictureEdge }).strict()
+export type HostPreviewRequest = z.infer<typeof hostPreviewRequestSchema>
 /** Just enough of a request to answer it: a request the host cannot otherwise read is refused by its id. */
 export const hostRequestEnvelopeSchema = z.object(base)
 export const hostRequestSchema = z.discriminatedUnion('op', [
@@ -623,9 +641,9 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
    * to a host that lists `failure-seen`; absent, the threads are shown, as from every older client and every phone. */
   z.object({ ...base, op: z.literal('observe'), threadIds: z.array(id).max(100), shown: z.literal(false).optional() }).strict(),
   z.object({ ...base, op: z.literal('command'), command: protocolAgentCommandSchema }).strict(),
-  z.object({ ...base, op: z.literal('preview'), request: agentAttachmentPreviewRequestSchema }).strict(),
+  z.object({ ...base, op: z.literal('preview'), request: hostPreviewRequestSchema }).strict(),
   /** One picture an activity record names, for a client that accepts `thread-media` (ADR-0170): its bytes as a data URL. */
-  z.object({ ...base, op: z.literal('thread-media'), request: agentThreadMediaRequestSchema }).strict(),
+  z.object({ ...base, op: z.literal('thread-media'), request: hostThreadMediaRequestSchema }).strict(),
   /** One part of a video an agent wrote, for a client that accepts `thread-media-video` (ADR-0170, part 4). */
   z.object({ ...base, op: z.literal('thread-media-part'), request: agentThreadMediaPartRequestSchema }).strict(),
   z.object({ ...base, op: z.literal('receipt'), commandId: id, answer: hostAnswerTargetSchema.optional() }).strict(),

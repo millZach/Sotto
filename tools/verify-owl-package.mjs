@@ -45,7 +45,8 @@ try {
   const first = await application.firstWindow()
   const page = application.windows().find(candidate => candidate.url().endsWith('/index.html')) ?? first
   await page.waitForLoadState('domcontentloaded')
-  await page.getByRole('button', { name: 'Get started', exact: true }).waitFor({ state: 'visible', timeout: 30_000 })
+  // A new profile opens on the Threads page with first-run setup's first note over it (ADR-0200).
+  await page.locator('.setup-walk__note').waitFor({ state: 'visible', timeout: 30_000 })
   const status = await page.evaluate(() => globalThis.sotto.getUpdateStatus())
   // On macOS the temporary folder is under /var, a link to /private/var, and the app reports the resolved form.
   const ownProfile = await realpath(identity.userData).catch(() => identity.userData) === await realpath(userData)
