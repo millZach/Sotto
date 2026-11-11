@@ -32,7 +32,9 @@ describe('the parts of a shell a phone is sent', () => {
   })
 
   it.each(PHONE_UNREAD_SHELL_PARTS)('leaves out %s only while no iPhone or Android source names it', part => {
-    expect(sources('apps/ios/Sources', '.swift') + sources('apps/ios/Sotto', '.swift')).not.toContain(part)
-    expect(sources('apps/android/app/src/main', '.kt')).not.toContain(part)
+    // The whole name: `clientUpdatesDismissedAt` is another part, and a phone is still sent it.
+    const named = new RegExp(`\\b${part}\\b`, 'u')
+    expect(sources('apps/ios/Sources', '.swift') + sources('apps/ios/Sotto', '.swift') + sources('apps/ios/SottoShare', '.swift')).not.toMatch(named)
+    expect(sources('apps/android/app/src/main', '.kt')).not.toMatch(named)
   })
 })
