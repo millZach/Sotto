@@ -499,22 +499,31 @@ export async function startSocketServer(options: SocketServerOptions) {
   /**
    * The digest of each list a Watcher projection carries, by the list. `WatcherService` makes a projection's requests,
    * operations and standing watches afresh whenever its record changes and never edits them, so a list it hands out
-   * again is the same list, digested once however many pushes and answers carry it.
+   * again is the same list, digested once however many pushes and answers carry it. A desktop that does not know every
+   * provider is sent a projection scoped for it (`watcherFor`), whose lists are made afresh each time, so a digest is kept
+   * by the service's own list and by what that peer may not be sent: scoping the same list the same way gives the same
+   * rows. Without that, every progress push to such a desktop serialized and hashed the whole record again.
    */
-  const watcherListDigests = new WeakMap<object, string>()
+  const watcherListDigests = new WeakMap<object, Map<string, string>>()
   const sha256 = (text: string): string => createHash('sha256').update(text).digest('hex')
   /**
    * Everything a Watcher projection holds but its progress, revision and time, as one digest: two projections with the
    * same one differ only in how far their watched threads have got, so the later can go as a progress push.
    */
-  const watcherRecordOf = (projection: WatcherHostProjection): string => sha256(JSON.stringify(Object.entries(projection)
+  const watcherRecordOf = (projection: WatcherHostProjection, source: WatcherHostProjection = projection, scoped = ''): string => sha256(JSON.stringify(Object.entries(projection)
     .filter(([name]) => name !== 'progress' && name !== 'revision' && name !== 'observedAt').sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
     .map(([name, value]) => {
       if (!Array.isArray(value)) return [name, value]
-      let digest = watcherListDigests.get(value)
-      if (digest === undefined) watcherListDigests.set(value, digest = sha256(JSON.stringify(value)))
+      const own = (source as unknown as Record<string, unknown>)[name]
+      const list: object = Array.isArray(own) ? own : value
+      let digests = watcherListDigests.get(list)
+      if (!digests) watcherListDigests.set(list, digests = new Map())
+      let digest = digests.get(scoped)
+      if (digest === undefined) digests.set(scoped, digest = sha256(JSON.stringify(value)))
       return [name, digest]
     })))
+  /** What a peer may not be sent, as the key its scoped lists' digests are kept under. */
+  const watcherScoped = (peer: Peer): string => peer.unknownProviders.size ? [...peer.unknownProviders].sort().join(',') : ''
   /** Remembers the projection a desktop that accepted `watcher-progress` was just written, pushed or in an answer. */
   const wroteWatcher = (peer: Peer, projection: WatcherHostProjection, record: string): void => {
     watcherRevisions.set(peer, projection.revision)
@@ -925,8 +934,8 @@ export async function startSocketServer(options: SocketServerOptions) {
    * as a progress push: what moved in its progress, measured from what that projection carried (ADR-0073, November 10,
    * 2026 amendment). Anything else goes whole, as to every other desktop.
    */
-  const pushWatcher = (peer: Peer, projection: WatcherHostProjection): void => {
-    const record = peer.watcherProgress ? watcherRecordOf(projection) : undefined
+  const pushWatcher = (peer: Peer, projection: WatcherHostProjection, source: WatcherHostProjection): void => {
+    const record = peer.watcherProgress ? watcherRecordOf(projection, source, watcherScoped(peer)) : undefined
     const written = record !== undefined ? watcherWritten.get(peer) : undefined
     if (record !== undefined && written?.record === record && written.revision === watcherRevisions.get(peer)) {
       const progress = { baseRevision: written.revision, revision: projection.revision, observedAt: projection.observedAt, ...watcherProgressChange(written.progress, projection.progress ?? []) }
@@ -962,8 +971,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     // Watcher's projection waits with the shell (#1089): the one sent once the socket drains is the newest, built then.
     const scope = watcherScopes.get(peer)
     if (scope && offers(peer, 'watcher-reads') && service.watcherProjection) {
-      const projection = watcherFor(peer, service.watcherProjection(scope, peer.client))
-      if (watcherRevisions.get(peer) !== projection.revision) pushWatcher(peer, projection)
+      const source = service.watcherProjection(scope, peer.client), projection = watcherFor(peer, source)
+      if (watcherRevisions.get(peer) !== projection.revision) pushWatcher(peer, projection, source)
     }
     const wire = wireShell(peer, shell(peer, read?.())), eventPage = events(peer, peer.afterSeq)
     // To a client that accepted `changed-thread-records`, the thread records that changed since its last shell push go

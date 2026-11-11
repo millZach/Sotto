@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import type { WatcherHostProgress, WatcherHostProjection } from '../../src/shared/watcherHost'
 import { watcherProgressHost, type WatcherProgressHost } from '../fixtures/watcherProgressHost'
 
@@ -106,4 +106,45 @@ it('lets go of a projection a progress push does not follow, and measures from t
   expect((await next(frames, start + 1)).frame.event).toBe('watcher-progress')
   expect(client.cachedWatcherProjection(made.master)).toEqual(made.projection())
   expect(told.at(-1)).toEqual(made.projection())
+})
+
+it('tells Watcher of a projection a scope read brings that it did not hold, since the host pushes that one to nobody', async () => {
+  const made = await host()
+  const { client } = await made.desktop()
+  await client.watcherRead({ master: made.master })
+  const told: (WatcherHostProjection | undefined)[] = []
+  client.subscribeWatcher!(projection => told.push(projection))
+  // A read's answer overtakes the push that would have carried a changed record: the desktop still holds the one before,
+  // and the host, which counts the answer as written, will not push the one it answered with.
+  const internal = client as unknown as { cachedWatcher: WatcherHostProjection | undefined }
+  internal.cachedWatcher = { ...internal.cachedWatcher!, revision: 'the-one-before' }
+  expect(await client.watcherRead({ master: made.master })).toEqual(made.projection())
+  expect(told).toEqual([made.projection()])
+  // A read that brings the projection already held tells nobody, so a reconcile's own read starts no other.
+  told.length = 0
+  await client.watcherRead({ master: made.master })
+  expect(told).toEqual([])
+})
+
+it('digests the record once for a desktop that does not know every provider, however many steps follow', async () => {
+  // Such a desktop is sent a projection scoped for it, whose lists are made afresh for every push (#1107).
+  const made = await watcherProgressHost({ requests: 300, operations: 300, targets: 12 }); hosts.push(made)
+  const peer = await made.rawDesktop(['detail-delta', 'watcher-reads', 'watcher-progress'])
+  expect(await peer.call('scope', { op: 'watcher-read', request: { master: made.master } })).toMatchObject({ ok: true })
+  const frames = () => peer.messages.filter(message => message.event === 'watcher-state' || message.event === 'watcher-progress')
+  // The first push after the read digests the record's lists; the steps after it must not.
+  made.step()
+  await expect.poll(() => frames().length).toBeGreaterThan(0)
+  const seen = frames().length, record = JSON.stringify(made.projection().requests).length
+  const native = JSON.stringify.bind(JSON) as (...args: unknown[]) => string | undefined
+  let longest = 0
+  const spy = vi.spyOn(JSON, 'stringify').mockImplementation(((...args: unknown[]) => { const text = native(...args); if (typeof text === 'string') longest = Math.max(longest, text.length); return text }) as typeof JSON.stringify)
+  try {
+    for (let step = 0; step < 3; step++) {
+      made.step()
+      await expect.poll(() => frames().length).toBe(seen + step + 1)
+      expect(frames().at(-1)!.event).toBe('watcher-progress')
+    }
+  } finally { spy.mockRestore() }
+  expect(longest).toBeLessThan(record / 10)
 })

@@ -988,13 +988,22 @@ export class SocketHostService implements HostService {
   }
   /**
    * Keeps the projection a scope read answered with as its answer arrives, before any push read after it, so what this
-   * connection holds is what the host measures its next progress push from (`watcher-progress`). An answer that is not a
-   * projection is handed on as it came, for the caller to refuse.
+   * connection holds is what the host measures its next progress push from (`watcher-progress`), and tells Watcher of it
+   * when it is not the projection held. An answer that is not a projection is handed on as it came, for the caller to
+   * refuse.
    */
   private keepProjection(result: unknown): unknown {
     const read = watcherHostProjectionSchema.safeParse(result)
     if (!read.success) return result
+    const moved = this.cachedWatcher?.revision !== read.data.revision
     this.cachedWatcher = read.data
+    // The host counts this answer as written, so it pushes this projection to nobody. A read that brings a projection
+    // this connection did not hold tells Watcher here, as that push would have: a receipt, an ownership change or new
+    // evidence in it must not wait for the next push.
+    if (moved && this.options.watcherEnabled === true && this.cached) {
+      for (const listener of this.watcherListeners) listener(read.data)
+      this.notifyState()
+    }
     return new KeptProjection(read.data)
   }
   get supportsDraftRevisions(): boolean { return this.features.includes('draft-revisions') }
