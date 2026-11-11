@@ -35,6 +35,8 @@ export interface ProviderSignInOptions {
   readonly startTimeoutMs?: number
   /** How long an ended sign-in can still be read, so the client that started it learns how it ended. */
   readonly keepEndedMs?: number
+  /** Where the clients run, for the sentences a refusal or a failure says: a host (the default), or the desktop's own computer (ADR-0200). */
+  readonly place?: 'host' | 'computer'
 }
 
 /** A refusal whose sentence is the client's to show: the sign-in could not start, or a code was not taken. */
@@ -95,6 +97,9 @@ export class ProviderSignIns {
   private readonly entries = new Map<string, Entry>()
   private closed = false
   constructor(private readonly options: ProviderSignInOptions) {}
+  private get here(): boolean { return this.options.place === 'computer' }
+  /** "on this host", or "on this computer" for the desktop's own sign-ins. */
+  private get placePhrase(): string { return this.here ? 'on this computer' : 'on this host' }
 
   /**
    * Starts a provider's sign-in for this client and answers once its client has printed the page (and, for a device
@@ -102,10 +107,10 @@ export class ProviderSignIns {
    * first: the newest press wins, as a second terminal's would.
    */
   async start(provider: ProviderId, clientId: string): Promise<HostSignIn> {
-    if (this.closed) throw new ProviderSignInRefusal('This host is stopping. Nothing was signed in. Connect again and try once more.')
+    if (this.closed) throw new ProviderSignInRefusal(this.here ? 'Sotto is closing. Nothing was signed in.' : 'This host is stopping. Nothing was signed in. Connect again and try once more.')
     const shape = PROVIDER_SIGN_IN_SHAPES[provider]
     const name = PROVIDER_LABELS[provider]
-    if (!shape) throw new ProviderSignInRefusal(`${name} signs in from a terminal on the host. Nothing was changed.`)
+    if (!shape) throw new ProviderSignInRefusal(`${name} signs in from a terminal ${this.here ? 'on this computer' : 'on the host'}. Nothing was changed.`)
     for (const [id, entry] of this.entries) if (entry.view.provider === provider && !ended(entry.view)) this.end(id, 'ended')
     // The provider is this start's before the lookup below waits, so a start that overlaps it (another press, another
     // client) stops this one rather than running beside it, and a host that stops meanwhile spawns nothing.
@@ -117,7 +122,7 @@ export class ProviderSignIns {
     if (this.closed || this.entries.get(id) !== entry || ended(entry.view)) return this.copy(entry)
     if (!command) {
       this.entries.delete(id)
-      throw new ProviderSignInRefusal(`${name} is not installed on this host, so it cannot sign in. Nothing was changed.`)
+      throw new ProviderSignInRefusal(`${name} is not installed ${this.placePhrase}, so it cannot sign in. Nothing was changed.`)
     }
     const printed = new Promise<void>(resolve => { entry.ready = resolve })
     let child: ChildProcess
@@ -125,7 +130,7 @@ export class ProviderSignIns {
       child = spawn(command.executable, [...command.args], { cwd: homedir(), env: command.env, shell: false, windowsHide: true,
         stdio: [shape === 'paste-code' ? 'pipe' : 'ignore', 'pipe', 'pipe'] })
     } catch {
-      this.end(id, 'failed', `${name} could not be started on this host. Nothing was changed.`)
+      this.end(id, 'failed', `${name} could not be started ${this.placePhrase}. Nothing was changed.`)
       return this.copy(entry)
     }
     entry.child = child
@@ -137,7 +142,7 @@ export class ProviderSignIns {
     child.stdout?.on('data', read)
     child.stderr?.on('data', read)
     child.stdin?.on('error', () => undefined)
-    child.on('error', () => { if (entry.child === child) this.end(id, 'failed', `${name} could not be started on this host. Nothing was changed.`) })
+    child.on('error', () => { if (entry.child === child) this.end(id, 'failed', `${name} could not be started ${this.placePhrase}. Nothing was changed.`) })
     child.on('close', exitCode => { if (entry.child === child) void this.exited(entry, exitCode) })
     entry.timers.push(setTimeout(() => { if (entry.view.stage === 'starting') this.end(id, 'failed', `${name} did not show a sign-in page. Nothing was changed.`) }, this.options.startTimeoutMs ?? START_TIMEOUT_MS))
     entry.timers.push(setTimeout(() => { if (!ended(entry.view)) this.end(id, 'ended', 'The sign-in ran out of time.') }, this.options.lifetimeMs ?? PROVIDER_SIGN_IN_LIFETIME_MS))
@@ -194,7 +199,7 @@ export class ProviderSignIns {
     if (!page) return
     const name = PROVIDER_LABELS[entry.view.provider]
     if (!isProviderSignInPage(entry.view.provider, page)) {
-      this.end(entry.view.id, 'failed', `${name} asked to sign in on a page Sotto does not open. Nothing was signed in. Sign in to ${name} on the host itself.`)
+      this.end(entry.view.id, 'failed', `${name} asked to sign in on a page Sotto does not open. Nothing was signed in. Sign in to ${name} ${this.here ? 'in a terminal instead' : 'on the host itself'}.`)
       return
     }
     const rest = text.replace(page, ''), printed = DEVICE_CODE.exec(rest)
@@ -222,7 +227,7 @@ export class ProviderSignIns {
     }
     entry.view = { id, provider, shape: entry.shape, stage: 'finishing' }
     let error: string | undefined
-    try { error = await this.options.connect(provider, entry.clientId) } catch { error = `${name} signed in, but the host could not connect it. Press Connect on its tile to try again.` }
+    try { error = await this.options.connect(provider, entry.clientId) } catch { error = this.here ? `${name} signed in, but Sotto could not connect it. Press Connect on its row to try again.` : `${name} signed in, but the host could not connect it. Press Connect on its tile to try again.` }
     if (this.entries.get(id) !== entry || ended(entry.view)) return
     this.end(id, error ? 'failed' : 'connected', error ? `${name} signed in, but did not connect: ${error}` : undefined)
   }

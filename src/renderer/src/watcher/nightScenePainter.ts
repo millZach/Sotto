@@ -357,6 +357,11 @@ export class NightScenePainter {
   /** Whether the landscape shows as line art now: asked for, among trees, in a place that has layers. */
   get linesShown(): boolean { return this.lineGlyph !== null }
 
+  /** Line art's character for a landscape cell, 0 for none or while cells are drawn by density: for a crown to sway in. */
+  landCode(cell: number): number { return this.lineGlyph?.[cell] ?? 0 }
+  /** That character's ink, 0 to 1. */
+  landStrength(cell: number): number { return this.lineGlyph === null ? 0 : this.lineStrength[cell] ?? 0 }
+
   /**
    * Asks for the scene as line art, or as it always was (ADR-0199): the landscape is worked out now, and the next frame
    * shows it whole. Returns whether the ask changed.

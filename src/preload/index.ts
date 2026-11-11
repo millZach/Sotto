@@ -30,6 +30,7 @@ import {
   signInFinishRequestSchema, signInKeyRequestSchema, signInMethodRequestSchema, signInResultSchema, signInStartSchema, signInWaitSchema, signOutRequestSchema,
   type OpenCodeSignInBridge,
 } from '../shared/opencodeSignIn'
+import { LOCAL_PROVIDER_SIGN_IN, localSignInRequestSchema, type LocalProviderSignInBridge } from '../shared/localProviderSignIn'
 import { CURSOR_RENDERER_ARGUMENT, CURSOR_SIGN_IN_CANCEL, CURSOR_SIGN_IN_READ, CURSOR_SIGN_IN_REOPEN, CURSOR_SIGN_IN_START, CURSOR_SIGN_OUT, cursorSignInDoneSchema,
   cursorSignInRequestSchema, cursorSignInStartSchema, cursorSignInViewSchema, type CursorSignInBridge } from '../shared/cursorSignIn'
 import {
@@ -536,6 +537,10 @@ export function createSottoBridge(
       cancel: async request => invokeParsed(renderer, OPENCODE_SIGN_IN_CANCEL, signInDoneSchema, signInAttemptRequestSchema.parse(request)),
       signOut: async request => invokeParsed(renderer, OPENCODE_SIGN_OUT, signInResultSchema, signOutRequestSchema.parse(request)),
     }) } : {}),
+    // A provider's sign-in from its row in Settings › Providers (ADR-0200). The page's address stays in main.
+    providerSignIn: Object.freeze<LocalProviderSignInBridge>({
+      signIn: async request => invokeParsed(renderer, LOCAL_PROVIDER_SIGN_IN, providerSignInResultSchema, localSignInRequestSchema.parse(request)),
+    }),
     // Cursor's sign-in from its tile (ADR-0128): only while Cursor's Owl feature is on. The page's address stays in main.
     ...(cursorEnabled ? { cursor: Object.freeze<CursorSignInBridge>({
       start: async () => invokeParsed(renderer, CURSOR_SIGN_IN_START, cursorSignInStartSchema),

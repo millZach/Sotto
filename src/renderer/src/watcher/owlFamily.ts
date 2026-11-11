@@ -27,6 +27,8 @@ export interface WatchedOwl {
   readonly asks?: OwlAsk | null
   /** How many messages Watcher has sent its thread. In the living night scene a rise sends Watcher's owl to it. */
   readonly told?: number
+  /** Whether its thread's work is settled. In the living night scene the wood marks the moment it settles. */
+  readonly settled?: boolean
 }
 
 /** What a waiting thread waits on the user for. */

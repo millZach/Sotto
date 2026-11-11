@@ -30,7 +30,13 @@ export const QUICK_STEPS = 24
 const SLEEP_CYCLE = 5.6, SLEEP_RISE = 2.9
 
 /** What each watched thread was when the scene last took the room's threads. */
-interface Known { readonly mood: OwlMood; readonly failed: boolean; readonly told: number }
+interface Known { readonly mood: OwlMood; readonly failed: boolean; readonly told: number; readonly settled: boolean }
+
+/**
+ * What changed in the room's watched threads since they were last taken, by owl: the threads Watcher has sent a
+ * message, those whose turn finished without failing, those whose turn failed, and those whose work settled.
+ */
+export interface RoomNews { readonly told: string[]; readonly finished: string[]; readonly failed: string[]; readonly settled: string[] }
 
 export class OwlLives implements OwlLivesView {
   watcherFlying = false
@@ -113,28 +119,31 @@ export class OwlLives implements OwlLivesView {
    * Takes the room's watched threads as they are at `t` and starts what a change calls for: an owl whose thread starts
    * working again wakes with a stretch, one whose question was answered is happy for a moment, and one whose turn
    * finished, without failing, gets sparks and a happy moment before it sleeps. `perch` says where an owl sits now, or
-   * null when it does not show. Returns the threads Watcher has sent a message since they were last taken, for its owl
-   * to fly to. A thread seen for the first time starts nothing: its owl is on its way out of the moon.
+   * null when it does not show. Returns what changed, for Watcher's owl to fly to the threads told and the wood to
+   * answer the rest. A thread seen for the first time starts nothing: its owl is on its way out of the moon.
    */
-  take(owls: readonly WatchedOwl[], t: number, perch: (key: string) => Point | null): string[] {
-    const told: string[] = [], seen = new Set<string>()
+  take(owls: readonly WatchedOwl[], t: number, perch: (key: string) => Point | null): RoomNews {
+    const news: RoomNews = { told: [], finished: [], failed: [], settled: [] }, seen = new Set<string>()
     for (const owl of owls) {
       seen.add(owl.key)
-      const before = this.known.get(owl.key), failed = owl.failed === true, messages = owl.told ?? 0
-      this.known.set(owl.key, { mood: owl.mood, failed, told: messages })
+      const before = this.known.get(owl.key), failed = owl.failed === true, messages = owl.told ?? 0, settled = owl.settled === true
+      this.known.set(owl.key, { mood: owl.mood, failed, told: messages, settled })
       if (before === undefined) continue
-      if (messages > before.told) told.push(owl.key)
+      if (messages > before.told) news.told.push(owl.key)
+      if (failed && !before.failed) news.failed.push(owl.key)
+      if (settled && !before.settled) news.settled.push(owl.key)
       if (before.mood === owl.mood) continue
       if (owl.mood === 'awake' && before.mood === 'asleep') this.act(owl.key, 'wake', t, 1.5)
       else if (owl.mood === 'awake' && before.mood === 'waiting') this.act(owl.key, 'happy', t, 1.6)
       else if (owl.mood === 'asleep' && before.mood === 'awake' && !failed) {
+        news.finished.push(owl.key)
         const at = perch(owl.key)
         if (at !== null) this.sparks(at, t)
         this.act(owl.key, 'happy', t, 2.6)
       }
     }
     for (const key of this.known.keys()) if (!seen.has(key)) { this.known.delete(key); this.acts.delete(key) }
-    return told
+    return news
   }
 
   /**
