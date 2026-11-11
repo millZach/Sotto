@@ -171,13 +171,6 @@ export function receiptNeedsWatcher(operation: Pick<WatcherRecord['operations'][
 export const receiptRevision = (operation: Pick<WatcherRecord['operations'][number], 'deliveryState' | 'refusalCode' | 'creationUncertain'>): string =>
   observationDigest([operation.deliveryState, operation.refusalCode, operation.creationUncertain])
 /** Whether a finish still waits on the work it left running: its news rides with that work's work-settled news (#1190). */
-/** Whether Watcher was told the required checks passed on the pull request and commit this checks-passed fact names (#2226). */
-const requiredPassTold = (key: string, told: ReadonlySet<string> | undefined): boolean => {
-  if (!told?.size) return false
-  const passed = attentionFactParts(key)
-  for (const fact of told) { const said = attentionFactParts(fact); if (said.kind === 'required-passed' && said.pr === passed.pr && said.detail === passed.detail) return true }
-  return false
-}
 const busyFinish = (event: WatcherEvent): boolean => event.kind === 'turn-finished' && (event.backgroundWorkCount ?? 0) > 0
 /**
  * The work a finished turn is still waiting on: background work (Claude's background tasks), the roster's working
@@ -661,9 +654,10 @@ export class WatcherWakeUp {
   }
   /**
    * Whether a thread's pull requests say something Watcher has not been told that wakes it (#1190, #2226): checks that
-   * failed, the required checks passing or a merge. Checks that failed and then went back to running before the news went
-   * say nothing new, so the news no longer needs Watcher by itself. Every check passing on a commit whose required checks
-   * Watcher was told passed says nothing it must act on either. The rest of what they say rides with news that wakes it.
+   * failed, every check passing or a merge. Checks that failed and then went back to running before the news went say
+   * nothing new, so the news no longer needs Watcher by itself. The required checks passing while others still run rides
+   * (#2432): the merge train waits for every check, so every check passing wakes Watcher even when it was told of the
+   * required ones on that commit. The rest of what they say rides with news that wakes it.
    */
   private attentionUntold(target: WatcherThreadTarget): boolean {
     // Unread after a restart, before GitHub is read again, is unknown: news from before it keeps needing Watcher as it did.
@@ -671,7 +665,7 @@ export class WatcherWakeUp {
     if (!this.evidence.readsPullRequests(target)) return this.restoredUnread.has(targetKey(target))
     const told = this.toldAttention.get(targetKey(target))
     for (const fact of this.evidence.attentionFacts(target)) {
-      if (WAKING_ATTENTION.has(fact.kind) && !told?.has(fact.key) && !(fact.kind === 'checks-passed' && requiredPassTold(fact.key, told))) return true
+      if (WAKING_ATTENTION.has(fact.kind) && !told?.has(fact.key)) return true
     }
     return false
   }

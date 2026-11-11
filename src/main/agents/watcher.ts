@@ -2712,7 +2712,7 @@ export class WatcherService implements WatcherControlHooks {
   }
   /**
    * What Sotto's own reads say beside a thread's READY TO MERGE (#2229), as the news goes: the pull request's place in the
-   * train, the head Sotto last read it on, and its required checks. Nothing here is the worker's.
+   * train, the head Sotto last read it on, and its checks. Nothing here is the worker's.
    */
   private readyDetail(event: WatcherEvent): string | undefined {
     const ready = event.ready
@@ -2723,7 +2723,7 @@ export class WatcherService implements WatcherControlHooks {
     const item = queue[at]!, short = (head: string) => head.slice(0, 12)
     const head = item.head === undefined ? 'Sotto has not read its head from GitHub yet.'
       : item.head === ready.head ? `Sotto last read it on that head, ${short(item.head)}.` : `Sotto last read it on ${short(item.head)}, not the head this names.`
-    const checks = { passed: 'Its required checks passed.', running: 'Its required checks are still running.', failed: 'Its checks failed.', unknown: 'Sotto cannot say where its checks stand.' }[item.requiredChecks]
+    const checks = { passed: 'Its checks passed.', running: 'Its checks are still running.', failed: 'Its checks failed.', unknown: 'Sotto cannot say where its checks stand.' }[item.requiredChecks]
     return `It is ${at + 1} of ${queue.length} in the merge train. ${head} ${checks}`
   }
   /**
@@ -5398,13 +5398,13 @@ ${operation.draftId}`)
       const queue = this.liveState().mergeQueue, holds = mergeTurnHolds(queue, goMerge.pullRequest, base), wanted = pullRequestKey(goMerge.pullRequest)
       const name = (item: WatcherMergeQueueItem) => `${item.pullRequest.number === undefined ? item.url ?? 'a pull request' : `#${item.pullRequest.number}`} in “${item.title.slice(0, 80)}”`
       const held = [...holds.baseFailed ? [`${holds.baseFailed.branch} is red: checks failed on its newest commit, ${holds.baseFailed.head.slice(0, 12)}.`] : [],
-        ...holds.running.map(item => `${name(item)} has its required checks running.`)]
+        ...holds.running.map(item => `${name(item)} has checks running.`)]
       const outside = queue.some(item => item.url !== undefined && pullRequestKey(item.url) === wanted) ? undefined
         : 'Sotto does not hold this pull request in the merge train: read read_state to see where it stands.'
       const note = [unread, outside].filter(Boolean).join(' ') || undefined
       if (held.length && !goMerge.overrideReason) {
         const shown = held.slice(0, 8), more = held.length - shown.length
-        refuse('MERGE_TURN_HELD', `Not its turn yet. ${shown.join(' ')}${more ? ` ${more} more train pull requests have required checks running.` : ''} A merge now would land in the middle of them, so nothing was sent.${note ? ` ${note}` : ''} ${MERGE_TURN_NEXT}`)
+        refuse('MERGE_TURN_HELD', `Not its turn yet. ${shown.join(' ')}${more ? ` ${more} more train pull requests have checks running.` : ''} A merge now would land in the middle of them, so nothing was sent.${note ? ` ${note}` : ''} ${MERGE_TURN_NEXT}`)
       }
       const reason = held.length ? goMerge.overrideReason : undefined
       return { receipt: { held, ...reason ? { overrideReason: reason } : {}, ...note ? { note } : {} },

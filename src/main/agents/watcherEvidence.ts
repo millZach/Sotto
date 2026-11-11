@@ -93,9 +93,10 @@ export function attentionFactParts(key: string): { readonly pr: unknown; readonl
  * The pull request facts that wake Watcher by themselves (#2226, Zach's pick on November 5, 2026): checks failed, the
  * required checks passed (all checks passing says they did), and a merge. The rest, approved, a review asking for changes,
  * comments or reviews that moved, a Bug Bot review, a conflict and a close, ride with the next news that wakes it.
- * Required checks passing stays a wake until #2229's READY TO MERGE takes its place, since it is what sends a thread to merge.
+ * Required checks passing while other checks still run rides too (#2432): the merge train waits for every check, so all
+ * checks passing is what sends a thread to merge, beside its READY TO MERGE (#2229).
  */
-export const WAKING_ATTENTION: ReadonlySet<WatcherAttentionKind> = new Set(['checks-failed', 'checks-passed', 'required-passed', 'merged'])
+export const WAKING_ATTENTION: ReadonlySet<WatcherAttentionKind> = new Set(['checks-failed', 'checks-passed', 'merged'])
 /** The kinds evidence does not hold, which an evidence event compares beside its facts. */
 const BESIDE_EVIDENCE: ReadonlySet<WatcherAttentionKind> = new Set(['required-passed', 'changes-requested', 'conflicting', 'remarks'])
 export interface CheckpointObservation {
