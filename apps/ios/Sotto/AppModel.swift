@@ -1712,6 +1712,9 @@ struct RailAsk: Equatable {
     private var benchShellRevision = 0
     private var benchSequence = 1_000
     private var benchState: Data?
+    /// How many records the laptop's list has, and the time they were made from.
+    private var benchThreads = 0
+    private var benchNow = Date()
     /// Which form of the picture thread this journey measures: full, noimages (grids whose pictures never come), nomedia
     /// (the same steps, no pictures) or nosteps (only the messages).
     private var benchPictureArm: String?
@@ -2038,6 +2041,7 @@ struct RailAsk: Equatable {
         BenchDriver.start(model: self, chunks: number("--bench-chunks") ?? 200, journey: journey ?? "all",
                           long: ThreadRef(hostID: laptop, threadID: BenchWire.longThreadID))
         let now = Date()
+        benchThreads = threads; benchNow = now
         benchLongFrame = Task.detached(priority: .userInitiated) { BenchWire.longDetailFrame(turns: turns, now: now) }
         // With --bench-pictures, the picture thread's shape in place of the long thread, as one `detail` push.
         if let arm = arguments.firstIndex(of: "--bench-pictures").flatMap({ arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil }) {
@@ -2134,6 +2138,30 @@ struct RailAsk: Equatable {
             }
             done()
         }
+    }
+    /// One list push that settles every thread the laptop's list shows working but the long one, so the long thread is
+    /// the only one working (`idle-list`, #2400).
+    func benchSettleOthers() async {
+        guard let laptop = benchLaptop, let state = benchState else { return }
+        let settled = BenchWire.othersSettled(count: benchThreads, hostID: laptop, now: benchNow)
+        await benchDeliver(BenchWire.shellFrame(state: state, revision: benchShellRevision + 1, base: benchShellRevision, changed: settled), kind: "shell")
+        benchShellRevision += 1
+    }
+    /// The long thread's turn ends as a host ends one: a `detail-delta` that finishes every step still running, then a
+    /// list push with its record settled, so its page shows no working line, running step or breathing light
+    /// (`idle-thread`, #2400).
+    func benchEndTurn() async {
+        guard let laptop = benchLaptop, let state = benchState else { return }
+        let ref = ThreadRef(hostID: laptop, threadID: BenchWire.longThreadID)
+        if selected == ref, let detail = openDetail {
+            let running = (detail.activities ?? []).filter { $0.status == "running" }
+            if !running.isEmpty {
+                await benchDeliver(BenchWire.endTurnFrame(finishing: running, revision: detail.revision, now: Date()), kind: "delta")
+            }
+        }
+        let record = BenchWire.longThreadRecord(hostID: laptop, now: Date(), running: false)
+        await benchDeliver(BenchWire.shellFrame(state: state, revision: benchShellRevision + 1, base: benchShellRevision, changed: [record]), kind: "shell")
+        benchShellRevision += 1
     }
     /// Twelve turns of a question and a long Markdown reply, a command between each, and a last step after the final reply.
     /// With `pictures`, the last fourteen turns' commands each hand back two screenshots, so pictures sit both in the latest

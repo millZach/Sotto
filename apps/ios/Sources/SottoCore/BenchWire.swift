@@ -16,14 +16,21 @@ public enum BenchWire {
     public static func threadRecords(count: Int, hostID: String, now: Date) -> [String] {
         var records = [longThreadRecord(hostID: hostID, now: now)]
         for index in 1..<max(1, count) {
-            records.append(record(id: "bench-\(index)", index: index, hostID: hostID, now: now, running: index % 40 == 0, title: titles[index % titles.count] + " \(index)"))
+            records.append(record(id: "bench-\(index)", index: index, hostID: hostID, now: now, running: startsWorking(index), title: threadTitle(index)))
         }
         return records
     }
+    /// The records of every thread `threadRecords` lists as working but the long one, settled: one list push of these
+    /// leaves the long thread the only one working (`idle-list`, #2400). Given the list's `now`, nothing else in them changes.
+    public static func othersSettled(count: Int, hostID: String, now: Date) -> [String] {
+        (1..<max(1, count)).filter(startsWorking).map { record(id: "bench-\($0)", index: $0, hostID: hostID, now: now, running: false, title: threadTitle($0)) }
+    }
+    private static func startsWorking(_ index: Int) -> Bool { index % 40 == 0 }
+    private static func threadTitle(_ index: Int) -> String { titles[index % titles.count] + " \(index)" }
 
-    /// The long thread's record, sent again whenever it changes while it works.
-    public static func longThreadRecord(hostID: String, now: Date) -> String {
-        record(id: longThreadID, index: 0, hostID: hostID, now: now, running: true, title: "Compare motor drive options for the new panel")
+    /// The long thread's record, sent again whenever it changes while it works, and settled once its turn ends.
+    public static func longThreadRecord(hostID: String, now: Date, running: Bool = true) -> String {
+        record(id: longThreadID, index: 0, hostID: hostID, now: now, running: running, title: "Compare motor drive options for the new panel")
     }
     /// The sequence the long thread's running step has; the steps a stream starts follow it.
     public static func streamStepSequence(turns: Int, stepsPerTurn: Int = 4) -> Int { turns * stepsPerTurn + 1 }
@@ -77,6 +84,19 @@ public enum BenchWire {
             activities = finished + "," + started
         }
         let delta = #"{"threadId":"\#(longThreadID)","baseRevision":\#(revision),"revision":\#(revision + 1),"messageDeltas":[{"id":"\#(streamingMessageID)","appendText":"\#(word)"}],"activityDeltas":[\#(activities)]}"#
+        return Data(#"{"v":1,"event":"detail-delta","threadId":"\#(longThreadID)","delta":\#(delta)}"#.utf8)
+    }
+
+    /// The long thread's turn ending, as a host sends it: a `detail-delta` that finishes `steps`, the ones still running.
+    /// The list push that goes with it carries `longThreadRecord(hostID:now:running: false)` (`idle-thread`, #2400).
+    public static func endTurnFrame(finishing steps: [Activity], revision: Int, now: Date) -> Data {
+        let finished = steps.map { step -> String in
+            var text = #"{"record":{"id":\#(quoted(step.id)),"sequence":\#(step.sequence),"kind":\#(quoted(step.kind)),"status":"completed","title":"Ran","#
+            if let command = step.command { text += #""command":\#(quoted(command)),"# }
+            return text + #""exitCode":0,"durationMs":1800,"startedAt":\#(quoted(step.startedAt ?? stamp(now, 50)))}}"#
+        }
+        let delta = #"{"threadId":"\#(longThreadID)","baseRevision":\#(revision),"revision":\#(revision + 1),"messageDeltas":[],"activityDeltas":["#
+            + finished.joined(separator: ",") + "]}"
         return Data(#"{"v":1,"event":"detail-delta","threadId":"\#(longThreadID)","delta":\#(delta)}"#.utf8)
     }
 

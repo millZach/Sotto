@@ -89,6 +89,35 @@ final class PhoneBenchTests: XCTestCase {
         XCTAssertEqual(ThreadTimeline.items(messages: long.messages, activities: long.activities ?? []).isEmpty, false)
     }
 
+    func testTheIdlePhasesLeaveOneThreadWorkingThenNone() async throws {
+        func working(_ shell: Shell) -> [String] { shell.host.threads.filter { ThreadState($0).workInProgress }.map(\.id) }
+        var cache = ThreadRecordsCache()
+        let full = try await shell(BenchWire.shellFrame(state: state, revision: 1, base: nil, changed: BenchWire.threadRecords(count: 300, hostID: host, now: now)))
+        let first = try XCTUnwrap(cache.whole(full))
+        XCTAssertEqual(working(first).count, 8)
+        // `idle-list`: one list push settles the other seven, and the long thread works alone.
+        let others = try await shell(BenchWire.shellFrame(state: state, revision: 2, base: 1, changed: BenchWire.othersSettled(count: 300, hostID: host, now: now)))
+        let alone = try XCTUnwrap(cache.whole(others))
+        XCTAssertEqual(alone.host.threads.count, 300)
+        XCTAssertEqual(working(alone), [BenchWire.longThreadID])
+        // `idle-thread`: after a stream, the turn ends with its last step finished and its record settled.
+        var long = try await detail(BenchWire.longDetailFrame(turns: 200, now: now))
+        let start = BenchWire.streamStepSequence(turns: 200)
+        for chunk in 1...200 {
+            let change = try await delta(BenchWire.deltaFrame(chunk: chunk, revision: long.revision, firstSequence: start, now: now))
+            long = try XCTUnwrap(long.applying(change), "Chunk \(chunk) must apply")
+        }
+        let running = (long.activities ?? []).filter { $0.status == "running" }
+        XCTAssertEqual(running.map(\.id), ["bench-step-stream-10"])
+        let end = try await delta(BenchWire.endTurnFrame(finishing: running, revision: long.revision, now: now))
+        long = try XCTUnwrap(long.applying(end), "The turn's end must apply")
+        XCTAssertEqual((long.activities ?? []).filter { $0.status == "running" }.count, 0)
+        XCTAssertEqual((long.activities ?? []).filter { $0.id.hasPrefix("bench-step-stream") }.count, 11)
+        let settled = try await shell(BenchWire.shellFrame(state: state, revision: 3, base: 2, changed: [BenchWire.longThreadRecord(hostID: host, now: now, running: false)]))
+        let none = try XCTUnwrap(cache.whole(settled))
+        XCTAssertEqual(working(none), [])
+    }
+
     // MARK: Timings, with SOTTO_IOS_BENCH=1
 
     private func timed(_ rounds: Int = 15, _ work: () async throws -> Void) async throws -> Double {
@@ -115,14 +144,12 @@ final class PhoneBenchTests: XCTestCase {
         let fullShell = try await shell(full)
         let held = try XCTUnwrap(cache.whole(fullShell))
         var revision = 1
-        let one = { (revision: Int) in BenchWire.shellFrame(state: self.state, revision: revision + 1, base: revision, changed: [BenchWire.longThreadRecord(hostID: self.host, now: self.now)]) }
-        report("shell-changed.bytes", Double(one(1).count), "B")
-        report("shell-changed.read", try await timed { _ = cache.whole(try await self.shell(one(revision))); revision += 1 }, "ms")
-        // The same push with what a running host sends whole beside the record (#2390).
-        let sized = BenchWire.hostSizedState(state, now: now)
-        let real = { (revision: Int) in BenchWire.shellFrame(state: sized, revision: revision + 1, base: revision, changed: [BenchWire.longThreadRecord(hostID: self.host, now: self.now)]) }
-        report("shell-real.bytes", Double(real(1).count), "B")
-        report("shell-real.read", try await timed { _ = cache.whole(try await self.shell(real(revision))); revision += 1 }, "ms")
+        // The same push both times, the second with what a running host sends whole beside the record (#2390).
+        for (name, pushed) in [("shell-changed", state), ("shell-real", BenchWire.hostSizedState(state, now: now))] {
+            let one = { (revision: Int) in BenchWire.shellFrame(state: pushed, revision: revision + 1, base: revision, changed: [BenchWire.longThreadRecord(hostID: self.host, now: self.now)]) }
+            report("\(name).bytes", Double(one(1).count), "B")
+            report("\(name).read", try await timed { _ = cache.whole(try await self.shell(one(revision))); revision += 1 }, "ms")
+        }
         let threads = ComputerThreads(hostID: host, name: "Laptop", status: .online, threads: held.host.threads)
         report("list.merged-300", try await timed { _ = ThreadGroups.merged([threads]) }, "ms")
 

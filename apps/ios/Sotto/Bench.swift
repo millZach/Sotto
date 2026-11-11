@@ -11,15 +11,17 @@ import UIKit
 /// turns on and reads the whole accessibility tree, which on a long thread cost more than the thread did. The phases:
 /// `launch` to the first frame showing every thread, `list-scroll` down the list and back, `open` the long thread as a
 /// notification opens it, `thread-scroll` up through it and back, `stream` a reply into it, `reply-box` the reply box
-/// going small and back with nothing else happening, `reply-box-stream` the same while a reply streams, `idle-thread` half
-/// a minute on the long thread with nothing arriving, `stream-real-push` the stream again with each list push the size a
-/// running host sends, `back` to the Threads list, `idle-list` half a minute there with nothing arriving, then `finished`.
-/// Each phase lasts until the screen is quiet, the idle ones for their fixed half minute, and records its frames, hitches,
-/// CPU time, memory and what the probes counted; an idle phase records its main thread's wake-ups in place of frames
-/// (`idle`). With `--bench-journey launch` it stops after the first. With `--bench-journey look`
+/// going small and back with nothing else happening, `reply-box-stream` the same while a reply streams, `back` to the
+/// Threads list, then the phases added after it on November 10: `idle-list` half a minute there with nothing arriving and
+/// one thread working, `reopen` the long thread again, `stream-real-push` the stream again with each list push the size a
+/// running host sends, `idle-thread` half a minute on the long thread once its turn has ended, and `finished`. Each phase
+/// lasts until the screen is quiet, the idle ones for their fixed half minute, and records its frames, hitches, CPU time,
+/// memory and what the probes counted; an idle phase records its main thread's wake-ups in place of frames (`idle`), and
+/// the short phase before each (`settle-others`, `end-turn`) holds the push that sets it up. With `--bench-journey idle`
+/// it walks only the two idle phases. With `--bench-journey launch` it stops after the first. With `--bench-journey look`
 /// it opens the long thread and photographs the page at fixed distances above its end (`look`), so two builds can be held
 /// to the same look. It reads and changes nothing the app shows, but for the draft that moves the reply box, which it
-/// takes out again.
+/// takes out again, and the list and turn it settles for the idle phases.
 @MainActor final class BenchDriver {
     private static var running: BenchDriver?
 
@@ -31,8 +33,11 @@ import UIKit
     }
     /// The laptop's whole list has been applied: the next Threads body draws it.
     static func listApplied() { running?.waiting.insert("first-list") }
-    /// The long thread's detail has been applied: the next conversation body draws it.
-    static func detailApplied() { running?.waiting.insert("open-rendered") }
+    /// The long thread's detail has been applied: the next conversation body draws it, the first open's or the second's.
+    static func detailApplied() {
+        guard let running else { return }
+        running.waiting.insert(running.phase == "reopen" ? "reopen-rendered" : "open-rendered")
+    }
 
     private weak var model: AppModel?
     private let report: URL
@@ -80,6 +85,7 @@ import UIKit
         await quiet()
         if kind == "look" { return await look() }
         if kind == "pictures" { return await pictures() }
+        if kind == "idle" { return await idleOnly() }
         guard kind == "all" else { return finish(nil) }
 
         next("list-scroll")
@@ -119,14 +125,28 @@ import UIKit
         phaseNotes["wallMs"] = (CACurrentMediaTime() - streamed) * 1000
         await quiet()
 
-        // The phases the journey had before these three run first and as they were, so their numbers still compare; only
-        // `back` now follows the first two. The long thread open with nothing arriving: its record still says it works, so
-        // its working line stays (#2400).
-        next("idle-thread")
-        await idle()
+        // Back to the list, as Back and a swipe back go: the Threads page comes into sight again under the thread and lets
+        // go of the list it held while the reply streamed (`ThreadsView.held`). A journey that can't go back, or whose page
+        // never comes back drawn as it stands, fails: its stale-frame count would say nothing.
+        next("back")
+        guard let navigation = Self.threadNavigation(), navigation.popViewController(animated: true) != nil else { return finish("no-back") }
+        guard await until({ self.pageInWindow && !self.pageHeld }) else { return finish("no-list-back") }
+        await quiet()
+
+        // What follows came on November 10 (#2400, #2390). It runs after everything before it, so those phases still
+        // measure what they measured.
+        await idleList()
+
+        // The long thread opened a second time, as the first was, so its own numbers stay out of `open`'s. It is read
+        // again from its first detail, with the reply as short as `stream` found it.
+        next("reopen")
+        mark("reopen-begin")
+        model?.alertOpened = long
+        guard await until({ self.marks["reopen-rendered"] != nil }) else { return finish("no-reopen") }
+        await quiet()
 
         // The stream again, each shell push carrying beside the long thread's record what a running host sends whole in
-        // every push, about 200 KB where `stream` sends 2 KB (#2390). The reply is 400 words longer than at `stream`.
+        // every push, about 200 KB where `stream` sends 2 KB (#2390).
         next("stream-real-push")
         let pushed = CACurrentMediaTime()
         await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
@@ -136,18 +156,46 @@ import UIKit
         phaseNotes["wallMs"] = (CACurrentMediaTime() - pushed) * 1000
         await quiet()
 
-        // Back to the list, as Back and a swipe back go: the Threads page comes into sight again under the thread and lets
-        // go of the list it held while the reply streamed (`ThreadsView.held`). A journey that can't go back, or whose page
-        // never comes back drawn as it stands, fails: its stale-frame count would say nothing.
-        next("back")
-        guard let navigation = Self.threadNavigation(), navigation.popViewController(animated: true) != nil else { return finish("no-back") }
-        guard await until({ self.pageInWindow && !self.pageHeld }) else { return finish("no-list-back") }
-        await quiet()
+        await idleThread()
+        finish(nil)
+    }
 
-        // The Threads list with nothing arriving, the long thread working at its top (#2400).
+    /// The two idle phases alone, from a cold launch: `bench.sh` runs this journey with the looping animations and again
+    /// with `--ui-still`, which stops every one of them, so the difference is what the loops cost the app.
+    private func idleOnly() async {
+        await idleList()
+        next("open")
+        model?.alertOpened = long
+        guard await until({ self.marks["open-rendered"] != nil }) else { return finish("no-thread") }
+        await quiet()
+        await idleThread()
+        finish(nil)
+    }
+
+    /// `idle-list`: the Threads list with nothing arriving and one thread working, the long one. The others the list
+    /// shows working settle first, in a phase of their own.
+    private func idleList() async {
+        next("settle-others")
+        await model?.benchSettleOthers()
+        await settled()
         next("idle-list")
         await idle()
-        finish(nil)
+    }
+
+    /// `idle-thread`: the open long thread with nothing arriving, once its turn has ended in a phase of its own, so it
+    /// shows no working line, running step or breathing light.
+    private func idleThread() async {
+        next("end-turn")
+        await model?.benchEndTurn()
+        await settled()
+        next("idle-thread")
+        await idle()
+    }
+
+    /// Waits out what a push set going, and after a launch the thread page's warm-up, before an idle phase starts.
+    private func settled() async {
+        try? await Task.sleep(nanoseconds: 2_500_000_000)
+        await quiet()
     }
 
     private static let idleSeconds: Double = 30
@@ -159,8 +207,10 @@ import UIKit
     /// every frame or every half second, and the main run loop's wake-ups are counted instead: the display link ticks at
     /// every refresh whether or not anything was drawn, so it cannot count frames drawn, and a frame the app commits needs
     /// its main thread awake. Core Animation's own loops, the background wash and a working card's glow, draw in the render
-    /// server without waking the app, so neither CPU time nor wake-ups hold them.
+    /// server without waking the app, so neither CPU time nor wake-ups hold them; what they cost the app is the difference
+    /// with `--ui-still` (`idleOnly`). The threads working as it starts are kept, so a phase that shows the wrong ones is seen.
     private func idle() async {
+        if let model { phaseNotes["workingThreads"] = ThreadGroups.working(model.lists).count }
         link?.isPaused = true
         timer?.invalidate(); timer = nil
         wakes = 0
@@ -599,7 +649,7 @@ import UIKit
         let drawn: String?
         switch name {
         case "ThreadsView": drawn = waiting.contains("first-list") ? "first-list" : nil
-        case "Conversation": drawn = waiting.contains("open-rendered") ? "open-rendered" : nil
+        case "Conversation": drawn = ["open-rendered", "reopen-rendered"].first { waiting.contains($0) }
         default: drawn = nil
         }
         guard let drawn else { return }
