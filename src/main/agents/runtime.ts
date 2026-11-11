@@ -1,4 +1,5 @@
 import { agentCaptures, ThreadMediaStore } from './threadMedia'
+import type { ReducedPictures } from './mediaThumbnail'
 import type { BrowserAgentTools } from './browserAgentServer'
 import type { FilesBinding } from '../files/service'
 import { join } from 'node:path'
@@ -24,6 +25,7 @@ import { DevinAcpHost } from './devin'
 import { MuseMspHost } from './muse'
 import { OpenCodeHost } from './opencode'
 import { CursorAcpHost } from './cursor'
+import { PiHost } from './pi'
 import { HermesAcpHost } from './hermes'
 import { DeepSeekAcpHost } from './deepseek'
 import { CursorSignIn } from './cursorSignIn'
@@ -205,6 +207,11 @@ export interface AgentRuntimeOptions {
   /** The store itself, when the process owner built it for providers of its own as well (the desktop's native fixtures). */
   threadMedia?: ThreadMediaStore
   /**
+   * The copies of pictures phones ask for at a longest edge (`thread-media-edge`, ADR-0170's November 10 amendment), made
+   * with the process owner's image tools: the desktop's alone, since a headless host has none and answers pictures whole.
+   */
+  reducedPictures?: ReducedPictures
+  /**
    * The Owl list's answer for next prompts (ADR-0132), read once by the process owner. Absent fails closed.
    * `nextPromptChanged` hears each change: the desktop tells its window, and a headless host its desktops (ADR-0173).
    * `nextPromptsWanted`, where given, is asked before each side call: a headless host asks only while a desktop that
@@ -340,6 +347,9 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       ...(options.ownServers ? { ownServers: options.ownServers } : {}) })),
     // Cursor runs with Sotto's own Cursor folder under this runtime's directory: user data, or a headless host's data (ADR-0128).
     cursor: adapter('cursor', () => options.providers?.cursor ?? new CursorAcpHost(directory, captureMedia)),
+    // Pi starts only on this computer, where its own-model-server record lives.
+    pi: adapter('pi', () => options.providers?.pi ?? (options.runsAs === 'headless-host' ? new HeldProviderHost('pi')
+      : new PiHost(directory, { heldProviders: held, ...captureMedia, ...(options.ownServers ? { servers: options.ownServers } : {}) }))),
     // This local Hermes build runs only on the Mac. Its gateway and model routes belong to this computer.
     hermes: adapter('hermes', () => options.providers?.hermes ?? (options.runsAs === 'headless-host' || process.platform !== 'darwin' ? new HeldProviderHost('hermes')
       : new HermesAcpHost(directory, { heldProviders: held, ...captureMedia, ...(options.ownServers ? { servers: options.ownServers } : {}) }))),
@@ -356,6 +366,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     muse: new SottoThreadHost('muse', providers.muse!, threadRegistry!),
     opencode: new SottoThreadHost('opencode', providers.opencode!, threadRegistry!),
     cursor: new SottoThreadHost('cursor', providers.cursor!, threadRegistry!),
+    pi: new SottoThreadHost('pi', providers.pi!, threadRegistry!),
     hermes: new SottoThreadHost('hermes', providers.hermes!, threadRegistry!),
     deepseek: new SottoThreadHost('deepseek', providers.deepseek!, threadRegistry!),
   }
@@ -919,6 +930,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ...(options.markdownSidePanel === true ? { threadFileLinks: true } : {}),
     ...(options.attachAnyFile === true ? { fileStaging: true } : {}),
     ...(threadMedia ? { threadMedia: true } : {}),
+    ...(options.reducedPictures ? { reducedPictures: options.reducedPictures } : {}),
     // The iPhone's Agents view (ADR-0103): delegated threads only where delegation runs, which on a headless host is only
     // where Work across machines is on (#1310).
     ...(options.agentsViewEnabled === true ? { agentsView: delegationRecord ? { delegations: (threadId, threads) => threadDelegations(delegationRecord, threads, threadId) } : {} } : {}),
@@ -933,10 +945,11 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // The user's own model servers reach the same OpenCode (ADR-0124), only where it runs and they were asked for.
   const ownServersOpenCode = options.ownServers && providers.opencode instanceof OpenCodeHost ? openCodeForOwnServers(providers.opencode) : undefined
   // And the same record reaches DeepSeek Harness (ADR-0138), only where its adapter runs.
+  const piHost = providers.pi instanceof PiHost ? providers.pi : undefined
   const deepseekHost = providers.deepseek instanceof DeepSeekAcpHost ? providers.deepseek : undefined
   // Hermes keeps its own copy of a keyed server's key (ADR-0124), only where its adapter runs.
   const ownServersHermes = options.ownServers && providers.hermes instanceof HermesAcpHost ? providers.hermes : undefined
-  const ownServersDeepSeek = options.ownServers && (deepseekHost || providers.hermes instanceof HermesAcpHost) ? { changed: () => { deepseekHost?.ownServersChanged(); if (providers.hermes instanceof HermesAcpHost) providers.hermes.ownServersChanged() } } : undefined
+  const ownServersDeepSeek = options.ownServers && (piHost || deepseekHost || providers.hermes instanceof HermesAcpHost) ? { changed: () => { piHost?.ownServersChanged(); deepseekHost?.ownServersChanged(); if (providers.hermes instanceof HermesAcpHost) providers.hermes.ownServersChanged() } } : undefined
   // Signing Cursor in from its tile on this computer (ADR-0128): only where its adapter runs, and never on a headless host, whose
   // Cursor a desktop signs in through the provider sign-in request instead.
   const cursorHost = providers.cursor instanceof CursorAcpHost ? providers.cursor : undefined

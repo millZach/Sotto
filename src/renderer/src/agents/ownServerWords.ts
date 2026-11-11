@@ -4,7 +4,7 @@ import { plural, t } from '@lingui/core/macro'
 import { OWN_SERVER_CONTEXT_MAX, OWN_SERVER_CONTEXT_MIN, type OwnServerKind, type OwnServerRefusal } from '../../../shared/ownModelServers'
 
 /**
- * Every sentence Your own model servers says in the window (ADR-0124), in the interface language (ADR-0123). Main sends
+ * Every sentence APIs and your own model servers says in the window (ADR-0124), in the interface language (ADR-0123). Main sends
  * its refusals in English beside a reason, since src/shared is built into the headless host without the macro
  * transform; the window words each reason here instead and shows main's English only for a reason it does not know.
  */
@@ -102,11 +102,12 @@ export function refusalWords(reason: OwnServerRefusal | string, doing: OwnServer
     case 'sign-in-failed': return doing === 'remove'
       ? t`OpenCode did not forget the key for ${name}, so nothing was removed. Try removing the server again.`
       : t`Sotto could not keep the key for ${name}, so nothing was saved. Try adding the server again.`
+    case 'replaced-partly': return t`OpenCode has the new key, but Hermes could not replace its copy. Your model choices were kept. Try again.`
     case 'added-partly': return t`Sotto could not finish adding ${name} or take it off its list. Remove it, then add it again.`
     case 'removed-partly': return t`Sotto could not finish removing ${name}. It is still listed. Remove it again.`
     case 'not-found': return t`That server is no longer saved. Nothing was changed.`
     case 'full': return t`Sotto keeps up to 32 servers. Remove one you no longer use, then add this one.`
-    case 'already-added': return t`${host} is already added. Nothing was saved. To change its key or its models, remove it and add it again.`
+    case 'already-added': return t`${host} is already added. Nothing was saved. Use Replace key or Choose models on its saved row.`
     case 'failed': return t`Sotto could not finish that, so nothing was changed. Try again.`
     default: return english ?? t`Sotto could not finish that, so nothing was changed. Try again.`
   }

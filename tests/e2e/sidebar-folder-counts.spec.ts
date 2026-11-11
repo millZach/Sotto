@@ -8,7 +8,7 @@ const countEdges = (sidebar: Locator): Promise<number[]> =>
 /** Connects the design fixture's three projects and returns the Threads sidebar. */
 async function connect(page: Page): Promise<Locator> {
   await page.evaluate(async () => {
-    await window.sotto!.updateSettings({ onboardingComplete: true })
+    await window.sotto!.updateSettings({ onboardingComplete: true, threadListGrouping: 'project' })
     await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true } })
     await window.sotto!.agents!.command({ type: 'connect' })
   })
@@ -22,7 +22,10 @@ async function connect(page: Page): Promise<Locator> {
 // waiting (a folder that is closed).
 test('every folder count ends on one edge, whatever sits beside it', async () => {
   test.setTimeout(90_000)
-  const launched = await launchSotto('design-threads')
+  // The dots stand only while the Needs you card is off, which it is no longer by default anywhere (ADR-0201).
+  const previous = process.env['SOTTO_OWL_FEATURES']
+  process.env['SOTTO_OWL_FEATURES'] = 'needs-you-queue=0'
+  const launched = await launchSotto('design-threads').finally(() => { if (previous === undefined) delete process.env['SOTTO_OWL_FEATURES']; else process.env['SOTTO_OWL_FEATURES'] = previous })
   const { page } = launched
   try {
     const sidebar = await connect(page)

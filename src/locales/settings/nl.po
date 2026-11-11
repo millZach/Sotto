@@ -879,6 +879,10 @@ msgstr ""
 msgid "A Dynamic thread's model oversees and chooses a model for each piece of work, inside these limits. Turn it on at the foot of a thread's model menu, or at the foot of the model menu under New threads for every new thread."
 msgstr ""
 
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "A folder for each project, with its threads inside."
+msgstr ""
+
 #: src/renderer/src/features/settings/DevicePicker.tsx
 msgid "A Git service, not a computer"
 msgstr ""
@@ -1214,6 +1218,10 @@ msgstr ""
 msgid "Anything the agent installed on {name} stays there, and the thread {thread} stays in your Threads list."
 msgstr ""
 
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "APIs and your own model servers"
+msgstr ""
+
 #. A Settings page, named in its rail and its heading. Other messages name it as "Settings > Appearance".
 #: src/renderer/src/features/settings/AppearanceSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
@@ -1283,7 +1291,7 @@ msgid "Asking GitHub..."
 msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
-msgid "Asks the npm registry for each client’s latest version when it connects and every five minutes. Only the package name is sent."
+msgid "Asks the npm registry for each client’s latest version when it connects and every hour. Only the package name is sent."
 msgstr ""
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
@@ -1402,6 +1410,14 @@ msgstr ""
 #. Where one client update stands: the user has to run it themselves.
 #: src/renderer/src/features/settings/hostClientUpdateWords.ts
 msgid "By hand"
+msgstr ""
+
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "By project"
+msgstr ""
+
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "By status"
 msgstr ""
 
 #. After a step that is done, as in "Signed in by the agent".
@@ -1595,15 +1611,15 @@ msgid "Checking…"
 msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
-msgid "Checks each client's published version when it connects and every five minutes. Cursor uses its install script; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates."
+msgid "Checks each client's published version when it connects and every hour. Cursor uses its install script; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates."
 msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
-msgid "Checks each client's published version when it connects and every five minutes. Muse uses its own release feed and Cursor its install script; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates."
+msgid "Checks each client's published version when it connects and every hour. Muse uses its own release feed and Cursor its install script; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates."
 msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
-msgid "Checks each client's published version when it connects and every five minutes. Muse uses its own release feed; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates."
+msgid "Checks each client's published version when it connects and every hour. Muse uses its own release feed; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates."
 msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeColorField.tsx
@@ -2860,6 +2876,11 @@ msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Global — works outside Sotto, as the popup’s does."
+msgstr ""
+
+#: src/renderer/src/features/settings/settingsPages.ts
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Group threads in the sidebar"
 msgstr ""
 
 #. A Council chamber layout: tiered seats round an altar, the chair at the back.
@@ -4522,6 +4543,10 @@ msgstr ""
 msgid "Phones…"
 msgstr ""
 
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Pi sign-ins, steering, compaction, native forks, skills, Watcher, remote hosts and phones are not available yet."
+msgstr ""
+
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Pick a color from the app"
 msgstr ""
@@ -4937,7 +4962,11 @@ msgid "Replies in threads"
 msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
-msgid "Replies, approvals and reasoning effort, on the keyless model servers you saved under Your own model servers. Change models and permissions in a thread. Replies arrive whole rather than word by word, and questions come in the reply itself."
+msgid "Replies stream as Pi writes. Threads keep their conversation after a restart, show tool calls and context use, and can be stopped. Models come from your saved servers without a key."
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Replies, approvals and reasoning effort, on the keyless model servers you saved under APIs and your own model servers. Change models and permissions in a thread. Replies arrive whole rather than word by word, and questions come in the reply itself."
 msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
@@ -5476,6 +5505,10 @@ msgstr ""
 msgid "Shows when the default branch is behind and leaves the pull to you."
 msgstr ""
 
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Sidebar"
+msgstr ""
+
 #. A family of theme colors in the theme editor
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Sidebar background"
@@ -5751,6 +5784,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Sotto runs its own OpenCode, with its own folder and its own sign-ins. The OpenCode you run yourself stays as it is."
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Sotto runs Pi in its own folder on your keyless model servers. Pi has Full access and does not ask before running tools. Pi sign-ins are not available in Sotto yet."
 msgstr ""
 
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
@@ -6932,6 +6969,10 @@ msgstr ""
 msgid "Threads with OpenCode"
 msgstr ""
 
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Threads with Pi"
+msgstr ""
+
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "Threads, pairing and settings for this host live here."
 msgstr ""
@@ -7792,6 +7833,10 @@ msgid "Working copy…"
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Working now and Recent under Needs you, as on the iPhone. Each thread names its project."
+msgstr ""
+
+#: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Working..."
 msgstr ""
 
@@ -7893,10 +7938,6 @@ msgstr ""
 
 #: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
 msgid "Your note to the overseer"
-msgstr ""
-
-#: src/renderer/src/features/settings/settingsPages.ts
-msgid "Your own model servers"
 msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx

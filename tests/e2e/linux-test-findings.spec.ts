@@ -4,7 +4,7 @@ import { chmod, cp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/prom
 import { join, resolve } from 'node:path'
 import { _electron as electron, expect, test, type Page } from '@playwright/test'
 import { AGENT_STATE } from '../../src/shared/agents'
-import { closeSotto, firstRunForwardButton, firstSottoWindow, openPage, skipThreadsTour, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, firstSottoWindow, openPage, reachSetupStop, setupForwardButton, setupNote, skipSetup, type LaunchedSotto } from './support/sottoLaunch'
 import { OMARCHY_SETUP_CHANGED } from '../../src/shared/omarchySetup'
 import { evidenceDirectory } from '../fixtures/evidence'
 import type { OmarchySetupState } from '../../src/shared/omarchySetup'
@@ -123,41 +123,22 @@ test('outside changes, removal, corner notice and launch environments on Omarchy
     await page.evaluate(() => window.sotto!.agents!.command({ type: 'configure', patch: { checkClientUpdates: false } }))
     await page.evaluate(() => window.sotto!.updateSettings({ reducedMotion: 'on' }))
     await fit(launched, 1280, 800)
-    await page.getByRole('button', { name: 'Get started' }).click()
-    await expect(page.getByRole('button', { name: 'Set up all three' })).toBeVisible()
-    await page.getByRole('button', { name: 'Set up all three' }).click()
-    await expect(page.getByText('Sotto is set up in Omarchy.', { exact: true })).toBeVisible()
-    // Remove only this proof's key line and snippet outside Sotto, then reopen the step.
-    const bindings = join(home, '.config/hypr/bindings.lua')
-    const installedBindings = await readFile(bindings, 'utf8')
-    await writeFile(bindings, '-- My bindings\n'); await rm(join(home, '.config/hypr/sotto-bindings.lua'))
-    hypr(['reload'])
-    await page.getByRole('button', { name: 'Back', exact: true }).click()
-    await page.getByRole('button', { name: 'Get started' }).click()
-    await expect(page.getByRole('button', { name: 'Set up the keys', exact: true })).toBeVisible()
-    await capture(page, 'outside-change-1280x800-dark')
-    // Keep the existing ownership boundary: explicitly restore the known require line before repairing its missing snippet.
-    await writeFile(bindings, installedBindings)
-    await page.getByRole('button', { name: 'Set up the keys', exact: true }).click()
-    await expect(page.getByText('Sotto is set up in Omarchy.', { exact: true })).toBeVisible()
-
-    // Feed the real corner card a client-update reading through its normal state channel.
+    // First-run setup's walk (ADR-0200) visits its agents stop, in Settings › Providers, before Omarchy's.
+    await setupForwardButton(page).click()
+    await expect(page.locator('.setup-walk')).toHaveAttribute('data-stop', 'agents')
+    // Feed the real corner card a client-update reading through its normal state channel: no card speaks over the walk.
     await clientNotice(launched)
     await expect(page.getByText('Client updates', { exact: true })).toHaveCount(0)
-    await page.getByRole('button', { name: 'Continue', exact: true }).click()
-    // Walk the genuine setup path; the microphone is explicitly skipped.
-    for (let n = 0; n < 4; n++) await firstRunForwardButton(page).click()
-    await expect(page.getByRole('heading', { name: 'Your coding agents' })).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Check again', exact: true })).toBeEnabled()
+    await expect(setupNote(page).getByRole('heading', { name: 'Sign in to a coding agent' })).toBeVisible()
     await clientNotice(launched, !packaged)
-    await expect(page.getByRole('button', { name: 'Continue', exact: true })).toBeVisible()
+    await expect(setupForwardButton(page)).toHaveText('Continue')
     for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]]) {
       await fit(launched, width!, height!)
       for (const appearance of ['dark', 'light'] as const) {
         await page.evaluate(appearance => window.sotto!.updateSettings({ appearance }), appearance)
         await clientNotice(launched, !packaged)
-        await expect(page.getByRole('button', { name: 'Continue', exact: true })).toBeVisible()
-        const button = firstRunForwardButton(page)
+        const button = setupForwardButton(page)
+        await expect(button).toHaveText('Continue')
         await expect(button).toBeInViewport({ ratio: 1 })
         expect(await button.evaluate(element => {
           const r = element.getBoundingClientRect()
@@ -166,9 +147,33 @@ test('outside changes, removal, corner notice and launch environments on Omarchy
         await capture(page, `onboarding-${width}x${height}-${appearance}`)
       }
     }
-    for (let n = 0; n < 3; n++) await firstRunForwardButton(page).click()
-    await page.getByRole('button', { name: 'Finish setup', exact: true }).click()
-    await skipThreadsTour(page)
+
+    await fit(launched, 1280, 800)
+    await page.evaluate(() => window.sotto!.updateSettings({ appearance: 'dark' }))
+    // The Omarchy stop lights Settings › Dictation's own Omarchy panel.
+    await reachSetupStop(page, 'omarchy')
+    const panel = page.locator('[data-setting="omarchy-setup"]')
+    await expect(panel.getByRole('button', { name: 'Set up all three' })).toBeVisible()
+    await panel.getByRole('button', { name: 'Set up all three' }).click()
+    await expect(panel.getByText('Sotto is set up in Omarchy.', { exact: true })).toBeVisible()
+    // Remove only this proof's key line and snippet outside Sotto, then come back to the stop, which reads the files again.
+    const bindings = join(home, '.config/hypr/bindings.lua')
+    const installedBindings = await readFile(bindings, 'utf8')
+    await writeFile(bindings, '-- My bindings\n'); await rm(join(home, '.config/hypr/sotto-bindings.lua'))
+    hypr(['reload'])
+    await setupNote(page).getByRole('button', { name: 'Back', exact: true }).click()
+    await expect(page.locator('.setup-walk')).not.toHaveAttribute('data-stop', 'omarchy')
+    await reachSetupStop(page, 'omarchy')
+    await expect(panel.getByRole('button', { name: 'Set up the keys', exact: true })).toBeVisible()
+    await capture(page, 'outside-change-1280x800-dark')
+    // Keep the existing ownership boundary: explicitly restore the known require line before repairing its missing snippet.
+    await writeFile(bindings, installedBindings)
+    await panel.getByRole('button', { name: 'Set up the keys', exact: true }).click()
+    await expect(panel.getByText('Sotto is set up in Omarchy.', { exact: true })).toBeVisible()
+    await expect(setupForwardButton(page)).toHaveText('Continue')
+    // Walk the rest of the genuine setup path to its last note; the microphone is explicitly skipped.
+    await reachSetupStop(page, 'end')
+    await skipSetup(page)
     await clientNotice(launched)
     await expect(page.getByText('Client updates', { exact: true })).toBeVisible()
     await page.getByRole('button', { name: 'Not now', exact: true }).click()

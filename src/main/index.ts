@@ -1,6 +1,7 @@
+import { ModelCatalogue } from './ownModelServers/catalogue'
 import { createDictationTiming } from './performance/dictationTiming'
 import { DICTATION_TIMING_ARGUMENT, dictationTimingNow, markDictationTiming } from '../shared/dictationTiming'
-import { mediaThumbnailMaker } from './agents/mediaThumbnail'
+import { KeptThumbnails, mediaEdgeMaker, mediaThumbnailMaker, ReducedPictures } from './agents/mediaThumbnail'
 import { agentCaptures, ThreadMediaStore } from './agents/threadMedia'
 import { t } from '@lingui/core/macro'
 import { cleanSettingsHistory } from './settings/privacyCleanup'
@@ -124,7 +125,7 @@ import { execFile, spawn } from 'node:child_process'
 import { appendFile, readFile, realpath, rename, stat, writeFile } from 'node:fs/promises'
 import { homedir, hostname as osHostname, release as osRelease } from 'node:os'
 import { isAbsolute, join } from 'node:path'
-import { forgetHermesKey } from './agents/hermesRuntime'
+import { HermesKeys, forgetHermesKey } from './agents/hermesRuntime'
 
 import {
   bootstrapSotto,
@@ -265,7 +266,7 @@ import {
   isTrustedMainE2ESender,
   snapshotE2EState,
 } from './e2e/e2eBoundary'
-import { E2E_SNAPSHOT_CHANNEL, E2E_TRIGGER_SHORTCUT_CHANNEL, E2E_BROWSER_AGENT_CHANNEL, E2E_HOST_SETUP_TOOL_CHANNEL, E2E_VISUAL_TOOL_CHANNEL, E2E_MEDIA_TOOL_CHANNEL, E2E_DELEGATION_TOOL_CHANNEL, e2eBrowserAgentSchema, e2eHostSetupToolSchema, e2eVisualToolSchema, e2eDelegationToolSchema, e2eAgentEventSchema } from '../shared/e2e'
+import { E2E_COMPUTER_NAME, E2E_SNAPSHOT_CHANNEL, E2E_TRIGGER_SHORTCUT_CHANNEL, E2E_BROWSER_AGENT_CHANNEL, E2E_HOST_SETUP_TOOL_CHANNEL, E2E_VISUAL_TOOL_CHANNEL, E2E_MEDIA_TOOL_CHANNEL, E2E_DELEGATION_TOOL_CHANNEL, e2eBrowserAgentSchema, e2eHostSetupToolSchema, e2eVisualToolSchema, e2eDelegationToolSchema, e2eAgentEventSchema } from '../shared/e2e'
 import { AGENT_STATE, AGENT_E2E, AGENT_THREAD_DETAIL } from '../shared/agents'
 import { AgentCredentials } from './agents/credentials'
 import { migrateDesktopKey } from './settings/migrateDesktopKey'
@@ -898,12 +899,17 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const applyInterfaceLanguage = (current: AppSettings): Promise<boolean> =>
     interfaceLanguage.apply(current).catch(() => { logOperational('interface-language-load-failed'); return false })
   await applyInterfaceLanguage(startupSettings)
-  // The user's own model servers (ADR-0124): an Owl feature run by this computer's OpenCode and DeepSeek Harness
-  // (ADR-0138), so it exists only while the Owl list turns it on, one of them is not held and the local host runs.
-  // Otherwise main keeps the record untouched, gives neither a server, passes no renderer argument and registers no channel.
-  const ownServers: OwnServers | undefined = owlFeatures['own-model-servers'] && (!heldProviders.has('opencode') || !heldProviders.has('deepseek') || !heldProviders.has('hermes')) && startupSettings.localHostEnabled
-    ? new OwnServers({ directory: userDataPath, openCode: (): OwnServersOpenCode | undefined => localRuntime?.ownServersOpenCode,
+  // The user's own model servers (ADR-0124): an Owl feature used by this computer's OpenCode, DeepSeek, Hermes or Pi,
+  // so it exists only while the Owl list turns it on, one provider is not held and the local host runs.
+  // Otherwise main keeps the record untouched, gives no provider a server, passes no renderer argument and registers no channel.
+  const ownServers: OwnServers | undefined = owlFeatures['own-model-servers'] && (!heldProviders.has('opencode') || !heldProviders.has('deepseek') || !heldProviders.has('hermes') || !heldProviders.has('pi')) && startupSettings.localHostEnabled
+    ? new OwnServers({ directory: userDataPath, ...(e2eConfiguration ? { catalogue: new ModelCatalogue(async () => { throw new Error('E2E_NETWORK_DISABLED') }) } : {}), openCode: (): OwnServersOpenCode | undefined => localRuntime?.ownServersOpenCode,
       deepSeek: (): OwnServersDeepSeek | undefined => localRuntime?.ownServersDeepSeek, hermes: (): OwnServersHermes | undefined => localRuntime?.ownServersHermes,
+      readKey: async id => (await new HermesKeys(join(userDataPath, 'hermes', 'own-server-keys.json')).read())[id],
+      replaceHeldHermesKey: async (id, key) => {
+        const keys = new HermesKeys(join(userDataPath, 'hermes', 'own-server-keys.json'))
+        if ((await keys.read())[id] !== undefined) await keys.keep(id, key)
+      },
       forgetHermesKey: id => forgetHermesKey(join(userDataPath, 'hermes'), id), log: event => { logOperational(event) } }) : undefined
   // AI cleanup on the user's own servers (ADR-0136): its own Owl entry, and only where both the cleanup model and Your own
   // model servers exist this run. Otherwise the cleanup pass is given no server, no channel is registered, and the saved
@@ -1099,6 +1105,9 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   // What the end-to-end fixture providers capture on their own: what the runtime gives its own (ADR-0170, part 7).
   const showEveryAgentPicture = (): boolean => workingCopySettings.showEveryAgentPicture
   const fixtureCaptures = threadMedia ? agentCaptures(threadMedia, showEveryAgentPicture) : {}
+  // The thumbnails main makes, for the window's tiles and for the copies a phone asks for at a longest edge
+  // (`thread-media-edge`, ADR-0170): one budget in bytes for both.
+  const keptThumbnails = new KeptThumbnails()
   // Teams (ADR-0186): an Owl feature on a desktop with a Watcher. An ask reaches only these reads and one side call with no
   // tools, and nothing here can send to a thread, answer a card or change a permission (ADR-0187).
   let teamReads: { readonly watcher: import('./agents/watcher').WatcherService | undefined; readonly host: { writeShortTextOn?: import('./agents/host').AgentHost['writeShortTextOn'] } } | undefined
@@ -1124,6 +1133,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     answerImages: owlFeatures['answer-images'], nextTurnChoice: owlFeatures['next-turn-choice'],
     inlineMedia: owlFeatures['inline-media'], showEveryAgentPicture,
     ...threadMedia ? { threadMedia } : {},
+    reducedPictures: new ReducedPictures(mediaEdgeMaker(url => nativeImage.createFromDataURL(url)), keptThumbnails),
     // Clearing settled threads (ADR-0140): Owl's answer, read once here. The log names the event and a count or a reason's code.
     clearThreadsEnabled: owlFeatures['clear-threads'], clearLog: (event, detail) => { console.error(`[Sotto] ${event} ${detail}`) },
     ...(ownServers ? { ownServers: () => ownServers.list() } : {}),
@@ -1214,7 +1224,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     ...cascadedSettles ? { cascadedSettles } : {},
     attachAnyFile: owlFeatures['attach-any-file'],
     // Pictures in threads (ADR-0170): their tile thumbnails are made here, on this desktop, for every host's threads.
-    ...owlFeatures['inline-media'] ? { mediaThumbnail: mediaThumbnailMaker(url => nativeImage.createFromDataURL(url)) } : {},
+    ...owlFeatures['inline-media'] ? { mediaThumbnail: mediaThumbnailMaker(url => nativeImage.createFromDataURL(url)), mediaTiles: keptThumbnails } : {},
     bindRequestDraftDecision: (target, decisionId, answers) => requestDrafts.bindDecision(target, decisionId, answers),
     // A paired host's deleted thread takes the answer drafts this computer kept for it (ADR-0140).
     threadsDeleted: threadIds => { void requestDrafts.forgetThreads(new Set(threadIds)).catch(() => undefined) },
@@ -1450,6 +1460,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const phoneAccess = new PhoneAccess({ featureUsed: feature => productEvents.featureUsed(feature), directory: userDataPath, listener: { sottoVersion: hostVersion, delegation: delegationEnabled, ...(phoneCompression ? {} : { compressPhones: false }) },
     service: startupSettings.localHostEnabled ? hostService : undefined,
     tailscale: e2eConfiguration === null ? new TailscaleCli() : e2eTailscale(userDataPath),
+    // An E2E run names no real machine, so a capture or a check reads the same on every computer.
+    ...(e2eConfiguration === null ? {} : { hostname: () => E2E_COMPUTER_NAME }),
     settings: () => workingCopySettings, policy: authority,
     openExternal: async url => { if (e2eConfiguration === null) await shell.openExternal(url) },
     log: logOperational,

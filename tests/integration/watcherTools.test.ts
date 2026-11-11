@@ -1221,19 +1221,20 @@ const waitingNews = (f: Awaited<ReturnType<typeof fixture>>): string | undefined
 const waitingEvidence = (f: Awaited<ReturnType<typeof fixture>>): boolean => queued(f).some(candidate => candidate.threadId === f.id && candidate.wakeUp
   && (candidate.news ?? []).some(item => isWatcherNews(item) && item.events.some(event => event.kind === 'evidence-changed')))
 
-it.each(['finish', 'question', 'failure'] as const)('wakes the master from fake-provider %s through the existing queue without answering', async kind => {
+it.each(['finish', 'question', 'permission', 'failure'] as const)('wakes the master from fake-provider %s through the existing queue without answering', async kind => {
   const f = await fixture(false), started = await f.call('start_thread', f.start())
   if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
   const binding = f.workspace.registry.byThread(started.target.threadId)!
   const native = f.workspace.adapters.codex.state.threads.find(thread => thread.id === binding.sessionId)!
   // Keep the master busy while news folds, then release its real follow-up pump.
   if (kind === 'question') native.requests = [{ id: 'private-card', kind: 'question', text: 'private_worker_question_82ac', options: [] }]
+  else if (kind === 'permission') native.requests = [{ id: 'private-permission', kind: 'permission', text: 'private_worker_command_91cd', options: [], context: { toolName: 'Bash', command: 'private_worker_command_91cd', summary: 'Runs the build' } }]
   else { native.status = kind === 'failure' ? 'error' : 'idle'; native.lastTurn = { id: 'wake-proof-turn', status: kind === 'failure' ? 'failed' : 'completed' }; if (kind === 'failure') native.activities = [{ id: 'native-error', turnId: 'wake-proof-turn', sequence: 0, kind: 'turn', status: 'failed', title: 'private_worker_error_73ff' }] }
   f.workspace.adapters.codex.emit()
   await vi.waitFor(() => expect(waitingNews(f)).toBeDefined(), { timeout: 15_000 })
   const expected = kind === 'finish' ? 'foreground turn finished' : kind === 'failure' ? 'turn failed' : 'waits on the user to answer'
   expect(waitingNews(f)).toContain(expected)
-  expect(waitingNews(f)).not.toMatch(/private_worker_(question|error)/)
+  expect(waitingNews(f)).not.toMatch(/private_worker_(question|error|command)/)
   // Waiting, it is in no queue panel or transcript.
   expect(f.control.shell().followups?.filter(item => item.threadId === f.id)).toEqual([])
   if (kind === 'failure') expect(f.service.state().watchedThreads.find(thread => thread.target.threadId === started.target.threadId)!.evidence)
@@ -1246,6 +1247,9 @@ it.each(['finish', 'question', 'failure'] as const)('wakes the master from fake-
   expect(sent).toMatchObject({ text: WATCHER_WAKE_UP_PROMPT })
   // A question's news says what it asks, in the worker's words, worked out as it goes and saved nowhere (#2230).
   if (kind === 'question') expect(sent.type === 'send' && sent.watcherNews).toContain('Its question, in the worker\'s words: "private_worker_question_82ac".')
+  // A permission card's news says its tool and summary, never its command (#2433).
+  if (kind === 'permission') expect(sent.type === 'send' && sent.watcherNews).toContain('It asks to use "Bash". Its summary, in the worker\'s words: "Runs the build".')
+  expect(sent.type === 'send' && sent.watcherNews).not.toContain('private_worker_command')
   // Sent, Watcher's conversation shows neither the message nor the news.
   await f.control.commandShell({ type: 'observe-threads', threadIds: [f.id] }); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
   await vi.waitFor(() => expect(f.control.get().host.threads.find(thread => thread.id === f.id)!.messages.map(message => message.text)).toContain('Synthetic Watcher user request'))
@@ -2535,7 +2539,7 @@ it('gives the merge queue and each watched thread’s open pull requests from li
 
 // #2229: a GO MERGE is checked against the merge train and the base branch before it goes, and goes past them only with
 // Watcher's reason, which its receipt carries for the user.
-it('refuses a GO MERGE while another train pull request runs its required checks or main is red, and sends it with a reason the receipt shows', async () => {
+it('refuses a GO MERGE while another train pull request runs its checks or main is red, and sends it with a reason the receipt shows', async () => {
   let base: BaseBranchChecks = { branch: 'main', head: 'd'.repeat(40), state: 'passed' }
   const asked: string[] = []
   const f = await fixture(true, { baseBranchChecks: async url => { asked.push(url); return base } })
@@ -2566,18 +2570,23 @@ it('refuses a GO MERGE while another train pull request runs its required checks
   const held = await send({ pullRequest: url(5) })
   expect(held).toMatchObject({ status: 'refused', code: 'MERGE_TURN_HELD' })
   if (held.status !== 'refused') throw new Error('sent')
-  expect(held.message).toContain('#7 in “Synthetic worker” has its required checks running.')
+  expect(held.message).toContain('#7 in “Synthetic worker” has checks running.')
   expect(held.message).toContain('goMerge.overrideReason')
   expect(asked).toEqual([url(5)])
   // Main red holds every merge turn, its own pull request's too.
   base = { ...base, state: 'failed' }
   expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: second.target, delivery: 'now', text: 'GO MERGE #7', goMerge: { pullRequest: url(7) } }))
     .toMatchObject({ status: 'refused', code: 'MERGE_TURN_HELD', message: expect.stringContaining('main is red: checks failed on its newest commit, dddddddddddd.') })
-  base = { ...base, state: 'passed' }
+  // Main's newest commit has no finished checks yet, and the one before it failed (#2431).
+  base = { ...base, newest: 'e'.repeat(40) }
+  expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: second.target, delivery: 'now', text: 'GO MERGE #7', goMerge: { pullRequest: url(7) } }))
+    .toMatchObject({ status: 'refused', code: 'MERGE_TURN_HELD', message: expect.stringContaining('main is red: checks failed on dddddddddddd, its newest commit whose checks have finished; eeeeeeeeeeee, after it, has none finished yet.') })
+  base = { branch: base.branch, head: base.head, state: 'passed' }
+  // The receipt names the commit it read (#2431): here #5's overridden send below says main passed on its newest commit.
   const reason = 'Zach asked for #5 before the release, and #7 merges main in after it anyway.'
   const retryKey = randomUUID(), call = { requestId: f.requestId, retryKey, target: first.target, delivery: 'now', text: 'GO MERGE #5', goMerge: { pullRequest: url(5), overrideReason: reason } }
   const sent = await f.call('send_to_thread', call)
-  expect(sent).toMatchObject({ status: 'ok', goMerge: { held: ['#7 in “Synthetic worker” has its required checks running.'], overrideReason: reason } })
+  expect(sent).toMatchObject({ status: 'ok', goMerge: { held: ['#7 in “Synthetic worker” has checks running.'], overrideReason: reason, note: 'main’s checks passed on its newest commit, dddddddddddd.' } })
   if (sent.status !== 'ok' || !('receipt' in sent)) throw new Error('refused')
   // A retry answers as the send did, and the room carries the reason for its receipt card.
   expect(await f.call('send_to_thread', call)).toEqual(sent)
