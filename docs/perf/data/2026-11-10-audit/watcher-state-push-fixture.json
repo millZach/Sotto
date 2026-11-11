@@ -1,0 +1,52 @@
+{
+ "source": "fixture",
+ "rounds": 15,
+ "160 requests": {
+  "requests": 160,
+  "operations": 160,
+  "progress": 40,
+  "jsonBytes": 304142,
+  "wireBytes": 30018,
+  "hostMs": {
+   "stringify": 0.5,
+   "deflate": 1.4,
+   "total": 1.9
+  },
+  "desktopMs": {
+   "inflate": 0.4,
+   "parse": 0.6,
+   "schema": 1.8,
+   "total": 2.8
+  },
+  "atLiveRate": {
+   "pushesPerSecond": 2.1,
+   "hostCorePercent": 0.4,
+   "desktopMainCorePercent": 0.6,
+   "wireBytesPerSecond": 63038
+  }
+ },
+ "925 requests": {
+  "requests": 925,
+  "operations": 925,
+  "progress": 40,
+  "jsonBytes": 1720412,
+  "wireBytes": 161554,
+  "hostMs": {
+   "stringify": 2.3,
+   "deflate": 7.7,
+   "total": 10
+  },
+  "desktopMs": {
+   "inflate": 1.6,
+   "parse": 2.8,
+   "schema": 6.6,
+   "total": 11
+  },
+  "atLiveRate": {
+   "pushesPerSecond": 2.1,
+   "hostCorePercent": 2.1,
+   "desktopMainCorePercent": 2.3,
+   "wireBytesPerSecond": 339263
+  }
+ }
+}

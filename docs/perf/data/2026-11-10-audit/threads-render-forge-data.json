@@ -1,0 +1,51 @@
+{
+ "threads": 161,
+ "messages": 18903,
+ "openThreadMessages": 1161,
+ "secondPaneMessages": 1119,
+ "updates": 20,
+ "rows": {
+  "1 pane, nothing changed": {
+   "msPerUpdate": 3.23,
+   "reactMsPerUpdate": 2.51,
+   "composerMsPerUpdate": 0,
+   "toolbarMsPerUpdate": 0,
+   "commits": 20
+  },
+  "1 pane, chunk on the open thread": {
+   "msPerUpdate": 24.18,
+   "reactMsPerUpdate": 7.56,
+   "composerMsPerUpdate": 1.2,
+   "toolbarMsPerUpdate": 0,
+   "commits": 20
+  },
+  "1 pane, chunk on a thread not on screen": {
+   "msPerUpdate": 18.99,
+   "reactMsPerUpdate": 3.92,
+   "composerMsPerUpdate": 0,
+   "toolbarMsPerUpdate": 0,
+   "commits": 20
+  },
+  "2 panes, nothing changed": {
+   "msPerUpdate": 1.59,
+   "reactMsPerUpdate": 0.88,
+   "composerMsPerUpdate": 0,
+   "toolbarMsPerUpdate": 0,
+   "commits": 20
+  },
+  "2 panes, chunk on the open thread": {
+   "msPerUpdate": 23.78,
+   "reactMsPerUpdate": 6.92,
+   "composerMsPerUpdate": 1.06,
+   "toolbarMsPerUpdate": 0,
+   "commits": 20
+  },
+  "2 panes, chunk on a thread not on screen": {
+   "msPerUpdate": 18.04,
+   "reactMsPerUpdate": 4.13,
+   "composerMsPerUpdate": 0,
+   "toolbarMsPerUpdate": 0,
+   "commits": 20
+  }
+ }
+}

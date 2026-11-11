@@ -1,0 +1,76 @@
+{
+ "runs": 5,
+ "platform": "linux",
+ "summary": {
+  "askedToWindowMs": {
+   "median": 982,
+   "min": 972,
+   "max": 1020
+  },
+  "askedToPageStartMs": {
+   "median": 674,
+   "min": 665.4,
+   "max": 687.7
+  },
+  "pageStartToDomMs": {
+   "median": 310.9,
+   "min": 305.6,
+   "max": 331.4
+  },
+  "pageStartToFirstPaintMs": {
+   "median": 508,
+   "min": 500,
+   "max": 548
+  },
+  "askedToFirstPaintMs": {
+   "median": 1182,
+   "min": 1165.4,
+   "max": 1235.7
+  },
+  "processes": {
+   "median": 6,
+   "min": 6,
+   "max": 6
+  },
+  "mainMemoryMb": {
+   "median": 322,
+   "min": 321,
+   "max": 322.2
+  },
+  "mainCpuPercent": {
+   "median": 0,
+   "min": 0,
+   "max": 0
+  },
+  "rendererMemoryMb": {
+   "median": 393.2,
+   "min": 392.6,
+   "max": 394.6
+  },
+  "rendererCpuPercent": {
+   "median": 0,
+   "min": 0,
+   "max": 0
+  },
+  "renderers": {
+   "median": 2,
+   "min": 2,
+   "max": 2
+  },
+  "gpuMemoryMb": {
+   "median": 135.8,
+   "min": 130.6,
+   "max": 136.6
+  },
+  "allMemoryMb": {
+   "median": 1016.9,
+   "min": 1014.4,
+   "max": 1019.8
+  },
+  "allCpuPercent": {
+   "median": 0,
+   "min": 0,
+   "max": 0
+  }
+ }
+}

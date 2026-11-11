@@ -1,0 +1,28 @@
+{
+ "source": "a saved record",
+ "rounds": 15,
+ "record": {
+  "requests": 928,
+  "operations": 933,
+  "progress": 132,
+  "jsonBytes": 2086237,
+  "wireBytes": 374132,
+  "hostMs": {
+   "stringify": 2.7,
+   "deflate": 15.4,
+   "total": 18.1
+  },
+  "desktopMs": {
+   "inflate": 3.1,
+   "parse": 2.5,
+   "schema": 7.9,
+   "total": 13.5
+  },
+  "atLiveRate": {
+   "pushesPerSecond": 2.1,
+   "hostCorePercent": 3.8,
+   "desktopMainCorePercent": 2.8,
+   "wireBytesPerSecond": 785677
+  }
+ }
+}
