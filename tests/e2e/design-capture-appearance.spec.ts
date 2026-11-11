@@ -144,7 +144,8 @@ test.describe('authoritative design-review captures', () => {
       await setMainWindowWidth(launched, DESIGN_CAPTURE_MINIMUM_WIDTH)
       for (const theme of appThemes) {
         if (theme === 'light') await setAppearance(page, { appearance: 'light' }, 'light')
-        await page.getByRole('tab', { name: 'Dictate', exact: true }).click()
+        // Below a 1000 pixel window the sidebar stands as the rail, which carries no room switch: its page key reaches Dictate.
+        await page.keyboard.press('ControlOrMeta+1')
         await assertDictateState(page, 'idle', /ready when you are/i)
         await capturePage(page, `width-${DESIGN_CAPTURE_MINIMUM_WIDTH}-dictate-${theme}.png`, { theme })
         await page.getByRole('link', { name: 'Settings' }).click()
