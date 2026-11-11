@@ -59,7 +59,7 @@ import { coordinatorSetupThreads } from './hosts/hostSetupThreads'
 import type { DesktopLocalRuntime } from './hosts/localRuntime'
 import { inactiveLocalHost, emptyDesktopState, requireLocalHistoryCleanup } from './hosts/inactiveLocalHost'
 import { registerHostsIpc } from './hosts/ipc'
-import { PhoneAccess, type PhoneAccessEvent } from './phones/phoneAccess'
+import { PhoneAccess, phonesCompressed, type PhoneAccessEvent } from './phones/phoneAccess'
 import { LocalApps, type LocalAppsEvent } from './phones/localApps'
 import { TailscaleCli, tailscaleInvoker } from './phones/tailscale'
 import { HostTailscale } from './hosts/tailscale'
@@ -372,6 +372,10 @@ if (e2eConfiguration === null) {
   app.setPath('userData', e2eConfiguration.userDataPath)
   failE2EOnUncaughtException(process, text => process.stderr.write(text), code => app.exit(code))
 }
+// Whether the phone listener compresses for phones (ADR-0025, November 10 amendment): read once, before any provider
+// starts, so no process Sotto starts inherits `SOTTO_HOST_COMPRESS_PHONES=0`, as a headless host reads it (#2394).
+const phoneCompression = phonesCompressed(process.env)
+delete process.env.SOTTO_HOST_COMPRESS_PHONES
 
 // The only read of process.platform in the application; every platform-varying
 // decision resolves through this profile.
@@ -1443,7 +1447,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     acquireStart: workspace => agentHost.acquireTerminalStart(workspace.workingDirectory),
     runCommandEnabled: owlFeatures['run-command'],
     emit: event => { windows.sendToMain(TERMINAL_EVENT, event) } })
-  const phoneAccess = new PhoneAccess({ featureUsed: feature => productEvents.featureUsed(feature), directory: userDataPath, listener: { sottoVersion: hostVersion, delegation: delegationEnabled },
+  const phoneAccess = new PhoneAccess({ featureUsed: feature => productEvents.featureUsed(feature), directory: userDataPath, listener: { sottoVersion: hostVersion, delegation: delegationEnabled, ...(phoneCompression ? {} : { compressPhones: false }) },
     service: startupSettings.localHostEnabled ? hostService : undefined,
     tailscale: e2eConfiguration === null ? new TailscaleCli() : e2eTailscale(userDataPath),
     settings: () => workingCopySettings, policy: authority,

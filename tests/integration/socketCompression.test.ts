@@ -1,8 +1,10 @@
 // @vitest-environment node
 /**
  * `permessage-deflate` on the host socket (ADR-0025, October 18 amendment): a desktop that offers it is sent its messages
- * compressed, and nobody else is, whatever they offer, unless the listener's phone compression switch is on (the November
- * 10 amendment, #2394), and then a phone that offers it is sent its messages as a desktop is.
+ * compressed; and since the November 10 amendment (#2394) so is a phone that offers it, on a listener that compresses for
+ * phones, as every phone listener does unless its host was started with `SOTTO_HOST_COMPRESS_PHONES=0`. A listener
+ * started here without `compressPhones` stands for a phone listener on a host started so, or for the local apps listener:
+ * it compresses for no phone.
  */
 import { connect, createServer, type AddressInfo, type Server } from 'node:net'
 import type { Duplex } from 'node:stream'
@@ -62,7 +64,7 @@ const serviceWithLongThread = (detail: AgentThreadDetail): HostService => ({
   subscribeThreadDetail: () => () => undefined,
 })
 /** A listener shaped like a headless host's tailnet listener, where no client is recorded as a desktop, so every peer is a phone. */
-const phoneListener = (service: HostService, compressPhones: boolean) => listen({ service, admin: false, ...(compressPhones ? { compressPhones } : {}),
+const phoneListener = (service: HostService, compressPhones: boolean) => listen({ service, admin: false, compressPhones,
   tailnet: { phonesAdmitted: () => true, desktops: { has: () => false, refresh: async () => undefined } } })
 type WireFrame = { fin: boolean; rsv1: boolean; opcode: number; size: number }
 /**
@@ -135,7 +137,7 @@ describe('compressed host socket messages', () => {
     expect(plain.frames.isClosed).toBe(false)
   })
 
-  it('accepts the offer of a desktop on a listener that tells desktops apart, and refuses a phone that offers it', async () => {
+  it('accepts the offer of a desktop on a listener that tells desktops apart, and with phone compression off refuses a phone that offers it', async () => {
     const desktop = await session('Sotto desktop'), phone = await session('Zach’s iPhone'), late = await session('Late desktop')
     const desktops = new Set([desktop.paired.clientId])
     let reads = 0
@@ -147,20 +149,22 @@ describe('compressed host socket messages', () => {
     expect(computer.frames.deflate).toBe(true)
     expect(await computer.call('hello', { op: 'hello' })).toMatchObject({ ok: true })
 
-    // An Android phone's OkHttp offers the extension by default; a phone is left uncompressed all the same.
+    // A phone is left uncompressed on a listener with phone compression off, whatever it offers: an Android phone's OkHttp
+    // offers the extension by default.
     const handset = await peer(port, phone.session, 'permessage-deflate; client_max_window_bits')
     expect(handset.extensions).toBeUndefined()
     expect(handset.frames.deflate).toBe(false)
     expect(await handset.call('hello', { op: 'hello' })).toMatchObject({ ok: true })
     expect(handset.frames.isClosed).toBe(false)
-    // So is an iPhone, whose URLSession offers the extension bare, while the phone compression switch is off.
+    // So is an iPhone, whose URLSession offers the extension bare.
     const iphone = await peer(port, phone.session, IPHONE_OFFER)
     expect(iphone.extensions).toBeUndefined()
     expect(iphone.frames.deflate).toBe(false)
     expect(await iphone.call('hello', { op: 'hello' })).toMatchObject({ ok: true })
     expect(iphone.frames.isClosed).toBe(false)
 
-    // A desktop the launch script recorded after the listener last read the record is found by reading it again.
+    // A desktop the launch script recorded after the listener last read the record is found by reading it again, which only
+    // a listener with phone compression off needs: compression is settled at the upgrade.
     const recorded = await peer(port, late.session, DEFLATE_OFFER)
     expect(recorded.frames.deflate).toBe(true)
     expect(reads).toBeGreaterThan(0)
@@ -192,12 +196,20 @@ describe('compressed host socket messages', () => {
     expect(upgrades.slice(-2)).toEqual([true, false])
   })
 
-  it('compresses nothing on the desktop’s own phone listener, and a desktop client there reads its messages uncompressed', async () => {
+  it('compresses on the desktop’s own phone listener, and with phone compression off a desktop client there reads its messages uncompressed', async () => {
+    // As phone access starts it: a client that offers is answered, whether or not it is a desktop.
+    const compressing = await listen({ admin: false, compressPhones: true })
+    const handset = await peer(compressing.descriptor.port, (await session('Zach’s iPhone', compressing.descriptor.port)).session, IPHONE_OFFER)
+    expect(handset.extensions).toBe(DEFLATE_RESPONSE)
+    expect(handset.frames.deflate).toBe(true)
+    expect(await handset.call('hello', { op: 'hello' })).toMatchObject({ ok: true })
+
+    // As phone access starts it with SOTTO_HOST_COMPRESS_PHONES=0: nothing is.
     const listener = await listen({ admin: false })
-    const phone = await session('Zach’s iPhone', listener.descriptor.port)
-    const handset = await peer(listener.descriptor.port, phone.session, DEFLATE_OFFER)
-    expect(handset.extensions).toBeUndefined()
-    expect(handset.frames.deflate).toBe(false)
+    const phone = await session('Other iPhone', listener.descriptor.port)
+    const plain = await peer(listener.descriptor.port, phone.session, DEFLATE_OFFER)
+    expect(plain.extensions).toBeUndefined()
+    expect(plain.frames.deflate).toBe(false)
     // The desktop's client offers the extension to every host; one that answers without it, as an older host does, still serves it.
     const client = new SocketHostService({ url: phone.url, token: phone.paired.token }); fixture.clients.push(client)
     await client.connect()

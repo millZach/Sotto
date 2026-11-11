@@ -24,7 +24,7 @@ import { ProviderSignIns, type ProviderSignInOptions } from './providerSignIn'
 import { startHostPhoneAccess, type HostPhoneAccess } from './phones'
 import { DesktopClients } from './desktopClients'
 import { CommandReceipts } from './commandReceipts'
-import type { PhoneAccessTailscale } from '../main/phones/phoneAccess'
+import { phonesCompressed, type PhoneAccessTailscale } from '../main/phones/phoneAccess'
 import { version as packageVersion } from '../../package.json'
 import { getReleaseTrack } from '../shared/releaseTrack'
 import { owlFeaturesForTrack, type OwlFeatureStates } from '../shared/owlFeatures'
@@ -85,9 +85,8 @@ export interface HeadlessHostOptions {
   /** Tests stand a local releases page in for a host that updates itself; a host always uses the published one. */
   releasesUrl?: string
   /**
-   * Its tailnet listener answers a phone's `permessage-deflate` offer and compresses what it sends that phone as it does a
-   * desktop's (#2394). Off by default; `SOTTO_HOST_COMPRESS_PHONES=1` turns it on, for a test host a real iPhone is checked
-   * against before any phone is compressed (ADR-0025, November 10 amendment).
+   * Whether its tailnet listener answers a phone's `permessage-deflate` offer and compresses what it sends that phone as it
+   * does a desktop's (ADR-0025, November 10 amendment): yes unless false. `SOTTO_HOST_COMPRESS_PHONES=0` makes it false.
    */
   compressPhones?: boolean
 }
@@ -335,7 +334,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         phones = startHostPhoneAccess({ directory, service: runtime.hostService, pairing, policy, settings, startup,
           desktops, listener: { onProductEventAnswer, signIns, ...opencodeSignIn, watcherDesktops: desktops, clientUpdates: true, receipts, pullRequestConfirmations, about, delegation, ...hostUpdate, ...listenerServices, ...(options.sottoVersion ? { sottoVersion: options.sottoVersion } : {}),
             // Phones reach only the tailnet listener; the one with the administrative routes counts every client a desktop.
-            ...(options.compressPhones ? { compressPhones: true } : {}) },
+            ...(options.compressPhones === false ? { compressPhones: false } : {}) },
           ...(options.tailscale ? { tailscale: options.tailscale } : {}), ...(options.log ? { log: options.log } : {}) })
         const tailnet = phones
         listener = await startSocketServer({ onProductEventAnswer, service: runtime.hostService, pairing, port: options.port, signIns, ...opencodeSignIn, clientUpdates: true, phones: tailnet.administration,
@@ -425,8 +424,8 @@ export function parseHostArguments(args: readonly string[], env: NodeJS.ProcessE
   if (!dataDirectory?.trim()) throw new HostArgumentError('Choose a host data folder with --data or SOTTO_HOST_DATA.')
   return { dataDirectory: resolve(dataDirectory), port, ...(keyFile ? { keyFile: resolve(keyFile) } : {}),
     ...(startedBySotto(env.SOTTO_HOST_STARTED_BY) ? { startedBy: env.SOTTO_HOST_STARTED_BY } : {}),
-    // Only for a test host, until a real iPhone reads compressed messages (#2394): Sotto never starts a host with it.
-    ...(env.SOTTO_HOST_COMPRESS_PHONES === '1' ? { compressPhones: true } : {}) }
+    // On unless set to exactly 0, the way to stop compressing for phones without a release (#2394).
+    ...(phonesCompressed(env) ? {} : { compressPhones: false }) }
 }
 
 /**
@@ -482,8 +481,8 @@ export async function runHeadlessCommandLine(): Promise<void> {
     // Read once: the provider processes this host starts must not inherit the mark, nor the phone compression switch.
     delete process.env.SOTTO_HOST_STARTED_BY
     delete process.env.SOTTO_HOST_COMPRESS_PHONES
-    // Said at start, so whoever runs a test host can see the switch took.
-    if (options.compressPhones) console.error('[Sotto] phone-compression-on')
+    // Said at start, so whoever turned phone compression off can see it took.
+    if (options.compressPhones === false) console.error('[Sotto] phone-compression-off')
     // The entry this process runs is where the host was installed, which a host that updates itself reads (ADR-0088).
     host = await startHeadlessHost({ ...options, ...(process.argv[1] ? { entryPath: process.argv[1] } : {}), log: event => console.error('[Sotto] ' + event) })
     if (stopping) stop()

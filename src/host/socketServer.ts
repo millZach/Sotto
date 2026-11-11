@@ -210,9 +210,10 @@ export interface SocketServerOptions {
    */
   tailnet?: TailnetAdmission
   /**
-   * A phone that offers `permessage-deflate` is answered and sent compressed messages as a desktop is (#2394). Off by
-   * default, so no phone is, until a real iPhone is seen to read them (ADR-0025, November 10 amendment). A headless host
-   * turns it on for its tailnet listener when started with `SOTTO_HOST_COMPRESS_PHONES=1`.
+   * A phone that offers `permessage-deflate` is answered and sent compressed messages as a desktop is (ADR-0025, November
+   * 10 amendment). Every phone listener turns it on (`PhoneAccess`), the desktop's and a headless host's tailnet listener,
+   * unless its host was started with `SOTTO_HOST_COMPRESS_PHONES=0`. Off when left out, as on the local apps listener,
+   * where loopback gains nothing from it.
    */
   compressPhones?: boolean
   /** The host's tailnet address and who started it, read for each health and hello answer. */
@@ -506,9 +507,9 @@ export async function startSocketServer(options: SocketServerOptions) {
   const admits = (clientId: string): boolean => isDesktop(clientId) || (tailnet?.phonesAdmitted() ?? true)
   /**
    * Whether a client that offers `permessage-deflate` is sent compressed messages: a desktop, on a listener that tells
-   * desktops apart or is reached only through SSH (ADR-0025, October 18 amendment). No phone is, on any listener, unless
-   * `compressPhones` is on (the November 10 amendment): without it the desktop's own phone listener, which serves no
-   * desktop, compresses nothing.
+   * desktops apart or is reached only through SSH (ADR-0025, October 18 amendment); and any client, a phone among them, on
+   * a listener with `compressPhones` on (the November 10 amendment). Without it a phone is not, and a listener that serves
+   * no desktop (no administrative routes and no `tailnet`) compresses nothing.
    */
   const compresses = (clientId: string): boolean => options.compressPhones === true || (options.admin !== false || tailnet !== undefined) && isDesktop(clientId)
   const phonesOffMessage = (): string => phonesOff(options.name?.())

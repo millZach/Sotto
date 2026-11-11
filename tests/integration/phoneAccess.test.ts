@@ -11,6 +11,8 @@ import { PolicyStore } from '../../src/main/memory/policies'
 import { MemoryStore } from '../../src/main/memory/store'
 import { PhoneAccess, type PhoneAccessTailscale } from '../../src/main/phones/phoneAccess'
 import { serveTarget } from '../../src/main/phones/tailscale'
+import { DEFLATE_RESPONSE } from '../../src/host/socketFrames'
+import { rawPeer } from '../fixtures/rawHostPeer'
 
 /**
  * The desktop's phone listener over a real host service and the real socket server: what a phone sees
@@ -122,6 +124,35 @@ it('closes every phone’s socket when phone access turns off', async () => {
   await expect.poll(() => access.get().phase).toBe('off')
   await expect.poll(() => access.get().phones[0]?.connected).toBe(false)
   await expect(fetch(await url() + '/v1/health')).rejects.toBeDefined()
+})
+
+it('compresses what it sends a phone that offers permessage-deflate, unless Sotto was started with phone compression off (#2394)', async () => {
+  const { paired } = await pairPhone()
+  /** The phone's socket, offering the extension bare, as the iPhone's URLSession does, or nothing. */
+  const phone = async (offer?: string) => {
+    const port = Number(new URL(await url()).port)
+    const { session } = await (await fetch(`http://127.0.0.1:${port}/v1/session`, { method: 'POST', headers: { Authorization: `Bearer ${paired.token}` } })).json() as { session: string }
+    const peer = await rawPeer(port, session, offer ? { offer } : {})
+    expect(await peer.call('hello', { op: 'hello' })).toMatchObject({ ok: true })
+    peer.frames.close()
+    return peer
+  }
+  // As Sotto starts it: the iPhone's offer is answered as a desktop's is, and a phone that offers nothing gets nothing.
+  const compressed = await phone('permessage-deflate')
+  expect(compressed.extensions).toBe(DEFLATE_RESPONSE)
+  expect(compressed.frames.deflate).toBe(true)
+  const offeredNothing = await phone()
+  expect(offeredNothing.extensions).toBeUndefined()
+  expect(offeredNothing.frames.deflate).toBe(false)
+
+  // As Sotto starts it with SOTTO_HOST_COMPRESS_PHONES=0: the offer goes unanswered.
+  await access.close()
+  access = new PhoneAccess({ directory: join(root, 'desktop'), service: host.service, tailscale, settings: () => settings, policy: new PolicyStore(memory), openExternal: async () => undefined,
+    listener: { compressPhones: false } })
+  await access.start()
+  const plain = await phone('permessage-deflate')
+  expect(plain.extensions).toBeUndefined()
+  expect(plain.frames.deflate).toBe(false)
 })
 
 
