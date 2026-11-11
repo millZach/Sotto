@@ -66,6 +66,9 @@ shrank by a quarter while the scripts the window starts with shrank by half. Eve
 `tests/e2e/launch-time.spec.ts` on forge (Linux) under `xvfb-run`, an empty profile, seven launches after a warm-up
 each time, the two builds in turns: before, after, before, after. Each cell is that round's median, with its range.
 Other agents were working on forge; the load average is when the round started.
+So these rounds say only that minifying did not move first paint by more than the spread between rounds on a busy
+machine. `docs/ci.md` asks for a timing benchmark on an idle one, and forge was not: the before and after that counts is
+the Launch time workflow's, on a Windows and a macOS runner of its own, once that workflow is on `main` (#2412).
 
 | Round | Build | Load | Asked to page start | Page start to DOM ready | Page start to first paint | Asked to first paint |
 |---|---|---:|---:|---:|---:|---:|
@@ -171,6 +174,11 @@ them (`docs/ci.md`). Tried on forge to compare the two builds instead, `design-c
 second onboarding step on the unminified build, as `app.spec.ts` does on both: on forge the first run does not show the
 step that chooses a look. Stylesheets are minified too, so the captures on Windows and macOS are still the check this
 change most needs.
+
+Who runs them: on Windows, a worker on the laptop runs `npm run design:verify` on this branch before it merges, which
+Watcher arranges once the pull request is otherwise ready; this pull request does not merge without that. On macOS
+nobody has been named: the captures there are taken by hand on the Apple silicon Mac, and whoever cuts the next Mac
+build runs `npm run design:verify` on it first.
 
 ## Re-run
 
