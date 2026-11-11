@@ -16,11 +16,11 @@ The built app was launched on forge (Linux, under `xvfb-run` at 1920×1200) on t
 | Working now folded from its head, light | [status-light-folded.png](../../artifacts/sidebar-status-groups/status-light-folded.png) |
 | Settings › Threads › Sidebar, By status chosen | [settings-dark.png](../../artifacts/sidebar-status-groups/settings-dark.png) |
 | After choosing By project: the folders, as before | [project-light.png](../../artifacts/sidebar-status-groups/project-light.png) |
+| Reduced motion, a Settle pressed with the pointer on Weekly note: its gap holds in Working now | [reduced-dark-gap.png](../../artifacts/sidebar-status-groups/reduced-dark-gap.png) |
 
-What they show: the Needs you card stands under the search with the waiting approval and the failed turn; Working now holds Footer links and Weekly note, each naming its project (sotto-site, notes) before its Working word; Recent holds the two threads in Needs you, reading ↑ In Needs you with their project, and Grok voice previews as a one-line resting row; Settled is folded at the foot. Choosing By project in Settings changed the sidebar at once, with no restart. At 820 × 560 the sidebar stands as the rail, unchanged.
+What they show: the Needs you card stands under the search with the waiting approval and the failed turn; Working now holds Footer links and Weekly note, each naming its project (sotto-site, notes) before its Working word; Recent holds the two threads in Needs you, reading ↑ In Needs you with their project, and Grok voice previews as a one-line resting row; Settled is folded at the foot. Choosing By project in Settings changed the sidebar at once, with no restart. At 820 × 560 the sidebar stands as the rail, unchanged. Under reduced motion, a Settle pressed with the pointer on a Working now row left its gap in Working now until the pointer left, then the group closed up to one thread and the toast offered Undo.
 
 ## Not checked here
 
 - The Windows design captures were not regenerated. The populated Threads captures change on purpose (status groups, and the Needs you card in place of the **need attention** line on stable); they need `npm run design:capture` on the Windows PC.
-- Reduced motion: only the existing ring animation moves, and its reduced-motion rules are unchanged.
 - A real remote host: the badge on a remote row is covered by a unit test, not a paired forge.

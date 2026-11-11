@@ -24,11 +24,11 @@ Then the **Snoozed** and **Settled** shelves, folded, as before. The rule is the
 
 **3. Every thread keeps a row.** A thread standing in Needs you keeps its row in Recent, reading **↑ In Needs you**, as its folder row did (ADR-0135, November 5 amendment), so settling, renaming and its row menu stay where they were.
 
-**4. Order.** Inside each group, rows on a reachable provider first, then the latest activity, as the iPhone orders them and as a folder ordered its rows.
+**4. Order.** Inside each group, rows on a reachable provider first, then the one that last moved, its last message or the start of its running turn, whichever is later, as the iPhone orders them (`ThreadGroups.latest`). A reply streaming in therefore does not reorder the group. A row keeps its group while it is being renamed and while a Settle's held gap stands (ADR-0167), so a half-typed name is not drawn anew and nothing slides under a still pointer.
 
 **5. The row names its place.** The desktop's row stays as it is (ADR-0135's resting rows, one-line names), and its second line leads with the **project's name**, then a **badge for a remote computer** when the thread runs on one, then what it is doing at the line's end. A thread on this computer names no computer. A resting row's one line keeps only its name and time; its project is in its description. There is no **All computers** menu, Zach's pick.
 
-**6. The heads fold.** Each group's head says its name and count and folds it, as a folder's head does, in the muted ink of a heading. A group starts open and stays as the user leaves it while the window lives (the folders' session store). A search opens every group. An empty group is not drawn; with no open thread the list says **All caught up.**
+**6. The heads fold.** Each group's head says its name and count and folds it, as a folder's head does, in the muted ink of a heading. A group starts open and stays as the user leaves it while the window lives (the folders' session store). A search opens every group. An empty group is not drawn. With no open thread but settled or snoozed ones the list says **All caught up.**; with no thread at all it says nothing, since the room says it once (#1834).
 
 **7. The keyboard is the thread list's.** The groups are tree items of the one thread list (ADR-0164): Up, Down, Home and End walk heads and rows, Right opens a group and Left folds it or steps out of a row to its head. Moving between threads by chord follows the sidebar's order: Working now, then Recent.
 

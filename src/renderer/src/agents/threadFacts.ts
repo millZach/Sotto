@@ -679,17 +679,27 @@ export interface StatusGroups {
 /**
  * The open folders' rows in the iPhone's groups and order (ADR-0201, from `FocusThreads` in SottoCore): Working now holds
  * rows working on a reachable provider, and Recent the rest; a thread out of reach says Disconnected in Recent rather than
- * Working in the group above, as the iPhone's does. Inside each, rows on a reachable provider come first, then the latest
- * activity, as a folder orders them. Needs you stays the card above the groups (Zach's pick, November 10, 2026), so its
- * threads keep their rows here, in Recent. Snoozed and Settled are not here: they keep their shelves.
+ * Working in the group above, as the iPhone's does. Inside each, rows on a reachable provider come first, then the one
+ * that last moved: its last message or the start of its running turn, whichever is later (`ThreadGroups.latest`), so a
+ * reply streaming in does not reorder the group on every update. Needs you stays the card above the groups (Zach's pick, November 10, 2026), so its
+ * threads keep their rows here, in Recent. Snoozed and Settled are not here: they keep their shelves. `pinned` keeps a
+ * row in the group it was in, whatever its thread does meanwhile: a held gap's (ADR-0167), whose place must not move.
  */
-export function groupByStatus(open: readonly ProjectFolder[]): StatusGroups {
+export type StatusGroupName = keyof StatusGroups
+export function groupByStatus(open: readonly ProjectFolder[], pinned?: ReadonlyMap<string, StatusGroupName>): StatusGroups {
   const rows = open.flatMap(item => item.rows)
+  // Each row's time read once, not on every comparison.
+  const moved = new Map(rows.map(row => {
+    const { lastMessageAt, runningTurnStartedAt } = threadSummaryOf(row.thread)
+    const times = [parse(lastMessageAt), parse(runningTurnStartedAt)].filter(Number.isFinite)
+    return [row, times.length ? Math.max(...times) : Number.NaN]
+  }))
   const order = (first: ThreadRow, second: ThreadRow): number => Number(second.connected) - Number(first.connected)
-    || byActivity({ activityAt: first.activityAt, id: first.thread.id }, { activityAt: second.activityAt, id: second.thread.id })
+    || byActivity({ activityAt: moved.get(first)!, id: first.thread.id }, { activityAt: moved.get(second)!, id: second.thread.id })
+  const groupOf = (row: ThreadRow): StatusGroupName => pinned?.get(row.thread.id) ?? (row.state === 'working' && row.connected ? 'working' : 'recent')
   return {
-    working: rows.filter(row => row.state === 'working' && row.connected).sort(order),
-    recent: rows.filter(row => row.state !== 'working' || !row.connected).sort(order),
+    working: rows.filter(row => groupOf(row) === 'working').sort(order),
+    recent: rows.filter(row => groupOf(row) === 'recent').sort(order),
   }
 }
 

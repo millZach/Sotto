@@ -54,6 +54,17 @@ describe('grouping open threads by status (ADR-0201)', () => {
   })
 })
 
+describe('a held row keeps its group (ADR-0167)', () => {
+  it('stays where it was pinned while its thread finishes, so the gap does not move', () => {
+    const rows = describeThreads(threadsStateFixture(), NOW)
+    const working = rows.find(row => row.state === 'working')!
+    const finished: ThreadRow = { ...working, state: 'done' }
+    const folder = { id: 'p', project: undefined, title: 'p', settled: false, rows: [finished], working: 0, needs: 0, activityAt: NOW }
+    expect(groupByStatus([folder]).recent).toContain(finished)
+    expect(groupByStatus([folder], new Map([[finished.thread.id, 'working' as const]])).working).toContain(finished)
+  })
+})
+
 describe('the sidebar by status (ADR-0201)', () => {
   it('is the default: Working now and Recent under Needs you, with no project folders among open work', () => {
     app()
@@ -144,6 +155,26 @@ describe('the sidebar by status (ADR-0201)', () => {
     mount({ ...state, host: { ...state.host, threads: state.host.threads.map(thread => ({ ...thread, status: 'idle' as const, requests: [], workspaceSettledAt: settledAt })) } })
     expect(document.querySelector('.thread-group')).toBeNull()
     expect(document.querySelector('.thread-nav__list')).toHaveTextContent('All caught up.')
+  })
+
+  it('keeps a row being renamed in its group while its turn finishes, with the typed name', () => {
+    app()
+    const state = threadsStateFixture()
+    const view = (current: AgentState) => <ThreadSidebar state={current} organization={organizeWorkspace(current, describeThreads(current, NOW), '', current.activeProjectId, false, NOW)}
+      command={vi.fn(async () => current)} query="" onQuery={vi.fn()} onOpen={vi.fn()} onNewThread={vi.fn()} shortcutsLive
+      currentThreadId={null} openThreadIds={[]} onOpenBeside={vi.fn()} onDragThread={vi.fn()} />
+    const { rerender } = render(view(state))
+    act(() => within(group('working')).getByRole('button', { name: 'Footer links' }).focus())
+    fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'F2' })
+    const field = within(group('working')).getByRole('textbox', { name: 'Rename Footer links' })
+    fireEvent.change(field, { target: { value: 'Footer links, fixed' } })
+    const finished: AgentState = { ...state, host: { ...state.host, threads: state.host.threads.map(thread => thread.id === 'footer-links' ? { ...thread, status: 'idle' as const } : thread) } }
+    rerender(view(finished))
+    expect(within(group('working')).getByRole('textbox', { name: 'Rename Footer links' })).toHaveValue('Footer links, fixed')
+    // Once the rename ends, the row goes where its state puts it.
+    fireEvent.keyDown(within(group('working')).getByRole('textbox', { name: 'Rename Footer links' }), { key: 'Escape' })
+    rerender(view(finished))
+    expect(within(group('recent')).getByRole('button', { name: 'Footer links' })).toBeInTheDocument()
   })
 
   it('keeps the project folders when Settings says By project', () => {
