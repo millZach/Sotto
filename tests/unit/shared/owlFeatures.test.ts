@@ -6,7 +6,8 @@ import { OWL_FEATURES, isOwlFeatureEnabled, owlFeaturesForTrack, type OwlFeature
 const SENT_ON_OCTOBER_23 = ['watcher', 'muse', 'usage', 'resume-after-restart', 'update-all', 'streaming-publish-cost', 'thread-delegation',
   'worker-roles', 'continue-on-provider', 'continue-agent-thread', 'opencode', 'dictation-hold-shortcuts', 'main-freeze', 'iphone-pull-request-view',
   'iphone-agents-view', 'dictation-off', 'message-scrubber', 'menu-bar-owl', 'desktop-notifications']
-const SENT_LATER = ['quiet-composer']
+// In list order: Needs you went with status groups on November 10 (ADR-0201), the quiet composer on October 30.
+const SENT_LATER = ['needs-you-queue', 'quiet-composer']
 
 describe('Owl feature list', () => {
   it('records Watcher as the first feature, points to its owning decision, and keeps every sent feature on in stable', () => {

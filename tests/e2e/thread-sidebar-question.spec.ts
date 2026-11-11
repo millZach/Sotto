@@ -58,6 +58,16 @@ async function emit(page: Page, threadId: string, request: AgentRequest): Promis
   await page.evaluate(async ([threadId, request]) => window.sottoE2E!.agentEvent!({ type: request.kind, threadId, text: request.text, request, status: 'running' }), [threadId, request] as const)
 }
 
+/**
+ * These rows say the need themselves, as they do while the Needs you card is off; on stable as on Owl the card is on since
+ * November 10, 2026 (ADR-0201), and the switch still turns it off for a run.
+ */
+async function launchWithoutNeedsYou(): Promise<LaunchedSotto> {
+  const previous = process.env['SOTTO_OWL_FEATURES']
+  process.env['SOTTO_OWL_FEATURES'] = 'needs-you-queue=0'
+  try { return await launchSotto() } finally { if (previous === undefined) delete process.env['SOTTO_OWL_FEATURES']; else process.env['SOTTO_OWL_FEATURES'] = previous }
+}
+
 async function open(page: Page, title: string): Promise<void> {
   await row(page, title).click()
   await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
@@ -98,7 +108,7 @@ test.afterEach(async () => { if (launched) await closeSotto(launched); launched 
 
 test('shows a question on a thread you run in its sidebar row until you answer it', async () => {
   test.setTimeout(120_000)
-  launched = await launchSotto()
+  launched = await launchWithoutNeedsYou()
   const { page, app } = launched
   await prepare(page, 'dark')
   await resize(app, page, 1280, 800)
@@ -135,7 +145,7 @@ test('shows a question on a thread you run in its sidebar row until you answer i
 
 test('shows a permission the same way at the minimum window in light', async () => {
   test.setTimeout(120_000)
-  launched = await launchSotto()
+  launched = await launchWithoutNeedsYou()
   const { page, app } = launched
   await prepare(page, 'light')
   await resize(app, page, 820, 560)

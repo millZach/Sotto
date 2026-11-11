@@ -316,13 +316,14 @@ export function watcherReplyBefore(thread: Pick<AgentThread, 'messages'>, at: st
 }
 const ATTENTION_WORDS: Record<Exclude<WatcherAttentionKind, 'remarks' | 'bug-bot-review'>, string> = {
   'checks-failed': 'checks failed on its newest commit', 'checks-passed': 'all checks passed on its newest commit',
-  'required-passed': 'its required checks passed on its newest commit', merged: 'merged', closed: 'closed without merging',
+  'required-passed': 'every check finished on its newest commit and its required checks passed, but an optional check did not, which holds no merge', merged: 'merged', closed: 'closed without merging',
   approved: 'approved', 'changes-requested': 'a review asks for changes', conflicting: 'conflicts with its base branch',
 }
 /**
  * What a thread's pull requests now say that needs Watcher, in Sotto's words (#1190): checks, merged or closed, the review
  * decision, a conflict, and comments or reviews that moved. Numbers come from the thread's links; never a comment's words.
- * `pending` adds how many required and optional checks are still running (#2116), counts only, never a check's name.
+ * `pending` adds how many required and optional checks are still running (#2116), counts only, never a check's name; the
+ * merge train waits for both (#2432).
  */
 export function watcherPullRequestWords(attention: ReadonlyMap<string, ReadonlySet<WatcherAttentionKind>>, thread: Pick<AgentThread, 'pullRequests' | 'worktree'>,
   evidence: readonly WatcherEvidence[] = [], pending: ReadonlyMap<string, { readonly required: number; readonly optional: number }> = new Map()): string | undefined {
@@ -337,10 +338,10 @@ export function watcherPullRequestWords(attention: ReadonlyMap<string, ReadonlyS
     const number = links.find(link => pullRequestKey(link.url) === pr)?.number
     const said = [...facts].flatMap(fact => fact === 'remarks' || fact === 'bug-bot-review' ? [] : [ATTENTION_WORDS[fact]])
     if (facts.has('remarks')) said.push('its comments or reviews changed; read them on GitHub')
-    // Which checks still running hold a merge, so Watcher waits on those and not on the others (#2116).
+    // How many checks are still running, required and not: the merge train waits for all of them (#2116, #2432).
     const waiting = facts.size ? pending.get(pr) : undefined
     if (waiting?.required) said.push(`${waiting.required} required ${waiting.required === 1 ? 'check is' : 'checks are'} still to finish`)
-    if (waiting?.optional) said.push(`${waiting.optional} optional ${waiting.optional === 1 ? 'check is' : 'checks are'} still running, which no merge waits on`)
+    if (waiting?.optional) said.push(`${waiting.optional} optional ${waiting.optional === 1 ? 'check is' : 'checks are'} still running, which the merge train waits for too`)
     // Each meaningful PR news line carries its coverage, including checks passing and a merge. Idle polls say nothing.
     if (facts.size) {
       const item = reviews.get(pr)

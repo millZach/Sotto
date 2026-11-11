@@ -879,6 +879,10 @@ msgstr "A different theme when dark"
 msgid "A Dynamic thread's model oversees and chooses a model for each piece of work, inside these limits. Turn it on at the foot of a thread's model menu, or at the foot of the model menu under New threads for every new thread."
 msgstr "A Dynamic thread's model oversees and chooses a model for each piece of work, inside these limits. Turn it on at the foot of a thread's model menu, or at the foot of the model menu under New threads for every new thread."
 
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "A folder for each project, with its threads inside."
+msgstr "A folder for each project, with its threads inside."
+
 #: src/renderer/src/features/settings/DevicePicker.tsx
 msgid "A Git service, not a computer"
 msgstr "A Git service, not a computer"
@@ -1407,6 +1411,14 @@ msgstr "Brings {name}’s threads back after it restarts. Sotto adds a systemd u
 #: src/renderer/src/features/settings/hostClientUpdateWords.ts
 msgid "By hand"
 msgstr "By hand"
+
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "By project"
+msgstr "By project"
+
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "By status"
+msgstr "By status"
 
 #. After a step that is done, as in "Signed in by the agent".
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
@@ -2843,6 +2855,10 @@ msgstr "Get Tailscale"
 msgid "Get Tailscale to see the machines on your tailnet here."
 msgstr "Get Tailscale to see the machines on your tailnet here."
 
+#: src/renderer/src/features/settings/PhonesSettings.tsx
+msgid "Get the iPhone beta"
+msgstr "Get the iPhone beta"
+
 #. A Settings page, named in its rail and its heading. Other messages name it as "Settings > Git & worktrees".
 #: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/SettingsView.tsx
@@ -2861,6 +2877,11 @@ msgstr "Global — the one set that works outside Sotto."
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Global — works outside Sotto, as the popup’s does."
 msgstr "Global — works outside Sotto, as the popup’s does."
+
+#: src/renderer/src/features/settings/settingsPages.ts
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Group threads in the sidebar"
+msgstr "Group threads in the sidebar"
 
 #. A Council chamber layout: tiered seats round an altar, the chair at the back.
 #: src/renderer/src/features/settings/CouncilSettings.tsx
@@ -3133,6 +3154,10 @@ msgstr "Install Devin CLI and run devin auth login before connecting."
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Install guide"
 msgstr "Install guide"
+
+#: src/renderer/src/features/settings/PhonesSettings.tsx
+msgid "Install the beta"
+msgstr "Install the beta"
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Installation steps"
@@ -4266,6 +4291,10 @@ msgstr "OpenCode 2 is not installed on this computer. Install it with its instal
 msgid "Opened {page} in your browser."
 msgstr "Opened {page} in your browser."
 
+#: src/renderer/src/features/settings/PhonesSettings.tsx
+msgid "Opened in your browser"
+msgstr "Opened in your browser"
+
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "OpenRouter key"
 msgstr "OpenRouter key"
@@ -4498,6 +4527,14 @@ msgstr "Phones on {name}"
 msgid "Phones paired with {name}"
 msgstr "Phones paired with {name}"
 
+#: src/renderer/src/features/settings/PhonesSettings.tsx
+msgid "Phones reach this computer over Tailscale, which is not installed here, and Sotto could not turn this back off. Turn it off, get Tailscale above, then turn it on."
+msgstr "Phones reach this computer over Tailscale, which is not installed here, and Sotto could not turn this back off. Turn it off, get Tailscale above, then turn it on."
+
+#: src/renderer/src/features/settings/PhonesSettings.tsx
+msgid "Phones reach this computer over Tailscale, which is not installed here, so this stayed off. Get Tailscale above, then turn it on."
+msgstr "Phones reach this computer over Tailscale, which is not installed here, so this stayed off. Get Tailscale above, then turn it on."
+
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
 msgid "Phones starting…"
 msgstr "Phones starting…"
@@ -4513,6 +4550,10 @@ msgstr "Pick a color from the app"
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "Pick a machine Sotto can reach over SSH, then add it yourself or have an agent set it up."
 msgstr "Pick a machine Sotto can reach over SSH, then add it yourself or have an agent set it up."
+
+#: src/renderer/src/features/settings/HostDialog.tsx
+msgid "Pick a machine Sotto can reach over SSH, then add it."
+msgstr "Pick a machine Sotto can reach over SSH, then add it."
 
 #: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
 msgid "Pieces"
@@ -5456,6 +5497,10 @@ msgstr "Shows the popup over any app, or hides it. It works outside Sotto, like 
 msgid "Shows when the default branch is behind and leaves the pull to you."
 msgstr "Shows when the default branch is behind and leaves the pull to you."
 
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Sidebar"
+msgstr "Sidebar"
+
 #. A family of theme colors in the theme editor
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Sidebar background"
@@ -5648,6 +5693,10 @@ msgstr "Sotto does not know how {name} was installed, so it will not replace it.
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "Sotto does this"
 msgstr "Sotto does this"
+
+#: src/renderer/src/features/settings/PhonesSettings.tsx
+msgid "Sotto for iPhone is in beta on TestFlight. Install TestFlight on the iPhone first."
+msgstr "Sotto for iPhone is in beta on TestFlight. Install TestFlight on the iPhone first."
 
 #: src/renderer/src/features/settings/HostProviderSignIn.tsx
 msgid "Sotto hands the code to {name} on {hostName} and keeps nothing."
@@ -7768,6 +7817,10 @@ msgid "Working copy…"
 msgstr "Working copy…"
 
 #: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Working now and Recent under Needs you, as on the iPhone. Each thread names its project."
+msgstr "Working now and Recent under Needs you, as on the iPhone. Each thread names its project."
+
+#: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Working..."
 msgstr "Working..."
 
@@ -7806,6 +7859,10 @@ msgstr "Your browser did not open. Go to {guide} to install {providerName}."
 #: src/renderer/src/features/settings/TailscaleConnect.tsx
 msgid "Your browser did not open. Go to tailscale.com/download to get Tailscale."
 msgstr "Your browser did not open. Go to tailscale.com/download to get Tailscale."
+
+#: src/renderer/src/features/settings/PhonesSettings.tsx
+msgid "Your browser did not open. On your iPhone, go to {betaAddress} instead."
+msgstr "Your browser did not open. On your iPhone, go to {betaAddress} instead."
 
 #: src/renderer/src/features/settings/TailscaleConnect.tsx
 msgid "Your browser did not open. Open the Tailscale app on this computer and sign in there."

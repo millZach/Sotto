@@ -98,7 +98,7 @@ test('adds your own model server from Settings and from the model menu, checks i
     launched = await launchSotto('success', profile)
     const { page } = launched
     page.on('pageerror', error => pageErrors.push(error.message))
-    await page.evaluate(() => window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', reducedMotion: 'on' }))
+    await page.evaluate(() => window.sotto!.updateSettings({ onboardingComplete: true, threadListGrouping: 'project', appearance: 'dark', reducedMotion: 'on' }))
     await page.reload()
     await page.evaluate(async () => { await window.sotto!.agents!.command({ type: 'connect', provider: 'opencode' }) })
     await resizeWindow(launched, 1280, 800)

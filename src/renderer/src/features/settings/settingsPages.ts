@@ -146,6 +146,7 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { id: 'cleanup-mode', label: msg`Cleanup mode`, section: 'settings-formatting', words: 'openrouter nitro floor fastest cheapest host', gate: 'cleanup-model' },
     { id: 'personal-dictionary', label: msg`Personal dictionary`, section: 'settings-formatting', words: 'vocabulary words names spelling', gate: 'dictation' },
 
+    { id: 'thread-grouping', label: msg`Group threads in the sidebar`, section: 'settings-agents', words: 'sidebar list status projects folders working now recent' },
     { id: 'thread-defaults', label: msg`New threads start with`, section: 'settings-agents', words: 'model reasoning effort permissions defaults' },
     { id: 'projects-directory', label: msg`Default projects directory`, section: 'settings-agents', words: 'folder' },
     { id: 'thread-working-copy', label: msg`New threads work in`, section: 'settings-agents', words: 'working copy worktree project folder' },

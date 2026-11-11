@@ -10,7 +10,7 @@ import {
 import { contextUnknown, keyNote, kindName, notAnswered, privacyWords, refusalWords } from './ownServerWords'
 import { effortLabel } from './effortNames'
 import { useOptionalAgents } from './AgentContext'
-import { localProviders } from '../features/onboarding/localAgents'
+import { localProviders } from './localAgents'
 import { RowMenu } from './RowMenu'
 import { Button } from '../components/Button'
 import { useDialogFocus } from '../components/useDialogFocus'

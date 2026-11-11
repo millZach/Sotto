@@ -44,7 +44,7 @@ import { needsPerson, unreadableRequest } from '../../nativeRequests'
 import { effortAfterChange, speedAfterChange, speedRuns, validatePromptAttachments, validateThreadOptions } from '../../threadOptions'
 import { CodexActivityProjection, codexItemSchema } from './codexActivity'
 import { ProviderUnavailable } from '../../providerProblem'
-import { SessionReaper } from '../../sessionReaper'
+import { SessionReaper, busyHolds, type HeldSession } from '../../sessionReaper'
 import { OpenSessions } from '../../openSessions'
 import { ReadsBeforeSend } from '../../readsBeforeSend'
 import { CodexProcess, Uncertain, type RpcApply, type RpcFrame, type RpcRejected } from './codexProcess'
@@ -551,9 +551,12 @@ export class CodexAppServerHost implements ProviderHost {
       ...(options.sessionIdleMs !== undefined ? { idleAfterMs: options.sessionIdleMs } : {}),
       isWatched: id => this.observed.has(id),
       isBusy: id => this.busy(id),
+      whyBusy: id => busyHolds({ busy: this.working(id), request: this.asking(id), compaction: compactionPending(this.aliases[id]?.compaction) }),
       stop: id => this.stopSession(id),
     })
   }
+  /** The sessions the reaper tracks, why each is held, and each one's process (#2398). */
+  heldSessions(): HeldSession[] { return this.reaper.held(id => this.runtimes.get(id)?.server.pid) }
   private async readQuota(): Promise<UsageQuotaRead> {
     const generation = this.generation, server = this.provider
     if (!server?.alive) return unavailableProviderQuota('codex', 'not-connected')
@@ -589,13 +592,14 @@ export class CodexAppServerHost implements ProviderHost {
     this.reaper.touch(id)
     this.workedSinceTick.add(id)
   }
-  private busy(id: string): boolean {
-    const thread = this.threads.get(id)
+  private busy(id: string): boolean { return this.working(id) || this.asking(id) || compactionPending(this.aliases[id]?.compaction) }
+  /** Everything that holds a session in `busy` but an unanswered request or a compaction. */
+  private working(id: string): boolean {
     return this.dispatching.has(id) || this.creating.has(id) || this.runningTurns.has(id) || this.unconfirmedDispatchSessionIds.has(id)
       || this.resuming.has(id) || this.opening.has(id) || this.threadReads.has(id) || this.launching.has(id) || !!this.runtimes.get(id)?.server.owed
-      || !!thread && (thread.status === 'running' || thread.requests.length > 0)
-      || compactionPending(this.aliases[id]?.compaction) || !!this.aliases[id]?.pendingSettings || !!this.aliases[id]?.pendingRollback
+      || this.threads.get(id)?.status === 'running' || !!this.aliases[id]?.pendingSettings || !!this.aliases[id]?.pendingRollback
   }
+  private asking(id: string): boolean { return !!this.threads.get(id)?.requests.length }
   /**
    * End the thread's own app-server: the next action starts another and resumes the thread on it. The rollout
    * tail stays where it is, because reading it from the start again would report every past native message as
