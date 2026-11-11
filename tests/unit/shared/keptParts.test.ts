@@ -49,4 +49,16 @@ describe('putting kept parts back', () => {
     expect(sent).toEqual({ kept: ['deliveries'], configuration: { enabled: false }, host: { kept: ['name', 'projects'], threads: [], models: catalog, modelsRevision: 2 } })
     expect(withKeptPartsPutBack(sent, 1, { revision: 1, top: before, host: before.host })).toEqual(after)
   })
+
+  it('never names kept a part JSON leaves out, so a push read off the wire puts back what the client holds (review)', () => {
+    const hostSent = new Set(['threads', 'models', 'modelsRevision', 'providerModeLists'])
+    // A part set to undefined is valid state but goes nowhere on the wire: the client never held it.
+    const whole = { deliveries, notice: undefined, host: { name: 'Synthetic host', error: undefined, projects, threads: [] } }
+    const written = JSON.parse(JSON.stringify(whole)) as typeof whole
+    const sent = JSON.parse(JSON.stringify(withKeptParts(whole, { top: whole, host: whole.host }, hostSent))) as { kept?: string[]; host: { kept?: string[] } }
+    expect(sent.kept).toEqual(['deliveries'])
+    expect(sent.host.kept).toEqual(['name', 'projects'])
+    // What the client held is the first push as it was read; the second puts back from it.
+    expect(withKeptPartsPutBack(sent, 1, { revision: 1, top: written, host: written.host })).toEqual(written)
+  })
 })

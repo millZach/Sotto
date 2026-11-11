@@ -132,11 +132,12 @@ export function withKeptParts(whole: { readonly host: object }, parts: KeptParts
   const kept: KeptPart[] = [], hostKept: KeptHostPart[] = []
   for (const [key, value] of Object.entries(whole)) {
     if (key === 'host') continue
-    if (Object.hasOwn(parts.top, key) && samePlainData(parts.top[key], value)) kept.push(key as KeptPart)
+    // A part that is undefined is never named: a push read off the wire never carried it, so a client holds nothing to put back.
+    if (value !== undefined && Object.hasOwn(parts.top, key) && samePlainData(parts.top[key], value)) kept.push(key as KeptPart)
     else top[key] = value
   }
   for (const [key, value] of Object.entries(whole.host)) {
-    if (!hostSent.has(key) && Object.hasOwn(parts.host, key) && samePlainData(parts.host[key], value)) hostKept.push(key as KeptHostPart)
+    if (value !== undefined && !hostSent.has(key) && Object.hasOwn(parts.host, key) && samePlainData(parts.host[key], value)) hostKept.push(key as KeptHostPart)
     else host[key] = value
   }
   if (hostKept.length) host.kept = hostKept

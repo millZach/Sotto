@@ -1017,7 +1017,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     // The frame is written out by hand so its state, serialized once, can also be compared with the last one pushed.
     const { text: stateText, digest, withoutConversation } = shellText(state)
     const threadsText = records ? ',"threads":' + JSON.stringify(records.payload) : '', eventsText = ',"eventPage":' + JSON.stringify(eventPage) + '}'
-    const full = '{"v":1,"event":"shell","state":' + stateText + threadsText + eventsText
+    const frameOf = (text: string): string => '{"v":1,"event":"shell","state":' + text + threadsText + eventsText
+    const full = frameOf(stateText)
     // To a client that accepted `kept-parts`, a push whose thread records are measured from the last push written to it
     // leaves out each part that holds what that push held, and names it (ADR-0028, November 10 amendment). Made only for a
     // push that goes: the repeat check and Watcher's writing window below read the whole state, as before.
@@ -1039,7 +1040,7 @@ export async function startSocketServer(options: SocketServerOptions) {
       // One whose only news is Watcher's conversation waits out its window, and is read again when the window closes.
       else if (noEvents && !threadNews && peer.shellSent !== null && last?.withoutConversation === withoutConversation && now < last.at + WATCHER_WRITING_WINDOW_MS) holdWriting(peer, last.at + WATCHER_WRITING_WINDOW_MS)
       else {
-        peer.frames.sendText(keeps ? '{"v":1,"event":"shell","state":' + JSON.stringify(sent()) + threadsText + eventsText : full)
+        peer.frames.sendText(keeps ? frameOf(JSON.stringify(sent())) : full)
         peer.shellSent = digest; lastShell.set(peer, { withoutConversation, at: now }); writingHeld.delete(peer); written()
       }
     } else {
