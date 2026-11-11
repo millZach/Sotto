@@ -2,6 +2,7 @@ import { startsThread } from '../shared/threadStarts'
 import type { HostDelegationRelay, RelayDesktop } from '../main/agents/delegationRelayHost'
 import type { HostTellWatcherRelay, TellWatcherDesktop } from '../main/agents/tellWatcherRelay'
 import type { HostRemoteCallers, RemoteDesktop } from '../main/agents/delegationRemoteHost'
+import type { HostHeldSession } from '../main/agents/sessionReaper'
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import type { Duplex } from 'node:stream'
@@ -68,6 +69,7 @@ const COMPOSER_OPS = { 'watcher-phone-open': 'open', 'watcher-phone-new': 'new',
 const adminPhonesRequest = z.object({}).strict()
 const adminPhonesCommandRequest = z.object({ command: hostAdminPhonesCommandSchema }).strict()
 const adminTailnetRequest = z.object({ enabled: z.boolean().optional() }).strict()
+const adminHeldSessionsRequest = z.object({}).strict()
 const adminClientRequest = z.object({ clientId: z.string().min(1).max(512) }).strict()
 const pairRequest = z.object({ v: z.literal(1), code: z.string().min(1).max(32), name: z.string().min(1).max(256) }).strict()
 
@@ -257,6 +259,11 @@ export interface SocketServerOptions {
    * reaches this host over SSH. Absent on the desktop's phone listener, whose administrative routes are off anyway.
    */
   phones?: HostPhonesAdministration
+  /**
+   * The provider sessions the headless host's adapters hold and the rules keeping each (#2398), read on the administrative
+   * route `held-sessions` by the host machine's own measuring script. Absent on the desktop's phone listener.
+   */
+  heldSessions?: () => readonly HostHeldSession[]
   /**
    * The headless host updating itself for a desktop that asks (ADR-0088). Offered on either listener, to a client in
    * `watcherDesktops` whose `remote-answer` policy lets it answer, and only when the host can update itself at all.
@@ -2123,6 +2130,12 @@ export async function startSocketServer(options: SocketServerOptions) {
             if (request.url === '/v1/admin/phones') { adminPhonesRequest.parse(await body(request)); respond(response, 200, { v: 1, hostId, state: options.phones.get() }); return }
             const { command } = adminPhonesCommandRequest.parse(await body(request))
             respond(response, 200, { v: 1, hostId, ...await options.phones.command(command) }); return
+          }
+          // Names, ages, process IDs and Sotto thread IDs only: what holds each provider session, never what a thread said.
+          if (request.url === '/v1/admin/held-sessions') {
+            if (!options.heldSessions) throw new Refusal('invalid_request')
+            adminHeldSessionsRequest.parse(await body(request))
+            respond(response, 200, { v: 1, hostId, sessions: options.heldSessions() }); return
           }
           // Only here, on the listener the tailnet never reaches: a desktop turns its tailnet connections on or off over SSH.
           if (request.url === '/v1/admin/tailnet') {
