@@ -8,6 +8,7 @@ import { HostProviderSignIn } from '../../../src/renderer/src/features/settings/
 import { HostProviders } from '../../../src/renderer/src/features/settings/HostProviders'
 import { HostSetupChecklist } from '../../../src/renderer/src/features/settings/HostSetupChecklist'
 import type { HostStatus } from '../../../src/shared/hosts'
+import type { HostSignInRequest } from '../../../src/shared/hostProviders'
 import type { AgentProviderStatus } from '../../../src/shared/agents'
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
@@ -26,7 +27,7 @@ it.each(['update command', 'sign-in code', 'Devin command', 'setup fix'] as cons
   } else if (surface === 'sign-in code') {
     text = 'ABCD-EFGH'; name = 'Copy the code'
     const bridge = hostsBridgeFixture({ commands: { signIn: vi.fn(async () => ({ id: 'sign-in', provider: 'codex' as const, shape: 'device-code' as const, stage: 'waiting' as const, code: text, page: 'auth.openai.com' })) } }).bridge
-    render(<HostProviderSignIn host={host} provider="codex" bridge={bridge} onClose={() => undefined} />)
+    render(<HostProviderSignIn place={host.name} provider="codex" signIn={step => bridge.signIn({ ...step, id: host.id } as HostSignInRequest)} onClose={() => undefined} />)
   } else if (surface === 'Devin command') {
     text = 'devin auth login --force-manual-token-flow'; name = 'Copy the Devin sign-in command'
     const provider = { id: 'devin', name: 'Devin', version: '', connection: 'error', problem: 'signed-out', capabilities: {} } as AgentProviderStatus
