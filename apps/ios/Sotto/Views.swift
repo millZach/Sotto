@@ -155,14 +155,17 @@ struct MainTabs: View {
         if abs(side) >= 60 { return .sideways(strip: max(insets.leading, insets.trailing), stripTrailing: side > 0) }
         return height == .regular ? .upright : .none
     }
-    /// Where the tabs stand: along the bottom; as a rail in the Duo's strip, where the pages get the whole height; or, in
-    /// a column of the strip's width: down the right edge of the unfolded Duo held upright, where the right thumb rests
-    /// (Zach's pick, November 1, 2026), or held sideways with the rail on the side away from the clock.
-    private enum RailPlace: Equatable { case bottom, strip(trailing: Bool, width: CGFloat), column(leading: Bool, width: CGFloat) }
+    /// Where the tabs stand: along the bottom; as a rail in the Duo's strip, where the pages get the whole height; over
+    /// the page's right edge on the unfolded Duo held upright, where the right thumb rests (Zach's pick, November 1, 2026);
+    /// or, held sideways with the rail on the side away from the clock, in a column of the strip's width.
+    /// Upright the pages run on under the rail to the screen's edge, each page's safe area ending where it starts
+    /// (`clearOfUprightRail`), as they run on under the strip: in a column of its own beside them, the navigation views
+    /// cut the page's wash at the rail's edge and left the rail on plain ground (Zach, November 10, 2026).
+    private enum RailPlace: Equatable { case bottom, strip(trailing: Bool, width: CGFloat), over(width: CGFloat), column(leading: Bool, width: CGFloat) }
     private func railPlace(_ duo: DuoLayout) -> RailPlace {
         switch duo {
         case .none: return .bottom
-        case .upright: return .column(leading: false, width: DuoLayout.uprightRail)
+        case .upright: return .over(width: DuoLayout.uprightRail)
         case .folded(let strip): return .strip(trailing: true, width: strip)
         case .sideways(let strip, let stripTrailing):
             let right = DuoTabsSide(rawValue: railSide) != .left
@@ -187,6 +190,7 @@ struct MainTabs: View {
         // taking it away.
         let shown = opened || threadRail(duo) || (!keyboard && covered.isEmpty)
         let sidebar = duo.sideways && sidebarShown
+        let railOver: CGFloat = if case .over(let width) = place { width } else { 0 }
         // The bar sits under the pages rather than in their safe area, which a NavigationStack doesn't pass on to its
         // pages: they end above it, as they did above the system's.
         return HStack(spacing: 0) {
@@ -209,13 +213,15 @@ struct MainTabs: View {
             // Upright, the sidebar comes over the page from its left edge and stops at the rail, which stays in reach.
             .overlay {
                 if upright && sidebarAvailable {
-                    SidebarDrawer(shown: $drawer, pull: pull, open: openFromSidebar).equatable()
+                    SidebarDrawer(shown: $drawer, pull: pull, open: openFromSidebar).equatable().padding(.trailing, railOver)
                 }
             }
+            // Upright it starts just under the status bar.
+            .overlay(alignment: .trailing) { if railOver > 0 { rail(shown, top: Space.s3, duo: duo).frame(width: railOver) } }
             .anchorPreference(key: DuoPageFrame.self, value: .bounds) { $0 }
             if case .column(leading: false, width: let strip) = place {
-                // Upright it starts just under the status bar; sideways, in a column of its own, a step down from the top.
-                rail(shown, top: upright ? Space.s3 : Space.s4, duo: duo).frame(width: strip)
+                // Sideways, in a column of its own, it starts a step down from the top.
+                rail(shown, top: Space.s4, duo: duo).frame(width: strip)
             }
         }
         // A thumb's drag moves the sidebar: upright it follows the thumb in and out from anywhere on a page; sideways a
@@ -417,23 +423,23 @@ struct MainTabs: View {
     private var pages: some View {
         TabView(selection: $tab) {
             NavigationStack(path: $threadPath) {
-                ThreadsView(open: { ref in threadPath.append(ThreadRoute(ref: ref)) }).equatable().threadDestination()
+                ThreadsView(open: { ref in threadPath.append(ThreadRoute(ref: ref)) }).equatable().clearOfUprightRail().threadDestination()
             }
                 .environment(\.pageTop, tops[.threads, default: 0])
                 .toolbar(.hidden, for: .tabBar)
                 .tag(Tab.threads)
             // Watcher's tab (1B), only for a computer that runs Watcher and shows it to this iPhone.
             if let hostID = model.watcherHostID {
-                NavigationStack(path: $watcherPath) { WatcherView(hostID: hostID).threadDestination() }
+                NavigationStack(path: $watcherPath) { WatcherView(hostID: hostID).clearOfUprightRail().threadDestination() }
                     .environment(\.pageTop, tops[.watcher, default: 0])
                     .toolbar(.hidden, for: .tabBar)
                     .tag(Tab.watcher)
             }
-            NavigationStack { ComputersView() }
+            NavigationStack { ComputersView().clearOfUprightRail() }
                 .environment(\.pageTop, tops[.computers, default: 0])
                 .toolbar(.hidden, for: .tabBar)
                 .tag(Tab.computers)
-            NavigationStack { SettingsView() }
+            NavigationStack { SettingsView().clearOfUprightRail() }
                 .environment(\.pageTop, tops[.settings, default: 0])
                 .toolbar(.hidden, for: .tabBar)
                 .tag(Tab.settings)
@@ -730,7 +736,18 @@ private struct FadeOnAppear: ViewModifier {
 struct ThreadRoute: Hashable { let ref: ThreadRef }
 extension View {
     func threadDestination() -> some View {
-        navigationDestination(for: ThreadRoute.self) { ThreadView(ref: $0.ref) }
+        navigationDestination(for: ThreadRoute.self) { ThreadView(ref: $0.ref).clearOfUprightRail() }
+    }
+    /// Upright on the unfolded Duo, ends the page's safe area at the rail standing over its right edge, so content keeps
+    /// clear of the rail while the ground and wash run on under it, as they do under the strip folded and sideways. A
+    /// safe area set around the tabs doesn't reach the pages inside their navigation stacks, so each page and each page
+    /// pushed onto one sets it itself.
+    func clearOfUprightRail() -> some View { modifier(ClearOfUprightRail()) }
+}
+private struct ClearOfUprightRail: ViewModifier {
+    @Environment(\.duoLayout) private var duo
+    func body(content: Content) -> some View {
+        content.safeAreaPadding(.trailing, duo == .upright ? DuoLayout.uprightRail : 0)
     }
 }
 
