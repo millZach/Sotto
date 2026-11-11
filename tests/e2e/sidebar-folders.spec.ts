@@ -4,7 +4,7 @@ import { launchSotto, openPage, openThreads } from './support/sottoLaunch'
 
 async function connect(page: Page): Promise<void> {
   await page.evaluate(async () => {
-    await window.sotto!.updateSettings({ onboardingComplete: true })
+    await window.sotto!.updateSettings({ onboardingComplete: true, threadListGrouping: 'project' })
     await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
     await window.sotto!.agents!.command({ type: 'connect' })
   })
