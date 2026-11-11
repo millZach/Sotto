@@ -6289,6 +6289,10 @@ msgstr "Permissions the new thread starts on"
 msgid "Personal"
 msgstr "Personal"
 
+#: src/renderer/src/agents/permissionPresentation.tsx
+msgid "Pi has Full access and does not ask before running tools, changing files or using the network."
+msgstr "Pi has Full access and does not ask before running tools, changing files or using the network."
+
 #. Snooze a thread until a date and time the user picks.
 #: src/renderer/src/agents/threadSnooze.tsx
 msgid "Pick a date and time…"

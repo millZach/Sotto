@@ -13,6 +13,7 @@ import { findOpenCodeExecutable, opencodeEnvironment, opencodePassword, type Ope
 import { compareMuseVersions, installMuseClient, museByHand, museInstallForExecutable, musePublishedVersion, museReleaseChannel, museResponseText, MUSE_FEED_BYTES, type MuseChannel, type MuseMakerInstall } from './museClientInstall'
 import { findGrokExecutable } from './grokRpc'
 import { compareCursorVersions, cursorEnvironment, cursorInstallRoot, cursorProgramOf, cursorPublishedVersion, findCursorExecutable, parseCursorVersion } from './cursorRpc'
+import { findPiExecutable } from './piRpc'
 import { findHermesExecutable } from './hermesRpc'
 import { findDeepSeekExecutable } from './deepseekRpc'
 import { findClaudeExecutable } from './subscriptionClaude'
@@ -25,6 +26,7 @@ export const CLIENT_PACKAGES: Readonly<Partial<Record<ProviderId, string>>> = {
   // OpenCode 2's package; OpenCode 1 is `opencode-ai`, and Sotto never moves an install between them (ADR-0087).
   opencode: '@opencode/cli',
   deepseek: '@deepseek-ai/dsh',
+  pi: '@earendil-works/pi-coding-agent',
 }
 const REGISTRY = 'https://registry.npmjs.org'
 /** How often each machine asks again while Sotto stays open, so a client published meanwhile is noticed (ADR-0042). */
@@ -477,7 +479,7 @@ export function byHandFor(provider: ProviderId, install: ClientInstall, platform
       return needsInstallStep(provider, install.miseTool) && packageName
         ? [...lines, `cd "$(mise where ${target.tool})/node_modules/${packageName}"`, GROK_INSTALL_STEP] : lines
     }
-    default: return install.byHand?.length ? [...install.byHand] : undefined
+    default: return install.byHand?.length ? [...install.byHand] : provider === 'pi' ? ['pi update'] : undefined
   }
 }
 /**
@@ -910,6 +912,7 @@ export async function locateClient(provider: ProviderId): Promise<string | undef
     case 'opencode': return findOpenCodeExecutable()
     case 'cursor': return findCursorExecutable()
     case 'deepseek': return findDeepSeekExecutable()
+    case 'pi': return findPiExecutable()
     case 'hermes': return findHermesExecutable()
   }
 }

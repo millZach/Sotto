@@ -4522,6 +4522,10 @@ msgstr "Phones starting…"
 msgid "Phones…"
 msgstr "Phones…"
 
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Pi sign-ins, steering, compaction, native forks, skills, Watcher, remote hosts and phones are not available yet."
+msgstr "Pi sign-ins, steering, compaction, native forks, skills, Watcher, remote hosts and phones are not available yet."
+
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Pick a color from the app"
 msgstr "Pick a color from the app"
@@ -4935,6 +4939,10 @@ msgstr "Replace key"
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Replies in threads"
 msgstr "Replies in threads"
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Replies stream as Pi writes. Threads keep their conversation after a restart, show tool calls and context use, and can be stopped. Models come from your saved servers without a key."
+msgstr "Replies stream as Pi writes. Threads keep their conversation after a restart, show tool calls and context use, and can be stopped. Models come from your saved servers without a key."
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Replies, approvals and reasoning effort, on the keyless model servers you saved under Your own model servers. Change models and permissions in a thread. Replies arrive whole rather than word by word, and questions come in the reply itself."
@@ -5752,6 +5760,10 @@ msgstr "Sotto runs DeepSeek with its own folder, on the models of your own model
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Sotto runs its own OpenCode, with its own folder and its own sign-ins. The OpenCode you run yourself stays as it is."
 msgstr "Sotto runs its own OpenCode, with its own folder and its own sign-ins. The OpenCode you run yourself stays as it is."
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Sotto runs Pi in its own folder on your keyless model servers. Pi has Full access and does not ask before running tools. Pi sign-ins are not available in Sotto yet."
+msgstr "Sotto runs Pi in its own folder on your keyless model servers. Pi has Full access and does not ask before running tools. Pi sign-ins are not available in Sotto yet."
 
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
 msgid "Sotto runs Tailscale Serve on {name}, port 8443, or 10000 when another app uses 8443, so Sotto on your iPhone can reach {name}’s threads over your tailnet. Only phones you pair can connect. Phones reach {name} while its host runs. Turning this off removes the setting and disconnects them."
@@ -6931,6 +6943,10 @@ msgstr "Threads with Muse"
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Threads with OpenCode"
 msgstr "Threads with OpenCode"
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Threads with Pi"
+msgstr "Threads with Pi"
 
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "Threads, pairing and settings for this host live here."

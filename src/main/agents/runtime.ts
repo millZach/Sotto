@@ -24,6 +24,7 @@ import { DevinAcpHost } from './devin'
 import { MuseMspHost } from './muse'
 import { OpenCodeHost } from './opencode'
 import { CursorAcpHost } from './cursor'
+import { PiHost } from './pi'
 import { HermesAcpHost } from './hermes'
 import { DeepSeekAcpHost } from './deepseek'
 import { CursorSignIn } from './cursorSignIn'
@@ -339,6 +340,9 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       ...(options.ownServers ? { ownServers: options.ownServers } : {}) })),
     // Cursor runs with Sotto's own Cursor folder under this runtime's directory: user data, or a headless host's data (ADR-0128).
     cursor: adapter('cursor', () => options.providers?.cursor ?? new CursorAcpHost(directory, captureMedia)),
+    // Pi starts only on this computer, where its own-model-server record lives.
+    pi: adapter('pi', () => options.providers?.pi ?? (options.runsAs === 'headless-host' ? new HeldProviderHost('pi')
+      : new PiHost(directory, { heldProviders: held, ...captureMedia, ...(options.ownServers ? { servers: options.ownServers } : {}) }))),
     // This local Hermes build runs only on the Mac. Its gateway and model routes belong to this computer.
     hermes: adapter('hermes', () => options.providers?.hermes ?? (options.runsAs === 'headless-host' || process.platform !== 'darwin' ? new HeldProviderHost('hermes')
       : new HermesAcpHost(directory, { heldProviders: held, ...captureMedia, ...(options.ownServers ? { servers: options.ownServers } : {}) }))),
@@ -357,6 +361,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       muse: new SottoThreadHost('muse', providers.muse!, threadRegistry!),
       opencode: new SottoThreadHost('opencode', providers.opencode!, threadRegistry!),
       cursor: new SottoThreadHost('cursor', providers.cursor!, threadRegistry!),
+      pi: new SottoThreadHost('pi', providers.pi!, threadRegistry!),
       hermes: new SottoThreadHost('hermes', providers.hermes!, threadRegistry!),
       deepseek: new SottoThreadHost('deepseek', providers.deepseek!, threadRegistry!),
     },
@@ -927,10 +932,11 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // The user's own model servers reach the same OpenCode (ADR-0124), only where it runs and they were asked for.
   const ownServersOpenCode = options.ownServers && providers.opencode instanceof OpenCodeHost ? openCodeForOwnServers(providers.opencode) : undefined
   // And the same record reaches DeepSeek Harness (ADR-0138), only where its adapter runs.
+  const piHost = providers.pi instanceof PiHost ? providers.pi : undefined
   const deepseekHost = providers.deepseek instanceof DeepSeekAcpHost ? providers.deepseek : undefined
   // Hermes keeps its own copy of a keyed server's key (ADR-0124), only where its adapter runs.
   const ownServersHermes = options.ownServers && providers.hermes instanceof HermesAcpHost ? providers.hermes : undefined
-  const ownServersDeepSeek = options.ownServers && (deepseekHost || providers.hermes instanceof HermesAcpHost) ? { changed: () => { deepseekHost?.ownServersChanged(); if (providers.hermes instanceof HermesAcpHost) providers.hermes.ownServersChanged() } } : undefined
+  const ownServersDeepSeek = options.ownServers && (piHost || deepseekHost || providers.hermes instanceof HermesAcpHost) ? { changed: () => { piHost?.ownServersChanged(); deepseekHost?.ownServersChanged(); if (providers.hermes instanceof HermesAcpHost) providers.hermes.ownServersChanged() } } : undefined
   // Signing Cursor in from its tile on this computer (ADR-0128): only where its adapter runs, and never on a headless host, whose
   // Cursor a desktop signs in through the provider sign-in request instead.
   const cursorHost = providers.cursor instanceof CursorAcpHost ? providers.cursor : undefined
