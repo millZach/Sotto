@@ -278,6 +278,35 @@ describe('how often the registry is asked', () => {
     } finally { control.dispose() }
   })
 
+  it('keeps an early ask that fell while another client was being updated, and asks once the update has ended (review)', async () => {
+    const started = deferred(), release = deferred()
+    const { control, npm } = await coordinator({ timeouts: true, run: async () => { started.resolve(); await release.promise; return { ok: false, detail: 'stopped' } } })
+    try {
+      // Claude Code is behind, and Codex's registry does not answer the check that finds it.
+      npm.published.claude = '2.1.290'; npm.state.refusing.add('codex')
+      await control.command({ type: 'check-client-updates' })
+      await settled(control)
+      await control.command({ type: 'queue-client-updates', providers: ['claude'] })
+      await started.promise
+      const failed = { ...npm.state.askedFor }
+      // The first early ask falls while Claude Code's update runs: nothing is asked, and the ask is not spent.
+      vi.advanceTimersByTime(FIRST)
+      await settled(control)
+      expect(since(npm, failed).codex).toBe(0)
+      // The update fails. Codex is asked at the next early ask, not left until the hourly check.
+      release.resolve()
+      await vi.waitFor(() => { expect(reading(control, 'claude')?.state).toBe('failed') })
+      await settled(control)
+      const ended = { ...npm.state.askedFor }
+      vi.advanceTimersByTime(FIRST)
+      await vi.waitFor(() => { expect(since(npm, ended).codex).toBe(1) })
+      await settled(control)
+      // And it still has two more: the one that fell during the update did not count.
+      vi.advanceTimersByTime(SECOND)
+      await vi.waitFor(() => { expect(since(npm, ended).codex).toBe(2) })
+    } finally { control.dispose() }
+  })
+
   it('goes back to the hour once the client answers, and gives its next failure all three again', async () => {
     const { control, npm } = await coordinator({ timeouts: true })
     try {

@@ -120,10 +120,12 @@ export class ClientUpdates {
   }
   /**
    * The early ask: afresh, of the unanswered clients that have one left, keeping every other client's reading as it is.
-   * It is let go while another check is reading, which arms the next one when it ends.
+   * It is let go while another check is reading, which arms the next one when it ends. One that falls while a client is
+   * being updated is not spent: no check reads then, so it waits its turn again.
    */
   private async askUnanswered(): Promise<void> {
     if (this.clientChecks > 0) return
+    if (this.updatingClient || this.clientLineRunning) { this.askUnansweredSoon(); return }
     const due = new Set<ProviderId>()
     for (const [provider, count] of this.unanswered) {
       if (count >= CLIENT_RETRY_DELAYS_MS.length) continue

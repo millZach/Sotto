@@ -30,7 +30,8 @@ What one check asks depends on the track and the platform. The pinned updater (`
 then driven with a fake request executor (`tests/unit/main/owlUpdates.test.ts`, which now holds each list exactly):
 stable on Windows keeps prereleases off, so it reads the release feed, asks `/releases/latest` for the newest stable tag
 and then reads that release's `latest.yml`. Owl reads the feed, picks its tag from it and reads `owl.yml`, or
-`owl-mac.yml` on a Mac; it reads `latest.yml` as well only if that file is missing. Stable on a Mac and every Linux
+`owl-mac.yml` on a Mac; if that read fails for any reason it reads `latest.yml` as well, or `latest-mac.yml` on a Mac,
+a third request. Stable on a Mac and every Linux
 build have no in-app updater (ADR-0062, ADR-0093), so they make none. GitHub answers `/releases/latest` and each
 manifest with a redirect, which the updater follows: one more round trip each, with an empty body.
 
