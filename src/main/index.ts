@@ -1,3 +1,4 @@
+import { ModelCatalogue } from './ownModelServers/catalogue'
 import { createDictationTiming } from './performance/dictationTiming'
 import { DICTATION_TIMING_ARGUMENT, dictationTimingNow, markDictationTiming } from '../shared/dictationTiming'
 import { mediaThumbnailMaker } from './agents/mediaThumbnail'
@@ -124,7 +125,7 @@ import { execFile, spawn } from 'node:child_process'
 import { appendFile, readFile, realpath, rename, stat, writeFile } from 'node:fs/promises'
 import { homedir, hostname as osHostname, release as osRelease } from 'node:os'
 import { isAbsolute, join } from 'node:path'
-import { forgetHermesKey } from './agents/hermesRuntime'
+import { HermesKeys, forgetHermesKey } from './agents/hermesRuntime'
 
 import {
   bootstrapSotto,
@@ -898,8 +899,13 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   // (ADR-0138), so it exists only while the Owl list turns it on, one of them is not held and the local host runs.
   // Otherwise main keeps the record untouched, gives neither a server, passes no renderer argument and registers no channel.
   const ownServers: OwnServers | undefined = owlFeatures['own-model-servers'] && (!heldProviders.has('opencode') || !heldProviders.has('deepseek') || !heldProviders.has('hermes')) && startupSettings.localHostEnabled
-    ? new OwnServers({ directory: userDataPath, openCode: (): OwnServersOpenCode | undefined => localRuntime?.ownServersOpenCode,
+    ? new OwnServers({ directory: userDataPath, ...(e2eConfiguration ? { catalogue: new ModelCatalogue(async () => { throw new Error('E2E_NETWORK_DISABLED') }) } : {}), openCode: (): OwnServersOpenCode | undefined => localRuntime?.ownServersOpenCode,
       deepSeek: (): OwnServersDeepSeek | undefined => localRuntime?.ownServersDeepSeek, hermes: (): OwnServersHermes | undefined => localRuntime?.ownServersHermes,
+      readKey: async id => (await new HermesKeys(join(userDataPath, 'hermes', 'own-server-keys.json')).read())[id],
+      replaceHeldHermesKey: async (id, key) => {
+        const keys = new HermesKeys(join(userDataPath, 'hermes', 'own-server-keys.json'))
+        if ((await keys.read())[id] !== undefined) await keys.keep(id, key)
+      },
       forgetHermesKey: id => forgetHermesKey(join(userDataPath, 'hermes'), id), log: event => { logOperational(event) } }) : undefined
   // AI cleanup on the user's own servers (ADR-0136): its own Owl entry, and only where both the cleanup model and Your own
   // model servers exist this run. Otherwise the cleanup pass is given no server, no channel is registered, and the saved

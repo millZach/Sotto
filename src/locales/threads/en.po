@@ -27,7 +27,6 @@ msgid "(link not opened: not a web address)"
 msgstr "(link not opened: not a web address)"
 
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
-#: src/renderer/src/agents/OwnModelServers.tsx
 msgid "(optional)"
 msgstr "(optional)"
 
@@ -35,6 +34,11 @@ msgstr "(optional)"
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "(recommended)"
 msgstr "(recommended)"
+
+#. placeholder {0}: models.length
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "{0, plural, one {# model found} other {# models found}}"
+msgstr "{0, plural, one {# model found} other {# models found}}"
 
 #. placeholder {0}: lines.left
 #: src/renderer/src/agents/CheckReply.tsx
@@ -50,6 +54,11 @@ msgstr "{0, plural, one {# worker} other {# workers}}"
 #: src/renderer/src/agents/MainCheckoutLine.tsx
 msgid "{0, plural, one {a local commit blocks the update} other {{commits} local commits block the update}}"
 msgstr "{0, plural, one {a local commit blocks the update} other {{commits} local commits block the update}}"
+
+#. placeholder {0}: kept.size
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "{0, plural, one {Add # model} other {Add # models}}"
+msgstr "{0, plural, one {Add # model} other {Add # models}}"
 
 #. placeholder {0}: extra.length
 #: src/renderer/src/agents/ownServerWords.ts
@@ -75,6 +84,22 @@ msgstr "{0, plural, one {Show {label} models, # model} other {Show {label} model
 #: src/renderer/src/agents/SwarmAngles.tsx
 msgid "{0, plural, other {# needs you}}"
 msgstr "{0, plural, other {# needs you}}"
+
+#. placeholder {0}: catalogue.length
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "{0} APIs"
+msgstr "{0} APIs"
+
+#. placeholder {0}: model.context.toLocaleString()
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "{0} context"
+msgstr "{0} context"
+
+#. placeholder {0}: kept.size
+#. placeholder {1}: models.length
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "{0} of {1} models selected"
+msgstr "{0} of {1} models selected"
 
 #. {about} is a sentence saying where the sign-in is; {host} is the name of a saved host.
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
@@ -283,6 +308,10 @@ msgstr "{count, plural, one {Update for # host} other {Updates for # hosts}}"
 msgid "{count, plural, other {Babysitting # pull requests}}"
 msgstr "{count, plural, other {Babysitting # pull requests}}"
 
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "{count} of {total} models"
+msgstr "{count} of {total} models"
+
 #. {creationError} is the sentence that says why the thread could not be made.
 #: src/renderer/src/agents/ThreadsView.tsx
 msgid "{creationError} Your prompt and screenshots are kept. Open New thread in {projectTitle} to get them back."
@@ -312,11 +341,6 @@ msgstr "{delivery} Reconnect {provider} to see whether its question is still ope
 #: src/renderer/src/agents/requests/RequestDraftRecovery.tsx
 msgid "{delivery} Sotto can’t tell whether {provider} still shows its question until this conversation loads."
 msgstr "{delivery} Sotto can’t tell whether {provider} still shows its question until this conversation loads."
-
-#. {derivedName} is the name Sotto takes from the address, such as spark-head.
-#: src/renderer/src/agents/OwnModelServers.tsx
-msgid "{derivedName}, from the address"
-msgstr "{derivedName}, from the address"
 
 #: src/renderer/src/agents/FilePicker.tsx
 msgid "{directory} has nothing to mention."
@@ -413,8 +437,8 @@ msgid "{host} asks for a key. Nothing was saved. Paste the key whoever runs the 
 msgstr "{host} asks for a key. Nothing was saved. Paste the key whoever runs the server gave you, then check again."
 
 #: src/renderer/src/agents/ownServerWords.ts
-msgid "{host} is already added. Nothing was saved. To change its key or its models, remove it and add it again."
-msgstr "{host} is already added. Nothing was saved. To change its key or its models, remove it and add it again."
+msgid "{host} is already added. Nothing was saved. Use Replace key or Choose models on its saved row."
+msgstr "{host} is already added. Nothing was saved. Use Replace key or Choose models on its saved row."
 
 #: src/renderer/src/agents/ActivityBody.tsx
 msgid "{host} is not connected. The diff is still there and shows here when {host} reconnects."
@@ -1515,6 +1539,10 @@ msgstr "⋯ earlier lines are on {host}"
 msgid "⋯ the rest is on {host}"
 msgstr "⋯ the rest is on {host}"
 
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "${price} per 1M tokens"
+msgstr "${price} per 1M tokens"
+
 #. A keyboard hint: the 1 key picks the suggestion.
 #: src/renderer/src/agents/NextList.tsx
 msgid "1 picks it"
@@ -1645,6 +1673,10 @@ msgstr "Actions for {title}"
 msgid "Activity"
 msgstr "Activity"
 
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Add {sourceName}"
+msgstr "Add {sourceName}"
+
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "Add a model source"
 msgstr "Add a model source"
@@ -1660,16 +1692,32 @@ msgid "Add a project folder to start."
 msgstr "Add a project folder to start."
 
 #: src/renderer/src/agents/OwnModelServers.tsx
-msgid "Add a server"
-msgstr "Add a server"
+msgid "Add an API key or a server you run, such as SGLang, vLLM, Ollama or LM Studio. Sotto contacts it only when you check or add it."
+msgstr "Add an API key or a server you run, such as SGLang, vLLM, Ollama or LM Studio. Sotto contacts it only when you check or add it."
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Add an API or server"
+msgstr "Add an API or server"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Add an API or server…"
+msgstr "Add an API or server…"
 
 #: src/renderer/src/agents/ThreadPanes.tsx
 msgid "Add as a pane"
 msgstr "Add as a pane"
 
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Add by address"
+msgstr "Add by address"
+
 #: src/renderer/src/agents/ThreadPanes.tsx
 msgid "Add here"
 msgstr "Add here"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Add models"
+msgstr "Add models"
 
 #: src/renderer/src/agents/SidebarFrame.tsx
 msgid "Add project"
@@ -1700,10 +1748,6 @@ msgstr "Add to reply ({modKey}+Enter)"
 msgid "Add Ultrathink to prompt"
 msgstr "Add Ultrathink to prompt"
 
-#: src/renderer/src/agents/OwnModelServers.tsx
-msgid "Add your own model server"
-msgstr "Add your own model server"
-
 #. A file added locally
 #: src/renderer/src/agents/mainCheckoutLine.logic.ts
 msgid "added"
@@ -1721,17 +1765,13 @@ msgctxt "queued message"
 msgid "Added"
 msgstr "Added"
 
-#: src/renderer/src/agents/OwnModelServers.tsx
-msgid "Added {doneName}"
-msgstr "Added {doneName}"
-
 #: src/renderer/src/agents/ownServerWords.ts
 msgid "Added {name}. Its models are in the model menu under {name}, with providers that can use them."
 msgstr "Added {name}. Its models are in the model menu under {name}, with providers that can use them."
 
 #: src/renderer/src/agents/OwnModelServers.tsx
-msgid "Added with a key"
-msgstr "Added with a key"
+msgid "Added. Its models are in the model menu."
+msgstr "Added. Its models are in the model menu."
 
 #: src/renderer/src/agents/attachmentWords.ts
 msgid "Adding files..."
@@ -1746,7 +1786,6 @@ msgid "Adding the marked copy…"
 msgstr "Adding the marked copy…"
 
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
-#: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Adding…"
 msgstr "Adding…"
 
@@ -1790,6 +1829,14 @@ msgstr "Agent setting"
 #: src/renderer/src/agents/ThreadActivity.tsx
 msgid "Agents"
 msgstr "Agents"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "All"
+msgstr "All"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "All APIs"
+msgstr "All APIs"
 
 #: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "All caught up."
@@ -1842,6 +1889,10 @@ msgstr "and {more} more"
 #: src/renderer/src/agents/SwarmAngles.tsx
 msgid "Angles of {title}"
 msgstr "Angles of {title}"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Another address"
+msgstr "Another address"
 
 #: src/renderer/src/agents/delegationWords.ts
 msgid "another machine"
@@ -1912,6 +1963,10 @@ msgstr "Answered, while {who} waited for it."
 msgid "Any provider until your first message."
 msgstr "Any provider until your first message."
 
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "API actions"
+msgstr "API actions"
+
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "API key"
 msgstr "API key"
@@ -1919,6 +1974,10 @@ msgstr "API key"
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "API token"
 msgstr "API token"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "APIs and your own model servers"
+msgstr "APIs and your own model servers"
 
 #. {sourceName} is a model source, such as Anthropic.
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
@@ -1980,10 +2039,6 @@ msgstr "Asked for {asked}. This computer couldn't start it there, so nothing was
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "Asking {inSentence} for a summary…"
 msgstr "Asking {inSentence} for a summary…"
-
-#: src/renderer/src/agents/OwnModelServers.tsx
-msgid "Asking the server for its models…"
-msgstr "Asking the server for its models…"
 
 #. When a stopped thread restarts today, as in "Restarts at 3:00 pm".
 #. When babysitting ended today, as in "Ended at 4:05 pm".
@@ -2185,6 +2240,10 @@ msgstr "Browsed {host}"
 msgid "Browsing {host}"
 msgstr "Browsing {host}"
 
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Cached input"
+msgstr "Cached input"
+
 #: src/renderer/src/agents/callouts.tsx
 #: src/renderer/src/agents/MarkupEditor.tsx
 msgid "Callouts"
@@ -2328,16 +2387,20 @@ msgid "Check"
 msgstr "Check"
 
 #: src/renderer/src/agents/OwnModelServers.tsx
-msgid "Check {name} again"
-msgstr "Check {name} again"
-
-#: src/renderer/src/agents/OwnModelServers.tsx
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 #: src/renderer/src/agents/ThreadFollowups.tsx
 #: src/renderer/src/agents/ThreadTranscript.tsx
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
 msgid "Check again"
 msgstr "Check again"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Check and replace"
+msgstr "Check and replace"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Check key"
+msgstr "Check key"
 
 #: src/renderer/src/agents/GitActionButton.tsx
 msgid "Check out feature branch & continue"
@@ -2350,6 +2413,10 @@ msgstr "Check the download"
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Check this server"
 msgstr "Check this server"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Checked"
+msgstr "Checked"
 
 #: src/renderer/src/agents/ClientUpdateCard.tsx
 msgid "Checked just now"
@@ -2374,6 +2441,10 @@ msgstr "checked the cloud iPhone"
 msgid "Checking the folder…"
 msgstr "Checking the folder…"
 
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Checking the key and reading models…"
+msgstr "Checking the key and reading models…"
+
 #: src/renderer/src/agents/DeleteThread.tsx
 msgid "Checking the thread…"
 msgstr "Checking the thread…"
@@ -2395,6 +2466,10 @@ msgstr "Checkout pull request"
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
 msgid "Choose"
 msgstr "Choose"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Choose {sourceName} models"
+msgstr "Choose {sourceName} models"
 
 #: src/renderer/src/agents/ProjectChooser.tsx
 msgid "Choose a folder for the new thread"
@@ -2428,6 +2503,10 @@ msgstr "Choose an answer"
 msgid "Choose an answer, or skip"
 msgstr "Choose an answer, or skip"
 
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Choose an API and paste its key, or add the address of a server you run."
+msgstr "Choose an API and paste its key, or add the address of a server you run."
+
 #: src/renderer/src/agents/ThreadGreeting.tsx
 msgid "Choose another folder…"
 msgstr "Choose another folder…"
@@ -2453,6 +2532,10 @@ msgstr "Choose model"
 msgid "Choose model. {modelNameNow} oversees this thread"
 msgstr "Choose model. {modelNameNow} oversees this thread"
 
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Choose models"
+msgstr "Choose models"
+
 #: src/renderer/src/agents/ProviderUpgradeNotice.tsx
 msgid "Choose or create a thread to review this draft."
 msgstr "Choose or create a thread to review this draft."
@@ -2469,6 +2552,10 @@ msgstr "Choose the default projects directory on {computerName}"
 #: src/renderer/src/agents/ProjectsDirectoryRow.tsx
 msgid "Choose the default projects directory on this computer"
 msgstr "Choose the default projects directory on this computer"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Choose thinking and effort in each thread’s effort control."
+msgstr "Choose thinking and effort in each thread’s effort control."
 
 #: src/renderer/src/agents/ProviderModelList.tsx
 msgid "Choose what new threads start with in Settings > Threads."
@@ -2492,6 +2579,10 @@ msgstr "Circle"
 msgid "Clear"
 msgstr "Clear"
 
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Clear all"
+msgstr "Clear all"
+
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "Clear choice"
 msgstr "Clear choice"
@@ -2507,6 +2598,10 @@ msgstr "Clear saved draft"
 #: src/renderer/src/agents/SidebarFrame.tsx
 msgid "Clear search"
 msgstr "Clear search"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Clear shown"
+msgstr "Clear shown"
 
 #. {computerName} is the name of a saved host.
 #: src/renderer/src/agents/ProjectsDirectoryRow.tsx
@@ -2610,10 +2705,6 @@ msgstr "Close video {0} of {1}, from {2}"
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "Close without adding a model source"
 msgstr "Close without adding a model source"
-
-#: src/renderer/src/agents/OwnModelServers.tsx
-msgid "Close without adding a server"
-msgstr "Close without adding a server"
 
 #. A background agent's status.
 #: src/renderer/src/agents/threadActivityView.ts
@@ -2725,6 +2816,7 @@ msgstr "Commit…"
 
 #. A heading over the model sources most people use.
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
+#: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Common"
 msgstr "Common"
 
@@ -2792,6 +2884,10 @@ msgstr "Conflicted"
 msgid "Connect providers"
 msgstr "Connect providers"
 
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Connect the provider that keeps this key before replacing it. Nothing was changed."
+msgstr "Connect the provider that keeps this key before replacing it. Nothing was changed."
+
 #. A host's status.
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
 msgid "Connected"
@@ -2809,6 +2905,10 @@ msgstr "Connecting…"
 #: src/renderer/src/agents/ThreadCompaction.tsx
 msgid "Context compacted"
 msgstr "Context compacted"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Context not given"
+msgstr "Context not given"
 
 #. In the speed card of a thread on the user’s own model server: how much of the model’s context the thread fills.
 #: src/renderer/src/agents/ServerMark.tsx
@@ -3517,7 +3617,9 @@ msgid "default"
 msgstr "default"
 
 #. A button that sets the model's own default reasoning effort.
+#. The model uses its own default thinking.
 #. The quiet composer's effort word while the thread is on the model's own default reasoning effort.
+#: src/renderer/src/agents/effortNames.ts
 #: src/renderer/src/agents/EffortPicker.tsx
 #: src/renderer/src/agents/SplitChipEffort.tsx
 msgid "Default"
@@ -3626,6 +3728,7 @@ msgid "Detached HEAD"
 msgstr "Detached HEAD"
 
 #: src/renderer/src/agents/ClientUpdateCard.tsx
+#: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Details"
 msgstr "Details"
 
@@ -3734,6 +3837,7 @@ msgstr "Don’t restart them"
 msgid "Don’t restart this thread"
 msgstr "Don’t restart this thread"
 
+#: src/renderer/src/agents/EffortPicker.tsx
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Done"
 msgstr "Done"
@@ -3974,6 +4078,10 @@ msgstr "Escape closes"
 msgid "Evening. What’s left?"
 msgstr "Evening. What’s left?"
 
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Every API, A to Z"
+msgstr "Every API, A to Z"
+
 #: src/renderer/src/agents/ModelPicker.tsx
 msgid "Every model here runs through Cursor, on your Cursor plan."
 msgstr "Every model here runs through Cursor, on your Cursor plan."
@@ -3989,6 +4097,10 @@ msgstr "everything the agent did on the way"
 #: src/renderer/src/agents/EffortPicker.tsx
 msgid "Everything the model has. Slowest, costliest."
 msgstr "Everything the model has. Slowest, costliest."
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Existing threads keep working. Unticked models leave the menu for new picks."
+msgstr "Existing threads keep working. Unticked models leave the menu for new picks."
 
 #. A command that ended with this exit code.
 #: src/renderer/src/agents/threadActivityView.ts
@@ -4222,6 +4334,18 @@ msgstr "Folder removed. Sending to this thread puts it back on its branch."
 msgid "For 1 hour"
 msgstr "For 1 hour"
 
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "For Anthropic, connect Claude Code under Providers."
+msgstr "For Anthropic, connect Claude Code under Providers."
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "For OpenAI, connect Codex under Providers."
+msgstr "For OpenAI, connect Codex under Providers."
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "For xAI, connect Grok Build under Providers."
+msgstr "For xAI, connect Grok Build under Providers."
+
 #. Starts the forked thread.
 #: src/renderer/src/agents/ForkFromHere.tsx
 msgid "Fork"
@@ -4271,14 +4395,14 @@ msgstr "From {source}, up to {provider}’s reply."
 msgid "From Sotto’s releases on GitHub."
 msgstr "From Sotto’s releases on GitHub."
 
-#: src/renderer/src/agents/OwnModelServers.tsx
-msgid "From the address, if left empty"
-msgstr "From the address, if left empty"
-
 #. A permission mode: the agent runs anything without asking.
 #: src/renderer/src/agents/permissionPresentation.tsx
 msgid "Full access"
 msgstr "Full access"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Get a key"
+msgstr "Get a key"
 
 #: src/renderer/src/agents/ActivityBody.tsx
 msgid "Getting earlier lines from {host}…"
@@ -4295,6 +4419,10 @@ msgstr "Getting the diff from {host}…"
 #: src/renderer/src/agents/ActivityBody.tsx
 msgid "Getting the input from {host}…"
 msgstr "Getting the input from {host}…"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Getting the list of APIs…"
+msgstr "Getting the list of APIs…"
 
 #: src/renderer/src/agents/ActivityBody.tsx
 msgid "Getting the rest from {host}…"
@@ -4399,6 +4527,7 @@ msgstr "Hidden answer"
 
 #. Hides the list under a project
 #: src/renderer/src/agents/MainCheckoutLine.tsx
+#: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Hide"
 msgstr "Hide"
 
@@ -4543,6 +4672,10 @@ msgstr "Initialize Git"
 #: src/renderer/src/agents/MarkupEditor.tsx
 msgid "Ink"
 msgstr "Ink"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Input"
+msgstr "Input"
 
 #. {from} is the version the host runs now.
 #: src/renderer/src/agents/HostUpdates.tsx
@@ -4723,6 +4856,10 @@ msgstr "Its models join the model menu under OpenCode on {host}, billed to your 
 msgid "Its models join the model menu under OpenCode, billed to your {sourceName} account."
 msgstr "Its models join the model menu under OpenCode, billed to your {sourceName} account."
 
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Its models will leave the menu. Existing threads keep their messages. Add it again before sending to it from those threads."
+msgstr "Its models will leave the menu. Existing threads keep their messages. Add it again before sending to it from those threads."
+
 #. Stands for a provider whose name is not known, inside a sentence.
 #: src/renderer/src/agents/ThreadStart.tsx
 msgid "its provider"
@@ -4861,10 +4998,21 @@ msgstr "Keep the callouts in the copy"
 msgid "Keep this branch"
 msgstr "Keep this branch"
 
-#. A secret the model server checks before it answers.
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Key"
 msgstr "Key"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Key (optional)"
+msgstr "Key (optional)"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Key kept by Hermes"
+msgstr "Key kept by Hermes"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Key kept by OpenCode"
+msgstr "Key kept by OpenCode"
 
 #: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Last activity unavailable"
@@ -4969,6 +5117,15 @@ msgstr "Local connection"
 #: src/renderer/src/agents/ProjectChooser.tsx
 msgid "Local folder"
 msgstr "Local folder"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Longest answer not given"
+msgstr "Longest answer not given"
+
+#. placeholder {0}: model.output.toLocaleString()
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Longest answer: {0} tokens"
+msgstr "Longest answer: {0} tokens"
 
 #. {longest} is how long the longest approval or question has waited, such as 26 min.
 #: src/renderer/src/agents/NeedsYouQueue.tsx
@@ -5110,10 +5267,6 @@ msgstr "Model for the forked thread"
 msgid "Model providers"
 msgstr "Model providers"
 
-#: src/renderer/src/agents/OwnModelServers.tsx
-msgid "Model servers you run, such as Ollama, LM Studio, vLLM or SGLang, on this computer, your network or your tailnet. OpenCode threads can use their models. Sotto contacts a server only when you check or add it."
-msgstr "Model servers you run, such as Ollama, LM Studio, vLLM or SGLang, on this computer, your network or your tailnet. OpenCode threads can use their models. Sotto contacts a server only when you check or add it."
-
 #: src/renderer/src/agents/ModelPicker.tsx
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "Model sources"
@@ -5135,6 +5288,10 @@ msgstr "Model the new thread starts on"
 #: src/renderer/src/agents/ModelPicker.tsx
 msgid "Models"
 msgstr "Models"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Models checked. Your choices were kept; new models start unticked."
+msgstr "Models checked. Your choices were kept; new models start unticked."
 
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Models found"
@@ -5169,6 +5326,10 @@ msgstr "More"
 #: src/renderer/src/agents/PaneMenu.tsx
 msgid "More actions"
 msgstr "More actions"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "More for {name}"
+msgstr "More for {name}"
 
 #: src/renderer/src/agents/GitActionButton.tsx
 msgid "More Git actions"
@@ -5328,6 +5489,14 @@ msgstr "Nested repository · {changes, plural, one {{changeCount} uncommitted ch
 msgid "Nested worktree · {changes, plural, one {{changeCount} uncommitted change} other {{changeCount} uncommitted changes}}"
 msgstr "Nested worktree · {changes, plural, one {{changeCount} uncommitted change} other {{changeCount} uncommitted changes}}"
 
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "new"
+msgstr "new"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "New"
+msgstr "New"
+
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
 msgid "New folder"
 msgstr "New folder"
@@ -5335,6 +5504,10 @@ msgstr "New folder"
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
 msgid "New folder name"
 msgstr "New folder name"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "New key"
+msgstr "New key"
 
 #: src/renderer/src/agents/ThreadTranscript.tsx
 msgid "New messages"
@@ -5456,6 +5629,10 @@ msgstr "No local commits to push."
 msgid "No longer kept on its computer"
 msgstr "No longer kept on its computer"
 
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "No matching API. Use Another address to enter an OpenAI-compatible address."
+msgstr "No matching API. Use Another address to enter an OpenAI-compatible address."
+
 #: src/renderer/src/agents/ModelPicker.tsx
 #: src/renderer/src/agents/ProviderModelList.tsx
 msgid "No matching models."
@@ -5481,6 +5658,10 @@ msgstr "No model is ready to start this thread. Connect a provider or choose one
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "No model source matches “{typed}”."
 msgstr "No model source matches “{typed}”."
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "No models match. Clear the search or choose another filter."
+msgstr "No models match. Clear the search or choose another filter."
 
 #: src/renderer/src/agents/DelegatedWork.tsx
 msgid "No other ready model is on the list in Settings."
@@ -5522,6 +5703,10 @@ msgstr "No skills match “{query}”."
 msgid "No threads yet."
 msgstr "No threads yet."
 
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "No tools"
+msgstr "No tools"
+
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
 msgid "No uncommitted changes"
 msgstr "No uncommitted changes"
@@ -5544,8 +5729,8 @@ msgid "None of {provider}’s skills here can be chosen from a message."
 msgstr "None of {provider}’s skills here can be chosen from a message."
 
 #: src/renderer/src/agents/OwnModelServers.tsx
-msgid "None yet. Add a model server to use its models in threads."
-msgstr "None yet. Add a model server to use its models in threads."
+msgid "None yet. Add an API or a model server to use its models in threads."
+msgstr "None yet. Add an API or a model server to use its models in threads."
 
 #: src/renderer/src/agents/MarkupEditor.tsx
 msgid "None yet. Draw on the picture."
@@ -5673,10 +5858,10 @@ msgstr "Note: {0}"
 msgid "Nothing answered at {host}. Nothing was saved. Check the server is on and this computer can reach it, over the tailnet if it is there, then try again."
 msgstr "Nothing answered at {host}. Nothing was saved. Check the server is on and this computer can reach it, over the tailnet if it is there, then try again."
 
-#. Settings › Providers › Your own model servers is where the server is kept; translate each name as the Settings page does.
+#. Settings › Providers › APIs and your own model servers is where the server is kept; translate each name as the Settings page does.
 #: src/renderer/src/agents/ownServerTurnWords.ts
-msgid "Nothing in the thread was lost. In Settings › Providers › Your own model servers, remove {name} and add it again with the right key, then try again."
-msgstr "Nothing in the thread was lost. In Settings › Providers › Your own model servers, remove {name} and add it again with the right key, then try again."
+msgid "Nothing in the thread was lost. In Settings › Providers › APIs and your own model servers, replace the key for {name}, then try again."
+msgstr "Nothing in the thread was lost. In Settings › Providers › APIs and your own model servers, replace the key for {name}, then try again."
 
 #: src/renderer/src/agents/ownServerTurnWords.ts
 msgid "Nothing in the thread was lost. Pick another model in the model menu below, or load {model} on {name} again, then try again."
@@ -5741,6 +5926,8 @@ msgid "now {to} tokens"
 msgstr "now {to} tokens"
 
 #. A host's status: switched off.
+#. Thinking is off for an API model.
+#: src/renderer/src/agents/effortNames.ts
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
 msgid "Off"
 msgstr "Off"
@@ -5765,10 +5952,6 @@ msgstr "On hold"
 #: src/renderer/src/agents/ThreadStart.tsx
 msgid "one of its agents"
 msgstr "one of its agents"
-
-#: src/renderer/src/agents/OwnModelServers.tsx
-msgid "Only if the server was started with one"
-msgstr "Only if the server was started with one"
 
 #. {whole} lists the parts of a handover, such as "the task and the result".
 #: src/renderer/src/agents/ThreadStart.tsx
@@ -5979,8 +6162,8 @@ msgid "Open Settings"
 msgstr "Open Settings"
 
 #: src/renderer/src/agents/ownServerTurnWords.ts
-msgid "Open Settings at Your own model servers"
-msgstr "Open Settings at Your own model servers"
+msgid "Open Settings at APIs and your own model servers"
+msgstr "Open Settings at APIs and your own model servers"
 
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "Open sign-in page"
@@ -6073,6 +6256,11 @@ msgstr "OpenCode and Hermes keep keys in their own Sotto folders. Adding with He
 msgid "OpenCode did not forget the key for {name}, so nothing was removed. Try removing the server again."
 msgstr "OpenCode did not forget the key for {name}, so nothing was removed. Try removing the server again."
 
+#: src/renderer/src/agents/OwnModelServers.tsx
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "OpenCode has the new key, but Hermes could not replace its copy. Your model choices were kept. Try again."
+msgstr "OpenCode has the new key, but Hermes could not replace its copy. Your model choices were kept. Try again."
+
 #. {host} is the name of a saved host.
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "OpenCode model sources on {host}"
@@ -6162,6 +6350,10 @@ msgstr "Other: {text}"
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "Outcome unknown"
 msgstr "Outcome unknown"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Output"
+msgstr "Output"
 
 #. After a model's name on a Dynamic thread's chip: Opus 5.5 oversees.
 #. After a model's name on a Dynamic thread's chip: Opus 5.5 oversees.
@@ -6446,6 +6638,10 @@ msgstr "Previous worktree (detached)"
 msgid "Previous-provider recovery"
 msgstr "Previous-provider recovery"
 
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Price not given"
+msgstr "Price not given"
+
 #: src/renderer/src/agents/GitActionButton.tsx
 msgid "Private"
 msgstr "Private"
@@ -6633,10 +6829,6 @@ msgstr "Read the handover, word for word"
 msgid "Read the reply from {title}, the check on {machine}"
 msgstr "Read the reply from {title}, the check on {machine}"
 
-#: src/renderer/src/agents/OwnModelServers.tsx
-msgid "Read your saved servers again"
-msgstr "Read your saved servers again"
-
 #. The working line while a tool reads a file; {name} is the file's name, such as threads.css.
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "Reading {name}"
@@ -6800,10 +6992,13 @@ msgstr "Remove"
 
 #. {name} is an attached file's name. The button takes it off the draft.
 #: src/renderer/src/agents/attachmentWords.ts
-#: src/renderer/src/agents/OwnModelServers.tsx
 #: src/renderer/src/agents/ScreenshotInput.tsx
 msgid "Remove {name}"
 msgstr "Remove {name}"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Remove {sourceName}?"
+msgstr "Remove {sourceName}?"
 
 #. {words} names a mark, such as "Arrow" or "Note: the button".
 #: src/renderer/src/agents/MarkupEditor.tsx
@@ -6891,7 +7086,6 @@ msgstr "Removed {name}. Its models are gone from the model menu. Threads that us
 msgid "Removes the worktree folder it made. Its branch and commits stay."
 msgstr "Removes the worktree folder it made. Its branch and commits stay."
 
-#: src/renderer/src/agents/OwnModelServers.tsx
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
 msgid "Removing…"
 msgstr "Removing…"
@@ -6918,6 +7112,18 @@ msgstr "renamed"
 #: src/renderer/src/agents/gitActionButton.logic.ts
 msgid "Renamed"
 msgstr "Renamed"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Replace key"
+msgstr "Replace key"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Replace the key for {sourceName}"
+msgstr "Replace the key for {sourceName}"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Replace the placeholders with your API address before checking."
+msgstr "Replace the placeholders with your API address before checking."
 
 #. Where an action's time came from; {provider} is the provider's name.
 #: src/renderer/src/agents/threadActivityView.ts
@@ -7143,6 +7349,10 @@ msgstr "Runs on {hostName}"
 msgid "Runs on this computer"
 msgstr "Runs on this computer"
 
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Runs with"
+msgstr "Runs with"
+
 #. Where a continued thread works: the folder this thread works in.
 #. Where a continued thread works: the folder this thread works in.
 #: src/renderer/src/agents/ContinueThread.tsx
@@ -7158,20 +7368,29 @@ msgstr "Save"
 msgid "Save again"
 msgstr "Save again"
 
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Save choices"
+msgstr "Save choices"
+
 #: src/renderer/src/agents/requests/RequestDraftRecovery.tsx
 msgid "Saved answer"
 msgstr "Saved answer"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Saved APIs and model servers"
+msgstr "Saved APIs and model servers"
 
 #: src/renderer/src/agents/EmptyWorkspace.tsx
 msgid "Saved draft"
 msgstr "Saved draft"
 
 #: src/renderer/src/agents/OwnModelServers.tsx
-msgid "Saved model servers"
-msgstr "Saved model servers"
+msgid "Saved. Its chosen models are in the model menu."
+msgstr "Saved. Its chosen models are in the model menu."
 
 #. The Use this folder button while the chosen folder is saved.
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
+#: src/renderer/src/agents/OwnModelServers.tsx
 #: src/renderer/src/agents/ThreadFollowups.tsx
 msgid "Saving…"
 msgstr "Saving…"
@@ -7200,6 +7419,10 @@ msgstr "Search {providerName} models"
 msgid "Search all {providerName} models"
 msgstr "Search all {providerName} models"
 
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Search APIs"
+msgstr "Search APIs"
+
 #. {currentName} is a folder's name.
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
 msgid "Search folders in {currentName}"
@@ -7224,6 +7447,7 @@ msgid "Search model sources"
 msgstr "Search model sources"
 
 #: src/renderer/src/agents/ModelPicker.tsx
+#: src/renderer/src/agents/OwnModelServers.tsx
 #: src/renderer/src/agents/ProviderModelList.tsx
 msgid "Search models"
 msgstr "Search models"
@@ -7270,9 +7494,21 @@ msgstr "Select {words}"
 msgid "Select a thread to read its messages and continue working."
 msgstr "Select a thread to read its messages and continue working."
 
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Select all"
+msgstr "Select all"
+
 #: src/renderer/src/agents/branchToolbar.logic.ts
 msgid "Select ref"
 msgstr "Select ref"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Select shown"
+msgstr "Select shown"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Selected"
+msgstr "Selected"
 
 #. {words} names a mark on a picture, such as "Arrow" or "Note: the button".
 #: src/renderer/src/agents/MarkupEditor.tsx
@@ -7395,15 +7631,12 @@ msgstr "Settled {title}. Removing its worktree…"
 msgid "Setup did not finish."
 msgstr "Setup did not finish."
 
-#: src/renderer/src/agents/OwnModelServers.tsx
-msgid "SGLang, vLLM, Ollama, LM Studio, llama.cpp or any OpenAI-compatible server. Check it, then add it to use its models in threads."
-msgstr "SGLang, vLLM, Ollama, LM Studio, llama.cpp or any OpenAI-compatible server. Check it, then add it to use its models in threads."
-
 #: src/renderer/src/agents/ThreadFollowups.tsx
 msgid "Shift+Enter for a new line"
 msgstr "Shift+Enter for a new line"
 
 #: src/renderer/src/agents/MarkupEditor.tsx
+#: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Show"
 msgstr "Show"
 
@@ -8354,8 +8587,8 @@ msgid "Table"
 msgstr "Table"
 
 #: src/renderer/src/agents/OwnModelServers.tsx
-msgid "Takes images."
-msgstr "Takes images."
+msgid "Takes images"
+msgstr "Takes images"
 
 #: src/renderer/src/agents/EffortPicker.tsx
 msgid "Takes longer and catches more."
@@ -8467,6 +8700,10 @@ msgstr "The answer comes back as a wake-up."
 #: src/renderer/src/agents/requests/RequestDraftRecovery.tsx
 msgid "The answer may have arrived, so Sotto won’t send it again."
 msgstr "The answer may have arrived, so Sotto won’t send it again."
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "The API answered. Its key stays with its provider, so its saved models were kept."
+msgstr "The API answered. Its key stays with its provider, so its saved models were kept."
 
 #. Stands for a branch's name when the record has none.
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
@@ -8596,6 +8833,14 @@ msgstr "The last turn failed."
 msgid "The last turn failed. Open the thread to see why."
 msgstr "The last turn failed. Open the thread to see why."
 
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "The list comes from models.dev. Sotto downloads it when this opens and sends nothing of yours."
+msgstr "The list comes from models.dev. Sotto downloads it when this opens and sends nothing of yours."
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "The list of APIs could not be fetched. Nothing was added. Try again, or choose Another address below."
+msgstr "The list of APIs could not be fetched. Nothing was added. Try again, or choose Another address below."
+
 #. {until} is a date.
 #: src/renderer/src/agents/ProviderUpgradeNotice.tsx
 msgid "The local recovery record is kept until {until}."
@@ -8613,9 +8858,17 @@ msgstr "The marked copy goes into your reply. The picture in the thread stays as
 msgid "The model it asked for was not ready on this computer, or Sotto could not save the delegation. {nothing}"
 msgstr "The model it asked for was not ready on this computer, or Sotto could not save the delegation. {nothing}"
 
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "the model’s default"
+msgstr "the model’s default"
+
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "the model's default effort"
 msgstr "the model's default effort"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "The new key could not be saved. The model choices were kept. Try again."
+msgstr "The new key could not be saved. The model choices were kept. Try again."
 
 #: src/renderer/src/agents/MarkupEditor.tsx
 msgid "The note is free now. It stays where you put it."
@@ -8719,13 +8972,13 @@ msgstr "the result"
 msgid "The saved answer belongs to a different question. Reload the original answer before editing."
 msgstr "The saved answer belongs to a different question. Reload the original answer before editing."
 
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "The saved key keeps working until the new one passes. Your model choices stay the same."
+msgstr "The saved key keeps working until the new one passes. Your model choices stay the same."
+
 #: src/renderer/src/agents/ownServerWords.ts
 msgid "The server does not say how much context this model has. Type it from the model’s page."
 msgstr "The server does not say how much context this model has. Type it from the model’s page."
-
-#: src/renderer/src/agents/OwnModelServers.tsx
-msgid "The server’s address, on this computer, your network, your tailnet or the internet."
-msgstr "The server’s address, on this computer, your network, your tailnet or the internet."
 
 #: src/renderer/src/agents/CursorConnection.tsx
 msgid "The sign-in page could not open. Nothing was changed. Try again."
@@ -8781,15 +9034,13 @@ msgstr "These files are ignored by Git and are deleted with the folder:"
 msgid "These quotes go with your next prompt, not this answer."
 msgstr "These quotes go with your next prompt, not this answer."
 
-#. Whether the model reasons before it answers.
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Thinking"
 msgstr "Thinking"
 
-#. {model} is a model name.
-#: src/renderer/src/agents/OwnModelServers.tsx
-msgid "Thinking for {model}"
-msgstr "Thinking for {model}"
+#: src/renderer/src/agents/EffortPicker.tsx
+msgid "Thinking is off."
+msgstr "Thinking is off."
 
 #: src/renderer/src/agents/requests/requestAnswers.ts
 msgid "This answer could not be saved. Use the offered choices and at most 24,000 characters per answer."
@@ -8810,6 +9061,18 @@ msgstr "This answer was not sent."
 #: src/renderer/src/agents/ThreadComposer.tsx
 msgid "This answer’s question is no longer pending."
 msgstr "This answer’s question is no longer pending."
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "This API cannot be added with just a key here. This list has only APIs that supply an OpenAI-compatible address."
+msgstr "This API cannot be added with just a key here. This list has only APIs that supply an OpenAI-compatible address."
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "This API did not accept the new key. The saved key and model choices were kept. Check the key and try again."
+msgstr "This API did not accept the new key. The saved key and model choices were kept. Check the key and try again."
+
+#: src/renderer/src/agents/EffortPicker.tsx
+msgid "This API does not say which thinking levels this model takes. It runs at its own default."
+msgstr "This API does not say which thinking levels this model takes. It runs at its own default."
 
 #. The computer Sotto runs on, inside a sentence.
 #: src/renderer/src/agents/DelegatedWork.tsx
@@ -8938,6 +9201,10 @@ msgstr "This image is too large to copy. Nothing was put on the clipboard."
 #: src/renderer/src/agents/ThreadFollowups.tsx
 msgid "This message has left the queue."
 msgstr "This message has left the queue."
+
+#: src/renderer/src/agents/EffortPicker.tsx
+msgid "This model always thinks."
+msgstr "This model always thinks."
 
 #. {name} is the file name of the image, such as "screenshot.png".
 #: src/renderer/src/agents/attachmentWords.ts
@@ -9209,6 +9476,14 @@ msgstr "took a picture of the screen"
 #: src/renderer/src/agents/diagrams/diagramRenderer.ts
 msgid "Took too long to draw."
 msgstr "Took too long to draw."
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Tool support not given"
+msgstr "Tool support not given"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Tools supported"
+msgstr "Tools supported"
 
 #. Button under a failed turn: sends the user’s last message again.
 #: src/renderer/src/agents/ActivityBody.tsx
@@ -9546,6 +9821,10 @@ msgid "Use {toolName}"
 msgstr "Use {toolName}"
 
 #: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Use an API key or a server you run"
+msgstr "Use an API key or a server you run"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Use its models with a connected provider."
 msgstr "Use its models with a connected provider."
 
@@ -9612,6 +9891,11 @@ msgstr "Uses your Cursor sign-in on this computer. Sotto keeps no Cursor key, an
 #: src/renderer/src/agents/CursorConnection.tsx
 msgid "Uses your Cursor sign-in on this computer. Sotto runs Cursor with a folder of its own, so your own Cursor’s settings stay as they are."
 msgstr "Uses your Cursor sign-in on this computer. Sotto runs Cursor with a folder of its own, so your own Cursor’s settings stay as they are."
+
+#. placeholder {0}: effortLabel(adjustedEffort)
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Using {0} for {modelNameNow}."
+msgstr "Using {0} for {modelNameNow}."
 
 #. The browser line while the agent uses Sotto's browser and has opened no address.
 #: src/renderer/src/agents/browserLine.ts
@@ -9879,10 +10163,6 @@ msgstr "What should {continueTarget} do next? It goes after the handover."
 msgid "What should {provider} do next?"
 msgstr "What should {provider} do next?"
 
-#: src/renderer/src/agents/OwnModelServers.tsx
-msgid "What the model menu calls it."
-msgstr "What the model menu calls it."
-
 #: src/renderer/src/agents/ThreadComposer.tsx
 msgid "What would you like to do next?"
 msgstr "What would you like to do next?"
@@ -10098,6 +10378,10 @@ msgstr "XHigh"
 msgid "You"
 msgstr "You"
 
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "You can use Another address if you have an OpenAI-compatible API address."
+msgstr "You can use Another address if you have an OpenAI-compatible API address."
+
 #: src/renderer/src/agents/DelegatedWork.tsx
 msgid "You chose this."
 msgstr "You chose this."
@@ -10177,18 +10461,6 @@ msgstr "Your last message and the thread before it are more than the model takes
 #: src/renderer/src/agents/MarkupEditor.tsx
 msgid "Your marks"
 msgstr "Your marks"
-
-#: src/renderer/src/agents/OwnModelServers.tsx
-msgid "Your own model servers"
-msgstr "Your own model servers"
-
-#: src/renderer/src/agents/OwnModelServers.tsx
-msgid "Your own server: add a model server you run"
-msgstr "Your own server: add a model server you run"
-
-#: src/renderer/src/agents/OwnModelServers.tsx
-msgid "Your own server…"
-msgstr "Your own server…"
 
 #: src/renderer/src/agents/ProviderUpgradeNotice.tsx
 msgid "Your saved draft is kept. Check any earlier send in the previous provider before using it again."

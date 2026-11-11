@@ -1,3 +1,4 @@
+import { nearestModelEffort } from '../../../shared/reasoningEfforts'
 import React, { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Zap } from 'lucide-react'
@@ -71,6 +72,7 @@ export function ThreadOptionFields({ models, modelId, reasoningEffort, runtimeMo
 
 /** Whether a provider can create threads now; hosts without per-provider status answer for themselves. */
 function canCreateWith(state: AgentState, model: AgentModel): boolean {
+  if (model.hiddenFromMenu) return false
   const status = state.host.providers?.find(provider => provider.id === model.providerId)
   return model.ready && (status ? status.connection === 'connected' && status.capabilities.threads : state.host.connected && state.host.capabilities.threads)
 }
@@ -242,7 +244,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   const serverMark = useOwnServerMark(thread, isThreadProviderConnected(state.host, thread))
   const serverTurn = serverMark?.turn
   const speedCardId = useId()
-  // Your own model servers run with this computer's OpenCode, so the model menu offers to add one only for a thread here,
+  // APIs and your own model servers run with this computer's OpenCode, so the model menu offers to add one only for a thread here,
   // and never for Watcher (ADR-0124, phase 1).
   const ownServersBridge = useOwnServersBridge()
   const ownServers = !watcher && (!thread.hostId || thread.hostId === localHostId(state)) ? ownServersBridge : undefined
@@ -342,6 +344,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   const modelId = settings.pending.model?.value ?? drawn.model
   const model = resolveModel(models, modelId)
   const modelNameNow = model?.name ?? modelId
+  const adjustedEffort = model?.ownServer ? nearestModelEffort(drawn.effort, model.reasoningEfforts ?? []) : undefined
   // Before the return below: a provider's capabilities can change while this bar stays on screen.
   const dynamic = useDynamicSwitch({ thread, state, command, modelName: modelNameNow, fixed: fixed || busy })
   if (locked && !capabilities.configureThread) {
@@ -362,7 +365,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   // What each chip shows with nothing pressed: the drawn values, except that a model change starts on the new
   // model's default effort, so that is what the effort chip shows meanwhile.
   const unpressed = modelId === drawn.model ? drawn
-    : settingValuesFor({ modelId, ...(thread.runtimeMode ? { runtimeMode: thread.runtimeMode } : {}), ...(thread.providerMode ? { providerMode: thread.providerMode } : {}),
+    : settingValuesFor({ modelId, ...(adjustedEffort ? { reasoningEffort: adjustedEffort } : {}), ...(thread.runtimeMode ? { runtimeMode: thread.runtimeMode } : {}), ...(thread.providerMode ? { providerMode: thread.providerMode } : {}),
       ...(keptSpeed ? { speed: keptSpeed } : {}) }, model)
   const reasoning = settings.pending.effort?.value ?? unpressed.effort
   const permission = settings.pending.permissions?.value ?? unpressed.permissions
@@ -442,6 +445,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
     })
   }
   const notices = <>
+    {model?.ownServer && modelId !== drawn.model && adjustedEffort && adjustedEffort !== drawn.effort ? <p className="thread-options__notice tt-paragraph" role="status">{t`Using ${effortLabel(adjustedEffort)} for ${modelNameNow}.`}</p> : null}
     {nextTurnLine === null ? null : <p className="thread-options__notice thread-options__notice--next tt-paragraph" role="status">
       <span id={nextTurnLineId}>{nextTurnLine}</span>
       <button type="button" className="tt-focusable" onClick={keepCurrent}>{t`Keep current settings`}</button></p>}
@@ -496,7 +500,8 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
         }
         const id = chosenModelId(models, pressed, modelId, thread.modelId)
         const pickedModel = resolveModel(models, id)
-        press('model', id, { modelId: id, ...(watcher && fitSpeed(roleSpeed, pickedModel) === roleSpeed ? speedPatch(roleSpeed ?? SPEED_STANDARD, pickedModel) : {}) })
+        const nextEffort = pickedModel?.ownServer ? nearestModelEffort(reasoning, pickedModel.reasoningEfforts ?? []) : undefined
+        press('model', id, { modelId: id, ...(nextEffort !== undefined ? { reasoningEffort: nextEffort } : {}), ...(watcher && fitSpeed(roleSpeed, pickedModel) === roleSpeed ? speedPatch(roleSpeed ?? SPEED_STANDARD, pickedModel) : {}) })
         orchestrating?.(id, resolveModel(models, id)?.defaultReasoningEffort ?? null, state.host.models, roleSpeed)
       }} />
       {!quiet && speeds.length > 0 && <SpeedToggle offered={speeds} provider={speedProvider} value={speed} disabled={fixed} pending={settings.pending.fast?.awaiting === 'unconfirmed' || kept.has('fast')} describedBy={describedFor('fast')}
@@ -513,7 +518,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
           press('effort', reasoningEffort, { reasoningEffort }, unpressed.effort)
           orchestrating?.(modelId, reasoningEffort, state.host.models, roleSpeed)
         }} />
-      : efforts.length > 0 && <EffortPicker key={`${modelId}:${model?.reasoningEfforts?.join(',') ?? ''}`} value={reasoning} options={efforts}
+      : efforts.length > 0 && <EffortPicker ownServer={model?.ownServer} key={`${modelId}:${model?.reasoningEfforts?.join(',') ?? ''}`} value={reasoning} options={efforts}
         disabled={fixed || modelDisabled} pending={settings.pending.effort?.awaiting === 'unconfirmed' || kept.has('effort')} describedBy={describedFor('effort')} onChange={reasoningEffort => {
           press('effort', reasoningEffort, { reasoningEffort }, unpressed.effort)
           orchestrating?.(modelId, reasoningEffort, state.host.models, roleSpeed)
