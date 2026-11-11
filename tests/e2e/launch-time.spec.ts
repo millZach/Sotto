@@ -4,15 +4,19 @@
  * the main window's page began to load (`performance.timeOrigin`), and its first contentful paint. Launch to page start
  * is Electron starting, main's bundle loading and its runtime starting; page start to paint is the preload and the
  * renderer's bundle. Then it leaves the app alone for five seconds and reads each process's memory and CPU from
- * `app.getAppMetrics()`.
+ * `app.getAppMetrics()`. Last it reads main's startup marks (`src/main/performance/startupMarks.ts`), each the time
+ * since main's clock started, and when that clock started after the launch was asked (`askedToMainClockMs`), so the
+ * marks and the page's clocks sit on one line from the ask.
  *
  * It prints JSON and asserts no time, so it runs only when asked, after `npm run build`, like the other timing
- * benchmarks (`docs/ci.md`):
+ * benchmarks (`docs/ci.md`). `SOTTO_LAUNCH_OUT` names a file to write the same JSON to, which
+ * `.github/workflows/launch-time.yml` compares:
  *
  *   SOTTO_PERF_BENCH=1 SOTTO_LAUNCH_RUNS=7 xvfb-run -a -s '-screen 0 1920x1080x24' npx playwright test tests/e2e/launch-time.spec.ts
  *
  * An empty profile opens on first-run setup, so this times the shell of the app, not a profile with threads in it.
  */
+import { writeFileSync } from 'node:fs'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { test } from '@playwright/test'
 import { PERF_BENCH, median, round } from '../fixtures/perfBench'
@@ -47,6 +51,8 @@ test('times the launch of the built app on an empty profile', async () => {
       await launched.app.evaluate(({ app }) => app.getAppMetrics().length)
       await sleep(2_000)
       const rest = await launched.app.evaluate(({ app }) => app.getAppMetrics().map(item => ({ type: item.type, name: item.name ?? '', cpu: item.cpu.percentCPUUsage, memoryKb: item.memory.workingSetSize })))
+      // A build from before the marks has none; its runs report the clocks above alone.
+      const main = await launched.app.evaluate(() => ({ origin: performance.timeOrigin, marks: globalThis.sottoStartupMarksE2E?.read() ?? [] }))
       const of = (type: string): typeof rest => rest.filter(item => item.type === type)
       const sum = (items: typeof rest, key: 'cpu' | 'memoryKb'): number => items.reduce((total, item) => total + item[key], 0)
       // The first launch warms the disk cache and is left out.
@@ -61,10 +67,18 @@ test('times the launch of the built app on an empty profile', async () => {
         rendererMemoryMb: sum(of('Tab'), 'memoryKb') / 1024, rendererCpuPercent: sum(of('Tab'), 'cpu'), renderers: of('Tab').length,
         gpuMemoryMb: sum(of('GPU'), 'memoryKb') / 1024,
         allMemoryMb: sum(rest, 'memoryKb') / 1024, allCpuPercent: sum(rest, 'cpu'),
+        ...(main.marks.length > 0 ? { askedToMainClockMs: main.origin - asked } : {}),
+        ...Object.fromEntries(main.marks.map(mark => [`mark:${mark.name}`, mark.atMs])),
       })
     } finally { await closeSotto(launched) }
   }
-  const keys = Object.keys(runs[0] ?? {})
-  const summary = Object.fromEntries(keys.map(key => { const values = runs.map(item => item[key]!); return [key, { median: round(median(values)), min: round(Math.min(...values)), max: round(Math.max(...values)) }] }))
-  console.log(`LAUNCH-TIME ${JSON.stringify({ runs: runs.length, platform: process.platform, summary }, null, 1)}`)
+  // A mark a run did not reach, such as the widget's while dictation is off, is left out of that run; `runs` says so.
+  const keys = [...new Set(runs.flatMap(item => Object.keys(item)))]
+  const summary = Object.fromEntries(keys.map(key => {
+    const values = runs.flatMap(item => item[key] === undefined ? [] : [item[key]])
+    return [key, { median: round(median(values)), min: round(Math.min(...values)), max: round(Math.max(...values)), ...(values.length < runs.length ? { runs: values.length } : {}) }]
+  }))
+  const result = JSON.stringify({ runs: runs.length, platform: process.platform, summary }, null, 1)
+  console.log(`LAUNCH-TIME ${result}`)
+  if (process.env.SOTTO_LAUNCH_OUT) writeFileSync(process.env.SOTTO_LAUNCH_OUT, `${result}\n`)
 })

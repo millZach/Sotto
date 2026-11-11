@@ -339,6 +339,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
           ...(options.tailscale ? { tailscale: options.tailscale } : {}), ...(options.log ? { log: options.log } : {}) })
         const tailnet = phones
         listener = await startSocketServer({ onProductEventAnswer, service: runtime.hostService, pairing, port: options.port, signIns, ...opencodeSignIn, clientUpdates: true, phones: tailnet.administration,
+          heldSessions: runtime.heldSessions,
           watcherDesktops: desktops, delegation, ...hostUpdate, ...listenerServices,
           ...(options.origins ? { origins: options.origins } : {}), ...(options.sottoVersion ? { sottoVersion: options.sottoVersion } : {}),
           receipts, pullRequestConfirmations, about, phoneAccess: () => tailnet.summary(), onRevoked: clientId => { tailnet.revoked(clientId); onProductEventAnswer() },

@@ -25,11 +25,12 @@ import { randomBytes } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { request as httpRequest } from 'node:http'
 import { homedir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import process from 'node:process'
 import { clearInterval, setInterval, setTimeout } from 'node:timers'
-import { fileURLToPath } from 'node:url'
 import { deflateRawSync, inflateRawSync, constants as zlib } from 'node:zlib'
+// The iPhone's hello `accepts`, read from its source so this never drifts from the app; the benchmarks read it the same way.
+import { iphoneAccepts } from '../../tests/fixtures/iphoneAccepts.mjs'
 
 const args = process.argv.slice(2)
 const option = (name, fallback) => { const index = args.indexOf(`--${name}`); return index < 0 ? fallback : args[index + 1] }
@@ -37,21 +38,6 @@ const data = String(option('data', join(homedir(), '.sotto'))).replace(/^~/u, ho
 const listSeconds = Number(option('list-seconds', 60)), threadSeconds = Number(option('thread-seconds', 60))
 const open = !args.includes('--no-open')
 const offerDeflate = args.includes('--offer-deflate')
-const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
-
-/** The iPhone's hello `accepts`, read from its source so this never drifts from the app. */
-function iphoneAccepts() {
-  const frame = readFileSync(join(root, 'apps/ios/Sources/SottoCore/IncomingFrame.swift'), 'utf8')
-  const watcher = readFileSync(join(root, 'apps/ios/Sources/SottoCore/Watcher.swift'), 'utf8') + readFileSync(join(root, 'apps/ios/Sources/SottoCore/Machines.swift'), 'utf8')
-  const step = readFileSync(join(root, 'apps/ios/Sources/SottoCore/StepWindow.swift'), 'utf8')
-  const hello = frame.slice(frame.indexOf('static let snapshotHello'))
-  const list = hello.slice(hello.indexOf('"accepts"'), hello.indexOf('])]'))
-  const accepts = [...list.matchAll(/\.string\("([a-z0-9-]+)"\)/gu)].map(match => match[1])
-  const named = (source, name) => { const match = new RegExp(`static let ${name} = "([a-z0-9-]+)"`, 'u').exec(source); if (!match) throw new Error(`No ${name} in the Swift source`); return match[1] }
-  if (list.includes('StepWindow.feature')) accepts.push(named(step, 'feature'))
-  for (const name of ['feature', 'stopFeature', 'manageFeature', 'steerFeature', 'machinesFeature', 'composerFeature']) accepts.push(named(watcher, name))
-  return accepts
-}
 
 function post(port, path, token, body) {
   return new Promise((resolve, reject) => {
