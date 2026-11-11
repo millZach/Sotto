@@ -33,7 +33,7 @@ Impact is how much it moves for the owner today. Effort is a guess at the size o
 | 1 | The host sends the laptop Watcher's whole record whenever a watched thread moves | 1.98 MB of JSON, up to 2.1 times a second. The laptop was sent 2.24 GB an hour over 38 minutes, and 90% of each two-minute tally was this | High | Medium |
 | 2 | Every thread list push sends about 205 KB that did not change | iPhone: 6.76 MB a minute with a working thread open, 1.1% of it the reply. Laptop: 52 KB/s compressed | High | Small for the phone's unread parts, medium for the rest |
 | 3 | The benchmarks do not hold what real traffic is made of | Fixture: Watcher's record 264 KB, no skill lists. forge: 2.49 MB and 115 KB a push | High, for every later fix | Small |
-| 4 | An iPhone is sent nothing compressed, though it offers to take it | Hello 237 KB, 64 KB if compressed. A thread's first page 93 KB, 22 KB if compressed | Medium now, small after 2 | Small on the host, plus a check on a real iPhone |
+| 4 | An iPhone is sent nothing compressed, though it offers to take it | Hello 237 KB, 64 KB if compressed. A thread's step window 93 KB, 22 KB if compressed | Medium now, small after 2 | Small on the host, plus a check on a real iPhone |
 | 5 | The iPhone fetches each picture whole to show it 640 pixels wide | Median picture 307 KB, 409 KB as sent. A sample at the size shown: 37 KB | Medium, high on picture threads | Medium |
 | 6 | The iPhone connects from nothing each time it comes to the front | 657 KB per connect on forge, 13 connects in 35 minutes. The list of threads is 16 KB of each | Medium | Mostly falls out of 2 and 4 |
 | 7 | Main's bundle has more than doubled since #995 was written, and #995 has not been started | Main 3.9 MB to 8.9 MB, the window's first scripts 4.1 MB to 7.8 MB. Launch to first paint on forge: 1.18 s | Medium | Small to medium, a piece at a time |
@@ -67,14 +67,16 @@ Watcher has ever made on that host.
 - That is 860 KB a second, after compression. A second two minutes, with less work going on, carried 19.2 MB, 160 KB
   a second, in 48 Watcher pushes and 27 thread list pushes. Watcher's share was 91%. So the rate moves with the work
   and the share does not.
-- The kernel's own counter for the connection (`ss -Htni`) rose by 1.42 GB over 38 minutes of the audit: 608 KB a
+- The kernel's own counter for the connection (`ss -Htni`) rose by 1.42 GB over 38 minutes of the audit: 623 KB a
   second, 2.24 GB an hour, on average. It stood at 6.47 GB when the audit started, on a host 5.4 hours up.
 - Each `watcher-state` push is 1.98 MB of JSON: requests 995 KB, operations 953 KB, progress 25 KB. Only the progress
   had changed.
 - forge's record holds 925 requests and 929 operations, from October 28 to today. 920 of the requests are closed or
   stopped. Five are active.
-- One push costs the host 27 ms, nearly all of it compressing, and the laptop's main process 16 ms: 4.6 ms to inflate,
-  3.0 ms to parse and 8.9 ms to check it against the schema. That is forge's CPU, timing the wire work only. What the
+- One push costs the host about 18 ms, most of it compressing, and the laptop's main process about 13.5 ms: 3.1 ms to
+  inflate, 2.5 ms to parse and 7.9 ms to check it against the schema. The benchmark builds its push from forge's whole
+  saved record with the fields a host keeps to itself left out: 2.09 MB of JSON and 374 KB compressed, against the
+  1.98 MB and 366 KB of the pushes the tally saw. That is forge's CPU, timing the wire work only. What the
   laptop then does with each projection is not in it: the reconcile benchmark
   (`tests/perf/watcherRemoteReconcile.perf.test.ts`, 1.5 to 1.9 ms a pass today) runs on a record of 253 to 260 KB.
 
@@ -203,7 +205,7 @@ Then add a guard on bytes per push. This comes first if findings 1 and 2 are to 
 | | As sent | If compressed | Ratio |
 |---|---:|---:|---:|
 | Hello | 237 KB | 64 KB | 3.7 |
-| A thread's first page (step window) | 93 KB | 22 KB | 4.1 |
+| A thread opened: its step window | 93 KB | 22 KB | 4.1 |
 | A minute on a working thread | 6.76 MB | 1.97 MB | 3.4 |
 
 After finding 2 is fixed the pushes are small either way. What compression still saves is most of each hello and of
@@ -236,8 +238,8 @@ is kept on disk, so a new launch fetches again. A sent photo's thumbnail (`previ
 - 2,707 pictures, 1.07 GB. The median is 307 KB, which is 409 KB as base64. The mean is 396 KB.
 - Forty of them, picked at random, made into 640-pixel JPEGs at quality 80: median 37 KB against 332 KB whole.
   Together 17.9 MB became 1.62 MB, about an eleventh.
-- A thread's first page on the iPhone holds its newest 200 steps (ADR-0194). The design thread held 680 pictures in
-  2,000 steps on November 5, so about 68 in a page: about 28 MB if every tile is scrolled past. That is worked out,
+- A thread's step window on the iPhone holds its newest 200 steps (ADR-0194). The design thread held 680 pictures in
+  2,000 steps on November 5, so about 68 in a window: about 28 MB if every tile is scrolled past. That is worked out,
   not measured.
 
 **Take it again.** `python3 scripts/perf-bench/picture-sizes.py ~/.sotto/thread-media 40`
@@ -313,7 +315,7 @@ minified window, are not done, and the issue has had no comment or linked change
 ### 8. The laptop's Sotto is busy and large while forge works
 
 **Measured.** Two 30-second readings of the laptop's Sotto processes, an Owl build, while forge's threads worked and the
-host sent it 330 to 860 KB a second:
+host sent it 340 to 860 KB a second:
 
 | Process | CPU, share of one core | Working set |
 |---|---:|---:|
@@ -322,7 +324,7 @@ host sent it 330 to 860 KB a second:
 | The GPU process | 16.0%, 17.4% | 335 MB |
 | Every Sotto process | about 60% to 80% | about 2.15 GB |
 
-**What is and is not explained.** The wire work of finding 1 is about 3.5% of a core on main by the benchmark, and
+**What is and is not explained.** The wire work of finding 1 is about 3% of a core on main by the benchmark, and
 finding 2's about 1%. That leaves most of main's 25-38% unexplained. A GPU process at 16% while nothing is being typed
 means something on the page is drawing all the time. Neither was traced: that needs a profile of main and a trace of the
 window on the laptop, which this audit did not take.
@@ -399,7 +401,7 @@ close #2339. Why the counts differ under Node 26 only matters when CI moves to i
   holds and it is small. `SOTTO_PERF_BENCH=1 SOTTO_PERF_DATA=$HOME/.sotto npx vitest run tests/perf/threadsRender.perf.test.tsx --maxWorkers=1 --disable-console-intercept`
   under Node 24.
 - **#1937, usage ledgers read at start.** forge holds 152 ledgers, 9.68 MB. Parsing them alone takes 38 ms. The issue's
-  9.8 MB still stands, and it is once a start.
+  9.8 MB still stands, and it is once a start. `node scripts/perf-bench/usage-ledger-sizes.mjs ~/.sotto`
 - **Whole-file saves.** The host wrote 9.0 MB to disk in two minutes of work, read from `/proc/<pid>/io`. On the
   fixture a send rewrites `workspace.json` three times, 384 KB each. Not worth a change by itself.
 - **The window's own channel is small.** One thread streaming sends the window 61 state messages of 2.7 KB and 60 reply
@@ -486,29 +488,30 @@ These were read in the app's source by a scout and are listed so they can be mea
 
 Earlier work checked and holding: #1818 (the desktop no longer copies each push or reads its catalog again), the
 background turn's read-back, #1940 (the window's kept parts: 2.7 KB a message while a thread streams) and #2252 (the
-iPhone's step window: a first page of 93 KB). #167 and #247, September's fixes, are under these and were not measured
+iPhone's step window: 93 KB for a thread opened). #167 and #247, September's fixes, are under these and were not measured
 apart.
 
 ## Proposed new issues
 
-Titles are written as the repository writes them. Each has the measure that says it is done.
+Each has the measure that says it is done. Zach chose on November 10 to file all of them and to fix them in turn,
+starting with D, then A and B; the numbers are the issues filed.
 
 | | Issue | From | Done when |
 |---|---|---|---|
-| A | Send a paired desktop Watcher's progress without the whole record | Finding 1 | `watcher-state` bytes a minute from `host-wire-tally.py` on forge fall from about 46 MB to under 1 MB with the same threads working |
-| B | Leave out of a phone's thread list the parts no phone reads | Finding 2, step 1 | A push in `phone-wire-probe.mjs` falls from about 209 KB to under 80 KB, with the iPhone and Android journeys unchanged |
-| C | Send a socket client the unchanged parts of the thread list once | Finding 2, step 2; finishes #996 | A push that changes one thread is under 10 KB to a phone and to a desktop |
-| D | Make the transfer benchmark hold what forge's host holds | Finding 3 | The fixture's push sizes are within a quarter of forge's, the phone sends the iPhone's own `accepts`, and a guard fails when a push grows |
-| E | Compress what an iPhone is sent | Finding 4 | A real iPhone reads a compressed hello from forge of under 70 KB, and ADR-0025 says phones are in |
-| F | Send the iPhone a picture at the size it shows | Finding 5 | A tile's fetch is under 60 KB at the median, and the full picture still opens |
-| G | Take up #995 a piece at a time, starting with timing marks and a minified window | Finding 7 | Each piece shows its before and after from `launch-time.spec.ts` on Windows |
-| H | Find what keeps the laptop's main and GPU processes busy while a host works | Finding 8 | A profile names the top costs, and each becomes its own issue or is closed |
-| I | Say why each idle provider session is still held | Finding 9 | A debug read lists each held session with the rule that holds it |
-| J | Check for a Sotto update less often | Finding 10 | Zach picks the interval |
-| K | Pin the repository's Node version | Finding 11; closes #2339 | The budget test passes on forge without a `PATH` change |
-| L | Add an idle phase to the iPhone benchmarks | The unmeasured list | CPU and frames drawn for 30 idle seconds on the Threads list and on a thread are in the summary |
-| M | Measure the iPhone's reply box against November 5 in turns on one runner | The iPhone run | Late frames while the reply box grows and shrinks are the same in both builds, or the commit that raised them is named |
-| N | Feed the iPhone benchmarks a thread list push the size a host sends | The iPhone run, finding 3 | The stream's push is the size `phone-wire-probe.mjs` reads from forge, until finding 2 is fixed |
+| A, #2391 | Send a paired desktop Watcher's progress without the whole record | Finding 1 | `watcher-state` bytes a minute from `host-wire-tally.py` on forge fall from about 46 MB to under 1 MB with the same threads working |
+| B, #2392 | Leave out of a phone's thread list the parts no phone reads | Finding 2, step 1 | A push in `phone-wire-probe.mjs` falls from about 209 KB to under 80 KB, with the iPhone and Android journeys unchanged |
+| C, #2393 | Send a socket client the unchanged parts of the thread list once | Finding 2, step 2; finishes #996 | A push that changes one thread is under 10 KB to a phone and to a desktop |
+| D, #2390 | Make the transfer benchmark hold what forge's host holds | Finding 3 | The fixture's push sizes are within a quarter of forge's, the phone sends the iPhone's own `accepts`, and a guard fails when a push grows |
+| E, #2394 | Compress what an iPhone is sent | Finding 4 | A real iPhone reads a compressed hello from forge of under 70 KB, and ADR-0025 says phones are in |
+| F, #2395 | Send the iPhone a picture at the size it shows | Finding 5 | A tile's fetch is under 60 KB at the median, and the full picture still opens |
+| G, #2396 | Take up #995 a piece at a time, starting with timing marks and a minified window | Finding 7 | Each piece shows its before and after from `launch-time.spec.ts` on Windows |
+| H, #2397 | Find what keeps the laptop's main and GPU processes busy while a host works | Finding 8 | A profile names the top costs, and each becomes its own issue or is closed |
+| I, #2398 | Say why each idle provider session is still held | Finding 9 | A debug read lists each held session with the rule that holds it |
+| J, #2399 | Check for a Sotto update less often | Finding 10 | Zach picks the interval |
+| K, #2339 | Pin the repository's Node version | Finding 11; closes #2339 | The budget test passes on forge without a `PATH` change |
+| L, #2400 | Add an idle phase to the iPhone benchmarks | The unmeasured list | CPU and frames drawn for 30 idle seconds on the Threads list and on a thread are in the summary |
+| M, #2401 | Measure the iPhone's reply box against November 5 in turns on one runner | The iPhone run | Late frames while the reply box grows and shrinks are the same in both builds, or the commit that raised them is named |
+| N, in #2390 | Feed the iPhone benchmarks a thread list push the size a host sends | The iPhone run, finding 3 | The stream's push is the size `phone-wire-probe.mjs` reads from forge, until finding 2 is fixed |
 
 A, B and D are the three that change the most for the least. A and B do not depend on each other. D makes both
 provable in CI rather than only on forge.
@@ -522,6 +525,12 @@ provable in CI rather than only on forge.
   runs no suites. `launch-time.spec.ts` is ready to run there.
 - **A real iPhone on cellular.** Every phone number here is what the host sends, counted on forge. Radio time and
   battery were not measured. The simulator benchmarks compare builds and say nothing absolute about a phone.
+- **Sending from the iPhone.** The iPhone benchmarks' journey never sends a reply, so how smooth a send is has no
+  number here. #2301 (a medium thread moves 16 points just after Send) and #2246 are the open issues on it.
+- **Bytes to outside services per action.** Only the update check and the client registry checks were sized
+  (finding 10). What one AI cleanup request, one cloud dictation segment, a theme search or a cloud iPhone session
+  sends and receives was not measured: each runs on a press or a dictation and needs its key. The inventory of where
+  Sotto reaches an outside host was read from the code, not captured.
 - **Why the laptop's main process is busy** (finding 8), and **which rule holds each idle session** (finding 9).
 - **The desktop's second whole read of a remote thread** (#1990), last measured November 1.
 
@@ -541,8 +550,8 @@ Tools for measuring, and evidence. No app code.
 
 - `scripts/perf-bench/host-wire-tally.py`: what a running host sends one client, by message and field name.
 - `scripts/perf-bench/phone-wire-probe.mjs`: what a running host sends an iPhone, per action.
-- `scripts/perf-bench/host-children.py`, `picture-sizes.py`, `sotto-processes.ps1` and `upgrade-offer-watch.py`: the
-  small readings above.
+- `scripts/perf-bench/host-children.py`, `picture-sizes.py`, `sotto-processes.ps1`, `upgrade-offer-watch.py` and
+  `usage-ledger-sizes.mjs`: the small readings above.
 - `tests/perf/watcherStatePush.perf.test.ts`: what one Watcher push costs each end.
 - `tests/e2e/launch-time.spec.ts`: launch to first paint, and memory at rest.
 - `docs/perf/data/2026-11-10-audit/`: the output of each, sizes and counts only.
