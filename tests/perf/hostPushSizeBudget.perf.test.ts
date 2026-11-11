@@ -2,10 +2,11 @@
 /**
  * What a host sends its paired clients while one thread streams, at forge's scale (#2390, the November 10, 2026 audit):
  * bytes per thread list push to a desktop and to an iPhone, how many of each push's parts are as the push before had them,
- * and bytes of `watcher-state` per change of Watcher's progress alone. It builds the host as the data-transfer benchmark
- * does (`hostSocketScale`), on Owl with short threads, and counts what each peer is sent. The fake clock steps only once the
- * sockets have carried what the last step sent, so the sizes and counts are the same on every run and on any machine, and
- * it runs in the default suite (`docs/perf/2026-11-10-real-size-transfer-benchmarks.md`).
+ * and, for each change of Watcher's progress alone, the bytes the desktop is sent and how many whole `watcher-state` pushes
+ * carry it. It builds the host as the data-transfer benchmark does (`hostSocketScale`), on Owl with short threads, and
+ * counts what each peer is sent. The fake clock steps only once the sockets have carried what the last step sent, so the
+ * sizes and counts are the same on every run and on any machine, and it runs in the default suite
+ * (`docs/perf/2026-11-10-real-size-transfer-benchmarks.md`).
  *
  * Each budget is today's number with a little room, and only tightens: a change that lowers a number lowers its budget in
  * the same pull request, and a raise needs its reason in the pull request. The numbers are large on purpose, since they
@@ -29,18 +30,20 @@ const DESKTOP_PUSH_BYTES = 204_000
 /** Bytes of JSON in one thread list push to an iPhone: about 199 KB. #2392 leaves out what no phone reads, and #2393 the rest. */
 const PHONE_PUSH_BYTES = 203_000
 /**
- * The parts of a push to a desktop, and to an iPhone, that are as the push before had them: 42 and 43. A part added to
- * every push goes as one more of them. #2392 and #2393 lower these.
+ * The parts of a push to a desktop, and to an iPhone, that are as the push before had them: 44 and 45, the frame's `v` and
+ * `event` among them. A part added to every push goes as one more of them. #2392 and #2393 lower these.
  */
-const DESKTOP_UNCHANGED_PARTS = 42
-const PHONE_UNCHANGED_PARTS = 43
+const DESKTOP_UNCHANGED_PARTS = 44
+const PHONE_UNCHANGED_PARTS = 45
 /**
- * Bytes of JSON in one `watcher-state` push whose only change is where a watched thread has got: about 1.99 MB, every
- * request and operation of the desktop's Watcher sent again, and the parts of it as the push before had them: six of its
- * nine. #2391 sends the progress without them.
+ * Bytes of JSON the desktop is sent for a change of where a watched thread has got and nothing else: about 1.99 MB, a
+ * whole `watcher-state` with every request and operation of the desktop's Watcher in it again, eight of its eleven parts
+ * as the push before had them. #2391 sends the progress alone, as `watcher-progress`.
  */
-const WATCHER_STATE_PROGRESS_BYTES = 2_006_000
-const WATCHER_STATE_UNCHANGED_PARTS = 6
+const PROGRESS_CHANGE_BYTES = 2_006_000
+const PROGRESS_CHANGE_UNCHANGED_PARTS = 8
+/** Whole `watcher-state` pushes per change of progress alone: every one today. #2391 makes it none. */
+const WHOLE_WATCHER_STATE_PER_PROGRESS_CHANGE = 1
 
 const clock = stepClock()
 const roots: string[] = []
@@ -70,21 +73,22 @@ it('sends a desktop and an iPhone no more per push than forge\'s host did, while
     await h.stream([session], 'reply', 40)
     await h.clock.pass(1_000)
     const toDesktop = tallyPeer(desktop.messages, marks.desktop, false), toPhone = tallyPeer(phone.messages, marks.phone, false)
-    const shellToDesktop = toDesktop.shell!, shellToPhone = toPhone.shell!, watcherState = toDesktop.watcherState!, progress = watcherState.progressOnly
-    // Some of each, so no budget passes on nothing.
-    expect(shellToDesktop.pushes).toBeGreaterThanOrEqual(2)
-    expect(shellToPhone.pushes).toBeGreaterThanOrEqual(2)
-    expect(progress.pushes).toBeGreaterThanOrEqual(2)
-    const report = JSON.stringify({ desktop: { pushes: shellToDesktop.pushes, bytesPerPush: shellToDesktop.bytesPerPush, unchangedPartsPerPush: shellToDesktop.unchangedPartsPerPush },
-      phone: { pushes: shellToPhone.pushes, bytesPerPush: shellToPhone.bytesPerPush, unchangedPartsPerPush: shellToPhone.unchangedPartsPerPush },
-      watcherState: { pushes: watcherState.pushes, unchangedPartsPerPush: watcherState.unchangedPartsPerPush, progressOnly: { pushes: progress.pushes, bytesPerPush: progress.bytesPerPush } } })
+    const shellToDesktop = toDesktop.events.shell, shellToPhone = toPhone.events.shell, progress = toDesktop.progressOnly
+    const report = JSON.stringify({ desktop: { pushes: shellToDesktop?.frames, bytesPerPush: shellToDesktop?.bytesPerFrame, unchangedPartsPerPush: shellToDesktop?.unchangedPartsPerFrame },
+      phone: { pushes: shellToPhone?.frames, bytesPerPush: shellToPhone?.bytesPerFrame, unchangedPartsPerPush: shellToPhone?.unchangedPartsPerFrame },
+      progressOnly: progress && { changes: progress.changes, bytesPerChange: progress.bytesPerChange, unchangedPartsPerChange: progress.unchangedPartsPerChange, wholeWatcherStatePerChange: progress.wholePushesPerChange } })
     if (process.env.SOTTO_PUSH_SIZES === '1') console.log(`HOST-PUSH-SIZES ${report}`)
-    expect(shellToDesktop.bytesPerPush, `A thread list push to a desktop grew past its budget: ${report}`).toBeLessThanOrEqual(DESKTOP_PUSH_BYTES)
-    expect(shellToPhone.bytesPerPush, `A thread list push to an iPhone grew past its budget: ${report}`).toBeLessThanOrEqual(PHONE_PUSH_BYTES)
-    expect(shellToDesktop.unchangedPartsPerPush, `A push to a desktop carries more parts that did not change: send a new part only when it changes. ${report}`).toBeLessThanOrEqual(DESKTOP_UNCHANGED_PARTS)
-    expect(shellToPhone.unchangedPartsPerPush, `A push to an iPhone carries more parts that did not change: send a new part only when it changes. ${report}`).toBeLessThanOrEqual(PHONE_UNCHANGED_PARTS)
-    expect(progress.bytesPerPush, `A watcher-state push for progress alone grew past its budget: ${report}`).toBeLessThanOrEqual(WATCHER_STATE_PROGRESS_BYTES)
-    expect(watcherState.unchangedPartsPerPush, `A watcher-state push carries more parts that did not change: ${report}`).toBeLessThanOrEqual(WATCHER_STATE_UNCHANGED_PARTS)
+    // Some of each, so no budget passes on nothing.
+    expect(shellToDesktop?.frames ?? 0, `The desktop was sent too few thread list pushes to measure: ${report}`).toBeGreaterThanOrEqual(2)
+    expect(shellToPhone?.frames ?? 0, `The iPhone was sent too few thread list pushes to measure: ${report}`).toBeGreaterThanOrEqual(2)
+    expect(progress?.changes ?? 0, `The desktop was told of too few changes of Watcher's progress to measure: ${report}`).toBeGreaterThanOrEqual(2)
+    expect(shellToDesktop!.bytesPerFrame, `A thread list push to a desktop grew past its budget: ${report}`).toBeLessThanOrEqual(DESKTOP_PUSH_BYTES)
+    expect(shellToPhone!.bytesPerFrame, `A thread list push to an iPhone grew past its budget: ${report}`).toBeLessThanOrEqual(PHONE_PUSH_BYTES)
+    expect(shellToDesktop!.unchangedPartsPerFrame, `A push to a desktop carries more parts that did not change: send a new part only when it changes. ${report}`).toBeLessThanOrEqual(DESKTOP_UNCHANGED_PARTS)
+    expect(shellToPhone!.unchangedPartsPerFrame, `A push to an iPhone carries more parts that did not change: send a new part only when it changes. ${report}`).toBeLessThanOrEqual(PHONE_UNCHANGED_PARTS)
+    expect(progress!.bytesPerChange, `What a desktop is sent for a change of Watcher's progress alone grew past its budget: ${report}`).toBeLessThanOrEqual(PROGRESS_CHANGE_BYTES)
+    expect(progress!.unchangedPartsPerChange, `What a desktop is sent for a change of Watcher's progress alone carries more parts that did not change: ${report}`).toBeLessThanOrEqual(PROGRESS_CHANGE_UNCHANGED_PARTS)
+    expect(progress!.wholePushesPerChange, `A change of Watcher's progress alone went to the desktop as a whole watcher-state more often: ${report}`).toBeLessThanOrEqual(WHOLE_WATCHER_STATE_PER_PROGRESS_CHANGE)
   } finally {
     await h.close(); vi.clearAllTimers()
   }

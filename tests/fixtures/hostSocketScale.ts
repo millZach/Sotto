@@ -211,94 +211,107 @@ function grown(usage: AgentThread['usage']): AgentThread['usage'] {
     contextUsed: (usage.contextUsed ?? 0) + 240 }
 }
 
-export interface EventTally { frames: number; bytes: number; deflated: number; max: number }
 export interface PartTally { bytes: number; unchanged: number }
-/** A peer's thread list pushes: their size, and each part's bytes and how many pushes left it as the push before had it. */
-export interface ShellTally {
-  pushes: number; bytesPerPush: number; deflatedPerPush: number
-  unchangedPartsPerPush: number; unchangedBytesPerPush: number
-  parts: Record<string, PartTally>
+/** What a peer was sent of one event, or of answers (`reply`). */
+export interface EventTally {
+  frames: number; bytes: number; deflated: number; max: number; bytesPerFrame: number; deflatedPerFrame: number
+  /**
+   * For a push, how many of a frame's parts, and of their bytes, were as the last frame of the same event had them, and
+   * each part's bytes over every frame. A part is a top-level field of the frame, with a shell's `state` and its `host`,
+   * and Watcher's `projection`, counted field by field (`state.host.projects`, `projection.requests`). A field added to a
+   * push is one more part, and one more unchanged part whenever it repeats.
+   */
+  unchangedPartsPerFrame?: number; unchangedBytesPerFrame?: number; parts?: Record<string, PartTally>
 }
-/** A peer's `watcher-state` pushes, and those whose only change from the push before was the progress list. */
-export interface WatcherStateTally {
-  pushes: number; bytesPerPush: number; deflatedPerPush: number
-  unchangedPartsPerPush: number; unchangedBytesPerPush: number
-  progressOnly: { pushes: number; bytesPerPush: number; deflatedPerPush: number }
-  requests: number; operations: number; progress: number
-  parts: Record<string, PartTally>
+/**
+ * The pushes that told the desktop only where its Watcher's watched threads have got, whichever event carried them: a whole
+ * `watcher-state` whose other parts were as the last one had them, or a `watcher-progress`, which carries the progress
+ * alone (#2391, `docs/host-protocol.md`, "Progress pushes").
+ */
+export interface ProgressTally {
+  changes: number; bytesPerChange: number; deflatedPerChange: number; unchangedPartsPerChange: number
+  /** Of those, whole `watcher-state` pushes: every request and operation sent again for a step of progress. */
+  wholePushes: number; wholePushesPerChange: number
 }
-export interface PeerTally { events: Record<string, EventTally>; shell?: ShellTally; watcherState?: WatcherStateTally }
+export interface PeerTally {
+  events: Record<string, EventTally>
+  progressOnly?: ProgressTally
+  /** The size of Watcher's record in the last `watcher-state`. */
+  watcherRecord?: { requests: number; operations: number; progress: number }
+}
 
-/** Each top-level part of a message, as JSON: a shell's state and its host by key, its changed records and event page. */
-function shellParts(message: Record<string, unknown>): Map<string, string> {
-  const parts = new Map<string, string>()
-  const put = (key: string, value: unknown): void => { if (value !== undefined) parts.set(key, JSON.stringify(value)) }
-  for (const [key, value] of Object.entries((message.state ?? {}) as Record<string, unknown>)) {
-    if (key === 'host') for (const [inner, innerValue] of Object.entries(value as Record<string, unknown>)) put(`host.${inner}`, innerValue)
-    else put(key, value)
+/** Fields whose own fields are counted as parts: a shell's state and its host, and Watcher's projection. */
+const OPENED = new Set(['state', 'state.host', 'projection'])
+/** Each part of a push, as JSON, by name: every top-level field, with the `OPENED` ones counted field by field. */
+function partsOf(value: Record<string, unknown>, prefix = '', parts = new Map<string, string>()): Map<string, string> {
+  for (const [key, field] of Object.entries(value)) {
+    const name = prefix + key
+    if (OPENED.has(name) && typeof field === 'object' && field !== null && !Array.isArray(field)) partsOf(field as Record<string, unknown>, `${name}.`, parts)
+    else parts.set(name, JSON.stringify(field))
   }
-  put('(changed thread records)', message.threads)
-  put('eventPage', message.eventPage)
   return parts
 }
-function projectionParts(message: Record<string, unknown>): Map<string, string> {
-  return new Map(Object.entries((message.projection ?? {}) as Record<string, unknown>).map(([key, value]) => [key, JSON.stringify(value)]))
+/** The parts of a projection that move when only a watched thread's progress does. */
+const MOVES_WITH_PROGRESS = new Set(['projection.progress', 'projection.revision', 'projection.observedAt'])
+function onlyProgressMoved(before: Map<string, string>, after: Map<string, string>): boolean {
+  if (before.get('projection.progress') === after.get('projection.progress')) return false
+  for (const key of new Set([...before.keys(), ...after.keys()])) if (!MOVES_WITH_PROGRESS.has(key) && before.get(key) !== after.get(key)) return false
+  return true
 }
-/** The parts of a projection that are Watcher's work rather than where its threads have got. */
-const WORK_PARTS = ['requests', 'operations', 'standingWatches', 'evidence', 'master', 'hostId'] as const
 
 /**
  * What `messages` from `from` on are, by event: frames, bytes of JSON, and bytes at deflate level 6 when `deflate`, as a
- * desktop's permessage-deflate sends them. For thread list pushes and `watcher-state`, each part's bytes and how many
- * pushes left it unchanged from the push before, the last before `from` included.
+ * desktop's permessage-deflate sends them; for each push, its parts' bytes and how many were as the last push of the same
+ * event had them, the last before `from` included; and the pushes that carried only Watcher's progress.
  */
 export function tallyPeer(messages: readonly Record<string, unknown>[], from: number, deflate: boolean): PeerTally {
-  const events: Record<string, EventTally> = {}
-  const shell = { pushes: 0, bytes: 0, deflated: 0, unchangedParts: 0, unchangedBytes: 0, parts: {} as Record<string, PartTally> }
-  const watcher = { pushes: 0, bytes: 0, deflated: 0, unchangedParts: 0, unchangedBytes: 0, progressOnly: { pushes: 0, bytes: 0, deflated: 0 }, requests: 0, operations: 0, progress: 0, parts: {} as Record<string, PartTally> }
-  const earlier = messages.slice(0, from), lastShell = earlier.findLast(message => message.event === 'shell'), lastProjection = earlier.findLast(message => message.event === 'watcher-state')
-  let shellBefore = lastShell ? shellParts(lastShell) : undefined, projectionBefore = lastProjection ? projectionParts(lastProjection) : undefined
+  const totals = new Map<string, { frames: number; bytes: number; deflated: number; max: number; push: boolean; unchangedParts: number; unchangedBytes: number; parts: Record<string, PartTally> }>()
+  const progress = { changes: 0, bytes: 0, deflated: 0, unchangedParts: 0, wholePushes: 0 }
+  let watcherRecord: PeerTally['watcherRecord']
+  /** Each event's last push, as parts: what the next push of that event is measured against. */
+  const last = new Map<string, Map<string, string>>()
+  for (let index = from - 1; index >= 0; index--) {
+    const event = messages[index]!.event
+    if (typeof event === 'string' && !last.has(event)) last.set(event, partsOf(messages[index]!))
+  }
   for (const message of messages.slice(from)) {
     const text = JSON.stringify(message), bytes = Buffer.byteLength(text)
     const deflated = deflate ? deflateRawSync(text, { level: 6 }).byteLength : 0
-    const name = String(message.event ?? (message.id !== undefined ? 'reply' : 'other'))
-    const entry = events[name] ??= { frames: 0, bytes: 0, deflated: 0, max: 0 }
-    entry.frames++; entry.bytes += bytes; entry.deflated += deflated; entry.max = Math.max(entry.max, bytes)
-    if (name === 'shell') {
-      const parts = shellParts(message)
-      shell.pushes++; shell.bytes += bytes; shell.deflated += deflated
-      for (const [key, value] of parts) {
-        const part = shell.parts[key] ??= { bytes: 0, unchanged: 0 }
-        part.bytes += Buffer.byteLength(value)
-        if (shellBefore?.get(key) === value) { part.unchanged++; shell.unchangedParts++; shell.unchangedBytes += Buffer.byteLength(value) }
-      }
-      shellBefore = parts
-    } else if (name === 'watcher-state') {
-      const parts = projectionParts(message), projection = message.projection as { requests: unknown[]; operations: unknown[]; progress: unknown[] }
-      watcher.pushes++; watcher.bytes += bytes; watcher.deflated += deflated
-      watcher.requests = projection.requests.length; watcher.operations = projection.operations.length; watcher.progress = projection.progress.length
-      for (const [key, value] of parts) {
-        const part = watcher.parts[key] ??= { bytes: 0, unchanged: 0 }
-        part.bytes += Buffer.byteLength(value)
-        if (projectionBefore?.get(key) === value) { part.unchanged++; watcher.unchangedParts++; watcher.unchangedBytes += Buffer.byteLength(value) }
-      }
-      if (projectionBefore && WORK_PARTS.every(key => projectionBefore!.get(key) === parts.get(key)) && projectionBefore.get('progress') !== parts.get('progress')) {
-        watcher.progressOnly.pushes++; watcher.progressOnly.bytes += bytes; watcher.progressOnly.deflated += deflated
-      }
-      projectionBefore = parts
+    const event = typeof message.event === 'string' ? message.event : undefined
+    const name = event ?? (message.id !== undefined ? 'reply' : 'other')
+    let total = totals.get(name)
+    if (!total) totals.set(name, total = { frames: 0, bytes: 0, deflated: 0, max: 0, push: event !== undefined, unchangedParts: 0, unchangedBytes: 0, parts: {} })
+    total.frames++; total.bytes += bytes; total.deflated += deflated; total.max = Math.max(total.max, bytes)
+    if (event === undefined) continue
+    const parts = partsOf(message), before = last.get(event)
+    let unchanged = 0
+    for (const [key, value] of parts) {
+      const part = total.parts[key] ??= { bytes: 0, unchanged: 0 }, size = Buffer.byteLength(value)
+      part.bytes += size
+      if (before?.get(key) === value) { part.unchanged++; unchanged++; total.unchangedBytes += size }
+    }
+    total.unchangedParts += unchanged
+    last.set(event, parts)
+    if (event === 'watcher-progress' || event === 'watcher-state' && before !== undefined && onlyProgressMoved(before, parts)) {
+      progress.changes++; progress.bytes += bytes; progress.deflated += deflated; progress.unchangedParts += unchanged
+      if (event === 'watcher-state') progress.wholePushes++
+    }
+    if (event === 'watcher-state') {
+      const projection = message.projection as Record<string, unknown[] | undefined> | undefined
+      watcherRecord = { requests: projection?.requests?.length ?? 0, operations: projection?.operations?.length ?? 0, progress: projection?.progress?.length ?? 0 }
     }
   }
-  const per = (total: number, count: number): number => count ? Math.round(total / count) : 0
-  const per2 = (total: number, count: number): number => count ? Math.round(total / count * 100) / 100 : 0
+  const per = (sum: number, count: number): number => count ? Math.round(sum / count) : 0
+  const per2 = (sum: number, count: number): number => count ? Math.round(sum / count * 100) / 100 : 0
+  const events = Object.fromEntries([...totals].map(([name, { push, unchangedParts, unchangedBytes, parts, ...total }]): [string, EventTally] => [name, {
+    ...total, bytesPerFrame: per(total.bytes, total.frames), deflatedPerFrame: per(total.deflated, total.frames),
+    ...push ? { unchangedPartsPerFrame: per2(unchangedParts, total.frames), unchangedBytesPerFrame: per(unchangedBytes, total.frames),
+      parts: Object.fromEntries(Object.entries(parts).sort((a, b) => b[1].bytes - a[1].bytes)) } : {},
+  }]))
   return {
     events,
-    ...shell.pushes ? { shell: { pushes: shell.pushes, bytesPerPush: per(shell.bytes, shell.pushes), deflatedPerPush: per(shell.deflated, shell.pushes),
-      unchangedPartsPerPush: per2(shell.unchangedParts, shell.pushes), unchangedBytesPerPush: per(shell.unchangedBytes, shell.pushes),
-      parts: Object.fromEntries(Object.entries(shell.parts).sort((a, b) => b[1].bytes - a[1].bytes)) } } : {},
-    ...watcher.pushes ? { watcherState: { pushes: watcher.pushes, bytesPerPush: per(watcher.bytes, watcher.pushes), deflatedPerPush: per(watcher.deflated, watcher.pushes),
-      unchangedPartsPerPush: per2(watcher.unchangedParts, watcher.pushes), unchangedBytesPerPush: per(watcher.unchangedBytes, watcher.pushes),
-      progressOnly: { pushes: watcher.progressOnly.pushes, bytesPerPush: per(watcher.progressOnly.bytes, watcher.progressOnly.pushes), deflatedPerPush: per(watcher.progressOnly.deflated, watcher.progressOnly.pushes) },
-      requests: watcher.requests, operations: watcher.operations, progress: watcher.progress,
-      parts: Object.fromEntries(Object.entries(watcher.parts).sort((a, b) => b[1].bytes - a[1].bytes)) } } : {},
+    ...progress.changes ? { progressOnly: { changes: progress.changes, bytesPerChange: per(progress.bytes, progress.changes), deflatedPerChange: per(progress.deflated, progress.changes),
+      unchangedPartsPerChange: per2(progress.unchangedParts, progress.changes), wholePushes: progress.wholePushes, wholePushesPerChange: per2(progress.wholePushes, progress.changes) } } : {},
+    ...watcherRecord ? { watcherRecord } : {},
   }
 }

@@ -456,9 +456,9 @@ it.skipIf(!BENCH)('measures what main moves per chunk and per action', async () 
  * accepts and reads its Watcher's projection, so it is pushed `watcher-state`; the iPhone sends its own list. Each observes
  * the threads that stream, while one and then three threads stream, their usage moving as they do, and then a send.
  * Counts what each peer is sent, by event: frames, bytes of JSON and, for the desktop, which negotiates permessage-deflate,
- * bytes at deflate level 6; and for thread list pushes and `watcher-state`, each part's bytes and how many pushes left it
- * as the push before had it (`docs/perf/2026-11-10-real-size-transfer-benchmarks.md`). Its clock steps only once the
- * sockets have carried what the last step sent, so what it counts is the same on any machine.
+ * bytes at deflate level 6; for each push, each part's bytes and how many pushes left it as the push before had it; and
+ * what the desktop was sent for each change of Watcher's progress alone (`docs/perf/2026-11-10-real-size-transfer-benchmarks.md`).
+ * Its clock steps only once the sockets have carried what the last step sent, so what it counts is the same on any machine.
  */
 it.skipIf(!BENCH || process.env.SOTTO_AUDIT_SOCKET !== '1')('measures what the host socket sends a desktop and a phone per push', async () => {
   const { hostSocketScale, tallyPeer } = await import('../fixtures/hostSocketScale')
