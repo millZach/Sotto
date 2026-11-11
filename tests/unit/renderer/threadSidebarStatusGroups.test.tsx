@@ -121,6 +121,22 @@ describe('the sidebar by status (ADR-0201)', () => {
     expect(rowIn(group('working'), 'Weekly note').querySelector('.host-badge')).toBeNull()
   })
 
+  it('lists the Snoozed shelf flat, each row naming its project, with no project folder (Zach, November 10, 2026)', () => {
+    app()
+    const state = threadsStateFixture()
+    const snoozes = new Map([['grok-previews', NOW + 3_600_000]])
+    render(<ThreadSidebar state={state} organization={organizeWorkspace(state, describeThreads(state, NOW), '', state.activeProjectId, false, NOW, false, snoozes)}
+      command={vi.fn(async () => state)} query="" onQuery={vi.fn()} onOpen={vi.fn()} onNewThread={vi.fn()} shortcutsLive
+      currentThreadId={null} openThreadIds={[]} onOpenBeside={vi.fn()} onDragThread={vi.fn()} />)
+    const shelf = document.querySelector<HTMLElement>('section[aria-label="Snoozed"]')!
+    fireEvent.click(within(shelf).getByRole('button', { name: /^Snoozed/ }))
+    expect(shelf.querySelector('.thread-folder')).toBeNull()
+    const row = within(shelf).getByRole('button', { name: 'Grok voice previews' }).closest('li')!
+    const described = within(row).getByRole('button', { name: 'Grok voice previews' }).getAttribute('aria-describedby')!.split(' ').map(id => document.getElementById(id)?.textContent ?? '').join(' ')
+    expect(described).toContain('workshop')
+    expect(within(group('recent')).queryByRole('button', { name: 'Grok voice previews' })).toBeNull()
+  })
+
   it('leaves the Settled shelf\'s folders as they were', () => {
     app()
     mount()

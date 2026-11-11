@@ -704,6 +704,14 @@ export function groupByStatus(open: readonly ProjectFolder[], pinned?: ReadonlyM
 }
 
 /**
+ * The Snoozed shelf's rows as one flat list, newest activity first, for the sidebar by status (ADR-0201, Zach's call of
+ * November 10, 2026). Settled keeps its project folders, where Restore project lives.
+ */
+export function snoozedShelfRows(folders: readonly ProjectFolder[]): ThreadRow[] {
+  return folders.flatMap(item => item.rows).sort((first, second) => byActivity({ activityAt: first.activityAt, id: first.thread.id }, { activityAt: second.activityAt, id: second.thread.id }))
+}
+
+/**
  * Project folders for the sidebar. Open folders hold each unsettled project's open threads;
  * Settled holds whole settled projects plus individually settled threads under their own project.
  * A search keeps attention rows and projects whose name matches; without a search an open project

@@ -20,7 +20,7 @@ The iPhone has listed threads by status since ADR-0039: what waits on you, then 
 - **Working now**: open threads with a turn, compaction or background work running, on a provider Sotto can reach;
 - **Recent**: every other open thread.
 
-Then the **Snoozed** and **Settled** shelves, folded, as before. The rule is the iPhone's (`FocusThreads.init`): a working thread whose provider is out of reach is in Recent, saying Disconnected, not in Working now. Two differences are the desktop's and stay: a failed turn nobody has seen stands in Needs you with Dismiss (ADR-0092, ADR-0135), where the iPhone puts it in Recent; and the iPhone's Needs you is a group, the desktop's a card.
+Then the **Snoozed** and **Settled** shelves, folded, as before (decision 8 says how each lists its threads). The rule is the iPhone's (`FocusThreads.init`): a working thread whose provider is out of reach is in Recent, saying Disconnected, not in Working now. Two differences are the desktop's and stay: a failed turn nobody has seen stands in Needs you with Dismiss (ADR-0092, ADR-0135), where the iPhone puts it in Recent; and the iPhone's Needs you is a group, the desktop's a card.
 
 **3. Every thread keeps a row.** A thread standing in Needs you keeps its row in Recent, reading **↑ In Needs you**, as its folder row did (ADR-0135, November 5 amendment), so settling, renaming and its row menu stay where they were.
 
@@ -32,7 +32,7 @@ Then the **Snoozed** and **Settled** shelves, folded, as before. The rule is the
 
 **7. The keyboard is the thread list's.** The groups are tree items of the one thread list (ADR-0164): Up, Down, Home and End walk heads and rows, Right opens a group and Left folds it or steps out of a row to its head. Moving between threads by chord follows the sidebar's order: Working now, then Recent.
 
-**8. The shelves stay.** Snoozed and Settled hold the same project folders as before, so **Restore project** and a settled project's own rows are where they were.
+**8. Snoozed is flat; Settled keeps its folders.** By status, the **Snoozed** shelf lists its threads as one flat list, newest activity first, each row naming its project as the groups' rows do, with no project folder: project folders show only by project, Zach's call of November 10, 2026. The **Settled** shelf keeps its project folders, his second call the same day, so **Restore project** and a settled project's own rows are where they were. By project both shelves are as before.
 
 ## Considered
 

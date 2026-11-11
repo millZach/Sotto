@@ -14,7 +14,7 @@ import { describeWorkingCopy, useSettleThread } from './ThreadWorkingCopy'
 import { useSidebarSize } from './sidebarSize'
 import type { AgentConnection } from './AgentContext'
 import { ProjectSettleAction, SidebarFrame } from './SidebarFrame'
-import { groupByStatus, holdSettledRows, type StatusGroupName, rowStatus, unseenFailures, workingLabel, type ProjectFolder, type ThreadRow, type WorkspaceOrganization } from './threadFacts'
+import { groupByStatus, holdSettledRows, snoozedShelfRows, type StatusGroupName, rowStatus, unseenFailures, workingLabel, type ProjectFolder, type ThreadRow, type WorkspaceOrganization } from './threadFacts'
 import { THREAD_DRAG_TYPE } from './splitLayout'
 import { HostBadge, hostIdOf, listedHosts, type ListedHost } from './HostBadge'
 import { MainCheckoutLine } from './MainCheckoutLine'
@@ -533,6 +533,29 @@ const FolderView = memo(function FolderView({ folder, section, panes, activeProj
   </div>
 })
 
+/** The remote computer a row's thread runs on, for its badge; none for this computer's, or while no remote is listed. */
+const remoteHostOf = (hosts: readonly ListedHost[], row: ThreadRow): ListedHost | undefined =>
+  hosts.length ? hosts.find(item => item.kind === 'remote' && item.hostId === (row.thread.hostId ?? hostIdOf(row.thread))) : undefined
+
+/**
+ * The Snoozed shelf by status (ADR-0201): its threads as one flat list, each naming its project, with no project folder
+ * (Zach's call, November 10, 2026). Memoised as a group is.
+ */
+const SnoozedShelfRows = memo(function SnoozedShelfRows({ rows, panes, liveClock, onOpen, command, settle, busyThreadIds, queuedIds, hosts, snoozes }: {
+  readonly rows: readonly ThreadRow[]; readonly panes: PaneActions; readonly liveClock: boolean; readonly onOpen: (threadId: string) => void
+  readonly command: Command; readonly settle: ListSettle; readonly busyThreadIds: readonly string[] | undefined
+  readonly queuedIds?: ReadonlySet<string> | undefined; readonly hosts: readonly ListedHost[]
+  /** On the Snoozed shelf, when each thread wakes (ADR-0175). */
+  readonly snoozes?: ReadonlyMap<string, number> | undefined
+}): ReactNode {
+  const listed = panes.listedThreadId ?? panes.currentThreadId
+  return <ul className="thread-folder__rows thread-nav__shelf-rows">
+    {rows.map(row => <ListPlace key={row.thread.id} row={row} gap={undefined} listed={listed} panes={panes} onOpen={onOpen} busyThreadIds={busyThreadIds}
+      liveClock={liveClock} command={command} settle={settle} queued={queuedIds?.has(row.thread.id) === true} snoozedUntil={snoozes?.get(row.thread.id)}
+      place={row.project?.title ?? row.provider} host={remoteHostOf(hosts, row)} />)}
+  </ul>
+})
+
 /** A status group's key in the sidebar's toggled set, beside the folders' (ADR-0201). */
 export const statusGroupKey = (group: 'working' | 'recent'): string => `group:${group}`
 
@@ -572,7 +595,7 @@ const StatusGroupView = memo(function StatusGroupView({ group, label, rows, pane
       {rows.map(row => <ListPlace key={row.thread.id} row={row} gap={gaps.get(row.thread.id)} listed={listed} panes={panes} onOpen={onOpen} busyThreadIds={busyThreadIds}
         liveClock={liveClock} command={command} settle={settle} angles={swarmAngles?.get(row.thread.id)} queued={queuedIds?.has(row.thread.id) === true}
         place={row.project?.title ?? row.provider} onRenaming={onRenaming}
-        host={hosts.length ? hosts.find(item => item.kind === 'remote' && item.hostId === (row.thread.hostId ?? hostIdOf(row.thread))) : undefined} />)}
+        host={remoteHostOf(hosts, row)} />)}
     </ul> : null}
   </div>
 })
@@ -785,6 +808,7 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
     return groups
   }, [byStatus, held.open, held.placed, renamingIds])
   const statusGaps = useMemo(() => new Map([...gaps].filter(([threadId]) => held.placed.has(threadId))), [gaps, held.placed])
+  const snoozedFlat = useMemo(() => byStatus ? snoozedShelfRows(organization.snoozed ?? []) : undefined, [byStatus, organization.snoozed])
   // The open threads in the sidebar's order, which moving between threads follows.
   const openOrder = useMemo(() => {
     if (!byStatus) return organization.open.flatMap(folder => folder.rows)
@@ -910,6 +934,8 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   const snoozed = organization.snoozed ?? []
   const snoozedThreads = snoozed.reduce((count, folder) => count + folder.rows.length, 0)
   const snoozedShown = snoozedOpen || searching
+  // By status the Snoozed shelf is a flat list; Settled keeps its project folders, and Restore project with them (ADR-0201).
+  const shelfFacts = { panes, liveClock, onOpen, command, settle: settleFromList, busyThreadIds: state.busyThreadIds, queuedIds, hosts }
   let owlRail: ReactNode = null
   if (railOn) {
     // Owl's rail (ADR-0146, Zach's pick C of November 5, 2026): the threads that wait on you or are moving, in a tray for
@@ -993,7 +1019,7 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
           <ChevronRight size={13} aria-hidden="true" className="thread-folder__chevron" />
           <span><Trans>Snoozed</Trans></span>
         </button>
-        {snoozedShown ? <div>{snoozed.map(folderView('snoozed'))}</div> : null}
+        {snoozedShown ? <div>{snoozedFlat ? <SnoozedShelfRows rows={snoozedFlat} snoozes={snoozes} {...shelfFacts} /> : snoozed.map(folderView('snoozed'))}</div> : null}
       </section> : null}
       <section aria-label={t`Settled`} className="thread-nav__shelf" {...{ [ROVING_GROUP]: '' }}>
         <button ref={settledButton} className="thread-nav__settled tt-focusable" type="button" aria-expanded={settledShown} onClick={() => setSettledOpen(!settledOpen)}

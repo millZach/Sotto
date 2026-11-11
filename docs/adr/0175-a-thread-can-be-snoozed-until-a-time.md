@@ -6,7 +6,7 @@ Accepted November 1, 2026, at Drake's request. It is an Owl feature (`thread-sno
 
 Amended November 5, 2026, at Drake’s request: the host shares snoozes with the iPhone and other desktops. Snooze remains an Owl feature.
 
-Amended November 10, 2026: by status ([ADR-0201](0201-the-threads-sidebar-groups-open-threads-by-status.md)), the Snoozed shelf still lists its threads under their projects, and a thread that wakes comes back to Working now or Recent rather than to its project folder.
+Amended November 10, 2026: by status ([ADR-0201](0201-the-threads-sidebar-groups-open-threads-by-status.md)), the Snoozed shelf lists its threads as one flat list, newest activity first, each naming its project, with no project folder (Zach's call); by project it lists them under their projects as before. A thread that wakes comes back to Working now or Recent rather than to its project folder.
 
 ## Context
 
