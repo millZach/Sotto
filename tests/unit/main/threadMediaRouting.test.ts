@@ -145,6 +145,22 @@ describe('reading an agent\'s picture from the window', () => {
     expect(kept.bytes).toBeLessThanOrEqual(100)
   })
 
+  it('makes a picture asked for again while its copy is being made once, for both (ADR-0202)', async () => {
+    let finish!: (copy: string) => void
+    const reduce = vi.fn(() => new Promise<string>(done => { finish = done }))
+    const pictures = new ReducedPictures(reduce, new KeptThumbnails())
+    const whole = vi.fn(async () => ({ dataUrl: `data:image/png;base64,${'A'.repeat(400)}` }))
+    const first = pictures.read(['thread-media', 't', 'a', 'm0'], 640, whole)
+    const second = pictures.read(['thread-media', 't', 'a', 'm0'], 640, whole)
+    await vi.waitFor(() => expect(reduce).toHaveBeenCalledTimes(1))
+    finish('data:image/jpeg;base64,CC')
+    await expect(Promise.all([first, second])).resolves.toEqual([{ dataUrl: 'data:image/jpeg;base64,CC' }, { dataUrl: 'data:image/jpeg;base64,CC' }])
+    expect(whole).toHaveBeenCalledTimes(1)
+    // Once made it is kept, and a later ask neither reads nor makes it again.
+    await pictures.read(['thread-media', 't', 'a', 'm0'], 640, whole)
+    expect([whole.mock.calls.length, reduce.mock.calls.length]).toEqual([1, 1])
+  })
+
   it('holds thumbnails to a budget in bytes, letting the one read longest ago go first', () => {
     const kept = new KeptThumbnails(100)
     for (const key of ['a', 'b', 'c']) kept.set(key, 'x'.repeat(30))

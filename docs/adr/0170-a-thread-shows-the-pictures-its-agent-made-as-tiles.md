@@ -14,6 +14,8 @@ Accepted October 31, 2026, by Zach's picks on `docs/prototypes/inline-media-prot
 
 **Amended November 10, 2026: a picture at the size a phone shows it** (below), from the November 10 audit (#2395). A phone's tile may ask for a picture at its own size, and the desktop answers a copy made with decision 4's maker; decision 5's whole picture is still what a phone's viewer gets, and what every phone gets from a headless host.
 
+**Amended again November 10, 2026, by [ADR-0202](0202-a-headless-host-makes-a-phones-picture-copies-in-a-worker.md):** a headless host makes the copy too, in a worker process with decoders compiled into its bundle, so decision 35 no longer holds and a phone paired to one gets copies as from a desktop.
+
 Amends [ADR-0031](0031-images-are-staged-once-and-carried-by-handle.md): a second store, kept the same way, holds the pictures an agent made. Leaves [ADR-0056](0056-an-agent-can-draw-a-visual-in-its-thread.md)'s visuals as they are.
 
 ## Context
@@ -138,7 +140,7 @@ The November 10 audit (`docs/perf/2026-11-10-performance-and-data-audit.md`, fin
 
 **34. The copy is decision 4's thumbnail, made for the phone.** The desktop makes it with the maker its window's thumbnails use, Electron's image tools, at the same JPEG quality, and keeps it beside them in their 32 MiB, letting the one read longest ago go first: one budget in bytes holds both, never a count. A tile looks as it did: a picture with anything that shows through stays a PNG, since a JPEG has nothing to show through and Electron turns it black; a GIF is answered whole, so it keeps its frames and the phone shows its first frame still and plays it as before; a JPEG carrying camera details is answered whole, since they can say to turn the picture and Electron does not, where the phone does; and a picture already that small, or one Electron cannot read, such as a WebP, is answered as it is.
 
-**35. Only the desktop makes the copy.** A headless host has no image tools: it runs under plain Node, which reads no picture, and decision 4 has the desktop make a remote host's thumbnails so that it needs none. So a headless host lists no `thread-media-edge`, and a phone paired to one still fetches whole pictures. Giving a headless host image tools, a native library or one compiled into its bundle, is a decision of its own.
+**35. Only the desktop makes the copy.** A headless host has no image tools: it runs under plain Node, which reads no picture, and decision 4 has the desktop make a remote host's thumbnails so that it needs none. So a headless host lists no `thread-media-edge`, and a phone paired to one still fetches whole pictures. Giving a headless host image tools, a native library or one compiled into its bundle, is a decision of its own. *Superseded the same day by [ADR-0202](0202-a-headless-host-makes-a-phones-picture-copies-in-a-worker.md): a headless host lists `thread-media-edge` and makes the copy in a worker process, with jpeg-js and pngjs compiled into its bundle and a JPEG writer of Sotto's own, by decision 34's rules. The desktop still makes a remote host's window thumbnails itself.*
 
 ## Consequences
 
@@ -163,4 +165,4 @@ The November 10 audit (`docs/perf/2026-11-10-performance-and-data-audit.md`, fin
 - A line that hides two or more videos plays only the first of them from its count. It takes five videos in one line, which only a turn that wrote five makes.
 - A GIF a turn wrote plays in its tile no longer on the iPhone, since it sits in its step; it opens still in the full-screen viewer there.
 - A phone's copy costs the desktop's main thread about 10 ms a picture on forge's pictures, once a picture and edge while it stays kept, and a phone's copies take room in the budget the window's thumbnails use, so a session that shows a phone a long picture thread keeps fewer of the window's.
-- A phone paired to a headless host, forge's among them, gains nothing from decisions 33 and 34 until that host has image tools.
+- A phone paired to a headless host, forge's among them, gains nothing from decisions 33 and 34 until that host has image tools. (Since ADR-0202 it has them.)
