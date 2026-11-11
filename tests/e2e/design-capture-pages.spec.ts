@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test'
 import { E2E_TRANSCRIPT } from '../../src/shared/e2e'
 import { populatedHistory, withSotto } from '../fixtures/designCaptureProfile'
 import { assertDictateState, assertFocusPresentation, captureFullSurface, capturePage, captureSection, startSettingsAtHeading } from './support/designCapture'
-import { openJournalRow, openPage } from './support/sottoLaunch'
+import { openJournalRow, openPage, reachSetupStop, setupForwardButton, setupNote, skipSetup } from './support/sottoLaunch'
 
 const captureEnabled = process.env.SOTTO_DESIGN_CAPTURE === '1'
 
@@ -11,58 +11,54 @@ test.describe('authoritative design-review captures', () => {
   test.skip(!captureEnabled, 'Run through npm run design:capture or npm run design:verify')
   test.describe.configure({ mode: 'serial', timeout: 10 * 60_000 })
 
-  test('onboarding, dictate, focus, and feedback matrix', async () => {
+  test('first-run setup, dictate, focus, and feedback matrix', async () => {
     await withSotto({ onboardingComplete: false }, async ({ page }) => {
-      const onboarding = page.locator('.onboarding-shell')
-      const forward = page.locator('.onboarding-actions').getByRole('button', { name: /^(Continue|Skip for now)$/ })
-      const onboardingHeading = page.getByRole('heading', { name: /talk to your computer and your coding agents/i })
-      await expect(onboardingHeading).toBeVisible()
-      expect(await onboardingHeading.evaluate((heading: unknown) => (globalThis as unknown as { document: { activeElement: unknown } }).document.activeElement === heading)).toBe(true)
-      expect(await onboardingHeading.evaluate((heading: unknown) => (globalThis as unknown as { getComputedStyle: (target: unknown) => { outlineStyle: string } }).getComputedStyle(heading).outlineStyle)).toBe('none')
-      await captureSection(page, onboarding, 'onboarding-step-1-welcome.png', { category: 'onboarding', state: 'welcome' })
+      // First-run setup is a walk of notes over the real pages (ADR-0200); each stop is captured as the whole window.
+      const welcomeHeading = setupNote(page).getByRole('heading', { name: /talk to your computer and your coding agents/i })
+      await expect(welcomeHeading).toBeVisible()
+      expect(await welcomeHeading.evaluate((heading: unknown) => (globalThis as unknown as { document: { activeElement: unknown } }).document.activeElement === heading)).toBe(true)
+      expect(await welcomeHeading.evaluate((heading: unknown) => (globalThis as unknown as { getComputedStyle: (target: unknown) => { outlineStyle: string } }).getComputedStyle(heading).outlineStyle)).toBe('none')
+      await expect(setupNote(page).getByRole('radiogroup', { name: 'Appearance' })).toBeVisible()
+      await capturePage(page, 'setup-welcome.png', { category: 'setup', state: 'welcome' })
 
-      const getStarted = page.getByRole('button', { name: 'Get started' })
-      await assertFocusPresentation(getStarted)
-      await getStarted.click()
-      await expect(page.getByRole('heading', { name: /choose how sotto looks/i })).toBeVisible()
-      await captureSection(page, onboarding, 'onboarding-step-2-look.png', { category: 'onboarding', state: 'look' })
+      const start = setupForwardButton(page)
+      await expect(start).toHaveText('Start')
+      await assertFocusPresentation(start)
+      await start.click()
+      await expect(setupNote(page).getByRole('heading', { name: 'Sign in to a coding agent' })).toBeVisible()
+      await capturePage(page, 'setup-agents.png', { category: 'setup', state: 'agents' })
 
-      await forward.click()
-      await page.getByRole('button', { name: /test microphone/i }).click()
-      await expect(page.getByText('Sotto heard you. Your microphone works.')).toBeVisible()
-      await captureSection(page, onboarding, 'onboarding-step-3-microphone-ready.png', { category: 'onboarding', state: 'microphone-ready' })
+      await reachSetupStop(page, 'microphone')
+      await page.locator('.settings-microphone-test').getByRole('button', { name: 'Test microphone', exact: true }).click()
+      await expect(setupNote(page)).toContainText('Sotto heard you. Your microphone works.')
+      await capturePage(page, 'setup-microphone.png', { category: 'setup', state: 'microphone' })
 
-      await forward.click()
-      await expect(page.getByRole('heading', { name: 'Choose a speech model' })).toBeVisible()
-      await captureSection(page, onboarding, 'onboarding-step-4-speech-model.png', { category: 'onboarding', state: 'speech-model' })
+      await reachSetupStop(page, 'speech-model')
+      await expect(setupNote(page).getByRole('heading', { name: 'Choose a speech model' })).toBeVisible()
+      await capturePage(page, 'setup-speech-model.png', { category: 'setup', state: 'speech-model' })
 
-      await forward.click()
-      await expect(page.getByRole('heading', { name: /one shortcut/i })).toBeVisible()
-      await captureSection(page, onboarding, 'onboarding-step-5-shortcut.png', { category: 'onboarding', state: 'shortcut-paste' })
+      await reachSetupStop(page, 'shortcut')
+      await expect(setupNote(page).getByRole('heading', { name: 'Try the shortcut' })).toBeVisible()
+      await capturePage(page, 'setup-shortcut.png', { category: 'setup', state: 'shortcut' })
 
-      await forward.click()
-      await expect(page.getByRole('heading', { name: 'Your coding agents', exact: true })).toBeVisible()
-      await captureSection(page, onboarding, 'onboarding-step-6-agents.png', { category: 'onboarding', state: 'coding-agents' })
+      await reachSetupStop(page, 'tailscale')
+      await expect(setupNote(page).getByRole('heading', { name: 'Tailscale joins your devices' })).toBeVisible()
+      await capturePage(page, 'setup-tailscale.png', { category: 'setup', state: 'tailscale' })
 
-      await forward.click()
-      await expect(page.getByRole('heading', { name: /choose a project folder/i })).toBeVisible()
-      await captureSection(page, onboarding, 'onboarding-step-7-project.png', { category: 'onboarding', state: 'first-project' })
+      await reachSetupStop(page, 'computers')
+      await expect(setupNote(page).getByRole('heading', { name: 'Run threads on another computer' })).toBeVisible()
+      await capturePage(page, 'setup-computers.png', { category: 'setup', state: 'computers' })
 
-      await forward.click()
-      await expect(page.getByRole('heading', { name: /run agents on another computer/i })).toBeVisible()
-      await captureSection(page, onboarding, 'onboarding-step-8-computers.png', { category: 'onboarding', state: 'other-computers' })
+      await reachSetupStop(page, 'iphone')
+      await expect(setupNote(page).getByRole('heading', { name: 'Answer threads from your iPhone' })).toBeVisible()
+      await capturePage(page, 'setup-iphone.png', { category: 'setup', state: 'iphone' })
 
-      await forward.click()
-      await expect(page.getByRole('heading', { name: /answer your threads from your iphone/i })).toBeVisible()
-      await captureSection(page, onboarding, 'onboarding-step-9-phone.png', { category: 'onboarding', state: 'iphone' })
+      await reachSetupStop(page, 'end')
+      await expect(setupNote(page).getByRole('heading', { name: 'That’s setup' })).toBeVisible()
+      await capturePage(page, 'setup-end.png', { category: 'setup', state: 'end' })
 
-      await page.getByRole('button', { name: /finish setup/i }).click()
-      await expect(page.getByRole('complementary', { name: 'Thread sidebar' })).toBeVisible()
-      const tour = page.locator('.threads-tour')
-      await expect(tour).toBeVisible()
-      await capturePage(page, 'threads-tour-projects.png', { category: 'threads', state: 'tour-projects' })
-      await tour.getByRole('button', { name: 'Skip tour' }).click()
-      await expect(tour).toHaveCount(0)
+      // Done ends the walk on the Threads page, with no tour after it.
+      await skipSetup(page)
     })
 
     await withSotto({ memory: true, onboardingComplete: true, history: populatedHistory }, async ({ page }) => {

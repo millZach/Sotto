@@ -1,5 +1,5 @@
-import { PROVIDER_LABELS, providerIdSchema, type AgentProject, type AgentProviderStatus, type AgentState, type ProviderId } from '../../../../shared/agents'
-import { projectOnHost } from '../../agents/projectFolders'
+import { PROVIDER_LABELS, providerIdSchema, type AgentProject, type AgentProviderStatus, type AgentState, type ProviderId } from '../../../shared/agents'
+import { projectOnHost } from './projectFolders'
 
 /** The providers in the order setup lists them. */
 export const SETUP_PROVIDERS: readonly ProviderId[] = providerIdSchema.options

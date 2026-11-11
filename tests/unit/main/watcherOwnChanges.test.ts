@@ -46,7 +46,7 @@ describe('Watcher own changes', () => {
   it('has a watched thread end its turn on a pushed pull request and Watcher act on its checks news', () => {
     expect(WATCHER_PULL_REQUEST_NEWS_PROMPT).toContain('A watched thread that pushed to a pull request ends its turn instead of watching CI itself')
     expect(WATCHER_PULL_REQUEST_NEWS_PROMPT).toContain('once any check fails, before the rest finish')
-    expect(WATCHER_PULL_REQUEST_NEWS_PROMPT).toContain('When the required checks pass, send it to merge')
+    expect(WATCHER_PULL_REQUEST_NEWS_PROMPT).toContain('When every check has finished with the required ones passing, send it to merge')
     // Only while that news runs (Restart stopped threads); without it nothing would tell Watcher a check failed.
     expect(watcherSystemPrompt(false, false, true)).toContain(WATCHER_PULL_REQUEST_NEWS_PROMPT)
     expect(watcherSystemPrompt(true, true)).not.toContain(WATCHER_PULL_REQUEST_NEWS_PROMPT)
