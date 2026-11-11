@@ -69,7 +69,7 @@ const menuWords = (menu: Locator): Promise<(string | null)[][]> => menu.locator(
 /** The design fixture on Threads at 1600x1000, with Streaming WAV stall on screen. */
 async function launchOnThreads(): Promise<LaunchedSotto> {
   const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-thread-list-keyboard-' })).directory
-  await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'dark', accent: 'teal' }))
+  await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'dark', accent: 'teal', threadListGrouping: 'project' }))
   await writeFile(join(profile, 'agents.json'), JSON.stringify({
     configuration: { ...defaultAgentConfiguration(), enabled: true },
     activeThreadId: 'wav-stall', activeProjectId: 'workshop', draft: '', draftThreadId: null, draftRequestId: null, composing: false, outbox: [],

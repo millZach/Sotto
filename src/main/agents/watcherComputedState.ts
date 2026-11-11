@@ -50,13 +50,24 @@ export function watcherMergeQueue(threads: readonly { readonly target: WatcherTh
   })).sort((a, b) => Date.parse(a.inTrainSince) - Date.parse(b.inTrainSince) || (a.pullRequest.number ?? 0) - (b.pullRequest.number ?? 0))
 }
 
-/** The checks on the newest commit of the branch a pull request merges into, as GitHub reports them when a GO MERGE asks. */
-export interface BaseBranchChecks { readonly branch: string; readonly head: string; readonly state: 'passed' | 'failed' | 'pending' | 'unknown' }
+/**
+ * How many commits back along the base branch's first parents the merge train reads for finished checks (#2431). Pushes to
+ * main queue behind each other in one concurrency group, and GitHub replaces a waiting run when a newer one comes, so a
+ * burst of merges leaves its newest commits with no check runs at all. Ten is the most one query can nest under GitHub's
+ * depth limit of 25, and covers the November 10, 2026 burst, which left five in a row with none.
+ */
+export const BASE_BRANCH_COMMITS_READ = 10
+/**
+ * The checks of the branch a pull request merges into, as GitHub reports them when a GO MERGE asks: those of `head`, its
+ * newest commit, or, when that has no finished checks yet, those of the newest commit along its first parents that has,
+ * with the newest as `newest` (#2431). Unknown when none of the commits read has finished checks.
+ */
+export interface BaseBranchChecks { readonly branch: string; readonly head: string; readonly state: 'passed' | 'failed' | 'pending' | 'unknown'; readonly newest?: string }
 
 /**
  * What holds a GO MERGE for `url` (#2229): the other pull requests of the same repository in the train whose required
- * checks are running, which the merge would land in the middle of, and the base branch when its newest commit's checks
- * failed (AGENTS.md: a red run on main is fixed before anything else merges). Nothing holds it when both are clear; a
+ * checks are running, which the merge would land in the middle of, and the base branch when its newest finished checks
+ * failed (AGENTS.md: a red run on main is fixed before anything else merges; #2431). Nothing holds it when both are clear; a
  * base branch GitHub could not be asked about holds nothing, and the GO MERGE says so.
  */
 export function mergeTurnHolds(queue: readonly WatcherMergeQueueItem[], url: string, base: BaseBranchChecks | undefined): { readonly running: readonly WatcherMergeQueueItem[]; readonly baseFailed?: BaseBranchChecks } {
