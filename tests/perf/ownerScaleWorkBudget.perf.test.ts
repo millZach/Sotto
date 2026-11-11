@@ -893,8 +893,9 @@ const LAYERS_RUN: Record<Scenario, readonly string[]> = { '1 streaming': LAYERS,
 const WHERE = SITES ? '' : ' Run it with SOTTO_WORK_SITES=1 to see where the serializations, thread visits and copied objects that grew come from.'
 
 // The counts are CI's Node major's (`tests/fixtures/pinnedNode.ts`): under another, a send publishes once more and reads
-// as over budget with nothing wrong in main (#2339), so the budgets skip there and the run says why at its start.
-describe.skipIf(!ON_PINNED_NODE).each(TRACKS)('main\'s work at the owner\'s scale on %s (#1232)', track => {
+// as over budget with nothing wrong in main (#2339), so the budgets skip there and the run says why at its start. CI
+// never skips them: a workflow moved to another major runs them and fails here, rather than pass with no budget held.
+describe.skipIf(!ON_PINNED_NODE && !process.env.CI).each(TRACKS)('main\'s work at the owner\'s scale on %s (#1232)', track => {
   it('builds the owner\'s world', () => {
     expect(measured[track].owner.counts).toMatchObject({ threads: 250, remoteThreads: 40, retirements: 256, remoteRetirements: 40, operations: 150, requests: 160, watches: 5, delegations: 40 })
     expect(measured[track].quarterHistory.counts).toMatchObject({ threads: 250, remoteThreads: 10, retirements: 64, operations: 38, requests: 40 })

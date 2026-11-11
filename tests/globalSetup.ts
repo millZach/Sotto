@@ -1,5 +1,5 @@
 import { assertTemporaryFolderOutsideRepositories } from './fixtures/gitGuard'
-import { OFF_PINNED_NODE, ON_PINNED_NODE } from './fixtures/pinnedNode'
+import { OFF_PINNED_NODE_MESSAGE, ON_PINNED_NODE } from './fixtures/pinnedNode'
 
 /**
  * Runs once, before any test file. Tests make plain folders under the temporary folder and expect Git to find no
@@ -11,5 +11,5 @@ import { OFF_PINNED_NODE, ON_PINNED_NODE } from './fixtures/pinnedNode'
  */
 export default function setup(): void {
   assertTemporaryFolderOutsideRepositories()
-  if (!ON_PINNED_NODE) console.warn(`\n${OFF_PINNED_NODE}\n`)
+  if (!ON_PINNED_NODE) console.warn(`\n${OFF_PINNED_NODE_MESSAGE}\n`)
 }
