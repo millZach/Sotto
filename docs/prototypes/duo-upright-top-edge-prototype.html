@@ -1,0 +1,156 @@
+<!doctype html>
+<!-- PROTOTYPE, throwaway. Question: on the iPhone Duo unfolded and held upright, once the page scrolls up to the screen's
+     top edge (as it does folded and sideways), what keeps words off the clock in the top-right corner? Today, plus two
+     answers, on the Threads page at the Duo's upright size (669 x 951 points, measured from Zach's screenshot), switched
+     with ?variant= or the bar at the foot. The accent running on under the rail is settled and shows in A and B.
+     Zach picked B, November 10, 2026 (ADR-0151, ninth amendment). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Duo upright: the top edge (prototype)</title>
+<style>
+  :root { --canvas:#08090b; --surface:#16181c; --surface2:#1d2025; --ink:#f4f5f7; --muted:#9aa0a8; --hair:#2a2d33;
+          --teal:#3fc7a4; --amber:#f5a524; --wash1:rgba(48,140,118,.55); --wash2:rgba(120,110,40,.18); }
+  .light { --canvas:#f6f6f4; --surface:#ffffff; --surface2:#efefec; --ink:#16181c; --muted:#5f646c; --hair:#dcdcd8;
+           --teal:#13876c; --amber:#a75f00; --wash1:rgba(48,160,128,.30); --wash2:rgba(200,170,40,.16); }
+  * { box-sizing:border-box; margin:0; }
+  html, body { height:100%; background:#000; color:#fff; font-family:Figtree, -apple-system, "Segoe UI", system-ui, sans-serif; }
+  body { display:flex; flex-direction:column; align-items:center; }
+  #stage { flex:1; width:100%; display:flex; align-items:center; justify-content:center; overflow:hidden; padding:8px; }
+  #holder { position:relative; }
+  #screen { position:absolute; left:0; top:0; width:669px; height:951px; transform-origin:0 0; background:var(--canvas);
+            border-radius:18px; overflow:hidden; color:var(--ink); }
+  /* The page: it scrolls under everything, from the screen's top edge; its safe area starts 83 points down. */
+  #scroll { position:absolute; inset:0; overflow-y:auto; overflow-x:hidden; scrollbar-width:none; }
+  #scroll::-webkit-scrollbar { display:none; }
+  #content { position:relative; padding:95px 104px 60px 24px; min-height:1700px; }
+  .wash { position:absolute; left:0; top:-160px; right:0; height:680px; pointer-events:none;
+          background: radial-gradient(120% 80% at 8% 0%, var(--wash1), transparent 62%),
+                      radial-gradient(70% 60% at 85% 0%, var(--wash2), transparent 70%); }
+  .v-today .wash { right:80px; }          /* today: cut at the rail's edge */
+  h1 { font-size:34px; font-weight:700; letter-spacing:-.6px; display:inline-block; vertical-align:middle; margin-right:22px; }
+  .row1 { position:relative; display:flex; align-items:center; gap:12px; height:52px; }
+  .pill { height:44px; border-radius:22px; border:1px solid var(--hair); display:flex; align-items:center; padding:0 16px;
+          gap:8px; font-size:16px; background:rgba(255,255,255,.02); }
+  .pill .dot { width:8px; height:8px; border-radius:4px; background:var(--teal); }
+  .search { flex:1; color:var(--muted); }
+  .cols { position:relative; display:grid; grid-template-columns:1fr 1fr; gap:17px; margin-top:34px; }
+  .label { font-size:16px; font-weight:600; display:flex; align-items:center; gap:8px; margin-bottom:16px; }
+  .label .n { color:var(--muted); font-weight:400; }
+  .label .dot { width:9px; height:9px; border-radius:5px; }
+  .card { background:var(--surface); border-radius:24px; padding:18px 16px; margin-bottom:12px; }
+  .state { font-size:13px; display:flex; justify-content:space-between; color:var(--muted); }
+  .state b { font-weight:500; display:flex; align-items:center; gap:6px; }
+  .state b i { width:7px; height:7px; border-radius:4px; display:inline-block; }
+  .title { font-size:18px; font-weight:600; margin:10px 0 6px; line-height:1.25; }
+  .meta { font-size:14px; color:var(--muted); }
+  .chip { display:inline-block; border:1px solid var(--hair); background:var(--surface2); border-radius:20px; padding:10px 16px;
+          font-size:15px; margin-top:10px; }
+  /* The rail: over the page's right edge, 80 points wide. */
+  #rail { position:absolute; top:0; right:0; bottom:0; width:80px; pointer-events:none; }
+  .v-today #rail { background:var(--canvas); }   /* today: its own plain column */
+  .circle { position:absolute; left:18px; width:44px; height:44px; border-radius:22px; border:1px solid var(--hair);
+            display:flex; align-items:center; justify-content:center; color:var(--muted); font-size:20px; background:rgba(255,255,255,.03); }
+  .circle.plus { color:var(--teal); font-size:28px; border-color:rgba(63,199,164,.45); }
+  .tabs { position:absolute; left:11px; width:58px; top:685px; height:212px; border-radius:29px; border:1px solid var(--hair);
+          background:rgba(255,255,255,.03); display:flex; flex-direction:column; align-items:center; justify-content:space-around; padding:8px 0; }
+  .tabs span { width:40px; height:40px; border-radius:20px; display:flex; align-items:center; justify-content:center; font-size:17px; color:var(--muted); }
+  .tabs span.on { background:rgba(63,199,164,.25); color:var(--teal); }
+  /* The status bar: the clock, Wi-Fi and battery stand in the top-right corner, partly over the page. */
+  #status { position:absolute; top:24px; left:549px; width:93px; height:47px; display:flex; align-items:center; gap:8px;
+            font-size:16px; font-weight:600; color:var(--ink); pointer-events:none; z-index:5; }
+  #status .ring { width:34px; height:34px; border-radius:17px; border:3px solid var(--muted); border-left-color:#f2c200; }
+  /* What keeps words off the clock, one per variant. */
+  .fade { position:absolute; pointer-events:none; z-index:4; }
+  .v-today .band { left:0; right:80px; top:0; height:93px; background:linear-gradient(var(--canvas) 62%, transparent); }
+  .edge { left:0; right:0; top:0; height:10px; background:linear-gradient(var(--canvas), transparent); }
+  .v-today .edge, .v-a .band, .v-b .band, .v-today .patch, .v-b .patch { display:none; }
+  .v-a .patch { right:0; top:0; width:152px; height:92px;
+                background:var(--canvas);
+                -webkit-mask: radial-gradient(130% 120% at 100% 0%, #000 55%, transparent 100%);
+                        mask: radial-gradient(130% 120% at 100% 0%, #000 55%, transparent 100%); }
+  /* Switcher */
+  #bar { flex:none; width:100%; display:flex; flex-direction:column; align-items:center; gap:6px; padding:8px 8px calc(10px + env(safe-area-inset-bottom));
+         background:#111; border-top:1px solid #222; }
+  #bar .btns { display:flex; gap:6px; flex-wrap:wrap; justify-content:center; }
+  #bar button { font:inherit; font-size:15px; padding:9px 14px; border-radius:20px; border:1px solid #333; background:#1b1b1b; color:#ddd; }
+  #bar button.on { background:#2b6f5d; border-color:#3fc7a4; color:#fff; }
+  #note { font-size:13px; color:#aaa; text-align:center; max-width:640px; line-height:1.35; }
+</style>
+</head>
+<body>
+<div id="stage"><div id="holder"><div id="screen">
+  <div id="scroll"><div id="content">
+    <div class="wash"></div>
+    <div class="row1"><h1>Threads</h1>
+      <div class="pill"><span class="dot"></span>All computers ⌄</div>
+      <div class="pill search">⌕&nbsp; Search threads</div></div>
+    <div class="cols">
+      <div>
+        <div class="label"><span class="dot" style="background:var(--amber)"></span>Needs you <span class="n">1</span></div>
+        <div class="card"><div class="state"><b style="color:var(--amber)"><i style="background:var(--amber)"></i>Question</b>4m</div>
+          <div class="title">Pixel art game: starting places</div><div class="meta">✳ Desktop · laptop</div>
+          <p class="meta" style="color:var(--ink);font-size:16px;margin-top:12px;line-height:1.4">Starting places, the character creator and items with crafting are in one build. Try it and say what to change.</p>
+          <span class="chip">Played it, merge</span><br><span class="chip">Played it, changes needed</span><br><span class="chip">Not yet</span>
+          <p style="color:var(--teal);margin-top:18px;font-size:16px">Write your own</p></div>
+        <div class="label" style="margin-top:26px">Recent <span class="n">7</span></div>
+        <div class="card">
+          <div class="title" style="font-size:16px">✓ Manage the project's issues</div><div class="meta">Just finished · forge · 9s ago</div>
+          <div class="title" style="font-size:16px;margin-top:18px">✓ Fix the flaky iPhone journeys</div><div class="meta">Just finished · forge · 36m</div>
+          <div class="title" style="font-size:16px;margin-top:18px">✓ Rework the first-run setup</div><div class="meta">Just finished · forge · 41m</div>
+          <div class="title" style="font-size:16px;margin-top:18px">✓ Group the desktop sidebar by status</div><div class="meta">Just finished · forge · 1h</div>
+        </div>
+      </div>
+      <div>
+        <div class="label"><span class="dot" style="background:var(--teal)"></span>Working now <span class="n">6</span></div>
+        <div class="card"><div class="state"><b style="color:var(--teal)"><i style="background:var(--teal)"></i>Working</b>9m</div><div class="title">Watcher news and merge-train gaps: file and fix</div><div class="meta">✳ Sotto · forge</div></div>
+        <div class="card"><div class="state"><b style="color:var(--teal)"><i style="background:var(--teal)"></i>Working</b>1m</div><div class="title">Audit: performance and data transferred</div><div class="meta">✳ Sotto · forge</div></div>
+        <div class="card"><div class="state"><b style="color:var(--teal)"><i style="background:var(--teal)"></i>Working</b>3m</div><div class="title">Landing page in a single HTML file</div><div class="meta">◆ Frontend · laptop</div></div>
+        <div class="card"><div class="state"><b style="color:var(--teal)"><i style="background:var(--teal)"></i>Working</b>4m</div><div class="title">Grilling session for a CAD tool</div><div class="meta">✳ Projects · forge</div></div>
+        <div class="card"><div class="state"><b style="color:var(--teal)"><i style="background:var(--teal)"></i>Working</b>8m</div><div class="title">Refine the short film with a judge panel</div><div class="meta">✳ Projects · forge</div></div>
+        <div class="card"><div class="state"><b style="color:var(--muted)"><i style="background:var(--muted)"></i>Waiting</b>11h</div><div class="title">Release notes for the next build</div><div class="meta">✳ Sotto · laptop</div></div>
+      </div>
+    </div>
+  </div></div>
+  <div class="fade band"></div><div class="fade edge"></div><div class="fade patch"></div>
+  <div id="rail">
+    <div class="circle" style="top:95px">▯</div>
+    <div class="circle plus" style="top:151px">+</div>
+    <div class="tabs"><span class="on">☰</span><span>◉</span><span>▭</span><span>≡</span></div>
+  </div>
+  <div id="status">20:53 <span class="ring"></span></div>
+</div></div></div>
+<div id="bar">
+  <div class="btns">
+    <button data-v="today">Today</button><button data-v="a">A · Patch behind the clock</button><button data-v="b">B · Nothing behind the clock</button>
+    <button id="theme">Light</button>
+  </div>
+  <div id="note"></div>
+</div>
+<script>
+  const notes = {
+    today: 'Today: the page fades out at a band as tall as the status bar, 93 points, and the accent stops at the rail.',
+    a: 'A: the page runs to the top edge across its width, with a soft patch of ground only behind the clock and battery, so words never sit under them. The accent runs on under the rail.',
+    b: 'B: the page runs to the top edge everywhere, as folded and sideways, with only the 10-point edge fade. Card edges and the search field pass under the clock. The accent runs on under the rail.'
+  };
+  const screen = document.getElementById('screen'), holder = document.getElementById('holder'), stage = document.getElementById('stage');
+  function fit() {
+    const s = Math.min((stage.clientWidth - 16) / 669, (stage.clientHeight - 16) / 951);
+    screen.style.transform = `scale(${s})`; holder.style.width = 669 * s + 'px'; holder.style.height = 951 * s + 'px';
+  }
+  function show(v) {
+    screen.className = 'v-' + v + (document.body.classList.contains('light') ? '' : '');
+    document.querySelectorAll('#bar [data-v]').forEach(b => b.classList.toggle('on', b.dataset.v === v));
+    document.getElementById('note').textContent = notes[v] + ' Drag the page to scroll it.';
+    const u = new URL(location); u.searchParams.set('variant', v); history.replaceState(null, '', u);
+  }
+  document.querySelectorAll('#bar [data-v]').forEach(b => b.onclick = () => show(b.dataset.v));
+  document.getElementById('theme').onclick = e => { const l = stage.classList.toggle('light'); e.target.textContent = l ? 'Dark' : 'Light'; };
+  addEventListener('resize', fit); fit();
+  show(new URLSearchParams(location.search).get('variant') || 'today');
+  // Start scrolled up, so the top edge shows what passes under it.
+  document.getElementById('scroll').scrollTop = 120;
+</script>
+</body>
+</html>
