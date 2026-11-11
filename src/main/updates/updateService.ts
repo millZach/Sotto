@@ -14,18 +14,22 @@ export const UPDATE_STARTUP_DELAY_MS = 15_000
 /**
  * After that Sotto asks once an hour (Zach's pick, November 10, 2026), so a
  * release published while the app is open is offered within the hour without a
- * press, and Check now still asks at once. Each check is two requests: the
- * release feed (16 KB, not compressed) and then the release's manifest (under
- * 1 KB). That is 24 checks a day where every four minutes made 360.
+ * press, and Check now still asks at once. That is 24 checks a day where every
+ * four minutes made 360. What one check asks depends on the track: stable on
+ * Windows reads the release feed (16 KB, not compressed), the latest release's
+ * tag and that release's `latest.yml`, three requests; Owl reads the feed and
+ * its own `owl.yml` or `owl-mac.yml`, two. Both come to about 17 KB.
  */
 export const UPDATE_CHECK_INTERVAL_MS = 60 * 60 * 1_000
 /**
  * A check that fails, as when the computer wakes before its connection does, is
- * tried again after four minutes, the pace every check ran at before the hour,
- * rather than going quiet until the next one. Each failure waits four minutes
- * again, and the first check that answers ends it.
+ * tried again 4, 8 and then 16 minutes later rather than going quiet until the
+ * next hourly check; after those three only the hourly check asks. The first
+ * check that answers ends them and gives the next failure all three again, so
+ * a computer that is offline all day makes three checks more than one that is
+ * online: 28 in its first day where an online one makes 25.
  */
-export const UPDATE_RETRY_AFTER_FAILURE_MS = 4 * 60 * 1_000
+export const UPDATE_RETRY_DELAYS_MS: readonly number[] = Object.freeze([4 * 60 * 1_000, 8 * 60 * 1_000, 16 * 60 * 1_000])
 
 const MAX_PROBLEM_LENGTH = 240
 
@@ -83,7 +87,7 @@ export interface UpdateServiceDependencies {
   readonly now?: () => number
   readonly startupDelayMs?: number
   readonly intervalMs?: number
-  readonly retryAfterFailureMs?: number
+  readonly retryDelaysMs?: readonly number[]
   /** Both return their own cancellation, so tests never touch real timers. */
   readonly scheduleTimeout?: (callback: () => void, delayMs: number) => () => void
   readonly scheduleInterval?: (callback: () => void, intervalMs: number) => () => void
@@ -191,7 +195,7 @@ export class UpdateService {
   private readonly owlFeatures: OwlFeatureStates
   private readonly startupDelayMs: number
   private readonly intervalMs: number
-  private readonly retryAfterFailureMs: number
+  private readonly retryDelaysMs: readonly number[]
   private readonly scheduleTimeout: (callback: () => void, delayMs: number) => () => void
   private readonly scheduleInterval: (callback: () => void, intervalMs: number) => () => void
   private adapter: UpdaterAdapter | null = null
@@ -210,6 +214,8 @@ export class UpdateService {
   private cancelTimers: Array<() => void> = []
   /** Cancels the check a failure scheduled, while one waits. */
   private cancelRetry: (() => void) | null = null
+  /** How many of the early retries have run since a check last answered. */
+  private retriesRun = 0
   private started = false
   private disposed = false
 
@@ -219,13 +225,13 @@ export class UpdateService {
     this.owlFeatures = Object.freeze({ ...features, watcher: dependencies.owlFeatures?.watcher ?? dependencies.watcherEnabled ?? features.watcher })
     this.startupDelayMs = dependencies.startupDelayMs ?? UPDATE_STARTUP_DELAY_MS
     this.intervalMs = dependencies.intervalMs ?? UPDATE_CHECK_INTERVAL_MS
-    this.retryAfterFailureMs = dependencies.retryAfterFailureMs ?? UPDATE_RETRY_AFTER_FAILURE_MS
+    this.retryDelaysMs = dependencies.retryDelaysMs ?? UPDATE_RETRY_DELAYS_MS
     this.scheduleTimeout = dependencies.scheduleTimeout ?? defaultScheduleTimeout
     this.scheduleInterval = dependencies.scheduleInterval ?? defaultScheduleInterval
   }
 
   /**
-   * One check shortly after launch, then one per interval, and one four minutes after any check that failed, each still
+   * One check shortly after launch, then one per interval, and up to three sooner after a check that failed, each still
    * gated on the setting.
    */
   start(): void {
@@ -412,9 +418,13 @@ export class UpdateService {
     // A check that completed without offering a version found nothing newer.
     if (this.currentPhase() === 'checking') this.setPhase({ phase: 'up-to-date' })
     this.previousOffer = null
-    // A check that answered ends the retry a failure scheduled. An error event can still have failed this one.
+    // A check that answered ends the retries a failure scheduled, and the next failure has all of them again. An error
+    // event can still have failed this one.
     const phase = this.phase
-    if (phase.phase !== 'failed' && !(phase.phase === 'available' && phase.failedStep === 'check')) this.stopRetry()
+    if (phase.phase !== 'failed' && !(phase.phase === 'available' && phase.failedStep === 'check')) {
+      this.stopRetry()
+      this.retriesRun = 0
+    }
     return this.status()
   }
 
@@ -425,16 +435,20 @@ export class UpdateService {
   }
 
   /**
-   * A failed check, automatic or pressed, is asked again in four minutes rather than at the next hourly check, once
-   * `start` has run. The retry is an automatic check, so it obeys the setting, and a retry already waiting is not doubled.
+   * A failed check, automatic or pressed, is asked again sooner than the next hourly check once `start` has run: 4, 8
+   * and then 16 minutes later, and after those only at the hourly check until one answers. The retry is an automatic
+   * check, so it obeys the setting, and a retry already waiting is not doubled.
    */
   private retrySoon(): void {
     if (!this.started || this.disposed || this.cancelRetry !== null) return
+    const delay = this.retryDelaysMs[this.retriesRun]
+    if (delay === undefined) return
     try {
       this.cancelRetry = this.scheduleTimeout(() => {
         this.cancelRetry = null
+        this.retriesRun += 1
         void this.check('automatic')
-      }, this.retryAfterFailureMs)
+      }, delay)
     } catch {
       // A scheduler that refuses leaves the next hourly check to ask.
     }

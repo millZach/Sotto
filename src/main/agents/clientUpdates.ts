@@ -2,7 +2,7 @@ import { PROVIDER_LABELS, type AgentHostSnapshot, type AgentState, type Provider
 import { clientVersionOf, compareClientVersions, isComparableVersion } from './clientVersions'
 import type { AgentHost } from './host'
 import { compareMuseVersions } from './museClientInstall'
-import { CLIENT_CHECK_INTERVAL_MS, CLIENT_RETRY_AFTER_FAILURE_MS, locateClient as locateClientOnDisk, type ProviderClients } from './providerClients'
+import { CLIENT_CHECK_INTERVAL_MS, CLIENT_RETRY_DELAYS_MS, locateClient as locateClientOnDisk, type ProviderClients } from './providerClients'
 
 /** Where a client's last update left it, carried over a new reading: its state and what that run said. */
 function outcomeOf(before: ProviderClientUpdate): Partial<ProviderClientUpdate> {
@@ -75,8 +75,13 @@ export class ClientUpdates {
   private dismissedReleases = new Map<ProviderId, string>()
   /** The check every machine runs every hour while Sotto is open (ADR-0042). */
   private clientCheckTimer: ReturnType<typeof setInterval> | null = null
-  /** The check every five minutes while a registry or feed has not answered for some client, beside the hourly one. */
-  private clientRetryTimer: ReturnType<typeof setInterval> | null = null
+  /**
+   * Each client whose registry or feed gave no version when it was last asked, with how many of the early asks it has
+   * had since it last answered. An answer takes it off.
+   */
+  private readonly unanswered = new Map<ProviderId, number>()
+  /** The next early ask of the clients in `unanswered` that have one left, while it waits. */
+  private clientRetryTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor(private readonly context: ClientUpdatesContext) {}
 
@@ -93,22 +98,39 @@ export class ClientUpdates {
   stopChecking(): void {
     if (this.clientCheckTimer) clearInterval(this.clientCheckTimer)
     this.clientCheckTimer = null
-    this.retryUntilAnswered(false)
+    if (this.clientRetryTimer) clearTimeout(this.clientRetryTimer)
+    this.clientRetryTimer = null
   }
   /**
-   * A check whose registry or feed gave no version for some client is asked again every five minutes, the pace every
-   * check ran at before the hour, until a check answers for them all; the hourly check carries on beside it. Only a
-   * machine that runs the hourly check retries.
+   * A client whose registry or feed gave no version is asked again 5, 10 and then 20 minutes later, alone or with the
+   * other clients that went unanswered, and after those only by the hourly check until it answers. Each client counts
+   * its own: the wait is the one owed to the client with the most early asks left. Only a machine that runs the hourly
+   * check asks early.
    */
-  private retryUntilAnswered(unanswered: boolean): void {
-    if (!unanswered) {
-      if (this.clientRetryTimer) clearInterval(this.clientRetryTimer)
-      this.clientRetryTimer = null
-      return
-    }
+  private askUnansweredSoon(): void {
     if (this.clientRetryTimer || !this.clientCheckTimer || this.disposed) return
-    this.clientRetryTimer = setInterval(() => { void this.backgroundClientCheck() }, CLIENT_RETRY_AFTER_FAILURE_MS)
+    let asked: number | undefined
+    for (const count of this.unanswered.values()) if (count < CLIENT_RETRY_DELAYS_MS.length) asked = Math.min(asked ?? count, count)
+    if (asked === undefined) return
+    this.clientRetryTimer = setTimeout(() => {
+      this.clientRetryTimer = null
+      void this.askUnanswered()
+    }, CLIENT_RETRY_DELAYS_MS[asked])
     this.clientRetryTimer.unref?.()
+  }
+  /**
+   * The early ask: afresh, of the unanswered clients that have one left, keeping every other client's reading as it is.
+   * It is let go while another check is reading, which arms the next one when it ends.
+   */
+  private async askUnanswered(): Promise<void> {
+    if (this.clientChecks > 0) return
+    const due = new Set<ProviderId>()
+    for (const [provider, count] of this.unanswered) {
+      if (count >= CLIENT_RETRY_DELAYS_MS.length) continue
+      due.add(provider)
+      this.unanswered.set(provider, count + 1)
+    }
+    if (due.size) await this.readClientsAfresh(due)
   }
   letGoOfLine(): void {
     // Updates still waiting in the line never start; whoever waits for one is told rather than left waiting.
@@ -133,25 +155,36 @@ export class ClientUpdates {
    * `fresh` is the user's own Check, and a host's `check-client-updates`: it shows the card again and asks the registry
    * afresh. `afresh` alone asks afresh and leaves the card as it was. Neither sets aside a finding that still describes
    * the client, which an Update all press may be reading (ADR-0077); only a newer release or another installed version
-   * does.
+   * does. `only` reads just those clients and keeps every other reading as it stands.
    */
-  async check(fresh = false, afresh = fresh): Promise<void> {
+  async check(fresh = false, afresh = fresh, only?: ReadonlySet<ProviderId>): Promise<void> {
     if (!this.state.configuration.checkClientUpdates) { delete this.state.clientUpdates; return }
     this.clientChecks += 1
-    try { await this.readClientUpdates(fresh, afresh) } finally { this.clientChecks -= 1 }
+    try { await this.readClientUpdates(fresh, afresh, only) } finally { this.clientChecks -= 1 }
   }
-  private async readClientUpdates(fresh: boolean, afresh: boolean): Promise<void> {
+  private async readClientUpdates(fresh: boolean, afresh: boolean, only: ReadonlySet<ProviderId> | undefined): Promise<void> {
     const previous = this.state.clientUpdates ?? []
     const moves = new Map(this.clientLineMoves)
     const readings: ProviderClientUpdate[] = []
-    let unanswered = false
+    /**
+     * The clients this check left as they were, those it asked about whose registry or feed gave no version, and every
+     * connected client with a version.
+     */
+    const kept = new Set<ProviderId>(), missed = new Set<ProviderId>(), present = new Set<ProviderId>()
     for (const provider of this.state.host.providers ?? []) {
       if (provider.connection !== 'connected') continue
       const installed = clientVersionOf(provider.version)
       if (!installed) continue
-      const executable = await this.clientPath(provider.id)
+      present.add(provider.id)
       const before = previous.find(item => item.id === provider.id)
-      let reading = await this.context.clients.check(provider.id, installed, executable, process.env, { afresh, unanswered: () => { unanswered = true } })
+      if (only && !only.has(provider.id)) {
+        if (before) { readings.push(before); kept.add(provider.id) }
+        continue
+      }
+      const executable = await this.clientPath(provider.id)
+      let reading = await this.context.clients.check(provider.id, installed, executable, process.env, { afresh, unanswered: () => { missed.add(provider.id) } })
+      if (!missed.has(provider.id)) this.unanswered.delete(provider.id)
+      else if (!this.unanswered.has(provider.id)) this.unanswered.set(provider.id, 0)
       // A registry that did not answer says nothing new: the release last read for the same install still stands, so a
       // check that failed and one that came back with the same release do not read as a new release.
       if (reading.published === undefined && before?.published !== undefined && before.installed === reading.installed) {
@@ -162,15 +195,19 @@ export class ClientUpdates {
       readings.push(before && (lined || (before.state !== 'idle' && outcomeHolds(before, reading))) ? withOutcome(reading, before) : reading)
     }
     if (this.disposed) return
-    this.retryUntilAnswered(unanswered)
+    // A client that has gone is asked nothing early; connecting it again asks it at once.
+    for (const provider of this.unanswered.keys()) if (!present.has(provider)) this.unanswered.delete(provider)
+    this.askUnansweredSoon()
     // The update line runs while this check waits on the registry and the disk: whatever it said about a client
     // meanwhile (its step, how it ended) is newer than what the check started from, and wins. How it ended gives way to
     // a newer release the check found, while waiting or running never does. A client the line installed meanwhile was
-    // read again after the install, so its record stands whole: this check's reading of it predates the install.
+    // read again after the install, so its record stands whole: this check's reading of it predates the install. A
+    // client this check left as it was takes its record as it is now.
     const latest = this.state.clientUpdates ?? []
     for (const [index, reading] of readings.entries()) {
       const now = latest.find(item => item.id === reading.id)
       if (!now) continue
+      if (kept.has(reading.id)) { readings[index] = now; continue }
       const moved = (this.clientLineMoves.get(reading.id) ?? 0) !== (moves.get(reading.id) ?? 0)
       if (moved && now.installed !== reading.installed) { readings[index] = now; continue }
       if (now !== previous.find(item => item.id === reading.id)
@@ -190,9 +227,9 @@ export class ClientUpdates {
     }
   }
   /**
-   * The check every machine runs every hour, and every five minutes while a registry has not answered (ADR-0042). It
-   * installs nothing, and the user's setting turning checks off stops it. A tick is let go while an update runs, which
-   * reads the new version itself, and while the last check is still waiting on the registry: the next tick asks again.
+   * The check every machine runs every hour (ADR-0042). It installs nothing, and the user's setting turning checks off
+   * stops it. A tick is let go while an update runs, which reads the new version itself, and while the last check is
+   * still waiting on the registry: the next tick asks again.
    */
   private async backgroundClientCheck(): Promise<void> {
     if (this.clientChecks > 0) return
@@ -208,10 +245,10 @@ export class ClientUpdates {
     if (this.updatingClient || this.clientLineRunning) { if (!this.disposed) this.clientCheckOwed = true; return }
     await this.readClientsAfresh()
   }
-  private async readClientsAfresh(): Promise<void> {
+  private async readClientsAfresh(only?: ReadonlySet<ProviderId>): Promise<void> {
     if (this.disposed || !this.state.configuration.checkClientUpdates || this.updatingClient || this.clientLineRunning) return
     const before = this.state.clientUpdates, dismissed = this.state.clientUpdatesDismissedAt
-    try { await this.check(false, true) } catch { return }
+    try { await this.check(false, true, only) } catch { return }
     // When it was checked is all that moved most times; the next publish carries that.
     if (!this.disposed && (dismissed !== this.state.clientUpdatesDismissedAt || !sameClientReadings(before, this.state.clientUpdates))) this.context.publish()
   }

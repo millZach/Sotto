@@ -33,10 +33,12 @@ const REGISTRY = 'https://registry.npmjs.org'
  */
 export const CLIENT_CHECK_INTERVAL_MS = 60 * 60 * 1000
 /**
- * How soon a check whose registry or feed did not answer for some client is asked again, rather than at the next hourly
- * check: five minutes, the pace every check ran at before the hour, until one answers for them all.
+ * How soon a client whose registry or feed gave no version is asked again, rather than at the next hourly check: 5, 10
+ * and then 20 minutes later, and after those only at the hourly check until it answers. Only the clients that went
+ * unanswered are asked. Its first answer gives its next failure all three again, so a client whose registry never
+ * answers is asked three times more a day than one whose registry does, and the others not once more.
  */
-export const CLIENT_RETRY_AFTER_FAILURE_MS = 5 * 60 * 1000
+export const CLIENT_RETRY_DELAYS_MS: readonly number[] = Object.freeze([5 * 60 * 1000, 10 * 60 * 1000, 20 * 60 * 1000])
 /**
  * How long an answer from the registry or Muse's channel feed is reused. The hourly check and its retries ask afresh, so
  * this spares the registry only the checks that come together, as when several providers connect at once, and a check

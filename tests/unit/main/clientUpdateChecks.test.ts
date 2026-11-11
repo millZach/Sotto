@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentControl } from '../../../src/main/agents/control'
-import { CLIENT_CHECK_INTERVAL_MS, CLIENT_PACKAGES, CLIENT_RETRY_AFTER_FAILURE_MS, ProviderClients, type RunResult } from '../../../src/main/agents/providerClients'
+import { CLIENT_CHECK_INTERVAL_MS, CLIENT_PACKAGES, CLIENT_RETRY_DELAYS_MS, ProviderClients, type RunResult } from '../../../src/main/agents/providerClients'
 import { E2EAgentHost } from '../../../src/main/e2e/agentEffects'
 import type { AgentHostSnapshot, ProviderClientUpdate, ProviderId } from '../../../src/shared/agents'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
@@ -39,20 +39,22 @@ class ThreeClients extends E2EAgentHost {
 }
 
 /**
- * The registry: what each package publishes now, how many times it was asked, a gate a test may close, one request a
- * test may hold, and whether it answers at all.
+ * The registry: what each package publishes now, how many times it was asked in all and for each client, a gate a test
+ * may close, one request a test may hold, whether it answers at all, and the clients it does not answer for.
  */
 function registry() {
   const published: Record<string, string> = { claude: '2.1.281', codex: '0.155.1', grok: '1.0.41' }
   // `now` is the clock each reading is stamped with, which a test moves on.
-  const state = { asked: 0, located: 0, now: 1_000_000, gate: undefined as Promise<void> | undefined, holdNext: undefined as Promise<void> | undefined, down: false }
+  const state = { asked: 0, askedFor: { claude: 0, codex: 0, grok: 0 } as Record<string, number>, refusing: new Set<ProviderId>(), located: 0, now: 1_000_000,
+    gate: undefined as Promise<void> | undefined, holdNext: undefined as Promise<void> | undefined, down: false }
   const fetchImpl = async (url: string): Promise<Response> => {
     state.asked += 1
+    const id = IDS.find(item => url.includes(encodeURIComponent(CLIENT_PACKAGES[item]!.split('/')[0]!)))!
+    state.askedFor[id]! += 1
     const hold = state.holdNext; state.holdNext = undefined
     if (hold) await hold
     if (state.gate) await state.gate
-    if (state.down) throw new Error('getaddrinfo ENOTFOUND registry.npmjs.org')
-    const id = IDS.find(item => url.includes(encodeURIComponent(CLIENT_PACKAGES[item]!.split('/')[0]!)))!
+    if (state.down || state.refusing.has(id)) throw new Error('getaddrinfo ENOTFOUND registry.npmjs.org')
     return new Response(JSON.stringify({ version: published[id] }), { status: 200 })
   }
   return { published, state, fetchImpl }
@@ -63,7 +65,7 @@ function registry() {
  * `<prefix>/lib/node_modules`, which every platform's install rules read as npm's with that prefix, so the same fixture
  * holds on Windows, Linux and macOS; `platform` picks whose rules the install is read by.
  */
-async function coordinator(options: { run?: (executable: string, args: readonly string[]) => Promise<RunResult>; platform?: NodeJS.Platform } = {}) {
+async function coordinator(options: { run?: (executable: string, args: readonly string[]) => Promise<RunResult>; platform?: NodeJS.Platform; timeouts?: boolean } = {}) {
   const directory = await mkdtemp(join(tmpdir(), 'sotto-client-checks-')); roots.push(directory)
   const prefix = join(directory, 'npm')
   const packageFolder = (id: ProviderId): string => join(prefix, 'lib', 'node_modules', ...CLIENT_PACKAGES[id]!.split('/'))
@@ -74,8 +76,9 @@ async function coordinator(options: { run?: (executable: string, args: readonly 
   const credentials = await testCredentials(join(directory, 'vault'), { mode: 'plain' })
   const host = new ThreeClients()
   const npm = registry()
-  // Only the intervals are the test's: the coordinator's own reads and the disk run as they do.
-  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+  // Only the intervals are the test's, and with `timeouts` the early asks: the coordinator's own reads and the disk run
+  // as they do.
+  vi.useFakeTimers({ toFake: options.timeouts ? ['setInterval', 'clearInterval', 'setTimeout', 'clearTimeout'] : ['setInterval', 'clearInterval'] })
   const control = createAgentControl({
     schedule: immediatePublishScheduler, directory, host, credentials,
     clients: new ProviderClients({ fetchImpl: npm.fetchImpl, now: () => npm.state.now, npmPath: async () => join(prefix, 'npm-cli.js'),
@@ -200,10 +203,14 @@ describe('the hourly client check', () => {
 
 /**
  * Zach's pick, November 10, 2026: every machine asks once an hour for each connected client, where every five minutes
- * made 288 requests a day for each. A registry that does not answer is asked again at the old pace until it does.
+ * made 288 requests a day for each. A client whose registry or feed gave no version is asked again 5, 10 and 20 minutes
+ * later, alone, and then only at the hourly check until it answers. The day is counted for each client, after the
+ * checks on connect.
  */
 describe('how often the registry is asked', () => {
   const MINUTE = 60 * 1000
+  const DAY = 24 * 60 * MINUTE
+  const [FIRST, SECOND, THIRD] = CLIENT_RETRY_DELAYS_MS as [number, number, number]
   /** Moves the clock on in five-minute steps, letting any check a step starts finish before the next. */
   async function pass(control: AgentControl, ms: number): Promise<void> {
     for (let gone = 0; gone < ms; gone += 5 * MINUTE) {
@@ -211,40 +218,91 @@ describe('how often the registry is asked', () => {
       await settled(control)
     }
   }
+  /** How many times the registry was asked for each client since `before`. */
+  const since = (npm: ReturnType<typeof registry>, before: Record<string, number>): Record<string, number> =>
+    Object.fromEntries(IDS.map(id => [id, npm.state.askedFor[id]! - before[id]!]))
 
   it('asks once an hour for each connected client: 24 times a day, where every five minutes made 288', async () => {
     expect(CLIENT_CHECK_INTERVAL_MS).toBe(60 * MINUTE)
-    const { control, npm } = await coordinator()
+    const { control, npm } = await coordinator({ timeouts: true })
     try {
-      const before = npm.state.asked
-      await pass(control, 24 * 60 * MINUTE)
-      expect((npm.state.asked - before) / IDS.length).toBe(24)
+      const before = { ...npm.state.askedFor }
+      await pass(control, DAY)
+      expect(since(npm, before)).toEqual({ claude: 24, codex: 24, grok: 24 })
     } finally { control.dispose() }
   })
 
-  it('asks again every five minutes while the registry does not answer, and goes back to the hour once it does', async () => {
-    expect(CLIENT_RETRY_AFTER_FAILURE_MS).toBe(5 * MINUTE)
-    const { control, npm } = await coordinator()
+  it('asks for a client whose registry never answers three times more a day, and for the others no more', async () => {
+    const { control, npm } = await coordinator({ timeouts: true })
     try {
+      const before = { ...npm.state.askedFor }
+      npm.state.refusing.add('codex')
+      await pass(control, DAY)
+      expect(since(npm, before)).toEqual({ claude: 24, codex: 24 + 3, grok: 24 })
+    } finally { control.dispose() }
+  })
+
+  it('asks for each client three times more in a day with no registry at all: 27, where an answered day asks 24', async () => {
+    const { control, npm } = await coordinator({ timeouts: true })
+    try {
+      const before = { ...npm.state.askedFor }
       npm.state.down = true
+      await pass(control, DAY)
+      expect(since(npm, before)).toEqual({ claude: 27, codex: 27, grok: 27 })
+    } finally { control.dispose() }
+  })
+
+  it('asks again 5, 10 and 20 minutes after a client went unanswered, for it alone, then only at the hourly check', async () => {
+    expect(CLIENT_RETRY_DELAYS_MS).toEqual([5 * MINUTE, 10 * MINUTE, 20 * MINUTE])
+    const { control, npm } = await coordinator({ timeouts: true })
+    try {
+      npm.state.refusing.add('codex')
       await tick(npm, 3)
       await settled(control)
-      const failed = npm.state.asked
-      await pass(control, 5 * MINUTE)
-      expect(npm.state.asked).toBe(failed + 3)
-      npm.state.down = false
+      const failed = { ...npm.state.askedFor }
+      for (const [index, delay] of [FIRST, SECOND, THIRD].entries()) {
+        vi.advanceTimersByTime(delay - 1_000)
+        await settled(control)
+        expect(since(npm, failed)).toEqual({ claude: 0, codex: index, grok: 0 })
+        vi.advanceTimersByTime(1_000)
+        await vi.waitFor(() => { expect(since(npm, failed)).toEqual({ claude: 0, codex: index + 1, grok: 0 }) })
+        await settled(control)
+      }
+      // The clients it did not ask keep their readings.
+      expect(reading(control, 'claude')).toMatchObject({ installed: '2.1.281', published: '2.1.281' })
+      // The three are spent: the next hourly check asks for every client, and nothing is asked sooner after it.
+      await pass(control, 60 * MINUTE - FIRST - SECOND - THIRD)
+      expect(since(npm, failed)).toEqual({ claude: 1, codex: 4, grok: 1 })
+      await pass(control, 55 * MINUTE)
+      expect(since(npm, failed)).toEqual({ claude: 1, codex: 4, grok: 1 })
+    } finally { control.dispose() }
+  })
+
+  it('goes back to the hour once the client answers, and gives its next failure all three again', async () => {
+    const { control, npm } = await coordinator({ timeouts: true })
+    try {
+      npm.state.refusing.add('codex')
+      await tick(npm, 3)
+      await settled(control)
+      const failed = npm.state.askedFor.codex!
+      await pass(control, FIRST)
+      expect(npm.state.askedFor.codex).toBe(failed + 1)
+      npm.state.refusing.delete('codex')
       npm.published.codex = '0.158.0'
-      await pass(control, 5 * MINUTE)
-      expect(npm.state.asked).toBe(failed + 6)
+      await pass(control, SECOND)
+      expect(npm.state.askedFor.codex).toBe(failed + 2)
       expect(reading(control, 'codex')).toMatchObject({ published: '0.158.0', behind: true })
-      // Answered: nothing more is asked before the next hourly check.
-      await pass(control, 40 * MINUTE)
-      expect(npm.state.asked).toBe(failed + 6)
+      // Answered: nothing more is asked before the next hourly check, which fails and starts the early asks over.
+      npm.state.refusing.add('codex')
+      await pass(control, 60 * MINUTE - FIRST - SECOND)
+      expect(npm.state.askedFor.codex).toBe(failed + 3)
+      await pass(control, FIRST)
+      expect(npm.state.askedFor.codex).toBe(failed + 4)
     } finally { control.dispose() }
   })
 
   it('stops asking again when Sotto stops', async () => {
-    const { control, npm } = await coordinator()
+    const { control, npm } = await coordinator({ timeouts: true })
     const quiet = vi.getTimerCount()
     npm.state.down = true
     await tick(npm, 3)
