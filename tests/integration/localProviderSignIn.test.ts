@@ -67,7 +67,7 @@ describe('signing a provider in on this computer', () => {
     const started = await signIn.request({ type: 'start', provider: 'grok' })
     expect(await signIn.request({ type: 'cancel', signInId: started!.id })).toBeNull()
     expect((await signIn.request({ type: 'read', signInId: started!.id }))?.stage).toBe('ended')
-    await expect(signIn.request({ type: 'open', signInId: started!.id })).rejects.toThrow('This sign-in is no longer waiting for you. Nothing was opened. Start it again.')
+    await expect(signIn.request({ type: 'open', signInId: started!.id })).rejects.toMatchObject({ reason: 'not-waiting' })
     expect(opened).toEqual([])
   })
 
@@ -92,10 +92,10 @@ describe('signing a provider in on this computer', () => {
     expect(withoutOwnBrowser('claude', undefined, 'linux')).toBeUndefined()
   })
 
-  it('says the page could not open when the browser did not take it, and keeps the sign-in waiting', async () => {
+  it('reports that the browser did not take the page, and keeps the sign-in waiting', async () => {
     const { signIn } = make({ open: async () => { throw new Error('no browser') } })
     const started = await signIn.request({ type: 'start', provider: 'codex' })
-    await expect(signIn.request({ type: 'open', signInId: started!.id })).rejects.toThrow('The sign-in page could not open in your browser. Nothing was changed. Try Open sign-in page again.')
+    await expect(signIn.request({ type: 'open', signInId: started!.id })).rejects.toMatchObject({ reason: 'browser' })
     expect((await signIn.request({ type: 'read', signInId: started!.id }))?.stage).toBe('waiting')
   })
 })

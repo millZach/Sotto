@@ -2487,7 +2487,7 @@ msgstr ""
 msgid "The sign-in page could not be opened from this window. Nothing was changed."
 msgstr ""
 
-#: src/main/agents/localProviderSignIn.ts
+#: src/main/agents/localProviderSignInIpc.ts
 #: src/main/hosts/desktopHosts.ts
 msgid "The sign-in page could not open in your browser. Nothing was changed. Try Open sign-in page again."
 msgstr ""
@@ -3108,7 +3108,7 @@ msgstr ""
 msgid "This result belongs to an earlier connection. Refresh the host."
 msgstr ""
 
-#: src/main/agents/localProviderSignIn.ts
+#: src/main/agents/localProviderSignInIpc.ts
 #: src/main/hosts/desktopHosts.ts
 msgid "This sign-in is no longer waiting for you. Nothing was opened. Start it again."
 msgstr ""

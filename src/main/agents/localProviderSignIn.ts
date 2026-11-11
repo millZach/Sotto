@@ -1,8 +1,16 @@
 import { existsSync } from 'node:fs'
-import { t } from '@lingui/core/macro'
-import { defaultSignInCommand, ProviderSignInRefusal, ProviderSignIns, type SignInCommand } from '../../host/providerSignIn'
+import { defaultSignInCommand, ProviderSignIns, type SignInCommand } from '../../host/providerSignIn'
 import { isProviderSignInPage, type HostSignIn, type ProviderSignInView } from '../../shared/hostProviders'
 import type { LocalSignInProvider, LocalSignInRequest } from '../../shared/localProviderSignIn'
+
+/**
+ * Open sign-in page did not open one: the sign-in is no longer waiting, or the browser did not take the page. The
+ * window's channel says which in the interface language; this module is built into the headless host with the agent
+ * runtime, which has no Lingui (ADR-0123), so it says it in a word.
+ */
+export class LocalSignInPageNotOpened extends Error {
+  constructor(readonly reason: 'not-waiting' | 'browser', cause?: unknown) { super(reason, cause === undefined ? undefined : { cause }) }
+}
 
 /** The one client this computer's own sign-ins are for: its window. */
 const DESKTOP = 'desktop'
@@ -57,9 +65,9 @@ export class LocalProviderSignIn {
     else if (request.type === 'cancel') { this.signIns.cancel(request.signInId, DESKTOP); return null }
     else {
       view = this.signIns.read(request.signInId, DESKTOP)
-      if (!view || view.stage !== 'waiting' || !view.url || !isProviderSignInPage(view.provider, view.url)) throw new ProviderSignInRefusal(t`This sign-in is no longer waiting for you. Nothing was opened. Start it again.`)
+      if (!view || view.stage !== 'waiting' || !view.url || !isProviderSignInPage(view.provider, view.url)) throw new LocalSignInPageNotOpened('not-waiting')
       try { await this.options.openExternal(view.url) }
-      catch { throw new ProviderSignInRefusal(t`The sign-in page could not open in your browser. Nothing was changed. Try Open sign-in page again.`) }
+      catch (error) { throw new LocalSignInPageNotOpened('browser', error) }
     }
     if (!view) return null
     const shown: HostSignIn = { ...view }

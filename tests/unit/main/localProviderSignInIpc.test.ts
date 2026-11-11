@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from 'vitest'
 vi.mock('electron', async () => (await import('../../fixtures/preloadElectron')).preloadElectron())
 import { ProviderSignInRefusal } from '../../../src/host/providerSignIn'
-import type { LocalProviderSignIn } from '../../../src/main/agents/localProviderSignIn'
+import { LocalSignInPageNotOpened, type LocalProviderSignIn } from '../../../src/main/agents/localProviderSignIn'
 import { registerLocalProviderSignInIpc } from '../../../src/main/agents/localProviderSignInIpc'
 import { createSottoBridge } from '../../../src/preload'
 import type { ProviderSignInView } from '../../../src/shared/hostProviders'
@@ -49,6 +49,11 @@ describe('this computer’s provider sign-in, from the window through preload to
     const { invoke, signIn } = register()
     signIn.request.mockRejectedValueOnce(new ProviderSignInRefusal('Codex is not installed on this computer, so it cannot sign in. Nothing was changed.'))
     await expect(invoke(LOCAL_PROVIDER_SIGN_IN, [read])).rejects.toThrow('Codex is not installed on this computer, so it cannot sign in. Nothing was changed.')
+    // Open sign-in page's two failures are said in the window's words.
+    signIn.request.mockRejectedValueOnce(new LocalSignInPageNotOpened('not-waiting'))
+    await expect(invoke(LOCAL_PROVIDER_SIGN_IN, [read])).rejects.toThrow('This sign-in is no longer waiting for you. Nothing was opened. Start it again.')
+    signIn.request.mockRejectedValueOnce(new LocalSignInPageNotOpened('browser'))
+    await expect(invoke(LOCAL_PROVIDER_SIGN_IN, [read])).rejects.toThrow('The sign-in page could not open in your browser. Nothing was changed. Try Open sign-in page again.')
     signIn.request.mockRejectedValueOnce(new Error('spawn /home/someone/.local/bin/codex ENOENT'))
     await expect(invoke(LOCAL_PROVIDER_SIGN_IN, [read])).rejects.toThrow(/^That sign-in is not available right now\. Nothing was changed\.$/u)
     signIn.request.mockResolvedValueOnce({ ...view, url: 'https://auth.openai.com/codex/device' } as ProviderSignInView)

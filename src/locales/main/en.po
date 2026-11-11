@@ -2488,7 +2488,7 @@ msgstr "The shell did not save the owl’s place on the bar. Sotto restored the 
 msgid "The sign-in page could not be opened from this window. Nothing was changed."
 msgstr "The sign-in page could not be opened from this window. Nothing was changed."
 
-#: src/main/agents/localProviderSignIn.ts
+#: src/main/agents/localProviderSignInIpc.ts
 #: src/main/hosts/desktopHosts.ts
 msgid "The sign-in page could not open in your browser. Nothing was changed. Try Open sign-in page again."
 msgstr "The sign-in page could not open in your browser. Nothing was changed. Try Open sign-in page again."
@@ -3109,7 +3109,7 @@ msgstr "This result belongs to an earlier connection. Nothing was saved. Refresh
 msgid "This result belongs to an earlier connection. Refresh the host."
 msgstr "This result belongs to an earlier connection. Refresh the host."
 
-#: src/main/agents/localProviderSignIn.ts
+#: src/main/agents/localProviderSignInIpc.ts
 #: src/main/hosts/desktopHosts.ts
 msgid "This sign-in is no longer waiting for you. Nothing was opened. Start it again."
 msgstr "This sign-in is no longer waiting for you. Nothing was opened. Start it again."
