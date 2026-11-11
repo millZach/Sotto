@@ -6,7 +6,10 @@
  * a window made later, such as the widget on the first dictation press while dictation was off at launch, leaves its
  * mark unrecorded rather than recorded late.
  *
- * Only an unpackaged e2e launch can read them (`src/main/e2e/startupMarks.ts`), for `tests/e2e/launch-time.spec.ts`.
+ * They are off by default: an ordinary launch records none. Only a launch started for an e2e run (`SOTTO_E2E=1`) records
+ * them, and only an unpackaged one of those can read them (`src/main/e2e/startupMarks.ts`), for
+ * `tests/e2e/launch-time.spec.ts`. The switch is read from the environment because the first startup mark is main's
+ * first statement, before anything else of main has run.
  */
 
 /** In the order launch reaches them. The main window is shown only after the widget has loaded (#995). */
@@ -40,10 +43,12 @@ export interface StartupMark {
 }
 
 const marks: StartupMark[] = []
+/** Whether this launch records startup marks at all: one started for an e2e run. */
+const recording = process.env.SOTTO_E2E === '1'
 let finished = false
 
 export function markStartup(name: StartupMarkName): void {
-  if (finished) return
+  if (!recording || finished) return
   for (const mark of marks) if (mark.name === name) return
   marks.push({ name, atMs: performance.now() })
   if (name === 'launch-finished') finished = true

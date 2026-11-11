@@ -6,8 +6,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const root = resolve(__dirname, '../../..')
 
 /** A fresh copy of the module, so each case starts from a launch that has reached nothing. */
-async function freshMarks(): Promise<typeof import('../../../src/main/performance/startupMarks')> {
+async function freshMarks(e2e = true): Promise<typeof import('../../../src/main/performance/startupMarks')> {
   vi.resetModules()
+  // A launch records startup marks only when it was started for an e2e run.
+  if (e2e) vi.stubEnv('SOTTO_E2E', '1'); else vi.stubEnv('SOTTO_E2E', '')
   return import('../../../src/main/performance/startupMarks')
 }
 
@@ -21,7 +23,13 @@ function sources(folder: string): string[] {
 
 describe('startup marks', () => {
   beforeEach(() => { globalThis.sottoStartupMarksE2E = undefined })
-  afterEach(() => { globalThis.sottoStartupMarksE2E = undefined })
+  afterEach(() => { globalThis.sottoStartupMarksE2E = undefined; vi.unstubAllEnvs() })
+
+  it('records nothing in an ordinary launch', async () => {
+    const { markStartup, startupMarks, STARTUP_MARKS } = await freshMarks(false)
+    for (const name of STARTUP_MARKS) markStartup(name)
+    expect(startupMarks()).toEqual([])
+  })
 
   it('keeps stable names in the order launch reaches them', async () => {
     const { STARTUP_MARKS } = await freshMarks()
@@ -66,9 +74,8 @@ describe('startup marks', () => {
   })
 
   it('cannot be read outside an e2e launch', async () => {
-    vi.resetModules()
+    const { markStartup } = await freshMarks()
     const { exposeStartupMarksForE2E } = await import('../../../src/main/e2e/startupMarks')
-    const { markStartup } = await import('../../../src/main/performance/startupMarks')
     markStartup('main-bundle-evaluated')
     expect(globalThis.sottoStartupMarksE2E).toBeUndefined()
     exposeStartupMarksForE2E(null)

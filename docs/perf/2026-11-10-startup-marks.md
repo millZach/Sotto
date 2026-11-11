@@ -12,7 +12,7 @@ first paint. It could not see inside main. Now main records where launch has got
   launch reaches it, and nothing is kept once launch has finished, so a window made later leaves no late mark.
 - **Names and numbers only, kept in memory.** Nothing logs them, writes them or sends them. Only an unpackaged e2e
   launch (`SOTTO_E2E=1`) can read them, through `globalThis.sottoStartupMarksE2E` (`src/main/e2e/startupMarks.ts`), the
-  way the other e2e hooks are reached.
+  way the other e2e hooks are reached. They are off by default: an ordinary launch records none, and only a launch started for an e2e run (`SOTTO_E2E=1`) does.
 - **Launch itself is unchanged.** No step moved and none was added beyond the marks.
 - **The spec reports them**, beside what it reported before: each mark's median, lowest and highest, and
   `askedToMainClockMs`, when main's clock started after the launch was asked. With that, the marks and the page's clocks
@@ -22,12 +22,12 @@ first paint. It could not see inside main. Now main records where launch has got
   laptop runs no suites. Started by hand, it measures a base and the chosen ref on the same runner and writes both and
   their ratio to the run's summary.
 
-## The marks
+## The startup marks
 
 In the order launch reaches them. Every time is milliseconds since main's clock started, which is the main process
 starting: on forge it starts about 21 ms after Playwright asks for the launch.
 
-| Mark | Where | Launch has reached |
+| Startup mark | Where | Launch has reached |
 |---|---|---|
 | `main-bundle-evaluated` | `src/main/index.ts`, its first line | Electron has started, and main's bundle has loaded and run every import |
 | `app-ready` | `bootstrapSotto`, after `app.whenReady()` | Electron is ready; the single-instance lock is held |
@@ -65,7 +65,7 @@ there.
 
 Evidence: `docs/perf/data/2026-11-10-startup-marks/launch-time-forge-after.json`.
 
-## What the marks cost
+## What the startup marks cost
 
 The same spec, run on the same build without and with the marks, one after the other under the heavy-job lock. Before
 is `c568e948b` as it is; after is the same commit with this change. Medians of seven, lowest to highest.
