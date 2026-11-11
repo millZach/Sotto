@@ -72,7 +72,7 @@
 /* Approved API picker: fixed header/footer, compact rows and a scrolling inventory at the minimum window size. */
 .own-dialog { width: min(620px, 100%); }
 .own-api-list { max-height: 290px; overflow-y: auto; margin: 8px 0 12px; }
-.own-api-option { display: block; width: 100%; padding: 10px 12px; text-align: left; color: var(--tt-text); background: var(--tt-card); border: 0; border-radius: var(--tt-radius-control); font-size: var(--tt-type-body); cursor: pointer; }
+.own-api-option { display: block; width: 100%; padding: 10px 12px; text-align: left; color: var(--tt-text); background: var(--tt-card); border: 0; border-radius: var(--tt-radius-control); font-size: var(--tt-type-body); }
 .own-api-option:hover, .own-api-option:focus-visible { background: var(--tt-card-inset); outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
 .own-key { display: flex; gap: 6px; }
 .own-key input { flex: 1; min-width: 0; }
@@ -86,7 +86,7 @@
 .own-model__choice input { flex: none; accent-color: var(--tt-accent); }
 .own-model__choice small { margin-left: auto; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .own-model__id { color: var(--tt-text-muted); font: var(--tt-type-caption)/1.3 var(--tt-font-mono); overflow-wrap: anywhere; }
-.own-model summary { width: fit-content; color: var(--tt-text-muted); cursor: pointer; font-size: var(--tt-type-caption); }
+.own-model summary { width: fit-content; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .own-model summary:focus-visible, .own-model-filters button:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; }
 .own-model__details { display: grid; gap: 3px; margin-top: 6px; font-size: var(--tt-type-caption); color: var(--tt-text-muted); }
 .own-model-count { margin-right: auto; font-size: var(--tt-type-small); color: var(--tt-text-muted); }
