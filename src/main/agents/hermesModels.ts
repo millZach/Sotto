@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { AgentModel, AgentRuntimeMode } from '../../shared/agents'
+import { defaultModelEffort } from '../../shared/reasoningEfforts'
 import { type OwnServer } from '../../shared/ownModelServers'
 
 /** Full access is the only mode Sotto runs Hermes in. */
@@ -26,7 +27,7 @@ export function hermesCatalog(servers: readonly OwnServer[], harnessImages = fal
     runtimeModes: [...HERMES_RUNTIME_MODES],
     ready: true,
     ...(server.keptModelIds && !server.keptModelIds.includes(model.id) ? { hiddenFromMenu: true } : {}),
-    ...(harnessEffort && model.thinking ? { reasoningEfforts: efforts, defaultReasoningEffort: efforts.includes('default') ? 'default' : efforts.includes('medium') ? 'medium' : efforts[0] } : {}),
+    ...(harnessEffort && model.thinking ? { reasoningEfforts: efforts, defaultReasoningEffort: defaultModelEffort(efforts) } : {}),
     source: server.name,
     ...(harnessImages && model.images ? { supportsImages: true } : {}),
 

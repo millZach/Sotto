@@ -52,3 +52,35 @@ describe('kept models and key replacement', () => {
     expect(disk.includes(key) || disk.includes(key2)).toBe(false)
   })
 })
+
+
+it('keeps legacy thinking levels when choosing models, even if a client sends a Default draft', async () => {
+  const { service, server } = await fixture()
+  await service.chooseModels({ id: server.id, keptModelIds: ['one'], models: [{ ...model, reasoningEfforts: ['default'] }] })
+  expect((await service.list())[0]!.models[0]!.reasoningEfforts).toBeUndefined()
+})
+
+it('reports an incomplete secondary key copy after OpenCode has accepted the replacement', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'sotto-api-copy-')); paths.push(directory)
+  const keep = vi.fn(async () => undefined)
+  const service = new OwnServers({ directory, openCode: () => ({ running: () => true, outdated: () => {}, catalogAgain: async () => true, signInWithKey: async () => true, signOut: async () => true }),
+    hermes: () => ({ keepKey: keep, forgetKey: async () => undefined }), check: async () => ({ status: 'ok', address: 'https://example.test/v1', kind: 'openai-compatible', answeredMs: 1, models: [model] }) })
+  const saved = await service.add({ name: 'Example', address: 'https://example.test/v1', key: randomUUID(), models: [model] })
+  if (saved.status !== 'ok') throw new Error('Fixture add failed')
+  keep.mockRejectedValueOnce(new Error('Cannot write'))
+  expect(await service.replaceKey({ id: saved.server.id, key: randomUUID() })).toMatchObject({ status: 'refused', reason: 'replaced-partly' })
+  expect((await service.list())[0]).toEqual(saved.server)
+})
+
+it('updates an existing Hermes copy while the adapter is held', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'sotto-api-held-')); paths.push(directory)
+  const replaceHeldHermesKey = vi.fn(async () => undefined)
+  const service = new OwnServers({ directory, openCode: () => ({ running: () => true, outdated: () => {}, catalogAgain: async () => true, signInWithKey: async () => true, signOut: async () => true }),
+    replaceHeldHermesKey, check: async () => ({ status: 'ok', address: 'https://example.test/v1', kind: 'openai-compatible', answeredMs: 1, models: [model] }) })
+  const saved = await service.add({ name: 'Example', address: 'https://example.test/v1', key: randomUUID(), models: [model] })
+  if (saved.status !== 'ok') throw new Error('Fixture add failed')
+  const next = randomUUID()
+  expect((await service.replaceKey({ id: saved.server.id, key: next })).status).toBe('ok')
+  expect(replaceHeldHermesKey).toHaveBeenCalledWith(saved.server.id, next)
+  expect((await service.list())[0]).toEqual(saved.server)
+})

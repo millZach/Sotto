@@ -674,6 +674,7 @@ export class HermesAcpHost implements ProviderHost {
       if (this.harnessEffort) {
         this.harnessEffort = false
         this.state.models = hermesCatalog(this.servers, this.harnessImages)
+        this.emit()
       }
     }
     const settings = hermesSettingsOf(value)
@@ -722,13 +723,8 @@ export class HermesAcpHost implements ProviderHost {
       const connection = this.connections.get(id)
       if (connection) {
         this.readSettings(connection, update)
-        const effort = connection.effort
-        if (alias.reasoningEffort !== 'default' && effort && this.model(alias.modelId)?.reasoningEfforts?.includes(effort)) {
-          alias.reasoningEffort = effort
-          this.thread(id).reasoningEffort = effort
-          void this.persist().catch(() => undefined)
-          this.emit()
-        }
+        // A notification may be replayed or precede an in-flight setting's reply. It is an observation,
+        // not authority to overwrite the newer choice that applySettings is about to send.
       }
       return
     }
@@ -943,9 +939,17 @@ export class HermesAcpHost implements ProviderHost {
       try {
         await connection.rpc.request('session/set_config_option', { sessionId: alias.hermesSessionId, configId: 'reasoning_effort', value: effort }, value => this.readSettings(connection, value))
         // A Default reset can read back the profile's resolved level; do not resend it before every prompt.
-        connection.appliedEffort = effort
-      } catch {
-        // Older Hermes builds do not have this session option. An unsupported control never fails a turn.
+        const observed = connection.effort
+        if (effort !== 'default' && observed && levels.includes(observed) && hermesEffortValue(alias.reasoningEffort) === effort) {
+          alias.reasoningEffort = observed
+          this.thread(id).reasoningEffort = observed
+          await this.persist()
+        }
+        connection.appliedEffort = hermesEffortValue(alias.reasoningEffort)
+      } catch (error) {
+        if (!(error instanceof HermesRejected) || error.code !== -32601) throw error
+        // An older binary without the method has no effort control. A timeout or broken connection is not
+        // evidence that other sessions lack the feature and must not disable their controls.
         connection.supportsEffort = false
         this.harnessEffort = false
         this.state.models = hermesCatalog(this.servers, this.harnessImages)

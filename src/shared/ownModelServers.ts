@@ -97,6 +97,7 @@ export const ownServerRefusalSchema = z.enum([
   'removed-partly',
   /** Add could not keep the key and then could not clear every copy or take the server back off the list. */
   'added-partly',
+  'replaced-partly',
 ])
 export type OwnServerRefusal = z.infer<typeof ownServerRefusalSchema>
 const refused = z.object({ status: z.literal('refused'), reason: ownServerRefusalSchema, message: z.string().min(1).max(600) }).strict()
@@ -201,6 +202,7 @@ export function ownServerRefusalWords(reason: OwnServerRefusal, host: string, se
     case 'failed': return OWN_SERVER_WORDS.failed
     case 'removed-partly': return OWN_SERVER_WORDS.removePartly(serverName)
     case 'added-partly': return OWN_SERVER_WORDS.addPartly(serverName)
+    case 'replaced-partly': return 'OpenCode has the new key, but Hermes could not replace its copy. Your model choices were kept. Try again.'
   }
 }
 
@@ -272,6 +274,7 @@ export type OwnServerAddress =
  */
 export function ownServerAddress(typed: string): OwnServerAddress {
   const trimmed = typed.trim()
+  if (trimmed.includes('${')) return { ok: false, reason: 'bad-address', host: '' }
   let url: URL
   try { url = new URL(/^[a-z][a-z0-9+.-]*:\/\//iu.test(trimmed) ? trimmed : `http://${trimmed}`) } catch { return { ok: false, reason: 'bad-address', host: trimmed.slice(0, 80) } }
   const host = url.host

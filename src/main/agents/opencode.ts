@@ -8,7 +8,7 @@ import type { UsageTokenObservation } from '../../shared/usageDashboard'
 import { mergeAgentActivities, type AgentActivity, type OwnServerTurn } from '../../shared/agentActivity'
 import { heldProvidersOf, type HeldProviders } from '../../shared/heldProviders'
 import { modelEfforts } from '../../shared/ownModelServers'
-import { orderReasoningEfforts } from '../../shared/reasoningEfforts'
+import { defaultModelEffort, orderReasoningEfforts } from '../../shared/reasoningEfforts'
 import { OWN_SERVER_ID_PREFIX, ownServerTurnText, type OwnServer } from '../../shared/ownModelServers'
 import { isHeaderTimeout, ownServerTurnFailure } from '../ownModelServers/turnFailure'
 import { watcherProvidersInWords } from '../../shared/workerRoles'
@@ -19,10 +19,11 @@ import { cloneHostSnapshot } from './cloneHostSnapshot'
 import { compareClientVersions } from './clientVersions'
 import type { ActivitySubscriptionOptions, ProviderHost, AgentHostCommand, AgentHostResult, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadLaunchProfiles, ThreadReadPurpose, ThreadSessionDraft } from './host'
 import { opencodeReasoningActivity, opencodeStepFilesActivity, opencodeTextMessageId, opencodeToolActivity, opencodeToolOutput, opencodeToolStatus, type OpenCodeTool } from './opencodeActivity'
+import { openCodeEffort } from './opencodeEffort'
 import { locationQuery, OpenCodeClient, OpenCodeRejected, type OpenCodeEvent } from './opencodeClient'
 import { OPENCODE_DECLINED, OPENCODE_FORM_UNSHOWN, opencodeFormAnswer, opencodeFormPending, opencodeFormSchema, opencodePermissionDecision, opencodePermissionPending, opencodePermissionSchema, type OpenCodePending } from './opencodeRequests'
 import { QUESTION_SKIPPED } from './nativeRequests'
-import { chooseOpenCode, endServersLeftBehind, rememberOpenCodeChoice, type OpenCodeChoice, ensureOpenCodeFolders, OPENCODE_CLI_VERSION, parseOpenCodeVersion, opencodeEnvironment, opencodeFolders, opencodePassword, OpenCodeServer, OpenCodeTooOld, OpenCodeUncertain, OpenCodeUnsupported, opencodeVersionRefusal, readOpenCodeVersion, withFirstServerLock, type OpenCodeFolders, type OpenCodeServerEvent } from './opencodeServer'
+import { chooseOpenCode, endServersLeftBehind, rememberOpenCodeChoice, type OpenCodeChoice, ensureOpenCodeFolders, OPENCODE_CLI_VERSION, parseOpenCodeVersion, prepareOpenCodeEnvironment, opencodeEnvironment, opencodeFolders, opencodePassword, OpenCodeServer, OpenCodeTooOld, OpenCodeUncertain, OpenCodeUnsupported, opencodeVersionRefusal, readOpenCodeVersion, withFirstServerLock, type OpenCodeFolders, type OpenCodeServerEvent } from './opencodeServer'
 import { acceptOpenCode } from './opencodeLookup'
 import { opencodeToolServers, toolServerStatuses, type OpenCodeToolServer } from './opencodeTools'
 import { tokenCount } from './nativeUsage'
@@ -701,9 +702,13 @@ export class OpenCodeHost implements ProviderHost {
     const servers = await this.ownServers()
     return withFirstServerLock(this.folders, async () => {
       const password = opencodePassword()
-      const server = await OpenCodeServer.start({ executable, ...(this.options.args ? { args: this.options.args } : {}), cwd,
-        env: opencodeEnvironment(this.environment, this.folders, password, servers), timeoutMs: this.options.startTimeoutMs ?? 30_000, log: this.options.log,
-        ledger: this.folders.servers })
+      const prepared = await prepareOpenCodeEnvironment(this.environment, this.folders, password, servers)
+      let server: OpenCodeServer
+      try {
+        server = await OpenCodeServer.start({ executable, ...(this.options.args ? { args: this.options.args } : {}), cwd,
+          env: prepared.env, timeoutMs: this.options.startTimeoutMs ?? 30_000, log: this.options.log, ledger: this.folders.servers })
+      } catch (error) { await prepared.dispose(); throw error }
+      void server.closed.then(prepared.dispose).catch(() => undefined)
       try {
         const client = new OpenCodeClient(server.url, password, this.timeoutMs, closed)
         const info = infoSchema.parse(await client.request('GET', '/api/info'))
@@ -825,8 +830,8 @@ export class OpenCodeHost implements ProviderHost {
 
   /** Asks a client its version, on Sotto's own OpenCode folders, without starting a server. */
   private async readVersion(executable: string, timeoutMs?: number): Promise<string | undefined> {
-    const servers = await this.ownServers()
-    return readOpenCodeVersion(executable, this.options.args ?? [], opencodeEnvironment(this.environment, this.folders, opencodePassword(), servers), timeoutMs).catch(() => undefined)
+    await this.ownServers()
+    return readOpenCodeVersion(executable, this.options.args ?? [], opencodeEnvironment(this.environment, this.folders, opencodePassword()), timeoutMs).catch(() => undefined)
   }
   /** The user's own model servers as they are saved now (ADR-0124); none while their Owl answer is off or the record cannot be read. */
   private async ownServers(): Promise<readonly OwnServer[]> {
@@ -1017,7 +1022,7 @@ export class OpenCodeHost implements ProviderHost {
       const ownServer = this.knownServers.find(server => server.id === model.providerID)
       const ownModel = ownServer?.models.find(item => item.id === model.id)
       const efforts = ownModel ? modelEfforts(ownModel) : orderReasoningEfforts(model.variants.map(variant => variant.id))
-      const preferred = ['medium', 'high'].find(level => efforts.includes(level)) ?? efforts[0]
+      const preferred = ownModel ? defaultModelEffort(efforts) : ['medium', 'high'].find(level => efforts.includes(level)) ?? efforts[0]
       return {
         id: `${model.providerID}/${model.id}`, name: model.name, provider: 'OpenCode',
         ...(ownServer ? { ownServer: true } : {}),
@@ -1300,7 +1305,7 @@ export class OpenCodeHost implements ProviderHost {
   private confirmSession(id: string, alias: Alias, session: NativeSession): void {
     if (session.model) {
       alias.modelId = `${session.model.providerID}/${session.model.id}`
-      if (session.model.variant && session.model.variant !== 'default') alias.reasoningEffort = session.model.variant === 'none' && this.state.models.find(model => model.id === alias.modelId)?.ownServer ? 'off' : session.model.variant
+      if (session.model.variant && session.model.variant !== 'default') alias.reasoningEffort = openCodeEffort(session.model.variant, this.state.models.find(model => model.id === alias.modelId)?.ownServer === true)
     }
     const mode = modeOfRules(session.permissions)
     if (mode) alias.runtimeMode = mode
@@ -1615,7 +1620,7 @@ export class OpenCodeHost implements ProviderHost {
         case 'session.model.selected': {
           const model = modelSelectedSchema.parse(data).model
           alias.modelId = `${model.providerID}/${model.id}`; thread.modelId = alias.modelId
-          if (model.variant && model.variant !== 'default') { alias.reasoningEffort = model.variant; thread.reasoningEffort = model.variant }
+          if (model.variant && model.variant !== 'default') { alias.reasoningEffort = openCodeEffort(model.variant, this.state.models.find(item => item.id === alias.modelId)?.ownServer === true); thread.reasoningEffort = alias.reasoningEffort }
           void this.persist().catch(() => undefined); this.emit(); return
         }
         default:

@@ -102,6 +102,7 @@ export function refusalWords(reason: OwnServerRefusal | string, doing: OwnServer
     case 'sign-in-failed': return doing === 'remove'
       ? t`OpenCode did not forget the key for ${name}, so nothing was removed. Try removing the server again.`
       : t`Sotto could not keep the key for ${name}, so nothing was saved. Try adding the server again.`
+    case 'replaced-partly': return t`OpenCode has the new key, but Hermes could not replace its copy. Your model choices were kept. Try again.`
     case 'added-partly': return t`Sotto could not finish adding ${name} or take it off its list. Remove it, then add it again.`
     case 'removed-partly': return t`Sotto could not finish removing ${name}. It is still listed. Remove it again.`
     case 'not-found': return t`That server is no longer saved. Nothing was changed.`

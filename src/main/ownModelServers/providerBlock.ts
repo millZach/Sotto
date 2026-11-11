@@ -1,8 +1,8 @@
 import { modelEfforts, type OwnServer, type OwnServerModel } from '../../shared/ownModelServers'
 
 /**
- * How a saved server reaches OpenCode (ADR-0124): one provider block per server in `OPENCODE_CONFIG_CONTENT`, built from
- * Sotto's record at each start, so nothing is written into Sotto's OpenCode folder. OpenCode never asks such a server for
+ * How a saved server reaches OpenCode (ADR-0124): one provider block per server in a key-free config snapshot, built from
+ * Sotto's record at each start. OpenCode never asks such a server for
  * its models, so each is declared with its limits, its input and whether it thinks (checked against OpenCode 2.1.4).
  */
 
@@ -49,4 +49,12 @@ export function openCodeProviderBlock(server: OwnServer): Record<string, unknown
 export function openCodeProviders(servers: readonly OwnServer[]): Record<string, Record<string, unknown>> {
   return Object.fromEntries(servers.filter(server => !server.keyed || server.keyKeeper !== 'hermes')
     .map(server => [server.id, openCodeProviderBlock(server)]))
+}
+
+
+/** Small route overrides stay inline so a project's configuration cannot redirect a saved source or its key. */
+export function openCodeProviderRoutes(servers: readonly OwnServer[]): Record<string, unknown> {
+  return Object.fromEntries(servers.filter(server => !server.keyed || server.keyKeeper !== 'hermes').map(server => [server.id, {
+    package: OPENCODE_OPENAI_COMPATIBLE, settings: { baseURL: server.address, apiKey: OWN_SERVER_PLACEHOLDER_KEY },
+  }]))
 }

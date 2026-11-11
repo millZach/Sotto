@@ -896,6 +896,10 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     ? new OwnServers({ directory: userDataPath, ...(e2eConfiguration ? { catalogue: new ModelCatalogue(async () => { throw new Error('E2E_NETWORK_DISABLED') }) } : {}), openCode: (): OwnServersOpenCode | undefined => localRuntime?.ownServersOpenCode,
       deepSeek: (): OwnServersDeepSeek | undefined => localRuntime?.ownServersDeepSeek, hermes: (): OwnServersHermes | undefined => localRuntime?.ownServersHermes,
       readKey: async id => (await new HermesKeys(join(userDataPath, 'hermes', 'own-server-keys.json')).read())[id],
+      replaceHeldHermesKey: async (id, key) => {
+        const keys = new HermesKeys(join(userDataPath, 'hermes', 'own-server-keys.json'))
+        if ((await keys.read())[id] !== undefined) await keys.keep(id, key)
+      },
       forgetHermesKey: id => forgetHermesKey(join(userDataPath, 'hermes'), id), log: event => { logOperational(event) } }) : undefined
   // AI cleanup on the user's own servers (ADR-0136): its own Owl entry, and only where both the cleanup model and Your own
   // model servers exist this run. Otherwise the cleanup pass is given no server, no channel is registered, and the saved

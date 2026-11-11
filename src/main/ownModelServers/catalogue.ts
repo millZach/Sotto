@@ -39,7 +39,7 @@ export function parseCatalogue(value: unknown): CatalogueProvider[] {
   for (const [id, raw] of Object.entries(objectValue(value))) {
     const entry = objectValue(raw)
     if (typeof entry.api !== 'string' || (entry.npm !== '@ai-sdk/openai-compatible' && id !== 'openrouter')) continue
-    const address = ownServerAddress(entry.api)
+    const address = entry.api.includes('${') ? { ok: true, address: entry.api } : ownServerAddress(entry.api)
     if (!address.ok) continue
     const models = new Map<string, FoundModel>()
     for (const [modelId, rawModel] of Object.entries(objectValue(entry.models))) {
@@ -57,7 +57,7 @@ export function parseCatalogue(value: unknown): CatalogueProvider[] {
         ...(input ? { images: input.includes('image') } : {}), ...(cost ? { cost } : {}) })
     }
     providers.push({ id, name: typeof entry.name === 'string' ? entry.name.slice(0, 100) : id, api: address.address,
-      ...(typeof entry.doc === 'string' && /^https:\/\//u.test(entry.doc) ? { doc: entry.doc } : {}), models })
+      ...(typeof entry.doc === 'string' && entry.doc.length <= 400 && /^https:\/\//u.test(entry.doc) ? { doc: entry.doc } : {}), models })
   }
   return providers.sort((a, b) => a.name.localeCompare(b.name))
 }
@@ -85,7 +85,7 @@ export class ModelCatalogue {
     } catch { this.pending = undefined; return { available: false, entries: [] } }
   }
   provider(address: string, id?: string): CatalogueProvider | undefined {
-    return this.entries.find(entry => entry.api === address && (!id || id === entry.id))
+    return this.entries.find(entry => (!id || id === entry.id) && (entry.api === address || (!!id && entry.api.includes('${'))))
   }
   private async download(): Promise<CatalogueProvider[]> {
     const response = await this.request(MODEL_CATALOGUE_URL, { redirect: 'error', credentials: 'omit', signal: AbortSignal.timeout(15_000), headers: { accept: 'application/json' } })

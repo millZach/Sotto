@@ -52,16 +52,23 @@ export function orderReasoningEfforts(ids: readonly string[]): string[] {
 }
 
 
+/** A neutral initial choice never turns thinking off. Default resets the model; otherwise prefer its usual middle level. */
+export function defaultModelEffort(offered: readonly string[]): string | undefined {
+  return ['default', 'medium', 'high'].find(level => offered.includes(level))
+    ?? offered.find(level => level !== 'off' && level !== 'none')
+}
+
 /** Model-owned levels have named positions; Default is a reset, never a numeric stop. Ties choose less thinking. */
 export function nearestModelEffort(current: string | undefined, offered: readonly string[]): string | undefined {
   if (!offered.length) return undefined
   if (current && offered.includes(current)) return current
-  if (offered.length === 1 && offered[0] === 'default') return 'default'
   const rank = current === undefined || current === 'default' ? undefined : effortRank(current)
-  if (rank === undefined) return offered.find(level => level !== 'none' && level !== 'default') ?? offered[0]
-  return offered.filter(level => effortRank(level) !== undefined).reduce<string | undefined>((best, level) => {
+  const levels = offered.filter(level => effortRank(level) !== undefined)
+  // A toggle with no numeric thinking levels preserves thinking through Default, unless Off was explicitly picked.
+  if (rank === undefined || (offered.includes('default') && levels.every(level => level === 'off' || level === 'none'))) return defaultModelEffort(offered)
+  return levels.reduce<string | undefined>((best, level) => {
     if (!best) return level
     const distance = Math.abs(effortRank(level)! - rank), previous = Math.abs(effortRank(best)! - rank)
     return distance < previous || (distance === previous && effortRank(level)! < effortRank(best)!) ? level : best
-  }, undefined) ?? offered[0]
+  }, undefined) ?? defaultModelEffort(offered)
 }

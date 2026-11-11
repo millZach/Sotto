@@ -35,6 +35,11 @@ msgstr "(optional)"
 msgid "(recommended)"
 msgstr "(recommended)"
 
+#. placeholder {0}: models.length
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "{0, plural, one {# model found} other {# models found}}"
+msgstr "{0, plural, one {# model found} other {# models found}}"
+
 #. placeholder {0}: lines.left
 #: src/renderer/src/agents/CheckReply.tsx
 msgid "{0, plural, one {# more line is in its thread.} other {# more lines are in its thread.}}"
@@ -49,6 +54,11 @@ msgstr "{0, plural, one {# worker} other {# workers}}"
 #: src/renderer/src/agents/MainCheckoutLine.tsx
 msgid "{0, plural, one {a local commit blocks the update} other {{commits} local commits block the update}}"
 msgstr "{0, plural, one {a local commit blocks the update} other {{commits} local commits block the update}}"
+
+#. placeholder {0}: kept.size
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "{0, plural, one {Add # model} other {Add # models}}"
+msgstr "{0, plural, one {Add # model} other {Add # models}}"
 
 #. placeholder {0}: extra.length
 #: src/renderer/src/agents/ownServerWords.ts
@@ -84,11 +94,6 @@ msgstr "{0} APIs"
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "{0} context"
 msgstr "{0} context"
-
-#. placeholder {0}: models.length
-#: src/renderer/src/agents/OwnModelServers.tsx
-msgid "{0} models found"
-msgstr "{0} models found"
 
 #. placeholder {0}: kept.size
 #. placeholder {1}: models.length
@@ -1664,11 +1669,6 @@ msgstr "Actions for {title}"
 msgid "Activity"
 msgstr "Activity"
 
-#. placeholder {0}: kept.size
-#: src/renderer/src/agents/OwnModelServers.tsx
-msgid "Add {0} models"
-msgstr "Add {0} models"
-
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Add {sourceName}"
 msgstr "Add {sourceName}"
@@ -1711,9 +1711,17 @@ msgstr "Add by address"
 msgid "Add here"
 msgstr "Add here"
 
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Add models"
+msgstr "Add models"
+
 #: src/renderer/src/agents/SidebarFrame.tsx
 msgid "Add project"
 msgstr "Add project"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Add server"
+msgstr "Add server"
 
 #: src/renderer/src/agents/ModelPicker.tsx
 msgid "Add to favorites"
@@ -2871,6 +2879,10 @@ msgstr "Conflicted"
 #: src/renderer/src/agents/EmptyWorkspace.tsx
 msgid "Connect providers"
 msgstr "Connect providers"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Connect the provider that keeps this key before replacing it. Nothing was changed."
+msgstr "Connect the provider that keeps this key before replacing it. Nothing was changed."
 
 #. A host's status.
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
@@ -6235,6 +6247,11 @@ msgstr "OpenCode and Hermes keep keys in their own Sotto folders. Adding with He
 msgid "OpenCode did not forget the key for {name}, so nothing was removed. Try removing the server again."
 msgstr "OpenCode did not forget the key for {name}, so nothing was removed. Try removing the server again."
 
+#: src/renderer/src/agents/OwnModelServers.tsx
+#: src/renderer/src/agents/ownServerWords.ts
+msgid "OpenCode has the new key, but Hermes could not replace its copy. Your model choices were kept. Try again."
+msgstr "OpenCode has the new key, but Hermes could not replace its copy. Your model choices were kept. Try again."
+
 #. {host} is the name of a saved host.
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "OpenCode model sources on {host}"
@@ -7089,6 +7106,10 @@ msgstr "Replace key"
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Replace the key for {sourceName}"
 msgstr "Replace the key for {sourceName}"
+
+#: src/renderer/src/agents/OwnModelServers.tsx
+msgid "Replace the placeholders with your API address before checking."
+msgstr "Replace the placeholders with your API address before checking."
 
 #. Where an action's time came from; {provider} is the provider's name.
 #: src/renderer/src/agents/threadActivityView.ts

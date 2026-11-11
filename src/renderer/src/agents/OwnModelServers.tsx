@@ -1,6 +1,7 @@
 import React, { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { Plus, Server, MoreHorizontal } from 'lucide-react'
+import { plural } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
 import {
   OWN_SERVER_CONTEXT_MAX, OWN_SERVER_CONTEXT_MIN, OWN_SERVER_KEY_MAX, ownServerAddress,
@@ -62,7 +63,7 @@ export function OwnModelServers({ bridge }: { readonly bridge: OwnServersBridge 
   const [dialog, setDialog] = useState<{ mode: 'add' | 'choose' | 'replace' | 'remove'; server?: OwnServer } | null>(null)
   const [menu, setMenu] = useState<OwnServer | null>(null)
   const addRef = useRef<HTMLButtonElement>(null), opener = useRef<HTMLElement | null>(null)
-  const read = (): void => { setReading(true); void bridge.list().then(setServers, () => setError(t`Sotto could not read your saved servers. Nothing was changed. Try again.`)).finally(() => setReading(false)) }
+  const read = (): void => { setError(''); setReading(true); void bridge.list().then(setServers, () => setError(t`Sotto could not read your saved servers. Nothing was changed. Try again.`)).finally(() => setReading(false)) }
   useEffect(read, [bridge])
   const open = (mode: 'add' | 'choose' | 'replace' | 'remove', server?: OwnServer): void => {
     opener.current = document.activeElement as HTMLElement; setDialog({ mode, ...(server ? { server } : {}) }); setMenu(null)
@@ -73,14 +74,16 @@ export function OwnModelServers({ bridge }: { readonly bridge: OwnServersBridge 
     try {
       const result = await bridge.checkSaved({ id: server.id })
       if (result.status === 'refused') setError(refusalWords(result.reason, 'check-saved', hostOf(server.address), server.name, result.message))
-      else setNotice(result.keyKept ? t`The API answered. Its key stays with its provider, so its saved models were kept.` : t`Models checked. Your choices were kept; new models start unticked.`)
-      read()
+      else {
+        setNotice(result.keyKept ? t`The API answered. Its key stays with its provider, so its saved models were kept.` : t`Models checked. Your choices were kept; new models start unticked.`)
+        read()
+      }
     } catch { setError(notAnswered()) } finally { setBusy('') }
   }
   return <SettingsGroup icon={Server} title={t`APIs and your own model servers`}
     note={t`Add an API key or a server you run, such as SGLang, vLLM, Ollama or LM Studio. Sotto contacts it only when you check or add it.`}>
     <div className="own-servers" data-setting="own-model-servers" aria-busy={reading}>
-      {!servers.length ? <p className="own-servers__empty">{reading ? t`Reading your servers…` : t`None yet. Add an API or a model server to use its models in threads.`}</p> :
+      {!servers.length ? !error && <p className="own-servers__empty">{reading ? t`Reading your servers…` : t`None yet. Add an API or a model server to use its models in threads.`}</p> :
         <ul className="own-servers__rows" aria-label={t`Saved APIs and model servers`}>{servers.map(server => {
           const count = keptModels(server).length, total = (server.inventory ?? server.models).length, name = server.name
           return <li className="own-server" key={server.id} aria-busy={busy === server.id}>
@@ -102,7 +105,7 @@ export function OwnModelServers({ bridge }: { readonly bridge: OwnServersBridge 
     {menu ? <RowMenu label={t`API actions`} anchor={() => opener.current} place="beside" onClose={restore => { setMenu(null); if (restore) opener.current?.focus() }}
       groups={[[...(menu.keyed ? [{ id: 'replace', label: t`Replace key`, run: () => open('replace', menu) }] : []),
         { id: 'remove', label: t`Remove`, tone: 'danger', run: () => open('remove', menu) }]]} /> : null}
-    {dialog ? <AddOwnServerDialog bridge={bridge} server={dialog.server} mode={dialog.mode} fallbackFocus={opener} onClose={() => setDialog(null)} onAdded={changed} onListChanged={read} /> : null}
+    {dialog ? <AddOwnServerDialog bridge={bridge} server={dialog.server} mode={dialog.mode} fallbackFocus={opener} onClose={() => setDialog(null)} onAdded={changed} onListChanged={() => { read(); if (dialog.mode === 'remove') requestAnimationFrame(() => addRef.current?.focus()) }} /> : null}
   </SettingsGroup>
 }
 
@@ -131,14 +134,24 @@ export function AddOwnServerDialog({ bridge, fallbackFocus, onClose, onAdded, on
   const { t } = useLingui()
   const [page, setPage] = useState<'apis' | 'key' | 'address' | 'models' | 'done'>(mode === 'choose' ? 'models' : mode === 'replace' ? 'key' : 'apis')
   const [catalogue, setCatalogue] = useState<CatalogueEntry[]>([]), [loading, setLoading] = useState(mode === 'add'), [available, setAvailable] = useState(true)
+  const [byAddress, setByAddress] = useState(false)
   const [api, setApi] = useState<CatalogueEntry | null>(server?.helpUrl ? { id: server.catalogueId ?? server.id, api: server.address, name: server.name, doc: server.helpUrl } : null), [query, setQuery] = useState('')
   const [address, setAddress] = useState(server?.address ?? ''), [name, setName] = useState(server?.name ?? '')
   const [writing, setWriting] = useState(false)
   const [key, setKey] = useState(''), [showKey, setShowKey] = useState(false), [error, setError] = useState(''), [busy, setBusy] = useState(false)
-  const [models, setModels] = useState<FoundModel[]>(server?.inventory ?? server?.models ?? [])
+  const [models, setModels] = useState<FoundModel[]>(server ? (server.inventory ?? server.models).map(model => {
+    const context = model.context ?? server.models.find(saved => saved.id === model.id)?.context
+    return { ...model, ...(context === undefined ? {} : { context }) }
+  }) : [])
   const [kept, setKept] = useState<Set<string>>(new Set(server ? keptModels(server).map(model => model.id) : []))
   const [contexts, setContexts] = useState<Record<string, string>>({}), [filter, setFilter] = useState('all'), [modelQuery, setModelQuery] = useState('')
   const root = useRef<HTMLElement>(null), focus = useRef<HTMLInputElement>(null), status = useRef<HTMLParagraphElement>(null)
+  const selectedFocus = useRef(false)
+  useEffect(() => {
+    if (!selectedFocus.current) return
+    selectedFocus.current = false
+    ;(root.current?.querySelector<HTMLElement>('[data-model-check]') ?? root.current?.querySelector<HTMLElement>('.own-model-filters button[aria-pressed="true"]'))?.focus()
+  }, [kept, filter])
   const ticket = useRef(0), live = useRef(true), titleId = useId(), errorId = useId()
   useEffect(() => () => { live.current = false; ticket.current++ }, [])
   const close = (): void => { if (!writing) { ticket.current++; setKey(''); onClose() } }
@@ -155,7 +168,7 @@ export function AddOwnServerDialog({ bridge, fallbackFocus, onClose, onAdded, on
     else if (page === 'models') (root.current?.querySelector<HTMLInputElement>('input[aria-invalid="true"]') ?? root.current?.querySelector<HTMLInputElement>(models.length > 10 ? '[data-model-search]' : '[data-model-check]'))?.focus()
     else (focus.current ?? root.current?.querySelector<HTMLButtonElement>('[data-another-address]'))?.focus()
   }, [page, busy, loading, models.length])
-  const parsed = ownServerAddress(address), sourceName = (api?.name ?? (name.trim() || ownServerName(address))).slice(0, 80)
+  const parsed = ownServerAddress(address), sourceName = (byAddress ? name.trim() || ownServerName(address) : api?.name ?? (name.trim() || ownServerName(address))).slice(0, 80)
   const many = models.length > 10, newIds = new Set(server?.newModelIds ?? [])
   const shown = models.filter(model => (`${model.name} ${model.id}`.toLowerCase().includes(modelQuery.toLowerCase())) &&
     (filter === 'selected' ? kept.has(model.id) : filter === 'new' ? newIds.has(model.id) : true)).sort((a, b) => Number(newIds.has(b.id)) - Number(newIds.has(a.id)))
@@ -164,7 +177,7 @@ export function AddOwnServerDialog({ bridge, fallbackFocus, onClose, onAdded, on
   const validIds = new Set(validModels.map(model => model.id))
   const canSave = kept.size > 0 && [...kept].every(id => validIds.has(id) || !!server?.models.some(model => model.id === id))
   const refuse = (result: { reason: OwnServerRefusal; message: string }): void => {
-    setError(mode === 'replace' ? (result.reason === 'key-refused' || result.reason === 'key-needed' ? t`This API did not accept the new key. The saved key and model choices were kept. Check the key and try again.` : t`The new key could not be saved. The model choices were kept. Try again.`) :
+    setError(mode === 'replace' ? (result.reason === 'replaced-partly' ? t`OpenCode has the new key, but Hermes could not replace its copy. Your model choices were kept. Try again.` : result.reason === 'opencode-not-running' ? t`Connect the provider that keeps this key before replacing it. Nothing was changed.` : result.reason === 'key-refused' || result.reason === 'key-needed' ? t`This API did not accept the new key. The saved key and model choices were kept. Check the key and try again.` : t`The new key could not be saved. The model choices were kept. Try again.`) :
       refusalWords(result.reason, 'check', hostOf(address), sourceName, result.message))
     queueMicrotask(() => focus.current?.focus())
   }
@@ -179,6 +192,7 @@ export function AddOwnServerDialog({ bridge, fallbackFocus, onClose, onAdded, on
       if (mode === 'replace' && server) {
         setWriting(true)
         const replaced = await bridge.replaceKey({ id: server.id, key: key.trim() })
+        if (!live.current || at !== ticket.current) return
         if (replaced.status === 'refused') { refuse(replaced); return }
         setKey(''); onAdded?.(replaced.server); onClose(); return
       }
@@ -189,21 +203,25 @@ export function AddOwnServerDialog({ bridge, fallbackFocus, onClose, onAdded, on
   const save = async (): Promise<void> => {
     if (!canSave || busy) return; setWriting(true); setBusy(true); setError('')
     try {
-      const result = mode === 'choose' && server ? await bridge.chooseModels({ id: server.id, keptModelIds: [...kept], models: validModels }) :
+      const result = mode === 'choose' && server ? await bridge.chooseModels({ id: server.id, keptModelIds: [...kept], models: validModels.filter(model => contexts[model.id] !== undefined || !server.models.some(saved => saved.id === model.id)) }) :
         await bridge.add({ name: sourceName, address, ...(key.trim() ? { key: key.trim() } : {}), models: validModels,
           inventory: models, keptModelIds: [...kept], ...(api ? { catalogueId: api.id } : {}) })
       if (result.status === 'refused') { refuse(result); onListChanged?.(); return }
+      if (!live.current) { onListChanged?.(); return }
       setKey(''); onAdded?.(result.server); if (confirm) setPage('done'); else onClose()
     } catch { setError(notAnswered()) } finally { if (live.current) { setBusy(false); setWriting(false) } }
   }
   const remove = async (): Promise<void> => {
-    if (!server || busy) return; setBusy(true)
-    try { const result = await bridge.remove({ id: server.id }); if (result.status === 'ok') { onListChanged?.(); onClose() } else refuse(result) }
+    if (!server || busy) return; const at = ++ticket.current; setWriting(true); setBusy(true)
+    try { const result = await bridge.remove({ id: server.id }); if (!live.current || at !== ticket.current) return; if (result.status === 'ok') { onListChanged?.(); onClose() } else refuse(result) }
     catch { setError(notAnswered()) } finally { if (live.current) { setBusy(false); setWriting(false) } }
   }
   const title = mode === 'remove' ? t`Remove ${sourceName}?` : mode === 'replace' ? t`Replace the key for ${sourceName}` : mode === 'choose' ? t`Choose ${sourceName} models` :
-    page === 'apis' ? t`Add an API or server` : page === 'address' || !api ? t`Add by address` : t`Add ${sourceName}`
-  const toggle = (id: string): void => setKept(current => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next })
+    page === 'apis' ? t`Add an API or server` : byAddress || !api ? t`Add by address` : t`Add ${sourceName}`
+  const toggle = (id: string): void => {
+    selectedFocus.current = filter === 'selected' && kept.has(id)
+    setKept(current => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next })
+  }
   const listKeys = (event: React.KeyboardEvent): void => {
     if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
     const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('button')], at = buttons.indexOf(document.activeElement as HTMLButtonElement)
@@ -216,7 +234,7 @@ export function AddOwnServerDialog({ bridge, fallbackFocus, onClose, onAdded, on
   const remaining = matched.filter(item => !common.includes(item))
   const apiButton = (item: CatalogueEntry, index: number): ReactNode => <button type="button" key={item.id} tabIndex={index === 0 ? 0 : -1} className="own-api-option"
     onFocus={event => { const buttons = root.current?.querySelectorAll<HTMLButtonElement>('.own-api-option'); buttons?.forEach(button => { button.tabIndex = button === event.currentTarget ? 0 : -1 }) }}
-    onClick={() => { setApi(item); setAddress(item.api); setName(item.name); setPage('key'); setQuery('') }}>{item.name}</button>
+    onClick={() => { const custom = item.api.includes('${'); setByAddress(custom); setApi(item); setAddress(item.api); setName(item.name); setPage(custom ? 'address' : 'key'); setQuery('') }}>{item.name}</button>
   return createPortal(<div className="tt-dialog-backdrop own-backdrop" role="presentation" onPointerDown={event => { if (event.target === event.currentTarget) close() }}>
     <section ref={element => { dialog.current = element; root.current = element }} className="tt-dialog own-dialog" role="dialog" aria-modal="true" aria-labelledby={titleId} aria-busy={busy || loading}>
       <h2 id={titleId}>{title}</h2>
@@ -236,14 +254,16 @@ export function AddOwnServerDialog({ bridge, fallbackFocus, onClose, onAdded, on
             {['openai', 'anthropic', 'google', 'xai', 'x.ai'].includes(notListed) ? <p>{t`This API cannot be added with just a key here. This list has only APIs that supply an OpenAI-compatible address.`} {notListed === 'openai' ? t`For OpenAI, connect Codex under Providers.` : notListed === 'anthropic' ? t`For Anthropic, connect Claude Code under Providers.` : ['xai', 'x.ai'].includes(notListed) ? t`For xAI, connect Grok Build under Providers.` : t`You can use Another address if you have an OpenAI-compatible API address.`}</p> : null}
             {query && !catalogue.some(item => `${item.name} ${item.id}`.toLowerCase().includes(notListed)) ? <p>{t`No matching API. Use Another address to enter an OpenAI-compatible address.`}</p> : null}
           </> : <p role="alert">{t`The list of APIs could not be fetched. Nothing was added. Try again, or choose Another address below.`}</p>}
-          <Button data-another-address variant="secondary" onClick={() => { setApi(null); setPage('address') }}>{t`Another address`}</Button>
+          <Button data-another-address variant="secondary" onClick={() => { setByAddress(true); setApi(null); setPage('address') }}>{t`Another address`}</Button>
           <p className="own-privacy">{t`The list comes from models.dev. Sotto downloads it when this opens and sends nothing of yours.`}</p>
         </> : null}
-        {(page === 'key' || page === 'address' || (page === 'models' && !api && mode === 'add')) && !busy ? <>
+        {(page === 'key' || page === 'address' || (page === 'models' && byAddress && mode === 'add')) && !busy ? <>
           {mode === 'add' ? <Button variant="ghost" onClick={() => { setPage('apis'); setKey(''); setError('') }}>{t`All APIs`}</Button> : null}
+          {api && !byAddress ? <p className="own-server__address">{address}</p> : null}
           <div className="own-fields">
-            {!api && mode === 'add' ? <>
+            {byAddress && mode === 'add' ? <>
               <label className="own-field">{t`Address`}<input ref={focus} className="tt-input" value={address} placeholder="http://localhost:11434" autoComplete="off" spellCheck={false} maxLength={400} aria-describedby={error ? errorId : undefined} onChange={event => { setAddress(event.target.value); setModels([]); setKept(new Set()); setPage('address'); setError('') }} /></label>
+              {api?.api.includes('${') ? <p className="own-model__note">{t`Replace the placeholders with your API address before checking.`}</p> : null}
               <label className="own-field">{t`Name`}<input className="tt-input" value={name} placeholder={ownServerName(address)} maxLength={80} onChange={event => setName(event.target.value)} /></label>
             </> : null}
             <div className="own-field"><label htmlFor={`${titleId}-key`}>{mode === 'replace' ? t`New key` : !api && mode === 'add' ? t`Key (optional)` : t`Key`}</label>
@@ -258,7 +278,7 @@ export function AddOwnServerDialog({ bridge, fallbackFocus, onClose, onAdded, on
           <p className="own-privacy">{privacyWords()}</p>
         </> : null}
         {page === 'models' && !busy ? <>
-          <div className="own-model-toolbar"><span>{t`${models.length} models found`}</span><Button variant="ghost" onClick={() => setKept(current => { const next = new Set(current), clear = shown.every(model => next.has(model.id)); for (const model of shown) { if (clear) next.delete(model.id); else next.add(model.id) } return next })}>{shown.length && shown.every(model => kept.has(model.id)) ? (many ? t`Clear shown` : t`Clear all`) : (many ? t`Select shown` : t`Select all`)}</Button></div>
+          <div className="own-model-toolbar"><span>{plural(models.length, { one: '# model found', other: '# models found' })}</span><Button variant="ghost" onClick={() => setKept(current => { const next = new Set(current), clear = shown.every(model => next.has(model.id)); for (const model of shown) { if (clear) next.delete(model.id); else next.add(model.id) } return next })}>{shown.length && shown.every(model => kept.has(model.id)) ? (many ? t`Clear shown` : t`Clear all`) : (many ? t`Select shown` : t`Select all`)}</Button></div>
           {many ? <><input data-model-search className="tt-input" aria-label={t`Search models`} placeholder={t`Search models`} value={modelQuery} onChange={event => setModelQuery(event.target.value)} />
             <div className="own-model-filters">{[['all', t`All`, models.length], ['selected', t`Selected`, kept.size], ...(newIds.size ? [['new', t`New`, newIds.size]] : [])].map(([id, label, count]) =>
               <button type="button" key={id} aria-pressed={filter === id} onClick={() => setFilter(String(id))}>{label} <span>{count}</span></button>)}</div></> : null}
@@ -281,8 +301,8 @@ export function AddOwnServerDialog({ bridge, fallbackFocus, onClose, onAdded, on
         {page === 'models' ? <span className="own-model-count" role="status">{t`${kept.size} of ${models.length} models selected`}</span> : null}
         <Button variant="secondary" disabled={writing} onClick={close}>{page === 'done' ? t`Done` : t`Cancel`}</Button>
         {page === 'apis' && !available ? <Button variant="primary" onClick={load}>{t`Try again`}</Button> : null}
-        {(page === 'key' || page === 'address' || (page === 'models' && !api && mode === 'add')) && !busy ? <Button variant="primary" disabled={page === 'key' ? !key.trim() : !address.trim()} onClick={() => void check()}>{mode === 'replace' ? t`Check and replace` : page === 'address' ? t`Check this server` : t`Check key`}</Button> : null}
-        {page === 'models' ? <Button variant="primary" disabled={!canSave || busy} onClick={() => void save()}>{busy ? t`Saving…` : mode === 'choose' ? t`Save choices` : t`Add ${kept.size} models`}</Button> : null}
+        {(page === 'key' || page === 'address') && !busy ? <Button variant="primary" disabled={address.includes('${') || (page === 'key' ? !key.trim() : !address.trim())} onClick={() => void check()}>{mode === 'replace' ? t`Check and replace` : page === 'address' ? t`Check this server` : t`Check key`}</Button> : null}
+        {page === 'models' ? <Button variant="primary" disabled={!canSave || busy} onClick={() => void save()}>{busy ? t`Saving…` : mode === 'choose' ? t`Save choices` : byAddress ? t`Add server` : kept.size ? plural(kept.size, { one: 'Add # model', other: 'Add # models' }) : t`Add models`}</Button> : null}
         {mode === 'remove' ? <Button variant="primary" disabled={busy} onClick={() => void remove()}>{t`Remove`}</Button> : null}
       </div>
     </section>

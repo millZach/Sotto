@@ -67,6 +67,8 @@ export interface OwnServersOptions {
   readonly check?: (address: string, key: string | undefined) => Promise<CheckResult>
   readonly catalogue?: ModelCatalogue
   readonly readKey?: (id: string) => Promise<string | undefined>
+  /** Replaces an existing Hermes file copy while its adapter is held, without creating a new keeper. */
+  readonly replaceHeldHermesKey?: (id: string, key: string) => Promise<void>
   readonly checkOptions?: OwnServerCheckOptions
   readonly log?: (event: OwnServerEvent) => void
   /** A new server's ID suffix for its address, which a test fixes. */
@@ -255,7 +257,11 @@ export class OwnServers {
       const servers = await this.servers(), server = servers.find(item => item.id === parsed.id)
       if (!server) return refusal('not-found', OWN_SERVER_WORDS.notFound)
       const models = new Map(server.models.map(model => [model.id, model]))
-      for (const model of parsed.models ?? []) models.set(model.id, model)
+      for (const model of parsed.models ?? []) {
+        const before = models.get(model.id)
+        // Choosing models changes a missing context only. Discovery, not this dialog, owns saved capabilities.
+        models.set(model.id, before ? { ...before, context: model.context } : model)
+      }
       if (parsed.keptModelIds.some(id => !models.has(id))) return refusal('failed', OWN_SERVER_WORDS.failed)
       const updated = ownServerSchema.parse({ ...server, models: [...models.values()], keptModelIds: [...new Set(parsed.keptModelIds)] })
       await this.save(servers.map(item => item.id === parsed.id ? updated : item))
@@ -280,7 +286,13 @@ export class OwnServers {
       } else {
         if (!openCode?.running()) return refusal('opencode-not-running', OWN_SERVER_WORDS.openCodeNotRunning)
         if (!await openCode.signInWithKey(id, key)) return refusal('sign-in-failed', OWN_SERVER_WORDS.signInFailed(server.name))
-        await hermes?.keepKey(id, key)
+        try {
+          if (hermes) await hermes.keepKey(id, key)
+          else await this.options.replaceHeldHermesKey?.(id, key)
+        } catch {
+          this.log('own-server-sign-in-failed')
+          return refusal('replaced-partly', ownServerRefusalWords('replaced-partly', '', server.name))
+        }
       }
       return { status: 'ok', server }
     })

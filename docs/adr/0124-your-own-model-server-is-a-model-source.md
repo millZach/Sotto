@@ -192,3 +192,28 @@ OpenRouter's model list is public, so its key is checked first through its
 (`GET /api/v1/key` at the chosen OpenRouter address). The answer is discarded;
 no inference is sent, and an unauthenticated key never reaches either keeper.
 Other APIs are checked through their own model-list authentication.
+
+
+### Review corrections: large catalogues and existing choices
+
+OpenCode's model declarations go in a generated JSON file for each process under
+Sotto's own OpenCode config folder, named with Sotto's PID and a random suffix.
+`OPENCODE_CONFIG` carries only that path; `OPENCODE_CONFIG_CONTENT` keeps the small
+share/update settings and source routing overrides, so project config cannot
+redirect a saved source or its key. This supersedes the original environment-only declaration:
+a large API can exceed Windows' 32,767-character per-variable limit. The file has
+no actual key, is removed when its process closes, and files left by a dead Sotto
+are removed on a later start. The saved model-server record remains the source of
+truth. Kept and existing-thread models still retain their declarations.
+
+An initial or Default effort never selects Off. Toggle-only models reset to
+Default unless Off was explicitly chosen. Known numeric lists prefer Medium,
+then High, then their first thinking level. Old OpenCode thinking flags survive
+Choose models unchanged until a recheck. Hermes no longer pins every new session
+to High: an unset choice uses Default, as the owner approved; protocol replay
+cannot overwrite a newer user choice. A transient effort-request error is not
+evidence that the installed client lacks effort support.
+
+Catalogue addresses with account or region placeholders open the address route,
+with the template visible and editable. No request is sent until those values
+are supplied. The key page shows the actual address that will receive its key.

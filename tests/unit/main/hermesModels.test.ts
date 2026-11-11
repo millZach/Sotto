@@ -8,6 +8,7 @@ const server: OwnServer = { id: 'own-test', name: 'Example', address: 'https://e
 ] }
 describe('Hermes model thinking', () => {
   it('uses only confirmed model levels when the harness supports the option', () => {
+    expect(hermesCatalog([server], false, true)[0]!.defaultReasoningEffort).toBe('high')
     expect(hermesCatalog([server], false, true)[0]!.reasoningEfforts).toEqual(['off', 'low', 'high', 'max'])
     expect(hermesCatalog([server], false, true)[1]).toMatchObject({ reasoningEfforts: ['default'], hiddenFromMenu: true })
     expect(hermesCatalog([server])[0]!.reasoningEfforts).toBeUndefined()

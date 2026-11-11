@@ -54,3 +54,11 @@ describe('the API catalogue and provider facts', () => {
     expect(await readBoundedText(response, 10)).toBeNull()
   })
 })
+
+
+it('keeps template entries discoverable and uses their metadata after the address is completed', async () => {
+  const api = 'https://${ACCOUNT}.example.test/v1'
+  const catalogue = new ModelCatalogue(async () => new Response(JSON.stringify({ templated: { ...listed, api } })))
+  expect((await catalogue.load()).entries[0]!.api).toBe(api)
+  expect(catalogue.provider('https://account.example.test/v1', 'templated')?.models.get('model')?.context).toBe(1000000)
+})
