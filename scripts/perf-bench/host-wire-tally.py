@@ -116,10 +116,11 @@ class Tally:
                     for inner, inner_value in value.items():
                         self.summary_fields[inner] += size(inner_value)
 
-    def report(self, seconds):
+    def report(self, seconds, started):
         def top(table, limit=25):
             return dict(sorted(table.items(), key=lambda item: -item[1])[:limit])
-        rates = sorted(self.per_second.values())
+        # Every second of the run, the idle ones too, so the median is the run's and not only its busy seconds'.
+        rates = sorted(self.per_second.get(second, 0) for second in range(int(started), int(started) + max(1, int(seconds))))
         total_wire = sum(entry['wireBytes'] for entry in self.events.values())
         total_json = sum(entry['jsonBytes'] for entry in self.events.values())
         return {
@@ -293,7 +294,7 @@ def main():
     if not started:
         print(json.dumps({'error': 'never found the start of a message; is the client connected and the host sending?'}))
         sys.exit(1)
-    print(json.dumps(tally.report(round(elapsed, 1)), indent=1))
+    print(json.dumps(tally.report(round(elapsed, 1), started), indent=1))
 
 
 if __name__ == '__main__':

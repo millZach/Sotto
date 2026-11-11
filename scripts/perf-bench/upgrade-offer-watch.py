@@ -9,23 +9,46 @@ User-Agent and the value of Sec-WebSocket-Extensions. Nothing else of the reques
 
 The port is `port` in the host's phone-access.json. Linux only.
 """
-import socket, struct, sys, time
-port=int(sys.argv[1]); seconds=float(sys.argv[2]); out=sys.argv[3]
-s=socket.socket(socket.AF_PACKET, socket.SOCK_DGRAM, socket.htons(0x0800)); s.bind(('lo',0x0800)); s.settimeout(1)
-end=time.time()+seconds; seen=set()
-while time.time()<end:
-    try: d,_=s.recvfrom(262144)
-    except socket.timeout: continue
-    if len(d)<40 or d[9]!=6: continue
-    ihl=(d[0]&15)*4; sp,dp,seq=struct.unpack('>HHI',d[ihl:ihl+8])
-    if dp!=port: continue
-    p=d[ihl+((d[ihl+12]>>4)*4):]
-    if not p.startswith(b'GET /v1/socket'): continue
-    if (sp,seq) in seen: continue
-    seen.add((sp,seq))
-    ext='(none offered)'; agent='(no user agent)'
-    for line in p.split(b'\r\n'):
-        low=line.lower()
-        if low.startswith(b'sec-websocket-extensions:'): ext=line.split(b':',1)[1].strip().decode('ascii','replace')[:160]
-        if low.startswith(b'user-agent:'): agent=' '.join(part.split('/')[0] for part in line.split(b':',1)[1].strip().decode('ascii','replace').split())[:80]
-    with open(out,'a') as f: f.write(f"{time.strftime('%H:%M:%S')} upgrade from {agent}: extensions {ext}\n")
+import socket
+import struct
+import sys
+import time
+
+listener_port = int(sys.argv[1])
+seconds = float(sys.argv[2])
+log_path = sys.argv[3]
+
+packets = socket.socket(socket.AF_PACKET, socket.SOCK_DGRAM, socket.htons(0x0800))
+packets.bind(('lo', 0x0800))
+packets.settimeout(1)
+deadline = time.time() + seconds
+logged = set()
+while time.time() < deadline:
+    try:
+        packet, _ = packets.recvfrom(262144)
+    except socket.timeout:
+        continue
+    if len(packet) < 40 or packet[9] != 6:
+        continue
+    ip_header = (packet[0] & 15) * 4
+    source_port, destination_port, sequence = struct.unpack('>HHI', packet[ip_header:ip_header + 8])
+    if destination_port != listener_port:
+        continue
+    payload = packet[ip_header + ((packet[ip_header + 12] >> 4) * 4):]
+    if not payload.startswith(b'GET /v1/socket'):
+        continue
+    # Loopback can show a packet twice; a request is logged once.
+    if (source_port, sequence) in logged:
+        continue
+    logged.add((source_port, sequence))
+    offer = '(none offered)'
+    products = '(no user agent)'
+    for line in payload.split(b'\r\n'):
+        name = line.lower()
+        if name.startswith(b'sec-websocket-extensions:'):
+            offer = line.split(b':', 1)[1].strip().decode('ascii', 'replace')[:160]
+        if name.startswith(b'user-agent:'):
+            agent = line.split(b':', 1)[1].strip().decode('ascii', 'replace')
+            products = ' '.join(product.split('/')[0] for product in agent.split())[:80]
+    with open(log_path, 'a') as log:
+        log.write(f"{time.strftime('%H:%M:%S')} upgrade from {products}: extensions {offer}\n")

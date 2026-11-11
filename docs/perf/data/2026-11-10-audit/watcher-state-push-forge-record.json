@@ -2,27 +2,27 @@
  "source": "a saved record",
  "rounds": 15,
  "record": {
-  "requests": 925,
-  "operations": 929,
-  "progress": 130,
-  "jsonBytes": 2205643,
-  "wireBytes": 434512,
+  "requests": 928,
+  "operations": 933,
+  "progress": 132,
+  "jsonBytes": 2086237,
+  "wireBytes": 374132,
   "hostMs": {
-   "stringify": 1.4,
-   "deflate": 25.7,
-   "total": 27.1
+   "stringify": 2.7,
+   "deflate": 15.4,
+   "total": 18.1
   },
   "desktopMs": {
-   "inflate": 4.6,
-   "parse": 3,
-   "schema": 8.9,
-   "total": 16.4
+   "inflate": 3.1,
+   "parse": 2.5,
+   "schema": 7.9,
+   "total": 13.5
   },
   "atLiveRate": {
    "pushesPerSecond": 2.1,
-   "hostCorePercent": 5.7,
-   "desktopMainCorePercent": 3.5,
-   "wireBytesPerSecond": 912475
+   "hostCorePercent": 3.8,
+   "desktopMainCorePercent": 2.8,
+   "wireBytesPerSecond": 785677
   }
  }
 }
