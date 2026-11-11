@@ -2,6 +2,7 @@ import { startsThread } from '../shared/threadStarts'
 import type { HostDelegationRelay, RelayDesktop } from '../main/agents/delegationRelayHost'
 import type { HostTellWatcherRelay, TellWatcherDesktop } from '../main/agents/tellWatcherRelay'
 import type { HostRemoteCallers, RemoteDesktop } from '../main/agents/delegationRemoteHost'
+import type { HostHeldSession } from '../main/agents/sessionReaper'
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import type { Duplex } from 'node:stream'
@@ -40,7 +41,7 @@ import { hostAdminPhonesCommandSchema, type HostAdminPhonesCommand, type PhonesS
 import { CommandReceipts, type CommandReceipt } from './commandReceipts'
 import { HttpBudgets } from './httpBudgets'
 import { PAGE_REQUESTS_PER_MINUTE, QUESTION_PAGE_PATH, serveQuestionPage } from './questionPageRoute'
-import type { WatcherHostRead } from '../shared/watcherHost'
+import { watcherProgressChange, type WatcherHostProjection, type WatcherHostRead } from '../shared/watcherHost'
 import type { WatcherThreadTarget } from '../shared/watcher'
 import { isWatcherQuestionRequest } from '../shared/watcherQuestions'
 import { visibleWatcherState } from '../shared/watcherVisibility'
@@ -68,6 +69,7 @@ const COMPOSER_OPS = { 'watcher-phone-open': 'open', 'watcher-phone-new': 'new',
 const adminPhonesRequest = z.object({}).strict()
 const adminPhonesCommandRequest = z.object({ command: hostAdminPhonesCommandSchema }).strict()
 const adminTailnetRequest = z.object({ enabled: z.boolean().optional() }).strict()
+const adminHeldSessionsRequest = z.object({}).strict()
 const adminClientRequest = z.object({ clientId: z.string().min(1).max(512) }).strict()
 const pairRequest = z.object({ v: z.literal(1), code: z.string().min(1).max(32), name: z.string().min(1).max(256) }).strict()
 
@@ -164,7 +166,14 @@ interface Peer { browserWatches?: Map<string, { ticket: number; stop?: () => voi
    * With `step-window` (ADR-0194), where each observed thread's window starts for this client, as cut for the last whole it
    * was sent: kept while it observes the thread, so the window only grows at its end, and moved back by `earlier-steps`.
    */
-  stepWindows?: Map<string, StepWindowCut> | undefined }
+  stepWindows?: Map<string, StepWindowCut> | undefined
+  /**
+   * Whether its hello accepted `watcher-progress` beside `watcher-reads`: a Watcher projection that differs from the last one
+   * written to it only in its progress goes as a progress push (ADR-0073, November 10, 2026 amendment).
+   */
+  watcherProgress?: boolean }
+/** The Watcher projection last written to a desktop that accepted `watcher-progress`, as far as a progress push needs it. */
+interface WatcherWritten { revision: string; record: string; progress: NonNullable<WatcherHostProjection['progress']> }
 /**
  * A desktop from before history import, or from before Muse and OpenCode were counted, is sent only the Usage read its
  * strict schemas know (ADR-0083).
@@ -255,6 +264,11 @@ export interface SocketServerOptions {
    * reaches this host over SSH. Absent on the desktop's phone listener, whose administrative routes are off anyway.
    */
   phones?: HostPhonesAdministration
+  /**
+   * The provider sessions the headless host's adapters hold and the rules keeping each (#2398), read on the administrative
+   * route `held-sessions` by the host machine's own measuring script. Absent on the desktop's phone listener.
+   */
+  heldSessions?: () => readonly HostHeldSession[]
   /**
    * The headless host updating itself for a desktop that asks (ADR-0088). Offered on either listener, to a client in
    * `watcherDesktops` whose `remote-answer` policy lets it answer, and only when the host can update itself at all.
@@ -372,6 +386,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'thread-media-video' || service.supportsThreadMedia === true && service.threadMediaPart !== undefined)
     && (feature !== 'watcher-control' || service.supportsWatcherControl === true && options.watcherDesktops !== undefined)
     && (feature !== 'watcher-reads' || watcherReads)
+    // A projection's progress alone goes where the projection does (ADR-0073, November 10, 2026 amendment).
+    && (feature !== 'watcher-progress' || watcherReads)
     && (feature !== 'watcher-standing-watch' || service.supportsWatcherStandingWatch === true && options.watcherDesktops !== undefined)
     && (feature !== 'watcher-work-settled' || watcherReads)
     && (feature !== 'watcher-outcomes' || watcherReads)
@@ -486,6 +502,40 @@ export async function startSocketServer(options: SocketServerOptions) {
       || options.watcherDesktops?.has(peer.client.clientId) === true)
   const watcherScopes = new WeakMap<Peer, WatcherHostRead>()
   const watcherRevisions = new WeakMap<Peer, string>()
+  const watcherWritten = new WeakMap<Peer, WatcherWritten>()
+  /**
+   * The digest of each list a Watcher projection carries, by the list. `WatcherService` makes a projection's requests,
+   * operations and standing watches afresh whenever its record changes and never edits them, so a list it hands out
+   * again is the same list, digested once however many pushes and answers carry it. A desktop that does not know every
+   * provider is sent a projection scoped for it (`watcherFor`), whose lists are made afresh each time, so a digest is kept
+   * by the service's own list and by what that peer may not be sent: scoping the same list the same way gives the same
+   * rows. Without that, every progress push to such a desktop serialized and hashed the whole record again.
+   */
+  const watcherListDigests = new WeakMap<object, Map<string, string>>()
+  const sha256 = (text: string): string => createHash('sha256').update(text).digest('hex')
+  /**
+   * Everything a Watcher projection holds but its progress, revision and time, as one digest: two projections with the
+   * same one differ only in how far their watched threads have got, so the later can go as a progress push.
+   */
+  const watcherRecordOf = (projection: WatcherHostProjection, source: WatcherHostProjection = projection, scoped = ''): string => sha256(JSON.stringify(Object.entries(projection)
+    .filter(([name]) => name !== 'progress' && name !== 'revision' && name !== 'observedAt').sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
+    .map(([name, value]) => {
+      if (!Array.isArray(value)) return [name, value]
+      const own = (source as unknown as Record<string, unknown>)[name]
+      const list: object = Array.isArray(own) ? own : value
+      let digests = watcherListDigests.get(list)
+      if (!digests) watcherListDigests.set(list, digests = new Map())
+      let digest = digests.get(scoped)
+      if (digest === undefined) digests.set(scoped, digest = sha256(JSON.stringify(value)))
+      return [name, digest]
+    })))
+  /** What a peer may not be sent, as the key its scoped lists' digests are kept under. */
+  const watcherScoped = (peer: Peer): string => peer.unknownProviders.size ? [...peer.unknownProviders].sort().join(',') : ''
+  /** Remembers the projection a desktop that accepted `watcher-progress` was just written, pushed or in an answer. */
+  const wroteWatcher = (peer: Peer, projection: WatcherHostProjection, record: string): void => {
+    watcherRevisions.set(peer, projection.revision)
+    watcherWritten.set(peer, { revision: projection.revision, record, progress: projection.progress ?? [] })
+  }
   const offers = (peer: Peer, feature: (typeof HOST_FEATURES)[number]): boolean => featuresFor(peer).includes(feature)
   const { tailnet } = options
   const isDesktop = (clientId: string): boolean => !tailnet || tailnet.desktops.has(clientId)
@@ -900,6 +950,24 @@ export async function startSocketServer(options: SocketServerOptions) {
     else peer.held.delete(threadId)
   }
   const detail = (peer: Peer, threadId: string): void => { sendWhole(peer, threadId, service.threadDetail(threadId)) }
+  /**
+   * Pushes a desktop Watcher's projection, whose revision differs from the last one it was written. To a desktop that
+   * accepted `watcher-progress`, a projection whose record part and evidence are those of the last one written to it goes
+   * as a progress push: what moved in its progress, measured from what that projection carried (ADR-0073, November 10,
+   * 2026 amendment). Anything else goes whole, as to every other desktop.
+   */
+  const pushWatcher = (peer: Peer, projection: WatcherHostProjection, source: WatcherHostProjection): void => {
+    const record = peer.watcherProgress ? watcherRecordOf(projection, source, watcherScoped(peer)) : undefined
+    const written = record !== undefined ? watcherWritten.get(peer) : undefined
+    if (record !== undefined && written?.record === record && written.revision === watcherRevisions.get(peer)) {
+      const progress = { baseRevision: written.revision, revision: projection.revision, observedAt: projection.observedAt, ...watcherProgressChange(written.progress, projection.progress ?? []) }
+      if (push(peer, { v: 1, event: 'watcher-progress', progress })) wroteWatcher(peer, projection, record)
+      return
+    }
+    if (!push(peer, { v: 1, event: 'watcher-state', projection })) return
+    if (record !== undefined) wroteWatcher(peer, projection, record)
+    else watcherRevisions.set(peer, projection.revision)
+  }
   // A streaming thread changes the shell many times a second. Pushes go out at most once a window, the
   // same way the desktop's own IPC coalesces them, and each carries the state as it is when it is sent.
   // Details come through their own subscription when the service has one, so a shell change resends no history.
@@ -925,8 +993,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     // Watcher's projection waits with the shell (#1089): the one sent once the socket drains is the newest, built then.
     const scope = watcherScopes.get(peer)
     if (scope && offers(peer, 'watcher-reads') && service.watcherProjection) {
-      const projection = watcherFor(peer, service.watcherProjection(scope, peer.client))
-      if (watcherRevisions.get(peer) !== projection.revision && push(peer, { v: 1, event: 'watcher-state', projection })) watcherRevisions.set(peer, projection.revision)
+      const source = service.watcherProjection(scope, peer.client), projection = watcherFor(peer, source)
+      if (watcherRevisions.get(peer) !== projection.revision) pushWatcher(peer, projection, source)
     }
     const wire = wireShell(peer, shell(peer, read?.())), eventPage = events(peer, peer.afterSeq)
     // To a client that accepted `changed-thread-records`, the thread records that changed since its last shell push go
@@ -1554,6 +1622,8 @@ export async function startSocketServer(options: SocketServerOptions) {
         // Watcher's box keeps its changes' outcomes under management's receipts, so it rides with management.
         peer.watcherPhoneComposer = peer.watcherPhoneManage && (request.accepts?.includes('watcher-phone-composer') ?? false) && offers(peer, 'watcher-phone-composer')
         peer.watcherReads = (request.accepts?.includes('watcher-reads') ?? false) && offers(peer, 'watcher-reads'); peer.answerReceipts = (request.accepts?.includes('answer-receipts') ?? false) && offers(peer, 'answer-receipts')
+        // A hello starts what progress pushes are measured from afresh: the next projection goes whole.
+        peer.watcherProgress = peer.watcherReads && (request.accepts?.includes('watcher-progress') ?? false) && offers(peer, 'watcher-progress'); watcherWritten.delete(peer)
         peer.usageHistory = (request.accepts?.includes('usage-history') ?? false) && offers(peer, 'usage-history')
         peer.retiredTerminals = request.accepts?.includes('terminals') ?? false
         peer.usageMuseOpenCode = (request.accepts?.includes('usage-muse-opencode') ?? false) && offers(peer, 'usage-muse-opencode')
@@ -2079,6 +2149,11 @@ export async function startSocketServer(options: SocketServerOptions) {
         } else if (request.op === 'next-prompts-wanted') {
           // Every next prompt held now follows the answer that turned them on; each change follows it.
           pushNextPrompts(peer)
+        } else if (request.op === 'watcher-read' && !request.request.call && peer.watcherProgress) {
+          // A desktop that accepted `watcher-progress` holds the projection a scope read answers with, in the order of its
+          // frames, so the next push is measured from it. A refusal carries no projection and leaves what it holds.
+          const read = response.result as Partial<WatcherHostProjection> | null
+          if (read !== null && typeof read === 'object' && typeof read.revision === 'string' && Array.isArray(read.requests)) wroteWatcher(peer, read as WatcherHostProjection, watcherRecordOf(read as WatcherHostProjection))
         }
       }
       // A restart that went ahead waits for its own answer to be on the way before it stops this host (ADR-0088), whether or
@@ -2131,6 +2206,12 @@ export async function startSocketServer(options: SocketServerOptions) {
             if (request.url === '/v1/admin/phones') { adminPhonesRequest.parse(await body(request)); respond(response, 200, { v: 1, hostId, state: options.phones.get() }); return }
             const { command } = adminPhonesCommandRequest.parse(await body(request))
             respond(response, 200, { v: 1, hostId, ...await options.phones.command(command) }); return
+          }
+          // Names, ages, process IDs and Sotto thread IDs only: what holds each provider session, never what a thread said.
+          if (request.url === '/v1/admin/held-sessions') {
+            if (!options.heldSessions) throw new Refusal('invalid_request')
+            adminHeldSessionsRequest.parse(await body(request))
+            respond(response, 200, { v: 1, hostId, sessions: options.heldSessions() }); return
           }
           // Only here, on the listener the tailnet never reaches: a desktop turns its tailnet connections on or off over SSH.
           if (request.url === '/v1/admin/tailnet') {

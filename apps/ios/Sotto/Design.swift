@@ -21,6 +21,9 @@ private struct DensityKey: EnvironmentKey {
 private struct GlowKey: EnvironmentKey {
     static var defaultValue: PhoneGlow { PhonePreferences().glow }
 }
+private struct ProseScaleKey: EnvironmentKey {
+    static let defaultValue: CGFloat = 1
+}
 
 private struct ScreenKey: EnvironmentKey {
     static let defaultValue = CGSize(width: 430, height: 932)
@@ -36,6 +39,12 @@ extension EnvironmentValues {
     var sottoDensity: PhoneDensity {
         get { self[DensityKey.self] }
         set { self[DensityKey.self] = newValue }
+    }
+    /// How much larger a conversation's words are drawn than the type scale's: a step larger in a thread held
+    /// sideways on the Duo (Zach's pick, November 9, 2026, round 5), 1 everywhere else.
+    var proseScale: CGFloat {
+        get { self[ProseScaleKey.self] }
+        set { self[ProseScaleKey.self] = newValue }
     }
     /// How strongly the lights shine. Set once at the root from the stored preference.
     var sottoGlow: PhoneGlow {
@@ -248,6 +257,10 @@ extension Font {
     static func sotto(_ scale: TextScale, _ weight: Font.Weight = .regular) -> Font {
         .figtree(scale.size, scale.style, weight)
     }
+    /// Figtree at a step of the type scale, `times` larger: the conversation held sideways on the Duo (`proseScale`).
+    static func sotto(_ scale: TextScale, _ weight: Font.Weight = .regular, times: CGFloat) -> Font {
+        .figtree(scale.size * times, scale.style, weight)
+    }
     /// Figtree draws Latin only. Every other script falls through, glyph by glyph, to the iPhone's own fonts, which
     /// the root's typesetting language points at the interface language (ADR-0123). Urdu is set in the iPhone's
     /// Nastaliq face, the way Urdu is written, rather than the Naskh shapes the fallback would give it.
@@ -398,29 +411,50 @@ struct PhoneDisplayPreferences: ViewModifier {
 // MARK: - Lights
 
 /// A small status light with a soft halo. Accent for working or online, warning for needs you, danger for
-/// failed or unreachable, an empty ring for quiet. A breathing light slows to still under Reduce Motion.
+/// failed or unreachable, an empty ring for quiet. A breathing light slows to still under Reduce Motion. A finished light
+/// is a larger disc with a check in it, so a thread that just finished can't pass for one at work; it keeps the halo and
+/// still takes only the dot's room.
 struct Light: View {
     enum Tone { case accent, warning, danger, off }
     let tone: Tone
     var size: CGFloat = 8
     var breathing = false
+    var finished = false
     @Environment(\.sottoTheme) private var theme
     @Environment(\.sottoGlow) private var glow
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.duoLayout) private var duo
+    @Environment(\.colorScheme) private var scheme
     var body: some View {
         Group {
             if tone == .off {
                 Circle().strokeBorder(theme.color(.muted), lineWidth: 1.5)
+            } else if finished {
+                let disc = max(size * 1.75, 14)
+                ZStack {
+                    Circle().fill(color)
+                    Image(systemName: "checkmark").font(.system(size: disc * 0.55, weight: .heavy)).foregroundStyle(theme.color(.onAccent))
+                }
+                .frame(width: disc, height: disc)
+                .background {
+                    if glow.shows {
+                        let reach = Light.haloRadius(disc, glow, reach: haloReach)
+                        Circle()
+                            .fill(RadialGradient(colors: [color.opacity(glow.alpha(Light.haloStrength)), color.opacity(0)], center: .center,
+                                                 startRadius: disc * 0.3, endRadius: reach))
+                            .frame(width: reach * 2, height: reach * 2)
+                    }
+                }
             } else if moving {
                 // The same dot and halo drawn by Core Animation, which breathes it without the app's help.
-                BreathingLight(color: theme.rgb(role), glow: glow)
+                BreathingLight(color: theme.rgb(role), glow: glow, reach: haloReach)
                     .allowsHitTesting(false)
             } else {
                 // A gradient halo rather than a shadow: it costs nothing to move or fade.
                 Circle().fill(color)
                     .background {
                         if glow.shows {
-                            let reach = Light.haloRadius(size, glow)
+                            let reach = Light.haloRadius(size, glow, reach: haloReach)
                             Circle()
                                 .fill(RadialGradient(colors: [color.opacity(glow.alpha(Light.haloStrength)), color.opacity(0)], center: .center,
                                                      startRadius: size * 0.3, endRadius: reach))
@@ -436,7 +470,14 @@ struct Light: View {
     /// At the standard glow the halo reaches as far past the dot as the shadow it replaced did (about 13 points, whatever
     /// the dot's size), starting a little softer than the dot so the core stays the dot itself.
     static let haloStrength = 0.45
-    static func haloRadius(_ size: CGFloat, _ glow: PhoneGlow) -> CGFloat { size / 2 + CGFloat(glow.radius(13)) }
+    /// `reach` scales how far the halo runs past the dot.
+    static func haloRadius(_ size: CGFloat, _ glow: PhoneGlow, reach: CGFloat = 1) -> CGFloat {
+        size / 2 + CGFloat(glow.radius(13)) * reach
+    }
+    /// On the Duo in light the halo keeps its core and ends close to the dot, about 4 points past it at the standard glow
+    /// rather than 13, so a dot reads as a light rather than a cloud on the pale room; dark keeps the full reach (Zach's
+    /// round 6 pick A, November 10, 2026).
+    private var haloReach: CGFloat { duo != .none && scheme == .light ? 0.3 : 1 }
     private var role: ThemeRoleName {
         switch tone {
         case .accent: return .accent
@@ -452,9 +493,10 @@ struct Light: View {
 private struct BreathingLight: UIViewRepresentable {
     let color: ThemeRGB
     let glow: PhoneGlow
+    let reach: CGFloat
     func makeUIView(context: Context) -> LightLoopView { LightLoopView(frame: .zero) }
     func updateUIView(_ view: LightLoopView, context: Context) {
-        view.paint(color, glow: glow)
+        view.paint(color, glow: glow, reach: reach)
         view.running = true
     }
 }
@@ -475,12 +517,14 @@ final class LightLoopView: LoopingView {
     required init?(coder: NSCoder) { fatalError("LightLoopView is made in code") }
     private var painted: ThemeRGB?
     private var glow = PhoneGlow(PhoneGlow.standard)
-    func paint(_ color: ThemeRGB, glow: PhoneGlow) {
+    private var reach: CGFloat = 1
+    func paint(_ color: ThemeRGB, glow: PhoneGlow, reach: CGFloat) {
         // A layer given its colours again, even the same ones, is drawn again; the view around it redraws far more often.
-        guard color != painted || glow != self.glow else { return }
-        let reaches = glow != self.glow
+        guard color != painted || glow != self.glow || reach != self.reach else { return }
+        let reaches = glow != self.glow || reach != self.reach
         painted = color
         self.glow = glow
+        self.reach = reach
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         dot.backgroundColor = color.uiColor(1).cgColor
@@ -498,7 +542,7 @@ final class LightLoopView: LoopingView {
         let side = min(bounds.width, bounds.height)
         dot.frame = CGRect(x: bounds.midX - side / 2, y: bounds.midY - side / 2, width: side, height: side)
         dot.cornerRadius = side / 2
-        let radius = Light.haloRadius(side, glow)
+        let radius = Light.haloRadius(side, glow, reach: reach)
         halo.frame = CGRect(x: bounds.midX - radius, y: bounds.midY - radius, width: radius * 2, height: radius * 2)
         halo.locations = [NSNumber(value: Double(side * 0.3 / radius)), NSNumber(value: 1.0)]
     }
@@ -906,7 +950,8 @@ extension View {
                     }
                 }
                 .padding(.top, -reach)
-                .ignoresSafeArea(edges: .bottom)
+                // Into the side safe areas too, so a dock that runs into the folded Duo's strip has its ground there.
+                .ignoresSafeArea(edges: [.bottom, .horizontal])
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
         }
@@ -967,15 +1012,23 @@ struct ComposerSurface<S: InsettableShape>: ViewModifier {
     @Environment(\.sottoTheme) private var theme
     @Environment(\.sottoGlass) private var glass
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.duoLayout) private var duo
     @ViewBuilder func body(content: Content) -> some View {
         if glass != nil, #available(iOS 26, *) {
             content.glassEffect(.regular.tint(theme.color(.surface).opacity(scheme == .dark ? 0.58 : 0.68)), in: shape)
         } else {
             content
                 // The room with a little of the ink over it, so the box is a shade off whatever the theme's room is.
-                .background { shape.fill(theme.tinted(.canvas, with: .ink, scheme == .dark ? 0.08 : 0.055)) }
+                .background { shape.fill(theme.tinted(.canvas, with: .ink, inkOver)) }
                 .softShadow(shape, color: Color.black.opacity(scheme == .dark ? 0.4 : 0.14), radius: 9, y: 4)
         }
+    }
+    /// How much of the ink is over the room. On the Duo in dark it is a step more, so the box stands off a table or card
+    /// running under it, where it had almost the table's fill; the conversation still runs under it, with no fade or
+    /// hairline (Zach's round 7 pick B, November 10, 2026).
+    private var inkOver: Double {
+        guard scheme == .dark else { return 0.055 }
+        return duo != .none ? 0.13 : 0.08
     }
 }
 
@@ -1238,7 +1291,7 @@ struct CardSurface: ViewModifier {
     @ViewBuilder private var glow: some View {
         switch tone {
         case .needsYou: GlowLayer(radius: radius, color: theme.rgb(.warning), alpha: 0.5, base: base, period: 6)
-        case .working: GlowLayer(radius: radius, color: theme.rgb(.accent), alpha: 0.5, base: base, period: 4.4)
+        case .working: GlowLayer(radius: radius, color: theme.rgb(.accent), alpha: 0.5, base: base, period: 4.4, working: true)
         case .answered: GlowLayer(radius: radius, color: theme.rgb(.accent), alpha: 0.6, base: base, period: nil)
         case .plain, .online: EmptyView()
         }
@@ -1327,8 +1380,12 @@ private struct GlowLayer: View {
     /// What the card's shape is filled with under the glow; nil leaves it clear.
     let base: ThemeRGB?
     let period: Double?
+    /// A Working card's glow, which reaches less far than a Needs you card's on the Duo (`CardGlowReach`).
+    var working = false
     @Environment(\.sottoGlow) private var glow
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.duoLayout) private var duo
+    @Environment(\.colorScheme) private var scheme
     var body: some View {
         Group {
             if !glow.shows {
@@ -1348,14 +1405,38 @@ private struct GlowLayer: View {
         .accessibilityHidden(true)
     }
     private var breathing: Bool { period != nil && !reduceMotion && !DebugFlags.still }
-    /// The glow's blur and how far it falls below the card: 18 and 10 at the standard glow.
-    private var blur: CGFloat { CGFloat(glow.radius(18)) }
-    private var drop: CGFloat { CGFloat(glow.radius(10)) }
+    private var blur: CGFloat { CardGlowReach.blur(glow, duo: duo, scheme: scheme, working: working) }
+    private var drop: CGFloat { CardGlowReach.drop(glow, duo: duo, scheme: scheme, working: working) }
     /// How bright the glow holds when it is not breathing.
     private var level: Double {
         if period == nil { return 1 }
         if reduceMotion { return 0.8 }
         return 0.55
+    }
+}
+
+/// How far a card's glow reaches, so what stands near a card can keep clear of it.
+enum CardGlowReach {
+    /// The glow's blur and how far it falls below the card: 18 and 10 at the standard glow. `working` is a Working card's.
+    static func blur(_ glow: PhoneGlow, duo: DuoLayout, scheme: ColorScheme, working: Bool = false) -> CGFloat {
+        CGFloat(glow.radius(18)) * reach(duo: duo, scheme: scheme, working: working)
+    }
+    static func drop(_ glow: PhoneGlow, duo: DuoLayout, scheme: ColorScheme, working: Bool = false) -> CGFloat {
+        CGFloat(glow.radius(10)) * reach(duo: duo, scheme: scheme, working: working)
+    }
+    /// How far below the card's bottom edge the glow shows: its drop, then its blur. Nothing at no glow.
+    static func below(_ glow: PhoneGlow, duo: DuoLayout, scheme: ColorScheme, working: Bool = false) -> CGFloat {
+        glow.shows ? drop(glow, duo: duo, scheme: scheme, working: working) + blur(glow, duo: duo, scheme: scheme, working: working) : 0
+    }
+    /// On the Duo in light, a glow reaches a sixth as far at the same strength, so it keeps its core and ends close to the
+    /// card's edge rather than washing across the gutters onto the next card; dark keeps the full reach. Round 4 took it
+    /// to a third (Zach's pick B, November 9, 2026) and round 6 tightened it again (his pick A, November 10, 2026).
+    /// Folded and sideways, a Working card's teal reaches half as far again, in dark and light, at the same strength, so
+    /// the Needs you cards' amber stands out and the teal halos no longer meet in the gutters (Zach's round 8 pick A,
+    /// November 10, 2026). Status lights keep their own glow.
+    private static func reach(duo: DuoLayout, scheme: ColorScheme, working: Bool) -> CGFloat {
+        let base: CGFloat = duo != .none && scheme == .light ? 1.0 / 6 : 1
+        return working && duo != .none && duo != .upright ? base / 2 : base
     }
 }
 
@@ -1674,10 +1755,12 @@ struct SectionHeading: View {
 /// A group's quiet heading, as on Settings.
 struct SectionLabel: View {
     let text: String
-    init(_ text: String) { self.text = text }
+    /// The room above it, which a page's first label can take in.
+    var top: CGFloat = Space.s7
+    init(_ text: String, top: CGFloat = Space.s7) { self.text = text; self.top = top }
     var body: some View {
         Text(text).font(.sotto(.small, .semibold)).foregroundStyle(Palette.muted)
-            .padding(.horizontal, Space.s1).padding(.top, Space.s7).padding(.bottom, Space.s2)
+            .padding(.horizontal, Space.s1).padding(.top, top).padding(.bottom, Space.s2)
             .accessibilityAddTraits(.isHeader)
     }
 }
@@ -1703,8 +1786,9 @@ private struct PressBody: View {
 }
 
 /// The capsule buttons. Primary is the one accent action on a surface; soft and ghost are the others; danger
-/// removes or stops something.
-enum PillKind { case primary, soft, ghost, danger }
+/// removes or stops something. Outline is soft's action as a ring on the surface's own fill, where a soft fill would
+/// read as a primary that can't be pressed yet.
+enum PillKind { case primary, soft, ghost, danger, outline }
 
 struct PillButtonStyle: ButtonStyle {
     var kind: PillKind = .soft
@@ -1724,6 +1808,13 @@ private struct PillBody: View {
     @Environment(\.isEnabled) private var enabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.sottoTheme) private var theme
+    @Environment(\.duoLayout) private var duo
+    /// On the Duo, a primary button that can't be pressed yet, such as Send answer before a choice, is the soft grey of
+    /// Not now with muted words, and turns the accent once it can be pressed. In light, pale teal behind a white label at
+    /// 42% could hardly be read (Zach's pick, November 9, 2026, round 4); in dark, the dimmed teal was still the most
+    /// coloured thing in view and looked pressable (Zach's round 7 pick A, November 10, 2026).
+    private var greyedPrimary: Bool { kind == .primary && !enabled && duo != .none }
+    private var drawn: PillKind { greyedPrimary ? .soft : kind }
     var body: some View {
         label
             .font(.sotto(compact ? .small : .body, .semibold))
@@ -1731,28 +1822,29 @@ private struct PillBody: View {
             .padding(.horizontal, compact ? Space.s3 : Space.s4)
             .padding(.vertical, Space.s2)
             .frame(maxWidth: wide ? .infinity : nil, minHeight: compact ? 40 : 44)
-            .foregroundStyle(foreground)
-            .modifier(PillGround(fill: fill, glass: kind == .soft))
+            .foregroundStyle(greyedPrimary ? Palette.muted : foreground)
+            .modifier(PillGround(fill: fill, glass: drawn == .soft))
+            .overlay { if drawn == .outline { Capsule().strokeBorder(Palette.ink.opacity(0.3), lineWidth: 1.5) } }
             .glow(Capsule(), color: theme.color(.accent), alpha: 0.4, radius: 10, y: 6, showing: kind == .primary && enabled)
             .contentShape(Capsule())
-            .opacity(enabled ? 1 : 0.42)
+            .opacity(enabled || greyedPrimary ? 1 : 0.42)
             .scaleEffect(pressed && !reduceMotion ? 0.972 : 1)
             .opacity(pressed && reduceMotion ? 0.7 : 1)
             .animation(.easeOut(duration: 0.16), value: pressed)
     }
     private var foreground: ThemeRole {
-        switch kind {
+        switch drawn {
         case .primary: return Palette.onAccent
-        case .soft: return Palette.ink
+        case .soft, .outline: return Palette.ink
         case .ghost: return Palette.accentText
         case .danger: return Palette.dangerText
         }
     }
     private var fill: ThemeRole {
-        switch kind {
+        switch drawn {
         case .primary: return Palette.accent
         case .soft: return Palette.fillSoft
-        case .ghost: return ThemeRole.clear
+        case .ghost, .outline: return ThemeRole.clear
         case .danger: return Palette.danger.opacity(Tint.dangerButton)
         }
     }
@@ -1809,8 +1901,10 @@ private struct ChoiceBody: View {
 /// A chip: a short choice in a capsule, glowing in the accent once chosen.
 struct ChipStyle: ButtonStyle {
     var selected = false
+    /// A narrower chip, so a row of them fits the Duo's cover screen.
+    var tight = false
     func makeBody(configuration: Configuration) -> some View {
-        ChipBody(label: configuration.label, pressed: configuration.isPressed, selected: selected)
+        ChipBody(label: configuration.label, pressed: configuration.isPressed, selected: selected, tight: tight)
     }
 }
 
@@ -1818,6 +1912,7 @@ private struct ChipBody: View {
     let label: ButtonStyleConfiguration.Label
     let pressed: Bool
     let selected: Bool
+    let tight: Bool
     @Environment(\.isEnabled) private var enabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.sottoTheme) private var theme
@@ -1825,7 +1920,7 @@ private struct ChipBody: View {
         label
             .font(.sotto(.small, .semibold))
             .lineLimit(2)
-            .padding(.horizontal, Space.s4)
+            .padding(.horizontal, tight ? Space.s3 : Space.s4)
             .padding(.vertical, Space.s2)
             .frame(minHeight: 44)
             .foregroundStyle(Palette.ink)
@@ -1844,24 +1939,29 @@ private struct ChipBody: View {
 
 /// The round glass button at the trailing edge of a page's heading, such as New thread.
 struct GlassCircleStyle: ButtonStyle {
+    /// On the iPhone Duo only New thread glows at rest; the other round buttons stand flat, so the strongest light on an
+    /// idle screen is what needs the user (Zach's pick C, November 8, 2026; ADR-0051, amended).
+    var flatOnDuo = false
     func makeBody(configuration: Configuration) -> some View {
-        GlassCircleBody(label: configuration.label, pressed: configuration.isPressed)
+        GlassCircleBody(label: configuration.label, pressed: configuration.isPressed, flatOnDuo: flatOnDuo)
     }
 }
 
 private struct GlassCircleBody: View {
     let label: ButtonStyleConfiguration.Label
     let pressed: Bool
+    let flatOnDuo: Bool
     @Environment(\.isEnabled) private var enabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.sottoTheme) private var theme
+    @Environment(\.duoLayout) private var duo
     var body: some View {
         label
             .font(.system(size: 20, weight: .semibold))
             .foregroundStyle(Palette.accentText)
             .frame(width: 44, height: 44)
             .modifier(CircleGround(ring: theme.color(.accent).opacity(0.28), tint: theme.color(.accent)))
-            .glow(Circle(), color: theme.color(.accent), alpha: 0.6, radius: 12, y: 6)
+            .glow(Circle(), color: theme.color(.accent), alpha: 0.6, radius: 12, y: 6, showing: !(flatOnDuo && duo != .none))
             .contentShape(Circle())
             .opacity(enabled ? 1 : 0.42)
             .scaleEffect(pressed && !reduceMotion ? 0.94 : 1)

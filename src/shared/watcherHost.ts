@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { agentRuntimeModeSchema, type AgentHostSnapshot, type AgentRuntimeMode } from './agents'
-import { watcherIdentitySchema, type WatcherIdentity, watcherOperationSchema, watcherRequestSchema, watcherToolSchemas, watcherEvidenceSchema, watcherThreadTargetSchema, watcherStandingWatchSchema } from './watcher'
+import { watcherIdentitySchema, type WatcherIdentity, watcherOperationSchema, watcherRequestSchema, watcherToolSchemas, watcherEvidenceSchema, watcherThreadTargetSchema, watcherStandingWatchSchema, type WatcherThreadTarget } from './watcher'
 import type { WatcherRoomState } from './watcherRoom'
 import type { HostMachineReport } from './hostFacts'
 import type { ProjectOrigins, ProjectSetupRequest, ProjectSetupResult } from './workerMachine'
@@ -38,15 +38,71 @@ export const watcherHostReadSchema = z.object({ master: watcherHostScopeSchema,
   // Sent only to a host that lists watcher-new-owner, on every read: before it answers, the host moves the requests an older
   // Watcher of the same desktop made there to this one (#1735).
   adopt: z.literal(true).optional() }).strict()
+/** How far one watched thread has got: its target and an opaque fingerprint from the shared progress classifier. */
+const watcherProgressEntrySchema = z.object({ target: watcherThreadTargetSchema, fingerprint: z.string().regex(/^[a-f0-9]{64}$/u) }).strict()
 export const watcherHostProjectionSchema = z.object({ hostId: z.uuid(), master: watcherHostScopeSchema,
   standingWatches: z.array(watcherStandingWatchSchema).optional(),
   revision: z.string().min(1).max(512), observedAt: z.string().datetime(),
   requests: z.array(watcherRequestSchema).max(1_000), operations: z.array(watcherOperationSchema).max(1_000),
   evidence: z.array(watcherEvidenceSchema).max(1_000),
-  progress: z.array(z.object({ target: watcherThreadTargetSchema, fingerprint: z.string().regex(/^[a-f0-9]{64}$/u) }).strict()).max(1_000).optional() }).strict()
+  progress: z.array(watcherProgressEntrySchema).max(1_000).optional() }).strict()
+/**
+ * A **progress push** (`watcher-progress`, ADR-0073's November 10, 2026 amendment): what a projection's `progress` gained,
+ * changed and lost since the projection last written to that connection, `baseRevision`, when nothing else in it moved.
+ * `revision` and `observedAt` are the new projection's. `changed` holds each entry that is new or carries another
+ * fingerprint, and `removed` the targets whose entries went. With `whole`, `changed` is the whole list in order instead.
+ */
+export const watcherHostProgressSchema = z.object({ baseRevision: z.string().min(1).max(512), revision: z.string().min(1).max(512),
+  observedAt: z.string().datetime(), changed: z.array(watcherProgressEntrySchema).max(1_000),
+  removed: z.array(watcherThreadTargetSchema).max(1_000).optional(), whole: z.literal(true).optional() }).strict()
 export type WatcherHostControl = z.infer<typeof watcherHostControlSchema>
 export type WatcherHostRead = z.infer<typeof watcherHostReadSchema>
 export type WatcherHostProjection = z.infer<typeof watcherHostProjectionSchema>
+export type WatcherHostProgress = z.infer<typeof watcherHostProgressSchema>
+type WatcherProgressEntry = z.infer<typeof watcherProgressEntrySchema>
+type WatcherProgressChange = Pick<WatcherHostProgress, 'changed' | 'removed' | 'whole'>
+
+/** A target as one string. A host ID is a UUID, so the separator cannot occur in it. */
+const progressKey = (target: WatcherThreadTarget): string => `${target.hostId}\u0000${target.threadId}`
+/**
+ * A progress list with a progress push's changes put in: an entry `changed` names takes the place of the one for its
+ * target, one for a target the list did not hold goes last, and a target `removed` names goes. `whole` replaces the list.
+ */
+function progressWith(held: readonly WatcherProgressEntry[], change: WatcherProgressChange): WatcherProgressEntry[] {
+  if (change.whole) return [...change.changed]
+  const gone = new Set((change.removed ?? []).map(progressKey))
+  const changed = new Map(change.changed.map(entry => [progressKey(entry.target), entry] as const))
+  const result: WatcherProgressEntry[] = [], placed = new Set<string>()
+  for (const entry of held) {
+    const key = progressKey(entry.target), next = changed.get(key)
+    if (gone.has(key)) continue
+    result.push(next ?? entry)
+    if (next) placed.add(key)
+  }
+  for (const [key, entry] of changed) if (!placed.has(key)) result.push(entry)
+  return result
+}
+/**
+ * What a host's progress push carries to take a connection from the progress list it was last written, `held`, to
+ * `next`. When putting those changes in would not give `next` in its order, as when a new watched thread sits above
+ * older ones, it carries the whole list.
+ */
+export function watcherProgressChange(held: readonly WatcherProgressEntry[], next: readonly WatcherProgressEntry[]): WatcherProgressChange {
+  const was = new Map(held.map(entry => [progressKey(entry.target), entry.fingerprint] as const))
+  const now = new Set(next.map(entry => progressKey(entry.target)))
+  const removed = held.filter(entry => !now.has(progressKey(entry.target))).map(entry => entry.target)
+  const change: WatcherProgressChange = { changed: next.filter(entry => was.get(progressKey(entry.target)) !== entry.fingerprint), ...removed.length ? { removed } : {} }
+  const rebuilt = progressWith(held, change)
+  const same = rebuilt.length === next.length && rebuilt.every((entry, index) => progressKey(entry.target) === progressKey(next[index]!.target) && entry.fingerprint === next[index]!.fingerprint)
+  return same ? change : { changed: [...next], whole: true }
+}
+/**
+ * The projection a desktop holds with a progress push put in: its record part, evidence and standing watches as they
+ * were, and the push's progress, revision and time. The caller checks that it holds the push's `baseRevision` first.
+ */
+export function withWatcherProgress(projection: WatcherHostProjection, push: WatcherHostProgress): WatcherHostProjection {
+  return { ...projection, revision: push.revision, observedAt: push.observedAt, progress: progressWith(projection.progress ?? [], push) }
+}
 
 /** Main-only routing seam. All IDs are owning-host IDs, never client UI keys. */
 export type WatcherRoomThreadInput = Pick<WatcherRoomState['watchedThreads'][number],

@@ -9,7 +9,7 @@ import { open } from 'node:fs/promises'
 import { request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
 import type { z } from 'zod'
-import { watcherHostProjectionSchema, type WatcherHostControl, type WatcherHostRead, type WatcherHostProjection, type WatcherRoomThreadInput } from '../../shared/watcherHost'
+import { watcherHostProjectionSchema, withWatcherProgress, type WatcherHostControl, type WatcherHostRead, type WatcherHostProjection, type WatcherRoomThreadInput } from '../../shared/watcherHost'
 import { watcherRoomInputs } from './watcherRoomInput'
 import { type WatcherIdentity, watcherResultFromHostV1, watcherToolSchemas } from '../../shared/watcher'
 import { DEFLATE_OFFER, deflateAccepted, SocketFrames } from '../../host/socketFrames'
@@ -179,6 +179,8 @@ export interface SocketHostServiceOptions {
 const LOOPBACK: ReadonlySet<string> = new Set(['127.0.0.1', '[::1]', 'localhost'])
 /** An `afterSeq` past any sequence a host can reach: the host has no event after it, so it sends none. */
 const NO_EVENTS_AFTER = Number.MAX_SAFE_INTEGER
+/** A scope read's projection, read and kept as its answer arrived (`keepProjection`), so its caller does not read it twice. */
+class KeptProjection { constructor(readonly projection: WatcherHostProjection) {} }
 /** One field of a frame not yet read, or undefined when it is not an object. */
 const field = (value: unknown, key: string): unknown => value !== null && typeof value === 'object' ? (value as Record<string, unknown>)[key] : undefined
 /**
@@ -237,11 +239,16 @@ export class SocketHostService implements HostService {
   /** The revision each raw shell `restoreCatalog` restored named, by its `host`, so its first reading can be kept. */
   private readonly namedCatalogs = new WeakMap<object, number>()
   private cachedWatcher: WatcherHostProjection | undefined
+  /**
+   * The scope reads whose answers are kept as they arrive, beside the pushes around them, for a host that lists
+   * `watcher-progress`: it measures its next progress push from the projection such an answer carried.
+   */
+  private readonly projectionReads = new Set<string>()
   /** Native ownership is immutable; an omitted later shell must not reopen a held thread. */
   private readonly dormantProviderThreads = new Map<string, DormantProviderThread>()
   /** The providers held to Owl on this run, read once at start. */
   private readonly held: HeldProviders
-  private readonly watcherListeners = new Set<(projection: WatcherHostProjection) => void>()
+  private readonly watcherListeners = new Set<(projection: WatcherHostProjection | undefined) => void>()
   private readonly delegationListeners = new Set<(change: DelegationViewsChange) => void>()
   /** The host's check queue as it last pushed it (#1312), on this connection only; undefined before a push and once it closes. */
   private checks: readonly CheckQueueEntry[] | undefined
@@ -416,7 +423,7 @@ export class SocketHostService implements HostService {
       // held on this run is hidden here as on this computer, by the held gate.
       // This connection holds no shell push's thread records yet, so the host's first push lists every one (#996).
       this.pushedThreads = createThreadReassembly()
-      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'host-update', 'activity-bodies', 'changed-thread-records', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads', 'watcher-tell', 'watcher-ready'] : [], ...this.options.crossMachineEnabled === true ? ['delegation-views', 'check-queue-views'] : [], ...this.options.pairedHostBrowser === true ? ['browser'] : [], ...this.options.nextPromptsWanted ? ['next-prompts'] : [], ...this.options.productEventAnswer ? ['product-events'] : [], ...this.relays ? ['delegation-relay', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts'] : []] as const).filter(feature => health.features.includes(feature))
+      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'host-update', 'activity-bodies', 'changed-thread-records', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads', 'watcher-tell', 'watcher-ready', 'watcher-progress'] : [], ...this.options.crossMachineEnabled === true ? ['delegation-views', 'check-queue-views'] : [], ...this.options.pairedHostBrowser === true ? ['browser'] : [], ...this.options.nextPromptsWanted ? ['next-prompts'] : [], ...this.options.productEventAnswer ? ['product-events'] : [], ...this.relays ? ['delegation-relay', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts'] : []] as const).filter(feature => health.features.includes(feature))
       const accepts = { accepts: [...accepted] }
       const hello = this.read(hostHelloSchema, await this.call({ op: 'hello', afterSeq: this.catchesUp ? this.latestSeq : NO_EVENTS_AFTER, ...accepts }))
       if (hello.hostId !== session.hostId) throw new HostConnectionError(CONNECT_FAILURES.identityChangedConnect(), 'unauthenticated')
@@ -515,6 +522,17 @@ export class SocketHostService implements HostService {
             this.notifyState()
           }
         }
+        // Pushed only to a desktop whose hello accepted `watcher-progress`: the projection held, with its progress moved on.
+        // One measured from a projection this connection does not hold is let go, so Watcher reads the projection again.
+        else if (message.event === 'watcher-progress') {
+          if (this.options.watcherEnabled === true && this.supportsWatcherProgress && this.cached) {
+            const held = this.cachedWatcher
+            const projection = held?.revision === message.progress.baseRevision ? withWatcherProgress(held, message.progress) : undefined
+            this.cachedWatcher = projection
+            for (const listener of this.watcherListeners) listener(projection)
+            this.notifyState()
+          }
+        }
         else if (message.event === 'detail') this.cacheDetail(message.threadId, message.detail)
         else if (message.event === 'detail-delta') this.applyDelta(message.threadId, message.delta)
         // Sent only to a client whose hello accepts `host-update` (ADR-0088), for the update step it asked for.
@@ -558,7 +576,7 @@ export class SocketHostService implements HostService {
         const pending = this.pending.get(message.id)
         if (!pending) { this.lateDetail(message); return }
         this.pending.delete(message.id); clearTimeout(pending.timer)
-        if (message.ok) pending.resolve(message.result)
+        if (message.ok) pending.resolve(this.projectionReads.delete(message.id) ? this.keepProjection(message.result) : message.result)
         // A host of another version refusing a request as unreadable is version skew, not a bad request.
         else if (message.error.code === 'invalid_request' && this.skewed()) pending.reject(new HostConnectionError(this.mismatchWords(), 'version_mismatch', pending.command ? message.id : undefined))
         else pending.reject(new HostConnectionError(message.error.message, message.error.code, pending.command ? message.id : undefined))
@@ -923,6 +941,8 @@ export class SocketHostService implements HostService {
   get supportsAtomicSend(): boolean { return this.features.includes('atomic-send') }
   get supportsWatcherControl(): boolean { return this.options.watcherEnabled === true && this.features.includes('watcher-control') }
   get supportsWatcherReads(): boolean { return this.options.watcherEnabled === true && this.features.includes('watcher-reads') }
+  /** The host sends Watcher's progress apart from its projection (`watcher-progress`, ADR-0073's November 10, 2026 amendment). */
+  get supportsWatcherProgress(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-progress') }
   get supportsWatcherStandingWatch(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-standing-watch') }
   get supportsWatcherWorkSettled(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-work-settled') }
   get supportsWatcherOutcomes(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-outcomes') }
@@ -944,7 +964,7 @@ export class SocketHostService implements HostService {
     guard?.()
     return watcherToolSchemas[request.call.name].output.parse(watcherResultFromHostV1(await this.call({ op: 'watcher-control', request })))
   }
-  subscribeWatcher(listener: (projection: WatcherHostProjection) => void): () => void { this.watcherListeners.add(listener); return () => this.watcherListeners.delete(listener) }
+  subscribeWatcher(listener: (projection: WatcherHostProjection | undefined) => void): () => void { this.watcherListeners.add(listener); return () => this.watcherListeners.delete(listener) }
   cachedWatcherProjection(master: WatcherIdentity): WatcherHostProjection | undefined {
     const projection = this.cachedWatcher
     return this.options.watcherEnabled === true && projection && projection.hostId === this.cached?.host.hostId
@@ -956,10 +976,35 @@ export class SocketHostService implements HostService {
     if (request.adopt !== undefined && !this.supportsWatcherNewOwner) throw new HostConnectionError(t`Update this host before a new Watcher takes over its threads. Nothing was changed.`, 'invalid_request')
     const held = this.heldWatcherProvider(request)
     if (held) return heldWatcherRefusal(held)
-    const result = await this.call({ op: 'watcher-read', request })
-    if (request.call) return watcherToolSchemas[request.call.name].output.parse(watcherResultFromHostV1(result))
-    this.cachedWatcher = watcherHostProjectionSchema.parse(result)
-    return this.cachedWatcher
+    if (request.call) return watcherToolSchemas[request.call.name].output.parse(watcherResultFromHostV1(await this.call({ op: 'watcher-read', request })))
+    const id = randomUUID()
+    if (this.supportsWatcherProgress) this.projectionReads.add(id)
+    try {
+      const result = await this.call({ op: 'watcher-read', request }, id)
+      if (result instanceof KeptProjection) return result.projection
+      this.cachedWatcher = watcherHostProjectionSchema.parse(result)
+      return this.cachedWatcher
+    } finally { this.projectionReads.delete(id) }
+  }
+  /**
+   * Keeps the projection a scope read answered with as its answer arrives, before any push read after it, so what this
+   * connection holds is what the host measures its next progress push from (`watcher-progress`), and tells Watcher of it
+   * when it is not the projection held. An answer that is not a projection is handed on as it came, for the caller to
+   * refuse.
+   */
+  private keepProjection(result: unknown): unknown {
+    const read = watcherHostProjectionSchema.safeParse(result)
+    if (!read.success) return result
+    const moved = this.cachedWatcher?.revision !== read.data.revision
+    this.cachedWatcher = read.data
+    // The host counts this answer as written, so it pushes this projection to nobody. A read that brings a projection
+    // this connection did not hold tells Watcher here, as that push would have: a receipt, an ownership change or new
+    // evidence in it must not wait for the next push.
+    if (moved && this.options.watcherEnabled === true && this.cached) {
+      for (const listener of this.watcherListeners) listener(read.data)
+      this.notifyState()
+    }
+    return new KeptProjection(read.data)
   }
   get supportsDraftRevisions(): boolean { return this.features.includes('draft-revisions') }
   /** The host lists `pull-request-babysit`: it babysits and takes the user's Babysit pull request (ADR-0061 decision 11). */

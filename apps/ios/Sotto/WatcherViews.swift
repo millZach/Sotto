@@ -39,7 +39,7 @@ struct WatcherView: View {
             .onDisappear { model.watcherOnScreen = false }
             // Another computer's Watcher opens on its own conversation, with nothing of this one's open over it.
             .onChange(of: hostID) { _, _ in stopPreview = nil; reviewing = nil }
-            .sheet(item: $reviewing) { card in
+            .duoSheet(item: $reviewing, wash: true) { card in
                 RequestSheet(place: card.place, request: card.request).requestSheetDetents()
             }
             // Stop Watcher’s threads asks in the middle of the screen, with Cancel beside Stop, as the design draws it. iOS 26
@@ -466,6 +466,7 @@ private struct WatcherConversationPane: View {
     @EnvironmentObject var model: AppModel
     /// Watched for Watcher's page, which publishes on its own store, not on the model.
     @EnvironmentObject var watcherStore: WatcherStore
+    @Environment(\.duoLayout) private var duo
     let hostID: String
     /// Presses on the Watcher tab while Watcher shows: each one scrolls the page to its top, to Watcher's hero.
     let toTop: Int
@@ -474,6 +475,8 @@ private struct WatcherConversationPane: View {
     let review: (ReviewedCard) -> Void
     @Environment(\.sottoDensity) private var density
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.sottoGlow) private var glow
+    @Environment(\.colorScheme) private var scheme
     @State private var follow = WatcherFollow()
     /// The height between the status bar and the box, so a short conversation sits at the bottom with the hero still at
     /// the top.
@@ -556,6 +559,7 @@ private struct WatcherConversationPane: View {
                             }
                             .accessibilityElement(children: .combine)
                             .accessibilityIdentifier("watcher-working")
+                            .padding(.top, workingClearance(under: page))
                         }
                         // What goes next, after Watcher's turn: a quiet line for each of the user's follow-ups (#1229, pick B).
                         ForEach(page?.followups ?? []) { item in
@@ -635,6 +639,14 @@ private struct WatcherConversationPane: View {
         // Where the page meets the status bar, its own ground fades in once it moves, as on a tab's page: no band.
         .overlay(alignment: .top) { TopFadeView(fade: topFade) }
         .fullScreenCover(item: $viewing) { PhotoViewer(opened: $0, box: .watcher(hostID: hostID)) }
+    }
+
+    /// Folded or sideways, the working line under a card waiting on the user starts where the card's glow ends, so the
+    /// amber halo never browns its teal (the Duo design climb's round 8). The page's own gap counts toward it; elsewhere,
+    /// and with no card above it, the line keeps the page's gap.
+    private func workingClearance(under page: WatcherPage?) -> CGFloat {
+        guard duo != .none, duo != .upright, page?.needsYou.isEmpty == false else { return 0 }
+        return max(0, CardGlowReach.below(glow, duo: duo, scheme: scheme) - Space.dense(Space.s5, density))
     }
 
     /// Scrolls to the hero at the page's top. The reader is reading there now, so Watcher's new words leave them there;
@@ -745,10 +757,14 @@ private struct WatcherConversationPane: View {
         box.followRequests += 1
         let request = box.followRequests
         let still = reduceMotion
+        // On the Duo folded, a card waiting on the user and the working line under it end above the box whenever they fit
+        // whole, even with less than `slack` of the newest words left showing above them (`WatcherReaderPlace.followAim`).
+        let folded: Bool = { if case .folded = duo { return true } else { return false } }()
         // Decided from where everything sits when it scrolls, so each look aims afresh. Before the box has been measured,
         // the page's end goes to the box.
         func aim() -> (target: String, anchor: UnitPoint) {
-            guard let found = WatcherReaderPlace.followAim(newest: words ? box.lastWords ?? box.newest : nil, end: box.end, top: box.top, dockTop: box.dockTop) else {
+            guard let found = WatcherReaderPlace.followAim(newest: words ? box.lastWords ?? box.newest : nil, end: box.end, top: box.top,
+                                                           dockTop: box.dockTop, wordsShown: folded ? 0 : WatcherReaderPlace.slack) else {
                 return (Self.end, .bottom)
             }
             return (found.mark == .newest ? Self.newestEnd : Self.end, UnitPoint(x: 0.5, y: found.y))
@@ -809,23 +825,44 @@ private struct WatcherConversationPane: View {
     @ViewBuilder private func cards(_ page: WatcherPage) -> some View {
         let workers = page.needsYou.filter { !page.isOwn($0) }
         let own = page.needsYou.filter { page.isOwn($0) }
+        let named = namedJustAbove(page, workers.first)
         ForEach(workers, id: \.key) { card in
             waiting(card.key) {
                 VStack(alignment: .leading, spacing: Space.s2) {
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        WatcherOwlMark(size: 12).foregroundStyle(Palette.muted).accessibilityHidden(true)
-                        Text("The thread’s own card. Your answer goes to \(card.title), not to Watcher.", comment: "%@ is a thread's title")
-                            .font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
-                            .paragraphDirection()
+                    // On the Duo the line saying where an answer goes shows only while this iPhone can answer; when it
+                    // can't, the card says where to answer and nothing above it repeats that (Zach's pick B,
+                    // November 9, 2026).
+                    if duo == .none || answerableHere(card) {
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            WatcherOwlMark(size: 12).foregroundStyle(Palette.muted).accessibilityHidden(true)
+                            Text("The thread’s own card. Your answer goes to \(card.title), not to Watcher.", comment: "%@ is a thread's title")
+                                .font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+                                .paragraphDirection()
+                        }
+                        .accessibilityElement(children: .combine)
                     }
-                    .accessibilityElement(children: .combine)
-                    WatcherRequestCard(hostID: hostID, card: card, own: false, review: review)
+                    WatcherRequestCard(hostID: hostID, card: card, own: false, review: review, startsAtQuestion: card.key == named)
                 }
             }
         }
         ForEach(own, id: \.key) { card in
             waiting(card.key) { WatcherRequestCard(hostID: hostID, card: card, own: true, review: review) }
         }
+    }
+    /// The worker's card whose thread Watcher's words just above it name, so the card need not name it again: on the Duo,
+    /// a question card straight after Watcher's last message, with nothing set aside or being sent between (Zach's pick A,
+    /// November 9, 2026, round 4).
+    private func namedJustAbove(_ page: WatcherPage, _ first: WatcherPage.RequestCard?) -> String? {
+        guard duo != .none, let first, first.request.kind != "permission", model.watcherSending[hostID] == nil,
+              (model.watcherSetAside[hostID] ?? []).isEmpty,
+              let last = page.conversation.messages.last, last.role != "user",
+              DuoWords.names(last.text, title: first.title) else { return nil }
+        return first.key
+    }
+    /// Whether this iPhone can answer a worker's card where it is now.
+    private func answerableHere(_ card: WatcherPage.RequestCard) -> Bool {
+        guard case .answer(let place, let current) = model.watcherCardRoute(card, on: hostID) else { return false }
+        return current.supported && model.mayAnswer(at: place)
     }
     /// A card waiting on the user, where the page can scroll to it and say where it sits, so a reader can be held on it.
     private func waiting<Card: View>(_ key: String, @ViewBuilder _ card: () -> Card) -> some View {
@@ -1218,6 +1255,10 @@ private struct WatcherRequestCard: View {
     let card: WatcherPage.RequestCard
     let own: Bool
     let review: (ReviewedCard) -> Void
+    /// Watcher's words just above name the thread, so the card starts at the question, with the thread's marks beside
+    /// its tag; VoiceOver still reads the thread's name and where it runs.
+    var startsAtQuestion = false
+    @Environment(\.duoLayout) private var duo
     @State private var picked: String?
     @State private var answered = 0
 
@@ -1276,9 +1317,15 @@ private struct WatcherRequestCard: View {
             HStack(spacing: Space.s2) {
                 Light(tone: .warning)
                 Text(tag).font(.sotto(.caption, .semibold)).foregroundStyle(Palette.warningText)
+                if startsAtQuestion {
+                    Text(verbatim: "·").font(.sotto(.caption)).foregroundStyle(Palette.muted)
+                    ProviderMarks(providerID: card.provider, watched: model.watchedByWatcher(card.target.ref))
+                        .font(.sotto(.small)).foregroundStyle(Palette.muted)
+                }
                 Spacer(minLength: 0)
             }
             .frame(minHeight: 18)
+            if !startsAtQuestion {
             Group {
                 if own {
                     HStack(spacing: Space.s2) {
@@ -1294,10 +1341,11 @@ private struct WatcherRequestCard: View {
             .padding(.top, Space.s2)
             PlaceLine(providerID: card.provider, watched: !own && model.watchedByWatcher(card.target.ref), text: whereItRuns)
                 .padding(.top, Space.s1)
+            }
             Text(verbatim: ask).font(.sotto(.body)).foregroundStyle(Palette.ink).lineLimit(4)
                 .fixedSize(horizontal: false, vertical: true)
                 .paragraphDirection()
-                .padding(.top, Space.s3)
+                .padding(.top, startsAtQuestion ? Space.s2 : Space.s3)
             if let command = request.context?.command, !command.isEmpty {
                 Text(command).font(.mono).foregroundStyle(Palette.codeInk).lineLimit(3)
                     .padding(.horizontal, Space.s3).padding(.vertical, Space.s2)
@@ -1320,6 +1368,7 @@ private struct WatcherRequestCard: View {
         .padding(.bottom, Space.s2)
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
+        .modifier(SpokenWhenTrimmed(trimmed: startsAtQuestion, words: "\(tag), \(card.title), \(whereItRuns), \(ask)"))
         .accessibilityIdentifier(own ? "watcher-own-card" : "watcher-card-\(card.target.threadId)")
     }
 
@@ -1355,7 +1404,22 @@ private struct WatcherRequestCard: View {
             if !current.supported {
                 note(String(localized: "Answer this one in Sotto on \(model.name(place.hostID)).", comment: "%@ is the computer's name"), reviews: false)
             } else if !model.mayAnswer(at: place) {
-                note(String(localized: "This iPhone can’t answer on \(model.name(place.hostID)) yet.", comment: "%@ is the computer's name"), reviews: true)
+                if duo != .none {
+                    // On the Duo it says where to answer, with Review on a row of its own, as the overview's cards do
+                    // (Zach's pick B, November 9, 2026).
+                    VStack(alignment: .leading, spacing: Space.s1) {
+                        Text(String(localized: "Answer it on \(model.name(place.hostID)).", comment: "On a question card when this iPhone can't answer on the thread's computer. %@ is the computer's name."))
+                            .font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+                            .paragraphDirection()
+                        Button(reviewWords, action: openReview)
+                            .buttonStyle(PillButtonStyle(kind: .ghost, compact: true))
+                            .accessibilityIdentifier("watcher-card-review")
+                            .padding(.leading, -Space.s3)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    note(String(localized: "This iPhone can’t answer on \(model.name(place.hostID)) yet.", comment: "%@ is the computer's name"), reviews: true)
+                }
             } else if !card.connected {
                 let elsewhere = model.computerName(card.target.hostId) ?? computer
                 note(String(localized: "\(AgentNames.name(card.provider)) isn’t connected on \(elsewhere). Answer once it’s back.",
@@ -2000,5 +2064,14 @@ struct WatchToast: View {
             }
         }
         .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.45, dampingFraction: 0.85), value: model.watchNotice)
+    }
+}
+
+/// A card that shows less than it says: VoiceOver reads the whole of it, its thread's name and where it runs included.
+private struct SpokenWhenTrimmed: ViewModifier {
+    let trimmed: Bool
+    let words: String
+    @ViewBuilder func body(content: Content) -> some View {
+        if trimmed { content.accessibilityLabel(Text(verbatim: words)) } else { content }
     }
 }

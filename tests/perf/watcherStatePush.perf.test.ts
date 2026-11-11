@@ -21,9 +21,8 @@ import { deflateRawSync, inflateRawSync, constants as zlib } from 'node:zlib'
 import { it } from 'vitest'
 import { hostPushSchema } from '../../src/shared/hostProtocol'
 import type { WatcherOperation, WatcherRecord, WatcherRequest } from '../../src/shared/watcher'
-import { addWatcherHistory } from '../fixtures/ownerScale'
+import { pairedDesktopWatcherWork } from '../fixtures/ownerScale'
 import { PERF_BENCH, median, round } from '../fixtures/perfBench'
-import { watcherRecordFixture } from '../fixtures/watcher'
 
 const RECORD = process.env.SOTTO_AUDIT_WATCHER_RECORD
 const ROUNDS = 15
@@ -33,14 +32,10 @@ const OUTCOME_FIELDS: readonly string[] = ['outcome', 'outcomeAt', 'turnMessageI
 
 /** Requests and operations as a host holds them for one paired desktop's Watcher: `count` of each, every request closed. */
 function fixtureWork(count: number): { requests: WatcherRequest[]; operations: WatcherOperation[] } {
-  const record = watcherRecordFixture(), hostId = randomUUID(), desktop = randomUUID()
+  const hostId = randomUUID(), desktop = randomUUID()
   const master = { target: { hostId: desktop, threadId: randomUUID() }, projectId: randomUUID(), provider: 'codex' as const, creationOperationId: randomUUID(), createdAt: AT }
   const targets = Array.from({ length: 40 }, () => ({ hostId, threadId: randomUUID() }))
-  record.requests = []; record.operations = []
-  addWatcherHistory(record, targets, { requests: count, operations: count }, master.target)
-  // Every request on a paired host came from a desktop's Watcher, and says which.
-  for (const request of record.requests) request.remoteOrigin = { clientId: randomUUID(), master, creationOperationId: master.creationOperationId, ceiling: 'approval-required' }
-  return { requests: record.requests, operations: record.operations }
+  return pairedDesktopWatcherWork(targets, { requests: count, operations: count }, { clientId: randomUUID(), master })
 }
 function recordedWork(path: string): { requests: WatcherRequest[]; operations: WatcherOperation[] } {
   const saved = JSON.parse(readFileSync(path, 'utf8')) as { watcher?: WatcherRecord } & Partial<WatcherRecord>
