@@ -33,6 +33,8 @@ private enum FrameEnvelope: Decodable {
             case "shell":
                 var shell = try c.decode(Shell.self, forKey: .state)
                 shell.threadRecords = try c.decodeIfPresent(ChangedThreadRecords.self, forKey: .threads)
+                // What it named of its parts, which the connection puts back from the push before (`KeptPartsCache`).
+                shell.keptParts = try c.decode(ShellPartNames.self, forKey: .state).names
                 self = .frame(.shell(shell))
             case "detail": self = .frame(.detail(threadID: try c.decode(String.self, forKey: .threadId), value: try c.decode(Optional<ThreadDetail>.self, forKey: .detail)))
             case "detail-delta": self = .frame(.delta(threadID: try c.decode(String.self, forKey: .threadId), value: try c.decode(ThreadDetailDelta.self, forKey: .delta)))
@@ -78,11 +80,13 @@ public extension Wire {
     /// that nothing names, which no menu here offers. `command-changed-thread-records` has a command's answer carry only
     /// the thread records that changed, which the connection puts back against what it held at that place in the socket
     /// (ADR-0028's November 2 amendment). `step-window` has each thread's detail start at the message before its newest
-    /// 200 steps, where a thread of a few long turns once sent every step it held (ADR-0194).
+    /// 200 steps, where a thread of a few long turns once sent every step it held (ADR-0194). `kept-parts` has a shell push
+    /// leave out each part that holds what the push before it held, such as the deliveries and the projects, which the
+    /// connection puts back from that push (`KeptPartsCache`, ADR-0028's November 10 amendment).
     static let snapshotHello: [String: JSONValue] = ["op": .string("hello"), "afterSeq": .number(9_007_199_254_740_991),
         "accepts": .array([.string("detail-delta"), .string("client-liveness"), .string("activity-summaries"), .string("model-catalog-revision"), .string("provider-opencode"), .string("provider-cursor"), .string("provider-deepseek"), .string("changed-thread-records"),
                     .string("reply-thread-records"), .string("provider-mode-lists"), .string("settled-threads-on-request"), .string("usable-models"), .string("command-changed-thread-records"),
-                    .string(StepWindow.feature)])]
+                    .string(StepWindow.feature), .string("kept-parts")])]
 
     // Nonisolated async functions run on the generic executor in this package's Swift 5 mode.
     // Awaiting each frame before receiving the next keeps pushes and replies in socket order.

@@ -30,6 +30,7 @@ import type { AgentModel, AgentThread, ProviderId } from '../../shared/agents'
 import { immutableModels } from './activitySnapshots'
 import { CONNECT_FAILURES, WordedError, type FailureWords } from '../hosts/hostFailureWords'
 import { createThreadReassembly, type ThreadReassembly } from '../../shared/threadReassembly'
+import { withKeptPartsPutBack, type HeldParts } from '../../shared/keptParts'
 import { commandFromProtocolV1, protocolAgentCommandSchema, protocolAgentStateSchema, managementCommandRefusal, LEGACY_MANAGEMENT_ALLOWED_COMMANDS, LEGACY_MANAGEMENT_UPDATE, hostAttachmentContentSchema, hostIsNewer, hostIsOlder, hostHealthFeatures, hostPairingSchema, hostSessionSchema, hostHelloSchema, hostEventPageSchema, hostResponseSchema, hostPushSchema, hostReceiptSchema, hostStartHandoverSchema, hostActivityBodySchema, hostThreadPromptsSchema, PROVIDER_HOST_FEATURES, HOST_FILE_PART_BYTES } from '../../shared/hostProtocol'
 import type { AgentActivity } from '../../shared/agentActivity'
 import { hostBrowserResultSchemas, type HostBrowserFrame, type HostBrowserMethod, type HostBrowserRequest, type HostBrowserResult } from '../../shared/hostBrowser'
@@ -236,6 +237,11 @@ export class SocketHostService implements HostService {
   private readonly readCatalogs = new WeakMap<object, AgentModel[]>()
   /** The thread records this connection's shell pushes carried, which each push's changed records are put back on (#996). */
   private pushedThreads: ThreadReassembly = createThreadReassembly()
+  /**
+   * The parts of the shell push this connection applied last, as it crossed with its kept parts put back, under its thread
+   * records' revision: what a later push's kept parts go back from (`kept-parts`, ADR-0028, November 10 amendment).
+   */
+  private pushedParts: HeldParts | null = null
   /** The revision each raw shell `restoreCatalog` restored named, by its `host`, so its first reading can be kept. */
   private readonly namedCatalogs = new WeakMap<object, number>()
   private cachedWatcher: WatcherHostProjection | undefined
@@ -422,8 +428,9 @@ export class SocketHostService implements HostService {
       // This desktop knows every provider Sotto has, OpenCode among them, so it accepts each one's feature (#1107); a provider
       // held on this run is hidden here as on this computer, by the held gate.
       // This connection holds no shell push's thread records yet, so the host's first push lists every one (#996).
-      this.pushedThreads = createThreadReassembly()
-      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'host-update', 'activity-bodies', 'changed-thread-records', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads', 'watcher-tell', 'watcher-ready', 'watcher-progress'] : [], ...this.options.crossMachineEnabled === true ? ['delegation-views', 'check-queue-views'] : [], ...this.options.pairedHostBrowser === true ? ['browser'] : [], ...this.options.nextPromptsWanted ? ['next-prompts'] : [], ...this.options.productEventAnswer ? ['product-events'] : [], ...this.relays ? ['delegation-relay', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts'] : []] as const).filter(feature => health.features.includes(feature))
+      // Nor any push's parts, so its first push keeps none (ADR-0028, November 10 amendment).
+      this.pushedThreads = createThreadReassembly(); this.pushedParts = null
+      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'host-update', 'activity-bodies', 'changed-thread-records', 'kept-parts', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads', 'watcher-tell', 'watcher-ready', 'watcher-progress'] : [], ...this.options.crossMachineEnabled === true ? ['delegation-views', 'check-queue-views'] : [], ...this.options.pairedHostBrowser === true ? ['browser'] : [], ...this.options.nextPromptsWanted ? ['next-prompts'] : [], ...this.options.productEventAnswer ? ['product-events'] : [], ...this.relays ? ['delegation-relay', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts'] : []] as const).filter(feature => health.features.includes(feature))
       const accepts = { accepts: [...accepted] }
       const hello = this.read(hostHelloSchema, await this.call({ op: 'hello', afterSeq: this.catchesUp ? this.latestSeq : NO_EVENTS_AFTER, ...accepts }))
       if (hello.hostId !== session.hostId) throw new HostConnectionError(CONNECT_FAILURES.identityChangedConnect(), 'unauthenticated')
@@ -485,6 +492,11 @@ export class SocketHostService implements HostService {
   private receive(text: string): void {
     let raw: unknown
     try { raw = JSON.parse(text) } catch { this.frames?.close(); return }
+    // A shell push's kept parts go back first, from the push this connection applied last, so every reading below meets the
+    // whole shell. One measured from another push, or naming a part that push did not have, should not happen: the shell is
+    // read whole, and the host's next push keeps nothing (ADR-0028, November 10 amendment).
+    const pushed = field(raw, 'event') === 'shell' ? this.withPushedParts(raw as Record<string, unknown>) : null
+    if (pushed === undefined) { void this.readShell().catch(() => this.frames?.close()); return }
     // Before any reading, so a catalog carried whole by an answer that arrives too late is still remembered.
     // A shell naming a catalog this connection does not hold cannot be shown, so the connection starts again, and its
     // hello carries the catalog whole (ADR-0028, October 16 amendment).
@@ -512,6 +524,8 @@ export class SocketHostService implements HostService {
             if (threads === undefined) { void this.readShell().catch(() => this.frames?.close()); return }
             state.host.threads = threads
           }
+          // Its parts, whole, go with the thread records it applied: a later push's kept parts are put back from them.
+          this.pushedParts = message.threads !== undefined && pushed ? { revision: message.threads.revision, top: pushed, host: pushed.host as Record<string, unknown> } : null
           this.publish(state, true)
         }
         else if (message.event === 'answer-receipt') { if (this.cacheAcceptedAnswer(message.acceptedAnswer) && this.cached) this.notifyState() }
@@ -596,6 +610,20 @@ export class SocketHostService implements HostService {
     if (id === undefined || !pending) { this.pushErrorThread = undefined; this.options.onPushError?.(this.mismatch()); return }
     this.pending.delete(id); clearTimeout(pending.timer)
     pending.reject(new HostConnectionError(this.mismatchWords(), 'version_mismatch', pending.command ? id : undefined))
+  }
+  /**
+   * A shell push's state with its kept parts put back from the parts this connection holds (`withKeptPartsPutBack`), placed
+   * back on `raw` so the catalog and the schemas read it whole. Null for a state that is not an object, which the schema
+   * refuses; undefined when it kept parts this connection cannot put back.
+   */
+  private withPushedParts(raw: Record<string, unknown>): Record<string, unknown> | null | undefined {
+    const state = raw.state
+    if (state === null || typeof state !== 'object' || Array.isArray(state)) return null
+    const host = (state as Record<string, unknown>).host
+    if (host === null || typeof host !== 'object' || Array.isArray(host)) return null
+    const whole = withKeptPartsPutBack<Record<string, unknown>>(state as { host: object }, field(raw.threads, 'base'), this.pushedParts)
+    if (whole !== undefined) raw.state = whole
+    return whole
   }
   /** Keeps the answer to a thread read that timed out, as the answer in time would have been kept. */
   private lateDetail(message: HostResponse): void {

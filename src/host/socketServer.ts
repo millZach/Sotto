@@ -12,7 +12,8 @@ import { z } from 'zod'
 import { RequestAnswerCheckRefusal, type HostService, type ClientIdentity } from '../main/agents/hostService'
 import { PairedClients, originAllowed, SESSION_LIFETIME_MS } from '../main/agents/pairing'
 import { coalesceAgentStatePublishes, coalesceAgentThreadDetailPublishes } from '../main/agents/statePublishers'
-import { ModelCatalogRevisions, ThreadRecordsBroadcast, type ThreadRecordsSeed } from '../main/agents/agentStateBroadcast'
+import { ModelCatalogRevisions, ThreadRecordsBroadcast, withKeptParts, type ThreadRecordsSeed } from '../main/agents/agentStateBroadcast'
+import type { HeldParts, KeptPartsShell } from '../shared/keptParts'
 import { shareProviderModes } from './providerModeLists'
 import { usableModels, usableVariant } from './usableModels'
 import { heldBackSettled, settledPage } from './heldBackSettled'
@@ -72,6 +73,11 @@ const adminTailnetRequest = z.object({ enabled: z.boolean().optional() }).strict
 const adminHeldSessionsRequest = z.object({}).strict()
 const adminClientRequest = z.object({ clientId: z.string().min(1).max(512) }).strict()
 const pairRequest = z.object({ v: z.literal(1), code: z.string().min(1).max(32), name: z.string().min(1).max(256) }).strict()
+/**
+ * The `host` fields a shell push always carries as it was made, never as kept parts (`kept-parts`, ADR-0028, November 10
+ * amendment): the threads, which go as changed thread records, and the catalog, which goes by its revision.
+ */
+const SOCKET_HOST_SENT: ReadonlySet<string> = new Set(['threads', 'models', 'modelsRevision', 'providerModeLists'])
 
 const errors: Record<HostErrorCode, string> = {
   unauthenticated: HOST_SESSION_REJECTED,
@@ -152,6 +158,12 @@ interface Peer { browserWatches?: Map<string, { ticket: number; stop?: () => voi
    * only the thread records that changed since what `threadRecords` last made its base, and moves nothing.
    */
   commandThreadRecords?: boolean
+  /**
+   * Whether its hello accepted `kept-parts` beside `changed-thread-records`: a shell push leaves out each part that holds
+   * what the last push written to it held, and names it (ADR-0028, November 10 amendment). `keptBase` is that push's
+   * parts, by reference, under its thread records' revision; a push is measured from it only when its thread records are.
+   */
+  keptParts?: boolean; keptBase?: HeldParts | null
   /** Whether its hello accepted `provider-mode-lists`: a catalog it is sent lists each provider's modes once, not on every model. */
   providerModeLists?: boolean
   /**
@@ -1004,9 +1016,19 @@ export async function startSocketServer(options: SocketServerOptions) {
     const threadNews = records !== undefined && (records.payload.base === null || records.payload.changed.length > 0 || records.payload.removed !== undefined || records.payload.order !== undefined)
     // The frame is written out by hand so its state, serialized once, can also be compared with the last one pushed.
     const { text: stateText, digest, withoutConversation } = shellText(state)
-    const full = '{"v":1,"event":"shell","state":' + stateText + (records ? ',"threads":' + JSON.stringify(records.payload) : '') + ',"eventPage":' + JSON.stringify(eventPage) + '}'
-    // A written push moves the client past its events, and what it carried is what the client now holds.
-    const written = (): void => { peer.afterSeq = eventPage.latestSeq; recordCatalog(peer, wire); records?.commit() }
+    const threadsText = records ? ',"threads":' + JSON.stringify(records.payload) : '', eventsText = ',"eventPage":' + JSON.stringify(eventPage) + '}'
+    const full = '{"v":1,"event":"shell","state":' + stateText + threadsText + eventsText
+    // To a client that accepted `kept-parts`, a push whose thread records are measured from the last push written to it
+    // leaves out each part that holds what that push held, and names it (ADR-0028, November 10 amendment). Made only for a
+    // push that goes: the repeat check and Watcher's writing window below read the whole state, as before.
+    const keptBase = peer.keptBase, keeps = keptBase != null && records !== undefined && records.payload.base === keptBase.revision
+    const sent = (): HostWireShell | KeptPartsShell<HostWireShell> => keeps && keptBase ? withKeptParts(state, keptBase, SOCKET_HOST_SENT) : state
+    // A written push moves the client past its events, and what it carried is what the client now holds: its parts, whole,
+    // become what the next push's are measured from, with its thread records.
+    const written = (): void => {
+      peer.afterSeq = eventPage.latestSeq; recordCatalog(peer, wire); records?.commit()
+      if (peer.keptParts) peer.keptBase = records && peer.threadRecords?.baseRevision === records.payload.revision ? { revision: records.payload.revision, top: state, host: state.host } : null
+    }
     if (fits(full)) {
       // A shell whose state is byte for byte the last one this client was pushed, with no events to bring, would only
       // cost the link its bytes again. It is not written; the cursor still moves past what the page left out for this
@@ -1017,11 +1039,12 @@ export async function startSocketServer(options: SocketServerOptions) {
       // One whose only news is Watcher's conversation waits out its window, and is read again when the window closes.
       else if (noEvents && !threadNews && peer.shellSent !== null && last?.withoutConversation === withoutConversation && now < last.at + WATCHER_WRITING_WINDOW_MS) holdWriting(peer, last.at + WATCHER_WRITING_WINDOW_MS)
       else {
-        peer.frames.sendText(full); peer.shellSent = digest; lastShell.set(peer, { withoutConversation, at: now }); writingHeld.delete(peer); written()
+        peer.frames.sendText(keeps ? '{"v":1,"event":"shell","state":' + JSON.stringify(sent()) + threadsText + eventsText : full)
+        peer.shellSent = digest; lastShell.set(peer, { withoutConversation, at: now }); writingHeld.delete(peer); written()
       }
     } else {
       peer.shellSent = null
-      if (push(peer, { v: 1, event: 'shell', state, eventPage: { events: [], latestSeq: peer.afterSeq, hasMore: true }, ...records ? { threads: records.payload } : {} })) written()
+      if (push(peer, { v: 1, event: 'shell', state: sent(), eventPage: { events: [], latestSeq: peer.afterSeq, hasMore: true }, ...records ? { threads: records.payload } : {} })) written()
     }
     if (detailsFollowShell) for (const threadId of peer.observed) detail(peer, threadId)
   }
@@ -1606,6 +1629,8 @@ export async function startSocketServer(options: SocketServerOptions) {
         peer.replyThreadRecords = peer.threadRecords !== undefined && (request.accepts?.includes('reply-thread-records') ?? false) && offers(peer, 'reply-thread-records')
         // A command's answer carries only the records that changed, measured from what those pushes and answers left held.
         peer.commandThreadRecords = peer.threadRecords !== undefined && (request.accepts?.includes('command-changed-thread-records') ?? false) && offers(peer, 'command-changed-thread-records')
+        // Shell pushes leave out the parts the last push written held, measured with the thread records from a fresh start.
+        peer.keptParts = peer.threadRecords !== undefined && (request.accepts?.includes('kept-parts') ?? false) && offers(peer, 'kept-parts'); peer.keptBase = null
         peer.providerModeLists = (request.accepts?.includes('provider-mode-lists') ?? false) && offers(peer, 'provider-mode-lists')
         peer.settledOnRequest = (request.accepts?.includes('settled-threads-on-request') ?? false) && offers(peer, 'settled-threads-on-request')
         peer.usableModels = (request.accepts?.includes('usable-models') ?? false) && offers(peer, 'usable-models')

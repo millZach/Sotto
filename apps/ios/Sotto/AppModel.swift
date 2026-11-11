@@ -1709,6 +1709,7 @@ struct RailAsk: Equatable {
     private var benchTurns = 0
     private var benchLongFrame: Task<Data, Never>?
     private var benchRecords = ThreadRecordsCache()
+    private var benchParts = KeptPartsCache()
     private var benchShellRevision = 0
     private var benchSequence = 1_000
     private var benchState: Data?
@@ -2070,7 +2071,7 @@ struct RailAsk: Equatable {
         let applied = DispatchTime.now().uptimeNanoseconds
         BenchProbe.record("decode." + kind, nanoseconds: Int(applied - read))
         if case .shell(let shell) = frame {
-            guard let whole = benchRecords.whole(shell) else { BenchProbe.count("frames.unplaced"); return }
+            guard let parts = benchParts.whole(shell), let whole = benchRecords.whole(parts) else { BenchProbe.count("frames.unplaced"); return }
             frame = .shell(whole)
         }
         benchSequence += 1

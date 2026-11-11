@@ -1,5 +1,6 @@
 import { clientCatalogKey, hostCatalogKey } from '../../../shared/agents'
 import type { AgentBridge, AgentClientHost, AgentCommandReceipt, AgentCommandChangedThreadRecordsReceipt, AgentModel, AgentState, AgentThread, AgentWireBridge, AgentStateBroadcast, CompleteAgentStateBroadcast, AgentThreadsBroadcast } from '../../../shared/agents'
+import { withKeptPartsPutBack, type HeldParts } from '../../../shared/keptParts'
 import { createThreadReassembly, type ThreadReassembly } from './agentStateThreads'
 
 interface CachedCatalog {
@@ -295,32 +296,19 @@ function createReassembler(bridge: Pick<AgentBridge, 'get'>, catalogs: CatalogCa
    * The broadcast this subscription last applied, as it crossed with its kept parts put back, under its thread revision: the
    * broadcast a later one's kept parts are read from (ADR-0028, October 30 kept parts).
    */
-  let applied: { readonly revision: number; readonly state: CompleteAgentStateBroadcast } | null = null
+  let applied: HeldParts | null = null
 
   /**
    * `raw` with the parts it kept put back from the broadcast applied, so every reader meets a whole state, and the parts that
    * did not change are that broadcast's own objects. Undefined when it kept parts measured from a broadcast this
-   * subscription does not hold.
+   * subscription does not hold. The desktop's client of a paired host puts a push's back the same way (`keptParts.ts`).
    */
-  const whole = (wire: AgentStateBroadcast): CompleteAgentStateBroadcast | undefined => {
-    const kept = Array.isArray(wire.kept) ? wire.kept as string[] : [], hostKept = Array.isArray(wire.host.kept) ? wire.host.kept as string[] : []
-    // Main sends every part not named as kept; a checked base supplies the rest.
-    if (!kept.length && !hostKept.length) return wire as CompleteAgentStateBroadcast
-    if (applied === null || wire.host.threads?.base !== applied.revision) return undefined
-    const held = applied.state as Record<string, unknown>, heldHost = applied.state.host as Record<string, unknown>
-    if (!kept.every(key => Object.hasOwn(held, key)) || !hostKept.every(key => Object.hasOwn(heldHost, key))) return undefined
-    const { kept: _kept, ...top } = wire as Record<string, unknown>
-    const { kept: _hostKept, ...host } = wire.host as Record<string, unknown>
-    void _kept; void _hostKept
-    // What the broadcast carries is never replaced: only a part it left out is put back.
-    for (const key of kept) if (!Object.hasOwn(top, key)) top[key] = held[key]
-    for (const key of hostKept) if (!Object.hasOwn(host, key)) host[key] = heldHost[key]
-    return { ...top, host } as CompleteAgentStateBroadcast
-  }
+  const whole = (wire: AgentStateBroadcast): CompleteAgentStateBroadcast | undefined =>
+    withKeptPartsPutBack<CompleteAgentStateBroadcast>(wire, wire.host.threads?.base, applied)
   /** Holds `raw`, put back whole, as the broadcast applied, once its threads were. */
   const apply = (raw: CompleteAgentStateBroadcast): void => {
     const revision = raw.host.threads.revision
-    applied = typeof revision === 'number' ? { revision, state: raw } : null
+    applied = typeof revision === 'number' ? { revision, top: raw, host: raw.host } : null
   }
 
   /**

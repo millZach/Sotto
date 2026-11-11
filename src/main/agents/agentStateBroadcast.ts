@@ -2,7 +2,8 @@ import { isDeepStrictEqual } from 'node:util'
 import { clientCatalogKey, hostCatalogKey } from '../../shared/agents'
 import { threadsReplacedSince } from '../../shared/threadListPatches'
 import { ThreadChangesDrift, verifyingThreadChanges } from './threadChanges'
-import type { AgentClientHost, AgentCommandReceipt, AgentCommandChangedThreadRecordsReceipt, AgentModel, AgentModelCatalogBroadcast, AgentModelCatalogRevision, AgentState, AgentStateBroadcast, CompleteAgentStateBroadcast, AgentHostSnapshotBroadcast, AgentThread, AgentThreadsBroadcast, KeptHostPart, KeptPart } from '../../shared/agents'
+import type { KeptPartsBase, KeptPartsShell } from '../../shared/keptParts'
+import type { AgentClientHost, AgentCommandReceipt, AgentCommandChangedThreadRecordsReceipt, AgentModel, AgentModelCatalogBroadcast, AgentModelCatalogRevision, AgentState, AgentStateBroadcast, CompleteAgentStateBroadcast, AgentThread, AgentThreadsBroadcast, KeptHostPart, KeptPart } from '../../shared/agents'
 
 type EncodedClientHost<Catalog> = Omit<AgentClientHost, 'models'> & { models: Catalog }
 type EncodedState<Catalog> = Omit<AgentState, 'host'> & {
@@ -110,16 +111,24 @@ export function samePlainData(previous: unknown, next: unknown, depth = 0): bool
   return keys === 0
 }
 
+/** The `host` fields a main-window broadcast always sends, being sent by change already: the threads. */
+const BROADCAST_HOST_SENT = new Set(['threads'])
+
 /**
  * `whole` with its kept parts left out and named in `kept` (ADR-0028, October 30 kept parts): each part, at its top and in
  * its `host` but the threads, that holds the same data as in `parts`. The parts around the threads are the drafts,
  * receipts, deliveries, projects, providers, paired hosts and settings. Most of them do not change from one broadcast to
  * the next, and they were resent whole on every one, up to seventeen a second while a reply streamed. A part is compared
  * with `samePlainData`, identity first, so a part handed over unchanged costs one comparison.
+ *
+ * A host's shell push to a socket client that accepted `kept-parts` is made the same way (ADR-0028, November 10 amendment),
+ * with `hostSent` naming the catalog's fields as well as the threads: they have forms of their own and always go as made.
  */
-function withKeptParts(whole: CompleteAgentStateBroadcast, parts: { readonly top: Readonly<Record<string, unknown>>; readonly host: Readonly<Record<string, unknown>> }): AgentStateBroadcast {
+export function withKeptParts(whole: CompleteAgentStateBroadcast, parts: KeptPartsBase, hostSent?: ReadonlySet<string>): AgentStateBroadcast
+export function withKeptParts<Whole extends { readonly host: object }>(whole: Whole, parts: KeptPartsBase, hostSent: ReadonlySet<string>): KeptPartsShell<Whole>
+export function withKeptParts(whole: { readonly host: object }, parts: KeptPartsBase, hostSent: ReadonlySet<string> = BROADCAST_HOST_SENT): object {
   const top: Record<string, unknown> = {}
-  const host: AgentHostSnapshotBroadcast = { threads: whole.host.threads }
+  const host: Record<string, unknown> = {}
   const kept: KeptPart[] = [], hostKept: KeptHostPart[] = []
   for (const [key, value] of Object.entries(whole)) {
     if (key === 'host') continue
@@ -127,8 +136,8 @@ function withKeptParts(whole: CompleteAgentStateBroadcast, parts: { readonly top
     else top[key] = value
   }
   for (const [key, value] of Object.entries(whole.host)) {
-    if (key !== 'threads' && Object.hasOwn(parts.host, key) && samePlainData(parts.host[key], value)) hostKept.push(key as KeptHostPart)
-    else (host as Record<string, unknown>)[key] = value
+    if (!hostSent.has(key) && Object.hasOwn(parts.host, key) && samePlainData(parts.host[key], value)) hostKept.push(key as KeptHostPart)
+    else host[key] = value
   }
   if (hostKept.length) host.kept = hostKept
   // The parts left out are absent: the page puts them back from the broadcast it holds before anything reads the state.
