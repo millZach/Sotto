@@ -1,6 +1,6 @@
 import { createDictationTiming } from './performance/dictationTiming'
 import { DICTATION_TIMING_ARGUMENT, dictationTimingNow, markDictationTiming } from '../shared/dictationTiming'
-import { mediaThumbnailMaker } from './agents/mediaThumbnail'
+import { KeptThumbnails, mediaEdgeMaker, mediaThumbnailMaker, ReducedPictures } from './agents/mediaThumbnail'
 import { agentCaptures, ThreadMediaStore } from './agents/threadMedia'
 import { t } from '@lingui/core/macro'
 import { cleanSettingsHistory } from './settings/privacyCleanup'
@@ -1089,6 +1089,9 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   // What the end-to-end fixture providers capture on their own: what the runtime gives its own (ADR-0170, part 7).
   const showEveryAgentPicture = (): boolean => workingCopySettings.showEveryAgentPicture
   const fixtureCaptures = threadMedia ? agentCaptures(threadMedia, showEveryAgentPicture) : {}
+  // The thumbnails main makes, for the window's tiles and for the copies a phone asks for at a longest edge
+  // (`thread-media-edge`, ADR-0170): one budget in bytes for both.
+  const keptThumbnails = new KeptThumbnails()
   // Teams (ADR-0186): an Owl feature on a desktop with a Watcher. An ask reaches only these reads and one side call with no
   // tools, and nothing here can send to a thread, answer a card or change a permission (ADR-0187).
   let teamReads: { readonly watcher: import('./agents/watcher').WatcherService | undefined; readonly host: { writeShortTextOn?: import('./agents/host').AgentHost['writeShortTextOn'] } } | undefined
@@ -1114,6 +1117,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     answerImages: owlFeatures['answer-images'], nextTurnChoice: owlFeatures['next-turn-choice'],
     inlineMedia: owlFeatures['inline-media'], showEveryAgentPicture,
     ...threadMedia ? { threadMedia } : {},
+    reducedPictures: new ReducedPictures(mediaEdgeMaker(url => nativeImage.createFromDataURL(url)), keptThumbnails),
     // Clearing settled threads (ADR-0140): Owl's answer, read once here. The log names the event and a count or a reason's code.
     clearThreadsEnabled: owlFeatures['clear-threads'], clearLog: (event, detail) => { console.error(`[Sotto] ${event} ${detail}`) },
     ...(ownServers ? { ownServers: () => ownServers.list() } : {}),
@@ -1204,7 +1208,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     ...cascadedSettles ? { cascadedSettles } : {},
     attachAnyFile: owlFeatures['attach-any-file'],
     // Pictures in threads (ADR-0170): their tile thumbnails are made here, on this desktop, for every host's threads.
-    ...owlFeatures['inline-media'] ? { mediaThumbnail: mediaThumbnailMaker(url => nativeImage.createFromDataURL(url)) } : {},
+    ...owlFeatures['inline-media'] ? { mediaThumbnail: mediaThumbnailMaker(url => nativeImage.createFromDataURL(url)), mediaTiles: keptThumbnails } : {},
     bindRequestDraftDecision: (target, decisionId, answers) => requestDrafts.bindDecision(target, decisionId, answers),
     // A paired host's deleted thread takes the answer drafts this computer kept for it (ADR-0140).
     threadsDeleted: threadIds => { void requestDrafts.forgetThreads(new Set(threadIds)).catch(() => undefined) },

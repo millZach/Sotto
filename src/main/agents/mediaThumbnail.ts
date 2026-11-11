@@ -12,15 +12,55 @@ export const MEDIA_TILE_DEFAULT_SCALE = 2
  * Electron cannot read it.
  */
 export function mediaThumbnailMaker(fromDataUrl: (dataUrl: string) => NativeImage): (dataUrl: string, scale?: number) => string | null {
-  return (dataUrl, tileScale = MEDIA_TILE_DEFAULT_SCALE) => {
-    const image = fromDataUrl(dataUrl)
-    if (image.isEmpty()) return null
-    const { width, height } = image.getSize()
-    const scale = Math.min(1, Math.ceil(MEDIA_TILE_SIZE.width * tileScale) / width, Math.ceil(MEDIA_TILE_SIZE.height * tileScale) / height)
-    if (scale >= 1) return dataUrl
-    const tile = image.resize({ width: Math.max(1, Math.round(width * scale)), height: Math.max(1, Math.round(height * scale)), quality: 'good' })
-    return `data:image/jpeg;base64,${tile.toJPEG(85).toString('base64')}`
+  return (dataUrl, tileScale = MEDIA_TILE_DEFAULT_SCALE) =>
+    fitted(fromDataUrl(dataUrl), dataUrl, Math.ceil(MEDIA_TILE_SIZE.width * tileScale), Math.ceil(MEDIA_TILE_SIZE.height * tileScale), asJpeg)
+}
+
+/**
+ * Makes the copy of a picture a phone asked for at a longest edge (`thread-media-edge`, ADR-0170's November 10
+ * amendment), with the tile thumbnail's own scaling, to fit `edge` by `edge`. The phone's tile shows what it showed
+ * before: a picture with any pixel that is not opaque stays a PNG, since a JPEG has none and Electron turns them black,
+ * and a JPEG carrying camera details is handed back whole, since those can say to turn it, which Electron does not do
+ * and the phone does. A picture already that small is handed back as it is. Null when Electron cannot read it, as a GIF
+ * or a WebP.
+ */
+export function mediaEdgeMaker(fromDataUrl: (dataUrl: string) => NativeImage): (dataUrl: string, edge: number) => string | null {
+  return (dataUrl, edge) => carriesCameraDetails(dataUrl) ? dataUrl
+    : fitted(fromDataUrl(dataUrl), dataUrl, edge, edge, scaled => seeThrough(scaled) ? `data:image/png;base64,${scaled.toPNG().toString('base64')}` : asJpeg(scaled))
+}
+
+/** `image` scaled down to fit `width` by `height` and written by `write`, `dataUrl` when it already fits, or null when empty. */
+function fitted(image: NativeImage, dataUrl: string, width: number, height: number, write: (scaled: NativeImage) => string): string | null {
+  if (image.isEmpty()) return null
+  const size = image.getSize()
+  const scale = Math.min(1, width / size.width, height / size.height)
+  if (scale >= 1) return dataUrl
+  return write(image.resize({ width: Math.max(1, Math.round(size.width * scale)), height: Math.max(1, Math.round(size.height * scale)), quality: 'good' }))
+}
+
+const asJpeg = (scaled: NativeImage): string => `data:image/jpeg;base64,${scaled.toJPEG(85).toString('base64')}`
+
+/** Whether any pixel of `image` is less than opaque. Its bitmap is four bytes a pixel, the fourth alpha on every platform. */
+function seeThrough(image: NativeImage): boolean {
+  const bitmap = image.toBitmap()
+  for (let index = 3; index < bitmap.length; index += 4) if (bitmap[index] !== 255) return true
+  return false
+}
+
+const JPEG_URL = 'data:image/jpeg;base64,'
+const EXIF = Buffer.from('Exif\0\0', 'latin1')
+/** Whether a JPEG data URL carries an Exif segment before its picture starts: read from its first 64 KiB, never all of it. */
+function carriesCameraDetails(dataUrl: string): boolean {
+  if (!dataUrl.startsWith(JPEG_URL)) return false
+  const head = Buffer.from(dataUrl.slice(JPEG_URL.length, JPEG_URL.length + 87_384), 'base64')
+  for (let at = 2; at + 4 <= head.length && head[at] === 0xff;) {
+    const marker = head[at + 1]
+    // The scan's start, or the end of the image: no segment after it is a header.
+    if (marker === 0xda || marker === 0xd9) return false
+    if (marker === 0xe1 && head.subarray(at + 4, at + 10).equals(EXIF)) return true
+    at += 2 + head.readUInt16BE(at + 2)
   }
+  return false
 }
 
 /**
@@ -59,4 +99,29 @@ export class KeptThumbnails {
   }
   /** The bytes kept now, never more than the budget. */
   get bytes(): number { return this.held }
+}
+
+/** What a phone asked for at a longest edge is answered with: the picture as a data URL, or null when none is kept. */
+type PictureRead = { readonly dataUrl: string } | null
+
+/**
+ * The copies of pictures phones asked for at a longest edge (`thread-media-edge`, ADR-0170's November 10 amendment),
+ * made by `reduce` and kept in `kept`, which the desktop shares with its window's thumbnails, so both stay inside one
+ * budget in bytes. A GIF is answered whole, so it keeps its frames for the phone to play; so is a picture `reduce`
+ * cannot read, or whose copy comes out no smaller. None of those is kept, as no whole picture is.
+ */
+export class ReducedPictures {
+  constructor(private readonly reduce: (dataUrl: string, edge: number) => string | null | Promise<string | null>, private readonly kept = new KeptThumbnails()) {}
+  /** The picture `key` names at no more than `edge` on its longest side, read whole by `whole` only when none is kept. */
+  async read(key: readonly string[], edge: number, whole: () => Promise<PictureRead>): Promise<PictureRead> {
+    const name = JSON.stringify(['edge', ...key, edge])
+    const kept = this.kept.get(name)
+    if (kept !== undefined) return { dataUrl: kept }
+    const picture = await whole()
+    if (!picture || picture.dataUrl.startsWith('data:image/gif;')) return picture
+    const reduced = await this.reduce(picture.dataUrl, edge)
+    if (reduced === null || reduced.length >= picture.dataUrl.length) return picture
+    this.kept.set(name, reduced)
+    return { dataUrl: reduced }
+  }
 }
