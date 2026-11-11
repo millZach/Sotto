@@ -47,6 +47,7 @@ Two orders changed from the adapters' own. Claude Code now tries PATH before `~/
 - On a desktop started from the Dock or Finder, a client in a version manager is found too, and on macOS and Linux the login shell is started once to ask for its PATH when a client is not on the inherited one.
 - Update checks treat a client under mise's or asdf's installs as that manager's, so Sotto shows the command rather than running npm, which would install a second copy elsewhere.
 - The integration test runs a scripted Claude Code from a mise layout with PATH `/usr/local/bin:/usr/bin:/bin`; it and the lookup's login-shell and link cases skip on Windows and run in the Linux CI job (`npm run test:socket`).
+- **GitHub's `gh` is found the same way** (November 11, 2026, #2430). Every pull request read, branch lookup, Git action and merge-train check runs `gh`, and Sotto started it from PATH alone. forge's host runs with PATH `/usr/local/bin:/usr/bin:/bin` and gh in `~/.local/bin`, so every one of them failed there: none of its 164 threads had a pull request linked, and Watcher heard nothing of their pull requests. Off Windows, Sotto now looks for gh as for a provider's client, once per process, looks again five minutes after finding none, and starts it by the path found with the PATH the lookup gives it. Windows starts `gh` from PATH as before.
 
 ## Considered options
 

@@ -7,6 +7,7 @@ import { isWatcherWorkActive } from '../../shared/watcherOverview'
 import { delegatedThreadsBelow } from '../../shared/delegation'
 import { baseRepository, GitHubRateLimited, isRateLimitAnswer, readGitHubRemotes, type GitHubHosts, type GitHubRateLimit } from './git/github'
 import { runWorktreeGit, type RunGit } from './threadWorktrees'
+import { ghLaunch } from './git/ghCommand'
 import { pullRequestAddress, pullRequestKey } from '../../shared/gitPullRequests'
 import type { PullRequestObservation } from './watcherEvidence'
 import { PULL_REQUEST_HOST } from './backgroundPullRequestReads'
@@ -430,9 +431,11 @@ async function askGitHub(args: readonly string[], options: { cwd?: string; maxBu
   const retryAt = github && host ? github.rateLimit.retryAt(host, 'background') : null
   if (retryAt !== null) throw new GitHubRateLimited(retryAt)
   const asked = github && host ? github.rateLimit.asking() : 0
+  // gh where the CLI lookup finds it, which a host's short PATH can miss (#2430).
+  const gh = await ghLaunch()
   return new Promise<string>((accept, reject) => {
-    const env = { ...process.env, GIT_TERMINAL_PROMPT: '0', GH_PROMPT_DISABLED: '1', GCM_INTERACTIVE: 'never' }
-    execFile('gh', [...args], { ...options.cwd ? { cwd: options.cwd } : {}, env, windowsHide: true, timeout: 30_000, maxBuffer: options.maxBuffer, encoding: 'utf8' }, (error, stdout, stderr) => {
+    const env = { ...process.env, ...gh.path !== undefined ? { PATH: gh.path } : {}, GIT_TERMINAL_PROMPT: '0', GH_PROMPT_DISABLED: '1', GCM_INTERACTIVE: 'never' }
+    execFile(gh.command, [...args], { ...options.cwd ? { cwd: options.cwd } : {}, env, windowsHide: true, timeout: 30_000, maxBuffer: options.maxBuffer, encoding: 'utf8' }, (error, stdout, stderr) => {
       if (error) {
         const words = typeof stderr === 'string' ? stderr : ''
         if (github && host && isRateLimitAnswer(words)) { reject(new GitHubRateLimited(github.rateLimit.limited(host, words))); return }
