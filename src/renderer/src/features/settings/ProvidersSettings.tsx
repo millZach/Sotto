@@ -79,6 +79,7 @@ function clientState(update: ProviderClientUpdate | undefined, checking: boolean
       : t({ message: `The update ran, but this client still reports ${installed}. Try again.`, comment: '{installed} is a version number.' })
   }
   if (update.channel === 'devin-app') return t({ message: `${installed} is installed. Devin updates with the Devin app.`, comment: '{installed} is a version number.' })
+  if (update.id === 'hermes') return t({ message: `${installed} is installed. Sotto does not check for new Hermes versions. Run hermes update in a terminal to update it, then reconnect Hermes.`, comment: '{installed} is a version number; hermes update is a terminal command.' })
   if (!published) return t({ message: `${installed} is installed. Sotto could not read the published version. Check again to try.`, comment: '{installed} is a version number.' })
   if (update.id === 'muse' && !update.behind && installed !== published) return t({ message: `${installed} is installed; ${published} is published.`, comment: '{installed} and {published} are version numbers.' })
   if (!update.behind) return t({ message: `${installed} is installed, and that is what is published.`, comment: '{installed} is a version number.' })
