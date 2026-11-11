@@ -53,7 +53,7 @@ host compresses nothing for a phone. forge's figures are the audit's (`docs/perf
 | A thread list push to the phone | 6,827 (after one of 204,308 listing every thread) | 199,134 (6 pushes) | 209,015 (32 in a minute, a working thread open) | 0.95 |
 | A `watcher-state` push to the desktop | none sent | 1,986,294 (23 pushes) | 1,976,203 (254 in 2 minutes) | 1.00 |
 | The same, compressed | none sent | 297,991 | 365,739 | 0.81 |
-| `watcher-state` from forge's saved record (`watcherStatePush`) | | | 2,205,643 | 0.90 |
+| `watcher-state` built from forge's saved record (`watcherStatePush`) | | | 2,086,237, 374,132 compressed | 0.95 |
 | Hello to the desktop | 416,811 | 609,390 | not measured | |
 | Hello to the phone | 406,374 | 476,592 | 236,631 (154 settled threads held back) | |
 | Observing the streaming threads, phone | 854,572 | 87,235 (the step window) | 92,599 for one thread | |
@@ -106,8 +106,8 @@ It was checked both ways. With one part that never changes added to every thread
 ## What else moved
 
 - `watcherStatePush.perf.test.ts` builds its records with the shared builder: one desktop rather than a new one for every
-  request, and operations with Watcher's fields. At 925 requests its push is 1,974,722 bytes, 237,617 compressed, where it
-  was 1,720,412 and 170,418; forge's saved record makes 2,205,643 and 434,512.
+  request, and operations with Watcher's fields. At 925 requests its push is 1,974,722 bytes, 237,721 compressed, where it
+  was 1,720,412 and 161,554; forge's saved record makes 2,086,237 and 374,132.
 - The default fixture did not move: `ownerScaleWorkBudget`, `streamingCopyBudget` and `copySites` pass as they were.
 
 ## What the fixture guesses
