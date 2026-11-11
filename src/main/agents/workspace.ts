@@ -4400,7 +4400,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (creation && (creation.phase === 'unstarted' || creation.phase === 'retryable')) {
       const project = this.state.snapshot.projects.find(project => project.id === thread.projectId)
       if (!project || !thread.providerId) throw new Error('This thread has no available working folder.')
-      return this.withProfileRefusal(threadId, () => this.inner.listThreadSkills!(threadId, forceReload, { providerId: thread.providerId!, workingDirectory }))
+      return this.withProfileRefusal(threadId, () => this.inner.listThreadSkills!(threadId, forceReload, { providerId: thread.providerId!, workingDirectory, projectPath: project.path }))
     }
     return this.withProfileRefusal(threadId, () => this.inner.listThreadSkills!(threadId, forceReload))
   }

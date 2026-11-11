@@ -972,20 +972,25 @@ export class HermesAcpHost implements ProviderHost {
     const alias = this.aliases[threadId]
     const cwd = alias?.cwd ?? (scope?.providerId === 'hermes' ? scope.workingDirectory : undefined)
     if (!this.state.connected || !cwd) throw new Error('Reconnect this Hermes thread before browsing skills.')
-    const project = this.state.projects.find(project => project.id === alias?.projectId)
+    // The profile is the project's, whichever folder the thread works in: a draft's project comes with its scope.
+    const project = this.state.projects.find(project => project.id === alias?.projectId)?.path ?? (alias ? undefined : scope?.projectPath)
     return discoverHermesSkills(threadId, cwd, [
-      { directory: join(hermesProjectHome(this.homeDirectory, project?.path ?? cwd), 'skills'), scope: 'repo' },
+      { directory: join(hermesProjectHome(this.homeDirectory, project ?? cwd), 'skills'), scope: 'repo' },
       { directory: hermesSharedSkills(this.homeDirectory), scope: 'user' }])
   }
   private async steer(command: Extract<AgentHostCommand, { type: 'steer' }>, generation: number): Promise<AgentHostResult> {
     const id = command.threadId, alias = this.aliases[id], turn = this.turns.get(id)
     if (!this.state.connected || !alias?.hermesSessionId || !turn || turn.ended) throw new Error('Hermes is not working on this thread. Send a follow-up instead.')
-    if (command.attachments?.length || command.skills?.length) throw new Error('Hermes steering takes text only. Queue attachments for the next turn.')
+    if (command.attachments?.length) throw new Error('Hermes steering takes text only. Queue attachments for the next turn.')
     const index = this.indexOf(id, alias), previous = index.sent(command.commandId, command.messageId)
     if (previous) return { accepted: this.log.has(id, previous.messageId), ...(!this.log.has(id, previous.messageId) ? { uncertain: true } : {}) }
     if (command.expectedLastUserMessageId !== undefined && command.expectedLastUserMessageId !== (this.log.lastUserMessageId(id) ?? null)) throw new Error('The latest user message changed. Review the thread before steering.')
     if (this.thread(id).requests.length) throw new Error('Answer Hermes’s pending request before steering.')
     verifyFileMentions(command.text, command.files)
+    // A skill starts a turn's work; steered into a running one it would arrive as words Hermes does not expand.
+    if (command.skills?.length || (/^\s*\/\S/u.test(command.text) && invokedHermesSkill(command.text, [], await this.listThreadSkills(id)))) {
+      throw new Error('Hermes starts a skill with a new message, not while it is working. Nothing was sent. Queue it as a follow-up instead.')
+    }
     const connection = await this.open(id)
     this.assertGeneration(generation)
     if (this.turns.get(id) !== turn || turn.ended) throw new Error('This turn has ended. Send a follow-up instead.')
@@ -1060,7 +1065,9 @@ export class HermesAcpHost implements ProviderHost {
     const delivered = await deliverAttachments(alias.cwd, attachments)
     // A skill is read only for a message that picked one or opens with a slash, so ordinary words cost no folder read.
     const skill = command.skills?.length || /^\s*\/\S/u.test(command.text) ? invokedHermesSkill(command.text, command.skills ?? [], await this.listThreadSkills(id)) : undefined
-    const words = skill ? hermesSkillPrompt(command.text, skill, await readFile(skill.path, 'utf8')) : command.text
+    const words = skill ? hermesSkillPrompt(command.text, skill, await readFile(skill.path, 'utf8').catch(() => {
+      throw new Error(`Hermes’s ${skill.name} skill could not be read. Nothing was sent. Check the skill’s file, then send again.`)
+    })) : command.text
     current()
     const nativeText = `Work in this project directory: ${alias.cwd}\nUse this directory for relative file paths and command working directories.\n\n${withAttachedFilesNote(words, delivered.note)}`
     const images = await acpImageBlocks(delivered.images)

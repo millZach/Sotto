@@ -226,7 +226,8 @@ export interface ShortTextTarget {
   readonly modelId: string
   readonly cwd?: string | undefined
 }
-export interface AgentSkillScope { readonly providerId: ProviderId; readonly workingDirectory: string }
+/** `projectPath` is the project's own folder, for a provider that keeps skills by project and not by working folder. */
+export interface AgentSkillScope { readonly providerId: ProviderId; readonly workingDirectory: string; readonly projectPath?: string }
 /** One thread's messages as the workspace still holds them, handed back before a connection reads history. */
 export interface RestoredThreadHistory {
   readonly threadId: string

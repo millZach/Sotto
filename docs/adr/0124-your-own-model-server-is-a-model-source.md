@@ -275,4 +275,10 @@ opens with `/` and the full name of a listed skill. The second is Hermes's
 alone: for the other providers a token typed without choosing stays plain text,
 and their own clients expand it. Hermes's does not, so a typed name that did
 nothing would be a silent failure. A slash word that names no listed skill is
-still plain text.
+still plain text. A skill is named by the word Hermes puts after the slash
+(`Code Review` is `/code-review`), and the folders are walked as Hermes walks
+them, links followed.
+
+Steering takes no skill. Hermes's `/steer` adds words to the running turn and
+expands nothing in them, so a steer that picks a skill, or opens with a listed
+skill's name, is refused with the way out: queue it as a follow-up.
