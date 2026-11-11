@@ -389,6 +389,31 @@ describe('PhoneStep', () => {
     expect(onUpdateSettings).toHaveBeenCalledWith({ phoneAccess: true })
   })
 
+  it('turns Let phones connect back off where Tailscale is not installed, says why, and offers Get Tailscale (ADR-0200)', async () => {
+    const { bridge } = phonesFixture({ phase: 'failed', enabled: true, tailscale: { status: 'failed', reason: 'missing' } })
+    const openTailscaleDownload = vi.fn(async () => undefined)
+    vi.stubGlobal('sotto', { hosts: { tailscale: vi.fn(async () => { throw new Error('unread') }), openTailscaleDownload } })
+    const user = userEvent.setup()
+    const saved: boolean[] = []
+    function Step(): React.ReactNode {
+      const [on, setOn] = React.useState(false)
+      return <PhoneStep heading={<div />} phoneAccess={on} onOpenLink={vi.fn(async () => true)} bridge={bridge}
+        onUpdateSettings={async patch => { if (patch.phoneAccess !== undefined) { saved.push(patch.phoneAccess); setOn(patch.phoneAccess) } return true }} />
+    }
+    try {
+      render(<Step />)
+      const toggle = await screen.findByRole('switch', { name: 'Let phones connect' })
+      await user.click(toggle)
+      await waitFor(() => expect(saved).toEqual([true, false]))
+      expect(toggle).toHaveAttribute('aria-checked', 'false')
+      expect(screen.getByText('Phones reach this computer over Tailscale, which is not installed here, so this stayed off. Get Tailscale, then turn it on.')).toBeInTheDocument()
+      // The step's own failure sentence, which said nothing was changed beside a switch that was on, is gone with it.
+      expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull()
+      await user.click(screen.getByRole('button', { name: 'Get Tailscale' }))
+      expect(openTailscaleDownload).toHaveBeenCalledTimes(1)
+    } finally { vi.unstubAllGlobals() }
+  })
+
   it('shows a pairing code after Show a pairing code', async () => {
     const { bridge, command } = phonesFixture({ phase: 'on', enabled: true })
     const user = userEvent.setup()
