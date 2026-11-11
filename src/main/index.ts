@@ -895,10 +895,10 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const applyInterfaceLanguage = (current: AppSettings): Promise<boolean> =>
     interfaceLanguage.apply(current).catch(() => { logOperational('interface-language-load-failed'); return false })
   await applyInterfaceLanguage(startupSettings)
-  // The user's own model servers (ADR-0124): an Owl feature run by this computer's OpenCode and DeepSeek Harness
-  // (ADR-0138), so it exists only while the Owl list turns it on, one of them is not held and the local host runs.
-  // Otherwise main keeps the record untouched, gives neither a server, passes no renderer argument and registers no channel.
-  const ownServers: OwnServers | undefined = owlFeatures['own-model-servers'] && (!heldProviders.has('opencode') || !heldProviders.has('deepseek') || !heldProviders.has('hermes')) && startupSettings.localHostEnabled
+  // The user's own model servers (ADR-0124): an Owl feature used by this computer's OpenCode, DeepSeek, Hermes or Pi,
+  // so it exists only while the Owl list turns it on, one provider is not held and the local host runs.
+  // Otherwise main keeps the record untouched, gives no provider a server, passes no renderer argument and registers no channel.
+  const ownServers: OwnServers | undefined = owlFeatures['own-model-servers'] && (!heldProviders.has('opencode') || !heldProviders.has('deepseek') || !heldProviders.has('hermes') || !heldProviders.has('pi')) && startupSettings.localHostEnabled
     ? new OwnServers({ directory: userDataPath, ...(e2eConfiguration ? { catalogue: new ModelCatalogue(async () => { throw new Error('E2E_NETWORK_DISABLED') }) } : {}), openCode: (): OwnServersOpenCode | undefined => localRuntime?.ownServersOpenCode,
       deepSeek: (): OwnServersDeepSeek | undefined => localRuntime?.ownServersDeepSeek, hermes: (): OwnServersHermes | undefined => localRuntime?.ownServersHermes,
       readKey: async id => (await new HermesKeys(join(userDataPath, 'hermes', 'own-server-keys.json')).read())[id],

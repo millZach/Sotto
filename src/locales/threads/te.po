@@ -6490,6 +6490,10 @@ msgstr ""
 msgid "Personal"
 msgstr ""
 
+#: src/renderer/src/agents/permissionPresentation.tsx
+msgid "Pi has Full access and does not ask before running tools, changing files or using the network."
+msgstr ""
+
 #. Snooze a thread until a date and time the user picks.
 #: src/renderer/src/agents/threadSnooze.tsx
 msgid "Pick a date and time…"
