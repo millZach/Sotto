@@ -58,7 +58,7 @@ export interface PullRequestObservation {
   requiredPassed?: boolean
   /**
    * Where Sotto can read which checks a merge needs: how many of them are still to finish on `head`, one GitHub has not
-   * made yet included, and how many other checks, which no merge waits on, are still running (#2116).
+   * made yet included, and how many other checks are still running (#2116), which the merge train waits for too (#2432).
    */
   pendingChecks?: { required: number; optional: number }
 }
