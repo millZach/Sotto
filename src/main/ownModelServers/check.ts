@@ -2,6 +2,7 @@ import {
   OWN_SERVER_CONTEXT_MAX, OWN_SERVER_CONTEXT_MIN, OWN_SERVER_MODELS_MAX, ownServerAddress, ownServerRefusalWords,
   type CheckResult, type FoundModel, type OwnServerKind, type OwnServerRefusal,
 } from '../../shared/ownModelServers'
+import { objectValue, modelCost, confirmedEfforts } from './catalogue'
 
 /**
  * Checking a model server the user runs (ADR-0124), only when they press Check, Add or Check again. The model list comes
@@ -78,8 +79,8 @@ function asker(key: string | undefined, options: OwnServerCheckOptions, overall:
  * length, is cut off there rather than held whole in main's memory, and the answer is null. Rejects when the answer
  * stops arriving. The cleanup on the user's own server (ADR-0136) reads its answers through this too.
  */
-export async function readBoundedText(response: Response): Promise<string | null> {
-  if (Number(response.headers.get('content-length') ?? '0') > ANSWER_BYTES_MAX) {
+export async function readBoundedText(response: Response, maxBytes = ANSWER_BYTES_MAX): Promise<string | null> {
+  if (Number(response.headers.get('content-length') ?? '0') > maxBytes) {
     await response.body?.cancel().catch(() => undefined)
     return null
   }
@@ -91,7 +92,7 @@ export async function readBoundedText(response: Response): Promise<string | null
     const { done, value } = await reader.read()
     if (done) break
     size += value.byteLength
-    if (size > ANSWER_BYTES_MAX) { await reader.cancel().catch(() => undefined); return null }
+    if (size > maxBytes) { await reader.cancel().catch(() => undefined); return null }
     chunks.push(value)
   }
   const whole = new Uint8Array(size)
@@ -117,7 +118,7 @@ async function eachLimited<T>(items: readonly T[], limit: number, work: (item: T
 const maybe = (promise: Promise<unknown>): Promise<unknown> => promise.catch(() => undefined)
 
 /** A model as the check found it, before what its server says about it. */
-interface Listed { id: string; name: string; context?: number | undefined; output?: number | undefined; thinking?: boolean | undefined; images: boolean; drop?: boolean }
+interface Listed extends FoundModel { drop?: boolean }
 
 /** The server's root: its OpenAI address without the `/v1` the OpenAI API answers under, where its own routes are. */
 export function serverRoot(address: string): string {
@@ -266,16 +267,36 @@ export async function checkOwnServer(typed: string, key: string | undefined, opt
   if (!items.length) return refused('no-models', place.host)
   const models: Listed[] = items.map(item => {
     const meta = isObject(item.meta) ? item.meta : undefined
-    return { id: item.id as string, name: (item.id as string).slice(0, 200), context: contextOf(item.max_model_len) ?? contextOf(meta?.n_ctx_train), images: false }
+    return apiModel(item, meta)
   })
-  const kind = await discover(ask, serverRoot(place.address), items, models, options.concurrency ?? CONCURRENCY).catch((): OwnServerKind => 'openai-compatible')
+  const hosted = models.some(model => model.context !== undefined && (model.tools !== undefined || model.cost !== undefined))
+  const kind = hosted ? 'openai-compatible' : await discover(ask, serverRoot(place.address), items, models, options.concurrency ?? CONCURRENCY).catch((): OwnServerKind => 'openai-compatible')
   const kept = models.filter(model => !model.drop)
   if (!kept.length) return refused('no-models', place.host)
   const found: FoundModel[] = kept.map(model => ({
-    id: model.id, name: model.name, images: model.images,
+    ...model,
     ...(model.context !== undefined ? { context: model.context } : {}),
     ...(model.output !== undefined ? { output: model.output } : {}),
     ...(model.thinking !== undefined ? { thinking: model.thinking } : {}),
   }))
   return { status: 'ok', address: place.address, kind, models: found, answeredMs }
+}
+
+/** Hosted OpenAI-compatible APIs supply these facts directly; never infer a capability from a model's name. */
+export function apiModel(item: Record<string, unknown>, meta?: Record<string, unknown>): FoundModel {
+  const id = item.id as string, architecture = objectValue(item.architecture), top = objectValue(item.top_provider)
+  const modalities = item.input_modalities ?? architecture.input_modalities
+  const features = Array.isArray(item.supported_features) ? item.supported_features : undefined
+  const parameters = Array.isArray(item.supported_parameters) ? item.supported_parameters : undefined
+  const pricing = objectValue(item.pricing)
+  const cost = modelCost({ input: pricing.prompt, output: pricing.completion, cache_read: pricing.input_cache_read }, 1_000_000)
+  const context = contextOf(item.context_length) ?? contextOf(item.max_model_len) ?? contextOf(meta?.n_ctx_train)
+  const output = integer(item.max_output_length) ?? integer(top.max_completion_tokens)
+  const displayName = text(item.display_name) ?? text(item.name) ?? id
+  const reasoningEfforts = confirmedEfforts(item.reasoning_options)
+  return { id, name: displayName.slice(0, 200), ...(reasoningEfforts ? { reasoningEfforts } : {}), ...((typeof item.display_name === 'string' || typeof item.name === 'string') ? { reportedName: true } : {}), ...(context !== undefined ? { context } : {}), ...(output !== undefined && output > 0 && output <= OWN_SERVER_CONTEXT_MAX ? { output } : {}),
+    ...(Array.isArray(modalities) ? { images: modalities.includes('image') } : {}),
+    ...(features ? { thinking: features.includes('reasoning'), tools: features.includes('tools') } : {}),
+    ...(parameters ? { thinking: parameters.includes('reasoning') || parameters.includes('reasoning_effort'), tools: parameters.includes('tools') } : {}),
+    ...(cost ? { cost } : {}) }
 }

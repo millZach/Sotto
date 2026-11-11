@@ -1214,6 +1214,10 @@ msgstr ""
 msgid "Anything the agent installed on {name} stays there, and the thread {thread} stays in your Threads list."
 msgstr ""
 
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "APIs and your own model servers"
+msgstr ""
+
 #. A Settings page, named in its rail and its heading. Other messages name it as "Settings > Appearance".
 #: src/renderer/src/features/settings/AppearanceSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
@@ -4913,7 +4917,7 @@ msgid "Replies in threads"
 msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
-msgid "Replies, approvals and reasoning effort, on the keyless model servers you saved under Your own model servers. Change models and permissions in a thread. Replies arrive whole rather than word by word, and questions come in the reply itself."
+msgid "Replies, approvals and reasoning effort, on the keyless model servers you saved under APIs and your own model servers. Change models and permissions in a thread. Replies arrive whole rather than word by word, and questions come in the reply itself."
 msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
@@ -7861,10 +7865,6 @@ msgstr ""
 
 #: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
 msgid "Your note to the overseer"
-msgstr ""
-
-#: src/renderer/src/features/settings/settingsPages.ts
-msgid "Your own model servers"
 msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx

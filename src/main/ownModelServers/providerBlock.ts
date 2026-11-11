@@ -1,4 +1,4 @@
-import type { OwnServer, OwnServerModel } from '../../shared/ownModelServers'
+import { modelEfforts, type OwnServer, type OwnServerModel } from '../../shared/ownModelServers'
 
 /**
  * How a saved server reaches OpenCode (ADR-0124): one provider block per server in `OPENCODE_CONFIG_CONTENT`, built from
@@ -13,8 +13,6 @@ export const OPENCODE_OPENAI_COMPATIBLE = '@opencode/ai/providers/openai-compati
  * secret, and a key signed in through `connect/key` wins over it.
  */
 export const OWN_SERVER_PLACEHOLDER_KEY = 'sotto-no-key'
-/** The effort levels a thinking model is given; OpenCode sends the chosen one as `reasoning_effort`. */
-const THINKING_EFFORTS = ['low', 'medium', 'high'] as const
 /** The longest answer a model is told it may give when the server does not say. */
 const OUTPUT_CAP = 32_000
 
@@ -27,11 +25,11 @@ function modelBlock(model: OwnServerModel): Record<string, unknown> {
   return {
     name: model.name,
     capabilities: {
-      tools: true,
+      tools: model.tools ?? true,
       input: model.images ? ['text', 'image'] : ['text'],
       output: ['text'],
       // Declared either way: a model that declares nothing is given effort levels by OpenCode.
-      reasoning: model.thinking ? { supported: true, effort: [...THINKING_EFFORTS] } : { supported: false },
+      reasoning: model.thinking ? { supported: true, effort: modelEfforts(model).filter(level => level !== 'default').map(level => level === 'off' ? 'none' : level) } : { supported: false },
     },
     limit: { context: model.context, output: ownModelOutput(model) },
   }

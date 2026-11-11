@@ -1214,6 +1214,10 @@ msgstr "Any age"
 msgid "Anything the agent installed on {name} stays there, and the thread {thread} stays in your Threads list."
 msgstr "Anything the agent installed on {name} stays there, and the thread {thread} stays in your Threads list."
 
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "APIs and your own model servers"
+msgstr "APIs and your own model servers"
+
 #. A Settings page, named in its rail and its heading. Other messages name it as "Settings > Appearance".
 #: src/renderer/src/features/settings/AppearanceSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
@@ -4913,8 +4917,8 @@ msgid "Replies in threads"
 msgstr "Replies in threads"
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
-msgid "Replies, approvals and reasoning effort, on the keyless model servers you saved under Your own model servers. Change models and permissions in a thread. Replies arrive whole rather than word by word, and questions come in the reply itself."
-msgstr "Replies, approvals and reasoning effort, on the keyless model servers you saved under Your own model servers. Change models and permissions in a thread. Replies arrive whole rather than word by word, and questions come in the reply itself."
+msgid "Replies, approvals and reasoning effort, on the keyless model servers you saved under APIs and your own model servers. Change models and permissions in a thread. Replies arrive whole rather than word by word, and questions come in the reply itself."
+msgstr "Replies, approvals and reasoning effort, on the keyless model servers you saved under APIs and your own model servers. Change models and permissions in a thread. Replies arrive whole rather than word by word, and questions come in the reply itself."
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Replies, images, approvals, Cursor’s questions and plans, and reasoning effort, on every model your Cursor plan lists. Change models and permissions in a thread."
@@ -7862,10 +7866,6 @@ msgstr "Your note"
 #: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
 msgid "Your note to the overseer"
 msgstr "Your note to the overseer"
-
-#: src/renderer/src/features/settings/settingsPages.ts
-msgid "Your own model servers"
-msgstr "Your own model servers"
 
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
 msgid "Your themes"

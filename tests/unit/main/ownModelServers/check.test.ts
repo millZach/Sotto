@@ -42,7 +42,7 @@ describe('what a check answers', () => {
     const server = await fake({ 'GET /v1/models': list({ id: 'alpha', owned_by: 'someone' }, { id: 'beta' }) })
     const result = ok(await checkOwnServer(server.address, undefined))
     expect(result).toMatchObject({ address: `${server.address}/v1`, kind: 'openai-compatible' })
-    expect(result.models).toEqual([{ id: 'alpha', name: 'alpha', images: false }, { id: 'beta', name: 'beta', images: false }])
+    expect(result.models).toEqual([{ id: 'alpha', name: 'alpha' }, { id: 'beta', name: 'beta' }])
     expect(result.answeredMs).toBeGreaterThanOrEqual(0)
     // No key was given, so none was sent.
     expect(server.seen.every(request => request.auth === undefined)).toBe(true)
@@ -108,11 +108,11 @@ describe('what a check answers', () => {
     expect(await checkOwnServer('ftp://localhost', undefined)).toMatchObject({ reason: 'bad-address', message: OWN_SERVER_WORDS.badAddress })
   })
 
-  it('keeps at most 64 models, each once, in the server’s order', async () => {
-    const items = [{ id: 'dup' }, { id: 'dup' }, { nope: true }, ...Array.from({ length: 80 }, (_, index) => ({ id: `m${index}` }))]
+  it('keeps at most 4096 models, each once, in the server’s order', async () => {
+    const items = [{ id: 'dup' }, { id: 'dup' }, { nope: true }, ...Array.from({ length: 4200 }, (_, index) => ({ id: `m${index}` }))]
     const server = await fake({ 'GET /v1/models': list(...items) })
     const models = ok(await checkOwnServer(server.address, undefined)).models
-    expect(models).toHaveLength(64)
+    expect(models).toHaveLength(4096)
     expect(models[0]!.id).toBe('dup')
     expect(models[1]!.id).toBe('m0')
   })
@@ -121,7 +121,7 @@ describe('what a check answers', () => {
     const server = await fake({ 'GET /v1/models': list({ id: 'alpha' }), 'GET /api/tags': () => ({ hang: true }), 'GET /props': () => ({ hang: true }) })
     // Each request alone may take ten seconds; the check's own deadline ends both unanswered ones first.
     const result = ok(await checkOwnServer(server.address, undefined, { totalMs: 500, requestMs: 10_000 }))
-    expect(result).toMatchObject({ kind: 'openai-compatible', models: [{ id: 'alpha', images: false }] })
+    expect(result).toMatchObject({ kind: 'openai-compatible', models: [{ id: 'alpha' }] })
     const hung = server.seen.filter(request => request.path === '/api/tags' || request.path === '/props')
     expect(hung).toHaveLength(2)
     await expect.poll(() => hung.every(request => request.abandoned)).toBe(true)
@@ -132,7 +132,7 @@ describe('what each kind of server says about its models', () => {
   it('reads vLLM’s context from its model list', async () => {
     const server = await fake({ 'GET /v1/models': list({ id: 'Qwen/Qwen3-32B', owned_by: 'vllm', max_model_len: 40_960 }) })
     const result = ok(await checkOwnServer(server.address, undefined))
-    expect(result).toMatchObject({ kind: 'vllm', models: [{ id: 'Qwen/Qwen3-32B', context: 40_960, images: false }] })
+    expect(result).toMatchObject({ kind: 'vllm', models: [{ id: 'Qwen/Qwen3-32B', context: 40_960 }] })
     expect(result.models[0]!.thinking).toBeUndefined()
     // The list said which kind it is, so nothing else was asked.
     expect(server.seen.map(request => request.path)).toEqual(['/v1/models'])
@@ -141,7 +141,7 @@ describe('what each kind of server says about its models', () => {
   it('reads SGLang’s context from its list, and whether it thinks from its reasoning parser', async () => {
     const thinking = await fake({ 'GET /v1/models': list({ id: 'deepseek-ai/DeepSeek-V4.1-Flash', owned_by: 'sglang', max_model_len: 163_840 }),
       'GET /model_info': () => ({ json: { model_path: 'deepseek-ai/DeepSeek-V4.1-Flash', reasoning_parser: 'deepseek-r1', has_image_understanding: false } }) })
-    expect(ok(await checkOwnServer(thinking.address, undefined))).toMatchObject({ kind: 'sglang', models: [{ context: 163_840, thinking: true, images: false }] })
+    expect(ok(await checkOwnServer(thinking.address, undefined))).toMatchObject({ kind: 'sglang', models: [{ context: 163_840, thinking: true }] })
     const plain = await fake({ 'GET /v1/models': list({ id: 'llama', owned_by: 'sglang', max_model_len: 8_192 }), 'GET /model_info': () => ({ json: { reasoning_parser: null } }) })
     expect(ok(await checkOwnServer(plain.address, undefined)).models[0]).toMatchObject({ thinking: false })
     const unknown = await fake({ 'GET /v1/models': list({ id: 'llama', owned_by: 'sglang', max_model_len: 8_192 }) })
@@ -212,7 +212,7 @@ describe('what each kind of server says about its models', () => {
       'GET /v1/models': list({ id: 'gpt-oss-20b', owned_by: 'llamacpp', meta: { n_ctx_train: 131_072 } }),
       'GET /props': () => ({ json: { default_generation_settings: { n_ctx: 65_536 }, chat_template_caps: { supports_tools: true, supports_reasoning_effort: true }, modalities: { vision: false } } }),
     })
-    expect(ok(await checkOwnServer(server.address, undefined))).toMatchObject({ kind: 'llamacpp', models: [{ context: 65_536, thinking: true, images: false }] })
+    expect(ok(await checkOwnServer(server.address, undefined))).toMatchObject({ kind: 'llamacpp', models: [{ context: 65_536, thinking: true }] })
     const bare = await fake({ 'GET /v1/models': list({ id: 'm', owned_by: 'llamacpp', meta: { n_ctx_train: 131_072 } }) })
     expect(ok(await checkOwnServer(bare.address, undefined)).models[0]).toMatchObject({ context: 131_072 })
   })

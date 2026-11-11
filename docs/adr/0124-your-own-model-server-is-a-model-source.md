@@ -131,3 +131,57 @@ Check again still sends no saved key. If the server asks for one, the row says
 it answered but its models could not be read again. The dialog and rows make no
 promise that OpenCode can run every server. No host, setting, dependency or
 permission rule changes.
+
+
+## Amended November 10, 2026: add an API with its key
+
+The owner approved layout A after four polish rounds, at local prototype commit
+`47b4e2a79`. [The approved mock-up](../../design/add-an-api/index.html) and its two
+JSON samples travel with this change; its hundreds of captures do not. This
+amendment supersedes the original dialog, discovery and thinking decisions above.
+It remains behind `own-model-servers` and `hermes`; stable starts and shows none.
+
+Settings > Providers has **APIs and your own model servers**, with one Add dialog.
+Main downloads `https://models.dev/api.json` when the dialog opens, without a key,
+cookies or user data. It reads a bounded response, caches it in memory for this
+app run, never logs it and never writes it to disk. Failure leaves Another address
+available and offers a retry. Only catalogue entries with an `api` address and
+`@ai-sdk/openai-compatible` (plus OpenRouter) are listed. There is no separate
+address list for OpenAI, Anthropic, Google or xAI; search explains the compatible
+address route and existing thread providers in plain words.
+
+The selected API's own model answer supplies its inventory. Its facts win field
+by field over the catalogue: display name, context, longest answer, image input,
+tools and prices. Prices from the API are per token and become per million;
+catalogue prices already use per million. Unknown stays unknown. Exact IDs are
+kept. Nothing is typed except a genuinely missing context needed to run a model.
+Only confirmed thinking levels are offered, with Off first when a toggle or a
+`none` value permits it. Otherwise a thinking model uses **Default**, without a
+slider. Old `thinking: true` records retain OpenCode Low, Medium and High until
+checked again; reading an old record changes nothing on disk.
+
+**Kept models** are the chosen IDs, separate from the saved inventory. Ten or
+fewer discovered models start all ticked; more than ten start unticked. Search and
+All / Selected / New appear only above ten. A recheck keeps choices, leaves new
+models unticked, and retains older models for existing threads. Unticking removes
+a model from new picks only; threads already on it continue to work.
+
+**Replace key** checks the new key before asking the existing keeper to replace
+it and preserves the model choices. A refused key never reaches the keeper, so
+the old key remains. The first keeper remains OpenCode when connected, otherwise
+Hermes, including keys already saved under the November 9 rules. No key enters
+Sotto's model-server record, logs, errors, command arguments or fixtures.
+
+Hermes sets effort per session through `session/set_config_option` with id
+`reasoning_effort`, maps Off to `none` and Default to `default`, and reads the
+answer's config options back. The option is in Hermes 0.22.6 (source commit `b2f9dee01a`), below Sotto’s
+verified 0.23.0. The session’s advertised options remain authoritative. Older
+Hermes without that option offers no effort
+control and continues turns normally. OpenCode gets each model's confirmed list.
+The real effort card stays; Default has no stops. A model without Off says it
+always thinks, and changing models chooses the nearest supported effort, lower
+on a tie. This supplements ADR-0087's model-variant rules.
+
+The build fixes two prototype mistakes: the four-model list has no search or
+filters, and compact rows let more than two models fit at 820 by 560. The provider
+answer wins for prices and both limits even when the catalogue disagrees.

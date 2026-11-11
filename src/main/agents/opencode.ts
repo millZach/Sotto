@@ -7,6 +7,7 @@ import type { UsageTokens } from '../../shared/threadUsage'
 import type { UsageTokenObservation } from '../../shared/usageDashboard'
 import { mergeAgentActivities, type AgentActivity, type OwnServerTurn } from '../../shared/agentActivity'
 import { heldProvidersOf, type HeldProviders } from '../../shared/heldProviders'
+import { modelEfforts } from '../../shared/ownModelServers'
 import { orderReasoningEfforts } from '../../shared/reasoningEfforts'
 import { OWN_SERVER_ID_PREFIX, ownServerTurnText, type OwnServer } from '../../shared/ownModelServers'
 import { isHeaderTimeout, ownServerTurnFailure } from '../ownModelServers/turnFailure'
@@ -1013,10 +1014,14 @@ export class OpenCodeHost implements ProviderHost {
     const shown = models.filter(model => model.enabled !== false && model.status !== 'deprecated')
     this.pdfModels = new Set(shown.filter(model => model.capabilities.input.includes('pdf')).map(model => `${model.providerID}/${model.id}`))
     this.state.models = shown.map((model): AgentModel => {
-      const efforts = orderReasoningEfforts(model.variants.map(variant => variant.id))
+      const ownServer = this.knownServers.find(server => server.id === model.providerID)
+      const ownModel = ownServer?.models.find(item => item.id === model.id)
+      const efforts = ownModel ? modelEfforts(ownModel) : orderReasoningEfforts(model.variants.map(variant => variant.id))
       const preferred = ['medium', 'high'].find(level => efforts.includes(level)) ?? efforts[0]
       return {
-        id: `${model.providerID}/${model.id}`, name: model.name, provider: 'OpenCode', source: sourceOf(model.providerID), ready: true,
+        id: `${model.providerID}/${model.id}`, name: model.name, provider: 'OpenCode',
+        ...(ownServer ? { ownServer: true } : {}),
+        ...(ownServer?.keptModelIds && !ownServer.keptModelIds.includes(model.id) ? { hiddenFromMenu: true } : {}), source: sourceOf(model.providerID), ready: true,
         runtimeModes: [...opencodeRuntimeModes], supportsImages: model.capabilities.input.includes('image'),
         ...(efforts.length ? { reasoningEfforts: efforts, ...(preferred ? { defaultReasoningEffort: preferred } : {}) } : {}),
         ...(fallback && fallback.id === model.id && fallback.providerID === model.providerID ? { recommended: true } : {}),
@@ -1288,14 +1293,14 @@ export class OpenCodeHost implements ProviderHost {
   private modelRef(modelId: string, effort: string | undefined): { id: string; providerID: string; variant?: string } {
     const at = modelId.indexOf('/')
     if (at <= 0) throw new Error('That model is not an OpenCode model.')
-    const offered = this.state.models.find(model => model.id === modelId)?.reasoningEfforts ?? []
-    return { providerID: modelId.slice(0, at), id: modelId.slice(at + 1), ...(effort && offered.includes(effort) ? { variant: effort } : {}) }
+    const offered = (this.state.models.find(model => model.id === modelId)?.reasoningEfforts ?? []).filter(level => level !== 'default')
+    return { providerID: modelId.slice(0, at), id: modelId.slice(at + 1), ...(effort && offered.includes(effort) ? { variant: effort === 'off' ? 'none' : effort } : {}) }
   }
   /** What a provider session reports settles the thread's model, effort and mode. */
   private confirmSession(id: string, alias: Alias, session: NativeSession): void {
     if (session.model) {
       alias.modelId = `${session.model.providerID}/${session.model.id}`
-      if (session.model.variant && session.model.variant !== 'default') alias.reasoningEffort = session.model.variant
+      if (session.model.variant && session.model.variant !== 'default') alias.reasoningEffort = session.model.variant === 'none' && this.state.models.find(model => model.id === alias.modelId)?.ownServer ? 'off' : session.model.variant
     }
     const mode = modeOfRules(session.permissions)
     if (mode) alias.runtimeMode = mode
