@@ -124,7 +124,7 @@ export function overrideLine(override: MergeTurnOverride | undefined): string | 
     // A pull request's number is its name, not a quantity, so it is not formatted as one.
     ...override.running.map(({ number, url, title }) => {
       const name = number !== undefined ? `#${number}` : url ?? ''
-      return name ? t`${name} in “${title}” has its required checks running.` : t`A pull request in “${title}” has its required checks running.`
+      return name ? t`${name} in “${title}” has checks running.` : t`A pull request in “${title}” has checks running.`
     })].join(' ')
   const reason = override.reason
   return t`Merge turn given early. ${held} Watcher’s reason: ${reason}`

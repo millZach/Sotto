@@ -57,7 +57,7 @@ import type { Handover } from './handover'
 import { handoverCounts, handoverPrefix, watcherHandoverProvenance, watcherMessageAsShown } from './watcherHandover'
 import { watcherHandoverState, type WatcherCarried } from './watcherHandoverState'
 import type { WatcherEvent } from '../../shared/watcherNews'
-import { carriesWords, LATER_REQUEST_REACHES, watcherCardLine, watcherNewsText, watcherWaitingCardWords, watcherPullRequestWords, watcherReplyBefore, watcherReplyStart } from './watcherNews'
+import { carriesWords, LATER_REQUEST_REACHES, watcherCardLine, watcherNewsText, watcherPermissionCardLine, watcherWaitingCardWords, watcherPullRequestWords, watcherReplyBefore, watcherReplyStart } from './watcherNews'
 import { WATCHER_MESSAGES_MAX, WATCHER_NOT_GIT_REASON, WATCHER_ROSTER_MAX, WATCHER_SHARED_REASON_MAX, watcherProjectTargetSchema, type WatcherProjectTarget } from '../../shared/watcher'
 import { WatcherToldNews } from './watcherToldNews'
 import { WatcherQuestions } from './watcherQuestions'
@@ -1257,6 +1257,8 @@ export class WatcherService implements WatcherControlHooks {
         const holder = event.delegatedThreadId === undefined ? thread : index ? index.thread({ hostId: event.target.hostId, threadId: event.delegatedThreadId })
           : snapshot.threads.find(item => item.id === event.delegatedThreadId && (item.hostId ?? snapshot!.hostId) === event.target.hostId)
         const words = holder?.requests.find(item => item.id === event.requestCardId)
+        // A permission card says its tool and its summary alone, never its command (#2433).
+        if (words?.kind === 'permission') return watcherPermissionCardLine(words)
         const asks = words && watcherWaitingCardWords(words, cardReply(holder!))
         return asks ? watcherCardLine(asks) : undefined
       }
@@ -2712,7 +2714,7 @@ export class WatcherService implements WatcherControlHooks {
   }
   /**
    * What Sotto's own reads say beside a thread's READY TO MERGE (#2229), as the news goes: the pull request's place in the
-   * train, the head Sotto last read it on, and its required checks. Nothing here is the worker's.
+   * train, the head Sotto last read it on, and its checks. Nothing here is the worker's.
    */
   private readyDetail(event: WatcherEvent): string | undefined {
     const ready = event.ready
@@ -2723,7 +2725,7 @@ export class WatcherService implements WatcherControlHooks {
     const item = queue[at]!, short = (head: string) => head.slice(0, 12)
     const head = item.head === undefined ? 'Sotto has not read its head from GitHub yet.'
       : item.head === ready.head ? `Sotto last read it on that head, ${short(item.head)}.` : `Sotto last read it on ${short(item.head)}, not the head this names.`
-    const checks = { passed: 'Its required checks passed.', running: 'Its required checks are still running.', failed: 'Its checks failed.', unknown: 'Sotto cannot say where its checks stand.' }[item.requiredChecks]
+    const checks = { passed: 'Its checks passed.', running: 'Its checks are still running.', failed: 'Its checks failed.', unknown: 'Sotto cannot say where its checks stand.' }[item.requiredChecks]
     return `It is ${at + 1} of ${queue.length} in the merge train. ${head} ${checks}`
   }
   /**
@@ -5404,13 +5406,13 @@ ${operation.draftId}`)
       const failed = holds.baseFailed
       const held = [...failed ? [failed.newest === undefined ? `${failed.branch} is red: checks failed on its newest commit, ${failed.head.slice(0, 12)}.`
         : `${failed.branch} is red: checks failed on ${failed.head.slice(0, 12)}, its newest commit whose checks have finished; ${failed.newest.slice(0, 12)}, after it, has none finished yet.`] : [],
-        ...holds.running.map(item => `${name(item)} has its required checks running.`)]
+        ...holds.running.map(item => `${name(item)} has checks running.`)]
       const outside = queue.some(item => item.url !== undefined && pullRequestKey(item.url) === wanted) ? undefined
         : 'Sotto does not hold this pull request in the merge train: read read_state to see where it stands.'
       const note = [baseNote, outside].filter(Boolean).join(' ') || undefined
       if (held.length && !goMerge.overrideReason) {
         const shown = held.slice(0, 8), more = held.length - shown.length
-        refuse('MERGE_TURN_HELD', `Not its turn yet. ${shown.join(' ')}${more ? ` ${more} more train pull requests have required checks running.` : ''} A merge now would land in the middle of them, so nothing was sent.${note ? ` ${note}` : ''} ${MERGE_TURN_NEXT}`)
+        refuse('MERGE_TURN_HELD', `Not its turn yet. ${shown.join(' ')}${more ? ` ${more} more train pull requests have checks running.` : ''} A merge now would land in the middle of them, so nothing was sent.${note ? ` ${note}` : ''} ${MERGE_TURN_NEXT}`)
       }
       const reason = held.length ? goMerge.overrideReason : undefined
       return { receipt: { held, ...reason ? { overrideReason: reason } : {}, ...note ? { note } : {} },

@@ -17,7 +17,7 @@
     "Capture launches disable GPU compositing to avoid Electron tile tearing; application layout and CSS rendering remain authoritative.",
     "Verification permits only negligible Windows raster variance: at most max(100, 0.05%) pixels and max(1000, 0.5% pixel-count) total channel delta."
   ],
-  "count": 143,
+  "count": 142,
   "entries": [
     {
       "theme": "dark",
@@ -408,8 +408,8 @@
       "state": "overview",
       "relativePath": "artifacts/design/app-review/baseline/help.png",
       "width": 720,
-      "height": 1994,
-      "sha256": "0ff169c85b823f19b3e3ea4dab1733ae3b7b4e6151a6f6160da8c8be06e978e9"
+      "height": 2071,
+      "sha256": "f9aee3644fc69f81a5a052a675b58cc9f49d1fba6121678f485fcf626a684f12"
     },
     {
       "theme": "light",
@@ -422,148 +422,8 @@
       "state": "overview",
       "relativePath": "artifacts/design/app-review/baseline/help-light.png",
       "width": 720,
-      "height": 1994,
-      "sha256": "ff6e8e86c0c995739b2aa94ee7188c20989a5f6a79a5becb26fe0d27e2dbb2df"
-    },
-    {
-      "theme": "dark",
-      "scalePercent": 100,
-      "motion": "normal",
-      "focusTarget": "none",
-      "source": "app-review",
-      "id": "onboarding-step-1-welcome",
-      "category": "onboarding",
-      "state": "welcome",
-      "relativePath": "artifacts/design/app-review/baseline/onboarding-step-1-welcome.png",
-      "width": 1070,
-      "height": 660,
-      "sha256": "a369936bd694db11622fe5259f59fb8720bef259c04dd77ca5d61078f65c6264"
-    },
-    {
-      "theme": "dark",
-      "scalePercent": 100,
-      "motion": "normal",
-      "focusTarget": "none",
-      "source": "app-review",
-      "id": "onboarding-step-2-look",
-      "category": "onboarding",
-      "state": "look",
-      "relativePath": "artifacts/design/app-review/baseline/onboarding-step-2-look.png",
-      "width": 1070,
-      "height": 660,
-      "sha256": "e67191f02f8d7e5848b5b824933a73862da482a236ca5e2d1eada27b62a81b0a"
-    },
-    {
-      "theme": "dark",
-      "scalePercent": 100,
-      "motion": "normal",
-      "focusTarget": "none",
-      "source": "app-review",
-      "id": "onboarding-step-3-microphone-ready",
-      "category": "onboarding",
-      "state": "microphone-ready",
-      "relativePath": "artifacts/design/app-review/baseline/onboarding-step-3-microphone-ready.png",
-      "width": 1070,
-      "height": 660,
-      "sha256": "103f9f01d132a59da5f8301b808c2863875d0486786209007fd62f700ba5d506"
-    },
-    {
-      "theme": "dark",
-      "scalePercent": 100,
-      "motion": "normal",
-      "focusTarget": "none",
-      "source": "app-review",
-      "id": "onboarding-step-4-speech-model",
-      "category": "onboarding",
-      "state": "speech-model",
-      "relativePath": "artifacts/design/app-review/baseline/onboarding-step-4-speech-model.png",
-      "width": 1070,
-      "height": 660,
-      "sha256": "d5de1ce5d294f426252f396715feda581e821b95caef92b79eb69eb688061b55"
-    },
-    {
-      "theme": "light",
-      "scalePercent": 100,
-      "motion": "normal",
-      "focusTarget": "none",
-      "source": "app-review",
-      "id": "onboarding-step-4-speech-model-light",
-      "category": "onboarding",
-      "state": "speech-model",
-      "relativePath": "artifacts/design/app-review/baseline/onboarding-step-4-speech-model-light.png",
-      "width": 1070,
-      "height": 660,
-      "sha256": "855810741713d5f2356c239b5cf9b10cd8cb3dd3a0efedbb8292bc8b6655a83b"
-    },
-    {
-      "theme": "dark",
-      "scalePercent": 100,
-      "motion": "normal",
-      "focusTarget": "none",
-      "source": "app-review",
-      "id": "onboarding-step-5-shortcut",
-      "category": "onboarding",
-      "state": "shortcut-paste",
-      "relativePath": "artifacts/design/app-review/baseline/onboarding-step-5-shortcut.png",
-      "width": 1070,
-      "height": 660,
-      "sha256": "a5c2d8277d1a57a5a0be461625f967bf573106554c45ce780407c162ca142241"
-    },
-    {
-      "theme": "dark",
-      "scalePercent": 100,
-      "motion": "normal",
-      "focusTarget": "none",
-      "source": "app-review",
-      "id": "onboarding-step-6-agents",
-      "category": "onboarding",
-      "state": "coding-agents",
-      "relativePath": "artifacts/design/app-review/baseline/onboarding-step-6-agents.png",
-      "width": 1070,
-      "height": 660,
-      "sha256": "b5f001cd52993eb110d6f8595b188a99b171d667cb3b7509f759a611fe232de8"
-    },
-    {
-      "theme": "dark",
-      "scalePercent": 100,
-      "motion": "normal",
-      "focusTarget": "none",
-      "source": "app-review",
-      "id": "onboarding-step-7-project",
-      "category": "onboarding",
-      "state": "first-project",
-      "relativePath": "artifacts/design/app-review/baseline/onboarding-step-7-project.png",
-      "width": 1070,
-      "height": 660,
-      "sha256": "7ff03cc50408071e96b12718a1e73d9c501f7a3634a185f4fa0d96e47ef7d920"
-    },
-    {
-      "theme": "dark",
-      "scalePercent": 100,
-      "motion": "normal",
-      "focusTarget": "none",
-      "source": "app-review",
-      "id": "onboarding-step-8-computers",
-      "category": "onboarding",
-      "state": "other-computers",
-      "relativePath": "artifacts/design/app-review/baseline/onboarding-step-8-computers.png",
-      "width": 1070,
-      "height": 660,
-      "sha256": "5bd74ac2bb04ea7005a72d7dab4f6f4ae83c71dbe87e05fb60b6a77306f8fb10"
-    },
-    {
-      "theme": "dark",
-      "scalePercent": 100,
-      "motion": "normal",
-      "focusTarget": "none",
-      "source": "app-review",
-      "id": "onboarding-step-9-phone",
-      "category": "onboarding",
-      "state": "iphone",
-      "relativePath": "artifacts/design/app-review/baseline/onboarding-step-9-phone.png",
-      "width": 1070,
-      "height": 660,
-      "sha256": "3b41b099e13ec48e4f88c53831e5545bdfee6504b161c63f962f00e129a33247"
+      "height": 2071,
+      "sha256": "c81b8bd8901056e8edfee3dee01c7d262d77af784eaf7d99898918f31abe3324"
     },
     {
       "theme": "dark",
@@ -604,8 +464,8 @@
       "state": "help-full",
       "relativePath": "artifacts/design/app-review/baseline/scale-100-help.png",
       "width": 720,
-      "height": 1994,
-      "sha256": "0ff169c85b823f19b3e3ea4dab1733ae3b7b4e6151a6f6160da8c8be06e978e9"
+      "height": 2071,
+      "sha256": "f9aee3644fc69f81a5a052a675b58cc9f49d1fba6121678f485fcf626a684f12"
     },
     {
       "theme": "dark",
@@ -620,20 +480,6 @@
       "width": 790,
       "height": 1353,
       "sha256": "9c9633cdc2473a43c71a3f22873a76a579cc4df6a4ada2556101036e43c06b19"
-    },
-    {
-      "theme": "dark",
-      "scalePercent": 100,
-      "motion": "normal",
-      "focusTarget": "none",
-      "source": "app-review",
-      "id": "scale-100-onboarding",
-      "category": "scale",
-      "state": "onboarding-model",
-      "relativePath": "artifacts/design/app-review/baseline/scale-100-onboarding.png",
-      "width": 1070,
-      "height": 660,
-      "sha256": "d2d5e66a3980c0c894fb1e7292445ec2f15520c421018168e3d4311016c944a8"
     },
     {
       "theme": "dark",
@@ -662,6 +508,20 @@
       "width": 1070,
       "height": 2042,
       "sha256": "6ee784acc8125743c06a5c491808107c250abf9d1be8e59c9335d920c16a8d81"
+    },
+    {
+      "theme": "dark",
+      "scalePercent": 100,
+      "motion": "normal",
+      "focusTarget": "none",
+      "source": "app-review",
+      "id": "scale-100-setup",
+      "category": "scale",
+      "state": "setup-speech-model",
+      "relativePath": "artifacts/design/app-review/baseline/scale-100-setup.png",
+      "width": 1080,
+      "height": 720,
+      "sha256": "c3c01130d81df21f3f97cf63f06d693b62e10e4bcbd47d3882d389cf5015bcfd"
     },
     {
       "theme": "dark",
@@ -730,8 +590,8 @@
       "state": "help-full",
       "relativePath": "artifacts/design/app-review/baseline/scale-125-help.png",
       "width": 900,
-      "height": 2489,
-      "sha256": "700d52b0d6e844a268ab3bc1ab2853279cb2cdde7007b396018eb1e40684c826"
+      "height": 2585,
+      "sha256": "978a0cd2f6ecbbeed88207ee563f7ee1cde21f4fad6cac0f8fb492b7abbd387e"
     },
     {
       "theme": "dark",
@@ -746,20 +606,6 @@
       "width": 990,
       "height": 1688,
       "sha256": "2b7359f1a5d8b0fe221db395609f91052d292618f9a161582f5467fb27963ff0"
-    },
-    {
-      "theme": "dark",
-      "scalePercent": 125,
-      "motion": "normal",
-      "focusTarget": "none",
-      "source": "app-review",
-      "id": "scale-125-onboarding",
-      "category": "scale",
-      "state": "onboarding-model",
-      "relativePath": "artifacts/design/app-review/baseline/scale-125-onboarding.png",
-      "width": 1340,
-      "height": 828,
-      "sha256": "d5eb0fc1cd335de7b37cfd3b17debace5b1c7506df4f167471a9005285935f55"
     },
     {
       "theme": "dark",
@@ -788,6 +634,20 @@
       "width": 1340,
       "height": 2546,
       "sha256": "722d6db560aace651c10794d1e10b7552487458e0eec5bfa7b216f015b0559cb"
+    },
+    {
+      "theme": "dark",
+      "scalePercent": 125,
+      "motion": "normal",
+      "focusTarget": "none",
+      "source": "app-review",
+      "id": "scale-125-setup",
+      "category": "scale",
+      "state": "setup-speech-model",
+      "relativePath": "artifacts/design/app-review/baseline/scale-125-setup.png",
+      "width": 1353,
+      "height": 903,
+      "sha256": "731e98f03db9a8ceec2468abf64860cb78249dd75e2e54e8ee9fd0c543f95171"
     },
     {
       "theme": "dark",
@@ -856,8 +716,8 @@
       "state": "help-full",
       "relativePath": "artifacts/design/app-review/baseline/scale-150-help.png",
       "width": 1080,
-      "height": 2987,
-      "sha256": "fa5c6677341502e1baa431464220e9779a23336e2348992780a3317b38501e77"
+      "height": 3102,
+      "sha256": "4990a235ce8cd6acf6e31ebbf67654ac4e312e5e885b1f3bad05cfd46be34f27"
     },
     {
       "theme": "dark",
@@ -872,20 +732,6 @@
       "width": 1185,
       "height": 2022,
       "sha256": "b2a0a77f78db671c370a5ce354525ef210809345b977153179acd995ed83f40c"
-    },
-    {
-      "theme": "dark",
-      "scalePercent": 150,
-      "motion": "normal",
-      "focusTarget": "none",
-      "source": "app-review",
-      "id": "scale-150-onboarding",
-      "category": "scale",
-      "state": "onboarding-model",
-      "relativePath": "artifacts/design/app-review/baseline/scale-150-onboarding.png",
-      "width": 1605,
-      "height": 942,
-      "sha256": "a636119386e54b57b5f95015b300ea5d3f383ee40779901271c6d627f992d7b2"
     },
     {
       "theme": "dark",
@@ -914,6 +760,20 @@
       "width": 1605,
       "height": 3063,
       "sha256": "c74ecbe111f8be327e41b5ce34cb92bebfce8a5e030718f9aa9d44f102786368"
+    },
+    {
+      "theme": "dark",
+      "scalePercent": 150,
+      "motion": "normal",
+      "focusTarget": "none",
+      "source": "app-review",
+      "id": "scale-150-setup",
+      "category": "scale",
+      "state": "setup-speech-model",
+      "relativePath": "artifacts/design/app-review/baseline/scale-150-setup.png",
+      "width": 1620,
+      "height": 1032,
+      "sha256": "dd93f9f049080c2feab47192609cea960ceecbefb6b98c3ec2a88731e4cca9ff"
     },
     {
       "theme": "dark",
@@ -982,8 +842,8 @@
       "state": "help-full",
       "relativePath": "artifacts/design/app-review/baseline/scale-200-help.png",
       "width": 1442,
-      "height": 3990,
-      "sha256": "8d1c6f4ecf6544a283974d519a50120dc7346975182349f4c7372e5e037276bf"
+      "height": 4144,
+      "sha256": "a45582c622972141eb2e25176bfc816ecae228a82b9d70b2691842e479063dfd"
     },
     {
       "theme": "dark",
@@ -998,20 +858,6 @@
       "width": 1578,
       "height": 2706,
       "sha256": "b73ec8fe74ee46399bdbb654fb0ab5f7c39d28028402c34ad88a1e725ae479ae"
-    },
-    {
-      "theme": "dark",
-      "scalePercent": 200,
-      "motion": "normal",
-      "focusTarget": "none",
-      "source": "app-review",
-      "id": "scale-200-onboarding",
-      "category": "scale",
-      "state": "onboarding-model",
-      "relativePath": "artifacts/design/app-review/baseline/scale-200-onboarding.png",
-      "width": 2138,
-      "height": 1320,
-      "sha256": "6591ad21d0b46eeeed7e60ae421810abafa4a7cc7658dad33126f1feec530932"
     },
     {
       "theme": "dark",
@@ -1040,6 +886,20 @@
       "width": 2138,
       "height": 4084,
       "sha256": "b6ee43b99998ee9aac0f66d918fbd10742907917e8e20a7e4cabc5ce6ce9804d"
+    },
+    {
+      "theme": "dark",
+      "scalePercent": 200,
+      "motion": "normal",
+      "focusTarget": "none",
+      "source": "app-review",
+      "id": "scale-200-setup",
+      "category": "scale",
+      "state": "setup-speech-model",
+      "relativePath": "artifacts/design/app-review/baseline/scale-200-setup.png",
+      "width": 2158,
+      "height": 1440,
+      "sha256": "2896d31b2688add1ebee76233fe9ebeddd83bbdf73ff95f156e0f68231e1a41e"
     },
     {
       "theme": "dark",
@@ -1334,6 +1194,146 @@
       "width": 1080,
       "height": 720,
       "sha256": "3f649c29fbde0c464009f52671a187084df97724075390f0e9e9ac91e3184534"
+    },
+    {
+      "theme": "dark",
+      "scalePercent": 100,
+      "motion": "normal",
+      "focusTarget": "none",
+      "source": "app-review",
+      "id": "setup-agents",
+      "category": "setup",
+      "state": "agents",
+      "relativePath": "artifacts/design/app-review/baseline/setup-agents.png",
+      "width": 1080,
+      "height": 720,
+      "sha256": "dc8116689a00ced94fd99d0eff1e60a7de943b887965a525fa5ca33ba7cd715d"
+    },
+    {
+      "theme": "dark",
+      "scalePercent": 100,
+      "motion": "normal",
+      "focusTarget": "none",
+      "source": "app-review",
+      "id": "setup-computers",
+      "category": "setup",
+      "state": "computers",
+      "relativePath": "artifacts/design/app-review/baseline/setup-computers.png",
+      "width": 1080,
+      "height": 720,
+      "sha256": "22bc29d4cdfeb33bc5a53a7a945f5e1287f8b4d53ba3b083a4d0a3551b4aabff"
+    },
+    {
+      "theme": "dark",
+      "scalePercent": 100,
+      "motion": "normal",
+      "focusTarget": "none",
+      "source": "app-review",
+      "id": "setup-end",
+      "category": "setup",
+      "state": "end",
+      "relativePath": "artifacts/design/app-review/baseline/setup-end.png",
+      "width": 1080,
+      "height": 720,
+      "sha256": "3b097cba14673de1fa810eb05505d7d0b0282b98b5adecc0c6e020a048bdfaee"
+    },
+    {
+      "theme": "dark",
+      "scalePercent": 100,
+      "motion": "normal",
+      "focusTarget": "none",
+      "source": "app-review",
+      "id": "setup-iphone",
+      "category": "setup",
+      "state": "iphone",
+      "relativePath": "artifacts/design/app-review/baseline/setup-iphone.png",
+      "width": 1080,
+      "height": 720,
+      "sha256": "50911aed43ac4171c3f1b71630064ee1fb6a76b257084fdd4ef7382e427a4b69"
+    },
+    {
+      "theme": "dark",
+      "scalePercent": 100,
+      "motion": "normal",
+      "focusTarget": "none",
+      "source": "app-review",
+      "id": "setup-microphone",
+      "category": "setup",
+      "state": "microphone",
+      "relativePath": "artifacts/design/app-review/baseline/setup-microphone.png",
+      "width": 1080,
+      "height": 720,
+      "sha256": "d50f4154a78ddfd8f572c44d457464d4838cbe18655aa1e871a4e0d7f9dc39f4"
+    },
+    {
+      "theme": "dark",
+      "scalePercent": 100,
+      "motion": "normal",
+      "focusTarget": "none",
+      "source": "app-review",
+      "id": "setup-shortcut",
+      "category": "setup",
+      "state": "shortcut",
+      "relativePath": "artifacts/design/app-review/baseline/setup-shortcut.png",
+      "width": 1080,
+      "height": 720,
+      "sha256": "985787eed727e199f685e54bdb1435b4d15af34e4aaa49850f3ac9b3a9bc6b8b"
+    },
+    {
+      "theme": "dark",
+      "scalePercent": 100,
+      "motion": "normal",
+      "focusTarget": "none",
+      "source": "app-review",
+      "id": "setup-speech-model",
+      "category": "setup",
+      "state": "speech-model",
+      "relativePath": "artifacts/design/app-review/baseline/setup-speech-model.png",
+      "width": 1080,
+      "height": 720,
+      "sha256": "c9ece24218b9e841d85026361114ae8bea233cd67f51ce80f969c7a00b869206"
+    },
+    {
+      "theme": "light",
+      "scalePercent": 100,
+      "motion": "normal",
+      "focusTarget": "none",
+      "source": "app-review",
+      "id": "setup-speech-model-light",
+      "category": "setup",
+      "state": "speech-model",
+      "relativePath": "artifacts/design/app-review/baseline/setup-speech-model-light.png",
+      "width": 1080,
+      "height": 720,
+      "sha256": "2db5dc7db0f11cc3a45f82f6522ac1764bf2af85d4f40fa4ceb357b946489334"
+    },
+    {
+      "theme": "dark",
+      "scalePercent": 100,
+      "motion": "normal",
+      "focusTarget": "none",
+      "source": "app-review",
+      "id": "setup-tailscale",
+      "category": "setup",
+      "state": "tailscale",
+      "relativePath": "artifacts/design/app-review/baseline/setup-tailscale.png",
+      "width": 1080,
+      "height": 720,
+      "sha256": "45cda7f43811b29748a6e156568b3f3a3bf5f63124daaf34e70afc8a0d24a7bf"
+    },
+    {
+      "theme": "dark",
+      "scalePercent": 100,
+      "motion": "normal",
+      "focusTarget": "none",
+      "source": "app-review",
+      "id": "setup-welcome",
+      "category": "setup",
+      "state": "welcome",
+      "relativePath": "artifacts/design/app-review/baseline/setup-welcome.png",
+      "width": 1080,
+      "height": 720,
+      "sha256": "132e759239b8db4e4b96448b1d0db1b1b9f33157fc91a514818c9ee1384e35d7"
     },
     {
       "theme": "dark",
@@ -1726,20 +1726,6 @@
       "width": 1080,
       "height": 720,
       "sha256": "f6b61238c47483928c87d381d4acd8f5a25f13328f6976a72ca4ce27c4a57124"
-    },
-    {
-      "theme": "dark",
-      "scalePercent": 100,
-      "motion": "normal",
-      "focusTarget": "none",
-      "source": "app-review",
-      "id": "threads-tour-projects",
-      "category": "threads",
-      "state": "tour-projects",
-      "relativePath": "artifacts/design/app-review/baseline/threads-tour-projects.png",
-      "width": 1080,
-      "height": 720,
-      "sha256": "f8ca1b2728359823e95a3fbbaf9f29a7ca83874096fbacb5b4463fbce3c80c3f"
     },
     {
       "theme": "dark",

@@ -193,6 +193,20 @@ export function watcherWaitingCardWords(request: Pick<AgentRequest, 'kind' | 'te
     ...choices.length > CARD_CHOICES_MAX ? { moreChoices: choices.length - CARD_CHOICES_MAX } : {}, ...more ? { moreQuestions: more } : {}, ...pages.length ? { prototype: pages } : {},
     ...links.length ? { links } : {} }
 }
+/**
+ * What a waiting permission card asks, as its news line gives it (#2433, Zach's pick on November 11, 2026): the tool's name
+ * and the card's one-line summary (ADR-0185), never the command, path or fields the card shows, which can carry a command's
+ * arguments to Watcher's provider. The summary is labelled as the worker's only when the asking model wrote it; one Sotto
+ * asked the thread's own provider for (`summaryAsk`) is labelled as that. Undefined when the card names neither.
+ */
+export function watcherPermissionCardLine(request: Pick<AgentRequest, 'kind' | 'context'>): string | undefined {
+  if (request.kind !== 'permission') return undefined
+  const tool = request.context?.toolName?.trim(), summary = request.context?.summary?.trim()
+  if (!tool && !summary) return undefined
+  const whose = request.context?.summaryAsk === undefined ? 'in the worker\'s words' : 'written for the card by its thread\'s provider when the worker gave none'
+  const asks = summary ? ` Its summary, ${whose}: ${JSON.stringify(cut(summary, CARD_QUESTION_CHARS))}.` : ''
+  return `It asks to use ${tool ? JSON.stringify(cut(tool, CARD_CHOICE_CHARS)) : 'a tool'}.${asks}`
+}
 /** A waiting card's words as its news line gives them (#2230), labelled as the worker's. */
 export function watcherCardLine(words: WatcherCardWords): string {
   const choices = words.choices.length ? ` Its choices: ${words.choices.map(choice => JSON.stringify(choice)).join(', ')}${words.moreChoices ? `, and ${words.moreChoices} more` : ''}.` : ''
@@ -316,13 +330,14 @@ export function watcherReplyBefore(thread: Pick<AgentThread, 'messages'>, at: st
 }
 const ATTENTION_WORDS: Record<Exclude<WatcherAttentionKind, 'remarks' | 'bug-bot-review'>, string> = {
   'checks-failed': 'checks failed on its newest commit', 'checks-passed': 'all checks passed on its newest commit',
-  'required-passed': 'its required checks passed on its newest commit', merged: 'merged', closed: 'closed without merging',
+  'required-passed': 'every check finished on its newest commit and its required checks passed, but an optional check did not, which holds no merge', merged: 'merged', closed: 'closed without merging',
   approved: 'approved', 'changes-requested': 'a review asks for changes', conflicting: 'conflicts with its base branch',
 }
 /**
  * What a thread's pull requests now say that needs Watcher, in Sotto's words (#1190): checks, merged or closed, the review
  * decision, a conflict, and comments or reviews that moved. Numbers come from the thread's links; never a comment's words.
- * `pending` adds how many required and optional checks are still running (#2116), counts only, never a check's name.
+ * `pending` adds how many required and optional checks are still running (#2116), counts only, never a check's name; the
+ * merge train waits for both (#2432).
  */
 export function watcherPullRequestWords(attention: ReadonlyMap<string, ReadonlySet<WatcherAttentionKind>>, thread: Pick<AgentThread, 'pullRequests' | 'worktree'>,
   evidence: readonly WatcherEvidence[] = [], pending: ReadonlyMap<string, { readonly required: number; readonly optional: number }> = new Map()): string | undefined {
@@ -337,10 +352,10 @@ export function watcherPullRequestWords(attention: ReadonlyMap<string, ReadonlyS
     const number = links.find(link => pullRequestKey(link.url) === pr)?.number
     const said = [...facts].flatMap(fact => fact === 'remarks' || fact === 'bug-bot-review' ? [] : [ATTENTION_WORDS[fact]])
     if (facts.has('remarks')) said.push('its comments or reviews changed; read them on GitHub')
-    // Which checks still running hold a merge, so Watcher waits on those and not on the others (#2116).
+    // How many checks are still running, required and not: the merge train waits for all of them (#2116, #2432).
     const waiting = facts.size ? pending.get(pr) : undefined
     if (waiting?.required) said.push(`${waiting.required} required ${waiting.required === 1 ? 'check is' : 'checks are'} still to finish`)
-    if (waiting?.optional) said.push(`${waiting.optional} optional ${waiting.optional === 1 ? 'check is' : 'checks are'} still running, which no merge waits on`)
+    if (waiting?.optional) said.push(`${waiting.optional} optional ${waiting.optional === 1 ? 'check is' : 'checks are'} still running, which the merge train waits for too`)
     // Each meaningful PR news line carries its coverage, including checks passing and a merge. Idle polls say nothing.
     if (facts.size) {
       const item = reviews.get(pr)

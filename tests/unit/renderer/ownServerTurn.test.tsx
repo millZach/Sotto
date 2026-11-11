@@ -124,7 +124,7 @@ describe('a turn the server let down', () => {
   const cases = [
     ['unreachable', 'Sparks didn’t answer.', 'OpenCode tried it 10 times over about a minute and a half. Nothing in the thread was lost. Check that Sparks is on and this computer can reach spark-head:8888, then try again.'],
     ['timeout', 'Sparks didn’t start answering within 5 minutes.', 'It took the message but sent nothing back. It may be busy, stuck or still reading a very long prompt. Nothing in the thread was lost. Check Sparks, then try again.'],
-    ['key-refused', 'Sparks turned down its key.', 'Nothing in the thread was lost. In Settings › Providers › Your own model servers, remove Sparks and add it again with the right key, then try again.'],
+    ['key-refused', 'Sparks turned down its key.', 'Nothing in the thread was lost. In Settings › Providers › APIs and your own model servers, replace the key for Sparks, then try again.'],
     ['model-gone', 'Sparks no longer has DeepSeek V4.1 Flash.', 'Nothing in the thread was lost. Pick another model in the model menu below, or load DeepSeek V4.1 Flash on Sparks again, then try again.'],
     ['too-long', 'This thread is too long for DeepSeek V4.1 Flash.', 'Your last message and the thread before it are more than the model takes at once. Nothing in the thread was lost. OpenCode threads can’t be compacted in Sotto, so pick a model with more context and try again, or start a new thread.'],
   ] as const
@@ -137,7 +137,7 @@ describe('a turn the server let down', () => {
     expect(reason.querySelector('strong')).toHaveTextContent(title)
     expect(within(transcript).queryByText(`English words for ${failure}.`)).toBeNull()
     const buttons = within(transcript.querySelector<HTMLElement>('.thread-own-failure__actions')!).getAllByRole('button').map(button => button.getAttribute('aria-label'))
-    expect(buttons).toEqual([...failure === 'key-refused' ? ['Open Settings at Your own model servers'] : [], 'Try again, sending your last message to Sparks again'])
+    expect(buttons).toEqual([...failure === 'key-refused' ? ['Open Settings at APIs and your own model servers'] : [], 'Try again, sending your last message to Sparks again'])
   })
 
   it('keeps the buttons on the newest failure only', () => {

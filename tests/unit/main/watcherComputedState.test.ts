@@ -125,13 +125,13 @@ it('keeps since when a pull request’s checks first passed, through later reads
 // #2229: the merge queue is the merge train. A pull request joins it when its checks first pass or its thread says READY TO
 // MERGE, keeps its place while its checks run again after a push, and says whose required checks a merge would land in.
 const pr = (number: number, repository = 'o/r') => `https://github.com/${repository}/pull/${number}`
-it('keeps a train pull request in its place while its checks run again, and says whose required checks are running', () => {
+it('keeps a train pull request in its place while its checks run again, and says whose checks are running', () => {
   const queue = watcherMergeQueue([
     { target: target('a'), title: 'Model picker', open: [
       // Joined first, then pushed: its required checks run again, so it keeps its place and says they are running.
       { url: pr(1959), summary: { number: 1959, state: 'open', checks: 'pending' }, draft: false, head: 'b'.repeat(40), pending: { required: 2, optional: 1 },
         train: { since: '2026-11-01T04:00:00.000Z', ready: { head: 'a'.repeat(40), at: '2026-11-01T04:00:00.000Z' } } },
-      // Only an optional check still runs: its required checks passed, though not every check has.
+      // Only an optional check still runs: the train waits for it too (#2432).
       { url: pr(1960), summary: { number: 1960, state: 'open', checks: 'pending' }, draft: false, pending: { required: 0, optional: 1 }, train: { since: '2026-11-01T04:30:00.000Z' } },
       // Running and never in the train: not listed.
       { url: pr(1961), summary: { number: 1961, state: 'open', checks: 'pending' }, draft: false, pending: { required: 3, optional: 0 } }] },
@@ -139,13 +139,13 @@ it('keeps a train pull request in its place while its checks run again, and says
       { url: pr(1949), summary: { number: 1949, state: 'open', checks: 'passed' }, draft: false, head: 'c'.repeat(40), checksPassedAt: '2026-11-01T04:20:00.000Z',
         train: { since: '2026-11-01T04:20:00.000Z', ready: { head: 'c'.repeat(40), at: '2026-11-01T04:21:00.000Z' } } }] },
   ])
-  expect(queue.map(item => [item.pullRequest.number, item.requiredChecks])).toEqual([[1959, 'running'], [1949, 'passed'], [1960, 'passed']])
+  expect(queue.map(item => [item.pullRequest.number, item.requiredChecks])).toEqual([[1959, 'running'], [1949, 'passed'], [1960, 'running']])
   expect(queue[0]).toMatchObject({ url: pr(1959), inTrainSince: '2026-11-01T04:00:00.000Z', head: 'b'.repeat(40), readyToMerge: { head: 'a'.repeat(40), onHead: false } })
   expect(queue[0]).not.toHaveProperty('checksPassedAt')
   expect(queue[1]).toMatchObject({ checksPassedAt: '2026-11-01T04:20:00.000Z', readyToMerge: { onHead: true } })
 })
 
-it('holds a GO MERGE while another train pull request of the same repository runs its required checks, or its base branch is red', () => {
+it('holds a GO MERGE while another train pull request of the same repository runs its checks, or its base branch is red', () => {
   const queue = watcherMergeQueue([{ target: target('a'), title: 'Train', open: [
     { url: pr(1), summary: { number: 1, state: 'open', checks: 'passed' }, draft: false, checksPassedAt: '2026-11-01T04:00:00.000Z' },
     { url: pr(2), summary: { number: 2, state: 'open', checks: 'pending' }, draft: false, pending: { required: 1, optional: 0 }, train: { since: '2026-11-01T04:10:00.000Z' } },

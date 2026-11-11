@@ -601,8 +601,8 @@ msgid "{name} hasn't reported its limits on {host} yet."
 msgstr "{name} hasn't reported its limits on {host} yet."
 
 #: src/renderer/src/watcher/WatcherReceipts.tsx
-msgid "{name} in “{title}” has its required checks running."
-msgstr "{name} in “{title}” has its required checks running."
+msgid "{name} in “{title}” has checks running."
+msgstr "{name} in “{title}” has checks running."
 
 #: src/renderer/src/watcher/WatcherMachines.tsx
 msgid "{name} is not connected. Connect it in Settings, under Hosts & phones."
@@ -1134,8 +1134,8 @@ msgid "A project is a folder your agents work in, usually a Git repository. Pres
 msgstr "A project is a folder your agents work in, usually a Git repository. Press Add project and choose one."
 
 #: src/renderer/src/watcher/WatcherReceipts.tsx
-msgid "A pull request in “{title}” has its required checks running."
-msgstr "A pull request in “{title}” has its required checks running."
+msgid "A pull request in “{title}” has checks running."
+msgstr "A pull request in “{title}” has checks running."
 
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "A question whose words are not kept"

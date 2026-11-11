@@ -334,3 +334,29 @@ describe('composer option chips', () => {
     expect(chip).toHaveFocus()
   })
 })
+
+it('shows Default without a slider and returns focus with Done', () => {
+  const state = fixture({ reasoningEffort: 'default' })
+  const model = state.host.models.find(model => model.id === 'claude:model')!
+  model.ownServer = true; model.reasoningEfforts = ['default']; model.defaultReasoningEffort = 'default'
+  mount(state)
+  const chip = screen.getByRole('combobox', { name: 'Thread reasoning' })
+  fireEvent.click(chip)
+  const panel = screen.getByRole('dialog', { name: 'Reasoning effort' })
+  expect(within(panel).queryByRole('slider')).toBeNull()
+  const done = within(panel).getByRole('button', { name: 'Done' })
+  expect(done).toHaveFocus()
+  fireEvent.click(done)
+  expect(screen.queryByRole('dialog', { name: 'Reasoning effort' })).toBeNull()
+  expect(chip).toHaveFocus()
+})
+
+it('offers Off first only when the model confirms it', () => {
+  const state = fixture({ reasoningEffort: 'off' })
+  const model = state.host.models.find(model => model.id === 'claude:model')!
+  model.ownServer = true; model.reasoningEfforts = ['off', 'minimal', 'low', 'high']; model.defaultReasoningEffort = 'low'
+  mount(state)
+  fireEvent.click(screen.getByRole('combobox', { name: 'Thread reasoning' }))
+  expect(screen.getByRole('slider', { name: 'Thread reasoning effort' })).toHaveAttribute('aria-valuetext', 'Off')
+  expect(screen.getByText('Thinking is off.')).toBeVisible()
+})

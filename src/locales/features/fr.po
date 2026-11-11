@@ -601,7 +601,7 @@ msgid "{name} hasn't reported its limits on {host} yet."
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherReceipts.tsx
-msgid "{name} in “{title}” has its required checks running."
+msgid "{name} in “{title}” has checks running."
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherMachines.tsx
@@ -1134,7 +1134,7 @@ msgid "A project is a folder your agents work in, usually a Git repository. Pres
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherReceipts.tsx
-msgid "A pull request in “{title}” has its required checks running."
+msgid "A pull request in “{title}” has checks running."
 msgstr ""
 
 #: src/renderer/src/features/council/CouncilView.tsx

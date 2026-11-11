@@ -101,7 +101,7 @@ export function newThreadDefaultModelId(state: AgentState): string {
  */
 function startingModelId(chosen: string, models: readonly AgentModel[], remote: boolean): string {
   if (!remote || (chosen && resolveModel(models, chosen))) return chosen
-  const ready = models.filter(model => model.ready)
+  const ready = models.filter(model => model.ready && !model.hiddenFromMenu)
   return (ready.find(model => model.recommended) ?? ready[0])?.id ?? chosen
 }
 
