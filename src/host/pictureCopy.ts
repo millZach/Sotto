@@ -3,7 +3,7 @@ import { read as readPng, write as writePng } from 'pngjs/lib/png-sync'
 import { encodeJpeg } from './jpegEncoder'
 
 /**
- * A headless host's copy of a picture at the longest edge a phone named (`thread-media-edge`, ADR-0202), made in the
+ * A headless host's copy of a picture at the longest edge a phone named (`thread-media-edge`, ADR-0203), made in the
  * picture worker (`pictureWorker.ts`) and never on the host's own thread, with pure JavaScript compiled into the host's
  * bundle: `jpeg-js`'s decoder and `pngjs` read the picture, and the copy is written by `pngjs` or by Sotto's own JPEG
  * writer (`jpegEncoder.ts`). It follows the desktop's maker (`mediaEdgeMaker`) rule for rule: fitted to `edge` by `edge`

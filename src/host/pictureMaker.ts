@@ -24,7 +24,7 @@ const FAILED_STARTS_MAX = 3
 const KINDS = ['data:image/png;base64,', 'data:image/jpeg;base64,'] as const
 
 /**
- * A headless host's maker of the copies phones ask for at a longest edge (`thread-media-edge`, ADR-0202), for
+ * A headless host's maker of the copies phones ask for at a longest edge (`thread-media-edge`, ADR-0203), for
  * `ReducedPictures` as Electron's image tools are on the desktop. The decoding, scaling and encoding run in one worker
  * process (`pictureWorker.ts`), one picture at a time, never on the host's own thread, which only hands the worker the data
  * URL it already read and takes back the copy. A process rather than a worker thread, because decoding leaves Node's

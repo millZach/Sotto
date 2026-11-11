@@ -1,5 +1,5 @@
 // The parts of jpeg-js (BSD-3-Clause, its decoder Apache-2.0) and pngjs (MIT) the headless host's picture worker calls
-// (`pictureCopy.ts`, ADR-0202). The worker reaches jpeg-js's decoder alone, which jpeg-js's own declarations do not
+// (`pictureCopy.ts`, ADR-0203). The worker reaches jpeg-js's decoder alone, which jpeg-js's own declarations do not
 // cover, and pngjs's synchronous half alone, which pngjs ships no declarations for, so neither jpeg-js's encoder nor
 // pngjs's stream-based reader and writer is in the host's bundle. Typed from each package's own source.
 declare module 'jpeg-js/lib/decoder' {

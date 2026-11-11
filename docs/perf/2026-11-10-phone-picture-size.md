@@ -4,7 +4,7 @@ The November 10 audit found the iPhone fetching each picture whole to show it 64
 note measures the fix: the `thread-media-edge` host feature, which lets a phone's tile ask for a picture at its own edge
 and has the desktop answer a copy made with the maker its window's thumbnails use ([ADR-0170](../adr/0170-a-thread-shows-the-pictures-its-agent-made-as-tiles.md),
 November 10 amendment), and a headless host answer one made in its picture worker
-([ADR-0202](../adr/0202-a-headless-host-makes-a-phones-picture-copies-in-a-worker.md)).
+([ADR-0203](../adr/0203-a-headless-host-makes-a-phones-picture-copies-in-a-worker.md)).
 
 ## The short answer
 
@@ -100,7 +100,7 @@ xvfb-run -a npx electron scripts/perf-bench/picture-edge.mjs ~/.sotto/thread-med
 ### Before: nothing to make a copy with
 
 A headless host runs under plain Node, which reads no picture, and the Electron maker cannot run there, so until
-ADR-0202 it listed no `thread-media-edge` and sent every phone every picture whole. As a measure of what a decoder
+ADR-0203 it listed no `thread-media-edge` and sent every phone every picture whole. As a measure of what a decoder
 compiled into the host's bundle would cost, the first part timed `jpeg-js` and `pngjs` on a seeded sample of 60 of
 forge's pictures: decoding, scaling to 640 by nearest pixel and writing a JPEG at 85 took a median of 76 ms a picture,
 the longest 182 ms, for a median of 57.6 KB.

@@ -477,7 +477,7 @@ export class LocalHostService implements HostService {
     threadMedia?: boolean
     /**
      * The copies of pictures phones ask for at a longest edge (`thread-media-edge`, ADR-0170's November 10 amendment): the
-     * desktop's, made with Electron's image tools, or a headless host's, made in its picture worker (ADR-0202). Absent, it
+     * desktop's, made with Electron's image tools, or a headless host's, made in its picture worker (ADR-0203). Absent, it
      * answers every picture whole.
      */
     reducedPictures?: ReducedPictures
