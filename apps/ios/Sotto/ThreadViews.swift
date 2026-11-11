@@ -87,8 +87,8 @@ struct ThreadView: View {
             Task { if model.selected == ref { await model.select(nil) } }
         }
         .onChange(of: thread?.requests.map(\.id)) { _, _ in offer() }
-        .sheet(item: $open, onDismiss: { if let shown { setAside.insert(shown) }; shown = nil; offer() }) { request in
-            RequestSheet(ref: ref, request: request).requestSheetDetents()
+        .duoSheet(item: $open, wash: true, onDismiss: { if let shown { setAside.insert(shown) }; shown = nil; offer() }) { request in
+            RequestSheet(ref: ref, request: request).requestSheetDetents().overThread()
         }
         .agentsSheet(ref: ref, open: $agentsOpen, covered: $agentsCovered) { offer() }
     }
@@ -149,7 +149,7 @@ struct RailBackButton: View {
     let back: () -> Void
     var body: some View {
         Button(action: back) { Image(systemName: "chevron.backward") }
-            .buttonStyle(GlassCircleStyle())
+            .buttonStyle(GlassCircleStyle(flatOnDuo: true))
             .accessibilityLabel(String(localized: "Back"))
             .accessibilityIdentifier("duo-rail-back")
     }
@@ -211,6 +211,19 @@ struct InteractivePop: UIViewControllerRepresentable {
     }
 }
 
+extension View {
+    /// Counts this sheet as standing over a thread while it shows (`AppModel.sheetsOverThread`).
+    func overThread() -> some View { modifier(OverThread()) }
+}
+private struct OverThread: ViewModifier {
+    @EnvironmentObject var model: AppModel
+    func body(content: Content) -> some View {
+        content
+            .onAppear { model.sheetsOverThread += 1 }
+            .onDisappear { model.sheetsOverThread = max(0, model.sheetsOverThread - 1) }
+    }
+}
+
 extension ToolbarContent {
     /// Keeps an item in the bar over the page. Where iOS 27.1 stands a vertical bar beside the page, as in the iPhone
     /// Duo cover screen's strip, it would otherwise move the item there, where only an icon fits (ADR-0151, amended).
@@ -230,17 +243,51 @@ struct ThreadStatePill: View {
     let state: ThreadState
     let since: Date?
     let reachable: Bool
-    /// Stacked in one tile of the Duo's rail: the light, the word and, unfolded, how long it has been at it.
+    /// Stacked in one tile of the Duo's rail: the light and the word.
     var vertical = false
     @Environment(\.horizontalSizeClass) private var sizeClass
+    @Environment(\.duoLayout) private var duo
     var body: some View {
+        if vertical, duo != .upright {
+            // Folded and sideways, the light and the word alone, the word at the sidebar row's second-line size where it
+            // had been the smallest words on the page. The tile keeps its width, so Needs you takes two lines, centred,
+            // and a single word shrinks rather than breaking. How long it has been at it goes to VoiceOver only (Zach's
+            // round 7 pick B, November 10, 2026). A point under that size and tracked a little tighter, Working keeps
+            // about 7 points each side of it in the tile, where it had nearly touched both (his round 8 pick A, November
+            // 10, 2026).
+            TimelineView(.periodic(from: Date(), by: 15)) { context in
+                VStack(spacing: 2) {
+                    light
+                    Text(railWord).font(.sotto(.small, .semibold, times: 12.5 / TextScale.small.size)).tracking(-0.3)
+                        .lineLimit(railWord.contains(" ") ? 2 : 1).multilineTextAlignment(.center).minimumScaleFactor(0.6)
+                }
+                .frame(width: DuoRailMetrics.tile, height: DuoRailMetrics.tile)
+                .foregroundStyle(foreground)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(railLabel(at: context.date))
+                .accessibilityIdentifier("thread-state")
+            }
+        } else {
+            pill
+        }
+    }
+    private var pill: some View {
         Group {
             if vertical {
                 VStack(spacing: 2) {
                     light
-                    // One word stays on one line, shrinking rather than breaking, in every language.
-                    Text(word).lineLimit(word.contains(" ") ? 2 : 1).multilineTextAlignment(.center).minimumScaleFactor(0.6)
-                    if reachable, state.workInProgress, sizeClass == .regular, let since { ElapsedText(since: since).lineLimit(1).minimumScaleFactor(0.6) }
+                    // Upright, every state word stays on one line, Needs you too, a little tighter and shrinking rather
+                    // than breaking, with room either side inside the tile (the Duo design climb's round 6). Only Can't
+                    // reach it, a phrase, may take two lines.
+                    Text(railWord).tracking(-0.2).lineLimit(reachable ? 1 : 2).multilineTextAlignment(.center).minimumScaleFactor(0.6)
+                        .padding(.horizontal, Space.s1)
+                    // How long it has been at it, in minutes, "12m", where "12m 14s" filled the tile to its edges (Zach's
+                    // pick B, round 4). VoiceOver reads the state alone, as before.
+                    if reachable, state.workInProgress, let since {
+                        TimelineView(.periodic(from: Date(), by: 15)) { context in
+                            Text(Words.runShort(context.date.timeIntervalSince(since))).lineLimit(1).minimumScaleFactor(0.6)
+                        }
+                    }
                 }
                 .frame(width: DuoRailMetrics.tile, height: DuoRailMetrics.tile)
                 .foregroundStyle(foreground)
@@ -261,11 +308,22 @@ struct ThreadStatePill: View {
         }
         .font(.sotto(.caption, .semibold).monospacedDigit())
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(reachable ? state.words : String(localized: "Can’t reach this computer"))
+        .accessibilityLabel(spokenState)
         .accessibilityIdentifier("thread-state")
+    }
+    private var spokenState: String { reachable ? state.words : String(localized: "Can’t reach this computer") }
+    /// The rail's tile no longer shows how long the thread has been at it, so VoiceOver says it after the state.
+    private func railLabel(at now: Date) -> String {
+        guard reachable, state.workInProgress, let since else { return spokenState }
+        return "\(spokenState), \(Words.runSpoken(now.timeIntervalSince(since)))"
     }
     @ViewBuilder private var light: some View {
         if reachable { StatusDot(state: state, size: 7) } else { Light(tone: .off, size: 7) }
+    }
+    /// On the rail a finished thread says Finished, the Agents sheet's word, where Done read like the teal Done that
+    /// closes every sheet (Zach's pick A, November 9, 2026).
+    private var railWord: String {
+        reachable && state == .done ? String(localized: "Finished", comment: "The heading over delegated threads and agents that have stopped working.") : word
     }
     private var word: String {
         guard reachable else { return String(localized: "Can’t reach it", comment: "A thread's state in its bar: its computer can't be reached") }
@@ -309,13 +367,28 @@ struct WatchToggle: View {
     @Environment(\.dynamicTypeSize) private var typeSize
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.sottoTheme) private var theme
     var body: some View {
         let watched = model.watchedByWatcher(ref)
         let compact = typeSize.isAccessibilitySize || sizeClass != .regular
         Button { presses += 1; Task { await model.setWatched(ref, !watched, title: title) } } label: {
             if tile {
+                // A smaller owl with a + at its corner, a check once on, so Watch reads as a switch and can't pass for
+                // the Watcher tab's owl a thumb below it (Zach's pick B, November 9, 2026).
                 Group {
-                    if model.changingWatch(ref) { ProgressView().controlSize(.mini) } else { WatcherOwlMark(size: DuoRailMetrics.owl).accessibilityHidden(true) }
+                    if model.changingWatch(ref) { ProgressView().controlSize(.mini) } else {
+                        WatcherOwlMark(size: DuoRailMetrics.owl - 4).accessibilityHidden(true)
+                            .overlay(alignment: .bottomTrailing) {
+                                Image(systemName: watched ? "checkmark" : "plus")
+                                    .font(.system(size: 7, weight: .heavy))
+                                    .foregroundStyle(watched ? theme.color(.onAccent) : theme.color(.ink))
+                                    .frame(width: 14, height: 14)
+                                    .background(Circle().fill(watched ? theme.color(.accent) : theme.color(.fillSoft)))
+                                    .overlay(Circle().strokeBorder(watched ? theme.color(.accentSurface) : theme.color(.canvas), lineWidth: 1.5))
+                                    .offset(x: 6, y: 5)
+                                    .accessibilityHidden(true)
+                            }
+                    }
                 }
                 .foregroundStyle(watched ? Palette.accentText : Palette.muted)
                 .frame(width: DuoRailMetrics.tile, height: DuoRailMetrics.tile)
@@ -363,36 +436,55 @@ struct ThreadMenu: View {
     var onRail = false
     @State private var acted = 0
     @State private var showingPullRequest = false
+    @State private var showingCard = false
+    /// Whether the rail stands on the left, as Settings can put it sideways, so the card opens toward the page.
+    @State private var railOnLeft = false
+    @Environment(\.sottoTheme) private var theme
+    @Environment(\.colorScheme) private var scheme
     var body: some View {
         let chips = GitChips(model.thread(ref)?.worktree)
-        Menu {
-            if onRail { railItems(chips) } else { actions }
-        } label: {
+        Group {
             if onRail {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: DuoRailMetrics.symbol, weight: .medium))
-                    .foregroundStyle(Palette.muted)
-                    .frame(width: DuoRailMetrics.tile, height: DuoRailMetrics.tile)
-                    .contentShape(Circle())
+                Button { showingCard = true } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: DuoRailMetrics.symbol, weight: .medium))
+                        .foregroundStyle(Palette.muted)
+                        .frame(width: DuoRailMetrics.tile, height: DuoRailMetrics.tile)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(PressStyle())
+                .onGeometryChange(for: Bool.self, of: { $0.frame(in: .global).midX < 240 }) { railOnLeft = $0 }
+                .popover(isPresented: $showingCard, attachmentAnchor: .rect(.bounds), arrowEdge: railOnLeft ? .leading : .trailing) {
+                    // A solid card a step off the sheets, like Sotto's cards, where iOS's glass showed a moving light that
+                    // read as a smudge, and the thread's reply box steps away while it is open, as it does beside a sheet
+                    // (Zach's pick A, November 9, 2026, round 4). Its fill is the overlay surface, a step past a card's,
+                    // so its edge reads against the words it covers rather than the page running into it (his round 6
+                    // pick A, November 10, 2026). A 1-point hairline and a soft shadow give it an edge against the
+                    // running text it cuts, with the page under it still undimmed (his round 8 pick A, November 10, 2026).
+                    railCard(chips).presentationCompactAdaptation(.popover)
+                        .background { PopoverEdge(ink: theme.rgb(.ink), dark: scheme == .dark).accessibilityHidden(true) }
+                        .presentationBackground(Palette.overlay)
+                        .overThread()
+                }
             } else {
-                Image(systemName: "ellipsis")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Palette.ink)
-                    .frame(width: 32, height: 32)
-                    .background(Palette.fillSoft, in: Circle())
-                    .overlay(Circle().strokeBorder(Palette.hairline, lineWidth: 1))
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
+                Menu { actions } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Palette.ink)
+                        .frame(width: 32, height: 32)
+                        .background(Palette.fillSoft, in: Circle())
+                        .overlay(Circle().strokeBorder(Palette.hairline, lineWidth: 1))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
             }
         }
-        // Opened from the foot of the rail, iOS would turn the list over and put the name under the actions.
-        .menuOrder(onRail ? .fixed : .automatic)
         .accessibilityLabel("Show thread actions")
         .accessibilityIdentifier("thread-actions")
         .sensoryFeedback(.impact(weight: .medium), trigger: acted)
-        .sheet(isPresented: $showingPullRequest) {
+        .duoSheet(isPresented: $showingPullRequest, toFoot: true) {
             if let url = chips.pullRequestURL, let number = chips.pullRequest?.number {
-                PullRequestSheet(ref: ref, url: url, number: number)
+                PullRequestSheet(ref: ref, url: url, number: number).overThread()
             }
         }
     }
@@ -419,51 +511,187 @@ struct ThreadMenu: View {
         }
     }
 
-    /// On the rail: the name, where it runs and its branch and changes head the menu as its section's heading, because iOS
-    /// dims a row that can't be pressed too far to read, and this is the only place they show. Under them the pull request,
-    /// where this computer offers its sheet (where it doesn't, it reads with the rest, as its chip does), and the actions.
-    @ViewBuilder private func railItems(_ chips: GitChips) -> some View {
+    /// On the rail: Sotto's own card, because iOS dims a menu's heading too far to read and this is the only place these
+    /// show (Zach's pick B, November 8, 2026). The name at full strength, each fact on its own line with its mark, the pull
+    /// request as a row where this computer offers its sheet (where it doesn't, it reads with the facts, as its chip does),
+    /// and the actions.
+    private func railCard(_ chips: GitChips) -> some View {
         let thread = model.thread(ref)
         let opens = model.offersPullRequestSheet(ref.hostID) && chips.pullRequestURL != nil
-        let name = thread?.title ?? String(localized: "Thread", comment: "Title for a thread that has no title yet")
-        let about = facts(chips, thread: thread, pullRequestOpens: opens)
-        if !opens && !model.compactionOffered(ref) && model.shelfAction(ref) == nil {
-            // A heading needs rows under it, so with nothing to do the name and the facts are the row.
-            Button {} label: {
-                Text(name)
-                Text(verbatim: about)
-            }
-            .disabled(true)
-        } else {
-            Section {
-                if opens, let pullRequest = chips.pullRequest, let url = chips.pullRequestURL {
-                    let checks = model.lastPullRequest(ref, url: url).map { PullRequests.rollup($0.checks) }
-                    Button { showingPullRequest = true } label: {
-                        Label(caption(pullRequest), systemImage: "arrow.triangle.pull")
-                        if let checks { Text(verbatim: checks) }
+        let place = model.placeLine(ref, provider: Words.provider(thread?.providerId), computer: model.name(ref.hostID))
+        let card = VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: Space.s1) {
+                Text(verbatim: thread?.title ?? String(localized: "Thread", comment: "Title for a thread that has no title yet"))
+                    .font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.bottom, Space.s1)
+                    .accessibilityAddTraits(.isHeader)
+                fact("laptopcomputer") { Text(verbatim: place) }
+                if let branch = chips.branch { fact("arrow.triangle.branch") { Text(verbatim: Self.breaksAtSlashes(branch)) } }
+                if let changes = chips.changes {
+                    // Its plus and minus are small and thin beside the other marks, so it is drawn a step larger and
+                    // heavier to read as strongly as they do (the Duo design climb's round 6).
+                    fact("plus.forwardslash.minus", size: 14, weight: .bold) {
+                        HStack(spacing: Space.s1) {
+                            Text(verbatim: "+\(changes.insertions)").foregroundStyle(Palette.accentText)
+                            Text(verbatim: "−\(changes.deletions)").foregroundStyle(Palette.dangerText)
+                        }
                     }
-                    .accessibilityLabel(GitChipRow.spokenPullRequest(pullRequest, rollup: checks))
-                    .accessibilityIdentifier("thread-menu-pull-request")
                 }
-                actions
-            } header: {
-                Text(verbatim: name + "\n" + about)
+                if !opens, let pullRequest = chips.pullRequest { fact("arrow.triangle.pull") { Text(verbatim: caption(pullRequest)) } }
+            }
+            .padding(.horizontal, Space.s4)
+            .padding(.vertical, Space.s3)
+            if opens, let pullRequest = chips.pullRequest, let url = chips.pullRequestURL {
+                let checks = model.lastPullRequest(ref, url: url).map { PullRequests.rollup($0.checks) }
+                Rectangle().fill(Palette.hairline).frame(height: 1)
+                cardRow(caption(pullRequest), detail: checks, icon: "arrow.triangle.pull", chevron: true, identifier: "thread-menu-pull-request") {
+                    // The sheet can't rise while the card is still going.
+                    Task { try? await Task.sleep(nanoseconds: 350_000_000); showingPullRequest = true }
+                }
+                .accessibilityLabel(GitChipRow.spokenPullRequest(pullRequest, rollup: checks))
+            }
+            if model.compactionOffered(ref) || model.shelfAction(ref) != nil { Rectangle().fill(Palette.hairline).frame(height: 1) }
+            cardActions
+        }
+        .frame(width: 292, alignment: .leading)
+        // At the largest text sizes the card can outgrow the screen; then it scrolls.
+        return ViewThatFits(in: .vertical) { card; ScrollView { card } }
+    }
+
+    /// A branch's name for a line that wraps: it may break after a slash, never after a hyphen, so
+    /// "feat/frosted-window-and-pane-terminal" no longer reads as a hyphenated word cut in two. A zero-width space after
+    /// each slash offers the break, and a word joiner after each hyphen holds it (Zach's pick A, round 4).
+    static func breaksAtSlashes(_ branch: String) -> String {
+        branch.replacingOccurrences(of: "/", with: "/\u{200B}").replacingOccurrences(of: "-", with: "-\u{2060}")
+    }
+
+    private func fact<Content: View>(_ icon: String, size: CGFloat = 12, weight: Font.Weight = .medium,
+                                     @ViewBuilder words: () -> Content) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
+            Image(systemName: icon).iconFont(size, weight: weight).foregroundStyle(Palette.muted).frame(width: 18).accessibilityHidden(true)
+            words().font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    /// The same actions as `actions`, as the card's rows.
+    @ViewBuilder private var cardActions: some View {
+        if model.compactionOffered(ref) {
+            let held = model.compactionHeld(ref)
+            cardRow(String(localized: "Compact context"), detail: held ?? String(localized: "Summarize earlier messages to free room"), enabled: held == nil) {
+                acted += 1
+                Task { await model.compact(ref) }
+            }
+        }
+        if let action = model.shelfAction(ref) {
+            let held = model.actionHeld(ref)
+            cardRow(action == .settle ? String(localized: "Settle", comment: "Settle the thread: put it away on the Settled shelf.")
+                    : String(localized: "Restore", comment: "Restore a settled thread to open work."),
+                    detail: held, identifier: action == .settle ? "thread-settle" : "thread-restore", enabled: held == nil) {
+                acted += 1
+                Task { await model.shelve(ref, action) }
             }
         }
     }
 
-    /// Where the thread runs on one line, then what the chips say on the next.
-    private func facts(_ chips: GitChips, thread: ThreadSummary?, pullRequestOpens: Bool) -> String {
-        let place = model.placeLine(ref, provider: Words.provider(thread?.providerId), computer: model.name(ref.hostID))
-        var git: [String] = []
-        if let branch = chips.branch { git.append(branch) }
-        if let changes = chips.changes { git.append("+\(changes.insertions) −\(changes.deletions)") }
-        if !pullRequestOpens, let pullRequest = chips.pullRequest { git.append(caption(pullRequest)) }
-        return git.isEmpty ? place : place + "\n" + git.joined(separator: " · ")
+    private func cardRow(_ title: String, detail: String?, icon: String? = nil, chevron: Bool = false, identifier: String = "",
+                         enabled: Bool = true, action: @escaping () -> Void) -> some View {
+        Button {
+            showingCard = false
+            action()
+        } label: {
+            // The marks stand in one column with the facts' above, and every row's words start at one edge with theirs,
+            // a row without a mark included (round 5).
+            HStack(spacing: Space.s2) {
+                Group {
+                    if let icon { Image(systemName: icon).iconFont(14, weight: .medium).foregroundStyle(Palette.muted) } else { Color.clear.frame(height: 1) }
+                }
+                .frame(width: 18)
+                .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(verbatim: title).font(.sotto(.body)).foregroundStyle(enabled ? Palette.ink : Palette.muted)
+                    if let detail { Text(verbatim: detail).font(.sotto(.caption)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true) }
+                }
+                Spacer(minLength: 0)
+                if chevron { Image(systemName: "chevron.right").iconFont(12, weight: .semibold).foregroundStyle(Palette.muted).accessibilityHidden(true) }
+            }
+            .padding(.horizontal, Space.s4)
+            .padding(.vertical, Space.s3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressStyle())
+        .disabled(!enabled)
+        .accessibilityIdentifier(identifier)
     }
 
     private func caption(_ pullRequest: GitChips.PullRequest) -> String {
         String(localized: "#\(String(pullRequest.number)) \(pullRequest.stateWord)", comment: "A pull request chip: its number, then its state, such as #721 open")
+    }
+}
+
+/// The ••• card's edge: a 1-point hairline round the card and a soft shadow under it. iOS draws a popover's frame itself,
+/// so this reaches the views it drew from inside the card: the shadow goes on the popover as a whole, so it follows the
+/// arrow too, and the hairline on the rounded view that clips the card, so it follows the card's corners. Where no such
+/// view is found the hairline goes on the card's own view at a sheet card's corner.
+private struct PopoverEdge: UIViewRepresentable {
+    /// The theme's text colour, which the hairline is a wash of.
+    let ink: ThemeRGB
+    let dark: Bool
+    func makeUIView(context: Context) -> EdgeView { EdgeView(frame: .zero) }
+    func updateUIView(_ view: EdgeView, context: Context) {
+        view.hairline = ink.uiColor(dark ? 0.17 : 0.14).cgColor
+        view.shadow = (opacity: dark ? 0.55 : 0.16, radius: dark ? 16 : 15)
+        view.apply()
+    }
+    final class EdgeView: UIView {
+        var hairline: CGColor?
+        var shadow: (opacity: Float, radius: CGFloat) = (0, 0)
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            isUserInteractionEnabled = false
+        }
+        required init?(coder: NSCoder) { fatalError("PopoverEdge is made in code") }
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            apply()
+        }
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            apply()
+        }
+        func apply() {
+            guard window != nil, let presented = presentedController, let content = presented.view,
+                  let container = presented.presentationController?.containerView,
+                  let popover = container.subviews.first(where: { isDescendant(of: $0) }) else { return }
+            popover.clipsToBounds = false
+            popover.layer.shadowColor = UIColor.black.cgColor
+            popover.layer.shadowOpacity = shadow.opacity
+            popover.layer.shadowRadius = shadow.radius
+            popover.layer.shadowOffset = CGSize(width: 0, height: 10)
+            var rounded: UIView?
+            var view: UIView? = content
+            while let step = view, step !== container {
+                if step.layer.cornerRadius > 0 { rounded = step; break }
+                view = step.superview
+            }
+            let edge = rounded ?? content
+            if rounded == nil {
+                edge.layer.cornerRadius = Radius.lg
+                edge.layer.cornerCurve = .continuous
+            }
+            edge.layer.borderWidth = 1
+            edge.layer.borderColor = hairline
+        }
+        /// The controller iOS presented as the popover: the topmost parent of the controller this view is in.
+        private var presentedController: UIViewController? {
+            var responder: UIResponder? = self
+            while let next = responder, !(next is UIViewController) { responder = next.next }
+            var controller = responder as? UIViewController
+            while let parent = controller?.parent { controller = parent }
+            return controller
+        }
     }
 }
 
@@ -657,6 +885,9 @@ private struct Conversation: View {
         ScrollViewReader { proxy in
             ScrollView {
                 page(detail: detail, rows: rows, pending: pending, scroll: proxy).readingWidth()
+                    // Held sideways, the conversation's words are a step larger, so its broad lines are easier to follow
+                    // from one to the next; folded is unchanged (Zach's pick A, November 9, 2026, round 5).
+                    .environment(\.proseScale, duo.sideways ? 1.065 : 1)
                     .environment(\.replyQuoteBox, ReplyQuoteBox(key: ref.id) { [model, ref] in model.quoteReply($0, into: ref.id) })
                     .tapPutsAwayKeyboard { [model, ref] in !model.replyHoldsAnything(ref) }
                     .benchEnvironment("EnvironmentUnderThread")
@@ -685,6 +916,10 @@ private struct Conversation: View {
                           openRequest: openRequest)
                     .equatable()
                     .readingWidth()
+                    // On the Duo the box steps away while a sheet stands over the thread, where unfolded it showed past
+                    // the sheet's edge (Zach's pick B, November 9, 2026).
+                    .opacity(duo != .none && model.sheetsOverThread > 0 ? 0 : 1)
+                    .animation(.easeInOut(duration: 0.2), value: model.sheetsOverThread > 0)
                     .background(dockReader(proxy))
                     .sendWatchDock()
             }
@@ -715,8 +950,21 @@ private struct Conversation: View {
                            topMoved: { top in follow.heroTop = top; refreshBar() },
                            titleMoved: { bottom in follow.titleBottom = bottom; refreshBar() })
                     .equatable()
+            } else if case .folded = duo {
+                // Folded, with no sidebar beside it to say which thread is open, the thread's name heads its conversation,
+                // quiet and one line long, and scrolls away with it: still no bar (Zach's pick A, November 9, 2026, round 5).
+                Text(verbatim: thread?.title ?? String(localized: "Thread", comment: "Title for a thread that has no title yet"))
+                    .font(.sotto(.body, .semibold))
+                    .foregroundStyle(Palette.muted)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, Space.s3)
+                    .padding(.bottom, Space.s1)
+                    .accessibilityAddTraits(.isHeader)
+                    .accessibilityIdentifier("thread-title")
             } else {
-                // The Duo draws no title (`ThreadMenu` holds it), but VoiceOver still reads the page's name first.
+                // Unfolded, the Duo draws no title (`ThreadMenu` holds it, and the sidebar marks the thread), but VoiceOver
+                // still reads the page's name first.
                 Color.clear
                     .frame(height: Space.s3)
                     .accessibilityElement()
@@ -831,7 +1079,8 @@ private struct Conversation: View {
         switch row.item {
         case .message(let message):
             MessageView(message: message, provider: provider, showsWho: row.showsWho, ref: ref,
-                        opensFiles: model.opensSentFiles(ref.hostID), showsVideos: model.stagesVideos(ref.hostID)) { viewing = $0 }.equatable()
+                        opensFiles: model.opensSentFiles(ref.hostID), providerID: model.thread(ref)?.providerId,
+                        showsVideos: model.stagesVideos(ref.hostID)) { viewing = $0 }.equatable()
                 .benchRowFrame("message", row.id, in: .named(Self.pageSpace))
         case .steps(let steps):
             FoldedRun(runID: steps.first?.id ?? row.id, steps: steps, seconds: row.seconds, working: working,
@@ -884,6 +1133,13 @@ private struct Conversation: View {
                 .onAppear { endMoved(proxy.frame(in: .global).maxY, inPage: proxy.frame(in: .named(Self.pageSpace)).maxY, scroll) }
                 .onChange(of: proxy.frame(in: .global).maxY) { _, value in
                     endMoved(value, inPage: proxy.frame(in: .named(Self.pageSpace)).maxY, scroll)
+                }
+                // The reading column grew or shrank, as it does held sideways when the sidebar comes or goes, and every
+                // line wrapped anew. A reader at the end stays there, with the last turn and its working line above the
+                // reply box, rather than trusting the scroll view to keep a page whose height changed under it at its end
+                // (the Duo design climb's round 6).
+                .onChange(of: proxy.size.width) { _, _ in
+                    if follow.atBottom { toBottom(scroll) }
                 }
         }
     }
@@ -1040,9 +1296,9 @@ private struct ThreadHero: View, Equatable {
         .padding(.bottom, Space.s2)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(edgeReader(\.minY, topMoved))
-        .sheet(isPresented: $showingPullRequest) {
+        .duoSheet(isPresented: $showingPullRequest, toFoot: true) {
             if let pullRequest, let number = chips.pullRequest?.number {
-                PullRequestSheet(ref: ref, url: pullRequest.url, number: number)
+                PullRequestSheet(ref: ref, url: pullRequest.url, number: number).overThread()
             }
         }
     }
@@ -1267,15 +1523,18 @@ private struct MessageView: View, Equatable {
     let ref: ThreadRef
     /// Whether its computer hands sent files back to open in Quick Look (`attachment-files`).
     let opensFiles: Bool
+    /// The provider's ID, for its mark beside its name on the Duo.
+    var providerID: String? = nil
     /// Whether its computer takes videos (`video-staging`, with `attach-any-file`), so sent videos are tiles; elsewhere a
     /// sent video is the file it was before.
     var showsVideos = false
     let open: (OpenPhotos) -> Void
     @Environment(\.sottoDensity) private var density
+    @Environment(\.duoLayout) private var duo
     /// Drawn again only when what it shows changes; opening a photo is the same action for every message.
     static func == (a: Self, b: Self) -> Bool {
         a.message == b.message && a.provider == b.provider && a.showsWho == b.showsWho && a.ref == b.ref && a.opensFiles == b.opensFiles
-            && a.showsVideos == b.showsVideos
+            && a.providerID == b.providerID && a.showsVideos == b.showsVideos
     }
     var body: some View {
         let _ = BenchProbe.body("MessageView")
@@ -1321,12 +1580,20 @@ private struct MessageView: View, Equatable {
         VStack(alignment: .leading, spacing: Space.s2) {
             if showsWho {
                 HStack(spacing: Space.s2) {
-                    Text(String(provider.prefix(1)))
-                        .font(.figtree(10, .caption2, .bold))
-                        .foregroundStyle(Palette.accentText)
-                        .frame(width: 18, height: 18)
-                        .background(Palette.accent.opacity(0.22), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                        .accessibilityHidden(true)
+                    // On the Duo the provider's own mark stands beside its name, as on the rows, cards and Agents, where
+                    // a lettered tile read like a placeholder (Zach's pick, November 9, 2026, round 4).
+                    if duo != .none, ProviderLogo.asset(providerID) != nil {
+                        ProviderLogo(providerID: providerID)
+                            .foregroundStyle(Palette.ink)
+                            .frame(width: 18, height: 18)
+                    } else {
+                        Text(String(provider.prefix(1)))
+                            .font(.figtree(10, .caption2, .bold))
+                            .foregroundStyle(Palette.accentText)
+                            .frame(width: 18, height: 18)
+                            .background(Palette.accent.opacity(0.22), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                            .accessibilityHidden(true)
+                    }
                     Text(provider).font(.sotto(.caption, .semibold)).foregroundStyle(Palette.muted)
                 }
             }
@@ -1381,12 +1648,13 @@ private struct MarkdownBlockView: View, Equatable {
     @Environment(\.replyQuoteBox) private var quoteBox
     @Environment(\.sottoTheme) private var theme
     @Environment(\.sottoDensity) private var density
+    @Environment(\.proseScale) private var scale
     var body: some View {
         let _ = BenchProbe.body("MarkdownBlockView")
         switch block {
         case .heading(let level, let text):
             Text(InlineStyle.render(text, theme: theme))
-                .font(.sotto(level <= 2 ? .lead : .body, .semibold))
+                .font(.sotto(level <= 2 ? .lead : .body, .semibold, times: scale))
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, first ? 0 : Space.dense(Space.s2, density))
                 .accessibilityAddTraits(.isHeader)
@@ -1395,7 +1663,7 @@ private struct MarkdownBlockView: View, Equatable {
                 ReplyText(inline: text, ink: .ink, box: quoteBox)
             } else {
                 Text(InlineStyle.render(text, theme: theme))
-                    .font(.sotto(.body))
+                    .font(.sotto(.body, times: scale))
                     .lineSpacing(3)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
@@ -1410,7 +1678,7 @@ private struct MarkdownBlockView: View, Equatable {
                     ReplyText(inline: text, ink: .muted, box: quoteBox)
                 } else {
                     Text(InlineStyle.render(text, theme: theme))
-                        .font(.sotto(.body))
+                        .font(.sotto(.body, times: scale))
                         .foregroundStyle(Palette.muted)
                         .lineSpacing(3)
                         .fixedSize(horizontal: false, vertical: true)
@@ -1438,10 +1706,16 @@ private struct MarkdownTableView: View {
     @ScaledMetric(relativeTo: .footnote) private var cellWidth: CGFloat = 180
     /// The widest a card's labels run before they wrap, leaving the rest of the row to the value.
     @ScaledMetric(relativeTo: .footnote) private var labelWidth: CGFloat = 140
+    /// On the Duo held sideways, a column whose words run no wider than this keeps them on one line.
+    @ScaledMetric(relativeTo: .footnote) private var shortColumn: CGFloat = 120
+    @Environment(\.duoLayout) private var duo
+    @Environment(\.dynamicTypeSize) private var typeSize
+    /// How wide the cards stand, so a folded card can tell which of its values fit on one line (`shortFields`).
+    @State private var cardsWidth: CGFloat = 0
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
         ViewThatFits(in: .horizontal) {
-            grid
+            wide
             cards
         }
         .background(Palette.code, in: shape)
@@ -1450,6 +1724,47 @@ private struct MarkdownTableView: View {
     }
 
     private var columns: Range<Int> { 0..<table.header.count }
+
+    /// The Duo held sideways sizes each column by its words (`ProportionalColumns`); every other phone keeps the grid.
+    @ViewBuilder private var wide: some View {
+        if duo.sideways { proportionalGrid } else { grid }
+    }
+
+    private var proportionalGrid: some View {
+        ProportionalColumns(columns: table.header.count, cap: cellWidth, shortColumn: shortColumn) {
+            ForEach(columns, id: \.self) { column in
+                proportionalCell(table.header[column], column: column, header: true)
+            }
+            ForEach(Array(table.rows.enumerated()), id: \.offset) { _, row in
+                ForEach(columns, id: \.self) { column in
+                    proportionalCell(row[column], column: column, header: false)
+                }
+            }
+        }
+    }
+
+    /// A cell of the proportional grid; a row under the header carries the hairline above it.
+    private func proportionalCell(_ text: MarkdownInline, column: Int, header: Bool) -> some View {
+        let layout = table.alignments[column].layout
+        return cellText(text, column: column, header: header)
+            .frame(maxWidth: .infinity, alignment: layout.frame)
+            .padding(.horizontal, Space.s3)
+            .padding(.vertical, Space.dense(Space.s2, density))
+            .frame(maxHeight: .infinity, alignment: .top)
+            .padding(.top, header ? 0 : 1)
+            .overlay(alignment: .top) {
+                if !header { Rectangle().fill(Palette.hairline).frame(height: 1) }
+            }
+    }
+
+    private func cellText(_ text: MarkdownInline, column: Int, header: Bool) -> some View {
+        Text(InlineStyle.render(text, theme: theme))
+            .font((header ? Font.sotto(.caption, .semibold) : Font.sotto(.small)).monospacedDigit())
+            .foregroundStyle(header ? Palette.muted : Palette.ink)
+            .multilineTextAlignment(table.alignments[column].layout.text)
+            .fixedSize(horizontal: false, vertical: true)
+            .textSelection(.enabled)
+    }
 
     private var grid: some View {
         Grid(alignment: .topLeading, horizontalSpacing: 0, verticalSpacing: 0) {
@@ -1473,12 +1788,7 @@ private struct MarkdownTableView: View {
     private func cell(_ text: MarkdownInline, column: Int, header: Bool) -> some View {
         let layout = table.alignments[column].layout
         return CappedWidth(width: cellWidth) {
-            Text(InlineStyle.render(text, theme: theme))
-                .font((header ? Font.sotto(.caption, .semibold) : Font.sotto(.small)).monospacedDigit())
-                .foregroundStyle(header ? Palette.muted : Palette.ink)
-                .multilineTextAlignment(layout.text)
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
+            cellText(text, column: column, header: header)
         }
         .frame(maxWidth: column == 0 ? .infinity : nil, alignment: layout.frame)
         .padding(.horizontal, Space.s3)
@@ -1497,12 +1807,15 @@ private struct MarkdownTableView: View {
                 .padding(.vertical, Space.dense(Space.s3, density))
                 .frame(maxWidth: .infinity, alignment: .leading)
         } else {
+            // Folded, once any row has a short field the table's cards take the shorter form (`shortCard`).
+            let short = duo.isFolded && table.rows.contains { !shortFields($0).isEmpty }
             VStack(alignment: .leading, spacing: 0) {
                 ForEach(Array(table.rows.enumerated()), id: \.offset) { index, row in
                     if index > 0 { Rectangle().fill(Palette.hairline).frame(height: 1) }
-                    card(row)
+                    if short { shortCard(row) } else { card(row) }
                 }
             }
+            .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { cardsWidth = $0 }
         }
     }
 
@@ -1516,23 +1829,29 @@ private struct MarkdownTableView: View {
         return line
     }
 
-    /// A card titled by the row's first cell, at the trailing edge when its column is set there.
-    private func card(_ row: [MarkdownInline]) -> some View {
+    /// A card's title: the row's first cell under its column's small label, at the trailing edge when its column is set
+    /// there.
+    private func cardTitle(_ row: [MarkdownInline]) -> some View {
         let trailing = table.alignments[0] == .trailing
-        return VStack(alignment: .leading, spacing: Space.s2) {
-            VStack(alignment: trailing ? .trailing : .leading, spacing: Space.s1) {
-                if !table.header[0].source.isEmpty {
-                    Text(InlineStyle.render(table.header[0], theme: theme))
-                        .font(.sotto(.caption, .semibold))
-                        .foregroundStyle(Palette.muted)
-                }
-                Text(InlineStyle.render(row[0], theme: theme))
-                    .font(.sotto(.body, .semibold).monospacedDigit())
-                    .multilineTextAlignment(trailing ? .trailing : .leading)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
+        return VStack(alignment: trailing ? .trailing : .leading, spacing: Space.s1) {
+            if !table.header[0].source.isEmpty {
+                Text(InlineStyle.render(table.header[0], theme: theme))
+                    .font(.sotto(.caption, .semibold))
+                    .foregroundStyle(Palette.muted)
             }
-            .frame(maxWidth: .infinity, alignment: trailing ? .trailing : .leading)
+            Text(InlineStyle.render(row[0], theme: theme))
+                .font(.sotto(.body, .semibold).monospacedDigit())
+                .multilineTextAlignment(trailing ? .trailing : .leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+        }
+        .frame(maxWidth: .infinity, alignment: trailing ? .trailing : .leading)
+    }
+
+    /// A card titled by the row's first cell, with every other column a label and its value.
+    private func card(_ row: [MarkdownInline]) -> some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            cardTitle(row)
             if row.count > 1 {
                 Grid(alignment: .topLeading, horizontalSpacing: Space.s3, verticalSpacing: Space.s1) {
                     ForEach(1..<row.count, id: \.self) { column in
@@ -1553,6 +1872,73 @@ private struct MarkdownTableView: View {
         .padding(.vertical, Space.dense(Space.s3, density))
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
+    }
+
+    /// Folded, a card whose label and value lines made a tall form of every record: its title as before, then its short
+    /// fields on one quiet line joined with " · ", in the table's own words, and each other field under its own small
+    /// label at the card's full width (Zach's round 8 pick A, November 10, 2026). VoiceOver still hears each short field's
+    /// label with its value.
+    private func shortCard(_ row: [MarkdownInline]) -> some View {
+        let short = shortFields(row)
+        let rest = row.indices.dropFirst().filter { !short.contains($0) && !row[$0].source.isEmpty }
+        return VStack(alignment: .leading, spacing: Space.s2) {
+            VStack(alignment: .leading, spacing: 2) {
+                cardTitle(row)
+                if !short.isEmpty {
+                    Text(joined(short, of: row))
+                        .font(.sotto(.small).monospacedDigit())
+                        .foregroundStyle(Palette.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                        .accessibilityLabel(short.map { "\(table.header[$0].text), \(row[$0].text)" }.joined(separator: ", "))
+                }
+            }
+            ForEach(rest, id: \.self) { column in
+                VStack(alignment: .leading, spacing: 2) {
+                    if !table.header[column].source.isEmpty {
+                        Text(InlineStyle.render(table.header[column], theme: theme))
+                            .font(.sotto(.caption, .semibold))
+                            .foregroundStyle(Palette.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    value(row[column], trailing: table.alignments[column] == .trailing)
+                }
+            }
+        }
+        .padding(.horizontal, Space.s4)
+        .padding(.vertical, Space.dense(Space.s3, density))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+
+    /// The columns between a row's first and last whose values fit on one line of the card, empty ones left out.
+    private func shortFields(_ row: [MarkdownInline]) -> [Int] {
+        guard row.count > 2, cardsWidth > 0 else { return [] }
+        let traits = UITraitCollection(preferredContentSizeCategory: FilledLines.category(typeSize))
+        let font = UIFont.figtree(TextScale.small.size, .footnote, .regular, traits: traits)
+        let room = cardsWidth - Space.s4 * 2
+        return (1..<(row.count - 1)).filter { column in
+            let words = row[column].text
+            guard !words.isEmpty, !words.contains("\n") else { return false }
+            return ceil((words as NSString).size(withAttributes: [.font: font]).width) <= room
+        }
+    }
+
+    /// A row's cells on one line, each with its inline Markdown, joined with " · ". A value that can't say what it is on
+    /// its own, a bare yes or no, a number or a mark, keeps its column's name before it ("Fixed: No"), where the pick's
+    /// "Not fixed" named itself.
+    private func joined(_ columns: [Int], of row: [MarkdownInline]) -> AttributedString {
+        var line = AttributedString()
+        for (index, column) in columns.enumerated() {
+            if index > 0 { line.append(AttributedString(" · ")) }
+            let header = table.header[column]
+            if !header.source.isEmpty, !DuoWords.namesItself(row[column].text) {
+                line.append(InlineStyle.render(header, theme: theme))
+                line.append(AttributedString(": "))
+            }
+            line.append(InlineStyle.render(row[column], theme: theme))
+        }
+        return line
     }
 
     /// A card's value; a centred column reads as leading, since a card has no column to centre it in.
@@ -1590,6 +1976,67 @@ private struct CappedWidth: Layout {
     }
 }
 
+/// A table's cells, row by row, `columns` to a row, on the Duo held sideways (the Duo design climb's round 6): each
+/// column takes the width in proportion to how wide its words run on one line, so a short column doesn't stand wide while
+/// a long one wraps narrow. A column whose words fit `shortColumn` keeps them on one line. Its ideal width is the grid's,
+/// each column's words up to `cap`, so the table takes the grid's place, or the cards', under the same test.
+private struct ProportionalColumns: Layout {
+    let columns: Int
+    let cap: CGFloat
+    let shortColumn: CGFloat
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard columns > 0 else { return .zero }
+        let natural = naturalWidths(subviews)
+        let width = proposal.width ?? natural.reduce(CGFloat(0)) { $0 + min($1, cap) }
+        let heights = rowHeights(subviews, widths: shares(natural, in: width))
+        return CGSize(width: width, height: heights.reduce(0, +))
+    }
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard columns > 0 else { return }
+        let widths = shares(naturalWidths(subviews), in: bounds.width)
+        var y = bounds.minY
+        for (row, height) in rowHeights(subviews, widths: widths).enumerated() {
+            var x = bounds.minX
+            for column in 0..<columns where row * columns + column < subviews.count {
+                subviews[row * columns + column].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(width: widths[column], height: height))
+                x += widths[column]
+            }
+            y += height
+        }
+    }
+    /// Each column's widest cell with its words on one line.
+    private func naturalWidths(_ subviews: Subviews) -> [CGFloat] {
+        var widths = Array(repeating: CGFloat(0), count: columns)
+        for (index, view) in subviews.enumerated() {
+            widths[index % columns] = max(widths[index % columns], view.sizeThatFits(.unspecified).width)
+        }
+        return widths
+    }
+    /// The width shared in proportion to the columns' words; a column whose share would wrap words that fit
+    /// `shortColumn` keeps that width instead, and the rest share what is left.
+    private func shares(_ natural: [CGFloat], in width: CGFloat) -> [CGFloat] {
+        let floors = natural.map { min($0, shortColumn) }
+        var held = Set<Int>()
+        while true {
+            let open = natural.indices.filter { !held.contains($0) }
+            let room = width - held.reduce(CGFloat(0)) { $0 + floors[$1] }
+            let words = open.reduce(CGFloat(0)) { $0 + natural[$1] }
+            guard words > 0 else { return floors }
+            let short = open.filter { natural[$0] * room / words < floors[$0] }
+            if short.isEmpty { return natural.indices.map { held.contains($0) ? floors[$0] : natural[$0] * room / words } }
+            held.formUnion(short)
+        }
+    }
+    /// Each row as tall as its tallest cell at its column's width.
+    private func rowHeights(_ subviews: Subviews, widths: [CGFloat]) -> [CGFloat] {
+        stride(from: 0, to: subviews.count, by: columns).map { start in
+            (start..<min(start + columns, subviews.count)).reduce(CGFloat(0)) { tallest, index in
+                max(tallest, subviews[index].sizeThatFits(ProposedViewSize(width: widths[index - start], height: nil)).height)
+            }
+        }
+    }
+}
+
 /// A list with hanging indents: the marker in its own column, muted, and the words aligned after it.
 private struct MarkdownListView: View {
     let items: [MarkdownListItem]
@@ -1597,6 +2044,7 @@ private struct MarkdownListView: View {
     let quoteBox: ReplyQuoteBox?
     @Environment(\.sottoTheme) private var theme
     @Environment(\.sottoDensity) private var density
+    @Environment(\.proseScale) private var scale
     @ScaledMetric(relativeTo: .body) private var digit: CGFloat = 9
     var body: some View {
         let width = markerWidth
@@ -1608,7 +2056,7 @@ private struct MarkdownListView: View {
                         ReplyText(inline: item.text, ink: .ink, box: quoteBox)
                     } else {
                         Text(InlineStyle.render(item.text, theme: theme))
-                            .font(.sotto(.body))
+                            .font(.sotto(.body, times: scale))
                             .lineSpacing(3)
                             .fixedSize(horizontal: false, vertical: true)
                             .textSelection(.enabled)
@@ -1629,54 +2077,142 @@ private struct MarkdownListView: View {
     @ViewBuilder private func marker(_ marker: MarkdownListItem.Marker, width: CGFloat) -> some View {
         switch marker {
         case .bullet:
-            Text("•").font(.sotto(.body, .bold)).foregroundStyle(Palette.muted)
+            Text("•").font(.sotto(.body, .bold, times: scale)).foregroundStyle(Palette.muted)
                 .frame(width: width, alignment: .center)
                 .accessibilityHidden(true)
         case .number(let number):
-            Text("\(number).").font(.sotto(.body).monospacedDigit()).foregroundStyle(Palette.muted)
+            Text("\(number).").font(.sotto(.body, times: scale).monospacedDigit()).foregroundStyle(Palette.muted)
                 .frame(width: width, alignment: .trailing)
         }
     }
 }
 
-/// Code on the code surface, its language above it and Copy beside that; long lines scroll sideways.
+/// Code that wraps at the block's edge, on the Duo in every posture (Zach, November 9, 2026, the Duo design climb's round
+/// 2): each line that runs past the edge goes on under a ↪, so a wrapped line can't pass for two, and Copy still copies
+/// the code as written. The font is monospaced, so a column is one measured character wide and the breaks are worked out
+/// here, at a space where one falls in the last half of the line.
+private struct WrappedCode: View {
+    let code: String
+    /// The code block's ink; a running step's command takes the conversation's.
+    var ink = Palette.codeInk
+    @State private var width: CGFloat = 0
+    @State private var advance: CGFloat = 0
+    @Environment(\.sottoTheme) private var theme
+    struct Line: Hashable { let text: String; let continued: Bool }
+    var body: some View {
+        let columns = advance > 0 && width > 0 ? max(12, Int((width / advance).rounded(.down))) : Int.max
+        VStack(alignment: .leading, spacing: 3) {
+            ForEach(Array(Self.lines(code, columns: columns).enumerated()), id: \.offset) { _, line in
+                Group {
+                    if line.continued {
+                        Text(verbatim: "↪ ").foregroundStyle(theme.color(.muted)) + Text(verbatim: line.text)
+                    } else {
+                        Text(verbatim: line.text.isEmpty ? " " : line.text)
+                    }
+                }
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .font(.system(.footnote, design: .monospaced))
+        .foregroundStyle(ink)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { width = $0 }
+        .background(alignment: .topLeading) {
+            Text(verbatim: "MMMMMMMMMM").font(.system(.footnote, design: .monospaced)).fixedSize().hidden()
+                .onGeometryChange(for: CGFloat.self, of: { $0.size.width / 10 }) { advance = $0 }
+        }
+        .textSelection(.enabled)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(verbatim: code))
+    }
+    /// The code's lines cut to `columns`, a continuation two columns shorter for its ↪.
+    static func lines(_ code: String, columns: Int) -> [Line] {
+        var out: [Line] = []
+        for raw in code.replacingOccurrences(of: "\t", with: "    ").components(separatedBy: "\n") {
+            var rest = Substring(raw)
+            var continued = false
+            repeat {
+                let room = continued ? columns - 2 : columns
+                if rest.count <= room { out.append(Line(text: String(rest), continued: continued)); break }
+                var cut = rest.index(rest.startIndex, offsetBy: room)
+                // A break goes after a space or a path's slash in the line's second half, so a name isn't split in its
+                // middle ("terminal" / "Drawer.test.ts"); only a run with neither is cut at the edge.
+                if let space = rest[..<cut].lastIndex(where: { $0 == " " || $0 == "/" }), rest.distance(from: rest.startIndex, to: space) >= room / 2 {
+                    cut = rest.index(after: space)
+                }
+                out.append(Line(text: String(rest[..<cut]), continued: continued))
+                rest = rest[cut...]
+                continued = true
+            } while !rest.isEmpty
+        }
+        return out
+    }
+}
+
+/// Code on the code surface, its language above it and Copy beside that; long lines scroll sideways. On the Duo they wrap
+/// in every posture instead, each break marked ↪ (`WrappedCode`). Folded or sideways, a block of one or two lines has no
+/// header: Copy stands at the code's right end on its first line and the language goes, where the header had stood as
+/// tall as the code (Zach's round 6 pick A, November 10, 2026).
 private struct CodeBlockView: View {
     let language: String?
     let code: String
     @State private var copied = false
+    @Environment(\.duoLayout) private var duo
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: Space.s2) {
-                Text(language ?? String(localized: "code", comment: "Label over a code block whose language is not named")).font(.sotto(.caption)).foregroundStyle(Palette.muted).lineLimit(1)
-                Spacer(minLength: Space.s2)
-                Button { copy() } label: {
-                    (copied ? Text("Copied", comment: "A code block's copy control, just after a press") : Text("Copy", comment: "A code block's copy control"))
-                        .font(.sotto(.caption, .semibold))
-                        .foregroundStyle(Palette.accentText)
-                        .padding(.horizontal, Space.s3)
-                        .frame(minHeight: 44)
-                        .contentShape(Rectangle())
+            if short {
+                HStack(alignment: .firstTextBaseline, spacing: Space.s1) {
+                    WrappedCode(code: code).padding(.vertical, Space.s3)
+                    copyButton
                 }
-                .buttonStyle(PressStyle())
-                .accessibilityLabel(copied ? String(localized: "Copied", comment: "A code block's copy control, just after a press") : String(localized: "Copy this code"))
-            }
-            .padding(.leading, Space.s3)
-            .padding(.trailing, Space.s1)
-            Rectangle().fill(Palette.hairline).frame(height: 1)
-            ScrollView(.horizontal, showsIndicators: false) {
-                Text(code)
-                    .font(.system(.footnote, design: .monospaced))
-                    .foregroundStyle(Palette.codeInk)
-                    .lineSpacing(3)
-                    .fixedSize()
-                    .padding(Space.s3)
-                    .textSelection(.enabled)
+                .padding(.leading, Space.s3)
+                .padding(.trailing, Space.s1)
+            } else {
+                HStack(spacing: Space.s2) {
+                    Text(language ?? String(localized: "code", comment: "Label over a code block whose language is not named")).font(.sotto(.caption)).foregroundStyle(Palette.muted).lineLimit(1)
+                    Spacer(minLength: Space.s2)
+                    copyButton
+                }
+                .padding(.leading, Space.s3)
+                .padding(.trailing, Space.s1)
+                Rectangle().fill(Palette.hairline).frame(height: 1)
+                if duo != .none {
+                    WrappedCode(code: code).padding(Space.s3)
+                } else {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        Text(code)
+                            .font(.system(.footnote, design: .monospaced))
+                            .foregroundStyle(Palette.codeInk)
+                            .lineSpacing(3)
+                            .fixedSize()
+                            .padding(Space.s3)
+                            .textSelection(.enabled)
+                    }
+                }
             }
         }
         .background(Palette.code, in: shape)
         .clipShape(shape)
         .overlay(shape.strokeBorder(Palette.hairline, lineWidth: 1))
+    }
+    /// Folded or sideways on the Duo, a block of one or two lines as written, however they wrap.
+    private var short: Bool {
+        guard duo != .none, duo != .upright else { return false }
+        let lines = code.trimmingCharacters(in: .newlines).components(separatedBy: "\n")
+        return lines.count <= 2
+    }
+    private var copyButton: some View {
+        Button { copy() } label: {
+            (copied ? Text("Copied", comment: "A code block's copy control, just after a press") : Text("Copy", comment: "A code block's copy control"))
+                .font(.sotto(.caption, .semibold))
+                .foregroundStyle(Palette.accentText)
+                .padding(.horizontal, Space.s3)
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(PressStyle())
+        .accessibilityLabel(copied ? String(localized: "Copied", comment: "A code block's copy control, just after a press") : String(localized: "Copy this code"))
     }
     private func copy() {
         UIPasteboard.general.string = code
@@ -1714,11 +2250,12 @@ private enum InlineStyle {
     }
     /// The words as `render` draws them at the body step, for a text view: Figtree in the ink given, code on the code
     /// surface, a key chord on the raised one, scaled to the text size in `traits`.
-    static func attributed(_ inline: MarkdownInline, ink: ThemeRoleName, theme: ThemeSwatch, traits: UITraitCollection) -> NSAttributedString {
+    static func attributed(_ inline: MarkdownInline, ink: ThemeRoleName, theme: ThemeSwatch, traits: UITraitCollection,
+                           scale: CGFloat = 1) -> NSAttributedString {
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = 3
-        let regular = UIFont.figtree(TextScale.body.size, .body, traits: traits)
-        let bold = UIFont.figtree(TextScale.body.size, .body, .bold, traits: traits)
+        let regular = UIFont.figtree(TextScale.body.size * scale, .body, traits: traits)
+        let bold = UIFont.figtree(TextScale.body.size * scale, .body, .bold, traits: traits)
         let parsed = inline.cachedAttributed()
         let out = NSMutableAttributedString()
         for run in parsed.runs {
@@ -1790,6 +2327,7 @@ private struct ReplyText: UIViewRepresentable {
     @Environment(\.sottoTheme) private var theme
     /// Read so a change of text size draws the words again.
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.proseScale) private var scale
 
     func makeCoordinator() -> Coordinator { Coordinator(box: box) }
 
@@ -1811,9 +2349,9 @@ private struct ReplyText: UIViewRepresentable {
         BenchProbe.count("textview.update")
         context.coordinator.box = box
         // Set only when the words or their look change, so a selection survives the page drawing again.
-        let words = InlineStyle.attributed(inline, ink: ink, theme: theme, traits: view.traitCollection)
+        let words = InlineStyle.attributed(inline, ink: ink, theme: theme, traits: view.traitCollection, scale: scale)
         if view.attributedText != words { BenchProbe.count("textview.set"); view.attributedText = words }
-        context.coordinator.installed = MeasuredWords.Words(inline: inline, traits: view.traitCollection)
+        context.coordinator.installed = MeasuredWords.Words(inline: inline, traits: view.traitCollection, scale: scale)
         view.linkTextAttributes = [.foregroundColor: UIColor(theme.color(.accentText))]
         view.tintColor = UIColor(theme.color(.accent))
     }
@@ -1824,7 +2362,7 @@ private struct ReplyText: UIViewRepresentable {
         // Laying words out is the costly part of a text view, and SwiftUI asks for the same size several times while
         // a row is made, and again when a row scrolled away is made again. The same words at the same width measure
         // the same, so each is measured once.
-        let words = MeasuredWords.Words(inline: inline, traits: uiView.traitCollection)
+        let words = MeasuredWords.Words(inline: inline, traits: uiView.traitCollection, scale: scale)
         let key = MeasuredWords.Key(words: words, width: bounded ?? -1)
         let fitted: CGSize
         if let known = MeasuredWords.size(for: key) {
@@ -1887,10 +2425,12 @@ private struct ReplyText: UIViewRepresentable {
         let inline: MarkdownInline
         let size: UIContentSizeCategory
         let weight: UILegibilityWeight
-        init(inline: MarkdownInline, traits: UITraitCollection) {
+        let scale: CGFloat
+        init(inline: MarkdownInline, traits: UITraitCollection, scale: CGFloat) {
             self.inline = inline
             size = traits.preferredContentSizeCategory
             weight = traits.legibilityWeight
+            self.scale = scale
         }
     }
     struct Key: Hashable {
@@ -2178,7 +2718,7 @@ final class GlowWordsView: LoopingView {
         if window == nil {
             timer?.invalidate()
             timer = nil
-        } else if timer == nil {
+        } else if timer == nil, !DebugFlags.still {
             // The timer holds this view until it leaves the window, where it stops.
             let next = Timer(timeInterval: WorkingWords.seconds, target: self, selector: #selector(nextWord), userInfo: nil, repeats: true)
             next.tolerance = 0.2
@@ -2262,6 +2802,7 @@ private struct StepLine: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The mark's room, which grows with the step's words so a sub-agent's Bot, which grows too, keeps clear of them.
     @ScaledMetric(relativeTo: .caption) private var markRoom: CGFloat = 16
+    @Environment(\.duoLayout) private var duo
     /// The video the step's strip set playing under its line.
     @State private var playing: String?
     var body: some View {
@@ -2269,36 +2810,87 @@ private struct StepLine: View {
         // The step's pictures sit at its line's end, before its time (ADR-0170, pictures in steps).
         let items = pictures == nil ? [] : StepPictures.inSteps([record])
         VStack(alignment: .leading, spacing: 0) {
-            line(items)
+            Group {
+                if duo == .none {
+                    line(items, whole: false)
+                } else if running {
+                    // On the Duo the running step's command always stands on its own line under Running and its timer, a
+                    // size larger and at the conversation's full strength, where beside them it was a fine grey strand
+                    // (Zach's pick A, November 9, 2026, round 5).
+                    stacked(items, strong: true)
+                } else {
+                    // On the Duo a command that doesn't fit beside its step goes whole on a line under it, rather than cut
+                    // in the middle (Zach, November 9, 2026, the Duo design climb's round 2).
+                    ViewThatFits(in: .horizontal) {
+                        line(items, whole: true)
+                        stacked(items, strong: false)
+                    }
+                }
+            }
+            // A line with pictures keeps them apart, so each opens on its own.
+            .accessibilityElement(children: items.isEmpty ? .combine : .contain)
+            .accessibilityIdentifier("step-\(record.id)")
             if let pictures, !items.isEmpty { StepPictureVideo(ref: pictures.ref, items: items, playing: playing) }
         }
     }
 
-    private func line(_ items: [StepPictures.Item]) -> some View {
+    /// The step over two lines: its kind, its pictures and time, then its command whole under them, `strong` a size
+    /// larger in ink.
+    private func stacked(_ items: [StepPictures.Item], strong: Bool) -> some View {
+        VStack(alignment: .leading, spacing: strong ? 3 : 1) {
+            HStack(spacing: 7) {
+                mark.frame(width: markRoom, height: markRoom)
+                verb
+                Spacer(minLength: Space.s2)
+                strip(items)
+                meta
+            }
+            .frame(minHeight: 26)
+            if let subject {
+                Group {
+                    if strong {
+                        // A command that runs past the edge wraps as a code block's line does, under a ↪.
+                        WrappedCode(code: subject, ink: Palette.ink)
+                    } else {
+                        subjectText(subject).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(.leading, markRoom + 7)
+            }
+        }
+    }
+
+    /// The step on one line; `whole` keeps the command whole, so it fits or doesn't, where elsewhere it is cut.
+    private func line(_ items: [StepPictures.Item], whole: Bool) -> some View {
         HStack(spacing: 7) {
             mark.frame(width: markRoom, height: markRoom)
-            Text(verbatim: record.title)
-                .font(.sotto(.caption, .semibold))
-                .foregroundStyle(verbStyle)
-                .lineLimit(1)
-                .layoutPriority(1)
+            verb
             if let subject {
-                Text(subject)
-                    .font(.system(.caption2, design: .monospaced))
-                    .foregroundStyle(Palette.muted)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                if whole { subjectText(subject).fixedSize() } else { subjectText(subject).lineLimit(1).truncationMode(.middle) }
             }
             Spacer(minLength: Space.s2)
-            if let pictures, !items.isEmpty {
-                StepPictureStrip(ref: pictures.ref, items: items, run: run, by: pictures.by, playing: $playing, open: pictures.open)
-            }
+            strip(items)
             meta
         }
         .frame(minHeight: 26)
-        // A line with pictures keeps them apart, so each opens on its own.
-        .accessibilityElement(children: items.isEmpty ? .combine : .contain)
-        .accessibilityIdentifier("step-\(record.id)")
+    }
+
+    @ViewBuilder private func strip(_ items: [StepPictures.Item]) -> some View {
+        if let pictures, !items.isEmpty {
+            StepPictureStrip(ref: pictures.ref, items: items, run: run, by: pictures.by, playing: $playing, open: pictures.open)
+        }
+    }
+    private var verb: some View {
+        Text(verbatim: record.title)
+            .font(.sotto(.caption, .semibold))
+            .foregroundStyle(verbStyle)
+            .lineLimit(1)
+            .layoutPriority(1)
+    }
+    private func subjectText(_ subject: String) -> some View {
+        Text(subject)
+            .font(.system(.caption2, design: .monospaced))
+            .foregroundStyle(Palette.muted)
     }
 
     private var running: Bool { record.status == "running" }
@@ -3017,10 +3609,30 @@ extension View {
 
 private struct RequestSheetDetents: ViewModifier {
     @Environment(\.dynamicTypeSize) private var typeSize
+    /// How tall the request says it needs to be, on the Duo.
+    @State private var fit: CGFloat?
+    @State private var chosen = PresentationDetent.medium
     func body(content: Content) -> some View {
-        let heights: Set<PresentationDetent> = typeSize.isAccessibilitySize ? [.large] : [.medium, .large]
-        return content.presentationDetents(heights).presentationDragIndicator(.visible)
+        let heights: Set<PresentationDetent>
+        if typeSize.isAccessibilitySize { heights = [.large] }
+        else if let fit { heights = [.height(fit), .large] }
+        else { heights = [.medium, .large] }
+        return content
+            .onPreferenceChange(RequestSheetFit.self) { height in
+                guard let height, height != fit else { return }
+                if chosen != .large { chosen = .height(height) }
+                fit = height
+            }
+            .presentationDetents(heights, selection: Binding(get: { typeSize.isAccessibilitySize ? .large : chosen }, set: { chosen = $0 }))
+            .presentationDragIndicator(.visible)
     }
+}
+
+/// How tall a request sheet's words, choices and buttons stand. On the Duo half the screen cut the third choice off with
+/// a band of nothing under the buttons, so the sheet opens exactly this tall (Zach's pick A, November 8, 2026).
+struct RequestSheetFit: PreferenceKey {
+    static let defaultValue: CGFloat? = nil
+    static func reduce(value: inout CGFloat?, nextValue: () -> CGFloat?) { value = nextValue() ?? value }
 }
 
 /// The whole request: its context and every choice, on glass with a warm wash. Nothing is chosen for the user, and a
@@ -3034,9 +3646,17 @@ struct RequestSheet: View {
     /// Watched so a card in Watcher's page that is answered or changes elsewhere shows here: Watcher's page publishes on
     /// its own store.
     @EnvironmentObject var watcherStore: WatcherStore
-    @Environment(\.dismiss) var dismiss
+    @Environment(\.dismiss) private var systemDismiss
+    @Environment(\.sheetClose) private var sheetClose
+    @Environment(\.duoLayout) private var duo
+    @Environment(\.colorScheme) private var scheme
     let place: RequestPlace
     let request: AgentRequest
+    /// Closes the sheet: Sotto's own over the page on the Duo held sideways, iOS's anywhere else.
+    private func dismiss() { if let sheetClose { sheetClose() } else { systemDismiss() } }
+    /// The height of what scrolls and of the buttons under it, for the Duo's fit.
+    @State private var wordsHeight: CGFloat = 0
+    @State private var footerHeight: CGFloat = 0
     @State private var answers: [String: QuestionAnswer] = [:]
     @State private var choice: String?
     @State private var text = ""
@@ -3053,6 +3673,10 @@ struct RequestSheet: View {
     private var computer: String { model.name(place.hostID) }
     /// The request as the computer holds it now; nil once it is answered or replaced.
     private var current: AgentRequest? { model.waitingRequest(request.id, at: place) }
+    /// Folded, how wide the strip under the clock is. Only the heading keeps clear of it; the choices and the buttons run
+    /// to the sheet's own margin below the clock, where the strip was 95 points of nothing (Zach's pick A, November 9,
+    /// 2026, round 4).
+    private var foldedStrip: CGFloat { if case .folded(let strip) = duo { return strip } else { return 0 } }
 
     var body: some View {
         ScrollView {
@@ -3066,11 +3690,18 @@ struct RequestSheet: View {
             }
             .padding(.horizontal, Space.gutter)
             .padding(.top, Space.s5)
-            .padding(.bottom, Space.s5)
+            .padding(.bottom, choicesMeetFooter ? Space.s2 : Space.s5)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { wordsHeight = $0 }
         }
         .scrollDismissesKeyboard(.interactively)
-        .safeAreaInset(edge: .bottom, spacing: 0) { footer }
+        .ignoresSafeArea(.container, edges: foldedStrip > 0 ? .trailing : [])
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            VStack(spacing: 0) { footer }.onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { footerHeight = $0 }
+                .ignoresSafeArea(.container, edges: foldedStrip > 0 ? .trailing : [])
+        }
+        // iOS adds the bottom safe area to a height detent itself, so it isn't counted here.
+        .preference(key: RequestSheetFit.self, value: duo == .none || wordsHeight == 0 ? nil : wordsHeight + footerHeight)
         .presentationBackground { SheetBackdrop(wash: true) }
         .environment(\.sottoOnSheet, true)
         .presentationCornerRadius(Radius.xl)
@@ -3105,6 +3736,7 @@ struct RequestSheet: View {
                     .accessibilityIdentifier("request-headline")
             }
         }
+        .padding(.trailing, foldedStrip)
         .accessibilityElement(children: .contain)
         if !permission, count > 0, let explanation = RequestText.explanation(current) {
             Text(explanation).font(.sotto(.body)).foregroundStyle(Palette.ink).textSelection(.enabled)
@@ -3579,14 +4211,31 @@ struct RequestSheet: View {
         sendAnswer(current)
     }
 
+    /// Whether Not now and Send answer stand in the footer under the question, rather than in what scrolls.
+    private var hasFooter: Bool {
+        guard let current else { return false }
+        return current.kind != "permission" && current.supported && model.mayAnswer(at: place)
+    }
+    /// Folded or sideways, the last choice stands as far above the footer's rule as the choices stand from each other,
+    /// where the page's own 20 points left a band over the footer in a sheet that opens exactly tall enough for its
+    /// choices and its buttons (the Duo design climb's round 8).
+    private var choicesMeetFooter: Bool { duo != .none && duo != .upright && hasFooter }
+    /// Whether Not now is the outline pill: on the Duo in light, and folded or sideways in dark as well.
+    private var notNowRing: Bool { duo != .none && (scheme == .light || duo != .upright) }
+
     /// Not now and Send answer stay in reach under a question, whatever its length.
     @ViewBuilder private var footer: some View {
-        if let current, current.kind != "permission", current.supported, model.mayAnswer(at: place) {
+        if let current, hasFooter {
             VStack(spacing: Space.s2) {
                 sendingLine(current)
                 skipLine(current)
                 HStack(spacing: Space.s2) {
-                    Button("Not now") { dismiss() }.buttonStyle(PillButtonStyle(kind: .soft, wide: true))
+                    // On the Duo in light, Not now is a ring on the sheet's own fill, so it can't read as the greyed Send
+                    // answer beside it (Zach's round 6 pick A, November 10, 2026). Folded and sideways it is the ring in
+                    // dark too, where the two had been the same grey pill and Not now's brighter label read as the
+                    // primary (his round 8 pick A, November 10, 2026).
+                    Button("Not now") { dismiss() }
+                        .buttonStyle(PillButtonStyle(kind: notNowRing ? .outline : .soft, wide: true))
                     // Every question skipped sends a skip, so the button says so (ADR-0135).
                     Group {
                         if let questions = current.questions, !questions.isEmpty, questions.allSatisfy(isSkipped) {
@@ -3604,7 +4253,8 @@ struct RequestSheet: View {
             .padding(.top, Space.s3)
             .padding(.bottom, Space.s2)
             .background { SheetBackdrop(wash: false) }
-            .overlay(alignment: .top) { Rectangle().fill(Palette.hairline).frame(height: 1) }
+            // The line runs under the folded Duo's strip too, to the sheet's edge, rather than stopping where the strip starts.
+            .overlay(alignment: .top) { Rectangle().fill(Palette.hairline).frame(height: 1).ignoresSafeArea(.container, edges: .horizontal) }
         }
     }
 }
@@ -3687,6 +4337,7 @@ private struct OptionLabel: View {
     let chosen: Bool
     var multiple = false
     @Environment(\.sottoTheme) private var theme
+    @Environment(\.duoLayout) private var duo
     var body: some View {
         HStack(alignment: .top, spacing: Space.s3) {
             mark.padding(.top, 1)
@@ -3702,7 +4353,9 @@ private struct OptionLabel: View {
         let shape = RoundedRectangle(cornerRadius: multiple ? 6 : 11, style: .continuous)
         return ZStack {
             shape.fill(chosen ? theme.color(.accent) : Color.clear)
-            shape.strokeBorder(chosen ? Color.clear : theme.color(.border), lineWidth: 1.5)
+            // On the Duo an empty mark is a thicker ring in the words' muted grey, where the thin border sank into the
+            // choice's fill (Zach's pick A, November 9, 2026, round 5).
+            shape.strokeBorder(chosen ? Color.clear : theme.color(duo != .none ? .muted : .border), lineWidth: duo != .none ? 2.25 : 1.5)
             Image(systemName: "checkmark")
                 .font(.system(size: 11, weight: .bold))
                 .foregroundStyle(Palette.onAccent)

@@ -60,3 +60,14 @@ started the watched set's (ADR-0057).
 
 Codex, Grok Build, Devin and the other providers keep the rule above: their reaper spares the watched set, and their
 watched threads keep a process. A Claude adapter that has not been told a live-session set keeps it too.
+
+## Amendment: the host says which rule holds each session (November 10, 2026, #2398)
+
+The November 10 audit found Claude Code CLIs idle for two to five and a half hours under forge's host, and nothing could
+say which of the rules above kept each, or whether a bug did. The reaper now answers a read of the sessions it tracks:
+for each, how long since its own last activity, its process where the adapter knows it, and the name of every rule
+keeping it now (`busy`, `request`, `background`, `compaction`, `reading`, `watched` or `live-session`), or `recent` while its thirty
+minutes run and `none` once the next sweep will stop it. Each adapter names the parts of its busy rule, and a name is
+asked only while the rule says yes, so the read cannot call a session free that the sweep would keep. The headless host
+answers the read on an administrative route (`docs/host-protocol.md`) for the host machine's own measuring script; the
+desktop shows none of it. The rules themselves do not change.
