@@ -47,7 +47,9 @@ SOTTO_PERF_BENCH=1 NODE_OPTIONS=--max-old-space-size=3072 npx vitest run tests/p
 | On the wire | 282,671 bytes | 13,113 bytes |
 | The probe's estimate | 12,961 bytes | 13,117 bytes |
 
-The two runs are seconds apart on one main that keeps working, so the hello grew by two thread records between them. The
+A second run, after `main` was merged in, gave the same JSON sizes, 13,109 bytes on the wire with the switch on, and
+estimates of 12,956 and 13,113 bytes. Within a run the two halves are seconds apart on one main that keeps working, so
+the hello grew by two thread records between them. The
 hello is over 64 KiB, so with the switch on it was compressed on the thread pool and arrived as one frame, which the probe
 inflated and read. The other messages in that run were under 1 KiB and went as they were, as the extension allows.
 
