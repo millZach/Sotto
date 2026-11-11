@@ -25,7 +25,8 @@ import { DevinAcpHost } from './devin'
 import { MuseMspHost } from './muse'
 import { OpenCodeHost } from './opencode'
 import { CursorAcpHost } from './cursor'
-import { PiHost } from './pi'
+import type { PiSignIn, PiSignInOptions } from './piSignIn'
+import type { PiHost, PiOptions } from './pi'
 import { HermesAcpHost } from './hermes'
 import { DeepSeekAcpHost } from './deepseek'
 import { CursorSignIn } from './cursorSignIn'
@@ -103,6 +104,10 @@ type ControlDependencies = ConstructorParameters<typeof AgentControl>[0]
 type NativeHost = ProviderHost & { closed?: () => Promise<void> }
 
 export interface AgentRuntimeOptions {
+  /** Only the desktop supplies Pi's terminal sign-in implementation; the headless bundle must not import it. */
+  createPiSignIn?: (host: PiHost, options: PiSignInOptions) => PiSignIn
+  /** Pi and its account support run only on the desktop; absence leaves a held provider. */
+  createPiHost?: (directory: string, options: PiOptions) => PiHost
   directory: string
   /**
    * Sotto's browser tools for this runtime's threads (a paired host's, ADR-0198), made once their working copies can be
@@ -334,6 +339,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   let showEveryAgentPicture: () => boolean = options.showEveryAgentPicture ?? (() => true)
   const showEvery = (): boolean => showEveryAgentPicture()
   const captureMedia = threadMedia ? agentCaptures(threadMedia, showEvery) : {}
+  let piHost: PiHost | undefined
   const providers: Partial<Record<ProviderId, NativeHost>> = options.host ? {} : {
     codex: adapter('codex', () => options.providers?.codex ?? new CodexAppServerHost({ userDataPath: directory, usageEnabled: options.usageEnabled === true, markdownLinks: options.markdownSidePanel === true, ...limitStops, ...captureMedia, ...(options.codexLog ? { logEvent: options.codexLog } : {}) })),
     claude: adapter('claude', () => options.providers?.claude ?? new ClaudeStreamJsonHost({ userDataPath: directory, usageEnabled: options.usageEnabled === true, markdownLinks: options.markdownSidePanel === true, ...limitStops, ...captureMedia, ...(options.claudeHistoryModulePath ? { historyModulePath: options.claudeHistoryModulePath } : {}),
@@ -349,7 +355,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     cursor: adapter('cursor', () => options.providers?.cursor ?? new CursorAcpHost(directory, captureMedia)),
     // Pi starts only on this computer, where its own-model-server record lives.
     pi: adapter('pi', () => options.providers?.pi ?? (options.runsAs === 'headless-host' ? new HeldProviderHost('pi')
-      : new PiHost(directory, { heldProviders: held, ...captureMedia, ...(options.ownServers ? { servers: options.ownServers } : {}) }))),
+      : (piHost = options.createPiHost?.(directory, { heldProviders: held, ...captureMedia, ...(options.ownServers ? { servers: options.ownServers } : {}) })) ?? new HeldProviderHost('pi'))),
     // This local Hermes build runs only on the Mac. Its gateway and model routes belong to this computer.
     hermes: adapter('hermes', () => options.providers?.hermes ?? (options.runsAs === 'headless-host' || process.platform !== 'darwin' ? new HeldProviderHost('hermes')
       : new HermesAcpHost(directory, { heldProviders: held, ...captureMedia, ...(options.ownServers ? { servers: options.ownServers } : {}) }))),
@@ -799,6 +805,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     movesHere?.close()
     closingWatcherTools = watcherTools?.close()
   }
+  let piSignIn: PiSignIn | undefined
   let stoppingProviders: Promise<void> | undefined
   const stopProviders = (): Promise<void> => {
     if (stoppingProviders) return stoppingProviders
@@ -810,7 +817,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     stoppingProviders = (async () => {
       // The record's last write runs beside the providers' closing; nothing they do changes it now. A thread title still
       // being written gets up to two seconds before the side calls are stopped, so `closed()` saves it (#980).
-      const results = await Promise.allSettled([reasoner.close?.(), agentControl.titleWritesSettled().then(() => shortTextWriter.close()), ...Object.values(providers).map(provider => provider.closed?.()),
+      const results = await Promise.allSettled([(async () => piSignIn?.close())(), reasoner.close?.(), agentControl.titleWritesSettled().then(() => shortTextWriter.close()), ...Object.values(providers).map(provider => provider.closed?.()),
         ...(closingWatcherTools ? [closingWatcherTools] : []), ...(resumeFrozen ? [resumeFrozen] : []), ...(limitClosed ? [limitClosed] : [])])
       await agentControl.closed()
       // A connection already starting when stop was requested has now settled. Stop and drain
@@ -861,6 +868,16 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // desktop ends it again whenever the switch is saved off.
   const switchedOff = babysitter && options.babysitting?.agentTool?.() === false ? babysitter : undefined
   try {
+    // The desktop owns the terminal implementation. Its lifetime belongs to this runtime, including failed startup.
+    const nativePi = piHost
+    piSignIn = nativePi && options.runsAs !== 'headless-host' ? options.createPiSignIn?.(nativePi, {
+      modelsChanged: models => nativePi.setAccountModels(models),
+      openExternal: async url => { await options.openExternal(url) },
+      changed: async () => {
+        if (nativePi.isConnected()) await nativePi.accountsChanged()
+        else await agentControl.command({ type: 'connect', provider: 'pi', notice: false })
+      },
+    }) : undefined
     // Read every startup record inside the cleanup boundary, before a provider can start.
     await desktopDefaults?.load()
     await delegationRemote?.load()
@@ -891,6 +908,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       async () => watchedPullRequests?.close(),
       async () => toolReads.dispose(),
       async () => agentControl.dispose(),
+      async () => piSignIn?.close(),
       async () => reasoner.close?.(),
       async () => shortTextWriter.close(),
       ...Object.values(providers).map(provider => async () => provider.closed?.()),
@@ -945,7 +963,6 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // The user's own model servers reach the same OpenCode (ADR-0124), only where it runs and they were asked for.
   const ownServersOpenCode = options.ownServers && providers.opencode instanceof OpenCodeHost ? openCodeForOwnServers(providers.opencode) : undefined
   // And the same record reaches DeepSeek Harness (ADR-0138), only where its adapter runs.
-  const piHost = providers.pi instanceof PiHost ? providers.pi : undefined
   const deepseekHost = providers.deepseek instanceof DeepSeekAcpHost ? providers.deepseek : undefined
   // Hermes keeps its own copy of a keyed server's key (ADR-0124), only where its adapter runs.
   const ownServersHermes = options.ownServers && providers.hermes instanceof HermesAcpHost ? providers.hermes : undefined
@@ -967,5 +984,5 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     connect: async provider => whyNotConnected(await agentControl.command({ type: 'connect', provider, notice: false }), provider),
   }) : undefined
   idleCompaction.start()
-  return { agentHost, agentControl, threadRegistry, turns, hostService, heldSessions, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, mainCheckout, watcher, watcherTools, delegation, dynamicRecord, delegationRelay, delegationRemote, continuation, threadMoves, workerRoles, opencodeSignIn, ownServersOpenCode, ownServersDeepSeek, ownServersHermes, cursorSignIn, providerSignIn, branchMoves, branchBundles, checks, workerAdmission, prepareForShutdown, close }
+  return { piSignIn, agentHost, agentControl, threadRegistry, turns, hostService, heldSessions, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, mainCheckout, watcher, watcherTools, delegation, dynamicRecord, delegationRelay, delegationRemote, continuation, threadMoves, workerRoles, opencodeSignIn, ownServersOpenCode, ownServersDeepSeek, ownServersHermes, cursorSignIn, providerSignIn, branchMoves, branchBundles, checks, workerAdmission, prepareForShutdown, close }
 }

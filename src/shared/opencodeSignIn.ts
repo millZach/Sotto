@@ -64,6 +64,8 @@ export const modelSourceSchema = z.object({
   /** How Sotto's OpenCode is signed in to it, such as "API key" or "ChatGPT account"; absent when it is not. */
   signedIn: z.object({ how: name }).strict().optional(),
   models: z.number().int().min(0).max(100_000),
+  /** A retained Pi sign-in that cannot currently supply models. */
+  problem: z.literal('unavailable').optional(),
 }).strict()
 export type ModelSource = z.infer<typeof modelSourceSchema>
 export const modelSourcesSchema = z.discriminatedUnion('status', [

@@ -38,7 +38,7 @@ it('isolates each thread’s configuration and keeps bearer tokens out of its fi
   try {
     const first = await piThreadEnvironment(root, 'first', piModels([server]), [{ name: 'probe', type: 'http', url: 'http://127.0.0.1:1234/mcp', headers: [{ name: 'Authorization', value: 'Bearer private-one' }] }])
     const second = await piThreadEnvironment(root, 'second', piModels([server]), [{ name: 'probe', type: 'http', url: 'http://127.0.0.1:4321/mcp', headers: [{ name: 'Authorization', value: 'Bearer private-two' }] }])
-    expect(first.PI_CODING_AGENT_DIR).not.toBe(second.PI_CODING_AGENT_DIR)
+    expect(first.PI_CODING_AGENT_DIR).toBe(second.PI_CODING_AGENT_DIR)
     expect(first.SOTTO_PI_MCP_0_0).toBe('Bearer private-one')
     expect(second.SOTTO_PI_MCP_0_0).toBe('Bearer private-two')
     const config = await readFile(join(first.PI_CODING_AGENT_DIR!, 'mcp.json'), 'utf8')

@@ -18,7 +18,10 @@ import { comparePiVersions, piEnvironment, PiRejected, PiRpc, PiUncertain, PI_CL
   findPiExecutable, readPiVersion, type PiFrame } from './piRpc'
 import { piProgram } from './piLookup'
 import { piModels } from './piModels'
-import { PI_ISOLATION_ARGS, piThreadEnvironment } from './piRuntime'
+import { PiAccounts } from './piAccounts'
+import { PI_SOURCES } from '../../shared/piSignIn'
+import { PiTools } from './piTools'
+import { PI_ISOLATION_ARGS, piSessionDirectory, piThreadEnvironment, writePiModels } from './piRuntime'
 import { piEventUpdates, piUsage, type PiTurnUsage } from './piEvents'
 import type { ActivitySubscriptionOptions, ProviderHost, AgentHostCommand, AgentHostResult, ThreadHistorySource, ThreadHostEvent,
   ThreadLaunchProfiles, ThreadReadPurpose, ThreadSessionDraft } from './host'
@@ -162,6 +165,10 @@ export class PiHost implements ProviderHost {
   private readonly dispatching = new Set<string>()
   private readonly observed = new Set<string>()
   private readonly outdated = new Set<string>()
+  private tools = new PiTools()
+  private toolClosing = Promise.resolve()
+  readonly accounts: PiAccounts
+  private accountModels: AgentModel[] = []
   private readonly processes = new Set<PiRpc>()
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
   private readonly activityListeners = new ActivitySubscribers()
@@ -197,6 +204,7 @@ export class PiHost implements ProviderHost {
 
   constructor(private readonly userDataDirectory: string, private readonly options: PiOptions = {}) {
     this.homeDirectory = options.homeDirectory ?? join(userDataDirectory, 'pi')
+    this.accounts = new PiAccounts(this.homeDirectory, () => this.clientProgram())
     this.aliasStore = new AtomicJsonStore(join(userDataDirectory, 'pi-threads.json'), aliasStoreSchema.parse, () => ({}))
     this.projectStore = new AtomicJsonStore(join(userDataDirectory, 'pi-projects.json'), projectStoreSchema.parse, () => [])
     this.reaper = new SessionReaper({
@@ -271,6 +279,7 @@ export class PiHost implements ProviderHost {
     await this.loading.get(id)?.catch(() => undefined)
     await this.stopSession(id)
     this.reaper.forget(id)
+    this.tools.revoke(id)
     this.observed.delete(id)
     this.outdated.delete(id)
     this.dispatching.delete(id)
@@ -340,14 +349,36 @@ export class PiHost implements ProviderHost {
     this.processes.add(rpc); void rpc.closed.then(() => this.processes.delete(rpc))
     return rpc
   }
+  async clientProgram() {
+    await mkdir(this.homeDirectory, { recursive: true, mode: 0o700 })
+    const executable = this.executable ?? this.options.executable ?? await findPiExecutable(this.options.environment)
+    if (!executable) throw new Error('Install Pi before signing in. Your threads are kept.')
+    const env = piEnvironment(this.homeDirectory, {}, this.options.environment)
+    const version = await readPiVersion(executable, env, this.options.executableArgs ?? [])
+    if (comparePiVersions(version, PI_CLI_VERSION) < 0) throw new Error(`Pi ${PI_CLI_VERSION} or newer is needed.`)
+    const program = await piProgram(executable, env)
+    return { ...program, args: [...program.args, ...(this.options.executableArgs ?? [])] }
+  }
+  setAccountModels(models: AgentModel[]): void {
+    if (JSON.stringify(models) === JSON.stringify(this.accountModels)) return
+    this.accountModels = models
+    this.state.models = [...piCatalog(this.servers), ...this.accountModels]
+    this.modelRevision++
+    for (const [id, connection] of this.connections) if (this.stale(connection)) this.outdated.add(id)
+    this.emit()
+  }
+  async accountsChanged(): Promise<void> {
+    this.accounts.invalidate()
+    this.setAccountModels((await this.accounts.read()).models)
+  }
   private readModelConfig(): void { this.modelConfig = piModels(this.servers) }
   private async startProcess(id: string, alias: Alias, cwd: string): Promise<Connection> {
     if (!this.executable || !this.state.connected) throw new Error('Connect Pi before using its threads.')
     const modelRevision = this.modelRevision
     this.readModelConfig()
-    if (!this.model(alias.modelId)) throw new Error('Pi no longer has this model server. Your thread is kept. Add the server again or choose another model.')
-    const env = await piThreadEnvironment(this.homeDirectory, id, this.modelConfig!, await this.toolServers(id), this.options.environment)
-    const sessions = join(env.PI_CODING_AGENT_DIR!, 'sessions')
+    if (!this.model(alias.modelId)) throw new Error('Pi no longer offers this model. Your thread is kept. Check its model source in Settings or choose another model.')
+    const env = await piThreadEnvironment(this.homeDirectory, id, this.modelConfig!, [await this.tools.mount(id, await this.toolServers(id))], this.options.environment)
+    const sessions = piSessionDirectory(this.homeDirectory, id)
     await mkdir(sessions, { recursive: true })
     const connection: Connection = { rpc: undefined as unknown as PiRpc, clientRevision: this.clientRevision,
       modelRevision, closing: false, model: undefined, effort: undefined, usage: {}, failed: false }
@@ -383,8 +414,12 @@ export class PiHost implements ProviderHost {
       if (comparePiVersions(version, PI_CLI_VERSION) < 0) throw new ProviderUnavailable('too-old', `Pi ${PI_CLI_VERSION} or newer is needed, and this one is ${version}. Update it, then connect again. Your threads are kept.`, version, PI_CLI_VERSION)
       this.servers = await this.options.servers?.() ?? []
       this.assertGeneration(generation)
-      const models = piCatalog(this.servers)
-      if (!models.length) throw new ProviderUnavailable('signed-out', 'Pi runs your own model servers, and none it can run is saved yet. Add one under APIs and your own model servers, then connect again. Your threads are kept.', version)
+      this.readModelConfig()
+      await writePiModels(this.homeDirectory, this.modelConfig!)
+      this.accounts.invalidate()
+      this.accountModels = (await this.accounts.read()).models
+      const models = [...piCatalog(this.servers), ...this.accountModels]
+      if (!models.length) throw new ProviderUnavailable('signed-out', 'Pi has no model it can use yet. Sign in to a Pi model source or add a server under APIs and your own model servers, then connect again. Your threads are kept.', version)
       this.executable = executable
       this.readModelConfig()
       const [aliases, projects] = await Promise.all([this.aliasStore.read(), this.projectStore.read()])
@@ -432,7 +467,7 @@ export class PiHost implements ProviderHost {
       const servers = await this.options.servers?.()
       if (!servers || generation !== this.generation) return
       this.servers = servers
-      this.state.models = piCatalog(servers)
+      this.state.models = [...piCatalog(servers), ...this.accountModels]
       // Only a new model declarations outdates a process: a save that leaves it the same, such as a keyed server's, restarts nothing.
       if (piModels(servers) !== this.modelConfig) {
         this.modelRevision++
@@ -538,6 +573,7 @@ export class PiHost implements ProviderHost {
     if (!connection) return Promise.resolve()
     const work = (async () => {
       this.connections.delete(id); this.outdated.delete(id)
+      this.tools.revoke(id)
       if (this.loaded.delete(id)) this.emit()
       this.log.release(id); this.reaper.forget(id)
       this.close(connection); await connection.rpc.closed
@@ -605,7 +641,7 @@ export class PiHost implements ProviderHost {
       this.readUsage(id, connection)
       if (this.connections.get(id) !== connection) return
       const status = frame.aborted === true ? 'interrupted' : connection.failed ? 'failed' : 'completed'
-      this.endTurn(id, status, status === 'failed' ? 'Pi could not finish this turn. Your thread is kept. Check the model server, then try again.' : undefined)
+      this.endTurn(id, status, status === 'failed' ? 'Pi could not finish this turn. Your thread is kept. Check its model source or sign-in in Settings, then try again.' : undefined)
       this.emit()
     }
   }
@@ -878,6 +914,11 @@ export class PiHost implements ProviderHost {
     if (running && !running.ended) throw new Error('Pi is still working on this thread. Queue this follow-up.')
     if (this.thread(id).requests.length) throw new Error('Answer Pi’s pending request before sending another message.')
     // An image is refused here, before any bytes are read, unless the model's record and the client both take images.
+    const source = PI_SOURCES.find(source => alias.modelId.startsWith(source.id + '/'))
+    if (source && (await this.accounts.check(source.id)).status !== 'ready') {
+      await this.accountsChanged()
+      throw new Error(`Pi is not signed in to ${source.name}, or its sign-in expired. Your draft is kept. Sign in again in Settings > Providers > Pi.`)
+    }
     const attachments = validatePromptAttachments(this.state, alias.modelId, command.attachments, { workingDirectory: alias.cwd })
     verifyFileMentions(command.text, command.files)
     if (command.skills?.length) throw new Error('Pi takes no skills from the composer in this version.')
@@ -967,7 +1008,21 @@ export class PiHost implements ProviderHost {
     for (const connection of this.connections.values()) this.close(connection)
     for (const rpc of this.processes) rpc.close()
     this.connections.clear(); this.loading.clear(); this.loaded.clear(); this.outdated.clear()
+    const tools = this.tools; this.tools = new PiTools()
+    const previous = this.toolClosing
+    this.toolClosing = (async () => {
+      const results = await Promise.allSettled([previous, (async () => tools.close())()])
+      const failure = results.find(result => result.status === 'rejected')
+      if (failure?.status === 'rejected') throw failure.reason
+    })()
+    // A disconnect starts closing now; closed() later reports any failure after every resource drains.
+    void this.toolClosing.catch(() => undefined)
     this.state.connected = false; this.emit()
   }
-  async closed(): Promise<void> { await Promise.all([...this.processes].map(rpc => rpc.closed)); await Promise.all([...this.stopping.values()].map(work => work.catch(() => undefined))); await this.writing }
+  async closed(): Promise<void> {
+    const results = await Promise.allSettled([this.toolClosing, ...[...this.processes].map(rpc => rpc.closed),
+      ...[...this.stopping.values()].map(work => work.catch(() => undefined)), this.writing])
+    const failure = results.find(result => result.status === 'rejected')
+    if (failure?.status === 'rejected') throw failure.reason
+  }
 }
