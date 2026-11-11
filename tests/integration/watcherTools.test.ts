@@ -1221,19 +1221,20 @@ const waitingNews = (f: Awaited<ReturnType<typeof fixture>>): string | undefined
 const waitingEvidence = (f: Awaited<ReturnType<typeof fixture>>): boolean => queued(f).some(candidate => candidate.threadId === f.id && candidate.wakeUp
   && (candidate.news ?? []).some(item => isWatcherNews(item) && item.events.some(event => event.kind === 'evidence-changed')))
 
-it.each(['finish', 'question', 'failure'] as const)('wakes the master from fake-provider %s through the existing queue without answering', async kind => {
+it.each(['finish', 'question', 'permission', 'failure'] as const)('wakes the master from fake-provider %s through the existing queue without answering', async kind => {
   const f = await fixture(false), started = await f.call('start_thread', f.start())
   if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
   const binding = f.workspace.registry.byThread(started.target.threadId)!
   const native = f.workspace.adapters.codex.state.threads.find(thread => thread.id === binding.sessionId)!
   // Keep the master busy while news folds, then release its real follow-up pump.
   if (kind === 'question') native.requests = [{ id: 'private-card', kind: 'question', text: 'private_worker_question_82ac', options: [] }]
+  else if (kind === 'permission') native.requests = [{ id: 'private-permission', kind: 'permission', text: 'private_worker_command_91cd', options: [], context: { toolName: 'Bash', command: 'private_worker_command_91cd', summary: 'Runs the build' } }]
   else { native.status = kind === 'failure' ? 'error' : 'idle'; native.lastTurn = { id: 'wake-proof-turn', status: kind === 'failure' ? 'failed' : 'completed' }; if (kind === 'failure') native.activities = [{ id: 'native-error', turnId: 'wake-proof-turn', sequence: 0, kind: 'turn', status: 'failed', title: 'private_worker_error_73ff' }] }
   f.workspace.adapters.codex.emit()
   await vi.waitFor(() => expect(waitingNews(f)).toBeDefined(), { timeout: 15_000 })
   const expected = kind === 'finish' ? 'foreground turn finished' : kind === 'failure' ? 'turn failed' : 'waits on the user to answer'
   expect(waitingNews(f)).toContain(expected)
-  expect(waitingNews(f)).not.toMatch(/private_worker_(question|error)/)
+  expect(waitingNews(f)).not.toMatch(/private_worker_(question|error|command)/)
   // Waiting, it is in no queue panel or transcript.
   expect(f.control.shell().followups?.filter(item => item.threadId === f.id)).toEqual([])
   if (kind === 'failure') expect(f.service.state().watchedThreads.find(thread => thread.target.threadId === started.target.threadId)!.evidence)
@@ -1246,6 +1247,9 @@ it.each(['finish', 'question', 'failure'] as const)('wakes the master from fake-
   expect(sent).toMatchObject({ text: WATCHER_WAKE_UP_PROMPT })
   // A question's news says what it asks, in the worker's words, worked out as it goes and saved nowhere (#2230).
   if (kind === 'question') expect(sent.type === 'send' && sent.watcherNews).toContain('Its question, in the worker\'s words: "private_worker_question_82ac".')
+  // A permission card's news says its tool and summary, never its command (#2433).
+  if (kind === 'permission') expect(sent.type === 'send' && sent.watcherNews).toContain('It asks to use "Bash". Its summary, in the worker\'s words: "Runs the build".')
+  expect(sent.type === 'send' && sent.watcherNews).not.toContain('private_worker_command')
   // Sent, Watcher's conversation shows neither the message nor the news.
   await f.control.commandShell({ type: 'observe-threads', threadIds: [f.id] }); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
   await vi.waitFor(() => expect(f.control.get().host.threads.find(thread => thread.id === f.id)!.messages.map(message => message.text)).toContain('Synthetic Watcher user request'))
