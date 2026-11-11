@@ -199,18 +199,30 @@ function tgiInfo(info: unknown, models: Listed[]): boolean {
   return true
 }
 
-/** SGLang: `/model_info` names the reasoning parser the server runs, which it has only for a model that thinks. */
-function sglangInfo(info: unknown, models: Listed[]): void {
+/** SGLang V4.1 accepts these OpenAI request values. Spark's encoder makes XHigh an alias of High. */
+const SGLANG_DSV41_EFFORTS = ['none', 'low', 'high', 'max'] as const
+
+/** SGLang: `/model_info` identifies the encoder; model-list roots bind aliases to that loaded model. */
+function sglangInfo(info: unknown, items: readonly Json[], models: Listed[]): void {
   if (!isObject(info)) return
   if ('reasoning_parser' in info) for (const model of models) model.thinking = typeof info.reasoning_parser === 'string' && info.reasoning_parser.length > 0
   if (typeof info.has_image_understanding === 'boolean') for (const model of models) model.images = info.has_image_understanding
+  // Confirm the encoder by its server-reported type and parser, never by a user-chosen model name or address.
+  if (info.model_type !== 'deepseek_v41' || info.reasoning_parser !== 'deepseek-v41') return
+  const served = text(info.served_model_name)
+  if (!served) return
+  const aliases = new Set(items.filter(item => item.id === served || item.root === served).map(item => item.id))
+  for (const model of models) {
+    // An API's explicit levels remain authoritative over this known encoder profile.
+    if (aliases.has(model.id) && model.reasoningEfforts === undefined) model.reasoningEfforts = [...SGLANG_DSV41_EFFORTS]
+  }
 }
 
 /** What the server says about each model, and so which kind of server it is. */
 async function discover(ask: Asker, root: string, items: readonly Json[], models: Listed[], concurrency: number): Promise<OwnServerKind> {
   const listed = kindFromList(items)
   if (listed === 'vllm') return 'vllm'
-  if (listed === 'sglang') { sglangInfo(await maybe(ask.json('GET', `${root}/model_info`)), models); return 'sglang' }
+  if (listed === 'sglang') { sglangInfo(await maybe(ask.json('GET', `${root}/model_info`)), items, models); return 'sglang' }
   if (listed === 'llamacpp') { await llamacpp(ask, root, models, concurrency); return 'llamacpp' }
   // Nothing in the list says, so each kind's own route is asked; the first that answers as that kind names it.
   const [tags, studio, props, info] = await Promise.all([
