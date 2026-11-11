@@ -491,7 +491,42 @@ private final class FollowBox {
     /// How far the page's end sits under the reply box's top, as the scroll view says on iOS 18; nil on iOS 17. Kept so
     /// that a move of the box alone, such as the keyboard opening, puts `sentinel` where the end now is.
     var endUnderBox: CGFloat?
+    /// UIKit's scroll view under the page, on iOS 18, for `scrolledEnd`.
+    weak var scroller: UIScrollView?
     func settle() { atBottom = sentinel <= dockTop + Self.slack }
+    /// How far the page's end sits under the reply box's top, and how tall the page is, as UIKit's scroll view stands now.
+    /// SwiftUI can report the scroll view part way through a change and not report the rest: the page grown, but not yet
+    /// moved by the bottom anchor. Such a report read the small iPhone's page as 160 points under the box while it rested
+    /// against it.
+    @MainActor var scrolledEnd: ScrolledEnd? {
+        guard let view = scroller else { return nil }
+        let shownBottom = view.contentOffset.y + view.bounds.height - view.adjustedContentInset.bottom
+        return ScrolledEnd(underBox: view.contentSize.height - shownBottom, pageHeight: view.contentSize.height)
+    }
+}
+
+/// Hands the follow box the scroll view it sits in.
+private struct PageScrollerFinder: UIViewRepresentable {
+    let follow: FollowBox
+    final class Finder: UIView {
+        weak var follow: FollowBox?
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            guard window != nil else { return }
+            var view: UIView? = superview
+            while let next = view {
+                if let scroller = next as? UIScrollView { follow?.scroller = scroller; return }
+                view = next.superview
+            }
+        }
+    }
+    func makeUIView(context: Context) -> Finder {
+        let finder = Finder()
+        finder.isUserInteractionEnabled = false
+        finder.follow = follow
+        return finder
+    }
+    func updateUIView(_ view: Finder, context: Context) { view.follow = follow }
 }
 
 /// A message, or a run of steps, as the conversation draws it.
@@ -669,10 +704,12 @@ private struct Conversation: View {
             }
             .defaultScrollAnchor(.bottom)
             .onEndUnderBox { underBox, pageHeight in
-                follow.endUnderBox = underBox
-                // Until the box is placed there is nothing to measure against. Its first place reads this then.
-                guard follow.dockTop < .greatestFiniteMagnitude / 2 else { follow.endInPage = pageHeight; return }
-                endMoved(follow.dockTop + underBox, inPage: pageHeight, proxy)
+                endRead(underBox, pageHeight, proxy)
+                // The report may be part way through a change; once the change is in, UIKit says where the page stands.
+                Task { @MainActor in
+                    await Task.yield()
+                    rereadEnd(proxy)
+                }
             }
             .scrollDismissesKeyboard(.interactively)
             .onUserScrolling { scrolling in
@@ -738,6 +775,7 @@ private struct Conversation: View {
             }
             entries(thread: thread, state: state, detail: detail, rows: rows, pending: pending, scroll: scroll)
             Color.clear.frame(height: 1).id(Self.end).background(sentinelReader(scroll))
+                .background { if Self.scrollReadsEnd { PageScrollerFinder(follow: follow) } }
             #if DEBUG
             if SendWatch.isOn { SendWatchAnchor().frame(width: 0, height: 0) }
             #endif
@@ -915,16 +953,37 @@ private struct Conversation: View {
     /// the screen moved because the page scrolled, by the user's hand or the status bar, and decides where they stand.
     /// Any growth that slips the end under the reply box is followed, even less than the slack: a photo a little taller
     /// than its placeholder would otherwise leave the end's last lines covered with nothing to bring them back.
-    private func endMoved(_ end: CGFloat, inPage: CGFloat, _ scroll: ScrollViewProxy) {
+    private func endMoved(_ end: CGFloat, inPage: CGFloat, _ scroll: ScrollViewProxy, settles: Bool = true) {
         let wasAtBottom = follow.atBottom
         let grew = abs(inPage - follow.endInPage) > 0.5
         follow.sentinel = end
         follow.endInPage = inPage
         if wasAtBottom, grew, end > follow.dockTop + 1 {
             toBottom(scroll)
-        } else {
+        } else if settles {
             follow.settle()
         }
+    }
+
+    /// The end as iOS 18 reads it, from how far it sits under the reply box. The last reading is kept, so the box's first
+    /// place, or a move of the box alone, puts the end where it now is.
+    private func endRead(_ underBox: CGFloat, _ pageHeight: CGFloat, _ scroll: ScrollViewProxy, settles: Bool = true) {
+        follow.endUnderBox = underBox
+        // Until the box is placed there is nothing to measure against. Its first place reads this then.
+        guard follow.dockTop < .greatestFiniteMagnitude / 2 else { follow.endInPage = pageHeight; return }
+        endMoved(follow.dockTop + underBox, inPage: pageHeight, scroll, settles: settles)
+    }
+
+    /// Reads the end again from UIKit's scroll view, where SwiftUI's last report may be out of date. A reading that has
+    /// not changed does nothing. It never stops the page following, as it may land while a scroll to the end is still on
+    /// its way; only SwiftUI's reports and the user's own scrolling do. An end it finds against the box is the reader
+    /// at the bottom again.
+    private func rereadEnd(_ scroll: ScrollViewProxy) {
+        guard Self.scrollReadsEnd, let end = follow.scrolledEnd else { return }
+        let same = abs(end.underBox - (follow.endUnderBox ?? .nan)) <= 0.5 && abs(end.pageHeight - follow.endInPage) <= 0.5
+        guard !same else { return }
+        endRead(end.underBox, end.pageHeight, scroll, settles: false)
+        if !follow.atBottom, follow.sentinel <= follow.dockTop + FollowBox.slack { follow.atBottom = true }
     }
 
     /// The top of the reply box, which moves when it changes height or the keyboard opens or closes.
@@ -978,6 +1037,10 @@ private struct Conversation: View {
             guard !box.userScrolling else { box.missedFollow = true; return }
             scroll.scrollTo(Self.end, anchor: .bottom)
             try? await Task.sleep(nanoseconds: 120_000_000)
+            guard box.followRequests == request else { return }
+            // A scroll that found the page already at its end changes nothing SwiftUI reports, so a reading taken part way
+            // through the change that started this would stay.
+            rereadEnd(scroll)
             if box.followRequests == request, box.atBottom, !box.userScrolling { scroll.scrollTo(Self.end, anchor: .bottom) }
         }
     }
@@ -1034,7 +1097,8 @@ extension View {
     }
 }
 
-/// How far the page's end sits under the reply box's top, and how tall the page is, for `onEndUnderBox`.
+/// How far the page's end sits under the reply box's top, and how tall the page is, for `onEndUnderBox` and
+/// `FollowBox.scrolledEnd`.
 private struct ScrolledEnd: Equatable {
     let underBox: CGFloat
     let pageHeight: CGFloat
