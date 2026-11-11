@@ -32,6 +32,18 @@ test.describe('authoritative design-review captures', () => {
       await expect(page.getByRole('button', { name: 'Pause managing' })).toHaveCount(0)
       await capturePage(page, `threads-populated${suffix}.png`, { theme: appearance, category: 'threads', state: 'populated' })
 
+      // A two-line row reached by the keys reads as one pointed at (Zach's pick B2, November 11, 2026): its shortcuts take
+      // the second line's end, and its word and time make way. The capture parks the pointer, so the keys reach it: from
+      // the thread on screen, Up walks past the Recent head and Weekly note to Footer links, with the keys' focus ring.
+      const onScreen = page.getByRole('button', { name: 'Visual gate flake', exact: true })
+      await onScreen.focus()
+      await expect(onScreen).toBeFocused()
+      for (let step = 0; step < 3; step++) await page.keyboard.press('ArrowUp')
+      const pointedAt = page.getByRole('button', { name: 'Footer links', exact: true })
+      await expect(pointedAt).toBeFocused()
+      await expect(page.locator('.thread-nav__row', { has: pointedAt }).locator('.thread-nav__status')).toBeHidden()
+      await capturePage(page, `threads-row-pointed-at-${appearance}.png`, { theme: appearance, category: 'threads', state: 'row-pointed-at' })
+
       await open('Footer links')
       await expect(page.getByLabel('Thread transcript')).toContainText('Fixing the footer links')
       await capturePage(page, `threads-open-running${suffix}.png`, { theme: appearance, category: 'threads', state: 'open-running' })

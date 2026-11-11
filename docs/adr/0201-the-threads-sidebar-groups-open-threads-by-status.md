@@ -44,3 +44,15 @@ Four ways in the prototype. **A**, the iPhone's own rows, with a provider · pro
 - Folder-only parts have no place by status: a folder's menu (**New thread here**, **Settle project**), the folder peek (Owl), and Keep main up to date's line under a project (Owl). By project keeps all three.
 - With Needs you on stable, stable's **N need attention** line and the folders' dots go (ADR-0135, Owl first): the card says what waits on every computer.
 - The rail is grouped by project while the list is grouped by status. Zach chose that over a rail that follows the list.
+
+## November 11, 2026 amendment: a pointed-at row makes way for its shortcuts
+
+Zach chose this. His screenshot of a row he was pointing at showed its second line squeezed: the provider's mark, the project cut to "S...", the computer's badge, Done with Watcher's owl and four shortcuts (Open beside, Watch, Snooze, Settle). #2463 had stopped the shortcuts covering the words, but at the default 280px sidebar the project still shrank to a letter or nothing and the badge to its icon, partly because the hidden time kept its column while the line also kept clear of the shortcuts' whole width. On November 11 he tried four answers in `prototype/sidebar-hover-row` (`docs/prototypes/sidebar-hover-row-prototype.html`, built from the running app's own markup and stylesheet): A, the shortcuts on the name's line; B, the shortcuts where they were with that room corrected; C, two shortcuts, ··· and Settle; and D, the shortcuts floating over the row's corner. He asked first for the computer's badge to show only its symbol ("All of those say forge, just use the symbol for forge"), then picked B, then asked for the pointed-at row's word and owl to go, and chose B2, every word, over keeping Done's alone (B1) or keeping In Needs you (B3).
+
+**What changed.** Decision 5 stands, with two changes:
+
+- A row's computer badge is the computer's symbol. Its name is the badge's tooltip ("On forge") and stays in the row's description. With two remote computers, rows on each look alike until pointed at.
+- Pointed at, or reached by the keys, in a sidebar narrower than 340 pixels, where the shortcuts share the words' line, the time's column goes while the shortcuts show, and a row whose line names its project (the status groups and the flat Snoozed shelf) also lets its word (Done, Working, In Needs you and the rest) and Watcher's owl leave the line, so the project and the computer keep the room. A row under a project folder, By project or on the Settled shelf, has only its word on that line and keeps it. The pressed owl among the shortcuts still says Watcher is on it, and a screen reader hears the word in the row's description as before. A sidebar 340 pixels or wider, whose shortcuts take the branch's line, keeps its words.
+
+**Why.** The row is pointed at to act on it, and the line read before then said what the shortcuts need not repeat. Its project and computer say which thread it is.
+
