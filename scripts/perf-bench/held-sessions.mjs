@@ -72,14 +72,15 @@ if (!Number.isInteger(descriptor.pid) || !Number.isInteger(descriptor.port) || t
   console.error('The host descriptor has no process ID, port or admin token. Start the host and try again.')
   process.exit(1)
 }
+const before = children(descriptor.pid)
+if (seconds > 0) await sleep(seconds * 1000)
+// The sessions are read once the sampling is over, beside the second look at the processes, so a session that was
+// replaced while it ran is not shown as held and its replacement as untracked.
 const answer = await post(descriptor.port, '/v1/admin/held-sessions', descriptor.adminToken)
 let sessions
 if (answer.status === 200 && Array.isArray(answer.body?.sessions)) sessions = answer.body.sessions
 else if (answer.status === 400) console.log('This host has no held-sessions read yet (it needs a release with #2398). Its processes follow, with sessions unknown.\n')
 else { console.error(`The host refused the read (${answer.status} ${answer.body?.error?.code ?? 'no answer'}). Nothing was changed.`); process.exit(1) }
-
-const before = children(descriptor.pid)
-if (seconds > 0) await sleep(seconds * 1000)
 const after = seconds > 0 ? children(descriptor.pid) : before
 const uptime = Number(readFileSync('/proc/uptime', 'utf8').split(' ')[0])
 const minutes = ms => `${Math.round(ms / 60_000)}`
