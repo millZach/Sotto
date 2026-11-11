@@ -1512,24 +1512,6 @@ extension EnvironmentValues {
     }
 }
 
-/// The sheet Sotto draws over the page on the Duo held sideways, and what closes it. iOS centres its own sheet in the
-/// window, where it cut the sidebar's names mid-word, so here the sheet stands over the page alone, from the sidebar's
-/// edge to the rail, and the sidebar stays whole beside it (Zach's pick A, November 9, 2026, round 4).
-@MainActor final class DuoSheetHost: ObservableObject {
-    struct Shown {
-        let id: UUID
-        /// The question sheet's warm wash at its top.
-        let wash: Bool
-        /// A sheet that takes the page's height runs on to the screen's foot (`DuoSheetLayer`).
-        var toFoot = false
-        let content: AnyView
-        let close: () -> Void
-    }
-    @Published private(set) var shown: Shown?
-    func show(_ sheet: Shown) { shown = sheet }
-    func gone(_ id: UUID) { if shown?.id == id { shown = nil } }
-}
-
 extension View {
     /// A sheet that is iOS's own everywhere but the Duo held sideways, where Sotto draws it over the page (`DuoSheetHost`).
     /// A view inside it closes it with `dismiss`, which its sheets route through `sheetClose`. `toFoot`: held sideways,
@@ -1554,31 +1536,42 @@ private struct DuoSheetPresenter<Sheet: View>: ViewModifier {
     @Environment(\.duoSheetHost) private var host
     /// The sheet this presenter has up in the host, if any.
     @State private var showing: UUID?
-    @ViewBuilder func body(content: Content) -> some View {
-        if duo.sideways, let host {
-            content
-                .onChange(of: isPresented, initial: true) { _, shown in
-                    if shown, showing == nil {
-                        let id = UUID()
-                        showing = id
-                        let binding = $isPresented
-                        host.show(.init(id: id, wash: wash, toFoot: toFoot, content: AnyView(sheet()), close: { binding.wrappedValue = false }))
-                    } else if !shown, let id = showing {
-                        showing = nil
-                        host.gone(id)
-                        onDismiss?()
-                    }
-                }
-                // Folding the Duo, or leaving the page, closes the sheet as iOS closes one whose page goes.
-                .onDisappear {
-                    guard let id = showing else { return }
-                    showing = nil
-                    host.gone(id)
-                    isPresented = false
-                    onDismiss?()
-                }
-        } else {
-            content.sheet(isPresented: $isPresented, onDismiss: onDismiss, content: sheet)
+    /// Whether Sotto draws the sheet: on the Duo held sideways, where a host stands.
+    private var own: Bool { duo.sideways && host != nil }
+    func body(content: Content) -> some View {
+        // One structure in every posture, the choice of who draws the sheet made by value, so a turn or a fold keeps
+        // every page under this as it was. A branch here had given them a new identity on every turn and reset each tab,
+        // its pushed thread and its scroll.
+        content
+            .sheet(isPresented: Binding(get: { isPresented && !own }, set: { if !own { isPresented = $0 } }),
+                   // iOS's sheet also goes when the Duo turns sideways and Sotto takes it over; only a real close runs it.
+                   onDismiss: { if !isPresented { onDismiss?() } }, content: sheet)
+            .onChange(of: isPresented, initial: true) { _, _ in step() }
+            // Turning or folding moves an open sheet between Sotto's and iOS's, where it had closed and lost the answer
+            // or the New thread being set up.
+            .onChange(of: own) { _, _ in step() }
+            // Leaving the page closes the sheet, as iOS closes one whose page goes.
+            .onDisappear {
+                guard let id = showing else { return }
+                showing = nil
+                host?.gone(id)
+                isPresented = false
+                onDismiss?()
+            }
+    }
+    private func step() {
+        guard let host else { return }
+        switch DuoSheetStep.next(presented: isPresented, own: own, inHost: showing != nil) {
+        case .none: break
+        case .show:
+            let id = UUID()
+            showing = id
+            let binding = $isPresented
+            host.show(.init(id: id, wash: wash, toFoot: toFoot, content: AnyView(sheet()), close: { binding.wrappedValue = false }))
+        case .take(let dismissed):
+            if let id = showing { host.gone(id) }
+            showing = nil
+            if dismissed { onDismiss?() }
         }
     }
 }
@@ -1591,31 +1584,44 @@ private struct DuoItemSheetPresenter<Item: Identifiable, Sheet: View>: ViewModif
     @Environment(\.duoLayout) private var duo
     @Environment(\.duoSheetHost) private var host
     @State private var showing: UUID?
-    @ViewBuilder func body(content: Content) -> some View {
-        if duo.sideways, let host {
-            content
-                .onChange(of: item?.id, initial: true) { _, _ in
-                    if let id = showing {
-                        showing = nil
-                        host.gone(id)
-                        if item == nil { onDismiss?() }
-                    }
-                    if let item {
-                        let id = UUID()
-                        showing = id
-                        let binding = $item
-                        host.show(.init(id: id, wash: wash, content: AnyView(sheet(item)), close: { binding.wrappedValue = nil }))
-                    }
-                }
-                .onDisappear {
-                    guard let id = showing else { return }
+    private var own: Bool { duo.sideways && host != nil }
+    /// One structure in every posture, as `DuoSheetPresenter`'s.
+    func body(content: Content) -> some View {
+        content
+            .sheet(item: Binding(get: { own ? nil : item }, set: { if !own { item = $0 } }),
+                   onDismiss: { if item == nil { onDismiss?() } }, content: sheet)
+            .onChange(of: item?.id, initial: true) { _, _ in
+                // Another item takes the open one's place.
+                if let id = showing {
                     showing = nil
-                    host.gone(id)
-                    item = nil
-                    onDismiss?()
+                    host?.gone(id)
+                    if item == nil { onDismiss?() }
                 }
-        } else {
-            content.sheet(item: $item, onDismiss: onDismiss, content: sheet)
+                step()
+            }
+            .onChange(of: own) { _, _ in step() }
+            .onDisappear {
+                guard let id = showing else { return }
+                showing = nil
+                host?.gone(id)
+                item = nil
+                onDismiss?()
+            }
+    }
+    private func step() {
+        guard let host else { return }
+        switch DuoSheetStep.next(presented: item != nil, own: own, inHost: showing != nil) {
+        case .none: break
+        case .show:
+            guard let item else { return }
+            let id = UUID()
+            showing = id
+            let binding = $item
+            host.show(.init(id: id, wash: wash, content: AnyView(sheet(item)), close: { binding.wrappedValue = nil }))
+        case .take(let dismissed):
+            if let id = showing { host.gone(id) }
+            showing = nil
+            if dismissed { onDismiss?() }
         }
     }
 }

@@ -915,7 +915,7 @@ private struct RequestCard: View {
         if !request.supported {
             reviewOnly(String(localized: "Answer this one in the thread."))
         } else if !model.mayAnswer(asking.ref.hostID) {
-            reviewOnly(String(localized: "Answer it on \(row.computer).", comment: "On a question card when this iPhone can't answer on the thread's computer. %@ is the computer's name."))
+            reviewOnly(DuoWords.cantAnswerHere(computer: row.computer, onDuo: duo != .none))
         } else if isPermission {
             permissionActions(enabled: ready)
         } else if let options = request.oneTapOptions {
@@ -925,9 +925,24 @@ private struct RequestCard: View {
         }
     }
 
-    /// A note on its own line, then the way into the thread on a row of its own, where the two side by side had wrapped
-    /// into a corner of the column (Zach's pick B, November 9, 2026).
-    private func reviewOnly(_ note: String?) -> some View {
+    /// On the Duo a note on its own line, then the way into the thread on a row of its own, where the two side by side had
+    /// wrapped into a corner of the column (Zach's pick B, November 9, 2026). Every other iPhone keeps them side by side.
+    @ViewBuilder private func reviewOnly(_ note: String?) -> some View {
+        if duo == .none {
+            HStack(spacing: Space.s3) {
+                if let note {
+                    Text(note).font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+                        .paragraphDirection()
+                }
+                Spacer(minLength: 0)
+                NavigationLink(value: ThreadRoute(ref: asking.ref)) { Text(reviewWords) }
+                    .buttonStyle(PillButtonStyle(kind: .ghost, compact: true))
+            }
+        } else {
+            duoReviewOnly(note)
+        }
+    }
+    private func duoReviewOnly(_ note: String?) -> some View {
         VStack(alignment: .leading, spacing: Space.s1) {
             if let note {
                 Text(note).font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
@@ -1182,8 +1197,8 @@ private struct WorkingCard: View {
             : label
     }
     /// The step running now when this iPhone holds the thread's detail; otherwise what the state says. The list
-    /// a computer shares carries no steps. Nothing when all it could say is that the agent works on its computer, which
-    /// the state and the place above already say (Zach's pick B, November 9, 2026).
+    /// a computer shares carries no steps. On the Duo nothing when all it could say is that the agent works on its
+    /// computer (`DuoWords.workingLine`).
     private var liveLine: String? {
         if let detail = model.detail(for: row.ref), let step = detail.activities?.last(where: { $0.status == "running" }) {
             return [step.title, step.subject].compactMap { $0 }.joined(separator: " ")
@@ -1191,7 +1206,7 @@ private struct WorkingCard: View {
         if state == .compacting { return String(localized: "Making room in the thread’s context.") }
         if state == .waiting { return String(localized: "A background command is still running.") }
         if row.thread.status != "running", !(row.thread.backgroundWork ?? []).isEmpty { return String(localized: "Background agents are still working.") }
-        return nil
+        return DuoWords.workingLine(provider: Words.provider(row.thread.providerId), computer: row.computer, onDuo: duo != .none)
     }
 }
 

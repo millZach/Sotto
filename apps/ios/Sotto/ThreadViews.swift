@@ -1932,21 +1932,13 @@ private struct MarkdownTableView: View {
         for (index, column) in columns.enumerated() {
             if index > 0 { line.append(AttributedString(" · ")) }
             let header = table.header[column]
-            if !header.source.isEmpty, !Self.namesItself(row[column].text) {
+            if !header.source.isEmpty, !DuoWords.namesItself(row[column].text) {
                 line.append(InlineStyle.render(header, theme: theme))
                 line.append(AttributedString(": "))
             }
             line.append(InlineStyle.render(row[column], theme: theme))
         }
         return line
-    }
-
-    private static let bareAnswers: Set<String> = ["yes", "no", "y", "n", "true", "false", "on", "off", "n/a", "na", "none"]
-
-    /// Whether a short value says what it is without its column: words do, a bare answer, number or mark doesn't.
-    static func namesItself(_ value: String) -> Bool {
-        let words = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        return words.contains(where: \.isLetter) && !bareAnswers.contains(words.lowercased())
     }
 
     /// A card's value; a centred column reads as leading, since a card has no column to centre it in.

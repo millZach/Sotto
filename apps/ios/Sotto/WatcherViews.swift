@@ -856,7 +856,7 @@ private struct WatcherConversationPane: View {
         guard duo != .none, let first, first.request.kind != "permission", model.watcherSending[hostID] == nil,
               (model.watcherSetAside[hostID] ?? []).isEmpty,
               let last = page.conversation.messages.last, last.role != "user",
-              !first.title.isEmpty, last.text.localizedCaseInsensitiveContains(first.title) else { return nil }
+              DuoWords.names(last.text, title: first.title) else { return nil }
         return first.key
     }
     /// Whether this iPhone can answer a worker's card where it is now.
