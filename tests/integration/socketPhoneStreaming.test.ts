@@ -10,7 +10,7 @@ import { startSocketServer } from '../../src/host/socketServer'
 import type { AgentState } from '../../src/shared/agents'
 import { rawPeer } from '../fixtures/rawHostPeer'
 import { useSocketHostFixture } from '../fixtures/socketHostFixture'
-import { hostSizedShellParts, withShellParts } from '../fixtures/shellParts'
+import { hostSizedShellParts, PHONE_SENT_STATE_PARTS, PHONE_SENT_WIRE_PARTS, withShellParts } from '../fixtures/shellParts'
 import { PHONE_UNREAD_SHELL_PARTS } from '../../src/shared/hostProtocol'
 
 const fixture = useSocketHostFixture()
@@ -109,6 +109,27 @@ describe('a phone\'s shell without the parts no phone reads (#2392)', () => {
     fixture.native.event({ type: 'stream', threadId: 'workshop', messageId: 'workshop-reply', text: 'Synthetic reply', status: 'running', activities: steps(1) })
     await expect.poll(() => phone.shells().some(push => row(push.state, 'workshop')?.status === 'running')).toBe(true)
     for (const push of phone.shells()) expect(held(push.state)).toEqual([])
+  })
+
+  it('sends a phone no part that is on neither list', async () => {
+    const { phone } = await listeners()
+    const sent: readonly string[] = [...PHONE_SENT_STATE_PARTS, ...PHONE_SENT_WIRE_PARTS]
+    fixture.native.event({ type: 'stream', threadId: 'workshop', messageId: 'workshop-reply', text: 'Synthetic reply', status: 'running', activities: steps(1) })
+    await expect.poll(() => phone.shells().length).toBeGreaterThan(0)
+    const states = [answered(phone.messages.find(message => message.id === 'hello')!), answered(await phone.call('read', { op: 'shell' })), ...phone.shells().map(push => push.state)]
+    for (const state of states) expect(Object.keys(state).filter(part => !sent.includes(part))).toEqual([])
+  })
+
+  it('keeps every part for a client on the phone listener that did not say it is a phone', async () => {
+    // A desktop whose record the listener has lost is admitted as a phone; it reads its drafts' save evidence here.
+    const service = withShellParts(fixture.host.service, hostSizedShellParts())
+    const phones = await startSocketServer({ service, pairing: fixture.host.pairing, admin: false })
+    cleanups.push(() => phones.close())
+    const paired = await fixture.host.pairing.redeem(fixture.host.pairing.issuePairingCode().code, 'Synthetic desktop without a record')
+    const peer = await rawPeer(phones.descriptor.port, fixture.host.pairing.signSession(paired.clientId))
+    cleanups.push(() => peer.frames.close())
+    const hello = await peer.call('hello', { op: 'hello', afterSeq: Number.MAX_SAFE_INTEGER, accepts: ['detail-delta', 'client-liveness', 'client-updates', 'activity-bodies'] })
+    expect(held(answered(hello))).toEqual([...PHONE_UNREAD_SHELL_PARTS])
   })
 
   it('keeps every part in a desktop\'s shell', async () => {

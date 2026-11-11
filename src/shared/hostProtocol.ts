@@ -109,7 +109,8 @@ export function commandFromProtocolV1(command: z.infer<typeof protocolAgentComma
 }
 /**
  * The parts of a shell no phone reads, which a host leaves out of every shell it sends one: hello, a read, a command's
- * answer and each push (ADR-0025, November 10, 2026 amendment, #2392). Each is optional on the wire, and no iPhone or
+ * answer and each push (ADR-0025, November 10, 2026 amendment, #2392). A phone is a client the listener does not know as
+ * a desktop and whose hello accepted `activity-summaries`, as every iPhone and Android build does and no desktop does. Each is optional on the wire, and no iPhone or
  * Android build has named any of them. A thread's skill lists, the drafts every thread holds and their save evidence, the
  * drafts a send made obsolete, and the provider clients' updates are the desktop's own. They were 131 KB of a 209 KB shell
  * on a host with many threads (`docs/perf/2026-11-10-phone-shell-parts.md`). A part a phone starts to read comes off this

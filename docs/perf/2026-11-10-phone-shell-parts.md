@@ -22,11 +22,16 @@ each is optional in protocol version 1. The host takes them out of a hello, a `s
 push, last of all, after it has worked out the composer's draft for that phone from its own drafts. A desktop's shell
 keeps every part.
 
+A phone, for this, is a client the listener does not know as a desktop and whose hello accepted `activity-summaries`,
+which every iPhone and Android build does and no desktop does. A desktop whose record a listener has lost is admitted
+as a phone, and it reads `threadDraftPersistence` to know a draft was saved, so the listener's own view is not enough.
+
 ## The measure
 
 `tests/perf/phoneShellParts.perf.test.ts` starts the real listeners over the fixture host, lays over its state the parts
 around the threads in the sizes forge's host sent (`tests/fixtures/shellParts.ts`: twenty threads' skill lists, the
-delivery and draft ledgers at their limit of 128), and weighs what a phone and a desktop are sent:
+delivery and draft ledgers at their limit of 128, each read with the state's own schema), and weighs what a phone and a
+desktop are sent:
 
 ```sh
 SOTTO_PERF_BENCH=1 npx vitest run tests/perf/phoneShellParts.perf.test.ts --maxWorkers=1 --disable-console-intercept
@@ -36,11 +41,11 @@ Before is the same test with the one line that takes the parts out switched off.
 
 | To a phone | Before | After | |
 | --- | ---: | ---: | ---: |
-| A push | 201,810 bytes | 72,656 bytes | 64% less |
-| A `shell` read | 206,717 bytes | 77,563 bytes | 62% less |
-| A hello | 209,556 bytes | 80,402 bytes | 62% less |
+| A push | 201,518 bytes | 72,656 bytes | 64% less |
+| A `shell` read | 206,425 bytes | 77,563 bytes | 62% less |
+| A hello | 209,264 bytes | 80,402 bytes | 62% less |
 
-A desktop's push is 201,940 bytes before and after.
+A desktop's push is 201,648 bytes before and after.
 
 The fixture's push is within 4% of the one read from forge's host on November 10 (209 KB, by
 `scripts/perf-bench/phone-wire-probe.mjs`). On that host an iPhone on a working thread was sent 32 pushes in a minute,
@@ -53,14 +58,18 @@ The fixture's push is within 4% of the one read from forge's host on November 10
   phone is sent, or `PHONE_UNREAD_SHELL_PARTS`. A new part fails it until it is put on one. It also fails if a part on
   the second list stops being optional, or if the iPhone's or the Android client's source names one.
 - `tests/integration/socketPhoneStreaming.test.ts` checks, over the real listener, that a phone's hello, `shell` read
-  and pushes hold none of the five and still hold the delivery ledgers, and that a desktop's hello holds all five.
+  and pushes hold none of the five and still hold the delivery ledgers; that every part they do hold, the ones the
+  host's projections add among them, is on the list of what a phone is sent; that a desktop's hello holds all five; and
+  that a client on the phone listener that did not accept `activity-summaries` keeps all five.
 
-## After a release
+## On forge's host
 
-The probe on forge reads the real thing once a host with this change runs there:
+The audit's probe read a push of about 209,000 bytes and a hello of 236,631 from forge's host on November 10. The five
+parts were 131,434 bytes of each, so with them gone a push is about 77,500 bytes and a hello about 105,200: under the
+80 KB and 110 KB #2392 asks for. That is worked out from the real push's parts, not read. The probe reads the real
+thing once a host with this change runs on forge, and #2392 stays open until it has:
 
 ```sh
 node scripts/perf-bench/phone-wire-probe.mjs --data ~/.sotto --list-seconds 60 --thread-seconds 60
 ```
 
-A push should fall from about 209 KB to about 78 KB, and a hello from about 237 KB to about 106 KB.

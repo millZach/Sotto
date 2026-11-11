@@ -635,7 +635,8 @@ export async function startSocketServer(options: SocketServerOptions) {
   /**
    * A phone's shell without the parts no phone reads (`PHONE_UNREAD_SHELL_PARTS`, November 10, 2026, #2392). They went
    * whole in every hello, read, answer and push: 131 KB of a 209 KB push on a host with many threads' skills read. Taken
-   * out last, since the composer's draft for this peer is worked out from `threadDrafts` on the way.
+   * out last, since the composer's draft for this peer is worked out from `threadDrafts` on the way, and only for a
+   * peer whose hello accepted `activity-summaries`.
    */
   const withoutUnreadParts = <State extends AgentState>(state: State): State => {
     if (!PHONE_UNREAD_SHELL_PARTS.some(part => state[part] !== undefined)) return state
@@ -676,7 +677,9 @@ export async function startSocketServer(options: SocketServerOptions) {
     const listed = peer.retiredTerminals ? { ...shell, terminals: [] as [] } : shell
     const kept = peer.settledOnRequest && !whole ? withoutHeldBack(peer, listed) : listed
     const usable = peer.usableModels ? withUsableModels(kept, read, phoneState) : kept
-    return isPhonePeer(peer) ? withoutUnreadParts(usable) : usable
+    // Only for a phone that said so itself, by accepting activity summaries, which every phone build does and no desktop
+    // does: a desktop the listener does not know as one, its record lost, still reads its drafts' save evidence here.
+    return isPhonePeer(peer) && peer.activitySummaries ? withoutUnreadParts(usable) : usable
   }
   /**
    * `state` with its catalog cut to the models a phone can use (`usable-models`): the ready ones, and any that is not but
