@@ -59,6 +59,15 @@ function post(port, path, token, body) {
 }
 
 const size = value => Buffer.byteLength(JSON.stringify(value))
+/** Adds the size of each part of a shell's state to `into`: its own parts, the host's, and Watcher's page's. */
+function addStateParts(state, into, { host = 'host', watcher = 'watcher', own = '' } = {}) {
+  const add = (table, key, value) => { table[key] = (table[key] ?? 0) + size(value) }
+  for (const [key, value] of Object.entries(state ?? {})) {
+    if (key === 'host') for (const [inner, innerValue] of Object.entries(value ?? {})) add(into[host], inner, innerValue)
+    else if (key === 'watcher') for (const [inner, innerValue] of Object.entries(value ?? {})) add(into[watcher], inner, innerValue)
+    else add(into[own], key, value)
+  }
+}
 const deflated = buffer => buffer.length < 1024 ? buffer.length : Math.min(buffer.length, deflateRawSync(buffer, { level: 6, finishFlush: zlib.Z_SYNC_FLUSH }).length)
 
 /** A WebSocket client that offers no extension, as a phone the host does not compress for, and counts what it is sent. */
@@ -108,11 +117,7 @@ function tallyMessage(tally, raw) {
   const entry = tally.events[name] ??= { frames: 0, bytes: 0, deflatedBytes: 0, maxBytes: 0 }
   entry.frames++; entry.bytes += raw.length; entry.deflatedBytes += deflated(raw); entry.maxBytes = Math.max(entry.maxBytes, raw.length)
   if (name === 'shell') {
-    for (const [key, value] of Object.entries(message.state ?? {})) {
-      if (key === 'host') for (const [inner, innerValue] of Object.entries(value ?? {})) tally.hostFields[inner] = (tally.hostFields[inner] ?? 0) + size(innerValue)
-      else if (key === 'watcher') for (const [inner, innerValue] of Object.entries(value ?? {})) tally.watcherFields[inner] = (tally.watcherFields[inner] ?? 0) + size(innerValue)
-      else tally.shellFields[key] = (tally.shellFields[key] ?? 0) + size(value)
-    }
+    addStateParts(message.state, tally, { host: 'hostFields', watcher: 'watcherFields', own: 'shellFields' })
     if (message.threads) { tally.shellFields['(changed thread records)'] = (tally.shellFields['(changed thread records)'] ?? 0) + size(message.threads); tally.changedRecords += message.threads.changed?.length ?? 0 }
   }
   return message
@@ -146,12 +151,9 @@ try {
   const shell = hello.message.result?.shell ?? hello.message.result?.state ?? hello.message.result
   const state = shell?.state ?? shell
   const threads = state?.host?.threads ?? []
-  const helloParts = {}
-  for (const [key, value] of Object.entries(state ?? {})) {
-    if (key === 'host') for (const [inner, innerValue] of Object.entries(value ?? {})) helloParts[`host.${inner}`] = size(innerValue)
-    else if (key === 'watcher') for (const [inner, innerValue] of Object.entries(value ?? {})) helloParts[`watcher.${inner}`] = size(innerValue)
-    else helloParts[key] = size(value)
-  }
+  const parts = { own: {}, host: {}, watcher: {} }
+  addStateParts(state, parts, { own: 'own' })
+  const helloParts = { ...parts.own, ...Object.fromEntries(Object.entries(parts.host).map(([key, bytes]) => [`host.${key}`, bytes])), ...Object.fromEntries(Object.entries(parts.watcher).map(([key, bytes]) => [`watcher.${key}`, bytes])) }
   report.hello = { bytes: hello.bytes, deflatedBytes: hello.deflatedBytes, threadsListed: threads.length, settledHeldBack: state?.settledHeldBack ?? null, models: state?.host?.models?.length ?? null, bytesByField: top(helloParts, 14) }
   await ask('observe-none', { op: 'observe', threadIds: [] })
   await wait(2)
