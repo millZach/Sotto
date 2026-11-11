@@ -548,3 +548,15 @@
 .thread-folder__main-kind { flex: none; width: 64px; color: var(--tt-text-muted); }
 .thread-folder__main-path { min-width: 0; overflow: hidden; color: var(--tt-text-2); font-family: var(--tt-font-mono); font-size: var(--tt-type-caption); text-overflow: ellipsis; white-space: nowrap; }
 .thread-folder__main-more, .thread-folder__main-failed { margin: 0 0 4px; }
+
+/* Status groups (ADR-0201): Working now and Recent, each a head that folds like a folder's, set as a quiet heading in the
+   muted ink so the rows under it lead. It keeps the folder's padding, so its count stands in the folders' one column, and
+   with no actions to make room for, its count stays under the pointer. */
+.thread-nav .thread-group .thread-folder__toggle { color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-weight: 600; letter-spacing: .02em; }
+.thread-nav .thread-group .thread-folder__toggle:hover { color: var(--tt-text); }
+.thread-nav .thread-group .thread-folder__head:is(:hover, :focus-within) .thread-folder__count { visibility: visible; }
+.thread-group { margin-bottom: 8px; }
+/* In a group, a row's words lead with its project, then a remote computer's badge, then what it is doing at the end. */
+.thread-nav__place { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.thread-nav__standing[data-placed] .host-badge { flex: 0 1 auto; }
+.thread-nav__standing[data-placed] > .thread-nav__status { margin-left: auto; flex: none; }

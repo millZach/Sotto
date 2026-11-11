@@ -28,7 +28,7 @@ test('one set of new-thread defaults applies on every host, and each computer ke
   await mkdir(site, { recursive: true })
   const install = join(root, '~', '.local', 'share', 'sotto-host', 'host')
   await buildSshHost(install)
-  await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, reducedMotion: 'on' }))
+  await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, threadListGrouping: 'project', reducedMotion: 'on' }))
   const modeFile = join(root, 'mode')
   await writeFile(modeFile, 'run')
   const keys = ['SOTTO_E2E_SSH_SCRIPT', 'SOTTO_E2E_SSH_EXECUTABLE', 'FAKE_SSH_MODE_FILE', 'FAKE_SSH_ROOT', 'FAKE_SSH_RECORD', 'HOME', 'USERPROFILE']

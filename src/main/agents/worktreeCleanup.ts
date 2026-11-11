@@ -11,7 +11,7 @@ import { ghLaunch } from './git/ghCommand'
 import { pullRequestAddress, pullRequestKey } from '../../shared/gitPullRequests'
 import type { PullRequestObservation } from './watcherEvidence'
 import { PULL_REQUEST_HOST } from './backgroundPullRequestReads'
-import type { BaseBranchChecks } from './watcherComputedState'
+import { BASE_BRANCH_COMMITS_READ, type BaseBranchChecks } from './watcherComputedState'
 
 /**
  * The part of WorkspaceHost the sweep needs: what threads there are, a way to reclaim, a way to hear a settle,
@@ -478,22 +478,40 @@ export async function githubPullRequestState(url: string, github?: SharedGitHub)
   return { state: known, headRefName, headRefOid: typeof headRefOid === 'string' ? headRefOid : null }
 }
 
-const BASE_BRANCH_CHECKS = 'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){baseRefName baseRef{target{... on Commit{oid statusCheckRollup{state}}}}}}}'
+/** One commit's rolled-up checks and, nested, its first parent's, BASE_BRANCH_COMMITS_READ deep: first parents are the branch's own pushes. */
+const commitChain = (depth: number): string => `oid statusCheckRollup{state}${depth > 1 ? ` parents(first:1){nodes{${commitChain(depth - 1)}}}` : ''}`
+const BASE_BRANCH_CHECKS = `query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){baseRefName baseRef{target{... on Commit{${commitChain(BASE_BRANCH_COMMITS_READ)}}}}}}}`
 /** GitHub's rolled-up state of a commit's checks, as the merge train reads it: an error is a failure, an expected check is still to come. */
 const ROLLUP: Readonly<Record<string, BaseBranchChecks['state']>> = { SUCCESS: 'passed', FAILURE: 'failed', ERROR: 'failed', PENDING: 'pending', EXPECTED: 'pending' }
+type ChainCommit = { readonly oid?: unknown; readonly statusCheckRollup?: { readonly state?: unknown } | null; readonly parents?: { readonly nodes?: readonly ChainCommit[] } | null }
 /**
- * The checks on the newest commit of the branch a pull request merges into, by the pull request's github.com URL (#2229),
- * asked as `askGitHub` says, once per GO MERGE. Throws when it cannot ask; a commit with no checks reads unknown.
+ * What GitHub's answer to BASE_BRANCH_CHECKS says of the base branch (#2229, #2431): its newest commit's checks when they
+ * have finished, else those of the newest commit along its first parents whose checks have, which is how main last stood,
+ * named by that commit with the newest beside it. No finished checks in the commits read is unknown, whatever the newest
+ * says. Throws when the answer names no base branch.
+ */
+export function baseBranchChecksOf(answer: unknown): BaseBranchChecks {
+  const pr = (answer as { data?: { repository?: { pullRequest?: { baseRefName?: unknown; baseRef?: { target?: ChainCommit | null } | null } } } })?.data?.repository?.pullRequest
+  const branch = pr?.baseRefName, newest = pr?.baseRef?.target
+  if (typeof branch !== 'string' || typeof newest?.oid !== 'string') throw new Error('GitHub did not describe the base branch.')
+  const stateOf = (commit: ChainCommit): BaseBranchChecks['state'] => typeof commit.statusCheckRollup?.state === 'string' ? ROLLUP[commit.statusCheckRollup.state] ?? 'unknown' : 'unknown'
+  const first = stateOf(newest)
+  if (first === 'passed' || first === 'failed') return { branch, head: newest.oid, state: first }
+  for (let commit = newest.parents?.nodes?.[0], read = 1; commit && read < BASE_BRANCH_COMMITS_READ; commit = commit.parents?.nodes?.[0], read++) {
+    if (typeof commit.oid !== 'string') break
+    const state = stateOf(commit)
+    if (state === 'passed' || state === 'failed') return { branch, head: commit.oid, state, newest: newest.oid }
+  }
+  return { branch, head: newest.oid, state: 'unknown' }
+}
+/**
+ * The checks of the branch a pull request merges into, by the pull request's github.com URL (#2229), as `baseBranchChecksOf`
+ * reads them, asked as `askGitHub` says, once per GO MERGE. Throws when it cannot ask.
  */
 export async function githubBaseBranchChecks(url: string, github?: SharedGitHub): Promise<BaseBranchChecks> {
   const address = pullRequestAddress(url)
   if (!address) throw new Error('Not a GitHub pull request.')
   const stdout = await askGitHub(['api', 'graphql', '-f', `query=${BASE_BRANCH_CHECKS}`, '-f', `owner=${address.owner}`, '-f', `name=${address.name}`, '-F', `number=${address.number}`],
     { maxBuffer: 200_000, github, host: PULL_REQUEST_HOST })
-  const answer: unknown = JSON.parse(stdout)
-  const pr = (answer as { data?: { repository?: { pullRequest?: { baseRefName?: unknown; baseRef?: { target?: { oid?: unknown; statusCheckRollup?: { state?: unknown } | null } } | null } } } })?.data?.repository?.pullRequest
-  const branch = pr?.baseRefName, head = pr?.baseRef?.target?.oid
-  if (typeof branch !== 'string' || typeof head !== 'string') throw new Error('GitHub did not describe the base branch.')
-  const state = pr?.baseRef?.target?.statusCheckRollup?.state
-  return { branch, head, state: typeof state === 'string' ? ROLLUP[state] ?? 'unknown' : 'unknown' }
+  return baseBranchChecksOf(JSON.parse(stdout))
 }
