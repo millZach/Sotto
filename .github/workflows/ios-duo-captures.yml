@@ -1,6 +1,6 @@
 name: iPhone Duo captures
 
-# Pictures and short videos of every surface of the iPhone Duo's layout, folded and unfolded sideways, from the real app on the
+# Pictures and short videos of every surface of the iPhone Duo's layout, folded and unfolded sideways and upright, from the real app on the
 # iPhone Duo simulator (apps/ios/Scripts/duo-captures.sh). For design work on the Duo: run it on a commit before a change
 # and on the change, and compare. A push to a branch named duo-captures/<anything> runs it on that commit, without
 # starting a pull request's CI; once on main it also runs by hand from the Actions tab. It is not a gate and no check
@@ -11,9 +11,9 @@ on:
   workflow_dispatch:
     inputs:
       postures:
-        description: 'Which postures, comma-separated: folded, sideways'
+        description: 'Which postures, comma-separated: folded, sideways, upright'
         required: false
-        default: 'folded,sideways'
+        default: 'folded,sideways,upright'
 
 permissions:
   contents: read
@@ -37,10 +37,10 @@ jobs:
         run: |
           xcodebuild -version
           command -v ffmpeg || echo "No ffmpeg on this runner: clips stay as marks beside the whole video"
-      - name: Capture the Duo folded and sideways
+      - name: Capture the Duo folded, sideways and upright
         # The input reaches the script as data, never as part of the shell's command.
         env:
-          POSTURES: ${{ inputs.postures || 'folded,sideways' }}
+          POSTURES: ${{ inputs.postures || 'folded,sideways,upright' }}
         run: sh apps/ios/Scripts/duo-captures.sh "$POSTURES"
       - name: Keep the captures
         if: always()

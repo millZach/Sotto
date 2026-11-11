@@ -50,7 +50,7 @@ struct ComputersView: View {
         .refreshable { await model.refresh() }
         .navigationTitle("Computers")
         .toolbar(.hidden, for: .navigationBar)
-        .navigationDestination(for: ComputerRoute.self) { ComputerDetailView(hostID: $0.hostID).toolbar(.hidden, for: .tabBar) }
+        .navigationDestination(for: ComputerRoute.self) { ComputerDetailView(hostID: $0.hostID).clearOfUprightRail().toolbar(.hidden, for: .tabBar) }
     }
     /// The list's last row on the Duo: Add a computer.
     private var addRow: some View {
