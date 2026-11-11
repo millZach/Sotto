@@ -491,24 +491,25 @@ apart.
 
 ## Proposed new issues
 
-Titles are written as the repository writes them. Each has the measure that says it is done.
+Each has the measure that says it is done. Zach chose on November 10 to file all of them and to fix them in turn,
+starting with D, then A and B; the numbers are the issues filed.
 
 | | Issue | From | Done when |
 |---|---|---|---|
-| A | Send a paired desktop Watcher's progress without the whole record | Finding 1 | `watcher-state` bytes a minute from `host-wire-tally.py` on forge fall from about 46 MB to under 1 MB with the same threads working |
-| B | Leave out of a phone's thread list the parts no phone reads | Finding 2, step 1 | A push in `phone-wire-probe.mjs` falls from about 209 KB to under 80 KB, with the iPhone and Android journeys unchanged |
-| C | Send a socket client the unchanged parts of the thread list once | Finding 2, step 2; finishes #996 | A push that changes one thread is under 10 KB to a phone and to a desktop |
-| D | Make the transfer benchmark hold what forge's host holds | Finding 3 | The fixture's push sizes are within a quarter of forge's, the phone sends the iPhone's own `accepts`, and a guard fails when a push grows |
-| E | Compress what an iPhone is sent | Finding 4 | A real iPhone reads a compressed hello from forge of under 70 KB, and ADR-0025 says phones are in |
-| F | Send the iPhone a picture at the size it shows | Finding 5 | A tile's fetch is under 60 KB at the median, and the full picture still opens |
-| G | Take up #995 a piece at a time, starting with timing marks and a minified window | Finding 7 | Each piece shows its before and after from `launch-time.spec.ts` on Windows |
-| H | Find what keeps the laptop's main and GPU processes busy while a host works | Finding 8 | A profile names the top costs, and each becomes its own issue or is closed |
-| I | Say why each idle provider session is still held | Finding 9 | A debug read lists each held session with the rule that holds it |
-| J | Check for a Sotto update less often | Finding 10 | Zach picks the interval |
-| K | Pin the repository's Node version | Finding 11; closes #2339 | The budget test passes on forge without a `PATH` change |
-| L | Add an idle phase to the iPhone benchmarks | The unmeasured list | CPU and frames drawn for 30 idle seconds on the Threads list and on a thread are in the summary |
-| M | Measure the iPhone's reply box against November 5 in turns on one runner | The iPhone run | Late frames while the reply box grows and shrinks are the same in both builds, or the commit that raised them is named |
-| N | Feed the iPhone benchmarks a thread list push the size a host sends | The iPhone run, finding 3 | The stream's push is the size `phone-wire-probe.mjs` reads from forge, until finding 2 is fixed |
+| A, #2391 | Send a paired desktop Watcher's progress without the whole record | Finding 1 | `watcher-state` bytes a minute from `host-wire-tally.py` on forge fall from about 46 MB to under 1 MB with the same threads working |
+| B, #2392 | Leave out of a phone's thread list the parts no phone reads | Finding 2, step 1 | A push in `phone-wire-probe.mjs` falls from about 209 KB to under 80 KB, with the iPhone and Android journeys unchanged |
+| C, #2393 | Send a socket client the unchanged parts of the thread list once | Finding 2, step 2; finishes #996 | A push that changes one thread is under 10 KB to a phone and to a desktop |
+| D, #2390 | Make the transfer benchmark hold what forge's host holds | Finding 3 | The fixture's push sizes are within a quarter of forge's, the phone sends the iPhone's own `accepts`, and a guard fails when a push grows |
+| E, #2394 | Compress what an iPhone is sent | Finding 4 | A real iPhone reads a compressed hello from forge of under 70 KB, and ADR-0025 says phones are in |
+| F, #2395 | Send the iPhone a picture at the size it shows | Finding 5 | A tile's fetch is under 60 KB at the median, and the full picture still opens |
+| G, #2396 | Take up #995 a piece at a time, starting with timing marks and a minified window | Finding 7 | Each piece shows its before and after from `launch-time.spec.ts` on Windows |
+| H, #2397 | Find what keeps the laptop's main and GPU processes busy while a host works | Finding 8 | A profile names the top costs, and each becomes its own issue or is closed |
+| I, #2398 | Say why each idle provider session is still held | Finding 9 | A debug read lists each held session with the rule that holds it |
+| J, #2399 | Check for a Sotto update less often | Finding 10 | Zach picks the interval |
+| K, #2339 | Pin the repository's Node version | Finding 11; closes #2339 | The budget test passes on forge without a `PATH` change |
+| L, #2400 | Add an idle phase to the iPhone benchmarks | The unmeasured list | CPU and frames drawn for 30 idle seconds on the Threads list and on a thread are in the summary |
+| M, #2401 | Measure the iPhone's reply box against November 5 in turns on one runner | The iPhone run | Late frames while the reply box grows and shrinks are the same in both builds, or the commit that raised them is named |
+| N, in #2390 | Feed the iPhone benchmarks a thread list push the size a host sends | The iPhone run, finding 3 | The stream's push is the size `phone-wire-probe.mjs` reads from forge, until finding 2 is fixed |
 
 A, B and D are the three that change the most for the least. A and B do not depend on each other. D makes both
 provable in CI rather than only on forge.
