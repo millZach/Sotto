@@ -11,7 +11,7 @@ test('new work reopens only its folder while older threads remain settled', asyn
   const { page } = launched
   try {
     await page.evaluate(async () => {
-      await window.sotto!.updateSettings({ onboardingComplete: true })
+      await window.sotto!.updateSettings({ onboardingComplete: true, threadListGrouping: 'project' })
       await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
     })

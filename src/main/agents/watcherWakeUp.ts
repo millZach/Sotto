@@ -625,13 +625,15 @@ export class WatcherWakeUp {
   /**
    * Whether this event needs Watcher by itself. A finish that left background work running does not: it rides with that
    * work's work-settled news, a question or a failure, and needs Watcher by itself only once it has waited WATCHER_QUIET_MS,
-   * so work that never settles cannot hold a finish for ever (#1190).
+   * so work that never settles cannot hold a finish for ever (#1190). One whose thread has begun another turn never does:
+   * the thread is working again, so it only rides with news that wakes Watcher (#2434). On November 10, 2026 about twenty
+   * wakes said nothing but that, none of them for anything Watcher had to do.
    */
   private attends(event: WatcherEvent): boolean {
     if (event.kind === 'evidence-changed') return this.waking.has(event.id) && (this.attentionUntold(event.target) || this.restoredNews(event))
     // A card that closed, a swarm's progress, a restart and a finished move only ride with news that does (#2226).
     if (WATCHER_RIDING_KINDS.has(event.kind)) return false
-    return !busyFinish(event) || this.ripe(event) || this.movedOn(event)
+    return !busyFinish(event) || (this.ripe(event) && !this.movedOn(event))
   }
   private ripe(event: WatcherEvent): boolean { return this.now() - Date.parse(event.observedAt) >= WATCHER_QUIET_MS }
   /**
@@ -645,7 +647,7 @@ export class WatcherWakeUp {
     if (!thread || thread.status === 'running' || thread.lastTurn?.id !== event.turnId) return undefined
     return Math.floor((this.now() - Date.parse(event.observedAt)) / 60_000)
   }
-  /** Whether a finish's thread has begun another turn since: a held busy finish is told then, never dropped. */
+  /** Whether a finish's thread has begun another turn since: a held busy finish then rides with the next wake, never dropped. */
   private movedOn(event: WatcherEvent): boolean {
     const thread = this.thread(this.snapshot(), event.target)
     return !!thread?.lastTurn && thread.lastTurn.id !== event.turnId
@@ -710,7 +712,8 @@ export class WatcherWakeUp {
   }
   /** When the earliest held busy finish starts to need Watcher by itself, if one is still waiting for that. */
   private ripensAt(): number | undefined {
-    const times = this.pending.filter(event => busyFinish(event) && !this.attends(event)).map(event => Date.parse(event.observedAt) + WATCHER_QUIET_MS)
+    // One whose thread moved on never ripens into a wake (#2434), so it sets no deadline: past it, the pass would only run again at once.
+    const times = this.pending.filter(event => busyFinish(event) && !this.attends(event) && !this.movedOn(event)).map(event => Date.parse(event.observedAt) + WATCHER_QUIET_MS)
     return times.length ? Math.min(...times) : undefined
   }
   /** A tool's answer gave Watcher this receipt as it stands: the same receipt is no news to it. */
@@ -1146,12 +1149,12 @@ export class WatcherWakeUp {
   private flush(): void {
     const { held, due, watcher } = this.withPassReads(() => ({ held: this.heldForGitRead(), due: this.canDeliver() ? this.stillDue(this.pending) : [], watcher: this.record().current?.target }))
     // A finish still waiting on its work goes with that work's news, a question or a failure, or once ripe; other
-    // ordinary news going now does not take it along.
+    // ordinary news going now does not take it along. One whose thread has moved on waits on nothing, and goes with any (#2434).
     const urgent = due.some(event => WATCHER_URGENT_KINDS.has(event.kind) || this.failedChecks(event))
     const settling = new Set(due.filter(event => event.kind === 'work-settled').map(event => JSON.stringify([targetKey(event.target), event.turnId ?? null])))
     const toldLater = toldEventsForLater(due)
     const stays = (event: WatcherEvent) => toldLater.has(event.id) || this.waitsForGitRead(event, held)
-      || !urgent && busyFinish(event) && !this.attends(event) && !settling.has(JSON.stringify([targetKey(event.target), event.turnId ?? null]))
+      || !urgent && busyFinish(event) && !this.attends(event) && !this.movedOn(event) && !settling.has(JSON.stringify([targetKey(event.target), event.turnId ?? null]))
     const ready = due.filter(event => !stays(event))
     const events = this.worthTelling(ready) ? ready : []
     if (events.length) this.pending = due.filter(stays)

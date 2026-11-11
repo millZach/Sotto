@@ -12,7 +12,7 @@ test('Settings effort stays a slider and new work uses the saved defaults', asyn
   const { page } = launched
   try {
     await page.evaluate(async () => {
-      await window.sotto!.updateSettings({ onboardingComplete: true })
+      await window.sotto!.updateSettings({ onboardingComplete: true, threadListGrouping: 'project' })
       await window.sotto!.agents!.command({ type: 'connect' })
     })
     await page.reload()
@@ -84,7 +84,7 @@ test('the project pen rejects settled and stale empty threads', async () => {
   const { page } = launched
   try {
     await page.evaluate(async () => {
-      await window.sotto!.updateSettings({ onboardingComplete: true })
+      await window.sotto!.updateSettings({ onboardingComplete: true, threadListGrouping: 'project' })
       await window.sotto!.agents!.command({ type: 'connect' })
       await window.sotto!.agents!.command({ type: 'configure', patch: { newThreadModelId: 'claude:sonnet' } })
     })
