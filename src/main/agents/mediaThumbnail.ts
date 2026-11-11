@@ -49,8 +49,12 @@ function seeThrough(image: NativeImage): boolean {
 
 const JPEG_URL = 'data:image/jpeg;base64,'
 const EXIF = Buffer.from('Exif\0\0', 'latin1')
-/** Whether a JPEG data URL carries an Exif segment before its picture starts: read from its first 64 KiB, never all of it. */
-function carriesCameraDetails(dataUrl: string): boolean {
+/**
+ * Whether a JPEG data URL carries an Exif segment before its picture starts: read from its first 64 KiB, never all of it.
+ * A headless host's maker (`src/host/pictureMaker.ts`, ADR-0203) hands such a picture back whole by the same rule, since
+ * its decoder does not turn a picture either.
+ */
+export function carriesCameraDetails(dataUrl: string): boolean {
   if (!dataUrl.startsWith(JPEG_URL)) return false
   const head = Buffer.from(dataUrl.slice(JPEG_URL.length, JPEG_URL.length + 87_384), 'base64')
   for (let at = 2; at + 4 <= head.length && head[at] === 0xff;) {
@@ -108,15 +112,26 @@ type PictureRead = { readonly dataUrl: string } | null
  * The copies of pictures phones asked for at a longest edge (`thread-media-edge`, ADR-0170's November 10 amendment),
  * made by `reduce` and kept in `kept`, which the desktop shares with its window's thumbnails, so both stay inside one
  * budget in bytes. A GIF is answered whole, so it keeps its frames for the phone to play; so is a picture `reduce`
- * cannot read, or whose copy comes out no smaller. None of those is kept, as no whole picture is.
+ * cannot read, or whose copy comes out no smaller. None of those is kept, as no whole picture is. `reduce` is the process
+ * owner's: Electron's image tools on the desktop, the picture worker on a headless host (ADR-0203). A picture and edge
+ * asked for again while its copy is being made waits for that one, so it is read and made once.
  */
 export class ReducedPictures {
+  /** The copies being made now, by the name they will be kept under. */
+  private readonly making = new Map<string, Promise<PictureRead>>()
   constructor(private readonly reduce: (dataUrl: string, edge: number) => string | null | Promise<string | null>, private readonly kept = new KeptThumbnails()) {}
   /** The picture `key` names at no more than `edge` on its longest side, read whole by `whole` only when none is kept. */
-  async read(key: readonly string[], edge: number, whole: () => Promise<PictureRead>): Promise<PictureRead> {
+  read(key: readonly string[], edge: number, whole: () => Promise<PictureRead>): Promise<PictureRead> {
     const name = JSON.stringify(['edge', ...key, edge])
     const kept = this.kept.get(name)
-    if (kept !== undefined) return { dataUrl: kept }
+    if (kept !== undefined) return Promise.resolve({ dataUrl: kept })
+    const making = this.making.get(name)
+    if (making) return making
+    const made = this.make(name, edge, whole).finally(() => { this.making.delete(name) })
+    this.making.set(name, made)
+    return made
+  }
+  private async make(name: string, edge: number, whole: () => Promise<PictureRead>): Promise<PictureRead> {
     const picture = await whole()
     if (!picture || picture.dataUrl.startsWith('data:image/gif;')) return picture
     const reduced = await this.reduce(picture.dataUrl, edge)

@@ -44,6 +44,8 @@ import { hostBrowserTools, type HostBrowserTools } from './browser/hostBrowserTo
 import type { ScopedThreadTools } from '../main/agents/threadToolServer'
 import { tellWatcherTools } from '../main/agents/tellWatcherTools'
 import { HostTellWatcherRelay } from '../main/agents/tellWatcherRelay'
+import { KeptThumbnails, ReducedPictures } from '../main/agents/mediaThumbnail'
+import { PictureMaker } from './pictureMaker'
 
 /** True in a host packaged for release (`scripts/package-host.mjs`), which alone has the product events endpoint (ADR-0179). */
 declare const __SOTTO_RELEASED_HOST__: boolean | undefined
@@ -84,6 +86,11 @@ export interface HeadlessHostOptions {
   entryPath?: string
   /** Tests stand a local releases page in for a host that updates itself; a host always uses the published one. */
   releasesUrl?: string
+  /**
+   * Tests stand in a maker over a picture worker they built, since none is built beside the source; a host starts the one
+   * beside its own index.js (ADR-0203). The host closes it when it closes.
+   */
+  pictures?: PictureMaker
 }
 
 export { HostLockError, HostLockHeldError } from './lock'
@@ -163,6 +170,10 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   let browser: HostBrowserTools | undefined
   let delegationRelay: HostDelegationRelay | undefined
   let startedRuntime: Awaited<ReturnType<typeof createAgentRuntime>> | undefined
+  // The copies a phone's tile asks for at its own size (`thread-media-edge`, ADR-0203), made in the picture worker with the
+  // decoders compiled into this host, on either release track, as the desktop makes them with Electron's. Only where that
+  // worker was built beside this file: without one the host lists no `thread-media-edge` and sends pictures whole.
+  const pictures = options.pictures ?? (PictureMaker.available() ? new PictureMaker(undefined, options.log ? { log: options.log } : {}) : undefined)
   try {
     productEvents.record('app.started', { pairedHosts: 0 })
     await repositories.settings.migrateProjectWorkingCopyDefaults(hostId)
@@ -241,6 +252,8 @@ async function startHostRuntime(options: HeadlessHostOptions) {
       // The host owns its worktrees, so it reclaims them under the rules in its own settings (ADR-0041, ADR-0025).
       worktreeCleanup: { pullRequestMerged: githubPullRequestMerged, pullRequestState: githubPullRequestState, log: event => options.log?.(event) },
       claudeSettingsLog: event => options.log?.(event),
+      // Kept within the thumbnails' own budget in bytes, as the desktop keeps its copies (ADR-0170, decision 34).
+      ...pictures ? { reducedPictures: new ReducedPictures((dataUrl, edge) => pictures.reduce(dataUrl, edge), new KeptThumbnails()) } : {},
     })
     // Sotto's tool servers for this host's own threads (#1310), on this machine's loopback with this host's own tokens:
     // `sotto_delegate`, and `sotto_media` with inline media on (ADR-0170, request-only), since this host keeps its own
@@ -380,8 +393,9 @@ async function startHostRuntime(options: HeadlessHostOptions) {
           await descriptorWrites.catch(() => undefined)
           threadMoves?.close()
           try { await listener?.close() } finally {
-            // No thread's tool call is taken once the host is closing; a call already running ends with its service.
-            await Promise.allSettled([...threadTools.map(tools => tools.close()), browser?.close()])
+            // No thread's tool call is taken once the host is closing; a call already running ends with its service. No
+            // phone is left to ask for a copy, so the picture worker goes too.
+            await Promise.allSettled([...threadTools.map(tools => tools.close()), browser?.close(), pictures?.close()])
             try { await runtime.close() } finally {
               memory?.close()
               if (listener) {
@@ -396,6 +410,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   } catch (error) {
     await Promise.allSettled([
       async () => productEvents.stop(), async () => delegationRelay?.close(), async () => browser?.close(), async () => startedRuntime?.close(),
+      async () => pictures?.close(),
     ].map(stop => stop()))
     try { memory?.close() } catch { /* Keep the startup failure. */ }
     throw error

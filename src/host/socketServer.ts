@@ -379,7 +379,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'thread-media' || service.supportsThreadMedia === true && service.threadMedia !== undefined)
     && (feature !== 'browser' || options.browser !== undefined)
     && (feature !== 'thread-media-video' || service.supportsThreadMedia === true && service.threadMediaPart !== undefined)
-    // A copy at a longest edge needs image tools, which only the desktop has (ADR-0170, November 10 amendment).
+    // A copy at a longest edge needs a maker: the desktop's image tools, or a headless host's picture worker (ADR-0203).
     && (feature !== 'thread-media-edge' || service.supportsPictureEdges === true)
     && (feature !== 'watcher-control' || service.supportsWatcherControl === true && options.watcherDesktops !== undefined)
     && (feature !== 'watcher-reads' || watcherReads)

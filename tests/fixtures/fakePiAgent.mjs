@@ -8,14 +8,48 @@ const args = process.argv.slice(3)
 const scriptPath = join(root, 'script.json')
 const script = () => { try { return JSON.parse(readFileSync(scriptPath, 'utf8')) } catch { return {} } }
 if (args.includes('--version')) { process.stdout.write((script().cliVersion ?? '1.5.2') + '\n'); process.exit(0) }
+const authPath = join(process.env.PI_CODING_AGENT_DIR ?? root, 'auth.json')
+const authRead = () => { try { return JSON.parse(readFileSync(authPath, 'utf8')) } catch { return {} } }
+if (args[0] === 'auth') {
+  const [, action, provider] = args
+  appendFileSync(join(root, 'requests.jsonl'), JSON.stringify({ method: 'fixture/auth-command', params: { args } }) + '\n')
+  if (action === 'check') {
+    const id = args[args.indexOf('--provider') + 1], credential = authRead()[id]
+    const ready = credential && !script().authExpired
+    process.stdout.write(JSON.stringify(ready ? { status: 'ready', provider: id, authType: credential.type } : credential ? { status: 'invalid', provider: id, reason: 'credential_refresh_failed' } : { status: 'not_ready', provider: id, reason: 'credentials_not_configured' }) + '\n')
+    process.exit(ready ? 0 : 1)
+  }
+  if (action === 'logout') { if (script().signOutFail) process.exit(1); const auth = authRead(); delete auth[provider]; writeFileSync(authPath, JSON.stringify(auth)); process.exit(0) }
+  if (action === 'login') {
+    if (args.includes('--api-key')) {
+      const names = { openai: 'OpenAI API key', anthropic: 'Anthropic API key' }
+      process.stdout.write(`Enter ${names[provider] ?? 'API key'}:`)
+      let input = ''
+      process.stdin.on('data', chunk => {
+        input += chunk
+        if (!/[\r\n]/u.test(input)) return
+        const key = input.split(/[\r\n]/u)[0]
+        if (script().authFail) process.exit(1)
+        writeFileSync(authPath, JSON.stringify({ ...authRead(), [provider]: { type: 'api_key', key } }))
+        process.stdout.write('Saved API key.\n'); process.exit(0)
+      })
+    } else {
+      process.stdout.write('Open https://auth.openai.com/codex/device and enter code: FIXTURE-CODE\nWaiting for authentication...\n')
+      const timer = setInterval(() => {
+        if (!script().authComplete) return
+        clearInterval(timer); writeFileSync(authPath, JSON.stringify({ ...authRead(), [provider]: { type: 'oauth' } })); process.exit(0)
+      }, 10)
+    }
+  }
+} else {
 const arg = name => args[args.indexOf(name) + 1]
 const sessionId = args.includes('--session') ? arg('--session') : randomUUID()
-const sessionDir = arg('--session-dir')
+const sessionDir = args.includes('--session-dir') ? arg('--session-dir') : join(root, 'catalogue')
 mkdirSync(sessionDir, { recursive: true })
 const sessionFile = join(sessionDir, sessionId + '.json')
 const saved = () => { try { return JSON.parse(readFileSync(sessionFile, 'utf8')) } catch { return { messages: [] } } }
 let messages = saved().messages
-let modelId = arg('--model'), thinkingLevel = 'medium', running = false
+let modelId = args.includes('--model') ? arg('--model') : 'openai/fixture-cloud', thinkingLevel = 'medium', running = false
 const pendingStats = []
 const record = data => appendFileSync(join(root, 'requests.jsonl'), JSON.stringify({ ...data, process: process.pid }) + '\n')
 const send = data => process.stdout.write(JSON.stringify(data) + '\n')
@@ -38,6 +72,7 @@ function command(frame) {
   record({ id: frame.id, method: frame.type, params: frame })
   const reply = data => send({ id: frame.id, type: 'response', command: frame.type, success: true, ...(data === undefined ? {} : { data }) })
   switch (frame.type) {
+    case 'get_available_models': reply({ models: Object.keys(authRead()).map(provider => ({ id: 'fixture-cloud', provider, name: 'Fixture Cloud', input: ['text'], reasoning: true })) }); break
     case 'get_state': reply(state()); break
     case 'get_session_stats': { const answer = () => reply({ tokens: { input: 100, output: 20 }, contextUsage: { tokens: 6200, contextWindow: 131072 } }); if (script().holdStats) pendingStats.push(answer); else answer(); break }
     case 'set_model': modelId = frame.provider + '/' + frame.modelId; reply(state().model); break
@@ -69,3 +104,5 @@ const timer = setInterval(() => {
   if (action.type === 'event') send(action.event)
 }, 10)
 process.stdin.on('end', () => { clearInterval(timer); record({ method: 'fixture/session-resident', params: { sessionId, resident: false } }); process.exit(0) })
+
+}

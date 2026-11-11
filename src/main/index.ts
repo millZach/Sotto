@@ -297,6 +297,10 @@ import { INTERFACE_LANGUAGE_SHOWN } from '../shared/interfaceLanguages'
 import { interfaceClockTime } from './interfaceClock'
 import { USAGE_RENDERER_ARGUMENT } from '../shared/usageDashboard'
 import { OPENCODE_HOSTS_RENDERER_ARGUMENT, OPENCODE_RENDERER_ARGUMENT } from '../shared/opencodeSignIn'
+import { PI_RENDERER_ARGUMENT } from '../shared/piSignIn'
+import { registerPiSignInIpc } from './agents/piSignInIpc'
+import { PiSignIn } from './agents/piSignIn'
+import { PiHost } from './agents/pi'
 import { registerOpenCodeSignInIpc } from './agents/opencodeSignInIpc'
 import { registerCursorSignInIpc } from './agents/cursorSignInIpc'
 import { registerLocalProviderSignInIpc } from './agents/localProviderSignInIpc'
@@ -998,6 +1002,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         ...(popupEnabled ? [POPUP_RENDERER_ARGUMENT] : []),
         ...(watcherEnabled && crossMachineEnabled ? [WATCHER_MACHINES_RENDERER_ARGUMENT] : []),
         ...(!heldProviders.has('opencode') && startupSettings.localHostEnabled ? [OPENCODE_RENDERER_ARGUMENT] : []),
+        ...(!heldProviders.has('pi') && startupSettings.localHostEnabled ? [PI_RENDERER_ARGUMENT] : []),
         ...(!heldProviders.has('opencode') ? [OPENCODE_HOSTS_RENDERER_ARGUMENT] : []),
         ...(!heldProviders.has('cursor') && startupSettings.localHostEnabled ? [CURSOR_RENDERER_ARGUMENT] : []),
         ...(ownServers ? [OWN_SERVERS_RENDERER_ARGUMENT] : []),
@@ -1141,6 +1146,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     babysitting: babysittingRetired ? { retired: true } : { agentTool: () => workingCopySettings.babysitPullRequests },
     // An end-to-end run starts no real client's sign-in: this computer's own sign-ins find no client there (ADR-0200).
     ...(e2eConfiguration !== null ? { signInCommand: async () => undefined } : {}),
+    createPiHost: (directory, options) => new PiHost(directory, options),
+    createPiSignIn: (host, options) => new PiSignIn(host.accounts, options),
     // A journey's Cursor sign-in page is written down for the spec to read, never opened in a browser.
     openExternal: url => cursorFixtureRoot ? appendFile(join(cursorFixtureRoot, 'opened-pages.txt'), `${url}
 `, 'utf8') : shell.openExternal(url),
@@ -2489,6 +2496,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         async path => { const error = await shell.openPath(path); if (error) throw new Error('Sotto could not open that folder.') })
       const unsubscribeMainCheckout = localRuntime.mainCheckout?.subscribe(state => { windows.sendToMain(MAIN_CHECKOUT_CHANGED, state) })
       // OpenCode's sign-in (#1104): only while its Owl feature is on, so stable registers nothing.
+      const cleanupPiSignIn = registerPiSignInIpc(ipcMain, heldProviders.has('pi') ? undefined : localRuntime.piSignIn, () => windows.getTrustedRenderers())
       const cleanupOpenCodeSignIn = registerOpenCodeSignInIpc(ipcMain, heldProviders.has('opencode') ? undefined : localRuntime.opencodeSignIn, () => windows.getTrustedRenderers())
       // Signing Codex, Claude Code or Grok Build in from its row in Settings › Providers (ADR-0200).
       const cleanupProviderSignIn = registerLocalProviderSignInIpc(ipcMain, localRuntime.providerSignIn, () => windows.getTrustedRenderers())
@@ -2780,7 +2788,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         unsubscribeMainCheckout?.()
         cleanupNotifications()
         cleanupPopup()
-        cleanupOpenCodeSignIn()
+        cleanupPiSignIn(); cleanupOpenCodeSignIn()
         cleanupCursorSignIn()
         cleanupProviderSignIn()
         cleanupOwnServers()

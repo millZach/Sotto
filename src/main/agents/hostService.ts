@@ -335,7 +335,7 @@ export interface HostService {
   readonly supportsFileStaging?: boolean
   /** The host keeps its agents' pictures and answers `thread-media` (ADR-0170): its Owl answer turns it on. */
   readonly supportsThreadMedia?: boolean
-  /** The host makes a copy of a picture at a longest edge a phone names (`thread-media-edge`): only where it has image tools. */
+  /** The host makes a copy of a picture at a longest edge a phone names (`thread-media-edge`): only where it has a maker. */
   readonly supportsPictureEdges?: boolean
   /** What delegation's record knows of each thread delegated below one thread, for the iPhone's Agents view (ADR-0103). */
   threadDelegations?(threadId: string): Promise<HostThreadDelegations>
@@ -477,7 +477,8 @@ export class LocalHostService implements HostService {
     threadMedia?: boolean
     /**
      * The copies of pictures phones ask for at a longest edge (`thread-media-edge`, ADR-0170's November 10 amendment): the
-     * desktop's, made with Electron's image tools. A headless host has none, so it answers every picture whole.
+     * desktop's, made with Electron's image tools, or a headless host's, made in its picture worker (ADR-0203). Absent, it
+     * answers every picture whole.
      */
     reducedPictures?: ReducedPictures
     /**
