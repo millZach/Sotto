@@ -31,22 +31,26 @@ const PAGES: Record<string, string> = {
 
 let server: Server, origin: string, profileRoot: string, browser: HostBrowser
 
-async function until(check: () => boolean, what: string): Promise<void> {
+/** Waits for `check`, giving up after 15 seconds, or at once when `stopped` is aborted (a test that ran out of time). */
+async function until(check: () => boolean, what: string, stopped?: AbortSignal): Promise<void> {
   const deadline = Date.now() + 15_000
   while (!check()) {
+    if (stopped?.aborted) throw new Error(`Stopped waiting for ${what}: the test ran out of time.`)
     if (Date.now() > deadline) throw new Error(`Timed out waiting for ${what}.`)
     await new Promise(resolve => setTimeout(resolve, 50))
   }
 }
-async function loaded(page: HostBrowserPage, path: string): Promise<void> {
-  await until(() => page.state.url === origin + path && page.state.status === 'ready', `${path} to load`)
+async function loaded(page: HostBrowserPage, path: string, stopped?: AbortSignal): Promise<void> {
+  await until(() => page.state.url === origin + path && page.state.status === 'ready', `${path} to load`, stopped)
 }
 
 /**
  * The deadline of the journey that starts a real Chromium and drives it through every action. It takes about 12 seconds on
  * CI's Linux runner (11.7 s on November 10, 2026), so the suite's 15 seconds left it no room: on a busier runner it timed
  * out on every run while every other test of the file passed (#2426). Waiting is not the assertion (AGENTS.md), and a
- * deadline that is never reached costs nothing.
+ * deadline that is never reached costs nothing. If it is reached, the journey stops at its next wait and never reaches its
+ * own close, which would otherwise land in the middle of a later test on the same page (the bug bot on #2441). It does not
+ * close the page when it stops: the next test opens the same workspace's page.
  */
 const REAL_CHROMIUM_JOURNEY_MS = 60_000
 
@@ -67,27 +71,27 @@ describe.skipIf(!enabled)('a host\'s own browser against a real Chromium (requir
     if (profileRoot) await rm(profileRoot, { recursive: true, force: true })
   })
 
-  it('opens, follows and drives a page as the agent and the user do', async () => {
+  it('opens, follows and drives a page as the agent and the user do', async ({ signal }) => {
     const page = await browser.open('workspace-1')
     expect((await readdir(profileRoot)).length).toBe(1)
     await page.navigate(`${origin}/a`)
-    await loaded(page, '/a')
-    await until(() => page.state.title === 'Page A', 'the title')
+    await loaded(page, '/a', signal)
+    await until(() => page.state.title === 'Page A', 'the title', signal)
 
     const inspected = JSON.parse(await page.automation.inspect()) as { url: string; elements: { name: string }[] }
     expect(inspected.url).toBe(`${origin}/a`)
     expect(inspected.elements.map(element => element.name)).toContain('Sign in')
 
     await page.automation.input({ type: 'click', x: 80, y: 40 }, () => undefined)
-    await until(() => page.state.title === 'Clicked', 'the click')
+    await until(() => page.state.title === 'Clicked', 'the click', signal)
 
     await page.input({ type: 'mouse', action: 'down', x: 60, y: 115, button: 'left', clickCount: 1, modifiers: 0 })
     await page.input({ type: 'mouse', action: 'up', x: 60, y: 115, button: 'left', clickCount: 1, modifiers: 0 })
     expect(await page.automation.target({ type: 'type', text: 'x' })).toContain('INPUT')
     await page.automation.input({ type: 'type', text: 'forge' }, () => undefined)
-    await until(() => page.state.title === 'Typed forge', 'the agent\'s typing')
+    await until(() => page.state.title === 'Typed forge', 'the agent\'s typing', signal)
     await page.input({ type: 'text', text: '!' })
-    await until(() => page.state.title === 'Typed forge!', 'the user\'s typing')
+    await until(() => page.state.title === 'Typed forge!', 'the user\'s typing', signal)
 
     const capture = await page.automation.capture(page.state.url)
     expect(capture.image.startsWith('data:image/png;base64,')).toBe(true)
@@ -100,15 +104,15 @@ describe.skipIf(!enabled)('a host\'s own browser against a real Chromium (requir
     expect((await page.automation.thumbnail())?.startsWith('data:image/jpeg;base64,')).toBe(true)
 
     await page.navigate(`${origin}/b`)
-    await loaded(page, '/b')
-    await until(() => page.state.canGoBack, 'history')
+    await loaded(page, '/b', signal)
+    await until(() => page.state.canGoBack, 'history', signal)
     await page.back()
-    await loaded(page, '/a')
-    await until(() => page.state.canGoForward, 'forward history')
+    await loaded(page, '/a', signal)
+    await until(() => page.state.canGoForward, 'forward history', signal)
     await page.forward()
-    await loaded(page, '/b')
+    await loaded(page, '/b', signal)
     await page.reload()
-    await loaded(page, '/b')
+    await loaded(page, '/b', signal)
     await page.close()
     expect(page.closed).toBe(true)
   }, REAL_CHROMIUM_JOURNEY_MS)

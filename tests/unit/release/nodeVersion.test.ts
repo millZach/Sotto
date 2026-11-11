@@ -46,8 +46,10 @@ describe('the pinned Node version', () => {
     expect(pick?.[1], `${name} no longer reads .node-version from each checkout the way this test knows`).toBe(PINNED_NODE)
     expect([...workflow.matchAll(/pick\(\) \{/gu)], `${name} defines pick more than once`).toHaveLength(1)
     expect(workflow, `${name} no longer feeds the change's setup-node from pick`).toMatch(/^\s*echo "change=\$\(pick \.\)" >> "\$GITHUB_OUTPUT"$/mu)
-    expect(workflow, `${name} no longer feeds the base's setup-node from pick`).toMatch(/echo "base=\$\(pick "\$RUNNER_TEMP\/base"\)" >> "\$GITHUB_OUTPUT"/u)
-    expect([...workflow.matchAll(/"(?:base|change)=/gu)], `${name} writes a Node output somewhere else too`).toHaveLength(2)
+    expect(workflow, `${name} no longer feeds the base's setup-node from pick`).toMatch(/^\s*if \[ -d "\$RUNNER_TEMP\/base" \]; then echo "base=\$\(pick "\$RUNNER_TEMP\/base"\)" >> "\$GITHUB_OUTPUT"; fi$/mu)
+    // Any other write of either output, quoted or not, by echo or printf, on a line that is not a comment.
+    const writes = workflow.split('\n').filter(line => !line.trim().startsWith('#') && line.includes('GITHUB_OUTPUT') && /(?:^|[\s"'])(?:base|change)=/u.test(line))
+    expect(writes, `${name} writes a Node output somewhere else too`).toHaveLength(2)
   })
 
   it('is installed by some workflow', () => {
