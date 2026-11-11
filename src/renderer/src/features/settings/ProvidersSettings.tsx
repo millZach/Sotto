@@ -301,8 +301,8 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
     const update = updateFor(provider)
     const providerUpdating = updatingNow(provider)
     const listed = hostModels.filter(model => model.providerId === provider || (!model.providerId && model.provider === PROVIDER_LABELS[provider]))
-    // Only the models the user can use now: one the provider lists but cannot run is left out rather than labelled.
-    const models = listed.filter(model => model.ready)
+    // Only the models the user can use now: unavailable and unchosen own-server models are left out rather than labelled.
+    const models = listed.filter(model => model.ready && !model.hiddenFromMenu)
     // A long-context variant the catalog does not list (`opus[1m]`) is its base model's entry here.
     const inheritedEntryId = catalogEntry(models, inheritedModelId)?.id
     // OpenCode missing, or refused for its version (OpenCode 1 among them), gets its install guide whether or not update
