@@ -43,6 +43,8 @@ test.describe('authoritative design-review captures', () => {
       await expect(pointedAt).toBeFocused()
       await expect(page.locator('.thread-nav__row', { has: pointedAt }).locator('.thread-nav__status')).toBeHidden()
       await capturePage(page, `threads-row-pointed-at-${appearance}.png`, { theme: appearance, category: 'threads', state: 'row-pointed-at' })
+      // Drop the keys' focus, or the click below lands on a row that is already focused and keeps the keys' ring.
+      await pointedAt.blur()
 
       await open('Footer links')
       await expect(page.getByLabel('Thread transcript')).toContainText('Fixing the footer links')
