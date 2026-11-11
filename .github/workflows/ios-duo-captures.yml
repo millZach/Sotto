@@ -38,7 +38,10 @@ jobs:
           xcodebuild -version
           command -v ffmpeg || echo "No ffmpeg on this runner: clips stay as marks beside the whole video"
       - name: Capture the Duo folded and sideways
-        run: sh apps/ios/Scripts/duo-captures.sh "${{ inputs.postures || 'folded,sideways' }}"
+        # The input reaches the script as data, never as part of the shell's command.
+        env:
+          POSTURES: ${{ inputs.postures || 'folded,sideways' }}
+        run: sh apps/ios/Scripts/duo-captures.sh "$POSTURES"
       - name: Keep the captures
         if: always()
         uses: actions/upload-artifact@v4

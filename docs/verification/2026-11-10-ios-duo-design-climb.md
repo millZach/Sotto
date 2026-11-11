@@ -15,6 +15,7 @@ November 10, 2026. Evidence for the Duo design climb (`docs/plans/2026-11-08-ios
 - **Upright.** The simulator can't turn the unfolded Duo upright, so upright is checked in the prototypes and on Zach's Duo with the TestFlight build.
 - **The keyboard.** The simulator's screenshot doesn't draw the software keyboard, so the keyboard pictures have a black lower part.
 - **Six surfaces have no before**, since the capture lane added them during the climb: `folded-pictures-earlier-dark`, `folded-reply-keyboard-dark`, `folded-settings-further-dark`, `sideways-pictures-earlier-dark`, `sideways-settings-further-dark`, `sideways-settings-scrolled-dark`. They aren't in the lists below.
+- **No pictures shot.** The capture's first "pictures" shot was the long thread's own screen, since the fixture's pictures sit above it, so it is left out and the capture no longer takes it. The pictures show in `pictures-earlier`, which has no before.
 - **The black disc** at the top right of some folded pictures is the simulator's camera, not the app.
 
 ## Pictures and videos
@@ -29,7 +30,6 @@ Folded:
 - [Folded, long thread, dark](../../artifacts/ios-duo-climb/shots/folded-long-thread-dark.jpg)
 - [Folded, long thread, earlier, dark](../../artifacts/ios-duo-climb/shots/folded-long-thread-earlier-dark.jpg)
 - [Folded, New thread, dark](../../artifacts/ios-duo-climb/shots/folded-new-thread-dark.jpg)
-- [Folded, pictures, dark](../../artifacts/ios-duo-climb/shots/folded-pictures-dark.jpg)
 - [Folded, pull request, checks, dark](../../artifacts/ios-duo-climb/shots/folded-pull-request-checks-dark.jpg)
 - [Folded, pull request, dark](../../artifacts/ios-duo-climb/shots/folded-pull-request-dark.jpg)
 - [Folded, question, dark](../../artifacts/ios-duo-climb/shots/folded-question-dark.jpg)
@@ -62,7 +62,6 @@ Sideways:
 - [Sideways, Needs you, dark](../../artifacts/ios-duo-climb/shots/sideways-needs-you-dark.jpg)
 - [Sideways, Needs you, light](../../artifacts/ios-duo-climb/shots/sideways-needs-you-light.jpg)
 - [Sideways, New thread, dark](../../artifacts/ios-duo-climb/shots/sideways-new-thread-dark.jpg)
-- [Sideways, pictures, dark](../../artifacts/ios-duo-climb/shots/sideways-pictures-dark.jpg)
 - [Sideways, pull request, checks, dark](../../artifacts/ios-duo-climb/shots/sideways-pull-request-checks-dark.jpg)
 - [Sideways, pull request, dark](../../artifacts/ios-duo-climb/shots/sideways-pull-request-dark.jpg)
 - [Sideways, question, dark](../../artifacts/ios-duo-climb/shots/sideways-question-dark.jpg)

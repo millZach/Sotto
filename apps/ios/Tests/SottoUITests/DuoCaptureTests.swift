@@ -165,13 +165,12 @@ import UIKit
         shot("long-thread-earlier")
     }
 
-    /// A thread with the pictures its agent made, as tiles.
+    /// A thread with the pictures its agent made, as tiles. The fixture's pictures sit above its last screen, which is the
+    /// long thread's own shot, so the picture is taken a scroll up.
     func testPictures() {
         launch(["--ui-pictures", "--ui-long-thread", "--ui-open-thread", "drives"])
         _ = byID("thread-reply").waitForExistence(timeout: 20)
         sleep(4)
-        shot("pictures")
-        // The fixture's pictures are on its later turns, not always its last screen.
         scrollThread(up: true)
         sleep(4)
         shot("pictures-earlier")
