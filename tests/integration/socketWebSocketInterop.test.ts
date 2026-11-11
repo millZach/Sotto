@@ -11,9 +11,9 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { startHeadlessHost } from '../../src/host'
 import { DEFLATE_SYNC_MAX_BYTES, SocketFrames } from '../../src/host/socketFrames'
 import { startSocketServer } from '../../src/host/socketServer'
-import type { HostService } from '../../src/main/agents/hostService'
 import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
 import type { AgentThreadDetail } from '../../src/shared/agents'
+import { PHONES_ONLY_TAILNET, serviceWithLongThread } from '../fixtures/longThreadService'
 
 let root: string, host: Awaited<ReturnType<typeof startHeadlessHost>>, server: Awaited<ReturnType<typeof startSocketServer>>
 beforeEach(async () => {
@@ -76,11 +76,8 @@ it('sends a phone compressed messages it reads over Node’s own WebSocket, one 
   // A thread long enough to be compressed on the thread pool rather than the loop.
   const long: AgentThreadDetail = { threadId: 'long', revision: 1, messages: Array.from({ length: 4 }, (_, index) => ({ id: 'message-' + index, role: 'assistant' as const,
     createdAt: '2026-11-10T00:00:00.000Z', text: Array.from({ length: 3000 }, (_, line) => `src/host/socketServer.ts:${line} ok ${index}`).join('\n') })) }
-  const service: HostService = { shell: () => host.service.shell(), state: () => host.service.state(), events: (afterSeq, threadId, limit) => host.service.events(afterSeq, threadId, limit),
-    subscribe: listener => host.service.subscribe(listener), threadDetail: id => id === 'long' ? structuredClone(long) : host.service.threadDetail(id),
-    command: (command, identity) => host.service.command(command, identity), subscribeThreadDetail: () => () => undefined }
   // Shaped like a headless host's tailnet listener with no desktop recorded, so this client is a phone.
-  const phones = await startSocketServer({ service, pairing: host.pairing, admin: false, compressPhones: true, tailnet: { phonesAdmitted: () => true, desktops: { has: () => false, refresh: async () => undefined } } })
+  const phones = await startSocketServer({ service: serviceWithLongThread(host.service, long), pairing: host.pairing, admin: false, compressPhones: true, tailnet: PHONES_ONLY_TAILNET })
   const written = vi.spyOn(SocketFrames.prototype as unknown as { frame(opcode: number, data: Buffer, compressed: boolean): boolean }, 'frame')
   try {
     const paired = await host.pairing.redeem(host.pairing.issuePairingCode().code, 'WebSocket phone')

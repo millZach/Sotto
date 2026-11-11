@@ -6,6 +6,7 @@
  * started here without `compressPhones` stands for a phone listener on a host started so, or for the local apps listener:
  * it compresses for no phone.
  */
+import { createHash, randomBytes } from 'node:crypto'
 import { connect, createServer, type AddressInfo, type Server } from 'node:net'
 import type { Duplex } from 'node:stream'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -13,7 +14,8 @@ import { DEFLATE_OFFER, DEFLATE_RESPONSE, DEFLATE_SYNC_MAX_BYTES, deflateAccepte
 import { startSocketServer } from '../../src/host/socketServer'
 import type { HostService } from '../../src/main/agents/hostService'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
-import type { AgentThreadDetail, AgentThreadDetailUpdate } from '../../src/shared/agents'
+import type { AgentAttachmentHandle, AgentThreadDetail, AgentThreadDetailUpdate } from '../../src/shared/agents'
+import { PHONES_ONLY_TAILNET, serviceWithLongThread } from '../fixtures/longThreadService'
 import { rawPeer } from '../fixtures/rawHostPeer'
 import { useSocketHostFixture } from '../fixtures/socketHostFixture'
 
@@ -55,17 +57,8 @@ async function peer(port: number, token: string, offer?: string) {
 
 /** The offer the iPhone's `URLSessionWebSocketTask` makes by itself, as forge's tailnet listener saw it (#2394). */
 const IPHONE_OFFER = 'permessage-deflate'
-/** The host's service with one long thread to read: `long`, the rest as the fixture host has it. */
-const serviceWithLongThread = (detail: AgentThreadDetail): HostService => ({
-  shell: () => fixture.host.service.shell(), state: () => fixture.host.service.state(),
-  events: (afterSeq, threadId, limit) => fixture.host.service.events(afterSeq, threadId, limit), subscribe: listener => fixture.host.service.subscribe(listener),
-  threadDetail: id => id === 'long' ? structuredClone(detail) : fixture.host.service.threadDetail(id),
-  command: (command, identity) => fixture.host.service.command(command, identity),
-  subscribeThreadDetail: () => () => undefined,
-})
 /** A listener shaped like a headless host's tailnet listener, where no client is recorded as a desktop, so every peer is a phone. */
-const phoneListener = (service: HostService, compressPhones: boolean) => listen({ service, admin: false, compressPhones,
-  tailnet: { phonesAdmitted: () => true, desktops: { has: () => false, refresh: async () => undefined } } })
+const phoneListener = (service: HostService, compressPhones: boolean) => listen({ service, admin: false, compressPhones, tailnet: PHONES_ONLY_TAILNET })
 type WireFrame = { fin: boolean; rsv1: boolean; opcode: number; size: number }
 /**
  * The frames a listener writes to a raw peer, read off its stream beside the peer's own reader: each frame's FIN and RSV1
@@ -219,7 +212,7 @@ describe('compressed host socket messages', () => {
 
   it('answers an iPhone’s bare offer with phone compression on, and the phone reads compressed messages, one over 64 KiB among them', async () => {
     const detail = longThread()
-    const listener = await phoneListener(serviceWithLongThread(detail), true)
+    const listener = await phoneListener(serviceWithLongThread(fixture.host.service, detail), true)
     const phone = await session('Zach’s iPhone')
     const iphone = await peer(listener.descriptor.port, phone.session, IPHONE_OFFER)
     // The desktop's answer, which is a valid one to an offer that asked for neither parameter (RFC 7692 section 7.1.1):
@@ -247,10 +240,35 @@ describe('compressed host socket messages', () => {
     expect(iphone.frames.isClosed).toBe(false)
   })
 
+  it('reads two photos a phone sends compressed on one connection, each inflated whole (#2394)', async () => {
+    const kept: string[] = []
+    const digest = (bytes: Uint8Array): string => createHash('sha256').update(bytes).digest('hex')
+    // Keeps nothing: the hash of what arrived is what the check reads.
+    const service = serviceWithLongThread(fixture.host.service, longThread(), { stageAttachment: image => {
+      kept.push(digest(image.bytes))
+      return Promise.resolve({ id: 'photo-' + kept.length, name: image.name, mimeType: image.mimeType, sizeBytes: image.bytes.byteLength, digest: digest(image.bytes) } as AgentAttachmentHandle)
+    } })
+    const listener = await phoneListener(service, true)
+    const phone = await session('Zach’s iPhone')
+    const iphone = await peer(listener.descriptor.port, phone.session, IPHONE_OFFER)
+    expect(await iphone.call('hello', { op: 'hello' })).toMatchObject({ ok: true })
+    const inflated = inflations()
+    // Bytes that do not compress, as a JPEG's do not, so each photo is a compressed message of about its own size: the
+    // large message a phone sends. The second is read with no context kept from the first, as the answer asked.
+    const photos = [randomBytes(300 * 1024), randomBytes(300 * 1024)]
+    for (const [index, bytes] of photos.entries()) {
+      expect(await iphone.call('photo-' + index, { op: 'stage-attachment', image: { name: `Photo ${index}.jpg`, mimeType: 'image/jpeg', data: bytes.toString('base64') } })).toMatchObject({ ok: true })
+    }
+    expect(kept).toEqual(photos.map(digest))
+    const read = inflated.mock.results.filter((result, index) => inflated.mock.contexts[index] !== iphone.frames && result.type === 'return' && (result.value as Buffer).length > 300 * 1024)
+    expect(read).toHaveLength(2)
+    expect(iphone.frames.isClosed).toBe(false)
+  })
+
   it('sends a phone that offers nothing no compressed frame, with phone compression on or off', async () => {
     const detail = longThread()
     for (const compressPhones of [false, true]) {
-      const listener = await phoneListener(serviceWithLongThread(detail), compressPhones)
+      const listener = await phoneListener(serviceWithLongThread(fixture.host.service, detail), compressPhones)
       const phone = await session(compressPhones ? 'Phone on a compressing listener' : 'Phone on a plain listener')
       const plain = await peer(listener.descriptor.port, phone.session)
       expect(plain.extensions).toBeUndefined()

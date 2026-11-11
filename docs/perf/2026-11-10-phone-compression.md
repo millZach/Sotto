@@ -102,8 +102,24 @@ before each compressed message when the answer has the second, resets its deflat
 it has the first, compresses only messages of 1 KiB or more, and reads a compressed message whole or in fragments, RSV1
 on the first frame. It fails the socket with close code 1010 only for an answer it does not understand: an unknown
 extension or parameter, any `client_max_window_bits`, or a `server_max_window_bits` outside 8 to 15. The host's answer has
-none of them. So Android is compressed on the strength of that source, not of a device check; if it misbehaves on a
-device, `SOTTO_HOST_COMPRESS_PHONES=0` turns compression off on the host or desktop it reaches until a fix ships.
+none of them.
+
+OkHttp itself was then run against the host's own listener, on forge under Java 25 with the 4.12.0 jar the Android build
+names (`tests/integration/socketOkHttpInterop.test.ts`, which runs `tests/fixtures/OkHttpPhone.java`). It offered the
+extension unasked and took the host's answer. It read a compressed hello and a compressed thread of over 64 KiB, each
+with the same hash as the text the host sent. It then staged two photos of 300 KB on one connection, each a compressed
+message of about 400 KB of base64, and the host inflated both whole and kept bytes with the hashes OkHttp sent. The
+check fails when the listener does not compress for phones. It needs a Java and three jars the repository does not
+carry, so it is skipped unless it is told where they are:
+
+```sh
+SOTTO_OKHTTP_CLASSPATH='<folder of okhttp-4.12.0.jar, okio-jvm-3.6.0.jar and kotlin-stdlib-1.9.10.jar>/*' \
+  npx vitest run tests/integration/socketOkHttpInterop.test.ts --maxWorkers=1
+```
+
+That is OkHttp on a desktop Java, not the app on an Android device, which no one has run against a compressing host. If
+it misbehaves there, `SOTTO_HOST_COMPRESS_PHONES=0` turns compression off on the host or desktop it reaches until a fix
+ships.
 
 ## What was not checked
 
@@ -111,7 +127,8 @@ device, `SOTTO_HOST_COMPRESS_PHONES=0` turns compression off on the host or desk
   compresses what it sends, and keeps no context between those messages as `client_no_context_takeover` asks, was not
   seen. A photo is the one large message an iPhone sends. A phone that compressed with context kept would have its second
   compressed message on a connection refused, and the host would close that connection. Sending two photos in one thread
-  from the iPhone, to a computer that compresses, would show it.
+  from the iPhone, to a computer that compresses, would show it. The host's side of it is held by a test: a phone-shaped
+  peer sends two photos compressed on one connection and the host reads both (`tests/integration/socketCompression.test.ts`).
 - The iPhone journeys in CI run the app against its own fixture rather than a host, so they do not exercise compression.
 - Android on a device, above.
 - The host-sized guard (`tests/perf/hostPushSizeBudget.perf.test.ts`) counts a push's JSON, not its bytes on the wire,
