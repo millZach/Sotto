@@ -397,17 +397,17 @@
 .thread-nav__branch[data-working-copy-state='error'] { color: var(--tt-warning-text); }
 /* The current row's selection is a tint, so its amber takes the on-tint tone. */
 .thread-nav__row[data-current] :is(.thread-nav__branch[data-working-copy-state='error'], .thread-nav__status[data-state='needs'], .thread-nav__status[data-state='working'][data-disconnected]) { color: var(--tt-warning-on-tint); }
-/* The row's shortcuts stand at the second line's end in the clock's place. While they show, the clock gives its column
-   up and the words keep clear of the buttons present and no more: the buttons stand 2px from the row's edge and the line
-   ends 18px from it (the row's padding and the column gap), so the line keeps the buttons' width less 10px, which leaves
-   it 6px of air before them. What the thread is doing and Watcher's owl leave the line meanwhile (below, in the narrow
-   sidebar), so the project and its computer keep the room (Zach's pick B2, November 11, 2026). */
+/* The row's shortcuts stand at the second line's end in the clock's place. In the narrow sidebar, while they show, the
+   clock gives its column up (below) and the words keep clear of the buttons present and no more: the line keeps the
+   buttons' width less 10px, which ends its words 8px before the first button. In a status group, what the thread is doing
+   and Watcher's owl leave the line meanwhile too, so the project and its computer keep the room (Zach's pick B2,
+   November 11, 2026). */
 .thread-nav .thread-nav__row--details .thread-nav__row-actions { position: absolute; top: auto; bottom: 1px; right: 2px; padding-right: 0; opacity: 0; pointer-events: none; }
 .thread-nav .thread-nav__row--details .thread-nav__action { width: 24px; height: 24px; min-height: 24px; }
 /* They show under the pointer and with the keyboard's focus, not for the focus a click leaves behind, so the row just
    pressed reads as quietly as the rest once the pointer moves on. */
 .thread-nav__row--details:is(:hover, :has(:focus-visible)) .thread-nav__row-actions { position: absolute; opacity: 1; pointer-events: auto; }
-.thread-nav .thread-nav__row--details:is(:hover, :has(:focus-visible)) .thread-nav__time { display: none; }
+.thread-nav .thread-nav__row--details:is(:hover, :has(:focus-visible)) .thread-nav__time { visibility: hidden; }
 .thread-nav__row--details:has(> .thread-nav__row-actions > :nth-child(2)) { --thread-row-actions-width: 52px; }
 .thread-nav__row--details:has(> .thread-nav__row-actions > :nth-child(3)) { --thread-row-actions-width: 78px; }
 .thread-nav__row--details:has(> .thread-nav__row-actions > :nth-child(4)) { --thread-row-actions-width: 104px; }
@@ -531,15 +531,17 @@
 @container thread-sidebar (max-width: 339px) {
   .thread-folder__toggle .host-badge { padding-inline: 5px; }
   .thread-folder__toggle .host-badge__name { display: none; }
-  /* Here the shortcuts share the words' line, so pointed at or reached by the keys, the row's word and Watcher's owl make
-     way for them. The pressed owl among the shortcuts still says Watcher is on it, and the word stays in the row's
-     description (Zach's pick B2, November 11, 2026). */
-  .thread-nav__row--details:is(:hover, :has(:focus-visible)) .thread-nav__standing > :is(.thread-nav__status, .watched-badge) { display: none; }
+  /* Here the shortcuts share the words' line, so pointed at or reached by the keys, the hidden clock gives its column up,
+     and a status group's row, whose line names its project and computer, lets its word and Watcher's owl make way. The
+     pressed owl among the shortcuts still says Watcher is on it, and the word stays in the row's description (Zach's pick
+     B2, November 11, 2026). A row under a project folder has only its word on the line, so it keeps it. */
+  .thread-nav .thread-nav__row--details:is(:hover, :has(:focus-visible)) .thread-nav__time { display: none; }
+  .thread-nav__row--details:is(:hover, :has(:focus-visible)) .thread-nav__standing[data-placed] > :is(.thread-nav__status, .watched-badge) { display: none; }
 }
 @container thread-sidebar (min-width: 340px) {
   .thread-nav__branch { display: flex; }
   /* Here the shortcuts have the branch's line, so the clock and the words keep theirs. */
-  .thread-nav .thread-nav__row--details:is(:hover, :has(:focus-visible)) .thread-nav__time { display: block; }
+  .thread-nav .thread-nav__row--details:is(:hover, :has(:focus-visible)) .thread-nav__time { visibility: visible; }
   .thread-nav__row--details:is(:hover, :has(:focus-visible)) .thread-nav__standing { padding-right: 0; }
 }
 @container thread-sidebar (min-width: 420px) { .thread-nav__model, .thread-nav__copy-kind { display: inline; } }
