@@ -11,7 +11,11 @@ struct SettingsView: View {
         SheetPage {
             PageHeading(String(localized: "Settings"), subtitle: String(localized: "These are kept on this iPhone. They don’t change any computer’s settings."))
                 .padding(.top, Space.s1)
-            SectionLabel(String(localized: "Look", comment: "Settings section heading for appearance, theme, text size and density."))
+            // Folded, Look is tighter: less room under the introduction, and less round each control and the Text size
+            // sample, with every target still 44 points, so Message density and Tabs show on the first screen (Zach's
+            // round 8 pick A, November 10, 2026). See `LookPanel`, `Segmented`, `TextSizePanel` and `TextSample`.
+            SectionLabel(String(localized: "Look", comment: "Settings section heading for appearance, theme, text size and density."),
+                         top: duo.isFolded ? Space.s3 : Space.s7)
             // Look is one group of rows on one card, as Notifications is, with the theme tiles on a card of their own
             // under it (#1864).
             VStack(spacing: Space.s3) {
@@ -54,12 +58,10 @@ private struct AppearancePanel: View {
     @Environment(\.colorScheme) private var scheme
     var body: some View {
         let current = PhoneAppearance(rawValue: appearance) ?? .dark
-        VStack(alignment: .leading, spacing: Space.s3) {
-            PanelHeader(title: String(localized: "Appearance"), value: current == .system ? (scheme == .dark ? String(localized: "Following the iPhone: Dark") : String(localized: "Following the iPhone: Light")) : nil)
+        LookPanel(title: String(localized: "Appearance"), value: current == .system ? (scheme == .dark ? String(localized: "Following the iPhone: Dark") : String(localized: "Following the iPhone: Light")) : nil) {
             Segmented(name: String(localized: "Appearance"), choices: PhoneAppearance.allCases, selection: current,
                       title: { $0.title }, identifier: { "setting-\($0.rawValue)" }) { appearance = $0.rawValue }
         }
-        .lookRow()
     }
 }
 
@@ -67,7 +69,12 @@ private struct ThemePanel: View {
     let announce: (String) -> Void
     @AppStorage(PhonePreferenceKey.theme) private var themeID = ThemePalettes.defaultID
     @Environment(\.colorScheme) private var scheme
-    private var columns: [GridItem] { Array(repeating: GridItem(.flexible(), spacing: Space.s3, alignment: .top), count: 3) }
+    @Environment(\.duoLayout) private var duo
+    /// Three across, and four on the Duo held sideways, so its seven themes stand in two rows rather than leaving the last
+    /// alone on a third (Zach's round 6 pick A, November 10, 2026).
+    private var columns: [GridItem] {
+        Array(repeating: GridItem(.flexible(), spacing: Space.s3, alignment: .top), count: duo.sideways ? 4 : 3)
+    }
     var body: some View {
         let current = ThemePalettes.named(themeID)
         let dark = scheme == .dark
@@ -170,31 +177,32 @@ private struct ThemeRoom: View {
 private struct TextSizePanel: View {
     @AppStorage(PhonePreferenceKey.textSize) private var textSize = ""
     @AppStorage(PhonePreferenceKey.legacyLargerText) private var legacyLarger = false
+    @Environment(\.duoLayout) private var duo
     var body: some View {
         let current = PhoneTextSize.resolve(textSize, legacyLarger: legacyLarger)
-        VStack(alignment: .leading, spacing: Space.s3) {
-            PanelHeader(title: String(localized: "Text size"), value: current.title)
+        LookPanel(title: String(localized: "Text size"), value: current.title) {
             HStack(spacing: 0) {
                 ForEach(PhoneTextSize.allCases, id: \.rawValue) { size in
                     TextSizeStep(size: size, selected: size == current) { textSize = size.rawValue }
                 }
             }
-            .padding(4)
+            .padding(duo.isFolded ? 1 : 4)
             .background {
                 ZStack {
                     RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Palette.fillSofter)
-                    Rectangle().fill(Palette.hairline).frame(height: 2).padding(.horizontal, 30)
+                    // Off the Duo the track still runs under every letter; on the Duo each step draws its own piece.
+                    if duo == .none { Rectangle().fill(Palette.hairline).frame(height: 2).padding(.horizontal, 30) }
                 }
             }
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Text size")
+        } under: {
             TextSample()
         }
-        .lookRow()
     }
 }
 
-/// One of the five text sizes, as a letter drawn at a size that grows with the step.
+/// One of the five text sizes, as a letter drawn at a size that grows with the step, on the track that joins them.
 private struct TextSizeStep: View {
     let size: PhoneTextSize
     let selected: Bool
@@ -202,15 +210,17 @@ private struct TextSizeStep: View {
     @Environment(\.colorScheme) private var scheme
     @Environment(\.sottoTheme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.duoLayout) private var duo
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+        let points = CGFloat(16 + size.offset * 3)
         Button {
             withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.25)) { pick() }
         } label: {
             Text("A", comment: "A sample letter drawn at each text size.")
-                .font(.custom("Figtree-Bold", fixedSize: CGFloat(16 + size.offset * 3)))
+                .font(.custom("Figtree-Bold", fixedSize: points))
                 .foregroundStyle(selected ? Palette.accentText : Palette.muted)
-                .frame(maxWidth: .infinity, minHeight: 52)
+                .frame(maxWidth: .infinity, minHeight: duo.isFolded ? 44 : 52)
                 .background {
                     if selected {
                         shape.fill(scheme == .dark ? Palette.overlay : Palette.surface)
@@ -227,19 +237,90 @@ private struct TextSizeStep: View {
         .accessibilityAddTraits(selected ? .isSelected : [])
         // The Larger step keeps the earlier Larger text switch's identifier.
         .accessibilityIdentifier(size == .larger ? "setting-larger-text" : "setting-text-\(size.rawValue)")
+        // The track runs from the first letter to the last and breaks around each one, where one line under them all ran
+        // through the letters and left them looking struck through (the Duo design climb's round 6). It stays still while
+        // the step is pressed. On the Duo alone.
+        .background {
+            if duo != .none { HStack(spacing: 0) {
+                Rectangle().fill(Palette.hairline).frame(height: 2).opacity(size == PhoneTextSize.allCases.first ? 0 : 1)
+                Color.clear.frame(width: points + Space.s3, height: 2)
+                Rectangle().fill(Palette.hairline).frame(height: 2).opacity(size == PhoneTextSize.allCases.last ? 0 : 1)
+            }
+            .accessibilityHidden(true) }
+        }
     }
 }
 
 /// A request card's words at the chosen size, so the size can be judged before leaving Settings.
 private struct TextSample: View {
+    @Environment(\.duoLayout) private var duo
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        let words = VStack(alignment: .leading, spacing: 2) {
+            // On the Duo it says what it is, since it reads like a request that strayed into Settings.
+            if duo != .none { Text("Sample", comment: "Labels the example words under Text size in Settings.").font(.sotto(.caption, .semibold)).foregroundStyle(Palette.muted) }
             Text("Pick the drawer shortcut").font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)
             Text("Asks: which shortcut should open the terminal drawer?").font(.sotto(.small)).foregroundStyle(Palette.muted)
         }
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
+        Group {
+            if duo == .none { words } else {
+                words.padding(.horizontal, Space.s3).padding(.vertical, duo.isFolded ? Space.s2 : Space.s3)
+                    .background(Palette.fillSofter, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+        }
         .accessibilityHidden(true)
+    }
+}
+
+/// One row of Look. Held sideways or upright on the Duo the label stands on the left with its control beside it, where
+/// phone-width controls stretched across the page (Zach's pick C, November 8, 2026); everywhere else the label stands over
+/// the control. At the accessibility text sizes the label stays over it, since the row has no room for both.
+private struct LookPanel<Control: View, Under: View>: View {
+    let title: String
+    let value: String?
+    let hint: String?
+    let control: Control
+    let under: Under
+    @Environment(\.duoLayout) private var duo
+    @Environment(\.dynamicTypeSize) private var typeSize
+    init(title: String, value: String?, hint: String? = nil, @ViewBuilder control: () -> Control, @ViewBuilder under: () -> Under) {
+        self.title = title
+        self.value = value
+        self.hint = hint
+        self.control = control()
+        self.under = under()
+    }
+    private var controlWidth: CGFloat? {
+        guard !typeSize.isAccessibilitySize else { return nil }
+        if duo.sideways { return 340 }
+        return duo == .upright ? 280 : nil
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: duo.isFolded ? Space.s2 : Space.s3) {
+            if let controlWidth {
+                HStack(spacing: Space.s5) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(title).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink).accessibilityAddTraits(.isHeader)
+                        if let words = value ?? hint { Text(words).font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true) }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    control.frame(width: controlWidth)
+                }
+            } else {
+                PanelHeader(title: title, value: value)
+                control
+                if let hint { PanelHint(text: hint) }
+            }
+            under
+        }
+        .lookRow(tight: duo.isFolded)
+    }
+}
+
+extension LookPanel where Under == EmptyView {
+    init(title: String, value: String?, hint: String? = nil, @ViewBuilder control: () -> Control) {
+        self.init(title: title, value: value, hint: hint, control: control, under: { EmptyView() })
     }
 }
 
@@ -250,8 +331,7 @@ private struct GlowPanel: View {
     @Environment(\.sottoTheme) private var theme
     var body: some View {
         let value = glow == 0 ? String(localized: "Off") : (Double(glow) / 100).formatted(.percent)
-        VStack(alignment: .leading, spacing: Space.s3) {
-            PanelHeader(title: String(localized: "Glow", comment: "Settings panel heading and slider name: how strongly the lights around working threads, questions and chosen controls shine."), value: value)
+        LookPanel(title: String(localized: "Glow", comment: "Settings panel heading and slider name: how strongly the lights around working threads, questions and chosen controls shine."), value: value) {
             HStack(spacing: Space.s4) {
                 Light(tone: .accent, size: 10, breathing: true)
                     .frame(width: 24)
@@ -263,7 +343,6 @@ private struct GlowPanel: View {
             }
             .frame(minHeight: 44)
         }
-        .lookRow()
     }
 }
 
@@ -271,29 +350,25 @@ private struct DensityPanel: View {
     @AppStorage(PhonePreferenceKey.density) private var density = PhoneDensity.comfortable.rawValue
     var body: some View {
         let current = PhoneDensity(rawValue: density) ?? .comfortable
-        VStack(alignment: .leading, spacing: Space.s3) {
-            PanelHeader(title: String(localized: "Message density"), value: nil)
+        LookPanel(title: String(localized: "Message density"), value: nil, hint: current == .compact ? String(localized: "Tighter spacing fits more of a thread on screen.") : String(localized: "Room between messages, lists and steps.")) {
             Segmented(name: String(localized: "Message density"), choices: PhoneDensity.allCases, selection: current,
                       title: { $0.title }, identifier: { "setting-density-\($0.rawValue)" }) { density = $0.rawValue }
-            PanelHint(text: current == .compact ? String(localized: "Tighter spacing fits more of a thread on screen.") : String(localized: "Room between messages, lists and steps."))
         }
-        .lookRow()
     }
 }
 
-/// Where the iPhone Duo, unfolded and held sideways, puts the tabs (Zach's pick, October 30, 2026).
+/// Where the iPhone Duo, unfolded and held sideways, puts the tabs (Zach's pick, October 30, 2026). Its line says what it
+/// chooses before what upright does, where "Upright, they stand down the right edge." alone under a heading about
+/// sideways read as a contradiction (the Duo design climb's round 6).
 private struct DuoTabsPanel: View {
     @AppStorage(PhonePreferenceKey.duoTabsSide) private var side = DuoTabsSide.right.rawValue
     var body: some View {
         let current = DuoTabsSide(rawValue: side) ?? .right
-        VStack(alignment: .leading, spacing: Space.s3) {
-            PanelHeader(title: String(localized: "Tabs when unfolded sideways", comment: "Settings panel heading, on the iPhone Duo only: where the tabs stand when it is unfolded and held sideways."), value: nil)
+        LookPanel(title: String(localized: "Tabs when unfolded sideways", comment: "Settings panel heading, on the iPhone Duo only: where the tabs stand when it is unfolded and held sideways."), value: nil, hint: String(localized: "Which edge the tabs stand on. Upright, they always stand on the right.", comment: "Under the iPhone Duo's sideways tabs setting: it chooses which edge the tabs stand on when the Duo is unfolded and held sideways; held upright, they always stand down the right edge.")) {
             Segmented(name: String(localized: "Tabs when unfolded sideways", comment: "Settings panel heading, on the iPhone Duo only: where the tabs stand when it is unfolded and held sideways."),
                       choices: DuoTabsSide.allCases, selection: current,
                       title: { $0.title }, identifier: { "setting-duo-tabs-\($0.rawValue)" }) { side = $0.rawValue }
-            PanelHint(text: String(localized: "Upright, they stand down the right edge.", comment: "Under the iPhone Duo's sideways tabs setting: held upright, the tabs stand in a column down the right edge of the screen."))
         }
-        .lookRow()
     }
 }
 
@@ -667,16 +742,18 @@ private struct Segmented<Value: Hashable>: View {
     @Namespace private var knob
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.duoLayout) private var duo
     var body: some View {
         HStack(spacing: 0) {
             ForEach(choices, id: \.self) { choice in
-                SegmentButton(title: title(choice), chosen: choice == selection, knob: knob, raised: scheme == .dark) {
+                SegmentButton(title: title(choice), chosen: choice == selection, knob: knob, raised: scheme == .dark,
+                              lifted: scheme == .dark && duo != .none) {
                     withAnimation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.86)) { pick(choice) }
                 }
                 .accessibilityIdentifier(identifier(choice))
             }
         }
-        .padding(3)
+        .padding(duo.isFolded ? 1 : 3)
         .background(Palette.fillSoft, in: Capsule())
         .accessibilityElement(children: .contain)
         .accessibilityLabel(name)
@@ -688,6 +765,9 @@ private struct SegmentButton: View {
     let chosen: Bool
     let knob: Namespace.ID
     let raised: Bool
+    /// On the Duo in dark the chosen segment stands a step lighter than its track, as it does in light, where the
+    /// overlay fill sat darker than the track and looked pressed in (Zach's pick, November 9, 2026, round 4).
+    var lifted = false
     let action: () -> Void
     var body: some View {
         Button(action: action) {
@@ -697,9 +777,14 @@ private struct SegmentButton: View {
                 .frame(maxWidth: .infinity, minHeight: 44)
                 .background {
                     if chosen {
-                        Capsule().fill(raised ? Palette.overlay : Palette.surface)
-                            .overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 1))
-                            .matchedGeometryEffect(id: "knob", in: knob)
+                        if lifted {
+                            Capsule().fill(Palette.fillSoft).overlay(Capsule().fill(Palette.ink.opacity(0.12)))
+                                .matchedGeometryEffect(id: "knob", in: knob)
+                        } else {
+                            Capsule().fill(raised ? Palette.overlay : Palette.surface)
+                                .overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 1))
+                                .matchedGeometryEffect(id: "knob", in: knob)
+                        }
                     }
                 }
                 .contentShape(Capsule())
@@ -732,9 +817,9 @@ private struct NoteLine: View {
 }
 
 extension View {
-    /// One row of Look's group: the padding a card gave it, without the card.
-    fileprivate func lookRow() -> some View {
-        padding(.vertical, Space.s4).frame(maxWidth: .infinity, alignment: .leading)
+    /// One row of Look's group: the padding a card gave it, without the card. `tight` on the folded Duo.
+    fileprivate func lookRow(tight: Bool) -> some View {
+        padding(.vertical, tight ? Space.s2 : Space.s4).frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
