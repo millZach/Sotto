@@ -311,6 +311,33 @@ it('bounds standing prompts by Watcher turn, retains retries across turns, and n
   expect(f.service.state().requests.find(request => request.id === scope.id)?.state).toBe('stopped')
 })
 
+// November 10-11, 2026 (#2435): a Stop on two watched threads at 17:18 refused every send under their watches until the
+// user's next message to Watcher, about ten hours, while the news kept naming those watches. Zach's pick: the rest of that
+// turn of Watcher's only.
+it('holds a watched thread after a Stop for the rest of that Watcher turn only, then sends under its watch again', async () => {
+  const f = await fixture(), target = await f.create()
+  await f.request(); await f.service.watchThread({ target })
+  const watch = f.service.state().standingWatches![0]!
+  const send = () => f.call('send_to_thread', { requestId: watch.id, retryKey: randomUUID(), target, text: 'Synthetic continuation after a stop', delivery: 'now' })
+  // Watcher calls its tools from inside a turn of its own.
+  const master = f.native(f.watcherId())
+  master.lastTurn = { id: 'synthetic-stopping-turn', status: 'running' }
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  expect(await send()).toMatchObject({ status: 'ok' })
+  const stopped = await f.call('stop_thread', { requestId: watch.id, retryKey: randomUUID(), target })
+  expect(stopped, JSON.stringify(stopped)).toMatchObject({ status: 'ok' })
+  await vi.waitFor(() => expect(f.service.state().requests.some(request => request.standingWatchId === watch.id
+    && request.participants.some(item => item.target.threadId === target.threadId && item.automationStopped))).toBe(true))
+  await f.finish(target.threadId)
+  // The same turn of Watcher's: still held.
+  expect(await send()).toMatchObject({ status: 'refused', code: 'REQUEST_NOT_ACTIVE', message: expect.stringContaining('Watcher stopped this participation') })
+  // Watcher's next turn, woken by news with no new message from the user: the watch sends again.
+  master.lastTurn = { id: 'synthetic-next-news-turn', status: 'running' }
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  const after = await send()
+  expect(after, JSON.stringify(after)).toMatchObject({ status: 'ok' })
+})
+
 it('shares four prompts across ordinary and standing origins without renewing for steer, late turn IDs or restart', async () => {
   const f = await fixture(), requestId = await f.request(), target = await f.create()
   await f.service.watchThread({ target })
