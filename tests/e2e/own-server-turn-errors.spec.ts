@@ -76,7 +76,7 @@ test('says what your own model server is doing to a turn, and offers Stop, Try a
     page.on('pageerror', error => pageErrors.push(error.message))
     // The window's clock runs on, but can be moved: the still-waiting line comes 30 seconds into a silent turn.
     await page.clock.install()
-    await page.evaluate(() => window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', reducedMotion: 'system' }))
+    await page.evaluate(() => window.sotto!.updateSettings({ onboardingComplete: true, threadListGrouping: 'project', appearance: 'dark', reducedMotion: 'system' }))
     await page.reload()
     await page.evaluate(async () => { await window.sotto!.agents!.command({ type: 'connect', provider: 'opencode' }) })
     await resizeWindow(app, 1280, 800)

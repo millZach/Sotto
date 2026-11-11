@@ -191,6 +191,7 @@ const settingKeys = [
   'mainFreezeNotice',
   'webLinkDestination',
   'responseStreaming',
+  'threadListGrouping',
   'localHostEnabled',
   'phoneAccess',
   'phoneAccessName',

@@ -30,7 +30,7 @@ test('creates a project thread without replacing a leftover draft from an earlie
   const { page } = launched
   try {
     await page.evaluate(async () => {
-      await window.sotto!.updateSettings({ onboardingComplete: true })
+      await window.sotto!.updateSettings({ onboardingComplete: true, threadListGrouping: 'project' })
       await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
     })
@@ -83,7 +83,7 @@ test('creates a thread in a centered popup, configures it, and sends file and pa
   const { page } = launched
   try {
     await page.evaluate(async () => {
-      await window.sotto!.updateSettings({ onboardingComplete: true })
+      await window.sotto!.updateSettings({ onboardingComplete: true, threadListGrouping: 'project' })
       await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true, } })
       await window.sotto!.agents!.command({ type: 'connect' })
     })

@@ -879,6 +879,10 @@ msgstr ""
 msgid "A Dynamic thread's model oversees and chooses a model for each piece of work, inside these limits. Turn it on at the foot of a thread's model menu, or at the foot of the model menu under New threads for every new thread."
 msgstr ""
 
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "A folder for each project, with its threads inside."
+msgstr ""
+
 #: src/renderer/src/features/settings/DevicePicker.tsx
 msgid "A Git service, not a computer"
 msgstr ""
@@ -1402,6 +1406,14 @@ msgstr ""
 #. Where one client update stands: the user has to run it themselves.
 #: src/renderer/src/features/settings/hostClientUpdateWords.ts
 msgid "By hand"
+msgstr ""
+
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "By project"
+msgstr ""
+
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "By status"
 msgstr ""
 
 #. After a step that is done, as in "Signed in by the agent".
@@ -2860,6 +2872,11 @@ msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Global — works outside Sotto, as the popup’s does."
+msgstr ""
+
+#: src/renderer/src/features/settings/settingsPages.ts
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Group threads in the sidebar"
 msgstr ""
 
 #. A Council chamber layout: tiered seats round an altar, the chair at the back.
@@ -5476,6 +5493,10 @@ msgstr ""
 msgid "Shows when the default branch is behind and leaves the pull to you."
 msgstr ""
 
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Sidebar"
+msgstr ""
+
 #. A family of theme colors in the theme editor
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Sidebar background"
@@ -7789,6 +7810,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Working copy…"
+msgstr ""
+
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Working now and Recent under Needs you, as on the iPhone. Each thread names its project."
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
