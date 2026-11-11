@@ -15,10 +15,11 @@
  * `--data` is the host's data folder (its `host-listener.json` holds the admin port and token, which are never printed).
  * `--no-open` leaves out the opened thread. Run it on the host's own machine.
  *
- * `--offer-deflate` offers `permessage-deflate` bare, as the iPhone's URLSession does (#2394). A host that answers it, one
- * started with `SOTTO_HOST_COMPRESS_PHONES=1`, sends compressed messages; the report then says what the host answered
- * (`negotiated`) and adds `wireBytes`, the payload bytes as they came over the socket, beside `bytes`, each message's size
- * once inflated, and `deflatedBytes`, the estimate. Without it the probe offers nothing, as before.
+ * `--offer-deflate` offers `permessage-deflate` bare, as the iPhone's URLSession does (#2394). A host that answers it, as
+ * one from November 10, 2026 on does unless started with `SOTTO_HOST_COMPRESS_PHONES=0`, sends compressed messages; the
+ * report then says what the host answered (`negotiated`, null when it answered nothing) and adds `wireBytes`, the payload
+ * bytes as they came over the socket, beside `bytes`, each message's size once inflated, and `deflatedBytes`, the
+ * estimate. Without it the probe offers nothing, as before.
  */
 import { Buffer } from 'node:buffer'
 import { randomBytes } from 'node:crypto'

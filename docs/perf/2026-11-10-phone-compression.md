@@ -1,83 +1,127 @@
-# Compressing what a phone is sent, behind a switch until a real iPhone reads it - November 10, 2026
+# Compressing what a phone is sent - November 10, 2026
 
 The November 10 audit (`docs/perf/2026-11-10-performance-and-data-audit.md`, finding 4) found that the iPhone is sent
 nothing compressed, though its URLSession offers `permessage-deflate` by itself and Tailscale Serve passes the offer on.
 On forge's own host, each frame compressed alone as a desktop's is, the hello would go from 237 KB to 64 KB and a
 thread's step window from 93 KB to 22 KB. Zach chose to check on his own iPhone, against a second host on forge, before
-any phone is compressed (#2394). This note says what is built for that check, what the check must show, and what the
-probe measured against a test listener.
+any phone was compressed (#2394). The check passed, and every listener that serves phones now compresses for a phone that
+offers it. This note says what changed, what the check on the iPhone showed, and what the probe measured before and after.
 
-## What is built
+## What changed
 
-- `compressPhones`, an option of the host's listener (`src/host/socketServer.ts`). On, a phone that offers the extension
-  is answered and sent compressed messages as a desktop is: the same answer, the 1 KiB threshold, level 6, the 64 KiB
-  limit above which a message is compressed on the thread pool, send order, the 16 MiB caps and the unread-output cap,
-  all of them `SocketFrames`' own. Off, which is the default, nothing changes for any phone.
-- A headless host turns it on for its tailnet listener when started with the environment variable
-  `SOTTO_HOST_COMPRESS_PHONES=1`, read once at start and not handed to its providers' processes. It prints
-  `[Sotto] phone-compression-on` when it took. No host Sotto starts sets it, and the desktop's own phone listener has no
-  such switch.
+- Every listener that serves phones answers a phone's offer as it answers a desktop's and sends that phone's messages
+  exactly as a desktop's: the desktop's own phone listener and a headless host's tailnet listener. The same answer, the
+  1 KiB threshold, level 6, the 64 KiB limit above which a message is compressed on the thread pool, send order, the
+  16 MiB caps and the unread-output cap, all of them `SocketFrames`' own. Phone access turns it on for its listener
+  (`compressPhones` in `src/main/phones/phoneAccess.ts`). A phone that offers nothing is never sent a compressed frame,
+  and the local apps listener, on loopback, answers no offer.
+- `SOTTO_HOST_COMPRESS_PHONES=0` in the environment a headless host or the desktop starts with turns it off, without a
+  release, should a phone misread compressed messages. It is read once at start and not handed to the processes the host
+  starts; any other value, or none, leaves phones compressed. A headless host started with it prints
+  `[Sotto] phone-compression-off`. `docs/guide.md` says where to set it.
 - `scripts/perf-bench/phone-wire-probe.mjs --offer-deflate` offers the extension bare, as the iPhone does, inflates what
-  comes compressed, and reports what the host answered (`negotiated`) and each message's bytes on the wire (`wireBytes`)
-  beside its size inflated (`bytes`) and the estimate (`deflatedBytes`). Without the option it offers nothing, as before.
-- `tests/perf/phoneWireProbe.perf.test.ts` runs that probe against a test listener with the switch off and on.
+  comes compressed, and reports what the host answered (`negotiated`, null for nothing) and each message's bytes on the
+  wire (`wireBytes`) beside its size inflated (`bytes`) and the estimate (`deflatedBytes`).
+- `tests/perf/phoneWireProbe.perf.test.ts` runs that probe against a host at forge's size, before and after.
 
 What the host answers a phone, and why it is the desktop's answer, is in `docs/host-protocol.md` under Compression,
-"Phones, not yet": RFC 7692 lets a server add `server_no_context_takeover` unasked (section 7.1.1.1) and requires a
-client to support `client_no_context_takeover` in an answer (section 7.1.1.2), and the host needs the second to read
-each message a phone compresses with no zlib state kept for the connection.
+"Phones": RFC 7692 lets a server add `server_no_context_takeover` unasked (section 7.1.1.1) and requires a client to
+support `client_no_context_takeover` in an answer (section 7.1.1.2), and the host needs the second to read each message a
+phone compresses with no zlib state kept for the connection.
+
+## The check on a real iPhone
+
+On November 10 a host built from this change ran on forge with phone compression on (then still a switch,
+`SOTTO_HOST_COMPRESS_PHONES=1`), on its own data folder and its own tailnet port, and Zach paired his iPhone with it.
+
+- The probe, offering the extension as the iPhone does, was answered
+  `permessage-deflate; server_no_context_takeover; client_no_context_takeover`. A hello of 19,529 bytes went as 3,030.
+- The iPhone paired, showed the computer's page and its Threads list, and connected again after the app had been in the
+  background. The kernel counted 3,372 bytes sent on its first connection in all, where the hello alone is 19,529
+  uncompressed.
+- Zach started a thread from the iPhone and had a reply of about 95 KB streamed to it. Opened again once it finished,
+  the thread came whole: a `detail` of 94,675 bytes went as 34,671 on the wire, compressed on the thread pool because it
+  is over 64 KiB. It showed.
+- One fault turned up that is not compression's. Opening that thread while the reply was still streaming crashed the app.
+  The host was started again with the switch off, the probe confirmed nothing was compressed, Zach did the same again, and
+  the app crashed the same way. It is #2440.
+
+The test host started with no threads of its own, so its hello was small; the hello under 70 KB that #2394 asks of forge's
+real host is the audit's estimate of 64 KB, which the probe below shows is what a host sends.
 
 ## What the probe measured
 
-Main at the owner's scale (`tests/fixtures/ownerScalePipeline.ts`: 250 threads, 40 on a remote host, Watcher's record,
-172 models, every payload generated) behind two listeners on loopback: one with the administrative routes, which the
-probe pairs through, and one shaped like a headless host's tailnet listener with no desktop recorded, which the probe
-reaches as a phone, with `compressPhones` off and then on. The probe ran with `--offer-deflate`, five seconds on the
-Threads list and five on an opened thread. forge, Intel Core i5-14400F, Node v24.22.1, other agents' work running beside
-it.
+A host at forge's size: the host-sized fixture the transfer benchmark uses (`ownerScalePipeline` with `host`, as
+`hostSocketScale` builds it: 250 threads, Watcher's record with a paired desktop's 925 requests, the delivery ledgers and
+skill lists forge's host holds), on the machine's own clock. One thread works: its reply streams twenty chunks a second
+and its token usage moves twice a second, as Claude's adapter reports it, which is what a phone is pushed a thread list
+for. Two listeners shaped like a headless host's tailnet listener serve it: before, one that compresses for no phone, as
+every host did until now and as one started with `SOTTO_HOST_COMPRESS_PHONES=0` does; after, one that compresses for
+phones, as every phone listener does now. Two probes ran at once, one on each, both offering the extension bare as the
+iPhone does, so both were sent the same pushes: 60 seconds on the Threads list, then the working thread opened, then 60
+seconds on it. forge, Intel Core i5-14400F, Node v24.22.1, other agents' work running beside it.
 
 ```sh
 SOTTO_PERF_BENCH=1 NODE_OPTIONS=--max-old-space-size=3072 npx vitest run tests/perf/phoneWireProbe.perf.test.ts --maxWorkers=1 --disable-console-intercept
 ```
 
-| The hello | Switch off | Switch on |
-|---|---:|---:|
-| What the host answered the offer | nothing | `permessage-deflate; server_no_context_takeover; client_no_context_takeover` |
-| Its JSON | 282,671 bytes | 283,858 bytes |
-| On the wire | 282,671 bytes | 13,113 bytes |
-| The probe's estimate | 12,961 bytes | 13,117 bytes |
+| What the phone was sent | Before | After | Ratio | forge's host, the audit: as sent, and estimated compressed |
+|---|---:|---:|---:|---:|
+| What the host answered the offer | nothing | `permessage-deflate; server_no_context_takeover; client_no_context_takeover` | | |
+| The hello | 476,335 bytes | 58,675 bytes | 8.1 | 237 KB, 64 KB |
+| The thread opened: its step window (`detail`) | 32,247 bytes | 3,220 bytes | 10.0 | 93 KB, 22 KB |
+| The thread opened: the answer and 3 seconds after it, 6 thread list pushes among it | 1,242,332 bytes | 307,624 bytes | 4.0 | |
+| A minute on the Threads list: 112 thread list pushes | 22.30 MB | 5.39 MB | 4.1 | 3.77 MB in 18 pushes, not estimated |
+| A minute on the working thread: 112 thread list pushes and about 1,120 updates to the reply | 22.61 MB | 5.70 MB | 4.0 | 6.76 MB, 1.97 MB |
 
-A second run, after `main` was merged in, gave the same JSON sizes, 13,109 bytes on the wire with the switch on, and
-estimates of 12,956 and 13,113 bytes. Within a run the two halves are seconds apart on one main that keeps working, so
-the hello grew by two thread records between them. The
-hello is over 64 KiB, so with the switch on it was compressed on the thread pool and arrived as one frame, which the probe
-inflated and read. The other messages in that run were under 1 KiB and went as they were, as the extension allows.
+Bytes after are the message payloads as they came over the socket; before, nothing was compressed, so they are the JSON.
+The probe's estimate of each message compressed was within four bytes a message of what the host sent after (58,679
+against 58,675 for the hello), since the host compresses as the estimate does and RFC 7692 drops a four-byte tail. That
+makes the audit's estimates from forge's real host what it will send now: the hello about 64 KB, a step window about
+22 KB, a minute on a working thread about 1.97 MB.
 
-The estimate is the host's own deflate at level 6 with the four-byte tail RFC 7692 drops left on, so on a host with the
-switch on the bytes on the wire are the estimate less four bytes for each compressed message. That makes the audit's
-estimates from forge's real host the numbers to expect there: the hello 237 KB to about 64 KB, a step window 93 KB to
-about 22 KB. The generated main compresses about 21 times, far better than real threads, whose words and command output
-repeat much less; read its ratio as the generator's, not the host's. The thread the probe opened is the generator's first
-idle thread and carries almost nothing, 162 bytes; a phone reading a message over 64 KiB is covered by the hello here and
-by `tests/integration/socketCompression.test.ts`, whose phone reads a 2.2 MB thread compressed.
+Reading the table:
 
-## What the check on the iPhone must show
+- The thread list pushes are what matter most, and they compress about four times here, about 199,100 bytes to about 48,200
+  each, as forge's do to a desktop (210,659 to 60,270, 3.5 times). Each is over 64 KiB, so each is compressed on the
+  thread pool. The fixture pushes about twice a second, because its usage moves twice a second; forge pushed a phone 32
+  times in a minute on a working thread, so per minute forge's numbers are smaller, and the ratio is the measure here.
+- The hello and the thread's detail compress better here than on forge, 8 and 10 times against 3.7 and 4.1: the
+  fixture's thread records and messages are generated and repeat more than real ones. Read forge's estimates for those.
+- The updates to the reply, 15 to 273 bytes each, are under 1 KiB and go as they are, as the extension allows.
+- The fixes for the audit's finding 2 (#2392, #2393) make the thread list pushes far smaller; what compression saves then is
+  mostly each hello and each thread opened.
 
-Against a host on forge started from this branch with the switch on, its own data folder, and Serve on its own port, the
-iPhone, paired with it once by its full address and port:
+## Android
 
-1. connects at all. URLSession must take the answer; if it refuses it, the iPhone cannot reach that host and says it can't
-   reach it, and the switch stays off.
-2. shows the host's Threads list and its computer page, which come in the hello. The hello must arrive compressed: the
-   probe with `--offer-deflate` against the same host reports `negotiated` and the hello's `wireBytes`. The test host
-   starts with no threads of its own, so its hello is smaller than forge's; the "under 70 KB" in #2394 is for forge's
-   real host, once phones are compressed there.
-3. reads one message over 64 KiB, which the host compresses on its thread pool. The hello is one when the host lists
-   enough, and the probe says how big it is. If it is not, a reply of more than 64 KiB in the test thread is one once the
-   thread is opened again, since an opened thread comes whole.
-4. opens a thread and follows it while it works, its words arriving as they are written.
-5. stays connected for a few minutes with the app open, and connects again after it goes to the background and back.
+The Android client (ADR-0059, proposed and not shipped) connects with OkHttp 4.12.0. Its source
+(`okhttp3/internal/ws/RealWebSocket.kt`, `WebSocketExtensions.kt`, `MessageDeflater.kt`, `MessageInflater.kt`,
+`WebSocketReader.kt` at `parent-4.12.0`) offers bare `permessage-deflate` in every upgrade and refuses a caller's own
+extension header. It reads the answer's `client_no_context_takeover` and `server_no_context_takeover`, resets its inflater
+before each compressed message when the answer has the second, resets its deflater before each message it compresses when
+it has the first, compresses only messages of 1 KiB or more, and reads a compressed message whole or in fragments, RSV1
+on the first frame. It fails the socket with close code 1010 only for an answer it does not understand: an unknown
+extension or parameter, any `client_max_window_bits`, or a `server_max_window_bits` outside 8 to 15. The host's answer has
+none of them. So Android is compressed on the strength of that source, not of a device check; if it misbehaves on a
+device, `SOTTO_HOST_COMPRESS_PHONES=0` turns compression off on the host or desktop it reaches until a fix ships.
 
-When it does, the change that turns phone compression on for everyone is a small one, with ADR-0025 and
-`docs/host-protocol.md` amended again, and the probe run against forge's real host for the before and after. Android's
-OkHttp offers the extension too, and is checked the same way before that change covers it.
+## What was not checked
+
+- What the iPhone sends. Its messages in the check were small (its hello is about 660 bytes), so whether URLSession
+  compresses what it sends, and keeps no context between those messages as `client_no_context_takeover` asks, was not
+  seen. A photo is the one large message an iPhone sends. A phone that compressed with context kept would have its second
+  compressed message on a connection refused, and the host would close that connection. Sending two photos in one thread
+  from the iPhone, to a computer that compresses, would show it.
+- The iPhone journeys in CI run the app against its own fixture rather than a host, so they do not exercise compression.
+- Android on a device, above.
+- The host-sized guard (`tests/perf/hostPushSizeBudget.perf.test.ts`) counts a push's JSON, not its bytes on the wire,
+  and its phone offers nothing, so its phone budget is unchanged.
+
+## Take it again
+
+The bench above, with `SOTTO_PROBE_SECONDS` for a shorter stay on each screen. Against a running host on this machine,
+the probe reports both columns at once, the estimate and the bytes on the wire:
+
+```sh
+node scripts/perf-bench/phone-wire-probe.mjs --data ~/.sotto --offer-deflate --list-seconds 60 --thread-seconds 60
+```
