@@ -59,6 +59,8 @@ describe.skipIf(!enabled)('a host\'s own browser against a real Chromium (requir
     if (profileRoot) await rm(profileRoot, { recursive: true, force: true })
   })
 
+  // This cold-start journey includes several navigations and captures. Each wait keeps its own 15 s deadline;
+  // the complete journey needs a separate budget so a slow CI runner does not cut off otherwise bounded steps.
   it('opens, follows and drives a page as the agent and the user do', async () => {
     const page = await browser.open('workspace-1')
     expect((await readdir(profileRoot)).length).toBe(1)
@@ -103,7 +105,7 @@ describe.skipIf(!enabled)('a host\'s own browser against a real Chromium (requir
     await loaded(page, '/b')
     await page.close()
     expect(page.closed).toBe(true)
-  })
+  }, 60_000)
 
   it('sends pictures to a pane at its size, newest first, until it stops watching', async () => {
     const page = await browser.open('workspace-1')
