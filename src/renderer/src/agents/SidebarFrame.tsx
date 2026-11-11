@@ -88,7 +88,7 @@ export function SidebarTop({ children, platform }: { readonly children?: ReactNo
  */
 export function RoomSwitch({ className, iconOnly = false }: { readonly className: string; readonly iconOnly?: boolean }): ReactNode {
   const app = useOptionalApp()
-  const shown = app === null || app.navigation === 'onboarding' ? 'threads' : app.navigation
+  const shown = app === null ? 'threads' : app.navigation
   const rooms = appRooms({ watcher: useWatcherEnabled(), dictation: useDictationOn() })
   const roomSwitch = useRoomSwitch(roomFor(shown), rooms, destination => app?.actions.navigate(destination))
   const { t } = useLingui()
@@ -244,7 +244,7 @@ function SidebarRail({ platform, onExpand, toggle, children, toast, foot, chord,
   const expand = t`Expand sidebar`
   return <div className="thread-nav__rail" data-owl={railOn || undefined} inert={over}>
     {platform === 'darwin' ? null : <SottoMark className="thread-nav__glyph" />}
-    <button ref={toggle} type="button" className="thread-nav__action tt-focusable" aria-label={expand} title={chord === undefined ? expand : `${expand} ${chord.label.suffix}`}
+    <button ref={toggle} type="button" className="thread-nav__action tt-focusable" data-setup="expand-sidebar" aria-label={expand} title={chord === undefined ? expand : `${expand} ${chord.label.suffix}`}
       aria-keyshortcuts={chord?.label.keys} aria-haspopup={narrow ? 'dialog' : undefined} aria-expanded={narrow ? over : undefined} onClick={onExpand}><PanelLeftOpen size={16} aria-hidden="true" /></button>
     {railOn && watcherOn ? <RailWatcher /> : null}
     <div className="thread-nav__rail-list">{children}</div>
@@ -411,8 +411,8 @@ export function SidebarFrame({ state, command, label, query, searchPlaceholder, 
     {sky ? <OwlSky /> : null}
     <SidebarTop platform={platform ?? app?.platform}>
       {heading === null ? null : <h1 className="tt-visually-hidden">{heading}</h1>}
-      <Button variant="ghost" iconOnly aria-label={t`Add project`} title={t`Add project`} disabled={addProject.adding} onClick={() => void addProject.add()}><FolderPlus size={16} /></Button>
-      <Button variant="ghost" className="thread-nav__new" data-tour="sidebar-new" aria-label={newLabel} title={newShortcut ? newShortcut.title : newLabel} aria-keyshortcuts={newShortcut?.keys} onClick={onNew}><NewIcon size={16} aria-hidden="true" /><span aria-hidden="true">{newLabel}</span></Button>
+      <Button variant="ghost" iconOnly data-setup="add-project" aria-label={t`Add project`} title={t`Add project`} disabled={addProject.adding} onClick={() => void addProject.add()}><FolderPlus size={16} /></Button>
+      <Button variant="ghost" className="thread-nav__new" data-tour="sidebar-new" data-setup="new-thread" aria-label={newLabel} title={newShortcut ? newShortcut.title : newLabel} aria-keyshortcuts={newShortcut?.keys} onClick={onNew}><NewIcon size={16} aria-hidden="true" /><span aria-hidden="true">{newLabel}</span></Button>
       <button ref={size.collapsed ? undefined : toggle} type="button" className="thread-nav__action tt-focusable thread-nav__collapse" aria-label={t`Collapse sidebar`} title={chordTitle(t`Collapse sidebar`)}
         aria-keyshortcuts={chord?.label.keys} onClick={() => size.collapse(true)}><PanelLeftClose size={16} aria-hidden="true" /></button>
     </SidebarTop>

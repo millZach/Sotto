@@ -69,6 +69,7 @@ export function LegacyRow({ open, count, onToggle }: { readonly open: boolean; r
 function groupModels(models: readonly AgentModel[], by: (model: AgentModel) => string): Map<string, AgentModel[]> {
   const result = new Map<string, AgentModel[]>()
   for (const model of models) {
+    if (model.hiddenFromMenu) continue
     const name = by(model)
     const group = result.get(name)
     if (group) group.push(model)
@@ -154,7 +155,7 @@ export function ModelPicker({ foot, suffix, models, modelId, disabled, onChange,
   readonly label?: string | undefined
   /** Opens the menu as the chip appears, where a press elsewhere asked for it. */
   readonly openOnMount?: boolean | undefined
-  /** Your own model servers' bridge, where this menu may add one: present only on Owl, for a thread on this computer. */
+  /** APIs and your own model servers' bridge, where this menu may add one: present only on Owl, for a thread on this computer. */
   readonly ownServers?: OwnServersBridge | undefined
   /** What stands at the menu's foot, given what closes the menu: Dynamic's switch (ADR-0191). */
   readonly foot?: ((close: () => void) => ReactNode) | undefined
@@ -235,7 +236,7 @@ export function ModelPicker({ foot, suffix, models, modelId, disabled, onChange,
   const selectedProvider = favoritesPane ? undefined : groups.find(group => group.name === provider) ?? groups.find(group => group.name === current?.provider) ?? groups[0]
   /** The rail's tiles by name, Favorites first where it has one. */
   const tiles = useMemo(() => [...(favoritesTile ? [FAVORITES] : []), ...groups.map(group => group.name)], [favoritesTile, groups])
-  const liveModels = useMemo(() => new Map(models.map(model => [favoriteKey(model), model])), [models])
+  const liveModels = useMemo(() => new Map(models.filter(model => !model.hiddenFromMenu).map(model => [favoriteKey(model), model])), [models])
   const matchesQuery = (model: AgentModel): boolean => `${model.name} ${model.id}`.toLowerCase().includes(query.toLowerCase())
   const filtered = selectedProvider?.models.filter(matchesQuery) ?? []
   // Legacy models are found by a search; otherwise they wait under the Legacy row until it is opened.
@@ -418,6 +419,7 @@ export function ModelPicker({ foot, suffix, models, modelId, disabled, onChange,
         </div>
         : favoritesPane ? <div ref={list} role="listbox" aria-label={t`Favorites`} className="model-picker__models" onKeyDown={event => moveListboxFocus(event, list.current)}>
           {favorites.map(favorite => {
+            if (models.some(model => favoriteKey(model) === favoriteKey(favorite) && model.hiddenFromMenu)) return null
             const live = liveModels.get(favoriteKey(favorite))
             // A Claude Code or Codex favourite that cannot be chosen now is left out rather than marked (ADR-0171).
             if (favorite.providerId && LINEUP_PROVIDERS.has(favorite.providerId) && !live?.ready) return null

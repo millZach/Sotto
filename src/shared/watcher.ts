@@ -295,7 +295,7 @@ const watcherStateWatchingSchema = watcherStateThreadSchema.extend({ pullRequest
 /**
  * A pull request in the merge queue, which is Watcher's merge train (#2229): open, not a draft, in the train since its
  * checks first passed or its thread said READY TO MERGE, in that order. `requiredChecks` says whether a merge now would
- * land while its required checks run, and `checksRunning` how many required and other checks are still to finish on its
+ * land while its checks run, required or not (#2432), and `checksRunning` how many required and other checks are still to finish on its
  * head, where Sotto can read which are required; `head` is the commit Sotto last read it on, and `readyToMerge` the newest READY TO
  * MERGE its thread sent, with `onHead` saying whether that is still the head.
  */
@@ -362,7 +362,7 @@ export const watcherMachinesWithoutLoadOutput = result({ machines: z.array(z.obj
 export const WATCHER_OVERRIDE_REASON_MAX = 500
 /**
  * A send that is a GO MERGE (#2229): the pull request it gives its turn, and Watcher's reason when it goes while another
- * train pull request's required checks run or the base branch is red. Sotto shows that reason on the send's receipt.
+ * train pull request's checks run or the base branch is red. Sotto shows that reason on the send's receipt.
  */
 export const watcherGoMergeSchema = z.object({ pullRequest: gitPullRequestUrlSchema,
   overrideReason: z.string().trim().min(1).max(WATCHER_OVERRIDE_REASON_MAX).optional() }).strict()

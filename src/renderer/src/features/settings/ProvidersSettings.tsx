@@ -17,7 +17,7 @@ import { ProviderModelList } from '../../agents/ProviderModelList'
 import { CursorConnection, useCursorSignIn } from '../../agents/CursorConnection'
 import { OwnModelServers, useOwnServersBridge } from '../../agents/OwnModelServers'
 import { useTransientFlag, writeClipboard } from '../../agents/richActions'
-import { localHostId, localProviders } from '../onboarding/localAgents'
+import { localHostId, localProviders } from '../../agents/localAgents'
 import { PROVIDER_INSTALL_GUIDES } from '../../../../shared/hostProviders'
 import { signsInHere, type LocalSignInProvider, type LocalSignInRequest } from '../../../../shared/localProviderSignIn'
 import { HostProviderSignIn } from './HostProviderSignIn'
@@ -408,7 +408,7 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
         {provider === 'muse' && <details className="provider-support"><summary>{t`Threads with Muse`}</summary><p className="tt-paragraph">{t`Replies, images, steering, approvals, questions and reasoning effort. Change models and permissions in a thread.`}</p><p className="tt-paragraph">{t`On Muse 1.4.7 or newer, Muse threads get Sotto's browser, visual, pull request babysitting and delegation tools, and Watcher runs on Muse. Skills are unavailable. Muse does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text.`}</p></details>}
         {provider === 'cursor' && <details className="provider-support"><summary>{t`Threads with Cursor`}</summary><p className="tt-paragraph"><Trans>Replies, images, approvals, Cursor’s questions and plans, and reasoning effort, on every model your Cursor plan lists. Change models and permissions in a thread.</Trans></p><p className="tt-paragraph"><Trans>Cursor threads get Sotto’s browser, visual, pull request babysitting and delegation tools, and skills, and Watcher runs on Cursor. Cursor has no fork of its own and cannot be steered, so a message sent while it works waits for the turn to end; Fork from here starts the new thread from a handover. Cursor reports no token counts, so it is not in Usage. Cursor keeps its own history, and runs Auto’s checks on its servers.</Trans></p></details>}
         {provider === 'opencode' && <details className="provider-support"><summary>{t`Threads with OpenCode`}</summary><p className="tt-paragraph">{t`Replies, images, steering, approvals, questions and reasoning effort, on each model's own source. Change models and permissions in a thread.`}</p><p className="tt-paragraph">{t`Sotto's browser tools, Watcher and skills are unavailable. OpenCode does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text.`}</p></details>}
-        {provider === 'deepseek' && <details className="provider-support"><summary>{t`Threads with DeepSeek`}</summary><p className="tt-paragraph">{t`Replies, approvals and reasoning effort, on the keyless model servers you saved under Your own model servers. Change models and permissions in a thread. Replies arrive whole rather than word by word, and questions come in the reply itself.`}</p><p className="tt-paragraph">{t`DeepSeek threads get Sotto's browser, visual, pull request babysitting and delegation tools. Images, steering, skills, Watcher and Usage counts are unavailable, and DeepSeek does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text.`}</p></details>}
+        {provider === 'deepseek' && <details className="provider-support"><summary>{t`Threads with DeepSeek`}</summary><p className="tt-paragraph">{t`Replies, approvals and reasoning effort, on the keyless model servers you saved under APIs and your own model servers. Change models and permissions in a thread. Replies arrive whole rather than word by word, and questions come in the reply itself.`}</p><p className="tt-paragraph">{t`DeepSeek threads get Sotto's browser, visual, pull request babysitting and delegation tools. Images, steering, skills, Watcher and Usage counts are unavailable, and DeepSeek does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text.`}</p></details>}
       </div>
     </>
   }
@@ -480,7 +480,7 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
   }
 
   return <div className="providers-settings">
-    {/* Your own model servers sit above the provider list, apart from any one provider (ADR-0124, layout B). */}
+    {/* APIs and your own model servers sit above the provider list, apart from any one provider (ADR-0124, layout B). */}
     {ownServers ? <OwnModelServers bridge={ownServers} /> : null}
     {signInFor && window.sotto?.providerSignIn ? <HostProviderSignIn place={t({ message: 'This computer', comment: 'The computer Sotto runs on, named where a paired host would be.' })} provider={signInFor}
       signIn={step => window.sotto!.providerSignIn!.signIn(step as LocalSignInRequest)} onClose={closeSignIn} /> : null}

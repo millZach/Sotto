@@ -10,7 +10,7 @@ import { OpenSystemSettingsButton } from '../../components/OpenSystemSettingsBut
 import { Select } from '../../components/Select'
 import { VoiceWave } from '../../components/VoiceWave'
 import { platformCopy } from '../../platformCopy'
-import { MICROPHONE_HEARD_LEVEL, WorkletMicrophoneTest, type MicrophoneTestController, type MicrophoneTestState } from '../onboarding/microphoneTest'
+import { MICROPHONE_HEARD_LEVEL, onStopMicrophoneTests, WorkletMicrophoneTest, type MicrophoneTestController, type MicrophoneTestState } from '../../audio/microphoneTest'
 
 interface MicrophoneSettingsProps {
   readonly settings: Pick<AppSettings, 'microphoneId' | 'microphoneSkipped'>
@@ -73,6 +73,9 @@ export function MicrophoneSettings({
     setMicrophoneLevel(0)
     setMicrophoneState(state => state === 'ready' ? 'closed' : state === 'requesting' ? 'idle' : state)
   }, [])
+
+  // First-run setup's walk stops the test as it moves on from it (ADR-0200).
+  useEffect(() => onStopMicrophoneTests(stopMicrophoneTest), [stopMicrophoneTest])
 
   useEffect(() => {
     const onVisibilityChange = (): void => { if (document.hidden) stopMicrophoneTest() }
@@ -153,7 +156,7 @@ export function MicrophoneSettings({
     </Field>
     {/* A row on the Microphone card like the others (ADR-0110, #1831): the label over its description and what the
         test found, and the level and the button at the row's end. */}
-    <div className="tt-field settings-microphone-test" data-state={microphoneState}>
+    <div className="tt-field settings-microphone-test" data-state={microphoneState} data-heard={microphonePeakRef.current > MICROPHONE_HEARD_LEVEL || undefined}>
       <p className="tt-field__label" id="settings-microphone-test-label">{t`Microphone test`}</p>
       <p className="tt-field__description tt-paragraph" id="settings-microphone-test-description">{t`Check that Sotto can hear you. Access is asked for only while the test runs.`}</p>
       <p className="settings-microphone-test__status tt-paragraph" role="status">
