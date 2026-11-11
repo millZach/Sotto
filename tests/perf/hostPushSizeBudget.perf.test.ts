@@ -3,8 +3,9 @@
  * What a host sends its paired clients while one thread streams, at forge's scale (#2390, the November 10, 2026 audit):
  * bytes per thread list push to a desktop and to an iPhone, how many of each push's parts are as the push before had them,
  * and bytes of `watcher-state` per change of Watcher's progress alone. It builds the host as the data-transfer benchmark
- * does (`hostSocketScale`), on Owl with short threads, and counts what each peer is sent. Sizes and counts only, the same
- * on every run, so it runs in the default suite (`docs/perf/2026-11-10-real-size-transfer-benchmarks.md`).
+ * does (`hostSocketScale`), on Owl with short threads, and counts what each peer is sent. The fake clock steps only once the
+ * sockets have carried what the last step sent, so the sizes and counts are the same on every run and on any machine, and
+ * it runs in the default suite (`docs/perf/2026-11-10-real-size-transfer-benchmarks.md`).
  *
  * Each budget is today's number with a little room, and only tightens: a change that lowers a number lowers its budget in
  * the same pull request, and a raise needs its reason in the pull request. The numbers are large on purpose, since they
@@ -17,6 +18,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, expect, it, vi } from 'vitest'
 import { hostSocketScale, tallyPeer } from '../fixtures/hostSocketScale'
+import { stepClock } from '../fixtures/stepClock'
 
 /**
  * Bytes of JSON in one thread list push to a desktop while a thread streams: about 200 KB, nearly all of it parts that did
@@ -40,26 +42,7 @@ const PHONE_UNCHANGED_PARTS = 43
 const WATCHER_STATE_PROGRESS_BYTES = 2_006_000
 const WATCHER_STATE_UNCHANGED_PARTS = 6
 
-// The fake clock, stepped as the data-transfer benchmark steps it, waiting for file work between steps.
-const STEP_MS = 5
-const turn = globalThis.setImmediate
-const fileWorkInFlight = (): boolean => process.getActiveResourcesInfo().some(name => /^(FSReq|FileHandle|CloseReq)/u.test(name))
-async function filesSettled(): Promise<void> {
-  for (let quiet = 0; quiet < 3;) {
-    await new Promise<void>(resolve => { turn(resolve) })
-    quiet = fileWorkInFlight() ? 0 : quiet + 1
-  }
-}
-async function step(): Promise<void> { await vi.advanceTimersByTimeAsync(STEP_MS); await filesSettled() }
-async function pass(ms: number): Promise<void> { for (let elapsed = 0; elapsed < ms; elapsed += STEP_MS) await step() }
-async function until<T>(work: Promise<T>): Promise<T> {
-  let done = false
-  void work.then(() => { done = true }, () => { done = true })
-  await filesSettled()
-  for (let elapsed = 0; !done; elapsed += STEP_MS) { if (elapsed > 120_000) throw new Error('not done'); await step() }
-  return work
-}
-
+const clock = stepClock()
 const roots: string[] = []
 beforeAll(() => { vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', 'performance'] }) })
 afterAll(async () => {
@@ -69,9 +52,9 @@ afterAll(async () => {
 
 it('sends a desktop and an iPhone no more per push than forge\'s host did, while one thread streams', async () => {
   const root = await mkdtemp(join(tmpdir(), 'sotto-host-push-')); roots.push(root)
-  const h = await hostSocketScale(root, { until, step, pass })
+  const h = await hostSocketScale(root, clock)
   try {
-    const { p, desktop, phone, io, ask } = h
+    const { p, desktop, phone, ask } = h
     expect(h.watcherReads, 'The desktop did not read its Watcher\'s projection, so it is pushed no watcher-state').toBe(true)
     const session = p.streamSessions[0]!, threadId = h.streamIds[0]!
     for (const [name, peer] of [['desktop', desktop], ['phone', phone]] as const) await ask(peer, `observe-${name}`, { op: 'observe', threadIds: [threadId] })
@@ -79,17 +62,16 @@ it('sends a desktop and an iPhone no more per push than forge\'s host did, while
     p.adapter.log.add(session, { id: 'prompt', role: 'user', text: 'Synthetic prompt', createdAt: new Date().toISOString() }); thread.status = 'running'; p.adapter.mark(session)
     p.adapter.log.add(session, { id: 'reply', role: 'assistant', text: 'First', createdAt: new Date().toISOString() })
     p.adapter.publish(true)
-    await pass(1_000); await io()
+    await h.clock.pass(1_000)
     // A stretch first, so what goes once after observing (the thread whole, the catalog) is behind what is counted.
     await h.stream([session], 'reply', 10)
-    await pass(500); await io()
+    await h.clock.pass(500)
     const marks = { desktop: desktop.messages.length, phone: phone.messages.length }
     await h.stream([session], 'reply', 40)
-    await pass(1_000); await io()
+    await h.clock.pass(1_000)
     const toDesktop = tallyPeer(desktop.messages, marks.desktop, false), toPhone = tallyPeer(phone.messages, marks.phone, false)
     const shellToDesktop = toDesktop.shell!, shellToPhone = toPhone.shell!, watcherState = toDesktop.watcherState!, progress = watcherState.progressOnly
-    // Some of each, so no budget passes on nothing. How many depends on how fast the peers read: the host sends a client
-    // that is behind the newest push once it catches up (push pacing), so a slow machine counts fewer.
+    // Some of each, so no budget passes on nothing.
     expect(shellToDesktop.pushes).toBeGreaterThanOrEqual(2)
     expect(shellToPhone.pushes).toBeGreaterThanOrEqual(2)
     expect(progress.pushes).toBeGreaterThanOrEqual(2)

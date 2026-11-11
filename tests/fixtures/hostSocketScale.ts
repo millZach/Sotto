@@ -1,4 +1,7 @@
+import type { Socket } from 'node:net'
+import { setTimeout as delay } from 'node:timers/promises'
 import { deflateRawSync } from 'node:zlib'
+import { SocketFrames } from '../../src/host/socketFrames'
 import { startSocketServer } from '../../src/host/socketServer'
 import { LocalHostService } from '../../src/main/agents/hostService'
 import { PairedClients } from '../../src/main/agents/pairing'
@@ -9,6 +12,7 @@ import { iphoneAccepts } from './iphoneAccepts.mjs'
 import type { OwnerScale } from './ownerScale'
 import { ownerScalePipeline, type OwnerScalePipeline, type OwnerScaleTrack } from './ownerScalePipeline'
 import { rawPeer } from './rawHostPeer'
+import { stepClock, type StepClock } from './stepClock'
 
 /**
  * The paired desktop's own Watcher, as it names itself to the host: a Watcher on another computer, made on October 28,
@@ -17,11 +21,46 @@ import { rawPeer } from './rawHostPeer'
 export const DESKTOP_WATCHER: WatcherIdentity = { target: { hostId: '7d3e2a10-4b5c-4d6e-8f70-1a2b3c4d5e6f', threadId: '0b1c2d3e-4f50-4a61-b728-394a5b6c7d8e' },
   projectId: 'synthetic-watcher-project', provider: 'claude', creationOperationId: '5e6f7a8b-9cad-4bef-8012-3456789abcde', createdAt: '2026-10-28T09:00:00.000Z' }
 
-/** The test's fake clock, stepped with file work settling between steps, as the benchmark that builds main steps it. */
-export interface StepClock {
-  until<T>(work: Promise<T>): Promise<T>
-  step(): Promise<void>
-  pass(ms: number): Promise<void>
+/**
+ * How long, in real time, what one end of a socket wrote may take to be read at the other: the suite's test deadline
+ * (`vitest.config.ts`). A push takes milliseconds; the deadline is only reached when a socket closed under its message.
+ */
+const DELIVERY_DEADLINE_MS = 15_000
+/** The test fakes `performance` and `Date`; the deadline is on the machine's clock. */
+const realNow = (): number => Number(process.hrtime.bigint()) / 1e6
+
+/**
+ * Both ends of every host socket opened from now on, so a step of the fake clock can wait until each end has read what the
+ * other wrote: no message still compressing off the loop or waiting for its socket to drain (`backlogged`), and every byte
+ * one end's socket was given read by the other end's. A desktop's push over 64 KiB is compressed on Node's thread pool, so
+ * how soon it goes depends on the machine's load; waiting for it makes what the peers are sent the same on any machine.
+ * Each end is known by its first `feed`, which the host and every client make as a socket opens.
+ */
+function socketDelivery(): { idle(): boolean; delivered(): Promise<void>; dispose(): void } {
+  const ends = new Set<SocketFrames>()
+  const prototype = SocketFrames.prototype, nativeFeed = prototype.feed
+  prototype.feed = function (this: SocketFrames, data: Buffer): void { ends.add(this); nativeFeed.call(this, data) }
+  const socketOf = (end: SocketFrames): Socket => (end as unknown as { stream: Socket }).stream
+  /** What is still on its way, or undefined once every open end has read all the other end wrote. */
+  const outstanding = (): string | undefined => {
+    for (const end of ends) {
+      if (end.isClosed) { ends.delete(end); continue }
+      if (end.backlogged) return 'a message is still being compressed or waiting for its socket to drain'
+      const socket = socketOf(end)
+      const other = [...ends].find(candidate => candidate !== end && !candidate.isClosed && socketOf(candidate).localPort === socket.remotePort && socketOf(candidate).remotePort === socket.localPort)
+      if (!other) return 'a socket\'s other end has not opened, or has closed and this end has not heard'
+      if (socket.bytesWritten !== socketOf(other).bytesRead) return 'one end has not read all the other wrote'
+    }
+    return undefined
+  }
+  const delivered = async (): Promise<void> => {
+    const deadline = realNow() + DELIVERY_DEADLINE_MS
+    for (let left = outstanding(); left !== undefined; left = outstanding()) {
+      if (realNow() > deadline) throw new Error(`The host's sockets did not settle in ${DELIVERY_DEADLINE_MS / 1_000} s: ${left}.`)
+      await delay(1)
+    }
+  }
+  return { idle: () => outstanding() === undefined, delivered, dispose: () => { prototype.feed = nativeFeed } }
 }
 
 type Peer = Awaited<ReturnType<typeof rawPeer>>
@@ -45,8 +84,12 @@ export interface HostSocketScale {
   /** Sotto's own client of this host, paired as a third client and connected, for a benchmark of the desktop's own work. */
   readonly client: SocketHostService
   readonly hostId: string
-  /** Real socket I/O between steps of the fake clock. */
-  io(turns?: number): Promise<void>
+  /**
+   * The test's clock, stepped only once every socket's ends have read what the other wrote, so the host never finds a peer
+   * behind because the machine was slow to compress or to read: every push it makes goes, and the count of pushes is the
+   * same on any machine. Step it rather than the test's own clock once the host is built.
+   */
+  readonly clock: StepClock
   /** Sends `operation` from `peer` and waits for its answer. */
   ask(peer: Peer, id: string, operation: Record<string, unknown>): Promise<Record<string, unknown>>
   /**
@@ -65,14 +108,19 @@ export interface HostSocketScale {
  * accepts, found by connecting that client and reading its hello, and reads its Watcher's projection with no call, as
  * the desktop's Watcher does, so the host pushes it `watcher-state` (`docs/host-protocol.md`, "Watcher on a paired host").
  * The phone says hello with the iPhone's own list. Neither observes a thread yet. `prepare` runs on main before any
- * client connects.
+ * client connects. Every step of `testClock` from here on waits for the sockets as well (`clock`).
  */
-export async function hostSocketScale(root: string, clock: StepClock, options: { track?: OwnerScaleTrack; scale?: OwnerScale; storeWorker?: string | undefined
+export async function hostSocketScale(root: string, testClock: StepClock, options: { track?: OwnerScaleTrack; scale?: OwnerScale; storeWorker?: string | undefined
   prepare?: (p: OwnerScalePipeline) => Promise<void> } = {}): Promise<HostSocketScale> {
+  const delivery = socketDelivery()
+  try { return await built(root, testClock, delivery, options) } catch (error) { delivery.dispose(); throw error }
+}
+
+async function built(root: string, testClock: StepClock, delivery: ReturnType<typeof socketDelivery>, options: Parameters<typeof hostSocketScale>[2] = {}): Promise<HostSocketScale> {
   const track = options.track ?? 'owl', owl = track === 'owl'
-  const io = async (turns = 20): Promise<void> => { for (let index = 0; index < turns; index++) await new Promise<void>(resolve => { setImmediate(resolve) }) }
+  const clock = stepClock(async () => { for (;;) { await testClock.settle(); if (delivery.idle()) return; await delivery.delivered() } })
   const settle = async (done: () => boolean, what: string): Promise<void> => {
-    for (let waited = 0; !done(); waited++) { if (waited > 4_000) throw new Error(what); await clock.step(); await io(2) }
+    for (let waited = 0; !done(); waited++) { if (waited > 4_000) throw new Error(what); await clock.step() }
   }
   // Paired before main is built, so main's Watcher record can hold the desktop's work under the desktop's own pairing.
   const pairing = new PairedClients(root)
@@ -81,7 +129,10 @@ export async function hostSocketScale(root: string, clock: StepClock, options: {
   const desktopPairing = await pair('Desktop'), phonePairing = await pair('iPhone'), clientPairing = await pair('Main desktop')
   const p = await clock.until(ownerScalePipeline(root, options.scale ?? { threads: 1, history: 1 }, 3, track,
     { storeWorker: options.storeWorker, host: { desktop: { clientId: desktopPairing.clientId, master: DESKTOP_WATCHER } } }))
-  await clock.pass(1_000)
+  // A host that has run a few seconds, as forge's had: a provider that is turned on but did not connect at start is
+  // reconnected 5 s later (`scheduleProviderReconnects`), and its models join the catalog. Before any client connects, so
+  // the catalog a client is sent first is the one it keeps, rather than a whole catalog arriving in what is counted.
+  await clock.pass(6_000)
   await options.prepare?.(p)
   const service = new LocalHostService({ control: p.control, events: p.workspace, ...(p.watcher ? { watcher: p.watcher } : {}) })
   // Recorded as desktops, as the launch script records a desktop that pairs over SSH: forge's host knows the laptop so.
@@ -140,15 +191,17 @@ export async function hostSocketScale(root: string, clock: StepClock, options: {
         }
       }
       p.adapter.publish(true)
-      for (let elapsed = 0; elapsed < 50; elapsed += 5) { await clock.step(); await io(2) }
+      await clock.pass(50)
     }
   }
   const close = async (): Promise<void> => {
-    await client.close()
-    desktop.frames.close(); phone.frames.close()
-    await clock.until(server.close()); await clock.until(phoneServer.close()); await clock.until(p.stop())
+    try {
+      await client.close()
+      desktop.frames.close(); phone.frames.close()
+      await clock.until(server.close()); await clock.until(phoneServer.close()); await clock.until(p.stop())
+    } finally { delivery.dispose() }
   }
-  return { p, desktop, phone, desktopAccepts, phoneAccepts, helloBytes, watcherReads, streamIds, client, hostId, io, ask, stream, close }
+  return { p, desktop, phone, desktopAccepts, phoneAccepts, helloBytes, watcherReads, streamIds, client, hostId, clock, ask, stream, close }
 }
 
 /** Usage after another stretch of a reply: a few hundred tokens more, the context fuller. */

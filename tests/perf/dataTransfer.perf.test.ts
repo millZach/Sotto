@@ -40,6 +40,7 @@ import type { AgentActivity } from '../../src/shared/agentActivity'
 import type { AgentState } from '../../src/shared/agents'
 import { ownerScalePipeline, type OwnerScalePipeline, type OwnerScaleTrack } from '../fixtures/ownerScalePipeline'
 import { median } from '../fixtures/perfBench'
+import { fileWork, filesSettled, stepClock } from '../fixtures/stepClock'
 import { builtStoreWorker } from '../fixtures/storeWorker'
 
 const BENCH = process.env.SOTTO_PERF_BENCH === '1'
@@ -230,26 +231,10 @@ function uninstall(): void {
   globalThis.structuredClone = nativeClone
 }
 
-// The fake clock, stepped as ownerScaleWorkBudget steps it, waiting for file work between steps.
-const STEP_MS = 5
-const turn = globalThis.setImmediate
-// On the store worker, its handle holds its port referenced while a write or a read is unanswered.
-const fileWorkInFlight = (): boolean => process.getActiveResourcesInfo().some(name => /^(FSReq|FileHandle|CloseReq)/u.test(name) || WORKER && name === 'MessagePort')
-async function filesSettled(): Promise<void> {
-  for (let quiet = 0; quiet < 3;) {
-    await new Promise<void>(resolve => { turn(resolve) })
-    quiet = fileWorkInFlight() ? 0 : quiet + 1
-  }
-}
-async function step(ms = STEP_MS): Promise<void> { await vi.advanceTimersByTimeAsync(ms); await filesSettled() }
-async function pass(ms: number): Promise<void> { for (let elapsed = 0; elapsed < ms; elapsed += STEP_MS) await step() }
-async function until<T>(work: Promise<T>): Promise<T> {
-  let done = false
-  void work.then(() => { done = true }, () => { done = true })
-  await filesSettled()
-  for (let elapsed = 0; !done; elapsed += STEP_MS) { if (elapsed > 120_000) throw new Error('not done'); await step() }
-  return work
-}
+// The fake clock, stepped as ownerScaleWorkBudget steps it, waiting for file work between steps. On the store worker, its
+// handle holds its port referenced while a write or a read is unanswered.
+const clock = stepClock(() => filesSettled(resource => fileWork(resource) || WORKER && resource === 'MessagePort'))
+const { pass, until } = clock
 
 interface Result {
   simulatedMs: number; cpuMs: number; harnessMs: number
@@ -472,22 +457,19 @@ it.skipIf(!BENCH)('measures what main moves per chunk and per action', async () 
  * the threads that stream, while one and then three threads stream, their usage moving as they do, and then a send.
  * Counts what each peer is sent, by event: frames, bytes of JSON and, for the desktop, which negotiates permessage-deflate,
  * bytes at deflate level 6; and for thread list pushes and `watcher-state`, each part's bytes and how many pushes left it
- * as the push before had it (`docs/perf/2026-11-10-real-size-transfer-benchmarks.md`).
+ * as the push before had it (`docs/perf/2026-11-10-real-size-transfer-benchmarks.md`). Its clock steps only once the
+ * sockets have carried what the last step sent, so what it counts is the same on any machine.
  */
 it.skipIf(!BENCH || process.env.SOTTO_AUDIT_SOCKET !== '1')('measures what the host socket sends a desktop and a phone per push', async () => {
   const { hostSocketScale, tallyPeer } = await import('../fixtures/hostSocketScale')
   const root = await mkdtemp(join(tmpdir(), 'sotto-transfer-socket-')); roots.push(root)
-  const h = await hostSocketScale(root, { until, step, pass }, { track: TRACK, scale: { threads: 1, history: 1, watcher: WATCHER_SCALE }, storeWorker: worker?.path,
+  const h = await hostSocketScale(root, clock, { track: TRACK, scale: { threads: 1, history: 1, watcher: WATCHER_SCALE }, storeWorker: worker?.path,
     ...LONG ? { prepare: (p: OwnerScalePipeline) => lengthen(p, p.streamSessions) } : {} })
-  const { p, desktop, phone, client, streamIds, hostId, io, ask } = h
+  const { p, desktop, phone, client, streamIds, hostId, ask } = h
   // The desktop's own client of this host, as main runs it for a paired host: its work per push is profiled below.
   let clientPushes = 0
   const offClient = client.subscribe(() => { clientPushes++ })
-  {
-    let observed = false
-    void client.observe([...streamIds]).then(() => { observed = true }, () => { observed = true })
-    for (let waited = 0; !observed; waited++) { if (waited > 4_000) throw new Error('client did not observe'); await step(); await io(2) }
-  }
+  await h.clock.until(client.observe([...streamIds]).catch(() => undefined))
   // The desktop's router and window broadcast over that client, as a desktop paired with this host runs them.
   const { DesktopHostRouter } = await import('../../src/main/hosts/desktopHostRouter')
   const { emptyDesktopState } = await import('../../src/main/hosts/inactiveLocalHost')
@@ -502,7 +484,7 @@ it.skipIf(!BENCH || process.env.SOTTO_AUDIT_SOCKET !== '1')('measures what the h
   for (const [name, peer] of [['desktop', desktop], ['phone', phone]] as const) {
     const before = peer.messages.length
     await ask(peer, `observe-${name}`, { op: 'observe', threadIds: streamIds })
-    await pass(500); await io()
+    await h.clock.pass(500)
     opened[name] = peer.messages.slice(before).reduce((n, message) => n + Buffer.byteLength(nativeStringify(message)), 0)
   }
   const report: Record<string, unknown> = { accepts: { desktop: h.desktopAccepts, phone: h.phoneAccepts }, watcherReads: h.watcherReads,
@@ -516,7 +498,7 @@ it.skipIf(!BENCH || process.env.SOTTO_AUDIT_SOCKET !== '1')('measures what the h
       p.adapter.log.add(session, { id: `reply-${streams}`, role: 'assistant', text: 'First', createdAt: at })
     }
     p.adapter.publish(true)
-    await pass(1_000); await io()
+    await h.clock.pass(1_000)
     const marks = { desktop: desktop.messages.length, phone: phone.messages.length }
     clientPushes = 0; desktopBroadcasts = 0; desktopBroadcastBytes = 0
     const profiler = PROFILE.has(`socket ${streams}`) ? new Session() : undefined
@@ -524,19 +506,19 @@ it.skipIf(!BENCH || process.env.SOTTO_AUDIT_SOCKET !== '1')('measures what the h
     const cpu = process.cpuUsage()
     // About twenty chunks a second for three seconds, as a provider streams.
     await h.stream(sessionsStreaming, `reply-${streams}`, 60)
-    await pass(1_000); await io()
+    await h.clock.pass(1_000)
     const used = process.cpuUsage(cpu)
     if (profiler) { const { profile } = await profiler.post('Profiler.stop'); writeFileSync(join(tmpdir(), `sotto-transfer-socket-${streams}.cpuprofile`), nativeStringify(profile)); profiler.disconnect() }
     report[`${streams} streaming`] = { seconds: 4, processCpuMs: Math.round((used.user + used.system) / 1000), clientPushes, desktopWindow: { broadcasts: desktopBroadcasts, bytes: desktopBroadcastBytes },
       desktop: tallyPeer(desktop.messages, marks.desktop, true), phone: tallyPeer(phone.messages, marks.phone, false) }
     for (const session of sessionsStreaming) { p.adapter.state.threads.find(item => item.id === session)!.status = 'idle'; p.adapter.mark(session) }
     p.adapter.publish(false)
-    await pass(1_000); await io()
+    await h.clock.pass(1_000)
   }
   // A send on the open thread, as a phone makes it: what each peer is sent for it.
   const marks = { desktop: desktop.messages.length, phone: phone.messages.length }
-  try { await until(p.actions.send()) } catch (error) { report.sendError = String(error) }
-  await pass(1_000); await io()
+  try { await h.clock.until(p.actions.send()) } catch (error) { report.sendError = String(error) }
+  await h.clock.pass(1_000)
   report.send = { desktop: tallyPeer(desktop.messages, marks.desktop, true), phone: tallyPeer(phone.messages, marks.phone, false) }
   console.log(`DATA-TRANSFER-SOCKET ${nativeStringify({ track: TRACK, long: LONG, hostId, ...report }, null, 1)}`)
   offDesktop(); desktopPublisher.dispose(); desktopRouter.dispose(); offClient()
