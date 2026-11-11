@@ -4543,10 +4543,6 @@ msgstr ""
 msgid "Phones…"
 msgstr ""
 
-#: src/renderer/src/features/settings/ProvidersSettings.tsx
-msgid "Pi sign-ins, steering, compaction, native forks, skills, Watcher, remote hosts and phones are not available yet."
-msgstr ""
-
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Pick a color from the app"
 msgstr ""
@@ -4962,7 +4958,7 @@ msgid "Replies in threads"
 msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
-msgid "Replies stream as Pi writes. Threads keep their conversation after a restart, show tool calls and context use, and can be stopped. Models come from your saved servers without a key."
+msgid "Replies stream as Pi writes. Threads keep their conversation after a restart, show tool calls and context use, and can be stopped. Models come from your keyless servers and the sources you sign in to below."
 msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
@@ -5787,7 +5783,7 @@ msgid "Sotto runs its own OpenCode, with its own folder and its own sign-ins. Th
 msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
-msgid "Sotto runs Pi in its own folder on your keyless model servers. Pi has Full access and does not ask before running tools. Pi sign-ins are not available in Sotto yet."
+msgid "Sotto runs Pi in its own folder on your keyless model servers. Pi has Full access and does not ask before running tools. Sign in below to use Pi’s other model sources."
 msgstr ""
 
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
@@ -6083,6 +6079,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Steer now"
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Steering, compaction, native forks, skills, Watcher, remote hosts and phones are not available yet."
 msgstr ""
 
 #: src/renderer/src/features/settings/hostClientUpdateWords.ts

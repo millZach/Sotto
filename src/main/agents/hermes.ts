@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, readFile } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
 import { nearestModelEffort } from '../../shared/reasoningEfforts'
@@ -19,8 +19,10 @@ import { hermesCatalog, hermesModelRoute, hermesModelValue, hermesSettingsOf, he
 import { hermesAnswer, hermesDecline, hermesPending, type HermesPending, type HermesToolDetail } from './hermesRequests'
 import { compareHermesVersions, HermesRejected, HermesRpc, HermesUncertain, HERMES_ACP_VERSION, HERMES_CLI_VERSION,
   findHermesExecutable, readHermesVersion, type HermesFrame } from './hermesRpc'
-import { HermesRuntime, hermesServers } from './hermesRuntime'
-import type { ActivitySubscriptionOptions, ProviderHost, AgentHostCommand, AgentHostResult, ThreadHistorySource, ThreadHostEvent,
+import { HermesRuntime, hermesProjectHome, hermesServers, hermesSharedSkills } from './hermesRuntime'
+import { discoverHermesSkills, hermesSkillPrompt, invokedHermesSkill } from './hermesSkills'
+import type { AgentSkillCatalog } from '../../shared/agentSkills'
+import type { ActivitySubscriptionOptions, AgentSkillScope, ProviderHost, AgentHostCommand, AgentHostResult, ThreadHistorySource, ThreadHostEvent,
   ThreadLaunchProfiles, ThreadReadPurpose, ThreadSessionDraft } from './host'
 import { unreadableRequest } from './nativeRequests'
 import { OpenSessions } from './openSessions'
@@ -44,6 +46,8 @@ import { heldProvidersOf, type HeldProviders } from '../../shared/heldProviders'
  * and history; Hermes keeps native sessions, memory and skills. Sotto runs it with Full access only. */
 
 const digest = (text: string): string => createHash('sha256').update(text).digest('hex')
+/** Words that open with a slash word that could name a skill: a path (`/tmp/x`) cannot, and costs no skill folder read. */
+const SLASH_WORD = /^\s*\/[^\s/]+(?:\s|$)/u
 const record = (value: unknown): Record<string, unknown> | undefined =>
   value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined
 const attachmentSchema = z.object({ id: z.string(), name: z.string(), mimeType: z.string(), sizeBytes: z.number() })
@@ -229,7 +233,7 @@ export class HermesAcpHost implements ProviderHost {
   private writing = Promise.resolve()
   private state: AgentHostSnapshot = { connected: false, name: 'Hermes', version: '', projects: [], models: [], threads: [],
     capabilities: { projects: true, threads: true, submit: true, observe: true, questions: false, permissions: true, interrupt: true, messageOrigin: true,
-      reconcile: true, configureThread: true, configureThreadModel: true, skills: false, steer: true, compact: false } }
+      reconcile: true, configureThread: true, configureThreadModel: true, skills: true, steer: true, compact: false } }
   private readonly homeDirectory: string
   private readonly runtime: HermesRuntime
 
@@ -961,15 +965,34 @@ export class HermesAcpHost implements ProviderHost {
       }
     }
   }
+  /**
+   * Hermes's skills, as `/name`: the ones this thread's project profile wrote, then the ones in Sotto's Hermes folder,
+   * which every project profile reads (`hermesConfig`). Read from the folders afresh on every request.
+   */
+  async listThreadSkills(threadId: string, _forceReload = false, scope?: AgentSkillScope): Promise<AgentSkillCatalog> {
+    void _forceReload
+    const alias = this.aliases[threadId]
+    const cwd = alias?.cwd ?? (scope?.providerId === 'hermes' ? scope.workingDirectory : undefined)
+    if (!this.state.connected || !cwd) throw new Error('Reconnect this Hermes thread before browsing skills.')
+    // The profile is the project's, whichever folder the thread works in: a draft's project comes with its scope.
+    const project = this.state.projects.find(project => project.id === alias?.projectId)?.path ?? (alias ? undefined : scope?.projectPath)
+    return discoverHermesSkills(threadId, cwd, [
+      { directory: join(hermesProjectHome(this.homeDirectory, project ?? cwd), 'skills'), scope: 'repo' },
+      { directory: hermesSharedSkills(this.homeDirectory), scope: 'user' }])
+  }
   private async steer(command: Extract<AgentHostCommand, { type: 'steer' }>, generation: number): Promise<AgentHostResult> {
     const id = command.threadId, alias = this.aliases[id], turn = this.turns.get(id)
     if (!this.state.connected || !alias?.hermesSessionId || !turn || turn.ended) throw new Error('Hermes is not working on this thread. Send a follow-up instead.')
-    if (command.attachments?.length || command.skills?.length) throw new Error('Hermes steering takes text only. Queue attachments for the next turn.')
+    if (command.attachments?.length) throw new Error('Hermes steering takes text only. Queue attachments for the next turn.')
     const index = this.indexOf(id, alias), previous = index.sent(command.commandId, command.messageId)
     if (previous) return { accepted: this.log.has(id, previous.messageId), ...(!this.log.has(id, previous.messageId) ? { uncertain: true } : {}) }
     if (command.expectedLastUserMessageId !== undefined && command.expectedLastUserMessageId !== (this.log.lastUserMessageId(id) ?? null)) throw new Error('The latest user message changed. Review the thread before steering.')
     if (this.thread(id).requests.length) throw new Error('Answer Hermes’s pending request before steering.')
     verifyFileMentions(command.text, command.files)
+    // A skill starts a turn's work; steered into a running one it would arrive as words Hermes does not expand.
+    if (command.skills?.length || (SLASH_WORD.test(command.text) && invokedHermesSkill(command.text, [], await this.listThreadSkills(id)))) {
+      throw new Error('Hermes starts a skill with a new message, not while it is working. Nothing was sent. Queue it as a follow-up instead.')
+    }
     const connection = await this.open(id)
     this.assertGeneration(generation)
     if (this.turns.get(id) !== turn || turn.ended) throw new Error('This turn has ended. Send a follow-up instead.')
@@ -1039,11 +1062,16 @@ export class HermesAcpHost implements ProviderHost {
     // An image is refused here, before any bytes are read, unless the model's record and the harness both take images.
     const attachments = validatePromptAttachments(this.state, alias.modelId, command.attachments, { workingDirectory: alias.cwd })
     verifyFileMentions(command.text, command.files)
-    if (command.skills?.length) throw new Error('Hermes takes no skills from the composer in this version.')
     // Images go as ACP image blocks after the words; files that are not images are saved into the thread's folder and
     // named in a note after the words (ADR-0131).
     const delivered = await deliverAttachments(alias.cwd, attachments)
-    const nativeText = `Work in this project directory: ${alias.cwd}\nUse this directory for relative file paths and command working directories.\n\n${withAttachedFilesNote(command.text, delivered.note)}`
+    // A skill is read only for a message that picked one or opens with a slash, so ordinary words cost no folder read.
+    const skill = command.skills?.length || SLASH_WORD.test(command.text) ? invokedHermesSkill(command.text, command.skills ?? [], await this.listThreadSkills(id)) : undefined
+    const words = skill ? hermesSkillPrompt(command.text, skill, await readFile(skill.path, 'utf8').catch(() => {
+      throw new Error(`Hermes’s ${skill.name} skill could not be read. Nothing was sent. Check the skill’s file, then send again.`)
+    }), alias.hermesSessionId) : command.text
+    current()
+    const nativeText = `Work in this project directory: ${alias.cwd}\nUse this directory for relative file paths and command working directories.\n\n${withAttachedFilesNote(words, delivered.note)}`
     const images = await acpImageBlocks(delivered.images)
     await this.applySettings(alias, connection, id)
     current()

@@ -63,8 +63,15 @@ export function hermesProjectHome(root: string, projectPath: string): string {
   return join(root, 'profiles', `project-${createHash('sha256').update(projectPath).digest('hex').slice(0, 24)}`)
 }
 
-/** JSON is YAML: no interpolation of model names, addresses, paths or secrets. */
-export function hermesConfig(servers: readonly OwnServer[], cwd?: string): string {
+/** Where Sotto's Hermes folder keeps the skills every project profile reads, beside each profile's own. */
+export function hermesSharedSkills(root: string): string { return join(root, 'skills') }
+
+/**
+ * JSON is YAML: no interpolation of model names, addresses, paths or secrets. `sharedSkills` is the folder a project
+ * profile reads skills from beside its own: Hermes keeps skills per home, so without it a profile sees only what its
+ * own threads wrote.
+ */
+export function hermesConfig(servers: readonly OwnServer[], cwd?: string, sharedSkills?: string): string {
   const first = servers[0]
   return JSON.stringify({
     _config_version: 52,
@@ -75,6 +82,7 @@ export function hermesConfig(servers: readonly OwnServer[], cwd?: string): strin
       compression: { provider: 'auto', model: '' }, vision: { provider: 'auto', model: '' } },
     memory: { memory_enabled: true, user_profile_enabled: true },
     ...(cwd ? { terminal: { cwd } } : {}),
+    ...(sharedSkills ? { skills: { external_dirs: [sharedSkills] } } : {}),
     ...(first ? { model: { provider: `custom:${first.id}`, default: first.models[0]?.id, base_url: first.address, api_mode: 'chat_completions', context_length: first.models[0]?.context,
       ...(first.keyed ? { key_env: hermesKeyVariable(first.id) } : {}) } } : {}),
     // Hermes 0.23.0 resolves a key only on its keyed `providers` map; its legacy `custom_providers` list runs keyless.
@@ -124,7 +132,8 @@ export class HermesRuntime {
     return this.inOrder(async () => {
       await mkdir(home, { recursive: true })
       const keys = await this.keys.read()
-      for (const [name, text] of [['config.yaml', hermesConfig(servers, cwd)], ['.env', hermesEnvFile(servers, keys)]] as const) {
+      const config = hermesConfig(servers, cwd, home === this.root ? undefined : hermesSharedSkills(this.root))
+      for (const [name, text] of [['config.yaml', config], ['.env', hermesEnvFile(servers, keys)]] as const) {
         const path = join(home, name)
         if (await readFile(path, 'utf8').catch(() => '') !== text) await writeFile(path, text, { mode: 0o600 })
       }
