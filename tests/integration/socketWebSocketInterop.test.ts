@@ -7,10 +7,13 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { afterEach, beforeEach, expect, it } from 'vitest'
+import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { startHeadlessHost } from '../../src/host'
+import { DEFLATE_SYNC_MAX_BYTES, SocketFrames } from '../../src/host/socketFrames'
 import { startSocketServer } from '../../src/host/socketServer'
+import type { HostService } from '../../src/main/agents/hostService'
 import { E2EAgentHost, e2eAgentReasoner } from '../../src/main/e2e/agentEffects'
+import type { AgentThreadDetail } from '../../src/shared/agents'
 
 let root: string, host: Awaited<ReturnType<typeof startHeadlessHost>>, server: Awaited<ReturnType<typeof startSocketServer>>
 beforeEach(async () => {
@@ -67,6 +70,43 @@ it('says hello, runs a command and receives a pushed event over Node’s own Web
   // checked below, on a socket with nothing in flight.
   socket.close(1000, 'done')
   await closed
+})
+
+it('sends a phone compressed messages it reads over Node’s own WebSocket, one over 64 KiB among them, with phone compression on (#2394)', async () => {
+  // A thread long enough to be compressed on the thread pool rather than the loop.
+  const long: AgentThreadDetail = { threadId: 'long', revision: 1, messages: Array.from({ length: 4 }, (_, index) => ({ id: 'message-' + index, role: 'assistant' as const,
+    createdAt: '2026-11-10T00:00:00.000Z', text: Array.from({ length: 3000 }, (_, line) => `src/host/socketServer.ts:${line} ok ${index}`).join('\n') })) }
+  const service: HostService = { shell: () => host.service.shell(), state: () => host.service.state(), events: (afterSeq, threadId, limit) => host.service.events(afterSeq, threadId, limit),
+    subscribe: listener => host.service.subscribe(listener), threadDetail: id => id === 'long' ? structuredClone(long) : host.service.threadDetail(id),
+    command: (command, identity) => host.service.command(command, identity), subscribeThreadDetail: () => () => undefined }
+  // Shaped like a headless host's tailnet listener with no desktop recorded, so this client is a phone.
+  const phones = await startSocketServer({ service, pairing: host.pairing, admin: false, compressPhones: true, tailnet: { phonesAdmitted: () => true, desktops: { has: () => false, refresh: async () => undefined } } })
+  const written = vi.spyOn(SocketFrames.prototype as unknown as { frame(opcode: number, data: Buffer, compressed: boolean): boolean }, 'frame')
+  try {
+    const paired = await host.pairing.redeem(host.pairing.issuePairingCode().code, 'WebSocket phone')
+    const opened = await fetch(`http://127.0.0.1:${phones.descriptor.port}/v1/session`, { method: 'POST', headers: { Authorization: `Bearer ${paired.token}` } })
+    const { session } = await opened.json() as { session: string }
+    const socket = new (WebSocket as unknown as NodeWebSocket)(`ws://127.0.0.1:${phones.descriptor.port}/v1/socket`, { headers: { Authorization: `Bearer ${session}` } })
+    const messages: Record<string, unknown>[] = []
+    socket.addEventListener('message', event => messages.push(JSON.parse(event.data as string) as Record<string, unknown>))
+    const closed = new Promise<CloseEvent>(resolve => socket.addEventListener('close', resolve))
+    await new Promise<void>((resolve, reject) => { socket.addEventListener('open', () => resolve()); socket.addEventListener('error', () => reject(new Error('The socket did not open.'))) })
+    expect(socket.extensions).toContain('permessage-deflate')
+    socket.send(JSON.stringify({ v: 1, id: 'hello-1', session, op: 'hello' }))
+    await vi.waitFor(() => expect(messages.find(message => message.id === 'hello-1')).toMatchObject({ ok: true }))
+    socket.send(JSON.stringify({ v: 1, id: 'long-1', session, op: 'detail', threadId: 'long' }))
+    await vi.waitFor(() => expect(messages.some(message => message.id === 'long-1')).toBe(true))
+    const read = messages.find(message => message.id === 'long-1')!
+    expect((read.result as AgentThreadDetail).messages).toEqual(long.messages)
+    const bytes = Buffer.byteLength(JSON.stringify(read))
+    expect(bytes).toBeGreaterThan(DEFLATE_SYNC_MAX_BYTES)
+    // What went on the wire for it was compressed, a fraction of the thread's size.
+    const compressed = written.mock.calls.filter(([opcode, , packed]) => opcode === 1 && packed).map(([, data]) => data.length)
+    expect(compressed.length).toBeGreaterThanOrEqual(2)
+    expect(Math.max(...compressed)).toBeLessThan(bytes / 4)
+    socket.close(1000, 'done')
+    await closed
+  } finally { written.mockRestore(); await phones.close() }
 })
 
 it('finishes the closing handshake with Node’s WebSocket', async () => {

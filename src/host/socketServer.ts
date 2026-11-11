@@ -207,6 +207,12 @@ export interface SocketServerOptions {
    * desktop's own phone listener offers no desktop-only feature and stops whenever phone access is off.
    */
   tailnet?: TailnetAdmission
+  /**
+   * A phone that offers `permessage-deflate` is answered and sent compressed messages as a desktop is (#2394). Off by
+   * default, so no phone is, until a real iPhone is seen to read them (ADR-0025, November 10 amendment). A headless host
+   * turns it on for its tailnet listener when started with `SOTTO_HOST_COMPRESS_PHONES=1`.
+   */
+  compressPhones?: boolean
   /** The host's tailnet address and who started it, read for each health and hello answer. */
   about?: () => HostAbout
   /** The host's phone access in its row's words, read for each hello to a desktop. */
@@ -493,10 +499,11 @@ export async function startSocketServer(options: SocketServerOptions) {
   const admits = (clientId: string): boolean => isDesktop(clientId) || (tailnet?.phonesAdmitted() ?? true)
   /**
    * Whether a client that offers `permessage-deflate` is sent compressed messages: a desktop, on a listener that tells
-   * desktops apart or is reached only through SSH (ADR-0025, October 18 amendment). No phone is, on any listener: the
-   * desktop's own phone listener, which serves no desktop, compresses nothing.
+   * desktops apart or is reached only through SSH (ADR-0025, October 18 amendment). No phone is, on any listener, unless
+   * `compressPhones` is on (the November 10 amendment): without it the desktop's own phone listener, which serves no
+   * desktop, compresses nothing.
    */
-  const compresses = (clientId: string): boolean => (options.admin !== false || tailnet !== undefined) && isDesktop(clientId)
+  const compresses = (clientId: string): boolean => options.compressPhones === true || (options.admin !== false || tailnet !== undefined) && isDesktop(clientId)
   const phonesOffMessage = (): string => phonesOff(options.name?.())
   const { signIns } = options
   /** A sign-in's own refusal keeps its sentence; anything else is the host's failure to run it. */
@@ -2195,9 +2202,9 @@ export async function startSocketServer(options: SocketServerOptions) {
     const key = request.headers['sec-websocket-key']
     if (request.url !== '/v1/socket' || !clientId || request.headers['sec-websocket-version'] !== '13' || typeof key !== 'string' || !/^[A-Za-z0-9+/]{22}==$/.test(key) || (request.headers.origin && !originAllowed(request.headers.origin, options.origins))) { refuse(stream, '401 Unauthorized'); return }
     const offered = deflateOffered(request.headers['sec-websocket-extensions'])
-    // Compression is settled at the upgrade or not at all, so a client offering it that this listener does not know as a
-    // desktop has the record read again first: the launch script may have recorded it since the last read.
-    if (admits(clientId) && !(offered && tailnet && !isDesktop(clientId))) { open(stream, head, session, clientId, key, offered); return }
+    // Compression is settled at the upgrade or not at all, so a client offering it that this listener would not compress
+    // for has the record read again first: the launch script may have recorded it as a desktop since the last read.
+    if (admits(clientId) && !(offered && tailnet && !compresses(clientId))) { open(stream, head, session, clientId, key, offered); return }
     if (!tailnet) { refuse(stream, '403 Forbidden'); return }
     // A desktop the launch script recorded since this listener last read the record is let in; anyone else is not.
     void tailnet.desktops.refresh().catch(() => undefined).then(() => { if (admits(clientId)) open(stream, head, session, clientId, key, offered); else refuse(stream, '403 Forbidden') })

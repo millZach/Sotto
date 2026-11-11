@@ -94,9 +94,10 @@ export interface PhoneAccessOptions {
   readonly quitTimeoutMs?: number
   /**
    * What a headless host's tailnet listener takes beyond a phone listener's (ADR-0053): which clients are desktops, the
-   * features only they are offered, the receipts it shares with the host's other listener, and what health and hello say.
+   * features only they are offered, the receipts it shares with the host's other listener, and what health and hello say;
+   * and, on a test host only, whether its phones are sent compressed messages (`compressPhones`, #2394).
    */
-  readonly listener?: Pick<SocketServerOptions, 'onProductEventAnswer' | 'signIns' | 'opencodeSignIn' | 'watcherDesktops' | 'clientUpdates' | 'receipts' | 'pullRequestConfirmations' | 'about' | 'phoneAccess' | 'onRevoked' | 'sottoVersion' | 'hostUpdate' | 'delegation' | 'branchMoves'>
+  readonly listener?: Pick<SocketServerOptions, 'onProductEventAnswer' | 'signIns' | 'opencodeSignIn' | 'watcherDesktops' | 'clientUpdates' | 'receipts' | 'pullRequestConfirmations' | 'about' | 'phoneAccess' | 'onRevoked' | 'sottoVersion' | 'hostUpdate' | 'delegation' | 'branchMoves' | 'compressPhones'>
     & { readonly desktops?: TailnetAdmission['desktops'] | undefined }
 }
 
