@@ -78,7 +78,8 @@ function Dot({ device }: { readonly device: HostDevice }): ReactNode {
  * Tailscale and SSH setup. Machines Sotto can add come first; the ones it cannot use now are listed greyed
  * with the reason, and are read out with it. **Another SSH host…** is always last and switches the field to
  * typing a host. From the keyboard: the arrow keys, Home and End move, typed letters jump to a name, Enter
- * or Space picks, and Escape closes the list before it closes the dialog.
+ * or Space picks. Escape closes a list the user has moved in or opened before it closes the dialog; the list
+ * that opened by itself with the dialog is not in its way, and one Escape closes the dialog (ADR-0200).
  */
 export function DevicePicker({ devices, failed = false, tailscale, saved, value, onPick, onOther, disabled, autoFocus = false }: {
   /** Null while the devices are being read. */
@@ -99,6 +100,8 @@ export function DevicePicker({ devices, failed = false, tailscale, saved, value,
   // The list opens with the dialog, since choosing a machine is what Add host is for.
   const [open, setOpen] = useState(true)
   const [active, setActive] = useState(-1)
+  /** True until the user moves in the list or opens it: the list is as the dialog opened it. One the user came back to, from a typed host, is theirs from the start. */
+  const asOpened = useRef(!autoFocus)
   const typed = useRef({ text: '', at: 0 })
   /** When Enter or Space was last handled, so the click a browser adds after it does not act twice. */
   const keyed = useRef(0)
@@ -149,7 +152,10 @@ export function DevicePicker({ devices, failed = false, tailscale, saved, value,
   }
   const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>): void => {
     if (event.key === 'Enter' || event.key === ' ') keyed.current = Date.now()
+    // Escape on the list as the dialog opened it is the dialog's to answer.
+    if (event.key === 'Escape' && shown && asOpened.current) return
     const letter = event.key.length === 1 && event.key !== ' ' && !event.ctrlKey && !event.metaKey && !event.altKey
+    if (letter || ['ArrowDown', 'ArrowUp', 'Home', 'End', 'PageDown', 'PageUp', 'Enter', ' '].includes(event.key)) asOpened.current = false
     if (!shown) {
       if (['ArrowDown', 'ArrowUp', 'Home', 'End', 'Enter', ' '].includes(event.key) || letter) {
         event.preventDefault()
@@ -192,6 +198,7 @@ export function DevicePicker({ devices, failed = false, tailscale, saved, value,
       onClick={() => {
         // A click a screen reader sends has no key before it; one a browser adds after Enter or Space was handled already.
         if (Date.now() - keyed.current < 500) return
+        asOpened.current = false
         if (shown) close(); else { setOpen(true); setActive(firstChoice()) }
       }}
       onKeyDown={onKeyDown}>

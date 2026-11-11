@@ -51,8 +51,8 @@ Zach first picked a terminal running the client's sign-in command, and the proto
 
 **8. The smaller faults, on the pages that own them.**
 
-- Add host is opened from its own page, where Threads is reachable, so its offer to have an agent set the host up is true again. Escape closes the dialog in one press while its device list is as it opened.
-- **Get the iPhone beta** moves from the setup card to the Phones group in Settings › Hosts & phones. **Let phones connect** does not stay on when Tailscale is missing; it says phones need Tailscale, and the Tailscale row above it has Get Tailscale.
+- Add host is opened from its own page, where Threads is reachable, so its offer to have an agent set the host up is true again. Until the setup card goes, the dialog it opens says only "then add it". Escape closes the dialog in one press while its device list is as it opened; a list the user has moved in, opened, or come back to from a typed host closes first, as before.
+- **Get the iPhone beta** moves from the setup card to the Phones group in Settings › Hosts & phones. **Let phones connect** does not stay on when Tailscale is missing; it says phones need Tailscale, and the Tailscale row above it has Get Tailscale. That is for a press that turns it on. A switch already on when Tailscale goes away stays on, as a failed step with Try again, so phone access comes back with Tailscale. The setup card's own switch follows the same rule until the card goes, with Get Tailscale beside it.
 - A note never covers the control it lights, and nothing clips at 820x560.
 - The first note names the agents this build offers, and every path is written with ›.
 

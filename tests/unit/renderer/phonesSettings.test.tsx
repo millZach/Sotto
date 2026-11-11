@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import userEvent from '@testing-library/user-event'
 import { afterEach, expect, it, vi } from 'vitest'
 import { PhonesSettings } from '../../../src/renderer/src/features/settings/PhonesSettings'
+import type { HostsBridge } from '../../../src/shared/hosts'
 import type { PairedPhone, PhonesCommand, PhonesState } from '../../../src/shared/phones'
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks() })
@@ -222,4 +223,64 @@ it('explains cleanup when the saved record could not be read', async () => {
 it('keeps pairing unavailable as soon as the setting turns off', async () => {
   show({ ...READY, enabled: false })
   expect(await screen.findByRole('button', { name: 'Show a pairing code' })).toBeDisabled()
+})
+
+it('opens the iPhone beta’s TestFlight page from the Phones card, and gives the address when the browser does not open (ADR-0200)', async () => {
+  const openExternalLink = vi.fn(async () => ({ ok: true as const }))
+  vi.stubGlobal('sotto', { openExternalLink })
+  const user = userEvent.setup()
+  const { bridge } = fixture(OFF)
+  const view = render(<PhonesSettings phoneAccess={false} phoneAccessName="" onUpdateSettings={vi.fn(async () => true)} onOpenHosts={vi.fn()} bridge={bridge} />)
+  await user.click(screen.getByRole('button', { name: 'Get the iPhone beta' }))
+  expect(openExternalLink).toHaveBeenCalledWith('https://testflight.apple.com/join/dJFTeyzp')
+  expect(await screen.findByText('Opened in your browser')).toBeInTheDocument()
+  view.unmount()
+  vi.stubGlobal('sotto', { openExternalLink: vi.fn(async () => ({ ok: false as const })) })
+  render(<PhonesSettings phoneAccess={false} phoneAccessName="" onUpdateSettings={vi.fn(async () => true)} onOpenHosts={vi.fn()} bridge={bridge} />)
+  await user.click(screen.getByRole('button', { name: 'Get the iPhone beta' }))
+  expect(await screen.findByText('Your browser did not open. On your iPhone, go to testflight.apple.com/join/dJFTeyzp instead.')).toBeInTheDocument()
+})
+
+const NEEDS_TAILSCALE = 'Phones reach this computer over Tailscale, which is not installed here, so this stayed off. Get Tailscale above, then turn it on.'
+
+it('Tailscale not installed, as the page already knows: Let phones connect stays off and says why (ADR-0200)', async () => {
+  const { bridge } = fixture(OFF)
+  const update = vi.fn(async () => true), user = userEvent.setup()
+  const hostsBridge = { tailscale: vi.fn(async () => ({ state: 'missing' as const })) } as unknown as HostsBridge
+  const { container } = render(<PhonesSettings phoneAccess={false} phoneAccessName="" onUpdateSettings={update} onOpenHosts={vi.fn()} bridge={bridge} hostsBridge={hostsBridge} />)
+  await waitFor(() => expect(hostsBridge.tailscale).toHaveBeenCalled())
+  const toggle = screen.getByRole('switch', { name: 'Let phones connect' })
+  await user.click(toggle)
+  expect(await within(container.querySelector('.phones-switch')!).findByRole('alert')).toHaveTextContent(NEEDS_TAILSCALE)
+  expect(toggle).toHaveAttribute('aria-checked', 'false')
+  expect(update).not.toHaveBeenCalled()
+})
+
+it('Tailscale not installed, found when phone access checks: the switch goes back off and says why (ADR-0200)', async () => {
+  const { bridge, push } = fixture(OFF)
+  const user = userEvent.setup()
+  const saved: boolean[] = []
+  function Page(): React.ReactNode {
+    const [on, setOn] = React.useState(false)
+    return <PhonesSettings phoneAccess={on} phoneAccessName="" onOpenHosts={vi.fn()} bridge={bridge}
+      onUpdateSettings={async patch => { if (patch.phoneAccess !== undefined) { saved.push(patch.phoneAccess); setOn(patch.phoneAccess) } return true }} />
+  }
+  const { container } = render(<Page />)
+  const toggle = screen.getByRole('switch', { name: 'Let phones connect' })
+  await user.click(toggle)
+  await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'true'))
+  push({ enabled: true, phase: 'failed', tailscale: { status: 'failed', reason: 'missing' } })
+  await waitFor(() => expect(toggle).toHaveAttribute('aria-checked', 'false'))
+  expect(saved).toEqual([true, false])
+  expect(within(container.querySelector('.phones-switch')!).getByRole('alert')).toHaveTextContent(NEEDS_TAILSCALE)
+})
+
+it('a switch that was already on when Tailscale went away is left on, with the failed step and Try again', async () => {
+  const { update } = show({ ...READY, phase: 'failed', tailscale: { status: 'failed', reason: 'missing' }, serve: { status: 'waiting' }, address: null })
+  await screen.findByRole('img', { name: 'Failed' })
+  expect(screen.getByRole('switch', { name: 'Let phones connect' })).toHaveAttribute('aria-checked', 'true')
+  expect(step('Tailscale is running')).toHaveTextContent('Tailscale isn’t installed on this computer.')
+  expect(within(step('Tailscale is running')).getByRole('button', { name: 'Try again' })).toBeInTheDocument()
+  expect(update).not.toHaveBeenCalled()
+  expect(screen.queryByText(NEEDS_TAILSCALE)).toBeNull()
 })

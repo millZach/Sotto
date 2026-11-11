@@ -101,6 +101,25 @@ it('opens and closes the list on a click with no key before it, the way a screen
   expect(picker.getAttribute('aria-expanded')).toBe('true')
 })
 
+it('closes Add host with one Escape while the device list is as it opened, and the list first once the user has moved in it (ADR-0200)', async () => {
+  const { bridge } = fixture([]), user = userEvent.setup()
+  settings(bridge)
+  const first = await openAddHost(user)
+  expect(within(first.dialog).getByRole('combobox', { name: 'Device' }).getAttribute('aria-expanded')).toBe('true')
+  await user.keyboard('{Escape}')
+  expect(screen.queryByRole('dialog')).toBeNull()
+  await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Add host' })))
+  // Moving in the list makes it the user's: Escape closes it, and the next one closes the dialog.
+  const second = await openAddHost(user)
+  const picker = within(second.dialog).getByRole('combobox', { name: 'Device' })
+  await user.keyboard('{ArrowDown}')
+  await user.keyboard('{Escape}')
+  expect(picker.getAttribute('aria-expanded')).toBe('false')
+  expect(screen.getByRole('dialog', { name: 'Add host' })).toBeTruthy()
+  await user.keyboard('{Escape}')
+  expect(screen.queryByRole('dialog')).toBeNull()
+})
+
 it('types a host through Another SSH host, and Choose from your devices goes back to the list', async () => {
   const { bridge, command } = fixture([]), user = userEvent.setup()
   settings(bridge)

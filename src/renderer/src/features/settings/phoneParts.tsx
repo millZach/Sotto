@@ -1,12 +1,57 @@
-import React, { type ReactNode } from 'react'
+import React, { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Circle, CircleCheck, CircleX, Smartphone } from 'lucide-react'
 import { Trans, useLingui } from '@lingui/react/macro'
-import type { PairedPhone } from '../../../../shared/phones'
+import type { PairedPhone, PhonesState } from '../../../../shared/phones'
+import type { SettingsPatch } from '../../../../shared/settings'
 import { Button } from '../../components/Button'
 
 /** Pieces of phone access that this computer's Phones page and a remote host's Phones dialog share (ADR-0033, ADR-0050). */
 
 export type Step = 'ok' | 'failed' | 'waiting'
+
+/**
+ * Let phones connect, wherever its switch is shown (ADR-0200). Phones reach this computer over Tailscale, so turning
+ * the switch on where Tailscale is not installed turns it back off and says so, rather than leaving it on beside a
+ * step that failed. `tailscaleMissing` is what the page already knows, which spares the switch going on at all; the
+ * check phone access makes itself catches the rest. A switch that was already on when Tailscale went away is left
+ * alone: that is a failed step with Try again, and phone access comes back with Tailscale.
+ */
+export function usePhoneAccessSwitch(phoneAccess: boolean, state: PhonesState | null, onUpdateSettings: (patch: SettingsPatch) => Promise<boolean>, tailscaleMissing = false): {
+  readonly turn: (enabled: boolean) => void
+  /** The last press could not turn phone access on because Tailscale is not installed on this computer. */
+  readonly needsTailscale: boolean
+  readonly saveFailed: boolean
+} {
+  const [needsTailscale, setNeedsTailscale] = useState(false)
+  const [saveFailed, setSaveFailed] = useState(false)
+  /** True from a press that turned the switch on until phone access has checked Tailscale for it. */
+  const pressed = useRef(false)
+  const update = useRef(onUpdateSettings)
+  update.current = onUpdateSettings
+  const save = (enabled: boolean): void => { void update.current({ phoneAccess: enabled }).then(saved => setSaveFailed(!saved), () => setSaveFailed(true)) }
+  const tailscale = state?.tailscale
+  const found = tailscale?.status === 'ok'
+  const missing = tailscale?.status === 'failed' && tailscale.reason === 'missing'
+  useEffect(() => {
+    if (!pressed.current || !phoneAccess) return
+    if (found) { pressed.current = false; return }
+    if (!missing) return
+    pressed.current = false
+    setNeedsTailscale(true)
+    save(false)
+  }, [found, missing, phoneAccess])
+  // Once Tailscale is here, the sentence about it has nothing left to say.
+  useEffect(() => { if (found) setNeedsTailscale(false) }, [found])
+  useEffect(() => { if (!tailscaleMissing) setNeedsTailscale(false) }, [tailscaleMissing])
+  const turn = (enabled: boolean): void => {
+    setSaveFailed(false)
+    if (enabled && tailscaleMissing) { setNeedsTailscale(true); return }
+    setNeedsTailscale(false)
+    pressed.current = enabled
+    save(enabled)
+  }
+  return { turn, needsTailscale, saveFailed }
+}
 
 /** "Sep 26", with the year when it is not this one. */
 export function pairedOn(iso: string, now = new Date()): string {

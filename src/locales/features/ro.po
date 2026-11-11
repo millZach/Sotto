@@ -2927,6 +2927,10 @@ msgid "Get started"
 msgstr ""
 
 #: src/renderer/src/features/onboarding/PhoneStep.tsx
+msgid "Get Tailscale"
+msgstr ""
+
+#: src/renderer/src/features/onboarding/PhoneStep.tsx
 msgid "Get the iPhone beta"
 msgstr ""
 
@@ -4976,6 +4980,10 @@ msgstr ""
 
 #: src/renderer/src/features/onboarding/PhoneStep.tsx
 msgid "Phone access needs the local host, which is off. Turn on Run the local host in Settings › Hosts & phones, then restart Sotto."
+msgstr ""
+
+#: src/renderer/src/features/onboarding/PhoneStep.tsx
+msgid "Phones reach this computer over Tailscale, which is not installed here, so this stayed off. Get Tailscale, then turn it on."
 msgstr ""
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx
