@@ -71,6 +71,18 @@ describe('Hermes skills', () => {
     expect(catalog.skills.find(item => item.name === 'linked')?.path).toBe(join(shared, 'linked', 'SKILL.md'))
   })
 
+  it('stops a walk that goes too deep or too wide, and says which folder it did not finish', async () => {
+    const base = await mkdtemp(join(tmpdir(), 'sotto-hermes-walk-')); folders.push(base)
+    await skill(base, 'a/b/c/d/e/f', '---\nname: at-the-limit\n---\n')
+    await skill(base, 'a/b/c/d/e/f/g', '---\nname: past-it\n---\n')
+    const deep = await discoverHermesSkills('thread', '/project', [{ directory: base, scope: 'user' }])
+    expect(deep.skills.map(item => item.name)).toEqual(['at-the-limit'])
+    expect(deep.errors).toEqual([])
+    const wide = await discoverHermesSkills('thread', '/project', [{ directory: base, scope: 'user' }], 3)
+    expect(wide.skills).toEqual([])
+    expect(wide.errors).toEqual([{ path: base, message: 'This folder holds more folders than Sotto reads for skills. Some of its skills are not listed.' }])
+  })
+
   it('takes the picked skill, or a listed one whose name opens the words', async () => {
     const { own, shared, afk } = await roots()
     const catalog = await discoverHermesSkills('thread', '/project', [{ directory: own, scope: 'repo' }, { directory: shared, scope: 'user' }])
@@ -78,6 +90,8 @@ describe('Hermes skills', () => {
     expect(invokedHermesSkill('/afk Back in 2 hours', [], catalog)?.path).toBe(afk)
     // Hermes reads a typed name loosely, as it writes one.
     expect(invokedHermesSkill('/Code_Review the branch', [], catalog)?.name).toBe('code-review')
+    // Punctuation is not part of a name: a dot file, a full stop and a shout name no skill.
+    for (const words of ['/.afk is missing', '/afk. now', '/AFK!']) expect(invokedHermesSkill(words, [], catalog)).toBeUndefined()
     // A path, an unknown slash word and a name further in are ordinary words.
     expect(invokedHermesSkill('/etc/hosts is wrong', [], catalog)).toBeUndefined()
     expect(invokedHermesSkill('/nothing here', [], catalog)).toBeUndefined()
@@ -87,17 +101,23 @@ describe('Hermes skills', () => {
 
   it('sends the skill file as Hermes’s own invocation does, with the words beside the name as the instruction', () => {
     const path = join('/hermes', 'skills', 'afk', 'SKILL.md')
-    expect(hermesSkillPrompt('/afk Back in 2 hours.', { name: 'afk', path }, '---\nname: afk\n---\n\n# AFK\n')).toBe([
+    expect(hermesSkillPrompt('/afk Back in 2 hours.', { name: 'afk', path }, '---\nname: afk\n---\n\n# AFK\n', 'session')).toBe([
       '[IMPORTANT: The user has invoked the "afk" skill, indicating they want you to follow its instructions. The full skill content is loaded below.]',
       '', '---\nname: afk\n---\n\n# AFK', '', `[Skill directory: ${dirname(path)}]`, 'Resolve any relative paths in this skill against that directory.',
       '', 'The user has provided the following instruction alongside the skill invocation: Back in 2 hours.'].join('\n'))
     // The name alone leaves no instruction line; words before a picked name stay in the instruction.
-    expect(hermesSkillPrompt('/afk', { name: 'afk', path }, '# AFK')).not.toContain('following instruction')
-    expect(hermesSkillPrompt('In ~/site\n/afk two hours', { name: 'afk', path }, '# AFK')).toContain('skill invocation: In ~/site\ntwo hours')
+    expect(hermesSkillPrompt('/afk', { name: 'afk', path }, '# AFK', 'session')).not.toContain('following instruction')
+    expect(hermesSkillPrompt('In ~/site\n/afk two hours', { name: 'afk', path }, '# AFK', 'session')).toContain('skill invocation: In ~/site\ntwo hours')
     // A longer name that starts the same is not this skill's token.
-    expect(hermesSkillPrompt('/afk-later now', { name: 'afk', path }, '# AFK')).toContain('skill invocation: /afk-later now')
+    expect(hermesSkillPrompt('/afk-later now', { name: 'afk', path }, '# AFK', 'session')).toContain('skill invocation: /afk-later now')
     // Only the first mention is the invocation, however it was typed.
-    expect(hermesSkillPrompt('/Code_Review then explain /code-review', { name: 'code-review', path }, '# Review')).toContain('skill invocation: then explain /code-review')
+    expect(hermesSkillPrompt('/Code_Review then explain /code-review', { name: 'code-review', path }, '# Review', 'session')).toContain('skill invocation: then explain /code-review')
+    // A slash word before the picked name leaves it its own space, and the words keep theirs.
+    expect(hermesSkillPrompt('see /tmp/a /code-review fix  it', { name: 'code-review', path }, '# Review', 'session')).toContain('skill invocation: see /tmp/a fix  it')
+    // Hermes fills in its two template values; one it has no value for stays as written.
+    const templated = 'Run ${HERMES_SKILL_DIR}/scripts/go.sh for ${HERMES_SESSION_ID}, not ${HOME}'
+    expect(hermesSkillPrompt('/afk', { name: 'afk', path }, templated, 'session-1')).toContain(`Run ${dirname(path)}/scripts/go.sh for session-1, not \${HOME}`)
+    expect(hermesSkillPrompt('/afk', { name: 'afk', path }, templated, undefined)).toContain('for ${HERMES_SESSION_ID}, not')
   })
 
   it('has every project profile read the shared skills, and the adapter list both folders', async () => {

@@ -266,9 +266,11 @@ skills over ACP either, and `hermes skills list` has no machine-readable form.
 So the adapter reads the same two folders for the composer's list, and sends an
 invoked skill as Hermes's own invocation is worded: its note that the user
 invoked the skill, the skill file, the skill's folder, then the user's words as
-the instruction. One skill a message. Sotto does not run Hermes's preprocessing
-of a skill file (template values, config and setup notes); the model reads the
-file as written and loads supporting files with its own tools.
+the instruction. One skill a message. Sotto fills in the two template values
+Hermes fills in by default, `${HERMES_SKILL_DIR}` and `${HERMES_SESSION_ID}`.
+It does not run a skill's inline shell, which Hermes leaves off by default, or
+add Hermes's config, setup and supporting-file notes; the model loads
+supporting files with its own tools.
 
 A skill is invoked when it is chosen in the composer, and also when the message
 opens with `/` and the full name of a listed skill. The second is Hermes's
@@ -277,7 +279,20 @@ and their own clients expand it. Hermes's does not, so a typed name that did
 nothing would be a silent failure. A slash word that names no listed skill is
 still plain text. A skill is named by the word Hermes puts after the slash
 (`Code Review` is `/code-review`), and the folders are walked as Hermes walks
-them, links followed.
+them, links followed. A typed name is read as Hermes reads one: any case, `_`
+for `-`, nothing else, so `/.env is missing` invokes nothing. Sotto's walk has
+an end where Hermes's has none, six folders deep and 2,000 folders a root,
+because it runs before a message that opens with a slash word is sent and a
+link into a home folder would hold that message; a root past the limit is
+reported in the list as skipped. A message that opens with a path reads no
+folder at all.
+
+The list still offers three kinds of skill Hermes would not: one whose
+`platforms` leave out this system, one whose name two skills in a root share,
+and one named like a Hermes command. Leaving them out means copying a YAML list
+parser and Hermes's command table, which moves with each release, for cases
+that are rare on the one system Hermes threads run on; such a skill still
+sends its own file when invoked.
 
 Steering takes no skill. Hermes's `/steer` adds words to the running turn and
 expands nothing in them, so a steer that picks a skill, or opens with a listed
