@@ -171,13 +171,6 @@ export function receiptNeedsWatcher(operation: Pick<WatcherRecord['operations'][
 export const receiptRevision = (operation: Pick<WatcherRecord['operations'][number], 'deliveryState' | 'refusalCode' | 'creationUncertain'>): string =>
   observationDigest([operation.deliveryState, operation.refusalCode, operation.creationUncertain])
 /** Whether a finish still waits on the work it left running: its news rides with that work's work-settled news (#1190). */
-/** Whether Watcher was told the required checks passed on the pull request and commit this checks-passed fact names (#2226). */
-const requiredPassTold = (key: string, told: ReadonlySet<string> | undefined): boolean => {
-  if (!told?.size) return false
-  const passed = attentionFactParts(key)
-  for (const fact of told) { const said = attentionFactParts(fact); if (said.kind === 'required-passed' && said.pr === passed.pr && said.detail === passed.detail) return true }
-  return false
-}
 const busyFinish = (event: WatcherEvent): boolean => event.kind === 'turn-finished' && (event.backgroundWorkCount ?? 0) > 0
 /**
  * The work a finished turn is still waiting on: background work (Claude's background tasks), the roster's working
@@ -506,6 +499,13 @@ export class WatcherWakeUp {
   /** Unknown roster entries keep work unsettled, but only provider-confirmed working agents can become quiet. */
   private active(thread: AgentThread): boolean { return isWatcherWorkActive(thread) }
   /**
+   * Whether a thread may become quiet: its own turn is running. One whose turn ended and that only waits on its background
+   * work or monitoring, as a CI watch or a review does, has its held finish's line for that, at the same twenty minutes,
+   * and work-settled news when the work ends (#1152, Zach's pick on November 11, 2026). Quiet news beside it said the same
+   * thing twice, and read as an alarm while a thread only waited on a queued runner.
+   */
+  private mayGoQuiet(thread: AgentThread): boolean { return isThreadTurnRunning(thread) }
+  /**
    * The thread's work is confirmed ended: nothing running and nothing unknown. A sub-agent a restart left unknown may still
    * be running, so it keeps the turn unsettled until its provider says how it ended. A host that does not report the counts
    * leaves them unknown, so its threads never settle.
@@ -663,9 +663,10 @@ export class WatcherWakeUp {
   }
   /**
    * Whether a thread's pull requests say something Watcher has not been told that wakes it (#1190, #2226): checks that
-   * failed, the required checks passing or a merge. Checks that failed and then went back to running before the news went
-   * say nothing new, so the news no longer needs Watcher by itself. Every check passing on a commit whose required checks
-   * Watcher was told passed says nothing it must act on either. The rest of what they say rides with news that wakes it.
+   * failed, every check passing or a merge. Checks that failed and then went back to running before the news went say
+   * nothing new, so the news no longer needs Watcher by itself. The required checks passing while others still run rides
+   * (#2432): the merge train waits for every check, so every check passing wakes Watcher even when it was told of the
+   * required ones on that commit. The rest of what they say rides with news that wakes it.
    */
   private attentionUntold(target: WatcherThreadTarget): boolean {
     // Unread after a restart, before GitHub is read again, is unknown: news from before it keeps needing Watcher as it did.
@@ -673,7 +674,7 @@ export class WatcherWakeUp {
     if (!this.evidence.readsPullRequests(target)) return this.restoredUnread.has(targetKey(target))
     const told = this.toldAttention.get(targetKey(target))
     for (const fact of this.evidence.attentionFacts(target)) {
-      if (WAKING_ATTENTION.has(fact.kind) && !told?.has(fact.key) && !(fact.kind === 'checks-passed' && requiredPassTold(fact.key, told))) return true
+      if (WAKING_ATTENTION.has(fact.kind) && !told?.has(fact.key)) return true
     }
     return false
   }
@@ -1508,14 +1509,14 @@ export class WatcherWakeUp {
       }
     }
     this.observations.set(observationKey(thread), this.withLanding(observed, target, connected))
-    const eligible = watched.has(key) && !muted.has(key) && observed.fresh && this.active(thread) && !thread.requests.length && !isThreadClosed(thread)
+    const eligible = watched.has(key) && !muted.has(key) && observed.fresh && this.mayGoQuiet(thread) && !thread.requests.length && !isThreadClosed(thread)
       && !isWorkspaceThreadSettled(thread, this.project(snapshot, thread))
     if (!eligible || changedProgress) { progress.cancel?.(); delete progress.cancel }
     if (eligible && !progress.quiet && !progress.cancel) progress.cancel = this.schedule(() => {
       delete progress.cancel
       // Fresh live state and ownership, not the old snapshot closed over by a timer.
       const current = this.options.snapshot(), live = this.lookUp(current, target)
-      if (!live || !this.connected(current, live) || !this.active(live) || live.requests.length || isThreadClosed(live)
+      if (!live || !this.connected(current, live) || !this.mayGoQuiet(live) || live.requests.length || isThreadClosed(live)
         || isWorkspaceThreadSettled(live, this.project(current, live)) || !this.watchedTargets().some(item => targetKey(item) === key)) return
       // Progress in an update whose pass is still owed is progress all the same: that pass starts the deadline again.
       if ((this.options.progress?.(target, key) ?? watcherProgressFingerprint(live)) !== progress.fingerprint) return
@@ -1882,7 +1883,7 @@ export class WatcherWakeUp {
     }
     if (!this.connected(snapshot, thread)) return false
     if (event.kind === 'needs-user') return thread.requests.some(card => card.id === event.requestCardId && requestRevision(card) === event.revision)
-    if (event.kind === 'quiet') return !!this.progress.get(targetKey(event.target))?.quiet && this.active(thread) && !thread.requests.length
+    if (event.kind === 'quiet') return !!this.progress.get(targetKey(event.target))?.quiet && this.mayGoQuiet(thread) && !thread.requests.length
     if (event.kind === 'at-rest') return this.restState(snapshot, thread, event.target) === event.revision
     // Work that started again withdraws it; stillDue keeps the turn owed it.
     if (event.kind === 'work-settled') return finishedTurn(thread)?.id === event.turnId && this.workSettled(thread, event.target.hostId)

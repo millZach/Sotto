@@ -4,7 +4,7 @@ import { expect, test } from '@playwright/test'
 
 import { E2E_TRANSCRIPT } from '../../src/shared/e2e'
 import { evidenceDirectory } from '../fixtures/evidence'
-import { closeSotto, launchSotto, reachFirstRunStep, sottoWidget } from './support/sottoLaunch'
+import { closeSotto, launchSotto, reachSetupStop, setupNote, sottoWidget } from './support/sottoLaunch'
 
 const evidence = evidenceDirectory('artifacts/widget-dictation')
 
@@ -17,11 +17,13 @@ test('dictation reveals the widget, delivers text and hides the widget again', a
   )
   try {
     await mkdir(evidence, { recursive: true })
-    await reachFirstRunStep(page, 'shortcut', { microphone: 'test' })
+    // Setup's shortcut stop, with Settings' microphone test run at the microphone stop on the way.
+    await reachSetupStop(page, 'microphone')
+    await page.locator('.settings-microphone-test').getByRole('button', { name: 'Test microphone', exact: true }).click()
+    await expect(setupNote(page)).toContainText('Sotto heard you. Your microphone works.')
+    await reachSetupStop(page, 'shortcut')
     await page.evaluate(() => window.sotto!.updateSettings({ showWidgetWhenIdle: false, autoPaste: true, reducedMotion: 'on' }))
     await expect.poll(visible).toBe(false)
-    const target = page.getByLabel('Paste test')
-    await target.focus()
     await page.evaluate(() => window.sottoE2E!.triggerShortcut())
     await expect.poll(visible).toBe(true)
     const widget = app.windows().find(window => window.url().endsWith('/widget.html'))!
@@ -29,8 +31,7 @@ test('dictation reveals the widget, delivers text and hides the widget again', a
     await widget.screenshot({ path: join(evidence, 'widget-listening.png') })
 
     await page.evaluate(() => window.sottoE2E!.triggerShortcut())
-    await expect(target).toHaveValue(E2E_TRANSCRIPT)
-    expect(await page.evaluate(() => window.sottoE2E!.snapshot())).toMatchObject({
+    await expect.poll(() => page.evaluate(() => window.sottoE2E!.snapshot())).toMatchObject({
       clipboardText: E2E_TRANSCRIPT, pasteAttempts: 1,
     })
     await page.screenshot({ path: join(evidence, 'text-delivered.png') })

@@ -267,6 +267,20 @@ it('folds the newest truth, drops answered questions and lets failure replace fi
   expect(f.delivered[0]!.events.map(event => event.kind)).not.toContain('needs-user')
 })
 
+// November 10-11, 2026 (#1152): Vellum, waiting on a queued GitHub macOS runner, and the onboarding thread, waiting on a Sol
+// review, were called quiet beside their held finish. Zach's pick: the held finish's line is the one check.
+it('sends no quiet news for a thread whose turn ended and that only waits on its background work or monitoring (#1152)', async () => {
+  const f = fixture()
+  f.thread.backgroundWork = [backgroundTask(1)]; f.thread.monitoring = [monitor(1)]
+  f.thread.status = 'idle'; f.thread.lastTurn = { id: 'turn-1', status: 'completed' }
+  f.wakes.observe(); await f.advance(WATCHER_QUIET_MS + WATCHER_BATCH_MS)
+  const events = f.delivered.flatMap(news => news.events)
+  expect(events.filter(event => event.kind === 'quiet')).toEqual([])
+  // Its finish, held for that work, goes by itself after the same twenty minutes, and says the thread is idle.
+  expect(events.filter(event => event.kind === 'turn-finished').map(event => event.backgroundWorkCount)).toEqual([2])
+  expect(f.wakes.heldMinutes(events.find(event => event.kind === 'turn-finished')!)).toBe(20)
+})
+
 it('has one cancellable quiet deadline per episode, ignores republished shells and resets on real progress', async () => {
   const f = fixture()
   expect(f.timers.size).toBe(1)
@@ -1736,7 +1750,7 @@ it('tells a finish whose work never settles once it has waited twenty minutes, w
   expect(f.delivered[0]!.events.find(event => event.kind === 'turn-finished')!.backgroundWorkCount).toBe(1)
 })
 
-it('wakes Watcher for a pull request only when its checks fail, its required checks pass or it merges, and lets the rest ride (#2226)', async () => {
+it('wakes Watcher for a pull request only when its checks fail, every check passes or it merges, and lets the rest ride (#2226, #2432)', async () => {
   const f = fixture()
   f.thread.pullRequests = [{ url: prUrl, number: 9, title: 'Synthetic pull request', state: 'open', draft: false, source: 'linked', linkedAt: centerTime }]
   let settled = 0
@@ -1753,12 +1767,12 @@ it('wakes Watcher for a pull request only when its checks fail, its required che
   expect(await read({ checks: 'pending', checkCount: 4 })).toBe(0)
   expect(await read({ head: 'h2', checks: 'pending', checkCount: 4 })).toBe(0)
   expect(await read({ head: 'h2', checks: 'failed', checkCount: 4 })).toBe(1)
-  // The required checks passing on a commit wakes Watcher; every check passing on that commit after them says nothing new.
-  expect(await read({ head: 'h2', checks: 'pending', checkCount: 4, requiredPassed: true })).toBe(2)
+  // The required checks passing while others run rides, since the merge train waits for every check (#2432); every check
+  // passing on that commit wakes Watcher, once.
+  expect(await read({ head: 'h2', checks: 'pending', checkCount: 4, requiredPassed: true })).toBe(1)
   expect(await read({ head: 'h2', checks: 'passed', checkCount: 4 })).toBe(2)
   expect(await read({ head: 'h2', checks: 'passed', checkCount: 4 })).toBe(2)
-  // A conflict, approval, a review asking for changes and comments moving wake no one: they ride with what does, and so
-  // does every check passing after the required ones, which Watcher has not been told in those words.
+  // A conflict, approval, a review asking for changes and comments moving wake no one: they ride with what does.
   expect(await read({ head: 'h2', checks: 'passed', conflicting: false })).toBe(2)
   expect(await read({ head: 'h2', checks: 'passed', conflicting: true })).toBe(2)
   expect(await read({ head: 'h2', checks: 'passed', reviewApproved: true })).toBe(2)
@@ -1766,7 +1780,7 @@ it('wakes Watcher for a pull request only when its checks fail, its required che
   expect(await read({ head: 'h2', remarks: 'comments:1' })).toBe(2)
   expect(await read({ head: 'h2', remarks: 'comments:2' })).toBe(2)
   expect(watcherPullRequestWords(f.wakes.untoldAttention(centerTarget), f.thread)).toBe(
-    'Pull request #9: all checks passed on its newest commit; approved; conflicts with its base branch; a review asks for changes; its comments or reviews changed; read them on GitHub.')
+    'Pull request #9: approved; conflicts with its base branch; a review asks for changes; its comments or reviews changed; read them on GitHub.')
   // A new commit's checks passing wakes Watcher again, and what waited goes with it.
   expect(await read({ head: 'h3', checks: 'passed', checkCount: 4 })).toBe(3)
   expect(watcherPullRequestWords(f.wakes.untoldAttention(centerTarget), f.thread)).toBeUndefined()
@@ -2100,13 +2114,39 @@ it('ignores a late pull request read that is older than the one Sotto holds', ()
   expect([...store.attentionByPullRequest(centerTarget).values()].flatMap(kinds => [...kinds])).not.toContain('conflicting')
 })
 
-it('wakes Watcher when the checks the base branch requires pass, before every check has', async () => {
+// November 10, 2026 (#2432): #2408's news said its required checks passed while both iPhone journeys still ran, and Watcher
+// had to hold the merge by hand. Zach's pick: the train waits for every check.
+it('says nothing of the required checks passing until every check has finished, which wakes Watcher', async () => {
   const f = fixture()
   f.thread.pullRequests = [{ url: prUrl, number: 9, title: 'Synthetic pull request', state: 'open', draft: false, source: 'linked', linkedAt: centerTime }]
-  f.wakes.pullRequest({ url: prUrl, head: 'h1', observedAt: new Date(f.now()).toISOString(), availability: 'available', checks: 'pending', checkCount: 5, requiredPassed: true })
+  const read = (said: Partial<Parameters<WatcherWakeUp['pullRequest']>[0]>) =>
+    f.wakes.pullRequest({ url: prUrl, head: 'h1', observedAt: new Date(f.now()).toISOString(), availability: 'available', checkCount: 5, ...said })
+  read({ checks: 'pending', requiredPassed: true, pendingChecks: { required: 0, optional: 2 } })
+  await f.advance(WATCHER_BATCH_MS)
+  expect(f.delivered).toHaveLength(0)
+  expect(watcherPullRequestWords(f.wakes.evidence.attentionByPullRequest(centerTarget), f.thread)).toBeUndefined()
+  read({ checks: 'passed', requiredPassed: true })
   await f.advance(WATCHER_BATCH_MS)
   expect(f.delivered).toHaveLength(1)
-  expect(watcherPullRequestWords(f.wakes.evidence.attentionByPullRequest(centerTarget), f.thread)).toBe('Pull request #9: its required checks passed on its newest commit.')
+})
+
+// Review of #2443: an optional check that failed early was told, and nothing woke Watcher once the rest finished.
+it('wakes Watcher once every check has finished with the required ones passing, after an optional one failed early', async () => {
+  const f = fixture()
+  f.thread.pullRequests = [{ url: prUrl, number: 9, title: 'Synthetic pull request', state: 'open', draft: false, source: 'linked', linkedAt: centerTime }]
+  const read = (said: Partial<Parameters<WatcherWakeUp['pullRequest']>[0]>) =>
+    f.wakes.pullRequest({ url: prUrl, head: 'h1', observedAt: new Date(f.now()).toISOString(), availability: 'available', checkCount: 5, ...said })
+  read({ checks: 'failed', requiredPassed: false, pendingChecks: { required: 2, optional: 1 } })
+  await f.advance(WATCHER_BATCH_MS)
+  expect(f.delivered).toHaveLength(1)
+  f.wakes.settled(f.delivered[0]!.events, 'told'); await f.wakes.drained()
+  read({ checks: 'failed', requiredPassed: true, pendingChecks: { required: 0, optional: 1 } })
+  await f.advance(WATCHER_BATCH_MS)
+  expect(f.delivered).toHaveLength(1)
+  read({ checks: 'failed', requiredPassed: true })
+  await f.advance(WATCHER_BATCH_MS)
+  expect(f.delivered).toHaveLength(2)
+  expect(watcherPullRequestWords(f.wakes.evidence.attentionByPullRequest(centerTarget), f.thread)).toContain('every check finished on its newest commit and its required checks passed, but an optional check did not')
 })
 
 it('says a busy finish once beside its work-settled news, and lets Sotto’s detail give way before any event', () => {
@@ -2135,7 +2175,8 @@ it('wakes Watcher again when checks fail again on the same commit after it was t
 
 it('ends a required-checks pass when the pull request moves to another commit', () => {
   const store = new WatcherEvidenceStore()
-  store.pullRequest(centerTarget, { url: prUrl, head: 'h1', observedAt: '2026-10-19T10:00:01.000Z', availability: 'available', checks: 'pending', requiredPassed: true })
+  // Every check finished, the required ones passing and an optional one not (#2432): only then is the pass a fact.
+  store.pullRequest(centerTarget, { url: prUrl, head: 'h1', observedAt: '2026-10-19T10:00:01.000Z', availability: 'available', checks: 'failed', requiredPassed: true })
   expect([...store.attentionByPullRequest(centerTarget).values()].flatMap(kinds => [...kinds])).toContain('required-passed')
   store.pullRequest(centerTarget, { url: prUrl, head: 'h2', observedAt: '2026-10-19T10:00:02.000Z', availability: 'available', checks: 'unknown', conflicting: false })
   expect([...store.attentionByPullRequest(centerTarget).values()].flatMap(kinds => [...kinds])).not.toContain('required-passed')

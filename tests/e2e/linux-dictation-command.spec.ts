@@ -5,19 +5,21 @@ import { promisify } from 'node:util'
 import { expect, test, type Page } from '@playwright/test'
 import { E2E_TRANSCRIPT } from '../../src/shared/e2e'
 import { evidenceDirectory } from '../fixtures/evidence'
-import { closeSotto, firstRunForwardButton, launchSotto, openPage, reachFirstRunStep, skipThreadsTour } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openPage, reachSetupStop, setupForwardButton, setupNote } from './support/sottoLaunch'
 
 const run = promisify(execFile)
 const sizes = [[1600, 1000], [1280, 800], [820, 560]] as const
 
-async function checkOnboardingLayout(page: Page, words: RegExp, buttonName: string | RegExp): Promise<void> {
+/** A first-run setup note at every size, dark and light: its words show, its way forward is in view, and the page is no wider than the window. */
+async function checkSetupLayout(page: Page, words: RegExp, forward: string | RegExp): Promise<void> {
   for (const appearance of ['dark', 'light'] as const) {
     await page.evaluate(async appearance => window.sotto!.updateSettings({ appearance, reducedMotion: 'on' }), appearance)
     await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)
     for (const [width, height] of sizes) {
       await page.setViewportSize({ width, height })
-      await expect(page.getByText(words)).toBeVisible()
-      const next = page.getByRole('button', { name: buttonName, exact: true })
+      await expect(setupNote(page).getByText(words)).toBeVisible()
+      const next = setupForwardButton(page)
+      await expect(next).toHaveText(forward)
       await next.scrollIntoViewIfNeeded()
       await expect(next).toBeInViewport()
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
@@ -48,22 +50,26 @@ test('compositor commands reach Linux dictation and Settings explains the bindin
     await run(join(process.cwd(), 'apps/omarchy/sotto'), ['dictation', verb, ...(at === undefined ? [] : ['--at', String(at)])], { env: { ...process.env, XDG_RUNTIME_DIR: userData } })
   }
   try {
-    await expect(page.getByText(/Hold F9 to talk after installing/)).toBeVisible()
-    await checkOnboardingLayout(page, /Hold F9 to talk after installing/, 'Get started')
-    await reachFirstRunStep(page, 'speech-model', { microphone: 'skip' })
-    // An E2E run offers Sotto's own model as already here and reports it ready without downloading it.
-    await expect(page.getByRole('heading', { name: 'Choose a speech model' })).toBeVisible()
-    await page.getByRole('button', { name: 'Use Parakeet v3' }).click()
-    await page.getByRole('button', { name: 'Continue', exact: true }).click()
-    await expect(page.getByText(/Install Sotto’s compositor bindings in Hyprland/)).toBeVisible()
-    await checkOnboardingLayout(page, /Install Sotto’s compositor bindings in Hyprland/, /^(Continue|Skip for now)$/)
+    await expect(setupNote(page).getByRole('heading', { name: 'Talk to your computer and your coding agents' })).toBeVisible()
+    await checkSetupLayout(page, /First, pick how Sotto looks\./, 'Start')
+    // The microphone stop is passed untested.
+    await reachSetupStop(page, 'speech-model')
+    // An E2E run offers Sotto's own model as already here and reports it ready without downloading it. The stop lights
+    // Settings' own speech model list.
+    await expect(setupNote(page).getByRole('heading', { name: 'Choose a speech model' })).toBeVisible()
+    await page.locator('#settings-transcription select').first().selectOption({ label: 'Parakeet v3' })
+    await expect(setupForwardButton(page)).toHaveText('Continue')
+    await setupForwardButton(page).click()
+    await expect(page.locator('.setup-walk')).toHaveAttribute('data-stop', 'shortcut')
+    await checkSetupLayout(page, /Hold F9, say something, and let go\./, /^(Continue|Skip for now)$/)
     await page.setViewportSize({ width: 820, height: 560 })
     await capture('onboarding-820x560-light.png')
     await page.setViewportSize({ width: 1280, height: 800 })
-    for (let step = 0; step < 4; step++) await firstRunForwardButton(page).click()
-    await page.getByRole('button', { name: 'Finish setup' }).focus()
+    await reachSetupStop(page, 'end')
+    await setupForwardButton(page).focus()
     await page.keyboard.press('Enter')
-    await skipThreadsTour(page)
+    await expect(page.locator('.setup-walk')).toHaveCount(0)
+    await expect(page.getByRole('complementary', { name: 'Thread sidebar' })).toBeVisible()
     await page.evaluate(async () => window.sotto!.updateSettings({ microphoneSkipped: false }))
     await openPage(page, 'Dictate')
     const room = page.getByRole('region', { name: 'Dictation', exact: true })

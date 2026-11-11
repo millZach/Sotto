@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
+import { nearestModelEffort } from '../../shared/reasoningEfforts'
 import { version as appVersion } from '../../../package.json'
 import { agentProjectSchema, attachmentReferences, type AgentHostSnapshot, type AgentModel, type AgentRuntimeMode, type AgentThread } from '../../shared/agents'
 import { mergeAgentActivities, type OwnServerTurn } from '../../shared/agentActivity'
@@ -14,7 +15,7 @@ import { acpImageBlocks, deliverAttachments, withAttachedFilesNote } from './att
 import type { BrowserAgentTools } from './browserAgentServer'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
 import { hermesActivities, HERMES_THINKING_ID_PREFIX } from './hermesActivity'
-import { hermesCatalog, hermesModelRoute, hermesModelValue, hermesSettingsOf, HERMES_RUNTIME_MODES } from './hermesModels'
+import { hermesCatalog, hermesModelRoute, hermesModelValue, hermesSettingsOf, hermesEffortValue, hermesHasEffort, HERMES_RUNTIME_MODES } from './hermesModels'
 import { hermesAnswer, hermesDecline, hermesPending, type HermesPending, type HermesToolDetail } from './hermesRequests'
 import { compareHermesVersions, HermesRejected, HermesRpc, HermesUncertain, HERMES_ACP_VERSION, HERMES_CLI_VERSION,
   findHermesExecutable, readHermesVersion, type HermesFrame } from './hermesRpc'
@@ -148,6 +149,8 @@ interface Connection {
   /** The model and effort this process's session is on, as the harness last said. */
   model: string | undefined
   effort: string | undefined
+  appliedEffort?: string
+  supportsEffort?: boolean
   /** The tool calls this process has shown, by ID: a permission request names only its call, and its card is built from this. */
   tools: Map<string, HermesToolDetail>
 }
@@ -220,6 +223,7 @@ export class HermesAcpHost implements ProviderHost {
   private servers: readonly OwnServer[] = []
   private httpToolServers = false
   /** Whether the harness advertised image prompts on the current overlay: unknown until a process has started on it. */
+  private harnessEffort = false
   private harnessImages = false
   private generation = 0
   private writing = Promise.resolve()
@@ -395,7 +399,7 @@ export class HermesAcpHost implements ProviderHost {
   private readHarnessImages(connection: Connection, images: boolean): void {
     if (this.stale(connection) || images === this.harnessImages) return
     this.harnessImages = images
-    this.state.models = hermesCatalog(this.servers, images)
+    this.state.models = hermesCatalog(this.servers, images, this.harnessEffort)
     this.emit()
   }
   /** The overlay from the current record, written whenever it changed: a record change makes processes outdated. */
@@ -443,7 +447,8 @@ export class HermesAcpHost implements ProviderHost {
       this.assertGeneration(generation)
       // Images wait for the harness to say it takes them, which a process started on this overlay does.
       this.harnessImages = false
-      const models = hermesCatalog(this.servers)
+      this.harnessEffort = compareHermesVersions(version, '0.22.6') >= 0
+      const models = hermesCatalog(this.servers, false, this.harnessEffort)
       if (!models.length) throw new ProviderUnavailable('signed-out', 'Hermes has no models it can run yet. Add a model server, or an API provider’s OpenAI-compatible address and key, under Your own model servers. Then connect again. Your threads are kept.', version)
       this.executable = executable
       await this.writePatch()
@@ -493,7 +498,7 @@ export class HermesAcpHost implements ProviderHost {
       const servers = saved ? hermesServers(saved, await this.runtime.keys.read()) : undefined
       if (!servers || generation !== this.generation) return
       this.servers = servers
-      this.state.models = hermesCatalog(servers, this.harnessImages)
+      this.state.models = hermesCatalog(servers, this.harnessImages, this.harnessEffort)
       // Only a new overlay outdates a process: a save that leaves it the same, such as a keyed server's, restarts nothing.
       if (JSON.stringify(servers) !== this.patchText) {
         this.patchRevision++
@@ -503,7 +508,17 @@ export class HermesAcpHost implements ProviderHost {
     })().catch(() => undefined)
   }
   /** A keyed server was added (ADR-0124): Hermes keeps its own copy of the key, as OpenCode does, and can run it from now on. */
-  async keepKey(id: string, key: string): Promise<void> { await this.runtime.keys.keep(id, key); this.ownServersChanged() }
+  async keepKey(id: string, key: string): Promise<void> {
+    await this.runtime.keys.keep(id, key)
+    // A replacement changes credentials without changing the overlay's model records. Reopen each viewer when idle
+    // so project() writes the new .env and asks the gateway to rescan its profile before the next turn.
+    if (this.state.connected) {
+      this.patchRevision++
+      for (const [threadId, connection] of this.connections) if (this.stale(connection)) this.outdated.add(threadId)
+      this.emit()
+    }
+    this.ownServersChanged()
+  }
   /** A keyed server was removed: Hermes's copy of its key goes with it, from its record and every profile's `.env`. */
   async forgetKey(id: string): Promise<void> { await this.runtime.forgetKey(id); this.ownServersChanged() }
   /**
@@ -587,7 +602,7 @@ export class HermesAcpHost implements ProviderHost {
       connection.replaying = true
       await connection.rpc.request('session/resume', { sessionId: alias.hermesSessionId, cwd: alias.cwd, mcpServers }, value => { this.readSettings(connection, value); connection.replaying = false })
       if (generation !== this.generation || this.connections.get(id) !== connection) throw new HermesUncertain('Hermes’s connection changed while the thread was opening.')
-      await this.applySettings(alias, connection)
+      await this.applySettings(alias, connection, id)
       this.log.pin(id); this.reaper.touch(id)
       const thread = this.thread(id)
       if (!this.turns.get(id) || this.turns.get(id)!.ended) thread.status = 'idle'
@@ -652,9 +667,24 @@ export class HermesAcpHost implements ProviderHost {
 
   /** The model and effort a session answer names, as the harness last said them. */
   private readSettings(connection: Connection, value: unknown): void {
+    if (hermesHasEffort(value)) {
+      connection.supportsEffort = true
+      if (!this.harnessEffort) {
+        this.harnessEffort = true
+        this.state.models = hermesCatalog(this.servers, this.harnessImages, true)
+      }
+    }
+    if (record(value)?.configOptions && !hermesHasEffort(value)) {
+      connection.supportsEffort = false
+      if (this.harnessEffort) {
+        this.harnessEffort = false
+        this.state.models = hermesCatalog(this.servers, this.harnessImages)
+        this.emit()
+      }
+    }
     const settings = hermesSettingsOf(value)
     if (settings.model !== undefined) connection.model = settings.model
-    connection.effort = settings.effort
+    if (settings.effort !== undefined) connection.effort = settings.effort
   }
   /** Every frame from one thread's process. A request is answered on the process that asked, never another. */
   private frame(id: string, connection: Connection, frame: HermesFrame): void {
@@ -696,7 +726,11 @@ export class HermesAcpHost implements ProviderHost {
     const kind = String(update.sessionUpdate)
     if (kind === 'config_option_update') {
       const connection = this.connections.get(id)
-      if (connection) this.readSettings(connection, update)
+      if (connection) {
+        this.readSettings(connection, update)
+        // A notification may be replayed or precede an in-flight setting's reply. It is an observation,
+        // not authority to overwrite the newer choice that applySettings is about to send.
+      }
       return
     }
     if (kind === 'usage_update') {
@@ -875,7 +909,7 @@ export class HermesAcpHost implements ProviderHost {
         alias.hermesSessionId = sessionNewSchema.parse(value).sessionId; this.readSettings(connection, value); await this.persist()
       })
       this.assertGeneration(generation)
-      await this.applySettings(alias, connection)
+      await this.applySettings(alias, connection, command.threadId)
     } catch (error) {
       if (this.connections.get(command.threadId) === connection) this.connections.delete(command.threadId)
       this.close(connection)
@@ -890,13 +924,41 @@ export class HermesAcpHost implements ProviderHost {
   }
   private model(modelId: string): AgentModel | undefined { return this.state.models.find(model => model.id === modelId) }
   /** Put the session on the thread's model and effort before a prompt that needs them, read back from the answer. */
-  private async applySettings(alias: Alias, connection: Connection): Promise<void> {
+  private async applySettings(alias: Alias, connection: Connection, id: string): Promise<void> {
     const value = hermesModelValue(alias.modelId)
     if (value === undefined) throw new Error('This thread’s model is not one of your own model servers. Choose a model your servers offer, then send.')
     await connection.rpc.request('session/set_mode', { sessionId: alias.hermesSessionId, modeId: 'dont_ask' })
     if (connection.model !== alias.modelId) {
       await connection.rpc.request('session/set_model', { sessionId: alias.hermesSessionId, modelId: value })
       connection.model = alias.modelId
+    }
+    const levels = this.model(alias.modelId)?.reasoningEfforts ?? []
+    const fitted = connection.supportsEffort ? nearestModelEffort(alias.reasoningEffort, levels) : undefined
+    if (fitted && fitted !== alias.reasoningEffort) {
+      alias.reasoningEffort = fitted
+      this.thread(id).reasoningEffort = fitted
+      await this.persist()
+    }
+    const effort = hermesEffortValue(alias.reasoningEffort)
+    if (connection.supportsEffort && effort !== connection.appliedEffort) {
+      try {
+        await connection.rpc.request('session/set_config_option', { sessionId: alias.hermesSessionId, configId: 'reasoning_effort', value: effort }, value => this.readSettings(connection, value))
+        // A Default reset can read back the profile's resolved level; do not resend it before every prompt.
+        const observed = connection.effort
+        if (effort !== 'default' && observed && levels.includes(observed) && hermesEffortValue(alias.reasoningEffort) === effort) {
+          alias.reasoningEffort = observed
+          this.thread(id).reasoningEffort = observed
+          await this.persist()
+        }
+        connection.appliedEffort = hermesEffortValue(alias.reasoningEffort)
+      } catch (error) {
+        if (!(error instanceof HermesRejected) || error.code !== -32601) throw error
+        // An older binary without the method has no effort control. A timeout or broken connection is not
+        // evidence that other sessions lack the feature and must not disable their controls.
+        connection.supportsEffort = false
+        this.harnessEffort = false
+        this.state.models = hermesCatalog(this.servers, this.harnessImages)
+      }
     }
   }
   private async steer(command: Extract<AgentHostCommand, { type: 'steer' }>, generation: number): Promise<AgentHostResult> {
@@ -954,7 +1016,7 @@ export class HermesAcpHost implements ProviderHost {
     } else if (settingsChange) {
       // Model and effort reach the running session in place, before its next prompt, and are read back now.
       const connection = this.connections.get(id)
-      if (connection && !this.busy(id)) await this.applySettings(alias, connection)
+      if (connection && !this.busy(id)) await this.applySettings(alias, connection, id)
     }
     this.emit()
     return { accepted: true, snapshot: this.current(command.historyFromEvents) }
@@ -983,7 +1045,7 @@ export class HermesAcpHost implements ProviderHost {
     const delivered = await deliverAttachments(alias.cwd, attachments)
     const nativeText = `Work in this project directory: ${alias.cwd}\nUse this directory for relative file paths and command working directories.\n\n${withAttachedFilesNote(command.text, delivered.note)}`
     const images = await acpImageBlocks(delivered.images)
-    await this.applySettings(alias, connection)
+    await this.applySettings(alias, connection, id)
     current()
     const origin: Origin = { messageId: command.messageId, commandId: command.commandId, digest: digest(nativeText), createdAt: new Date().toISOString(), turn: alias.turns,
       attachments: attachmentReferences(attachments) }

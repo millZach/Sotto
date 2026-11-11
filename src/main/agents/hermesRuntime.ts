@@ -70,7 +70,7 @@ export function hermesConfig(servers: readonly OwnServer[], cwd?: string): strin
     _config_version: 52,
     auth: { adopt_external_logins: false }, approvals: { mode: 'off' },
     gateway: { multiplex_profiles: true }, updates: { check: false }, plugins: { auto_update_check_hours: 0, auto_apply: false },
-    fallback_model: [], agent: { reasoning_effort: 'high' },
+    fallback_model: [], agent: {},
     auxiliary: { title_generation: { enabled: false, model_upgrade_enabled: false },
       compression: { provider: 'auto', model: '' }, vision: { provider: 'auto', model: '' } },
     memory: { memory_enabled: true, user_profile_enabled: true },
