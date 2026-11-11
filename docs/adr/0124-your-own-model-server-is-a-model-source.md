@@ -219,3 +219,27 @@ evidence that the installed client lacks effort support.
 Catalogue addresses with account or region placeholders open the address route,
 with the template visible and editable. No request is sent until those values
 are supplied. The key page shows the actual address that will receive its key.
+
+
+### SGLang DeepSeek V4.1 effort discovery
+
+A saved Spark Cluster otherwise stays on Default because its OpenAI model list
+reports IDs and context but no `reasoning_options`. On Check or Check again,
+Sotto recognizes the known SGLang V4.1 encoder only when `/model_info` reports
+both `model_type: deepseek_v41` and `reasoning_parser: deepseek-v41`. Its
+`served_model_name` must match the listed model ID or that entry's `root`, so
+one loaded model's facts do not grant levels to unrelated entries.
+
+That profile offers Off, Low, High and Max. Off sends `reasoning_effort: none`;
+SGLang's request validator translates it into both thinking toggles set false
+before prompt encoding. The named tiers pass through unchanged. On the
+verified Spark image, Low, High and Max render budgets 50, 75 and 100; XHigh
+also renders 75, so it adds no separate stop. High is the initial choice through
+the existing model-default rule. Explicit `reasoning_options` in the model list
+win over this profile. Other encoders remain unknown unless they report levels.
+
+This is a confirmed encoder profile, not a guess from a model's display name or
+network address. The verification note records the running image and its actual
+request normalization and encoding. Reading a saved record still performs no
+network call or migration; Check again refreshes it using the existing save and
+adapter notification path. No new host, setting or dependency is introduced.
