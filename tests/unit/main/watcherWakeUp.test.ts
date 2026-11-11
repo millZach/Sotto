@@ -267,6 +267,20 @@ it('folds the newest truth, drops answered questions and lets failure replace fi
   expect(f.delivered[0]!.events.map(event => event.kind)).not.toContain('needs-user')
 })
 
+// November 10-11, 2026 (#1152): Vellum, waiting on a queued GitHub macOS runner, and the onboarding thread, waiting on a Sol
+// review, were called quiet beside their held finish. Zach's pick: the held finish's line is the one check.
+it('sends no quiet news for a thread whose turn ended and that only waits on its background work or monitoring (#1152)', async () => {
+  const f = fixture()
+  f.thread.backgroundWork = [backgroundTask(1)]; f.thread.monitoring = [monitor(1)]
+  f.thread.status = 'idle'; f.thread.lastTurn = { id: 'turn-1', status: 'completed' }
+  f.wakes.observe(); await f.advance(WATCHER_QUIET_MS + WATCHER_BATCH_MS)
+  const events = f.delivered.flatMap(news => news.events)
+  expect(events.filter(event => event.kind === 'quiet')).toEqual([])
+  // Its finish, held for that work, goes by itself after the same twenty minutes, and says the thread is idle.
+  expect(events.filter(event => event.kind === 'turn-finished').map(event => event.backgroundWorkCount)).toEqual([2])
+  expect(f.wakes.heldMinutes(events.find(event => event.kind === 'turn-finished')!)).toBe(20)
+})
+
 it('has one cancellable quiet deadline per episode, ignores republished shells and resets on real progress', async () => {
   const f = fixture()
   expect(f.timers.size).toBe(1)
