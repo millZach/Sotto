@@ -361,7 +361,7 @@ const licenseSections = [
   ['Thread composer MIT licenses', (await Promise.all(COMPOSER_NOTICE_COMPONENTS.map(async component =>
     `${component.name}\n${await read(`${component.packagePath}/${component.name.startsWith('@tiptap/') && component.name !== '@tiptap/pm' ? 'LICENSE.md' : 'LICENSE'}`)}`))).join('\n\n')],
   ['Zod MIT license', await read('node_modules/zod/LICENSE')],
-  // The headless host's picture worker compiles in jpeg-js's decoder and pngjs's synchronous reader and writer (ADR-0202).
+  // The headless host's picture worker compiles in jpeg-js's decoder and pngjs's synchronous reader and writer (ADR-0203).
   // jpeg-js's license ends some lines with spaces, which go; not a word of it changes.
   ['Headless host picture decoder licenses', `jpeg-js (BSD 3-Clause License; the host's picture worker compiles in its decoder alone)
 ${(await read('node_modules/jpeg-js/LICENSE')).replace(/[ \t]+$/gmu, '')}

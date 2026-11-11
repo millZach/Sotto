@@ -1,5 +1,5 @@
 /**
- * A baseline JPEG writer for the headless host's picture copies (ADR-0202), written from the JPEG standard (ITU-T T.81:
+ * A baseline JPEG writer for the headless host's picture copies (ADR-0203), written from the JPEG standard (ITU-T T.81:
  * its Annex K quantization and Huffman tables, the zigzag order, and the coding of DC and AC coefficients). It writes
  * colour at half resolution each way (4:2:0), as Electron's JPEG writer does on the desktop, so a copy is about the size
  * the desktop's would be: jpeg-js, which the host decodes with, writes colour at full resolution, half as large again at

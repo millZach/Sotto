@@ -1,5 +1,5 @@
 /**
- * The headless host's picture worker (`src/host/pictureWorker.ts`, ADR-0202) compiled as `scripts/build-host.mjs` compiles
+ * The headless host's picture worker (`src/host/pictureWorker.ts`, ADR-0203) compiled as `scripts/build-host.mjs` compiles
  * it: one `.cjs` file with jpeg-js and pngjs inside it and Node's builtins outside. The test runner has no built file
  * beside the host's source, so a host under test makes no copies unless a test hands it a maker over this one.
  */
