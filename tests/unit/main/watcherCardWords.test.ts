@@ -30,6 +30,9 @@ it('says which tool a permission card asks for and its summary, never its comman
   const line = watcherPermissionCardLine(card({ toolName: 'Bash', command: 'GH_TOKEN=secret gh pr merge 12', cwd: '/home/someone/project', summary: 'Merges the pull request', target: '/home/someone/secret.txt', details: 'token: secret' }))!
   expect(line).toBe('It asks to use "Bash". Its summary, in the worker\'s words: "Merges the pull request".')
   expect(line).not.toContain('secret'); expect(line).not.toContain('someone')
+  // A summary Sotto asked the thread's provider for is not the worker's (ADR-0185).
+  expect(watcherPermissionCardLine(card({ toolName: 'Bash', summary: 'Merges the pull request', summaryAsk: 'answered' })))
+    .toBe('It asks to use "Bash". Its summary, written for the card by its thread\'s provider when the worker gave none: "Merges the pull request".')
   // No summary yet: the tool alone. Neither: nothing, as before.
   expect(watcherPermissionCardLine(card({ toolName: 'Edit', target: '/home/someone/a.ts' }))).toBe('It asks to use "Edit".')
   expect(watcherPermissionCardLine(card({ command: 'rm -rf build' }))).toBeUndefined()

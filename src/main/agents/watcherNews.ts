@@ -195,14 +195,16 @@ export function watcherWaitingCardWords(request: Pick<AgentRequest, 'kind' | 'te
 }
 /**
  * What a waiting permission card asks, as its news line gives it (#2433, Zach's pick on November 11, 2026): the tool's name
- * and the asking model's own one-line summary (ADR-0185), labelled as the worker's, never the command, path or fields the
- * card shows, which can carry a command's arguments to Watcher's provider. Undefined when the card names neither.
+ * and the card's one-line summary (ADR-0185), never the command, path or fields the card shows, which can carry a command's
+ * arguments to Watcher's provider. The summary is labelled as the worker's only when the asking model wrote it; one Sotto
+ * asked the thread's own provider for (`summaryAsk`) is labelled as that. Undefined when the card names neither.
  */
 export function watcherPermissionCardLine(request: Pick<AgentRequest, 'kind' | 'context'>): string | undefined {
   if (request.kind !== 'permission') return undefined
   const tool = request.context?.toolName?.trim(), summary = request.context?.summary?.trim()
   if (!tool && !summary) return undefined
-  const asks = summary ? ` Its summary, in the worker's words: ${JSON.stringify(cut(summary, CARD_QUESTION_CHARS))}.` : ''
+  const whose = request.context?.summaryAsk === undefined ? 'in the worker\'s words' : 'written for the card by its thread\'s provider when the worker gave none'
+  const asks = summary ? ` Its summary, ${whose}: ${JSON.stringify(cut(summary, CARD_QUESTION_CHARS))}.` : ''
   return `It asks to use ${tool ? JSON.stringify(cut(tool, CARD_CHOICE_CHARS)) : 'a tool'}.${asks}`
 }
 /** A waiting card's words as its news line gives them (#2230), labelled as the worker's. */
