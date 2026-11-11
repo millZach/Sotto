@@ -23,6 +23,7 @@ import {
   type WidgetPlacement,
 } from './widgetPlacementMath'
 import type { StoredWidgetPlacement } from '../storage/widgetPlacementRepository'
+import { markStartup } from '../performance/startupMarks'
 
 const WIDGET_EDGE_INSET = 16
 const WIDGET_MONITOR_INTERVAL_MS = 100
@@ -527,6 +528,7 @@ export class WindowManager {
       ),
     })
     this.mainWindow = window
+    markStartup('main-window-created')
     this.installMainLifecycle(window)
     this.installRendererProcessLifecycle(window, 'main')
     this.installNavigationPolicy(window)
@@ -539,6 +541,7 @@ export class WindowManager {
     ).then(
       () => {
         this.assertLoadedWindow(window, 'main')
+        markStartup('main-window-loaded')
         this.loadedRendererUrls.set(window, window.webContents.getURL())
         // A window made hidden reports its page visible until it is first shown, and Start minimized may never show it.
         this.sendMainVisibility(window)
@@ -612,6 +615,7 @@ export class WindowManager {
       },
     })
     this.widgetWindow = window
+    markStartup('widget-created')
     this.widgetFocusable = this.dependencies.chrome.widgetFocusable
     // The constructor's alwaysOnTop (and setAlwaysOnTop's default 'floating'
     // level) silently fails to apply WS_EX_TOPMOST on current Windows 11
@@ -647,6 +651,7 @@ export class WindowManager {
     ).then(
       () => {
         this.assertLoadedWindow(window, 'widget')
+        markStartup('widget-loaded')
         this.loadedRendererUrls.set(window, window.webContents.getURL())
         return window
       },
@@ -692,6 +697,7 @@ export class WindowManager {
       window.restore()
     }
     window.show()
+    markStartup('main-window-shown')
     window.focus()
   }
 

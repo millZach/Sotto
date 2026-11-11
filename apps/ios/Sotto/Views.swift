@@ -121,6 +121,9 @@ struct MainTabs: View {
     @State private var sidebarElse = false
     /// New thread, opened from the Duo's rail.
     @State private var creating = false
+    /// Where the Duo held sideways draws its own sheets, over the page (`DuoSheetLayer`). Held, not watched: only the
+    /// layer redraws when a sheet comes or goes.
+    @State private var sheetHost = DuoSheetHost()
     /// The Duo was last folded, on the Threads list, so unfolding it opens the list's top row (`openTopRow`).
     @State private var foldedOnList = false
     /// How much of the page shows: below one while a change that isn't a push or a pop fades it (`crossfade`, `fadeIn`).
@@ -209,6 +212,7 @@ struct MainTabs: View {
                     SidebarDrawer(shown: $drawer, pull: pull, open: openFromSidebar).equatable()
                 }
             }
+            .anchorPreference(key: DuoPageFrame.self, value: .bounds) { $0 }
             if case .column(leading: false, width: let strip) = place {
                 // Upright it starts just under the status bar; sideways, in a column of its own, a step down from the top.
                 rail(shown, top: upright ? Space.s3 : Space.s4, duo: duo).frame(width: strip)
@@ -242,7 +246,16 @@ struct MainTabs: View {
         .overlay(alignment: .leading) {
             if case .strip(trailing: false, width: let strip) = place { rail(shown, top: duo.clockClearance, duo: duo).frame(width: strip).offset(x: -strip) }
         }
-        .sheet(isPresented: $creating, onDismiss: { model.newThreadClosed() }) {
+        // Behind the Duo's own sheet every glow goes out, so nothing under the scrim competes with it (Zach's pick B,
+        // November 9, 2026, round 5).
+        .modifier(GlowsOutBehindSheet(host: sheetHost))
+        // Held sideways, a sheet stands over the page from the sidebar's edge to the rail (Zach's pick A, round 4).
+        .overlayPreferenceValue(DuoPageFrame.self) { anchor in
+            if duo.sideways, let anchor {
+                GeometryReader { proxy in DuoSheetLayer(host: sheetHost, page: proxy[anchor]) }
+            }
+        }
+        .duoSheet(isPresented: $creating, onDismiss: { model.newThreadClosed() }) {
             NewThreadSheet(opened: { ref in
                 model.newThreadOpened(ref)
                 tab = .threads
@@ -287,6 +300,7 @@ struct MainTabs: View {
         .onChange(of: model.watcherHostID) { _, hostID in
             if hostID == nil, tab == .watcher { tab = .threads; watcherPath = NavigationPath() }
         }
+        .environment(\.duoSheetHost, duo.sideways ? sheetHost : nil)
     }
     /// The sidebar has a page to stand beside: every page but the Threads list, which is the same list.
     private var sidebarAvailable: Bool { !(tab == .threads && threadPath.isEmpty) }
@@ -322,9 +336,21 @@ struct MainTabs: View {
                 if (duo.sideways || duo == .upright) && !nestedBack { sidebarButton(upright: duo == .upright) }
                 if !tight { newThread }
                 Spacer(minLength: tight ? 0 : Space.s3)
-                if beside, let ref = model.selected { ThreadRailPill(ref: ref) }
+                if beside, let ref = model.selected {
+                    ThreadRailPill(ref: ref)
+                    // Held sideways the thread's pill stands as far under the sidebar's button as over the tabs, where
+                    // it sat 4 points over them (the Duo design climb's round 6).
+                    if tight { Spacer(minLength: 0) }
+                }
+                // Held sideways, the tabs step away while the keyboard is up, where they showed through its corner, and
+                // come back when it goes (Zach's pick A, November 9, 2026, round 5). The thread's pill above them stays.
+                let underKeyboard = keyboard && duo.sideways
                 TabsBar(tab: tabChoice, threadsBadge: model.threadsBadge, watcher: model.watcherHostID == nil ? nil : model.watcherTab,
                         style: .rail, reselect: reselect)
+                    .opacity(underKeyboard ? 0 : 1)
+                    .allowsHitTesting(!underKeyboard)
+                    .accessibilityHidden(underKeyboard)
+                    .animation(.easeInOut(duration: 0.2), value: underKeyboard)
             }
             .padding(.top, top)
             .padding(.bottom, Space.s5)
@@ -339,7 +365,7 @@ struct MainTabs: View {
     private func sidebarButton(upright: Bool) -> some View {
         let showing = upright ? drawer : sidebarShown
         return Button { settleSidebar(!showing, upright: upright) } label: { Image(systemName: "sidebar.left") }
-            .buttonStyle(GlassCircleStyle())
+            .buttonStyle(GlassCircleStyle(flatOnDuo: true))
             .disabled(!sidebarAvailable)
             .accessibilityLabel(showing ? String(localized: "Hide the threads", comment: "Hides the list of threads beside the open thread on the iPhone Duo unfolded")
                                 : String(localized: "Show the threads", comment: "Shows the list of threads beside the open thread on the iPhone Duo unfolded"))
@@ -721,6 +747,7 @@ enum DuoLayout: Equatable {
     /// Unfolded and held upright: the rail stands in a column down the right edge, `uprightRail` wide.
     case upright
     var sideways: Bool { if case .sideways = self { return true } else { return false } }
+    var isFolded: Bool { if case .folded = self { return true } else { return false } }
     /// How wide the upright rail's column is: room for the tabs' pill and the round buttons, with a margin each side.
     static let uprightRail: CGFloat = 80
     /// How far down the strip New thread, or a thread's Back, sits: under the clock, battery and page dots, lower on the
@@ -736,6 +763,21 @@ enum DuoLayout: Equatable {
         case .upright: return (0, Self.uprightRail)
         case .none: return (0, 0)
         }
+    }
+}
+extension DuoLayout {
+    /// Folded, how far the clock's strip reaches into a sheet from the sheet's right edge: the strip's width less the
+    /// sheet's own margin from the screen's edge, taken from its left margin, `sheetLeft`, since iOS stands a sheet in
+    /// the middle. A folded sheet's short header ends this far in, on the strip's left edge, so its title row, step bar
+    /// and dividers end on one edge beside the clock (Zach's round 8 pick A, November 10, 2026). Nothing elsewhere.
+    func stripReach(sheetLeft: CGFloat) -> CGFloat {
+        if case .folded(let strip) = self { return max(0, strip - max(0, sheetLeft)) } else { return 0 }
+    }
+}
+extension View {
+    /// Keeps `left` at where this view's left edge stands on the screen: a sheet's margin, for `DuoLayout.stripReach`.
+    func sheetLeft(_ left: Binding<CGFloat>) -> some View {
+        onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .global).minX }) { left.wrappedValue = $0 }
     }
 }
 private struct DuoLayoutKey: EnvironmentKey { static let defaultValue = DuoLayout.none }
@@ -781,11 +823,20 @@ struct ThreadSidebar: View, Equatable {
             .padding(.horizontal, Space.s2)
             .padding(.bottom, Space.s6)
         }
+        // The list fades out over its last 40 points, so a row the screen's foot cuts reads as more below rather than as
+        // sliced (Zach's pick, November 9, 2026, round 4). The ground behind it doesn't fade.
+        .mask {
+            VStack(spacing: 0) {
+                Rectangle()
+                LinearGradient(colors: [.black, .black.opacity(0)], startPoint: .top, endPoint: .bottom).frame(height: 40)
+            }
+            .ignoresSafeArea(.container, edges: .bottom)
+        }
         .frame(width: width)
         .background(Palette.surface.opacity(0.7))
         .overlay(alignment: .trailing) { Rectangle().fill(Palette.hairline).frame(width: 1) }
         .accessibilityIdentifier("duo-sidebar-list")
-        .sheet(isPresented: $creating, onDismiss: { model.newThreadClosed() }) {
+        .duoSheet(isPresented: $creating, onDismiss: { model.newThreadClosed() }) {
             NewThreadSheet(opened: { ref in model.newThreadOpened(ref); open(ref) })
         }
     }
@@ -912,12 +963,17 @@ struct ThreadListHeading: View {
     let title: String
     let count: Int
     let id: String
+    @Environment(\.duoLayout) private var duo
+    private var folded: Bool { if case .folded = duo { return true } else { return false } }
     var body: some View {
+        // Folded, it starts on the left edge the page's title and banner share, where it stood a third edge between them
+        // and the names (the Duo design climb's round 6). Beside a thread it keeps its inset.
         HStack(spacing: Space.s2) {
             Text(title).font(.sotto(.small, .semibold)).foregroundStyle(Palette.muted)
             Text("\(count)").font(.sotto(.small)).foregroundStyle(Palette.muted)
         }
-        .padding(.horizontal, Space.s3)
+        .padding(.leading, folded ? 0 : Space.s3)
+        .padding(.trailing, Space.s3)
         .padding(.top, Space.s5)
         .padding(.bottom, Space.s1)
         .accessibilityElement(children: .combine)
@@ -949,7 +1005,8 @@ struct ThreadListRow: View, Equatable {
     /// What the row draws: the thread's title, state, place and times, its section, light and chip.
     static func == (lhs: ThreadListRow, rhs: ThreadListRow) -> Bool {
         lhs.row.id == rhs.row.id && lhs.kind == rhs.kind && lhs.asking?.id == rhs.asking?.id && lhs.watched == rhs.watched && lhs.chosen == rhs.chosen
-            && lhs.canWatch == rhs.canWatch && lhs.shelf == rhs.shelf && lhs.identifier == rhs.identifier && lhs.line == rhs.line && lhs.label == rhs.label
+            && lhs.canWatch == rhs.canWatch && lhs.shelf == rhs.shelf && lhs.identifier == rhs.identifier
+            && lhs.words(duo: false) == rhs.words(duo: false) && lhs.words(duo: true) == rhs.words(duo: true) && lhs.label == rhs.label
             && lhs.row.thread.summary?.runningTurnStartedAt == rhs.row.thread.summary?.runningTurnStartedAt
             && lhs.row.thread.summary?.lastMessageAt == rhs.row.thread.summary?.lastMessageAt
     }
@@ -963,23 +1020,41 @@ struct ThreadListRow: View, Equatable {
         case .recent(let unread): return unread ? .accent : row.failed ? .danger : .off
         }
     }
+    @Environment(\.duoLayout) private var duo
+    @Environment(\.sottoTheme) private var theme
+    private var folded: Bool { if case .folded = duo { return true } else { return false } }
+    /// What the row says under its title.
+    private var line: String { words(duo: duo != .none) }
     /// What the row says under its title: the request it waits on, where a working thread lives, or for a recent one
-    /// just finished, can't be reached, failed, or where it lives, as the Threads page always wrote it.
-    private var line: String {
+    /// just finished, can't be reached, failed, or where it lives, as the Threads page always wrote it. On the Duo the
+    /// provider's mark stands for its name, so the line keeps room for the project and computer, and a waiting thread
+    /// says Question or Permission under Needs you (Zach's pick B, November 9, 2026). VoiceOver still says it all.
+    func words(duo: Bool) -> String {
+        let place = duo ? Words.placeWithoutProvider(row) : Words.place(row)
         switch kind {
         case .needs:
+            // On the Duo a request waiting in a delegated thread reads as any waiting row does, by the delegated thread's
+            // own request; VoiceOver still names the thread it waits in (round 5).
+            if let asking, duo {
+                let short = ThreadState(asking.thread) == .needsAnswer ? String(localized: "Permission") : String(localized: "Question")
+                return "\(short) · \(row.computer)"
+            }
             if let asking {
                 let provider = Words.provider(row.thread.providerId)
                 return String(localized: "\(provider) on \(row.computer) · Waiting in \(asking.thread.title)",
                               comment: "First %@ is the agent's name, such as Codex; second is the computer's name; third is the title of the delegated thread the request waits in.")
             }
+            if duo {
+                let short = state == .needsAnswer ? String(localized: "Permission") : String(localized: "Question")
+                return "\(short) · \(row.computer)"
+            }
             return "\(state.words) · \(row.computer)"
-        case .working, .snoozed: return Words.place(row)
+        case .working, .snoozed: return place
         case .recent(let unread):
             if unread { return String(localized: "Just finished · \(row.computer)", comment: "%@ is the computer's name.") }
             if !row.reachable { return "\(row.status.words) · \(row.computer)" }
             if row.failed { return "\(state.words) · \(row.computer)" }
-            return Words.place(row)
+            return place
         }
     }
     /// The row as VoiceOver reads it: its title, then its state where that matters, then where it runs.
@@ -987,7 +1062,7 @@ struct ThreadListRow: View, Equatable {
         let place = Words.place(row)
         let spoken: String
         switch kind {
-        case .needs: spoken = "\(row.thread.title), \(ThreadState((asking ?? row).thread).words), \(asking.map { _ in line } ?? place)"
+        case .needs: spoken = "\(row.thread.title), \(ThreadState((asking ?? row).thread).words), \(asking.map { _ in words(duo: false) } ?? place)"
         case .working: spoken = "\(row.thread.title), \(state.words), \(place)"
         case .snoozed: spoken = "\(row.thread.title), \(wakeTime ?? ""), \(place)"
         case .recent(let unread):
@@ -1026,23 +1101,55 @@ struct ThreadListRow: View, Equatable {
     private var button: some View {
         // At the accessibility text sizes a title can't hold one line: titles and lines wrap and the age goes under them.
         let large = typeSize.isAccessibilitySize
-        let ago = wakeTime ?? Words.ago(row.thread.summary?.runningTurnStartedAt ?? row.thread.summary?.lastMessageAt)
+        // Beside a thread on the Duo, the name has the row's whole width and up to two lines, and the time ends the second
+        // line, where a column of times had cut nearly every name (Zach's pick C, November 8, 2026).
+        let side = identifier == "sidebar-thread-" && !large
+        // Folded, a row's time ends its second line too, as the sidebar's does, so the name has its line to itself (Zach's
+        // round 6 pick A, November 10, 2026).
+        let timeEndsLine = side || (folded && !large)
+        // Folded, the time ends on the right edge the banner and the search button share, with no gap or padding after
+        // it, where it ended 27 points short (the Duo design climb's round 6). Beside a thread the row keeps its own.
+        let flush = folded && timeEndsLine
+        // A thread waiting on the user gives the time it last changed, when it asked, as its Needs you card does; one at
+        // work gives how long its turn has run. A waiting row once said "22m" beside its card's "3m" (the Duo design
+        // climb's round 6). On the Duo alone.
+        let started = kind == .needs && duo != .none ? row.thread.summary?.lastMessageAt
+            : row.thread.summary?.runningTurnStartedAt ?? row.thread.summary?.lastMessageAt
+        // On the Duo every row gives one short time, "2m", as the sidebar and the overview's cards do (round 4's pick B).
+        let ago = wakeTime ?? (side || duo != .none ? Words.agoShort(started) : Words.ago(started))
         return Button(action: open) {
             HStack(alignment: .top, spacing: Space.s3) {
-                Light(tone: tone, breathing: kind == .working).padding(.top, 6)
+                // On the Duo a thread that just finished carries a check in its light, so it can't pass for one at
+                // work (Zach's pick A, November 9, 2026).
+                Light(tone: tone, breathing: kind == .working, finished: unread && duo != .none).padding(.top, 6)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(verbatim: row.thread.title).font(.sotto(.body, unread ? .bold : .semibold))
-                        .foregroundStyle(chosen ? Palette.accentText : Palette.ink).lineLimit(large ? 4 : 1)
-                    PlaceLine(providerID: row.thread.providerId, watched: watched, text: line,
-                              tone: row.failed ? Palette.dangerText : Palette.muted, lines: large ? 3 : 1)
+                    if side {
+                        // Beside a thread a name fills its first line before it wraps: Text moves a word down so no last
+                        // line is a lone word, which broke names at about 60% of the row (Zach's pick A, November 9, 2026,
+                        // round 5).
+                        FilledLines(text: row.thread.title, weight: unread ? .bold : .semibold,
+                                    color: theme.color(chosen ? .accentText : .ink), lines: 2)
+                    } else {
+                        Text(verbatim: row.thread.title).font(.sotto(.body, unread ? .bold : .semibold))
+                            .foregroundStyle(chosen ? Palette.accentText : Palette.ink).lineLimit(large ? 4 : 1)
+                    }
+                    HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
+                        PlaceLine(providerID: row.thread.providerId, watched: watched, text: line,
+                                  tone: row.failed ? Palette.dangerText : Palette.muted, lines: large ? 3 : 1)
+                        if timeEndsLine, let ago {
+                            Spacer(minLength: 0)
+                            Text(ago).font(.sotto(.caption)).foregroundStyle(Palette.muted).lineLimit(1).fixedSize()
+                        }
+                    }
                     if large, let ago { Text(ago).font(.sotto(.caption)).foregroundStyle(Palette.muted) }
                 }
-                Spacer(minLength: Space.s1)
-                if !large, let ago {
+                if !flush { Spacer(minLength: Space.s1) }
+                if !large, !timeEndsLine, let ago {
                     Text(ago).font(.sotto(.caption)).foregroundStyle(Palette.muted).lineLimit(1).padding(.top, 3)
                 }
             }
-            .padding(.horizontal, Space.s3)
+            .padding(.leading, Space.s3)
+            .padding(.trailing, flush ? 0 : Space.s3)
             .padding(.vertical, Space.s2 + 2)
             .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
             .background { if chosen { RoundedRectangle(cornerRadius: Radius.md, style: .continuous).fill(ThemeRole(.accentSurface)) } }
@@ -1263,9 +1370,43 @@ enum Words {
     static func date(_ iso: String?) -> Date? { iso.flatMap { stamp.date(from: $0) ?? plainStamp.date(from: $0) } }
     /// "4 min. ago", or nothing when the host did not say.
     static func ago(_ iso: String?) -> String? { date(iso).map { relative.localizedString(for: $0, relativeTo: Date()) } }
+    private static let shortAgo: DateComponentsFormatter = {
+        let formatter = DateComponentsFormatter()
+        formatter.unitsStyle = .abbreviated
+        formatter.allowedUnits = [.day, .hour, .minute]
+        formatter.maximumUnitCount = 1
+        return formatter
+    }()
+    /// How long ago in the fewest letters, such as 12m, for a row with little room; under a minute it is `ago`'s words.
+    static func agoShort(_ iso: String?) -> String? {
+        guard let when = date(iso) else { return nil }
+        let seconds = Date().timeIntervalSince(when)
+        guard seconds >= 60 else { return ago(iso) }
+        return shortAgo.string(from: seconds) ?? ago(iso)
+    }
+    /// How long something has run in the fewest letters, minutes and up ("12m", "1h"), and seconds under a minute.
+    static func runShort(_ seconds: TimeInterval) -> String {
+        guard seconds >= 60 else { return Elapsed.words(seconds) }
+        return shortAgo.string(from: seconds) ?? Elapsed.words(seconds)
+    }
+    private static let spokenRun: DateComponentsFormatter = {
+        let formatter = DateComponentsFormatter()
+        formatter.unitsStyle = .full
+        formatter.allowedUnits = [.hour, .minute, .second]
+        formatter.maximumUnitCount = 1
+        return formatter
+    }()
+    /// How long something has run as VoiceOver says it, in the interface language's own words: "12 minutes".
+    static func runSpoken(_ seconds: TimeInterval) -> String {
+        spokenRun.string(from: max(0, seconds)) ?? Elapsed.words(seconds)
+    }
     /// A card's or row's second line: the agent, the project and the computer.
     static func place(_ row: HostedThread) -> String {
         [provider(row.thread.providerId), row.project, row.computer].compactMap { $0 }.joined(separator: " · ")
+    }
+    /// Where a thread lives for a line that already shows its provider's mark: the project, then the computer.
+    static func placeWithoutProvider(_ row: HostedThread) -> String {
+        [row.project, row.computer].compactMap { $0 }.joined(separator: " · ")
     }
     static func duration(_ ms: Double?) -> String? {
         guard let ms, ms >= 1000 else { return nil }
@@ -1352,4 +1493,327 @@ struct ComputerBanner: View {
             FeedbackBanner()
         }
     }
+}
+
+// MARK: - The Duo's own sheet, held sideways
+
+/// Closes the sheet a view stands in when Sotto draws that sheet itself (`duoSheet`); nil inside iOS's own sheets.
+private struct SheetCloseKey: EnvironmentKey { static let defaultValue: (() -> Void)? = nil }
+/// Where Sotto draws its own sheet on the Duo held sideways; nil anywhere else.
+private struct DuoSheetHostKey: EnvironmentKey { static let defaultValue: DuoSheetHost? = nil }
+extension EnvironmentValues {
+    var sheetClose: (() -> Void)? {
+        get { self[SheetCloseKey.self] }
+        set { self[SheetCloseKey.self] = newValue }
+    }
+    var duoSheetHost: DuoSheetHost? {
+        get { self[DuoSheetHostKey.self] }
+        set { self[DuoSheetHostKey.self] = newValue }
+    }
+}
+
+extension View {
+    /// A sheet that is iOS's own everywhere but the Duo held sideways, where Sotto draws it over the page (`DuoSheetHost`).
+    /// A view inside it closes it with `dismiss`, which its sheets route through `sheetClose`. `toFoot`: held sideways,
+    /// a sheet that takes the page's height runs on to the screen's foot.
+    func duoSheet<Sheet: View>(isPresented: Binding<Bool>, wash: Bool = false, toFoot: Bool = false, onDismiss: (() -> Void)? = nil,
+                               @ViewBuilder content: @escaping () -> Sheet) -> some View {
+        modifier(DuoSheetPresenter(isPresented: isPresented, wash: wash, toFoot: toFoot, onDismiss: onDismiss, sheet: content))
+    }
+    func duoSheet<Item: Identifiable, Sheet: View>(item: Binding<Item?>, wash: Bool = false, onDismiss: (() -> Void)? = nil,
+                                                   @ViewBuilder content: @escaping (Item) -> Sheet) -> some View {
+        modifier(DuoItemSheetPresenter(item: item, wash: wash, onDismiss: onDismiss, sheet: content))
+    }
+}
+
+private struct DuoSheetPresenter<Sheet: View>: ViewModifier {
+    @Binding var isPresented: Bool
+    let wash: Bool
+    let toFoot: Bool
+    let onDismiss: (() -> Void)?
+    let sheet: () -> Sheet
+    @Environment(\.duoLayout) private var duo
+    @Environment(\.duoSheetHost) private var host
+    /// The sheet this presenter has up in the host, if any.
+    @State private var showing: UUID?
+    /// Whether Sotto draws the sheet: on the Duo held sideways, where a host stands.
+    private var own: Bool { duo.sideways && host != nil }
+    func body(content: Content) -> some View {
+        // One structure in every posture, the choice of who draws the sheet made by value, so a turn or a fold keeps
+        // every page under this as it was. A branch here had given them a new identity on every turn and reset each tab,
+        // its pushed thread and its scroll.
+        content
+            .sheet(isPresented: Binding(get: { isPresented && !own }, set: { if !own { isPresented = $0 } }),
+                   // iOS's sheet also goes when the Duo turns sideways and Sotto takes it over; only a real close runs it.
+                   onDismiss: { if !isPresented { onDismiss?() } }, content: sheet)
+            .onChange(of: isPresented, initial: true) { _, _ in step() }
+            // Turning or folding moves an open sheet between Sotto's and iOS's, where it had closed and lost the answer
+            // or the New thread being set up.
+            .onChange(of: own) { _, _ in step() }
+            // Leaving the page closes the sheet, as iOS closes one whose page goes.
+            .onDisappear {
+                guard let id = showing else { return }
+                showing = nil
+                host?.gone(id)
+                isPresented = false
+                onDismiss?()
+            }
+    }
+    private func step() {
+        guard let host else { return }
+        switch DuoSheetStep.next(presented: isPresented, own: own, inHost: showing != nil) {
+        case .none: break
+        case .show:
+            let id = UUID()
+            showing = id
+            let binding = $isPresented
+            host.show(.init(id: id, wash: wash, toFoot: toFoot, content: AnyView(sheet()), close: { binding.wrappedValue = false }))
+        case .take(let dismissed):
+            if let id = showing { host.gone(id) }
+            showing = nil
+            if dismissed { onDismiss?() }
+        }
+    }
+}
+
+private struct DuoItemSheetPresenter<Item: Identifiable, Sheet: View>: ViewModifier {
+    @Binding var item: Item?
+    let wash: Bool
+    let onDismiss: (() -> Void)?
+    let sheet: (Item) -> Sheet
+    @Environment(\.duoLayout) private var duo
+    @Environment(\.duoSheetHost) private var host
+    @State private var showing: UUID?
+    private var own: Bool { duo.sideways && host != nil }
+    /// One structure in every posture, as `DuoSheetPresenter`'s.
+    func body(content: Content) -> some View {
+        content
+            .sheet(item: Binding(get: { own ? nil : item }, set: { if !own { item = $0 } }),
+                   onDismiss: { if item == nil { onDismiss?() } }, content: sheet)
+            .onChange(of: item?.id, initial: true) { _, _ in
+                // Another item takes the open one's place.
+                if let id = showing {
+                    showing = nil
+                    host?.gone(id)
+                    if item == nil { onDismiss?() }
+                }
+                step()
+            }
+            .onChange(of: own) { _, _ in step() }
+            .onDisappear {
+                guard let id = showing else { return }
+                showing = nil
+                host?.gone(id)
+                item = nil
+                onDismiss?()
+            }
+    }
+    private func step() {
+        guard let host else { return }
+        switch DuoSheetStep.next(presented: item != nil, own: own, inHost: showing != nil) {
+        case .none: break
+        case .show:
+            guard let item else { return }
+            let id = UUID()
+            showing = id
+            let binding = $item
+            host.show(.init(id: id, wash: wash, content: AnyView(sheet(item)), close: { binding.wrappedValue = nil }))
+        case .take(let dismissed):
+            if let id = showing { host.gone(id) }
+            showing = nil
+            if dismissed { onDismiss?() }
+        }
+    }
+}
+
+/// Words over up to `lines` lines (0 for no limit) at the body step, or `scale`'s, in Figtree as `Font.sotto(scale,
+/// weight)` draws them, that fill each line before they wrap and end in an ellipsis past the last. SwiftUI's `Text`
+/// moves a word down so a last line is never a single word, which left a two-line name's first line short. `scale` is a
+/// step drawn relative to body, body or lead.
+struct FilledLines: UIViewRepresentable {
+    let text: String
+    let weight: Font.Weight
+    let color: Color
+    var lines = 2
+    var scale = TextScale.body
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    func makeUIView(context: Context) -> UILabel {
+        let label = UILabel()
+        label.lineBreakMode = .byTruncatingTail
+        label.lineBreakStrategy = []
+        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        label.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        label.isAccessibilityElement = false
+        return label
+    }
+
+    func updateUIView(_ label: UILabel, context: Context) {
+        style(label)
+        label.textColor = UIColor(color)
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UILabel, context: Context) -> CGSize? {
+        style(uiView)
+        let bounded = proposal.width.flatMap { $0.isFinite ? $0 : nil }
+        let fitted = uiView.sizeThatFits(CGSize(width: bounded ?? .greatestFiniteMagnitude, height: .greatestFiniteMagnitude))
+        return CGSize(width: bounded ?? ceil(fitted.width), height: ceil(fitted.height))
+    }
+
+    private func style(_ label: UILabel) {
+        let traits = UITraitCollection(preferredContentSizeCategory: Self.category(typeSize))
+        let font = UIFont.figtree(scale.size, .body, weight, traits: traits)
+        if label.font != font { label.font = font }
+        if label.text != text { label.text = text }
+        if label.numberOfLines != lines { label.numberOfLines = lines }
+    }
+
+    static func category(_ size: DynamicTypeSize) -> UIContentSizeCategory {
+        switch size {
+        case .xSmall: return .extraSmall
+        case .small: return .small
+        case .medium: return .medium
+        case .large: return .large
+        case .xLarge: return .extraLarge
+        case .xxLarge: return .extraExtraLarge
+        case .xxxLarge: return .extraExtraExtraLarge
+        case .accessibility1: return .accessibilityMedium
+        case .accessibility2: return .accessibilityLarge
+        case .accessibility3: return .accessibilityExtraLarge
+        case .accessibility4: return .accessibilityExtraExtraLarge
+        case .accessibility5: return .accessibilityExtraExtraExtraLarge
+        default: return .large
+        }
+    }
+}
+
+/// Puts out every glow under it while the Duo's own sheet is up. Only this modifier watches the host, so a sheet coming
+/// or going redraws the glows rather than all of `MainTabs`.
+private struct GlowsOutBehindSheet: ViewModifier {
+    @ObservedObject var host: DuoSheetHost
+    @Environment(\.sottoGlow) private var glow
+    func body(content: Content) -> some View {
+        content.environment(\.sottoGlow, host.shown == nil ? glow : PhoneGlow(0))
+    }
+}
+
+/// Where the page stands beside the sidebar and the rail, for the Duo's own sheet.
+struct DuoPageFrame: PreferenceKey {
+    static let defaultValue: Anchor<CGRect>? = nil
+    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) { value = nextValue() ?? value }
+}
+
+/// The Duo's own sheet over the page: a scrim over the whole screen, and the sheet inside the page's frame with a margin,
+/// as tall as a question asks to be, or from the page's top to the screen's foot. A drag down on its grabber or a tap on
+/// the scrim closes it, and VoiceOver treats it as a dialog that its escape gesture closes.
+struct DuoSheetLayer: View {
+    @ObservedObject var host: DuoSheetHost
+    let page: CGRect
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var scheme
+    /// How tall a question sheet asks to be (`RequestSheetFit`); nil for a sheet that takes the page's height.
+    @State private var fit: CGFloat?
+    @State private var drag: CGFloat = 0
+    /// Where the layer's foot and the screen's foot stand on the screen: the layer stands in the safe area, so a sheet
+    /// that runs to the screen's foot reaches the difference further down.
+    @State private var layerFoot: CGFloat = 0
+    @State private var screenFoot: CGFloat = 0
+    /// Whether the sheet's content holds it open (`DuoSheetHeld`), as `interactiveDismissDisabled` holds iOS's own sheet.
+    @State private var held = false
+    /// The height of the grabber's strip over the sheet's content. A sheet that draws its own ground carries it up behind
+    /// the grabber by this much (`NewThreadSheet`).
+    static let grabber: CGFloat = 16
+    /// The scrim in light: neutral, not the theme's, so the page under it greys rather than browns.
+    static let lightScrim = Color(red: 10 / 255, green: 10 / 255, blue: 12 / 255).opacity(0.55)
+    /// The lower corners of a sheet that runs to the screen's foot, which follow the screen's own rounded corners.
+    static let footCorner: CGFloat = 44
+    /// How far a sheet that runs to the screen's foot holds its content up from it, clear of the home indicator.
+    static let footInset: CGFloat = Space.s4
+    var body: some View {
+        ZStack {
+            if let shown = host.shown {
+                // Darker than iOS's own dimming, so the page below the sheet's foot and the lights behind it don't read
+                // through (Zach's pick B, November 9, 2026, round 5). At 62% black the thread's words still read below
+                // the sheet, so in dark it is the theme's canvas at 86%, which leaves the page's words at about 1.4:1,
+                // shapes rather than text (the Duo design climb's round 6). In light the theme's warm ink at 86% turned
+                // the page a muddy brown, so it is a neutral near-black at 55%: the page goes grey (Zach's round 7 pick
+                // A, November 10, 2026).
+                Rectangle().fill(scheme == .dark ? AnyShapeStyle(ThemeRole(.canvas, amount: 0.86)) : AnyShapeStyle(Self.lightScrim))
+                    .ignoresSafeArea()
+                    .contentShape(Rectangle())
+                    .onTapGesture { if !held { shown.close() } }
+                    .accessibilityHidden(true)
+                    .transition(.opacity)
+                GeometryReader { proxy in
+                    // The Agents and pull request sheets, which take the page's height, run on to the screen's foot,
+                    // where they stopped short and the page's dimmed words showed in the strip below them; a question
+                    // keeps fitting its choices and New thread its step (Zach's round 8 pick A, November 10, 2026).
+                    let toFoot = shown.toFoot && fit == nil
+                    let fitted = min(page.maxY, proxy.size.height) - Space.s2
+                    let bottom = toFoot ? proxy.size.height + max(0, screenFoot - layerFoot) : fitted
+                    let top = page.minY + Space.s2
+                    let room = max(fitted - top, 160)
+                    let height = fit.map { min($0 + Self.grabber, room) } ?? max(bottom - top, 160)
+                    sheet(shown, toFoot: toFoot)
+                        .frame(width: max(page.width - Space.s2 * 2, 0), height: height)
+                        .position(x: page.midX, y: bottom - height / 2 + max(drag, 0))
+                }
+                .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+                .id(shown.id)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .global).maxY }) { layerFoot = $0 }
+        .background {
+            Color.clear
+                .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .global).maxY }) { screenFoot = $0 }
+                .ignoresSafeArea()
+                .accessibilityHidden(true)
+        }
+        .animation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.38, dampingFraction: 0.9), value: host.shown?.id)
+        .onChange(of: host.shown?.id) { _, _ in fit = nil; drag = 0; held = false }
+    }
+    private func sheet(_ shown: DuoSheetHost.Shown, toFoot: Bool) -> some View {
+        let foot = toFoot ? Self.footCorner : Radius.xl
+        let shape = UnevenRoundedRectangle(topLeadingRadius: Radius.xl, bottomLeadingRadius: foot, bottomTrailingRadius: foot,
+                                           topTrailingRadius: Radius.xl, style: .continuous)
+        return VStack(spacing: 0) {
+            Capsule().fill(Palette.muted.opacity(0.5)).frame(width: 36, height: 5)
+                .frame(maxWidth: .infinity, minHeight: Self.grabber)
+                .contentShape(Rectangle())
+                .gesture(DragGesture()
+                    .onChanged { drag = $0.translation.height }
+                    .onEnded { value in
+                        if !held, value.translation.height > 90 || value.predictedEndTranslation.height > 260 { shown.close() }
+                        withAnimation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.9)) { drag = 0 }
+                    })
+                .accessibilityHidden(true)
+                // Over a ground the content carries up behind it.
+                .zIndex(1)
+            shown.content
+                .environment(\.sheetClose, shown.close)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                // At the screen's foot the content stops a set way up from it, whatever iOS would give it there.
+                .safeAreaPadding(.bottom, toFoot ? Self.footInset : 0)
+                .ignoresSafeArea(.container, edges: toFoot ? .bottom : [])
+        }
+        .onPreferenceChange(RequestSheetFit.self) { fit = $0 }
+        .onPreferenceChange(DuoSheetHeld.self) { held = $0 }
+        .background { SheetBackdrop(wash: shown.wash) }
+        .clipShape(shape)
+        .overlay(shape.strokeBorder(Palette.hairline, lineWidth: 1))
+        // Drawn once rather than on every frame the sheet moves (ADR-0051: no SwiftUI `.shadow`).
+        .softShadow(shape, color: .black.opacity(0.28), radius: 24, y: 8)
+        .environment(\.sottoOnSheet, true)
+        .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(.isModal)
+        .accessibilityAction(.escape) { if !held { shown.close() } }
+    }
+}
+
+/// Whether a sheet's content holds Sotto's own sheet open, so the scrim, the grabber's drag and VoiceOver's escape leave
+/// it standing, as `interactiveDismissDisabled` holds iOS's: New thread while it creates the thread.
+struct DuoSheetHeld: PreferenceKey {
+    static let defaultValue = false
+    static func reduce(value: inout Bool, nextValue: () -> Bool) { value = value || nextValue() }
 }

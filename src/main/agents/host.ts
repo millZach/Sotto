@@ -19,6 +19,7 @@ import type { UsageQuotaRead, UsageTokenObservation } from '../../shared/usageDa
 import type { UsageHistorySink, UsageRecordedUserMessage } from './usageHistory/sink'
 import type { AgentThreadPrompts } from '../../shared/threadPrompts'
 import type { MergedSettleExpectation } from './worktreeCleanup'
+import type { HeldSession } from './sessionReaper'
 
 /**
  * A staged image as an adapter receives it (ADR-0031): its handle, and its bytes read from this host's attachment
@@ -417,6 +418,12 @@ export interface ProviderHost {
    * November 1, 2026 amendment).
    */
   keepSessionsLive?(threadIds: readonly string[]): void
+  /**
+   * The provider sessions this adapter's session reaper tracks, each with every rule keeping it now and its process where
+   * known, by the adapter's own session IDs (#2398). Read on request for the headless host's administrative read, never on
+   * the update path. Absent on an adapter with no reaper.
+   */
+  heldSessions?(): readonly HeldSession[]
   /**
    * The threads the user has settled (CONTEXT.md, Settled), as a run begins, by the caller's IDs. An adapter may leave
    * them out of work it does for every saved thread once, such as Codex catching a rollout up after an update, and do it
