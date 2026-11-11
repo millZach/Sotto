@@ -123,6 +123,7 @@ test.describe('Teams', () => {
         await page.getByRole('button', { name: 'Copy code' }).click()
         await expect(page.getByRole('button', { name: 'Copied' })).toBeVisible()
         expect((await page.evaluate(() => window.sottoE2E!.snapshot())).clipboardText).toBe(await code.textContent())
+        await captureWindow(app, resolve(evidence, `tab-code-copied-${appearance}-1280x800.png`))
         await page.getByRole('button', { name: 'Cancel code' }).click()
         await expect(code).toHaveCount(0)
         // A project left out stays left out, and takes back its tick.
