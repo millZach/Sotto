@@ -511,7 +511,7 @@ export class WatcherWakeUp {
    * and work-settled news when the work ends (#1152, Zach's pick on November 11, 2026). Quiet news beside it said the same
    * thing twice, and read as an alarm while a thread only waited on a queued runner.
    */
-  private mayGoQuiet(thread: AgentThread): boolean { return this.active(thread) && (thread.status === 'running' || thread.lastTurn?.status === 'running') }
+  private mayGoQuiet(thread: AgentThread): boolean { return isThreadTurnRunning(thread) }
   /**
    * The thread's work is confirmed ended: nothing running and nothing unknown. A sub-agent a restart left unknown may still
    * be running, so it keeps the turn unsettled until its provider says how it ended. A host that does not report the counts
