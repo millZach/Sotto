@@ -1725,6 +1725,10 @@ final class WatcherModelTests: XCTestCase {
         let fits = 460 - WatcherReaderPlace.endGap - WatcherReaderPlace.slack
         XCTAssertEqual(WatcherReaderPlace.followAim(newest: 1000, end: 1000 + fits, top: 140, dockTop: 600)?.mark, .end)
         XCTAssertEqual(WatcherReaderPlace.followAim(newest: 1000, end: 1000 + fits + 1, top: 140, dockTop: 600)?.mark, .newest)
+        // On the Duo folded the end wins whenever what sits under the newest words shows whole above the box.
+        let whole = 460 - WatcherReaderPlace.endGap
+        XCTAssertEqual(WatcherReaderPlace.followAim(newest: 1000, end: 1000 + whole, top: 140, dockTop: 600, wordsShown: 0)?.mark, .end)
+        XCTAssertEqual(WatcherReaderPlace.followAim(newest: 1000, end: 1000 + whole + 1, top: 140, dockTop: 600, wordsShown: 0)?.mark, .newest)
         XCTAssertNil(WatcherReaderPlace.followAim(newest: 1000, end: 1090, top: 140, dockTop: .greatestFiniteMagnitude), "Before the box is measured")
         XCTAssertNil(WatcherReaderPlace.followAim(newest: 1000, end: 1090, top: 140, dockTop: 150), "No room for the gap")
     }

@@ -8,19 +8,41 @@ struct ComputerRoute: Hashable { let hostID: String }
 /// cards scroll as one sheet, like Threads.
 struct ComputersView: View {
     @EnvironmentObject var model: AppModel
+    @Environment(\.duoLayout) private var duo
+    @Environment(\.dynamicTypeSize) private var textSize
+    /// Unfolded and sideways, computers stand as cards two to a row, each with its state under its name, where full-width
+    /// rows set the name and the state 860 points apart (Zach's pick B, November 9, 2026).
+    private var paired: Bool { duo.sideways && !textSize.isAccessibilitySize }
     var body: some View {
         SheetPage(washHeight: 330) {
             PageHeading(String(localized: "Computers"), subtitle: String(localized: "Each computer runs Sotto and shares its threads with this iPhone.")) {
-                Button { model.startAdding() } label: { Image(systemName: "plus") }
-                    .buttonStyle(GlassCircleStyle())
-                    .disabled(!model.storageReady)
-                    .accessibilityLabel("Add computer")
+                // On the Duo, New thread's + stands on the rail beside this, so adding is the list's last row instead (Zach's
+                // pick C, November 8, 2026).
+                if duo == .none {
+                    Button { model.startAdding() } label: { Image(systemName: "plus") }
+                        .buttonStyle(GlassCircleStyle())
+                        .disabled(!model.storageReady)
+                        .accessibilityLabel("Add computer")
+                }
             }
             .padding(.top, Space.s1)
             if model.feedback != nil { FeedbackBanner().padding(.top, Space.s4) }
-            VStack(spacing: Space.s3) {
-                ForEach(model.computers, id: \.hostID) { computer in
-                    ComputerCard(hostID: computer.hostID, name: computer.name)
+            Group {
+                if paired {
+                    LazyVGrid(columns: [GridItem(.flexible(), spacing: Space.s3, alignment: .top), GridItem(.flexible(), spacing: Space.s3, alignment: .top)],
+                              alignment: .leading, spacing: Space.s3) {
+                        ForEach(model.computers, id: \.hostID) { computer in
+                            ComputerCard(hostID: computer.hostID, name: computer.name, stateUnderName: true)
+                        }
+                        addRow
+                    }
+                } else {
+                    VStack(spacing: Space.s3) {
+                        ForEach(model.computers, id: \.hostID) { computer in
+                            ComputerCard(hostID: computer.hostID, name: computer.name)
+                        }
+                        if duo != .none { addRow }
+                    }
                 }
             }
             .padding(.top, Space.s6)
@@ -29,6 +51,25 @@ struct ComputersView: View {
         .navigationTitle("Computers")
         .toolbar(.hidden, for: .navigationBar)
         .navigationDestination(for: ComputerRoute.self) { ComputerDetailView(hostID: $0.hostID).toolbar(.hidden, for: .tabBar) }
+    }
+    /// The list's last row on the Duo: Add a computer.
+    private var addRow: some View {
+        let shape = RoundedRectangle(cornerRadius: Radius.lg, style: .continuous)
+        return Button { model.startAdding() } label: {
+            HStack(spacing: Space.s3) {
+                Image(systemName: "plus").iconFont(16, weight: .semibold).accessibilityHidden(true)
+                Text("Add a computer")
+            }
+            .font(.sotto(.body, .semibold))
+            .foregroundStyle(Palette.accentText)
+            .padding(.horizontal, Space.s4)
+            .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+            .overlay(shape.strokeBorder(Palette.hairline, style: StrokeStyle(lineWidth: 1, dash: [4, 4])))
+            .contentShape(shape)
+        }
+        .buttonStyle(PressStyle())
+        .disabled(!model.storageReady)
+        .accessibilityIdentifier("computers-add")
     }
 }
 
@@ -40,6 +81,8 @@ private struct ComputerCard: View {
     @Environment(\.dynamicTypeSize) private var textSize
     let hostID: String
     let name: String
+    /// The state under the name with what it shared, for a card half the page wide.
+    var stateUnderName = false
     @State private var retries = 0
     private var status: ComputerStatus { model.status(hostID) }
     var body: some View {
@@ -52,7 +95,8 @@ private struct ComputerCard: View {
                     .accessibilityHint("Opens this computer’s details")
             }
             .buttonStyle(PressStyle())
-            if status == .unreachable {
+            // Half the page wide, Try again ends the state line instead (below), so the two cards match.
+            if status == .unreachable, !stateUnderName {
                 HStack(spacing: Space.s3) {
                     Button { retries += 1; Task { await model.connect(hostID) } } label: {
                         Label("Try again", systemImage: "arrow.clockwise")
@@ -66,13 +110,54 @@ private struct ComputerCard: View {
             }
         }
         .padding(Space.s4)
+        // The link can't hold a button, so Try again stands over the place kept for it on the state line.
+        .overlayPreferenceValue(TryAgainSpot.self) { spot in
+            GeometryReader { proxy in
+                if let spot, stateUnderName, status == .unreachable {
+                    let rect = proxy[spot]
+                    Button { retries += 1; Task { await model.connect(hostID) } } label: {
+                        tryAgainWords.frame(width: rect.width, height: max(rect.height, 44)).contentShape(Rectangle())
+                    }
+                    .buttonStyle(PressStyle())
+                    .sensoryFeedback(.impact(flexibility: .soft), trigger: retries)
+                    .accessibilityLabel("Try reaching \(name) again")
+                    .position(x: rect.midX, y: rect.midY)
+                }
+            }
+        }
         .sottoCard()
+    }
+
+    /// Try again as the state line's last words, in the accent.
+    private var tryAgainWords: some View {
+        Text("Try again").font(.sotto(.small, .semibold)).foregroundStyle(Palette.accentText).lineLimit(1).fixedSize()
     }
 
     /// The name with one line under it, and the computer's state at the trailing edge. At the largest text sizes the
     /// state goes under the name instead, so the name keeps the width.
     @ViewBuilder private var header: some View {
-        if textSize.isAccessibilitySize {
+        if stateUnderName {
+            HStack(alignment: .top, spacing: Space.s3) {
+                VStack(alignment: .leading, spacing: Space.s1) {
+                    title
+                    HStack(spacing: Space.s2) {
+                        state
+                        Text(verbatim: "·").font(.sotto(.small)).foregroundStyle(Palette.muted).accessibilityHidden(true)
+                        // Unreachable, the line ends with Try again where the counts were, so this card is as tall as
+                        // the one beside it; the counts were the last it shared and come back once it connects (Zach's
+                        // pick A, November 9, 2026, round 4).
+                        if status == .unreachable {
+                            tryAgainWords.hidden().accessibilityHidden(true)
+                                .anchorPreference(key: TryAgainSpot.self, value: .bounds) { $0 }
+                        } else {
+                            detail
+                        }
+                    }
+                }
+                Spacer(minLength: Space.s2)
+                chevron.padding(.top, 6)
+            }
+        } else if textSize.isAccessibilitySize {
             HStack(spacing: Space.s3) {
                 VStack(alignment: .leading, spacing: Space.s1) {
                     title
@@ -263,3 +348,8 @@ private struct ClientIDRow: View {
     }
 }
 
+/// Where Try again stands on a half-width computer card's state line.
+private struct TryAgainSpot: PreferenceKey {
+    static let defaultValue: Anchor<CGRect>? = nil
+    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) { value = nextValue() ?? value }
+}
