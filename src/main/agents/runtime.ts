@@ -213,7 +213,7 @@ export interface AgentRuntimeOptions {
   threadMedia?: ThreadMediaStore
   /**
    * The copies of pictures phones ask for at a longest edge (`thread-media-edge`, ADR-0170's November 10 amendment), made
-   * by the process owner: the desktop with Electron's image tools, a headless host in its picture worker (ADR-0202). Absent,
+   * by the process owner: the desktop with Electron's image tools, a headless host in its picture worker (ADR-0203). Absent,
    * pictures are answered whole and `thread-media-edge` is not listed.
    */
   reducedPictures?: ReducedPictures

@@ -1,6 +1,6 @@
 // @vitest-environment node
 /**
- * `thread-media-edge` on a headless host (ADR-0202; #2395): a phone paired straight to a headless host, as forge's phones
+ * `thread-media-edge` on a headless host (ADR-0203; #2395): a phone paired straight to a headless host, as forge's phones
  * are, asks a tile's picture at the tile's edge, 640 on the iPhone, and is sent a copy the host made in its picture worker
  * with the decoders compiled into it, where before it was sent the whole picture. A real headless host over its real
  * listener, with its own thread media store holding pictures made in the test at the size of forge's

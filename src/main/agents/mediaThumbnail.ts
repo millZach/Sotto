@@ -51,7 +51,7 @@ const JPEG_URL = 'data:image/jpeg;base64,'
 const EXIF = Buffer.from('Exif\0\0', 'latin1')
 /**
  * Whether a JPEG data URL carries an Exif segment before its picture starts: read from its first 64 KiB, never all of it.
- * A headless host's maker (`src/host/pictureMaker.ts`, ADR-0202) hands such a picture back whole by the same rule, since
+ * A headless host's maker (`src/host/pictureMaker.ts`, ADR-0203) hands such a picture back whole by the same rule, since
  * its decoder does not turn a picture either.
  */
 export function carriesCameraDetails(dataUrl: string): boolean {
@@ -113,7 +113,7 @@ type PictureRead = { readonly dataUrl: string } | null
  * made by `reduce` and kept in `kept`, which the desktop shares with its window's thumbnails, so both stay inside one
  * budget in bytes. A GIF is answered whole, so it keeps its frames for the phone to play; so is a picture `reduce`
  * cannot read, or whose copy comes out no smaller. None of those is kept, as no whole picture is. `reduce` is the process
- * owner's: Electron's image tools on the desktop, the picture worker on a headless host (ADR-0202). A picture and edge
+ * owner's: Electron's image tools on the desktop, the picture worker on a headless host (ADR-0203). A picture and edge
  * asked for again while its copy is being made waits for that one, so it is read and made once.
  */
 export class ReducedPictures {
