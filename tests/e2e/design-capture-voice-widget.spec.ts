@@ -20,7 +20,8 @@ test.describe('authoritative design-review captures', () => {
         await expect(widget.locator('.widget-shell[data-status="idle"]')).toBeVisible()
         await launched.page.getByRole('button', { name: 'Start dictation' }).click()
         await expect(widget.locator('.widget-shell[data-status="listening"]')).toBeVisible()
-        await widget.getByRole('button', { name: 'Cancel dictation' }).click()
+        // Main holds Escape while listening on Windows and macOS, so the pill shows no cancel ×: cancel as Escape would.
+        await widget.evaluate(() => window.sottoWidget!.requestCancel())
         await expect(widget.locator('.widget-shell[data-status="idle"]')).toBeVisible({ timeout: 15_000 })
         await expect(widget.locator('.widget-sliver')).toBeVisible()
         await captureWidget(
@@ -46,7 +47,7 @@ test.describe('authoritative design-review captures', () => {
         await expect(widget.locator('.widget-shell[data-status="idle"]')).toBeVisible()
         await launched.page.getByRole('button', { name: 'Start dictation' }).click()
         await expect(widget.locator('.widget-shell[data-status="listening"]')).toBeVisible()
-        await widget.getByRole('button', { name: 'Cancel dictation' }).click()
+        await widget.evaluate(() => window.sottoWidget!.requestCancel())
         await expect(widget.getByText('Cancelled', { exact: true })).toBeVisible()
         await captureWidget(widget, `widget-cancelled-${theme}.png`, { category: 'widget', state: 'cancelled', theme, reducedMotion: true })
       })

@@ -10,8 +10,8 @@ import { openPage } from './support/sottoLaunch'
 import { holdContentSize } from './support/sottoWindow'
 
 // #1831, from the desktop UI review: the last containers ADR-0110 had not reached. Settings' Microphone test is a row on
-// the Microphone card, and Hosts & phones groups its rows on cards with no dashed box. First-run setup's card is checked
-// by first-run-setup-fit.spec.ts. docs/verification/filled-cards-and-setup-card.md cites what this writes when run with
+// the Microphone card, and Hosts & phones groups its rows on cards with no dashed box. First-run setup's notes are
+// checked by first-run-setup-fit.spec.ts. docs/verification/filled-cards-and-setup-card.md cites what this writes when run with
 // SOTTO_E2E_EVIDENCE=publish.
 
 const shots = evidenceDirectory('artifacts/filled-cards-and-setup-card')

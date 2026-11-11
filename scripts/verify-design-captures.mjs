@@ -84,11 +84,13 @@ for (const entry of manifest.entries) {
     const minimum = entry.state === 'idle-sliver' ? { width: 124, height: 54 } : { width: 248, height: 88 }
     if (entry.source === 'app-review' && (decoded.info.width < minimum.width || decoded.info.height < minimum.height)) throw new Error(`Live widget raster is smaller than its ${minimum.width}x${minimum.height} logical window: ${entry.id}`)
     const alphaAt = (x, y) => decoded.data[(y * decoded.info.width + x) * 4 + 3] ?? 255
+    // As designCapture.ts: a shadow's tail may round to 2 of 255 on an edge, which no eye sees, and no more.
+    const edgeAlphaLimit = 2
     for (let x = 0; x < decoded.info.width; x += 1) {
-      if (alphaAt(x, 0) !== 0 || alphaAt(x, decoded.info.height - 1) !== 0) throw new Error(`Widget edge is not transparent: ${entry.id}`)
+      if (alphaAt(x, 0) > edgeAlphaLimit || alphaAt(x, decoded.info.height - 1) > edgeAlphaLimit) throw new Error(`Widget edge is not transparent: ${entry.id}`)
     }
     for (let y = 0; y < decoded.info.height; y += 1) {
-      if (alphaAt(0, y) !== 0 || alphaAt(decoded.info.width - 1, y) !== 0) throw new Error(`Widget edge is not transparent: ${entry.id}`)
+      if (alphaAt(0, y) > edgeAlphaLimit || alphaAt(decoded.info.width - 1, y) > edgeAlphaLimit) throw new Error(`Widget edge is not transparent: ${entry.id}`)
     }
   }
 }

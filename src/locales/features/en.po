@@ -283,6 +283,10 @@ msgstr "{count, plural, one {You asked to move # thread to {machine}. Sotto repo
 msgid "{count, plural, other {# choices}}"
 msgstr "{count, plural, other {# choices}}"
 
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "{count} of {total}"
+msgstr "{count} of {total}"
+
 #: src/renderer/src/watcher/WatcherMachines.tsx
 msgid "{cpus, plural, one {# CPU} other {# CPUs}}"
 msgstr "{cpus, plural, one {# CPU} other {# CPUs}}"
@@ -406,6 +410,10 @@ msgstr "{held, plural, =0 {Sotto holds news until then.} other {Sotto is holding
 msgid "{held, plural, other {Sotto holds news and tries again every few minutes. Holding # so far.}}"
 msgstr "{held, plural, other {Sotto holds news and tries again every few minutes. Holding # so far.}}"
 
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "{host} is added."
+msgstr "{host} is added."
+
 #: src/renderer/src/features/updates/updateAll.ts
 msgid "{host} restarted before {name} updated. Nothing was changed. Try again."
 msgstr "{host} restarted before {name} updated. Nothing was changed. Try again."
@@ -462,14 +470,6 @@ msgstr "{language}, {model}, in {app}. Kept on this computer only."
 #: src/renderer/src/features/dictate/journalFacts.ts
 msgid "{language}, {model}. Kept on this computer only."
 msgstr "{language}, {model}. Kept on this computer only."
-
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "{languages}. {size}, from GitHub."
-msgstr "{languages}. {size}, from GitHub."
-
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "{languages}. Ready."
-msgstr "{languages}. Ready."
 
 #: src/renderer/src/features/performance/MainActivityParts.tsx
 msgid "{left} seconds left"
@@ -661,10 +661,6 @@ msgstr "{name} runs Sotto host {to}."
 msgid "{name} was not updated."
 msgstr "{name} was not updated."
 
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "{name}, by {maker}"
-msgstr "{name}, by {maker}"
-
 #. A filter on the Usage page and its current choice: "Date range: Last 30 days"
 #: src/renderer/src/features/usage/UsageMenu.tsx
 msgid "{name}: {current}"
@@ -803,6 +799,10 @@ msgstr "{placePromptCount, plural, one {{placePrompts} prompt} other {{placeProm
 msgid "{placeTokens} tokens"
 msgstr "{placeTokens} tokens"
 
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "{project} is added."
+msgstr "{project} is added."
+
 #: src/renderer/src/features/usage/UsageModels.tsx
 msgid "{promptTotal, plural, one {{name}, {provider}: {shown} prompt, {rowTokens} tokens, {rowCache} from cache} other {{name}, {provider}: {shown} prompts, {rowTokens} tokens, {rowCache} from cache}}"
 msgstr "{promptTotal, plural, one {{name}, {provider}: {shown} prompt, {rowTokens} tokens, {rowCache} from cache} other {{name}, {provider}: {shown} prompts, {rowTokens} tokens, {rowCache} from cache}}"
@@ -827,9 +827,9 @@ msgstr "{provider} decides what to ask you about."
 msgid "{provider} doesn't report tokens."
 msgstr "{provider} doesn't report tokens."
 
-#: src/renderer/src/features/onboarding/AgentsStep.tsx
-msgid "{ready} of {total} ready. Settings › Providers manages them later."
-msgstr "{ready} of {total} ready. Settings › Providers manages them later."
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "{readyName} is ready."
+msgstr "{readyName} is ready."
 
 #: src/renderer/src/watcher/TeamsPage.tsx
 msgid "{refused} turned down."
@@ -875,10 +875,6 @@ msgstr "{shown}. Show {name}’s load and what runs there."
 msgid "{shown}. Show this computer’s load and what runs there."
 msgstr "{shown}. Show this computer’s load and what runs there."
 
-#: src/renderer/src/features/onboarding/ThreadsTour.tsx
-msgid "{shownStop} of {shownStops}"
-msgstr "{shownStop} of {shownStops}"
-
 #: src/renderer/src/components/CleanupModelFields.tsx
 msgid "{slug} on {server}"
 msgstr "{slug} on {server}"
@@ -922,6 +918,10 @@ msgstr "{title} no longer waits on you"
 #: src/renderer/src/watcher/WatcherAsks.tsx
 msgid "{title} no longer waits on you."
 msgstr "{title} no longer waits on you."
+
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "{title}: {where}"
+msgstr "{title}: {where}"
 
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "{topShare} of prompts"
@@ -1125,9 +1125,13 @@ msgstr "a fact to check"
 msgid "a new thread"
 msgstr "a new thread"
 
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "A project is a folder your agents work in, usually a Git repository. Threads start in it."
-msgstr "A project is a folder your agents work in, usually a Git repository. Threads start in it."
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "A project is a folder your agents work in, usually a Git repository. Open the sidebar, press Add project and choose one."
+msgstr "A project is a folder your agents work in, usually a Git repository. Open the sidebar, press Add project and choose one."
+
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "A project is a folder your agents work in, usually a Git repository. Press Add project and choose one."
+msgstr "A project is a folder your agents work in, usually a Git repository. Press Add project and choose one."
 
 #: src/renderer/src/watcher/WatcherReceipts.tsx
 msgid "A pull request in “{title}” has its required checks running."
@@ -1141,9 +1145,9 @@ msgstr "A question whose words are not kept"
 msgid "a review"
 msgstr "a review"
 
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "A safe local field for testing your clipboard or shortcut."
-msgstr "A safe local field for testing your clipboard or shortcut."
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "A speech model is chosen. Dictation works as soon as it is ready."
+msgstr "A speech model is chosen. Dictation works as soon as it is ready."
 
 #: src/renderer/src/features/help/HelpView.tsx
 msgid "A speech model transcribes your speech on this computer. Choose it in Settings → Dictation, under Speech model."
@@ -1171,9 +1175,9 @@ msgstr "a thread no longer here"
 msgid "A thread no longer here"
 msgstr "A thread no longer here"
 
-#: src/renderer/src/features/onboarding/ThreadsTour.tsx
-msgid "A thread shows the agent's work, and the questions and permissions it asks you to answer."
-msgstr "A thread shows the agent's work, and the questions and permissions it asks you to answer."
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "A thread runs on an agent you already have. These are the ones Sotto looked for on this computer. Sign in opens that agent’s own sign-in."
+msgstr "A thread runs on an agent you already have. These are the ones Sotto looked for on this computer. Sign in opens that agent’s own sign-in."
 
 #. Whose a check is: a thread delegated it.
 #: src/renderer/src/watcher/checkQueueWords.ts
@@ -1218,10 +1222,6 @@ msgstr "Accessibility"
 msgid "Account-wide, as each provider reports it."
 msgstr "Account-wide, as each provider reports it."
 
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Active shortcut"
-msgstr "Active shortcut"
-
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "Activity counts the work on each computer: Sotto threads, the subagents they start, and Claude Code and Codex used outside Sotto. Grok Build, Devin, Muse and OpenCode are counted in Sotto only."
 msgstr "Activity counts the work on each computer: Sotto threads, the subagents they start, and Claude Code and Codex used outside Sotto. Grok Build, Devin, Muse and OpenCode are counted in Sotto only."
@@ -1238,21 +1238,21 @@ msgstr "Activity recording saved. Hide it"
 msgid "Activity recording saved. Show it"
 msgstr "Activity recording saved. Show it"
 
-#: src/renderer/src/features/onboarding/ComputersStep.tsx
-msgid "Add a computer"
-msgstr "Add a computer"
-
-#: src/renderer/src/features/onboarding/ComputersStep.tsx
-msgid "Add another computer"
-msgstr "Add another computer"
-
-#: src/renderer/src/features/onboarding/ProjectStep.tsx
-msgid "Add another folder"
-msgstr "Add another folder"
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Add a project folder"
+msgstr "Add a project folder"
 
 #: src/renderer/src/features/council/ClimbPanel.tsx
 msgid "Add criterion"
 msgstr "Add criterion"
+
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Add host lists the computers on your tailnet and in your SSH configuration, and sets Sotto up on the one you choose."
+msgstr "Add host lists the computers on your tailnet and in your SSH configuration, and sets Sotto up on the one you choose."
+
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Add project, in the sidebar"
+msgstr "Add project, in the sidebar"
 
 #: src/renderer/src/features/performance/MainActivityParts.tsx
 msgid "Added to a new thread's composer. It is sent when you send."
@@ -1261,15 +1261,6 @@ msgstr "Added to a new thread's composer. It is sent when you send."
 #: src/renderer/src/watcher/TeamDesks.tsx
 msgid "Advice from both desks: checks passed first, then oldest. Nothing merges from this, and it cannot see which files pull requests share."
 msgstr "Advice from both desks: checks passed first, then oldest. Nothing merges from this, and it cannot see which files pull requests share."
-
-#. First-run setup: the group of steps about coding agents
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Agents"
-msgstr "Agents"
-
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "AI cleanup is optional; turn it on in Settings → Cleanup."
-msgstr "AI cleanup is optional; turn it on in Settings → Cleanup."
 
 #. The Journal chip that shows transcripts from every app
 #: src/renderer/src/features/dictate/Journal.tsx
@@ -1334,10 +1325,6 @@ msgstr "Allow microphone access in Windows Settings."
 msgid "Allowed: {action}"
 msgstr "Allowed: {action}"
 
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Already on this computer:"
-msgstr "Already on this computer:"
-
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Also answer again as"
 msgstr "Also answer again as"
@@ -1354,6 +1341,10 @@ msgstr "Always confirm: {action}"
 #: src/renderer/src/features/memory/Questionnaire.tsx
 msgid "Always confirm: {confirmed}."
 msgstr "Always confirm: {confirmed}."
+
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "An agent is ready."
+msgstr "An agent is ready."
 
 #. Mid-sentence, after the dictation language: "English, an earlier model."
 #: src/renderer/src/features/dictate/journalFacts.ts
@@ -1393,13 +1384,13 @@ msgstr "Answer again without outside research"
 msgid "Answer it here instead; the handover carries it."
 msgstr "Answer it here instead; the handover carries it."
 
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Answer threads from your iPhone"
+msgstr "Answer threads from your iPhone"
+
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Answer to objections"
 msgstr "Answer to objections"
-
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Answer your threads from your iPhone"
-msgstr "Answer your threads from your iPhone"
 
 #. Mid-sentence, after "Always confirm:" or in a list joined by semicolons, so it starts in lower case where the language has one
 #: src/renderer/src/features/memory/questions.ts
@@ -1423,11 +1414,7 @@ msgstr "Answers are preferences. Only the confirmation choices create policies; 
 msgid "Any dictation or agent work in progress will be interrupted. Make sure you are ready before continuing."
 msgstr "Any dictation or agent work in progress will be interrupted. Make sure you are ready before continuing."
 
-#: src/renderer/src/features/onboarding/ThreadsTour.tsx
-msgid "Anything you skipped in setup waits here, with your shortcut, microphone and keys."
-msgstr "Anything you skipped in setup waits here, with your shortcut, microphone and keys."
-
-#: src/renderer/src/features/onboarding/LookStep.tsx
+#: src/renderer/src/features/setup/SetupWalk.tsx
 msgid "Appearance"
 msgstr "Appearance"
 
@@ -1604,10 +1591,13 @@ msgid "Automation"
 msgstr "Automation"
 
 #: src/renderer/src/features/memory/Questionnaire.tsx
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-#: src/renderer/src/features/onboarding/ThreadsTour.tsx
+#: src/renderer/src/features/setup/SetupWalk.tsx
 msgid "Back"
 msgstr "Back"
+
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Back to setup"
+msgstr "Back to setup"
 
 #: src/renderer/src/watcher/TeamDesks.tsx
 msgid "Back to Teams"
@@ -1690,10 +1680,6 @@ msgstr "Cache reads"
 msgid "Cache write"
 msgstr "Cache write"
 
-#: src/renderer/src/features/onboarding/AgentsStep.tsx
-msgid "Can't be started"
-msgstr "Can't be started"
-
 #: src/renderer/src/watcher/WatcherOverview.tsx
 msgid "Can’t reach it"
 msgstr "Can’t reach it"
@@ -1710,7 +1696,6 @@ msgstr "Can't read limits"
 msgid "Cancel"
 msgstr "Cancel"
 
-#: src/renderer/src/features/onboarding/PhoneStep.tsx
 #: src/renderer/src/watcher/TeamsPage.tsx
 msgid "Cancel code"
 msgstr "Cancel code"
@@ -1765,10 +1750,6 @@ msgstr "Change"
 msgid "Change {topic} answer"
 msgstr "Change {topic} answer"
 
-#: src/renderer/src/features/onboarding/LookStep.tsx
-msgid "Change it any time, or make your own theme, in Settings › Appearance."
-msgstr "Change it any time, or make your own theme, in Settings › Appearance."
-
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Change the criteria"
 msgstr "Change the criteria"
@@ -1798,7 +1779,6 @@ msgstr "Changes save as you make them."
 msgid "ChatGPT through Codex"
 msgstr "ChatGPT through Codex"
 
-#: src/renderer/src/features/onboarding/AgentsStep.tsx
 #: src/renderer/src/watcher/TeamsPage.tsx
 msgid "Check again"
 msgstr "Check again"
@@ -1815,10 +1795,6 @@ msgstr "Check for updates"
 msgid "Check it works both ways"
 msgstr "Check it works both ways"
 
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Check that the microphone above is the one you speak into, then say something."
-msgstr "Check that the microphone above is the one you speak into, then say something."
-
 #: src/renderer/src/watcher/TeamsPage.tsx
 msgid "Check that this computer is on and that your tailnet's access rules let {name} reach it. Then check again."
 msgstr "Check that this computer is on and that your tailnet's access rules let {name} reach it. Then check again."
@@ -1827,7 +1803,7 @@ msgstr "Check that this computer is on and that your tailnet's access rules let 
 msgid "Check the download"
 msgstr "Check the download"
 
-#: src/renderer/src/features/onboarding/Onboarding.tsx
+#: src/renderer/src/features/setup/SetupWalk.tsx
 msgid "Check your microphone"
 msgstr "Check your microphone"
 
@@ -1842,10 +1818,6 @@ msgstr "checking for its update"
 #: src/renderer/src/features/updates/updateControlLogic.ts
 msgid "Checking for updates…"
 msgstr "Checking for updates…"
-
-#: src/renderer/src/features/onboarding/PhoneStep.tsx
-msgid "Checking Tailscale on this computer…"
-msgstr "Checking Tailscale on this computer…"
 
 #: src/renderer/src/features/updates/updateAll.ts
 msgid "Checking the releases page for its update…"
@@ -1866,10 +1838,6 @@ msgstr "Checking which threads are Watcher’s…"
 #: src/renderer/src/watcher/MoveThreads.tsx
 msgid "Checking which threads can move…"
 msgstr "Checking which threads can move…"
-
-#: src/renderer/src/features/onboarding/AgentsStep.tsx
-msgid "Checking…"
-msgstr "Checking…"
 
 #: src/renderer/src/watcher/TeamDesks.tsx
 msgid "checks failed"
@@ -1903,19 +1871,11 @@ msgstr "Checks, one at a time"
 msgid "Chinese"
 msgstr "Chinese"
 
-#: src/renderer/src/features/onboarding/ProjectStep.tsx
-msgid "Choose a folder"
-msgstr "Choose a folder"
-
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Choose a project folder"
-msgstr "Choose a project folder"
-
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "Choose a range of a year or less to see each day. The totals still cover the whole range."
 msgstr "Choose a range of a year or less to see each day. The totals still cover the whole range."
 
-#: src/renderer/src/features/onboarding/Onboarding.tsx
+#: src/renderer/src/features/setup/SetupWalk.tsx
 msgid "Choose a speech model"
 msgstr "Choose a speech model"
 
@@ -1938,10 +1898,6 @@ msgstr "Choose another model for {who}"
 #: src/renderer/src/features/usage/UsageView.tsx
 msgid "Choose dates"
 msgstr "Choose dates"
-
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Choose how Sotto looks"
-msgstr "Choose how Sotto looks"
 
 #: src/renderer/src/features/dictate/DictateRoom.tsx
 msgid "Choose one in Settings → Dictation, under Speech model."
@@ -2068,10 +2024,6 @@ msgstr "Codex, Claude Code or Grok Build"
 msgid "Codex, Claude Code, Grok Build or Muse"
 msgstr "Codex, Claude Code, Grok Build or Muse"
 
-#: src/renderer/src/features/onboarding/AgentsStep.tsx
-msgid "Coding agents"
-msgstr "Coding agents"
-
 #: src/renderer/src/features/updates/UpdateAllCard.tsx
 msgid "comes last"
 msgstr "comes last"
@@ -2142,29 +2094,9 @@ msgstr "Computer use"
 msgid "Confidence"
 msgstr "Confidence"
 
-#: src/renderer/src/features/onboarding/AgentsStep.tsx
-msgid "Connect"
-msgstr "Connect"
-
-#: src/renderer/src/features/onboarding/AgentsStep.tsx
-msgid "Connect {provider}"
-msgstr "Connect {provider}"
-
 #: src/renderer/src/watcher/WatcherView.tsx
 msgid "Connect {providers} in Settings, under Providers, to start Watcher."
 msgstr "Connect {providers} in Settings, under Providers, to start Watcher."
-
-#: src/renderer/src/features/onboarding/ProjectStep.tsx
-msgid "Connect a coding agent first: a project starts its threads with one. Go back to Coding agents, or skip this and add a project from the sidebar later."
-msgstr "Connect a coding agent first: a project starts its threads with one. Go back to Coding agents, or skip this and add a project from the sidebar later."
-
-#: src/renderer/src/features/onboarding/ProjectStep.tsx
-msgid "Connect a coding agent to add another project. Go back to Coding agents, or add one from the sidebar later."
-msgstr "Connect a coding agent to add another project. Go back to Coding agents, or add one from the sidebar later."
-
-#: src/renderer/src/features/onboarding/AgentsStep.tsx
-msgid "Connect it to use it on this computer."
-msgstr "Connect it to use it on this computer."
 
 #: src/renderer/src/platformCopy.ts
 msgid "Connect or enable an input device in System Settings > Sound, then try again."
@@ -2185,10 +2117,6 @@ msgstr "connecting"
 #: src/renderer/src/features/starting/startingView.ts
 msgid "Connecting {connecting}"
 msgstr "Connecting {connecting}"
-
-#: src/renderer/src/features/onboarding/AgentsStep.tsx
-msgid "Connecting the agents on this computer…"
-msgstr "Connecting the agents on this computer…"
 
 #: src/renderer/src/features/dictate/DictateRoom.tsx
 msgid "Connecting to your microphone."
@@ -2216,13 +2144,17 @@ msgid "context, compacts at {point}"
 msgstr "context, compacts at {point}"
 
 #: src/renderer/src/features/memory/Questionnaire.tsx
-#: src/renderer/src/features/onboarding/Onboarding.tsx
+#: src/renderer/src/features/setup/SetupWalk.tsx
 msgid "Continue"
 msgstr "Continue"
 
 #: src/renderer/src/features/council/ClimbPanel.tsx
 msgid "Continue Climb"
 msgstr "Continue Climb"
+
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Continue to dictation"
+msgstr "Continue to dictation"
 
 #: src/renderer/src/watcher/WatcherView.tsx
 msgid "Continue with the handover"
@@ -2383,7 +2315,7 @@ msgid "Crux check: {0}"
 msgstr "Crux check: {0}"
 
 #. Colour scheme
-#: src/renderer/src/features/onboarding/LookStep.tsx
+#: src/renderer/src/features/setup/SetupWalk.tsx
 msgid "Dark"
 msgstr "Dark"
 
@@ -2488,9 +2420,7 @@ msgstr "Dictate"
 msgid "Dictate something and it will be kept here, on this computer."
 msgstr "Dictate something and it will be kept here, on this computer."
 
-#. First-run setup: the group of steps about dictation
 #: src/renderer/src/features/dictate/DictateRoom.tsx
-#: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Dictation"
 msgstr "Dictation"
 
@@ -2558,16 +2488,16 @@ msgid "done"
 msgstr "done"
 
 #. An Omarchy setup piece that is set up
+#. Closes a dialog.
 #: src/renderer/src/features/council/ClimbGrid.tsx
 #: src/renderer/src/features/council/CouncilView.tsx
 #: src/renderer/src/features/council/SeatGrid.tsx
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
-#: src/renderer/src/features/onboarding/ThreadsTour.tsx
+#: src/renderer/src/features/setup/SetupWalk.tsx
 #: src/renderer/src/watcher/TeamsPage.tsx
 msgid "Done"
 msgstr "Done"
 
-#: src/renderer/src/features/onboarding/Onboarding.tsx
 #: src/renderer/src/features/updates/updateAll.ts
 msgid "Download {name}"
 msgstr "Download {name}"
@@ -2684,11 +2614,6 @@ msgstr "Edits files and runs any command without asking, anywhere on this comput
 msgid "Edits files without asking. Asks before a command that changes something."
 msgstr "Edits files without asking. Asks before a command that changes something."
 
-#. First-run setup: the group of steps about other computers and the iPhone
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Elsewhere"
-msgstr "Elsewhere"
-
 #: src/renderer/src/languages.ts
 msgid "English"
 msgstr "English"
@@ -2705,9 +2630,9 @@ msgstr "Every product event"
 msgid "Every read of your desk ({reads})"
 msgstr "Every read of your desk ({reads})"
 
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Every step after this one can be skipped and finished later in Settings."
-msgstr "Every step after this one can be skipped and finished later in Settings."
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Everything in the walk is set up."
+msgstr "Everything in the walk is set up."
 
 #: src/renderer/src/features/usage/UsageView.tsx
 msgid "Everywhere"
@@ -2799,9 +2724,9 @@ msgstr "Find a thread"
 msgid "Findings: {found}."
 msgstr "Findings: {found}."
 
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Finish setup"
-msgstr "Finish setup"
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Finish here"
+msgstr "Finish here"
 
 #: src/renderer/src/features/council/ClimbPanel.tsx
 msgid "Finished"
@@ -2922,17 +2847,9 @@ msgstr "German"
 msgid "Get {name}'s desk"
 msgstr "Get {name}'s desk"
 
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Get started"
-msgstr "Get started"
-
-#: src/renderer/src/features/onboarding/PhoneStep.tsx
-msgid "Get Tailscale"
-msgstr "Get Tailscale"
-
-#: src/renderer/src/features/onboarding/PhoneStep.tsx
-msgid "Get the iPhone beta"
-msgstr "Get the iPhone beta"
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Get the beta from TestFlight, turn on Let phones connect, then show a pairing code and enter it in the app."
+msgstr "Get the beta from TestFlight, turn on Let phones connect, then show a pairing code and enter it in the app."
 
 #: src/renderer/src/watcher/TeamDesks.tsx
 msgid "Getting {name}'s desk…"
@@ -3094,13 +3011,9 @@ msgstr "Hold {held} to talk."
 msgid "Hold {hold} to talk, or press {press} to start and stop, once Sotto’s compositor bindings are installed in Hyprland. The dictation button works too. To stop without transcribing, press Cancel on the floating widget."
 msgstr "Hold {hold} to talk, or press {press} to start and stop, once Sotto’s compositor bindings are installed in Hyprland. The dictation button works too. To stop without transcribing, press Cancel on the floating widget."
 
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Hold F9 to talk, then release it. Sotto copies your text, then pastes into the focused app or terminal. If paste does not get through, use Super+V, Omarchy’s universal paste."
-msgstr "Hold F9 to talk, then release it. Sotto copies your text, then pastes into the focused app or terminal. If paste does not get through, use Super+V, Omarchy’s universal paste."
-
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Hold F9 to try it"
-msgstr "Hold F9 to try it"
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Hold F9, say something, and let go. Your words arrive wherever you were typing."
+msgstr "Hold F9, say something, and let go. Your words arrive wherever you were typing."
 
 #: src/renderer/src/watcher/MoveThreads.tsx
 msgid "Holding sends"
@@ -3194,14 +3107,6 @@ msgstr "in Sotto"
 msgid "In Sotto"
 msgstr "In Sotto"
 
-#: src/renderer/src/features/onboarding/PhoneStep.tsx
-msgid "In the app, tap Add computer, enter {machine}, then this code. It works once and expires in {expiresIn}."
-msgstr "In the app, tap Add computer, enter {machine}, then this code. It works once and expires in {expiresIn}."
-
-#: src/renderer/src/features/onboarding/PhoneStep.tsx
-msgid "In the app, tap Add computer, enter this computer’s name on your tailnet, then this code. It works once and expires in {expiresIn}."
-msgstr "In the app, tap Add computer, enter this computer’s name on your tailnet, then this code. It works once and expires in {expiresIn}."
-
 #. Follows “Open” and a pull request’s title: where it opens
 #: src/renderer/src/watcher/WatcherBeside.tsx
 msgid "in Tools on the Threads page"
@@ -3256,14 +3161,6 @@ msgstr "Install beside {from}"
 msgid "Install failed for {version}. Click to retry."
 msgstr "Install failed for {version}. Click to retry."
 
-#: src/renderer/src/features/onboarding/AgentsStep.tsx
-msgid "Install guide"
-msgstr "Install guide"
-
-#: src/renderer/src/features/onboarding/PhoneStep.tsx
-msgid "Install the beta"
-msgstr "Install the beta"
-
 #: src/renderer/src/platformCopy.ts
 msgid "Install the next sotto-bin package with sudo pacman -U. Once sotto-bin is in a package repository, omarchy update brings it."
 msgstr "Install the next sotto-bin package with sudo pacman -U. Once sotto-bin is in a package repository, omarchy update brings it."
@@ -3271,14 +3168,6 @@ msgstr "Install the next sotto-bin package with sudo pacman -U. Once sotto-bin i
 #: src/renderer/src/features/updates/updateControlLogic.ts
 msgid "Install update {version} and restart Sotto?"
 msgstr "Install update {version} and restart Sotto?"
-
-#: src/renderer/src/features/onboarding/AgentsStep.tsx
-msgid "Installed, but Sotto could not start it."
-msgstr "Installed, but Sotto could not start it."
-
-#: src/renderer/src/features/onboarding/AgentsStep.tsx
-msgid "Installed. Sign in to it, then check again."
-msgstr "Installed. Sign in to it, then check again."
 
 #: src/renderer/src/watcher/checkQueueWords.ts
 msgid "installing packages first, because package-lock.json changed"
@@ -3356,6 +3245,10 @@ msgstr "It takes no sends on {from} while it moves."
 #: src/renderer/src/features/performance/MainFreezeNotice.tsx
 msgid "It was blocked {blocked} of the last minute. The longest freeze was {longest}. Threads, typing and the window may lag until it recovers."
 msgstr "It was blocked {blocked} of the last minute. The longest freeze was {longest}. Threads, typing and the window may lag until it recovers."
+
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "It was on “{title}”. Come back to it when you are ready."
+msgstr "It was on “{title}”. Come back to it when you are ready."
 
 #: src/renderer/src/languages.ts
 msgid "Italian"
@@ -3606,16 +3499,8 @@ msgstr "Left out {leftOut}."
 msgid "Less"
 msgstr "Less"
 
-#: src/renderer/src/features/onboarding/PhoneStep.tsx
-msgid "Let phones connect"
-msgstr "Let phones connect"
-
-#: src/renderer/src/features/onboarding/PhoneStep.tsx
-msgid "Lets your iPhone reach this computer over your tailnet. Only phones you pair can connect."
-msgstr "Lets your iPhone reach this computer over your tailnet. Only phones you pair can connect."
-
 #. Colour scheme
-#: src/renderer/src/features/onboarding/LookStep.tsx
+#: src/renderer/src/features/setup/SetupWalk.tsx
 msgid "Light"
 msgstr "Light"
 
@@ -3667,10 +3552,6 @@ msgstr "listening"
 msgid "Listening."
 msgstr "Listening."
 
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Listening. Say something."
-msgstr "Listening. Say something."
-
 #: src/renderer/src/watcher/machineWords.ts
 msgid "load unknown"
 msgstr "load unknown"
@@ -3694,10 +3575,6 @@ msgstr "longest freeze"
 #: src/renderer/src/watcher/TeamsPage.tsx
 msgid "Looking at this computer's Tailscale…"
 msgstr "Looking at this computer's Tailscale…"
-
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Looking for speech models on this computer…"
-msgstr "Looking for speech models on this computer…"
 
 #: src/renderer/src/features/council/ClimbPanel.tsx
 msgid "Lower"
@@ -3759,7 +3636,7 @@ msgstr "Make a code"
 msgid "Markdown file"
 msgstr "Markdown file"
 
-#: src/renderer/src/features/onboarding/LookStep.tsx
+#: src/renderer/src/features/setup/SetupWalk.tsx
 msgid "Match {system}"
 msgstr "Match {system}"
 
@@ -3835,23 +3712,13 @@ msgid "Message Watcher"
 msgstr "Message Watcher"
 
 #. The macOS Privacy & Security pane, as System Settings names it
-#. The microphone picker
 #: src/renderer/src/components/OpenSystemSettingsButton.tsx
-#: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Microphone"
 msgstr "Microphone"
-
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Microphone {number}"
-msgstr "Microphone {number}"
 
 #: src/renderer/src/features/help/HelpView.tsx
 msgid "Microphone access"
 msgstr "Microphone access"
-
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Microphone access is blocked."
-msgstr "Microphone access is blocked."
 
 #: src/renderer/src/platformCopy.ts
 msgid "Microphone access is blocked. Allow access if asked, then test again."
@@ -3877,10 +3744,6 @@ msgstr "Microphone access is off. Check your microphone access, then try again."
 msgid "Microphone activity"
 msgstr "Microphone activity"
 
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Microphone level"
-msgstr "Microphone level"
-
 #: src/renderer/src/features/dictate/DictateRoom.tsx
 msgid "Microphone needed"
 msgstr "Microphone needed"
@@ -3888,14 +3751,6 @@ msgstr "Microphone needed"
 #: src/renderer/src/features/dictation/dictationController.ts
 msgid "Microphone permission was denied."
 msgstr "Microphone permission was denied."
-
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Microphone test skipped. Dictation waits until you run the test in Settings."
-msgstr "Microphone test skipped. Dictation waits until you run the test in Settings."
-
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Microphone test skipped. Run it in Settings when you want to dictate."
-msgstr "Microphone test skipped. Run it in Settings when you want to dictate."
 
 #: src/renderer/src/platformCopy.ts
 msgid "Microphones are unavailable. Check System Settings > Privacy & Security > Microphone."
@@ -4069,10 +3924,6 @@ msgstr "Needs {name}'s desk first."
 msgid "Needs {name}'s desk first. Your own, for now: {own}."
 msgstr "Needs {name}'s desk first. Your own, for now: {own}."
 
-#: src/renderer/src/features/onboarding/AgentsStep.tsx
-msgid "Needs attention"
-msgstr "Needs attention"
-
 #. A group of threads in Watcher’s room: they wait on the user
 #: src/renderer/src/features/council/ClimbGrid.tsx
 #: src/renderer/src/features/council/SeatGrid.tsx
@@ -4105,7 +3956,6 @@ msgstr "New criterion"
 msgid "New folder path"
 msgstr "New folder path"
 
-#: src/renderer/src/features/onboarding/ThreadsTour.tsx
 #: src/renderer/src/popup/PopupApp.tsx
 msgid "New thread"
 msgstr "New thread"
@@ -4115,9 +3965,9 @@ msgstr "New thread"
 msgid "New thread in {0}"
 msgstr "New thread in {0}"
 
-#: src/renderer/src/features/onboarding/ProjectStep.tsx
-msgid "New threads share the project folder. Choose New worktree when you start one to give it a checkout of its own."
-msgstr "New threads share the project folder. Choose New worktree when you start one to give it a checkout of its own."
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "New thread, in the sidebar"
+msgstr "New thread, in the sidebar"
 
 #: src/renderer/src/watcher/WatcherNew.tsx
 msgid "New Watcher"
@@ -4126,10 +3976,6 @@ msgstr "New Watcher"
 #: src/renderer/src/watcher/WatcherNew.tsx
 msgid "New Watcher on {model}."
 msgstr "New Watcher on {model}."
-
-#: src/renderer/src/features/onboarding/ThreadsTour.tsx
-msgid "Next"
-msgstr "Next"
 
 #: src/renderer/src/watcher/TeamsPage.tsx
 msgid "No answer came."
@@ -4182,10 +4028,6 @@ msgstr "No limits read"
 #: src/renderer/src/features/dictate/DictateRoom.tsx
 msgid "No microphone is set up."
 msgstr "No microphone is set up."
-
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "No microphone was found."
-msgstr "No microphone was found."
 
 #: src/renderer/src/components/CleanupModelFields.tsx
 msgid "No model matches."
@@ -4270,9 +4112,9 @@ msgstr "No saved policies. Existing permission checks still apply."
 msgid "No setting passed the test cleanups on {chosenName}, so Mercury 2 cleans up instead. Change the server, then measure again."
 msgstr "No setting passed the test cleanups on {chosenName}, so Mercury 2 cleans up instead. Change the server, then measure again."
 
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "No Sotto account. Product events are on until you turn them off in Settings"
-msgstr "No Sotto account. Product events are on until you turn them off in Settings"
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "No Sotto account. Product events are on until you turn them off in Settings."
+msgstr "No Sotto account. Product events are on until you turn them off in Settings."
 
 #: src/renderer/src/components/SpeechModelStatus.tsx
 msgid "No speech model chosen"
@@ -4363,9 +4205,9 @@ msgstr "No usage yet"
 msgid "None"
 msgstr "None"
 
-#: src/renderer/src/features/onboarding/AgentsStep.tsx
-msgid "None ready yet. Threads need at least one; Settings › Providers has them later too."
-msgstr "None ready yet. Threads need at least one; Settings › Providers has them later too."
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "None is ready yet. A thread needs one."
+msgstr "None is ready yet. A thread needs one."
 
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Not a Git repository, so Sotto can’t check cited lines."
@@ -4374,10 +4216,6 @@ msgstr "Not a Git repository, so Sotto can’t check cited lines."
 #: src/renderer/src/features/starting/StartingScreen.tsx
 msgid "not answering"
 msgstr "not answering"
-
-#: src/renderer/src/features/onboarding/AgentsStep.tsx
-msgid "Not checked yet"
-msgstr "Not checked yet"
 
 #: src/renderer/src/watcher/TeamsPage.tsx
 msgid "Not checked yet. A check reaches each computer once and carries nothing."
@@ -4392,7 +4230,6 @@ msgstr "Not confirmed yet"
 msgid "not connected"
 msgstr "not connected"
 
-#: src/renderer/src/features/onboarding/AgentsStep.tsx
 #: src/renderer/src/watcher/MoveThreads.tsx
 msgid "Not connected"
 msgstr "Not connected"
@@ -4400,14 +4237,6 @@ msgstr "Not connected"
 #: src/renderer/src/features/updates/updateAll.ts
 msgid "Not everything updated"
 msgstr "Not everything updated"
-
-#: src/renderer/src/features/onboarding/AgentsStep.tsx
-msgid "Not found on this computer."
-msgstr "Not found on this computer."
-
-#: src/renderer/src/features/onboarding/AgentsStep.tsx
-msgid "Not installed"
-msgstr "Not installed"
 
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "Not matched for these prompts"
@@ -4475,14 +4304,6 @@ msgstr "Not reported yet."
 msgid "Not set up"
 msgstr "Not set up"
 
-#: src/renderer/src/features/onboarding/AgentsStep.tsx
-msgid "Not signed in"
-msgstr "Not signed in"
-
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Not tested yet."
-msgstr "Not tested yet."
-
 #: src/renderer/src/watcher/WatcherNightScene.tsx
 msgid "Not working now"
 msgstr "Not working now"
@@ -4502,10 +4323,6 @@ msgstr "Nothing answered at {server}. Nothing was changed. Check the server is o
 #: src/renderer/src/watcher/TeamDesks.tsx
 msgid "Nothing from {name} yet."
 msgstr "Nothing from {name} yet."
-
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Nothing heard yet."
-msgstr "Nothing heard yet."
 
 #: src/renderer/src/features/dictate/Journal.tsx
 msgid "Nothing here yet."
@@ -4591,10 +4408,6 @@ msgstr "of input tokens"
 msgid "of tokens · {sottoPromptShare} of prompts"
 msgstr "of tokens · {sottoPromptShare} of prompts"
 
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Omarchy defaults"
-msgstr "Omarchy defaults"
-
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
 msgid "Omarchy in both columns of Settings › Appearance, with Match Linux."
 msgstr "Omarchy in both columns of Settings › Appearance, with Match Linux."
@@ -4643,14 +4456,6 @@ msgstr "One line by provider: {names}."
 #: src/renderer/src/watcher/TeamsPage.tsx
 msgid "One of you makes a code and sends it however you like, and the other pastes it. One code links both ways. It works once, for 30 minutes."
 msgstr "One of you makes a code and sends it however you like, and the other pastes it. One code links both ways. It works once, for 30 minutes."
-
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "One shortcut from speech to text"
-msgstr "One shortcut from speech to text"
-
-#: src/renderer/src/features/onboarding/ComputersStep.tsx
-msgid "Only using this computer? Skip this. Settings › Hosts & phones adds one any time."
-msgstr "Only using this computer? Skip this. Settings › Hosts & phones adds one any time."
 
 #: src/renderer/src/watcher/WatcherAsks.tsx
 #: src/renderer/src/watcher/WatcherOverview.tsx
@@ -4726,13 +4531,13 @@ msgstr "Open System Settings at Privacy & Security, {paneName}"
 msgid "Open Tailscale's Machines"
 msgstr "Open Tailscale's Machines"
 
-#: src/renderer/src/features/onboarding/AgentsStep.tsx
-msgid "Open the {provider} install guide"
-msgstr "Open the {provider} install guide"
-
 #: src/renderer/src/watcher/MoveThreads.tsx
 msgid "Open the new thread"
 msgstr "Open the new thread"
+
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Open the sidebar and press New thread."
+msgstr "Open the sidebar and press New thread."
 
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Open thread"
@@ -4750,17 +4555,9 @@ msgstr "Open two desks"
 msgid "Open Windows Settings > Privacy & security > Microphone, allow desktop apps, then try again."
 msgstr "Open Windows Settings > Privacy & security > Microphone, allow desktop apps, then try again."
 
-#: src/renderer/src/features/onboarding/PhoneStep.tsx
-msgid "Opened in your browser"
-msgstr "Opened in your browser"
-
 #: src/renderer/src/watcher/TeamsPage.tsx
 msgid "Opening Teams…"
 msgstr "Opening Teams…"
-
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Opening the microphone…"
-msgstr "Opening the microphone…"
 
 #: src/renderer/src/watcher/WatcherView.tsx
 msgid "Opening Watcher…"
@@ -4791,10 +4588,6 @@ msgstr "OpenRouter returned an error."
 msgid "OpenRouter speech model"
 msgstr "OpenRouter speech model"
 
-#: src/renderer/src/features/onboarding/PhoneStep.tsx
-msgid "Opens Apple's TestFlight page in your browser. Install TestFlight on the iPhone first."
-msgstr "Opens Apple's TestFlight page in your browser. Install TestFlight on the iPhone first."
-
 #: src/renderer/src/features/dictate/DictateRoom.tsx
 msgid "or press <0/> again"
 msgstr "or press <0/> again"
@@ -4822,6 +4615,10 @@ msgstr "Other apps hold the tailnet ports a team link uses (8445 to 8447), so {n
 #: src/renderer/src/watcher/TeamsPage.tsx
 msgid "Other apps hold the tailnet ports a team link uses (8445 to 8447). Free one, then make or paste the code again."
 msgstr "Other apps hold the tailnet ports a team link uses (8445 to 8447). Free one, then make or paste the code again."
+
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Other computers and your iPhone reach this computer over Tailscale. Only using this computer? Skip the next three."
+msgstr "Other computers and your iPhone reach this computer over Tailscale. Only using this computer? Skip the next three."
 
 #: src/renderer/src/features/usage/UsagePerDay.tsx
 msgid "Other holds {list}."
@@ -4873,18 +4670,6 @@ msgstr "Paired computer"
 msgid "Paired machine"
 msgstr "Paired machine"
 
-#: src/renderer/src/features/onboarding/PhoneStep.tsx
-msgid "Paired phones, and the name they show for this computer, are in Settings › Hosts & phones."
-msgstr "Paired phones, and the name they show for this computer, are in Settings › Hosts & phones."
-
-#: src/renderer/src/features/onboarding/PhoneStep.tsx
-msgid "Pairing code"
-msgstr "Pairing code"
-
-#: src/renderer/src/features/onboarding/PhoneStep.tsx
-msgid "Pairing code {spokenCode}"
-msgstr "Pairing code {spokenCode}"
-
 #. placeholder {0}: seat + 1
 #: src/renderer/src/features/council/CouncilSeats.tsx
 msgid "Panelist {0}"
@@ -4914,17 +4699,9 @@ msgstr "Paste fallback"
 msgid "Paste manually"
 msgstr "Paste manually"
 
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Paste or type here"
-msgstr "Paste or type here"
-
 #: src/renderer/src/features/help/HelpView.tsx
 msgid "Paste permissions"
 msgstr "Paste permissions"
-
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Paste test"
-msgstr "Paste test"
 
 #: src/renderer/src/watcher/TeamsPage.tsx
 msgid "Paste their code"
@@ -4970,29 +4747,9 @@ msgstr "Permission request from {title}"
 msgid "Permission request in a thread it delegated to"
 msgstr "Permission request in a thread it delegated to"
 
-#: src/renderer/src/features/onboarding/PhoneStep.tsx
-msgid "Phone access could not be changed. Nothing was changed. Try again."
-msgstr "Phone access could not be changed. Nothing was changed. Try again."
-
-#: src/renderer/src/features/onboarding/PhoneStep.tsx
-msgid "Phone access could not be saved. Nothing was changed. Try again."
-msgstr "Phone access could not be saved. Nothing was changed. Try again."
-
-#: src/renderer/src/features/onboarding/PhoneStep.tsx
-msgid "Phone access needs the local host, which is off. Turn on Run the local host in Settings › Hosts & phones, then restart Sotto."
-msgstr "Phone access needs the local host, which is off. Turn on Run the local host in Settings › Hosts & phones, then restart Sotto."
-
-#: src/renderer/src/features/onboarding/PhoneStep.tsx
-msgid "Phones reach this computer over Tailscale, which is not installed here, and Sotto could not turn this back off. Turn it off, get Tailscale, then turn it on."
-msgstr "Phones reach this computer over Tailscale, which is not installed here, and Sotto could not turn this back off. Turn it off, get Tailscale, then turn it on."
-
-#: src/renderer/src/features/onboarding/PhoneStep.tsx
-msgid "Phones reach this computer over Tailscale, which is not installed here, so this stayed off. Get Tailscale, then turn it on."
-msgstr "Phones reach this computer over Tailscale, which is not installed here, so this stayed off. Get Tailscale, then turn it on."
-
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Pick light or dark and a theme. The window and the owl follow your choice."
-msgstr "Pick light or dark and a theme. The window and the owl follow your choice."
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Phones you pair can connect."
+msgstr "Phones you pair can connect."
 
 #: src/renderer/src/features/memory/questions.ts
 msgid "Planning first, architecture decisions, new dependencies, branches, and worktrees."
@@ -5054,6 +4811,10 @@ msgstr "Press {pressed} anywhere to talk."
 msgid "Press {pressed} to start and stop."
 msgstr "Press {pressed} to start and stop."
 
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Press {shortcut}, say something, and press it again. Your words arrive wherever you were typing."
+msgstr "Press {shortcut}, say something, and press it again. Your words arrive wherever you were typing."
+
 #: src/renderer/src/watcher/TeamsPage.tsx
 msgid "Press ••• beside {machine}, then Share."
 msgstr "Press ••• beside {machine}, then Share."
@@ -5062,21 +4823,21 @@ msgstr "Press ••• beside {machine}, then Share."
 msgid "Press <0/> anywhere to begin, then press it again to finish. Press Escape to cancel an active recording without transcribing."
 msgstr "Press <0/> anywhere to begin, then press it again to finish. Press Escape to cancel an active recording without transcribing."
 
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Press a shortcut and speak, and your words arrive as text wherever you were typing. Sotto also runs Codex, Claude Code, Grok Build and Devin threads in one window, on this computer or another."
-msgstr "Press a shortcut and speak, and your words arrive as text wherever you were typing. Sotto also runs Codex, Claude Code, Grok Build and Devin threads in one window, on this computer or another."
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Press New thread."
+msgstr "Press New thread."
 
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Press it to start and again to finish. Your text is always copied before Sotto pastes it."
-msgstr "Press it to start and again to finish. Your text is always copied before Sotto pastes it."
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Press New thread. It opens in {project}."
+msgstr "Press New thread. It opens in {project}."
 
 #: src/renderer/src/watcher/TeamsPage.tsx
 msgid "Press Open Tailscale's Machines."
 msgstr "Press Open Tailscale's Machines."
 
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Press Test microphone, then say a few words."
-msgstr "Press Test microphone, then say a few words."
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Press Test microphone and say a few words. Sotto opens the microphone only while you dictate or run this test."
+msgstr "Press Test microphone and say a few words. Sotto opens the microphone only while you dictate or run this test."
 
 #: src/renderer/src/watcher/WatcherNightScene.tsx
 msgid "Press to see all threads."
@@ -5098,10 +4859,6 @@ msgstr "Preview capture"
 msgid "Preview reference"
 msgstr "Preview reference"
 
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Previous microphone (unavailable)"
-msgstr "Previous microphone (unavailable)"
-
 #: src/renderer/src/features/help/HelpView.tsx
 msgid "Privacy"
 msgstr "Privacy"
@@ -5113,14 +4870,6 @@ msgstr "Product events are off. Sotto sends nothing."
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "Project: {scope}"
 msgstr "Project: {scope}"
-
-#: src/renderer/src/features/onboarding/ProjectStep.tsx
-msgid "Projects"
-msgstr "Projects"
-
-#: src/renderer/src/features/onboarding/ThreadsTour.tsx
-msgid "Projects and threads"
-msgstr "Projects and threads"
 
 #: src/renderer/src/features/usage/usageChartSeries.ts
 #: src/renderer/src/features/usage/UsageModels.tsx
@@ -5401,9 +5150,7 @@ msgstr "Reading…"
 msgid "ready"
 msgstr "ready"
 
-#. A coding agent on this computer is connected
 #. The starting screen once every provider and host has connected
-#: src/renderer/src/features/onboarding/AgentsStep.tsx
 #: src/renderer/src/features/starting/startingView.ts
 msgid "Ready"
 msgstr "Ready"
@@ -5703,9 +5450,9 @@ msgstr "Round exported to a new folder."
 msgid "Rubric and scoring anchors"
 msgstr "Rubric and scoring anchors"
 
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Run agents on another computer"
-msgstr "Run agents on another computer"
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Run threads on another computer"
+msgstr "Run threads on another computer"
 
 #. The check whose turn it is on its machine.
 #: src/renderer/src/watcher/checkQueueWords.ts
@@ -5758,7 +5505,7 @@ msgstr "Saved transcript"
 msgid "Saved usage figures were cleared on the selected computers."
 msgstr "Saved usage figures were cleared on the selected computers."
 
-#: src/renderer/src/features/onboarding/Onboarding.tsx
+#: src/renderer/src/features/setup/SetupWalk.tsx
 msgid "Saving setup..."
 msgstr "Saving setup..."
 
@@ -5878,17 +5625,13 @@ msgstr "Set up all three"
 msgid "Set up by hand"
 msgstr "Set up by hand"
 
-#: src/renderer/src/features/onboarding/Onboarding.tsx
+#: src/renderer/src/features/help/HelpView.tsx
+msgid "Set up Sotto"
+msgstr "Set up Sotto"
+
+#: src/renderer/src/features/setup/SetupWalk.tsx
 msgid "Set up Sotto in Omarchy"
 msgstr "Set up Sotto in Omarchy"
-
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Set up Sotto in Omarchy in the next step, then hold F9 to talk. Sotto copies your words, then pastes them into the focused app or terminal. Sotto also runs Codex, Claude Code, Grok Build and Devin threads in one window, on this computer or another."
-msgstr "Set up Sotto in Omarchy in the next step, then hold F9 to talk. Sotto copies your words, then pastes them into the focused app or terminal. Sotto also runs Codex, Claude Code, Grok Build and Devin threads in one window, on this computer or another."
-
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Set up the keys in Settings › Dictation when you’re ready. You can still dictate with Sotto’s button. If paste does not get through, use Super+V, Omarchy’s universal paste."
-msgstr "Set up the keys in Settings › Dictation when you’re ready. You can still dictate with Sotto’s button. If paste does not get through, use Super+V, Omarchy’s universal paste."
 
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "Set working preferences"
@@ -5899,15 +5642,29 @@ msgid "Setting up"
 msgstr "Setting up"
 
 #. The page link: the Settings page
-#. The page link: the Settings page
 #: src/renderer/src/components/AppShell.tsx
-#: src/renderer/src/features/onboarding/ThreadsTour.tsx
 msgid "Settings"
 msgstr "Settings"
+
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Settings › Dictation"
+msgstr "Settings › Dictation"
+
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Settings › Hosts & phones"
+msgstr "Settings › Hosts & phones"
+
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Settings › Providers"
+msgstr "Settings › Providers"
 
 #: src/renderer/src/features/dictation/dictationController.ts
 msgid "Settings are unavailable."
 msgstr "Settings are unavailable."
+
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Settings has how Sotto looks, and each part of this walk. Set up Sotto, in Help, starts the walk again."
+msgstr "Settings has how Sotto looks, and each part of this walk. Set up Sotto, in Help, starts the walk again."
 
 #: src/renderer/src/features/council/ClimbPanel.tsx
 #: src/renderer/src/features/council/CouncilView.tsx
@@ -5938,16 +5695,17 @@ msgid "Settling"
 msgstr "Settling"
 
 #: src/renderer/src/features/council/ClimbGrid.tsx
+#: src/renderer/src/features/setup/SetupWalk.tsx
 msgid "Setup"
 msgstr "Setup"
 
-#: src/renderer/src/features/onboarding/Onboarding.tsx
+#: src/renderer/src/features/setup/SetupWalk.tsx
 msgid "Setup could not be saved. Your choices are intact; please try again."
 msgstr "Setup could not be saved. Your choices are intact; please try again."
 
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Setup progress: step {stepNumber} of {stepCount}"
-msgstr "Setup progress: step {stepNumber} of {stepCount}"
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Setup is waiting"
+msgstr "Setup is waiting"
 
 #: src/renderer/src/watcher/TeamsPage.tsx
 msgid "Share this computer with {name} in Tailscale: on Machines, press ••• beside {machine}, then Share, and send {name} the link. Then check again."
@@ -5993,10 +5751,6 @@ msgstr "Shortened here. Open the thread for the rest."
 msgctxt "Usage chart"
 msgid "Show"
 msgstr "Show"
-
-#: src/renderer/src/features/onboarding/PhoneStep.tsx
-msgid "Show a pairing code"
-msgstr "Show a pairing code"
 
 #: src/renderer/src/watcher/WatcherNightScene.tsx
 msgid "Show all threads"
@@ -6054,9 +5808,9 @@ msgstr "Show what it said, {title}"
 msgid "Shows a notice in the window's top row while main is blocked for more than half of the last minute."
 msgstr "Shows a notice in the window's top row while main is blocked for more than half of the last minute."
 
-#: src/renderer/src/features/onboarding/AgentsStep.tsx
-msgid "Signed in"
-msgstr "Signed in"
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Sign in to a coding agent"
+msgstr "Sign in to a coding agent"
 
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "Since {since}"
@@ -6078,13 +5832,13 @@ msgstr "Since this window began: no prompts in Sotto."
 msgid "Since this window began: nothing on {computer}."
 msgstr "Since this window began: nothing on {computer}."
 
-#: src/renderer/src/features/onboarding/Onboarding.tsx
+#: src/renderer/src/features/setup/SetupWalk.tsx
 msgid "Skip for now"
 msgstr "Skip for now"
 
-#: src/renderer/src/features/onboarding/ThreadsTour.tsx
-msgid "Skip tour"
-msgstr "Skip tour"
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Skip setup"
+msgstr "Skip setup"
 
 #. Mid-sentence, after "Always confirm:" or in a list joined by semicolons, so it starts in lower case where the language has one
 #: src/renderer/src/features/memory/questions.ts
@@ -6131,10 +5885,6 @@ msgstr "Sotto answers your teammate on your tailnet only, never the internet."
 msgid "Sotto application"
 msgstr "Sotto application"
 
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Sotto can run threads on another PC, a Mac or a Linux box over Tailscale or SSH, and show them here."
-msgstr "Sotto can run threads on another PC, a Mac or a Linux box over Tailscale or SSH, and show them here."
-
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "Sotto can't read {name}'s limits yet."
 msgstr "Sotto can't read {name}'s limits yet."
@@ -6163,10 +5913,6 @@ msgstr "Sotto cannot update this install. Update it the way you installed it."
 msgid "Sotto compacts Watcher’s conversation once it passes {point}, between turns."
 msgstr "Sotto compacts Watcher’s conversation once it passes {point}, between turns."
 
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Sotto connects every agent installed on this computer, each signed in with your own account."
-msgstr "Sotto connects every agent installed on this computer, each signed in with your own account."
-
 #: src/renderer/src/App.tsx
 msgid "Sotto copied the transcript instead of pasting it. Automatic paste needs Sotto allowed in System Settings > Privacy & Security > Accessibility, and allowed to control System Events under System Settings > Privacy & Security > Automation. After an update, if paste still fails, remove Sotto from the Accessibility list and add it again."
 msgstr "Sotto copied the transcript instead of pasting it. Automatic paste needs Sotto allowed in System Settings > Privacy & Security > Accessibility, and allowed to control System Events under System Settings > Privacy & Security > Automation. After an update, if paste still fails, remove Sotto from the Accessibility list and add it again."
@@ -6194,14 +5940,6 @@ msgstr "Sotto could not check whether {title} can move. Nothing was moved. Try a
 #: src/renderer/src/watcher/MoveThreads.tsx
 msgid "Sotto could not check which threads can move. Nothing was moved. Try again."
 msgstr "Sotto could not check which threads can move. Nothing was moved. Try again."
-
-#: src/renderer/src/features/onboarding/AgentsStep.tsx
-msgid "Sotto could not check your coding agents. Nothing was changed. Press Check again."
-msgstr "Sotto could not check your coding agents. Nothing was changed. Press Check again."
-
-#: src/renderer/src/features/onboarding/AgentsStep.tsx
-msgid "Sotto could not connect it."
-msgstr "Sotto could not connect it."
 
 #: src/renderer/src/watcher/TeamDesks.tsx
 msgid "Sotto could not do that. Nothing changed. Try again."
@@ -6287,10 +6025,6 @@ msgstr "Sotto could not read {name}’s load just now. Watcher treats it as unkn
 msgid "Sotto could not read its saved keys. The encrypted file was preserved. Add your keys again in Settings."
 msgstr "Sotto could not read its saved keys. The encrypted file was preserved. Add your keys again in Settings."
 
-#: src/renderer/src/features/onboarding/PhoneStep.tsx
-msgid "Sotto could not read phone access. Nothing was changed. You can turn it on later in Settings › Hosts & phones."
-msgstr "Sotto could not read phone access. Nothing was changed. You can turn it on later in Settings › Hosts & phones."
-
 #: src/renderer/src/features/council/ClimbPanel.tsx
 msgid "Sotto could not read the Climbs. Open the Council again."
 msgstr "Sotto could not read the Climbs. Open the Council again."
@@ -6335,14 +6069,6 @@ msgstr "Sotto could not read Watcher. Nothing was changed. Reopen Sotto to try a
 msgid "Sotto could not read Watcher’s room. Reopen the popup and try again."
 msgstr "Sotto could not read Watcher’s room. Reopen the popup and try again."
 
-#: src/renderer/src/features/onboarding/ComputersStep.tsx
-msgid "Sotto could not read your hosts. Nothing was changed. You can add a computer later in Settings › Hosts & phones."
-msgstr "Sotto could not read your hosts. Nothing was changed. You can add a computer later in Settings › Hosts & phones."
-
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Sotto could not save that microphone. The previous one is still selected."
-msgstr "Sotto could not save that microphone. The previous one is still selected."
-
 #: src/renderer/src/components/SpeechModelStatus.tsx
 msgid "Sotto could not save the model on this computer."
 msgstr "Sotto could not save the model on this computer."
@@ -6367,10 +6093,6 @@ msgstr "Sotto could not start Watcher. Nothing was started, and your message is 
 msgid "Sotto could not switch to that model, so nothing changed. It may no longer be on this computer; choose it again or another one."
 msgstr "Sotto could not switch to that model, so nothing changed. It may no longer be on this computer; choose it again or another one."
 
-#: src/renderer/src/features/onboarding/AgentsStep.tsx
-msgid "Sotto could not switch to this computer, so it checked nothing. Press Check again."
-msgstr "Sotto could not switch to this computer, so it checked nothing. Press Check again."
-
 #: src/renderer/src/App.tsx
 msgid "Sotto could not use wl-clipboard. It used its own clipboard instead, so other apps may not see the text. Install wl-clipboard, then copy again."
 msgstr "Sotto could not use wl-clipboard. It used its own clipboard instead, so other apps may not see the text. Install wl-clipboard, then copy again."
@@ -6391,15 +6113,11 @@ msgstr "Sotto doesn't read {name}'s use outside Sotto."
 msgid "Sotto has no saved memories yet."
 msgstr "Sotto has no saved memories yet."
 
-#: src/renderer/src/features/onboarding/AgentsStep.tsx
-msgid "Sotto has no word yet on this computer’s agents. Press Check again."
-msgstr "Sotto has no word yet on this computer’s agents. Press Check again."
-
 #: src/renderer/src/features/starting/startingView.ts
 msgid "Sotto has not loaded your threads in 10 seconds. It keeps trying."
 msgstr "Sotto has not loaded your threads in 10 seconds. It keeps trying."
 
-#: src/renderer/src/features/onboarding/Onboarding.tsx
+#: src/renderer/src/features/setup/SetupWalk.tsx
 msgid "Sotto heard you. Your microphone works."
 msgstr "Sotto heard you. Your microphone works."
 
@@ -6420,12 +6138,9 @@ msgid "Sotto is clipboard first: successful text is always copied. Automatic pas
 msgstr "Sotto is clipboard first: successful text is always copied. Automatic paste may be blocked in secure input fields and applications with custom input handling. When that happens, paste manually with ⌘V."
 
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
+#: src/renderer/src/features/setup/SetupWalk.tsx
 msgid "Sotto is set up in Omarchy."
 msgstr "Sotto is set up in Omarchy."
-
-#: src/renderer/src/features/onboarding/ComputersStep.tsx
-msgid "Sotto lists the computers on your tailnet and the hosts in your SSH configuration, and sets Sotto up on the one you choose."
-msgstr "Sotto lists the computers on your tailnet and the hosts in your SSH configuration, and sets Sotto up on the one you choose."
 
 #: src/renderer/src/platformCopy.ts
 msgid "Sotto looks for new releases on GitHub and installs them itself."
@@ -6451,10 +6166,6 @@ msgstr "Sotto never updates itself on Linux. New versions come through pacman."
 msgid "Sotto now sends product events"
 msgstr "Sotto now sends product events"
 
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Sotto opens the microphone only while you dictate or run this test."
-msgstr "Sotto opens the microphone only while you dictate or run this test."
-
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Sotto restarted while Keep local history was off, so this Council’s words are gone and it cannot go on."
 msgstr "Sotto restarted while Keep local history was off, so this Council’s words are gone and it cannot go on."
@@ -6462,6 +6173,18 @@ msgstr "Sotto restarted while Keep local history was off, so this Council’s wo
 #: src/renderer/src/App.tsx
 msgid "Sotto restored default settings after a local settings file could not be read. The original file was preserved."
 msgstr "Sotto restored default settings after a local settings file could not be read. The original file was preserved."
+
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Sotto runs {agentNames} threads in one window, and turns your voice into text on this computer. This walk sets up your first thread, then dictation, other computers and your iPhone. Skip any part. First, pick how Sotto looks."
+msgstr "Sotto runs {agentNames} threads in one window, and turns your voice into text on this computer. This walk sets up your first thread, then dictation, other computers and your iPhone. Skip any part. First, pick how Sotto looks."
+
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Sotto runs {agentNames} threads in one window, and turns your voice into text. This walk sets up your first thread, then dictation, other computers and your iPhone. Skip any part. First, pick how Sotto looks."
+msgstr "Sotto runs {agentNames} threads in one window, and turns your voice into text. This walk sets up your first thread, then dictation, other computers and your iPhone. Skip any part. First, pick how Sotto looks."
+
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Sotto runs {agentNames} threads in one window. This walk sets up your first thread, then other computers and your iPhone. Skip any part. First, pick how Sotto looks."
+msgstr "Sotto runs {agentNames} threads in one window. This walk sets up your first thread, then other computers and your iPhone. Skip any part. First, pick how Sotto looks."
 
 #: src/renderer/src/watcher/TeamsPage.tsx
 msgid "Sotto says nothing to a teammate's computer until one of you asks, checks or reads a desk, so this page never says who is online."
@@ -6485,9 +6208,13 @@ msgstr "Sotto threads"
 msgid "Sotto turns it on when you make or paste a code, on your tailnet only, never the internet. If your tailnet has Serve off, this step says so."
 msgstr "Sotto turns it on when you make or paste a code, on your tailnet only, never the internet. If your tailnet has Serve off, this step says so."
 
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Sotto turns your voice into text on this computer. Your audio never leaves it."
-msgstr "Sotto turns your voice into text on this computer. Your audio never leaves it."
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Sotto turns your voice into text on this computer, and your audio never leaves it. Choose a model here; Sotto suggests {suggestedSpeechModel}. One that is not on this computer yet downloads when you choose it, and you can carry on while it does."
+msgstr "Sotto turns your voice into text on this computer, and your audio never leaves it. Choose a model here; Sotto suggests {suggestedSpeechModel}. One that is not on this computer yet downloads when you choose it, and you can carry on while it does."
+
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Sotto turns your voice into text on this computer, and your audio never leaves it. Choose a model here. One that is not on this computer yet downloads when you choose it, and you can carry on while it does."
+msgstr "Sotto turns your voice into text on this computer, and your audio never leaves it. Choose a model here. One that is not on this computer yet downloads when you choose it, and you can carry on while it does."
 
 #: src/renderer/src/components/CleanupModelFields.tsx
 msgid "Sotto’s choice"
@@ -6525,10 +6252,6 @@ msgstr "Sources:"
 #: src/renderer/src/languages.ts
 msgid "Spanish"
 msgstr "Spanish"
-
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Speak, then paste into any window"
-msgstr "Speak, then paste into any window"
 
 #: src/renderer/src/components/SpeechModelStatus.tsx
 msgid "Speech model could not be saved"
@@ -6574,8 +6297,8 @@ msgstr "Stacked by provider: {names}."
 msgid "Stage"
 msgstr "Stage"
 
-#. First-run setup: the group of steps that begins it
-#: src/renderer/src/features/onboarding/Onboarding.tsx
+#. Starts first-run setup’s walk.
+#: src/renderer/src/features/setup/SetupWalk.tsx
 msgid "Start"
 msgstr "Start"
 
@@ -6606,6 +6329,10 @@ msgstr "Start Watcher"
 #: src/renderer/src/watcher/WatcherView.tsx
 msgid "Start Watcher and send"
 msgstr "Start Watcher and send"
+
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Start your first thread"
+msgstr "Start your first thread"
 
 #. Before a thread’s name on a receipt card
 #: src/renderer/src/watcher/WatcherReceipts.tsx
@@ -6658,14 +6385,6 @@ msgstr "Starting Watcher…"
 msgid "Starting…"
 msgstr "Starting…"
 
-#: src/renderer/src/features/onboarding/ThreadsTour.tsx
-msgid "Starts a thread in the selected project. Type your message, or hold F9 to speak it with Sotto’s Hyprland bindings."
-msgstr "Starts a thread in the selected project. Type your message, or hold F9 to speak it with Sotto’s Hyprland bindings."
-
-#: src/renderer/src/features/onboarding/ThreadsTour.tsx
-msgid "Starts a thread in the selected project. Type your message, or press {shortcut} and speak it."
-msgstr "Starts a thread in the selected project. Type your message, or press {shortcut} and speak it."
-
 #: src/renderer/src/platformCopy.ts
 msgid "Starts and stops dictation from anywhere in macOS."
 msgstr "Starts and stops dictation from anywhere in macOS."
@@ -6714,10 +6433,6 @@ msgstr "Step {number} of 4 · {title} · Restarts once {name}’s clients have."
 msgid "Step {number} of 4 · {title} once its clients have"
 msgstr "Step {number} of 4 · {title} once its clients have"
 
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Step {stepNumber} of {stepCount}"
-msgstr "Step {stepNumber} of {stepCount}"
-
 #: src/renderer/src/features/updates/UpdateAllCard.tsx
 msgid "Steps, in order"
 msgstr "Steps, in order"
@@ -6729,6 +6444,10 @@ msgstr "Still reading {pendingList}…"
 #: src/renderer/src/features/usage/UsageView.tsx
 msgid "Still reading {scanningList} history. The figures fill in as it reads."
 msgstr "Still reading {scanningList} history. The figures fill in as it reads."
+
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Still to do:"
+msgstr "Still to do:"
 
 #. Stops the dictation that is recording
 #: src/renderer/src/features/council/ClimbPanel.tsx
@@ -6785,10 +6504,6 @@ msgstr "Stop requested. Waiting for it to confirm."
 #: src/renderer/src/watcher/WatcherStopAll.tsx
 msgid "Stop requested. Waiting on {computer} to confirm."
 msgstr "Stop requested. Waiting on {computer} to confirm."
-
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Stop test"
-msgstr "Stop test"
 
 #. placeholder {0}: card.machine
 #: src/renderer/src/watcher/MoveThreads.tsx
@@ -6915,9 +6630,21 @@ msgstr "Tailscale couldn't set up this computer's address, so {names} can't reac
 msgid "Tailscale doesn't show anyone else's computer yet. If your teammate has their own tailnet, they share their computer with you, and you accept."
 msgstr "Tailscale doesn't show anyone else's computer yet. If your teammate has their own tailnet, they share their computer with you, and you accept."
 
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Tailscale is not installed on this computer."
+msgstr "Tailscale is not installed on this computer."
+
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Tailscale is off on this computer."
+msgstr "Tailscale is off on this computer."
+
 #: src/renderer/src/watcher/TeamsPage.tsx
 msgid "Tailscale is on"
 msgstr "Tailscale is on"
+
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Tailscale is on."
+msgstr "Tailscale is on."
 
 #: src/renderer/src/watcher/TeamsPage.tsx
 msgid "Tailscale isn't installed on this computer. Install it from tailscale.com and sign in, then check again."
@@ -6930,6 +6657,10 @@ msgstr "Tailscale isn't running on this computer, so {names} can't reach it. Sta
 #: src/renderer/src/watcher/TeamsPage.tsx
 msgid "Tailscale isn't running on this computer. Start it and sign in, then check again."
 msgstr "Tailscale isn't running on this computer. Start it and sign in, then check again."
+
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Tailscale joins your devices"
+msgstr "Tailscale joins your devices"
 
 #: src/renderer/src/watcher/TeamsPage.tsx
 msgid "Tailscale sees {othersText}."
@@ -6947,7 +6678,7 @@ msgstr "Tailscale won't let this account change Serve, so {names} can't reach th
 msgid "Tailscale won't let this account change Serve. Run tailscale set --operator=$USER on this computer, then make or paste the code again."
 msgstr "Tailscale won't let this account change Serve. Run tailscale set --operator=$USER on this computer, then make or paste the code again."
 
-#: src/renderer/src/features/onboarding/Onboarding.tsx
+#: src/renderer/src/features/setup/SetupWalk.tsx
 msgid "Talk to your computer and your coding agents"
 msgstr "Talk to your computer and your coding agents"
 
@@ -6988,29 +6719,25 @@ msgstr "Teams has unsaved changes. They are active here, but may be lost when So
 msgid "Tell me when main freezes"
 msgstr "Tell me when main freezes"
 
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Test again"
-msgstr "Test again"
-
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Test again after changing the microphone."
-msgstr "Test again after changing the microphone."
-
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Test microphone"
-msgstr "Test microphone"
-
 #: src/renderer/src/features/memory/questions.ts
 msgid "Tests, visual checks, and the evidence you want before calling work finished."
 msgstr "Tests, visual checks, and the evidence you want before calling work finished."
 
-#: src/renderer/src/features/onboarding/LookStep.tsx
+#: src/renderer/src/features/setup/SetupWalk.tsx
 msgid "That look could not be saved. Your previous look is still on. Choose it again to retry."
 msgstr "That look could not be saved. Your previous look is still on. Choose it again to retry."
 
 #: src/renderer/src/components/CleanupModelFields.tsx
 msgid "That server or model is no longer in Your own model servers, so Mercury 2 cleans up instead. Choose another."
 msgstr "That server or model is no longer in Your own model servers, so Mercury 2 cleans up instead. Choose another."
+
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "That worked."
+msgstr "That worked."
+
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "That’s setup"
+msgstr "That’s setup"
 
 #: src/renderer/src/features/updates/updateAll.ts
 msgid "The {name} update on {host} stopped before it finished. Nothing was changed. Try again."
@@ -7027,10 +6754,6 @@ msgstr "The activity recording was not saved. Show why"
 #: src/renderer/src/components/OpenRouterKeyField.tsx
 msgid "The API key could not be saved."
 msgstr "The API key could not be saved."
-
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "The beta reads and answers threads on your computers, questions included. It needs Tailscale on the iPhone and on this computer."
-msgstr "The beta reads and answers threads on your computers, questions included. It needs Tailscale on the iPhone and on this computer."
 
 #. The Council's chair, in the middle of a sentence
 #: src/renderer/src/features/council/CouncilSeats.tsx
@@ -7081,6 +6804,10 @@ msgstr "The desktop clipboard could not be updated. Your text is kept below. Use
 #: src/renderer/src/features/dictation/dictationController.ts
 msgid "The desktop clipboard could not be updated. Your text is kept in Sotto. Open Dictate to copy it again or select it."
 msgstr "The desktop clipboard could not be updated. Your text is kept in Sotto. Open Dictate to copy it again or select it."
+
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "the Dictate page"
+msgstr "the Dictate page"
 
 #: src/renderer/src/features/updates/updateAll.ts
 msgid "The download did not finish. Nothing was installed."
@@ -7138,10 +6865,6 @@ msgstr "The login item could not be updated."
 #: src/renderer/src/features/dictation/dictationController.ts
 msgid "The microphone could not be started."
 msgstr "The microphone could not be started."
-
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "The microphone test could not start."
-msgstr "The microphone test could not start."
 
 #: src/renderer/src/components/SpeechModelStatus.tsx
 msgid "The model is downloaded, but the speech engine would not start on this computer."
@@ -7224,10 +6947,6 @@ msgstr "The speech model"
 msgid "The speech model is not ready yet."
 msgstr "The speech model is not ready yet."
 
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "The test passes once Sotto hears your voice."
-msgstr "The test passes once Sotto hears your voice."
-
 #. A piece of the Omarchy setup, named inside "Set up …", "Remove …" and "Try … again"
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
 msgid "the theme"
@@ -7260,10 +6979,6 @@ msgstr "The window {host} last read ended at {clock}. Read again for the new one
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "The window {host} last read ended on {day}. Read again for the new one."
 msgstr "The window {host} last read ended on {day}. Read again for the new one."
-
-#: src/renderer/src/features/onboarding/LookStep.tsx
-msgid "Theme"
-msgstr "Theme"
 
 #: src/renderer/src/popup/PopupApp.tsx
 msgid "There is no project to start a thread in. Add one in Sotto, then send again."
@@ -7343,13 +7058,13 @@ msgstr "This computer runs one check at a time. The rest wait here in the order 
 msgid "This computer’s load and what runs there"
 msgstr "This computer’s load and what runs there"
 
-#: src/renderer/src/features/onboarding/AgentsStep.tsx
-msgid "This computer’s local host is off, so Sotto can’t run agents here and checked nothing. Turn on Run the local host in Settings › Hosts & phones, then restart Sotto."
-msgstr "This computer’s local host is off, so Sotto can’t run agents here and checked nothing. Turn on Run the local host in Settings › Hosts & phones, then restart Sotto."
-
 #: src/renderer/src/watcher/machineWords.ts
 msgid "This computer’s memory changed during the reading, so Watcher treats it as unknown until the next one."
 msgstr "This computer’s memory changed during the reading, so Watcher treats it as unknown until the next one."
+
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "This is a thread"
+msgstr "This is a thread"
 
 #: src/renderer/src/watcher/TeammateMessages.tsx
 msgid "This link has run out on {name}'s computer. Press Link again on the Teams tab."
@@ -7401,9 +7116,7 @@ msgstr "Thread {threadId}: {ref}"
 
 #. The room switch and page links: the Threads page
 #. The room switch and page links: the Threads page
-#. The room switch and page links: the Threads page
 #: src/renderer/src/components/AppShell.tsx
-#: src/renderer/src/features/onboarding/ThreadsTour.tsx
 #: src/renderer/src/popup/PopupApp.tsx
 msgid "Threads"
 msgstr "Threads"
@@ -7416,9 +7129,9 @@ msgstr "Threads keep working while clients update."
 msgid "Threads that need you"
 msgstr "Threads that need you"
 
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Three changes to your Omarchy settings. Remove any of them later in Settings › Dictation."
-msgstr "Three changes to your Omarchy settings. Remove any of them later in Settings › Dictation."
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Three changes to your Omarchy settings: the F9 and Super+Ctrl+X keys, the owl in the bar, and the theme. Remove any of them later here."
+msgstr "Three changes to your Omarchy settings: the F9 and Super+Ctrl+X keys, the owl in the bar, and the theme. Remove any of them later here."
 
 #: src/renderer/src/features/usage/UsageView.tsx
 msgid "Through"
@@ -7497,10 +7210,6 @@ msgstr "Tokens per prompt"
 msgid "Tolerance"
 msgstr "Tolerance"
 
-#: src/renderer/src/features/onboarding/AgentsStep.tsx
-msgid "Too old to use"
-msgstr "Too old to use"
-
 #: src/renderer/src/features/usage/UsagePerDay.tsx
 msgid "Total"
 msgstr "Total"
@@ -7512,10 +7221,6 @@ msgstr "Total tokens are input plus output. Cache reads and writes are part of i
 #: src/renderer/src/features/dictate/DictateRoom.tsx
 msgid "Transcribe on this computer"
 msgstr "Transcribe on this computer"
-
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Transcribed on this computer by the speech model you choose"
-msgstr "Transcribed on this computer by the speech model you choose"
 
 #: src/renderer/src/platformCopy.ts
 msgid "Transcribed on this computer, never saved"
@@ -7568,7 +7273,6 @@ msgstr "Try a longer range or another provider."
 #: src/renderer/src/components/SpeechModelStatus.tsx
 #: src/renderer/src/features/dictate/DictateRoom.tsx
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
-#: src/renderer/src/features/onboarding/PhoneStep.tsx
 #: src/renderer/src/features/updates/UpdateAllCard.tsx
 #: src/renderer/src/features/usage/UsagePerDay.tsx
 #: src/renderer/src/features/usage/UsageView.tsx
@@ -7604,10 +7308,6 @@ msgstr "Try again to update {name} on {host}"
 msgid "Try again, or check its provider in Settings, under Providers."
 msgstr "Try again, or check its provider in Settings, under Providers."
 
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Try again, or choose another microphone."
-msgstr "Try again, or choose another microphone."
-
 #: src/renderer/src/features/dictate/Journal.tsx
 msgid "Try another word, or choose All."
 msgstr "Try another word, or choose All."
@@ -7616,13 +7316,13 @@ msgstr "Try another word, or choose All."
 msgid "Try another word, or clear the search."
 msgstr "Try another word, or clear the search."
 
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Try microphone again"
-msgstr "Try microphone again"
-
 #: src/renderer/src/watcher/WatcherHoldBand.tsx
 msgid "Try now"
 msgstr "Try now"
+
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Try the shortcut"
+msgstr "Try the shortcut"
 
 #: src/renderer/src/watcher/WatcherNew.tsx
 msgid "Trying again…"
@@ -7640,10 +7340,6 @@ msgstr "Turn on Serve in Tailscale"
 #: src/renderer/src/platformCopy.ts
 msgid "Turn on Sotto in System Settings > Privacy & Security > Microphone, then test again."
 msgstr "Turn on Sotto in System Settings > Privacy & Security > Microphone, then test again."
-
-#: src/renderer/src/features/onboarding/AgentsStep.tsx
-msgid "Turned off"
-msgstr "Turned off"
 
 #: src/renderer/src/features/dictate/DictateRoom.tsx
 msgid "Turning speech into text."
@@ -7664,6 +7360,18 @@ msgstr "Two desks with {name}"
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "Type"
 msgstr "Type"
+
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Type what you want done, or hold F9 and say it. The agent’s work shows here, and it asks you before anything that needs your say."
+msgstr "Type what you want done, or hold F9 and say it. The agent’s work shows here, and it asks you before anything that needs your say."
+
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Type what you want done, or press {shortcut} and say it. The agent’s work shows here, and it asks you before anything that needs your say."
+msgstr "Type what you want done, or press {shortcut} and say it. The agent’s work shows here, and it asks you before anything that needs your say."
+
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Type what you want done. The agent’s work shows here, and it asks you before anything that needs your say."
+msgstr "Type what you want done. The agent’s work shows here, and it asks you before anything that needs your say."
 
 #. The kind of work a delegated thread or check was asked for.
 #: src/renderer/src/watcher/checkQueueWords.ts
@@ -7773,10 +7481,6 @@ msgstr "Update downloaded"
 msgid "Update it yourself with {command}."
 msgstr "Update it yourself with {command}."
 
-#: src/renderer/src/features/onboarding/AgentsStep.tsx
-msgid "Update it, then check again."
-msgstr "Update it, then check again."
-
 #: src/renderer/src/watcher/TeamDesks.tsx
 msgid "Update now"
 msgstr "Update now"
@@ -7871,10 +7575,6 @@ msgstr "Usage starts counting again with your next prompt."
 #: src/renderer/src/features/usage/UsageView.tsx
 msgid "Usage views"
 msgstr "Usage views"
-
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Use {name}"
-msgstr "Use {name}"
 
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Use another model"
@@ -7985,6 +7685,10 @@ msgstr "Waits for Watcher’s turn to end"
 #: src/renderer/src/watcher/MoveThreads.tsx
 msgid "Waits for you"
 msgstr "Waits for you"
+
+#: src/renderer/src/features/help/HelpView.tsx
+msgid "Walk through setup again: your first thread, dictation, other computers and your iPhone."
+msgstr "Walk through setup again: your first thread, dictation, other computers and your iPhone."
 
 #: src/renderer/src/watcher/WatchControls.tsx
 msgctxt "Put a thread under Watcher's watch"
@@ -8374,14 +8078,6 @@ msgstr "You asked {name} about merge priority."
 msgid "You asked {name} what they are working on."
 msgstr "You asked {name} what they are working on."
 
-#: src/renderer/src/features/onboarding/ProjectStep.tsx
-msgid "You can add more projects from the sidebar at any time."
-msgstr "You can add more projects from the sidebar at any time."
-
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "You can continue while it downloads. Dictation works as soon as it finishes. AI cleanup is optional; turn it on in Settings → Cleanup."
-msgstr "You can continue while it downloads. Dictation works as soon as it finishes. AI cleanup is optional; turn it on in Settings → Cleanup."
-
 #: src/renderer/src/watcher/TeamsPage.tsx
 msgid "You can read {name}'s desk, but {name} can't read yours or ask your Watcher."
 msgstr "You can read {name}'s desk, but {name} can't read yours or ask your Watcher."
@@ -8438,37 +8134,17 @@ msgstr "You told Sotto"
 msgid "You took over {thread}. Watcher stopped sending to it."
 msgstr "You took over {thread}. Watcher stopped sending to it."
 
-#: src/renderer/src/features/onboarding/AgentsStep.tsx
-msgid "You turned it off on this computer. Connect it to use it here."
-msgstr "You turned it off on this computer. Connect it to use it here."
-
-#: src/renderer/src/features/omarchy/OmarchySetup.tsx
-msgid "You’ll try F9 in the Shortcut step, once the speech model is downloaded."
-msgstr "You’ll try F9 in the Shortcut step, once the speech model is downloaded."
-
 #: src/renderer/src/features/productEvents/ProductEventsNotice.tsx
 msgid "Your answer could not be saved, and nothing was sent. Try again."
 msgstr "Your answer could not be saved, and nothing was sent. Try again."
 
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Your audio never leaves this computer"
-msgstr "Your audio never leaves this computer"
-
-#: src/renderer/src/features/onboarding/AgentsStep.tsx
-msgid "Your browser did not open. Go to {guide} to install it."
-msgstr "Your browser did not open. Go to {guide} to install it."
-
-#: src/renderer/src/features/onboarding/PhoneStep.tsx
-msgid "Your browser did not open. On your iPhone, go to {betaAddress} instead."
-msgstr "Your browser did not open. On your iPhone, go to {betaAddress} instead."
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Your audio never leaves this computer. No Sotto account. Product events are on until you turn them off in Settings."
+msgstr "Your audio never leaves this computer. No Sotto account. Product events are on until you turn them off in Settings."
 
 #: src/renderer/src/features/dictate/JournalStats.tsx
 msgid "your busiest hour"
 msgstr "your busiest hour"
-
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Your coding agents"
-msgstr "Your coding agents"
 
 #: src/renderer/src/features/dictate/DictateRoom.tsx
 msgid "Your completed text is below. Copy it again, or select and copy it yourself."
@@ -8490,10 +8166,6 @@ msgstr "Your computer is answering from your thread list."
 msgid "Your computer turned this down and ran nothing."
 msgstr "Your computer turned this down and ran nothing."
 
-#: src/renderer/src/features/onboarding/ComputersStep.tsx
-msgid "Your computers"
-msgstr "Your computers"
-
 #: src/renderer/src/App.tsx
 msgid "Your data was not changed. Close and reopen Sotto, then try again."
 msgstr "Your data was not changed. Close and reopen Sotto, then try again."
@@ -8509,6 +8181,10 @@ msgstr "Your dictation"
 #: src/renderer/src/features/memory/Questionnaire.tsx
 msgid "Your existing permission boundaries stay in place."
 msgstr "Your existing permission boundaries stay in place."
+
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Your first thread is open. The rest is optional."
+msgstr "Your first thread is open. The rest is optional."
 
 #: src/renderer/src/watcher/WatcherNew.tsx
 msgid "Your last message was not confirmed."
@@ -8529,10 +8205,6 @@ msgstr "Your own servers"
 #: src/renderer/src/App.tsx
 msgid "Your preferences, with their history."
 msgstr "Your preferences, with their history."
-
-#: src/renderer/src/features/onboarding/ThreadsTour.tsx
-msgid "Your projects and their threads are listed here. Add project brings in another folder."
-msgstr "Your projects and their threads are listed here. Add project brings in another folder."
 
 #: src/renderer/src/watcher/WatcherContextTile.tsx
 msgid "Your rules"
@@ -8565,10 +8237,6 @@ msgstr "Your text is still here"
 #: src/renderer/src/watcher/WatcherMachines.tsx
 msgid "your thread"
 msgstr "your thread"
-
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Your threads go only to each agent's own provider"
-msgstr "Your threads go only to each agent's own provider"
 
 #: src/renderer/src/features/dictate/Journal.tsx
 msgid "Your transcripts on this computer are being read."

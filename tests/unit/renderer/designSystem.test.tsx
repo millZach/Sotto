@@ -18,7 +18,7 @@ import { MODES, THEME_IDS, contrast, over, parseTokenBlocks, resolveColor, rootD
 const globalCss = readFileSync(join(process.cwd(), 'src/renderer/src/styles/global.css'), 'utf8')
 const tokensCss = readFileSync(join(process.cwd(), 'src/renderer/src/styles/tokens.css'), 'utf8')
 const tokenBlocks = parseTokenBlocks(tokensCss)
-const onboardingSource = readFileSync(join(process.cwd(), 'src/renderer/src/features/onboarding/Onboarding.tsx'), 'utf8')
+const setupSource = readFileSync(join(process.cwd(), 'src/renderer/src/features/setup/SetupWalk.tsx'), 'utf8')
 
 afterEach(cleanup)
 
@@ -154,8 +154,8 @@ describe('Sotto design-system primitives', () => {
     expect(globalCss).toContain('color: var(--tt-error-contrast)')
   })
 
-  it('contains no common UTF-8 mojibake markers in user-visible onboarding copy', () => {
-    expect(onboardingSource).not.toMatch(/\u00c3|\u00c2|\u00e2/u)
+  it('contains no common UTF-8 mojibake markers in first-run setup’s user-visible copy', () => {
+    expect(setupSource).not.toMatch(/\u00c3|\u00c2|\u00e2/u)
   })
 
   it('keeps control borders at 3:1 and every text tier and the activity accent at 4.5:1 in every room and built-in theme', () => {

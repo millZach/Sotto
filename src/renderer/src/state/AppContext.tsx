@@ -51,7 +51,7 @@ import { createUnconfiguredTranscriber, LocalTranscriber, type TranscriptionBrid
 export type AppStatus = 'loading' | 'ready' | 'unavailable'
 export type HistoryStatus = 'loading' | 'ready' | 'degraded'
 /** `watcher` is Watcher's room, reachable only while the Watcher gate is on. */
-export type AppNavigation = 'onboarding' | 'home' | 'usage' | 'watcher' | 'threads' | 'memory' | 'settings' | 'help'
+export type AppNavigation = 'home' | 'usage' | 'watcher' | 'threads' | 'memory' | 'settings' | 'help'
 
 /** A request to open Settings somewhere other than its first page; `key` tells two requests for the same place apart. */
 export interface SettingsRequest {
@@ -284,7 +284,7 @@ export function AppProvider({
   const [dictationRecovery, setDictationRecovery] = useState<readonly HistoryEntry[]>([])
   const [dictation, setDictation] = useState<DictationState>(initialDictationState)
   const [dictationLevel] = useState(() => new LiveLevelStore())
-  const [navigation, setNavigation] = useState<AppNavigation>('onboarding')
+  const [navigation, setNavigation] = useState<AppNavigation>('threads')
   const [settingsRequest, setSettingsRequest] = useState<SettingsRequest | null>(null)
   const [helpRequest, setHelpRequest] = useState<HelpRequest | null>(null)
   const [recoveryNotices, setRecoveryNotices] = useState<readonly RecoveryNotice[]>([])
@@ -606,7 +606,8 @@ export function AppProvider({
         commitSettings(loadedSettings)
         // Sotto opens on Threads: the work waiting for an answer is what a
         // returning user came back for, and dictation is one tab away.
-        setNavigation(loadedSettings.onboardingComplete ? 'threads' : 'onboarding')
+        // First-run setup is a walk over the real pages (ADR-0200), so a new profile opens on Threads too.
+        setNavigation('threads')
 
         setDictationTimingSink(bridge.dictationTiming ? mark => bridge.dictationTiming!.mark(mark) : undefined)
         let controller!: AppController
@@ -951,7 +952,7 @@ export function AppProvider({
   useEffect(() => {
     if (bridge === undefined) return undefined
     try {
-      return bridge.onSettingsRequested(() => { if (navigationRef.current !== 'onboarding') actions.navigate('settings') })
+      return bridge.onSettingsRequested(() => { if (settingsRef.current?.onboardingComplete === true) actions.navigate('settings') })
     } catch {
       // Without the menu's request, Settings is still a press or Ctrl+5 away.
       return undefined

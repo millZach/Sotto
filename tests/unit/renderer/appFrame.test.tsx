@@ -24,11 +24,6 @@ describe('shared main-window frame', () => {
       }),
       stateText: /could not finish starting/i,
     },
-    {
-      name: 'onboarding',
-      createStateBridge: () => createBridge(),
-      stateText: /talk to your computer and your coding agents/i,
-    },
   ])('renders exactly one strip and both window controls in the $name state', async ({
     createStateBridge,
     stateText,
@@ -39,6 +34,17 @@ describe('shared main-window frame', () => {
 
     expect(container.querySelectorAll('.app-strip')).toHaveLength(1)
     expect(container.querySelectorAll('.app-titlebar, .app-navigation, .dictation-strip')).toHaveLength(0)
+    expect(screen.getByRole('button', { name: 'Minimize Sotto' })).toBeVisible()
+    expect(screen.getByRole('button', { name: 'Close Sotto to tray' })).toBeVisible()
+  })
+
+  it('shows the app’s own frame, with no strip, under first-run setup’s first note (ADR-0200)', async () => {
+    const { container } = renderApp(createBridge())
+
+    await screen.findByRole('dialog', { name: 'Talk to your computer and your coding agents' })
+
+    expect(container.querySelectorAll('.app-strip')).toHaveLength(0)
+    expect(container.querySelector('.app-shell')).toHaveClass('app-shell--page')
     expect(screen.getByRole('button', { name: 'Minimize Sotto' })).toBeVisible()
     expect(screen.getByRole('button', { name: 'Close Sotto to tray' })).toBeVisible()
   })
