@@ -668,6 +668,31 @@ export function holdSettledRows(open: readonly ProjectFolder[], settled: readonl
   return { open: [...folders.values()].sort(byActivity), placed }
 }
 
+/** The open part of the sidebar grouped by status (ADR-0201): what is working, then everything else open. */
+export interface StatusGroups {
+  /** Working now: a turn, compaction or background work running, on a provider Sotto can reach. */
+  readonly working: readonly ThreadRow[]
+  /** Recent: every other open thread, the ones standing in Needs you included, which point up to its card. */
+  readonly recent: readonly ThreadRow[]
+}
+
+/**
+ * The open folders' rows in the iPhone's groups and order (ADR-0201, from `FocusThreads` in SottoCore): Working now holds
+ * rows working on a reachable provider, and Recent the rest; a thread out of reach says Disconnected in Recent rather than
+ * Working in the group above, as the iPhone's does. Inside each, rows on a reachable provider come first, then the latest
+ * activity, as a folder orders them. Needs you stays the card above the groups (Zach's pick, November 10, 2026), so its
+ * threads keep their rows here, in Recent. Snoozed and Settled are not here: they keep their shelves.
+ */
+export function groupByStatus(open: readonly ProjectFolder[]): StatusGroups {
+  const rows = open.flatMap(item => item.rows)
+  const order = (first: ThreadRow, second: ThreadRow): number => Number(second.connected) - Number(first.connected)
+    || byActivity({ activityAt: first.activityAt, id: first.thread.id }, { activityAt: second.activityAt, id: second.thread.id })
+  return {
+    working: rows.filter(row => row.state === 'working' && row.connected).sort(order),
+    recent: rows.filter(row => row.state !== 'working' || !row.connected).sort(order),
+  }
+}
+
 /**
  * Project folders for the sidebar. Open folders hold each unsettled project's open threads;
  * Settled holds whole settled projects plus individually settled threads under their own project.
