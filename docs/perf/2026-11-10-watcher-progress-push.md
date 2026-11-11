@@ -57,3 +57,17 @@ the progress path turned off it fails, and so it does on the code before this ch
 
 The issue's own measure is `watcher-state` bytes a minute in `scripts/perf-bench/host-wire-tally.py` on forge, about 46 MB
 before. That needs this change in a release on forge's host and on the laptop, so it was not taken here.
+
+## The host-sized guard
+
+`tests/perf/hostPushSizeBudget.perf.test.ts` (#2390) builds a host the size of forge's and connects a desktop that
+accepts what Sotto's own client accepts. It merged after this change was written, so its Watcher budgets are lowered
+here, to what it measures with this change in:
+
+| For a change of Watcher's progress alone, to the desktop | Before | After |
+| --- | ---: | ---: |
+| Bytes of JSON | 1,986,099 | 451 |
+| Parts of the push that did not change | 8 | 2 |
+| Whole `watcher-state` pushes | 1 | 0 |
+
+`SOTTO_PUSH_SIZES=1 npx vitest run tests/perf/hostPushSizeBudget.perf.test.ts --maxWorkers=1 --disable-console-intercept`
