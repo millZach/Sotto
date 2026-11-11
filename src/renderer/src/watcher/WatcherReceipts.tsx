@@ -120,7 +120,7 @@ export function overrideLine(override: MergeTurnOverride | undefined): string | 
   if (override === undefined) return null
   const branch = override.baseFailed?.branch, head = override.baseFailed?.head
   const held = [
-    ...branch !== undefined && head !== undefined ? [t`${branch} is red: checks failed on its newest commit, ${head}.`] : [],
+    ...branch !== undefined && head !== undefined ? [t`${branch} is red: checks failed on ${head}, its newest commit whose checks have finished.`] : [],
     // A pull request's number is its name, not a quantity, so it is not formatted as one.
     ...override.running.map(({ number, url, title }) => {
       const name = number !== undefined ? `#${number}` : url ?? ''

@@ -180,8 +180,8 @@ msgid "{authority} (memory does not grant permission)"
 msgstr "{authority} (memory does not grant permission)"
 
 #: src/renderer/src/watcher/WatcherReceipts.tsx
-msgid "{branch} is red: checks failed on its newest commit, {head}."
-msgstr "{branch} is red: checks failed on its newest commit, {head}."
+msgid "{branch} is red: checks failed on {head}, its newest commit whose checks have finished."
+msgstr "{branch} is red: checks failed on {head}, its newest commit whose checks have finished."
 
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "{busiestCount, plural, one {{shown} prompt} other {{shown} prompts}}"
