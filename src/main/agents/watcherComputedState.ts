@@ -24,7 +24,7 @@ export interface WatcherOpenPullRequest { readonly summary: WatcherPullRequestSu
  * for over an hour after "required checks passed"), and unknown when Sotto's read says nothing. The field keeps its name,
  * `requiredChecks`, for the tools that read it.
  */
-export function requiredChecksOf(pr: Pick<WatcherOpenPullRequest, 'summary' | 'pending'>): WatcherMergeQueueItem['requiredChecks'] {
+export function mergeTrainChecksOf(pr: Pick<WatcherOpenPullRequest, 'summary' | 'pending'>): WatcherMergeQueueItem['requiredChecks'] {
   const checks = pr.summary.checks
   if (checks === 'passed' || checks === 'failed') return checks
   if (checks === 'pending') return pr.pending !== undefined && pr.pending.required + pr.pending.optional === 0 ? 'passed' : 'running'
@@ -44,7 +44,7 @@ export function watcherMergeQueue(threads: readonly { readonly target: WatcherTh
     if (pr.summary.state !== 'open' || pr.summary.stale === true || pr.draft !== false || since === undefined) return []
     const ready = pr.train?.ready
     const url = pr.url ?? pr.summary.url
-    return [{ target: thread.target, title: thread.title, pullRequest: pr.summary, ...url !== undefined ? { url } : {}, inTrainSince: since, requiredChecks: requiredChecksOf(pr),
+    return [{ target: thread.target, title: thread.title, pullRequest: pr.summary, ...url !== undefined ? { url } : {}, inTrainSince: since, requiredChecks: mergeTrainChecksOf(pr),
       ...pr.checksPassedAt && pr.summary.checks === 'passed' ? { checksPassedAt: pr.checksPassedAt } : {},
       ...pr.head ? { head: pr.head } : {}, ...pr.pending ? { checksRunning: pr.pending } : {},
       ...ready ? { readyToMerge: { head: ready.head, at: ready.at, ...pr.head ? { onHead: pr.head === ready.head } : {} } } : {} }]

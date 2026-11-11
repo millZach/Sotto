@@ -71,6 +71,10 @@ interface PullRequestAttention { conflicting?: boolean; changesRequested?: boole
   /** What `pendingChecks` said of `head`: words for the news, never a reason to wake Watcher. */
   pending?: { head: string; required: number; optional: number }
   observedAt: string }
+/** Whether checks are still running on the commit whose required checks passed, as the last read that counted them said. */
+function checksStillRunning(said: Pick<PullRequestAttention, 'requiredPassedHead' | 'pending'>): boolean {
+  return said.requiredPassedHead !== undefined && said.pending?.head === said.requiredPassedHead && said.pending.required + said.pending.optional > 0
+}
 /** One thing a pull request says that needs Watcher, and the key that tells it from what Watcher was told before. */
 export type WatcherAttentionKind = 'checks-failed' | 'checks-passed' | 'required-passed' | 'merged' | 'closed' | 'approved' | 'changes-requested' | 'conflicting' | 'remarks' | 'bug-bot-review'
 /** `returns` counts how often the fact came back after it was gone, so checks that fail again on a commit are a new fact. */
@@ -93,10 +97,10 @@ export function attentionFactParts(key: string): { readonly pr: unknown; readonl
  * The pull request facts that wake Watcher by themselves (#2226, Zach's pick on November 5, 2026): checks failed, the
  * required checks passed (all checks passing says they did), and a merge. The rest, approved, a review asking for changes,
  * comments or reviews that moved, a Bug Bot review, a conflict and a close, ride with the next news that wakes it.
- * Required checks passing while other checks still run rides too (#2432): the merge train waits for every check, so all
- * checks passing is what sends a thread to merge, beside its READY TO MERGE (#2229).
+ * The required checks passing is a fact only once no check is still running on that commit (#2432): the merge train waits
+ * for every check, so that or every check passing is what sends a thread to merge, beside its READY TO MERGE (#2229).
  */
-export const WAKING_ATTENTION: ReadonlySet<WatcherAttentionKind> = new Set(['checks-failed', 'checks-passed', 'merged'])
+export const WAKING_ATTENTION: ReadonlySet<WatcherAttentionKind> = new Set(['checks-failed', 'checks-passed', 'required-passed', 'merged'])
 /** The kinds evidence does not hold, which an evidence event compares beside its facts. */
 const BESIDE_EVIDENCE: ReadonlySet<WatcherAttentionKind> = new Set(['required-passed', 'changes-requested', 'conflicting', 'remarks'])
 export interface CheckpointObservation {
@@ -289,7 +293,7 @@ export class WatcherEvidenceStore {
     }
     const ended = new Map<string, 'merged' | 'closed'>()
     for (const [pr, { state }] of newest) if (state !== 'open') ended.set(pr, state)
-    const passed = new Set<string>(), heads = new Map<string, Set<string>>()
+    const passed = new Set<string>(), running = new Set<string>(), heads = new Map<string, Set<string>>()
     for (const item of entries?.values() ?? []) {
       if (item.source !== 'github' || !item.url || item.availability !== 'available') continue
       const pr = pullRequestKey(item.url) ?? item.url
@@ -297,6 +301,7 @@ export class WatcherEvidenceStore {
       if (item.headId) heads.set(pr, (heads.get(pr) ?? new Set()).add(item.headId))
       if (item.checksState === 'failed' || item.checksState === 'passed') add(pr, `checks-${item.checksState}`, item.headId ?? '')
       if (item.checksState === 'passed') passed.add(JSON.stringify([pr, item.headId ?? '']))
+      if (item.checksState === 'pending') running.add(JSON.stringify([pr, item.headId ?? '']))
       if (item.githubReviewApproved === true) add(pr, 'approved')
       if (item.bugBotReview) add(pr, 'bug-bot-review', JSON.stringify([item.headId, item.bugBotReview]))
     }
@@ -304,9 +309,12 @@ export class WatcherEvidenceStore {
     for (const [pr, said] of this.attending.get(key) ?? []) {
       if (ended.has(pr)) continue
       // Every check passing already says the required ones did.
-      // Only on the commit the pull request is on now, as evidence last read it.
+      // Only on the commit the pull request is on now, as evidence last read it, and only once no check is still running
+      // there (#2432): the merge train waits for every check, so a pass while others run is no news yet, and once they
+      // finish it says an optional one did not pass, which holds no merge.
       const onHead = said.requiredPassedHead !== undefined && (!heads.get(pr)?.size || heads.get(pr)!.has(said.requiredPassedHead))
-      if (onHead && !passed.has(JSON.stringify([pr, said.requiredPassedHead]))) add(pr, 'required-passed', said.requiredPassedHead!)
+      const onThatHead = JSON.stringify([pr, said.requiredPassedHead])
+      if (onHead && !checksStillRunning(said) && !running.has(onThatHead) && !passed.has(onThatHead)) add(pr, 'required-passed', said.requiredPassedHead!)
       if (said.conflicting) add(pr, 'conflicting')
       if (said.changesRequested) add(pr, 'changes-requested')
       if (said.remarksMoved) add(pr, 'remarks', String(said.remarksMoved))
@@ -448,7 +456,7 @@ export class WatcherEvidenceStore {
     this.attending.set(key, byPr)
     this.written.add(key)
     return after.conflicting !== before.conflicting || after.changesRequested !== before.changesRequested || after.remarksMoved !== before.remarksMoved
-      || after.requiredPassedHead !== before.requiredPassedHead
+      || after.requiredPassedHead !== before.requiredPassedHead || checksStillRunning(after) !== checksStillRunning(before)
   }
   /** Paired observations share fact replacement rules, but shell link summaries cannot erase owning-host facts. */
   paired(fact: WatcherEvidence): boolean {

@@ -316,7 +316,7 @@ export function watcherReplyBefore(thread: Pick<AgentThread, 'messages'>, at: st
 }
 const ATTENTION_WORDS: Record<Exclude<WatcherAttentionKind, 'remarks' | 'bug-bot-review'>, string> = {
   'checks-failed': 'checks failed on its newest commit', 'checks-passed': 'all checks passed on its newest commit',
-  'required-passed': 'its required checks passed on its newest commit', merged: 'merged', closed: 'closed without merging',
+  'required-passed': 'every check finished on its newest commit and its required checks passed, but an optional check did not, which holds no merge', merged: 'merged', closed: 'closed without merging',
   approved: 'approved', 'changes-requested': 'a review asks for changes', conflicting: 'conflicts with its base branch',
 }
 /**
