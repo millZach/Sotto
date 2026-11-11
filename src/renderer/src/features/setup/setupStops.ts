@@ -42,6 +42,8 @@ export interface SetupFacts {
   readonly hostAdded: boolean
   readonly phoneAccess: boolean
   readonly dictationOn: boolean
+  /** Dictation is transcribed on this computer, so there is a speech model to choose; false while an OpenRouter model transcribes (ADR-0160). */
+  readonly speechModelHere: boolean
 }
 
 /** The collapsed sidebar's Expand sidebar, which a stop lights when the control it wants is in the sidebar. */
@@ -85,9 +87,9 @@ export function stopDone(id: SetupStopId, facts: SetupFacts): boolean {
   }
 }
 
-/** A stop the walk does not visit now: one that needs an agent while none is ready, or a dictation stop while dictation is off. */
+/** A stop the walk does not visit now: one that needs an agent while none is ready, a dictation stop while dictation is off, or the speech model while OpenRouter transcribes. */
 export function passedOver(stop: SetupStop, facts: SetupFacts): boolean {
-  return (stop.needsAgent === true && !facts.agentReady) || (stop.dictation === true && !facts.dictationOn)
+  return (stop.needsAgent === true && !facts.agentReady) || (stop.dictation === true && !facts.dictationOn) || (stop.id === 'speech-model' && !facts.speechModelHere)
 }
 
 /** The stop one step on from `at` (or back, with `step` -1), over the stops the walk passes over; `at` itself at either end. */
@@ -98,7 +100,7 @@ export function neighbouringStop(stops: readonly SetupStop[], at: number, step: 
 
 /** The stops whose task is still to do, for the last note: every stop with a task that is not done, visited or not. */
 export function stopsLeft(stops: readonly SetupStop[], facts: SetupFacts): readonly SetupStopId[] {
-  return stops.filter(stop => stop.id !== 'welcome' && stop.id !== 'end' && !(stop.dictation === true && !facts.dictationOn) && !stopDone(stop.id, facts)).map(stop => stop.id)
+  return stops.filter(stop => stop.id !== 'welcome' && stop.id !== 'end' && !(stop.dictation === true && !facts.dictationOn) && !(stop.id === 'speech-model' && !facts.speechModelHere) && !stopDone(stop.id, facts)).map(stop => stop.id)
 }
 
 export interface Box { readonly top: number; readonly left: number; readonly width: number; readonly height: number }
@@ -110,16 +112,17 @@ export const NOTE_WIDTH = 330
 export const NOTE_MIN_WIDTH = 228
 
 /**
- * Where a note goes: beside the control it lights, never over it (ADR-0200). It takes the first side with room for it,
- * to the right, then the left, then below, then above, narrowing to fit a side that is tight, as the sidebar is at the
- * smallest window. A control so large that no side has room keeps its note in the corner farthest from its middle.
- * With no control, the note is in the middle of the window.
+ * Where a note goes, and what stays lit: the note beside the control it lights, never over it (ADR-0200). It takes the
+ * first side with room for it, to the right, then the left, then below, then above, narrowing to fit a side that is
+ * tight, as the sidebar is at the smallest window. Where a control is so large that no side has room, the note takes
+ * the corner farthest from the control's middle and the lit box gives way to it, losing as little as it can, so the
+ * note still covers nothing that is lit. With no control, the note is in the middle of the window.
  */
-export function placeNote(target: Box | null, noteHeight: (width: number) => number, view: { readonly width: number; readonly height: number }): { top: number; left: number; width: number } {
+export function placeNote(target: Box | null, noteHeight: (width: number) => number, view: { readonly width: number; readonly height: number }): { note: { top: number; left: number; width: number }; lit: Box | null } {
   const widest = Math.min(NOTE_WIDTH, view.width - EDGE * 2)
   if (!target) {
     const height = noteHeight(widest)
-    return { width: widest, left: Math.max(EDGE, (view.width - widest) / 2), top: Math.max(EDGE, (view.height - height) / 2) }
+    return { lit: null, note: { width: widest, left: Math.max(EDGE, (view.width - widest) / 2), top: Math.max(EDGE, (view.height - height) / 2) } }
   }
   const clampTop = (top: number, height: number): number => Math.min(Math.max(EDGE, top), Math.max(EDGE, view.height - height - EDGE))
   const clampLeft = (left: number, width: number): number => Math.min(Math.max(EDGE, left), Math.max(EDGE, view.width - width - EDGE))
@@ -130,14 +133,21 @@ export function placeNote(target: Box | null, noteHeight: (width: number) => num
     if (room < NOTE_MIN_WIDTH) continue
     const width = Math.min(widest, room)
     const height = noteHeight(width)
-    return { width, left: side === 'right' ? target.left + target.width + GAP : target.left - GAP - width, top: clampTop(target.top, height) }
+    return { lit: target, note: { width, left: side === 'right' ? target.left + target.width + GAP : target.left - GAP - width, top: clampTop(target.top, height) } }
   }
   const height = noteHeight(widest)
   const below = view.height - (target.top + target.height) - GAP - EDGE
   const above = target.top - GAP - EDGE
-  if (below >= height) return { width: widest, left: clampLeft(target.left + target.width - widest, widest), top: target.top + target.height + GAP }
-  if (above >= height) return { width: widest, left: clampLeft(target.left + target.width - widest, widest), top: target.top - GAP - height }
-  // No side has room: the corner farthest from the control's middle covers the least of it.
-  const middleX = target.left + target.width / 2, middleY = target.top + target.height / 2
-  return { width: widest, left: middleX < view.width / 2 ? view.width - widest - EDGE : EDGE, top: middleY < view.height / 2 ? Math.max(EDGE, view.height - height - EDGE) : EDGE }
+  if (below >= height) return { lit: target, note: { width: widest, left: clampLeft(target.left + target.width - widest, widest), top: target.top + target.height + GAP } }
+  if (above >= height) return { lit: target, note: { width: widest, left: clampLeft(target.left + target.width - widest, widest), top: target.top - GAP - height } }
+  // No side has room: the note takes the corner farthest from the control's middle, and the lit box gives way.
+  const atRight = target.left + target.width / 2 < view.width / 2, atBottom = target.top + target.height / 2 < view.height / 2
+  const note = { width: widest, left: atRight ? view.width - widest - EDGE : EDGE, top: atBottom ? Math.max(EDGE, view.height - height - EDGE) : EDGE }
+  // Cut the lit box back along whichever of its edges loses less of it.
+  const narrowed: Box = atRight ? { ...target, width: Math.max(0, Math.min(target.width, note.left - GAP - target.left)) }
+    : { ...target, left: Math.max(target.left, note.left + widest + GAP), width: Math.max(0, target.left + target.width - Math.max(target.left, note.left + widest + GAP)) }
+  const shortened: Box = atBottom ? { ...target, height: Math.max(0, Math.min(target.height, note.top - GAP - target.top)) }
+    : { ...target, top: Math.max(target.top, note.top + height + GAP), height: Math.max(0, target.top + target.height - Math.max(target.top, note.top + height + GAP)) }
+  const lit = narrowed.width * narrowed.height >= shortened.width * shortened.height ? narrowed : shortened
+  return { note, lit: lit.width > 0 && lit.height > 0 ? lit : null }
 }

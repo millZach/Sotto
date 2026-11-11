@@ -42,7 +42,7 @@ interface Shown {
   readonly close: ReturnType<typeof vi.fn<(outcome: { microphoneOpened: boolean }) => Promise<boolean>>>
   readonly rerender: (props?: Partial<Walk>) => void
 }
-interface Walk { settings: AppSettings; platform: SottoPlatform; speechModelChosen: boolean; dictation: DictationState; dictationOn: boolean; state: AgentState }
+interface Walk { settings: AppSettings; platform: SottoPlatform; speechModelChosen: boolean; dictation: DictationState; dictationOn: boolean; cloudTranscription?: boolean; navigation?: string; state: AgentState }
 function show(first: Partial<Walk> = {}, close: (outcome: { microphoneOpened: boolean }) => Promise<boolean> = async () => true): Shown {
   const opened: SetupPage[] = []
   const update = vi.fn<(patch: SettingsPatch) => Promise<boolean>>(async () => true), closed = vi.fn(close)
@@ -50,8 +50,8 @@ function show(first: Partial<Walk> = {}, close: (outcome: { microphoneOpened: bo
   let props: Walk = { settings: DEFAULT_SETTINGS, platform: 'win32', speechModelChosen: false, dictation: { status: 'idle' }, dictationOn: true, state: agentState(), ...first }
   const element = (): React.ReactElement => {
     vi.mocked(useOptionalAgents).mockReturnValue(agentContextFixture(props.state, command as never))
-    return <SetupWalk settings={props.settings} platform={props.platform} onOpenPage={page => { opened.push(page) }} onUpdateSettings={update}
-      speechModelChosen={props.speechModelChosen} dictation={props.dictation} dictationOn={props.dictationOn} onClose={closed} />
+    return <SetupWalk settings={props.settings} platform={props.platform} onOpenPage={page => { opened.push(page) }} navigation={props.navigation} onUpdateSettings={update}
+      speechModelChosen={props.speechModelChosen} dictation={props.dictation} dictationOn={props.dictationOn} cloudTranscription={props.cloudTranscription === true} onClose={closed} />
   }
   const view = render(element())
   return { opened, command, update, close: closed, rerender: next => { props = { ...props, ...next }; view.rerender(element()) } }
@@ -259,6 +259,94 @@ describe('first-run setup’s walk (ADR-0200)', () => {
     screen.getByRole('heading', { name: 'Sign in to a coding agent' }).focus()
     await user.keyboard('{Escape}')
     await waitFor(() => expect(close).toHaveBeenCalledWith({ microphoneOpened: false }))
+  })
+
+  it('does not promise that audio stays on this computer, or offer a speech model, while an OpenRouter model transcribes (ADR-0160)', async () => {
+    const user = userEvent.setup()
+    show({ cloudTranscription: true })
+    expect(note()).toHaveTextContent('turns your voice into text. This walk')
+    expect(note()).not.toHaveTextContent('never leaves this computer')
+    expect(note()).toHaveTextContent('No Sotto account. Product events are on until you turn them off in Settings.')
+    await press(user, 'Start')
+    await press(user, 'Skip for now')
+    expect(note()).toHaveAccessibleName('Check your microphone')
+    await press(user, 'Skip for now')
+    expect(note()).toHaveAccessibleName('Try the shortcut')
+  })
+
+  it('leaves a key the lit control used for itself alone, and lets no key through to the window’s own shortcuts', async () => {
+    const user = userEvent.setup()
+    giveBoxes()
+    const lit = document.createElement('button')
+    lit.dataset.setup = 'add-project'
+    lit.addEventListener('keydown', event => { if (event.key === 'Tab') event.preventDefault() })
+    document.body.append(lit)
+    const windowKeys = vi.fn()
+    window.addEventListener('keydown', windowKeys)
+    try {
+      show({ state: agentState({ ready: true }) })
+      await press(user, 'Start')
+      await press(user, 'Continue')
+      await waitFor(() => expect(document.querySelector('.setup-walk__lit')).not.toBeNull())
+      lit.focus()
+      // The control took Tab itself, as the composer does to accept a suggestion: focus stays where it put it.
+      await user.keyboard('{Tab}')
+      expect(document.activeElement).toBe(lit)
+      await user.keyboard('{F6}')
+      expect(windowKeys).not.toHaveBeenCalled()
+    } finally { window.removeEventListener('keydown', windowKeys) }
+  })
+
+  it('stands aside while the lit control shows a list of its own, which reaches past its box', async () => {
+    const user = userEvent.setup()
+    giveBoxes()
+    const composer = document.createElement('form')
+    composer.className = 'thread-prompt'
+    document.body.append(composer)
+    show({ state: agentState({ ready: true, project: true }) })
+    await press(user, 'Start')
+    await press(user, 'Continue')
+    await press(user, 'Continue')
+    await waitFor(() => expect(note()).toHaveAccessibleName('This is a thread'))
+    const suggestions = document.createElement('ul')
+    suggestions.setAttribute('role', 'listbox')
+    act(() => { composer.append(suggestions) })
+    await waitFor(() => expect(document.querySelector('.setup-walk')).toBeNull())
+    act(() => { suggestions.remove() })
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'This is a thread' })).toHaveFocus())
+  })
+
+  it('waits in the corner, with the page live, when a lit control leads to another page, and comes back on Back to setup', async () => {
+    const user = userEvent.setup()
+    const windowKeys = vi.fn()
+    window.addEventListener('keydown', windowKeys)
+    try {
+      const shown = show({ navigation: 'threads' })
+      await press(user, 'Start')
+      // The walk's own move to its next page is not being led away: the note stays until that page has shown.
+      expect(note()).toHaveAccessibleName('Sign in to a coding agent')
+      shown.rerender({ navigation: 'settings' })
+      expect(note()).toHaveAccessibleName('Sign in to a coding agent')
+      // A lit control then takes the user to Threads.
+      shown.rerender({ navigation: 'threads' })
+      const waiting = await screen.findByRole('region', { name: 'Setup' })
+      expect(waiting).toHaveTextContent('Setup is waiting')
+      expect(waiting).toHaveTextContent('It was on “Sign in to a coding agent”. Come back to it when you are ready.')
+      expect(screen.queryByRole('dialog')).toBeNull()
+      expect(document.querySelector('.setup-walk__dim')).toBeNull()
+      // The page is the user's, keys and all: Escape does not end setup, and the window's shortcuts hear their keys.
+      await user.keyboard('{Escape}')
+      expect(shown.close).not.toHaveBeenCalled()
+      expect(windowKeys).toHaveBeenCalled()
+      await user.click(within(waiting).getByRole('button', { name: 'Back to setup' }))
+      expect(shown.opened.at(-1)).toEqual({ navigation: 'settings', section: 'settings-providers' })
+      shown.rerender({ navigation: 'settings' })
+      await waitFor(() => expect(note()).toHaveAccessibleName('Sign in to a coding agent'))
+      // Skip setup is offered while it waits, too.
+      shown.rerender({ navigation: 'help' })
+      await user.click(within(await screen.findByRole('region', { name: 'Setup' })).getByRole('button', { name: 'Skip setup' }))
+      await waitFor(() => expect(shown.close).toHaveBeenCalledTimes(1))
+    } finally { window.removeEventListener('keydown', windowKeys) }
   })
 
   it('keeps focus in the note and the control it lights: Tab goes through the note, then the control, and round', async () => {

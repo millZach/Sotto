@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { neighbouringStop, NOTE_MIN_WIDTH, NOTE_WIDTH, passedOver, placeNote, setupStops, stopDone, stopsLeft, type Box, type SetupFacts } from '../../../src/renderer/src/features/setup/setupStops'
 
 const NOTHING: SetupFacts = { agentReady: false, projectAdded: false, threadOpen: false, omarchyDone: false, microphoneHeard: false, speechModelChosen: false, shortcutTried: false,
-  tailscaleOn: false, hostAdded: false, phoneAccess: false, dictationOn: true }
+  tailscaleOn: false, hostAdded: false, phoneAccess: false, dictationOn: true, speechModelHere: true }
 const ids = (platform: 'win32' | 'darwin' | 'linux') => setupStops(platform).map(stop => stop.id)
 const overlap = (a: Box, b: Box): number => Math.max(0, Math.min(a.left + a.width, b.left + b.width) - Math.max(a.left, b.left)) * Math.max(0, Math.min(a.top + a.height, b.top + b.height) - Math.max(a.top, b.top))
 
@@ -17,7 +17,7 @@ describe('first-run setup’s stops (ADR-0200)', () => {
   it('counts a stop done by its own task, and the first and last notes always', () => {
     for (const stop of setupStops('linux')) expect(stopDone(stop.id, NOTHING), stop.id).toBe(stop.id === 'welcome' || stop.id === 'end')
     const everything: SetupFacts = { agentReady: true, projectAdded: true, threadOpen: true, omarchyDone: true, microphoneHeard: true, speechModelChosen: true, shortcutTried: true,
-      tailscaleOn: true, hostAdded: true, phoneAccess: true, dictationOn: true }
+      tailscaleOn: true, hostAdded: true, phoneAccess: true, dictationOn: true, speechModelHere: true }
     for (const stop of setupStops('linux')) expect(stopDone(stop.id, everything), stop.id).toBe(true)
     expect(stopDone('thread', { ...NOTHING, agentReady: true, projectAdded: true })).toBe(false)
   })
@@ -62,7 +62,8 @@ describe('where a note goes (ADR-0200)', () => {
   ]
   it.each(cases)('keeps the note off %s and inside the window', (_name, target, view) => {
     const placed = placeNote(target, height, view)
-    const note: Box = { ...placed, height: height() }
+    const note: Box = { ...placed.note, height: height() }
+    expect(placed.lit).toEqual(target)
     expect(overlap(note, target)).toBe(0)
     expect(note.left).toBeGreaterThanOrEqual(0)
     expect(note.top).toBeGreaterThanOrEqual(0)
@@ -73,17 +74,34 @@ describe('where a note goes (ADR-0200)', () => {
   })
 
   it('narrows to the sidebar’s width at the smallest window rather than covering the control', () => {
-    const placed = placeNote({ top: 18, left: 282, width: 506, height: 548 }, height, { width: 820, height: 560 })
+    const placed = placeNote({ top: 18, left: 282, width: 506, height: 548 }, height, { width: 820, height: 560 }).note
     expect(placed.left + placed.width).toBeLessThanOrEqual(282)
     expect(placed.width).toBeLessThan(NOTE_WIDTH)
   })
 
   it('stands in the middle of the window when a stop lights nothing', () => {
-    expect(placeNote(null, height, { width: 1080, height: 720 })).toEqual({ width: NOTE_WIDTH, left: 375, top: 260 })
+    expect(placeNote(null, height, { width: 1080, height: 720 })).toEqual({ lit: null, note: { width: NOTE_WIDTH, left: 375, top: 260 } })
   })
 
-  it('takes the corner farthest from a control that leaves no side free', () => {
-    const placed = placeNote({ top: 10, left: 10, width: 800, height: 540 }, height, { width: 820, height: 560 })
-    expect(placed).toEqual({ width: NOTE_WIDTH, left: 12, top: 12 })
+  it('takes the corner farthest from a control that leaves no side free, and the lit box gives way so the note covers nothing lit', () => {
+    const target = { top: 10, left: 10, width: 800, height: 540 }, view = { width: 820, height: 560 }
+    const placed = placeNote(target, height, view)
+    expect(placed.note).toEqual({ width: NOTE_WIDTH, left: 12, top: 12 })
+    const note: Box = { ...placed.note, height: height() }
+    expect(placed.lit).not.toBeNull()
+    expect(overlap(note, placed.lit!)).toBe(0)
+    // It gives up the smaller strip: what is left is still most of the control, and still inside it.
+    expect(placed.lit!.width * placed.lit!.height).toBeGreaterThan(target.width * target.height / 2)
+    expect(placed.lit!.left).toBeGreaterThanOrEqual(target.left)
+    expect(placed.lit!.top).toBeGreaterThanOrEqual(target.top)
+    expect(placed.lit!.left + placed.lit!.width).toBeLessThanOrEqual(target.left + target.width)
+    expect(placed.lit!.top + placed.lit!.height).toBeLessThanOrEqual(target.top + target.height)
+  })
+
+  it('passes over the speech model stop while an OpenRouter model transcribes, and does not list it as left', () => {
+    const stops = setupStops('win32'), cloud = { ...NOTHING, speechModelHere: false }
+    const at = (id: string): number => stops.findIndex(stop => stop.id === id)
+    expect(neighbouringStop(stops, at('microphone'), 1, cloud)).toBe(at('shortcut'))
+    expect(stopsLeft(stops, cloud)).not.toContain('speech-model')
   })
 })

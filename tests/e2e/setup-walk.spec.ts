@@ -171,7 +171,8 @@ test('first-run setup walks a new profile to its first thread on the real pages,
   }
 })
 
-test('Skip setup on the first note ends setup for good, with dictation waiting for the microphone test', async () => {
+test('Skip setup on the first note ends setup for good, and a walk led away by its lit control waits in the corner', async () => {
+  test.setTimeout(120_000)
   const launched = await launchSotto()
   const { page } = launched
   try {
@@ -185,6 +186,27 @@ test('Skip setup on the first note ends setup for good, with dictation waiting f
     // After a reload the profile is set up: no note comes back.
     await page.reload()
     await expect(page.getByRole('complementary', { name: 'Thread sidebar' })).toBeVisible()
+    await expect(page.locator('.setup-walk')).toHaveCount(0)
+
+    // Started again from Help, the shortcut stop lights Dictate, which asks for the microphone test and offers Open
+    // Settings. That leads to another page, so the dim lifts and the walk waits in the corner with the page live.
+    await page.getByRole('link', { name: 'Help' }).click()
+    await page.getByRole('button', { name: 'Set up Sotto', exact: true }).click()
+    await reachSetupStop(page, 'shortcut')
+    await page.getByRole('button', { name: 'Open Settings', exact: true }).click()
+    const waiting = page.getByRole('region', { name: 'Setup', exact: true })
+    await expect(waiting).toContainText('Setup is waiting')
+    await expect(waiting).toContainText('It was on “Try the shortcut”.')
+    await expect(page.locator('.setup-walk__dim')).toHaveCount(0)
+    await expect(page.getByRole('heading', { level: 1, name: 'Settings' })).toBeVisible()
+    // The page it was sent to takes presses: Settings' own microphone test answers.
+    await page.locator('.settings-microphone-test').getByRole('button', { name: 'Test microphone', exact: true }).click()
+    await expect(page.locator('.settings-microphone-test')).not.toHaveAttribute('data-state', 'idle')
+    await page.screenshot({ animations: 'disabled', path: `${SHOTS}/waiting-1080x720-dark.png` })
+    await waiting.getByRole('button', { name: 'Back to setup' }).click()
+    await expect(setupNote(page)).toHaveAccessibleName('Try the shortcut')
+    await expect(page.getByRole('region', { name: 'Dictation' })).toBeVisible()
+    await setupNote(page).getByRole('button', { name: 'Skip setup' }).click()
     await expect(page.locator('.setup-walk')).toHaveCount(0)
   } finally {
     await closeSotto(launched)

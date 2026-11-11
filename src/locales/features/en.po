@@ -1595,6 +1595,10 @@ msgstr "Automation"
 msgid "Back"
 msgstr "Back"
 
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Back to setup"
+msgstr "Back to setup"
+
 #: src/renderer/src/watcher/TeamDesks.tsx
 msgid "Back to Teams"
 msgstr "Back to Teams"
@@ -3242,6 +3246,10 @@ msgstr "It takes no sends on {from} while it moves."
 msgid "It was blocked {blocked} of the last minute. The longest freeze was {longest}. Threads, typing and the window may lag until it recovers."
 msgstr "It was blocked {blocked} of the last minute. The longest freeze was {longest}. Threads, typing and the window may lag until it recovers."
 
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "It was on “{title}”. Come back to it when you are ready."
+msgstr "It was on “{title}”. Come back to it when you are ready."
+
 #: src/renderer/src/languages.ts
 msgid "Italian"
 msgstr "Italian"
@@ -4103,6 +4111,10 @@ msgstr "No saved policies. Existing permission checks still apply."
 #: src/renderer/src/components/CleanupModelFields.tsx
 msgid "No setting passed the test cleanups on {chosenName}, so Mercury 2 cleans up instead. Change the server, then measure again."
 msgstr "No setting passed the test cleanups on {chosenName}, so Mercury 2 cleans up instead. Change the server, then measure again."
+
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "No Sotto account. Product events are on until you turn them off in Settings."
+msgstr "No Sotto account. Product events are on until you turn them off in Settings."
 
 #: src/renderer/src/components/SpeechModelStatus.tsx
 msgid "No speech model chosen"
@@ -5683,12 +5695,17 @@ msgid "Settling"
 msgstr "Settling"
 
 #: src/renderer/src/features/council/ClimbGrid.tsx
+#: src/renderer/src/features/setup/SetupWalk.tsx
 msgid "Setup"
 msgstr "Setup"
 
 #: src/renderer/src/features/setup/SetupWalk.tsx
 msgid "Setup could not be saved. Your choices are intact; please try again."
 msgstr "Setup could not be saved. Your choices are intact; please try again."
+
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Setup is waiting"
+msgstr "Setup is waiting"
 
 #: src/renderer/src/watcher/TeamsPage.tsx
 msgid "Share this computer with {name} in Tailscale: on Machines, press ••• beside {machine}, then Share, and send {name} the link. Then check again."
@@ -6160,6 +6177,10 @@ msgstr "Sotto restored default settings after a local settings file could not be
 #: src/renderer/src/features/setup/SetupWalk.tsx
 msgid "Sotto runs {agentNames} threads in one window, and turns your voice into text on this computer. This walk sets up your first thread, then dictation, other computers and your iPhone. Skip any part. First, pick how Sotto looks."
 msgstr "Sotto runs {agentNames} threads in one window, and turns your voice into text on this computer. This walk sets up your first thread, then dictation, other computers and your iPhone. Skip any part. First, pick how Sotto looks."
+
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Sotto runs {agentNames} threads in one window, and turns your voice into text. This walk sets up your first thread, then dictation, other computers and your iPhone. Skip any part. First, pick how Sotto looks."
+msgstr "Sotto runs {agentNames} threads in one window, and turns your voice into text. This walk sets up your first thread, then dictation, other computers and your iPhone. Skip any part. First, pick how Sotto looks."
 
 #: src/renderer/src/features/setup/SetupWalk.tsx
 msgid "Sotto runs {agentNames} threads in one window. This walk sets up your first thread, then other computers and your iPhone. Skip any part. First, pick how Sotto looks."

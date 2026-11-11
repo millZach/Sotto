@@ -433,12 +433,14 @@ export function App({ createMicrophoneTest, watcherBridge = window.sotto?.watche
           settings={app.settings}
           platform={app.platform}
           onOpenPage={page => { if (page.navigation === 'settings') app.actions.navigate('settings', page.section); else app.actions.navigate(page.navigation) }}
+          navigation={navigation}
           onUpdateSettings={app.actions.updateSettings}
           speechModelChosen={app.speechModelChoice !== null && app.speechModel !== null && app.speechModel.state !== 'missing' && app.speechModel.state !== 'failed'}
           // The first in Settings' own list, the models already here before Sotto's downloads, is the one setup suggests (ADR-0094).
           suggestedSpeechModel={app.speechModelChoice === null ? [...(app.speechModels ?? [])].sort((a, b) => Number(b.installed) - Number(a.installed))[0]?.name ?? null : null}
           dictation={app.dictation}
           dictationOn={dictationOn}
+          cloudTranscription={cloudTranscription}
           onClose={async ({ microphoneOpened }) => {
             // Started again from Help: the profile's own setup ended long ago, and nothing of it is saved again.
             if (latestSettingsRef.current?.onboardingComplete) { setSetupAgain(false); return true }

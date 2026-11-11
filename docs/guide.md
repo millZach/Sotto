@@ -833,7 +833,9 @@ Locally built artifacts are not code-signed because no Windows signing certifica
 
 ### After install
 
-A new install opens on the real Threads page with first-run setup's first note over it. Setup is a walk of notes over the real pages: each stop opens its page, lights one control there and dims the rest of the window, and puts a note beside the control. The note says what the stop is for and where it stands, counts the stops ("2 of 11"), and has **Back**, the way forward and **Skip setup**. `Escape` ends the walk as **Skip setup** does. The way forward reads **Continue** once the stop's task is done and **Skip for now** until then. Only the lit control and the note take presses and focus: Tab goes through the note, then the lit control, and round. The control is the page's own, so pressing it does what it always does; a dialog it opens, such as Sign in, the folder browser or Add host, has the window to itself until it closes, and the note comes back after.
+A new install opens on the real Threads page with first-run setup's first note over it. Setup is a walk of notes over the real pages: each stop opens its page, lights one control there and dims the rest of the window, and puts a note beside the control. The note says what the stop is for and where it stands, counts the stops ("2 of 11"), and has **Back**, the way forward and **Skip setup**. `Escape` ends the walk as **Skip setup** does. The way forward reads **Continue** once the stop's task is done and **Skip for now** until then. Only the lit control and the note take presses and focus: Tab goes through the note, then the lit control, and round. The control is the page's own, so pressing it does what it always does; a dialog or menu it opens, such as Sign in, the folder browser or Add host, has the window to itself until it closes, and the note comes back after. Page shortcuts and F6 wait until the walk is over.
+
+A lit control can lead to another page: Add host's **Open thread** goes to Threads, where its agent asks its questions. The dim then lifts, that page is fully yours, and a small note in the corner says **Setup is waiting**, with **Back to setup**, which returns to the stop, and **Skip setup**.
 
 The stops, in order:
 
@@ -850,11 +852,11 @@ The stops, in order:
 11. **Answer threads from your iPhone**, the same page's Phones card.
 12. **That's setup.** The last note lists whatever was not done and where it lives, and **Done** ends the walk.
 
-A project and a thread need a connected agent, so while none is ready **Skip for now** on the agents stop passes over both and goes on to dictation rather than stopping where there is nothing to press. With dictation turned off, the walk passes over the dictation stops.
+A project and a thread need a connected agent, so while none is ready **Skip for now** on the agents stop passes over both and goes on to dictation rather than stopping where there is nothing to press. With dictation turned off, the walk passes over the dictation stops, and with an OpenRouter speech model transcribing it passes over the speech model.
 
-**Skip setup**, `Escape`, **Finish here** and **Done** end the walk and leave you on the Threads page. If the microphone test never opened the microphone, dictation waits until you run the test in Settings → Dictation. If setup's end cannot be saved, the note stays and says so. Quitting Sotto part-way starts the walk from its first note next time, with the stops already done reading **Continue**. No corner card speaks until the walk is over; the product events notice is the first.
+**Skip setup**, `Escape`, **Finish here** and **Done** end the walk and leave you on the Threads page. If the microphone test never opened the microphone, dictation waits until you run the test in Settings → Dictation. If setup's end cannot be saved, the note stays and says so. Quitting Sotto part-way starts the walk from its first note next time; the stops Sotto can still see as done read **Continue**, and the microphone test is asked for again. No corner card speaks until the walk is over; the product events notice is the first.
 
-**Set up Sotto**, the card above Getting started in Help, starts the walk again at any time. Ending it there changes nothing that setup saved.
+**Set up Sotto**, the card at the top of Getting started in Help, starts the walk again at any time. Ending it there changes nothing that setup saved.
 
 If microphone access is blocked or no microphone is found, follow the recovery guidance and try again, or skip. The default global shortcut is `Ctrl+Shift+Space` on Windows and `⌃⇧Space` (the literal Control key) on macOS. Press it once to start and again to stop and transcribe. If you press it again while the microphone is connecting, Sotto cancels the session immediately. No audio is kept or transcribed. `Escape` cancels an active session.
 

@@ -1595,6 +1595,10 @@ msgstr ""
 msgid "Back"
 msgstr ""
 
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Back to setup"
+msgstr ""
+
 #: src/renderer/src/watcher/TeamDesks.tsx
 msgid "Back to Teams"
 msgstr ""
@@ -3242,6 +3246,10 @@ msgstr ""
 msgid "It was blocked {blocked} of the last minute. The longest freeze was {longest}. Threads, typing and the window may lag until it recovers."
 msgstr ""
 
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "It was on “{title}”. Come back to it when you are ready."
+msgstr ""
+
 #: src/renderer/src/languages.ts
 msgid "Italian"
 msgstr ""
@@ -4102,6 +4110,10 @@ msgstr ""
 
 #: src/renderer/src/components/CleanupModelFields.tsx
 msgid "No setting passed the test cleanups on {chosenName}, so Mercury 2 cleans up instead. Change the server, then measure again."
+msgstr ""
+
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "No Sotto account. Product events are on until you turn them off in Settings."
 msgstr ""
 
 #: src/renderer/src/components/SpeechModelStatus.tsx
@@ -5683,11 +5695,16 @@ msgid "Settling"
 msgstr ""
 
 #: src/renderer/src/features/council/ClimbGrid.tsx
+#: src/renderer/src/features/setup/SetupWalk.tsx
 msgid "Setup"
 msgstr ""
 
 #: src/renderer/src/features/setup/SetupWalk.tsx
 msgid "Setup could not be saved. Your choices are intact; please try again."
+msgstr ""
+
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Setup is waiting"
 msgstr ""
 
 #: src/renderer/src/watcher/TeamsPage.tsx
@@ -6159,6 +6176,10 @@ msgstr ""
 
 #: src/renderer/src/features/setup/SetupWalk.tsx
 msgid "Sotto runs {agentNames} threads in one window, and turns your voice into text on this computer. This walk sets up your first thread, then dictation, other computers and your iPhone. Skip any part. First, pick how Sotto looks."
+msgstr ""
+
+#: src/renderer/src/features/setup/SetupWalk.tsx
+msgid "Sotto runs {agentNames} threads in one window, and turns your voice into text. This walk sets up your first thread, then dictation, other computers and your iPhone. Skip any part. First, pick how Sotto looks."
 msgstr ""
 
 #: src/renderer/src/features/setup/SetupWalk.tsx

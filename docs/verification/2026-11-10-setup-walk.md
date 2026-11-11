@@ -26,11 +26,14 @@ The app was started outside test mode with a private, empty home folder, so the 
 7. The last note left out what was done. Done saved `onboardingComplete` true and `microphoneSkipped` false, and left the Threads page.
 8. Set up Sotto, in Help, started the walk again, and Escape ended it with nothing saved.
 
+9. On a profile whose microphone was never tested, the walk was started from Help and taken to the shortcut stop, where Dictate offers Open Settings. Pressing it lifted the dim and left "Setup is waiting" in the corner over a live Settings page, whose own microphone test answered a press. Back to setup returned to the stop.
+
 `tests/e2e/first-run-setup-fit.spec.ts` visited every stop at 1080x720, 820x560, 1280x800 and 1600x1000, dark and light: each note was inside the window, off the lit control and not scrolling. At 820x560 the sidebar is a rail, and the project and thread stops lit its Expand sidebar.
 
 - `artifacts/setup-walk/welcome-1080x720.png`, `first-thread-1080x720.png`, `end-1080x720.png`: the first note, the first thread, the last note.
 - `artifacts/setup-walk/project-rail-820x560.png`, `iphone-820x560.png`: the smallest window.
 - `artifacts/setup-walk/help-set-up-sotto-1080x720.png`: Set up Sotto in Help.
+- `artifacts/setup-walk/waiting-1080x720.png`: the walk waiting in the corner after a lit control led to Settings.
 
 ## Not checked here
 
@@ -38,4 +41,5 @@ The app was started outside test mode with a private, empty home folder, so the 
 - A sign-in carried through from the agents stop to Connected against a real account.
 - The shortcut stop's "That worked.", which needs a dictation; forge's test build cannot press the global shortcut. The unit test covers it.
 - A real download at the speech model stop.
+- Add host's Open thread leading to Threads, which needs a host that can be added; forge's test build cannot add one. Dictate's Open Settings stands in for it above.
 - The design capture baselines. The captures of the nine card steps and the tour are replaced in the matrix by captures of the walk's stops, but `artifacts/design/app-review/` still holds the old images: retaking them needs `npm run design:capture` on Windows.

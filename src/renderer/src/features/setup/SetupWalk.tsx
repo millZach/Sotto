@@ -25,6 +25,8 @@ export interface SetupWalkProps {
   readonly platform: SottoPlatform
   /** Opens a stop's page, as `actions.navigate` does. */
   readonly onOpenPage: (page: SetupPage) => void
+  /** The page the app is on now, which a lit control can change: Add host's Open thread goes to Threads. Without it the walk never waits. */
+  readonly navigation?: string | undefined
   readonly onUpdateSettings: (patch: SettingsPatch) => Promise<boolean>
   /** A speech model is chosen and has not failed. */
   readonly speechModelChosen: boolean
@@ -32,6 +34,8 @@ export interface SetupWalkProps {
   readonly suggestedSpeechModel?: string | null | undefined
   readonly dictation: DictationState
   readonly dictationOn: boolean
+  /** Dictation is transcribed by an OpenRouter speech model (ADR-0160): audio leaves this computer, and there is no model to choose here. */
+  readonly cloudTranscription?: boolean
   /** Ends the walk: Skip setup, Finish here and the last note's Done. Answers false when a first run's end could not be saved. */
   readonly onClose: (outcome: { readonly microphoneOpened: boolean }) => Promise<boolean>
 }
@@ -42,7 +46,9 @@ const PAD = 6
 const MISSING_FRAMES = 45
 const FOCUSABLE = 'a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [contenteditable="true"], [tabindex]:not([tabindex="-1"])'
 /** A dialog one of the lit controls opened (Sign in, Add host, a folder browser): the walk stands aside for it. */
-const OTHER_DIALOG = '.tt-dialog-backdrop, dialog[open], [role="alertdialog"], [role="dialog"][aria-modal="true"]'
+const OTHER_DIALOG = '.tt-dialog-backdrop, dialog[open], [role="alertdialog"], [role="dialog"][aria-modal="true"], [role="menu"]'
+/** A list the lit control opened inside itself, such as the composer's file and skill suggestions, which reach past its box. */
+const OWN_POPUP = '[role="listbox"]'
 
 function shown(element: Element | null): element is HTMLElement {
   return element instanceof HTMLElement && element.getClientRects().length > 0
@@ -66,7 +72,7 @@ const sameBox = (a: Box | null, b: Box | null): boolean => a === b || (a !== nul
  * focus; a dialog the control opens has the window to itself until it closes. Skip setup, or Escape, ends the walk. Setup's first part is done when a first
  * thread is open, and everything after is optional.
  */
-export function SetupWalk({ settings, platform, onOpenPage, onUpdateSettings, speechModelChosen, suggestedSpeechModel = null, dictation, dictationOn, onClose }: SetupWalkProps): ReactNode {
+export function SetupWalk({ settings, platform, onOpenPage, navigation, onUpdateSettings, speechModelChosen, suggestedSpeechModel = null, dictation, dictationOn, cloudTranscription = false, onClose }: SetupWalkProps): ReactNode {
   const { t, i18n } = useLingui()
   useAppearancePreviewVersion()
   const stops = setupStops(platform)
@@ -83,6 +89,8 @@ export function SetupWalk({ settings, platform, onOpenPage, onUpdateSettings, sp
   const [microphoneOpened, setMicrophoneOpened] = useState(false)
   const [shortcutTried, setShortcutTried] = useState(false)
   const [hosts, setHosts] = useState<HostsState | null>(null)
+  /** What the Hosts page's own Tailscale row says, which follows a connect made there; null until the walk has seen the row. */
+  const [pageTailscale, setPageTailscale] = useState<string | null>(null)
   const [noteHeight, setNoteHeight] = useState(220)
   const [view, setView] = useState(() => ({ width: window.innerWidth, height: window.innerHeight }))
   const [closing, setClosing] = useState(false)
@@ -114,9 +122,10 @@ export function SetupWalk({ settings, platform, onOpenPage, onUpdateSettings, sp
     return () => { alive = false; off() }
   }, [hostsBridge])
 
+  const tailscaleState = pageTailscale ?? tailscale.summary?.state ?? null
   const facts: SetupFacts = {
     agentReady: ready !== undefined || hostReady, projectAdded: projects.length > 0, threadOpen, omarchyDone, microphoneHeard, speechModelChosen, shortcutTried,
-    tailscaleOn: tailscale.summary?.state === 'running', hostAdded: (hosts?.hosts.length ?? 0) > 0, phoneAccess: settings.phoneAccess, dictationOn,
+    tailscaleOn: tailscaleState === 'running', hostAdded: (hosts?.hosts.length ?? 0) > 0, phoneAccess: settings.phoneAccess, dictationOn, speechModelHere: !cloudTranscription,
   }
   const done = stopDone(stop.id, facts)
 
@@ -124,6 +133,17 @@ export function SetupWalk({ settings, platform, onOpenPage, onUpdateSettings, sp
   const openPage = useRef(onOpenPage)
   openPage.current = onOpenPage
   useEffect(() => { openPage.current(stop.page) }, [stop])
+
+  // A lit control can lead to another page: Add host's Open thread goes to Threads, where its agent asks its questions.
+  // Once a stop's own page has shown, any other page means the user was led away. The walk then waits in the corner,
+  // with the page they were sent to fully live, until Back to setup or their own way back (Zach's pick, November 10, 2026).
+  const arrivedAt = useRef<SetupStopId | null>(null)
+  const [waiting, setWaiting] = useState(false)
+  useEffect(() => {
+    if (navigation === undefined) return
+    if (navigation === stop.page.navigation) { arrivedAt.current = stop.id; setWaiting(false) }
+    else setWaiting(arrivedAt.current === stop.id)
+  }, [navigation, stop])
 
   // Arriving at the agents stop connects every agent installed on this computer, as setup's step did (ADR-0063
   // decision 3), so each row says where it stands. It signs in to nothing; a row's own Sign in does that.
@@ -148,9 +168,10 @@ export function SetupWalk({ settings, platform, onOpenPage, onUpdateSettings, sp
   useEffect(() => {
     let frame = 0, missing = 0, revealed = false
     const look = (): void => {
-      const aside = [...document.querySelectorAll(OTHER_DIALOG)].some(element => shown(element) && !element.closest('.setup-walk'))
-      setStandsAside(current => current === aside ? current : aside)
       const element = stop.target.map(selector => document.querySelector(selector)).find(shown) ?? null
+      const aside = [...document.querySelectorAll(OTHER_DIALOG)].some(popup => shown(popup) && !popup.closest('.setup-walk'))
+        || (element !== null && [...element.querySelectorAll(OWN_POPUP)].some(shown))
+      setStandsAside(current => current === aside ? current : aside)
       if (element && !revealed) { revealed = true; element.scrollIntoView?.({ block: 'nearest', inline: 'nearest' }) }
       lit.current = element
       const rail = element !== null && element.matches(SIDEBAR_RAIL)
@@ -162,6 +183,8 @@ export function SetupWalk({ settings, platform, onOpenPage, onUpdateSettings, sp
       const composer = shown(document.querySelector('form.thread-prompt'))
       setThreadOpen(current => current === composer ? current : composer)
       if (document.querySelector('.settings-microphone-test[data-heard]')) setMicrophoneHeard(true)
+      const row = document.querySelector<HTMLElement>('section.hosts-tailscale')?.dataset.state
+      if (row) setPageTailscale(current => current === row ? current : row)
       if (document.querySelector('.settings-microphone-test:is([data-state="ready"], [data-state="closed"])')) setMicrophoneOpened(true)
       const width = window.innerWidth, height = window.innerHeight
       setView(current => current.width === width && current.height === height ? current : { width, height })
@@ -173,7 +196,7 @@ export function SetupWalk({ settings, platform, onOpenPage, onUpdateSettings, sp
 
   useLayoutEffect(() => { if (note.current) setNoteHeight(current => note.current!.offsetHeight === current ? current : note.current!.offsetHeight) })
   // Focus goes to each note as it arrives, and comes back to it when a dialog a lit control opened has closed.
-  useEffect(() => { if (!standsAside) heading.current?.focus() }, [index, standsAside])
+  useEffect(() => { if (!standsAside && !waiting) heading.current?.focus() }, [index, standsAside, waiting])
 
   const close = async (): Promise<void> => {
     if (closing) return
@@ -185,9 +208,17 @@ export function SetupWalk({ settings, platform, onOpenPage, onUpdateSettings, sp
   const forward = (): void => { setIndex(current => neighbouringStop(stops, current, 1, facts)) }
   const back = (): void => { setIndex(current => neighbouringStop(stops, current, -1, facts)) }
 
-  // Focus stays with the note and the control it lights: Tab goes through the note, then the control, and round.
+  // Focus stays with the note and the control it lights: Tab goes through the note, then the control, and round. It
+  // is heard after the page, so a Tab or an Escape the lit control used for itself (the composer taking a suggestion,
+  // an opened provider row closing) is not also the walk's. Escape ends the walk, as Skip setup does (Zach's pick,
+  // November 10, 2026). No key goes on to the window's own shortcuts, which would move the page out from under a stop.
   const onKeyDown = (event: globalThis.KeyboardEvent): void => {
-    if (event.key !== 'Tab' || standsAside || !note.current) return
+    // While the walk waits in the corner the page is the user's, keys and all.
+    if (standsAside || waiting || !note.current) return
+    event.stopPropagation()
+    if (event.defaultPrevented) return
+    if (event.key === 'Escape') { event.preventDefault(); void close(); return }
+    if (event.key !== 'Tab') return
     const within = (root: HTMLElement | null): HTMLElement[] => root ? [...(root.matches(FOCUSABLE) ? [root] : []), ...root.querySelectorAll<HTMLElement>(FOCUSABLE)].filter(shown) : []
     const order = [...within(note.current), ...within(lit.current)]
     if (order.length === 0) return
@@ -198,21 +229,10 @@ export function SetupWalk({ settings, platform, onOpenPage, onUpdateSettings, sp
   }
   const keyDown = useRef(onKeyDown)
   keyDown.current = onKeyDown
-  // Escape ends the walk, as Skip setup does (Zach's pick, November 10, 2026). It is heard after the page, so an Escape
-  // the lit control used for itself, closing an opened provider row say, is not also the walk's.
-  const onEscape = (event: globalThis.KeyboardEvent): void => {
-    if (event.key !== 'Escape' || event.defaultPrevented || standsAside) return
-    event.preventDefault()
-    void close()
-  }
-  const escape = useRef(onEscape)
-  escape.current = onEscape
   useEffect(() => {
     const listen = (event: globalThis.KeyboardEvent): void => keyDown.current(event)
-    const listenForEscape = (event: globalThis.KeyboardEvent): void => escape.current(event)
-    document.addEventListener('keydown', listen, true)
-    document.addEventListener('keydown', listenForEscape)
-    return () => { document.removeEventListener('keydown', listen, true); document.removeEventListener('keydown', listenForEscape) }
+    document.addEventListener('keydown', listen)
+    return () => document.removeEventListener('keydown', listen)
   }, [])
 
   // The look, on the first note: light, dark or the system's, painted at once as Settings › Appearance paints it.
@@ -266,7 +286,9 @@ export function SetupWalk({ settings, platform, onOpenPage, onUpdateSettings, sp
   }
   const body = (): string => {
     switch (stop.id) {
-      case 'welcome': return dictationOn
+      case 'welcome': return dictationOn && cloudTranscription
+        ? t`Sotto runs ${agentNames} threads in one window, and turns your voice into text. This walk sets up your first thread, then dictation, other computers and your iPhone. Skip any part. First, pick how Sotto looks.`
+        : dictationOn
         ? t`Sotto runs ${agentNames} threads in one window, and turns your voice into text on this computer. This walk sets up your first thread, then dictation, other computers and your iPhone. Skip any part. First, pick how Sotto looks.`
         : t`Sotto runs ${agentNames} threads in one window. This walk sets up your first thread, then other computers and your iPhone. Skip any part. First, pick how Sotto looks.`
       case 'agents': return t`A thread runs on an agent you already have. These are the ones Sotto looked for on this computer. Sign in opens that agent’s own sign-in.`
@@ -300,8 +322,8 @@ export function SetupWalk({ settings, platform, onOpenPage, onUpdateSettings, sp
       case 'speech-model': return speechModelChosen ? { tone: 'done', text: t`A speech model is chosen. Dictation works as soon as it is ready.` } : null
       case 'shortcut': return shortcutTried ? { tone: 'done', text: t`That worked.` } : null
       case 'tailscale': return facts.tailscaleOn ? { tone: 'done', text: t`Tailscale is on.` }
-        : tailscale.summary?.state === 'missing' ? { tone: 'waiting', text: t`Tailscale is not installed on this computer.` }
-        : tailscale.summary?.state === 'off' ? { tone: 'waiting', text: t`Tailscale is off on this computer.` } : null
+        : tailscaleState === 'missing' ? { tone: 'waiting', text: t`Tailscale is not installed on this computer.` }
+        : tailscaleState === 'off' ? { tone: 'waiting', text: t`Tailscale is off on this computer.` } : null
       case 'computers': return facts.hostAdded ? { tone: 'done', text: t`${host} is added.` } : null
       case 'iphone': return facts.phoneAccess ? { tone: 'done', text: t`Phones you pair can connect.` } : null
       default: return null
@@ -315,13 +337,30 @@ export function SetupWalk({ settings, platform, onOpenPage, onUpdateSettings, sp
   const forwardLabel = first ? t({ message: 'Start', comment: 'Starts first-run setup’s walk.' })
     : firstThread && stops[onward]?.dictation ? t`Continue to dictation`
     : done ? t`Continue` : t`Skip for now`
-  const place = placeNote(target, () => noteHeight, view)
+  const placed = placeNote(target, () => noteHeight, view)
+  const place = placed.note
   const count = index + 1, total = stops.length
   const modes = [['light', t({ message: 'Light', comment: 'Colour scheme' })], ['system', t`Match ${system}`], ['dark', t({ message: 'Dark', comment: 'Colour scheme' })]] as const
 
   // A dialog a lit control opened has the window to itself: nothing of the walk is drawn until it closes.
   if (standsAside) return null
-  const hole = target ? { top: target.top - PAD, left: target.left - PAD, width: target.width + PAD * 2, height: target.height + PAD * 2 } : null
+  const title = titles[stop.id]
+  if (waiting) return createPortal(
+    <div className="setup-walk setup-walk--waiting" data-stop={stop.id}>
+      <div className="setup-walk__waiting" role="region" aria-label={t`Setup`}>
+        <h2>{t`Setup is waiting`}</h2>
+        <p className="tt-paragraph"><Trans>It was on “{title}”. Come back to it when you are ready.</Trans></p>
+        {saveFailed ? <p className="setup-walk__failed tt-paragraph" role="alert"><Trans>Setup could not be saved. Your choices are intact; please try again.</Trans></p> : null}
+        <footer>
+          <button type="button" className="setup-walk__quit tt-focusable" disabled={closing} onClick={() => void close()}>{t`Skip setup`}</button>
+          <span className="setup-walk__actions"><Button onClick={() => openPage.current(stop.page)}><Trans>Back to setup</Trans></Button></span>
+        </footer>
+      </div>
+    </div>,
+    document.body,
+  )
+  const lighted = placed.lit
+  const hole = lighted ? { top: lighted.top - PAD, left: lighted.left - PAD, width: lighted.width + PAD * 2, height: lighted.height + PAD * 2 } : null
   return createPortal(
     <div className="setup-walk" data-stop={stop.id}>
       {hole ? <>
@@ -343,7 +382,9 @@ export function SetupWalk({ settings, platform, onOpenPage, onUpdateSettings, sp
               className="setup-walk__look tt-focusable" onClick={() => void chooseLook(mode)}>{label}</button>)}
           </div>
           {lookFailed ? <p className="setup-walk__failed tt-paragraph" role="alert"><Trans>That look could not be saved. Your previous look is still on. Choose it again to retry.</Trans></p> : null}
-          <p className="setup-walk__aside tt-paragraph"><Trans>Your audio never leaves this computer. No Sotto account. Product events are on until you turn them off in Settings.</Trans></p>
+          <p className="setup-walk__aside tt-paragraph">{cloudTranscription
+            ? <Trans>No Sotto account. Product events are on until you turn them off in Settings.</Trans>
+            : <Trans>Your audio never leaves this computer. No Sotto account. Product events are on until you turn them off in Settings.</Trans>}</p>
         </> : null}
         {said ? <p className="setup-walk__status tt-paragraph" data-tone={said.tone} role="status">{said.text}</p> : null}
         {last ? left.length === 0 ? <p className="setup-walk__status tt-paragraph" data-tone="done"><Trans>Everything in the walk is set up.</Trans></p>

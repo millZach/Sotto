@@ -70,7 +70,8 @@
   font-weight: 600;
 }
 
-.setup-walk__note p.setup-walk__failed {
+.setup-walk__note p.setup-walk__failed,
+.setup-walk__waiting p.setup-walk__failed {
   color: var(--tt-error-text);
 }
 
@@ -135,4 +136,42 @@
   display: flex;
   gap: 4px;
   margin-left: auto;
+}
+
+/* A lit control led to another page: the dim lifts and the walk waits in the window's corner, where the corner cards
+   sit once setup is over (they wait until then), with the page fully live around it. */
+.setup-walk__waiting {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  display: grid;
+  gap: 8px;
+  width: min(330px, calc(100vw - 40px));
+  border: 1px solid var(--tt-hairline);
+  border-radius: var(--tt-radius-lg);
+  background: var(--tt-surface-elevated);
+  box-shadow: var(--tt-shadow-lg);
+  padding: 14px 16px 10px;
+  color: var(--tt-text);
+  pointer-events: auto;
+}
+
+.setup-walk__waiting h2 {
+  margin: 0;
+  font-size: var(--tt-type-reading);
+  font-weight: 600;
+}
+
+.setup-walk__waiting p {
+  margin: 0;
+  color: var(--tt-text-muted);
+  font-size: var(--tt-type-small);
+  line-height: 1.5;
+}
+
+.setup-walk__waiting footer {
+  display: flex;
+  align-items: center;
+  gap: 4px 10px;
+  margin-top: 4px;
 }
