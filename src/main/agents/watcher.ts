@@ -43,7 +43,7 @@ import { threadsById, WatcherHosts } from './watcherHosts'
 import type { WorkspaceHost } from './workspace'
 import { WatcherWakeUp, watcherBackgroundWorkCount, watcherRosterWork, watcherProgressFingerprint, type WatcherWakeOptions } from './watcherWakeUp'
 import { watcherEndedPullRequests, watcherHostInput, watcherOpenPullRequests, watcherPullRequestSummaries, watcherSlimRead, watcherThreadPullRequests } from './watcherSlimReads'
-import { mergeTurnHolds, watcherMergeQueue, watcherStaleNotes, type BaseBranchChecks, type WatcherKnownPullRequest, type WatcherOpenPullRequest } from './watcherComputedState'
+import { BASE_BRANCH_COMMITS_READ, mergeTurnHolds, watcherMergeQueue, watcherStaleNotes, type BaseBranchChecks, type WatcherKnownPullRequest, type WatcherOpenPullRequest } from './watcherComputedState'
 import { pullRequestKey } from '../../shared/gitPullRequests'
 import { GitHubRateLimited, retryWords } from './git/github'
 import { WATCHER_COMPACTED_NOTE, watcherRequestLine, watcherRequestNote } from './watcherRequestNote'
@@ -5391,13 +5391,15 @@ ${operation.draftId}`)
     if (ask) {
       try {
         base = await ask(goMerge.pullRequest)
-        if (base.state === 'unknown') unread = `Sotto could not read the checks on ${base.branch}’s newest commit, so they held nothing.`
+        if (base.state === 'unknown') unread = `Sotto found no finished checks on ${base.branch}’s newest ${BASE_BRANCH_COMMITS_READ} commits, so they held nothing.`
       } catch { unread = 'Sotto could not ask GitHub for the checks on the branch this merges into, so they held nothing.' }
     }
     return () => {
       const queue = this.liveState().mergeQueue, holds = mergeTurnHolds(queue, goMerge.pullRequest, base), wanted = pullRequestKey(goMerge.pullRequest)
       const name = (item: WatcherMergeQueueItem) => `${item.pullRequest.number === undefined ? item.url ?? 'a pull request' : `#${item.pullRequest.number}`} in “${item.title.slice(0, 80)}”`
-      const held = [...holds.baseFailed ? [`${holds.baseFailed.branch} is red: checks failed on its newest commit, ${holds.baseFailed.head.slice(0, 12)}.`] : [],
+      const failed = holds.baseFailed
+      const held = [...failed ? [failed.newest === undefined ? `${failed.branch} is red: checks failed on its newest commit, ${failed.head.slice(0, 12)}.`
+        : `${failed.branch} is red: checks failed on ${failed.head.slice(0, 12)}, its newest commit whose checks have finished; ${failed.newest.slice(0, 12)}, after it, has none finished yet.`] : [],
         ...holds.running.map(item => `${name(item)} has its required checks running.`)]
       const outside = queue.some(item => item.url !== undefined && pullRequestKey(item.url) === wanted) ? undefined
         : 'Sotto does not hold this pull request in the merge train: read read_state to see where it stands.'

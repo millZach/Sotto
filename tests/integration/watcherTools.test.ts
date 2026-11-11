@@ -2573,7 +2573,11 @@ it('refuses a GO MERGE while another train pull request runs its required checks
   base = { ...base, state: 'failed' }
   expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: second.target, delivery: 'now', text: 'GO MERGE #7', goMerge: { pullRequest: url(7) } }))
     .toMatchObject({ status: 'refused', code: 'MERGE_TURN_HELD', message: expect.stringContaining('main is red: checks failed on its newest commit, dddddddddddd.') })
-  base = { ...base, state: 'passed' }
+  // Main's newest commit has no finished checks yet, and the one before it failed (#2431).
+  base = { ...base, newest: 'e'.repeat(40) }
+  expect(await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: second.target, delivery: 'now', text: 'GO MERGE #7', goMerge: { pullRequest: url(7) } }))
+    .toMatchObject({ status: 'refused', code: 'MERGE_TURN_HELD', message: expect.stringContaining('main is red: checks failed on dddddddddddd, its newest commit whose checks have finished; eeeeeeeeeeee, after it, has none finished yet.') })
+  base = { branch: base.branch, head: base.head, state: 'passed' }
   const reason = 'Zach asked for #5 before the release, and #7 merges main in after it anyway.'
   const retryKey = randomUUID(), call = { requestId: f.requestId, retryKey, target: first.target, delivery: 'now', text: 'GO MERGE #5', goMerge: { pullRequest: url(5), overrideReason: reason } }
   const sent = await f.call('send_to_thread', call)
