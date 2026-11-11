@@ -13,7 +13,7 @@ import { RUNTIME_LABELS, PERMISSIONS_ICON, effortChoices, modeChoices, startingP
 import { ModelPicker, type UnavailablePickerProvider } from './ModelPicker'
 import { useOwnServersBridge } from './OwnModelServers'
 import { ServerMark, ServerSpeedCard, useOwnServerMark } from './ServerMark'
-import { localHostId } from '../features/onboarding/localAgents'
+import { localHostId } from './localAgents'
 import { EffortPicker, effortLabel } from './EffortPicker'
 import { SplitChipEffort, type SpeedOption } from './SplitChipEffort'
 import { suggestedEffortIndex } from './effortSuggestion'

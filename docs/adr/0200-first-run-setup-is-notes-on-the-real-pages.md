@@ -60,6 +60,24 @@ Zach first picked a terminal running the client's sign-in command, and the proto
 
 **10. Straight to stable.** It is not an Owl feature.
 
+## How the walk behaves
+
+Settled while building it, from the picks above and from what setup did before.
+
+- **Escape ends the walk, as Skip setup does,** as it ended the tour. Zach picked this on November 10, 2026, over Escape doing nothing and over Escape working only for a walk started from Help. An Escape the lit control uses for itself, or a dialog it opened, is not also the walk's.
+- **Set up Sotto is a card of its own above Getting started in Help,** his pick over a topic row and over the side panel. Started from there, the walk's quiet button still reads Skip setup.
+- **A note counts every stop,** his pick: "2 of 12", then "5 of 12" when the walk passes two over, as the prototype counted.
+- **Only the note and the lit control are live.** The dimmed window takes no presses, and Tab goes through the note, then the lit control, and round. The control is the page's own: pressing it does what it always does.
+- **A dialog the lit control opens has the window to itself.** Sign in, the folder browser, Add host and a host's SSH question are drawn with nothing of the walk over them, and the note comes back, with focus, when they close.
+- **In a narrow window the sidebar is a rail,** and Add project and New thread are behind its Expand sidebar. The project and thread stops light Expand sidebar there and say to open the sidebar first; the opened sidebar is a dialog over the page, so the walk stands aside for it.
+- **Arriving at the agents stop connects every agent installed on this computer,** as the card's step did (ADR-0063 decision 3), once per walk, leaving Threads quiet.
+- **The dictation stops are passed over while dictation is turned off,** and are not listed as left.
+- **The stops use the pages' own controls as they are.** The microphone stop lights Settings' test, which listens until it is stopped, so the walk stops it on moving on; the note says it heard a voice as soon as the test has. The speech model stop lights Settings' list, where a model downloads when it is chosen, not the three Download rows the prototype drew. The list has no strong button for a suggestion, so the note names the model setup suggests while none is chosen (ADR-0094): the first already on this computer, else Parakeet Ultra.
+- **A microphone the test never opened waits for Settings' test,** as a skipped microphone step did: ending setup then saves `microphoneSkipped`.
+- **Quitting part-way starts the walk from its first note next time,** as the card did, with the stops already done reading Continue.
+- **Started again from Help, the walk is the same walk,** and ending it saves nothing.
+- **The starting screen and the corner cards wait for setup to be over,** as before.
+
 ## Consequences
 
-`Onboarding.tsx`, its step components, `ThreadsTour.tsx` and their stylesheets go; `localAgents.ts` and `microphoneTest.ts`, which Settings also uses, move out of the onboarding folder. The Omarchy panel loses its `first-run` surface. The end-to-end helpers that walk setup are rewritten around the notes, the design captures of the nine steps and the tour are retaken as captures of the stops, and `first-run-setup-fit.spec.ts` becomes a check that every note fits beside its control at all four window sizes, light and dark. `README.md`, `docs/guide.md` and `CONTEXT.md` describe the walk. The work lands in three pull requests so stable never ships half of it: Sign in and the row words; the Hosts & phones and Add host fixes; then the walk, which removes the card and the tour.
+`Onboarding.tsx`, its step components, `ThreadsTour.tsx` and their stylesheets go, and the walk is `src/renderer/src/features/setup/`; `localAgents.ts` and `microphoneTest.ts`, which Settings also uses, move to `agents/` and `audio/`. The `onboarding` page value goes with the card: a new profile's window is on Threads from the start. The Omarchy panel loses its `first-run` surface. The end-to-end helpers that walk setup are rewritten around the notes, the design captures of the nine steps and the tour are retaken as captures of the stops, and `first-run-setup-fit.spec.ts` becomes a check that every note fits beside its control at all four window sizes, light and dark. `README.md`, `docs/guide.md` and `CONTEXT.md` describe the walk. The work lands in three pull requests so stable never ships half of it: Sign in and the row words; the Hosts & phones and Add host fixes; then the walk, which removes the card and the tour.

@@ -23,7 +23,7 @@ type CaptureMotion = 'normal' | 'reduced'
 type CaptureFocusTarget = 'none' | 'tab' | 'navigation' | 'input' | 'switch' | 'destructive'
 
 interface CaptureMetadata {
-  readonly category: 'onboarding' | 'dictate' | 'settings' | 'help' | 'threads' | 'scale' | 'widget' | 'appearance' | 'width'
+  readonly category: 'setup' | 'dictate' | 'settings' | 'help' | 'threads' | 'scale' | 'widget' | 'appearance' | 'width'
   readonly state: string
   readonly theme: CaptureTheme
   readonly scalePercent: CaptureScale
@@ -96,12 +96,13 @@ export async function pageBoundProblems(page: Page): Promise<string[]> {
       }
     }
 
-    for (const selector of ['.app-shell', '.app-strip', '.app-room', '.app-footer', '.onboarding-shell', '.threads-view', '.thread-nav', '.thread-workspace', '.threads-view__winctl']) {
+    // First-run setup's note (ADR-0200) stands over the page, and the whole of it stays inside the window too.
+    for (const selector of ['.app-shell', '.app-strip', '.app-room', '.app-footer', '.setup-walk__note', '.threads-view', '.thread-nav', '.thread-workspace', '.threads-view__winctl']) {
       const element = document.querySelector(selector)
       if (element === null) continue
       const bounds = element.getBoundingClientRect()
       if (bounds.left < -tolerance || bounds.right > innerWidth + tolerance) problems.push(selector + '-outside-horizontal-bounds')
-      if (selector !== '.onboarding-shell' && (bounds.top < -tolerance || bounds.bottom > innerHeight + tolerance)) problems.push(selector + '-outside-vertical-bounds')
+      if (bounds.top < -tolerance || bounds.bottom > innerHeight + tolerance) problems.push(selector + '-outside-vertical-bounds')
     }
 
     for (const element of document.querySelectorAll('button, input, select, textarea, a')) {

@@ -145,80 +145,72 @@ function threadSidebar(page: Page): Locator {
   return page.getByRole('complementary', { name: 'Thread sidebar' })
 }
 
-/** First-run setup's nine steps, in the order the footer walks them. */
-const FIRST_RUN_STEPS = ['welcome', 'look', 'microphone', 'speech-model', 'shortcut', 'agents', 'project', 'computers', 'phone'] as const
-export type FirstRunStepId = typeof FIRST_RUN_STEPS[number] | 'omarchy'
-
-async function firstRunSteps(page: Page): Promise<readonly FirstRunStepId[]> {
-  const linux = await page.evaluate(() => window.sotto?.platform === 'linux')
-  return linux ? ['welcome', 'omarchy', ...FIRST_RUN_STEPS.slice(1)] : FIRST_RUN_STEPS
-}
+/** First-run setup's stops, in the order its walk visits them (ADR-0200); `omarchy` only on Linux. */
+const SETUP_STOPS = ['welcome', 'agents', 'project', 'thread', 'omarchy', 'microphone', 'speech-model', 'shortcut', 'tailscale', 'computers', 'iphone', 'end'] as const
+export type SetupStopId = typeof SETUP_STOPS[number]
 
 export interface FirstRunSetupOptions {
-  /** 'test' runs the microphone test and waits for it to hear a voice before leaving that step; 'skip' (the default) leaves it untested. */
+  /** 'test' runs Settings' microphone test at the walk's microphone stop and waits for it to hear a voice; 'skip' (the default) leaves it untested. */
   readonly microphone?: 'test' | 'skip'
 }
 
-/**
- * The footer's forward action on a middle first-run step: Continue when the step's own task is done, Skip for now
- * otherwise. Welcome's "Get started" and the final phone step's "Finish setup" are their own calls, since neither
- * label varies with state.
- */
-export function firstRunForwardButton(page: Page): Locator {
-  return page.locator('.onboarding-actions').getByRole('button', { name: /^(Continue|Skip for now)$/ })
+/** First-run setup's note, beside the control its stop lights. */
+export function setupNote(page: Page): Locator {
+  return page.locator('.setup-walk__note')
 }
 
-/** Clicks past one first-run step, in whichever way that step leaves setup: Welcome's Get started, Finish setup on the last step, or the footer's Continue/Skip for now in between. */
-async function advanceFirstRunStep(page: Page, step: FirstRunStepId, options: FirstRunSetupOptions): Promise<void> {
-  if (step === 'welcome') {
-    await page.getByRole('button', { name: 'Get started' }).click()
-    return
-  }
-  if (step === 'microphone' && options.microphone === 'test') {
-    await page.getByRole('button', { name: /test microphone/i }).click()
-    await expect(page.getByText('Sotto heard you. Your microphone works.')).toBeVisible()
-  }
-  if (step === 'phone') {
-    await page.getByRole('button', { name: /finish setup/i }).click()
-    return
-  }
-  await firstRunForwardButton(page).click()
-}
-
-/** Walks first-run setup up to, but not through, the named step: that step's own heading is showing and nothing past it has been touched. */
-export async function reachFirstRunStep(page: Page, step: FirstRunStepId, options: FirstRunSetupOptions = {}): Promise<void> {
-  const steps = await firstRunSteps(page), stop = steps.indexOf(step)
-  for (const current of steps.slice(0, stop)) await advanceFirstRunStep(page, current, options)
-}
-
-/** Ends the Threads tour that first-run setup opens with, from whichever stop it is showing. */
-export async function skipThreadsTour(page: Page): Promise<void> {
-  const tour = page.locator('.threads-tour')
-  await expect(tour).toBeVisible()
-  const skipTour = tour.getByRole('button', { name: 'Skip tour' })
-  if ((await skipTour.count()) > 0) await skipTour.click()
-  else await tour.getByRole('button', { name: 'Done' }).click()
-  await expect(tour).toHaveCount(0)
+/** The stop the walk is on. */
+export async function setupStop(page: Page): Promise<SetupStopId> {
+  await expect(setupNote(page)).toBeVisible()
+  return await page.locator('.setup-walk').getAttribute('data-stop') as SetupStopId
 }
 
 /**
- * Finishes first-run setup from wherever `reachFirstRunStep` left it (or from Welcome, the default), through Finish
- * setup and the Threads tour that follows it.
+ * The note's way forward: Start on the first note, then Continue once the stop's task is done and Skip for now until
+ * then (Continue to dictation once the first thread is open), and Done on the last note.
  */
-export async function finishFirstRunSetupFrom(
-  page: Page,
-  from: FirstRunStepId = 'welcome',
-  options: FirstRunSetupOptions = {},
-): Promise<void> {
-  const steps = await firstRunSteps(page)
-  for (const step of steps.slice(steps.indexOf(from))) await advanceFirstRunStep(page, step, options)
+export function setupForwardButton(page: Page): Locator {
+  return setupNote(page).locator('.setup-walk__actions button').last()
+}
+
+/**
+ * Walks first-run setup forward to the named stop: its note is showing and nothing past it has been touched. With no
+ * agent connected the walk passes over `project` and `thread`, so a spec that stops there connects one first.
+ */
+export async function reachSetupStop(page: Page, stop: SetupStopId): Promise<void> {
+  for (let presses = 0; presses < SETUP_STOPS.length; presses += 1) {
+    const now = await setupStop(page)
+    if (now === stop) return
+    if (SETUP_STOPS.indexOf(now) > SETUP_STOPS.indexOf(stop)) throw new Error(`First-run setup is on ${now}, past ${stop}.`)
+    await setupForwardButton(page).click()
+    await expect(page.locator('.setup-walk')).not.toHaveAttribute('data-stop', now)
+  }
+  throw new Error(`First-run setup never reached ${stop}.`)
+}
+
+/** Ends first-run setup from whichever stop it is on, with Skip setup, Finish here or the last note's Done, and waits for the Threads page. */
+export async function skipSetup(page: Page): Promise<void> {
+  const note = setupNote(page)
+  await expect(note).toBeVisible()
+  const quit = note.locator('.setup-walk__quit')
+  if ((await quit.count()) > 0) await quit.click()
+  else await setupForwardButton(page).click()
+  await expect(page.locator('.setup-walk')).toHaveCount(0)
   await expect(threadSidebar(page)).toBeVisible()
-  await skipThreadsTour(page)
 }
 
-/** Walks the whole of first-run setup, Welcome through the Threads tour, in one call. */
+/**
+ * Finishes first-run setup from wherever it is: the microphone test first when asked for, then Skip setup. The window
+ * is left on the Threads page with setup saved as done.
+ */
 export async function completeFirstRunSetup(page: Page, options: FirstRunSetupOptions = {}): Promise<void> {
-  await finishFirstRunSetupFrom(page, 'welcome', options)
+  if (options.microphone === 'test') {
+    await reachSetupStop(page, 'microphone')
+    await page.locator('.settings-microphone-test').getByRole('button', { name: 'Test microphone', exact: true }).click()
+    await expect(page.locator('.settings-microphone-test[data-heard]')).toBeVisible()
+    await expect(setupNote(page)).toContainText('Sotto heard you. Your microphone works.')
+  }
+  await skipSetup(page)
 }
 
 /**

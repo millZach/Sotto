@@ -43,7 +43,7 @@ describe('what Sotto says about product events', () => {
   })
 
   it('calls them anonymous nowhere it describes them', () => {
-    const words = [page, notice, row, dialog, read('README.md'), read('docs/guide.md'), read('src/renderer/src/features/help/HelpView.tsx'), read('src/renderer/src/features/onboarding/Onboarding.tsx')]
+    const words = [page, notice, row, dialog, read('README.md'), read('docs/guide.md'), read('src/renderer/src/features/help/HelpView.tsx'), read('src/renderer/src/features/setup/SetupWalk.tsx')]
     for (const text of words) expect(text.replaceAll('Hashed is not anonymous', '')).not.toMatch(/anonymous|anonymi[sz]ed/i)
   })
 

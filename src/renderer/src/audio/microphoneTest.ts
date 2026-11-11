@@ -2,9 +2,9 @@ import {
   AudioRecorder,
   AudioRecorderError,
   type AudioRecorderOptions,
-} from '../../audio/audioRecorder'
-import { ensureMicrophoneAccess } from '../../audio/ensureMicrophoneAccess'
-import { microphoneConstraints, type MicrophoneConstraints } from '../../audio/microphoneConstraints'
+} from './audioRecorder'
+import { ensureMicrophoneAccess } from './ensureMicrophoneAccess'
+import { microphoneConstraints, type MicrophoneConstraints } from './microphoneConstraints'
 
 export type MicrophoneTestState =
   | 'idle'
@@ -336,4 +336,19 @@ export class WorkletMicrophoneTest implements MicrophoneTestController {
     this.recorder = null
     if (recorder !== null) await recorder.cancel().catch(() => undefined)
   }
+}
+
+/** The microphone tests running now, each by how it is stopped. */
+const runningTests = new Set<() => void>()
+/** A microphone test says how to stop it, for as long as its surface is there. */
+export function onStopMicrophoneTests(stop: () => void): () => void {
+  runningTests.add(stop)
+  return () => { runningTests.delete(stop) }
+}
+/**
+ * Stops every microphone test, from outside them: first-run setup's walk moves on from Settings' test without leaving
+ * its page, and the test's own Stop is then out of reach under the dim (ADR-0200).
+ */
+export function stopMicrophoneTests(): void {
+  for (const stop of [...runningTests]) stop()
 }

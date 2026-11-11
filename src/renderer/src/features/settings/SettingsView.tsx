@@ -80,7 +80,7 @@ import { WorkerCapacitySettings, WorkerMachineSettings } from './WorkerMachineSe
 import { PerformanceSettings } from '../performance/PerformanceSettings'
 import { WatcherOwl } from '../../watcher/WatcherOwl'
 import type { MediaDevicesAdapter } from '../../audio/useAudioInputDevices'
-import type { MicrophoneTestController } from '../onboarding/microphoneTest'
+import type { MicrophoneTestController } from '../../audio/microphoneTest'
 import { MicrophoneSettings } from './MicrophoneSettings'
 
 

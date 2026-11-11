@@ -13,18 +13,13 @@ import { Card } from './components/Card'
 import { DictateRoom } from './features/dictate/DictateRoom'
 import { HelpView } from './features/help/HelpView'
 import { UsageView } from './features/usage/UsageView'
-import { Onboarding } from './features/onboarding/Onboarding'
-import { ThreadsTour } from './features/onboarding/ThreadsTour'
+import { SetupWalk } from './features/setup/SetupWalk'
 import { UpdateControl } from './features/updates/UpdateControl'
 import { installConfirmation } from './features/updates/updateControlLogic'
 import { useUpdateFlow, type UpdateNotice } from './features/updates/useUpdateFlow'
 import { releaseUrl } from '../../shared/releases'
 import { ConfirmationDialog } from './components/ConfirmationDialog'
-import {
-  WorkletMicrophoneTest,
-  type MicrophoneTestController,
-  type MicrophoneTestState,
-} from './features/onboarding/microphoneTest'
+import type { MicrophoneTestController } from './audio/microphoneTest'
 import { useApp, type AppNavigation } from './state/AppContext'
 import { setTerminalPreferences } from './tools/terminalPreferences'
 import { useDictationOn } from './state/dictationFeature'
@@ -133,7 +128,7 @@ function chosenSpeechModelName(models: readonly SpeechModelOption[] | null, choi
 }
 
 function FooterStatus({ navigation, dictationOn, cloudTranscription, speechModel, speechModelName }: {
-  readonly navigation: Exclude<AppNavigation, 'onboarding'>
+  readonly navigation: AppNavigation
   /** With dictation off (ADR-0107) the speech model is not loaded, so the status says nothing about it. */
   readonly dictationOn: boolean
   /** Nor while OpenRouter transcribes (ADR-0160): the model here is unloaded on purpose. */
@@ -151,7 +146,7 @@ function FooterStatus({ navigation, dictationOn, cloudTranscription, speechModel
   }
 }
 
-export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), watcherBridge = window.sotto?.watcher }: AppProps): ReactNode {
+export function App({ createMicrophoneTest, watcherBridge = window.sotto?.watcher }: AppProps): ReactNode {
   const app = useApp()
   const { t } = useLingui()
   const watcherEnabled = useWatcherEnabled()
@@ -171,27 +166,18 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
   // nothing about it, and Dictate reads the list only to know whether Transcribe on this computer can be offered.
   const cloudTranscription = useOwlFeature('cloud-dictation') && app.settings?.cloudTranscription === true
   const localModelHere = app.speechModels !== null && speechModelHere(app.speechModels, app.speechModelChoice)
-  const offersSpeechModels = !app.settings?.onboardingComplete || app.navigation === 'onboarding' || (app.navigation === 'settings' && dictationOn)
+  const offersSpeechModels = !app.settings?.onboardingComplete || (app.navigation === 'settings' && dictationOn)
     || (app.navigation === 'home' && cloudTranscription)
   useEffect(() => {
     if (offersSpeechModels) void app.actions.refreshSpeechModels()
   }, [offersSpeechModels, app.actions])
   const memoryEnabled = useMemoryEnabled()
-  const [microphoneState, setMicrophoneState] = useState<MicrophoneTestState>('idle')
-  const [microphoneLevel, setMicrophoneLevel] = useState(0)
   // The Journal's search outlives the room, so leaving Dictate and coming back finds it as it was.
   const [journalQuery, setJournalQuery] = useState('')
-  // Set when first-run setup finishes, so the Threads tour runs once, on the Threads page it opens.
-  const [threadsTour, setThreadsTour] = useState(false)
+  // Set up Sotto, in Help, starts first-run setup's walk again for a profile that has finished it (ADR-0200).
+  const [setupAgain, setSetupAgain] = useState(false)
   const productEventsNotice = useProductEventsNotice(app.settings, app.actions.updateSettings)
   const [journalSearchRequest, setJournalSearchRequest] = useState(0)
-  const microphoneRef = useRef<MicrophoneTestController | null>(null)
-  const microphoneGenerationRef = useRef(0)
-  const microphoneMountedRef = useRef(false)
-  const microphoneStateRef = useRef<MicrophoneTestState>('idle')
-  const microphoneSettledStateRef = useRef<Exclude<MicrophoneTestState, 'requesting'>>('idle')
-  const microphoneReleaseTailRef = useRef<Promise<void>>(Promise.resolve())
-  const microphoneReleasesRef = useRef(new WeakMap<MicrophoneTestController, Promise<void>>())
   const systemDark = useSystemPrefersDark()
   // Glass turns solid at once when the system asks for less transparency (ADR-0150); held, nothing listens.
   const reducesTransparency = useSystemReducesTransparency(useOwlFeature('glass-theme'))
@@ -293,113 +279,6 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
     if (journalSearchRequest > 0 && app.navigation === 'home') document.querySelector<HTMLInputElement>('.journal-search__input')?.focus()
   }, [journalSearchRequest, app.navigation])
 
-  const releaseMicrophone = useCallback((controller: MicrophoneTestController): Promise<void> => {
-    const existing = microphoneReleasesRef.current.get(controller)
-    if (existing !== undefined) return existing
-    const release = microphoneReleaseTailRef.current
-      .then(() => controller.stop())
-      .catch(() => undefined)
-    microphoneReleasesRef.current.set(controller, release)
-    microphoneReleaseTailRef.current = release
-    return release
-  }, [])
-
-  const commitMicrophoneState = useCallback((next: MicrophoneTestState): void => {
-    microphoneStateRef.current = next
-    if (next !== 'requesting') microphoneSettledStateRef.current = next
-    if (microphoneMountedRef.current) setMicrophoneState(next)
-  }, [])
-
-  useEffect(() => {
-    microphoneMountedRef.current = true
-    return () => {
-      microphoneMountedRef.current = false
-      ++microphoneGenerationRef.current
-      const controller = microphoneRef.current
-      microphoneRef.current = null
-      if (controller !== null) void releaseMicrophone(controller)
-    }
-  }, [releaseMicrophone])
-
-  const stopMicrophone = useCallback(async (): Promise<void> => {
-    ++microphoneGenerationRef.current
-    const controller = microphoneRef.current
-    microphoneRef.current = null
-    if (microphoneMountedRef.current) {
-      setMicrophoneLevel(0)
-      if (microphoneStateRef.current === 'requesting') {
-        commitMicrophoneState(microphoneSettledStateRef.current)
-      }
-    }
-    if (controller !== null) await releaseMicrophone(controller)
-    else await microphoneReleaseTailRef.current
-  }, [commitMicrophoneState, releaseMicrophone])
-
-  // A test result belongs to one input: choosing another stops the test and
-  // returns it to idle without opening the microphone.
-  const resetMicrophone = useCallback(async (): Promise<void> => {
-    const stopping = stopMicrophone()
-    if (microphoneMountedRef.current) commitMicrophoneState('idle')
-    await stopping
-  }, [commitMicrophoneState, stopMicrophone])
-
-  const requestMicrophone = useCallback(async (selectedDeviceId?: string | null): Promise<void> => {
-    const generation = ++microphoneGenerationRef.current
-    if (!microphoneMountedRef.current) return
-    const previousController = microphoneRef.current
-    microphoneRef.current = null
-    setMicrophoneLevel(0)
-    commitMicrophoneState('requesting')
-    if (previousController !== null) await releaseMicrophone(previousController)
-    else await microphoneReleaseTailRef.current
-    if (!microphoneMountedRef.current || microphoneGenerationRef.current !== generation) return
-    let controller: MicrophoneTestController
-    try { controller = createMicrophoneTest() } catch {
-      if (microphoneMountedRef.current && microphoneGenerationRef.current === generation) {
-        commitMicrophoneState('error')
-      }
-      return
-    }
-    if (!microphoneMountedRef.current || microphoneGenerationRef.current !== generation) {
-      await releaseMicrophone(controller)
-      return
-    }
-    microphoneRef.current = controller
-    const selected = selectedDeviceId !== undefined
-      ? selectedDeviceId
-      : latestSettingsRef.current?.microphoneId
-    const outcome = await controller.start((level) => {
-      if (
-        microphoneMountedRef.current &&
-        microphoneGenerationRef.current === generation &&
-        microphoneRef.current === controller
-      ) {
-        setMicrophoneLevel(level)
-      }
-    }, selected ? selected : undefined, () => {
-      if (
-        !microphoneMountedRef.current ||
-        microphoneGenerationRef.current !== generation ||
-        microphoneRef.current !== controller
-      ) return
-      microphoneRef.current = null
-      setMicrophoneLevel(0)
-      commitMicrophoneState('missing')
-    }).catch(() => 'error' as const)
-    if (
-      !microphoneMountedRef.current ||
-      microphoneGenerationRef.current !== generation ||
-      microphoneRef.current !== controller
-    ) {
-      await releaseMicrophone(controller)
-      return
-    }
-    commitMicrophoneState(outcome)
-    if (outcome !== 'ready') {
-      microphoneRef.current = null
-      await releaseMicrophone(controller)
-    }
-  }, [commitMicrophoneState, createMicrophoneTest, releaseMicrophone])
 
   let content: ReactNode
   if (app.status === 'loading') {
@@ -413,41 +292,9 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
         </Card>
       </main>
     )
-  } else if (!app.settings.onboardingComplete || app.navigation === 'onboarding') {
-    const recoveryToasts: ToastMessage[] = app.recoveryNotices.map((notice) => recoveryToast(notice, app.platform, app.actions.dismissPastePermissionNotice))
-    content = (
-      <>
-        <Onboarding
-          microphoneState={microphoneState}
-          microphoneLevel={microphoneLevel}
-          settings={app.settings}
-          onUpdateSettings={app.actions.updateSettings}
-          speechModels={app.speechModels}
-          speechModelChoice={app.speechModelChoice}
-          speechModel={app.speechModel}
-          onChooseSpeechModel={chooseSpeechModel}
-          speechModelRefused={speechModelRefused}
-          onRetrySpeechModel={downloadSpeechModel}
-          shortcut={app.settings.hotkey}
-          platform={app.platform}
-          onRequestMicrophone={requestMicrophone}
-          onStopMicrophone={stopMicrophone}
-          onResetMicrophone={resetMicrophone}
-          onComplete={async ({ microphoneSkipped }) => {
-            await stopMicrophone()
-            const saved = await app.actions.updateSettings({ onboardingComplete: true, microphoneSkipped })
-            if (saved) {
-              setThreadsTour(true)
-              app.actions.navigate('threads')
-            }
-            return saved
-          }}
-        />
-        <ToastRegion messages={recoveryToasts} />
-      </>
-    )
   } else {
     const navigation = app.navigation
+    const setupShowing = !app.settings.onboardingComplete || setupAgain
     // Linux has no in-app updater (ADR-0062): pacman brings new versions, so the foot offers nothing to press.
     const updateControl = app.platform === 'linux' ? null : <UpdateControl status={app.update} busy={updateFlow.busy} onActivate={updateFlow.activate} />
     // Watcher's room is reachable only while its gate is on, and Dictate only while dictation is on (ADR-0107);
@@ -483,6 +330,9 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
         break
       case 'settings':
         view = <SettingsView
+          // First-run setup's microphone stop lights Settings' own test (ADR-0200): while the walk shows, a test build's
+          // stand-in microphone is Settings' too, as it was the setup card's. Any other time Settings opens the real one.
+          {...(createMicrophoneTest && setupShowing ? { createMicrophoneTest } : {})}
           onNotice={setSettingsNotice}
           settings={app.settings}
           openRouterKeyMigrationFailed={app.recoveryNotices.some(notice => notice.code === 'OPENROUTER_KEY_MIGRATION_FAILED')}
@@ -512,7 +362,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
         />
         break
       case 'help':
-        view = <HelpView productEventsEnabled={app.settings.productEventsEnabled} shortcut={startShortcut(app.settings)} holdShortcut={app.settings.holdShortcuts[0]} platform={app.platform} version={app.update?.currentVersion} releaseTrack={releaseTrack} openTopic={app.helpRequest ?? null} />
+        view = <HelpView onSetUp={() => setSetupAgain(true)} productEventsEnabled={app.settings.productEventsEnabled} shortcut={startShortcut(app.settings)} holdShortcut={app.settings.holdShortcuts[0]} platform={app.platform} version={app.update?.currentVersion} releaseTrack={releaseTrack} openTopic={app.helpRequest ?? null} />
         break
       default:
         view = threadsPage ? threadWorkspace : <DictateRoom
@@ -578,7 +428,26 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
         ) : null}
         {/* Move threads' sheet (#1178), opened from Watcher's header or a thread's More menu: Owl, with Watcher on. */}
         {watcherEnabled ? <MoveThreadsSheetHost /> : null}
-        {threadsTour && threadsPage ? <ThreadsTour shortcut={app.settings.hotkey} platform={app.platform} onDone={() => setThreadsTour(false)} /> : null}
+        {/* First-run setup is a walk of notes over these pages (ADR-0200): for a profile that has not finished it, and again from Help. */}
+        {setupShowing ? <SetupWalk
+          settings={app.settings}
+          platform={app.platform}
+          onOpenPage={page => { if (page.navigation === 'settings') app.actions.navigate('settings', page.section); else app.actions.navigate(page.navigation) }}
+          onUpdateSettings={app.actions.updateSettings}
+          speechModelChosen={app.speechModelChoice !== null && app.speechModel !== null && app.speechModel.state !== 'missing' && app.speechModel.state !== 'failed'}
+          // The first in Settings' own list, the models already here before Sotto's downloads, is the one setup suggests (ADR-0094).
+          suggestedSpeechModel={app.speechModelChoice === null ? [...(app.speechModels ?? [])].sort((a, b) => Number(b.installed) - Number(a.installed))[0]?.name ?? null : null}
+          dictation={app.dictation}
+          dictationOn={dictationOn}
+          onClose={async ({ microphoneOpened }) => {
+            // Started again from Help: the profile's own setup ended long ago, and nothing of it is saved again.
+            if (latestSettingsRef.current?.onboardingComplete) { setSetupAgain(false); return true }
+            // A microphone the test never opened waits for Settings' test, as a skipped microphone step did (ADR-0063).
+            const saved = await app.actions.updateSettings({ onboardingComplete: true, microphoneSkipped: !microphoneOpened })
+            if (saved) app.actions.navigate('threads')
+            return saved
+          }}
+        /> : null}
         <ThemeEditorHost
           settings={app.settings}
           onSave={app.actions.updateSettings}
@@ -604,8 +473,9 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
   }
 
   const management = app.status === 'ready' && app.settings !== null
-    && app.settings.onboardingComplete && app.navigation !== 'onboarding'
-  // The loading, unavailable and setup views, and the starting screen, sit under the window's strip.
+  // First-run setup is over: the starting screen and the corner cards wait for that (ADR-0086, ADR-0077).
+  const settled = management && app.settings?.onboardingComplete === true
+  // The loading and unavailable views, and the starting screen, sit under the window's strip.
   const strip = (children: ReactNode): ReactNode => (
     <AppShell
       navigation={null}
@@ -622,14 +492,14 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
   return (
     <AgentProvider settings={app.settings}>
       {/* At launch the starting screen holds the window until providers and hosts have connected (ADR-0086). */}
-      <StartingScreenGate settingsSettled={app.status !== 'loading'} eligible={management} frame={strip}>
+      <StartingScreenGate settingsSettled={app.status !== 'loading'} eligible={settled} frame={strip}>
         <WatcherRoomProvider bridge={watcherBridge}>
         {management ? content : strip(content)}
         </WatcherRoomProvider>
-        {/* No card speaks before first-run setup ends; on Owl, Update all takes the corner and speaks for clients too (ADR-0077). The
-            product events notice has the corner first, after the Threads tour, until it is answered or put off (ADR-0179). */}
-        {management
-          ? productEventsNotice.open && !threadsTour
+        {/* No card speaks before first-run setup ends, or over its walk; on Owl, Update all takes the corner and speaks for clients too
+            (ADR-0077). The product events notice has the corner first, after the walk, until it is answered or put off (ADR-0179). */}
+        {settled && !setupAgain
+          ? productEventsNotice.open
             ? <ProductEventsNotice onAnswer={productEventsNotice.answer} onPutOff={productEventsNotice.putOff} />
             : updateAll ? <UpdateAllCard /> : <ClientUpdateCard />
           : null}
