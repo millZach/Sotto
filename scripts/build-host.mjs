@@ -53,7 +53,7 @@ export async function buildHost(outDir = resolve(root, process.env.SOTTO_HOST_OU
       },
     }],
     // A server build leaves a package in node_modules to be loaded at run time unless told otherwise. The reviewed few the
-    // picture worker needs are compiled in (ADR-0202); `verify-host-archive.mjs` holds the archive to exactly them.
+    // picture worker needs are compiled in (ADR-0203); `verify-host-archive.mjs` holds the archive to exactly them.
     ssr: { noExternal: [...HOST_BUNDLED_PACKAGES] },
     build: {
       // The host launches Git off its own thread too, from the worker file beside its index.js (`gitLauncher.ts`), and makes

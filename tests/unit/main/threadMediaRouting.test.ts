@@ -145,7 +145,7 @@ describe('reading an agent\'s picture from the window', () => {
     expect(kept.bytes).toBeLessThanOrEqual(100)
   })
 
-  it('makes a picture asked for again while its copy is being made once, for both (ADR-0202)', async () => {
+  it('makes a picture asked for again while its copy is being made once, for both (ADR-0203)', async () => {
     let finish!: (copy: string) => void
     const reduce = vi.fn(() => new Promise<string>(done => { finish = done }))
     const pictures = new ReducedPictures(reduce, new KeptThumbnails())

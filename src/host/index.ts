@@ -93,7 +93,7 @@ export interface HeadlessHostOptions {
   compressPhones?: boolean
   /**
    * Tests stand in a maker over a picture worker they built, since none is built beside the source; a host starts the one
-   * beside its own index.js (ADR-0202). The host closes it when it closes.
+   * beside its own index.js (ADR-0203). The host closes it when it closes.
    */
   pictures?: PictureMaker
 }
@@ -175,7 +175,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   let browser: HostBrowserTools | undefined
   let delegationRelay: HostDelegationRelay | undefined
   let startedRuntime: Awaited<ReturnType<typeof createAgentRuntime>> | undefined
-  // The copies a phone's tile asks for at its own size (`thread-media-edge`, ADR-0202), made in the picture worker with the
+  // The copies a phone's tile asks for at its own size (`thread-media-edge`, ADR-0203), made in the picture worker with the
   // decoders compiled into this host, on either release track, as the desktop makes them with Electron's. Only where that
   // worker was built beside this file: without one the host lists no `thread-media-edge` and sends pictures whole.
   const pictures = options.pictures ?? (PictureMaker.available() ? new PictureMaker(undefined, options.log ? { log: options.log } : {}) : undefined)

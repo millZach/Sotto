@@ -37,7 +37,7 @@ export const NOTICE_COMPONENTS = Object.freeze([
   packageComponent('@lingui/core', '6.10.1', 'MIT', 'Tomáš Ehrlich; Crowdin'),
   packageComponent('@lingui/react', '6.10.1', 'MIT', 'Tomáš Ehrlich; Crowdin'),
   packageComponent('zod', '4.6.7', 'MIT', 'Colin McDonnell'),
-  // Compiled into the headless host's picture worker, so they ship in the host archive (ADR-0202).
+  // Compiled into the headless host's picture worker, so they ship in the host archive (ADR-0203).
   packageComponent('jpeg-js', '0.4.4', 'BSD-3-Clause', 'Eugene Ware; notmasteryet'),
   packageComponent('pngjs', '7.0.0', 'MIT', 'Luke Page and Original Contributors; Kuba Niegowski'),
   packageComponent('@anthropic-ai/claude-agent-sdk', '0.3.270', 'SEE LICENSE IN README.md', 'Anthropic PBC'),

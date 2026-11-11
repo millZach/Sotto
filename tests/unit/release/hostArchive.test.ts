@@ -51,7 +51,7 @@ describe('headless host release boundary', () => {
     const root = await fixture(); await writeFile(join(root, 'private-workspace.json'), 'must never ship')
     await expect(verifyHostArchive(root)).rejects.toThrow('hashes do not match')
   })
-  it('compiles in only the reviewed pure-JavaScript picture decoders (ADR-0202)', async () => {
+  it('compiles in only the reviewed pure-JavaScript picture decoders (ADR-0203)', async () => {
     expect(HOST_BUNDLED_PACKAGES).toEqual(['jpeg-js', 'pngjs'])
     for (const packages of [[...HOST_BUNDLED_PACKAGES, 'unseen'], ['jpeg-js'], []]) {
       const root = await fixture()
