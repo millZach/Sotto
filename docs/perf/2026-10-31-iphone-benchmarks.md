@@ -16,7 +16,8 @@ sh apps/ios/Scripts/bench.sh /tmp/bench/after
 python3 apps/ios/Scripts/bench-summary.py compare /tmp/bench/before /tmp/bench/after
 ```
 
-A run takes about 25 minutes for each side, and a few more for the change's traced journey. The workflow keeps the summaries, the logs and the app's own reports as
+A run takes about half an hour for each side, and about ten minutes more for the change's traced journey; the idle phases
+and the second stream (November 10) added about seven minutes a side. The workflow keeps the summaries, the logs and the app's own reports as
 the `ios-benchmarks` artifact for 30 days.
 
 ## What runs
@@ -36,6 +37,13 @@ run reads the same bytes:
 - **The stream:** 200 `detail-delta` pushes, one word each, one every 50 ms after the last was applied. Every fifth is
   followed by a `shell` push carrying only the long thread's record, and every twentieth finishes a step and starts
   another, as a working thread does.
+- **What a running host sends whole** (#2390): the second stream's `shell` pushes also carry the parts a host sends whole
+  in every thread list push, made up at the sizes forge's host sent a phone on November 10, 2026
+  (`docs/perf/2026-11-10-performance-and-data-audit.md`, finding 2): each thread's skill list (115 KB), the delivery
+  ledger (46 KB), the delivered and obsolete draft ledgers (13 KB each), the follow-up receipts (8 KB) and three small
+  parts no phone reads, about 200 KB a push against forge's 209 KB. The rest of forge's is its projects, providers and
+  settings, which stay as the laptop's so the list does not change. The threads the parts name are not on the list and
+  every delivery was accepted, so the phone shows nothing of them (`BenchWire.hostSizedState`).
 
 Every frame goes through `Wire.readFrame` off the main actor, the records cache, and `AppModel.push`, the path a live
 computer's frames take.
@@ -54,10 +62,24 @@ Then:
    - `reply-box`: the reply box out to full and back to small twenty times, by a draft put in and taken out, so no
      keyboard moves the page. Its budgets hold that this draws no part of the conversation (ADR-0184).
    - `reply-box-stream`: the same for as long as another 200 words stream in, to set against `stream`.
+   - `idle-thread`: 30 seconds on the long thread with nothing arriving. Its record still says it works, so its
+     working line stays.
+   - `stream-real-push`: 200 more words as `stream` sends them, each list push the size a running host sends. The
+     reply is 400 words longer than at `stream`, so read the pushes' own rows to set the two against each other.
    - `back`: back to the Threads list, as a press on Back goes, until the list is drawn as it stands.
+   - `idle-list`: 30 seconds on the Threads list with nothing arriving, the long thread working at its top.
 
-   Each phase lasts until half a second passes without a late frame. The scroll sets the offset from the clock every
-   frame, so a late frame jumps as a fling would.
+   Each phase lasts until half a second passes without a late frame, but for the idle phases, which last 30 seconds
+   whatever the screen does. The scroll sets the offset from the clock every frame, so a late frame jumps as a fling
+   would. The three phases added on November 10 come after the ones before them, so those still compare with a base
+   from before; only `back` now starts after `idle-thread` and `stream-real-push`.
+
+   In the idle phases the driver stops its own display link and its report's half-second timer, which would wake the
+   app's main thread at every refresh, and counts the main run loop's wake-ups instead. The display link ticks at every
+   refresh whether anything was drawn or not, so it cannot count frames drawn; a frame the app commits needs its main
+   thread awake, so the wake-ups bound them. The background wash and a working card's breathing dot, glow and streak are
+   Core Animation loops, which the render server draws without waking the app: neither the app's CPU time nor its
+   wake-ups hold what they cost.
 3. **The long thread's look**, twice from a cold launch: the app photographs the long thread at fixed distances above
    its end. `bench-summary.py look` fails the run when the change's photos differ from the base's at a distance where
    the base's two launches agree.
@@ -105,7 +127,12 @@ finished. A journey that ends on `failed-<why>` (the list or the thread never dr
 | `list-scroll.worst.<count>` | Bodies of the Threads page's `SheetPage`, its list and its rows during the list's scroll in the worst of the five journeys, for the budgets of zero. |
 | `journey.page.<count>` | Over each whole journey, the Threads page coming into the window (`shown`), holding its list as it went out of sight (`holds`), holding it while still in the window (`held_in_window`), and turns of the main run loop that ended, after Core Animation's commit, with the page in the window and drawn from a held list (`stale_frames`). |
 | `stream.bytes/decode/apply_per_push.<kind>` | The stream's pushes: bytes, reading time, applying time. |
-| `core.*` | SottoCore's timings on the runner's Mac, from `PhoneBenchTests`. |
+| `stream-real-push.*` | The same rows as `stream`'s for the stream whose list pushes are the size a running host sends. |
+| `<idle>.app.cpu` | CPU time on every thread of the app over the idle phase's 30 seconds. |
+| `<idle>.app.wakes_per_second` | Times a second the app's main run loop woke while the idle phase lasted, with the driver's display link and timer stopped. |
+| `<idle>.app.bodies`, `<idle>.app.body.<view>` | View bodies that ran in the idle phase: all of them, and each view that ran in any journey's idle. |
+| `journey.frames_unread` | Frames the phone could not read or place in any phase, in the worst journey: a push it refused is work the benchmark never measured. |
+| `core.*` | SottoCore's timings on the runner's Mac, from `PhoneBenchTests`; `core.shell-real.*` reads a list push the size a host sends. |
 
 Some counts have a budget, the most a change may leave them at (`BUDGETS` in `Scripts/bench-summary.py`); the workflow
 fails when the change's side is over one. Counts are the same on any runner, so a budget sits just above what the

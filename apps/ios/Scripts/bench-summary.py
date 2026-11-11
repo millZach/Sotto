@@ -28,7 +28,12 @@ PER_CHUNK = ["body.RootView", "body.MainTabs", "body.ThreadsView", "body.ThreadL
 # What opening the long thread made and read once.
 ON_OPEN = ["body.MessageView", "body.MarkdownBlockView", "body.FoldedRun", "body.StepLine", "textview.make", "time.textview.measure.n",
            "markdown.blocks", "markdown.bytes"]
-PHASES = ["launch", "list-scroll", "open", "thread-scroll", "stream", "reply-box", "reply-box-stream", "back"]
+PHASES = ["launch", "list-scroll", "open", "thread-scroll", "stream", "reply-box", "reply-box-stream", "stream-real-push", "back"]
+# Half a minute each with nothing arriving (#2400): on the long thread, and on the Threads list after going back. The
+# driver's display link is stopped in them, so they report the main thread's wake-ups and no frames.
+IDLE = ["idle-thread", "idle-list"]
+# The two streams: list pushes of the long thread's record alone, and the same pushes the size a running host sends (#2390).
+STREAMS = ["stream", "stream-real-push"]
 # The Threads page's hold while a thread covers it (`ThreadsView.held`), counted over each whole journey: the page coming
 # into sight, holds taken, holds taken while the page could still show, and frames that could have shown an old row.
 WORST_PER_CHUNK = ["body.ThreadsView", "body.ThreadListSections", "body.ThreadListRow"]
@@ -61,6 +66,9 @@ BUDGETS = {
     "list-scroll.worst.body.ThreadListRow": 0,
     # The Threads page lets go of its held list before the first frame that shows it again, in every journey.
     "journey.page.stale_frames": 0,
+    # Every frame the benchmark's computer sends is read and placed, so no phase measures pushes the phone threw away: the
+    # host-sized pushes are made up, and one the phone refused would make the stream look cheap (#2390).
+    "journey.frames_unread": 0,
 }
 
 
@@ -94,8 +102,9 @@ def app_metrics(folder):
     journeys = [r for r in reports["journey"] if r.get("phase") == "finished"]
     rows["journey.completed"] = {"value": len(journeys), "unit": "runs", "n": len(reports["journey"])}
     marks = [r.get("marks", {}) for r in journeys]
-    phases = {name: [r.get("phases", {}).get(name) or {} for r in journeys] for name in PHASES}
-    counts = {name: [p.get("counts", {}) for p in phases[name]] for name in PHASES}
+    # A journey from before a phase existed has none of it, and its rows are left out.
+    phases = {name: [r.get("phases", {}).get(name) or {} for r in journeys] for name in PHASES + IDLE}
+    counts = {name: [p.get("counts", {}) for p in phases[name]] for name in PHASES + IDLE}
 
     # Launch: the first frame with every thread, from the process's start, in XCTest's launches and the journeys.
     put("launch.app.first_list", [r.get("marks", {}).get("first-list") for r in reports["launch"] + journeys], "ms")
@@ -131,11 +140,12 @@ def app_metrics(folder):
     put("open.bytes.detail", [c.get("bytes.detail") for c in counts["open"]], "B")
 
     chunks = journeys[0].get("chunks", 200) if journeys else 200
-    stream = phases["stream"]
-    put("stream.wall_per_chunk", [p["wallMs"] / chunks for p in stream if "wallMs" in p], "ms")
-    put("stream.cpu_per_chunk", [p["cpuMs"] / chunks for p in stream if "cpuMs" in p], "ms")
-    for key in PER_CHUNK:
-        put(f"stream.per_chunk.{key}", [c.get(key, 0) / chunks for c in counts["stream"]], "count")
+    for name in STREAMS:
+        stream = phases[name]
+        put(f"{name}.wall_per_chunk", [p["wallMs"] / chunks for p in stream if "wallMs" in p], "ms")
+        put(f"{name}.cpu_per_chunk", [p["cpuMs"] / chunks for p in stream if "cpuMs" in p], "ms")
+        for key in PER_CHUNK:
+            put(f"{name}.per_chunk.{key}", [c.get(key, 0) / chunks for p, c in zip(stream, counts[name]) if p], "count")
     # The same 200 words over the moves, to set against `stream`: moving the box adds no drawing per word and no time.
     box_stream = phases["reply-box-stream"]
     put("reply-box-stream.wall_per_chunk", [p["wallMs"] / chunks for p in box_stream if "wallMs" in p], "ms")
@@ -143,18 +153,36 @@ def app_metrics(folder):
     for key in PER_CHUNK:
         put(f"reply-box-stream.per_chunk.{key}", [c.get(key, 0) / chunks for c in counts["reply-box-stream"]], "count")
     # The worst journey's, for the counts budgeted at zero, where the median would hide one journey that drew.
-    for key in WORST_PER_CHUNK:
-        values = [c.get(key, 0) / chunks for c in counts["stream"]]
-        if values:
-            rows[f"stream.worst_per_chunk.{key}"] = {"value": max(values), "unit": "count", "n": len(values)}
+    for name in STREAMS:
+        for key in WORST_PER_CHUNK:
+            values = [c.get(key, 0) / chunks for p, c in zip(phases[name], counts[name]) if p]
+            if values:
+                rows[f"{name}.worst_per_chunk.{key}"] = {"value": max(values), "unit": "count", "n": len(values)}
     for key in WORST_LIST_SCROLL:
         values = [c.get(key, 0) for c in counts["list-scroll"]]
         if values:
             rows[f"list-scroll.worst.{key}"] = {"value": max(values), "unit": "count", "n": len(values)}
-    for kind in ["delta", "shell"]:
-        put(f"stream.bytes_per_push.{kind}", [c[f"bytes.{kind}"] / c[f"frames.{kind}"] if c.get(f"frames.{kind}") else None for c in counts["stream"]], "B")
-        put(f"stream.decode_per_push.{kind}", [ns_ms(c, f"time.decode.{kind}.ns", f"time.decode.{kind}.n") for c in counts["stream"]], "ms")
-        put(f"stream.apply_per_push.{kind}", [ns_ms(c, f"time.apply.{kind}.ns", f"time.apply.{kind}.n") for c in counts["stream"]], "ms")
+    for name in STREAMS:
+        for kind in ["delta", "shell"]:
+            put(f"{name}.bytes_per_push.{kind}", [c[f"bytes.{kind}"] / c[f"frames.{kind}"] if c.get(f"frames.{kind}") else None for c in counts[name]], "B")
+            put(f"{name}.decode_per_push.{kind}", [ns_ms(c, f"time.decode.{kind}.ns", f"time.decode.{kind}.n") for c in counts[name]], "ms")
+            put(f"{name}.apply_per_push.{kind}", [ns_ms(c, f"time.apply.{kind}.ns", f"time.apply.{kind}.n") for c in counts[name]], "ms")
+    # Frames the phone could not read or place, in any phase of the worst journey.
+    unread = [sum(r.get("phases", {}).get(name, {}).get("counts", {}).get(key, 0) for name in r.get("phases", {}) for key in ["frames.unreadable", "frames.unplaced"])
+              for r in journeys]
+    if unread:
+        rows["journey.frames_unread"] = {"value": max(unread), "unit": "count", "n": len(unread)}
+
+    # The idle phases: CPU time, memory, how often the main thread woke, and every view body that ran, so whether a page
+    # draws while nothing happens is a number. Each view whose body ran in any journey's idle gets a row of its own.
+    for name in IDLE:
+        measured = [(p, c) for p, c in zip(phases[name], counts[name]) if p]
+        put(f"{name}.app.cpu", [p.get("cpuMs") for p, _ in measured], "ms")
+        put(f"{name}.app.footprint", [p.get("footprintMB") for p, _ in measured], "MB")
+        put(f"{name}.app.wakes_per_second", [p["wakes"] / p["idleSeconds"] for p, _ in measured if p.get("idleSeconds")], "/s")
+        put(f"{name}.app.bodies", [sum(v for k, v in c.items() if k.startswith("body.")) for _, c in measured], "count")
+        for key in sorted({k for _, c in measured for k in c if k.startswith("body.")}):
+            put(f"{name}.app.{key}", [c.get(key, 0) for _, c in measured], "count")
     for name in ["open", "thread-scroll"]:
         put(f"{name}.app.textview_measure", [ns_ms(c, "time.textview.measure.ns") for c in counts[name]], "ms")
     put("stream.textview_measure_per_chunk", [ns_ms(c, "time.textview.measure.ns") / chunks if "time.textview.measure.ns" in c else 0 for c in counts["stream"]], "ms")
@@ -165,7 +193,7 @@ def app_metrics(folder):
     went_back = [i for i, p in enumerate(phases["back"]) if p and counts["back"][i].get("page.shown", 0)]
     if went_back:
         for key in PAGE:
-            values = [sum(counts[name][i].get(key, 0) for name in PHASES) for i in went_back]
+            values = [sum(counts[name][i].get(key, 0) for name in PHASES + IDLE) for i in went_back]
             rows[f"journey.{key}"] = {"value": max(values), "unit": "count", "n": len(values)}
     return rows
 

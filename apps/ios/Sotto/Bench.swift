@@ -11,9 +11,12 @@ import UIKit
 /// turns on and reads the whole accessibility tree, which on a long thread cost more than the thread did. The phases:
 /// `launch` to the first frame showing every thread, `list-scroll` down the list and back, `open` the long thread as a
 /// notification opens it, `thread-scroll` up through it and back, `stream` a reply into it, `reply-box` the reply box
-/// going small and back with nothing else happening, `reply-box-stream` the same while a reply streams, `back` to the
-/// Threads list, then `finished`. Each phase lasts until the screen is quiet, and records its frames, hitches, CPU time,
-/// memory and what the probes counted. With `--bench-journey launch` it stops after the first. With `--bench-journey look`
+/// going small and back with nothing else happening, `reply-box-stream` the same while a reply streams, `idle-thread` half
+/// a minute on the long thread with nothing arriving, `stream-real-push` the stream again with each list push the size a
+/// running host sends, `back` to the Threads list, `idle-list` half a minute there with nothing arriving, then `finished`.
+/// Each phase lasts until the screen is quiet, the idle ones for their fixed half minute, and records its frames, hitches,
+/// CPU time, memory and what the probes counted; an idle phase records its main thread's wake-ups in place of frames
+/// (`idle`). With `--bench-journey launch` it stops after the first. With `--bench-journey look`
 /// it opens the long thread and photographs the page at fixed distances above its end (`look`), so two builds can be held
 /// to the same look. It reads and changes nothing the app shows, but for the draft that moves the reply box, which it
 /// takes out again.
@@ -62,7 +65,7 @@ import UIKit
         let link = CADisplayLink(target: FrameTarget(self), selector: #selector(FrameTarget.tick(_:)))
         link.add(to: .main, forMode: .common)
         self.link = link
-        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in MainActor.assumeIsolated { BenchDriver.running?.write() } }
+        startReports()
         mark("driver-start")
         let arguments = ProcessInfo.processInfo.arguments
         if let index = arguments.firstIndex(of: "--bench-sample"), arguments.indices.contains(index + 1) {
@@ -116,6 +119,23 @@ import UIKit
         phaseNotes["wallMs"] = (CACurrentMediaTime() - streamed) * 1000
         await quiet()
 
+        // The phases the journey had before these three run first and as they were, so their numbers still compare; only
+        // `back` now follows the first two. The long thread open with nothing arriving: its record still says it works, so
+        // its working line stays (#2400).
+        next("idle-thread")
+        await idle()
+
+        // The stream again, each shell push carrying beside the long thread's record what a running host sends whole in
+        // every push, about 200 KB where `stream` sends 2 KB (#2390). The reply is 400 words longer than at `stream`.
+        next("stream-real-push")
+        let pushed = CACurrentMediaTime()
+        await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in
+            model?.benchStream(chunks: chunks, hostSized: true) { done.resume() }
+        }
+        mark("stream-real-push-done")
+        phaseNotes["wallMs"] = (CACurrentMediaTime() - pushed) * 1000
+        await quiet()
+
         // Back to the list, as Back and a swipe back go: the Threads page comes into sight again under the thread and lets
         // go of the list it held while the reply streamed (`ThreadsView.held`). A journey that can't go back, or whose page
         // never comes back drawn as it stands, fails: its stale-frame count would say nothing.
@@ -123,7 +143,45 @@ import UIKit
         guard let navigation = Self.threadNavigation(), navigation.popViewController(animated: true) != nil else { return finish("no-back") }
         guard await until({ self.pageInWindow && !self.pageHeld }) else { return finish("no-list-back") }
         await quiet()
+
+        // The Threads list with nothing arriving, the long thread working at its top (#2400).
+        next("idle-list")
+        await idle()
         finish(nil)
+    }
+
+    private static let idleSeconds: Double = 30
+    /// The main run loop's wake-ups while an idle phase lasts.
+    private var wakes = 0
+
+    /// Holds still for `idleSeconds` with nothing arriving: a fixed length, so every journey's idle lasts as long, not
+    /// `quiet()`'s. The driver's own display link and report timer stop meanwhile, since each would wake the main thread at
+    /// every frame or every half second, and the main run loop's wake-ups are counted instead: the display link ticks at
+    /// every refresh whether or not anything was drawn, so it cannot count frames drawn, and a frame the app commits needs
+    /// its main thread awake. Core Animation's own loops, the background wash and a working card's glow, draw in the render
+    /// server without waking the app, so neither CPU time nor wake-ups hold them.
+    private func idle() async {
+        link?.isPaused = true
+        timer?.invalidate(); timer = nil
+        wakes = 0
+        let observer = CFRunLoopObserverCreateWithHandler(nil, CFRunLoopActivity.afterWaiting.rawValue, true, 0) { _, _ in
+            MainActor.assumeIsolated { BenchDriver.running?.wakes += 1 }
+        }
+        CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
+        let started = CACurrentMediaTime()
+        try? await Task.sleep(nanoseconds: UInt64(Self.idleSeconds * 1_000_000_000))
+        CFRunLoopRemoveObserver(CFRunLoopGetMain(), observer, .commonModes)
+        phaseNotes["idleSeconds"] = CACurrentMediaTime() - started
+        phaseNotes["wakes"] = wakes
+        // The frames the link missed belong to no phase: it starts again from now.
+        frames = Frames(from: CACurrentMediaTime())
+        link?.isPaused = false
+        startReports()
+    }
+
+    /// The report, written every half second so the script sees how far the journey has got.
+    private func startReports() {
+        timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in MainActor.assumeIsolated { BenchDriver.running?.write() } }
     }
 
     /// The picture thread (`--bench-pictures`): opened, its first tiles read, the whole page scrolled up and back, then held
