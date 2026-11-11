@@ -47,9 +47,12 @@ describe('the pinned Node version', () => {
     expect([...workflow.matchAll(/pick\(\) \{/gu)], `${name} defines pick more than once`).toHaveLength(1)
     expect(workflow, `${name} no longer feeds the change's setup-node from pick`).toMatch(/^\s*echo "change=\$\(pick \.\)" >> "\$GITHUB_OUTPUT"$/mu)
     expect(workflow, `${name} no longer feeds the base's setup-node from pick`).toMatch(/^\s*if \[ -d "\$RUNNER_TEMP\/base" \]; then echo "base=\$\(pick "\$RUNNER_TEMP\/base"\)" >> "\$GITHUB_OUTPUT"; fi$/mu)
-    // Any other write of either output, quoted or not, by echo or printf, on a line that is not a comment.
-    const writes = workflow.split('\n').filter(line => !line.trim().startsWith('#') && line.includes('GITHUB_OUTPUT') && /(?:^|[\s"'])(?:base|change)=/u.test(line))
-    expect(writes, `${name} writes a Node output somewhere else too`).toHaveLength(2)
+    // In the step that sets them, any other write of either output, quoted or not, by echo or printf, on a line that is
+    // not a comment; and no write spread over lines (a heredoc, a brace group or a continued line), which this cannot read.
+    const step = /^\s*id: node\n[\s\S]*?(?=^\s*- name:)/mu.exec(workflow)?.[0] ?? ''
+    const lines = step.split('\n').filter(line => !line.trim().startsWith('#'))
+    expect(lines.filter(line => line.includes('GITHUB_OUTPUT') && /(?:^|[\s"'])(?:base|change)=/u.test(line)), `${name} writes a Node output somewhere else too`).toHaveLength(2)
+    expect(lines.filter(line => /<<|\\\s*$|^\s*\}/u.test(line)), `${name} writes a Node output over several lines`).toEqual([])
   })
 
   it('is installed by some workflow', () => {

@@ -34,8 +34,10 @@ let server: Server, origin: string, profileRoot: string, browser: HostBrowser
 /** Waits for `check`, giving up after 15 seconds, or at once when `stopped` is aborted (a test that ran out of time). */
 async function until(check: () => boolean, what: string, stopped?: AbortSignal): Promise<void> {
   const deadline = Date.now() + 15_000
-  while (!check()) {
+  // The abort is checked first, so a wait whose condition already holds still stops a test that ran out of time.
+  for (;;) {
     if (stopped?.aborted) throw new Error(`Stopped waiting for ${what}: the test ran out of time.`)
+    if (check()) return
     if (Date.now() > deadline) throw new Error(`Timed out waiting for ${what}.`)
     await new Promise(resolve => setTimeout(resolve, 50))
   }
@@ -49,8 +51,9 @@ async function loaded(page: HostBrowserPage, path: string, stopped?: AbortSignal
  * CI's Linux runner (11.7 s on November 10, 2026), so the suite's 15 seconds left it no room: on a busier runner it timed
  * out on every run while every other test of the file passed (#2426). Waiting is not the assertion (AGENTS.md), and a
  * deadline that is never reached costs nothing. If it is reached, the journey stops at its next wait and never reaches its
- * own close, which would otherwise land in the middle of a later test on the same page (the bug bot on #2441). It does not
- * close the page when it stops: the next test opens the same workspace's page.
+ * own close, which would otherwise dispose the workspace's browser context under a later test's open (the bug bot on
+ * #2441). A page call already in flight still finishes. It does not close the page when it stops: closing it could do the
+ * same, and the browser's own close at the end takes it.
  */
 const REAL_CHROMIUM_JOURNEY_MS = 60_000
 
