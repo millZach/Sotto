@@ -37,6 +37,7 @@ import { HeldProviderHost } from './heldProviderGate'
 import { heldProvidersOption, type HeldProviders } from '../../shared/heldProviders'
 import { ConfiguredProviderHost } from './providerSwitch'
 import { SottoThreadHost, ThreadRegistry } from './threads'
+import type { HostHeldSession } from './sessionReaper'
 import { WorkspaceHost } from './workspace'
 import { MainCheckoutKeeper, type MainCheckoutEvent } from './mainCheckout'
 import type { PullRequestObservation } from './watcherEvidence'
@@ -354,19 +355,24 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     deepseek: adapter('deepseek', () => options.providers?.deepseek ?? (options.runsAs === 'headless-host' ? new HeldProviderHost('deepseek')
       : new DeepSeekAcpHost(directory, { heldProviders: held, ...captureMedia, ...(options.ownServers ? { servers: options.ownServers } : {}) }))),
   }
+  const threadHosts: Record<ProviderId, SottoThreadHost> | undefined = options.host ? undefined : {
+    codex: new SottoThreadHost('codex', providers.codex!, threadRegistry!),
+    claude: new SottoThreadHost('claude', providers.claude!, threadRegistry!),
+    grok: new SottoThreadHost('grok', providers.grok!, threadRegistry!),
+    devin: new SottoThreadHost('devin', providers.devin!, threadRegistry!),
+    muse: new SottoThreadHost('muse', providers.muse!, threadRegistry!),
+    opencode: new SottoThreadHost('opencode', providers.opencode!, threadRegistry!),
+    cursor: new SottoThreadHost('cursor', providers.cursor!, threadRegistry!),
+    hermes: new SottoThreadHost('hermes', providers.hermes!, threadRegistry!),
+    deepseek: new SottoThreadHost('deepseek', providers.deepseek!, threadRegistry!),
+  }
+  /** Every provider session this runtime's adapters hold, and what keeps each (#2398): the headless host's administrative read. */
+  const heldSessions = (): HostHeldSession[] => threadHosts
+    ? (Object.entries(threadHosts) as [ProviderId, SottoThreadHost][]).flatMap(([provider, host]) => host.heldThreadSessions().map(held => ({ provider, ...held })))
+    : []
   const agentHost = new WorkspaceHost(options.host ?? new ConfiguredProviderHost({
     directory,
-    hosts: {
-      codex: new SottoThreadHost('codex', providers.codex!, threadRegistry!),
-      claude: new SottoThreadHost('claude', providers.claude!, threadRegistry!),
-      grok: new SottoThreadHost('grok', providers.grok!, threadRegistry!),
-      devin: new SottoThreadHost('devin', providers.devin!, threadRegistry!),
-      muse: new SottoThreadHost('muse', providers.muse!, threadRegistry!),
-      opencode: new SottoThreadHost('opencode', providers.opencode!, threadRegistry!),
-      cursor: new SottoThreadHost('cursor', providers.cursor!, threadRegistry!),
-      hermes: new SottoThreadHost('hermes', providers.hermes!, threadRegistry!),
-      deepseek: new SottoThreadHost('deepseek', providers.deepseek!, threadRegistry!),
-    },
+    hosts: threadHosts!,
     provider: () => agentControl.configuration().provider,
     enabledProviders: () => { const configuration = agentControl.configuration(); return configuration.enabledProviders ?? [configuration.provider] },
     threadProvider: threadId => threadRegistry?.byThread(threadId)?.provider,
@@ -956,5 +962,5 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     connect: async provider => whyNotConnected(await agentControl.command({ type: 'connect', provider, notice: false }), provider),
   }) : undefined
   idleCompaction.start()
-  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, mainCheckout, watcher, watcherTools, delegation, dynamicRecord, delegationRelay, delegationRemote, continuation, threadMoves, workerRoles, opencodeSignIn, ownServersOpenCode, ownServersDeepSeek, ownServersHermes, cursorSignIn, providerSignIn, branchMoves, branchBundles, checks, workerAdmission, prepareForShutdown, close }
+  return { agentHost, agentControl, threadRegistry, turns, hostService, heldSessions, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, mainCheckout, watcher, watcherTools, delegation, dynamicRecord, delegationRelay, delegationRemote, continuation, threadMoves, workerRoles, opencodeSignIn, ownServersOpenCode, ownServersDeepSeek, ownServersHermes, cursorSignIn, providerSignIn, branchMoves, branchBundles, checks, workerAdmission, prepareForShutdown, close }
 }

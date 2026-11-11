@@ -1,14 +1,14 @@
 import { t } from '@lingui/core/macro'
 import { z } from 'zod'
 import {
-  addResultSchema, checkResultSchema, OWN_SERVER_WORDS, OWN_SERVERS_ADD, OWN_SERVERS_CHECK, OWN_SERVERS_CHECK_SAVED, OWN_SERVERS_LIST,
+  catalogueResultSchema, chooseModelsSchema, replaceKeySchema, OWN_SERVERS_CATALOGUE, OWN_SERVERS_CHOOSE, OWN_SERVERS_REPLACE_KEY, addResultSchema, checkResultSchema, OWN_SERVER_WORDS, OWN_SERVERS_ADD, OWN_SERVERS_CHECK, OWN_SERVERS_CHECK_SAVED, OWN_SERVERS_LIST,
   OWN_SERVERS_REMOVE, ownServerListSchema, removeResultSchema,
 } from '../../shared/ownModelServers'
 import { isAuthorizedIpcSender, type IpcMainAdapter, type TrustedIpcSender } from '../ipc/registerIpc'
 import type { OwnServers } from './service'
 
 /** What the bridge reaches. */
-export type OwnServersCalls = Pick<OwnServers, 'list' | 'check' | 'add' | 'checkSaved' | 'remove'>
+export type OwnServersCalls = Pick<OwnServers, 'list' | 'check' | 'add' | 'checkSaved' | 'remove' | 'catalogue' | 'chooseModels' | 'replaceKey'>
 
 const FAILED = { status: 'refused', reason: 'failed', message: OWN_SERVER_WORDS.failed } as const
 /** A list that could not be read rejects, so the window says so and offers Try again rather than showing none saved. */
@@ -30,11 +30,14 @@ export function registerOwnServersIpc(ipc: IpcMainAdapter, calls: OwnServersCall
       return schema.parse(answer)
     })
   }
+  handle(OWN_SERVERS_CATALOGUE, catalogueResultSchema, () => calls.catalogue(), () => ({ available: false, entries: [] }))
+  handle(OWN_SERVERS_CHOOSE, addResultSchema, request => calls.chooseModels(chooseModelsSchema.parse(request)), () => FAILED)
+  handle(OWN_SERVERS_REPLACE_KEY, addResultSchema, request => calls.replaceKey(replaceKeySchema.parse(request)), () => FAILED)
   handle(OWN_SERVERS_LIST, ownServerListSchema, () => calls.list(), () => { throw new Error(t`Sotto could not read your own model servers.`) })
   handle(OWN_SERVERS_CHECK, checkResultSchema, request => calls.check(request), () => FAILED)
   handle(OWN_SERVERS_ADD, addResultSchema, request => calls.add(request), () => FAILED)
   handle(OWN_SERVERS_CHECK_SAVED, checkResultSchema, request => calls.checkSaved(request), () => FAILED)
   handle(OWN_SERVERS_REMOVE, removeResultSchema, request => calls.remove(request), () => FAILED)
-  const channels = [OWN_SERVERS_LIST, OWN_SERVERS_CHECK, OWN_SERVERS_ADD, OWN_SERVERS_CHECK_SAVED, OWN_SERVERS_REMOVE]
+  const channels = [OWN_SERVERS_CATALOGUE, OWN_SERVERS_CHOOSE, OWN_SERVERS_REPLACE_KEY, OWN_SERVERS_LIST, OWN_SERVERS_CHECK, OWN_SERVERS_ADD, OWN_SERVERS_CHECK_SAVED, OWN_SERVERS_REMOVE]
   return () => { for (const channel of channels) ipc.removeHandler(channel) }
 }

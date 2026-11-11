@@ -13,18 +13,26 @@ import type { SottoBridge } from '../../src/shared/contracts'
 import { TRANSCRIPTION_KEPT_DETAIL } from '../../src/shared/dictation'
 import { DETERMINISTIC_TRANSCRIPT, PRESERVED_CLIPBOARD_TEXT } from '../fixtures/fakeTranscription'
 import { evidenceDirectory } from '../fixtures/evidence'
-import { closeSotto, e2eEnvironment, finishFirstRunSetupFrom, launchSotto, openPage, reachFirstRunStep } from './support/sottoLaunch'
+import { closeSotto, completeFirstRunSetup, e2eEnvironment, launchSotto, openPage, reachSetupStop, setupForwardButton, setupNote, skipSetup } from './support/sottoLaunch'
 import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
 import { resizeContentWindow } from './support/sottoWindow'
 
 const evidence = evidenceDirectory('artifacts/review-quit-drain')
 const recordEvidence = evidenceDirectory('artifacts/dictation-record')
 
-/** Onboarding, and then the Dictate page the dictation tests work on. */
+/** First-run setup, and then the Dictate page the dictation tests work on. */
 async function completeOnboarding(page: Page): Promise<void> {
-  await finishFirstRunSetupFrom(page, 'welcome', { microphone: 'test' })
+  await completeFirstRunSetup(page, { microphone: 'test' })
   await openPage(page, 'Dictate')
   await expect(page.getByRole('heading', { name: /ready when you are/i })).toBeVisible()
+}
+
+/** Walks first-run setup to its shortcut stop, running Settings' microphone test at the microphone stop on the way. */
+async function reachShortcutStopWithMicrophoneTested(page: Page): Promise<void> {
+  await reachSetupStop(page, 'microphone')
+  await page.locator('.settings-microphone-test').getByRole('button', { name: 'Test microphone', exact: true }).click()
+  await expect(setupNote(page)).toContainText('Sotto heard you. Your microphone works.')
+  await reachSetupStop(page, 'shortcut')
 }
 
 async function dictateWithButton(page: Page): Promise<void> {
@@ -124,9 +132,7 @@ async function triggerShortcut(page: Page): Promise<void> {
 test('onboards, dictates through the registered shortcut, pastes, and records local history', async () => {
   const launched = await launchSotto()
   try {
-    await reachFirstRunStep(launched.page, 'shortcut', { microphone: 'test' })
-    const pasteTarget = launched.page.getByLabel('Paste test')
-    await pasteTarget.focus()
+    await reachShortcutStopWithMicrophoneTested(launched.page)
 
     await triggerShortcut(launched.page)
     const widget = launched.app.windows().find((candidate) => candidate.url().endsWith('/widget.html'))
@@ -134,14 +140,16 @@ test('onboards, dictates through the registered shortcut, pastes, and records lo
     await expect(widget.locator('.widget-shell[data-status="listening"]')).toBeVisible()
     await triggerShortcut(launched.page)
 
-    await expect(pasteTarget).toHaveValue(DETERMINISTIC_TRANSCRIPT)
     await expect.poll(() => snapshot(launched.page)).toMatchObject({
       clipboardText: DETERMINISTIC_TRANSCRIPT,
       pasteAttempts: 1,
     })
     await expect(widget.locator('.widget-shell')).toHaveAttribute('data-status', 'idle')
+    // A dictation that ends in text during the shortcut stop is the shortcut tried.
+    await expect(setupNote(launched.page)).toContainText('That worked.')
+    await expect(setupForwardButton(launched.page)).toHaveText('Continue')
 
-    await finishFirstRunSetupFrom(launched.page, 'shortcut', { microphone: 'test' })
+    await skipSetup(launched.page)
     // Transcripts live in the Dictate room's Journal (#1293).
     await openPage(launched.page, 'Dictate')
     await expect(launched.page.getByText(DETERMINISTIC_TRANSCRIPT).first()).toBeVisible()
@@ -345,12 +353,15 @@ test('reports a hotkey conflict and preserves the previous shortcut', async () =
 test('recovers after microphone permission is denied once', async () => {
   const launched = await launchSotto('microphone-denied-once')
   try {
-    await reachFirstRunStep(launched.page, 'microphone')
-    await launched.page.getByRole('button', { name: /test microphone/i }).click()
-    await expect(launched.page.getByText('Microphone access is blocked.')).toBeVisible()
-    await expect(launched.page.getByText(/privacy & security.*microphone/i)).toBeVisible()
-    await launched.page.getByRole('button', { name: /try microphone again/i }).click()
-    await expect(launched.page.getByText('Sotto heard you. Your microphone works.')).toBeVisible()
+    // Setup's microphone stop lights Settings' own test, which says a refusal in that platform's words.
+    await reachSetupStop(launched.page, 'microphone')
+    const microphoneTest = launched.page.locator('.settings-microphone-test')
+    await microphoneTest.getByRole('button', { name: 'Test microphone', exact: true }).click()
+    await expect(microphoneTest).toHaveAttribute('data-state', 'denied')
+    await expect(microphoneTest.getByRole('status')).toHaveText(process.platform === 'win32' ? /Check Windows privacy settings/ : /Microphone access is blocked/)
+    await expect(setupForwardButton(launched.page)).toHaveText('Skip for now')
+    await microphoneTest.getByRole('button', { name: 'Test microphone', exact: true }).click()
+    await expect(setupNote(launched.page)).toContainText('Sotto heard you. Your microphone works.')
   } finally {
     await closeSotto(launched)
   }
@@ -410,7 +421,7 @@ test('persists settings through reload', async () => {
   }
 })
 
-test('keeps the real main window frameless, with a strip while onboarding and the Threads page after it', async () => {
+test('keeps the real main window frameless, with setup walked over the Threads page and the Threads page after it', async () => {
   const launched = await launchSotto()
   try {
     const geometry = await launched.app.evaluate(({ BrowserWindow }) => {
@@ -426,13 +437,15 @@ test('keeps the real main window frameless, with a strip while onboarding and th
 
     expect(geometry).not.toBeNull()
     expect(geometry?.contentBounds).toEqual(geometry?.bounds)
-    await expect(launched.page.locator('header.app-strip')).toHaveCount(1)
+    // A new profile opens straight on the Threads page, with setup's first note over it (ADR-0200).
+    await expect(setupNote(launched.page)).toBeVisible()
+    await expect(launched.page.getByRole('complementary', { name: 'Thread sidebar' })).toBeVisible()
 
-    await finishFirstRunSetupFrom(launched.page)
+    await skipSetup(launched.page)
 
-    // Onboarding hands over to Threads, which owns the whole window: no strip, and the window controls it carries
-    // itself instead. macOS paints its own traffic lights over the sidebar's top row and gets none of ours, and
-    // Linux draws none, because Hyprland closes windows itself (#849).
+    // Threads owns the whole window: no strip, and the window controls it carries itself instead. macOS paints its own
+    // traffic lights over the sidebar's top row and gets none of ours, and Linux draws none, because Hyprland closes
+    // windows itself (#849).
     await expect(launched.page.getByRole('complementary', { name: 'Thread sidebar' })).toBeVisible()
     await expect(launched.page.locator('header.app-strip')).toHaveCount(0)
     await expect(launched.page.locator('.app-controls')).toHaveCount(process.platform === 'win32' ? 1 : 0)
@@ -441,11 +454,11 @@ test('keeps the real main window frameless, with a strip while onboarding and th
   }
 })
 
-test('keeps onboarding Continue reachable and clickable at the supported 820x560 minimum', async () => {
+test('keeps setup’s Start reachable and clickable at the supported 820x560 minimum', async () => {
   const launched = await launchSotto()
   try {
     await expect(
-      launched.page.getByRole('heading', { name: /talk to your computer and your coding agents/i }),
+      setupNote(launched.page).getByRole('heading', { name: /talk to your computer and your coding agents/i }),
     ).toBeVisible()
     await launched.app.evaluate(({ BrowserWindow }) => {
       const main = BrowserWindow.getAllWindows().find((candidate) =>
@@ -464,40 +477,18 @@ test('keeps onboarding Continue reachable and clickable at the supported 820x560
       return main?.getMinimumSize() ?? null
     })).toEqual([820, 560])
 
-    const continueButton = launched.page.getByRole('button', { name: 'Get started' })
-    const access = await continueButton.evaluate((button) => {
-      const shell = button.closest('.onboarding-shell')
-      if (shell === null) return null
-      const buttonInsideViewport = (): boolean => {
-        const bounds = button.getBoundingClientRect()
-        const viewportHeight = (
-          globalThis as unknown as { readonly innerHeight: number }
-        ).innerHeight
-        return bounds.top >= 0 && bounds.bottom <= viewportHeight
-      }
-      const initiallyVisible = buttonInsideViewport()
-      shell.scrollTop = shell.scrollHeight
-      return {
-        initiallyVisible,
-        clientHeight: shell.clientHeight,
-        scrollHeight: shell.scrollHeight,
-        scrollTop: shell.scrollTop,
-        visibleAfterScroll: buttonInsideViewport(),
-      }
-    })
+    const startButton = setupForwardButton(launched.page)
+    await expect(startButton).toHaveText('Start')
+    // The welcome note shows all of itself in the window, so Start is in view and nothing covers its middle.
+    await expect(startButton).toBeInViewport({ ratio: 1 })
+    expect(await startButton.evaluate((button) => {
+      const bounds = button.getBoundingClientRect()
+      return button.contains(document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2))
+    })).toBe(true)
 
-    expect(access).not.toBeNull()
-    expect(
-      access!.initiallyVisible || (
-        access!.scrollHeight > access!.clientHeight &&
-        access!.scrollTop > 0 &&
-        access!.visibleAfterScroll
-      ),
-    ).toBe(true)
-
-    await continueButton.click()
+    await startButton.click()
     await expect(
-      launched.page.getByRole('heading', { name: /choose how sotto looks/i }),
+      setupNote(launched.page).getByRole('heading', { name: 'Sign in to a coding agent' }),
     ).toBeVisible()
   } finally {
     await closeSotto(launched)
@@ -656,7 +647,8 @@ test('quitting retains native windows during the drain and releases the lock for
     expect(state?.windows).toBeGreaterThan(0)
     expect(await exited).toBe(0)
     relaunched = await launchSotto('success', launched.userData)
-    await expect(relaunched.page.getByRole('button', { name: 'Get started', exact: true })).toBeVisible()
+    // Setup was never finished, so the relaunched window opens on its first note again.
+    await expect(setupForwardButton(relaunched.page)).toHaveText('Start')
   } finally {
     if (relaunched) await closeSotto(relaunched)
     await closeSotto(launched)

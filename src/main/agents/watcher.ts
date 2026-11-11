@@ -43,7 +43,7 @@ import { threadsById, WatcherHosts } from './watcherHosts'
 import type { WorkspaceHost } from './workspace'
 import { WatcherWakeUp, watcherBackgroundWorkCount, watcherRosterWork, watcherProgressFingerprint, type WatcherWakeOptions } from './watcherWakeUp'
 import { watcherEndedPullRequests, watcherHostInput, watcherOpenPullRequests, watcherPullRequestSummaries, watcherSlimRead, watcherThreadPullRequests } from './watcherSlimReads'
-import { mergeTurnHolds, watcherMergeQueue, watcherStaleNotes, type BaseBranchChecks, type WatcherKnownPullRequest, type WatcherOpenPullRequest } from './watcherComputedState'
+import { BASE_BRANCH_COMMITS_READ, mergeTurnHolds, watcherMergeQueue, watcherStaleNotes, type BaseBranchChecks, type WatcherKnownPullRequest, type WatcherOpenPullRequest } from './watcherComputedState'
 import { pullRequestKey } from '../../shared/gitPullRequests'
 import { GitHubRateLimited, retryWords } from './git/github'
 import { WATCHER_COMPACTED_NOTE, watcherRequestLine, watcherRequestNote } from './watcherRequestNote'
@@ -57,7 +57,7 @@ import type { Handover } from './handover'
 import { handoverCounts, handoverPrefix, watcherHandoverProvenance, watcherMessageAsShown } from './watcherHandover'
 import { watcherHandoverState, type WatcherCarried } from './watcherHandoverState'
 import type { WatcherEvent } from '../../shared/watcherNews'
-import { carriesWords, LATER_REQUEST_REACHES, watcherCardLine, watcherNewsText, watcherWaitingCardWords, watcherPullRequestWords, watcherReplyBefore, watcherReplyStart } from './watcherNews'
+import { carriesWords, LATER_REQUEST_REACHES, watcherCardLine, watcherNewsText, watcherPermissionCardLine, watcherWaitingCardWords, watcherPullRequestWords, watcherReplyBefore, watcherReplyStart } from './watcherNews'
 import { WATCHER_MESSAGES_MAX, WATCHER_NOT_GIT_REASON, WATCHER_ROSTER_MAX, WATCHER_SHARED_REASON_MAX, watcherProjectTargetSchema, type WatcherProjectTarget } from '../../shared/watcher'
 import { WatcherToldNews } from './watcherToldNews'
 import { WatcherQuestions } from './watcherQuestions'
@@ -737,6 +737,12 @@ export class WatcherService implements WatcherControlHooks {
   private readonly snapshotting = new Set<Promise<void>>()
   private readonly steerFallbacks = new Map<string, string>()
   /**
+   * The Watcher turn each Stop or settle fenced a standing watch's scope in, by the scope and the thread (#2435). The fence
+   * holds Watcher's sends to that thread for the rest of that turn of Watcher's only (Zach's pick on November 11, 2026); a
+   * later turn sends under a scope of its own. In memory: a restart ends Watcher's turn, so a fence with no entry is over.
+   */
+  private readonly standingFences = new Map<string, string | null>()
+  /**
    * unsettle_thread's answered calls, by request and retry key, to the target each restored: a retry answers as the first
    * did and restores nothing again, even after the thread was settled once more. Kept in memory, the newest UNSETTLES_KEPT.
    */
@@ -1257,6 +1263,8 @@ export class WatcherService implements WatcherControlHooks {
         const holder = event.delegatedThreadId === undefined ? thread : index ? index.thread({ hostId: event.target.hostId, threadId: event.delegatedThreadId })
           : snapshot.threads.find(item => item.id === event.delegatedThreadId && (item.hostId ?? snapshot!.hostId) === event.target.hostId)
         const words = holder?.requests.find(item => item.id === event.requestCardId)
+        // A permission card says its tool and its summary alone, never its command (#2433).
+        if (words?.kind === 'permission') return watcherPermissionCardLine(words)
         const asks = words && watcherWaitingCardWords(words, cardReply(holder!))
         return asks ? watcherCardLine(asks) : undefined
       }
@@ -2712,7 +2720,7 @@ export class WatcherService implements WatcherControlHooks {
   }
   /**
    * What Sotto's own reads say beside a thread's READY TO MERGE (#2229), as the news goes: the pull request's place in the
-   * train, the head Sotto last read it on, and its required checks. Nothing here is the worker's.
+   * train, the head Sotto last read it on, and its checks. Nothing here is the worker's.
    */
   private readyDetail(event: WatcherEvent): string | undefined {
     const ready = event.ready
@@ -2723,7 +2731,7 @@ export class WatcherService implements WatcherControlHooks {
     const item = queue[at]!, short = (head: string) => head.slice(0, 12)
     const head = item.head === undefined ? 'Sotto has not read its head from GitHub yet.'
       : item.head === ready.head ? `Sotto last read it on that head, ${short(item.head)}.` : `Sotto last read it on ${short(item.head)}, not the head this names.`
-    const checks = { passed: 'Its required checks passed.', running: 'Its required checks are still running.', failed: 'Its checks failed.', unknown: 'Sotto cannot say where its checks stand.' }[item.requiredChecks]
+    const checks = { passed: 'Its checks passed.', running: 'Its checks are still running.', failed: 'Its checks failed.', unknown: 'Sotto cannot say where its checks stand.' }[item.requiredChecks]
     return `It is ${at + 1} of ${queue.length} in the merge train. ${head} ${checks}`
   }
   /**
@@ -3168,12 +3176,42 @@ export class WatcherService implements WatcherControlHooks {
     record.localTakeovers = [...(record.localTakeovers ?? []).filter(item => item.target.hostId === this.hostId()
       && key(item.target) !== key(target) && represented.has(key(item.target))), { target, at, lastRequestId, ...(userDrafts.length ? { userDrafts } : {}) }]
   }
+  /** The current Watcher's own turn, as its thread last reported it; null when Sotto cannot say. */
+  private watcherNativeTurn(): string | null {
+    const current = this.view().current
+    return (current && this.localThread(current.target.threadId)?.lastTurn?.id) ?? null
+  }
+  /** Notes the turn a fence came in, the first time only: a receipt read again, as a paired host's reconciliation does, keeps it. */
+  private noteStandingFence(scopeId: string, target: WatcherThreadTarget): void {
+    const fence = JSON.stringify([scopeId, key(target)])
+    if (this.standingFences.has(fence)) return
+    this.standingFences.set(fence, this.watcherNativeTurn())
+    while (this.standingFences.size > ROLE_STARTS_KEPT * 10) this.standingFences.delete(this.standingFences.keys().next().value!)
+  }
+  /** Whether a Stop's or settle's fence on this scope and thread came in an earlier turn of Watcher's than this one (#2435). */
+  private standingFenceOver(scopeId: string, target: WatcherThreadTarget): boolean {
+    const fence = JSON.stringify([scopeId, key(target)])
+    if (!this.standingFences.has(fence)) return true
+    // One noted when Watcher's turn was unknown is over once a turn is known: Watcher acts from inside one.
+    const fencedIn = this.standingFences.get(fence), now = this.watcherNativeTurn()
+    return now !== null && fencedIn !== now
+  }
+  /**
+   * The standing scope a watched thread's sends go under in this turn of Watcher's: the prompt turn's, or, once a Stop or
+   * settle stopped that in an earlier turn of Watcher's, one for this turn alone (#2435). Sends and fences both use it.
+   */
+  private currentStandingScope(record: WatcherRecord, watchId: string, target: WatcherThreadTarget, promptTurnId: string): { scope: WatcherRecord['requests'][number]; created: boolean } {
+    const standing = standingScope(record, record.current!.target, watchId, promptTurnId)
+    if (standing.created || !standing.scope.participants.some(item => key(item.target) === key(target) && item.automationStopped)
+      || !this.standingFenceOver(standing.scope.id, target)) return standing
+    return standingScope(record, record.current!.target, watchId, `${promptTurnId}:${digest([this.watcherNativeTurn()]).slice(0, 16)}`)
+  }
   private fenceStandingTurn(record: WatcherRecord, target: WatcherThreadTarget): void {
     const watch = record.watches?.find(item => key(item.target) === key(target)), current = record.current
     if (!watch || !current || this.options.workerHost) return
     const master = this.localThread(current.target.threadId)
     if (!master) return
-    const { scope, created } = standingScope(record, current.target, watch.id, this.promptTurn(record, current.target).id)
+    const { scope, created } = this.currentStandingScope(record, watch.id, target, this.promptTurn(record, current.target).id)
     if (created) record.requests.push(scope)
     let participant = scope.participants.find(item => key(item.target) === key(target))
     if (!participant) {
@@ -3182,6 +3220,7 @@ export class WatcherService implements WatcherControlHooks {
       scope.participants.push(participant)
     }
     setIfChanged(participant, 'automationStopped', true)
+    this.noteStandingFence(scope.id, target)
   }
 
   async recover(): Promise<void> {
@@ -4828,7 +4867,10 @@ export class WatcherService implements WatcherControlHooks {
           return { operation: retry, retry: true, archivedWork }
         }
         // Four prompts per Watcher turn and assignment. A stopped scope stays stopped; a later turn gets a new scope.
-        const standing = standingScope(record, record.current!.target, offeredWatch.id, turnOf()!.id)
+        // A Stop or settle holds the watch for the rest of the turn of Watcher's it came in, not until the user's next message
+        // to Watcher opens another prompt turn (#2435): a later turn sends under a scope of its own, which a paired host has
+        // no stopped participation for either. The news names the watch, so it and this admission agree.
+        const standing = this.currentStandingScope(record, offeredWatch.id, offeredWatch.target, turnOf()!.id)
         request = standing.scope
         if (standing.created) newStandingRequest = request
         input = { ...input, requestId: request.id }
@@ -5387,24 +5429,30 @@ ${operation.draftId}`)
    */
   private async askBeforeGoMerge(goMerge: WatcherGoMerge): Promise<() => MergeTurnChecked> {
     const ask = this.options.baseBranchChecks
-    let base: BaseBranchChecks | undefined, unread: string | undefined
+    let base: BaseBranchChecks | undefined, baseNote: string | undefined
     if (ask) {
       try {
         base = await ask(goMerge.pullRequest)
-        if (base.state === 'unknown') unread = `Sotto could not read the checks on ${base.branch}’s newest commit, so they held nothing.`
-      } catch { unread = 'Sotto could not ask GitHub for the checks on the branch this merges into, so they held nothing.' }
+        // The receipt names the commit it read (#2431); a failure is said in what held the send instead.
+        if (base.state === 'unknown') baseNote = `Sotto found no finished checks on ${base.branch}’s newest ${BASE_BRANCH_COMMITS_READ} commits, so they held nothing.`
+        else if (base.state === 'passed') baseNote = base.newest === undefined ? `${base.branch}’s checks passed on its newest commit, ${base.head.slice(0, 12)}.`
+          : `${base.branch}’s checks last passed on ${base.head.slice(0, 12)}; ${base.newest.slice(0, 12)}, after it, has none finished yet.`
+        else if (base.state === 'pending') baseNote = `${base.branch}’s checks are still running on its newest commit, ${base.head.slice(0, 12)}, so they held nothing.`
+      } catch { baseNote = 'Sotto could not ask GitHub for the checks on the branch this merges into, so they held nothing.' }
     }
     return () => {
       const queue = this.liveState().mergeQueue, holds = mergeTurnHolds(queue, goMerge.pullRequest, base), wanted = pullRequestKey(goMerge.pullRequest)
       const name = (item: WatcherMergeQueueItem) => `${item.pullRequest.number === undefined ? item.url ?? 'a pull request' : `#${item.pullRequest.number}`} in “${item.title.slice(0, 80)}”`
-      const held = [...holds.baseFailed ? [`${holds.baseFailed.branch} is red: checks failed on its newest commit, ${holds.baseFailed.head.slice(0, 12)}.`] : [],
-        ...holds.running.map(item => `${name(item)} has its required checks running.`)]
+      const failed = holds.baseFailed
+      const held = [...failed ? [failed.newest === undefined ? `${failed.branch} is red: checks failed on its newest commit, ${failed.head.slice(0, 12)}.`
+        : `${failed.branch} is red: checks failed on ${failed.head.slice(0, 12)}, its newest commit whose checks have finished; ${failed.newest.slice(0, 12)}, after it, has none finished yet.`] : [],
+        ...holds.running.map(item => `${name(item)} has checks running.`)]
       const outside = queue.some(item => item.url !== undefined && pullRequestKey(item.url) === wanted) ? undefined
         : 'Sotto does not hold this pull request in the merge train: read read_state to see where it stands.'
-      const note = [unread, outside].filter(Boolean).join(' ') || undefined
+      const note = [baseNote, outside].filter(Boolean).join(' ') || undefined
       if (held.length && !goMerge.overrideReason) {
         const shown = held.slice(0, 8), more = held.length - shown.length
-        refuse('MERGE_TURN_HELD', `Not its turn yet. ${shown.join(' ')}${more ? ` ${more} more train pull requests have required checks running.` : ''} A merge now would land in the middle of them, so nothing was sent.${note ? ` ${note}` : ''} ${MERGE_TURN_NEXT}`)
+        refuse('MERGE_TURN_HELD', `Not its turn yet. ${shown.join(' ')}${more ? ` ${more} more train pull requests have checks running.` : ''} A merge now would land in the middle of them, so nothing was sent.${note ? ` ${note}` : ''} ${MERGE_TURN_NEXT}`)
       }
       const reason = held.length ? goMerge.overrideReason : undefined
       return { receipt: { held, ...reason ? { overrideReason: reason } : {}, ...note ? { note } : {} },

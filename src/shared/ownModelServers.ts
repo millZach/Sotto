@@ -14,6 +14,9 @@ export const OWN_SERVERS_LIST = 'sotto:own-servers:list'
 export const OWN_SERVERS_CHECK = 'sotto:own-servers:check'
 export const OWN_SERVERS_ADD = 'sotto:own-servers:add'
 export const OWN_SERVERS_CHECK_SAVED = 'sotto:own-servers:check-saved'
+export const OWN_SERVERS_CATALOGUE = 'sotto:own-servers:catalogue'
+export const OWN_SERVERS_CHOOSE = 'sotto:own-servers:choose'
+export const OWN_SERVERS_REPLACE_KEY = 'sotto:own-servers:replace-key'
 export const OWN_SERVERS_REMOVE = 'sotto:own-servers:remove'
 
 /** Every server's ID starts with this, so it never meets an OpenCode provider ID of its own, such as `ollama` or `vllm`. */
@@ -21,7 +24,7 @@ export const OWN_SERVER_ID_PREFIX = 'own-'
 /** The longest key Sotto passes on, as for OpenCode's other model sources. */
 export const OWN_SERVER_KEY_MAX = 4_096
 /** The most models one server may bring; a server listing more is cut to these, by its own order. */
-export const OWN_SERVER_MODELS_MAX = 64
+export const OWN_SERVER_MODELS_MAX = 4_096
 /** The smallest and largest context a model may be given, in tokens. */
 export const OWN_SERVER_CONTEXT_MIN = 1_024
 export const OWN_SERVER_CONTEXT_MAX = 10_000_000
@@ -31,26 +34,26 @@ const name = z.string().trim().min(1).max(80)
 const address = z.string().min(1).max(400)
 const modelId = z.string().min(1).max(200)
 const context = z.number().int().min(OWN_SERVER_CONTEXT_MIN).max(OWN_SERVER_CONTEXT_MAX)
+const output = z.number().int().min(1).max(OWN_SERVER_CONTEXT_MAX)
 const key = z.string().max(OWN_SERVER_KEY_MAX)
+
+export const ownModelFactsShape = {
+  reasoningEfforts: z.array(z.enum(['default', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'])).max(9).optional(),
+  reportedName: z.literal(true).optional(),
+  tools: z.boolean().optional(),
+  cost: z.object({ input: z.number().nonnegative().optional(), output: z.number().nonnegative().optional(), cacheRead: z.number().nonnegative().optional() }).strict().optional(),
+}
 
 /** A model as Sotto saves it: what OpenCode is told about it, since OpenCode never asks the server for its models. */
 export const ownServerModelSchema = z.object({
-  id: modelId, name: z.string().min(1).max(200), context, output: context.optional(),
-  /** Thinking on: OpenCode offers low, medium and high effort and sends `reasoning_effort`. Off: no effort levels. */
+  id: modelId, name: z.string().min(1).max(200), context, output: output.optional(),
+  /** Legacy thinking records keep OpenCode low/medium/high until checked; new records carry confirmed levels. */
   thinking: z.boolean(),
+  ...ownModelFactsShape,
   /** Whether the server says the model takes images; false unless it does. */
   images: z.boolean(),
 }).strict()
 export type OwnServerModel = z.infer<typeof ownServerModelSchema>
-
-/** A saved server. It holds no key, only which provider took it first. */
-export const ownServerSchema = z.object({
-  id: serverId, name, address, keyed: z.boolean(), models: z.array(ownServerModelSchema).min(1).max(OWN_SERVER_MODELS_MAX),
-  /** Absent on old records, whose keys were always given to OpenCode. Hermes may also hold a copy of OpenCode's key. */
-  keyKeeper: z.enum(['opencode', 'hermes']).optional(),
-}).strict()
-export type OwnServer = z.infer<typeof ownServerSchema>
-export const ownServerListSchema = z.array(ownServerSchema).max(32)
 
 /** What kind of server answered, as far as its answers tell. Only shown in words; nothing depends on it but discovery. */
 export const ownServerKindSchema = z.enum(['vllm', 'sglang', 'ollama', 'lmstudio', 'llamacpp', 'tgi', 'openai-compatible'])
@@ -58,12 +61,29 @@ export type OwnServerKind = z.infer<typeof ownServerKindSchema>
 
 /** A model the check found, before the user adds it. `context` is absent when the server does not say. */
 export const foundModelSchema = z.object({
-  id: modelId, name: z.string().min(1).max(200), context: context.optional(), output: context.optional(),
+  id: modelId, name: z.string().min(1).max(200), context: context.optional(), output: output.optional(),
   /** Whether the server says the model can think, and so whether Thinking starts on. Absent when it does not say. */
   thinking: z.boolean().optional(),
-  images: z.boolean(),
+  images: z.boolean().optional(),
+  ...ownModelFactsShape,
 }).strict()
 export type FoundModel = z.infer<typeof foundModelSchema>
+
+/** A saved server. It holds no key, only which provider took it first. */
+export const ownServerSchema = z.object({
+  id: serverId, name, address, keyed: z.boolean(), models: z.array(ownServerModelSchema).min(1).max(OWN_SERVER_MODELS_MAX),
+  /** Catalogue identity and the latest discovered inventory; old records need neither. */
+  catalogueId: z.string().max(100).optional(),
+  helpUrl: z.string().max(400).optional(),
+  keptModelIds: z.array(modelId).max(OWN_SERVER_MODELS_MAX).optional(),
+  inventory: z.array(foundModelSchema).max(OWN_SERVER_MODELS_MAX).optional(),
+  checkedAt: z.string().optional(),
+  newModelIds: z.array(modelId).max(OWN_SERVER_MODELS_MAX).optional(),
+  /** Absent on old records, whose keys were always given to OpenCode. */
+  keyKeeper: z.enum(['opencode', 'hermes']).optional(),
+}).strict()
+export type OwnServer = z.infer<typeof ownServerSchema>
+export const ownServerListSchema = z.array(ownServerSchema).max(32)
 
 /** Why a check or an add went no further. Each has its words in `OWN_SERVER_WORDS`. */
 export const ownServerRefusalSchema = z.enum([
@@ -77,11 +97,12 @@ export const ownServerRefusalSchema = z.enum([
   'removed-partly',
   /** Add could not keep the key and then could not clear every copy or take the server back off the list. */
   'added-partly',
+  'replaced-partly',
 ])
 export type OwnServerRefusal = z.infer<typeof ownServerRefusalSchema>
 const refused = z.object({ status: z.literal('refused'), reason: ownServerRefusalSchema, message: z.string().min(1).max(600) }).strict()
 
-export const checkRequestSchema = z.object({ address, key: key.optional() }).strict()
+export const checkRequestSchema = z.object({ address, key: key.optional(), catalogueId: z.string().max(100).optional() }).strict()
 export type CheckRequest = z.infer<typeof checkRequestSchema>
 export const checkResultSchema = z.discriminatedUnion('status', [
   z.object({
@@ -101,20 +122,38 @@ export const checkResultSchema = z.discriminatedUnion('status', [
 export type CheckResult = z.infer<typeof checkResultSchema>
 
 export const addRequestSchema = z.object({
-  name, address, key: key.optional(), models: z.array(ownServerModelSchema).min(1).max(OWN_SERVER_MODELS_MAX),
+  name, address, key: key.optional(), catalogueId: z.string().max(100).optional(),
+  inventory: z.array(foundModelSchema).max(OWN_SERVER_MODELS_MAX).optional(), keptModelIds: z.array(modelId).max(OWN_SERVER_MODELS_MAX).optional(), models: z.array(ownServerModelSchema).min(1).max(OWN_SERVER_MODELS_MAX),
 }).strict()
 export type AddRequest = z.infer<typeof addRequestSchema>
 export const addResultSchema = z.discriminatedUnion('status', [z.object({ status: z.literal('ok'), server: ownServerSchema }).strict(), refused])
 export type AddResult = z.infer<typeof addResultSchema>
 
-/** Check again: the saved server is checked as it is saved, and its models are not changed until the user adds again. */
+/** Check again refreshes the inventory and facts while keeping choices and existing-thread model IDs. */
 export const checkSavedRequestSchema = z.object({ id: serverId }).strict()
 export const removeRequestSchema = z.object({ id: serverId }).strict()
 export const removeResultSchema = z.discriminatedUnion('status', [z.object({ status: z.literal('ok') }).strict(), refused])
 export type RemoveResult = z.infer<typeof removeResultSchema>
 
+export const catalogueEntrySchema = z.object({ id: z.string(), name: z.string(), api: z.string(), doc: z.string().optional() }).strict()
+export type CatalogueEntry = z.infer<typeof catalogueEntrySchema>
+export const catalogueResultSchema = z.object({ entries: z.array(catalogueEntrySchema), available: z.boolean() }).strict()
+export const chooseModelsSchema = z.object({ id: serverId, keptModelIds: z.array(modelId).min(1).max(OWN_SERVER_MODELS_MAX),
+  models: z.array(ownServerModelSchema).max(OWN_SERVER_MODELS_MAX).optional() }).strict()
+export const replaceKeySchema = z.object({ id: serverId, key: key.min(1) }).strict()
+export function keptModels(server: OwnServer): OwnServerModel[] {
+  const ids = server.keptModelIds && new Set(server.keptModelIds)
+  return server.models.filter(model => !ids || ids.has(model.id))
+}
+export function modelEfforts(model: Pick<OwnServerModel, 'thinking' | 'reasoningEfforts'>): string[] {
+  return model.thinking ? (model.reasoningEfforts ?? ['low', 'medium', 'high']).map(level => level === 'none' ? 'off' : level) : []
+}
+
 /** The main window's bridge, present only while the Owl feature is on. */
 export interface OwnServersBridge {
+  catalogue(): Promise<z.infer<typeof catalogueResultSchema>>
+  chooseModels(request: z.infer<typeof chooseModelsSchema>): Promise<AddResult>
+  replaceKey(request: z.infer<typeof replaceKeySchema>): Promise<AddResult>
   list(): Promise<OwnServer[]>
   check(request: CheckRequest): Promise<CheckResult>
   add(request: AddRequest): Promise<AddResult>
@@ -135,7 +174,7 @@ export const OWN_SERVER_WORDS = {
   signInFailed: (name: string) => `Sotto could not keep the key for ${name}, so nothing was saved. Try adding the server again.`,
   notFound: 'That server is no longer saved. Nothing was changed.',
   full: 'Sotto keeps up to 32 servers. Remove one you no longer use, then add this one.',
-  alreadyAdded: (host: string) => `${host} is already added. Nothing was saved. To change its key or its models, remove it and add it again.`,
+  alreadyAdded: (host: string) => `${host} is already added. Nothing was saved. Use Replace key or Choose models on its saved row.`,
   removeNeedsOpenCode: (name: string) => `Sotto’s OpenCode holds the key for ${name} and is not running, so nothing was removed. Connect OpenCode under Providers, then remove the server again.`,
   signOutFailed: (name: string) => `OpenCode did not forget the key for ${name}, so nothing was removed. Try removing the server again.`,
   addPartly: (name: string) => `Sotto could not finish adding ${name} or take it off its list. Remove it, then add it again.`,
@@ -163,6 +202,7 @@ export function ownServerRefusalWords(reason: OwnServerRefusal, host: string, se
     case 'failed': return OWN_SERVER_WORDS.failed
     case 'removed-partly': return OWN_SERVER_WORDS.removePartly(serverName)
     case 'added-partly': return OWN_SERVER_WORDS.addPartly(serverName)
+    case 'replaced-partly': return 'OpenCode has the new key, but Hermes could not replace its copy. Your model choices were kept. Try again.'
   }
 }
 
@@ -180,7 +220,7 @@ export function ownServerTurnWords(failure: OwnServerTurnFailure, turn: Pick<Own
     case 'timeout': return { title: `${name} didn’t start answering within 5 minutes.`,
       body: `It took the message but sent nothing back. It may be busy, stuck or still reading a very long prompt. Nothing in the thread was lost. Check ${name}, then try again.` }
     case 'key-refused': return { title: `${name} turned down its key.`,
-      body: `Nothing in the thread was lost. In Settings › Providers › Your own model servers, remove ${name} and add it again with the right key, then try again.` }
+      body: `Nothing in the thread was lost. In Settings › Providers › APIs and your own model servers, replace the key for ${name}, then try again.` }
     case 'model-gone': return { title: `${name} no longer has ${model}.`,
       body: `Nothing in the thread was lost. Pick another model in the model menu below, or load ${model} on ${name} again, then try again.` }
     case 'too-long': return { title: `This thread is too long for ${model}.`,
@@ -234,6 +274,7 @@ export type OwnServerAddress =
  */
 export function ownServerAddress(typed: string): OwnServerAddress {
   const trimmed = typed.trim()
+  if (trimmed.includes('${')) return { ok: false, reason: 'bad-address', host: '' }
   let url: URL
   try { url = new URL(/^[a-z][a-z0-9+.-]*:\/\//iu.test(trimmed) ? trimmed : `http://${trimmed}`) } catch { return { ok: false, reason: 'bad-address', host: trimmed.slice(0, 80) } }
   const host = url.host

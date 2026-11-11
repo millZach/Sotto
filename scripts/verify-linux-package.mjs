@@ -65,7 +65,10 @@ try {
   assert.ok(page, 'Main renderer must open')
   const rendererSession = await page.context().newCDPSession(page)
   await rendererSession.send('Emulation.clearDeviceMetricsOverride')
-  await page.getByRole('button', { name: 'Get started', exact: true }).waitFor({ state: 'visible' })
+  // A new profile opens on the Threads page with first-run setup's first note over it (ADR-0200).
+  const setupWalk = page.locator('.setup-walk')
+  const setupForward = page.locator('.setup-walk__note .setup-walk__actions button').last()
+  await page.locator('.setup-walk__note').waitFor({ state: 'visible' })
   let mainClient
   const windowDeadline = Date.now() + 20000
   while (!mainClient && Date.now() < windowDeadline) {
@@ -75,17 +78,15 @@ try {
   }
   assert.ok(mainClient, 'Packaged window must belong to the nested compositor')
   if (!mainClient.floating) execFileSync('hyprctl', ['dispatch', `hl.dsp.window.float({ window = "address:${mainClient.address}", action = "toggle" })`])
-  await page.getByRole('button', { name: 'Get started', exact: true }).click()
-  const progress = page.locator('.onboarding-progress')
-  const total = Number((await progress.getAttribute('aria-label'))?.match(/of (\d+)$/u)?.[1])
-  assert.ok(total >= 2, 'First-run setup must report its step count')
-  for (let step = 2; step < total; step++) {
-    await page.locator('.onboarding-actions').getByRole('button', { name: /^(Continue|Skip for now)$/u }).click()
-    await page.waitForFunction(expected => document.querySelector('.onboarding-progress')?.getAttribute('aria-label') === expected,
-      `Setup progress: step ${step + 1} of ${total}`)
+  // Walk every note's way forward (Start, Continue or Skip for now) to the last, then its Done.
+  for (let presses = 0; presses < 13 && await setupWalk.getAttribute('data-stop') !== 'end'; presses++) {
+    const stop = await setupWalk.getAttribute('data-stop')
+    await setupForward.click()
+    await page.waitForFunction(previous => document.querySelector('.setup-walk')?.getAttribute('data-stop') !== previous, stop)
   }
-  await page.getByRole('button', { name: 'Finish setup', exact: true }).click()
-  await page.getByRole('button', { name: 'Skip tour', exact: true }).click()
+  assert.equal(await setupWalk.getAttribute('data-stop'), 'end', 'First-run setup must reach its last note')
+  await setupForward.click()
+  await setupWalk.waitFor({ state: 'detached' })
   await page.getByRole('link', { name: 'Settings', exact: true }).click()
   await page.getByRole('tab', { name: 'Application', exact: true }).click()
   const toggle = page.getByRole('switch', { name: 'Launch when you sign in', exact: true })

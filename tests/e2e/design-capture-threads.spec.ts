@@ -91,6 +91,8 @@ test.describe('authoritative design-review captures', () => {
       await expect(unavailable).toBeVisible()
       await capturePage(page, `threads-files-unavailable-${appearance}.png`, { theme: appearance, category: 'threads', state: 'files-unavailable' })
       await tools.getByRole('button', { name: 'Close tools panel' }).click()
+      // At 820 the sidebar stands as the rail; Expand opens it over the thread, and New thread closes it again.
+      await page.getByRole('button', { name: 'Expand sidebar', exact: true }).click()
       await page.getByRole('button', { name: 'New thread', exact: true }).first().click()
       const dialog = page.getByRole('dialog', { name: 'New thread', exact: true })
       // The top New thread button asks only which project; choosing one opens the thread on the Settings defaults (#347).

@@ -1,6 +1,6 @@
 import type { AgentModel, AgentState, AgentThread } from '../../../shared/agents'
 import { DEFAULT_ULTRACODE_EFFORT, ULTRACODE, ultracodeRunsAt } from '../../../shared/ultracode'
-import { localHostId } from '../features/onboarding/localAgents'
+import { localHostId } from './localAgents'
 
 /**
  * The level a thread on this model would run Ultracode at (ADR-0148), for the effort card to name: this computer's

@@ -34,7 +34,7 @@ import { LOCAL_PROVIDER_SIGN_IN, localSignInRequestSchema, type LocalProviderSig
 import { CURSOR_RENDERER_ARGUMENT, CURSOR_SIGN_IN_CANCEL, CURSOR_SIGN_IN_READ, CURSOR_SIGN_IN_REOPEN, CURSOR_SIGN_IN_START, CURSOR_SIGN_OUT, cursorSignInDoneSchema,
   cursorSignInRequestSchema, cursorSignInStartSchema, cursorSignInViewSchema, type CursorSignInBridge } from '../shared/cursorSignIn'
 import {
-  addRequestSchema, addResultSchema, checkRequestSchema, checkResultSchema, checkSavedRequestSchema, OWN_SERVERS_ADD, OWN_SERVERS_CHECK, OWN_SERVERS_CHECK_SAVED,
+  catalogueResultSchema, chooseModelsSchema, replaceKeySchema, OWN_SERVERS_CATALOGUE, OWN_SERVERS_CHOOSE, OWN_SERVERS_REPLACE_KEY, addRequestSchema, addResultSchema, checkRequestSchema, checkResultSchema, checkSavedRequestSchema, OWN_SERVERS_ADD, OWN_SERVERS_CHECK, OWN_SERVERS_CHECK_SAVED,
   OWN_SERVERS_LIST, OWN_SERVERS_REMOVE, OWN_SERVERS_RENDERER_ARGUMENT, ownServerListSchema, removeRequestSchema, removeResultSchema, type OwnServersBridge,
 } from '../shared/ownModelServers'
 import {
@@ -552,6 +552,9 @@ export function createSottoBridge(
     // The user's own model servers (ADR-0124): only while their Owl feature is on. A key goes to main once and nothing
     // returned carries one.
     ...(ownServersEnabled ? { ownServers: Object.freeze<OwnServersBridge>({
+      catalogue: async () => invokeParsed(renderer, OWN_SERVERS_CATALOGUE, catalogueResultSchema),
+      chooseModels: async request => invokeParsed(renderer, OWN_SERVERS_CHOOSE, addResultSchema, chooseModelsSchema.parse(request)),
+      replaceKey: async request => invokeParsed(renderer, OWN_SERVERS_REPLACE_KEY, addResultSchema, replaceKeySchema.parse(request)),
       list: async () => invokeParsed(renderer, OWN_SERVERS_LIST, ownServerListSchema),
       check: async request => invokeParsed(renderer, OWN_SERVERS_CHECK, checkResultSchema, checkRequestSchema.parse(request)),
       add: async request => invokeParsed(renderer, OWN_SERVERS_ADD, addResultSchema, addRequestSchema.parse(request)),

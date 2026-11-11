@@ -46,7 +46,7 @@ import { mergeAgentActivities, type AgentActivity } from '../../shared/agentActi
 import { compareClientVersions } from './clientVersions'
 import { findGrokExecutable, grokEnvironment, GROK_ACP_VERSION, GROK_CLI_VERSION, GrokRpc, GrokRejected, GrokSignedOut, GrokTooOld, GrokUncertain, GrokUnsupported, type GrokFrame } from './grokRpc'
 import { launchInteractiveProcess } from './git/gitLauncher'
-import { SessionReaper } from './sessionReaper'
+import { SessionReaper, busyHolds, type HeldSession } from './sessionReaper'
 import { OpenSessions } from './openSessions'
 import { ReadsBeforeSend } from './readsBeforeSend'
 import { sameSnapshot } from './sameSnapshot'
@@ -439,10 +439,13 @@ export class GrokAcpHost implements ProviderHost {
       ...(options.sessionIdleMs !== undefined ? { idleAfterMs: options.sessionIdleMs } : {}),
       isWatched: id => this.observed.has(id),
       isBusy: id => this.busy(id),
+      whyBusy: id => busyHolds({ busy: this.working(id), request: this.asking(id) }),
       isReading: id => this.historyReads.has(id),
       stop: id => this.stopSession(id),
     })
   }
+  /** The sessions the reaper tracks, why each is held, and each one's process (#2398). */
+  heldSessions(): HeldSession[] { return this.reaper.held(id => this.processes.get(id)?.rpc.pid) }
   /**
    * A refused prompt's usage-limit stop (ADR-0144), while restarting stopped threads is on: only when Grok Build's refusal
    * says it was its usage limit, with the reset of the allowance its last limits reading showed used up.
@@ -550,12 +553,13 @@ export class GrokAcpHost implements ProviderHost {
    * A thread being created, a send on its way to Grok, a prompt in flight, a running turn or an unanswered request
    * all hold a session open.
    */
-  private busy(id: string): boolean {
-    const thread = this.threads.get(id)
-    return this.holds.has(id) || this.activePrompts.has(id) || this.loading.has(id)
-      || !!thread && (thread.status === 'running' || thread.requests.length > 0)
+  private busy(id: string): boolean { return this.working(id) || this.asking(id) }
+  /** Everything that holds a session in `busy` but an unanswered request. */
+  private working(id: string): boolean {
+    return this.holds.has(id) || this.activePrompts.has(id) || this.loading.has(id) || this.threads.get(id)?.status === 'running'
       || !!this.aliases[id]?.pendingRuntimeMode
   }
+  private asking(id: string): boolean { return !!this.threads.get(id)?.requests.length }
   /**
    * Load this thread's native session, once. Sotto holds no session until a thread is watched or acted on,
    * so this is where a thread's provider session begins on this connection.

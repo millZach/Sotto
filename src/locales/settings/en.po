@@ -879,6 +879,10 @@ msgstr "A different theme when dark"
 msgid "A Dynamic thread's model oversees and chooses a model for each piece of work, inside these limits. Turn it on at the foot of a thread's model menu, or at the foot of the model menu under New threads for every new thread."
 msgstr "A Dynamic thread's model oversees and chooses a model for each piece of work, inside these limits. Turn it on at the foot of a thread's model menu, or at the foot of the model menu under New threads for every new thread."
 
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "A folder for each project, with its threads inside."
+msgstr "A folder for each project, with its threads inside."
+
 #: src/renderer/src/features/settings/DevicePicker.tsx
 msgid "A Git service, not a computer"
 msgstr "A Git service, not a computer"
@@ -1214,6 +1218,10 @@ msgstr "Any age"
 msgid "Anything the agent installed on {name} stays there, and the thread {thread} stays in your Threads list."
 msgstr "Anything the agent installed on {name} stays there, and the thread {thread} stays in your Threads list."
 
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "APIs and your own model servers"
+msgstr "APIs and your own model servers"
+
 #. A Settings page, named in its rail and its heading. Other messages name it as "Settings > Appearance".
 #: src/renderer/src/features/settings/AppearanceSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
@@ -1283,8 +1291,8 @@ msgid "Asking GitHub..."
 msgstr "Asking GitHub..."
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
-msgid "Asks the npm registry for each client’s latest version when it connects and every five minutes. Only the package name is sent."
-msgstr "Asks the npm registry for each client’s latest version when it connects and every five minutes. Only the package name is sent."
+msgid "Asks the npm registry for each client’s latest version when it connects and every hour. Only the package name is sent."
+msgstr "Asks the npm registry for each client’s latest version when it connects and every hour. Only the package name is sent."
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Asks you before it edits a file or runs a command that changes something."
@@ -1403,6 +1411,14 @@ msgstr "Brings {name}’s threads back after it restarts. Sotto adds a systemd u
 #: src/renderer/src/features/settings/hostClientUpdateWords.ts
 msgid "By hand"
 msgstr "By hand"
+
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "By project"
+msgstr "By project"
+
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "By status"
+msgstr "By status"
 
 #. After a step that is done, as in "Signed in by the agent".
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
@@ -1595,16 +1611,16 @@ msgid "Checking…"
 msgstr "Checking…"
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
-msgid "Checks each client's published version when it connects and every five minutes. Cursor uses its install script; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates."
-msgstr "Checks each client's published version when it connects and every five minutes. Cursor uses its install script; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates."
+msgid "Checks each client's published version when it connects and every hour. Cursor uses its install script; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates."
+msgstr "Checks each client's published version when it connects and every hour. Cursor uses its install script; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates."
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
-msgid "Checks each client's published version when it connects and every five minutes. Muse uses its own release feed and Cursor its install script; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates."
-msgstr "Checks each client's published version when it connects and every five minutes. Muse uses its own release feed and Cursor its install script; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates."
+msgid "Checks each client's published version when it connects and every hour. Muse uses its own release feed and Cursor its install script; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates."
+msgstr "Checks each client's published version when it connects and every hour. Muse uses its own release feed and Cursor its install script; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates."
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
-msgid "Checks each client's published version when it connects and every five minutes. Muse uses its own release feed; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates."
-msgstr "Checks each client's published version when it connects and every five minutes. Muse uses its own release feed; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates."
+msgid "Checks each client's published version when it connects and every hour. Muse uses its own release feed; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates."
+msgstr "Checks each client's published version when it connects and every hour. Muse uses its own release feed; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates."
 
 #: src/renderer/src/features/settings/themes/ThemeColorField.tsx
 msgid "Choose {name} color"
@@ -2861,6 +2877,11 @@ msgstr "Global — the one set that works outside Sotto."
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Global — works outside Sotto, as the popup’s does."
 msgstr "Global — works outside Sotto, as the popup’s does."
+
+#: src/renderer/src/features/settings/settingsPages.ts
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Group threads in the sidebar"
+msgstr "Group threads in the sidebar"
 
 #. A Council chamber layout: tiered seats round an altar, the chair at the back.
 #: src/renderer/src/features/settings/CouncilSettings.tsx
@@ -4937,8 +4958,8 @@ msgid "Replies in threads"
 msgstr "Replies in threads"
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
-msgid "Replies, approvals and reasoning effort, on the keyless model servers you saved under Your own model servers. Change models and permissions in a thread. Replies arrive whole rather than word by word, and questions come in the reply itself."
-msgstr "Replies, approvals and reasoning effort, on the keyless model servers you saved under Your own model servers. Change models and permissions in a thread. Replies arrive whole rather than word by word, and questions come in the reply itself."
+msgid "Replies, approvals and reasoning effort, on the keyless model servers you saved under APIs and your own model servers. Change models and permissions in a thread. Replies arrive whole rather than word by word, and questions come in the reply itself."
+msgstr "Replies, approvals and reasoning effort, on the keyless model servers you saved under APIs and your own model servers. Change models and permissions in a thread. Replies arrive whole rather than word by word, and questions come in the reply itself."
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Replies, images, approvals, Cursor’s questions and plans, and reasoning effort, on every model your Cursor plan lists. Change models and permissions in a thread."
@@ -5475,6 +5496,10 @@ msgstr "Shows the popup over any app, or hides it. It works outside Sotto, like 
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Shows when the default branch is behind and leaves the pull to you."
 msgstr "Shows when the default branch is behind and leaves the pull to you."
+
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Sidebar"
+msgstr "Sidebar"
 
 #. A family of theme colors in the theme editor
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
@@ -7792,6 +7817,10 @@ msgid "Working copy…"
 msgstr "Working copy…"
 
 #: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Working now and Recent under Needs you, as on the iPhone. Each thread names its project."
+msgstr "Working now and Recent under Needs you, as on the iPhone. Each thread names its project."
+
+#: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Working..."
 msgstr "Working..."
 
@@ -7894,10 +7923,6 @@ msgstr "Your note"
 #: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
 msgid "Your note to the overseer"
 msgstr "Your note to the overseer"
-
-#: src/renderer/src/features/settings/settingsPages.ts
-msgid "Your own model servers"
-msgstr "Your own model servers"
 
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
 msgid "Your themes"

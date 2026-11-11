@@ -4,7 +4,7 @@ import { join, resolve } from 'node:path'
 import { _electron as electron, expect, test, type Page } from '@playwright/test'
 import sharp from 'sharp'
 import { ownedE2EProfile } from './support/e2eProfile'
-import { firstRunForwardButton, firstSottoWindow, launchSotto, closeSotto, openPage, type LaunchedSotto } from './support/sottoLaunch'
+import { firstSottoWindow, launchSotto, closeSotto, openPage, reachSetupStop, setupForwardButton, setupNote, skipSetup, type LaunchedSotto } from './support/sottoLaunch'
 import type { OmarchySetupState } from '../../src/shared/omarchySetup'
 import { inspectDictationBindings } from '../../src/main/omarchy/setup'
 import { evidenceDirectory } from '../fixtures/evidence'
@@ -86,8 +86,9 @@ test('set up Omarchy, handle every decision, undo and update through the real wi
     const errors: string[] = []; page.on('pageerror', error => errors.push(error.message))
     await page.emulateMedia({ reducedMotion: 'reduce' })
     await size(app, 1280, 800)
-    await page.getByRole('button', { name: 'Get started' }).click()
-    await expect(page.getByRole('heading', { name: 'Set up Sotto in Omarchy' })).toBeVisible()
+    // First-run setup's Omarchy stop lights Settings › Dictation's own Omarchy panel (ADR-0200).
+    await reachSetupStop(page, 'omarchy')
+    await expect(setupNote(page).getByRole('heading', { name: 'Set up Sotto in Omarchy' })).toBeVisible()
     await expect(page.getByRole('button', { name: 'Set up all three' })).toBeVisible()
     await writeFile(join(root, 'detected.json'), JSON.stringify({ binds: JSON.parse(hypr(['binds', '-j'])), state: await state(page) }, null, 2))
     expect((await state(page)).voxtype).toBe(true)
@@ -104,22 +105,22 @@ test('set up Omarchy, handle every decision, undo and update through the real wi
     await writeFile(join(root, 'hold-keys'), '')
     await page.getByRole('button', { name: 'Set up all three' }).click()
     await expect(page.locator('.omarchy-setup__piece[data-state="working"]').first()).toBeVisible()
-    await expect(firstRunForwardButton(page)).toBeDisabled()
     await capture(page, 'working-1280x800-dark')
     await rm(join(root, 'hold-keys'))
-    await expect(page.getByText('Sotto is set up in Omarchy.', { exact: true })).toBeVisible()
+    await expect(page.locator('.omarchy-setup').getByText('Sotto is set up in Omarchy.', { exact: true })).toBeVisible()
+    await expect(setupNote(page)).toContainText('Sotto is set up in Omarchy.')
+    await expect(setupForwardButton(page)).toHaveText('Continue')
     expect(Object.values((await state(page)).pieces).map(piece => piece.status)).toEqual(['done', 'done', 'done'])
     expect(inspectDictationBindings(JSON.parse(hypr(['binds', '-j']))).manual).toBe(true)
     expect(hypr(['configerrors']).trim()).toBe('')
     expect(await page.evaluate(() => window.sotto!.getSettings())).toMatchObject({ appearance: 'system', lightTheme: '__omarchy', darkTheme: '__omarchy' })
     await capture(page, 'done-1280x800-dark')
-    await firstRunForwardButton(page).click() // Look
-    for (let i = 0; i < 3; i++) await firstRunForwardButton(page).click()
-    await expect(page.getByRole('heading', { name: 'Hold F9 to try it' })).toBeVisible()
-    // Continue the actual first-use journey through Finish setup before opening Settings.
-    for (let i = 0; i < 4; i++) await firstRunForwardButton(page).click()
-    await page.getByRole('button', { name: 'Finish setup' }).click()
-    await page.locator('.threads-tour').getByRole('button', { name: 'Skip tour' }).click()
+    await reachSetupStop(page, 'shortcut')
+    await expect(setupNote(page).getByRole('heading', { name: 'Try the shortcut' })).toBeVisible()
+    await expect(setupNote(page)).toContainText('Hold F9, say something, and let go.')
+    // Continue the actual first-use journey to the walk's last note and its Done before opening Settings.
+    await reachSetupStop(page, 'end')
+    await skipSetup(page)
     await settings(page)
     for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]]) {
       await size(app, width!, height!)

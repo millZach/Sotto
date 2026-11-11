@@ -68,6 +68,8 @@ export class CodexProcess {
   private ending = false
   private endIdle = false
   private lost = false
+  /** The app-server's process, for the held-sessions read (#2398). */
+  get pid(): number | undefined { return this.child.pid }
 
   constructor(private readonly options: CodexProcessOptions) {
     const child = spawn(options.executable, [...options.args], { cwd: options.cwd, env: options.env, windowsHide: true, shell: false, stdio: 'pipe' })
