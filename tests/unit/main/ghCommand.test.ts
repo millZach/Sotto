@@ -26,7 +26,9 @@ it.skipIf(process.platform === 'win32')('starts gh from ~/.local/bin for a host 
   await writeFile(join(bin, 'gh'), '#!/bin/sh\necho "scripted gh $*"\n')
   await chmod(join(bin, 'gh'), 0o755)
   resetGhLookup(); resetCliLookup()
-  // A host started by systemd or a non-interactive SSH shell, with a login shell that adds nothing.
-  Object.assign(process.env, { PATH: '/usr/local/bin:/usr/bin:/bin', HOME: join(root, 'home'), SHELL: '/bin/false' })
+  // A host started by systemd or a non-interactive SSH shell, with a login shell that adds nothing. Its PATH is an empty
+  // folder rather than /usr/bin, where a CI runner's own gh would be found first.
+  await mkdir(join(root, 'system-bin'))
+  Object.assign(process.env, { PATH: join(root, 'system-bin'), HOME: join(root, 'home'), SHELL: '/bin/false' })
   expect(await runGitStatusCommand(root, 'gh', ['auth', 'status'])).toBe('scripted gh auth status\n')
 })
