@@ -6,6 +6,8 @@ import { createdPullRequestUrls, endedTurn, openedDuringTurn, pullRequestUrlsIn 
 import type { AgentActivity } from '../../../src/shared/agentActivity'
 import type { GitStatus } from '../../../src/shared/gitStatus'
 import { cleanup, fixture, send } from '../../fixtures/workspaceTestFixture'
+import { tellWatcherTools } from '../../../src/main/agents/tellWatcherTools'
+import { READY_TO_MERGE_TOOL, type ReadyToMerge } from '../../../src/shared/tellWatcher'
 
 afterEach(async () => { for (const step of cleanup.splice(0).reverse()) await step() })
 
@@ -72,5 +74,36 @@ describe('the pull requests a turn opened (#2307)', () => {
     await vi.waitFor(() => expect(links().map(link => [link.number, link.source])).toEqual([[7, 'created'], [9, 'created']]))
     expect(view.mock.calls.map(([, reference]) => reference)).toEqual([url(7), url(8), url(9)])
     await vi.waitFor(() => expect(readRemote).toHaveBeenCalledWith(expect.any(String), { background: true }))
+  })
+
+  // November 10, 2026 (#2430): READY TO MERGE for pull requests a thread opened from other branches, or in other
+  // repositories, came back "Sotto does not hold it in the merge train", since nothing had linked them to the thread.
+  it('links the open pull request a READY TO MERGE names before Watcher hears of it, and not a closed one', async () => {
+    const f = await fixture()
+    const snapshot = await f.host.connect()
+    const project = snapshot.projects.find(project => project.providerId === 'codex')!
+    const model = snapshot.models.find(model => model.providerId === 'codex')!
+    const other = (number: number) => `https://github.com/o/other/pull/${number}`
+    const view = vi.fn(async (_cwd: string, reference: string) => {
+      const number = Number(reference.split('/').at(-1))
+      return { number, url: other(number), title: `Pull ${number}`, body: '', state: number === 4 ? 'closed' as const : 'open' as const, draft: false, baseBranch: 'main', headBranch: `feat/${number}`,
+        crossRepository: false, reviewDecision: null, reviews: [], mergeable: 'mergeable' as const, checks: [], checksUnknown: false, mergeMethods: ['merge' as const], autoMergeAllowed: true,
+        autoMerge: null, mergedAt: null, behindBy: 0, canUpdateBranch: true, createdAt: '2026-11-10T00:00:00.000Z' }
+    })
+    f.host.setGitPullRequests({ view, act: vi.fn() } as never)
+    await f.host.execute({ type: 'create-thread', commandId: 'create-ready', threadId: 'ready', projectId: project.id, title: 'Ready', modelId: model.id })
+    const links = () => (f.host.workspaceSnapshot().threads.find(thread => thread.id === 'ready')?.pullRequests ?? []).map(link => [link.number, link.source])
+    const heard: (readonly (string | number)[])[][] = []
+    const ready = vi.fn<(threadId: string, ready: ReadyToMerge) => Promise<{ status: 'told'; requestOpened: boolean }>>(async () => { heard.push(links()); return { status: 'told' as const, requestOpened: false } })
+    const tools = tellWatcherTools(f.host, { toldUserMessage: async () => undefined }, async () => ({ status: 'told' as const, requestOpened: false }), ready)
+    const head = 'a'.repeat(40)
+    await tools.call('ready', READY_TO_MERGE_TOOL, { pullRequest: other(3), head })
+    expect(heard).toEqual([[[3, 'linked']]])
+    // A closed one is not linked, and READY TO MERGE goes all the same; one already linked is not asked about again.
+    await tools.call('ready', READY_TO_MERGE_TOOL, { pullRequest: other(4), head })
+    await tools.call('ready', READY_TO_MERGE_TOOL, { pullRequest: other(3), head })
+    expect(ready).toHaveBeenCalledTimes(3)
+    expect(links()).toEqual([[3, 'linked']])
+    expect(view.mock.calls.map(([, reference]) => reference)).toEqual([other(3), other(4)])
   })
 })

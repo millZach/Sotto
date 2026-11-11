@@ -116,8 +116,22 @@ export class TellWatcherToolServer implements ScopedThreadTools {
   }
 }
 
-/** The server for threads a host holds: `tell` says where Watcher is, on this computer or through a desktop. */
-export function tellWatcherTools(host: { admitsTellWatcher(threadId: string): boolean }, watcher: { toldUserMessage(threadId: string): Promise<ToldUserMessage | undefined> },
-  tell: TellWatcherHandlers['tell'], ready?: TellWatcherHandlers['ready']): TellWatcherToolServer {
-  return new TellWatcherToolServer({ admits: threadId => host.admitsTellWatcher(threadId), userMessage: threadId => watcher.toldUserMessage(threadId), tell, ...ready ? { ready } : {} })
+/** The longest a READY TO MERGE waits for its pull request to be linked to its thread before it goes all the same (#2430). */
+export const READY_LINK_WAIT_MS = 10_000
+
+/**
+ * The server for threads a host holds: `tell` says where Watcher is, on this computer or through a desktop. A READY TO
+ * MERGE first links the pull request it names to its thread on the host that holds the thread (#2430), waiting at most
+ * READY_LINK_WAIT_MS, so the merge train holds it by the time Watcher reads the news.
+ */
+export function tellWatcherTools(host: { admitsTellWatcher(threadId: string): boolean; linkReadyPullRequest?(threadId: string, url: string): Promise<void> },
+  watcher: { toldUserMessage(threadId: string): Promise<ToldUserMessage | undefined> }, tell: TellWatcherHandlers['tell'], ready?: TellWatcherHandlers['ready']): TellWatcherToolServer {
+  const link = host.linkReadyPullRequest?.bind(host)
+  const linkedReady: TellWatcherHandlers['ready'] = ready && link ? async (threadId, named) => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    await Promise.race([link(threadId, named.pullRequest).catch(() => undefined), new Promise<void>(resolve => { timer = setTimeout(resolve, READY_LINK_WAIT_MS) })])
+    clearTimeout(timer)
+    return ready(threadId, named)
+  } : ready
+  return new TellWatcherToolServer({ admits: threadId => host.admitsTellWatcher(threadId), userMessage: threadId => watcher.toldUserMessage(threadId), tell, ...linkedReady ? { ready: linkedReady } : {} })
 }
