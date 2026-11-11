@@ -4,7 +4,7 @@ Two additions to the iPhone benchmarks ([the benchmarks](2026-10-31-iphone-bench
 audit ([the audit](2026-11-10-performance-and-data-audit.md)). The benchmarks had no phase in which the app sits still,
 so what it costs at rest had no number (#2400). And their stream sent a thread list push of 2,075 bytes where a running
 host sends a phone about 209 KB, so they never gave the phone the work a real push does (#2390). This note says what was
-added and how to read it; its baseline comes from the first green run.
+added, how to read it, and its first numbers.
 
 Everything added runs after `back`, the journey's last phase before. Every phase before it runs as it did, with the
 same work, so its numbers still compare with earlier runs. The journey now goes on: `settle-others`, `idle-list`,
@@ -106,58 +106,63 @@ about 39 and 50 once main has them, against limits of 50 and 60 minutes a side a
 
 ## Baseline
 
-Owed from the first green run of the iPhone benchmarks on this change's pull request, from its change column:
-[run …](https://github.com/millZach/Sotto/actions/runs/…), on a `macos-26` runner with Xcode 26.6 and iOS 26 on an
-iPhone 16 Pro Max simulator. Its sides took … and … minutes.
+From the change column of the iPhone benchmarks' first run on this change's pull request, in which every journey
+finished: [run 42958615475](https://github.com/millZach/Sotto/actions/runs/42958615475), on a `macos-26` runner with
+Xcode 26.6 and iOS 26 on an iPhone 16 Pro Max simulator. Its sides took 30 and 43 minutes. The base side ran slower than
+the change on rows this change leaves alone (`open.app.cpu` 4,756 ms against 2,957), so read these numbers against
+later runs' change columns, not against that base.
 
 | Metric | Value | Unit |
 | --- | ---: | --- |
-| `idle-list.app.cpu` | … | ms |
-| `idle-list.app.wakes_per_second` | … | /s |
-| `idle-list.app.bodies` | … | count |
-| `idle-list.app.footprint` | … | MB |
-| `idle-thread.app.cpu` | … | ms |
-| `idle-thread.app.wakes_per_second` | … | /s |
-| `idle-thread.app.bodies` | … | count |
-| `idle-thread.app.footprint` | … | MB |
-| `idle-list.loops_on.cpu` | … | ms |
-| `idle-list.loops_off.cpu` | … | ms |
-| `idle-list.loops.app_cpu` | … | ms |
-| `idle-list.loops.spread` | … | ms |
-| `idle-thread.loops_on.cpu` | … | ms |
-| `idle-thread.loops_off.cpu` | … | ms |
-| `idle-thread.loops.app_cpu` | … | ms |
-| `idle-thread.loops.spread` | … | ms |
-| `open.app.tap_to_drawn` | … | ms |
-| `reopen.app.tap_to_drawn` | … | ms |
-| `open.app.cpu` | … | ms |
-| `reopen.app.cpu` | … | ms |
-| `stream.bytes_per_push.shell` | … | B |
-| `stream-real-push.bytes_per_push.shell` | … | B |
-| `stream.decode_per_push.shell` | … | ms |
-| `stream-real-push.decode_per_push.shell` | … | ms |
-| `stream.apply_per_push.shell` | … | ms |
-| `stream-real-push.apply_per_push.shell` | … | ms |
-| `stream.cpu_per_chunk` | … | ms |
-| `stream-real-push.cpu_per_chunk` | … | ms |
-| `core.shell-changed.read` | … | ms |
-| `core.shell-real.read` | … | ms |
+| `idle-list.app.cpu` | 26.9 | ms |
+| `idle-list.app.wakes_per_second` | 2.6 | /s |
+| `idle-list.app.bodies` | 0 | count |
+| `idle-list.app.footprint` | 150.5 | MB |
+| `idle-thread.app.cpu` | 23.8 | ms |
+| `idle-thread.app.wakes_per_second` | 2.5 | /s |
+| `idle-thread.app.bodies` | 0 | count |
+| `idle-thread.app.footprint` | 148.0 | MB |
+| `idle-list.loops_on.cpu` | 1,185 | ms |
+| `idle-list.loops_off.cpu` | 42.0 | ms |
+| `idle-list.loops.app_cpu` | 1,143 | ms |
+| `idle-list.loops.spread` | 2,184 | ms |
+| `idle-thread.loops_on.cpu` | 51.9 | ms |
+| `idle-thread.loops_off.cpu` | 125.6 | ms |
+| `idle-thread.loops.app_cpu` | −73.7 | ms |
+| `idle-thread.loops.spread` | 330.4 | ms |
+| `open.app.tap_to_drawn` | 1,789 | ms |
+| `reopen.app.tap_to_drawn` | 1,758 | ms |
+| `open.app.cpu` | 2,957 | ms |
+| `reopen.app.cpu` | 2,098 | ms |
+| `stream.bytes_per_push.shell` | 2,075 | B |
+| `stream-real-push.bytes_per_push.shell` | 200,499 | B |
+| `stream.decode_per_push.shell` | 9.52 | ms |
+| `stream-real-push.decode_per_push.shell` | 10.50 | ms |
+| `stream.apply_per_push.shell` | 0.70 | ms |
+| `stream-real-push.apply_per_push.shell` | 0.84 | ms |
+| `stream.cpu_per_chunk` | 43.3 | ms |
+| `stream-real-push.cpu_per_chunk` | 49.0 | ms |
+| `core.shell-changed.read` | 0.34 | ms |
+| `core.shell-real.read` | 1.22 | ms |
 
 ## What it says
 
-Owed with the baseline. A share of one core is the CPU time over the phase's 30,000 ms.
+A share of one core is the CPU time over the phase's 30,000 ms.
 
-- **At rest on the list**, with one thread working, the app spent … ms of CPU in 30 seconds (…% of one core), its main
-  thread woke … times a second, and … view bodies ran.
-- **At rest on a thread that has stopped**, … ms (…% of one core), … wake-ups a second, … view bodies.
-- **The loops** cost the app … ms of the list's 30 seconds (the wash and one row's breathing light) and … ms of the thread's (the
-  wash alone), against runs … ms and … ms apart on their own. Then one of:
-  - Each share is inside its spread: the loops cost the app nothing the benchmark can tell from the runner, and they stay
-    as they are.
-  - A share is past its spread: the [wash / breathing light] cost the app …% of one core while the page sits still,
-    which is enough to change, and an issue holds the number.
+- **At rest on the list**, with one thread working, the app spent 26.9 ms of CPU in 30 seconds (0.09% of one core), its
+  main thread woke 2.6 times a second, and no view bodies ran.
+- **At rest on a thread that has stopped**, 23.8 ms (0.08% of one core), 2.5 wake-ups a second, no view bodies.
+- **The loops** cost the app 1,143 ms of the list's 30 seconds (the wash and one row's breathing light) and −74 ms of the
+  thread's (the wash alone), against runs 2,184 ms and 330 ms apart on their own. Each share is inside its spread: the
+  loops cost the app nothing the benchmark can tell from the runner, and they stay as they are. The list's spread is
+  wide because two of the three runs with the loops on spent 1.2 and 2.2 s of CPU while the main thread woke only 13
+  and 101 times, and the third spent 21 ms. That work was off the main thread, and three runs cannot say whose it was.
 
   What they cost the render server is not measured: the app cannot read it, and Instruments on a real iPhone would.
-- **The second open** drew in … ms against the first's … ms, for … ms of CPU against ….
-- **A list push the size a host sends** took … ms to read and … ms to apply, against … ms and … ms for the 2 KB push.
-  Each streamed word cost … ms of CPU against `stream`'s … ms.
+- **The second open** drew in 1,758 ms against the first's 1,789 ms, for 2,098 ms of CPU against 2,957.
+- **A list push the size a host sends** took 10.50 ms to read and 0.84 ms to apply, against 9.52 ms and 0.70 ms for the
+  2 KB push. Each streamed word cost 49.0 ms of CPU against `stream`'s 43.3 ms. On the runner's Mac without the
+  simulator, reading it took 1.22 ms against 0.34 ms. So the phone pays about a millisecond more to read each push a
+  host sends than the benchmarks' stream showed; 115 KB of that push is skill catalogs the phone does not read.
+- **No view body ran in either idle phase**, in any of the five long journeys or the six short ones, so `idle-list.app.bodies` and
+  `idle-thread.app.bodies` could take budgets of zero.
