@@ -109,15 +109,29 @@ public enum Photos {
         if let dimensions { image["dimensions"] = dimensions.wire }
         return ["op": .string("stage-attachment"), "image": .object(image)]
     }
-    /// The request for one sent photo's preview: the image, by its message and attachment.
-    public static func preview(threadID: String, messageID: String, attachmentID: String) -> [String: JSONValue] {
-        ["op": .string("preview"), "request": .object(["threadId": .string(threadID), "messageId": .string(messageID), "attachmentId": .string(attachmentID)])]
+    /// The request for one sent photo's preview: the image, by its message and attachment. With `edge`, for a computer that
+    /// lists `thread-media-edge`, a copy no larger than that on its longest side.
+    public static func preview(threadID: String, messageID: String, attachmentID: String, edge: Int? = nil) -> [String: JSONValue] {
+        ["op": .string("preview"), "request": .object(sized(["threadId": .string(threadID), "messageId": .string(messageID), "attachmentId": .string(attachmentID)], edge: edge))]
     }
     /// The feature a computer lists when it keeps its agents' pictures and answers for them (ADR-0170).
     public static let threadMediaFeature = "thread-media"
-    /// The request that reads one picture a step's handle names (ADR-0170). It is answered like a preview, `{dataUrl}`.
-    public static func threadMedia(threadID: String, activityID: String, mediaID: String) -> [String: JSONValue] {
-        ["op": .string("thread-media"), "request": .object(["threadId": .string(threadID), "activityId": .string(activityID), "mediaId": .string(mediaID)])]
+    /// The request that reads one picture a step's handle names (ADR-0170). It is answered like a preview, `{dataUrl}`, and
+    /// takes `edge` as a preview does.
+    public static func threadMedia(threadID: String, activityID: String, mediaID: String, edge: Int? = nil) -> [String: JSONValue] {
+        ["op": .string("thread-media"), "request": .object(sized(["threadId": .string(threadID), "activityId": .string(activityID), "mediaId": .string(mediaID)], edge: edge))]
+    }
+    /// The feature a computer lists, and this client's hello accepts, when it answers `thread-media` and `preview` with a
+    /// copy no larger than the longest edge a request names (ADR-0170, November 10 amendment). A tile asks at its own edge;
+    /// the full-screen viewer and a GIF that plays ask for the whole picture.
+    public static let edgeFeature = "thread-media-edge"
+    /// The longest edges a computer that lists `thread-media-edge` takes: any other is refused.
+    public static let edges: Set<Int> = [320, 640, 1280]
+    private static func sized(_ request: [String: JSONValue], edge: Int?) -> [String: JSONValue] {
+        guard let edge, edges.contains(edge) else { return request }
+        var sized = request
+        sized["edge"] = .number(Double(edge))
+        return sized
     }
     /// Whether one more image of `bytes` keeps a reply inside the host's limits.
     public static func fits(_ bytes: Int, with others: [Int]) -> Bool {

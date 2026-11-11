@@ -49,7 +49,8 @@ export class ThreadToolServer {
   /** `listFor` narrows what one thread is shown, when threads get different tools from the same server; every tool otherwise. */
   constructor(protected readonly identity: ThreadToolServerIdentity, readonly definitions: readonly ThreadToolDefinition[],
     private readonly invoke: (threadId: string, name: string, args: unknown, context: ThreadToolCallContext) => Promise<ThreadToolResult>,
-    private readonly listFor?: (threadId: string) => readonly ThreadToolDefinition[]) {}
+    private readonly listFor?: (threadId: string) => readonly ThreadToolDefinition[],
+    private readonly instructionsFor?: (threadId: string) => string) {}
   async call(threadId: string, name: string, args: unknown, context: ThreadToolCallContext = {}): Promise<ThreadToolResult> {
     if (this.closed || !this.definitions.some(tool => tool.name === name)) return { isError: true, content: [{ type: 'text', text: this.identity.unavailable }] }
     try { return await this.invoke(threadId, name, args, context) }
@@ -115,7 +116,7 @@ export class ThreadToolServer {
       if (method === 'initialize') {
         const version = initializeSchema.safeParse(params)
         const protocolVersion = version.success && ['2024-11-05', '2025-03-26', '2025-06-18', '2025-11-25'].includes(version.data.protocolVersion) ? version.data.protocolVersion : '2025-06-18'
-        reply({ protocolVersion, capabilities: { tools: { listChanged: false } }, serverInfo: { name: this.identity.serverName, version: '1.0.0' }, instructions: this.identity.instructions }); return
+        reply({ protocolVersion, capabilities: { tools: { listChanged: false } }, serverInfo: { name: this.identity.serverName, version: '1.0.0' }, instructions: this.instructionsFor?.(threadId) ?? this.identity.instructions }); return
       }
       if (method === 'ping') { reply({}); return }
       if (method === 'tools/list') { reply({ tools: this.listFor?.(threadId) ?? this.definitions }); return }

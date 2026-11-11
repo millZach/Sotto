@@ -1,6 +1,7 @@
+import { ModelCatalogue } from './ownModelServers/catalogue'
 import { createDictationTiming } from './performance/dictationTiming'
 import { DICTATION_TIMING_ARGUMENT, dictationTimingNow, markDictationTiming } from '../shared/dictationTiming'
-import { mediaThumbnailMaker } from './agents/mediaThumbnail'
+import { KeptThumbnails, mediaEdgeMaker, mediaThumbnailMaker, ReducedPictures } from './agents/mediaThumbnail'
 import { agentCaptures, ThreadMediaStore } from './agents/threadMedia'
 import { t } from '@lingui/core/macro'
 import { cleanSettingsHistory } from './settings/privacyCleanup'
@@ -124,7 +125,7 @@ import { execFile, spawn } from 'node:child_process'
 import { appendFile, readFile, realpath, rename, stat, writeFile } from 'node:fs/promises'
 import { homedir, hostname as osHostname, release as osRelease } from 'node:os'
 import { isAbsolute, join } from 'node:path'
-import { forgetHermesKey } from './agents/hermesRuntime'
+import { HermesKeys, forgetHermesKey } from './agents/hermesRuntime'
 
 import {
   bootstrapSotto,
@@ -265,7 +266,7 @@ import {
   isTrustedMainE2ESender,
   snapshotE2EState,
 } from './e2e/e2eBoundary'
-import { E2E_SNAPSHOT_CHANNEL, E2E_TRIGGER_SHORTCUT_CHANNEL, E2E_BROWSER_AGENT_CHANNEL, E2E_HOST_SETUP_TOOL_CHANNEL, E2E_VISUAL_TOOL_CHANNEL, E2E_MEDIA_TOOL_CHANNEL, E2E_DELEGATION_TOOL_CHANNEL, e2eBrowserAgentSchema, e2eHostSetupToolSchema, e2eVisualToolSchema, e2eDelegationToolSchema, e2eAgentEventSchema } from '../shared/e2e'
+import { E2E_COMPUTER_NAME, E2E_SNAPSHOT_CHANNEL, E2E_TRIGGER_SHORTCUT_CHANNEL, E2E_BROWSER_AGENT_CHANNEL, E2E_HOST_SETUP_TOOL_CHANNEL, E2E_VISUAL_TOOL_CHANNEL, E2E_MEDIA_TOOL_CHANNEL, E2E_DELEGATION_TOOL_CHANNEL, e2eBrowserAgentSchema, e2eHostSetupToolSchema, e2eVisualToolSchema, e2eDelegationToolSchema, e2eAgentEventSchema } from '../shared/e2e'
 import { AGENT_STATE, AGENT_E2E, AGENT_THREAD_DETAIL } from '../shared/agents'
 import { AgentCredentials } from './agents/credentials'
 import { migrateDesktopKey } from './settings/migrateDesktopKey'
@@ -296,8 +297,13 @@ import { INTERFACE_LANGUAGE_SHOWN } from '../shared/interfaceLanguages'
 import { interfaceClockTime } from './interfaceClock'
 import { USAGE_RENDERER_ARGUMENT } from '../shared/usageDashboard'
 import { OPENCODE_HOSTS_RENDERER_ARGUMENT, OPENCODE_RENDERER_ARGUMENT } from '../shared/opencodeSignIn'
+import { PI_RENDERER_ARGUMENT } from '../shared/piSignIn'
+import { registerPiSignInIpc } from './agents/piSignInIpc'
+import { PiSignIn } from './agents/piSignIn'
+import { PiHost } from './agents/pi'
 import { registerOpenCodeSignInIpc } from './agents/opencodeSignInIpc'
 import { registerCursorSignInIpc } from './agents/cursorSignInIpc'
+import { registerLocalProviderSignInIpc } from './agents/localProviderSignInIpc'
 import { CURSOR_RENDERER_ARGUMENT } from '../shared/cursorSignIn'
 import { OWN_SERVERS_RENDERER_ARGUMENT } from '../shared/ownModelServers'
 import { OwnServers, type OwnServerEvent, type OwnServersOpenCode, type OwnServersDeepSeek, type OwnServersHermes } from './ownModelServers/service'
@@ -347,6 +353,8 @@ import { isImmutableActivities } from './agents/activitySnapshots'
 import type { AgentActivity } from '../shared/agentActivity'
 import { installRemoteHostE2E } from './e2e/remoteHost'
 import { installBabysitPassE2E } from './e2e/babysitPass'
+import { exposeStartupMarksForE2E } from './e2e/startupMarks'
+import { markStartup } from './performance/startupMarks'
 import { openRuntimeMemory } from './memory/runtime'
 import { PolicyStore } from './memory/policies'
 import { MemoryProfile } from './memory/profile'
@@ -356,7 +364,11 @@ import { probeMemoryStore } from './memory/probe'
 
 export { probeMemoryStore }
 
+// The first line of main that runs, once every import above has loaded.
+markStartup('main-bundle-evaluated')
+
 const e2eConfiguration = resolveE2EConfiguration(app.isPackaged, process.env)
+exposeStartupMarksForE2E(e2eConfiguration)
 if (e2eConfiguration === null) {
   delete process.env.SOTTO_E2E
   delete process.env.SOTTO_E2E_SCENARIO
@@ -887,12 +899,17 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const applyInterfaceLanguage = (current: AppSettings): Promise<boolean> =>
     interfaceLanguage.apply(current).catch(() => { logOperational('interface-language-load-failed'); return false })
   await applyInterfaceLanguage(startupSettings)
-  // The user's own model servers (ADR-0124): an Owl feature run by this computer's OpenCode and DeepSeek Harness
-  // (ADR-0138), so it exists only while the Owl list turns it on, one of them is not held and the local host runs.
-  // Otherwise main keeps the record untouched, gives neither a server, passes no renderer argument and registers no channel.
-  const ownServers: OwnServers | undefined = owlFeatures['own-model-servers'] && (!heldProviders.has('opencode') || !heldProviders.has('deepseek') || !heldProviders.has('hermes')) && startupSettings.localHostEnabled
-    ? new OwnServers({ directory: userDataPath, openCode: (): OwnServersOpenCode | undefined => localRuntime?.ownServersOpenCode,
+  // The user's own model servers (ADR-0124): an Owl feature used by this computer's OpenCode, DeepSeek, Hermes or Pi,
+  // so it exists only while the Owl list turns it on, one provider is not held and the local host runs.
+  // Otherwise main keeps the record untouched, gives no provider a server, passes no renderer argument and registers no channel.
+  const ownServers: OwnServers | undefined = owlFeatures['own-model-servers'] && (!heldProviders.has('opencode') || !heldProviders.has('deepseek') || !heldProviders.has('hermes') || !heldProviders.has('pi')) && startupSettings.localHostEnabled
+    ? new OwnServers({ directory: userDataPath, ...(e2eConfiguration ? { catalogue: new ModelCatalogue(async () => { throw new Error('E2E_NETWORK_DISABLED') }) } : {}), openCode: (): OwnServersOpenCode | undefined => localRuntime?.ownServersOpenCode,
       deepSeek: (): OwnServersDeepSeek | undefined => localRuntime?.ownServersDeepSeek, hermes: (): OwnServersHermes | undefined => localRuntime?.ownServersHermes,
+      readKey: async id => (await new HermesKeys(join(userDataPath, 'hermes', 'own-server-keys.json')).read())[id],
+      replaceHeldHermesKey: async (id, key) => {
+        const keys = new HermesKeys(join(userDataPath, 'hermes', 'own-server-keys.json'))
+        if ((await keys.read())[id] !== undefined) await keys.keep(id, key)
+      },
       forgetHermesKey: id => forgetHermesKey(join(userDataPath, 'hermes'), id), log: event => { logOperational(event) } }) : undefined
   // AI cleanup on the user's own servers (ADR-0136): its own Owl entry, and only where both the cleanup model and Your own
   // model servers exist this run. Otherwise the cleanup pass is given no server, no channel is registered, and the saved
@@ -985,6 +1002,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         ...(popupEnabled ? [POPUP_RENDERER_ARGUMENT] : []),
         ...(watcherEnabled && crossMachineEnabled ? [WATCHER_MACHINES_RENDERER_ARGUMENT] : []),
         ...(!heldProviders.has('opencode') && startupSettings.localHostEnabled ? [OPENCODE_RENDERER_ARGUMENT] : []),
+        ...(!heldProviders.has('pi') && startupSettings.localHostEnabled ? [PI_RENDERER_ARGUMENT] : []),
         ...(!heldProviders.has('opencode') ? [OPENCODE_HOSTS_RENDERER_ARGUMENT] : []),
         ...(!heldProviders.has('cursor') && startupSettings.localHostEnabled ? [CURSOR_RENDERER_ARGUMENT] : []),
         ...(ownServers ? [OWN_SERVERS_RENDERER_ARGUMENT] : []),
@@ -1088,6 +1106,9 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   // What the end-to-end fixture providers capture on their own: what the runtime gives its own (ADR-0170, part 7).
   const showEveryAgentPicture = (): boolean => workingCopySettings.showEveryAgentPicture
   const fixtureCaptures = threadMedia ? agentCaptures(threadMedia, showEveryAgentPicture) : {}
+  // The thumbnails main makes, for the window's tiles and for the copies a phone asks for at a longest edge
+  // (`thread-media-edge`, ADR-0170): one budget in bytes for both.
+  const keptThumbnails = new KeptThumbnails()
   // Teams (ADR-0186): an Owl feature on a desktop with a Watcher. An ask reaches only these reads and one side call with no
   // tools, and nothing here can send to a thread, answer a card or change a permission (ADR-0187).
   let teamReads: { readonly watcher: import('./agents/watcher').WatcherService | undefined; readonly host: { writeShortTextOn?: import('./agents/host').AgentHost['writeShortTextOn'] } } | undefined
@@ -1113,6 +1134,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     answerImages: owlFeatures['answer-images'], nextTurnChoice: owlFeatures['next-turn-choice'],
     inlineMedia: owlFeatures['inline-media'], showEveryAgentPicture,
     ...threadMedia ? { threadMedia } : {},
+    reducedPictures: new ReducedPictures(mediaEdgeMaker(url => nativeImage.createFromDataURL(url)), keptThumbnails),
     // Clearing settled threads (ADR-0140): Owl's answer, read once here. The log names the event and a count or a reason's code.
     clearThreadsEnabled: owlFeatures['clear-threads'], clearLog: (event, detail) => { console.error(`[Sotto] ${event} ${detail}`) },
     ...(ownServers ? { ownServers: () => ownServers.list() } : {}),
@@ -1122,6 +1144,10 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     historyEnabled: () => agentHistoryEnabled,
     gitStatus: { fetchIntervalMs: () => workingCopySettings.gitFetchIntervalSeconds * 1000, foreground: windowInFront, visible: windowShowing, ...(ghStandIn ? { ghStandIn } : {}), log: event => { logOperational(event) } },
     babysitting: babysittingRetired ? { retired: true } : { agentTool: () => workingCopySettings.babysitPullRequests },
+    // An end-to-end run starts no real client's sign-in: this computer's own sign-ins find no client there (ADR-0200).
+    ...(e2eConfiguration !== null ? { signInCommand: async () => undefined } : {}),
+    createPiHost: (directory, options) => new PiHost(directory, options),
+    createPiSignIn: (host, options) => new PiSignIn(host.accounts, options),
     // A journey's Cursor sign-in page is written down for the spec to read, never opened in a browser.
     openExternal: url => cursorFixtureRoot ? appendFile(join(cursorFixtureRoot, 'opened-pages.txt'), `${url}
 `, 'utf8') : shell.openExternal(url),
@@ -1201,7 +1227,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     ...cascadedSettles ? { cascadedSettles } : {},
     attachAnyFile: owlFeatures['attach-any-file'],
     // Pictures in threads (ADR-0170): their tile thumbnails are made here, on this desktop, for every host's threads.
-    ...owlFeatures['inline-media'] ? { mediaThumbnail: mediaThumbnailMaker(url => nativeImage.createFromDataURL(url)) } : {},
+    ...owlFeatures['inline-media'] ? { mediaThumbnail: mediaThumbnailMaker(url => nativeImage.createFromDataURL(url)), mediaTiles: keptThumbnails } : {},
     bindRequestDraftDecision: (target, decisionId, answers) => requestDrafts.bindDecision(target, decisionId, answers),
     // A paired host's deleted thread takes the answer drafts this computer kept for it (ADR-0140).
     threadsDeleted: threadIds => { void requestDrafts.forgetThreads(new Set(threadIds)).catch(() => undefined) },
@@ -1437,6 +1463,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const phoneAccess = new PhoneAccess({ featureUsed: feature => productEvents.featureUsed(feature), directory: userDataPath, listener: { sottoVersion: hostVersion, delegation: delegationEnabled },
     service: startupSettings.localHostEnabled ? hostService : undefined,
     tailscale: e2eConfiguration === null ? new TailscaleCli() : e2eTailscale(userDataPath),
+    // An E2E run names no real machine, so a capture or a check reads the same on every computer.
+    ...(e2eConfiguration === null ? {} : { hostname: () => E2E_COMPUTER_NAME }),
     settings: () => workingCopySettings, policy: authority,
     openExternal: async url => { if (e2eConfiguration === null) await shell.openExternal(url) },
     log: logOperational,
@@ -2468,7 +2496,10 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         async path => { const error = await shell.openPath(path); if (error) throw new Error('Sotto could not open that folder.') })
       const unsubscribeMainCheckout = localRuntime.mainCheckout?.subscribe(state => { windows.sendToMain(MAIN_CHECKOUT_CHANGED, state) })
       // OpenCode's sign-in (#1104): only while its Owl feature is on, so stable registers nothing.
+      const cleanupPiSignIn = registerPiSignInIpc(ipcMain, heldProviders.has('pi') ? undefined : localRuntime.piSignIn, () => windows.getTrustedRenderers())
       const cleanupOpenCodeSignIn = registerOpenCodeSignInIpc(ipcMain, heldProviders.has('opencode') ? undefined : localRuntime.opencodeSignIn, () => windows.getTrustedRenderers())
+      // Signing Codex, Claude Code or Grok Build in from its row in Settings › Providers (ADR-0200).
+      const cleanupProviderSignIn = registerLocalProviderSignInIpc(ipcMain, localRuntime.providerSignIn, () => windows.getTrustedRenderers())
       // Cursor's sign-in from its tile (ADR-0128): only while its Owl feature is on, so stable registers nothing.
       const cleanupCursorSignIn = registerCursorSignInIpc(ipcMain, heldProviders.has('cursor') ? undefined : localRuntime.cursorSignIn, () => windows.getTrustedRenderers())
       // The user's own model servers (ADR-0124): only while their Owl feature is on, so stable registers nothing.
@@ -2757,8 +2788,9 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         unsubscribeMainCheckout?.()
         cleanupNotifications()
         cleanupPopup()
-        cleanupOpenCodeSignIn()
+        cleanupPiSignIn(); cleanupOpenCodeSignIn()
         cleanupCursorSignIn()
+        cleanupProviderSignIn()
         cleanupOwnServers()
         cleanupOwnServerCleanup()
         worktreeCleanup?.dispose()

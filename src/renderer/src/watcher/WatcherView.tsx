@@ -64,7 +64,7 @@ import { overviewCount, statusWord, threadPress, TONES, unlistedStatus, useOverv
 import { WatcherContextTile } from './WatcherContextTile'
 import { WatcherOwl } from './WatcherOwl'
 import { WatcherNightScene } from './WatcherNightScene'
-import { moodOf, owlKey, type WatchedOwl } from './owlFamily'
+import { asksOf, failedOf, moodOf, owlKey, toldOf, type WatchedOwl } from './owlFamily'
 import { WatcherOwnChangesContext } from './WatcherOwnChange'
 import { TeamsPage } from './TeamsPage'
 import { placeTeammateMessages, useTeamsBridge, useTeamsState } from './teamsState'
@@ -508,6 +508,9 @@ function useWatchedOwls(room: WatcherRoomState | null, state: AgentState | null)
   const idOf = useMemo(() => threadAddressIndex(state), [state])
   return useShared(useMemo<readonly WatchedOwl[]>(() => room === null ? [] : watchedRows(room).map(row => ({
     key: owlKey(row.target), title: row.title, threadId: idOf(row.target) ?? null, mood: moodOf(row),
+    // For the living night scene (ADR-0199): its owl winces after a failed turn, shows what it waits on the user for,
+    // and is called to by Watcher's owl when Watcher sends it a message.
+    failed: failedOf(row), asks: asksOf(row), told: toldOf(row), settled: row.settled,
   })), [room, idOf]))
 }
 

@@ -1329,7 +1329,7 @@ export class AgentControl {
         this.publish()
       })
     }, 30_000)
-    // A client published while Sotto stays open is noticed within five minutes, on this computer and on every host,
+    // A client published while Sotto stays open is noticed within the hour, on this computer and on every host,
     // each running its own (ADR-0042). It never holds Sotto open.
     this.clientUpdates.startChecking()
     this.titles.startRefreshing()

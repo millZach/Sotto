@@ -36,6 +36,8 @@
 /* Update to <version>: a filled chip in the selected card's colour, beside the switch while an update is offered. */
 .provider-row__update { justify-self: end; display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-height: 28px; padding: 0 10px; border: 0; border-radius: var(--tt-radius-tag); background: var(--tt-card-selected); color: var(--tt-accent-text); font: inherit; font-size: var(--tt-type-caption); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: box-shadow 120ms ease, opacity 120ms ease; }
 .provider-row__update > svg { flex: none; }
+/* Sign in, or Install guide, in the place an update chip takes: what a row that cannot connect yet needs next (ADR-0200). */
+.provider-row__head .provider-row__act { justify-self: end; min-height: 32px; padding: 5px 12px; font-size: var(--tt-type-small); white-space: nowrap; }
 .provider-row__update:hover:not(:disabled) { box-shadow: inset 0 0 0 1px var(--tt-accent-border); }
 .provider-row__update:disabled { cursor: default; opacity: .7; }
 .provider-row__update:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; }
@@ -65,6 +67,8 @@
 .provider-row__column p.provider-connection__notice { margin-top: 10px; }
 .provider-connection__waiting i { width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--tt-accent-text); animation: provider-busy 1s ease-in-out infinite; }
 .provider-connection .provider-detail__error { margin-top: 14px; }
+/* The client's own sentence about a problem the folded row already names in a word. */
+.provider-row__column p.provider-connection__said { margin-top: 8px; overflow-wrap: anywhere; }
 .provider-login { display: flex; align-items: center; flex-wrap: wrap; gap: 3px 8px; margin-top: 9px; }
 .provider-login code { color: var(--tt-text); font: var(--tt-type-small)/1.6 var(--tt-font-mono); user-select: text; }
 .provider-login .tt-button { min-height: 32px; padding: 5px 8px; font-size: var(--tt-type-small); }
@@ -118,6 +122,9 @@
   .provider-row__head:has(.provider-row__update) { grid-template-areas: 'trigger trigger' 'update toggle'; }
   .provider-row__head:has(.provider-row__update) .tt-toggle { margin: -6px 0 12px; }
   .provider-row__update { grid-area: update; justify-self: start; margin: -6px 0 12px 76px; }
+  .provider-row__head:has(.provider-row__act) { grid-template-areas: 'trigger trigger' 'update toggle'; }
+  .provider-row__head:has(.provider-row__act) .tt-toggle { margin: -6px 0 12px; }
+  .provider-row__head .provider-row__act { grid-area: update; justify-self: start; margin: -6px 0 12px 76px; }
   .provider-row__error { margin-left: 76px; margin-right: 14px; }
   .provider-row__panel { padding: 4px 14px 18px; }
 }

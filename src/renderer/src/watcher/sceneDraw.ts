@@ -40,8 +40,8 @@ export function alongLimb(l: Limb, step = 6): Array<readonly [number, number]> {
   return out
 }
 
-/** The moon with its rim and craters, and the accent's glow around it. `scale` draws it larger about the same centre. */
-export function drawMoon(fx: Field, ax: Field, moon: Moon, scale = 1): void {
+/** The moon's ink: its faint rings, its face with its rim, and its craters. `scale` draws it larger about the same centre. */
+export function drawMoonInk(fx: Field, moon: Moon, scale = 1): void {
   const m = { x: moon.x, y: moon.y, r: moon.r * scale }
   fx.globalAlpha = 0.05; for (let k = 2.4; k > 1.2; k -= 0.4) { fx.beginPath(); fx.arc(m.x, m.y, m.r * k, 0, 7); fx.fill() }
   fx.globalAlpha = 0.3; fx.beginPath(); fx.arc(m.x, m.y, m.r, 0, 7); fx.fill()
@@ -49,6 +49,12 @@ export function drawMoon(fx: Field, ax: Field, moon: Moon, scale = 1): void {
   fx.globalCompositeOperation = 'destination-out'; fx.globalAlpha = 0.35
   for (const [dx, dy, r] of [[-0.3, -0.25, 0.22], [0.25, 0.1, 0.16], [-0.05, 0.4, 0.12], [0.35, -0.38, 0.09]] as const) { fx.beginPath(); fx.arc(m.x + dx * m.r, m.y + dy * m.r, r * m.r, 0, 7); fx.fill() }
   fx.globalCompositeOperation = 'source-over'
+}
+
+/** The moon with its rim and craters, and the accent's glow around it. `scale` draws it larger about the same centre. */
+export function drawMoon(fx: Field, ax: Field, moon: Moon, scale = 1): void {
+  const m = { x: moon.x, y: moon.y, r: moon.r * scale }
+  drawMoonInk(fx, moon, scale)
   const glow = ax.createRadialGradient(m.x, m.y, m.r * 0.9, m.x, m.y, m.r * 2.8)
   glow.addColorStop(0, 'rgba(0, 0, 0, 0.55)'); glow.addColorStop(1, 'rgba(0, 0, 0, 0)')
   ax.globalAlpha = 1; ax.fillStyle = glow; ax.beginPath(); ax.arc(m.x, m.y, m.r * 2.8, 0, 7); ax.fill(); ax.fillStyle = MASK

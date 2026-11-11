@@ -113,7 +113,7 @@ async function send(page: Page, text: string): Promise<void> {
 async function launch(folders: readonly (readonly [string, string])[]): Promise<LaunchedSotto> {
   const launched = await launchSotto()
   await launched.page.evaluate(async folders => {
-    await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark' })
+    await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', threadListGrouping: 'project' })
     const agents = window.sotto!.agents!
     await agents.command({ type: 'configure', patch: { enabled: true, } })
     await agents.command({ type: 'connect' })

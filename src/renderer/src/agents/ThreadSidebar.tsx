@@ -14,7 +14,7 @@ import { describeWorkingCopy, useSettleThread } from './ThreadWorkingCopy'
 import { useSidebarSize } from './sidebarSize'
 import type { AgentConnection } from './AgentContext'
 import { ProjectSettleAction, SidebarFrame } from './SidebarFrame'
-import { holdSettledRows, rowStatus, unseenFailures, workingLabel, type ProjectFolder, type ThreadRow, type WorkspaceOrganization } from './threadFacts'
+import { groupByStatus, holdSettledRows, snoozedShelfRows, type StatusGroupName, rowStatus, unseenFailures, workingLabel, type ProjectFolder, type ThreadRow, type WorkspaceOrganization } from './threadFacts'
 import { THREAD_DRAG_TYPE } from './splitLayout'
 import { HostBadge, hostIdOf, listedHosts, type ListedHost } from './HostBadge'
 import { MainCheckoutLine } from './MainCheckoutLine'
@@ -146,8 +146,16 @@ function StatusRing({ row, finished, background, queued = false }: { readonly ro
  * row whose thread the update did not touch keeps every prop it had and does not re-render. Its props stay
  * cheap to compare — no object or array is built for it here.
  */
-const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, liveClock, onOpen, command, panes, settle, angles, snoozedUntil, queued }: {
+const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, liveClock, onOpen, command, panes, settle, angles, snoozedUntil, queued, place, host, onRenaming }: {
   readonly row: ThreadRow; readonly current: boolean; readonly open: boolean; readonly onOpen: (threadId: string) => void; readonly command: Command
+  /**
+   * The row's project, said on its second line where no folder says it: in a status group (ADR-0201). Absent under a folder.
+   */
+  readonly place?: string | undefined
+  /** The remote computer the thread runs on, as a badge after its project, in a status group (ADR-0201). */
+  readonly host?: ListedHost | undefined
+  /** Told when a rename starts and ends, so a status group keeps the row where it is meanwhile (ADR-0201). */
+  readonly onRenaming?: ((threadId: string, renaming: boolean) => void) | undefined
   /**
    * The thread stands in Needs you (ADR-0135, Zach's pick B, November 5, 2026): the card says what it needs, so the row
    * drops the amber, reads In Needs you, and lights its entry when pointed at or focused.
@@ -179,6 +187,13 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
   useLayoutEffect(() => {
     if (!renaming && restoreRenameFocus.current) { restoreRenameFocus.current = false; rowButton.current?.focus() }
   }, [renaming])
+  // A row moving between status groups is drawn anew, which would drop a half-typed name, so the group holds it meanwhile.
+  const threadId = row.thread.id
+  useEffect(() => {
+    if (!renaming || onRenaming === undefined) return undefined
+    onRenaming(threadId, true)
+    return () => onRenaming(threadId, false)
+  }, [renaming, onRenaming, threadId])
   // The row's menu (ADR-0164): closed, beside the row (Shift+F10, the menu key) or at a right-click's point.
   const [menu, setMenu] = useState<RowMenuPlace | null>(null)
   // The snooze menu, and its Pick a date and time field (ADR-0175), each beside the row.
@@ -202,7 +217,7 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
   const watched = useWatchedThread(row.thread.id)
   // A row that says it needs you for a thread it delegated names that thread (ADR-0081, October 17, 2026).
   const waitingIn = row.waitingIn
-  const copyDetails = [...new Set([waitingIn ? t({ message: `Waiting in ${waitingIn}`, comment: '{waitingIn} is the title of a thread this one delegated to.' }) : undefined, row.thread.hostLabel, row.model?.name, branchName, copyLabel, watched ? WATCHED_BY_WATCHER : undefined].filter(Boolean))].join(', ')
+  const copyDetails = [...new Set([waitingIn ? t({ message: `Waiting in ${waitingIn}`, comment: '{waitingIn} is the title of a thread this one delegated to.' }) : undefined, place, row.thread.hostLabel, row.model?.name, branchName, copyLabel, watched ? WATCHED_BY_WATCHER : undefined].filter(Boolean))].join(', ')
   const swarm = angles === undefined ? null : <SwarmAngles lead={row.thread} angles={angles} currentThreadId={panes.currentThreadId} onOpen={onOpen} command={command} />
   const id = row.thread.id
   const threadMenu = useThreadMenu()
@@ -266,7 +281,10 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
           <span className="thread-nav__mark" data-provider={row.providerId}><ProviderMark provider={row.providerId} name={row.provider} size={12} /></span>
         </span>
         {/* What the thread is doing starts where its name starts, so a list of rows reads down one edge. */}
-        <span className="thread-nav__standing">
+        <span className="thread-nav__standing" data-placed={place !== undefined || undefined}>
+          {/* In a status group the project leads the words, and a remote computer's badge follows it (ADR-0201). */}
+          {place !== undefined ? <span className="thread-nav__place" aria-hidden="true">{place}</span> : null}
+          {host ? <HostBadge host={host} /> : null}
           {inQueue
             // What it needs stays in the tooltip and for a screen reader; the words point up to the card that says it.
             ? <span id={statusId} className="thread-nav__status" data-in-queue title={status + disconnected}><span className="tt-visually-hidden">{row.provider}, {status}{disconnected}, </span><ArrowUp size={12} aria-hidden="true" />{t({ message: 'In Needs you', comment: 'A sidebar row\'s state: the thread waits on the user and stands in the Needs you card above, which says what for.' })}</span>
@@ -303,6 +321,18 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
   </li>{swarm}</>
 })
 
+/**
+ * One place in a folder or a status group: the row, or the held gap of a settled one (ADR-0167), the settled row's height
+ * of nothing, with no control and no name, so a click on it does nothing.
+ */
+function ListPlace({ row, gap, listed, panes, onOpen, busyThreadIds, ...rest }: Omit<React.ComponentProps<typeof ThreadNavRow>, 'current' | 'open' | 'busy'> & {
+  readonly gap: HeldGap | undefined; readonly listed: string | null; readonly busyThreadIds: readonly string[] | undefined
+}): ReactNode {
+  if (gap !== undefined) return <li className="thread-nav__gap" aria-hidden="true" data-closing={gap.closing || undefined} style={{ height: gap.height }} />
+  return <ThreadNavRow row={row} current={listed === row.thread.id} open={panes.openThreadIds.includes(row.thread.id)} busy={isThreadBusy({ busyThreadIds }, row.thread.id)}
+    panes={panes} onOpen={onOpen} {...rest} />
+}
+
 /** A folder's key in the sidebar's toggled set; a project can appear in both sections. */
 export const folderKey = (section: Section, folderId: string): string => `${section}:${folderId}`
 
@@ -326,13 +356,18 @@ function parseToggles(stored: string): Set<string> {
     return new Set(Array.isArray(value) ? value.filter((key): key is string => typeof key === 'string') : [])
   } catch { return new Set() }
 }
-function useFolderToggles(): readonly [(key: string) => boolean, (key: string) => void] {
+function useFolderToggles(): readonly [(key: string) => boolean, (key: string) => void, (key: string) => boolean] {
   const subscribe = useCallback((listener: () => void) => { toggleListeners.add(listener); return () => { toggleListeners.delete(listener) } }, [])
   const stored = useSyncExternalStore(subscribe, readToggles, () => '[]')
   const isOpen = useMemo(() => {
     const toggled = parseToggles(stored)
     const startOpen = window.sottoE2E !== undefined
     return (key: string): boolean => startOpen !== toggled.has(key)
+  }, [stored])
+  // A status group starts open, in the app and its harness alike, so it asks only whether the user toggled it (ADR-0201).
+  const wasToggled = useMemo(() => {
+    const toggled = parseToggles(stored)
+    return (key: string): boolean => toggled.has(key)
   }, [stored])
   const toggle = useCallback((key: string): void => {
     const next = parseToggles(readToggles())
@@ -341,7 +376,7 @@ function useFolderToggles(): readonly [(key: string) => boolean, (key: string) =
     try { sessionStorage.setItem(FOLDER_TOGGLES_KEY, togglesFallback); togglesUnsaved = false } catch { togglesUnsaved = true }
     for (const listener of [...toggleListeners]) listener()
   }, [])
-  return [isOpen, toggle]
+  return [isOpen, toggle, wasToggled]
 }
 
 /** How long the pointer or focus rests on a closed folder before its preview opens, and how long it lingers after leaving. */
@@ -442,14 +477,10 @@ const FolderView = memo(function FolderView({ folder, section, panes, activeProj
     if (pointerType !== '' && pointerType !== 'mouse' && pointerType !== 'pen') return false
     return typeof window.matchMedia !== 'function' || window.matchMedia('(hover: hover) and (pointer: fine)').matches
   }
-  // A held gap is the settled row's height of nothing: no control, no name, and a click on it does nothing.
-  const renderRows = (open: (threadId: string) => void, rowPanes: PaneActions): ReactNode => folder.rows.map(row => {
-    const gap = gaps?.get(row.thread.id)
-    if (gap !== undefined) return <li key={row.thread.id} className="thread-nav__gap" aria-hidden="true" data-closing={gap.closing || undefined} style={{ height: gap.height }} />
-    return <ThreadNavRow key={row.thread.id} row={row} current={listed === row.thread.id} open={rowPanes.openThreadIds.includes(row.thread.id)} busy={isThreadBusy({ busyThreadIds }, row.thread.id)}
-      liveClock={liveClock} onOpen={open} command={command} panes={rowPanes} settle={settle} angles={swarmAngles?.get(row.thread.id)} snoozedUntil={snoozes?.get(row.thread.id)}
-      queued={queuedIds?.has(row.thread.id) === true} />
-  })
+  const renderRows = (open: (threadId: string) => void, rowPanes: PaneActions): ReactNode => folder.rows.map(row =>
+    <ListPlace key={row.thread.id} row={row} gap={gaps?.get(row.thread.id)} listed={listed} panes={rowPanes} onOpen={open} busyThreadIds={busyThreadIds}
+      liveClock={liveClock} command={command} settle={settle} angles={swarmAngles?.get(row.thread.id)} snoozedUntil={snoozes?.get(row.thread.id)}
+      queued={queuedIds?.has(row.thread.id) === true} />)
   return <div ref={rootRef} className="thread-folder" data-section={section} data-active={activeProjectId === folder.id || undefined} {...{ [ROVING_GROUP]: '' }}
     onPointerEnter={event => { if (fineHover(event.pointerType)) { hoverRef.current = true; schedulePreview('hover') } }}
     onPointerLeave={() => { hoverRef.current = false; scheduleHide('hover') }}
@@ -498,6 +529,73 @@ const FolderView = memo(function FolderView({ folder, section, panes, activeProj
     </ul> : null}
     {expanded ? <ul className="thread-folder__rows" id={listId}>
       {renderRows(onOpen, panes)}
+    </ul> : null}
+  </div>
+})
+
+/** The remote computer a row's thread runs on, for its badge; none for this computer's, or while no remote is listed. */
+const remoteHostOf = (hosts: readonly ListedHost[], row: ThreadRow): ListedHost | undefined =>
+  hosts.length ? hosts.find(item => item.kind === 'remote' && item.hostId === (row.thread.hostId ?? hostIdOf(row.thread))) : undefined
+
+/**
+ * The Snoozed shelf by status (ADR-0201): its threads as one flat list, each naming its project, with no project folder
+ * (Zach's call, November 10, 2026). Memoised as a group is.
+ */
+const SnoozedShelfRows = memo(function SnoozedShelfRows({ rows, panes, liveClock, onOpen, command, settle, busyThreadIds, queuedIds, hosts, snoozes }: {
+  readonly rows: readonly ThreadRow[]; readonly panes: PaneActions; readonly liveClock: boolean; readonly onOpen: (threadId: string) => void
+  readonly command: Command; readonly settle: ListSettle; readonly busyThreadIds: readonly string[] | undefined
+  readonly queuedIds?: ReadonlySet<string> | undefined; readonly hosts: readonly ListedHost[]
+  /** On the Snoozed shelf, when each thread wakes (ADR-0175). */
+  readonly snoozes?: ReadonlyMap<string, number> | undefined
+}): ReactNode {
+  const listed = panes.listedThreadId ?? panes.currentThreadId
+  return <ul className="thread-folder__rows thread-nav__shelf-rows">
+    {rows.map(row => <ListPlace key={row.thread.id} row={row} gap={undefined} listed={listed} panes={panes} onOpen={onOpen} busyThreadIds={busyThreadIds}
+      liveClock={liveClock} command={command} settle={settle} queued={queuedIds?.has(row.thread.id) === true} snoozedUntil={snoozes?.get(row.thread.id)}
+      place={row.project?.title ?? row.provider} host={remoteHostOf(hosts, row)} />)}
+  </ul>
+})
+
+/** A status group's key in the sidebar's toggled set, beside the folders' (ADR-0201). */
+export const statusGroupKey = (group: 'working' | 'recent'): string => `group:${group}`
+
+/**
+ * One status group (ADR-0201): Working now or Recent, its name and count at its head, which folds it as a folder's head
+ * does, and its rows, each naming its project. Memoised as a folder is: its rows are shared across updates.
+ */
+const StatusGroupView = memo(function StatusGroupView({ group, label, rows, panes, expanded, liveClock, onToggle, onOpen, command, settle, busyThreadIds, gaps, queuedIds, swarmAngles, hosts, onRenaming }: {
+  readonly group: 'working' | 'recent'; readonly label: string; readonly rows: readonly ThreadRow[]; readonly panes: PaneActions
+  readonly expanded: boolean; readonly liveClock: boolean; readonly onToggle: (key: string) => void; readonly onOpen: (threadId: string) => void
+  readonly command: Command; readonly settle: ListSettle; readonly busyThreadIds: readonly string[] | undefined
+  /** The held gaps among the group's rows (ADR-0167). */
+  readonly gaps: ReadonlyMap<string, HeldGap>
+  readonly queuedIds?: ReadonlySet<string> | undefined
+  readonly swarmAngles?: ReadonlyMap<string, readonly AgentThread[]> | undefined
+  /** The hosts listed once a remote host is connected; a row on a remote one wears its badge. */
+  readonly hosts: readonly ListedHost[]
+  readonly onRenaming: (threadId: string, renaming: boolean) => void
+}): ReactNode {
+  const key = statusGroupKey(group)
+  const listId = `thread-group-${group}`
+  // A held gap is a settled thread's place, not one of the group's threads.
+  const count = rows.length - rows.filter(row => gaps.has(row.thread.id)).length
+  const listed = panes.listedThreadId ?? panes.currentThreadId
+  if (rows.length === 0) return null
+  return <div className="thread-folder thread-group" data-group={group} {...{ [ROVING_GROUP]: '' }}>
+    <div className="thread-folder__head">
+      <button type="button" className="thread-folder__toggle thread-group__toggle tt-focusable" aria-expanded={expanded} aria-controls={listId} onClick={() => onToggle(key)}
+        aria-label={plural(count, { one: `${label} ${{ threads: shownCount(count) }} thread`, other: `${label} ${{ threads: shownCount(count) }} threads` })}
+        {...{ [ROVING_TOGGLE]: '', [ROVING_KEY]: key }}>
+        <ChevronRight size={12} aria-hidden="true" className="thread-folder__chevron" />
+        <span className="thread-folder__title">{label}</span>
+        <span className="thread-folder__count" aria-hidden="true">{shownCount(count)}</span>
+      </button>
+    </div>
+    {expanded ? <ul className="thread-folder__rows" id={listId}>
+      {rows.map(row => <ListPlace key={row.thread.id} row={row} gap={gaps.get(row.thread.id)} listed={listed} panes={panes} onOpen={onOpen} busyThreadIds={busyThreadIds}
+        liveClock={liveClock} command={command} settle={settle} angles={swarmAngles?.get(row.thread.id)} queued={queuedIds?.has(row.thread.id) === true}
+        place={row.project?.title ?? row.provider} onRenaming={onRenaming}
+        host={remoteHostOf(hosts, row)} />)}
     </ul> : null}
   </div>
 })
@@ -583,7 +681,7 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   const [snoozedOpen, setSnoozedOpen] = useState(false)
   const settledButton = useRef<HTMLButtonElement>(null)
   const { settle, dialog: settleDialog } = useSettleThread(command, settledButton)
-  const [isFolderOpen, toggle] = useFolderToggles()
+  const [isFolderOpen, toggle, wasToggled] = useFolderToggles()
   const folderPeek = useOwlFeature('folder-peek')
   // Worker swarms (Owl, ADR-0162): each lead's angles under its row. Off, nothing is read and no row changes.
   const swarmsOn = useOwlFeature('worker-swarms')
@@ -601,6 +699,9 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   const app = useOptionalApp()
   const platform: SottoPlatform = app?.platform ?? 'win32'
   const settings = app?.settings
+  // Status groups (ADR-0201) are the default. The app reads settings before any page shows; a list drawn without them
+  // (outside the app) keeps the folders, as it did before the choice existed.
+  const byStatus = (settings?.threadListGrouping ?? 'project') === 'status'
   // Rows carry these labels so their buttons can say their keys; memoised like the New thread label above them.
   const openBesideChord = useMemo(() => {
     const chord = claimedThreadChord(settings, 'open-beside', platform)
@@ -686,6 +787,34 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
     }
     return folders
   }, [held.placed, gaps])
+  // Status groups (ADR-0201): the open folders' rows, held ones included, as Working now and Recent; the held gaps among them.
+  // A row stays in the group it was in while its gap stands (ADR-0167) or while it is being renamed, whatever its thread
+  // does meanwhile: moving it would slide rows under a still pointer, or draw the half-typed name's field anew.
+  const [renamingIds, setRenamingIds] = useState<ReadonlySet<string>>(() => new Set())
+  const onRenaming = useCallback((threadId: string, renaming: boolean): void => setRenamingIds(current => {
+    if (current.has(threadId) === renaming) return current
+    const next = new Set(current)
+    if (renaming) next.add(threadId); else next.delete(threadId)
+    return next
+  }), [])
+  const pinnedGroups = useRef(new Map<string, StatusGroupName>())
+  const statusGroups = useMemo(() => {
+    if (!byStatus) return undefined
+    const pinned = pinnedGroups.current
+    const holding = (id: string): boolean => held.placed.has(id) || renamingIds.has(id)
+    for (const id of [...pinned.keys()]) if (!holding(id)) pinned.delete(id)
+    const groups = groupByStatus(held.open, pinned)
+    for (const id of [...held.placed.keys(), ...renamingIds]) if (!pinned.has(id)) pinned.set(id, groups.working.some(row => row.thread.id === id) ? 'working' : 'recent')
+    return groups
+  }, [byStatus, held.open, held.placed, renamingIds])
+  const statusGaps = useMemo(() => new Map([...gaps].filter(([threadId]) => held.placed.has(threadId))), [gaps, held.placed])
+  const snoozedFlat = useMemo(() => byStatus ? snoozedShelfRows(organization.snoozed ?? []) : undefined, [byStatus, organization.snoozed])
+  // The open threads in the sidebar's order, which moving between threads follows.
+  const openOrder = useMemo(() => {
+    if (!byStatus) return organization.open.flatMap(folder => folder.rows)
+    const groups = groupByStatus(organization.open)
+    return [...groups.working, ...groups.recent]
+  }, [byStatus, organization.open])
   // A gap whose thread came back (Undo, the shelf's Restore) goes at once, rather than waiting for the pointer to leave.
   const heldSettled = useRef(new Set<string>())
   useEffect(() => {
@@ -703,7 +832,7 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
     if (!shortcutsLive) return
     const onKey = (event: globalThis.KeyboardEvent): void => {
       const press = (chord: string | null): boolean => chord !== null && threadChordPressed(event, chord, platform)
-      const openRows = organization.open.flatMap(folder => folder.rows)
+      const openRows = openOrder
       if (press(settleChord)) {
         const row = openRows.find(item => item.thread.id === currentThreadId)
         if (!row || row.settledBy !== null || isThreadBusy({ busyThreadIds: state.busyThreadIds }, row.thread.id)) return
@@ -742,7 +871,7 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [shortcutsLive, collapsed, platform, settleChord, restoreChord, nextChord, previousChord, waitingChord, organization, currentThreadId, state.busyThreadIds, settle, command, onOpen])
+  }, [shortcutsLive, collapsed, platform, settleChord, restoreChord, nextChord, previousChord, waitingChord, organization, openOrder, currentThreadId, state.busyThreadIds, settle, command, onOpen])
   const listed = listedThreadId ?? currentThreadId
   const searching = query.trim() !== ''
   const connections = state.connections
@@ -759,6 +888,7 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
       expanded={searching || isFolderOpen(key)} onToggle={toggle} onOpen={onOpen} onNewThread={onNewThread} command={command} settle={settleFromList} globalLaneBusy={state.globalLaneBusy} busyThreadIds={state.busyThreadIds} indicatorsHidden={queueOn}
       swarmAngles={swarmAngles} gaps={section === 'open' ? gapsByFolder.get(folder.id) : undefined} snoozes={section === 'snoozed' ? snoozes : undefined} queuedIds={queuedIds} />
   }
+  const statusGroupFacts = { panes, liveClock, onToggle: toggle, onOpen, command, settle: settleFromList, busyThreadIds: state.busyThreadIds, gaps: statusGaps, queuedIds, swarmAngles, hosts, onRenaming }
   const { open, settled } = organization
   // The collapsed rail's threads: every open one, and the focused one even once settled.
   const railRows = [...open.flatMap(folder => folder.rows), ...settled.flatMap(folder => folder.rows).filter(row => row.thread.id === listed)]
@@ -804,6 +934,8 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   const snoozed = organization.snoozed ?? []
   const snoozedThreads = snoozed.reduce((count, folder) => count + folder.rows.length, 0)
   const snoozedShown = snoozedOpen || searching
+  // By status the Snoozed shelf is a flat list; Settled keeps its project folders, and Restore project with them (ADR-0201).
+  const shelfFacts = { panes, liveClock, onOpen, command, settle: settleFromList, busyThreadIds: state.busyThreadIds, queuedIds, hosts }
   let owlRail: ReactNode = null
   if (railOn) {
     // Owl's rail (ADR-0146, Zach's pick C of November 5, 2026): the threads that wait on you or are moving, in a tray for
@@ -866,10 +998,19 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
       {/* The thread list: its folders, rows and the Settled shelf are one Tab stop, walked with the arrow keys, and the
           first place F6 lands in the sidebar (ADR-0164). */}
       <div ref={threadList} className="thread-nav__list" data-region-entry="1" onKeyDown={listKeys.onKeyDown} onFocus={listKeys.onFocus}>
-      <section aria-label={t`Projects`}>
+      {statusGroups ? <section aria-label={t({ message: 'Open threads', comment: 'The sidebar\'s open threads grouped by status, as a screen reader names the part.' })}>
+        {/* The iPhone's groups and order (ADR-0201): Working now, then Recent; Needs you is the card above. */}
+        <StatusGroupView group="working" label={t({ message: 'Working now', comment: 'A sidebar group: the open threads whose agent is working.' })} rows={statusGroups.working}
+          expanded={searching || !wasToggled(statusGroupKey('working'))} {...statusGroupFacts} />
+        <StatusGroupView group="recent" label={t({ message: 'Recent', comment: 'A sidebar group: every other open thread, newest first.' })} rows={statusGroups.recent}
+          expanded={searching || !wasToggled(statusGroupKey('recent'))} {...statusGroupFacts} />
+        {/* With no thread at all the room says so, once (#1834); with only settled or snoozed ones, the list is caught up. */}
+        {!statusGroups.working.length && !statusGroups.recent.length && (searching || !state.host.projects.length || state.host.threads.length)
+          ? <p className="thread-nav__empty tt-paragraph">{searching ? t`No matching open threads.` : state.host.projects.length ? t`All caught up.` : t`Add a project folder to start.`}</p> : null}
+      </section> : <section aria-label={t`Projects`}>
         {held.open.map(folderView('open'))}
         {!held.open.length ? <p className="thread-nav__empty tt-paragraph">{searching ? t`No matching open threads.` : state.host.projects.length ? t`All caught up.` : t`Add a project folder to start.`}</p> : null}
-      </section>
+      </section>}
       {/* Snoozed (ADR-0175; Owl only): threads put away until a time, above Settled, shown while any sleep. */}
       {snoozedThreads ? <section aria-label={t`Snoozed`} className="thread-nav__shelf" {...{ [ROVING_GROUP]: '' }}>
         <button className="thread-nav__settled tt-focusable" type="button" aria-expanded={snoozedShown} onClick={() => setSnoozedOpen(!snoozedOpen)}
@@ -878,7 +1019,7 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
           <ChevronRight size={13} aria-hidden="true" className="thread-folder__chevron" />
           <span><Trans>Snoozed</Trans></span>
         </button>
-        {snoozedShown ? <div>{snoozed.map(folderView('snoozed'))}</div> : null}
+        {snoozedShown ? <div>{snoozedFlat ? <SnoozedShelfRows rows={snoozedFlat} snoozes={snoozes} {...shelfFacts} /> : snoozed.map(folderView('snoozed'))}</div> : null}
       </section> : null}
       <section aria-label={t`Settled`} className="thread-nav__shelf" {...{ [ROVING_GROUP]: '' }}>
         <button ref={settledButton} className="thread-nav__settled tt-focusable" type="button" aria-expanded={settledShown} onClick={() => setSettledOpen(!settledOpen)}

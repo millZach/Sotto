@@ -21,7 +21,7 @@ test('new threads inherit Agents despite a saved Grok override and wait if that 
     launched = await launchSotto('success', profile)
     const { page } = launched
     const chosen = await page.evaluate(async path => {
-      await window.sotto!.updateSettings({ onboardingComplete: true })
+      await window.sotto!.updateSettings({ onboardingComplete: true, threadListGrouping: 'project' })
       const agents = window.sotto!.agents!
       await agents.command({ type: 'connect', provider: 'grok' })
       await agents.command({ type: 'connect', provider: 'claude' })

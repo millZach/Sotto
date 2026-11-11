@@ -1,8 +1,9 @@
 import { agentCaptures, ThreadMediaStore } from './threadMedia'
+import type { ReducedPictures } from './mediaThumbnail'
 import type { BrowserAgentTools } from './browserAgentServer'
 import type { FilesBinding } from '../files/service'
 import { join } from 'node:path'
-import type { AgentThread, ProviderId } from '../../shared/agents'
+import type { AgentState, AgentThread, ProviderId } from '../../shared/agents'
 import type { ThreadClearKeptReason } from '../../shared/threadClear'
 import type { AppSettings } from '../../shared/settings'
 import type { ProjectSetupRequest } from '../../shared/workerMachine'
@@ -24,15 +25,21 @@ import { DevinAcpHost } from './devin'
 import { MuseMspHost } from './muse'
 import { OpenCodeHost } from './opencode'
 import { CursorAcpHost } from './cursor'
+import type { PiSignIn, PiSignInOptions } from './piSignIn'
+import type { PiHost, PiOptions } from './pi'
 import { HermesAcpHost } from './hermes'
 import { DeepSeekAcpHost } from './deepseek'
 import { CursorSignIn } from './cursorSignIn'
+import { LocalProviderSignIn } from './localProviderSignIn'
+import type { SignInCommand } from '../../host/providerSignIn'
+import type { LocalSignInProvider } from '../../shared/localProviderSignIn'
 import type { OwnServer } from '../../shared/ownModelServers'
 import { openCodeForOwnServers } from '../ownModelServers/openCode'
 import { HeldProviderHost } from './heldProviderGate'
 import { heldProvidersOption, type HeldProviders } from '../../shared/heldProviders'
 import { ConfiguredProviderHost } from './providerSwitch'
 import { SottoThreadHost, ThreadRegistry } from './threads'
+import type { HostHeldSession } from './sessionReaper'
 import { WorkspaceHost } from './workspace'
 import { MainCheckoutKeeper, type MainCheckoutEvent } from './mainCheckout'
 import type { PullRequestObservation } from './watcherEvidence'
@@ -97,6 +104,10 @@ type ControlDependencies = ConstructorParameters<typeof AgentControl>[0]
 type NativeHost = ProviderHost & { closed?: () => Promise<void> }
 
 export interface AgentRuntimeOptions {
+  /** Only the desktop supplies Pi's terminal sign-in implementation; the headless bundle must not import it. */
+  createPiSignIn?: (host: PiHost, options: PiSignInOptions) => PiSignIn
+  /** Pi and its account support run only on the desktop; absence leaves a held provider. */
+  createPiHost?: (directory: string, options: PiOptions) => PiHost
   directory: string
   /**
    * Sotto's browser tools for this runtime's threads (a paired host's, ADR-0198), made once their working copies can be
@@ -201,6 +212,11 @@ export interface AgentRuntimeOptions {
   /** The store itself, when the process owner built it for providers of its own as well (the desktop's native fixtures). */
   threadMedia?: ThreadMediaStore
   /**
+   * The copies of pictures phones ask for at a longest edge (`thread-media-edge`, ADR-0170's November 10 amendment), made
+   * with the process owner's image tools: the desktop's alone, since a headless host has none and answers pictures whole.
+   */
+  reducedPictures?: ReducedPictures
+  /**
    * The Owl list's answer for next prompts (ADR-0132), read once by the process owner. Absent fails closed.
    * `nextPromptChanged` hears each change: the desktop tells its window, and a headless host its desktops (ADR-0173).
    * `nextPromptsWanted`, where given, is asked before each side call: a headless host asks only while a desktop that
@@ -222,6 +238,8 @@ export interface AgentRuntimeOptions {
   historyEnabled: () => boolean
   observeActiveThread?: boolean
   openExternal: (url: string) => Promise<unknown>
+  /** How this computer's own provider sign-ins find their clients (ADR-0200); the adapters' own lookup by default. An end-to-end run finds none, so no test starts a real client's sign-in. */
+  signInCommand?: (provider: LocalSignInProvider) => Promise<SignInCommand | undefined>
   openThreadFolder?: ControlDependencies['openThreadFolder']
   authority?: ControlDependencies['authority']
   bindRequestDraftDecision?: ControlDependencies['bindRequestDraftDecision']
@@ -285,6 +303,12 @@ export interface AgentRuntimeOptions {
  * host. A host has no Settings to choose Clear settled threads after in, so the 30-day default read from its own file
  * would delete threads no one asked it to, whatever the desktop chose. A desktop's Delete thread… still reaches it.
  */
+/** After a sign-in's connect: nothing when the provider is connected, else its own error, the command's, or that it did not confirm. */
+function whyNotConnected(state: AgentState, provider: ProviderId): string | undefined {
+  const status = state.host.providers?.find(item => item.id === provider)
+  return status?.connection === 'connected' ? undefined : status?.error ?? state.error ?? 'It did not confirm the connection.'
+}
+
 export function clearsOnItsOwn(options: Pick<AgentRuntimeOptions, 'clearThreadsEnabled' | 'runsAs'>): boolean {
   return options.clearThreadsEnabled === true && options.runsAs !== 'headless-host'
 }
@@ -315,6 +339,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   let showEveryAgentPicture: () => boolean = options.showEveryAgentPicture ?? (() => true)
   const showEvery = (): boolean => showEveryAgentPicture()
   const captureMedia = threadMedia ? agentCaptures(threadMedia, showEvery) : {}
+  let piHost: PiHost | undefined
   const providers: Partial<Record<ProviderId, NativeHost>> = options.host ? {} : {
     codex: adapter('codex', () => options.providers?.codex ?? new CodexAppServerHost({ userDataPath: directory, usageEnabled: options.usageEnabled === true, markdownLinks: options.markdownSidePanel === true, ...limitStops, ...captureMedia, ...(options.codexLog ? { logEvent: options.codexLog } : {}) })),
     claude: adapter('claude', () => options.providers?.claude ?? new ClaudeStreamJsonHost({ userDataPath: directory, usageEnabled: options.usageEnabled === true, markdownLinks: options.markdownSidePanel === true, ...limitStops, ...captureMedia, ...(options.claudeHistoryModulePath ? { historyModulePath: options.claudeHistoryModulePath } : {}),
@@ -328,6 +353,9 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       ...(options.ownServers ? { ownServers: options.ownServers } : {}) })),
     // Cursor runs with Sotto's own Cursor folder under this runtime's directory: user data, or a headless host's data (ADR-0128).
     cursor: adapter('cursor', () => options.providers?.cursor ?? new CursorAcpHost(directory, captureMedia)),
+    // Pi starts only on this computer, where its own-model-server record lives.
+    pi: adapter('pi', () => options.providers?.pi ?? (options.runsAs === 'headless-host' ? new HeldProviderHost('pi')
+      : (piHost = options.createPiHost?.(directory, { heldProviders: held, ...captureMedia, ...(options.ownServers ? { servers: options.ownServers } : {}) })) ?? new HeldProviderHost('pi'))),
     // This local Hermes build runs only on the Mac. Its gateway and model routes belong to this computer.
     hermes: adapter('hermes', () => options.providers?.hermes ?? (options.runsAs === 'headless-host' || process.platform !== 'darwin' ? new HeldProviderHost('hermes')
       : new HermesAcpHost(directory, { heldProviders: held, ...captureMedia, ...(options.ownServers ? { servers: options.ownServers } : {}) }))),
@@ -336,19 +364,25 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     deepseek: adapter('deepseek', () => options.providers?.deepseek ?? (options.runsAs === 'headless-host' ? new HeldProviderHost('deepseek')
       : new DeepSeekAcpHost(directory, { heldProviders: held, ...captureMedia, ...(options.ownServers ? { servers: options.ownServers } : {}) }))),
   }
+  const threadHosts: Record<ProviderId, SottoThreadHost> | undefined = options.host ? undefined : {
+    codex: new SottoThreadHost('codex', providers.codex!, threadRegistry!),
+    claude: new SottoThreadHost('claude', providers.claude!, threadRegistry!),
+    grok: new SottoThreadHost('grok', providers.grok!, threadRegistry!),
+    devin: new SottoThreadHost('devin', providers.devin!, threadRegistry!),
+    muse: new SottoThreadHost('muse', providers.muse!, threadRegistry!),
+    opencode: new SottoThreadHost('opencode', providers.opencode!, threadRegistry!),
+    cursor: new SottoThreadHost('cursor', providers.cursor!, threadRegistry!),
+    pi: new SottoThreadHost('pi', providers.pi!, threadRegistry!),
+    hermes: new SottoThreadHost('hermes', providers.hermes!, threadRegistry!),
+    deepseek: new SottoThreadHost('deepseek', providers.deepseek!, threadRegistry!),
+  }
+  /** Every provider session this runtime's adapters hold, and what keeps each (#2398): the headless host's administrative read. */
+  const heldSessions = (): HostHeldSession[] => threadHosts
+    ? (Object.entries(threadHosts) as [ProviderId, SottoThreadHost][]).flatMap(([provider, host]) => host.heldThreadSessions().map(held => ({ provider, ...held })))
+    : []
   const agentHost = new WorkspaceHost(options.host ?? new ConfiguredProviderHost({
     directory,
-    hosts: {
-      codex: new SottoThreadHost('codex', providers.codex!, threadRegistry!),
-      claude: new SottoThreadHost('claude', providers.claude!, threadRegistry!),
-      grok: new SottoThreadHost('grok', providers.grok!, threadRegistry!),
-      devin: new SottoThreadHost('devin', providers.devin!, threadRegistry!),
-      muse: new SottoThreadHost('muse', providers.muse!, threadRegistry!),
-      opencode: new SottoThreadHost('opencode', providers.opencode!, threadRegistry!),
-      cursor: new SottoThreadHost('cursor', providers.cursor!, threadRegistry!),
-      hermes: new SottoThreadHost('hermes', providers.hermes!, threadRegistry!),
-      deepseek: new SottoThreadHost('deepseek', providers.deepseek!, threadRegistry!),
-    },
+    hosts: threadHosts!,
     provider: () => agentControl.configuration().provider,
     enabledProviders: () => { const configuration = agentControl.configuration(); return configuration.enabledProviders ?? [configuration.provider] },
     threadProvider: threadId => threadRegistry?.byThread(threadId)?.provider,
@@ -771,6 +805,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     movesHere?.close()
     closingWatcherTools = watcherTools?.close()
   }
+  let piSignIn: PiSignIn | undefined
   let stoppingProviders: Promise<void> | undefined
   const stopProviders = (): Promise<void> => {
     if (stoppingProviders) return stoppingProviders
@@ -782,7 +817,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     stoppingProviders = (async () => {
       // The record's last write runs beside the providers' closing; nothing they do changes it now. A thread title still
       // being written gets up to two seconds before the side calls are stopped, so `closed()` saves it (#980).
-      const results = await Promise.allSettled([reasoner.close?.(), agentControl.titleWritesSettled().then(() => shortTextWriter.close()), ...Object.values(providers).map(provider => provider.closed?.()),
+      const results = await Promise.allSettled([(async () => piSignIn?.close())(), reasoner.close?.(), agentControl.titleWritesSettled().then(() => shortTextWriter.close()), ...Object.values(providers).map(provider => provider.closed?.()),
         ...(closingWatcherTools ? [closingWatcherTools] : []), ...(resumeFrozen ? [resumeFrozen] : []), ...(limitClosed ? [limitClosed] : [])])
       await agentControl.closed()
       // A connection already starting when stop was requested has now settled. Stop and drain
@@ -833,6 +868,16 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // desktop ends it again whenever the switch is saved off.
   const switchedOff = babysitter && options.babysitting?.agentTool?.() === false ? babysitter : undefined
   try {
+    // The desktop owns the terminal implementation. Its lifetime belongs to this runtime, including failed startup.
+    const nativePi = piHost
+    piSignIn = nativePi && options.runsAs !== 'headless-host' ? options.createPiSignIn?.(nativePi, {
+      modelsChanged: models => nativePi.setAccountModels(models),
+      openExternal: async url => { await options.openExternal(url) },
+      changed: async () => {
+        if (nativePi.isConnected()) await nativePi.accountsChanged()
+        else await agentControl.command({ type: 'connect', provider: 'pi', notice: false })
+      },
+    }) : undefined
     // Read every startup record inside the cleanup boundary, before a provider can start.
     await desktopDefaults?.load()
     await delegationRemote?.load()
@@ -863,6 +908,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       async () => watchedPullRequests?.close(),
       async () => toolReads.dispose(),
       async () => agentControl.dispose(),
+      async () => piSignIn?.close(),
       async () => reasoner.close?.(),
       async () => shortTextWriter.close(),
       ...Object.values(providers).map(provider => async () => provider.closed?.()),
@@ -902,6 +948,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ...(options.markdownSidePanel === true ? { threadFileLinks: true } : {}),
     ...(options.attachAnyFile === true ? { fileStaging: true } : {}),
     ...(threadMedia ? { threadMedia: true } : {}),
+    ...(options.reducedPictures ? { reducedPictures: options.reducedPictures } : {}),
     // The iPhone's Agents view (ADR-0103): delegated threads only where delegation runs, which on a headless host is only
     // where Work across machines is on (#1310).
     ...(options.agentsViewEnabled === true ? { agentsView: delegationRecord ? { delegations: (threadId, threads) => threadDelegations(delegationRecord, threads, threadId) } : {} } : {}),
@@ -919,19 +966,23 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const deepseekHost = providers.deepseek instanceof DeepSeekAcpHost ? providers.deepseek : undefined
   // Hermes keeps its own copy of a keyed server's key (ADR-0124), only where its adapter runs.
   const ownServersHermes = options.ownServers && providers.hermes instanceof HermesAcpHost ? providers.hermes : undefined
-  const ownServersDeepSeek = options.ownServers && (deepseekHost || providers.hermes instanceof HermesAcpHost) ? { changed: () => { deepseekHost?.ownServersChanged(); if (providers.hermes instanceof HermesAcpHost) providers.hermes.ownServersChanged() } } : undefined
+  const ownServersDeepSeek = options.ownServers && (piHost || deepseekHost || providers.hermes instanceof HermesAcpHost) ? { changed: () => { piHost?.ownServersChanged(); deepseekHost?.ownServersChanged(); if (providers.hermes instanceof HermesAcpHost) providers.hermes.ownServersChanged() } } : undefined
   // Signing Cursor in from its tile on this computer (ADR-0128): only where its adapter runs, and never on a headless host, whose
   // Cursor a desktop signs in through the provider sign-in request instead.
   const cursorHost = providers.cursor instanceof CursorAcpHost ? providers.cursor : undefined
   const cursorSignIn = cursorHost && options.runsAs !== 'headless-host' ? new CursorSignIn({
     configDirectory: cursorHost.folder, program: () => cursorHost.clientProgram(), openExternal: async url => { await options.openExternal(url) },
-    connect: async () => {
-      const state = await agentControl.command({ type: 'connect', provider: 'cursor' })
-      const status = state.host.providers?.find(item => item.id === 'cursor')
-      return status?.connection === 'connected' ? undefined : status?.error ?? state.error ?? 'It did not confirm the connection.'
-    },
+    connect: async () => whyNotConnected(await agentControl.command({ type: 'connect', provider: 'cursor' }), 'cursor'),
     signedOut: async () => { await agentControl.command({ type: 'disconnect', provider: 'cursor' }) },
   }) : undefined
+  // Signing Codex, Claude Code or Grok Build in from its row on this computer (ADR-0200); a headless host's are signed
+  // in by a desktop through the provider sign-in request instead (ADR-0037).
+  const providerSignIn = options.runsAs !== 'headless-host' ? new LocalProviderSignIn({
+    openExternal: async url => { await options.openExternal(url) },
+    ...(options.signInCommand ? { command: options.signInCommand } : {}),
+    // Settings connections leave Threads quiet (ADR-0068): the row and the dialog say how it went.
+    connect: async provider => whyNotConnected(await agentControl.command({ type: 'connect', provider, notice: false }), provider),
+  }) : undefined
   idleCompaction.start()
-  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, mainCheckout, watcher, watcherTools, delegation, dynamicRecord, delegationRelay, delegationRemote, continuation, threadMoves, workerRoles, opencodeSignIn, ownServersOpenCode, ownServersDeepSeek, ownServersHermes, cursorSignIn, branchMoves, branchBundles, checks, workerAdmission, prepareForShutdown, close }
+  return { piSignIn, agentHost, agentControl, threadRegistry, turns, hostService, heldSessions, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, mainCheckout, watcher, watcherTools, delegation, dynamicRecord, delegationRelay, delegationRemote, continuation, threadMoves, workerRoles, opencodeSignIn, ownServersOpenCode, ownServersDeepSeek, ownServersHermes, cursorSignIn, providerSignIn, branchMoves, branchBundles, checks, workerAdmission, prepareForShutdown, close }
 }

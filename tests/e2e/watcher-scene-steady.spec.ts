@@ -88,7 +88,11 @@ test("Watcher's night scene never blinks while the room changes", async () => {
     ] } satisfies WatcherStandInSeed })
     await page.reload()
     await openThreads(page)
-    await page.getByRole('tablist', { name: 'Page' }).getByRole('tab', { name: 'Watcher', exact: true }).click()
+    // Under a 1000 pixel window Threads stands as the rail, whose foot has no room switch (ADR-0110, November 5, 2026), so
+    // the room's keys open it there.
+    const tab = page.getByRole('tablist', { name: 'Page' }).getByRole('tab', { name: 'Watcher', exact: true })
+    if (await tab.isVisible()) await tab.click()
+    else await page.keyboard.press('ControlOrMeta+2')
     await expect(page.locator(`${WATCHER} [data-message-id="blink-23"]`)).toBeVisible()
     await resizeContentWindow(launched, 1280, 800)
     await expect.poll(() => page.evaluate(pane => Number(document.querySelector<HTMLElement>(pane)!.dataset.nightSceneFrames ?? 0), WATCHER)).toBeGreaterThan(2)

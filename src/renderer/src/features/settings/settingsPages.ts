@@ -146,6 +146,7 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { id: 'cleanup-mode', label: msg`Cleanup mode`, section: 'settings-formatting', words: 'openrouter nitro floor fastest cheapest host', gate: 'cleanup-model' },
     { id: 'personal-dictionary', label: msg`Personal dictionary`, section: 'settings-formatting', words: 'vocabulary words names spelling', gate: 'dictation' },
 
+    { id: 'thread-grouping', label: msg`Group threads in the sidebar`, section: 'settings-agents', words: 'sidebar list status projects folders working now recent' },
     { id: 'thread-defaults', label: msg`New threads start with`, section: 'settings-agents', words: 'model reasoning effort permissions defaults' },
     { id: 'projects-directory', label: msg`Default projects directory`, section: 'settings-agents', words: 'folder' },
     { id: 'thread-working-copy', label: msg`New threads work in`, section: 'settings-agents', words: 'working copy worktree project folder' },
@@ -222,7 +223,7 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { id: 'council-layout', label: msg`Council layout`, section: 'settings-council', words: 'chamber long table half circle round table', gate: 'council' },
     { id: 'council-deadline', label: msg`Stage deadline`, section: 'settings-council', words: 'council minutes wait retry', gate: 'council' },
 
-    { id: 'own-model-servers', label: msg`Your own model servers`, section: 'settings-providers', words: 'local self-hosted ollama lm studio vllm sglang llama.cpp tailnet opencode add server', gate: 'own-model-servers' },
+    { id: 'own-model-servers', label: msg`APIs and your own model servers`, section: 'settings-providers', words: 'api key kept models local self-hosted ollama lm studio vllm sglang llama.cpp tailnet opencode add server', gate: 'own-model-servers' },
     { id: 'thread-providers', label: msg`Thread providers`, section: 'settings-providers', words: 'claude codex grok devin connect sign in accounts' },
     { id: 'client-updates', label: msg`Check for client updates`, section: 'settings-providers', words: 'agent clients' },
     { id: 'shell-sandbox', label: msg`Shell sandbox`, section: 'settings-providers', words: 'muse', fallback: 'thread-providers', gate: 'muse' },

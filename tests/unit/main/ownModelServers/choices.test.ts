@@ -1,0 +1,112 @@
+// @vitest-environment node
+import { mkdtemp, rm, readFile } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { ModelCatalogue } from '../../../../src/main/ownModelServers/catalogue'
+import { OwnServers } from '../../../../src/main/ownModelServers/service'
+import { keptModels, type CheckResult } from '../../../../src/shared/ownModelServers'
+
+const paths: string[] = []
+afterEach(async () => { await Promise.all(paths.splice(0).map(path => rm(path, { recursive: true, force: true }))) })
+const model = { id: 'one', name: 'One', context: 131072, thinking: true, images: false }
+async function fixture() {
+  const directory = await mkdtemp(join(tmpdir(), 'sotto-api-')); paths.push(directory)
+  const key = randomUUID(), key2 = randomUUID(), keys = new Map<string, string>()
+  const keepKey = vi.fn(async (id: string, value: string) => { keys.set(id, value) })
+  const check = vi.fn<(_address: string, _key: string | undefined) => Promise<CheckResult>>(async () => ({ status: 'ok', address: 'https://example.test/v1', kind: 'openai-compatible', answeredMs: 1, models: [model] }))
+  const service = new OwnServers({ directory, openCode: () => undefined, hermes: () => ({ keepKey, forgetKey: async id => { keys.delete(id) } }), readKey: async id => keys.get(id), check, catalogue: new ModelCatalogue(async () => { throw new Error('No network in a unit test') }) })
+  const added = await service.add({ name: 'Example', address: 'https://example.test/v1', key, models: [model], inventory: [model], keptModelIds: ['one'] })
+  if (added.status !== 'ok') throw new Error('Fixture add failed')
+  return { service, directory, server: added.server, key, key2, keys, keepKey, check }
+}
+describe('kept models and key replacement', () => {
+  it('unticks only menu choices, keeping the old model runnable', async () => {
+    const { service, server } = await fixture()
+    const two = { ...model, id: 'two', name: 'Two' }
+    await service.chooseModels({ id: server.id, models: [two], keptModelIds: ['two'] })
+    const saved = (await service.list())[0]!
+    expect(saved.models.map(model => model.id)).toEqual(['one', 'two'])
+    expect(keptModels(saved).map(model => model.id)).toEqual(['two'])
+  })
+  it('rechecks using the keeper key, preserves choices, and leaves new models unticked', async () => {
+    const { service, server, check, key } = await fixture()
+    check.mockResolvedValueOnce({ status: 'ok', address: server.address, kind: 'openai-compatible', answeredMs: 1, models: [{ ...model, context: 262144 }, { ...model, id: 'two' }] })
+    await service.checkSaved({ id: server.id })
+    expect(check).toHaveBeenLastCalledWith(server.address, key)
+    const saved = (await service.list())[0]!
+    expect(saved.keptModelIds).toEqual(['one'])
+    expect(saved.newModelIds).toEqual(['two'])
+    expect(saved.models[0]!.context).toBe(262144)
+  })
+  it('leaves the old key and choices on refusal, then replaces only the key on success', async () => {
+    const { service, server, check, key, key2, keys, keepKey, directory } = await fixture()
+    check.mockResolvedValueOnce({ status: 'refused', reason: 'key-refused', message: 'Refused' })
+    expect((await service.replaceKey({ id: server.id, key: key2 })).status).toBe('refused')
+    expect(keys.get(server.id)).toBe(key)
+    expect(keepKey).toHaveBeenCalledTimes(1)
+    expect((await service.replaceKey({ id: server.id, key: key2 })).status).toBe('ok')
+    expect(keys.get(server.id)).toBe(key2)
+    expect((await service.list())[0]).toEqual(server)
+    const disk = await readFile(join(directory, 'own-model-servers.json'), 'utf8')
+    expect(disk.includes(key) || disk.includes(key2)).toBe(false)
+  })
+})
+
+
+it('keeps legacy thinking levels when choosing models, even if a client sends a Default draft', async () => {
+  const { service, server } = await fixture()
+  await service.chooseModels({ id: server.id, keptModelIds: ['one'], models: [{ ...model, reasoningEfforts: ['default'] }] })
+  expect((await service.list())[0]!.models[0]!.reasoningEfforts).toBeUndefined()
+})
+
+it('reports an incomplete secondary key copy after OpenCode has accepted the replacement', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'sotto-api-copy-')); paths.push(directory)
+  const keep = vi.fn(async () => undefined)
+  const service = new OwnServers({ directory, openCode: () => ({ running: () => true, outdated: () => {}, catalogAgain: async () => true, signInWithKey: async () => true, signOut: async () => true }),
+    hermes: () => ({ keepKey: keep, forgetKey: async () => undefined }), check: async () => ({ status: 'ok', address: 'https://example.test/v1', kind: 'openai-compatible', answeredMs: 1, models: [model] }) })
+  const saved = await service.add({ name: 'Example', address: 'https://example.test/v1', key: randomUUID(), models: [model] })
+  if (saved.status !== 'ok') throw new Error('Fixture add failed')
+  keep.mockRejectedValueOnce(new Error('Cannot write'))
+  expect(await service.replaceKey({ id: saved.server.id, key: randomUUID() })).toMatchObject({ status: 'refused', reason: 'replaced-partly' })
+  expect((await service.list())[0]).toEqual(saved.server)
+})
+
+it('updates an existing Hermes copy while the adapter is held', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'sotto-api-held-')); paths.push(directory)
+  const replaceHeldHermesKey = vi.fn(async () => undefined)
+  const service = new OwnServers({ directory, openCode: () => ({ running: () => true, outdated: () => {}, catalogAgain: async () => true, signInWithKey: async () => true, signOut: async () => true }),
+    replaceHeldHermesKey, check: async () => ({ status: 'ok', address: 'https://example.test/v1', kind: 'openai-compatible', answeredMs: 1, models: [model] }) })
+  const saved = await service.add({ name: 'Example', address: 'https://example.test/v1', key: randomUUID(), models: [model] })
+  if (saved.status !== 'ok') throw new Error('Fixture add failed')
+  const next = randomUUID()
+  expect((await service.replaceKey({ id: saved.server.id, key: next })).status).toBe('ok')
+  expect(replaceHeldHermesKey).toHaveBeenCalledWith(saved.server.id, next)
+  expect((await service.list())[0]).toEqual(saved.server)
+})
+
+it('reads the catalogue on Check again, so an API saved before the catalogue existed gets its thinking levels', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'sotto-api-')); paths.push(directory)
+  const request = vi.fn(async () => new Response(JSON.stringify({ example: { name: 'Example', npm: '@ai-sdk/openai-compatible', api: 'https://example.test/v1',
+    models: { one: { name: 'One', reasoning: true, reasoning_options: [{ type: 'toggle' }, { type: 'effort', values: ['low', 'high'] }], limit: { context: 131072, output: 8192 } } } } })))
+  const service = new OwnServers({ directory, openCode: () => undefined, hermes: () => ({ keepKey: async () => undefined, forgetKey: async () => undefined }), catalogue: new ModelCatalogue(request),
+    check: async () => ({ status: 'ok', address: 'https://example.test/v1', kind: 'openai-compatible', answeredMs: 1, models: [{ id: 'one', name: 'one' }] }) })
+  const added = await service.add({ name: 'Example', address: 'https://example.test/v1', key: randomUUID(), models: [model] })
+  if (added.status !== 'ok') throw new Error('The fixture was not added.')
+  // Add never opened in this run: nothing but Check again asks for the catalogue.
+  expect(request).not.toHaveBeenCalled()
+  expect(await service.checkSaved({ id: added.server.id })).toMatchObject({ status: 'ok', models: [{ id: 'one', reasoningEfforts: ['none', 'low', 'high'] }] })
+  expect((await service.list())[0]!.models[0]).toMatchObject({ reasoningEfforts: ['none', 'low', 'high'], output: 8192 })
+})
+
+it('asks no catalogue when Check again is for a server on plain http', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'sotto-api-')); paths.push(directory)
+  const request = vi.fn(async () => new Response('{}'))
+  const service = new OwnServers({ directory, openCode: () => undefined, hermes: () => ({ keepKey: async () => undefined, forgetKey: async () => undefined }), catalogue: new ModelCatalogue(request),
+    check: async () => ({ status: 'ok', address: 'http://spark-head:8888/v1', kind: 'sglang', answeredMs: 1, models: [{ id: 'one', name: 'one', context: 131072 }] }) })
+  const added = await service.add({ name: 'Spark', address: 'http://spark-head:8888', models: [model] })
+  if (added.status !== 'ok') throw new Error('The fixture was not added.')
+  await service.checkSaved({ id: added.server.id })
+  expect(request).not.toHaveBeenCalled()
+})

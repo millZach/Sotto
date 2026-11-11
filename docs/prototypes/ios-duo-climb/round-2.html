@@ -1,0 +1,532 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>PROTOTYPE: the Duo design climb, round 2</title>
+<!--
+  THROWAWAY PROTOTYPE. Not product code.
+  Question: for each surface two or more round 1 judges marked down on the iPhone Duo, which variant should the app build?
+  Opens on the Duo and picks its posture from the window, folded, sideways or upright. Colours are the Sotto theme's,
+  measurements come from the app's captures. Upright can't be captured from the simulator, so it is a sketch.
+  Plan: docs/plans/2026-11-08-ios-duo-design-climb.md
+-->
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; font-display: swap; src: url('figtree-latin.woff2') format('woff2'); }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+body { font: 15px/1.3 'Figtree', -apple-system, system-ui, sans-serif; color: #eee; display: flex; flex-direction: column; -webkit-text-size-adjust: 100%; }
+button, select { font: inherit; color: inherit; }
+
+/* The prototype's own controls, outside the Duo's screen. */
+#bar { flex: none; background: #17181b; border-bottom: 1px solid #2c2e33; padding: 5px 8px; padding-top: max(5px, env(safe-area-inset-top)); }
+#row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+#surface { background: #26282c; border: 0; border-radius: 9px; padding: 6px 8px; font-weight: 600; font-size: 14px; max-width: 170px; }
+.seg { display: inline-flex; background: #26282c; border-radius: 9px; padding: 2px; }
+.seg button { border: 0; background: none; padding: 5px 9px; border-radius: 7px; font-size: 13px; font-weight: 600; color: #b5b8be; min-width: 30px; }
+.seg button.on { background: #47b8a9; color: #04201c; }
+.seg button.rec::after { content: ' ★'; font-size: 11px; }
+#caption { font-size: 13px; color: #c8cbd0; margin-top: 4px; line-height: 1.3; }
+#caption b { color: #fff; font-weight: 600; }
+#holder { flex: 1; min-height: 0; position: relative; overflow: hidden; background: #000; }
+#holder.actual { overflow: auto; -webkit-overflow-scrolling: touch; }
+#stage { position: absolute; left: 0; top: 0; transform-origin: 0 0; overflow: hidden; background: var(--ground); color: var(--ink); font-size: 17px; line-height: 1.32; }
+
+/* The Sotto theme. */
+.dark { --ground:#040507; --card:#111316; --sheet:#15171a; --opt:#1f2124; --soft:#26282a; --ink:#f3f4f5; --muted:#a0a5ae; --dim:#6d7178; --hair:rgba(255,255,255,.1); --accent:#47b8a9; --acctext:#6bc3b6; --accsurf:#0c3b36; --onacc:#04201c; --warn:#fe9a00; --warntext:#ffb86b; --danger:#ff4a55; --dangertext:#ff8a8a; --bubble:#13161d; --glass:rgba(58,60,64,.82); --glassdim:#85888d; --scrim:rgba(0,0,0,.42); --washa:rgba(71,184,169,.24); --washw:rgba(254,154,0,.24); --tile:#0a0c10; --rgb:71,184,169; --dimbtn:#2a5b56; --dimtext:#0d2b28; }
+.light { --ground:#f9f8f5; --card:#f2f0ec; --sheet:#fbfaf7; --opt:#f0efec; --soft:#e9e7e2; --ink:#1c1a17; --muted:#68625b; --dim:#8f8a82; --hair:rgba(0,0,0,.1); --accent:#007d74; --acctext:#1e665e; --accsurf:#cfece7; --onacc:#fdfcf9; --warn:#c96a00; --warntext:#9a5200; --danger:#d42c37; --dangertext:#b3202a; --bubble:#ebe9e3; --glass:rgba(233,231,226,.88); --glassdim:#8f8a82; --scrim:rgba(0,0,0,.22); --washa:rgba(0,125,116,.14); --washw:rgba(201,106,0,.14); --tile:#fff; --rgb:0,125,116; --dimbtn:#92c6c0; --dimtext:#2f6b65; }
+#stage { --cg: 0 6px 24px rgba(var(--rgb),.5); --ng: 0 6px 24px rgba(var(--rgb),.5); }
+#stage.glow-A { --cg: none; --ng: none; }
+#stage.glow-B { --cg: 0 3px 11px rgba(var(--rgb),.24); --ng: 0 3px 11px rgba(var(--rgb),.24); }
+#stage.glow-C { --cg: none; }
+
+svg { display: block; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+svg.solid { fill: currentColor; stroke: none; }
+.abs { position: absolute; }
+.clip { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+/* Rail */
+.circle { position: absolute; width: 44px; height: 44px; margin: -22px 0 0 -22px; border-radius: 50%; display: grid; place-items: center; color: var(--acctext); background: color-mix(in srgb, var(--accent) 10%, var(--ground)); border: 1px solid color-mix(in srgb, var(--accent) 34%, transparent); }
+.chrome { box-shadow: var(--cg); }
+.newt { box-shadow: var(--ng); }
+.pill { position: absolute; width: 58px; border-radius: 29px; background: var(--ground); border: 1px solid var(--hair); display: flex; flex-direction: column; align-items: center; }
+.tile { width: 50px; height: 50px; border-radius: 50%; display: grid; place-items: center; color: var(--muted); margin: 1px 0; position: relative; flex: none; }
+.tile.on { background: var(--accsurf); color: var(--acctext); }
+.badge { position: absolute; top: 1px; right: 0; min-width: 18px; height: 18px; border-radius: 9px; background: var(--warn); color: #201200; font-size: 12px; font-weight: 700; display: grid; place-items: center; }
+.state { font-size: 13px; font-weight: 600; text-align: center; line-height: 1.15; padding: 11px 2px 2px; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.w { background: var(--warn); box-shadow: 0 0 12px 4px color-mix(in srgb, var(--warn) 42%, transparent); }
+.g { background: var(--accent); box-shadow: 0 0 12px 4px rgba(var(--rgb),.4); }
+.r { background: var(--danger); box-shadow: 0 0 12px 4px color-mix(in srgb, var(--danger) 40%, transparent); }
+.i { background: none; border: 2px solid var(--muted); }
+.clock { position: absolute; font-weight: 700; font-size: 15px; transform: translateX(-50%); }
+.ring { position: absolute; width: 40px; height: 40px; margin: -20px 0 0 -20px; color: #35c75a; }
+
+/* Conversation */
+.conv { position: absolute; top: 0; bottom: 0; overflow: hidden; }
+.conv p { margin: 0 0 13px; }
+.conv .tbl { border: 1px solid var(--hair); border-radius: 14px; margin-bottom: 15px; background: color-mix(in srgb, var(--card) 45%, var(--ground)); font-size: 15px; overflow: hidden; }
+.tr { display: grid; padding: 9px 12px; border-top: 1px solid var(--hair); }
+.tr:first-child { border-top: 0; color: var(--muted); font-size: 14px; font-weight: 600; }
+.bub { margin: 0 0 16px auto; width: fit-content; max-width: 86%; background: var(--bubble); border: 1px solid var(--hair); border-radius: 16px; padding: 9px 15px; }
+.codex { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); margin-bottom: 7px; font-weight: 500; }
+.ctile { width: 18px; height: 18px; border-radius: 5px; background: var(--accsurf); color: var(--acctext); display: grid; place-items: center; font-size: 11px; font-weight: 700; }
+.composer { position: absolute; height: 50px; border-radius: 25px; background: #18191b; display: flex; align-items: center; padding: 0 7px; gap: 6px; color: var(--muted); }
+.light .composer { background: #e9e7e2; }
+.disc { width: 34px; height: 34px; border-radius: 50%; background: var(--soft); display: grid; place-items: center; color: var(--ink); flex: none; }
+
+/* Sidebar */
+.side { position: absolute; left: 0; top: 0; bottom: 0; width: 280px; border-right: 1px solid var(--hair); overflow-y: auto; padding: 70px 8px 16px; }
+.sidehead { position: absolute; left: 16px; top: 16px; font-size: 20px; font-weight: 700; z-index: 1; }
+.sec { font-size: 15px; color: var(--muted); font-weight: 500; padding: 10px 12px 5px; }
+.sec span { margin-left: 5px; }
+.rowt { display: flex; gap: 10px; padding: 7px 8px 7px 12px; border-radius: 14px; min-height: 54px; }
+.rowt.ch { background: var(--accsurf); }
+.rowt.ch .tt { color: var(--acctext); }
+.rowt .dot { margin-top: 7px; }
+.tt { font-weight: 600; line-height: 1.22; }
+.mt { font-size: 14px; color: var(--muted); display: flex; align-items: center; gap: 5px; margin-top: 2px; min-width: 0; }
+.mt > .clip { min-width: 0; }
+.tm { font-size: 13px; color: var(--muted); flex: none; }
+.two { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* Sheets */
+.scrim { position: absolute; inset: 0; background: var(--scrim); }
+.sheet { position: absolute; background: var(--sheet); border-radius: 26px 26px 26px 26px; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 -8px 30px rgba(0,0,0,.28); }
+.grab { flex: none; width: 36px; height: 4px; border-radius: 2px; background: var(--dim); margin: 6px auto 0; }
+.wash { position: absolute; left: 0; right: 0; top: 0; height: 120px; background: radial-gradient(90% 100% at 8% 0, var(--washa), transparent 72%), radial-gradient(70% 90% at 100% 0, var(--washw), transparent 70%); pointer-events: none; }
+.from { position: relative; font-size: 15px; color: var(--muted); display: flex; align-items: center; gap: 10px; }
+.q { position: relative; font-size: 22px; font-weight: 600; letter-spacing: -.3px; line-height: 1.22; margin-top: 11px; color: var(--ink); }
+.opt { display: flex; gap: 14px; border: 1px solid var(--hair); background: var(--opt); border-radius: 15px; padding: 11px 15px; margin-top: 8px; cursor: pointer; }
+.opt .ra { flex: none; width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--dim); margin-top: 3px; }
+.opt.on { border-color: var(--accent); }
+.opt.on .ra { border: 6px solid var(--accent); }
+.opt b { font-weight: 600; display: block; }
+.opt small { font-size: 15px; color: var(--muted); display: block; line-height: 1.26; margin-top: 1px; }
+.foot { flex: none; display: flex; gap: 8px; border-top: 1px solid var(--hair); padding: 12px 20px; }
+.btn { flex: 1; height: 44px; border-radius: 22px; display: grid; place-items: center; font-weight: 600; border: 0; }
+.btn.soft { background: var(--soft); color: var(--ink); }
+.btn.pri { background: var(--accent); color: var(--onacc); box-shadow: 0 5px 20px rgba(var(--rgb),.35); display: flex; align-items: center; justify-content: center; gap: 8px; }
+.btn.dimp { background: var(--dimbtn); color: var(--dimtext); }
+.tabs { display: flex; gap: 8px; padding: 0 20px 10px; flex: none; border-bottom: 1px solid var(--hair); overflow: hidden; }
+.tab { flex: none; height: 44px; padding: 0 16px; border-radius: 22px; background: var(--soft); display: flex; align-items: center; gap: 7px; font-weight: 500; border: 1px solid var(--hair); }
+.tab.on { background: var(--accsurf); border: 2px solid var(--accent); box-shadow: 0 2px 12px rgba(var(--rgb),.32); }
+.tabs.tight { gap: 5px; }
+.tabs.tight .tab { padding: 0 11px; height: 40px; font-size: 15px; gap: 5px; }
+.rd { width: 7px; height: 7px; border-radius: 50%; background: var(--danger); }
+.prbody { flex: 1; min-height: 0; overflow-y: auto; }
+.chipm { font: 14px ui-monospace, Menlo, monospace; background: var(--opt); padding: 3px 7px; border-radius: 7px; }
+.strow { display: flex; gap: 14px; padding: 11px 16px; }
+.strow + .strow > div:last-child { border-top: 0; }
+.st { flex: none; width: 22px; height: 22px; }
+.stt { font-weight: 600; }
+.sts { font-size: 15px; color: var(--muted); }
+.group { background: var(--card); border-radius: 18px; margin: 12px 0; }
+.dark .group { background: #191b1e; }
+.lbl { color: var(--muted); font-size: 15px; font-weight: 600; }
+.dock { flex: none; border: 1px solid var(--hair); border-radius: 22px; margin: 8px 12px 14px; padding: 12px 14px; background: var(--sheet); }
+.note { font-size: 15px; color: var(--muted); display: flex; gap: 10px; margin-bottom: 10px; }
+
+/* ••• menu */
+.menu { position: absolute; width: 250px; border-radius: 26px; background: var(--glass); -webkit-backdrop-filter: blur(22px); backdrop-filter: blur(22px); overflow: hidden; box-shadow: 0 12px 40px rgba(0,0,0,.4); }
+.mi { padding: 11px 19px; display: flex; align-items: center; gap: 12px; }
+.mi small { display: block; font-size: 13px; color: var(--muted); }
+.mh { height: 1px; background: var(--hair); margin: 0 19px; }
+.fact { display: flex; gap: 9px; font-size: 14px; color: var(--muted); padding: 3px 0; line-height: 1.24; align-items: flex-start; }
+.fact svg { flex: none; margin-top: 2px; }
+.cp { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; padding: 4px 9px; border-radius: 13px; background: color-mix(in srgb, var(--ink) 12%, transparent); color: var(--ink); max-width: 100%; }
+
+/* Pages */
+.page { position: absolute; top: 0; bottom: 0; overflow-y: auto; }
+.pt { font-size: 28px; font-weight: 700; letter-spacing: -.5px; }
+.ps { font-size: 15px; color: var(--muted); margin: 6px 0 18px; }
+.pcard { background: var(--card); border-radius: 20px; padding: 16px; margin-bottom: 12px; }
+.segs { display: flex; background: var(--soft); border-radius: 22px; padding: 3px; height: 44px; align-items: stretch; }
+.segs div { flex: 1; display: grid; place-items: center; border-radius: 19px; color: var(--muted); font-size: 15px; font-weight: 500; }
+.segs .on { background: var(--card); color: var(--ink); border: 1px solid var(--hair); }
+.sizes { display: flex; background: var(--opt); border-radius: 13px; height: 50px; align-items: center; position: relative; }
+.sizes div { flex: 1; text-align: center; font-weight: 700; color: var(--muted); }
+.sizes .on { color: var(--acctext); background: var(--card); border-radius: 10px; height: 44px; display: grid; place-items: center; border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); box-shadow: 0 0 12px rgba(var(--rgb),.3); }
+.slide { height: 7px; border-radius: 4px; background: var(--soft); position: relative; flex: 1; }
+.slide::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 50%; border-radius: 4px; background: var(--accent); }
+.slide::after { content: ''; position: absolute; left: calc(50% - 18px); top: -8px; width: 37px; height: 23px; border-radius: 12px; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.4); }
+.srow { padding: 13px 0; border-top: 1px solid var(--hair); }
+.srow:first-child { border-top: 0; padding-top: 0; }
+.srow:last-child { padding-bottom: 0; }
+.rowhead { display: flex; justify-content: space-between; font-weight: 500; margin-bottom: 9px; }
+.rowhead span { color: var(--muted); font-size: 15px; font-weight: 400; }
+.side-label { display: grid; grid-template-columns: 1fr 340px; gap: 20px; align-items: center; }
+.side-label .rowhead { margin: 0; flex-direction: column; }
+.hint { font-size: 15px; color: var(--muted); margin-top: 8px; }
+.side-label .hint { margin-top: 2px; }
+.sample { margin-top: 10px; padding: 9px 12px; border-radius: 12px; background: var(--opt); }
+.sample i { font-style: normal; font-size: 12px; color: var(--muted); font-weight: 600; display: block; margin-bottom: 2px; }
+
+/* Agents */
+.ag { padding: 12px 14px; display: flex; gap: 12px; border-top: 1px solid var(--hair); }
+.ag:first-child { border-top: 0; }
+.agt { flex: none; width: 34px; height: 34px; border-radius: 50%; background: var(--opt); display: grid; place-items: center; color: var(--ink); }
+.agb { flex: 1; min-width: 0; }
+.tag { display: inline-block; font-size: 13px; color: var(--muted); border: 1px solid var(--hair); border-radius: 11px; padding: 1px 8px; font-weight: 500; }
+.ags { display: flex; gap: 9px; align-items: center; font-size: 15px; margin-top: 4px; }
+.smeta { font-size: 13px; color: var(--muted); margin-top: 2px; }
+.sprev { font-size: 15px; color: var(--muted); }
+.open { display: inline-block; margin-top: 7px; padding: 8px 14px; background: var(--soft); border-radius: 17px; font-weight: 500; font-size: 15px; }
+.ask { color: var(--warntext); }
+.wk { color: var(--acctext); }
+.tell { position: absolute; left: 50%; top: 42%; transform: translateX(-50%); width: 78%; text-align: center; background: var(--card); border: 1px solid var(--hair); padding: 16px; border-radius: 18px; font-size: 16px; color: var(--muted); }
+/* Round 2 */
+.lt { flex: none; width: 10px; display: flex; justify-content: center; align-items: center; height: 22px; }
+.rowt .lt .dot { margin-top: 0; }
+.finA { width: 15px; height: 15px; border-radius: 50%; background: var(--accent); color: var(--onacc); display: grid; place-items: center; box-shadow: 0 0 12px 4px rgba(var(--rgb),.4); flex: none; }
+.finB { width: 12px; height: 12px; border-radius: 50%; border: 2.5px solid var(--accent); box-shadow: 0 0 12px 4px rgba(var(--rgb),.35); flex: none; }
+.finC { color: var(--acctext); filter: drop-shadow(0 0 5px rgba(var(--rgb),.75)); display: grid; place-items: center; }
+.code { border: 1px solid var(--hair); border-radius: 16px; background: color-mix(in srgb, var(--card) 45%, var(--ground)); margin-bottom: 15px; overflow: hidden; }
+.codeh { display: flex; gap: 14px; align-items: center; padding: 10px 16px; font-size: 15px; color: var(--muted); border-bottom: 1px solid var(--hair); }
+.codeb { font: 16px/1.5 ui-monospace, Menlo, monospace; padding: 12px 16px; color: var(--ink); }
+.slide-x { white-space: pre; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-right: 40px; scrollbar-width: none; }
+.slide-x::-webkit-scrollbar { display: none; }
+.fade { position: absolute; top: 0; right: 0; bottom: 0; width: 56px; background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--card) 45%, var(--ground)) 85%); pointer-events: none; }
+.cont { color: var(--dim); margin-right: 6px; }
+.wrapb { color: var(--muted); font-weight: 600; padding: 2px 10px; border-radius: 11px; border: 1px solid var(--hair); cursor: pointer; }
+.wrapb.on { color: var(--acctext); border-color: var(--accent); background: var(--accsurf); }
+.steps { margin: 8px 0 0 8px; padding-left: 14px; border-left: 2px solid var(--hair); }
+.step { display: flex; gap: 9px; align-items: center; font-size: 15px; padding: 5px 0; min-width: 0; }
+.mono { font: 14px ui-monospace, Menlo, monospace; color: var(--muted); }
+.step .ok { color: var(--acctext); flex: none; width: 17px; display: grid; place-items: center; }
+.spin { flex: none; width: 15px; height: 15px; border-radius: 50%; border: 2px solid rgba(var(--rgb),.3); border-top-color: var(--accent); margin: 0 1px; }
+.opill { height: 44px; border-radius: 22px; border: 1px solid var(--hair); background: color-mix(in srgb, var(--card) 60%, var(--ground)); display: flex; align-items: center; gap: 9px; padding: 0 15px; font-weight: 600; font-size: 16px; }
+.notice { border-radius: 18px; border: 1px solid color-mix(in srgb, var(--danger) 22%, transparent); background: color-mix(in srgb, var(--danger) 7%, var(--card)); display: flex; align-items: center; gap: 14px; padding: 0 12px 0 18px; }
+.ohead { display: flex; gap: 9px; align-items: center; font-weight: 600; padding: 0 6px 10px; }
+.ocard { background: var(--card); border-radius: 22px; padding: 14px 16px; margin-bottom: 14px; }
+.ndc { box-shadow: 0 0 28px 2px color-mix(in srgb, var(--warn) 18%, transparent); }
+.wkc { box-shadow: 0 0 24px 1px rgba(var(--rgb),.12); }
+.oh { display: flex; gap: 8px; align-items: center; font-size: 15px; }
+.ot { font-size: 19px; font-weight: 600; line-height: 1.22; margin-top: 8px; }
+.om { display: flex; gap: 6px; align-items: center; color: var(--muted); font-size: 15px; margin-top: 4px; min-width: 0; }
+.oq { margin-top: 10px; font-size: 17px; }
+
+</style>
+</head>
+<body>
+<div id="bar">
+  <div id="row">
+    <select id="surface" aria-label="Surface"></select>
+    <div class="seg" id="variants"></div>
+    <div class="seg" id="postures"></div>
+    <div class="seg" id="tools"></div>
+  </div>
+  <div id="caption"></div>
+</div>
+<div id="holder"><div id="stage"></div></div>
+
+<script>
+const I = {
+  plus: s => `<svg width="${s||22}" height="${s||22}" viewBox="0 0 24 24"><path d="M12 4v16M4 12h16"/></svg>`,
+  back: `<svg width="22" height="22" viewBox="0 0 24 24"><path d="M15 4l-8 8 8 8"/></svg>`,
+  side: `<svg width="24" height="24" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="4"/><path d="M9 4v16M4.800 8h1.700M4.800 11h1.700M4.800 14h1.700"/></svg>`,
+  owl: `<svg width="26" height="26" viewBox="0 0 24 24" class="solid"><path d="M4 3l3.500 2.500C9 5 10.500 4.800 12 4.800s3 .2 4.500.7L20 3v10c0 4.500-3.800 7-8 7s-8-2.500-8-7z"/><circle cx="8.400" cy="12" r="2.700" style="fill:var(--ground);stroke:none"/><circle cx="15.600" cy="12" r="2.700" style="fill:var(--ground);stroke:none"/><circle cx="8.800" cy="12" r="1.200"/><circle cx="16" cy="12" r="1.200"/></svg>`,
+  owlS: `<svg width="16" height="16" viewBox="0 0 24 24" class="solid"><path d="M4 3l3.500 2.500C9 5 10.500 4.800 12 4.800s3 .2 4.500.7L20 3v10c0 4.500-3.800 7-8 7s-8-2.500-8-7z"/><circle cx="8.400" cy="12" r="2.700" style="fill:var(--ground);stroke:none"/><circle cx="15.600" cy="12" r="2.700" style="fill:var(--ground);stroke:none"/></svg>`,
+  dots: `<svg width="24" height="24" viewBox="0 0 24 24" class="solid"><circle cx="5" cy="12" r="1.800"/><circle cx="12" cy="12" r="1.800"/><circle cx="19" cy="12" r="1.800"/></svg>`,
+  chat: `<svg width="26" height="26" viewBox="0 0 24 24"><path d="M6 4h12a3 3 0 013 3v7a3 3 0 01-3 3h-5l-4 3.500V17H6a3 3 0 01-3-3V7a3 3 0 013-3z"/></svg>`,
+  chatF: `<svg width="26" height="26" viewBox="0 0 24 24" class="solid"><path d="M6 4h12a3 3 0 013 3v7a3 3 0 01-3 3h-5l-4 3.500V17H6a3 3 0 01-3-3V7a3 3 0 013-3z"/></svg>`,
+  mac: `<svg width="26" height="26" viewBox="0 0 24 24" class="solid"><path d="M4 3h16a2 2 0 012 2v10a2 2 0 01-2 2h-6l.5 2.500H16V21H8v-1.500h1.500L10 17H4a2 2 0 01-2-2V5a2 2 0 012-2zm0 2v10h16V5z" fill-rule="evenodd"/></svg>`,
+  macPlus: `<svg width="24" height="24" viewBox="0 0 24 24"><path d="M12 3H4.500A2.500 2.500 0 002 5.500v8A2.500 2.500 0 004.500 16h13a2.500 2.500 0 002.500-2.500V12M12 16v4M8 20.500h8"/><path d="M18 2.500v7M14.500 6h7"/></svg>`,
+  sliders: `<svg width="26" height="26" viewBox="0 0 24 24"><path d="M3 6h9M18 6h3M3 12h3M12 12h9M3 18h10M19 18h2"/><rect x="12" y="4" width="6" height="4" rx="2"/><rect x="6" y="10" width="6" height="4" rx="2"/><rect x="13" y="16" width="6" height="4" rx="2"/></svg>`,
+  mic: `<svg width="18" height="18" viewBox="0 0 24 24"><rect x="8.500" y="2.500" width="7" height="12" rx="3.500"/><path d="M5 11a7 7 0 0014 0M12 18v3M8 21h8"/></svg>`,
+  ext: `<svg width="20" height="20" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M9 15l6-6M10 9h5v5"/></svg>`,
+  alarm: s => `<svg width="${s||20}" height="${s||20}" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 8.500V13l3 2M3.500 6L7 3M20.500 6L17 3"/></svg>`,
+  info: `<svg width="20" height="20" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 7.800v.2"/></svg>`,
+  xc: c => `<svg width="22" height="22" viewBox="0 0 24 24" style="color:${c}"><circle cx="12" cy="12" r="9.500"/><path d="M8.500 8.500l7 7M15.500 8.500l-7 7"/></svg>`,
+  cl: c => `<svg width="22" height="22" viewBox="0 0 24 24" style="color:${c}"><circle cx="12" cy="12" r="9.500"/><path d="M12 7v5H8"/></svg>`,
+  ok: c => `<svg width="22" height="22" viewBox="0 0 24 24" style="color:${c}"><circle cx="12" cy="12" r="9.500"/><path d="M8 12.500l3 3 5-6"/></svg>`,
+  branch: `<svg width="15" height="15" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2.500"/><circle cx="18" cy="5" r="2.500"/><circle cx="12" cy="19" r="2.500"/><path d="M6 7.500c0 4 6 3.500 6 9M18 7.500c0 4-6 3.500-6 9"/></svg>`,
+  pr: `<svg width="15" height="15" viewBox="0 0 24 24"><circle cx="6" cy="19" r="2.500"/><circle cx="18" cy="19" r="2.500"/><path d="M6 16.500V6M3 9l3-3.500L9 9M18 16.500V10c0-2-1-3-3-3h-3"/></svg>`,
+  place: `<svg width="15" height="15" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M12 16v4M8 20h8"/></svg>`,
+  diff: `<svg width="15" height="15" viewBox="0 0 24 24"><path d="M12 3v8M8 7h8M7 18h10"/></svg>`,
+  chev: `<svg width="15" height="15" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>`,
+  down: `<svg width="15" height="15" viewBox="0 0 24 24"><path d="M5 9l7 7 7-7"/></svg>`,
+  knot: `<svg width="15" height="15" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3c-3 4-3 14 0 18M12 3c3 4 3 14 0 18M3.500 9c5-2 12-2 17 0M3.500 15c5 2 12 2 17 0"/></svg>`,
+  star: `<svg width="15" height="15" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M5.600 5.600l12.800 12.800M18.400 5.600L5.600 18.400"/></svg>`,
+  bot: `<svg width="19" height="19" viewBox="0 0 24 24"><rect x="4" y="9" width="16" height="11" rx="3"/><path d="M12 9V5M9 14v1M15 14v1"/><circle cx="12" cy="4" r="1"/></svg>`,
+  stop: `<svg width="12" height="12" viewBox="0 0 12 12" class="solid"><rect width="12" height="12" rx="3"/></svg>`,
+  ring: `<svg width="40" height="40" viewBox="0 0 40 40"><path d="M8 29A15 15 0 1132 29" stroke-width="3"/><path d="M13 19a10 10 0 0114 0M16 23a6 6 0 018 0" stroke-width="2.200" style="stroke:var(--ink)"/><circle cx="20" cy="27" r="1.500" style="fill:var(--ink);stroke:none"/></svg>`,
+};
+
+const SIZES = { folded: { w: 466, h: 678 }, sideways: { w: 951, h: 669 }, upright: { w: 669, h: 951 } };
+
+const SURFACES = [
+  { id: 'code', name: 'Code, folded', rec: 'A', judges: 'All three judges: folded, a long command stops at the edge with nothing to say there is more. Astra: an open step cuts its command in the middle.',
+    now: 'Folded, a long line in a code block stops dead at the right edge, and an open step shortens its command to "npm test -- t…rawer.test.ts". Sideways already shows both whole.',
+    A: ['Fade and slide', 'The line runs on under a soft fade at the block\'s right edge, so it reads as more, and the block slides sideways. An open step shows its whole command under it. Try dragging the code.'],
+    B: ['Wrap folded', 'Folded, long lines wrap, each break marked with a faint ↪ so a wrapped line can\'t pass for two. Copy still copies the line as written. An open step shows its whole command under it.'],
+    C: ['Wrap button', 'A\'s fade and slide, plus a Wrap button beside Copy that wraps the block, and the choice is kept. An open step shows its whole command under it. Try Wrap.'] },
+  { id: 'overview', name: 'Threads overview', rec: 'B', judges: 'All three judges: sideways, the heading, filter and notice take the top two-fifths, working cards say one fact three times, and a question card\'s foot is crammed into a corner.',
+    now: 'The heading, the computer menu and search, then a two-line notice come before any card. A working card says Working, Codex on Laptop and "Codex is working on Laptop." A question card ends in a three-line sentence beside a two-line link.',
+    A: ['Trim the cards', 'Working cards drop the sentence that repeats them. A question card ends in one line, "Answer it on Laptop.", with Review on a row of its own. The top is unchanged.'],
+    B: ['Trim cards and top', 'A, and the top is one row: Threads, the computer menu and search side by side. The notice is one line with Try again at its end. The cards start about 90 points higher.'],
+    C: ['B, columns by need', 'B, and the columns share the width by what they hold: Needs you widest and Recent narrowest, so a question card wraps less.'] },
+  { id: 'rows', name: 'Rows\' second line', rec: 'B', judges: 'Sol and Astra: the second line spells out Codex or Claude Code beside its mark and then cuts the computer, and "Asked you a question" repeats Needs you.',
+    now: 'The second line spells out the provider beside its mark, then the project and the computer, so "Laptop" is often cut. A question row says "Asked you a question".',
+    A: ['The mark says who', 'The provider\'s mark stands alone, so the line reads "Sotto · Laptop". VoiceOver still says the provider. Status words stay as they are.'],
+    B: ['Mark, shorter status', 'A, and a question row says "Question · Laptop", since the section already says it needs you. Just finished and Can\'t reach it stay.'],
+    C: ['Computer first', 'B, with the computer before the project, "Laptop · Sotto", so a long line cuts the project rather than where the thread runs.'] },
+  { id: 'finished', name: 'Finished light', rec: 'A', judges: 'Sol, and Opus in round 0: a thread that just finished wears the same teal light as one that\'s working.',
+    now: 'Just finished and Working both show a teal dot with its glow. Only the words under the name tell them apart.',
+    A: ['Check in the light', 'A finished thread\'s light is a small teal disc with a check, keeping its glow. Working keeps the dot.'],
+    B: ['Ring', 'A finished thread\'s light is a teal ring with its glow. Working keeps the solid dot.'],
+    C: ['Check alone', 'A finished thread shows a teal check with a soft glow and no disc. Working keeps the dot.'] },
+  { id: 'prsheet', name: 'Pull request sheet', rec: 'B', judges: 'Sol: the header and three tall status rows push Summary down to the dock. Opus: a sliver of cut-off text shows above Babysit.',
+    now: 'The badge, title, branch and three status rows fill most of the sheet, so Summary starts just above Babysit, and half a line shows over the dock.',
+    A: ['Fade above the dock', 'Text fades out under Babysit instead of being cut. Nothing else moves.'],
+    B: ['Fade, tighter top', 'A, and the badge, title and branch sit closer and the status rows are slimmer, so Summary\'s first lines show without scrolling.'],
+    C: ['B, one-line statuses', 'B, and each status is one line with its detail after it in grey, so the three take about half the room.'] },
+];
+
+const state = { surface: 'code', variant: 'now', posture: null, theme: 'dark', actual: false, wrap: false };
+const params = location.hash.replace('#', '').split('/');
+if (SURFACES.some(s => s.id === params[0])) state.surface = params[0];
+if (['now', 'A', 'B', 'C'].includes(params[1])) state.variant = params[1];
+if (SIZES[params[2]]) state.posture = params[2];
+const autoPosture = () => innerWidth < 560 ? 'folded' : innerWidth < 800 ? 'upright' : 'sideways';
+const posture = () => state.posture || autoPosture();
+const tell = words => `<div class="tell">${words}</div>`;
+
+/* ---------- Rows ---------- */
+const TROWS = [
+  ['Needs you', [
+    { d: 'w', t: 'Choose the release target', mark: 'star', prov: 'Claude Code', project: 'Sotto', comp: 'Laptop', status: 'Asked you a question', short: 'Question', time: '2m' },
+    { d: 'w', t: 'Fix login test', mark: 'star', owl: 1, prov: 'Claude Code', project: 'Sotto', comp: 'Laptop', status: 'Asked you a question', short: 'Question', time: '22m' }]],
+  ['Working now', [
+    { d: 'g', t: 'Babysit #845 release notes', mark: 'knot', owl: 1, prov: 'Codex', project: 'Sotto', comp: 'Laptop', time: '12m' },
+    { d: 'g', t: 'Refine the iPhone thread view', mark: 'knot', prov: 'Codex', project: 'Sotto', comp: 'Laptop', time: '12m', chosen: 1 },
+    { d: 'g', t: 'Clean up the wiring schedule', mark: 'star', prov: 'Claude Code', project: 'Panel tools', comp: 'Laptop', time: '12m' }]],
+  ['Recent', [
+    { d: 'fin', t: 'Add keyboard shortcuts', mark: 'knot', prov: 'Codex', project: 'Sotto', comp: 'Laptop', status: 'Just finished', short: 'Just finished', time: '18m' },
+    { d: 'i', t: 'Compare motor drive options', mark: 'knot', prov: 'Codex', project: 'Panel tools', comp: 'Laptop', time: '1h' },
+    { d: 'i', t: 'Update the lighting plan', mark: 'knot', prov: 'Codex', project: 'Lighting', comp: 'Studio Mac', status: 'Can\'t reach it', short: 'Can\'t reach it', time: '1d' }]],
+];
+function metaLine(r, v) {
+  if (v === 'now') return r.status ? `${r.status} · ${r.comp}` : `${r.prov} · ${r.project} · ${r.comp}`;
+  if (v === 'A') return r.status ? `${r.status} · ${r.comp}` : `${r.project} · ${r.comp}`;
+  if (v === 'B') return r.status ? `${r.short} · ${r.comp}` : `${r.project} · ${r.comp}`;
+  return r.status ? `${r.short} · ${r.comp}` : `${r.comp} · ${r.project}`;
+}
+const CHECK = s => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" style="stroke-width:3.2"><path d="M6 12.5l4 4 8-9"/></svg>`;
+function light(d, fin) {
+  if (d !== 'fin' || fin === 'now') return `<span class="lt"><span class="dot ${d === 'fin' ? 'g' : d}"></span></span>`;
+  if (fin === 'A') return `<span class="lt"><span class="finA">${CHECK(10)}</span></span>`;
+  if (fin === 'B') return `<span class="lt"><span class="finB"></span></span>`;
+  return `<span class="lt"><span class="finC">${CHECK(15)}</span></span>`;
+}
+function sidebar(meta, fin) {
+  const rows = TROWS.map(([label, list]) => `<div class="sec">${label}<span>${list.length}</span></div>` + list.map(r =>
+    `<div class="rowt ${r.chosen ? 'ch' : ''}">${light(r.d, fin)}<div style="flex:1;min-width:0"><div class="tt two">${r.t}</div><div class="mt">${I[r.mark]}${r.owl ? I.owlS : ''}<span class="clip">${metaLine(r, meta)}</span><span style="flex:1"></span><span class="tm">${r.time}</span></div></div></div>`).join('')).join('');
+  return `<div class="side">${rows}</div><div class="sidehead">Threads</div><div class="circle newt" style="left:244px;top:38px">${I.plus()}</div>`;
+}
+function listPage(p, meta, fin) {
+  const R = p === 'folded' ? 100 : 90, L = p === 'folded' ? 16 : 24;
+  const rows = TROWS.map(([label, list]) => `<div class="sec" style="padding-left:4px">${label}<span>${list.length}</span></div>` + list.map(r =>
+    `<div class="rowt" style="padding-left:4px">${light(r.d, fin)}<div style="flex:1;min-width:0"><div style="display:flex;gap:8px"><div class="tt clip" style="flex:1">${r.t}</div><span class="tm" style="padding-top:2px">${r.time} ago</span></div><div class="mt">${I[r.mark]}${r.owl ? I.owlS : ''}<span class="clip">${metaLine(r, meta)}</span></div></div></div>`).join('')).join('');
+  return `<div class="page" style="left:0;right:0;padding:14px ${R}px 40px ${L}px"><div class="pt" style="margin:0 0 6px 4px">Threads</div>${rows}</div>${rail(p, { top: p === 'folded' ? ['new'] : ['side', 'new'], tabs: 'threads' })}`;
+}
+function rowsSurface(p, meta, fin) {
+  return p === 'sideways' ? threadPage(p, { meta, fin }) : listPage(p, meta, fin);
+}
+
+/* ---------- Code, folded ---------- */
+const LONG = 'python compare_drives.py --option 40 --report drives.csv --limit 12';
+const CMD = 'npm test -- tests/unit/renderer/terminalDrawer.test.ts';
+function codeBlock(p, v) {
+  const wrapButton = v === 'C' ? `<span class="wrapb ${state.wrap ? 'on' : ''}" onclick="toggleWrap()">Wrap</span>` : '';
+  const head = `<div class="codeh"><span>sh</span><span style="flex:1"></span>${wrapButton}<span style="color:var(--acctext);font-weight:600">Copy</span></div>`;
+  const wrapped = `<div class="codeb">python compare_drives.py<br><span class="cont">↪</span>--option 40 --report<br><span class="cont">↪</span>drives.csv --limit 12</div>`;
+  let body;
+  if (p !== 'folded' || v === 'now') body = `<div class="codeb" style="white-space:pre;overflow:hidden">${LONG}</div>`;
+  else if (v === 'B' || (v === 'C' && state.wrap)) body = wrapped;
+  else body = `<div style="position:relative"><div class="codeb slide-x">${LONG}</div><div class="fade"></div></div>`;
+  return `<div class="code">${head}${body}</div>`;
+}
+function steps(p, v) {
+  const done = `<div class="step"><span class="ok">${CHECK(13)}</span><span style="color:var(--muted)">Read</span><span class="mono clip" style="flex:1">docs/terminal.md</span><span class="tm">4s</span></div>`;
+  const running = (p !== 'folded' || v === 'now')
+    ? `<div class="step"><span class="spin"></span><span class="wk" style="font-weight:600">Running</span><span class="mono clip" style="flex:1">${p === 'folded' ? 'npm test -- t…rawer.test.ts' : CMD}</span><span class="wk">1m 02s</span></div>`
+    : `<div class="step" style="flex-wrap:wrap"><span class="spin"></span><span class="wk" style="font-weight:600;flex:1">Running</span><span class="wk">1m 02s</span><div class="mono" style="flex-basis:100%;padding-left:26px;margin-top:3px;word-break:break-all;white-space:normal">${CMD}</div></div>`;
+  return `<div class="steps">${done}${running}</div>`;
+}
+function codeSurface(p, v) {
+  const left = p === 'sideways' ? 296 : p === 'folded' ? 16 : 24;
+  const right = p === 'folded' ? 100 : p === 'sideways' ? 99 : 90;
+  const conv = `<p style="margin-top:8px">The drive's rated current, its cooling and the cable run all change, so the breaker and the conduit fill need checking again before anything is ordered.</p>
+    <p>1. Check the breaker.<br>2. Check the conduit fill.</p>${codeBlock(p, v)}
+    <div class="codex"><span class="ctile">C</span>Codex</div><p>Running the drawer's tests now, then the chord.</p>
+    <div style="display:flex;gap:12px;align-items:center;color:var(--muted);font-weight:500"><span class="dot g"></span>Combing the desert ${I.down}</div>${steps(p, v)}`;
+  return `<div class="conv" style="left:${left}px;right:${right}px;top:${p === 'folded' ? 14 : 30}px">${conv}</div>
+    <div class="composer" style="left:${left - 4}px;right:${right - 4}px;bottom:${p === 'folded' ? 43 : 41}px"><span class="disc">${I.plus(16)}</span><span style="flex:1">Reply while it works</span><span class="disc">${I.mic}</span><span class="disc" style="background:var(--ink);color:var(--ground)">${I.stop}</span></div>
+    ${p === 'sideways' ? sidebar('now', 'now') : ''}
+    ${rail(p, { top: p === 'folded' ? ['back'] : p === 'sideways' ? ['side'] : ['side', 'new'], thread: 'working', tabs: p === 'folded' ? null : 'threads' })}`;
+}
+window.toggleWrap = () => { state.wrap = !state.wrap; render(); };
+
+/* ---------- Threads overview, sideways ---------- */
+function overview(p, v) {
+  const trim = v !== 'now', compact = v === 'B' || v === 'C';
+  const mac = `<span style="color:var(--muted);flex:none">${I.place.replace(/"15"/g, '"22"')}</span>`;
+  const picker = `<div class="opill" style="flex:none"><span class="dot g"></span>All computers ${I.down}</div>`;
+  const search = `<div class="opill" style="flex:1;color:var(--muted);font-weight:400"><svg width="18" height="18" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M16 16l5 5"/></svg>Search threads</div>`;
+  const tryAgain = small => `<div style="flex:none;background:var(--soft);border-radius:${small ? 15 : 19}px;padding:${small ? '5px 12px' : '8px 15px'};font-weight:600;font-size:${small ? 14 : 16}px">Try again</div>`;
+  let top, colsTop;
+  if (!compact) {
+    top = `<div class="pt" style="position:absolute;top:18px">Threads</div>
+      <div style="position:absolute;top:66px;left:0;right:0;display:flex;gap:14px">${picker}<div style="width:520px;display:flex">${search}</div></div>
+      <div class="notice" style="position:absolute;top:128px;left:0;right:0;height:66px">${mac}<div style="flex:1"><div style="font-weight:600">Can't reach Studio Mac.</div><div style="color:var(--muted);font-size:15px">Showing its last shared threads.</div></div>${tryAgain()}</div>`;
+    colsTop = 216;
+  } else {
+    top = `<div style="position:absolute;top:14px;left:0;right:0;display:flex;gap:14px;align-items:center"><div class="pt" style="flex:none;margin-right:6px">Threads</div>${picker}${search}</div>
+      <div class="notice" style="position:absolute;top:70px;left:0;right:0;height:40px;padding:0 6px 0 14px">${mac}<div style="flex:1;min-width:0" class="clip"><b style="font-weight:600">Can't reach Studio Mac.</b> <span style="color:var(--muted);font-size:15px">Showing its last shared threads.</span></div>${tryAgain(true)}</div>`;
+    colsTop = 128;
+  }
+  const qcard = (t, meta, owl, ask, time, more, n) => `<div class="ocard ndc"><div class="oh"><span class="dot w"></span><span class="ask" style="font-weight:600">Question</span><span style="flex:1"></span><span class="tm">${time}</span></div>
+    <div class="ot">${t}</div><div class="om">${I.star}${owl ? I.owlS : ''}<span>${meta}</span></div><div class="oq">${ask}</div>${more ? '<div style="font-size:14px;color:var(--muted);margin-top:6px">1 more request in this thread</div>' : ''}
+    ${trim
+      ? `<div style="font-size:15px;color:var(--muted);margin-top:12px">Answer it on Laptop.</div><div class="wk" style="font-weight:600;margin-top:5px;display:flex;align-items:center;gap:3px">Review ${n} request${n > 1 ? 's' : ''} ${I.chev}</div>`
+      : `<div style="display:flex;gap:10px;align-items:center;margin-top:12px"><span style="flex:1;color:var(--muted);font-size:16px">This iPhone can't answer on Laptop yet.</span><span class="wk" style="font-weight:600;text-align:center;flex:none;width:96px;line-height:1.2">${n > 1 ? 'Review 2 requests' : 'Review question'}</span></div>`}</div>`;
+  const wcard = (t, meta, mark, owl, time, line) => `<div class="ocard wkc"><div class="oh"><span class="dot g"></span><span class="wk" style="font-weight:600">Working</span><span style="flex:1"></span><span class="tm" style="font-weight:600">${time}</span></div>
+    <div class="ot">${t}</div><div class="om">${I[mark]}${owl ? I.owlS : ''}<span class="clip">${meta}</span></div>${line ? `<div style="font-size:16px;color:var(--muted);margin-top:10px">${line}</div>` : ''}</div>`;
+  const repeat = trim ? '' : 'Codex is working on Laptop.';
+  const recent = `<div class="ocard" style="padding:4px 0">${[['g', 'Add keyboard shortcuts', 'Just finished · Laptop', '18m ago'], ['i', 'Compare motor drive options', 'Codex · Panel tools · Laptop', '1h ago'], ['i', 'Update the lighting plan', 'Can\'t reach it · Studio Mac', '1d ago']].map(([d, t, m, time], n) =>
+    `<div style="display:flex;gap:10px;padding:10px 14px;${n ? 'border-top:1px solid var(--hair)' : ''}"><span class="dot ${d}" style="margin-top:7px"></span><div style="flex:1;min-width:0"><div style="display:flex;gap:6px"><div class="tt" style="flex:1">${t}</div><span class="tm" style="padding-top:2px">${time}</span></div><div class="mt">${I.knot}<span class="clip">${m}</span></div></div></div>`).join('')}</div>
+    <div style="display:flex;gap:8px;align-items:center;padding:14px 6px;color:var(--muted);font-weight:500">${I.chev}<span style="flex:1">Settled</span>2</div>`;
+  const cols = v === 'C' ? '1.3fr 1fr .78fr' : '1fr 1fr 1fr';
+  const head = (dot, label, n) => `<div class="ohead">${dot ? `<span class="dot ${dot}"></span>` : ''}${label}<span style="color:var(--muted);font-weight:400">${n}</span></div>`;
+  const columns = `<div style="position:absolute;top:${colsTop}px;left:0;right:0;display:grid;grid-template-columns:${cols};gap:18px;align-items:start">
+    <div>${head('w', 'Needs you', 2)}${qcard('Choose the release target', 'Claude Code on Laptop', 0, 'Which release should I prepare?', '2m ago', 1, 2)}${qcard('Fix login test', 'Claude Code on Laptop', 1, 'Which account should the login test sign in with?', '3m ago', 0, 1)}</div>
+    <div>${head('g', 'Working now', 3)}${wcard('Babysit #845 release notes', 'Codex on Laptop · Sotto', 'knot', 1, '12m 10s', repeat)}${wcard('Refine the iPhone thread view', 'Codex on Laptop · Sotto', 'knot', 0, '12m 10s', repeat)}${wcard('Clean up the wiring schedule', 'Claude Code on Laptop · Panel tools', 'star', 0, '12m ago', 'Background agents are still working.')}</div>
+    <div>${head('', 'Recent', 3)}${recent}</div></div>`;
+  return `<div style="position:absolute;left:24px;right:99px;top:0;bottom:0;overflow:hidden">${top}${columns}</div>${rail(p, { top: ['side', 'new'], tabs: 'threads' })}`;
+}
+
+/* ---------- Pull request sheet ---------- */
+function prSheet(p, v) {
+  const box = p === 'folded' ? 'left:8px;right:8px;top:8px;bottom:0' : p === 'sideways' ? 'left:150px;width:653px;top:8px;bottom:0' : 'left:8px;right:8px;top:30px;bottom:0';
+  const padR = p === 'folded' ? 96 : 20;
+  const tight = v === 'B' || v === 'C';
+  const tabs = [['Summary', 0, 1], ['Checks', 1], ['Reviews', 1], ['Files', 0]];
+  const tabRow = `<div class="tabs ${p === 'folded' ? 'tight' : ''}" style="padding-right:${padR}px">${tabs.map(([t, d, on]) => `<div class="tab ${on ? 'on' : ''}">${t}${d ? '<span class="rd"></span>' : ''}</div>`).join('')}</div>`;
+  const band = `<div style="flex:none;display:flex;align-items:center;justify-content:flex-end;gap:14px;height:${tight ? 48 : 54}px;padding-right:${padR + 2}px"><div class="circle" style="position:relative;margin:0">${I.ext}</div><span style="color:var(--acctext);font-weight:600">Done</span></div>`;
+  const rows = [[I.xc('var(--dangertext)'), 'A check failed', '1 failing, 1 running, 2 passed'], [I.xc('var(--dangertext)'), 'Changes requested', 'chloe-r asked for changes'], [I.cl('var(--warntext)'), '3 commits behind main', 'No conflicts. Merges cleanly into main']];
+  const statusRows = rows.map(([ic, t, d], n) => v === 'C'
+    ? `<div class="strow" style="padding:8px 16px;align-items:flex-start;${n ? 'border-top:1px solid var(--hair)' : ''}"><span class="st">${ic}</span><div><span class="stt">${t}</span> <span class="sts">· ${d}</span></div></div>`
+    : `<div class="strow" style="padding:${tight ? '8px' : '12px'} 16px;${n ? 'border-top:1px solid var(--hair)' : ''}"><span class="st">${ic}</span><div><div class="stt">${t}</div><div class="sts">${d}</div></div></div>`).join('');
+  const body = `<div style="display:flex;align-items:center;gap:10px"><span style="display:inline-flex;gap:5px;align-items:center;background:var(--soft);padding:3px 10px;border-radius:12px;font-size:14px;font-weight:600;color:var(--muted)">${I.pr} Draft</span><span style="color:var(--muted);font-weight:600">#721</span></div>
+    <div style="font-size:22px;font-weight:700;line-height:1.2;margin:${tight ? '6px 0 6px' : '12px 0 10px'}">Let the window frost and put a terminal in the bottom third</div>
+    <div style="display:flex;align-items:center;gap:6px;color:var(--muted)">${I.branch}<span class="chipm clip" style="flex:0 1 auto;min-width:0">feat/frosted-window-and-pane-terminal</span><span style="font-size:14px">into</span><span class="chipm">main</span></div>
+    <div class="group" style="margin:${tight ? 10 : 18}px 0">${statusRows}</div>
+    <div class="lbl" style="margin:${tight ? 12 : 22}px 0 6px">Summary</div>
+    <div class="group" style="padding:14px 16px;margin-top:6px;font-size:16px"><div style="font-weight:600;font-size:18px;margin-bottom:8px">What this does</div>Frosts the window and puts a <b>terminal</b> in the bottom third.<div style="font-weight:600;margin:12px 0 4px">Tooltips read the theme</div>Each pane's tooltip takes its colours from the theme, so a light theme gets light tooltips.<div style="font-weight:600;margin:12px 0 4px">The drawer's shortcut</div>Ctrl+J opens it, checked against the dictation hotkey.</div><div style="height:90px"></div>`;
+  const fade = v === 'now' ? '' : `<div style="position:absolute;left:0;right:0;bottom:100%;height:44px;background:linear-gradient(transparent,var(--sheet));pointer-events:none"></div>`;
+  const dock = `<div style="position:relative;flex:none;padding:6px 12px 22px;padding-right:${p === 'folded' ? padR - 8 : 12}px;background:var(--sheet)">${fade}<div style="display:flex;gap:8px;align-items:center"><div class="btn pri" style="flex:1;height:46px">${I.alarm(18)} Babysit pull request</div><div class="disc" style="width:46px;height:46px;color:var(--muted)">${I.info}</div></div></div>`;
+  return threadPage(p, {}) + `<div class="scrim"></div><div class="sheet" style="${box};border-radius:26px 26px 0 0"><div class="grab"></div>${band}${tabRow}<div class="prbody" style="padding:${tight ? 12 : 16}px ${padR}px 0 20px">${body}</div>${dock}</div>`;
+}
+
+/* ---------- Render ---------- */
+function render() {
+  const s = SURFACES.find(x => x.id === state.surface), p = posture();
+  const v = state.variant;
+  const stage = document.getElementById('stage');
+  const size = SIZES[p];
+  stage.className = state.theme;
+  stage.style.width = size.w + 'px'; stage.style.height = size.h + 'px';
+  let html;
+  if (s.id === 'code') html = codeSurface(p, v);
+  if (s.id === 'overview') html = p === 'sideways' ? overview(p, v) : listPage(p, 'now', 'now') + tell('The overview of cards stands only when the Duo is unfolded. Turn it sideways, or press Sideways above.');
+  if (s.id === 'rows') html = rowsSurface(p, v, 'now');
+  if (s.id === 'finished') html = rowsSurface(p, 'now', v);
+  if (s.id === 'prsheet') html = prSheet(p, v);
+  stage.innerHTML = html;
+  document.getElementById('surface').value = s.id;
+  document.getElementById('variants').innerHTML = ['now', 'A', 'B', 'C'].map(k => `<button class="${k === v ? 'on' : ''} ${k === s.rec ? 'rec' : ''}" onclick="setV('${k}')">${k === 'now' ? 'Now' : k}</button>`).join('');
+  document.getElementById('postures').innerHTML = [['folded', 'Folded'], ['sideways', 'Sideways'], ['upright', 'Upright']].map(([k, t]) => `<button class="${k === p ? 'on' : ''}" onclick="setP('${k}')">${t}</button>`).join('');
+  document.getElementById('tools').innerHTML = `<button class="${state.theme === 'light' ? 'on' : ''}" onclick="setT()">Light</button><button class="${state.actual ? 'on' : ''}" onclick="setA()">Actual size</button>`;
+  const c = document.getElementById('caption');
+  if (v === 'now') c.innerHTML = `<b>Now.</b> ${s.now} <span style="color:#8f949b">${s.judges}</span>`;
+  else c.innerHTML = `<b>${v}: ${s[v][0]}.</b> ${s[v][1]}${v === s.rec ? ' <b style="color:#6bc3b6">Suggested.</b>' : ''}`;
+  fit();
+  history.replaceState(null, '', `#${s.id}/${v}${state.posture ? '/' + state.posture : ''}`);
+}
+function fit() {
+  const holder = document.getElementById('holder'), stage = document.getElementById('stage');
+  const size = SIZES[posture()];
+  holder.classList.toggle('actual', state.actual);
+  if (state.actual) { stage.style.transform = 'none'; stage.style.left = '0'; stage.style.top = '0'; return; }
+  const scale = Math.min(holder.clientWidth / size.w, holder.clientHeight / size.h, 1);
+  stage.style.transform = `scale(${scale})`;
+  stage.style.left = Math.max(0, (holder.clientWidth - size.w * scale) / 2) + 'px';
+  stage.style.top = Math.max(0, (holder.clientHeight - size.h * scale) / 2) + 'px';
+}
+window.setV = k => { state.variant = k; state.wrap = false; render(); };
+window.setP = k => { state.posture = k; render(); };
+window.setT = () => { state.theme = state.theme === 'dark' ? 'light' : 'dark'; render(); };
+window.setA = () => { state.actual = !state.actual; render(); };
+document.getElementById('surface').innerHTML = SURFACES.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+document.getElementById('surface').onchange = e => { state.surface = e.target.value; state.variant = 'now'; render(); };
+addEventListener('resize', () => render());
+addEventListener('orientationchange', () => setTimeout(render, 200));
+render();
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(fit);
+
+/* ---------- Rail ---------- */
+function rail(p, o) {
+  const x = p === 'folded' ? 424 : p === 'sideways' ? 910 : 630;
+  const cx = p === 'folded' ? 418 : p === 'sideways' ? 904 : 626;
+  const H = SIZES[p].h, top = p === 'folded' ? 198 : p === 'sideways' ? 146 : 92;
+  const clockY = p === 'folded' ? 84 : p === 'sideways' ? 30 : 8;
+  let html = `<div class="clock" style="left:${cx}px;top:${clockY}px">9:41</div><div class="ring" style="left:${cx}px;top:${clockY + 44}px">${I.ring}</div>`;
+  (o.top || []).forEach((b, n) => {
+    const cls = b === 'new' ? 'newt' : 'chrome';
+    html += `<div class="circle ${cls}" style="left:${x}px;top:${top + n * 56}px">${b === 'back' ? I.back : b === 'side' ? I.side : I.plus()}</div>`;
+  });
+  const pillX = x - 29;
+  if (o.thread) {
+    const bottom = p === 'folded' ? H - 55 : H - 275;
+    const word = o.thread === 'needs' ? ['w', 'Needs<br>you', 'ask'] : o.thread === 'done' ? ['i', 'Done', ''] : ['g', 'Working', 'wk'];
+    html += `<div class="pill" style="left:${pillX}px;top:${bottom - 163}px;height:163px;justify-content:space-between;padding-bottom:12px"><div class="state ${word[2]}"><span class="dot ${word[0]}" style="margin-bottom:3px"></span><br>${word[1]}</div><div style="color:var(--muted)">${I.owl}</div><div style="color:var(--muted)">${I.dots}</div></div>`;
+  }
+  if (o.tabs) {
+    const a = o.tabs;
+    html += `<div class="pill" style="left:${pillX}px;top:${H - 55 - 214}px;height:214px;padding:3px 0"><div class="tile ${a === 'threads' ? 'on' : ''}">${a === 'threads' ? I.chatF : I.chat}<span class="badge">2</span></div><div class="tile">${I.owl}</div><div class="tile ${a === 'computers' ? 'on' : ''}">${I.mac}</div><div class="tile ${a === 'settings' ? 'on' : ''}">${I.sliders}</div></div>`;
+  }
+  return html;
+}
+/* ---------- A thread behind sheets and menus ---------- */
+function conversation(p) {
+  const table = (rows, cols) => `<div class="tbl">${rows.map(r => `<div class="tr" style="grid-template-columns:${cols}">${r.map(c => `<div>${c}</div>`).join('')}</div>`).join('')}</div>`;
+  const records = p === 'folded'
+    ? `<div class="tbl">${[['Drawer toggle', 'Terminal mode', 'No', 'Move the toggle on screen before the drawer opens'], ['Tooltips', 'Every pane', 'No', 'Name the chord only while the shortcut is on']].map((r, n) => `<div style="padding:9px 14px;${n ? 'border-top:1px solid var(--hair)' : ''}"><div style="font-size:13px;color:var(--muted);font-weight:600">Finding</div><div style="font-size:17px;font-weight:600;margin:1px 0 5px">${r[0]}</div>${['Where', 'Fixed', 'What to do next'].map((h, k) => `<div style="display:grid;grid-template-columns:108px 1fr"><span style="color:var(--muted)">${h}</span><span>${r[k + 1]}</span></div>`).join('')}</div>`).join('')}</div>`
+    : table([['Finding', 'Where', 'Fixed', 'What to do next'], ['Drawer toggle', 'Terminal mode', 'No', 'Move the toggle on screen before the drawer opens'], ['Tooltips', 'Every pane', 'No', 'Name the chord only while the shortcut is on']], '1.4fr 1fr .5fr 1.8fr');
+  return `<p style="font-weight:600;margin-top:18px">Implemented but looks wrong</p>
+    <p>1. <b>Ctrl+\` in Terminal mode:</b> the same off-screen drawer toggle as Standards #2.</p>
+    <p>2. <b>Tooltips:</b> they always say "(Ctrl+\`)", even when dictation owns that chord and the shortcut is off.</p>
+    <p>Where the time went:</p>
+    ${table([['Step', 'Before', 'After'], ['Open the thread', '1.2 s', '0.3 s'], ['First reply', '2.4 s', '0.9 s']], '1fr 60px 60px')}
+    <p>What is left:</p>${records}
+    <div class="bub">Fix the tooltips first, then the drawer chord.</div>
+    <div class="codex"><span class="ctile">C</span>Codex</div>
+    <p>Still working through the review fixes. The tooltips are done; the drawer's chord is next.</p>
+    <div style="display:flex;gap:12px;align-items:center;color:var(--muted);font-weight:500"><span class="dot g"></span>Combing the desert ${I.chev}</div>`;
+}
+function threadPage(p, o = {}) {
+  const sideShown = p === 'sideways' && o.sidebar !== false;
+  const left = sideShown ? 296 : p === 'folded' ? 16 : 24;
+  const right = p === 'folded' ? 100 : p === 'sideways' ? 99 : 90;
+  const compL = left - 4, compR = right - 4;
+  const composerB = p === 'folded' ? 43 : 41;
+  return `<div class="conv" style="left:${left}px;right:${right}px">${conversation(p)}</div>
+    <div class="composer" style="left:${compL}px;right:${compR}px;bottom:${composerB}px"><span class="disc">${I.plus(16)}</span><span style="flex:1">Reply while it works</span><span class="disc">${I.mic}</span><span class="disc" style="background:var(--ink);color:var(--ground)">${I.stop}</span></div>
+    ${sideShown ? sidebar(o.meta || 'now', o.fin || 'now') : ''}
+    ${rail(p, { top: p === 'folded' ? ['back'] : p === 'sideways' ? ['side'] : ['side', 'new'], thread: o.thread || 'working', tabs: p === 'folded' ? null : 'threads' })}`;
+}
+</script>
+</body>
+</html>

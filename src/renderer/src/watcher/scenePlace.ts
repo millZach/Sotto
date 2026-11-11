@@ -15,6 +15,29 @@ export interface ScenePlace {
   readonly stars: number
   /** What moves in it, beyond the stars: falling snow, drifting sand, a lighthouse's beam. Null when nothing does. */
   readonly ambience: ((layout: SceneLayout) => Ambience) | null
+  /**
+   * The same landscape a layer at a time, for the living night scene's line art (ADR-0199). Null for a place that has
+   * no layers yet, which is drawn by density as it always was.
+   */
+  readonly layers: SceneLayers | null
+}
+
+/**
+ * A place drawn a layer at a time, the farthest first, so the painter can let what is in front hide what is behind and
+ * draw far things fainter (ADR-0199). The layers together are the place's `draw`, part for part.
+ */
+export interface SceneLayers {
+  /** The layers' names, the farthest first. */
+  readonly order: readonly string[]
+  /** How strong each layer's ink is drawn, 1 as the place draws it: the far hills fainter, the moon brighter. */
+  readonly tone: Readonly<Record<string, number>>
+  /** Draws one layer's parts on `fx`, and nothing of any other layer. */
+  readonly draw: (layer: string, fx: Field, layout: SceneLayout) => void
+  /**
+   * The part of the pane a layer draws in, with room for its strokes' width, so the painter reads back only that. A
+   * layer may draw outside it; nothing outside it is seen.
+   */
+  readonly bounds: (layer: string, layout: SceneLayout) => { readonly x: number; readonly y: number; readonly w: number; readonly h: number }
 }
 
 /**

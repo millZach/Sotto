@@ -1,0 +1,113 @@
+{
+  "source": "https://models.dev/api.json",
+  "fetchedAt": "2026-11-10T23:45:06.897508+00:00",
+  "catalogueProviders": 235,
+  "eligibleProviders": 197,
+  "rule": "A supplied API address and @ai-sdk/openai-compatible package, plus OpenRouter.",
+  "common": [
+    {
+      "id": "openrouter",
+      "name": "OpenRouter",
+      "api": "https://openrouter.ai/api/v1",
+      "npm": "@openrouter/ai-sdk-provider"
+    },
+    {
+      "id": "deepseek",
+      "name": "DeepSeek",
+      "api": "https://api.deepseek.com",
+      "npm": "@ai-sdk/openai-compatible"
+    },
+    {
+      "id": "fireworks-ai",
+      "name": "Fireworks AI",
+      "api": "https://api.fireworks.ai/inference/v1/",
+      "npm": "@ai-sdk/openai-compatible"
+    },
+    {
+      "id": "moonshotai",
+      "name": "Moonshot AI",
+      "api": "https://api.moonshot.ai/v1",
+      "npm": "@ai-sdk/openai-compatible"
+    },
+    {
+      "id": "zai",
+      "name": "Z.AI",
+      "api": "https://api.z.ai/api/paas/v4",
+      "npm": "@ai-sdk/openai-compatible"
+    }
+  ],
+  "alphabeticalSample": [
+    {
+      "id": "302ai",
+      "name": "302.AI",
+      "api": "https://api.302.ai/v1",
+      "npm": "@ai-sdk/openai-compatible"
+    },
+    {
+      "id": "abacus",
+      "name": "Abacus",
+      "api": "https://routellm.abacus.ai/v1",
+      "npm": "@ai-sdk/openai-compatible"
+    },
+    {
+      "id": "abliteration-ai",
+      "name": "abliteration.ai",
+      "api": "https://api.abliteration.ai/v1",
+      "npm": "@ai-sdk/openai-compatible"
+    },
+    {
+      "id": "aimlapi",
+      "name": "AI/ML API",
+      "api": "https://api.aimlapi.com/v1",
+      "npm": "@ai-sdk/openai-compatible"
+    },
+    {
+      "id": "alibaba",
+      "name": "Alibaba",
+      "api": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+      "npm": "@ai-sdk/openai-compatible"
+    },
+    {
+      "id": "arcee",
+      "name": "Arcee",
+      "api": "https://api.arcee.ai/api/v1",
+      "npm": "@ai-sdk/openai-compatible"
+    },
+    {
+      "id": "baseten",
+      "name": "Baseten",
+      "api": "https://inference.baseten.co/v1",
+      "npm": "@ai-sdk/openai-compatible"
+    },
+    {
+      "id": "berget",
+      "name": "Berget.AI",
+      "api": "https://api.berget.ai/v1",
+      "npm": "@ai-sdk/openai-compatible"
+    },
+    {
+      "id": "chutes",
+      "name": "Chutes",
+      "api": "https://llm.chutes.ai/v1",
+      "npm": "@ai-sdk/openai-compatible"
+    },
+    {
+      "id": "clarifai",
+      "name": "Clarifai",
+      "api": "https://api.clarifai.com/v2/ext/openai/v1",
+      "npm": "@ai-sdk/openai-compatible"
+    },
+    {
+      "id": "cortecs",
+      "name": "Cortecs",
+      "api": "https://api.cortecs.ai/v1",
+      "npm": "@ai-sdk/openai-compatible"
+    },
+    {
+      "id": "nebius",
+      "name": "Nebius Token Factory",
+      "api": "https://api.tokenfactory.nebius.com/v1",
+      "npm": "@ai-sdk/openai-compatible"
+    }
+  ]
+}

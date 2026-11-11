@@ -2,6 +2,7 @@ import { startsThread } from '../shared/threadStarts'
 import type { HostDelegationRelay, RelayDesktop } from '../main/agents/delegationRelayHost'
 import type { HostTellWatcherRelay, TellWatcherDesktop } from '../main/agents/tellWatcherRelay'
 import type { HostRemoteCallers, RemoteDesktop } from '../main/agents/delegationRemoteHost'
+import type { HostHeldSession } from '../main/agents/sessionReaper'
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import type { Duplex } from 'node:stream'
@@ -68,6 +69,7 @@ const COMPOSER_OPS = { 'watcher-phone-open': 'open', 'watcher-phone-new': 'new',
 const adminPhonesRequest = z.object({}).strict()
 const adminPhonesCommandRequest = z.object({ command: hostAdminPhonesCommandSchema }).strict()
 const adminTailnetRequest = z.object({ enabled: z.boolean().optional() }).strict()
+const adminHeldSessionsRequest = z.object({}).strict()
 const adminClientRequest = z.object({ clientId: z.string().min(1).max(512) }).strict()
 const pairRequest = z.object({ v: z.literal(1), code: z.string().min(1).max(32), name: z.string().min(1).max(256) }).strict()
 
@@ -164,7 +166,9 @@ interface Peer { browserWatches?: Map<string, { ticket: number; stop?: () => voi
    * With `step-window` (ADR-0194), where each observed thread's window starts for this client, as cut for the last whole it
    * was sent: kept while it observes the thread, so the window only grows at its end, and moved back by `earlier-steps`.
    */
-  stepWindows?: Map<string, StepWindowCut> | undefined }
+  stepWindows?: Map<string, StepWindowCut> | undefined
+  /** Whether its hello accepted `thread-media-edge`: it may name the longest edge of a picture it asks for (ADR-0170). */
+  pictureEdges?: boolean }
 /**
  * A desktop from before history import, or from before Muse and OpenCode were counted, is sent only the Usage read its
  * strict schemas know (ADR-0083).
@@ -255,6 +259,11 @@ export interface SocketServerOptions {
    * reaches this host over SSH. Absent on the desktop's phone listener, whose administrative routes are off anyway.
    */
   phones?: HostPhonesAdministration
+  /**
+   * The provider sessions the headless host's adapters hold and the rules keeping each (#2398), read on the administrative
+   * route `held-sessions` by the host machine's own measuring script. Absent on the desktop's phone listener.
+   */
+  heldSessions?: () => readonly HostHeldSession[]
   /**
    * The headless host updating itself for a desktop that asks (ADR-0088). Offered on either listener, to a client in
    * `watcherDesktops` whose `remote-answer` policy lets it answer, and only when the host can update itself at all.
@@ -370,6 +379,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'thread-media' || service.supportsThreadMedia === true && service.threadMedia !== undefined)
     && (feature !== 'browser' || options.browser !== undefined)
     && (feature !== 'thread-media-video' || service.supportsThreadMedia === true && service.threadMediaPart !== undefined)
+    // A copy at a longest edge needs image tools, which only the desktop has (ADR-0170, November 10 amendment).
+    && (feature !== 'thread-media-edge' || service.supportsPictureEdges === true)
     && (feature !== 'watcher-control' || service.supportsWatcherControl === true && options.watcherDesktops !== undefined)
     && (feature !== 'watcher-reads' || watcherReads)
     && (feature !== 'watcher-standing-watch' || service.supportsWatcherStandingWatch === true && options.watcherDesktops !== undefined)
@@ -1528,6 +1539,7 @@ export async function startSocketServer(options: SocketServerOptions) {
         peer.usableModels = (request.accepts?.includes('usable-models') ?? false) && offers(peer, 'usable-models')
         // A hello again keeps where each window stands; one that no longer accepts the feature is sent whole threads.
         peer.stepWindows = (request.accepts?.includes('step-window') ?? false) && offers(peer, 'step-window') ? peer.stepWindows ?? new Map() : undefined
+        peer.pictureEdges = (request.accepts?.includes('thread-media-edge') ?? false) && offers(peer, 'thread-media-edge')
         peer.activitySummaries = request.accepts?.includes('activity-summaries') ?? false
         // Summaries win over cut bodies: a client that asks for both reads summaries, as it did before cut bodies.
         peer.activityBodies = !peer.activitySummaries && (request.accepts?.includes('activity-bodies') ?? false) && offers(peer, 'activity-bodies')
@@ -1957,12 +1969,14 @@ export async function startSocketServer(options: SocketServerOptions) {
       case 'sign-in-cancel': return signingIn(peer, request.op, () => { signIns!.cancel(request.signInId, peer.client.clientId); return null })
       case 'opencode-sign-in': return opencodeCall(peer, request.op, request.call)
       case 'preview':
+        // Only a client that accepted `thread-media-edge` names an edge (ADR-0170, November 10 amendment).
+        if (request.request.edge !== undefined && !peer.pictureEdges) throw new Refusal('invalid_request')
         if (peer.preview) throw new Refusal('busy')
         peer.preview = true
         try { return await service.attachmentPreview?.(request.request) ?? null } finally { peer.preview = false }
       // A picture an activity record names (ADR-0170), on the same one-at-a-time guard as a preview: one large frame a socket.
       case 'thread-media':
-        if (!offers(peer, 'thread-media') || !service.threadMedia) throw new Refusal('invalid_request')
+        if (!offers(peer, 'thread-media') || !service.threadMedia || request.request.edge !== undefined && !peer.pictureEdges) throw new Refusal('invalid_request')
         if (peer.preview) throw new Refusal('busy')
         peer.preview = true
         try { return await service.threadMedia(request.request) } finally { peer.preview = false }
@@ -2116,6 +2130,12 @@ export async function startSocketServer(options: SocketServerOptions) {
             if (request.url === '/v1/admin/phones') { adminPhonesRequest.parse(await body(request)); respond(response, 200, { v: 1, hostId, state: options.phones.get() }); return }
             const { command } = adminPhonesCommandRequest.parse(await body(request))
             respond(response, 200, { v: 1, hostId, ...await options.phones.command(command) }); return
+          }
+          // Names, ages, process IDs and Sotto thread IDs only: what holds each provider session, never what a thread said.
+          if (request.url === '/v1/admin/held-sessions') {
+            if (!options.heldSessions) throw new Refusal('invalid_request')
+            adminHeldSessionsRequest.parse(await body(request))
+            respond(response, 200, { v: 1, hostId, sessions: options.heldSessions() }); return
           }
           // Only here, on the listener the tailnet never reaches: a desktop turns its tailnet connections on or off over SSH.
           if (request.url === '/v1/admin/tailnet') {

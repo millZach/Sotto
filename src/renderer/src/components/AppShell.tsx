@@ -20,7 +20,7 @@ import { ClickEffect } from './ClickEffect'
 import { useClickEffectOn } from '../state/clickEffect'
 import { claimRoomFocus, handRoomFocus, pageShortcutFor, usePageShortcutLabels, type AppRoom } from './pageShortcuts'
 
-type ManagementNavigation = Exclude<AppNavigation, 'onboarding'>
+type ManagementNavigation = AppNavigation
 
 export type AppLayout = 'strip' | 'page' | 'sidebar'
 

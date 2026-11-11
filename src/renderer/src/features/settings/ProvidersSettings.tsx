@@ -1,5 +1,5 @@
 import React, { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
-import { ChevronRight, CircleArrowUp, RefreshCw } from 'lucide-react'
+import { ChevronRight, CircleArrowUp, ExternalLink, RefreshCw } from 'lucide-react'
 import { i18n } from '@lingui/core'
 import { msg, t } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
@@ -17,14 +17,21 @@ import { ProviderModelList } from '../../agents/ProviderModelList'
 import { CursorConnection, useCursorSignIn } from '../../agents/CursorConnection'
 import { OwnModelServers, useOwnServersBridge } from '../../agents/OwnModelServers'
 import { useTransientFlag, writeClipboard } from '../../agents/richActions'
-import { localHostId, localProviders } from '../onboarding/localAgents'
+import { localHostId, localProviders } from '../../agents/localAgents'
 import { PROVIDER_INSTALL_GUIDES } from '../../../../shared/hostProviders'
+import { signsInHere, type LocalSignInProvider, type LocalSignInRequest } from '../../../../shared/localProviderSignIn'
+import { HostProviderSignIn } from './HostProviderSignIn'
 import { COMPACT_IDLE_SETTING, onProviderAimed, takeAimedProvider } from './settingsTarget'
 import { shownWords, type LaterWords } from '../../agents/interfaceWords'
 import { effortLabel } from '../../agents/EffortPicker'
 import './providers.css'
 
-const CLIENT_NAMES: Record<ProviderId, string> = { codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin CLI', muse: 'Muse', opencode: 'OpenCode', cursor: 'Cursor', deepseek: 'DeepSeek', hermes: 'Hermes' }
+/** A provider's problem in a word, the same for every provider (ADR-0200); undefined for one Sotto has no word for. */
+function problemWord(problem: string | undefined): string | undefined {
+  return problem === 'signed-out' ? t`Not signed in` : problem === 'not-installed' ? t`Not installed` : problem === 'too-old' ? t`Too old to use` : problem === 'cannot-start' ? t`Can't be started` : undefined
+}
+
+const CLIENT_NAMES: Record<ProviderId, string> = { codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin CLI', muse: 'Muse', opencode: 'OpenCode', cursor: 'Cursor', deepseek: 'DeepSeek', hermes: 'Hermes', pi: 'Pi' }
 
 /**
  * What the update switch says it checks, by where each client's published version is read: Muse's own release feed and
@@ -32,10 +39,10 @@ const CLIENT_NAMES: Record<ProviderId, string> = { codex: 'Codex', claude: 'Clau
  */
 function updateChecks(held: ReadonlySet<ProviderId>): string {
   const muse = !held.has('muse'), cursor = !held.has('cursor')
-  if (muse && cursor) return i18n._(msg`Checks each client's published version when it connects and every five minutes. Muse uses its own release feed and Cursor its install script; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates.`)
-  if (muse) return i18n._(msg`Checks each client's published version when it connects and every five minutes. Muse uses its own release feed; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates.`)
-  if (cursor) return i18n._(msg`Checks each client's published version when it connects and every five minutes. Cursor uses its install script; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates.`)
-  return i18n._(msg`Asks the npm registry for each client’s latest version when it connects and every five minutes. Only the package name is sent.`)
+  if (muse && cursor) return i18n._(msg`Checks each client's published version when it connects and every hour. Muse uses its own release feed and Cursor its install script; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates.`)
+  if (muse) return i18n._(msg`Checks each client's published version when it connects and every hour. Muse uses its own release feed; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates.`)
+  if (cursor) return i18n._(msg`Checks each client's published version when it connects and every hour. Cursor uses its install script; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates.`)
+  return i18n._(msg`Asks the npm registry for each client’s latest version when it connects and every hour. Only the package name is sent.`)
 }
 /** What the Providers page says when Cursor's install guide does not open. */
 const CURSOR_GUIDE_FAILED = msg`Cursor’s install guide could not be opened. Try again.`
@@ -111,7 +118,9 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
   const [checkingUpdates, setCheckingUpdates] = useState(false)
   const [updatePending, setUpdatePending] = useState<Partial<Record<ProviderId, boolean>>>({})
   const [copyingLogin, setCopyingLogin] = useState(false)
-  const [loginCopied, showLoginCopied] = useTransientFlag<'copied'>()
+  const [loginCopied, showLoginCopied] = useTransientFlag<'muse' | 'devin'>()
+  /** The provider whose Sign in dialog is open (ADR-0200): Codex, Claude Code or Grok Build, on this computer. */
+  const [signInFor, setSignInFor] = useState<LocalSignInProvider | null>(null)
   /** Cursor's sign-in from its row (ADR-0128), kept while its row is closed or another row is open. */
   const cursorSignIn = useCursorSignIn(window.sotto?.cursor)
   const inFlight = useRef(new Set<ProviderId>())
@@ -186,12 +195,34 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
       if (!result?.ok) setErrors(previous => ({ ...previous, cursor: CURSOR_GUIDE_FAILED }))
     } catch { setErrors(previous => ({ ...previous, cursor: CURSOR_GUIDE_FAILED })) }
   }
-  const copyMuseLogin = async (): Promise<void> => {
+  // Muse and Devin sign in from their own command, which their opened rows show with Copy.
+  const copyLogin = async (provider: 'muse' | 'devin', loginCommand: string): Promise<void> => {
     setCopyingLogin(true)
-    setErrors(previous => ({ ...previous, muse: undefined }))
-    try { await writeClipboard('muse login'); showLoginCopied('copied') }
-    catch { setErrors(previous => ({ ...previous, muse: msg`The command could not be copied. Select muse login and copy it yourself.` })) }
+    setErrors(previous => ({ ...previous, [provider]: undefined }))
+    try { await writeClipboard(loginCommand); showLoginCopied(provider) }
+    catch { setErrors(previous => ({ ...previous, [provider]: msg`The command could not be copied. Select ${loginCommand} and copy it yourself.` })) }
     finally { setCopyingLogin(false) }
+  }
+  // A provider this computer does not have, or has too old, opens its maker's install page, as first-run setup did.
+  const openInstallGuide = async (provider: ProviderId): Promise<void> => {
+    const guide = PROVIDER_INSTALL_GUIDES[provider].replace(/^https:\/\//u, ''), providerName = PROVIDER_LABELS[provider]
+    const failed = msg({ message: `Your browser did not open. Go to ${guide} to install ${providerName}.`, comment: '{guide} is a web address; {providerName} is a provider\'s name.' })
+    setErrors(previous => ({ ...previous, [provider]: undefined }))
+    try {
+      const result = await window.sotto?.openExternalLink?.(PROVIDER_INSTALL_GUIDES[provider])
+      if (!result?.ok) setErrors(previous => ({ ...previous, [provider]: failed }))
+    } catch { setErrors(previous => ({ ...previous, [provider]: failed })) }
+  }
+  // Closing Sign in checks the provider again when it did not connect, and gives focus back to its row.
+  const closeSignIn = (): void => {
+    const provider = signInFor
+    setSignInFor(null)
+    if (!provider) return
+    if (statusFor(provider).connection !== 'connected' && !inFlight.current.has(provider)) void perform(provider, 'refresh')
+    setTimeout(() => {
+      const focused = document.activeElement
+      if (focused === null || focused === document.body || !focused.isConnected) triggerOf(provider)?.focus()
+    }, 0)
   }
   const openMuseGuide = async (): Promise<void> => {
     setErrors(previous => ({ ...previous, muse: undefined }))
@@ -278,6 +309,7 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
     // checks are on, as first-run setup offers it. A copy too old to use is most likely in ~/.opencode/bin, where both
     // generations' install scripts put it and Sotto looks first, so only OpenCode 2's script replaces it.
     const problem = 'problem' in status ? status.problem : undefined
+    const named = status.connection === 'error' && problemWord(problem) !== undefined
     const requiredVersion = 'requiredVersion' in status && status.requiredVersion ? status.requiredVersion : '2.0.31'
     const openCodeInstall = provider !== 'opencode' || connected ? undefined
       : problem === 'not-installed' ? t`OpenCode 2 is not installed on this computer. Install it with its install script or npm’s @opencode/cli, then connect again.`
@@ -296,11 +328,14 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
         : <div className="provider-connection">
           <div>
             <h4>{t`Local connection`}</h4>
-            <p className="tt-paragraph">{provider === 'devin' ? t`Install Devin CLI and run devin auth login before connecting.` : provider === 'muse' ? t`Uses your Muse sign-in on this computer. Run muse login in a terminal before connecting.` : provider === 'opencode' ? t`Sotto runs its own OpenCode, with its own folder and its own sign-ins. The OpenCode you run yourself stays as it is.` : provider === 'hermes' ? t`Full access on this Mac. Uses your model servers or an API provider’s OpenAI-compatible address and key. Project memory and skills are shared across models. Hermes keeps prompt logs and fetches the models.dev catalog.` : provider === 'deepseek' ? t`Sotto runs DeepSeek with its own folder, on the models of your own model servers below. The DeepSeek you run yourself stays as it is.` : t({ message: `Uses your ${clientName} sign-in on this computer.`, comment: '{clientName} is a provider\'s client, such as Claude Code.' })}</p>
-            {provider === 'muse' && <div className="provider-login"><code>muse login</code><Button variant="ghost" disabled={copyingLogin} aria-label={t`Copy Muse login command`} onClick={() => void copyMuseLogin()}>{loginCopied ? t`Copied` : t`Copy`}</Button><Button variant="ghost" onClick={() => void openMuseGuide()}>{t`Sign-in steps`}</Button><span className="tt-visually-hidden" role="status">{loginCopied ? t`Muse login command copied.` : ''}</span></div>}
+            <p className="tt-paragraph">{provider === 'devin' ? t`Install Devin CLI and run devin auth login before connecting.` : provider === 'muse' ? t`Uses your Muse sign-in on this computer. Run muse login in a terminal before connecting.` : provider === 'opencode' ? t`Sotto runs its own OpenCode, with its own folder and its own sign-ins. The OpenCode you run yourself stays as it is.` : provider === 'pi' ? t`Sotto runs Pi in its own folder on your keyless model servers. Pi has Full access and does not ask before running tools. Sign in below to use Pi’s other model sources.` : provider === 'hermes' ? t`Full access on this Mac. Uses your model servers or an API provider’s OpenAI-compatible address and key. Project memory and skills are shared across models. Hermes keeps prompt logs and fetches the models.dev catalog.` : provider === 'deepseek' ? t`Sotto runs DeepSeek with its own folder, on the models of your own model servers below. The DeepSeek you run yourself stays as it is.` : t({ message: `Uses your ${clientName} sign-in on this computer.`, comment: '{clientName} is a provider\'s client, such as Claude Code.' })}</p>
+            {provider === 'devin' && <div className="provider-login"><code>devin auth login</code><Button variant="ghost" disabled={copyingLogin} aria-label={t`Copy Devin login command`} onClick={() => void copyLogin('devin', 'devin auth login')}>{loginCopied === 'devin' ? t`Copied` : t`Copy`}</Button><span className="tt-visually-hidden" role="status">{loginCopied === 'devin' ? t`Devin login command copied.` : ''}</span></div>}
+            {named && status.error ? <p className="provider-connection__said tt-paragraph">{shownWords(status.error)}</p> : null}
+            {provider === 'muse' && <div className="provider-login"><code>muse login</code><Button variant="ghost" disabled={copyingLogin} aria-label={t`Copy Muse login command`} onClick={() => void copyLogin('muse', 'muse login')}>{loginCopied === 'muse' ? t`Copied` : t`Copy`}</Button><Button variant="ghost" onClick={() => void openMuseGuide()}>{t`Sign-in steps`}</Button><span className="tt-visually-hidden" role="status">{loginCopied === 'muse' ? t`Muse login command copied.` : ''}</span></div>}
           </div>
           <div className="provider-client__actions">{connectButtons}</div>
         </div>}
+        {provider === 'pi' && window.sotto?.pi ? <OpenCodeModelSources provider="Pi" bridge={window.sotto.pi} /> : null}
         {provider === 'opencode' && connected && window.sotto?.opencode ? <OpenCodeModelSources bridge={window.sotto.opencode} /> : null}
         {/* A small field rather than the whole list, so one provider's models never fill the page. Cursor's models arrive
             grouped by model maker (ADR-0128) and OpenCode's by model source, and the list keeps those groups. */}
@@ -374,7 +409,8 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
         {provider === 'muse' && <details className="provider-support"><summary>{t`Threads with Muse`}</summary><p className="tt-paragraph">{t`Replies, images, steering, approvals, questions and reasoning effort. Change models and permissions in a thread.`}</p><p className="tt-paragraph">{t`On Muse 1.4.7 or newer, Muse threads get Sotto's browser, visual, pull request babysitting and delegation tools, and Watcher runs on Muse. Skills are unavailable. Muse does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text.`}</p></details>}
         {provider === 'cursor' && <details className="provider-support"><summary>{t`Threads with Cursor`}</summary><p className="tt-paragraph"><Trans>Replies, images, approvals, Cursor’s questions and plans, and reasoning effort, on every model your Cursor plan lists. Change models and permissions in a thread.</Trans></p><p className="tt-paragraph"><Trans>Cursor threads get Sotto’s browser, visual, pull request babysitting and delegation tools, and skills, and Watcher runs on Cursor. Cursor has no fork of its own and cannot be steered, so a message sent while it works waits for the turn to end; Fork from here starts the new thread from a handover. Cursor reports no token counts, so it is not in Usage. Cursor keeps its own history, and runs Auto’s checks on its servers.</Trans></p></details>}
         {provider === 'opencode' && <details className="provider-support"><summary>{t`Threads with OpenCode`}</summary><p className="tt-paragraph">{t`Replies, images, steering, approvals, questions and reasoning effort, on each model's own source. Change models and permissions in a thread.`}</p><p className="tt-paragraph">{t`Sotto's browser tools, Watcher and skills are unavailable. OpenCode does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text.`}</p></details>}
-        {provider === 'deepseek' && <details className="provider-support"><summary>{t`Threads with DeepSeek`}</summary><p className="tt-paragraph">{t`Replies, approvals and reasoning effort, on the keyless model servers you saved under Your own model servers. Change models and permissions in a thread. Replies arrive whole rather than word by word, and questions come in the reply itself.`}</p><p className="tt-paragraph">{t`DeepSeek threads get Sotto's browser, visual, pull request babysitting and delegation tools. Images, steering, skills, Watcher and Usage counts are unavailable, and DeepSeek does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text.`}</p></details>}
+        {provider === 'pi' && <details className="provider-support"><summary>{t`Threads with Pi`}</summary><p className="tt-paragraph">{t`Replies stream as Pi writes. Threads keep their conversation after a restart, show tool calls and context use, and can be stopped. Models come from your keyless servers and the sources you sign in to below.`}</p><p className="tt-paragraph">{t`Steering, compaction, native forks, skills, Watcher, remote hosts and phones are not available yet.`}</p></details>}
+        {provider === 'deepseek' && <details className="provider-support"><summary>{t`Threads with DeepSeek`}</summary><p className="tt-paragraph">{t`Replies, approvals and reasoning effort, on the keyless model servers you saved under APIs and your own model servers. Change models and permissions in a thread. Replies arrive whole rather than word by word, and questions come in the reply itself.`}</p><p className="tt-paragraph">{t`DeepSeek threads get Sotto's browser, visual, pull request babysitting and delegation tools. Images, steering, skills, Watcher and Usage counts are unavailable, and DeepSeek does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text.`}</p></details>}
       </div>
     </>
   }
@@ -387,15 +423,25 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
     const connecting = status.connection === 'connecting' || pending[provider]
     // While a sign-in waits on cursor.com, Cursor's row says so, live as a connect is, and holds its switch.
     const signingIn = provider === 'cursor' && cursorBridge !== undefined && cursorSignIn.signing && status.connection !== 'connected'
-    const signedOut = provider === 'cursor' && status.connection === 'error' && 'problem' in status && status.problem === 'signed-out'
+    // A problem Sotto knows says so in a word, the same word for every provider (ADR-0200); the client's own sentence is in the opened row.
+    const problem = status.connection === 'error' && 'problem' in status ? status.problem : undefined
+    const named = problemWord(problem)
     const statusLabel = signingIn ? t`Signing in…` : pending[provider] === 'disconnect' ? t`Disconnecting…` : pending[provider] === 'refresh' ? t`Refreshing…` : connecting ? t`Connecting…`
-      : status.connection === 'connected' ? t({ message: 'Connected', comment: 'A provider\'s status.' }) : signedOut ? t`Not signed in` : status.connection === 'error' ? t({ message: 'Needs attention', comment: 'A provider\'s status.' })
-      : active ? t({ message: 'Not connected', comment: 'A provider\'s status.' }) : t({ message: 'Disabled', comment: 'A provider\'s status: switched off.' })
+      : status.connection === 'connected' ? t({ message: 'Connected', comment: 'A provider\'s status.' }) : named ?? (status.connection === 'error' ? t({ message: 'Needs attention', comment: 'A provider\'s status.' })
+      : active ? t({ message: 'Not connected', comment: 'A provider\'s status.' }) : t({ message: 'Disabled', comment: 'A provider\'s status: switched off.' }))
     const update = updateFor(provider)
     const providerUpdating = updatingNow(provider)
     const version = update?.published ?? ''
-    const error = cursorExplains(provider, status) ? undefined : errors[provider] ?? status.error
+    // Cursor's row keeps its own design (ADR-0128): its sentence under the header, and its guide in the opened row.
+    const plain = named !== undefined && provider !== 'cursor'
+    // A press that fails for the same reason answers with the client's sentence again; that is still the opened row's to say.
+    const pressed = errors[provider]
+    const clientsOwn = plain && typeof pressed === 'string' && Boolean(status.error) && pressed.includes(status.error!)
+    const error = cursorExplains(provider, status) ? undefined : (clientsOwn ? undefined : pressed) ?? (plain ? undefined : status.error)
     const id = `${rowId}-${provider}`
+    // Sign in runs the client's own sign-in in a dialog (ADR-0200); Cursor signs in from its opened row (ADR-0128).
+    const signInHere = problem === 'signed-out' && signsInHere(provider) && window.sotto?.providerSignIn !== undefined && !connecting
+    const installGuide = plain && (problem === 'not-installed' || problem === 'too-old') && !connecting
     // Closes the open row from anywhere in it and gives focus back to its header; a dialog's own Escape is its own.
     const closeOnEscape = (event: KeyboardEvent<HTMLLIElement>): void => {
       if (event.key !== 'Escape' || !isOpen || event.defaultPrevented) return
@@ -418,10 +464,15 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
             </span>
           </span>
         </button>
-        {checkClientUpdates && update?.published && (update.canInstall || providerUpdating)
+        {/* A row that is not signed in offers Sign in before anything else: nothing else on it works until then. */}
+        {signInHere ? <Button variant="secondary" className="provider-row__act" aria-label={t({ message: `Sign in to ${label}`, comment: '{label} is a provider\'s name.' })}
+            onClick={() => { setErrors(previous => ({ ...previous, [provider]: undefined })); if (signsInHere(provider)) setSignInFor(provider) }}>{t`Sign in`}</Button>
+          : checkClientUpdates && update?.published && (update.canInstall || providerUpdating)
           ? <button type="button" className="provider-row__update tt-focusable" aria-label={providerUpdating ? t`Updating ${label} to ${version}` : t`Update ${label} to ${version}`}
             disabled={providerUpdating || Boolean(connecting) || updating || checkingUpdates} onClick={() => void runUpdate(provider)}>
             <CircleArrowUp size={13} aria-hidden="true" />{providerUpdating ? update.state === 'queued' ? t`Waiting to update` : t`Updating…` : t`Update to ${version}`}</button>
+          : installGuide ? <Button variant="ghost" className="provider-row__act" aria-label={t({ message: `Open the ${label} install guide`, comment: '{label} is a provider\'s name.' })}
+            onClick={() => void openInstallGuide(provider)}><ExternalLink size={14} aria-hidden="true" />{t`Install guide`}</Button>
           : <span className="provider-row__update-slot" />}
         <Toggle label={t({ message: `Enable ${label}`, comment: '{label} is a provider\'s name.' })} checked={active} disabled={signingIn || Boolean(connecting) || providerUpdating} onCheckedChange={value => void perform(provider, value ? 'connect' : 'disconnect')} />
       </div>
@@ -431,8 +482,10 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
   }
 
   return <div className="providers-settings">
-    {/* Your own model servers sit above the provider list, apart from any one provider (ADR-0124, layout B). */}
+    {/* APIs and your own model servers sit above the provider list, apart from any one provider (ADR-0124, layout B). */}
     {ownServers ? <OwnModelServers bridge={ownServers} /> : null}
+    {signInFor && window.sotto?.providerSignIn ? <HostProviderSignIn place={t({ message: 'This computer', comment: 'The computer Sotto runs on, named where a paired host would be.' })} provider={signInFor}
+      signIn={step => window.sotto!.providerSignIn!.signIn(step as LocalSignInRequest)} onClose={closeSignIn} /> : null}
     <ul className="providers-list" aria-label={t`Thread providers`} data-setting="thread-providers" onKeyDown={moveBetweenRows}>{providerIdSchema.options.filter(provider => !held.has(provider)).map(row)}</ul>
     <p className="providers-note tt-paragraph">{t`Choose what new threads start with in Settings > Threads.`}</p>
     <div className="providers-updates">

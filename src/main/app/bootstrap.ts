@@ -1,6 +1,7 @@
 import type { HotkeyChangeResult } from '../../shared/contracts'
 import type { AppSettings } from '../../shared/settings'
 import type { RendererRole } from '../security'
+import { markStartup } from '../performance/startupMarks'
 
 export interface PermissionWebContents {
   getURL(): string
@@ -668,6 +669,7 @@ export async function bootstrapSotto(
   if (disposed) {
     return { started: false, dispose }
   }
+  markStartup('app-ready')
 
   let candidate: RuntimeController
   try {
@@ -681,6 +683,7 @@ export async function bootstrapSotto(
     app.quit()
     return { started: false, dispose }
   }
+  markStartup('runtime-created')
 
   if (disposed) {
     stopRuntime(candidate)
@@ -705,6 +708,7 @@ export async function bootstrapSotto(
   }
 
   runtimeStarted = true
+  markStartup('launch-finished')
   if (consumePendingShowRequest()) {
     candidate.showMain()
   }

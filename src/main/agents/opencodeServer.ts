@@ -8,7 +8,7 @@ import { compareClientVersions } from './clientVersions'
 import { withCliPath } from './cliLookup'
 import { acceptOpenCode, opencodeCandidates, resetOpenCodeLookup, type OpenCodeLookupOptions } from './opencodeLookup'
 import type { OwnServer } from '../../shared/ownModelServers'
-import { openCodeProviders } from '../ownModelServers/providerBlock'
+import { openCodeProviderRoutes, openCodeProviders } from '../ownModelServers/providerBlock'
 
 /**
  * OpenCode's floor: the oldest client Sotto connects (ADR-0042, ADR-0087). 2.0.31 is the client this adapter's routes,
@@ -54,14 +54,31 @@ const safeEnvironment = new Set(['path', 'pathext', 'systemroot', 'windir', 'tem
 /**
  * The environment an OpenCode process gets: the shared allow-list and nothing else, so no provider's key reaches it and
  * a thread runs on the sign-ins OpenCode keeps in Sotto's own folder. The XDG folders are always Sotto's; the user's own
- * are never passed through. The password is this process's alone, so OpenCode never makes up and prints one. `servers`
- * are the user's own model servers (ADR-0124), passed only while their Owl feature is on.
+ * are never passed through. The password is this process's alone, so OpenCode never makes up and prints one.
  */
-export function opencodeEnvironment(environment: NodeJS.ProcessEnv, folders: OpenCodeFolders, password: string, servers: readonly OwnServer[] = []): NodeJS.ProcessEnv {
+export function opencodeEnvironment(environment: NodeJS.ProcessEnv, folders: OpenCodeFolders, password: string): NodeJS.ProcessEnv {
   const env = Object.fromEntries(Object.entries(environment).filter(([key]) => safeEnvironment.has(key.toLowerCase())))
   return { ...env, XDG_DATA_HOME: folders.data, XDG_CONFIG_HOME: folders.config, XDG_STATE_HOME: folders.state, XDG_CACHE_HOME: folders.cache,
-    OPENCODE_PASSWORD: password, OPENCODE_CONFIG_CONTENT: opencodeConfigContent(servers), OPENCODE_DISABLE_AUTOUPDATE: '1' }
+    OPENCODE_PASSWORD: password, OPENCODE_CONFIG_CONTENT: OPENCODE_CONFIG_CONTENT, OPENCODE_DISABLE_AUTOUPDATE: '1' }
 }
+const cleanedModelFolders = new Set<string>()
+/** Large inventories cannot live in an environment variable on Windows. Each process reads its own key-free snapshot. */
+export async function prepareOpenCodeEnvironment(environment: NodeJS.ProcessEnv, folders: OpenCodeFolders, password: string, servers: readonly OwnServer[] = []): Promise<{ env: NodeJS.ProcessEnv; dispose: () => Promise<void> }> {
+  const env = opencodeEnvironment(environment, folders, password)
+  if (!servers.length) return { env, dispose: async () => undefined }
+  await mkdir(folders.config, { recursive: true })
+  if (!cleanedModelFolders.has(folders.config)) {
+    cleanedModelFolders.add(folders.config)
+    for (const file of await readdir(folders.config)) {
+      const match = /^own-models-(\d+)-[a-f0-9]{12}\.json$/u.exec(file)
+      if (match && !isRunning(Number(match[1]))) await rm(join(folders.config, file), { force: true })
+    }
+  }
+  const path = join(folders.config, `own-models-${process.pid}-${randomBytes(6).toString('hex')}.json`)
+  await writeFile(path, opencodeConfigContent(servers), { mode: 0o600, flag: 'wx' })
+  return { env: { ...env, OPENCODE_CONFIG: path, OPENCODE_CONFIG_CONTENT: JSON.stringify({ share: 'disabled', update: 'disable', providers: openCodeProviderRoutes(servers) }) }, dispose: () => rm(path, { force: true }) }
+}
+
 /** A fresh secret for one server, never written down or logged. */
 export function opencodePassword(): string { return randomBytes(32).toString('base64url') }
 

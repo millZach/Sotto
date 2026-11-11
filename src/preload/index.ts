@@ -30,10 +30,12 @@ import {
   signInFinishRequestSchema, signInKeyRequestSchema, signInMethodRequestSchema, signInResultSchema, signInStartSchema, signInWaitSchema, signOutRequestSchema,
   type OpenCodeSignInBridge,
 } from '../shared/opencodeSignIn'
+import { PI_RENDERER_ARGUMENT, PI_SIGN_IN, piSignInCallSchema, type PiSignInBridge } from '../shared/piSignIn'
+import { LOCAL_PROVIDER_SIGN_IN, localSignInRequestSchema, type LocalProviderSignInBridge } from '../shared/localProviderSignIn'
 import { CURSOR_RENDERER_ARGUMENT, CURSOR_SIGN_IN_CANCEL, CURSOR_SIGN_IN_READ, CURSOR_SIGN_IN_REOPEN, CURSOR_SIGN_IN_START, CURSOR_SIGN_OUT, cursorSignInDoneSchema,
   cursorSignInRequestSchema, cursorSignInStartSchema, cursorSignInViewSchema, type CursorSignInBridge } from '../shared/cursorSignIn'
 import {
-  addRequestSchema, addResultSchema, checkRequestSchema, checkResultSchema, checkSavedRequestSchema, OWN_SERVERS_ADD, OWN_SERVERS_CHECK, OWN_SERVERS_CHECK_SAVED,
+  catalogueResultSchema, chooseModelsSchema, replaceKeySchema, OWN_SERVERS_CATALOGUE, OWN_SERVERS_CHOOSE, OWN_SERVERS_REPLACE_KEY, addRequestSchema, addResultSchema, checkRequestSchema, checkResultSchema, checkSavedRequestSchema, OWN_SERVERS_ADD, OWN_SERVERS_CHECK, OWN_SERVERS_CHECK_SAVED,
   OWN_SERVERS_LIST, OWN_SERVERS_REMOVE, OWN_SERVERS_RENDERER_ARGUMENT, ownServerListSchema, removeRequestSchema, removeResultSchema, type OwnServersBridge,
 } from '../shared/ownModelServers'
 import {
@@ -449,6 +451,7 @@ export function createSottoBridge(
   dictationTiming = false,
   /** Dynamic threads' record in Settings and Give it to another model… (ADR-0191): only while the `dynamic-threads` Owl feature is on. */
   dynamicThreadsEnabled = false,
+  piEnabled = false,
 ): SottoBridge {
   const onDictationCommand = createBufferedSubscription(
     renderer,
@@ -525,6 +528,17 @@ export function createSottoBridge(
     }) } : {}),
     // Signing Sotto's OpenCode in to model sources (#1104): only while OpenCode's Owl feature is on. A key goes to main
     // once and nothing returned carries one.
+    ...(piEnabled ? { pi: Object.freeze<PiSignInBridge>({
+      sources: async () => invokeParsed(renderer, PI_SIGN_IN, modelSourcesSchema, piSignInCallSchema.parse({ action: 'sources' })),
+      signInWithKey: async request => invokeParsed(renderer, PI_SIGN_IN, signInResultSchema, piSignInCallSchema.parse({ action: 'key', request })),
+      startBrowserSignIn: async request => invokeParsed(renderer, PI_SIGN_IN, signInStartSchema, piSignInCallSchema.parse({ action: 'browser', request })),
+      useExternalSignIn: async () => ({ status: 'refused', message: 'Pi uses its own sign-in.' }),
+      wait: async request => invokeParsed(renderer, PI_SIGN_IN, signInWaitSchema, piSignInCallSchema.parse({ action: 'wait', request })),
+      finish: async request => invokeParsed(renderer, PI_SIGN_IN, signInWaitSchema, piSignInCallSchema.parse({ action: 'finish', request })),
+      reopen: async request => invokeParsed(renderer, PI_SIGN_IN, signInDoneSchema, piSignInCallSchema.parse({ action: 'reopen', request })),
+      cancel: async request => invokeParsed(renderer, PI_SIGN_IN, signInDoneSchema, piSignInCallSchema.parse({ action: 'cancel', request })),
+      signOut: async request => invokeParsed(renderer, PI_SIGN_IN, signInResultSchema, piSignInCallSchema.parse({ action: 'sign-out', request })),
+    }) } : {}),
     ...(opencodeEnabled ? { opencode: Object.freeze<OpenCodeSignInBridge>({
       sources: async () => invokeParsed(renderer, OPENCODE_SOURCES_READ, modelSourcesSchema),
       signInWithKey: async request => invokeParsed(renderer, OPENCODE_SIGN_IN_KEY, signInResultSchema, signInKeyRequestSchema.parse(request)),
@@ -536,6 +550,10 @@ export function createSottoBridge(
       cancel: async request => invokeParsed(renderer, OPENCODE_SIGN_IN_CANCEL, signInDoneSchema, signInAttemptRequestSchema.parse(request)),
       signOut: async request => invokeParsed(renderer, OPENCODE_SIGN_OUT, signInResultSchema, signOutRequestSchema.parse(request)),
     }) } : {}),
+    // A provider's sign-in from its row in Settings › Providers (ADR-0200). The page's address stays in main.
+    providerSignIn: Object.freeze<LocalProviderSignInBridge>({
+      signIn: async request => invokeParsed(renderer, LOCAL_PROVIDER_SIGN_IN, providerSignInResultSchema, localSignInRequestSchema.parse(request)),
+    }),
     // Cursor's sign-in from its tile (ADR-0128): only while Cursor's Owl feature is on. The page's address stays in main.
     ...(cursorEnabled ? { cursor: Object.freeze<CursorSignInBridge>({
       start: async () => invokeParsed(renderer, CURSOR_SIGN_IN_START, cursorSignInStartSchema),
@@ -547,6 +565,9 @@ export function createSottoBridge(
     // The user's own model servers (ADR-0124): only while their Owl feature is on. A key goes to main once and nothing
     // returned carries one.
     ...(ownServersEnabled ? { ownServers: Object.freeze<OwnServersBridge>({
+      catalogue: async () => invokeParsed(renderer, OWN_SERVERS_CATALOGUE, catalogueResultSchema),
+      chooseModels: async request => invokeParsed(renderer, OWN_SERVERS_CHOOSE, addResultSchema, chooseModelsSchema.parse(request)),
+      replaceKey: async request => invokeParsed(renderer, OWN_SERVERS_REPLACE_KEY, addResultSchema, replaceKeySchema.parse(request)),
       list: async () => invokeParsed(renderer, OWN_SERVERS_LIST, ownServerListSchema),
       check: async request => invokeParsed(renderer, OWN_SERVERS_CHECK, checkResultSchema, checkRequestSchema.parse(request)),
       add: async request => invokeParsed(renderer, OWN_SERVERS_ADD, addResultSchema, addRequestSchema.parse(request)),
@@ -927,7 +948,7 @@ export function exposeRendererBridge(
       parseInterfaceLanguageArgument(arguments_), arguments_.includes(OWN_SERVERS_RENDERER_ARGUMENT), arguments_.includes(NEXT_PROMPT_RENDERER_ARGUMENT),
       arguments_.includes(OWN_SERVER_CLEANUP_RENDERER_ARGUMENT), arguments_.includes(MAIN_CHECKOUT_RENDERER_ARGUMENT),
       parseGlassWindowArguments(arguments_), arguments_.includes(COUNCIL_RENDERER_ARGUMENT), arguments_.includes(POPUP_RENDERER_ARGUMENT), arguments_.includes(DICTATION_TIMING_ARGUMENT),
-      arguments_.includes(DYNAMIC_THREADS_RENDERER_ARGUMENT)))
+      arguments_.includes(DYNAMIC_THREADS_RENDERER_ARGUMENT), arguments_.includes(PI_RENDERER_ARGUMENT)))
     return true
   }
   if (rendererRole === 'popup') {

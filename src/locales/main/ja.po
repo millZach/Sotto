@@ -521,6 +521,10 @@ msgstr ""
 msgid "another model"
 msgstr ""
 
+#: src/main/agents/piSignInIpc.ts
+msgid "Another Pi sign-in is still open. Finish or cancel it first."
+msgstr ""
+
 #: src/main/hosts/hostFailureWords.ts
 msgid "Another program is using the port the host last listened on. Nothing was saved. Stop it on the SSH host, then add the host again."
 msgstr ""
@@ -1148,6 +1152,18 @@ msgstr ""
 msgid "Phone access on the host could not be reached. Nothing was saved. Nothing was changed. Check that the host is running, then try again."
 msgstr ""
 
+#: src/main/agents/piSignInIpc.ts
+msgid "Pi could not confirm sign-out. Check its model sources before trying again."
+msgstr ""
+
+#: src/main/agents/piSignInIpc.ts
+msgid "Pi could not finish signing in. Check the account and try again. Your threads are kept."
+msgstr ""
+
+#: src/main/agents/piSignInIpc.ts
+msgid "Pi is not available for sign-in. Install Pi and try again. Your threads are kept."
+msgstr ""
+
 #: src/main/tools/browser.ts
 msgid "Point at something is not available in this version of Sotto."
 msgstr ""
@@ -1287,11 +1303,16 @@ msgstr "Sotto を表示"
 msgid "Showing linked files is not part of this version of Sotto. Nothing was opened."
 msgstr ""
 
+#: src/main/agents/localProviderSignInIpc.ts
+msgid "Sign a provider in from the main Sotto window."
+msgstr ""
+
 #: src/main/agents/cursorSignInIpc.ts
 msgid "Sign Cursor in from the main Sotto window."
 msgstr ""
 
 #: src/main/agents/opencodeSignInIpc.ts
+#: src/main/agents/piSignInIpc.ts
 msgid "Sign in to model sources from the main Sotto window."
 msgstr ""
 
@@ -1775,6 +1796,10 @@ msgstr ""
 
 #: src/main/council/councilService.ts
 msgid "That row has nothing to do now. Nothing was changed."
+msgstr ""
+
+#: src/main/agents/localProviderSignInIpc.ts
+msgid "That sign-in is not available right now. Nothing was changed."
 msgstr ""
 
 #: src/main/themes/ipc.ts
@@ -2399,6 +2424,14 @@ msgstr ""
 msgid "The pairing code could not be read from the host. Nothing was saved. Check that the host is running and try again."
 msgstr ""
 
+#: src/main/agents/piSignInIpc.ts
+msgid "The Pi sign-in expired. Open the sign-in page again to start over."
+msgstr ""
+
+#: src/main/agents/piSignInIpc.ts
+msgid "The Pi sign-in page could not be opened. Try Open the page again."
+msgstr ""
+
 #: src/main/omarchy/files.ts
 msgid "The plugin folder is not a folder. Sotto left it alone."
 msgstr ""
@@ -2479,6 +2512,7 @@ msgstr ""
 msgid "The sign-in page could not be opened from this window. Nothing was changed."
 msgstr ""
 
+#: src/main/agents/localProviderSignInIpc.ts
 #: src/main/hosts/desktopHosts.ts
 msgid "The sign-in page could not open in your browser. Nothing was changed. Try Open sign-in page again."
 msgstr ""
@@ -3075,6 +3109,10 @@ msgstr ""
 msgid "This path is unavailable or changed. Refresh Files and try again."
 msgstr ""
 
+#: src/main/agents/piSignInIpc.ts
+msgid "This Pi sign-in is no longer waiting. Open the sign-in page again to start over."
+msgstr ""
+
 #: src/main/agents/delegationIpc.ts
 msgid "This piece was already given to another model. Move it from the newer worker's row instead. Nothing was started."
 msgstr ""
@@ -3099,6 +3137,7 @@ msgstr ""
 msgid "This result belongs to an earlier connection. Refresh the host."
 msgstr ""
 
+#: src/main/agents/localProviderSignInIpc.ts
 #: src/main/hosts/desktopHosts.ts
 msgid "This sign-in is no longer waiting for you. Nothing was opened. Start it again."
 msgstr ""

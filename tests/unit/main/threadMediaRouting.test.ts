@@ -13,7 +13,7 @@ vi.mock('electron', () => ({ app: { isPackaged: false, getAppPath: () => 'D:/fix
 import { registerAgentIpc } from '../../../src/main/agents/ipc'
 import { DesktopHostRouter, type DesktopHostConnection } from '../../../src/main/hosts/desktopHostRouter'
 import { emptyDesktopState } from '../../../src/main/hosts/inactiveLocalHost'
-import { KeptThumbnails, MEDIA_TILE_KEEP_BYTES, mediaThumbnailMaker } from '../../../src/main/agents/mediaThumbnail'
+import { KeptThumbnails, MEDIA_TILE_KEEP_BYTES, mediaEdgeMaker, mediaThumbnailMaker, ReducedPictures } from '../../../src/main/agents/mediaThumbnail'
 
 const REMOTE = '22222222-2222-4222-8222-222222222222'
 const WHOLE = 'data:image/png;base64,AAAA'
@@ -87,6 +87,62 @@ describe('reading an agent\'s picture from the window', () => {
     expect(resized).toEqual([{ width: 208, height: 130 }, { width: 229, height: 143 }, { width: 260, height: 163 }, { width: 312, height: 195 }, { width: 416, height: 260 }, { width: 416, height: 260 }])
     // The screen's own ratio, to the hundredth above, from 1 to 4.
     expect([0.8, 1, 1.1, 1.125, 1.25, 1.5, 2, 2.625, 4, 5].map(mediaTileScale)).toEqual([1, 1, 1.1, 1.13, 1.25, 1.5, 2, 2.63, 4, 4])
+  })
+
+  it('makes a phone\'s copy no larger than its edge, a PNG only when something shows through, and hands back what it cannot make', () => {
+    const made: string[] = []
+    // Electron's image, as the maker sees it: its size, and what resizing and writing it give back.
+    const picture = (size: { width: number; height: number }, alpha = 255) => ({ isEmpty: () => size.width === 0, getSize: () => size,
+      resize: (to: { width: number; height: number }) => {
+        made.push(`${to.width}x${to.height}`)
+        return { toBitmap: () => Buffer.from([1, 2, 3, 255, 4, 5, 6, alpha]), toJPEG: (quality: number) => Buffer.from(`jpeg ${quality}`), toPNG: () => Buffer.from('png') }
+      } })
+    const make = (size: { width: number; height: number }, alpha?: number) => mediaEdgeMaker(() => picture(size, alpha) as never)
+    const png = 'data:image/png;base64,AAAA'
+    // A screenshot fits 640 by its width, a portrait photo by its height; both come as JPEGs at the tile thumbnail's quality.
+    expect(make({ width: 1600, height: 1000 })(png, 640)).toBe(`data:image/jpeg;base64,${Buffer.from('jpeg 85').toString('base64')}`)
+    expect(make({ width: 900, height: 1200 })(png, 640)).toBe(`data:image/jpeg;base64,${Buffer.from('jpeg 85').toString('base64')}`)
+    expect(made).toEqual(['640x400', '480x640'])
+    // One pixel less than opaque keeps it a PNG, since a JPEG would turn what shows through black.
+    expect(make({ width: 1600, height: 1000 }, 254)(png, 640)).toBe(`data:image/png;base64,${Buffer.from('png').toString('base64')}`)
+    // Already that small, it is handed back as it is; one Electron cannot read (a GIF, a WebP) is null.
+    expect(make({ width: 640, height: 300 })(png, 640)).toBe(png)
+    expect(make({ width: 0, height: 0 })('data:image/gif;base64,R0lG', 640)).toBeNull()
+    expect(made).toHaveLength(3)
+    // A JPEG with camera details is handed back whole, unread: they may say to turn it, which Electron does not do.
+    const exif = Buffer.from([0xff, 0xd8, 0xff, 0xe1, 0x00, 0x0a, ...Buffer.from('Exif\0\0'), 0x00, 0x00, 0xff, 0xda, 0x00, 0x02])
+    const plain = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x06, ...Buffer.from('JFIF'), 0xff, 0xda, 0x00, 0x02])
+    const fromCamera = `data:image/jpeg;base64,${exif.toString('base64')}`
+    expect(make({ width: 4000, height: 3000 })(fromCamera, 640)).toBe(fromCamera)
+    expect(made).toHaveLength(3)
+    expect(make({ width: 4000, height: 3000 })(`data:image/jpeg;base64,${plain.toString('base64')}`, 640)).toMatch(/^data:image\/jpeg;base64,/u)
+    expect(made.at(-1)).toBe('640x480')
+  })
+
+  it('keeps a phone\'s copies in the thumbnails\' budget, and keeps no whole picture', async () => {
+    const kept = new KeptThumbnails(100)
+    const reduce = vi.fn(async (whole: string, edge: number) => whole.startsWith('data:image/webp') ? null : `data:image/jpeg;base64,${'C'.repeat(edge / 32)}`)
+    const pictures = new ReducedPictures(reduce, kept)
+    const big = { dataUrl: `data:image/png;base64,${'A'.repeat(400)}` }
+    const whole = vi.fn(async () => big)
+    await expect(pictures.read(['thread-media', 't', 'a', 'm0'], 640, whole)).resolves.toEqual({ dataUrl: `data:image/jpeg;base64,${'C'.repeat(20)}` })
+    // Asked again, it comes from what is kept, unread; another edge is a copy of its own.
+    await pictures.read(['thread-media', 't', 'a', 'm0'], 640, whole)
+    await pictures.read(['thread-media', 't', 'a', 'm0'], 320, whole)
+    expect(whole).toHaveBeenCalledTimes(2)
+    expect(reduce.mock.calls.map(call => call[1])).toEqual([640, 320])
+    expect(kept.bytes).toBeLessThanOrEqual(100)
+    // A GIF is answered whole, never made into a copy, so it keeps its frames; so is a picture the maker cannot read.
+    const gif = { dataUrl: 'data:image/gif;base64,R0lG' }
+    await expect(pictures.read(['thread-media', 't', 'gif', 'm0'], 640, async () => gif)).resolves.toBe(gif)
+    const webp = { dataUrl: `data:image/webp;base64,${'U'.repeat(400)}` }
+    await expect(pictures.read(['preview', 't', 'm', 'a'], 640, async () => webp)).resolves.toBe(webp)
+    expect(reduce).toHaveBeenCalledTimes(3)
+    // A copy no smaller than the picture is not sent in its place, and a picture the host no longer keeps is null.
+    const small = { dataUrl: 'data:image/png;base64,AA' }
+    await expect(pictures.read(['thread-media', 't', 'small', 'm0'], 640, async () => small)).resolves.toBe(small)
+    await expect(pictures.read(['thread-media', 't', 'gone', 'm0'], 640, async () => null)).resolves.toBeNull()
+    expect(kept.bytes).toBeLessThanOrEqual(100)
   })
 
   it('holds thumbnails to a budget in bytes, letting the one read longest ago go first', () => {

@@ -426,7 +426,10 @@ export interface SottoBridge {
   /** The popup's shortcut for Settings, and what `/open` asks the window to show (ADR-0181): only while the `popup` Owl feature is on. */
   readonly popup?: import('./popup').PopupShortcutBridge
   /** Signing Sotto's OpenCode in to model sources (#1104), present only while OpenCode's Owl feature is on. */
+  readonly pi?: import('./piSignIn').PiSignInBridge
   readonly opencode?: import('./opencodeSignIn').OpenCodeSignInBridge
+  /** Signing Codex, Claude Code or Grok Build in on this computer from its row in Settings › Providers (ADR-0200). */
+  readonly providerSignIn?: import('./localProviderSignIn').LocalProviderSignInBridge
   /** Signing Cursor in and out on this computer (ADR-0128), present only while Cursor's Owl feature is on. */
   readonly cursor?: import('./cursorSignIn').CursorSignInBridge
   /** The user's own model servers (ADR-0124), present only while the `own-model-servers` Owl feature is on and OpenCode runs on this computer. */

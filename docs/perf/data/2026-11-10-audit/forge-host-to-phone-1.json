@@ -1,0 +1,229 @@
+{
+ "hostVersion": "0.1.43-owl.20261110.1",
+ "accepts": 20,
+ "hello": {
+  "bytes": 236631,
+  "deflatedBytes": 64171,
+  "threadsListed": 7,
+  "settledHeldBack": 154,
+  "models": 38,
+  "bytesByField": {
+   "skillCatalogs": 115223,
+   "deliveries": 45933,
+   "host.threads": 16109,
+   "host.models": 12955,
+   "deliveredDrafts": 12929,
+   "obsoleteDrafts": 12929,
+   "followupReceipts": 7980,
+   "host.projects": 3346,
+   "host.providers": 2760,
+   "clientUpdates": 1454,
+   "threadDrafts": 1001,
+   "threadDraftPersistence": 827,
+   "configuration": 596,
+   "host.capabilities": 245
+  }
+ },
+ "connect": {
+  "frames": 4,
+  "bytes": 656912,
+  "deflatedBytes": 184398,
+  "events": {
+   "reply": {
+    "frames": 2,
+    "bytes": 236682,
+    "deflatedBytes": 64222,
+    "maxBytes": 236631
+   },
+   "shell": {
+    "frames": 2,
+    "bytes": 420230,
+    "deflatedBytes": 120176,
+    "maxBytes": 213778
+   }
+  },
+  "changedThreadRecords": 3,
+  "shellBytesByField": {
+   "skillCatalogs": 230446,
+   "deliveries": 91866,
+   "deliveredDrafts": 25858,
+   "obsoleteDrafts": 25858,
+   "followupReceipts": 15960,
+   "(changed thread records)": 7398,
+   "clientUpdates": 2908,
+   "threadDrafts": 2002,
+   "threadDraftPersistence": 1654,
+   "configuration": 1192,
+   "voice": 116,
+   "notice": 110
+  },
+  "shellHostBytesByField": {
+   "projects": 6692,
+   "providers": 5520,
+   "capabilities": 490,
+   "hostId": 76,
+   "name": 36,
+   "connected": 8,
+   "version": 4,
+   "threads": 4,
+   "modelsRevision": 2
+  },
+  "shellWatcherPageBytesByField": {}
+ },
+ "onThreadsList": {
+  "seconds": 60,
+  "frames": 18,
+  "bytes": 3770329,
+  "deflatedBytes": 1084893,
+  "events": {
+   "shell": {
+    "frames": 18,
+    "bytes": 3770329,
+    "deflatedBytes": 1084893,
+    "maxBytes": 213957
+   }
+  },
+  "changedThreadRecords": 22,
+  "shellBytesByField": {
+   "skillCatalogs": 2074014,
+   "deliveries": 826794,
+   "deliveredDrafts": 232722,
+   "obsoleteDrafts": 232722,
+   "followupReceipts": 143640,
+   "(changed thread records)": 54841,
+   "clientUpdates": 26172,
+   "threadDrafts": 18018,
+   "threadDraftPersistence": 14886,
+   "configuration": 10728,
+   "voice": 1044,
+   "notice": 990
+  },
+  "shellHostBytesByField": {
+   "projects": 60228,
+   "providers": 49680,
+   "capabilities": 4410,
+   "hostId": 684,
+   "name": 324,
+   "connected": 72,
+   "version": 36,
+   "threads": 36,
+   "modelsRevision": 18
+  },
+  "shellWatcherPageBytesByField": {}
+ },
+ "openThread": {
+  "working": true,
+  "answerBytes": 50,
+  "frames": 5,
+  "bytes": 302960,
+  "deflatedBytes": 84023,
+  "events": {
+   "detail": {
+    "frames": 1,
+    "bytes": 92599,
+    "deflatedBytes": 22415,
+    "maxBytes": 92599
+   },
+   "reply": {
+    "frames": 1,
+    "bytes": 50,
+    "deflatedBytes": 50,
+    "maxBytes": 50
+   },
+   "detail-delta": {
+    "frames": 2,
+    "bytes": 1386,
+    "deflatedBytes": 1386,
+    "maxBytes": 818
+   },
+   "shell": {
+    "frames": 1,
+    "bytes": 208925,
+    "deflatedBytes": 60172,
+    "maxBytes": 208925
+   }
+  },
+  "changedThreadRecords": 1,
+  "shellBytesByField": {
+   "skillCatalogs": 115223,
+   "deliveries": 45933,
+   "deliveredDrafts": 12929,
+   "obsoleteDrafts": 12929,
+   "followupReceipts": 7980,
+   "(changed thread records)": 2509,
+   "clientUpdates": 1454,
+   "threadDrafts": 1001,
+   "threadDraftPersistence": 827,
+   "configuration": 596,
+   "voice": 58,
+   "notice": 55
+  },
+  "shellHostBytesByField": {
+   "projects": 3346,
+   "providers": 2760,
+   "capabilities": 245,
+   "hostId": 38,
+   "name": 18,
+   "connected": 4,
+   "version": 2,
+   "threads": 2,
+   "modelsRevision": 1
+  },
+  "shellWatcherPageBytesByField": {}
+ },
+ "threadOpen": {
+  "seconds": 60,
+  "working": true,
+  "frames": 95,
+  "bytes": 6763508,
+  "deflatedBytes": 1974640,
+  "events": {
+   "detail-delta": {
+    "frames": 63,
+    "bytes": 75026,
+    "deflatedBytes": 49471,
+    "maxBytes": 6722
+   },
+   "shell": {
+    "frames": 32,
+    "bytes": 6688482,
+    "deflatedBytes": 1925169,
+    "maxBytes": 213929
+   },
+   "reply": {
+    "frames": 1,
+    "bytes": 50,
+    "deflatedBytes": 50,
+    "maxBytes": 50
+   }
+  },
+  "changedThreadRecords": 33,
+  "shellBytesByField": {
+   "skillCatalogs": 3687136,
+   "deliveries": 1469856,
+   "deliveredDrafts": 413728,
+   "obsoleteDrafts": 413728,
+   "followupReceipts": 255360,
+   "(changed thread records)": 83113,
+   "clientUpdates": 46528,
+   "threadDrafts": 32032,
+   "threadDraftPersistence": 26464,
+   "configuration": 19072,
+   "voice": 1856,
+   "notice": 1760
+  },
+  "shellHostBytesByField": {
+   "projects": 107072,
+   "providers": 88320,
+   "capabilities": 7840,
+   "hostId": 1216,
+   "name": 576,
+   "connected": 128,
+   "version": 64,
+   "threads": 64,
+   "modelsRevision": 32
+  },
+  "shellWatcherPageBytesByField": {}
+ },
+ "pairingRemoved": true
+}

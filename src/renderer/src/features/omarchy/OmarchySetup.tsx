@@ -85,8 +85,7 @@ export function useOmarchySetup(enabled: boolean, bridge = typeof window === 'un
 }
 export type OmarchySetupController = ReturnType<typeof useOmarchySetup>
 
-export function OmarchySetupPanel({ surface = 'settings', visible = true, controller, bridge, shortcuts = DEFAULT_SHORTCUTS }: {
-  readonly surface?: 'settings' | 'first-run'
+export function OmarchySetupPanel({ visible = true, controller, bridge, shortcuts = DEFAULT_SHORTCUTS }: {
   readonly visible?: boolean
   readonly controller?: OmarchySetupController
   readonly bridge?: OmarchySetupBridge
@@ -116,13 +115,8 @@ export function OmarchySetupPanel({ surface = 'settings', visible = true, contro
     else await setup.command(action)
     // A vanished Set up or Remove gives focus to the action that carries on.
     requestAnimationFrame(() => {
-      if (surface === 'first-run' && root.current?.querySelector('.omarchy-setup__done')) {
-        const body = root.current.closest<HTMLElement>('.onboarding-card__body')
-        if (body) body.scrollTop = 0
-      }
       if (focused instanceof HTMLElement && focused.isConnected && !focused.hasAttribute('disabled')) return
-      const next = root.current?.querySelector<HTMLButtonElement>('button[data-next]:not(:disabled)') ??
-        (surface === 'first-run' ? document.querySelector<HTMLButtonElement>('.onboarding-actions button:last-child:not(:disabled)') : root.current?.querySelector<HTMLButtonElement>('button:not(:disabled)'))
+      const next = root.current?.querySelector<HTMLButtonElement>('button[data-next]:not(:disabled)') ?? root.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')
       ;(next ?? root.current)?.focus()
     })
   }
@@ -138,9 +132,9 @@ export function OmarchySetupPanel({ surface = 'settings', visible = true, contro
 
   return <div className="omarchy-setup" data-setting="omarchy-setup" ref={root} tabIndex={-1} aria-label={t`Omarchy setup`} aria-busy={busy}
     onKeyDown={event => { if (event.key === 'Escape' && files && !updateQuestion) { event.stopPropagation(); setFiles(false); filesButton.current?.focus() } }}>
-    {surface === 'settings' ? <div className="omarchy-setup__head"><div>
+    <div className="omarchy-setup__head"><div>
       <p className="tt-field__label">Omarchy</p><p className="tt-field__description tt-paragraph"><Trans>Sotto’s keys, its owl in the bar and the Omarchy theme.</Trans></p>
-    </div>{owned.length > 0 ? <Button variant="ghost" disabled={busy} onClick={() => void act({ type: 'remove', pieces: owned })}><Trans>Remove all</Trans></Button> : null}</div> : null}
+    </div>{owned.length > 0 ? <Button variant="ghost" disabled={busy} onClick={() => void act({ type: 'remove', pieces: owned })}><Trans>Remove all</Trans></Button> : null}</div>
     {state?.notice ? <p className="omarchy-setup__notice tt-paragraph" role="status">{state.notice}</p> : null}
     {setup.error || !setup.available ? <p className="tt-paragraph" role="alert"><Trans>Sotto could not check Omarchy setup. Your files were left alone. Try again.</Trans>
       {setup.available ? <Button variant="secondary" onClick={() => void act({ type: 'inspect' })}><Trans>Try again</Trans></Button> : null}</p> : null}
@@ -157,7 +151,7 @@ export function OmarchySetupPanel({ surface = 'settings', visible = true, contro
           <div className="omarchy-setup__side"><span className="omarchy-setup__status" role="status">
             {current?.status === 'working' ? <LoaderCircle size={15} className="omarchy-setup__spin" aria-hidden="true" /> : ['done', 'manual'].includes(current?.status ?? '') ? <Check size={15} aria-hidden="true" /> : null}
             {statusText(piece)}</span>
-            {surface === 'settings' && owned.includes(piece) ? <Button variant="ghost" disabled={busy} aria-label={t`Remove ${short}`} onClick={() => void act({ type: 'remove', pieces: [piece] })}><Trans>Remove</Trans></Button> : null}
+            {owned.includes(piece) ? <Button variant="ghost" disabled={busy} aria-label={t`Remove ${short}`} onClick={() => void act({ type: 'remove', pieces: [piece] })}><Trans>Remove</Trans></Button> : null}
             {current?.status === 'stale' && piece === 'owl' ? <Button variant="secondary" disabled={busy} onClick={() => setUpdateQuestion(true)}><Trans>Update the owl</Trans></Button> : null}
           </div>
           {conflict ? <div className="omarchy-setup__detail"><p className="tt-paragraph" id={`${label}-keys`}>{state.keyConflicts.join(' ')}</p>
@@ -176,7 +170,7 @@ export function OmarchySetupPanel({ surface = 'settings', visible = true, contro
       })}
     </ul>
     {all ? <div className="omarchy-setup__done" role="status"><strong><Trans>Sotto is set up in Omarchy.</Trans></strong>
-      <p className="tt-paragraph">{surface === 'first-run' ? t`You’ll try F9 in the Shortcut step, once the speech model is downloaded.` : keys.done}</p></div> : null}
+      <p className="tt-paragraph">{keys.done}</p></div> : null}
     <div className="omarchy-setup__actions">
       {todo.length > 0 || busy ? <Button data-next disabled={busy} onClick={() => void install(todo)}>
         {busy ? setup.removing ? t`Removing` : t`Setting up` : todo.length === 3 ? t`Set up all three` : setUpLabel}

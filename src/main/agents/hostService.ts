@@ -20,7 +20,8 @@ import type { HostThreadDelegations } from '../../shared/agentsView'
 import type { ToolListRequest, ToolsResult } from '../../shared/tools'
 import { listHostFolders } from './hostFolders'
 import type { HostThreadToolReads } from './threadToolReads'
-import type { HostAnswerTarget, HostAttachmentFile, HostAttachmentFileRequest, HostErrorCode } from '../../shared/hostProtocol'
+import type { HostAnswerTarget, HostAttachmentFile, HostAttachmentFileRequest, HostErrorCode, HostPreviewRequest, HostThreadMediaRequest } from '../../shared/hostProtocol'
+import type { ReducedPictures } from './mediaThumbnail'
 import { mayGrantLocally, REMOTE_PERMISSION_DENIED } from './authority'
 import type { HostMachineReport } from '../../shared/hostFacts'
 import type { NextPromptEntry } from '../../shared/nextPrompt'
@@ -280,9 +281,13 @@ export interface HostService {
   questionPage?(token: string): QuestionPageTarget | undefined
   /** A page was opened by its token, which clears the prototype-ready mark it belongs to (ADR-0108). */
   questionPageOpened?(token: string): void
-  attachmentPreview?(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
-  /** One picture an activity record names (ADR-0170); null when the host keeps no such picture for that record. */
-  threadMedia?(request: AgentThreadMediaRequest): Promise<AgentThreadMediaResult>
+  /** One sent image, whole, or with `edge` no larger than that on its longest side (`thread-media-edge`). */
+  attachmentPreview?(request: HostPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
+  /**
+   * One picture an activity record names (ADR-0170); null when the host keeps no such picture for that record. With
+   * `edge`, a copy no larger than that on its longest side (`thread-media-edge`).
+   */
+  threadMedia?(request: HostThreadMediaRequest): Promise<AgentThreadMediaResult>
   /** One part of a video an activity record names (ADR-0170, part 4); null when it is no longer the file its handle names. */
   threadMediaPart?(request: AgentThreadMediaPartRequest): Promise<AgentThreadMediaPart>
   /** One part of a sent attached file a message carries, for the iPhone's Quick Look (ADR-0131); null for anything else. */
@@ -330,6 +335,8 @@ export interface HostService {
   readonly supportsFileStaging?: boolean
   /** The host keeps its agents' pictures and answers `thread-media` (ADR-0170): its Owl answer turns it on. */
   readonly supportsThreadMedia?: boolean
+  /** The host makes a copy of a picture at a longest edge a phone names (`thread-media-edge`): only where it has image tools. */
+  readonly supportsPictureEdges?: boolean
   /** What delegation's record knows of each thread delegated below one thread, for the iPhone's Agents view (ADR-0103). */
   threadDelegations?(threadId: string): Promise<HostThreadDelegations>
 }
@@ -468,6 +475,11 @@ export class LocalHostService implements HostService {
     fileStaging?: boolean
     /** The `inline-media` Owl answer (ADR-0170): this host keeps its agents' pictures and answers for them. */
     threadMedia?: boolean
+    /**
+     * The copies of pictures phones ask for at a longest edge (`thread-media-edge`, ADR-0170's November 10 amendment): the
+     * desktop's, made with Electron's image tools. A headless host has none, so it answers every picture whole.
+     */
+    reducedPictures?: ReducedPictures
     /**
      * The iPhone's Agents view (ADR-0103), present only when the host's Owl answer turns it on. `delegations` is there only
      * where delegation runs (ADR-0081); without it a thread has no delegated threads to read.
@@ -632,10 +644,20 @@ export class LocalHostService implements HostService {
   subscribeThreadDetail(listener: (update: AgentThreadDetailUpdate) => void): () => void { return this.control.subscribeThreadDetail?.(listener) ?? (() => undefined) }
   questionPage(token: string): QuestionPageTarget | undefined { return this.control.questionPage?.(token) }
   questionPageOpened(token: string): void { this.control.questionPageOpened?.(token) }
-  async attachmentPreview(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult> { return await this.control.attachmentPreview?.(request) ?? null }
-  async threadMedia(request: AgentThreadMediaRequest): Promise<AgentThreadMediaResult> { return this.options.threadMedia === true ? await this.control.threadMedia?.(request) ?? null : null }
+  async attachmentPreview({ edge, ...request }: HostPreviewRequest): Promise<AgentAttachmentPreviewResult> {
+    const whole = async (): Promise<AgentAttachmentPreviewResult> => await this.control.attachmentPreview?.(request) ?? null
+    const reduced = this.options.reducedPictures
+    return edge !== undefined && reduced ? await reduced.read(['preview', request.threadId, request.messageId, request.attachmentId], edge, whole) : await whole()
+  }
+  async threadMedia({ edge, ...request }: HostThreadMediaRequest): Promise<AgentThreadMediaResult> {
+    if (this.options.threadMedia !== true) return null
+    const whole = async (): Promise<AgentThreadMediaResult> => await this.control.threadMedia?.(request) ?? null
+    const reduced = this.options.reducedPictures
+    return edge !== undefined && reduced ? await reduced.read(['thread-media', request.threadId, request.activityId, request.mediaId], edge, whole) : await whole()
+  }
   async threadMediaPart(request: AgentThreadMediaPartRequest): Promise<AgentThreadMediaPart> { return this.options.threadMedia === true ? await this.control.threadMediaPart?.(request) ?? null : null }
   get supportsThreadMedia(): boolean { return this.options.threadMedia === true }
+  get supportsPictureEdges(): boolean { return this.options.reducedPictures !== undefined }
   async attachmentFile(request: HostAttachmentFileRequest): Promise<HostAttachmentFile> { return await this.control.attachmentFile?.(request) ?? null }
   stageAttachment(image: AgentAttachmentUpload): Promise<AgentAttachmentHandle> {
     if (!this.control.stageAttachment) return Promise.reject(new Error(HOST_CANNOT_STAGE_SCREENSHOTS))
