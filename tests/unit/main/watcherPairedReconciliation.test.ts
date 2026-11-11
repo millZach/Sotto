@@ -378,6 +378,35 @@ it('does not turn ordinary shell streaming into Watcher reads and exposes typed 
   expect(changed).toHaveBeenCalledWith(f.hostId, false)
 })
 
+it('puts a progress push into the projection it holds and hands it on whole, and lets go of one it does not follow (ADR-0073, November 10, 2026)', async () => {
+  const f = await fixture(), state = f.control.shell(), master = f.control.watcherRecords.copy().current!
+  const socket = new SocketHostService({ url: 'http://127.0.0.1:1', token: 'synthetic', watcherEnabled: true })
+  const internal = socket as unknown as { cached: typeof state; features: string[]; receive(text: string): void }
+  internal.cached = { ...state, stale: false, host: { ...state.host, hostId: f.hostId } }; internal.features = ['watcher-control', 'watcher-reads']
+  const router = new DesktopHostRouter(emptyDesktopState, { watcherEnabled: true })
+  cleanups.push(async () => { router.dispose(); await socket.close() })
+  router.add({ hostId: f.hostId, name: 'Synthetic', kind: 'remote', service: socket, detail: id => socket.readThreadDetail(id), preview: () => null })
+  const changed = vi.fn(); router.watcherHosts().subscribe(changed)
+  const target = { hostId: f.hostId, threadId: 'synthetic-worker' }, at = new Date().toISOString()
+  const whole: WatcherHostProjection = { hostId: f.hostId, master, revision: 'whole', observedAt: at, requests: [], operations: [], evidence: [], progress: [{ target, fingerprint: 'a'.repeat(64) }] }
+  const progress = (baseRevision: string, revision: string) => JSON.stringify({ v: 1, event: 'watcher-progress', progress: { baseRevision, revision, observedAt: at, changed: [{ target, fingerprint: 'b'.repeat(64) }] } })
+  // A host that does not list the feature is not followed for it.
+  internal.receive(JSON.stringify({ v: 1, event: 'watcher-state', projection: whole }))
+  internal.receive(progress('whole', 'unlisted'))
+  expect(socket.cachedWatcherProjection(master)?.revision).toBe('whole')
+  expect(changed).toHaveBeenCalledOnce()
+  // One that lists it moves the projection on, and the router hears of it as of any push.
+  internal.features = ['watcher-control', 'watcher-reads', 'watcher-progress']
+  internal.receive(progress('whole', 'stepped'))
+  expect(socket.cachedWatcherProjection(master)).toEqual({ ...whole, revision: 'stepped', progress: [{ target, fingerprint: 'b'.repeat(64) }] })
+  expect(changed).toHaveBeenCalledTimes(2)
+  expect(changed).toHaveBeenLastCalledWith(f.hostId, false)
+  // A push measured from another revision drops what it held, so Watcher's reconcile reads the projection again.
+  internal.receive(progress('missed', 'later'))
+  expect(socket.cachedWatcherProjection(master)).toBeUndefined()
+  expect(changed).toHaveBeenCalledTimes(3)
+})
+
 it('backs off a failing owning read while further pushes are coalesced', async () => {
   const f = await fixture()
   f.read.mockClear(); f.read.mockRejectedValue(new Error('synthetic-retry'))
