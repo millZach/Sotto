@@ -40,6 +40,18 @@ send (receipt, card, draft, message, command and, for a start, its creation rece
 - **While a thread streams**, its token usage moves every tenth chunk, twice a second, as Claude's adapter reports it. A
   phone reads no reply text in a thread list push, so without it a phone was sent a list only when something else changed.
 
+## How the clock waits
+
+The benchmark runs main on Vitest's fake clock and steps it 5 ms at a time (`tests/fixtures/stepClock.ts`). Since review,
+each step also waits until both ends of every host socket have read what the other wrote, a push still being compressed
+on Node's thread pool included (`hostSocketScale`). A desktop's push over 64 KiB is compressed there, so before this, a
+busy machine let the fake clock run ahead of it: the host found the desktop behind and held pushes back, and fewer were
+counted. Now the host never finds a peer behind because the machine was slow, every push it makes goes, and the counts
+are the same on any machine: one thread list push and one `watcher-state` per chunk to the desktop, where it counted 23
+in 60 chunks before. A real link that reads slowly still has the host hold pushes back; this benchmark no longer measures
+that. The host also runs 6 s before any client connects, past the 5 s after which it reconnects a provider that is
+turned on, so that provider's models are in the catalog from the first hello.
+
 ## Before and after
 
 One thread streaming, 60 chunks in 3 seconds and one more second, on Owl, long threads. Before is the benchmark as of
@@ -48,17 +60,19 @@ host compresses nothing for a phone. forge's figures are the audit's (`docs/perf
 
 | | Before | Now | forge's host | Now against forge |
 |---|---:|---:|---:|---:|
-| A thread list push to the desktop | 8,888 (59 pushes after one of 205,905 listing every thread) | 200,032 (23 pushes) | 210,659 (103 in 2 minutes) | 0.95 |
-| The same, compressed | not counted apart | 48,323 | 60,270 | 0.80 |
+| A thread list push to the desktop | 8,888 (59 pushes after one of 205,905 listing every thread) | 200,099 (60 pushes) | 210,659 (103 in 2 minutes) | 0.95 |
+| The same, compressed | not counted apart | 48,317 | 60,270 | 0.80 |
 | A thread list push to the phone | 6,827 (after one of 204,308 listing every thread) | 199,134 (6 pushes) | 209,015 (32 in a minute, a working thread open) | 0.95 |
-| A `watcher-state` push to the desktop | none sent | 1,986,294 (23 pushes) | 1,976,203 (254 in 2 minutes) | 1.00 |
-| The same, compressed | none sent | 297,991 | 365,739 | 0.81 |
+| A `watcher-state` push to the desktop | none sent | 1,986,294 (60 pushes) | 1,976,203 (254 in 2 minutes) | 1.01 |
+| The same, compressed | none sent | 298,236 | 365,739 | 0.82 |
 | `watcher-state` built from forge's saved record (`watcherStatePush`) | | | 2,086,237, 374,132 compressed | 0.95 |
-| Hello to the desktop | 416,811 | 609,390 | not measured | |
+| Hello to the desktop | 416,811 | 610,613 | not measured | |
 | Hello to the phone | 406,374 | 476,592 | 236,631 (154 settled threads held back) | |
 | Observing the streaming threads, phone | 854,572 | 87,235 (the step window) | 92,599 for one thread | |
 
-Each push is within a quarter of forge's. What is in one:
+Each push is within a quarter of forge's. What is in one, by the top-level part of the frame, a thread list push's
+`state` and its `host` counted field by field (`state.host.projects` in the evidence) and Watcher's `projection` the same
+way:
 
 | Part of a push | Now, to the desktop | forge, to the phone |
 |---|---:|---:|
@@ -69,39 +83,75 @@ Each push is within a quarter of forge's. What is in one:
 | `followupReceipts` | 7,980 | 7,980 |
 | `host.projects` | 2,764 | 3,346 |
 | `host.providers` | 2,263 | 2,760 |
-| Changed thread records | 2,132 (1,214 to the phone) | 2,509 (about 4,200 to the laptop) |
-| Parts as the push before had them | 42 of 43, 197,217 bytes | about 205 KB of 209 KB |
+| Changed thread records (`threads`) | 2,199 (1,214 to the phone) | 2,509 (about 4,200 to the laptop) |
+| Parts as the push before had them | 44 of 45, 197,225 bytes, the frame's `v` and `event` among them | about 205 KB of 209 KB |
 
 | Part of a `watcher-state` push | Now | forge |
 |---|---:|---:|
 | `requests` | 1,177,671 | 995,250 |
 | `operations` | 783,097 | 952,735 |
 | `progress` | 24,961 (130 threads) | 24,961 (130 threads) |
-| Parts as the push before had them | 6 of 9; only `progress`, `revision` and `observedAt` moved | the same |
+| Parts as the push before had them | 8 of 11 with the frame's `v` and `event`; only `progress`, `revision` and `observedAt` moved | the same |
 
-22 of the 23 `watcher-state` pushes changed only Watcher's progress. The other carried the user's prompt on a thread the
-desktop's Watcher had worked on, which the host records against that thread.
+All 60 `watcher-state` pushes changed only Watcher's progress. The user's prompt on a thread the desktop's Watcher had
+worked on, which the host records against that thread and which changes the projection's requests, now reaches the
+desktop in the second the benchmark waits before it counts. Before review, with the clock running ahead, it arrived late
+and one of the 23 counted carried it.
 
 ## The guard
 
-`tests/perf/hostPushSizeBudget.perf.test.ts` runs in the default suite, in about 3 seconds on forge. It builds the same
+`tests/perf/hostPushSizeBudget.perf.test.ts` runs in the default suite, in about 4 seconds on forge. It builds the same
 host, starts one thread, streams 10 chunks so what goes once after observing is behind it, then counts 40 more:
 
 | Measure | Today | Budget | Lowered by |
 |---|---:|---:|---|
-| Bytes per thread list push to a desktop | 199,863 | 204,000 | #2393 |
+| Bytes per thread list push to a desktop | 199,919 | 204,000 | #2393 |
 | Bytes per thread list push to an iPhone | 198,970 | 203,000 | #2392, #2393 |
-| Parts of a push to a desktop as the push before had them | 42 | 42 | #2393 |
-| Parts of a push to an iPhone as the push before had them | 43 | 43 | #2392, #2393 |
-| Bytes per `watcher-state` push that changes only progress | 1,986,099 | 2,006,000 | #2391 |
-| Parts of a `watcher-state` push as the push before had them | 6 | 6 | #2391 |
+| Parts of a push to a desktop as the push before had them | 44 | 44 | #2393 |
+| Parts of a push to an iPhone as the push before had them | 45 | 45 | #2392, #2393 |
+| Bytes the desktop is sent per change of Watcher's progress alone | 1,986,099 | 2,006,000 | #2391 |
+| Parts of it as the push before had them | 8 | 8 | #2391 |
+| Whole `watcher-state` pushes per change of progress alone | 1 | 1 | #2391 |
 
-The byte budgets have 2% room for a push and 1% for `watcher-state`, since the host's folders are in a push and a
-temporary folder's path is longer on Windows and macOS than on Linux. The counts have none. Every budget only tightens.
+A part is a top-level field of the frame, with a thread list push's `state` and its `host`, and Watcher's `projection`,
+counted field by field, so a field added anywhere in a push is one more part, and one more unchanged part whenever it
+repeats. Each push is measured against the last push of the same event. The frame's `v` and `event` count, which is why a desktop's push has 44 unchanged parts where the benchmark
+reported 42 before review. A change of progress alone is counted whichever push carries it: a `watcher-state` whose only
+moved parts are `progress`, `revision` and `observedAt`, or a `watcher-progress`, which #2391 adds.
 
-It was checked both ways. With one part that never changes added to every thread list push (`probeUnchanged: true` in
-`shell` in `src/host/socketServer.ts`), it failed: 43 parts against 42. With one added to Watcher's projection, it failed:
-7 against 6. Both were taken out.
+The byte budgets have 2% room for a push and 1% for Watcher's, since the host's folders are in a push and a temporary
+folder's path is longer on Windows and macOS than on Linux. The counts have none. Every budget only tightens.
+
+It asserts sizes and counts, never times. It steps the clock the way the benchmark does (How the clock waits, above),
+so it gives the same numbers on every run:
+
+- **Under load.** Ten rounds of two copies at once, with ten processes spinning on forge's 16 cores (load average 8 to
+  19), passed all 20 runs with the numbers above. The guard as it was before review, five rounds the same way (load
+  average 6 to 12), passed all 10 but counted 13 to 17 pushes to the desktop and 199,830 to 199,913 bytes a push.
+- **With compression held back.** Holding every off-loop compression's answer back 20 ms and then 100 ms gave the same
+  numbers. Before review, 100 ms failed the guard at setup, its desktop's client timing out on the fake clock, and 20 ms
+  counted 9 pushes rather than 15.
+
+It was checked both ways. Each of these, added to `src/host/socketServer.ts` and taken out again, failed it:
+
+| Added to every push | Measure that failed |
+|---|---|
+| `probeUnchanged: true` beside `state` in a thread list push | unchanged parts to a desktop, 45 against 44 |
+| `probeUnchanged: true` in the state of a thread list push | unchanged parts to a desktop, 45 against 44 |
+| `probeUnchanged: true` beside `projection` in a `watcher-state` | unchanged parts per change of progress, 9 against 8 |
+| `probeUnchanged: true` in Watcher's projection | unchanged parts per change of progress, 9 against 8 |
+
+Each added 22 bytes to a push, inside the byte budgets: the part counts are what catch a small part that never changes.
+
+The fixes it measures lower a budget rather than fail it. With each merged in for a run and taken out again:
+
+| Measure | Today | With #2405 (`153f6604d`, for #2391) | With #2404 (`893c83b34`, for #2392) |
+|---|---:|---:|---:|
+| Bytes per change of Watcher's progress alone | 1,986,099 | 451 | 1,986,099 |
+| Parts of it as the push before had them | 8 | 2 (the frame's `v` and `event`) | 8 |
+| Whole `watcher-state` pushes per change of progress alone | 1 | 0 | 1 |
+| Bytes per thread list push to an iPhone | 198,970 | 198,970 | 73,177 |
+| Parts of a push to an iPhone as the push before had them | 45 | 45 | 41 |
 
 ## What else moved
 
@@ -142,4 +192,4 @@ SOTTO_PERF_BENCH=1 npx vitest run tests/perf/watcherStatePush.perf.test.ts --max
 
 Evidence, sizes, counts and field names only: `docs/perf/data/2026-11-10-real-size-transfer-benchmarks/`
 (`data-transfer-socket-before.json`, `data-transfer-socket-after.json`, `host-push-sizes.json`,
-`watcher-state-push-fixture.json`).
+`host-push-guard-checks.json`, `watcher-state-push-fixture.json`).

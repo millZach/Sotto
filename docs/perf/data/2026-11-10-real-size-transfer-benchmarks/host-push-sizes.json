@@ -1,20 +1,18 @@
 {
  "desktop": {
-  "pushes": 15,
-  "bytesPerPush": 199863,
-  "unchangedPartsPerPush": 42
+  "pushes": 40,
+  "bytesPerPush": 199919,
+  "unchangedPartsPerPush": 44
  },
  "phone": {
   "pushes": 4,
   "bytesPerPush": 198970,
-  "unchangedPartsPerPush": 43
+  "unchangedPartsPerPush": 45
  },
- "watcherState": {
-  "pushes": 15,
-  "unchangedPartsPerPush": 6,
-  "progressOnly": {
-   "pushes": 15,
-   "bytesPerPush": 1986099
-  }
+ "progressOnly": {
+  "changes": 40,
+  "bytesPerChange": 1986099,
+  "unchangedPartsPerChange": 8,
+  "wholeWatcherStatePerChange": 1
  }
 }
