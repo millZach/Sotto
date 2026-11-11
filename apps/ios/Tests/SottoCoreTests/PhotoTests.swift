@@ -24,11 +24,11 @@ final class PhotoTests: XCTestCase {
         // A tile, on a computer that lists `thread-media-edge`, names the longest edge it shows (ADR-0170, November 10 amendment).
         let tile = Photos.threadMedia(threadID: "t", activityID: "claude-tool-shot", mediaID: "m0", edge: 640)
         XCTAssertEqual(tile["request"], .object(["threadId": .string("t"), "activityId": .string("claude-tool-shot"), "mediaId": .string("m0"), "edge": .number(640)]))
-        let photo = JSONValue.object(Photos.preview(threadID: "t", messageID: "m", attachmentID: "a", edge: 640))
+        let photo = Photos.preview(threadID: "t", messageID: "m", attachmentID: "a", edge: 640)
         XCTAssertEqual(photo["request"]?["edge"], .number(640))
         // The viewer, and a computer from before, are asked for the whole picture, with no edge at all.
         XCTAssertEqual(Photos.threadMedia(threadID: "t", activityID: "claude-tool-shot", mediaID: "m0")["request"]?["edge"], .null)
-        XCTAssertEqual(JSONValue.object(Photos.preview(threadID: "t", messageID: "m", attachmentID: "a"))["request"]?["edge"], .null)
+        XCTAssertEqual(Photos.preview(threadID: "t", messageID: "m", attachmentID: "a")["request"]?["edge"], .null)
         // An edge the computer does not take is never sent: the picture comes whole rather than being refused.
         XCTAssertEqual(Photos.threadMedia(threadID: "t", activityID: "claude-tool-shot", mediaID: "m0", edge: 600)["request"]?["edge"], .null)
         XCTAssertEqual(Photos.edges, [320, 640, 1280])

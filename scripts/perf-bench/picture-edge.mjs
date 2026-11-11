@@ -82,4 +82,5 @@ async function main() {
   } finally { rmSync(scratch, { recursive: true, force: true }) }
 }
 
-app.whenReady().then(main).catch(error => { console.error(error instanceof Error ? error.message : 'failed'); process.exitCode = 1 }).finally(() => app.quit())
+// A failure is said by its kind only: a file system error's message carries the folder and a picture's name.
+app.whenReady().then(main).catch(error => { console.error(`The pictures could not be measured (${error instanceof Error && 'code' in error ? String(error.code) : 'no error code'}).`); process.exitCode = 1 }).finally(() => app.quit())
