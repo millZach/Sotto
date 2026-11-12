@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
 import { mkdir, stat } from 'node:fs/promises'
-import { join } from 'node:path'
+import { join, posix } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
 import { GitActions } from '../../src/main/agents/git/gitActions'
 import { GitStatusReader } from '../../src/main/agents/git/gitStatus'
@@ -38,7 +38,8 @@ async function fixture() {
   const requestId = service.state().requests.at(-1)!.id
   const call = async <N extends keyof typeof watcherToolSchemas>(name: N, input: unknown) =>
     watcherToolSchemas[name].output.parse((await tools.call(watcherId, name, input)).structuredContent)
-  const add = (input: object, retryKey = randomUUID()) => call('add_project', { requestId, retryKey, ...input })
+  const add = async (input: object, retryKey = randomUUID()) =>
+    watcherToolSchemas.add_project.output.parse((await tools.call(watcherId, 'add_project', { requestId, retryKey, ...input })).structuredContent)
   const hostId = f.control.hostId()!
   return { ...f, workspace, service, call, add, requestId, model, hostId }
 }
@@ -106,15 +107,16 @@ it('adds and makes projects on a connected machine with that machine’s own cre
     addProject: async (_id, command) => {
       sent.push(command)
       if (command.path === '/home/zach/Refused') throw new Error('That folder no longer exists. Nothing was added. Choose another folder.')
-      const path = command.path ?? `/home/zach/Projects/${command.title}`
+      // The host resolves the path, as its create-project does.
+      const path = command.path ? posix.resolve(command.path) : `/home/zach/Projects/${command.title}`
       projects = [...projects, { id: `project-${projects.length}`, title: command.title, path } as AgentProject]
       return projects
     },
   }
   f.service.useRemoteHosts(remote)
-  expect(await f.add({ hostId: remoteId, path: '/home/zach/AI Sentiment Index/' })).toMatchObject({ status: 'ok',
+  expect(await f.add({ hostId: remoteId, path: '/home/zach/Projects/../AI Sentiment Index/' })).toMatchObject({ status: 'ok',
     project: { target: { hostId: remoteId, projectId: 'project-0' }, title: 'AI Sentiment Index' }, folderMade: false, alreadyAdded: false })
-  expect(sent).toEqual([{ title: 'AI Sentiment Index', path: '/home/zach/AI Sentiment Index/', useExisting: true }])
+  expect(sent).toEqual([{ title: 'AI Sentiment Index', path: '/home/zach/Projects/../AI Sentiment Index/', useExisting: true }])
   expect(await f.add({ hostId: remoteId, title: 'Fresh', newFolder: true, gitInit: true })).toMatchObject({ status: 'refused', code: 'HOST_FEATURE_UNAVAILABLE' })
   expect(sent).toHaveLength(1)
   gitInit = true

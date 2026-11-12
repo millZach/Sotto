@@ -1,7 +1,7 @@
 import { sendOutcome } from './sendOutcome'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { join, posix, resolve, win32 } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 import { capabilitiesForThread, isThreadProviderConnected, lastUserMessageIdOf, PROVIDER_LABELS,
   type AgentCommand, type AgentDelivery, type AgentHostSnapshot, type AgentModel, type AgentProject, type AgentRuntimeMode, type AgentSpeed, type AgentThread, type HandoverCounts, isVisualMessage } from '../../shared/agents'
@@ -1065,11 +1065,15 @@ export class WatcherService implements WatcherControlHooks {
       if (earlier.asked !== asked) refuse('RETRY_KEY_CONFLICT', 'This retry key already belongs to a different call. Nothing was added.')
       return earlier.result
     }
-    const record = this.view(), request = record.requests.find(item => item.id === input.requestId)
-    const answer = request !== undefined && answeredRequestOf(request.rootUserMessageId) !== undefined && this.toldRequestLive(request.id)
-    if (!request || request.standingWatchId || request.state !== 'active' || !this.owns(record, request) || isToldRequest(request) && !answer) {
-      refuse('REQUEST_NOT_ACTIVE', 'Watcher adds a project only for the user\'s own message to it, or their answer to its question. Nothing was added.')
+    // Asked again in the command's lane, so a request that ended while the add waited there makes nothing.
+    const allowed = (): void => {
+      const record = this.view(), request = record.requests.find(item => item.id === input.requestId)
+      const answer = request !== undefined && answeredRequestOf(request.rootUserMessageId) !== undefined && this.toldRequestLive(request.id)
+      if (!request || request.standingWatchId || request.state !== 'active' || !this.owns(record, request) || isToldRequest(request) && !answer) {
+        refuse('REQUEST_NOT_ACTIVE', 'Watcher adds a project only for the user\'s own message to it, or their answer to its question. Nothing was added.')
+      }
     }
+    allowed()
     const newFolder = input.newFolder === true, gitInit = input.gitInit === true
     if (gitInit && !newFolder) refuse('INVALID_INPUT', 'gitInit runs only in a folder Sotto makes. Set newFolder too, or add the folder as it is and ask a worker to set up Git. Nothing was added.')
     if (!input.path && !(newFolder && input.title)) refuse('INVALID_INPUT', 'Name the folder by its absolute path, or set newFolder with a title to make it in the machine\'s default projects directory. Nothing was added.')
@@ -1081,7 +1085,7 @@ export class WatcherService implements WatcherControlHooks {
     const said = (error: unknown) => error instanceof Error && error.message ? error.message.slice(0, 2_000) : 'Sotto could not add the project. Nothing was added.'
     let found: { readonly projectId: string; readonly path: string; readonly title: string; readonly known: boolean }
     if (local) {
-      try { found = await this.options.control.addProjectForWatcher(command) } catch (error) { refuse('INVALID_INPUT', said(error)) }
+      try { found = await this.options.control.addProjectForWatcher(command, allowed) } catch (error) { if (error instanceof Refusal) throw error; refuse('INVALID_INPUT', said(error)) }
     } else {
       const host = this.remote?.hosts().find(item => item.hostId === hostId)
       if (!host) refuse('UNKNOWN_TARGET', 'That machine is unavailable. Read list_machines again. Nothing was added.')
@@ -1089,8 +1093,8 @@ export class WatcherService implements WatcherControlHooks {
       const remote = this.remote
       if (!remote?.addProject) refuse('HOST_FEATURE_UNAVAILABLE', 'Watcher cannot add projects on other machines here. Nothing was added.')
       if (gitInit && !host.gitInit) refuse('HOST_FEATURE_UNAVAILABLE', 'Update Sotto on that machine before Watcher sets up Git in a new project there. Nothing was added.')
-      // A machine's folders as it compares them: a Windows path whatever its case, and none with a separator at its end.
-      const folder = (path: string) => { const trimmed = path.replace(/(?<=.)[\\/]+$/u, ''); return /^[a-z]:|\\/iu.test(path) ? trimmed.replaceAll('/', '\\').toLowerCase() : trimmed }
+      // Resolved by the machine's own rules, as its create-project resolves the path, so `..` and a trailing separator match.
+      const folder = (path: string) => /^[a-z]:|\\/iu.test(path) ? win32.resolve(path).toLowerCase() : posix.resolve(path)
       const before = this.owningSnapshot(hostId)?.projects ?? [], had = new Set(before.map(project => project.id))
       const same = input.path !== undefined ? before.find(project => folder(project.path) === folder(input.path!)) : undefined
       if (same && newFolder) found = { projectId: same.id, path: same.path, title: same.title, known: true }

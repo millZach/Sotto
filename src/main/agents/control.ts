@@ -13,7 +13,8 @@ import { FollowupStore, followupDigest, isWaitingWakeUp, UNKNOWN_TURN, WATCHER_S
 import { createHash, randomUUID } from 'node:crypto'
 import { stat } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
-import { makeProjectFolder } from './projectFolders'
+import { makeProjectFolder, projectFolderKey } from './projectFolders'
+import type { ProjectAddition } from '../../shared/watcherHost'
 import { isDeepStrictEqual } from 'node:util'
 import { z } from 'zod'
 import {
@@ -793,17 +794,17 @@ export class AgentControl {
    * A new folder with no path goes in the default projects directory under the title. Resolves with the project, and
    * whether a project already had the folder; a refusal rejects with its words.
    */
-  async addProjectForWatcher(input: { readonly title: string; readonly path?: string; readonly useExisting?: true; readonly gitInit?: true }): Promise<{ projectId: string; path: string; title: string; known: boolean }> {
+  async addProjectForWatcher(input: ProjectAddition, allowed?: () => void): Promise<{ projectId: string; path: string; title: string; known: boolean }> {
     const parsed = agentCommandSchema.parse({ type: 'create-project', ...input })
-    const key = (value: string): string => process.platform === 'win32' ? resolve(value).toLowerCase() : resolve(value)
     const provider = this.state.configuration.provider
     const directory = this.state.configuration.projectsDirectory
     const path = input.path || (directory ? join(directory, input.title) : '')
-    const find = () => path && isAbsolute(path) ? this.state.host.projects.find(item => key(item.path) === key(path) && (!item.providerId || item.providerId === provider)) : undefined
+    const find = () => path && isAbsolute(path) ? this.state.host.projects.find(item => projectFolderKey(item.path) === projectFolderKey(path) && (!item.providerId || item.providerId === provider)) : undefined
     const before = find()
     // A new folder a project already has is that project, so a retry after its first call made it answers as that one did.
     if (before && !input.useExisting) return { projectId: before.id, path: before.path, title: before.title, known: true }
-    const guard = () => { if (this.disposed) throw new Error('Sotto is stopping.') }
+    // `allowed` is Watcher's: checked again before the folder is made and before the provider hears of it.
+    const guard = () => { if (this.disposed) throw new Error('Sotto is stopping.'); allowed?.() }
     guard(); this.watcherOrigins.set(parsed, { guard })
     const answer = await this.admitCommandShell(parsed)
     if (answer.error) throw new Error(answer.error)
@@ -4784,7 +4785,7 @@ export class AgentControl {
         if (unusableName) throw new Error('Choose a project name that can be used as a folder name.')
         if (command.gitInit && command.useExisting) throw new Error('Sotto sets up Git only in a folder it makes. Nothing was added. Add the folder as it is, and ask a thread to set up Git there.')
         const initFolder = this.dependencies.host.initProjectFolder?.bind(this.dependencies.host)
-        if (command.gitInit && !initFolder) throw new Error('Setting up Git is unavailable here. Nothing was added.')
+        if (command.gitInit && !initFolder) throw new Error('Setting up Git is unavailable here. Nothing was added. Make the project without Git, and ask a thread to set up Git there.')
         const target = command.path || (this.state.configuration.projectsDirectory ? join(this.state.configuration.projectsDirectory, command.title) : '')
         if (!target || !isAbsolute(target)) throw new Error('Choose an absolute project folder or configure a default projects directory.')
         const path = resolve(target)
@@ -4802,6 +4803,8 @@ export class AgentControl {
           this.observe(); if (!origin || origin.userSetup) this.say(`Opened ${known.title}.`)
           return
         }
+        // Sotto's own command checks its guard before it makes anything: Watcher's request may have ended while it waited.
+        origin?.guard()
         const made = existing ? undefined : await makeProjectFolder(path, command.gitInit ? initFolder : undefined)
         const projectId = this.dependencies.host.createProjectId?.(provider) ?? randomUUID()
         if (turn) { turn.threadId = null; turn.projectId = projectId }
@@ -5338,6 +5341,8 @@ export class AgentControl {
     client: ClientIdentity = this.localClient, atomicDigest?: string, machineOrigin?: WatcherCommandOrigin, queueGuard?: () => void): Promise<void> {
     // A prompt or an answer stays as a draft when this refuses; a create, a setting or a stop has none.
     const draftKept = promptOf(command) !== null || command.type === 'answer'
+    // A new project counts as refused until its provider took it or may have (#704): any throw before then refused it.
+    if (command.type === 'create-project') this.refusedProjects.add(command.projectId)
     this.assertCanAct(undefined, draftKept)
     // Refused here, before an outbox entry exists and long before the provider hears anything.
     if (command.type === 'answer') this.guardClientGrant(client)
@@ -5491,7 +5496,6 @@ export class AgentControl {
       }
     } catch (error) {
       this.watcherHooks?.dispatchAborted?.(command as AgentHostCommand); startAborted()
-      if (command.type === 'create-project') this.refusedProjects.add(command.projectId)
       // A queued steer its turn ended without taking (#1408) keeps its entry until its message is saved back on the queue
       // (`requeueNotTaken`), so a failed save leaves a record that a later snapshot or a restart retries.
       const keptForRequeue = command.type === 'steer' && error instanceof Error && error.message === STEER_NOT_TAKEN
@@ -5511,6 +5515,7 @@ export class AgentControl {
         this.setDelivery(prompt.threadId, draftId, delivery?.status ?? 'submitting', { providerLatencyMs })
       }
     }
+    if (command.type === 'create-project' && (result.accepted || result.uncertain)) this.refusedProjects.delete(command.projectId)
     if (result.accepted || result.uncertain) this.watcherHooks?.dispatched?.(command as AgentHostCommand)
     else { this.watcherHooks?.dispatchAborted?.(command as AgentHostCommand); startAborted() }
     // Previews are decoration, not history: the provider hears the prompt first, and a definitive refusal records nothing.
@@ -5596,7 +5601,6 @@ export class AgentControl {
     await this.persist()
     if (!result.accepted && !result.uncertain) {
       if (turn) turn.failureCode = 'provider-failed'
-      if (command.type === 'create-project') this.refusedProjects.add(command.projectId)
       throw new Error(PROVIDER_REJECTED_ACTION)
     }
     try { this.acceptSnapshot(await this.readThread(threadId, provider)) }

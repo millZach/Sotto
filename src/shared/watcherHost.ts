@@ -54,6 +54,8 @@ export type WatcherRoomThreadInput = Pick<WatcherRoomState['watchedThreads'][num
   id: string; waitsOn: { id: string; kind: 'question' | 'permission' }[]
 }
 
+/** What add_project asks a machine's `create-project` for, on This computer or a paired host (ADR-0073, November 12, 2026). */
+export interface ProjectAddition { readonly title: string; readonly path?: string; readonly useExisting?: true; readonly gitInit?: true }
 export interface WatcherRemoteHosts {
   /**
    * `name` is the machine's name as this computer saved it; `facts` says whether the host lists `host-facts` (#1031), and
@@ -89,7 +91,7 @@ export interface WatcherRemoteHosts {
    * desktop's Add project and New project send it, answering the host's projects after it. Rejects with the host's words
    * when it refuses. `gitInit` goes only to a host that lists `project-git-init`, which `hosts()` says as `gitInit`.
    */
-  addProject?(hostId: string, command: { readonly title: string; readonly path?: string; readonly useExisting?: true; readonly gitInit?: true }): Promise<readonly AgentProject[]>
+  addProject?(hostId: string, command: ProjectAddition): Promise<readonly AgentProject[]>
   /**
    * A connected host's socket for moving a branch (#1033), whatever it lists, or undefined when it is not connected. The
    * mover says in plain words when the host does not list `branch-moves`.
