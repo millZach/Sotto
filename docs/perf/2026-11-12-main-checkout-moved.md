@@ -43,7 +43,8 @@ Every thread's branch stops saying it is behind, before and after.
 ## What changed
 
 The threads of one folder take one read of it, begun after the move, and are saved and published together. A thread
-whose lane is busy reads when it is free, as before.
+whose lane is busy reads when it is free, as before, and Automatically pull is still decided for each thread from what
+the read found.
 
 ## The guard
 

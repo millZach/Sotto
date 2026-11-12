@@ -1340,9 +1340,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    *
    * The threads of one folder take one read of it, begun after the move, and are saved and published together. Each
    * used to read the folder for itself, about five Git processes and a save a thread: with 392 threads in the project's
-   * folder, 391 of them settled, main was blocked for 1.1 to 1.6 s after every merge (November 12, 2026). The read is
-   * the local one. The folder was fast-forwarded a moment ago, so there is nothing for Automatically pull to bring, and
-   * the timer's own read still decides that.
+   * folder, 391 of them settled, main was blocked for 1.1 to 1.6 s after every merge (November 12, 2026). Automatically
+   * pull is still decided for each thread from what the read found, as it was.
    */
   async projectCheckoutMoved(folder: string): Promise<void> {
     const key = (path: string): string => path.replace(/[\\/]+$/u, '').replace(/\\/gu, '/').toLowerCase()
@@ -2240,7 +2239,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     // A trailing re-read takes any read of the folder begun since its timer fired (`refreshWorktreeRecord`).
     const share = afterRemote ? { fresh: true } : options.startedAfter !== undefined ? { startedAfter: options.startedAfter } : {}
     try { status = await this.gitStatus.read(folder, { remote: false, ...share }) } catch { return }
-    if (afterRemote && this.mayAutoPull(status)) status = await this.autoPull(threadId, folder) ?? status
+    // A moved checkout's threads share their read (`together`) and still decide a pull, each for its own folder: a
+    // repository of its own inside the moved one may be behind an upstream already fetched. `autoPull` decides again
+    // from a read of its own, so a shared one never pulls on what another thread's read found.
+    if ((afterRemote || options.together) && this.mayAutoPull(status)) status = await this.autoPull(threadId, folder) ?? status
     const current = this.threadById(threadId)
     if (!current?.worktree || current.worktree.status !== 'ready' || this.stopping) return
     if (gitStatusFingerprint(current.worktree.git) === gitStatusFingerprint(status)) return
