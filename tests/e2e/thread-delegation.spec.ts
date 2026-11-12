@@ -20,7 +20,7 @@ import { join } from 'node:path'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { contrastRatio, parseThemeRgb } from '../../src/shared/themes/color'
 import { evidenceDirectory } from '../fixtures/evidence'
-import { fakeClaudePrompts } from '../fixtures/fakeClaudeRecords'
+import { fakeClaudeLaunches, fakeClaudePrompts } from '../fixtures/fakeClaudeRecords'
 import { parseProviderRecords, writeProviderAction } from '../fixtures/providerRecords'
 import { pageBoundProblems } from './support/designCapture'
 import { onReleaseTrack } from './support/releaseTrack'
@@ -231,13 +231,15 @@ test('a Claude thread delegates to a Codex thread: delegated work, the sidebar, 
       const { page } = launched
       const parentId = await delegatingThread(page, project)
       await expect.poll(() => fakeClaudePrompts(join(root, 'claude')), { timeout: 30_000 }).toBe(1)
+      const [parentLaunch] = await fakeClaudeLaunches(join(root, 'claude'))
+      const parentControl = join(root, 'claude', `control-${parentLaunch!.session}.json`)
       await page.reload()
       await resizeWindow(launched, 1280, 800)
       await openThreads(page)
       const parent = await openThread(page, PARENT)
       expect(await page.evaluate(() => window.sotto!.delegations !== undefined)).toBe(true)
       // Two replies give the stopped turn something to fold, so its settled rows can still be inspected there.
-      await writeProviderAction(join(root, 'claude', 'control.json'), { type: 'say', text: 'I will have the reconnect fix reviewed.' })
+      await writeProviderAction(parentControl, { type: 'say', text: 'I will have the reconnect fix reviewed.' })
       await expect.poll(() => page.evaluate(async threadId => (await window.sotto!.agents!.get()).host.threads
         .find(thread => thread.id === threadId)?.messages.some(message => message.text === 'I will have the reconnect fix reviewed.'), parentId)).toBe(true)
 
@@ -461,7 +463,7 @@ test('a Claude thread delegates to a Codex thread: delegated work, the sidebar, 
       await expect(pane(page).locator('.thread-workspace__head h2')).toHaveText(PARENT)
 
       // The closing reply leaves the earlier reply to fold when Stop ends the turn.
-      await writeProviderAction(join(root, 'claude', 'control.json'), { type: 'say', text: 'The Linux journeys are still running.' })
+      await writeProviderAction(parentControl, { type: 'say', text: 'The Linux journeys are still running.' })
       await expect.poll(() => page.evaluate(async threadId => (await window.sotto!.agents!.get()).host.threads
         .find(thread => thread.id === threadId)?.messages.some(message => message.text === 'The Linux journeys are still running.'), parentId)).toBe(true)
       // One press stops the Claude thread and the Codex thread it delegated that is still working.
@@ -516,6 +518,8 @@ test('a check\'s row says Check, quotes the first line of its reply, and Read it
       const { page } = launched
       const parentId = await delegatingThread(page, project)
       await expect.poll(() => fakeClaudePrompts(join(root, 'claude')), { timeout: 30_000 }).toBe(1)
+      const [parentLaunch] = await fakeClaudeLaunches(join(root, 'claude'))
+      const parentControl = join(root, 'claude', `control-${parentLaunch!.session}.json`)
       await page.reload()
       await resizeWindow(launched, 1280, 800)
       await openThreads(page)
@@ -541,7 +545,7 @@ test('a check\'s row says Check, quotes the first line of its reply, and Read it
       const [checkNative] = await codexThreads(codex)
       await writeProviderAction(join(codex, 'control.json'), { type: 'complete', threadId: checkNative, text: CHECK_REPLY })
       await expect(row).toHaveCount(0, { timeout: 30_000 })
-      await writeProviderAction(join(root, 'claude', 'control.json'), { type: 'complete', thinking: 'Read the check result.', text: 'The check found two failures.' })
+      await writeProviderAction(parentControl, { type: 'complete', thinking: 'Read the check result.', text: 'The check found two failures.' })
       const fold = parent.getByRole('button', { name: /^Worked for/u }).first()
       await expect(fold).toBeVisible()
       if (await fold.getAttribute('aria-expanded') === 'false') await fold.click()

@@ -139,6 +139,8 @@ test('a remote parent\'s delegated threads: grouped under its machine, held line
     const parentId = randomUUID()
     await command({ type: 'create-thread', threadId: parentId, projectId: project.id, title: PARENT, titleSource: 'user', modelId: model.id, runtimeMode: 'full-access', workingCopy: 'shared' })
     await command({ type: 'manual-send', threadId: parentId, draftId: randomUUID(), text: 'Get the host protocol docs in shape for the agents view. Have someone review the socket changes and run the contract tests.' })
+    await native.action(await session(parentId), { type: 'say', text: 'I will delegate the host checks.' })
+    await expect.poll(() => thread(parentId)?.messages.some(message => message.text === 'I will delegate the host checks.')).toBe(true)
     const tests = await delegate(parentId, 'building', 'Run the host contract tests', 'Run tests/integration/hostServiceContract.ts against the headless host on this machine and report which cases fail and why.')
     expect(tests.status, JSON.stringify(tests)).toBe('ok')
     const research = await delegate(parentId, 'research', 'Find what the iPhone reads for agents', 'Read docs/host-protocol.md for every field the phone reads from thread-delegations.', { permission: 'approval-required' })
@@ -255,6 +257,15 @@ test('a remote parent\'s delegated threads: grouped under its machine, held line
       await expect(tools(page).getByRole('status').filter({ hasText: 'is not connected' })).toHaveCount(0)
       await expect(forge.getByRole('heading', { level: 3 })).not.toContainText('not connected')
       await capture(launched, 'reconnected-dark-1280x800')
+      // Two replies give the stopped parent a fold, where the refusal's explanation remains available.
+      await native.action(await session(parentId), { type: 'say', text: 'The host checks have reported back.' })
+      await expect.poll(() => thread(parentId)?.messages.some(message => message.text === 'The host checks have reported back.')).toBe(true)
+      await command({ type: 'interrupt', threadId: parentId })
+      const refusedFold = pane(page).getByRole('button', { name: /^Worked for/u }).first()
+      await expect(refusedFold).toBeVisible()
+      if (await refusedFold.getAttribute('aria-expanded') === 'false') await refusedFold.click()
+      await expect(cards.getByRole('listitem', { name: 'Building, not delegated, Refused' }).locator('.delegated-work__line'))
+        .toHaveText(`Asked for ${process.platform === 'darwin' ? 'a Windows machine' : 'a Mac'}. Forge can start threads only on Forge for now. Nothing was started.`)
       expect(errors).toEqual([])
       await writeFile(join(evidence, 'verification.json'), JSON.stringify({ groupedUnderForge: true, heldNotTold: true, heldNoAnswerGrant: true, refusedOtherMachine: true,
         nestedSecondLevel: true, keyboardOpensAndEscapeCloses: true, keptGreyedWhileAway: true, readAfreshOnReconnect: true, sizes: ['1600x1000', '1280x800', '820x560'],

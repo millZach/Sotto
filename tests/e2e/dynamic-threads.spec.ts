@@ -38,9 +38,10 @@ async function fixture(holdOverseer = false) {
 
 /** Finish the held overseer's turn with a thinking step, so its workers have a Worked for fold. */
 async function finishOverseer(root: string): Promise<void> {
-  // Later news and a worker moved to Claude keep the fixture's ordinary automatic reply.
+  // Later news keeps the fixture's ordinary automatic reply.
   await writeFile(join(root, 'claude', 'script.json'), JSON.stringify({ reply: 'Done.' }))
-  await writeProviderAction(join(root, 'claude', 'control.json'), { type: 'complete', thinking: 'Choose a worker for the review.', text: 'The review is delegated.' })
+  const [overseer] = await fakeClaudeLaunches(join(root, 'claude'))
+  await writeProviderAction(join(root, 'claude', `control-${overseer!.session}.json`), { type: 'complete', thinking: 'Choose a worker for the review.', text: 'The review is delegated.' })
 }
 
 /** Claude Code connected, a project, and a thread nothing has been sent to. */
@@ -252,6 +253,8 @@ test('a worker row\'s ··· gives its piece to another model the user chooses, 
       const models = page.getByRole('menu', { name: /^Give .+ to$/u })
       await expect(models.getByRole('menuitem', { name: 'Opus 5.5' })).toBeFocused()
       await expect(models.getByRole('menuitem', { name: 'GPT-6.1 Sol' })).toHaveCount(0)
+      // The replacement's anchor can be a private wake-up; keep it working so its row remains in view.
+      await writeFile(join(root, 'claude', 'script.json'), '{}')
       await page.keyboard.press('Enter')
       // A new row on Opus, the user's own choice, taking over from the old one.
       const moved = page.locator('.delegated-work__row', { hasText: 'You chose this.' })
