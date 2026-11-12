@@ -10,20 +10,21 @@ import { join } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 import { overseerInstructions } from '../../src/shared/dynamicThreads'
 import { evidenceDirectory } from '../fixtures/evidence'
-import { fakeClaudeLaunches, fakeClaudeRecords } from '../fixtures/fakeClaudeRecords'
+import { fakeClaudeLaunches, fakeClaudePrompts, fakeClaudeRecords } from '../fixtures/fakeClaudeRecords'
+import { writeProviderAction } from '../fixtures/providerRecords'
 import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
 import { onReleaseTrack } from './support/releaseTrack'
 import { pageBoundProblems } from './support/designCapture'
 import { settingsLayoutProblems, settingsTextContrast } from './support/settingsChecks'
 import { closeSotto, launchSotto, openPage, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
 
-async function fixture() {
+async function fixture(holdOverseer = false) {
   const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-dynamic-' })).directory
   const root = join(profile, 'native-fixture')
   for (const folder of ['claude', 'codex', 'project']) await mkdir(join(root, folder), { recursive: true })
   await writeFile(join(root, 'codex', 'script.json'), JSON.stringify({ reply: 'Reviewed.', models: [{ id: 'gpt-6.1-sol', model: 'gpt-6.1-sol', displayName: 'GPT-6.1 Sol', isDefault: true, defaultReasoningEffort: 'medium',
     supportedReasoningEfforts: ['low', 'medium', 'high', 'xhigh', 'max'].map(reasoningEffort => ({ reasoningEffort })) }] }))
-  await writeFile(join(root, 'claude', 'script.json'), JSON.stringify({ reply: 'Done.' }))
+  await writeFile(join(root, 'claude', 'script.json'), JSON.stringify(holdOverseer ? {} : { reply: 'Done.' }))
   await writeFile(join(root, 'claude', 'models.json'), JSON.stringify([{ value: 'opus', displayName: 'Opus 5.5', supportsEffort: true, supportedEffortLevels: ['low', 'high'] }]))
   const previous = { SOTTO_E2E_NATIVE_FIXTURE_ROOT: process.env.SOTTO_E2E_NATIVE_FIXTURE_ROOT, SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE: process.env.SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE }
   process.env.SOTTO_E2E_NATIVE_FIXTURE_ROOT = root
@@ -33,6 +34,13 @@ async function fixture() {
     await removeOwnedE2EProfile(profile)
   }
   return { profile, root, project: join(root, 'project'), restore }
+}
+
+/** Finish the held overseer's turn with a thinking step, so its workers have a Worked for fold. */
+async function finishOverseer(root: string): Promise<void> {
+  // Later news and a worker moved to Claude keep the fixture's ordinary automatic reply.
+  await writeFile(join(root, 'claude', 'script.json'), JSON.stringify({ reply: 'Done.' }))
+  await writeProviderAction(join(root, 'claude', 'control.json'), { type: 'complete', thinking: 'Choose a worker for the review.', text: 'The review is delegated.' })
 }
 
 /** Claude Code connected, a project, and a thread nothing has been sent to. */
@@ -218,7 +226,7 @@ test('its record in Settings counts an overseer\'s piece on the model it chose, 
 
 test('a worker row\'s ··· gives its piece to another model the user chooses, on its brief, and the new row says You chose this', async () => {
   test.setTimeout(180_000)
-  const { profile, root, project, restore } = await fixture()
+  const { profile, root, project, restore } = await fixture(true)
   let launched: LaunchedSotto | undefined
   try {
     await onReleaseTrack('owl', async () => {
@@ -228,16 +236,17 @@ test('a worker row\'s ··· gives its piece to another model the user chooses, 
       await page.evaluate(() => window.sotto!.updateSettings({ dynamicThreads: { providers: ['claude', 'codex'], highestEffort: 'high', workersAtOnce: 4 } }))
       expect(await command(page, { type: 'set-thread-dynamic', threadId: id, dynamic: true })).toBeNull()
       expect(await send(page, id, 'Fix the reconnect flake.')).toBeNull()
-      await expect.poll(() => page.evaluate(async threadId => (await window.sotto!.agents!.get()).host.threads.find(item => item.id === threadId)?.status !== 'running', id), { timeout: 30_000 }).toBe(true)
+      await expect.poll(() => fakeClaudePrompts(join(root, 'claude')), { timeout: 30_000 }).toBe(1)
       await page.evaluate(threadId => window.sottoE2E!.delegationTool!({ threadId, name: 'delegate', arguments: { work: 'code-review', brief: 'Review the reconnect fix in src/net.ts.', wait_seconds: 0,
         provider: 'codex', model: 'native:codex:model:gpt-6.1-sol', effort: 'high', permission: 'approval-required', why: 'Another maker\'s read.' } }), id)
+      await finishOverseer(root)
       await page.reload()
       await openThreads(page)
       await page.getByRole('button', { name: 'Reconnect fix', exact: true }).first().click({ position: { x: 16, y: 12 } })
       const sol = page.locator('.delegated-work__row', { hasText: 'GPT-6.1 Sol' }).first()
       const worked = page.getByRole('button', { name: /Worked for/u }).first()
-      await expect(sol.or(worked)).toBeVisible({ timeout: 15_000 })
-      if (!await sol.isVisible()) await worked.click()
+      await expect(worked).toBeVisible({ timeout: 15_000 })
+      if (await worked.getAttribute('aria-expanded') === 'false') await worked.click()
       await sol.getByRole('button', { name: /^Actions for / }).click()
       await page.getByRole('menuitem', { name: 'Give it to another model…' }).click()
       const models = page.getByRole('menu', { name: /^Give .+ to$/u })
@@ -261,7 +270,7 @@ test('a worker row\'s ··· gives its piece to another model the user chooses, 
 
 test('an overseer starts the model it names inside the list, with its reason, and is refused one off it', async () => {
   test.setTimeout(120_000)
-  const { profile, project, restore } = await fixture()
+  const { profile, root, project, restore } = await fixture(true)
   let launched: LaunchedSotto | undefined
   try {
     await onReleaseTrack('owl', async () => {
@@ -271,7 +280,7 @@ test('an overseer starts the model it names inside the list, with its reason, an
       await page.evaluate(() => window.sotto!.updateSettings({ dynamicThreads: { providers: ['claude'], highestEffort: 'high', workersAtOnce: 4 } }))
       expect(await command(page, { type: 'set-thread-dynamic', threadId: id, dynamic: true })).toBeNull()
       expect(await send(page, id, 'Fix the reconnect flake.')).toBeNull()
-      await expect.poll(() => page.evaluate(async threadId => (await window.sotto!.agents!.get()).host.threads.find(item => item.id === threadId)?.lastUserMessageId !== undefined, id), { timeout: 30_000 }).toBe(true)
+      await expect.poll(() => fakeClaudePrompts(join(root, 'claude')), { timeout: 30_000 }).toBe(1)
       const delegate = (args: Record<string, unknown>) => page.evaluate(async ({ threadId, args }) => {
         const result = await window.sottoE2E!.delegationTool!({ threadId, name: 'delegate', arguments: args })
         const text = result.content.find(item => item.type === 'text')
@@ -290,6 +299,7 @@ test('an overseer starts the model it names inside the list, with its reason, an
         return thread && { provider: thread.providerId, effort: thread.reasoningEffort }
       }, id), { timeout: 30_000 }).toEqual({ provider: 'codex', effort: 'high' })
       // Its row says which model the overseer chose, at what effort and why, and has a menu to open or stop it.
+      await finishOverseer(root)
       await page.reload()
       await openThreads(page)
       await page.getByRole('button', { name: 'Reconnect fix', exact: true }).first().click({ position: { x: 16, y: 12 } })
@@ -297,8 +307,8 @@ test('an overseer starts the model it names inside the list, with its reason, an
       const row = page.locator('.delegated-work__row', { hasText: 'GPT-6.1 Sol' }).first()
       // A finished turn folds its work away under its Worked for line.
       const worked = page.getByRole('button', { name: /Worked for/u }).first()
-      await expect(row.or(worked)).toBeVisible({ timeout: 15_000 })
-      if (!await row.isVisible()) await worked.click()
+      await expect(worked).toBeVisible({ timeout: 15_000 })
+      if (await worked.getAttribute('aria-expanded') === 'false') await worked.click()
       await expect(row).toBeVisible({ timeout: 15_000 })
       await expect(row.locator('.delegated-work__meta')).toContainText('GPT-6.1 Sol, High')
       await expect(row).toContainText('Why: Another maker\'s read.')
@@ -404,7 +414,7 @@ test('the model menu turns Dynamic on, asking once which companies it may use, a
 
 test('the switch, a worker\'s row and the Settings card hold in both themes at every window size', async () => {
   test.setTimeout(240_000)
-  const { profile, project, restore } = await fixture()
+  const { profile, root, project, restore } = await fixture(true)
   const evidence = evidenceDirectory('artifacts/dynamic-threads')
   let launched: LaunchedSotto | undefined
   try {
@@ -415,11 +425,12 @@ test('the switch, a worker\'s row and the Settings card hold in both themes at e
       await page.evaluate(() => window.sotto!.updateSettings({ dynamicThreads: { providers: ['claude', 'codex'], highestEffort: 'high', workersAtOnce: 4, note: 'Sol for reviews. Save Opus for the hard debugging, and keep each change as small as the issue allows.' } }))
       expect(await command(page, { type: 'set-thread-dynamic', threadId: id, dynamic: true })).toBeNull()
       expect(await send(page, id, 'Fix the reconnect flake.')).toBeNull()
-      await expect.poll(() => page.evaluate(async threadId => (await window.sotto!.agents!.get()).host.threads.find(item => item.id === threadId)?.status !== 'running', id), { timeout: 30_000 }).toBe(true)
+      await expect.poll(() => fakeClaudePrompts(join(root, 'claude')), { timeout: 30_000 }).toBe(1)
       await page.evaluate(async threadId => {
         const result = await window.sottoE2E!.delegationTool!({ threadId, name: 'delegate', arguments: { work: 'code-review', brief: 'Review the reconnect fix.', wait_seconds: 0, provider: 'codex', model: 'native:codex:model:gpt-6.1-sol', effort: 'max', permission: 'approval-required', why: 'Another maker\'s read, and Codex has room this week.' } })
         return result
       }, id)
+      await finishOverseer(root)
       await page.reload()
       await openThreads(page)
       await page.getByRole('button', { name: 'Reconnect fix', exact: true }).first().click({ position: { x: 16, y: 12 } })
@@ -434,8 +445,8 @@ test('the switch, a worker\'s row and the Settings card hold in both themes at e
           await expect(chip, where).toContainText('oversees')
           const row = page.locator('.delegated-work__row', { hasText: 'GPT-6.1 Sol' }).first()
           const worked = page.getByRole('button', { name: /Worked for/u }).first()
-          await expect(row.or(worked), where).toBeVisible({ timeout: 15_000 })
-          if (!await row.isVisible()) await worked.click()
+          await expect(worked, where).toBeVisible({ timeout: 15_000 })
+          if (await worked.getAttribute('aria-expanded') === 'false') await worked.click()
           await expect(row, where).toBeVisible()
           expect(await pageBoundProblems(page), where).toEqual([])
           await page.screenshot({ path: join(evidence, `row-${appearance}-${width}x${height}.png`), animations: 'disabled' })

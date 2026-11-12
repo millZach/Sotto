@@ -177,7 +177,7 @@ test('a remote parent\'s delegated threads: grouped under its machine, held line
       await page.getByRole('button', { name: PARENT, exact: true }).click()
       await expect(pane(page).locator('.thread-workspace__head h2')).toHaveText(PARENT)
 
-      // The parent's rows of delegated work name the host; the refusal names what it asked for, in Zach's words.
+      // The parent's working rows name the host; the refusal leaves no row under its running reply.
       const cards = pane(page)
       const work = (title: string): Locator => cards.getByRole('listitem', { name: new RegExp(`^Building: ${title}, `, 'u') })
       // A turn that folds keeps its rows in its Worked for fold.
@@ -189,8 +189,7 @@ test('a remote parent\'s delegated threads: grouped under its machine, held line
         .toHaveText('Started at Ask for approval: Forge had no new-thread default from this computer yet.')
       await expect(work('Review the delegation socket changes').locator('.delegated-work__held'))
         .toHaveText('Held at Ask for approval: this computer can\'t answer on Forge.')
-      await expect(cards.getByRole('listitem', { name: 'Building, not delegated, Refused' }).locator('.delegated-work__line'))
-        .toHaveText(`Asked for ${process.platform === 'darwin' ? 'a Windows machine' : 'a Mac'}. Forge can start threads only on Forge for now. Nothing was started.`)
+      await expect(cards.getByRole('listitem', { name: 'Building, not delegated, Refused' })).toHaveCount(0)
       await capture(launched, 'delegated-work-dark-1280x800')
 
       // Tools › Agents: a heading for Forge with its count, and its threads under it, both levels.
