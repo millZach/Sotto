@@ -18,6 +18,8 @@ const GH_SIGN_IN_COMMAND = 'gh auth login'
 /** Where Vercel makes tokens. Shown as words to type or copy: the page opens nothing on its own. */
 const VERCEL_TOKENS_PAGE = 'vercel.com/account/tokens'
 
+/** This computer's projects as the page knows them: read, not read yet, or a read that failed. */
+type ProjectsView = readonly PluginProject[] | null | 'failed'
 /** What the page knows of gh's sign-in: main's answer, still asking, or a read that failed. */
 type SignInView = GitHubSignIn | { readonly state: 'checking' }
 
@@ -59,12 +61,13 @@ export function PluginsSettings({ bridge = window.sotto?.plugins }: { readonly b
     void bridge.accounts().then(value => { if (alive) setAccounts(value) }).catch(() => { if (alive) setAccounts(null) })
     return () => { alive = false }
   }, [bridge])
-  // This computer's projects, for keeping an account to some of them. None while unread: an account kept to projects still says so.
-  const [projects, setProjects] = useState<readonly PluginProject[]>([])
+  // This computer's projects, for keeping an account to some of them. Null while unread, and `failed` when they
+  // could not be read: neither is the same as there being none, which would make every kept project look gone.
+  const [projects, setProjects] = useState<ProjectsView>(null)
   useEffect(() => {
     if (!bridge) return
     let alive = true
-    void bridge.projects().then(value => { if (alive) setProjects(value) }).catch(() => undefined)
+    void bridge.projects().then(value => { if (alive) setProjects(value) }).catch(() => { if (alive) setProjects('failed') })
     return () => { alive = false }
   }, [bridge])
   const groupTitle: Record<PluginGroupId, string> = { code: t`Code and deploys` }
@@ -155,7 +158,7 @@ function useProblemWords(): (problem: PluginAccountProblem, replacing: boolean) 
 }
 
 function VercelRow({ plugin, bridge, accounts, projects, uses, onAccounts }: {
-  readonly plugin: PluginEntry; readonly bridge: PluginsBridge | undefined; readonly accounts: readonly PluginAccount[] | null; readonly projects: readonly PluginProject[]
+  readonly plugin: PluginEntry; readonly bridge: PluginsBridge | undefined; readonly accounts: readonly PluginAccount[] | null; readonly projects: ProjectsView
   readonly uses: readonly ShownPluginUse[] | null; readonly onAccounts: (accounts: readonly PluginAccount[]) => void
 }): ReactNode {
   const { t } = useLingui()
@@ -227,7 +230,7 @@ function AddAccount({ bridge, onAccounts, onDone }: { readonly bridge: PluginsBr
 
 /** One account: its name, when its token was saved, Replace and Remove, and its recent use. */
 function AccountCard({ account, bridge, projects, uses, onAccounts, onRemoved }: {
-  readonly account: PluginAccount; readonly bridge: PluginsBridge | undefined; readonly projects: readonly PluginProject[]; readonly uses: readonly ShownPluginUse[] | null
+  readonly account: PluginAccount; readonly bridge: PluginsBridge | undefined; readonly projects: ProjectsView; readonly uses: readonly ShownPluginUse[] | null
   readonly onAccounts: (accounts: readonly PluginAccount[]) => void
   /** The account is gone, and its buttons with it: focus needs somewhere to go. */
   readonly onRemoved: () => void
@@ -303,8 +306,8 @@ function AccountCard({ account, bridge, projects, uses, onAccounts, onRemoved }:
  * is the default; pressing a project keeps the account to the ones pressed, and letting the last one go gives it back
  * to every project. A change is saved as it is made, and one that could not be saved says so and shows what is kept.
  */
-function AccountThreads({ account, bridge, projects, onAccounts }: {
-  readonly account: PluginAccount; readonly bridge: PluginsBridge | undefined; readonly projects: readonly PluginProject[]
+function AccountThreads({ account, bridge, projects: read, onAccounts }: {
+  readonly account: PluginAccount; readonly bridge: PluginsBridge | undefined; readonly projects: ProjectsView
   readonly onAccounts: (accounts: readonly PluginAccount[]) => void
 }): ReactNode {
   const { t } = useLingui()
@@ -322,9 +325,11 @@ function AccountThreads({ account, bridge, projects, onAccounts }: {
     setFailed(false)
     wanted.current = next
     const mine = ++asked.current
-    // Once the newest change is answered the page shows what main kept, saved or not.
-    const settle = (): void => { if (asked.current === mine) wanted.current = null }
-    void bridge.updateAccount({ id: account.id, ...request }).then(result => { settle(); if (result.ok) onAccounts(result.accounts); else setFailed(true) }, () => { settle(); setFailed(true) })
+    // Every change main kept is shown as it is answered. Only the newest one's answer says whether the page is
+    // showing what the user asked for: an older change that failed is made good by a newer one built on it, and a
+    // newer one that failed leaves the page on what main last kept.
+    const answered = (ok: boolean): void => { if (asked.current === mine) { wanted.current = null; setFailed(!ok) } }
+    void bridge.updateAccount({ id: account.id, ...request }).then(result => { if (result.ok) onAccounts(result.accounts); answered(result.ok) }, () => answered(false))
   }
   const turn = (): void => { const now = standing(); change({ ...now, on: !now.on }, { on: !now.on }) }
   const keepTo = (projects: string[] | null): void => { change({ ...standing(), projects }, { projects }) }
@@ -332,6 +337,18 @@ function AccountThreads({ account, bridge, projects, onAccounts }: {
     const now = standing().projects
     const next = now?.includes(id) ? now.filter(other => other !== id) : [...now ?? [], id]
     keepTo(next.length === 0 ? null : next)
+  }
+  // The projects, once they are read. Until then nothing is said to be gone and nothing can be let go: a list not
+  // read yet is not an empty one, and letting the last project go gives the account to every project.
+  const projects = read === null || read === 'failed' ? null : read
+  if (projects === null) {
+    return <div className="plugin-account__threads">
+      <Toggle label={t`Threads may use ${name}`} checked={account.on} disabled={!bridge} onCheckedChange={turn}
+        {...(account.on ? {} : { description: t`Off. No thread can see or use this account until you turn it back on. Its token stays saved.` })} />
+      {account.on ? <p className="tt-paragraph plugin-row__note">{kept === null ? <Trans>Threads in every project may use it, and so may Watcher.</Trans> : <Trans>It is kept to chosen projects.</Trans>}</p> : null}
+      {account.on && read === 'failed' ? <p className="tt-field__error tt-paragraph" role="alert"><Trans>Your projects could not be read, so the projects this account is kept to cannot be changed here. Nothing was changed. Reopen Settings and try again.</Trans></p> : null}
+      {failed ? <p className="tt-field__error tt-paragraph" role="alert"><Trans>That could not be saved. What is shown is what is kept. Try again.</Trans></p> : null}
+    </div>
   }
   // A settled project is offered only while the account is kept to it; one that is gone keeps a chip, so it can be let go.
   const offered = projects.filter(project => !project.settled || kept?.includes(project.id))
@@ -351,7 +368,7 @@ function AccountThreads({ account, bridge, projects, onAccounts }: {
         : titles ? <Trans>Only threads in {titles} may use it. Watcher belongs to no project, so it cannot.</Trans>
           : <Trans>It is kept to a project that is gone, so no thread can use it. Press Every project, or choose one.</Trans>}</p>
     </> : null}
-    {failed ? <p className="tt-field__error tt-paragraph" role="alert"><Trans>That could not be saved. Nothing was changed. Try again.</Trans></p> : null}
+    {failed ? <p className="tt-field__error tt-paragraph" role="alert"><Trans>That could not be saved. What is shown is what is kept. Try again.</Trans></p> : null}
   </div>
 }
 

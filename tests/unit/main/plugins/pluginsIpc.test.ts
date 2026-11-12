@@ -119,6 +119,9 @@ describe('Settings › Plugins, from the window through preload to main (ADR-020
     // A project's folder is not something the page is told.
     projects.mockReturnValueOnce([{ id: 'p-sotto', title: 'Sotto', settled: false, path: 'C:/example/project' } as never])
     await expect(invoke(PLUGINS_PROJECTS, [])).rejects.toThrow()
+    // With no projects to read, the page is told so rather than handed none.
+    projects.mockImplementationOnce(() => { throw new Error('PLUGIN_PROJECTS_UNAVAILABLE') })
+    await expect(bridge.projects()).rejects.toThrow()
     close()
     for (const channel of [PLUGINS_ACCOUNT_UPDATE, PLUGINS_PROJECTS]) expect(handlers.has(channel)).toBe(false)
   })

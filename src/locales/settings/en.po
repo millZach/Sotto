@@ -3334,6 +3334,10 @@ msgstr "It failed."
 msgid "It is kept to a project that is gone, so no thread can use it. Press Every project, or choose one."
 msgstr "It is kept to a project that is gone, so no thread can use it. Press Every project, or choose one."
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "It is kept to chosen projects."
+msgstr "It is kept to chosen projects."
+
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "It is waiting for your answer there."
 msgstr "It is waiting for your answer there."
@@ -6681,8 +6685,8 @@ msgid "That account is no longer here. Nothing was changed."
 msgstr "That account is no longer here. Nothing was changed."
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
-msgid "That could not be saved. Nothing was changed. Try again."
-msgstr "That could not be saved. Nothing was changed. Try again."
+msgid "That could not be saved. What is shown is what is kept. Try again."
+msgstr "That could not be saved. What is shown is what is kept. Try again."
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "That file is {size}. Theme files are only a few KB, so this one was not read (limit {limit})."
@@ -8350,6 +8354,10 @@ msgstr "Your note"
 #: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
 msgid "Your note to the overseer"
 msgstr "Your note to the overseer"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Your projects could not be read, so the projects this account is kept to cannot be changed here. Nothing was changed. Reopen Settings and try again."
+msgstr "Your projects could not be read, so the projects this account is kept to cannot be changed here. Nothing was changed. Reopen Settings and try again."
 
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
 msgid "Your themes"

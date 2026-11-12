@@ -155,7 +155,10 @@ export const pluginAccountSchema = z.object({
   signedInAs: z.string().max(200).nullable(),
   /** Whether threads may use the account at all (ADR-0205, decision 9). An account kept before the switch existed is on. */
   on: z.boolean().default(true),
-  /** The projects whose threads may use it, by Sotto's IDs for them on this computer. Null is every project. */
+  /**
+   * The projects whose threads may use it. Null is every project. A project is its folder on this computer, under a
+   * name of Sotto's own, so it is the same project for every provider that works in that folder.
+   */
   projects: z.array(projectIdSchema).max(PLUGIN_ACCOUNT_PROJECTS_MAX).nullable().default(null),
 }).strict()
 export type PluginAccount = z.infer<typeof pluginAccountSchema>

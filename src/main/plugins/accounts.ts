@@ -7,7 +7,12 @@ import {
   type PluginAccountRemove, type PluginAccountReplace, type PluginAccountResult, type PluginAccountUpdate,
 } from '../../shared/plugins'
 
-const fileSchema = z.object({ version: z.literal(1), accounts: z.array(z.unknown()) })
+/**
+ * The record of accounts. Version 1 holds accounts that are all on and for every project, in the shape an older
+ * build reads. Version 2 holds at least one that is off or kept to projects: an older build cannot honour that, and
+ * refuses the whole file rather than read such an account as open to every thread.
+ */
+const fileSchema = z.object({ version: z.union([z.literal(1), z.literal(2)]), accounts: z.array(z.unknown()) })
 
 /** The part of the credential store plugin accounts use: this computer's, or a headless host's own. */
 export interface PluginCredentials {
@@ -197,7 +202,11 @@ export class PluginAccounts {
     const next = `${this.path}.next`
     await mkdir(dirname(this.path), { recursive: true })
     try {
-      await writeFile(next, JSON.stringify({ version: 1, accounts }), { mode: 0o600 })
+      // The switch and the projects are written only where they are not the default, so a record of accounts that
+      // are all on and for every project stays one an older build reads, and keeps, whole.
+      const stored = accounts.map(({ on, projects, ...rest }) => ({ ...rest, ...(on ? {} : { on }), ...(projects === null ? {} : { projects }) }))
+      const version = stored.some(entry => 'on' in entry || 'projects' in entry) ? 2 : 1
+      await writeFile(next, JSON.stringify({ version, accounts: stored }), { mode: 0o600 })
       await rename(next, this.path)
     } catch (error) {
       await rm(next, { force: true })

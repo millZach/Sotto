@@ -375,7 +375,7 @@ it('says so when a change to which threads may use an account could not be saved
   await act(async () => { render(<PluginsSettings bridge={bridge} />) })
   fireEvent.click(vercelRow())
   await act(async () => { fireEvent.click(await screen.findByRole('switch', { name: 'Threads may use Work' })) })
-  expect(screen.getByRole('alert').textContent).toBe('That could not be saved. Nothing was changed. Try again.')
+  expect(screen.getByRole('alert').textContent).toBe('That could not be saved. What is shown is what is kept. Try again.')
   expect(screen.getByRole('switch', { name: 'Threads may use Work' }).getAttribute('aria-checked')).toBe('true')
 })
 
@@ -404,4 +404,69 @@ it('works a press out from what was last asked for, so two quick presses never g
   fireEvent.click(toggle)
   fireEvent.click(toggle)
   expect(answers.slice(2).map(entry => entry.request)).toEqual([{ id: work.id, on: false }, { id: work.id, on: true }])
+})
+
+/** Two quick presses with main slow to answer: each save's answer is in the test's hands. */
+async function twoPresses(start: PluginAccount) {
+  const answers: { request: PluginAccountUpdate; answer: ReturnType<typeof deferred<PluginAccountResult>> }[] = []
+  const bridge = vercelBridge([start], {
+    projects: async () => [{ id: 'p-sotto', title: 'Sotto', settled: false }, { id: 'p-site', title: 'Lumen shop', settled: false }],
+    updateAccount: request => { const answer = deferred<PluginAccountResult>(); answers.push({ request, answer }); return answer.promise },
+  })
+  await act(async () => { render(<PluginsSettings bridge={bridge} />) })
+  fireEvent.click(vercelRow())
+  await screen.findByRole('group', { name: 'Projects whose threads may use Work' })
+  fireEvent.click(screen.getByRole('button', { name: 'Sotto' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Lumen shop' }))
+  expect(answers.map(entry => entry.request.projects)).toEqual([['p-sotto'], ['p-sotto', 'p-site']])
+  return answers
+}
+
+it('says nothing failed when an earlier save failed and a later one, built on it, was kept', async () => {
+  const answers = await twoPresses(work)
+  await act(async () => {
+    answers[0]!.answer.resolve({ ok: false, problem: 'store' })
+    answers[1]!.answer.resolve({ ok: true, accounts: [{ ...work, projects: ['p-sotto', 'p-site'] }] })
+  })
+  // Main kept both projects, which is what the two presses asked for: the page shows that and no error.
+  expect(chips()).toEqual([{ name: 'Every project', pressed: false }, { name: 'Sotto', pressed: true }, { name: 'Lumen shop', pressed: true }])
+  expect(screen.queryByRole('alert')).toBeNull()
+})
+
+it('shows what main last kept, and says so, when the later of two saves failed', async () => {
+  const answers = await twoPresses(work)
+  await act(async () => {
+    answers[0]!.answer.resolve({ ok: true, accounts: [{ ...work, projects: ['p-sotto'] }] })
+    answers[1]!.answer.resolve({ ok: false, problem: 'store' })
+  })
+  expect(chips()).toEqual([{ name: 'Every project', pressed: false }, { name: 'Sotto', pressed: true }, { name: 'Lumen shop', pressed: false }])
+  expect(screen.getByRole('alert').textContent).toBe('That could not be saved. What is shown is what is kept. Try again.')
+  // The next press starts from what is kept, not from what was asked for and lost.
+  fireEvent.click(screen.getByRole('button', { name: 'Lumen shop' }))
+  expect(answers.at(-1)!.request.projects).toEqual(['p-sotto', 'p-site'])
+})
+
+it('calls no project gone, and lets none go, while this computer’s projects are unread or could not be read', async () => {
+  const kept = { ...work, projects: ['p-site'] }
+  const updateAccount = vi.fn(async (): Promise<PluginAccountResult> => ({ ok: true, accounts: [{ ...kept, projects: null }] }))
+  // The read fails: before the fix the page showed "A project that is gone", and pressing it gave the account to every project.
+  const failing = vercelBridge([kept], { projects: async () => { throw new Error('PLUGIN_PROJECTS_UNAVAILABLE') }, updateAccount })
+  await act(async () => { render(<PluginsSettings bridge={failing} />) })
+  fireEvent.click(vercelRow())
+  expect(await screen.findByText('It is kept to chosen projects.')).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'A project that is gone' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Every project' })).toBeNull()
+  expect(screen.queryByText('It is kept to a project that is gone, so no thread can use it. Press Every project, or choose one.')).toBeNull()
+  expect(screen.getByRole('alert').textContent).toBe('Your projects could not be read, so the projects this account is kept to cannot be changed here. Nothing was changed. Reopen Settings and try again.')
+  // The switch still works: turning an account off never widens it.
+  expect(screen.getByRole('switch', { name: 'Threads may use Work' })).toBeTruthy()
+  expect(updateAccount).not.toHaveBeenCalled()
+  cleanup()
+  // Still reading: the same, without the alert.
+  const reading = vercelBridge([kept], { projects: () => new Promise(() => undefined), updateAccount })
+  await act(async () => { render(<PluginsSettings bridge={reading} />) })
+  fireEvent.click(vercelRow())
+  expect(await screen.findByText('It is kept to chosen projects.')).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'A project that is gone' })).toBeNull()
+  expect(screen.queryByRole('alert')).toBeNull()
 })

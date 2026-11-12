@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { z } from 'zod'
 import { PluginAccounts, PluginAccountsUnreadable, pluginAccountSlot, PluginSecretLocked, type PluginCredentials, type SecretCheck } from '../../../../src/main/plugins/accounts'
 import { PLUGIN_ACCOUNTS_MAX, pluginAccountAdmits, type PluginAccount } from '../../../../src/shared/plugins'
 
@@ -52,7 +53,7 @@ describe('plugin accounts (ADR-0205)', () => {
     expect(made.secret(account!.id)).toBe(GOOD)
     const file = await readFile(join(directory, 'plugin-accounts.json'), 'utf8')
     expect(file).not.toContain(GOOD)
-    expect(Object.keys((JSON.parse(file) as { accounts: object[] }).accounts[0]!).sort()).toEqual(['id', 'name', 'on', 'plugin', 'projects', 'savedAt', 'signedInAs'])
+    expect(Object.keys((JSON.parse(file) as { accounts: object[] }).accounts[0]!).sort()).toEqual(['id', 'name', 'plugin', 'savedAt', 'signedInAs'])
     // After a restart the account is found again, and what a window is given never holds the secret.
     expect(JSON.stringify(await again().list())).not.toContain(GOOD)
     expect(await again().list()).toEqual(result.ok ? result.accounts : [])
@@ -233,5 +234,29 @@ describe('plugin accounts (ADR-0205)', () => {
     await expect(made.find('vercel', undefined, inProject('p-site'))).resolves.toBe('withheld')
     // Without a thread to ask for, as the page asks, every account is found.
     await expect(made.find('vercel', 'Work')).resolves.toMatchObject({ name: 'Work', on: false })
+  })
+
+  it('writes an account that is on and for every project as an older build reads it, and marks a record an older build must not read', async () => {
+    // What the build before the switch read: this shape and nothing more, in a file of version 1. Anything else it dropped.
+    const before = z.object({ version: z.literal(1), accounts: z.array(z.object({ id: z.uuid(), plugin: z.literal('vercel'), name: z.string(), savedAt: z.iso.datetime(), signedInAs: z.string().nullable() }).strict()) })
+    const { made, directory, again } = await accounts()
+    const file = async (): Promise<unknown> => JSON.parse(await readFile(join(directory, 'plugin-accounts.json'), 'utf8'))
+    const added = await made.add({ plugin: 'vercel', name: 'Work', secret: GOOD })
+    const id = added.ok ? added.accounts[0]!.id : ''
+    expect(before.safeParse(await file()).success).toBe(true)
+    // Switched off and on again, and narrowed and widened again, it is back to the shape an older build keeps whole.
+    await made.update({ id, on: false })
+    await made.update({ id, on: true })
+    await made.update({ id, projects: ['folder:one'] })
+    await made.update({ id, projects: null })
+    expect(before.safeParse(await file()).success).toBe(true)
+    // Kept to a project, or off: an older build would read it as open to every thread, so the file is one it refuses whole.
+    await made.update({ id, projects: ['folder:one'] })
+    expect(await file()).toMatchObject({ version: 2, accounts: [{ id, projects: ['folder:one'] }] })
+    expect(before.safeParse(await file()).success).toBe(false)
+    expect(await again().list()).toMatchObject([{ id, on: true, projects: ['folder:one'] }])
+    await made.update({ id, on: false, projects: null })
+    expect(await file()).toMatchObject({ version: 2, accounts: [{ id, on: false }] })
+    expect(await again().list()).toMatchObject([{ id, on: false, projects: null }])
   })
 })

@@ -137,7 +137,7 @@ test('A Vercel account is checked, kept without its token showing anywhere, repl
       expect(file.text.includes(BAD), file.path).toBe(false)
     }
     const kept = JSON.parse(await readFile(join(profile, 'plugin-accounts.json'), 'utf8')) as { accounts: Record<string, unknown>[] }
-    expect(kept.accounts.map(account => Object.keys(account).sort())).toEqual([['id', 'name', 'on', 'plugin', 'projects', 'savedAt', 'signedInAs']])
+    expect(kept.accounts.map(account => Object.keys(account).sort())).toEqual([['id', 'name', 'plugin', 'savedAt', 'signedInAs']])
 
     // Remove asks first, and says what is deleted.
     await card.getByRole('button', { name: 'Remove the Vercel account Work' }).click()

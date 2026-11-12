@@ -57,6 +57,9 @@ thread's agent was told of Work once more. The made-up token was nowhere on the 
   project that is gone, and a change that could not be saved.
 - `tests/unit/main/plugins/pluginsIpc.test.ts`: only the main window may change an account, and a project's folder
   never reaches the page.
+- `tests/unit/main/plugins/projectFolders.test.ts`: a folder two providers work in is offered once, and an account
+  kept to it is for that folder's threads on both. The run above had one provider, so this was not driven in the
+  built app.
 
 ## Not checked
 
