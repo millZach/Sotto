@@ -1,8 +1,9 @@
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { PluginsSettings } from '../../../../../src/renderer/src/features/settings/PluginsSettings'
 import type { GitHubSignIn, PluginsBridge } from '../../../../../src/shared/plugins'
+import { deferred } from '../../../../fixtures/deferred'
 
 afterEach(cleanup)
 
@@ -60,4 +61,21 @@ it('says when gh is not installed, and when it could not be asked, without calli
   fireEvent.click(row())
   expect(screen.getByText('Sotto couldn’t ask gh who is signed in. Nothing was changed. Press Check again.')).toBeInTheDocument()
   expect(document.body).not.toHaveTextContent('someone')
+})
+
+it('keeps focus on Check again while gh is asked, and takes no second press until it answers', async () => {
+  const second = deferred<GitHubSignIn>()
+  const gitHubSignIn = vi.fn<() => Promise<GitHubSignIn>>().mockResolvedValueOnce({ state: 'signed-out' }).mockReturnValueOnce(second.promise)
+  await act(async () => { render(<PluginsSettings bridge={{ gitHubSignIn }} />) })
+  fireEvent.click(row())
+  const again = screen.getByRole('button', { name: 'Check GitHub’s sign-in again' })
+  again.focus()
+  fireEvent.click(again)
+  expect(again).toHaveAttribute('aria-disabled', 'true')
+  expect(again).toHaveFocus()
+  fireEvent.click(again)
+  expect(gitHubSignIn).toHaveBeenCalledTimes(2)
+  await act(async () => { second.resolve({ state: 'signed-in', login: 'example-user' }) })
+  expect(again).toHaveAttribute('aria-disabled', 'false')
+  expect(row()).toHaveAccessibleName('GitHub Signed in as example-user through gh')
 })

@@ -2897,8 +2897,8 @@ msgid "gh isn’t installed"
 msgstr "gh isn’t installed"
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
-msgid "gh, GitHub’s command line program, isn’t installed on this computer. Install it from cli.github.com, sign in with <0>{GH_SIGN_IN_COMMAND}</0>, then press Check again."
-msgstr "gh, GitHub’s command line program, isn’t installed on this computer. Install it from cli.github.com, sign in with <0>{GH_SIGN_IN_COMMAND}</0>, then press Check again."
+msgid "gh, GitHub’s command line program, isn’t installed on this computer. Install it from cli.github.com, sign in with <0>{GH_SIGN_IN_COMMAND}</0>, then press Check again. If this still shows, quit Sotto and open it again so it can find gh."
+msgstr "gh, GitHub’s command line program, isn’t installed on this computer. Install it from cli.github.com, sign in with <0>{GH_SIGN_IN_COMMAND}</0>, then press Check again. If this still shows, quit Sotto and open it again so it can find gh."
 
 #. A Settings page, named in its rail and its heading. Other messages name it as "Settings > Git & worktrees".
 #: src/renderer/src/features/settings/settingsPages.ts

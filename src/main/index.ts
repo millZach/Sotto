@@ -66,7 +66,8 @@ import { TailscaleCli, tailscaleInvoker } from './phones/tailscale'
 import { HostTailscale } from './hosts/tailscale'
 import { registerLocalAppsIpc, registerPhonesIpc } from './phones/ipc'
 import { registerPluginsIpc } from './plugins/ipc'
-import { readGitHubSignIn } from './plugins/github/signIn'
+import { readGitHubSignIn, sharedGitHubSignIn } from './plugins/github/signIn'
+import { resetGhLookup } from './agents/git/ghCommand'
 import { GitUnavailableError, runGitStatusCommand, runWithGhStandIn, type RunGitCommand } from './agents/git/gitStatus'
 import { registerTeamsIpc } from './teams/ipc'
 import { TeamService, type TeamEvent } from './teams/teams'
@@ -2632,7 +2633,10 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       // asks its gh stand-in or nothing, never the real gh, which checks its sign-in over the network.
       const pluginsGh: RunGitCommand = ghStandIn ? runWithGhStandIn(ghStandIn) : e2eConfiguration ? async () => { throw new GitUnavailableError('gh is not installed') } : runGitStatusCommand
       const pluginsStop = new AbortController()
-      const cleanupPlugins = pluginsEnabled ? registerPluginsIpc(ipcMain, { gitHubSignIn: () => readGitHubSignIn(pluginsGh, pluginsStop.signal) }, () => windows.getTrustedRenderers()) : undefined
+      // Each read looks for gh afresh, so one installed since the last read is found by Check again where the system lets
+      // a running program see it, and reads asked for while one runs share it rather than starting gh again.
+      const pluginsGitHubSignIn = sharedGitHubSignIn(() => { resetGhLookup(); return readGitHubSignIn(pluginsGh, pluginsStop.signal) })
+      const cleanupPlugins = pluginsEnabled ? registerPluginsIpc(ipcMain, { gitHubSignIn: pluginsGitHubSignIn }, () => windows.getTrustedRenderers()) : undefined
       // The window plays a video an agent wrote from its thread's computer, a part at a time (ADR-0170, part 4).
       if (owlFeatures['inline-media']) session.defaultSession.protocol.handle(THREAD_MEDIA_SCHEME, request => threadVideoResponse(request, part => hostRouter.threadMediaPart(part)))
       const cleanupAgents = registerAgentIpc(ipcMain, hostRouter, hostRouter, () => trustedRenderers(), { encodeReceipt: agentStateBroadcaster.encodeReceipt, encodeChangedThreadRecordsReceipt: agentStateBroadcaster.encodeChangedThreadRecordsReceipt, windowRead: agentStateBroadcaster.windowRead,
