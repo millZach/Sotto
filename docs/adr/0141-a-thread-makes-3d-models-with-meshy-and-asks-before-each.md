@@ -1,5 +1,7 @@
 # A thread makes 3D models with Meshy and asks before each
 
+November 11, 2026 amendment: [ADR-0205](0205-plugins-connect-outside-services-once-and-threads-use-them-through-sottos-tools.md) builds this as a plugin. The Meshy key is entered as a Meshy account on Settings › Plugins and copied to the user's paired hosts, rather than typed on each host. For a copied account, the monthly limit is one figure across the computers that hold it, and **Ask before each 3D model** turned off on the desktop applies to a host's threads too, where this record had a host count its own credits and always ask. Everything else here stands.
+
 ## Status
 
 Proposed October 22, 2026. Zach asked on October 22 for something like the Meshy plugin Nous Research shows for Hermes Agent, and chose its shape the same day. It adds two hosts and a third paid key, so it is an ADR and a README change before it is a patch (AGENTS.md). It is an Owl feature ([ADR-0072](0072-sotto-owl-is-a-windows-preview-release-track.md)). It adds a standing exception to "the user answers every permission", which the user turns on in Settings and which is off by default; see the last decision below.

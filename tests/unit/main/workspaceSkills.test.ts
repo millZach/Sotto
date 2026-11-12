@@ -16,7 +16,7 @@ it('routes a local unstarted thread catalog to its provider without creating nat
   const model = snapshot.models.find(model => model.providerId === 'codex')!
   await f.host.execute({ type: 'create-thread', commandId: 'create', threadId: 'local', projectId: project.id, title: 'Local', modelId: model.id })
   expect(await f.host.listThreadSkills('local', true)).toMatchObject({ threadId: 'local', status: 'ready', cwd: project.path })
-  expect(list).toHaveBeenCalledWith('local', true, { providerId: 'codex', workingDirectory: project.path })
+  expect(list).toHaveBeenCalledWith('local', true, { providerId: 'codex', workingDirectory: project.path, projectPath: project.path })
   expect(f.registry.byThread('local')).toBeUndefined()
   expect(f.adapters.codex.commands).toEqual([])
   const claude = snapshot.models.find(model => model.providerId === 'claude')!

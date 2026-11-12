@@ -20,6 +20,7 @@ import type { UsageHistorySink, UsageRecordedUserMessage } from './usageHistory/
 import type { AgentThreadPrompts } from '../../shared/threadPrompts'
 import type { MergedSettleExpectation } from './worktreeCleanup'
 import type { HeldSession } from './sessionReaper'
+import type { RunMark } from './detachedRunScan'
 
 /**
  * A staged image as an adapter receives it (ADR-0031): its handle, and its bytes read from this host's attachment
@@ -226,7 +227,8 @@ export interface ShortTextTarget {
   readonly modelId: string
   readonly cwd?: string | undefined
 }
-export interface AgentSkillScope { readonly providerId: ProviderId; readonly workingDirectory: string }
+/** `projectPath` is the project's own folder, for a provider that keeps skills by project and not by working folder. */
+export interface AgentSkillScope { readonly providerId: ProviderId; readonly workingDirectory: string; readonly projectPath?: string }
 /** One thread's messages as the workspace still holds them, handed back before a connection reads history. */
 export interface RestoredThreadHistory {
   readonly threadId: string
@@ -425,6 +427,12 @@ export interface ProviderHost {
    */
   heldSessions?(): readonly HeldSession[]
   /**
+   * The thread whose provider session a detached run's mark names (#2476), by the caller's IDs: Claude Code's session for
+   * `CLAUDE_CODE_SESSION_ID`, Codex's thread for `CODEX_THREAD_ID`. Undefined for a mark this adapter does not own or a
+   * session it does not hold. Read only when the detached-run watch looks, never on the update path.
+   */
+  threadForRunMark?(mark: RunMark): string | undefined
+  /**
    * The threads the user has settled (CONTEXT.md, Settled), as a run begins, by the caller's IDs. An adapter may leave
    * them out of work it does for every saved thread once, such as Codex catching a rollout up after an update, and do it
    * when the thread is opened instead (#992, Zach's call on October 30).
@@ -488,6 +496,8 @@ export interface AgentHost extends ProviderHost {
   /** Deletes threads that pass `hold` and the workspace's own checks, finally (ADR-0140). WorkspaceHost's. */
   deleteThreads?(threadIds: readonly string[], options: { readonly automatic: boolean; readonly hold: (threadId: string) => ThreadClearKeptReason | null
     readonly worktree?: { confirmedIgnored?: readonly string[]; confirmedItems?: readonly { path: string; fileCount: number }[]; confirmedRepositories?: WorktreeReclaimPreview['repositories'] } }): Promise<{ deleted: string[]; kept: { threadId: string; reason: ThreadClearKeptReason; error?: string }[] }>
+  /** Stops one of a thread's detached runs (#2476) because the user pressed Stop; throws with words to show when it cannot. WorkspaceHost's. */
+  stopDetachedRun?(threadId: string, runId: string): Promise<void>
   /** A settled thread given new work comes back, and only it: a settled project returns with this thread alone. */
   reopenThreadForWork?(threadId: string, guard?: () => void): Promise<AgentHostSnapshot>
   /** Rename a thread in Sotto's own workspace and record where the name came from; a hand rename is

@@ -170,6 +170,10 @@ msgstr ""
 msgid "{count, plural, other {Remove selected ({selected})}}"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "{count} accounts: {names}"
+msgstr ""
+
 #: src/renderer/src/features/settings/WorkerMachineSettings.tsx
 msgid "{cpus, plural, one {# CPU} other {# CPUs}}"
 msgstr ""
@@ -308,6 +312,11 @@ msgstr ""
 #. {installed} is a version number.
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "{installed} is installed. Sotto could not read the published version. Check again to try."
+msgstr ""
+
+#. {installed} is a version number; hermes update is a terminal command.
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "{installed} is installed. Sotto does not check for new Hermes versions. Run hermes update in a terminal to update it, then reconnect Hermes."
 msgstr ""
 
 #. {installed} is a version number; {error} is the reason the update gave.
@@ -879,6 +888,10 @@ msgstr ""
 msgid "A Dynamic thread's model oversees and chooses a model for each piece of work, inside these limits. Turn it on at the foot of a thread's model menu, or at the foot of the model menu under New threads for every new thread."
 msgstr ""
 
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "A folder for each project, with its threads inside."
+msgstr ""
+
 #: src/renderer/src/features/settings/DevicePicker.tsx
 msgid "A Git service, not a computer"
 msgstr ""
@@ -933,6 +946,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "A thread working when Sotto closes, for an update, a quit, a crash or a restart, carries on when Sotto opens again, with a short note from Sotto in the thread."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "A thread’s agent uses a plugin through Sotto’s tools and never holds its secret. So far the tools only read, and reading never asks you."
 msgstr ""
 
 #. A systemd unit, the file that starts a service.
@@ -1003,6 +1020,18 @@ msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Add a theme"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Add a Vercel account"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Add account"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Add another Vercel account"
 msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
@@ -1214,6 +1243,10 @@ msgstr ""
 msgid "Anything the agent installed on {name} stays there, and the thread {thread} stays in your Threads list."
 msgstr ""
 
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "APIs and your own model servers"
+msgstr ""
+
 #. A Settings page, named in its rail and its heading. Other messages name it as "Settings > Appearance".
 #: src/renderer/src/features/settings/AppearanceSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
@@ -1278,12 +1311,16 @@ msgstr ""
 msgid "Ask about your threads, or say what to start or send"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Asking gh who is signed in…"
+msgstr ""
+
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Asking GitHub..."
 msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
-msgid "Asks the npm registry for each client’s latest version when it connects and every five minutes. Only the package name is sent."
+msgid "Asks the npm registry for each client’s latest version when it connects and every hour. Only the package name is sent."
 msgstr ""
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
@@ -1404,6 +1441,14 @@ msgstr ""
 msgid "By hand"
 msgstr ""
 
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "By project"
+msgstr ""
+
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "By status"
+msgstr ""
+
 #. After a step that is done, as in "Signed in by the agent".
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
 msgid "by the agent"
@@ -1433,6 +1478,7 @@ msgstr ""
 #: src/renderer/src/features/settings/HostProviderAgent.tsx
 #: src/renderer/src/features/settings/HostProviderSignIn.tsx
 #: src/renderer/src/features/settings/HostsSettings.tsx
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
@@ -1523,6 +1569,7 @@ msgid "Check {hostName} for {name} again"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostProviders.tsx
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Check again"
 msgstr ""
@@ -1535,6 +1582,10 @@ msgstr ""
 #: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Check for updates automatically"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Check GitHub’s sign-in again"
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
@@ -1590,20 +1641,21 @@ msgstr ""
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
 #: src/renderer/src/features/settings/HostProviders.tsx
 #: src/renderer/src/features/settings/PhonesSettings.tsx
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Checking…"
 msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
-msgid "Checks each client's published version when it connects and every five minutes. Cursor uses its install script; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates."
+msgid "Checks each client's published version when it connects and every hour. Cursor uses its install script; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates."
 msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
-msgid "Checks each client's published version when it connects and every five minutes. Muse uses its own release feed and Cursor its install script; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates."
+msgid "Checks each client's published version when it connects and every hour. Muse uses its own release feed and Cursor its install script; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates."
 msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
-msgid "Checks each client's published version when it connects and every five minutes. Muse uses its own release feed; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates."
+msgid "Checks each client's published version when it connects and every hour. Muse uses its own release feed; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates."
 msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeColorField.tsx
@@ -1854,6 +1906,10 @@ msgstr ""
 msgid "Code {spoken}"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Code and deploys"
+msgstr ""
+
 #: src/renderer/src/features/settings/HostProviderSignIn.tsx
 msgid "Code from the page"
 msgstr ""
@@ -2059,6 +2115,7 @@ msgstr ""
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
 #: src/renderer/src/features/settings/HostsSettings.tsx
 #: src/renderer/src/features/settings/PhonesSettings.tsx
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Copied"
 msgstr ""
@@ -2080,6 +2137,7 @@ msgstr ""
 #: src/renderer/src/features/settings/HostClientUpdates.tsx
 #: src/renderer/src/features/settings/HostProviders.tsx
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Copy"
 msgstr ""
@@ -2131,6 +2189,10 @@ msgstr ""
 msgid "Copy the command to run on {name}"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Copy the gh sign-in command"
+msgstr ""
+
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Could not check for client updates. Try again."
 msgstr ""
@@ -2170,6 +2232,14 @@ msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Could not update this provider. Try again."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Couldn’t check"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Couldn’t read the accounts"
 msgstr ""
 
 #. A Settings page, named in its rail and its heading: who sits on a Council of models. Other messages name it as "Settings > Council".
@@ -2306,6 +2376,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/ClearThreadsSettings.tsx
 msgid "Deletes a settled thread’s history once it has been quiet this long. Never clears one with uncommitted work or an open pull request. Checked every hour."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Deployments, build logs, projects and domains, read with a token you paste. Sotto keeps the token in its encrypted store and makes each read itself, so no agent ever sees it."
 msgstr ""
 
 #. A place Watcher’s night scene can be set in
@@ -2843,6 +2917,18 @@ msgstr ""
 msgid "Get the iPhone beta"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "gh is not signed in to GitHub on this computer. Run this in a terminal, then press Check again."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "gh isn’t installed"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "gh, GitHub’s command line program, isn’t installed on this computer. Install it from cli.github.com, sign in with <0>{GH_SIGN_IN_COMMAND}</0>, then press Check again. If this still shows, quit Sotto and open it again so it can find gh."
+msgstr ""
+
 #. A Settings page, named in its rail and its heading. Other messages name it as "Settings > Git & worktrees".
 #: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/SettingsView.tsx
@@ -2854,12 +2940,21 @@ msgstr ""
 msgid "Git fetch interval"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "GitHub uses the gh command’s own sign-in. Sotto stores nothing for it."
+msgstr ""
+
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Global — the one set that works outside Sotto."
 msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Global — works outside Sotto, as the popup’s does."
+msgstr ""
+
+#: src/renderer/src/features/settings/settingsPages.ts
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Group threads in the sidebar"
 msgstr ""
 
 #. A Council chamber layout: tiered seats round an altar, the chair at the back.
@@ -3066,8 +3161,17 @@ msgstr ""
 msgid "If you reset"
 msgstr ""
 
+#. placeholder {0}: use.threadTitle
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "in “{0}”"
+msgstr ""
+
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "In a thread"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "in a thread that is gone"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
@@ -3174,6 +3278,10 @@ msgstr ""
 msgid "It could not be copied. Select it and copy it instead."
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "It failed."
+msgstr ""
+
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "It is waiting for your answer there."
 msgstr ""
@@ -3258,6 +3366,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "Keep host"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Keep it"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostsSettings.tsx
@@ -3481,6 +3593,10 @@ msgstr ""
 msgid "Make a new code"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Make one at {VERCEL_TOKENS_PAGE}. Sotto checks it with Vercel before saving it, and never shows it again."
+msgstr ""
+
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
 msgid "Match {system}"
 msgstr ""
@@ -3685,6 +3801,10 @@ msgstr ""
 msgid "Muted text"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Name"
+msgstr ""
+
 #: src/renderer/src/features/settings/PhonesSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Name on phones"
@@ -3755,6 +3875,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "New threads, replies, the browser & visuals"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "New token"
 msgstr ""
 
 #: src/renderer/src/features/settings/WorkerMachineSettings.tsx
@@ -3884,6 +4008,10 @@ msgstr ""
 msgid "No supported open-source themes found. Try a broader search."
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "No thread has used {name} yet."
+msgstr ""
+
 #: src/renderer/src/features/settings/ClearThreadsSettings.tsx
 msgid "None of them can go yet."
 msgstr ""
@@ -3903,6 +4031,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/CloudSpeechModelList.tsx
 msgid "Not a zero-retention model: its host may keep your audio under its own terms."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Not added"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
@@ -3969,6 +4101,7 @@ msgid "Not set up"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostProviders.tsx
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Not signed in"
 msgstr ""
@@ -4007,6 +4140,10 @@ msgstr ""
 #: src/renderer/src/features/settings/HostSetupView.tsx
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "Nothing was saved as a host."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Nothing was saved."
 msgstr ""
 
 #: src/renderer/src/features/settings/GitSettings.tsx
@@ -4327,6 +4464,10 @@ msgstr ""
 msgid "Other apps on {name} already use ports 8443 and 10000 in Tailscale Serve. Sotto left them alone, and nothing was changed. Free one of them on {name}, then press Try again."
 msgstr ""
 
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Outside services your threads can use"
+msgstr ""
+
 #: src/renderer/src/features/settings/HostConnectionChoice.tsx
 msgid "Over your tailnet, SSH when it can’t"
 msgstr ""
@@ -4416,6 +4557,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostProviderSignIn.tsx
 msgid "Paste the code"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Paste the token"
 msgstr ""
 
 #: src/renderer/src/features/settings/CloudIphoneSettings.tsx
@@ -4536,6 +4681,12 @@ msgstr ""
 
 #: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
 msgid "Pieces"
+msgstr ""
+
+#. A Settings page, named in its rail and its heading: outside services such as GitHub that threads can use. Other messages name it as "Settings > Plugins".
+#: src/renderer/src/features/settings/settingsPages.ts
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Plugins"
 msgstr ""
 
 #. Precedes theme names people often search for
@@ -4732,6 +4883,54 @@ msgstr ""
 msgid "Reaching {name}…"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Read a build log"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Read a repository"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Read account details"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Read checks"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Read commits"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Read deployments"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Read domains"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Read from {name}"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Read issues"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Read projects"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Read pull requests"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Read releases"
+msgstr ""
+
 #: src/renderer/src/features/settings/CloudIphoneSettings.tsx
 msgid "Reading Cloud iPhone status…"
 msgstr ""
@@ -4767,6 +4966,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/CloudIphoneSettings.tsx
 msgid "Recent sessions"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Recent use"
 msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
@@ -4815,6 +5018,7 @@ msgstr ""
 
 #. Removes a paired phone.
 #: src/renderer/src/features/settings/phoneParts.tsx
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Remove"
 msgstr ""
 
@@ -4839,6 +5043,10 @@ msgstr ""
 msgid "Remove {removingName}?"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Remove <0>{name}</0>? Its token is deleted from this computer, and threads lose the account at once. Nothing changes at Vercel."
+msgstr ""
+
 #: src/renderer/src/features/settings/GitSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Remove a worktree once its commits are in the default branch"
@@ -4852,6 +5060,10 @@ msgstr ""
 #: src/renderer/src/features/settings/GitSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Remove a worktree when its thread is settled"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Remove account"
 msgstr ""
 
 #: src/renderer/src/features/settings/GitSettings.tsx
@@ -4885,6 +5097,10 @@ msgstr ""
 #: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Remove shortcut, {words}"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Remove the Vercel account {name}"
 msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
@@ -4927,8 +5143,16 @@ msgstr ""
 msgid "Rename the thread"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Replace"
+msgstr ""
+
 #: src/renderer/src/features/settings/CloudIphoneSettings.tsx
 msgid "Replace key"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Replace the token for {name}"
 msgstr ""
 
 #: src/renderer/src/features/settings/settingsPages.ts
@@ -4937,7 +5161,11 @@ msgid "Replies in threads"
 msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
-msgid "Replies, approvals and reasoning effort, on the keyless model servers you saved under Your own model servers. Change models and permissions in a thread. Replies arrive whole rather than word by word, and questions come in the reply itself."
+msgid "Replies stream as Pi writes. Threads keep their conversation after a restart, show tool calls and context use, and can be stopped. Models come from your keyless servers and the sources you sign in to below."
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Replies, approvals and reasoning effort, on the keyless model servers you saved under APIs and your own model servers. Change models and permissions in a thread. Replies arrive whole rather than word by word, and questions come in the reply itself."
 msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
@@ -5147,6 +5375,10 @@ msgstr ""
 msgid "Save name"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Save token"
+msgstr ""
+
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Saves transcripts on this computer to search and reuse. With it off, Sotto saves no text but still keeps each dictation's time, length, word count and app name. Turning it off deletes saved checkpoints right away."
 msgstr ""
@@ -5189,6 +5421,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Search transcripts already uses {keys}. Pick other keys."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Searched {name}"
 msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
@@ -5476,6 +5712,10 @@ msgstr ""
 msgid "Shows when the default branch is behind and leaves the pull to you."
 msgstr ""
 
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Sidebar"
+msgstr ""
+
 #. A family of theme colors in the theme editor
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Sidebar background"
@@ -5525,6 +5765,18 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
 msgid "Signed in"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Signed in as {login} through gh"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Signed in as <0>{login}</0> through gh on this computer."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Signed in to Vercel as {signedInAs}. Token saved {saved}."
 msgstr ""
 
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
@@ -5601,6 +5853,10 @@ msgstr ""
 msgid "Sotto cannot change sign-in startup here."
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sotto checks it with Vercel first. The token saved now stays in use until the new one is accepted."
+msgstr ""
+
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Sotto could not check for updates: {problem}"
 msgstr ""
@@ -5615,6 +5871,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/hostClientUpdateWords.ts
 msgid "Sotto could not find mise on {host}, so it will not run the update itself."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sotto could not keep the token. {kept} Check that this computer’s credential store is unlocked, then try again."
 msgstr ""
 
 #: src/renderer/src/features/settings/ClearThreadsSettings.tsx
@@ -5635,6 +5895,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostQuestionDialog.tsx
 msgid "Sotto could not stop signing in to {name}. Try again in Settings > Hosts & phones."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sotto couldn’t ask gh who is signed in. Nothing was changed. Press Check again."
 msgstr ""
 
 #: src/renderer/src/features/settings/PhonesSettings.tsx
@@ -5733,6 +5997,14 @@ msgstr ""
 msgid "Sotto never fetches, even before a Git action. Ahead and behind use the last fetch."
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sotto records what was done and by which thread, never what was read."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sotto refused it."
+msgstr ""
+
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "Sotto removed {name} from this computer but could not remove its start at boot unit there, so its host still starts when {name} restarts. To remove the unit, run this on {name}:"
 msgstr ""
@@ -5751,6 +6023,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Sotto runs its own OpenCode, with its own folder and its own sign-ins. The OpenCode you run yourself stays as it is."
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Sotto runs Pi in its own folder on your keyless model servers. Pi has Full access and does not ask before running tools. Sign in below to use Pi’s other model sources."
 msgstr ""
 
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
@@ -6048,6 +6324,10 @@ msgstr ""
 msgid "Steer now"
 msgstr ""
 
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Steering, compaction, native forks, skills, Watcher, remote hosts and phones are not available yet."
+msgstr ""
+
 #: src/renderer/src/features/settings/hostClientUpdateWords.ts
 msgid "Step {step} of {steps}"
 msgstr ""
@@ -6308,6 +6588,10 @@ msgstr ""
 msgid "Text"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "That account is no longer here. Nothing was changed."
+msgstr ""
+
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "That file is {size}. Theme files are only a few KB, so this one was not read (limit {limit})."
 msgstr ""
@@ -6349,6 +6633,14 @@ msgstr ""
 msgid "That theme was removed while you were editing it. Save it under a new name to keep your changes."
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "The account could not be removed. Nothing was changed. Try again."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "The accounts could not be read. Nothing was changed. Reopen Settings and try again."
+msgstr ""
+
 #: src/renderer/src/features/settings/PhonesSettings.tsx
 msgid "The address could not be copied. Select it and copy it instead."
 msgstr ""
@@ -6388,6 +6680,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "The command could not be copied. It is selected above: copy it with your keyboard’s copy shortcut."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "The command could not be copied. Select {GH_SIGN_IN_COMMAND} and copy it yourself."
 msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
@@ -6716,6 +7012,10 @@ msgstr ""
 msgid "The thread's own model writes a new pull request's title and body from the branch's commits and diff."
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "The token already saved was kept."
+msgstr ""
+
 #. Shown when saving the Ultracode effort setting fails. Ultracode is Claude Code’s own name; keep it as it is.
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "The Ultracode effort was not saved, so Claude threads keep the one they had. Try again."
@@ -6786,6 +7086,10 @@ msgstr ""
 #: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
 msgid "Themes"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "There is already a Vercel account with that name. Nothing was saved. Give this one another name."
 msgstr ""
 
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
@@ -6932,6 +7236,10 @@ msgstr ""
 msgid "Threads with OpenCode"
 msgstr ""
 
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Threads with Pi"
+msgstr ""
+
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "Threads, pairing and settings for this host live here."
 msgstr ""
@@ -6943,6 +7251,14 @@ msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Toggle developer tools"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Token"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Token saved {saved}."
 msgstr ""
 
 #: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
@@ -7429,6 +7745,26 @@ msgstr ""
 msgid "Usual number of {roleName} workers for one request"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Vercel account {name}"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Vercel already has as many accounts as Sotto keeps for one plugin. Nothing was saved. Remove one first."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Vercel could not be reached to check the token. {kept} Check your connection, then try again."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Vercel did not accept this token. {kept} Make a new token at {VERCEL_TOKENS_PAGE} and paste it here."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Vercel is turning requests away for now, so the token could not be checked. {kept} Wait a minute, then try again."
+msgstr ""
+
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "View source for {extensionName}"
 msgstr ""
@@ -7663,6 +7999,10 @@ msgstr ""
 msgid "What would you like to do next?"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "What you and your threads’ agents call this account, such as Work or Personal."
+msgstr ""
+
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "When a provider’s usage limit resets, or Sotto opens again after closing, every thread that was working carries on, with a short note from Sotto in the thread."
 msgstr ""
@@ -7792,6 +8132,10 @@ msgid "Working copy…"
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Working now and Recent under Needs you, as on the iPhone. Each thread names its project."
+msgstr ""
+
+#: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Working..."
 msgstr ""
 
@@ -7893,10 +8237,6 @@ msgstr ""
 
 #: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
 msgid "Your note to the overseer"
-msgstr ""
-
-#: src/renderer/src/features/settings/settingsPages.ts
-msgid "Your own model servers"
 msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx

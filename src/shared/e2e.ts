@@ -16,6 +16,8 @@ export const E2E_TRANSCRIPT = 'A deterministic local transcript.'
 export const E2E_HISTORY_CREATED_AT = Date.UTC(2026, 6, 12, 19, 30)
 export const E2E_PRESERVED_CLIPBOARD = 'Clipboard text that must survive silence.'
 export const E2E_CONFLICTING_HOTKEY = 'Ctrl+Alt+9'
+/** The name an E2E run gives this computer where Sotto would say the machine's own, as on the Phones page. */
+export const E2E_COMPUTER_NAME = 'WORKSHOP-PC'
 /** The exit code and stderr line an e2e-launched main ends with after an uncaught exception (#1577), so its test fails. */
 export const E2E_UNCAUGHT_EXIT_CODE = 70
 export const E2E_UNCAUGHT_PREFIX = '[Sotto] e2e-uncaught-exception'

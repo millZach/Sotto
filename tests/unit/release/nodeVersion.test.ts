@@ -40,8 +40,20 @@ describe('the pinned Node version', () => {
 
   it.each(Object.keys(READ_FROM_EACH_CHECKOUT))('is what %s falls back to, and it reads each checkout\'s own file', name => {
     const workflow = readFileSync(join('.github/workflows', name), 'utf8')
-    const pick = /pick\(\) \{ if \[ -f "\$1\/\.node-version" \]; then tr -d '\[:space:\]' < "\$1\/\.node-version"; else echo (\S+); fi; \}/u.exec(workflow)
+    // The one `pick`, at the start of a line, and the two lines that feed setup-node from it: a fixed version written to
+    // an output, the two sides swapped, or an output left empty (which installs whatever the runner has) all fail here.
+    const pick = /^\s*pick\(\) \{ if \[ -f "\$1\/\.node-version" \]; then tr -d '\[:space:\]' < "\$1\/\.node-version"; else echo (\S+); fi; \}/mu.exec(workflow)
     expect(pick?.[1], `${name} no longer reads .node-version from each checkout the way this test knows`).toBe(PINNED_NODE)
+    expect([...workflow.matchAll(/pick\(\) \{/gu)], `${name} defines pick more than once`).toHaveLength(1)
+    expect(workflow, `${name} no longer feeds the change's setup-node from pick`).toMatch(/^\s*echo "change=\$\(pick \.\)" >> "\$GITHUB_OUTPUT"$/mu)
+    expect(workflow, `${name} no longer feeds the base's setup-node from pick`).toMatch(/^\s*if \[ -d "\$RUNNER_TEMP\/base" \]; then echo "base=\$\(pick "\$RUNNER_TEMP\/base"\)" >> "\$GITHUB_OUTPUT"; fi$/mu)
+    // In the step that sets them, any other write of either output, quoted or not, by echo or printf, on a line that is
+    // not a comment; and no write spread over lines (a heredoc, a brace group or a continued line), which this cannot read.
+    // A Windows checkout gives the workflow CRLF line ends.
+    const step = /^\s*id: node\r?\n[\s\S]*?(?=^\s*- name:)/mu.exec(workflow)?.[0] ?? ''
+    const lines = step.split(/\r?\n/u).filter(line => !line.trim().startsWith('#'))
+    expect(lines.filter(line => line.includes('GITHUB_OUTPUT') && /(?:^|[\s"'])(?:base|change)=/u.test(line)), `${name} writes a Node output somewhere else too`).toHaveLength(2)
+    expect(lines.filter(line => /<<|\\\s*$|^\s*\}/u.test(line)), `${name} writes a Node output over several lines`).toEqual([])
   })
 
   it('is installed by some workflow', () => {

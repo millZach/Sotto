@@ -76,7 +76,7 @@ test('says what your own model server is doing to a turn, and offers Stop, Try a
     page.on('pageerror', error => pageErrors.push(error.message))
     // The window's clock runs on, but can be moved: the still-waiting line comes 30 seconds into a silent turn.
     await page.clock.install()
-    await page.evaluate(() => window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', reducedMotion: 'system' }))
+    await page.evaluate(() => window.sotto!.updateSettings({ onboardingComplete: true, threadListGrouping: 'project', appearance: 'dark', reducedMotion: 'system' }))
     await page.reload()
     await page.evaluate(async () => { await window.sotto!.agents!.command({ type: 'connect', provider: 'opencode' }) })
     await resizeWindow(app, 1280, 800)
@@ -102,7 +102,7 @@ test('says what your own model server is doing to a turn, and offers Stop, Try a
     const live = transcript.getByTestId('thread-activity-live')
     const stop = transcript.getByRole('button', { name: 'Stop agent', exact: true })
     const tryAgain = transcript.getByRole('button', { name: 'Try again, sending your last message to Sparks again', exact: true })
-    const openSettings = transcript.getByRole('button', { name: 'Open Settings at Your own model servers', exact: true })
+    const openSettings = transcript.getByRole('button', { name: 'Open Settings at APIs and your own model servers', exact: true })
 
     const send = async (text: string): Promise<void> => {
       await fillPrompt(prompt, text)
@@ -207,7 +207,7 @@ test('says what your own model server is doing to a turn, and offers Stop, Try a
     await send('Add the key section too.')
     await action('fail', { error: 'provider.auth', status: 401, message: 'Invalid API key.' })
     await expect(failure).toHaveAttribute('data-failure', 'key-refused')
-    await expect(failure).toContainText('Sparks turned down its key. Nothing in the thread was lost. In Settings › Providers › Your own model servers, remove Sparks and add it again with the right key, then try again.')
+    await expect(failure).toContainText('Sparks turned down its key. Nothing in the thread was lost. In Settings › Providers › APIs and your own model servers, replace the key for Sparks, then try again.')
     await expect(failure).not.toContainText('Invalid API key.')
     await capture('fail-key-refused', failure.locator('xpath=..'), { ...reason, 'Open Settings': 'button:first-child' })
     await openSettings.focus()
@@ -221,7 +221,7 @@ test('says what your own model server is doing to a turn, and offers Stop, Try a
     await page.keyboard.press('Shift+Tab')
     await expect(openSettings).toBeFocused()
     await page.keyboard.press('Enter')
-    const group = page.getByRole('region', { name: 'Your own model servers', exact: true })
+    const group = page.getByRole('region', { name: 'APIs and your own model servers', exact: true })
     await expect(page.getByRole('tab', { name: 'Providers', exact: true })).toHaveAttribute('aria-selected', 'true')
     await expect(group).toBeInViewport()
     expect(await group.evaluate(node => { const focused = document.activeElement; return focused !== null && (node.contains(focused) || focused.contains(node)) })).toBe(true)

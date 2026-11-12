@@ -46,11 +46,12 @@ export const OWL_FEATURES = [
   { id: 'attach-any-file', name: 'Attach any file', owlSince: '2026-10-24', owner: 'docs/adr/0131-any-file-can-be-attached.md', sentToStable: false },
   { id: 'reply-quote', name: 'Quote a reply in the prompt', owlSince: '2026-10-24', owner: 'docs/adr/0129-words-from-a-reply-can-be-quoted-in-the-next-prompt.md', sentToStable: false },
   { id: 'next-prompt', name: 'Next prompt suggestions', owlSince: '2026-10-24', owner: 'docs/adr/0132-a-finished-turn-suggests-the-next-prompt.md', sentToStable: false },
+  { id: 'pi', name: 'Pi provider', owlSince: '2026-11-10', owner: 'docs/adr/0202-pi-is-a-thread-provider.md', sentToStable: false },
   { id: 'hermes', name: 'Hermes provider', owlSince: '2026-11-06', owner: 'src/main/agents/hermes.ts', sentToStable: false },
   { id: 'deepseek', name: 'DeepSeek provider', owlSince: '2026-10-24', owner: 'docs/adr/0138-deepseek-harness-is-a-thread-provider.md', sentToStable: false },
   { id: 'cross-machine-work', name: 'Work across machines', owlSince: '2026-10-22', owner: 'docs/adr/0082-work-moves-between-a-desktops-machines-over-its-own-ssh-link.md', sentToStable: false },
   { id: 'own-server-cleanup', name: 'AI cleanup on your own model server', owlSince: '2026-10-25', owner: 'docs/adr/0136-ai-cleanup-can-run-on-your-own-model-server.md', sentToStable: false },
-  { id: 'needs-you-queue', name: 'Needs you in the Threads sidebar', owlSince: '2026-10-24', owner: 'docs/adr/0135-the-threads-sidebar-opens-on-needs-you.md', sentToStable: false },
+  { id: 'needs-you-queue', name: 'Needs you in the Threads sidebar', owlSince: '2026-10-24', owner: 'docs/adr/0135-the-threads-sidebar-opens-on-needs-you.md', sentToStable: true },
   { id: 'folder-peek', name: 'Peek inside a closed folder', owlSince: '2026-10-24', owner: 'docs/plans/collapsed-folder-peek.md', sentToStable: false },
   { id: 'paired-host-terminal', name: 'A terminal for a thread on a paired host', owlSince: '2026-11-02', owner: 'docs/adr/0183-a-paired-hosts-thread-opens-its-terminal-over-ssh.md', sentToStable: false },
   { id: 'run-command', name: 'Run a command from a reply', owlSince: '2026-10-25', owner: 'docs/adr/0139-a-command-in-a-reply-runs-in-the-terminal-drawer.md', sentToStable: false },
@@ -75,6 +76,7 @@ export const OWL_FEATURES = [
   { id: 'dynamic-threads', name: 'Dynamic threads', owlSince: '2026-11-04', owner: 'docs/adr/0191-a-dynamic-threads-model-oversees-and-chooses-a-model-for-each-piece.md', sentToStable: false },
   { id: 'paired-host-browser', name: 'Sotto\'s browser for a thread on a paired host', owlSince: '2026-11-08', owner: 'docs/adr/0198-a-paired-hosts-thread-browses-in-the-hosts-own-chromium.md', sentToStable: false },
   { id: 'living-night-scene', name: 'Watcher\'s living night scene', owlSince: '2026-11-10', owner: 'docs/adr/0199-watchers-night-scene-comes-to-life.md', sentToStable: false },
+  { id: 'plugins', name: 'Plugins', owlSince: '2026-11-11', owner: 'docs/adr/0205-plugins-connect-outside-services-once-and-threads-use-them-through-sottos-tools.md', sentToStable: false },
 ] as const satisfies readonly OwlFeature[]
 
 export type OwlFeatureId = typeof OWL_FEATURES[number]['id']

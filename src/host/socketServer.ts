@@ -167,6 +167,8 @@ interface Peer { browserWatches?: Map<string, { ticket: number; stop?: () => voi
    * was sent: kept while it observes the thread, so the window only grows at its end, and moved back by `earlier-steps`.
    */
   stepWindows?: Map<string, StepWindowCut> | undefined
+  /** Whether its hello accepted `thread-media-edge`: it may name the longest edge of a picture it asks for (ADR-0170). */
+  pictureEdges?: boolean
   /**
    * Whether its hello accepted `watcher-progress` beside `watcher-reads`: a Watcher projection that differs from the last one
    * written to it only in its progress goes as a progress push (ADR-0073, November 10, 2026 amendment).
@@ -216,6 +218,13 @@ export interface SocketServerOptions {
    * desktop's own phone listener offers no desktop-only feature and stops whenever phone access is off.
    */
   tailnet?: TailnetAdmission
+  /**
+   * A phone that offers `permessage-deflate` is answered and sent compressed messages as a desktop is (ADR-0025, November
+   * 10 amendment). Every phone listener turns it on (`PhoneAccess`), the desktop's and a headless host's tailnet listener,
+   * unless its host was started with `SOTTO_HOST_COMPRESS_PHONES=0`. Off when left out, as on the local apps listener,
+   * where loopback gains nothing from it.
+   */
+  compressPhones?: boolean
   /** The host's tailnet address and who started it, read for each health and hello answer. */
   about?: () => HostAbout
   /** The host's phone access in its row's words, read for each hello to a desktop. */
@@ -384,6 +393,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'thread-media' || service.supportsThreadMedia === true && service.threadMedia !== undefined)
     && (feature !== 'browser' || options.browser !== undefined)
     && (feature !== 'thread-media-video' || service.supportsThreadMedia === true && service.threadMediaPart !== undefined)
+    // A copy at a longest edge needs a maker: the desktop's image tools, or a headless host's picture worker (ADR-0203).
+    && (feature !== 'thread-media-edge' || service.supportsPictureEdges === true)
     && (feature !== 'watcher-control' || service.supportsWatcherControl === true && options.watcherDesktops !== undefined)
     && (feature !== 'watcher-reads' || watcherReads)
     // A projection's progress alone goes where the projection does (ADR-0073, November 10, 2026 amendment).
@@ -543,10 +554,11 @@ export async function startSocketServer(options: SocketServerOptions) {
   const admits = (clientId: string): boolean => isDesktop(clientId) || (tailnet?.phonesAdmitted() ?? true)
   /**
    * Whether a client that offers `permessage-deflate` is sent compressed messages: a desktop, on a listener that tells
-   * desktops apart or is reached only through SSH (ADR-0025, October 18 amendment). No phone is, on any listener: the
-   * desktop's own phone listener, which serves no desktop, compresses nothing.
+   * desktops apart or is reached only through SSH (ADR-0025, October 18 amendment); and any client, a phone among them, on
+   * a listener with `compressPhones` on (the November 10 amendment). Without it a phone is not, and a listener that serves
+   * no desktop (no administrative routes and no `tailnet`) compresses nothing.
    */
-  const compresses = (clientId: string): boolean => (options.admin !== false || tailnet !== undefined) && isDesktop(clientId)
+  const compresses = (clientId: string): boolean => options.compressPhones === true || (options.admin !== false || tailnet !== undefined) && isDesktop(clientId)
   const phonesOffMessage = (): string => phonesOff(options.name?.())
   const { signIns } = options
   /** A sign-in's own refusal keeps its sentence; anything else is the host's failure to run it. */
@@ -1596,6 +1608,7 @@ export async function startSocketServer(options: SocketServerOptions) {
         peer.usableModels = (request.accepts?.includes('usable-models') ?? false) && offers(peer, 'usable-models')
         // A hello again keeps where each window stands; one that no longer accepts the feature is sent whole threads.
         peer.stepWindows = (request.accepts?.includes('step-window') ?? false) && offers(peer, 'step-window') ? peer.stepWindows ?? new Map() : undefined
+        peer.pictureEdges = (request.accepts?.includes('thread-media-edge') ?? false) && offers(peer, 'thread-media-edge')
         peer.activitySummaries = request.accepts?.includes('activity-summaries') ?? false
         // Summaries win over cut bodies: a client that asks for both reads summaries, as it did before cut bodies.
         peer.activityBodies = !peer.activitySummaries && (request.accepts?.includes('activity-bodies') ?? false) && offers(peer, 'activity-bodies')
@@ -2027,12 +2040,14 @@ export async function startSocketServer(options: SocketServerOptions) {
       case 'sign-in-cancel': return signingIn(peer, request.op, () => { signIns!.cancel(request.signInId, peer.client.clientId); return null })
       case 'opencode-sign-in': return opencodeCall(peer, request.op, request.call)
       case 'preview':
+        // Only a client that accepted `thread-media-edge` names an edge (ADR-0170, November 10 amendment).
+        if (request.request.edge !== undefined && !peer.pictureEdges) throw new Refusal('invalid_request')
         if (peer.preview) throw new Refusal('busy')
         peer.preview = true
         try { return await service.attachmentPreview?.(request.request) ?? null } finally { peer.preview = false }
       // A picture an activity record names (ADR-0170), on the same one-at-a-time guard as a preview: one large frame a socket.
       case 'thread-media':
-        if (!offers(peer, 'thread-media') || !service.threadMedia) throw new Refusal('invalid_request')
+        if (!offers(peer, 'thread-media') || !service.threadMedia || request.request.edge !== undefined && !peer.pictureEdges) throw new Refusal('invalid_request')
         if (peer.preview) throw new Refusal('busy')
         peer.preview = true
         try { return await service.threadMedia(request.request) } finally { peer.preview = false }
@@ -2276,9 +2291,9 @@ export async function startSocketServer(options: SocketServerOptions) {
     const key = request.headers['sec-websocket-key']
     if (request.url !== '/v1/socket' || !clientId || request.headers['sec-websocket-version'] !== '13' || typeof key !== 'string' || !/^[A-Za-z0-9+/]{22}==$/.test(key) || (request.headers.origin && !originAllowed(request.headers.origin, options.origins))) { refuse(stream, '401 Unauthorized'); return }
     const offered = deflateOffered(request.headers['sec-websocket-extensions'])
-    // Compression is settled at the upgrade or not at all, so a client offering it that this listener does not know as a
-    // desktop has the record read again first: the launch script may have recorded it since the last read.
-    if (admits(clientId) && !(offered && tailnet && !isDesktop(clientId))) { open(stream, head, session, clientId, key, offered); return }
+    // Compression is settled at the upgrade or not at all, so a client offering it that this listener would not compress
+    // for has the record read again first: the launch script may have recorded it as a desktop since the last read.
+    if (admits(clientId) && !(offered && tailnet && !compresses(clientId))) { open(stream, head, session, clientId, key, offered); return }
     if (!tailnet) { refuse(stream, '403 Forbidden'); return }
     // A desktop the launch script recorded since this listener last read the record is let in; anyone else is not.
     void tailnet.desktops.refresh().catch(() => undefined).then(() => { if (admits(clientId)) open(stream, head, session, clientId, key, offered); else refuse(stream, '403 Forbidden') })

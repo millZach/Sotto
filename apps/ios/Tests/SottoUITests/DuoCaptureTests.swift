@@ -4,9 +4,10 @@ import UIKit
 /// The Duo design captures: every surface of the iPhone Duo's own layout, folded and unfolded, in dark and light, taken
 /// the same way on any commit so a before and an after match. They assert nothing about the layout; `DuoJourneyTests`
 /// does that. `apps/ios/Scripts/duo-captures.sh` runs them on the iPhone Duo simulator in each posture and sets
-/// `SOTTO_DUO_POSTURE` (folded or sideways) through xcodebuild's `TEST_RUNNER_` prefix; without it every test skips
-/// before launching anything, so CI's iPhone journeys spend no time here. The simulator can't turn the unfolded Duo
-/// upright, neither by `--ui-orientation` nor by `XCUIDevice` (November 8, 2026), so upright is checked on a real Duo.
+/// `SOTTO_DUO_POSTURE` (folded, sideways or upright) through xcodebuild's `TEST_RUNNER_` prefix; without it every test
+/// skips before launching anything, so CI's iPhone journeys spend no time here. The script turns the unfolded Duo upright
+/// with the posture tool, since neither `--ui-orientation` nor `XCUIDevice` reaches the inner screen (November 8, 2026),
+/// and runs only the Threads page, a thread and Watcher there.
 ///
 /// XCTest's own screenshots on the Duo show only the cover screen, so each test prints `DUO-SHOT name time` at a moment
 /// worth a picture and the script takes it from the host, and `DUO-CLIP-START` and `DUO-CLIP-END` around a movement worth
@@ -19,7 +20,7 @@ import UIKit
     override func setUpWithError() throws {
         continueAfterFailure = true
         posture = ProcessInfo.processInfo.environment["SOTTO_DUO_POSTURE"] ?? ""
-        guard ["folded", "sideways"].contains(posture) else { throw XCTSkip("Only the Duo captures run these") }
+        guard ["folded", "sideways", "upright"].contains(posture) else { throw XCTSkip("Only the Duo captures run these") }
     }
 
     override func tearDownWithError() throws {
@@ -244,6 +245,11 @@ import UIKit
                 _ = app.keyboards.firstMatch.waitForExistence(timeout: 5)
                 reply.typeText("What is waiting on me before lunch?")
                 shot("watcher-keyboard")
+                app.terminate()
+                launch(["--ui-open-watcher"])
+                _ = byID("watcher-reply").waitForExistence(timeout: 20)
+                scrollPage(by: 320)
+                shot("watcher-earlier")
             }
             app.terminate()
         }

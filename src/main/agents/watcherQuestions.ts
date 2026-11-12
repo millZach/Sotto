@@ -54,11 +54,11 @@ export class WatcherQuestions {
     return this.questions.filter(question => question.watcherThreadId === watcherThreadId && question.state === 'open')
   }
   /** Puts a question's card before the user. A settle question takes Sotto's own two choices. */
-  ask(watcherThreadId: string, input: WatcherAskInput): Promise<WatcherQuestion> {
+  ask(watcherThreadId: string, input: WatcherAskInput, askedUnder?: string): Promise<WatcherQuestion> {
     return this.inTurn(async () => {
       const question: WatcherQuestion = { id: randomUUID(), watcherThreadId, question: input.question,
         options: input.settle ? SETTLE_CHOICES.map(option => ({ ...option })) : input.options!.map(option => ({ ...option })),
-        ...input.settle ? { settle: input.settle } : {}, state: 'open', at: this.now() }
+        ...input.settle ? { settle: input.settle } : {}, state: 'open', at: this.now(), ...askedUnder ? { askedUnder } : {} }
       // Asking again about the same settle replaces the earlier card, so one thread has one settle question.
       const kept = input.settle ? this.questions.map(item => item.state === 'open' && item.watcherThreadId === watcherThreadId && item.settle && sameTarget(item.settle, input.settle!)
         ? { ...item, state: 'closed' as const, endedAt: question.at } : item) : this.questions
@@ -68,12 +68,21 @@ export class WatcherQuestions {
   }
   /** The user's choice. Undefined when the question no longer waits, so nothing is told twice. */
   answer(id: string, choice: string): Promise<WatcherQuestion | undefined> {
+    return this.end(id, question => question.options.some(option => option.label === choice) ? { state: 'answered', choice } : undefined)
+  }
+  /** The user skipped the question and gave no answer (#2477). Undefined when it no longer waits, so nothing is told twice. */
+  skip(id: string): Promise<WatcherQuestion | undefined> {
+    return this.end(id, () => ({ state: 'skipped' }))
+  }
+  /** Ends an open question the way `how` says, or not at all when it gives nothing. Undefined when nothing changed. */
+  private end(id: string, how: (question: WatcherQuestion) => Pick<WatcherQuestion, 'state' | 'choice'> | undefined): Promise<WatcherQuestion | undefined> {
     return this.inTurn(async () => {
       const question = this.get(id)
-      if (!question || question.state !== 'open' || !question.options.some(option => option.label === choice)) return undefined
-      const answered: WatcherQuestion = { ...question, state: 'answered', choice, endedAt: this.now() }
-      await this.replace(this.questions.map(item => item.id === id ? answered : item))
-      return answered
+      const ending = question?.state === 'open' ? how(question) : undefined
+      if (!question || !ending) return undefined
+      const ended: WatcherQuestion = { ...question, ...ending, endedAt: this.now() }
+      await this.replace(this.questions.map(item => item.id === id ? ended : item))
+      return ended
     })
   }
   /** A new Watcher took over: the last one's open questions close, and go in its handover. */

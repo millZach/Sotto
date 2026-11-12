@@ -192,6 +192,7 @@ describe('typed preload bridge', () => {
         'openSystemSettings',
         'phones',
         'platform',
+        'plugins',
         'productEvents',
         'providerSignIn',
         'polishTranscript',

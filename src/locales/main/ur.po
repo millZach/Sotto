@@ -521,6 +521,10 @@ msgstr ""
 msgid "another model"
 msgstr ""
 
+#: src/main/agents/piSignInIpc.ts
+msgid "Another Pi sign-in is still open. Finish or cancel it first."
+msgstr ""
+
 #: src/main/hosts/hostFailureWords.ts
 msgid "Another program is using the port the host last listened on. Nothing was saved. Stop it on the SSH host, then add the host again."
 msgstr ""
@@ -1065,6 +1069,7 @@ msgstr ""
 #: src/main/notifications/notificationIpc.ts
 #: src/main/performance/mainActivityIpc.ts
 #: src/main/phones/ipc.ts
+#: src/main/plugins/ipc.ts
 msgid "Open Settings in the main Sotto window."
 msgstr ""
 
@@ -1146,6 +1151,18 @@ msgstr ""
 
 #: src/main/hosts/hostFailureWords.ts
 msgid "Phone access on the host could not be reached. Nothing was saved. Nothing was changed. Check that the host is running, then try again."
+msgstr ""
+
+#: src/main/agents/piSignInIpc.ts
+msgid "Pi could not confirm sign-out. Check its model sources before trying again."
+msgstr ""
+
+#: src/main/agents/piSignInIpc.ts
+msgid "Pi could not finish signing in. Check the account and try again. Your threads are kept."
+msgstr ""
+
+#: src/main/agents/piSignInIpc.ts
+msgid "Pi is not available for sign-in. Install Pi and try again. Your threads are kept."
 msgstr ""
 
 #: src/main/tools/browser.ts
@@ -1296,6 +1313,7 @@ msgid "Sign Cursor in from the main Sotto window."
 msgstr ""
 
 #: src/main/agents/opencodeSignInIpc.ts
+#: src/main/agents/piSignInIpc.ts
 msgid "Sign in to model sources from the main Sotto window."
 msgstr ""
 
@@ -1726,6 +1744,10 @@ msgstr ""
 
 #: src/main/hosts/desktopHostRouter.ts
 msgid "That computer is not connected. Nothing was changed. Connect it in Settings > Hosts & phones, then try again."
+msgstr ""
+
+#: src/main/plugins/ipc.ts
+msgid "That could not be done. Nothing was changed."
 msgstr ""
 
 #: src/main/council/councilService.ts
@@ -2407,6 +2429,14 @@ msgstr ""
 msgid "The pairing code could not be read from the host. Nothing was saved. Check that the host is running and try again."
 msgstr ""
 
+#: src/main/agents/piSignInIpc.ts
+msgid "The Pi sign-in expired. Open the sign-in page again to start over."
+msgstr ""
+
+#: src/main/agents/piSignInIpc.ts
+msgid "The Pi sign-in page could not be opened. Try Open the page again."
+msgstr ""
+
 #: src/main/omarchy/files.ts
 msgid "The plugin folder is not a folder. Sotto left it alone."
 msgstr ""
@@ -3082,6 +3112,10 @@ msgstr ""
 
 #: src/main/hosts/desktopHostRouter.ts
 msgid "This path is unavailable or changed. Refresh Files and try again."
+msgstr ""
+
+#: src/main/agents/piSignInIpc.ts
+msgid "This Pi sign-in is no longer waiting. Open the sign-in page again to start over."
 msgstr ""
 
 #: src/main/agents/delegationIpc.ts

@@ -5,6 +5,7 @@ import { pathToFileURL } from 'node:url'
 import process from 'node:process'
 import { build } from 'vite'
 import { STORE_WORKERS, storeWorkerBuild } from './store-worker-build.mjs'
+import { HOST_BUNDLED_PACKAGES } from './release-external-dependencies.mjs'
 
 const root = resolve(import.meta.dirname, '..')
 
@@ -51,11 +52,15 @@ export async function buildHost(outDir = resolve(root, process.env.SOTTO_HOST_OU
         this.emitFile({ type: 'asset', fileName: 'bundled-dependencies.json', source: JSON.stringify({ version: 1, packages: [...packages].sort() }, null, 2) + '\n' })
       },
     }],
+    // A server build leaves a package in node_modules to be loaded at run time unless told otherwise. The reviewed few the
+    // picture worker needs are compiled in (ADR-0203); `verify-host-archive.mjs` holds the archive to exactly them.
+    ssr: { noExternal: [...HOST_BUNDLED_PACKAGES] },
     build: {
-      // The host launches Git off its own thread too, from the worker file beside its index.js (`gitLauncher.ts`).
+      // The host launches Git off its own thread too, from the worker file beside its index.js (`gitLauncher.ts`), and makes
+      // a phone's picture copies on another (`pictureMaker.ts`): each an entry here, so its imports are in the inventory.
       ssr: true, target: 'node24', outDir, emptyOutDir: true, minify: false,
       rollupOptions: {
-        input: { index: resolve(root, 'src/host/index.ts'), gitLauncherWorker: resolve(root, 'src/main/agents/git/gitLauncherWorker.ts') },
+        input: { index: resolve(root, 'src/host/index.ts'), gitLauncherWorker: resolve(root, 'src/main/agents/git/gitLauncherWorker.ts'), pictureWorker: resolve(root, 'src/host/pictureWorker.ts') },
         external: id => isBuiltin(id) || id === 'zod' || id === 'node-pty',
         output: { format: 'cjs', entryFileNames: '[name].js' },
       },

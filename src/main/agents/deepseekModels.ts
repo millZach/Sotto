@@ -39,6 +39,7 @@ export function deepseekCatalog(servers: readonly OwnServer[], harnessImages = f
     name: model.name,
     runtimeModes: [...DEEPSEEK_RUNTIME_MODES],
     ready: true,
+    ...(server.keptModelIds && !server.keptModelIds.includes(model.id) ? { hiddenFromMenu: true } : {}),
     source: server.name,
     ...(harnessImages && model.images ? { supportsImages: true } : {}),
     ...(model.thinking ? { reasoningEfforts: orderReasoningEfforts([...DEEPSEEK_REASONING_EFFORTS]), defaultReasoningEffort: DEEPSEEK_DEFAULT_EFFORT } : {}),

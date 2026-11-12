@@ -59,6 +59,7 @@ import { stoppedWork } from '../../stoppedWork'
 import { ClaudeSubagentModels } from './claudeSubagentModels'
 import { ClaudeMonitoring } from './claudeMonitoring'
 import { SessionReaper, busyHolds, type HeldSession } from '../../sessionReaper'
+import type { RunMark } from '../../detachedRunScan'
 import { markCompactionActivity } from '../../compactionActivity'
 import { markTurnActivity } from '../../turnActivity'
 import { CLAUDE_RESUME_FAILED, CLAUDE_RESUME_FAILED_SESSION } from '../../../../shared/threadFailures'
@@ -622,6 +623,17 @@ export class ClaudeStreamJsonHost implements ProviderHost {
   private inBackground(id: string): boolean {
     const thread = this.threads.get(id)
     return !!thread && (!!thread.monitoring?.length || !!thread.backgroundWork?.length)
+  }
+  /**
+   * The thread whose Claude Code session a detached run names in `CLAUDE_CODE_SESSION_ID` (#2476): its session now, or one
+   * it had before a rewind or a compaction, since a run keeps the session it was started from.
+   */
+  threadForRunMark(mark: RunMark): string | undefined {
+    if (mark.name !== 'CLAUDE_CODE_SESSION_ID') return undefined
+    for (const [id, alias] of Object.entries(this.aliases)) {
+      if (!alias.councilJudge && (alias.sessionId === mark.value || alias.lineage?.some(item => item.sessionId === mark.value))) return id
+    }
+    return undefined
   }
   /** The sessions the reaper tracks, why each is held, and each CLI's process (#2398). */
   heldSessions(): HeldSession[] {

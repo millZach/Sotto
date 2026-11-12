@@ -54,7 +54,7 @@ test('signs Cursor in from its row, groups its models by maker, offers its three
     launched = await launchSotto('success', profile)
     const { page } = launched
     page.on('pageerror', error => pageErrors.push(error.message))
-    await page.evaluate(() => window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', reducedMotion: 'on' }))
+    await page.evaluate(() => window.sotto!.updateSettings({ onboardingComplete: true, threadListGrouping: 'project', appearance: 'dark', reducedMotion: 'on' }))
     await page.reload()
 
     // Settings > Providers > Cursor's row, signed out: one Sign in, and Sotto keeps no Cursor key.

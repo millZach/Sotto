@@ -116,7 +116,7 @@ private struct AgentsPresenter: ViewModifier {
                 .presentationDragIndicator(.visible)
                 .overThread()
             }
-            .navigationDestination(item: $pushed) { target in ThreadView(ref: target, nested: true) }
+            .navigationDestination(item: $pushed) { target in ThreadView(ref: target, nested: true).clearOfUprightRail() }
             // Only once the delegated thread has gone: a swipe back that is cancelled leaves it open, and the sheet shut.
             .onChange(of: pushed) { old, new in
                 covered = new != nil

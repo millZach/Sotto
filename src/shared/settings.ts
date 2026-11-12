@@ -173,6 +173,12 @@ export interface AppSettings {
   webLinkDestination: 'external' | 'embedded'
   /** `live` draws assistant text as it streams; `complete` shows each reply once it is finished. Activity is always live. */
   responseStreaming: 'live' | 'complete'
+  /**
+   * How the Threads sidebar lists open threads (ADR-0201): `status` in Working now and Recent under Needs you, as the
+   * iPhone does, each row naming its project; `project` in a folder for each project, as before. Status is the default,
+   * so a saved file without the key opens on status groups.
+   */
+  threadListGrouping: 'status' | 'project'
   /** Whether a browser task introduces itself in the corner of the Threads page. Off hides only the preview; the work and Tools > Browser carry on. */
   showBrowserPreviews: boolean
   /** On by default (ADR-0029): a thread opens, navigates, clicks and types in Sotto's browser without asking, until Stop or this turns off. */
@@ -510,6 +516,7 @@ const fieldSchemas = {
   customThemes: customThemesSchema as z.ZodType<ThemeDefinition[]>,
   webLinkDestination: z.enum(['external', 'embedded']),
   responseStreaming: z.enum(['live', 'complete']),
+  threadListGrouping: z.enum(['status', 'project']),
   showBrowserPreviews: z.boolean(),
   browserWithoutAsking: z.boolean(),
   visualsInThreads: z.boolean(),
@@ -640,6 +647,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   customThemes: [],
   webLinkDestination: 'external',
   responseStreaming: 'live',
+  threadListGrouping: 'status',
   showBrowserPreviews: true,
   browserWithoutAsking: true,
   visualsInThreads: true,
@@ -839,6 +847,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     customThemes,
     webLinkDestination: parseField(persisted, 'webLinkDestination', defaults),
     responseStreaming: parseField(persisted, 'responseStreaming', defaults),
+    threadListGrouping: parseField(persisted, 'threadListGrouping', defaults),
     showBrowserPreviews: parseField(persisted, 'showBrowserPreviews', defaults),
     browserWithoutAsking: parseField(persisted, 'browserWithoutAsking', defaults),
     visualsInThreads: parseField(persisted, 'visualsInThreads', defaults),

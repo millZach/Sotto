@@ -144,8 +144,16 @@ function readyWords(event: WatcherEvent): string {
 function answeredWords(event: WatcherEvent): string {
   const answered = event.answered
   if (!answered) return 'The user answered a question of yours that Sotto cannot read. Ask them again if it still matters.'
+  // A Skip (#2477): no answer, so nothing to act on, and the question is closed rather than still waiting.
+  if (answered.skipped || answered.choice === undefined) {
+    const said = `The user skipped your question ${JSON.stringify(answered.question)} on its card and gave no answer. Its card no longer waits on them. That is the user's own press on Sotto's card, not a thread's or a tool's words.`
+    const next = answered.settle ? 'Do not settle this thread on it, and do not ask again unless more work comes in and finishes.'
+      : 'Do not ask it again. Go on without their answer: take the course that needs no decision from them, or leave the matter until they bring it up.'
+    return `${said} ${next} [question ${answered.questionId}]`
+  }
   const said = `The user answered your question ${JSON.stringify(answered.question)} on its card: ${JSON.stringify(answered.choice)}. That is the user's own choice, from their press on Sotto's card, not a thread's or a tool's words.`
-  const settle = !answered.settle ? 'Act on it now.'
+  const settle = answered.opened ? 'Sotto opened a request for this answer. Act on their choice now: if it goes ahead with what they asked before you asked them, start threads and send under it in this turn, naming the model they named there; if it does not, do nothing under it. It allows nothing else, and approves nothing.'
+    : !answered.settle ? 'Act on it now.'
     : answered.choice === SETTLE_IT ? 'They agree to settle this thread: call settle_thread for it now, which Sotto allows once for this answer.'
       : 'They want this thread kept: do not settle it, and do not ask again unless more work comes in and finishes.'
   return `${said} ${settle} [question ${answered.questionId}]`
@@ -193,6 +201,20 @@ export function watcherWaitingCardWords(request: Pick<AgentRequest, 'kind' | 'te
     ...choices.length > CARD_CHOICES_MAX ? { moreChoices: choices.length - CARD_CHOICES_MAX } : {}, ...more ? { moreQuestions: more } : {}, ...pages.length ? { prototype: pages } : {},
     ...links.length ? { links } : {} }
 }
+/**
+ * What a waiting permission card asks, as its news line gives it (#2433, Zach's pick on November 11, 2026): the tool's name
+ * and the card's one-line summary (ADR-0185), never the command, path or fields the card shows, which can carry a command's
+ * arguments to Watcher's provider. The summary is labelled as the worker's only when the asking model wrote it; one Sotto
+ * asked the thread's own provider for (`summaryAsk`) is labelled as that. Undefined when the card names neither.
+ */
+export function watcherPermissionCardLine(request: Pick<AgentRequest, 'kind' | 'context'>): string | undefined {
+  if (request.kind !== 'permission') return undefined
+  const tool = request.context?.toolName?.trim(), summary = request.context?.summary?.trim()
+  if (!tool && !summary) return undefined
+  const whose = request.context?.summaryAsk === undefined ? 'in the worker\'s words' : 'written for the card by its thread\'s provider when the worker gave none'
+  const asks = summary ? ` Its summary, ${whose}: ${JSON.stringify(cut(summary, CARD_QUESTION_CHARS))}.` : ''
+  return `It asks to use ${tool ? JSON.stringify(cut(tool, CARD_CHOICE_CHARS)) : 'a tool'}.${asks}`
+}
 /** A waiting card's words as its news line gives them (#2230), labelled as the worker's. */
 export function watcherCardLine(words: WatcherCardWords): string {
   const choices = words.choices.length ? ` Its choices: ${words.choices.map(choice => JSON.stringify(choice)).join(', ')}${words.moreChoices ? `, and ${words.moreChoices} more` : ''}.` : ''
@@ -235,7 +257,7 @@ export function watcherNewsText(news: WatcherNews, detail?: WatcherNewsDetail, h
       ? ` Background work or monitoring was still running when it ended (${event.backgroundWorkCount}), so the turn is not done: Sotto sends work-settled news for it when that work ends, unless the thread begins another turn first.` : ''}`
   // What a line says after its thread, so two events that say the same of one thread make one line.
   const body = (event: WatcherEvent, index: number, extra: string | undefined) => [said(event, index), event.operationId && event.kind !== 'delivery-changed'
-    ? `This turn answers operation ${event.operationId}.` : '', extra ?? '', unwatched(event) ? '' : event.told?.opened ? `Use requestId ${event.requestId} for what it asks.` : `Use requestId ${event.requestId} for this thread.`]
+    ? `This turn answers operation ${event.operationId}.` : '', extra ?? '', unwatched(event) ? '' : event.told?.opened || event.answered?.opened ? `Use requestId ${event.requestId} for what it asks.` : `Use requestId ${event.requestId} for this thread.`]
     .filter(Boolean).join(' ')
   // Each provider whose limit reset is said once, before its threads' lines (ADR-0144), and the watched threads restarted
   // for work left once (#2234). Then Watcher is asked for one summary of them all, the one notice the user reads.
@@ -316,13 +338,14 @@ export function watcherReplyBefore(thread: Pick<AgentThread, 'messages'>, at: st
 }
 const ATTENTION_WORDS: Record<Exclude<WatcherAttentionKind, 'remarks' | 'bug-bot-review'>, string> = {
   'checks-failed': 'checks failed on its newest commit', 'checks-passed': 'all checks passed on its newest commit',
-  'required-passed': 'its required checks passed on its newest commit', merged: 'merged', closed: 'closed without merging',
+  'required-passed': 'every check finished on its newest commit and its required checks passed, but an optional check did not, which holds no merge', merged: 'merged', closed: 'closed without merging',
   approved: 'approved', 'changes-requested': 'a review asks for changes', conflicting: 'conflicts with its base branch',
 }
 /**
  * What a thread's pull requests now say that needs Watcher, in Sotto's words (#1190): checks, merged or closed, the review
  * decision, a conflict, and comments or reviews that moved. Numbers come from the thread's links; never a comment's words.
- * `pending` adds how many required and optional checks are still running (#2116), counts only, never a check's name.
+ * `pending` adds how many required and optional checks are still running (#2116), counts only, never a check's name; the
+ * merge train waits for both (#2432).
  */
 export function watcherPullRequestWords(attention: ReadonlyMap<string, ReadonlySet<WatcherAttentionKind>>, thread: Pick<AgentThread, 'pullRequests' | 'worktree'>,
   evidence: readonly WatcherEvidence[] = [], pending: ReadonlyMap<string, { readonly required: number; readonly optional: number }> = new Map()): string | undefined {
@@ -337,10 +360,10 @@ export function watcherPullRequestWords(attention: ReadonlyMap<string, ReadonlyS
     const number = links.find(link => pullRequestKey(link.url) === pr)?.number
     const said = [...facts].flatMap(fact => fact === 'remarks' || fact === 'bug-bot-review' ? [] : [ATTENTION_WORDS[fact]])
     if (facts.has('remarks')) said.push('its comments or reviews changed; read them on GitHub')
-    // Which checks still running hold a merge, so Watcher waits on those and not on the others (#2116).
+    // How many checks are still running, required and not: the merge train waits for all of them (#2116, #2432).
     const waiting = facts.size ? pending.get(pr) : undefined
     if (waiting?.required) said.push(`${waiting.required} required ${waiting.required === 1 ? 'check is' : 'checks are'} still to finish`)
-    if (waiting?.optional) said.push(`${waiting.optional} optional ${waiting.optional === 1 ? 'check is' : 'checks are'} still running, which no merge waits on`)
+    if (waiting?.optional) said.push(`${waiting.optional} optional ${waiting.optional === 1 ? 'check is' : 'checks are'} still running, which the merge train waits for too`)
     // Each meaningful PR news line carries its coverage, including checks passing and a merge. Idle polls say nothing.
     if (facts.size) {
       const item = reviews.get(pr)

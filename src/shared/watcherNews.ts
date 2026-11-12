@@ -56,7 +56,8 @@ export const WATCHER_NEWS_TARGETS_MAX = 50
  * any of them is news again. It approves nothing.
  * `user-answered` comes once for each answer the user gave on a card of Watcher's own question (#2228, ADR-0073, amendment
  * of November 5, 2026): `answered` carries the question and the user's choice, which are theirs, under the thread a settle
- * question names, or Watcher's own thread. It is saved with the told words, since nothing else holds the choice for Watcher.
+ * question names, or Watcher's own thread; or `skipped` and no choice, when the user pressed Skip and gave no answer
+ * (#2477). It is saved with the told words, since nothing else holds the choice for Watcher.
  */
 export const watcherEventSchema = z.object({
   id: z.string().max(512), kind: z.enum(['turn-finished', 'needs-user', 'turn-failed', 'quiet', 'taken-over', 'delivery-changed', 'evidence-changed', 'work-settled',
@@ -78,8 +79,9 @@ export const watcherEventSchema = z.object({
   told: z.object({ words: z.string().min(1).max(TELL_WATCHER_WORDS_BYTES_MAX), userWords: z.string().min(1).max(TELL_WATCHER_WORDS_BYTES_MAX).optional(),
     userWordsCut: z.literal(true).optional(), opened: z.boolean() }).strict().optional(),
   ready: readyToMergeSchema.optional(),
-  answered: z.object({ questionId: z.uuid(), question: z.string().min(1).max(WATCHER_QUESTION_WORDS_MAX), choice: z.string().min(1).max(WATCHER_QUESTION_LABEL_MAX),
-    settle: z.literal(true).optional() }).strict().optional(),
+  answered: z.object({ questionId: z.uuid(), question: z.string().min(1).max(WATCHER_QUESTION_WORDS_MAX), choice: z.string().min(1).max(WATCHER_QUESTION_LABEL_MAX).optional(),
+    skipped: z.literal(true).optional(), settle: z.literal(true).optional(), opened: z.literal(true).optional() }).strict()
+    .refine(answered => (answered.choice === undefined) === (answered.skipped === true), 'An answer names a choice or says it was skipped.').optional(),
 }).strict()
 /** The request a `threads-restarted` event names for a thread no request watches: the nil UUID, which no request has. */
 export const WATCHER_UNWATCHED_REQUEST_ID = '00000000-0000-0000-0000-000000000000'

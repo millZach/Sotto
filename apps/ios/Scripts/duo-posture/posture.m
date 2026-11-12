@@ -14,6 +14,7 @@ int main(int argc, char **argv) { @autoreleasepool {
   Swap s; memset(&s, 0, sizeof s);
   s.a = 0; memcpy(&s.b, &w[0], 8); s.c = w[1]; s.d = w[2]; s.e = (BOOL)w[3]; s.f = w[4]; memcpy(&s.g, &w[5], 8);
   if (getenv("KIND")) s.a = atoll(getenv("KIND"));
+  if (getenv("ORIENT")) s.c = atoll(getenv("ORIENT")); // 3 turns the open inner screen upright; arguments for it crash the parser
   printf("err=%s\nkind=%lld dur=%f orient=%lld profile=%lld wait=%d mode=%lld pos=%f %f\n", err ? err.description.UTF8String : "nil", s.a, s.b, s.c, s.d, s.e, s.f, s.g, s.h);
   if (err || getenv("DRY")) return 0;
   id service = [[NSClassFromString(@"SBSDisplayToolService") alloc] init];

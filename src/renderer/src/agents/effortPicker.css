@@ -107,3 +107,5 @@
   animation: none !important;
   transition: none !important;
 }
+.effort-card[data-effort-default='true'] .effort-card__track,
+.effort-card[data-effort-default='true'] .effort-card__ends { display: none; }

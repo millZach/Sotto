@@ -1,14 +1,16 @@
 import type { AgentHostCommand } from './host'
 import type { AgentRequest } from '../../shared/agents'
+import { PLUGINS_MCP_SERVER } from '../../shared/plugins'
 import type { ScopedThreadTools } from './threadToolServer'
 
 /**
- * Watcher's scoped tools are its pull request babysitting alone. The browser's standing grant and host setup stay
- * outside them, and so does drawing a visual: Watcher's room is its conversation, with no picture to draw in (Zach,
- * October 27, 2026).
+ * Watcher's scoped tools are its pull request babysitting and the plugin tools, which only read (ADR-0205, Zach's
+ * answer of November 11, 2026: Watcher reads from a plugin and never changes anything through one). The browser's
+ * standing grant and host setup stay outside them, and so does drawing a visual: Watcher's room is its conversation,
+ * with no picture to draw in (Zach, October 27, 2026).
  */
 export function watcherThreadTools(tools: readonly ScopedThreadTools[]): readonly ScopedThreadTools[] {
-  return tools.filter(tool => tool.name === 'sotto_pull_requests')
+  return tools.filter(tool => tool.name === 'sotto_pull_requests' || tool.name === PLUGINS_MCP_SERVER)
 }
 
 /** The user's runtime mode is separate from a native remembered permission grant. */

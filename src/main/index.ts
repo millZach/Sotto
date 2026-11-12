@@ -1,6 +1,7 @@
+import { ModelCatalogue } from './ownModelServers/catalogue'
 import { createDictationTiming } from './performance/dictationTiming'
 import { DICTATION_TIMING_ARGUMENT, dictationTimingNow, markDictationTiming } from '../shared/dictationTiming'
-import { mediaThumbnailMaker } from './agents/mediaThumbnail'
+import { KeptThumbnails, mediaEdgeMaker, mediaThumbnailMaker, ReducedPictures } from './agents/mediaThumbnail'
 import { agentCaptures, ThreadMediaStore } from './agents/threadMedia'
 import { t } from '@lingui/core/macro'
 import { cleanSettingsHistory } from './settings/privacyCleanup'
@@ -59,11 +60,21 @@ import { coordinatorSetupThreads } from './hosts/hostSetupThreads'
 import type { DesktopLocalRuntime } from './hosts/localRuntime'
 import { inactiveLocalHost, emptyDesktopState, requireLocalHistoryCleanup } from './hosts/inactiveLocalHost'
 import { registerHostsIpc } from './hosts/ipc'
-import { PhoneAccess, type PhoneAccessEvent } from './phones/phoneAccess'
+import { PhoneAccess, phonesCompressed, type PhoneAccessEvent } from './phones/phoneAccess'
 import { LocalApps, type LocalAppsEvent } from './phones/localApps'
 import { TailscaleCli, tailscaleInvoker } from './phones/tailscale'
 import { HostTailscale } from './hosts/tailscale'
 import { registerLocalAppsIpc, registerPhonesIpc } from './phones/ipc'
+import { registerPluginsIpc } from './plugins/ipc'
+import { readGitHubSignIn, sharedGitHubSignIn } from './plugins/github/signIn'
+import { readGitHub } from './plugins/github/read'
+import { PluginToolServer } from './plugins/pluginTools'
+import { PluginAccounts, PluginSecretLocked } from './plugins/accounts'
+import { checkVercelToken, readVercel, type VercelFetch } from './plugins/vercel/read'
+import { PluginUseRecord } from './plugins/useRecord'
+import { PLUGIN_USE_THREAD_TITLE_MAX } from '../shared/plugins'
+import { resetGhLookup } from './agents/git/ghCommand'
+import { GitUnavailableError, runGitStatusCommand, runWithGhStandIn, type RunGitCommand } from './agents/git/gitStatus'
 import { registerTeamsIpc } from './teams/ipc'
 import { TeamService, type TeamEvent } from './teams/teams'
 import { TEAMS_CHANGED } from '../shared/teams'
@@ -124,7 +135,7 @@ import { execFile, spawn } from 'node:child_process'
 import { appendFile, readFile, realpath, rename, stat, writeFile } from 'node:fs/promises'
 import { homedir, hostname as osHostname, release as osRelease } from 'node:os'
 import { isAbsolute, join } from 'node:path'
-import { forgetHermesKey } from './agents/hermesRuntime'
+import { HermesKeys, forgetHermesKey } from './agents/hermesRuntime'
 
 import {
   bootstrapSotto,
@@ -265,7 +276,7 @@ import {
   isTrustedMainE2ESender,
   snapshotE2EState,
 } from './e2e/e2eBoundary'
-import { E2E_SNAPSHOT_CHANNEL, E2E_TRIGGER_SHORTCUT_CHANNEL, E2E_BROWSER_AGENT_CHANNEL, E2E_HOST_SETUP_TOOL_CHANNEL, E2E_VISUAL_TOOL_CHANNEL, E2E_MEDIA_TOOL_CHANNEL, E2E_DELEGATION_TOOL_CHANNEL, e2eBrowserAgentSchema, e2eHostSetupToolSchema, e2eVisualToolSchema, e2eDelegationToolSchema, e2eAgentEventSchema } from '../shared/e2e'
+import { E2E_COMPUTER_NAME, E2E_SNAPSHOT_CHANNEL, E2E_TRIGGER_SHORTCUT_CHANNEL, E2E_BROWSER_AGENT_CHANNEL, E2E_HOST_SETUP_TOOL_CHANNEL, E2E_VISUAL_TOOL_CHANNEL, E2E_MEDIA_TOOL_CHANNEL, E2E_DELEGATION_TOOL_CHANNEL, e2eBrowserAgentSchema, e2eHostSetupToolSchema, e2eVisualToolSchema, e2eDelegationToolSchema, e2eAgentEventSchema } from '../shared/e2e'
 import { AGENT_STATE, AGENT_E2E, AGENT_THREAD_DETAIL } from '../shared/agents'
 import { AgentCredentials } from './agents/credentials'
 import { migrateDesktopKey } from './settings/migrateDesktopKey'
@@ -296,6 +307,10 @@ import { INTERFACE_LANGUAGE_SHOWN } from '../shared/interfaceLanguages'
 import { interfaceClockTime } from './interfaceClock'
 import { USAGE_RENDERER_ARGUMENT } from '../shared/usageDashboard'
 import { OPENCODE_HOSTS_RENDERER_ARGUMENT, OPENCODE_RENDERER_ARGUMENT } from '../shared/opencodeSignIn'
+import { PI_RENDERER_ARGUMENT } from '../shared/piSignIn'
+import { registerPiSignInIpc } from './agents/piSignInIpc'
+import { PiSignIn } from './agents/piSignIn'
+import { PiHost } from './agents/pi'
 import { registerOpenCodeSignInIpc } from './agents/opencodeSignInIpc'
 import { registerCursorSignInIpc } from './agents/cursorSignInIpc'
 import { registerLocalProviderSignInIpc } from './agents/localProviderSignInIpc'
@@ -372,6 +387,10 @@ if (e2eConfiguration === null) {
   app.setPath('userData', e2eConfiguration.userDataPath)
   failE2EOnUncaughtException(process, text => process.stderr.write(text), code => app.exit(code))
 }
+// Whether the phone listener compresses for phones (ADR-0025, November 10 amendment): read once, before any provider
+// starts, so no process Sotto starts inherits `SOTTO_HOST_COMPRESS_PHONES=0`, as a headless host reads it (#2394).
+const phoneCompression = phonesCompressed(process.env)
+delete process.env.SOTTO_HOST_COMPRESS_PHONES
 
 // The only read of process.platform in the application; every platform-varying
 // decision resolves through this profile.
@@ -817,6 +836,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const councilEnabled = owlFeatures.council
   // Let apps on this computer connect (ADR-0180): stable builds no listener and registers no bridge.
   const localAppsEnabled = owlFeatures['local-apps']
+  // Plugins (ADR-0205): stable registers no channel, so Settings shows no page and nothing asks gh.
+  const pluginsEnabled = owlFeatures.plugins
   const workerRolesEnabled = owlFeatures['worker-roles']
   // The interface language (ADR-0123) also waits on its catalogs (#1684): until they are drafted Owl is English, as stable is.
   const interfaceLanguageEnabled = owlFeatures['interface-language'] && INTERFACE_LANGUAGE_SHOWN
@@ -894,12 +915,17 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const applyInterfaceLanguage = (current: AppSettings): Promise<boolean> =>
     interfaceLanguage.apply(current).catch(() => { logOperational('interface-language-load-failed'); return false })
   await applyInterfaceLanguage(startupSettings)
-  // The user's own model servers (ADR-0124): an Owl feature run by this computer's OpenCode and DeepSeek Harness
-  // (ADR-0138), so it exists only while the Owl list turns it on, one of them is not held and the local host runs.
-  // Otherwise main keeps the record untouched, gives neither a server, passes no renderer argument and registers no channel.
-  const ownServers: OwnServers | undefined = owlFeatures['own-model-servers'] && (!heldProviders.has('opencode') || !heldProviders.has('deepseek') || !heldProviders.has('hermes')) && startupSettings.localHostEnabled
-    ? new OwnServers({ directory: userDataPath, openCode: (): OwnServersOpenCode | undefined => localRuntime?.ownServersOpenCode,
+  // The user's own model servers (ADR-0124): an Owl feature used by this computer's OpenCode, DeepSeek, Hermes or Pi,
+  // so it exists only while the Owl list turns it on, one provider is not held and the local host runs.
+  // Otherwise main keeps the record untouched, gives no provider a server, passes no renderer argument and registers no channel.
+  const ownServers: OwnServers | undefined = owlFeatures['own-model-servers'] && (!heldProviders.has('opencode') || !heldProviders.has('deepseek') || !heldProviders.has('hermes') || !heldProviders.has('pi')) && startupSettings.localHostEnabled
+    ? new OwnServers({ directory: userDataPath, ...(e2eConfiguration ? { catalogue: new ModelCatalogue(async () => { throw new Error('E2E_NETWORK_DISABLED') }) } : {}), openCode: (): OwnServersOpenCode | undefined => localRuntime?.ownServersOpenCode,
       deepSeek: (): OwnServersDeepSeek | undefined => localRuntime?.ownServersDeepSeek, hermes: (): OwnServersHermes | undefined => localRuntime?.ownServersHermes,
+      readKey: async id => (await new HermesKeys(join(userDataPath, 'hermes', 'own-server-keys.json')).read())[id],
+      replaceHeldHermesKey: async (id, key) => {
+        const keys = new HermesKeys(join(userDataPath, 'hermes', 'own-server-keys.json'))
+        if ((await keys.read())[id] !== undefined) await keys.keep(id, key)
+      },
       forgetHermesKey: id => forgetHermesKey(join(userDataPath, 'hermes'), id), log: event => { logOperational(event) } }) : undefined
   // AI cleanup on the user's own servers (ADR-0136): its own Owl entry, and only where both the cleanup model and Your own
   // model servers exist this run. Otherwise the cleanup pass is given no server, no channel is registered, and the saved
@@ -992,6 +1018,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         ...(popupEnabled ? [POPUP_RENDERER_ARGUMENT] : []),
         ...(watcherEnabled && crossMachineEnabled ? [WATCHER_MACHINES_RENDERER_ARGUMENT] : []),
         ...(!heldProviders.has('opencode') && startupSettings.localHostEnabled ? [OPENCODE_RENDERER_ARGUMENT] : []),
+        ...(!heldProviders.has('pi') && startupSettings.localHostEnabled ? [PI_RENDERER_ARGUMENT] : []),
         ...(!heldProviders.has('opencode') ? [OPENCODE_HOSTS_RENDERER_ARGUMENT] : []),
         ...(!heldProviders.has('cursor') && startupSettings.localHostEnabled ? [CURSOR_RENDERER_ARGUMENT] : []),
         ...(ownServers ? [OWN_SERVERS_RENDERER_ARGUMENT] : []),
@@ -1095,6 +1122,9 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   // What the end-to-end fixture providers capture on their own: what the runtime gives its own (ADR-0170, part 7).
   const showEveryAgentPicture = (): boolean => workingCopySettings.showEveryAgentPicture
   const fixtureCaptures = threadMedia ? agentCaptures(threadMedia, showEveryAgentPicture) : {}
+  // The thumbnails main makes, for the window's tiles and for the copies a phone asks for at a longest edge
+  // (`thread-media-edge`, ADR-0170): one budget in bytes for both.
+  const keptThumbnails = new KeptThumbnails()
   // Teams (ADR-0186): an Owl feature on a desktop with a Watcher. An ask reaches only these reads and one side call with no
   // tools, and nothing here can send to a thread, answer a card or change a permission (ADR-0187).
   let teamReads: { readonly watcher: import('./agents/watcher').WatcherService | undefined; readonly host: { writeShortTextOn?: import('./agents/host').AgentHost['writeShortTextOn'] } } | undefined
@@ -1119,7 +1149,10 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     attachAnyFile: owlFeatures['attach-any-file'], markdownSidePanel: owlFeatures['markdown-side-panel'],
     answerImages: owlFeatures['answer-images'], nextTurnChoice: owlFeatures['next-turn-choice'],
     inlineMedia: owlFeatures['inline-media'], showEveryAgentPicture,
+    // The runs threads detach (#2476). A desktop journey reads no processes unless it starts a run of its own to find.
+    detachedRuns: e2eConfiguration === null || process.env.SOTTO_E2E_DETACHED_RUNS === '1',
     ...threadMedia ? { threadMedia } : {},
+    reducedPictures: new ReducedPictures(mediaEdgeMaker(url => nativeImage.createFromDataURL(url)), keptThumbnails),
     // Clearing settled threads (ADR-0140): Owl's answer, read once here. The log names the event and a count or a reason's code.
     clearThreadsEnabled: owlFeatures['clear-threads'], clearLog: (event, detail) => { console.error(`[Sotto] ${event} ${detail}`) },
     ...(ownServers ? { ownServers: () => ownServers.list() } : {}),
@@ -1131,6 +1164,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     babysitting: babysittingRetired ? { retired: true } : { agentTool: () => workingCopySettings.babysitPullRequests },
     // An end-to-end run starts no real client's sign-in: this computer's own sign-ins find no client there (ADR-0200).
     ...(e2eConfiguration !== null ? { signInCommand: async () => undefined } : {}),
+    createPiHost: (directory, options) => new PiHost(directory, options),
+    createPiSignIn: (host, options) => new PiSignIn(host.accounts, options),
     // A journey's Cursor sign-in page is written down for the spec to read, never opened in a browser.
     openExternal: url => cursorFixtureRoot ? appendFile(join(cursorFixtureRoot, 'opened-pages.txt'), `${url}
 `, 'utf8') : shell.openExternal(url),
@@ -1210,7 +1245,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     ...cascadedSettles ? { cascadedSettles } : {},
     attachAnyFile: owlFeatures['attach-any-file'],
     // Pictures in threads (ADR-0170): their tile thumbnails are made here, on this desktop, for every host's threads.
-    ...owlFeatures['inline-media'] ? { mediaThumbnail: mediaThumbnailMaker(url => nativeImage.createFromDataURL(url)) } : {},
+    ...owlFeatures['inline-media'] ? { mediaThumbnail: mediaThumbnailMaker(url => nativeImage.createFromDataURL(url)), mediaTiles: keptThumbnails } : {},
     bindRequestDraftDecision: (target, decisionId, answers) => requestDrafts.bindDecision(target, decisionId, answers),
     // A paired host's deleted thread takes the answer drafts this computer kept for it (ADR-0140).
     threadsDeleted: threadIds => { void requestDrafts.forgetThreads(new Set(threadIds)).catch(() => undefined) },
@@ -1322,6 +1357,37 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   // stable offers no server.
   const mediaTools = owlFeatures['inline-media'] ? new MediaToolServer({ admits: threadId => agentHost.admitsShownMedia(threadId), show: (threadId, input) => agentHost.showMedia(threadId, input) }) : undefined
   if (mediaTools) quitHandles.mediaTools = mediaTools
+  // Plugins (ADR-0205): GitHub's account is gh's own sign-in, so the tools and Settings ask gh and store nothing. An
+  // end-to-end run asks its gh stand-in or nothing, never the real gh, which checks its sign-in over the network.
+  const pluginsGh: RunGitCommand = ghStandIn ? runWithGhStandIn(ghStandIn) : e2eConfiguration ? async () => { throw new GitUnavailableError('gh is not installed') } : runGitStatusCommand
+  const pluginsStop = new AbortController()
+  // Each read looks for gh afresh, so one installed since the last read is found by Check again where the system lets
+  // a running program see it, and reads asked for while one runs share it rather than starting gh again.
+  const pluginsGitHubSignIn = sharedGitHubSignIn(() => { resetGhLookup(); return readGitHubSignIn(pluginsGh, pluginsStop.signal) })
+  // What each plugin tool call did, by which thread, and never its content; it follows Keep local history.
+  const pluginUse = pluginsEnabled ? new PluginUseRecord(userDataPath, { historyEnabled: () => agentHistoryEnabled }) : undefined
+  // Vercel (ADR-0205): an account's token goes to api.vercel.com and nowhere else. An end-to-end run reaches the
+  // stand-in its test names, or nothing; a packaged build never reads that name.
+  const vercelBase = e2eConfiguration !== null && !app.isPackaged ? process.env['SOTTO_E2E_VERCEL_API_URL'] : undefined
+  const vercelFetch: VercelFetch = e2eConfiguration !== null && !vercelBase ? async () => { throw new Error('E2E_NETWORK_DISABLED') } : (url, init) => fetch(url, init)
+  const vercelOptions = { ...(vercelBase ? { base: vercelBase } : {}), signal: pluginsStop.signal }
+  // Plugin accounts: a name, a plugin and a secret in the credential store, checked with its service before it is kept.
+  const pluginAccounts = pluginsEnabled ? new PluginAccounts(userDataPath, { credentials, check: (_plugin, secret) => checkVercelToken(vercelFetch, secret, vercelOptions) }) : undefined
+  // The plugin tools, for every thread that takes Sotto's tools: stable builds no server.
+  const pluginTools = pluginUse && pluginAccounts ? new PluginToolServer({
+    admits: threadId => agentHost.admitsPluginTools(threadId), gitHubSignIn: pluginsGitHubSignIn,
+    readGitHub: (path, query) => readGitHub(pluginsGh, path, query, pluginsStop.signal), record: use => pluginUse.add(use),
+    accounts: () => pluginAccounts.list(), findAccount: (plugin, name) => pluginAccounts.find(plugin, name),
+    readVercel: async (accountId, path, query) => {
+      let secret: string
+      try { secret = pluginAccounts.secret(accountId) } catch (error) {
+        if (error instanceof PluginSecretLocked) return { ok: false, reason: 'locked' }
+        throw error
+      }
+      return readVercel(vercelFetch, secret, path, query, vercelOptions)
+    },
+  }) : undefined
+  if (pluginTools) quitHandles.pluginTools = pluginTools
   // Let an agent babysit its pull requests (ADR-0061): every Claude Code, Codex and Grok Build launch on this computer gets
   // the tool while the switch is on, read live; turned off, what agents started ends at once. Only the local host reads
   // GitHub for this computer's threads, so with it off no thread is offered the tool. Off at start, the runtime has
@@ -1373,7 +1439,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     read: (threadId, council) => councilService.readForThread(threadId, council),
   }) : undefined
   if (councilTools) quitHandles.councilTools = councilTools
-  agentHost.useThreadTools([hostSetupTools, visualTools, ...(mediaTools ? [mediaTools] : []), ...(pullRequestTools ? [pullRequestTools] : []), ...(delegationTools ? [delegationTools] : []), ...(tellTools ? [tellTools] : []),
+  agentHost.useThreadTools([hostSetupTools, visualTools, ...(mediaTools ? [mediaTools] : []), ...(pluginTools ? [pluginTools] : []), ...(pullRequestTools ? [pullRequestTools] : []), ...(delegationTools ? [delegationTools] : []), ...(tellTools ? [tellTools] : []),
     ...(councilTools ? [councilTools] : [])])
   // An interactive visual runs in a sealed page (ADR-0060): main serves it from this store, once per address. The session
   // and its proxy are set up the first time a page is asked for.
@@ -1443,9 +1509,11 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     acquireStart: workspace => agentHost.acquireTerminalStart(workspace.workingDirectory),
     runCommandEnabled: owlFeatures['run-command'],
     emit: event => { windows.sendToMain(TERMINAL_EVENT, event) } })
-  const phoneAccess = new PhoneAccess({ featureUsed: feature => productEvents.featureUsed(feature), directory: userDataPath, listener: { sottoVersion: hostVersion, delegation: delegationEnabled },
+  const phoneAccess = new PhoneAccess({ featureUsed: feature => productEvents.featureUsed(feature), directory: userDataPath, listener: { sottoVersion: hostVersion, delegation: delegationEnabled, ...(phoneCompression ? {} : { compressPhones: false }) },
     service: startupSettings.localHostEnabled ? hostService : undefined,
     tailscale: e2eConfiguration === null ? new TailscaleCli() : e2eTailscale(userDataPath),
+    // An E2E run names no real machine, so a capture or a check reads the same on every computer.
+    ...(e2eConfiguration === null ? {} : { hostname: () => E2E_COMPUTER_NAME }),
     settings: () => workingCopySettings, policy: authority,
     openExternal: async url => { if (e2eConfiguration === null) await shell.openExternal(url) },
     log: logOperational,
@@ -1472,6 +1540,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   // This computer's deleted threads take their answer drafts too, under either name the window gave them (ADR-0140).
   localRuntime?.agentControl.onThreadsDeleted(threadIds => {
     const hostId = agentControl.hostId()
+    // A forgotten thread takes its entries in the plugin use record with it (ADR-0205).
+    void pluginUse?.forgetThreads(threadIds).catch(() => undefined)
     void requestDrafts.forgetThreads(new Set(threadIds.flatMap(id => [id, hostEntityKey(hostId, id)]))).catch(() => undefined)
     // And what their Settles did to delegated threads elsewhere, whether the window, Clear now, the hourly clear or a phone
     // deleted them (#1316 part 3).
@@ -1503,17 +1573,21 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const cleanRetiredHistory = async (): Promise<void> => {
     teams?.privacyChanged()
     delegationService?.privacyChanged()
-    const [chats, answers, remoteDrafts] = await Promise.allSettled([
+    const [chats, answers, remoteDrafts, pluginUses] = await Promise.allSettled([
       Promise.resolve().then(() => retiredChatHistory.privacyChanged()),
       Promise.resolve().then(() => requestDrafts.privacyChanged(agentHistoryEnabled)),
       Promise.resolve().then(() => retainedDrafts.privacyChanged()),
+      // With Keep local history off, the plugin use record keeps nothing (ADR-0205).
+      Promise.resolve().then(() => agentHistoryEnabled ? undefined : pluginUse?.clear()),
     ])
     if (chats.status === 'rejected') recoveryNotices.publish({ code: 'RETIRED_CHAT_HISTORY_NOT_CLEARED' })
     if (answers.status === 'rejected') recoveryNotices.publish({ code: 'ANSWER_HISTORY_NOT_CLEARED' })
     if (remoteDrafts.status === 'rejected') recoveryNotices.publish({ code: 'REMOTE_DRAFT_STORAGE_NOT_UPDATED' })
+    if (pluginUses.status === 'rejected') recoveryNotices.publish({ code: 'PLUGIN_USE_NOT_CLEARED' })
     if (chats.status === 'rejected') throw chats.reason
     if (answers.status === 'rejected') throw answers.reason
     if (remoteDrafts.status === 'rejected') throw remoteDrafts.reason
+    if (pluginUses.status === 'rejected') throw pluginUses.reason
   }
   // Retired records never start a provider. Apply the saved privacy preference once,
   // and keep startup available when inaccessible storage needs a later Settings retry.
@@ -2477,6 +2551,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         async path => { const error = await shell.openPath(path); if (error) throw new Error('Sotto could not open that folder.') })
       const unsubscribeMainCheckout = localRuntime.mainCheckout?.subscribe(state => { windows.sendToMain(MAIN_CHECKOUT_CHANGED, state) })
       // OpenCode's sign-in (#1104): only while its Owl feature is on, so stable registers nothing.
+      const cleanupPiSignIn = registerPiSignInIpc(ipcMain, heldProviders.has('pi') ? undefined : localRuntime.piSignIn, () => windows.getTrustedRenderers())
       const cleanupOpenCodeSignIn = registerOpenCodeSignInIpc(ipcMain, heldProviders.has('opencode') ? undefined : localRuntime.opencodeSignIn, () => windows.getTrustedRenderers())
       // Signing Codex, Claude Code or Grok Build in from its row in Settings › Providers (ADR-0200).
       const cleanupProviderSignIn = registerLocalProviderSignInIpc(ipcMain, localRuntime.providerSignIn, () => windows.getTrustedRenderers())
@@ -2597,6 +2672,27 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       const cleanupPhones = registerPhonesIpc(ipcMain, phoneAccess, () => windows.getTrustedRenderers(), state => windows.sendToMain(PHONES_CHANGED, state))
       const cleanupTeams = teams ? registerTeamsIpc(ipcMain, teams, () => windows.getTrustedRenderers(), state => windows.sendToMain(TEAMS_CHANGED, state)) : undefined
       const cleanupLocalApps = localApps ? registerLocalAppsIpc(ipcMain, localApps, () => windows.getTrustedRenderers(), state => windows.sendToMain(LOCAL_APPS_CHANGED, state)) : undefined
+      // Settings › Plugins (ADR-0205): gh's sign-in, read when the page asks, and the newest uses with each thread's name
+      // as it is now. A thread that is gone has none.
+      const cleanupPlugins = pluginsEnabled ? registerPluginsIpc(ipcMain, {
+        gitHubSignIn: pluginsGitHubSignIn,
+        accounts: async () => await pluginAccounts?.list() ?? [],
+        addAccount: async request => await pluginAccounts?.add(request) ?? { ok: false, problem: 'store' },
+        replaceSecret: async request => await pluginAccounts?.replace(request) ?? { ok: false, problem: 'store' },
+        // A removed account takes its entries in the use record with it.
+        removeAccount: async request => {
+          const result = await pluginAccounts?.remove(request) ?? { ok: false as const, problem: 'store' as const }
+          if (result.ok) void pluginUse?.forgetAccount(request.id).catch(() => undefined)
+          return result
+        },
+        recentUse: async () => {
+          const uses = await pluginUse?.list() ?? []
+          if (uses.length === 0) return []
+          // Read where the state is, without the copy `get()` makes of every thread's history.
+          const titles = new Map(localRuntime?.agentControl.watcherSnapshot().threads.map(thread => [thread.id, thread.title]))
+          return uses.map(use => ({ ...use, threadTitle: titles.get(use.threadId)?.slice(0, PLUGIN_USE_THREAD_TITLE_MAX) ?? null }))
+        },
+      }, () => windows.getTrustedRenderers()) : undefined
       // The window plays a video an agent wrote from its thread's computer, a part at a time (ADR-0170, part 4).
       if (owlFeatures['inline-media']) session.defaultSession.protocol.handle(THREAD_MEDIA_SCHEME, request => threadVideoResponse(request, part => hostRouter.threadMediaPart(part)))
       const cleanupAgents = registerAgentIpc(ipcMain, hostRouter, hostRouter, () => trustedRenderers(), { encodeReceipt: agentStateBroadcaster.encodeReceipt, encodeChangedThreadRecordsReceipt: agentStateBroadcaster.encodeChangedThreadRecordsReceipt, windowRead: agentStateBroadcaster.windowRead,
@@ -2748,6 +2844,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         cleanupPhones()
         cleanupTeams?.()
         cleanupLocalApps?.()
+        pluginsStop.abort()
+        cleanupPlugins?.()
         checkpointIntegration.dispose()
         cleanupRequestDrafts()
         cleanupFiles()
@@ -2768,7 +2866,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         unsubscribeMainCheckout?.()
         cleanupNotifications()
         cleanupPopup()
-        cleanupOpenCodeSignIn()
+        cleanupPiSignIn(); cleanupOpenCodeSignIn()
         cleanupCursorSignIn()
         cleanupProviderSignIn()
         cleanupOwnServers()

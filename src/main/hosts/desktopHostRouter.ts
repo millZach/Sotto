@@ -436,6 +436,8 @@ export class DesktopHostRouter {
      * null when it cannot read it. Present only while `inline-media` is on; without it no picture is read.
      */
     mediaThumbnail?: (dataUrl: string, scale: number) => string | null
+    /** Where those thumbnails are kept: shared with the copies made for phones, so all of them keep to one budget in bytes. */
+    mediaTiles?: KeptThumbnails
     /**
      * This desktop's Owl answer for Restart stopped threads (ADR-0144), read once at start: with it, the window offers
      * Babysit pull request on no host's threads, and refuses a press that reaches it anyway.
@@ -1303,7 +1305,9 @@ export class DesktopHostRouter {
     return connection.preview({ ...request, threadId: id! })
   }
   /** The thumbnails made for this window, so a tile scrolled back into view is neither read nor decoded again (ADR-0170). */
-  private readonly mediaTiles = new KeptThumbnails()
+  private readonly ownMediaTiles = new KeptThumbnails()
+  /** Where they are kept: beside the copies main makes for phones, when main shares that budget, else apart. */
+  private get mediaTiles(): KeptThumbnails { return this.options.mediaTiles ?? this.ownMediaTiles }
   /**
    * One picture a thread's record names (ADR-0170), from the host that runs the thread: whole for the viewer, or at tile
    * size for a tile. The thumbnail is made here, so the window never decodes a whole picture to draw a tile, and a headless

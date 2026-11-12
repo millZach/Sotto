@@ -1329,7 +1329,7 @@ export class AgentControl {
         this.publish()
       })
     }, 30_000)
-    // A client published while Sotto stays open is noticed within five minutes, on this computer and on every host,
+    // A client published while Sotto stays open is noticed within the hour, on this computer and on every host,
     // each running its own (ADR-0042). It never holds Sotto open.
     this.clientUpdates.startChecking()
     this.titles.startRefreshing()
@@ -3419,6 +3419,17 @@ export class AgentControl {
     const activities = thread && stored.activities?.(threadId, thread.historyEpoch)
     return thread && activities ? failedTurnReason({ activities: activities as AgentThread['activities'], lastTurn: thread.lastTurn }) : undefined
   }
+  private async stopDetachedRun(command: Extract<AgentCommand, { type: 'stop-detached-run' }>): Promise<AgentState> {
+    try {
+      this.thread(command.threadId)
+      const host = this.dependencies.host
+      if (!host.stopDetachedRun) throw new Error('This computer does not stop detached runs. Nothing was stopped. Update Sotto there and try again.')
+      await host.stopDetachedRun(command.threadId, command.runId)
+      this.state.error = null
+    } catch (error) { this.setCommandError(error, error instanceof Error ? error.message : 'The detached run could not be stopped.') }
+    this.publish()
+    return this.reply()
+  }
   private cancelRestart(command: Extract<AgentCommand, { type: 'cancel-restart' }>): AgentState {
     try {
       this.thread(command.threadId)
@@ -3832,6 +3843,8 @@ export class AgentControl {
     if (command.type === 'babysit-pull-request' || command.type === 'stop-babysitting') return this.babysitCommand(command)
     // Don't restart changes Sotto's own record of the thread alone, so it waits on no turn and no lane (ADR-0144).
     if (command.type === 'cancel-restart') return Promise.resolve(this.cancelRestart(command))
+    // A detached run is outside every provider, so stopping one waits on no turn and no lane (#2476).
+    if (command.type === 'stop-detached-run') return this.stopDetachedRun(command)
     // Renaming edits Sotto's own record of the thread, so it never waits on a running turn or any provider action.
     if (command.type === 'rename-thread') return this.renameThread(command)
     // Naming a thread is Sotto's own record too: the thread's provider is asked on the side, never inside the thread.

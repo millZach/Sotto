@@ -80,8 +80,6 @@ for (const scenario of cases) {
     const rendererSession = await page.context().newCDPSession(page)
     await rendererSession.send('Emulation.clearDeviceMetricsOverride')
     await page.getByRole('link', { name: 'Settings', exact: true }).waitFor()
-    const tour = page.getByRole('button', { name: 'Skip tour', exact: true })
-    if (await tour.isVisible()) await tour.click()
     await page.getByRole('link', { name: 'Settings', exact: true }).click()
     await page.getByRole('tab', { name: 'Application', exact: true }).click()
     const toggle = page.getByRole('switch', { name: 'Launch when you sign in', exact: true })

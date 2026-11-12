@@ -24,7 +24,7 @@ import { ProviderSignIns, type ProviderSignInOptions } from './providerSignIn'
 import { startHostPhoneAccess, type HostPhoneAccess } from './phones'
 import { DesktopClients } from './desktopClients'
 import { CommandReceipts } from './commandReceipts'
-import type { PhoneAccessTailscale } from '../main/phones/phoneAccess'
+import { phonesCompressed, type PhoneAccessTailscale } from '../main/phones/phoneAccess'
 import { version as packageVersion } from '../../package.json'
 import { getReleaseTrack } from '../shared/releaseTrack'
 import { owlFeaturesForTrack, type OwlFeatureStates } from '../shared/owlFeatures'
@@ -44,6 +44,8 @@ import { hostBrowserTools, type HostBrowserTools } from './browser/hostBrowserTo
 import type { ScopedThreadTools } from '../main/agents/threadToolServer'
 import { tellWatcherTools } from '../main/agents/tellWatcherTools'
 import { HostTellWatcherRelay } from '../main/agents/tellWatcherRelay'
+import { KeptThumbnails, ReducedPictures } from '../main/agents/mediaThumbnail'
+import { PictureMaker } from './pictureMaker'
 
 /** True in a host packaged for release (`scripts/package-host.mjs`), which alone has the product events endpoint (ADR-0179). */
 declare const __SOTTO_RELEASED_HOST__: boolean | undefined
@@ -84,6 +86,16 @@ export interface HeadlessHostOptions {
   entryPath?: string
   /** Tests stand a local releases page in for a host that updates itself; a host always uses the published one. */
   releasesUrl?: string
+  /**
+   * Whether its tailnet listener answers a phone's `permessage-deflate` offer and compresses what it sends that phone as it
+   * does a desktop's (ADR-0025, November 10 amendment): yes unless false. `SOTTO_HOST_COMPRESS_PHONES=0` makes it false.
+   */
+  compressPhones?: boolean
+  /**
+   * Tests stand in a maker over a picture worker they built, since none is built beside the source; a host starts the one
+   * beside its own index.js (ADR-0203). The host closes it when it closes.
+   */
+  pictures?: PictureMaker
 }
 
 export { HostLockError, HostLockHeldError } from './lock'
@@ -163,6 +175,10 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   let browser: HostBrowserTools | undefined
   let delegationRelay: HostDelegationRelay | undefined
   let startedRuntime: Awaited<ReturnType<typeof createAgentRuntime>> | undefined
+  // The copies a phone's tile asks for at its own size (`thread-media-edge`, ADR-0203), made in the picture worker with the
+  // decoders compiled into this host, on either release track, as the desktop makes them with Electron's. Only where that
+  // worker was built beside this file: without one the host lists no `thread-media-edge` and sends pictures whole.
+  const pictures = options.pictures ?? (PictureMaker.available() ? new PictureMaker(undefined, options.log ? { log: options.log } : {}) : undefined)
   try {
     productEvents.record('app.started', { pairedHosts: 0 })
     await repositories.settings.migrateProjectWorkingCopyDefaults(hostId)
@@ -207,7 +223,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
       ...owlFeatures['paired-host-browser'] && owlFeatures['quiet-browser'] ? { browserTools: resolveBinding => (browser = hostBrowserTools({ resolveBinding, withoutAsking: startup.browserWithoutAsking,
         saveWithoutAsking: async value => { await repositories.settings.update({ browserWithoutAsking: value }) } })).tools } : {},
       keepsWorktree: keptWhileOff ?? ((threadId: string) => heldMoves === undefined || heldMoves !== null && heldMoves.keepsWorktree(threadId)),
-      observeActiveThread: false, directory, credentials, watcherEnabled, threadSnoozeEnabled: owlFeatures['thread-snooze'], heldProviders, usageEnabled, productEvents, resumeAfterRestart, restartStoppedThreads, streamingPublishCost, threadStartsEnabled, pullRequestViewEnabled, agentsViewEnabled, crossMachineEnabled, workerSwarmsEnabled, attachAnyFile, answerImages: owlFeatures['answer-images'], nextTurnChoice: owlFeatures['next-turn-choice'], markdownSidePanel: owlFeatures['markdown-side-panel'], clearThreadsEnabled, inlineMedia: owlFeatures['inline-media'],
+      observeActiveThread: false, detachedRuns: true, directory, credentials, watcherEnabled, threadSnoozeEnabled: owlFeatures['thread-snooze'], heldProviders, usageEnabled, productEvents, resumeAfterRestart, restartStoppedThreads, streamingPublishCost, threadStartsEnabled, pullRequestViewEnabled, agentsViewEnabled, crossMachineEnabled, workerSwarmsEnabled, attachAnyFile, answerImages: owlFeatures['answer-images'], nextTurnChoice: owlFeatures['next-turn-choice'], markdownSidePanel: owlFeatures['markdown-side-panel'], clearThreadsEnabled, inlineMedia: owlFeatures['inline-media'],
       // Next prompts for this host's threads (ADR-0173), asked for only while a connected desktop wants them.
       nextPromptEnabled: owlFeatures['next-prompt'], nextPromptsWanted: () => nextPromptsWanted(),
       clearLog: (event, detail) => options.log?.(`${event} ${detail}`), settings: () => startup, writingSettings: () => settings.get(),
@@ -241,6 +257,8 @@ async function startHostRuntime(options: HeadlessHostOptions) {
       // The host owns its worktrees, so it reclaims them under the rules in its own settings (ADR-0041, ADR-0025).
       worktreeCleanup: { pullRequestMerged: githubPullRequestMerged, pullRequestState: githubPullRequestState, log: event => options.log?.(event) },
       claudeSettingsLog: event => options.log?.(event),
+      // Kept within the thumbnails' own budget in bytes, as the desktop keeps its copies (ADR-0170, decision 34).
+      ...pictures ? { reducedPictures: new ReducedPictures((dataUrl, edge) => pictures.reduce(dataUrl, edge), new KeptThumbnails()) } : {},
     })
     // Sotto's tool servers for this host's own threads (#1310), on this machine's loopback with this host's own tokens:
     // `sotto_delegate`, and `sotto_media` with inline media on (ADR-0170, request-only), since this host keeps its own
@@ -327,7 +345,9 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         // The host's own OpenCode signed in to model sources from a desktop (#1107), only where its OpenCode runs.
         const opencodeSignIn = runtime.opencodeSignIn ? { opencodeSignIn: runtime.opencodeSignIn } : {}
         phones = startHostPhoneAccess({ directory, service: runtime.hostService, pairing, policy, settings, startup,
-          desktops, listener: { onProductEventAnswer, signIns, ...opencodeSignIn, watcherDesktops: desktops, clientUpdates: true, receipts, pullRequestConfirmations, about, delegation, ...hostUpdate, ...listenerServices, ...(options.sottoVersion ? { sottoVersion: options.sottoVersion } : {}) },
+          desktops, listener: { onProductEventAnswer, signIns, ...opencodeSignIn, watcherDesktops: desktops, clientUpdates: true, receipts, pullRequestConfirmations, about, delegation, ...hostUpdate, ...listenerServices, ...(options.sottoVersion ? { sottoVersion: options.sottoVersion } : {}),
+            // Phones reach only the tailnet listener; the one with the administrative routes counts every client a desktop.
+            ...(options.compressPhones === false ? { compressPhones: false } : {}) },
           ...(options.tailscale ? { tailscale: options.tailscale } : {}), ...(options.log ? { log: options.log } : {}) })
         const tailnet = phones
         listener = await startSocketServer({ onProductEventAnswer, service: runtime.hostService, pairing, port: options.port, signIns, ...opencodeSignIn, clientUpdates: true, phones: tailnet.administration,
@@ -380,8 +400,9 @@ async function startHostRuntime(options: HeadlessHostOptions) {
           await descriptorWrites.catch(() => undefined)
           threadMoves?.close()
           try { await listener?.close() } finally {
-            // No thread's tool call is taken once the host is closing; a call already running ends with its service.
-            await Promise.allSettled([...threadTools.map(tools => tools.close()), browser?.close()])
+            // No thread's tool call is taken once the host is closing; a call already running ends with its service. No
+            // phone is left to ask for a copy, so the picture worker goes too.
+            await Promise.allSettled([...threadTools.map(tools => tools.close()), browser?.close(), pictures?.close()])
             try { await runtime.close() } finally {
               memory?.close()
               if (listener) {
@@ -396,6 +417,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   } catch (error) {
     await Promise.allSettled([
       async () => productEvents.stop(), async () => delegationRelay?.close(), async () => browser?.close(), async () => startedRuntime?.close(),
+      async () => pictures?.close(),
     ].map(stop => stop()))
     try { memory?.close() } catch { /* Keep the startup failure. */ }
     throw error
@@ -416,7 +438,9 @@ export function parseHostArguments(args: readonly string[], env: NodeJS.ProcessE
   }
   if (!dataDirectory?.trim()) throw new HostArgumentError('Choose a host data folder with --data or SOTTO_HOST_DATA.')
   return { dataDirectory: resolve(dataDirectory), port, ...(keyFile ? { keyFile: resolve(keyFile) } : {}),
-    ...(startedBySotto(env.SOTTO_HOST_STARTED_BY) ? { startedBy: env.SOTTO_HOST_STARTED_BY } : {}) }
+    ...(startedBySotto(env.SOTTO_HOST_STARTED_BY) ? { startedBy: env.SOTTO_HOST_STARTED_BY } : {}),
+    // On unless set to exactly 0, the way to stop compressing for phones without a release (#2394).
+    ...(phonesCompressed(env) ? {} : { compressPhones: false }) }
 }
 
 /**
@@ -469,8 +493,11 @@ export async function runHeadlessCommandLine(): Promise<void> {
   process.on('SIGINT', stop)
   try {
     const options = parseHostArguments(process.argv.slice(2))
-    // Read once: the provider processes this host starts must not inherit the mark.
+    // Read once: the provider processes this host starts must not inherit the mark, nor the phone compression switch.
     delete process.env.SOTTO_HOST_STARTED_BY
+    delete process.env.SOTTO_HOST_COMPRESS_PHONES
+    // Said at start, so whoever turned phone compression off can see it took.
+    if (options.compressPhones === false) console.error('[Sotto] phone-compression-off')
     // The entry this process runs is where the host was installed, which a host that updates itself reads (ADR-0088).
     host = await startHeadlessHost({ ...options, ...(process.argv[1] ? { entryPath: process.argv[1] } : {}), log: event => console.error('[Sotto] ' + event) })
     if (stopping) stop()

@@ -22,6 +22,8 @@ test('Phones and Hosts explain real failed saves beside the affected control and
   }
   try {
     await writeFile(join(userData, 'e2e-tailscale.json'), JSON.stringify({ state: 'not-running' }))
+    // The Hosts page reads its own stand-in, which Let phones connect asks before it turns on (ADR-0200): installed, not running.
+    await writeFile(join(userData, 'e2e-tailscale-status.json'), JSON.stringify({ BackendState: 'Stopped' }))
     await page.evaluate(() => window.sotto!.updateSettings({ onboardingComplete: true, reducedMotion: 'on' }))
     await page.reload()
     await openPage(page, 'Settings')

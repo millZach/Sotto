@@ -87,6 +87,8 @@ export const REMOTE_COMMANDS: { readonly [T in CommandType]?: Fields<T> } = {
   // Early start: typing in a thread's composer starts its provider session. It grants and sends nothing.
   'start-thread-session': ['threadId'],
   interrupt: ['threadId'], 'compact-thread': ['threadId'],
+  // Stopping a run the thread detached is the user's own press, like Stop on the thread; it answers no request (#2476).
+  'stop-detached-run': ['threadId', 'runId'],
   answer: ['threadId', 'requestId', 'answer', 'approved', 'questionAnswers', 'permissionChoice', 'skipped', 'attachments'],
 }
 /**

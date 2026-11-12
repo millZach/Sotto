@@ -10,6 +10,7 @@ import { toldEventsForLater, watcherNewsText } from '../../../src/main/agents/wa
 import { WatcherToldNews } from '../../../src/main/agents/watcherToldNews'
 import { WATCHER_UNWATCHED_REQUEST_ID, type WatcherEvent } from '../../../src/shared/watcherNews'
 import { watcherQuestionChoice, watcherQuestionOf, watcherQuestionRequest, watcherQuestionRequestId, WATCHER_QUESTION_FIELD } from '../../../src/shared/watcherQuestions'
+import { watcherEventSchema } from '../../../src/shared/watcherNews'
 
 const folders: string[] = []
 afterEach(async () => { for (const folder of folders.splice(0)) await rm(folder, { recursive: true, force: true }) })
@@ -64,6 +65,23 @@ describe('Watcher’s questions as main keeps them', () => {
     expect(questions.agreedSettle('watcher', worker)).toBe(false)
   })
 
+  it('skips only an open question, keeps the skip across a restart, and a skipped settle question agrees no settle (#2477)', async () => {
+    const directory = await folder()
+    const questions = new WatcherQuestions(directory, () => true)
+    const asked = await questions.ask('watcher', ASK)
+    expect(await questions.skip(asked.id)).toMatchObject({ state: 'skipped', endedAt: expect.any(String) })
+    expect(questions.get(asked.id)?.choice).toBeUndefined()
+    expect(await questions.skip(asked.id)).toBeUndefined()
+    expect(await questions.answer(asked.id, 'Run it again')).toBeUndefined()
+    expect(questions.open('watcher')).toEqual([])
+    const settle = await questions.ask('watcher', { question: 'Settle Synthetic worker?', settle: worker })
+    await questions.skip(settle.id)
+    expect(questions.agreedSettle('watcher', worker)).toBe(false)
+    const again = new WatcherQuestions(directory, () => true)
+    await again.load()
+    expect(again.get(asked.id)).toMatchObject({ state: 'skipped' })
+  })
+
   it('closes a Watcher’s open questions for its handover, and hands the room the same list until one changes', async () => {
     const questions = new WatcherQuestions(await folder(), () => false)
     const open = await questions.ask('watcher', ASK)
@@ -93,10 +111,16 @@ describe('Watcher’s question as a card', () => {
     expect(watcherQuestionChoice(ASK, { answer: 'Do something else' })).toBeUndefined()
     expect(watcherQuestionRequestId('x')).toBe('watcher-question:x')
   })
+
+  it('offers the Skip a thread’s card does, as the card’s own skip and not its one question’s (#2477)', () => {
+    const request = watcherQuestionRequest({ id: '3f1a6c2e-5b7d-4e8f-9a0b-1c2d3e4f5a6b', question: ASK.question, options: ASK.options, at: '2026-11-05T12:00:00.000Z' })
+    expect(request.skippable).toBe(true)
+    expect(request.questions![0]!.skippable).toBeUndefined()
+  })
 })
 
 describe('the news of the user’s answer', () => {
-  const event = (answered: NonNullable<WatcherEvent['answered']>, requestId = WATCHER_UNWATCHED_REQUEST_ID): WatcherEvent => ({ id: `answered-${answered.choice}`, kind: 'user-answered',
+  const event = (answered: NonNullable<WatcherEvent['answered']>, requestId = WATCHER_UNWATCHED_REQUEST_ID): WatcherEvent => ({ id: `answered-${answered.choice ?? 'skipped'}`, kind: 'user-answered',
     requestId, target: worker, generation: 0, observedAt: '2026-11-05T12:00:00.000Z', answered })
   const news = (events: WatcherEvent[]) => watcherNewsText({ source: 'watcher', watcher: { hostId: HOST, threadId: 'watcher' }, events, omitted: 0 })
   const QUESTION = '3f1a6c2e-5b7d-4e8f-9a0b-1c2d3e4f5a6b'
@@ -115,6 +139,26 @@ describe('the news of the user’s answer', () => {
     expect(agreed).toContain('They agree to settle this thread: call settle_thread for it now')
     expect(agreed).toContain(`Use requestId ${watch} for this thread.`)
     expect(news([event({ questionId: QUESTION, question: 'Settle Synthetic worker?', choice: 'Keep watching', settle: true }, watch)])).toContain('They want this thread kept')
+  })
+
+  it('says a skip is the user’s, with no answer, so Watcher stops waiting and does not ask again (#2477)', () => {
+    const text = news([event({ questionId: QUESTION, question: ASK.question, skipped: true })])
+    expect(text).toContain(`The user skipped your question ${JSON.stringify(ASK.question)} on its card and gave no answer.`)
+    expect(text).toContain('Its card no longer waits on them.')
+    expect(text).toContain('Do not ask it again.')
+    expect(text).toContain(QUESTION)
+    const settle = news([event({ questionId: QUESTION, question: 'Settle Synthetic worker?', skipped: true, settle: true }, '7a4c2e1f-0b3d-4e5f-8a9b-1c2d3e4f5a6b')])
+    expect(settle).toContain('Do not settle this thread on it')
+    expect(settle).not.toContain('call settle_thread')
+  })
+
+  it('holds an answer to a choice or a skip, never both or neither', () => {
+    const base = { id: 'a', kind: 'user-answered', requestId: WATCHER_UNWATCHED_REQUEST_ID, target: worker, generation: 0, observedAt: '2026-11-05T12:00:00.000Z' }
+    const answered = { questionId: QUESTION, question: ASK.question }
+    expect(watcherEventSchema.safeParse({ ...base, answered: { ...answered, choice: 'Run it again' } }).success).toBe(true)
+    expect(watcherEventSchema.safeParse({ ...base, answered: { ...answered, skipped: true } }).success).toBe(true)
+    expect(watcherEventSchema.safeParse({ ...base, answered: { ...answered, choice: 'Run it again', skipped: true } }).success).toBe(false)
+    expect(watcherEventSchema.safeParse({ ...base, answered }).success).toBe(false)
   })
 
   it('keeps answers that would not fit whole in one wake-up for the next, never leaving them out', () => {

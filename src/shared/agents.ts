@@ -404,7 +404,7 @@ export const agentModelSchema = z.object({ id: providerEntityId, provider: id, p
    * The adapter puts them in that order (`orderReasoningEfforts`); a provider that lists them highest
    * first, as Grok does, is turned round there and nowhere else.
    */
-  reasoningEfforts: z.array(z.string()).optional(), defaultReasoningEffort: z.string().optional(),
+  ownServer: z.literal(true).optional(), hiddenFromMenu: z.literal(true).optional(), reasoningEfforts: z.array(z.string()).optional(), defaultReasoningEffort: z.string().optional(),
   runtimeModes: z.array(agentRuntimeModeSchema).optional(), supportsImages: z.boolean().optional(),
   /**
    * Offered in place of `runtimeModes` by a provider whose permission modes are its own, not Sotto's four.
@@ -1061,7 +1061,7 @@ export function isSubscriptionReasoning(provider: string): provider is Subscript
 }
 
 export const PROVIDER_LABELS: Readonly<Record<ProviderId, string>> = {
-  codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin', muse: 'Muse', opencode: 'OpenCode', cursor: 'Cursor', deepseek: 'DeepSeek', hermes: 'Hermes',
+  codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin', muse: 'Muse', opencode: 'OpenCode', cursor: 'Cursor', deepseek: 'DeepSeek', hermes: 'Hermes', pi: 'Pi',
 }
 const THREAD_PROVIDERS_CONNECTED = 'Thread providers connected'
 /** The bounded success vocabulary old hosts use, including a default provider discovered during connect. */
@@ -1723,6 +1723,8 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
    * prompt, and says nothing when it cannot start: the send reports its own error (#769). */
   z.object({ type: z.literal('start-thread-session'), threadId: id }).strict(),
   z.object({ type: z.literal('interrupt'), threadId: id }).strict(),
+  /** Stop one of the thread's detached runs (#2476), by the ID its background work names: the user's own press, which answers no request. */
+  z.object({ type: z.literal('stop-detached-run'), threadId: id, runId: z.string().uuid() }).strict(),
   z.object({ type: z.literal('compact-thread'), threadId: id }).strict(),
   z.object({ type: z.literal('answer'), threadId: id, requestId: id, answer: text, approved: z.boolean().optional(), questionAnswers: agentQuestionAnswersSchema.optional(), permissionChoice: id.optional(),
     /** The user skipped a `skippable` question: its provider is told so and the turn goes on without an answer. */
@@ -1812,7 +1814,7 @@ export function hostForThread(host: AgentHostSnapshot, thread: Pick<AgentThread,
   const source = host.clientHosts?.find(item => item.hostId === thread.hostId)
   return source ? { ...host, ...source, providers: source.providers } : host
 }
-const INSTALLED_PROVIDER_ORDER = everyProvider(['codex', 'claude', 'grok', 'devin', 'muse', 'opencode', 'cursor', 'deepseek', 'hermes'])
+const INSTALLED_PROVIDER_ORDER = everyProvider(['codex', 'claude', 'grok', 'devin', 'muse', 'opencode', 'cursor', 'deepseek', 'hermes', 'pi'])
 /**
  * What Connect providers turns on: every thread client installed on this machine, Devin included, except one the user
  * turned off, added to the ones already on, as a headless host connects them all (ADR-0036). A client already on stays
@@ -1866,10 +1868,10 @@ export function defaultThreadModelId(configuration: AgentConfiguration, models: 
     const provider = configuration.reasoning
     const nativeModelId = configuration.reasoningModel || accounts.find(account => account.provider === provider)?.defaultModelId
     if (nativeModelId) return publicProviderEntityId(provider, 'model', nativeModelId)
-    const candidates = models.filter(model => model.providerId === provider)
+    const candidates = models.filter(model => model.providerId === provider && !model.hiddenFromMenu)
     return (candidates.find(model => model.ready) ?? candidates[0])?.id ?? ''
   }
-  const ready = models.filter(model => model.ready)
+  const ready = models.filter(model => model.ready && !model.hiddenFromMenu)
   return (ready.find(model => model.providerId === configuration.provider) ?? ready[0])?.id ?? ''
 }
 /**

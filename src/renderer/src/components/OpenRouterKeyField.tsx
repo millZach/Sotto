@@ -15,6 +15,7 @@ function openRouterKeyStatusCopy(result: OpenRouterKeyCheck): MessageDescriptor 
   switch (result.reason) {
     case 'unauthorized': return msg`OpenRouter rejected this key.`
     case 'unconfigured': return msg`Enter your OpenRouter API key first.`
+    case 'unreadable': return msg`Sotto could not read the saved key. Enter it again.`
     case 'network':
     case 'timeout': return msg`Could not reach OpenRouter.`
     default: return msg`OpenRouter returned an error.`

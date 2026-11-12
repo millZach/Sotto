@@ -131,3 +131,169 @@ Check again still sends no saved key. If the server asks for one, the row says
 it answered but its models could not be read again. The dialog and rows make no
 promise that OpenCode can run every server. No host, setting, dependency or
 permission rule changes.
+
+
+## Amended November 10, 2026: add an API with its key
+
+The owner approved layout A after four polish rounds, at local prototype commit
+`47b4e2a79`. [The approved mock-up](../../design/add-an-api/index.html) and its two
+JSON samples travel with this change; its hundreds of captures do not. This
+amendment supersedes the original dialog, discovery and thinking decisions above.
+It remains behind `own-model-servers` and `hermes`; stable starts and shows none.
+
+Settings > Providers has **APIs and your own model servers**, with one Add dialog.
+Main downloads `https://models.dev/api.json` when the dialog opens, or on Check
+again for a saved https address so a record older than the catalogue gets its
+facts, without a key,
+cookies or user data. It reads a bounded response, caches it in memory for this
+app run, never logs it and never writes it to disk. Failure leaves Another address
+available and offers a retry. Only catalogue entries with an `api` address and
+`@ai-sdk/openai-compatible` (plus OpenRouter) are listed. There is no separate
+address list for OpenAI, Anthropic, Google or xAI; search explains the compatible
+address route and existing thread providers in plain words.
+
+The selected API's own model answer supplies its inventory. Its facts win field
+by field over the catalogue: display name, context, longest answer, image input,
+tools and prices. Prices from the API are per token and become per million;
+catalogue prices already use per million. Unknown stays unknown. Exact IDs are
+kept. Nothing is typed except a genuinely missing context needed to run a model.
+Only confirmed thinking levels are offered, with Off first when a toggle or a
+`none` value permits it. Otherwise a thinking model uses **Default**, without a
+slider. Old `thinking: true` records retain OpenCode Low, Medium and High until
+checked again; reading an old record changes nothing on disk.
+
+**Kept models** are the chosen IDs, separate from the saved inventory. Ten or
+fewer discovered models start all ticked; more than ten start unticked. Search and
+All / Selected / New appear only above ten. A recheck keeps choices, leaves new
+models unticked, and retains older models for existing threads. Unticking removes
+a model from new picks only; threads already on it continue to work.
+
+**Replace key** checks the new key before asking the existing keeper to replace
+it and preserves the model choices. A refused key never reaches the keeper, so
+the old key remains. The first keeper remains OpenCode when connected, otherwise
+Hermes, including keys already saved under the November 9 rules. No key enters
+Sotto's model-server record, logs, errors, command arguments or fixtures.
+
+Hermes sets effort per session through `session/set_config_option` with id
+`reasoning_effort`, maps Off to `none` and Default to `default`, and reads the
+answer's config options back. The option is in Hermes 0.22.6 (source commit `b2f9dee01a`), below Sotto’s
+verified 0.23.0. The session’s advertised options remain authoritative. Older
+Hermes without that option offers no effort
+control and continues turns normally. OpenCode gets each model's confirmed list.
+The real effort card stays; Default has no stops. A model without Off says it
+always thinks, and changing models chooses the nearest supported effort, lower
+on a tie. This supplements ADR-0087's model-variant rules.
+
+The build fixes two prototype mistakes: the four-model list has no search or
+filters, and compact rows let more than two models fit at 820 by 560. The provider
+answer wins for prices and both limits even when the catalogue disagrees.
+
+
+OpenRouter's model list is public, so its key is checked first through its
+[current-key route](https://openrouter.ai/docs/api/api-reference/api-keys/get-current-key)
+(`GET /api/v1/key` at the chosen OpenRouter address). The answer is discarded;
+no inference is sent, and an unauthenticated key never reaches either keeper.
+Other APIs are checked through their own model-list authentication.
+
+
+### Review corrections: large catalogues and existing choices
+
+OpenCode's model declarations go in a generated JSON file for each process under
+Sotto's own OpenCode config folder, named with Sotto's PID and a random suffix.
+`OPENCODE_CONFIG` carries only that path; `OPENCODE_CONFIG_CONTENT` keeps the small
+share/update settings and source routing overrides, so project config cannot
+redirect a saved source or its key. This supersedes the original environment-only declaration:
+a large API can exceed Windows' 32,767-character per-variable limit. The file has
+no actual key, is removed when its process closes, and files left by a dead Sotto
+are removed on a later start. The saved model-server record remains the source of
+truth. Kept and existing-thread models still retain their declarations.
+
+An initial or Default effort never selects Off. Toggle-only models reset to
+Default unless Off was explicitly chosen. Known numeric lists prefer Medium,
+then High, then their first thinking level. Old OpenCode thinking flags survive
+Choose models unchanged until a recheck. Hermes no longer pins every new session
+to High: an unset choice uses Default, as the owner approved; protocol replay
+cannot overwrite a newer user choice. A transient effort-request error is not
+evidence that the installed client lacks effort support.
+
+Catalogue addresses with account or region placeholders open the address route,
+with the template visible and editable. No request is sent until those values
+are supplied. The key page shows the actual address that will receive its key.
+
+
+### SGLang DeepSeek V4.1 effort discovery
+
+A saved Spark Cluster otherwise stays on Default because its OpenAI model list
+reports IDs and context but no `reasoning_options`. On Check or Check again,
+Sotto recognizes the known SGLang V4.1 encoder only when `/model_info` reports
+both `model_type: deepseek_v41` and `reasoning_parser: deepseek-v41`. Its
+`served_model_name` must match the listed model ID or that entry's `root`, so
+one loaded model's facts do not grant levels to unrelated entries.
+
+That profile offers Off, Low, High and Max. Off sends `reasoning_effort: none`;
+SGLang's request validator translates it into both thinking toggles set false
+before prompt encoding. The named tiers pass through unchanged. On the
+verified Spark image, Low, High and Max render budgets 50, 75 and 100; XHigh
+also renders 75, so it adds no separate stop. High is the initial choice through
+the existing model-default rule. Explicit `reasoning_options` in the model list
+win over this profile. Other encoders remain unknown unless they report levels.
+
+This is a confirmed encoder profile, not a guess from a model's display name or
+network address. The verification note records the running image and its actual
+request normalization and encoding. Reading a saved record still performs no
+network call or migration; Check again refreshes it using the existing save and
+adapter notification path. No new host, setting or dependency is introduced.
+
+## Amended November 11, 2026: Hermes skills
+
+Hermes keeps skills per home, and each project's threads run in a profile home
+of their own, so a skill installed in Sotto's Hermes folder, or in the user's own
+Hermes, reached no thread: a profile saw only the skills its own threads wrote.
+Each project profile's config now names the `skills` folder of Sotto's Hermes
+folder under `skills.external_dirs`, Hermes's own way to share skills between
+homes. Hermes reads that folder and never writes to it, and a profile's own
+skill wins a shared name. The user's own Hermes home stays separate, as above:
+its skills are not read. A skill is added for every project with
+`hermes skills install` and `HERMES_HOME` set to Sotto's folder. Reading the
+user's own skills as well would be one more folder on that list; it was left
+out because it is a second decision, and it adds every skill there to each
+thread's prompt.
+
+Hermes 0.23.1 expands `/name` for an installed skill in its terminal and chat
+apps but not over ACP, where a slash word it has no command for is prompt text,
+and Sotto's prompt opens with the project folder note in any case. It lists no
+skills over ACP either, and `hermes skills list` has no machine-readable form.
+So the adapter reads the same two folders for the composer's list, and sends an
+invoked skill as Hermes's own invocation is worded: its note that the user
+invoked the skill, the skill file, the skill's folder, then the user's words as
+the instruction. One skill a message. Sotto fills in the two template values
+Hermes fills in by default, `${HERMES_SKILL_DIR}` and `${HERMES_SESSION_ID}`.
+It does not run a skill's inline shell, which Hermes leaves off by default, or
+add Hermes's config, setup and supporting-file notes; the model loads
+supporting files with its own tools.
+
+A skill is invoked when it is chosen in the composer, and also when the message
+opens with `/` and the full name of a listed skill. The second is Hermes's
+alone: for the other providers a token typed without choosing stays plain text,
+and their own clients expand it. Hermes's does not, so a typed name that did
+nothing would be a silent failure. A slash word that names no listed skill is
+still plain text. A skill is named by the word Hermes puts after the slash
+(`Code Review` is `/code-review`), and the folders are walked as Hermes walks
+them, links followed. A typed name is read as Hermes reads one: any case, `_`
+for `-`, nothing else, so `/.env is missing` invokes nothing. Sotto's walk has
+an end where Hermes's has none, six folders deep and 2,000 folders a root,
+because it runs before a message that opens with a slash word is sent and a
+link into a home folder would hold that message; a root past the limit is
+reported in the list as skipped. A message that opens with a path reads no
+folder at all.
+
+The list still offers three kinds of skill Hermes would not: one whose
+`platforms` leave out this system, one whose name two skills in a root share,
+and one named like a Hermes command. Leaving them out means copying a YAML list
+parser and Hermes's command table, which moves with each release, for cases
+that are rare on the one system Hermes threads run on; such a skill still
+sends its own file when invoked.
+
+Steering takes no skill. Hermes's `/steer` adds words to the running turn and
+expands nothing in them, so a steer that picks a skill, or opens with a listed
+skill's name, is refused with the way out: queue it as a follow-up.

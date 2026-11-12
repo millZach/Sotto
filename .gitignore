@@ -946,6 +946,12 @@ artifacts/watcher-own-question/*
 !artifacts/watcher-own-question/own-question-answered-dark-1280x800.png
 !artifacts/watcher-own-question/own-question-answered-light-1600x1000.png
 !artifacts/watcher-own-question/readings.json
+!artifacts/watcher-own-question/own-question-skip-card-dark-1280x800.png
+!artifacts/watcher-own-question/own-question-skip-card-dark-820x560.png
+!artifacts/watcher-own-question/own-question-skip-card-light-1280x800.png
+!artifacts/watcher-own-question/own-question-skipped-dark-1280x800.png
+!artifacts/watcher-own-question/own-question-skipped-dark-820x560.png
+!artifacts/watcher-own-question/own-question-skipped-light-1280x800.png
 
 # Watcher bottom navigation: keep the cited headless frames.
 artifacts/watcher-bottom-navigation/*
@@ -974,3 +980,6 @@ artifacts/watcher-header-820/*
 !artifacts/watcher-header-820/after-mac-full-820.png
 !artifacts/watcher-header-820/after-mac-beside-820.png
 !artifacts/watcher-header-820/wide-headers.png
+
+# Approved API prototype: only HTML and JSON travel with the implementation.
+design/add-an-api/shots/
