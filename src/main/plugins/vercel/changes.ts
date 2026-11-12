@@ -14,10 +14,13 @@ export type VercelChange =
 
 interface Options { readonly base?: string; readonly signal?: AbortSignal }
 
-/** A short plain line of the service's, safe to show on a card: one line, no control characters, never long. */
-const shown = (value: unknown): string | undefined => {
+/**
+ * A short plain line of the service's, safe to show on a card: one line, no control characters, never long, and
+ * without the account's token, which a service can echo. The token goes first, so cutting the line cannot leave part of it.
+ */
+const shown = (value: unknown, token: string): string | undefined => {
   if (typeof value !== 'string') return undefined
-  const line = [...value].filter(character => character.charCodeAt(0) >= 0x20 && character.charCodeAt(0) !== 0x7f).join('').trim().slice(0, 120)
+  const line = [...withoutToken(value, token)].filter(character => character.charCodeAt(0) >= 0x20 && character.charCodeAt(0) !== 0x7f).join('').trim().slice(0, 120)
   return line || undefined
 }
 
@@ -43,9 +46,9 @@ export async function describeVercelDeployment(fetcher: VercelFetch, token: stri
   if (answered === 'unreachable' || !answered.response.ok) return {}
   try {
     const deployment = JSON.parse(answered.body ?? '') as Record<string, unknown>
-    const project = shown(deployment['name']), url = shown(deployment['url']), state = shown(deployment['readyState'] ?? deployment['state'])
+    const project = shown(deployment['name'], token), url = shown(deployment['url'], token), state = shown(deployment['readyState'] ?? deployment['state'], token)
     // Vercel leaves the target out of a preview deployment and names it for production.
-    const target = shown(deployment['target']) ?? (deployment['target'] === null ? 'preview' : undefined)
+    const target = shown(deployment['target'], token) ?? (deployment['target'] === null ? 'preview' : undefined)
     return { ...(project ? { project } : {}), ...(target ? { target } : {}), ...(url ? { url } : {}), ...(state ? { state } : {}) }
   } catch { return {} }
 }
@@ -65,6 +68,6 @@ export async function cancelVercelDeployment(fetcher: VercelFetch, token: string
   if (response.status === 400) return { ok: false, reason: 'too-late' }
   if (!response.ok) return { ok: false, reason: 'failed', said: withoutToken(saidBy(response.status, body), token) }
   let state: string | null = null
-  try { state = shown((JSON.parse(body ?? '') as Record<string, unknown>)['readyState']) ?? null } catch { /* Cancelled, with nothing readable said of it. */ }
-  return { ok: true, state: state === null ? null : withoutToken(state, token) }
+  try { state = shown((JSON.parse(body ?? '') as Record<string, unknown>)['readyState'], token) ?? null } catch { /* Cancelled, with nothing readable said of it. */ }
+  return { ok: true, state }
 }

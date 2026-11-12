@@ -173,6 +173,8 @@ export type PluginChange =
   }
   | {
     readonly kind: 'vercel-cancel'; readonly account: string; readonly deploymentId: string
+    /** The team the agent named, which is sent with the call. */
+    readonly teamId?: string
     /** What Vercel says of the deployment, read before asking, where it said: none of it is taken on trust for the call. */
     readonly project?: string; readonly target?: string; readonly url?: string; readonly state?: string
   }

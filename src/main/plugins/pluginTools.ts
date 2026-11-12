@@ -183,10 +183,20 @@ export class PluginToolServer implements ScopedThreadTools {
     const signIn = await this.handlers.gitHubSignIn().catch((): GitHubSignIn => ({ state: 'unknown' }))
     if (signIn.state === 'not-installed') return text(`gh, GitHub's command line program, isn't installed on this computer, so a comment can't be posted. ${ASK_USER} ${NOTHING_CHANGED}`, true)
     if (signIn.state === 'signed-out') return text(`gh is not signed in to GitHub on this computer, so a comment can't be posted. ${ASK_USER} ${NOTHING_CHANGED}`, true)
-    const refused = await this.refusalOf(threadId, { kind: 'github-comment', ...input.data, ...(signIn.state === 'signed-in' ? { account: signIn.login } : {}) })
+    const named = signIn.state === 'signed-in' ? signIn.login : undefined
+    const refused = await this.refusalOf(threadId, { kind: 'github-comment', ...input.data, ...(named ? { account: named } : {}) })
     if (refused) {
       if (refused.outcome) await this.record(threadId, { plugin: 'github', tool: GITHUB_COMMENT_TOOL, kind: 'comment', outcome: refused.outcome })
       return refused.result
+    }
+    // The user allowed a comment as the account the card named. gh may have been switched to another while the card
+    // waited, so it is asked again, and the comment is posted only while it still says that account.
+    if (named) {
+      const now = await this.handlers.gitHubSignIn().catch((): GitHubSignIn => ({ state: 'unknown' }))
+      if (now.state !== 'signed-in' || now.login !== named) {
+        await this.record(threadId, { plugin: 'github', tool: GITHUB_COMMENT_TOOL, kind: 'comment', outcome: 'failed' })
+        return text(`The user allowed a comment as ${named}, but gh ${now.state === 'signed-in' ? `is now signed in to GitHub as ${now.login}` : 'no longer says it is signed in to GitHub as that account'}, so the comment was not posted. Call ${GITHUB_COMMENT_TOOL} again if it should still be posted; the user will be asked again.`, true)
+      }
     }
     const result = await this.handlers.commentOnGitHub(input.data)
     await this.record(threadId, { plugin: 'github', tool: GITHUB_COMMENT_TOOL, kind: 'comment', outcome: result.ok ? 'done' : 'failed' })
@@ -210,7 +220,7 @@ export class PluginToolServer implements ScopedThreadTools {
     const { deploymentId, teamId } = input.data
     // What Vercel says of the deployment, so the card names it in words. A read: it asks nobody and decides nothing.
     const said = await this.handlers.describeVercelDeployment(account.id, deploymentId, teamId).catch((): VercelDeployment => ({}))
-    const refused = await this.refusalOf(threadId, { kind: 'vercel-cancel', account: account.name, deploymentId, ...said })
+    const refused = await this.refusalOf(threadId, { kind: 'vercel-cancel', account: account.name, deploymentId, ...(teamId ? { teamId } : {}), ...said })
     const kept = async (outcome: PluginUseReport['outcome']): Promise<void> => {
       // An account removed while its card waited has been forgotten already, and gets no entry after that.
       const still = await this.handlers.accounts().then(accounts => accounts.some(entry => entry.id === account.id), () => false)

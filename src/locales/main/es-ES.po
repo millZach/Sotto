@@ -1790,6 +1790,10 @@ msgstr ""
 msgid "Tailscale would not let this account change Serve. Run tailscale set --operator=$USER on this computer, then try again. Nothing was linked."
 msgstr ""
 
+#: src/main/plugins/changeWords.ts
+msgid "Team: {team}"
+msgstr ""
+
 #: src/main/teams/teams.ts
 msgid "Teams is still starting. Try again in a moment."
 msgstr ""

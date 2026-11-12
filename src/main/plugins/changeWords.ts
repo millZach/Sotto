@@ -21,7 +21,7 @@ export function wordPluginChange(change: PluginChange): PluginChangeCard {
       deny: t`Don’t post it`,
     }
   }
-  const account = change.account, id = change.deploymentId
+  const account = change.account, id = change.deploymentId, team = change.teamId
   const named = change.project ?? id
   const lines = [
     change.project ? t`Project: ${change.project}` : null,
@@ -29,6 +29,7 @@ export function wordPluginChange(change: PluginChange): PluginChangeCard {
     change.url ? t`Address: ${change.url}` : null,
     change.state ? t`Its build now: ${change.state}` : null,
     t`Deployment: ${id}`,
+    team ? t`Team: ${team}` : null,
     t`Vercel account: ${account}`,
     t`A cancelled build cannot be picked up again. It has to be deployed again.`,
   ].filter((line): line is string => line !== null)

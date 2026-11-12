@@ -20,7 +20,7 @@ const TOKEN = 'made-up-vercel-token'
 const comment = { owner: 'example-owner', repo: 'example-repo', number: 12, body: 'Looks good to me.' }
 
 /** The tools over a gh and a Vercel that keep what they were asked, with the user's answer in the test's hands. */
-function tools(options: { watcher?: boolean; answer?: PluginChangeAnswer; signIn?: GitHubSignIn; accounts?: readonly PluginAccount[]; gh?: string | Error; vercel?: (url: string, method: string) => { status?: number; body?: unknown } } = {}) {
+function tools(options: { watcher?: boolean; answer?: PluginChangeAnswer; signIn?: GitHubSignIn; signIns?: GitHubSignIn[]; accounts?: readonly PluginAccount[]; gh?: string | Error; vercel?: (url: string, method: string) => { status?: number; body?: unknown } } = {}) {
   const ghCalls: { args: readonly string[]; stdin: string | undefined }[] = []
   const run: RunGitCommand = async (_cwd, _command, args, runOptions?: GitCommandOptions) => {
     ghCalls.push({ args, stdin: runOptions?.stdin })
@@ -41,7 +41,8 @@ function tools(options: { watcher?: boolean; answer?: PluginChangeAnswer; signIn
   const added = options.accounts ?? []
   const server = new PluginToolServer({
     admits: threadId => threadId === 'admitted' && !gone,
-    gitHubSignIn: async () => options.signIn ?? { state: 'signed-in', login: 'example-user' },
+    // A list of answers is gh being asked more than once: the last one stands for every ask after it.
+    gitHubSignIn: async () => (options.signIns && options.signIns.length > 1 ? options.signIns.shift() : options.signIns?.[0]) ?? options.signIn ?? { state: 'signed-in', login: 'example-user' },
     readGitHub: async () => ({ ok: true, text: '[]', truncated: false }),
     accounts: async () => added,
     findAccount: async (_plugin, name) => added.length === 0 ? 'none' : name === undefined ? (added.length === 1 ? added[0]! : 'ambiguous') : added.find(account => account.name === name) ?? 'unknown',
@@ -144,6 +145,21 @@ describe('a plugin change asks the user first (ADR-0205, decision 7)', () => {
     expect(unsure.asked).toEqual([{ kind: 'github-comment', ...comment }])
   })
 
+  it('posts nothing when gh was switched to another account while the card waited', async () => {
+    for (const [after, words] of [
+      [{ state: 'signed-in', login: 'other-user' }, 'The user allowed a comment as example-user, but gh is now signed in to GitHub as other-user, so the comment was not posted. Call github_comment again if it should still be posted; the user will be asked again.'],
+      [{ state: 'unknown' }, 'The user allowed a comment as example-user, but gh no longer says it is signed in to GitHub as that account, so the comment was not posted. Call github_comment again if it should still be posted; the user will be asked again.'],
+    ] as const) {
+      const { server, asked, ghCalls, recorded } = tools({ signIns: [{ state: 'signed-in', login: 'example-user' }, after], answer: 'allowed' })
+      const result = await server.call('admitted', GITHUB_COMMENT_TOOL, comment)
+      expect(result.isError).toBe(true)
+      expect(said(result)).toBe(words)
+      expect(asked).toHaveLength(1)
+      expect(ghCalls).toEqual([])
+      expect(recorded.map(use => use.outcome)).toEqual(['failed'])
+    }
+  })
+
   it('says the comment was not posted when GitHub will not take it, though the user allowed it', async () => {
     const { server, recorded } = tools({ answer: 'allowed', gh: new Error('gh: Validation Failed (HTTP 422)') })
     const result = await server.call('admitted', GITHUB_COMMENT_TOOL, comment)
@@ -156,7 +172,7 @@ describe('a plugin change asks the user first (ADR-0205, decision 7)', () => {
       ? { body: { name: 'example-project', target: null, url: 'example-project-abc.vercel.app', readyState: 'BUILDING' } } : { body: { readyState: 'CANCELED' } } })
     const call = server.call('admitted', VERCEL_CANCEL_TOOL, { deploymentId: 'dpl_example1', teamId: 'team_example1' })
     await settle()
-    expect(asked).toEqual([{ kind: 'vercel-cancel', account: 'Work', deploymentId: 'dpl_example1', project: 'example-project', target: 'preview', url: 'example-project-abc.vercel.app', state: 'BUILDING' }])
+    expect(asked).toEqual([{ kind: 'vercel-cancel', account: 'Work', deploymentId: 'dpl_example1', teamId: 'team_example1', project: 'example-project', target: 'preview', url: 'example-project-abc.vercel.app', state: 'BUILDING' }])
     // Only the read for the card has gone to Vercel.
     expect(vercelCalls).toEqual([{ url: 'https://api.vercel.com/v13/deployments/dpl_example1?teamId=team_example1', method: 'GET', authorization: `Bearer ${TOKEN}` }])
     answer('allowed')
@@ -213,6 +229,8 @@ describe('a change’s card, in plain words (ADR-0185)', () => {
     const bare = wordPluginChange({ kind: 'vercel-cancel', account: 'Work', deploymentId: 'dpl_example1' })
     expect(bare.target).toBe('dpl_example1')
     expect(bare.details.split('\n')[0]).toBe('Deployment: dpl_example1')
+    // A team the agent named is sent with the call, so the card shows it.
+    expect(wordPluginChange({ kind: 'vercel-cancel', account: 'Work', deploymentId: 'dpl_example1', teamId: 'team_example1' }).details.split('\n').slice(0, 2)).toEqual(['Deployment: dpl_example1', 'Team: team_example1'])
   })
 })
 
@@ -239,5 +257,9 @@ describe('the changes themselves', () => {
     // What Vercel says of a deployment is shown as one short plain line, whatever it holds.
     const odd = await describeVercelDeployment(fetcher(200, { name: 'line one\nline two' + 'x'.repeat(300), target: 'production', url: 7 }), TOKEN, 'dpl_example1', undefined)
     expect(odd).toEqual({ project: ('line oneline two' + 'x'.repeat(300)).slice(0, 120), target: 'production' })
+    // A token Vercel echoes in a deployment's own words never reaches the card, even where the line is cut short.
+    const echoed = await describeVercelDeployment(fetcher(200, { name: `${'y'.repeat(110)}${TOKEN}`, url: `${TOKEN}.vercel.app`, readyState: TOKEN, target: TOKEN }), TOKEN, 'dpl_example1', undefined)
+    expect(JSON.stringify(echoed)).not.toContain(TOKEN.slice(0, 8))
+    expect(echoed.url).toBe('[removed by Sotto].vercel.app')
   })
 })
