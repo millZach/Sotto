@@ -63,6 +63,7 @@ import { ThreadGreeting } from './ThreadGreeting'
 import type { DelegationView } from '../../../shared/delegation'
 import { DelegatedWork, DelegatedWorkSummary, DelegationWorldProvider, delegationsByTurn, StillWorking, stillWorkingAgents, UnfoldedWork, useDelegationWorld } from './DelegatedWork'
 import { useDelegations, useDelegationsEnabled } from './delegations'
+import { settledDelegation } from './delegationWords'
 import { MessageScrubber } from './MessageScrubber'
 import { keepReadingPlace, MessageRows, MessageRowsContext, readingPlace, revealLift, scrolledSince, scrollsTranscript, type ReadingPlace } from './readingPlace'
 import { readsBack, typesIntoComposer } from './slimComposer'
@@ -672,6 +673,7 @@ export const MessageList = memo(function MessageList({ messages, provider, runni
   // Turns are re-split on every arrival but hold the same messages; sharing their structure lets the
   // memoised turns below compare equal.
   const turns = useShared(useMemo(() => splitTurns(messages, placement.unshown), [messages, placement.unshown]))
+  const trailingDelegations = useMemo(() => delegations?.get('')?.filter(view => !settledDelegation(view)), [delegations])
   // The newest turn drawn is the one being worked on while the thread runs, except in Watcher's conversation when that turn
   // ended and another turn's lifecycle runs: Watcher is then working on news, whose wake-up the conversation leaves out
   // (`watcherWakeUpsAsShown`), so the news turn has nothing drawn until its first reply. Drawn as the running turn, the
@@ -713,7 +715,7 @@ export const MessageList = memo(function MessageList({ messages, provider, runni
     {movedAfter === index ? movedLine : null}
   </React.Fragment>)}
   <ActivityGroups groups={unshown(placement.trailing)} context={context} />
-  <DelegatedWork views={delegations?.get('')} />
+  <DelegatedWork views={trailingDelegations} />
   </>
 })
 

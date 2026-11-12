@@ -246,7 +246,7 @@ export function DelegatedWorkRow({ view }: { readonly view: DelegationView }): R
   </li>
 }
 
-/** The rows of one turn, in the order the delegating thread made them: in its Worked for fold, or under its reply when nothing folds. */
+/** Rows for the given delegations, in order: callers choose all turn history or only unsettled work. */
 export function DelegatedWork({ views, label }: { readonly views: readonly DelegationView[] | undefined; readonly label?: string | null }): ReactNode {
   const { t } = useLingui()
   if (!views?.length) return null
@@ -318,12 +318,12 @@ export function StillWorking({ views, work }: { readonly views: readonly Delegat
 }
 
 /**
- * A turn's work under a reply with nothing to fold: its delegations as rows, or, while the provider's agents still run after
- * it, the settled ones as rows and everything still open under one "Still working after this reply".
+ * A turn's unsettled delegations under a reply with nothing to fold, under "Still working after this reply" with the
+ * provider's agents while they still run. A delegation goes once it settles.
  */
 export function UnfoldedWork({ views, work }: { readonly views: readonly DelegationView[] | undefined; readonly work: readonly AgentBackgroundWork[] | undefined }): ReactNode {
-  const settled = useMemo(() => work?.length ? views?.filter(settledDelegation) : views, [views, work])
-  return <><DelegatedWork views={settled} />{work?.length ? <StillWorking views={views} work={work} /> : null}</>
+  const open = useMemo(() => views?.filter(view => !settledDelegation(view)), [views])
+  return work?.length ? <StillWorking views={open} work={work} /> : <DelegatedWork views={open} />
 }
 
 /**
