@@ -378,3 +378,30 @@ it('says so when a change to which threads may use an account could not be saved
   expect(screen.getByRole('alert').textContent).toBe('That could not be saved. Nothing was changed. Try again.')
   expect(screen.getByRole('switch', { name: 'Threads may use Work' }).getAttribute('aria-checked')).toBe('true')
 })
+
+it('works a press out from what was last asked for, so two quick presses never give the account to every project', async () => {
+  // Main is slow: neither save has been answered when the second press lands.
+  const answers: { request: PluginAccountUpdate; answer: ReturnType<typeof deferred<PluginAccountResult>> }[] = []
+  const start = { ...work, projects: ['p-sotto'] }
+  const bridge = vercelBridge([start], {
+    projects: async () => [{ id: 'p-sotto', title: 'Sotto', settled: false }, { id: 'p-site', title: 'Lumen shop', settled: false }],
+    updateAccount: request => { const answer = deferred<PluginAccountResult>(); answers.push({ request, answer }); return answer.promise },
+  })
+  await act(async () => { render(<PluginsSettings bridge={bridge} />) })
+  fireEvent.click(vercelRow())
+  await screen.findByRole('group', { name: 'Projects whose threads may use Work' })
+  // Lumen shop is added, then Sotto is let go: the user means Lumen shop alone.
+  fireEvent.click(screen.getByRole('button', { name: 'Lumen shop' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Sotto' }))
+  expect(answers.map(entry => entry.request)).toEqual([{ id: work.id, projects: ['p-sotto', 'p-site'] }, { id: work.id, projects: ['p-site'] }])
+  await act(async () => {
+    answers[0]!.answer.resolve({ ok: true, accounts: [{ ...start, projects: ['p-sotto', 'p-site'] }] })
+    answers[1]!.answer.resolve({ ok: true, accounts: [{ ...start, projects: ['p-site'] }] })
+  })
+  expect(chips()).toEqual([{ name: 'Every project', pressed: false }, { name: 'Sotto', pressed: false }, { name: 'Lumen shop', pressed: true }])
+  // The switch turned twice in a row ends where it began, rather than sending the same answer twice.
+  const toggle = screen.getByRole('switch', { name: 'Threads may use Work' })
+  fireEvent.click(toggle)
+  fireEvent.click(toggle)
+  expect(answers.slice(2).map(entry => entry.request)).toEqual([{ id: work.id, on: false }, { id: work.id, on: true }])
+})

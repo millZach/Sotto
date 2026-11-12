@@ -387,7 +387,8 @@ export class PluginToolServer implements ScopedThreadTools {
     const now = await this.handlers.findAccount(threadId, 'vercel', account.name).catch(() => 'unknown' as const)
     if (typeof now === 'string' || now.id !== account.id) {
       await kept('failed')
-      return text(`The user allowed it, but the Vercel account "${account.name}" was switched off, kept to other projects or removed while the card waited, so nothing was sent. ${NOTHING_CHANGED}`, true)
+      // The thread may no longer use the account, so it is not named back to it.
+      return text(`The user allowed it, but the Vercel account it was to go through was switched off, kept to other projects or removed while the card waited, so nothing was sent. ${NOTHING_CHANGED}`, true)
     }
     const result: VercelChange = action === 'cancel' ? await this.handlers.cancelVercelDeployment(account.id, deploymentId, teamId)
       : projectId ? await this.handlers.moveVercelProduction(account.id, action, projectId, deploymentId, teamId) : { ok: false, reason: 'failed' }

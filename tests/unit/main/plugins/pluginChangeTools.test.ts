@@ -708,7 +708,9 @@ describe('which threads may use an account (ADR-0205, decision 9)', () => {
       answer('allowed')
       const result = await call
       expect(result.isError).toBe(true)
-      expect(said(result)).toBe('The user allowed it, but the Vercel account "Work" was switched off, kept to other projects or removed while the card waited, so nothing was sent. Nothing was changed.')
+      // The account is no longer this thread's to use, so the refusal does not name it.
+      expect(said(result)).toBe('The user allowed it, but the Vercel account it was to go through was switched off, kept to other projects or removed while the card waited, so nothing was sent. Nothing was changed.')
+      expect(said(result)).not.toContain('Work')
       // Only the read for the card went to Vercel.
       expect(vercelCalls.map(entry => entry.method)).toEqual(['GET'])
       // A removed account gets no entry; one that is still there keeps that the change was allowed and not made.

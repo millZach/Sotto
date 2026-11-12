@@ -311,25 +311,38 @@ function AccountThreads({ account, bridge, projects, onAccounts }: {
   const [failed, setFailed] = useState(false)
   const name = account.name
   const kept = account.projects
-  const change = (request: { readonly on?: boolean; readonly projects?: string[] | null }): void => {
+  // What the user has asked for and main has not yet answered. A press made while a save is still on its way is
+  // worked out from this, not from what the page last heard: otherwise two quick presses would each start from
+  // the same stale list, and letting one project go could give the account to every project.
+  const wanted = useRef<{ readonly on: boolean; readonly projects: readonly string[] | null } | null>(null)
+  const asked = useRef(0)
+  const standing = (): { readonly on: boolean; readonly projects: readonly string[] | null } => wanted.current ?? { on: account.on, projects: kept }
+  const change = (next: { readonly on: boolean; readonly projects: readonly string[] | null }, request: { readonly on?: boolean; readonly projects?: string[] | null }): void => {
     if (!bridge) return
     setFailed(false)
-    void bridge.updateAccount({ id: account.id, ...request }).then(result => { if (result.ok) onAccounts(result.accounts); else setFailed(true) }, () => setFailed(true))
+    wanted.current = next
+    const mine = ++asked.current
+    // Once the newest change is answered the page shows what main kept, saved or not.
+    const settle = (): void => { if (asked.current === mine) wanted.current = null }
+    void bridge.updateAccount({ id: account.id, ...request }).then(result => { settle(); if (result.ok) onAccounts(result.accounts); else setFailed(true) }, () => { settle(); setFailed(true) })
   }
+  const turn = (): void => { const now = standing(); change({ ...now, on: !now.on }, { on: !now.on }) }
+  const keepTo = (projects: string[] | null): void => { change({ ...standing(), projects }, { projects }) }
   const press = (id: string): void => {
-    const next = kept?.includes(id) ? kept.filter(other => other !== id) : [...kept ?? [], id]
-    change({ projects: next.length === 0 ? null : next })
+    const now = standing().projects
+    const next = now?.includes(id) ? now.filter(other => other !== id) : [...now ?? [], id]
+    keepTo(next.length === 0 ? null : next)
   }
   // A settled project is offered only while the account is kept to it; one that is gone keeps a chip, so it can be let go.
   const offered = projects.filter(project => !project.settled || kept?.includes(project.id))
   const gone = (kept ?? []).filter(id => !projects.some(project => project.id === id))
   const titles = (kept ?? []).flatMap(id => { const project = projects.find(entry => entry.id === id); return project ? [project.title] : [] }).join(', ')
   return <div className="plugin-account__threads">
-    <Toggle label={t`Threads may use ${name}`} checked={account.on} disabled={!bridge} onCheckedChange={on => change({ on })}
+    <Toggle label={t`Threads may use ${name}`} checked={account.on} disabled={!bridge} onCheckedChange={turn}
       {...(account.on ? {} : { description: t`Off. No thread can see or use this account until you turn it back on. Its token stays saved.` })} />
     {account.on ? <>
       <div className="plugin-account__projects" role="group" aria-label={t`Projects whose threads may use ${name}`}>
-        <button type="button" className="plugin-chip tt-focusable" aria-pressed={kept === null} disabled={!bridge} onClick={() => { if (kept !== null) change({ projects: null }) }}><Trans>Every project</Trans></button>
+        <button type="button" className="plugin-chip tt-focusable" aria-pressed={kept === null} disabled={!bridge} onClick={() => { if (standing().projects !== null) keepTo(null) }}><Trans>Every project</Trans></button>
         {offered.map(project => <button key={project.id} type="button" className="plugin-chip tt-focusable" aria-pressed={kept?.includes(project.id) ?? false} disabled={!bridge}
           onClick={() => press(project.id)}>{project.title}</button>)}
         {gone.map(id => <button key={id} type="button" className="plugin-chip tt-focusable" aria-pressed disabled={!bridge} onClick={() => press(id)}><Trans>A project that is gone</Trans></button>)}
