@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { archivableWatcherRequests, NOTHING_ARCHIVED, removeArchivedWork, WATCHER_ARCHIVE_FILE, WATCHER_ARCHIVE_INDEX, WATCHER_LIVE_CLOSED_REQUESTS,
   WatcherArchive, watcherArchiveBatch, WatcherArchiveUnreadable, type WatcherArchiveOpen } from '../../../src/main/agents/watcherArchive'
 import { emptyWatcherRecord, watcherRecordSchema, type WatcherOperation, type WatcherRecord, type WatcherRequest } from '../../../src/shared/watcher'
+import { watcherTakeovers } from '../../../src/shared/watcherRoom'
 
 // Watcher's archive (#1759): what may leave the live record, that the record stays valid without it, and that the store
 // gives back the work placed on the messages a conversation holds, follows Keep local history and survives a restart.
@@ -80,6 +81,108 @@ describe('what leaves the live record', () => {
     const retained = new Set(archivableWatcherRequests(value, operation => operation.id === value.operations[10]!.id))
     for (const index of [0, 1, 2, 3, 4, 6, 8, 9, 10, 12, 13]) expect.soft(retained.has(requestAt(value, index).id), `request ${index}`).toBe(false)
     for (const index of [5, 7, 11, 19]) expect.soft(retained.has(requestAt(value, index).id), `request ${index}`).toBe(true)
+  })
+
+  it('keeps the newest request that records each thread\'s stop, and lets the older ones of that thread go', () => {
+    const origin = (next: WatcherRecord): NonNullable<WatcherRequest['remoteOrigin']> => ({ clientId: 'desktop', master: next.current!, creationOperationId: randomUUID(), ceiling: 'approval-required' })
+    const value = record(WATCHER_LIVE_CLOSED_REQUESTS + 30, next => {
+      // Stop watching and Watcher's Stop mark every request the thread took part in: worker-1 in requests 1 and 8.
+      for (const index of [1, 8]) next.requests[index]!.participants[0]!.automationStopped = true
+      // A stopped request on a thread Watcher started is a stop too: worker-3 in request 3, then a marked one in 10.
+      next.requests[3]!.state = 'stopped'
+      next.requests[10]!.participants[0]!.automationStopped = true
+      // A paired desktop's request with a stop stays whatever its age, since it can come back: worker-2 in 2, then 9.
+      next.requests[2]!.participants[0]!.automationStopped = true
+      next.requests[2]!.remoteOrigin = origin(next)
+      next.requests[9]!.participants[0]!.automationStopped = true
+      // A stop that was taken over or let go holds nothing: worker-4 in request 4.
+      Object.assign(next.requests[4]!.participants[0]!, { automationStopped: true, state: 'relinquished' })
+    })
+    const leaving = new Set(archivableWatcherRequests(value))
+    for (const index of [1, 3, 4]) expect.soft(leaving.has(requestAt(value, index).id), `request ${index}`).toBe(true)
+    for (const index of [2, 8, 9, 10]) expect.soft(leaving.has(requestAt(value, index).id), `request ${index}`).toBe(false)
+  })
+
+  it('counts a thread\'s stop on a closed request, so a settle under a newer one does not end the hold', () => {
+    const value = record(WATCHER_LIVE_CLOSED_REQUESTS + 30, next => {
+      // worker-1: closed long ago in 1 and 8, and stopped again under request 15, which is still active.
+      for (const index of [1, 8, 15]) next.requests[index]!.participants[0]!.automationStopped = true
+      Object.assign(next.requests[15]!, { state: 'active', closedAt: null })
+      // worker-2: closed in 2 and 9, and stopped under 16, closed, whose settle has not come back yet.
+      for (const index of [2, 9, 16]) next.requests[index]!.participants[0]!.automationStopped = true
+      next.operations[16]!.deliveryState = 'dispatching'
+      // worker-3: closed in 3 and 10, and stopped under 17, a paired desktop's, which that desktop can settle.
+      for (const index of [3, 10, 17]) next.requests[index]!.participants[0]!.automationStopped = true
+      next.requests[17]!.remoteOrigin = { clientId: 'desktop', master: next.current!, creationOperationId: randomUUID(), ceiling: 'approval-required' }
+    })
+    const leaving = new Set(archivableWatcherRequests(value))
+    for (const index of [1, 2, 3]) expect.soft(leaving.has(requestAt(value, index).id), `request ${index}`).toBe(true)
+    for (const index of [8, 9, 10, 15, 16, 17]) expect.soft(leaving.has(requestAt(value, index).id), `request ${index}`).toBe(false)
+    // Each newer request lets go of its own participation alone, as an accepted settle under it does: the hold stays.
+    const next = structuredClone(value) as WatcherRecord
+    removeArchivedWork(next, leaving)
+    for (const index of [15, 16, 17]) next.requests.find(item => item.id === requestAt(value, index).id)!.participants[0]!.state = 'relinquished'
+    const held = new Set(next.requests.flatMap(request => request.participants.flatMap(participant => participant.state === 'participating' && participant.automationStopped ? [participant.target.threadId] : [])))
+    expect(held).toEqual(new Set(['worker-1', 'worker-2', 'worker-3']))
+  })
+
+  it('keeps the request a stopped thread\'s takeover line is drawn from, so the user\'s next send there still shows it', () => {
+    const OLDER = { hostId: HOST, threadId: 'older-watcher-thread' }
+    const value = record(WATCHER_LIVE_CLOSED_REQUESTS + 30, next => {
+      // worker-1 was stopped: requests 1 and 8 are ordinary requests of this Watcher, 15 is its standing watch's, the newest.
+      for (const index of [1, 8, 15]) next.requests[index]!.participants[0]!.automationStopped = true
+      next.requests[15]!.standingWatchId = randomUUID()
+      // worker-2 was stopped too: request 2 is an older Watcher conversation's, 9 this one's, 16 a standing watch's.
+      for (const index of [2, 9, 16]) next.requests[index]!.participants[0]!.automationStopped = true
+      next.requests[2]!.watcher = OLDER
+      next.requests[16]!.standingWatchId = randomUUID()
+    })
+    const ids = archivableWatcherRequests(value)
+    const leaving = new Set(ids)
+    // The standing watch's request holds the queue; the newest ordinary one of each conversation holds the line.
+    expect.soft(leaving.has(requestAt(value, 1).id), 'request 1').toBe(true)
+    for (const index of [2, 8, 9, 15, 16]) expect.soft(leaving.has(requestAt(value, index).id), `request ${index}`).toBe(false)
+    // The user sends in each stopped thread: every stopped participation the record holds becomes a takeover (`takeoverChange`).
+    const sent = (from: WatcherRecord): WatcherRecord => {
+      const next = structuredClone(from) as WatcherRecord
+      for (const request of next.requests) for (const participant of request.participants) {
+        if (participant.state === 'participating' && participant.automationStopped) Object.assign(participant, { state: 'taken-over', takeover: { reason: 'user-send', at: at(500) } })
+      }
+      return next
+    }
+    const archived = structuredClone(value) as WatcherRecord
+    removeArchivedWork(archived, leaving)
+    for (const current of [value.current!, { ...value.current!, target: OLDER }]) {
+      const lines = watcherTakeovers({ current, requests: sent(value).requests })
+      expect(lines.length).toBeGreaterThan(0)
+      expect(watcherTakeovers({ current, requests: sent(archived).requests })).toEqual(lines)
+    }
+  })
+
+  it('holds each stopped thread\'s queue as before, with a record no longer than its newest requests and one per stopped thread', () => {
+    // A record as weeks of Stop watching leave it: 3,000 closed requests over 300 threads, every participation stopped.
+    const threads = 300, count = 3_000
+    const value = record(count, next => {
+      next.requests.forEach((request, index) => {
+        const target = { hostId: HOST, threadId: `stopped-${index % threads}` }
+        Object.assign(request.participants[0]!, { target, automationStopped: true })
+        next.operations[index]!.target = target
+      })
+    })
+    /** The threads whose queue a stopped participation holds, as `preserveUserQueue` asks it of each. */
+    const held = (from: WatcherRecord): Set<string> => new Set(from.requests.flatMap(request => request.participants.flatMap(participant =>
+      participant.state === 'participating' && (participant.automationStopped === true || request.state === 'stopped' && participant.startedBy === 'watcher') ? [participant.target.threadId] : [])))
+    const ids = archivableWatcherRequests(value)
+    // The newest 200 name the last 200 of the 300 threads; the other 100 threads each keep their newest request.
+    expect(ids).toHaveLength(count - WATCHER_LIVE_CLOSED_REQUESTS - (threads - WATCHER_LIVE_CLOSED_REQUESTS))
+    const next = structuredClone(value) as WatcherRecord
+    removeArchivedWork(next, new Set(ids))
+    expect(next.requests).toHaveLength(threads)
+    expect(held(next)).toEqual(held(value))
+    expect(held(next).size).toBe(threads)
+    expect(() => watcherRecordSchema.parse(next)).not.toThrow()
+    // Nothing more is due once it has gone: the record does not shrink and grow by turns.
+    expect(archivableWatcherRequests(next)).toEqual([])
   })
 
   it('leaves a record that is still valid, with every reference it holds still named', () => {
