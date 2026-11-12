@@ -99,7 +99,7 @@ it('shows a plugin’s newest uses: what was done and in which thread, and how a
   ]
   const bridge: PluginsBridge = { gitHubSignIn: async () => ({ state: 'signed-in', login: 'example-user' }), recentUse: async () => uses, ...noAccounts }
   await act(async () => { render(<PluginsSettings bridge={bridge} />) })
-  expect(screen.getByText('A thread’s agent uses a plugin through Sotto’s tools and never holds its secret. So far the tools only read, and reading never asks you.')).toBeInTheDocument()
+  expect(screen.getByText('A thread’s agent uses a plugin through Sotto’s tools and never holds its secret. Reading never asks you. A change, such as posting a comment, asks you first in its thread, each time.')).toBeInTheDocument()
   fireEvent.click(row())
   const items = within(screen.getByRole('region', { name: 'Recent use' })).getAllByRole('listitem')
   expect(items.map(item => item.querySelector('span')!.textContent)).toEqual([
@@ -108,7 +108,7 @@ it('shows a plugin’s newest uses: what was done and in which thread, and how a
     'Read from GitHub in a thread that is gone Sotto refused it.',
   ])
   expect(items[0]!.querySelector('time')).toHaveAttribute('datetime', '2026-11-12T08:00:00.000Z')
-  expect(screen.getByText('Sotto records what was done and by which thread, never what was read.')).toBeInTheDocument()
+  expect(screen.getByText('Sotto records what was done and by which thread, never what was read or sent.')).toBeInTheDocument()
 })
 
 it('says when no thread has used a plugin yet, shows only the newest five, and reads the uses again on Check again', async () => {
@@ -259,4 +259,22 @@ it('says Vercel is turning requests away, not that the connection is lost, when 
   fireEvent.change(screen.getByLabelText('Token'), { target: { value: TOKEN } })
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Add account' })) })
   expect(screen.getByRole('alert')).toHaveTextContent('Vercel is turning requests away for now, so the token could not be checked. Nothing was saved. Wait a minute, then try again.')
+})
+
+it('says of a change what was done or only asked for, and how the user answered', async () => {
+  const uses = [
+    use(1, { tool: 'github_comment', kind: 'comment', outcome: 'done' }),
+    use(2, { tool: 'github_comment', kind: 'comment', outcome: 'denied' }),
+    use(3, { tool: 'github_comment', kind: 'comment', outcome: 'lapsed' }),
+    use(4, { tool: 'github_comment', kind: 'comment', outcome: 'failed' }),
+  ]
+  const bridge: PluginsBridge = { gitHubSignIn: async () => ({ state: 'signed-in', login: 'example-user' }), recentUse: async () => uses, ...noAccounts }
+  await act(async () => { render(<PluginsSettings bridge={bridge} />) })
+  fireEvent.click(row())
+  expect(within(screen.getByRole('region', { name: 'Recent use' })).getAllByRole('listitem').map(item => item.querySelector('span')!.textContent)).toEqual([
+    'Posted a comment in “Fix the preview build” You allowed it.',
+    'Asked to post a comment in “Fix the preview build” You said no.',
+    'Asked to post a comment in “Fix the preview build” Nobody answered in time.',
+    'Asked to post a comment in “Fix the preview build” You allowed it, and it failed.',
+  ])
 })

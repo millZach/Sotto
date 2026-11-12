@@ -306,6 +306,10 @@ msgstr ""
 msgid "A browser action is still running."
 msgstr ""
 
+#: src/main/plugins/changeWords.ts
+msgid "A cancelled build cannot be picked up again. It has to be deployed again."
+msgstr ""
+
 #: src/main/tools/checkpoints.ts
 msgid "A checkpoint file backup failed its integrity check."
 msgstr ""
@@ -449,6 +453,11 @@ msgstr ""
 msgid "Add host is connecting to {host} right now. Nothing was saved. Wait for it to finish, then try again."
 msgstr ""
 
+#. placeholder {0}: change.url
+#: src/main/plugins/changeWords.ts
+msgid "Address: {0}"
+msgstr ""
+
 #: src/main/agents/subagentIpc.ts
 msgid "Agents cannot reach the host machine from this window. Nothing was changed. Restart Sotto and try again."
 msgstr ""
@@ -570,6 +579,18 @@ msgstr ""
 msgid "Branches are unavailable."
 msgstr ""
 
+#: src/main/plugins/changeWords.ts
+msgid "Cancel a deployment on Vercel"
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Cancel the build"
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Cancel the build of {named} on Vercel?"
+msgstr ""
+
 #: src/main/tools/browser.ts
 msgid "Capture the page again before selecting feedback."
 msgstr ""
@@ -688,6 +709,14 @@ msgstr ""
 msgid "Codex cannot judge Climbs on Windows yet. Choose Claude or run the Climb on a Mac or Linux computer."
 msgstr ""
 
+#: src/main/plugins/changeWords.ts
+msgid "Comment on GitHub"
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Comment on GitHub as {login}"
+msgstr ""
+
 #: src/main/tools/checkpoints.ts
 msgid "Completed file snapshot was unavailable."
 msgstr ""
@@ -780,6 +809,10 @@ msgstr ""
 msgid "Council history could not be read. Its file was kept unchanged. Update Sotto or restore councils.json before starting another Council."
 msgstr ""
 
+#: src/main/plugins/changeWords.ts
+msgid "Deployment: {id}"
+msgstr ""
+
 #: src/main/hosts/hostFailureWords.ts
 msgid "Desktop permissions could not be set up on the host. Nothing was replaced. Check its data folder, then reconnect."
 msgstr ""
@@ -790,6 +823,10 @@ msgstr ""
 
 #: src/main/hosts/hostSetup.ts
 msgid "Don’t add"
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Don’t post it"
 msgstr ""
 
 #: src/main/hosts/hostFailureWords.ts
@@ -896,6 +933,11 @@ msgstr ""
 msgid "Install that Node for the SSH account on {name}, then try again."
 msgstr ""
 
+#. placeholder {0}: change.state
+#: src/main/plugins/changeWords.ts
+msgid "Its build now: {0}"
+msgstr ""
+
 #: src/main/hosts/hostSetup.ts
 msgid "Its row in Settings > Hosts & phones says what to do."
 msgstr ""
@@ -908,12 +950,21 @@ msgstr ""
 msgid "Keep using {from}, or update it by hand on {name} once one is published."
 msgstr ""
 
+#. placeholder {0}: change.target
+#: src/main/plugins/changeWords.ts
+msgid "Kind: {0}"
+msgstr ""
+
 #: src/main/tools/checkpoints.ts
 msgid "Later edits in {path} would be overwritten."
 msgstr ""
 
 #: src/main/tools/checkpoints.ts
 msgid "Later edits in {path} would be overwritten. Preserve them before reverting."
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Leave it running"
 msgstr ""
 
 #: src/main/omarchy/setup.ts
@@ -1177,12 +1228,29 @@ msgstr ""
 msgid "Point at something needs the theme's accent colour from the window."
 msgstr ""
 
+#: src/main/plugins/changeWords.ts
+msgid "Post the comment"
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Post this comment on {where} on GitHub, as {login}?"
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Post this comment on {where} on GitHub, as the account gh is signed in to?"
+msgstr ""
+
 #: src/main/council/climbService.ts
 msgid "Preview the fixed reference before approving."
 msgstr ""
 
 #: src/main/council/climbService.ts
 msgid "Preview the fixed reference before starting."
+msgstr ""
+
+#. placeholder {0}: change.project
+#: src/main/plugins/changeWords.ts
+msgid "Project: {0}"
 msgstr ""
 
 #: src/main/hosts/desktopHostRouter.ts
@@ -1720,6 +1788,10 @@ msgstr ""
 
 #: src/main/teams/teams.ts
 msgid "Tailscale would not let this account change Serve. Run tailscale set --operator=$USER on this computer, then try again. Nothing was linked."
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Team: {team}"
 msgstr ""
 
 #: src/main/teams/teams.ts
@@ -3363,6 +3435,10 @@ msgstr ""
 
 #: src/main/hosts/hostUpdate.ts
 msgid "Use a newer Sotto build, or stop the host on {name}, keep that folder as a backup and move it aside before trying again."
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Vercel account: {account}"
 msgstr ""
 
 #: src/main/app/applicationMenu.ts

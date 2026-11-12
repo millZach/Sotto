@@ -30,7 +30,7 @@ export interface ShownPictureThread {
  * `sotto_media`'s show_in_thread, as an agent does when the user asks to see it. The profile, the fixture and the
  * environment are put back afterwards. `pictures` makes the turn write that many screenshots rather than one.
  */
-export async function withShownPictureThread(prefix: string, journey: (thread: ShownPictureThread) => Promise<void>, options: { readonly everyPicture?: boolean; readonly pictures?: number } = {}): Promise<void> {
+export async function withShownPictureThread(prefix: string, journey: (thread: ShownPictureThread) => Promise<void>, options: { readonly everyPicture?: boolean; readonly pictures?: number; readonly owlFeatures?: string } = {}): Promise<void> {
   const profile = (await ownedE2EProfile({ prefix })).directory
   const root = join(profile, 'native-fixture')
   const project = join(root, 'project')
@@ -41,7 +41,8 @@ export async function withShownPictureThread(prefix: string, journey: (thread: S
   const previous = { root: process.env.SOTTO_E2E_NATIVE_FIXTURE_ROOT, executable: process.env.SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE, owl: process.env.SOTTO_OWL_FEATURES }
   process.env.SOTTO_E2E_NATIVE_FIXTURE_ROOT = root
   process.env.SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE = process.execPath
-  process.env.SOTTO_OWL_FEATURES = 'inline-media=1'
+  // A journey for another Owl feature names its own switches, and gets the same thread.
+  process.env.SOTTO_OWL_FEATURES = options.owlFeatures ?? 'inline-media=1'
   let launched: LaunchedSotto | undefined
   try {
     launched = await launchSotto('success', profile)

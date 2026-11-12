@@ -53,6 +53,9 @@ describe('Sotto browser tool admission', () => {
     await post(endpoint, invoke, { 'Sotto-Tool-Wait': '300' })
     await post(endpoint, invoke)
     for (const forged of ['0', '-5', '30.5', '3601', 'soon']) await post(endpoint, invoke, { 'Sotto-Tool-Wait': forged })
-    expect(call.mock.calls.map(args => (args as unknown[])[3])).toEqual([{ waitMs: 300_000 }, {}, {}, {}, {}, {}, {}])
+    const contexts = call.mock.calls.map(args => (args as unknown[])[3] as { waitMs?: number; signal?: AbortSignal })
+    expect(contexts.map(context => context.waitMs)).toEqual([300_000, undefined, undefined, undefined, undefined, undefined, undefined])
+    // Every call also carries a signal for its client going away, which an answered call never trips.
+    expect(contexts.every(context => context.signal instanceof AbortSignal && !context.signal.aborted)).toBe(true)
   })
 })

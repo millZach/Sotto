@@ -89,6 +89,20 @@ So a Vercel read is held four ways rather than one, and this is the pattern for 
 
 The cost is that a project named `env` or `files` cannot be read by name, and that a field Vercel adds later under a name this does not know would pass. The first is rare and the refusal says why; the second is why the list is by ending, not by exact name.
 
+## November 12, 2026: how a change waits
+
+Slice 4 built decision 7 and settled what it left open.
+
+- **A change is one of Sotto's own requests in its thread**, as host setup's question is, not a new kind of card. That is what puts it in Needs you and on a paired phone, and what holds it to the coordinator's rules for who may answer: the user's explicit choice, never a wake-up turn. It offers two choices, allow this once and no. There is no "always" on the card; a standing answer is an account's **Ask before each** switch, where the decision gives it one.
+- **It lapses after five minutes**, as the browser's and the cloud iPhone's asks do, and the agent is told to say what it wanted rather than ask again. A client that says it waits less than that for a call gets a card that lapses a minute before its wait ends, so the change and its result still fit.
+- **A card lives no longer than the call it is for.** It stops when the client's connection closes before the answer, as it does when a turn is stopped; when its thread is settled, archived or deleted; and when Sotto closes. An allowed change is not made once any of those has happened. Otherwise an Allow could act for an agent that will never hear of it, and that would ask again.
+- **The card is worded by Sotto from arguments it has checked**, never from the agent's own description of what it is doing, and shows everything that will be sent. Where the words need something from the service, as a Vercel deployment's project and whether it is production, Sotto reads it first; that is a read, and nothing it returns is used for the call.
+- **What is sent never travels in a command's arguments.** A GitHub comment goes to `gh` as JSON on standard input, so its words cannot be read as flags or as a file to send.
+- **Watcher is not offered a change's tool**, and a call to one from Watcher's thread is refused without asking, so decision 12 does not rest on the list alone.
+- **The use record keeps how a change was answered**: done, failed, denied or lapsed. A stopped ask keeps nothing.
+
+Zach chose the first named changes on November 12: for GitHub, comment, open an issue, and close or reopen an issue; for Vercel, redeploy as a preview, promote to production, cancel a build and roll back. Redeploy as a preview is held back: Vercel's pages say that without a target the branch decides production or preview, so it ships only after a check against a real project.
+
 ## Considered options
 
 - **Where secrets live.** Each computer its own, as ADR-0025 has it (rejected: every account typed in on every computer). The desktop keeps them and answers a host's calls (rejected: forge's threads would lose plugins while the laptop is closed). One operating-system keychain entry per account (rejected: a native dependency, which ADR-0018 says needs its own ADR).

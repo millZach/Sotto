@@ -60,7 +60,7 @@ export function PluginsSettings({ bridge = window.sotto?.plugins }: { readonly b
   }, [bridge])
   const groupTitle: Record<PluginGroupId, string> = { code: t`Code and deploys` }
   return <div className="plugins-settings">
-    <p className="tt-paragraph plugins-lead"><Trans>A thread’s agent uses a plugin through Sotto’s tools and never holds its secret. So far the tools only read, and reading never asks you.</Trans></p>
+    <p className="tt-paragraph plugins-lead"><Trans>A thread’s agent uses a plugin through Sotto’s tools and never holds its secret. Reading never asks you. A change, such as posting a comment, asks you first in its thread, each time.</Trans></p>
     <SettingsGroup title={groupTitle.code} icon={Code} rows={false}>
       <div className="plugins-list">
         {PLUGINS.filter(plugin => plugin.group === 'code').map(plugin => plugin.id === 'github'
@@ -296,19 +296,27 @@ function RecentUse({ name, uses }: { readonly name: string; readonly uses: reado
     issues: t`Read issues`, 'pull-requests': t`Read pull requests`, repository: t`Read a repository`, commits: t`Read commits`, checks: t`Read checks`,
     releases: t`Read releases`, search: t`Searched ${name}`, account: t`Read account details`, deployments: t`Read deployments`, projects: t`Read projects`,
     domains: t`Read domains`, logs: t`Read a build log`, other: t`Read from ${name}`,
+    comment: t`Posted a comment`, 'deployment-cancel': t`Cancelled a deployment’s build`,
   }
+  // A change that was not made: what the agent asked to do, since nothing was done.
+  const asked: Partial<Record<PluginReadKind, string>> = { comment: t`Asked to post a comment`, 'deployment-cancel': t`Asked to cancel a deployment’s build` }
+  const changed = (use: ShownPluginUse): boolean => use.tool !== 'plugin_read'
   return <section className="plugin-use" aria-labelledby={headingId}>
     <h4 id={headingId}><Trans>Recent use</Trans></h4>
     {shown.length === 0 ? <p className="tt-paragraph plugin-row__note"><Trans>No thread has used {name} yet.</Trans></p> : <ul>
       {shown.map(use => <li key={use.id}>
         <time dateTime={use.at}>{whenUsed(new Date(use.at))}</time>
         <span>
-          {what[use.kind]}{' '}
+          {use.outcome === 'done' || !changed(use) ? what[use.kind] : asked[use.kind] ?? what[use.kind]}{' '}
           <span className="plugin-use__thread">{use.threadTitle === null ? t`in a thread that is gone` : t`in “${use.threadTitle}”`}</span>
-          {use.outcome === 'refused' ? <>{' '}<Trans>Sotto refused it.</Trans></> : use.outcome === 'failed' ? <>{' '}<Trans>It failed.</Trans></> : null}
+          {use.outcome === 'refused' ? <>{' '}<Trans>Sotto refused it.</Trans></>
+            : use.outcome === 'failed' ? <>{' '}{changed(use) ? <Trans>You allowed it, and it failed.</Trans> : <Trans>It failed.</Trans>}</>
+              : use.outcome === 'denied' ? <>{' '}<Trans>You said no.</Trans></>
+                : use.outcome === 'lapsed' ? <>{' '}<Trans>Nobody answered in time.</Trans></>
+                  : changed(use) ? <>{' '}<Trans>You allowed it.</Trans></> : null}
         </span>
       </li>)}
     </ul>}
-    <p className="tt-paragraph plugin-row__note"><Trans>Sotto records what was done and by which thread, never what was read.</Trans></p>
+    <p className="tt-paragraph plugin-row__note"><Trans>Sotto records what was done and by which thread, never what was read or sent.</Trans></p>
   </section>
 }

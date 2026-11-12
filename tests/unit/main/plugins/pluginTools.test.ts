@@ -6,7 +6,7 @@ import { readGitHub } from '../../../../src/main/plugins/github/read'
 import { PluginToolServer, type PluginToolHandlers } from '../../../../src/main/plugins/pluginTools'
 import type { PluginUseReport } from '../../../../src/main/plugins/useRecord'
 import { readVercel, type VercelFetch } from '../../../../src/main/plugins/vercel/read'
-import { PLUGIN_ACCOUNTS_TOOL, PLUGIN_READ_TOOL, PLUGINS_MCP_SERVER, type GitHubSignIn, type PluginAccount } from '../../../../src/shared/plugins'
+import { GITHUB_COMMENT_TOOL, PLUGIN_ACCOUNTS_TOOL, PLUGIN_READ_TOOL, PLUGINS_MCP_SERVER, VERCEL_CANCEL_TOOL, type GitHubSignIn, type PluginAccount } from '../../../../src/shared/plugins'
 
 const servers: PluginToolServer[] = []
 afterEach(async () => { await Promise.all(servers.splice(0).map(server => server.close())) })
@@ -42,6 +42,11 @@ function tools(options: { answer?: string | Error; signIn?: GitHubSignIn; record
     findAccount: async (_plugin, name) => added.length === 0 ? 'none' : name === undefined ? (added.length === 1 ? added[0]! : 'ambiguous') : added.find(account => account.name.toLowerCase() === name.toLowerCase()) ?? 'unknown',
     readVercel: async (accountId, path, query) => options.locked ? { ok: false, reason: 'locked' } : readVercel(vercelFetch, accountId === WORK.id || accountId === PERSONAL.id ? VERCEL_TOKEN : '', path, query),
     record: options.record ?? (async report => { recorded.push(report) }),
+    isWatcher: () => false,
+    askChange: async () => 'denied',
+    commentOnGitHub: async () => ({ ok: false, reason: 'failed' }),
+    describeVercelDeployment: async () => ({}),
+    cancelVercelDeployment: async () => ({ ok: false, reason: 'failed' }),
   })
   servers.push(server)
   return { server, ghCalls, recorded, vercelCalls, forget: () => { gone = true } }
@@ -49,11 +54,11 @@ function tools(options: { answer?: string | Error; signIn?: GitHubSignIn; record
 const said = (result: { content: { type: string; text?: string }[] }): string => result.content.map(part => part.text ?? '').join('\n')
 
 describe('sotto_plugins, the tools a thread’s agent uses plugins through (ADR-0205)', () => {
-  it('is offered to an admitted thread only, and both tools say they read', async () => {
+  it('is offered to an admitted thread only, and says which tools read and which change something', async () => {
     const { server } = tools()
     expect(server.name).toBe(PLUGINS_MCP_SERVER)
     expect(server.definitions.map(tool => [tool.name, tool.annotations?.readOnlyHint, tool.annotations?.destructiveHint])).toEqual([
-      [PLUGIN_ACCOUNTS_TOOL, true, false], [PLUGIN_READ_TOOL, true, false]])
+      [PLUGIN_ACCOUNTS_TOOL, true, false], [PLUGIN_READ_TOOL, true, false], [GITHUB_COMMENT_TOOL, false, false], [VERCEL_CANCEL_TOOL, false, true]])
     await expect(server.mcpServer('someone-else')).resolves.toBeUndefined()
     const offered = await server.mcpServer('admitted')
     expect(offered).toMatchObject({ name: PLUGINS_MCP_SERVER, type: 'http' })
@@ -65,11 +70,10 @@ describe('sotto_plugins, the tools a thread’s agent uses plugins through (ADR-
     expect(ghCalls).toEqual([])
   })
 
-  it('is one of the tools Watcher is given, since it only reads', () => {
+  it('is one of the servers Watcher is given, for its reading tools', () => {
     const { server } = tools()
     const others = [{ name: 'sotto_visual' }, { name: 'sotto_host_setup' }, { name: 'sotto_pull_requests' }].map(entry => ({ ...entry, definitions: [], mcpServer: async () => undefined }))
     expect(watcherThreadTools([...others, server]).map(entry => entry.name)).toEqual(['sotto_pull_requests', PLUGINS_MCP_SERVER])
-    expect(server.definitions.every(tool => tool.annotations?.readOnlyHint === true)).toBe(true)
   })
 
   it('lists who is signed in without reading from GitHub or recording a use', async () => {
@@ -160,7 +164,7 @@ describe('sotto_plugins, the tools a thread’s agent uses plugins through (ADR-
     const post = (frame: object, headers: Record<string, string> = Object.fromEntries(endpoint.headers.map(header => [header.name, header.value]))): Promise<Response> =>
       fetch(endpoint.url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, ...frame }) })
     const listed = await (await post({ method: 'tools/list' })).json() as { result: { tools: { name: string }[] } }
-    expect(listed.result.tools.map(tool => tool.name)).toEqual([PLUGIN_ACCOUNTS_TOOL, PLUGIN_READ_TOOL])
+    expect(listed.result.tools.map(tool => tool.name)).toEqual([PLUGIN_ACCOUNTS_TOOL, PLUGIN_READ_TOOL, GITHUB_COMMENT_TOOL, VERCEL_CANCEL_TOOL])
     const read = await (await post({ method: 'tools/call', params: { name: PLUGIN_READ_TOOL, arguments: { plugin: 'github', path: 'user' } } })).json() as { result: { content: { text: string }[] } }
     expect(read.result.content[0]!.text).toBe('{"login":"example-user"}')
     expect(ghCalls).toHaveLength(1)
