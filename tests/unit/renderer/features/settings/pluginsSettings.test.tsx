@@ -1,6 +1,7 @@
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
+import { waitFor } from '@testing-library/react'
 import { PluginsSettings } from '../../../../../src/renderer/src/features/settings/PluginsSettings'
 import type { GitHubSignIn, PluginAccount, PluginAccountResult, PluginsBridge, ShownPluginUse } from '../../../../../src/shared/plugins'
 import { deferred } from '../../../../fixtures/deferred'
@@ -169,8 +170,10 @@ it('says what happened when Vercel refuses a token, that nothing was saved, and 
   fireEvent.change(screen.getByLabelText('Token'), { target: { value: TOKEN } })
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Add account' })) })
   expect(screen.getByRole('alert')).toHaveTextContent('Vercel did not accept this token. Nothing was saved. Make a new token at vercel.com/account/tokens and paste it here.')
-  // The form stays, so the name need not be typed again.
+  // The form stays, so the name need not be typed again, but the refused token is not kept in the page.
   expect(screen.getByLabelText('Name')).toHaveValue('Work')
+  expect(screen.getByLabelText('Token')).toHaveValue('')
+  expect(document.body.innerHTML).not.toContain(TOKEN)
   // Escape cancels the form without closing the row, and focus goes back to the button that opened it.
   fireEvent.keyDown(screen.getByLabelText('Name'), { key: 'Escape' })
   expect(screen.queryByRole('form', { name: 'Add a Vercel account' })).toBeNull()
@@ -212,6 +215,8 @@ it('asks before removing an account, saying what is deleted and that nothing cha
   expect(removeAccount).toHaveBeenCalledWith({ id: work.id })
   expect(screen.queryByRole('region', { name: 'Vercel account Work' })).toBeNull()
   expect(vercelRow()).toHaveAccessibleName('Vercel Not added')
+  // The account's buttons are gone with it: focus goes to the button that adds one.
+  await waitFor(() => expect(screen.getByRole('button', { name: 'Add a Vercel account' })).toHaveFocus())
 })
 
 it('lists each account’s own recent use, and names several accounts on the folded row', async () => {
@@ -223,4 +228,24 @@ it('lists each account’s own recent use, and names several accounts on the fol
   expect(within(screen.getByRole('region', { name: 'Vercel account Work' })).getAllByRole('listitem').map(item => item.querySelector('span')!.textContent)).toEqual(['Read deployments in “Fix the preview build”'])
   expect(within(screen.getByRole('region', { name: 'Vercel account Personal' })).getAllByRole('listitem').map(item => item.querySelector('span')!.textContent)).toEqual(['Read a build log in “Fix the preview build”'])
   expect(screen.getByRole('button', { name: 'Add another Vercel account' })).toBeInTheDocument()
+})
+
+it('does not let a token that is being checked be cancelled, since it is saved or refused whatever the form does', async () => {
+  const checking = deferred<PluginAccountResult>()
+  const addAccount = vi.fn(() => checking.promise)
+  await act(async () => { render(<PluginsSettings bridge={vercelBridge([], { addAccount })} />) })
+  fireEvent.click(vercelRow())
+  fireEvent.click(screen.getByRole('button', { name: 'Add a Vercel account' }))
+  fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Work' } })
+  fireEvent.change(screen.getByLabelText('Token'), { target: { value: TOKEN } })
+  fireEvent.click(screen.getByRole('button', { name: 'Add account' }))
+  const cancel = screen.getByRole('button', { name: 'Cancel' })
+  expect(cancel).toHaveAttribute('aria-disabled', 'true')
+  fireEvent.click(cancel)
+  fireEvent.keyDown(screen.getByLabelText('Name'), { key: 'Escape' })
+  // The form is still there, and so is the row.
+  expect(screen.getByRole('form', { name: 'Add a Vercel account' })).toBeInTheDocument()
+  expect(vercelRow()).toHaveAttribute('aria-expanded', 'true')
+  await act(async () => { checking.resolve({ ok: true, accounts: [work] }) })
+  expect(screen.getByRole('region', { name: 'Vercel account Work' })).toBeInTheDocument()
 })

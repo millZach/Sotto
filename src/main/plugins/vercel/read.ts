@@ -20,12 +20,13 @@ const QUERY_KEY = /^[A-Za-z_][A-Za-z0-9_.[\]-]{0,63}$/u
 /**
  * Reads Sotto refuses because what they return is other credentials, or may be (ADR-0205, decision 6). Vercel's pages,
  * read on November 12, 2026, do not say whether an environment variable's value comes back in the clear, so every
- * route to one is refused, with the routes to tokens, signing secrets, certificates, stores and a deployment's files.
+ * route to one is refused, with the routes to tokens, signing secrets, certificates, stores, a deployment's files and
+ * a domain's transfer code.
  * A path is refused when any of its parts is one of these, in any version of the API.
  */
 const SECRET_PARTS: ReadonlySet<string> = new Set([
   'env', 'secrets', 'tokens', 'token', 'edge-config', 'drains', 'log-drains', 'webhooks', 'certs', 'integrations', 'storage', 'stores',
-  'files', 'bypass', 'oidc', 'connect',
+  'files', 'bypass', 'oidc', 'connect', 'auth-code',
 ])
 /** Query parameters that ask for a secret in the clear, or for an answer that never ends. */
 const REFUSED_QUERY: ReadonlySet<string> = new Set(['decrypt', 'follow'])
@@ -36,14 +37,14 @@ const REFUSED_QUERY: ReadonlySet<string> = new Set(['decrypt', 'follow'])
  * too: it is theirs, and an answer goes on to the thread's provider.
  */
 const REMOVED_KEYS: ReadonlySet<string> = new Set([
-  'env', 'legacyvalue', 'vsmvalue', 'protectionbypass', 'passwordprotection', 'deployhooks', 'gitcredentialid', 'authorization', 'headers', 'email',
+  'env', 'legacyvalue', 'vsmvalue', 'protectionbypass', 'passwordprotection', 'deployhooks', 'gitcredentialid', 'authorization', 'headers', 'email', 'authcode',
 ])
 const REMOVED_ENDINGS = /(?:secret|secrets|token|tokens|password|passphrase|privatekey|apikey|credential|credentials|connectionstring)$/u
 
 export type VercelReadRefusal = 'path' | 'query' | 'secrets'
 export type VercelRead =
   | { readonly ok: true; readonly text: string; readonly truncated: boolean }
-  | { readonly ok: false; readonly reason: VercelReadRefusal | 'no-secret' | 'refused' | 'unreachable' | 'failed'; readonly said?: string }
+  | { readonly ok: false; readonly reason: VercelReadRefusal | 'no-secret' | 'locked' | 'refused' | 'unreachable' | 'failed'; readonly said?: string }
 
 /** How this module reaches the network: Node's `fetch`, or a stand-in. */
 export type VercelFetch = (url: string, init: { readonly method: 'GET'; readonly headers: Readonly<Record<string, string>>; readonly redirect: 'manual'; readonly signal: AbortSignal }) => Promise<Response>
@@ -98,20 +99,27 @@ async function bodyOf(response: Response): Promise<string | null> {
   return bytes.byteLength > BODY_MAX_BYTES ? null : new TextDecoder().decode(bytes)
 }
 
-/** One line of what Vercel said went wrong, for the agent that asked: its own code and message, nothing else. */
+/**
+ * What Vercel said went wrong, for the agent that asked: the status, and Vercel's short code for the error when it
+ * is one. Never its message, which is free text a service could put anything in, the request's own token included.
+ */
 function saidBy(status: number, body: string | null): string {
   try {
-    const error = (JSON.parse(body ?? '') as { error?: { code?: unknown; message?: unknown } }).error
-    if (typeof error?.message === 'string') return `${error.message.slice(0, 200)} (HTTP ${status})`
+    const code = (JSON.parse(body ?? '') as { error?: { code?: unknown } }).error?.code
+    if (typeof code === 'string' && /^[a-z][a-z_]{0,39}$/u.test(code)) return `${code} (HTTP ${status})`
   } catch { /* Not JSON: the status alone. */ }
   return `HTTP ${status}`
 }
+
+/** Text with the token taken out of it, wherever a service put it: nothing handed to an agent may carry the token it was read with. */
+const withoutToken = (text: string, token: string): string => token ? text.split(token).join(REMOVED) : text
 
 /**
  * Reads from Vercel's REST API with an account's token (ADR-0205): a GET to api.vercel.com and nothing else. The path
  * and query are checked before anything is sent, a redirect is never followed, so the token cannot be carried to
  * another host, and the answer has to be JSON, so the fields that can hold other credentials can be taken out of it.
- * The token is in the request's header and nowhere else: it is not in the address, the answer, a log or the record.
+ * The token is in the request's header and nowhere else: it is not in the address, a log or the record, and it is
+ * taken out of whatever comes back before that is handed on.
  */
 export async function readVercel(fetcher: VercelFetch, token: string, path: string, query: Readonly<Record<string, string>> = {}, options: { readonly base?: string; readonly signal?: AbortSignal } = {}): Promise<VercelRead> {
   const refusal = vercelReadRefusal(path, query)
@@ -130,11 +138,11 @@ export async function readVercel(fetcher: VercelFetch, token: string, path: stri
   // Vercel marks a token it will not take apart from a token that may not read this one thing, such as another team's.
   if (response.status === 401 || (response.status === 403 && /invalidToken|missingToken/u.test(body ?? ''))) return { ok: false, reason: 'refused' }
   if (response.status >= 300 && response.status < 400) return { ok: false, reason: 'failed', said: 'Vercel sent the read to another address, which Sotto does not follow' }
-  if (!response.ok) return { ok: false, reason: 'failed', said: saidBy(response.status, body) }
+  if (!response.ok) return { ok: false, reason: 'failed', said: withoutToken(saidBy(response.status, body), token) }
   if (body === null) return { ok: false, reason: 'failed', said: 'the answer was too large to read. Ask for a smaller page' }
   let parsed: unknown
   try { parsed = JSON.parse(body) } catch { return { ok: false, reason: 'failed', said: 'the answer was not JSON, so Sotto could not check it for credentials' } }
-  const text = JSON.stringify(withoutSecrets(parsed))
+  const text = withoutToken(JSON.stringify(withoutSecrets(parsed)), token)
   if (text.length <= VERCEL_READ_MAX_CHARS) return { ok: true, text, truncated: false }
   // The cut never falls between the halves of a character that takes two.
   const last = text.charCodeAt(VERCEL_READ_MAX_CHARS - 1)

@@ -159,7 +159,7 @@ function VercelRow({ plugin, bridge, accounts, uses, onAccounts }: {
   return <PluginRow plugin={plugin} state={accounts === null ? 'unknown' : count === 0 ? 'none' : 'signed-in'} summary={summary}>
     <p className="tt-paragraph"><Trans>Deployments, build logs, projects and domains, read with a token you paste. Sotto keeps the token in its encrypted store and makes each read itself, so no agent ever sees it.</Trans></p>
     {accounts === null ? <p className="tt-field__error tt-paragraph" role="alert"><Trans>The accounts could not be read. Nothing was changed. Reopen Settings and try again.</Trans></p> : null}
-    {mine.map(account => <AccountCard key={account.id} account={account} bridge={bridge} onAccounts={onAccounts}
+    {mine.map(account => <AccountCard key={account.id} account={account} bridge={bridge} onAccounts={onAccounts} onRemoved={() => { setAdding(false); requestAnimationFrame(() => addButton.current?.focus()) }}
       uses={uses === null ? null : uses.filter(use => use.accountId === account.id)} />)}
     {adding ? <AddAccount bridge={bridge} onAccounts={onAccounts} onDone={closeAdd} />
       : <div className="plugin-row__actions"><Button ref={addButton} variant="secondary" disabled={accounts === null || !bridge} onClick={() => setAdding(true)}>
@@ -185,15 +185,17 @@ function AddAccount({ bridge, onAccounts, onDone }: { readonly bridge: PluginsBr
     let result: PluginAccountResult
     try { result = await bridge.addAccount({ plugin: 'vercel', name: name.trim(), secret: token.trim() }) } catch { result = { ok: false, problem: 'store' } }
     setBusy(false)
-    if (!result.ok) { setProblem(words(result.problem, false)); return }
-    // The token is not kept in the page a moment longer than the request that carried it.
+    // The token is not kept in the page a moment longer than the request that carried it, whether it was kept or not.
     setToken('')
+    if (!result.ok) { setProblem(words(result.problem, false)); return }
     onAccounts(result.accounts)
     onDone()
   }
   const cancelOnEscape = (event: KeyboardEvent<HTMLFormElement>): void => {
     if (event.key !== 'Escape') return
     event.preventDefault(); event.stopPropagation()
+    // A token already sent to be checked is saved or refused whatever the form does, so the form stays until it knows.
+    if (busy) return
     setToken(''); onDone()
   }
   return <form className="plugin-account plugin-account--form" aria-label={t`Add a Vercel account`} onSubmit={event => void submit(event)} onKeyDown={cancelOnEscape}>
@@ -206,13 +208,18 @@ function AddAccount({ bridge, onAccounts, onDone }: { readonly bridge: PluginsBr
     {problem ? <p className="tt-field__error tt-paragraph" role="alert">{problem}</p> : null}
     <div className="plugin-row__actions">
       <Button type="submit" variant="primary" aria-disabled={!ready}>{busy ? t`Checking…` : t`Add account`}</Button>
-      <Button variant="ghost" onClick={() => { setToken(''); onDone() }}><Trans>Cancel</Trans></Button>
+      <Button variant="ghost" aria-disabled={busy} onClick={() => { if (!busy) { setToken(''); onDone() } }}><Trans>Cancel</Trans></Button>
     </div>
   </form>
 }
 
 /** One account: its name, when its token was saved, Replace and Remove, and its recent use. */
-function AccountCard({ account, bridge, uses, onAccounts }: { readonly account: PluginAccount; readonly bridge: PluginsBridge | undefined; readonly uses: readonly ShownPluginUse[] | null; readonly onAccounts: (accounts: readonly PluginAccount[]) => void }): ReactNode {
+function AccountCard({ account, bridge, uses, onAccounts, onRemoved }: {
+  readonly account: PluginAccount; readonly bridge: PluginsBridge | undefined; readonly uses: readonly ShownPluginUse[] | null
+  readonly onAccounts: (accounts: readonly PluginAccount[]) => void
+  /** The account is gone, and its buttons with it: focus needs somewhere to go. */
+  readonly onRemoved: () => void
+}): ReactNode {
   const { t } = useLingui()
   const words = useProblemWords()
   const [mode, setMode] = useState<'rest' | 'replacing' | 'removing'>('rest')
@@ -237,10 +244,12 @@ function AccountCard({ account, bridge, uses, onAccounts }: { readonly account: 
     if (!result.ok) { setProblem(replacing ? words(result.problem, true) : t`The account could not be removed. Nothing was changed. Try again.`); return }
     onAccounts(result.accounts)
     if (replacing) rest('replace')
+    else onRemoved()
   }
   const cancelOnEscape = (event: KeyboardEvent<HTMLElement>): void => {
     if (event.key !== 'Escape' || mode === 'rest') return
     event.preventDefault(); event.stopPropagation()
+    if (busy) return
     rest(mode === 'replacing' ? 'replace' : 'remove')
   }
   return <section className="plugin-account" aria-label={t`Vercel account ${name}`} onKeyDown={cancelOnEscape}>
@@ -261,14 +270,14 @@ function AccountCard({ account, bridge, uses, onAccounts }: { readonly account: 
       </Field>
       <div className="plugin-row__actions">
         <Button type="submit" variant="primary" aria-disabled={busy || token.trim() === ''}>{busy ? t`Checking…` : t`Save token`}</Button>
-        <Button variant="ghost" onClick={() => rest('replace')}><Trans>Cancel</Trans></Button>
+        <Button variant="ghost" aria-disabled={busy} onClick={() => { if (!busy) rest('replace') }}><Trans>Cancel</Trans></Button>
       </div>
     </form> : null}
     {mode === 'removing' ? <div className="plugin-account__change" role="group" aria-label={t`Remove the Vercel account ${name}`}>
       <p className="tt-paragraph"><Trans>Remove <b>{name}</b>? Its token is deleted from this computer, and threads lose the account at once. Nothing changes at Vercel.</Trans></p>
       <div className="plugin-row__actions">
         <Button variant="danger" autoFocus aria-disabled={busy} onClick={() => void run(() => bridge!.removeAccount({ id: account.id }), false)}><Trans>Remove account</Trans></Button>
-        <Button variant="ghost" onClick={() => rest('remove')}><Trans>Keep it</Trans></Button>
+        <Button variant="ghost" aria-disabled={busy} onClick={() => { if (!busy) rest('remove') }}><Trans>Keep it</Trans></Button>
       </div>
     </div> : null}
     {problem ? <p className="tt-field__error tt-paragraph" role="alert">{problem}</p> : null}

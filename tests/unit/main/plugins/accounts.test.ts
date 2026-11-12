@@ -1,9 +1,9 @@
 // @vitest-environment node
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { PluginAccounts, pluginAccountSlot, type PluginCredentials, type SecretCheck } from '../../../../src/main/plugins/accounts'
+import { PluginAccounts, PluginAccountsUnreadable, pluginAccountSlot, PluginSecretLocked, type PluginCredentials, type SecretCheck } from '../../../../src/main/plugins/accounts'
 import { PLUGIN_ACCOUNTS_MAX } from '../../../../src/shared/plugins'
 
 const folders: string[] = []
@@ -17,12 +17,13 @@ afterEach(async () => { await Promise.all(folders.splice(0).map(made => rm(made,
 /** A credential store held in memory. `failing` makes the next write of a secret fail, as a locked store does. */
 function credentials() {
   const slots = new Map<string, string>()
-  const state = { failing: false }
+  const state = { failing: false, locked: false, failingClear: false }
   const store: PluginCredentials = {
     has: slot => slots.has(slot),
-    get: slot => slots.get(slot) ?? '',
+    get: slot => { if (state.locked) throw new Error('Unlock your operating system credential store to continue.'); return slots.get(slot) ?? '' },
     set: async (slot, value) => {
       if (value && state.failing) throw new Error('Secure credential storage is unavailable. No key was saved.')
+      if (!value && state.failingClear) throw new Error('The credential file could not be written.')
       if (value) slots.set(slot, value); else slots.delete(slot)
     },
   }
@@ -126,5 +127,64 @@ describe('plugin accounts (ADR-0205)', () => {
     await made.add({ plugin: 'vercel', name: 'Personal', secret: OTHER })
     await expect(made.find('vercel', undefined)).resolves.toBe('ambiguous')
     await expect(made.find('vercel', 'personal')).resolves.toMatchObject({ name: 'Personal' })
+  })
+
+  it('keeps the saved secret in use, and says so truthfully, whichever write of a replacement fails', async () => {
+    const { made, directory, kept, again } = await accounts()
+    const added = await made.add({ plugin: 'vercel', name: 'Work', secret: GOOD })
+    const id = added.ok ? added.accounts[0]!.id : ''
+    // The secret cannot be kept: the old one stays, and the day it was saved is put back.
+    kept.state.failing = true
+    await expect(made.replace({ id, secret: OTHER })).resolves.toEqual({ ok: false, problem: 'store' })
+    expect(kept.slots.get(pluginAccountSlot(id))).toBe(GOOD)
+    expect((await again().list())[0]!.savedAt).toBe('2026-11-12T08:00:00.000Z')
+    kept.state.failing = false
+    // The record of accounts cannot be written: nothing was changed, the secret least of all.
+    await rm(join(directory, 'plugin-accounts.json'))
+    await mkdir(join(directory, 'plugin-accounts.json', 'held'), { recursive: true })
+    await expect(made.replace({ id, secret: OTHER })).resolves.toEqual({ ok: false, problem: 'store' })
+    expect(kept.slots.get(pluginAccountSlot(id))).toBe(GOOD)
+  })
+
+  it('removes an account whose secret is deleted even when its record cannot be written, and changes nothing when the secret cannot be deleted', async () => {
+    const { made, directory, kept } = await accounts()
+    const added = await made.add({ plugin: 'vercel', name: 'Work', secret: GOOD })
+    const id = added.ok ? added.accounts[0]!.id : ''
+    kept.state.failingClear = true
+    await expect(made.remove({ id })).resolves.toEqual({ ok: false, problem: 'store' })
+    expect(kept.slots.get(pluginAccountSlot(id))).toBe(GOOD)
+    expect(await made.list()).toHaveLength(1)
+    kept.state.failingClear = false
+    await rm(join(directory, 'plugin-accounts.json'))
+    await mkdir(join(directory, 'plugin-accounts.json', 'held'), { recursive: true })
+    await expect(made.remove({ id })).resolves.toEqual({ ok: true, accounts: [] })
+    expect(kept.slots.size).toBe(0)
+    expect(await made.list()).toEqual([])
+  })
+
+  it('changes nothing while the record of accounts cannot be read, so a passing failure never writes over the accounts', async () => {
+    const { made, directory, kept } = await accounts()
+    await made.add({ plugin: 'vercel', name: 'Work', secret: GOOD })
+    const file = join(directory, 'plugin-accounts.json')
+    const good = await readFile(file, 'utf8')
+    await writeFile(file, 'not json', 'utf8')
+    const later = new PluginAccounts(directory, { credentials: kept.store, check: async () => ({ ok: true, signedInAs: null }) })
+    await expect(later.list()).rejects.toBeInstanceOf(PluginAccountsUnreadable)
+    await expect(later.add({ plugin: 'vercel', name: 'Personal', secret: OTHER })).resolves.toEqual({ ok: false, problem: 'store' })
+    expect(await readFile(file, 'utf8')).toBe('not json')
+    expect(kept.slots.size).toBe(1)
+    // Once the file can be read again, the same store finds the account that was there.
+    await writeFile(file, good, 'utf8')
+    expect((await later.list()).map(account => account.name)).toEqual(['Work'])
+  })
+
+  it('tells a secret that cannot be read from one that is gone', async () => {
+    const { made, kept } = await accounts()
+    const added = await made.add({ plugin: 'vercel', name: 'Work', secret: GOOD })
+    const id = added.ok ? added.accounts[0]!.id : ''
+    kept.state.locked = true
+    expect(() => made.secret(id)).toThrow(PluginSecretLocked)
+    kept.state.locked = false
+    expect(made.secret('11111111-1111-4111-8111-111111111111')).toBe('')
   })
 })

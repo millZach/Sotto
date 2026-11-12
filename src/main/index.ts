@@ -69,7 +69,7 @@ import { registerPluginsIpc } from './plugins/ipc'
 import { readGitHubSignIn, sharedGitHubSignIn } from './plugins/github/signIn'
 import { readGitHub } from './plugins/github/read'
 import { PluginToolServer } from './plugins/pluginTools'
-import { PluginAccounts } from './plugins/accounts'
+import { PluginAccounts, PluginSecretLocked } from './plugins/accounts'
 import { checkVercelToken, readVercel, type VercelFetch } from './plugins/vercel/read'
 import { PluginUseRecord } from './plugins/useRecord'
 import { PLUGIN_USE_THREAD_TITLE_MAX } from '../shared/plugins'
@@ -1378,7 +1378,14 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     admits: threadId => agentHost.admitsPluginTools(threadId), gitHubSignIn: pluginsGitHubSignIn,
     readGitHub: (path, query) => readGitHub(pluginsGh, path, query, pluginsStop.signal), record: use => pluginUse.add(use),
     accounts: () => pluginAccounts.list(), findAccount: (plugin, name) => pluginAccounts.find(plugin, name),
-    readVercel: (accountId, path, query) => readVercel(vercelFetch, pluginAccounts.secret(accountId), path, query, vercelOptions),
+    readVercel: async (accountId, path, query) => {
+      let secret: string
+      try { secret = pluginAccounts.secret(accountId) } catch (error) {
+        if (error instanceof PluginSecretLocked) return { ok: false, reason: 'locked' }
+        throw error
+      }
+      return readVercel(vercelFetch, secret, path, query, vercelOptions)
+    },
   }) : undefined
   if (pluginTools) quitHandles.pluginTools = pluginTools
   // Let an agent babysit its pull requests (ADR-0061): every Claude Code, Codex and Grok Build launch on this computer gets

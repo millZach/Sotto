@@ -58,6 +58,7 @@ describe('reading Vercel with an account’s token (ADR-0205)', () => {
     'v8/certs/cert_example',
     'v1/integrations/configuration/icfg_example',
     'v8/deployments/dpl_example/files/abc123',
+    'v1/registrar/domains/example.com/auth-code',
     'v9/projects/example/ENV',
     'v9/projects/example/%65nv',
   ])('refuses %s, which can hand back other credentials, before anything is sent', async (path) => {
@@ -84,7 +85,7 @@ describe('reading Vercel with an account’s token (ADR-0205)', () => {
       passwordProtection: { deploymentType: 'all' },
       link: { type: 'github', repo: 'example', deployHooks: [{ name: 'hook', url: 'https://example.com/made-up-hook' }], gitCredentialId: 'cred_example' },
       latestDeployments: [{ id: 'dpl_1', meta: { githubCommitMessage: 'Fix the build' }, oidcTokenClaims: { sub: 'example' } }],
-      nested: [{ clientSecret: 'made-up', api_key: 'made-up', accessToken: 'made-up', ok: true }],
+      nested: [{ clientSecret: 'made-up', api_key: 'made-up', accessToken: 'made-up', authCode: 'made-up', ok: true }],
     }
     const f = vercel({ body: { project, user: { username: 'example-user', email: 'someone@example.com' } } })
     const result = await readVercel(f.fetcher, TOKEN, 'v9/projects/example')
@@ -93,7 +94,7 @@ describe('reading Vercel with an account’s token (ADR-0205)', () => {
         id: 'prj_example', name: 'example', env: REMOVED, protectionBypass: REMOVED, passwordProtection: REMOVED,
         link: { type: 'github', repo: 'example', deployHooks: REMOVED, gitCredentialId: REMOVED },
         latestDeployments: [{ id: 'dpl_1', meta: { githubCommitMessage: 'Fix the build' }, oidcTokenClaims: { sub: 'example' } }],
-        nested: [{ clientSecret: REMOVED, api_key: REMOVED, accessToken: REMOVED, ok: true }],
+        nested: [{ clientSecret: REMOVED, api_key: REMOVED, accessToken: REMOVED, authCode: REMOVED, ok: true }],
       },
       user: { username: 'example-user', email: REMOVED },
     })
@@ -113,13 +114,25 @@ describe('reading Vercel with an account’s token (ADR-0205)', () => {
     await expect(readVercel(vercel({ status: 401, body: { error: { code: 'unauthorized', message: 'Not authorized' } } }).fetcher, TOKEN, 'v2/user')).resolves.toEqual({ ok: false, reason: 'refused' })
     await expect(readVercel(vercel({ status: 403, body: { error: { code: 'forbidden', message: 'Not authorized', invalidToken: true } } }).fetcher, TOKEN, 'v2/user')).resolves.toEqual({ ok: false, reason: 'refused' })
     await expect(readVercel(vercel({ status: 403, body: { error: { code: 'forbidden', message: 'You do not have permission to access this resource.' } } }).fetcher, TOKEN, 'v9/projects'))
-      .resolves.toEqual({ ok: false, reason: 'failed', said: 'You do not have permission to access this resource. (HTTP 403)' })
+      .resolves.toEqual({ ok: false, reason: 'failed', said: 'forbidden (HTTP 403)' })
     await expect(readVercel(vercel({ status: 429, text: 'slow down' }).fetcher, TOKEN, 'v6/deployments')).resolves.toEqual({ ok: false, reason: 'failed', said: 'HTTP 429' })
     await expect(readVercel(vercel(new Error('getaddrinfo ENOTFOUND api.vercel.com')).fetcher, TOKEN, 'v6/deployments')).resolves.toEqual({ ok: false, reason: 'unreachable' })
     // An account whose token is gone sends nothing.
     const none = vercel({ body: {} })
     await expect(readVercel(none.fetcher, '', 'v6/deployments')).resolves.toEqual({ ok: false, reason: 'no-secret' })
     expect(none.calls).toEqual([])
+  })
+
+  it('never hands back the token it read with, wherever a service puts it', async () => {
+    // In an error's own words: only Vercel's short code is passed on, never its message.
+    const echoed = await readVercel(vercel({ status: 400, body: { error: { code: 'bad_request', message: `Bearer ${TOKEN} is malformed` } } }).fetcher, TOKEN, 'v6/deployments')
+    expect(echoed).toEqual({ ok: false, reason: 'failed', said: 'bad_request (HTTP 400)' })
+    // As the code itself, or a code that is not a short plain word: the status alone.
+    const asCode = await readVercel(vercel({ status: 400, body: { error: { code: TOKEN } } }).fetcher, TOKEN, 'v6/deployments')
+    expect(JSON.stringify(asCode)).not.toContain(TOKEN)
+    // In an ordinary field of a good answer.
+    const inside = await readVercel(vercel({ body: { note: `seen ${TOKEN} here`, list: [TOKEN] } }).fetcher, TOKEN, 'v6/deployments')
+    expect(inside).toEqual({ ok: true, text: `{"note":"seen ${REMOVED} here","list":["${REMOVED}"]}`, truncated: false })
   })
 
   it('cuts a long answer and says so', async () => {

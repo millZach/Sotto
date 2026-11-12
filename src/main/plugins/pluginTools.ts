@@ -142,6 +142,7 @@ export class PluginToolServer implements ScopedThreadTools {
       case 'secrets': return text(`Sotto does not read that through a plugin, because it holds other credentials, such as a project's environment variables or its tokens. ${NOTHING_READ}`, true)
       case 'query': return text(`Give at most ${GITHUB_QUERY_MAX} query parameters, each a plain name with a text value, and none that asks for a secret in the clear. ${NOTHING_READ}`, true)
       case 'no-secret': return text(`Sotto no longer holds the token for the Vercel account "${account.name}". Ask the user to replace it in ${SETTINGS}. ${NOTHING_READ}`, true)
+      case 'locked': return text(`Sotto could not read the token for the Vercel account "${account.name}", because this computer's credential store is locked. Ask the user to unlock it, then try again. ${NOTHING_READ}`, true)
       case 'refused': return text(`Vercel did not accept the token of the account "${account.name}". Ask the user to replace it in ${SETTINGS}. ${NOTHING_READ}`, true)
       case 'unreachable': return text(`Vercel could not be reached. ${NOTHING_READ} Try again.`, true)
       default: return text(`Vercel did not answer the read${result.said ? `: ${result.said}` : ''}. ${NOTHING_READ}`, true)

@@ -17,7 +17,7 @@ const WORK: PluginAccount = { id: '22222222-2222-4222-8222-000000000001', plugin
 const PERSONAL: PluginAccount = { ...WORK, id: '22222222-2222-4222-8222-000000000002', name: 'Personal' }
 const VERCEL_TOKEN = 'made-up-vercel-token'
 
-function tools(options: { answer?: string | Error; signIn?: GitHubSignIn; record?: PluginToolHandlers['record']; whileReading?: () => void; accounts?: readonly PluginAccount[]; vercel?: { status?: number; body: unknown } } = {}) {
+function tools(options: { answer?: string | Error; signIn?: GitHubSignIn; record?: PluginToolHandlers['record']; whileReading?: () => void; accounts?: readonly PluginAccount[]; vercel?: { status?: number; body: unknown }; locked?: boolean } = {}) {
   const ghCalls: (readonly string[])[] = []
   let gone = false
   const run: RunGitCommand = async (_cwd, _command, args) => {
@@ -40,7 +40,7 @@ function tools(options: { answer?: string | Error; signIn?: GitHubSignIn; record
     readGitHub: (path, query) => readGitHub(run, path, query),
     accounts: async () => added,
     findAccount: async (_plugin, name) => added.length === 0 ? 'none' : name === undefined ? (added.length === 1 ? added[0]! : 'ambiguous') : added.find(account => account.name.toLowerCase() === name.toLowerCase()) ?? 'unknown',
-    readVercel: (accountId, path, query) => readVercel(vercelFetch, accountId === WORK.id || accountId === PERSONAL.id ? VERCEL_TOKEN : '', path, query),
+    readVercel: async (accountId, path, query) => options.locked ? { ok: false, reason: 'locked' } : readVercel(vercelFetch, accountId === WORK.id || accountId === PERSONAL.id ? VERCEL_TOKEN : '', path, query),
     record: options.record ?? (async report => { recorded.push(report) }),
   })
   servers.push(server)
@@ -207,5 +207,12 @@ describe('sotto_plugins, the tools a thread’s agent uses plugins through (ADR-
     const result = await server.call('admitted', PLUGIN_READ_TOOL, { plugin: 'vercel', path: 'v6/deployments' })
     expect(said(result)).toBe('Vercel did not accept the token of the account "Work". Ask the user to replace it in Settings > Plugins. Nothing was read.')
     expect(recorded).toEqual([{ threadId: 'admitted', plugin: 'vercel', accountId: WORK.id, tool: PLUGIN_READ_TOOL, kind: 'deployments', outcome: 'failed' }])
+  })
+
+  it('says to unlock the credential store, not to replace the token, when the token is there but cannot be read', async () => {
+    const { server, vercelCalls } = tools({ accounts: [WORK], locked: true })
+    const result = await server.call('admitted', PLUGIN_READ_TOOL, { plugin: 'vercel', path: 'v6/deployments' })
+    expect(said(result)).toBe('Sotto could not read the token for the Vercel account "Work", because this computer\'s credential store is locked. Ask the user to unlock it, then try again. Nothing was read.')
+    expect(vercelCalls).toEqual([])
   })
 })
