@@ -85,13 +85,16 @@ it('lets Watcher act on the user’s answer to a card it asked under their reque
   expect(question.askedUnder).toBe(asked)
   expect((await f.answer(question.id)).error).toBeNull()
   const news = await f.answerNews(question.id)
-  const opened = f.service.state().requests.find(request => request.rootUserMessageId === `answered:${question.id}`)!
+  const opened = f.service.state().requests.find(request => request.rootUserMessageId === `answered:${question.id}:${asked}`)!
   expect(opened).toMatchObject({ state: 'active' })
   expect(news).toContain('Sotto opened a request for this answer')
   expect(news).toContain(`Use requestId ${opened.id} for what it asks.`)
   const started = await f.start(opened.id, f.other.id)
   expect(started).toMatchObject({ status: 'ok', effectiveChoices: { modelId: f.other.id } })
   expect(started.status === 'ok' && 'role' in started ? started.role?.named : undefined).toEqual(['model'])
+  // A question asked in the answer's own turn is a news turn's, so its answer opens nothing more.
+  const again = await f.ask()
+  expect(f.service.state().questions!.find(item => item.id === again.questionId)!.askedUnder).toBeUndefined()
 })
 
 it('opens no request for an answer to a question Watcher asked outside the user’s request, or for a Skip', async () => {
@@ -112,7 +115,7 @@ it('opens no request for an answer to a question Watcher asked outside the user�
   expect(f.service.state().requests.some(request => request.rootUserMessageId.startsWith('answered:'))).toBe(false)
 })
 
-it('keeps the model a request named for a follow-up “go” while nothing was started or sent under it, and not after (#2483)', async () => {
+it('keeps the model a request named for a follow-up “go” while no thread was started under it, and not after (#2483)', async () => {
   const f = await fixture()
   const first = await f.send('Start the Synthetic project, run by the Synthetic other model.')
   await f.closes(first)

@@ -75,14 +75,20 @@ export function toldUserMessage(id: string, text: string): ToldUserMessage | und
  */
 const TOLD_ROOT = 'told:'
 /**
- * A request the user's answer on Watcher's own question card opened (#2482) is rooted in that question, by this prefix. It
- * is told news's kind of request: for starting threads and sending in the one turn the answer's news starts.
+ * A request the user's answer on Watcher's own question card opened (#2482) is rooted in that question and the user's
+ * request Watcher asked it under, by this prefix, so one answer opens at most one and the request it continues is known
+ * after the question is gone. It is told news's kind of request: for starting threads and sending in the one turn the
+ * answer's news starts.
  */
 const ANSWERED_ROOT = 'answered:'
 export const toldRequestRoot = (hostId: string, threadId: string, messageId: string): string => `${TOLD_ROOT}${hostId}:${threadId}:${messageId}`
-export const answeredRequestRoot = (questionId: string): string => `${ANSWERED_ROOT}${questionId}`
-/** The question of Watcher's whose answer opened a request. Undefined for any other request's root. */
-export const answeredRequestQuestion = (root: string): string | undefined => root.startsWith(ANSWERED_ROOT) ? root.slice(ANSWERED_ROOT.length) || undefined : undefined
+export const answeredRequestRoot = (questionId: string, askedUnder: string): string => `${ANSWERED_ROOT}${questionId}:${askedUnder}`
+/** The question whose answer opened a request, and the user's request it was asked under. Undefined for any other root. */
+export function answeredRequestOf(root: string): { readonly questionId: string; readonly askedUnder: string } | undefined {
+  if (!root.startsWith(ANSWERED_ROOT)) return undefined
+  const [questionId, askedUnder] = root.slice(ANSWERED_ROOT.length).split(':')
+  return questionId && askedUnder ? { questionId, askedUnder } : undefined
+}
 /** Whether news opened this request, a thread's message or the user's answer on a card, rather than a message to Watcher. */
 export const isToldRequest = (request: { readonly rootUserMessageId: string }): boolean => request.rootUserMessageId.startsWith(TOLD_ROOT) || request.rootUserMessageId.startsWith(ANSWERED_ROOT)
 /** The user's message a told request is rooted in, and its thread. Undefined for any other request's root. */

@@ -63,7 +63,7 @@ import { WatcherToldNews } from './watcherToldNews'
 import { WatcherQuestions } from './watcherQuestions'
 import { WATCHER_ASK_NOTE, watcherAskInputSchema, watcherQuestionChoice, watcherQuestionOf, type WatcherQuestion } from '../../shared/watcherQuestions'
 import type { TeamFacts, TeamProjectFact, TeamThreadFact } from '../../shared/teams'
-import { answeredRequestQuestion, answeredRequestRoot, isToldRequest, toldRequestMessage, toldRequestRoot, toldUserMessage, type ReadyToMerge, type TellWatcherAnswer, type TellWatcherAsk, type ToldUserMessage } from '../../shared/tellWatcher'
+import { answeredRequestOf, answeredRequestRoot, isToldRequest, toldRequestMessage, toldRequestRoot, toldUserMessage, type ReadyToMerge, type TellWatcherAnswer, type TellWatcherAsk, type ToldUserMessage } from '../../shared/tellWatcher'
 import type { CheckpointObservation, PullRequestObservation } from './watcherEvidence'
 import type { WatcherCommand, WatcherCommandOrigin, WatcherControlHooks } from './watcherCommands'
 import type { HiddenWakeUpOutcome } from './hiddenWakeUp'
@@ -178,7 +178,7 @@ const KEEP_FROM_THREAD = 'A thread sent the message this turn answers, so a rule
 const TOLD_REQUEST_LIMITS = 'A thread’s message opened this request, for starting threads and sending in the turn that news started, and for sending to the threads it started after that. It allows nothing else. Nothing was changed. Ask the user.'
 /** What a turn the user's answer on a card started may not do under the request it opened (#2482). */
 const ANSWERED_REQUEST_LIMITS = 'The user’s answer on your question card opened this request, for starting threads and sending in the turn that answer’s news started, and for sending to the threads it started after that. It allows nothing else. Nothing was changed. Ask the user.'
-const toldLimits = (request: Pick<WatcherRequest, 'rootUserMessageId'>): string => answeredRequestQuestion(request.rootUserMessageId) === undefined ? TOLD_REQUEST_LIMITS : ANSWERED_REQUEST_LIMITS
+const toldLimits = (request: Pick<WatcherRequest, 'rootUserMessageId'>): string => answeredRequestOf(request.rootUserMessageId) === undefined ? TOLD_REQUEST_LIMITS : ANSWERED_REQUEST_LIMITS
 /** A request's ID from its root, in UUID form, so one message can open only one, whatever has become of it since. */
 function toldRequestId(root: string): string {
   const hash = createHash('sha256').update(root).digest('hex')
@@ -1398,9 +1398,10 @@ export class WatcherService implements WatcherControlHooks {
     // A choice on a question Watcher asked while it worked on the user's own request opens a request for the one turn its
     // news starts (#2482), as a thread's message that names Watcher does. A Skip, a settle answer or a question a news turn
     // asked opens none: the user never asked Watcher for that work.
-    const created: WatcherRequest | undefined = current && choice !== undefined && !answered.settle && answered.askedUnder
-      && this.questionRequest(record, answered.askedUnder) && !record.requests.some(request => request.id === toldRequestId(answeredRequestRoot(answered.id)))
-      ? { id: toldRequestId(answeredRequestRoot(answered.id)), watcher: current.target, rootUserMessageId: answeredRequestRoot(answered.id), state: 'active', createdAt: now(), closedAt: null, participants: [] } : undefined
+    const root = current && choice !== undefined && !answered.settle && answered.askedUnder && this.questionRequest(record, answered.askedUnder)
+      ? answeredRequestRoot(answered.id, answered.askedUnder) : undefined, openedId = root && toldRequestId(root)
+    const created: WatcherRequest | undefined = current && root && openedId && !record.requests.some(request => request.id === openedId)
+      ? { id: openedId, watcher: current.target, rootUserMessageId: root, state: 'active', createdAt: now(), closedAt: null, participants: [] } : undefined
     const event = current ? this.wakes.answeredEvent(answered.settle ?? current.target, randomUUID(),
       { questionId: answered.id, question: answered.question, ...choice === undefined ? { skipped: true as const } : { choice }, ...answered.settle ? { settle: true as const } : {},
         ...created ? { opened: true as const } : {} }, created?.id) : undefined
@@ -1414,25 +1415,12 @@ export class WatcherService implements WatcherControlHooks {
     return null
   }
   /**
-   * The user's own request the running Watcher turn answers, for a question it asks there (#2482): a message to Watcher,
-   * or the one behind the answer whose news started this turn. Undefined in a turn news or a thread's message started.
+   * The user's own request the running Watcher turn answers, for a question it asks there (#2482). Undefined in a turn
+   * news, a thread's message or an answer's news started, so an answer's turn cannot open another by asking again.
    */
   private askingRequest(threadId: string): WatcherRequest | undefined {
-    const record = this.view(), request = this.turnRequest(threadId, record) ?? this.answerTurnRequest(record)
-    if (!request) return undefined
-    const question = answeredRequestQuestion(request.rootUserMessageId)
-    if (question === undefined) return isToldRequest(request) ? undefined : request
-    const under = this.questions.get(question)?.askedUnder
-    return under ? this.questionRequest(record, under) : undefined
-  }
-  /** The request an answer's news opened, while the turn that news started runs. */
-  private answerTurnRequest(record: Readonly<WatcherRecord>): WatcherRequest | undefined {
-    for (const told of this.toldNews.values()) {
-      if (told.sentHead === undefined || !told.requestId || !told.answer) continue
-      const request = record.requests.find(item => item.id === told.requestId && item.state === 'active')
-      if (request && answeredRequestQuestion(request.rootUserMessageId) !== undefined) return request
-    }
-    return undefined
+    const request = this.turnRequest(threadId)
+    return request && !isToldRequest(request) ? request : undefined
   }
   /** The user's own request a question was asked under, from Watcher's record: never a told one or a standing watch's. */
   private questionRequest(record: Readonly<WatcherRecord>, requestId: string): WatcherRequest | undefined {
@@ -3095,13 +3083,13 @@ export class WatcherService implements WatcherControlHooks {
    * less any handover ahead of it, which is another Watcher's, and the newest they have sent it since. For a told request,
    * the message in that thread, which only a thread on this computer's record holds. A standing watch's request has none.
    * A request the user's answer on a card opened has the words of the request Watcher asked under (#2482). A message to
-   * Watcher also carries the user's previous request's words while nothing has been started or sent under it (#2483): that work
+   * Watcher also carries the user's previous request's words while no thread has been started under it (#2483): that work
    * is still what the user asked for, so a "go" after it keeps the model they named.
    */
   private requestWords(request: WatcherRequest): readonly string[] {
-    const record = this.view(), question = answeredRequestQuestion(request.rootUserMessageId)
-    if (question !== undefined) {
-      const under = this.questions.get(question)?.askedUnder, asked = under ? this.questionRequest(record, under) : undefined
+    const record = this.view(), answered = answeredRequestOf(request.rootUserMessageId)
+    if (answered) {
+      const asked = this.questionRequest(record, answered.askedUnder)
       return asked ? this.requestWords(asked) : []
     }
     const own = this.ownRequestWords(request)
@@ -3110,15 +3098,11 @@ export class WatcherService implements WatcherControlHooks {
       && !isToldRequest(item) && !item.standingWatchId && !item.remoteOrigin)
     return previous && !this.startedUnder(record, previous) ? [...own, ...this.ownRequestWords(previous)] : own
   }
-  /** Whether Watcher started or sent anything under a request, or under a request an answer to a question asked under it opened. */
+  /** Whether Watcher started a thread under a request, or under a request an answer to a question asked under it opened. */
   private startedUnder(record: Readonly<WatcherRecord>, request: WatcherRequest): boolean {
     const under = new Set([request.id])
-    for (const item of record.requests) {
-      const question = answeredRequestQuestion(item.rootUserMessageId)
-      if (question !== undefined && this.questions.get(question)?.askedUnder === request.id) under.add(item.id)
-    }
-    return record.operations.some(operation => under.has(operation.requestId))
-      || record.requests.some(item => under.has(item.id) && item.participants.length > 0)
+    for (const item of record.requests) if (answeredRequestOf(item.rootUserMessageId)?.askedUnder === request.id) under.add(item.id)
+    return record.operations.some(operation => operation.action === 'start' && under.has(operation.requestId))
   }
   /** A request's own words: its first message and its newest since, or a told request's message in its thread. */
   private ownRequestWords(request: WatcherRequest): readonly string[] {
