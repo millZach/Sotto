@@ -102,7 +102,7 @@
 .needs-you__foot > .tt-button--ghost { color: var(--tt-text-muted); }
 /* A waiting thread's card, popped open over the sidebar beside its entry or its rail tile (ADR-0135, October 29
    amendment). It holds the thread's own request card, or why its last turn failed. */
-.needs-you-card { position: fixed; inset: auto; margin: 0; box-sizing: border-box; width: min(380px, calc(100vw - 24px)); max-height: calc(100vh - 24px); overflow: auto;
+.needs-you-card { position: fixed; inset: auto; margin: 0; box-sizing: border-box; width: min(380px, calc(100vw - 24px)); max-height: calc(100vh - var(--needs-you-top-clear) - 12px); overflow: auto;
   padding: 10px 12px 8px; border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-inset); background: var(--tt-surface-elevated); color: var(--tt-text);
   box-shadow: 0 16px 48px var(--tt-shadow-color); z-index: 60; font: inherit; }
 .needs-you-card:popover-open { display: block; }
