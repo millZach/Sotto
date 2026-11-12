@@ -77,7 +77,9 @@ function harness(overrides: Partial<MainHangWatchOptions> = {}) {
     /** Set by `stop`: when main answers again, and goes on answering from then on. */
     answersAt: null as number | null,
     /** The computer sleeps this long during the watch's next sleep between stacks. */
-    sleepsFor: 0 }
+    sleepsFor: 0,
+    /** Main is inside a native call until then: `Debugger.enable` does not land, or `Debugger.pause` does not. */
+    enableFrom: 0, pauseFrom: 0, enables: 0 }
   /** The clock moves on, through the watch's own looks and its sleeps between stacks alike. */
   const advance = (ms: number): void => {
     state.now += ms
@@ -86,15 +88,19 @@ function harness(overrides: Partial<MainHangWatchOptions> = {}) {
   let pending: ((frames: unknown[] | null) => void) | null = null
   const debug: MainDebugger = {
     post: async method => {
-      if (method === 'Debugger.enable' && state.enable === 'never') return new Promise(() => undefined)
+      if (method === 'Debugger.enable') {
+        state.enables += 1
+        if (state.enable === 'never' || state.now < state.enableFrom) return new Promise(() => undefined)
+      }
       if (method === 'Debugger.pause') {
         state.pauses += 1
+        if (state.now < state.pauseFrom) return {}
         if (state.duringPause === 'answers') state.answered = state.now
         pending?.([{ functionName: 'saveThreads', url: appFile('out/main/index.js'), location: { lineNumber: 1, columnNumber: 2 } }])
       }
       return {}
     },
-    nextPause: async () => new Promise(resolve => { pending = resolve }),
+    nextPause: async withinMs => new Promise(resolve => { pending = resolve; setTimeout(() => resolve(null), withinMs) }),
     close: () => { state.closed += 1 },
   }
   const watch = new MainHangWatch({
@@ -206,6 +212,40 @@ describe('the watch on main', () => {
     expect(state.saved[0]!.stacks).toEqual([])
   })
 
+  it('keeps trying in the same recording when a stop begins outside JavaScript, and takes stacks once main is back in it', async () => {
+    const { state, watch, run, stop } = harness()
+    await watch.tick()
+    // A 20 s stop whose first 4 s are one native call: the debugger cannot even be enabled.
+    stop(20_000)
+    state.enableFrom = state.now + 4_000
+    await run(22_000)
+    expect(state.saved).toHaveLength(1)
+    expect(state.saved[0]!.stacks).toEqual([])
+    const last = state.updated.at(-1)!
+    expect(last.answeredAfterMs).toBe(20_000)
+    const times = last.stacks!.map(stack => stack.atMs)
+    expect(times.length).toBeGreaterThanOrEqual(5)
+    expect(times.every(atMs => atMs >= 4_000)).toBe(true)
+    // Every session the tries opened was let go.
+    expect(state.closed).toBe(state.enables)
+  })
+
+  it('keeps trying in the same recording when the debugger is enabled but its first pauses do not land', async () => {
+    const { state, watch, run, stop } = harness()
+    await watch.tick()
+    stop(20_000)
+    state.pauseFrom = state.now + 4_000
+    await run(22_000)
+    const last = state.updated.at(-1)!
+    expect(last.answeredAfterMs).toBe(20_000)
+    const times = last.stacks!.map(stack => stack.atMs)
+    expect(times.length).toBeGreaterThanOrEqual(5)
+    expect(times.every(atMs => atMs >= 4_000)).toBe(true)
+    // A session whose pause did not land is let go at once, so that pause cannot land later and leave main paused.
+    expect(state.enables).toBeGreaterThan(1)
+    expect(state.closed).toBe(state.enables)
+  })
+
   it('saves the hang with no stack when main is stopped outside JavaScript', async () => {
     const { state, watch, run } = harness()
     state.enable = 'never'
@@ -314,6 +354,8 @@ describe('the watch on main', () => {
     await run(2_000, () => { state.answered = state.now })
     expect(state.killed).toBe(0)
     expect(state.saved).toHaveLength(1)
+    // Stopped from 101 s, answered at 165.5 s, a minute of it asleep: 4.5 s awake.
+    expect(state.updated.at(-1)!.answeredAfterMs).toBe(4_500)
   })
 
   it('keeps Quit\'s backstop as it was: a main stopped 5 s or more is ended at the deadline, and not before', async () => {

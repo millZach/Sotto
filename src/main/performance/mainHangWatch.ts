@@ -3,7 +3,9 @@ import { WATCH_TICK_MS } from './hangWatchdogShared'
 
 /**
  * Main has not answered for this long: the watch takes its stack and saves a hang recording (Zach's pick, November 12,
- * 2026). It was `MAIN_HANG_MS` until then, so the common freeze of one to five seconds left nothing to diagnose.
+ * 2026). It was `MAIN_HANG_MS` until then, so the common freeze of one to five seconds left nothing to diagnose. It is
+ * measured from main's last heartbeat, which comes every 250 ms, so a freeze from about 750 ms that starts just after a
+ * beat reaches it too.
  */
 export const MAIN_RECORD_MS = 1_000
 /**
@@ -20,6 +22,11 @@ export const QUIT_FORCE_MS = 20_000
  */
 export const HANG_STACK_EVERY_MS = 1_000
 export const HANG_STACKS = 9
+/**
+ * Tries at a stack in one recording, those that got one and those that did not. A try that gets nothing waits for the
+ * debugger first, so a main that stays outside JavaScript for good is tried for about a minute and then left.
+ */
+export const HANG_TRIES = 2 * HANG_STACKS
 /**
  * At most one recording of main in this long: two freezes 24 s apart are both kept, and a minute of freezes writes
  * three at most.
@@ -93,7 +100,9 @@ const within = <T>(work: Promise<T>, ms: number): Promise<T | undefined> =>
  * stopped answering for `hangMs` and the process has run for `quitForceMs` since.
  */
 export class MainHangWatch {
-  private recording: { readonly name: string; readonly record: HangRecord; readonly answeredAt: number } | null = null
+  private recording: { readonly name: string; readonly record: HangRecord; readonly answeredAt: number
+    /** Time the computer slept between two of its stacks, left out of how long main was stopped. */
+    readonly asleepMs: number } | null = null
   /** When the previous look began and ended; undefined before the first. */
   private previous: { readonly began: number; readonly ended: number } | undefined
   /** When the look that is running began. */
@@ -182,23 +191,35 @@ export class MainHangWatch {
   }
 
   /**
-   * Main's stack at once, saved, then once a second while it stays stopped, rewritten with them. A pause that landed after
-   * main had answered is not kept. Stacks stop at Quit's deadline, so the backstop decides on time.
+   * Main's stack at once, saved, then once a second while it stays stopped, rewritten with them. A try that gets nothing,
+   * as when main is inside a long native call, is tried again a second later in the same recording, so a stop that goes
+   * back into JavaScript still gets its stacks. A pause that landed after main had answered is not kept. Stacks stop at
+   * Quit's deadline, so the backstop decides on time.
    */
   private async record(answeredAt: number): Promise<void> {
-    const debug = await this.connect()
+    const session: Session = { debug: null }
     try {
       const stacks: HangStack[] = []
-      const first = debug ? await this.stack(debug, answeredAt) : null
+      const first = await this.take(session, answeredAt)
       if (first) stacks.push(first)
-      if (!await this.save(answeredAt, stacks) || !debug || !first) return
-      while (stacks.length < HANG_STACKS && await this.whileStopped(answeredAt, HANG_STACK_EVERY_MS)) {
-        const next = await this.stack(debug, answeredAt)
-        if (!next) break
-        stacks.push(next)
+      if (!await this.save(answeredAt, stacks)) return
+      for (let tries = 1; stacks.length < HANG_STACKS && tries < HANG_TRIES && await this.whileStopped(answeredAt, HANG_STACK_EVERY_MS); tries += 1) {
+        const next = await this.take(session, answeredAt)
+        if (next) stacks.push(next)
       }
       await this.rewrite(answeredAt, stacks)
-    } finally { if (debug) release(debug) }
+    } finally { if (session.debug) release(session.debug) }
+  }
+
+  /**
+   * One try at main's stack: a debugger session if there is none, then a pause. A session whose pause did not land is let
+   * go, which drops the pause it asked for, so main is never left paused by a pause that lands later.
+   */
+  private async take(session: Session, answeredAt: number): Promise<HangStack | null> {
+    session.debug ??= await this.connect()
+    const stack = session.debug ? await this.stack(session.debug, answeredAt) : null
+    if (!stack && session.debug) { release(session.debug); session.debug = null }
+    return stack
   }
 
   /**
@@ -222,6 +243,8 @@ export class MainHangWatch {
         this.lookBegan = after
         this.wokeAt = after
         this.resumedAt = after
+        const current = this.recording
+        if (current?.answeredAt === answeredAt) this.recording = { ...current, asleepMs: current.asleepMs + after - before - step }
         return false
       }
       waited += step
@@ -236,7 +259,7 @@ export class MainHangWatch {
     try { debug = this.options.connect() } catch { return null }
     try {
       // Stopped outside JavaScript (a long native call), main cannot take even this until it returns.
-      if (await within(debug.post('Debugger.enable').then(() => true), this.debuggerWaitMs) === true) return debug
+      if (await within(debug.post('Debugger.enable').then(() => true), this.debuggerWait()) === true) return debug
     } catch { /* released below */ }
     release(debug)
     return null
@@ -246,7 +269,7 @@ export class MainHangWatch {
   private async stack(debug: MainDebugger, answeredAt: number): Promise<HangStack | null> {
     const { now, lastAnswered } = this.options
     try {
-      const paused = debug.nextPause(this.debuggerWaitMs)
+      const paused = debug.nextPause(this.debuggerWait())
       void debug.post('Debugger.pause').catch(() => undefined)
       const frames = await paused
       if (frames === null) return null
@@ -263,7 +286,7 @@ export class MainHangWatch {
       startedAt: new Date(wallNow() - (now() - answeredAt)).toISOString(), answeredAfterMs: null,
       writtenAfterMs: now() - answeredAt, stacks: [...stacks] }
     try {
-      this.recording = { name: await this.options.save(record), record, answeredAt }
+      this.recording = { name: await this.options.save(record), record, answeredAt, asleepMs: 0 }
       this.options.log('hang-recording-saved')
       return true
     } catch { this.recording = null; this.options.log('hang-recording-failed'); return false }
@@ -277,14 +300,16 @@ export class MainHangWatch {
     const current = this.recording
     if (!current || current.answeredAt !== answeredAt) return
     const answered = this.options.lastAnswered()
-    const answeredAfterMs = answered === answeredAt ? null : answered - answeredAt
+    const answeredAfterMs = answered === answeredAt ? null : answered - answeredAt - current.asleepMs
     if (answeredAfterMs === null && stacks.length === (current.record.stacks?.length ?? 0)) return
     await this.write({ ...current.record, answeredAfterMs,
-      writtenAfterMs: Math.min(this.options.now() - answeredAt, answeredAfterMs ?? Number.POSITIVE_INFINITY), stacks: [...stacks] })
+      writtenAfterMs: Math.min(this.options.now() - answeredAt - current.asleepMs, answeredAfterMs ?? Number.POSITIVE_INFINITY), stacks: [...stacks] })
   }
 
+  /** How long main was stopped, leaving out any time the computer slept between two of the recording's stacks. */
   private async answered(answeredAt: number): Promise<void> {
-    await this.write({ ...this.recording!.record, answeredAfterMs: answeredAt - this.recording!.answeredAt })
+    const current = this.recording!
+    await this.write({ ...current.record, answeredAfterMs: answeredAt - current.answeredAt - current.asleepMs })
   }
 
   /** The open recording, written again over its saved file. */
@@ -294,12 +319,20 @@ export class MainHangWatch {
     await this.options.update(current.name, record).catch(() => undefined)
   }
 
+  /** How long a debugger request may wait: `debuggerWaitMs`, and no later than Quit's deadline, so the backstop decides on time. */
+  private debuggerWait(): number {
+    return Math.max(1, Math.min(this.debuggerWaitMs, this.quitLeftMs()))
+  }
+
   /** How long until Quit's deadline, counting the look that is running; infinite while no quit is being timed. */
   private quitLeftMs(): number {
     if (this.quit.at === 0 || this.quit.cancelled) return Number.POSITIVE_INFINITY
     return this.quitForceMs - this.quit.ranMs - (this.options.now() - this.lookBegan)
   }
 }
+
+/** The debugger session a recording holds between its tries, or none. */
+interface Session { debug: MainDebugger | null }
 
 function release(debug: MainDebugger): void {
   void debug.post('Debugger.disable').catch(() => undefined)
