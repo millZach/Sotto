@@ -114,7 +114,11 @@ export interface HostService {
   readonly supportsWatcherMuse?: boolean
   /** The host lists `watcher-cursor`: it takes Watcher requests whose identity names Cursor (ADR-0128). */
   readonly supportsWatcherCursor?: boolean
-  subscribeWatcher?(listener: (projection: WatcherHostProjection) => void): () => void
+  /**
+   * Tells `listener` each time the host's Watcher projection changes, with the projection now held: undefined when a
+   * progress push did not follow the one held (`watcher-progress`), so Watcher's next reconcile reads it again.
+   */
+  subscribeWatcher?(listener: (projection: WatcherHostProjection | undefined) => void): () => void
   cachedWatcherProjection?(master: WatcherIdentity): WatcherHostProjection | undefined
   watcherRoomThreads?(threadIds: readonly string[]): WatcherRoomThreadInput[]
   watcherControl?(request: WatcherHostControl, client: ClientIdentity, guard: () => void, mayAnswer?: () => boolean): Promise<unknown>
