@@ -943,14 +943,14 @@ export class WatcherWakeUp {
     })
   }
   /**
-   * The user answered a card of Watcher's own question (#2228): news under the request that watches the thread a settle
-   * question names, else under none. Undefined when Watcher's news is not running.
+   * The user answered a card of Watcher's own question (#2228): news under the request the answer opened (#2482), else the
+   * one that watches the thread a settle question names, else under none. Undefined when Watcher's news is not running.
    */
-  answeredEvent(target: WatcherThreadTarget, id: string, answered: NonNullable<WatcherEvent['answered']>): WatcherEvent | undefined {
+  answeredEvent(target: WatcherThreadTarget, id: string, answered: NonNullable<WatcherEvent['answered']>, opened?: string): WatcherEvent | undefined {
     if (!this.started || this.closed) return undefined
     return this.withPassReads((): WatcherEvent => {
       const one = answered.settle ? this.watching(target) : undefined
-      return { kind: 'user-answered', target, requestId: one?.request.id ?? WATCHER_UNWATCHED_REQUEST_ID, generation: one?.participant.generation ?? 0,
+      return { kind: 'user-answered', target, requestId: opened ?? one?.request.id ?? WATCHER_UNWATCHED_REQUEST_ID, generation: one?.participant.generation ?? 0,
         observedAt: new Date(this.now()).toISOString(), answered, id }
     })
   }

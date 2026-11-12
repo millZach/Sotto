@@ -54,11 +54,11 @@ export class WatcherQuestions {
     return this.questions.filter(question => question.watcherThreadId === watcherThreadId && question.state === 'open')
   }
   /** Puts a question's card before the user. A settle question takes Sotto's own two choices. */
-  ask(watcherThreadId: string, input: WatcherAskInput): Promise<WatcherQuestion> {
+  ask(watcherThreadId: string, input: WatcherAskInput, askedUnder?: string): Promise<WatcherQuestion> {
     return this.inTurn(async () => {
       const question: WatcherQuestion = { id: randomUUID(), watcherThreadId, question: input.question,
         options: input.settle ? SETTLE_CHOICES.map(option => ({ ...option })) : input.options!.map(option => ({ ...option })),
-        ...input.settle ? { settle: input.settle } : {}, state: 'open', at: this.now() }
+        ...input.settle ? { settle: input.settle } : {}, state: 'open', at: this.now(), ...askedUnder ? { askedUnder } : {} }
       // Asking again about the same settle replaces the earlier card, so one thread has one settle question.
       const kept = input.settle ? this.questions.map(item => item.state === 'open' && item.watcherThreadId === watcherThreadId && item.settle && sameTarget(item.settle, input.settle!)
         ? { ...item, state: 'closed' as const, endedAt: question.at } : item) : this.questions

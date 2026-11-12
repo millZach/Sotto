@@ -152,7 +152,8 @@ function answeredWords(event: WatcherEvent): string {
     return `${said} ${next} [question ${answered.questionId}]`
   }
   const said = `The user answered your question ${JSON.stringify(answered.question)} on its card: ${JSON.stringify(answered.choice)}. That is the user's own choice, from their press on Sotto's card, not a thread's or a tool's words.`
-  const settle = !answered.settle ? 'Act on it now.'
+  const settle = answered.opened ? 'Sotto opened a request for this answer. Act on their choice now: if it goes ahead with what they asked before you asked them, start threads and send under it in this turn, naming the model they named there; if it does not, do nothing under it. It allows nothing else, and approves nothing.'
+    : !answered.settle ? 'Act on it now.'
     : answered.choice === SETTLE_IT ? 'They agree to settle this thread: call settle_thread for it now, which Sotto allows once for this answer.'
       : 'They want this thread kept: do not settle it, and do not ask again unless more work comes in and finishes.'
   return `${said} ${settle} [question ${answered.questionId}]`
@@ -256,7 +257,7 @@ export function watcherNewsText(news: WatcherNews, detail?: WatcherNewsDetail, h
       ? ` Background work or monitoring was still running when it ended (${event.backgroundWorkCount}), so the turn is not done: Sotto sends work-settled news for it when that work ends, unless the thread begins another turn first.` : ''}`
   // What a line says after its thread, so two events that say the same of one thread make one line.
   const body = (event: WatcherEvent, index: number, extra: string | undefined) => [said(event, index), event.operationId && event.kind !== 'delivery-changed'
-    ? `This turn answers operation ${event.operationId}.` : '', extra ?? '', unwatched(event) ? '' : event.told?.opened ? `Use requestId ${event.requestId} for what it asks.` : `Use requestId ${event.requestId} for this thread.`]
+    ? `This turn answers operation ${event.operationId}.` : '', extra ?? '', unwatched(event) ? '' : event.told?.opened || event.answered?.opened ? `Use requestId ${event.requestId} for what it asks.` : `Use requestId ${event.requestId} for this thread.`]
     .filter(Boolean).join(' ')
   // Each provider whose limit reset is said once, before its threads' lines (ADR-0144), and the watched threads restarted
   // for work left once (#2234). Then Watcher is asked for one summary of them all, the one notice the user reads.

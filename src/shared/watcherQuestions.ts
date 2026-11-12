@@ -59,6 +59,11 @@ export const watcherQuestionSchema = z.object({
   endedAt: z.iso.datetime().optional(),
   /** A Settle it that settle_thread has already used, so one answer agrees one settle. */
   spent: z.literal(true).optional(),
+  /**
+   * The user's own request Watcher's turn answered when it asked (#2482), by its ID: an answer opens a request for the
+   * turn its news starts only then, and a start under it reads that request's words for a model the user named (#2483).
+   */
+  askedUnder: z.uuid().optional(),
 }).strict()
 export type WatcherQuestion = z.infer<typeof watcherQuestionSchema>
 
