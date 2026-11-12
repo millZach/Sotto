@@ -9,7 +9,7 @@ import { WatcherQuestions } from '../../../src/main/agents/watcherQuestions'
 import { toldEventsForLater, watcherNewsText } from '../../../src/main/agents/watcherNews'
 import { WatcherToldNews } from '../../../src/main/agents/watcherToldNews'
 import { WATCHER_UNWATCHED_REQUEST_ID, type WatcherEvent } from '../../../src/shared/watcherNews'
-import { watcherQuestionChoice, watcherQuestionOf, watcherQuestionRequest, watcherQuestionRequestId, watcherQuestionSkipped, WATCHER_QUESTION_FIELD } from '../../../src/shared/watcherQuestions'
+import { watcherQuestionChoice, watcherQuestionOf, watcherQuestionRequest, watcherQuestionRequestId, WATCHER_QUESTION_FIELD } from '../../../src/shared/watcherQuestions'
 import { watcherEventSchema } from '../../../src/shared/watcherNews'
 
 const folders: string[] = []
@@ -112,11 +112,10 @@ describe('Watcher’s question as a card', () => {
     expect(watcherQuestionRequestId('x')).toBe('watcher-question:x')
   })
 
-  it('offers the Skip a thread’s card does, and knows a skip by the card’s own or its one question’s (#2477)', () => {
-    expect(watcherQuestionRequest({ id: '3f1a6c2e-5b7d-4e8f-9a0b-1c2d3e4f5a6b', question: ASK.question, options: ASK.options, at: '2026-11-05T12:00:00.000Z' }).skippable).toBe(true)
-    expect(watcherQuestionSkipped({ skipped: true })).toBe(true)
-    expect(watcherQuestionSkipped({ questionAnswers: { [WATCHER_QUESTION_FIELD]: { optionIds: [], skipped: true } } })).toBe(true)
-    expect(watcherQuestionSkipped({ questionAnswers: { [WATCHER_QUESTION_FIELD]: { optionIds: ['choice-1'] } } })).toBe(false)
+  it('offers the Skip a thread’s card does, as the card’s own skip and not its one question’s (#2477)', () => {
+    const request = watcherQuestionRequest({ id: '3f1a6c2e-5b7d-4e8f-9a0b-1c2d3e4f5a6b', question: ASK.question, options: ASK.options, at: '2026-11-05T12:00:00.000Z' })
+    expect(request.skippable).toBe(true)
+    expect(request.questions![0]!.skippable).toBeUndefined()
   })
 })
 

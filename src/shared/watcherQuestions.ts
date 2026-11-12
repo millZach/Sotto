@@ -94,8 +94,3 @@ export function watcherQuestionChoice(question: Pick<WatcherQuestion, 'options'>
   const words = answer.answer.trim().toLowerCase()
   return question.options.find(option => option.label.toLowerCase() === words)?.label
 }
-
-/** Whether an answer to a question's card is the user's Skip: the card's own skip, or its one question skipped (#2477). */
-export function watcherQuestionSkipped(answer: { readonly skipped?: true | undefined; readonly questionAnswers?: Readonly<Record<string, { readonly optionIds: readonly string[]; readonly skipped?: true | undefined }>> | undefined }): boolean {
-  return answer.skipped === true || answer.questionAnswers?.[WATCHER_QUESTION_FIELD]?.skipped === true
-}

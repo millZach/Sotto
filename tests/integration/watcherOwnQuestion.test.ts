@@ -105,6 +105,10 @@ it('tells Watcher the user’s own choice as news, once, and the card gives way 
 it('tells Watcher the user skipped with no answer, once, and the card gives way to it (#2477)', async () => {
   const f = await fixture()
   const asked = await f.ask(RUN_AGAIN)
+  // Its one question is not skippable on its own, so a skip of that question alone is refused (ADR-0135).
+  expect((await f.control.commandShell({ type: 'answer', threadId: f.watcherId, requestId: watcherQuestionRequestId(asked.questionId), answer: '',
+    questionAnswers: { [WATCHER_QUESTION_FIELD]: { optionIds: [], skipped: true } } })).error).toContain('Choose one of the answers')
+  expect(f.service.state().questions![0]).toMatchObject({ state: 'open' })
   // The card's own skip, as the window and the phone send it for a skippable card.
   expect((await f.control.commandShell({ type: 'answer', threadId: f.watcherId, requestId: watcherQuestionRequestId(asked.questionId), answer: '', skipped: true })).error).toBeNull()
   expect(f.service.state().questions).toEqual([expect.objectContaining({ id: asked.questionId, state: 'skipped' })])

@@ -61,7 +61,7 @@ import { carriesWords, LATER_REQUEST_REACHES, watcherCardLine, watcherNewsText, 
 import { WATCHER_MESSAGES_MAX, WATCHER_NOT_GIT_REASON, WATCHER_ROSTER_MAX, WATCHER_SHARED_REASON_MAX, watcherProjectTargetSchema, type WatcherProjectTarget } from '../../shared/watcher'
 import { WatcherToldNews } from './watcherToldNews'
 import { WatcherQuestions } from './watcherQuestions'
-import { WATCHER_ASK_NOTE, watcherAskInputSchema, watcherQuestionChoice, watcherQuestionOf, watcherQuestionSkipped, type WatcherQuestion } from '../../shared/watcherQuestions'
+import { WATCHER_ASK_NOTE, watcherAskInputSchema, watcherQuestionChoice, watcherQuestionOf, type WatcherQuestion } from '../../shared/watcherQuestions'
 import type { TeamFacts, TeamProjectFact, TeamThreadFact } from '../../shared/teams'
 import { isToldRequest, toldRequestMessage, toldRequestRoot, toldUserMessage, type ReadyToMerge, type TellWatcherAnswer, type TellWatcherAsk, type ToldUserMessage } from '../../shared/tellWatcher'
 import type { CheckpointObservation, PullRequestObservation } from './watcherEvidence'
@@ -1381,11 +1381,12 @@ export class WatcherService implements WatcherControlHooks {
    * news to Watcher that says it is theirs (ADR-0073, November 5, 2026); or their Skip, told as news that they gave no
    * answer (#2477). Null when it went; otherwise what to tell the user.
    */
-  async answerOwnQuestion(threadId: string, answer: { readonly requestId: string; readonly answer: string; readonly skipped?: true | undefined; readonly questionAnswers?: Readonly<Record<string, { readonly optionIds: readonly string[]; readonly skipped?: true | undefined }>> | undefined }): Promise<string | null> {
+  async answerOwnQuestion(threadId: string, answer: { readonly requestId: string; readonly answer: string; readonly skipped?: true | undefined; readonly questionAnswers?: Readonly<Record<string, { readonly optionIds: readonly string[] }>> | undefined }): Promise<string | null> {
     const id = watcherQuestionOf(answer.requestId), question = id === undefined ? undefined : this.questions.get(id)
     if (!question || question.watcherThreadId !== threadId || question.state !== 'open') return 'This question of Watcher’s no longer waits on you. Nothing was sent.'
     if (!this.isCurrent(threadId)) return 'This question belongs to an earlier Watcher. Nothing was sent. Open Watcher to see what it asks now.'
-    const skipped = watcherQuestionSkipped(answer)
+    // Only the card's own skip: the card is `skippable`, its one question is not (ADR-0135).
+    const skipped = answer.skipped === true
     const choice = skipped ? undefined : watcherQuestionChoice(question, answer)
     if (!skipped && choice === undefined) return 'Choose one of the answers on Watcher’s card. Nothing was sent.'
     const answered = choice === undefined ? await this.questions.skip(question.id) : await this.questions.answer(question.id, choice)
