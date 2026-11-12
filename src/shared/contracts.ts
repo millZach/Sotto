@@ -455,6 +455,8 @@ export interface SottoBridge {
   readonly teams?: import('./teams').TeamsBridge
   /** Let apps on this computer connect (ADR-0180); main answers it only while the `local-apps` Owl feature is on. */
   readonly localApps?: import('./localApps').LocalAppsBridge
+  /** Settings › Plugins (ADR-0205); main answers it only while the `plugins` Owl feature is on. */
+  readonly plugins?: import('./plugins').PluginsBridge
   readonly requestDrafts?: import('./requestDrafts').RequestDraftBridge
   readonly terminal?: import('./terminal').TerminalBridge
   readonly browser?: import('./browser').BrowserBridge

@@ -7,6 +7,7 @@ import { HOSTS_DEVICES, HOSTS_TAILSCALE, HOSTS_TAILSCALE_CONNECT, HOSTS_TAILSCAL
 import { HOSTS_OPENCODE_SIGN_IN, HOSTS_PROVIDER_ACTION, HOSTS_SIGN_IN, HOSTS_UPDATE_CLIENTS, hostOpenCodeSignInRequestSchema, hostClientUpdateRequestSchema, hostProviderActionSchema, hostProviderActionResultSchema, hostSignInRequestSchema, providerSignInResultSchema, parseHostOpenCodeAnswer } from '../shared/hostProviders'
 import { PHONES_GET, PHONES_COMMAND, PHONES_CHANGED, phonesCommandSchema, type PhonesState } from '../shared/phones'
 import { LOCAL_APPS_CHANGED, LOCAL_APPS_GET, type LocalAppsState } from '../shared/localApps'
+import { gitHubSignInSchema, PLUGINS_GITHUB_SIGN_IN, type PluginsBridge } from '../shared/plugins'
 import { TEAMS_CHANGED, TEAMS_COMMAND, TEAMS_GET, TEAMS_OWN_DESK, teamsCommandSchema, type TeamDesk, type TeamsBridge, type TeamsCommandResult, type TeamsState } from '../shared/teams'
 import { mapHostReferences, parseHostEntityKey } from '../shared/clientIdentity'
 
@@ -659,6 +660,8 @@ export function createSottoBridge(
     phones: Object.freeze<import('../shared/phones').PhonesBridge>({ get: async () => renderer.invoke(PHONES_GET) as Promise<PhonesState>, command: async command => renderer.invoke(PHONES_COMMAND, phonesCommandSchema.parse(command)) as Promise<PhonesState>, onChanged: listener => subscribe(renderer, PHONES_CHANGED, trustedState<PhonesState>('phones'), listener) }),
     teams: Object.freeze<TeamsBridge>({ get: async () => renderer.invoke(TEAMS_GET) as Promise<TeamsState>, command: async command => renderer.invoke(TEAMS_COMMAND, teamsCommandSchema.parse(command)) as Promise<TeamsCommandResult>, ownDesk: async () => renderer.invoke(TEAMS_OWN_DESK) as Promise<TeamDesk>, subscribe: listener => subscribe(renderer, TEAMS_CHANGED, trustedState<TeamsState>('links'), listener) }),
     localApps: Object.freeze<import('../shared/localApps').LocalAppsBridge>({ get: async () => renderer.invoke(LOCAL_APPS_GET) as Promise<LocalAppsState>, onChanged: listener => subscribe(renderer, LOCAL_APPS_CHANGED, trustedState<LocalAppsState>('phase'), listener) }),
+    // Settings › Plugins (ADR-0205); main answers it only while the `plugins` Owl feature is on.
+    plugins: Object.freeze<PluginsBridge>({ gitHubSignIn: async () => invokeParsed(renderer, PLUGINS_GITHUB_SIGN_IN, gitHubSignInSchema) }),
     ...createToolsBridges(renderer),
     cloudIphone: createCloudIphoneBridge(renderer),
     themes: createThemesBridge(renderer),

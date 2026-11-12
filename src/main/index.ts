@@ -65,6 +65,9 @@ import { LocalApps, type LocalAppsEvent } from './phones/localApps'
 import { TailscaleCli, tailscaleInvoker } from './phones/tailscale'
 import { HostTailscale } from './hosts/tailscale'
 import { registerLocalAppsIpc, registerPhonesIpc } from './phones/ipc'
+import { registerPluginsIpc } from './plugins/ipc'
+import { readGitHubSignIn } from './plugins/github/signIn'
+import { GitUnavailableError, runGitStatusCommand, runWithGhStandIn, type RunGitCommand } from './agents/git/gitStatus'
 import { registerTeamsIpc } from './teams/ipc'
 import { TeamService, type TeamEvent } from './teams/teams'
 import { TEAMS_CHANGED } from '../shared/teams'
@@ -826,6 +829,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const councilEnabled = owlFeatures.council
   // Let apps on this computer connect (ADR-0180): stable builds no listener and registers no bridge.
   const localAppsEnabled = owlFeatures['local-apps']
+  // Plugins (ADR-0205): stable registers no channel, so Settings shows no page and nothing asks gh.
+  const pluginsEnabled = owlFeatures.plugins
   const workerRolesEnabled = owlFeatures['worker-roles']
   // The interface language (ADR-0123) also waits on its catalogs (#1684): until they are drafted Owl is English, as stable is.
   const interfaceLanguageEnabled = owlFeatures['interface-language'] && INTERFACE_LANGUAGE_SHOWN
@@ -2623,6 +2628,11 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       const cleanupPhones = registerPhonesIpc(ipcMain, phoneAccess, () => windows.getTrustedRenderers(), state => windows.sendToMain(PHONES_CHANGED, state))
       const cleanupTeams = teams ? registerTeamsIpc(ipcMain, teams, () => windows.getTrustedRenderers(), state => windows.sendToMain(TEAMS_CHANGED, state)) : undefined
       const cleanupLocalApps = localApps ? registerLocalAppsIpc(ipcMain, localApps, () => windows.getTrustedRenderers(), state => windows.sendToMain(LOCAL_APPS_CHANGED, state)) : undefined
+      // Settings › Plugins (ADR-0205): GitHub's account is gh's own sign-in, read when the page asks. An end-to-end run
+      // asks its gh stand-in or nothing, never the real gh, which checks its sign-in over the network.
+      const pluginsGh: RunGitCommand = ghStandIn ? runWithGhStandIn(ghStandIn) : e2eConfiguration ? async () => { throw new GitUnavailableError('gh is not installed') } : runGitStatusCommand
+      const pluginsStop = new AbortController()
+      const cleanupPlugins = pluginsEnabled ? registerPluginsIpc(ipcMain, { gitHubSignIn: () => readGitHubSignIn(pluginsGh, pluginsStop.signal) }, () => windows.getTrustedRenderers()) : undefined
       // The window plays a video an agent wrote from its thread's computer, a part at a time (ADR-0170, part 4).
       if (owlFeatures['inline-media']) session.defaultSession.protocol.handle(THREAD_MEDIA_SCHEME, request => threadVideoResponse(request, part => hostRouter.threadMediaPart(part)))
       const cleanupAgents = registerAgentIpc(ipcMain, hostRouter, hostRouter, () => trustedRenderers(), { encodeReceipt: agentStateBroadcaster.encodeReceipt, encodeChangedThreadRecordsReceipt: agentStateBroadcaster.encodeChangedThreadRecordsReceipt, windowRead: agentStateBroadcaster.windowRead,
@@ -2774,6 +2784,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         cleanupPhones()
         cleanupTeams?.()
         cleanupLocalApps?.()
+        pluginsStop.abort()
+        cleanupPlugins?.()
         checkpointIntegration.dispose()
         cleanupRequestDrafts()
         cleanupFiles()

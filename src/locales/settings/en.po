@@ -1291,6 +1291,10 @@ msgstr "As written"
 msgid "Ask about your threads, or say what to start or send"
 msgstr "Ask about your threads, or say what to start or send"
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Asking gh who is signed in…"
+msgstr "Asking gh who is signed in…"
+
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Asking GitHub..."
 msgstr "Asking GitHub..."
@@ -1544,6 +1548,7 @@ msgid "Check {hostName} for {name} again"
 msgstr "Check {hostName} for {name} again"
 
 #: src/renderer/src/features/settings/HostProviders.tsx
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Check again"
 msgstr "Check again"
@@ -1557,6 +1562,10 @@ msgstr "Check for client updates"
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Check for updates automatically"
 msgstr "Check for updates automatically"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Check GitHub’s sign-in again"
+msgstr "Check GitHub’s sign-in again"
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Check now"
@@ -1611,6 +1620,7 @@ msgstr "Checking the published version…"
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
 #: src/renderer/src/features/settings/HostProviders.tsx
 #: src/renderer/src/features/settings/PhonesSettings.tsx
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Checking…"
 msgstr "Checking…"
@@ -1875,6 +1885,10 @@ msgstr "Cloud iPhone status could not be read. Reopen Settings and try again."
 msgid "Code {spoken}"
 msgstr "Code {spoken}"
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Code and deploys"
+msgstr "Code and deploys"
+
 #: src/renderer/src/features/settings/HostProviderSignIn.tsx
 msgid "Code from the page"
 msgstr "Code from the page"
@@ -2080,6 +2094,7 @@ msgstr "Conversation"
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
 #: src/renderer/src/features/settings/HostsSettings.tsx
 #: src/renderer/src/features/settings/PhonesSettings.tsx
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Copied"
 msgstr "Copied"
@@ -2101,6 +2116,7 @@ msgstr "Copied the command"
 #: src/renderer/src/features/settings/HostClientUpdates.tsx
 #: src/renderer/src/features/settings/HostProviders.tsx
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Copy"
 msgstr "Copy"
@@ -2152,6 +2168,10 @@ msgstr "Copy the command that updates {name} on {host}"
 msgid "Copy the command to run on {name}"
 msgstr "Copy the command to run on {name}"
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Copy the gh sign-in command"
+msgstr "Copy the gh sign-in command"
+
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Could not check for client updates. Try again."
 msgstr "Could not check for client updates. Try again."
@@ -2192,6 +2212,10 @@ msgstr "Could not update {providerName}. Try again."
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Could not update this provider. Try again."
 msgstr "Could not update this provider. Try again."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Couldn’t check"
+msgstr "Couldn’t check"
 
 #. A Settings page, named in its rail and its heading: who sits on a Council of models. Other messages name it as "Settings > Council".
 #: src/renderer/src/features/settings/settingsPages.ts
@@ -2864,6 +2888,18 @@ msgstr "Get Tailscale to see the machines on your tailnet here."
 msgid "Get the iPhone beta"
 msgstr "Get the iPhone beta"
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "gh is not signed in to GitHub on this computer. Run this in a terminal, then press Check again."
+msgstr "gh is not signed in to GitHub on this computer. Run this in a terminal, then press Check again."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "gh isn’t installed"
+msgstr "gh isn’t installed"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "gh, GitHub’s command line program, isn’t installed on this computer. Install it from cli.github.com, sign in with <0>{GH_SIGN_IN_COMMAND}</0>, then press Check again."
+msgstr "gh, GitHub’s command line program, isn’t installed on this computer. Install it from cli.github.com, sign in with <0>{GH_SIGN_IN_COMMAND}</0>, then press Check again."
+
 #. A Settings page, named in its rail and its heading. Other messages name it as "Settings > Git & worktrees".
 #: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/SettingsView.tsx
@@ -2874,6 +2910,10 @@ msgstr "Git & worktrees"
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Git fetch interval"
 msgstr "Git fetch interval"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "GitHub uses the gh command’s own sign-in. Sotto stores nothing for it."
+msgstr "GitHub uses the gh command’s own sign-in. Sotto stores nothing for it."
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Global — the one set that works outside Sotto."
@@ -3995,6 +4035,7 @@ msgid "Not set up"
 msgstr "Not set up"
 
 #: src/renderer/src/features/settings/HostProviders.tsx
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Not signed in"
 msgstr "Not signed in"
@@ -4353,6 +4394,10 @@ msgstr "Other apps already use ports 8443 and 10000 in Tailscale Serve on this c
 msgid "Other apps on {name} already use ports 8443 and 10000 in Tailscale Serve. Sotto left them alone, and nothing was changed. Free one of them on {name}, then press Try again."
 msgstr "Other apps on {name} already use ports 8443 and 10000 in Tailscale Serve. Sotto left them alone, and nothing was changed. Free one of them on {name}, then press Try again."
 
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Outside services your threads can use"
+msgstr "Outside services your threads can use"
+
 #: src/renderer/src/features/settings/HostConnectionChoice.tsx
 msgid "Over your tailnet, SSH when it can’t"
 msgstr "Over your tailnet, SSH when it can’t"
@@ -4563,6 +4608,12 @@ msgstr "Pick a machine Sotto can reach over SSH, then add it."
 #: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
 msgid "Pieces"
 msgstr "Pieces"
+
+#. A Settings page, named in its rail and its heading: outside services such as GitHub that threads can use. Other messages name it as "Settings > Plugins".
+#: src/renderer/src/features/settings/settingsPages.ts
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Plugins"
+msgstr "Plugins"
 
 #. Precedes theme names people often search for
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
@@ -5561,6 +5612,14 @@ msgstr "Sign-in steps"
 msgid "Signed in"
 msgstr "Signed in"
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Signed in as {login} through gh"
+msgstr "Signed in as {login} through gh"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Signed in as <0>{login}</0> through gh on this computer."
+msgstr "Signed in as <0>{login}</0> through gh on this computer."
+
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
 msgid "Signed in. {name} is <0>{dnsName}</0> on your tailnet."
 msgstr "Signed in. {name} is <0>{dnsName}</0> on your tailnet."
@@ -5670,6 +5729,10 @@ msgstr "Sotto could not start a new Watcher. Nothing was changed. Try again, or 
 #: src/renderer/src/features/settings/HostQuestionDialog.tsx
 msgid "Sotto could not stop signing in to {name}. Try again in Settings > Hosts & phones."
 msgstr "Sotto could not stop signing in to {name}. Try again in Settings > Hosts & phones."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sotto couldn’t ask gh who is signed in. Nothing was changed. Press Check again."
+msgstr "Sotto couldn’t ask gh who is signed in. Nothing was changed. Press Check again."
 
 #: src/renderer/src/features/settings/PhonesSettings.tsx
 msgid "Sotto couldn’t open its listener for phones on this computer. Nothing was changed. Press Try again, or restart Sotto."
@@ -6431,6 +6494,10 @@ msgstr "The color a thread’s effort control turns at its highest level."
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "The command could not be copied. It is selected above: copy it with your keyboard’s copy shortcut."
 msgstr "The command could not be copied. It is selected above: copy it with your keyboard’s copy shortcut."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "The command could not be copied. Select {GH_SIGN_IN_COMMAND} and copy it yourself."
+msgstr "The command could not be copied. Select {GH_SIGN_IN_COMMAND} and copy it yourself."
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "The command could not be copied. Select {loginCommand} and copy it yourself."

@@ -1069,6 +1069,7 @@ msgstr ""
 #: src/main/notifications/notificationIpc.ts
 #: src/main/performance/mainActivityIpc.ts
 #: src/main/phones/ipc.ts
+#: src/main/plugins/ipc.ts
 msgid "Open Settings in the main Sotto window."
 msgstr ""
 
