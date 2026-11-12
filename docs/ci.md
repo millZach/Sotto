@@ -61,6 +61,8 @@ The renderer activity tests keep handles to their mounted prompt editors, finish
 
 `tests/unit/main/codeSizeBudget.test.ts` checks the files on `tests/fixtures/codeSizeBudget.json` in the normal test gate: each holds no more code than its cap in KB, comments and indentation left out (ADR-0190). A red run names the file, its size and its cap. Move code out along a seam; a raise needs its reason in the PR.
 
+`tests/perf/mainCheckoutMoved.perf.test.ts` moves a checkout that three threads work in, and one that twelve do, in the normal test gate (ADR-0142): the Git processes started and the saves of the workspace may not grow with the threads, since one folder is one read. A red run gives both counts; share the read rather than raise the allowance.
+
 `tests/unit/release/trackedFileEncoding.test.ts` checks every Git-tracked file for a UTF-8 byte order mark in the normal test gate. Files stay UTF-8 without a BOM.
 
 Each gate is its own named step, so a red check names the gate that failed. Locally, `npm test -- --maxWorkers=2` still runs the whole suite in one go; while iterating, `npx vitest related <changed files> --run` runs only the tests that import them.

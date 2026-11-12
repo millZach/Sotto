@@ -45,3 +45,9 @@ Each project's `origin` is fetched every 15 minutes, also while the window is no
 Sotto has no battery or metered-connection policy, so the check has none either. If Sotto gains one, this check should follow it.
 
 The log keeps only `main-checkout-updated`, `main-checkout-blocked` and `main-checkout-update-failed`, never a path, a branch or a file.
+
+## November 12, 2026: the threads of a moved checkout read it once
+
+After a fast-forward, every thread working in the checkout reads its Git status again, so its branch stops saying it is behind. Each read the folder for itself: about five Git processes and a save of the workspace a thread. On the owner's laptop 392 threads worked in the project's folder, 391 of them settled, and main was blocked for 1.1 to 1.6 s about two minutes after each of three merges that day, 1.7 s with 120 threads in a test.
+
+The threads of one folder now take one read of it, begun after the move, and are saved and published together; a thread whose lane is busy reads when it is free, as before. Every thread's branch still stops saying it is behind, and Automatically pull is still decided for each thread from what the read found, so a repository of its own inside the moved checkout is still brought up to date. With 120 threads in one folder a move costs 5 Git processes and one save, where it cost 496 and 120, and main is blocked for 2 ms, where it was blocked for 1,743 (`tests/perf/mainCheckoutMoved.perf.test.ts`, `docs/perf/2026-11-12-main-checkout-moved.md`).
