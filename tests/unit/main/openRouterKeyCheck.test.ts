@@ -45,10 +45,10 @@ describe('OpenRouter key verification', () => {
     expect(fetchFn).not.toHaveBeenCalled()
   })
 
-  it('answers unconfigured when settings cannot be read', async () => {
+  it('answers unreadable when settings cannot be read', async () => {
     const fetchFn = vi.fn<typeof fetch>()
     const result = await checkOpenRouterKey({ getSettings: async () => { throw new Error('store locked') }, fetchFn })
-    expect(result).toEqual({ ok: false, reason: 'unconfigured' })
+    expect(result).toEqual({ ok: false, reason: 'unreadable' })
     expect(fetchFn).not.toHaveBeenCalled()
   })
 
