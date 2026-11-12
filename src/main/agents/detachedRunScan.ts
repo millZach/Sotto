@@ -203,43 +203,57 @@ async function scanLinux(include: Parameters<ScanProcesses>[0]): Promise<Process
 
 // --- macOS ---------------------------------------------------------------------------------------------------------
 
-const run = (file: string, args: readonly string[], timeout = 20_000): Promise<string> => new Promise((done, fail) => {
-  execFile(file, [...args], { encoding: 'utf8', timeout, maxBuffer: 32 * 1024 * 1024, windowsHide: true }, (error, stdout) => error && !stdout ? fail(error) : done(stdout))
+const run = (file: string, args: readonly string[], timeout = 20_000, env?: NodeJS.ProcessEnv): Promise<string> => new Promise((done, fail) => {
+  execFile(file, [...args], { encoding: 'utf8', timeout, maxBuffer: 32 * 1024 * 1024, windowsHide: true, ...(env ? { env } : {}) }, (error, stdout) => error && !stdout ? fail(error) : done(stdout))
 })
 
-/** `ps`'s elapsed time, `[[dd-]hh:]mm:ss`, in milliseconds. */
-export function parseElapsed(value: string): number | undefined {
-  const match = /^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)$/u.exec(value.trim())
-  if (!match) return undefined
-  const [, days = '0', hours = '0', minutes, seconds] = match
-  return (((Number(days) * 24 + Number(hours)) * 60 + Number(minutes)) * 60 + Number(seconds)) * 1000
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+/**
+ * `ps`'s `lstart` in the C locale, `Tue Nov 11 17:00:00 2026`, local time, in milliseconds. It is the start the system
+ * records, to the second, so a run's identity is the same at every read; one worked out from its elapsed time and the
+ * clock could move a second between two reads.
+ */
+export function parseStarted(fields: readonly string[]): number | undefined {
+  const [, month, day, time, year] = fields
+  const at = MONTHS.indexOf(month ?? '')
+  const clock = /^(\d{1,2}):(\d{2}):(\d{2})$/u.exec(time ?? '')
+  if (at < 0 || !clock || !/^\d{1,2}$/u.test(day ?? '') || !/^\d{4}$/u.test(year ?? '')) return undefined
+  return new Date(Number(year), at, Number(day), Number(clock[1]), Number(clock[2]), Number(clock[3])).getTime()
 }
 
-/** `ps -axww -o pid=,ppid=,etime=,command=`: each process's parent, its start and its command line. */
-export function parseMacTable(output: string, now: number): { pid: number; parentPid: number; startedAt: number | undefined; commandLine: string }[] {
+/** `ps -axww -o pid=,ppid=,lstart=,command=`: each process's parent, its start and its command line. */
+export function parseMacTable(output: string): { pid: number; parentPid: number; startedAt: number | undefined; commandLine: string }[] {
   const rows: { pid: number; parentPid: number; startedAt: number | undefined; commandLine: string }[] = []
   for (const line of output.split('\n')) {
-    const match = /^\s*(\d+)\s+(\d+)\s+(\S+)\s+(.*)$/u.exec(line)
+    const match = /^\s*(\d+)\s+(\d+)\s+(\S+\s+\S+\s+\S+\s+\S+\s+\S+)\s+(.*)$/u.exec(line)
     if (!match) continue
-    const elapsed = parseElapsed(match[3]!)
-    // To the second: ps says no finer, and a run's identity must not shift between two reads.
-    rows.push({ pid: Number(match[1]), parentPid: Number(match[2]), startedAt: elapsed === undefined ? undefined : Math.round((now - elapsed) / 1000) * 1000, commandLine: match[4]!.trimEnd() })
+    rows.push({ pid: Number(match[1]), parentPid: Number(match[2]), startedAt: parseStarted(match[3]!.split(/\s+/u)), commandLine: match[4]!.trimEnd() })
   }
   return rows
 }
 
-async function scanMac(include: Parameters<ScanProcesses>[0]): Promise<ProcessTable> {
-  const now = Date.now()
+interface ListedRow { readonly pid: number; readonly parentPid: number; readonly startedAt: number | undefined; readonly commandLine: string }
+interface Candidate { readonly listed: ListedProcess; readonly client: string; readonly commandLine: string; readonly argv: string[] }
+/**
+ * A system that shows each command only as a line (macOS, Windows): every row listed for its parents, and the agent clients
+ * `include` keeps once all are listed, their lines split into arguments.
+ */
+function candidates(rows: readonly ListedRow[], include: Parameters<ScanProcesses>[0]): { processes: Map<number, ListedProcess>; wanted: Candidate[] } {
   const processes = new Map<number, ListedProcess>()
-  let wanted: { listed: ListedProcess; client: string; commandLine: string; argv: string[] }[] = []
-  for (const row of parseMacTable(await run('/bin/ps', ['-axww', '-o', 'pid=,ppid=,etime=,command=']), now)) {
+  const found: Candidate[] = []
+  for (const row of rows) {
     const listed: ListedProcess = { pid: row.pid, parentPid: row.parentPid || undefined, startedAt: row.startedAt }
     processes.set(row.pid, listed)
+    if (!row.commandLine) continue
     const argv = splitCommandLine(row.commandLine)
     const client = agentClient(argv)
-    if (client) wanted.push({ listed, client, commandLine: row.commandLine, argv })
+    if (client) found.push({ listed, client, commandLine: row.commandLine, argv })
   }
-  wanted = wanted.filter(item => include({ ...item.listed, client: item.client }, processes))
+  return { processes, wanted: found.filter(item => include({ ...item.listed, client: item.client }, processes)) }
+}
+
+async function scanMac(include: Parameters<ScanProcesses>[0]): Promise<ProcessTable> {
+  const { processes, wanted } = candidates(parseMacTable(await run('/bin/ps', ['-axww', '-o', 'pid=,ppid=,lstart=,command='], 20_000, { ...process.env, LC_ALL: 'C' })), include)
   if (!wanted.length) return { processes, agents: [] }
   const pids = wanted.map(item => item.listed.pid).join(',')
   // With -E, ps puts the environment after the command, which it reads only for this user's own processes.
@@ -353,17 +367,7 @@ export function parseWindowsTable(output: string): { pid: number; parentPid: num
 }
 
 async function scanWindows(include: Parameters<ScanProcesses>[0]): Promise<ProcessTable> {
-  const processes = new Map<number, ListedProcess>()
-  let wanted: { listed: ListedProcess; client: string; commandLine: string; argv: string[] }[] = []
-  for (const row of parseWindowsTable(await run('powershell.exe', encoded(WINDOWS_TABLE), 60_000))) {
-    const listed: ListedProcess = { pid: row.pid, parentPid: row.parentPid || undefined, startedAt: row.startedAt }
-    processes.set(row.pid, listed)
-    if (!row.commandLine) continue
-    const argv = splitCommandLine(row.commandLine)
-    const client = agentClient(argv)
-    if (client) wanted.push({ listed, client, commandLine: row.commandLine, argv })
-  }
-  wanted = wanted.filter(item => include({ ...item.listed, client: item.client }, processes))
+  const { processes, wanted } = candidates(parseWindowsTable(await run('powershell.exe', encoded(WINDOWS_TABLE), 60_000)), include)
   if (!wanted.length) return { processes, agents: [] }
   const names = RUN_MARKS.map(name => `'${name}'`).join(',')
   const script = `$ErrorActionPreference = 'Stop'

@@ -1,8 +1,11 @@
 import React from 'react'
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
-import { DetachedRunStopContext, StillWorking } from '../../../src/renderer/src/agents/DelegatedWork'
+import { DetachedRunStopContext, StillWorking, stillWorkingAgents } from '../../../src/renderer/src/agents/DelegatedWork'
+import { MessageList, type ActivityContext } from '../../../src/renderer/src/agents/ThreadTranscript'
+import { placeActivities } from '../../../src/renderer/src/agents/threadActivityView'
 import type { AgentBackgroundWork } from '../../../src/shared/agentMonitoring'
+import type { AgentMessage } from '../../../src/shared/agents'
 
 afterEach(cleanup)
 
@@ -45,4 +48,33 @@ it('has no Stop where nothing may stop a run', () => {
   render(<StillWorking views={undefined} work={[run]} />)
   expect(screen.queryByRole('button', { name: /Stop/u })).toBeNull()
   expect(screen.getByRole('listitem', { name: 'Detached run: tetherfall-art-director, Working' })).toBeInTheDocument()
+})
+
+it('closes the open command on Escape and gives focus back to its summary', () => {
+  render(<StillWorking views={undefined} work={[run]} />)
+  const summary = screen.getByText('Command')
+  const details = summary.closest('details')!
+  details.open = true
+  fireEvent.keyDown(summary, { key: 'Escape' })
+  expect(details.open).toBe(false)
+  expect(summary).toHaveFocus()
+})
+
+it('keeps a run, its only Stop, whatever else holds the thread: an error, a card waiting on the user', () => {
+  expect(stillWorkingAgents([subagent, run], false)).toEqual([run])
+  expect(stillWorkingAgents([subagent, run], true)).toEqual([subagent, run])
+  expect(stillWorkingAgents([subagent], false)).toBeUndefined()
+})
+
+it('keeps the row under the last finished reply while a new turn runs', () => {
+  const at = (minutes: number): string => new Date(Date.now() - minutes * 60_000).toISOString()
+  const messages: AgentMessage[] = [
+    { id: 'ask', role: 'user', text: 'Start the art director on its own.', createdAt: at(30) },
+    { id: 'reply', role: 'assistant', text: 'It is running on its own now.', createdAt: at(29) },
+    { id: 'later', role: 'user', text: 'Now fix the title screen.', createdAt: at(1) },
+  ]
+  const context: ActivityContext = { liveTurn: null, running: true, connected: true, provider: 'claude', onDisclosure: () => undefined }
+  render(<MessageList messages={messages} provider="Claude Code" running placement={placeActivities(messages, messages, [])} context={context} backgroundWork={[run]} />)
+  const order = [...document.querySelectorAll('[data-message-id], .delegated-work__row')].map(element => element.getAttribute('data-message-id') ?? element.getAttribute('aria-label'))
+  expect(order).toEqual(['ask', 'reply', 'Detached run: tetherfall-art-director, Working', 'later'])
 })

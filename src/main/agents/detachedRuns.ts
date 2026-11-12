@@ -23,6 +23,9 @@ const STOP_GRACE_MS = 5_000
 
 export const DETACHED_RUN_ENDED = 'That detached run has already ended. Nothing was stopped.'
 export const DETACHED_RUN_NOT_STOPPED = 'Sotto could not stop that detached run. It may still be running. Stop it from a terminal on that computer.'
+export const DETACHED_RUN_UNCHECKED = 'Sotto could not check that the detached run is still the same process, so nothing was stopped. Try again in a moment.'
+/** How many looks in a row may fail before the watch waits for the next turn to end. */
+const FAILED_LOOKS_RETRIED = 3
 
 export interface DetachedRunWatchOptions {
   readonly scan: ScanProcesses
@@ -85,14 +88,16 @@ export async function endRun(pid: number): Promise<boolean> {
   }
   const group = signal(-pid, 'SIGTERM')
   if (!group && !signal(pid, 'SIGTERM')) return !signal(pid, 0)
+  // A group is gone when nothing in it is left, not when its leader is: a helper that ignores SIGTERM outlives it.
+  const alive = (): boolean => group ? signal(-pid, 0) : signal(pid, 0)
   const deadline = Date.now() + STOP_GRACE_MS
   while (Date.now() < deadline) {
     await new Promise(done => setTimeout(done, 200))
-    if (!signal(pid, 0)) return true
+    if (!alive()) return true
   }
   if (group) signal(-pid, 'SIGKILL'); else signal(pid, 'SIGKILL')
   await new Promise(done => setTimeout(done, 200))
-  return !signal(pid, 0)
+  return !alive()
 }
 
 export class DetachedRunWatch {
@@ -101,7 +106,8 @@ export class DetachedRunWatch {
   private readonly listeners = new Set<(threadIds: readonly string[]) => void>()
   private timer: ReturnType<typeof setTimeout> | undefined
   private dueAt = Number.POSITIVE_INFINITY
-  private looking: Promise<void> | undefined
+  private looking: Promise<boolean> | undefined
+  private failedLooks = 0
   private closed = false
 
   constructor(private readonly options: DetachedRunWatchOptions) {}
@@ -124,7 +130,8 @@ export class DetachedRunWatch {
    */
   async stop(threadId: string, id: string): Promise<void> {
     if (this.records.get(id)?.threadId !== threadId) throw new Error(DETACHED_RUN_ENDED)
-    await this.lookNow()
+    // Only a look that read the table now may vouch for the process: one that failed leaves the old records standing.
+    if (!await this.lookNow()) throw new Error(DETACHED_RUN_UNCHECKED)
     const record = this.records.get(id)
     if (record?.threadId !== threadId) throw new Error(DETACHED_RUN_ENDED)
     const ended = await (this.options.end ?? endRun)(record.pid)
@@ -139,11 +146,11 @@ export class DetachedRunWatch {
     this.listeners.clear()
   }
 
-  /** Looks now, after any look already under way. */
-  async lookNow(): Promise<void> {
+  /** Looks now, after any look already under way; true when it read the process table. */
+  async lookNow(): Promise<boolean> {
     while (this.looking) await this.looking
     this.looking = this.look().finally(() => { this.looking = undefined })
-    await this.looking
+    return this.looking
   }
 
   private schedule(delay: number): void {
@@ -159,17 +166,19 @@ export class DetachedRunWatch {
     this.timer.unref?.()
   }
 
-  private async look(): Promise<void> {
-    if (this.closed) return
+  private async look(): Promise<boolean> {
+    if (this.closed) return false
     let table: ProcessTable
     try {
       table = await this.options.scan((process, all) => process.pid !== this.options.rootPid && !descendsFrom(all, process.pid, this.options.rootPid))
     } catch {
-      // A look that failed says nothing about the runs: the ones known stay, and it tries again.
-      if (this.records.size) this.schedule(this.options.followMs ?? DETACHED_RUN_FOLLOW_MS)
-      return
+      // A look that failed says nothing about the runs: the ones known stay, and it tries again a few times, whether or not
+      // it knows of any, so a run already going when the first look failed is still found.
+      if (++this.failedLooks <= FAILED_LOOKS_RETRIED || this.records.size) this.schedule(this.options.followMs ?? DETACHED_RUN_FOLLOW_MS)
+      return false
     }
-    if (this.closed) return
+    this.failedLooks = 0
+    if (this.closed) return false
     const found = new Map<string, AgentBackgroundWork[]>()
     const records = new Map<string, RunRecord>()
     const owned = new Map<number, string>()
@@ -195,6 +204,7 @@ export class DetachedRunWatch {
     this.records.clear(); for (const [id, record] of records) this.records.set(id, record)
     if (this.records.size) this.schedule(this.options.followMs ?? DETACHED_RUN_FOLLOW_MS)
     if (changed.size) for (const listener of [...this.listeners]) listener([...changed])
+    return true
   }
 
   private underAnotherRun(table: ProcessTable, pid: number, threadId: string, owned: ReadonlyMap<number, string>): boolean {

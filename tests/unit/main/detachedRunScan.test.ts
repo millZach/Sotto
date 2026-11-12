@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
-import { agentClient, descendsFrom, marksIn, parseElapsed, parseLinuxStat, parseMacTable, parseWindowsTable, runWords, shownCommand, splitCommandLine, type ListedProcess } from '../../../src/main/agents/detachedRunScan'
+import { agentClient, descendsFrom, marksIn, parseLinuxStat, parseMacTable, parseStarted, parseWindowsTable, runWords, shownCommand, splitCommandLine, type ListedProcess } from '../../../src/main/agents/detachedRunScan'
 
 describe('which processes are agent clients', () => {
   it('knows a client by its command, on any system, and under a runtime by its script or package', () => {
@@ -66,15 +66,16 @@ describe('reading what the system lists', () => {
     expect(parseLinuxStat('garbage')).toBeUndefined()
   })
 
-  it('reads ps elapsed times and table rows on macOS', () => {
-    expect(parseElapsed('19:54')).toBe((19 * 60 + 54) * 1000)
-    expect(parseElapsed('01:02:03')).toBe((3600 + 2 * 60 + 3) * 1000)
-    expect(parseElapsed('2-00:00:01')).toBe((2 * 86_400 + 1) * 1000)
-    expect(parseElapsed('soon')).toBeUndefined()
-    const now = Date.parse('2026-11-12T01:00:00Z')
-    expect(parseMacTable('  961128     1    19:54 claude -p --name run "Read it"\n bad line\n', now)).toEqual([
-      { pid: 961128, parentPid: 1, startedAt: now - (19 * 60 + 54) * 1000, commandLine: 'claude -p --name run "Read it"' },
+  it('reads the start ps records on macOS, the same at every read, and its table rows', () => {
+    const started = new Date(2026, 10, 11, 17, 4, 5).getTime()
+    expect(parseStarted(['Wed', 'Nov', '11', '17:04:05', '2026'])).toBe(started)
+    expect(parseStarted(['Wed', 'Novembre', '11', '17:04:05', '2026'])).toBeUndefined()
+    expect(parseStarted(['Wed', 'Nov', '11', 'soon', '2026'])).toBeUndefined()
+    expect(parseMacTable('  961128     1 Wed Nov 11 17:04:05 2026     claude -p --name run "Read it"\n bad line\n')).toEqual([
+      { pid: 961128, parentPid: 1, startedAt: started, commandLine: 'claude -p --name run "Read it"' },
     ])
+    // Read again later, the same process has the same start, so its run keeps its ID and Stop finds it.
+    expect(parseMacTable('961128 1 Wed Nov 11 17:04:05 2026 claude -p')[0]!.startedAt).toBe(started)
   })
 
   it('reads the Windows table, a process without a command line kept for its parents', () => {

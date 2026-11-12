@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { agentBackgroundWorkSchema, type AgentBackgroundWork } from '../../../src/shared/agentMonitoring'
-import { DETACHED_RUN_AFTER_TURN_MS, DETACHED_RUN_ENDED, DetachedRunWatch, detachedRunWork, withDetachedRuns } from '../../../src/main/agents/detachedRuns'
+import { DETACHED_RUN_AFTER_TURN_MS, DETACHED_RUN_ENDED, DETACHED_RUN_UNCHECKED, DetachedRunWatch, detachedRunWork, withDetachedRuns } from '../../../src/main/agents/detachedRuns'
 import type { AgentProcess, ListedProcess, ProcessTable, RunMark, ScanProcesses } from '../../../src/main/agents/detachedRunScan'
 import { WorkspaceHost } from '../../../src/main/agents/workspace'
 import { FakeProviderHost } from '../../fixtures/fakeProviderHost'
@@ -122,6 +122,33 @@ describe('the watch', () => {
     host.set({ processes: base, agents: [{ ...agent(961128, 1, [mark()]), startedAt: 99_999_999 }] })
     await expect(watch.stop('thread-a', id)).rejects.toThrow(DETACHED_RUN_ENDED)
     expect(end).not.toHaveBeenCalled()
+  })
+})
+
+describe('when a look fails', () => {
+  it('stops nothing when the look before Stop could not read the table', async () => {
+    const host = computer({ processes: base, agents: [agent(961128, 1, [mark()])] })
+    const end = vi.fn(async () => true)
+    const watch = new DetachedRunWatch({ scan: host.scan, rootPid: SOTTO, owner: () => 'thread-a', end })
+    cleanup.push(() => watch.close())
+    await watch.lookNow()
+    const id = watch.runsFor('thread-a')![0]!.id
+    host.scan.mockRejectedValueOnce(new Error('ps failed'))
+    await expect(watch.stop('thread-a', id)).rejects.toThrow(DETACHED_RUN_UNCHECKED)
+    expect(end).not.toHaveBeenCalled()
+  })
+
+  it('tries again after a first look that failed, though it knows of no run yet', async () => {
+    vi.useFakeTimers()
+    const host = computer({ processes: base, agents: [agent(961128, 1, [mark()])] })
+    host.scan.mockRejectedValueOnce(new Error('ps failed'))
+    const watch = new DetachedRunWatch({ scan: host.scan, rootPid: SOTTO, owner: () => 'thread-a', followMs: 15_000 })
+    cleanup.push(() => watch.close())
+    watch.turnEnded()
+    await vi.advanceTimersByTimeAsync(DETACHED_RUN_AFTER_TURN_MS)
+    expect(watch.runsFor('thread-a')).toBeUndefined()
+    await vi.advanceTimersByTimeAsync(15_000)
+    expect(watch.runsFor('thread-a')).toHaveLength(1)
   })
 })
 

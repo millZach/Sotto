@@ -268,9 +268,12 @@ export function DelegatedWorkSummary({ views }: { readonly views: readonly Deleg
 /**
  * The provider's agents that still run in the background, for the rows under the last reply: none where the composer's
  * ornament may not show them either, and never a command, which waits rather than works and stays the ornament's alone.
+ * A detached run is the exception: it stands whatever else holds the thread.
  */
 export function stillWorkingAgents(work: readonly AgentBackgroundWork[] | undefined, ornamentAllowed: boolean): readonly AgentBackgroundWork[] | undefined {
-  const agents = ornamentAllowed ? work?.filter(task => task.type !== 'command') : undefined
+  // A detached run's row is its only Stop (#2476), so it stands whatever else holds the thread: an error, a card waiting on
+  // the user, a settle. It goes only when the run ends.
+  const agents = work?.filter(task => task.type === 'detached-run' || (ornamentAllowed && task.type !== 'command'))
   return agents?.length ? agents : undefined
 }
 
@@ -334,6 +337,14 @@ function DetachedRunRow({ work }: { readonly work: AgentBackgroundWork }): React
   const kindWord = BACKGROUND_WORK_LABELS['detached-run']
   const label = work.label
   const model = run.model ? run.effort ? `${run.model}, ${run.effort}` : run.model : run.effort
+  // The open command answers Escape: it closes, and focus goes back to its summary.
+  const closeOnEscape = (event: React.KeyboardEvent<HTMLDetailsElement>): void => {
+    const details = event.currentTarget
+    if (event.key !== 'Escape' || !details.open) return
+    event.preventDefault(); event.stopPropagation()
+    details.open = false
+    details.querySelector('summary')?.focus()
+  }
   const press = (): void => {
     if (!stop || stopping) return
     setStopping(true); setWhy(null)
@@ -358,7 +369,7 @@ function DetachedRunRow({ work }: { readonly work: AgentBackgroundWork }): React
       {work.startedAt ? <><span aria-hidden="true">·</span><RunningFor startedAt={work.startedAt} /></> : null}
     </p>
     <p id={lineId} className="delegated-work__line"><Trans>Started from this thread and left running after its turn. Sotto found it running; its provider does not report it.</Trans></p>
-    <details className="delegated-work__command"><summary className="tt-focusable">{t({ message: 'Command', comment: 'Shows the command a detached run was started with.' })}</summary><code>{run.command}</code></details>
+    <details className="delegated-work__command" onKeyDown={closeOnEscape}><summary className="tt-focusable">{t({ message: 'Command', comment: 'Shows the command a detached run was started with.' })}</summary><code>{run.command}</code></details>
     {why ? <p className="delegated-work__why tt-paragraph" role="alert">{why}</p> : null}
   </li>
 }

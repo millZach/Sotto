@@ -686,6 +686,9 @@ export const MessageList = memo(function MessageList({ messages, provider, runni
     return runs?.length ? runs : undefined
   }, [backgroundWork])
   const agents = live ? undefined : delegationOn ? backgroundWork : detachedOnly
+  // While a new turn runs, a detached run's row, its only Stop, stays under the last finished reply rather than going.
+  const agentsAt = live && detachedOnly ? turns.length - 2 : turns.length - 1
+  const shownAgents = live ? detachedOnly : agents
   // Only the newest turn's reply is being written: a turn that has drawn nothing yet, such as one opened by an empty reply,
   // leaves the reply above it finished. A visual after the reply means the reply is no longer being written, and so does a
   // turn that is not writing now (`notWriting`), so no caret says the provider is still typing.
@@ -715,7 +718,7 @@ export const MessageList = memo(function MessageList({ messages, provider, runni
     <ActivityGroups groups={unshown(placement.before.get((turn.user ?? turn.replies[0])!.id))} context={context} />
     <TurnView turn={turn} provider={provider} running={live}
       last={index === turns.length - 1} writing={writing} writingBelow={index === turns.length - 1 ? writingBelow : null} placement={placement} context={context} streamText={streamText} threadId={threadId} speaker={speaker}
-      delegations={turn.user ? delegations?.get(turn.user.id) : undefined} backgroundWork={index === turns.length - 1 ? agents : undefined} briefs={briefs} continuedIn={turn.user ? continuedIn?.get(turn.user.id) : undefined} close={close} />
+      delegations={turn.user ? delegations?.get(turn.user.id) : undefined} backgroundWork={index === agentsAt ? shownAgents : undefined} briefs={briefs} continuedIn={turn.user ? continuedIn?.get(turn.user.id) : undefined} close={close} />
     {movedAfter === index ? movedLine : null}
   </React.Fragment>)}
   <ActivityGroups groups={unshown(placement.trailing)} context={context} />

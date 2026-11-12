@@ -6,7 +6,7 @@
  * and know it runs under this test's own process.
  */
 import { spawn, type ChildProcess } from 'node:child_process'
-import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
@@ -44,3 +44,23 @@ it('finds a marked agent client with its folder, and knows it runs under this pr
   const after = await scanProcesses(item => item.pid === pid)
   expect(after.agents.find(item => item.pid === pid)).toBeUndefined()
 }, 120_000)
+
+it.skipIf(process.platform === 'win32')('ends a run\'s whole group, a helper that ignores SIGTERM included, not only its leader', async () => {
+  const folder = await realpath(await mkdtemp(join(tmpdir(), 'sotto-detached-group-')))
+  const helperPidFile = join(folder, 'helper.pid')
+  await writeFile(join(folder, 'helper.mjs'), `import { writeFileSync } from 'node:fs'\nprocess.on('SIGTERM', () => {})\nwriteFileSync(${JSON.stringify(helperPidFile)}, String(process.pid))\nsetInterval(() => {}, 1000)\n`)
+  await writeFile(join(folder, 'claude.mjs'), `import { spawn } from 'node:child_process'\nspawn(process.execPath, [${JSON.stringify(join(folder, 'helper.mjs'))}], { stdio: 'ignore' })\nsetInterval(() => {}, 1000)\n`)
+  const leader = spawn(process.execPath, [join(folder, 'claude.mjs')], { cwd: folder, detached: true, stdio: 'ignore' })
+  let helper: number | undefined
+  cleanup.push(async () => {
+    for (const pid of [leader.pid, helper]) if (pid) try { process.kill(pid, 'SIGKILL') } catch { /* already ended */ }
+    await rm(folder, { recursive: true, force: true })
+  })
+  for (let tries = 0; tries < 50 && helper === undefined; tries++) {
+    await new Promise(done => setTimeout(done, 100))
+    helper = Number(await readFile(helperPidFile, 'utf8').catch(() => '')) || undefined
+  }
+  expect(helper, 'the helper started').toBeDefined()
+  expect(await endRun(leader.pid!)).toBe(true)
+  expect(() => process.kill(helper!, 0)).toThrow()
+}, 60_000)
