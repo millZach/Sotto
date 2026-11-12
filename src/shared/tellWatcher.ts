@@ -74,8 +74,17 @@ export function toldUserMessage(id: string, text: string): ToldUserMessage | und
  * from one a message to Watcher started and so one message opens at most one.
  */
 const TOLD_ROOT = 'told:'
+/**
+ * A request the user's answer on Watcher's own question card opened (#2482) is rooted in that question, by this prefix. It
+ * is told news's kind of request: for starting threads and sending in the one turn the answer's news starts.
+ */
+const ANSWERED_ROOT = 'answered:'
 export const toldRequestRoot = (hostId: string, threadId: string, messageId: string): string => `${TOLD_ROOT}${hostId}:${threadId}:${messageId}`
-export const isToldRequest = (request: { readonly rootUserMessageId: string }): boolean => request.rootUserMessageId.startsWith(TOLD_ROOT)
+export const answeredRequestRoot = (questionId: string): string => `${ANSWERED_ROOT}${questionId}`
+/** The question of Watcher's whose answer opened a request. Undefined for any other request's root. */
+export const answeredRequestQuestion = (root: string): string | undefined => root.startsWith(ANSWERED_ROOT) ? root.slice(ANSWERED_ROOT.length) || undefined : undefined
+/** Whether news opened this request, a thread's message or the user's answer on a card, rather than a message to Watcher. */
+export const isToldRequest = (request: { readonly rootUserMessageId: string }): boolean => request.rootUserMessageId.startsWith(TOLD_ROOT) || request.rootUserMessageId.startsWith(ANSWERED_ROOT)
 /** The user's message a told request is rooted in, and its thread. Undefined for any other request's root. */
 export function toldRequestMessage(root: string): { readonly threadId: string; readonly messageId: string } | undefined {
   if (!root.startsWith(TOLD_ROOT)) return undefined

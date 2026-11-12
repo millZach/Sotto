@@ -80,7 +80,7 @@ export const watcherEventSchema = z.object({
     userWordsCut: z.literal(true).optional(), opened: z.boolean() }).strict().optional(),
   ready: readyToMergeSchema.optional(),
   answered: z.object({ questionId: z.uuid(), question: z.string().min(1).max(WATCHER_QUESTION_WORDS_MAX), choice: z.string().min(1).max(WATCHER_QUESTION_LABEL_MAX).optional(),
-    skipped: z.literal(true).optional(), settle: z.literal(true).optional() }).strict()
+    skipped: z.literal(true).optional(), settle: z.literal(true).optional(), opened: z.literal(true).optional() }).strict()
     .refine(answered => (answered.choice === undefined) === (answered.skipped === true), 'An answer names a choice or says it was skipped.').optional(),
 }).strict()
 /** The request a `threads-restarted` event names for a thread no request watches: the nil UUID, which no request has. */
