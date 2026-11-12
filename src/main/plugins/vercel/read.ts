@@ -47,7 +47,7 @@ export type VercelRead =
   | { readonly ok: false; readonly reason: VercelReadRefusal | 'no-secret' | 'locked' | 'refused' | 'unreachable' | 'failed'; readonly said?: string }
 
 /** How this module reaches the network: Node's `fetch`, or a stand-in. */
-export type VercelFetch = (url: string, init: { readonly method: 'GET' | 'PATCH'; readonly headers: Readonly<Record<string, string>>; readonly redirect: 'manual'; readonly signal: AbortSignal }) => Promise<Response>
+export type VercelFetch = (url: string, init: { readonly method: 'GET' | 'PATCH' | 'POST'; readonly headers: Readonly<Record<string, string>>; readonly redirect: 'manual'; readonly signal: AbortSignal }) => Promise<Response>
 
 /** A path's parts as Vercel will read them, in lower case. Null for a path this tool does not read. */
 function readParts(path: string): string[] | null {

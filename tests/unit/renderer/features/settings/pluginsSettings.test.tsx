@@ -278,3 +278,23 @@ it('says of a change what was done or only asked for, and how the user answered'
     'Asked to post a comment in “Fix the preview build” You allowed it, and it failed.',
   ])
 })
+
+it('says of each kind of change what was done, and what was only asked for', async () => {
+  const uses = [
+    use(1, { tool: 'github_open_issue', kind: 'issue-open', outcome: 'done' }),
+    use(2, { tool: 'github_close_issue', kind: 'issue-close', outcome: 'done' }),
+    use(3, { tool: 'github_reopen_issue', kind: 'issue-reopen', outcome: 'denied' }),
+    use(4, { tool: 'vercel_promote_deployment', kind: 'deployment-promote', outcome: 'done' }),
+    use(5, { tool: 'vercel_rollback_production', kind: 'deployment-rollback', outcome: 'lapsed' }),
+  ]
+  const bridge: PluginsBridge = { gitHubSignIn: async () => ({ state: 'signed-in', login: 'example-user' }), recentUse: async () => uses, ...noAccounts }
+  await act(async () => { render(<PluginsSettings bridge={bridge} />) })
+  fireEvent.click(row())
+  expect(within(screen.getByRole('region', { name: 'Recent use' })).getAllByRole('listitem').map(item => item.querySelector('span')!.textContent)).toEqual([
+    'Opened an issue in “Fix the preview build” You allowed it.',
+    'Closed an issue in “Fix the preview build” You allowed it.',
+    'Asked to reopen an issue in “Fix the preview build” You said no.',
+    'Promoted a deployment to production in “Fix the preview build” You allowed it.',
+    'Asked to roll production back in “Fix the preview build” Nobody answered in time.',
+  ])
+})

@@ -1,14 +1,14 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { commentOnGitHub } from '../../../../src/main/plugins/github/changes'
+import { commentOnGitHub, describeGitHubIssue, openGitHubIssue, setGitHubIssueState } from '../../../../src/main/plugins/github/changes'
 import type { GitCommandOptions, RunGitCommand } from '../../../../src/main/agents/git/gitStatus'
 import { wordPluginChange } from '../../../../src/main/plugins/changeWords'
 import { PluginChangeRequests, type PluginChangeAnswer, type PluginChangeWait } from '../../../../src/main/plugins/pendingChanges'
 import { PluginToolServer } from '../../../../src/main/plugins/pluginTools'
 import type { PluginUseReport } from '../../../../src/main/plugins/useRecord'
-import { cancelVercelDeployment, describeVercelDeployment, type VercelChange, type VercelDescribed } from '../../../../src/main/plugins/vercel/changes'
+import { cancelVercelDeployment, describeVercelDeployment, moveVercelProduction, type VercelChange, type VercelDescribed } from '../../../../src/main/plugins/vercel/changes'
 import type { VercelFetch } from '../../../../src/main/plugins/vercel/read'
-import { GITHUB_COMMENT_TOOL, PLUGIN_ACCOUNTS_TOOL, PLUGIN_READ_TOOL, VERCEL_CANCEL_TOOL, type GitHubSignIn, type PluginAccount, type PluginChange } from '../../../../src/shared/plugins'
+import { GITHUB_CLOSE_ISSUE_TOOL, GITHUB_COMMENT_TOOL, GITHUB_OPEN_ISSUE_TOOL, GITHUB_REOPEN_ISSUE_TOOL, PLUGIN_ACCOUNTS_TOOL, PLUGIN_READ_TOOL, VERCEL_CANCEL_TOOL, VERCEL_PROMOTE_TOOL, VERCEL_ROLLBACK_TOOL, type GitHubSignIn, type PluginAccount, type PluginChange } from '../../../../src/shared/plugins'
 import { deferred } from '../../../fixtures/deferred'
 
 const servers: PluginToolServer[] = []
@@ -21,6 +21,8 @@ const comment = { owner: 'example-owner', repo: 'example-repo', number: 12, body
 
 /** The tools over a gh and a Vercel that keep what they were asked, with the user's answer in the test's hands. */
 function tools(options: { watcher?: boolean; answer?: PluginChangeAnswer; signIn?: GitHubSignIn; signIns?: GitHubSignIn[]; accounts?: readonly PluginAccount[]; gh?: string | Error; vercel?: (url: string, method: string) => { status?: number; body?: unknown }
+  /** What gh answers when it is asked about one issue before a change to it: GitHub's title, state and whether it is a pull request. */
+  issue?: string | Error
   /** The real waiting asks, where a test answers or abandons a card as the app would. */
   requests?: PluginChangeRequests
   /** What main says of the account's token, where it cannot be read. */
@@ -28,7 +30,8 @@ function tools(options: { watcher?: boolean; answer?: PluginChangeAnswer; signIn
   const ghCalls: { args: readonly string[]; stdin: string | undefined }[] = []
   const run: RunGitCommand = async (_cwd, _command, args, runOptions?: GitCommandOptions) => {
     ghCalls.push({ args, stdin: runOptions?.stdin })
-    const answer = options.gh ?? '{"html_url":"https://github.com/example-owner/example-repo/issues/12#issuecomment-1"}'
+    const answer = args.includes('--jq') ? options.issue ?? '{"title":"The preview build fails","state":"open","pullRequest":false}'
+      : options.gh ?? '{"html_url":"https://github.com/example-owner/example-repo/issues/12#issuecomment-1"}'
     if (answer instanceof Error) throw answer
     return answer
   }
@@ -59,6 +62,10 @@ function tools(options: { watcher?: boolean; answer?: PluginChangeAnswer; signIn
       return options.requests ? options.requests.ask(threadId, wordPluginChange(change), wait) : options.answer ?? asking.promise
     },
     commentOnGitHub: input => commentOnGitHub(run, input),
+    openGitHubIssue: input => openGitHubIssue(run, input),
+    describeGitHubIssue: input => describeGitHubIssue(run, input),
+    setGitHubIssueState: input => setGitHubIssueState(run, input),
+    moveVercelProduction: async (_accountId, action, projectId, deploymentId, teamId) => options.cancelled ?? moveVercelProduction(fetcher, TOKEN, action, projectId, deploymentId, teamId),
     describeVercelDeployment: async (_accountId, deploymentId, teamId) => options.described ?? describeVercelDeployment(fetcher, TOKEN, deploymentId, teamId),
     cancelVercelDeployment: async (_accountId, deploymentId, teamId) => options.cancelled ?? cancelVercelDeployment(fetcher, TOKEN, deploymentId, teamId),
   })
@@ -155,8 +162,8 @@ describe('a plugin change asks the user first (ADR-0205, decision 7)', () => {
 
   it('posts nothing when gh was switched to another account while the card waited', async () => {
     for (const [after, words] of [
-      [{ state: 'signed-in', login: 'other-user' }, 'The user allowed a comment as example-user, but gh is now signed in to GitHub as other-user, so the comment was not posted. Call github_comment again if it should still be posted; the user will be asked again.'],
-      [{ state: 'unknown' }, 'The user allowed a comment as example-user, but gh no longer says it is signed in to GitHub as that account, so the comment was not posted. Call github_comment again if it should still be posted; the user will be asked again.'],
+      [{ state: 'signed-in', login: 'other-user' }, 'The user allowed it as example-user, but gh is now signed in to GitHub as other-user, so the comment was not posted. Call github_comment again if it should still be done; the user will be asked again.'],
+      [{ state: 'unknown' }, 'The user allowed it as example-user, but gh no longer says it is signed in to GitHub as that account, so the comment was not posted. Call github_comment again if it should still be done; the user will be asked again.'],
     ] as const) {
       const { server, asked, ghCalls, recorded } = tools({ signIns: [{ state: 'signed-in', login: 'example-user' }, after], answer: 'allowed' })
       const result = await server.call('admitted', GITHUB_COMMENT_TOOL, comment)
@@ -171,7 +178,7 @@ describe('a plugin change asks the user first (ADR-0205, decision 7)', () => {
   it('says the comment was not posted when GitHub will not take it, though the user allowed it', async () => {
     const { server, recorded } = tools({ answer: 'allowed', gh: new Error('gh: Validation Failed (HTTP 422)') })
     const result = await server.call('admitted', GITHUB_COMMENT_TOOL, comment)
-    expect(said(result)).toBe('The user allowed it, but GitHub did not take the comment: gh: Validation Failed (HTTP 422). Nothing was posted.')
+    expect(said(result)).toBe('The user allowed it, but GitHub did not take the comment: gh: Validation Failed (HTTP 422). Nothing was changed.')
     expect(recorded).toEqual([{ threadId: 'admitted', plugin: 'github', tool: GITHUB_COMMENT_TOOL, kind: 'comment', outcome: 'failed' }])
   })
 
@@ -333,5 +340,214 @@ describe('the changes themselves', () => {
     const echoed = await describeVercelDeployment(fetcher(200, { name: `${'y'.repeat(110)}${TOKEN}`, url: `${TOKEN}.vercel.app`, readyState: TOKEN, target: TOKEN }), TOKEN, 'dpl_example1', undefined)
     expect(JSON.stringify(echoed)).not.toContain(TOKEN.slice(0, 8))
     expect(echoed.url).toBe('[removed by Sotto].vercel.app')
+  })
+})
+
+describe('the rest of the first plugin changes: issues on GitHub, production on Vercel (#2489)', () => {
+  const place = { owner: 'example-owner', repo: 'example-repo' }
+  /** The calls that changed something, apart from the reads gh was asked for before a card. */
+  const writes = (calls: readonly { args: readonly string[]; stdin: string | undefined }[]) => calls.filter(call => !call.args.includes('--jq'))
+  const DEPLOYMENT = { name: 'example-project', projectId: 'prj_example1', target: null, url: 'example-project-abc.vercel.app', readyState: 'READY' }
+
+  it('opens an issue only once the user allows it, with its title and body on standard input', async () => {
+    const { server, ghCalls, asked, recorded, answer } = tools({ gh: '{"html_url":"https://github.com/example-owner/example-repo/issues/13"}' })
+    const issue = { ...place, title: 'The preview build fails', body: 'It stops at the install step.\nSee the log.' }
+    const call = server.call('admitted', GITHUB_OPEN_ISSUE_TOOL, issue)
+    await settle()
+    expect(asked).toEqual([{ kind: 'github-open-issue', ...issue, account: 'example-user' }])
+    expect(ghCalls).toEqual([])
+    answer('allowed')
+    expect(said(await call)).toBe('The user allowed it, and the issue is open: https://github.com/example-owner/example-repo/issues/13')
+    expect(ghCalls).toEqual([{
+      args: ['api', '--method', 'POST', '--hostname', 'github.com', '-H', 'Accept: application/vnd.github+json', 'repos/example-owner/example-repo/issues', '--input', '-'],
+      stdin: JSON.stringify({ title: issue.title, body: issue.body }),
+    }])
+    expect(recorded).toEqual([{ threadId: 'admitted', plugin: 'github', tool: GITHUB_OPEN_ISSUE_TOOL, kind: 'issue-open', outcome: 'done' }])
+    // An issue with no body sends a title alone, and one with no title asks nobody.
+    const bare = tools({ answer: 'allowed' })
+    await bare.server.call('admitted', GITHUB_OPEN_ISSUE_TOOL, { ...place, title: 'A title alone' })
+    expect(bare.ghCalls[0]!.stdin).toBe('{"title":"A title alone"}')
+    const untitled = tools({ answer: 'allowed' })
+    expect((await untitled.server.call('admitted', GITHUB_OPEN_ISSUE_TOOL, { ...place, title: '   ', body: 'Words' })).isError).toBe(true)
+    expect([untitled.asked, untitled.ghCalls]).toEqual([[], []])
+  })
+
+  it('reads an issue for its card, then closes it only once the user allows it, as completed unless told otherwise', async () => {
+    const { server, ghCalls, asked, recorded, answer } = tools({ gh: '{"html_url":"https://github.com/example-owner/example-repo/issues/12"}' })
+    const call = server.call('admitted', GITHUB_CLOSE_ISSUE_TOOL, { ...place, number: 12 })
+    await settle()
+    // The card names the issue by GitHub's own title for it, and only a read has gone to gh.
+    expect(asked).toEqual([{ kind: 'github-close-issue', ...place, number: 12, title: 'The preview build fails', reason: 'completed', account: 'example-user' }])
+    expect(ghCalls.map(entry => entry.args.slice(0, 3))).toEqual([['api', '--method', 'GET']])
+    expect(ghCalls[0]!.args).toContain('repos/example-owner/example-repo/issues/12')
+    answer('allowed')
+    expect(said(await call)).toBe('The user allowed it, and the issue is closed: https://github.com/example-owner/example-repo/issues/12')
+    expect(writes(ghCalls)).toEqual([{
+      args: ['api', '--method', 'PATCH', '--hostname', 'github.com', '-H', 'Accept: application/vnd.github+json', 'repos/example-owner/example-repo/issues/12', '--input', '-'],
+      stdin: '{"state":"closed","state_reason":"completed"}',
+    }])
+    expect(recorded).toEqual([{ threadId: 'admitted', plugin: 'github', tool: GITHUB_CLOSE_ISSUE_TOOL, kind: 'issue-close', outcome: 'done' }])
+    const unplanned = tools({ answer: 'allowed' })
+    await unplanned.server.call('admitted', GITHUB_CLOSE_ISSUE_TOOL, { ...place, number: 12, reason: 'not_planned' })
+    expect(unplanned.asked[0]).toMatchObject({ reason: 'not_planned' })
+    expect(writes(unplanned.ghCalls)[0]!.stdin).toBe('{"state":"closed","state_reason":"not_planned"}')
+  })
+
+  it('reopens a closed issue once the user allows it, and changes nothing when they say no', async () => {
+    const closed = '{"title":"The preview build fails","state":"closed","pullRequest":false}'
+    const allowed = tools({ answer: 'allowed', issue: closed })
+    expect(said(await allowed.server.call('admitted', GITHUB_REOPEN_ISSUE_TOOL, { ...place, number: 12 }))).toContain('The user allowed it, and the issue is open again')
+    expect(allowed.asked).toEqual([{ kind: 'github-reopen-issue', ...place, number: 12, title: 'The preview build fails', account: 'example-user' }])
+    expect(writes(allowed.ghCalls).map(entry => entry.stdin)).toEqual(['{"state":"open"}'])
+    expect(allowed.recorded.map(use => [use.kind, use.outcome])).toEqual([['issue-reopen', 'done']])
+    const denied = tools({ answer: 'denied', issue: closed })
+    expect(said(await denied.server.call('admitted', GITHUB_REOPEN_ISSUE_TOOL, { ...place, number: 12 }))).toBe('The user said no. Nothing was changed. Do not ask again unless they tell you to.')
+    expect(writes(denied.ghCalls)).toEqual([])
+    expect(denied.recorded.map(use => [use.kind, use.outcome])).toEqual([['issue-reopen', 'denied']])
+    // A reason is for closing: reopening takes none.
+    expect((await tools({ answer: 'allowed', issue: closed }).server.call('admitted', GITHUB_REOPEN_ISSUE_TOOL, { ...place, number: 12, reason: 'completed' })).isError).toBe(true)
+  })
+
+  it('never closes or reopens a pull request, an issue already in that state, or one GitHub will not show, and asks nobody', async () => {
+    const pull = tools({ answer: 'allowed', issue: '{"title":"Fix the build","state":"open","pullRequest":true}' })
+    const refused = await pull.server.call('admitted', GITHUB_CLOSE_ISSUE_TOOL, { ...place, number: 12 })
+    expect(said(refused)).toBe('example-owner/example-repo #12 is a pull request, and this tool closes issues only. Nothing was changed.')
+    expect(refused.isError).toBe(true)
+    const already = tools({ answer: 'allowed', issue: '{"title":"Done","state":"closed","pullRequest":false}' })
+    const same = await already.server.call('admitted', GITHUB_CLOSE_ISSUE_TOOL, { ...place, number: 12 })
+    expect(said(same)).toBe('Issue example-owner/example-repo #12 is already closed, so the user was not asked. Nothing was changed.')
+    expect(same.isError).toBeUndefined()
+    const missing = tools({ answer: 'allowed', issue: new Error('gh: Not Found (HTTP 404)') })
+    expect(said(await missing.server.call('admitted', GITHUB_REOPEN_ISSUE_TOOL, { ...place, number: 12 }))).toBe('GitHub would not show example-owner/example-repo #12: gh: Not Found (HTTP 404), so the user was not asked. Nothing was changed.')
+    for (const each of [pull, already, missing]) {
+      expect(each.asked).toEqual([])
+      expect(writes(each.ghCalls)).toEqual([])
+      expect(each.recorded).toEqual([])
+    }
+  })
+
+  it('makes no issue change as an account the card did not name, or from Watcher', async () => {
+    const switched = tools({ signIns: [{ state: 'signed-in', login: 'example-user' }, { state: 'signed-in', login: 'other-user' }], answer: 'allowed' })
+    expect(said(await switched.server.call('admitted', GITHUB_CLOSE_ISSUE_TOOL, { ...place, number: 12 })))
+      .toBe('The user allowed it as example-user, but gh is now signed in to GitHub as other-user, so the issue was not closed. Call github_close_issue again if it should still be done; the user will be asked again.')
+    expect(writes(switched.ghCalls)).toEqual([])
+    for (const tool of [GITHUB_OPEN_ISSUE_TOOL, GITHUB_CLOSE_ISSUE_TOOL, GITHUB_REOPEN_ISSUE_TOOL, VERCEL_PROMOTE_TOOL, VERCEL_ROLLBACK_TOOL]) {
+      const watcher = tools({ watcher: true, answer: 'allowed', accounts: [WORK] })
+      expect(said(await watcher.server.call('admitted', tool, tool.startsWith('vercel') ? { deploymentId: 'dpl_example1' } : { ...place, number: 12, title: 'A title' })))
+        .toBe('Watcher reads from plugins and changes nothing through them. Start or steer a thread to make this change. Nothing was changed.')
+      expect([watcher.asked, watcher.ghCalls, watcher.vercelCalls]).toEqual([[], [], []])
+    }
+  })
+
+  it('reads a deployment for its card, then promotes it to production on Vercel only once the user allows it', async () => {
+    const { server, vercelCalls, asked, recorded, answer } = tools({ accounts: [WORK], vercel: (_url, method) => method === 'GET' ? { body: DEPLOYMENT } : { status: 201, body: {} } })
+    const call = server.call('admitted', VERCEL_PROMOTE_TOOL, { deploymentId: 'dpl_example1', teamId: 'team_example1' })
+    await settle()
+    expect(asked).toEqual([{ kind: 'vercel-promote', account: 'Work', deploymentId: 'dpl_example1', teamId: 'team_example1', project: 'example-project', projectId: 'prj_example1',
+      target: 'preview', url: 'example-project-abc.vercel.app', state: 'READY' }])
+    // Only the read for the card has gone to Vercel.
+    expect(vercelCalls.map(entry => entry.method)).toEqual(['GET'])
+    answer('allowed')
+    const result = await call
+    expect(said(result)).toBe('The user allowed it, and Vercel has taken the promotion: the project\'s production addresses move to the deployment within moments. Read the project to confirm.')
+    expect(vercelCalls[1]).toEqual({ url: 'https://api.vercel.com/v10/projects/prj_example1/promote/dpl_example1?teamId=team_example1', method: 'POST', authorization: `Bearer ${TOKEN}` })
+    expect(JSON.stringify(result)).not.toContain(TOKEN)
+    expect(recorded).toEqual([{ threadId: 'admitted', plugin: 'vercel', accountId: WORK.id, tool: VERCEL_PROMOTE_TOOL, kind: 'deployment-promote', outcome: 'done' }])
+  })
+
+  it('rolls production back on Vercel only once the user allows it, and says what Vercel does with new pushes afterwards', async () => {
+    const { server, vercelCalls, asked, recorded } = tools({ accounts: [WORK], answer: 'allowed', vercel: (_url, method) => method === 'GET' ? { body: { ...DEPLOYMENT, target: 'production' } } : { status: 201, body: {} } })
+    const result = await server.call('admitted', VERCEL_ROLLBACK_TOOL, { deploymentId: 'dpl_example1' })
+    expect(asked[0]).toMatchObject({ kind: 'vercel-rollback', projectId: 'prj_example1', target: 'production' })
+    expect(said(result)).toBe('The user allowed it, and Vercel has taken the rollback: the project\'s production addresses go back to the deployment within moments. Vercel now keeps new pushes to the production branch out of production until a deployment is promoted.')
+    expect(vercelCalls.map(entry => [entry.method, entry.url])).toEqual([
+      ['GET', 'https://api.vercel.com/v13/deployments/dpl_example1'], ['POST', 'https://api.vercel.com/v1/projects/prj_example1/rollback/dpl_example1']])
+    expect(recorded.map(use => [use.tool, use.kind, use.outcome])).toEqual([[VERCEL_ROLLBACK_TOOL, 'deployment-rollback', 'done']])
+  })
+
+  it('moves production nowhere when the user says no, when the deployment cannot be read, or while Vercel is busy with another move', async () => {
+    const denied = tools({ accounts: [WORK], answer: 'denied', vercel: () => ({ body: DEPLOYMENT }) })
+    expect(said(await denied.server.call('admitted', VERCEL_PROMOTE_TOOL, { deploymentId: 'dpl_example1' }))).toBe('The user said no. Nothing was changed. Do not ask again unless they tell you to.')
+    expect(denied.vercelCalls.map(entry => entry.method)).toEqual(['GET'])
+    expect(denied.recorded.map(use => [use.kind, use.outcome])).toEqual([['deployment-promote', 'denied']])
+    // With no project to name, there is nothing honest to put on a card that moves production.
+    for (const unreadable of [{ status: 404, body: {} }, { body: { name: 'example-project' } }, { body: { ...DEPLOYMENT, projectId: 'prj_../../v2/user' } }]) {
+      const blind = tools({ accounts: [WORK], answer: 'allowed', vercel: () => unreadable })
+      expect(said(await blind.server.call('admitted', VERCEL_ROLLBACK_TOOL, { deploymentId: 'dpl_example1' })))
+        .toBe('Sotto could not read that deployment from Vercel with the account "Work", so it cannot say which project\'s production would change, and the user was not asked. Check the deployment\'s ID, and give the "teamId" when it belongs to a team. Nothing was changed.')
+      expect(blind.asked).toEqual([])
+      expect(blind.vercelCalls.map(entry => entry.method)).toEqual(['GET'])
+    }
+    const busy = tools({ accounts: [WORK], answer: 'allowed', vercel: (_url, method) => method === 'GET' ? { body: DEPLOYMENT } : { status: 409, body: {} } })
+    expect(said(await busy.server.call('admitted', VERCEL_PROMOTE_TOOL, { deploymentId: 'dpl_example1' })))
+      .toBe('The user allowed it, but Vercel is still finishing another promotion or rollback for this project and refused this one. Nothing was changed. Call vercel_promote_deployment again shortly if it should still be done; the user will be asked again.')
+    expect(busy.recorded.map(use => use.outcome)).toEqual(['failed'])
+    const failed = tools({ accounts: [WORK], answer: 'allowed', vercel: (_url, method) => method === 'GET' ? { body: DEPLOYMENT } : { status: 402, body: { error: { code: 'payment_required', message: `Bearer ${TOKEN}` } } } })
+    expect(said(await failed.server.call('admitted', VERCEL_ROLLBACK_TOOL, { deploymentId: 'dpl_example1' }))).toBe('The user allowed it, but Vercel did not roll production back: payment_required (HTTP 402). Nothing was changed.')
+  })
+
+  it('words each new card with what it does, what it acts on and buttons that say what a press does', () => {
+    expect(wordPluginChange({ kind: 'github-open-issue', ...place, title: 'The preview build fails', body: 'It stops at the install step.', account: 'example-user' })).toEqual({
+      plugin: 'GitHub', text: 'Open this issue in example-owner/example-repo on GitHub, as example-user?', action: 'Open an issue on GitHub as example-user',
+      target: 'example-owner/example-repo', details: 'Title: The preview build fails\n\nIt stops at the install step.', allow: 'Open the issue', deny: 'Don’t open it',
+    })
+    expect(wordPluginChange({ kind: 'github-open-issue', ...place, title: 'A title alone', body: '' }).details).toBe('Title: A title alone')
+    expect(wordPluginChange({ kind: 'github-close-issue', ...place, number: 12, title: 'The preview build fails', reason: 'not_planned', account: 'example-user' })).toEqual({
+      plugin: 'GitHub', text: 'Close issue example-owner/example-repo #12 on GitHub, as example-user?', action: 'Close an issue on GitHub as example-user',
+      target: 'example-owner/example-repo #12', details: 'Issue: The preview build fails\nClosed as: not planned', allow: 'Close the issue', deny: 'Leave it open',
+    })
+    expect(wordPluginChange({ kind: 'github-reopen-issue', ...place, number: 12, title: 'The preview build fails' })).toMatchObject({
+      text: 'Reopen issue example-owner/example-repo #12 on GitHub, as the account gh is signed in to?', action: 'Reopen an issue on GitHub',
+      details: 'Issue: The preview build fails', allow: 'Reopen the issue', deny: 'Leave it closed',
+    })
+    const moved = { account: 'Work', deploymentId: 'dpl_example1', teamId: 'team_example1', project: 'example-project', projectId: 'prj_example1', target: 'preview', url: 'example-project-abc.vercel.app', state: 'READY' }
+    const promote = wordPluginChange({ kind: 'vercel-promote', ...moved })
+    expect(promote).toMatchObject({ plugin: 'Vercel', text: 'Promote this deployment of example-project to production on Vercel?', action: 'Promote a deployment to production on Vercel',
+      target: 'example-project', allow: 'Promote to production', deny: 'Leave production as it is' })
+    expect(promote.details.split('\n')).toEqual(['Project: example-project (prj_example1)', 'Kind: preview', 'Address: example-project-abc.vercel.app', 'Its build now: READY', 'Deployment: dpl_example1',
+      'Team: team_example1', 'Vercel account: Work', 'The project’s production addresses will serve this deployment. It is not built again.'])
+    const rollback = wordPluginChange({ kind: 'vercel-rollback', ...moved, target: 'production' })
+    expect(rollback).toMatchObject({ text: 'Roll production of example-project back to this deployment on Vercel?', action: 'Roll production back on Vercel', allow: 'Roll production back', deny: 'Leave production as it is' })
+    expect(rollback.details.split('\n').slice(-2)).toEqual(['The project’s production addresses will serve this deployment again, at once.',
+      'After a rollback, Vercel keeps new pushes to the production branch out of production until a deployment is promoted.'])
+  })
+
+  it('keeps what is sent to GitHub out of gh’s arguments, and shows an issue’s title as one plain line', async () => {
+    const calls: { args: readonly string[]; stdin: string | undefined }[] = []
+    const run = (answer: string): RunGitCommand => async (_cwd, _command, args, options?: GitCommandOptions) => { calls.push({ args, stdin: options?.stdin }); return answer }
+    const title = '--method DELETE @/etc/passwd'
+    await expect(openGitHubIssue(run('{"html_url":"https://example.com/phish"}'), { ...place, title, body: '-F x=@secret' })).resolves.toEqual({ ok: true, url: null })
+    await expect(setGitHubIssueState(run('{}'), { ...place, number: 12, state: 'closed', reason: 'not_planned' })).resolves.toEqual({ ok: true, url: null })
+    expect(calls.map(call => call.args.join(' ')).join(' ')).not.toMatch(/DELETE|passwd|secret|not_planned/u)
+    expect(JSON.parse(calls[0]!.stdin!)).toEqual({ title, body: '-F x=@secret' })
+    // A place that is not a repository's, or a number that is not an issue's, never reaches gh.
+    calls.length = 0
+    await expect(openGitHubIssue(run('{}'), { owner: 'example-owner/..', repo: 'example-repo', title: 'A title', body: '' })).resolves.toEqual({ ok: false, reason: 'failed' })
+    await expect(setGitHubIssueState(run('{}'), { ...place, number: 0, state: 'open' })).resolves.toEqual({ ok: false, reason: 'failed' })
+    await expect(describeGitHubIssue(run('{}'), { ...place, number: 1.5 })).resolves.toEqual({ ok: false, reason: 'failed' })
+    expect(calls).toEqual([])
+    await expect(describeGitHubIssue(run(JSON.stringify({ title: `Line one\nline two ${'x'.repeat(300)}`, state: 'open', pullRequest: false })), { ...place, number: 12 }))
+      .resolves.toEqual({ ok: true, title: `Line oneline two ${'x'.repeat(300)}`.slice(0, 200), state: 'open', pullRequest: false })
+    // An answer that is not what was asked for is no description at all.
+    for (const odd of ['not json', '{"title":"A title","state":"merged","pullRequest":false}', '{"title":7,"state":"open","pullRequest":false}', '{"title":"A title","state":"open"}']) {
+      await expect(describeGitHubIssue(run(odd), { ...place, number: 12 }), odd).resolves.toEqual({ ok: false, reason: 'failed' })
+    }
+  })
+
+  it('moves production on Vercel’s two documented paths, with the token in the header alone', async () => {
+    const seen: { url: string; method: string }[] = []
+    const fetcher = (status: number, body: unknown): VercelFetch => async (url, init) => { seen.push({ url, method: init.method }); expect(init.redirect).toBe('manual'); return new Response(JSON.stringify(body), { status }) }
+    await expect(moveVercelProduction(fetcher(202, {}), TOKEN, 'promote', 'prj_example1', 'dpl_example1', undefined)).resolves.toEqual({ ok: true, state: null })
+    await expect(moveVercelProduction(fetcher(201, {}), TOKEN, 'rollback', 'prj_example1', 'dpl_example1', 'team_example1')).resolves.toEqual({ ok: true, state: null })
+    expect(seen).toEqual([{ url: 'https://api.vercel.com/v10/projects/prj_example1/promote/dpl_example1', method: 'POST' },
+      { url: 'https://api.vercel.com/v1/projects/prj_example1/rollback/dpl_example1?teamId=team_example1', method: 'POST' }])
+    await expect(moveVercelProduction(fetcher(409, {}), TOKEN, 'promote', 'prj_example1', 'dpl_example1', undefined)).resolves.toEqual({ ok: false, reason: 'busy' })
+    await expect(moveVercelProduction(fetcher(403, { error: { invalidToken: true } }), TOKEN, 'rollback', 'prj_example1', 'dpl_example1', undefined)).resolves.toEqual({ ok: false, reason: 'refused' })
+    await expect(moveVercelProduction(fetcher(500, { error: { code: 'internal_error', message: TOKEN } }), TOKEN, 'promote', 'prj_example1', 'dpl_example1', undefined)).resolves.toEqual({ ok: false, reason: 'failed', said: 'internal_error (HTTP 500)' })
+    // A project that is not named as Vercel names them, or no token, sends nothing.
+    seen.length = 0
+    await expect(moveVercelProduction(fetcher(201, {}), TOKEN, 'promote', 'prj_../v2/user', 'dpl_example1', undefined)).resolves.toEqual({ ok: false, reason: 'failed' })
+    await expect(moveVercelProduction(fetcher(201, {}), '', 'promote', 'prj_example1', 'dpl_example1', undefined)).resolves.toEqual({ ok: false, reason: 'no-secret' })
+    expect(seen).toEqual([])
   })
 })
