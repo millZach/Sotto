@@ -75,6 +75,12 @@ export function registerFilesIpc(ipc: IpcMainAdapter, files: FilesService, sende
    */
   const unavailable = (message: string): FilesResult<never> => ({ ok: false, error: { code: 'unavailable', message } })
   const invalid = (): FilesResult<never> => ({ ok: false, error: { code: 'invalid-request', message: i18n._(NOT_A_LINK) } })
+  const gone = (): FilesResult<never> => ({ ok: false, error: { code: 'path-unavailable', message: i18n._(DOWNLOAD_GONE) } })
+  /** Where main saved the download a handle names; the window never names a saved file by a path. */
+  const savedPath = (request: unknown): string | undefined => {
+    const parsed = fileDownloadHandleSchema.safeParse(request)
+    return parsed.success ? saved?.downloads.savedPath(parsed.data.downloadId) : undefined
+  }
   const linked: readonly (readonly [string, (request: unknown) => unknown])[] = [
     [FILES_OPEN_LINK, request => namesHostThread(request) ? unavailable(i18n._(ON_HOST_OPEN)) : files.openLink(request)],
     [FILES_LINKED_FILE, async request => {
@@ -97,18 +103,16 @@ export function registerFilesIpc(ipc: IpcMainAdapter, files: FilesService, sende
       return !parsed.success ? invalid() : saved ? saved.downloads.stop(parsed.data) : unavailable(i18n._(UNAVAILABLE))
     }],
     [FILES_DOWNLOAD_SHOW, request => {
-      const parsed = fileDownloadHandleSchema.safeParse(request)
-      const path = parsed.success ? saved?.downloads.savedPath(parsed.data.downloadId) : undefined
-      if (path === undefined) return { ok: false, error: { code: 'path-unavailable', message: i18n._(DOWNLOAD_GONE) } }
+      const path = savedPath(request)
+      if (path === undefined) return gone()
       saved!.reveal(path)
       return { ok: true, value: {} }
     }],
     [FILES_DOWNLOAD_OPEN, async request => {
-      const parsed = fileDownloadHandleSchema.safeParse(request)
-      const path = parsed.success ? saved?.downloads.savedPath(parsed.data.downloadId) : undefined
-      if (path === undefined) return { ok: false, error: { code: 'path-unavailable', message: i18n._(DOWNLOAD_GONE) } }
+      const path = savedPath(request)
+      if (path === undefined) return gone()
       const opened = await files.openHere(path)
-      return !opened.ok && opened.error.code === 'path-unavailable' ? { ok: false, error: { code: 'path-unavailable', message: i18n._(DOWNLOAD_GONE) } } : opened
+      return !opened.ok && opened.error.code === 'path-unavailable' ? gone() : opened
     }],
   ]
   for (const [channel, answer] of linked) {

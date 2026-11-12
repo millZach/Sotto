@@ -35,8 +35,9 @@ export class FileDownloadsStore {
     this.hear(bridge)
     this.set(key, { status: 'going', received: 0, size: 0 })
     void Promise.resolve().then(() => bridge.download!({ threadId, path })).then(result => {
-      // A stop the reader asked for is said in the window's own words, not as a failure.
-      if (this.states.get(key)?.status === 'stopped') return
+      // A stop the reader asked for is said in the window's own words, not as a failure. A file main had already saved
+      // when the stop reached it is there, so the line says so rather than that nothing was saved.
+      if (!result.ok && this.states.get(key)?.status === 'stopped') return
       this.set(key, result.ok ? { status: 'saved', downloadId: result.value.downloadId, name: result.value.name } : { status: 'failed', message: result.error.message })
     }, () => { if (this.states.get(key)?.status !== 'stopped') this.set(key, { status: 'failed', message: null }) })
   }

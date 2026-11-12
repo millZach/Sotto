@@ -76,6 +76,24 @@ describe('saving a file from a paired host to Downloads (ADR-0120, November 12 a
     expect(await readdir(folder)).toEqual([])
   })
 
+  it('never replaces a file that took the name while the download ran, and stops even on its last part', async () => {
+    // Another program saves report.pdf between the first part and the last.
+    const racing = vi.fn(async ({ offset }: PartRequest): Promise<FilesResult<LinkedFile>> => {
+      if (offset === 3) await writeFile(join(folder, 'report.pdf'), 'theirs')
+      return { ok: true, value: { is: 'part', name: 'report.pdf', size: 6, offset, data: Buffer.from('123456').subarray(offset, offset + 3).toString('base64'), revision } }
+    })
+    expect(await new FileDownloads({ part: racing, folder: () => folder, progress: () => undefined }).download(request)).toMatchObject({ ok: true, value: { name: 'report (1).pdf' } })
+    expect(await readFile(join(folder, 'report.pdf'), 'utf8')).toBe('theirs')
+    expect(await readFile(join(folder, 'report (1).pdf'), 'utf8')).toBe('123456')
+
+    // A stop that arrives with the last part still leaves nothing.
+    const running: { downloads?: FileDownloads } = {}
+    const last = vi.fn(async ({ offset }: PartRequest): Promise<FilesResult<LinkedFile>> => ({ ok: true, value: { is: 'part', name: 'late.txt', size: 3, offset, data: 'MTIz', revision } }))
+    const downloads = running.downloads = new FileDownloads({ part: last, folder: () => folder, progress: () => { running.downloads?.stop(request) } })
+    expect(await downloads.download(request)).toMatchObject({ ok: false, error: { message: 'Download stopped. Nothing was saved.' } })
+    expect((await readdir(folder)).sort()).toEqual(['report (1).pdf', 'report.pdf'])
+  })
+
   it('downloads one file once at a time, and another beside it', async () => {
     let release = (): void => undefined
     const held = new Promise<void>(done => { release = done })
@@ -93,11 +111,13 @@ describe('saving a file from a paired host to Downloads (ADR-0120, November 12 a
 
   it('saves under a name this computer can hold, whatever the host called the file', () => {
     expect(downloadName('report.pdf')).toBe('report.pdf')
-    expect(downloadName('../../etc/passwd')).toBe('_.._etc_passwd')
+    expect(downloadName('../../etc/passwd')).toBe('.._.._etc_passwd')
     expect(downloadName('C:\\Windows\\win.ini')).toBe('C__Windows_win.ini')
     expect(downloadName('a<b>c:d"e|f?g*h\u0000i')).toBe('a_b_c_d_e_f_g_h_i')
     expect(downloadName('trailing. . ')).toBe('trailing')
-    expect(downloadName('.bashrc')).toBe('bashrc')
+    // A name this computer can hold is kept, a leading dot included.
+    expect(downloadName('.bashrc')).toBe('.bashrc')
+    expect(downloadName('.env')).toBe('.env')
     expect(downloadName('CON')).toBe('_CON')
     expect(downloadName('nul.txt')).toBe('_nul.txt')
     expect(downloadName('...')).toBe('download')

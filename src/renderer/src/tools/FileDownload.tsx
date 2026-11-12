@@ -1,6 +1,7 @@
 import React, { useCallback, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useLingui } from '@lingui/react/macro'
 import type { FilesBridge } from '../../../shared/files'
+import { useOwlFeature } from '../state/owlFeature'
 import { revealLabel } from './FilePreview'
 import { fileDownloads, type FileDownloadsStore, type FileDownloadState } from './fileDownloads'
 
@@ -12,12 +13,13 @@ export interface FileDownloadControl {
 
 /**
  * The download of one file on a paired host to this computer (ADR-0120, November 12 amendment), offered only where the
- * file is on a host and the window can ask for it.
+ * file is on a host and the window can ask for it. It is part of the reveal-linked-files Owl feature, so stable offers none.
  */
 export function useFileDownload(bridge: FilesBridge | undefined, host: string | undefined, threadId: string, path: string, store: FileDownloadsStore = fileDownloads): FileDownloadControl | undefined {
   const state = useSyncExternalStore(store.subscribe, () => store.state(threadId, path))
   const start = useCallback(() => store.start(bridge, threadId, path), [store, bridge, threadId, path])
-  return host === undefined || !bridge?.download ? undefined : { state, start }
+  const on = useOwlFeature('reveal-linked-files')
+  return !on || host === undefined || !bridge?.download ? undefined : { state, start }
 }
 
 /**

@@ -12,9 +12,10 @@ import { ToolsPanelStore } from '../../../../src/renderer/src/tools/toolsPanelSt
 import { threadLinkRouter } from '../../../../src/renderer/src/tools/webLinks'
 import type { FileDownload, FileDownloadProgress, FileListRequest, FilesBridge, FilesResult } from '../../../../src/shared/files'
 
+const owl = vi.hoisted(() => ({ on: true }))
 vi.mock('../../../../src/renderer/src/state/owlFeature', async importOriginal => ({
   ...await importOriginal<typeof import('../../../../src/renderer/src/state/owlFeature')>(),
-  useOwlFeature: () => true,
+  useOwlFeature: () => owl.on,
 }))
 
 const workspace = { threadId: 'host:thread', projectId: 'host:project', workingDirectory: '/home/zach/Projects/reports', workspaceId: 'a'.repeat(64) }
@@ -172,9 +173,17 @@ describe('a file on a paired host shown alone, with Download', () => {
     expect(screen.getByRole('button', { name: 'Download plan.md to this computer' })).toBeInTheDocument()
     expect(document.querySelector('.linked-file__path')).toBeNull()
     unmount()
-    render(<LinkedFilePanel file={{ threadId: 'local', path: 'docs/plan.md', revision: 1 }} bridge={host.bridge} onClose={() => undefined} />)
+    const local = render(<LinkedFilePanel file={{ threadId: 'local', path: 'docs/plan.md', revision: 1 }} bridge={host.bridge} onClose={() => undefined} />)
     await screen.findByRole('heading', { name: 'Plan' })
     expect(screen.queryByRole('button', { name: /Download/u })).toBeNull()
+    local.unmount()
+    // Stable has the bridge too, and main would refuse the press, so the control is not drawn there at all.
+    owl.on = false
+    try {
+      render(<LinkedFilePanel file={{ threadId: 'host:md', path: 'docs/plan.md', revision: 1 }} host="forge" bridge={host.bridge} onClose={() => undefined} />)
+      await screen.findByRole('heading', { name: 'Plan' })
+      expect(screen.queryByRole('button', { name: /Download/u })).toBeNull()
+    } finally { owl.on = true }
   })
 })
 
@@ -196,6 +205,17 @@ describe('a download\'s line', () => {
     expect(screen.getByText('Download stopped. Nothing was saved.')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Dismiss' }))
     expect(container).toBeEmptyDOMElement()
+  })
+
+  it('says the file was saved when main had saved it before the stop reached it', async () => {
+    const user = userEvent.setup()
+    const host = hostBridge(), store = new FileDownloadsStore()
+    line(host, store)
+    await act(async () => { store.start(host.bridge, 'host:thread', 'out/q3-report.pdf') })
+    await user.click(screen.getByRole('button', { name: 'Stop' }))
+    expect(screen.getByText('Download stopped. Nothing was saved.')).toBeInTheDocument()
+    await host.finish(saved)
+    expect(screen.getByText('Saved q3-report (1).pdf to Downloads on this computer.')).toBeInTheDocument()
   })
 
   it('says why nothing was saved in main\'s words, and what a saved program\'s Open did', async () => {
