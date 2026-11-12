@@ -39,6 +39,14 @@ describe('what a row says about a run', () => {
     expect(shownCommand(['codex', 'exec', '--api-key', 'sk-live-123', '--token=abc', '--client-secret', 's3', 'go'])).toBe('codex exec --api-key … --token=… --client-secret … go')
   })
 
+  it('leaves out a credential in an override, a header, a bearer token or inline JSON', () => {
+    const shown = shownCommand(['codex', 'exec', '-c', 'model_providers.az.query_params.api-key=SECRET1', '-c', 'model_reasoning_effort=high',
+      '--header', 'X-Custom: SECRET2', 'Authorization: Bearer SECRET3', '--mcp-config', '{"mcpServers":{"a":{"env":{"GITHUB_TOKEN":"SECRET5"}}}}', 'hi'])
+    expect(shown).not.toMatch(/SECRET/u)
+    expect(shown).toBe('codex exec -c model_providers.az.query_params.api-key=… -c model_reasoning_effort=high --header … "Authorization: Bearer …" --mcp-config … hi')
+    expect(shownCommand(['claude', '-p', '{"env":{"KEY":"SECRET6"}}'])).toBe('claude -p {…}')
+  })
+
   it('cuts a very long command and strips control characters', () => {
     const shown = shownCommand(['claude', '-p', 'x'.repeat(5_000)])
     expect(shown.length).toBe(2_000)

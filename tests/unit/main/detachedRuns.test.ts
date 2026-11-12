@@ -152,6 +152,49 @@ describe('when a look fails', () => {
   })
 })
 
+describe('just after Sotto starts', () => {
+  it('looks again while a marked client has no owner yet, as when the adapters have not loaded their sessions', async () => {
+    vi.useFakeTimers()
+    const host = computer({ processes: base, agents: [agent(961128, 1, [mark()])] })
+    let loaded = false
+    const watch = new DetachedRunWatch({ scan: host.scan, rootPid: SOTTO, owner: () => loaded ? 'thread-a' : undefined, followMs: 15_000 })
+    cleanup.push(() => watch.close())
+    watch.start()
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(watch.runsFor('thread-a')).toBeUndefined()
+    loaded = true
+    await vi.advanceTimersByTimeAsync(15_000)
+    expect(watch.runsFor('thread-a')).toHaveLength(1)
+  })
+
+  it('stops looking after a while for a client no thread will ever own', async () => {
+    vi.useFakeTimers()
+    const host = computer({ processes: base, agents: [agent(400, 1, [mark('someone-elses-session')])] })
+    const watch = new DetachedRunWatch({ scan: host.scan, rootPid: SOTTO, owner: () => undefined, followMs: 15_000 })
+    cleanup.push(() => watch.close())
+    watch.start()
+    await vi.advanceTimersByTimeAsync(60 * 60_000)
+    expect(host.scan.mock.calls.length).toBeLessThanOrEqual(10)
+  })
+})
+
+describe('many runs on one thread', () => {
+  it('lists the oldest, the same ones at every look, whatever order the system gives', async () => {
+    const runs = Array.from({ length: 20 }, (_, index) => ({ ...agent(1000 + index, 1, [mark()]), startedAt: (100 - index) * 1000 }))
+    const host = computer({ processes: base, agents: runs })
+    const watch = new DetachedRunWatch({ scan: host.scan, rootPid: SOTTO, owner: () => 'thread-a' })
+    cleanup.push(() => watch.close())
+    await watch.lookNow()
+    const first = watch.runsFor('thread-a')!.map(run => run.label)
+    expect(first).toHaveLength(16)
+    expect(first[0]).toBe('run-1019')
+    expect(first).not.toContain('run-1000')
+    host.set({ processes: base, agents: [...runs].reverse() })
+    await watch.lookNow()
+    expect(watch.runsFor('thread-a')!.map(run => run.label)).toEqual(first)
+  })
+})
+
 describe('background work with detached runs', () => {
   const subagent: AgentBackgroundWork = { id: '0d5c4b7e-3f5a-4f0e-8a51-2b8f1c9d7e60', label: 'Review the diff', type: 'subagent' }
   const run = detachedRunWork(agent(961128, 1, [mark()]))
@@ -194,5 +237,20 @@ describe('the workspace', () => {
     await host.stopDetachedRun(threadId, work()![1]!.id)
     expect(end).toHaveBeenCalledWith(961128)
     expect(work()).toEqual([subagent])
+  })
+
+  it('keeps a thread\'s runs, and their Stop, while its provider is disconnected', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'sotto-detached-runs-'))
+    const native = new FakeProviderHost()
+    const host = new WorkspaceHost(native, directory)
+    cleanup.push(async () => { host.dispose(); await rm(directory, { recursive: true, force: true }) })
+    await host.connect()
+    const threadId = host.workspaceSnapshot().threads[0]!.id
+    const watch = new DetachedRunWatch({ scan: computer({ processes: base, agents: [agent(961128, 1, [mark()])] }).scan, rootPid: SOTTO, owner: () => threadId })
+    cleanup.push(() => watch.close())
+    host.watchDetachedRuns(watch)
+    await watch.lookNow()
+    host.disconnect()
+    expect(host.workspaceSnapshot().threads.find(thread => thread.id === threadId)?.backgroundWork?.map(item => item.type)).toEqual(['detached-run'])
   })
 })

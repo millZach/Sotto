@@ -326,6 +326,14 @@ describe('restarting threads a usage limit stopped', () => {
     expect(f.restart.scheduled('codex')).toBeUndefined()
   })
 
+  it('leaves a thread whose only background work is a detached run, which a limit does not stop (#2476)', async () => {
+    const run = [{ id: 'ced23e61-1ed2-577f-9219-04dcdf869f0d', label: 'art-director', type: 'detached-run', run: { client: 'Claude Code', command: 'claude -p' } }] as AgentThread['backgroundWork']
+    const f = await fixture({ threads: [thread('workshop'), thread('detached', { status: 'idle', lastTurn: { id: 'd', status: 'completed' }, backgroundWork: run })] })
+    f.update('workshop', limitStop('workshop', new Date(START + 60_000).toISOString()))
+    expect(f.restart.scheduled('workshop')).toBeDefined()
+    expect(f.restart.scheduled('detached')).toBeUndefined()
+  })
+
   it('waits for the provider to connect before it restarts, and looks again', async () => {
     const f = await fixture()
     f.update('workshop', limitStop('workshop', new Date(START + 60_000).toISOString()))

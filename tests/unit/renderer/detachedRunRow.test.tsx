@@ -78,3 +78,10 @@ it('keeps the row under the last finished reply while a new turn runs', () => {
   const order = [...document.querySelectorAll('[data-message-id], .delegated-work__row')].map(element => element.getAttribute('data-message-id') ?? element.getAttribute('aria-label'))
   expect(order).toEqual(['ask', 'reply', 'Detached run: tetherfall-art-director, Working', 'later'])
 })
+
+it('shows the row under the thread\'s only turn while it runs, when there is no finished reply above it', () => {
+  const messages: AgentMessage[] = [{ id: 'ask', role: 'user', text: 'Start the art director on its own.', createdAt: new Date(Date.now() - 60_000).toISOString() }]
+  const context: ActivityContext = { liveTurn: null, running: true, connected: true, provider: 'claude', onDisclosure: () => undefined }
+  render(<MessageList messages={messages} provider="Claude Code" running placement={placeActivities(messages, messages, [])} context={context} backgroundWork={[run]} />)
+  expect(screen.getByRole('listitem', { name: 'Detached run: tetherfall-art-director, Working' })).toBeInTheDocument()
+})

@@ -1551,6 +1551,15 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     }
     if (changed) this.publish()
   }
+  /**
+   * A thread's live state goes when its provider is not connected, but not its detached runs: they run on their own, and
+   * their row is their only Stop, so they stay until the watch sees them end.
+   */
+  private dropLive(thread: AgentThread): void {
+    dropLiveThreadState(thread)
+    const runs = this.detachedRuns?.runsFor(thread.id)
+    if (runs?.length) thread.backgroundWork = [...runs]
+  }
   /** Stops one of a thread's detached runs, because the user pressed its Stop. */
   async stopDetachedRun(threadId: string, runId: string): Promise<void> {
     await this.initialize(); this.thread(threadId)
@@ -3010,7 +3019,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       snapshot.models.forEach(model => { model.ready = false; if (model.provider === 'claude') model.provider = PROVIDER_LABELS.claude })
       snapshot.providers?.forEach(provider => { provider.connection = 'disconnected'; delete provider.error })
       delete snapshot.error
-      for (const thread of snapshot.threads.filter(thread => this.visible(thread))) dropLiveThreadState(thread)
+      for (const thread of snapshot.threads.filter(thread => this.visible(thread))) this.dropLive(thread)
       if (!this.historyEnabled()) {
         this.activityJsonFallbackAllowed = false
         for (const thread of snapshot.threads.filter(thread => this.visible(thread))) {
@@ -4928,7 +4937,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     for (const id of this.activityInputs.keys()) if (!connectedInputs.has(id)) this.activityInputs.delete(id)
     for (const id of this.storedInputs.keys()) if (!connectedInputs.has(id)) this.storedInputs.delete(id)
     this.state.snapshot = stampHostSnapshot({ ...snapshot, models: this.acceptedModels(previous.models, snapshot.models), projects: [...projects.values()], threads: [...threads.values()] }, this.hostId!)
-    for (const thread of this.state.snapshot.threads.filter(thread => this.visible(thread))) if (!isThreadProviderConnected(snapshot, thread)) dropLiveThreadState(thread)
+    for (const thread of this.state.snapshot.threads.filter(thread => this.visible(thread))) if (!isThreadProviderConnected(snapshot, thread)) this.dropLive(thread)
     // An agent that switched branches mid-turn moved HEAD without a send, so finished work asks for a re-read.
     for (const thread of this.state.snapshot.threads.filter(thread => this.visible(thread))) {
       const old = previousThreads.get(thread.id)
@@ -4984,7 +4993,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       handled++
       const stamped = stampHostThread(next, this.hostId!)
       const visible = this.visible(stamped)
-      if (visible && !isThreadProviderConnected(host, stamped)) dropLiveThreadState(stamped)
+      if (visible && !isThreadProviderConnected(host, stamped)) this.dropLive(stamped)
       if (at === undefined) threads.push(stamped)
       else threads[at] = stamped
       this.markChanged(id)
@@ -6219,7 +6228,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     snapshot.models = snapshot.models.map(model => model.ready && (!provider || model.providerId === provider) ? { ...model, ready: false } : model)
     snapshot.connected = snapshot.providers?.some(item => item.connection === 'connected') ?? false
     for (const thread of snapshot.threads.filter(thread => this.visible(thread))) if (!provider || thread.providerId === provider) {
-      dropLiveThreadState(thread)
+      this.dropLive(thread)
       this.trackSubagents(thread, false)
       thread.subagentSummary = this.subagentSummaries.get(thread.id) ?? EMPTY_SUBAGENT_SUMMARY
     }

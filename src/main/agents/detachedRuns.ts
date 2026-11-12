@@ -26,6 +26,12 @@ export const DETACHED_RUN_NOT_STOPPED = 'Sotto could not stop that detached run.
 export const DETACHED_RUN_UNCHECKED = 'Sotto could not check that the detached run is still the same process, so nothing was stopped. Try again in a moment.'
 /** How many looks in a row may fail before the watch waits for the next turn to end. */
 const FAILED_LOOKS_RETRIED = 3
+/**
+ * How many looks in a row may find marked clients that no thread owns before the watch waits for the next turn to end. Just
+ * after Sotto starts, its adapters may not have loaded the sessions a run names yet, so a run that outlived a restart is
+ * looked for again for about two minutes (four on Windows); a client started from somewhere else stays unowned for good.
+ */
+const UNOWNED_LOOKS_RETRIED = 8
 
 export interface DetachedRunWatchOptions {
   readonly scan: ScanProcesses
@@ -108,6 +114,7 @@ export class DetachedRunWatch {
   private dueAt = Number.POSITIVE_INFINITY
   private looking: Promise<boolean> | undefined
   private failedLooks = 0
+  private unownedLooks = 0
   private closed = false
 
   constructor(private readonly options: DetachedRunWatchOptions) {}
@@ -186,23 +193,27 @@ export class DetachedRunWatch {
       const threadId = agent.marks.map(mark => this.options.owner(mark)).find(id => id !== undefined)
       if (threadId) owned.set(agent.pid, threadId)
     }
+    const all = new Map<string, RunRecord[]>()
     for (const agent of table.agents) {
       const threadId = owned.get(agent.pid)
       // A client that starts its own client, as Codex's npm launcher starts Codex, is one run, counted at the top.
       if (!threadId || this.underAnotherRun(table, agent.pid, threadId, owned)) continue
-      const list = found.get(threadId) ?? []
-      if (list.length >= MAX_DETACHED_RUNS) continue
-      const work = detachedRunWork(agent)
-      list.push(work); found.set(threadId, list)
-      records.set(work.id, { threadId, pid: agent.pid, work })
+      all.set(threadId, [...all.get(threadId) ?? [], { threadId, pid: agent.pid, work: detachedRunWork(agent) }])
     }
-    for (const list of found.values()) list.sort((a, b) => (a.startedAt ?? '').localeCompare(b.startedAt ?? '') || a.id.localeCompare(b.id))
+    // The oldest runs are listed, the same ones at every look, however the system orders its processes.
+    for (const [threadId, list] of all) {
+      const kept = list.sort((a, b) => (a.work.startedAt ?? '').localeCompare(b.work.startedAt ?? '') || a.work.id.localeCompare(b.work.id)).slice(0, MAX_DETACHED_RUNS)
+      found.set(threadId, kept.map(record => record.work))
+      for (const record of kept) records.set(record.work.id, record)
+    }
     const changed = new Set<string>()
     for (const [threadId, list] of found) if (JSON.stringify(this.byThread.get(threadId)) !== JSON.stringify(list)) changed.add(threadId)
     for (const threadId of this.byThread.keys()) if (!found.has(threadId)) changed.add(threadId)
     this.byThread.clear(); for (const [threadId, list] of found) this.byThread.set(threadId, list)
     this.records.clear(); for (const [id, record] of records) this.records.set(id, record)
-    if (this.records.size) this.schedule(this.options.followMs ?? DETACHED_RUN_FOLLOW_MS)
+    const unowned = table.agents.some(agent => agent.marks.length > 0 && !owned.has(agent.pid))
+    this.unownedLooks = unowned ? this.unownedLooks + 1 : 0
+    if (this.records.size || (unowned && this.unownedLooks <= UNOWNED_LOOKS_RETRIED)) this.schedule(this.options.followMs ?? DETACHED_RUN_FOLLOW_MS)
     if (changed.size) for (const listener of [...this.listeners]) listener([...changed])
     return true
   }

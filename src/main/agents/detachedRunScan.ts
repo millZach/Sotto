@@ -93,7 +93,7 @@ export function splitCommandLine(line: string): string[] {
   return out
 }
 
-const SECRET_FLAG = /(key|token|secret|password|passwd|credential)/iu
+const SECRET_FLAG = /(key|token|secret|password|passwd|credential|auth)/iu
 /** A flag's value, as `--flag value` or `--flag=value`. */
 function flagValue(argv: readonly string[], names: readonly string[]): string | undefined {
   for (let at = 1; at < argv.length; at++) {
@@ -119,18 +119,32 @@ const shown = (value: string | undefined): string | undefined => {
   return text ? text.slice(0, MAX_MONITOR_LABEL) : undefined
 }
 
+/** Flags whose value can carry a credential whatever the flag is called: a request header, settings, an environment. */
+const SECRET_VALUE_FLAGS = new Set(['--header', '-H', '--mcp-config', '--settings', '--env'])
+const BEARER = /\b(bearer|basic)\s+\S+/giu
 /**
- * The command as a row shows it: each value after a flag that names a key, a token, a secret or a password left out, no
- * control characters, cut at the row's limit.
+ * One argument as a row shows it, with what could be a credential left out: inline JSON, such as an MCP configuration
+ * whose servers carry keys in their environment; a bearer or basic credential anywhere in it; and the value of any
+ * \`name=value\`, \`-c\` override or flag included, whose name speaks of a key, a token, a secret, a password or auth.
+ */
+function shownArgument(arg: string): string {
+  if (/^\s*[{[]/u.test(arg)) return '{…}'
+  const equals = arg.indexOf('=')
+  if (equals > 0 && SECRET_FLAG.test(arg.slice(0, equals))) return `${arg.slice(0, equals)}=…`
+  return arg.replace(BEARER, '$1 …')
+}
+
+/**
+ * The command as a row shows it: anything that could be a credential left out (\`shownArgument\`), and the value after a
+ * flag that names one or carries one, no control characters, cut at the row's limit.
  */
 export function shownCommand(argv: readonly string[]): string {
   const parts: string[] = []
   for (let at = 0; at < argv.length; at++) {
     const arg = argv[at]!
-    const equals = arg.startsWith('-') ? arg.indexOf('=') : -1
-    if (equals > 0 && SECRET_FLAG.test(arg.slice(0, equals))) { parts.push(`${arg.slice(0, equals)}=…`); continue }
-    parts.push(/\s/u.test(arg) || arg === '' ? `"${arg}"` : arg)
-    if (arg.startsWith('-') && equals < 0 && SECRET_FLAG.test(arg) && at + 1 < argv.length) { parts.push('…'); at++ }
+    const shown = shownArgument(arg)
+    parts.push(/\s/u.test(shown) || shown === '' ? `"${shown}"` : shown)
+    if (arg.startsWith('-') && !arg.includes('=') && (SECRET_FLAG.test(arg) || SECRET_VALUE_FLAGS.has(arg)) && at + 1 < argv.length) { parts.push('…'); at++ }
   }
   const line = parts.join(' ').replace(/\p{Cc}/gu, ' ')
   return line.length > MAX_DETACHED_RUN_COMMAND ? `${line.slice(0, MAX_DETACHED_RUN_COMMAND - 1)}…` : line
@@ -203,8 +217,18 @@ async function scanLinux(include: Parameters<ScanProcesses>[0]): Promise<Process
 
 // --- macOS ---------------------------------------------------------------------------------------------------------
 
-const run = (file: string, args: readonly string[], timeout = 20_000, env?: NodeJS.ProcessEnv): Promise<string> => new Promise((done, fail) => {
-  execFile(file, [...args], { encoding: 'utf8', timeout, maxBuffer: 32 * 1024 * 1024, windowsHide: true, ...(env ? { env } : {}) }, (error, stdout) => error && !stdout ? fail(error) : done(stdout))
+/**
+ * A listing's output. Any failure fails it, so a table cut short by a timeout, an overflow or a script that stopped partway
+ * is never read as the whole table, which would drop the runs it left out. `partial` lets a read about named processes
+ * keep what it printed when it exits 1 for one that has just ended, as `ps -p` and `lsof -p` do; a kill or an overflow
+ * still fails it.
+ */
+const run = (file: string, args: readonly string[], options: { readonly timeout?: number; readonly env?: NodeJS.ProcessEnv; readonly partial?: boolean } = {}): Promise<string> => new Promise((done, fail) => {
+  execFile(file, [...args], { encoding: 'utf8', timeout: options.timeout ?? 20_000, maxBuffer: 32 * 1024 * 1024, windowsHide: true, ...(options.env ? { env: options.env } : {}) }, (error, stdout) => {
+    if (!error) { done(stdout); return }
+    const cut = error.killed === true || error.signal !== null && error.signal !== undefined || (error as { code?: unknown }).code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER'
+    if (options.partial === true && stdout && !cut) done(stdout); else fail(error)
+  })
 })
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -253,18 +277,18 @@ function candidates(rows: readonly ListedRow[], include: Parameters<ScanProcesse
 }
 
 async function scanMac(include: Parameters<ScanProcesses>[0]): Promise<ProcessTable> {
-  const { processes, wanted } = candidates(parseMacTable(await run('/bin/ps', ['-axww', '-o', 'pid=,ppid=,lstart=,command='], 20_000, { ...process.env, LC_ALL: 'C' })), include)
+  const { processes, wanted } = candidates(parseMacTable(await run('/bin/ps', ['-axww', '-o', 'pid=,ppid=,lstart=,command='], { env: { ...process.env, LC_ALL: 'C' } })), include)
   if (!wanted.length) return { processes, agents: [] }
   const pids = wanted.map(item => item.listed.pid).join(',')
   // With -E, ps puts the environment after the command, which it reads only for this user's own processes.
   const environments = new Map<number, string>()
-  for (const line of (await run('/bin/ps', ['-E', '-ww', '-o', 'pid=,command=', '-p', pids]).catch(() => '')).split('\n')) {
+  for (const line of (await run('/bin/ps', ['-E', '-ww', '-o', 'pid=,command=', '-p', pids], { partial: true })).split('\n')) {
     const match = /^\s*(\d+)\s+(.*)$/u.exec(line)
     if (match) environments.set(Number(match[1]), match[2]!)
   }
   const folders = new Map<number, string>()
   let current: number | undefined
-  for (const line of (await run('/usr/sbin/lsof', ['-a', '-d', 'cwd', '-Fn', '-p', pids]).catch(() => '')).split('\n')) {
+  for (const line of (await run('/usr/sbin/lsof', ['-a', '-d', 'cwd', '-Fn', '-p', pids], { partial: true }).catch(() => '')).split('\n')) {
     if (line.startsWith('p')) current = Number(line.slice(1))
     else if (line.startsWith('n') && current !== undefined) folders.set(current, line.slice(1))
   }
@@ -367,7 +391,7 @@ export function parseWindowsTable(output: string): { pid: number; parentPid: num
 }
 
 async function scanWindows(include: Parameters<ScanProcesses>[0]): Promise<ProcessTable> {
-  const { processes, wanted } = candidates(parseWindowsTable(await run('powershell.exe', encoded(WINDOWS_TABLE), 60_000)), include)
+  const { processes, wanted } = candidates(parseWindowsTable(await run('powershell.exe', encoded(WINDOWS_TABLE), { timeout: 60_000 })), include)
   if (!wanted.length) return { processes, agents: [] }
   const names = RUN_MARKS.map(name => `'${name}'`).join(',')
   const script = `$ErrorActionPreference = 'Stop'
@@ -384,7 +408,7 @@ foreach ($id in @(${wanted.map(item => item.listed.pid).join(',')})) {
   [Console]::Out.WriteLine("$id\`t$folder\`t$marks")
 }`
   const read = new Map<number, { folder: string; marks: RunMark[] }>()
-  for (const line of (await run('powershell.exe', encoded(script), 60_000)).split(/\r?\n/u)) {
+  for (const line of (await run('powershell.exe', encoded(script), { timeout: 60_000 })).split(/\r?\n/u)) {
     const [pid, folder = '', marks = ''] = line.split('\t')
     if (pid && /^\d+$/u.test(pid)) read.set(Number(pid), { folder: b64(folder).replace(/\\$/u, ''), marks: marksIn(b64(marks).split('\n'), true) })
   }

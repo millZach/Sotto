@@ -526,7 +526,7 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
   const work = final ? written.filter(message => message !== final && drawn(message) && !visuals.some(visual => visual.message === message)) : []
   // A turn whose only record is how it ended has nothing to fold; its group states the outcome itself.
   if (!final || (!work.length && !groups.some(group => group.records.length && !compactionOf(group)))) return <>
-    <ActivityGroups groups={opening} context={context} />{everything.map(plain)}<ThreadMediaTiles groups={groups} threadId={threadId} who={speaker === 'watcher' ? 'Watcher' : provider} /><UnfoldedWork views={delegations} work={final ? backgroundWork : undefined} />{continued}</>
+    <ActivityGroups groups={opening} context={context} />{everything.map(plain)}<ThreadMediaTiles groups={groups} threadId={threadId} who={speaker === 'watcher' ? 'Watcher' : provider} /><UnfoldedWork views={delegations} work={final || running && last ? backgroundWork : undefined} />{continued}</>
   const finalAt = turn.replies.indexOf(final)
   const unfolded = new Set(visuals.map(visual => visual.message))
   const shown = (from: number, to: number): ReactNode => visuals.filter(visual => visual.at > from && visual.at < to)
@@ -687,7 +687,7 @@ export const MessageList = memo(function MessageList({ messages, provider, runni
   }, [backgroundWork])
   const agents = live ? undefined : delegationOn ? backgroundWork : detachedOnly
   // While a new turn runs, a detached run's row, its only Stop, stays under the last finished reply rather than going.
-  const agentsAt = live && detachedOnly ? turns.length - 2 : turns.length - 1
+  const agentsAt = live && detachedOnly ? Math.max(0, turns.length - 2) : turns.length - 1
   const shownAgents = live ? detachedOnly : agents
   // Only the newest turn's reply is being written: a turn that has drawn nothing yet, such as one opened by an empty reply,
   // leaves the reply above it finished. A visual after the reply means the reply is no longer being written, and so does a
