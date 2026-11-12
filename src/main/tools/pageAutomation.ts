@@ -339,13 +339,28 @@ export abstract class PageAutomation {
     if (image.length > 16_000_000) return fail('too-large', 'This page is too large to capture. Set a smaller viewport, then try again.')
     return { image, url, width: snapshot.width, height: snapshot.height, element }
   }
+  /**
+   * The node a click or tap at a point in the screenshot lands on. The point is in the visible viewport, as screenshots
+   * and input are, but Chromium hit-tests `DOM.getNodeForLocation` in the document, so the point moves by how far the
+   * page has scrolled. Without that, every click on a scrolled page tested a node above the one it would press, and one
+   * above the visible area came back as a protocol error the agent could only read as the tool breaking.
+   */
+  private async nodeAt(point: { x: number; y: number }): Promise<number | undefined> {
+    const layout = await this.send('Page.getLayoutMetrics') as { cssVisualViewport?: { pageX: number; pageY: number; clientWidth: number; clientHeight: number } }
+    const viewport = layout.cssVisualViewport
+    if (!viewport || !viewport.clientWidth || !viewport.clientHeight) return fail('unavailable', 'This page has not drawn yet. Wait for it to load, then try again.')
+    const width = Math.round(viewport.clientWidth), height = Math.round(viewport.clientHeight)
+    if (point.x >= width || point.y >= height) return fail('blocked', `That point is outside the page's visible area, which is ${width} by ${height}. Take a screenshot and use its coordinates.`)
+    const located = await this.send('DOM.getNodeForLocation', { x: Math.round(viewport.pageX + point.x), y: Math.round(viewport.pageY + point.y), includeUserAgentShadowDOM: true })
+      .catch((error: unknown) => error instanceof Error && /no node found/iu.test(error.message) ? fail('blocked', 'Nothing on the page is at that point. Take a screenshot and use its coordinates.') : Promise.reject(error)) as { backendNodeId?: number }
+    return located.backendNodeId
+  }
   /** What a click, tap, typed entry or key press would reach: the node at its point, or the focused node. */
   async target(action: Extract<BrowserAction, { type: 'click' | 'type' | 'tap' | 'key' }>): Promise<string> {
     await this.ready()
     let backendNodeId: number | undefined
     if (action.type === 'click' || action.type === 'tap') {
-      const located = await this.send('DOM.getNodeForLocation', { x: Math.round(action.x), y: Math.round(action.y), includeUserAgentShadowDOM: true }) as { backendNodeId?: number }
-      backendNodeId = located.backendNodeId
+      backendNodeId = await this.nodeAt(action)
     } else {
       const focused = await this.send('Runtime.evaluate', { expression: 'document.activeElement', objectGroup: 'sotto-browser-target' }) as { result?: { objectId?: string } }
       if (!focused.result?.objectId) return fail('blocked', 'Nothing on the page has focus. Click a text field, then type.')
