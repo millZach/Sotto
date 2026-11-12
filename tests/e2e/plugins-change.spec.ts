@@ -138,7 +138,8 @@ async function standInVercel(): Promise<{ server: Server; url: string; asked: st
     if (request.headers.authorization !== `Bearer ${VERCEL_TOKEN}`) { answer(403, { error: { code: 'forbidden', invalidToken: true } }); return }
     if (request.method === 'GET' && request.url === '/v2/user') { answer(200, { user: { username: 'example-user' } }); return }
     if (request.method === 'GET' && request.url === '/v13/deployments/dpl_example1') {
-      answer(200, { name: 'lumen-shop', projectId: 'prj_example1', target: null, url: 'lumen-shop-git-checkout-example.vercel.app', readyState: 'READY' }); return
+      // A deployment built for production that is not serving it yet, which is what Vercel's promote is for.
+      answer(200, { name: 'lumen-shop', projectId: 'prj_example1', target: 'production', url: 'lumen-shop-8k2j1example.vercel.app', readyState: 'READY' }); return
     }
     if (request.method === 'POST' && request.url === '/v10/projects/prj_example1/promote/dpl_example1') { answer(201, {}); return }
     answer(404, { error: { code: 'not_found' } })
@@ -161,7 +162,8 @@ test('Closing an issue and promoting a deployment each wait for the user’s ans
   process.env.SOTTO_E2E_GH_EXECUTABLE = process.execPath
   process.env.FAKE_GH_SIGN_IN = join(scratch, 'sign-in.json')
   process.env.FAKE_GH_POSTS = posts
-  process.env.FAKE_GH_ISSUE = JSON.stringify({ title: 'The preview build fails at the install step', state: 'open', pullRequest: false })
+  process.env.FAKE_GH_ISSUE = JSON.stringify({ title: 'The preview build fails at the install step', state: 'open', pullRequest: false, number: 12,
+    repository: 'https://api.github.com/repos/example-owner/example-repo' })
   process.env.SOTTO_E2E_VERCEL_API_URL = vercel.url
   const sent = async (): Promise<{ args: string[]; stdin: string }[]> =>
     (await readFile(posts, 'utf8').catch(() => '')).split('\n').filter(Boolean).map(line => JSON.parse(line) as { args: string[]; stdin: string })
@@ -192,11 +194,11 @@ test('Closing an issue and promoting a deployment each wait for the user’s ans
       const added = await page.evaluate(async secret => window.sotto!.plugins!.addAccount({ plugin: 'vercel', name: 'Work', secret }), VERCEL_TOKEN)
       expect(added.ok).toBe(true)
 
-      // Promote a deployment: the card names the project, says it is a preview now and what production will do.
+      // Promote a deployment: the card names the project, says what kind of deployment it is and what production will do.
       await ask(page, threadId, 'vercel_promote_deployment', { deploymentId: 'dpl_example1' })
       await expect(card).toHaveCount(1, { timeout: 30_000 })
       await expect(card.getByText('Promote a deployment to production on Vercel', { exact: true })).toBeVisible()
-      await expect(card.locator('.agent-request__details')).toHaveText(['Project: lumen-shop (prj_example1)', 'Kind: preview', 'Address: lumen-shop-git-checkout-example.vercel.app', 'Its build now: READY',
+      await expect(card.locator('.agent-request__details')).toHaveText(['Project: lumen-shop (prj_example1)', 'Kind: production', 'Address: lumen-shop-8k2j1example.vercel.app', 'Its build now: READY',
         'Deployment: dpl_example1', 'Vercel account: Work', 'The project’s production addresses will serve this deployment. It is not built again.'].join('\n'))
       const promote = card.getByRole('button', { name: 'Promote to production', exact: true })
       const leave = card.getByRole('button', { name: 'Leave production as it is', exact: true })

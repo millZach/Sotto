@@ -14,8 +14,11 @@ function refuse(why) {
 const args = process.argv.slice(2)
 const posts = process.env.FAKE_GH_POSTS
 if (args[0] === 'api' && posts && args[1] === '--method' && (args[2] === 'POST' || args[2] === 'PATCH') && args.at(-2) === '--input' && args.at(-1) === '-') {
-  appendFileSync(posts, `${JSON.stringify({ args, stdin: readFileSync(0, 'utf8') })}\n`)
-  process.stdout.write(JSON.stringify({ html_url: args[2] === 'POST' ? 'https://github.com/example-owner/example-repo/issues/12#issuecomment-1' : 'https://github.com/example-owner/example-repo/issues/12' }))
+  const stdin = readFileSync(0, 'utf8')
+  appendFileSync(posts, `${JSON.stringify({ args, stdin })}\n`)
+  // A changed issue comes back in the state it was given, as GitHub's answer to a PATCH does.
+  process.stdout.write(JSON.stringify(args[2] === 'POST' ? { html_url: 'https://github.com/example-owner/example-repo/issues/12#issuecomment-1' }
+    : { html_url: 'https://github.com/example-owner/example-repo/issues/12', state: JSON.parse(stdin).state }))
   process.exit(0)
 }
 const issue = process.env.FAKE_GH_ISSUE

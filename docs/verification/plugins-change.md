@@ -47,18 +47,19 @@ on the page.
 The slice's second pull request added opening an issue, closing or reopening an issue, promoting a deployment and
 rolling production back. The same spec's second journey checked two of them in the built app, on the same day. gh
 was the same stand-in, now also answering a read of one issue with a title of its own. Vercel was a small server on
-this computer, reached through `SOTTO_E2E_VERCEL_API_URL`, that knows one made-up token, one deployment and one
-promotion. A Vercel account named Work was added with that token through the page's own bridge.
+this computer, reached through `SOTTO_E2E_VERCEL_API_URL`, that knows one made-up token, one deployment built for
+production and one promotion. A Vercel account named Work was added with that token through the page's own bridge.
 
 `github_close_issue` was called for `example-owner/example-repo` #12. The card was headed "Close an issue on GitHub
 as example-user", named `example-owner/example-repo #12`, and read "Issue: The preview build fails at the install
 step" and "Closed as: completed": the title was the one the stand-in gave when gh was asked about the issue, not
 anything the call carried. The buttons were **Close the issue** and **Leave it open**. Nothing had been sent.
 **Close the issue** was pressed; the stand-in had been handed one `PATCH` with `{"state":"closed",
-"state_reason":"completed"}` on standard input.
+"state_reason":"completed"}` on standard input, and answered with the issue closed, which is what Sotto takes for
+done.
 
 `vercel_promote_deployment` was called for `dpl_example1`. The card was headed "Promote a deployment to production
-on Vercel", named `lumen-shop`, and listed the project with its ID, "Kind: preview", its address, "Its build now:
+on Vercel", named `lumen-shop`, and listed the project with its ID, "Kind: production", its address, "Its build now:
 READY", the deployment, the account, and "The project's production addresses will serve this deployment. It is not
 built again." The buttons were **Promote to production** and **Leave production as it is**. The stand-in had been
 asked for the deployment and sent no `POST`. The card stayed inside its pane in dark at 1280x800 and 820x560 and in
@@ -75,8 +76,9 @@ made-up token was nowhere on the page.
 
 Opening an issue, reopening one and rolling production back were not driven in the built app. Their cards are the
 same component with other words, and `pluginChangeTools.test.ts` covers each: what the card says, that nothing is
-sent before the answer, what is sent after it, a pull request's number refused, a deployment that cannot be read
-refused before anyone is asked, and Vercel being busy with another move.
+sent before the answer, what is sent after it, a pull request's number refused, a moved issue refused, a deployment
+that cannot be read or is not a production one refused before anyone is asked, Vercel being busy with another move,
+and gh never answering being told as unknown.
 
 ## What unit tests cover instead
 

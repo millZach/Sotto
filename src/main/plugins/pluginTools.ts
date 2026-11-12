@@ -98,7 +98,7 @@ export const vercelCancelDefinition = changeDefinition(VERCEL_CANCEL_TOOL,
   'Cancel a Vercel deployment whose build is under way. The user is shown which deployment on a card, and it is cancelled only if they allow it. A cancelled build cannot be resumed.',
   deploymentInputSchema, { destructive: true, idempotent: true })
 export const vercelPromoteDefinition = changeDefinition(VERCEL_PROMOTE_TOOL,
-  'Promote an existing Vercel deployment to production: the project\'s production addresses serve it, and it is not built again. This changes what the public sees. The user is shown the project and the deployment on a card, and it is promoted only if they allow it.',
+  'Promote a Vercel deployment that was built for production but is not serving it: the project\'s production addresses serve it, and it is not built again. A preview deployment is refused. This changes what the public sees. The user is shown the project and the deployment on a card, and it is promoted only if they allow it.',
   deploymentInputSchema, { destructive: true, idempotent: true })
 export const vercelRollbackDefinition = changeDefinition(VERCEL_ROLLBACK_TOOL,
   'Roll a Vercel project\'s production back to an earlier production deployment, at once and without a build. This changes what the public sees, and afterwards Vercel keeps new pushes to the production branch out of production until a deployment is promoted. The user is shown the project and the deployment on a card, and production is rolled back only if they allow it.',
@@ -287,10 +287,11 @@ export class PluginToolServer implements ScopedThreadTools {
       notDone: closing ? 'the issue was not closed' : 'the issue was not reopened', refused: closing ? 'GitHub did not close the issue' : 'GitHub did not reopen the issue',
       change: async account => {
         const issue = await this.handlers.describeGitHubIssue({ owner, repo, number }).catch((): GitHubIssue => ({ ok: false, reason: 'failed' }))
+        if (!issue.ok && issue.reason === 'moved') return text(`GitHub answered for another issue than ${where}, as it does when an issue was moved to another repository or the repository was renamed. Read it to find where it is now, and name that place. The user was not asked. ${NOTHING_CHANGED}`, true)
         if (!issue.ok) return text(`GitHub would not show ${where}${issue.said ? `: ${issue.said}` : ''}, so the user was not asked. ${NOTHING_CHANGED}`, true)
         // GitHub's issues address answers for pull requests too. This tool changes issues and nothing else.
         if (issue.pullRequest) return text(`${where} is a pull request, and this tool ${closing ? 'closes' : 'reopens'} issues only. ${NOTHING_CHANGED}`, true)
-        if (issue.state === state) return text(`Issue ${where} is already ${closing ? 'closed' : 'open'}, so the user was not asked. ${NOTHING_CHANGED}`)
+        if (issue.state === state) return text(`Issue ${where} is already ${closing ? 'closed' : 'open'}, so the user was not asked. ${closing ? 'This tool does not change why a closed issue was closed. ' : ''}${NOTHING_CHANGED}`)
         return { kind: closing ? 'github-close-issue' : 'github-reopen-issue', owner, repo, number, title: issue.title, ...(closing ? { reason: reason ?? 'completed' } : {}), ...(account ? { account } : {}) }
       },
       make: () => this.handlers.setGitHubIssueState({ owner, repo, number, state, ...(reason ? { reason } : {}) }),
@@ -332,6 +333,8 @@ export class PluginToolServer implements ScopedThreadTools {
     switch (result.reason) {
       case 'not-installed': return text(`The user allowed it, but gh, GitHub's command line program, isn't installed on this computer, so ${ask.notDone}. ${ASK_USER}`, true)
       case 'signed-out': return text(`The user allowed it, but gh is not signed in to GitHub on this computer, so ${ask.notDone}. ${ASK_USER}`, true)
+      // gh ran out of time, was stopped, or handed back something else. What was sent may have arrived, so nothing is claimed either way.
+      case 'unknown': return text(`The user allowed it, but GitHub's answer never came back in a form Sotto can read. Sotto cannot say whether ${ask.done}: read it on GitHub to see, before you ask for it again.`, true)
       default: return text(`The user allowed it, but ${ask.refused}${result.said ? `: ${result.said}` : ''}. ${NOTHING_CHANGED}`, true)
     }
   }
@@ -362,6 +365,11 @@ export class PluginToolServer implements ScopedThreadTools {
     if (action !== 'cancel' && !projectId) {
       return text(`Sotto could not read that deployment from Vercel with the account "${account.name}", so it cannot say which project's production would change, and the user was not asked. Check the deployment's ID, and give the "teamId" when it belongs to a team. ${NOTHING_CHANGED}`, true)
     }
+    // Vercel's promote moves production to a deployment that was built for production, and a rollback goes back to an
+    // earlier production deployment. A preview would have to be built again, which is another change with another card.
+    if (action !== 'cancel' && said.target !== 'production') {
+      return text(`That deployment is ${said.target ? `a ${said.target} deployment` : 'not one Vercel calls a production deployment'}. ${action === 'promote' ? 'Promoting moves production to a deployment that was built for production' : 'A rollback goes back to an earlier production deployment'}, so the user was not asked. ${NOTHING_CHANGED}`, true)
+    }
     const refused = await this.refusalOf(threadId, { kind: change, account: account.name, deploymentId, ...(teamId ? { teamId } : {}), ...said }, call)
     const kept = async (outcome: PluginUseReport['outcome']): Promise<void> => {
       // An account removed while its card waited has been forgotten already, and gets no entry after that.
@@ -372,8 +380,8 @@ export class PluginToolServer implements ScopedThreadTools {
       if (refused.outcome) await kept(refused.outcome)
       return refused.result
     }
-    const result = action === 'cancel' || !projectId ? await this.handlers.cancelVercelDeployment(account.id, deploymentId, teamId)
-      : await this.handlers.moveVercelProduction(account.id, action, projectId, deploymentId, teamId)
+    const result: VercelChange = action === 'cancel' ? await this.handlers.cancelVercelDeployment(account.id, deploymentId, teamId)
+      : projectId ? await this.handlers.moveVercelProduction(account.id, action, projectId, deploymentId, teamId) : { ok: false, reason: 'failed' }
     await kept(result.ok ? 'done' : 'failed')
     if (result.ok) {
       if (action === 'promote') return text('The user allowed it, and Vercel has taken the promotion: the project\'s production addresses move to the deployment within moments. Read the project to confirm.')
