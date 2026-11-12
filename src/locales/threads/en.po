@@ -552,6 +552,7 @@ msgstr "{kindWord}, not sent to {threadTitle}, {stateWord}"
 msgid "{kindWord}, Working"
 msgstr "{kindWord}, Working"
 
+#. {kindWord} is "Detached run"; {label} is the run's name, or its client and "run".
 #. {kindWord} is the kind of a provider's background agent; {label} is the provider's label for it.
 #: src/renderer/src/agents/DelegatedWork.tsx
 msgid "{kindWord}: {label}, Working"
@@ -1147,6 +1148,10 @@ msgstr "{removed, plural, one {{lineCount} line removed} other {{lineCount} line
 #: src/renderer/src/agents/delegationWords.ts
 msgid "{reviews, plural, one {# review} other {# reviews}}"
 msgstr "{reviews, plural, one {# review} other {# reviews}}"
+
+#: src/renderer/src/agents/ThreadMonitor.tsx
+msgid "{runs, plural, one {# detached run} other {# detached runs}}"
+msgstr "{runs, plural, one {# detached run} other {# detached runs}}"
 
 #. A browser line step whose outcome is not known. {said} is the step, such as took a picture of the page.
 #: src/renderer/src/agents/browserLine.ts
@@ -2760,6 +2765,11 @@ msgstr "Collapse question"
 #: src/renderer/src/agents/SidebarFrame.tsx
 msgid "Collapse sidebar"
 msgstr "Collapse sidebar"
+
+#. Shows the command a detached run was started with.
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "Command"
+msgstr "Command"
 
 #. {name} is the name of a saved host.
 #: src/renderer/src/agents/HostUpdates.tsx
@@ -7366,6 +7376,11 @@ msgstr "Running {command}"
 msgid "Running {name}..."
 msgstr "Running {name}..."
 
+#. How long a detached run has been going, such as "running 20m".
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "running {time}"
+msgstr "running {time}"
+
 #. Shown when the pointer rests on the Ultracode effort level, on the reasoning effort slider or its chip.
 #: src/renderer/src/agents/EffortPicker.tsx
 msgid "Runs a multi-agent workflow; uses many more tokens."
@@ -8174,6 +8189,10 @@ msgstr "Sotto could not reach its own side of this. Nothing was changed. Try aga
 msgid "Sotto could not reach its own side of this. Nothing was saved. Try again."
 msgstr "Sotto could not reach its own side of this. Nothing was saved. Try again."
 
+#: src/renderer/src/agents/ThreadTranscript.tsx
+msgid "Sotto could not reach the computer that runs this thread. The run may still be running."
+msgstr "Sotto could not reach the computer that runs this thread. The run may still be running."
+
 #: src/renderer/src/agents/delegationWords.ts
 msgid "Sotto could not read it again on {machine} just now. It reads it again when {machine} says it changed."
 msgstr "Sotto could not read it again on {machine} just now. It reads it again when {machine} says it changed."
@@ -8221,6 +8240,10 @@ msgstr "Sotto could not start a new Watcher. Nothing was changed. Try again, or 
 #: src/renderer/src/agents/delegationWords.ts
 msgid "Sotto could not start it or send it the brief. Nothing was sent."
 msgstr "Sotto could not start it or send it the brief. Nothing was sent."
+
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "Sotto could not stop that detached run. It may still be running."
+msgstr "Sotto could not stop that detached run. It may still be running."
 
 #: src/renderer/src/agents/delegationWords.ts
 msgid "Sotto could not tell how it stood at {time}, when it last read it."
@@ -8403,6 +8426,10 @@ msgstr "Started by {agent}. Sotto sends this thread a wake-up when #{number} nee
 msgid "Started by you. Sotto sends this thread a wake-up when #{number} needs it."
 msgstr "Started by you. Sotto sends this thread a wake-up when #{number} needs it."
 
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "Started from this thread and left running after its turn. Sotto found it running; its provider does not report it."
+msgstr "Started from this thread and left running after its turn. Sotto found it running; its provider does not report it."
+
 #. A background agent's status.
 #. A delegated thread's state: its brief is still being started or sent.
 #: src/renderer/src/agents/delegationWords.ts
@@ -8528,6 +8555,8 @@ msgid "Still working after this reply"
 msgstr "Still working after this reply"
 
 #. Button on the line of a turn that is waiting on the user’s own model server: stops the turn.
+#. Ends a detached run the thread started.
+#: src/renderer/src/agents/DelegatedWork.tsx
 #: src/renderer/src/agents/ownServerTurnWords.ts
 #: src/renderer/src/agents/SwarmAngles.tsx
 msgid "Stop"
@@ -8550,6 +8579,10 @@ msgstr "Stop babysitting #{number}"
 #: src/renderer/src/agents/ThreadMediaTiles.tsx
 msgid "Stop GIF {number}"
 msgstr "Stop GIF {number}"
+
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "Stop the detached run {label}"
+msgstr "Stop the detached run {label}"
 
 #: src/renderer/src/agents/DelegatedWork.tsx
 msgid "Stop this worker"
@@ -8591,6 +8624,11 @@ msgstr "Stopped, before the brief was sent."
 #: src/renderer/src/agents/delegationWords.ts
 msgid "Stopped. Nothing more will come of it."
 msgstr "Stopped. Nothing more will come of it."
+
+#. On the Stop button of a detached run while Sotto stops it.
+#: src/renderer/src/agents/DelegatedWork.tsx
+msgid "Stopping…"
+msgstr "Stopping…"
 
 #. Beside a reasoning effort level the draft seems to want.
 #: src/renderer/src/agents/SplitChipEffort.tsx
@@ -10275,6 +10313,7 @@ msgstr "worked in the page"
 msgid "worked on the cloud iPhone"
 msgstr "worked on the cloud iPhone"
 
+#. A detached run's state: it is running.
 #. A provider's background agent's state: it is running.
 #. A thread row's state: its agent is working.
 #. A thread row's state: its agent is working.

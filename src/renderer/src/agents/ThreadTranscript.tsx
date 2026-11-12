@@ -61,7 +61,7 @@ import { isThreadClosed, threadOrnamentAllowed } from '../../../shared/threadAct
 import type { AgentBackgroundWork } from '../../../shared/agentMonitoring'
 import { ThreadGreeting } from './ThreadGreeting'
 import type { DelegationView } from '../../../shared/delegation'
-import { DelegatedWork, DelegatedWorkSummary, DelegationWorldProvider, delegationsByTurn, StillWorking, stillWorkingAgents, UnfoldedWork, useDelegationWorld } from './DelegatedWork'
+import { DelegatedWork, DelegatedWorkSummary, DelegationWorldProvider, delegationsByTurn, DetachedRunStopContext, StillWorking, stillWorkingAgents, UnfoldedWork, useDelegationWorld } from './DelegatedWork'
 import { useDelegations, useDelegationsEnabled } from './delegations'
 import { MessageScrubber } from './MessageScrubber'
 import { keepReadingPlace, MessageRows, MessageRowsContext, readingPlace, revealLift, scrolledSince, scrollsTranscript, type ReadingPlace } from './readingPlace'
@@ -678,8 +678,14 @@ export const MessageList = memo(function MessageList({ messages, provider, runni
   // finished one would open while the news turn runs and fold again when it ends (#1452). Without that evidence on both
   // sides, the newest turn is the running one, as in every other thread.
   const live = running && !(speaker === 'watcher' && placement.newestTurnEnded === true)
-  // The provider's agents stand under the reply beside delegated work, so they keep to delegation's Owl switch.
-  const agents = useOwlFeature('thread-delegation') && !live ? backgroundWork : undefined
+  // The provider's agents stand under the reply beside delegated work, so they keep to delegation's Owl switch. A detached
+  // run's row went straight to stable (#2476, Zach's call on November 11, 2026), so it stands there on every track.
+  const delegationOn = useOwlFeature('thread-delegation')
+  const detachedOnly = useMemo(() => {
+    const runs = backgroundWork?.filter(task => task.type === 'detached-run')
+    return runs?.length ? runs : undefined
+  }, [backgroundWork])
+  const agents = live ? undefined : delegationOn ? backgroundWork : detachedOnly
   // Only the newest turn's reply is being written: a turn that has drawn nothing yet, such as one opened by an empty reply,
   // leaves the reply above it finished. A visual after the reply means the reply is no longer being written, and so does a
   // turn that is not writing now (`notWriting`), so no caret says the provider is still typing.
@@ -1016,6 +1022,10 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   // ornament may show them too. A command waits rather than works, so it stays the ornament's alone.
   const ornamentAllowed = threadOrnamentAllowed(thread, row.connected)
   const backgroundAgents = useShared(useMemo(() => stillWorkingAgents(thread.backgroundWork, ornamentAllowed), [ornamentAllowed, thread.backgroundWork]))
+  // Stop on a detached run's row (#2476): the host that runs the thread looks again and ends that process alone.
+  const unreached = t`Sotto could not reach the computer that runs this thread. The run may still be running.`
+  const stopDetachedRun = useMemo(() => (runId: string): Promise<string | null> => command({ type: 'stop-detached-run', threadId: thread.id, runId })
+    .then(result => result === null ? unreached : result.error, () => unreached), [command, thread.id, unreached])
   const delegatingTitle = thread.delegatedBy === undefined ? undefined : state.host.threads.find(item => item.id === thread.delegatedBy)?.title ?? t`The thread that delegated`
   const briefs = useMemo<DelegatedBriefs | undefined>(() => {
     const ids = new Set(delegations.received.map(view => view.briefMessageId))
@@ -1406,10 +1416,10 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
         {hidden === 0 && !thread.earlierAvailable ? <ContinuedFromNote thread={thread} state={state} command={command} /> : null}
         {startView && startNoteAtHead ? <ThreadStartNote view={startView} /> : null}
         {startView && startHandoverWaiting ? <StartHandoverCard key={thread.id} view={startView} createdAt={startView.start.at} /> : null}
-        {thread.messages.length || showsActivity ? <ActivityBodyContext.Provider value={bodyHost}><ThreadStartContext.Provider value={startView ?? (thread.startedFrom && !watcher ? 'off' : null)}><ForkContext.Provider value={forkOptions}><CouncilAskContext.Provider value={councilAsk}><DelegationWorldProvider world={delegationWorld}><ContinueLinksContext.Provider value={continueLinks}><HandoverFromContext.Provider value={handoverFrom}>
+        {thread.messages.length || showsActivity ? <ActivityBodyContext.Provider value={bodyHost}><ThreadStartContext.Provider value={startView ?? (thread.startedFrom && !watcher ? 'off' : null)}><ForkContext.Provider value={forkOptions}><CouncilAskContext.Provider value={councilAsk}><DelegationWorldProvider world={delegationWorld}><DetachedRunStopContext.Provider value={stopDetachedRun}><ContinueLinksContext.Provider value={continueLinks}><HandoverFromContext.Provider value={handoverFrom}>
           <OverseenContext.Provider value={overseen}><MessageRowsContext.Provider value={rows}><MessageList messages={messages} provider={row.provider} running={thread.status === 'running'} notWriting={notWriting} sending={sending.some(item => item.status === 'queued' || item.status === 'submitting' || item.status === 'accepted')} writingBelow={writingBelow} placement={placement} context={activity} streamText={streamText} threadId={thread.id} speaker={watcher ? 'watcher' : undefined}
           delegations={delegatedWork.size ? delegatedWork : undefined} backgroundWork={backgroundAgents} briefs={briefs} continuedIn={continuedIn?.size ? continuedIn : undefined} modelMoved={thread.modelMoved} /></MessageRowsContext.Provider></OverseenContext.Provider>
-        </HandoverFromContext.Provider></ContinueLinksContext.Provider></DelegationWorldProvider></CouncilAskContext.Provider></ForkContext.Provider></ThreadStartContext.Provider></ActivityBodyContext.Provider>
+        </HandoverFromContext.Provider></ContinueLinksContext.Provider></DetachedRunStopContext.Provider></DelegationWorldProvider></CouncilAskContext.Provider></ForkContext.Provider></ThreadStartContext.Provider></ActivityBodyContext.Provider>
           : thread.historyStatus === 'loading' ? <div className="thread-history-skeleton" aria-hidden="true"><i /><i /><i /></div>
             : thread.historyStatus === 'error' || !empty || greets || startView ? null
               : emptyNote != null && thread.status !== 'running' && thread.compaction?.status !== 'running' ? emptyNote

@@ -45,6 +45,7 @@ import { effortAfterChange, speedAfterChange, speedRuns, validatePromptAttachmen
 import { CodexActivityProjection, codexItemSchema } from './codexActivity'
 import { ProviderUnavailable } from '../../providerProblem'
 import { SessionReaper, busyHolds, type HeldSession } from '../../sessionReaper'
+import type { RunMark } from '../../detachedRunScan'
 import { OpenSessions } from '../../openSessions'
 import { ReadsBeforeSend } from '../../readsBeforeSend'
 import { CodexProcess, Uncertain, type RpcApply, type RpcFrame, type RpcRejected } from './codexProcess'
@@ -554,6 +555,12 @@ export class CodexAppServerHost implements ProviderHost {
       whyBusy: id => busyHolds({ busy: this.working(id), request: this.asking(id), compaction: compactionPending(this.aliases[id]?.compaction) }),
       stop: id => this.stopSession(id),
     })
+  }
+  /** The thread whose Codex thread a detached run names in `CODEX_THREAD_ID`, which Codex sets for every command it runs (#2476). */
+  threadForRunMark(mark: RunMark): string | undefined {
+    if (mark.name !== 'CODEX_THREAD_ID') return undefined
+    const id = this.sessionId(mark.value)
+    return id && !this.aliases[id]?.councilJudge ? id : undefined
   }
   /** The sessions the reaper tracks, why each is held, and each one's process (#2398). */
   heldSessions(): HeldSession[] { return this.reaper.held(id => this.runtimes.get(id)?.server.pid) }

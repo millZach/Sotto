@@ -1,0 +1,40 @@
+# Sotto finds the agent runs a thread detaches
+
+## Status
+
+Accepted November 11, 2026. Issue #2476. Zach chose to fix the gap ("Why doesn't Sotto detect this?"), and picked how a run shows on a question card: variant 1, **Background work**, of `docs/prototypes/detached-runs-prototype.html`, straight to stable rather than behind an Owl switch.
+
+Widens **Background work** (CONTEXT.md), whose evidence until now was the provider's own task frames alone.
+
+## Context
+
+On forge, thread 5a4f24ec started a long art-director run as `claude -p --name tetherfall-art-director …`, detached with `setsid`/`nohup`. Its parent became init, not the Sotto host. Sotto showed the thread at rest with no background work while that run and its four helpers kept working, and nothing in Sotto showed the run, so it could not be seen or stopped from Sotto.
+
+Sotto knew two kinds of work for a thread: the turns it starts, and the background work the provider reports with its own task frames. A run a thread's command cuts loose is neither. The provider never reports it, and once its launching shell exits it is no longer in the thread's process tree.
+
+The process tree breaks, but the environment survives. The run had inherited `CLAUDE_CODE_SESSION_ID`, the thread's own Claude Code session, from the thread's Claude Code process; Codex sets `CODEX_THREAD_ID` for every command it runs in the same way. The host's own records tie that session to thread 5a4f24ec.
+
+## Decision
+
+**1. A detached run is background work Sotto finds itself.** An agent client the thread started and cut loose, still running, is background work of a new kind, `detached-run`, beside the provider's workflows, subagents, teammates, remote agents and commands. Every rule that reads background work reads it: the sidebar keeps the thread **Working**, the readout counts it, Watcher counts it, settle and Auto-settle merged threads wait for it, a move to another machine is refused while it runs, and a host does not update itself under it. It is observation only, like the rest: it grants nothing, is never saved and is never restored from history. One rule leaves it out: a provider's usage limit does not stop a run Sotto found, so a limit stop does not mark the thread to be restarted for it.
+
+**2. It is found by the marks it inherited.** The watch (`src/main/agents/detachedRuns.ts`) lists this computer's processes (`detachedRunScan.ts`) and keeps the agent clients (Claude Code, Codex, Grok Build, Devin, OpenCode, Cursor, Gemini CLI, Hermes, Pi, Qwen Code, by their command or the script a runtime runs) that run outside Sotto's own process tree. A client under Sotto is a provider's own, or work the provider reports itself. For each it reads only the marks: `CLAUDE_CODE_SESSION_ID` and `CODEX_THREAD_ID`. The adapter that owns the session says which thread a mark names (`threadForRunMark`), and `SottoThreadHost` turns that into the Sotto thread ID, so no provider's identifier crosses the boundary (ADR-0002). A client that starts its own client, as Codex's npm launcher does, counts once, at the top. Anything else a thread leaves running, such as a preview server, is not an agent client and keeps no thread busy.
+
+**3. Linux, macOS and Windows, each the way its system allows.** Linux reads `/proc`. macOS reads `ps`, `ps -E` for the environments and `lsof` for the folders. Windows reads the process list through PowerShell's `Win32_Process`, and the environment and folder of each candidate through a small reader PowerShell compiles, which opens the process and reads its environment block, 64-bit processes only. A process another user owns cannot be read and is not counted. Only the named marks leave the read; the rest of an environment, keys included, never does.
+
+**4. It looks when there is a reason to, never on an update.** Five seconds after Sotto starts, three seconds after any turn ends, and, while it knows of a run, every 15 seconds (30 on Windows, where a look starts PowerShell and takes about two seconds) until the run ends. A look that fails keeps what it knew and tries again. Work per thread update is one map read.
+
+**5. The user can stop it, and only the user.** A detached run's row has **Stop**. Main looks again first and signals only a process that is still the same one, by its number and its start time, so a process that ended, or another that took its number, is never signalled. On Linux and macOS it ends the run's process group when it leads one, as a run cut loose with `setsid` does, else the process, with SIGTERM and then SIGKILL after five seconds; on Windows `taskkill /T /F`. Sotto never stops a run on its own. Stop reaches a run on a paired host through the host's own command, `stop-detached-run`, on the remote allow-list beside Interrupt.
+
+**6. How it shows.** Under the thread's last finished reply, after "Still working after this reply": the Terminal mark, **Detached run** and the run's name (its `--name`, or its client and "run"), Working and Stop; under them the client, the model and effort its command names, the folder it works in and how long it has run; then "Started from this thread and left running after its turn. Sotto found it running; its provider does not report it."; and its command behind a **Command** disclosure, with the value after any flag that names a key, a token, a secret or a password left out. The readout says *Working · 1 detached run*, counting runs on their own. These rows stand on every track; the provider's own agents' rows keep to delegation's Owl switch.
+
+**7. The desktop and the headless host look; tests do not.** The runtime looks only where its owner asks (`detachedRuns: true`): the desktop outside a desktop journey, and the headless host. A test that runs fake providers reads no processes by accident.
+
+## Consequences
+
+- The forge example now reads Working on thread 5a4f24ec, with a row for `tetherfall-art-director`, until the run ends.
+- A run started from a provider that sets no mark of its own (Grok Build, Devin, OpenCode, Cursor, Pi, Hermes, Muse, DeepSeek Harness) is not found yet. Sotto could put its own mark on the provider processes it starts per thread; that is a follow-up.
+- A run a thread started from a session it no longer has, after a rewind or a compaction moved it to another, is still found: the Claude Code adapter also answers for the sessions in a thread's lineage.
+- A user's own `claude` in a terminal they opened outside Sotto carries no thread's mark and is never counted. One started from a Sotto thread's own terminal drawer runs under Sotto and is not counted either.
+- On Windows each look starts PowerShell twice and compiles the reader, about two seconds of a background process after a turn ends. Nothing waits on it.
+- Reading another process's environment is local and sends nothing anywhere; no host is added.
