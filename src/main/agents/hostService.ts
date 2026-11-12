@@ -236,6 +236,8 @@ export interface HostService {
   readonly supportsPullRequestView?: boolean
   /** The host deletes its settled threads when asked (ADR-0140), present only when its Owl answer turns clearing on. */
   readonly supportsThreadDelete?: boolean
+  /** The host runs `git init` in a new project's folder when `create-project` asks (`gitInit`): it lists `project-git-init`. */
+  readonly supportsProjectGitInit?: boolean
   /** The host brings a thread's commits back to the branch of the thread it began from (#1030): it takes `bring-changes-back`. */
   readonly supportsBringBack?: boolean
   /** The words of the handover a thread that began from another goes with on its first message, or null when it has none (#1028). */

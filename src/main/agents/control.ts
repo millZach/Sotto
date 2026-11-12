@@ -11,8 +11,10 @@ import { readVideo } from './shownMedia'
 import { immutableUpdates, isImmutableModels, subscribeActivitySnapshots } from './activitySnapshots'
 import { FollowupStore, followupDigest, isWaitingWakeUp, UNKNOWN_TURN, WATCHER_STOP_PAUSE, type MovedPrompt, type QueuedFollowup } from './followups'
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, stat } from 'node:fs/promises'
+import { stat } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
+import { makeProjectFolder, projectFolderKey } from './projectFolders'
+import type { ProjectAddition } from '../../shared/watcherHost'
 import { isDeepStrictEqual } from 'node:util'
 import { z } from 'zod'
 import {
@@ -784,16 +786,31 @@ export class AgentControl {
    * the project's ID; a refusal rejects with its words.
    */
   async addProjectForPlacement(title: string, path: string): Promise<string> {
-    const parsed = agentCommandSchema.parse({ type: 'create-project', title, path, useExisting: true })
-    const guard = () => { if (this.disposed) throw new Error('Sotto is stopping.') }
+    return (await this.addProjectForWatcher({ title, path, useExisting: true })).projectId
+  }
+  /**
+   * Watcher's add_project on this machine (ADR-0073, November 12, 2026), and Sotto's own setup above: the coordinator's own
+   * `create-project`, as Add project and New project run it, without moving the window's selection or announcing anything.
+   * A new folder with no path goes in the default projects directory under the title. Resolves with the project, and
+   * whether a project already had the folder; a refusal rejects with its words.
+   */
+  async addProjectForWatcher(input: ProjectAddition, allowed?: () => void): Promise<{ projectId: string; path: string; title: string; known: boolean }> {
+    const parsed = agentCommandSchema.parse({ type: 'create-project', ...input })
+    const provider = this.state.configuration.provider
+    const directory = this.state.configuration.projectsDirectory
+    const path = input.path || (directory ? join(directory, input.title) : '')
+    const find = () => path && isAbsolute(path) ? this.state.host.projects.find(item => projectFolderKey(item.path) === projectFolderKey(path) && (!item.providerId || item.providerId === provider)) : undefined
+    const before = find()
+    // A new folder a project already has is that project, so a retry after its first call made it answers as that one did.
+    if (before && !input.useExisting) return { projectId: before.id, path: before.path, title: before.title, known: true }
+    // `allowed` is Watcher's: checked again before the folder is made and before the provider hears of it.
+    const guard = () => { if (this.disposed) throw new Error('Sotto is stopping.'); allowed?.() }
     guard(); this.watcherOrigins.set(parsed, { guard })
     const answer = await this.admitCommandShell(parsed)
     if (answer.error) throw new Error(answer.error)
-    const key = (value: string): string => process.platform === 'win32' ? resolve(value).toLowerCase() : resolve(value)
-    const provider = this.state.configuration.provider
-    const project = this.state.host.projects.find(item => key(item.path) === key(path) && (!item.providerId || item.providerId === provider))
+    const project = find()
     if (!project) throw new Error('The project did not appear in the list. Try again.')
-    return project.id
+    return { projectId: project.id, path: project.path, title: project.title, known: before?.id === project.id }
   }
   /** Where new projects go by default, as the user configured it; empty for none. Read without copying the state. */
   projectsDirectory(): string { return this.state.configuration.projectsDirectory }
@@ -915,6 +932,8 @@ export class AgentControl {
   private queuedWrite: QueuedWrite | undefined
   /** Thread settings changes being dispatched now: the outbox entries that were added inside this dispatch. */
   private readonly settingsDispatching = new Set<string>()
+  /** New projects the provider definitely refused, by project ID, so create-project takes back the folder it made (#704). */
+  private readonly refusedProjects = new Set<string>()
   /**
    * Settings entries the provider confirmed inside their own dispatch, whose removal is not on disk yet. Dropping
    * one is the only change such a write would carry, so it waits for the next write that carries anything else.
@@ -4764,6 +4783,9 @@ export class AgentControl {
           ? /[<>:"/\\|?*]/u.test(command.title) || /[. ]$/u.test(command.title) || /^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³]) *(\.|$)/iu.test(command.title)
           : command.title.includes('/') || /^\.\.?$/u.test(command.title)
         if (unusableName) throw new Error('Choose a project name that can be used as a folder name.')
+        if (command.gitInit && command.useExisting) throw new Error('Sotto sets up Git only in a folder it makes. Nothing was added. Add the folder as it is, and ask a thread to set up Git there.')
+        const initFolder = this.dependencies.host.initProjectFolder?.bind(this.dependencies.host)
+        if (command.gitInit && !initFolder) throw new Error('Setting up Git is unavailable here. Nothing was added. Make the project without Git, and ask a thread to set up Git there.')
         const target = command.path || (this.state.configuration.projectsDirectory ? join(this.state.configuration.projectsDirectory, command.title) : '')
         if (!target || !isAbsolute(target)) throw new Error('Choose an absolute project folder or configure a default projects directory.')
         const path = resolve(target)
@@ -4781,10 +4803,18 @@ export class AgentControl {
           this.observe(); if (!origin || origin.userSetup) this.say(`Opened ${known.title}.`)
           return
         }
-        if (!existing) await mkdir(path, { recursive: true })
+        // Sotto's own command checks its guard before it makes anything: Watcher's request may have ended while it waited.
+        origin?.guard()
+        const made = existing ? undefined : await makeProjectFolder(path, command.gitInit ? initFolder : undefined)
         const projectId = this.dependencies.host.createProjectId?.(provider) ?? randomUUID()
         if (turn) { turn.threadId = null; turn.projectId = projectId }
-        await this.dispatch({ type: 'create-project', commandId: randomUUID(), projectId, title: command.title, path, ...(this.state.host.providers ? { provider } : {}) }, turn)
+        try { await this.dispatch({ type: 'create-project', commandId: randomUUID(), projectId, title: command.title, path, ...(this.state.host.providers ? { provider } : {}) }, turn) }
+        catch (error) {
+          // A definite refusal leaves no folder Sotto made for it (#704). An unconfirmed creation, or one the provider took
+          // whose snapshot read failed after, keeps its folder.
+          if (this.refusedProjects.delete(projectId)) await made?.undo()
+          throw error
+        }
         if (!origin && selectionRevision === this.selectionRevision) {
           this.state.activeProjectId = projectId; this.state.activeThreadId = null
         }
@@ -5311,6 +5341,8 @@ export class AgentControl {
     client: ClientIdentity = this.localClient, atomicDigest?: string, machineOrigin?: WatcherCommandOrigin, queueGuard?: () => void): Promise<void> {
     // A prompt or an answer stays as a draft when this refuses; a create, a setting or a stop has none.
     const draftKept = promptOf(command) !== null || command.type === 'answer'
+    // A new project counts as refused until its provider took it or may have (#704): any throw before then refused it.
+    if (command.type === 'create-project') this.refusedProjects.add(command.projectId)
     this.assertCanAct(undefined, draftKept)
     // Refused here, before an outbox entry exists and long before the provider hears anything.
     if (command.type === 'answer') this.guardClientGrant(client)
@@ -5483,6 +5515,7 @@ export class AgentControl {
         this.setDelivery(prompt.threadId, draftId, delivery?.status ?? 'submitting', { providerLatencyMs })
       }
     }
+    if (command.type === 'create-project' && (result.accepted || result.uncertain)) this.refusedProjects.delete(command.projectId)
     if (result.accepted || result.uncertain) this.watcherHooks?.dispatched?.(command as AgentHostCommand)
     else { this.watcherHooks?.dispatchAborted?.(command as AgentHostCommand); startAborted() }
     // Previews are decoration, not history: the provider hears the prompt first, and a definitive refusal records nothing.

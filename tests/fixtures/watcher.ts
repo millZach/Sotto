@@ -39,6 +39,8 @@ export const watcherToolFixtures: Record<WatcherToolName, { input: unknown; outp
   list_projects: { input: {}, output: { status: 'ok', projects: [{ target: centerProject, title: 'Project', displayRoot: 'D:/Project',
     workers: [{ provider: 'devin', modelId: 'model', reasoningEfforts: [], defaultPermission: null, permissionComparable: false }],
     controlAvailable: false, readsAvailable: true, readOnlyProfileAvailable: false, freshness: 'fresh' }], ...page } },
+  add_project: { input: { ...mutation, hostId: centerHostId, path: 'D:/AI Sentiment Index', newFolder: true, gitInit: true },
+    output: { status: 'ok', project: { target: centerProject, title: 'AI Sentiment Index', displayRoot: 'D:/AI Sentiment Index' }, folderMade: true, gitInitialized: true, alreadyAdded: false } },
   keep_state: { input: { add: [{ list: 'rules', text: 'Full test suites run in CI, not on the laptop.' }], close: [{ id: 'd1', note: 'done: #4 merged' }] }, output: { status: 'ok',
     changed: [{ list: 'decisions', id: 'd1', change: 'closed' }, { list: 'rules', id: 'r2', change: 'added', text: 'Full test suites run in CI, not on the laptop.' }],
     counts: { decisions: { open: 0, closed: 1 }, rules: { open: 1, closed: 0 }, issues: { open: 0, closed: 0 } } } },

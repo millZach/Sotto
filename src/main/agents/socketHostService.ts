@@ -967,6 +967,8 @@ export class SocketHostService implements HostService {
   get supportsBabysitting(): boolean { return this.features.includes('pull-request-babysit') }
   /** The host lists `thread-delete`: it deletes one of its settled threads when asked (ADR-0140). */
   get supportsThreadDelete(): boolean { return this.features.includes('thread-delete') }
+  /** The host lists `project-git-init`: it runs `git init` in the folder a new project is made in when asked. */
+  get supportsProjectGitInit(): boolean { return this.features.includes('project-git-init') }
   async command(command: AgentCommand, _client?: ClientIdentity, commandId?: string): Promise<AgentState> {
     this.requireCommandAvailable(command)
     const refusal = managementCommandRefusal(command)
@@ -979,6 +981,7 @@ export class SocketHostService implements HostService {
     // A host from before babysitting would refuse the command with no word of why; this says which side to update.
     if ((admitted.type === 'babysit-pull-request' || admitted.type === 'stop-babysitting') && !this.supportsBabysitting) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
     if ((admitted.type === 'delete-thread' || admitted.type === 'preview-delete-thread') && !this.supportsThreadDelete) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
+    if (admitted.type === 'create-project' && admitted.gitInit && !this.supportsProjectGitInit) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
     // A host from before the window's own refresh (#820) would refuse the field; it reads the folder as any refresh instead.
     if (admitted.type === 'refresh-thread-worktree' && admitted.background !== undefined && !this.features.includes('background-refresh')) delete admitted.background
     if (admitted.type === 'compose' && admitted.threadId !== undefined) {

@@ -331,6 +331,10 @@ describe('remote command allow-list', () => {
     expect(refuse({ type: 'stop-babysitting', threadId: 'thread', url })).toBeNull()
     expect(refuse({ type: 'babysit-pull-request', threadId: 'thread', url, startedBy: 'agent' } as AgentCommand, true)).toBe('forbidden')
   })
+  it('takes git init on a new project from a paired client, as it takes the folder: it answers nothing and grants nothing', () => {
+    expect(refuse({ type: 'create-project', title: 'Fresh', path: '/home/zach/Fresh', gitInit: true })).toBeNull()
+    expect(refuse({ type: 'create-project', title: 'Fresh', gitInit: true })).toBeNull()
+  })
   it('refuses host-local commands and fields outside the list', () => {
     for (const command of [
       { type: 'credential', slot: 'reasoning', value: 'not-a-real-key' },
