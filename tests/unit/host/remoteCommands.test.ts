@@ -161,6 +161,10 @@ describe('remote command allow-list', () => {
       'project-setup',
       // A recorded desktop's new-thread default and worker roles for host delegation (#1310): settings, never a grant.
       'desktop-defaults',
+      // Account copies (ADR-0205, amending ADR-0025): a plugin account's secret and settings, taken only from the desktop
+      // the launch script recorded, on a host that lists plugin-account-copies. The one credential a client may send.
+      // Letting a copy go and listing which are held take the same desktop; nothing answers with a secret.
+      'plugin-account-copy', 'plugin-account-copy-remove', 'plugin-account-copies',
       // A host thread's delegations and a delegated thread's newest brief, reads for a recorded desktop's window on a
       // listener that offers delegation-views (#1310), never a reply and never a grant.
       'delegation-views', 'delegation-brief',

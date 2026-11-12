@@ -34,6 +34,7 @@ import { usageLocalClearResultSchema, usageLocalHostReadSchema, usageProvidersBe
 import { hostMachineReportSchema } from '../shared/hostFacts'
 import { projectOriginsSchema, projectSetupResultSchema, type ProjectOrigins } from '../shared/workerMachine'
 import { desktopDefaultsReceiptSchema } from '../shared/desktopDefaults'
+import { heldPluginAccountCopiesSchema, pluginAccountCopyReceiptSchema, pluginAccountCopyRemovedSchema } from '../shared/pluginAccountCopies'
 import { ProviderSignInRefusal, type ProviderSignIns } from './providerSignIn'
 import { DEFLATE_RESPONSE, deflateOffered, SocketFrames } from './socketFrames'
 import { CutBodies } from '../shared/activityBodies'
@@ -433,6 +434,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     // A host that keeps a check queue sends it to a recorded desktop's window (#1312), only where its Owl answer turns on
     // Work across machines; the desktop's own phone listener never lists it.
     && (feature !== 'check-queue-views' || service.supportsCheckQueueViews === true && service.checkQueue !== undefined && desktopRecords)
+    // Account copies (ADR-0205) only where the host keeps them, and only on a listener that tells its desktops apart.
+    && (feature !== 'plugin-account-copies' || service.supportsPluginAccountCopies === true && desktopRecords)
     // The same host answers a recorded desktop's read of those threads' delegations, for its window (#1310).
     && (feature !== 'delegation-views' || service.supportsDelegationViews === true && service.delegationViews !== undefined && desktopRecords)
     // Continuing agents and forking (#1028) only where the host's Owl answer turns them on.
@@ -499,6 +502,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     .filter(feature => !feature.startsWith('watcher-') || feature.startsWith('watcher-phone') || options.watcherDesktops?.has(peer.client.clientId))
     .filter(feature => feature !== 'host-update' || mayUpdate(peer))
     .filter(feature => feature !== 'branch-moves' && feature !== 'thread-move' && feature !== 'thread-move-source' && feature !== 'thread-move-keep' || (options.watcherDesktops?.has(peer.client.clientId) ?? false))
+    // An account copy carries a secret, so it comes only from the desktop the launch script recorded (ADR-0205).
+    .filter(feature => feature !== 'plugin-account-copies' || options.watcherDesktops?.has(peer.client.clientId) === true)
     // Desktop defaults come only from a client the launch script recorded as a desktop (#1310).
     .filter(feature => feature !== 'host-delegation' && feature !== 'every-agent-picture' && feature !== 'delegation-views' && feature !== 'delegation-relay' && feature !== 'delegation-relay-send' && feature !== 'delegation-remote' && feature !== 'delegation-branch-starts' && feature !== 'check-queue-views'
       || options.watcherDesktops?.has(peer.client.clientId) === true)
@@ -1830,6 +1835,22 @@ export async function startSocketServer(options: SocketServerOptions) {
         if (request.defaults.workerCeiling !== undefined && !offers(peer, 'worker-swarms')) throw new Refusal('invalid_request')
         if (request.defaults.showEveryAgentPicture !== undefined && !offers(peer, 'every-agent-picture')) throw new Refusal('invalid_request')
         try { return desktopDefaultsReceiptSchema.parse(await service.desktopDefaults(request.defaults, peer.client)) } catch { throw new Refusal('unavailable') }
+      }
+      case 'plugin-account-copy': {
+        // The one credential a client may send (ADR-0205, amending ADR-0025), and only a recorded desktop may. The copy
+        // is kept as that desktop's own. The answer says whether it was kept and never repeats what was sent; a failure
+        // says nothing of it either.
+        if (!offers(peer, 'plugin-account-copies') || !service.keepPluginAccountCopy) throw new Refusal('invalid_request')
+        try { return pluginAccountCopyReceiptSchema.parse(await service.keepPluginAccountCopy(request.copy, peer.client)) } catch { throw new Refusal('unavailable') }
+      }
+      case 'plugin-account-copy-remove': {
+        if (!offers(peer, 'plugin-account-copies') || !service.removePluginAccountCopy) throw new Refusal('invalid_request')
+        try { return pluginAccountCopyRemovedSchema.parse(await service.removePluginAccountCopy(request.accountId, peer.client)) } catch { throw new Refusal('unavailable') }
+      }
+      case 'plugin-account-copies': {
+        // Which accounts this desktop sent and when each was saved. The schema names no secret, so none can be listed.
+        if (!offers(peer, 'plugin-account-copies') || !service.pluginAccountCopies) throw new Refusal('invalid_request')
+        try { return heldPluginAccountCopiesSchema.parse(await service.pluginAccountCopies(peer.client)) } catch { throw new Refusal('unavailable') }
       }
       case 'watcher-tell-answer': {
         // The desktop's answer to a thread's message for Watcher. An answer nobody waits for is dropped.

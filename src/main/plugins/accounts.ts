@@ -161,6 +161,66 @@ export class PluginAccounts {
     })
   }
 
+  /**
+   * Keeps an account copy the desktop sent (ADR-0205, amending ADR-0025): the account as the desktop holds it, under
+   * the desktop's own ID for it, and its secret in this computer's credential store. The desktop checked the secret
+   * with its service before it kept it, so it is not checked again here. A copy of an account already held replaces
+   * it, secret and settings.
+   *
+   * A copy that could not be kept leaves what was held as it was, and the order of the two writes is chosen so that
+   * holds even when putting things back fails too. A new account's record is written first and its secret last: a
+   * record with no secret is never listed, so nothing is left behind. A replacement's secret is written first and
+   * its record last: the record holds who may use the account, and it is never changed by a copy the host then says
+   * it did not keep.
+   */
+  adopt(account: PluginAccount, secret: string, mine: (held: PluginAccount) => boolean = () => true): Promise<{ readonly kept: true; readonly replaced?: string } | { readonly kept: false; readonly problem: 'store' | 'limit' | 'held' | 'name-taken' }> {
+    return this.inTurn(async () => {
+      const accounts = await this.loadOrNull()
+      if (!accounts) return { kept: false, problem: 'store' }
+      const prior = accounts.find(entry => entry.id === account.id)
+      // An account another desktop sent is not this one's to replace.
+      if (prior && !mine(prior)) return { kept: false, problem: 'held' }
+      // A copy saved before the one held is a late arrival, as a retry after a lost answer is. It changes nothing.
+      if (prior && Date.parse(account.savedAt) < Date.parse(prior.savedAt)) return { kept: true }
+      // A plugin never holds two accounts of one name, or an agent that names one could be handed the other. A copy
+      // of the same name under another ID is a stale one of the sender's own, left by a removal that never arrived,
+      // and the new copy takes its place. Another desktop's account of that name stays, and the copy is refused.
+      const clash = accounts.find(entry => entry.plugin === account.plugin && entry.id !== account.id && sameName(entry.name, account.name))
+      if (clash && !mine(clash)) return { kept: false, problem: 'name-taken' }
+      const base = clash ? accounts.filter(entry => entry !== clash) : accounts
+      const held = prior !== undefined
+      if (!held && base.filter(entry => entry.plugin === account.plugin).length >= PLUGIN_ACCOUNTS_MAX) return { kept: false, problem: 'limit' }
+      const next = held ? base.map(entry => entry.id === account.id ? account : entry) : [...base, account]
+      // The stale copy's secret goes once the new one is kept. It has no record by then, so it is never used either way.
+      const done = async (): Promise<{ readonly kept: true; readonly replaced?: string }> => {
+        if (!clash) return { kept: true }
+        await this.options.credentials.set(pluginAccountSlot(clash.id), '').catch(() => undefined)
+        return { kept: true, replaced: clash.id }
+      }
+      const slot = pluginAccountSlot(account.id)
+      const refused = { kept: false, problem: 'store' } as const
+      if (held) {
+        // The secret held now, to put back if the record cannot be written. One that cannot be read cannot be put back, so nothing is tried.
+        let before: string
+        try { before = this.options.credentials.get(slot) } catch { return refused }
+        try { await this.options.credentials.set(slot, secret) } catch { return refused }
+        try { await this.write(next) } catch {
+          await this.options.credentials.set(slot, before).catch(() => undefined)
+          return refused
+        }
+        return done()
+      }
+      try { await this.write(next) } catch { return refused }
+      try { await this.options.credentials.set(slot, secret) } catch {
+        await this.write(accounts).catch(() => { this.accounts = accounts })
+        // The secret never arrived, so there is nothing of it to leave behind.
+        await this.options.credentials.set(slot, '').catch(() => undefined)
+        return refused
+      }
+      return done()
+    })
+  }
+
   private now(): string { return (this.options.now?.() ?? new Date()).toISOString() }
 
   /** Runs one change after every change before it, whether those succeeded or not. */
