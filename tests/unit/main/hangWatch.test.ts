@@ -75,7 +75,9 @@ function harness(overrides: Partial<MainHangWatchOptions> = {}) {
     /** What main does while paused: nothing (still stopped), or answer (the pause landed after it had recovered). */
     duringPause: 'stopped' as 'stopped' | 'answers', enable: 'answers' as 'answers' | 'never',
     /** Set by `stop`: when main answers again, and goes on answering from then on. */
-    answersAt: null as number | null }
+    answersAt: null as number | null,
+    /** The computer sleeps this long during the watch's next sleep between stacks. */
+    sleepsFor: 0 }
   /** The clock moves on, through the watch's own looks and its sleeps between stacks alike. */
   const advance = (ms: number): void => {
     state.now += ms
@@ -98,7 +100,7 @@ function harness(overrides: Partial<MainHangWatchOptions> = {}) {
   const watch = new MainHangWatch({
     lastAnswered: () => state.answered, quitReceivedAt: () => state.quitAt, now: () => state.now, wallNow: () => state.now, connect: () => debug,
     save: async record => { state.saved.push(record); return 'sotto-hang-x' }, update: async (_name, record) => { state.updated.push(record) },
-    kill: () => { state.killed += 1 }, sleep: async ms => { advance(ms) }, log: event => { state.logged.push(event) },
+    kill: () => { state.killed += 1 }, sleep: async ms => { advance(ms + state.sleepsFor); state.sleepsFor = 0 }, log: event => { state.logged.push(event) },
     appRoots: [APP], sottoVersion: '0.1.41', platform: 'win32', debuggerWaitMs: 5, ...overrides,
   })
   /** `ms` of the computer running, the watch looking every 250 ms as its worker does; `step` is what main does meanwhile. */
@@ -281,17 +283,37 @@ describe('the watch on main', () => {
     expect(state.pauses).toBe(0)
   })
 
-  it('keeps Quit\'s backstop as it was: a main stopped 3 s at the deadline cancels the quit, as before the threshold moved', async () => {
+  it('keeps Quit\'s backstop as it was: a main stopped 4.75 s at the deadline cancels the quit, as before the threshold moved', async () => {
     const { state, watch, run, stop } = harness({ quitForceMs: 20_000 })
     await watch.tick()
     state.quitAt = state.now
-    await run(17_000, () => { state.answered = state.now })
+    await run(15_250, () => { state.answered = state.now })
     stop()
     await run(30_000)
-    // Recorded at 1 s; its stacks stop at the deadline, so the backstop decides then, on a stop of 3 s, not 5.
+    // Recorded at 1 s; its stacks stop at the deadline and the backstop decides there, on a stop of 4.75 s, not a look
+    // later on one of 5 s.
     expect(state.saved).toHaveLength(1)
-    expect(state.updated.at(-1)!.stacks!.map(stack => stack.atMs)).toEqual([1_000, 2_000])
+    expect(state.updated.at(-1)!.stacks!.map(stack => stack.atMs)).toEqual([1_000, 2_000, 3_000, 4_000])
     expect(state.killed).toBe(0)
+  })
+
+  it('takes a computer asleep between two stacks for no freeze and no stopped quit, as between two looks', async () => {
+    const { state, watch, run, stop } = harness({ quitForceMs: 20_000 })
+    await watch.tick()
+    state.quitAt = state.now
+    await run(1_000, () => { state.answered = state.now })
+    stop()
+    // Asleep for a minute during the first wait after the first stack.
+    state.sleepsFor = 60_000
+    await run(1_000)
+    expect(state.saved).toHaveLength(1)
+    expect(state.pauses).toBe(1)
+    // Awake, main still stopped for 3 s more: no hang, and no quit deadline reached.
+    await run(3_000)
+    expect(state.killed).toBe(0)
+    await run(2_000, () => { state.answered = state.now })
+    expect(state.killed).toBe(0)
+    expect(state.saved).toHaveLength(1)
   })
 
   it('keeps Quit\'s backstop as it was: a main stopped 5 s or more is ended at the deadline, and not before', async () => {
