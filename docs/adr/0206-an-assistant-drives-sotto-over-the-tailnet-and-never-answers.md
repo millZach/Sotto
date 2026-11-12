@@ -10,9 +10,9 @@ It reopens the decision at the head of `docs/research/2026-10-28-assistants-driv
 
 Zach wants Grok Bot to drive Sotto: see his threads and what waits on him, start and steer work, from wherever he talks to it. The October 28 note found that Grok Bot runs only on Cursor's cloud computers and could reach a private Sotto only through a tailnet setup that was Enterprise only, or a public relay, which it advised against; Zach dropped it.
 
-What changed: Tailscale's post of November 9, 2026 (tailscale.com/blog/oauth-apps-ga) says Grok Bot joins the user's tailnet through the Tailscale plugin in its desktop app, "as a device associated with your user identity", and can then reach private MCP servers "without exposing them to the public internet". Zach's account is a personal or Teams plan. Grok Bot's own pages did not yet describe this on November 11, and no page confirms the whole path, including whether a custom server may take a bearer header, so the first slice ends in a live test with his Bot.
+What changed: Tailscale's post of November 9, 2026 (tailscale.com/blog/oauth-apps-ga) says Grok Bot joins the user's tailnet through the Tailscale plugin in its desktop app, "as a device associated with your user identity", and can then reach private MCP servers "without exposing them to the public internet". Zach's account is a personal or Teams plan. Grok Bot's own pages did not yet describe this on November 11, and no page confirms the whole path, including whether a custom server may take a bearer header, so the first assistant slice includes a live check with his Bot, before anything is built on the assumption.
 
-The note's findings that still bind: Sotto cannot control what an assistant does with its own approvals, so Sotto's side must refuse by construction; a client holding a `remote-answer` record gets Allow without a further check, so an assistant must never hold one; one-merge-at-a-time is not in code.
+The note's findings that still bind: Sotto cannot control what an assistant does with its own approvals, so Sotto's side must refuse by construction; a client holding a `remote-answer` record gets Allow without a further check, so an assistant must never hold one; and one merge at a time is kept only by Watcher's merge train (ADR-0073, November 5 amendment), not by a lock every client meets.
 
 ## Decision
 
@@ -36,7 +36,7 @@ The note's findings that still bind: Sotto cannot control what an assistant does
 
 - **A public tunnel so Grok Bot works without the tailnet.** Rejected: a door to the user's threads on the internet, against ADR-0033 and ADR-0088.
 - **Reports only**, Sotto posting a status to a Grok Bot routine. Not chosen: it cannot steer, and it adds Cursor's routine address as a host.
-- **Read only**; **read, steer and merge**; **everything a phone can do**. Zach chose read and steer. Merging would need a merge lock Sotto does not have, and answering cards would have the Bot answering for him.
+- **Read only**; **read, steer and merge**; **everything a phone can do**. Zach chose read and steer. Merging would need a merge lock every client meets, where Sotto has only Watcher's merge train, and answering cards would have the Bot answering for him.
 - **A token that never lapses**, or **the tailnet alone**. Not chosen: an assistant in someone else's cloud holds this token.
 
 ## Consequences
