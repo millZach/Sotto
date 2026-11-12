@@ -3,8 +3,9 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { z } from 'zod'
 import { PluginAccounts, PluginAccountsUnreadable, pluginAccountSlot, PluginSecretLocked, type PluginCredentials, type SecretCheck } from '../../../../src/main/plugins/accounts'
-import { PLUGIN_ACCOUNTS_MAX } from '../../../../src/shared/plugins'
+import { PLUGIN_ACCOUNTS_MAX, pluginAccountAdmits, type PluginAccount } from '../../../../src/shared/plugins'
 
 const folders: string[] = []
 async function folder(): Promise<string> {
@@ -45,7 +46,7 @@ describe('plugin accounts (ADR-0205)', () => {
   it('checks a secret with its service, keeps it in a slot of its own, and never writes it in the record of accounts', async () => {
     const { made, directory, kept, asked, again } = await accounts()
     const result = await made.add({ plugin: 'vercel', name: 'Work', secret: GOOD })
-    expect(result).toEqual({ ok: true, accounts: [{ id: expect.any(String), plugin: 'vercel', name: 'Work', savedAt: '2026-11-12T08:00:00.000Z', signedInAs: 'example-user' }] })
+    expect(result).toEqual({ ok: true, accounts: [{ id: expect.any(String), plugin: 'vercel', name: 'Work', savedAt: '2026-11-12T08:00:00.000Z', signedInAs: 'example-user', on: true, projects: null }] })
     const account = result.ok ? result.accounts[0]! : undefined
     expect(asked).toHaveBeenCalledWith('vercel', GOOD)
     expect([...kept.slots]).toEqual([[pluginAccountSlot(account!.id), GOOD]])
@@ -186,5 +187,76 @@ describe('plugin accounts (ADR-0205)', () => {
     expect(() => made.secret(id)).toThrow(PluginSecretLocked)
     kept.state.locked = false
     expect(made.secret('11111111-1111-4111-8111-111111111111')).toBe('')
+  })
+
+  it('switches an account off and keeps it to projects without touching its secret, and remembers both', async () => {
+    const { made, kept, asked, again } = await accounts()
+    const added = await made.add({ plugin: 'vercel', name: 'Work', secret: GOOD })
+    const id = added.ok ? added.accounts[0]!.id : ''
+    asked.mockClear()
+    await expect(made.update({ id, on: false })).resolves.toMatchObject({ ok: true, accounts: [{ id, on: false, projects: null }] })
+    // Each project once, in the order given; the switch is left as it was.
+    await expect(made.update({ id, projects: ['p-site', 'p-sotto', 'p-site'] })).resolves.toMatchObject({ ok: true, accounts: [{ id, on: false, projects: ['p-site', 'p-sotto'] }] })
+    await expect(made.update({ id, on: true, projects: null })).resolves.toMatchObject({ ok: true, accounts: [{ id, on: true, projects: null }] })
+    await made.update({ id, projects: ['p-site'] })
+    // Nothing was asked of the service, and the secret is the one saved.
+    expect(asked).not.toHaveBeenCalled()
+    expect([...kept.slots]).toEqual([[pluginAccountSlot(id), GOOD]])
+    expect(await again().list()).toMatchObject([{ id, on: true, projects: ['p-site'] }])
+    await expect(made.update({ id: '11111111-1111-4111-8111-111111111111', on: false })).resolves.toEqual({ ok: false, problem: 'gone' })
+  })
+
+  it('takes an account kept before the switch existed as on, and for every project', async () => {
+    const { directory, kept, again } = await accounts()
+    const id = '22222222-2222-4222-8222-000000000001'
+    kept.slots.set(pluginAccountSlot(id), GOOD)
+    await writeFile(join(directory, 'plugin-accounts.json'), JSON.stringify({ version: 1, accounts: [{ id, plugin: 'vercel', name: 'Work', savedAt: '2026-11-12T08:00:00.000Z', signedInAs: null }] }))
+    expect(await again().list()).toEqual([{ id, plugin: 'vercel', name: 'Work', savedAt: '2026-11-12T08:00:00.000Z', signedInAs: null, on: true, projects: null }])
+  })
+
+  it('finds for a thread only the accounts it may use, and says when the plugin has accounts and none is for it', async () => {
+    const { made } = await accounts()
+    const work = await made.add({ plugin: 'vercel', name: 'Work', secret: GOOD })
+    const workId = work.ok ? work.accounts[0]!.id : ''
+    await made.add({ plugin: 'vercel', name: 'Personal', secret: OTHER })
+    await made.update({ id: workId, projects: ['p-site'] })
+    const inProject = (project: string | null) => (account: PluginAccount) => pluginAccountAdmits(account, project)
+    // In the project Work is kept to, both are there; elsewhere Work is not, and is not found by name either.
+    await expect(made.find('vercel', undefined, inProject('p-site'))).resolves.toBe('ambiguous')
+    await expect(made.find('vercel', 'Work', inProject('p-site'))).resolves.toMatchObject({ name: 'Work' })
+    await expect(made.find('vercel', undefined, inProject('p-other'))).resolves.toMatchObject({ name: 'Personal' })
+    await expect(made.find('vercel', 'Work', inProject('p-other'))).resolves.toBe('unknown')
+    // A thread in no project, as Watcher's is, may use only an account kept to none.
+    await expect(made.find('vercel', 'Work', inProject(null))).resolves.toBe('unknown')
+    await expect(made.find('vercel', 'Personal', inProject(null))).resolves.toMatchObject({ name: 'Personal' })
+    const both = await made.list()
+    for (const account of both) await made.update({ id: account.id, on: false })
+    await expect(made.find('vercel', undefined, inProject('p-site'))).resolves.toBe('withheld')
+    // Without a thread to ask for, as the page asks, every account is found.
+    await expect(made.find('vercel', 'Work')).resolves.toMatchObject({ name: 'Work', on: false })
+  })
+
+  it('writes an account that is on and for every project as an older build reads it, and marks a record an older build must not read', async () => {
+    // What the build before the switch read: this shape and nothing more, in a file of version 1. Anything else it dropped.
+    const before = z.object({ version: z.literal(1), accounts: z.array(z.object({ id: z.uuid(), plugin: z.literal('vercel'), name: z.string(), savedAt: z.iso.datetime(), signedInAs: z.string().nullable() }).strict()) })
+    const { made, directory, again } = await accounts()
+    const file = async (): Promise<unknown> => JSON.parse(await readFile(join(directory, 'plugin-accounts.json'), 'utf8'))
+    const added = await made.add({ plugin: 'vercel', name: 'Work', secret: GOOD })
+    const id = added.ok ? added.accounts[0]!.id : ''
+    expect(before.safeParse(await file()).success).toBe(true)
+    // Switched off and on again, and narrowed and widened again, it is back to the shape an older build keeps whole.
+    await made.update({ id, on: false })
+    await made.update({ id, on: true })
+    await made.update({ id, projects: ['folder:one'] })
+    await made.update({ id, projects: null })
+    expect(before.safeParse(await file()).success).toBe(true)
+    // Kept to a project, or off: an older build would read it as open to every thread, so the file is one it refuses whole.
+    await made.update({ id, projects: ['folder:one'] })
+    expect(await file()).toMatchObject({ version: 2, accounts: [{ id, projects: ['folder:one'] }] })
+    expect(before.safeParse(await file()).success).toBe(false)
+    expect(await again().list()).toMatchObject([{ id, on: true, projects: ['folder:one'] }])
+    await made.update({ id, on: false, projects: null })
+    expect(await file()).toMatchObject({ version: 2, accounts: [{ id, on: false }] })
+    expect(await again().list()).toMatchObject([{ id, on: false, projects: null }])
   })
 })

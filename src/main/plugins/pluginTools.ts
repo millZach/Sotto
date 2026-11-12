@@ -112,10 +112,16 @@ export interface PluginToolHandlers {
   admits(threadId: string): boolean
   gitHubSignIn(): Promise<GitHubSignIn>
   readGitHub(path: string, query: Readonly<Record<string, string>>): Promise<GitHubRead>
-  /** The accounts the user added, without their secrets. */
-  accounts(): Promise<readonly PluginAccount[]>
-  /** The account an agent named, or the plugin's only one when it named none. */
-  findAccount(plugin: AccountPluginId, name: string | undefined): Promise<PluginAccount | 'none' | 'ambiguous' | 'unknown'>
+  /** The accounts this thread may use, without their secrets: those switched on, and for every project or for the thread's own (decision 9). */
+  accounts(threadId: string): Promise<readonly PluginAccount[]>
+  /**
+   * The account an agent named, or the plugin's only one when it named none, among those this thread may use.
+   * `withheld` is a plugin with accounts and none of them for this thread. Asked afresh at every call, so a switch
+   * turned off takes effect on the next one.
+   */
+  findAccount(threadId: string, plugin: AccountPluginId, name: string | undefined): Promise<PluginAccount | 'none' | 'withheld' | 'ambiguous' | 'unknown'>
+  /** Whether an account is still there, whoever may use it: a removed account gets no entry in the record. */
+  holdsAccount(accountId: string): Promise<boolean>
   /** Reads from Vercel with an account's token, which stays in main. */
   readVercel(accountId: string, path: string, query: Readonly<Record<string, string>>): Promise<VercelRead>
   /** Keeps what was done, by which thread and how it ended. Never what was asked for by name or what came back. */
@@ -203,7 +209,7 @@ export class PluginToolServer implements ScopedThreadTools {
     if (!this.admits(threadId)) return text(`This thread cannot use plugins. ${NOTHING_READ}`, true)
     if (name === PLUGIN_ACCOUNTS_TOOL) {
       if (!accountsInputSchema.safeParse(args ?? {}).success) return text(`${PLUGIN_ACCOUNTS_TOOL} takes no arguments.`, true)
-      return this.accounts()
+      return this.accounts(threadId)
     }
     if ((PLUGIN_CHANGE_TOOLS as readonly string[]).includes(name)) {
       // Watcher is not offered a change's tool, and a call to one from Watcher changes nothing whatever it holds.
@@ -349,12 +355,8 @@ export class PluginToolServer implements ScopedThreadTools {
     const { tool, kind, change, refused: wouldNot } = VERCEL_CHANGES[action]
     const input = deploymentInputSchema.safeParse(args)
     if (!input.success) return text(`Give the "deploymentId" (it starts with dpl_), and optionally the "account" name and a "teamId" (it starts with team_). ${NOTHING_CHANGED}`, true)
-    const account = await this.handlers.findAccount('vercel', input.data.account)
-    if (account === 'none') return text(`No Vercel account is added. Ask the user to add one in ${SETTINGS}. ${NOTHING_CHANGED}`, true)
-    if (account === 'ambiguous' || account === 'unknown') {
-      const names = (await this.handlers.accounts()).filter(entry => entry.plugin === 'vercel').map(entry => `"${entry.name}"`).join(', ')
-      return text(`${account === 'unknown' ? 'There is no Vercel account by that name.' : 'There is more than one Vercel account.'} Give "account" as one of ${names}. ${NOTHING_CHANGED}`, true)
-    }
+    const account = await this.vercelAccount(threadId, input.data.account, NOTHING_CHANGED)
+    if ('content' in account) return account
     const { deploymentId, teamId } = input.data
     // What Vercel says of the deployment, so the card names it in words. A read: it asks nobody and decides nothing.
     const said = await this.handlers.describeVercelDeployment(account.id, deploymentId, teamId).catch((): VercelDescribed => ({}))
@@ -373,12 +375,20 @@ export class PluginToolServer implements ScopedThreadTools {
     const refused = await this.refusalOf(threadId, { kind: change, account: account.name, deploymentId, ...(teamId ? { teamId } : {}), ...said }, call)
     const kept = async (outcome: PluginUseReport['outcome']): Promise<void> => {
       // An account removed while its card waited has been forgotten already, and gets no entry after that.
-      const still = await this.handlers.accounts().then(accounts => accounts.some(entry => entry.id === account.id), () => false)
+      const still = await this.handlers.holdsAccount(account.id).catch(() => false)
       if (still) await this.record(threadId, { plugin: 'vercel', accountId: account.id, tool, kind, outcome })
     }
     if (refused) {
       if (refused.outcome) await kept(refused.outcome)
       return refused.result
+    }
+    // The user allowed a change through this account. It may have been switched off, kept to other projects or
+    // removed while the card waited, so it is looked for again, and the change is made only while it is still this thread's to use.
+    const now = await this.handlers.findAccount(threadId, 'vercel', account.name).catch(() => 'unknown' as const)
+    if (typeof now === 'string' || now.id !== account.id) {
+      await kept('failed')
+      // The thread may no longer use the account, so it is not named back to it.
+      return text(`The user allowed it, but the Vercel account it was to go through was switched off, kept to other projects or removed while the card waited, so nothing was sent. ${NOTHING_CHANGED}`, true)
     }
     const result: VercelChange = action === 'cancel' ? await this.handlers.cancelVercelDeployment(account.id, deploymentId, teamId)
       : projectId ? await this.handlers.moveVercelProduction(account.id, action, projectId, deploymentId, teamId) : { ok: false, reason: 'failed' }
@@ -400,6 +410,21 @@ export class PluginToolServer implements ScopedThreadTools {
     }
   }
 
+  /**
+   * The Vercel account a thread means, among those it may use, or what to tell its agent when there is none. An
+   * account switched off or kept to other projects is not named to a thread that may not use it.
+   */
+  private async vercelAccount(threadId: string, named: string | undefined, nothing: string): Promise<PluginAccount | ThreadToolResult> {
+    const account = await this.handlers.findAccount(threadId, 'vercel', named)
+    if (account === 'none') return text(`No Vercel account is added. Ask the user to add one in ${SETTINGS}. ${nothing}`, true)
+    if (account === 'withheld') return text(`No Vercel account is available to this thread: the user has switched it off or kept it to other projects. Tell the user, who can change that in ${SETTINGS}. ${nothing}`, true)
+    if (account === 'ambiguous' || account === 'unknown') {
+      const names = (await this.handlers.accounts(threadId)).filter(entry => entry.plugin === 'vercel').map(entry => `"${entry.name}"`).join(', ')
+      return text(`${account === 'unknown' ? 'There is no Vercel account by that name that this thread can use.' : 'There is more than one Vercel account.'} Give "account" as one of ${names}. ${nothing}`, true)
+    }
+    return account
+  }
+
   private async readGitHub(threadId: string, path: string, query: Readonly<Record<string, string>>): Promise<ThreadToolResult> {
     const result = await this.handlers.readGitHub(path, query)
     const outcome = result.ok ? 'done' : result.reason === 'path' || result.reason === 'query' || result.reason === 'graphql' || result.reason === 'secrets' ? 'refused' : 'failed'
@@ -417,16 +442,12 @@ export class PluginToolServer implements ScopedThreadTools {
   }
 
   private async readVercel(threadId: string, named: string | undefined, path: string, query: Readonly<Record<string, string>>): Promise<ThreadToolResult> {
-    const account = await this.handlers.findAccount('vercel', named)
-    if (account === 'none') return text(`No Vercel account is added. Ask the user to add one in ${SETTINGS}. ${NOTHING_READ}`, true)
-    if (account === 'ambiguous' || account === 'unknown') {
-      const names = (await this.handlers.accounts()).filter(entry => entry.plugin === 'vercel').map(entry => `"${entry.name}"`).join(', ')
-      return text(`${account === 'unknown' ? 'There is no Vercel account by that name.' : 'There is more than one Vercel account.'} Give "account" as one of ${names}. ${NOTHING_READ}`, true)
-    }
+    const account = await this.vercelAccount(threadId, named, NOTHING_READ)
+    if ('content' in account) return account
     const result = await this.handlers.readVercel(account.id, path, query)
     const outcome = result.ok ? 'done' : result.reason === 'path' || result.reason === 'query' || result.reason === 'secrets' ? 'refused' : 'failed'
     // An account removed while its read ran has been forgotten already, and gets no entry after that.
-    const still = await this.handlers.accounts().then(accounts => accounts.some(entry => entry.id === account.id), () => false)
+    const still = await this.handlers.holdsAccount(account.id).catch(() => false)
     if (still) await this.record(threadId, { plugin: 'vercel', accountId: account.id, kind: vercelReadKind(path), outcome })
     if (result.ok) return cut(result)
     switch (result.reason) {
@@ -441,14 +462,17 @@ export class PluginToolServer implements ScopedThreadTools {
     }
   }
 
-  private async accounts(): Promise<ThreadToolResult> {
+  private async accounts(threadId: string): Promise<ThreadToolResult> {
     const signIn = await this.handlers.gitHubSignIn().catch((): GitHubSignIn => ({ state: 'unknown' }))
     const gitHub = signIn.state === 'signed-in' ? `signed in as ${signIn.login} through the gh command. Read it with ${PLUGIN_READ_TOOL}, plugin "github".`
       : signIn.state === 'signed-out' ? `gh is not signed in on this computer. ${ASK_USER}`
         : signIn.state === 'not-installed' ? `gh isn't installed on this computer. ${ASK_USER}`
           : `Sotto couldn't ask gh who is signed in. Try ${PLUGIN_READ_TOOL}, or ask the user to open ${SETTINGS}.`
-    const added = (await this.handlers.accounts().catch((): readonly PluginAccount[] => [])).filter(account => account.plugin === 'vercel')
-    const vercel = added.length === 0 ? `no account added. To use it, ask the user to add one in ${SETTINGS}.`
+    const added = (await this.handlers.accounts(threadId).catch((): readonly PluginAccount[] => [])).filter(account => account.plugin === 'vercel')
+    // An account this thread may not use is not named to it; it is told only that there is one it cannot use.
+    const withheld = added.length === 0 && await this.handlers.findAccount(threadId, 'vercel', undefined).then(found => found === 'withheld', () => false)
+    const vercel = withheld ? `no account is available to this thread: the user has switched it off or kept it to other projects, and can change that in ${SETTINGS}.`
+      : added.length === 0 ? `no account added. To use it, ask the user to add one in ${SETTINGS}.`
       : `${added.length === 1 ? 'account' : 'accounts'} ${added.map(account => `"${account.name}"`).join(', ')}. Read with ${PLUGIN_READ_TOOL}, plugin "vercel"${added.length > 1 ? ' and "account" as one of those names' : ''}.`
     return {
       content: [{ type: 'text', text: `GitHub: ${gitHub}\nVercel: ${vercel}` }],

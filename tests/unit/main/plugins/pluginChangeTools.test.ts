@@ -8,14 +8,14 @@ import { PluginToolServer } from '../../../../src/main/plugins/pluginTools'
 import type { PluginUseReport } from '../../../../src/main/plugins/useRecord'
 import { cancelVercelDeployment, describeVercelDeployment, moveVercelProduction, type VercelChange, type VercelDescribed } from '../../../../src/main/plugins/vercel/changes'
 import type { VercelFetch } from '../../../../src/main/plugins/vercel/read'
-import { GITHUB_CLOSE_ISSUE_TOOL, GITHUB_COMMENT_TOOL, GITHUB_OPEN_ISSUE_TOOL, GITHUB_REOPEN_ISSUE_TOOL, PLUGIN_ACCOUNTS_TOOL, PLUGIN_READ_TOOL, VERCEL_CANCEL_TOOL, VERCEL_PROMOTE_TOOL, VERCEL_ROLLBACK_TOOL, type GitHubSignIn, type PluginAccount, type PluginChange } from '../../../../src/shared/plugins'
+import { GITHUB_CLOSE_ISSUE_TOOL, GITHUB_COMMENT_TOOL, GITHUB_OPEN_ISSUE_TOOL, GITHUB_REOPEN_ISSUE_TOOL, PLUGIN_ACCOUNTS_TOOL, PLUGIN_READ_TOOL, VERCEL_CANCEL_TOOL, VERCEL_PROMOTE_TOOL, VERCEL_ROLLBACK_TOOL, pluginAccountAdmits, type GitHubSignIn, type PluginAccount, type PluginChange } from '../../../../src/shared/plugins'
 import { deferred } from '../../../fixtures/deferred'
 
 const servers: PluginToolServer[] = []
 afterEach(async () => { await Promise.all(servers.splice(0).map(server => server.close())) })
 
 /** A made-up account and a made-up token: nothing here is a real credential. */
-const WORK: PluginAccount = { id: '22222222-2222-4222-8222-000000000001', plugin: 'vercel', name: 'Work', savedAt: '2026-11-12T08:00:00.000Z', signedInAs: 'example-user' }
+const WORK: PluginAccount = { id: '22222222-2222-4222-8222-000000000001', plugin: 'vercel', name: 'Work', savedAt: '2026-11-12T08:00:00.000Z', signedInAs: 'example-user', on: true, projects: null }
 const TOKEN = 'made-up-vercel-token'
 const comment = { owner: 'example-owner', repo: 'example-repo', number: 12, body: 'Looks good to me.' }
 /** What gh hands back when it is asked about one issue: GitHub's title and state for it, and which issue it is. */
@@ -26,6 +26,8 @@ const issueSaid = (title: string, state: string, pullRequest = false, issue: obj
 function tools(options: { watcher?: boolean; answer?: PluginChangeAnswer; signIn?: GitHubSignIn; signIns?: GitHubSignIn[]; accounts?: readonly PluginAccount[]; gh?: string | Error; vercel?: (url: string, method: string) => { status?: number; body?: unknown }
   /** What gh answers when it is asked about one issue before a change to it: GitHub's title, state and whether it is a pull request. */
   issue?: string | Error
+  /** The project the calling thread is in, or null for a thread in none, as Watcher's is. */
+  project?: string | null
   /** The real waiting asks, where a test answers or abandons a card as the app would. */
   requests?: PluginChangeRequests
   /** What main says of the account's token, where it cannot be read. */
@@ -51,14 +53,23 @@ function tools(options: { watcher?: boolean; answer?: PluginChangeAnswer; signIn
   const waits: PluginChangeWait[] = []
   const asking = deferred<PluginChangeAnswer>()
   let gone = false
-  const added = options.accounts ?? []
+  let added = options.accounts ?? []
+  const project = options.project === undefined ? 'project-one' : options.project
+  const held = (): readonly PluginAccount[] => added
   const server = new PluginToolServer({
     admits: threadId => threadId === 'admitted' && !gone,
     // A list of answers is gh being asked more than once: the last one stands for every ask after it.
     gitHubSignIn: async () => (options.signIns && options.signIns.length > 1 ? options.signIns.shift() : options.signIns?.[0]) ?? options.signIn ?? { state: 'signed-in', login: 'example-user' },
     readGitHub: async () => ({ ok: true, text: '[]', truncated: false }),
-    accounts: async () => added,
-    findAccount: async (_plugin, name) => added.length === 0 ? 'none' : name === undefined ? (added.length === 1 ? added[0]! : 'ambiguous') : added.find(account => account.name === name) ?? 'unknown',
+    // The thread is in the project named here. An account switched off, or kept to other projects, is not this thread's to use.
+    accounts: async () => held().filter(account => pluginAccountAdmits(account, project)),
+    findAccount: async (_threadId, _plugin, name) => {
+      const mine = held().filter(account => pluginAccountAdmits(account, project))
+      if (mine.length === 0) return held().length === 0 ? 'none' : 'withheld'
+      if (name === undefined) return mine.length === 1 ? mine[0]! : 'ambiguous'
+      return mine.find(account => account.name.toLowerCase() === name.toLowerCase()) ?? 'unknown'
+    },
+    holdsAccount: async accountId => held().some(account => account.id === accountId),
     readVercel: async () => ({ ok: true, text: '{}', truncated: false }),
     record: async report => { recorded.push(report) },
     isWatcher: () => options.watcher === true,
@@ -75,7 +86,9 @@ function tools(options: { watcher?: boolean; answer?: PluginChangeAnswer; signIn
     cancelVercelDeployment: async (_accountId, deploymentId, teamId) => options.cancelled ?? cancelVercelDeployment(fetcher, TOKEN, deploymentId, teamId),
   })
   servers.push(server)
-  return { server, ghCalls, vercelCalls, recorded, asked, waits, answer: (value: PluginChangeAnswer) => { asking.resolve(value) }, forget: () => { gone = true } }
+  return { server, ghCalls, vercelCalls, recorded, asked, waits, answer: (value: PluginChangeAnswer) => { asking.resolve(value) }, forget: () => { gone = true },
+    /** The user changes the accounts while a call is under way. */
+    setAccounts: (next: readonly PluginAccount[]) => { added = next } }
 }
 const said = (result: { content: { type: string; text?: string }[] }): string => result.content.map(part => part.text ?? '').join('\n')
 /** Lets a held call run as far as it can before the user answers. */
@@ -649,5 +662,59 @@ describe('a change that cannot be undone is never described wrongly (Bug Bot on 
     expect(said(await already.server.call('admitted', GITHUB_CLOSE_ISSUE_TOOL, { ...place, number: 12, reason: 'not_planned' })))
       .toBe('Issue example-owner/example-repo #12 is already closed, so the user was not asked. This tool does not change why a closed issue was closed. Nothing was changed.')
     expect(already.asked).toEqual([])
+  })
+})
+
+describe('which threads may use an account (ADR-0205, decision 9)', () => {
+  const PERSONAL: PluginAccount = { ...WORK, id: '22222222-2222-4222-8222-000000000002', name: 'Personal' }
+  const PRODUCTION = { name: 'example-project', projectId: 'prj_example1', target: 'production', url: 'example-project-abc.vercel.app', readyState: 'READY' }
+  const withheld = 'No Vercel account is available to this thread: the user has switched it off or kept it to other projects. Tell the user, who can change that in Settings > Plugins.'
+
+  it('makes no change through an account that is switched off, or kept to another project, and does not ask', async () => {
+    for (const account of [{ ...WORK, on: false }, { ...WORK, projects: ['project-two'] }]) {
+      const { server, asked, vercelCalls, recorded } = tools({ accounts: [account], answer: 'allowed' })
+      const result = await server.call('admitted', VERCEL_CANCEL_TOOL, { deploymentId: 'dpl_example1' })
+      expect(result.isError).toBe(true)
+      expect(said(result)).toBe(`${withheld} Nothing was changed.`)
+      expect([asked, vercelCalls, recorded]).toEqual([[], [], []])
+    }
+    // Named outright, an account this thread may not use is not there for it, and is not named back to it.
+    const two = tools({ accounts: [{ ...WORK, projects: ['project-two'] }, PERSONAL], answer: 'allowed' })
+    const named = await two.server.call('admitted', VERCEL_PROMOTE_TOOL, { deploymentId: 'dpl_example1', account: 'Work' })
+    expect(said(named)).toBe('There is no Vercel account by that name that this thread can use. Give "account" as one of "Personal". Nothing was changed.')
+    expect(two.asked).toEqual([])
+  })
+
+  it('lets a thread in a project the account is kept to use it, and leaves Watcher, which is in none, without it', async () => {
+    const kept = { ...WORK, projects: ['project-one'] }
+    const mine = tools({ accounts: [kept], answer: 'denied', project: 'project-one', vercel: () => ({ body: PRODUCTION }) })
+    await mine.server.call('admitted', VERCEL_PROMOTE_TOOL, { deploymentId: 'dpl_example1' })
+    expect(mine.asked).toHaveLength(1)
+    const nowhere = tools({ accounts: [kept], answer: 'allowed', project: null })
+    expect(said(await nowhere.server.call('admitted', VERCEL_CANCEL_TOOL, { deploymentId: 'dpl_example1' }))).toBe(`${withheld} Nothing was changed.`)
+    // An account for every project is for a thread in none as well.
+    const every = tools({ accounts: [WORK], answer: 'denied', project: null })
+    await every.server.call('admitted', VERCEL_CANCEL_TOOL, { deploymentId: 'dpl_example1' })
+    expect(every.asked).toHaveLength(1)
+  })
+
+  it('sends nothing when the account was switched off, narrowed or removed while its card waited, though the user allowed it', async () => {
+    const afterwards: PluginAccount[][] = [[{ ...WORK, on: false }], [{ ...WORK, projects: ['project-two'] }], []]
+    for (const after of afterwards) {
+      const { server, vercelCalls, recorded, answer, setAccounts } = tools({ accounts: [WORK], vercel: () => ({ body: PRODUCTION }) })
+      const call = server.call('admitted', VERCEL_PROMOTE_TOOL, { deploymentId: 'dpl_example1' })
+      await settle()
+      setAccounts(after)
+      answer('allowed')
+      const result = await call
+      expect(result.isError).toBe(true)
+      // The account is no longer this thread's to use, so the refusal does not name it.
+      expect(said(result)).toBe('The user allowed it, but the Vercel account it was to go through was switched off, kept to other projects or removed while the card waited, so nothing was sent. Nothing was changed.')
+      expect(said(result)).not.toContain('Work')
+      // Only the read for the card went to Vercel.
+      expect(vercelCalls.map(entry => entry.method)).toEqual(['GET'])
+      // A removed account gets no entry; one that is still there keeps that the change was allowed and not made.
+      expect(recorded.map(use => use.outcome)).toEqual(after.length === 0 ? [] : ['failed'])
+    }
   })
 })

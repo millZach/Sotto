@@ -53,6 +53,10 @@ export interface PluginsBridge {
   replaceSecret(request: PluginAccountReplace): Promise<PluginAccountResult>
   /** Deletes the account's secret and the account. Nothing changes at the service. */
   removeAccount(request: PluginAccountRemove): Promise<PluginAccountResult>
+  /** Switches an account on or off for threads, or keeps it to chosen projects. */
+  updateAccount(request: PluginAccountUpdate): Promise<PluginAccountResult>
+  /** This computer's projects, for choosing which ones an account is kept to. */
+  projects(): Promise<PluginProject[]>
 }
 
 /** The one name every client addresses the plugin tools by (ADR-0205). */
@@ -122,6 +126,8 @@ export const PLUGINS_ACCOUNTS = 'sotto:plugins:accounts'
 export const PLUGINS_ACCOUNT_ADD = 'sotto:plugins:account-add'
 export const PLUGINS_ACCOUNT_REPLACE = 'sotto:plugins:account-replace'
 export const PLUGINS_ACCOUNT_REMOVE = 'sotto:plugins:account-remove'
+export const PLUGINS_ACCOUNT_UPDATE = 'sotto:plugins:account-update'
+export const PLUGINS_PROJECTS = 'sotto:plugins:projects'
 
 /** The plugins an account is added to by pasting a secret. GitHub is not one: its account is gh's own sign-in. */
 export const ACCOUNT_PLUGIN_IDS = ['vercel'] as const
@@ -132,6 +138,9 @@ export const PLUGIN_ACCOUNT_NAME_MAX = 40
 export const PLUGIN_SECRET_MAX = 1_000
 /** How many accounts one plugin holds. */
 export const PLUGIN_ACCOUNTS_MAX = 10
+/** How many projects one account can be kept to. */
+export const PLUGIN_ACCOUNT_PROJECTS_MAX = 200
+const projectIdSchema = z.string().min(1).max(512)
 
 /** A name the user gives an account: what the page shows and what an agent names it by. */
 export const pluginAccountNameSchema = z.string().trim().min(1).max(PLUGIN_ACCOUNT_NAME_MAX)
@@ -144,8 +153,24 @@ export const pluginAccountSchema = z.object({
   name: z.string().min(1).max(PLUGIN_ACCOUNT_NAME_MAX),
   savedAt: z.iso.datetime(),
   signedInAs: z.string().max(200).nullable(),
+  /** Whether threads may use the account at all (ADR-0205, decision 9). An account kept before the switch existed is on. */
+  on: z.boolean().default(true),
+  /**
+   * The projects whose threads may use it. Null is every project. A project is its folder on this computer, under a
+   * name of Sotto's own, so it is the same project for every provider that works in that folder.
+   */
+  projects: z.array(projectIdSchema).max(PLUGIN_ACCOUNT_PROJECTS_MAX).nullable().default(null),
 }).strict()
 export type PluginAccount = z.infer<typeof pluginAccountSchema>
+
+/**
+ * Whether a thread may use an account: it is on, and it is either for every project or for the thread's own. A
+ * thread with no project to go by, as Watcher's is, may use only an account kept to none: an account kept to chosen
+ * projects is for those projects' threads and nobody else.
+ */
+export function pluginAccountAdmits(account: Pick<PluginAccount, 'on' | 'projects'>, projectId: string | null): boolean {
+  return account.on && (account.projects === null || (projectId !== null && account.projects.includes(projectId)))
+}
 export const pluginAccountsSchema = z.array(pluginAccountSchema).max(ACCOUNT_PLUGIN_IDS.length * PLUGIN_ACCOUNTS_MAX)
 
 export const pluginAccountAddSchema = z.object({ plugin: z.enum(ACCOUNT_PLUGIN_IDS), name: pluginAccountNameSchema, secret: z.string().min(1).max(PLUGIN_SECRET_MAX) }).strict()
@@ -154,6 +179,17 @@ export const pluginAccountReplaceSchema = z.object({ id: z.uuid(), secret: z.str
 export type PluginAccountReplace = z.infer<typeof pluginAccountReplaceSchema>
 export const pluginAccountRemoveSchema = z.object({ id: z.uuid() }).strict()
 export type PluginAccountRemove = z.infer<typeof pluginAccountRemoveSchema>
+/** A change to which threads may use an account: its switch, the projects it is kept to, or both. Null is every project. */
+export const pluginAccountUpdateSchema = z.object({
+  id: z.uuid(), on: z.boolean().optional(),
+  projects: z.array(projectIdSchema).min(1).max(PLUGIN_ACCOUNT_PROJECTS_MAX).nullable().optional(),
+}).strict().refine(update => update.on !== undefined || update.projects !== undefined)
+export type PluginAccountUpdate = z.infer<typeof pluginAccountUpdateSchema>
+
+/** A project as the page offers it for an account: its name, and whether it is settled, which keeps it off the list unless it is chosen. */
+export const pluginProjectSchema = z.object({ id: projectIdSchema, title: z.string().max(512), settled: z.boolean() }).strict()
+export type PluginProject = z.infer<typeof pluginProjectSchema>
+export const pluginProjectsSchema = z.array(pluginProjectSchema).max(10_000)
 
 /**
  * Why an account was not saved or removed. `refused`: the service did not accept the secret. `unreachable`: the service

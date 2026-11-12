@@ -42,3 +42,12 @@
 .plugin-account__change { display: grid; gap: 10px; padding-top: 10px; border-top: 1px solid var(--tt-hairline); }
 .plugin-account--form .tt-input, .plugin-account__change .tt-input { max-width: 460px; }
 .plugin-account .tt-button[aria-disabled='true'] { cursor: not-allowed; opacity: 0.45; }
+/* Which threads may use an account: its switch, then the projects it is kept to as chips that are pressed or not. */
+.plugin-account__threads { display: grid; gap: 10px; padding-top: 10px; border-top: 1px solid var(--tt-hairline); }
+.plugin-account__threads .tt-toggle__copy > strong { font-size: var(--tt-type-reading); font-weight: 500; overflow-wrap: anywhere; }
+.plugin-account__projects { display: flex; flex-wrap: wrap; gap: 6px; }
+.plugin-chip { min-width: 0; max-width: 100%; padding: 5px 11px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-tag); background: transparent; color: var(--tt-text-muted); font: inherit; font-size: var(--tt-type-small); overflow-wrap: anywhere; text-align: start; }
+.plugin-chip:hover:not(:disabled) { background: var(--tt-hover); color: var(--tt-text); }
+.plugin-chip:active:not(:disabled) { background: var(--tt-hover-strong); }
+.plugin-chip[aria-pressed='true'] { border-color: var(--tt-accent-text); background: var(--tt-hover); color: var(--tt-text); font-weight: 600; }
+.plugin-chip:disabled { opacity: 0.45; }

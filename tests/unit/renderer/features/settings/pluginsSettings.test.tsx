@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { afterEach, expect, it, vi } from 'vitest'
 import { waitFor } from '@testing-library/react'
 import { PluginsSettings } from '../../../../../src/renderer/src/features/settings/PluginsSettings'
-import type { GitHubSignIn, PluginAccount, PluginAccountResult, PluginsBridge, ShownPluginUse } from '../../../../../src/shared/plugins'
+import type { GitHubSignIn, PluginAccount, PluginAccountResult, PluginAccountUpdate, PluginProject, PluginsBridge, ShownPluginUse } from '../../../../../src/shared/plugins'
 import { deferred } from '../../../../fixtures/deferred'
 
 afterEach(cleanup)
@@ -15,6 +15,8 @@ const noAccounts = {
   addAccount: async (): Promise<PluginAccountResult> => ({ ok: false, problem: 'store' }),
   replaceSecret: async (): Promise<PluginAccountResult> => ({ ok: false, problem: 'store' }),
   removeAccount: async (): Promise<PluginAccountResult> => ({ ok: false, problem: 'store' }),
+  updateAccount: async (): Promise<PluginAccountResult> => ({ ok: false, problem: 'store' }),
+  projects: async (): Promise<PluginProject[]> => [],
 }
 const answering = (...answers: readonly GitHubSignIn[]): { bridge: PluginsBridge; asked: () => number } => {
   let asked = 0
@@ -131,7 +133,7 @@ it('leaves Recent use out when the record could not be read, rather than saying 
 })
 
 /** A made-up account and a made-up token: nothing here is a real credential. */
-const work: PluginAccount = { id: '22222222-2222-4222-8222-000000000001', plugin: 'vercel', name: 'Work', savedAt: '2026-11-12T08:00:00.000Z', signedInAs: 'example-user' }
+const work: PluginAccount = { id: '22222222-2222-4222-8222-000000000001', plugin: 'vercel', name: 'Work', savedAt: '2026-11-12T08:00:00.000Z', signedInAs: 'example-user', on: true, projects: null }
 const TOKEN = 'made-up-vercel-token'
 const vercelRow = (): HTMLElement => screen.getByRole('button', { name: /^Vercel/u })
 function vercelBridge(start: readonly PluginAccount[], overrides: Partial<PluginsBridge> = {}): PluginsBridge {
@@ -297,4 +299,174 @@ it('says of each kind of change what was done, and what was only asked for', asy
     'Promoted a deployment to production in “Fix the preview build” You allowed it.',
     'Asked to roll production back in “Fix the preview build” Nobody answered in time.',
   ])
+})
+
+/** A bridge that keeps what the page asks of an account's switch and projects, and answers with the account so changed. */
+function threadsBridge(start: PluginAccount, projects: readonly PluginProject[] = [{ id: 'p-sotto', title: 'Sotto', settled: false }, { id: 'p-site', title: 'Lumen shop', settled: false }, { id: 'p-old', title: 'Old site', settled: true }]) {
+  let account = start
+  const updates: PluginAccountUpdate[] = []
+  const bridge = vercelBridge([start], {
+    projects: async () => [...projects],
+    updateAccount: async request => {
+      updates.push(request)
+      account = { ...account, ...(request.on === undefined ? {} : { on: request.on }), ...(request.projects === undefined ? {} : { projects: request.projects }) }
+      return { ok: true, accounts: [account] }
+    },
+  })
+  return { bridge, updates }
+}
+const chips = (): { name: string; pressed: boolean }[] =>
+  within(screen.getByRole('group', { name: 'Projects whose threads may use Work' })).getAllByRole('button').map(chip => ({ name: chip.textContent, pressed: chip.getAttribute('aria-pressed') === 'true' }))
+
+it('lets an account be switched off for every thread, and says so on the folded row', async () => {
+  const { bridge, updates } = threadsBridge(work)
+  await act(async () => { render(<PluginsSettings bridge={bridge} />) })
+  fireEvent.click(vercelRow())
+  const toggle = await screen.findByRole('switch', { name: 'Threads may use Work' })
+  expect(toggle.getAttribute('aria-checked')).toBe('true')
+  expect(screen.getByText('Threads in every project may use it, and so may Watcher.')).toBeTruthy()
+  await act(async () => { fireEvent.click(toggle) })
+  expect(updates).toEqual([{ id: work.id, on: false }])
+  expect(screen.getByRole('switch', { name: 'Threads may use Work' }).getAttribute('aria-checked')).toBe('false')
+  expect(screen.getByText('Off. No thread can see or use this account until you turn it back on. Its token stays saved.')).toBeTruthy()
+  // With the account off there is nothing to keep it to, and its row says it is off.
+  expect(screen.queryByRole('group', { name: 'Projects whose threads may use Work' })).toBeNull()
+  expect(vercelRow().textContent).toContain('Work (off)')
+  await act(async () => { fireEvent.click(screen.getByRole('switch', { name: 'Threads may use Work' })) })
+  expect(updates.at(-1)).toEqual({ id: work.id, on: true })
+})
+
+it('keeps an account to the projects pressed, and gives it back to every project when the last is let go', async () => {
+  const { bridge, updates } = threadsBridge(work)
+  await act(async () => { render(<PluginsSettings bridge={bridge} />) })
+  fireEvent.click(vercelRow())
+  await screen.findByRole('group', { name: 'Projects whose threads may use Work' })
+  // A settled project is not offered while the account is not kept to it.
+  expect(chips()).toEqual([{ name: 'Every project', pressed: true }, { name: 'Sotto', pressed: false }, { name: 'Lumen shop', pressed: false }])
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Lumen shop' })) })
+  expect(updates).toEqual([{ id: work.id, projects: ['p-site'] }])
+  expect(chips()).toEqual([{ name: 'Every project', pressed: false }, { name: 'Sotto', pressed: false }, { name: 'Lumen shop', pressed: true }])
+  expect(screen.getByText('Only threads in Lumen shop may use it. Watcher belongs to no project, so it cannot.')).toBeTruthy()
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Sotto' })) })
+  expect(updates.at(-1)).toEqual({ id: work.id, projects: ['p-site', 'p-sotto'] })
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Sotto' })) })
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Lumen shop' })) })
+  expect(updates.at(-1)).toEqual({ id: work.id, projects: null })
+  expect(chips()[0]).toEqual({ name: 'Every project', pressed: true })
+  // Every project, pressed while it already is, asks main for nothing.
+  const before = updates.length
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Every project' })) })
+  expect(updates).toHaveLength(before)
+})
+
+it('still shows a settled project an account is kept to, and a project that is gone, so either can be let go', async () => {
+  const { bridge, updates } = threadsBridge({ ...work, projects: ['p-old', 'p-gone'] })
+  await act(async () => { render(<PluginsSettings bridge={bridge} />) })
+  fireEvent.click(vercelRow())
+  await screen.findByRole('group', { name: 'Projects whose threads may use Work' })
+  expect(chips()).toEqual([{ name: 'Every project', pressed: false }, { name: 'Sotto', pressed: false }, { name: 'Lumen shop', pressed: false }, { name: 'Old site', pressed: true }, { name: 'A project that is gone', pressed: true }])
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'A project that is gone' })) })
+  expect(updates).toEqual([{ id: work.id, projects: ['p-old'] }])
+  expect(screen.queryByRole('button', { name: 'A project that is gone' })).toBeNull()
+})
+
+it('says so when a change to which threads may use an account could not be saved, and shows what is still kept', async () => {
+  const bridge = vercelBridge([work], { projects: async () => [{ id: 'p-sotto', title: 'Sotto', settled: false }], updateAccount: async () => ({ ok: false, problem: 'store' }) })
+  await act(async () => { render(<PluginsSettings bridge={bridge} />) })
+  fireEvent.click(vercelRow())
+  await act(async () => { fireEvent.click(await screen.findByRole('switch', { name: 'Threads may use Work' })) })
+  expect(screen.getByRole('alert').textContent).toBe('That could not be saved. What is shown is what is kept. Try again.')
+  expect(screen.getByRole('switch', { name: 'Threads may use Work' }).getAttribute('aria-checked')).toBe('true')
+})
+
+it('works a press out from what was last asked for, so two quick presses never give the account to every project', async () => {
+  // Main is slow: neither save has been answered when the second press lands.
+  const answers: { request: PluginAccountUpdate; answer: ReturnType<typeof deferred<PluginAccountResult>> }[] = []
+  const start = { ...work, projects: ['p-sotto'] }
+  const bridge = vercelBridge([start], {
+    projects: async () => [{ id: 'p-sotto', title: 'Sotto', settled: false }, { id: 'p-site', title: 'Lumen shop', settled: false }],
+    updateAccount: request => { const answer = deferred<PluginAccountResult>(); answers.push({ request, answer }); return answer.promise },
+  })
+  await act(async () => { render(<PluginsSettings bridge={bridge} />) })
+  fireEvent.click(vercelRow())
+  await screen.findByRole('group', { name: 'Projects whose threads may use Work' })
+  // Lumen shop is added, then Sotto is let go: the user means Lumen shop alone.
+  fireEvent.click(screen.getByRole('button', { name: 'Lumen shop' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Sotto' }))
+  expect(answers.map(entry => entry.request)).toEqual([{ id: work.id, projects: ['p-sotto', 'p-site'] }, { id: work.id, projects: ['p-site'] }])
+  await act(async () => {
+    answers[0]!.answer.resolve({ ok: true, accounts: [{ ...start, projects: ['p-sotto', 'p-site'] }] })
+    answers[1]!.answer.resolve({ ok: true, accounts: [{ ...start, projects: ['p-site'] }] })
+  })
+  expect(chips()).toEqual([{ name: 'Every project', pressed: false }, { name: 'Sotto', pressed: false }, { name: 'Lumen shop', pressed: true }])
+  // The switch turned twice in a row ends where it began, rather than sending the same answer twice.
+  const toggle = screen.getByRole('switch', { name: 'Threads may use Work' })
+  fireEvent.click(toggle)
+  fireEvent.click(toggle)
+  expect(answers.slice(2).map(entry => entry.request)).toEqual([{ id: work.id, on: false }, { id: work.id, on: true }])
+})
+
+/** Two quick presses with main slow to answer: each save's answer is in the test's hands. */
+async function twoPresses(start: PluginAccount) {
+  const answers: { request: PluginAccountUpdate; answer: ReturnType<typeof deferred<PluginAccountResult>> }[] = []
+  const bridge = vercelBridge([start], {
+    projects: async () => [{ id: 'p-sotto', title: 'Sotto', settled: false }, { id: 'p-site', title: 'Lumen shop', settled: false }],
+    updateAccount: request => { const answer = deferred<PluginAccountResult>(); answers.push({ request, answer }); return answer.promise },
+  })
+  await act(async () => { render(<PluginsSettings bridge={bridge} />) })
+  fireEvent.click(vercelRow())
+  await screen.findByRole('group', { name: 'Projects whose threads may use Work' })
+  fireEvent.click(screen.getByRole('button', { name: 'Sotto' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Lumen shop' }))
+  expect(answers.map(entry => entry.request.projects)).toEqual([['p-sotto'], ['p-sotto', 'p-site']])
+  return answers
+}
+
+it('says nothing failed when an earlier save failed and a later one, built on it, was kept', async () => {
+  const answers = await twoPresses(work)
+  await act(async () => {
+    answers[0]!.answer.resolve({ ok: false, problem: 'store' })
+    answers[1]!.answer.resolve({ ok: true, accounts: [{ ...work, projects: ['p-sotto', 'p-site'] }] })
+  })
+  // Main kept both projects, which is what the two presses asked for: the page shows that and no error.
+  expect(chips()).toEqual([{ name: 'Every project', pressed: false }, { name: 'Sotto', pressed: true }, { name: 'Lumen shop', pressed: true }])
+  expect(screen.queryByRole('alert')).toBeNull()
+})
+
+it('shows what main last kept, and says so, when the later of two saves failed', async () => {
+  const answers = await twoPresses(work)
+  await act(async () => {
+    answers[0]!.answer.resolve({ ok: true, accounts: [{ ...work, projects: ['p-sotto'] }] })
+    answers[1]!.answer.resolve({ ok: false, problem: 'store' })
+  })
+  expect(chips()).toEqual([{ name: 'Every project', pressed: false }, { name: 'Sotto', pressed: true }, { name: 'Lumen shop', pressed: false }])
+  expect(screen.getByRole('alert').textContent).toBe('That could not be saved. What is shown is what is kept. Try again.')
+  // The next press starts from what is kept, not from what was asked for and lost.
+  fireEvent.click(screen.getByRole('button', { name: 'Lumen shop' }))
+  expect(answers.at(-1)!.request.projects).toEqual(['p-sotto', 'p-site'])
+})
+
+it('calls no project gone, and lets none go, while this computer’s projects are unread or could not be read', async () => {
+  const kept = { ...work, projects: ['p-site'] }
+  const updateAccount = vi.fn(async (): Promise<PluginAccountResult> => ({ ok: true, accounts: [{ ...kept, projects: null }] }))
+  // The read fails: before the fix the page showed "A project that is gone", and pressing it gave the account to every project.
+  const failing = vercelBridge([kept], { projects: async () => { throw new Error('PLUGIN_PROJECTS_UNAVAILABLE') }, updateAccount })
+  await act(async () => { render(<PluginsSettings bridge={failing} />) })
+  fireEvent.click(vercelRow())
+  expect(await screen.findByText('It is kept to chosen projects.')).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'A project that is gone' })).toBeNull()
+  expect(screen.queryByRole('button', { name: 'Every project' })).toBeNull()
+  expect(screen.queryByText('It is kept to a project that is gone, so no thread can use it. Press Every project, or choose one.')).toBeNull()
+  expect(screen.getByRole('alert').textContent).toBe('Your projects could not be read, so the projects this account is kept to cannot be changed here. Nothing was changed. Reopen Settings and try again.')
+  // The switch still works: turning an account off never widens it.
+  expect(screen.getByRole('switch', { name: 'Threads may use Work' })).toBeTruthy()
+  expect(updateAccount).not.toHaveBeenCalled()
+  cleanup()
+  // Still reading: the same, without the alert.
+  const reading = vercelBridge([kept], { projects: () => new Promise(() => undefined), updateAccount })
+  await act(async () => { render(<PluginsSettings bridge={reading} />) })
+  fireEvent.click(vercelRow())
+  expect(await screen.findByText('It is kept to chosen projects.')).toBeTruthy()
+  expect(screen.queryByRole('button', { name: 'A project that is gone' })).toBeNull()
+  expect(screen.queryByRole('alert')).toBeNull()
 })

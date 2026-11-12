@@ -71,6 +71,7 @@ import { readGitHub } from './plugins/github/read'
 import { PluginToolServer } from './plugins/pluginTools'
 import { PluginAccounts, PluginSecretLocked } from './plugins/accounts'
 import { PluginChangeRequests } from './plugins/pendingChanges'
+import { pluginFolderOfThread, pluginProjects } from './plugins/projectFolders'
 import { isThreadClosed } from '../shared/threadActivity'
 import { wordPluginChange } from './plugins/changeWords'
 import { commentOnGitHub, describeGitHubIssue, openGitHubIssue, setGitHubIssueState } from './plugins/github/changes'
@@ -78,7 +79,7 @@ import { cancelVercelDeployment, describeVercelDeployment, moveVercelProduction 
 import { combinedSottoRequests } from './agents/sottoRequests'
 import { checkVercelToken, readVercel, type VercelFetch } from './plugins/vercel/read'
 import { PluginUseRecord } from './plugins/useRecord'
-import { PLUGIN_USE_THREAD_TITLE_MAX } from '../shared/plugins'
+import { PLUGIN_USE_THREAD_TITLE_MAX, pluginAccountAdmits } from '../shared/plugins'
 import { resetGhLookup } from './agents/git/ghCommand'
 import { GitUnavailableError, runGitStatusCommand, runWithGhStandIn, type RunGitCommand } from './agents/git/gitStatus'
 import { registerTeamsIpc } from './teams/ipc'
@@ -1385,11 +1386,18 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     const thread = agentControl.watcherSnapshot().threads.find(item => item.id === threadId)
     return thread !== undefined && !isThreadClosed(thread)
   } }) : undefined
+  // The project a thread belongs to, for an account kept to chosen projects: its folder, which is the same project
+  // whichever provider the thread runs on. Watcher's threads, and a thread Sotto does not know, belong to none.
+  const pluginProjectOf = (threadId: string): string | null => pluginFolderOfThread(agentControl.watcherSnapshot(), threadId)
   // The plugin tools, for every thread that takes Sotto's tools: stable builds no server.
   const pluginTools = pluginUse && pluginAccounts ? new PluginToolServer({
     admits: threadId => agentHost.admitsPluginTools(threadId), gitHubSignIn: pluginsGitHubSignIn,
     readGitHub: (path, query) => readGitHub(pluginsGh, path, query, pluginsStop.signal), record: use => pluginUse.add(use),
-    accounts: () => pluginAccounts.list(), findAccount: (plugin, name) => pluginAccounts.find(plugin, name),
+    // Which accounts a thread may use is read afresh at every call (decision 9): a switch turned off, or a project
+    // taken off an account, takes effect on the next one.
+    accounts: async threadId => { const project = pluginProjectOf(threadId); return (await pluginAccounts.list()).filter(account => pluginAccountAdmits(account, project)) },
+    findAccount: (threadId, plugin, name) => { const project = pluginProjectOf(threadId); return pluginAccounts.find(plugin, name, account => pluginAccountAdmits(account, project)) },
+    holdsAccount: async accountId => (await pluginAccounts.list()).some(account => account.id === accountId),
     readVercel: async (accountId, path, query) => {
       let secret: string
       try { secret = pluginAccounts.secret(accountId) } catch (error) {
@@ -2722,6 +2730,14 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         accounts: async () => await pluginAccounts?.list() ?? [],
         addAccount: async request => await pluginAccounts?.add(request) ?? { ok: false, problem: 'store' },
         replaceSecret: async request => await pluginAccounts?.replace(request) ?? { ok: false, problem: 'store' },
+        updateAccount: async request => await pluginAccounts?.update(request) ?? { ok: false, problem: 'store' },
+        // This computer's projects, by name, for choosing which ones an account is kept to. No folder goes to the window.
+        // Each folder once, whichever providers have a project in it. With no projects to read, the page is told so
+        // rather than handed none: an empty list would make every project an account is kept to look gone.
+        projects: () => {
+          if (!localRuntime) throw new Error('PLUGIN_PROJECTS_UNAVAILABLE')
+          return pluginProjects(localRuntime.agentControl.watcherSnapshot().projects)
+        },
         // A removed account takes its entries in the use record with it.
         removeAccount: async request => {
           const result = await pluginAccounts?.remove(request) ?? { ok: false as const, problem: 'store' as const }
