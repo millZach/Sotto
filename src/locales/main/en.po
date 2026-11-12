@@ -3085,6 +3085,10 @@ msgstr "This file is on the host machine, so it cannot be opened here. Nothing w
 msgid "This file is on the host machine, so it cannot be shown in a folder here. Nothing was opened."
 msgstr "This file is on the host machine, so it cannot be shown in a folder here. Nothing was opened."
 
+#: src/main/files/ipc.ts
+msgid "This file is on this computer, so its link opens it. Nothing was read."
+msgstr "This file is on this computer, so its link opens it. Nothing was read."
+
 #: src/main/hosts/desktopHostRouter.ts
 msgid "This folder is on the host machine. Open it there."
 msgstr "This folder is on the host machine. Open it there."

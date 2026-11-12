@@ -34,6 +34,7 @@ const UNAVAILABLE = msg`Files cannot reach the host machine from this window. No
 const ON_HOST_OPEN = msg`This file is on the host machine, so it cannot be opened here. Nothing was opened.`
 const NOT_A_LINK = msg`This link is not a file path. Nothing was opened.`
 const ALREADY_HERE = msg`This file is already on this computer. Nothing was saved.`
+const OPENS_HERE = msg`This file is on this computer, so its link opens it. Nothing was read.`
 const DOWNLOAD_GONE = msg`Sotto no longer knows where this download is. Look in the Downloads folder.`
 
 const REVEAL_LINK_OFF = msg`Showing linked files is not part of this version of Sotto. Nothing was opened.`
@@ -86,7 +87,9 @@ export function registerFilesIpc(ipc: IpcMainAdapter, files: FilesService, sende
     [FILES_LINKED_FILE, async request => {
       const parsed = linkedFileViewRequestSchema.safeParse(request)
       if (!parsed.success) return invalid()
-      if (!namesHostThread(parsed.data)) return files.linkedFile(parsed.data)
+      // Only a paired host's file is found and read this way. One on this computer opens from its link, and the window is
+      // told nothing of where a path here leads.
+      if (!namesHostThread(parsed.data)) return unavailable(i18n._(OPENS_HERE))
       if (!hosted?.linkedFile) return unavailable(i18n._(UNAVAILABLE))
       const answer = await hosted.linkedFile(parsed.data)
       // The window asked where a file is or for its preview, and is never handed its bytes.

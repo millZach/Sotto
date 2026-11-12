@@ -80,7 +80,7 @@ const PROGRAM_ENDING = new RegExp(`\\.(?:${[
   // Linux's: a launcher, a packaged program, a package, and shell scripts.
   'desktop', 'appimage', 'run', 'bin', 'elf', 'out', 'deb', 'rpm', 'flatpakref', 'snap', 'sh', 'bash', 'zsh', 'fish', 'csh', 'ksh',
   // Scripts whose interpreter takes the double click where it is installed.
-  'py', 'pyw', 'pyc', 'pyz', 'pl', 'rb', 'php', 'tcl', 'lua', 'ahk', 'au3',
+  'py', 'pyw', 'pyc', 'pyo', 'pyz', 'pyzw', 'pl', 'rb', 'php', 'tcl', 'lua', 'ahk', 'au3',
 ].join('|')})$`, 'iu')
 /** Whether a file's name ends as a program, installer, shortcut or script does. Its contents are main's to judge as well. */
 export const isProgramFileName = (name: string): boolean => PROGRAM_ENDING.test(name.replace(/[. ]+$/u, ''))
@@ -132,7 +132,8 @@ export type LinkedFileViewRequest = z.infer<typeof linkedFileViewRequestSchema>
 const linkedFileSize = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)
 /**
  * Where a linked file is. `inside` is its place in the thread's working folder, as Files lists it, and null for a file
- * anywhere else on that machine, which Files shows alone. The name is the file's own.
+ * anywhere else on that machine, which Files shows alone. The name is the link's own, as a linked Markdown file's is:
+ * outside the thread's folder the window never learns where a path led.
  */
 export const linkedFilePlaceSchema = z.object({ is: z.literal('place'), name: z.string().max(4096), kind: z.enum(['file', 'directory']), size: linkedFileSize,
   inside: z.object({ workspace: fileWorkspaceSchema, path: fileRelativePathSchema }).strict().nullable() }).strict()

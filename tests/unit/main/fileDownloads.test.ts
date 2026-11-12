@@ -94,6 +94,16 @@ describe('saving a file from a paired host to Downloads (ADR-0120, November 12 a
     expect((await readdir(folder)).sort()).toEqual(['report (1).pdf', 'report.pdf'])
   })
 
+  it('leaves nothing when a stop comes while the file is taking its name', async () => {
+    // The folder is read once to begin and once to finish; the stop arrives on the second, after every part.
+    const running: { downloads?: FileDownloads } = {}
+    let asked = 0
+    const downloads = running.downloads = new FileDownloads({ part: host(Buffer.from('123')), progress: () => undefined,
+      folder: () => { if (++asked === 2) expect(running.downloads?.stop(request)).toEqual({ ok: true, value: { stopped: true } }); return folder } })
+    expect(await downloads.download(request)).toMatchObject({ ok: false, error: { message: 'Download stopped. Nothing was saved.' } })
+    expect(await readdir(folder)).toEqual([])
+  })
+
   it('downloads one file once at a time, and another beside it', async () => {
     let release = (): void => undefined
     const held = new Promise<void>(done => { release = done })

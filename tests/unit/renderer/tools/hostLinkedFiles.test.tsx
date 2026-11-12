@@ -171,11 +171,13 @@ describe('a file on a paired host shown alone, with Download', () => {
     expect(await screen.findByRole('heading', { name: 'Plan' })).toBeInTheDocument()
     expect(host.bridge.linkedFile).not.toHaveBeenCalled()
     expect(screen.getByRole('button', { name: 'Download plan.md to this computer' })).toBeInTheDocument()
-    expect(document.querySelector('.linked-file__path')).toBeNull()
+    // Shown alone on a host, it says its path as the link wrote it; on this computer its folder is a press away instead.
+    expect(document.querySelector('.linked-file__path')).toHaveTextContent('docs/plan.md')
     unmount()
     const local = render(<LinkedFilePanel file={{ threadId: 'local', path: 'docs/plan.md', revision: 1 }} bridge={host.bridge} onClose={() => undefined} />)
     await screen.findByRole('heading', { name: 'Plan' })
     expect(screen.queryByRole('button', { name: /Download/u })).toBeNull()
+    expect(document.querySelector('.linked-file__path')).toBeNull()
     local.unmount()
     // Stable has the bridge too, and main would refuse the press, so the control is not drawn there at all.
     owl.on = false

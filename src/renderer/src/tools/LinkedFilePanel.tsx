@@ -80,10 +80,11 @@ export function LinkedFilePanel({ file, host, backTo, onClose, bridge = windowFi
       onRefreshFolder={readAgain} onMarkdownView={setView} onReadAgain={readAgain} takesFocus
       place={host === undefined ? undefined : t({ message: `on ${host}`, comment: '{host} is the name of a paired host, as in forge.' })}
       problem={error => <LinkedFileProblem error={error} markdown={markdown} downloads={download !== undefined} onRetry={readAgain} />}
-      under={backTo === undefined && notice === null && markdown && downloadLine === null ? undefined : <>
+      under={backTo === undefined && notice === null && host === undefined && downloadLine === null ? undefined : <>
         {backTo !== undefined ? <div className="linked-file__back"><button type="button" className="linked-file__back-button tt-focusable" onClick={onClose}>{t({ message: `Back to ${backTo}`, comment: '{backTo} is a thread\'s title. Closes a Markdown file to show that thread again.' })}</button></div> : null}
         {downloadLine}
-        {markdown ? null : <p className="linked-file__path">{shownPath}</p>}
+        {/* On a paired host no folder on this computer says where the file is, so its path as the link wrote it stands here. */}
+        {host === undefined ? null : <p className="linked-file__path">{shownPath}</p>}
         {notice !== null ? <p className="linked-file__notice" role="status">{notice}</p> : null}
       </>} />
   </div>

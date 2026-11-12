@@ -319,9 +319,15 @@ export class FilesService {
     })
   }
 
-  /** Opens a file this computer holds, as a link's file opens: a download Sotto saved, by main's own path to it. */
+  /**
+   * Opens a file this computer holds, as a link's file opens: a download Sotto saved, by main's own path to it. The file
+   * it really is, once links are followed, is judged too, so a saved name since replaced by a link to a program is shown.
+   */
   openHere(path: string): Promise<FilesResult<FileLinkOpened>> {
-    return this.run(async () => this.openOrShow(path, await stat(path, { bigint: true })))
+    return this.run(async () => {
+      const real = await realpath(path)
+      return this.openOrShow(real, await stat(real, { bigint: true }), path)
+    })
   }
 
   private async openOrShow(absolutePath: string, stats: BigIntStats, written = absolutePath): Promise<FileLinkOpened> {
@@ -344,7 +350,8 @@ export class FilesService {
       if (!parsed.success) return fail('invalid-request', 'This link is not a file path. Nothing was opened.')
       const request = parsed.data
       const { workspace, found } = await this.linked(request.threadId, request.path)
-      const name = basename(found.absolutePath)
+      // The link's own name, as a linked Markdown file's is; where the path led stays here.
+      const name = nameOf(found.written.replace(/[\\/]+$/u, '')) || basename(found.absolutePath)
       if (request.want === 'place') {
         const within = inside(workspace.root, found.absolutePath) ? relative(workspace.root, found.absolutePath).split(sep).join('/') : null
         // A place Files cannot name, such as one its listing would show as unavailable, is shown alone as a file outside is.

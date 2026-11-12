@@ -88,6 +88,8 @@ export class FileDownloads {
       if (run.stopped) return refusal('unavailable', i18n._(STOPPED))
       const final = await this.finish(partPath!, name)
       partPath = undefined
+      // And a stop that came while the file took its name: it is removed again, so a stop the window was told of leaves nothing.
+      if (run.stopped) { await rm(final.path, { force: true }); return refusal('unavailable', i18n._(STOPPED)) }
       const downloadId = randomBytes(16).toString('hex')
       this.saved.set(downloadId, final.path)
       while (this.saved.size > KEPT) this.saved.delete(this.saved.keys().next().value!)
@@ -135,9 +137,11 @@ export class FileDownloads {
     for (let count = 0; count < 1000; count++) {
       const name = numbered(wanted, count)
       const path = join(folder, name)
-      try { await (await open(path, 'wx')).close() }
+      let claim: FileHandle
+      try { claim = await open(path, 'wx') }
       catch (error) { if ((error as NodeJS.ErrnoException).code === 'EEXIST') continue; throw error }
-      try { await rename(partPath, path) }
+      // From here the name is this download's, so a failure takes the claim away again.
+      try { await claim.close(); await rename(partPath, path) }
       catch (error) { await rm(path, { force: true }).catch(() => undefined); throw error }
       return { path, name }
     }

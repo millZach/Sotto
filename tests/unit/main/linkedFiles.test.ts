@@ -84,7 +84,7 @@ describe('opening a file a message links to (ADR-0120, November 12 amendment)', 
   })
 
   it('reads a path\'s ending as a program\'s with or without a line after it, and leaves documents and source alone', () => {
-    for (const path of ['D:/Reports/build-report.bat', 'setup.EXE', '~/bin/deploy.sh:12', 'C:\\Tools\\run.ps1', '/Applications/Notes.app', 'a/b.lnk', 'trailing.exe. ']) expect(isProgramPath(path), path).toBe(true)
+    for (const path of ['D:/Reports/build-report.bat', 'setup.EXE', '~/bin/deploy.sh:12', 'C:\\Tools\\run.ps1', '/Applications/Notes.app', 'a/b.lnk', 'trailing.exe. ', 'tool.pyzw', 'cache.pyo']) expect(isProgramPath(path), path).toBe(true)
     for (const path of ['D:/Reports/q3-report.pdf', 'src/main.ts', 'notes.md#L4', 'photo.png', '/home/me/out', 'archive.zip', 'page.html', 'data.json']) expect(isProgramPath(path), path).toBe(false)
   })
 })
@@ -111,7 +111,21 @@ describe('a linked file read for Files on another computer (ADR-0120, November 1
 
   it.skipIf(process.platform === 'win32')('shows a link in the folder that leads out of it alone, as the file it really is', async () => {
     await writeFile(join(other, 'sales.csv'), 'a,b\n'); await symlink(join(other, 'sales.csv'), join(root, 'data.csv'))
-    expect(await read({ want: 'place', path: join(root, 'data.csv') })).toMatchObject({ name: 'sales.csv', inside: null })
+    // Shown alone, under the link's own name: where the path led is not said.
+    expect(await read({ want: 'place', path: join(root, 'data.csv') })).toEqual({ is: 'place', name: 'data.csv', kind: 'file', size: 4, inside: null })
+    expect(await read({ want: 'preview', path: join(root, 'data.csv') })).toMatchObject({ name: 'data.csv' })
+    expect(await read({ want: 'part', path: join(root, 'data.csv'), offset: 0 })).toMatchObject({ name: 'data.csv', size: 4 })
+    // Written relative to the thread's folder it must stay inside it, as in Files.
+    error(await service.linkedFile({ threadId: 'thread', want: 'place', path: 'data.csv' }), 'path-outside-workspace')
+  })
+
+  it.skipIf(process.platform === 'win32')('shows a saved download that has become a link to a program, by the file it really is', async () => {
+    await writeFile(join(other, 'task.cmd'), 'echo hi\r\n'); await symlink(join(other, 'task.cmd'), join(other, 'report.pdf'))
+    expect(value(await service.openHere(join(other, 'report.pdf')))).toEqual({ did: 'shown' })
+    await writeFile(join(other, 'real.pdf'), '%PDF-1.7')
+    expect(value(await service.openHere(join(other, 'real.pdf')))).toEqual({ did: 'opened' })
+    expect(opened).toHaveBeenCalledOnce()
+    error(await service.openHere(join(other, 'gone.pdf')), 'path-unavailable')
   })
 
   it('previews text, Markdown and pictures within Files\' own limits, and says when there is none', async () => {

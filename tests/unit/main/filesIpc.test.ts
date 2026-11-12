@@ -57,6 +57,9 @@ describe('Files IPC for opening, finding and downloading a linked file (ADR-0120
     expect(linkedFile).toHaveBeenCalledOnce()
     linkedFile.mockResolvedValueOnce({ ok: true, value: { is: 'part', name: 'report.pdf', size: 3, offset: 0, data: 'MTIz', revision: 'a'.repeat(64) } } as never)
     await expect(f.invoke(FILES_LINKED_FILE, f.event, { ...onHost, want: 'place' })).resolves.toMatchObject({ ok: false, error: { code: 'unavailable' } })
+    // A file on this computer is not found or read this way: its link opens it, and the window learns nothing of where a path leads.
+    await expect(f.invoke(FILES_LINKED_FILE, f.event, { threadId: 'thread', path: '/home/me/.ssh/config', want: 'preview' })).resolves.toEqual({ ok: false, error: { code: 'unavailable', message: 'This file is on this computer, so its link opens it. Nothing was read.' } })
+    expect(f.resolveBinding).not.toHaveBeenCalled()
     // With no host router behind it, a host's file cannot be reached at all.
     const bare = fixture()
     await expect(bare.invoke(FILES_LINKED_FILE, bare.event, { ...onHost, want: 'place' })).resolves.toMatchObject({ ok: false, error: { code: 'unavailable' } })
