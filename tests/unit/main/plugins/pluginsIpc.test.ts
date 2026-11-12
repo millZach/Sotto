@@ -43,6 +43,9 @@ describe('Settings › Plugins, from the window through preload to main (ADR-020
   it('sends back only what the schema names, so nothing gh said beside the account’s name can cross', async () => {
     const { invoke } = register({ state: 'signed-in', login: 'example-user', token: 'made-up-value' } as GitHubSignIn)
     await expect(invoke(PLUGINS_GITHUB_SIGN_IN, [])).rejects.toThrow()
+    // A thread's name may be as long as Sotto lets a thread be named, and still crosses.
+    const { bridge: long } = register(undefined, [{ ...used, threadTitle: 'x'.repeat(512) }])
+    await expect(long.recentUse()).resolves.toHaveLength(1)
     // A use that carried anything beside what the record names, such as what a read returned, does not cross either.
     const { invoke: uses } = register(undefined, [{ ...used, body: 'something read' } as ShownPluginUse])
     await expect(uses(PLUGINS_RECENT_USE, [])).rejects.toThrow()

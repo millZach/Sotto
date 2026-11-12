@@ -70,6 +70,7 @@ import { readGitHubSignIn, sharedGitHubSignIn } from './plugins/github/signIn'
 import { readGitHub } from './plugins/github/read'
 import { PluginToolServer } from './plugins/pluginTools'
 import { PluginUseRecord } from './plugins/useRecord'
+import { PLUGIN_USE_THREAD_TITLE_MAX } from '../shared/plugins'
 import { resetGhLookup } from './agents/git/ghCommand'
 import { GitUnavailableError, runGitStatusCommand, runWithGhStandIn, type RunGitCommand } from './agents/git/gitStatus'
 import { registerTeamsIpc } from './teams/ipc'
@@ -2660,8 +2661,9 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         recentUse: async () => {
           const uses = await pluginUse?.list() ?? []
           if (uses.length === 0) return []
-          const titles = new Map(agentControl.get().host.threads.map(thread => [thread.id, thread.title]))
-          return uses.map(use => ({ ...use, threadTitle: titles.get(use.threadId) ?? null }))
+          // Read where the state is, without the copy `get()` makes of every thread's history.
+          const titles = new Map(localRuntime?.agentControl.watcherSnapshot().threads.map(thread => [thread.id, thread.title]))
+          return uses.map(use => ({ ...use, threadTitle: titles.get(use.threadId)?.slice(0, PLUGIN_USE_THREAD_TITLE_MAX) ?? null }))
         },
       }, () => windows.getTrustedRenderers()) : undefined
       // The window plays a video an agent wrote from its thread's computer, a part at a time (ADR-0170, part 4).

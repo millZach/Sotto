@@ -81,6 +81,9 @@ describe('reading GitHub through gh (ADR-0205)', () => {
   it('cuts a long answer and says so', async () => {
     const result = await readGitHub(gh('x'.repeat(GITHUB_READ_MAX_CHARS + 10)).run, 'user')
     expect(result).toEqual({ ok: true, text: 'x'.repeat(GITHUB_READ_MAX_CHARS), truncated: true })
+    // A character that takes two halves is never cut between them.
+    const emoji = await readGitHub(gh('x'.repeat(GITHUB_READ_MAX_CHARS - 1) + '\u{1F989}' + 'tail').run, 'user')
+    expect(emoji).toEqual({ ok: true, text: 'x'.repeat(GITHUB_READ_MAX_CHARS - 1), truncated: true })
   })
 
   it('tells a missing gh, a signed-out gh and GitHub’s own refusal apart', async () => {
@@ -94,7 +97,11 @@ describe('reading GitHub through gh (ADR-0205)', () => {
     expect(gitHubReadKind('repos/example-owner/example-repo/issues/12/comments')).toBe('issues')
     expect(gitHubReadKind('repos/example-owner/example-repo/pulls')).toBe('pull-requests')
     expect(gitHubReadKind('repos/example-owner/example-repo')).toBe('repository')
-    expect(gitHubReadKind('repos/example-owner/example-repo/commits/abc/check-runs')).toBe('commits')
+    expect(gitHubReadKind('repos/example-owner/example-repo/commits/abc')).toBe('commits')
+    expect(gitHubReadKind('repos/example-owner/example-repo/commits/abc/check-runs')).toBe('checks')
+    expect(gitHubReadKind('repos/example-owner/example-repo/commits/abc/status')).toBe('checks')
+    // A part spelled with percent signs is named as what it spells, as it is checked.
+    expect(gitHubReadKind('repo%73/example-owner/example-repo/issue%73')).toBe('issues')
     expect(gitHubReadKind('repos/example-owner/example-repo/actions/runs')).toBe('checks')
     expect(gitHubReadKind('repos/example-owner/example-repo/releases/latest')).toBe('releases')
     expect(gitHubReadKind('search/issues')).toBe('search')

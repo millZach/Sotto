@@ -81,7 +81,9 @@ export const PLUGIN_USE_KEPT = 200
 /** How many of a plugin's uses its row shows. */
 export const PLUGIN_USE_SHOWN = 5
 
+/** The longest name a thread can have (`agents.ts`: a thread's title, and what rename-thread takes). */
+export const PLUGIN_USE_THREAD_TITLE_MAX = 512
 /** A use as Settings shows it: with the thread's name as it is now, or none when the thread is gone. */
-export const shownPluginUseSchema = pluginUseSchema.extend({ threadTitle: z.string().max(400).nullable() }).strict()
+export const shownPluginUseSchema = pluginUseSchema.extend({ threadTitle: z.string().max(PLUGIN_USE_THREAD_TITLE_MAX).nullable() }).strict()
 export type ShownPluginUse = z.infer<typeof shownPluginUseSchema>
 export const shownPluginUsesSchema = z.array(shownPluginUseSchema).max(PLUGIN_USE_KEPT)
