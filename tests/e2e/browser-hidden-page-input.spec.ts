@@ -13,7 +13,8 @@ import { evidenceDirectory } from '../fixtures/evidence'
 const SHOTS = evidenceDirectory('artifacts/browser-launch-reliability')
 const NOTES = Array.from({ length: 60 }, (_, index) => `<li>Note ${index + 1}</li>`).join('')
 const CONTENT = `<!doctype html><html><head><title>Fieldnotes</title><style>body{font:18px system-ui;margin:24px}li{height:48px}</style></head>
-<body><h1>Fieldnotes</h1><ol>${NOTES}</ol><script>addEventListener('scroll', () => { document.title = 'Fieldnotes, scrolled to ' + Math.round(scrollY) })</script></body></html>`
+<body><h1>Fieldnotes</h1><ol>${NOTES}</ol><script>addEventListener('scroll', () => { document.title = 'Fieldnotes, scrolled to ' + Math.round(scrollY) })
+addEventListener('click', event => { document.title = 'Fieldnotes, clicked ' + event.target.textContent; event.target.textContent += ', clicked'; event.target.style.background = 'gold' })</script></body></html>`
 
 test('an agent scrolls a page that is not on screen, and the page is free for its next action', async () => {
   test.setTimeout(180_000)
@@ -60,6 +61,11 @@ test('an agent scrolls a page that is not on screen, and the page is free for it
     // The page is free: a second action on it runs rather than saying one is still running.
     const again = await agent('browser_action', { pageId: task.pageId, taskId: task.id, action: { type: 'scroll', x: 300, y: 300, deltaX: 0, deltaY: 300 } })
     expect(again.isError, JSON.stringify(again)).not.toBe(true)
+    // A click on the scrolled page lands on the note its screenshot shows there. Its target check used to hit-test that
+    // point in the document, above the visible part, and every click after a scroll failed as the tool being broken.
+    const clicked = await agent('browser_action', { pageId: task.pageId, taskId: task.id, action: { type: 'click', x: 100, y: 100 } })
+    expect(clicked.isError, JSON.stringify(clicked)).not.toBe(true)
+    await expect.poll(title).toMatch(/^Fieldnotes, clicked Note (1[5-9]|[2-6]\d)$/u)
 
     // Show it: the page is where the agent left it.
     await toggleTools(page)
@@ -68,7 +74,7 @@ test('an agent scrolls a page that is not on screen, and the page is free for it
     await expect(panel.getByRole('textbox', { name: 'Address' })).toHaveValue(url)
     await captureSotto(launched, join(SHOTS, 'hidden-scroll-landed.png'), { mode: 'native-window', title: 'Sotto browser hidden scroll', retries: 9, retryDelayMs: 500 })
     expect(errors).toEqual([])
-    await writeFile(join(SHOTS, 'hidden-scroll.json'), JSON.stringify({ hiddenScrollReturned: true, scrollMs, pageTitleAfter: await title(), secondActionRan: true, errors }, null, 2))
+    await writeFile(join(SHOTS, 'hidden-scroll.json'), JSON.stringify({ hiddenScrollReturned: true, scrollMs, pageTitleAfter: await title(), secondActionRan: true, clickAfterScrollRan: true, errors }, null, 2))
   } catch (error) {
     await page.screenshot({ path: join(SHOTS, 'hidden-scroll-failure.png') }).catch(() => undefined)
     throw error

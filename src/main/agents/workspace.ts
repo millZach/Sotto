@@ -1494,6 +1494,13 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       await this.followGitChange(threadId)
     }), () => this.workspaceSnapshot())
   }
+  /**
+   * No thread has the folder yet, so it holds no thread's Git lane: GitActions keeps one init to a folder at a time. Not
+   * `init`, which refuses a folder inside another repository; a folder create-project just made is always its own.
+   */
+  initProjectFolder(path: string): Promise<void> {
+    return this.gitActionsOrRefuse().initNewFolder(path)
+  }
   publishThreadRepository(threadId: string, options: { repository: string; visibility: 'private' | 'public' }): Promise<{ snapshot: AgentHostSnapshot; url: string }> {
     return this.thenReadRemoteStatus(threadId, this.onGitLane(threadId, async () => {
       const { url } = await this.gitActionsOrRefuse().publish(await this.gitActionFolder(threadId), options)

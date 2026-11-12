@@ -553,6 +553,8 @@ export interface AgentHost extends ProviderHost {
   listThreadChangedFiles?(request: GitChangedFilesRequest): Promise<GitChangedFiles>
   switchThreadBranch?(threadId: string, ref: string, create: boolean): Promise<AgentHostSnapshot>
   initThreadRepository?(threadId: string): Promise<AgentHostSnapshot>
+  /** `git init` in a folder create-project just made, before it becomes a project (`gitInit`, ADR-0073, November 12, 2026). */
+  initProjectFolder?(path: string): Promise<void>
   publishThreadRepository?(threadId: string, options: { repository: string; visibility: 'private' | 'public' }): Promise<{ snapshot: AgentHostSnapshot; url: string }>
   /** One pull request of the thread's through `gh`: by reference, else its branch's own or the one last linked (ADR-0027). */
   readThreadPullRequest?(request: GitPullRequestRequest): Promise<GitPullRequestRead>
