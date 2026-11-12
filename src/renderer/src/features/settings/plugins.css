@@ -1,0 +1,25 @@
+/* Settings > Plugins (ADR-0205): every plugin is a row in its group, and a row opens in place. */
+.plugins-list { border: 1px solid var(--tt-border-faint); border-radius: var(--tt-radius-card); background: var(--tt-card); }
+.plugin-row + .plugin-row { border-top: 1px solid var(--tt-hairline); }
+.plugin-row__head { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 52px; padding: 12px 14px; border: 0; border-radius: var(--tt-radius-card); background: none; color: var(--tt-text); font: inherit; text-align: start; }
+.plugin-row__head:hover { background: var(--tt-hover); }
+.plugin-mark { flex: none; fill: currentColor; color: var(--tt-text); }
+.plugin-row__name { flex: none; font-size: var(--tt-type-reading); font-weight: 600; }
+.plugin-row__state { display: flex; flex: 1; align-items: center; gap: 8px; min-width: 0; overflow: hidden; color: var(--tt-text-muted); font-size: var(--tt-type-small); text-overflow: ellipsis; white-space: nowrap; }
+/* The dot says where the sign-in stands; the words beside it always say the same thing. */
+.plugin-row__dot { flex: none; width: 8px; height: 8px; border-radius: var(--tt-radius-full); background: var(--tt-text-faint); }
+.plugin-row[data-state='signed-in'] .plugin-row__dot { background: var(--tt-success); }
+.plugin-row[data-state='signed-out'] .plugin-row__dot, .plugin-row[data-state='not-installed'] .plugin-row__dot, .plugin-row[data-state='unknown'] .plugin-row__dot { background: var(--tt-warning); }
+.plugin-row__chevron { flex: none; color: var(--tt-text-muted); transition: transform 120ms ease; }
+.plugin-row__head[aria-expanded='true'] .plugin-row__chevron { transform: rotate(90deg); }
+.plugin-row__body { display: grid; gap: 10px; padding: 2px 14px 16px 46px; }
+.plugin-row__body p { margin: 0; color: var(--tt-text); font-size: var(--tt-type-body); }
+.plugin-row__body p.plugin-row__note { color: var(--tt-text-muted); font-size: var(--tt-type-small); }
+.plugin-row__body code { font: var(--tt-type-small)/1.6 var(--tt-font-mono); user-select: text; }
+.plugin-command { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 8px; margin-top: 8px; }
+.plugin-command .tt-button { min-height: 32px; padding: 5px 8px; font-size: var(--tt-type-small); }
+.plugin-row__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+/* While gh is asked the button waits rather than disabling, so keyboard focus stays on it. */
+.plugin-row__actions .tt-button[aria-disabled='true'] { cursor: not-allowed; opacity: 0.45; }
+@media (prefers-reduced-motion: reduce) { .plugin-row__chevron { transition: none; } }
+[data-reduced-motion='on'] .plugin-row__chevron { transition: none; }
