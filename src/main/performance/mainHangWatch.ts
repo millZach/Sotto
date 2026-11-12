@@ -1,13 +1,34 @@
 import { cleanHangFrames, type HangRecord, type HangStack } from './hangRecording'
+import { WATCH_TICK_MS } from './hangWatchdogShared'
 
-/** Main has not answered for this long: long enough that no ordinary save or start is mistaken for a hang. */
+/**
+ * Main has not answered for this long: the watch takes its stack and saves a hang recording (Zach's pick, November 12,
+ * 2026). It was `MAIN_HANG_MS` until then, so the common freeze of one to five seconds left nothing to diagnose.
+ */
+export const MAIN_RECORD_MS = 1_000
+/**
+ * A hang of main: it has not answered for this long, long enough that no ordinary save or start is mistaken for one.
+ * Quit's backstop ends only a main stopped this long, and a stop this long is recorded even inside
+ * `MAIN_RECORDING_GAP_MS`, as it was before the threshold moved.
+ */
 export const MAIN_HANG_MS = 5_000
 /** Once Quit was received, Sotto ends itself after this long whatever main is doing: the quit drain's 10 s, and room. */
 export const QUIT_FORCE_MS = 20_000
-/** A stack each this often while main stays stopped, up to `HANG_STACKS`. */
+/**
+ * A stack each this often while main stays stopped, up to `HANG_STACKS`: from 1 s to 9 s, so a stop that lasts past 5 s
+ * keeps the stacks at 5 to 9 s that a hang recording held before, and the four before them.
+ */
 export const HANG_STACK_EVERY_MS = 1_000
-export const HANG_STACKS = 5
-/** At most one recording of each kind in this long, so a slow afternoon does not fill the folder. */
+export const HANG_STACKS = 9
+/**
+ * At most one recording of main in this long: two freezes 24 s apart are both kept, and a minute of freezes writes
+ * three at most.
+ */
+export const MAIN_RECORDING_GAP_MS = 20_000
+/**
+ * At most one window hang in this long. A hang of main (`MAIN_HANG_MS`) is also recorded inside `MAIN_RECORDING_GAP_MS`
+ * at most once in this long, so a short freeze never costs the hang after it its recording.
+ */
 export const HANG_RECORDING_GAP_MS = 10 * 60_000
 /**
  * A gap this long between two of the watch's own looks, which come every 250 ms, means the whole process was not running:
@@ -15,6 +36,13 @@ export const HANG_RECORDING_GAP_MS = 10 * 60_000
  * towards Quit's deadline.
  */
 export const ASLEEP_GAP_MS = 2_000
+/**
+ * The same, for the 1 s recording. A look finds main's heartbeat, written every 250 ms, up to 250 ms old while main runs.
+ * So a stall of the whole process of 750 ms or more between two looks would read as main stopped for 1 s, and
+ * `ASLEEP_GAP_MS` lets stalls up to 2 s through. A gap over 500 ms restarts the count towards `MAIN_RECORD_MS`, leaving
+ * the heartbeat 250 ms of lateness and the watch's own look 250 ms. Quit and the hang rule still use `ASLEEP_GAP_MS`.
+ */
+export const NOT_RUNNING_GAP_MS = 500
 /** How long a debugger request may wait before the watch gives up on it: main is stopped outside JavaScript. */
 export const DEBUGGER_WAIT_MS = 3_000
 
@@ -49,6 +77,7 @@ export interface MainHangWatchOptions {
   readonly devOrigins?: readonly string[]
   readonly sottoVersion: string
   readonly platform: string
+  readonly recordMs?: number
   readonly hangMs?: number
   readonly quitForceMs?: number
   readonly debuggerWaitMs?: number
@@ -59,25 +88,33 @@ const within = <T>(work: Promise<T>, ms: number): Promise<T | undefined> =>
 
 /**
  * The watch on main that runs off main's thread (#1581). A hang of main stops main's own monitor, its freeze notice and
- * the tray with it, so only another thread can see one. When main has not answered for `hangMs`, it takes main's stack a
- * few times while main stays stopped and saves them as a hang recording; once main answers, it writes how long that took.
- * Once Quit was received, it ends Sotto if main has stopped answering and the process has run for `quitForceMs` since.
+ * the tray with it, so only another thread can see one. When main has not answered for `recordMs`, it takes main's stack
+ * at once and saves it as a hang recording, then takes it again once a second while main stays stopped and rewrites the
+ * recording with them; once main answers, it writes how long that took. Once Quit was received, it ends Sotto if main has
+ * stopped answering for `hangMs` and the process has run for `quitForceMs` since.
  */
 export class MainHangWatch {
   private recording: { readonly name: string; readonly record: HangRecord; readonly answeredAt: number } | null = null
   /** When the previous look began and ended; undefined before the first. */
   private previous: { readonly began: number; readonly ended: number } | undefined
+  /** When the look that is running began. */
+  private lookBegan = 0
   /** The last time the process woke from a gap with no looks: main's silence before it is not counted. */
   private wokeAt = Number.NEGATIVE_INFINITY
+  /** The same for `NOT_RUNNING_GAP_MS`: main's silence before it does not count towards `recordMs`. */
+  private resumedAt = Number.NEGATIVE_INFINITY
   /** The Quit stamp being timed, how long the process has run since it, and whether main answered all through. */
   private quit = { at: 0, ranMs: 0, cancelled: false }
   private ended = false
   private lastRecordingAt = Number.NEGATIVE_INFINITY
+  private lastHangRecordingAt = Number.NEGATIVE_INFINITY
+  private readonly recordMs: number
   private readonly hangMs: number
   private readonly quitForceMs: number
   private readonly debuggerWaitMs: number
 
   constructor(private readonly options: MainHangWatchOptions) {
+    this.recordMs = options.recordMs ?? MAIN_RECORD_MS
     this.hangMs = options.hangMs ?? MAIN_HANG_MS
     this.quitForceMs = options.quitForceMs ?? QUIT_FORCE_MS
     this.debuggerWaitMs = options.debuggerWaitMs ?? DEBUGGER_WAIT_MS
@@ -87,11 +124,14 @@ export class MainHangWatch {
   async tick(): Promise<void> {
     if (this.ended) return
     const began = this.options.now()
+    this.lookBegan = began
     // How long the process ran since the last look began (a look that took stacks runs long), unless it was not
     // running at all between the two looks.
     let ranMs = 0
     if (this.previous) {
-      if (began - this.previous.ended > ASLEEP_GAP_MS) this.wokeAt = began
+      const gap = began - this.previous.ended
+      if (gap > NOT_RUNNING_GAP_MS) this.resumedAt = began
+      if (gap > ASLEEP_GAP_MS) this.wokeAt = began
       else ranMs = began - this.previous.began
     }
     try { await this.look(began, ranMs) } finally { this.previous = { began, ended: this.options.now() } }
@@ -119,49 +159,106 @@ export class MainHangWatch {
         this.quit.cancelled = true
       }
     }
-    if (stoppedFor < this.hangMs) {
-      if (this.recording && this.recording.record.answeredAfterMs === null && answeredAt !== this.recording.answeredAt) await this.answered(answeredAt)
-      return
-    }
+    if (this.recording && this.recording.record.answeredAfterMs === null && answeredAt !== this.recording.answeredAt) await this.answered(answeredAt)
     if (this.recording?.answeredAt === answeredAt) return
-    if (now - this.lastRecordingAt < HANG_RECORDING_GAP_MS) return
+    const hang = stoppedFor >= this.hangMs
+    const due = (now - Math.max(answeredAt, this.resumedAt) >= this.recordMs && now - this.lastRecordingAt >= MAIN_RECORDING_GAP_MS)
+      || (hang && now - this.lastHangRecordingAt >= HANG_RECORDING_GAP_MS)
+    if (!due) return
     this.lastRecordingAt = now
-    const stacks = await this.stacks(answeredAt)
+    if (hang) this.lastHangRecordingAt = now
+    await this.record(answeredAt)
+  }
+
+  /**
+   * Main's stack at once, saved, then once a second while it stays stopped, rewritten with them. A pause that landed after
+   * main had answered is not kept. Stacks stop at Quit's deadline, so the backstop decides on time.
+   */
+  private async record(answeredAt: number): Promise<void> {
+    const debug = await this.connect()
+    try {
+      const stacks: HangStack[] = []
+      const first = debug ? await this.stack(debug, answeredAt) : null
+      if (first) stacks.push(first)
+      if (!await this.save(answeredAt, stacks) || !debug || !first) return
+      while (stacks.length < HANG_STACKS && await this.whileStopped(answeredAt, HANG_STACK_EVERY_MS)) {
+        const next = await this.stack(debug, answeredAt)
+        if (!next) break
+        stacks.push(next)
+      }
+      await this.rewrite(answeredAt, stacks)
+    } finally { if (debug) release(debug) }
+  }
+
+  /**
+   * Waits `ms` while main stays stopped, looking as often as the watch does, so the first heartbeat after main answers is
+   * the one read and a 1.2 s freeze is not written as 2 s. False once main has answered or Quit's deadline has come.
+   */
+  private async whileStopped(answeredAt: number, ms: number): Promise<boolean> {
+    for (let waited = 0; waited < ms;) {
+      const left = this.quitLeftMs()
+      if (left <= 0) return false
+      const step = Math.min(WATCH_TICK_MS, ms - waited, left)
+      await this.options.sleep(step)
+      waited += step
+      if (this.options.lastAnswered() !== answeredAt) return false
+    }
+    return this.quitLeftMs() > 0
+  }
+
+  /** Main's debugger, enabled; null when it could not be had, as when main is stopped outside JavaScript. */
+  private async connect(): Promise<MainDebugger | null> {
+    let debug: MainDebugger
+    try { debug = this.options.connect() } catch { return null }
+    try {
+      // Stopped outside JavaScript (a long native call), main cannot take even this until it returns.
+      if (await within(debug.post('Debugger.enable').then(() => true), this.debuggerWaitMs) === true) return debug
+    } catch { /* released below */ }
+    release(debug)
+    return null
+  }
+
+  /** One stack, or null when none came or main had answered by the time it did. */
+  private async stack(debug: MainDebugger, answeredAt: number): Promise<HangStack | null> {
+    const { now, lastAnswered } = this.options
+    try {
+      const paused = debug.nextPause(this.debuggerWaitMs)
+      void debug.post('Debugger.pause').catch(() => undefined)
+      const frames = await paused
+      if (frames === null) return null
+      const stillStopped = lastAnswered() === answeredAt
+      await within(debug.post('Debugger.resume').catch(() => undefined), this.debuggerWaitMs)
+      return stillStopped ? { atMs: now() - answeredAt, frames: cleanHangFrames(frames, this.options.appRoots, this.options.devOrigins) } : null
+    } catch { return null }
+  }
+
+  private async save(answeredAt: number, stacks: readonly HangStack[]): Promise<boolean> {
+    const { now } = this.options
     const wallNow = this.options.wallNow ?? Date.now
     const record: HangRecord = { format: 1, kind: 'main', sottoVersion: this.options.sottoVersion, platform: this.options.platform,
-      startedAt: new Date(wallNow() - (this.options.now() - answeredAt)).toISOString(), answeredAfterMs: null,
-      writtenAfterMs: this.options.now() - answeredAt, stacks }
+      startedAt: new Date(wallNow() - (now() - answeredAt)).toISOString(), answeredAfterMs: null,
+      writtenAfterMs: now() - answeredAt, stacks: [...stacks] }
     try {
       this.recording = { name: await this.options.save(record), record, answeredAt }
       this.options.log('hang-recording-saved')
-    } catch { this.recording = null; this.options.log('hang-recording-failed') }
+      return true
+    } catch { this.recording = null; this.options.log('hang-recording-failed'); return false }
   }
 
-  /** Main's stack, a few times while it stays stopped. A pause that landed after main had answered is not kept. */
-  private async stacks(answeredAt: number): Promise<HangStack[]> {
-    const { now, lastAnswered } = this.options
-    const stacks: HangStack[] = []
-    let debug: MainDebugger
-    try { debug = this.options.connect() } catch { return stacks }
-    try {
-      // Stopped outside JavaScript (a long native call), main cannot take even this until it returns.
-      if (await within(debug.post('Debugger.enable').then(() => true), this.debuggerWaitMs) !== true) return stacks
-      for (let taken = 0; taken < HANG_STACKS && lastAnswered() === answeredAt; taken += 1) {
-        const paused = debug.nextPause(this.debuggerWaitMs)
-        void debug.post('Debugger.pause').catch(() => undefined)
-        const frames = await paused
-        if (frames === null) break
-        const stillStopped = lastAnswered() === answeredAt
-        await within(debug.post('Debugger.resume').catch(() => undefined), this.debuggerWaitMs)
-        if (!stillStopped) break
-        stacks.push({ atMs: now() - answeredAt, frames: cleanHangFrames(frames, this.options.appRoots, this.options.devOrigins) })
-        if (taken + 1 < HANG_STACKS) await this.options.sleep(HANG_STACK_EVERY_MS)
-      }
-    } catch { /* what was taken is kept */ } finally {
-      void debug.post('Debugger.disable').catch(() => undefined)
-      try { debug.close() } catch { /* already closed */ }
-    }
-    return stacks
+  /**
+   * The saved recording again, with every stack taken while main stayed stopped, and how long it lasted if main has
+   * answered meanwhile. Not written when neither has changed.
+   */
+  private async rewrite(answeredAt: number, stacks: readonly HangStack[]): Promise<void> {
+    const current = this.recording
+    if (!current || current.answeredAt !== answeredAt) return
+    const answered = this.options.lastAnswered()
+    const answeredAfterMs = answered === answeredAt ? null : answered - answeredAt
+    if (answeredAfterMs === null && stacks.length === (current.record.stacks?.length ?? 0)) return
+    const record: HangRecord = { ...current.record, answeredAfterMs,
+      writtenAfterMs: Math.min(this.options.now() - answeredAt, answeredAfterMs ?? Number.POSITIVE_INFINITY), stacks: [...stacks] }
+    this.recording = { name: current.name, record, answeredAt }
+    await this.options.update(current.name, record).catch(() => undefined)
   }
 
   private async answered(answeredAt: number): Promise<void> {
@@ -170,4 +267,15 @@ export class MainHangWatch {
     this.recording = { name: current.name, record, answeredAt: current.answeredAt }
     await this.options.update(current.name, record).catch(() => undefined)
   }
+
+  /** How long until Quit's deadline, counting the look that is running; infinite while no quit is being timed. */
+  private quitLeftMs(): number {
+    if (this.quit.at === 0 || this.quit.cancelled) return Number.POSITIVE_INFINITY
+    return this.quitForceMs - this.quit.ranMs - (this.options.now() - this.lookBegan)
+  }
+}
+
+function release(debug: MainDebugger): void {
+  void debug.post('Debugger.disable').catch(() => undefined)
+  try { debug.close() } catch { /* already closed */ }
 }

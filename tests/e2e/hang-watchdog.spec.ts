@@ -1,6 +1,6 @@
 /**
- * The hang watch (#1581, ADR-0098's October 26 amendment) in the built app. A hang of main is seen from the watch's own
- * thread and saved with main's stack; a window that stops answering while main keeps going is saved with each process's
+ * The hang watch (#1581, ADR-0098's October 26 and November 12 amendments) in the built app. A stop of main of a second
+ * or more is seen from the watch's own thread and saved with main's stack; a window that stops answering while main keeps going is saved with each process's
  * numbers; and once Quit is received, Sotto ends itself even if main then stops for good. The waits are shortened for the
  * run through the development-only overrides.
  */
@@ -19,29 +19,69 @@ async function launch(): Promise<LaunchedSotto> {
   }
 }
 
-interface SavedHang { kind: string; answeredAfterMs: number | null; stacks?: { frames: { functionName: string; url: string }[] }[]; processes?: { type: string }[] }
-
-/** The hang recordings saved so far, read whole. */
-async function hangs(launched: LaunchedSotto): Promise<SavedHang[]> {
-  const folder = join(launched.userData, 'performance-recordings')
-  const names = (await readdir(folder).catch(() => [])).filter(name => /^sotto-hang-[\d-]+$/u.test(name))
-  return Promise.all(names.map(async name => JSON.parse(await readFile(join(folder, name, 'hang.json'), 'utf8')) as SavedHang))
+interface SavedHang {
+  name: string
+  kind: string
+  startedAt: string
+  answeredAfterMs: number | null
+  stacks?: { atMs: number; frames: { functionName: string; url: string }[] }[]
+  processes?: { type: string }[]
 }
+
+/** The hang recordings saved so far, read whole, leaving out the ones named in `before`. */
+async function hangs(launched: LaunchedSotto, before: ReadonlySet<string> = new Set()): Promise<SavedHang[]> {
+  const folder = join(launched.userData, 'performance-recordings')
+  const names = (await readdir(folder).catch(() => [])).filter(name => /^sotto-hang-[\d-]+$/u.test(name) && !before.has(name))
+  return Promise.all(names.map(async name => ({ name, ...JSON.parse(await readFile(join(folder, name, 'hang.json'), 'utf8')) as Omit<SavedHang, 'name'> })))
+}
+
+/**
+ * The recordings so far, once main is outside the 20 s gap of any it saved while Sotto started: a freeze at start is
+ * recorded like any other, and would keep the test's own short freeze from being recorded.
+ */
+async function hangsBefore(launched: LaunchedSotto): Promise<ReadonlySet<string>> {
+  const saved = (await hangs(launched)).filter(hang => hang.kind === 'main')
+  const until = Math.max(0, ...saved.map(hang => Date.parse(hang.startedAt) + 25_000))
+  if (until > Date.now()) await new Promise(resolve => setTimeout(resolve, until - Date.now()))
+  return new Set((await hangs(launched)).map(hang => hang.name))
+}
+
+test('a freeze of main under 2 s is saved with main\'s stack, taken while main was still stopped, then how long it lasted', async () => {
+  test.setTimeout(120_000)
+  const launched = await launch()
+  try {
+    const before = await hangsBefore(launched)
+    await launched.app.evaluate(() => {
+      setTimeout(() => { const end = Date.now() + 1_800; while (Date.now() < end) { /* stopped on purpose */ } }, 50)
+    })
+    await expect.poll(async () => (await hangs(launched, before)).find(hang => hang.kind === 'main')?.answeredAfterMs ?? null, { timeout: 15_000 })
+      .toBeGreaterThanOrEqual(1_500)
+    const hang = (await hangs(launched, before)).find(item => item.kind === 'main')!
+    expect(hang.answeredAfterMs).toBeLessThan(3_000)
+    expect(hang.stacks!.length).toBeGreaterThan(0)
+    // Taken at 1 s, before this run's shortened hang of 2 s.
+    expect(hang.stacks![0]!.atMs).toBeGreaterThanOrEqual(1_000)
+    expect(hang.stacks![0]!.atMs).toBeLessThan(2_000)
+    expect(hang.stacks![0]!.atMs).toBeLessThanOrEqual(hang.answeredAfterMs!)
+    expect(JSON.stringify(hang)).not.toContain(launched.userData)
+  } finally { await closeSotto(launched) }
+})
 
 test('a hang of main is saved with main\'s stack while main is still stopped, then how long it lasted', async () => {
   test.setTimeout(120_000)
   const launched = await launch()
   try {
+    const before = new Set((await hangs(launched)).map(hang => hang.name))
     const stopped = Date.now()
     await launched.app.evaluate(() => {
       setTimeout(function stopMainOnPurpose() { const end = Date.now() + 15_000; while (Date.now() < end) { /* stopped on purpose */ } }, 50)
     })
     // Saved while main is still stopped, as a hang that is ended by force has to be.
-    await expect.poll(async () => (await hangs(launched)).some(hang => hang.kind === 'main' && hang.answeredAfterMs === null), { timeout: 12_000 }).toBe(true)
+    await expect.poll(async () => (await hangs(launched, before)).some(hang => hang.kind === 'main' && hang.answeredAfterMs === null), { timeout: 12_000 }).toBe(true)
     expect(Date.now() - stopped).toBeLessThan(15_000)
-    await expect.poll(async () => (await hangs(launched)).find(hang => hang.kind === 'main')?.answeredAfterMs ?? null, { timeout: 30_000 })
+    await expect.poll(async () => (await hangs(launched, before)).find(hang => hang.kind === 'main')?.answeredAfterMs ?? null, { timeout: 30_000 })
       .toBeGreaterThanOrEqual(14_000)
-    const hang = (await hangs(launched)).find(item => item.kind === 'main')!
+    const hang = (await hangs(launched, before)).find(item => item.kind === 'main')!
     expect(hang.stacks!.length).toBeGreaterThan(0)
     // The stopping function was evaluated from text, so it keeps neither its name nor its place: only Sotto's own do.
     for (const stack of hang.stacks!) for (const frame of stack.frames) {
@@ -58,14 +98,16 @@ test('a window that stops answering is saved with each process\'s numbers, while
   test.setTimeout(120_000)
   const launched = await launch()
   try {
+    const before = new Set((await hangs(launched)).map(hang => hang.name))
     await launched.page.evaluate(() => {
       setTimeout(() => { const end = Date.now() + 7_000; while (Date.now() < end) { /* stopped on purpose */ } }, 50)
     })
-    await expect.poll(async () => (await hangs(launched)).find(hang => hang.kind === 'window')?.answeredAfterMs ?? null, { timeout: 30_000 })
+    await expect.poll(async () => (await hangs(launched, before)).find(hang => hang.kind === 'window')?.answeredAfterMs ?? null, { timeout: 30_000 })
       .toBeGreaterThanOrEqual(3_000)
-    const hang = (await hangs(launched)).find(item => item.kind === 'window')!
+    const hang = (await hangs(launched, before)).find(item => item.kind === 'window')!
     expect(hang.processes!.map(item => item.type)).toEqual(expect.arrayContaining(['Browser', 'Tab']))
-    expect((await hangs(launched)).some(item => item.kind === 'main')).toBe(false)
+    // Main kept going: it did not hang (2 s in this run) while the window was stopped.
+    expect((await hangs(launched, before)).some(item => item.kind === 'main' && (item.answeredAfterMs ?? Number.POSITIVE_INFINITY) >= 2_000)).toBe(false)
   } finally { await closeSotto(launched) }
 })
 
