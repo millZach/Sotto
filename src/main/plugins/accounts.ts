@@ -173,13 +173,30 @@ export class PluginAccounts {
    * its record last: the record holds who may use the account, and it is never changed by a copy the host then says
    * it did not keep.
    */
-  adopt(account: PluginAccount, secret: string): Promise<{ readonly kept: true } | { readonly kept: false; readonly problem: 'store' | 'limit' }> {
+  adopt(account: PluginAccount, secret: string, mine: (held: PluginAccount) => boolean = () => true): Promise<{ readonly kept: true; readonly replaced?: string } | { readonly kept: false; readonly problem: 'store' | 'limit' | 'held' | 'name-taken' }> {
     return this.inTurn(async () => {
       const accounts = await this.loadOrNull()
       if (!accounts) return { kept: false, problem: 'store' }
-      const held = accounts.some(entry => entry.id === account.id)
-      if (!held && accounts.filter(entry => entry.plugin === account.plugin).length >= PLUGIN_ACCOUNTS_MAX) return { kept: false, problem: 'limit' }
-      const next = held ? accounts.map(entry => entry.id === account.id ? account : entry) : [...accounts, account]
+      const prior = accounts.find(entry => entry.id === account.id)
+      // An account another desktop sent is not this one's to replace.
+      if (prior && !mine(prior)) return { kept: false, problem: 'held' }
+      // A copy saved before the one held is a late arrival, as a retry after a lost answer is. It changes nothing.
+      if (prior && Date.parse(account.savedAt) < Date.parse(prior.savedAt)) return { kept: true }
+      // A plugin never holds two accounts of one name, or an agent that names one could be handed the other. A copy
+      // of the same name under another ID is a stale one of the sender's own, left by a removal that never arrived,
+      // and the new copy takes its place. Another desktop's account of that name stays, and the copy is refused.
+      const clash = accounts.find(entry => entry.plugin === account.plugin && entry.id !== account.id && sameName(entry.name, account.name))
+      if (clash && !mine(clash)) return { kept: false, problem: 'name-taken' }
+      const base = clash ? accounts.filter(entry => entry !== clash) : accounts
+      const held = prior !== undefined
+      if (!held && base.filter(entry => entry.plugin === account.plugin).length >= PLUGIN_ACCOUNTS_MAX) return { kept: false, problem: 'limit' }
+      const next = held ? base.map(entry => entry.id === account.id ? account : entry) : [...base, account]
+      // The stale copy's secret goes once the new one is kept. It has no record by then, so it is never used either way.
+      const done = async (): Promise<{ readonly kept: true; readonly replaced?: string }> => {
+        if (!clash) return { kept: true }
+        await this.options.credentials.set(pluginAccountSlot(clash.id), '').catch(() => undefined)
+        return { kept: true, replaced: clash.id }
+      }
       const slot = pluginAccountSlot(account.id)
       const refused = { kept: false, problem: 'store' } as const
       if (held) {
@@ -191,7 +208,7 @@ export class PluginAccounts {
           await this.options.credentials.set(slot, before).catch(() => undefined)
           return refused
         }
-        return { kept: true }
+        return done()
       }
       try { await this.write(next) } catch { return refused }
       try { await this.options.credentials.set(slot, secret) } catch {
@@ -200,7 +217,7 @@ export class PluginAccounts {
         await this.options.credentials.set(slot, '').catch(() => undefined)
         return refused
       }
-      return { kept: true }
+      return done()
     })
   }
 

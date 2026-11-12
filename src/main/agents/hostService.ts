@@ -167,9 +167,9 @@ export interface HostService {
    * holds; on the host they keep, delete and list. A secret goes one way: nothing here hands one back.
    */
   readonly supportsPluginAccountCopies?: boolean
-  keepPluginAccountCopy?(copy: PluginAccountCopy): Promise<PluginAccountCopyReceipt>
-  removePluginAccountCopy?(accountId: string): Promise<PluginAccountCopyRemoved>
-  pluginAccountCopies?(): Promise<HeldPluginAccountCopy[]>
+  keepPluginAccountCopy?(copy: PluginAccountCopy, client?: ClientIdentity): Promise<PluginAccountCopyReceipt>
+  removePluginAccountCopy?(accountId: string, client?: ClientIdentity): Promise<PluginAccountCopyRemoved>
+  pluginAccountCopies?(client?: ClientIdentity): Promise<HeldPluginAccountCopy[]>
   /**
    * The host answers the desktop window's read of its own threads' delegations (#1310), present only where it runs
    * delegation for them: what a thread delegated and was sent, and a delegated thread's newest brief, never a reply. Thread
@@ -542,17 +542,18 @@ export class LocalHostService implements HostService {
   }
   get supportsPluginAccountCopies(): boolean { return this.options.pluginAccountCopies !== undefined }
   /** Keeps a copy a desktop sent; the socket listener admits only the desktop the launch script recorded. */
-  keepPluginAccountCopy(copy: PluginAccountCopy): Promise<PluginAccountCopyReceipt> {
+  /** A copy belongs to the desktop that sent it, so each of these is for one client: that desktop's own copies and no other's. */
+  keepPluginAccountCopy(copy: PluginAccountCopy, client: ClientIdentity): Promise<PluginAccountCopyReceipt> {
     if (!this.options.pluginAccountCopies) return Promise.reject(new Error('This host does not keep account copies.'))
-    return this.options.pluginAccountCopies.keep(copy)
+    return this.options.pluginAccountCopies.keep(copy, client.clientId)
   }
-  removePluginAccountCopy(accountId: string): Promise<PluginAccountCopyRemoved> {
+  removePluginAccountCopy(accountId: string, client: ClientIdentity): Promise<PluginAccountCopyRemoved> {
     if (!this.options.pluginAccountCopies) return Promise.reject(new Error('This host does not keep account copies.'))
-    return this.options.pluginAccountCopies.remove(accountId)
+    return this.options.pluginAccountCopies.remove(accountId, client.clientId)
   }
-  pluginAccountCopies(): Promise<HeldPluginAccountCopy[]> {
+  pluginAccountCopies(client: ClientIdentity): Promise<HeldPluginAccountCopy[]> {
     if (!this.options.pluginAccountCopies) return Promise.reject(new Error('This host does not keep account copies.'))
-    return this.options.pluginAccountCopies.list()
+    return this.options.pluginAccountCopies.list(client.clientId)
   }
   get supportsDelegationViews(): boolean { return this.options.delegationViews !== undefined }
   /** Read from delegation's own record, never a snapshot, as the desktop's own window reads this computer's (#1029). */

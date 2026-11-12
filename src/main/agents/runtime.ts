@@ -179,17 +179,17 @@ export interface AgentRuntimeOptions {
   /** How a check installs packages first in the check worktree (#1312): `npm ci` under the user's Node by default; a test gives its own. */
   checkInstaller?: PackageInstaller
   /**
+   * Where a headless host keeps the account copies its desktop sends (ADR-0205, amending ADR-0025), present only
+   * where its own Owl answer turns on plugins. A desktop's own runtime has none: it holds the accounts themselves.
+   */
+  pluginAccountCopies?: PluginAccountCopyStore
+  /**
    * A headless host runs delegation for its own threads (#1310) only where its own Owl answer turns on Work across
    * machines. It holds them to the desktop defaults the last desktop that still counts sent it, and to Ask for approval
    * when none counts. `counts` says whether a desktop is still paired here with an answers grant, read from the host's
    * pairing and policy records at every start. `roles` is the host's own Owl answer for worker roles: with it, a
    * delegation's kind of work starts on the desktop's roles.
    */
-  /**
-   * Where a headless host keeps the account copies its desktop sends (ADR-0205, amending ADR-0025), present only
-   * where its own Owl answer turns on plugins. A desktop's own runtime has none: it holds the accounts themselves.
-   */
-  pluginAccountCopies?: PluginAccountCopyStore
   hostDelegation?: { counts(clientId: string): boolean; roles: boolean; revoked?(clientId: string): boolean
     /** A paired, recorded desktop may narrow capacity even when it cannot answer permission requests. */
     capacityEligible?(clientId: string): boolean

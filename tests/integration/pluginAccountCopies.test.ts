@@ -48,6 +48,12 @@ async function hostFixture({ version = OWL, key = true }: { version?: string; ke
     const hello = await socket.connect()
     return { socket, pairing, hello }
   }
+  /** The host's own owner forgets a paired client, as `--revoke-client` does. */
+  const revoke = async (clientId: string) => {
+    const { adminToken } = JSON.parse(await readFile(join(data, 'host-listener.json'), 'utf8')) as { adminToken: string }
+    const response = await fetch(url + '/v1/admin/revoke-client', { method: 'POST', headers: { Authorization: 'Bearer ' + adminToken, 'Content-Type': 'application/json' }, body: JSON.stringify({ clientId }) })
+    expect(response.status).toBe(200)
+  }
   /** A request sent as it is on the wire, after hello, whatever the client was offered: the host's own answer. */
   const raw = async (clientId: string, operation: Record<string, unknown>) => {
     const peer = await rawPeer(host.descriptor!.port, host.pairing.signSession(clientId, Date.now()))
@@ -67,7 +73,7 @@ async function hostFixture({ version = OWL, key = true }: { version?: string; ke
   }
   const kept = async (): Promise<{ version: number; accounts: Record<string, unknown>[] }> =>
     JSON.parse(await readFile(join(data, 'plugin-accounts.json'), 'utf8').catch(() => '{"version":1,"accounts":[]}')) as { version: number; accounts: Record<string, unknown>[] }
-  return { host, data, client, raw, files, kept }
+  return { host, data, client, raw, files, kept, revoke }
 }
 
 it('keeps a copy the recorded desktop sends, in the host’s own encrypted credential file, and never hands the secret back', async () => {
@@ -128,6 +134,38 @@ it('takes a copy from no client but the recorded desktop: a paired client the la
   for (const file of await f.files()) expect(file.text.includes('made-up-token-from-another-client'), file.path).toBe(false)
 })
 
+it('keeps each recorded desktop’s copies as its own: another recorded desktop cannot list, replace or remove them', async () => {
+  const f = await hostFixture()
+  const laptop = await f.client(true), tower = await f.client(true)
+  await laptop.socket.keepPluginAccountCopy(COPY)
+  // The second desktop is recorded too, and is offered the feature, but the laptop's copy is not its to see or touch.
+  expect(tower.hello.features).toContain('plugin-account-copies')
+  await expect(tower.socket.pluginAccountCopies()).resolves.toEqual([])
+  await expect(tower.socket.keepPluginAccountCopy({ ...COPY, secret: 'made-up-token-from-the-other-desktop' })).resolves.toEqual({ kept: false, problem: 'held' })
+  await expect(tower.socket.removePluginAccountCopy(COPY.account.id)).resolves.toEqual({ removed: false })
+  await expect(laptop.socket.pluginAccountCopies()).resolves.toEqual([{ id: COPY.account.id, plugin: 'vercel', savedAt: COPY.account.savedAt }])
+  for (const file of await f.files()) expect(file.text.includes('made-up-token-from-the-other-desktop'), file.path).toBe(false)
+  // Its own account it keeps, and lists, beside the laptop's.
+  const theirs = { account: { ...COPY.account, id: '22222222-2222-4222-8222-000000000002', name: 'Personal' }, secret: 'made-up-token-of-the-other-desktop' }
+  await expect(tower.socket.keepPluginAccountCopy(theirs)).resolves.toMatchObject({ kept: true })
+  await expect(tower.socket.pluginAccountCopies()).resolves.toEqual([{ id: theirs.account.id, plugin: 'vercel', savedAt: theirs.account.savedAt }])
+})
+
+it('deletes a desktop’s copies and their secrets when the host’s owner revokes it', async () => {
+  const f = await hostFixture()
+  const laptop = await f.client(true), tower = await f.client(true)
+  await laptop.socket.keepPluginAccountCopy(COPY)
+  const theirs = { account: { ...COPY.account, id: '22222222-2222-4222-8222-000000000002', name: 'Personal' }, secret: 'made-up-token-of-the-other-desktop' }
+  await tower.socket.keepPluginAccountCopy(theirs)
+  await f.revoke(laptop.pairing.clientId)
+  // The laptop's account and its secret are gone from the host; the other desktop's are as they were.
+  await expect.poll(async () => (await f.kept()).accounts.map(account => account.id)).toEqual([theirs.account.id])
+  const slots = JSON.parse(await readFile(join(f.data, 'credentials.json'), 'utf8')) as Record<string, string>
+  expect(slots).not.toHaveProperty(`plugin:${COPY.account.id}`)
+  expect(slots).toHaveProperty(`plugin:${theirs.account.id}`)
+  await expect(tower.socket.pluginAccountCopies()).resolves.toHaveLength(1)
+})
+
 it('keeps nothing on a host started without a key file, and says it could not be kept', async () => {
   const f = await hostFixture({ key: false })
   const { socket } = await f.client(true)
@@ -151,7 +189,13 @@ it('turns away a copy that is not one: no secret, a secret too long to be one, o
   const f = await hostFixture()
   const { pairing } = await f.client(true)
   for (const copy of [{ account: COPY.account }, { ...COPY, secret: '' }, { ...COPY, secret: 'x'.repeat(1_001) }, { ...COPY, extra: true }, { account: { ...COPY.account, plugin: 'github' }, secret: TOKEN },
-    { account: { ...COPY.account, token: TOKEN }, secret: TOKEN }]) {
+    { account: { ...COPY.account, token: TOKEN }, secret: TOKEN },
+    // A copy that leaves out who may use it would arrive open to every thread, so it is not taken.
+    { account: { id: COPY.account.id, plugin: 'vercel', name: 'Work', savedAt: COPY.account.savedAt, signedInAs: null }, secret: TOKEN },
+    { account: { ...COPY.account, on: undefined }, secret: TOKEN }, { account: { ...COPY.account, projects: undefined }, secret: TOKEN },
+    // Nor one the desktop could not have saved: kept to no project at all, to one twice, or under a name it would have turned away.
+    { account: { ...COPY.account, projects: [] }, secret: TOKEN }, { account: { ...COPY.account, projects: ['folder:one', 'folder:one'] }, secret: TOKEN },
+    { account: { ...COPY.account, name: '   ' }, secret: TOKEN }, { account: { ...COPY.account, name: 'Work' + String.fromCharCode(7) }, secret: TOKEN }]) {
     const answer = await f.raw(pairing.clientId, { op: 'plugin-account-copy', copy })
     expect(answer.ok, JSON.stringify(Object.keys(copy))).toBe(false)
     expect(JSON.stringify(answer)).not.toContain(TOKEN)

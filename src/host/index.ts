@@ -350,6 +350,8 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         // The host's own OpenCode signed in to model sources from a desktop (#1107), only where its OpenCode runs.
         const opencodeSignIn = runtime.opencodeSignIn ? { opencodeSignIn: runtime.opencodeSignIn } : {}
         phones = startHostPhoneAccess({ directory, service: runtime.hostService, pairing, policy, settings, startup,
+          // A revoked desktop's account copies, and their secrets, are deleted with it (ADR-0205, amending ADR-0025).
+          ...(pluginAccountCopies ? { onClientRevoked: (clientId: string) => { void pluginAccountCopies.forgetDesktop(clientId).catch(() => options.log?.('plugin-account-copies-not-forgotten')) } } : {}),
           desktops, listener: { onProductEventAnswer, signIns, ...opencodeSignIn, watcherDesktops: desktops, clientUpdates: true, receipts, pullRequestConfirmations, about, delegation, ...hostUpdate, ...listenerServices, ...(options.sottoVersion ? { sottoVersion: options.sottoVersion } : {}),
             // Phones reach only the tailnet listener; the one with the administrative routes counts every client a desktop.
             ...(options.compressPhones === false ? { compressPhones: false } : {}) },

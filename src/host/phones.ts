@@ -36,6 +36,8 @@ export interface HostPhoneAccessOptions {
   readonly desktops: DesktopClients
   /** What the tailnet listener takes for desktops besides: provider sign-in, client updates, the shared receipts, and what health says. */
   readonly listener?: Omit<NonNullable<PhoneAccessOptions['listener']>, 'desktops' | 'phoneAccess' | 'onRevoked'> | undefined
+  /** Told when a client was revoked on either listener, before anything else is done about it. */
+  readonly onClientRevoked?: ((clientId: string) => void) | undefined
   /** Tests and end-to-end runs stand in for this machine's Tailscale. */
   readonly tailscale?: PhoneAccessTailscale | undefined
   readonly log?: ((event: PhoneAccessEvent | 'phone-access-setting-failed' | 'tailnet-connections-setting-failed' | 'tailnet-connections-off-failed') => void) | undefined
@@ -85,6 +87,7 @@ export function startHostPhoneAccess(options: HostPhoneAccessOptions): HostPhone
   let current = { phoneAccess: options.startup.phoneAccess, phoneAccessName: options.startup.phoneAccessName, tailnetConnections: options.startup.tailnetConnections }
   let revoking: Promise<void> = Promise.resolve()
   const revoked = (clientId: string): void => {
+    options.onClientRevoked?.(clientId)
     // A revoked desktop's answer for product events stops counting now, on either listener (ADR-0179).
     options.listener?.onProductEventAnswer?.()
     revoking = revoking.then(async () => {

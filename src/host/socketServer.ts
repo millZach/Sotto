@@ -1837,19 +1837,20 @@ export async function startSocketServer(options: SocketServerOptions) {
         try { return desktopDefaultsReceiptSchema.parse(await service.desktopDefaults(request.defaults, peer.client)) } catch { throw new Refusal('unavailable') }
       }
       case 'plugin-account-copy': {
-        // The one credential a client may send (ADR-0205, amending ADR-0025), and only the recorded desktop may. The
-        // answer says whether it was kept and never repeats what was sent; a failure says nothing of it either.
+        // The one credential a client may send (ADR-0205, amending ADR-0025), and only a recorded desktop may. The copy
+        // is kept as that desktop's own. The answer says whether it was kept and never repeats what was sent; a failure
+        // says nothing of it either.
         if (!offers(peer, 'plugin-account-copies') || !service.keepPluginAccountCopy) throw new Refusal('invalid_request')
-        try { return pluginAccountCopyReceiptSchema.parse(await service.keepPluginAccountCopy(request.copy)) } catch { throw new Refusal('unavailable') }
+        try { return pluginAccountCopyReceiptSchema.parse(await service.keepPluginAccountCopy(request.copy, peer.client)) } catch { throw new Refusal('unavailable') }
       }
       case 'plugin-account-copy-remove': {
         if (!offers(peer, 'plugin-account-copies') || !service.removePluginAccountCopy) throw new Refusal('invalid_request')
-        try { return pluginAccountCopyRemovedSchema.parse(await service.removePluginAccountCopy(request.accountId)) } catch { throw new Refusal('unavailable') }
+        try { return pluginAccountCopyRemovedSchema.parse(await service.removePluginAccountCopy(request.accountId, peer.client)) } catch { throw new Refusal('unavailable') }
       }
       case 'plugin-account-copies': {
-        // Which accounts are held and when each was saved. The schema names no secret, so none can be listed.
+        // Which accounts this desktop sent and when each was saved. The schema names no secret, so none can be listed.
         if (!offers(peer, 'plugin-account-copies') || !service.pluginAccountCopies) throw new Refusal('invalid_request')
-        try { return heldPluginAccountCopiesSchema.parse(await service.pluginAccountCopies()) } catch { throw new Refusal('unavailable') }
+        try { return heldPluginAccountCopiesSchema.parse(await service.pluginAccountCopies(peer.client)) } catch { throw new Refusal('unavailable') }
       }
       case 'watcher-tell-answer': {
         // The desktop's answer to a thread's message for Watcher. An answer nobody waits for is dropped.
