@@ -34,7 +34,7 @@
 .delegated-work__stop:disabled { color: var(--tt-text-muted); }
 .delegated-work__folder { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .delegated-work__command { grid-column: 2 / -1; min-width: 0; color: var(--tt-text-2); font-size: var(--tt-type-caption); }
-.delegated-work__command > summary { width: fit-content; border-radius: var(--tt-radius-mark); cursor: pointer; }
+.delegated-work__command > summary { width: fit-content; border-radius: var(--tt-radius-mark); }
 .delegated-work__command > code { display: block; margin-top: 4px; padding: 6px 8px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-control); background: var(--tt-surface-sunken, var(--tt-surface)); font-family: var(--tt-font-mono); font-size: var(--tt-type-small); line-height: 1.5; overflow-wrap: anywhere; white-space: pre-wrap; }
 .delegated-work__row[data-outcome='refused'] .delegated-work__glyph { color: var(--tt-error-text); }
 /* After the Worked for line, the turn's delegated work in a few words. */
