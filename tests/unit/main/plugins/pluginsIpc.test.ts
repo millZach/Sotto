@@ -4,7 +4,7 @@ vi.mock('electron', async () => (await import('../../../fixtures/preloadElectron
 import { registerPluginsIpc } from '../../../../src/main/plugins/ipc'
 import { createSottoBridge } from '../../../../src/preload'
 import {
-  PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNTS, PLUGINS_GITHUB_SIGN_IN, PLUGINS_RECENT_USE,
+  PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNT_UPDATE, PLUGINS_ACCOUNTS, PLUGINS_GITHUB_SIGN_IN, PLUGINS_PROJECTS, PLUGINS_RECENT_USE,
   type GitHubSignIn, type PluginAccount, type PluginAccountResult, type ShownPluginUse,
 } from '../../../../src/shared/plugins'
 import { ipcRegistry } from '../../../fixtures/ipcHarness'
@@ -13,7 +13,7 @@ import { preloadElectron } from '../../../fixtures/preloadElectron'
 const used: ShownPluginUse = { id: '11111111-1111-4111-8111-111111111111', at: '2026-11-12T08:00:00.000Z', threadId: 'thread-one', plugin: 'github', tool: 'plugin_read', kind: 'issues', outcome: 'done', threadTitle: 'Fix the preview build' }
 
 /** A made-up account and a made-up token: nothing here is a real credential. */
-const account: PluginAccount = { id: '22222222-2222-4222-8222-000000000001', plugin: 'vercel', name: 'Work', savedAt: '2026-11-12T08:00:00.000Z', signedInAs: 'example-user' }
+const account: PluginAccount = { id: '22222222-2222-4222-8222-000000000001', plugin: 'vercel', name: 'Work', savedAt: '2026-11-12T08:00:00.000Z', signedInAs: 'example-user', on: true, projects: null }
 const TOKEN = 'made-up-vercel-token'
 
 function register(answer: GitHubSignIn = { state: 'signed-in', login: 'example-user' }, uses: readonly ShownPluginUse[] = [used]) {
@@ -24,10 +24,12 @@ function register(answer: GitHubSignIn = { state: 'signed-in', login: 'example-u
   const saved: PluginAccountResult = { ok: true, accounts: [account] }
   const addAccount = vi.fn(async (): Promise<PluginAccountResult> => saved), replaceSecret = vi.fn(async (): Promise<PluginAccountResult> => saved)
   const removeAccount = vi.fn(async (): Promise<PluginAccountResult> => ({ ok: true, accounts: [] }))
-  const close = registerPluginsIpc(registry.ipc, { gitHubSignIn, recentUse, accounts, addAccount, replaceSecret, removeAccount }, registry.trustedSenders)
+  const updateAccount = vi.fn(async (): Promise<PluginAccountResult> => ({ ok: true, accounts: [{ ...account, on: false }] }))
+  const projects = vi.fn(() => [{ id: 'p-sotto', title: 'Sotto', settled: false }])
+  const close = registerPluginsIpc(registry.ipc, { gitHubSignIn, recentUse, accounts, addAccount, replaceSecret, removeAccount, updateAccount, projects }, registry.trustedSenders)
   const renderer = preloadElectron().ipcRenderer
   renderer.invoke.mockImplementation((channel: string, ...args: unknown[]) => registry.invoke(channel, args))
-  return { ...registry, gitHubSignIn, recentUse, accounts, addAccount, replaceSecret, removeAccount, close, bridge: createSottoBridge(renderer, 'win32').plugins! }
+  return { ...registry, gitHubSignIn, recentUse, accounts, addAccount, replaceSecret, removeAccount, updateAccount, projects, close, bridge: createSottoBridge(renderer, 'win32').plugins! }
 }
 
 describe('Settings › Plugins, from the window through preload to main (ADR-0205)', () => {
@@ -96,5 +98,28 @@ describe('Settings › Plugins, from the window through preload to main (ADR-020
     const { invoke, accounts } = register()
     accounts.mockResolvedValueOnce([{ ...account, secret: TOKEN } as PluginAccount])
     await expect(invoke(PLUGINS_ACCOUNTS, [])).rejects.toThrow()
+  })
+
+  it('carries which threads may use an account to main, and this computer’s projects back, for the main window only', async () => {
+    const { bridge, invoke, widgetEvent, updateAccount, projects, close, handlers } = register()
+    await expect(bridge.updateAccount({ id: account.id, on: false })).resolves.toEqual({ ok: true, accounts: [{ ...account, on: false }] })
+    expect(updateAccount).toHaveBeenCalledWith({ id: account.id, on: false })
+    await bridge.updateAccount({ id: account.id, projects: ['p-sotto'] })
+    await bridge.updateAccount({ id: account.id, projects: null })
+    expect(updateAccount.mock.calls.map(call => (call as unknown[])[0])).toEqual([{ id: account.id, on: false }, { id: account.id, projects: ['p-sotto'] }, { id: account.id, projects: null }])
+    await expect(bridge.projects()).resolves.toEqual([{ id: 'p-sotto', title: 'Sotto', settled: false }])
+    updateAccount.mockClear()
+    // A change that names nothing to change, no project at all, or anything else of the account, never reaches main.
+    for (const bad of [{ id: account.id }, { id: account.id, projects: [] }, { id: account.id, on: false, name: 'Other' }, { id: 'not-an-id', on: false }, { id: account.id, on: 'no' }]) {
+      await expect(invoke(PLUGINS_ACCOUNT_UPDATE, [bad]), JSON.stringify(bad)).rejects.toThrow('That could not be done. Nothing was changed.')
+    }
+    await expect(invoke(PLUGINS_ACCOUNT_UPDATE, [{ id: account.id, on: false }], widgetEvent)).rejects.toThrow('Open Settings in the main Sotto window.')
+    await expect(invoke(PLUGINS_PROJECTS, [], widgetEvent)).rejects.toThrow('Open Settings in the main Sotto window.')
+    expect(updateAccount).not.toHaveBeenCalled()
+    // A project's folder is not something the page is told.
+    projects.mockReturnValueOnce([{ id: 'p-sotto', title: 'Sotto', settled: false, path: 'C:/example/project' } as never])
+    await expect(invoke(PLUGINS_PROJECTS, [])).rejects.toThrow()
+    close()
+    for (const channel of [PLUGINS_ACCOUNT_UPDATE, PLUGINS_PROJECTS]) expect(handlers.has(channel)).toBe(false)
   })
 })

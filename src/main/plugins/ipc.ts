@@ -1,9 +1,9 @@
 import { t } from '@lingui/core/macro'
 import { z } from 'zod'
 import {
-  gitHubSignInSchema, pluginAccountAddSchema, pluginAccountRemoveSchema, pluginAccountReplaceSchema, pluginAccountResultSchema, pluginAccountsSchema,
-  PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNTS, PLUGINS_GITHUB_SIGN_IN, PLUGINS_RECENT_USE, shownPluginUsesSchema,
-  type GitHubSignIn, type PluginAccount, type PluginAccountAdd, type PluginAccountRemove, type PluginAccountReplace, type PluginAccountResult, type ShownPluginUse,
+  gitHubSignInSchema, pluginAccountAddSchema, pluginAccountRemoveSchema, pluginAccountReplaceSchema, pluginAccountResultSchema, pluginAccountsSchema, pluginAccountUpdateSchema, pluginProjectsSchema,
+  PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNT_UPDATE, PLUGINS_ACCOUNTS, PLUGINS_GITHUB_SIGN_IN, PLUGINS_PROJECTS, PLUGINS_RECENT_USE, shownPluginUsesSchema,
+  type GitHubSignIn, type PluginAccount, type PluginAccountAdd, type PluginAccountRemove, type PluginAccountReplace, type PluginAccountResult, type PluginAccountUpdate, type PluginProject, type ShownPluginUse,
 } from '../../shared/plugins'
 import { isAuthorizedIpcSender, type IpcMainAdapter, type TrustedIpcSender } from '../ipc/registerIpc'
 
@@ -12,6 +12,7 @@ const noArguments = z.tuple([])
 const addArguments = z.tuple([pluginAccountAddSchema])
 const replaceArguments = z.tuple([pluginAccountReplaceSchema])
 const removeArguments = z.tuple([pluginAccountRemoveSchema])
+const updateArguments = z.tuple([pluginAccountUpdateSchema])
 
 /** What Settings › Plugins asks of main. */
 export interface PluginsIpcHandlers {
@@ -21,6 +22,8 @@ export interface PluginsIpcHandlers {
   readonly addAccount: (request: PluginAccountAdd) => Promise<PluginAccountResult>
   readonly replaceSecret: (request: PluginAccountReplace) => Promise<PluginAccountResult>
   readonly removeAccount: (request: PluginAccountRemove) => Promise<PluginAccountResult>
+  readonly updateAccount: (request: PluginAccountUpdate) => Promise<PluginAccountResult>
+  readonly projects: () => readonly PluginProject[]
 }
 
 /**
@@ -45,6 +48,11 @@ export function registerPluginsIpc(ipc: IpcMainAdapter, plugins: PluginsIpcHandl
     noArguments.parse(args)
     return pluginAccountsSchema.parse(await plugins.accounts())
   })
+  ipc.handle(PLUGINS_PROJECTS, async (event, ...args) => {
+    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Open Settings in the main Sotto window.`)
+    noArguments.parse(args)
+    return pluginProjectsSchema.parse(plugins.projects())
+  })
   const change = <Request>(channel: string, schema: z.ZodType<[Request]>, run: (request: Request) => Promise<PluginAccountResult>): void => {
     ipc.handle(channel, async (event, ...args) => {
       if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Open Settings in the main Sotto window.`)
@@ -56,5 +64,8 @@ export function registerPluginsIpc(ipc: IpcMainAdapter, plugins: PluginsIpcHandl
   change(PLUGINS_ACCOUNT_ADD, addArguments, request => plugins.addAccount(request))
   change(PLUGINS_ACCOUNT_REPLACE, replaceArguments, request => plugins.replaceSecret(request))
   change(PLUGINS_ACCOUNT_REMOVE, removeArguments, request => plugins.removeAccount(request))
-  return () => { for (const channel of [PLUGINS_GITHUB_SIGN_IN, PLUGINS_RECENT_USE, PLUGINS_ACCOUNTS, PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNT_REMOVE]) ipc.removeHandler(channel) }
+  change(PLUGINS_ACCOUNT_UPDATE, updateArguments, request => plugins.updateAccount(request))
+  return () => {
+    for (const channel of [PLUGINS_GITHUB_SIGN_IN, PLUGINS_RECENT_USE, PLUGINS_ACCOUNTS, PLUGINS_PROJECTS, PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_UPDATE]) ipc.removeHandler(channel)
+  }
 }

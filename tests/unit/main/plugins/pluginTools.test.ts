@@ -6,18 +6,20 @@ import { readGitHub } from '../../../../src/main/plugins/github/read'
 import { PluginToolServer, type PluginToolHandlers } from '../../../../src/main/plugins/pluginTools'
 import type { PluginUseReport } from '../../../../src/main/plugins/useRecord'
 import { readVercel, type VercelFetch } from '../../../../src/main/plugins/vercel/read'
-import { PLUGIN_ACCOUNTS_TOOL, PLUGIN_CHANGE_TOOLS, PLUGIN_READ_TOOL, PLUGINS_MCP_SERVER, type GitHubSignIn, type PluginAccount } from '../../../../src/shared/plugins'
+import { PLUGIN_ACCOUNTS_TOOL, PLUGIN_CHANGE_TOOLS, PLUGIN_READ_TOOL, PLUGINS_MCP_SERVER, pluginAccountAdmits, type GitHubSignIn, type PluginAccount } from '../../../../src/shared/plugins'
 
 const servers: PluginToolServer[] = []
 afterEach(async () => { await Promise.all(servers.splice(0).map(server => server.close())) })
 
 /** The tools over a gh that answers `answer`, for a thread named `admitted`. */
 /** Made-up accounts and a made-up token: nothing here is a real credential. */
-const WORK: PluginAccount = { id: '22222222-2222-4222-8222-000000000001', plugin: 'vercel', name: 'Work', savedAt: '2026-11-12T08:00:00.000Z', signedInAs: 'example-user' }
+const WORK: PluginAccount = { id: '22222222-2222-4222-8222-000000000001', plugin: 'vercel', name: 'Work', savedAt: '2026-11-12T08:00:00.000Z', signedInAs: 'example-user', on: true, projects: null }
 const PERSONAL: PluginAccount = { ...WORK, id: '22222222-2222-4222-8222-000000000002', name: 'Personal' }
 const VERCEL_TOKEN = 'made-up-vercel-token'
 
-function tools(options: { answer?: string | Error; signIn?: GitHubSignIn; record?: PluginToolHandlers['record']; whileReading?: () => void; accounts?: readonly PluginAccount[]; vercel?: { status?: number; body: unknown }; locked?: boolean; accountsAfterRead?: readonly PluginAccount[] } = {}) {
+function tools(options: { answer?: string | Error; signIn?: GitHubSignIn; record?: PluginToolHandlers['record']; whileReading?: () => void; accounts?: readonly PluginAccount[]; vercel?: { status?: number; body: unknown }; locked?: boolean; accountsAfterRead?: readonly PluginAccount[]
+  /** The project the calling thread is in, or null for a thread in none, as Watcher's is. */
+  project?: string | null } = {}) {
   const ghCalls: (readonly string[])[] = []
   let gone = false
   const run: RunGitCommand = async (_cwd, _command, args) => {
@@ -34,12 +36,22 @@ function tools(options: { answer?: string | Error; signIn?: GitHubSignIn; record
     vercelCalls.push({ url, authorization: init.headers.Authorization })
     return new Response(JSON.stringify(options.vercel?.body ?? {}), { status: options.vercel?.status ?? 200 })
   }
+  const project = options.project === undefined ? 'project-one' : options.project
+  // The accounts that are still there: a test can take them away once Vercel has been read.
+  const held = (): readonly PluginAccount[] => options.accountsAfterRead && vercelCalls.length > 0 ? options.accountsAfterRead : added
   const server = new PluginToolServer({
     admits: threadId => threadId === 'admitted' && !gone,
     gitHubSignIn: async () => options.signIn ?? { state: 'signed-in', login: 'example-user' },
     readGitHub: (path, query) => readGitHub(run, path, query),
-    accounts: async () => options.accountsAfterRead && vercelCalls.length > 0 ? options.accountsAfterRead : added,
-    findAccount: async (_plugin, name) => added.length === 0 ? 'none' : name === undefined ? (added.length === 1 ? added[0]! : 'ambiguous') : added.find(account => account.name.toLowerCase() === name.toLowerCase()) ?? 'unknown',
+    // The thread is in the project named here. An account switched off, or kept to other projects, is not this thread's to use.
+    accounts: async () => held().filter(account => pluginAccountAdmits(account, project)),
+    findAccount: async (_threadId, _plugin, name) => {
+      const mine = held().filter(account => pluginAccountAdmits(account, project))
+      if (mine.length === 0) return held().length === 0 ? 'none' : 'withheld'
+      if (name === undefined) return mine.length === 1 ? mine[0]! : 'ambiguous'
+      return mine.find(account => account.name.toLowerCase() === name.toLowerCase()) ?? 'unknown'
+    },
+    holdsAccount: async accountId => held().some(account => account.id === accountId),
     readVercel: async (accountId, path, query) => options.locked ? { ok: false, reason: 'locked' } : readVercel(vercelFetch, accountId === WORK.id || accountId === PERSONAL.id ? VERCEL_TOKEN : '', path, query),
     record: options.record ?? (async report => { recorded.push(report) }),
     isWatcher: () => false,
@@ -193,7 +205,7 @@ describe('sotto_plugins, the tools a thread’s agent uses plugins through (ADR-
   it('asks which Vercel account when there is more than one or the name is not one of them, and says when none is added', async () => {
     const { server, vercelCalls, recorded } = tools({ accounts: [WORK, PERSONAL] })
     expect(said(await server.call('admitted', PLUGIN_READ_TOOL, { plugin: 'vercel', path: 'v6/deployments' }))).toBe('There is more than one Vercel account. Give "account" as one of "Work", "Personal". Nothing was read.')
-    expect(said(await server.call('admitted', PLUGIN_READ_TOOL, { plugin: 'vercel', account: 'Other', path: 'v6/deployments' }))).toBe('There is no Vercel account by that name. Give "account" as one of "Work", "Personal". Nothing was read.')
+    expect(said(await server.call('admitted', PLUGIN_READ_TOOL, { plugin: 'vercel', account: 'Other', path: 'v6/deployments' }))).toBe('There is no Vercel account by that name that this thread can use. Give "account" as one of "Work", "Personal". Nothing was read.')
     expect(said(await tools().server.call('admitted', PLUGIN_READ_TOOL, { plugin: 'vercel', path: 'v6/deployments' }))).toBe('No Vercel account is added. Ask the user to add one in Settings > Plugins. Nothing was read.')
     expect(vercelCalls).toEqual([])
     expect(recorded).toEqual([])

@@ -8,8 +8,8 @@ import { HOSTS_OPENCODE_SIGN_IN, HOSTS_PROVIDER_ACTION, HOSTS_SIGN_IN, HOSTS_UPD
 import { PHONES_GET, PHONES_COMMAND, PHONES_CHANGED, phonesCommandSchema, type PhonesState } from '../shared/phones'
 import { LOCAL_APPS_CHANGED, LOCAL_APPS_GET, type LocalAppsState } from '../shared/localApps'
 import {
-  gitHubSignInSchema, pluginAccountAddSchema, pluginAccountRemoveSchema, pluginAccountReplaceSchema, pluginAccountResultSchema, pluginAccountsSchema,
-  PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNTS, PLUGINS_GITHUB_SIGN_IN, PLUGINS_RECENT_USE, shownPluginUsesSchema, type PluginsBridge,
+  gitHubSignInSchema, pluginAccountAddSchema, pluginAccountRemoveSchema, pluginAccountReplaceSchema, pluginAccountResultSchema, pluginAccountsSchema, pluginAccountUpdateSchema, pluginProjectsSchema,
+  PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNT_UPDATE, PLUGINS_ACCOUNTS, PLUGINS_GITHUB_SIGN_IN, PLUGINS_PROJECTS, PLUGINS_RECENT_USE, shownPluginUsesSchema, type PluginsBridge,
 } from '../shared/plugins'
 import { TEAMS_CHANGED, TEAMS_COMMAND, TEAMS_GET, TEAMS_OWN_DESK, teamsCommandSchema, type TeamDesk, type TeamsBridge, type TeamsCommandResult, type TeamsState } from '../shared/teams'
 import { mapHostReferences, parseHostEntityKey } from '../shared/clientIdentity'
@@ -672,6 +672,8 @@ export function createSottoBridge(
       addAccount: async request => invokeParsed(renderer, PLUGINS_ACCOUNT_ADD, pluginAccountResultSchema, pluginAccountAddSchema.parse(request)),
       replaceSecret: async request => invokeParsed(renderer, PLUGINS_ACCOUNT_REPLACE, pluginAccountResultSchema, pluginAccountReplaceSchema.parse(request)),
       removeAccount: async request => invokeParsed(renderer, PLUGINS_ACCOUNT_REMOVE, pluginAccountResultSchema, pluginAccountRemoveSchema.parse(request)),
+      updateAccount: async request => invokeParsed(renderer, PLUGINS_ACCOUNT_UPDATE, pluginAccountResultSchema, pluginAccountUpdateSchema.parse(request)),
+      projects: async () => invokeParsed(renderer, PLUGINS_PROJECTS, pluginProjectsSchema),
     }),
     ...createToolsBridges(renderer),
     cloudIphone: createCloudIphoneBridge(renderer),

@@ -419,6 +419,10 @@ msgstr "{modelName}, {level}"
 msgid "{name} (Claude Code’s choice)"
 msgstr "{name} (Claude Code’s choice)"
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "{name} (off)"
+msgstr "{name} (off)"
+
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "{name} actions"
 msgstr "{name} actions"
@@ -923,6 +927,10 @@ msgstr "A phone cannot run the host"
 #: src/renderer/src/features/settings/AppearanceSettings.tsx
 msgid "A press anywhere but the composer or the sidebar sends waves of 0s and 1s in the accent through the room behind it. They never cover what you pressed. Reduced motion turns them off."
 msgstr "A press anywhere but the composer or the sidebar sends waves of 0s and 1s in the accent through the room behind it. They never cover what you pressed. Reduced motion turns them off."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "A project that is gone"
+msgstr "A project that is gone"
 
 #: src/renderer/src/features/settings/NotificationSettings.tsx
 msgid "A question or a permission is waiting for you."
@@ -2742,6 +2750,10 @@ msgstr "Every connection signs in over SSH, and Tailscale may ask you to approve
 msgid "Every edit shows, spacing included."
 msgstr "Every edit shows, spacing included."
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Every project"
+msgstr "Every project"
+
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Every shortcut in Sotto, in one place"
 msgstr "Every shortcut in Sotto, in one place"
@@ -3317,6 +3329,10 @@ msgstr "It could not be copied. Select it and copy it instead."
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "It failed."
 msgstr "It failed."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "It is kept to a project that is gone, so no thread can use it. Press Every project, or choose one."
+msgstr "It is kept to a project that is gone, so no thread can use it. Press Every project, or choose one."
 
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "It is waiting for your answer there."
@@ -4236,6 +4252,10 @@ msgstr "Off, open Sotto from the Dock."
 msgid "Off, Sotto doesn’t load the popup, take its shortcut or offer it in the tray."
 msgstr "Off, Sotto doesn’t load the popup, take its shortcut or offer it in the tray."
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Off. No thread can see or use this account until you turn it back on. Its token stays saved."
+msgstr "Off. No thread can see or use this account until you turn it back on. Its token stays saved."
+
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "Off. Sotto turns it on for {who} before anything else, so the host starts before anyone signs in to {name} and keeps running after they sign out. If {name} asks for an administrator, nothing on {name} changes: run this there, then press Start at boot again. Sotto never runs sudo."
 msgstr "Off. Sotto turns it on for {who} before anything else, so the host starts before anyone signs in to {name} and keeps running after they sign out. If {name} asks for an administrator, nothing on {name} changes: run this there, then press Start at boot again. Sotto never runs sudo."
@@ -4325,6 +4345,10 @@ msgstr "Only a Claude Code or Codex thread can be Dynamic for now, so {provider}
 #: src/renderer/src/features/settings/WorkerMachineSettings.tsx
 msgid "Only this computer is connected, so new workers start here. Add a machine in <0>Hosts & phones</0>."
 msgstr "Only this computer is connected, so new workers start here. Add a machine in <0>Hosts & phones</0>."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Only threads in {titles} may use it. Watcher belongs to no project, so it cannot."
+msgstr "Only threads in {titles} may use it. Watcher belongs to no project, so it cannot."
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Open a thread’s menu"
@@ -4863,6 +4887,10 @@ msgstr "Projects"
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Projects stay where they are until you pull. A project can turn it on for itself in Threads, Project defaults."
 msgstr "Projects stay where they are until you pull. A project can turn it on for itself in Threads, Project defaults."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Projects whose threads may use {name}"
+msgstr "Projects whose threads may use {name}"
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Promoted a deployment to production"
@@ -6652,6 +6680,10 @@ msgstr "Text"
 msgid "That account is no longer here. Nothing was changed."
 msgstr "That account is no longer here. Nothing was changed."
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "That could not be saved. Nothing was changed. Try again."
+msgstr "That could not be saved. Nothing was changed. Try again."
+
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "That file is {size}. Theme files are only a few KB, so this one was not read (limit {limit})."
 msgstr "That file is {size}. Theme files are only a few KB, so this one was not read (limit {limit})."
@@ -7260,9 +7292,17 @@ msgstr "Thread providers"
 msgid "Threads"
 msgstr "Threads"
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Threads in every project may use it, and so may Watcher."
+msgstr "Threads in every project may use it, and so may Watcher."
+
 #: src/renderer/src/features/settings/ClearThreadsSettings.tsx
 msgid "Threads kept"
 msgstr "Threads kept"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Threads may use {name}"
+msgstr "Threads may use {name}"
 
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Threads page shortcut"

@@ -4,7 +4,7 @@ import { dirname, join } from 'node:path'
 import { z } from 'zod'
 import {
   PLUGIN_ACCOUNTS_MAX, pluginAccountSchema, type AccountPluginId, type PluginAccount, type PluginAccountAdd, type PluginAccountProblem,
-  type PluginAccountRemove, type PluginAccountReplace, type PluginAccountResult,
+  type PluginAccountRemove, type PluginAccountReplace, type PluginAccountResult, type PluginAccountUpdate,
 } from '../../shared/plugins'
 
 const fileSchema = z.object({ version: z.literal(1), accounts: z.array(z.unknown()) })
@@ -55,10 +55,15 @@ export class PluginAccounts {
     return this.inTurn(async () => [...await this.load()])
   }
 
-  /** The account a thread's agent named, by plugin and name, or the plugin's only account when it names none. */
-  async find(plugin: AccountPluginId, name: string | undefined): Promise<PluginAccount | 'none' | 'ambiguous' | 'unknown'> {
-    const mine = (await this.list()).filter(account => account.plugin === plugin)
-    if (mine.length === 0) return 'none'
+  /**
+   * The account a thread's agent named, by plugin and name, or the plugin's only account when it names none. With
+   * `admits`, only the accounts the asking thread may use are looked among (decision 9), as if the others were not
+   * there: `withheld` says the plugin has accounts and none of them is for this thread.
+   */
+  async find(plugin: AccountPluginId, name: string | undefined, admits?: (account: PluginAccount) => boolean): Promise<PluginAccount | 'none' | 'withheld' | 'ambiguous' | 'unknown'> {
+    const all = (await this.list()).filter(account => account.plugin === plugin)
+    const mine = admits ? all.filter(admits) : all
+    if (mine.length === 0) return all.length === 0 ? 'none' : 'withheld'
     if (name === undefined) return mine.length === 1 ? mine[0]! : 'ambiguous'
     return mine.find(account => sameName(account.name, name)) ?? 'unknown'
   }
@@ -82,7 +87,7 @@ export class PluginAccounts {
       if (mine.length >= PLUGIN_ACCOUNTS_MAX) return refusal('limit')
       const checked = await this.options.check(request.plugin, request.secret)
       if (!checked.ok) return refusal(checked.problem)
-      const account: PluginAccount = { id: randomUUID(), plugin: request.plugin, name: request.name, savedAt: this.now(), signedInAs: checked.signedInAs }
+      const account: PluginAccount = { id: randomUUID(), plugin: request.plugin, name: request.name, savedAt: this.now(), signedInAs: checked.signedInAs, on: true, projects: null }
       const slot = pluginAccountSlot(account.id)
       try {
         await this.options.credentials.set(slot, request.secret)
@@ -128,6 +133,25 @@ export class PluginAccounts {
       const next = accounts.filter(entry => entry.id !== request.id)
       try { await this.options.credentials.set(pluginAccountSlot(request.id), '') } catch { return refusal('store') }
       await this.write(next).catch(() => { this.accounts = next })
+      return { ok: true, accounts: next }
+    })
+  }
+
+  /**
+   * Changes which threads may use an account: its switch, the projects it is kept to, or both. Only the record of
+   * accounts is written; the secret is not touched. A change that cannot be written changes nothing.
+   */
+  update(request: PluginAccountUpdate): Promise<PluginAccountResult> {
+    return this.inTurn(async () => {
+      const accounts = await this.loadOrNull()
+      if (!accounts) return refusal('store')
+      if (!accounts.some(entry => entry.id === request.id)) return refusal('gone')
+      const next = accounts.map(entry => entry.id !== request.id ? entry : {
+        ...entry, ...(request.on === undefined ? {} : { on: request.on }),
+        // Each project once, in the order given.
+        ...(request.projects === undefined ? {} : { projects: request.projects === null ? null : [...new Set(request.projects)] }),
+      })
+      try { await this.write(next) } catch { return refusal('store') }
       return { ok: true, accounts: next }
     })
   }

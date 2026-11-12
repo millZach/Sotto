@@ -111,6 +111,16 @@ The second pull request of the slice added the rest, and settled three things.
 - **Promote and roll back take a production deployment and no other.** Vercel's promote moves production to a deployment that was built for production, and its own command line builds a preview again rather than promote it. So a deployment whose target is not production is refused before anyone is asked: the card's "it is not built again" would otherwise be untrue. Putting a preview's code in production is a deploy, and belongs with redeploy (#2516).
 - **A change is done only when the service's answer shows it.** GitHub redirects a moved issue and a renamed repository, and a redirected change arrives as a read that changes nothing and still answers. So the issue read for a card must be the issue asked for, by number and repository, and a change counts as made only when the answer is the thing made or carries the state asked for. When no answer comes back, the agent is told Sotto cannot say whether the change was made, so it looks before it asks the user again: an issue opened twice cannot be taken back.
 
+## November 12, 2026: which threads may use an account
+
+Slice 5 built decision 9 and settled what it left open.
+
+- **The rule is asked at every call.** Whether a thread may use an account is read when its agent calls a tool, never when the tools were handed out, so a switch turned off or a project taken away takes effect at the next call. A change the user allowed on a card is looked at once more before it is sent: an account switched off, narrowed or removed while the card waited sends nothing.
+- **An account a thread may not use is not named to it.** The thread is told that the plugin has an account it cannot use, so its agent can tell the user, and nothing more.
+- **Watcher is in no project.** An account kept to chosen projects is for those projects' threads and nobody else, so Watcher, which belongs to none, may use only an account for every project. This is the narrower reading of "so a work project never touches a personal account"; the other reading, that Watcher may read through any account that is on, would let an account kept to one project be read from the thread that watches all of them. The page says so beside the projects.
+- **GitHub has no switch.** Its account is `gh`'s own sign-in on the computer, which a thread's shell can use whatever Sotto does, so a switch on its row would promise more than it could keep. The mock-up Zach picked shows GitHub as every project's.
+- **Projects are this computer's.** An account is kept to projects by Sotto's own IDs for them here. A project that is later deleted stays on the account as "a project that is gone" until the user lets it go, rather than quietly widening the account to every project. What an account copy does on a paired host is slice 7's to settle.
+
 ## Considered options
 
 - **Where secrets live.** Each computer its own, as ADR-0025 has it (rejected: every account typed in on every computer). The desktop keeps them and answers a host's calls (rejected: forge's threads would lose plugins while the laptop is closed). One operating-system keychain entry per account (rejected: a native dependency, which ADR-0018 says needs its own ADR).
