@@ -101,7 +101,12 @@ export function pairedDesktopWatcherWork(targets: readonly WatcherThreadTarget[]
   desktop: { readonly clientId: string; readonly master: WatcherIdentity }): { requests: WatcherRequest[]; operations: WatcherOperation[] } {
   const record = emptyWatcherRecord(), { clientId, master } = desktop
   addWatcherHistory(record, targets, counts, master.target)
-  for (const request of record.requests) request.remoteOrigin = { clientId, master, creationOperationId: master.creationOperationId, ceiling: 'approval-required' }
+  for (const request of record.requests) {
+    request.remoteOrigin = { clientId, master, creationOperationId: master.creationOperationId, ceiling: 'approval-required' }
+    // As forge's host held them when its pushes were measured (`HOST_SCALE`): the stops `addWatcherHistory` now leaves are
+    // the owner's own record's, and each would add its bytes to every whole push this work is sent in.
+    for (const participant of request.participants) delete participant.automationStopped
+  }
   const roots = new Map(record.requests.map(request => [request.id, request.rootUserMessageId]))
   for (const operation of record.operations) {
     // A desktop sends an operation without its prompt turn, which stays in the desktop's own record.
