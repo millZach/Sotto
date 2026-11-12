@@ -76,6 +76,13 @@ test('Plugins shows GitHub’s sign-in on Owl, fits every checked size, and says
     await expect(row).toHaveAttribute('aria-expanded', 'true')
     await expect(panel.getByText('Signed in as example-user through gh on this computer.')).toBeVisible()
     await expect(panel.getByText('GitHub uses the gh command’s own sign-in. Sotto stores nothing for it.')).toBeVisible()
+    // Escape from a control inside the row closes it and gives focus back to its header; Enter opens it again.
+    await panel.getByRole('button', { name: 'Check GitHub’s sign-in again' }).focus()
+    await page.keyboard.press('Escape')
+    await expect(row).toHaveAttribute('aria-expanded', 'false')
+    await expect(row).toBeFocused()
+    await page.keyboard.press('Enter')
+    await expect(row).toHaveAttribute('aria-expanded', 'true')
 
     for (const mode of ['dark', 'light'] as const) {
       await page.evaluate(async appearance => { await window.sotto!.updateSettings({ appearance }) }, mode)

@@ -14,8 +14,10 @@ const statusSchema = z.object({
 /**
  * Who the `gh` command is signed in to github.com as on this computer (ADR-0205): GitHub's plugin account is gh's own
  * sign-in, so this asks gh and stores nothing. It reads the account's name and whether gh counts the sign-in good, and
- * never a token. A gh too old for `--json` words its status for a person, and only the "Logged in to" line is read.
- * Run from the home folder, since the answer is the same in every folder.
+ * never a token. gh acts as its active account, so that is the one read: a good older sign-in listed beside a failing
+ * active one is not who gh is. gh marks a sign-in it could not check over the network apart from one GitHub refused,
+ * and only the refused one reads as signed out. A gh too old for `--json` words its status for a person, on either
+ * stream, and only the "Logged in to" line is read. Run from the home folder, since the answer is the same in every folder.
  */
 export async function readGitHubSignIn(run: RunGitCommand, signal?: AbortSignal): Promise<GitHubSignIn> {
   const options = { timeoutMs: TIMEOUT_MS, ...(signal ? { signal } : {}) }
@@ -29,20 +31,25 @@ export async function readGitHubSignIn(run: RunGitCommand, signal?: AbortSignal)
   let parsed: z.infer<typeof statusSchema>
   try { parsed = statusSchema.parse(JSON.parse(listed)) } catch { return { state: 'unknown' } }
   const accounts = parsed.hosts[HOST] ?? []
-  const account = accounts.find(entry => entry.active !== false && entry.state === 'success' && entry.login)
-    ?? accounts.find(entry => entry.state === 'success' && entry.login)
-  return account?.login ? signedIn(account.login) : { state: 'signed-out' }
+  if (accounts.length === 0) return { state: 'signed-out' }
+  const account = accounts.find(entry => entry.active === true) ?? (accounts.length === 1 ? accounts[0] : undefined)
+  if (!account) return { state: 'unknown' }
+  if (account.state === 'success') return account.login ? signedIn(account.login) : { state: 'unknown' }
+  // `error` is a sign-in GitHub refused. Anything else, `timeout` above all, is a sign-in gh could not check.
+  return account.state === 'error' ? { state: 'signed-out' } : { state: 'unknown' }
 }
 
 async function readWords(run: RunGitCommand, options: { readonly timeoutMs: number; readonly signal?: AbortSignal }): Promise<GitHubSignIn> {
-  let text: string
+  // An older gh prints a good status on its error stream and ends well, so both streams are read as they are printed.
+  const lines: string[] = []
   try {
-    text = await run(homedir(), 'gh', ['auth', 'status', '--hostname', HOST], options)
+    lines.push(await run(homedir(), 'gh', ['auth', 'status', '--hostname', HOST], { ...options, onLine: line => { lines.push(line) } }))
   } catch (error) {
     if (error instanceof GitUnavailableError) return { state: 'not-installed' }
     // gh ends with an error when it is signed in nowhere, and says so on either stream.
-    text = error instanceof Error ? `${String((error as { stdout?: unknown }).stdout ?? '')}\n${error.message}` : ''
+    if (error instanceof Error) lines.push(String((error as { stdout?: unknown }).stdout ?? ''), error.message)
   }
+  const text = lines.join('\n')
   const login = /Logged in to github\.com (?:account|as) (\S+)/u.exec(text)?.[1]
   if (login) return signedIn(login)
   return /not logged in|gh auth login/iu.test(text) ? { state: 'signed-out' } : { state: 'unknown' }

@@ -13,7 +13,8 @@ the account shown is made up. The run is `tests/e2e/plugins-settings.spec.ts`, w
 
 With the stand-in signed in as `example-user`, Settings was opened. Plugins sat directly after Providers in the rail.
 GitHub's folded row read "GitHub, Signed in as example-user through gh". The row was focused and opened with Enter, and
-said "Signed in as example-user through gh on this computer." and that Sotto stores nothing for it.
+said "Signed in as example-user through gh on this computer." and that Sotto stores nothing for it. With focus on
+**Check again** inside the row, Escape closed the row and put focus back on its header; Enter opened it again.
 
 The open page was checked in dark and light at 1600x1000, 1280x800 and the 820x560 minimum. Nothing on it was wider than
 the room it sits in at any of the six.

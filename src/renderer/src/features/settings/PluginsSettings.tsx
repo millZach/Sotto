@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import React, { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { ChevronRight, Code } from 'lucide-react'
 import { PLUGINS, type GitHubSignIn, type PluginEntry, type PluginGroupId, type PluginsBridge } from '../../../../shared/plugins'
@@ -45,6 +45,15 @@ function GitHubRow({ plugin, signIn, onCheck }: { readonly plugin: PluginEntry; 
   const [copied, showCopied] = useTransientFlag<'copied'>()
   const [copyFailed, setCopyFailed] = useState(false)
   const bodyId = useId()
+  const head = useRef<HTMLButtonElement>(null)
+  // Escape closes the open row from anywhere in it and gives focus back to its header, as a provider's row does.
+  const closeOnEscape = (event: KeyboardEvent<HTMLDivElement>): void => {
+    if (event.key !== 'Escape' || !open || event.defaultPrevented) return
+    event.preventDefault()
+    event.stopPropagation()
+    setOpen(false)
+    head.current?.focus()
+  }
   const login = signIn.state === 'signed-in' ? signIn.login : ''
   const summary = signIn.state === 'signed-in' ? t`Signed in as ${login} through gh`
     : signIn.state === 'signed-out' ? t`Not signed in`
@@ -54,8 +63,8 @@ function GitHubRow({ plugin, signIn, onCheck }: { readonly plugin: PluginEntry; 
     setCopyFailed(false)
     try { await writeClipboard(GH_SIGN_IN_COMMAND); showCopied('copied') } catch { setCopyFailed(true) }
   }
-  return <div className="plugin-row" data-setting={`plugin-${plugin.id}`} data-state={signIn.state}>
-    <button type="button" className="plugin-row__head tt-focusable" aria-expanded={open} aria-controls={bodyId} onClick={() => setOpen(value => !value)}>
+  return <div className="plugin-row" data-setting={`plugin-${plugin.id}`} data-state={signIn.state} onKeyDown={closeOnEscape}>
+    <button ref={head} type="button" className="plugin-row__head tt-focusable" aria-expanded={open} aria-controls={bodyId} onClick={() => setOpen(value => !value)}>
       <PluginMark plugin={plugin.id} />
       <span className="plugin-row__name">{plugin.name}</span>
       {/* A space between the two, so the row's name reads "GitHub Signed in…" and not one run-together word. */}

@@ -24,6 +24,18 @@ it('names who gh is signed in as on the folded row, and opens in place to say So
   expect(document.querySelector('[data-setting="plugin-github"]')).toContainElement(row())
 })
 
+it('closes the open row on Escape from anywhere in it, and gives focus back to its header', async () => {
+  await act(async () => { render(<PluginsSettings bridge={answering({ state: 'signed-in', login: 'example-user' }).bridge} />) })
+  fireEvent.click(row())
+  const again = screen.getByRole('button', { name: 'Check GitHub’s sign-in again' })
+  again.focus()
+  fireEvent.keyDown(again, { key: 'Escape' })
+  expect(row()).toHaveAttribute('aria-expanded', 'false')
+  expect(row()).toHaveFocus()
+  // A folded row leaves Escape alone, for whatever holds the page.
+  expect(fireEvent.keyDown(row(), { key: 'Escape' })).toBe(true)
+})
+
 it('shows the sign-in command when gh is signed out, and asks gh again on Check again', async () => {
   const gh = answering({ state: 'signed-out' }, { state: 'signed-in', login: 'example-user' })
   await act(async () => { render(<PluginsSettings bridge={gh.bridge} />) })

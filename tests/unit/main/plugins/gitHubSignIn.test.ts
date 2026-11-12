@@ -3,17 +3,23 @@ import { describe, expect, it } from 'vitest'
 import { GitUnavailableError, type RunGitCommand } from '../../../../src/main/agents/git/gitStatus'
 import { readGitHubSignIn } from '../../../../src/main/plugins/github/signIn'
 
+/** What gh printed on its error stream while ending well, as an older gh prints a good status. */
+const onStderr = (text: string) => ({ stderr: text })
+
 /** A gh that answers each call from a list, in order, and keeps what it was asked. */
-function gh(...answers: readonly (string | Error)[]) {
+function gh(...answers: readonly (string | Error | { readonly stderr: string })[]) {
   const calls: (readonly string[])[] = []
   let next = 0
-  const run: RunGitCommand = async (_cwd, command, args) => {
+  const run: RunGitCommand = async (_cwd, command, args, options) => {
     if (command !== 'gh') throw new Error('only gh is asked')
     calls.push(args)
     const answer = answers[next++]
     if (answer === undefined) throw new Error('asked more than expected')
     if (answer instanceof Error) throw answer
-    return answer
+    if (typeof answer === 'string') return answer
+    // The runner hands back standard output alone; the other stream reaches a caller only line by line.
+    for (const line of answer.stderr.split('\n')) options?.onLine?.(line, 'stderr')
+    return ''
   }
   return { run, calls }
 }
@@ -38,6 +44,18 @@ describe('who gh is signed in to github.com as (ADR-0205)', () => {
     await expect(readGitHubSignIn(gh(hosts([{ active: true, login: 'example-user', state: 'success' }], 'ghe.example.com')).run)).resolves.toEqual({ state: 'signed-out' })
   })
 
+  it('reads the account gh acts as, not a good older sign-in listed beside a failing one', async () => {
+    const refused = gh(hosts([{ active: true, login: 'current-user', state: 'error' }, { active: false, login: 'older-account', state: 'success' }]))
+    await expect(readGitHubSignIn(refused.run)).resolves.toEqual({ state: 'signed-out' })
+    // No account marked active among several: gh's answer does not say who it acts as.
+    const unmarked = gh(hosts([{ login: 'one-user', state: 'success' }, { login: 'other-user', state: 'success' }]))
+    await expect(readGitHubSignIn(unmarked.run)).resolves.toEqual({ state: 'unknown' })
+  })
+
+  it('says it could not tell, not signed out, when gh could not reach GitHub to check the sign-in', async () => {
+    await expect(readGitHubSignIn(gh(hosts([{ active: true, login: 'example-user', state: 'timeout' }])).run)).resolves.toEqual({ state: 'unknown' })
+  })
+
   it('says gh is not installed when it cannot be started', async () => {
     await expect(readGitHubSignIn(gh(new GitUnavailableError('gh is not installed')).run)).resolves.toEqual({ state: 'not-installed' })
   })
@@ -48,6 +66,9 @@ describe('who gh is signed in to github.com as (ADR-0205)', () => {
     expect(older.calls[1]).toEqual(['auth', 'status', '--hostname', 'github.com'])
     const oldest = gh(new Error('unknown flag: --json'), '✓ Logged in to github.com as example-user (oauth_token)')
     await expect(readGitHubSignIn(oldest.run)).resolves.toEqual({ state: 'signed-in', login: 'example-user' })
+    // gh 2.0 prints a good status on its error stream and ends well, so standard output is empty.
+    const onErrorStream = gh(new Error('unknown flag: --json'), onStderr('github.com\n  \u2713 Logged in to github.com as example-user (oauth_token)\n  \u2713 Token: *******************'))
+    await expect(readGitHubSignIn(onErrorStream.run)).resolves.toEqual({ state: 'signed-in', login: 'example-user' })
     const signedOut = gh(new Error('unknown flag: --json'), new Error('You are not logged into any GitHub hosts. To log in, run: gh auth login'))
     await expect(readGitHubSignIn(signedOut.run)).resolves.toEqual({ state: 'signed-out' })
   })
