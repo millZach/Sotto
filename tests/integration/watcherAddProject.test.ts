@@ -1,8 +1,9 @@
 // @vitest-environment node
+import { execFileSync } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { mkdir, stat } from 'node:fs/promises'
+import { mkdir, stat, symlink } from 'node:fs/promises'
 import { join, posix } from 'node:path'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { GitActions } from '../../src/main/agents/git/gitActions'
 import { GitStatusReader } from '../../src/main/agents/git/gitStatus'
 import { WatcherService } from '../../src/main/agents/watcher'
@@ -128,4 +129,48 @@ it('adds and makes projects on a connected machine with that machine’s own cre
   expect(sent).toHaveLength(2)
   expect(await f.add({ hostId: remoteId, path: '/home/zach/Refused' })).toMatchObject({ status: 'refused', code: 'INVALID_INPUT', message: PROJECT_FOLDER_MISSING })
   expect(await f.add({ hostId: randomUUID(), path: '/home/zach/Elsewhere' })).toMatchObject({ status: 'refused', code: 'UNKNOWN_TARGET' })
+})
+
+// Bug Bot on #2519, L1: a new folder below another repository, a dotfiles home or a monorepo, reported that repository,
+// so git init was refused every time.
+it('sets up Git in a new folder below another repository as a repository of its own', async () => {
+  const f = await fixture()
+  const outer = join(f.workspace.root, 'monorepo')
+  await mkdir(outer)
+  execFileSync('git', ['init', '-q'], { cwd: outer })
+  const path = join(outer, 'packages', 'index')
+  expect(await f.add({ path, newFolder: true, gitInit: true })).toMatchObject({ status: 'ok', folderMade: true, gitInitialized: true })
+  expect((await stat(join(path, '.git'))).isDirectory()).toBe(true)
+})
+
+// Bug Bot on #2519, L2: a retry with the same key while the first call still waited was told the folder already exists.
+it('answers a retry with the same key while the first call still works as that call does, adding one project', async () => {
+  const f = await fixture()
+  const path = join(f.workspace.root, 'Twice'), retryKey = randomUUID()
+  const [first, second] = await Promise.all([f.add({ path, newFolder: true }, retryKey), f.add({ path, newFolder: true }, retryKey)])
+  expect(first).toMatchObject({ status: 'ok', folderMade: true })
+  expect(second).toEqual(first)
+  expect(f.control.shell().host.projects.filter(item => item.path === path)).toHaveLength(1)
+})
+
+// Bug Bot on #2519, L3: an add the provider did not confirm read as bad input, with nothing pointing to list_projects.
+it('says an add its provider did not confirm may have happened, and to read list_projects before trying again', async () => {
+  const f = await fixture()
+  const execute = f.workspace.host.execute.bind(f.workspace.host)
+  vi.spyOn(f.workspace.host, 'execute').mockImplementation(async command => command.type === 'create-project' ? { accepted: false, uncertain: true } : execute(command))
+  expect(await f.add({ path: join(f.workspace.root, 'Unconfirmed'), newFolder: true })).toMatchObject({ status: 'refused', code: 'DELIVERY_UNCERTAIN', retryable: true,
+    message: expect.stringContaining('list_projects') })
+})
+
+// Bug Bot on #2519, N1: Sotto's own folders were refused only on an exact path.
+it('refuses Sotto\'s own folders through a link to them, inside them, and in another case where folders ignore case', async () => {
+  const f = await fixture()
+  const own = join(f.root, 'watcher', 'workspace')
+  await mkdir(own, { recursive: true })
+  const link = join(f.workspace.root, 'linked-workspace')
+  await symlink(own, link, 'junction')
+  for (const path of [link, join(own, 'inside'), ...process.platform === 'win32' || process.platform === 'darwin' ? [own.toUpperCase()] : []]) {
+    if (path.endsWith('inside')) await mkdir(path, { recursive: true })
+    expect(await f.add({ path }), path).toMatchObject({ status: 'refused', code: 'INVALID_INPUT', message: expect.stringContaining('Sotto\'s own') })
+  }
 })

@@ -15,9 +15,9 @@ import { heldProviderRefusal, heldProvidersOption, type HeldProviders } from '..
 import { watcherRoomInputs } from '../agents/watcherRoomInput'
 import { BABYSITTING_RETIRED } from '../agents/babysitting'
 import { visibleWatcherState, watcherThreadVisible, withoutThreads } from '../../shared/watcherVisibility'
-import { HOST_CANNOT_STAGE_VIDEOS, mediaTileScale, type AgentAttachmentFileUpload, type AgentAttachmentStageFileRequest, parsePublicProviderEntityId, providerIdSchema } from '../../shared/agents'
+import { HOST_CANNOT_STAGE_VIDEOS, PROVIDER_RESULT_UNCONFIRMED, mediaTileScale, type AgentAttachmentFileUpload, type AgentAttachmentStageFileRequest, parsePublicProviderEntityId, providerIdSchema } from '../../shared/agents'
 import { modelInForce } from '../../shared/modelLineup'
-import type { WatcherHostControl, WatcherHostRead, WatcherRemoteHosts, WatcherRoomThreadInput } from '../../shared/watcherHost'
+import { ProjectAdditionUnconfirmed, type WatcherHostControl, type WatcherHostRead, type WatcherRemoteHosts, type WatcherRoomThreadInput } from '../../shared/watcherHost'
 import { BRING_BACK_INTERFACE_WORDS, bringBackInInterfaceLanguage, hostCannotStageScreenshotsWords, inInterfaceLanguage, threadStartsUnsupportedWords, watcherDisabledWords } from '../../shared/interfaceWords'
 import { randomUUID } from 'node:crypto'
 import { isAgentThreadDetailDelta } from '../../shared/agentThreadDetail'
@@ -328,8 +328,14 @@ export class DesktopHostRouter {
       addProject: async (id, command) => {
         const host = connection(id)
         if (command.gitInit && host.service.supportsProjectGitInit !== true) throw new Error(`Update ${host.name} before Watcher sets up Git in a new project there. Nothing was added.`)
-        const result = await host.service.command({ type: 'create-project', ...command }, desktopWindowClient())
-        if (result.error) throw new Error(result.error)
+        let result: AgentState
+        try { result = await host.service.command({ type: 'create-project', ...command }, desktopWindowClient()) }
+        catch (error) {
+          // A request that went and was never answered may have made the project there; one never sent made nothing.
+          if (error instanceof HostRequestUnanswered && error.stage !== 'unsent') throw new ProjectAdditionUnconfirmed(error.message)
+          throw error
+        }
+        if (result.error) throw result.error === PROVIDER_RESULT_UNCONFIRMED ? new ProjectAdditionUnconfirmed(result.error) : new Error(result.error)
         return result.host.projects
       },
       branchMoves: id => {

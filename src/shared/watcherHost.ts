@@ -56,6 +56,8 @@ export type WatcherRoomThreadInput = Pick<WatcherRoomState['watchedThreads'][num
 
 /** What add_project asks a machine's `create-project` for, on This computer or a paired host (ADR-0073, November 12, 2026). */
 export interface ProjectAddition { readonly title: string; readonly path?: string; readonly useExisting?: true; readonly gitInit?: true }
+/** A project addition a host or provider may have carried out without confirming it: list_projects says whether it was added. */
+export class ProjectAdditionUnconfirmed extends Error {}
 export interface WatcherRemoteHosts {
   /**
    * `name` is the machine's name as this computer saved it; `facts` says whether the host lists `host-facts` (#1031), and

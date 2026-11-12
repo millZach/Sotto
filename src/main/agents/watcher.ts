@@ -1,10 +1,10 @@
 import { sendOutcome } from './sendOutcome'
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdir } from 'node:fs/promises'
-import { join, posix, resolve, win32 } from 'node:path'
+import { mkdir, realpath } from 'node:fs/promises'
+import { isAbsolute, join, posix, relative, resolve, win32 } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 import { capabilitiesForThread, isThreadProviderConnected, lastUserMessageIdOf, PROVIDER_LABELS,
-  type AgentCommand, type AgentDelivery, type AgentHostSnapshot, type AgentModel, type AgentProject, type AgentRuntimeMode, type AgentSpeed, type AgentThread, type HandoverCounts, isVisualMessage } from '../../shared/agents'
+  type AgentCommand, type AgentDelivery, type AgentHostSnapshot, type AgentModel, type AgentProject, type AgentRuntimeMode, type AgentSpeed, type AgentThread, type HandoverCounts, isVisualMessage, PROVIDER_RESULT_UNCONFIRMED } from '../../shared/agents'
 import { resolveModel } from '../../shared/modelCatalog'
 import { withoutUltracode } from '../../shared/ultracode'
 import { capRuntimeMode, fitSpeed, messageNamesModel, roleHold, roleStartNote, startFromRole, workerCounts, WORKER_KINDS, type HeldPermission, type RoleField, type WorkerKind, type WorkerRoleChoices } from '../../shared/workerRoles'
@@ -75,7 +75,7 @@ import { WatcherHoldState } from './watcherHold'
 import { delegatedRefusalWords, type DelegatedAction, type DelegatingThread } from './watcherDelegated'
 import { delegatingThreadOfLink } from '../../shared/clientIdentity'
 import { WATCHER_FINAL_OUTCOMES, watcherBriefTurnIsNewest, watcherLatestTurnMessageId, watcherNewestTurnReply, watcherNewestTurnSaidMore, watcherTurnOutcome } from './watcherOutcomes'
-import { watcherHostControlSchema, watcherHostReadSchema, watcherHostProjectionSchema, type WatcherHostControl, type WatcherHostRead, type WatcherHostProjection, type WatcherRemoteHosts, type WatcherRoomThreadInput } from '../../shared/watcherHost'
+import { ProjectAdditionUnconfirmed, watcherHostControlSchema, watcherHostReadSchema, watcherHostProjectionSchema, type WatcherHostControl, type WatcherHostRead, type WatcherHostProjection, type WatcherRemoteHosts, type WatcherRoomThreadInput } from '../../shared/watcherHost'
 
 const now = () => new Date().toISOString()
 const key = (target: WatcherThreadTarget) => JSON.stringify([target.hostId, target.threadId])
@@ -367,6 +367,8 @@ const STILL_ADMITTING = 'Sotto is still checking this call, so its result is not
 const STILL_WATCHING = 'Sotto is still carrying this out, so its result is not known yet. It may still finish, and calling it again is safe. Read list_threads to see where it stands.'
 const STILL_READING = 'This read took longer than your provider waits for a tool call. Nothing changed. Read again.'
 const STILL_ADDING = 'Sotto is still adding this project, so its result is not known yet. It may still finish. Call list_projects to see whether it was added before calling again.'
+const ADD_NOT_ALLOWED = 'Watcher adds a project only for the user\'s own message to it, or their answer to its question. Nothing was added.'
+const ADD_UNCONFIRMED = 'Sotto cannot tell whether the project was added: its machine or provider did not confirm it. Call list_projects to see whether it is there before trying again.'
 /** What a call that may outlast its client's wait has reached: the operation its start, send, stop or settle admitted. */
 interface CallProgress {
   operationId?: string
@@ -745,7 +747,7 @@ export class WatcherService implements WatcherControlHooks {
    */
   private readonly unsettles = new Map<string, string>()
   /** add_project's answered calls, by request and retry key, with what each asked: a retry answers as the first did. */
-  private readonly addedProjects = new Map<string, { readonly asked: string; readonly result: WatcherToolOutput<'add_project'> }>()
+  private readonly addedProjects = new Map<string, { readonly asked: string; readonly result: Promise<WatcherToolOutput<'add_project'>> }>()
   private settledTimer: ReturnType<typeof setTimeout> | undefined
   private endingSettled = false
   /**
@@ -1052,33 +1054,50 @@ export class WatcherService implements WatcherControlHooks {
    * answer to Watcher's question in the turn it starts: never news, a thread's message or Watcher's own initiative. No card
    * asks first, as none asks before start_thread. It keeps no operation, as unsettle_thread keeps none.
    */
-  private async addProject(input: WatcherToolInput<'add_project'>): Promise<WatcherToolOutput<'add_project'>> {
+  private addProject(input: WatcherToolInput<'add_project'>): Promise<WatcherToolOutput<'add_project'>> {
     const retry = `${input.requestId}\0${input.retryKey}`, asked = digest(input), earlier = this.addedProjects.get(retry)
     if (earlier) {
       if (earlier.asked !== asked) refuse('RETRY_KEY_CONFLICT', 'This retry key already belongs to a different call. Nothing was added.')
+      // A call still waiting in the lane is answered when it is, rather than run a second time and told the folder exists.
       return earlier.result
     }
+    const result = this.addProjectNow(input)
+    this.addedProjects.set(retry, { asked, result })
+    if (this.addedProjects.size > UNSETTLES_KEPT) this.addedProjects.delete(this.addedProjects.keys().next().value!)
+    // A refusal is not kept: the same key may try again once its cause is gone.
+    result.catch(() => { if (this.addedProjects.get(retry)?.result === result) this.addedProjects.delete(retry) })
+    return result
+  }
+  private async addProjectNow(input: WatcherToolInput<'add_project'>): Promise<WatcherToolOutput<'add_project'>> {
     // Asked again in the command's lane, so a request that ended while the add waited there makes nothing.
     const allowed = (): void => {
       const record = this.view(), request = record.requests.find(item => item.id === input.requestId)
       const answer = request !== undefined && answeredRequestOf(request.rootUserMessageId) !== undefined && this.toldRequestLive(request.id)
       if (!request || request.standingWatchId || request.state !== 'active' || !this.owns(record, request) || isToldRequest(request) && !answer) {
-        refuse('REQUEST_NOT_ACTIVE', 'Watcher adds a project only for the user\'s own message to it, or their answer to its question. Nothing was added.')
+        refuse('REQUEST_NOT_ACTIVE', ADD_NOT_ALLOWED)
       }
     }
     allowed()
+    // What a refused or unanswered create-project tells Watcher: its own code for an ended request, a reconcile for an add the
+    // machine may have made, and otherwise the machine's words.
+    const failed = (error: unknown): never => {
+      if (error instanceof Refusal) throw error
+      const words = error instanceof Error && error.message ? error.message.slice(0, 2_000) : 'Sotto could not add the project. Nothing was added.'
+      if (words === ADD_NOT_ALLOWED) refuse('REQUEST_NOT_ACTIVE', ADD_NOT_ALLOWED)
+      if (error instanceof ProjectAdditionUnconfirmed || words === PROVIDER_RESULT_UNCONFIRMED) refuse('DELIVERY_UNCERTAIN', ADD_UNCONFIRMED, true)
+      refuse('INVALID_INPUT', words)
+    }
     const newFolder = input.newFolder === true, gitInit = input.gitInit === true
     if (gitInit && !newFolder) refuse('INVALID_INPUT', 'gitInit runs only in a folder Sotto makes. Set newFolder too, or add the folder as it is and ask a worker to set up Git. Nothing was added.')
     if (!input.path && !(newFolder && input.title)) refuse('INVALID_INPUT', 'Name the folder by its absolute path, or set newFolder with a title to make it in the machine\'s default projects directory. Nothing was added.')
     const title = input.title ?? input.path!.split(/[\\/]+/u).filter(Boolean).at(-1)
     if (!title) refuse('INVALID_INPUT', 'Give the project a title. Nothing was added.')
     const hostId = input.hostId ?? this.hostId(), local = hostId === this.hostId()
-    if (local && input.path && this.reservedProject(input.path)) refuse('INVALID_INPUT', 'That folder is Sotto\'s own. Choose another. Nothing was added.')
+    if (local && input.path && await this.insideOwnFolder(input.path)) refuse('INVALID_INPUT', 'That folder is Sotto\'s own. Choose another. Nothing was added.')
     const command = { title, ...input.path ? { path: input.path } : {}, ...newFolder ? {} : { useExisting: true as const }, ...gitInit ? { gitInit: true as const } : {} }
-    const said = (error: unknown) => error instanceof Error && error.message ? error.message.slice(0, 2_000) : 'Sotto could not add the project. Nothing was added.'
     let found: { readonly projectId: string; readonly path: string; readonly title: string; readonly known: boolean }
     if (local) {
-      try { found = await this.options.control.addProjectForWatcher(command, allowed) } catch (error) { if (error instanceof Refusal) throw error; refuse('INVALID_INPUT', said(error)) }
+      try { found = await this.options.control.addProjectForWatcher(command, allowed) } catch (error) { return failed(error) }
     } else {
       const host = this.remote?.hosts().find(item => item.hostId === hostId)
       if (!host) refuse('UNKNOWN_TARGET', 'That machine is unavailable. Read list_machines again. Nothing was added.')
@@ -1093,8 +1112,7 @@ export class WatcherService implements WatcherControlHooks {
       if (same && newFolder) found = { projectId: same.id, path: same.path, title: same.title, known: true }
       else {
         let after: readonly AgentProject[]
-        // The host's own words: a refusal of the folder, or its connection lost on the way, which list_projects settles.
-        try { after = await remote.addProject(hostId, command) } catch (error) { refuse('INVALID_INPUT', said(error)) }
+        try { after = await remote.addProject(hostId, command) } catch (error) { return failed(error) }
         const project = after.find(item => !had.has(item.id) && (input.path !== undefined ? folder(item.path) === folder(input.path) : item.title === title))
           ?? (input.path !== undefined ? after.find(item => folder(item.path) === folder(input.path!)) : undefined)
         if (!project) refuse('PROVIDER_UNAVAILABLE', 'The project did not appear in that machine\'s list. Call list_projects to see whether it was added before trying again.', true)
@@ -1103,9 +1121,21 @@ export class WatcherService implements WatcherControlHooks {
     }
     const result = { status: 'ok' as const, project: { target: { hostId, projectId: found.projectId }, title: found.title, displayRoot: found.path },
       folderMade: newFolder && !found.known, gitInitialized: gitInit && !found.known, alreadyAdded: found.known }
-    this.addedProjects.set(retry, { asked, result })
-    if (this.addedProjects.size > UNSETTLES_KEPT) this.addedProjects.delete(this.addedProjects.keys().next().value!)
     return result
+  }
+  /**
+   * Whether a folder on this computer is one of Sotto's own, Watcher's working folder or host setup's, or inside one, read
+   * through any link to it and in any case where the computer's folders ignore case.
+   */
+  private async insideOwnFolder(path: string): Promise<boolean> {
+    const fold = (value: string) => process.platform === 'win32' || process.platform === 'darwin' ? value.toLowerCase() : value
+    const real = async (value: string) => fold(await realpath(value).catch(() => resolve(value)))
+    const target = await real(path)
+    for (const own of [join(this.options.directory, 'watcher', 'workspace'), join(this.options.directory, 'host-setup')]) {
+      const between = relative(await real(own), target)
+      if (between === '' || !between.startsWith('..') && !isAbsolute(between)) return true
+    }
+    return false
   }
   private thread(target: WatcherThreadTarget): AgentThread {
     const snapshot = this.owningSnapshot(target.hostId)
