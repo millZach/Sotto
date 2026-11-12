@@ -1006,3 +1006,11 @@ Zach's rule of October 20, 2026: Watcher talks only to parent threads, never to 
 - **Reading is open.** read_thread and list_threads read a delegated thread as before. The user's own typing there is untouched: the rule binds Watcher alone.
 
 This amends the October 13 "Standing watching" section, which let the user watch any ordinary thread: a delegated thread is not one Watcher watches.
+
+## November 11, 2026: the user can skip Watcher's own question (#2477)
+
+A card of Watcher's own question offered only its choices, so the user had to pick one or leave it waiting; a watched thread's card has offered Skip since ADR-0135. Zach: "I am not able to skip watcher questions."
+
+- **The card is skippable.** Watcher's question card is marked `skippable`, so it offers the same Skip a thread's card does: **Skip question** on the desktop and **Skip** on the iPhone. No new look and no Swift change.
+- **A skip is told as news, with no answer.** The skip is the card's ordinary answer with `skipped`, handed to Watcher's service as an answer is. The question becomes `skipped`, with no choice, and its card gives way to **You skipped this question.** Watcher gets `user-answered` news whose `answered` says `skipped` and names no choice: the user skipped the question and gave no answer, so it no longer waits on them, and Watcher goes on without the answer and does not ask it again. It is saved and goes first, as an answer does.
+- **A skipped settle question agrees nothing.** As Keep watching, it lets no `settle_thread` go without `userAgreed`, and the news tells Watcher not to settle the thread on it.

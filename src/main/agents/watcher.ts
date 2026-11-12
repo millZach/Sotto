@@ -1378,19 +1378,22 @@ export class WatcherService implements WatcherControlHooks {
   }
   /**
    * The user's answer on Watcher's own card, from this window or a phone: their choice, kept in the card's own words, and
-   * news to Watcher that says it is theirs (ADR-0073, November 5, 2026). Null when it went; otherwise what to tell the user.
+   * news to Watcher that says it is theirs (ADR-0073, November 5, 2026); or their Skip, told as news that they gave no
+   * answer (#2477). Null when it went; otherwise what to tell the user.
    */
-  async answerOwnQuestion(threadId: string, answer: { readonly requestId: string; readonly answer: string; readonly questionAnswers?: Readonly<Record<string, { readonly optionIds: readonly string[] }>> | undefined }): Promise<string | null> {
+  async answerOwnQuestion(threadId: string, answer: { readonly requestId: string; readonly answer: string; readonly skipped?: true | undefined; readonly questionAnswers?: Readonly<Record<string, { readonly optionIds: readonly string[] }>> | undefined }): Promise<string | null> {
     const id = watcherQuestionOf(answer.requestId), question = id === undefined ? undefined : this.questions.get(id)
     if (!question || question.watcherThreadId !== threadId || question.state !== 'open') return 'This question of Watcher’s no longer waits on you. Nothing was sent.'
     if (!this.isCurrent(threadId)) return 'This question belongs to an earlier Watcher. Nothing was sent. Open Watcher to see what it asks now.'
-    const choice = watcherQuestionChoice(question, answer)
-    if (choice === undefined) return 'Choose one of the answers on Watcher’s card. Nothing was sent.'
-    const answered = await this.questions.answer(question.id, choice)
+    // Only the card's own skip: the card is `skippable`, its one question is not (ADR-0135).
+    const skipped = answer.skipped === true
+    const choice = skipped ? undefined : watcherQuestionChoice(question, answer)
+    if (!skipped && choice === undefined) return 'Choose one of the answers on Watcher’s card. Nothing was sent.'
+    const answered = choice === undefined ? await this.questions.skip(question.id) : await this.questions.answer(question.id, choice)
     if (!answered) return 'This question of Watcher’s no longer waits on you. Nothing was sent.'
     const current = this.view().current
     const event = current ? this.wakes.answeredEvent(answered.settle ?? current.target, randomUUID(),
-      { questionId: answered.id, question: answered.question, choice, ...answered.settle ? { settle: true as const } : {} }) : undefined
+      { questionId: answered.id, question: answered.question, ...choice === undefined ? { skipped: true as const } : { choice }, ...answered.settle ? { settle: true as const } : {} }) : undefined
     // Saved before it goes, as a thread's own message is: nothing else holds the user's choice for Watcher.
     if (event) { await this.toldSaved.add(event).catch(() => undefined); this.wakes.tellSaved([event]) }
     this.publish()

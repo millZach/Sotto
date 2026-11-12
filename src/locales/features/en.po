@@ -8122,6 +8122,10 @@ msgstr "You skipped {title}’s question"
 msgid "You skipped {title}’s question."
 msgstr "You skipped {title}’s question."
 
+#: src/renderer/src/watcher/WatcherQuestions.tsx
+msgid "You skipped this question."
+msgstr "You skipped this question."
+
 #: src/renderer/src/features/productEvents/ProductEventsDialog.tsx
 msgid "You start a feature from a fixed list, at most once a day per feature while Sotto runs. It shows what gets used and what to fix or remove."
 msgstr "You start a feature from a fixed list, at most once a day per feature while Sotto runs. It shows what gets used and what to fix or remove."

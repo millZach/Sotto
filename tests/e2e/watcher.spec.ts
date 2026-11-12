@@ -2100,7 +2100,7 @@ test.describe("Watcher's room on the built app", () => {
     }))
   })
 
-  test('Watcher’s own question is a card where it asked that holds nothing, counts in Needs you and gives way to the user’s choice', async () => {
+  test('Watcher’s own question is a card where it asked that holds nothing, counts in Needs you and gives way to the user’s choice or skip', async () => {
     const asked = 'Settle Footer links? Its pull request merged and it has nothing left to do.'
     // Watcher kept working after it asked: news replies came below the question.
     const news = ['#2240 merged. Sent Council separation to merge next.', 'Owl build asked for computer use on forge. Granted it.',
@@ -2114,9 +2114,10 @@ test.describe("Watcher's room on the built app", () => {
     const turn = (turnId: string, minute: number, sequence: number): AgentActivity => ({ id: `turn-${turnId}`, turnId, afterMessageId: turnId, sequence, kind: 'turn', status: 'completed', title: 'Turn',
       startedAt: new Date(Date.UTC(2026, 6, 12, 19, minute) - 5_000).toISOString(), completedAt: new Date(Date.UTC(2026, 6, 12, 19, minute) + 1_000).toISOString() })
     const activities = [turn('news-ask', 34, 200), ...news.map((_text, index) => turn(`news-${index}`, 36 + index, 201 + index))]
-    const question = (hostId: string, state: 'open' | 'answered'): NonNullable<WatcherRoomState['questions']>[number] => ({ id: '3f1a6c2e-5b7d-4e8f-9a0b-1c2d3e4f5a6b', watcherThreadId: CURRENT,
+    const question = (hostId: string, state: 'open' | 'answered' | 'skipped'): NonNullable<WatcherRoomState['questions']>[number] => ({ id: '3f1a6c2e-5b7d-4e8f-9a0b-1c2d3e4f5a6b', watcherThreadId: CURRENT,
       question: asked, options: [{ label: 'Settle it', description: 'Stop watching it. The thread stays in All threads.' }, { label: 'Keep watching', description: 'Keep it in view in case more work comes in.' }],
-      settle: { hostId, threadId: 'footer-links' }, state, at: new Date(Date.UTC(2026, 6, 12, 19, 35)).toISOString(), ...state === 'answered' ? { choice: 'Settle it', endedAt: new Date(Date.UTC(2026, 6, 12, 19, 44)).toISOString() } : {} })
+      settle: { hostId, threadId: 'footer-links' }, state, at: new Date(Date.UTC(2026, 6, 12, 19, 35)).toISOString(), ...state === 'answered' ? { choice: 'Settle it', endedAt: new Date(Date.UTC(2026, 6, 12, 19, 44)).toISOString() }
+        : state === 'skipped' ? { endedAt: new Date(Date.UTC(2026, 6, 12, 19, 44)).toISOString() } : {} })
     for (const [appearance, motion] of [['dark', 'normal'], ['light', 'reduced']] as const) await onReleaseTrack('owl', () => withSotto(launchOptions('t3-code', appearance, motion), async (launched) => {
       const { page } = launched
       await openThreads(page)
@@ -2128,6 +2129,8 @@ test.describe("Watcher's room on the built app", () => {
       await expect(card).toBeVisible()
       await expect(card).toContainText('Watcher asks')
       await expect(card).toContainText('Watcher keeps working while this waits')
+      // It offers the Skip a thread's card does (#2477).
+      await expect(card.getByRole('button', { name: 'Skip question' })).toBeVisible()
       // It counts in Needs you beside the two threads that wait.
       await expect(pane.locator('.watcher-glance__lead')).toHaveText('3 need you')
       // Where Watcher asked: after its reply that said so, and before the news that came while it waited.
@@ -2181,6 +2184,20 @@ test.describe("Watcher's room on the built app", () => {
         await expect.poll(() => pageBoundProblems(page), { message: `the answered line at ${width}x${height}` }).toEqual([])
         await captureInto(questionEvidence, launched, `own-question-answered-${appearance}-${width}x${height}.png`)
         await contrastHolds(page, `own-question-answered-${appearance}-${width}x${height}`)
+      }
+      // Skipped (#2477): the card gives way to one line that says so, and names no choice.
+      await seedRoom(page, { current: true, messages, activities, more: hostId => ({ questions: [question(hostId, 'skipped')] }) })
+      await openRoom(page)
+      await expect(pane.getByRole('region', { name: 'Question from Watcher' })).toHaveCount(0)
+      await expect(line).toHaveText('You skipped this question.')
+      await expect(pane.locator('.watcher-glance__lead')).toHaveText('2 need you')
+      for (const [width, height] of SIZES) {
+        await resizeContentWindow(launched, width, height)
+        await settle(page)
+        await line.scrollIntoViewIfNeeded()
+        await expect.poll(() => pageBoundProblems(page), { message: `the skipped line at ${width}x${height}` }).toEqual([])
+        await captureInto(questionEvidence, launched, `own-question-skipped-${appearance}-${width}x${height}.png`)
+        await contrastHolds(page, `own-question-skipped-${appearance}-${width}x${height}`)
       }
     }))
   })
