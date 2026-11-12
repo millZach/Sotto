@@ -161,6 +161,32 @@ export class PluginAccounts {
     })
   }
 
+  /**
+   * Keeps an account copy the desktop sent (ADR-0205, amending ADR-0025): the account as the desktop holds it, under
+   * the desktop's own ID for it, and its secret in this computer's credential store. The desktop checked the secret
+   * with its service before it kept it, so it is not checked again here. A copy of an account already held replaces
+   * it, secret and settings. Ordered as a replacement is: the record first and the secret last, so a copy that could
+   * not be kept leaves what was held as it was, and a new one leaves nothing behind.
+   */
+  adopt(account: PluginAccount, secret: string): Promise<{ readonly kept: true } | { readonly kept: false; readonly problem: 'store' | 'limit' }> {
+    return this.inTurn(async () => {
+      const accounts = await this.loadOrNull()
+      if (!accounts) return { kept: false, problem: 'store' }
+      const held = accounts.some(entry => entry.id === account.id)
+      if (!held && accounts.filter(entry => entry.plugin === account.plugin).length >= PLUGIN_ACCOUNTS_MAX) return { kept: false, problem: 'limit' }
+      const next = held ? accounts.map(entry => entry.id === account.id ? account : entry) : [...accounts, account]
+      const slot = pluginAccountSlot(account.id)
+      try { await this.write(next) } catch { return { kept: false, problem: 'store' } }
+      try { await this.options.credentials.set(slot, secret) } catch {
+        await this.write(accounts).catch(() => { this.accounts = accounts })
+        // A new account's secret never arrived, so there is nothing of it to leave behind.
+        if (!held) await this.options.credentials.set(slot, '').catch(() => undefined)
+        return { kept: false, problem: 'store' }
+      }
+      return { kept: true }
+    })
+  }
+
   private now(): string { return (this.options.now?.() ?? new Date()).toISOString() }
 
   /** Runs one change after every change before it, whether those succeeded or not. */

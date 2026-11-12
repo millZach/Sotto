@@ -1,3 +1,4 @@
+import type { PluginAccountCopyStore } from '../../shared/pluginAccountCopies'
 import { agentCaptures, ThreadMediaStore } from './threadMedia'
 import type { ReducedPictures } from './mediaThumbnail'
 import type { BrowserAgentTools } from './browserAgentServer'
@@ -184,6 +185,11 @@ export interface AgentRuntimeOptions {
    * pairing and policy records at every start. `roles` is the host's own Owl answer for worker roles: with it, a
    * delegation's kind of work starts on the desktop's roles.
    */
+  /**
+   * Where a headless host keeps the account copies its desktop sends (ADR-0205, amending ADR-0025), present only
+   * where its own Owl answer turns on plugins. A desktop's own runtime has none: it holds the accounts themselves.
+   */
+  pluginAccountCopies?: PluginAccountCopyStore
   hostDelegation?: { counts(clientId: string): boolean; roles: boolean; revoked?(clientId: string): boolean
     /** A paired, recorded desktop may narrow capacity even when it cannot answer permission requests. */
     capacityEligible?(clientId: string): boolean
@@ -954,6 +960,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     // And sends its own check queue to those desktops' windows, for the machine's panel and Tools › Agents (#1312).
     ...(checks && options.runsAs === 'headless-host' ? { checks } : {}),
     ...(crossMachine && gitStatus ? { bringBack: true } : {}),
+    ...(options.pluginAccountCopies && options.runsAs === 'headless-host' ? { pluginAccountCopies: options.pluginAccountCopies } : {}),
     prompts: { threadPrompts: (threadId, beforeMessageId) => agentHost.threadPrompts(threadId, beforeMessageId) },
     ...(options.threadStartsEnabled === true ? { threadStarts: { startHandover: (threadId: string) => agentHost.startHandover(threadId) } } : {}),
     ...(options.pullRequestViewEnabled === true ? { pullRequestView: true } : {}),

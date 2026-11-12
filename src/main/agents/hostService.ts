@@ -29,6 +29,7 @@ import type { ProjectOrigins, ProjectSetupRequest, ProjectSetupResult } from '..
 import type { HostBranchMoveRequest } from '../../shared/branchMoves'
 import type { HostThreadMoveRequest } from '../../shared/threadMoves'
 import type { DesktopDefaultsInput, DesktopDefaultsReceipt } from '../../shared/desktopDefaults'
+import type { HeldPluginAccountCopy, PluginAccountCopy, PluginAccountCopyReceipt, PluginAccountCopyRemoved, PluginAccountCopyStore } from '../../shared/pluginAccountCopies'
 import type { DelegationRelayAsk, DelegationRemoteAsk, RelayedReply } from '../../shared/delegationRelay'
 import type { TellWatcherAnswer, WatcherTellPush } from '../../shared/tellWatcher'
 import type { DelegationNews } from '../../shared/delegation'
@@ -160,6 +161,15 @@ export interface HostService {
    */
   readonly supportsHostDelegation?: boolean
   desktopDefaults?(defaults: DesktopDefaultsInput, client?: ClientIdentity): Promise<DesktopDefaultsReceipt>
+  /**
+   * The host keeps account copies (ADR-0205, amending ADR-0025), present only on a headless host whose Owl answer
+   * turns on plugins. On a desktop's connection to such a host these send a copy, let one go and read which the host
+   * holds; on the host they keep, delete and list. A secret goes one way: nothing here hands one back.
+   */
+  readonly supportsPluginAccountCopies?: boolean
+  keepPluginAccountCopy?(copy: PluginAccountCopy): Promise<PluginAccountCopyReceipt>
+  removePluginAccountCopy?(accountId: string): Promise<PluginAccountCopyRemoved>
+  pluginAccountCopies?(): Promise<HeldPluginAccountCopy[]>
   /**
    * The host answers the desktop window's read of its own threads' delegations (#1310), present only where it runs
    * delegation for them: what a thread delegated and was sent, and a delegated thread's newest brief, never a reply. Thread
@@ -492,6 +502,8 @@ export class LocalHostService implements HostService {
     setUpProject?: (request: ProjectSetupRequest) => Promise<ProjectSetupResult>
     /** Where a headless host keeps the desktop defaults (#1310), present only where it runs delegation for its own threads. */
     desktopDefaults?: { record(clientId: string, defaults: DesktopDefaultsInput): Promise<DesktopDefaultsReceipt> }
+    /** Where a headless host keeps account copies (ADR-0205), present only where its Owl answer turns on plugins. */
+    pluginAccountCopies?: PluginAccountCopyStore
     workerSwarms?: boolean
     /** This host keeps what a desktop says of **Show every picture and video an agent makes** (ADR-0170, part 7). */
     everyAgentPicture?: boolean
@@ -527,6 +539,20 @@ export class LocalHostService implements HostService {
   desktopDefaults(defaults: DesktopDefaultsInput, client: ClientIdentity): Promise<DesktopDefaultsReceipt> {
     if (!this.options.desktopDefaults) return Promise.reject(new Error('This host does not keep desktop defaults.'))
     return this.options.desktopDefaults.record(client.clientId, defaults)
+  }
+  get supportsPluginAccountCopies(): boolean { return this.options.pluginAccountCopies !== undefined }
+  /** Keeps a copy a desktop sent; the socket listener admits only the desktop the launch script recorded. */
+  keepPluginAccountCopy(copy: PluginAccountCopy): Promise<PluginAccountCopyReceipt> {
+    if (!this.options.pluginAccountCopies) return Promise.reject(new Error('This host does not keep account copies.'))
+    return this.options.pluginAccountCopies.keep(copy)
+  }
+  removePluginAccountCopy(accountId: string): Promise<PluginAccountCopyRemoved> {
+    if (!this.options.pluginAccountCopies) return Promise.reject(new Error('This host does not keep account copies.'))
+    return this.options.pluginAccountCopies.remove(accountId)
+  }
+  pluginAccountCopies(): Promise<HeldPluginAccountCopy[]> {
+    if (!this.options.pluginAccountCopies) return Promise.reject(new Error('This host does not keep account copies.'))
+    return this.options.pluginAccountCopies.list()
   }
   get supportsDelegationViews(): boolean { return this.options.delegationViews !== undefined }
   /** Read from delegation's own record, never a snapshot, as the desktop's own window reads this computer's (#1029). */

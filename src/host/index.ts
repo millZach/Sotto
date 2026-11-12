@@ -15,6 +15,7 @@ import { openRuntimeMemory } from '../main/memory/runtime'
 import { PolicyStore } from '../main/memory/policies'
 import { join } from 'node:path'
 import { openHostCredentials } from './credentials'
+import { hostPluginAccountCopies } from '../main/plugins/accountCopies'
 import { PairedClients } from '../main/agents/pairing'
 import { startSocketServer } from './socketServer'
 import { PullRequestConfirmations } from './pullRequestConfirmations'
@@ -137,6 +138,9 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   // A host reads its features from its own packaged version; a paired desktop cannot turn any on.
   const owlFeatures: OwlFeatureStates = { ...owlFeaturesForTrack(getReleaseTrack(options.sottoVersion ?? packageVersion)), ...options.owlFeatures }
   const usageEnabled = owlFeatures.usage
+  // Account copies (ADR-0205, amending ADR-0025): the plugin accounts the recorded desktop sent this host, each
+  // secret in this host's own encrypted credential file. Kept only while the host's Owl answer turns on plugins.
+  const pluginAccountCopies = owlFeatures.plugins ? hostPluginAccountCopies(directory, credentials) : undefined
   // Its Owl answers, and every provider hosts do not take yet: DeepSeek, whose models need own servers (ADR-0138).
   const heldProviders = heldOnHost(heldProvidersOf(owlFeatures))
   const resumeAfterRestart = owlFeatures['resume-after-restart']
@@ -220,6 +224,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     let heldMoves: HostThreadMoveSources | null | undefined
     const keptWhileOff = crossMachineEnabled ? undefined : await heldMoveWorktrees(directory)
     const runtime = startedRuntime = await createAgentRuntime({
+      ...(pluginAccountCopies ? { pluginAccountCopies } : {}),
       ...owlFeatures['paired-host-browser'] && owlFeatures['quiet-browser'] ? { browserTools: resolveBinding => (browser = hostBrowserTools({ resolveBinding, withoutAsking: startup.browserWithoutAsking,
         saveWithoutAsking: async value => { await repositories.settings.update({ browserWithoutAsking: value }) } })).tools } : {},
       keepsWorktree: keptWhileOff ?? ((threadId: string) => heldMoves === undefined || heldMoves !== null && heldMoves.keepsWorktree(threadId)),

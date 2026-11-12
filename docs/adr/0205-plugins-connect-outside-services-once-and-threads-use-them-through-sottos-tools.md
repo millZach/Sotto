@@ -123,6 +123,18 @@ Slice 5 built decision 9 and settled what it left open.
 - **An older build must not misread the record.** The switch and the projects are written only where they are not the default, and the record's version is 2 only while some account is off or kept to projects. A build from before the switch reads a record of ordinary accounts as it always did, and refuses one that holds an account it would otherwise treat as open to every thread.
 - **Projects are this computer's.** An account is kept to this computer's folders. A project that is later deleted stays on the account as "a project that is gone" until the user lets it go, rather than quietly widening the account to every project. What an account copy does on a paired host is slice 7's to settle.
 
+## November 12, 2026: a host keeps an account copy
+
+Slice 7 is built in three parts. The first is the host's side, and it settled how a copy is kept.
+
+- **A copy is one of the host's own plugin accounts.** It is kept under the desktop's own ID for the account, in the same record and the same credential slots a desktop uses, so the host's threads will use a copy exactly as a desktop's threads use an account, and the desktop can name a copy to replace or remove it.
+- **Only the recorded desktop may send one.** The host takes a copy only from a client the launch script recorded as its desktop, the same test it makes for the desktop's defaults. Being paired is not enough, and neither is being on the tailnet: a phone is paired too. The feature is not offered to any other client, and the request is refused for one that sends it anyway.
+- **A secret goes one way.** The host answers whether it kept a copy and lists which accounts it holds. No request reads a secret back, and the listing's own shape has no room for one.
+- **The host asks no service anything.** The desktop checked the secret before it kept it. A host that cannot keep a secret, as one started without a key file cannot, keeps nothing and says so, so the desktop can tell the user why forge has no copy.
+- **An older host is never sent a secret.** A host that keeps copies lists a feature, and a desktop sends one only to a host that lists it.
+
+One limit across computers, which the slice also names, has nothing to count until a plugin that spends exists. It moves to the first one, Meshy.
+
 ## Considered options
 
 - **Where secrets live.** Each computer its own, as ADR-0025 has it (rejected: every account typed in on every computer). The desktop keeps them and answers a host's calls (rejected: forge's threads would lose plugins while the laptop is closed). One operating-system keychain entry per account (rejected: a native dependency, which ADR-0018 says needs its own ADR).
