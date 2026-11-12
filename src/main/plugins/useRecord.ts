@@ -54,6 +54,15 @@ export class PluginUseRecord {
     })
   }
 
+  /** Removes a removed account's entries. */
+  forgetAccount(accountId: string): Promise<void> {
+    return this.inTurn(async () => {
+      const uses = await this.load()
+      const kept = uses.filter(use => use.accountId !== accountId)
+      if (kept.length !== uses.length) await this.write(kept)
+    })
+  }
+
   /** Removes everything kept: Keep local history is off. Rejects when the file could not be removed. */
   clear(): Promise<void> {
     return this.inTurn(async () => {
