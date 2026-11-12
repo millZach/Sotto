@@ -16,6 +16,7 @@ const ALL_CODES = [
   { code: 'ANSWER_HISTORY_NOT_CLEARED' },
   { code: 'REMOTE_DRAFT_STORAGE_NOT_UPDATED' },
   { code: 'REMOTE_DRAFTS_UNREADABLE' },
+  { code: 'PLUGIN_USE_NOT_CLEARED' },
 ] as const
 
 describe('recoveryNoticeSchema', () => {

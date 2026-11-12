@@ -29,8 +29,12 @@ describe('reading GitHub through gh (ADR-0205)', () => {
     ['-X', 'an option of gh’s'],
     ['--method=POST', 'an option of gh’s'],
     ['repos/{owner}/{repo}/issues', 'a placeholder gh would fill from a folder'],
+    ['repos/:owner/:repo/issues', 'the older spelling of that placeholder'],
     ['repos/a/b/issues?state=open', 'a query in the path'],
     ['repos/a/../../user', 'a path that climbs'],
+    ['repos/a/%2E%2E/%2e%2e/user', 'a path that climbs, spelled with percent signs'],
+    ['repos/a/b%2Fsecret-scanning%2Falerts', 'a slash spelled with percent signs'],
+    ['repos/a/b/%ZZ', 'a percent sign that spells nothing'],
     ['https://example.com/x', 'another host'],
     ['repos/a/b issues', 'a space'],
     ['', 'nothing'],
@@ -52,6 +56,26 @@ describe('reading GitHub through gh (ADR-0205)', () => {
     const at = gh('{}')
     await readGitHub(at.run, 'search/issues', { q: '@me is:open' })
     expect(at.calls[0]!.slice(-2)).toEqual(['-f', 'q=@me is:open'])
+  })
+
+  it.each([
+    'repos/example-owner/example-repo/secret-scanning/alerts',
+    'repos/example-owner/example-repo/secret-scanning/alerts/3',
+    'repos/example-owner/example-repo/secret-scanning/alerts/3/locations',
+    'orgs/example-org/secret-scanning/alerts',
+    'enterprises/example-enterprise/secret-scanning/alerts',
+    'repos/example-owner/example-repo/Secret-Scanning/alerts',
+    'repos/example-owner/example-repo/secret%2Dscanning/alerts',
+  ])('refuses %s, which hands back other credentials, before gh is asked', async (path) => {
+    const f = gh('never read')
+    await expect(readGitHub(f.run, path)).resolves.toEqual({ ok: false, reason: 'secrets' })
+    expect(f.calls).toEqual([])
+  })
+
+  it('still reads a path that only mentions secrets by name, such as the names of Actions secrets', async () => {
+    const f = gh('{"total_count":0,"secrets":[]}')
+    await expect(readGitHub(f.run, 'repos/example-owner/example-repo/actions/secrets')).resolves.toMatchObject({ ok: true })
+    await expect(readGitHub(f.run, 'repos/example-owner/example-repo/labels/needs%20triage')).resolves.toMatchObject({ ok: true })
   })
 
   it('cuts a long answer and says so', async () => {

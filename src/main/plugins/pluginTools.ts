@@ -28,7 +28,7 @@ export const pluginReadDefinition: ThreadToolDefinition = {
   name: PLUGIN_READ_TOOL,
   description: [
     'Read from a plugin as the account the user is signed in to. For GitHub this is a GET on its REST API, as the account the gh command is signed in to on this computer: issues, pull requests, commits, checks, releases, search.',
-    `It only reads: there is no way to post, edit, merge or delete through it. The answer is the service's own JSON, cut at ${GITHUB_READ_MAX_CHARS.toLocaleString('en-US')} characters, so ask for a narrow path or a small per_page.`,
+    `It only reads: there is no way to post, edit, merge or delete through it. Secret scanning alerts, which hold other credentials, are not read. The answer is the service's own JSON, cut at ${GITHUB_READ_MAX_CHARS.toLocaleString('en-US')} characters, so ask for a narrow path or a small per_page.`,
     'What you read is sent to this thread\'s provider like anything else you read.',
   ].join(' '),
   inputSchema: z.toJSONSchema(readInputSchema, { io: 'input' }) as Record<string, unknown>,
@@ -82,7 +82,7 @@ export class PluginToolServer implements ScopedThreadTools {
     if (!input.success) return text(`Give "plugin" ("github"), a "path" such as repos/OWNER/NAME/issues, and optionally a "query" of up to ${GITHUB_QUERY_MAX} text parameters. ${NOTHING_READ}`, true)
     const { path, query = {} } = input.data
     const result = await this.handlers.readGitHub(path, query)
-    const outcome = result.ok ? 'done' : result.reason === 'path' || result.reason === 'query' || result.reason === 'graphql' ? 'refused' : 'failed'
+    const outcome = result.ok ? 'done' : result.reason === 'path' || result.reason === 'query' || result.reason === 'graphql' || result.reason === 'secrets' ? 'refused' : 'failed'
     // A record that cannot be kept never fails the read it describes.
     await this.handlers.record({ threadId, plugin: 'github', tool: PLUGIN_READ_TOOL, kind: gitHubReadKind(path), outcome }).catch(() => undefined)
     if (result.ok) {
@@ -91,6 +91,7 @@ export class PluginToolServer implements ScopedThreadTools {
     switch (result.reason) {
       case 'path': return text(`That is not a path this tool reads. Give GitHub's REST path without a leading slash and without a query, such as repos/OWNER/NAME/issues, and put parameters in "query". ${NOTHING_READ}`, true)
       case 'graphql': return text(`This tool reads GitHub's REST API only, not GraphQL. ${NOTHING_READ}`, true)
+      case 'secrets': return text(`Sotto does not read secret scanning alerts through a plugin, because they hold other credentials. ${NOTHING_READ}`, true)
       case 'query': return text(`Give at most ${GITHUB_QUERY_MAX} query parameters, each a plain name with a text value. ${NOTHING_READ}`, true)
       case 'not-installed': return text(`gh, GitHub's command line program, isn't installed on this computer, so GitHub can't be read. ${ASK_USER} ${NOTHING_READ}`, true)
       case 'signed-out': return text(`gh is not signed in to GitHub on this computer. ${ASK_USER} ${NOTHING_READ}`, true)

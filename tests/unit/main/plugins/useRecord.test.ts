@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -47,8 +47,41 @@ describe('the plugin use record (ADR-0205)', () => {
     const record = new PluginUseRecord(await folder(), { historyEnabled: () => true })
     await record.add(use('kept'))
     await record.add(use('forgotten'))
-    await record.forgetThread('forgotten')
+    await record.forgetThreads(['forgotten'])
     expect((await record.list()).map(entry => entry.threadId)).toEqual(['kept'])
+  })
+
+  it('forgets every thread asked for at once, whether in one call or several started together', async () => {
+    const directory = await folder()
+    const record = new PluginUseRecord(directory, { historyEnabled: () => true })
+    for (const thread of ['a', 'b', 'c', 'kept']) await record.add(use(thread))
+    // Started together, before either has read what is kept: neither may put the other's thread back.
+    await Promise.all([record.forgetThreads(['a']), record.forgetThreads(['b', 'c'])])
+    expect((await record.list()).map(entry => entry.threadId)).toEqual(['kept'])
+    expect((await new PluginUseRecord(directory, { historyEnabled: () => true }).list()).map(entry => entry.threadId)).toEqual(['kept'])
+  })
+
+  it('writes nothing for an addition that was waiting when Keep local history was turned off', async () => {
+    const directory = await folder()
+    let history = true
+    const record = new PluginUseRecord(directory, { historyEnabled: () => history })
+    await record.add(use('before'))
+    // A second record over the same file has not read it yet, so its addition is still loading when history goes off.
+    const late = new PluginUseRecord(directory, { historyEnabled: () => history })
+    const adding = late.add(use('late'))
+    history = false
+    const clearing = late.clear()
+    await Promise.all([adding, clearing])
+    await expect(readFile(join(directory, 'plugin-use.json'), 'utf8')).rejects.toThrow()
+    history = true
+    expect(await late.list()).toEqual([])
+  })
+
+  it('says when what was kept could not be removed, rather than reporting it cleared', async () => {
+    const directory = await folder()
+    // A folder where the file should be cannot be removed as a file.
+    await mkdir(join(directory, 'plugin-use.json', 'held'), { recursive: true })
+    await expect(new PluginUseRecord(directory, { historyEnabled: () => false }).clear()).rejects.toThrow()
   })
 
   it('writes nothing and shows nothing with Keep local history off, and clears what was kept', async () => {

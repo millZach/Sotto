@@ -136,9 +136,9 @@ A thread's agent uses a plugin through Sotto's tools, never with a token of its 
 
 **GitHub** is the first. Its account is the `gh` command's own sign-in on this computer, so there is nothing to add and Sotto stores nothing for it. The row says who `gh` is signed in to github.com as. When `gh` is signed out, the row shows `gh auth login` with **Copy**: run it in a terminal, then press **Check again**. When `gh` isn't installed, the row says so and points to cli.github.com. Sotto asks `gh` for the account's name only, never for a token.
 
-Through the plugin an agent reads GitHub's REST API as that account: issues, pull requests, commits, checks, releases and search. It is a read and nothing else, so there is no way to post, merge or delete through it; an agent's own shell can still run `gh`, as it could before.
+Through the plugin an agent reads GitHub's REST API as that account: issues, pull requests, commits, checks, releases and search. It is a read and nothing else, so there is no way to post, merge or delete through it, and Sotto refuses to read secret scanning alerts, which hold other credentials; an agent's own shell can still run `gh`, as it could before.
 
-**Recent use**, in the open row, lists the newest five reads: when, the kind of thing read, such as issues or pull requests, and the thread that read it. Sotto records that much and no more: not which repository or issue, and nothing of what came back. The record follows **Keep local history**, and forgetting a thread removes that thread's entries.
+**Recent use**, in the open row, lists the newest five reads: when, the kind of thing read, such as issues or pull requests, and the thread that read it. Sotto records that much and no more: not which repository or issue, and nothing of what came back. The record follows **Keep local history**, and forgetting a thread removes that thread's entries. If the record cannot be cleared when history is turned off, Sotto says so rather than reporting it done.
 
 ### Memory (off for the beta)
 

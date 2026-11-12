@@ -11,22 +11,39 @@ export const GITHUB_QUERY_MAX = 20
 
 /**
  * A REST path as GitHub documents them, without the leading slash: `repos/OWNER/NAME/issues`. It starts with a letter
- * or digit, so it can never be read as an option of gh's; it holds no `{}` for gh to fill from a folder, no `?` (the
+ * or digit, so it can never be read as an option of gh's; it holds no `{}` and no `:` for gh to fill from a folder (an
+ * older gh reads `:owner` as it reads `{owner}`), no `?` (the
  * query has its own argument), no `..` and no scheme, so it cannot leave github.com's API.
  */
-const PATH = /^[A-Za-z0-9][A-Za-z0-9._~%+@:,=-]*(?:\/[A-Za-z0-9._~%+@:,=-]+)*$/u
+const PATH = /^[A-Za-z0-9][A-Za-z0-9._~%+@,=-]*(?:\/[A-Za-z0-9._~%+@,=-]+)*$/u
 const QUERY_KEY = /^[A-Za-z_][A-Za-z0-9_.[\]-]{0,63}$/u
 
-export type GitHubReadRefusal = 'path' | 'query' | 'graphql'
+/**
+ * Reads Sotto refuses because what they return is other credentials (ADR-0205, decision 6). Secret scanning alerts
+ * hold the literal tokens GitHub found in a repository's history, in every form of the endpoint: a repository's, an
+ * organisation's and an enterprise's, the list, one alert and its locations.
+ */
+const SECRET_SEGMENTS: ReadonlySet<string> = new Set(['secret-scanning'])
+
+export type GitHubReadRefusal = 'path' | 'query' | 'graphql' | 'secrets'
 export type GitHubRead =
   | { readonly ok: true; readonly text: string; readonly truncated: boolean }
   | { readonly ok: false; readonly reason: GitHubReadRefusal | 'not-installed' | 'signed-out' | 'failed'; readonly said?: string }
 
 /** Why a read is refused before gh is asked, or null when it may go. */
 export function gitHubReadRefusal(path: string, query: Readonly<Record<string, string>>): GitHubReadRefusal | null {
-  if (path.length > GITHUB_PATH_MAX || !PATH.test(path) || path.split('/').includes('..')) return 'path'
+  if (path.length > GITHUB_PATH_MAX || !PATH.test(path)) return 'path'
+  // Each part is read as GitHub will read it, so a part spelled with percent signs is checked as what it spells.
+  const parts: string[] = []
+  for (const raw of path.split('/')) {
+    let part: string
+    try { part = decodeURIComponent(raw) } catch { return 'path' }
+    if (part === '.' || part === '..' || /[/\\]/u.test(part) || [...part].some(character => character.charCodeAt(0) < 0x20)) return 'path'
+    parts.push(part.toLowerCase())
+  }
   // GraphQL takes a POST, and one POST there can change things: reads go through REST.
-  if (path.toLowerCase() === 'graphql' || path.toLowerCase().startsWith('graphql/')) return 'graphql'
+  if (parts[0] === 'graphql') return 'graphql'
+  if (parts.some(part => SECRET_SEGMENTS.has(part))) return 'secrets'
   const entries = Object.entries(query)
   if (entries.length > GITHUB_QUERY_MAX || entries.some(([key, value]) => !QUERY_KEY.test(key) || value.length > 1_000 || [...value].some(character => character.charCodeAt(0) < 0x20))) return 'query'
   return null

@@ -6919,6 +6919,10 @@ msgstr ""
 msgid "The provider of {name} is not connected. Choose another model, or connect it in Settings, under Providers."
 msgstr ""
 
+#: src/renderer/src/App.tsx
+msgid "The record of plugin use could not be cleared. Its file was left in place. Repair local storage, then save Settings or restart Sotto to try again."
+msgstr ""
+
 #: src/renderer/src/features/dictation/dictationController.ts
 msgid "The recording could not be completed."
 msgstr ""

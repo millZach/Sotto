@@ -6919,6 +6919,10 @@ msgstr "The projects you left out are not here, as they are not on {name}'s desk
 msgid "The provider of {name} is not connected. Choose another model, or connect it in Settings, under Providers."
 msgstr "The provider of {name} is not connected. Choose another model, or connect it in Settings, under Providers."
 
+#: src/renderer/src/App.tsx
+msgid "The record of plugin use could not be cleared. Its file was left in place. Repair local storage, then save Settings or restart Sotto to try again."
+msgstr "The record of plugin use could not be cleared. Its file was left in place. Repair local storage, then save Settings or restart Sotto to try again."
+
 #: src/renderer/src/features/dictation/dictationController.ts
 msgid "The recording could not be completed."
 msgstr "The recording could not be completed."

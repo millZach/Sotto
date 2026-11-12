@@ -85,6 +85,9 @@ describe('sotto_plugins, the tools a thread’s agent uses plugins through (ADR-
     }
     expect(ghCalls).toEqual([])
     expect(recorded.map(report => report.outcome)).toEqual(['refused', 'refused', 'refused', 'refused'])
+    const alerts = await server.call('admitted', PLUGIN_READ_TOOL, { plugin: 'github', path: 'repos/example-owner/example-repo/secret-scanning/alerts' })
+    expect(said(alerts)).toBe('Sotto does not read secret scanning alerts through a plugin, because they hold other credentials. Nothing was read.')
+    expect(recorded.pop()).toMatchObject({ outcome: 'refused' })
     // Arguments that are not the tool's own are turned away without a read or a record.
     const before = recorded.length
     expect((await server.call('admitted', PLUGIN_READ_TOOL, { plugin: 'github', path: 'user', method: 'POST' })).isError).toBe(true)

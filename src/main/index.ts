@@ -1522,7 +1522,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   localRuntime?.agentControl.onThreadsDeleted(threadIds => {
     const hostId = agentControl.hostId()
     // A forgotten thread takes its entries in the plugin use record with it (ADR-0205).
-    for (const id of threadIds) void pluginUse?.forgetThread(id).catch(() => undefined)
+    void pluginUse?.forgetThreads(threadIds).catch(() => undefined)
     void requestDrafts.forgetThreads(new Set(threadIds.flatMap(id => [id, hostEntityKey(hostId, id)]))).catch(() => undefined)
     // And what their Settles did to delegated threads elsewhere, whether the window, Clear now, the hourly clear or a phone
     // deleted them (#1316 part 3).
@@ -1552,21 +1552,23 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   windowHangs?.start()
   app.on('will-quit', () => windowHangs?.stop())
   const cleanRetiredHistory = async (): Promise<void> => {
-    // With Keep local history off, the plugin use record keeps nothing (ADR-0205).
-    if (!agentHistoryEnabled) void pluginUse?.clear().catch(() => undefined)
     teams?.privacyChanged()
     delegationService?.privacyChanged()
-    const [chats, answers, remoteDrafts] = await Promise.allSettled([
+    const [chats, answers, remoteDrafts, pluginUses] = await Promise.allSettled([
       Promise.resolve().then(() => retiredChatHistory.privacyChanged()),
       Promise.resolve().then(() => requestDrafts.privacyChanged(agentHistoryEnabled)),
       Promise.resolve().then(() => retainedDrafts.privacyChanged()),
+      // With Keep local history off, the plugin use record keeps nothing (ADR-0205).
+      Promise.resolve().then(() => agentHistoryEnabled ? undefined : pluginUse?.clear()),
     ])
     if (chats.status === 'rejected') recoveryNotices.publish({ code: 'RETIRED_CHAT_HISTORY_NOT_CLEARED' })
     if (answers.status === 'rejected') recoveryNotices.publish({ code: 'ANSWER_HISTORY_NOT_CLEARED' })
     if (remoteDrafts.status === 'rejected') recoveryNotices.publish({ code: 'REMOTE_DRAFT_STORAGE_NOT_UPDATED' })
+    if (pluginUses.status === 'rejected') recoveryNotices.publish({ code: 'PLUGIN_USE_NOT_CLEARED' })
     if (chats.status === 'rejected') throw chats.reason
     if (answers.status === 'rejected') throw answers.reason
     if (remoteDrafts.status === 'rejected') throw remoteDrafts.reason
+    if (pluginUses.status === 'rejected') throw pluginUses.reason
   }
   // Retired records never start a provider. Apply the saved privacy preference once,
   // and keep startup available when inaccessible storage needs a later Settings retry.

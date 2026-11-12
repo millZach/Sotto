@@ -14,44 +14,59 @@ export type PluginUseReport = Omit<PluginUse, 'id' | 'at'>
  * when. It holds no content: not what was asked for by name, not what came back. One small file in Sotto's data
  * folder, newest first, the newest PLUGIN_USE_KEPT kept. It follows Keep local history: with history off nothing is
  * written and what was kept is removed, and forgetting a thread removes that thread's entries.
+ *
+ * Every change runs whole, one after another: it reads what is kept, changes it and writes it before the next begins.
+ * Two threads forgotten at once therefore both go, and an addition that was waiting when history was turned off finds
+ * it off when its turn comes and writes nothing.
  */
 export class PluginUseRecord {
   private readonly path: string
   private uses: PluginUse[] | undefined
-  private writing: Promise<void> = Promise.resolve()
+  private queue: Promise<unknown> = Promise.resolve()
   constructor(directory: string, private readonly options: { readonly historyEnabled: () => boolean; readonly now?: () => Date }) {
     this.path = join(directory, 'plugin-use.json')
   }
 
-  /** The kept uses, newest first. */
-  async list(): Promise<readonly PluginUse[]> {
-    if (!this.options.historyEnabled()) return []
-    return [...await this.load()]
+  /** The kept uses, newest first, as they stand once every change asked for so far has run. */
+  list(): Promise<readonly PluginUse[]> {
+    return this.inTurn(async () => this.options.historyEnabled() ? [...await this.load()] : [])
   }
 
-  /** Keeps one use. A record that cannot be written never fails the tool call it describes. */
-  async add(report: PluginUseReport): Promise<void> {
-    if (!this.options.historyEnabled()) return
-    const uses = await this.load()
-    uses.unshift({ ...report, id: randomUUID(), at: (this.options.now?.() ?? new Date()).toISOString() })
-    uses.length = Math.min(uses.length, PLUGIN_USE_KEPT)
-    await this.save()
+  /** Keeps one use. Rejects when it cannot be written; the tool that reports it does not fail for that. */
+  add(report: PluginUseReport): Promise<void> {
+    return this.inTurn(async () => {
+      if (!this.options.historyEnabled()) return
+      const uses = await this.load()
+      // History may have been turned off while the file was read.
+      if (!this.options.historyEnabled()) return
+      const next = [{ ...report, id: randomUUID(), at: (this.options.now?.() ?? new Date()).toISOString() }, ...uses].slice(0, PLUGIN_USE_KEPT)
+      await this.write(next)
+    })
   }
 
-  /** Removes a forgotten thread's entries. */
-  async forgetThread(threadId: string): Promise<void> {
-    const uses = await this.load()
-    const kept = uses.filter(use => use.threadId !== threadId)
-    if (kept.length === uses.length) return
-    this.uses = kept
-    await this.save()
+  /** Removes forgotten threads' entries, all of them in one change. */
+  forgetThreads(threadIds: readonly string[]): Promise<void> {
+    const gone = new Set(threadIds)
+    return this.inTurn(async () => {
+      const uses = await this.load()
+      const kept = uses.filter(use => !gone.has(use.threadId))
+      if (kept.length !== uses.length) await this.write(kept)
+    })
   }
 
-  /** Removes everything kept: Keep local history was turned off, or local history was cleared. */
-  async clear(): Promise<void> {
-    this.uses = []
-    this.writing = this.writing.catch(() => undefined).then(() => rm(this.path, { force: true }))
-    await this.writing
+  /** Removes everything kept: Keep local history is off. Rejects when the file could not be removed. */
+  clear(): Promise<void> {
+    return this.inTurn(async () => {
+      this.uses = []
+      await rm(this.path, { force: true })
+    })
+  }
+
+  /** Runs one change after every change before it, whether those succeeded or not. */
+  private inTurn<Result>(change: () => Promise<Result>): Promise<Result> {
+    const run = this.queue.catch(() => undefined).then(change)
+    this.queue = run
+    return run
   }
 
   private async load(): Promise<PluginUse[]> {
@@ -62,24 +77,21 @@ export class PluginUseRecord {
       // An entry this version cannot read is dropped rather than failing the rest.
       if (parsed.success) uses = parsed.data.uses.flatMap(entry => { const use = pluginUseSchema.safeParse(entry); return use.success ? [use.data] : [] })
     } catch { /* No file yet, or one that cannot be read: an empty record. */ }
-    this.uses ??= uses
-    return this.uses
+    this.uses = uses
+    return uses
   }
 
-  private save(): Promise<void> {
-    const write = async (): Promise<void> => {
-      const next = `${this.path}.next`
-      await mkdir(dirname(this.path), { recursive: true })
-      try {
-        await writeFile(next, JSON.stringify({ version: 1, uses: this.uses ?? [] }), { mode: 0o600 })
-        await rename(next, this.path)
-      } catch (error) {
-        await rm(next, { force: true })
-        throw error
-      }
+  /** Writes the record whole and only then takes it as kept, so a failed write leaves what was kept as it was. */
+  private async write(uses: PluginUse[]): Promise<void> {
+    const next = `${this.path}.next`
+    await mkdir(dirname(this.path), { recursive: true })
+    try {
+      await writeFile(next, JSON.stringify({ version: 1, uses }), { mode: 0o600 })
+      await rename(next, this.path)
+    } catch (error) {
+      await rm(next, { force: true })
+      throw error
     }
-    // One write at a time, in order; a failed one does not stop the next.
-    this.writing = this.writing.catch(() => undefined).then(write)
-    return this.writing
+    this.uses = uses
   }
 }
