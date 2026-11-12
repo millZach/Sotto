@@ -141,10 +141,10 @@ export type PluginAccountRemove = z.infer<typeof pluginAccountRemoveSchema>
 
 /**
  * Why an account was not saved or removed. `refused`: the service did not accept the secret. `unreachable`: the service
- * could not be asked. `name-taken`, `limit`: the plugin already has that name, or its full count of accounts.
+ * could not be asked. `busy`: the service is turning requests away for now. `name-taken`, `limit`: the plugin already has that name, or its full count of accounts.
  * `store`: Sotto could not keep the secret or the account. `gone`: the account is no longer there.
  */
-export const PLUGIN_ACCOUNT_PROBLEMS = ['refused', 'unreachable', 'name-taken', 'limit', 'store', 'gone'] as const
+export const PLUGIN_ACCOUNT_PROBLEMS = ['refused', 'unreachable', 'busy', 'name-taken', 'limit', 'store', 'gone'] as const
 export type PluginAccountProblem = typeof PLUGIN_ACCOUNT_PROBLEMS[number]
 export const pluginAccountResultSchema = z.discriminatedUnion('ok', [
   z.object({ ok: z.literal(true), accounts: pluginAccountsSchema }).strict(),

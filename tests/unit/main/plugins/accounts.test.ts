@@ -59,7 +59,7 @@ describe('plugin accounts (ADR-0205)', () => {
   })
 
   it('keeps nothing when the service refuses the secret or cannot be asked', async () => {
-    for (const problem of ['refused', 'unreachable'] as const) {
+    for (const problem of ['refused', 'unreachable', 'busy'] as const) {
       const { made, kept } = await accounts(async () => ({ ok: false, problem }))
       await expect(made.add({ plugin: 'vercel', name: 'Work', secret: GOOD })).resolves.toEqual({ ok: false, problem })
       expect(kept.slots.size).toBe(0)

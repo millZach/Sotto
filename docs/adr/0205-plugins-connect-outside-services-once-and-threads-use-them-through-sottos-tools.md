@@ -82,8 +82,8 @@ Slice 3 confirmed Vercel's row of the table on Vercel's own documentation on Nov
 
 So a Vercel read is held four ways rather than one, and this is the pattern for a plugin read over `fetch`:
 
-1. **A refuse list of path parts**, in any version of the API: environment variables, tokens, secrets, Edge Config, drains, webhooks, certificates, integrations, stores, a deployment's files and a domain's transfer code, and the `decrypt` query parameter. Refused before anything is sent.
-2. **Fields are taken out of every answer.** An allowed read can still carry a credential, as a project does, so the answer must be JSON, and `env`, deploy hooks, protection bypass, and any field whose name ends in secret, token, password, key or credential are replaced before the agent sees it. The user's email address goes too: it is theirs, and an answer goes on to the thread's provider. An answer that is not JSON is not handed over.
+1. **A refuse list of path parts**, in any version of the API: environment variables, tokens, secrets, Edge Config under both its names (`edge-config` and `global-config`), drains, webhooks, certificates, integrations, stores, a deployment's files, a domain's transfer code and the account's activity log, and the `decrypt` query parameter. Refused before anything is sent.
+2. **Fields are taken out of every answer.** An allowed read can still carry a credential, as a project does, so the answer must be JSON, and `env`, deploy hooks, protection bypass, a team's invite code, and any field whose name ends in secret, token, password, key or credential are replaced before the agent sees it. The user's email address goes too: it is theirs, and an answer goes on to the thread's provider. An answer that is not JSON is not handed over.
 3. **No redirect is followed**, so a token cannot be carried to another host.
 4. **The token itself is taken out of whatever comes back.** A service can echo a request's credential, so the account's own token is removed from an answer, and of an error only the status and Vercel's short code are passed on, never its message.
 

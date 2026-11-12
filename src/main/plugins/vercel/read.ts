@@ -21,12 +21,12 @@ const QUERY_KEY = /^[A-Za-z_][A-Za-z0-9_.[\]-]{0,63}$/u
  * Reads Sotto refuses because what they return is other credentials, or may be (ADR-0205, decision 6). Vercel's pages,
  * read on November 12, 2026, do not say whether an environment variable's value comes back in the clear, so every
  * route to one is refused, with the routes to tokens, signing secrets, certificates, stores, a deployment's files and
- * a domain's transfer code.
+ * a domain's transfer code. Edge Config goes by two names in Vercel's API, and both are here.
  * A path is refused when any of its parts is one of these, in any version of the API.
  */
 const SECRET_PARTS: ReadonlySet<string> = new Set([
   'env', 'secrets', 'tokens', 'token', 'edge-config', 'drains', 'log-drains', 'webhooks', 'certs', 'integrations', 'storage', 'stores',
-  'files', 'bypass', 'oidc', 'connect', 'auth-code',
+  'files', 'bypass', 'oidc', 'connect', 'auth-code', 'global-config',
 ])
 /** Query parameters that ask for a secret in the clear, or for an answer that never ends. */
 const REFUSED_QUERY: ReadonlySet<string> = new Set(['decrypt', 'follow'])
@@ -37,9 +37,9 @@ const REFUSED_QUERY: ReadonlySet<string> = new Set(['decrypt', 'follow'])
  * too: it is theirs, and an answer goes on to the thread's provider.
  */
 const REMOVED_KEYS: ReadonlySet<string> = new Set([
-  'env', 'legacyvalue', 'vsmvalue', 'protectionbypass', 'passwordprotection', 'deployhooks', 'gitcredentialid', 'authorization', 'headers', 'email', 'authcode',
+  'env', 'legacyvalue', 'vsmvalue', 'protectionbypass', 'passwordprotection', 'deployhooks', 'gitcredentialid', 'authorization', 'headers', 'email', 'authcode', 'invitecode',
 ])
-const REMOVED_ENDINGS = /(?:secret|secrets|token|tokens|password|passphrase|privatekey|apikey|credential|credentials|connectionstring)$/u
+const REMOVED_ENDINGS = /(?:secret|secrets|token|tokens|password|passphrase|privatekey|apikey|credential|credentials|connectionstring|envvar|envvars)$/u
 
 export type VercelReadRefusal = 'path' | 'query' | 'secrets'
 export type VercelRead =
@@ -67,6 +67,9 @@ export function vercelReadRefusal(path: string, query: Readonly<Record<string, s
   const parts = readParts(path)
   if (!parts) return 'path'
   if (parts.some(part => SECRET_PARTS.has(part))) return 'secrets'
+  // The account's activity log (`v3/events`) carries what each change set, an environment variable's new value and
+  // a team's invite code among them. A deployment's own events, its build log, are a different read and stay.
+  if (parts[1] === 'events') return 'secrets'
   const entries = Object.entries(query)
   if (entries.some(([key]) => REFUSED_QUERY.has(key.toLowerCase()))) return 'secrets'
   if (entries.length > VERCEL_QUERY_MAX || entries.some(([key, value]) => !QUERY_KEY.test(key) || value.length > 1_000 || [...value].some(character => character.charCodeAt(0) < 0x20))) return 'query'
@@ -151,8 +154,8 @@ export async function readVercel(fetcher: VercelFetch, token: string, path: stri
 
 /**
  * Asks Vercel whether a token is good, and what it calls the account: `GET /v2/user`. Only the username is kept, to
- * tell accounts apart on the page. A token Vercel will not take is refused; a Vercel that cannot be asked is not the
- * same thing, and says so.
+ * tell accounts apart on the page. A token Vercel will not take is refused; a Vercel that cannot be asked, or that
+ * is turning requests away for now, is not the same thing, and says so.
  */
 export async function checkVercelToken(fetcher: VercelFetch, token: string, options: { readonly base?: string; readonly signal?: AbortSignal } = {}): Promise<SecretCheck> {
   const address = addressOf(options.base ?? VERCEL_API, 'v2/user', {})
@@ -161,7 +164,12 @@ export async function checkVercelToken(fetcher: VercelFetch, token: string, opti
   try {
     const response = await fetcher(address, { method: 'GET', headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' }, redirect: 'manual',
       signal: options.signal ? AbortSignal.any([options.signal, timeout]) : timeout })
-    if (response.status === 401 || response.status === 403) return { ok: false, problem: 'refused' }
+    const said = response.ok ? null : await bodyOf(response)
+    // The line a read draws: a token Vercel will not take, apart from one that may not read this one thing.
+    if (response.status === 401 || (response.status === 403 && /invalidToken|missingToken/u.test(said ?? ''))) return { ok: false, problem: 'refused' }
+    // A token scoped to a team or a project may not read the account it belongs to, and is good all the same.
+    if (response.status === 403 || response.status === 404) return { ok: true, signedInAs: null }
+    if (response.status === 429) return { ok: false, problem: 'busy' }
     if (!response.ok) return { ok: false, problem: 'unreachable' }
     const user = (JSON.parse(await bodyOf(response) ?? 'null') as { user?: { username?: unknown } } | null)?.user
     const username = typeof user?.username === 'string' && /^[A-Za-z0-9._-]{1,100}$/u.test(user.username) ? user.username : null

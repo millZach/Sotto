@@ -19,7 +19,7 @@ export interface PluginCredentials {
 }
 
 /** What a service said of a secret it was asked about: good, with its own name for the account, refused, or not asked. */
-export type SecretCheck = { readonly ok: true; readonly signedInAs: string | null } | { readonly ok: false; readonly problem: 'refused' | 'unreachable' }
+export type SecretCheck = { readonly ok: true; readonly signedInAs: string | null } | { readonly ok: false; readonly problem: 'refused' | 'unreachable' | 'busy' }
 
 /** The credential store could not hand over a secret it holds: it is locked, or cannot be read right now. */
 export class PluginSecretLocked extends Error {}
@@ -109,7 +109,7 @@ export class PluginAccounts {
       // still the one in use: a failed first write changed nothing, and a failed second leaves the old secret.
       try { await this.write(next) } catch { return refusal('store') }
       try { await this.options.credentials.set(pluginAccountSlot(account.id), request.secret) } catch {
-        await this.write(accounts).catch(() => undefined)
+        await this.write(accounts).catch(() => { this.accounts = accounts })
         return refusal('store')
       }
       return { ok: true, accounts: next }

@@ -136,6 +136,7 @@ function useProblemWords(): (problem: PluginAccountProblem, replacing: boolean) 
     switch (problem) {
       case 'refused': return t`Vercel did not accept this token. ${kept} Make a new token at ${VERCEL_TOKENS_PAGE} and paste it here.`
       case 'unreachable': return t`Vercel could not be reached to check the token. ${kept} Check your connection, then try again.`
+      case 'busy': return t`Vercel is turning requests away for now, so the token could not be checked. ${kept} Wait a minute, then try again.`
       case 'name-taken': return t`There is already a Vercel account with that name. Nothing was saved. Give this one another name.`
       case 'limit': return t`Vercel already has as many accounts as Sotto keeps for one plugin. Nothing was saved. Remove one first.`
       case 'gone': return t`That account is no longer here. Nothing was changed.`

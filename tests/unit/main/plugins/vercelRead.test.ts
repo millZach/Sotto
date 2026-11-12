@@ -59,6 +59,9 @@ describe('reading Vercel with an account’s token (ADR-0205)', () => {
     'v1/integrations/configuration/icfg_example',
     'v8/deployments/dpl_example/files/abc123',
     'v1/registrar/domains/example.com/auth-code',
+    'v1/global-config/ecfg_example/items',
+    'v1/global-config/ecfg_example/item/api_key',
+    'v3/events',
     'v9/projects/example/ENV',
     'v9/projects/example/%65nv',
   ])('refuses %s, which can hand back other credentials, before anything is sent', async (path) => {
@@ -85,7 +88,7 @@ describe('reading Vercel with an account’s token (ADR-0205)', () => {
       passwordProtection: { deploymentType: 'all' },
       link: { type: 'github', repo: 'example', deployHooks: [{ name: 'hook', url: 'https://example.com/made-up-hook' }], gitCredentialId: 'cred_example' },
       latestDeployments: [{ id: 'dpl_1', meta: { githubCommitMessage: 'Fix the build' }, oidcTokenClaims: { sub: 'example' } }],
-      nested: [{ clientSecret: 'made-up', api_key: 'made-up', accessToken: 'made-up', authCode: 'made-up', ok: true }],
+      nested: [{ clientSecret: 'made-up', api_key: 'made-up', accessToken: 'made-up', authCode: 'made-up', inviteCode: 'made-up', newEnvVar: { key: 'A', value: 'made-up' }, statusCode: 200, ok: true }],
     }
     const f = vercel({ body: { project, user: { username: 'example-user', email: 'someone@example.com' } } })
     const result = await readVercel(f.fetcher, TOKEN, 'v9/projects/example')
@@ -94,7 +97,7 @@ describe('reading Vercel with an account’s token (ADR-0205)', () => {
         id: 'prj_example', name: 'example', env: REMOVED, protectionBypass: REMOVED, passwordProtection: REMOVED,
         link: { type: 'github', repo: 'example', deployHooks: REMOVED, gitCredentialId: REMOVED },
         latestDeployments: [{ id: 'dpl_1', meta: { githubCommitMessage: 'Fix the build' }, oidcTokenClaims: { sub: 'example' } }],
-        nested: [{ clientSecret: REMOVED, api_key: REMOVED, accessToken: REMOVED, authCode: REMOVED, ok: true }],
+        nested: [{ clientSecret: REMOVED, api_key: REMOVED, accessToken: REMOVED, authCode: REMOVED, inviteCode: REMOVED, newEnvVar: REMOVED, statusCode: 200, ok: true }],
       },
       user: { username: 'example-user', email: REMOVED },
     })
@@ -151,6 +154,8 @@ describe('reading Vercel with an account’s token (ADR-0205)', () => {
     expect(vercelReadKind('v6/deployments')).toBe('deployments')
     expect(vercelReadKind('v13/deployments/dpl_example')).toBe('deployments')
     expect(vercelReadKind('v3/deployments/dpl_example/events')).toBe('logs')
+    // A deployment's build log is still read; only the account's own activity log is refused.
+    expect(vercelReadRefusal('v3/deployments/dpl_example/events', {})).toBeNull()
     expect(vercelReadKind('v9/projects/example')).toBe('projects')
     expect(vercelReadKind('v5/domains')).toBe('domains')
     expect(vercelReadKind('v2/user')).toBe('account')
@@ -168,6 +173,12 @@ describe('checking a Vercel token before it is kept', () => {
 
   it('says refused for a token Vercel will not take, and unreachable when Vercel could not be asked', async () => {
     await expect(checkVercelToken(vercel({ status: 403, body: { error: { code: 'forbidden', invalidToken: true } } }).fetcher, TOKEN)).resolves.toEqual({ ok: false, problem: 'refused' })
+    await expect(checkVercelToken(vercel({ status: 403, body: { error: { code: 'forbidden', missingToken: true } } }).fetcher, TOKEN)).resolves.toEqual({ ok: false, problem: 'refused' })
+    // A token scoped to a team or a project may not read the account, and is good all the same.
+    await expect(checkVercelToken(vercel({ status: 403, body: { error: { code: 'forbidden', message: 'Not authorized' } } }).fetcher, TOKEN)).resolves.toEqual({ ok: true, signedInAs: null })
+    await expect(checkVercelToken(vercel({ status: 404, body: { error: { code: 'not_found' } } }).fetcher, TOKEN)).resolves.toEqual({ ok: true, signedInAs: null })
+    // Vercel turning requests away for now is neither a bad token nor a lost connection.
+    await expect(checkVercelToken(vercel({ status: 429, body: { error: { code: 'rate_limited' } } }).fetcher, TOKEN)).resolves.toEqual({ ok: false, problem: 'busy' })
     await expect(checkVercelToken(vercel({ status: 401, body: {} }).fetcher, TOKEN)).resolves.toEqual({ ok: false, problem: 'refused' })
     await expect(checkVercelToken(vercel({ status: 500, body: {} }).fetcher, TOKEN)).resolves.toEqual({ ok: false, problem: 'unreachable' })
     await expect(checkVercelToken(vercel({ status: 302, headers: { location: 'https://example.com' } }).fetcher, TOKEN)).resolves.toEqual({ ok: false, problem: 'unreachable' })

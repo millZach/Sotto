@@ -135,7 +135,9 @@ export class PluginToolServer implements ScopedThreadTools {
     }
     const result = await this.handlers.readVercel(account.id, path, query)
     const outcome = result.ok ? 'done' : result.reason === 'path' || result.reason === 'query' || result.reason === 'secrets' ? 'refused' : 'failed'
-    await this.record(threadId, { plugin: 'vercel', accountId: account.id, kind: vercelReadKind(path), outcome })
+    // An account removed while its read ran has been forgotten already, and gets no entry after that.
+    const still = await this.handlers.accounts().then(accounts => accounts.some(entry => entry.id === account.id), () => false)
+    if (still) await this.record(threadId, { plugin: 'vercel', accountId: account.id, kind: vercelReadKind(path), outcome })
     if (result.ok) return cut(result)
     switch (result.reason) {
       case 'path': return text(`That is not a path this tool reads. Give Vercel's REST path with its version and without a leading slash or a query, such as v6/deployments, and put parameters in "query". ${NOTHING_READ}`, true)

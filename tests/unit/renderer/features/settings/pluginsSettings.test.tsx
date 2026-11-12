@@ -249,3 +249,14 @@ it('does not let a token that is being checked be cancelled, since it is saved o
   await act(async () => { checking.resolve({ ok: true, accounts: [work] }) })
   expect(screen.getByRole('region', { name: 'Vercel account Work' })).toBeInTheDocument()
 })
+
+it('says Vercel is turning requests away, not that the connection is lost, when a token could not be checked for that reason', async () => {
+  const addAccount = vi.fn(async (): Promise<PluginAccountResult> => ({ ok: false, problem: 'busy' }))
+  await act(async () => { render(<PluginsSettings bridge={vercelBridge([], { addAccount })} />) })
+  fireEvent.click(vercelRow())
+  fireEvent.click(screen.getByRole('button', { name: 'Add a Vercel account' }))
+  fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Work' } })
+  fireEvent.change(screen.getByLabelText('Token'), { target: { value: TOKEN } })
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Add account' })) })
+  expect(screen.getByRole('alert')).toHaveTextContent('Vercel is turning requests away for now, so the token could not be checked. Nothing was saved. Wait a minute, then try again.')
+})

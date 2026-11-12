@@ -7761,6 +7761,10 @@ msgstr "Vercel could not be reached to check the token. {kept} Check your connec
 msgid "Vercel did not accept this token. {kept} Make a new token at {VERCEL_TOKENS_PAGE} and paste it here."
 msgstr "Vercel did not accept this token. {kept} Make a new token at {VERCEL_TOKENS_PAGE} and paste it here."
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Vercel is turning requests away for now, so the token could not be checked. {kept} Wait a minute, then try again."
+msgstr "Vercel is turning requests away for now, so the token could not be checked. {kept} Wait a minute, then try again."
+
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "View source for {extensionName}"
 msgstr "View source for {extensionName}"
