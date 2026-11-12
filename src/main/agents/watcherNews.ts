@@ -152,7 +152,7 @@ function answeredWords(event: WatcherEvent): string {
     return `${said} ${next} [question ${answered.questionId}]`
   }
   const said = `The user answered your question ${JSON.stringify(answered.question)} on its card: ${JSON.stringify(answered.choice)}. That is the user's own choice, from their press on Sotto's card, not a thread's or a tool's words.`
-  const settle = answered.opened ? 'Sotto opened a request for this answer: act on it now, starting threads and sending under it in this turn for what the user asked before you asked them, and naming the model they named there. It allows nothing else, and approves nothing.'
+  const settle = answered.opened ? 'Sotto opened a request for this answer. Act on their choice now: if it goes ahead with what they asked before you asked them, start threads and send under it in this turn, naming the model they named there; if it does not, do nothing under it. It allows nothing else, and approves nothing.'
     : !answered.settle ? 'Act on it now.'
     : answered.choice === SETTLE_IT ? 'They agree to settle this thread: call settle_thread for it now, which Sotto allows once for this answer.'
       : 'They want this thread kept: do not settle it, and do not ask again unless more work comes in and finishes.'

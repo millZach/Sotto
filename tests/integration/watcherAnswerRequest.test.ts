@@ -109,10 +109,26 @@ it('opens no request for an answer to a question Watcher asked outside the user�
   await f.endTurn()
   const asked = await f.send('Start the Synthetic project, run by the Synthetic other model.')
   const skipped = await f.ask()
+  expect(f.service.state().questions!.find(item => item.id === skipped.questionId)!.askedUnder).toBe(asked)
   await f.closes(asked)
   expect((await f.service.answerOwnQuestion(f.service.state().current!.target.threadId, { requestId: watcherQuestionRequestId(skipped.questionId), answer: '', skipped: true }))).toBeNull()
   await f.answerNews(skipped.questionId)
   expect(f.service.state().requests.some(request => request.rootUserMessageId.startsWith('answered:'))).toBe(false)
+})
+
+it('sends the answer back to the request it was asked under while that request is still active', async () => {
+  const f = await fixture()
+  const asked = await f.send('Start the Synthetic project, run by the Synthetic other model.')
+  expect(await f.start(asked, f.other.id)).toMatchObject({ status: 'ok', effectiveChoices: { modelId: f.other.id } })
+  const question = await f.ask()
+  await f.endTurn()
+  expect(f.service.state().requests.find(request => request.id === asked)?.state).toBe('active')
+  expect((await f.answer(question.questionId)).error).toBeNull()
+  const news = await f.answerNews(question.questionId)
+  expect(news).not.toContain('Sotto opened a request')
+  expect(news).toContain('Act on it now.')
+  expect(f.service.state().requests.some(request => request.rootUserMessageId.startsWith('answered:'))).toBe(false)
+  expect(await f.start(asked, f.other.id)).toMatchObject({ status: 'ok', effectiveChoices: { modelId: f.other.id } })
 })
 
 it('keeps the model a request named for a follow-up “go” while no thread was started under it, and not after (#2483)', async () => {

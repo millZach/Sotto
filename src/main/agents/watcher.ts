@@ -1397,9 +1397,11 @@ export class WatcherService implements WatcherControlHooks {
     const record = this.view(), current = record.current
     // A choice on a question Watcher asked while it worked on the user's own request opens a request for the one turn its
     // news starts (#2482), as a thread's message that names Watcher does. A Skip, a settle answer or a question a news turn
-    // asked opens none: the user never asked Watcher for that work.
-    const root = current && choice !== undefined && !answered.settle && answered.askedUnder && this.questionRequest(record, answered.askedUnder)
-      ? answeredRequestRoot(answered.id, answered.askedUnder) : undefined, openedId = root && toldRequestId(root)
+    // asked opens none: the user never asked Watcher for that work. While the request it was asked under is still active,
+    // Watcher acts on the answer under that one, with its watch, as before.
+    const asked = answered.askedUnder ? this.questionRequest(record, answered.askedUnder) : undefined
+    const root = current && choice !== undefined && !answered.settle && asked && asked.state !== 'active'
+      ? answeredRequestRoot(answered.id, asked.id) : undefined, openedId = root && toldRequestId(root)
     const created: WatcherRequest | undefined = current && root && openedId && !record.requests.some(request => request.id === openedId)
       ? { id: openedId, watcher: current.target, rootUserMessageId: root, state: 'active', createdAt: now(), closedAt: null, participants: [] } : undefined
     const event = current ? this.wakes.answeredEvent(answered.settle ?? current.target, randomUUID(),
@@ -3094,15 +3096,19 @@ export class WatcherService implements WatcherControlHooks {
     }
     const own = this.ownRequestWords(request)
     if (isToldRequest(request) || request.standingWatchId || request.remoteOrigin) return own
-    const previous = record.requests.findLast(item => item.id !== request.id && item.createdAt <= request.createdAt && key(item.watcher) === key(request.watcher)
-      && !isToldRequest(item) && !item.standingWatchId && !item.remoteOrigin)
+    // By when it began, not its place in the record: a request a queued message started can sit before its own (#1184).
+    let previous: WatcherRequest | undefined
+    for (const item of record.requests) {
+      if (item.id === request.id || item.createdAt > request.createdAt || key(item.watcher) !== key(request.watcher) || isToldRequest(item) || item.standingWatchId || item.remoteOrigin) continue
+      if (!previous || item.createdAt >= previous.createdAt) previous = item
+    }
     return previous && !this.startedUnder(record, previous) ? [...own, ...this.ownRequestWords(previous)] : own
   }
   /** Whether Watcher started a thread under a request, or under a request an answer to a question asked under it opened. */
   private startedUnder(record: Readonly<WatcherRecord>, request: WatcherRequest): boolean {
     const under = new Set([request.id])
     for (const item of record.requests) if (answeredRequestOf(item.rootUserMessageId)?.askedUnder === request.id) under.add(item.id)
-    return record.operations.some(operation => operation.action === 'start' && under.has(operation.requestId))
+    return record.operations.some(operation => operation.action === 'start' && operation.deliveryState !== 'failed' && under.has(operation.requestId))
   }
   /** A request's own words: its first message and its newest since, or a told request's message in its thread. */
   private ownRequestWords(request: WatcherRequest): readonly string[] {
