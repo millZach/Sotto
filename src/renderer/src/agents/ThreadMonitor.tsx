@@ -295,9 +295,13 @@ export function ThreadMonitor({ tasks }: { readonly tasks: readonly AgentMonitor
 
 const commandCount = (count: number): string => plural(count, { one: '# command', other: '# commands' })
 
-/** The readout's second line: the word for the state, how many agents when there is more than one, and any commands beside them. */
-const workingStatus = (working: string, agents: number, commands: number): string =>
-  [working, ...agents > 1 ? [plural(agents, { one: '# agent', other: '# agents' })] : [], ...commands > 0 ? [commandCount(commands)] : []].join(' · ')
+/**
+ * The readout's second line: the word for the state, how many of the provider's agents when there is more than one, any
+ * detached runs (#2476), always counted since nothing else says they are not the provider's, and any commands beside them.
+ */
+const workingStatus = (working: string, agents: number, runs: number, commands: number): string =>
+  [working, ...agents > 1 ? [plural(agents, { one: '# agent', other: '# agents' })] : [], ...runs > 0 ? [plural(runs, { one: '# detached run', other: '# detached runs' })] : [],
+    ...commands > 0 ? [commandCount(commands)] : []].join(' · ')
 
 /**
  * Observational only. The caller supplies this thread's live background work, provider-confirmed, and has
@@ -309,12 +313,13 @@ export function ThreadWorking({ work }: { readonly work: readonly AgentBackgroun
   const character = useCreature()
   const agents = work.filter(task => task.type !== 'command')
   const commands = work.filter(task => task.type === 'command')
+  const runs = agents.filter(task => task.type === 'detached-run').length
   const first = agents[0]
   if (!first) return null
   return <ThreadOrnament kind="working" character={character}
     creature={<CreaturePose character={character} pose="working" agents={agents.length} />}
-    label={first.label} title={[...agents, ...commands].map(task => task.label).join('\n')} status={workingStatus(t({ message: 'Working', comment: 'The readout beside the creature: background work the turn started is running.' }), agents.length, commands.length)}
-    wide={commands.length > 0} />
+    label={first.label} title={[...agents, ...commands].map(task => task.label).join('\n')} status={workingStatus(t({ message: 'Working', comment: 'The readout beside the creature: background work the turn started is running.' }), agents.length - runs, runs, commands.length)}
+    wide={commands.length > 0 || (runs > 0 && agents.length - runs > 1)} />
 }
 
 /**

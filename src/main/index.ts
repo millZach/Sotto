@@ -1137,6 +1137,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     attachAnyFile: owlFeatures['attach-any-file'], markdownSidePanel: owlFeatures['markdown-side-panel'],
     answerImages: owlFeatures['answer-images'], nextTurnChoice: owlFeatures['next-turn-choice'],
     inlineMedia: owlFeatures['inline-media'], showEveryAgentPicture,
+    // The runs threads detach (#2476). A desktop journey reads no processes unless it starts a run of its own to find.
+    detachedRuns: e2eConfiguration === null || process.env.SOTTO_E2E_DETACHED_RUNS === '1',
     ...threadMedia ? { threadMedia } : {},
     reducedPictures: new ReducedPictures(mediaEdgeMaker(url => nativeImage.createFromDataURL(url)), keptThumbnails),
     // Clearing settled threads (ADR-0140): Owl's answer, read once here. The log names the event and a count or a reason's code.

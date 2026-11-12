@@ -585,6 +585,22 @@ describe('background work in the thread composer', () => {
     expect(node.querySelector('.thread-monitor__task')).toHaveAttribute('title', 'Agent 1\nAgent 2\nRun all CI gates')
   })
 
+  it('counts a detached run on its own, and keeps the thread Working with one alone (#2476)', () => {
+    const { state, thread } = watched()
+    thread.status = 'idle'
+    const run = { id: '8b2e3c4d-8f4b-4d3c-9a1e-000000000001', label: 'tetherfall-art-director', type: 'detached-run' as const, startedAt: new Date(NOW - 1_200_000).toISOString(),
+      run: { client: 'Claude Code', model: 'claude-fable-5-2', effort: 'high', command: 'claude -p --name tetherfall-art-director' } }
+    thread.backgroundWork = [run]
+    let node = ornament(renderThreads(state))!
+    expect(node.dataset.ornament).toBe('working')
+    expect(node.querySelector('.thread-monitor__label')).toHaveTextContent('tetherfall-art-director')
+    expect(node.querySelector('.thread-monitor__status')).toHaveTextContent('Working · 1 detached run')
+    cleanup()
+    thread.backgroundWork = [...work(2), run, command('Run all CI gates')]
+    node = ornament(renderThreads(state))!
+    expect(node.querySelector('.thread-monitor__status')).toHaveTextContent('Working · 2 agents · 1 detached run · 1 command')
+  })
+
   it.each(['disconnected', 'settled', 'archived', 'error', 'permission', 'question'] as const)(
     'hides the working creature for %s even though the work is still reported', reason => {
       const { state, thread } = watched()

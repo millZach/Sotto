@@ -19,6 +19,7 @@ import type { ScopedThreadTools } from './threadToolServer'
 import { createHash, randomUUID } from 'node:crypto'
 import { shownMedia, type ShownMediaStore, type ShownRefusal } from './shownMedia'
 import { writtenMedia, type WrittenMedia, type WrittenMediaStore } from './writtenMedia'
+import { withDetachedRuns, type DetachedRunWatch } from './detachedRuns'
 import { placeCallouts, type CalloutRefusal, type CalloutRequest } from './shownCallouts'
 import { SHOWN_STEP_PREFIX, WRITTEN_STEP_PREFIX } from '../../shared/agentActivity'
 import { isDeepStrictEqual } from 'node:util'
@@ -1526,8 +1527,48 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    */
   private readonly turnStarts = new Map<string, { at: number; folder: string; messageId: string; sequence: number | undefined }>()
   keepWrittenMedia(store: WrittenMediaStore, wanted: () => boolean): void { this.writtenMediaKept = { store, wanted } }
+  private detachedRuns: DetachedRunWatch | undefined
+  /**
+   * The runs this host's threads detach (#2476, ADR-0204): each thread's are laid over its background work, so every rule
+   * that reads background work reads them too, and the watch looks again a few seconds after any turn ends.
+   */
+  watchDetachedRuns(watch: DetachedRunWatch): void {
+    this.detachedRuns = watch
+    watch.subscribe(threadIds => this.detachedRunsChanged(threadIds))
+    watch.start()
+  }
+  /** The watch's latest look changed these threads' runs: their records take them now, and the next merge keeps them. */
+  private detachedRunsChanged(threadIds: readonly string[]): void {
+    if (!this.ready) return
+    let changed = false
+    for (const id of threadIds) {
+      const thread = this.threadById(id)
+      if (!thread || !this.visible(thread)) continue
+      const work = withDetachedRuns(thread.backgroundWork, this.detachedRuns?.runsFor(id))
+      if (work === thread.backgroundWork) continue
+      if (work) this.touched(thread).backgroundWork = work; else delete this.touched(thread).backgroundWork
+      changed = true
+    }
+    if (changed) this.publish()
+  }
+  /**
+   * A thread's live state goes when its provider is not connected, but not its detached runs: they run on their own, and
+   * their row is their only Stop, so they stay until the watch sees them end.
+   */
+  private dropLive(thread: AgentThread): void {
+    dropLiveThreadState(thread)
+    const runs = this.detachedRuns?.runsFor(thread.id)
+    if (runs?.length) thread.backgroundWork = [...runs]
+  }
+  /** Stops one of a thread's detached runs, because the user pressed its Stop. */
+  async stopDetachedRun(threadId: string, runId: string): Promise<void> {
+    await this.initialize(); this.thread(threadId)
+    if (!this.detachedRuns) throw new Error('This computer is not looking for detached runs. Nothing was stopped.')
+    await this.detachedRuns.stop(threadId, runId)
+  }
   /** A turn that may have written pictures ended: what it wrote is found off the update path and becomes a step of its own. */
   private turnEnded(threadId: string): void {
+    this.detachedRuns?.turnEnded()
     this.followTurnPullRequests(threadId)
     const start = this.turnStarts.get(threadId)
     const kept = this.writtenMediaKept
@@ -2978,7 +3019,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       snapshot.models.forEach(model => { model.ready = false; if (model.provider === 'claude') model.provider = PROVIDER_LABELS.claude })
       snapshot.providers?.forEach(provider => { provider.connection = 'disconnected'; delete provider.error })
       delete snapshot.error
-      for (const thread of snapshot.threads.filter(thread => this.visible(thread))) dropLiveThreadState(thread)
+      for (const thread of snapshot.threads.filter(thread => this.visible(thread))) this.dropLive(thread)
       if (!this.historyEnabled()) {
         this.activityJsonFallbackAllowed = false
         for (const thread of snapshot.threads.filter(thread => this.visible(thread))) {
@@ -4822,6 +4863,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       workspaceSettledAt: old?.workspaceSettledAt ?? null, nativeSessionStarted: true }
     // A stored thread keeps no list, not the provider's: an empty one saved over the store would remove every record.
     if (!activities) delete merged.activities
+    // The runs it detached are background work too (#2476); a thread with none keeps its provider's list as it is.
+    const runs = this.detachedRuns?.runsFor(thread.id)
+    if (runs) { const work = withDetachedRuns(thread.backgroundWork, runs); if (work) merged.backgroundWork = work }
     // A provider that is still loading a thread's history has published no history yet, so the
     // store keeps what it already holds and the pane keeps the window it was given.
     if (this.eventSourced) {
@@ -4893,7 +4937,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     for (const id of this.activityInputs.keys()) if (!connectedInputs.has(id)) this.activityInputs.delete(id)
     for (const id of this.storedInputs.keys()) if (!connectedInputs.has(id)) this.storedInputs.delete(id)
     this.state.snapshot = stampHostSnapshot({ ...snapshot, models: this.acceptedModels(previous.models, snapshot.models), projects: [...projects.values()], threads: [...threads.values()] }, this.hostId!)
-    for (const thread of this.state.snapshot.threads.filter(thread => this.visible(thread))) if (!isThreadProviderConnected(snapshot, thread)) dropLiveThreadState(thread)
+    for (const thread of this.state.snapshot.threads.filter(thread => this.visible(thread))) if (!isThreadProviderConnected(snapshot, thread)) this.dropLive(thread)
     // An agent that switched branches mid-turn moved HEAD without a send, so finished work asks for a re-read.
     for (const thread of this.state.snapshot.threads.filter(thread => this.visible(thread))) {
       const old = previousThreads.get(thread.id)
@@ -4949,7 +4993,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       handled++
       const stamped = stampHostThread(next, this.hostId!)
       const visible = this.visible(stamped)
-      if (visible && !isThreadProviderConnected(host, stamped)) dropLiveThreadState(stamped)
+      if (visible && !isThreadProviderConnected(host, stamped)) this.dropLive(stamped)
       if (at === undefined) threads.push(stamped)
       else threads[at] = stamped
       this.markChanged(id)
@@ -6184,7 +6228,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     snapshot.models = snapshot.models.map(model => model.ready && (!provider || model.providerId === provider) ? { ...model, ready: false } : model)
     snapshot.connected = snapshot.providers?.some(item => item.connection === 'connected') ?? false
     for (const thread of snapshot.threads.filter(thread => this.visible(thread))) if (!provider || thread.providerId === provider) {
-      dropLiveThreadState(thread)
+      this.dropLive(thread)
       this.trackSubagents(thread, false)
       thread.subagentSummary = this.subagentSummaries.get(thread.id) ?? EMPTY_SUBAGENT_SUMMARY
     }

@@ -99,6 +99,8 @@ import { DesktopRemoteDelegations } from './delegationRemoteDesktop'
 import type { DelegationNews } from '../../shared/delegation'
 import type { RelayedReply } from '../../shared/delegationRelay'
 import { machineWorkingThreadsWarning } from '../../shared/workingThreads'
+import { DetachedRunWatch } from './detachedRuns'
+import { scanProcesses, type RunMark } from './detachedRunScan'
 
 type ControlDependencies = ConstructorParameters<typeof AgentControl>[0]
 type NativeHost = ProviderHost & { closed?: () => Promise<void> }
@@ -198,6 +200,11 @@ export interface AgentRuntimeOptions {
   answerImages?: boolean
   /** A chip pressed while a thread works is kept for its next turn (ADR-0192): the `next-turn-choice` Owl answer, read once at start. */
   nextTurnChoice?: boolean
+  /**
+   * Look for the agent runs this runtime's threads detach (#2476, ADR-0204). The desktop and the headless host turn it on;
+   * tests and tools that run fake providers leave it off, so no test reads this computer's processes by accident.
+   */
+  detachedRuns?: boolean
   /**
    * The Owl list's answer for pictures in threads (ADR-0170), read once by the process owner. With it Claude Code and Codex
    * keep their tool results' pictures in the thread media store and the host answers `thread-media` reads. Absent fails
@@ -381,6 +388,9 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const heldSessions = (): HostHeldSession[] => threadHosts
     ? (Object.entries(threadHosts) as [ProviderId, SottoThreadHost][]).flatMap(([provider, host]) => host.heldThreadSessions().map(held => ({ provider, ...held })))
     : []
+  // Each adapter says which of its sessions a detached run's mark names, under its Sotto thread (#2476).
+  const detachedRuns = options.detachedRuns === true && threadHosts ? new DetachedRunWatch({ scan: scanProcesses, rootPid: process.pid,
+    owner: (mark: RunMark) => { for (const host of Object.values(threadHosts!)) { const id = host.threadForRunMark(mark); if (id) return id } return undefined } }) : undefined
   const agentHost = new WorkspaceHost(options.host ?? new ConfiguredProviderHost({
     directory,
     hosts: threadHosts!,
@@ -389,6 +399,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     threadProvider: threadId => threadRegistry?.byThread(threadId)?.provider,
   }), directory, { historyEnabled: options.historyEnabled, watcherEnabled: options.watcherEnabled ?? false,
     heldProviders: held, streamingPublishCostEnabled: options.streamingPublishCost ?? false, councilEnabled: options.councilEnabled ?? false })
+  if (detachedRuns) agentHost.watchDetachedRuns(detachedRuns)
   const usage = options.usageEnabled === true ? new UsageService({ directory, host: agentHost,
     acceptedPromptIdentities: identities => agentHost.recordedUserMessages(identities) }) : undefined
   usage?.start()
@@ -849,6 +860,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const close = (): Promise<void> => {
     admissionOff?.(); workerAdmission?.close()
     closing ??= (async () => {
+      detachedRuns?.close()
       // A sweep in progress finishes its current worktree, and takes no other, before the host it asks is closed.
       // A babysitting pass finishes the pull request it is on, and records what it told, the same way.
       stopWatcher()

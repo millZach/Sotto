@@ -1723,6 +1723,8 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
    * prompt, and says nothing when it cannot start: the send reports its own error (#769). */
   z.object({ type: z.literal('start-thread-session'), threadId: id }).strict(),
   z.object({ type: z.literal('interrupt'), threadId: id }).strict(),
+  /** Stop one of the thread's detached runs (#2476), by the ID its background work names: the user's own press, which answers no request. */
+  z.object({ type: z.literal('stop-detached-run'), threadId: id, runId: z.string().uuid() }).strict(),
   z.object({ type: z.literal('compact-thread'), threadId: id }).strict(),
   z.object({ type: z.literal('answer'), threadId: id, requestId: id, answer: text, approved: z.boolean().optional(), questionAnswers: agentQuestionAnswersSchema.optional(), permissionChoice: id.optional(),
     /** The user skipped a `skippable` question: its provider is told so and the turn goes on without an answer. */

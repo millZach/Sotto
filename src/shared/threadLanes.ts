@@ -27,6 +27,6 @@ export const THREAD_SCOPED_COMMAND_TYPES: ReadonlySet<AgentCommand['type']> = ne
  * main.
  */
 export const LANELESS_THREAD_COMMAND_TYPES: ReadonlySet<AgentCommand['type']> = new Set<AgentCommand['type']>([
-  'interrupt', 'select-thread', 'save-thread-draft', 'refresh-thread-skills',
+  'interrupt', 'stop-detached-run', 'select-thread', 'save-thread-draft', 'refresh-thread-skills',
   'queue-followup', 'edit-followup', 'remove-followup', 'reorder-followups', 'resume-followups',
 ])
