@@ -10,7 +10,10 @@ export interface VercelDeployment { readonly project?: string; readonly target?:
 
 export type VercelChange =
   | { readonly ok: true; readonly state: string | null }
-  | { readonly ok: false; readonly reason: 'no-secret' | 'refused' | 'unreachable' | 'too-late' | 'failed'; readonly said?: string }
+  | { readonly ok: false; readonly reason: 'no-secret' | 'locked' | 'refused' | 'unreachable' | 'too-late' | 'failed'; readonly said?: string }
+
+/** What is known of a deployment for its card, or why its account's token could not be read at all. */
+export type VercelDescribed = VercelDeployment | 'locked' | 'no-secret'
 
 interface Options { readonly base?: string; readonly signal?: AbortSignal }
 
@@ -56,7 +59,8 @@ export async function describeVercelDeployment(fetcher: VercelFetch, token: stri
 /**
  * Cancels a deployment whose build is under way (ADR-0205): `PATCH /v12/deployments/{id}/cancel` on api.vercel.com,
  * with the account's token in the header and nowhere else. It is called only after the user allowed it. Vercel answers
- * 400 for a deployment that has already finished, which is said as too late rather than as a failure.
+ * 400 for a deployment that has already finished, which is said as too late with Vercel's own short code beside it,
+ * since a 400 can mean something else.
  */
 export async function cancelVercelDeployment(fetcher: VercelFetch, token: string, deploymentId: string, teamId: string | undefined, options: Options = {}): Promise<VercelChange> {
   if (!token) return { ok: false, reason: 'no-secret' }
@@ -65,7 +69,7 @@ export async function cancelVercelDeployment(fetcher: VercelFetch, token: string
   if (answered === 'unreachable') return { ok: false, reason: 'unreachable' }
   const { response, body } = answered
   if (response.status === 401 || (response.status === 403 && /invalidToken|missingToken/u.test(body ?? ''))) return { ok: false, reason: 'refused' }
-  if (response.status === 400) return { ok: false, reason: 'too-late' }
+  if (response.status === 400) return { ok: false, reason: 'too-late', said: withoutToken(saidBy(response.status, body), token) }
   if (!response.ok) return { ok: false, reason: 'failed', said: withoutToken(saidBy(response.status, body), token) }
   let state: string | null = null
   try { state = shown((JSON.parse(body ?? '') as Record<string, unknown>)['readyState'], token) ?? null } catch { /* Cancelled, with nothing readable said of it. */ }

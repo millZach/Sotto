@@ -26,14 +26,27 @@ export interface PluginChangeCard {
 /** How an ask ended: the user allowed it or said no, nobody answered in time, or its thread or Sotto went away. */
 export type PluginChangeAnswer = 'allowed' | 'denied' | 'lapsed' | 'stopped'
 
-interface Waiting { readonly threadId: string; readonly request: AgentRequest; readonly settle: (answer: PluginChangeAnswer) => void; readonly timer: ReturnType<typeof setTimeout> }
+/** What bounds one ask beyond the usual wait: the call it is for, and how long that call's client will wait. */
+export interface PluginChangeWait {
+  /** Aborts when the tool call the ask is for has gone away; the ask stops, since nobody would hear its result. */
+  readonly signal?: AbortSignal
+  /** The longest this ask may wait, when that is shorter than the usual wait. */
+  readonly waitMs?: number
+}
+
+interface Waiting {
+  readonly threadId: string; readonly request: AgentRequest; readonly settle: (answer: PluginChangeAnswer) => void; readonly timer: ReturnType<typeof setTimeout>
+  /** Lets go of the call's signal. */
+  readonly release: () => void
+}
 
 /**
  * Plugin changes waiting on the user (ADR-0205, decision 7). A change's tool call is held here until the user answers
  * its card, and nothing reaches the service before that. Each is one of Sotto's own requests in its thread, so it shows
  * and is answered where a provider's permission is, counts in Needs you, reaches a paired phone with the thread, and
  * is answered only by the coordinator's own rules: the user's explicit choice, never a wake-up turn or a client without
- * authority. An ask nobody answers lapses; an ask whose thread is deleted, or that Sotto closes under, stops.
+ * authority. An ask nobody answers lapses. An ask stops when its tool call goes away, when its thread is deleted,
+ * settled or archived, or when Sotto closes: nothing is done for a call nobody is waiting on.
  */
 export class PluginChangeRequests implements SottoThreadRequests {
   private readonly waiting = new Map<string, Waiting>()
@@ -41,11 +54,13 @@ export class PluginChangeRequests implements SottoThreadRequests {
   /** Built again only when an ask is added or ends: the coordinator reads this on every publication. */
   private shown: ReadonlyMap<string, readonly AgentRequest[]> = new Map()
   private closed = false
-  constructor(private readonly options: { readonly waitMs?: number; readonly now?: () => Date } = {}) {}
+  private checking = false
+  /** `open` says whether a thread is still open: not settled, archived or gone. Without it no ask stops for that. */
+  constructor(private readonly options: { readonly waitMs?: number; readonly now?: () => Date; readonly open?: (threadId: string) => boolean } = {}) {}
 
   /** Shows the card and waits for the user. Resolves once: allowed, denied, lapsed or stopped. */
-  ask(threadId: string, card: PluginChangeCard): Promise<PluginChangeAnswer> {
-    if (this.closed) return Promise.resolve('stopped')
+  ask(threadId: string, card: PluginChangeCard, wait: PluginChangeWait = {}): Promise<PluginChangeAnswer> {
+    if (this.closed || wait.signal?.aborted) return Promise.resolve('stopped')
     const id = `${PLUGIN_CHANGE_PREFIX}${randomUUID()}`
     const request: AgentRequest = {
       id, kind: 'permission', text: card.text, options: [],
@@ -54,13 +69,37 @@ export class PluginChangeRequests implements SottoThreadRequests {
       since: (this.options.now?.() ?? new Date()).toISOString(),
     }
     return new Promise(resolve => {
-      const timer = setTimeout(() => this.end(id, 'lapsed'), this.options.waitMs ?? PLUGIN_CHANGE_WAIT_MS)
-      this.waiting.set(id, { threadId, request, settle: resolve, timer })
+      const timer = setTimeout(() => this.end(id, 'lapsed'), Math.max(0, Math.min(this.options.waitMs ?? PLUGIN_CHANGE_WAIT_MS, wait.waitMs ?? Infinity)))
+      const gone = (): void => { this.end(id, 'stopped') }
+      wait.signal?.addEventListener('abort', gone, { once: true })
+      this.waiting.set(id, { threadId, request, settle: resolve, timer, release: () => { wait.signal?.removeEventListener('abort', gone) } })
       this.changed()
     })
   }
 
-  requests(): ReadonlyMap<string, readonly AgentRequest[]> { return this.shown }
+  /**
+   * The coordinator reads this on every publication, and a thread being settled or archived is one. So that read is
+   * when the waiting asks look at their threads, once it is over: the read itself changes nothing. With nothing
+   * waiting it costs a comparison.
+   */
+  requests(): ReadonlyMap<string, readonly AgentRequest[]> {
+    if (this.waiting.size > 0 && this.options.open && !this.checking) {
+      this.checking = true
+      queueMicrotask(() => { this.checking = false; this.stopClosed() })
+    }
+    return this.shown
+  }
+
+  /** Stops every ask whose thread is no longer open. A settled thread takes no answer, and one reopened later must not find its old card. */
+  stopClosed(): void {
+    const open = this.options.open
+    if (!open) return
+    for (const [id, waiting] of [...this.waiting]) {
+      let still = false
+      try { still = open(waiting.threadId) } catch { /* A thread that cannot be read is not taken for open. */ }
+      if (!still) this.end(id, 'stopped')
+    }
+  }
 
   /** The user's answer. Throws when the request is no longer waiting, as any request's answer does. */
   answer(threadId: string, requestId: string, approved: boolean): void {
@@ -90,6 +129,7 @@ export class PluginChangeRequests implements SottoThreadRequests {
     const waiting = this.waiting.get(id)
     if (!waiting) return
     clearTimeout(waiting.timer)
+    waiting.release()
     this.waiting.delete(id)
     this.changed()
     waiting.settle(answer)

@@ -3,10 +3,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { commentOnGitHub } from '../../../../src/main/plugins/github/changes'
 import type { GitCommandOptions, RunGitCommand } from '../../../../src/main/agents/git/gitStatus'
 import { wordPluginChange } from '../../../../src/main/plugins/changeWords'
-import type { PluginChangeAnswer } from '../../../../src/main/plugins/pendingChanges'
+import { PluginChangeRequests, type PluginChangeAnswer, type PluginChangeWait } from '../../../../src/main/plugins/pendingChanges'
 import { PluginToolServer } from '../../../../src/main/plugins/pluginTools'
 import type { PluginUseReport } from '../../../../src/main/plugins/useRecord'
-import { cancelVercelDeployment, describeVercelDeployment } from '../../../../src/main/plugins/vercel/changes'
+import { cancelVercelDeployment, describeVercelDeployment, type VercelChange, type VercelDescribed } from '../../../../src/main/plugins/vercel/changes'
 import type { VercelFetch } from '../../../../src/main/plugins/vercel/read'
 import { GITHUB_COMMENT_TOOL, PLUGIN_ACCOUNTS_TOOL, PLUGIN_READ_TOOL, VERCEL_CANCEL_TOOL, type GitHubSignIn, type PluginAccount, type PluginChange } from '../../../../src/shared/plugins'
 import { deferred } from '../../../fixtures/deferred'
@@ -20,7 +20,11 @@ const TOKEN = 'made-up-vercel-token'
 const comment = { owner: 'example-owner', repo: 'example-repo', number: 12, body: 'Looks good to me.' }
 
 /** The tools over a gh and a Vercel that keep what they were asked, with the user's answer in the test's hands. */
-function tools(options: { watcher?: boolean; answer?: PluginChangeAnswer; signIn?: GitHubSignIn; signIns?: GitHubSignIn[]; accounts?: readonly PluginAccount[]; gh?: string | Error; vercel?: (url: string, method: string) => { status?: number; body?: unknown } } = {}) {
+function tools(options: { watcher?: boolean; answer?: PluginChangeAnswer; signIn?: GitHubSignIn; signIns?: GitHubSignIn[]; accounts?: readonly PluginAccount[]; gh?: string | Error; vercel?: (url: string, method: string) => { status?: number; body?: unknown }
+  /** The real waiting asks, where a test answers or abandons a card as the app would. */
+  requests?: PluginChangeRequests
+  /** What main says of the account's token, where it cannot be read. */
+  described?: VercelDescribed; cancelled?: VercelChange } = {}) {
   const ghCalls: { args: readonly string[]; stdin: string | undefined }[] = []
   const run: RunGitCommand = async (_cwd, _command, args, runOptions?: GitCommandOptions) => {
     ghCalls.push({ args, stdin: runOptions?.stdin })
@@ -36,6 +40,7 @@ function tools(options: { watcher?: boolean; answer?: PluginChangeAnswer; signIn
   }
   const recorded: PluginUseReport[] = []
   const asked: PluginChange[] = []
+  const waits: PluginChangeWait[] = []
   const asking = deferred<PluginChangeAnswer>()
   let gone = false
   const added = options.accounts ?? []
@@ -49,13 +54,16 @@ function tools(options: { watcher?: boolean; answer?: PluginChangeAnswer; signIn
     readVercel: async () => ({ ok: true, text: '{}', truncated: false }),
     record: async report => { recorded.push(report) },
     isWatcher: () => options.watcher === true,
-    askChange: async (_threadId, change) => { asked.push(change); return options.answer ?? asking.promise },
+    askChange: async (threadId, change, wait) => {
+      asked.push(change); waits.push(wait)
+      return options.requests ? options.requests.ask(threadId, wordPluginChange(change), wait) : options.answer ?? asking.promise
+    },
     commentOnGitHub: input => commentOnGitHub(run, input),
-    describeVercelDeployment: (_accountId, deploymentId, teamId) => describeVercelDeployment(fetcher, TOKEN, deploymentId, teamId),
-    cancelVercelDeployment: (_accountId, deploymentId, teamId) => cancelVercelDeployment(fetcher, TOKEN, deploymentId, teamId),
+    describeVercelDeployment: async (_accountId, deploymentId, teamId) => options.described ?? describeVercelDeployment(fetcher, TOKEN, deploymentId, teamId),
+    cancelVercelDeployment: async (_accountId, deploymentId, teamId) => options.cancelled ?? cancelVercelDeployment(fetcher, TOKEN, deploymentId, teamId),
   })
   servers.push(server)
-  return { server, ghCalls, vercelCalls, recorded, asked, answer: (value: PluginChangeAnswer) => { asking.resolve(value) }, forget: () => { gone = true } }
+  return { server, ghCalls, vercelCalls, recorded, asked, waits, answer: (value: PluginChangeAnswer) => { asking.resolve(value) }, forget: () => { gone = true } }
 }
 const said = (result: { content: { type: string; text?: string }[] }): string => result.content.map(part => part.text ?? '').join('\n')
 /** Lets a held call run as far as it can before the user answers. */
@@ -84,7 +92,7 @@ describe('a plugin change asks the user first (ADR-0205, decision 7)', () => {
 
   it.each([
     ['denied', 'The user said no. Nothing was changed. Do not ask again unless they tell you to.', 'denied'],
-    ['lapsed', 'Nobody answered within five minutes, so the request lapsed. Nothing was changed. Tell the user what you wanted to do and why, and ask again only if they tell you to.', 'lapsed'],
+    ['lapsed', 'Nobody answered in time, so the request lapsed. Nothing was changed. Tell the user what you wanted to do and why, and ask again only if they tell you to.', 'lapsed'],
   ] as const)('changes nothing when the answer is %s, and tells the agent so', async (answer, words, outcome) => {
     const { server, ghCalls, recorded } = tools({ answer })
     const result = await server.call('admitted', GITHUB_COMMENT_TOOL, comment)
@@ -189,7 +197,7 @@ describe('a plugin change asks the user first (ADR-0205, decision 7)', () => {
     expect(denied.vercelCalls.map(call => call.method)).toEqual(['GET'])
     expect(denied.recorded.map(use => use.outcome)).toEqual(['denied'])
     const late = tools({ accounts: [WORK], answer: 'allowed', vercel: (_url, method) => method === 'PATCH' ? { status: 400, body: { error: { code: 'bad_request' } } } : { body: {} } })
-    expect(said(await late.server.call('admitted', VERCEL_CANCEL_TOOL, { deploymentId: 'dpl_example1' }))).toBe('The user allowed it, but the deployment had already finished, so there was nothing to cancel. Nothing was changed.')
+    expect(said(await late.server.call('admitted', VERCEL_CANCEL_TOOL, { deploymentId: 'dpl_example1' }))).toBe('The user allowed it, but Vercel would not cancel the build: bad_request (HTTP 400). A deployment whose build has already finished cannot be cancelled. Nothing was changed.')
     expect(late.recorded.map(use => use.outcome)).toEqual(['failed'])
   })
 
@@ -201,6 +209,70 @@ describe('a plugin change asks the user first (ADR-0205, decision 7)', () => {
     expect((await tools({ answer: 'allowed' }).server.call('admitted', VERCEL_CANCEL_TOOL, { deploymentId: 'dpl_example1' })).isError).toBe(true)
     expect(asked).toEqual([])
     expect(vercelCalls).toEqual([])
+  })
+
+  it('stops the card when the client gives up on the call, so a later Allow posts nothing', async () => {
+    const requests = new PluginChangeRequests()
+    const { server, ghCalls, recorded } = tools({ requests })
+    const endpoint = (await server.mcpServer('admitted'))!
+    const client = new AbortController()
+    const call = fetch(endpoint.url, { method: 'POST', signal: client.signal,
+      headers: { 'Content-Type': 'application/json', ...Object.fromEntries(endpoint.headers.map(header => [header.name, header.value])) },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: GITHUB_COMMENT_TOOL, arguments: comment } }) }).catch(() => 'gone')
+    await vi.waitFor(() => { expect(requests.requests().get('admitted')).toHaveLength(1) })
+    const { id } = requests.requests().get('admitted')![0]!
+    // The turn is stopped: the client drops the call while the card waits.
+    client.abort()
+    await expect(call).resolves.toBe('gone')
+    await vi.waitFor(() => { expect(requests.requests().size).toBe(0) })
+    expect(() => requests.answer('admitted', id, true)).toThrow('This request is no longer pending. Refresh the thread.')
+    expect(ghCalls).toEqual([])
+    expect(recorded).toEqual([])
+  })
+
+  it('posts nothing when the client went away as the user allowed it', async () => {
+    const client = new AbortController()
+    const { server, ghCalls, answer } = tools()
+    const call = server.call('admitted', GITHUB_COMMENT_TOOL, comment, { signal: client.signal })
+    await settle()
+    client.abort()
+    answer('allowed')
+    const result = await call
+    expect(said(result)).toBe('The request was stopped before it was answered. Nothing was changed.')
+    expect(ghCalls).toEqual([])
+  })
+
+  it('ends the card before a client’s declared wait runs out, with room left to make the change, and asks nobody when there is no room', async () => {
+    // Muse waits 300 seconds for a call: the card may wait four minutes of it at most, less what the call has used.
+    const muse = tools({ answer: 'denied' })
+    await muse.server.call('admitted', GITHUB_COMMENT_TOOL, comment, { waitMs: 300_000 })
+    expect(muse.waits).toHaveLength(1)
+    expect(muse.waits[0]!.waitMs).toBeLessThanOrEqual(240_000)
+    expect(muse.waits[0]!.waitMs).toBeGreaterThan(200_000)
+    // A client that says nothing of its wait gets the usual one.
+    const plain = tools({ answer: 'denied' })
+    await plain.server.call('admitted', GITHUB_COMMENT_TOOL, comment)
+    expect(plain.waits).toEqual([{}])
+    // A client that waits a minute cannot hold a card and the change after it.
+    const short = tools({ answer: 'allowed' })
+    const result = await short.server.call('admitted', GITHUB_COMMENT_TOOL, comment, { waitMs: 60_000 })
+    expect(said(result)).toBe('This client does not wait long enough for a change that asks the user first, so the user was not asked. Nothing was changed.')
+    expect([short.asked, short.ghCalls, short.recorded]).toEqual([[], [], []])
+  })
+
+  it('says a locked credential store before asking, and says unlock rather than replace when it locks after the answer', async () => {
+    const locked = tools({ accounts: [WORK], answer: 'allowed', described: 'locked' })
+    expect(said(await locked.server.call('admitted', VERCEL_CANCEL_TOOL, { deploymentId: 'dpl_example1' })))
+      .toBe('Sotto could not read the token for the Vercel account "Work", because this computer’s credential store is locked. Ask the user to unlock it, then try again. Nothing was changed.'.replace('’', "'"))
+    expect([locked.asked, locked.vercelCalls, locked.recorded]).toEqual([[], [], []])
+    const missing = tools({ accounts: [WORK], answer: 'allowed', described: 'no-secret' })
+    expect(said(await missing.server.call('admitted', VERCEL_CANCEL_TOOL, { deploymentId: 'dpl_example1' })))
+      .toBe('Sotto no longer holds the token for the Vercel account "Work". Ask the user to replace it in Settings > Plugins. Nothing was changed.')
+    expect(missing.asked).toEqual([])
+    const after = tools({ accounts: [WORK], answer: 'allowed', cancelled: { ok: false, reason: 'locked' } })
+    expect(said(await after.server.call('admitted', VERCEL_CANCEL_TOOL, { deploymentId: 'dpl_example1' })))
+      .toBe('The user allowed it, but Sotto could not read the token for the Vercel account "Work", because this computer’s credential store is locked. Ask the user to unlock it, then try again. Nothing was changed.'.replace('’', "'"))
+    expect(after.recorded.map(use => use.outcome)).toEqual(['failed'])
   })
 
   it('waits longer for a change than its card can stay up, so a client does not give up first', () => {

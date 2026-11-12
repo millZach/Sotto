@@ -62,6 +62,56 @@ describe('a plugin change waiting on the user (ADR-0205)', () => {
     expect(() => changes.answer('thread-one', id, true)).toThrow()
   })
 
+  it('stops with the tool call it is for, so a client that has gone leaves no card to allow', async () => {
+    const changes = new PluginChangeRequests()
+    const call = new AbortController()
+    const answer = changes.ask('thread-one', card, { signal: call.signal })
+    const { id } = only(changes, 'thread-one')
+    call.abort()
+    await expect(answer).resolves.toBe('stopped')
+    expect(changes.requests().size).toBe(0)
+    expect(() => changes.answer('thread-one', id, true)).toThrow('This request is no longer pending. Refresh the thread.')
+    // A call that had already gone shows no card at all.
+    await expect(changes.ask('thread-one', card, { signal: call.signal })).resolves.toBe('stopped')
+    expect(changes.requests().size).toBe(0)
+  })
+
+  it('lapses within the wait its client declared, when that is shorter than the usual wait', async () => {
+    vi.useFakeTimers()
+    const changes = new PluginChangeRequests()
+    const answer = changes.ask('thread-one', card, { waitMs: 200_000 })
+    await vi.advanceTimersByTimeAsync(199_999)
+    expect(changes.requests().size).toBe(1)
+    await vi.advanceTimersByTimeAsync(1)
+    await expect(answer).resolves.toBe('lapsed')
+    // A declared wait never lengthens the usual one.
+    const long = changes.ask('thread-one', card, { waitMs: PLUGIN_CHANGE_WAIT_MS * 4 })
+    await vi.advanceTimersByTimeAsync(PLUGIN_CHANGE_WAIT_MS)
+    await expect(long).resolves.toBe('lapsed')
+  })
+
+  it('stops when its thread is settled or archived, at the coordinator’s next read, and a reopened thread does not find the old card', async () => {
+    const closed = new Set<string>()
+    const changes = new PluginChangeRequests({ open: threadId => !closed.has(threadId) })
+    const settled = changes.ask('thread-one', card)
+    const other = changes.ask('thread-two', card)
+    const { id } = only(changes, 'thread-one')
+    // A read while both threads are open stops nothing.
+    changes.requests()
+    await Promise.resolve()
+    expect(changes.requests().size).toBe(2)
+    // The thread is settled: the coordinator publishes, which reads the requests.
+    closed.add('thread-one')
+    changes.requests()
+    await expect(settled).resolves.toBe('stopped')
+    expect([...changes.requests().keys()]).toEqual(['thread-two'])
+    // Reopened within the wait, the card is gone and takes no answer.
+    closed.delete('thread-one')
+    expect(() => changes.answer('thread-one', id, true)).toThrow('This request is no longer pending. Refresh the thread.')
+    changes.answer('thread-two', only(changes, 'thread-two').id, false)
+    await expect(other).resolves.toBe('denied')
+  })
+
   it('stops an ask whose thread is deleted, and every ask when Sotto closes, and takes none after that', async () => {
     const changes = new PluginChangeRequests()
     const gone = changes.ask('thread-gone', card), kept = changes.ask('thread-kept', card)

@@ -71,6 +71,7 @@ import { readGitHub } from './plugins/github/read'
 import { PluginToolServer } from './plugins/pluginTools'
 import { PluginAccounts, PluginSecretLocked } from './plugins/accounts'
 import { PluginChangeRequests } from './plugins/pendingChanges'
+import { isThreadClosed } from '../shared/threadActivity'
 import { wordPluginChange } from './plugins/changeWords'
 import { commentOnGitHub } from './plugins/github/changes'
 import { cancelVercelDeployment, describeVercelDeployment } from './plugins/vercel/changes'
@@ -1379,7 +1380,11 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   // Plugin accounts: a name, a plugin and a secret in the credential store, checked with its service before it is kept.
   const pluginAccounts = pluginsEnabled ? new PluginAccounts(userDataPath, { credentials, check: (_plugin, secret) => checkVercelToken(vercelFetch, secret, vercelOptions) }) : undefined
   // Plugin changes waiting on the user: each is one of Sotto's own requests in its thread, answered there (ADR-0205).
-  const pluginChanges = pluginsEnabled ? new PluginChangeRequests() : undefined
+  // A thread that is settled, archived or gone takes its waiting changes with it, read as the coordinator holds it.
+  const pluginChanges = pluginsEnabled ? new PluginChangeRequests({ open: threadId => {
+    const thread = agentControl.watcherSnapshot().threads.find(item => item.id === threadId)
+    return thread !== undefined && !isThreadClosed(thread)
+  } }) : undefined
   // The plugin tools, for every thread that takes Sotto's tools: stable builds no server.
   const pluginTools = pluginUse && pluginAccounts ? new PluginToolServer({
     admits: threadId => agentHost.admitsPluginTools(threadId), gitHubSignIn: pluginsGitHubSignIn,
@@ -1398,17 +1403,19 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       const thread = agentControl.watcherSnapshot().threads.find(item => item.id === threadId)
       return thread === undefined || thread.kind === 'watcher' || thread.kind === 'watcher-history'
     },
-    askChange: async (threadId, change) => await pluginChanges?.ask(threadId, wordPluginChange(change)) ?? 'stopped',
+    askChange: async (threadId, change, wait) => await pluginChanges?.ask(threadId, wordPluginChange(change), wait) ?? 'stopped',
     commentOnGitHub: input => commentOnGitHub(pluginsGh, input, pluginsStop.signal),
     // The deployment is read for its card with the account's token; one that cannot be read shows its ID alone.
+    // A token that cannot be read at all is said before anyone is asked: locked is not the same as gone.
     describeVercelDeployment: async (accountId, deploymentId, teamId) => {
       let secret: string
-      try { secret = pluginAccounts.secret(accountId) } catch { return {} }
+      try { secret = pluginAccounts.secret(accountId) } catch (error) { return error instanceof PluginSecretLocked ? 'locked' : 'no-secret' }
+      if (!secret) return 'no-secret'
       return describeVercelDeployment(vercelFetch, secret, deploymentId, teamId, vercelOptions)
     },
     cancelVercelDeployment: async (accountId, deploymentId, teamId) => {
       let secret: string
-      try { secret = pluginAccounts.secret(accountId) } catch { return { ok: false, reason: 'no-secret' } }
+      try { secret = pluginAccounts.secret(accountId) } catch (error) { return { ok: false, reason: error instanceof PluginSecretLocked ? 'locked' : 'no-secret' } }
       return cancelVercelDeployment(vercelFetch, secret, deploymentId, teamId, vercelOptions)
     },
   }) : undefined

@@ -3,12 +3,12 @@ import {
   GITHUB_COMMENT_TOOL, PLUGIN_ACCOUNT_NAME_MAX, PLUGIN_ACCOUNTS_TOOL, PLUGIN_CHANGE_TOOLS, PLUGIN_READ_TOOL, PLUGINS_MCP_SERVER, VERCEL_CANCEL_TOOL,
   type AccountPluginId, type GitHubSignIn, type PluginAccount, type PluginChange, type PluginChangeTool, type PluginReadKind,
 } from '../../shared/plugins'
-import { ThreadToolServer, type ScopedThreadTools, type ThreadMcpServer, type ThreadToolDefinition, type ThreadToolResult } from '../agents/threadToolServer'
+import { ThreadToolServer, type ScopedThreadTools, type ThreadMcpServer, type ThreadToolCallContext, type ThreadToolDefinition, type ThreadToolResult } from '../agents/threadToolServer'
 import { GITHUB_COMMENT_MAX, GITHUB_OWNER, GITHUB_REPO, type GitHubChange } from './github/changes'
 import { GITHUB_PATH_MAX, GITHUB_QUERY_MAX, GITHUB_READ_MAX_CHARS, gitHubReadKind, type GitHubRead } from './github/read'
-import { PLUGIN_CHANGE_WAIT_MS, type PluginChangeAnswer } from './pendingChanges'
+import { PLUGIN_CHANGE_WAIT_MS, type PluginChangeAnswer, type PluginChangeWait } from './pendingChanges'
 import type { PluginUseReport } from './useRecord'
-import { VERCEL_DEPLOYMENT_ID, VERCEL_TEAM_ID, type VercelChange, type VercelDeployment } from './vercel/changes'
+import { VERCEL_DEPLOYMENT_ID, VERCEL_TEAM_ID, type VercelChange, type VercelDescribed } from './vercel/changes'
 import { vercelReadKind, type VercelRead } from './vercel/read'
 
 const SETTINGS = 'Settings > Plugins'
@@ -93,16 +93,22 @@ export interface PluginToolHandlers {
   /** Whether the thread is Watcher, which reads from plugins and changes nothing through them. */
   isWatcher(threadId: string): boolean
   /** Shows the user a change's card in the thread and waits for their answer. Nothing is sent before it resolves `allowed`. */
-  askChange(threadId: string, change: PluginChange): Promise<PluginChangeAnswer>
+  askChange(threadId: string, change: PluginChange, wait: PluginChangeWait): Promise<PluginChangeAnswer>
   commentOnGitHub(input: { readonly owner: string; readonly repo: string; readonly number: number; readonly body: string }): Promise<GitHubChange>
-  /** What Vercel says of a deployment, for its card. A read. */
-  describeVercelDeployment(accountId: string, deploymentId: string, teamId: string | undefined): Promise<VercelDeployment>
+  /** What Vercel says of a deployment, for its card, or that the account's token cannot be read. A read. */
+  describeVercelDeployment(accountId: string, deploymentId: string, teamId: string | undefined): Promise<VercelDescribed>
   cancelVercelDeployment(accountId: string, deploymentId: string, teamId: string | undefined): Promise<VercelChange>
 }
 
 const NOTHING_READ = 'Nothing was read.'
 const NOTHING_CHANGED = 'Nothing was changed.'
 const ASK_USER = `Ask the user to open ${SETTINGS}.`
+/** What a change needs of its client's wait besides the card: the reads before it and the change after it. */
+const CHANGE_ROOM_MS = 60_000
+/** A card up for less than this is no ask at all. */
+const CHANGE_CARD_MIN_MS = 10_000
+/** One tool call: what its client said of it, and when it came in. */
+interface Call { readonly context: ThreadToolCallContext; readonly started: number }
 const text = (value: string, isError = false): ThreadToolResult => ({ content: [{ type: 'text', text: value }], ...(isError ? { isError: true } : {}) })
 const cut = (result: { readonly text: string; readonly truncated: boolean }): ThreadToolResult =>
   text(result.truncated ? `${result.text}\n\n[Cut at ${GITHUB_READ_MAX_CHARS.toLocaleString('en-US')} characters. Ask for less: a narrower path, or a smaller page in the query.]` : result.text)
@@ -123,13 +129,13 @@ export class PluginToolServer implements ScopedThreadTools {
   constructor(private readonly handlers: PluginToolHandlers) {
     this.server = new ThreadToolServer({ name: PLUGINS_MCP_SERVER, serverName: 'sotto-plugins', instructions: INSTRUCTIONS,
       unavailable: `The plugin tools are unavailable. ${NOTHING_READ}`, failed: `The plugin could not be used. ${NOTHING_READ} Nothing was changed.` },
-    this.definitions, (threadId, name, args) => this.invoke(threadId, name, args),
+    this.definitions, (threadId, name, args, context) => this.invoke(threadId, name, args, { context, started: Date.now() }),
     threadId => this.isWatcher(threadId) ? this.definitions.filter(tool => READING_TOOLS.has(tool.name)) : this.definitions)
   }
   async mcpServer(threadId: string): Promise<ThreadMcpServer | undefined> {
     return this.admits(threadId) ? this.server.mcpServer(threadId) : undefined
   }
-  call(threadId: string, name: string, args: unknown): Promise<ThreadToolResult> { return this.server.call(threadId, name, args) }
+  call(threadId: string, name: string, args: unknown, context: ThreadToolCallContext = {}): Promise<ThreadToolResult> { return this.server.call(threadId, name, args, context) }
   close(): Promise<void> { return this.server.close() }
   private admits(threadId: string): boolean {
     try { return this.handlers.admits(threadId) } catch { return false }
@@ -138,7 +144,7 @@ export class PluginToolServer implements ScopedThreadTools {
   private isWatcher(threadId: string): boolean {
     try { return this.handlers.isWatcher(threadId) } catch { return true }
   }
-  private async invoke(threadId: string, name: string, args: unknown): Promise<ThreadToolResult> {
+  private async invoke(threadId: string, name: string, args: unknown, call: Call): Promise<ThreadToolResult> {
     if (!this.admits(threadId)) return text(`This thread cannot use plugins. ${NOTHING_READ}`, true)
     if (name === PLUGIN_ACCOUNTS_TOOL) {
       if (!accountsInputSchema.safeParse(args ?? {}).success) return text(`${PLUGIN_ACCOUNTS_TOOL} takes no arguments.`, true)
@@ -147,7 +153,7 @@ export class PluginToolServer implements ScopedThreadTools {
     if ((PLUGIN_CHANGE_TOOLS as readonly string[]).includes(name)) {
       // Watcher is not offered a change's tool, and a call to one from Watcher changes nothing whatever it holds.
       if (this.isWatcher(threadId)) return text(`Watcher reads from plugins and changes nothing through them. Start or steer a thread to make this change. ${NOTHING_CHANGED}`, true)
-      return name === GITHUB_COMMENT_TOOL ? this.commentOnGitHub(threadId, args) : this.cancelVercelDeployment(threadId, args)
+      return name === GITHUB_COMMENT_TOOL ? this.commentOnGitHub(threadId, args, call) : this.cancelVercelDeployment(threadId, args, call)
     }
     const input = readInputSchema.safeParse(args)
     if (!input.success) return text(`Give "plugin" ("github" or "vercel"), a "path" such as repos/OWNER/NAME/issues or v6/deployments, and optionally an "account" name and a "query" of up to ${GITHUB_QUERY_MAX} parameters, each text, a number or true or false. ${NOTHING_READ}`, true)
@@ -166,17 +172,24 @@ export class PluginToolServer implements ScopedThreadTools {
 
   /**
    * Asks the user about a change and says what to tell the agent when they did not allow it. Null means allowed, and
-   * that the thread is still here: a thread deleted while its card waited changes nothing.
+   * that the thread and the call are still here: a thread deleted while its card waited changes nothing, and neither
+   * does a call whose client has gone, since the agent would never hear of it and could ask for it again.
+   *
+   * The card ends with the call. It stops when the client goes away, and where the client said how long it waits,
+   * the card lapses early enough before that for the change to be made and its result heard.
    */
-  private async refusalOf(threadId: string, change: PluginChange): Promise<{ readonly outcome: 'denied' | 'lapsed' | null; readonly result: ThreadToolResult } | null> {
-    const answer = await this.handlers.askChange(threadId, change).catch((): PluginChangeAnswer => 'stopped')
-    if (answer === 'allowed' && this.admits(threadId)) return null
+  private async refusalOf(threadId: string, change: PluginChange, call: Call): Promise<{ readonly outcome: 'denied' | 'lapsed' | null; readonly result: ThreadToolResult } | null> {
+    const { signal, waitMs } = call.context
+    const room = waitMs === undefined ? undefined : waitMs - (Date.now() - call.started) - CHANGE_ROOM_MS
+    if (room !== undefined && room < CHANGE_CARD_MIN_MS) return { outcome: null, result: text(`This client does not wait long enough for a change that asks the user first, so the user was not asked. ${NOTHING_CHANGED}`, true) }
+    const answer = await this.handlers.askChange(threadId, change, { ...(signal ? { signal } : {}), ...(room === undefined ? {} : { waitMs: room }) }).catch((): PluginChangeAnswer => 'stopped')
+    if (answer === 'allowed' && this.admits(threadId) && !signal?.aborted) return null
     if (answer === 'denied') return { outcome: 'denied', result: text(`The user said no. ${NOTHING_CHANGED} Do not ask again unless they tell you to.`, true) }
-    if (answer === 'lapsed') return { outcome: 'lapsed', result: text(`Nobody answered within five minutes, so the request lapsed. ${NOTHING_CHANGED} Tell the user what you wanted to do and why, and ask again only if they tell you to.`, true) }
+    if (answer === 'lapsed') return { outcome: 'lapsed', result: text(`Nobody answered in time, so the request lapsed. ${NOTHING_CHANGED} Tell the user what you wanted to do and why, and ask again only if they tell you to.`, true) }
     return { outcome: null, result: text(`The request was stopped before it was answered. ${NOTHING_CHANGED}`, true) }
   }
 
-  private async commentOnGitHub(threadId: string, args: unknown): Promise<ThreadToolResult> {
+  private async commentOnGitHub(threadId: string, args: unknown, call: Call): Promise<ThreadToolResult> {
     const input = commentInputSchema.safeParse(args)
     if (!input.success) return text(`Give "owner", "repo", the issue or pull request "number" and the comment's "body" of up to ${GITHUB_COMMENT_MAX.toLocaleString('en-US')} characters. ${NOTHING_CHANGED}`, true)
     // Who would post it, for the card. A gh that cannot post is said now, rather than after the user answered for nothing.
@@ -184,7 +197,7 @@ export class PluginToolServer implements ScopedThreadTools {
     if (signIn.state === 'not-installed') return text(`gh, GitHub's command line program, isn't installed on this computer, so a comment can't be posted. ${ASK_USER} ${NOTHING_CHANGED}`, true)
     if (signIn.state === 'signed-out') return text(`gh is not signed in to GitHub on this computer, so a comment can't be posted. ${ASK_USER} ${NOTHING_CHANGED}`, true)
     const named = signIn.state === 'signed-in' ? signIn.login : undefined
-    const refused = await this.refusalOf(threadId, { kind: 'github-comment', ...input.data, ...(named ? { account: named } : {}) })
+    const refused = await this.refusalOf(threadId, { kind: 'github-comment', ...input.data, ...(named ? { account: named } : {}) }, call)
     if (refused) {
       if (refused.outcome) await this.record(threadId, { plugin: 'github', tool: GITHUB_COMMENT_TOOL, kind: 'comment', outcome: refused.outcome })
       return refused.result
@@ -193,6 +206,8 @@ export class PluginToolServer implements ScopedThreadTools {
     // waited, so it is asked again, and the comment is posted only while it still says that account.
     if (named) {
       const now = await this.handlers.gitHubSignIn().catch((): GitHubSignIn => ({ state: 'unknown' }))
+      // The client may have gone while gh was asked: nothing is posted for a call nobody is waiting on.
+      if (call.context.signal?.aborted) return text(`The request was stopped before it was answered. ${NOTHING_CHANGED}`, true)
       if (now.state !== 'signed-in' || now.login !== named) {
         await this.record(threadId, { plugin: 'github', tool: GITHUB_COMMENT_TOOL, kind: 'comment', outcome: 'failed' })
         return text(`The user allowed a comment as ${named}, but gh ${now.state === 'signed-in' ? `is now signed in to GitHub as ${now.login}` : 'no longer says it is signed in to GitHub as that account'}, so the comment was not posted. Call ${GITHUB_COMMENT_TOOL} again if it should still be posted; the user will be asked again.`, true)
@@ -208,7 +223,7 @@ export class PluginToolServer implements ScopedThreadTools {
     }
   }
 
-  private async cancelVercelDeployment(threadId: string, args: unknown): Promise<ThreadToolResult> {
+  private async cancelVercelDeployment(threadId: string, args: unknown, call: Call): Promise<ThreadToolResult> {
     const input = cancelInputSchema.safeParse(args)
     if (!input.success) return text(`Give the "deploymentId" (it starts with dpl_), and optionally the "account" name and a "teamId" (it starts with team_). ${NOTHING_CHANGED}`, true)
     const account = await this.handlers.findAccount('vercel', input.data.account)
@@ -219,8 +234,11 @@ export class PluginToolServer implements ScopedThreadTools {
     }
     const { deploymentId, teamId } = input.data
     // What Vercel says of the deployment, so the card names it in words. A read: it asks nobody and decides nothing.
-    const said = await this.handlers.describeVercelDeployment(account.id, deploymentId, teamId).catch((): VercelDeployment => ({}))
-    const refused = await this.refusalOf(threadId, { kind: 'vercel-cancel', account: account.name, deploymentId, ...(teamId ? { teamId } : {}), ...said })
+    const said = await this.handlers.describeVercelDeployment(account.id, deploymentId, teamId).catch((): VercelDescribed => ({}))
+    // A token Sotto cannot read is said now, rather than after the user answered for nothing.
+    if (said === 'locked') return text(`Sotto could not read the token for the Vercel account "${account.name}", because this computer's credential store is locked. Ask the user to unlock it, then try again. ${NOTHING_CHANGED}`, true)
+    if (said === 'no-secret') return text(`Sotto no longer holds the token for the Vercel account "${account.name}". Ask the user to replace it in ${SETTINGS}. ${NOTHING_CHANGED}`, true)
+    const refused = await this.refusalOf(threadId, { kind: 'vercel-cancel', account: account.name, deploymentId, ...(teamId ? { teamId } : {}), ...said }, call)
     const kept = async (outcome: PluginUseReport['outcome']): Promise<void> => {
       // An account removed while its card waited has been forgotten already, and gets no entry after that.
       const still = await this.handlers.accounts().then(accounts => accounts.some(entry => entry.id === account.id), () => false)
@@ -234,7 +252,8 @@ export class PluginToolServer implements ScopedThreadTools {
     await kept(result.ok ? 'done' : 'failed')
     if (result.ok) return text(`The user allowed it, and the deployment's build is cancelled${result.state ? ` (${result.state})` : ''}.`)
     switch (result.reason) {
-      case 'too-late': return text(`The user allowed it, but the deployment had already finished, so there was nothing to cancel. ${NOTHING_CHANGED}`, true)
+      case 'too-late': return text(`The user allowed it, but Vercel would not cancel the build${result.said ? `: ${result.said}` : ''}. A deployment whose build has already finished cannot be cancelled. ${NOTHING_CHANGED}`, true)
+      case 'locked': return text(`The user allowed it, but Sotto could not read the token for the Vercel account "${account.name}", because this computer's credential store is locked. Ask the user to unlock it, then try again. ${NOTHING_CHANGED}`, true)
       case 'no-secret': return text(`The user allowed it, but Sotto no longer holds the token for the Vercel account "${account.name}". Ask the user to replace it in ${SETTINGS}. ${NOTHING_CHANGED}`, true)
       case 'refused': return text(`The user allowed it, but Vercel did not accept the token of the account "${account.name}". Ask the user to replace it in ${SETTINGS}. ${NOTHING_CHANGED}`, true)
       case 'unreachable': return text(`The user allowed it, but Vercel could not be reached. Sotto cannot say whether the build was cancelled: read the deployment to see where it stands.`, true)
