@@ -82,6 +82,52 @@ describe('what leaves the live record', () => {
     for (const index of [5, 7, 11, 19]) expect.soft(retained.has(requestAt(value, index).id), `request ${index}`).toBe(true)
   })
 
+  it('keeps the newest request that records each thread\'s stop, and lets the older ones of that thread go', () => {
+    const origin = (next: WatcherRecord): NonNullable<WatcherRequest['remoteOrigin']> => ({ clientId: 'desktop', master: next.current!, creationOperationId: randomUUID(), ceiling: 'approval-required' })
+    const value = record(WATCHER_LIVE_CLOSED_REQUESTS + 30, next => {
+      // Stop watching and Watcher's Stop mark every request the thread took part in: worker-1 in requests 1 and 8.
+      for (const index of [1, 8]) next.requests[index]!.participants[0]!.automationStopped = true
+      // A stopped request on a thread Watcher started is a stop too: worker-3 in request 3, then a marked one in 10.
+      next.requests[3]!.state = 'stopped'
+      next.requests[10]!.participants[0]!.automationStopped = true
+      // A paired desktop's request with a stop stays whatever its age, since it can come back: worker-2 in 2, then 9.
+      next.requests[2]!.participants[0]!.automationStopped = true
+      next.requests[2]!.remoteOrigin = origin(next)
+      next.requests[9]!.participants[0]!.automationStopped = true
+      // A stop that was taken over or let go holds nothing: worker-4 in request 4.
+      Object.assign(next.requests[4]!.participants[0]!, { automationStopped: true, state: 'relinquished' })
+    })
+    const leaving = new Set(archivableWatcherRequests(value))
+    for (const index of [1, 3, 4]) expect.soft(leaving.has(requestAt(value, index).id), `request ${index}`).toBe(true)
+    for (const index of [2, 8, 9, 10]) expect.soft(leaving.has(requestAt(value, index).id), `request ${index}`).toBe(false)
+  })
+
+  it('holds each stopped thread\'s queue as before, with a record no longer than its newest requests and one per stopped thread', () => {
+    // A record as weeks of Stop watching leave it: 3,000 closed requests over 300 threads, every participation stopped.
+    const threads = 300, count = 3_000
+    const value = record(count, next => {
+      next.requests.forEach((request, index) => {
+        const target = { hostId: HOST, threadId: `stopped-${index % threads}` }
+        Object.assign(request.participants[0]!, { target, automationStopped: true })
+        next.operations[index]!.target = target
+      })
+    })
+    /** The threads whose queue a stopped participation holds, as `preserveUserQueue` asks it of each. */
+    const held = (from: WatcherRecord): Set<string> => new Set(from.requests.flatMap(request => request.participants.flatMap(participant =>
+      participant.state === 'participating' && (participant.automationStopped === true || request.state === 'stopped' && participant.startedBy === 'watcher') ? [participant.target.threadId] : [])))
+    const ids = archivableWatcherRequests(value)
+    // The newest 200 name the last 200 of the 300 threads; the other 100 threads each keep their newest request.
+    expect(ids).toHaveLength(count - WATCHER_LIVE_CLOSED_REQUESTS - (threads - WATCHER_LIVE_CLOSED_REQUESTS))
+    const next = structuredClone(value) as WatcherRecord
+    removeArchivedWork(next, new Set(ids))
+    expect(next.requests).toHaveLength(threads)
+    expect(held(next)).toEqual(held(value))
+    expect(held(next).size).toBe(threads)
+    expect(() => watcherRecordSchema.parse(next)).not.toThrow()
+    // Nothing more is due once it has gone: the record does not shrink and grow by turns.
+    expect(archivableWatcherRequests(next)).toEqual([])
+  })
+
   it('leaves a record that is still valid, with every reference it holds still named', () => {
     const value = record(WATCHER_LIVE_CLOSED_REQUESTS + 80, next => {
       next.reservations.push({ target: next.requests[1]!.participants[0]!.target, requestId: next.requests[1]!.id, operationId: next.operations[1]!.id, generation: 0, reason: 'creation' })
