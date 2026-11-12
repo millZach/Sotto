@@ -304,11 +304,16 @@ export abstract class PageAutomation {
       return await Promise.race([this.frame(rect, encoding), new Promise<never>((_resolve, reject) => { timer = setTimeout(() => { this.reset(); reject(new ToolFailure('unavailable', 'The page did not draw in time. Inspect it before trying again.')) }, 10_000) })])
     } finally { if (timer) clearTimeout(timer); release() }
   }
-  private async frame(rect: BrowserBounds | undefined, encoding: PageEncoding): Promise<PageFrame> {
-    await this.ready()
+  /** The part of the page on screen, in CSS pixels, and how far down the document it sits; a screenshot is this. */
+  private async visibleViewport(): Promise<{ pageX: number; pageY: number; clientWidth: number; clientHeight: number }> {
     const layout = await this.send('Page.getLayoutMetrics') as { cssVisualViewport?: { pageX: number; pageY: number; clientWidth: number; clientHeight: number } }
     const viewport = layout.cssVisualViewport
     if (!viewport || !viewport.clientWidth || !viewport.clientHeight) return fail('unavailable', 'This page has not drawn yet. Wait for it to load, then try again.')
+    return viewport
+  }
+  private async frame(rect: BrowserBounds | undefined, encoding: PageEncoding): Promise<PageFrame> {
+    await this.ready()
+    const viewport = await this.visibleViewport()
     const width = Math.round(rect?.width ?? viewport.clientWidth), height = Math.round(rect?.height ?? viewport.clientHeight)
     if (width <= 0 || height <= 0 || width > 8192 || height > 8192) return fail('too-large', 'This page is too large to capture. Set a smaller viewport, then try again.')
     if (rect && (rect.x + rect.width > viewport.clientWidth || rect.y + rect.height > viewport.clientHeight)) return fail('blocked', 'This selection extends beyond the captured page.')
@@ -346,9 +351,7 @@ export abstract class PageAutomation {
    * above the visible area came back as a protocol error the agent could only read as the tool breaking.
    */
   private async nodeAt(point: { x: number; y: number }): Promise<number | undefined> {
-    const layout = await this.send('Page.getLayoutMetrics') as { cssVisualViewport?: { pageX: number; pageY: number; clientWidth: number; clientHeight: number } }
-    const viewport = layout.cssVisualViewport
-    if (!viewport || !viewport.clientWidth || !viewport.clientHeight) return fail('unavailable', 'This page has not drawn yet. Wait for it to load, then try again.')
+    const viewport = await this.visibleViewport()
     const width = Math.round(viewport.clientWidth), height = Math.round(viewport.clientHeight)
     if (point.x >= width || point.y >= height) return fail('blocked', `That point is outside the page's visible area, which is ${width} by ${height}. Take a screenshot and use its coordinates.`)
     const located = await this.send('DOM.getNodeForLocation', { x: Math.round(viewport.pageX + point.x), y: Math.round(viewport.pageY + point.y), includeUserAgentShadowDOM: true })
