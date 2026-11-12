@@ -456,7 +456,7 @@ describe('delegated work in the delegating thread', () => {
   })
   const order = (): (string | null)[] => [...document.querySelectorAll('[data-message-id], .delegated-work__row')].map(element => element.getAttribute('data-message-id') ?? element.getAttribute('aria-label'))
 
-  it.each(['ask', 'hidden-wake-up'])('keeps only unsettled rows for anchor %s, under an unfolded reply or in the trailing list', anchorMessageId => {
+  it.each(['ask', 'hidden-wake-up'])('keeps unfinished rows for anchor %s, under an unfolded reply or in the trailing list', anchorMessageId => {
     const open = vi.fn()
     const working = view({ anchorMessageId, wait: { seconds: 300, startedAt: at(9) } })
     const list = (shown: DelegationView): React.ReactElement => <DelegationWorldProvider world={world(open)}><MessageList messages={messages} provider="Claude Code" running={false}
@@ -482,6 +482,12 @@ describe('delegated work in the delegating thread', () => {
       expect(screen.queryByRole('list', { name: 'Delegated work' })).toBeNull()
       expect(screen.queryByRole('region', { name: 'Still working after this reply' })).toBeNull()
     }
+    for (const outcome of ['unknown', 'paused', 'background', 'working'] as const) {
+      rerender(list({ ...working, outcome }))
+      expect(screen.getByRole('listitem')).toHaveAttribute('data-outcome', outcome)
+    }
+    rerender(list(refusedView({ anchorMessageId })))
+    expect(screen.getByRole('listitem')).toHaveAttribute('data-outcome', 'refused')
   })
 
   describe('a Dynamic thread\'s worker', () => {
@@ -569,14 +575,12 @@ describe('delegated work in the delegating thread', () => {
   })
 
   it('shows a refused delegation in the turn it was asked in: what was refused and why, with no link, since nothing started', () => {
-    const folding = [messages[0]!, { id: 'step', role: 'assistant' as const, text: 'Checking the requests.', createdAt: at(9.5) }, ...messages.slice(1)]
     // Sotto found no message of the user's for this one, so it has no turn.
     const { anchorMessageId: _anchor, rootUserMessageId: _root, ...turnless } = refusedView({ refusal: 'NO_USER_MESSAGE', createdAt: at(1) })
     void _anchor; void _root
     const rows = delegationsByTurn([view({ anchorMessageId: 'ask', outcome: 'answered', outcomeAt: at(8) }), refusedView({ anchorMessageId: 'ask', createdAt: at(8) }),
-      refusedView({ anchorMessageId: 'ask', action: 'send', thread: CHILD, refusal: 'PAUSED', createdAt: at(7) }), turnless], folding)
-    render(<DelegationWorldProvider world={world()}><MessageList messages={folding} provider="Claude Code" running={false} placement={placeActivities(folding, folding, [])} context={context} delegations={rows} /></DelegationWorldProvider>)
-    fireEvent.click(screen.getByRole('button', { name: /^Worked for/u }))
+      refusedView({ anchorMessageId: 'ask', action: 'send', thread: CHILD, refusal: 'PAUSED', createdAt: at(7) }), turnless], messages)
+    render(<DelegationWorldProvider world={world()}><MessageList messages={messages} provider="Claude Code" running={false} placement={placeActivities(messages, messages, [])} context={context} delegations={rows} /></DelegationWorldProvider>)
     const start = screen.getAllByRole('listitem', { name: 'Research, not delegated, Refused' })[0]!
     expect(start).toHaveAttribute('data-state', 'refused')
     expect(start.querySelector('.delegated-work__state')).toHaveTextContent('Refused')
@@ -588,8 +592,8 @@ describe('delegated work in the delegating thread', () => {
     expect(send).toHaveTextContent('Not sent to Review the gate fix')
     expect(send).toHaveTextContent('You were working in that thread, so it takes no brief until your turn there ends. Nothing was sent.')
     expect(within(send).queryByRole('button')).toBeNull()
-    // Settled rows stay in the turn's fold; a settled delegation with no shown turn leaves no trailing row.
-    expect(order()).toEqual(['ask', 'step', 'Review: Review the gate fix, Returned', 'Research, not delegated, Refused', 'Research, not sent to Review the gate fix, Refused', 'reply', 'later'])
+    // Refusals stay under the reply or in the trailing list; the answered delegation is gone.
+    expect(order()).toEqual(['ask', 'reply', 'Research, not delegated, Refused', 'Research, not sent to Review the gate fix, Refused', 'later', 'Research, not delegated, Refused'])
   })
 
   it('a finished turn keeps its rows in the Worked for fold, says them in a few words, and keeps what still works under its reply', () => {
@@ -703,21 +707,25 @@ describe('delegated work in the delegating thread', () => {
     const agents = [{ id: crypto.randomUUID(), type: 'teammate' as const, label: 'Check the docs' }, { id: crypto.randomUUID(), type: 'remote-agent' as const, label: 'Run on forge' }]
     const threads = [thread('found', 'Find the scene code', { providerId: 'claude' }), thread('spec', 'Spec review', { providerId: 'codex', status: 'running' })]
     const made = [view({ anchorMessageId: 'ask', thread: 'found', work: 'research', outcome: 'answered', outcomeAt: at(8) }),
-      view({ anchorMessageId: 'ask', thread: 'spec', work: 'code-review', outcome: 'working', wait: { seconds: 0, startedAt: at(8) } })]
+      view({ anchorMessageId: 'ask', thread: 'spec', work: 'code-review', outcome: 'working', wait: { seconds: 0, startedAt: at(8) } }),
+      refusedView({ anchorMessageId: 'ask' }),
+      view({ anchorMessageId: 'ask', thread: 'found', work: 'research', outcome: 'unknown' }),
+      view({ anchorMessageId: 'ask', thread: 'found', work: 'research', outcome: 'paused' })]
     const list = (work: readonly AgentBackgroundWork[] | undefined): React.ReactElement => <DelegationWorldProvider world={world(vi.fn(), threads)}>
       <MessageList messages={turns} provider="Claude Code" running={false} placement={placeActivities(turns, turns, [])} context={context}
         delegations={delegationsByTurn(made, turns)} backgroundWork={stillWorkingAgents(work, true)} /></DelegationWorldProvider>
     const labels = (root: ParentNode): (string | null)[] => [...root.querySelectorAll('.delegated-work__row')].map(row => row.getAttribute('aria-label'))
     const { rerender } = render(list(agents))
-    // Everything still open sits under the one heading, the open delegation first; the settled one is gone.
+    // Unfinished settled rows stay above the heading; the answered row is gone.
     const still = screen.getByRole('region', { name: 'Still working after this reply' })
     expect(labels(still)).toEqual(['Review: Spec review, Working', 'Teammate: Check the docs, Working', 'Remote agent: Run on forge, Working'])
-    expect(labels(document)).toEqual(labels(still))
+    const retained = ['Research, not delegated, Refused', 'Research: Find the scene code, Unknown', 'Research: Find the scene code, Paused']
+    expect(labels(document)).toEqual([...retained, ...labels(still)])
     expect(screen.getAllByRole('region', { name: 'Still working after this reply' })).toHaveLength(1)
-    // With no agents running, only the open delegation stays under the reply, with no heading.
+    // With no agents running, all unfinished rows stay under the reply, with no heading.
     rerender(list(undefined))
     expect(screen.queryByRole('region', { name: 'Still working after this reply' })).toBeNull()
-    expect(labels(document)).toEqual(['Review: Spec review, Working'])
+    expect(labels(document)).toEqual(['Review: Spec review, Working', ...retained])
     // A turn stopped before it wrote any reply has no reply for the heading to follow, so its agents get no rows.
     const asked = turns.slice(0, 1)
     rerender(<DelegationWorldProvider world={world(vi.fn(), threads)}>

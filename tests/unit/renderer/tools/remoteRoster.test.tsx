@@ -173,9 +173,7 @@ describe('the rows of delegated work in a remote parent\'s transcript', () => {
   const rows = (): ReturnType<typeof delegationsByTurn> => delegationsByTurn(answers()[PARENT]!, messages)
 
   it('names forge, says why a start began at Ask for approval, and words the refusal for another machine', () => {
-    const folding = [messages[0]!, { id: 'step', role: 'assistant' as const, text: 'Delegating the checks.', createdAt: at(13.5) }, messages[1]!]
-    render(<DelegationWorldProvider world={world({ name: 'forge', connected: true, lastReadAt: Number.NaN })}><MessageList messages={folding} provider="Claude Code" running={false} placement={placeActivities(folding, folding, [])} context={context} delegations={delegationsByTurn(answers()[PARENT]!, folding)} /></DelegationWorldProvider>)
-    fireEvent.click(screen.getByRole('button', { name: /^Worked for/u }))
+    render(<DelegationWorldProvider world={world({ name: 'forge', connected: true, lastReadAt: Number.NaN })}><MessageList messages={messages} provider="Claude Code" running={false} placement={placeActivities(messages, messages, [])} context={context} delegations={rows()} /></DelegationWorldProvider>)
     const row = screen.getByRole('listitem', { name: /^Review: Review the socket changes, / })
     expect(row.querySelector('.delegated-work__meta')).toHaveTextContent('Codex·forge')
     expect(row.querySelector('.delegated-work__state')).toHaveTextContent('Working')

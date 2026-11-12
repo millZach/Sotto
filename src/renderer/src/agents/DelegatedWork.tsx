@@ -11,7 +11,7 @@ import { isThreadClosed, isThreadTurnRunning } from '../../../shared/threadActiv
 import type { AgentConnection } from './AgentContext'
 import { threadHostName } from './HostBadge'
 import { ProviderMark } from './ProviderMark'
-import { askedFor, DELEGATION_OUTCOME_WORDS, delegatedKind, delegatedKindWord, delegatedLine, delegatedNote, delegatedState, delegatedSummary, delegationRefusalLine, heldLine, lastReadOutcome, lastReadWord, pendingRequestOf, settledDelegation, stopLine, userTurnRunning, workingDelegatedThreads, type DelegatedKind, type DelegatedState } from './delegationWords'
+import { askedFor, DELEGATION_OUTCOME_WORDS, delegatedKind, delegatedKindWord, delegatedLine, delegatedNote, delegatedState, delegatedSummary, delegationRefusalLine, finishedDelegation, heldLine, lastReadOutcome, lastReadWord, pendingRequestOf, settledDelegation, stopLine, userTurnRunning, workingDelegatedThreads, type DelegatedKind, type DelegatedState } from './delegationWords'
 import { useDelegations, useDelegationsEnabled, useNewestBrief } from './delegations'
 import { openDelegatedThread, rosterMachine } from '../tools/delegatedRoster'
 import { useOwlFeature } from '../state/owlFeature'
@@ -246,7 +246,7 @@ export function DelegatedWorkRow({ view }: { readonly view: DelegationView }): R
   </li>
 }
 
-/** Rows for the given delegations, in order: callers choose all turn history or only unsettled work. */
+/** Rows for the given delegations, in order: callers choose all turn history or omit finished work outside a fold. */
 export function DelegatedWork({ views, label }: { readonly views: readonly DelegationView[] | undefined; readonly label?: string | null }): ReactNode {
   const { t } = useLingui()
   if (!views?.length) return null
@@ -318,12 +318,13 @@ export function StillWorking({ views, work }: { readonly views: readonly Delegat
 }
 
 /**
- * A turn's unsettled delegations under a reply with nothing to fold, under "Still working after this reply" with the
- * provider's agents while they still run. A delegation goes once it settles.
+ * A turn's rows under a reply with nothing to fold, omitting answered, failed and stopped work. While the provider's
+ * agents still run, refusals, unknown outcomes and pauses stay above "Still working after this reply".
  */
 export function UnfoldedWork({ views, work }: { readonly views: readonly DelegationView[] | undefined; readonly work: readonly AgentBackgroundWork[] | undefined }): ReactNode {
-  const open = useMemo(() => views?.filter(view => !settledDelegation(view)), [views])
-  return work?.length ? <StillWorking views={open} work={work} /> : <DelegatedWork views={open} />
+  const remaining = useMemo(() => views?.filter(view => !finishedDelegation(view)), [views])
+  const settled = useMemo(() => work?.length ? remaining?.filter(settledDelegation) : remaining, [remaining, work])
+  return <><DelegatedWork views={settled} />{work?.length ? <StillWorking views={remaining} work={work} /> : null}</>
 }
 
 /**

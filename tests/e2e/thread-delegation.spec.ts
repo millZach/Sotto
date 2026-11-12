@@ -374,13 +374,19 @@ test('a Claude thread delegates to a Codex thread: delegated work, the sidebar, 
       await expect(journeys.locator('.delegated-work__line')).toHaveText('This thread did not wait for it. The answer comes back as a wake-up.', { timeout: 30_000 })
       await expect.poll(() => codexPrompts(codex), { timeout: 30_000 }).toBe(2)
 
-      // A delegation wider than this thread's own permission is refused and leaves no row under the running reply.
+      // A delegation wider than this thread's own permission is refused: its row says what and why, and links nowhere.
       expect(model!.permissions).toContain('full-access')
       const wider = await tool(page, parentId, 'delegate', { work: 'research', brief: 'Draft the release notes for the reconnect fix.', provider: 'codex', model: model!.model,
         ...model!.efforts.length ? { effort: model!.efforts[0] } : {}, permission: 'full-access', wait_seconds: 0 })
       expect(wider, JSON.stringify(wider)).toMatchObject({ status: 'refused', code: 'PERMISSION_TOO_WIDE' })
       const refused = parent.getByRole('listitem', { name: 'Research, not delegated, Refused' })
-      await expect(refused).toHaveCount(0)
+      await expect(refused).toBeVisible({ timeout: 30_000 })
+      await expect(refused).toHaveAttribute('data-outcome', 'refused')
+      await expect(refused.locator('.delegated-work__meta')).toContainText('Codex')
+      await expect(refused.locator('.delegated-work__meta')).toContainText('This computer')
+      await expect(refused.locator('.delegated-work__line')).toHaveText('It asked for more permission than this thread has, or than your new-thread default allows. '
+        + 'A delegated thread gets no more than either. Nothing was started. To give it more, raise the lower of the two first.')
+      await expect(refused.getByRole('button')).toHaveCount(0)
       // Nothing was started for it.
       expect(await page.evaluate(async parentId => (await window.sotto!.agents!.get()).host.threads.filter(thread => thread.delegatedBy === parentId).length, parentId)).toBe(2)
 
@@ -398,6 +404,10 @@ test('a Claude thread delegates to a Codex thread: delegated work, the sidebar, 
           await fits(page, `parent ${appearance} ${width}x${height}`)
           await readable(page, `parent ${appearance} ${width}x${height}`)
           await capture(launched, `parent-${appearance}-${width}x${height}`)
+          await refused.scrollIntoViewIfNeeded()
+          await fits(page, `refused ${appearance} ${width}x${height}`)
+          await readable(page, `refused ${appearance} ${width}x${height}`)
+          await capture(launched, `refused-${appearance}-${width}x${height}`)
         }
       }
       // Citrine, a built-in theme with a yellow accent, at the minimum size in both appearances.
@@ -475,30 +485,12 @@ test('a Claude thread delegates to a Codex thread: delegated work, the sidebar, 
       if (await fold.getAttribute('aria-expanded') === 'false') await fold.click()
       await expect(review.locator('.delegated-work__state')).toHaveText('Returned', { timeout: 30_000 })
       await expect(review.locator('.delegated-work__line')).toHaveText(/^Answered in (\d+ min )?\d+ s, while this thread waited for it\. Open it to read what it found\.$|^Answered in \d+ min, while this thread waited for it\. Open it to read what it found\.$/u)
-      await expect(refused).toBeVisible({ timeout: 30_000 })
-      await expect(refused).toHaveAttribute('data-outcome', 'refused')
-      await expect(refused.locator('.delegated-work__meta')).toContainText('Codex')
-      await expect(refused.locator('.delegated-work__meta')).toContainText('This computer')
-      await expect(refused.locator('.delegated-work__line')).toHaveText('It asked for more permission than this thread has, or than your new-thread default allows. '
-        + 'A delegated thread gets no more than either. Nothing was started. To give it more, raise the lower of the two first.')
-      await expect(refused.getByRole('button')).toHaveCount(0)
       await expect(journeys.locator('.delegated-work__state')).toHaveText('Stopped', { timeout: 30_000 })
       await expect(pane(page).locator('.delegation-note')).toHaveCount(0)
       const threads = await page.evaluate(async () => (await window.sotto!.agents!.get()).host.threads.map(thread => ({ title: thread.title, status: thread.status })))
       expect(threads.find(thread => thread.title === JOURNEYS)?.status).not.toBe('running')
       expect(await page.evaluate(async threadId => (await window.sotto!.agents!.get()).host.threads.find(thread => thread.id === threadId)?.title, journeysId)).toBe(JOURNEYS)
       await capture(launched, 'parent-stopped-dark-1280x800')
-      // The refusal's words remain readable inside the fold at both sizes and in both appearances.
-      for (const [width, height] of [[1280, 800], [820, 560]] as const) {
-        await resizeWindow(launched, width, height)
-        for (const appearance of ['dark', 'light'] as const) {
-          await page.evaluate(appearance => window.sotto!.updateSettings({ appearance }), appearance)
-          await refused.scrollIntoViewIfNeeded()
-          await fits(page, `refused ${appearance} ${width}x${height}`)
-          await readable(page, `refused ${appearance} ${width}x${height}`)
-          await capture(launched, `refused-${appearance}-${width}x${height}`)
-        }
-      }
       expect(await readFile(join(root, 'claude', 'violations.jsonl'), 'utf8').catch(() => '')).toBe('')
     })
   } finally {
