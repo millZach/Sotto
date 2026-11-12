@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { createHash, randomUUID } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { version as packageVersion } from '../../package.json'
@@ -217,8 +218,8 @@ describe('the iPhone’s pull request sheet (#1281)', () => {
 
 describe('host version and features', () => {
   /** What a host lists whatever its Owl answers say, in health and its listener file, and in the hello to a paired client. */
-  const LISTED: readonly HostFeature[] = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'git-pull-request-list', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'provider-opencode', 'activity-bodies', 'failure-seen', 'client-update-outcomes', 'provider-cursor', 'watcher-cursor', 'client-update-not-listed', 'thread-prompts', 'pull-request-confirmation', 'watcher-new-owner', 'changed-thread-records', 'reply-thread-records', 'provider-mode-lists', 'settled-threads-on-request', 'usable-models', 'product-events', 'watcher-tell', 'command-changed-thread-records', 'step-window', 'watcher-ready', 'provider-deepseek', 'provider-pi']
-  const GREETED: readonly HostFeature[] = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'git-pull-request-list', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'host-facts', 'provider-opencode', 'activity-bodies', 'failure-seen', 'client-update-outcomes', 'provider-cursor', 'client-update-not-listed', 'thread-prompts', 'pull-request-confirmation', 'changed-thread-records', 'reply-thread-records', 'provider-mode-lists', 'settled-threads-on-request', 'usable-models', 'product-events', 'command-changed-thread-records', 'step-window', 'provider-deepseek', 'provider-pi']
+  const LISTED: readonly HostFeature[] = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'git-pull-request-list', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'provider-opencode', 'activity-bodies', 'failure-seen', 'client-update-outcomes', 'provider-cursor', 'watcher-cursor', 'client-update-not-listed', 'thread-prompts', 'pull-request-confirmation', 'watcher-new-owner', 'changed-thread-records', 'reply-thread-records', 'provider-mode-lists', 'settled-threads-on-request', 'usable-models', 'product-events', 'watcher-tell', 'command-changed-thread-records', 'step-window', 'watcher-ready', 'provider-deepseek', 'provider-pi', 'project-git-init']
+  const GREETED: readonly HostFeature[] = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'git-pull-request-list', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'host-facts', 'provider-opencode', 'activity-bodies', 'failure-seen', 'client-update-outcomes', 'provider-cursor', 'client-update-not-listed', 'thread-prompts', 'pull-request-confirmation', 'changed-thread-records', 'reply-thread-records', 'provider-mode-lists', 'settled-threads-on-request', 'usable-models', 'product-events', 'command-changed-thread-records', 'step-window', 'provider-deepseek', 'provider-pi', 'project-git-init']
   /**
    * Features a host offers only where its own version's Owl answer is on (ADR-0072), and the answer each reads. Its OpenCode
    * sign-in also needs OpenCode's own adapter, which this host's fake is not; `hostOpenCode.test.ts` has that one.
@@ -268,6 +269,21 @@ describe('host version and features', () => {
     expect((await client.command({ type: 'babysit-pull-request', threadId, url: pullRequest })).error).toBe('Link this pull request to the thread first. Nothing was started.')
     expect((await client.command({ type: 'stop-babysitting', threadId, url: pullRequest })).notice).toBe('This thread was not babysitting PR #42.')
     expect(client.shell().host.threads.find(thread => thread.id === threadId)!.babysitting).toBeUndefined()
+  })
+
+  it('makes a new project with Git from a paired desktop, as Watcher\'s add_project asks (ADR-0073, November 12, 2026)', async () => {
+    const { client } = await pair()
+    expect(client.supportsProjectGitInit).toBe(true)
+    await client.command({ type: 'configure', patch: { provider: 'codex', enabledProviders: ['codex'] } })
+    await client.command({ type: 'connect', provider: 'codex' })
+    const root = await mkdtemp(join(tmpdir(), 'sotto-git-init-'))
+    try {
+      const path = join(root, 'Fresh')
+      const made = await client.command({ type: 'create-project', provider: 'codex', title: 'Fresh', path, gitInit: true })
+      expect(made.error).toBeNull()
+      expect(made.host.projects.some(project => project.path === path)).toBe(true)
+      expect((await stat(join(path, '.git'))).isDirectory()).toBe(true)
+    } finally { await rm(root, { recursive: true, force: true }) }
   })
 
   it('runs client updates only where it offers them: the headless host does, the phone listener does not (#480)', async () => {

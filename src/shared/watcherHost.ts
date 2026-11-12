@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { agentRuntimeModeSchema, type AgentHostSnapshot, type AgentRuntimeMode } from './agents'
+import { agentRuntimeModeSchema, type AgentHostSnapshot, type AgentProject, type AgentRuntimeMode } from './agents'
 import { watcherIdentitySchema, type WatcherIdentity, watcherOperationSchema, watcherRequestSchema, watcherToolSchemas, watcherEvidenceSchema, watcherThreadTargetSchema, watcherStandingWatchSchema } from './watcher'
 import type { WatcherRoomState } from './watcherRoom'
 import type { HostMachineReport } from './hostFacts'
@@ -54,15 +54,19 @@ export type WatcherRoomThreadInput = Pick<WatcherRoomState['watchedThreads'][num
   id: string; waitsOn: { id: string; kind: 'question' | 'permission' }[]
 }
 
+/** What add_project asks a machine's `create-project` for, on This computer or a paired host (ADR-0073, November 12, 2026). */
+export interface ProjectAddition { readonly title: string; readonly path?: string; readonly useExisting?: true; readonly gitInit?: true }
+/** A project addition a host or provider may have carried out without confirming it: list_projects says whether it was added. */
+export class ProjectAdditionUnconfirmed extends Error {}
 export interface WatcherRemoteHosts {
   /**
    * `name` is the machine's name as this computer saved it; `facts` says whether the host lists `host-facts` (#1031), and
-   * `origins` whether it lists `project-origins` (#1032), and `setUp` whether it lists `project-setup` (#1690).
+   * `origins` whether it lists `project-origins` (#1032), `setUp` whether it lists `project-setup` (#1690), and `gitInit` whether it lists `project-git-init`.
    * `permissionCeiling` is the widest mode the host lets this computer give a thread there: Full access where this
    * computer may answer on it, Ask for approval where it may not. `clientId` is the client ID the host knows this computer
    * by, which names this computer's threads in its delegation links (`relay:<client>:<caller>`, #1217).
    */
-  hosts(): { hostId: string; name?: string; clientId?: string; control: boolean; reads: boolean; standingWatch?: boolean; workSettled?: boolean; outcomes?: boolean; facts?: boolean; origins?: boolean; setUp?: boolean; checks?: boolean; checkStop?: boolean; swarms?: boolean; newOwner?: boolean; muse?: boolean; cursor?: boolean; connected: boolean; permissionCeiling: AgentRuntimeMode }[]
+  hosts(): { hostId: string; name?: string; clientId?: string; control: boolean; reads: boolean; standingWatch?: boolean; workSettled?: boolean; outcomes?: boolean; facts?: boolean; origins?: boolean; setUp?: boolean; gitInit?: boolean; checks?: boolean; checkStop?: boolean; swarms?: boolean; newOwner?: boolean; muse?: boolean; cursor?: boolean; connected: boolean; permissionCeiling: AgentRuntimeMode }[]
   read(hostId: string, request: WatcherHostRead): Promise<unknown>
   control(hostId: string, request: WatcherHostControl): Promise<unknown>
   snapshot(hostId: string): AgentHostSnapshot | undefined
@@ -84,6 +88,12 @@ export interface WatcherRemoteHosts {
    * list `project-setup`. Rejects when the host is out of reach; a setup that cannot finish answers in plain words.
    */
   setUpProject?(hostId: string, request: ProjectSetupRequest): Promise<ProjectSetupResult | undefined>
+  /**
+   * Watcher's add_project on a connected host (ADR-0073, November 12, 2026): the host's own `create-project`, as the
+   * desktop's Add project and New project send it, answering the host's projects after it. Rejects with the host's words
+   * when it refuses. `gitInit` goes only to a host that lists `project-git-init`, which `hosts()` says as `gitInit`.
+   */
+  addProject?(hostId: string, command: ProjectAddition): Promise<readonly AgentProject[]>
   /**
    * A connected host's socket for moving a branch (#1033), whatever it lists, or undefined when it is not connected. The
    * mover says in plain words when the host does not list `branch-moves`.
