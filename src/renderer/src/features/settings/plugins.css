@@ -19,6 +19,15 @@
 .plugin-command { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 8px; margin-top: 8px; }
 .plugin-command .tt-button { min-height: 32px; padding: 5px 8px; font-size: var(--tt-type-small); }
 .plugin-row__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.plugins-lead { margin: 18px 2px 0; color: var(--tt-text-muted); font-size: var(--tt-type-body); }
+/* Recent use: when, then what was done and in which thread. */
+.plugin-use { display: grid; gap: 6px; margin-top: 4px; }
+.plugin-use h4 { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); font-weight: 600; }
+.plugin-use ul { margin: 0; padding: 0; list-style: none; }
+.plugin-use li { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 10px; padding: 5px 0; border-top: 1px solid var(--tt-hairline); font-size: var(--tt-type-small); }
+.plugin-use li:first-child { border-top: 0; }
+.plugin-use time { color: var(--tt-text-muted); font-size: var(--tt-type-caption); padding-top: 1px; }
+.plugin-use__thread { color: var(--tt-text-muted); overflow-wrap: anywhere; }
 /* While gh is asked the button waits rather than disabling, so keyboard focus stays on it. */
 .plugin-row__actions .tt-button[aria-disabled='true'] { cursor: not-allowed; opacity: 0.45; }
 @media (prefers-reduced-motion: reduce) { .plugin-row__chevron { transition: none; } }

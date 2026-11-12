@@ -130,9 +130,15 @@ A DeepSeek thread offers three permission modes, which are its sandbox (see Deep
 
 ### Plugins
 
-In Sotto Owl, Settings → Plugins is where outside services are connected once so that every thread's agent has one known place to use them ([ADR-0205](adr/0205-plugins-connect-outside-services-once-and-threads-use-them-through-sottos-tools.md)). Each plugin is a row under the service's own icon, and a row opens in place. More plugins and the tools agents use them through arrive a slice at a time; `docs/plans/2026-11-11-plugins.md` has the order.
+In Sotto Owl, Settings → Plugins is where outside services are connected once so that every thread's agent has one known place to use them ([ADR-0205](adr/0205-plugins-connect-outside-services-once-and-threads-use-them-through-sottos-tools.md)). Each plugin is a row under the service's own icon, and a row opens in place. More plugins arrive a slice at a time; `docs/plans/2026-11-11-plugins.md` has the order.
+
+A thread's agent uses a plugin through Sotto's tools, never with a token of its own. There are two so far, and both only read: one lists the plugins the thread can use and who is signed in, and one reads from a plugin. Reading never asks you. Every thread on a provider that takes Sotto's tools gets them, and so does Watcher. What an agent reads goes to that thread's provider, as anything it reads does.
 
 **GitHub** is the first. Its account is the `gh` command's own sign-in on this computer, so there is nothing to add and Sotto stores nothing for it. The row says who `gh` is signed in to github.com as. When `gh` is signed out, the row shows `gh auth login` with **Copy**: run it in a terminal, then press **Check again**. When `gh` isn't installed, the row says so and points to cli.github.com. Sotto asks `gh` for the account's name only, never for a token.
+
+Through the plugin an agent reads GitHub's REST API as that account: issues, pull requests, commits, checks, releases and search. It is a read and nothing else, so there is no way to post, merge or delete through it; an agent's own shell can still run `gh`, as it could before.
+
+**Recent use**, in the open row, lists the newest five reads: when, the kind of thing read, such as issues or pull requests, and the thread that read it. Sotto records that much and no more: not which repository or issue, and nothing of what came back. The record follows **Keep local history**, and forgetting a thread removes that thread's entries.
 
 ### Memory (off for the beta)
 

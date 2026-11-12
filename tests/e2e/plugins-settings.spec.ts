@@ -8,8 +8,8 @@ import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { evidenceDirectory } from '../fixtures/evidence'
 
 /**
- * Settings › Plugins on Owl (ADR-0205, slice 1): the page sits after Providers, GitHub's row says who gh is signed in
- * as and opens in place, it fits the three checked sizes in both modes, Find a setting reaches it, and a gh that is
+ * Settings › Plugins on Owl (ADR-0205): the page sits after Providers, GitHub's row says who gh is signed in as and
+ * opens in place, shows its recent use by threads from the plugin use record, it fits the three checked sizes in both modes, Find a setting reaches it, and a gh that is
  * signed out shows the command to sign in. gh is a stand-in that reaches nothing. Captures go to
  * artifacts/plugins-settings for the verification note.
  */
@@ -48,6 +48,11 @@ test('Plugins shows GitHub’s sign-in on Owl, fits every checked size, and says
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, reducedMotion: 'on' }), 'utf8')
   const signIn = join(profile, 'fake-gh-sign-in.json')
   await writeFile(signIn, JSON.stringify({ login: 'example-user' }), 'utf8')
+  // Two uses already in the record, by threads this profile does not hold: the row names what was done and says the thread is gone.
+  await writeFile(join(profile, 'plugin-use.json'), JSON.stringify({ version: 1, uses: [
+    { id: '11111111-1111-4111-8111-000000000002', at: '2026-11-12T09:07:00.000Z', threadId: 'gone-thread-two', plugin: 'github', tool: 'plugin_read', kind: 'pull-requests', outcome: 'failed' },
+    { id: '11111111-1111-4111-8111-000000000001', at: '2026-11-12T09:05:00.000Z', threadId: 'gone-thread-one', plugin: 'github', tool: 'plugin_read', kind: 'issues', outcome: 'done' },
+  ] }), 'utf8')
   const previous = Object.fromEntries(OWNED.map(key => [key, process.env[key]]))
   process.env.SOTTO_OWL_FEATURES = 'plugins=1'
   process.env.SOTTO_E2E_GH_SCRIPT = resolve('tests/fixtures/fakeGhSignIn.mjs')
@@ -76,6 +81,11 @@ test('Plugins shows GitHub’s sign-in on Owl, fits every checked size, and says
     await expect(row).toHaveAttribute('aria-expanded', 'true')
     await expect(panel.getByText('Signed in as example-user through gh on this computer.')).toBeVisible()
     await expect(panel.getByText('GitHub uses the gh command’s own sign-in. Sotto stores nothing for it.')).toBeVisible()
+    await expect(panel.getByText('A thread’s agent uses a plugin through Sotto’s tools. So far they only read, and reading never asks you.')).toBeVisible()
+    const used = panel.getByRole('region', { name: 'Recent use' }).getByRole('listitem')
+    await expect(used).toHaveCount(2)
+    await expect(used.nth(0)).toContainText('Read pull requests in a thread that is gone It failed.')
+    await expect(used.nth(1)).toContainText('Read issues in a thread that is gone')
     // Escape from a control inside the row closes it and gives focus back to its header; Enter opens it again.
     await panel.getByRole('button', { name: 'Check GitHub’s sign-in again' }).focus()
     await page.keyboard.press('Escape')

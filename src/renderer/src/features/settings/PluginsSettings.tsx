@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { ChevronRight, Code } from 'lucide-react'
-import { PLUGINS, type GitHubSignIn, type PluginEntry, type PluginGroupId, type PluginsBridge } from '../../../../shared/plugins'
+import { PLUGIN_USE_SHOWN, PLUGINS, type GitHubSignIn, type PluginEntry, type PluginGroupId, type PluginReadKind, type PluginsBridge, type ShownPluginUse } from '../../../../shared/plugins'
+import { localeFormatter } from '../../agents/localeFormat'
 import { useTransientFlag, writeClipboard } from '../../agents/richActions'
 import { Button } from '../../components/Button'
 import { PluginMark } from './PluginMark'
@@ -12,6 +13,9 @@ const GH_SIGN_IN_COMMAND = 'gh auth login'
 
 /** What the page knows of gh's sign-in: main's answer, still asking, or a read that failed. */
 type SignInView = GitHubSignIn | { readonly state: 'checking' }
+
+/** When a use happened, as the day and the time of day. */
+const whenUsed = localeFormatter({ month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
 
 /**
  * Settings › Plugins (ADR-0205), an Owl feature: every plugin is a row in its group, and a row opens in place. Zach's
@@ -29,17 +33,27 @@ export function PluginsSettings({ bridge = window.sotto?.plugins }: { readonly b
     void bridge.gitHubSignIn().then(value => { if (asked.current === mine) setSignIn(value) }).catch(() => { if (asked.current === mine) setSignIn({ state: 'unknown' }) })
   }, [bridge])
   useEffect(() => { check(); return () => { asked.current += 1 } }, [check])
+  // The newest uses, read when the page opens and with each Check again. Null while unread, or when the read failed.
+  const [uses, setUses] = useState<readonly ShownPluginUse[] | null>(null)
+  const usesAsked = useRef(0)
+  const readUses = useCallback((): void => {
+    if (!bridge) return
+    const mine = ++usesAsked.current
+    void bridge.recentUse().then(value => { if (usesAsked.current === mine) setUses(value) }).catch(() => { if (usesAsked.current === mine) setUses(null) })
+  }, [bridge])
+  useEffect(() => { readUses(); return () => { usesAsked.current += 1 } }, [readUses])
   const groupTitle: Record<PluginGroupId, string> = { code: t`Code and deploys` }
   return <div className="plugins-settings">
+    <p className="tt-paragraph plugins-lead"><Trans>A thread’s agent uses a plugin through Sotto’s tools. So far they only read, and reading never asks you.</Trans></p>
     <SettingsGroup title={groupTitle.code} icon={Code} rows={false}>
       <div className="plugins-list">
-        {PLUGINS.filter(plugin => plugin.group === 'code').map(plugin => <GitHubRow key={plugin.id} plugin={plugin} signIn={signIn} onCheck={check} />)}
+        {PLUGINS.filter(plugin => plugin.group === 'code').map(plugin => <GitHubRow key={plugin.id} plugin={plugin} signIn={signIn} uses={uses} onCheck={() => { check(); readUses() }} />)}
       </div>
     </SettingsGroup>
   </div>
 }
 
-function GitHubRow({ plugin, signIn, onCheck }: { readonly plugin: PluginEntry; readonly signIn: SignInView; readonly onCheck: () => void }): ReactNode {
+function GitHubRow({ plugin, signIn, uses, onCheck }: { readonly plugin: PluginEntry; readonly signIn: SignInView; readonly uses: readonly ShownPluginUse[] | null; readonly onCheck: () => void }): ReactNode {
   const { t } = useLingui()
   const [open, setOpen] = useState(false)
   const [copied, showCopied] = useTransientFlag<'copied'>()
@@ -85,7 +99,35 @@ function GitHubRow({ plugin, signIn, onCheck }: { readonly plugin: PluginEntry; 
         {signIn.state === 'checking' ? <p className="tt-paragraph"><Trans>Asking gh who is signed in…</Trans></p> : null}
       </div>
       <p className="tt-paragraph plugin-row__note"><Trans>GitHub uses the gh command’s own sign-in. Sotto stores nothing for it.</Trans></p>
+      <RecentUse plugin={plugin} uses={uses} />
       <div className="plugin-row__actions"><Button variant="secondary" aria-disabled={signIn.state === 'checking'} aria-label={t`Check GitHub’s sign-in again`} onClick={() => { if (signIn.state !== 'checking') onCheck() }}><Trans>Check again</Trans></Button></div>
     </div> : null}
   </div>
+}
+
+/** A plugin's newest uses by threads' agents: what was done and by which thread, never what was read. */
+function RecentUse({ plugin, uses }: { readonly plugin: PluginEntry; readonly uses: readonly ShownPluginUse[] | null }): ReactNode {
+  const { t } = useLingui()
+  const headingId = useId()
+  if (uses === null) return null
+  const name = plugin.name
+  const shown = uses.filter(use => use.plugin === plugin.id).slice(0, PLUGIN_USE_SHOWN)
+  const what: Record<PluginReadKind, string> = {
+    issues: t`Read issues`, 'pull-requests': t`Read pull requests`, repository: t`Read a repository`, commits: t`Read commits`, checks: t`Read checks`,
+    releases: t`Read releases`, search: t`Searched ${name}`, account: t`Read account details`, other: t`Read from ${name}`,
+  }
+  return <section className="plugin-use" aria-labelledby={headingId}>
+    <h4 id={headingId}><Trans>Recent use</Trans></h4>
+    {shown.length === 0 ? <p className="tt-paragraph plugin-row__note"><Trans>No thread has used {name} yet.</Trans></p> : <ul>
+      {shown.map(use => <li key={use.id}>
+        <time dateTime={use.at}>{whenUsed(new Date(use.at))}</time>
+        <span>
+          {what[use.kind]}{' '}
+          <span className="plugin-use__thread">{use.threadTitle === null ? t`in a thread that is gone` : t`in “${use.threadTitle}”`}</span>
+          {use.outcome === 'refused' ? <>{' '}<Trans>Sotto refused it.</Trans></> : use.outcome === 'failed' ? <>{' '}<Trans>It failed.</Trans></> : null}
+        </span>
+      </li>)}
+    </ul>}
+    <p className="tt-paragraph plugin-row__note"><Trans>Sotto records what was done and by which thread, never what was read.</Trans></p>
+  </section>
 }

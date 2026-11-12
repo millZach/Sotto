@@ -1,9 +1,9 @@
-# The Plugins page, with GitHub's row
+# The Plugins page, with GitHub's row and its recent use
 
 Checked on Windows on November 11, 2026, in the built app, for #2486: the first slice of
 `docs/plans/2026-11-11-plugins.md`. On Owl, Settings has a **Plugins** page after Providers, laid out as Zach's pick A of
 `docs/prototypes/plugins-settings-prototype.html`: every plugin is a row in its group, and a row opens in place. GitHub
-is the only row so far. ADR-0205 records the decision.
+is the only row so far. ADR-0205 records the decision. It was checked again on November 12 for #2487, which gives threads the plugin tools and adds **Recent use** to the row.
 
 `gh` was a stand-in (`tests/fixtures/fakeGhSignIn.mjs`) that answers `gh auth status` from a file and reaches nothing, so
 the account shown is made up. The run is `tests/e2e/plugins-settings.spec.ts`, with the Owl feature turned on by
@@ -13,7 +13,9 @@ the account shown is made up. The run is `tests/e2e/plugins-settings.spec.ts`, w
 
 With the stand-in signed in as `example-user`, Settings was opened. Plugins sat directly after Providers in the rail.
 GitHub's folded row read "GitHub, Signed in as example-user through gh". The row was focused and opened with Enter, and
-said "Signed in as example-user through gh on this computer." and that Sotto stores nothing for it. With focus on
+said "Signed in as example-user through gh on this computer." and that Sotto stores nothing for it. Above the rows the page said that a thread's agent uses a plugin through Sotto's tools, which only read so far.
+
+The profile's plugin use record was seeded with two reads by threads the profile does not hold. **Recent use** listed both, newest first: "Read pull requests in a thread that is gone. It failed." and "Read issues in a thread that is gone", each with its time, under the line that Sotto records what was done and by which thread, never what was read. With focus on
 **Check again** inside the row, Escape closed the row and put focus back on its header; Enter opened it again.
 
 The open page was checked in dark and light at 1600x1000, 1280x800 and the 820x560 minimum. Nothing on it was wider than
@@ -25,7 +27,7 @@ with the row in view.
 
 | Screenshot | What it shows |
 | --- | --- |
-| `artifacts/plugins-settings/plugins-github-signed-in-dark-1280x800.png` | Signed in, row open and focused, dark |
+| `artifacts/plugins-settings/plugins-github-signed-in-dark-1280x800.png` | Signed in, row open and focused, with Recent use, dark |
 | `artifacts/plugins-settings/plugins-github-signed-in-light-1280x800.png` | The same in light |
 | `artifacts/plugins-settings/plugins-github-signed-in-dark-1600x1000.png` | The same at 1600x1000 |
 | `artifacts/plugins-settings/plugins-github-signed-in-dark-820x560.png` | The same at the minimum window |
@@ -43,4 +45,5 @@ icon is its own mark in the theme's text colour, the way provider marks are draw
   read held no Plugins page. That spec then fails for another reason: its own list of pages is out of date and lacks
   Watcher and Performance (#2505), so its size checks did not run.
 - **macOS and Linux.** The spec runs on Windows only, as the other Settings specs do.
-- **Agent tools.** There are none yet. Slice 2 (#2487) adds them; until then the page only shows the sign-in.
+- **A real agent's call.** No provider client was run. `tests/unit/main/plugins/pluginTools.test.ts` reaches the tools over their real loopback address with a thread's token, as a client does, and reads through a stand-in `gh`; no test asked the real GitHub.
+- **A use by a thread the profile holds.** The seeded uses name threads that are gone, so the row's thread names were checked in `tests/unit/renderer/features/settings/pluginsSettings.test.tsx`, not here.

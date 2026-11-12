@@ -1,16 +1,19 @@
 import React from 'react'
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { PluginsSettings } from '../../../../../src/renderer/src/features/settings/PluginsSettings'
-import type { GitHubSignIn, PluginsBridge } from '../../../../../src/shared/plugins'
+import type { GitHubSignIn, PluginsBridge, ShownPluginUse } from '../../../../../src/shared/plugins'
 import { deferred } from '../../../../fixtures/deferred'
 
 afterEach(cleanup)
 
+const noUses = async (): Promise<ShownPluginUse[]> => []
 const answering = (...answers: readonly GitHubSignIn[]): { bridge: PluginsBridge; asked: () => number } => {
   let asked = 0
-  return { bridge: { gitHubSignIn: async () => answers[Math.min(asked++, answers.length - 1)]! }, asked: () => asked }
+  return { bridge: { gitHubSignIn: async () => answers[Math.min(asked++, answers.length - 1)]!, recentUse: noUses }, asked: () => asked }
 }
+const use = (id: number, extra: Partial<ShownPluginUse>): ShownPluginUse => ({ id: `11111111-1111-4111-8111-${String(id).padStart(12, '0')}`, at: '2026-11-12T08:00:00.000Z',
+  threadId: `thread-${id}`, plugin: 'github', tool: 'plugin_read', kind: 'issues', outcome: 'done', threadTitle: 'Fix the preview build', ...extra })
 const row = (): HTMLElement => screen.getByRole('button', { name: /^GitHub/u })
 
 it('names who gh is signed in as on the folded row, and opens in place to say Sotto stores nothing', async () => {
@@ -55,7 +58,7 @@ it('says when gh is not installed, and when it could not be asked, without calli
   fireEvent.click(row())
   expect(screen.getByText(/isn’t installed on this computer\. Install it from cli\.github\.com/u)).toBeInTheDocument()
   cleanup()
-  const failing: PluginsBridge = { gitHubSignIn: async () => { throw new Error('spawn C:\\Users\\someone\\gh.exe EPERM') } }
+  const failing: PluginsBridge = { gitHubSignIn: async () => { throw new Error('spawn C:\\Users\\someone\\gh.exe EPERM') }, recentUse: noUses }
   await act(async () => { render(<PluginsSettings bridge={failing} />) })
   expect(row()).toHaveAccessibleName('GitHub Couldn’t check')
   fireEvent.click(row())
@@ -66,7 +69,7 @@ it('says when gh is not installed, and when it could not be asked, without calli
 it('keeps focus on Check again while gh is asked, and takes no second press until it answers', async () => {
   const second = deferred<GitHubSignIn>()
   const gitHubSignIn = vi.fn<() => Promise<GitHubSignIn>>().mockResolvedValueOnce({ state: 'signed-out' }).mockReturnValueOnce(second.promise)
-  await act(async () => { render(<PluginsSettings bridge={{ gitHubSignIn }} />) })
+  await act(async () => { render(<PluginsSettings bridge={{ gitHubSignIn, recentUse: noUses }} />) })
   fireEvent.click(row())
   const again = screen.getByRole('button', { name: 'Check GitHub’s sign-in again' })
   again.focus()
@@ -78,4 +81,43 @@ it('keeps focus on Check again while gh is asked, and takes no second press unti
   await act(async () => { second.resolve({ state: 'signed-in', login: 'example-user' }) })
   expect(again).toHaveAttribute('aria-disabled', 'false')
   expect(row()).toHaveAccessibleName('GitHub Signed in as example-user through gh')
+})
+
+it('shows a plugin’s newest uses: what was done and in which thread, and how a use ended', async () => {
+  const uses = [
+    use(1, {}),
+    use(2, { kind: 'pull-requests', outcome: 'failed', threadTitle: 'Review the release' }),
+    use(3, { kind: 'other', outcome: 'refused', threadTitle: null }),
+  ]
+  const bridge: PluginsBridge = { gitHubSignIn: async () => ({ state: 'signed-in', login: 'example-user' }), recentUse: async () => uses }
+  await act(async () => { render(<PluginsSettings bridge={bridge} />) })
+  expect(screen.getByText('A thread’s agent uses a plugin through Sotto’s tools. So far they only read, and reading never asks you.')).toBeInTheDocument()
+  fireEvent.click(row())
+  const items = within(screen.getByRole('region', { name: 'Recent use' })).getAllByRole('listitem')
+  expect(items.map(item => item.querySelector('span')!.textContent)).toEqual([
+    'Read issues in “Fix the preview build”',
+    'Read pull requests in “Review the release” It failed.',
+    'Read from GitHub in a thread that is gone Sotto refused it.',
+  ])
+  expect(items[0]!.querySelector('time')).toHaveAttribute('datetime', '2026-11-12T08:00:00.000Z')
+  expect(screen.getByText('Sotto records what was done and by which thread, never what was read.')).toBeInTheDocument()
+})
+
+it('says when no thread has used a plugin yet, shows only the newest five, and reads the uses again on Check again', async () => {
+  let asked = 0
+  const many = Array.from({ length: 7 }, (_, index) => use(index + 1, { threadTitle: `Thread ${index + 1}` }))
+  const bridge: PluginsBridge = { gitHubSignIn: async () => ({ state: 'signed-in', login: 'example-user' }), recentUse: async () => asked++ === 0 ? [] : many }
+  await act(async () => { render(<PluginsSettings bridge={bridge} />) })
+  fireEvent.click(row())
+  expect(screen.getByText('No thread has used GitHub yet.')).toBeInTheDocument()
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Check GitHub’s sign-in again' })) })
+  expect(within(screen.getByRole('region', { name: 'Recent use' })).getAllByRole('listitem')).toHaveLength(5)
+})
+
+it('leaves Recent use out when the record could not be read, rather than saying nothing was used', async () => {
+  const bridge: PluginsBridge = { gitHubSignIn: async () => ({ state: 'signed-in', login: 'example-user' }), recentUse: async () => { throw new Error('EACCES') } }
+  await act(async () => { render(<PluginsSettings bridge={bridge} />) })
+  fireEvent.click(row())
+  expect(screen.queryByRole('region', { name: 'Recent use' })).toBeNull()
+  expect(screen.queryByText('No thread has used GitHub yet.')).toBeNull()
 })
