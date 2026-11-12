@@ -66,7 +66,7 @@ The services' own facts, read from their documentation on November 11, 2026, are
 
 10. **Sotto keeps a record of each use, without its content.** The thread, the account, what was done in plain words, how it was answered and when. Never message text, addresses, file contents or what a read returned. It follows Keep local history and forgetting a thread, and the account's page shows the recent ones.
 
-11. **Settings › Plugins is one list.** Zach's pick A of three: every plugin is a row, grouped (code and deploys, mail, 3D models, sound and video, posting, assistants that drive Sotto), in the manner of Providers, and a row opens in place to show its accounts, each with its settings. A plugin's row shows the service's own icon. The page sits after Providers. An **Other computers** group holds the copy default and says which hosts hold copies.
+11. **Settings › Plugins is one list.** Zach's pick A of three: every plugin is a row, grouped (code and deploys, mail, 3D models, sound and video, posting, assistants that drive Sotto), in the manner of Providers, and a row opens in place to show its accounts, each with its settings. A plugin's row shows the service's own icon, drawn in one colour from the theme as a provider's mark is (`ProviderMark.tsx`). The page sits after Providers. An **Other computers** group holds the copy default and says which hosts hold copies.
 
 12. **Each plugin sits behind one adapter in main that imports nothing from Electron**, so the host runs the same code, and speaks to its service with Node's `fetch` or sockets: no vendor SDK and no new runtime dependency ([ADR-0018](0018-terminals-run-on-node-pty.md)). Everything else addresses an account by Sotto's own ID.
 
@@ -89,5 +89,5 @@ The services' own facts, read from their documentation on November 11, 2026, are
 - GitHub through Sotto's tools asks before a change while an agent's own shell does not. The page says so rather than implying a protection that is not there.
 - An app password is all-or-nothing at Google and at Proton Mail Bridge. Decisions 6 to 8 are the only thing between an agent and the whole mailbox, so they are tested as a boundary, not as a convenience.
 - A thread's provider sees whatever a read returns: mail, build logs, project names. The mail card says so; the page says it once for every plugin.
-- Vendor icons are bundled files with their sources and terms listed in the notices.
-- Still to settle on a card when each slice starts: X's monthly limit and whether Sotto sets the automated label; what ElevenLabs is for beside files in a thread's folder, given that nothing in Sotto speaks ([ADR-0068](0068-remove-voice-control-and-thread-management.md)); Higgsfield's limit; whether icons keep their own colours or take the theme's text colour.
+- Vendor icons are drawn from each service's own mark, with the source of each recorded beside it as provider marks record theirs. The trademarks belong to their owners.
+- Still to settle on a card when each slice starts: X's monthly limit and whether Sotto sets the automated label; what ElevenLabs is for beside files in a thread's folder, given that nothing in Sotto speaks ([ADR-0068](0068-remove-voice-control-and-thread-management.md)); Higgsfield's limit.
