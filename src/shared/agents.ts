@@ -1572,7 +1572,11 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('resume-followups'), threadId: id }).strict(),
   z.object({ type: z.literal('steer'), threadId: id, draftId: z.uuid(), text, attachments: agentAttachmentHandlesSchema.optional(), skills: agentSkillReferencesSchema.optional(), files: agentFileReferencesSchema.optional() }).strict(),
   z.object({ type: z.literal('cancel-draft') }).strict(),
-  z.object({ type: z.literal('create-project'), provider: providerIdSchema.optional(), title: id, path: z.string().max(4_096).optional(), useExisting: z.boolean().optional() }).strict(),
+  // `gitInit` runs `git init` in the folder the command makes, before the project is added: Watcher's add_project when the
+  // user asked for a repository (ADR-0073, November 12, 2026). Never with `useExisting`. A paired host takes it only when it
+  // lists `project-git-init`.
+  z.object({ type: z.literal('create-project'), provider: providerIdSchema.optional(), title: id, path: z.string().max(4_096).optional(), useExisting: z.boolean().optional(),
+    gitInit: z.literal(true).optional() }).strict(),
   z.object({ type: z.literal('select-project'), projectId: providerEntityId }).strict(),
   z.object({ type: z.literal('settle-project'), projectId: providerEntityId }).strict(),
   z.object({ type: z.literal('restore-project'), projectId: providerEntityId }).strict(),
