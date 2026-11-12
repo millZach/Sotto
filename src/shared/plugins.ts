@@ -11,7 +11,7 @@ export const PLUGINS_FEATURE = 'plugins'
 export const PLUGIN_GROUPS = ['code'] as const
 export type PluginGroupId = typeof PLUGIN_GROUPS[number]
 
-export const PLUGIN_IDS = ['github'] as const
+export const PLUGIN_IDS = ['github', 'vercel'] as const
 export type PluginId = typeof PLUGIN_IDS[number]
 
 /** A plugin as the page lists it. Its name is the service's own and is the same in every language. */
@@ -19,6 +19,7 @@ export interface PluginEntry { readonly id: PluginId; readonly name: string; rea
 
 export const PLUGINS: readonly PluginEntry[] = [
   { id: 'github', name: 'GitHub', group: 'code' },
+  { id: 'vercel', name: 'Vercel', group: 'code' },
 ]
 
 export const PLUGINS_GITHUB_SIGN_IN = 'sotto:plugins:github-sign-in'
@@ -45,6 +46,13 @@ export interface PluginsBridge {
   gitHubSignIn(): Promise<GitHubSignIn>
   /** The newest uses of plugins by threads' agents, newest first: what was done and by which thread, never its content. */
   recentUse(): Promise<ShownPluginUse[]>
+  /** The accounts the user added, without their secrets. */
+  accounts(): Promise<PluginAccount[]>
+  /** Checks a secret with its service and keeps it. The secret goes to main once and never comes back. */
+  addAccount(request: PluginAccountAdd): Promise<PluginAccountResult>
+  replaceSecret(request: PluginAccountReplace): Promise<PluginAccountResult>
+  /** Deletes the account's secret and the account. Nothing changes at the service. */
+  removeAccount(request: PluginAccountRemove): Promise<PluginAccountResult>
 }
 
 /** The one name every client addresses the plugin tools by (ADR-0205). */
@@ -58,7 +66,7 @@ export const PLUGINS_RECENT_USE = 'sotto:plugins:recent-use'
  * What a read was of, as far as the record keeps it: a kind of thing, never which one. A repository's name, an
  * issue's number and what the read returned are the user's own and stay out of the record (ADR-0205, decision 10).
  */
-export const PLUGIN_READ_KINDS = ['issues', 'pull-requests', 'repository', 'commits', 'checks', 'releases', 'search', 'account', 'other'] as const
+export const PLUGIN_READ_KINDS = ['issues', 'pull-requests', 'repository', 'commits', 'checks', 'releases', 'search', 'account', 'deployments', 'projects', 'domains', 'logs', 'other'] as const
 export type PluginReadKind = typeof PLUGIN_READ_KINDS[number]
 
 /** How a use ended: done, refused by Sotto before anything was sent, or failed at the service. */
@@ -70,6 +78,8 @@ export const pluginUseSchema = z.object({
   at: z.iso.datetime(),
   threadId: z.string().min(1).max(200),
   plugin: z.enum(PLUGIN_IDS),
+  /** The plugin account the use was through, by Sotto's own ID. None for GitHub, whose account is gh's sign-in. */
+  accountId: z.uuid().optional(),
   tool: z.enum([PLUGIN_READ_TOOL]),
   kind: z.enum(PLUGIN_READ_KINDS),
   outcome: z.enum(PLUGIN_USE_OUTCOMES),
@@ -87,3 +97,57 @@ export const PLUGIN_USE_THREAD_TITLE_MAX = 512
 export const shownPluginUseSchema = pluginUseSchema.extend({ threadTitle: z.string().max(PLUGIN_USE_THREAD_TITLE_MAX).nullable() }).strict()
 export type ShownPluginUse = z.infer<typeof shownPluginUseSchema>
 export const shownPluginUsesSchema = z.array(shownPluginUseSchema).max(PLUGIN_USE_KEPT)
+
+/**
+ * Plugin accounts (ADR-0205): one sign-in to a plugin that the user added and named. Its secret sits in the credential
+ * store and is never among these fields: the window learns that it is saved and when, and nothing more.
+ */
+export const PLUGINS_ACCOUNTS = 'sotto:plugins:accounts'
+export const PLUGINS_ACCOUNT_ADD = 'sotto:plugins:account-add'
+export const PLUGINS_ACCOUNT_REPLACE = 'sotto:plugins:account-replace'
+export const PLUGINS_ACCOUNT_REMOVE = 'sotto:plugins:account-remove'
+
+/** The plugins an account is added to by pasting a secret. GitHub is not one: its account is gh's own sign-in. */
+export const ACCOUNT_PLUGIN_IDS = ['vercel'] as const
+export type AccountPluginId = typeof ACCOUNT_PLUGIN_IDS[number]
+
+export const PLUGIN_ACCOUNT_NAME_MAX = 40
+/** Longer than any token a plugin issues, and short enough that a pasted file is turned away. */
+export const PLUGIN_SECRET_MAX = 1_000
+/** How many accounts one plugin holds. */
+export const PLUGIN_ACCOUNTS_MAX = 10
+
+/** A name the user gives an account: what the page shows and what an agent names it by. */
+export const pluginAccountNameSchema = z.string().trim().min(1).max(PLUGIN_ACCOUNT_NAME_MAX)
+  .refine(name => [...name].every(character => character.charCodeAt(0) >= 0x20 && character.charCodeAt(0) !== 0x7f))
+
+/** An account as the window sees it. `signedInAs` is the service's own name for the account, when it gave one. */
+export const pluginAccountSchema = z.object({
+  id: z.uuid(),
+  plugin: z.enum(ACCOUNT_PLUGIN_IDS),
+  name: z.string().min(1).max(PLUGIN_ACCOUNT_NAME_MAX),
+  savedAt: z.iso.datetime(),
+  signedInAs: z.string().max(200).nullable(),
+}).strict()
+export type PluginAccount = z.infer<typeof pluginAccountSchema>
+export const pluginAccountsSchema = z.array(pluginAccountSchema).max(ACCOUNT_PLUGIN_IDS.length * PLUGIN_ACCOUNTS_MAX)
+
+export const pluginAccountAddSchema = z.object({ plugin: z.enum(ACCOUNT_PLUGIN_IDS), name: pluginAccountNameSchema, secret: z.string().min(1).max(PLUGIN_SECRET_MAX) }).strict()
+export type PluginAccountAdd = z.infer<typeof pluginAccountAddSchema>
+export const pluginAccountReplaceSchema = z.object({ id: z.uuid(), secret: z.string().min(1).max(PLUGIN_SECRET_MAX) }).strict()
+export type PluginAccountReplace = z.infer<typeof pluginAccountReplaceSchema>
+export const pluginAccountRemoveSchema = z.object({ id: z.uuid() }).strict()
+export type PluginAccountRemove = z.infer<typeof pluginAccountRemoveSchema>
+
+/**
+ * Why an account was not saved or removed. `refused`: the service did not accept the secret. `unreachable`: the service
+ * could not be asked. `name-taken`, `limit`: the plugin already has that name, or its full count of accounts.
+ * `store`: Sotto could not keep the secret or the account. `gone`: the account is no longer there.
+ */
+export const PLUGIN_ACCOUNT_PROBLEMS = ['refused', 'unreachable', 'name-taken', 'limit', 'store', 'gone'] as const
+export type PluginAccountProblem = typeof PLUGIN_ACCOUNT_PROBLEMS[number]
+export const pluginAccountResultSchema = z.discriminatedUnion('ok', [
+  z.object({ ok: z.literal(true), accounts: pluginAccountsSchema }).strict(),
+  z.object({ ok: z.literal(false), problem: z.enum(PLUGIN_ACCOUNT_PROBLEMS) }).strict(),
+])
+export type PluginAccountResult = z.infer<typeof pluginAccountResultSchema>

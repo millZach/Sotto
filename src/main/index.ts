@@ -69,6 +69,8 @@ import { registerPluginsIpc } from './plugins/ipc'
 import { readGitHubSignIn, sharedGitHubSignIn } from './plugins/github/signIn'
 import { readGitHub } from './plugins/github/read'
 import { PluginToolServer } from './plugins/pluginTools'
+import { PluginAccounts } from './plugins/accounts'
+import { checkVercelToken, readVercel, type VercelFetch } from './plugins/vercel/read'
 import { PluginUseRecord } from './plugins/useRecord'
 import { PLUGIN_USE_THREAD_TITLE_MAX } from '../shared/plugins'
 import { resetGhLookup } from './agents/git/ghCommand'
@@ -1364,10 +1366,19 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const pluginsGitHubSignIn = sharedGitHubSignIn(() => { resetGhLookup(); return readGitHubSignIn(pluginsGh, pluginsStop.signal) })
   // What each plugin tool call did, by which thread, and never its content; it follows Keep local history.
   const pluginUse = pluginsEnabled ? new PluginUseRecord(userDataPath, { historyEnabled: () => agentHistoryEnabled }) : undefined
+  // Vercel (ADR-0205): an account's token goes to api.vercel.com and nowhere else. An end-to-end run reaches the
+  // stand-in its test names, or nothing; a packaged build never reads that name.
+  const vercelBase = e2eConfiguration !== null && !app.isPackaged ? process.env['SOTTO_E2E_VERCEL_API_URL'] : undefined
+  const vercelFetch: VercelFetch = e2eConfiguration !== null && !vercelBase ? async () => { throw new Error('E2E_NETWORK_DISABLED') } : (url, init) => fetch(url, init)
+  const vercelOptions = { ...(vercelBase ? { base: vercelBase } : {}), signal: pluginsStop.signal }
+  // Plugin accounts: a name, a plugin and a secret in the credential store, checked with its service before it is kept.
+  const pluginAccounts = pluginsEnabled ? new PluginAccounts(userDataPath, { credentials, check: (_plugin, secret) => checkVercelToken(vercelFetch, secret, vercelOptions) }) : undefined
   // The plugin tools, for every thread that takes Sotto's tools: stable builds no server.
-  const pluginTools = pluginUse ? new PluginToolServer({
+  const pluginTools = pluginUse && pluginAccounts ? new PluginToolServer({
     admits: threadId => agentHost.admitsPluginTools(threadId), gitHubSignIn: pluginsGitHubSignIn,
     readGitHub: (path, query) => readGitHub(pluginsGh, path, query, pluginsStop.signal), record: use => pluginUse.add(use),
+    accounts: () => pluginAccounts.list(), findAccount: (plugin, name) => pluginAccounts.find(plugin, name),
+    readVercel: (accountId, path, query) => readVercel(vercelFetch, pluginAccounts.secret(accountId), path, query, vercelOptions),
   }) : undefined
   if (pluginTools) quitHandles.pluginTools = pluginTools
   // Let an agent babysit its pull requests (ADR-0061): every Claude Code, Codex and Grok Build launch on this computer gets
@@ -2658,6 +2669,15 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       // as it is now. A thread that is gone has none.
       const cleanupPlugins = pluginsEnabled ? registerPluginsIpc(ipcMain, {
         gitHubSignIn: pluginsGitHubSignIn,
+        accounts: async () => await pluginAccounts?.list() ?? [],
+        addAccount: async request => await pluginAccounts?.add(request) ?? { ok: false, problem: 'store' },
+        replaceSecret: async request => await pluginAccounts?.replace(request) ?? { ok: false, problem: 'store' },
+        // A removed account takes its entries in the use record with it.
+        removeAccount: async request => {
+          const result = await pluginAccounts?.remove(request) ?? { ok: false as const, problem: 'store' as const }
+          if (result.ok) void pluginUse?.forgetAccount(request.id).catch(() => undefined)
+          return result
+        },
         recentUse: async () => {
           const uses = await pluginUse?.list() ?? []
           if (uses.length === 0) return []

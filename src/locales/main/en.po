@@ -1747,6 +1747,10 @@ msgstr "That code came from this computer. Send it to your teammate instead. Not
 msgid "That computer is not connected. Nothing was changed. Connect it in Settings > Hosts & phones, then try again."
 msgstr "That computer is not connected. Nothing was changed. Connect it in Settings > Hosts & phones, then try again."
 
+#: src/main/plugins/ipc.ts
+msgid "That could not be done. Nothing was changed."
+msgstr "That could not be done. Nothing was changed."
+
 #: src/main/council/councilService.ts
 msgid "That Council is no longer here."
 msgstr "That Council is no longer here."

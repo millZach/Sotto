@@ -73,6 +73,21 @@ The services' own facts, read from their documentation on November 11, 2026, are
 
 13. **Owl only.** Stable shows no page and serves no plugin tools, and keeps accounts, copies and records whole, so a return to Owl finds them.
 
+## November 12, 2026: what Vercel's pages say, and how its reads are held
+
+Slice 3 confirmed Vercel's row of the table on Vercel's own documentation on November 12, 2026, and found more than decision 6's refuse list allowed for.
+
+- **Confirmed.** Requests go to `api.vercel.com` with `Authorization: Bearer`. `GET /v2/user` says whose a token is. A token Vercel will not take answers 403 with `invalidToken`; a token that may not read one thing answers 403 without it. Tokens are made at vercel.com/account/tokens, scoped to the account, a team or a project.
+- **Not confirmed.** Whether an environment variable's value comes back in the clear by default, whether `api.vercel.com` is the only host, where its documented `302` leads, and what a project object carries beyond its documented example, which shows `env`, deploy hook addresses and protection bypass secrets.
+
+So a Vercel read is held three ways rather than one, and this is the pattern for a plugin read over `fetch`:
+
+1. **A refuse list of path parts**, in any version of the API: environment variables, tokens, secrets, Edge Config, drains, webhooks, certificates, integrations, stores and a deployment's files, and the `decrypt` query parameter. Refused before anything is sent.
+2. **Fields are taken out of every answer.** An allowed read can still carry a credential, as a project does, so the answer must be JSON, and `env`, deploy hooks, protection bypass, and any field whose name ends in secret, token, password, key or credential are replaced before the agent sees it. The user's email address goes too: it is theirs, and an answer goes on to the thread's provider. An answer that is not JSON is not handed over.
+3. **No redirect is followed**, so a token cannot be carried to another host.
+
+The cost is that a project named `env` or `files` cannot be read by name, and that a field Vercel adds later under a name this does not know would pass. The first is rare and the refusal says why; the second is why the list is by ending, not by exact name.
+
 ## Considered options
 
 - **Where secrets live.** Each computer its own, as ADR-0025 has it (rejected: every account typed in on every computer). The desktop keeps them and answers a host's calls (rejected: forge's threads would lose plugins while the laptop is closed). One operating-system keychain entry per account (rejected: a native dependency, which ADR-0018 says needs its own ADR).

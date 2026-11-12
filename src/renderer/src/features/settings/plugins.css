@@ -15,6 +15,7 @@
 .plugin-row__body { display: grid; gap: 10px; padding: 2px 14px 16px 46px; }
 .plugin-row__body p { margin: 0; color: var(--tt-text); font-size: var(--tt-type-body); }
 .plugin-row__body p.plugin-row__note { color: var(--tt-text-muted); font-size: var(--tt-type-small); }
+.plugin-row__body p.tt-field__error { color: var(--tt-error); }
 .plugin-row__body code { font: var(--tt-type-small)/1.6 var(--tt-font-mono); user-select: text; }
 .plugin-command { display: flex; flex-wrap: wrap; align-items: center; gap: 3px 8px; margin-top: 8px; }
 .plugin-command .tt-button { min-height: 32px; padding: 5px 8px; font-size: var(--tt-type-small); }
@@ -32,3 +33,12 @@
 .plugin-row__actions .tt-button[aria-disabled='true'] { cursor: not-allowed; opacity: 0.45; }
 @media (prefers-reduced-motion: reduce) { .plugin-row__chevron { transition: none; } }
 [data-reduced-motion='on'] .plugin-row__chevron { transition: none; }
+/* An account the user added: its name and when its secret was saved, its two actions, and its recent use. */
+.plugin-account { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-inset); background: var(--tt-card-inset); }
+.plugin-account__top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px; }
+.plugin-account__who { display: grid; gap: 2px; min-width: 0; flex: 1 1 220px; }
+.plugin-account__who b { font-size: var(--tt-type-reading); font-weight: 600; overflow-wrap: anywhere; }
+.plugin-account__who span { color: var(--tt-text-muted); font-size: var(--tt-type-small); overflow-wrap: anywhere; }
+.plugin-account__change { display: grid; gap: 10px; padding-top: 10px; border-top: 1px solid var(--tt-hairline); }
+.plugin-account--form .tt-input, .plugin-account__change .tt-input { max-width: 460px; }
+.plugin-account .tt-button[aria-disabled='true'] { cursor: not-allowed; opacity: 0.45; }

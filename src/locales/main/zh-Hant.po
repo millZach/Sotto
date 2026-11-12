@@ -1746,6 +1746,10 @@ msgstr ""
 msgid "That computer is not connected. Nothing was changed. Connect it in Settings > Hosts & phones, then try again."
 msgstr ""
 
+#: src/main/plugins/ipc.ts
+msgid "That could not be done. Nothing was changed."
+msgstr ""
+
 #: src/main/council/councilService.ts
 msgid "That Council is no longer here."
 msgstr ""

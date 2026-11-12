@@ -7,7 +7,10 @@ import { HOSTS_DEVICES, HOSTS_TAILSCALE, HOSTS_TAILSCALE_CONNECT, HOSTS_TAILSCAL
 import { HOSTS_OPENCODE_SIGN_IN, HOSTS_PROVIDER_ACTION, HOSTS_SIGN_IN, HOSTS_UPDATE_CLIENTS, hostOpenCodeSignInRequestSchema, hostClientUpdateRequestSchema, hostProviderActionSchema, hostProviderActionResultSchema, hostSignInRequestSchema, providerSignInResultSchema, parseHostOpenCodeAnswer } from '../shared/hostProviders'
 import { PHONES_GET, PHONES_COMMAND, PHONES_CHANGED, phonesCommandSchema, type PhonesState } from '../shared/phones'
 import { LOCAL_APPS_CHANGED, LOCAL_APPS_GET, type LocalAppsState } from '../shared/localApps'
-import { gitHubSignInSchema, PLUGINS_GITHUB_SIGN_IN, PLUGINS_RECENT_USE, shownPluginUsesSchema, type PluginsBridge } from '../shared/plugins'
+import {
+  gitHubSignInSchema, pluginAccountAddSchema, pluginAccountRemoveSchema, pluginAccountReplaceSchema, pluginAccountResultSchema, pluginAccountsSchema,
+  PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNTS, PLUGINS_GITHUB_SIGN_IN, PLUGINS_RECENT_USE, shownPluginUsesSchema, type PluginsBridge,
+} from '../shared/plugins'
 import { TEAMS_CHANGED, TEAMS_COMMAND, TEAMS_GET, TEAMS_OWN_DESK, teamsCommandSchema, type TeamDesk, type TeamsBridge, type TeamsCommandResult, type TeamsState } from '../shared/teams'
 import { mapHostReferences, parseHostEntityKey } from '../shared/clientIdentity'
 
@@ -664,6 +667,11 @@ export function createSottoBridge(
     plugins: Object.freeze<PluginsBridge>({
       gitHubSignIn: async () => invokeParsed(renderer, PLUGINS_GITHUB_SIGN_IN, gitHubSignInSchema),
       recentUse: async () => invokeParsed(renderer, PLUGINS_RECENT_USE, shownPluginUsesSchema),
+      accounts: async () => invokeParsed(renderer, PLUGINS_ACCOUNTS, pluginAccountsSchema),
+      // A secret goes to main once and nothing returned carries one.
+      addAccount: async request => invokeParsed(renderer, PLUGINS_ACCOUNT_ADD, pluginAccountResultSchema, pluginAccountAddSchema.parse(request)),
+      replaceSecret: async request => invokeParsed(renderer, PLUGINS_ACCOUNT_REPLACE, pluginAccountResultSchema, pluginAccountReplaceSchema.parse(request)),
+      removeAccount: async request => invokeParsed(renderer, PLUGINS_ACCOUNT_REMOVE, pluginAccountResultSchema, pluginAccountRemoveSchema.parse(request)),
     }),
     ...createToolsBridges(renderer),
     cloudIphone: createCloudIphoneBridge(renderer),
