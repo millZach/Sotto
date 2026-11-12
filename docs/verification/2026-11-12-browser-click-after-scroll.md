@@ -14,3 +14,11 @@ The same refusal came back on a fresh example.com page when the agent clicked at
 - **The built app (`tests/e2e/browser-hidden-page-input.spec.ts`).** The agent scrolls a hidden page, then clicks at 100, 100. Without the fix the click returns `{"code":"unavailable","message":"This tool is unavailable. Refresh and try again."}`. With the fix it lands on the note at that point of the scrolled page. `artifacts/browser-launch-reliability/hidden-scroll-landed.png` shows the page once shown in Tools, with Note 26 marked clicked. `hidden-scroll.json` beside it records the title "Fieldnotes, clicked Note 26".
 - **A real Chrome (`tests/integration/hostBrowser.test.ts`, `SOTTO_REAL_BROWSER=1`).** The page is scrolled to 1400 pixels. Without the fix the target check throws `No node found at given location`. With the fix it finds the button 100 pixels down the view, and a point below the visible area is refused as `blocked`. It sends no click: a headless page on Linux CI draws no frames, and input waits on them (#2496), so the click itself is the e2e's to prove. This laptop's run pointed the host browser at Chrome by hand, since its finder looks only where Linux and macOS keep a browser. CI's Linux job runs it as written.
 - **Unit (`tests/unit/main/browserTools.test.ts`).** A debugger that hit-tests in the document, as Chromium does, red before and green after.
+
+## A click straight after a scroll
+
+Bug Bot found that Chromium acknowledges a scroll before the page moves. So a click sent at once was checked against where the page had been, and pressed whatever had scrolled into that place. A scroll, swipe or tap now waits until the page has drawn twice, or half a second if it draws none.
+
+- **Real Chrome, a throwaway probe of six runs.** Each run loaded a page, scrolled 600 pixels and checked a click at once. Without the wait, all six checked the button the scroll had moved away. With it, all six checked what was there after the scroll. The probe was not kept: a headless page on Linux CI may draw no frames, and then only the half-second fallback stands between it and the scroll.
+- **Unit.** A debugger that moves the page only when it next draws: without the wait the click is checked at y 30, and with it at y 630.
+- **The built app.** `agent-browser`, `agent-iphone` and `browser-hidden-page-input` pass, the iPhone's taps and swipes included.

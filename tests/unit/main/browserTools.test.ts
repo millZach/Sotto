@@ -642,6 +642,28 @@ describe('browser grant (ADR-0029)', () => {
     expect(unwrap(await service.action({ ...request, action: { type: 'click', x: 40, y: 50 } })).output).toBe('click completed.')
   })
 
+  it('checks a click straight after a scroll against where the scroll left the page', async () => {
+    const { service, target } = await browserFixture()
+    const request = await grantThread(service, { threadId: target.threadId, workspaceId: target.workspaceId })
+    const send = vi.mocked(lastView().webContents.debugger.sendCommand)
+    const original = send.getMockImplementation()!
+    // As Chromium does: the wheel is acknowledged at once, and the page moves only when it next draws.
+    let pageY = 0, moving = 0
+    send.mockImplementation(async (...args) => {
+      const [method, params] = args as [string, { type?: string; deltaY?: number; awaitPromise?: boolean }]
+      if (method === 'Input.dispatchMouseEvent' && params.type === 'mouseWheel') { moving += params.deltaY ?? 0; return {} }
+      if (method === 'Runtime.evaluate' && params.awaitPromise) { pageY += moving; moving = 0; return { result: {} } }
+      if (method === 'Page.getLayoutMetrics') return { cssVisualViewport: { pageX: 0, pageY, clientWidth: 1280, clientHeight: 800 } }
+      return original(...args)
+    })
+    unwrap(await service.action({ ...request, action: { type: 'scroll', x: 300, y: 300, deltaX: 0, deltaY: 600 } }))
+    send.mockClear()
+    unwrap(await service.action({ ...request, action: { type: 'click', x: 20, y: 30 } }))
+    expect(send.mock.calls.filter(([method]) => method === 'DOM.getNodeForLocation').map(([, params]) => params)).toEqual([
+      expect.objectContaining({ x: 20, y: 630 }), expect.objectContaining({ x: 20, y: 630 }),
+    ])
+  })
+
   it('a waiting action whose page changed still does not run once granted', async () => {
     const { service, target } = await browserFixture()
     const owner = { threadId: target.threadId, workspaceId: target.workspaceId }

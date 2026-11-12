@@ -74,6 +74,8 @@ function markupText(html: string): string {
  * showed it again. A command past this fails in words instead, and the action's page lock goes with it.
  */
 export const BROWSER_COMMAND_DEADLINE_MS = 20_000
+/** Resolves once the page has drawn two frames, or after half a second if it draws none. A fixed expression. */
+const SETTLE_EXPRESSION = 'new Promise(done => { const timer = setTimeout(done, 500); requestAnimationFrame(() => requestAnimationFrame(() => { clearTimeout(timer); done() })) })'
 
 /**
  * Fixed operations only: callers cannot evaluate script or read cookies. The commands are the DevTools Protocol's, so
@@ -348,13 +350,16 @@ export abstract class PageAutomation {
    * The node a click or tap at a point in the screenshot lands on. The point is in the visible viewport, as screenshots
    * and input are, but Chromium hit-tests `DOM.getNodeForLocation` in the document, so the point moves by how far the
    * page has scrolled. Without that, every click on a scrolled page tested a node above the one it would press, and one
-   * above the visible area came back as a protocol error the agent could only read as the tool breaking.
+   * above the visible area came back as a protocol error the agent could only read as the tool breaking. The point is
+   * rounded as `dispatch` rounds it, so what is checked is what is sent. Chromium takes only whole pixels here, so on a
+   * page zoomed away from 1, whose scroll can be fractional, the check can name the neighbour of an element at its edge.
    */
   private async nodeAt(point: { x: number; y: number }): Promise<number | undefined> {
     const viewport = await this.visibleViewport()
     const width = Math.round(viewport.clientWidth), height = Math.round(viewport.clientHeight)
-    if (point.x >= width || point.y >= height) return fail('blocked', `That point is outside the page's visible area, which is ${width} by ${height}. Take a screenshot and use its coordinates.`)
-    const located = await this.send('DOM.getNodeForLocation', { x: Math.round(viewport.pageX + point.x), y: Math.round(viewport.pageY + point.y), includeUserAgentShadowDOM: true })
+    const x = Math.round(point.x), y = Math.round(point.y)
+    if (x >= width || y >= height) return fail('blocked', `That point is outside the page's visible area, which is ${width} by ${height}. Take a screenshot and use its coordinates.`)
+    const located = await this.send('DOM.getNodeForLocation', { x: Math.round(viewport.pageX + x), y: Math.round(viewport.pageY + y), includeUserAgentShadowDOM: true })
       .catch((error: unknown) => error instanceof Error && /no node found/iu.test(error.message) ? fail('blocked', 'Nothing on the page is at that point. Take a screenshot and use its coordinates.') : Promise.reject(error)) as { backendNodeId?: number }
     return located.backendNodeId
   }
@@ -389,12 +394,26 @@ export abstract class PageAutomation {
    * Chromium answers a wheel or touch event only once the page draws a frame, and a page that is not on screen
    * draws none, so input borrows the surface a capture borrows. Without it a scroll, tap or swipe on a hidden page
    * waited until someone showed the page.
+   *
+   * Chromium acknowledges a wheel or touch event before the page has moved, so a scroll, swipe or tap waits, still
+   * holding the surface, until the page has drawn twice. Without it a click straight after a scroll was checked
+   * against where the page had been and pressed what scrolled into that place.
    */
   async input(action: PageInput, guard: () => void): Promise<void> {
     await this.ready()
     guard()
     const release = this.prepareCapture()
-    try { await this.dispatch(action) } finally { release() }
+    try {
+      await this.dispatch(action)
+      if (action.type === 'scroll' || action.type === 'swipe' || action.type === 'tap') await this.settled()
+    } finally { release() }
+  }
+  /**
+   * Two frames, or half a second if the page draws none, as a headless page may not. Best effort: a tap that starts
+   * a navigation takes the page's context with it, and the action itself has already happened.
+   */
+  private async settled(): Promise<void> {
+    await this.send('Runtime.evaluate', { expression: SETTLE_EXPRESSION, awaitPromise: true }).catch(() => undefined)
   }
   private async dispatch(action: PageInput): Promise<void> {
     const send = (method: string, params: Record<string, unknown>): Promise<unknown> => this.send(method, params)
