@@ -1316,8 +1316,28 @@ msgid "Asked to cancel a deployment’s build"
 msgstr "Asked to cancel a deployment’s build"
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Asked to close an issue"
+msgstr "Asked to close an issue"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Asked to open an issue"
+msgstr "Asked to open an issue"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Asked to post a comment"
 msgstr "Asked to post a comment"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Asked to promote a deployment to production"
+msgstr "Asked to promote a deployment to production"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Asked to reopen an issue"
+msgstr "Asked to reopen an issue"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Asked to roll production back"
+msgstr "Asked to roll production back"
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Asking gh who is signed in…"
@@ -1890,6 +1910,10 @@ msgstr "Close. Start at boot carries on"
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "Close. Stop starting at boot carries on"
 msgstr "Close. Stop starting at boot carries on"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Closed an issue"
+msgstr "Closed an issue"
 
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "Closes this dialog. {submittedName} is already added and stays added."
@@ -4423,6 +4447,10 @@ msgstr "OpenCode 2 is not installed on this computer. Install it with its instal
 msgid "Opened {page} in your browser."
 msgstr "Opened {page} in your browser."
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Opened an issue"
+msgstr "Opened an issue"
+
 #: src/renderer/src/features/settings/PhonesSettings.tsx
 msgid "Opened in your browser"
 msgstr "Opened in your browser"
@@ -4836,6 +4864,10 @@ msgstr "Projects"
 msgid "Projects stay where they are until you pull. A project can turn it on for itself in Threads, Project defaults."
 msgstr "Projects stay where they are until you pull. A project can turn it on for itself in Threads, Project defaults."
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Promoted a deployment to production"
+msgstr "Promoted a deployment to production"
+
 #: src/renderer/src/features/settings/AgentAccountSettings.tsx
 msgid "Provider default"
 msgstr "Provider default"
@@ -5164,6 +5196,10 @@ msgid "Rename the thread"
 msgstr "Rename the thread"
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Reopened an issue"
+msgstr "Reopened an issue"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Replace"
 msgstr "Replace"
 
@@ -5340,6 +5376,10 @@ msgstr "Retry {label}"
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Retry connection"
 msgstr "Retry connection"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Rolled production back"
+msgstr "Rolled production back"
 
 #: src/renderer/src/features/settings/themes/AppearancePreview.tsx
 msgid "Room the preview shows"

@@ -458,6 +458,10 @@ msgstr ""
 msgid "Address: {0}"
 msgstr ""
 
+#: src/main/plugins/changeWords.ts
+msgid "After a rollback, Vercel keeps new pushes to the production branch out of production until a deployment is promoted."
+msgstr ""
+
 #: src/main/agents/subagentIpc.ts
 msgid "Agents cannot reach the host machine from this window. Nothing was changed. Restart Sotto and try again."
 msgstr ""
@@ -705,6 +709,34 @@ msgstr ""
 msgid "Climb needs connected Claude or Codex models for its judges, and none is ready. Tell the user to connect one. Nothing was started."
 msgstr ""
 
+#: src/main/plugins/changeWords.ts
+msgid "Close an issue on GitHub"
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Close an issue on GitHub as {login}"
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Close issue {where} on GitHub, as {login}?"
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Close issue {where} on GitHub, as the account gh is signed in to?"
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Close the issue"
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Closed as: completed"
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Closed as: not planned"
+msgstr ""
+
 #: src/main/council/climbService.ts
 msgid "Codex cannot judge Climbs on Windows yet. Choose Claude or run the Climb on a Mac or Linux computer."
 msgstr ""
@@ -826,6 +858,10 @@ msgid "Don’t add"
 msgstr ""
 
 #: src/main/plugins/changeWords.ts
+msgid "Don’t open it"
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
 msgid "Don’t post it"
 msgstr ""
 
@@ -933,6 +969,10 @@ msgstr ""
 msgid "Install that Node for the SSH account on {name}, then try again."
 msgstr ""
 
+#: src/main/plugins/changeWords.ts
+msgid "Issue: {title}"
+msgstr ""
+
 #. placeholder {0}: change.state
 #: src/main/plugins/changeWords.ts
 msgid "Its build now: {0}"
@@ -964,7 +1004,19 @@ msgid "Later edits in {path} would be overwritten. Preserve them before revertin
 msgstr ""
 
 #: src/main/plugins/changeWords.ts
+msgid "Leave it closed"
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Leave it open"
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
 msgid "Leave it running"
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Leave production as it is"
 msgstr ""
 
 #: src/main/omarchy/setup.ts
@@ -1100,6 +1152,14 @@ msgstr ""
 msgid "Open Agents in the main Sotto window."
 msgstr ""
 
+#: src/main/plugins/changeWords.ts
+msgid "Open an issue on GitHub"
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Open an issue on GitHub as {login}"
+msgstr ""
+
 #: src/main/agents/checkQueueIpc.ts
 msgid "Open checks in the main Sotto window."
 msgstr ""
@@ -1130,6 +1190,18 @@ msgstr ""
 
 #: src/main/council/councilIpc.ts
 msgid "Open the Council in the main Sotto window."
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Open the issue"
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Open this issue in {repository} on GitHub, as {login}?"
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Open this issue in {repository} on GitHub, as the account gh is signed in to?"
 msgstr ""
 
 #: src/main/agents/usageIpc.ts
@@ -1248,9 +1320,28 @@ msgstr ""
 msgid "Preview the fixed reference before starting."
 msgstr ""
 
-#. placeholder {0}: change.project
 #: src/main/plugins/changeWords.ts
-msgid "Project: {0}"
+msgid "Project: {project}"
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Project: {project} ({projectId})"
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Project: {projectId}"
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Promote a deployment to production on Vercel"
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Promote this deployment of {named} to production on Vercel?"
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Promote to production"
 msgstr ""
 
 #: src/main/hosts/desktopHostRouter.ts
@@ -1294,8 +1385,40 @@ msgstr ""
 msgid "Removing"
 msgstr ""
 
+#: src/main/plugins/changeWords.ts
+msgid "Reopen an issue on GitHub"
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Reopen an issue on GitHub as {login}"
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Reopen issue {where} on GitHub, as {login}?"
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Reopen issue {where} on GitHub, as the account gh is signed in to?"
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Reopen the issue"
+msgstr ""
+
 #: src/main/tools/checkpoints.ts
 msgid "Revert was interrupted. Check recovery to reconcile native history and finish restoring files."
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Roll production back"
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Roll production back on Vercel"
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Roll production of {named} back to this deployment on Vercel?"
 msgstr ""
 
 #: src/main/hosts/hostUpdate.ts
@@ -2521,6 +2644,14 @@ msgstr ""
 msgid "The previous owl folder changed. Sotto left it alone. Restore it before trying again."
 msgstr ""
 
+#: src/main/plugins/changeWords.ts
+msgid "The project’s production addresses will serve this deployment again, at once."
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "The project’s production addresses will serve this deployment. It is not built again."
+msgstr ""
+
 #: src/main/tools/checkpoints.ts
 msgid "The provider rejected rollback. Files are unchanged; review the native thread before retrying."
 msgstr ""
@@ -3326,6 +3457,10 @@ msgstr ""
 
 #: src/main/tools/checkpoints.ts
 msgid "Thread work changed while checking the checkpoint. Review it again before reverting."
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Title: {title}"
 msgstr ""
 
 #: src/main/hosts/hostBootStart.ts

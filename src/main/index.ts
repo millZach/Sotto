@@ -73,8 +73,8 @@ import { PluginAccounts, PluginSecretLocked } from './plugins/accounts'
 import { PluginChangeRequests } from './plugins/pendingChanges'
 import { isThreadClosed } from '../shared/threadActivity'
 import { wordPluginChange } from './plugins/changeWords'
-import { commentOnGitHub } from './plugins/github/changes'
-import { cancelVercelDeployment, describeVercelDeployment } from './plugins/vercel/changes'
+import { commentOnGitHub, describeGitHubIssue, openGitHubIssue, setGitHubIssueState } from './plugins/github/changes'
+import { cancelVercelDeployment, describeVercelDeployment, moveVercelProduction } from './plugins/vercel/changes'
 import { combinedSottoRequests } from './agents/sottoRequests'
 import { checkVercelToken, readVercel, type VercelFetch } from './plugins/vercel/read'
 import { PluginUseRecord } from './plugins/useRecord'
@@ -1405,6 +1405,9 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     },
     askChange: async (threadId, change, wait) => await pluginChanges?.ask(threadId, wordPluginChange(change), wait) ?? 'stopped',
     commentOnGitHub: input => commentOnGitHub(pluginsGh, input, pluginsStop.signal),
+    openGitHubIssue: input => openGitHubIssue(pluginsGh, input, pluginsStop.signal),
+    describeGitHubIssue: input => describeGitHubIssue(pluginsGh, input, pluginsStop.signal),
+    setGitHubIssueState: input => setGitHubIssueState(pluginsGh, input, pluginsStop.signal),
     // The deployment is read for its card with the account's token; one that cannot be read shows its ID alone.
     // A token that cannot be read at all is said before anyone is asked: locked is not the same as gone.
     describeVercelDeployment: async (accountId, deploymentId, teamId) => {
@@ -1417,6 +1420,11 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       let secret: string
       try { secret = pluginAccounts.secret(accountId) } catch (error) { return { ok: false, reason: error instanceof PluginSecretLocked ? 'locked' : 'no-secret' } }
       return cancelVercelDeployment(vercelFetch, secret, deploymentId, teamId, vercelOptions)
+    },
+    moveVercelProduction: async (accountId, action, projectId, deploymentId, teamId) => {
+      let secret: string
+      try { secret = pluginAccounts.secret(accountId) } catch (error) { return { ok: false, reason: error instanceof PluginSecretLocked ? 'locked' : 'no-secret' } }
+      return moveVercelProduction(vercelFetch, secret, action, projectId, deploymentId, teamId, vercelOptions)
     },
   }) : undefined
   if (pluginTools) quitHandles.pluginTools = pluginTools

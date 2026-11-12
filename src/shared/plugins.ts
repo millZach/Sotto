@@ -61,8 +61,13 @@ export const PLUGIN_ACCOUNTS_TOOL = 'plugin_accounts'
 export const PLUGIN_READ_TOOL = 'plugin_read'
 /** The named tools that change something (ADR-0205, decision 6): each asks the user before anything is sent. */
 export const GITHUB_COMMENT_TOOL = 'github_comment'
+export const GITHUB_OPEN_ISSUE_TOOL = 'github_open_issue'
+export const GITHUB_CLOSE_ISSUE_TOOL = 'github_close_issue'
+export const GITHUB_REOPEN_ISSUE_TOOL = 'github_reopen_issue'
 export const VERCEL_CANCEL_TOOL = 'vercel_cancel_deployment'
-export const PLUGIN_CHANGE_TOOLS = [GITHUB_COMMENT_TOOL, VERCEL_CANCEL_TOOL] as const
+export const VERCEL_PROMOTE_TOOL = 'vercel_promote_deployment'
+export const VERCEL_ROLLBACK_TOOL = 'vercel_rollback_production'
+export const PLUGIN_CHANGE_TOOLS = [GITHUB_COMMENT_TOOL, GITHUB_OPEN_ISSUE_TOOL, GITHUB_CLOSE_ISSUE_TOOL, GITHUB_REOPEN_ISSUE_TOOL, VERCEL_CANCEL_TOOL, VERCEL_PROMOTE_TOOL, VERCEL_ROLLBACK_TOOL] as const
 export type PluginChangeTool = typeof PLUGIN_CHANGE_TOOLS[number]
 
 export const PLUGINS_RECENT_USE = 'sotto:plugins:recent-use'
@@ -70,9 +75,11 @@ export const PLUGINS_RECENT_USE = 'sotto:plugins:recent-use'
 /**
  * What a use was of, as far as the record keeps it: a kind of thing read or changed, never which one. A repository's
  * name, an issue's number, a comment's words and what a read returned are the user's own and stay out of the record
- * (ADR-0205, decision 10). The last two are changes: a comment posted, and a deployment's build cancelled.
+ * (ADR-0205, decision 10). Those from `comment` on are changes: a comment posted, an issue opened, closed or
+ * reopened, a deployment's build cancelled, a deployment promoted to production, and production rolled back.
  */
-export const PLUGIN_READ_KINDS = ['issues', 'pull-requests', 'repository', 'commits', 'checks', 'releases', 'search', 'account', 'deployments', 'projects', 'domains', 'logs', 'other', 'comment', 'deployment-cancel'] as const
+export const PLUGIN_READ_KINDS = ['issues', 'pull-requests', 'repository', 'commits', 'checks', 'releases', 'search', 'account', 'deployments', 'projects', 'domains', 'logs', 'other',
+  'comment', 'deployment-cancel', 'issue-open', 'issue-close', 'issue-reopen', 'deployment-promote', 'deployment-rollback'] as const
 export type PluginReadKind = typeof PLUGIN_READ_KINDS[number]
 
 /**
@@ -171,8 +178,20 @@ export type PluginChange =
     /** Who gh is signed in to github.com as, where it said: the account the comment is posted as. */
     readonly account?: string
   }
+  | { readonly kind: 'github-open-issue'; readonly owner: string; readonly repo: string; readonly title: string; readonly body: string; readonly account?: string }
   | {
-    readonly kind: 'vercel-cancel'; readonly account: string; readonly deploymentId: string
+    readonly kind: 'github-close-issue' | 'github-reopen-issue'; readonly owner: string; readonly repo: string; readonly number: number
+    /** The issue's title as GitHub gave it, read before asking, so the card names the issue in words. */
+    readonly title: string
+    /** Why it is closed, which is sent with the call: finished, or not going to be done. */
+    readonly reason?: 'completed' | 'not_planned'
+    readonly account?: string
+  }
+  | {
+    /** Promote and roll back move production: every production address of the project serves the deployment. */
+    readonly kind: 'vercel-cancel' | 'vercel-promote' | 'vercel-rollback'; readonly account: string; readonly deploymentId: string
+    /** The project the deployment belongs to, by Vercel's own ID for it. Promote and roll back send it. */
+    readonly projectId?: string
     /** The team the agent named, which is sent with the call. */
     readonly teamId?: string
     /** What Vercel says of the deployment, read before asking, where it said: none of it is taken on trust for the call. */

@@ -297,9 +297,15 @@ function RecentUse({ name, uses }: { readonly name: string; readonly uses: reado
     releases: t`Read releases`, search: t`Searched ${name}`, account: t`Read account details`, deployments: t`Read deployments`, projects: t`Read projects`,
     domains: t`Read domains`, logs: t`Read a build log`, other: t`Read from ${name}`,
     comment: t`Posted a comment`, 'deployment-cancel': t`Cancelled a deployment’s build`,
+    'issue-open': t`Opened an issue`, 'issue-close': t`Closed an issue`, 'issue-reopen': t`Reopened an issue`,
+    'deployment-promote': t`Promoted a deployment to production`, 'deployment-rollback': t`Rolled production back`,
   }
   // A change that was not made: what the agent asked to do, since nothing was done.
-  const asked: Partial<Record<PluginReadKind, string>> = { comment: t`Asked to post a comment`, 'deployment-cancel': t`Asked to cancel a deployment’s build` }
+  const asked: Partial<Record<PluginReadKind, string>> = {
+    comment: t`Asked to post a comment`, 'deployment-cancel': t`Asked to cancel a deployment’s build`,
+    'issue-open': t`Asked to open an issue`, 'issue-close': t`Asked to close an issue`, 'issue-reopen': t`Asked to reopen an issue`,
+    'deployment-promote': t`Asked to promote a deployment to production`, 'deployment-rollback': t`Asked to roll production back`,
+  }
   const changed = (use: ShownPluginUse): boolean => use.tool !== 'plugin_read'
   return <section className="plugin-use" aria-labelledby={headingId}>
     <h4 id={headingId}><Trans>Recent use</Trans></h4>
