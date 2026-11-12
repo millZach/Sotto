@@ -58,7 +58,10 @@ export async function describeVercelDeployment(fetcher: VercelFetch, token: stri
     const project = shown(deployment['name'], token), url = shown(deployment['url'], token), state = shown(deployment['readyState'] ?? deployment['state'], token)
     // Vercel leaves the target out of a preview deployment and names it for production.
     const target = shown(deployment['target'], token) ?? (deployment['target'] === null ? 'preview' : undefined)
-    const projectId = typeof deployment['projectId'] === 'string' && VERCEL_PROJECT_ID.test(deployment['projectId']) ? deployment['projectId'] : undefined
+    // The ID is shown and sent, so it is kept only when it is shaped as one and holds nothing of the token, which a
+    // service can echo anywhere: with the token taken out, an ID that held it no longer has an ID's shape.
+    const named = typeof deployment['projectId'] === 'string' ? withoutToken(deployment['projectId'], token) : ''
+    const projectId = VERCEL_PROJECT_ID.test(named) ? named : undefined
     return { ...(project ? { project } : {}), ...(target ? { target } : {}), ...(url ? { url } : {}), ...(state ? { state } : {}), ...(projectId ? { projectId } : {}) }
   } catch { return {} }
 }

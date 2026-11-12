@@ -340,6 +340,10 @@ describe('the changes themselves', () => {
     const echoed = await describeVercelDeployment(fetcher(200, { name: `${'y'.repeat(110)}${TOKEN}`, url: `${TOKEN}.vercel.app`, readyState: TOKEN, target: TOKEN }), TOKEN, 'dpl_example1', undefined)
     expect(JSON.stringify(echoed)).not.toContain(TOKEN.slice(0, 8))
     expect(echoed.url).toBe('[removed by Sotto].vercel.app')
+    // A project ID that holds the token is no project ID: it is neither shown nor sent.
+    const plain = 'madeUpVercelToken123'
+    await expect(describeVercelDeployment(fetcher(200, { name: 'example-project', projectId: `prj_${plain}` }), plain, 'dpl_example1', undefined)).resolves.toEqual({ project: 'example-project' })
+    await expect(describeVercelDeployment(fetcher(200, { name: 'example-project', projectId: 'prj_example1' }), plain, 'dpl_example1', undefined)).resolves.toEqual({ project: 'example-project', projectId: 'prj_example1' })
   })
 })
 
