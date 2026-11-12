@@ -15,7 +15,7 @@ vi.mock('electron', async () => {
   class Contents extends EventEmitter {
     url = ''; destroyed = false
     navigationHistory = { canGoBack: () => false, canGoForward: () => false }
-    debugger = Object.assign(new EventEmitter(), { isAttached: () => true, attach: vi.fn(), detach: vi.fn(), sendCommand: vi.fn(async (method: string) => method === 'DOM.getNodeForLocation' ? { backendNodeId: 7 } : method === 'DOM.describeNode' ? { node: { backendNodeId: 7, nodeName: 'BUTTON', attributes: ['aria-label', 'Save'] } } : {}) })
+    debugger = Object.assign(new EventEmitter(), { isAttached: () => true, attach: vi.fn(), detach: vi.fn(), sendCommand: vi.fn(async (method: string) => method === 'Page.getLayoutMetrics' ? { cssVisualViewport: { pageX: 0, pageY: 0, clientWidth: 1280, clientHeight: 800 } } : method === 'DOM.getNodeForLocation' ? { backendNodeId: 7 } : method === 'DOM.describeNode' ? { node: { backendNodeId: 7, nodeName: 'BUTTON', attributes: ['aria-label', 'Save'] } } : {}) })
     getBackgroundThrottling = vi.fn(() => true)
     setBackgroundThrottling = vi.fn()
     getURL() { return this.url }
