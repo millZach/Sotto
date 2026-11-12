@@ -742,6 +742,11 @@ msgstr "{name} from {spokenSource}, in {spokenProvider}"
 msgid "{name} has no fork of its own, so the new {name} thread starts from a handover of this conversation up to {time}. It goes with your first message. What’s below stays here."
 msgstr "{name} has no fork of its own, so the new {name} thread starts from a handover of this conversation up to {time}. It goes with your first message. What’s below stays here."
 
+#. {name} is a file name.
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "{name} is a program or script, so it was shown in its folder. Nothing was run."
+msgstr "{name} is a program or script, so it was shown in its folder. Nothing was run."
+
 #. {name} is a Git branch name.
 #: src/renderer/src/agents/branchToolbar.logic.ts
 msgid "{name} is already checked out here."
@@ -3881,6 +3886,11 @@ msgctxt "ticked task"
 msgid "Done"
 msgstr "Done"
 
+#. Saves a file on another computer to this computer's Downloads folder.
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Download"
+msgstr "Download"
+
 #. {to} is a version number.
 #: src/renderer/src/agents/HostUpdates.tsx
 msgid "Download {to}"
@@ -5080,7 +5090,7 @@ msgstr "Let’s make something."
 msgid "Link copied"
 msgstr "Link copied"
 
-#. {file} is a path to a Markdown file.
+#. {file} is a path to a file.
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "Link: {file}"
 msgstr "Link: {file}"
@@ -5984,9 +5994,16 @@ msgid "Only the first entries of this folder are listed. Keep typing to narrow t
 msgstr "Only the first entries of this folder are listed. Keep typing to narrow them."
 
 #. A sidebar row's menu: open the thread in the focused pane.
+#. Opens a file in its own app, or a folder in the file manager.
+#: src/renderer/src/agents/MessageContent.tsx
 #: src/renderer/src/agents/threadMenu.tsx
 msgid "Open"
 msgstr "Open"
+
+#. {file} is a path. A press opens the file in its own app, or the folder.
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Open {file}"
+msgstr "Open {file}"
 
 #. {file} is a path to a Markdown file.
 #. {file} is a path to a Markdown file.
@@ -7701,10 +7718,14 @@ msgid "Show {earlier} earlier"
 msgstr "Show {earlier} earlier"
 
 #. {manager} is File Explorer, Finder or the file manager; {file} is a path.
-#. {manager} is File Explorer, Finder or the file manager; {file} is a path.
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "Show {file} in {manager}"
 msgstr "Show {file} in {manager}"
+
+#. {file} is a path to a file on another computer. Files is the Tools surface.
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Show {file} in Files"
+msgstr "Show {file} in Files"
 
 #. {name} is the file name of an image.
 #: src/renderer/src/agents/AttachmentViewer.tsx
@@ -7786,10 +7807,14 @@ msgid "Show in {manager}"
 msgstr "Show in {manager}"
 
 #. {manager} is File Explorer, Finder or the file manager; {file} is a path.
-#. {manager} is File Explorer, Finder or the file manager; {file} is a path.
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "Show in {manager}: {file}"
 msgstr "Show in {manager}: {file}"
+
+#. Shows a file on another computer in the Tools surface named Files.
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Show in Files"
+msgstr "Show in Files"
 
 #: src/renderer/src/agents/BranchToolbar.tsx
 msgid "Show more"
@@ -8153,6 +8178,10 @@ msgstr "Sotto could not confirm whether the {continueTarget} thread started. You
 msgid "Sotto could not discard this saved answer. It is still kept."
 msgstr "Sotto could not discard this saved answer. It is still kept."
 
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Sotto could not download this file. Nothing was saved. Try again."
+msgstr "Sotto could not download this file. Nothing was saved. Try again."
+
 #: src/renderer/src/agents/ownServerWords.ts
 msgid "Sotto could not finish adding {name} or take it off its list. Remove it, then add it again."
 msgstr "Sotto could not finish adding {name} or take it off its list. Remove it, then add it again."
@@ -8180,6 +8209,10 @@ msgstr "Sotto could not open that page. Nothing else changed. Try again."
 #: src/renderer/src/agents/InteractiveVisual.tsx
 msgid "Sotto could not open the page."
 msgstr "Sotto could not open the page."
+
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Sotto could not open this file. Nothing was opened."
+msgstr "Sotto could not open this file. Nothing was opened."
 
 #: src/renderer/src/agents/ownServerWords.ts
 msgid "Sotto could not reach its own side of this. Nothing was changed. Try again."

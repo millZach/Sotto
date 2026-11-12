@@ -3544,6 +3544,11 @@ msgstr "Link with a code"
 msgid "Link with a teammate"
 msgstr "Link with a teammate"
 
+#. A file a reply linked, shown beside Watcher.
+#: src/renderer/src/watcher/WatcherBeside.tsx
+msgid "Linked file"
+msgstr "Linked file"
+
 #: src/renderer/src/features/council/CouncilChamber.tsx
 msgid "listening"
 msgstr "listening"

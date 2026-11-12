@@ -150,6 +150,8 @@ export interface AgentRuntimeOptions {
   threadStartsEnabled?: boolean
   /** Linked Markdown files in the side panel (ADR-0120, November 3 amendment): the Owl list's answer, read once at start. Absent, models are not told to link them and a host reads none. */
   markdownSidePanel?: boolean
+  /** The `reveal-linked-files` Owl answer: this host finds, previews and sends the files its threads' messages link to (ADR-0120, November 12 amendment). */
+  revealLinkedFiles?: boolean
   /** Clearing settled threads (ADR-0140): the Owl list's answer, read once at start. Absent, nothing is deleted. */
   clearThreadsEnabled?: boolean
   /** What clearing did, as stable event names with a count or a reason's code. */
@@ -959,6 +961,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ...(options.pullRequestViewEnabled === true ? { pullRequestView: true } : {}),
     ...(options.clearThreadsEnabled === true ? { threadDelete: true } : {}),
     ...(options.markdownSidePanel === true ? { threadFileLinks: true } : {}),
+    ...(options.revealLinkedFiles === true ? { threadLinkedFiles: true } : {}),
     ...(options.attachAnyFile === true ? { fileStaging: true } : {}),
     ...(threadMedia ? { threadMedia: true } : {}),
     ...(options.reducedPictures ? { reducedPictures: options.reducedPictures } : {}),

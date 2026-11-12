@@ -870,6 +870,10 @@ msgstr "Don’t post it"
 msgid "Download {archive} from the Sotto releases page to the SSH host, then unpack it into the host installation folder there:"
 msgstr "Download {archive} from the Sotto releases page to the SSH host, then unpack it into the host installation folder there:"
 
+#: src/main/files/downloads.ts
+msgid "Download stopped. Nothing was saved."
+msgstr "Download stopped. Nothing was saved."
+
 #: src/main/tools/browser.ts
 msgid "Downloads are blocked here. Open this page externally to download."
 msgstr "Downloads are blocked here. Open this page externally to download."
@@ -1665,6 +1669,10 @@ msgstr "Sotto could not start its SSH helper. Nothing was saved. Check Windows .
 msgid "Sotto could not start recording. Nothing was kept. Try Record a minute again."
 msgstr "Sotto could not start recording. Nothing was kept. Try Record a minute again."
 
+#: src/main/files/downloads.ts
+msgid "Sotto could not write to the Downloads folder. Nothing was saved."
+msgstr "Sotto could not write to the Downloads folder. Nothing was saved."
+
 #: src/main/agents/delegationIpc.ts
 msgid "Sotto couldn't start a worker on {model}. Nothing was started. Try again, or ask the overseer in a message to give it the piece."
 msgstr "Sotto couldn't start a worker on {model}. Nothing was started. Try again, or ask the overseer in a message to give it the piece."
@@ -1761,6 +1769,10 @@ msgstr "Sotto no longer has this page, so it is not shown."
 #: src/main/agents/delegationIpc.ts
 msgid "Sotto no longer holds what this worker was asked, so it can't hand it on. Ask the overseer in a message to give the piece to {model}. Nothing was started."
 msgstr "Sotto no longer holds what this worker was asked, so it can't hand it on. Ask the overseer in a message to give the piece to {model}. Nothing was started."
+
+#: src/main/files/ipc.ts
+msgid "Sotto no longer knows where this download is. Look in the Downloads folder."
+msgstr "Sotto no longer knows where this download is. Look in the Downloads folder."
 
 #: src/main/council/climbService.ts
 msgid "Sotto restarted. Review the held round before continuing. Unconfirmed builder turns are never sent again."
@@ -2186,6 +2198,10 @@ msgstr "The connection was closed while this computer paired."
 #: src/main/hosts/hostFailureWords.ts
 msgid "The connection was closed while this computer paired. Nothing was saved."
 msgstr "The connection was closed while this computer paired. Nothing was saved."
+
+#: src/main/files/downloads.ts
+msgid "The download did not finish. Nothing was saved. Try again."
+msgstr "The download did not finish. Nothing was saved. Try again."
 
 #: src/main/themes/openVsx.ts
 msgid "The download did not match the checksum Open VSX publishes, so it was discarded."
@@ -3051,6 +3067,18 @@ msgstr "This draft could not be saved on the host. Reconnect and try again."
 #: src/main/agents/socketHostService.ts
 msgid "This draft may already have been sent. Your copy is kept on this computer. Check the original thread before sending again."
 msgstr "This draft may already have been sent. Your copy is kept on this computer. Check the original thread before sending again."
+
+#: src/main/files/downloads.ts
+msgid "This file is already downloading."
+msgstr "This file is already downloading."
+
+#: src/main/files/ipc.ts
+msgid "This file is already on this computer. Nothing was saved."
+msgstr "This file is already on this computer. Nothing was saved."
+
+#: src/main/files/ipc.ts
+msgid "This file is on the host machine, so it cannot be opened here. Nothing was opened."
+msgstr "This file is on the host machine, so it cannot be opened here. Nothing was opened."
 
 #: src/main/files/ipc.ts
 #: src/main/tools/ipc.ts

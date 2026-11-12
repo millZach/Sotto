@@ -176,6 +176,17 @@ export class ToolsPanelStore {
     this.update({ open: true, surface: 'files', ...(moves ? { pinnedThreadId: threadId } : {}) })
     this.notify()
   }
+  /**
+   * Opens Files on a thread's own tree, for a link to a file in its folder on a paired host (ADR-0120, November 12
+   * amendment): a linked file shown alone gives way to it, and the panel moves to the thread as it does for one.
+   */
+  showThreadFiles(threadId: string, focused = true): void {
+    this.linkedFiles.delete(threadId)
+    const pinned = this.chrome.pinnedThreadId
+    const moves = pinned === null ? !focused : pinned !== threadId
+    this.update({ open: true, surface: 'files', ...(moves ? { pinnedThreadId: threadId } : {}) })
+    this.notify()
+  }
   linkedFile(threadId: string): LinkedFile | null { return this.linkedFiles.get(threadId) ?? null }
   closeLinkedFile(threadId: string): void { if (this.linkedFiles.delete(threadId)) this.notify() }
 

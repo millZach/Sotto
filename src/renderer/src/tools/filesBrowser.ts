@@ -145,6 +145,15 @@ export class FilesBrowserStore {
     this.openFile(bridge, threadId, path)
   }
 
+  /** Open a folder from elsewhere (a link in a reply): it and the folders above it open in the tree, and it takes the tree's focus. */
+  showFolder(bridge: FilesBridge | undefined, threadId: string, path: string): void {
+    if (!this.threads.has(threadId)) this.activate(bridge, threadId)
+    if (path === ROOT) return
+    const parts = path.split('/')
+    for (let depth = 1; depth <= parts.length; depth++) this.toggleDirectory(bridge, threadId, parts.slice(0, depth).join('/'), true)
+    this.focusPath(threadId, path)
+  }
+
   closePreview(threadId: string): void {
     const current = this.threads.get(threadId)
     if (current) this.patch(threadId, current.generation, { selectedPath: null, preview: null })

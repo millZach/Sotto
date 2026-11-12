@@ -14,7 +14,7 @@ import { isFenceClosed } from '../../../shared/diagramSource'
 import { useCopyImage, useTransientFlag, writeClipboard } from './richActions'
 import { useAttachmentSource, type AttachmentOrigin } from './attachmentSources'
 import { AttachmentViewer } from './AttachmentViewer'
-import { isMarkdownPath, withDriveFirst } from '../../../shared/files'
+import { isMarkdownPath, isProgramPath, withDriveFirst, withoutLinkLocation } from '../../../shared/files'
 import { rememberLinkOpener } from '../tools/linkedFile'
 import { LinkMenu, useWebLinkRouter, type LinkMenuItem, type WebLinkDestination, type WebLinkResult } from '../tools/webLinks'
 import { highlighterNow, loadHighlighter, type Highlighter } from './codeHighlighter'
@@ -104,6 +104,9 @@ export function localFilePath(raw: string | undefined): string | null {
   return value && !/[\x00-\x1f\x7f]/u.test(value) && !/\p{Bidi_Control}/u.test(value) ? value : null
 }
 
+/** A file's own name from a path a link wrote, without a trailing line or heading. */
+const fileNameOf = (path: string): string => { const bare = withoutLinkLocation(path).replace(/[\\/]+$/u, ''); return bare.slice(Math.max(bare.lastIndexOf('/'), bare.lastIndexOf('\\')) + 1) || path }
+
 /** The file manager by its own name on each platform: File Explorer first, Finder on a Mac, the file manager on Linux. */
 const fileManager = (): string => {
   const platform = (window.sotto as { platform?: string } | undefined)?.platform
@@ -137,6 +140,15 @@ interface LinkActions {
   readonly reveal?: ((path: string) => void) | undefined
   /** Opens a Markdown file in the side panel (ADR-0120, November 3 amendment); absent where that is not on or not possible. */
   readonly markdown?: ((path: string, opener: HTMLElement) => void) | undefined
+  /**
+   * A press on a link to any other file (ADR-0120, November 12 amendment): opened in its own app on this computer, or
+   * shown in its folder when it is a program, and shown in Files when it is on a paired host. Absent with `reveal`.
+   */
+  readonly file?: ((path: string, opener: HTMLElement) => void) | undefined
+  /** Whether a link's file is on a paired host, which words what a press does. */
+  readonly onHost?: ((path: string) => boolean) | undefined
+  /** Shows a file on a paired host in Files and saves it to this computer. */
+  readonly download?: ((path: string, opener: HTMLElement) => void) | undefined
   readonly fileMenu?: ((path: string, anchor: HTMLElement, at: { x: number; y: number }) => void) | undefined
 }
 const LinkContext = createContext<LinkActions>({ open: () => undefined, menu: () => undefined })
@@ -358,10 +370,15 @@ function MarkdownCodeBlock({ source, language, start, end }: { source: string; l
 
 /** What a link to a Markdown file does: a press opens it in the side panel, and its menu offers the folder and the path. */
 function markdownLinkProps(file: string, { markdown, fileMenu }: LinkActions, label: string) {
+  return fileLinkProps(file, markdown, fileMenu, label, label)
+}
+
+/** What a link to a file does: a press, or Enter, does `press`, and a right-click, Shift+F10 or the menu key opens its menu. */
+function fileLinkProps(file: string, press: ((path: string, opener: HTMLElement) => void) | undefined, fileMenu: LinkActions['fileMenu'], title: string, label: string) {
   const beside = (element: HTMLElement): { x: number; y: number } => { const rect = element.getBoundingClientRect(); return { x: rect.left, y: rect.bottom + 4 } }
   return {
-    title: label, 'aria-label': label,
-    onClick: (event: MouseEvent<HTMLElement>) => markdown?.(file, event.currentTarget),
+    title, 'aria-label': label,
+    onClick: (event: MouseEvent<HTMLElement>) => press?.(file, event.currentTarget),
     onAuxClick: (event: MouseEvent<HTMLElement>) => event.preventDefault(),
     onContextMenu: (event: MouseEvent<HTMLElement>) => {
       event.preventDefault()
@@ -369,10 +386,32 @@ function markdownLinkProps(file: string, { markdown, fileMenu }: LinkActions, la
       fileMenu?.(file, event.currentTarget, event.clientX === 0 && event.clientY === 0 ? beside(event.currentTarget) : { x: event.clientX, y: event.clientY })
     },
     onKeyDown: (event: KeyboardEvent<HTMLElement>) => {
-      if (event.key === 'Enter') { event.preventDefault(); markdown?.(file, event.currentTarget) }
+      if (event.key === 'Enter') { event.preventDefault(); press?.(file, event.currentTarget) }
       else if ((event.key === 'F10' && event.shiftKey) || event.key === 'ContextMenu') { event.preventDefault(); fileMenu?.(file, event.currentTarget, beside(event.currentTarget)) }
     },
   }
+}
+
+/**
+ * What a press on a link to a file other than a side-panel Markdown file does, in the link's own words: shown in Files
+ * for a file on a paired host, shown in its folder for a program, which is never opened, and opened otherwise.
+ */
+function useFileLinkProps(file: string | null, actions: LinkActions) {
+  const { t } = useLingui()
+  if (file === null || !actions.reveal) return null
+  const { reveal } = actions
+  const manager = fileManager()
+  const press = actions.file ?? ((path: string) => reveal(path))
+  if (actions.file && actions.onHost?.(file)) {
+    const label = t({ message: `Show ${ph({ file: leftToRight(file) })} in Files`, comment: '{file} is a path to a file on another computer. Files is the Tools surface.' })
+    return fileLinkProps(file, press, actions.fileMenu, label, label)
+  }
+  if (actions.file && !isProgramPath(file)) {
+    const label = t({ message: `Open ${ph({ file: leftToRight(file) })}`, comment: '{file} is a path. A press opens the file in its own app, or the folder.' })
+    return fileLinkProps(file, press, actions.fileMenu, label, label)
+  }
+  return fileLinkProps(file, press, actions.fileMenu, t({ message: `Show in ${manager}: ${ph({ file: leftToRight(file) })}`, comment: '{manager} is File Explorer, Finder or the file manager; {file} is a path.' }),
+    t({ message: `Show ${ph({ file: leftToRight(file) })} in ${manager}`, comment: '{manager} is File Explorer, Finder or the file manager; {file} is a path.' }))
 }
 
 /** Inline code that names a Markdown file by a relative path: `README.md`, `docs/plan.md:12`. Spaces and shell characters make it something else. */
@@ -384,13 +423,11 @@ function MarkdownLink({ href, title, children }: { href?: string | undefined; ti
   const { open, menu, reveal, markdown } = actions
   const url = safeLinkUrl(href)
   const file = !url && (reveal || markdown) ? localFilePath(href) : null
-  const manager = fileManager()
+  const fileProps = useFileLinkProps(file, actions)
   // No href here either: the side panel reads the file, and the window never navigates to it.
   if (file && markdown && isMarkdownPath(file)) return <a className="rich-link tt-focusable" role="link" tabIndex={0} {...markdownLinkProps(file, actions, t({ message: `Open ${ph({ file: leftToRight(file) })} in the side panel`, comment: '{file} is a path to a Markdown file.' }))}>{children}</a>
   // No href: a file path never becomes something the window could navigate to.
-  if (file && reveal) return <a className="rich-link tt-focusable" role="link" tabIndex={0} title={t({ message: `Show in ${manager}: ${ph({ file: leftToRight(file) })}`, comment: '{manager} is File Explorer, Finder or the file manager; {file} is a path.' })}
-    aria-label={t({ message: `Show ${ph({ file: leftToRight(file) })} in ${manager}`, comment: '{manager} is File Explorer, Finder or the file manager; {file} is a path.' })}
-    onClick={() => reveal(file)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); reveal(file) } }}>{children}</a>
+  if (fileProps) return <a className="rich-link tt-focusable" role="link" tabIndex={0} {...fileProps}>{children}</a>
   // The reason is read with the text, not only on hover, so keyboard and screen reader users get it too.
   if (!url) return <span className="rich-link rich-link--inert" title={href ? t`Not a web link: ${href}` : undefined}>{children}{href ? <span className="tt-visually-hidden">{' '}{t`(link not opened: not a web address)`}</span> : null}</span>
   return <a className="rich-link tt-focusable" href={url} rel="noopener noreferrer" target="_blank" title={title || url}
@@ -440,15 +477,13 @@ function InlineCode({ node, children }: { node?: Element | undefined; children?:
   const text = typeof children === 'string' ? children.trim() : ''
   const file = !insideLink && (reveal && /^(?:~[\\/]|\/[^/\s]+\/|[a-z]:[\\/])\S*$/iu.test(text) || markdown && MARKDOWN_CODE_PATH.test(text)) ? localFilePath(text) : null
   const { t } = useLingui()
+  const fileProps = useFileLinkProps(file, actions)
   // What runs is the span's own text, the same characters the reply shows.
   const command = !file && run && !insideLink ? runnableInline(hastText(node)) : null
   if (run && command !== null) return <RunnableInline command={command} run={run}>{children}</RunnableInline>
   if (file && markdown && isMarkdownPath(file)) return <code className="rich-link tt-focusable" role="link" tabIndex={0} {...markdownLinkProps(file, actions, t({ message: `Open ${ph({ file: leftToRight(file) })} in the side panel`, comment: '{file} is a path to a Markdown file.' }))}>{children}</code>
-  if (!file || !reveal) return <code>{children}</code>
-  const manager = fileManager()
-  return <code className="rich-link tt-focusable" role="link" tabIndex={0} title={t({ message: `Show in ${manager}: ${ph({ file: leftToRight(file) })}`, comment: '{manager} is File Explorer, Finder or the file manager; {file} is a path.' })}
-    aria-label={t({ message: `Show ${ph({ file: leftToRight(file) })} in ${manager}`, comment: '{manager} is File Explorer, Finder or the file manager; {file} is a path.' })}
-    onClick={() => reveal(file)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); reveal(file) } }}>{children}</code>
+  if (!fileProps) return <code>{children}</code>
+  return <code className="rich-link tt-focusable" role="link" tabIndex={0} {...fileProps}>{children}</code>
 }
 
 // Every URL-bearing element is rendered by a component below, which vets it before it reaches the DOM.
@@ -594,6 +629,27 @@ export const MessageContent = memo(function MessageContent({ text, streaming = f
       rememberLinkOpener(opener)
       router.openFile?.(path)
     } : undefined,
+    // Opening a linked file, and showing one on a paired host in Files, are the same Owl feature (ADR-0120, November 12 amendment).
+    file: revealLinks && router.revealFile && (router.openInApp || router.showHostFile) ? (path, opener) => {
+      setFailedLink(null)
+      setLinkNotice(null)
+      if (router.fileOnHost?.(path)) {
+        rememberLinkOpener(opener)
+        void (router.showHostFile?.(path) ?? Promise.resolve<WebLinkResult>({ ok: false })).then(result => setLinkNotice(result.message ?? null), () => setLinkNotice(msg`Sotto could not show this file. Nothing was opened.`))
+        return
+      }
+      const name = leftToRight(fileNameOf(path))
+      void (router.openInApp?.(path) ?? Promise.resolve<WebLinkResult & { shown?: boolean }>({ ok: false })).then(
+        result => setLinkNotice(result.shown ? msg({ message: `${name} is a program or script, so it was shown in its folder. Nothing was run.`, comment: '{name} is a file name.' }) : result.message ?? null),
+        () => setLinkNotice(msg`Sotto could not open this file. Nothing was opened.`))
+    } : undefined,
+    onHost: path => router.fileOnHost?.(path) === true,
+    download: revealLinks && router.showHostFile ? (path, opener) => {
+      setFailedLink(null)
+      setLinkNotice(null)
+      rememberLinkOpener(opener)
+      void router.showHostFile?.(path, true).then(result => setLinkNotice(result.message ?? null), () => setLinkNotice(msg`Sotto could not download this file. Nothing was saved. Try again.`))
+    } : undefined,
     fileMenu: (path, anchor, at) => setFileMenu({ path, anchor, at }),
   }), [router, revealLinks, markdownPanel])
   const menuItems = (url: string): LinkMenuItem[] => {
@@ -608,9 +664,19 @@ export const MessageContent = memo(function MessageContent({ text, streaming = f
   const closeFileMenu = useMemo(() => () => setFileMenu(null), [])
   const fileMenuItems = ({ path, anchor }: { path: string; anchor: HTMLElement }): LinkMenuItem[] => {
     const manager = fileManager()
+    const sidePanel = context.markdown !== undefined && isMarkdownPath(path)
+    // A file on a paired host is shown in Files and can be saved here; nothing on this computer can open or show it.
+    const onHost = context.file !== undefined && context.onHost?.(path) === true
     return [
-      { id: 'open', label: t`Open in side panel`, run: () => context.markdown?.(path, anchor) },
-      ...(context.reveal ? [{ id: 'show', label: t({ message: `Show in ${manager}`, comment: '{manager} is File Explorer, Finder or the file manager.' }), run: () => context.reveal?.(path) }] : []),
+      ...(sidePanel ? [{ id: 'open', label: t`Open in side panel`, run: () => context.markdown?.(path, anchor) }] : []),
+      ...(onHost ? [
+        ...(sidePanel ? [] : [{ id: 'files', label: t({ message: 'Show in Files', comment: 'Shows a file on another computer in the Tools surface named Files.' }), run: () => context.file?.(path, anchor) }]),
+        ...(context.download ? [{ id: 'download', label: t({ message: 'Download', comment: 'Saves a file on another computer to this computer\'s Downloads folder.' }), run: () => context.download?.(path, anchor) }] : []),
+      ] : [
+        // A program is never opened from a link, so Open is not offered for one.
+        ...(context.file && !isProgramPath(path) ? [{ id: 'app', label: t({ message: 'Open', comment: 'Opens a file in its own app, or a folder in the file manager.' }), run: () => context.file?.(path, anchor) }] : []),
+        ...(context.reveal ? [{ id: 'show', label: t({ message: `Show in ${manager}`, comment: '{manager} is File Explorer, Finder or the file manager.' }), run: () => context.reveal?.(path) }] : []),
+      ]),
       { id: 'copy', label: t`Copy path`, run: () => { void writeClipboard(path).then(() => setLinkNotice(msg`Path copied.`), () => setLinkNotice(msg`Could not copy the path.`)) } },
     ]
   }
@@ -631,7 +697,7 @@ export const MessageContent = memo(function MessageContent({ text, streaming = f
         {failedLink ? <><span>{shownWords(linkNotice) ?? t({ message: `Could not open ${failedHost}.`, comment: '{failedHost} is a web site\'s host name or an email address.' })}</span><button type="button" className="rich-message__feedback-action tt-focusable" onClick={copyFailedLink}>{t`Copy link`}</button></> : shownWords(linkNotice) ?? copyFeedback}
       </div>
     </div>
-    {fileMenu ? <LinkMenu at={fileMenu.at} label={t({ message: `Link: ${ph({ file: leftToRight(fileMenu.path) })}`, comment: '{file} is a path to a Markdown file.' })} items={fileMenuItems(fileMenu)} returnFocus={fileMenu.anchor} onClose={closeFileMenu} /> : null}
+    {fileMenu ? <LinkMenu at={fileMenu.at} label={t({ message: `Link: ${ph({ file: leftToRight(fileMenu.path) })}`, comment: '{file} is a path to a file.' })} items={fileMenuItems(fileMenu)} returnFocus={fileMenu.anchor} onClose={closeFileMenu} /> : null}
     {linkMenu ? <LinkMenu at={linkMenu.at} label={t`Link: ${menuHost}`} items={menuItems(linkMenu.url)} returnFocus={linkMenu.anchor} onClose={closeLinkMenu} /> : null}
   </RunCommandContext.Provider></LinkContext.Provider>
 })

@@ -335,6 +335,8 @@ import { AgentStateBroadcaster } from './agents/agentStateBroadcast'
 import { registerAgentIpc } from './agents/ipc'
 import { createAgentRuntime } from './agents/runtime'
 import { loadHostIdentity } from './agents/hostIdentity'
+import { FILES_DOWNLOAD_PROGRESS } from '../shared/files'
+import { FileDownloads } from './files/downloads'
 import { registerFilesIpc } from './files/ipc'
 import { FilesService } from './files/service'
 import { registerToolsIpc } from './tools/ipc'
@@ -1116,6 +1118,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     await testAgentHost.initializeWorkingFolders(join(userDataPath, 'agent-workspaces'))
   }
   let openedThreadFolder: string | null = null
+  // What a journey's presses would have opened or shown in a folder: recorded, since a test opens nothing on its machine.
+  const e2eFiles = { opened: [] as string[], shown: [] as string[] }
   // T3's rule for background Git reads: the window is showing and has the focus, or had it within the last 45 seconds.
   let windowBlurredAt = 0
   app.on('browser-window-focus', () => { windowBlurredAt = 0 })
@@ -1153,7 +1157,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     delegationEnabled, workerRolesEnabled, workerSwarmsEnabled: owlFeatures['worker-swarms'], continueEnabled, threadStartsEnabled, ...(keepMainCurrentEnabled ? { keepMainCurrent: { log: logOperational } } : {}), pullRequestViewEnabled: owlFeatures['iphone-pull-request-view'], agentsViewEnabled, crossMachineEnabled,
     // A check's snapshot time, as this computer writes a time in the interface language (#1312, Zach, October 27).
     clockTime: interfaceClockTime,
-    attachAnyFile: owlFeatures['attach-any-file'], markdownSidePanel: owlFeatures['markdown-side-panel'],
+    attachAnyFile: owlFeatures['attach-any-file'], markdownSidePanel: owlFeatures['markdown-side-panel'], revealLinkedFiles: owlFeatures['reveal-linked-files'],
     answerImages: owlFeatures['answer-images'], nextTurnChoice: owlFeatures['next-turn-choice'],
     inlineMedia: owlFeatures['inline-media'], showEveryAgentPicture,
     // The runs threads detach (#2476). A desktop journey reads no processes unless it starts a run of its own to find.
@@ -1547,8 +1551,15 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const files = new FilesService({
     resolveBinding: threadId => agentControl.filesBinding(threadId),
     copyPath: path => copyOutput(path),
-    reveal: path => shell.showItemInFolder(path),
+    reveal: path => { if (e2eConfiguration !== null) e2eFiles.shown.push(path); else shell.showItemInFolder(path) },
+    open: async path => {
+      if (e2eConfiguration !== null) { e2eFiles.opened.push(path); return }
+      const error = await shell.openPath(path); if (error) throw new Error('No app opened this file.')
+    },
   })
+  // Files saved from paired hosts go to this computer's Downloads folder (ADR-0120, November 12 amendment).
+  const fileDownloads = new FileDownloads({ part: request => hostRouter.threadLinkedFile(request), folder: () => e2eConfiguration !== null ? join(userDataPath, 'downloads') : app.getPath('downloads'),
+    progress: progress => { windows.sendToMain(FILES_DOWNLOAD_PROGRESS, progress) } })
   // A pane drawer starts in the project folder, even for a thread with its own worktree.
   const terminalService = new TerminalService({ files, directory: userDataPath,
     // A thread on a paired host opens its terminal over the user's own SSH (ADR-0183; Owl only).
@@ -2550,9 +2561,9 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       // path to this computer's clipboard, in the host's format; nothing on the host is opened or written.
       const copyHostPath = async <T extends { ok: true; value: { absolutePath: string } } | { ok: false }>(result: T): Promise<T> => { if (result.ok) await copyOutput(result.value.absolutePath); return result }
       const cleanupFiles = registerFilesIpc(ipcMain, files, () => windows.getTrustedRenderers(), {
-        list: request => hostRouter.threadFiles(request), preview: request => hostRouter.threadFilePreview(request), previewLink: request => hostRouter.threadFileLink(request),
+        list: request => hostRouter.threadFiles(request), preview: request => hostRouter.threadFilePreview(request), previewLink: request => hostRouter.threadFileLink(request), linkedFile: request => hostRouter.threadLinkedFile(request),
         copyPath: async request => copyHostPath(await hostRouter.threadFilePath(request)),
-      }, owlFeatures['reveal-linked-files'], owlFeatures['markdown-side-panel'])
+      }, owlFeatures['reveal-linked-files'], owlFeatures['markdown-side-panel'], { downloads: fileDownloads, reveal: path => { if (e2eConfiguration !== null) e2eFiles.shown.push(path); else shell.showItemInFolder(path) } })
       const cleanupSubagents = registerSubagentIpc(ipcMain, agentHost, () => windows.getTrustedRenderers(), change => windows.sendToMain(SUBAGENTS_CHANGED, change), hostRouter)
       const cleanupProductEvents = registerProductEventsIpc(ipcMain, { featureUsed: tool => productEvents.featureUsed(tool), state: { canSend: productEvents.canSend, offBy: productEventsOffBy(process.env) } }, () => windows.getTrustedRenderers())
       const cleanupUsage = registerUsageIpc(ipcMain, { read: query => { productEvents.featureUsed('usage'); return hostRouter.usageRead(query) },
@@ -3015,7 +3026,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         return { ...snapshotE2EState(
           e2eState,
           BrowserWindow.getAllWindows().some((candidate) => candidate.getTitle() === buildName && candidate.isVisible()),
-        ), openedThreadFolder, openedExternalLink, ...(certifiedDetail ? { certifiedDetail } : {}) }
+        ), openedThreadFolder, openedExternalLink, openedFiles: [...e2eFiles.opened], shownFiles: [...e2eFiles.shown], ...(certifiedDetail ? { certifiedDetail } : {}) }
       })
       ipcMain.handle(E2E_TRIGGER_SHORTCUT_CHANNEL, (event) => {
         if (!isTrustedMainE2ESender(event.sender, windows.getTrustedRenderers())) {

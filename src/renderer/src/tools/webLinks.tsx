@@ -2,7 +2,8 @@ import React, { createContext, useContext, useLayoutEffect, useMemo, useRef, typ
 import { createPortal } from 'react-dom'
 import { t } from '@lingui/core/macro'
 import type { BrowserBridge, BrowserPage } from '../../../shared/browser'
-import type { FilesBridge } from '../../../shared/files'
+import type { FilesBridge, FilesError } from '../../../shared/files'
+import { fileDownloads } from './fileDownloads'
 import { toolsPanelStore, type ToolsPanelStore } from './toolsPanelStore'
 import './webLinks.css'
 
@@ -25,6 +26,26 @@ export interface WebLinkRouter {
   revealFile?(path: string): Promise<WebLinkResult>
   /** Opens a Markdown file a message links to in the side panel (ADR-0120, November 3 amendment). Only a thread's transcript can. */
   openFile?(path: string): void
+  /**
+   * Opens a file a message links to in its own app, or its folder (ADR-0120, November 12 amendment). `shown` says it was a
+   * program, which is never opened and was shown in its folder instead.
+   */
+  openInApp?(path: string): Promise<WebLinkResult & { readonly shown?: boolean }>
+  /** Whether a link's file is on a paired host, where a press shows it in Files and nothing here can open it. */
+  fileOnHost?(path: string): boolean
+  /** Shows a file on a paired host in Files, selected, or alone when it is outside the thread's folder; with `download`, saves it to this computer too. */
+  showHostFile?(path: string, download?: boolean): Promise<WebLinkResult>
+}
+
+/** Why a file on a paired host could not be shown, in the interface's language: the host's own service answers in English. */
+function hostFileRefusal(error: FilesError): string {
+  switch (error.code) {
+    case 'path-unavailable': return t`This file is not on the computer this thread runs on, or it has moved. Nothing was opened.`
+    case 'path-outside-workspace': return t`This link points outside the thread’s folder. Nothing was opened.`
+    case 'thread-unavailable': case 'workspace-unavailable': return t`This thread’s folder is not available on its computer. Nothing was opened.`
+    case 'busy': return t`Files is busy. Nothing was opened. Try again shortly.`
+    default: return error.message || t`Sotto could not show this file. Nothing was opened.`
+  }
 }
 
 function bridgeBrowser(): BrowserBridge | undefined {
@@ -62,6 +83,8 @@ export const BrowserPageRouteContext = createContext<BrowserPageRoute | undefine
 export interface LinkedFileRoute {
   open(threadId: string, path: string): void
   readerOf(threadId: string, path: string): string
+  /** Whether a thread runs on a paired host, so its files are there and not on this computer. */
+  onPairedHost?(threadId: string): boolean
 }
 export const LinkedFileRouteContext = createContext<LinkedFileRoute | undefined>(undefined)
 
@@ -72,7 +95,10 @@ export const LinkedFileRouteContext = createContext<LinkedFileRoute | undefined>
  * `show`, when given, takes an opened page where it can be seen instead of Tools beside the panes.
  */
 export function threadLinkRouter(threadId: string, threadTitle: string, bridge: BrowserBridge | undefined, store: ToolsPanelStore = toolsPanelStore, focused = true,
-  show?: (page: BrowserPage) => WebLinkResult, showFile?: LinkedFileRoute): WebLinkRouter {
+  show?: (page: BrowserPage) => WebLinkResult, showFile?: LinkedFileRoute, onPairedHost = false): WebLinkRouter {
+  const filesBridge = (): FilesBridge | undefined => (window.sotto as { files?: FilesBridge } | undefined)?.files
+  const readerOf = (path: string): string => showFile?.readerOf(threadId, path) ?? threadId
+  const fileOnHost = (path: string): boolean => { const reader = readerOf(path); return reader === threadId ? onPairedHost : showFile?.onPairedHost?.(reader) ?? false }
   const showPage = (page: BrowserPage): WebLinkResult => {
     if (show) return show(page)
     const shown = store.showBrowserPage(page, focused)
@@ -86,6 +112,40 @@ export function threadLinkRouter(threadId: string, threadTitle: string, bridge: 
     openFile(path) {
       if (showFile) showFile.open(threadId, path)
       else store.showLinkedFile(threadId, path, focused)
+    },
+    fileOnHost,
+    async openInApp(path) {
+      const files = filesBridge()
+      if (!files?.openLink) return { ok: false, message: t`Sotto cannot open files from here. Nothing was opened.` }
+      try {
+        const result = await files.openLink({ threadId: readerOf(path), path })
+        return result.ok ? { ok: true, shown: result.value.did === 'shown' } : { ok: false, message: result.error.message }
+      } catch { return { ok: false, message: t`Sotto could not open this file. Nothing was opened.` } }
+    },
+    async showHostFile(path, download = false) {
+      const files = filesBridge()
+      if (!files?.linkedFile) return { ok: false, message: t`Sotto cannot show files from here. Nothing was opened.` }
+      const reader = readerOf(path)
+      try {
+        const result = await files.linkedFile({ threadId: reader, path, want: 'place' })
+        if (!result.ok) return { ok: false, message: hostFileRefusal(result.error) }
+        if (result.value.is !== 'place') return { ok: false, message: t`Sotto could not show this file. Nothing was opened.` }
+        const { inside, kind } = result.value
+        // Files browses a thread's own folder beside its pane. Anywhere else, and in a room with no Tools, a file is shown alone.
+        const inTree = inside !== null && !showFile && reader === threadId
+        if (kind === 'directory' && !inTree) return { ok: false, message: t`This folder is on another computer, outside what Files shows here. Nothing was opened. Copy its path from the link’s menu instead.` }
+        if (inTree) {
+          store.showThreadFiles(threadId, focused)
+          if (kind === 'directory') store.files.showFolder(files, threadId, inside.path)
+          else store.files.showFile(files, threadId, inside.path)
+        } else if (showFile) showFile.open(reader, path)
+        else store.showLinkedFile(threadId, path, focused)
+        if (!download) return { ok: true }
+        if (kind === 'directory') return { ok: true, message: t`A folder is not downloaded. It is open in Files, where each file can be.` }
+        // Named as the panel that shows it names it, so its line of progress is that file's.
+        fileDownloads.start(files, reader, inTree ? inside.path : path)
+        return { ok: true }
+      } catch { return { ok: false, message: t`Sotto could not show this file. Nothing was opened.` } }
     },
     async revealFile(path) {
       const files = (window.sotto as { files?: FilesBridge } | undefined)?.files
@@ -130,7 +190,7 @@ export function ThreadWebLinks({ threadId, threadTitle, children, bridge, store,
   // A thread whose browser cannot be shown from here has none to open links in.
   const resolved = route === null || onPairedHost ? undefined : bridge ?? bridgeBrowser()
   const fileRoute = useContext(LinkedFileRouteContext)
-  const router = useMemo(() => threadLinkRouter(threadId, threadTitle, resolved, store, focused, route ?? undefined, fileRoute), [threadId, threadTitle, resolved, store, focused, route, fileRoute])
+  const router = useMemo(() => threadLinkRouter(threadId, threadTitle, resolved, store, focused, route ?? undefined, fileRoute, onPairedHost), [threadId, threadTitle, resolved, store, focused, route, fileRoute, onPairedHost])
   return <WebLinkRouterContext.Provider value={router}>{children}</WebLinkRouterContext.Provider>
 }
 

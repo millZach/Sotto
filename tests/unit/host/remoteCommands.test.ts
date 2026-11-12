@@ -150,8 +150,8 @@ describe('remote command allow-list', () => {
       // the handover away, each naming the current Watcher (October 31, 2026). Pairing admits them, as it admits watching:
       // a new Watcher keeps the saved permission mode, and none answers anything.
       'watcher-phone-open', 'watcher-phone-new', 'watcher-phone-stop-turn', 'watcher-phone-dismiss-handover',
-      // A thread's Files, Changes and Agents: reads only, never commands (ADR-0025, October 5 amendment).
-      'thread-files', 'thread-file-preview', 'thread-file-link', 'thread-changes', 'thread-changes-review', 'subagent-page', 'subagent-assignments',
+      // A thread's Files, Changes and Agents, and a linked file's place, preview and parts (ADR-0120): reads only, never commands (ADR-0025, October 5 amendment).
+      'thread-files', 'thread-file-preview', 'thread-file-link', 'thread-linked-file', 'thread-changes', 'thread-changes-review', 'subagent-page', 'subagent-assignments',
       // The machine's host facts: numbers and the system's own name, read only by a desktop that lists host-facts (#1031).
       'host-facts',
       // Each project's GitHub repository, read only by a desktop that lists project-origins, to place a worker (#1032).

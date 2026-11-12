@@ -869,6 +869,10 @@ msgstr ""
 msgid "Download {archive} from the Sotto releases page to the SSH host, then unpack it into the host installation folder there:"
 msgstr ""
 
+#: src/main/files/downloads.ts
+msgid "Download stopped. Nothing was saved."
+msgstr ""
+
 #: src/main/tools/browser.ts
 msgid "Downloads are blocked here. Open this page externally to download."
 msgstr ""
@@ -1664,6 +1668,10 @@ msgstr ""
 msgid "Sotto could not start recording. Nothing was kept. Try Record a minute again."
 msgstr ""
 
+#: src/main/files/downloads.ts
+msgid "Sotto could not write to the Downloads folder. Nothing was saved."
+msgstr ""
+
 #: src/main/agents/delegationIpc.ts
 msgid "Sotto couldn't start a worker on {model}. Nothing was started. Try again, or ask the overseer in a message to give it the piece."
 msgstr ""
@@ -1759,6 +1767,10 @@ msgstr ""
 
 #: src/main/agents/delegationIpc.ts
 msgid "Sotto no longer holds what this worker was asked, so it can't hand it on. Ask the overseer in a message to give the piece to {model}. Nothing was started."
+msgstr ""
+
+#: src/main/files/ipc.ts
+msgid "Sotto no longer knows where this download is. Look in the Downloads folder."
 msgstr ""
 
 #: src/main/council/climbService.ts
@@ -2184,6 +2196,10 @@ msgstr ""
 
 #: src/main/hosts/hostFailureWords.ts
 msgid "The connection was closed while this computer paired. Nothing was saved."
+msgstr ""
+
+#: src/main/files/downloads.ts
+msgid "The download did not finish. Nothing was saved. Try again."
 msgstr ""
 
 #: src/main/themes/openVsx.ts
@@ -3049,6 +3065,18 @@ msgstr ""
 
 #: src/main/agents/socketHostService.ts
 msgid "This draft may already have been sent. Your copy is kept on this computer. Check the original thread before sending again."
+msgstr ""
+
+#: src/main/files/downloads.ts
+msgid "This file is already downloading."
+msgstr ""
+
+#: src/main/files/ipc.ts
+msgid "This file is already on this computer. Nothing was saved."
+msgstr ""
+
+#: src/main/files/ipc.ts
+msgid "This file is on the host machine, so it cannot be opened here. Nothing was opened."
 msgstr ""
 
 #: src/main/files/ipc.ts

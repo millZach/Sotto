@@ -67,7 +67,7 @@ import { createCloudIphoneBridge } from './cloudIphone'
 import { createThemesBridge } from './themes'
 import { OMARCHY_SETUP_GET, OMARCHY_SETUP_COMMAND, OMARCHY_SETUP_CHANGED, OMARCHY_SETUP_FOCUS, omarchySetupCommandSchema, omarchySetupStateSchema, type OmarchySetupBridge } from '../shared/omarchySetup'
 import { speechModelListSchema, speechModelStatusSchema } from '../shared/speechModel'
-import { FILES_LIST, FILES_PREVIEW, FILES_COPY_PATH, FILES_REVEAL, FILES_REVEAL_LINK, FILES_PREVIEW_LINK, fileLinkPreviewSchema, fileLinkRequestSchema, fileLinkSchema, fileListRequestSchema, fileRequestSchema, fileListingSchema, filePreviewSchema, filePathSchema, filesResultSchema, type FilesBridge } from '../shared/files'
+import { FILES_LIST, FILES_PREVIEW, FILES_COPY_PATH, FILES_REVEAL, FILES_REVEAL_LINK, FILES_PREVIEW_LINK, FILES_OPEN_LINK, FILES_LINKED_FILE, FILES_DOWNLOAD, FILES_DOWNLOAD_STOP, FILES_DOWNLOAD_SHOW, FILES_DOWNLOAD_OPEN, FILES_DOWNLOAD_PROGRESS, fileDownloadHandleSchema, fileDownloadProgressSchema, fileDownloadRequestSchema, fileDownloadSchema, fileDownloadStoppedSchema, fileLinkOpenedSchema, linkedFileViewRequestSchema, linkedFileViewSchema, fileLinkPreviewSchema, fileLinkRequestSchema, fileLinkSchema, fileListRequestSchema, fileRequestSchema, fileListingSchema, filePreviewSchema, filePathSchema, filesResultSchema, type FilesBridge } from '../shared/files'
 import { AGENT_CHOOSE_PROJECT_DIRECTORY, AGENT_WORKING_COPY_OPTIONS, agentWorkingCopyOptionsSchema, agentWorkingCopyOptionsRequestSchema } from '../shared/agents'
 import { AGENT_GIT_REFS, gitRefsPageSchema, gitRefsRequestSchema } from '../shared/gitRefs'
 import { AGENT_GIT_CHANGED_FILES, gitChangedFilesRequestSchema, gitChangedFilesSchema } from '../shared/gitChangedFiles'
@@ -254,6 +254,10 @@ const filePreviewResultSchema = filesResultSchema(filePreviewSchema)
 const filePathResultSchema = filesResultSchema(filePathSchema)
 const fileLinkResultSchema = filesResultSchema(fileLinkSchema)
 const fileLinkPreviewResultSchema = filesResultSchema(fileLinkPreviewSchema)
+const fileLinkOpenedResultSchema = filesResultSchema(fileLinkOpenedSchema)
+const linkedFileViewResultSchema = filesResultSchema(linkedFileViewSchema)
+const fileDownloadResultSchema = filesResultSchema(fileDownloadSchema)
+const fileDownloadStoppedResultSchema = filesResultSchema(fileDownloadStoppedSchema)
 const requestDraftsSchema = requestDraftSchema.array()
 const requestDraftResultSchema = requestDraftSchema.nullable()
 const dictationRecordResultSchema = dictationRecordSchema.nullable()
@@ -700,6 +704,14 @@ export function createSottoBridge(
       reveal: async request => invokeParsed(renderer, FILES_REVEAL, filePathResultSchema, fileRequestSchema.parse(request)),
       revealLink: async request => invokeParsed(renderer, FILES_REVEAL_LINK, fileLinkResultSchema, fileLinkRequestSchema.parse(request)),
       previewLink: async request => invokeParsed(renderer, FILES_PREVIEW_LINK, fileLinkPreviewResultSchema, fileLinkRequestSchema.parse(request)),
+      // A linked file opened here, or found, read and saved from the paired host its thread runs on (ADR-0120, November 12 amendment).
+      openLink: async request => invokeParsed(renderer, FILES_OPEN_LINK, fileLinkOpenedResultSchema, fileLinkRequestSchema.parse(request)),
+      linkedFile: async request => invokeParsed(renderer, FILES_LINKED_FILE, linkedFileViewResultSchema, linkedFileViewRequestSchema.parse(request)),
+      download: async request => invokeParsed(renderer, FILES_DOWNLOAD, fileDownloadResultSchema, fileDownloadRequestSchema.parse(request)),
+      stopDownload: async request => invokeParsed(renderer, FILES_DOWNLOAD_STOP, fileDownloadStoppedResultSchema, fileDownloadRequestSchema.parse(request)),
+      showDownload: async request => invokeParsed(renderer, FILES_DOWNLOAD_SHOW, fileLinkResultSchema, fileDownloadHandleSchema.parse(request)),
+      openDownload: async request => invokeParsed(renderer, FILES_DOWNLOAD_OPEN, fileLinkOpenedResultSchema, fileDownloadHandleSchema.parse(request)),
+      onDownloadProgress: listener => subscribe(renderer, FILES_DOWNLOAD_PROGRESS, fileDownloadProgressSchema, listener),
     }),
     memory: Object.freeze<MemoryBridge>({
       get: async () => invokeParsed(renderer, MEMORY_GET, memorySnapshotSchema),

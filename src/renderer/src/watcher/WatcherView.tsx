@@ -625,7 +625,7 @@ export function WatcherView({ now: fixedNow }: {
   hostNow.current = state?.host
   const linkedFileRoute = useMemo<LinkedFileRoute>(() => {
     const readerOf = (threadId: string, path: string): string => threadId === watcherId && hostNow.current ? linkedFileThread(hostNow.current, threadId, path) : threadId
-    return { readerOf, open: (threadId, path) => {
+    return { readerOf, onPairedHost: threadId => hostNow.current?.threads.find(thread => thread.id === threadId)?.remoteHost === true, open: (threadId, path) => {
       roomView.set({ file: { threadId: readerOf(threadId, path), path, revision: (roomView.get().file?.revision ?? 0) + 1 } })
       setFocusedPane('beside')
     } }
