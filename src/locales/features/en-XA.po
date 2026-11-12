@@ -6041,6 +6041,10 @@ msgstr ""
 msgid "Sotto could not read the handover. Nothing was sent. Press Read it to try again."
 msgstr ""
 
+#: src/renderer/src/components/OpenRouterKeyField.tsx
+msgid "Sotto could not read the saved key. Enter it again."
+msgstr ""
+
 #: src/renderer/src/platformCopy.ts
 msgid "Sotto could not read the saved OpenRouter key. Nothing was deleted. Enter the key again in Settings → Cleanup."
 msgstr ""

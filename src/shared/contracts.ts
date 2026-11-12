@@ -270,7 +270,7 @@ export const transcriptionResultSchema = z.discriminatedUnion('ok', [
 /** Whether OpenRouter accepts the saved key, for AI cleanup (Verify key in Settings → Cleanup). */
 export const openRouterKeyCheckSchema = z.discriminatedUnion('ok', [
   z.object({ ok: z.literal(true) }).strict(),
-  z.object({ ok: z.literal(false), reason: z.enum(['unconfigured', 'unauthorized', 'http', 'network', 'timeout']) }).strict(),
+  z.object({ ok: z.literal(false), reason: z.enum(['unconfigured', 'unreadable', 'unauthorized', 'http', 'network', 'timeout']) }).strict(),
 ])
 
 /** OpenRouter's text models and active presets, for the cleanup model picker in Settings → Cleanup (ADR-0122). */

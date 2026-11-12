@@ -6041,6 +6041,10 @@ msgstr "Sotto could not read the decisions, rules and issues Watcher kept. Nothi
 msgid "Sotto could not read the handover. Nothing was sent. Press Read it to try again."
 msgstr "Sotto could not read the handover. Nothing was sent. Press Read it to try again."
 
+#: src/renderer/src/components/OpenRouterKeyField.tsx
+msgid "Sotto could not read the saved key. Enter it again."
+msgstr "Sotto could not read the saved key. Enter it again."
+
 #: src/renderer/src/platformCopy.ts
 msgid "Sotto could not read the saved OpenRouter key. Nothing was deleted. Enter the key again in Settings → Cleanup."
 msgstr "Sotto could not read the saved OpenRouter key. Nothing was deleted. Enter the key again in Settings → Cleanup."
