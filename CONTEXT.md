@@ -883,6 +883,28 @@ Pressing Stop, releasing F9 or pressing the dictation shortcut again while the m
 
 **Memory store probe.** The check that proves the shipped build can use the store: the packaged executable is launched in an isolated profile and its debugger invokes the bundled probe, which opens the real memory store in a temporary user-data folder, migrates, inserts, answers a full-text query and returns its evidence. The unused environment probe launch mode has been removed. The packaged-resource verifier fails the build without it. A direct Node-only probe (`scripts/probe-memory-store.mjs`) exists for the Mac runtime check.
 
+## Plugins
+
+Decided November 11, 2026 and not built yet (an Owl feature, ADR-0205 and ADR-0206).
+
+**Plugin.** An outside service Sotto can connect once, so every thread's agent has one known place to use it, from a fixed list Sotto ships: GitHub, Vercel, Gmail, Proton Mail, X, ElevenLabs, Higgsfield and Meshy (ADR-0205). An agent uses a plugin only through **plugin tools** and never holds its secret. Settings › Plugins lists every plugin as a row under the service's own icon, and a row opens in place. Grok Bot sits on the same page but is an **assistant**, not a plugin. Not a **provider**, the installed client that runs a thread; not an **API**, a hosted model source; not a Codex or Claude Code plugin, which extends that client; and not something a user can write, since Sotto loads no plugin code. Avoid: "connection", which is how a host is reached; "integration", "connector"; bare "service" as its name, which is the **host service**.
+
+**Plugin account.** One sign-in to a plugin that the user added and named, such as Work or Personal; a plugin holds several. Its secret, a token, key or password, sits in the credential store and is never shown again, only replaced. GitHub's account is the `gh` command's own sign-in on each computer, so Sotto stores nothing for it. An account has an on switch and works in every thread unless it is narrowed to chosen projects. Avoid: "connection", "login"; "credential" in the UI.
+
+**Account copy.** A plugin account's secret and settings, sent by the desktop to one of the user's own paired hosts and kept in that host's encrypted credential file, so the host's threads can use the account while the desktop is off (ADR-0205, amending ADR-0025). New accounts are copied by default, each account has a switch per host, and removing the account removes every copy. A monthly limit and an **Ask before each** switch are the account's, so they hold across every computer with a copy. Never sent to a phone, an app on this computer, an assistant or a teammate's computer. Avoid: "sync", which suggests the host can send one back.
+
+**Plugin tools.** The tools Sotto serves a thread for the plugin accounts it may use: one that lists them, one read tool that reaches any part of a plugin's API, and one named tool for each **plugin change**. Sotto makes the call with the secret and the agent sees only the result. Watcher gets the reading tools only.
+
+**Plugin change.** Anything a plugin tool does that sends, posts, deploys, deletes or spends to make something. It waits on a card that names the thread, the account and what will happen, and only the user's choice answers it. A few have an **Ask before each** switch on the account, on by default and bounded by a monthly limit where the change costs money; sending an email, posting on X, a production deploy, a merge and deleting always ask. Reading is not one, even where the service charges for the read, and never asks, except mail. Avoid: "write", "action".
+
+**Mail grant.** One thread's leave to search and read one mail account, given by the user's answer the first time that thread asks, and lasting until the user stops it or the thread is settled. It never covers sending. Named after the **browser grant**. Avoid: "mail permission".
+
+**Plugin use record.** What Sotto keeps of each plugin tool call and each assistant call: the thread, the account or assistant, what was done in plain words, how it was answered and when. Never message text, addresses, file contents or what a read returned.
+
+**Assistant.** An outside program the user pairs to drive Sotto over their tailnet, Grok Bot first (ADR-0206). It reads and steers threads through the **drive tools** and can never answer a permission or a question, merge or close a pull request, change a setting or use a plugin account. It pairs with a code from Settings › Plugins, and the pairing lapses after 30 days until the user presses **Link again**. Not a **provider**, which runs a thread's agent; not a paired phone; not **Watcher**. Avoid: bare "bot", "agent".
+
+**Drive tools.** The fixed list of tools an assistant gets: list and read threads, read what waits on the user, list projects and machines, start a thread, send to one, stop one and settle one. Distinct from Watcher's own thread tools, which only the current Watcher thread gets.
+
 ## Authority
 
 **Policy record.** One row in the `policies` table of the memory store that carries authority: an action (`spend`, `publish`, `destroy`, `relax-verification`), a resource (`*` or a specific path, repository or provider), a scope (`global` or a project id), an effect (`allow` or `always-confirm`), a source (`user` or `questionnaire`), a note, and granted, expiry and revocation times. Policy records carry standing authority; the user's explicit answer can authorize one action without creating a policy record; a memory whose authority field says `permission` is evidence, never a grant. An `always-confirm` record beats any `allow`; expired or revoked records never allow. See ADR-0004. Avoid: "permission memory", "rule".

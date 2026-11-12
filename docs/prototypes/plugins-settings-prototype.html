@@ -1,0 +1,660 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway. Not shipped, not tested, not wired to anything. Every button changes memory only.
+
+  Question: what should the Plugins page in Settings look like? Three layouts, A, B and C, for Zach to pick from.
+  It also shows the one part of the design that changes an existing rule: a plugin account's secret copied to a
+  paired computer (ADR-0025 says a credential is never sent to one), so that he sees it before any of it is built.
+
+  Settled before this prototype (11 November 2026, with Zach, on question cards):
+    1. The name is Plugins. A plugin is an outside service from a fixed list; an account is one sign-in to it that
+       the user added and named. A plugin holds several accounts.
+    2. An Owl feature (ADR-0072).
+    3. All nine are wanted: GitHub, Vercel, Gmail, Proton Mail, X, ElevenLabs, Higgsfield, Meshy, Grok Bot.
+    4. Secrets live in Sotto's credential store. Added once here, Sotto copies them to paired computers (changes
+       ADR-0025; this page is where he sees that).
+    5. Agents reach a plugin through Sotto's tools only and never hold the secret.
+    6. One read tool per plugin reaches anything; each change is its own named tool.
+    7. Reading never asks; a change asks each time; some changes get an Ask before each switch with a monthly
+       limit; sending email, posting on X and a production deploy always ask.
+    8. Mail: each thread asks once before it reads an account's mail.
+    9. Gmail signs in with an app password over IMAP and SMTP; Proton Mail through Proton Mail Bridge.
+   10. An account works in every thread; a project can narrow it.
+   11. GitHub's account is gh's own sign-in on each computer. Nothing is stored or copied.
+   12. Grok Bot joins the tailnet and drives Sotto: it reads and steers, never answers or merges, and pairs with a
+       code from this page that lapses after 30 days.
+
+  Variants differ in structure:
+    a  One list.          Every plugin is a row on one page, grouped, as Providers is. A row opens in place.
+    b  Accounts first.    Only what you added, one row per account. Add a plugin opens a compact list; an account
+                          opens in a side sheet.
+    c  List and detail.   Plugins and their accounts down the left, the chosen one's settings on the right.
+                          Narrow, it becomes drill-in with a back control.
+
+  The bar: variant (← → cycle), scenario, theme, window size. Under 700px wide the window frame goes and the page
+  fills the screen, so it can be judged on a phone.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sotto — Plugins page in Settings, prototype</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; font-display: swap; src: url('../../src/shared/fonts/figtree-latin.woff2') format('woff2'), url('figtree-latin.woff2') format('woff2'); }
+:root {
+  color-scheme: dark;
+  --tt-canvas: oklch(0.115 0.008 265);
+  --tt-surface: oklch(0.145 0.008 265);
+  --tt-surface-elevated: oklch(0.185 0.008 265);
+  --tt-surface-overlay: oklch(0.205 0.008 265);
+  --tt-surface-sunken: oklch(0.13 0.008 265);
+  --tt-sidebar: oklch(0.225 0.004 265);
+  --tt-text: oklch(0.985 0.005 280);
+  --tt-text-2: color-mix(in oklab, oklch(0.985 0.005 280) 55%, oklch(0.72 0.014 265));
+  --tt-text-muted: color-mix(in oklab, oklch(0.72 0.014 265) 85%, oklch(0.985 0.005 280));
+  --tt-hairline: oklch(0.305 0.02 265);
+  --tt-border: oklch(0.5 0.02 265);
+  --tt-field-border: oklch(0.42 0.02 265);
+  --tt-accent: oklch(0.714 0.104 183);
+  --tt-accent-text: oklch(0.84 0.08 183);
+  --tt-accent-wash: color-mix(in srgb, oklch(0.714 0.104 183) 14%, transparent);
+  --tt-on-accent: oklch(0.16 0.012 190);
+  --tt-success: oklch(0.79 0.13 165);
+  --tt-error-text: oklch(0.78 0.14 25);
+  --tt-warning-text: oklch(0.84 0.15 85);
+  --tt-hover: color-mix(in srgb, oklch(0.32 0.05 185) 70%, transparent);
+  --tt-scrim: rgb(0 0 0 / 55%);
+  --tt-shadow-lg: 0 18px 50px rgb(0 0 0 / 55%);
+  --tt-font: 'Figtree', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+  --tt-mono: ui-monospace, Consolas, monospace;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --tt-canvas: oklch(0.978 0.004 85);
+  --tt-surface: oklch(0.99 0.003 85);
+  --tt-surface-elevated: oklch(0.995 0.002 85);
+  --tt-surface-overlay: oklch(0.995 0.002 85);
+  --tt-surface-sunken: oklch(0.955 0.006 85);
+  --tt-sidebar: oklch(0.945 0.006 85);
+  --tt-text: oklch(0.235 0.014 75);
+  --tt-text-2: oklch(0.34 0.014 75);
+  --tt-text-muted: oklch(0.43 0.014 75);
+  --tt-hairline: oklch(0.86 0.012 80);
+  --tt-border: oklch(0.7 0.016 80);
+  --tt-field-border: oklch(0.72 0.016 80);
+  --tt-accent: oklch(0.52 0.13 235);
+  --tt-accent-text: oklch(0.42 0.13 235);
+  --tt-accent-wash: color-mix(in srgb, oklch(0.52 0.13 235) 12%, transparent);
+  --tt-on-accent: oklch(0.99 0.003 85);
+  --tt-success: oklch(0.45 0.12 160);
+  --tt-error-text: oklch(0.45 0.18 25);
+  --tt-warning-text: oklch(0.44 0.12 70);
+  --tt-hover: oklch(0.92 0.01 85);
+  --tt-scrim: rgb(0 0 0 / 30%);
+  --tt-shadow-lg: 0 18px 50px rgb(0 0 0 / 18%);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; background: #222; font-family: var(--tt-font); }
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--tt-accent); outline-offset: 2px; }
+h1, h2, h3, h4, p, ul { margin: 0; padding: 0; }
+ul { list-style: none; }
+
+/* ---- the window ---- */
+.stage { display: flex; justify-content: center; padding: 20px 12px 96px; }
+.win { position: relative; width: var(--w, 1280px); height: var(--h, 800px); max-width: 100%; background: var(--tt-canvas); color: var(--tt-text); font-size: 14px; line-height: 1.45; border: 1px solid #000; display: grid; grid-template-columns: 200px minmax(0, 1fr); overflow: hidden; }
+.win.is-fit { width: 100%; height: calc(100vh - 116px); }
+.rail { background: var(--tt-sidebar); padding: 44px 8px 12px; overflow: auto; border-right: 1px solid var(--tt-hairline); }
+.rail__title { font-size: 12px; color: var(--tt-text-muted); padding: 0 10px 8px; }
+.rail a { display: block; padding: 6px 10px; border-radius: 8px; color: var(--tt-text-2); text-decoration: none; font-size: 14px; }
+.rail a[aria-current] { background: var(--tt-hover); color: var(--tt-text); font-weight: 600; }
+.rail hr { border: 0; border-top: 1px solid var(--tt-hairline); margin: 6px 10px; }
+.main { overflow: auto; padding: 40px 28px 40px; container-type: inline-size; container-name: page; }
+.back { display: none; }
+.page { max-width: 880px; margin: 0 auto; }
+
+.phead { margin-bottom: 20px; }
+.phead h1 { font-size: 28px; font-weight: 650; display: flex; align-items: center; gap: 10px; }
+.phead p { color: var(--tt-text-muted); font-size: 14px; max-width: 62ch; margin-top: 6px; }
+.owl { font-size: 11px; font-weight: 600; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--tt-hairline); color: var(--tt-text-muted); }
+.muted { color: var(--tt-text-muted); }
+.small { font-size: 13px; }
+.cap { font-size: 12px; }
+.ok { color: var(--tt-success); }
+.bad { color: var(--tt-error-text); }
+.warn { color: var(--tt-warning-text); }
+.mono { font-family: var(--tt-mono); font-size: 13px; }
+
+.card { background: var(--tt-surface-elevated); border: 1px solid var(--tt-hairline); border-radius: 14px; }
+.grp { margin-bottom: 22px; }
+.grp > h3 { font-size: 13px; font-weight: 600; color: var(--tt-text-muted); margin: 0 4px 8px; }
+
+.btn { min-height: 34px; padding: 6px 14px; border-radius: 6px; border: 1px solid var(--tt-field-border); background: transparent; font-size: 13px; white-space: nowrap; }
+.btn:hover { background: var(--tt-hover); }
+.btn--primary { background: var(--tt-accent); color: var(--tt-on-accent); border-color: transparent; font-weight: 600; }
+.btn--primary:hover { background: var(--tt-accent); filter: brightness(1.08); }
+.btn--danger { color: var(--tt-error-text); }
+.btn--link { border: 0; padding: 0; min-height: 0; color: var(--tt-accent-text); text-decoration: underline; text-underline-offset: 2px; background: none; }
+.btnrow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+.mark { flex: none; width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; background: var(--tt-surface-sunken); border: 1px solid var(--tt-hairline); font-size: 13px; font-weight: 700; color: var(--tt-text-2); }
+.sw { flex: none; position: relative; width: 36px; height: 20px; border-radius: 10px; border: 1px solid var(--tt-field-border); background: var(--tt-surface-sunken); padding: 0; }
+.sw::after { content: ''; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--tt-text-muted); transition: transform .12s; }
+.sw[aria-checked='true'] { background: var(--tt-accent); border-color: transparent; }
+.sw[aria-checked='true']::after { transform: translateX(16px); background: var(--tt-on-accent); }
+.swrow { display: flex; align-items: flex-start; gap: 12px; justify-content: space-between; padding: 8px 0; }
+.swrow > div { min-width: 0; }
+.field { display: grid; gap: 4px; margin-bottom: 12px; }
+.field label { font-size: 13px; color: var(--tt-text-2); }
+.field input, .field select, .inp { min-height: 34px; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--tt-field-border); background: var(--tt-surface-sunken); font-size: 14px; width: 100%; }
+.note { border-radius: 10px; background: var(--tt-surface-sunken); border: 1px solid var(--tt-hairline); padding: 10px 12px; font-size: 13px; color: var(--tt-text-2); }
+.addform { max-width: 460px; }
+.note--bad { border-color: color-mix(in srgb, var(--tt-error-text) 50%, transparent); }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--tt-success); margin-right: 6px; vertical-align: 1px; }
+.dot--bad { background: var(--tt-error-text); }
+.dot--warn { background: var(--tt-warning-text); }
+.dot--off { background: var(--tt-border); }
+.meter { height: 4px; border-radius: 2px; background: var(--tt-hairline); overflow: hidden; margin-top: 6px; }
+.meter i { display: block; height: 100%; background: var(--tt-accent); }
+.chip { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding: 2px 10px; border-radius: 6px; border: 1px solid var(--tt-field-border); font-size: 13px; background: transparent; }
+.chip[aria-pressed='true'] { background: var(--tt-accent-wash); border-color: var(--tt-accent); color: var(--tt-accent-text); }
+.protonote { margin: 10px 0 0; padding: 8px 10px; border: 1px dashed #c9a227; border-radius: 6px; background: #2a2410; color: #f3e3a3; font: 12px/1.4 system-ui, sans-serif; }
+
+/* ---- an account's settings: the same sections in every variant, laid out by its container ---- */
+.secs { display: grid; gap: 18px; }
+.secs--two { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 28px; }
+.sec h4 { font-size: 13px; font-weight: 600; color: var(--tt-text-muted); margin-bottom: 6px; }
+.sec p + p { margin-top: 4px; }
+.kv { display: flex; gap: 10px; justify-content: space-between; align-items: center; padding: 6px 0; border-top: 1px solid var(--tt-hairline); }
+.kv:first-of-type { border-top: 0; }
+.kv > div { min-width: 0; }
+.kv > span { white-space: nowrap; }
+.use li { display: grid; grid-template-columns: 78px minmax(0, 1fr); gap: 10px; padding: 5px 0; font-size: 13px; border-top: 1px solid var(--tt-hairline); }
+.use li:first-child { border-top: 0; }
+.use .t { color: var(--tt-text-muted); font-size: 12px; padding-top: 1px; }
+.rules li { padding: 3px 0 3px 14px; position: relative; font-size: 14px; }
+.rules li::before { content: ''; position: absolute; left: 2px; top: 11px; width: 4px; height: 4px; border-radius: 50%; background: var(--tt-text-muted); }
+.code { font-family: var(--tt-mono); font-size: 22px; letter-spacing: 3px; padding: 8px 12px; border-radius: 8px; background: var(--tt-surface-sunken); border: 1px solid var(--tt-hairline); display: inline-block; }
+@container page (max-width: 640px) { .secs--two { grid-template-columns: minmax(0, 1fr); } }
+
+/* ---- A: one list ---- */
+.prow { border-top: 1px solid var(--tt-hairline); }
+.prow:first-child { border-top: 0; }
+.prow__head { width: 100%; display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: none; border: 0; text-align: left; border-radius: 14px; min-height: 52px; }
+.prow__head:hover { background: var(--tt-hover); }
+.prow__name { font-size: 15px; font-weight: 600; flex: none; min-width: 104px; }
+.prow__state { flex: 1; min-width: 0; color: var(--tt-text-muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chev { flex: none; width: 8px; height: 8px; border-right: 1.5px solid var(--tt-text-muted); border-bottom: 1.5px solid var(--tt-text-muted); transform: rotate(-45deg); transition: transform .12s; margin-right: 4px; }
+[aria-expanded='true'] > .chev { transform: rotate(45deg); }
+.prow__body { padding: 2px 14px 16px 54px; display: grid; gap: 12px; }
+.acct { border: 1px solid var(--tt-hairline); border-radius: 10px; background: var(--tt-surface); }
+.acct__top { display: flex; align-items: center; gap: 12px; padding: 10px 12px; flex-wrap: wrap; }
+.acct__top .grow { flex: 1; min-width: 150px; }
+.acct__detail { padding: 14px 12px 14px; border-top: 1px solid var(--tt-hairline); }
+@container page (max-width: 640px) { .prow__body { padding-left: 14px; } .prow__name { min-width: 0; } }
+
+/* ---- B: accounts first ---- */
+.bhead { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+.bhead .phead { margin: 0; flex: 1; min-width: 240px; }
+.arow { width: 100%; display: grid; grid-template-columns: 28px minmax(0, 1.5fr) minmax(0, 1.1fr) minmax(0, 1fr) 84px 10px; gap: 12px; align-items: center; padding: 10px 14px; border: 0; border-top: 1px solid var(--tt-hairline); background: none; text-align: left; min-height: 56px; }
+.arow:first-child { border-top: 0; border-radius: 14px 14px 0 0; }
+.arow:last-child { border-radius: 0 0 14px 14px; }
+.arow:hover { background: var(--tt-hover); }
+.arow strong { font-size: 15px; font-weight: 600; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.arow span { font-size: 13px; color: var(--tt-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+.arow .chev { margin: 0; }
+.arow .mark { display: grid; font-size: 13px; color: var(--tt-text-2); overflow: visible; }
+.ahead { display: grid; grid-template-columns: 28px minmax(0, 1.5fr) minmax(0, 1.1fr) minmax(0, 1fr) 84px 10px; gap: 12px; padding: 0 14px 6px; font-size: 12px; color: var(--tt-text-muted); }
+@container page (max-width: 640px) {
+  .ahead { display: none; }
+  .arow { grid-template-columns: 28px minmax(0, 1fr) 10px; row-gap: 0; }
+  .arow .c3, .arow .c4 { display: none; }
+  .arow .c2 { grid-column: 2; }
+  .arow .chev { grid-row: 1 / span 2; grid-column: 3; }
+  .arow .mark { grid-row: 1 / span 2; }
+}
+.empty { padding: 28px 20px; text-align: center; }
+.empty h2 { font-size: 18px; font-weight: 600; }
+.empty p { color: var(--tt-text-muted); margin: 6px auto 16px; max-width: 46ch; }
+#layer { display: contents; }
+.layer { position: absolute; inset: 0; z-index: 20; background: var(--tt-scrim); display: flex; }
+.sheet { margin-left: auto; width: min(460px, 100%); height: 100%; background: var(--tt-surface-overlay); border-left: 1px solid var(--tt-hairline); box-shadow: var(--tt-shadow-lg); display: flex; flex-direction: column; }
+.sheet__head { display: flex; align-items: center; gap: 12px; padding: 16px 18px; border-bottom: 1px solid var(--tt-hairline); }
+.sheet__head h2 { font-size: 16px; font-weight: 600; flex: 1; min-width: 0; }
+.sheet__body { padding: 18px; overflow: auto; flex: 1; }
+.dialog { margin: auto; width: min(480px, calc(100% - 24px)); max-height: calc(100% - 24px); background: var(--tt-surface-overlay); border: 1px solid var(--tt-hairline); border-radius: 20px; box-shadow: var(--tt-shadow-lg); display: flex; flex-direction: column; overflow: hidden; }
+.pick { overflow: auto; padding: 0 8px 8px; }
+.pick button { width: 100%; display: flex; align-items: center; gap: 12px; padding: 8px 10px; border: 0; background: none; border-radius: 8px; text-align: left; min-height: 48px; }
+.pick button:hover { background: var(--tt-hover); }
+.pick strong { font-size: 14px; font-weight: 600; display: block; }
+.pick span.d { font-size: 12px; color: var(--tt-text-muted); display: block; }
+.x { width: 34px; height: 34px; border-radius: 8px; border: 0; background: none; font-size: 16px; color: var(--tt-text-muted); }
+.x:hover { background: var(--tt-hover); }
+
+/* ---- C: list and detail ---- */
+.split { display: grid; grid-template-columns: 232px minmax(0, 1fr); gap: 20px; align-items: start; }
+.tree { padding: 8px; position: sticky; top: 0; }
+.tree h3 { font-size: 12px; font-weight: 600; color: var(--tt-text-muted); padding: 10px 8px 4px; }
+.tree button { width: 100%; display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 0; background: none; border-radius: 8px; text-align: left; font-size: 14px; min-height: 34px; }
+.tree button:hover { background: var(--tt-hover); }
+.tree button[aria-current='true'] { background: var(--tt-accent-wash); color: var(--tt-accent-text); font-weight: 600; }
+.tree .sub { padding-left: 30px; color: var(--tt-text-2); }
+.tree .n { margin-left: auto; font-size: 12px; color: var(--tt-text-muted); font-weight: 400; }
+.pane { padding: 18px 20px 20px; min-height: 380px; }
+.pane__head { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+.pane__head h2 { font-size: 18px; font-weight: 600; flex: 1; min-width: 0; }
+.paneback { display: none; }
+@container page (max-width: 640px) {
+  .split { grid-template-columns: minmax(0, 1fr); }
+  .split.has-sel .split__list { display: none; }
+  .split:not(.has-sel) .split__detail { display: none; }
+  .paneback { display: inline-flex; margin-bottom: 10px; }
+  .tree { position: static; }
+  .tree button { min-height: 44px; }
+}
+
+/* ---- the prototype's own bar: not part of the design ---- */
+.bar { position: fixed; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 50; display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px; padding: 8px; max-width: calc(100vw - 16px); background: #111; color: #eee; border: 1px solid #444; border-radius: 12px; font: 13px system-ui, sans-serif; box-shadow: 0 6px 24px rgb(0 0 0 / 50%); }
+.bar button, .bar select { min-height: 36px; padding: 4px 10px; border-radius: 8px; border: 1px solid #444; background: #1c1c1c; color: #eee; font: inherit; }
+.bar .lab { min-width: 152px; text-align: center; font-weight: 600; padding: 0 4px; }
+.bar :focus-visible { outline: 2px solid #7fd; }
+
+@media (max-width: 700px) {
+  html, body { background: var(--tt-canvas); }
+  .stage { padding: 0 0 132px; }
+  .win, .win.is-fit { width: 100%; height: auto; min-height: 100vh; border: 0; display: block; overflow: visible; }
+  .rail { display: none; }
+  .main { overflow: visible; padding: 14px 14px 24px; }
+  .back { display: inline-flex; align-items: center; min-height: 44px; color: var(--tt-accent-text); text-decoration: none; font-size: 15px; }
+  .phead h1 { font-size: 22px; }
+  .btn, .field input, .field select, .inp, .chip { min-height: 44px; }
+  .sw { width: 44px; height: 26px; border-radius: 13px; }
+  .sw::after { width: 20px; height: 20px; }
+  .sw[aria-checked='true']::after { transform: translateX(18px); }
+  .x { width: 44px; height: 44px; }
+  .layer { position: fixed; }
+  .sheet { width: 100%; border-left: 0; }
+  .sheet__body, .dialog .sheet__body { padding-bottom: 140px; }
+  .dialog { margin-top: 12px; max-height: calc(100% - 140px); }
+  .bar { bottom: 0; left: 0; right: 0; transform: none; max-width: none; border-radius: 12px 12px 0 0; border-width: 1px 0 0; padding-bottom: max(8px, env(safe-area-inset-bottom)); }
+  .bar button, .bar select { min-height: 44px; }
+  .bar .size { display: none; }
+  .bar .lab { min-width: 0; flex: 1; white-space: nowrap; }
+  .bar #scn { flex: 1 1 100%; order: 9; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="stage">
+  <div class="win" id="win">
+    <nav class="rail" aria-label="Settings pages">
+      <div class="rail__title">Settings</div>
+      <a href="#">Dictation</a><a href="#">Cleanup</a><hr>
+      <a href="#">Threads</a><a href="#">Keyboard</a><a href="#">Git &amp; worktrees</a><a href="#">Watcher</a><a href="#">Council</a><hr>
+      <a href="#">Providers</a><a href="#" aria-current="page">Plugins</a><a href="#">Hosts &amp; phones</a><a href="#">Cloud iPhone</a><hr>
+      <a href="#">Appearance</a><a href="#">Application</a><a href="#">Performance</a>
+    </nav>
+    <main class="main">
+      <a class="back" href="#">‹ Settings</a>
+      <div class="page" id="page"></div>
+    </main>
+    <div id="layer"></div>
+  </div>
+</div>
+
+<div class="bar" role="toolbar" aria-label="Prototype controls">
+  <button id="prev" aria-label="Previous variant">←</button>
+  <span class="lab" id="lab" aria-live="polite"></span>
+  <button id="next" aria-label="Next variant">→</button>
+  <select id="scn" aria-label="Scenario">
+    <option value="few">A few added</option>
+    <option value="empty">Nothing added yet</option>
+    <option value="adding">Adding an account</option>
+    <option value="wrong">Something is wrong</option>
+  </select>
+  <button id="theme" aria-label="Switch between dark and light">Light</button>
+  <select id="size" class="size" aria-label="Window size">
+    <option value="1280x800">1280 × 800</option>
+    <option value="1600x1000">1600 × 1000</option>
+    <option value="820x560">820 × 560</option>
+    <option value="fit">Fit</option>
+  </select>
+</div>
+
+<script>
+/* ---------- what there is to connect ---------- */
+const GROUPS = [
+  { id: 'code', name: 'Code and deploys', ids: ['github', 'vercel'] },
+  { id: 'mail', name: 'Mail', ids: ['gmail', 'proton'] },
+  { id: 'media', name: '3D models, sound and video', ids: ['meshy', 'elevenlabs', 'higgsfield'] },
+  { id: 'post', name: 'Posting', ids: ['x'] },
+  { id: 'drive', name: 'Assistants that drive Sotto', ids: ['grokbot'] },
+];
+const P = {
+  github: { name: 'GitHub', mark: 'G', kind: 'gh', blurb: 'Issues, pull requests and repositories, through the gh command’s own sign-in.' },
+  vercel: { name: 'Vercel', mark: 'V', kind: 'token', secret: 'Token', blurb: 'Deployments, build logs and projects.', help: 'Make a token in Vercel' },
+  gmail: { name: 'Gmail', mark: 'M', kind: 'mail', secret: 'App password', blurb: 'Search, read and send mail with an app password.', help: 'Make an app password' },
+  proton: { name: 'Proton Mail', mark: 'P', kind: 'bridge', secret: 'Bridge password', blurb: 'Search, read and send mail through Proton Mail Bridge on the same computer.', help: 'Where Bridge shows its password' },
+  meshy: { name: 'Meshy', mark: '3D', kind: 'key', secret: 'Key', thing: '3D model', unit: 'credits', limit: 1000, blurb: '3D models from words or a photo. Paid by the credit.', help: 'Make a key in Meshy' },
+  elevenlabs: { name: 'ElevenLabs', mark: 'E', kind: 'key', secret: 'Key', thing: 'sound', unit: '$', limit: 20, blurb: 'Speech, sound effects and music as files. Paid by use.', help: 'Make a key in ElevenLabs' },
+  higgsfield: { name: 'Higgsfield', mark: 'H', kind: 'key', secret: 'Key', thing: 'video', unit: '$', limit: 30, blurb: 'Video and pictures from words. Paid by use.', help: 'Make a key in Higgsfield' },
+  x: { name: 'X', mark: 'X', kind: 'browser', unit: '$', limit: 10, blurb: 'Read and post on X. X charges for every call, reading included.' },
+  grokbot: { name: 'Grok Bot', mark: 'B', kind: 'assistant', blurb: 'Lets your Grok Bot read and steer threads over your tailnet. It never answers for you.' },
+};
+const PROJECTS = ['sotto', 'drb-site', 'feature-video'];
+const VARIANTS = [['a', 'One list'], ['b', 'Accounts first'], ['c', 'List and detail']];
+
+/* ---------- memory ---------- */
+let S;
+function scenario(name) {
+  const use = {
+    v1: [['2:14 pm', 'Fix the preview build', 'Read 3 deployments'], ['1:50 pm', 'Fix the preview build', 'Deployed a preview. You allowed it.'], ['Yesterday', 'Landing page copy', 'Read a build log']],
+    v2: [['Monday', 'Quote form', 'Read 2 projects']],
+    g1: [['9:07 am', 'Invoice follow-up', 'Sent an email. You allowed it.'], ['9:05 am', 'Invoice follow-up', 'Searched mail, 4 results'], ['9:04 am', 'Invoice follow-up', 'Asked to read this account’s mail. You allowed it for this thread.']],
+    m1: [['Monday', 'Owl figurine', 'Made a 3D model, 30 credits. You allowed it.']],
+  };
+  const few = [
+    { id: 'v1', plugin: 'vercel', name: 'Personal', on: true, forge: 'sent', projects: null, ask: true, last: '2:14 pm', saved: 'November 9', use: use.v1 },
+    { id: 'v2', plugin: 'vercel', name: 'Work', on: true, forge: 'off', projects: ['drb-site'], ask: true, last: 'Monday', saved: 'November 10', use: use.v2 },
+    { id: 'g1', plugin: 'gmail', name: 'Personal', addr: 'me@example.com', on: true, forge: 'sent', projects: null, last: '9:07 am', saved: 'November 10', use: use.g1 },
+    { id: 'm1', plugin: 'meshy', name: 'Meshy', on: true, forge: 'sent', projects: null, ask: true, used: 240, limit: 1000, last: 'Monday', saved: 'November 8', use: use.m1 },
+  ];
+  S = { scenario: name, accounts: [], forgeUp: true, copyDefault: true, gh: { here: true, forge: true }, grok: 'none', open: {}, detail: null, adding: null, sheet: null, picker: false, sel: null, removing: null, q: '' };
+  const narrow = document.querySelector('.main').clientWidth < 700;
+  if (name !== 'empty') { S.accounts = few; S.grok = 'paired'; S.open = { vercel: true }; S.sel = narrow ? null : { t: 'acct', id: 'v1' }; }
+  if (name === 'adding') { S.adding = 'vercel'; S.sel = { t: 'plugin', id: 'vercel' }; }
+  if (name === 'wrong') {
+    S.forgeUp = false; S.grok = 'lapsed'; S.gh.forge = false;
+    S.accounts = few.map((a) => ({ ...a, forge: a.forge === 'sent' && a.id === 'g1' ? 'waiting' : a.forge }));
+    S.accounts.find((a) => a.id === 'v2').error = true;
+    S.accounts.push({ id: 'p1', plugin: 'proton', name: 'Private', addr: 'me@example.org', on: true, forge: 'sent', bridgeDown: true, projects: null, last: 'Sunday', saved: 'November 7', use: [['Sunday', 'Tax papers', 'Searched mail, 2 results']] });
+    S.open = { vercel: true, proton: true }; S.detail = 'v2'; S.sel = { t: 'acct', id: 'v2' };
+  }
+}
+const acc = (pid) => S.accounts.filter((a) => a.plugin === pid);
+const byId = (id) => S.accounts.find((a) => a.id === id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+/* ---------- small shared pieces ---------- */
+const sw = (on, act, id, label) => `<button class="sw" role="switch" aria-checked="${on}" data-act="${act}" data-id="${id}" data-key="${act}-${id}" aria-label="${esc(label)}"></button>`;
+function acctProblem(a) {
+  if (a.error) return `${P[a.plugin].name} did not accept this ${P[a.plugin].secret.toLowerCase()}`;
+  if (a.bridgeDown) return 'Proton Mail Bridge isn’t running on forge';
+  if (a.forge === 'waiting' || (a.forge === 'sent' && !S.forgeUp && false)) return 'A copy is waiting for forge';
+  return '';
+}
+function whereLine(a) { return a.forge === 'off' ? 'This computer' : a.forge === 'waiting' ? 'This computer; forge waiting' : 'This computer, forge'; }
+function projLine(a) { return a.projects ? a.projects.join(', ') : 'Every project'; }
+function pluginState(pid) {
+  const p = P[pid];
+  if (p.kind === 'gh') return S.gh.here ? `Signed in as example-user through gh${S.gh.forge ? ', here and on forge' : '. Not signed in on forge'}` : 'Not signed in';
+  if (p.kind === 'assistant') return S.grok === 'paired' ? 'Paired. Lapses December 11' : S.grok === 'lapsed' ? 'Lapsed December 11' : S.grok === 'pairing' ? 'Waiting for the code' : 'Not paired';
+  const n = acc(pid);
+  if (!n.length) return 'Not added';
+  const bad = n.map(acctProblem).filter(Boolean)[0];
+  return (n.length === 1 ? (n[0].addr || n[0].name) : `${n.length} accounts: ${n.map((a) => a.name).join(', ')}`) + (bad ? `. ${bad}` : '');
+}
+function pluginDot(pid) {
+  const p = P[pid];
+  if (p.kind === 'gh') return S.gh.here && S.gh.forge ? '' : 'dot--warn';
+  if (p.kind === 'assistant') return S.grok === 'paired' ? '' : S.grok === 'lapsed' ? 'dot--bad' : 'dot--off';
+  const n = acc(pid);
+  if (!n.length) return 'dot--off';
+  return n.some((a) => a.error || a.bridgeDown) ? 'dot--bad' : n.some((a) => a.forge === 'waiting') ? 'dot--warn' : '';
+}
+
+/* ---------- an account's settings (shared sections) ---------- */
+function rules(a) {
+  const p = P[a.plugin]; const out = [];
+  if (p.kind === 'mail' || p.kind === 'bridge') out.push('Each thread asks once before it reads this account’s mail. What it reads goes to that thread’s provider.', 'Sending an email always asks.', 'Deleting or moving mail always asks.');
+  else if (a.plugin === 'vercel') out.push('Reading never asks.', 'A production deploy always asks.', 'Deleting anything always asks.');
+  else if (a.plugin === 'x') out.push('Reading costs money on X, so it counts against the limit. It does not ask.', 'Posting on X always asks.');
+  else out.push('Reading never asks.');
+  return out;
+}
+function secSignIn(a) {
+  const p = P[a.plugin];
+  const err = a.error ? `<p class="note note--bad" role="alert"><span class="bad">${p.name} did not accept this ${p.secret.toLowerCase()}.</span> Nothing was lost, and threads cannot use this account until it is replaced. ${esc(p.help)}, then press Replace.</p>` : '';
+  const bridge = a.bridgeDown ? `<p class="note note--bad" role="alert"><span class="bad">Proton Mail Bridge isn’t running on forge.</span> forge’s threads cannot use this account until Bridge is started there. This computer is not affected.</p>` : '';
+  return `<section class="sec"><h4>Sign-in</h4>
+    ${a.addr ? `<div class="kv"><div>Address</div><div class="muted">${esc(a.addr)}</div></div>` : ''}
+    <div class="kv"><div>${p.secret || 'Sign-in'} <span class="muted small">Saved ${a.saved}. Sotto never shows it again.</span></div><button class="btn" data-act="noop" aria-label="Replace the ${esc((p.secret || 'sign-in').toLowerCase())} for ${esc(a.name)}">Replace</button></div>
+    ${err}${bridge}
+    ${p.thing ? `<p class="muted small" style="margin-top:6px">${p.name} may use what is sent to train its models.</p>` : ''}
+  </section>`;
+}
+function secCopies(a) {
+  const st = a.forge === 'sent' ? (S.forgeUp ? 'A copy is kept on forge, sent ' + a.saved + '.' : 'A copy is kept on forge. forge is not connected now.') : a.forge === 'waiting' ? '<span class="warn">forge is not connected. The copy will be sent when it is.</span>' : 'No copy. forge’s threads cannot use this account.';
+  return `<section class="sec"><h4>Where its secret is kept</h4>
+    <div class="kv"><div>This computer <span class="muted small">Always, in Sotto’s encrypted store.</span></div><span class="muted small">Kept here</span></div>
+    <div class="kv"><div>forge <span class="muted small">${st}</span></div>${sw(a.forge !== 'off', 'copy', a.id, 'Keep a copy of ' + a.name + ' on forge')}</div>
+    <p class="muted small" style="margin-top:6px">A copy lets forge’s threads use this account while this computer is off. It travels over your tailnet and is kept in forge’s own encrypted store.</p>
+  </section>`;
+}
+function secThreads(a) {
+  const only = !!a.projects;
+  return `<section class="sec"><h4>Which threads</h4>
+    <div class="swrow" style="padding-top:0"><div>Threads may use this account</div>${sw(a.on, 'on', a.id, 'Let threads use ' + a.name)}</div>
+    <div class="btnrow" role="group" aria-label="Projects that may use ${esc(a.name)}">
+      <button class="chip" aria-pressed="${!only}" data-act="proj-all" data-id="${a.id}" data-key="proj-all-${a.id}">Every project</button>
+      ${PROJECTS.map((pr) => `<button class="chip" aria-pressed="${only && a.projects.includes(pr)}" data-act="proj" data-id="${a.id}" data-p="${pr}" data-key="proj-${a.id}-${pr}">${pr}</button>`).join('')}
+    </div>
+  </section>`;
+}
+function secAsking(a) {
+  const p = P[a.plugin];
+  let toggle = '';
+  if (a.plugin === 'vercel') toggle = `<div class="swrow"><div>Ask before each preview deploy<div class="muted small">Off, a thread deploys previews without asking. Every one still shows in the thread.</div></div>${sw(a.ask, 'ask', a.id, 'Ask before each preview deploy with ' + a.name)}</div>`;
+  if (p.thing) toggle = `<div class="swrow"><div>Ask before each ${p.thing}<div class="muted small">Off, a thread makes them without asking, up to the monthly limit.</div></div>${sw(a.ask, 'ask', a.id, 'Ask before each ' + p.thing)}</div>`;
+  const lim = p.unit ? `<div class="kv"><div>Monthly limit<div class="muted small">${p.unit === '$' ? '$' + (a.used || 0) + ' of $' + (a.limit || p.limit) : (a.used || 0) + ' of ' + (a.limit || p.limit).toLocaleString() + ' credits'} used in November</div><div class="meter" aria-hidden="true"><i style="width:${Math.round(100 * (a.used || 0) / (a.limit || p.limit))}%"></i></div></div><input class="inp" style="width:96px" aria-label="Monthly limit for ${esc(a.name)}" value="${p.unit === '$' ? '$' : ''}${(a.limit || p.limit).toLocaleString()}"></div>` : '';
+  return `<section class="sec"><h4>What agents may do without asking</h4>
+    <ul class="rules">${rules(a).map((r) => `<li>${r}</li>`).join('')}</ul>${toggle}${lim}
+  </section>`;
+}
+function secUse(a) {
+  return `<section class="sec"><h4>Recent use</h4>
+    ${a.use && a.use.length ? `<ul class="use">${a.use.map((u) => `<li><span class="t">${u[0]}</span><span>${esc(u[2])} <span class="muted">in “${esc(u[1])}”</span></span></li>`).join('')}</ul>` : '<p class="muted small">No thread has used this account yet.</p>'}
+    <p class="muted cap" style="margin-top:6px">Sotto records what was done and by which thread, never the words, addresses or files.</p>
+  </section>`;
+}
+function secRemove(a) {
+  if (S.removing === a.id) return `<section class="sec"><div class="note note--bad" role="alertdialog" aria-label="Remove ${esc(a.name)}"><p><strong>Remove ${esc(a.name)}?</strong> Its ${(P[a.plugin].secret || 'sign-in').toLowerCase()} is deleted from this computer${a.forge !== 'off' ? ' and from forge' : ''}. Threads lose it at once. Nothing changes at ${P[a.plugin].name}.</p><div class="btnrow" style="margin-top:10px"><button class="btn btn--danger" data-act="remove-yes" data-id="${a.id}">Remove account</button><button class="btn" data-act="remove-no" data-key="remove-${a.id}">Keep it</button></div></div></section>`;
+  return `<section class="sec"><button class="btn btn--danger" data-act="remove" data-id="${a.id}" data-key="remove-${a.id}">Remove this account</button></section>`;
+}
+function detail(a, two) {
+  return `<div class="secs ${two ? 'secs--two' : ''}">${secSignIn(a)}${secCopies(a)}${secThreads(a)}${secAsking(a)}${secUse(a)}${secRemove(a)}</div>`;
+}
+
+/* ---------- GitHub and Grok Bot have no pasted secret ---------- */
+function ghBlock() {
+  return `<div class="secs"><section class="sec"><h4>Sign-in</h4>
+    <div class="kv"><div><span class="dot"></span>This computer <span class="muted small">Signed in as example-user through gh.</span></div><span class="muted small">gh’s own</span></div>
+    <div class="kv"><div><span class="dot ${S.gh.forge ? '' : 'dot--warn'}"></span>forge <span class="muted small">${S.gh.forge ? 'Signed in as example-user through gh.' : 'Not signed in. forge’s threads cannot use GitHub tools.'}</span></div>${S.gh.forge ? '<span class="muted small">gh’s own</span>' : '<button class="btn" data-act="gh-signin" aria-label="Sign in to GitHub on forge">Sign in</button>'}</div>
+    <p class="muted small" style="margin-top:6px">GitHub uses the gh command’s sign-in on each computer. Sotto stores nothing and copies nothing.</p></section>
+    <section class="sec"><h4>What agents may do without asking</h4><ul class="rules"><li>Through Sotto’s GitHub tools, reading never asks.</li><li>Commenting, opening or closing an issue or a pull request asks each time.</li><li>Merging always asks.</li><li>An agent’s own shell can still run gh, as it can today.</li></ul></section></div>`;
+}
+function grokBlock() {
+  const can = `<section class="sec"><h4>What Grok Bot may do</h4><ul class="rules"><li>List and read threads, and see what waits on you.</li><li>Start a thread, send to one, stop one and settle one.</li></ul></section>
+    <section class="sec"><h4>What it can never do</h4><ul class="rules"><li>Answer a permission or a question.</li><li>Merge or close a pull request.</li><li>Change a setting, or use a plugin account.</li></ul><p class="muted small" style="margin-top:6px">Sotto refuses these itself, whatever the Bot is told.</p></section>`;
+  let top;
+  if (S.grok === 'none') top = `<section class="sec"><p>Grok Bot joins your tailnet and calls Sotto there. Sotto is never reachable from the public internet.</p><div class="btnrow" style="margin-top:10px"><button class="btn btn--primary" data-act="grok-pair" data-key="grok-main">Pair Grok Bot</button></div></section>`;
+  else if (S.grok === 'pairing') top = `<section class="sec"><h4>Give these to Grok Bot</h4><p class="code" aria-label="Pairing code K7QM 2XHD">K7QM 2XHD</p><p class="muted small" style="margin-top:6px">The code works once, for five minutes.</p><div class="kv" style="margin-top:8px"><div class="mono" style="overflow-wrap:anywhere">https://laptop.example-tailnet.ts.net/assistant</div><button class="btn" data-act="noop" aria-label="Copy the address for Grok Bot">Copy</button></div><div class="btnrow" style="margin-top:10px"><button class="btn" data-act="grok-paired" data-key="grok-main">Pretend the Bot used the code</button><button class="btn" data-act="grok-cancel">Cancel</button></div></section>`;
+  else if (S.grok === 'paired') top = `<section class="sec"><h4>Pairing</h4><div class="kv"><div><span class="dot"></span>Paired November 11. Lapses December 11.</div><div class="btnrow"><button class="btn" data-act="noop" aria-label="Link Grok Bot again for 30 more days">Link again</button><button class="btn btn--danger" data-act="grok-remove" data-key="grok-main" aria-label="Remove Grok Bot’s pairing">Remove</button></div></div></section>`;
+  else top = `<section class="sec"><h4>Pairing</h4><div class="note note--bad" role="alert"><span class="bad">Lapsed December 11.</span> Grok Bot cannot reach Sotto. Nothing was lost. Press Link again to let it back in.</div><div class="btnrow" style="margin-top:10px"><button class="btn btn--primary" data-act="grok-paired" data-key="grok-main">Link again</button><button class="btn btn--danger" data-act="grok-remove">Remove</button></div></section>`;
+  const use = S.grok === 'paired' || S.grok === 'lapsed' ? `<section class="sec"><h4>Recent use</h4><ul class="use"><li><span class="t">8:55 am</span><span>Tried to answer a permission. Sotto refused.</span></li><li><span class="t">8:41 am</span><span>Sent a message <span class="muted">to “Fix the preview build”</span></span></li><li><span class="t">8:40 am</span><span>Listed threads</span></li></ul></section>` : '';
+  return `<div class="secs">${top}${can}${use}</div>`;
+}
+
+/* ---------- adding an account ---------- */
+function addForm(pid) {
+  const p = P[pid];
+  const copies = `<div class="field"><label>Where its secret is kept</label><div class="note"><div class="swrow" style="padding:0 0 6px"><div>This computer</div><span class="muted small">Always</span></div><div class="swrow" style="padding:6px 0 0"><div>forge<div class="muted small">${S.forgeUp ? 'A copy lets forge’s threads use it while this computer is off.' : 'forge is not connected. The copy will be sent when it is.'}</div></div>${sw(S.copyDefault, 'copy-new', pid, 'Keep a copy on forge')}</div></div></div>`;
+  const name = `<div class="field"><label for="f-name">Name</label><input id="f-name" placeholder="Work, Personal…" autocomplete="off"></div>`;
+  let fields = '';
+  if (p.kind === 'token' || p.kind === 'key') fields = `${name}<div class="field"><label for="f-sec">${p.secret}</label><input id="f-sec" type="password" autocomplete="off" placeholder="Paste it here"><button class="btn--link small" data-act="noop" style="justify-self:start">${p.help}</button></div>${p.unit ? `<div class="field"><label for="f-lim">Monthly limit</label><input id="f-lim" value="${p.unit === '$' ? '$' + p.limit : p.limit.toLocaleString() + ' credits'}"></div><p class="muted small" style="margin:-4px 0 12px">${p.name} may use what is sent to train its models.</p>` : ''}`;
+  if (p.kind === 'mail') fields = `${name}<div class="field"><label for="f-addr">Gmail address</label><input id="f-addr" placeholder="you@example.com" autocomplete="off"></div><div class="field"><label for="f-sec">App password</label><input id="f-sec" type="password" autocomplete="off" placeholder="16 letters"><span class="muted small">Needs 2-Step Verification on the Google account. <button class="btn--link" data-act="noop">Make an app password</button></span></div>`;
+  if (p.kind === 'bridge') fields = `${name}<div class="field"><label for="f-addr">Bridge address</label><input id="f-addr" placeholder="you@example.org" autocomplete="off"></div><div class="field"><label for="f-sec">Bridge password</label><input id="f-sec" type="password" autocomplete="off" placeholder="From Bridge, not your Proton password"><span class="muted small">Proton Mail Bridge must be running on each computer that uses this account. <button class="btn--link" data-act="noop">${p.help}</button></span></div>`;
+  if (p.kind === 'browser') fields = `${name}<div class="field"><label for="f-lim">Monthly limit</label><input id="f-lim" value="$${p.limit}"></div><p class="muted small" style="margin:-4px 0 12px">X charges for every call, reading included. Add account opens X in your browser to sign in.</p>`;
+  return `<form class="addform" data-form="${pid}" aria-label="Add a ${p.name} account">${fields}${copies}
+    <p class="muted small" style="margin-bottom:12px">Agents never see this. They use ${p.name} through Sotto’s tools.</p>
+    <div class="btnrow"><button class="btn btn--primary" type="submit">Add account</button><button class="btn" type="button" data-act="add-cancel" data-key="add-${pid}">Cancel</button></div></form>`;
+}
+function otherComputers() {
+  return `<div class="swrow"><div>Copy new accounts to every computer I pair<div class="muted small">Each account’s secret is sent over your tailnet to forge and kept in its encrypted store, so forge’s threads work while this computer is off. You can stop the copy for any account.</div></div>${sw(S.copyDefault, 'copy-default', 'x', 'Copy new accounts to every computer I pair')}</div>
+    <div class="kv"><div><span class="dot ${S.forgeUp ? '' : 'dot--warn'}"></span>forge <span class="muted small">${S.forgeUp ? 'Connected.' : 'Not connected. Copies wait until it is.'} ${S.accounts.filter((a) => a.forge !== 'off').length} of ${S.accounts.length} accounts copied.</span></div></div>
+    <p class="protonote">Prototype note: this is the change to ADR-0025, which today says a credential is never sent to another computer.</p>`;
+}
+const head = () => `<header class="phead"><h1>Plugins <span class="owl">Owl</span></h1><p>Outside services your threads can use, and assistants that can drive Sotto. An agent uses a plugin through Sotto’s tools and never holds its secret.</p></header>`;
+
+/* ---------- A: one list ---------- */
+function vA() {
+  const row = (pid) => {
+    const p = P[pid]; const open = !!S.open[pid]; const n = acc(pid);
+    let body = '';
+    if (open) {
+      if (p.kind === 'gh') body = ghBlock();
+      else if (p.kind === 'assistant') body = grokBlock();
+      else body = n.map((a) => `<div class="acct"><div class="acct__top"><div class="grow"><strong>${esc(a.name)}</strong> ${a.addr ? `<span class="muted small">${esc(a.addr)}</span>` : ''}<div class="muted small">${acctProblem(a) ? `<span class="bad">${acctProblem(a)}.</span> ` : ''}${whereLine(a)} · ${projLine(a)} · used ${a.last}</div></div>${sw(a.on, 'on', a.id, 'Let threads use ' + a.name)}<button class="btn" data-act="detail" data-id="${a.id}" data-key="detail-${a.id}" aria-expanded="${S.detail === a.id}" aria-label="Settings for ${esc(a.name)}">Settings <span class="chev" style="display:inline-block;margin:0 0 2px 6px"></span></button></div>${S.detail === a.id ? `<div class="acct__detail">${detail(a, true)}</div>` : ''}</div>`).join('')
+        + (S.adding === pid ? `<div class="acct"><div class="acct__detail" style="border-top:0">${addForm(pid)}</div></div>` : `<div><button class="btn" data-act="add" data-id="${pid}" data-key="add-${pid}">Add ${n.length ? 'another' : 'a'} ${p.name} account</button></div>`);
+      body = `<div class="prow__body"><p class="muted small">${p.blurb}</p>${body}</div>`;
+    }
+    return `<div class="prow"><button class="prow__head" data-act="toggle" data-id="${pid}" data-key="toggle-${pid}" aria-expanded="${open}"><span class="mark" aria-hidden="true">${p.mark}</span><span class="prow__name">${p.name}</span><span class="prow__state"><span class="dot ${pluginDot(pid)}"></span>${pluginState(pid)}</span><span class="chev" aria-hidden="true"></span></button>${body}</div>`;
+  };
+  return head() + GROUPS.map((g) => `<section class="grp"><h3>${g.name}</h3><div class="card">${g.ids.map(row).join('')}</div></section>`).join('')
+    + `<section class="grp"><h3>Other computers</h3><div class="card" style="padding:8px 14px 14px">${otherComputers()}</div></section>`;
+}
+
+/* ---------- B: accounts first ---------- */
+function vB() {
+  const rows = [];
+  rows.push(`<button class="arow" data-act="sheet" data-t="plugin" data-id="github" data-key="sheet-github"><span class="mark" aria-hidden="true">G</span><div><strong>GitHub</strong><span class="c2">gh’s sign-in, example-user</span></div><span class="c3">${S.gh.forge ? 'This computer, forge' : 'This computer; forge not signed in'}</span><span class="c4">Every project</span><span class="c4">Today</span><span class="chev" aria-hidden="true"></span></button>`);
+  for (const a of S.accounts) { const bad = acctProblem(a); rows.push(`<button class="arow" data-act="sheet" data-t="acct" data-id="${a.id}" data-key="sheet-${a.id}"><span class="mark" aria-hidden="true">${P[a.plugin].mark}</span><div><strong>${esc(a.name)}</strong><span class="c2">${bad ? `<span class="bad">${bad}</span>` : P[a.plugin].name + (a.addr ? ', ' + esc(a.addr) : '')}</span></div><span class="c3">${whereLine(a)}</span><span class="c4">${projLine(a)}</span><span class="c4">${a.last}</span><span class="chev" aria-hidden="true"></span></button>`); }
+  const bot = S.grok === 'none' ? '' : `<section class="grp"><h3>Drives Sotto</h3><div class="card"><button class="arow" data-act="sheet" data-t="plugin" data-id="grokbot" data-key="sheet-grokbot"><span class="mark" aria-hidden="true">B</span><div><strong>Grok Bot</strong><span class="c2">${S.grok === 'lapsed' ? '<span class="bad">Lapsed December 11</span>' : pluginState('grokbot')}</span></div><span class="c3">Your tailnet</span><span class="c4">Reads and steers</span><span class="c4">8:55 am</span><span class="chev" aria-hidden="true"></span></button></div></section>`;
+  const list = S.accounts.length || S.grok !== 'none'
+    ? `<section class="grp"><div class="ahead" aria-hidden="true"><span></span><span>Account</span><span>Kept on</span><span>Projects</span><span>Last used</span><span></span></div><div class="card">${rows.join('')}</div></section>${bot}`
+    : `<section class="grp"><div class="card">${rows[0]}</div></section><section class="grp"><div class="card empty"><h2>Nothing else is added yet</h2><p>Add an account once and every thread’s agent can use it through Sotto’s tools. GitHub already works through gh.</p><button class="btn btn--primary" data-act="picker" data-key="picker">Add a plugin</button></div></section>`;
+  const any = S.accounts.length || S.grok !== 'none';
+  return `<div class="bhead">${head()}${any ? '<button class="btn btn--primary" data-act="picker" data-key="picker">Add a plugin</button>' : ''}</div>${list}
+    <section class="grp"><h3>Other computers</h3><div class="card" style="padding:8px 14px 14px">${otherComputers()}</div></section>`;
+}
+function layerB() {
+  if (S.picker) {
+    const q = S.q.toLowerCase();
+    const items = Object.keys(P).filter((id) => id !== 'github' && (P[id].name + ' ' + P[id].blurb).toLowerCase().includes(q));
+    return `<div class="layer" data-act="close-layer"><div class="dialog" role="dialog" aria-modal="true" aria-label="Add a plugin"><div class="sheet__head"><h2>Add a plugin</h2><button class="x" data-act="close-layer" aria-label="Close">✕</button></div><div style="padding:12px 16px 8px"><input class="inp" id="q" placeholder="Find a plugin" aria-label="Find a plugin" value="${esc(S.q)}"></div><div class="pick">${items.map((id) => `<button data-act="pick" data-id="${id}"><span class="mark" aria-hidden="true">${P[id].mark}</span><div><strong>${P[id].name}${id === 'grokbot' ? '' : acc(id).length ? ` <span class="muted cap">${acc(id).length} added</span>` : ''}</strong><span class="d">${P[id].blurb}</span></div></button>`).join('') || '<p class="muted small" style="padding:12px">No plugin matches. Sotto offers only the plugins on its list.</p>'}</div></div></div>`;
+  }
+  if (S.adding) return `<div class="layer" data-act="close-layer"><div class="dialog" role="dialog" aria-modal="true" aria-label="Add a ${P[S.adding].name} account"><div class="sheet__head"><span class="mark" aria-hidden="true">${P[S.adding].mark}</span><h2>Add a ${P[S.adding].name} account</h2><button class="x" data-act="close-layer" aria-label="Close">✕</button></div><div class="sheet__body">${addForm(S.adding)}</div></div></div>`;
+  if (S.sheet) {
+    const a = S.sheet.t === 'acct' ? byId(S.sheet.id) : null; const p = a ? P[a.plugin] : P[S.sheet.id];
+    if (S.sheet.t === 'acct' && !a) return '';
+    return `<div class="layer" data-act="close-layer"><aside class="sheet" role="dialog" aria-modal="true" aria-label="${esc(a ? a.name + ', ' + p.name : p.name)}"><div class="sheet__head"><span class="mark" aria-hidden="true">${p.mark}</span><h2>${a ? esc(a.name) + ' <span class="muted small">' + p.name + '</span>' : p.name}</h2><button class="x" data-act="close-layer" aria-label="Close">✕</button></div><div class="sheet__body">${a ? detail(a, false) : p.kind === 'gh' ? ghBlock() : grokBlock()}</div></aside></div>`;
+  }
+  return '';
+}
+
+/* ---------- C: list and detail ---------- */
+function vC() {
+  const cur = (t, id) => !!S.sel && S.sel.t === t && S.sel.id === id;
+  const tree = GROUPS.map((g) => `<h3>${g.name}</h3>` + g.ids.map((pid) => {
+    const n = acc(pid);
+    return `<button data-act="sel" data-t="plugin" data-id="${pid}" data-key="sel-plugin-${pid}" aria-current="${cur('plugin', pid)}"><span class="mark" aria-hidden="true">${P[pid].mark}</span>${P[pid].name}<span class="n"><span class="dot ${pluginDot(pid)}" style="margin:0"></span></span></button>`
+      + n.map((a) => `<button class="sub" data-act="sel" data-t="acct" data-id="${a.id}" data-key="sel-acct-${a.id}" aria-current="${cur('acct', a.id)}">${esc(a.name)}${acctProblem(a) ? '<span class="n bad">!</span>' : ''}</button>`).join('');
+  }).join('')).join('') + `<h3>This page</h3><button data-act="sel" data-t="other" data-id="x" data-key="sel-other-x" aria-current="${cur('other', 'x')}">Other computers<span class="n">${S.forgeUp ? 'forge' : 'forge off'}</span></button>`;
+  let pane = '';
+  const back = `<button class="btn paneback" data-act="unsel" data-key="unsel">‹ Plugins</button>`;
+  if (!S.sel) pane = `<div class="pane"><h2 style="font-size:18px;font-weight:600">Choose a plugin</h2><p class="muted" style="margin-top:6px">Its accounts and what agents may do with them show here.</p></div>`;
+  else if (S.sel.t === 'other') pane = `<div class="pane">${back}<div class="pane__head"><h2>Other computers</h2></div>${otherComputers()}</div>`;
+  else if (S.sel.t === 'acct' && byId(S.sel.id)) { const a = byId(S.sel.id); pane = `<div class="pane">${back}<div class="pane__head"><span class="mark" aria-hidden="true">${P[a.plugin].mark}</span><h2>${esc(a.name)} <span class="muted small">${P[a.plugin].name}</span></h2></div>${detail(a, false)}</div>`; }
+  else { const pid = S.sel.id; const p = P[pid] || P.github; const n = acc(pid);
+    const inner = p.kind === 'gh' ? ghBlock() : p.kind === 'assistant' ? grokBlock()
+      : (S.adding === pid || !n.length ? addForm(pid) : `<ul class="use" style="margin-bottom:14px">${n.map((a) => `<li style="grid-template-columns:minmax(0,1fr) auto"><span><strong>${esc(a.name)}</strong> <span class="muted">${whereLine(a)} · ${projLine(a)}</span></span><button class="btn" data-act="sel" data-t="acct" data-id="${a.id}" aria-label="Open ${esc(a.name)}">Open</button></li>`).join('')}</ul><button class="btn" data-act="add" data-id="${pid}" data-key="add-${pid}">Add another ${p.name} account</button>`);
+    pane = `<div class="pane">${back}<div class="pane__head"><span class="mark" aria-hidden="true">${p.mark}</span><h2>${p.name}</h2></div><p class="muted" style="margin:-8px 0 16px">${p.blurb}</p>${inner}</div>`; }
+  return head() + `<div class="split ${S.sel ? 'has-sel' : ''}"><div class="split__list card tree" role="navigation" aria-label="Plugins and accounts">${tree}</div><div class="split__detail card">${pane}</div></div>`;
+}
+
+/* ---------- wiring ---------- */
+let V = (new URLSearchParams(location.search).get('variant') || 'a').toLowerCase();
+if (!VARIANTS.some((v) => v[0] === V)) V = 'a';
+const $ = (s) => document.querySelector(s);
+function render(focusKey) {
+  $('#page').innerHTML = V === 'a' ? vA() : V === 'b' ? vB() : vC();
+  $('#layer').innerHTML = V === 'b' ? layerB() : '';
+  const v = VARIANTS.find((x) => x[0] === V);
+  $('#lab').textContent = `${v[0].toUpperCase()} — ${v[1]}`;
+  document.title = `Plugins prototype — ${v[0].toUpperCase()}, ${v[1]}`;
+  let el = null;
+  const lay = $('#layer .dialog, #layer .sheet');
+  if (lay && !(focusKey && lay.querySelector(`[data-key="${focusKey}"]`))) el = focusKey === 'q' ? $('#q') : lay.querySelector('input, button:not(.x)') || lay.querySelector('button');
+  else if (focusKey) el = document.querySelector(`[data-key="${focusKey}"]`);
+  if (el) { el.focus({ preventScroll: false }); if (focusKey === 'q') el.setSelectionRange(el.value.length, el.value.length); }
+}
+function setVariant(d) { const i = VARIANTS.findIndex((v) => v[0] === V); V = VARIANTS[(i + d + VARIANTS.length) % VARIANTS.length][0]; const u = new URL(location.href); u.searchParams.set('variant', V); history.replaceState(null, '', u); scenario(S.scenario); render(); }
+function addAccount(pid, form) {
+  const p = P[pid]; const name = (form.querySelector('#f-name') || {}).value || (acc(pid).length ? 'Second' : p.kind === 'key' ? p.name : 'Personal');
+  const addr = (form.querySelector('#f-addr') || {}).value || (p.kind === 'mail' ? 'you@example.com' : p.kind === 'bridge' ? 'you@example.org' : undefined);
+  const id = 'n' + Date.now();
+  S.accounts.push({ id, plugin: pid, name, addr, on: true, forge: S.copyDefault ? (S.forgeUp ? 'sent' : 'waiting') : 'off', projects: null, ask: true, used: 0, limit: p.limit, last: 'not yet', saved: 'today', use: [] });
+  S.adding = null; S.open[pid] = true; S.detail = id;
+  if (V === 'b') S.sheet = { t: 'acct', id }; if (V === 'c') S.sel = { t: 'acct', id };
+  render(V === 'a' ? 'detail-' + id : V === 'c' ? 'sel-acct-' + id : null);
+}
+document.addEventListener('click', (e) => {
+  const t = e.target.closest('[data-act]'); if (!t) return;
+  const act = t.dataset.act; const id = t.dataset.id; const a = byId(id); const key = t.dataset.key;
+  if (act === 'close-layer') { if (t.classList.contains('layer') && e.target !== t) return; const back = S.sheet ? 'sheet-' + S.sheet.id : 'picker'; S.sheet = null; S.picker = false; S.adding = null; S.removing = null; S.q = ''; return render(back); }
+  if (t.tagName === 'A') e.preventDefault();
+  if (act === 'noop') return;
+  if (act === 'toggle') S.open[id] = !S.open[id];
+  if (act === 'detail') { S.detail = S.detail === id ? null : id; S.removing = null; }
+  if (act === 'on') a.on = !a.on;
+  if (act === 'ask') a.ask = !a.ask;
+  if (act === 'copy') a.forge = a.forge === 'off' ? (S.forgeUp ? 'sent' : 'waiting') : 'off';
+  if (act === 'copy-default' || act === 'copy-new') S.copyDefault = !S.copyDefault;
+  if (act === 'proj-all') a.projects = null;
+  if (act === 'proj') { const pr = t.dataset.p; const set = new Set(a.projects || []); set.has(pr) ? set.delete(pr) : set.add(pr); a.projects = set.size ? [...set] : null; }
+  if (act === 'add') { S.adding = id; if (V === 'c') S.sel = { t: 'plugin', id }; render(); const f = document.querySelector('.addform input'); if (f) f.focus(); return; }
+  if (act === 'add-cancel') S.adding = null;
+  if (act === 'remove') S.removing = id;
+  if (act === 'remove-no') S.removing = null;
+  if (act === 'remove-yes') { S.accounts = S.accounts.filter((x) => x.id !== id); S.removing = null; S.sheet = null; if (V === 'c') S.sel = { t: 'plugin', id: a.plugin }; return render(V === 'b' ? 'picker' : V === 'c' ? 'sel-plugin-' + a.plugin : 'toggle-' + a.plugin); }
+  if (act === 'gh-signin') S.gh.forge = true;
+  if (act === 'grok-pair') S.grok = 'pairing';
+  if (act === 'grok-paired') S.grok = 'paired';
+  if (act === 'grok-cancel' || act === 'grok-remove') S.grok = 'none';
+  if (act === 'picker') { S.picker = true; S.q = ''; return render('q'); }
+  if (act === 'pick') { S.picker = false; if (id === 'grokbot') { S.sheet = { t: 'plugin', id }; if (S.grok === 'none') S.grok = 'pairing'; } else S.adding = id; return render(); }
+  if (act === 'sheet') { S.sheet = { t: t.dataset.t, id }; return render(); }
+  if (act === 'sel') { S.sel = { t: t.dataset.t, id }; S.adding = null; S.removing = null; return render(`sel-${t.dataset.t}-${id}`); }
+  if (act === 'unsel') { const k = S.sel ? `sel-${S.sel.t}-${S.sel.id}` : null; S.sel = null; return render(k); }
+  render(key);
+});
+document.addEventListener('submit', (e) => { e.preventDefault(); const f = e.target.closest('[data-form]'); if (f) addAccount(f.dataset.form, f); });
+document.addEventListener('input', (e) => { if (e.target.id === 'q') { S.q = e.target.value; render('q'); } });
+document.addEventListener('keydown', (e) => {
+  const typing = e.target.matches('input, textarea, select, [contenteditable]');
+  if (e.key === 'Escape') {
+    if (S.picker || S.sheet || (V === 'b' && S.adding)) { const back = S.sheet ? 'sheet-' + S.sheet.id : 'picker'; S.picker = false; S.sheet = null; S.adding = null; S.removing = null; return render(back); }
+    if (S.removing) { const k = 'remove-' + S.removing; S.removing = null; return render(k); }
+    if (S.adding) { const k = 'add-' + S.adding; S.adding = null; return render(k); }
+    if (S.grok === 'pairing') { S.grok = 'none'; return render('grok-main'); }
+  }
+  if (typing) return;
+  if (e.key === 'ArrowLeft') setVariant(-1);
+  if (e.key === 'ArrowRight') setVariant(1);
+});
+$('#prev').onclick = () => setVariant(-1);
+$('#next').onclick = () => setVariant(1);
+$('#scn').onchange = (e) => { scenario(e.target.value); render(); };
+$('#theme').onclick = (e) => { const light = document.documentElement.dataset.theme === 'light'; document.documentElement.dataset.theme = light ? 'dark' : 'light'; e.target.textContent = light ? 'Light' : 'Dark'; };
+$('#size').onchange = (e) => { const w = $('#win'); if (e.target.value === 'fit') { w.classList.add('is-fit'); return; } w.classList.remove('is-fit'); const [x, y] = e.target.value.split('x'); w.style.setProperty('--w', x + 'px'); w.style.setProperty('--h', y + 'px'); };
+document.querySelectorAll('.rail a, .back').forEach((a) => a.addEventListener('click', (e) => e.preventDefault()));
+const sz = new URLSearchParams(location.search).get('size'); if (sz) { $('#size').value = sz; $('#size').onchange({ target: $('#size') }); }
+const first = new URLSearchParams(location.search).get('scenario');
+scenario(['few', 'empty', 'adding', 'wrong'].includes(first) ? first : 'few'); $('#scn').value = S.scenario;
+if (new URLSearchParams(location.search).get('theme') === 'light') $('#theme').click();
+render();
+</script>
+</body>
+</html>
