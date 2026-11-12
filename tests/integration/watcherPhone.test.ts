@@ -281,6 +281,21 @@ it('shows Watcher’s own question as a card on the phone and takes its answer a
   expect(await peer.call('again', answer)).toMatchObject({ ok: false, error: { code: 'stale_request' } })
 })
 
+it('offers Skip on Watcher’s own question on the phone and takes the phone’s skip as the user’s, with no choice (#2477)', async () => {
+  const f = await fixture(), peer = await f.pair()
+  const asked = await f.watcher.ask(f.target.threadId, { question: 'Run Owl build’s CI again?', options: [{ label: 'Run it again' }, { label: 'Leave it failed' }] }) as { questionId: string }
+  const requestId = watcherQuestionRequestId(asked.questionId)
+  expect(f.phone.state(true).needsYou).toEqual([expect.objectContaining({ request: expect.objectContaining({ id: requestId, skippable: true }) })])
+  f.canAnswer(true)
+  // What the iPhone sends for Skip on a skippable card: the card's own skip (SottoCore's Commands.swift).
+  const skip = { op: 'watcher-phone-answer', request: { target: f.target, command: { type: 'answer', threadId: f.target.threadId, requestId, answer: '', skipped: true } } }
+  expect(await peer.call('skip', skip)).toMatchObject({ ok: true, result: { status: 'ok' } })
+  expect(f.watcher.state().questions![0]).toMatchObject({ state: 'skipped' })
+  expect(f.watcher.state().questions![0]!.choice).toBeUndefined()
+  expect(f.workspace.adapters.codex.commands.filter(row => row.type === 'answer')).toHaveLength(0)
+  expect(f.phone.state(true).needsYou).toEqual([])
+})
+
 it('projects worker cards inside Watcher and routes the user answer to the worker under a freshly checked answers grant without takeover', async () => {
   const f = await fixture(), peer = await f.pair()
   await peer.call('send', f.send(peer.paired.clientId)); const worker = await f.start()

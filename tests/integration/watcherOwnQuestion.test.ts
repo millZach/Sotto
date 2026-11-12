@@ -102,6 +102,24 @@ it('tells Watcher the user’s own choice as news, once, and the card gives way 
   expect(f.service.state().questions![0]).toMatchObject({ choice: 'Run it again' })
 })
 
+it('tells Watcher the user skipped with no answer, once, and the card gives way to it (#2477)', async () => {
+  const f = await fixture()
+  const asked = await f.ask(RUN_AGAIN)
+  // The card's own skip, as the window and the phone send it for a skippable card.
+  expect((await f.control.commandShell({ type: 'answer', threadId: f.watcherId, requestId: watcherQuestionRequestId(asked.questionId), answer: '', skipped: true })).error).toBeNull()
+  expect(f.service.state().questions).toEqual([expect.objectContaining({ id: asked.questionId, state: 'skipped' })])
+  expect(f.service.state().questions![0]!.choice).toBeUndefined()
+  await vi.waitFor(() => expect(f.notes().join('\n')).toContain('The user skipped your question'), { timeout: 15_000 })
+  const told = f.notes().find(note => note.includes(asked.questionId))!
+  expect(told).toContain(JSON.stringify(RUN_AGAIN.question))
+  expect(told).toContain('gave no answer')
+  expect(told).toContain('Do not ask it again.')
+  expect(f.workspace.adapters.codex.commands.filter(command => command.type === 'answer')).toHaveLength(0)
+  // Nothing waits any more: neither a choice nor a second skip goes.
+  expect((await f.answer(asked.questionId, 1, 'Run it again')).error).toContain('no longer waits on you')
+  expect(f.service.state().questions![0]).toMatchObject({ state: 'skipped' })
+})
+
 it('takes only a choice the card offers', async () => {
   const f = await fixture()
   const asked = await f.ask(RUN_AGAIN)

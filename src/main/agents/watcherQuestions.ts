@@ -76,6 +76,16 @@ export class WatcherQuestions {
       return answered
     })
   }
+  /** The user skipped the question and gave no answer (#2477). Undefined when it no longer waits, so nothing is told twice. */
+  skip(id: string): Promise<WatcherQuestion | undefined> {
+    return this.inTurn(async () => {
+      const question = this.get(id)
+      if (!question || question.state !== 'open') return undefined
+      const skipped: WatcherQuestion = { ...question, state: 'skipped', endedAt: this.now() }
+      await this.replace(this.questions.map(item => item.id === id ? skipped : item))
+      return skipped
+    })
+  }
   /** A new Watcher took over: the last one's open questions close, and go in its handover. */
   close(watcherThreadId: string): Promise<WatcherQuestion[]> {
     return this.inTurn(async () => {

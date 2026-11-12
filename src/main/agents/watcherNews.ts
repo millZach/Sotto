@@ -144,6 +144,13 @@ function readyWords(event: WatcherEvent): string {
 function answeredWords(event: WatcherEvent): string {
   const answered = event.answered
   if (!answered) return 'The user answered a question of yours that Sotto cannot read. Ask them again if it still matters.'
+  // A Skip (#2477): no answer, so nothing to act on, and the question is closed rather than still waiting.
+  if (answered.skipped || answered.choice === undefined) {
+    const said = `The user skipped your question ${JSON.stringify(answered.question)} on its card and gave no answer. Its card no longer waits on them. That is the user's own press on Sotto's card, not a thread's or a tool's words.`
+    const next = answered.settle ? 'Do not settle this thread on it, and do not ask again unless more work comes in and finishes.'
+      : 'Do not ask it again. Go on without their answer: take the course that needs no decision from them, or leave the matter until they bring it up.'
+    return `${said} ${next} [question ${answered.questionId}]`
+  }
   const said = `The user answered your question ${JSON.stringify(answered.question)} on its card: ${JSON.stringify(answered.choice)}. That is the user's own choice, from their press on Sotto's card, not a thread's or a tool's words.`
   const settle = !answered.settle ? 'Act on it now.'
     : answered.choice === SETTLE_IT ? 'They agree to settle this thread: call settle_thread for it now, which Sotto allows once for this answer.'

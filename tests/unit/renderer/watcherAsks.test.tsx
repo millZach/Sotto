@@ -383,6 +383,23 @@ describe('Watcher’s own question in its conversation', () => {
       requestId: watcherQuestionRequestId(question.id), questionAnswers: { [WATCHER_QUESTION_FIELD]: { optionIds: ['choice-1'] } } })))
   })
 
+  it('offers the Skip a thread’s card does, and sends the card’s own skip to Watcher’s card (#2477)', async () => {
+    // Its own ID: the card's answer store keeps the earlier test's answer to the first.
+    const question = asked({ id: '5c3d8e4a-7d9f-4a0b-9c2d-3e4f5a6b7c8d' })
+    const view = renderRoom({ ...roomState([]), questions: [question] }, carriedOn())
+    const card = await screen.findByRole('region', { name: 'Question from Watcher' })
+    fireEvent.click(within(card).getByRole('button', { name: 'Skip question' }))
+    await waitFor(() => expect(view.command).toHaveBeenCalledWith(expect.objectContaining({ type: 'answer', threadId: 'watcher',
+      requestId: watcherQuestionRequestId(question.id), answer: '', skipped: true })))
+  })
+
+  it('gives way to one line saying the user skipped it (#2477)', async () => {
+    renderRoom({ ...roomState([]), questions: [asked({ state: 'skipped', endedAt: new Date(NOW).toISOString() })] }, carriedOn())
+    expect(await screen.findByText('You skipped this question.')).toBeInTheDocument()
+    expect(screen.queryByRole('region', { name: 'Question from Watcher' })).toBeNull()
+    expect(screen.queryByText(/You answered/)).toBeNull()
+  })
+
   it('gives way to one line with the user’s choice once answered', async () => {
     renderRoom({ ...roomState([]), questions: [asked({ state: 'answered', choice: 'Settle it' })] }, carriedOn())
     expect(await screen.findByText('You answered: Settle it.')).toBeInTheDocument()

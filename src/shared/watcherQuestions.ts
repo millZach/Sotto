@@ -37,11 +37,12 @@ export const watcherAskInputSchema = z.object({
 export type WatcherAskInput = z.infer<typeof watcherAskInputSchema>
 /** What the tool answers: the card is up, and the answer comes later as news. */
 export const watcherAskOutputSchema = z.object({ status: z.literal('ok'), questionId: z.uuid(), note: z.string().min(1).max(1_000) }).strict()
-export const WATCHER_ASK_NOTE = 'Sotto showed the user this question as a card in your conversation. Carry on with your work: their answer comes as news, in their own choice. Do not ask it again while its card waits.'
+export const WATCHER_ASK_NOTE = 'Sotto showed the user this question as a card in your conversation. Carry on with your work: their answer comes as news, in their own choice, or news that they skipped it. Do not ask it again while its card waits.'
 
 /**
  * One question of Watcher's: `open` while its card waits; `answered` with the user's choice, in the card's own words;
- * `closed` when a new Watcher took over before the user answered, and the question went in the handover.
+ * `skipped` when the user pressed Skip and gave no answer (#2477); `closed` when a new Watcher took over before the user
+ * answered, and the question went in the handover.
  */
 export const watcherQuestionSchema = z.object({
   id: z.uuid(),
@@ -50,10 +51,10 @@ export const watcherQuestionSchema = z.object({
   question: z.string().min(1).max(WATCHER_QUESTION_WORDS_MAX),
   options: z.array(optionSchema).min(2).max(4),
   settle: watcherThreadTargetSchema.optional(),
-  state: z.enum(['open', 'answered', 'closed']),
+  state: z.enum(['open', 'answered', 'skipped', 'closed']),
   /** The user's choice, the option's label. */
   choice: label.optional(),
-  /** When Watcher asked, which places the card after that turn; and when it was answered or closed. */
+  /** When Watcher asked, which places the card after that turn; and when it was answered, skipped or closed. */
   at: z.iso.datetime(),
   endedAt: z.iso.datetime().optional(),
   /** A Settle it that settle_thread has already used, so one answer agrees one settle. */
@@ -74,10 +75,11 @@ const optionId = (index: number): string => `choice-${index + 1}`
 
 /**
  * The card a question is drawn as, on the desktop and the phone: the ordinary question card, with one choice and no
- * written answer. The user can always write to Watcher in its message box instead.
+ * written answer. The user can always write to Watcher in its message box instead. It is `skippable` (#2477), so it offers
+ * the Skip a thread's card does (ADR-0135), and a skip reaches Watcher as news that the user gave no answer.
  */
 export function watcherQuestionRequest(question: Pick<WatcherQuestion, 'id' | 'question' | 'options' | 'at'>): AgentRequest {
-  return { id: watcherQuestionRequestId(question.id), kind: 'question', text: question.question, options: [], since: question.at,
+  return { id: watcherQuestionRequestId(question.id), kind: 'question', text: question.question, options: [], since: question.at, skippable: true,
     questions: [{ id: WATCHER_QUESTION_FIELD, question: question.question, multiSelect: false, allowFreeText: false,
       options: question.options.map((option, index) => ({ id: optionId(index), label: option.label, ...option.description ? { description: option.description } : {} })) }] }
 }
@@ -91,4 +93,9 @@ export function watcherQuestionChoice(question: Pick<WatcherQuestion, 'options'>
   }
   const words = answer.answer.trim().toLowerCase()
   return question.options.find(option => option.label.toLowerCase() === words)?.label
+}
+
+/** Whether an answer to a question's card is the user's Skip: the card's own skip, or its one question skipped (#2477). */
+export function watcherQuestionSkipped(answer: { readonly skipped?: true | undefined; readonly questionAnswers?: Readonly<Record<string, { readonly optionIds: readonly string[]; readonly skipped?: true | undefined }>> | undefined }): boolean {
+  return answer.skipped === true || answer.questionAnswers?.[WATCHER_QUESTION_FIELD]?.skipped === true
 }
