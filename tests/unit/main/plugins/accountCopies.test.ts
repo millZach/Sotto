@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -76,6 +76,31 @@ describe('a headless host’s account copies (ADR-0205, amending ADR-0025)', () 
     kept.state.failing = true
     await expect(copies.keep({ account: { ...WORK, on: false }, secret: OTHER })).resolves.toEqual({ kept: false, problem: 'store' })
     expect(await accounts().list()).toEqual([WORK])
+    expect([...kept.slots]).toEqual([[pluginAccountSlot(WORK.id), TOKEN]])
+  })
+
+  it('never changes who may use a copy it then says it did not keep, even when the record cannot be written or put back', async () => {
+    const { directory, kept, copies } = await host()
+    await copies.keep({ account: { ...WORK, projects: ['folder:one'] }, secret: TOKEN })
+    const before = await readFile(join(directory, 'plugin-accounts.json'), 'utf8')
+    // The record of accounts can no longer be written: a folder stands where the next one would be put.
+    await mkdir(join(directory, 'plugin-accounts.json.next', 'held'), { recursive: true })
+    // The desktop sends the account opened to every project, with a new secret.
+    await expect(copies.keep({ account: { ...WORK, projects: null }, secret: OTHER })).resolves.toEqual({ kept: false, problem: 'store' })
+    // On disk, where a restart reads it, the account is still kept to its project, and its secret is the one it had.
+    expect(await readFile(join(directory, 'plugin-accounts.json'), 'utf8')).toBe(before)
+    expect(JSON.parse(before)).toMatchObject({ accounts: [{ projects: ['folder:one'] }] })
+    expect([...kept.slots]).toEqual([[pluginAccountSlot(WORK.id), TOKEN]])
+    // The other way round: the secret cannot be kept, and by then the record cannot be written either, so nothing
+    // could be put back. The host says it kept nothing, so the record must not have moved: it holds who may use the
+    // account, and a restart reads it from disk.
+    await rm(join(directory, 'plugin-accounts.json.next'), { recursive: true })
+    kept.store.set = async () => {
+      await mkdir(join(directory, 'plugin-accounts.json.next', 'held'), { recursive: true })
+      throw new Error('The credential file could not be written.')
+    }
+    await expect(copies.keep({ account: { ...WORK, projects: null }, secret: OTHER })).resolves.toEqual({ kept: false, problem: 'store' })
+    expect(await readFile(join(directory, 'plugin-accounts.json'), 'utf8')).toBe(before)
     expect([...kept.slots]).toEqual([[pluginAccountSlot(WORK.id), TOKEN]])
   })
 
