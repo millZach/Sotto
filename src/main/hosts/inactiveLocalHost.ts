@@ -87,7 +87,7 @@ export async function inactiveLocalHost(directory: string,
     useBrowserTools: idle, useThreadTools: idle,
     // Git actions are wired at start whichever host runs. With no local threads there is nothing to guard or to refresh.
     setMutationGuard: idle, gitActionFinished: async () => undefined,
-    admitsVisuals: unavailable, addVisual: unavailable, admitsShownMedia: unavailable, showMedia: unavailable,
+    admitsVisuals: unavailable, addVisual: unavailable, admitsShownMedia: unavailable, showMedia: unavailable, admitsPluginTools: unavailable,
     admitsTellWatcher: unavailable, threadMessage: unavailable, threadMessages: unavailable, visual: unavailable,
     acquireTerminalStart: unavailable, setWorktreeInUse: idle, workingCopyOptions: unavailable, writeShortTextOn: unavailable,
     subagentPage: unavailable, subagentAssignments: unavailable, admitsBabysitting: unavailable,

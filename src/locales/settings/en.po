@@ -944,6 +944,10 @@ msgstr "A thread working when Sotto closes waits for your next message."
 msgid "A thread working when Sotto closes, for an update, a quit, a crash or a restart, carries on when Sotto opens again, with a short note from Sotto in the thread."
 msgstr "A thread working when Sotto closes, for an update, a quit, a crash or a restart, carries on when Sotto opens again, with a short note from Sotto in the thread."
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "A thread’s agent uses a plugin through Sotto’s tools. So far they only read, and reading never asks you."
+msgstr "A thread’s agent uses a plugin through Sotto’s tools. So far they only read, and reading never asks you."
+
 #. A systemd unit, the file that starts a service.
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "A unit"
@@ -3132,9 +3136,18 @@ msgstr "If nothing appears, allow Sotto in System Settings → Notifications."
 msgid "If you reset"
 msgstr "If you reset"
 
+#. placeholder {0}: use.threadTitle
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "in “{0}”"
+msgstr "in “{0}”"
+
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "In a thread"
 msgstr "In a thread"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "in a thread that is gone"
+msgstr "in a thread that is gone"
 
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
 msgid "In progress"
@@ -3239,6 +3252,10 @@ msgstr "Instructions saved."
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
 msgid "It could not be copied. Select it and copy it instead."
 msgstr "It could not be copied. Select it and copy it instead."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "It failed."
+msgstr "It failed."
 
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "It is waiting for your answer there."
@@ -3949,6 +3966,10 @@ msgstr "No speech models were returned."
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "No supported open-source themes found. Try a broader search."
 msgstr "No supported open-source themes found. Try a broader search."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "No thread has used {name} yet."
+msgstr "No thread has used {name} yet."
 
 #: src/renderer/src/features/settings/ClearThreadsSettings.tsx
 msgid "None of them can go yet."
@@ -4809,6 +4830,38 @@ msgstr "Reaching {name} over your tailnet…"
 msgid "Reaching {name}…"
 msgstr "Reaching {name}…"
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Read a repository"
+msgstr "Read a repository"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Read account details"
+msgstr "Read account details"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Read checks"
+msgstr "Read checks"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Read commits"
+msgstr "Read commits"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Read from {name}"
+msgstr "Read from {name}"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Read issues"
+msgstr "Read issues"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Read pull requests"
+msgstr "Read pull requests"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Read releases"
+msgstr "Read releases"
+
 #: src/renderer/src/features/settings/CloudIphoneSettings.tsx
 msgid "Reading Cloud iPhone status…"
 msgstr "Reading Cloud iPhone status…"
@@ -4845,6 +4898,10 @@ msgstr "Ready"
 #: src/renderer/src/features/settings/CloudIphoneSettings.tsx
 msgid "Recent sessions"
 msgstr "Recent sessions"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Recent use"
+msgstr "Recent use"
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Reconnect"
@@ -5271,6 +5328,10 @@ msgstr "Search transcripts"
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Search transcripts already uses {keys}. Pick other keys."
 msgstr "Search transcripts already uses {keys}. Pick other keys."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Searched {name}"
+msgstr "Searched {name}"
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Searching themes…"
@@ -5829,6 +5890,14 @@ msgstr "Sotto never fetches for threads, even before a Git action. Ahead and beh
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Sotto never fetches, even before a Git action. Ahead and behind use the last fetch."
 msgstr "Sotto never fetches, even before a Git action. Ahead and behind use the last fetch."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sotto records what was done and by which thread, never what was read."
+msgstr "Sotto records what was done and by which thread, never what was read."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sotto refused it."
+msgstr "Sotto refused it."
 
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "Sotto removed {name} from this computer but could not remove its start at boot unit there, so its host still starts when {name} restarts. To remove the unit, run this on {name}:"

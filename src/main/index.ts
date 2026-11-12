@@ -67,6 +67,10 @@ import { HostTailscale } from './hosts/tailscale'
 import { registerLocalAppsIpc, registerPhonesIpc } from './phones/ipc'
 import { registerPluginsIpc } from './plugins/ipc'
 import { readGitHubSignIn, sharedGitHubSignIn } from './plugins/github/signIn'
+import { readGitHub } from './plugins/github/read'
+import { PluginToolServer } from './plugins/pluginTools'
+import { PluginUseRecord } from './plugins/useRecord'
+import { PLUGIN_USE_THREAD_TITLE_MAX } from '../shared/plugins'
 import { resetGhLookup } from './agents/git/ghCommand'
 import { GitUnavailableError, runGitStatusCommand, runWithGhStandIn, type RunGitCommand } from './agents/git/gitStatus'
 import { registerTeamsIpc } from './teams/ipc'
@@ -1351,6 +1355,21 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   // stable offers no server.
   const mediaTools = owlFeatures['inline-media'] ? new MediaToolServer({ admits: threadId => agentHost.admitsShownMedia(threadId), show: (threadId, input) => agentHost.showMedia(threadId, input) }) : undefined
   if (mediaTools) quitHandles.mediaTools = mediaTools
+  // Plugins (ADR-0205): GitHub's account is gh's own sign-in, so the tools and Settings ask gh and store nothing. An
+  // end-to-end run asks its gh stand-in or nothing, never the real gh, which checks its sign-in over the network.
+  const pluginsGh: RunGitCommand = ghStandIn ? runWithGhStandIn(ghStandIn) : e2eConfiguration ? async () => { throw new GitUnavailableError('gh is not installed') } : runGitStatusCommand
+  const pluginsStop = new AbortController()
+  // Each read looks for gh afresh, so one installed since the last read is found by Check again where the system lets
+  // a running program see it, and reads asked for while one runs share it rather than starting gh again.
+  const pluginsGitHubSignIn = sharedGitHubSignIn(() => { resetGhLookup(); return readGitHubSignIn(pluginsGh, pluginsStop.signal) })
+  // What each plugin tool call did, by which thread, and never its content; it follows Keep local history.
+  const pluginUse = pluginsEnabled ? new PluginUseRecord(userDataPath, { historyEnabled: () => agentHistoryEnabled }) : undefined
+  // The plugin tools, for every thread that takes Sotto's tools: stable builds no server.
+  const pluginTools = pluginUse ? new PluginToolServer({
+    admits: threadId => agentHost.admitsPluginTools(threadId), gitHubSignIn: pluginsGitHubSignIn,
+    readGitHub: (path, query) => readGitHub(pluginsGh, path, query, pluginsStop.signal), record: use => pluginUse.add(use),
+  }) : undefined
+  if (pluginTools) quitHandles.pluginTools = pluginTools
   // Let an agent babysit its pull requests (ADR-0061): every Claude Code, Codex and Grok Build launch on this computer gets
   // the tool while the switch is on, read live; turned off, what agents started ends at once. Only the local host reads
   // GitHub for this computer's threads, so with it off no thread is offered the tool. Off at start, the runtime has
@@ -1402,7 +1421,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     read: (threadId, council) => councilService.readForThread(threadId, council),
   }) : undefined
   if (councilTools) quitHandles.councilTools = councilTools
-  agentHost.useThreadTools([hostSetupTools, visualTools, ...(mediaTools ? [mediaTools] : []), ...(pullRequestTools ? [pullRequestTools] : []), ...(delegationTools ? [delegationTools] : []), ...(tellTools ? [tellTools] : []),
+  agentHost.useThreadTools([hostSetupTools, visualTools, ...(mediaTools ? [mediaTools] : []), ...(pluginTools ? [pluginTools] : []), ...(pullRequestTools ? [pullRequestTools] : []), ...(delegationTools ? [delegationTools] : []), ...(tellTools ? [tellTools] : []),
     ...(councilTools ? [councilTools] : [])])
   // An interactive visual runs in a sealed page (ADR-0060): main serves it from this store, once per address. The session
   // and its proxy are set up the first time a page is asked for.
@@ -1503,6 +1522,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   // This computer's deleted threads take their answer drafts too, under either name the window gave them (ADR-0140).
   localRuntime?.agentControl.onThreadsDeleted(threadIds => {
     const hostId = agentControl.hostId()
+    // A forgotten thread takes its entries in the plugin use record with it (ADR-0205).
+    void pluginUse?.forgetThreads(threadIds).catch(() => undefined)
     void requestDrafts.forgetThreads(new Set(threadIds.flatMap(id => [id, hostEntityKey(hostId, id)]))).catch(() => undefined)
     // And what their Settles did to delegated threads elsewhere, whether the window, Clear now, the hourly clear or a phone
     // deleted them (#1316 part 3).
@@ -1534,17 +1555,21 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const cleanRetiredHistory = async (): Promise<void> => {
     teams?.privacyChanged()
     delegationService?.privacyChanged()
-    const [chats, answers, remoteDrafts] = await Promise.allSettled([
+    const [chats, answers, remoteDrafts, pluginUses] = await Promise.allSettled([
       Promise.resolve().then(() => retiredChatHistory.privacyChanged()),
       Promise.resolve().then(() => requestDrafts.privacyChanged(agentHistoryEnabled)),
       Promise.resolve().then(() => retainedDrafts.privacyChanged()),
+      // With Keep local history off, the plugin use record keeps nothing (ADR-0205).
+      Promise.resolve().then(() => agentHistoryEnabled ? undefined : pluginUse?.clear()),
     ])
     if (chats.status === 'rejected') recoveryNotices.publish({ code: 'RETIRED_CHAT_HISTORY_NOT_CLEARED' })
     if (answers.status === 'rejected') recoveryNotices.publish({ code: 'ANSWER_HISTORY_NOT_CLEARED' })
     if (remoteDrafts.status === 'rejected') recoveryNotices.publish({ code: 'REMOTE_DRAFT_STORAGE_NOT_UPDATED' })
+    if (pluginUses.status === 'rejected') recoveryNotices.publish({ code: 'PLUGIN_USE_NOT_CLEARED' })
     if (chats.status === 'rejected') throw chats.reason
     if (answers.status === 'rejected') throw answers.reason
     if (remoteDrafts.status === 'rejected') throw remoteDrafts.reason
+    if (pluginUses.status === 'rejected') throw pluginUses.reason
   }
   // Retired records never start a provider. Apply the saved privacy preference once,
   // and keep startup available when inaccessible storage needs a later Settings retry.
@@ -2629,14 +2654,18 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       const cleanupPhones = registerPhonesIpc(ipcMain, phoneAccess, () => windows.getTrustedRenderers(), state => windows.sendToMain(PHONES_CHANGED, state))
       const cleanupTeams = teams ? registerTeamsIpc(ipcMain, teams, () => windows.getTrustedRenderers(), state => windows.sendToMain(TEAMS_CHANGED, state)) : undefined
       const cleanupLocalApps = localApps ? registerLocalAppsIpc(ipcMain, localApps, () => windows.getTrustedRenderers(), state => windows.sendToMain(LOCAL_APPS_CHANGED, state)) : undefined
-      // Settings › Plugins (ADR-0205): GitHub's account is gh's own sign-in, read when the page asks. An end-to-end run
-      // asks its gh stand-in or nothing, never the real gh, which checks its sign-in over the network.
-      const pluginsGh: RunGitCommand = ghStandIn ? runWithGhStandIn(ghStandIn) : e2eConfiguration ? async () => { throw new GitUnavailableError('gh is not installed') } : runGitStatusCommand
-      const pluginsStop = new AbortController()
-      // Each read looks for gh afresh, so one installed since the last read is found by Check again where the system lets
-      // a running program see it, and reads asked for while one runs share it rather than starting gh again.
-      const pluginsGitHubSignIn = sharedGitHubSignIn(() => { resetGhLookup(); return readGitHubSignIn(pluginsGh, pluginsStop.signal) })
-      const cleanupPlugins = pluginsEnabled ? registerPluginsIpc(ipcMain, { gitHubSignIn: pluginsGitHubSignIn }, () => windows.getTrustedRenderers()) : undefined
+      // Settings › Plugins (ADR-0205): gh's sign-in, read when the page asks, and the newest uses with each thread's name
+      // as it is now. A thread that is gone has none.
+      const cleanupPlugins = pluginsEnabled ? registerPluginsIpc(ipcMain, {
+        gitHubSignIn: pluginsGitHubSignIn,
+        recentUse: async () => {
+          const uses = await pluginUse?.list() ?? []
+          if (uses.length === 0) return []
+          // Read where the state is, without the copy `get()` makes of every thread's history.
+          const titles = new Map(localRuntime?.agentControl.watcherSnapshot().threads.map(thread => [thread.id, thread.title]))
+          return uses.map(use => ({ ...use, threadTitle: titles.get(use.threadId)?.slice(0, PLUGIN_USE_THREAD_TITLE_MAX) ?? null }))
+        },
+      }, () => windows.getTrustedRenderers()) : undefined
       // The window plays a video an agent wrote from its thread's computer, a part at a time (ADR-0170, part 4).
       if (owlFeatures['inline-media']) session.defaultSession.protocol.handle(THREAD_MEDIA_SCHEME, request => threadVideoResponse(request, part => hostRouter.threadMediaPart(part)))
       const cleanupAgents = registerAgentIpc(ipcMain, hostRouter, hostRouter, () => trustedRenderers(), { encodeReceipt: agentStateBroadcaster.encodeReceipt, encodeChangedThreadRecordsReceipt: agentStateBroadcaster.encodeChangedThreadRecordsReceipt, windowRead: agentStateBroadcaster.windowRead,
