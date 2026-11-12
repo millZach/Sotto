@@ -70,6 +70,11 @@ import { readGitHubSignIn, sharedGitHubSignIn } from './plugins/github/signIn'
 import { readGitHub } from './plugins/github/read'
 import { PluginToolServer } from './plugins/pluginTools'
 import { PluginAccounts, PluginSecretLocked } from './plugins/accounts'
+import { PluginChangeRequests } from './plugins/pendingChanges'
+import { wordPluginChange } from './plugins/changeWords'
+import { commentOnGitHub } from './plugins/github/changes'
+import { cancelVercelDeployment, describeVercelDeployment } from './plugins/vercel/changes'
+import { combinedSottoRequests } from './agents/sottoRequests'
 import { checkVercelToken, readVercel, type VercelFetch } from './plugins/vercel/read'
 import { PluginUseRecord } from './plugins/useRecord'
 import { PLUGIN_USE_THREAD_TITLE_MAX } from '../shared/plugins'
@@ -276,7 +281,7 @@ import {
   isTrustedMainE2ESender,
   snapshotE2EState,
 } from './e2e/e2eBoundary'
-import { E2E_COMPUTER_NAME, E2E_SNAPSHOT_CHANNEL, E2E_TRIGGER_SHORTCUT_CHANNEL, E2E_BROWSER_AGENT_CHANNEL, E2E_HOST_SETUP_TOOL_CHANNEL, E2E_VISUAL_TOOL_CHANNEL, E2E_MEDIA_TOOL_CHANNEL, E2E_DELEGATION_TOOL_CHANNEL, e2eBrowserAgentSchema, e2eHostSetupToolSchema, e2eVisualToolSchema, e2eDelegationToolSchema, e2eAgentEventSchema } from '../shared/e2e'
+import { E2E_COMPUTER_NAME, E2E_SNAPSHOT_CHANNEL, E2E_TRIGGER_SHORTCUT_CHANNEL, E2E_BROWSER_AGENT_CHANNEL, E2E_HOST_SETUP_TOOL_CHANNEL, E2E_VISUAL_TOOL_CHANNEL, E2E_MEDIA_TOOL_CHANNEL, E2E_DELEGATION_TOOL_CHANNEL, E2E_PLUGIN_TOOL_CHANNEL, e2eBrowserAgentSchema, e2eHostSetupToolSchema, e2eVisualToolSchema, e2eDelegationToolSchema, e2ePluginToolSchema, e2eAgentEventSchema } from '../shared/e2e'
 import { AGENT_STATE, AGENT_E2E, AGENT_THREAD_DETAIL } from '../shared/agents'
 import { AgentCredentials } from './agents/credentials'
 import { migrateDesktopKey } from './settings/migrateDesktopKey'
@@ -1373,6 +1378,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const vercelOptions = { ...(vercelBase ? { base: vercelBase } : {}), signal: pluginsStop.signal }
   // Plugin accounts: a name, a plugin and a secret in the credential store, checked with its service before it is kept.
   const pluginAccounts = pluginsEnabled ? new PluginAccounts(userDataPath, { credentials, check: (_plugin, secret) => checkVercelToken(vercelFetch, secret, vercelOptions) }) : undefined
+  // Plugin changes waiting on the user: each is one of Sotto's own requests in its thread, answered there (ADR-0205).
+  const pluginChanges = pluginsEnabled ? new PluginChangeRequests() : undefined
   // The plugin tools, for every thread that takes Sotto's tools: stable builds no server.
   const pluginTools = pluginUse && pluginAccounts ? new PluginToolServer({
     admits: threadId => agentHost.admitsPluginTools(threadId), gitHubSignIn: pluginsGitHubSignIn,
@@ -1385,6 +1392,24 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         throw error
       }
       return readVercel(vercelFetch, secret, path, query, vercelOptions)
+    },
+    // A thread Sotto does not know is taken for Watcher: it changes nothing.
+    isWatcher: threadId => {
+      const thread = agentControl.watcherSnapshot().threads.find(item => item.id === threadId)
+      return thread === undefined || thread.kind === 'watcher' || thread.kind === 'watcher-history'
+    },
+    askChange: async (threadId, change) => await pluginChanges?.ask(threadId, wordPluginChange(change)) ?? 'stopped',
+    commentOnGitHub: input => commentOnGitHub(pluginsGh, input, pluginsStop.signal),
+    // The deployment is read for its card with the account's token; one that cannot be read shows its ID alone.
+    describeVercelDeployment: async (accountId, deploymentId, teamId) => {
+      let secret: string
+      try { secret = pluginAccounts.secret(accountId) } catch { return {} }
+      return describeVercelDeployment(vercelFetch, secret, deploymentId, teamId, vercelOptions)
+    },
+    cancelVercelDeployment: async (accountId, deploymentId, teamId) => {
+      let secret: string
+      try { secret = pluginAccounts.secret(accountId) } catch { return { ok: false, reason: 'no-secret' } }
+      return cancelVercelDeployment(vercelFetch, secret, deploymentId, teamId, vercelOptions)
     },
   }) : undefined
   if (pluginTools) quitHandles.pluginTools = pluginTools
@@ -1459,7 +1484,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     preloadDirectory: join(__dirname, '../preload'), fontCss: FIGTREE_FONT_FACES,
   })
   app.on('will-quit', disposeVisualSandbox)
-  agentControl.useSottoRequests(hostSetupRequests(hostSetup))
+  // Sotto's own requests in a thread: host setup's, and a plugin change waiting on the user (ADR-0205).
+  agentControl.useSottoRequests(pluginChanges ? combinedSottoRequests([hostSetupRequests(hostSetup), pluginChanges]) : hostSetupRequests(hostSetup))
   desktopHosts.useSetup(hostSetup)
   desktopHosts.useProviderJob(providerJobs)
   const busyThreads = routerBusyThreads(hostRouter)
@@ -1542,6 +1568,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     const hostId = agentControl.hostId()
     // A forgotten thread takes its entries in the plugin use record with it (ADR-0205).
     void pluginUse?.forgetThreads(threadIds).catch(() => undefined)
+    // And any change of theirs still waiting on the user stops: nothing is done for a thread that is gone.
+    pluginChanges?.forgetThreads(threadIds)
     void requestDrafts.forgetThreads(new Set(threadIds.flatMap(id => [id, hostEntityKey(hostId, id)]))).catch(() => undefined)
     // And what their Settles did to delegated threads elsewhere, whether the window, Clear now, the hourly clear or a phone
     // deleted them (#1316 part 3).
@@ -2845,6 +2873,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         cleanupTeams?.()
         cleanupLocalApps?.()
         pluginsStop.abort()
+        pluginChanges?.close()
         cleanupPlugins?.()
         checkpointIntegration.dispose()
         cleanupRequestDrafts()
@@ -2919,6 +2948,13 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         if (!delegationTools) throw new Error('Delegation is off in this build.')
         // As a provider's call does, the tool hears the Sotto thread, never the window's host-qualified ID.
         return delegationTools.call(parseHostEntityKey(request.threadId)?.id ?? request.threadId, request.name, request.arguments)
+      })
+      ipcMain.handle(E2E_PLUGIN_TOOL_CHANNEL, (event, payload: unknown) => {
+        if (!isAuthorizedIpcSender(event, windows.getTrustedRenderers(), ['main'])) throw new Error('E2E_SENDER_REJECTED')
+        const request = e2ePluginToolSchema.parse(payload)
+        if (!pluginTools) throw new Error('Plugins are off in this build.')
+        // As a provider's call does, the tool hears the Sotto thread, and a change still waits for the user's answer in it.
+        return pluginTools.call(parseHostEntityKey(request.threadId)?.id ?? request.threadId, request.name, request.arguments)
       })
       ipcMain.handle(AGENT_E2E, (event, payload: unknown) => {
         if (!isTrustedMainE2ESender(event.sender, windows.getTrustedRenderers())) throw new Error('E2E_SENDER_REJECTED')

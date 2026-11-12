@@ -949,8 +949,8 @@ msgid "A thread working when Sotto closes, for an update, a quit, a crash or a r
 msgstr "A thread working when Sotto closes, for an update, a quit, a crash or a restart, carries on when Sotto opens again, with a short note from Sotto in the thread."
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
-msgid "A thread’s agent uses a plugin through Sotto’s tools and never holds its secret. So far the tools only read, and reading never asks you."
-msgstr "A thread’s agent uses a plugin through Sotto’s tools and never holds its secret. So far the tools only read, and reading never asks you."
+msgid "A thread’s agent uses a plugin through Sotto’s tools and never holds its secret. Reading never asks you. A change, such as posting a comment, asks you first in its thread, each time."
+msgstr "A thread’s agent uses a plugin through Sotto’s tools and never holds its secret. Reading never asks you. A change, such as posting a comment, asks you first in its thread, each time."
 
 #. A systemd unit, the file that starts a service.
 #: src/renderer/src/features/settings/HostBootStart.tsx
@@ -1312,6 +1312,14 @@ msgid "Ask about your threads, or say what to start or send"
 msgstr "Ask about your threads, or say what to start or send"
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Asked to cancel a deployment’s build"
+msgstr "Asked to cancel a deployment’s build"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Asked to post a comment"
+msgstr "Asked to post a comment"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Asking gh who is signed in…"
 msgstr "Asking gh who is signed in…"
 
@@ -1519,6 +1527,10 @@ msgstr "Cancel, and leave {name}’s host as it is"
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "Cancel, and leave start at boot on {name} as it is"
 msgstr "Cancel, and leave start at boot on {name} as it is"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Cancelled a deployment’s build"
+msgstr "Cancelled a deployment’s build"
 
 #. Goes back to change which host to add.
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
@@ -4012,6 +4024,10 @@ msgstr "No supported open-source themes found. Try a broader search."
 msgid "No thread has used {name} yet."
 msgstr "No thread has used {name} yet."
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Nobody answered in time."
+msgstr "Nobody answered in time."
+
 #: src/renderer/src/features/settings/ClearThreadsSettings.tsx
 msgid "None of them can go yet."
 msgstr "None of them can go yet."
@@ -4709,6 +4725,10 @@ msgstr "port {port}, user from your SSH configuration"
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "Port <0>(optional)</0>"
 msgstr "Port <0>(optional)</0>"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Posted a comment"
+msgstr "Posted a comment"
 
 #: src/renderer/src/features/settings/AgentAccountSettings.tsx
 msgid "Preparing agent configuration…"
@@ -5998,8 +6018,8 @@ msgid "Sotto never fetches, even before a Git action. Ahead and behind use the l
 msgstr "Sotto never fetches, even before a Git action. Ahead and behind use the last fetch."
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
-msgid "Sotto records what was done and by which thread, never what was read."
-msgstr "Sotto records what was done and by which thread, never what was read."
+msgid "Sotto records what was done and by which thread, never what was read or sent."
+msgstr "Sotto records what was done and by which thread, never what was read or sent."
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Sotto refused it."
@@ -8153,6 +8173,14 @@ msgstr "Worktrees, commits, pull requests, Changes & fetching"
 msgid "Yes. The controls now sit in three short cards, beside a preview."
 msgstr "Yes. The controls now sit in three short cards, beside a preview."
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "You allowed it, and it failed."
+msgstr "You allowed it, and it failed."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "You allowed it."
+msgstr "You allowed it."
+
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "You are on the newest release."
 msgstr "You are on the newest release."
@@ -8160,6 +8188,10 @@ msgstr "You are on the newest release."
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
 msgid "You can bring it back anytime by importing its JSON file."
 msgstr "You can bring it back anytime by importing its JSON file."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "You said no."
+msgstr "You said no."
 
 #. Stands in for the name of the user's account on a host, as in "a systemd user unit for {who}".
 #: src/renderer/src/features/settings/HostBootStart.tsx

@@ -59,18 +59,27 @@ export interface PluginsBridge {
 export const PLUGINS_MCP_SERVER = 'sotto_plugins'
 export const PLUGIN_ACCOUNTS_TOOL = 'plugin_accounts'
 export const PLUGIN_READ_TOOL = 'plugin_read'
+/** The named tools that change something (ADR-0205, decision 6): each asks the user before anything is sent. */
+export const GITHUB_COMMENT_TOOL = 'github_comment'
+export const VERCEL_CANCEL_TOOL = 'vercel_cancel_deployment'
+export const PLUGIN_CHANGE_TOOLS = [GITHUB_COMMENT_TOOL, VERCEL_CANCEL_TOOL] as const
+export type PluginChangeTool = typeof PLUGIN_CHANGE_TOOLS[number]
 
 export const PLUGINS_RECENT_USE = 'sotto:plugins:recent-use'
 
 /**
- * What a read was of, as far as the record keeps it: a kind of thing, never which one. A repository's name, an
- * issue's number and what the read returned are the user's own and stay out of the record (ADR-0205, decision 10).
+ * What a use was of, as far as the record keeps it: a kind of thing read or changed, never which one. A repository's
+ * name, an issue's number, a comment's words and what a read returned are the user's own and stay out of the record
+ * (ADR-0205, decision 10). The last two are changes: a comment posted, and a deployment's build cancelled.
  */
-export const PLUGIN_READ_KINDS = ['issues', 'pull-requests', 'repository', 'commits', 'checks', 'releases', 'search', 'account', 'deployments', 'projects', 'domains', 'logs', 'other'] as const
+export const PLUGIN_READ_KINDS = ['issues', 'pull-requests', 'repository', 'commits', 'checks', 'releases', 'search', 'account', 'deployments', 'projects', 'domains', 'logs', 'other', 'comment', 'deployment-cancel'] as const
 export type PluginReadKind = typeof PLUGIN_READ_KINDS[number]
 
-/** How a use ended: done, refused by Sotto before anything was sent, or failed at the service. */
-export const PLUGIN_USE_OUTCOMES = ['done', 'refused', 'failed'] as const
+/**
+ * How a use ended: done, refused by Sotto before anything was sent, or failed at the service. A change can also end
+ * with the user saying no (`denied`) or with nobody answering its card in time (`lapsed`); nothing was sent for either.
+ */
+export const PLUGIN_USE_OUTCOMES = ['done', 'refused', 'failed', 'denied', 'lapsed'] as const
 
 /** One entry of the plugin use record: the thread, the plugin, what was done and how it ended. Never its content. */
 export const pluginUseSchema = z.object({
@@ -80,7 +89,7 @@ export const pluginUseSchema = z.object({
   plugin: z.enum(PLUGIN_IDS),
   /** The plugin account the use was through, by Sotto's own ID. None for GitHub, whose account is gh's sign-in. */
   accountId: z.uuid().optional(),
-  tool: z.enum([PLUGIN_READ_TOOL]),
+  tool: z.enum([PLUGIN_READ_TOOL, ...PLUGIN_CHANGE_TOOLS]),
   kind: z.enum(PLUGIN_READ_KINDS),
   outcome: z.enum(PLUGIN_USE_OUTCOMES),
 }).strict()
@@ -151,3 +160,19 @@ export const pluginAccountResultSchema = z.discriminatedUnion('ok', [
   z.object({ ok: z.literal(false), problem: z.enum(PLUGIN_ACCOUNT_PROBLEMS) }).strict(),
 ])
 export type PluginAccountResult = z.infer<typeof pluginAccountResultSchema>
+
+/**
+ * A plugin change as its tool asked for it, for the card that asks the user first (ADR-0205, decision 7). The card is
+ * worded from this, so it says in plain words what will happen and shows everything that will be sent.
+ */
+export type PluginChange =
+  | {
+    readonly kind: 'github-comment'; readonly owner: string; readonly repo: string; readonly number: number; readonly body: string
+    /** Who gh is signed in to github.com as, where it said: the account the comment is posted as. */
+    readonly account?: string
+  }
+  | {
+    readonly kind: 'vercel-cancel'; readonly account: string; readonly deploymentId: string
+    /** What Vercel says of the deployment, read before asking, where it said: none of it is taken on trust for the call. */
+    readonly project?: string; readonly target?: string; readonly url?: string; readonly state?: string
+  }

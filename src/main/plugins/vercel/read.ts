@@ -3,7 +3,7 @@ import type { SecretCheck } from '../accounts'
 
 /** Vercel's REST API. An account's token goes to this origin and to no other. */
 export const VERCEL_API = 'https://api.vercel.com'
-const TIMEOUT_MS = 30_000
+export const TIMEOUT_MS = 30_000
 /** The most of an answer handed to an agent. A longer one is cut and says so, so the agent asks for less. */
 export const VERCEL_READ_MAX_CHARS = 200_000
 /** The largest answer read at all: it has to be read whole to take the secrets out of it. */
@@ -47,7 +47,7 @@ export type VercelRead =
   | { readonly ok: false; readonly reason: VercelReadRefusal | 'no-secret' | 'locked' | 'refused' | 'unreachable' | 'failed'; readonly said?: string }
 
 /** How this module reaches the network: Node's `fetch`, or a stand-in. */
-export type VercelFetch = (url: string, init: { readonly method: 'GET'; readonly headers: Readonly<Record<string, string>>; readonly redirect: 'manual'; readonly signal: AbortSignal }) => Promise<Response>
+export type VercelFetch = (url: string, init: { readonly method: 'GET' | 'PATCH'; readonly headers: Readonly<Record<string, string>>; readonly redirect: 'manual'; readonly signal: AbortSignal }) => Promise<Response>
 
 /** A path's parts as Vercel will read them, in lower case. Null for a path this tool does not read. */
 function readParts(path: string): string[] | null {
@@ -87,7 +87,7 @@ export function withoutSecrets(value: unknown): unknown {
 }
 
 /** The address a read goes to: always on Vercel's API, whatever the path and query hold. */
-function addressOf(base: string, path: string, query: Readonly<Record<string, string>>): string | null {
+export function addressOf(base: string, path: string, query: Readonly<Record<string, string>>): string | null {
   const origin = new URL(base).origin
   const url = new URL(`${origin}/${path}`)
   for (const [key, value] of Object.entries(query)) url.searchParams.append(key, value)
@@ -95,7 +95,7 @@ function addressOf(base: string, path: string, query: Readonly<Record<string, st
 }
 
 /** Reads an answer's text, giving up past the size Sotto will take apart. */
-async function bodyOf(response: Response): Promise<string | null> {
+export async function bodyOf(response: Response): Promise<string | null> {
   const length = Number(response.headers.get('content-length') ?? '0')
   if (Number.isFinite(length) && length > BODY_MAX_BYTES) return null
   const bytes = new Uint8Array(await response.arrayBuffer())
@@ -106,7 +106,7 @@ async function bodyOf(response: Response): Promise<string | null> {
  * What Vercel said went wrong, for the agent that asked: the status, and Vercel's short code for the error when it
  * is one. Never its message, which is free text a service could put anything in, the request's own token included.
  */
-function saidBy(status: number, body: string | null): string {
+export function saidBy(status: number, body: string | null): string {
   try {
     const code = (JSON.parse(body ?? '') as { error?: { code?: unknown } }).error?.code
     if (typeof code === 'string' && /^[a-z][a-z_]{0,39}$/u.test(code)) return `${code} (HTTP ${status})`
@@ -115,7 +115,7 @@ function saidBy(status: number, body: string | null): string {
 }
 
 /** Text with the token taken out of it, wherever a service put it: nothing handed to an agent may carry the token it was read with. */
-const withoutToken = (text: string, token: string): string => token ? text.split(token).join(REMOVED) : text
+export const withoutToken = (text: string, token: string): string => token ? text.split(token).join(REMOVED) : text
 
 /**
  * Reads from Vercel's REST API with an account's token (ADR-0205): a GET to api.vercel.com and nothing else. The path
