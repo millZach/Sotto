@@ -42,6 +42,34 @@ final class PhoneBenchTests: XCTestCase {
         XCTAssertEqual(next.host.threads.dropFirst().map(\.id), first.host.threads.dropFirst().map(\.id))
     }
 
+    func testAListPushTheSizeAHostSendsIsReadAndShowsNothingNew() async throws {
+        for part in BenchWire.hostParts {
+            XCTAssertEqual(BenchWire.hostPart(part.name, bytes: part.bytes, now: now).utf8.count, part.bytes, part.name)
+        }
+        let sized = BenchWire.hostSizedState(state, now: now)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: sized) as? [String: Any])
+        XCTAssertTrue(Set(object.keys).isSuperset(of: BenchWire.hostParts.map { $0.name }))
+        var cache = ThreadRecordsCache()
+        let full = try await shell(BenchWire.shellFrame(state: state, revision: 1, base: nil, changed: BenchWire.threadRecords(count: 300, hostID: host, now: now)))
+        _ = try XCTUnwrap(cache.whole(full))
+        let frame = BenchWire.shellFrame(state: sized, revision: 2, base: 1, changed: [BenchWire.longThreadRecord(hostID: host, now: now)])
+        // forge's host sent a phone 208,925 bytes; the rest is its projects, providers and settings, kept as the laptop's.
+        XCTAssertGreaterThan(frame.count, 195_000)
+        XCTAssertLessThan(frame.count, 209_000)
+        let read = try await shell(frame)
+        XCTAssertEqual(read.deliveries?.count, 128)
+        XCTAssertEqual(read.deliveredDrafts?.count, 128)
+        XCTAssertEqual(read.followupReceipts?.count, 79)
+        XCTAssertEqual(read.deliveries?.allSatisfy { $0.status == "accepted" && $0.setAside == nil }, true)
+        let whole = try XCTUnwrap(cache.whole(read))
+        XCTAssertEqual(whole.host.threads.count, 300)
+        XCTAssertNoThrow(try whole.validate(hostID: host))
+        // None of the threads the ledgers name is on the list, so no thread's reply box or queue reads them.
+        let listed = Set(whole.host.threads.map(\.id))
+        let named = (read.deliveries ?? []).map(\.threadId) + (read.deliveredDrafts ?? []).map(\.threadId) + (read.followupReceipts ?? []).map(\.threadId)
+        XCTAssertTrue(named.allSatisfy { !listed.contains($0) })
+    }
+
     func testTheLongThreadAndItsStreamAreRead() async throws {
         var long = try await detail(BenchWire.longDetailFrame(turns: 200, now: now))
         XCTAssertEqual(long.messages.count, 402)
@@ -59,6 +87,35 @@ final class PhoneBenchTests: XCTestCase {
         XCTAssertEqual(streamed.count, 11)
         XCTAssertEqual(streamed.filter { $0.status == "running" }.map(\.id), ["bench-step-stream-10"])
         XCTAssertEqual(ThreadTimeline.items(messages: long.messages, activities: long.activities ?? []).isEmpty, false)
+    }
+
+    func testTheIdlePhasesLeaveOneThreadWorkingThenNone() async throws {
+        func working(_ shell: Shell) -> [String] { shell.host.threads.filter { ThreadState($0).workInProgress }.map(\.id) }
+        var cache = ThreadRecordsCache()
+        let full = try await shell(BenchWire.shellFrame(state: state, revision: 1, base: nil, changed: BenchWire.threadRecords(count: 300, hostID: host, now: now)))
+        let first = try XCTUnwrap(cache.whole(full))
+        XCTAssertEqual(working(first).count, 8)
+        // `idle-list`: one list push settles the other seven, and the long thread works alone.
+        let others = try await shell(BenchWire.shellFrame(state: state, revision: 2, base: 1, changed: BenchWire.othersSettled(count: 300, hostID: host, now: now)))
+        let alone = try XCTUnwrap(cache.whole(others))
+        XCTAssertEqual(alone.host.threads.count, 300)
+        XCTAssertEqual(working(alone), [BenchWire.longThreadID])
+        // `idle-thread`: after a stream, the turn ends with its last step finished and its record settled.
+        var long = try await detail(BenchWire.longDetailFrame(turns: 200, now: now))
+        let start = BenchWire.streamStepSequence(turns: 200)
+        for chunk in 1...200 {
+            let change = try await delta(BenchWire.deltaFrame(chunk: chunk, revision: long.revision, firstSequence: start, now: now))
+            long = try XCTUnwrap(long.applying(change), "Chunk \(chunk) must apply")
+        }
+        let running = (long.activities ?? []).filter { $0.status == "running" }
+        XCTAssertEqual(running.map(\.id), ["bench-step-stream-10"])
+        let end = try await delta(BenchWire.endTurnFrame(finishing: running, revision: long.revision, now: now))
+        long = try XCTUnwrap(long.applying(end), "The turn's end must apply")
+        XCTAssertEqual((long.activities ?? []).filter { $0.status == "running" }.count, 0)
+        XCTAssertEqual((long.activities ?? []).filter { $0.id.hasPrefix("bench-step-stream") }.count, 11)
+        let settled = try await shell(BenchWire.shellFrame(state: state, revision: 3, base: 2, changed: [BenchWire.longThreadRecord(hostID: host, now: now, running: false)]))
+        let none = try XCTUnwrap(cache.whole(settled))
+        XCTAssertEqual(working(none), [])
     }
 
     // MARK: Timings, with SOTTO_IOS_BENCH=1
@@ -87,9 +144,12 @@ final class PhoneBenchTests: XCTestCase {
         let fullShell = try await shell(full)
         let held = try XCTUnwrap(cache.whole(fullShell))
         var revision = 1
-        let one = { (revision: Int) in BenchWire.shellFrame(state: self.state, revision: revision + 1, base: revision, changed: [BenchWire.longThreadRecord(hostID: self.host, now: self.now)]) }
-        report("shell-changed.bytes", Double(one(1).count), "B")
-        report("shell-changed.read", try await timed { _ = cache.whole(try await self.shell(one(revision))); revision += 1 }, "ms")
+        // The same push both times, the second with what a running host sends whole beside the record (#2390).
+        for (name, pushed) in [("shell-changed", state), ("shell-real", BenchWire.hostSizedState(state, now: now))] {
+            let one = { (revision: Int) in BenchWire.shellFrame(state: pushed, revision: revision + 1, base: revision, changed: [BenchWire.longThreadRecord(hostID: self.host, now: self.now)]) }
+            report("\(name).bytes", Double(one(1).count), "B")
+            report("\(name).read", try await timed { _ = cache.whole(try await self.shell(one(revision))); revision += 1 }, "ms")
+        }
         let threads = ComputerThreads(hostID: host, name: "Laptop", status: .online, threads: held.host.threads)
         report("list.merged-300", try await timed { _ = ThreadGroups.merged([threads]) }, "ms")
 

@@ -6,8 +6,9 @@
   bench-summary.py budget <folder>            fails when a work count in the folder's summary is over its budget
   bench-summary.py look <before> <after>      fails when the long thread's photos differ from the base's (bench.sh's look)
 
-Every number is the median over the benchmark's iterations: five launches or journeys, or the rounds PhoneBenchTests
-times each core step. Lower is better for all of them but journey.completed, which counts only journeys that finished.
+Every number is the median over the benchmark's iterations: five launches or journeys, three idle journeys a side, or
+the rounds PhoneBenchTests times each core step. Lower is better for all of them but journey.completed and
+loops.completed, which count only journeys that finished.
 """
 import json
 import re
@@ -29,6 +30,17 @@ PER_CHUNK = ["body.RootView", "body.MainTabs", "body.ThreadsView", "body.ThreadL
 ON_OPEN = ["body.MessageView", "body.MarkdownBlockView", "body.FoldedRun", "body.StepLine", "textview.make", "time.textview.measure.n",
            "markdown.blocks", "markdown.bytes"]
 PHASES = ["launch", "list-scroll", "open", "thread-scroll", "stream", "reply-box", "reply-box-stream", "back"]
+# After `back`, so the phases above run as they did and still compare with runs from before these (#2400, #2390): the
+# long thread opened a second time, and the stream again with list pushes the size a running host sends.
+AFTER = ["reopen", "stream-real-push"]
+# Half a minute each with nothing arriving (#2400): the Threads list with only the long thread working, and the long
+# thread once its turn has ended. The driver's display link is stopped in them, so they report the main thread's
+# wake-ups and no frames. They run in the journey and again in the short idle journeys, with the looping animations
+# running (idle-<n>.json) and stopped by `--ui-still` (still-<n>.json).
+IDLE = ["idle-list", "idle-thread"]
+LOOPS = {"idle": "loops_on", "still": "loops_off"}
+# The two streams: list pushes of the long thread's record alone, and the same pushes the size a running host sends (#2390).
+STREAMS = ["stream", "stream-real-push"]
 # The Threads page's hold while a thread covers it (`ThreadsView.held`), counted over each whole journey: the page coming
 # into sight, holds taken, holds taken while the page could still show, and frames that could have shown an old row.
 WORST_PER_CHUNK = ["body.ThreadsView", "body.ThreadListSections", "body.ThreadListRow"]
@@ -61,6 +73,12 @@ BUDGETS = {
     "list-scroll.worst.body.ThreadListRow": 0,
     # The Threads page lets go of its held list before the first frame that shows it again, in every journey.
     "journey.page.stale_frames": 0,
+    # Every frame the benchmark's computer sends is read and placed, so no phase measures pushes the phone threw away: the
+    # host-sized pushes are made up, and one the phone refused would make the stream look cheap (#2390).
+    "journey.frames_unread": 0,
+    # The idle phases show what #2400 asked for in every journey: one thread working on the list, none on the thread.
+    "idle-list.worst.working_threads": 1,
+    "idle-thread.worst.working_threads": 0,
 }
 
 
@@ -74,10 +92,11 @@ def median(values):
 
 
 def app_metrics(folder):
-    """The app's own reports: launch-<n>.json from XCTest's launches, journey-<n>.json from the app-driven journeys."""
-    reports = {"launch": [], "journey": []}
+    """The app's own reports: launch-<n>.json from XCTest's launches, journey-<n>.json from the app-driven journeys, and
+    idle-<n>.json and still-<n>.json from the short idle journeys with the loops running and stopped."""
+    reports = {"launch": [], "journey": [], "idle": [], "still": []}
     for path in sorted((folder / "app").glob("*.json")):
-        match = re.match(r"(launch|journey)-(\d+)\.json$", path.name)
+        match = re.match(r"(launch|journey|idle|still)-(\d+)\.json$", path.name)
         if not match:
             continue
         try:
@@ -93,9 +112,13 @@ def app_metrics(folder):
 
     journeys = [r for r in reports["journey"] if r.get("phase") == "finished"]
     rows["journey.completed"] = {"value": len(journeys), "unit": "runs", "n": len(reports["journey"])}
+    loops = {kind: [r for r in reports[kind] if r.get("phase") == "finished"] for kind in LOOPS}
+    if reports["idle"] or reports["still"]:
+        rows["loops.completed"] = {"value": sum(len(v) for v in loops.values()), "unit": "runs", "n": len(reports["idle"]) + len(reports["still"])}
     marks = [r.get("marks", {}) for r in journeys]
-    phases = {name: [r.get("phases", {}).get(name) or {} for r in journeys] for name in PHASES}
-    counts = {name: [p.get("counts", {}) for p in phases[name]] for name in PHASES}
+    # A journey from before a phase existed has none of it, and its rows are left out.
+    phases = {name: [r.get("phases", {}).get(name) or {} for r in journeys] for name in PHASES + AFTER + IDLE}
+    counts = {name: [p.get("counts", {}) for p in phases[name]] for name in PHASES + AFTER + IDLE}
 
     # Launch: the first frame with every thread, from the process's start, in XCTest's launches and the journeys.
     put("launch.app.first_list", [r.get("marks", {}).get("first-list") for r in reports["launch"] + journeys], "ms")
@@ -104,7 +127,7 @@ def app_metrics(folder):
     put("launch.apply.shell_full", [ns_ms(c, "time.apply.shell-full.ns") for c in counts["launch"]], "ms")
     put("launch.list_rebuild", [ns_ms(c, "time.list.focusThreads.ns") for c in counts["launch"]], "ms")
 
-    for name in PHASES:
+    for name in PHASES + AFTER:
         put(f"{name}.app.footprint", [p.get("footprintMB") for p in phases[name]], "MB")
         if name == "launch":
             continue
@@ -113,7 +136,8 @@ def app_metrics(folder):
         put(f"{name}.app.hitch_time_ratio", [f.get("hitchMsPerSecond") for f in frames], "ms/s")
         put(f"{name}.app.hitches", [f.get("hitches") for f in frames], "count")
         put(f"{name}.app.longest_frame", [f.get("longestFrameMs") for f in frames], "ms")
-    put("journey.app.peak_footprint", [r.get("peakFootprintMB") for r in journeys], "MB")
+    # Up to the end of `back`, the journey as it was before the phases after it, so the peak still compares.
+    put("journey.app.peak_footprint", [(r.get("phases", {}).get("back") or {}).get("peakFootprintMB", r.get("peakFootprintMB")) for r in journeys], "MB")
     for name in ["list-scroll", "thread-scroll"]:
         put(f"{name}.app.points", [p.get("scrolledPoints") for p in phases[name]], "pt")
 
@@ -124,6 +148,7 @@ def app_metrics(folder):
     put("reply-box-stream.app.moves", [p.get("replyBoxMoves") for p in phases["reply-box-stream"]], "count")
 
     put("open.app.tap_to_drawn", [m["open-rendered"] - m["open-begin"] for m in marks if "open-rendered" in m and "open-begin" in m], "ms")
+    put("reopen.app.tap_to_drawn", [m["reopen-rendered"] - m["reopen-begin"] for m in marks if "reopen-rendered" in m and "reopen-begin" in m], "ms")
     for key in ON_OPEN:
         put(f"open.app.{key}", [c.get(key) for c in counts["open"]], "count")
     put("open.app.timeline_rows", [ns_ms(c, "time.timeline.rows.ns") for c in counts["open"]], "ms")
@@ -131,11 +156,12 @@ def app_metrics(folder):
     put("open.bytes.detail", [c.get("bytes.detail") for c in counts["open"]], "B")
 
     chunks = journeys[0].get("chunks", 200) if journeys else 200
-    stream = phases["stream"]
-    put("stream.wall_per_chunk", [p["wallMs"] / chunks for p in stream if "wallMs" in p], "ms")
-    put("stream.cpu_per_chunk", [p["cpuMs"] / chunks for p in stream if "cpuMs" in p], "ms")
-    for key in PER_CHUNK:
-        put(f"stream.per_chunk.{key}", [c.get(key, 0) / chunks for c in counts["stream"]], "count")
+    for name in STREAMS:
+        stream = phases[name]
+        put(f"{name}.wall_per_chunk", [p["wallMs"] / chunks for p in stream if "wallMs" in p], "ms")
+        put(f"{name}.cpu_per_chunk", [p["cpuMs"] / chunks for p in stream if "cpuMs" in p], "ms")
+        for key in PER_CHUNK:
+            put(f"{name}.per_chunk.{key}", [c.get(key, 0) / chunks for p, c in zip(stream, counts[name]) if p], "count")
     # The same 200 words over the moves, to set against `stream`: moving the box adds no drawing per word and no time.
     box_stream = phases["reply-box-stream"]
     put("reply-box-stream.wall_per_chunk", [p["wallMs"] / chunks for p in box_stream if "wallMs" in p], "ms")
@@ -143,18 +169,59 @@ def app_metrics(folder):
     for key in PER_CHUNK:
         put(f"reply-box-stream.per_chunk.{key}", [c.get(key, 0) / chunks for c in counts["reply-box-stream"]], "count")
     # The worst journey's, for the counts budgeted at zero, where the median would hide one journey that drew.
-    for key in WORST_PER_CHUNK:
-        values = [c.get(key, 0) / chunks for c in counts["stream"]]
-        if values:
-            rows[f"stream.worst_per_chunk.{key}"] = {"value": max(values), "unit": "count", "n": len(values)}
+    for name in STREAMS:
+        for key in WORST_PER_CHUNK:
+            values = [c.get(key, 0) / chunks for p, c in zip(phases[name], counts[name]) if p]
+            if values:
+                rows[f"{name}.worst_per_chunk.{key}"] = {"value": max(values), "unit": "count", "n": len(values)}
     for key in WORST_LIST_SCROLL:
         values = [c.get(key, 0) for c in counts["list-scroll"]]
         if values:
             rows[f"list-scroll.worst.{key}"] = {"value": max(values), "unit": "count", "n": len(values)}
-    for kind in ["delta", "shell"]:
-        put(f"stream.bytes_per_push.{kind}", [c[f"bytes.{kind}"] / c[f"frames.{kind}"] if c.get(f"frames.{kind}") else None for c in counts["stream"]], "B")
-        put(f"stream.decode_per_push.{kind}", [ns_ms(c, f"time.decode.{kind}.ns", f"time.decode.{kind}.n") for c in counts["stream"]], "ms")
-        put(f"stream.apply_per_push.{kind}", [ns_ms(c, f"time.apply.{kind}.ns", f"time.apply.{kind}.n") for c in counts["stream"]], "ms")
+    for name in STREAMS:
+        for kind in ["delta", "shell"]:
+            put(f"{name}.bytes_per_push.{kind}", [c[f"bytes.{kind}"] / c[f"frames.{kind}"] if c.get(f"frames.{kind}") else None for c in counts[name]], "B")
+            put(f"{name}.decode_per_push.{kind}", [ns_ms(c, f"time.decode.{kind}.ns", f"time.decode.{kind}.n") for c in counts[name]], "ms")
+            put(f"{name}.apply_per_push.{kind}", [ns_ms(c, f"time.apply.{kind}.ns", f"time.apply.{kind}.n") for c in counts[name]], "ms")
+    # Frames the phone could not read or place, in any phase of the worst journey, the idle journeys among them: a push
+    # that settles threads for an idle phase and is refused leaves the phase measuring the wrong page.
+    every = journeys + loops["idle"] + loops["still"]
+    unread = [sum(r.get("phases", {}).get(name, {}).get("counts", {}).get(key, 0) for name in r.get("phases", {}) for key in ["frames.unreadable", "frames.unplaced"])
+              for r in every]
+    if unread:
+        rows["journey.frames_unread"] = {"value": max(unread), "unit": "count", "n": len(unread)}
+
+    def wakes(p):
+        return p["wakes"] / p["idleSeconds"] if p.get("idleSeconds") and "wakes" in p else None
+
+    # The idle phases: CPU time, memory, how often the main thread woke, and every view body that ran, so whether a page
+    # draws while nothing happens is a number. Each view whose body ran in any journey's idle gets a row of its own.
+    for name in IDLE:
+        measured = [(p, c) for p, c in zip(phases[name], counts[name]) if p]
+        put(f"{name}.app.cpu", [p.get("cpuMs") for p, _ in measured], "ms")
+        put(f"{name}.app.footprint", [p.get("footprintMB") for p, _ in measured], "MB")
+        put(f"{name}.app.wakes_per_second", [wakes(p) for p, _ in measured], "/s")
+        put(f"{name}.app.bodies", [sum(v for k, v in c.items() if k.startswith("body.")) for _, c in measured], "count")
+        for key in sorted({k for _, c in measured for k in c if k.startswith("body.")}):
+            put(f"{name}.app.{key}", [c.get(key, 0) for _, c in measured], "count")
+        # The threads working as the phase began, in the worst journey of any kind: one on the list, none on the thread.
+        working = [(r.get("phases", {}).get(name) or {}).get("workingThreads") for r in every]
+        working = [w for w in working if w is not None]
+        if working:
+            rows[f"{name}.worst.working_threads"] = {"value": max(working), "unit": "count", "n": len(working)}
+        # The same phase in the short idle journeys, with the loops running and stopped. The difference of the medians is
+        # what the loops cost the app over the phase; the spread, the most minus the least of either side's runs, is how
+        # far its runs went apart on their own, so a difference under it is the runner's, not the loops'.
+        side = {}
+        for kind, label in LOOPS.items():
+            runs = [p for p in (r.get("phases", {}).get(name) for r in loops[kind]) if p]
+            put(f"{name}.{label}.cpu", [p.get("cpuMs") for p in runs], "ms")
+            put(f"{name}.{label}.wakes_per_second", [wakes(p) for p in runs], "/s")
+            side[label] = [p["cpuMs"] for p in runs if p.get("cpuMs") is not None]
+        if side["loops_on"] and side["loops_off"]:
+            n = min(len(side["loops_on"]), len(side["loops_off"]))
+            rows[f"{name}.loops.app_cpu"] = {"value": median(side["loops_on"]) - median(side["loops_off"]), "unit": "ms", "n": n}
+            rows[f"{name}.loops.spread"] = {"value": max(max(v) - min(v) for v in side.values()), "unit": "ms", "n": n}
     for name in ["open", "thread-scroll"]:
         put(f"{name}.app.textview_measure", [ns_ms(c, "time.textview.measure.ns") for c in counts[name]], "ms")
     put("stream.textview_measure_per_chunk", [ns_ms(c, "time.textview.measure.ns") / chunks if "time.textview.measure.ns" in c else 0 for c in counts["stream"]], "ms")

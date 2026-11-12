@@ -63,7 +63,7 @@ TEST_RUNNER_SOTTO_BENCH_OUT="$out/app" xcodebuild -project Sotto.xcodeproj -sche
     $optimized ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO test-without-building > "$out/test.log" 2>&1 || status=$?
 grep -E "measured \[|Test Case .*(passed|failed|skipped)|error:" "$out/test.log" || true
 
-# One journey ($3, `all` or `look`) from a cold launch with nothing else attached, writing its report to $1 and waiting
+# One journey ($3, `all`, `idle` or `look`) from a cold launch with nothing else attached, writing its report to $1 and waiting
 # up to $2 seconds; any further arguments go to the app. Sets `outcome`: the app ends on `finished`, or on
 # `failed-<why>` when a phase never got what it waited for.
 journey() {
@@ -89,6 +89,19 @@ journey() {
 for run in 1 2 3 4 5; do
     journey "$out/app/journey-$run.json" 600 all
     echo "Journey $run: $outcome"
+    [ "$outcome" = finished ] || status=1
+done
+
+# The two idle phases again, in a short journey of their own, three times with the looping animations running
+# (idle-<n>.json) and three with `--ui-still`, which stops every one of them (still-<n>.json), taking turns so a runner
+# that slows down weighs on both alike. The difference is what the loops cost the app. What they cost the simulator's
+# render server is not the app's, and the app cannot read it.
+for run in 1 2 3; do
+    journey "$out/app/idle-$run.json" 300 idle
+    echo "Idle $run: $outcome"
+    [ "$outcome" = finished ] || status=1
+    journey "$out/app/still-$run.json" 300 idle --ui-still
+    echo "Still $run: $outcome"
     [ "$outcome" = finished ] || status=1
 done
 

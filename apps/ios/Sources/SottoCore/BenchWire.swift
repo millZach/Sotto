@@ -16,14 +16,21 @@ public enum BenchWire {
     public static func threadRecords(count: Int, hostID: String, now: Date) -> [String] {
         var records = [longThreadRecord(hostID: hostID, now: now)]
         for index in 1..<max(1, count) {
-            records.append(record(id: "bench-\(index)", index: index, hostID: hostID, now: now, running: index % 40 == 0, title: titles[index % titles.count] + " \(index)"))
+            records.append(record(id: "bench-\(index)", index: index, hostID: hostID, now: now, running: startsWorking(index), title: threadTitle(index)))
         }
         return records
     }
+    /// The records of every thread `threadRecords` lists as working but the long one, settled: one list push of these
+    /// leaves the long thread the only one working (`idle-list`, #2400). Given the list's `now`, nothing else in them changes.
+    public static func othersSettled(count: Int, hostID: String, now: Date) -> [String] {
+        (1..<max(1, count)).filter(startsWorking).map { record(id: "bench-\($0)", index: $0, hostID: hostID, now: now, running: false, title: threadTitle($0)) }
+    }
+    private static func startsWorking(_ index: Int) -> Bool { index % 40 == 0 }
+    private static func threadTitle(_ index: Int) -> String { titles[index % titles.count] + " \(index)" }
 
-    /// The long thread's record, sent again whenever it changes while it works.
-    public static func longThreadRecord(hostID: String, now: Date) -> String {
-        record(id: longThreadID, index: 0, hostID: hostID, now: now, running: true, title: "Compare motor drive options for the new panel")
+    /// The long thread's record, sent again whenever it changes while it works, and settled once its turn ends.
+    public static func longThreadRecord(hostID: String, now: Date, running: Bool = true) -> String {
+        record(id: longThreadID, index: 0, hostID: hostID, now: now, running: running, title: "Compare motor drive options for the new panel")
     }
     /// The sequence the long thread's running step has; the steps a stream starts follow it.
     public static func streamStepSequence(turns: Int, stepsPerTurn: Int = 4) -> Int { turns * stepsPerTurn + 1 }
@@ -79,6 +86,125 @@ public enum BenchWire {
         let delta = #"{"threadId":"\#(longThreadID)","baseRevision":\#(revision),"revision":\#(revision + 1),"messageDeltas":[{"id":"\#(streamingMessageID)","appendText":"\#(word)"}],"activityDeltas":[\#(activities)]}"#
         return Data(#"{"v":1,"event":"detail-delta","threadId":"\#(longThreadID)","delta":\#(delta)}"#.utf8)
     }
+
+    /// The long thread's turn ending, as a host sends it: a `detail-delta` that finishes `steps`, the ones still running.
+    /// The list push that goes with it carries `longThreadRecord(hostID:now:running: false)` (`idle-thread`, #2400).
+    public static func endTurnFrame(finishing steps: [Activity], revision: Int, now: Date) -> Data {
+        let finished = steps.map { step -> String in
+            var text = #"{"record":{"id":\#(quoted(step.id)),"sequence":\#(step.sequence),"kind":\#(quoted(step.kind)),"status":"completed","title":"Ran","#
+            if let command = step.command { text += #""command":\#(quoted(command)),"# }
+            return text + #""exitCode":0,"durationMs":1800,"startedAt":\#(quoted(step.startedAt ?? stamp(now, 50)))}}"#
+        }
+        let delta = #"{"threadId":"\#(longThreadID)","baseRevision":\#(revision),"revision":\#(revision + 1),"messageDeltas":[],"activityDeltas":["#
+            + finished.joined(separator: ",") + "]}"
+        return Data(#"{"v":1,"event":"detail-delta","threadId":"\#(longThreadID)","delta":\#(delta)}"#.utf8)
+    }
+
+    // MARK: What a running host sends whole
+
+    /// What a running host sends whole in every thread list push beside the records that changed, by name, with the bytes
+    /// of each that forge's host sent a phone while one thread worked on November 10, 2026, as `JSON.stringify` counts
+    /// them (`docs/perf/2026-11-10-performance-and-data-audit.md`, finding 2). The phone reads `deliveries`,
+    /// `deliveredDrafts` and `followupReceipts` and reads past the rest. The host's projects, providers and settings stay
+    /// as the benchmark's laptop has them, so its list and its new thread sheet do not change.
+    public static let hostParts: [(name: String, bytes: Int)] = [
+        ("skillCatalogs", 115_223), ("deliveries", 45_933), ("deliveredDrafts", 12_929), ("obsoleteDrafts", 12_929),
+        ("followupReceipts", 7_980), ("clientUpdates", 1_454), ("threadDrafts", 1_001), ("threadDraftPersistence", 827),
+    ]
+
+    /// `state`, a shell push's state as a JSON object, with every one of `hostParts` made up at its size: the list push a
+    /// running host sends, where the benchmark's laptop sends only the record that changed (#2390). The threads the parts
+    /// name are not on the list and every delivery was accepted, so nothing the phone shows changes.
+    public static func hostSizedState(_ state: Data, now: Date) -> Data {
+        var text = String(decoding: state, as: UTF8.self)
+        guard text.hasSuffix("}") else { return state }
+        text.removeLast()
+        for part in hostParts {
+            if !text.hasSuffix("{") { text += "," }
+            text += quoted(part.name) + ":" + hostPart(part.name, bytes: part.bytes, now: now)
+        }
+        return Data((text + "}").utf8)
+    }
+
+    /// One of `hostParts`, made up `bytes` long. Each receipt is two UUIDs, 100 bytes as forge's are, so the three receipt
+    /// ledgers and the drafts' save marks are their size by their count alone; the rest are padded to it.
+    public static func hostPart(_ name: String, bytes: Int, now: Date) -> String {
+        switch name {
+        case "skillCatalogs": return sized(bytes, count: 6) { skillCatalog($0, pad: $1) }
+        case "deliveries": return sized(bytes, count: 128) { delivery($0, pad: $1, now: now) }
+        // The ledgers keep a host's last 128 drafts; forge's follow-up receipts held 79. The delivered drafts are the
+        // deliveries' own.
+        case "deliveredDrafts": return receipts(128, ledger: 3)
+        case "obsoleteDrafts": return receipts(128, ledger: 4)
+        case "followupReceipts": return receipts(79, ledger: 5)
+        case "clientUpdates": return sized(bytes, count: 5) { clientUpdate($0, pad: $1, now: now) }
+        case "threadDrafts": return sized(bytes, count: 2) { threadDraft($0, pad: $1, now: now) }
+        case "threadDraftPersistence":
+            return "[" + (0..<7).map { #"{"threadId":"\#(madeUpID(2, $0))","draftId":"\#(madeUpID(6, $0))","status":"saved"}"# }.joined(separator: ",") + "]"
+        default: return "[]"
+        }
+    }
+
+    /// A JSON list of `count` entries exactly `bytes` long: `entry(index, pad)` writes each, and what the entries leave
+    /// short of `bytes` with no pad is shared among them, one byte of the entry for each of its pad, the first entries a
+    /// byte longer. Entries already over `bytes` are left as they are.
+    static func sized(_ bytes: Int, count: Int, _ entry: (_ index: Int, _ pad: Int) -> String) -> String {
+        let bare = (0..<count).map { entry($0, 0) }
+        let short = bytes - bare.reduce(2 + max(0, count - 1)) { $0 + $1.utf8.count }
+        guard short > 0 else { return "[" + bare.joined(separator: ",") + "]" }
+        return "[" + (0..<count).map { entry($0, short / count + ($0 < short % count ? 1 : 0)) }.joined(separator: ",") + "]"
+    }
+    /// One thread's skill list: sixty skills, the pad shared among their descriptions.
+    private static func skillCatalog(_ index: Int, pad: Int) -> String {
+        let count = 60
+        let skills = (0..<count).map { skill -> String in
+            let name = skillWords[skill % skillWords.count] + "-" + String(skill / skillWords.count + 1)
+            let more = pad / count + (skill < pad % count ? 1 : 0)
+            var text = #"{"name":"\#(name)","path":"/home/user/.agents/skills/\#(name)/SKILL.md","#
+            text += #""description":"Use when the work needs \#(name): it reads the project notes and drawings, checks them against the schedule and writes up what changed.\#(filler(more))","#
+            return text + #""scope":"\#(skill % 6 == 0 ? "repo" : "user")","enabled":true,"userInvocable":\#(skill % 9 != 4)}"#
+        }
+        var text = #"{"threadId":"\#(madeUpID(1, index))","providerId":"\#(index % 2 == 0 ? "claude" : "codex")","#
+        text += #""cwd":"/home/user/Projects/panel/.worktrees/bench-\#(index)","status":"ready","skills":["#
+        return text + skills.joined(separator: ",") + #"],"errors":[]}"#
+    }
+    /// A delivery the provider accepted, as the host keeps it; the pad lengthens its provider message ID.
+    private static func delivery(_ index: Int, pad: Int, now: Date) -> String {
+        var text = #"{"threadId":"\#(madeUpID(2, index % 40))","draftId":"\#(madeUpID(3, index))","status":"accepted","#
+        text += #""createdAt":"\#(stamp(now, Double(index) * 90 + 30))","updatedAt":"\#(stamp(now, Double(index) * 90))","#
+        text += #""commandId":"\#(madeUpID(7, index))","messageId":"msg_\#(hex(index, 24 + pad))""#
+        if index % 8 == 0 { text += #","packetDigest":"\#(String(repeating: hex(index, 16), count: 4))""# }
+        return text + #","localFeedbackMs":\#(40 + index % 60),"providerLatencyMs":\#(1_200 + index * 37 % 4_000)}"#
+    }
+    /// `count` receipts of the ledger numbered `ledger`, each a thread and one of its drafts.
+    private static func receipts(_ count: Int, ledger: Int) -> String {
+        "[" + (0..<count).map { #"{"threadId":"\#(madeUpID(2, $0 % 40))","draftId":"\#(madeUpID(ledger, $0))"}"# }.joined(separator: ",") + "]"
+    }
+    private static func clientUpdate(_ index: Int, pad: Int, now: Date) -> String {
+        let id = ["claude", "codex", "grok", "devin", "opencode"][index % 5]
+        var text = #"{"id":"\#(id)","installed":"2.\#(index + 1).0","published":"2.\#(index + 1).1","behind":true,"channel":"npm","#
+        text += #""command":"npm install --global @fixture/\#(id)-cli@2.\#(index + 1).1 --prefix /home/user/.local\#(filler(pad))","#
+        return text + #""canInstall":true,"checkedAt":"\#(stamp(now, 600))","state":"idle"}"#
+    }
+    private static func threadDraft(_ index: Int, pad: Int, now: Date) -> String {
+        var text = #"{"threadId":"\#(madeUpID(2, index))","draftId":"\#(madeUpID(6, index))","#
+        text += #""text":"Check the conduit fill for the new drive before the drawings go out.\#(filler(pad))","#
+        return text + #""attachments":[],"requestId":null,"updatedAt":"\#(stamp(now, 120))"}"#
+    }
+    /// A made-up UUID, the same for the same two numbers: `kind` tells the made-up things apart, `index` the entries.
+    static func madeUpID(_ kind: Int, _ index: Int) -> String { "\(hex(kind, 8))-0000-4000-8000-\(hex(index, 12))" }
+    private static func hex(_ value: Int, _ width: Int) -> String {
+        let digits = String(value, radix: 16)
+        return String(repeating: "0", count: max(0, width - digits.count)) + digits
+    }
+    /// `count` characters of plain words, for the made-up parts' free text.
+    private static func filler(_ count: Int) -> String {
+        guard count > 0 else { return "" }
+        let words = " It names the parts to check, the order to check them in, and what to write down once they pass."
+        return String(String(repeating: words, count: count / words.count + 1).prefix(count))
+    }
+    private static let skillWords = ["review", "plan", "release", "drawings", "wiring", "schedule", "estimate", "notes", "research",
+                                     "testing", "commissioning", "checkout"]
 
     // MARK: Building blocks
 
