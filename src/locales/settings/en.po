@@ -122,6 +122,30 @@ msgstr "{cleared, plural, one {Cleared # thread.} other {Cleared # threads.}} {c
 msgid "{clientName} lists no model you can use now. Check your {clientName} sign-in and plan, then refresh this provider."
 msgstr "{clientName} lists no model you can use now. Check your {clientName} sign-in and plan, then refresh this provider."
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "{computer} already holds as many accounts as a plugin takes. Nothing was kept there."
+msgstr "{computer} already holds as many accounts as a plugin takes. Nothing was kept there."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "{computer} is not connected: if it holds a copy, it deletes it when it next connects."
+msgstr "{computer} is not connected: if it holds a copy, it deletes it when it next connects."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "{computer} is not connected. Sotto sends the copy, or checks the one there, when it is."
+msgstr "{computer} is not connected. Sotto sends the copy, or checks the one there, when it is."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "{computer} was started without a key file, so it cannot keep a token. Nothing was kept there. On {computer}, set SOTTO_HOST_KEY_FILE to a file holding a secret of your own, start its host again, and the copy is sent."
+msgstr "{computer} was started without a key file, so it cannot keep a token. Nothing was kept there. On {computer}, set SOTTO_HOST_KEY_FILE to a file holding a secret of your own, start its host again, and the copy is sent."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "{computer}’s Sotto cannot keep account copies now, so it cannot say whether it holds one from before. Update Sotto on {computer}, and a copy it holds is deleted."
+msgstr "{computer}’s Sotto cannot keep account copies now, so it cannot say whether it holds one from before. Update Sotto on {computer}, and a copy it holds is deleted."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "{computer}’s Sotto cannot keep account copies. Update Sotto on {computer}, and the copy is sent."
+msgstr "{computer}’s Sotto cannot keep account copies. Update Sotto on {computer}, and the copy is sent."
+
 #: src/renderer/src/features/settings/AgentAccountSettings.tsx
 msgid "{count, plural, one {{hosts} doesn’t let this computer answer permission requests yet, so its new threads start on \"{asking}\".} other {{hosts} don’t let this computer answer permission requests yet, so their new threads start on \"{asking}\".}}"
 msgstr "{count, plural, one {{hosts} doesn’t let this computer answer permission requests yet, so its new threads start on \"{asking}\".} other {{hosts} don’t let this computer answer permission requests yet, so their new threads start on \"{asking}\".}}"
@@ -535,6 +559,10 @@ msgstr "{name} is connected"
 msgid "{name} is connected over SSH"
 msgstr "{name} is connected over SSH"
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "{name} is kept to projects on this computer, so it is not copied."
+msgstr "{name} is kept to projects on this computer, so it is not copied."
+
 #: src/renderer/src/features/settings/HostClientUpdates.tsx
 msgid "{name} is now {installed}."
 msgstr "{name} is now {installed}."
@@ -879,6 +907,14 @@ msgstr "A code works once, for five minutes."
 msgid "A community color theme for your editor."
 msgstr "A community color theme for your editor."
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "A copy is kept on {computer}."
+msgstr "A copy is kept on {computer}."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "A copy lets that computer’s threads use this account while this computer is off. It travels on the connection Sotto already holds to that computer and is kept in that computer’s own encrypted store."
+msgstr "A copy lets that computer’s threads use this account while this computer is off. It travels on the connection Sotto already holds to that computer and is kept in that computer’s own encrypted store."
+
 #: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 msgid "A dictation shortcut already uses {keys}. Pick other keys."
 msgstr "A dictation shortcut already uses {keys}. Pick other keys."
@@ -1151,6 +1187,10 @@ msgstr "Already on this computer"
 msgid "Always on. Every successful transcript is copied."
 msgstr "Always on. Every successful transcript is copied."
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Always, in Sotto’s encrypted store."
+msgstr "Always, in Sotto’s encrypted store."
+
 #. {does} is what the agent does to the provider: installs, updates or fixes.
 #: src/renderer/src/features/settings/HostProviderAgent.tsx
 msgid "An agent {does} {name} on {hostName} from this computer, in a thread you can watch. It reaches {hostName} through this computer's SSH, and its tool works only on {hostName}. It stops once {hostName}'s host finds {name}; you then sign in."
@@ -1220,6 +1260,14 @@ msgstr "Another app already uses {refused}. {kept} still works. Pick other keys,
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
 msgid "Another app on {name} already uses port 8443 in Tailscale Serve. Sotto left it alone, and nothing was changed. Free port 8443 on {name}, then press Try again."
 msgstr "Another app on {name} already uses port 8443 in Tailscale Serve. Sotto left it alone, and nothing was changed. Free port 8443 on {name}, then press Try again."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Another of your computers already sent {computer} an account called {name}. Rename one of the two. Nothing was kept there."
+msgstr "Another of your computers already sent {computer} an account called {name}. Rename one of the two. Nothing was kept there."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Another of your computers already sent {computer} this account. Nothing was changed there."
+msgstr "Another of your computers already sent {computer} this account. Nothing was changed there."
 
 #: src/renderer/src/features/settings/DevicePicker.tsx
 msgid "Another SSH host…"
@@ -1738,6 +1786,10 @@ msgstr "Choose a model"
 msgid "Choose a model for the setup thread."
 msgstr "Choose a model for the setup thread."
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Choose Every project to copy it."
+msgstr "Choose Every project to copy it."
+
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Choose files"
 msgstr "Choose files"
@@ -2100,6 +2152,10 @@ msgstr "Connect to Tailscale to see the machines on your tailnet here."
 msgid "Connected"
 msgstr "Connected"
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Connected. Copies kept there: {kept}."
+msgstr "Connected. Copies kept there: {kept}."
+
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "Connecting over SSH…"
 msgstr "Connecting over SSH…"
@@ -2207,6 +2263,10 @@ msgstr "Copy Devin login command"
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Copy Muse login command"
 msgstr "Copy Muse login command"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Copy new accounts to every computer I pair"
+msgstr "Copy new accounts to every computer I pair"
 
 #: src/renderer/src/features/settings/HostProviders.tsx
 msgid "Copy the {name} sign-in command"
@@ -2624,6 +2684,10 @@ msgstr "Dynamic threads"
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "e.g. Aurora"
 msgstr "e.g. Aurora"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Each account’s secret is sent to the computers you paired as hosts, on the connection Sotto already holds to each, and kept in each one’s own encrypted store, so their threads work while this computer is off. You can stop the copy for any account. An account kept to chosen projects is never copied."
+msgstr "Each account’s secret is sent to the computers you paired as hosts, on the connection Sotto already holds to each, and kept in each one’s own encrypted store, so their threads work while this computer is off. You can stop the copy for any account. An account kept to chosen projects is never copied."
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Each kind of work starts on its own model, effort and permissions. Watcher names the role when it starts a worker, and a thread names it when it delegates. Defaults come from the providers you have connected; a choice you make here stays until you reset it."
@@ -3412,6 +3476,10 @@ msgstr "Jump to the next question or permission, settled threads included."
 msgid "Keep {name} connected, now and when Sotto starts"
 msgstr "Keep {name} connected, now and when Sotto starts"
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Keep a copy of {name} on {computerName}"
+msgstr "Keep a copy of {name} on {computerName}"
+
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Keep both"
 msgstr "Keep both"
@@ -3994,6 +4062,18 @@ msgstr "Night wood"
 msgid "No connected provider can do this work."
 msgstr "No connected provider can do this work."
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "No copy from now on."
+msgstr "No copy from now on."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "No copy. {computer}’s threads cannot use this account."
+msgstr "No copy. {computer}’s threads cannot use this account."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "No copy. {name} is kept to projects on this computer, so its secret stays here. Choose Every project to copy it."
+msgstr "No copy. {name} is kept to projects on this computer, so its secret stays here. Choose Every project to copy it."
+
 #. The last stop of the recording limit slider: a dictation runs until you stop it.
 #: src/renderer/src/features/settings/RecordingLimitSetting.tsx
 msgid "No limit"
@@ -4018,6 +4098,10 @@ msgstr "No model"
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "No models were returned. Refresh this provider to check again."
 msgstr "No models were returned. Refresh this provider to check again."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "No other computer is paired. Pair one in Settings › Hosts & phones, and its threads can use these accounts too."
+msgstr "No other computer is paired. Pair one in Settings › Hosts & phones, and its threads can use these accounts too."
 
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
 msgid "No phones paired with {name} yet. A phone paired with {name}’s own pairing command isn’t listed here."
@@ -4117,6 +4201,10 @@ msgstr "Not checked yet."
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Not connected"
 msgstr "Not connected"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Not connected. Copies wait until it is."
+msgstr "Not connected. Copies wait until it is."
 
 #: src/renderer/src/features/settings/HostProviders.tsx
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
@@ -4535,6 +4623,10 @@ msgstr "Other apps already use ports 8443 and 10000 in Tailscale Serve on this c
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
 msgid "Other apps on {name} already use ports 8443 and 10000 in Tailscale Serve. Sotto left them alone, and nothing was changed. Free one of them on {name}, then press Try again."
 msgstr "Other apps on {name} already use ports 8443 and 10000 in Tailscale Serve. Sotto left them alone, and nothing was changed. Free one of them on {name}, then press Try again."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Other computers"
+msgstr "Other computers"
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Outside services your threads can use"
@@ -5549,6 +5641,10 @@ msgstr "Send product events"
 msgid "Send the prompt"
 msgstr "Send the prompt"
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sending the copy to {computer}…"
+msgstr "Sending the copy to {computer}…"
+
 #: src/renderer/src/features/settings/ProductEventsSettings.tsx
 msgid "Sends Sotto’s developers which features you use, which provider and public model ran, how each turn ended, how long it took and its token counts. Events carry a random ID for this install and hashed IDs of your Claude and OpenAI accounts. Hashed is not anonymous: those IDs link your computers to one person. It never sends your words, code, file names, paths, repo or branch names, thread IDs or keys. Off stops this computer and its hosts, and drops anything waiting to go."
 msgstr "Sends Sotto’s developers which features you use, which provider and public model ran, how each turn ended, how long it took and its token counts. Events carry a random ID for this install and hashed IDs of your Claude and OpenAI accounts. Hashed is not anonymous: those IDs link your computers to one person. It never sends your words, code, file names, paths, repo or branch names, thread IDs or keys. Off stops this computer and its hosts, and drops anything waiting to go."
@@ -5946,6 +6042,14 @@ msgid "Sotto cannot change sign-in startup here."
 msgstr "Sotto cannot change sign-in startup here."
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sotto cannot read its record of which computers keep a copy, so it is not sending one to {computer}."
+msgstr "Sotto cannot read its record of which computers keep a copy, so it is not sending one to {computer}."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sotto cannot read its record of which computers keep a copy, so it sends no copy and no choice can be changed. It still takes back the copy of an account you remove or keep to chosen projects. If a newer Sotto wrote the record, update Sotto on this computer."
+msgstr "Sotto cannot read its record of which computers keep a copy, so it sends no copy and no choice can be changed. It still takes back the copy of an account you remove or keep to chosen projects. If a newer Sotto wrote the record, update Sotto on this computer."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Sotto checks it with Vercel first. The token saved now stays in use until the new one is accepted."
 msgstr "Sotto checks it with Vercel first. The token saved now stays in use until the new one is accepted."
 
@@ -6061,6 +6165,10 @@ msgstr "Sotto is connecting to {name}, and SSH needs your key passphrase to sign
 msgid "Sotto is connecting to {name}, and SSH needs your password to sign in."
 msgstr "Sotto is connecting to {name}, and SSH needs your password to sign in."
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sotto is making sure {computer} holds no copy."
+msgstr "Sotto is making sure {computer} holds no copy."
+
 #: src/renderer/src/features/settings/HostQuestionDialog.tsx
 msgid "Sotto is signing in to {name} for a change you asked for there, and SSH has not seen this host before. Check its key, then trust it to continue."
 msgstr "Sotto is signing in to {name} for a change you asked for there, and SSH has not seen this host before. Check its key, then trust it to continue."
@@ -6072,6 +6180,10 @@ msgstr "Sotto is signing in to {name} for a change you asked for there, and SSH 
 #: src/renderer/src/features/settings/HostQuestionDialog.tsx
 msgid "Sotto is signing in to {name} for a change you asked for there, and SSH needs your password to sign in."
 msgstr "Sotto is signing in to {name} for a change you asked for there, and SSH needs your password to sign in."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sotto is taking the copy back from {computer}."
+msgstr "Sotto is taking the copy back from {computer}."
 
 #: src/renderer/src/features/settings/HostProviders.tsx
 msgid "Sotto needs {required} or later."
@@ -6685,6 +6797,10 @@ msgid "That account is no longer here. Nothing was changed."
 msgstr "That account is no longer here. Nothing was changed."
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "That could not be saved. Nothing was changed. Try again."
+msgstr "That could not be saved. Nothing was changed. Try again."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "That could not be saved. What is shown is what is kept. Try again."
 msgstr "That could not be saved. What is shown is what is kept. Try again."
 
@@ -6799,6 +6915,10 @@ msgstr "The composer’s own key. Shift+Enter adds a line."
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "The connection could not be saved. Nothing was changed. Try again."
 msgstr "The connection could not be saved. Nothing was changed. Try again."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "The copy could not be sent to {computer}. Sotto tries again."
+msgstr "The copy could not be sent to {computer}. Sotto tries again."
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "The dictionary could not be saved. Keep it within 4,000 characters."
@@ -7199,6 +7319,7 @@ msgstr "this computer"
 
 #. The computer Sotto runs on, named where a paired host would be.
 #: src/renderer/src/features/settings/HostsSettings.tsx
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 #: src/renderer/src/features/settings/WorkerMachineSettings.tsx
 msgid "This computer"
@@ -7219,6 +7340,10 @@ msgstr "This computer, other computers, and your iPhone"
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "This computer's client ID on {editingName}: <0>{clientId}</0>"
 msgstr "This computer's client ID on {editingName}: <0>{clientId}</0>"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "This computer’s credential store is locked, so the token could not be read to send. Unlock it, and Sotto tries again."
+msgstr "This computer’s credential store is locked, so the token could not be read to send. Unlock it, and Sotto tries again."
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "This computer’s local host is off, so Sotto can’t run agents here. Turn on Run the local host in Settings › Hosts & phones, then restart Sotto. A host’s own providers are on its tiles there."
@@ -8152,6 +8277,10 @@ msgstr "When your computer starts"
 #: src/renderer/src/features/settings/AgentAccountSettings.tsx
 msgid "Where a new project goes. Each computer has its own folder."
 msgstr "Where a new project goes. Each computer has its own folder."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Where its secret is kept"
+msgstr "Where its secret is kept"
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Where links in threads open. To choose for one link, right-click it or press Shift+F10."

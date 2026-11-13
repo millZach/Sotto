@@ -48,8 +48,10 @@ describe('a headless host’s account copies (ADR-0205, amending ADR-0025)', () 
     await expect(copies.keep({ account: WORK, secret: TOKEN }, LAPTOP)).resolves.toEqual({ kept: true, keptAt: '2026-11-12T09:00:00.000Z' })
     expect([...kept.slots]).toEqual([[pluginAccountSlot(WORK.id), TOKEN]])
     const listed = await copies.list(LAPTOP)
-    expect(listed).toEqual([{ id: WORK.id, plugin: 'vercel', savedAt: WORK.savedAt }])
+    expect(listed).toMatchObject([{ id: WORK.id, plugin: 'vercel', savedAt: WORK.savedAt }])
     expect(JSON.stringify(listed)).not.toContain(TOKEN)
+    // The list says what the host holds of the account, so the desktop can tell a changed switch or project arrived.
+    expect(listed).toEqual([{ id: WORK.id, plugin: 'vercel', savedAt: WORK.savedAt, name: 'Work', signedInAs: 'example-user', on: true, projects: null }])
     expect(await readFile(join(directory, 'plugin-accounts.json'), 'utf8')).not.toContain(TOKEN)
     expect(await readFile(join(directory, 'plugin-account-copy-senders.json'), 'utf8')).not.toContain(TOKEN)
     // The host's tools find it as they find any account, with the secret the desktop sent.
@@ -64,7 +66,7 @@ describe('a headless host’s account copies (ADR-0205, amending ADR-0025)', () 
     await expect(copies.keep({ account: narrowed, secret: OTHER }, LAPTOP)).resolves.toMatchObject({ kept: true })
     expect([...kept.slots]).toEqual([[pluginAccountSlot(WORK.id), OTHER]])
     expect(await accounts().list()).toEqual([narrowed])
-    expect(await copies.list(LAPTOP)).toEqual([{ id: WORK.id, plugin: 'vercel', savedAt: '2026-11-13T08:00:00.000Z' }])
+    expect(await copies.list(LAPTOP)).toMatchObject([{ id: WORK.id, plugin: 'vercel', savedAt: '2026-11-13T08:00:00.000Z' }])
   })
 
   it('tells a desktop of its own copies alone, and lets no other desktop replace or remove them', async () => {
@@ -82,7 +84,7 @@ describe('a headless host’s account copies (ADR-0205, amending ADR-0025)', () 
     await expect(copies.keep({ account: theirs, secret: OTHER }, TOWER)).resolves.toEqual({ kept: false, problem: 'name-taken' })
     expect(await accounts().list()).toEqual([WORK])
     expect([...kept.slots]).toEqual([[pluginAccountSlot(WORK.id), TOKEN]])
-    expect(await copies.list(LAPTOP)).toEqual([{ id: WORK.id, plugin: 'vercel', savedAt: WORK.savedAt }])
+    expect(await copies.list(LAPTOP)).toMatchObject([{ id: WORK.id, plugin: 'vercel', savedAt: WORK.savedAt }])
     // An account of another name is the other desktop's own, and each then lists only its own.
     const personal = { ...theirs, name: 'Personal' }
     await expect(copies.keep({ account: personal, secret: OTHER }, TOWER)).resolves.toMatchObject({ kept: true })

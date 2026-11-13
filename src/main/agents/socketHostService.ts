@@ -213,6 +213,8 @@ export class SocketHostService implements HostService {
    */
   private hostVersion: string | undefined
   private features: readonly string[] = []
+  /** What the host's health listed before it knew who was asking: what this listener offers some client, not yet this one. */
+  private listed: readonly string[] = []
   /** Threads being read whole because a delta did not follow the revision held, so a run of them costs one read. */
   private readonly resyncing = new Set<string>()
   /** Threads whose held detail a delta could not follow. Only a whole detail stored afterwards makes one current again. */
@@ -374,7 +376,7 @@ export class SocketHostService implements HostService {
       this.hostVersion = typeof advertised === 'string' ? advertised : undefined
       throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
     }
-    this.hostVersion = health.sottoVersion; this.features = []
+    this.hostVersion = health.sottoVersion; this.features = []; this.listed = health.features
     // A host that says it is another one is not sent this device's token at all.
     if (this.options.expectedHostId && health.hostId !== this.options.expectedHostId) throw new WrongHostError()
     const response = await fetch(this.endpoint('/v1/session'), { method: 'POST', headers: { Authorization: 'Bearer ' + this.options.token }, signal: AbortSignal.any([opening.signal, AbortSignal.timeout(15000)]), redirect: 'error' })
@@ -1583,9 +1585,10 @@ export class SocketHostService implements HostService {
   /**
    * The host lists `plugin-account-copies` (ADR-0205, amending ADR-0025): it keeps a plugin account's secret and
    * settings in its own encrypted credential file, for its own threads. An older or stable host lists none, and is
-   * never sent a secret: each call below refuses before anything leaves this computer.
+   * never sent a secret: each call below refuses before anything leaves this computer. Sending and removing wait for
+   * the host to have said this desktop may, in its hello or by answering the list.
    */
-  get supportsPluginAccountCopies(): boolean { return this.features.includes('plugin-account-copies') }
+  get supportsPluginAccountCopies(): boolean { return this.features.includes('plugin-account-copies') || this.listed.includes('plugin-account-copies') }
   async keepPluginAccountCopy(copy: PluginAccountCopy): Promise<PluginAccountCopyReceipt> {
     this.offers('plugin-account-copies')
     return this.read(pluginAccountCopyReceiptSchema, await this.call({ op: 'plugin-account-copy', copy }, undefined, undefined, 10000))
@@ -1595,8 +1598,14 @@ export class SocketHostService implements HostService {
     return this.read(pluginAccountCopyRemovedSchema, await this.call({ op: 'plugin-account-copy-remove', accountId }, undefined, undefined, 10000))
   }
   async pluginAccountCopies(): Promise<HeldPluginAccountCopy[]> {
-    this.offers('plugin-account-copies')
-    return this.read(heldPluginAccountCopiesSchema, await this.call({ op: 'plugin-account-copies' }, undefined, undefined, 10000))
+    // A host being added records this desktop a moment after its hello, so that hello listed no copies. Its health did,
+    // for it keeps them, so the list is asked anyway: it carries no secret, and a host reads its record of desktops again
+    // before it answers. An answer is the host saying this desktop may send, as a hello now would.
+    if (this.features.includes('plugin-account-copies') || !this.listed.includes('plugin-account-copies')) this.offers('plugin-account-copies')
+    const frames = this.frames
+    const held = this.read(heldPluginAccountCopiesSchema, await this.call({ op: 'plugin-account-copies' }, undefined, undefined, 10000))
+    if (frames === this.frames && !this.features.includes('plugin-account-copies')) this.features = [...this.features, 'plugin-account-copies']
+    return held
   }
   /**
    * The host lists `delegation-views` and this desktop accepted it (#1310): its window reads what the host's own threads

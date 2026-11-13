@@ -1842,18 +1842,22 @@ export async function startSocketServer(options: SocketServerOptions) {
         try { return desktopDefaultsReceiptSchema.parse(await service.desktopDefaults(request.defaults, peer.client)) } catch { throw new Refusal('unavailable') }
       }
       case 'plugin-account-copy': {
-        // The one credential a client may send (ADR-0205, amending ADR-0025), and only a recorded desktop may. The copy
+        // The one credential a client may send (ADR-0205, amending ADR-0025), and only a recorded desktop may: the list
+        // of desktops is read again first, so one taken off it since its hello sends nothing more. The copy
         // is kept as that desktop's own. The answer says whether it was kept and never repeats what was sent; a failure
         // says nothing of it either.
+        await options.watcherDesktops?.refresh().catch(() => undefined)
         if (!offers(peer, 'plugin-account-copies') || !service.keepPluginAccountCopy) throw new Refusal('invalid_request')
         try { return pluginAccountCopyReceiptSchema.parse(await service.keepPluginAccountCopy(request.copy, peer.client)) } catch { throw new Refusal('unavailable') }
       }
       case 'plugin-account-copy-remove': {
+        await options.watcherDesktops?.refresh().catch(() => undefined)
         if (!offers(peer, 'plugin-account-copies') || !service.removePluginAccountCopy) throw new Refusal('invalid_request')
         try { return pluginAccountCopyRemovedSchema.parse(await service.removePluginAccountCopy(request.accountId, peer.client)) } catch { throw new Refusal('unavailable') }
       }
       case 'plugin-account-copies': {
         // Which accounts this desktop sent and when each was saved. The schema names no secret, so none can be listed.
+        await options.watcherDesktops?.refresh().catch(() => undefined)
         if (!offers(peer, 'plugin-account-copies') || !service.pluginAccountCopies) throw new Refusal('invalid_request')
         try { return heldPluginAccountCopiesSchema.parse(await service.pluginAccountCopies(peer.client)) } catch { throw new Refusal('unavailable') }
       }

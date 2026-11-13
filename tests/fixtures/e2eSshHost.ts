@@ -71,7 +71,10 @@ async function main(): Promise<void> {
   // While the file SOTTO_E2E_HOST_SIGNED_OUT names exists, this host starts with every provider signed out.
   const signedOut = Boolean(process.env.SOTTO_E2E_HOST_SIGNED_OUT && existsSync(process.env.SOTTO_E2E_HOST_SIGNED_OUT))
   const provider = (): E2EAgentHost => signedOut ? new SignedOut() : new E2EAgentHost()
-  const host = await startHeadlessHost({ ...options, ...installedVersion(), providers: { codex: provider(), claude: provider(), grok: provider(), devin: provider() }, reasoner: e2eAgentReasoner })
+  // With SOTTO_E2E_HOST_OWL, the host is an Owl build of this release, so it runs what Owl holds back from stable, such as
+  // keeping plugin account copies (tests/e2e/plugins-account-copies.spec.ts).
+  const owl = process.env.SOTTO_E2E_HOST_OWL ? { sottoVersion: OWL_HOST } : installedVersion()
+  const host = await startHeadlessHost({ ...options, ...owl, providers: { codex: provider(), claude: provider(), grok: provider(), devin: provider() }, reasoner: e2eAgentReasoner })
   keepRunning(() => host.close())
 }
 function keepRunning(close: () => Promise<void>): void {
