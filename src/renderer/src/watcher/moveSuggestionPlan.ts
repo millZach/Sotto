@@ -1,4 +1,4 @@
-import type { AgentThread } from '../../../shared/agents'
+import type { AgentProject, AgentThread } from '../../../shared/agents'
 import type { MachineEntry } from '../../../shared/machineLine'
 import { isThreadTurnRunning } from '../../../shared/threadActivity'
 import { THREAD_MOVE_THREADS_MAX } from '../../../shared/threadMoves'
@@ -59,11 +59,12 @@ export function moveSuggestionPlan(entries: readonly MachineEntry[], notNow: Rea
 
 /**
  * Whether the window can see that a thread is not at a clean point: a turn running, a question or permission card,
- * uncommitted work as its host last read its folder, put away, delegated, or Watcher's own. Background work, sends on
- * their way and work uncommitted since that read are main's to say, in its preview, which a press asks again.
+ * uncommitted work as its host last read its folder, put away (itself or with its project), delegated, or Watcher's own.
+ * Background work, sends on their way and work uncommitted since that read are main's to say, in its preview, which a
+ * press asks again.
  */
-export function plainlyHeld(thread: AgentThread): boolean {
-  return isPutAway(thread) || thread.kind === 'watcher' || thread.kind === 'watcher-history' || thread.clientConnected === false
+export function plainlyHeld(thread: AgentThread, project: Pick<AgentProject, 'workspaceSettledAt'> | undefined): boolean {
+  return isPutAway(thread, project) || thread.kind === 'watcher' || thread.kind === 'watcher-history' || thread.clientConnected === false
     || thread.delegatedBy !== undefined || isThreadTurnRunning(thread) || thread.requests.length > 0
     || thread.worktree?.dirty === true || thread.worktree?.git?.dirty === true
 }
@@ -72,8 +73,8 @@ export function plainlyHeld(thread: AgentThread): boolean {
  * A machine's threads that might move, most recently worked first, in the hundreds a preview takes at a time, so a hundred
  * that would not move never hide one that would. Worked out once a reading.
  */
-export function moveSuggestionCandidates(threads: readonly AgentThread[], from: MachineEntry): readonly (readonly string[])[] {
-  const ids = threads.filter(thread => onMachine(thread, from) && !plainlyHeld(thread)).sort((a, b) => worked(b) - worked(a)).map(thread => thread.id)
+export function moveSuggestionCandidates(threads: readonly AgentThread[], from: MachineEntry, projects: ReadonlyMap<string, AgentProject>): readonly (readonly string[])[] {
+  const ids = threads.filter(thread => onMachine(thread, from) && !plainlyHeld(thread, projects.get(thread.projectId))).sort((a, b) => worked(b) - worked(a)).map(thread => thread.id)
   const pages: string[][] = []
   for (let at = 0; at < ids.length; at += THREAD_MOVE_THREADS_MAX) pages.push(ids.slice(at, at + THREAD_MOVE_THREADS_MAX))
   return pages

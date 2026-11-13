@@ -3,10 +3,10 @@
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { AgentState, AgentThread } from '../../../src/shared/agents'
+import type { AgentProject, AgentState, AgentThread } from '../../../src/shared/agents'
 import type { MachineEntry, MachineProblem } from '../../../src/shared/machineLine'
 import type { ThreadMovePrepare, ThreadMovesBridge } from '../../../src/shared/threadMoves'
-import { moveSheetStore } from '../../../src/renderer/src/watcher/MoveThreads'
+import { movableThreadIds, moveSheetStore } from '../../../src/renderer/src/watcher/MoveThreads'
 import { WatcherMoveSuggestion } from '../../../src/renderer/src/watcher/MoveSuggestion'
 import { moveSuggestionCandidates, moveSuggestionNotNow, moveSuggestionPlan } from '../../../src/renderer/src/watcher/moveSuggestionPlan'
 import { useOptionalApp } from '../../../src/renderer/src/state/AppContext'
@@ -33,6 +33,8 @@ function entry(hostId: string, name: string, options: { problems?: MachineProble
 }
 const here = (options: Parameters<typeof entry>[2] = {}) => entry(LOCAL, 'This computer', { thisComputer: true, ...options })
 const forgeShort = (observedAt = ago(0)) => entry(FORGE, 'forge', { problems: ['short'], headroom: 0, observedAt })
+const NO_PROJECTS: readonly AgentProject[] = []
+const project = (id: string, over: Partial<AgentProject> = {}): AgentProject => ({ id, title: id, path: `D:\\${id}`, providerId: 'codex', ...over }) as AgentProject
 const THREADS = [thread('tray', 'Tray icon at night', { updatedAt: ago(4) }), thread('menu', 'Linux tray menu spacing', { updatedAt: ago(1) }),
   thread('wav', 'Streaming WAV stall', { status: 'running', updatedAt: ago(0) }), thread('local', 'Here already', { remoteHost: false, hostId: LOCAL, updatedAt: ago(0) }),
   thread('kid', 'Delegated', { delegatedBy: 'tray' }), thread('watcher', 'Watcher', { kind: 'watcher' })]
@@ -69,7 +71,7 @@ describe('which machine, which machine with room and which threads', () => {
     // asked about, and the rest go in the hundreds a preview takes, so a hundred that would not move never hide the next.
     const many = Array.from({ length: 120 }, (_, index) => thread(`held-${index}`, `Held ${index}`, { updatedAt: ago(0) }))
     const pages = moveSuggestionCandidates([...THREADS, thread('asks', 'Asks', { requests: [{ id: 'q', kind: 'question', text: 'Which?' }] } as Partial<AgentThread>),
-      thread('dirty', 'Dirty', { worktree: { mode: 'independent', status: 'ready', dirty: true } } as Partial<AgentThread>), ...many], plan!.troubled[0]!.from)
+      thread('dirty', 'Dirty', { worktree: { mode: 'independent', status: 'ready', dirty: true } } as Partial<AgentThread>), ...many], plan!.troubled[0]!.from, new Map())
     expect(pages.map(page => page.length)).toEqual([100, 22])
     expect(pages.flat()).toEqual([...many.map(item => item.id), 'menu', 'tray'])
     // This computer first among equals.
@@ -99,17 +101,17 @@ describe('the line under the machines line', () => {
   it('names the thread main says moves now, once a reading, and moves it with one press', async () => {
     const moves = bridge()
     const entries = [here(), forgeShort()]
-    const { rerender } = render(<WatcherMoveSuggestion entries={entries} threads={THREADS} now={NOW} />)
+    const { rerender } = render(<WatcherMoveSuggestion projects={NO_PROJECTS} entries={entries} threads={THREADS} now={NOW} />)
     // menu worked last but stays, so tray is named.
     const line = await screen.findByRole('group', { name: /forge is short on memory, and This computer has room\. Move Tray icon at night there\?/u })
     expect(line.textContent).toContain('It last worked 4 min. ago and is between turns.')
     expect(moves.prepare).toHaveBeenCalledTimes(1)
     expect(moves.prepare).toHaveBeenCalledWith({ threadIds: ['menu', 'tray'], hostId: LOCAL })
     // A thread's update under the same reading never asks again, nor does the line going and coming back on it.
-    rerender(<WatcherMoveSuggestion entries={entries} threads={THREADS.map(item => item.id === 'menu' ? { ...item, updatedAt: ago(0) } : item)} now={NOW} />)
-    rerender(<WatcherMoveSuggestion entries={[here({ headroom: 0 }), forgeShort()]} threads={THREADS} now={NOW} />)
+    rerender(<WatcherMoveSuggestion projects={NO_PROJECTS} entries={entries} threads={THREADS.map(item => item.id === 'menu' ? { ...item, updatedAt: ago(0) } : item)} now={NOW} />)
+    rerender(<WatcherMoveSuggestion projects={NO_PROJECTS} entries={[here({ headroom: 0 }), forgeShort()]} threads={THREADS} now={NOW} />)
     expect(screen.queryByRole('group')).toBeNull()
-    rerender(<WatcherMoveSuggestion entries={entries} threads={THREADS} now={NOW} />)
+    rerender(<WatcherMoveSuggestion projects={NO_PROJECTS} entries={entries} threads={THREADS} now={NOW} />)
     await screen.findByRole('group')
     await act(async () => { await Promise.resolve() })
     expect(moves.prepare).toHaveBeenCalledTimes(1)
@@ -118,23 +120,23 @@ describe('the line under the machines line', () => {
     // A fresh preview for that thread alone, then the line is gone until the next reading.
     expect(moves.prepare).toHaveBeenLastCalledWith({ threadIds: ['tray'], hostId: LOCAL })
     await waitFor(() => expect(screen.queryByRole('group')).toBeNull())
-    rerender(<WatcherMoveSuggestion entries={[here(), forgeShort(ago(-1))]} threads={THREADS} now={NOW} />)
+    rerender(<WatcherMoveSuggestion projects={NO_PROJECTS} entries={[here(), forgeShort(ago(-1))]} threads={THREADS} now={NOW} />)
     expect(await screen.findByRole('group')).toBeTruthy()
     expect(moves.prepare).toHaveBeenCalledTimes(3)
   })
 
   it('says nothing when no thread there would move now, or once the named one starts a turn', async () => {
     bridge(ids => ({ status: 'ok', confirmationId: CONFIRMATION, expiresAt: ago(-1), machine: 'This computer', threads: ids.map(threadId => ({ threadId, outcome: 'stays' as const, words: 'A turn is running.' })) }))
-    render(<WatcherMoveSuggestion entries={[here(), forgeShort()]} threads={THREADS} now={NOW} />)
+    render(<WatcherMoveSuggestion projects={NO_PROJECTS} entries={[here(), forgeShort()]} threads={THREADS} now={NOW} />)
     await act(async () => { await Promise.resolve(); await Promise.resolve() })
     expect(screen.queryByRole('group')).toBeNull()
     cleanup()
     bridge()
-    const { rerender } = render(<WatcherMoveSuggestion entries={[here(), forgeShort()]} threads={THREADS} now={NOW} />)
+    const { rerender } = render(<WatcherMoveSuggestion projects={NO_PROJECTS} entries={[here(), forgeShort()]} threads={THREADS} now={NOW} />)
     await screen.findByRole('group')
-    rerender(<WatcherMoveSuggestion entries={[here(), forgeShort()]} threads={THREADS.map(item => item.id === 'tray' ? { ...item, status: 'running' } as AgentThread : item)} now={NOW} />)
+    rerender(<WatcherMoveSuggestion projects={NO_PROJECTS} entries={[here(), forgeShort()]} threads={THREADS.map(item => item.id === 'tray' ? { ...item, status: 'running' } as AgentThread : item)} now={NOW} />)
     expect(screen.queryByRole('group')).toBeNull()
-    rerender(<WatcherMoveSuggestion entries={[here(), forgeShort()]} threads={THREADS.map(item => item.id === 'tray' ? { ...item, requests: [{ id: 'q', kind: 'question', text: 'Which?' }] } as AgentThread : item)} now={NOW} />)
+    rerender(<WatcherMoveSuggestion projects={NO_PROJECTS} entries={[here(), forgeShort()]} threads={THREADS.map(item => item.id === 'tray' ? { ...item, requests: [{ id: 'q', kind: 'question', text: 'Which?' }] } as AgentThread : item)} now={NOW} />)
     expect(screen.queryByRole('group')).toBeNull()
   })
 
@@ -144,7 +146,7 @@ describe('the line under the machines line', () => {
       threads: ids.map(threadId => ({ threadId, outcome: threadId === 'studio-one' ? 'moves' as const : 'stays' as const, words: 'It has uncommitted work.' })) }))
     const studioBusy = (observedAt = ago(0)) => entry(STUDIO, 'studio', { problems: ['busy'], headroom: 0, observedAt })
     const threads = [...THREADS.filter(item => item.id !== 'tray'), thread('studio-one', 'Studio render', { hostId: STUDIO }), thread('studio-two', 'Studio bake', { hostId: STUDIO })]
-    const { rerender } = render(<WatcherMoveSuggestion entries={[here(), forgeShort(), studioBusy()]} threads={threads} now={NOW} />)
+    const { rerender } = render(<WatcherMoveSuggestion projects={NO_PROJECTS} entries={[here(), forgeShort(), studioBusy()]} threads={threads} now={NOW} />)
     await screen.findByRole('group', { name: /studio is busy/u })
     expect(moves.prepare).toHaveBeenCalledTimes(2)
     // Not now on studio: forge's answer for its unchanged reading stands, and nothing is asked again.
@@ -156,8 +158,8 @@ describe('the line under the machines line', () => {
     // hides nothing.
     moveSuggestionNotNow.clear()
     vi.mocked(moves.prepare).mockReturnValueOnce(new Promise(resolve => { late = resolve }))
-    rerender(<WatcherMoveSuggestion entries={[here(), forgeShort(), studioBusy(ago(-1))]} threads={threads} now={NOW} />)
-    rerender(<WatcherMoveSuggestion entries={[here(), forgeShort(), studioBusy(ago(-2))]} threads={threads} now={NOW} />)
+    rerender(<WatcherMoveSuggestion projects={NO_PROJECTS} entries={[here(), forgeShort(), studioBusy(ago(-1))]} threads={threads} now={NOW} />)
+    rerender(<WatcherMoveSuggestion projects={NO_PROJECTS} entries={[here(), forgeShort(), studioBusy(ago(-2))]} threads={threads} now={NOW} />)
     await act(async () => { await Promise.resolve() })
     await act(async () => { late({ status: 'ok', confirmationId: CONFIRMATION, expiresAt: ago(-1), machine: 'This computer', threads: [{ threadId: 'studio-two', outcome: 'moves' }] }) })
     expect((await screen.findByRole('group')).textContent).toContain('Move Studio render there?')
@@ -168,7 +170,7 @@ describe('the line under the machines line', () => {
     const studioBusy = entry(STUDIO, 'studio', { problems: ['busy'], headroom: 0 })
     const threads = [...THREADS, thread('studio-one', 'Studio render', { hostId: STUDIO })]
     act(() => { moveSheetStore.open({ kind: 'all' }) })
-    const { rerender } = render(<WatcherMoveSuggestion entries={[here(), forgeShort(), studioBusy]} threads={threads} now={NOW} />)
+    const { rerender } = render(<WatcherMoveSuggestion projects={NO_PROJECTS} entries={[here(), forgeShort(), studioBusy]} threads={threads} now={NOW} />)
     await act(async () => { await Promise.resolve() })
     expect(moves.prepare).not.toHaveBeenCalled()
     act(() => { moveSheetStore.close() })
@@ -176,7 +178,7 @@ describe('the line under the machines line', () => {
     expect(moves.prepare).toHaveBeenCalledTimes(1)
     // Tray starts a turn: forge names nothing now, and studio, not asked yet, is.
     const running = threads.map(item => item.id === 'tray' ? { ...item, status: 'running' } as AgentThread : item)
-    rerender(<WatcherMoveSuggestion entries={[here(), forgeShort(), studioBusy]} threads={running} now={NOW} />)
+    rerender(<WatcherMoveSuggestion projects={NO_PROJECTS} entries={[here(), forgeShort(), studioBusy]} threads={running} now={NOW} />)
     expect((await screen.findByRole('group', { name: /studio is busy/u })).textContent).toContain('Move Studio render there?')
     expect(moves.prepare).toHaveBeenLastCalledWith({ threadIds: ['studio-one'], hostId: LOCAL })
   })
@@ -185,14 +187,14 @@ describe('the line under the machines line', () => {
     const moves = bridge(ids => ({ status: 'ok', confirmationId: CONFIRMATION, expiresAt: ago(-1), machine: 'This computer',
       threads: ids.map(threadId => ({ threadId, outcome: threadId === 'studio-one' ? 'moves' as const : 'stays' as const, words: 'It has uncommitted work.' })) }))
     const studioBusy = entry(STUDIO, 'studio', { problems: ['busy'], headroom: 0 })
-    render(<WatcherMoveSuggestion entries={[here(), forgeShort(), studioBusy]} threads={[...THREADS, thread('studio-one', 'Studio render', { hostId: STUDIO })]} now={NOW} />)
+    render(<WatcherMoveSuggestion projects={NO_PROJECTS} entries={[here(), forgeShort(), studioBusy]} threads={[...THREADS, thread('studio-one', 'Studio render', { hostId: STUDIO })]} now={NOW} />)
     expect((await screen.findByRole('group')).textContent).toContain('studio is busy, and This computer has room. Move Studio render there?')
     expect(moves.prepare).toHaveBeenCalledTimes(2)
   })
 
   it('opens the sheet for a thread that would start narrower, and the sheet at the machine with room for Choose threads…', async () => {
     const moves = bridge()
-    render(<WatcherMoveSuggestion entries={[here(), forgeShort()]} threads={THREADS} now={NOW} />)
+    render(<WatcherMoveSuggestion projects={NO_PROJECTS} entries={[here(), forgeShort()]} threads={THREADS} now={NOW} />)
     fireEvent.click(await screen.findByRole('button', { name: 'Choose threads to move to This computer' }))
     expect(moveSheetStore.get()).toEqual({ kind: 'all', targetHostId: LOCAL })
     moveSheetStore.close()
@@ -205,7 +207,7 @@ describe('the line under the machines line', () => {
 
   it('says a check that failed moved nothing, and shows a press’s answer only on the reading it was pressed on', async () => {
     const moves = bridge()
-    const { rerender } = render(<WatcherMoveSuggestion entries={[here(), forgeShort()]} threads={THREADS} now={NOW} />)
+    const { rerender } = render(<WatcherMoveSuggestion projects={NO_PROJECTS} entries={[here(), forgeShort()]} threads={THREADS} now={NOW} />)
     await screen.findByRole('group')
     vi.mocked(moves.prepare).mockRejectedValueOnce(new Error('gone'))
     fireEvent.click(screen.getByRole('button', { name: 'Move to This computer' }))
@@ -216,7 +218,7 @@ describe('the line under the machines line', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Move to This computer' }))
     await waitFor(() => expect(moves.start).toHaveBeenCalled())
     // A new reading while the press is under way: every button waits, and the old press's refusal is not shown on it.
-    rerender(<WatcherMoveSuggestion entries={[here(), forgeShort(ago(-1))]} threads={THREADS} now={NOW} />)
+    rerender(<WatcherMoveSuggestion projects={NO_PROJECTS} entries={[here(), forgeShort(ago(-1))]} threads={THREADS} now={NOW} />)
     await waitFor(() => expect(moves.prepare).toHaveBeenCalledTimes(4))
     expect(screen.getByRole('button', { name: 'Moving…' })).toHaveProperty('disabled', true)
     await act(async () => { refuse({ status: 'refused', message: 'This thread is moving already. Nothing more was moved.' }) })
@@ -226,16 +228,44 @@ describe('the line under the machines line', () => {
 
   it('says why a press moved nothing, and Not now passes the machine over until it reads fine', async () => {
     const moves = bridge()
-    const { rerender } = render(<WatcherMoveSuggestion entries={[here(), forgeShort()]} threads={THREADS} now={NOW} />)
+    const { rerender } = render(<WatcherMoveSuggestion projects={NO_PROJECTS} entries={[here(), forgeShort()]} threads={THREADS} now={NOW} />)
     vi.mocked(moves.start).mockResolvedValueOnce({ status: 'refused', message: 'This thread is moving already. Nothing more was moved.' })
     fireEvent.click(await screen.findByRole('button', { name: 'Move to This computer' }))
     expect((await screen.findByRole('alert')).textContent).toBe('This thread is moving already. Nothing more was moved.')
     fireEvent.click(screen.getByRole('button', { name: 'Not now, until forge reads fine again' }))
     expect(screen.queryByRole('group')).toBeNull()
-    rerender(<WatcherMoveSuggestion entries={[here(), forgeShort(ago(-1))]} threads={THREADS} now={NOW} />)
+    rerender(<WatcherMoveSuggestion projects={NO_PROJECTS} entries={[here(), forgeShort(ago(-1))]} threads={THREADS} now={NOW} />)
     expect(screen.queryByRole('group')).toBeNull()
-    rerender(<WatcherMoveSuggestion entries={[here(), entry(FORGE, 'forge', { observedAt: ago(-2) })]} threads={THREADS} now={NOW} />)
-    rerender(<WatcherMoveSuggestion entries={[here(), forgeShort(ago(-3))]} threads={THREADS} now={NOW} />)
+    rerender(<WatcherMoveSuggestion projects={NO_PROJECTS} entries={[here(), entry(FORGE, 'forge', { observedAt: ago(-2) })]} threads={THREADS} now={NOW} />)
+    rerender(<WatcherMoveSuggestion projects={NO_PROJECTS} entries={[here(), forgeShort(ago(-3))]} threads={THREADS} now={NOW} />)
     expect(await screen.findByRole('group')).toBeTruthy()
+  })
+})
+
+describe('a thread put away is never offered', () => {
+  // Zach, November 12, 2026: the line offered a thread settled through its project's folder, on the Settled shelf (#2407),
+  // since only the thread's own settle was read.
+  const SETTLED = project('ww2', { workspaceSettledAt: ago(60 * 24) })
+  const putAway = [thread('ww2', 'Build WW2 historical animation from prompt file', { projectId: 'ww2', workspaceSettledAt: null, updatedAt: ago(0) }),
+    thread('shelf', 'Settled itself', { workspaceSettledAt: ago(30), updatedAt: ago(0) }),
+    thread('lifecycle', 'Settled by its lifecycle', { settledAt: ago(30), updatedAt: ago(0) }),
+    thread('archived', 'Archived', { archivedAt: ago(30), updatedAt: ago(0) })]
+
+  it('leaves settled, archived and project-settled threads out of the suggestion’s candidates and out of Move threads', () => {
+    const projects = new Map([[SETTLED.id, SETTLED], ['sotto', project('sotto')]])
+    expect(moveSuggestionCandidates([...THREADS, ...putAway], forgeShort(), projects).flat()).toEqual(['menu', 'tray'])
+    const state = { hostId: LOCAL, host: { hostId: LOCAL, threads: [...THREADS, ...putAway], projects: [...projects.values()] } } as unknown as AgentState
+    expect(movableThreadIds(state, LOCAL)).toEqual(['tray', 'menu', 'wav', 'kid'])
+  })
+
+  it('never asks main about a thread settled through its project, and drops one named once its project is settled', async () => {
+    const moves = bridge()
+    const threads = [putAway[0]!, ...THREADS]
+    const { rerender } = render(<WatcherMoveSuggestion projects={[SETTLED]} entries={[here(), forgeShort()]} threads={threads} now={NOW} />)
+    await screen.findByRole('group', { name: /Move Tray icon at night there\?/u })
+    expect(moves.prepare).toHaveBeenCalledWith({ threadIds: ['menu', 'tray'], hostId: LOCAL })
+    // Tray's project is settled after the line named it: the line says nothing.
+    rerender(<WatcherMoveSuggestion projects={[SETTLED, project('sotto', { workspaceSettledAt: ago(0) })]} entries={[here(), forgeShort()]} threads={threads} now={NOW} />)
+    expect(screen.queryByRole('group')).toBeNull()
   })
 })

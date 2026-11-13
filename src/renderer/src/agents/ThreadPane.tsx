@@ -433,7 +433,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   // It opens Move threads' sheet for this one thread.
   const moves = useMovesOffered()
   const remote = thread.remoteHost === true
-  const moveOffered = moves !== undefined && !ownPane && !isPutAway(thread) && thread.kind !== 'watcher' && thread.kind !== 'watcher-history' && (!remote || thread.clientConnected !== false)
+  const moveOffered = moves !== undefined && !ownPane && !isPutAway(thread, row.project) && thread.kind !== 'watcher' && thread.kind !== 'watcher-history' && (!remote || thread.clientConnected !== false)
   const moveMachines = useMoveMachines(moveOffered)
   const moving: PaneMenuItem[] = moveOffered && (remote || moveMachines.some(machine => machine.connected))
     ? [{ id: 'move', label: t`Continue on another machine…`, icon: <ArrowRightLeft size={15} aria-hidden="true" />,
