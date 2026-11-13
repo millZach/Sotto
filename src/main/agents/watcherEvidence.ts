@@ -120,9 +120,32 @@ const ENDED_KINDS: ReadonlySet<WatcherAttentionKind> = new Set(['merged', 'close
  */
 interface PullRequestLife { linkedEnded?: true; merged?: true; state?: NonNullable<PullRequestObservation['state']>; closedAt?: number }
 
+/** How long a pull request's or working copy's fact stays fresh after it was read, while its thread is connected. */
+const FRESH_MS = 5 * 60_000
+/** One thread's facts by slot. It counts its changes, so a read made since the last one can be handed out again. */
+class EvidenceSlots extends Map<string, WatcherEvidence> {
+  revision = 0
+  override set(slot: string, item: WatcherEvidence): this { this.revision++; return super.set(slot, item) }
+  override delete(slot: string): boolean { const had = super.delete(slot); if (had) this.revision++; return had }
+  override clear(): void { this.revision++; super.clear() }
+}
+/**
+ * What `read` made of one thread's facts, connected or not: the list, the slots' revision it was made at, and the span of
+ * clock times over which each fact stays as fresh or as stale as the list says.
+ */
+interface EvidenceRead { readonly revision: number; readonly from: number; readonly until: number; readonly items: WatcherEvidence[] }
+/** The read of a thread with no facts, the same list each time. */
+const NO_EVIDENCE = Object.freeze([]) as unknown as WatcherEvidence[]
+
 /** Bounded in-memory facts only. Never keep raw errors, file paths, tool inputs, output or review bodies. */
 export class WatcherEvidenceStore {
-  private readonly entries = new Map<string, Map<string, WatcherEvidence>>()
+  private readonly entries = new Map<string, EvidenceSlots>()
+  /**
+   * Each thread's last read, connected and not, kept with its slots so it goes when they do. Watcher's room reads every
+   * thread's facts on every publish, about 730 times a minute on the owner's laptop on November 13, 2026, and making each
+   * list again was most of what a room build grew by since the Owl before.
+   */
+  private readonly reads = new WeakMap<EvidenceSlots, { connected?: EvidenceRead; disconnected?: EvidenceRead }>()
   private readonly attending = new Map<string, Map<string, PullRequestAttention>>()
   /**
    * Each attention fact of a thread, whether it holds now and how often it came back after it was gone (#1190). In memory
@@ -158,7 +181,7 @@ export class WatcherEvidenceStore {
     const parsed = watcherEvidenceSchema.safeParse({ ...input, id })
     if (!parsed.success) return false
     const item = parsed.data
-    const key = targetKey(item.target), entries = this.entries.get(key) ?? new Map<string, WatcherEvidence>()
+    const key = targetKey(item.target), entries = this.entries.get(key) ?? new EvidenceSlots()
     const previous = entries.get(slot)
     if (slot.endsWith(':checks')) this.notePassing(key, slot, item, previous)
     // Clock-only refreshes preserve ordering; only a real change becomes a recent fact.
@@ -169,20 +192,36 @@ export class WatcherEvidenceStore {
     this.written.add(key)
     return previous?.id !== id
   }
-  /** `key` is the target's key, when the caller has already built it: the room reads every target's evidence on every publish. */
+  /**
+   * `key` is the target's key, when the caller has already built it: the room reads every target's evidence on every publish.
+   * The list is shared and frozen: a read with the thread's facts unchanged, and none of them turned stale or fresh by the
+   * clock since, hands out the very list the read before made.
+   */
   read(target: WatcherThreadTarget, connected = true, now = Date.now(), key = targetKey(target)): WatcherEvidence[] {
     const entries = this.entries.get(key)
-    return [...entries?.entries() ?? []].slice(-EVIDENCE_PROJECTION_MAX).map(([slot, item]) => {
+    if (!entries) return NO_EVIDENCE
+    const reads = this.reads.get(entries), kept = connected ? reads?.connected : reads?.disconnected
+    if (kept && kept.revision === entries.revision && kept.from < now && now <= kept.until) return kept.items
+    // A fact read at `at` is fresh while the clock is at most `at` + FRESH_MS, and stale after: the list holds between the
+    // moment the latest stale one turned, not counting it, and the moment the first fresh one turns.
+    let from = -Infinity, until = Infinity
+    const items = [...entries].slice(-EVIDENCE_PROJECTION_MAX).map(([slot, item]) => {
       const prefix = slot.startsWith('host:github:') ? 'host:github:' : 'pr:'
-      const unread = item.source === 'github' && item.url ? entries?.get(prefix + pullRequestKey(item.url)) : undefined
-      return { ...item,
-        ...connected ? (['github', 'working-copy'].includes(item.source) && now - Date.parse(item.observedAt) > 5 * 60_000 ? { freshness: 'stale' as const } : {})
+      const unread = item.source === 'github' && item.url ? entries.get(prefix + pullRequestKey(item.url)) : undefined
+      const turns = connected && (item.source === 'github' || item.source === 'working-copy') ? Date.parse(item.observedAt) + FRESH_MS : NaN
+      const stale = now > turns
+      if (stale) from = Math.max(from, turns); else if (!Number.isNaN(turns)) until = Math.min(until, turns)
+      return Object.freeze({ ...item,
+        ...connected ? (stale ? { freshness: 'stale' as const } : {})
           : { freshness: 'stale' as const, availability: 'unavailable' as const, reason: 'disconnected' as const },
         ...connected && unread?.availability === 'unavailable' && (unread.reason === 'read-failed' || unread.reason === 'rate-limited') ? { freshness: 'stale' as const, availability: 'unavailable' as const, ...(unread.reason ? { reason: unread.reason } : {}) } : {},
         ...item.bugBotReview && (!connected || unread?.availability === 'unavailable')
           ? { bugBotReview: { ...item.bugBotReview, coverage: 'unknown' as const } } : {},
-      }
+      })
     })
+    Object.freeze(items)
+    this.reads.set(entries, { ...reads, [connected ? 'connected' : 'disconnected']: { revision: entries.revision, from, until, items } })
+    return items
   }
   private notePassing(key: string, slot: string, item: WatcherEvidence, previous: WatcherEvidence | undefined): void {
     const passing = this.passing.get(key) ?? new Map<string, { head: string | undefined; since: string }>()
