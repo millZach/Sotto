@@ -5100,6 +5100,10 @@ msgid "Read a build log"
 msgstr "Read a build log"
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Read a message"
+msgstr "Read a message"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Read a repository"
 msgstr "Read a repository"
 
@@ -5646,6 +5650,10 @@ msgstr "Search transcripts already uses {keys}. Pick other keys."
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Searched {name}"
 msgstr "Searched {name}"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Searched mail"
+msgstr "Searched mail"
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Searching themes…"

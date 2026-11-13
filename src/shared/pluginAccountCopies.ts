@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { ACCOUNT_PLUGIN_IDS, PLUGIN_ACCOUNT_NAME_MAX, PLUGIN_ACCOUNT_PROJECTS_MAX, PLUGIN_ACCOUNTS_MAX, PLUGIN_SECRET_MAX, pluginAccountNameSchema, pluginAccountSchema } from './plugins'
+import { ACCOUNT_PLUGIN_IDS, isMailPlugin, PLUGIN_ACCOUNT_NAME_MAX, PLUGIN_ACCOUNT_PROJECTS_MAX, PLUGIN_ACCOUNTS_MAX, PLUGIN_SECRET_MAX, pluginAccountNameSchema, pluginAccountSchema } from './plugins'
 
 /**
  * Account copies (CONTEXT.md, ADR-0205, amending ADR-0025): a plugin account's secret and settings, sent by the
@@ -26,8 +26,11 @@ const copiedAccountSchema = pluginAccountSchema.extend({
   on: z.boolean(),
   projects: z.array(z.string().min(1).max(512)).min(1).max(PLUGIN_ACCOUNT_PROJECTS_MAX).refine(projects => new Set(projects).size === projects.length).nullable(),
 }).strict()
-/** An account as the desktop holds it, with its secret. The only message in the host protocol that carries one. */
-export const pluginAccountCopySchema = z.object({ account: copiedAccountSchema, secret: z.string().min(1).max(PLUGIN_SECRET_MAX) }).strict()
+/**
+ * An account as the desktop holds it, with its secret. The only message in the host protocol that carries one. A
+ * mail account is not one yet: a host has no mail grant to ask its threads for, so it is sent none and keeps none.
+ */
+export const pluginAccountCopySchema = z.object({ account: copiedAccountSchema.refine(account => !isMailPlugin(account.plugin)), secret: z.string().min(1).max(PLUGIN_SECRET_MAX) }).strict()
 export type PluginAccountCopy = z.infer<typeof pluginAccountCopySchema>
 
 /**

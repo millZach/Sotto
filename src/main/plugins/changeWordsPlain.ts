@@ -3,6 +3,7 @@ import type { PluginChangeCard } from './pendingChanges'
 
 type GitHubChange = Extract<PluginChange, { readonly kind: 'github-comment' | 'github-open-issue' | 'github-close-issue' | 'github-reopen-issue' }>
 type VercelChange = Extract<PluginChange, { readonly kind: 'vercel-cancel' | 'vercel-promote' | 'vercel-rollback' }>
+type MailRead = Extract<PluginChange, { readonly kind: 'mail-read' }>
 
 /**
  * A plugin change's card in English, for a headless host (ADR-0205, decision 7). A host has no interface language and
@@ -12,8 +13,32 @@ type VercelChange = Extract<PluginChange, { readonly kind: 'vercel-cancel' | 've
  * is changed in the other.
  */
 export function wordPluginChangeInEnglish(change: PluginChange): PluginChangeCard {
+  if (change.kind === 'mail-read') return wordMailRead(change)
   // Only a Vercel change names a deployment.
   return 'deploymentId' in change ? wordVercelChange(change) : wordGitHubChange(change)
+}
+
+/**
+ * A thread's first read of a mail account (decision 8). Not a change: the user's yes lets this thread, and no other,
+ * search and read the account until they stop it or the thread is settled. The card says where what is read goes.
+ */
+function wordMailRead(change: MailRead): PluginChangeCard {
+  const { plugin, provider } = change
+  const named = change.address ? `${change.account} (${change.address})` : change.account
+  return {
+    plugin,
+    text: provider ? `Let this thread read the ${plugin} account ${named}? What it reads goes to ${provider}.`
+      : `Let this thread read the ${plugin} account ${named}? What it reads goes to this thread’s provider.`,
+    action: `Read ${plugin} mail`,
+    target: named,
+    details: [
+      'This thread can search this account’s mail and read its messages, until you stop it or the thread is settled.',
+      provider ? `What it reads goes to ${provider}, as everything a thread reads does.` : `What it reads goes to this thread’s provider, as everything a thread reads does.`,
+      'It cannot send, move or delete mail. Every other thread asks for itself.',
+    ].join('\n'),
+    allow: 'Let this thread read it',
+    deny: 'Don’t allow',
+  }
 }
 
 function wordGitHubChange(change: GitHubChange): PluginChangeCard {

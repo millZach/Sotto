@@ -11,12 +11,26 @@ export const PLUGINS_FEATURE = 'plugins'
 export const PLUGIN_GROUPS = ['code'] as const
 export type PluginGroupId = typeof PLUGIN_GROUPS[number]
 
-export const PLUGIN_IDS = ['github', 'vercel'] as const
+/**
+ * Every plugin a thread's agent can use. Gmail is here before it has a row on the page: its accounts, its reads and
+ * the mail grant are built first, and the row that adds an account comes with the slice's last part.
+ */
+export const PLUGIN_IDS = ['github', 'vercel', 'gmail'] as const
 export type PluginId = typeof PLUGIN_IDS[number]
+/** Each plugin's name, which is the service's own and the same in every language. */
+export const PLUGIN_NAMES: Readonly<Record<PluginId, string>> = { github: 'GitHub', vercel: 'Vercel', gmail: 'Gmail' }
 
+/** The plugins that are mail accounts: read over IMAP, each thread asking once (ADR-0205, decision 8). */
+export const MAIL_PLUGIN_IDS = ['gmail'] as const
+export type MailPluginId = typeof MAIL_PLUGIN_IDS[number]
+export const isMailPlugin = (plugin: string): plugin is MailPluginId => (MAIL_PLUGIN_IDS as readonly string[]).includes(plugin)
+
+/** The plugins with a row on the page today: every plugin but mail, whose row comes with the slice's last part. */
+export type ListedPluginId = Exclude<PluginId, MailPluginId>
 /** A plugin as the page lists it. Its name is the service's own and is the same in every language. */
-export interface PluginEntry { readonly id: PluginId; readonly name: string; readonly group: PluginGroupId }
+export interface PluginEntry { readonly id: ListedPluginId; readonly name: string; readonly group: PluginGroupId }
 
+/** The rows of Settings › Plugins: the plugins a user can connect there today. */
 export const PLUGINS: readonly PluginEntry[] = [
   { id: 'github', name: 'GitHub', group: 'code' },
   { id: 'vercel', name: 'Vercel', group: 'code' },
@@ -106,15 +120,17 @@ export const PLUGINS_RECENT_USE = 'sotto:plugins:recent-use'
  * What a use was of, as far as the record keeps it: a kind of thing read or changed, never which one. A repository's
  * name, an issue's number, a comment's words and what a read returned are the user's own and stay out of the record
  * (ADR-0205, decision 10). Those from `comment` on are changes: a comment posted, an issue opened, closed or
- * reopened, a deployment's build cancelled, a deployment promoted to production, and production rolled back.
+ * reopened, a deployment's build cancelled, a deployment promoted to production, and production rolled back. The last
+ * two are reads of a mail account: a search, and a message opened.
  */
 export const PLUGIN_READ_KINDS = ['issues', 'pull-requests', 'repository', 'commits', 'checks', 'releases', 'search', 'account', 'deployments', 'projects', 'domains', 'logs', 'other',
-  'comment', 'deployment-cancel', 'issue-open', 'issue-close', 'issue-reopen', 'deployment-promote', 'deployment-rollback'] as const
+  'comment', 'deployment-cancel', 'issue-open', 'issue-close', 'issue-reopen', 'deployment-promote', 'deployment-rollback', 'mail-search', 'mail-message'] as const
 export type PluginReadKind = typeof PLUGIN_READ_KINDS[number]
 
 /**
- * How a use ended: done, refused by Sotto before anything was sent, or failed at the service. A change can also end
- * with the user saying no (`denied`) or with nobody answering its card in time (`lapsed`); nothing was sent for either.
+ * How a use ended: done, refused by Sotto before anything was sent, or failed at the service. A change, and a
+ * thread's first read of a mail account, can also end with the user saying no (`denied`) or with nobody answering its
+ * card in time (`lapsed`); nothing was sent for either.
  */
 export const PLUGIN_USE_OUTCOMES = ['done', 'refused', 'failed', 'denied', 'lapsed'] as const
 
@@ -160,8 +176,12 @@ export const PLUGINS_COPY_NEW_SET = 'sotto:plugins:copy-new-set'
 export const PLUGINS_COPIES_CHANGED = 'sotto:plugins:copies-changed'
 
 /** The plugins an account is added to by pasting a secret. GitHub is not one: its account is gh's own sign-in. */
-export const ACCOUNT_PLUGIN_IDS = ['vercel'] as const
+export const ACCOUNT_PLUGIN_IDS = ['vercel', 'gmail'] as const
 export type AccountPluginId = typeof ACCOUNT_PLUGIN_IDS[number]
+
+/** A mail account's address, which signs in to it beside its password: one address, with nothing a mail server would read as more. */
+export const PLUGIN_MAIL_ADDRESS_MAX = 320
+export const pluginMailAddressSchema = z.string().trim().min(3).max(PLUGIN_MAIL_ADDRESS_MAX).regex(/^[^\s@<>"\\]+@[^\s@<>"\\]+$/u)
 
 export const PLUGIN_ACCOUNT_NAME_MAX = 40
 /** Longer than any token a plugin issues, and short enough that a pasted file is turned away. */
@@ -183,6 +203,8 @@ export const pluginAccountSchema = z.object({
   name: z.string().min(1).max(PLUGIN_ACCOUNT_NAME_MAX),
   savedAt: z.iso.datetime(),
   signedInAs: z.string().max(200).nullable(),
+  /** A mail account's address. A plugin that is not mail has none. */
+  address: pluginMailAddressSchema.optional(),
   /** Whether threads may use the account at all (ADR-0205, decision 9). An account kept before the switch existed is on. */
   on: z.boolean().default(true),
   /**
@@ -203,7 +225,10 @@ export function pluginAccountAdmits(account: Pick<PluginAccount, 'on' | 'project
 }
 export const pluginAccountsSchema = z.array(pluginAccountSchema).max(ACCOUNT_PLUGIN_IDS.length * PLUGIN_ACCOUNTS_MAX)
 
-export const pluginAccountAddSchema = z.object({ plugin: z.enum(ACCOUNT_PLUGIN_IDS), name: pluginAccountNameSchema, secret: z.string().min(1).max(PLUGIN_SECRET_MAX) }).strict()
+/** A new account: its plugin, the name the user gives it, its secret, and for a mail account the address the secret signs in. */
+export const pluginAccountAddSchema = z.object({
+  plugin: z.enum(ACCOUNT_PLUGIN_IDS), name: pluginAccountNameSchema, secret: z.string().min(1).max(PLUGIN_SECRET_MAX), address: pluginMailAddressSchema.optional(),
+}).strict().refine(account => isMailPlugin(account.plugin) === (account.address !== undefined))
 export type PluginAccountAdd = z.infer<typeof pluginAccountAddSchema>
 export const pluginAccountReplaceSchema = z.object({ id: z.uuid(), secret: z.string().min(1).max(PLUGIN_SECRET_MAX) }).strict()
 export type PluginAccountReplace = z.infer<typeof pluginAccountReplaceSchema>
@@ -290,6 +315,17 @@ export type PluginChange =
     /** Why it is closed, which is sent with the call: finished, or not going to be done. */
     readonly reason?: 'completed' | 'not_planned'
     readonly account?: string
+  }
+  | {
+    /**
+     * Not a change: a thread's first read of a mail account, which asks once (decision 8). The user's yes is a mail
+     * grant for that thread and that account. It is asked on the same card a change is.
+     */
+    readonly kind: 'mail-read'
+    /** The plugin's name, the account's name and its address. */
+    readonly plugin: string; readonly account: string; readonly address: string
+    /** The provider the thread runs on, by name: what the thread reads goes there. */
+    readonly provider: string
   }
   | {
     /** Promote and roll back move production: every production address of the project serves the deployment. */

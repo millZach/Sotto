@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { PluginSecretLocked } from '../../../../src/main/plugins/accounts'
 import { PluginAccountCopySync, type CopyComputer, type CopySyncEvent, type CopyTarget } from '../../../../src/main/plugins/copySync'
-import type { HeldPluginAccountCopy, PluginAccountCopy, PluginAccountCopyReceipt } from '../../../../src/shared/pluginAccountCopies'
+import { pluginAccountCopySchema, type HeldPluginAccountCopy, type PluginAccountCopy, type PluginAccountCopyReceipt } from '../../../../src/shared/pluginAccountCopies'
 import type { PluginAccount } from '../../../../src/shared/plugins'
 
 const folders: string[] = []
@@ -230,6 +230,23 @@ describe('sending account copies to paired hosts (ADR-0205, amending ADR-0025)',
     expect(forge.calls).toEqual(['list', 'keep Work', 'keep Personal'])
     expect([...forge.held.values()].map(copy => copy.account.projects)).toEqual([null, null])
     expect(await d.states()).toEqual(['Work@host-forge: kept', 'Personal@host-forge: kept'])
+  })
+
+  it('keeps a mail account on this computer for now: a host has no mail grant to ask its threads for', async () => {
+    const mail: PluginAccount = { ...PERSONAL, plugin: 'gmail', name: 'Mail', address: 'reader@example.com', signedInAs: null }
+    const d = await desk([WORK, mail])
+    const forge = fakeHost('host-forge')
+    d.connect(forge)
+    await d.sync.idle()
+    expect(forge.calls).toEqual(['list', 'keep Work'])
+    expect(await d.states()).toEqual(['Work@host-forge: kept', 'Mail@host-forge: here-only'])
+    // Asking for its copy by its switch sends nothing either.
+    await d.sync.setCopy(mail.id, 'saved-host-forge', true)
+    await d.sync.idle()
+    expect([...forge.held.keys()]).toEqual([WORK.id])
+    // And the one request that carries a secret to a host carries no mail account's.
+    expect(pluginAccountCopySchema.safeParse({ account: mail, secret: 'made-up-password' }).success).toBe(false)
+    expect(pluginAccountCopySchema.safeParse({ account: WORK, secret: 'made-up-token' }).success).toBe(true)
   })
 
   it('takes back a narrowed account’s copy from a host that was away when it was narrowed', async () => {

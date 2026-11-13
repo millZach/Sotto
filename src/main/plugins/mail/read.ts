@@ -55,17 +55,17 @@ export interface MailFailure {
 /** What to look for. Every word given must match; none given lists the mailbox's newest messages. */
 export interface MailSearch {
   /** `inbox` (the default), `all`, `sent`, `drafts`, `trash`, `spam` or `starred`, or a mailbox's own name. */
-  readonly mailbox?: string
-  readonly from?: string
-  readonly to?: string
-  readonly subject?: string
+  readonly mailbox?: string | undefined
+  readonly from?: string | undefined
+  readonly to?: string | undefined
+  readonly subject?: string | undefined
   /** Words anywhere in a message. */
-  readonly text?: string
+  readonly text?: string | undefined
   /** Days as `2026-11-13`: received on or after, and before. */
-  readonly since?: string
-  readonly before?: string
-  readonly unread?: boolean
-  readonly limit?: number
+  readonly since?: string | undefined
+  readonly before?: string | undefined
+  readonly unread?: boolean | undefined
+  readonly limit?: number | undefined
 }
 
 /** A message as a search lists it. */

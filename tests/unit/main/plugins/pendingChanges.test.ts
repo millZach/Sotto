@@ -184,3 +184,14 @@ describe('Sotto’s own requests from several sources, as the coordinator reads 
     expect(listeners.map(list => list.length)).toEqual([0, 0])
   })
 })
+
+it('tells its listener each time the coordinator reads the requests, which is how a settled thread’s mail grant is noticed', () => {
+  const noticed = vi.fn()
+  const requests = new PluginChangeRequests({ noticed })
+  requests.requests()
+  requests.requests()
+  expect(noticed).toHaveBeenCalledTimes(2)
+  // Nothing is asked of it otherwise.
+  requests.close()
+  expect(noticed).toHaveBeenCalledTimes(2)
+})

@@ -55,8 +55,12 @@ export class PluginChangeRequests implements SottoThreadRequests {
   private shown: ReadonlyMap<string, readonly AgentRequest[]> = new Map()
   private closed = false
   private checking = false
-  /** `open` says whether a thread is still open: not settled, archived or gone. Without it no ask stops for that. */
-  constructor(private readonly options: { readonly waitMs?: number; readonly now?: () => Date; readonly open?: (threadId: string) => boolean } = {}) {}
+  /**
+   * `open` says whether a thread is still open: not settled, archived or gone. Without it no ask stops for that.
+   * `noticed` is called whenever the coordinator reads these requests, which it does on every publication: it is how
+   * the mail grants hear that a thread may have been settled, and must cost next to nothing.
+   */
+  constructor(private readonly options: { readonly waitMs?: number; readonly now?: () => Date; readonly open?: (threadId: string) => boolean; readonly noticed?: () => void } = {}) {}
 
   /** Shows the card and waits for the user. Resolves once: allowed, denied, lapsed or stopped. */
   ask(threadId: string, card: PluginChangeCard, wait: PluginChangeWait = {}): Promise<PluginChangeAnswer> {
@@ -83,6 +87,7 @@ export class PluginChangeRequests implements SottoThreadRequests {
    * waiting it costs a comparison.
    */
   requests(): ReadonlyMap<string, readonly AgentRequest[]> {
+    this.options.noticed?.()
     if (this.waiting.size > 0 && this.options.open && !this.checking) {
       this.checking = true
       queueMicrotask(() => { this.checking = false; this.stopClosed() })

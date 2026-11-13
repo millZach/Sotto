@@ -43,12 +43,43 @@ async function accounts(check: (plugin: string, secret: string) => Promise<Secre
 }
 
 describe('plugin accounts (ADR-0205)', () => {
+  it('keeps a mail account with its address, checks the two together, and leaves out the spaces a Gmail app password is shown with', async () => {
+    const { made, directory, kept, asked, again } = await accounts(async () => ({ ok: true, signedInAs: null }))
+    const result = await made.add({ plugin: 'gmail', name: 'Personal', address: 'reader@example.com', secret: 'abcd efgh ijkl mnop' })
+    expect(result).toEqual({ ok: true, accounts: [{ id: expect.any(String), plugin: 'gmail', name: 'Personal', savedAt: '2026-11-12T08:00:00.000Z', signedInAs: null, address: 'reader@example.com', on: true, projects: null }] })
+    const account = result.ok ? result.accounts[0]! : undefined
+    expect(asked).toHaveBeenLastCalledWith('gmail', 'abcdefghijklmnop', 'reader@example.com')
+    expect([...kept.slots]).toEqual([[pluginAccountSlot(account!.id), 'abcdefghijklmnop']])
+    // A build from before mail would drop the account and leave its password behind, so the record says it is newer than that build reads.
+    const file = JSON.parse(await readFile(join(directory, 'plugin-accounts.json'), 'utf8')) as { version: number }
+    expect(file.version).toBe(3)
+    expect(JSON.stringify(file)).not.toContain('abcdefghijklmnop')
+    expect(await again().list()).toEqual(result.ok ? result.accounts : [])
+
+    // A new password is checked with the account's own address.
+    expect((await made.replace({ id: account!.id, secret: 'qrst uvwx yzab cdef' })).ok).toBe(true)
+    expect(asked).toHaveBeenLastCalledWith('gmail', 'qrstuvwxyzabcdef', 'reader@example.com')
+    expect(made.secret(account!.id)).toBe('qrstuvwxyzabcdef')
+    // A token of another plugin keeps its spaces: only Gmail shows a password that way.
+    await made.add({ plugin: 'vercel', name: 'Work', secret: 'made up token' })
+    expect(asked).toHaveBeenLastCalledWith('vercel', 'made up token', undefined)
+
+    // A mail account without an address, or an address on another plugin's account, is refused before any service is asked.
+    asked.mockClear()
+    expect(await made.add({ plugin: 'gmail', name: 'No address', secret: GOOD })).toEqual({ ok: false, problem: 'refused' })
+    expect(await made.add({ plugin: 'vercel', name: 'An address', secret: GOOD, address: 'reader@example.com' })).toEqual({ ok: false, problem: 'refused' })
+    expect(asked).not.toHaveBeenCalled()
+    // With the mail account gone, the record is one an older build reads again.
+    expect((await made.remove({ id: account!.id })).ok).toBe(true)
+    expect((JSON.parse(await readFile(join(directory, 'plugin-accounts.json'), 'utf8')) as { version: number }).version).toBe(1)
+  })
+
   it('checks a secret with its service, keeps it in a slot of its own, and never writes it in the record of accounts', async () => {
     const { made, directory, kept, asked, again } = await accounts()
     const result = await made.add({ plugin: 'vercel', name: 'Work', secret: GOOD })
     expect(result).toEqual({ ok: true, accounts: [{ id: expect.any(String), plugin: 'vercel', name: 'Work', savedAt: '2026-11-12T08:00:00.000Z', signedInAs: 'example-user', on: true, projects: null }] })
     const account = result.ok ? result.accounts[0]! : undefined
-    expect(asked).toHaveBeenCalledWith('vercel', GOOD)
+    expect(asked).toHaveBeenCalledWith('vercel', GOOD, undefined)
     expect([...kept.slots]).toEqual([[pluginAccountSlot(account!.id), GOOD]])
     expect(made.secret(account!.id)).toBe(GOOD)
     const file = await readFile(join(directory, 'plugin-accounts.json'), 'utf8')

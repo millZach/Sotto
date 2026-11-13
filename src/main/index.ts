@@ -71,6 +71,9 @@ import { PluginToolServer } from './plugins/pluginTools'
 import { pluginToolHandlers } from './plugins/toolHandlers'
 import { readHostGitHubSignIns } from './plugins/hostSignIns'
 import { PluginAccounts } from './plugins/accounts'
+import { checkMailAccount } from './plugins/mail/accounts'
+import type { MailOptions } from './plugins/mail/read'
+import { MailGrants } from './plugins/mailGrants'
 import { PluginChangeRequests } from './plugins/pendingChanges'
 import { pluginFolderOfThread, pluginProjects } from './plugins/projectFolders'
 import { PluginAccountCopySync } from './plugins/copySync'
@@ -79,7 +82,7 @@ import { wordPluginChange } from './plugins/changeWords'
 import { combinedSottoRequests } from './agents/sottoRequests'
 import { checkVercelToken, type VercelFetch } from './plugins/vercel/read'
 import { PluginUseRecord } from './plugins/useRecord'
-import { PLUGIN_USE_THREAD_TITLE_MAX, PLUGINS_COPIES_CHANGED } from '../shared/plugins'
+import { isMailPlugin, PLUGIN_USE_THREAD_TITLE_MAX, PLUGINS_COPIES_CHANGED } from '../shared/plugins'
 import { resetGhLookup } from './agents/git/ghCommand'
 import { GitUnavailableError, runGitStatusCommand, runWithGhStandIn, type RunGitCommand } from './agents/git/gitStatus'
 import { registerTeamsIpc } from './teams/ipc'
@@ -284,7 +287,7 @@ import {
   snapshotE2EState,
 } from './e2e/e2eBoundary'
 import { E2E_COMPUTER_NAME, E2E_SNAPSHOT_CHANNEL, E2E_TRIGGER_SHORTCUT_CHANNEL, E2E_BROWSER_AGENT_CHANNEL, E2E_HOST_SETUP_TOOL_CHANNEL, E2E_VISUAL_TOOL_CHANNEL, E2E_MEDIA_TOOL_CHANNEL, E2E_DELEGATION_TOOL_CHANNEL, E2E_PLUGIN_TOOL_CHANNEL, e2eBrowserAgentSchema, e2eHostSetupToolSchema, e2eVisualToolSchema, e2eDelegationToolSchema, e2ePluginToolSchema, e2eAgentEventSchema } from '../shared/e2e'
-import { AGENT_STATE, AGENT_E2E, AGENT_THREAD_DETAIL } from '../shared/agents'
+import { AGENT_STATE, AGENT_E2E, AGENT_THREAD_DETAIL, PROVIDER_LABELS } from '../shared/agents'
 import { AgentCredentials } from './agents/credentials'
 import { migrateDesktopKey } from './settings/migrateDesktopKey'
 import { SecureSettings } from './agents/secureSettings'
@@ -1386,7 +1389,11 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const vercelFetch: VercelFetch = e2eConfiguration !== null && !vercelBase ? async () => { throw new Error('E2E_NETWORK_DISABLED') } : (url, init) => fetch(url, init)
   const vercelOptions = { ...(vercelBase ? { base: vercelBase } : {}), signal: pluginsStop.signal }
   // Plugin accounts: a name, a plugin and a secret in the credential store, checked with its service before it is kept.
-  const pluginAccounts = pluginsEnabled ? new PluginAccounts(userDataPath, { credentials, check: (_plugin, secret) => checkVercelToken(vercelFetch, secret, vercelOptions) }) : undefined
+  // A mail account is read over IMAP, each read a connection of its own to that account's mail server. An end-to-end
+  // run reaches no mail server.
+  const mailOptions: MailOptions = { signal: pluginsStop.signal, ...(e2eConfiguration !== null ? { connect: async () => { throw new Error('E2E_NETWORK_DISABLED') } } : {}) }
+  const pluginAccounts = pluginsEnabled ? new PluginAccounts(userDataPath, { credentials,
+    check: (plugin, secret, address) => isMailPlugin(plugin) ? checkMailAccount(plugin, address ?? '', secret, mailOptions) : checkVercelToken(vercelFetch, secret, vercelOptions) }) : undefined
   // Account copies (ADR-0205, amending ADR-0025): each plugin account the user keeps on a paired host is sent to it on
   // every connection and whenever it changes here, and a copy no longer wanted is taken back. Owl `plugins` only.
   const pluginCopySync = pluginsEnabled && pluginAccounts ? new PluginAccountCopySync(userDataPath, {
@@ -1403,10 +1410,14 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const stopFollowingCopies = (): void => { stopFollowingConnections?.(); stopFollowingHosts?.() }
   // Plugin changes waiting on the user: each is one of Sotto's own requests in its thread, answered there (ADR-0205).
   // A thread that is settled, archived or gone takes its waiting changes with it, read as the coordinator holds it.
-  const pluginChanges = pluginsEnabled ? new PluginChangeRequests({ open: threadId => {
+  const pluginThreadOpen = (threadId: string): boolean => {
     const thread = agentControl.watcherSnapshot().threads.find(item => item.id === threadId)
     return thread !== undefined && !isThreadClosed(thread)
-  } }) : undefined
+  }
+  // Mail grants: which threads the user has let read which mail accounts (ADR-0205, decision 8). A grant ends when
+  // its thread is settled, archived or gone, which the grants look for a moment after the coordinator publishes.
+  const mailGrants = pluginsEnabled ? new MailGrants(userDataPath, { open: pluginThreadOpen }) : undefined
+  const pluginChanges = pluginsEnabled ? new PluginChangeRequests({ open: pluginThreadOpen, noticed: () => { mailGrants?.noticed() } }) : undefined
   // The project a thread belongs to, for an account kept to chosen projects: its folder, which is the same project
   // whichever provider the thread runs on. Watcher's threads, and a thread Sotto does not know, belong to none.
   const pluginProjectOf = (threadId: string): string | null => pluginFolderOfThread(agentControl.watcherSnapshot(), threadId)
@@ -1420,6 +1431,11 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       return thread === undefined || thread.kind === 'watcher' || thread.kind === 'watcher-history'
     },
     askChange: async (threadId, change, wait) => await pluginChanges?.ask(threadId, wordPluginChange(change), wait) ?? 'stopped',
+    // What a thread reads from mail goes to its provider, which the card that asks names.
+    ...(mailGrants ? { mail: { grants: mailGrants, options: mailOptions, providerOf: (threadId: string) => {
+      const thread = agentControl.watcherSnapshot().threads.find(item => item.id === threadId)
+      return thread?.providerId ? PROVIDER_LABELS[thread.providerId] : ''
+    } } } : {}),
   })) : undefined
   if (pluginTools) quitHandles.pluginTools = pluginTools
   // Let an agent babysit its pull requests (ADR-0061): every Claude Code, Codex and Grok Build launch on this computer gets
@@ -1586,6 +1602,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     void pluginUse?.forgetThreads(threadIds).catch(() => undefined)
     // And any change of theirs still waiting on the user stops: nothing is done for a thread that is gone.
     pluginChanges?.forgetThreads(threadIds)
+    // And its mail grants go with it.
+    void mailGrants?.forgetThreads(threadIds).catch(() => undefined)
     void requestDrafts.forgetThreads(new Set(threadIds.flatMap(id => [id, hostEntityKey(hostId, id)]))).catch(() => undefined)
     // And what their Settles did to delegated threads elsewhere, whether the window, Clear now, the hourly clear or a phone
     // deleted them (#1316 part 3).
@@ -2742,6 +2760,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         removeAccount: async request => {
           const result = await pluginAccounts?.remove(request) ?? { ok: false as const, problem: 'store' as const }
           if (result.ok) void pluginUse?.forgetAccount(request.id).catch(() => undefined)
+          // And with every thread's leave to read it, where it was a mail account.
+          if (result.ok) void mailGrants?.forgetAccount(request.id).catch(() => undefined)
           // And every host that keeps a copy is told to let it go, now or when it next connects.
           if (result.ok) pluginCopySync?.accountsChanged()
           return result
@@ -2907,6 +2927,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         cleanupLocalApps?.()
         pluginsStop.abort()
         pluginChanges?.close()
+        mailGrants?.close()
         cleanupPlugins?.()
         stopFollowingCopies()
         pluginCopySync?.close()
