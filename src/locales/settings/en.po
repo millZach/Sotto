@@ -1407,6 +1407,10 @@ msgstr "Asking gh who is signed in…"
 msgid "Asking GitHub..."
 msgstr "Asking GitHub..."
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Asking its gh who is signed in…"
+msgstr "Asking its gh who is signed in…"
+
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Asks the npm registry for each client’s latest version when it connects and every hour. Only the package name is sent."
 msgstr "Asks the npm registry for each client’s latest version when it connects and every hour. Only the package name is sent."

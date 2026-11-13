@@ -22,6 +22,8 @@ const VERCEL_TOKENS_PAGE = 'vercel.com/account/tokens'
 type ProjectsView = readonly PluginProject[] | null | 'failed'
 /** What the page knows of gh's sign-in: main's answer, still asking, or a read that failed. */
 type SignInView = GitHubSignIn | { readonly state: 'checking' }
+/** gh's sign-in on another computer as the page shows it: what the computer said, or that it has just connected and is being asked. */
+type ShownHostSignIn = PluginHostSignIn | { readonly computerId: string; readonly name: string; readonly state: 'asking'; readonly login?: undefined }
 
 /** When a use happened, as the day and the time of day. */
 const whenUsed = localeFormatter({ month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
@@ -44,8 +46,9 @@ export function PluginsSettings({ bridge = window.sotto?.plugins }: { readonly b
     void bridge.gitHubSignIn().then(value => { if (asked.current === mine) setSignIn(value) }).catch(() => { if (asked.current === mine) setSignIn({ state: 'unknown' }) })
   }, [bridge])
   useEffect(() => { check(); return () => { asked.current += 1 } }, [check])
-  // gh's sign-in on each of the user's other computers, whose threads act as that account. Read with this computer's,
-  // and again when a computer connects or leaves. Null while unread, or when it could not be read.
+  // gh's sign-in on each of the user's other computers, whose threads act as that account. Null while unread, or
+  // when it could not be read. Each read starts gh on every connected computer, so it is asked for when the page
+  // knows its computers, when one connects or leaves, and on Check again, and not each time a copy changes.
   const [elsewhereSignIns, setElsewhereSignIns] = useState<readonly PluginHostSignIn[] | null>(null)
   const elsewhereAsked = useRef(0)
   const checkElsewhere = useCallback((): void => {
@@ -53,7 +56,6 @@ export function PluginsSettings({ bridge = window.sotto?.plugins }: { readonly b
     const mine = ++elsewhereAsked.current
     void bridge.gitHubSignInElsewhere().then(value => { if (elsewhereAsked.current === mine) setElsewhereSignIns(value) }).catch(() => { if (elsewhereAsked.current === mine) setElsewhereSignIns(null) })
   }, [bridge])
-  useEffect(() => { checkElsewhere(); return () => { elsewhereAsked.current += 1 } }, [checkElsewhere])
   // The newest uses, read when the page opens and with each Check again. Null while unread, or when the read failed.
   const [uses, setUses] = useState<readonly ShownPluginUse[] | null>(null)
   const usesAsked = useRef(0)
@@ -91,9 +93,9 @@ export function PluginsSettings({ bridge = window.sotto?.plugins }: { readonly b
   }, [bridge])
   useEffect(() => {
     readCopies()
-    const off = bridge?.onCopiesChanged(() => { readCopies(); checkElsewhere() })
+    const off = bridge?.onCopiesChanged(readCopies)
     return () => { copiesAsked.current += 1; off?.() }
-  }, [bridge, readCopies, checkElsewhere])
+  }, [bridge, readCopies])
   // A choice takes its place in line when it is asked, as a read does, so whichever was asked last is what shows:
   // an older read still on its way does not land after a choice's answer, and a choice's answer that comes back
   // late does not undo a newer read.
@@ -103,15 +105,32 @@ export function PluginsSettings({ bridge = window.sotto?.plugins }: { readonly b
   }
   const changedAccounts = (next: readonly PluginAccount[]): void => { setAccounts(next); readCopies() }
   // With another computer paired, its threads use plugins too: its own gh, and the copies it holds.
+  // Which computers are paired and which of them are connected, as one value that changes only when that does.
+  const computersNow = copies === null ? null : copies.computers.map(computer => `${computer.id} ${computer.connected ? 'connected' : 'away'}`).join('\n')
+  useEffect(() => {
+    if (computersNow === null) return
+    checkElsewhere()
+    return () => { elsewhereAsked.current += 1 }
+  }, [computersNow, checkElsewhere])
+  // What each computer last said is shown as the computers stand now, since a read can take as long as its slowest
+  // computer: one that has left is not connected whatever it said a moment ago, one that has just connected is
+  // being asked, and one that is no longer paired is not listed.
+  const shownElsewhere: readonly ShownHostSignIn[] | null = elsewhereSignIns === null ? null : elsewhereSignIns.flatMap((computer): ShownHostSignIn[] => {
+    if (copies === null) return [computer]
+    const now = copies.computers.find(saved => saved.id === computer.computerId)
+    if (!now) return []
+    if (!now.connected) return [computer.state === 'no-plugins' || computer.state === 'away' ? computer : { computerId: computer.computerId, name: computer.name, state: 'away' }]
+    return [computer.state === 'away' ? { computerId: computer.computerId, name: computer.name, state: 'asking' } : computer]
+  })
   // Only a computer whose Sotto runs plugin tools counts, once each has said; until then, any paired computer.
-  const elsewhere = elsewhereSignIns !== null ? elsewhereSignIns.some(computer => computer.state !== 'no-plugins') : copies !== null && copies.computers.length > 0
+  const elsewhere = shownElsewhere !== null ? shownElsewhere.some(computer => computer.state !== 'no-plugins') : copies !== null && copies.computers.length > 0
   const groupTitle: Record<PluginGroupId, string> = { code: t`Code and deploys` }
   return <div className="plugins-settings">
     <p className="tt-paragraph plugins-lead"><Trans>A thread’s agent uses a plugin through Sotto’s tools and never holds its secret. Reading never asks you. A change, such as posting a comment, asks you first in its thread, each time.</Trans></p>
     <SettingsGroup title={groupTitle.code} icon={Code} rows={false}>
       <div className="plugins-list">
         {PLUGINS.filter(plugin => plugin.group === 'code').map(plugin => plugin.id === 'github'
-          ? <GitHubRow key={plugin.id} plugin={plugin} signIn={signIn} uses={uses} elsewhere={elsewhere} elsewhereSignIns={elsewhereSignIns} onCheck={() => { check(); checkElsewhere(); readUses() }} />
+          ? <GitHubRow key={plugin.id} plugin={plugin} signIn={signIn} uses={uses} elsewhere={elsewhere} elsewhereSignIns={shownElsewhere} onCheck={() => { check(); checkElsewhere(); readUses() }} />
           : <VercelRow key={plugin.id} plugin={plugin} bridge={bridge} accounts={accounts} projects={projects} copies={copies} uses={uses} elsewhere={elsewhere} onAccounts={changedAccounts} onCopies={tookCopies} />)}
       </div>
     </SettingsGroup>
@@ -193,7 +212,7 @@ function GitHubRow({ plugin, signIn, uses, elsewhere, elsewhereSignIns, onCheck 
   /** Whether another computer is paired whose threads use plugins, with that computer's own gh. */
   readonly elsewhere: boolean
   /** gh's sign-in on each of the user's other computers, or null while unread. */
-  readonly elsewhereSignIns: readonly PluginHostSignIn[] | null; readonly onCheck: () => void
+  readonly elsewhereSignIns: readonly ShownHostSignIn[] | null; readonly onCheck: () => void
 }): ReactNode {
   const { t } = useLingui()
   const [copied, showCopied] = useTransientFlag<'copied'>()
@@ -226,6 +245,7 @@ function GitHubRow({ plugin, signIn, uses, elsewhere, elsewhereSignIns, onCheck 
           : computer.state === 'signed-out' ? t`gh is not signed in there, so its threads cannot use GitHub. On ${name}, run ${GH_SIGN_IN_COMMAND}.`
             : computer.state === 'not-installed' ? t`gh isn’t installed there, so its threads cannot use GitHub.`
               : computer.state === 'away' ? t`Not connected, so its gh cannot be asked.`
+                : computer.state === 'asking' ? t`Asking its gh who is signed in…`
                 : computer.state === 'no-plugins' ? t`Its Sotto runs no plugin tools, so its threads do not use GitHub through Sotto.`
                   : t`Sotto couldn’t ask its gh who is signed in.`
         return <li key={computer.computerId}>

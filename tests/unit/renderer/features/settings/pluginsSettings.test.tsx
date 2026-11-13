@@ -482,14 +482,14 @@ it('calls no project gone, and lets none go, while this computer’s projects ar
 })
 
 /** A bridge with one computer paired, forge, and the account's copy there in a state the test names. */
-function copiesBridge(state: PluginCopiesView['copies'][number]['state'], options: { connected?: boolean; account?: PluginAccount; leaving?: PluginCopiesView['copies'][number]['leaving']; readable?: boolean; signIn?: Omit<PluginHostSignIn, 'computerId' | 'name'> | 'unread' } = {}) {
+function copiesBridge(state: PluginCopiesView['copies'][number]['state'], options: { connected?: boolean; account?: PluginAccount; leaving?: PluginCopiesView['copies'][number]['leaving']; readable?: boolean; signIn?: Omit<PluginHostSignIn, 'computerId' | 'name'> | 'unread' | 'slow' } = {}) {
   const account = options.account ?? work
   let view: PluginCopiesView = { copyNew: true, readable: options.readable !== false, computers: [{ id: 'saved-forge', name: 'forge', connected: options.connected !== false }], copies: [{ accountId: account.id, computerId: 'saved-forge', state, leaving: options.leaving ?? 'no' }] }
   const sets: PluginCopySet[] = []
   const defaults: boolean[] = []
   let heard: (() => void) | undefined
   let elsewhereAsked = 0
-  const signIn: { current: Omit<PluginHostSignIn, 'computerId' | 'name'> | 'unread' } = { current: options.signIn ?? { state: 'signed-in', login: 'host-user' } }
+  const signIn: { current: Omit<PluginHostSignIn, 'computerId' | 'name'> | 'unread' | 'slow' } = { current: options.signIn ?? { state: 'signed-in', login: 'host-user' } }
   const bridge = vercelBridge([account], {
     copies: async () => view,
     setCopy: async request => { sets.push(request); view = { ...view, copies: [{ accountId: account.id, computerId: 'saved-forge', state: request.on ? 'waiting' : 'off', leaving: request.on ? 'no' : 'now' }] }; return view },
@@ -499,10 +499,14 @@ function copiesBridge(state: PluginCopiesView['copies'][number]['state'], option
     gitHubSignInElsewhere: async () => {
       elsewhereAsked += 1
       if (signIn.current === 'unread') throw new Error('The hosts could not be asked.')
+      // A read that is still on its way, as one waiting on a slow computer is.
+      if (signIn.current === 'slow') return new Promise<PluginHostSignIn[]>(() => undefined)
       return [{ computerId: 'saved-forge', name: 'forge', ...signIn.current }]
     },
   })
-  return { bridge, sets, defaults, signIn, elsewhereAsked: () => elsewhereAsked, changed: () => { heard?.() }, arrive: (next: PluginCopiesView['copies'][number]['state']) => { view = { ...view, copies: [{ accountId: account.id, computerId: 'saved-forge', state: next, leaving: 'no' }] }; heard?.() }, listening: () => heard !== undefined }
+  /** forge connects or leaves, and main says the copies changed. */
+  const connect = (connected: boolean): void => { view = { ...view, computers: [{ id: 'saved-forge', name: 'forge', connected }] }; heard?.() }
+  return { bridge, sets, defaults, signIn, elsewhereAsked: () => elsewhereAsked, connect, arrive: (next: PluginCopiesView['copies'][number]['state']) => { view = { ...view, copies: [{ accountId: account.id, computerId: 'saved-forge', state: next, leaving: 'no' }] }; heard?.() }, listening: () => heard !== undefined }
 }
 const copySwitch = (): HTMLElement => screen.getByRole('switch', { name: 'Keep a copy of Work on forge' })
 const copyLine = (): string => copySwitch().querySelector('.tt-field__description')?.textContent ?? ''
@@ -674,15 +678,21 @@ it('shows who gh is signed in as on each other computer, since a thread there ac
   // This computer's account, and forge's, which is another.
   expect(screen.getByText('example-user')).toBeInTheDocument()
   await waitFor(() => expect(elsewhereLines()).toEqual(['forgeSigned in as host-user through gh on that computer.']))
-  // Check again asks forge too, and a computer connecting or leaving is asked without a press.
+  // Check again asks forge too.
   const before = f.elsewhereAsked()
   f.signIn.current = { state: 'signed-out' }
   await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Check GitHub’s sign-in again' })) })
   expect(f.elsewhereAsked()).toBe(before + 1)
   await waitFor(() => expect(elsewhereLines()).toEqual(['forgegh is not signed in there, so its threads cannot use GitHub. On forge, run gh auth login.']))
+  // A copy changing asks no computer's gh again: each read starts gh there.
+  const asked = f.elsewhereAsked()
+  await act(async () => { f.arrive('kept') })
+  expect(f.elsewhereAsked()).toBe(asked)
+  // A computer leaving, or connecting, is asked without a press.
   f.signIn.current = { state: 'away' }
-  await act(async () => { f.changed() })
+  await act(async () => { f.connect(false) })
   await waitFor(() => expect(elsewhereLines()).toEqual(['forgeNot connected, so its gh cannot be asked.']))
+  expect(f.elsewhereAsked()).toBe(asked + 1)
   cleanup()
   // Each other thing a computer can say.
   const lines: [PluginHostSignIn['state'], string][] = [
@@ -697,6 +707,28 @@ it('shows who gh is signed in as on each other computer, since a thread there ac
     await waitFor(() => expect(elsewhereLines(), state).toEqual([line]))
     cleanup()
   }
+})
+
+it('shows a computer that has left as not connected at once, whatever read is still on its way', async () => {
+  const f = copiesBridge('kept')
+  await act(async () => { render(<PluginsSettings bridge={f.bridge} />) })
+  fireEvent.click(await screen.findByRole('button', { name: /^GitHub/u }))
+  await waitFor(() => expect(elsewhereLines()).toEqual(['forgeSigned in as host-user through gh on that computer.']))
+  // forge leaves, and the read that follows waits on another computer: forge is not left reading as signed in.
+  f.signIn.current = 'slow'
+  await act(async () => { f.connect(false) })
+  expect(elsewhereLines()).toEqual(['forgeNot connected, so its gh cannot be asked.'])
+  // It connects again, and is being asked until it has answered.
+  await act(async () => { f.connect(true) })
+  expect(elsewhereLines()).toEqual(['forgeSigned in as host-user through gh on that computer.'])
+  cleanup()
+  const away = copiesBridge('waiting', { connected: false, signIn: { state: 'away' } })
+  await act(async () => { render(<PluginsSettings bridge={away.bridge} />) })
+  fireEvent.click(await screen.findByRole('button', { name: /^GitHub/u }))
+  await waitFor(() => expect(elsewhereLines()).toEqual(['forgeNot connected, so its gh cannot be asked.']))
+  away.signIn.current = 'slow'
+  await act(async () => { away.connect(true) })
+  expect(elsewhereLines()).toEqual(['forgeAsking its gh who is signed in…'])
 })
 
 it('adds nothing about another computer whose Sotto runs no plugin tools, and falls back to any paired computer while none has answered', async () => {
