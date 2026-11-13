@@ -143,7 +143,10 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   // Plugins (ADR-0205, amending ADR-0025): the account copies the recorded desktop sent this host, each secret in this
   // host's own encrypted credential file, and `sotto_plugins` for this host's own threads over them. Only while the
   // host's Owl answer turns on plugins. Its threads are read once the runtime that holds them has started.
+  // Nobody is paired until the paired clients are read, below: until then no copy is anyone's to use.
+  let pairedNow: (clientId: string) => boolean = () => false
   const plugins = owlFeatures.plugins ? hostPlugins({ directory, credentials, ...(options.plugins ? { standIns: options.plugins } : {}),
+    paired: clientId => pairedNow(clientId),
     thread: threadId => startedRuntime?.agentControl.watcherSnapshot().threads.find(item => item.id === threadId),
     admits: threadId => startedRuntime?.agentHost.admitsPluginTools(threadId) ?? false }) : undefined
   const pluginAccountCopies = plugins?.copies
@@ -211,6 +214,10 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     // Saved capacity limits apply before recovery can resume any queued starts, even before a desktop reconnects.
     await pairing.load()
     await desktops.refresh()
+    // A copy is used only while the desktop that sent it is paired. One left by a desktop revoked while its copies
+    // could not be deleted, or while this host was going away, is deleted now, before any thread starts.
+    pairedNow = clientId => pairing.isPaired(clientId)
+    await plugins?.copies.forgetUnpaired(pairedNow).catch(() => options.log?.('plugin-account-copies-not-forgotten'))
     const recordedDesktop = (clientId: string): boolean => desktops.has(clientId)
     // The desktop relay (#1316): a thread here delegates to other machines through a desktop that relays, only where the
     // Owl answer turns on Work across machines. Its record of relayed delegations is read before the threads start.
