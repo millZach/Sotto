@@ -24,7 +24,7 @@ name and who it is signed in as, and forge's encrypted credential file held one 
 connection, where the launch script records the desktop a moment after its hello; the copy arrived all the same.
 The made-up token was in no file under forge's data folder or this profile in the clear.
 
-On Plugins, **Other computers** listed "forge Connected. Copies kept there: 1 of 1." under **Copy new accounts to
+On Plugins, **Other computers** listed "forge Connected. Copies kept there: 1." under **Copy new accounts to
 every computer I pair**, switched on. The Vercel row's account showed **Where its secret is kept**: "This computer
 Always, in Sotto's encrypted store.", and **Keep a copy of Work on forge** switched on with "A copy is kept on forge."
 
@@ -33,7 +33,7 @@ The page was checked with the copy kept in dark at 1600x1000, 1280x800 and the 8
 
 The switch was turned off from the keyboard, with focus on it and Enter. Once forge had let the copy go it read "No
 copy. forge's threads cannot use this account.", forge's record of accounts emptied and its credential slot went, and **Other computers** read
-"Copies kept there: 0 of 1." Pressed again, it read "A copy is kept on forge." and forge held the account once more.
+"Copies kept there: 0." Pressed again, it read "A copy is kept on forge." and forge held the account once more.
 
 The account was then kept to a project, Site, made on this computer for the run. The switch for forge turned off and
 could not be pressed, and once forge had let its copy go, account and secret, it read "No copy. Work is kept to
@@ -61,12 +61,15 @@ token was still in no file in the clear, and the page raised no error.
   no secret sent for an account narrowed, or a copy switched off, while the host was still answering; two choices
   made a moment apart both kept; a host not said to hold no copy until it has said so, away or here; no secret
   sent by a look that begins while a copy is being switched off; another look after a choice that could not be
-  written down; and a host that keeps no copies now neither said to hold none nor counted.
+  written down; a host that keeps no copies now neither said to hold none nor counted; what is no longer wanted
+  taken back before anything is sent, so a full host has room; and, with a record of choices that cannot be read,
+  nothing sent, a removed or narrowed account's copy still taken back, and the page still shown.
 - `tests/integration/pluginAccountCopies.test.ts`: over a real host's socket, a desktop the launch script recorded
   after its hello is answered and may then send, nothing with a secret leaves a client the host has not answered,
   and the list says what the host holds without a secret.
 - `tests/unit/renderer/features/settings/pluginsSettings.test.tsx`: where a secret is kept, each sentence a switch
-  can show, a copy that is leaving a host and one that leaves when the host is back, a copy arriving without the page asking, the other computers and the default, and a choice that could
+  can show, a copy that is leaving a host and one that leaves when the host is back, a record of choices that cannot be
+  read, a late answer to a choice not undoing a newer read, a copy arriving without the page asking, the other computers and the default, and a choice that could
   not be saved.
 - `tests/unit/main/plugins/pluginsIpc.test.ts`: only the main window may read the copies or change a choice.
 

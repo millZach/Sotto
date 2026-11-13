@@ -84,8 +84,13 @@ export function PluginsSettings({ bridge = window.sotto?.plugins }: { readonly b
     const off = bridge?.onCopiesChanged(readCopies)
     return () => { copiesAsked.current += 1; off?.() }
   }, [bridge, readCopies])
-  // An answer to a choice is the newest word on the copies, so an older read still on its way must not land after it.
-  const tookCopies = (view: PluginCopiesView): void => { copiesAsked.current += 1; setCopies(view) }
+  // A choice takes its place in line when it is asked, as a read does, so whichever was asked last is what shows:
+  // an older read still on its way does not land after a choice's answer, and a choice's answer that comes back
+  // late does not undo a newer read.
+  const tookCopies: CopiesChoice = ask => {
+    const mine = ++copiesAsked.current
+    return ask().then(view => { if (copiesAsked.current === mine) setCopies(view) })
+  }
   const changedAccounts = (next: readonly PluginAccount[]): void => { setAccounts(next); readCopies() }
   const groupTitle: Record<PluginGroupId, string> = { code: t`Code and deploys` }
   return <div className="plugins-settings">
@@ -97,33 +102,35 @@ export function PluginsSettings({ bridge = window.sotto?.plugins }: { readonly b
           : <VercelRow key={plugin.id} plugin={plugin} bridge={bridge} accounts={accounts} projects={projects} copies={copies} uses={uses} onAccounts={changedAccounts} onCopies={tookCopies} />)}
       </div>
     </SettingsGroup>
-    <OtherComputers bridge={bridge} copies={copies} accounts={accounts} onCopies={tookCopies} />
+    <OtherComputers bridge={bridge} copies={copies} onCopies={tookCopies} />
   </div>
 }
 
+/** A choice about copies, asked of main: its answer is the copies as the choice left them. */
+type CopiesChoice = (ask: () => Promise<PluginCopiesView>) => Promise<void>
+
 /**
  * The user's other computers (ADR-0205, amending ADR-0025): whether a new account starts with a copy on them, and
- * for each computer whether it is connected and how many accounts it holds. A copy lets a computer's threads use an
+ * for each computer whether it is connected and how many copies it has said it holds. A copy lets a computer's threads use an
  * account while this one is off. Each account says for itself where it is kept.
  */
-function OtherComputers({ bridge, copies, accounts, onCopies }: {
-  readonly bridge: PluginsBridge | undefined; readonly copies: PluginCopiesView | null; readonly accounts: readonly PluginAccount[] | null
-  readonly onCopies: (view: PluginCopiesView) => void
+function OtherComputers({ bridge, copies, onCopies }: {
+  readonly bridge: PluginsBridge | undefined; readonly copies: PluginCopiesView | null; readonly onCopies: CopiesChoice
 }): ReactNode {
   const { t } = useLingui()
   const [failed, setFailed] = useState(false)
   if (!copies) return null
-  const count = accounts?.length ?? 0
   const setCopyNew = (copyNew: boolean): void => {
     if (!bridge) return
     setFailed(false)
-    void bridge.setCopyNew(copyNew).then(onCopies, () => setFailed(true))
+    void onCopies(() => bridge.setCopyNew(copyNew)).catch(() => setFailed(true))
   }
   return <SettingsGroup title={t`Other computers`} icon={MonitorSmartphone} rows={false}>
     <div className="plugins-computers">
-      <Toggle label={t`Copy new accounts to every computer I pair`} checked={copies.copyNew} disabled={!bridge} onCheckedChange={setCopyNew}
+      <Toggle label={t`Copy new accounts to every computer I pair`} checked={copies.copyNew} disabled={!bridge || !copies.readable} onCheckedChange={setCopyNew}
         description={t`Each account’s secret is sent to the computers you paired as hosts, on the connection Sotto already holds to each, and kept in each one’s own encrypted store, so their threads work while this computer is off. You can stop the copy for any account. An account kept to chosen projects is never copied.`} />
       {failed ? <p className="tt-field__error tt-paragraph" role="alert"><Trans>That could not be saved. Nothing was changed. Try again.</Trans></p> : null}
+      {copies.readable ? null : <p className="tt-field__error tt-paragraph" role="alert"><Trans>Sotto cannot read its record of which computers keep a copy, so it sends no copy and no choice can be changed. It still takes back the copy of an account you remove or keep to chosen projects. If a newer Sotto wrote the record, update Sotto on this computer.</Trans></p>}
       {copies.computers.length === 0 ? <p className="tt-paragraph plugin-row__note"><Trans>No other computer is paired. Pair one in Settings › Hosts &amp; phones, and its threads can use these accounts too.</Trans></p>
         : <ul className="plugins-computers__list" aria-label={t`Other computers`}>
           {copies.computers.map(computer => {
@@ -134,7 +141,7 @@ function OtherComputers({ bridge, copies, accounts, onCopies }: {
             return <li key={computer.id}>
               <span className="plugin-row__dot" data-state={computer.connected ? 'signed-in' : 'none'} aria-hidden="true" />
               <b>{name}</b>
-              <span>{computer.connected ? t`Connected. Copies kept there: ${kept} of ${count}.` : t`Not connected. Copies wait until it is.`}</span>
+              <span>{computer.connected ? t`Connected. Copies kept there: ${kept}.` : t`Not connected. Copies wait until it is.`}</span>
             </li>
           })}
         </ul>}
@@ -218,7 +225,7 @@ function useProblemWords(): (problem: PluginAccountProblem, replacing: boolean) 
 
 function VercelRow({ plugin, bridge, accounts, projects, copies, uses, onAccounts, onCopies }: {
   readonly plugin: PluginEntry; readonly bridge: PluginsBridge | undefined; readonly accounts: readonly PluginAccount[] | null; readonly projects: ProjectsView
-  readonly copies: PluginCopiesView | null; readonly onCopies: (view: PluginCopiesView) => void
+  readonly copies: PluginCopiesView | null; readonly onCopies: CopiesChoice
   readonly uses: readonly ShownPluginUse[] | null; readonly onAccounts: (accounts: readonly PluginAccount[]) => void
 }): ReactNode {
   const { t } = useLingui()
@@ -291,7 +298,7 @@ function AddAccount({ bridge, onAccounts, onDone }: { readonly bridge: PluginsBr
 /** One account: its name, when its token was saved, Replace and Remove, and its recent use. */
 function AccountCard({ account, bridge, projects, copies, uses, onAccounts, onCopies, onRemoved }: {
   readonly account: PluginAccount; readonly bridge: PluginsBridge | undefined; readonly projects: ProjectsView; readonly uses: readonly ShownPluginUse[] | null
-  readonly copies: PluginCopiesView | null; readonly onCopies: (view: PluginCopiesView) => void
+  readonly copies: PluginCopiesView | null; readonly onCopies: CopiesChoice
   readonly onAccounts: (accounts: readonly PluginAccount[]) => void
   /** The account is gone, and its buttons with it: focus needs somewhere to go. */
   readonly onRemoved: () => void
@@ -369,7 +376,7 @@ function AccountCard({ account, bridge, projects, copies, uses, onAccounts, onCo
  * plain words: kept, waiting for the computer, or why the computer could not keep it. Nothing here shows a secret.
  */
 function AccountCopies({ account, bridge, copies, onCopies }: {
-  readonly account: PluginAccount; readonly bridge: PluginsBridge | undefined; readonly copies: PluginCopiesView | null; readonly onCopies: (view: PluginCopiesView) => void
+  readonly account: PluginAccount; readonly bridge: PluginsBridge | undefined; readonly copies: PluginCopiesView | null; readonly onCopies: CopiesChoice
 }): ReactNode {
   const { t } = useLingui()
   const headingId = useId()
@@ -380,7 +387,7 @@ function AccountCopies({ account, bridge, copies, onCopies }: {
   const set = (computerId: string, on: boolean): void => {
     if (!bridge) return
     setFailed(false)
-    void bridge.setCopy({ accountId: account.id, computerId, on }).then(onCopies, () => setFailed(true))
+    void onCopies(() => bridge.setCopy({ accountId: account.id, computerId, on })).catch(() => setFailed(true))
   }
   const words = (state: PluginAccountCopyState, leaving: PluginAccountCopyLeaving, computer: string, connected: boolean): string => {
     // No copy is wanted, and only the computer can say it holds none: until it has, the line says what is still to happen.
@@ -396,6 +403,7 @@ function AccountCopies({ account, bridge, copies, onCopies }: {
       case 'kept': return t`A copy is kept on ${computer}.`
       case 'waiting': return connected ? t`Sending the copy to ${computer}…` : t`${computer} is not connected. Sotto sends the copy, or checks the one there, when it is.`
       case 'off': return t`No copy. ${computer}’s threads cannot use this account.`
+      case 'no-record': return t`Sotto cannot read its record of which computers keep a copy, so it is not sending one to ${computer}.`
       case 'here-only': return t`No copy. ${name} is kept to projects on this computer, so its secret stays here. Choose Every project to copy it.`
       case 'too-old': return t`${computer}’s Sotto cannot keep account copies. Update Sotto on ${computer}, and the copy is sent.`
       case 'no-key': return t`${computer} was started without a key file, so it cannot keep a token. Nothing was kept there. On ${computer}, set SOTTO_HOST_KEY_FILE to a file holding a secret of your own, start its host again, and the copy is sent.`
@@ -413,7 +421,7 @@ function AccountCopies({ account, bridge, copies, onCopies }: {
       const copy = copies.copies.find(entry => entry.accountId === account.id && entry.computerId === computer.id)
       const state = copy?.state ?? 'waiting'
       const computerName = computer.name
-      return <Toggle key={computer.id} label={t`Keep a copy of ${name} on ${computerName}`} checked={state !== 'off' && state !== 'here-only'} disabled={!bridge || state === 'here-only'}
+      return <Toggle key={computer.id} label={t`Keep a copy of ${name} on ${computerName}`} checked={state !== 'off' && state !== 'here-only' && state !== 'no-record'} disabled={!bridge || !copies.readable || state === 'here-only'}
         description={words(state, copy?.leaving ?? 'no', computerName, computer.connected)} onCheckedChange={on => set(computer.id, on)} />
     })}
     <p className="tt-paragraph plugin-row__note"><Trans>A copy lets that computer’s threads use this account while this computer is off. It travels on the connection Sotto already holds to that computer and is kept in that computer’s own encrypted store.</Trans></p>

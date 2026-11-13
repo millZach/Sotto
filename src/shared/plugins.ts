@@ -210,9 +210,10 @@ export const pluginProjectsSchema = z.array(pluginProjectSchema).max(10_000)
  * `no-key`: it could not keep the secret, as a host started without a key file cannot. `full`: it holds as many
  * accounts of the plugin as a plugin takes. `name-taken`, `held`: another of the user's computers sent it an account
  * of that name, or that very account. `locked`: this computer's credential store would not hand over the secret.
- * `failed`: the copy could not be sent, and is tried again.
+ * `failed`: the copy could not be sent, and is tried again. `no-record`: this computer cannot read its own record of
+ * which computers keep a copy, so none is sent and this one is not taken back.
  */
-export const PLUGIN_ACCOUNT_COPY_STATES = ['kept', 'waiting', 'off', 'here-only', 'too-old', 'no-key', 'full', 'name-taken', 'held', 'locked', 'failed'] as const
+export const PLUGIN_ACCOUNT_COPY_STATES = ['kept', 'waiting', 'off', 'here-only', 'no-record', 'too-old', 'no-key', 'full', 'name-taken', 'held', 'locked', 'failed'] as const
 export type PluginAccountCopyState = typeof PLUGIN_ACCOUNT_COPY_STATES[number]
 /**
  * Whether a computer may still hold a copy that is not wanted there, `off` or `here-only`. Only the computer can say
@@ -229,6 +230,8 @@ const computerIdSchema = z.string().min(1).max(512)
 export const pluginCopiesViewSchema = z.object({
   /** Whether a new account, or a newly paired computer, starts with a copy. */
   copyNew: z.boolean(),
+  /** Whether this computer could read its record of choices. Where it could not, nothing is sent and no choice can be made. */
+  readable: z.boolean(),
   computers: z.array(z.object({ id: computerIdSchema, name: z.string().max(512), connected: z.boolean() }).strict()).max(PLUGIN_COPY_COMPUTERS_MAX),
   copies: z.array(z.object({ accountId: z.uuid(), computerId: computerIdSchema, state: z.enum(PLUGIN_ACCOUNT_COPY_STATES), leaving: z.enum(PLUGIN_ACCOUNT_COPY_LEAVING) }).strict())
     .max(PLUGIN_COPY_COMPUTERS_MAX * ACCOUNT_PLUGIN_IDS.length * PLUGIN_ACCOUNTS_MAX),

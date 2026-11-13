@@ -2153,7 +2153,7 @@ msgid "Connected"
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
-msgid "Connected. Copies kept there: {kept} of {count}."
+msgid "Connected. Copies kept there: {kept}."
 msgstr ""
 
 #: src/renderer/src/features/settings/HostsSettings.tsx
@@ -6039,6 +6039,14 @@ msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Sotto cannot change sign-in startup here."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sotto cannot read its record of which computers keep a copy, so it is not sending one to {computer}."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sotto cannot read its record of which computers keep a copy, so it sends no copy and no choice can be changed. It still takes back the copy of an account you remove or keep to chosen projects. If a newer Sotto wrote the record, update Sotto on this computer."
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx

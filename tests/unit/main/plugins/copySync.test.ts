@@ -17,7 +17,7 @@ const PERSONAL: PluginAccount = { ...WORK, id: '22222222-2222-4222-8222-00000000
 const tokenOf = (id: string): string => `made-up-token-for-${id.slice(-4)}`
 
 /** A paired host as the desktop reaches it, keeping what it is sent the way a real one does. */
-function fakeHost(hostId: string, options: { feature?: boolean; settings?: boolean; refuses?: PluginAccountCopyReceipt } = {}) {
+function fakeHost(hostId: string, options: { feature?: boolean; settings?: boolean; refuses?: PluginAccountCopyReceipt; room?: number } = {}) {
   const held = new Map<string, PluginAccountCopy>()
   const calls: string[] = []
   /** `down`: nothing is answered. `keeps`: a removal is not answered. `asked`: a list waits for it, as a slow host's does. */
@@ -28,6 +28,8 @@ function fakeHost(hostId: string, options: { feature?: boolean; settings?: boole
       calls.push(`keep ${copy.account.name}`)
       if (state.down) throw new Error('The host did not answer.')
       if (options.refuses) return options.refuses
+      // A host holds only so many accounts of a plugin, and counts the ones it has not been told to let go.
+      if (options.room !== undefined && !held.has(copy.account.id) && held.size >= options.room) return { kept: false, problem: 'limit' }
       held.set(copy.account.id, copy)
       return { kept: true, keptAt: '2026-11-12T09:00:00.000Z' }
     },
@@ -411,7 +413,7 @@ describe('sending account copies to paired hosts (ADR-0205, amending ADR-0025)',
     const file = await readFile(join(d.directory, 'plugin-account-copy-choices.json'), 'utf8')
     expect(JSON.parse(file)).toEqual({ version: 1, copyNew: true, choices: { [WORK.id]: { 'saved-host-forge': true }, [PERSONAL.id]: { 'saved-host-forge': false } } })
     expect(file).not.toContain('made-up-token')
-    expect(await d.make().view()).toMatchObject({ copyNew: true, copies: [{ accountId: WORK.id }, { accountId: PERSONAL.id, state: 'off' }] })
+    expect(await d.make().view()).toMatchObject({ copyNew: true, readable: true, copies: [{ accountId: WORK.id }, { accountId: PERSONAL.id, state: 'off' }] })
   })
 
   it('says when a copy could not be sent, sends no secret it could not read, and tries again', async () => {
@@ -434,7 +436,7 @@ describe('sending account copies to paired hosts (ADR-0205, amending ADR-0025)',
     d.world.accounts = [{ ...WORK, on: false }]
     d.sync.accountsChanged()
     await d.sync.idle()
-    expect(await d.states()).toEqual(['Work@host-forge: waiting'])
+    expect(await d.states()).toEqual(['Work@host-forge: failed'])
     forge.state.down = false
     d.sync.accountsChanged()
     await d.sync.idle()
@@ -458,7 +460,63 @@ describe('sending account copies to paired hosts (ADR-0205, amending ADR-0025)',
     const forge = fakeHost('host-forge')
     d.connect(forge)
     await d.sync.idle()
-    expect(forge.calls).toEqual([])
+    expect(forge.calls).toEqual(['list'])
+    expect(forge.held.size).toBe(0)
     expect(d.events).toContain('plugin-account-copies-failed')
+  })
+
+  it('still takes back the copy of an account removed or kept to projects while its choices cannot be read, and still shows the page', async () => {
+    // Removing an account removes every copy (ADR-0205), whatever has become of the record of choices.
+    const third = { ...WORK, id: '22222222-2222-4222-8222-000000000003', name: 'Client' }
+    const d = await desk([WORK, PERSONAL, third])
+    const forge = fakeHost('host-forge')
+    d.connect(forge)
+    await d.sync.idle()
+    expect(forge.held.size).toBe(3)
+    // A newer Sotto wrote the record, in a form this one does not read.
+    await writeFile(join(d.directory, 'plugin-account-copy-choices.json'), JSON.stringify({ version: 2, copyNew: true, choices: {} }))
+    const later = d.make()
+    // Work is removed and Personal kept to a project. Client is as it was, with a new token.
+    d.world.accounts = [{ ...PERSONAL, projects: ['folder:one'] }, { ...third, savedAt: '2026-11-13T08:00:00.000Z' }]
+    forge.calls.length = 0
+    d.events.length = 0
+    later.connected(forge.target)
+    await later.idle()
+    // Both copies are taken back. Client's is neither sent again nor taken back: nothing says whether it is wanted.
+    expect(forge.calls).toEqual(['list', 'remove Work', 'remove Personal'])
+    expect([...forge.held.keys()]).toEqual([third.id])
+    // It is still a look that failed, so it is tried again.
+    expect(d.events).toEqual(['plugin-account-copies-failed'])
+    // The page is told the record cannot be read, and what forge holds all the same.
+    expect(await later.view()).toEqual({ copyNew: false, readable: false, computers: [{ id: 'saved-host-forge', name: 'forge', connected: true }], copies: [
+      { accountId: PERSONAL.id, computerId: 'saved-host-forge', state: 'here-only', leaving: 'no' },
+      { accountId: third.id, computerId: 'saved-host-forge', state: 'kept', leaving: 'no' },
+    ] })
+    // No choice can be made of it: nothing is written over a record that could not be read.
+    await expect(later.setCopy(third.id, 'saved-host-forge', false)).rejects.toThrow()
+    await later.idle()
+    expect(JSON.parse(await readFile(join(d.directory, 'plugin-account-copy-choices.json'), 'utf8')).version).toBe(2)
+    expect([...forge.held.keys()]).toEqual([third.id])
+    later.close()
+  })
+
+  it('takes back what is no longer wanted before it sends, so a host holding all it can has room for a new copy', async () => {
+    const d = await desk([WORK, PERSONAL])
+    const forge = fakeHost('host-forge', { room: 2 })
+    d.connect(forge)
+    await d.sync.idle()
+    expect(forge.held.size).toBe(2)
+    // While forge is away, Work is removed and Client added.
+    d.leave(forge)
+    const third = { ...WORK, id: '22222222-2222-4222-8222-000000000003', name: 'Client' }
+    d.world.accounts = [PERSONAL, third]
+    d.sync.accountsChanged()
+    await d.sync.idle()
+    forge.calls.length = 0
+    d.connect(forge)
+    await d.sync.idle()
+    expect(forge.calls).toEqual(['list', 'remove Work', 'keep Client'])
+    expect([...forge.held.keys()].sort()).toEqual([PERSONAL.id, third.id])
+    expect(await d.states()).toEqual(['Personal@host-forge: kept', 'Client@host-forge: kept'])
   })
 })

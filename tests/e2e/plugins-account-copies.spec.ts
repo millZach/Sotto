@@ -144,7 +144,7 @@ test('An account is copied to a paired host, the page says where it is kept, and
 
     await sections.getByRole('tab', { name: 'Plugins', exact: true }).click()
     const computers = panel.getByRole('list', { name: 'Other computers' })
-    await expect(computers.getByRole('listitem')).toHaveText(['forgeConnected. Copies kept there: 1 of 1.'])
+    await expect(computers.getByRole('listitem')).toHaveText(['forgeConnected. Copies kept there: 1.'])
     await expect(panel.getByRole('switch', { name: 'Copy new accounts to every computer I pair' })).toHaveAttribute('aria-checked', 'true')
     await panel.getByRole('button', { name: /^Vercel/u }).click()
     const card = panel.getByRole('region', { name: 'Vercel account Work' })
@@ -173,7 +173,7 @@ test('An account is copied to a paired host, the page says where it is kept, and
     await expect.poll(held, { timeout: 30_000 }).toEqual([])
     expect(await hostSlots()).toEqual([])
     await computers.scrollIntoViewIfNeeded()
-    await expect(computers.getByRole('listitem')).toHaveText(['forgeConnected. Copies kept there: 0 of 1.'])
+    await expect(computers.getByRole('listitem')).toHaveText(['forgeConnected. Copies kept there: 0.'])
     await shot(page, 'copy-off-dark-1280x800')
 
     // Switched back on, it is sent again.

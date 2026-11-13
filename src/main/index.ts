@@ -2750,9 +2750,9 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         addAccount: async request => { const result = await pluginAccounts?.add(request) ?? { ok: false as const, problem: 'store' as const }; if (result.ok) pluginCopySync?.accountsChanged(); return result },
         replaceSecret: async request => { const result = await pluginAccounts?.replace(request) ?? { ok: false as const, problem: 'store' as const }; if (result.ok) pluginCopySync?.accountsChanged(); return result },
         updateAccount: async request => { const result = await pluginAccounts?.update(request) ?? { ok: false as const, problem: 'store' as const }; if (result.ok) pluginCopySync?.accountsChanged(); return result },
-        copies: async () => await pluginCopySync?.view() ?? { copyNew: true, computers: [], copies: [] },
-        setCopy: async request => { await pluginCopySync?.setCopy(request.accountId, request.computerId, request.on); return await pluginCopySync?.view() ?? { copyNew: true, computers: [], copies: [] } },
-        setCopyNew: async copyNew => { await pluginCopySync?.setCopyNew(copyNew); return await pluginCopySync?.view() ?? { copyNew: true, computers: [], copies: [] } },
+        copies: async () => await pluginCopySync?.view() ?? { copyNew: true, readable: true, computers: [], copies: [] },
+        setCopy: async request => { await pluginCopySync?.setCopy(request.accountId, request.computerId, request.on); return await pluginCopySync?.view() ?? { copyNew: true, readable: true, computers: [], copies: [] } },
+        setCopyNew: async copyNew => { await pluginCopySync?.setCopyNew(copyNew); return await pluginCopySync?.view() ?? { copyNew: true, readable: true, computers: [], copies: [] } },
         // This computer's projects, by name, for choosing which ones an account is kept to. No folder goes to the window.
         // Each folder once, whichever providers have a project in it. With no projects to read, the page is told so
         // rather than handed none: an empty list would make every project an account is kept to look gone.

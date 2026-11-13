@@ -147,13 +147,16 @@ export class PluginAccountCopySync {
   async view(): Promise<PluginCopiesView> {
     const computers = this.options.computers()
     const accounts = await this.options.accounts.list()
-    const choices = await this.settled(accounts, computers)
+    // Choices that cannot be read are said to be so. The page still shows what each computer is known to hold.
+    const choices = await this.settled(accounts, computers).catch(() => undefined)
     return {
-      copyNew: choices.copyNew,
+      copyNew: choices?.copyNew ?? false, readable: choices !== undefined,
       computers: computers.map(computer => ({ id: computer.id, name: computer.name, connected: computer.connected })),
       copies: accounts.flatMap(account => computers.map(computer => {
         const answered = computer.hostId ? this.states.get(computer.hostId)?.get(account.id) : undefined
-        if (mayBeCopied(account) && chosen(choices, account.id, computer.id)) {
+        // Without the choices nothing is sent and nothing of this account is taken back: what the computer last said.
+        if (mayBeCopied(account) && !choices) return { accountId: account.id, computerId: computer.id, state: computer.connected && answered === 'kept' ? 'kept' as const : 'no-record' as const, leaving: 'no' as const }
+        if (mayBeCopied(account) && chosen(choices!, account.id, computer.id)) {
           // A copy that is wanted waits until its host has answered for it: away, or connected and being asked.
           const state: PluginAccountCopyState = !computer.connected || answered === undefined ? 'waiting' : answered
           return { accountId: account.id, computerId: computer.id, state, leaving: 'no' as const }
@@ -207,8 +210,15 @@ export class PluginAccountCopySync {
     // What this look reads is what the user wanted when it began. Every change since is counted, and seen below.
     const revision = this.revision
     const accounts = await this.options.accounts.list()
-    const choices = await this.settled(accounts, this.options.computers())
-    const wanted = accounts.filter(account => mayBeCopied(account) && chosen(choices, account.id, computer.id))
+    // Choices that cannot be read, as a file a newer Sotto wrote cannot, send nothing. They must not stop a copy being
+    // taken back: an account removed here, or kept to chosen projects, has no copy whatever the choices say.
+    let choices: Choices | undefined
+    let unreadable: unknown
+    try { choices = await this.settled(accounts, this.options.computers()) } catch (error) { unreadable = error }
+    const read = choices
+    const wanted = read ? accounts.filter(account => mayBeCopied(account) && chosen(read, account.id, computer.id)) : []
+    /** Without the choices, the copy of an account that may be copied is neither sent nor taken back. */
+    const unsure = read ? [] : accounts.filter(mayBeCopied)
     let states = this.states.get(target.hostId)
     if (!states) { states = new Map(); this.states.set(target.hostId, states) }
     let unwanted = this.unwanted.get(target.hostId)
@@ -219,14 +229,33 @@ export class PluginAccountCopySync {
     // holds either: a host that kept copies and now runs a build that does not still has what it was sent.
     if (service.supportsPluginAccountCopies !== true || !service.pluginAccountCopies || !service.keepPluginAccountCopy || !service.removePluginAccountCopy) {
       for (const account of accounts) {
-        if (wanted.includes(account)) { states.set(account.id, 'too-old'); unwanted.delete(account.id) } else { states.delete(account.id); unwanted.set(account.id, 'cannot') }
+        states.delete(account.id); unwanted.delete(account.id)
+        if (wanted.includes(account)) states.set(account.id, 'too-old'); else if (!unsure.includes(account)) unwanted.set(account.id, 'cannot')
       }
+      if (unreadable) throw unreadable
       return
     }
     let held: HeldPluginAccountCopy[]
-    // A host that does not answer is not known to hold what it was last seen to: a wanted copy waits again.
-    try { held = await service.pluginAccountCopies() } catch (error) { for (const account of wanted) states.delete(account.id); throw error }
+    // A host that does not answer, or will not answer this desktop, is not known to hold what it was last seen to: a
+    // wanted copy is said not to have been sent, and is tried again.
+    try { held = await service.pluginAccountCopies() } catch (error) { for (const account of wanted) states.set(account.id, 'failed'); throw error }
     let failed = false
+    // First, what the host holds of this desktop's and is no longer wanted: an account removed here, a copy switched
+    // off, or an account since kept to chosen projects. It goes before anything is sent, so a host holding as many
+    // accounts as a plugin takes has room for the copy that replaces one. Taking a copy back is always safe: one asked
+    // for again while this look ran is sent by the look that change asked for. An account is marked as having no copy
+    // there only once the host has said so, by not listing it or by answering its removal.
+    const stillThere = new Set<string>()
+    for (const copy of held) {
+      if (wanted.some(account => account.id === copy.id) || unsure.some(account => account.id === copy.id)) continue
+      try { await service.removePluginAccountCopy(copy.id) } catch { stillThere.add(copy.id); failed = true }
+    }
+    for (const account of accounts) {
+      if (wanted.includes(account)) continue
+      states.delete(account.id); unwanted.delete(account.id)
+      if (!unsure.includes(account)) unwanted.set(account.id, stillThere.has(account.id) ? 'there' : 'gone')
+      else if (held.some(copy => copy.id === account.id)) states.set(account.id, 'kept')
+    }
     for (const account of wanted) {
       unwanted.delete(account.id)
       const there = held.find(copy => copy.id === account.id)
@@ -247,21 +276,8 @@ export class PluginAccountCopySync {
         states.set(account.id, receipt.kept ? 'kept' : receipt.problem === 'store' ? 'no-key' : receipt.problem === 'limit' ? 'full' : receipt.problem)
       } catch { states.set(account.id, 'failed'); failed = true }
     }
-    // A copy asked for again while this look ran is left where it is; the look that change asked for settles it.
-    if (this.revision !== revision) return
-    // What the host holds of this desktop's and is no longer wanted: an account removed here, a copy switched off, or
-    // an account since kept to chosen projects. An account is marked as having no copy there only once the host has
-    // said so, by not listing it or by answering its removal.
-    const stillThere = new Set<string>()
-    for (const copy of held) {
-      if (wanted.some(account => account.id === copy.id)) continue
-      try { await service.removePluginAccountCopy(copy.id) } catch { stillThere.add(copy.id); failed = true }
-    }
-    for (const account of accounts) {
-      if (wanted.includes(account)) continue
-      states.delete(account.id)
-      unwanted.set(account.id, stillThere.has(account.id) ? 'there' : 'gone')
-    }
+    // The choices are still unreadable: said so, and looked at again later.
+    if (unreadable) throw unreadable
     if (failed) throw new Error('PLUGIN_ACCOUNT_COPIES_NOT_AGREED')
   }
 
