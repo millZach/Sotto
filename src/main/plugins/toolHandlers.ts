@@ -1,10 +1,12 @@
 import type { RunGitCommand } from '../agents/git/gitStatus'
-import { pluginAccountAdmits, type AccountPluginId, type GitHubSignIn, type PluginAccount, type PluginChange } from '../../shared/plugins'
+import { isMailPlugin, pluginAccountAdmits, type AccountPluginId, type GitHubSignIn, type PluginAccount, type PluginChange } from '../../shared/plugins'
 import { PluginSecretLocked } from './accounts'
 import { commentOnGitHub, describeGitHubIssue, openGitHubIssue, setGitHubIssueState } from './github/changes'
 import { readGitHub } from './github/read'
+import { MAIL_SERVERS } from './mail/accounts'
+import { openMail, searchMail, type MailOptions, type MailServer, type MailSignIn } from './mail/read'
 import type { PluginChangeAnswer, PluginChangeWait } from './pendingChanges'
-import type { PluginToolHandlers } from './pluginTools'
+import type { PluginToolHandlers, SecretTrouble } from './pluginTools'
 import { cancelVercelDeployment, describeVercelDeployment, moveVercelProduction } from './vercel/changes'
 import { readVercel, type VercelFetch } from './vercel/read'
 
@@ -33,6 +35,15 @@ export interface PluginToolWiring {
   readonly gh: RunGitCommand
   readonly vercelFetch: VercelFetch
   readonly vercelOptions: { readonly base?: string; readonly signal: AbortSignal }
+  /**
+   * Reading mail, on a computer whose threads can: where its mail grants are kept, the name of the provider a thread
+   * runs on, and how a mail server is reached. Left out, no thread here is offered a mail account.
+   */
+  readonly mail?: {
+    readonly grants: { has(threadId: string, accountId: string): Promise<boolean>; grant(threadId: string, accountId: string): Promise<void>; open(threadId: string): boolean }
+    readonly providerOf: (threadId: string) => string
+    readonly options: MailOptions
+  }
 }
 
 /**
@@ -59,7 +70,22 @@ export function pluginToolHandlers(wiring: PluginToolWiring): PluginToolHandlers
       return { reason: error instanceof PluginSecretLocked ? 'locked' : 'no-secret' }
     }
   }
+  const { mail } = wiring
+  /** A mail account's server, address and password for one read. The password is read from the credential store and goes to that server alone. */
+  const mailSignIn = (account: PluginAccount): { readonly server: MailServer; readonly signIn: MailSignIn } | SecretTrouble => {
+    if (!isMailPlugin(account.plugin) || !account.address) return 'no-secret'
+    const read = secretOf(account.id)
+    return 'reason' in read ? read.reason : { server: MAIL_SERVERS[account.plugin], signIn: { address: account.address, password: read.secret } }
+  }
   return {
+    ...(mail ? { mail: {
+      granted: (threadId, accountId) => mail.grants.has(threadId, accountId),
+      grant: (threadId, accountId) => mail.grants.grant(threadId, accountId),
+      threadOpen: threadId => mail.grants.open(threadId),
+      providerOf: mail.providerOf,
+      search: async (account, search) => { const reach = mailSignIn(account); return typeof reach === 'string' ? reach : searchMail(reach.server, reach.signIn, search, mail.options) },
+      open: async (account, id) => { const reach = mailSignIn(account); return typeof reach === 'string' ? reach : openMail(reach.server, reach.signIn, { id }, mail.options) },
+    } } : {}),
     admits: wiring.admits, gitHubSignIn: wiring.gitHubSignIn, record: wiring.record, isWatcher: wiring.isWatcher, askChange: wiring.askChange,
     readGitHub: (path, query) => readGitHub(gh, path, query, signal),
     accounts: async threadId => (await accounts.list()).filter(admitsFor(threadId)),

@@ -576,6 +576,7 @@ function RecentUse({ name, uses, elsewhere }: {
     comment: t`Posted a comment`, 'deployment-cancel': t`Cancelled a deployment’s build`,
     'issue-open': t`Opened an issue`, 'issue-close': t`Closed an issue`, 'issue-reopen': t`Reopened an issue`,
     'deployment-promote': t`Promoted a deployment to production`, 'deployment-rollback': t`Rolled production back`,
+    'mail-search': t`Searched mail`, 'mail-message': t`Read a message`,
   }
   // A change that was not made: what the agent asked to do, since nothing was done.
   const asked: Partial<Record<PluginReadKind, string>> = {

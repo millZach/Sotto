@@ -2,7 +2,7 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { z } from 'zod'
 import type { HeldPluginAccountCopy, PluginAccountCopy, PluginAccountCopyReceipt, PluginAccountCopyRemoved } from '../../shared/pluginAccountCopies'
-import type { PluginAccount, PluginAccountCopyLeaving, PluginAccountCopyState, PluginCopiesView } from '../../shared/plugins'
+import { isMailPlugin, type PluginAccount, type PluginAccountCopyLeaving, type PluginAccountCopyState, type PluginCopiesView } from '../../shared/plugins'
 import { PluginSecretLocked } from './accounts'
 
 /** A connected host as the copies reach it: its identity, and the three requests where it lists `plugin-account-copies`. */
@@ -34,9 +34,10 @@ const sameProjects = (one: readonly string[] | null | undefined, other: readonly
   one === other || (!!one && !!other && one.length === other.length && one.every((id, index) => id === other[index]))
 /**
  * Whether an account may have a copy anywhere else. One kept to chosen projects may not (Zach, November 12, 2026): a
- * project is a folder on this computer, which another computer does not have, so its secret stays here.
+ * project is a folder on this computer, which another computer does not have, so its secret stays here. A mail
+ * account may not yet: a host has no mail grant to ask its threads for, so it is sent none.
  */
-const mayBeCopied = (account: PluginAccount): boolean => account.projects === null
+const mayBeCopied = (account: PluginAccount): boolean => account.projects === null && !isMailPlugin(account.plugin)
 /** Whether the user's choices ask for a copy of an account on a computer. */
 const chosen = (choices: Choices, accountId: string, computerId: string): boolean => choices.choices[accountId]?.[computerId] ?? choices.copyNew
 /** Whether a host holds an account as it is here. A host that does not say what it holds of it is not taken to. */

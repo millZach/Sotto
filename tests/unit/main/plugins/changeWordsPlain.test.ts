@@ -28,6 +28,8 @@ const CHANGES: readonly PluginChange[] = [
   { kind: 'vercel-promote', ...deployment, projectId: 'prj_example1' },
   { kind: 'vercel-rollback', ...full },
   { kind: 'vercel-rollback', ...deployment, projectId: 'prj_example1' },
+  { kind: 'mail-read', plugin: 'Gmail', account: 'Personal', provider: 'Claude Code' },
+  { kind: 'mail-read', plugin: 'Gmail', account: 'Personal', provider: '' },
 ] as PluginChange[]
 
 it('words a change’s card on a host as the desktop words it in English, sentence for sentence', () => {

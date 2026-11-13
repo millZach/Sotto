@@ -1,7 +1,7 @@
 import type { Duplex } from 'node:stream'
 import { connect as connectTls } from 'node:tls'
 import { atomOf, IMAP_LITERAL_MAX, ImapClosed, ImapConnection, ImapProtocolError, listOf, textOf, type ImapAnswer, type ImapArg, type ImapItem } from './imapWire'
-import { attachedParts, decodeMailboxName, decodePart, htmlToText, mailHeaders, mailParts, textPart } from './message'
+import { attachedParts, decodeMailboxName, decodePart, htmlToText, mailHeaders, mailParts, readableText, textPart } from './message'
 
 /**
  * Reading a mail account over IMAP (ADR-0205): whether a sign-in is good, a search, and one message opened. Each
@@ -55,17 +55,17 @@ export interface MailFailure {
 /** What to look for. Every word given must match; none given lists the mailbox's newest messages. */
 export interface MailSearch {
   /** `inbox` (the default), `all`, `sent`, `drafts`, `trash`, `spam` or `starred`, or a mailbox's own name. */
-  readonly mailbox?: string
-  readonly from?: string
-  readonly to?: string
-  readonly subject?: string
+  readonly mailbox?: string | undefined
+  readonly from?: string | undefined
+  readonly to?: string | undefined
+  readonly subject?: string | undefined
   /** Words anywhere in a message. */
-  readonly text?: string
+  readonly text?: string | undefined
   /** Days as `2026-11-13`: received on or after, and before. */
-  readonly since?: string
-  readonly before?: string
-  readonly unread?: boolean
-  readonly limit?: number
+  readonly since?: string | undefined
+  readonly before?: string | undefined
+  readonly unread?: boolean | undefined
+  readonly limit?: number | undefined
 }
 
 /** A message as a search lists it. */
@@ -373,7 +373,7 @@ export function openMail(server: MailServer, signIn: MailSignIn, message: { read
       const bytes = startingWith(fetched(body).get(uid) ?? new Map<string, ImapItem>(), `BODY[${chosen.section}]`)
       const cut = chosen.size > piece
       const decoded = decodePart(Buffer.isBuffer(bytes) ? bytes : Buffer.alloc(0), chosen, cut)
-      const whole = chosen.type === 'text/html' ? htmlToText(decoded) : decoded
+      const whole = readableText(chosen.type === 'text/html' ? htmlToText(decoded) : decoded)
       text = whole.slice(0, MAIL_TEXT_MAX_CHARS)
       truncated = cut || whole.length > MAIL_TEXT_MAX_CHARS
     }

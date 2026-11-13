@@ -858,6 +858,10 @@ msgid "Don’t add"
 msgstr ""
 
 #: src/main/plugins/changeWords.ts
+msgid "Don’t allow"
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
 msgid "Don’t open it"
 msgstr ""
 
@@ -977,6 +981,10 @@ msgstr ""
 msgid "Issue: {title}"
 msgstr ""
 
+#: src/main/plugins/changeWords.ts
+msgid "It cannot send, move or delete mail. Every other thread asks for itself."
+msgstr ""
+
 #. placeholder {0}: change.state
 #: src/main/plugins/changeWords.ts
 msgid "Its build now: {0}"
@@ -1025,6 +1033,18 @@ msgstr ""
 
 #: src/main/omarchy/setup.ts
 msgid "Left alone. Your keys still run what they did before."
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Let this thread read it"
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Let this thread read the {plugin} account {named}? What it reads goes to {provider}."
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Let this thread read the {plugin} account {named}? What it reads goes to this thread’s provider."
 msgstr ""
 
 #: src/main/settings/retiredChats.ts
@@ -1359,6 +1379,10 @@ msgstr ""
 #: src/main/tray/trayController.ts
 msgid "Quit"
 msgstr "Ukončit"
+
+#: src/main/plugins/changeWords.ts
+msgid "Read {plugin} mail"
+msgstr ""
 
 #: src/main/agents/nextPromptIpc.ts
 msgid "Read next prompts from the main Sotto window."
@@ -3438,6 +3462,10 @@ msgstr ""
 msgid "This thread already started a Council or a Climb for the user's message. One message asks for one. Nothing was started."
 msgstr ""
 
+#: src/main/plugins/changeWords.ts
+msgid "This thread can search this account’s mail and read its messages, until you stop it or the thread is settled."
+msgstr ""
+
 #: src/main/council/climbService.ts
 msgid "This thread has no folder for the Climb's evidence. Nothing was started."
 msgstr ""
@@ -3646,6 +3674,14 @@ msgstr ""
 
 #: src/main/hosts/desktopHostRouter.ts
 msgid "Wait for this thread to finish its turn, then bring its changes back. Nothing changed."
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "What it reads goes to {provider}, as everything a thread reads does."
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "What it reads goes to this thread’s provider, as everything a thread reads does."
 msgstr ""
 
 #: src/main/app/applicationMenu.ts

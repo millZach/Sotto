@@ -30,6 +30,7 @@ const mainImports = [
   'node:stream/promises',
   'node:string_decoder',
   'node:timers/promises',
+  'node:tls',
   'node:url',
   'node:util',
   'node:worker_threads',

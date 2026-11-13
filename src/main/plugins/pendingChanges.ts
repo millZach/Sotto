@@ -32,12 +32,19 @@ export interface PluginChangeWait {
   readonly signal?: AbortSignal
   /** The longest this ask may wait, when that is shorter than the usual wait. */
   readonly waitMs?: number
+  /**
+   * Whether the ask's thread is still open, for an ask that means more by that than every ask does. The mail card
+   * gives the mail grants' own test, so the card and the grant it asks for end at the same moment. The ask stops
+   * when this says no.
+   */
+  readonly stillOpen?: () => boolean
 }
 
 interface Waiting {
   readonly threadId: string; readonly request: AgentRequest; readonly settle: (answer: PluginChangeAnswer) => void; readonly timer: ReturnType<typeof setTimeout>
   /** Lets go of the call's signal. */
   readonly release: () => void
+  readonly stillOpen: (() => boolean) | undefined
 }
 
 /**
@@ -55,12 +62,16 @@ export class PluginChangeRequests implements SottoThreadRequests {
   private shown: ReadonlyMap<string, readonly AgentRequest[]> = new Map()
   private closed = false
   private checking = false
-  /** `open` says whether a thread is still open: not settled, archived or gone. Without it no ask stops for that. */
-  constructor(private readonly options: { readonly waitMs?: number; readonly now?: () => Date; readonly open?: (threadId: string) => boolean } = {}) {}
+  /**
+   * `open` says whether a thread is still open: not settled, archived or gone. Without it no ask stops for that.
+   * `noticed` is called whenever the coordinator reads these requests, which it does on every publication: it is how
+   * the mail grants hear that a thread may have been settled, and must cost next to nothing.
+   */
+  constructor(private readonly options: { readonly waitMs?: number; readonly now?: () => Date; readonly open?: (threadId: string) => boolean; readonly noticed?: () => void } = {}) {}
 
   /** Shows the card and waits for the user. Resolves once: allowed, denied, lapsed or stopped. */
   ask(threadId: string, card: PluginChangeCard, wait: PluginChangeWait = {}): Promise<PluginChangeAnswer> {
-    if (this.closed || wait.signal?.aborted) return Promise.resolve('stopped')
+    if (this.closed || wait.signal?.aborted || wait.stillOpen?.() === false) return Promise.resolve('stopped')
     const id = `${PLUGIN_CHANGE_PREFIX}${randomUUID()}`
     const request: AgentRequest = {
       id, kind: 'permission', text: card.text, options: [],
@@ -72,7 +83,7 @@ export class PluginChangeRequests implements SottoThreadRequests {
       const timer = setTimeout(() => this.end(id, 'lapsed'), Math.max(0, Math.min(this.options.waitMs ?? PLUGIN_CHANGE_WAIT_MS, wait.waitMs ?? Infinity)))
       const gone = (): void => { this.end(id, 'stopped') }
       wait.signal?.addEventListener('abort', gone, { once: true })
-      this.waiting.set(id, { threadId, request, settle: resolve, timer, release: () => { wait.signal?.removeEventListener('abort', gone) } })
+      this.waiting.set(id, { threadId, request, settle: resolve, timer, release: () => { wait.signal?.removeEventListener('abort', gone) }, stillOpen: wait.stillOpen })
       this.changed()
     })
   }
@@ -83,7 +94,8 @@ export class PluginChangeRequests implements SottoThreadRequests {
    * waiting it costs a comparison.
    */
   requests(): ReadonlyMap<string, readonly AgentRequest[]> {
-    if (this.waiting.size > 0 && this.options.open && !this.checking) {
+    this.options.noticed?.()
+    if (this.waiting.size > 0 && !this.checking) {
       this.checking = true
       queueMicrotask(() => { this.checking = false; this.stopClosed() })
     }
@@ -93,10 +105,9 @@ export class PluginChangeRequests implements SottoThreadRequests {
   /** Stops every ask whose thread is no longer open. A settled thread takes no answer, and one reopened later must not find its old card. */
   stopClosed(): void {
     const open = this.options.open
-    if (!open) return
     for (const [id, waiting] of [...this.waiting]) {
       let still = false
-      try { still = open(waiting.threadId) } catch { /* A thread that cannot be read is not taken for open. */ }
+      try { still = (open?.(waiting.threadId) ?? true) && (waiting.stillOpen?.() ?? true) } catch { /* A thread that cannot be read is not taken for open. */ }
       if (!still) this.end(id, 'stopped')
     }
   }
