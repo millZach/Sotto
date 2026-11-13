@@ -120,6 +120,18 @@ describe('mail grants (ADR-0205, decision 8)', () => {
     expect((await again().list()).map(grant => [grant.threadId, grant.accountId])).toEqual([['thread-two', PERSONAL]])
   })
 
+  it('holds no grant for an account from the moment it is forgotten, for a read that asked before and is answered after', async () => {
+    const { made } = await grants()
+    await made.grant('thread-one', PERSONAL)
+    // The read asks whether it may; the account is forgotten before that question is reached. A copy let go and
+    // sent again comes under the same ID, and a read that began for the old one must not go by its grant.
+    const [had] = await Promise.all([made.has('thread-one', PERSONAL), made.forgetAccount(PERSONAL)])
+    expect(had).toBe(false)
+    // A grant given after that is a new one, and holds.
+    await made.grant('thread-one', PERSONAL)
+    expect(await made.has('thread-one', PERSONAL)).toBe(true)
+  })
+
   it('holds for this run when the file cannot be written, ends at once all the same, and writes the file when it next can', async () => {
     const { made, again, closed, breakWrites, heal } = await grants()
     await made.grant('thread-one', PERSONAL)

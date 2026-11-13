@@ -247,9 +247,12 @@ export class PluginAccountCopySync {
     // accounts as a plugin takes has room for the copy that replaces one. Taking a copy back is always safe: one asked
     // for again while this look ran is sent by the look that change asked for. An account is marked as having no copy
     // there only once the host has said so, by not listing it or by answering its removal.
+    // A mail account on a host from before it could keep one: its threads could not ask before they read it. It is
+    // sent none, and one it holds, as a host that was downgraded does, is taken back.
+    const cannotKeep = (account: PluginAccount): boolean => isMailPlugin(account.plugin) && service.supportsPluginMailCopies !== true
     const stillThere = new Set<string>()
     for (const copy of held) {
-      if (wanted.some(account => account.id === copy.id) || unsure.some(account => account.id === copy.id)) continue
+      if (wanted.some(account => account.id === copy.id && !cannotKeep(account)) || unsure.some(account => account.id === copy.id)) continue
       try { await service.removePluginAccountCopy(copy.id) } catch { stillThere.add(copy.id); failed = true }
     }
     for (const account of accounts) {
@@ -260,10 +263,9 @@ export class PluginAccountCopySync {
     }
     for (const account of wanted) {
       unwanted.delete(account.id)
+      if (cannotKeep(account)) { states.set(account.id, 'too-old'); continue }
       const there = held.find(copy => copy.id === account.id)
       if (there && holdsAsHere(there, account)) { states.set(account.id, 'kept'); continue }
-      // A host from before it could keep a mail account is sent none: its threads could not ask before they read it.
-      if (isMailPlugin(account.plugin) && service.supportsPluginMailCopies !== true) { states.set(account.id, 'too-old'); continue }
       // The account is read again, and nothing may have been asked for since this look began: an account narrowed or
       // a copy switched off while the host was answering is not sent, for a copy sent cannot be unsent. The change
       // that stopped it has already asked for another look, which sends what is still wanted. Nothing below waits

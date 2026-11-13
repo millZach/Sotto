@@ -219,6 +219,8 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     // could not be deleted, or while this host was going away, is deleted now, before any thread starts.
     pairedNow = clientId => pairing.isPaired(clientId)
     await plugins?.copies.forgetUnpaired(pairedNow).catch(() => options.log?.('plugin-account-copies-not-forgotten'))
+    // And no thread may read a mail account by a grant given for a copy that is gone.
+    await plugins?.forgetGrantsOfGone().catch(() => undefined)
     const recordedDesktop = (clientId: string): boolean => desktops.has(clientId)
     // The desktop relay (#1316): a thread here delegates to other machines through a desktop that relays, only where the
     // Owl answer turns on Work across machines. Its record of relayed delegations is read before the threads start.

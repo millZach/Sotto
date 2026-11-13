@@ -41,7 +41,10 @@ export function hostPluginAccountCopies(directory: string, credentials: PluginCr
     credentials,
     // A host adds no account of its own, so nothing is ever asked of a service from here.
     check: async () => ({ ok: false, problem: 'unreachable' }),
-  })): HostPluginAccountCopies {
+  }),
+  // Told of each copy as it goes, inside the step that deletes it and before any other change to the copies can
+  // begin: what hangs on a copy, as a thread's leave to read a mail account does, goes with it and not a moment after.
+  wentAway: (accountId: string) => void = () => undefined): HostPluginAccountCopies {
   const path = join(directory, 'plugin-account-copy-senders.json')
   /** Only a file that is not there yet means no copies. One that cannot be read throws, so nobody is taken for a copy's sender by mistake. */
   const read = async (): Promise<Senders> => {
@@ -86,7 +89,10 @@ export function hostPluginAccountCopies(directory: string, credentials: PluginCr
         return { kept: false, problem: kept.problem }
       }
       // A stale copy of the same name, taken over by this one, is gone with its secret: nobody sent it any longer.
-      if (kept.replaced) await write(without({ ...senders, [id]: clientId }, kept.replaced)).catch(() => undefined)
+      if (kept.replaced) {
+        wentAway(kept.replaced)
+        await write(without({ ...senders, [id]: clientId }, kept.replaced)).catch(() => undefined)
+      }
       return { kept: true, keptAt: now().toISOString() }
     }),
     remove: (id: string, clientId: string): Promise<PluginAccountCopyRemoved> => inTurn(async () => {
@@ -97,6 +103,7 @@ export function hostPluginAccountCopies(directory: string, credentials: PluginCr
       if (senders[id] !== clientId) return { removed: false }
       const result = await accounts.remove({ id })
       if (!result.ok && result.problem !== 'gone') throw new Error('PLUGIN_ACCOUNT_COPY_NOT_REMOVED')
+      wentAway(id)
       await write(without(senders, id)).catch(() => undefined)
       return { removed: true }
     }),
@@ -114,7 +121,7 @@ export function hostPluginAccountCopies(directory: string, credentials: PluginCr
         const result = await accounts.remove({ id })
         // A copy whose secret could not be deleted keeps its sender, so the host's threads still see whose it was
         // and use none of it, and the sweep at the next start finds it again.
-        if (result.ok || result.problem === 'gone') gone.push(id)
+        if (result.ok || result.problem === 'gone') { gone.push(id); wentAway(id) }
       }
       if (gone.length > 0) await write(without(senders, ...gone))
     }),
@@ -127,7 +134,7 @@ export function hostPluginAccountCopies(directory: string, credentials: PluginCr
         const sender = senders[account.id]
         if (sender !== undefined && paired(sender)) continue
         const result = await accounts.remove({ id: account.id })
-        if (result.ok || result.problem === 'gone') gone.push(account.id)
+        if (result.ok || result.problem === 'gone') { gone.push(account.id); wentAway(account.id) }
       }
       // A sender written down for a copy that was never kept, or is gone, is dropped with its desktop.
       for (const [id, sender] of Object.entries(senders)) if (!paired(sender) && !held.some(account => account.id === id)) gone.push(id)

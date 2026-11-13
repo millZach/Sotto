@@ -36,6 +36,8 @@ export interface HostPlugins {
   readonly mailGrants: MailGrants
   /** Deleted threads take their waiting cards and their mail grants with them. */
   forgetThreads(threadIds: readonly string[]): void
+  /** Forgets the grants of copies this host no longer holds, when it starts. */
+  forgetGrantsOfGone(): Promise<void>
   close(): Promise<void>
 }
 
@@ -90,20 +92,16 @@ export function hostPlugins(options: {
     return found !== undefined && mailThreadOpen({ threads: [found], projects: project ? [project] : [] }, threadId)
   } })
   const changes = new PluginChangeRequests({ open: threadId => { const found = thread(threadId); return found !== undefined && !isThreadClosed(found) }, noticed: () => { mailGrants.noticed() } })
-  const store = hostPluginAccountCopies(options.directory, options.credentials, undefined, accounts)
-  // A copy that is gone takes every thread's leave to read it. A copy sent again comes under the same ID, and must
-  // not find a grant that was given for the one before it.
-  const dropGrantsOfGone = async (): Promise<void> => {
+  // A copy that goes takes every thread's leave to read it, in the step that deletes it: whether the desktop let it
+  // go, another copy of its name took its place, or its desktop was revoked. A copy sent again comes under the same
+  // ID, and must not find a grant that was given for the one before it.
+  const store = hostPluginAccountCopies(options.directory, options.credentials, undefined, accounts, accountId => { void mailGrants.forgetAccount(accountId).catch(() => undefined) })
+  // This host's threads can read a mail account and ask before they do, so it keeps one.
+  const copies: HostPluginAccountCopies = { ...store, mail: true }
+  // A grant left in the file for a copy that is gone, as a host that went away part-way leaves, goes at the next start.
+  const forgetGrantsOfGone = async (): Promise<void> => {
     const held = new Set((await accounts.list()).map(account => account.id))
     for (const accountId of new Set((await mailGrants.list()).map(grant => grant.accountId))) if (!held.has(accountId)) await mailGrants.forgetAccount(accountId)
-  }
-  const copies: HostPluginAccountCopies = {
-    ...store,
-    // This host's threads can read a mail account and ask before they do, so it keeps one.
-    mail: true,
-    remove: async (id, clientId) => { const removed = await store.remove(id, clientId); await dropGrantsOfGone().catch(() => undefined); return removed },
-    forgetDesktop: async clientId => { try { await store.forgetDesktop(clientId) } finally { await dropGrantsOfGone().catch(() => undefined) } },
-    forgetUnpaired: async paired => { try { await store.forgetUnpaired(paired) } finally { await dropGrantsOfGone().catch(() => undefined) } },
   }
   // Who sent each copy, as last read. A token is read without waiting, so it is checked against this, and against
   // whether that desktop is paired now: a copy listed a moment before its desktop was revoked hands over nothing.
@@ -137,7 +135,7 @@ export function hostPlugins(options: {
     },
   }))
   return {
-    copies, changes, tools, gitHubSignIn, mailGrants,
+    copies, changes, tools, gitHubSignIn, mailGrants, forgetGrantsOfGone,
     forgetThreads: threadIds => { changes.forgetThreads(threadIds); void mailGrants.forgetThreads(threadIds).catch(() => undefined) },
     close: async () => { stop.abort(); changes.close(); mailGrants.close(); await tools.close() },
   }

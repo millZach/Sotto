@@ -170,6 +170,23 @@ describe('a host’s threads and a mail account’s copy (ADR-0205, decision 8)'
     }
   })
 
+  it('drops the grants of a copy that another of the same name takes the place of, and of one that went while the host was off', async () => {
+    const h = await mailHost()
+    await h.plugins.copies.keep(COPY, LAPTOP)
+    await h.plugins.mailGrants.grant(h.thread.id, MAIL.id)
+    // The desktop's new account of the same name replaces its stale copy, which goes with its password.
+    const next = { account: { ...MAIL, id: '33333333-3333-4333-8333-000000000002' }, secret: 'anothermadeuppass' }
+    await expect(h.plugins.copies.keep(next, LAPTOP)).resolves.toMatchObject({ kept: true })
+    await expect.poll(() => h.plugins.mailGrants.list()).toEqual([])
+
+    // A grant left in the file for a copy the host no longer holds, as a host that went away part-way leaves, goes
+    // when the host next starts.
+    await h.plugins.mailGrants.grant(h.thread.id, next.account.id)
+    await h.plugins.mailGrants.grant(h.thread.id, MAIL.id)
+    await h.plugins.forgetGrantsOfGone()
+    expect((await h.plugins.mailGrants.list()).map(grant => grant.accountId)).toEqual([next.account.id])
+  })
+
   it('ends a grant when the user settles the thread or its project, by the test the desktop’s grants go by', async () => {
     const h = await mailHost()
     await h.plugins.copies.keep(COPY, LAPTOP)

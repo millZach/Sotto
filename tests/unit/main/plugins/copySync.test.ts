@@ -255,6 +255,15 @@ describe('sending account copies to paired hosts (ADR-0205, amending ADR-0025)',
     d.sync.accountsChanged()
     await d.sync.idle()
     expect(anvil.calls).toEqual(['list'])
+
+    // A host that kept a mail account and now runs a build from before it could: the copy is not said to be kept,
+    // and it is taken back, since that host's threads would not ask before they read it.
+    const older = fakeHost('host-older', { mail: false })
+    older.held.set(mail.id, { account: mail, secret: tokenOf(mail.id) })
+    d.connect(older, 'older')
+    await d.sync.idle()
+    expect(older.calls).toEqual(['list', 'remove Mail', 'keep Work'])
+    expect((await d.states()).filter(state => state.includes('host-older'))).toEqual(['Work@host-older: kept', 'Mail@host-older: too-old'])
   })
 
   it('takes back a narrowed account’s copy from a host that was away when it was narrowed', async () => {

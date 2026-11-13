@@ -50,6 +50,8 @@ export class MailGrants {
   private behind = false
   private timer: ReturnType<typeof setTimeout> | undefined
   private closed = false
+  /** Accounts being forgotten, and how many times over. None of their grants is honoured, from the moment that was asked. */
+  private readonly forgetting = new Map<string, number>()
   constructor(directory: string, private readonly options: {
     /** Whether a thread is still open: not settled, archived or gone. */
     readonly open: (threadId: string) => boolean
@@ -62,6 +64,7 @@ export class MailGrants {
   /** Whether the thread may read the account without asking. A thread that is no longer open holds no grant. */
   has(threadId: string, accountId: string): Promise<boolean> {
     return this.inTurn(async () => {
+      if (this.forgetting.has(accountId)) return false
       const grants = await this.load()
       if (!grants.some(grant => grant.threadId === threadId && grant.accountId === accountId)) return false
       if (this.isOpen(threadId)) return true
@@ -113,9 +116,17 @@ export class MailGrants {
     return this.drop(grant => gone.has(grant.threadId))
   }
 
-  /** A removed account takes its grants with it. */
+  /**
+   * A removed account takes its grants with it, at once: a read that asked whether it may before this was called,
+   * and is answered after, is told no. On a host a copy that is let go can be sent again under the same ID a moment
+   * later, and a read that began for the old one must not go by its grant.
+   */
   forgetAccount(accountId: string): Promise<void> {
-    return this.drop(grant => grant.accountId === accountId)
+    this.forgetting.set(accountId, (this.forgetting.get(accountId) ?? 0) + 1)
+    return this.drop(grant => grant.accountId === accountId).finally(() => {
+      const left = (this.forgetting.get(accountId) ?? 1) - 1
+      if (left > 0) this.forgetting.set(accountId, left); else this.forgetting.delete(accountId)
+    })
   }
 
   list(): Promise<MailGrant[]> {
