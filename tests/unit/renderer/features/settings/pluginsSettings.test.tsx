@@ -111,7 +111,7 @@ it('shows a plugin’s newest uses: what was done and in which thread, and how a
   ]
   const bridge: PluginsBridge = { gitHubSignIn: async () => ({ state: 'signed-in', login: 'example-user' }), recentUse: async () => uses, ...noAccounts }
   await act(async () => { render(<PluginsSettings bridge={bridge} />) })
-  expect(screen.getByText('A thread’s agent uses a plugin through Sotto’s tools and never holds its secret. Reading never asks you. A change, such as posting a comment, asks you first in its thread, each time.')).toBeInTheDocument()
+  expect(screen.getByText('A thread’s agent uses a plugin through Sotto’s tools and never holds its secret. Reading never asks you, except that each thread asks once before it reads a mail account. A change, such as posting a comment, asks you first in its thread, each time.')).toBeInTheDocument()
   fireEvent.click(row())
   const items = within(screen.getByRole('region', { name: 'Recent use' })).getAllByRole('listitem')
   expect(items.map(item => item.querySelector('span')!.textContent)).toEqual([
@@ -783,4 +783,114 @@ it('lists the other computers with what each holds, and keeps the default for ne
   expect(await screen.findByText('No other computer is paired. Pair one in Settings › Hosts & phones, and its threads can use these accounts too.')).toBeTruthy()
   fireEvent.click(vercelRow())
   expect(screen.queryByRole('region', { name: 'Where its secret is kept' })).toBeNull()
+})
+
+/** A made-up mail account and a made-up app password: nothing here is a real address or credential. */
+const personal: PluginAccount = { id: '33333333-3333-4333-8333-000000000001', plugin: 'gmail', name: 'Personal', address: 'reader@example.com', savedAt: '2026-11-13T08:00:00.000Z', signedInAs: null, on: true, projects: null }
+const APP_PASSWORD = 'madeupapppasswrd'
+const gmailRow = (): HTMLElement => screen.getByRole('button', { name: /^Gmail/u })
+
+it('lists Gmail under Mail, and adds an account by its name, its address and an app password that is not left in the page', async () => {
+  const addAccount = vi.fn(async (): Promise<PluginAccountResult> => ({ ok: true, accounts: [personal] }))
+  await act(async () => { render(<PluginsSettings bridge={vercelBridge([], { addAccount })} />) })
+  expect(screen.getByText('Mail', { exact: true })).toBeInTheDocument()
+  expect(gmailRow()).toHaveAccessibleName('Gmail Not added')
+  expect(document.querySelector('[data-setting="plugin-gmail"]')).toContainElement(gmailRow())
+  fireEvent.click(gmailRow())
+  // The row says what a thread may do with mail, and that each thread asks first.
+  expect(document.getElementById(gmailRow().getAttribute('aria-controls')!)).toHaveTextContent('Each thread asks you once, in the thread, before it reads an account’s mail, and what it reads goes to that thread’s provider. A thread cannot send, move or delete mail')
+  fireEvent.click(screen.getByRole('button', { name: 'Add a Gmail account' }))
+  const form = screen.getByRole('form', { name: 'Add a Gmail account' })
+  expect(within(form).getByLabelText('Name')).toHaveFocus()
+  const submit = within(form).getByRole('button', { name: 'Add account' })
+  fireEvent.change(within(form).getByLabelText('Name'), { target: { value: ' Personal ' } })
+  const password = within(form).getByLabelText('App password')
+  expect(password).toHaveAttribute('type', 'password')
+  fireEvent.change(password, { target: { value: APP_PASSWORD } })
+  // Without an address, or with something that is not one, there is nothing to sign in as.
+  expect(submit).toHaveAttribute('aria-disabled', 'true')
+  fireEvent.change(within(form).getByLabelText('Gmail address'), { target: { value: 'not an address' } })
+  expect(submit).toHaveAttribute('aria-disabled', 'true')
+  fireEvent.change(within(form).getByLabelText('Gmail address'), { target: { value: ' reader@example.com ' } })
+  expect(submit).toHaveAttribute('aria-disabled', 'false')
+  expect(form).toHaveTextContent('Sixteen characters, made at myaccount.google.com/apppasswords. It needs 2-Step Verification on the Google account.')
+  await act(async () => { fireEvent.click(submit) })
+  expect(addAccount).toHaveBeenCalledWith({ plugin: 'gmail', name: 'Personal', secret: APP_PASSWORD, address: 'reader@example.com' })
+  expect(screen.queryByRole('form', { name: 'Add a Gmail account' })).toBeNull()
+  expect(gmailRow()).toHaveAccessibleName('Gmail Personal')
+  expect(screen.getByRole('region', { name: 'Gmail account Personal' })).toHaveTextContent(/reader@example\.com\. App password saved November 1[23]\./u)
+  expect(document.body.innerHTML).not.toContain(APP_PASSWORD)
+  // Vercel's row is not Gmail's: its account is listed under its own row alone.
+  expect(vercelRow()).toHaveAccessibleName('Vercel Not added')
+})
+
+it('says in Gmail’s own words why an app password was not kept, and what replacing, removing and switching off do', async () => {
+  const addAccount = vi.fn(async (): Promise<PluginAccountResult> => ({ ok: false, problem: 'refused' }))
+  const replaceSecret = vi.fn(async (): Promise<PluginAccountResult> => ({ ok: false, problem: 'busy' }))
+  await act(async () => { render(<PluginsSettings bridge={vercelBridge([{ ...personal, on: false }], { addAccount, replaceSecret })} />) })
+  expect(gmailRow()).toHaveAccessibleName('Gmail Personal (off)')
+  fireEvent.click(gmailRow())
+  const card = screen.getByRole('region', { name: 'Gmail account Personal' })
+  expect(card).toHaveTextContent('Off. No thread can see or use this account until you turn it back on. Its app password stays saved.')
+
+  fireEvent.click(within(card).getByRole('button', { name: 'Replace the app password for Personal' }))
+  fireEvent.change(within(card).getByLabelText('New app password'), { target: { value: APP_PASSWORD } })
+  await act(async () => { fireEvent.click(within(card).getByRole('button', { name: 'Save app password' })) })
+  expect(replaceSecret).toHaveBeenCalledWith({ id: personal.id, secret: APP_PASSWORD })
+  expect(within(card).getByRole('alert')).toHaveTextContent('Gmail is turning sign-ins away for now, so the app password could not be checked. The app password already saved was kept. Wait a few minutes, then try again.')
+  fireEvent.keyDown(within(card).getByLabelText('New app password'), { key: 'Escape' })
+
+  fireEvent.click(within(card).getByRole('button', { name: 'Remove the Gmail account Personal' }))
+  expect(within(card).getByRole('group', { name: 'Remove the Gmail account Personal' })).toHaveTextContent('Remove Personal? Its app password is deleted from this computer, and threads lose the account at once. Nothing changes at Gmail.')
+  fireEvent.click(within(card).getByRole('button', { name: 'Keep it' }))
+
+  fireEvent.click(screen.getByRole('button', { name: 'Add another Gmail account' }))
+  const form = screen.getByRole('form', { name: 'Add a Gmail account' })
+  fireEvent.change(within(form).getByLabelText('Name'), { target: { value: 'Second' } })
+  fireEvent.change(within(form).getByLabelText('Gmail address'), { target: { value: 'reader@example.org' } })
+  fireEvent.change(within(form).getByLabelText('App password'), { target: { value: APP_PASSWORD } })
+  await act(async () => { fireEvent.click(within(form).getByRole('button', { name: 'Add account' })) })
+  expect(within(form).getByRole('alert')).toHaveTextContent('Gmail did not accept this address and app password. Nothing was saved. Check the address, and make a new app password at myaccount.google.com/apppasswords.')
+  // The address stays to be corrected; the refused app password is not kept in the page.
+  expect(within(form).getByLabelText('Gmail address')).toHaveValue('reader@example.org')
+  expect(within(form).getByLabelText('App password')).toHaveValue('')
+  expect(document.body.innerHTML).not.toContain(APP_PASSWORD)
+})
+
+it('says of a mail account’s copy what another computer cannot keep, in mail’s words', async () => {
+  const lines: Record<string, string> = {
+    'too-old': 'forge’s Sotto cannot keep a mail account’s copy. Update Sotto on forge, and the copy is sent.',
+    'no-key': 'forge was started without a key file, so it cannot keep an app password. Nothing was kept there. On forge, set SOTTO_HOST_KEY_FILE to a file holding a secret of your own, start its host again, and the copy is sent.',
+    locked: 'This computer’s credential store is locked, so the app password could not be read to send. Unlock it, and Sotto tries again.',
+    kept: 'A copy is kept on forge.',
+  }
+  for (const [state, line] of Object.entries(lines)) {
+    const { bridge } = copiesBridge(state as PluginCopiesView['copies'][number]['state'], { account: personal })
+    await act(async () => { render(<PluginsSettings bridge={bridge} />) })
+    fireEvent.click(gmailRow())
+    await screen.findByRole('region', { name: 'Where its secret is kept' })
+    expect(screen.getByRole('switch', { name: 'Keep a copy of Personal on forge' }).querySelector('.tt-field__description')?.textContent, state).toBe(line)
+    cleanup()
+  }
+})
+
+it('says of a use of mail what was read, and of a first read you did not allow what was asked', async () => {
+  const mail = { plugin: 'gmail' as const, accountId: personal.id, threadTitle: 'Tax papers' }
+  const uses = [
+    use(1, { ...mail, kind: 'mail-search' }),
+    use(2, { ...mail, kind: 'mail-message' }),
+    use(3, { ...mail, kind: 'mail-message', outcome: 'denied' }),
+    use(4, { ...mail, kind: 'mail-search', outcome: 'lapsed' }),
+    use(5, { ...mail, kind: 'mail-search', outcome: 'failed' }),
+  ]
+  await act(async () => { render(<PluginsSettings bridge={vercelBridge([personal], { recentUse: async () => uses })} />) })
+  fireEvent.click(gmailRow())
+  const items = within(within(screen.getByRole('region', { name: 'Gmail account Personal' })).getByRole('region', { name: 'Recent use' })).getAllByRole('listitem')
+  expect(items.map(item => item.querySelector('span')!.textContent)).toEqual([
+    'Searched mail in “Tax papers”',
+    'Read a message in “Tax papers”',
+    'Asked to read a message in “Tax papers” You said no.',
+    'Asked to search mail in “Tax papers” Nobody answered in time.',
+    'Searched mail in “Tax papers” It failed.',
+  ])
 })

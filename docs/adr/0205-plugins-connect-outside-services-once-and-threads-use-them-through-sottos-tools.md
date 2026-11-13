@@ -198,6 +198,18 @@ Slice 8's third part. A mail account is copied to a paired host like any other, 
 - **One test of an open thread, on the host too.** The host's grants end by the test the desktop's do: the thread is not settled, by itself or with its project, not archived and not gone.
 - **Mail is read from the host's machine.** The host signs in to the account's own mail server with the copy's password from its encrypted credential file, as it reaches Vercel with a copy's token.
 
+## November 13, 2026: Gmail's row
+
+Slice 8's fourth part puts Gmail on Settings › Plugins, in a **Mail** group of its own, as the mock-up Zach picked for the page has it.
+
+- **An account is a name, an address and an app password.** The form says where an app password is made (myaccount.google.com/apppasswords, from Google's own help page, read that day) and that it needs 2-Step Verification. It is kept without the spaces Google shows it with, so it can be pasted as shown.
+- **The page shows the address; an agent is told the name.** The address is on the account's card, since it is the user's own and tells two accounts apart. It is not on the card that asks, and `plugin_accounts` does not list it.
+- **The row says what a thread may do.** That each thread asks once, in the thread, before it reads an account; that what it reads goes to the thread's provider; and that a thread cannot send, move or delete mail and leaves a message unread.
+- **The page's first sentence says so too.** It said "Reading never asks you." With mail that is no longer the whole of it: "Reading never asks you, except that each thread asks once before it reads a mail account."
+- **An agent is told of Gmail whether or not an account is added.** With none, `plugin_accounts` says to ask the user to add one, as it does for Vercel. Before the row existed it left Gmail out, so that no agent sent the user looking for a way to add one.
+- **A first read the user did not allow reads as what was asked.** Recent use says "Asked to search mail" with "You said no." or "Nobody answered in time.", as it does of a change that was not made.
+- **Where a grant is stopped is the thread.** Zach decided on November 13, 2026, on a question card, from a mock-up with three answers kept as the tag `prototype/plugin-mail-grants`: a list of threads on the account's row with Stop, an item in the thread's ··· menu, or both. He picked the menu item, **Ask before this thread reads** the account, shown only while the thread can read it, as the browser's is. The page lists no threads. That is the slice's last part; until it lands a grant ends when its thread is settled, archived or deleted, or its account is removed.
+
 ## Considered options
 
 - **Where secrets live.** Each computer its own, as ADR-0025 has it (rejected: every account typed in on every computer). The desktop keeps them and answers a host's calls (rejected: forge's threads would lose plugins while the laptop is closed). One operating-system keychain entry per account (rejected: a native dependency, which ADR-0018 says needs its own ADR).

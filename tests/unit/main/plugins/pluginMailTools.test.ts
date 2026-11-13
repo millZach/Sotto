@@ -256,7 +256,7 @@ describe('reading a mail account through plugin_read (ADR-0205, decision 8)', ()
     expect([t.asked, t.searched, t.opened, t.recorded]).toEqual([[], [], [], []])
   })
 
-  it('lists mail accounts by name, never by address, and only where there is one a thread could be told of', async () => {
+  it('lists mail accounts by name, never by address, and says how to get one where there is none', async () => {
     const two = tools({ accounts: [PERSONAL, WORK] })
     const listed = await two.server.call('one', PLUGIN_ACCOUNTS_TOOL, {})
     expect(said(listed)).toContain('Gmail: accounts "Personal", "Work". Read with plugin_read, plugin "gmail", "account" as one of those names and "search" or "message". The user is asked once before this thread first reads an account.')
@@ -264,8 +264,7 @@ describe('reading a mail account through plugin_read (ADR-0205, decision 8)', ()
     expect((listed.structuredContent as { plugins: unknown[] }).plugins[2]).toEqual({ id: 'gmail', name: 'Gmail', accounts: [{ name: 'Personal' }, { name: 'Work' }] })
 
     expect(said(await tools({ accounts: [{ ...PERSONAL, on: false }] }).server.call('one', PLUGIN_ACCOUNTS_TOOL, {}))).toContain('Gmail: no account is available to this thread')
-    // No row adds a Gmail account yet, so with none an agent is not told to send the user looking for one.
-    expect(said(await tools({ accounts: [] }).server.call('one', PLUGIN_ACCOUNTS_TOOL, {}))).not.toContain('Gmail')
+    expect(said(await tools({ accounts: [] }).server.call('one', PLUGIN_ACCOUNTS_TOOL, {}))).toContain('Gmail: no account added. To use it, ask the user to add one in Settings > Plugins.')
     expect(two.asked).toEqual([])
   })
 
