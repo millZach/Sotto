@@ -606,6 +606,43 @@ describe('Thread transcript scrolling', () => {
     expect(screen.queryByRole('button', { name: /Jump to latest|New messages/ })).not.toBeInTheDocument()
   })
 
+  it('keeps the turns main’s window lets go of while the reader is above the end, and lets them go at the end', () => {
+    // Main holds a thread on screen as a window of its newest turns, so a message that begins a turn takes the oldest turn
+    // off the top: in Watcher's conversation, every piece of news. The reader was thrown off the row they were reading.
+    const state = manualState()
+    const at = new Date(NOW).toISOString()
+    const thread = state.host.threads.find(item => item.id === 'grok-previews')!
+    thread.messages = Array.from({ length: 20 }, (_, index) => ({ id: `m${index}`, role: 'assistant' as const, text: `History ${index}`, createdAt: at }))
+    thread.earlierAvailable = true
+    const { live } = mount(state)
+    const transcript = screen.getByRole('log', { name: 'Thread transcript' })
+    const rows = (): number => transcript.querySelectorAll('.thread-message').length
+    // The window moves on by a turn: its oldest two messages go and a reply arrives at the end.
+    const news = (id: string): void => act(() => { live.publish({ host: { ...live.state.host, threads: live.state.host.threads.map(item => item.id === 'grok-previews'
+      ? { ...item, messages: [...item.messages.slice(2), { id, role: 'assistant' as const, text: id, createdAt: at }] } : item) } }) })
+    // At the end, the window is followed as it moves: nothing is held for a reader who is not reading back.
+    news('news-at-the-end')
+    expect(rows()).toBe(19)
+    expect(transcript.scrollTop).toBe(transcript.scrollHeight - VIEW)
+    // Reading the oldest message drawn, the reader keeps it, and every row above the end, through each piece of news.
+    transcript.scrollTop = 0
+    fireEvent.scroll(transcript)
+    news('news-1')
+    news('news-2')
+    expect(screen.getByText('History 2', { exact: true })).toBeInTheDocument()
+    expect(rows()).toBe(21)
+    expect(transcript.scrollTop).toBe(0)
+    expect(live.state.host.threads.find(item => item.id === 'grok-previews')!.messages[0]!.id).toBe('m6')
+    // Back at the end, what the window let go is let go, and the end is followed again.
+    fireEvent.click(screen.getByRole('button', { name: 'New messages' }))
+    expect(screen.queryByText('History 2', { exact: true })).not.toBeInTheDocument()
+    expect(rows()).toBe(17)
+    expect(transcript.scrollTop).toBe(transcript.scrollHeight - VIEW)
+    news('news-3')
+    expect(rows()).toBe(16)
+    expect(transcript.scrollTop).toBe(transcript.scrollHeight - VIEW)
+  })
+
   it('keeps a reader above the end where they are when they send, and follows a send from the end', async () => {
     const state = manualState()
     const at = new Date(NOW).toISOString()
@@ -732,6 +769,45 @@ describe('Thread transcript scrolling', () => {
       const scrollTo = (top: number): void => { transcript.scrollTop = top; fireEvent.scroll(transcript) }
       return { transcript, update, scrollTo }
     }
+
+    it('stays on the answer they are reading when news moves main’s window past its turn, which stays folded as it was', () => {
+      // The answered turn, then four short ones: main's window is its newest turns, and each piece of news moves it on.
+      const state = answered()
+      const thread = state.host.threads.find(item => item.id === 'grok-previews')!
+      thread.messages = [...thread.messages, ...Array.from({ length: 4 }, (_, index) => [
+        { id: `later-${index}`, role: 'user' as const, text: `Later ${index}.`, createdAt: at(6 + index) },
+        { id: `reply-${index}`, role: 'assistant' as const, text: `Reply ${index}.`, createdAt: at(6 + index) }]).flat()]
+      const { transcript, update, scrollTo } = mountWith(state)
+      const answer = (): Element | null => transcript.querySelector('[data-message-id="answer"]')
+      const folds = (): number => within(transcript).queryAllByRole('button', { name: /^Worked for/u }).length
+      // What begins a turn moves the window on: here a message of the user's, in Watcher's conversation Sotto's own news.
+      const news = (index: number) => [{ id: `wake-${index}`, role: 'user' as const, text: `Wake ${index}.`, createdAt: at(20 + index) },
+        { id: `news-${index}`, role: 'assistant' as const, text: `News ${index}.`, createdAt: at(20 + index) }]
+      expect(folds()).toBe(1)
+      // Reading the answer's third paragraph: the answer begins two rows above the view's top.
+      scrollTo(3 * ROW)
+      expect(answer()!.getBoundingClientRect().top).toBe(-2 * ROW)
+      // News: the window lets go of the answered turn, its five messages and its work, and a turn arrives at the end.
+      update(item => ({ messages: [...item.messages.slice(5), ...news(1)], activities: [], earlierAvailable: true }))
+      expect(answer(), 'the answer being read is still drawn').not.toBeNull()
+      expect(answer()!.getBoundingClientRect().top).toBe(-2 * ROW)
+      expect(transcript.scrollTop).toBe(3 * ROW)
+      // Its turn is drawn as it was: folded under its line, its replies on the way not laid open above the reader.
+      expect(folds()).toBe(1)
+      expect(transcript.querySelector('[data-message-id="step-1"]')).toBeNull()
+      // More news, and the next turn goes from the window too.
+      update(item => ({ messages: [...item.messages.slice(2), ...news(2)] }))
+      expect(answer()!.getBoundingClientRect().top).toBe(-2 * ROW)
+      expect(transcript.querySelector('[data-message-id="later-0"]')).not.toBeNull()
+      // Back at the end, the transcript is main's window again, and follows it.
+      scrollTo(transcript.scrollHeight - VIEW)
+      update(item => ({ messages: [...item.messages.slice(2), ...news(3)] }))
+      expect(answer()).toBeNull()
+      expect(transcript.querySelector('[data-message-id="later-0"]')).toBeNull()
+      expect(transcript.querySelector('[data-message-id="later-1"]')).toBeNull()
+      expect(folds()).toBe(0)
+      expect(transcript.scrollTop).toBe(transcript.scrollHeight - VIEW)
+    })
 
     it('stays where they are reading while the turn above opens and folds again, and the end is still followed', () => {
       const { transcript, update, scrollTo } = mountWith(answered())

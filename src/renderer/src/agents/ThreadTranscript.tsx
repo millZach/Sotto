@@ -66,6 +66,7 @@ import { useDelegations, useDelegationsEnabled } from './delegations'
 import { finishedDelegation } from './delegationWords'
 import { MessageScrubber } from './MessageScrubber'
 import { keepReadingPlace, MessageRows, MessageRowsContext, readingPlace, revealLift, scrolledSince, scrollsTranscript, type ReadingPlace } from './readingPlace'
+import { readingWindow, type ReadingWindow } from './readingWindow'
 import { readsBack, typesIntoComposer } from './slimComposer'
 import { aboveWindow, joinedMarks, scrubberMarks, storedMarks, SCRUBBER_FEWEST, type ScrubberMark } from './messageScrubberMarks'
 import { useSlidMarks, useStoredPrompts } from './useStoredPrompts'
@@ -920,7 +921,12 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   readonly onQuoted?: (() => void) | undefined
 }): ReactNode {
   const { t } = useLingui()
-  const thread = row.thread
+  const following = useRef(true)
+  // A reader above the end keeps the turns main's window lets go of, until they are back at the end (readingWindow.ts).
+  const drawnWindow = useRef<ReadingWindow | null>(null)
+  drawnWindow.current = readingWindow(drawnWindow.current, row.thread, !following.current)
+  const thread = drawnWindow.current.thread
+  const heldAbove = drawnWindow.current.held
   const overseen = isDynamicThread(thread, useOwlFeature('dynamic-threads')) ? resolveModel(state.host.models, thread.modelId)?.name ?? thread.modelId : undefined
   const quoting = useOwlFeature('reply-quote')
   const sentSkills = useSentSkills(row, state, command)
@@ -928,7 +934,6 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const scroller = useRef<HTMLDivElement>(null)
   const content = useRef<HTMLDivElement>(null)
   const jump = useRef<HTMLButtonElement>(null)
-  const following = useRef(true)
   /** Where the scroll stood when last heard or set to the end, so a reader moving up from the end is told apart from the end moving away. */
   const lastTop = useRef(0)
   const anchor = useRef<{ readonly height: number; readonly top: number } | null>(null)
@@ -1178,7 +1183,8 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     seen.current = lastMessageId
     if (following.current) { element.scrollTop = element.scrollHeight; lastTop.current = element.scrollTop; seenUpTo.current = lastMessageId }
     else if (arrived) setUnseen(true)
-  }, [lastMessageId, pendingKey, hidden, followSignal, thread.historyStatus, toEnd])
+    // What was held above main's window goes when the reader is back at the end, which is followed as it shortens.
+  }, [lastMessageId, pendingKey, hidden, heldAbove, followSignal, thread.historyStatus, toEnd])
 
   // Late content layout, composer padding and window resizing keep a following reader at the end. Observe the
   // scroll box's content size too: a taller floating composer changes its padding without resizing the messages.
