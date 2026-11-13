@@ -635,6 +635,27 @@ it('says in plain words why a computer holds no copy, and what to do where there
   }
 })
 
+it('says whose threads Recent use lists, and whose gh a thread on another computer uses, once another computer is paired', async () => {
+  const records = 'Sotto records what was done and by which thread, never what was read or sent.'
+  const gh = 'GitHub uses the gh command’s own sign-in. Sotto stores nothing for it.'
+  // With no other computer there is nothing to add.
+  await act(async () => { render(<PluginsSettings bridge={vercelBridge([work])} />) })
+  fireEvent.click(await screen.findByRole('button', { name: /^GitHub/u }))
+  fireEvent.click(vercelRow())
+  expect(screen.getAllByText(records)).toHaveLength(2)
+  expect(screen.getByText(gh).textContent).toBe(gh)
+  cleanup()
+  // With forge paired, its threads use plugins too: its own gh, and a record this page does not hold.
+  const { bridge } = copiesBridge('kept')
+  await act(async () => { render(<PluginsSettings bridge={bridge} />) })
+  fireEvent.click(await screen.findByRole('button', { name: /^GitHub/u }))
+  fireEvent.click(vercelRow())
+  await screen.findByRole('region', { name: 'Where its secret is kept' })
+  const notes = [...document.querySelectorAll('.plugin-row__note')].map(note => note.textContent)
+  expect(notes.filter(note => note === `${records} Only this computer’s threads are listed. Your other computers keep no record of use.`)).toHaveLength(2)
+  expect(notes).toContain(`${gh} A thread on another of your computers uses the gh sign-in on that computer, which may be a different account.`)
+})
+
 it('lists the other computers with what each holds, and keeps the default for new copies', async () => {
   const { bridge, defaults } = copiesBridge('kept')
   await act(async () => { render(<PluginsSettings bridge={bridge} />) })

@@ -980,6 +980,10 @@ msgstr "A short sound when recording starts and stops."
 msgid "A theme with the id \"{id}\" is already installed."
 msgstr "A theme with the id \"{id}\" is already installed."
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "A thread on another of your computers uses the gh sign-in on that computer, which may be a different account."
+msgstr "A thread on another of your computers uses the gh sign-in on that computer, which may be a different account."
+
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "A thread stopped by a usage limit or by Sotto closing waits for your next message."
 msgstr "A thread stopped by a usage limit or by Sotto closing waits for your next message."
@@ -4437,6 +4441,10 @@ msgstr "Only a Claude Code or Codex thread can be Dynamic for now, so {provider}
 #: src/renderer/src/features/settings/WorkerMachineSettings.tsx
 msgid "Only this computer is connected, so new workers start here. Add a machine in <0>Hosts & phones</0>."
 msgstr "Only this computer is connected, so new workers start here. Add a machine in <0>Hosts & phones</0>."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Only this computer’s threads are listed. Your other computers keep no record of use."
+msgstr "Only this computer’s threads are listed. Your other computers keep no record of use."
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Only threads in {titles} may use it. Watcher belongs to no project, so it cannot."

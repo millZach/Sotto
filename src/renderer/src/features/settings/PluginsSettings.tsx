@@ -92,13 +92,15 @@ export function PluginsSettings({ bridge = window.sotto?.plugins }: { readonly b
     return ask().then(view => { if (copiesAsked.current === mine) setCopies(view) })
   }
   const changedAccounts = (next: readonly PluginAccount[]): void => { setAccounts(next); readCopies() }
+  // With another computer paired, its threads use plugins too: its own gh, and the copies it holds.
+  const elsewhere = copies !== null && copies.computers.length > 0
   const groupTitle: Record<PluginGroupId, string> = { code: t`Code and deploys` }
   return <div className="plugins-settings">
     <p className="tt-paragraph plugins-lead"><Trans>A thread’s agent uses a plugin through Sotto’s tools and never holds its secret. Reading never asks you. A change, such as posting a comment, asks you first in its thread, each time.</Trans></p>
     <SettingsGroup title={groupTitle.code} icon={Code} rows={false}>
       <div className="plugins-list">
         {PLUGINS.filter(plugin => plugin.group === 'code').map(plugin => plugin.id === 'github'
-          ? <GitHubRow key={plugin.id} plugin={plugin} signIn={signIn} uses={uses} onCheck={() => { check(); readUses() }} />
+          ? <GitHubRow key={plugin.id} plugin={plugin} signIn={signIn} uses={uses} elsewhere={elsewhere} onCheck={() => { check(); readUses() }} />
           : <VercelRow key={plugin.id} plugin={plugin} bridge={bridge} accounts={accounts} projects={projects} copies={copies} uses={uses} onAccounts={changedAccounts} onCopies={tookCopies} />)}
       </div>
     </SettingsGroup>
@@ -175,7 +177,11 @@ function PluginRow({ plugin, state, summary, children }: { readonly plugin: Plug
   </div>
 }
 
-function GitHubRow({ plugin, signIn, uses, onCheck }: { readonly plugin: PluginEntry; readonly signIn: SignInView; readonly uses: readonly ShownPluginUse[] | null; readonly onCheck: () => void }): ReactNode {
+function GitHubRow({ plugin, signIn, uses, elsewhere, onCheck }: {
+  readonly plugin: PluginEntry; readonly signIn: SignInView; readonly uses: readonly ShownPluginUse[] | null
+  /** Whether another computer is paired, whose threads use that computer's own gh. */
+  readonly elsewhere: boolean; readonly onCheck: () => void
+}): ReactNode {
   const { t } = useLingui()
   const [copied, showCopied] = useTransientFlag<'copied'>()
   const [copyFailed, setCopyFailed] = useState(false)
@@ -200,8 +206,9 @@ function GitHubRow({ plugin, signIn, uses, onCheck }: { readonly plugin: PluginE
       {signIn.state === 'unknown' ? <p className="tt-paragraph"><Trans>Sotto couldn’t ask gh who is signed in. Nothing was changed. Press Check again.</Trans></p> : null}
       {signIn.state === 'checking' ? <p className="tt-paragraph"><Trans>Asking gh who is signed in…</Trans></p> : null}
     </div>
-    <p className="tt-paragraph plugin-row__note"><Trans>GitHub uses the gh command’s own sign-in. Sotto stores nothing for it.</Trans></p>
-    <RecentUse name={plugin.name} uses={uses === null ? null : uses.filter(use => use.plugin === plugin.id)} />
+    <p className="tt-paragraph plugin-row__note"><Trans>GitHub uses the gh command’s own sign-in. Sotto stores nothing for it.</Trans>
+      {elsewhere ? <> <Trans>A thread on another of your computers uses the gh sign-in on that computer, which may be a different account.</Trans></> : null}</p>
+    <RecentUse name={plugin.name} uses={uses === null ? null : uses.filter(use => use.plugin === plugin.id)} elsewhere={elsewhere} />
     <div className="plugin-row__actions"><Button variant="secondary" aria-disabled={signIn.state === 'checking'} aria-label={t`Check GitHub’s sign-in again`} onClick={() => { if (signIn.state !== 'checking') onCheck() }}><Trans>Check again</Trans></Button></div>
   </PluginRow>
 }
@@ -366,7 +373,7 @@ function AccountCard({ account, bridge, projects, copies, uses, onAccounts, onCo
     {problem ? <p className="tt-field__error tt-paragraph" role="alert">{problem}</p> : null}
     <AccountThreads account={account} bridge={bridge} projects={projects} onAccounts={onAccounts} />
     <AccountCopies account={account} bridge={bridge} copies={copies} onCopies={onCopies} />
-    <RecentUse name={name} uses={uses} />
+    <RecentUse name={name} uses={uses} elsewhere={copies !== null && copies.computers.length > 0} />
   </section>
 }
 
@@ -501,7 +508,11 @@ function AccountThreads({ account, bridge, projects: read, onAccounts }: {
 }
 
 /** The newest uses by threads' agents of a plugin or of one account: what was done and by which thread, never what was read. */
-function RecentUse({ name, uses }: { readonly name: string; readonly uses: readonly ShownPluginUse[] | null }): ReactNode {
+function RecentUse({ name, uses, elsewhere }: {
+  readonly name: string; readonly uses: readonly ShownPluginUse[] | null
+  /** Whether another computer is paired: its threads' uses are that computer's, and are not listed here. */
+  readonly elsewhere: boolean
+}): ReactNode {
   const { t } = useLingui()
   const headingId = useId()
   if (uses === null) return null
@@ -537,6 +548,7 @@ function RecentUse({ name, uses }: { readonly name: string; readonly uses: reado
         </span>
       </li>)}
     </ul>}
-    <p className="tt-paragraph plugin-row__note"><Trans>Sotto records what was done and by which thread, never what was read or sent.</Trans></p>
+    <p className="tt-paragraph plugin-row__note"><Trans>Sotto records what was done and by which thread, never what was read or sent.</Trans>
+      {elsewhere ? <> <Trans>Only this computer’s threads are listed. Your other computers keep no record of use.</Trans></> : null}</p>
   </section>
 }

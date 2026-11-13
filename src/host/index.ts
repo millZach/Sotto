@@ -15,7 +15,7 @@ import { openRuntimeMemory } from '../main/memory/runtime'
 import { PolicyStore } from '../main/memory/policies'
 import { join } from 'node:path'
 import { openHostCredentials } from './credentials'
-import { hostPluginAccountCopies } from '../main/plugins/accountCopies'
+import { hostPlugins, type HostPluginStandIns } from './plugins'
 import { PairedClients } from '../main/agents/pairing'
 import { startSocketServer } from './socketServer'
 import { PullRequestConfirmations } from './pullRequestConfirmations'
@@ -92,6 +92,8 @@ export interface HeadlessHostOptions {
    * does a desktop's (ADR-0025, November 10 amendment): yes unless false. `SOTTO_HOST_COMPRESS_PHONES=0` makes it false.
    */
   compressPhones?: boolean
+  /** Tests stand in for this machine's `gh` and for Vercel; a host runs its own `gh` and reaches api.vercel.com. */
+  plugins?: HostPluginStandIns
   /**
    * Tests stand in a maker over a picture worker they built, since none is built beside the source; a host starts the one
    * beside its own index.js (ADR-0203). The host closes it when it closes.
@@ -138,9 +140,16 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   // A host reads its features from its own packaged version; a paired desktop cannot turn any on.
   const owlFeatures: OwlFeatureStates = { ...owlFeaturesForTrack(getReleaseTrack(options.sottoVersion ?? packageVersion)), ...options.owlFeatures }
   const usageEnabled = owlFeatures.usage
-  // Account copies (ADR-0205, amending ADR-0025): the plugin accounts the recorded desktop sent this host, each
-  // secret in this host's own encrypted credential file. Kept only while the host's Owl answer turns on plugins.
-  const pluginAccountCopies = owlFeatures.plugins ? hostPluginAccountCopies(directory, credentials) : undefined
+  // Plugins (ADR-0205, amending ADR-0025): the account copies the recorded desktop sent this host, each secret in this
+  // host's own encrypted credential file, and `sotto_plugins` for this host's own threads over them. Only while the
+  // host's Owl answer turns on plugins. Its threads are read once the runtime that holds them has started.
+  // Nobody is paired until the paired clients are read, below: until then no copy is anyone's to use.
+  let pairedNow: (clientId: string) => boolean = () => false
+  const plugins = owlFeatures.plugins ? hostPlugins({ directory, credentials, ...(options.plugins ? { standIns: options.plugins } : {}),
+    paired: clientId => pairedNow(clientId),
+    thread: threadId => startedRuntime?.agentControl.watcherSnapshot().threads.find(item => item.id === threadId),
+    admits: threadId => startedRuntime?.agentHost.admitsPluginTools(threadId) ?? false }) : undefined
+  const pluginAccountCopies = plugins?.copies
   // Its Owl answers, and every provider hosts do not take yet: DeepSeek, whose models need own servers (ADR-0138).
   const heldProviders = heldOnHost(heldProvidersOf(owlFeatures))
   const resumeAfterRestart = owlFeatures['resume-after-restart']
@@ -205,6 +214,10 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     // Saved capacity limits apply before recovery can resume any queued starts, even before a desktop reconnects.
     await pairing.load()
     await desktops.refresh()
+    // A copy is used only while the desktop that sent it is paired. One left by a desktop revoked while its copies
+    // could not be deleted, or while this host was going away, is deleted now, before any thread starts.
+    pairedNow = clientId => pairing.isPaired(clientId)
+    await plugins?.copies.forgetUnpaired(pairedNow).catch(() => options.log?.('plugin-account-copies-not-forgotten'))
     const recordedDesktop = (clientId: string): boolean => desktops.has(clientId)
     // The desktop relay (#1316): a thread here delegates to other machines through a desktop that relays, only where the
     // Owl answer turns on Work across machines. Its record of relayed delegations is read before the threads start.
@@ -275,10 +288,14 @@ async function startHostRuntime(options: HeadlessHostOptions) {
       ...(runtime.delegation && crossMachineEnabled
         ? [new DelegationToolServer(runtime.delegation, { roles: owlFeatures['worker-roles'], machines: true, place: 'this-machine', relay: delegationRelay !== undefined, swarms: workerSwarmsEnabled })] : []),
       ...(owlFeatures['inline-media'] ? [new MediaToolServer({ admits: threadId => agentHost.admitsShownMedia(threadId), show: (threadId, input) => agentHost.showMedia(threadId, input) })] : []),
+      // `sotto_plugins` (ADR-0205): this host's threads use the account copies it holds and this machine's own gh.
+      ...(plugins ? [plugins.tools] : []),
       ...(tellWatcherRelay && runtime.watcher ? [tellWatcherTools(agentHost, runtime.watcher, (threadId, words, userMessage) => tellWatcherRelay.tell({ threadId, words, ...userMessage ? { userMessage } : {} }),
         (threadId, ready) => tellWatcherRelay.tell({ threadId, ready }))] : []),
     ]
     if (threadTools.length) runtime.agentHost.useThreadTools(threadTools)
+    // A plugin change waits on a card in its thread: one of this host's own requests, answered as its others are.
+    if (plugins) runtime.agentControl.useSottoRequests(plugins.changes)
     // A provider signed in from a paired client's browser is connected here for that client (ADR-0037).
     const signIns = new ProviderSignIns({ ...(options.signInCommand ? { command: options.signInCommand } : {}), cursorConfigDirectory: join(directory, 'cursor', 'config'),
       connect: async (provider, clientId) => {
@@ -386,7 +403,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     } catch (error) {
       await Promise.allSettled([
         async () => signIns.close(), async () => phones?.close(), async () => listener?.close(),
-        ...threadTools.map(tools => async () => tools.close()),
+        ...threadTools.map(tools => async () => tools.close()), async () => plugins?.close(),
       ].map(stop => stop()))
       throw error
     }
@@ -397,6 +414,10 @@ async function startHostRuntime(options: HeadlessHostOptions) {
       service: runtime.hostService, credentials, pairing, descriptor: listener?.descriptor,
       close: (): Promise<void> => {
         closing ??= (async () => {
+          // First, and before anything here is waited on: a plugin change still waiting on its card stops, and no
+          // answer to it is taken. Phone access and the listener can take seconds to close, and a card allowed in
+          // that time would change something outside Sotto for a host that is already going away.
+          const pluginsClosed = plugins?.close()
           productEvents.stop()
           delegationRelay?.close()
           signIns.close()
@@ -409,7 +430,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
           try { await listener?.close() } finally {
             // No thread's tool call is taken once the host is closing; a call already running ends with its service. No
             // phone is left to ask for a copy, so the picture worker goes too.
-            await Promise.allSettled([...threadTools.map(tools => tools.close()), browser?.close(), pictures?.close()])
+            await Promise.allSettled([...threadTools.map(tools => tools.close()), pluginsClosed, browser?.close(), pictures?.close()])
             try { await runtime.close() } finally {
               memory?.close()
               if (listener) {
@@ -423,7 +444,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     }
   } catch (error) {
     await Promise.allSettled([
-      async () => productEvents.stop(), async () => delegationRelay?.close(), async () => browser?.close(), async () => startedRuntime?.close(),
+      async () => productEvents.stop(), async () => delegationRelay?.close(), async () => browser?.close(), async () => plugins?.close(), async () => startedRuntime?.close(),
       async () => pictures?.close(),
     ].map(stop => stop()))
     try { memory?.close() } catch { /* Keep the startup failure. */ }

@@ -9,6 +9,17 @@ import { PluginAccounts, type PluginCredentials } from './accounts'
 const sendersSchema = z.object({ version: z.literal(1), senders: z.record(z.uuid(), z.string().min(1).max(DESKTOP_CLIENT_ID_MAX)) }).strict()
 type Senders = Readonly<Record<string, string>>
 
+/** A host's own view of its account copies: the store its desktops reach, and what the host itself needs of it. */
+export interface HostPluginAccountCopies extends PluginAccountCopyStore {
+  /** Which desktop sent each copy, by the account's ID. Throws when that cannot be read, so no copy is taken for a paired desktop's by mistake. */
+  senders(): Promise<Readonly<Record<string, string>>>
+  /**
+   * Deletes every copy, and its secret, that no paired desktop sent: one whose desktop was revoked while its copies
+   * could not be deleted, or while the host was going away, and one with no sender at all. Run when the host starts.
+   */
+  forgetUnpaired(paired: (clientId: string) => boolean): Promise<void>
+}
+
 /**
  * A headless host's account copies (ADR-0205, amending ADR-0025): the plugin accounts a desktop sent, each under that
  * desktop's own ID for it, with its secret in the host's encrypted credential file. They are kept as the host's own
@@ -24,12 +35,13 @@ type Senders = Readonly<Record<string, string>>
  * it, so the host asks no service anything. A host started without a key file cannot keep a secret; it says `store`
  * and keeps nothing.
  */
-export function hostPluginAccountCopies(directory: string, credentials: PluginCredentials, now: () => Date = () => new Date()): PluginAccountCopyStore {
-  const accounts = new PluginAccounts(directory, {
+export function hostPluginAccountCopies(directory: string, credentials: PluginCredentials, now: () => Date = () => new Date(),
+  // The host's own threads read the accounts the copies are kept in, so both are handed the one record.
+  accounts: PluginAccounts = new PluginAccounts(directory, {
     credentials,
     // A host adds no account of its own, so nothing is ever asked of a service from here.
     check: async () => ({ ok: false, problem: 'unreachable' }),
-  })
+  })): HostPluginAccountCopies {
   const path = join(directory, 'plugin-account-copy-senders.json')
   /** Only a file that is not there yet means no copies. One that cannot be read throws, so nobody is taken for a copy's sender by mistake. */
   const read = async (): Promise<Senders> => {
@@ -100,9 +112,25 @@ export function hostPluginAccountCopies(directory: string, credentials: PluginCr
       for (const [id, sender] of Object.entries(senders)) {
         if (sender !== clientId) continue
         const result = await accounts.remove({ id })
-        // A copy whose secret could not be deleted keeps its sender, so the next revocation or removal finds it again.
+        // A copy whose secret could not be deleted keeps its sender, so the host's threads still see whose it was
+        // and use none of it, and the sweep at the next start finds it again.
         if (result.ok || result.problem === 'gone') gone.push(id)
       }
+      if (gone.length > 0) await write(without(senders, ...gone))
+    }),
+    senders: (): Promise<Senders> => inTurn(read),
+    forgetUnpaired: (paired: (clientId: string) => boolean): Promise<void> => inTurn(async () => {
+      const senders = await read()
+      const held = await accounts.list()
+      const gone: string[] = []
+      for (const account of held) {
+        const sender = senders[account.id]
+        if (sender !== undefined && paired(sender)) continue
+        const result = await accounts.remove({ id: account.id })
+        if (result.ok || result.problem === 'gone') gone.push(account.id)
+      }
+      // A sender written down for a copy that was never kept, or is gone, is dropped with its desktop.
+      for (const [id, sender] of Object.entries(senders)) if (!paired(sender) && !held.some(account => account.id === id)) gone.push(id)
       if (gone.length > 0) await write(without(senders, ...gone))
     }),
   }
