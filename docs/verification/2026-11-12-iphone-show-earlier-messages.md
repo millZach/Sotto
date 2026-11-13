@@ -28,6 +28,14 @@ showed until the thread next changed. On a quiet thread that is never; on a work
 
 The page now keys its rows on the model's count of copies taken in as well.
 
+A working thread had a second way to lose the press, which Sol's review found. An update taken in while the answer was on
+its way left the answer older than the copy held, so the phone dropped it and read the thread again. That read came at the
+revision the phone now held, and a plain read at the same revision is taken for nothing new. Show earlier messages now reads
+the thread again itself, up to three times, and takes that copy as widened.
+`AppModelTests.testShowEarlierMessagesKeepsItsAnswerWhenAnUpdateComesFirst` scripts it. On scratch run
+[43370018710](https://github.com/millZach/Sotto/actions/runs/43370018710) it failed against main's `AppModel.swift` (the
+phone kept only the message it had) and passed with the change, with the other 187 app-model tests.
+
 ## The journey
 
 `FocusJourneyTests.testShowEarlierMessagesShowsWhatItBrings` opens the long fixture thread (40 turns) on a step window of its
