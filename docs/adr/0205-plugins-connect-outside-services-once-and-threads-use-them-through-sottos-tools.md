@@ -149,6 +149,20 @@ Slice 7 is built in three parts. The first is the host's side, and it settled ho
 
 One limit across computers, which the slice also names, has nothing to count until a plugin that spends exists. It moves to the first one, Meshy.
 
+## November 13, 2026: how mail is read
+
+Slice 8 is built in parts. The first is the mail adapter alone, with no account, tool or page, and it settled how a mail account is read.
+
+- **Every read is a connection of its own.** It signs in, does one search or opens one message, and says goodbye. Nothing stays signed in between reads, so there is no connection to keep alive, share between threads or leave open when an account is switched off.
+- **Nothing here can change a mailbox.** A mailbox is opened for reading only (`EXAMINE`), a message is fetched without being marked as read (`BODY.PEEK`), and the adapter has no command that sends, moves, flags or deletes. Reading a message through a plugin leaves it unread for the user. Sending is slice 9's named change.
+- **A search is in IMAP's own terms, not Gmail's.** Sender, recipient, subject, words anywhere, received since and before a day, and unread, in one mailbox. Gmail's own search syntax would read better to an agent, but Proton Mail Bridge does not speak it, and decision 2 puts both on one mail path. A mailbox is named by what it is for (`inbox`, `all`, `sent`, `drafts`, `trash`, `spam`, `starred`), which a server marks whatever language its names are in, or by its own name.
+- **A search lists; opening reads.** A search returns up to 50 messages, newest first, each with who it is from and to, its subject, when the server received it, whether it is unread and its size. Opening one returns its text, cut at 200,000 characters. A message with no plain text is read from its HTML, made into text, and says so.
+- **A file that came with a message is named, never fetched.** Its name, kind and size are listed. Reading attachments is not part of this slice: a file is not text an agent reads, and it can be large.
+- **A message is named by its mailbox's numbering.** If the server has rebuilt the mailbox since the search, the number may be another message's, so the open is refused and the agent searches again.
+- **The connection is TLS from its first byte, to the one server it is given.** The server's certificate is checked as any is. A server that says it takes no password on the connection is sent none, and one that greets the connection as signed in already is not read from.
+- **What a server sends is counted.** A line, a piece of a message and a whole connection each have a size past which the connection is ended, and one read has thirty seconds. The password is in no error and no result.
+- **No library.** IMAP and the decoding of a message are written out in `src/main/plugins/mail/`, on Node's `tls` alone, as ADR-0018 asks.
+
 ## Considered options
 
 - **Where secrets live.** Each computer its own, as ADR-0025 has it (rejected: every account typed in on every computer). The desktop keeps them and answers a host's calls (rejected: forge's threads would lose plugins while the laptop is closed). One operating-system keychain entry per account (rejected: a native dependency, which ADR-0018 says needs its own ADR).
