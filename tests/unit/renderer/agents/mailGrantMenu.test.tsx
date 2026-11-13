@@ -74,6 +74,25 @@ it('says so when a grant could not be ended, and leaves the row, since the threa
   expect(labels(result.current.items)).toEqual(['Ask before this thread reads Personal'])
 })
 
+it('stops saying a grant could not be ended once the thread can no longer read that account some other way', async () => {
+  owl(true)
+  const held: Record<string, ThreadMailGrant[]> = { one: [PERSONAL, WORK] }
+  const b = bridge(held, { stops: false })
+  const { result } = renderHook(() => useMailGrantMenu('one', true, b.made))
+  await act(async () => undefined)
+  await act(async () => { result.current.items[0]!.run() })
+  expect(result.current.problem).toContain('could not stop this thread reading Personal')
+  // Another account's grant changing leaves the sentence: it is still true.
+  held.one = [PERSONAL]
+  await act(async () => { b.changed() })
+  expect(result.current.problem).toContain('could not stop this thread reading Personal')
+  // The account is removed, or the thread settled: the row goes, and so does a sentence that is no longer true.
+  held.one = []
+  await act(async () => { b.changed() })
+  expect(result.current.items).toEqual([])
+  expect(result.current.problem).toBeNull()
+})
+
 it('reads the thread’s grants again when main says one changed, as when the user allows a read', async () => {
   owl(true)
   const held: Record<string, ThreadMailGrant[]> = { one: [] }

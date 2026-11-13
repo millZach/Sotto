@@ -594,6 +594,12 @@ export class PluginToolServer implements ScopedThreadTools {
       if (!await usable()) return changed('before it could be read')
     }
     const result = 'message' in wanted ? await mail.open(account, wanted.message) : await mail.search(account, wanted.search)
+    // The user may have stopped this thread reading the account, or settled it, while the mail server was answering.
+    // A grant that ended then covers nothing: what came back is not handed over, and the thread asks again.
+    if (!await mail.granted(threadId, account.id).catch(() => false)) {
+      await kept('refused')
+      return text(`The user stopped this thread reading the ${service} account "${account.name}" while this was being read, so nothing of it was handed over. Call ${PLUGIN_READ_TOOL} again if it should still be read; the user will be asked again.`, true)
+    }
     if (result === 'locked') { await kept('failed'); return text(`Sotto could not read the password for the ${service} account "${account.name}", because this computer's credential store is locked. Ask the user to unlock it, then try again. ${NOTHING_READ}`, true) }
     if (result === 'no-secret') { await kept('failed'); return text(`Sotto no longer holds the password for the ${service} account "${account.name}". Ask the user to replace it in ${SETTINGS}. ${NOTHING_READ}`, true) }
     await kept(result.ok ? 'done' : result.reason === 'input' ? 'refused' : 'failed')

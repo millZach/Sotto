@@ -18,7 +18,8 @@ export function useMailGrantMenu(threadId: string, here: boolean, bridge: Plugin
   const { t } = useLingui()
   const on = useOwlFeature('plugins') && here && bridge !== undefined
   const [grants, setGrants] = useState<readonly ThreadMailGrant[]>([])
-  const [problem, setProblem] = useState<string | null>(null)
+  // A Stop that could not be made, and the account it was for: said only while the thread can still read that account.
+  const [problem, setProblem] = useState<{ readonly accountId: string; readonly words: string } | null>(null)
   // Only the newest read's answer is shown, and none after the pane has gone to another thread.
   const asked = useRef(0)
   // The thread the pane shows now, as one object for as long as it shows it: what a Stop began for an earlier one
@@ -46,12 +47,13 @@ export function useMailGrantMenu(threadId: string, here: boolean, bridge: Plugin
     setProblem(null)
     // An answer that arrives after the pane has gone to another thread, or has gone, is not this pane's to show.
     const still = (): boolean => shown !== null && showing.current === shown
-    const failed = (): void => { if (still()) setProblem(t`Sotto could not stop this thread reading ${name}, so it can still read it. Try again.`) }
+    const failed = (): void => { if (still()) setProblem({ accountId: grant.accountId, words: t`Sotto could not stop this thread reading ${name}, so it can still read it. Try again.` }) }
     void bridge.stopMailGrant({ threadId, accountId: grant.accountId }).then(stopped => { if (!stopped) failed(); else if (still()) read() }, failed)
   }
   const items = !on ? [] : grants.map((grant): PaneMenuItem => {
     const name = grant.name
     return { id: `mail-grant-${grant.accountId}`, label: t`Ask before this thread reads ${name}`, icon: <Hand size={15} aria-hidden="true" />, run: () => stop(grant) }
   })
-  return { items, problem }
+  // Once the grant has ended some other way, as when the thread is settled or the account removed, it is no longer true.
+  return { items, problem: problem !== null && grants.some(grant => grant.accountId === problem.accountId) ? problem.words : null }
 }
