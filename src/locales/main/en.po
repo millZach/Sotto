@@ -1221,6 +1221,10 @@ msgstr "Open the Council in the main Sotto window."
 msgid "Open the issue"
 msgstr "Open the issue"
 
+#: src/main/plugins/ipc.ts
+msgid "Open the thread in the main Sotto window."
+msgstr "Open the thread in the main Sotto window."
+
 #: src/main/plugins/changeWords.ts
 msgid "Open this issue in {repository} on GitHub, as {login}?"
 msgstr "Open this issue in {repository} on GitHub, as {login}?"

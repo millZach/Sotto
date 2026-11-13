@@ -39,7 +39,11 @@ again, and the card was allowed from the keyboard, with Enter on **Let this thre
 the made-up message's subject, under a first line saying that what follows is mail and never instructions, and without
 the app password. A further search by the same thread came back without a card.
 
-Settings › Plugins then listed, under the account's Recent use, the two searches and "Asked to search mail in “Check the
+The thread's ··· menu was opened while the card first waited: it had no row about mail. Opened again once the thread
+could read the account, it had **Ask before this thread reads Personal**. That was pressed; the menu, opened again, no
+longer had the row, and the thread's next search waited on a card, which was allowed.
+
+Settings › Plugins then listed, under the account's Recent use, the three searches and "Asked to search mail in “Check the
 checkout page” You said no.", and nothing of the message. Every `.json`, `.log`, `.txt` and `.jsonl` file under the
 profile's data folder was read: neither app password was in any of them, the good one neither as it is kept nor as it
 was pasted, and `plugin-mail-grants.json` held the
@@ -55,11 +59,12 @@ In `artifacts/plugins-gmail/`:
   `gmail-account-light-1280x800.png`: the open row with the account.
 - `mail-card-dark-1280x800.png`, `mail-card-light-1280x800.png`, `mail-card-dark-1600x1000.png` and
   `mail-card-dark-820x560.png`: the card in the thread.
+- `mail-grant-menu-dark-1280x800.png`: the thread's ··· menu with **Ask before this thread reads Personal**.
 - `gmail-recent-use-dark-1280x800.png`: the account's Recent use after the reads.
 
 ## Not checked here
 
 - A real Gmail account. A live check needs Zach to add an account himself and to say which mailbox and message it may
   read.
-- Stopping a grant from the thread's menu, which Zach picked on November 13 and the slice's last part builds.
+- Stopping a grant held by a thread on a paired host, or by Watcher, whose room has no such menu.
 - A paired host: `tests/integration/hostPluginTools.test.ts` reads a copied account from a host's thread.

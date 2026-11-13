@@ -1220,6 +1220,10 @@ msgstr ""
 msgid "Open the issue"
 msgstr ""
 
+#: src/main/plugins/ipc.ts
+msgid "Open the thread in the main Sotto window."
+msgstr ""
+
 #: src/main/plugins/changeWords.ts
 msgid "Open this issue in {repository} on GitHub, as {login}?"
 msgstr ""

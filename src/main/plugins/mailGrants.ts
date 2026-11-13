@@ -2,6 +2,8 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { z } from 'zod'
 import type { AgentProject, AgentThread } from '../../shared/agents'
+import { parseHostEntityKey } from '../../shared/clientIdentity'
+import { isMailPlugin, pluginAccountAdmits, type PluginAccount, type ThreadMailGrant } from '../../shared/plugins'
 import { isThreadClosed, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 
 const grantSchema = z.object({ threadId: z.string().min(1).max(200), accountId: z.uuid(), at: z.iso.datetime() }).strict()
@@ -21,6 +23,29 @@ export function mailThreadOpen(snapshot: {
   const thread = snapshot.threads.find(item => item.id === threadId)
   if (!thread || isThreadClosed(thread)) return false
   return !isWorkspaceThreadSettled(thread, snapshot.projects.find(project => project.id === thread.projectId))
+}
+
+/**
+ * A thread as a window names it, as this computer's own ID for it. A window names every thread by a key that says
+ * which computer holds it; the grants are kept under the thread's own ID. Null for a thread on a paired host, whose
+ * grants that host keeps: this computer has none for it and can end none.
+ */
+export function ownThreadId(threadKey: string, ownHostId: string | undefined): string | null {
+  const key = parseHostEntityKey(threadKey)
+  if (key === null) return threadKey
+  return key.hostId === ownHostId ? key.id : null
+}
+
+/**
+ * The mail accounts a thread's menu lists: those it holds a grant for and can read now. An account that is gone,
+ * switched off or kept to other projects is not one the thread can read, so it has no row, though its grant stands
+ * and holds again if the account comes back to the thread. Each by Sotto's ID and the user's name for it.
+ */
+export function mailGrantsShown(grants: readonly MailGrant[], accounts: readonly PluginAccount[], threadId: string, projectId: string | null): ThreadMailGrant[] {
+  return grants.filter(grant => grant.threadId === threadId).flatMap(grant => {
+    const account = accounts.find(entry => entry.id === grant.accountId)
+    return account && isMailPlugin(account.plugin) && pluginAccountAdmits(account, projectId) ? [{ accountId: account.id, plugin: account.plugin, name: account.name }] : []
+  })
 }
 
 /** More than anyone gives. Past it the oldest grant goes, and its thread asks again. */
@@ -59,6 +84,8 @@ export class MailGrants {
     readonly open: (threadId: string) => boolean
     readonly now?: () => Date
     readonly checkEveryMs?: number
+    /** Told when a grant was given or ended, so a thread's menu can read its own again. */
+    readonly changed?: () => void
   }) {
     this.path = join(directory, 'plugin-mail-grants.json')
   }
@@ -120,6 +147,7 @@ export class MailGrants {
       // written before this says the grant has ended.
       if (next.length === grants.length && !this.behind) return true
       try { await this.write(next) } catch { return false }
+      this.told()
       return true
     })
   }
@@ -195,6 +223,10 @@ export class MailGrants {
   private async keep(grants: MailGrant[]): Promise<void> {
     this.grants = grants
     try { await this.write(grants) } catch { this.behind = true }
+    this.told()
+  }
+  private told(): void {
+    try { this.options.changed?.() } catch { /* Whoever listens is told again at the next change. */ }
   }
 
   private inTurn<Result>(change: () => Promise<Result>): Promise<Result> {

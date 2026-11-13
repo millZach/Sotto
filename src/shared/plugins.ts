@@ -93,6 +93,12 @@ export interface PluginsBridge {
   setCopyNew(copyNew: boolean): Promise<PluginCopiesView>
   /** Told when a copy arrived, a computer connected or left, or a choice changed. Returns the way to stop. */
   onCopiesChanged(listener: () => void): () => void
+  /** The mail accounts a thread on this computer has been let read, for that thread's menu. */
+  mailGrants(threadId: string): Promise<ThreadMailGrant[]>
+  /** Ends a thread's leave to read a mail account, so it asks again. False when it could not be ended; it then still stands. */
+  stopMailGrant(request: MailGrantStop): Promise<boolean>
+  /** Told when some thread's mail grant was given or ended. Returns the way to stop. */
+  onMailGrantsChanged(listener: () => void): () => void
 }
 
 /** The one name every client addresses the plugin tools by (ADR-0205). */
@@ -170,6 +176,9 @@ export const PLUGINS_COPIES = 'sotto:plugins:copies'
 export const PLUGINS_COPY_SET = 'sotto:plugins:copy-set'
 export const PLUGINS_COPY_NEW_SET = 'sotto:plugins:copy-new-set'
 export const PLUGINS_COPIES_CHANGED = 'sotto:plugins:copies-changed'
+export const PLUGINS_MAIL_GRANTS = 'sotto:plugins:mail-grants'
+export const PLUGINS_MAIL_GRANT_STOP = 'sotto:plugins:mail-grant-stop'
+export const PLUGINS_MAIL_GRANTS_CHANGED = 'sotto:plugins:mail-grants-changed'
 
 /** The plugins an account is added to by pasting a secret. GitHub is not one: its account is gh's own sign-in. */
 export const ACCOUNT_PLUGIN_IDS = ['vercel', 'gmail'] as const
@@ -279,6 +288,20 @@ export type PluginCopiesView = z.infer<typeof pluginCopiesViewSchema>
 export const pluginCopySetSchema = z.object({ accountId: z.uuid(), computerId: computerIdSchema, on: z.boolean() }).strict()
 export type PluginCopySet = z.infer<typeof pluginCopySetSchema>
 export const pluginCopyNewSetSchema = z.object({ copyNew: z.boolean() }).strict()
+
+/**
+ * The mail accounts one thread has been let read (ADR-0205, decision 8), for the thread's own menu: each by Sotto's
+ * ID for it and the name the user gave it. Never its address, and nothing of any other thread.
+ */
+export const threadMailGrantsSchema = z.array(z.object({ accountId: z.uuid(), plugin: z.enum(MAIL_PLUGIN_IDS), name: z.string().min(1).max(PLUGIN_ACCOUNT_NAME_MAX) }).strict())
+  .max(MAIL_PLUGIN_IDS.length * PLUGIN_ACCOUNTS_MAX)
+export type ThreadMailGrant = z.infer<typeof threadMailGrantsSchema>[number]
+/** A thread as the window names it: its ID, behind the key that says which computer holds it. */
+const grantThreadIdSchema = z.string().min(1).max(512)
+export const mailGrantsOfSchema = z.object({ threadId: grantThreadIdSchema }).strict()
+/** The user's Stop: this thread asks again before it next reads this account. */
+export const mailGrantStopSchema = z.object({ threadId: grantThreadIdSchema, accountId: z.uuid() }).strict()
+export type MailGrantStop = z.infer<typeof mailGrantStopSchema>
 
 /**
  * Why an account was not saved or removed. `refused`: the service did not accept the secret. `unreachable`: the service

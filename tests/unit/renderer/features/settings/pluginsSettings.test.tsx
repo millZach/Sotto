@@ -17,6 +17,10 @@ const noCopies = {
   setCopyNew: async (): Promise<PluginCopiesView> => NO_COMPUTERS,
   onCopiesChanged: (): (() => void) => () => undefined,
   gitHubSignInElsewhere: async (): Promise<PluginHostSignIn[]> => [],
+  // The page lists no thread's mail grants: a thread's own menu does.
+  mailGrants: async () => [],
+  stopMailGrant: async () => true,
+  onMailGrantsChanged: (): (() => void) => () => undefined,
 }
 /** The account methods of a bridge with no accounts, for tests of GitHub's row. */
 const noAccounts = {
@@ -798,7 +802,7 @@ it('lists Gmail under Mail, and adds an account by its name, its address and an 
   expect(document.querySelector('[data-setting="plugin-gmail"]')).toContainElement(gmailRow())
   fireEvent.click(gmailRow())
   // The row says what a thread may do with mail, and that each thread asks first.
-  expect(document.getElementById(gmailRow().getAttribute('aria-controls')!)).toHaveTextContent('Each thread asks you once, in the thread, before it reads an account’s mail, and what it reads goes to that thread’s provider. A thread cannot send, move or delete mail')
+  expect(document.getElementById(gmailRow().getAttribute('aria-controls')!)).toHaveTextContent('Each thread asks you once, in the thread, before it reads an account’s mail, and what it reads goes to that thread’s provider. A thread cannot send, move or delete mail, and a message it reads stays unread for you. To make a thread ask again, open its ··· menu and press Ask before this thread reads the account.')
   fireEvent.click(screen.getByRole('button', { name: 'Add a Gmail account' }))
   const form = screen.getByRole('form', { name: 'Add a Gmail account' })
   expect(within(form).getByLabelText('Name')).toHaveFocus()

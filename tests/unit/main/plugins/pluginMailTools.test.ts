@@ -21,7 +21,7 @@ const OPENED: MailOpened = { ok: true, mailbox: 'INBOX', message: { ...FOUND.mes
  */
 function tools(options: {
   accounts?: PluginAccount[]; answers?: (PluginChangeAnswer | Promise<PluginChangeAnswer>)[]; noMail?: boolean
-  search?: MailFound | SecretTrouble; open?: MailOpened | SecretTrouble; whileAsked?: () => void; whileGranting?: () => void
+  search?: MailFound | SecretTrouble; open?: MailOpened | SecretTrouble; whileAsked?: () => void; whileGranting?: () => void; whileReading?: () => void
 } = {}) {
   const world = { accounts: options.accounts ?? [PERSONAL] }
   const answers = [...options.answers ?? []]
@@ -68,8 +68,8 @@ function tools(options: {
       },
       threadOpen: threadId => !settled.has(threadId),
       providerOf: threadId => threadId === 'watcher' ? 'Codex' : 'Claude Code',
-      search: async (account, search) => { searched.push({ account: account.name, search }); return options.search ?? FOUND },
-      open: async (account, id) => { opened.push({ account: account.name, id }); return options.open ?? OPENED },
+      search: async (account, search) => { searched.push({ account: account.name, search }); options.whileReading?.(); return options.search ?? FOUND },
+      open: async (account, id) => { opened.push({ account: account.name, id }); options.whileReading?.(); return options.open ?? OPENED },
     } }),
   })
   servers.push(server)
@@ -197,6 +197,26 @@ describe('reading a mail account through plugin_read (ADR-0205, decision 8)', ()
     // Asked again, the card is for the copy that is there now.
     expect((await t.read('one', { search: {} })).isError).toBeUndefined()
     expect(t.asked).toHaveLength(2)
+  })
+
+  it('hands over nothing of a read that the user stopped while it was being fetched', async () => {
+    // The thread held a grant when the read began. The user presses Ask before this thread reads while the mail
+    // server is still answering: what comes back is not handed to the agent.
+    let stopNow = false
+    const t = tools({ whileReading: () => { if (stopNow) t.granted.clear() } })
+    expect((await t.read('one', { search: {} })).isError).toBeUndefined()
+    stopNow = true
+    for (const wanted of [{ search: { from: 'ann' } }, { message: '7-12-SU5CT1g' }]) {
+      await t.granted.add(`one ${PERSONAL.id}`)
+      const result = await t.read('one', wanted)
+      expect(result.isError).toBe(true)
+      expect(said(result)).toBe('The user stopped this thread reading the Gmail account "Personal" while this was being read, so nothing of it was handed over. Call plugin_read again if it should still be read; the user will be asked again.')
+      expect(said(result)).not.toContain('Lunch on Friday')
+    }
+    expect(uses(t.recorded)).toEqual(['one gmail mail-search done', 'one gmail mail-search refused', 'one gmail mail-message refused'])
+    // A first read the user has just allowed is handed over: its grant is there when the mail comes back.
+    const first = tools()
+    expect((await first.read('two', { search: {} })).isError).toBeUndefined()
   })
 
   it('does not ask on behalf of a client that would not wait for the answer', async () => {
