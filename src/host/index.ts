@@ -238,6 +238,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     const keptWhileOff = crossMachineEnabled ? undefined : await heldMoveWorktrees(directory)
     const runtime = startedRuntime = await createAgentRuntime({
       ...(pluginAccountCopies ? { pluginAccountCopies } : {}),
+      ...(plugins ? { pluginGitHubSignIn: plugins.gitHubSignIn } : {}),
       ...owlFeatures['paired-host-browser'] && owlFeatures['quiet-browser'] ? { browserTools: resolveBinding => (browser = hostBrowserTools({ resolveBinding, withoutAsking: startup.browserWithoutAsking,
         saveWithoutAsking: async value => { await repositories.settings.update({ browserWithoutAsking: value }) } })).tools } : {},
       keepsWorktree: keptWhileOff ?? ((threadId: string) => heldMoves === undefined || heldMoves !== null && heldMoves.keepsWorktree(threadId)),

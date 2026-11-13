@@ -83,6 +83,12 @@ const key = (target: WatcherThreadTarget) => JSON.stringify([target.hostId, targ
 const WATCHER_READ_BOUND = WATCHER_READ_BYTES_MAX - 64
 /** Whether two targets name the same thread: what equal keys say, without building either key. */
 const sameTarget = (left: WatcherThreadTarget, right: WatcherThreadTarget) => left.hostId === right.hostId && left.threadId === right.threadId
+/** A list's items by ID, those sharing one in list order, so a search for an ID finds what a search of the list finds first. */
+function byId<T extends { readonly id: string }>(items: readonly T[]): Map<string, T[]> {
+  const found = new Map<string, T[]>()
+  for (const item of items) { const same = found.get(item.id); if (same) same.push(item); else found.set(item.id, [item]) }
+  return found
+}
 /** The levels Watcher may start a worker on: Ultracode is the user's own choice in a thread, never Watcher's (ADR-0148). */
 const workerEfforts = (model: AgentModel): string[] => withoutUltracode(model.reasoningEfforts ?? [])
 /** A read of every machine, as list_machines lists them before it adds where new workers start (#1032). */
@@ -6004,16 +6010,18 @@ ${operation.draftId}`)
       const adopts = this.adopts(host.hostId), here = (request: Readonly<WatcherRequest>, record: Readonly<WatcherRecord> = this.view()) =>
         adopts ? this.owns(record, request) : key(request.watcher) === key(master.target)
       const owned = this.view().requests.filter(request => here(request))
+      // The requests with an operation on this host, found in one walk of the operations rather than one for each request.
+      const ranHere = new Set<string>()
+      for (const item of this.view().operations) if (item.target.hostId === host.hostId) ranHere.add(item.requestId)
       // A replaced Watcher's starts and sends on this host are still tracked (#1325): their slots are freed and their receipts
       // read as the current Watcher's are, so a host where only they remain is reconciled too.
-      if (!host.standingWatch && !owned.some(request => request.participants.some(item => item.target.hostId === host.hostId)
-        || this.view().operations.some(item => item.requestId === request.id && item.target.hostId === host.hostId))
+      if (!host.standingWatch && !owned.some(request => request.participants.some(item => item.target.hostId === host.hostId) || ranHere.has(request.id))
         && !this.view().reservations.some(item => item.target.hostId === host.hostId)
         && !this.view().operations.some(item => item.target.hostId === host.hostId && ['queued', 'dispatching', 'uncertain'].includes(item.deliveryState))) continue
       let receiptFailed = false
       try {
         const stoppedRequests = this.view().requests.filter(request => request.state === 'stopped' && here(request)
-          && (request.participants.some(item => item.target.hostId === host.hostId) || this.view().operations.some(item => item.requestId === request.id && item.target.hostId === host.hostId)))
+          && (request.participants.some(item => item.target.hostId === host.hostId) || ranHere.has(request.id)))
           .slice(-1_000).map(request => ({ request: { id: request.id, watcher: master.target, rootUserMessageId: request.rootUserMessageId, createdAt: request.createdAt },
             ceiling: request.pairedPermissionCeiling ?? this.options.control.configuration().newThreadRuntimeMode ?? 'approval-required' as const }))
         const cached = !force ? this.remote.projection?.(host.hostId, master) : undefined
@@ -6050,8 +6058,12 @@ ${operation.draftId}`)
             if (receipt) this.copyRemoteReceipt(record, own, { ...receipt, updatedAt: now() })
             else this.recordRemoteRefusal(record, id, 'OPERATION_NOT_RECORDED')
           }
+          // The record's requests and operations by ID, each in record order, gathered once for the pass. A search of the
+          // whole record for each request and receipt the host projects was nearly all a pass cost: about 56 of 60 ms with
+          // the owner's record of 942 requests and 1,110 operations, once a second while a paired host pushed (November 13, 2026).
+          const requestsById = byId(record.requests)
           for (const remoteRequest of projection.requests) {
-            const request = record.requests.find(item => item.id === remoteRequest.id && here(item, record))
+            const request = requestsById.get(remoteRequest.id)?.find(item => here(item, record))
             if (!request || key(remoteRequest.watcher) !== key(master.target)
               || remoteRequest.rootUserMessageId !== request.rootUserMessageId || remoteRequest.createdAt !== request.createdAt) continue
             for (const participant of remoteRequest.participants) {
@@ -6070,16 +6082,17 @@ ${operation.draftId}`)
               if (participant.lastUserMessageId !== undefined) setIfChanged(own, 'lastUserMessageId', participant.lastUserMessageId)
             }
           }
+          const operationsById = byId(record.operations)
           for (const receipt of projection.operations) {
             if (receipt.target.hostId !== host.hostId) continue
-            const own = record.operations.find(item => item.id === receipt.id && item.requestId === receipt.requestId
-              && item.digest === receipt.digest && key(item.target) === key(receipt.target))
+            const own = operationsById.get(receipt.id)?.find(item => item.requestId === receipt.requestId
+              && item.digest === receipt.digest && sameTarget(item.target, receipt.target))
             if (!own) continue
             this.copyRemoteReceipt(record, own, receipt)
           }
           const reservations = record.reservations.filter(reservation => {
             if (reservation.target.hostId !== host.hostId) return true
-            const operations = record.operations.filter(item => key(item.target) === key(reservation.target))
+            const operations = record.operations.filter(item => sameTarget(item.target, reservation.target))
             if (operations.some(item => ['queued', 'dispatching', 'uncertain'].includes(item.deliveryState))) return true
             const thread = this.owningSnapshot(host.hostId)?.threads.find(item => item.id === reservation.target.threadId)
             if (!thread) return !operations.every(item => item.deliveryState === 'failed')

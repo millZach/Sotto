@@ -9,6 +9,7 @@ import { PluginToolServer } from '../main/plugins/pluginTools'
 import { pluginToolHandlers, type PluginToolAccounts } from '../main/plugins/toolHandlers'
 import type { VercelFetch } from '../main/plugins/vercel/read'
 import type { AgentHostSnapshot } from '../shared/agents'
+import type { GitHubSignIn } from '../shared/plugins'
 import { isThreadClosed } from '../shared/threadActivity'
 
 /** Tests stand in for this machine's `gh` and for Vercel; a host runs its own `gh` and reaches api.vercel.com. */
@@ -25,6 +26,8 @@ export interface HostPlugins {
   readonly changes: PluginChangeRequests
   /** `sotto_plugins` for this host's own threads. */
   readonly tools: PluginToolServer
+  /** Who this machine's gh is signed in to GitHub as: the account this host's threads act as. A name, never a token. */
+  readonly gitHubSignIn: () => Promise<GitHubSignIn>
   close(): Promise<void>
 }
 
@@ -77,6 +80,8 @@ export function hostPlugins(options: {
     find: async (plugin, name, admits) => { await readSenders(); return accounts.find(plugin, name, account => live(account.id) && (admits?.(account) ?? true)) },
     secret: accountId => live(accountId) ? accounts.secret(accountId) : '',
   }
+  // Each read looks for gh afresh, and reads asked for while one runs share it rather than starting gh again.
+  const gitHubSignIn = sharedGitHubSignIn(() => { resetGhLookup(); return readGitHubSignIn(gh, stop.signal) })
   const tools = new PluginToolServer(pluginToolHandlers({
     admits: options.admits, accounts: usable,
     projectOf: () => null,
@@ -84,13 +89,12 @@ export function hostPlugins(options: {
     isWatcher: threadId => { const found = thread(threadId); return found === undefined || found.kind === 'watcher' || found.kind === 'watcher-history' },
     askChange: (threadId, change, wait) => changes.ask(threadId, wordPluginChangeInEnglish(change), wait),
     record: async () => undefined,
-    gitHubSignIn: sharedGitHubSignIn(() => { resetGhLookup(); return readGitHubSignIn(gh, stop.signal) }),
-    gh,
+    gitHubSignIn, gh,
     vercelFetch: options.standIns?.vercelFetch ?? ((url, init) => fetch(url, init)),
     vercelOptions: { ...(options.standIns?.vercelBase ? { base: options.standIns.vercelBase } : {}), signal: stop.signal },
   }))
   return {
-    copies, changes, tools,
+    copies, changes, tools, gitHubSignIn,
     close: async () => { stop.abort(); changes.close(); await tools.close() },
   }
 }

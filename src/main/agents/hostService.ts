@@ -30,6 +30,7 @@ import type { HostBranchMoveRequest } from '../../shared/branchMoves'
 import type { HostThreadMoveRequest } from '../../shared/threadMoves'
 import type { DesktopDefaultsInput, DesktopDefaultsReceipt } from '../../shared/desktopDefaults'
 import type { HeldPluginAccountCopy, PluginAccountCopy, PluginAccountCopyReceipt, PluginAccountCopyRemoved, PluginAccountCopyStore } from '../../shared/pluginAccountCopies'
+import type { GitHubSignIn } from '../../shared/plugins'
 import type { DelegationRelayAsk, DelegationRemoteAsk, RelayedReply } from '../../shared/delegationRelay'
 import type { TellWatcherAnswer, WatcherTellPush } from '../../shared/tellWatcher'
 import type { DelegationNews } from '../../shared/delegation'
@@ -170,6 +171,13 @@ export interface HostService {
   keepPluginAccountCopy?(copy: PluginAccountCopy, client?: ClientIdentity): Promise<PluginAccountCopyReceipt>
   removePluginAccountCopy?(accountId: string, client?: ClientIdentity): Promise<PluginAccountCopyRemoved>
   pluginAccountCopies?(client?: ClientIdentity): Promise<HeldPluginAccountCopy[]>
+  /**
+   * Who gh on the host's own machine is signed in to GitHub as (ADR-0205): the account its threads' plugin tools act
+   * as, which need not be the desktop's. Present only on a headless host whose Owl answer turns on plugins, and on a
+   * desktop's connection to one. A name, never a token.
+   */
+  readonly supportsPluginGitHubSignIn?: boolean
+  pluginGitHubSignIn?(): Promise<GitHubSignIn>
   /**
    * The host answers the desktop window's read of its own threads' delegations (#1310), present only where it runs
    * delegation for them: what a thread delegated and was sent, and a delegated thread's newest brief, never a reply. Thread
@@ -512,6 +520,8 @@ export class LocalHostService implements HostService {
     desktopDefaults?: { record(clientId: string, defaults: DesktopDefaultsInput): Promise<DesktopDefaultsReceipt> }
     /** Where a headless host keeps account copies (ADR-0205), present only where its Owl answer turns on plugins. */
     pluginAccountCopies?: PluginAccountCopyStore
+    /** Asks this machine's gh who is signed in (ADR-0205), present only where a headless host's Owl answer turns on plugins. */
+    pluginGitHubSignIn?: () => Promise<GitHubSignIn>
     workerSwarms?: boolean
     /** This host keeps what a desktop says of **Show every picture and video an agent makes** (ADR-0170, part 7). */
     everyAgentPicture?: boolean
@@ -549,6 +559,12 @@ export class LocalHostService implements HostService {
     return this.options.desktopDefaults.record(client.clientId, defaults)
   }
   get supportsPluginAccountCopies(): boolean { return this.options.pluginAccountCopies !== undefined }
+  get supportsPluginGitHubSignIn(): boolean { return this.options.pluginGitHubSignIn !== undefined }
+  /** Who this machine's gh is signed in as; the socket listener answers only the desktop the launch script recorded. */
+  pluginGitHubSignIn(): Promise<GitHubSignIn> {
+    if (!this.options.pluginGitHubSignIn) return Promise.reject(new Error('This host runs no plugin tools.'))
+    return this.options.pluginGitHubSignIn()
+  }
   /** Keeps a copy a desktop sent; the socket listener admits only the desktop the launch script recorded. */
   /** A copy belongs to the desktop that sent it, so each of these is for one client: that desktop's own copies and no other's. */
   keepPluginAccountCopy(copy: PluginAccountCopy, client: ClientIdentity): Promise<PluginAccountCopyReceipt> {

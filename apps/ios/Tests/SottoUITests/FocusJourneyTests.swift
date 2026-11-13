@@ -551,6 +551,39 @@ import UIKit
         capture("thread-long-open")
     }
 
+    /// Show earlier messages in a step window shows the messages it brings (ADR-0194). The computer answers at the revision
+    /// the phone already holds, and the page kept its rows by revision, so on the phone a press took the count under the
+    /// button down and brought nothing new into view until the thread next changed (Zach, November 12, 2026). The fixture
+    /// opens the long thread on its newest ten turns and answers the press with the whole thread at the same revision.
+    func testShowEarlierMessagesShowsWhatItBrings() {
+        launch(Self.fixture + ["--ui-long-thread", "--ui-step-window"])
+        let thread = row("drives")
+        reveal(thread)
+        thread.tap()
+        XCTAssertTrue(byID("thread-reply").waitForExistence(timeout: 5))
+        let show = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Show earlier messages")).firstMatch
+        XCTAssertTrue(show.waitForExistence(timeout: 10), "A thread opened on a step window offers Show earlier messages")
+        // The window's ten turns stand about 15,000 points tall on the large iPhone, more than the slow drags below cover,
+        // so quick flicks bring the button near first (run 43370485698).
+        let conversation = app.scrollViews.containing(.staticText, identifier: "thread-title").firstMatch
+        for _ in 0..<30 where show.frame.maxY < threadTop - 600 { conversation.swipeDown(velocity: .fast) }
+        scrollThread(to: show, towardStart: true)
+        XCTAssertTrue(show.isHittable, "Show earlier messages can be pressed at the top of the thread")
+        // The questions above the window, the thread's first thirty: the press brings them. The page now opens on them
+        // from the oldest, at the top where the reader pressed, so which of them is made depends on where it lands.
+        let brought = conversation.descendants(matching: .any)
+            .matching(NSPredicate(format: "label MATCHES %@", "Compare drive option ([1-9]|[12][0-9]|30) with .*")).firstMatch
+        XCTAssertFalse(brought.exists, "The window opens without the turns above it")
+        let pressed = Date()
+        show.tap()
+        let shown = brought.waitForExistence(timeout: 20)
+        print("show-earlier-journey: \(shown ? "shown" : "not shown") \(String(format: "%.1f", Date().timeIntervalSince(pressed))) s after the press")
+        if !shown { explain("show-earlier-not-shown", "No question from above the window came into the page") }
+        XCTAssertTrue(shown, "Show earlier messages shows the turns it brought above the window")
+        XCTAssertTrue(waitUntilGone(show, timeout: 10), "With the whole thread here, nothing more is offered")
+        capture("thread-show-earlier")
+    }
+
     /// A row's long press offers Settle, as a thread's ••• does; it acts at once, and its confirmation offers Undo (#1859).
     func testARowsLongPressOffersSettle() {
         launch(Self.fixture)

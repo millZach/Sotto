@@ -69,6 +69,7 @@ import { registerPluginsIpc } from './plugins/ipc'
 import { readGitHubSignIn, sharedGitHubSignIn } from './plugins/github/signIn'
 import { PluginToolServer } from './plugins/pluginTools'
 import { pluginToolHandlers } from './plugins/toolHandlers'
+import { readHostGitHubSignIns } from './plugins/hostSignIns'
 import { PluginAccounts } from './plugins/accounts'
 import { PluginChangeRequests } from './plugins/pendingChanges'
 import { pluginFolderOfThread, pluginProjects } from './plugins/projectFolders'
@@ -2719,6 +2720,9 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       // as it is now. A thread that is gone has none.
       const cleanupPlugins = pluginsEnabled ? registerPluginsIpc(ipcMain, {
         gitHubSignIn: pluginsGitHubSignIn,
+        // Each of the user's other computers has a gh of its own, and its threads act as that one's account (ADR-0205).
+        gitHubSignInElsewhere: () => readHostGitHubSignIns(
+          desktopHosts.get().hosts.map(host => ({ id: host.id, name: host.name, hostId: host.hostId, connected: host.phase === 'connected' })), () => hostRouter.remoteConnections()),
         accounts: async () => await pluginAccounts?.list() ?? [],
         // Each change to an account here is carried to the hosts that keep a copy of it.
         addAccount: async request => { const result = await pluginAccounts?.add(request) ?? { ok: false as const, problem: 'store' as const }; if (result.ok) pluginCopySync?.accountsChanged(); return result },
