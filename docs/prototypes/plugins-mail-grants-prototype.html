@@ -1,0 +1,213 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway. Sotto, Plugins project, slice 8 part 4 (#2493).
+
+  The question for Zach: once a thread has been let to read a mail account (a mail grant), where does he see which
+  threads can read it, and where does he stop one?
+
+  Three variants, switchable with ?v=a|b|c and the bar at the bottom:
+    a  On the account.   Gmail's row on Settings › Plugins lists the threads that can read each account, with Stop.
+    b  In the thread.    The thread's ··· menu gets "Ask before this thread reads Personal", as the browser's is.
+    c  Both.             The list on the account, and the menu item in the thread.
+
+  Nothing here is real: the account, the address and the threads are made up.
+
+  VERDICT: Zach picked B, in the thread, on a question card on November 13, 2026. The list on the account (A, and
+  the half of C that is A) is not built. Kept as the tag prototype/plugin-mail-grants.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sotto — where a mail grant is seen and stopped, prototype</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root {
+  color-scheme: dark;
+  --canvas: oklch(0.115 0.008 265); --surface: oklch(0.145 0.008 265); --raised: oklch(0.185 0.008 265); --sunken: oklch(0.13 0.008 265);
+  --sidebar: oklch(0.225 0.004 265); --text: oklch(0.985 0.005 280); --text-2: oklch(0.86 0.01 270); --muted: oklch(0.74 0.014 265);
+  --hairline: oklch(0.305 0.02 265); --border: oklch(0.42 0.02 265); --accent: oklch(0.714 0.104 183); --accent-text: oklch(0.84 0.08 183);
+  --wash: color-mix(in srgb, oklch(0.714 0.104 183) 14%, transparent); --on-accent: oklch(0.16 0.012 190); --ok: oklch(0.79 0.13 165);
+  --hover: color-mix(in srgb, oklch(0.32 0.05 185) 70%, transparent); --shadow: 0 18px 50px rgb(0 0 0 / 55%);
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --canvas: oklch(0.978 0.004 85); --surface: oklch(0.99 0.003 85); --raised: oklch(0.995 0.002 85); --sunken: oklch(0.955 0.006 85);
+  --sidebar: oklch(0.945 0.006 85); --text: oklch(0.235 0.014 75); --text-2: oklch(0.34 0.014 75); --muted: oklch(0.43 0.014 75);
+  --hairline: oklch(0.86 0.012 80); --border: oklch(0.72 0.016 80); --accent: oklch(0.52 0.13 235); --accent-text: oklch(0.42 0.13 235);
+  --wash: color-mix(in srgb, oklch(0.52 0.13 235) 12%, transparent); --on-accent: oklch(0.99 0.003 85); --ok: oklch(0.45 0.12 160);
+  --hover: oklch(0.92 0.01 85); --shadow: 0 18px 50px rgb(0 0 0 / 18%);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; background: #222; font-family: 'Figtree', ui-sans-serif, system-ui, 'Segoe UI', sans-serif; }
+button { font: inherit; color: inherit; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+h1, h2, h3, h4, p, ul { margin: 0; padding: 0; } ul { list-style: none; }
+
+.stage { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 18px 12px 120px; }
+.what { max-width: 1280px; width: 100%; color: #ddd; font: 14px/1.5 system-ui, sans-serif; }
+.what b { color: #fff; }
+.win { width: 1280px; max-width: 100%; background: var(--canvas); color: var(--text); font-size: 14px; line-height: 1.45; border: 1px solid #000; border-radius: 10px; overflow: hidden; display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); box-shadow: var(--shadow); }
+@media (max-width: 900px) { .win { grid-template-columns: 1fr; } }
+.pane { padding: 18px 20px 22px; min-height: 620px; }
+.pane + .pane { border-left: 1px solid var(--hairline); background: var(--surface); }
+.pane__where { font-size: 12px; color: var(--muted); letter-spacing: .02em; margin-bottom: 10px; }
+h2 { font-size: 20px; font-weight: 650; margin-bottom: 4px; }
+.lede { color: var(--text-2); margin-bottom: 16px; }
+.group { font-size: 12px; color: var(--muted); margin: 14px 0 6px; }
+
+.row { border: 1px solid var(--hairline); border-radius: 10px; background: var(--surface); }
+.row__head { display: flex; align-items: center; gap: 10px; padding: 10px 12px; }
+.mark { width: 22px; height: 22px; border-radius: 6px; background: var(--raised); display: grid; place-items: center; font-weight: 700; font-size: 12px; color: var(--text-2); }
+.row__name { font-weight: 600; } .row__sum { color: var(--muted); margin-left: auto; font-size: 13px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
+.row__body { border-top: 1px solid var(--hairline); padding: 12px; display: grid; gap: 12px; }
+.acct { border: 1px solid var(--hairline); border-radius: 8px; padding: 10px 12px; background: var(--sunken); display: grid; gap: 10px; }
+.acct__top { display: flex; align-items: baseline; gap: 8px; } .acct__name { font-weight: 600; } .acct__addr { color: var(--muted); font-size: 13px; }
+.switch { margin-left: auto; width: 34px; height: 20px; border-radius: 10px; background: var(--accent); position: relative; flex: none; }
+.switch::after { content: ''; position: absolute; top: 3px; left: 17px; width: 14px; height: 14px; border-radius: 50%; background: var(--on-accent); }
+h4 { font-size: 13px; font-weight: 600; color: var(--text-2); }
+.rules li { color: var(--text-2); font-size: 13px; padding: 1px 0; }
+.rules li::before { content: '· '; color: var(--muted); }
+.grants li { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-top: 1px solid var(--hairline); font-size: 13px; }
+.grants li:first-child { border-top: 0; }
+.grants .t { font-weight: 550; } .grants .p { color: var(--muted); } .grants .w { color: var(--muted); margin-left: auto; }
+.btn { border: 1px solid var(--border); background: transparent; border-radius: 7px; padding: 4px 10px; font-size: 13px; }
+.btn:hover { background: var(--hover); }
+.btn--go { background: var(--accent); color: var(--on-accent); border-color: transparent; font-weight: 600; }
+.note { color: var(--muted); font-size: 13px; }
+.new { outline: 2px dashed var(--accent); outline-offset: 4px; border-radius: 8px; }
+.tag { display: inline-block; font-size: 11px; color: var(--accent-text); background: var(--wash); border-radius: 5px; padding: 1px 6px; margin-left: 6px; vertical-align: 1px; }
+
+.thread__bar { display: flex; align-items: center; gap: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--hairline); margin-bottom: 14px; position: relative; }
+.thread__title { font-weight: 600; } .thread__prov { color: var(--muted); font-size: 13px; }
+.more { margin-left: auto; border: 1px solid var(--hairline); background: transparent; border-radius: 7px; width: 30px; height: 26px; line-height: 1; }
+.menu { position: absolute; right: 0; top: 34px; width: 290px; background: var(--raised); border: 1px solid var(--hairline); border-radius: 10px; box-shadow: var(--shadow); padding: 5px; z-index: 2; }
+.menu li { padding: 6px 9px; border-radius: 6px; font-size: 13px; color: var(--text-2); }
+.menu li.is-new { background: var(--wash); color: var(--text); }
+.menu hr { border: 0; border-top: 1px solid var(--hairline); margin: 4px 0; }
+.msg { color: var(--text-2); margin: 0 0 12px; max-width: 46ch; }
+.msg b { color: var(--text); font-weight: 600; }
+.card { border: 1px solid var(--border); border-radius: 10px; background: var(--raised); padding: 12px; display: grid; gap: 8px; max-width: 470px; }
+.card__head { display: flex; gap: 8px; align-items: center; font-size: 12px; color: var(--muted); }
+.card__what { font-weight: 600; } .card__lines { color: var(--text-2); font-size: 13px; display: grid; gap: 2px; }
+.card__btns { display: flex; gap: 8px; margin-top: 4px; }
+.toast { margin-top: 12px; font-size: 13px; color: var(--muted); }
+
+.bar { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); background: #111; color: #eee; border: 1px solid #444; border-radius: 12px; padding: 8px 10px; display: flex; gap: 12px; align-items: center; font: 13px system-ui, sans-serif; box-shadow: 0 10px 30px rgb(0 0 0 / 60%); flex-wrap: wrap; justify-content: center; max-width: calc(100vw - 16px); }
+.bar span { color: #aaa; } .bar .seg { display: flex; gap: 4px; }
+.bar button { background: #222; border: 1px solid #555; border-radius: 7px; padding: 4px 10px; color: #eee; }
+.bar button[aria-pressed='true'] { background: #e9e9e9; color: #111; border-color: #e9e9e9; font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="stage">
+  <p class="what" id="what"></p>
+  <div class="win">
+    <section class="pane" aria-label="Settings, Plugins">
+      <div class="pane__where">Settings › Plugins</div>
+      <h2>Plugins</h2>
+      <p class="lede">Connect a service once. A thread’s agent uses it through Sotto and never holds its secret.</p>
+      <div class="group">Mail</div>
+      <div class="row">
+        <div class="row__head"><span class="mark">M</span><span class="row__name">Gmail</span><span class="dot" aria-hidden="true"></span><span class="row__sum">Personal</span></div>
+        <div class="row__body">
+          <div class="acct">
+            <div class="acct__top"><span class="acct__name">Personal</span><span class="acct__addr">reader@example.com</span><span class="switch" role="img" aria-label="On for threads"></span></div>
+            <ul class="rules">
+              <li>Each thread asks once before it reads this account’s mail. What it reads goes to that thread’s provider.</li>
+              <li>A thread cannot send, move or delete mail.</li>
+            </ul>
+            <div id="onAccount"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+    <section class="pane" aria-label="A thread">
+      <div class="pane__where">Threads › Tax papers</div>
+      <div class="thread__bar">
+        <span class="thread__title">Tax papers</span><span class="thread__prov">Claude Code</span>
+        <button class="more" aria-label="More">···</button>
+        <div id="menu"></div>
+      </div>
+      <p class="msg"><b>You</b><br>Find the accountant’s last email about the filing date.</p>
+      <div id="thread"></div>
+    </section>
+  </div>
+</div>
+
+<div class="bar" role="toolbar" aria-label="Prototype controls">
+  <span>Where a grant is stopped</span>
+  <div class="seg" id="variants"></div>
+  <span>Moment</span>
+  <div class="seg" id="moments"></div>
+  <button id="theme">Light</button>
+</div>
+
+<script>
+const VARIANTS = { a: 'A · On the account', b: 'B · In the thread', c: 'C · Both' }
+const MOMENTS = { ask: 'The card is waiting', yes: 'After you said yes' }
+const params = new URLSearchParams(location.search)
+const S = { v: VARIANTS[params.get('v')] ? params.get('v') : 'a', m: MOMENTS[params.get('m')] ? params.get('m') : 'yes', theme: params.get('theme') === 'light' ? 'light' : 'dark' }
+
+const WHAT = {
+  a: '<b>A · On the account.</b> Gmail’s row lists the threads that can read each account, each with <b>Stop</b>. One place answers “which threads can read my mail?”. Nothing is added to the thread.',
+  b: '<b>B · In the thread.</b> The thread’s ··· menu gets <b>Ask before this thread reads Personal</b>, shown only while the thread can read it, the way the browser’s is. The page says the rule and lists nothing.',
+  c: '<b>C · Both.</b> The list on the account, and the menu item in the thread. Either one stops the same grant.',
+}
+
+function onAccount() {
+  if (S.v === 'b') return ''
+  const rows = S.m === 'yes'
+    ? `<li><span class="t">Tax papers</span><span class="p">Claude Code</span><span class="w">since 9:07 am</span><button class="btn">Stop</button></li>
+       <li><span class="t">Watcher</span><span class="p">Codex</span><span class="w">since Monday</span><button class="btn">Stop</button></li>`
+    : `<li><span class="t">Watcher</span><span class="p">Codex</span><span class="w">since Monday</span><button class="btn">Stop</button></li>`
+  return `<div class="new"><h4>Threads that can read this account<span class="tag">new</span></h4>
+    <ul class="grants">${rows}</ul>
+    <p class="note">Stop, and the thread asks again before it next reads this account. Settling a thread stops it too.</p></div>`
+}
+function menu() {
+  if (S.v === 'a' || S.m !== 'yes') return ''
+  return `<ul class="menu" role="menu">
+    <li role="menuitem">Rename…</li><li role="menuitem">Settle</li><hr>
+    <li role="menuitem">Ask before this thread uses the browser</li>
+    <li role="menuitem" class="is-new">Ask before this thread reads Personal<span class="tag">new</span></li>
+  </ul>`
+}
+function thread() {
+  if (S.m === 'ask') return `<div class="card" role="group" aria-label="A request from this thread">
+      <div class="card__head"><span class="mark">M</span><span>Gmail</span><span>·</span><span>Read Gmail mail</span></div>
+      <div class="card__what">Let this thread read the Gmail account Personal? What it reads goes to Claude Code.</div>
+      <div class="card__lines"><span>This thread can search this account’s mail and read its messages, until you stop it or the thread is settled.</span><span>What it reads goes to Claude Code, as everything a thread reads does.</span><span>It cannot send, move or delete mail. Every other thread asks for itself.</span></div>
+      <div class="card__btns"><button class="btn btn--go">Let this thread read it</button><button class="btn">Don’t allow</button></div>
+    </div>
+    <p class="toast">This card is built already. It is here so you can see what leads to the grant.</p>`
+  return `<p class="msg"><b>Claude Code</b><br>Searched mail in Personal, then read one message. The accountant wrote on Tuesday: the filing date is the 30th.</p>
+    <p class="toast">${S.v === 'a' ? 'The thread shows nothing more. To stop it, open Settings › Plugins.' : 'The ··· menu above is open to show the new item.'}</p>`
+}
+function render() {
+  document.documentElement.dataset.theme = S.theme
+  document.getElementById('what').innerHTML = WHAT[S.v]
+  document.getElementById('onAccount').innerHTML = onAccount()
+  document.getElementById('menu').innerHTML = menu()
+  document.getElementById('thread').innerHTML = thread()
+  const seg = (id, all, key) => { document.getElementById(id).innerHTML = Object.entries(all).map(([k, label]) => `<button data-${key}="${k}" aria-pressed="${S[key] === k}">${label}</button>`).join('') }
+  seg('variants', VARIANTS, 'v'); seg('moments', MOMENTS, 'm')
+  document.getElementById('theme').textContent = S.theme === 'dark' ? 'Light' : 'Dark'
+  history.replaceState(null, '', `?v=${S.v}&m=${S.m}&theme=${S.theme}`)
+}
+document.querySelector('.bar').addEventListener('click', event => {
+  const button = event.target.closest('button'); if (!button) return
+  if (button.dataset.v) S.v = button.dataset.v
+  else if (button.dataset.m) S.m = button.dataset.m
+  else if (button.id === 'theme') S.theme = S.theme === 'dark' ? 'light' : 'dark'
+  render()
+})
+document.addEventListener('keydown', event => {
+  const keys = Object.keys(VARIANTS); const at = keys.indexOf(S.v)
+  if (event.key === 'ArrowRight') { S.v = keys[(at + 1) % keys.length]; render() }
+  if (event.key === 'ArrowLeft') { S.v = keys[(at + keys.length - 1) % keys.length]; render() }
+})
+render()
+</script>
+</body>
+</html>
