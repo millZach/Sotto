@@ -74,14 +74,20 @@ async function hostFixture(version = OWL) {
   const path = join(root, 'project'); await mkdir(path, { recursive: true })
   const project = (await command({ type: 'create-project', provider: 'codex', title: 'Synthetic host project', path, useExisting: true })).host.projects.find(item => item.path === path)!
   const model = host.service.shell().host.models.find(item => item.providerId === 'codex' && item.ready)!
-  /** The desktop the launch script recorded, paired and connected over the host's socket. */
-  const desktop = async () => {
-    const pairing = await SocketHostService.pair(url, host.pairing.issuePairingCode().code, 'Synthetic desktop')
-    await writeFile(join(data, DESKTOP_CLIENTS_FILE), JSON.stringify([pairing.clientId]))
+  /**
+   * A paired client, connected over the host's socket. With `record`, the launch script recorded it as this host's
+   * desktop, before its hello or, as for a host being added, after it; without, it is any other paired client.
+   */
+  const recorded: string[] = []
+  const desktop = async (record: boolean | 'after hello' = true) => {
+    const pairing = await SocketHostService.pair(url, host.pairing.issuePairingCode().code, record ? 'Synthetic desktop' : 'Synthetic phone')
+    const write = async () => { recorded.push(pairing.clientId); await writeFile(join(data, DESKTOP_CLIENTS_FILE), JSON.stringify(recorded)) }
+    if (record === true) await write()
     const socket = new SocketHostService({ url, token: pairing.token, expectedHostId: pairing.hostId })
     clients.push(socket)
-    await socket.connect()
-    return { socket, pairing }
+    const hello = await socket.connect()
+    if (record === 'after hello') await write()
+    return { socket, pairing, hello }
   }
   /** The host's own owner lets a desktop answer here, or stops it, as `--allow-answers` and `--deny-answers` do. */
   const answers = async (clientId: string, allowed: boolean) => {
@@ -241,8 +247,33 @@ it('uses no copy that is switched off, or that names projects, which a host does
   expect(f.vercelCalls).toEqual([])
 })
 
+it('tells a recorded desktop who gh is signed in as on the host, and no other client', async () => {
+  const f = await hostFixture()
+  const { socket, hello } = await f.desktop()
+  expect(hello.features).toContain('plugin-github-sign-in')
+  expect(socket.supportsPluginGitHubSignIn).toBe(true)
+  // The host's own gh is asked, and what comes back is a state and a name.
+  await expect(socket.pluginGitHubSignIn()).resolves.toEqual({ state: 'signed-in', login: 'host-user' })
+  expect(f.ghCalls.at(-1)?.slice(0, 2)).toEqual(['auth', 'status'])
+  // A desktop recorded after its hello, as a host being added does, is answered too: the host's health listed the read.
+  const added = await f.desktop('after hello')
+  expect(added.hello.features).not.toContain('plugin-github-sign-in')
+  await expect(added.socket.pluginGitHubSignIn()).resolves.toEqual({ state: 'signed-in', login: 'host-user' })
+  // A paired client the launch script did not record, as a phone is, is told nothing of the owner's GitHub account.
+  const other = await f.desktop(false)
+  expect(other.hello.features).not.toContain('plugin-github-sign-in')
+  const asked = f.ghCalls.length
+  await expect(other.socket.pluginGitHubSignIn()).rejects.toMatchObject({ code: 'version_mismatch' })
+  expect(f.ghCalls.length).toBe(asked)
+})
+
 it('gives a stable host’s threads no plugin tools', async () => {
   const f = await hostFixture(STABLE)
+  // And it has no sign-in to tell a desktop of: a desktop asks it nothing.
+  const { socket, hello } = await f.desktop()
+  expect(hello.features).not.toContain('plugin-github-sign-in')
+  expect(socket.supportsPluginGitHubSignIn).toBe(false)
+  await expect(socket.pluginGitHubSignIn()).rejects.toMatchObject({ code: 'version_mismatch' })
   const threadId = await f.thread()
   expect(f.provider.tools.some(tools => tools.name === 'sotto_plugins')).toBe(false)
   expect(await f.call(threadId, 'plugin_accounts', {})).toBeUndefined()

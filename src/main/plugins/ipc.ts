@@ -1,7 +1,7 @@
 import { t } from '@lingui/core/macro'
 import { z } from 'zod'
 import {
-  gitHubSignInSchema, pluginCopiesViewSchema, pluginCopyNewSetSchema, pluginCopySetSchema, PLUGINS_COPIES, PLUGINS_COPY_NEW_SET, PLUGINS_COPY_SET, pluginAccountAddSchema, pluginAccountRemoveSchema, pluginAccountReplaceSchema, pluginAccountResultSchema, pluginAccountsSchema, pluginAccountUpdateSchema, pluginProjectsSchema,
+  gitHubSignInSchema, pluginHostSignInsSchema, PLUGINS_GITHUB_SIGN_IN_ELSEWHERE, type PluginHostSignIn, pluginCopiesViewSchema, pluginCopyNewSetSchema, pluginCopySetSchema, PLUGINS_COPIES, PLUGINS_COPY_NEW_SET, PLUGINS_COPY_SET, pluginAccountAddSchema, pluginAccountRemoveSchema, pluginAccountReplaceSchema, pluginAccountResultSchema, pluginAccountsSchema, pluginAccountUpdateSchema, pluginProjectsSchema,
   PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNT_UPDATE, PLUGINS_ACCOUNTS, PLUGINS_GITHUB_SIGN_IN, PLUGINS_PROJECTS, PLUGINS_RECENT_USE, shownPluginUsesSchema,
   type GitHubSignIn, type PluginAccount, type PluginAccountAdd, type PluginAccountRemove, type PluginAccountReplace, type PluginAccountResult, type PluginAccountUpdate, type PluginCopiesView, type PluginCopySet, type PluginProject, type ShownPluginUse,
 } from '../../shared/plugins'
@@ -19,6 +19,7 @@ const copyNewArguments = z.tuple([pluginCopyNewSetSchema])
 /** What Settings › Plugins asks of main. */
 export interface PluginsIpcHandlers {
   readonly gitHubSignIn: () => Promise<GitHubSignIn>
+  readonly gitHubSignInElsewhere: () => Promise<readonly PluginHostSignIn[]>
   readonly recentUse: () => Promise<readonly ShownPluginUse[]>
   readonly accounts: () => Promise<readonly PluginAccount[]>
   readonly addAccount: (request: PluginAccountAdd) => Promise<PluginAccountResult>
@@ -42,6 +43,11 @@ export function registerPluginsIpc(ipc: IpcMainAdapter, plugins: PluginsIpcHandl
     if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Open Settings in the main Sotto window.`)
     noArguments.parse(args)
     return gitHubSignInSchema.parse(await plugins.gitHubSignIn())
+  })
+  ipc.handle(PLUGINS_GITHUB_SIGN_IN_ELSEWHERE, async (event, ...args) => {
+    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Open Settings in the main Sotto window.`)
+    noArguments.parse(args)
+    return pluginHostSignInsSchema.parse(await plugins.gitHubSignInElsewhere())
   })
   ipc.handle(PLUGINS_RECENT_USE, async (event, ...args) => {
     if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Open Settings in the main Sotto window.`)
@@ -88,6 +94,6 @@ export function registerPluginsIpc(ipc: IpcMainAdapter, plugins: PluginsIpcHandl
   change(PLUGINS_ACCOUNT_REMOVE, removeArguments, request => plugins.removeAccount(request))
   change(PLUGINS_ACCOUNT_UPDATE, updateArguments, request => plugins.updateAccount(request))
   return () => {
-    for (const channel of [PLUGINS_GITHUB_SIGN_IN, PLUGINS_RECENT_USE, PLUGINS_ACCOUNTS, PLUGINS_PROJECTS, PLUGINS_COPIES, PLUGINS_COPY_SET, PLUGINS_COPY_NEW_SET, PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_UPDATE]) ipc.removeHandler(channel)
+    for (const channel of [PLUGINS_GITHUB_SIGN_IN, PLUGINS_GITHUB_SIGN_IN_ELSEWHERE, PLUGINS_RECENT_USE, PLUGINS_ACCOUNTS, PLUGINS_PROJECTS, PLUGINS_COPIES, PLUGINS_COPY_SET, PLUGINS_COPY_NEW_SET, PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_UPDATE]) ipc.removeHandler(channel)
   }
 }

@@ -59,6 +59,13 @@
 .plugin-account__here b { font-weight: 500; }
 .plugin-account__here span { color: var(--tt-text-muted); font-size: var(--tt-type-small); }
 /* The user's other computers: the default for new copies, then each computer and what it holds. */
+/* gh's sign-in on each of the user's other computers, in GitHub's row. */
+.plugin-row__elsewhere { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.plugin-row__elsewhere li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
+.plugin-row__elsewhere b { font-weight: 600; overflow-wrap: anywhere; }
+.plugin-row__elsewhere span:last-child { color: var(--tt-text-muted); font-size: var(--tt-type-small); overflow-wrap: anywhere; }
+.plugin-row__elsewhere .plugin-row__dot[data-state='signed-in'] { background: var(--tt-success); }
+.plugin-row__elsewhere .plugin-row__dot[data-state='signed-out'] { background: var(--tt-warning); }
 .plugins-computers { display: grid; gap: 12px; padding: 12px 16px; border: 1px solid var(--tt-border-faint); border-radius: var(--tt-radius-card); background: var(--tt-card); }
 .plugins-computers .tt-toggle__copy > strong { font-size: var(--tt-type-reading); font-weight: 500; }
 .plugins-computers__list { display: grid; gap: 8px; margin: 0; padding: 10px 0 0; border-top: 1px solid var(--tt-hairline); list-style: none; }

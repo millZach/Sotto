@@ -53,6 +53,7 @@ import { projectOriginsSchema, projectSetupResultSchema, type ProjectOrigins, ty
 import type { NextPromptEntry } from '../../shared/nextPrompt'
 import { desktopDefaultsReceiptSchema, type DesktopDefaultsInput, type DesktopDefaultsReceipt } from '../../shared/desktopDefaults'
 import { heldPluginAccountCopiesSchema, pluginAccountCopyReceiptSchema, pluginAccountCopyRemovedSchema, type HeldPluginAccountCopy, type PluginAccountCopy, type PluginAccountCopyReceipt, type PluginAccountCopyRemoved } from '../../shared/pluginAccountCopies'
+import { gitHubSignInSchema, type GitHubSignIn } from '../../shared/plugins'
 import type { DelegationRelayAsk, DelegationRemoteAsk, RelayedReply } from '../../shared/delegationRelay'
 import type { TellWatcherAnswer, WatcherTellPush } from '../../shared/tellWatcher'
 import type { DelegationNews } from '../../shared/delegation'
@@ -1581,6 +1582,16 @@ export class SocketHostService implements HostService {
   async desktopDefaults(defaults: DesktopDefaultsInput): Promise<DesktopDefaultsReceipt> {
     this.offers('host-delegation')
     return this.read(desktopDefaultsReceiptSchema, await this.call({ op: 'desktop-defaults', defaults }, undefined, undefined, 10000))
+  }
+  /**
+   * The host lists `plugin-github-sign-in` (ADR-0205): it says who gh on its own machine is signed in to GitHub as.
+   * A host being added lists it in its health and not yet in this desktop's hello, as with account copies, so the
+   * read is asked where the health listed it: the host reads its record of desktops again before it answers.
+   */
+  get supportsPluginGitHubSignIn(): boolean { return this.features.includes('plugin-github-sign-in') || this.listed.includes('plugin-github-sign-in') }
+  async pluginGitHubSignIn(): Promise<GitHubSignIn> {
+    if (!this.supportsPluginGitHubSignIn) this.offers('plugin-github-sign-in')
+    return this.read(gitHubSignInSchema, await this.call({ op: 'plugin-github-sign-in' }, undefined, undefined, 20000))
   }
   /**
    * The host lists `plugin-account-copies` (ADR-0205, amending ADR-0025): it keeps a plugin account's secret and

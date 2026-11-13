@@ -4,7 +4,7 @@ vi.mock('electron', async () => (await import('../../../fixtures/preloadElectron
 import { registerPluginsIpc } from '../../../../src/main/plugins/ipc'
 import { createSottoBridge } from '../../../../src/preload'
 import {
-  PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNT_UPDATE, PLUGINS_ACCOUNTS, PLUGINS_COPIES, PLUGINS_COPIES_CHANGED, PLUGINS_COPY_NEW_SET, PLUGINS_COPY_SET, PLUGINS_GITHUB_SIGN_IN, PLUGINS_PROJECTS, PLUGINS_RECENT_USE,
+  PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNT_UPDATE, PLUGINS_ACCOUNTS, PLUGINS_COPIES, PLUGINS_COPIES_CHANGED, PLUGINS_GITHUB_SIGN_IN_ELSEWHERE, type PluginHostSignIn, PLUGINS_COPY_NEW_SET, PLUGINS_COPY_SET, PLUGINS_GITHUB_SIGN_IN, PLUGINS_PROJECTS, PLUGINS_RECENT_USE,
   type GitHubSignIn, type PluginAccount, type PluginAccountResult, type PluginCopiesView, type ShownPluginUse,
 } from '../../../../src/shared/plugins'
 import { ipcRegistry } from '../../../fixtures/ipcHarness'
@@ -28,13 +28,29 @@ function register(answer: GitHubSignIn = { state: 'signed-in', login: 'example-u
   const projects = vi.fn(() => [{ id: 'p-sotto', title: 'Sotto', settled: false }])
   const view: PluginCopiesView = { copyNew: true, readable: true, computers: [{ id: 'saved-forge', name: 'forge', connected: true }], copies: [{ accountId: account.id, computerId: 'saved-forge', state: 'kept', leaving: 'no' }] }
   const copies = vi.fn(async (): Promise<PluginCopiesView> => view), setCopy = vi.fn(async (): Promise<PluginCopiesView> => view), setCopyNew = vi.fn(async (): Promise<PluginCopiesView> => view)
-  const close = registerPluginsIpc(registry.ipc, { gitHubSignIn, recentUse, accounts, addAccount, replaceSecret, removeAccount, updateAccount, projects, copies, setCopy, setCopyNew }, registry.trustedSenders)
+  const elsewhere: PluginHostSignIn[] = [{ computerId: 'saved-forge', name: 'forge', state: 'signed-in', login: 'host-user' }]
+  const gitHubSignInElsewhere = vi.fn(async (): Promise<PluginHostSignIn[]> => elsewhere)
+  const close = registerPluginsIpc(registry.ipc, { gitHubSignIn, gitHubSignInElsewhere, recentUse, accounts, addAccount, replaceSecret, removeAccount, updateAccount, projects, copies, setCopy, setCopyNew }, registry.trustedSenders)
   const renderer = preloadElectron().ipcRenderer
   renderer.invoke.mockImplementation((channel: string, ...args: unknown[]) => registry.invoke(channel, args))
-  return { ...registry, gitHubSignIn, recentUse, accounts, addAccount, replaceSecret, removeAccount, updateAccount, projects, copies, setCopy, setCopyNew, view, close, bridge: createSottoBridge(renderer, 'win32').plugins! }
+  return { ...registry, gitHubSignIn, gitHubSignInElsewhere, elsewhere, recentUse, accounts, addAccount, replaceSecret, removeAccount, updateAccount, projects, copies, setCopy, setCopyNew, view, close, bridge: createSottoBridge(renderer, 'win32').plugins! }
 }
 
 describe('Settings › Plugins, from the window through preload to main (ADR-0205)', () => {
+  it('carries gh’s sign-in on each other computer to the main window, as a state and a name and nothing else', async () => {
+    const { bridge, invoke, handlers, widgetEvent, gitHubSignInElsewhere, elsewhere, close } = register()
+    await expect(bridge.gitHubSignInElsewhere()).resolves.toEqual(elsewhere)
+    await expect(invoke(PLUGINS_GITHUB_SIGN_IN_ELSEWHERE, [], widgetEvent)).rejects.toThrow('Open Settings in the main Sotto window.')
+    await expect(invoke(PLUGINS_GITHUB_SIGN_IN_ELSEWHERE, [{ computerId: 'saved-forge' }])).rejects.toThrow()
+    // A token, or where a computer is, does not cross, whatever a host answered.
+    gitHubSignInElsewhere.mockResolvedValueOnce([{ ...elsewhere[0]!, token: TOKEN } as never])
+    await expect(invoke(PLUGINS_GITHUB_SIGN_IN_ELSEWHERE, [])).rejects.toThrow()
+    gitHubSignInElsewhere.mockResolvedValueOnce([{ ...elsewhere[0]!, state: 'somewhere' } as never])
+    await expect(invoke(PLUGINS_GITHUB_SIGN_IN_ELSEWHERE, [])).rejects.toThrow()
+    close()
+    expect(handlers.has(PLUGINS_GITHUB_SIGN_IN_ELSEWHERE)).toBe(false)
+  })
+
   it('carries gh’s sign-in to the window and answers nothing once closed', async () => {
     const { bridge, close, handlers } = register()
     await expect(bridge.gitHubSignIn()).resolves.toEqual({ state: 'signed-in', login: 'example-user' })

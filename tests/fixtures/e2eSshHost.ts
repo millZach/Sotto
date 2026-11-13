@@ -22,6 +22,19 @@ class SignedOut extends E2EAgentHost {
 const OWL_HOST = `${packageVersion.replace(/-.*$/u, '')}-owl.20261012.1`
 const ADMIN = new Set(['--pairing-code', '--allow-answers', '--deny-answers', '--revoke-client'])
 /**
+ * The host's own gh, for its plugin tools and for a desktop's Plugins page (ADR-0205): never the real one, which
+ * checks its sign-in over the network and would name whoever is signed in on the machine a journey runs on. It is
+ * signed in as the made-up account SOTTO_E2E_HOST_GH_LOGIN names, or signed out, and reads nothing. Vercel is not
+ * reached at all.
+ */
+const PLUGIN_STAND_INS = {
+  gh: async (_cwd: string, _command: 'git' | 'gh', args: readonly string[]): Promise<string> => {
+    const login = process.env.SOTTO_E2E_HOST_GH_LOGIN
+    return args[0] === 'auth' ? JSON.stringify({ hosts: login ? { 'github.com': [{ active: true, login, state: 'success' }] } : {} }) : '[]'
+  },
+  vercelFetch: async (): Promise<Response> => { throw new Error('E2E_NETWORK_DISABLED') },
+}
+/**
  * The version of the install this runs from, the way a release says it: the package.json beside its `host` folder. The
  * host update journey (tests/e2e/host-update.spec.ts) installs one as an older release and updates it to this build.
  */
@@ -45,7 +58,7 @@ async function main(): Promise<void> {
   // at SOTTO_E2E_SIGN_IN_SCRIPT) writes its mark there, and the host runs that fake client for Sign in (#460).
   const signInDirectory = process.env.SOTTO_E2E_SIGN_IN_DIR, signInScript = process.env.SOTTO_E2E_SIGN_IN_SCRIPT
   if (signInDirectory && signInScript) {
-    const host = await startHeadlessHost({ ...options, ...installedVersion(), providers: signInProviders(signInDirectory), reasoner: e2eAgentReasoner, signInCommand: fakeSignInCommand(signInDirectory, signInScript) })
+    const host = await startHeadlessHost({ ...options, plugins: PLUGIN_STAND_INS, ...installedVersion(), providers: signInProviders(signInDirectory), reasoner: e2eAgentReasoner, signInCommand: fakeSignInCommand(signInDirectory, signInScript) })
     keepRunning(() => host.close())
     return
   }
@@ -55,7 +68,7 @@ async function main(): Promise<void> {
   const opencodeRoot = process.env.SOTTO_E2E_HOST_OPENCODE_ROOT, opencodeScript = process.env.SOTTO_E2E_HOST_OPENCODE_SCRIPT
   if (opencodeRoot && opencodeScript) {
     const opencode = new OpenCodeHost(options.dataDirectory, { executable: process.execPath, args: [opencodeScript, opencodeRoot], startTimeoutMs: 30_000, heldProviders: new Set() })
-    const host = await startHeadlessHost({ ...options, sottoVersion: OWL_HOST, reasoner: e2eAgentReasoner,
+    const host = await startHeadlessHost({ ...options, plugins: PLUGIN_STAND_INS, sottoVersion: OWL_HOST, reasoner: e2eAgentReasoner,
       providers: { codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost(), muse: new E2EAgentHost(), opencode } })
     keepRunning(() => host.close())
     return
@@ -64,7 +77,7 @@ async function main(): Promise<void> {
   const updates = process.env.SOTTO_E2E_CLIENT_UPDATES_DIR
   if (updates) {
     const { clients, locateClient, providers } = clientUpdateHost(updates, homedir())
-    const host = await startHeadlessHost({ ...options, ...installedVersion(), providers, clients, locateClient, reasoner: e2eAgentReasoner })
+    const host = await startHeadlessHost({ ...options, plugins: PLUGIN_STAND_INS, ...installedVersion(), providers, clients, locateClient, reasoner: e2eAgentReasoner })
     keepRunning(() => host.close())
     return
   }
@@ -74,7 +87,7 @@ async function main(): Promise<void> {
   // With SOTTO_E2E_HOST_OWL, the host is an Owl build of this release, so it runs what Owl holds back from stable, such as
   // keeping plugin account copies (tests/e2e/plugins-account-copies.spec.ts).
   const owl = process.env.SOTTO_E2E_HOST_OWL ? { sottoVersion: OWL_HOST } : installedVersion()
-  const host = await startHeadlessHost({ ...options, ...owl, providers: { codex: provider(), claude: provider(), grok: provider(), devin: provider() }, reasoner: e2eAgentReasoner })
+  const host = await startHeadlessHost({ ...options, plugins: PLUGIN_STAND_INS, ...owl, providers: { codex: provider(), claude: provider(), grok: provider(), devin: provider() }, reasoner: e2eAgentReasoner })
   keepRunning(() => host.close())
 }
 function keepRunning(close: () => Promise<void>): void {

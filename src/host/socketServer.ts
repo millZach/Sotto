@@ -35,6 +35,7 @@ import { hostMachineReportSchema } from '../shared/hostFacts'
 import { projectOriginsSchema, projectSetupResultSchema, type ProjectOrigins } from '../shared/workerMachine'
 import { desktopDefaultsReceiptSchema } from '../shared/desktopDefaults'
 import { heldPluginAccountCopiesSchema, pluginAccountCopyReceiptSchema, pluginAccountCopyRemovedSchema } from '../shared/pluginAccountCopies'
+import { gitHubSignInSchema } from '../shared/plugins'
 import { ProviderSignInRefusal, type ProviderSignIns } from './providerSignIn'
 import { DEFLATE_RESPONSE, deflateOffered, SocketFrames } from './socketFrames'
 import { CutBodies } from '../shared/activityBodies'
@@ -436,6 +437,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'check-queue-views' || service.supportsCheckQueueViews === true && service.checkQueue !== undefined && desktopRecords)
     // Account copies (ADR-0205) only where the host keeps them, and only on a listener that tells its desktops apart.
     && (feature !== 'plugin-account-copies' || service.supportsPluginAccountCopies === true && desktopRecords)
+    // Who the host's own gh is signed in as (ADR-0205), where the host runs plugin tools, on the same listeners.
+    && (feature !== 'plugin-github-sign-in' || service.supportsPluginGitHubSignIn === true && service.pluginGitHubSignIn !== undefined && desktopRecords)
     // The same host answers a recorded desktop's read of those threads' delegations, for its window (#1310).
     && (feature !== 'delegation-views' || service.supportsDelegationViews === true && service.delegationViews !== undefined && desktopRecords)
     // Continuing agents and forking (#1028) only where the host's Owl answer turns them on.
@@ -505,6 +508,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     .filter(feature => feature !== 'branch-moves' && feature !== 'thread-move' && feature !== 'thread-move-source' && feature !== 'thread-move-keep' || (options.watcherDesktops?.has(peer.client.clientId) ?? false))
     // An account copy carries a secret, so it comes only from the desktop the launch script recorded (ADR-0205).
     .filter(feature => feature !== 'plugin-account-copies' || options.watcherDesktops?.has(peer.client.clientId) === true)
+    // The account a host's gh is signed in to is its owner's own detail: told only to a recorded desktop.
+    .filter(feature => feature !== 'plugin-github-sign-in' || options.watcherDesktops?.has(peer.client.clientId) === true)
     // Desktop defaults come only from a client the launch script recorded as a desktop (#1310).
     .filter(feature => feature !== 'host-delegation' && feature !== 'every-agent-picture' && feature !== 'delegation-views' && feature !== 'delegation-relay' && feature !== 'delegation-relay-send' && feature !== 'delegation-remote' && feature !== 'delegation-branch-starts' && feature !== 'check-queue-views'
       || options.watcherDesktops?.has(peer.client.clientId) === true)
@@ -1860,6 +1865,13 @@ export async function startSocketServer(options: SocketServerOptions) {
         await options.watcherDesktops?.refresh().catch(() => undefined)
         if (!offers(peer, 'plugin-account-copies') || !service.pluginAccountCopies) throw new Refusal('invalid_request')
         try { return heldPluginAccountCopiesSchema.parse(await service.pluginAccountCopies(peer.client)) } catch { throw new Refusal('unavailable') }
+      }
+      case 'plugin-github-sign-in': {
+        // Who this machine's gh is signed in as, for a recorded desktop's Plugins page. The list of desktops is read
+        // again first, as for a copy. The schema names a state and a login, so nothing else of gh's can be answered.
+        await options.watcherDesktops?.refresh().catch(() => undefined)
+        if (!offers(peer, 'plugin-github-sign-in') || !service.pluginGitHubSignIn) throw new Refusal('invalid_request')
+        try { return gitHubSignInSchema.parse(await service.pluginGitHubSignIn()) } catch { throw new Refusal('unavailable') }
       }
       case 'watcher-tell-answer': {
         // The desktop's answer to a thread's message for Watcher. An answer nobody waits for is dropped.

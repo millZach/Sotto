@@ -23,6 +23,7 @@ export const PLUGINS: readonly PluginEntry[] = [
 ]
 
 export const PLUGINS_GITHUB_SIGN_IN = 'sotto:plugins:github-sign-in'
+export const PLUGINS_GITHUB_SIGN_IN_ELSEWHERE = 'sotto:plugins:github-sign-in-elsewhere'
 
 /** The longest account name GitHub allows is 39 characters; anything far past it is not a name gh printed. */
 const GITHUB_LOGIN_MAX = 100
@@ -40,10 +41,26 @@ export const gitHubSignInSchema = z.discriminatedUnion('state', [
 ])
 export type GitHubSignIn = z.infer<typeof gitHubSignInSchema>
 
+/**
+ * Who gh is signed in to GitHub as on one of the user's other computers, for Settings › Plugins. A thread there acts
+ * as that account, which need not be this computer's. Besides gh's own four answers: `away`, the computer is not
+ * connected, so its gh cannot be asked; `no-plugins`, its Sotto runs no plugin tools, so its threads do not use
+ * GitHub through Sotto. A name, never a token.
+ */
+export const PLUGIN_HOST_SIGN_IN_STATES = ['signed-in', 'signed-out', 'not-installed', 'unknown', 'away', 'no-plugins'] as const
+export const pluginHostSignInsSchema = z.array(z.object({
+  computerId: z.string().min(1).max(512), name: z.string().max(512), state: z.enum(PLUGIN_HOST_SIGN_IN_STATES),
+  /** The account, where gh is signed in. */
+  login: z.string().min(1).max(GITHUB_LOGIN_MAX).optional(),
+}).strict()).max(200)
+export type PluginHostSignIn = z.infer<typeof pluginHostSignInsSchema>[number]
+
 /** `window.sotto.plugins`: what Settings › Plugins reads from main. Nothing here ever carries a secret. */
 export interface PluginsBridge {
   /** Asks gh, on this computer, who it is signed in to github.com as. */
   gitHubSignIn(): Promise<GitHubSignIn>
+  /** Asks gh on each of the user's other computers who it is signed in as there, where that computer is connected and runs plugin tools. */
+  gitHubSignInElsewhere(): Promise<PluginHostSignIn[]>
   /** The newest uses of plugins by threads' agents, newest first: what was done and by which thread, never its content. */
   recentUse(): Promise<ShownPluginUse[]>
   /** The accounts the user added, without their secrets. */

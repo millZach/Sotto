@@ -3034,12 +3034,20 @@ msgid "Get the iPhone beta"
 msgstr "Get the iPhone beta"
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "gh is not signed in there, so its threads cannot use GitHub. On {name}, run {GH_SIGN_IN_COMMAND}."
+msgstr "gh is not signed in there, so its threads cannot use GitHub. On {name}, run {GH_SIGN_IN_COMMAND}."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "gh is not signed in to GitHub on this computer. Run this in a terminal, then press Check again."
 msgstr "gh is not signed in to GitHub on this computer. Run this in a terminal, then press Check again."
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "gh isn’t installed"
 msgstr "gh isn’t installed"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "gh isn’t installed there, so its threads cannot use GitHub."
+msgstr "gh isn’t installed there, so its threads cannot use GitHub."
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "gh, GitHub’s command line program, isn’t installed on this computer. Install it from cli.github.com, sign in with <0>{GH_SIGN_IN_COMMAND}</0>, then press Check again. If this still shows, quit Sotto and open it again so it can find gh."
@@ -3059,6 +3067,10 @@ msgstr "Git fetch interval"
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "GitHub uses the gh command’s own sign-in. Sotto stores nothing for it."
 msgstr "GitHub uses the gh command’s own sign-in. Sotto stores nothing for it."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "GitHub’s sign-in on your other computers"
+msgstr "GitHub’s sign-in on your other computers"
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Global — the one set that works outside Sotto."
@@ -3462,6 +3474,10 @@ msgstr "Its record on this computer"
 #: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
 msgid "Its record was cleared. Pieces from now on are counted here."
 msgstr "Its record was cleared. Pieces from now on are counted here."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Its Sotto runs no plugin tools, so its threads do not use GitHub through Sotto."
+msgstr "Its Sotto runs no plugin tools, so its threads do not use GitHub through Sotto."
 
 #. placeholder {0}: (model.medianMs / 1_000).toFixed(1)
 #: src/renderer/src/features/settings/CloudSpeechModelList.tsx
@@ -4205,6 +4221,10 @@ msgstr "Not checked yet."
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Not connected"
 msgstr "Not connected"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Not connected, so its gh cannot be asked."
+msgstr "Not connected, so its gh cannot be asked."
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Not connected. Copies wait until it is."
@@ -5964,6 +5984,10 @@ msgid "Signed in"
 msgstr "Signed in"
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Signed in as {account} through gh on that computer."
+msgstr "Signed in as {account} through gh on that computer."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Signed in as {login} through gh"
 msgstr "Signed in as {login} through gh"
 
@@ -6104,6 +6128,10 @@ msgstr "Sotto could not stop signing in to {name}. Try again in Settings > Hosts
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Sotto couldn’t ask gh who is signed in. Nothing was changed. Press Check again."
 msgstr "Sotto couldn’t ask gh who is signed in. Nothing was changed. Press Check again."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sotto couldn’t ask its gh who is signed in."
+msgstr "Sotto couldn’t ask its gh who is signed in."
 
 #: src/renderer/src/features/settings/PhonesSettings.tsx
 msgid "Sotto couldn’t open its listener for phones on this computer. Nothing was changed. Press Try again, or restart Sotto."
