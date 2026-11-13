@@ -1,0 +1,226 @@
+<!doctype html>
+<!-- PROTOTYPE — throwaway. Question: by status, what should the Settled shelf look like as one list, most recent first,
+     instead of a folder for each project? Zach, November 13, 2026: "For the default sidebar view I want the settled
+     threads to be in order of most recent rather than by project". By project is not drawn: it stays as it is.
+     Undecided, so each is a switch in the bar: what "most recent" means (when settled, or last activity), where Restore
+     project goes once the folders are gone, whether a row names its project, and how many rows the shelf shows at once.
+     Everything here is a stub: Restore only takes the row away and says what the app would do.
+     Zach's picks, the same day, the page's defaults: 1 when settled, 2 Restore project on the row, 3 no project on the
+     row, 4 thirty at a time. Recorded in ADR-0201's November 13, 2026 amendment. -->
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Settled, most recent first — prototype</title>
+<style>
+:root{
+  --canvas:oklch(0.115 0.008 265);--sidebar:oklch(0.205 0.004 265);--card:oklch(0.245 0.006 265);--text:oklch(0.985 0.005 280);
+  --text2:oklch(0.86 0.01 265);--muted:oklch(0.72 0.014 265);--hair:oklch(0.305 0.02 265);--accent:oklch(0.714 0.104 183);
+  --hover:oklch(0.27 0.006 265);--pop:oklch(0.235 0.006 265);--shadow:0 12px 32px rgba(0,0,0,.55);
+}
+body.light{
+  --canvas:oklch(0.978 0.004 85);--sidebar:oklch(0.945 0.007 85);--card:oklch(0.975 0.004 85);--text:oklch(0.235 0.014 75);
+  --text2:oklch(0.36 0.014 75);--muted:oklch(0.47 0.014 75);--hair:oklch(0.86 0.012 80);--accent:oklch(0.53 0.095 186);
+  --hover:oklch(0.91 0.01 85);--pop:oklch(0.99 0.003 85);--shadow:0 12px 32px rgba(60,40,20,.18);
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--canvas);color:var(--text);font:14px/1.35 Figtree,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit}
+.proto-bar{position:sticky;top:0;z-index:50;display:flex;flex-direction:column;gap:6px;padding:8px 10px;background:#111;color:#eee;font-size:12.5px;border-bottom:1px solid #333}
+.proto-bar b{color:#ffcf5a;letter-spacing:.02em}
+.proto-bar .pick{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center}
+.proto-bar .pick > span{flex:none;width:112px;color:#bbb}
+.seg{display:inline-flex;flex-wrap:wrap;border:1px solid #444;border-radius:6px;overflow:hidden}
+.seg button{background:#1d1d1d;border:0;padding:6px 9px;cursor:pointer;color:#ccc;min-height:30px}
+.seg button[aria-pressed=true]{background:#e9e9e9;color:#111;font-weight:600}
+.says{margin:0;padding:8px 12px;background:#1a1a1a;color:#cfcfcf;font-size:12.5px;border-bottom:1px solid #333}
+.says b{color:#fff}
+.stage{display:flex;justify-content:center;padding:14px 10px 90px}
+.sidebar{position:relative;width:300px;max-width:100%;display:flex;flex-direction:column;background:var(--sidebar);border:1px solid var(--hair);border-radius:10px;overflow:hidden}
+.list{padding:4px 4px 10px}
+.head{display:flex;align-items:center;gap:6px;width:100%;min-height:28px;padding:0 8px 0 6px;border:0;border-radius:6px;background:transparent;color:var(--muted);font-size:12.5px;font-weight:600;text-align:left;cursor:pointer}
+.head:hover{background:var(--hover);color:var(--text)}
+.head .count{margin-left:auto;font-weight:500}
+.head svg{flex:none;transition:transform .12s}
+.head[aria-expanded=true] svg.chev{transform:rotate(90deg)}
+.shelf-head{margin-top:8px;min-height:30px;color:var(--text2)}
+.dim .row .title{color:var(--muted)}
+.row{position:relative;display:flex;align-items:center;gap:8px;min-height:30px;margin:0 0 1px;padding:4px 8px 4px 30px;border-radius:6px;cursor:default}
+.row.two{align-items:flex-start;padding-block:6px}
+.row:hover{background:var(--hover)}
+.row .main{flex:1;min-width:0}
+.row .title{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text2);font-weight:500}
+.row .line{display:flex;gap:6px;align-items:center;margin-top:2px;color:var(--muted);font-size:12.5px;white-space:nowrap;overflow:hidden}
+.row .line .place{overflow:hidden;text-overflow:ellipsis}
+.row .time{flex:none;color:var(--muted);font-size:12.5px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.row .act{flex:none;display:none;width:26px;height:26px;place-items:center;border:0;border-radius:6px;background:transparent;color:var(--muted);cursor:pointer}
+.row .act:hover{background:var(--card);color:var(--text)}
+.row:hover .act,.row:focus-within .act{display:grid}
+.row:hover .time,.row:focus-within .time{display:none}
+@media (hover:none){.row .act{display:grid}.row .time{display:none}.row.two .time{display:block}}
+.folder-rows .row{padding-left:38px}
+.tag{flex:none;padding:0 5px;border:1px solid var(--hair);border-radius:4px;font-size:11.5px;color:var(--muted)}
+.more{display:block;width:calc(100% - 16px);margin:6px 8px 2px;min-height:30px;border:1px solid var(--hair);border-radius:6px;background:transparent;color:var(--text2);cursor:pointer}
+.more:hover{background:var(--hover)}
+.project{display:flex;align-items:center;gap:8px;min-height:30px;padding:2px 6px 2px 30px;border-radius:6px;color:var(--text2)}
+.project:hover{background:var(--hover)}
+.project .name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.project .n{color:var(--muted);font-size:12.5px}
+.project button,.folder-restore{flex:none;border:0;border-radius:6px;background:transparent;color:var(--accent);font-size:12.5px;padding:4px 6px;cursor:pointer}
+.project button:hover,.folder-restore:hover{background:var(--card)}
+.open-part{padding:2px 0 0}
+.open-part .row .title{color:var(--text2)}
+.toast{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);max-width:calc(100% - 24px);padding:9px 14px;border-radius:8px;background:var(--pop);color:var(--text);border:1px solid var(--hair);box-shadow:var(--shadow);font-size:13px}
+.toast[hidden]{display:none}
+</style></head>
+<body>
+<div class="proto-bar">
+  <div class="pick"><span><b>PROTOTYPE</b> Settled</span><div class="seg" data-key="view"><button data-value="new">One list (new)</button><button data-value="today">Folders (today)</button></div></div>
+  <div class="pick"><span>1. Most recent is</span><div class="seg" data-key="order"><button data-value="settled">When settled</button><button data-value="activity">Last activity</button></div></div>
+  <div class="pick"><span>2. Restore project</span><div class="seg" data-key="restore"><button data-value="row">On the row</button><button data-value="foot">Settled projects at the foot</button><button data-value="none">Only By project</button></div></div>
+  <div class="pick"><span>3. Row names project</span><div class="seg" data-key="place"><button data-value="no">No</button><button data-value="yes">Yes</button></div></div>
+  <div class="pick"><span>4. Rows shown</span><div class="seg" data-key="length"><button data-value="page">30 at a time</button><button data-value="all">All</button></div></div>
+  <div class="pick"><span>Theme</span><div class="seg" data-key="theme"><button data-value="dark">Dark</button><button data-value="light">Light</button></div></div>
+</div>
+<p class="says" id="says"></p>
+<div class="stage"><div class="sidebar"><div class="list" id="list"></div></div></div>
+<div class="toast" id="toast" hidden></div>
+<script>
+// The same sixty-four settled threads in every view. `act` is hours since the thread last did anything; `set` is hours
+// since it was settled. Twelve were settled together this morning in a clear-out, long after they last moved, which is
+// where the two orders part. `project: true` means the thread was settled with its whole project, not on its own.
+const NOW = new Date('2026-11-13T15:10:00')
+const T = (title, place, act, set, project) => ({ id: title, title, place, act, set, project: project === true })
+const threads = [
+  T('Order Settled by most recent', 'Sotto', 1.2, 0.4), T('Forge thread PR links', 'Sotto', 3.1, 2.6), T('Watcher reconcile index', 'Sotto', 5.5, 5.2),
+  T('iPhone earlier messages', 'Sotto', 9, 8.4), T('Plugin host gh sign-in', 'Sotto', 20, 19.5), T('Watcher regression report', 'Sotto', 23, 22.6),
+  // The clear-out: settled 6 hours ago, last active days or weeks back.
+  T('Streaming WAV stall', 'Sotto', 412, 6.0), T('Boiler purge timer rungs', 'Boiler sequence', 640, 6.02), T('Glass theme hairlines', 'Sotto', 198, 6.04),
+  T('Loop sheet LT-204', 'Boiler sequence', 530, 6.06), T('Title card timing', 'Feature video', 290, 6.08), T('Composer shrink at 820', 'Sotto', 150, 6.1),
+  T('Pull sheet for MCC-3', 'Boiler sequence', 610, 6.12), T('Voiceover take 4', 'Feature video', 300, 6.14), T('Owl nightly on Linux', 'Sotto', 260, 6.16),
+  T('Grok voice previews', 'workshop', 480, 6.18), T('Hermes skills by slash', 'Sotto', 120, 6.2), T('Weekly note template', 'workshop', 700, 6.22),
+  T('Move suggestion skips settled', 'Sotto', 31, 30), T('Sidebar hover row', 'Sotto', 52, 50), T('API picker polish', 'Sotto', 47, 46),
+  T('Needs you card on Mac', 'Sotto', 29, 28.5), T('Pi sign-ins', 'Sotto', 56, 55), T('Status group captures', 'Sotto', 60, 58),
+  T('Socket host contract deadline', 'Sotto', 54, 53.5), T('Provider models count', 'Sotto', 53, 52), T('Unreadable key message', 'Sotto', 28, 27),
+  // Two whole projects are settled; their threads were settled with them.
+  T('Trip log import', 'Field notes', 900, 340, true), T('Photo captions', 'Field notes', 880, 340, true), T('Map pins by day', 'Field notes', 860, 340, true),
+  T('Old hotkey test', 'Dictation tests', 1500, 1100, true),
+  T('Delegations leave the reply', 'Sotto', 30, 29.2), T('Footer links', 'workshop', 80, 70), T('Thread sidebar question', 'Sotto', 100, 96),
+  T('Scene 3 colour pass', 'Feature video', 110, 104), T('Flame scanner I/O list', 'Boiler sequence', 130, 125), T('Clear settled threads', 'Sotto', 140, 139),
+  T('Keep main up to date line', 'Sotto', 170, 168), T('Snooze until a time', 'Sotto', 175, 172), T('Collapsed rail trays', 'Sotto', 180, 176),
+  T('Settle toast width', 'Sotto', 240, 238), T('Checkout punch list', 'Boiler sequence', 250, 246), T('Council chamber scene', 'Sotto', 270, 262),
+  T('End card music', 'Feature video', 320, 318), T('Product events worker', 'Sotto', 330, 329), T('Folder counts in one column', 'Sotto', 500, 497),
+  T('Starting screen fade', 'Sotto', 520, 516), T('DeltaV module names', 'Boiler sequence', 560, 554), T('Reading list', 'workshop', 580, 577),
+  T('Worktree cleanup sweep', 'Sotto', 600, 590), T('Auto-settle merged threads', 'Sotto', 620, 612), T('Phone pairing over tailnet', 'Sotto', 650, 648),
+  T('Interconnect drawing 12', 'Boiler sequence', 670, 665), T('Rough cut notes', 'Feature video', 690, 688), T('Budget sheet', 'workshop', 720, 715),
+  T('Adapter contract fixtures', 'Sotto', 740, 733), T('Theme tokens on scale', 'Sotto', 760, 757), T('First-run notes', 'Sotto', 780, 771),
+  T('Annunciator alarm list', 'Boiler sequence', 800, 795), T('Recipe scaler', 'workshop', 820, 818), T('Storyboard v2', 'Feature video', 840, 836),
+  T('Memory gate for beta', 'Sotto', 950, 944), T('Widget placement', 'Sotto', 1000, 998), T('One key for cleanup', 'Sotto', 1200, 1190),
+]
+// Settled projects: two hold threads, three hold none (on the laptop, 36 of 51 settled projects hold no thread).
+const settledProjects = ['Field notes', 'Dictation tests', 'Scratch', 'Demo repo', 'Old site']
+const PAGE = 30
+
+const params = new URLSearchParams(location.search)
+const pick = { view: 'new', order: 'settled', restore: 'row', place: 'no', length: 'page', theme: 'dark' }
+for (const key of Object.keys(pick)) if (params.get(key)) pick[key] = params.get(key)
+let shown = PAGE
+const openFolders = new Set()
+let projectsOpen = false
+let shelfOpen = true
+const gone = new Set()
+
+const clock = hours => {
+  const at = new Date(NOW - hours * 3_600_000)
+  if (at.toDateString() === NOW.toDateString()) return at.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }).toLowerCase()
+  if (hours < 24 * 6) return at.toLocaleDateString('en-US', { weekday: 'short' }).toLowerCase()
+  return at.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toLowerCase()
+}
+const ICON = {
+  chev: '<svg class="chev" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>',
+  folder: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>',
+  restore: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h2"/><path d="M20 8v11a2 2 0 0 1-2 2h-2"/><path d="m9 15 3-3 3 3"/><path d="M12 12v9"/></svg>',
+}
+const escape = text => text.replace(/[&<>"]/g, mark => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[mark]))
+const live = () => threads.filter(thread => !gone.has(thread.id))
+const by = key => (first, second) => first[key] - second[key] || first.title.localeCompare(second.title)
+
+function row(thread, { time, place, restore }) {
+  // A thread settled with its project has no Restore of its own in the app today: only its folder's Restore project.
+  const action = thread.project
+    ? restore === 'row' ? `<button class="act" data-restore-project="${escape(thread.place)}" title="Restore project ${escape(thread.place)}" aria-label="Restore project ${escape(thread.place)}">${ICON.restore}</button>` : ''
+    : `<button class="act" data-restore="${escape(thread.id)}" title="Restore thread" aria-label="Restore ${escape(thread.title)}">${ICON.restore}</button>`
+  const tag = thread.project && place ? '<span class="tag">project settled</span>' : ''
+  return `<div class="row${place ? ' two' : ''}" tabindex="0"><div class="main"><span class="title" title="${escape(thread.title)}">${escape(thread.title)}</span>${place ? `<div class="line"><span class="place">${escape(thread.place)}</span>${tag}</div>` : ''}</div><span class="time">${clock(thread[time])}</span>${action}</div>`
+}
+
+function render() {
+  document.body.classList.toggle('light', pick.theme === 'light')
+  for (const seg of document.querySelectorAll('.seg')) for (const button of seg.querySelectorAll('button')) button.setAttribute('aria-pressed', String(pick[seg.dataset.key] === button.dataset.value))
+  const today = pick.view === 'today'
+  for (const seg of document.querySelectorAll('.seg')) if (!['view', 'theme'].includes(seg.dataset.key)) seg.parentElement.style.opacity = today ? .35 : 1
+  const all = live()
+  const projects = settledProjects.filter(name => !gone.has(`project:${name}`))
+  let html = `<div class="open-part dim"><button class="head" aria-expanded="true">${ICON.chev}<span>Working now</span><span class="count">2</span></button><button class="head" aria-expanded="false">${ICON.chev}<span>Recent</span><span class="count">14</span></button></div>`
+  html += `<button class="head shelf-head" id="shelf" aria-expanded="${shelfOpen}">${ICON.chev}<span>Settled</span><span class="count">${all.length}</span></button>`
+  let says
+  if (shelfOpen && today) {
+    // Today: a folder for each project, newest activity first, every folder closed until pressed.
+    const names = [...new Set([...all.slice().sort(by('act')).map(thread => thread.place), ...projects])]
+    for (const name of names) {
+      const rows = all.filter(thread => thread.place === name).sort(by('act'))
+      const whole = projects.includes(name)
+      const open = openFolders.has(name)
+      html += `<div style="display:flex;align-items:center"><button class="head" data-folder="${escape(name)}" aria-expanded="${open}" style="padding-left:14px">${ICON.chev}${ICON.folder}<span style="color:var(--text2)">${escape(name)}</span><span class="count">${rows.length || ''}</span></button>${whole ? `<button class="folder-restore" data-restore-project="${escape(name)}">Restore project</button>` : ''}</div>`
+      if (open) html += `<div class="folder-rows">${rows.map(thread => row(thread, { time: 'act', place: false, restore: 'none' })).join('')}</div>`
+    }
+    says = `<b>Today.</b> A folder for each project, closed until you press it; inside, the thread that last did anything is first. A settled project's folder has <b>Restore project</b>.`
+  } else if (shelfOpen) {
+    const key = pick.order === 'settled' ? 'set' : 'act'
+    const sorted = all.slice().sort(by(key))
+    const limit = pick.length === 'all' ? sorted.length : Math.min(shown, sorted.length)
+    html += sorted.slice(0, limit).map(thread => row(thread, { time: key, place: pick.place === 'yes', restore: pick.restore })).join('')
+    if (limit < sorted.length) html += `<button class="more" id="more">Show ${Math.min(PAGE, sorted.length - limit)} more</button>`
+    if (pick.restore === 'foot' && projects.length) {
+      html += `<button class="head" id="projects" aria-expanded="${projectsOpen}" style="margin-top:6px;padding-left:14px">${ICON.chev}<span>Settled projects</span><span class="count">${projects.length}</span></button>`
+      if (projectsOpen) html += projects.map(name => { const n = all.filter(thread => thread.place === name).length; return `<div class="project">${ICON.folder}<span class="name">${escape(name)}</span><span class="n">${n ? `${n} thread${n === 1 ? '' : 's'}` : 'no threads'}</span><button data-restore-project="${escape(name)}">Restore project</button></div>` }).join('')
+    }
+    const order = pick.order === 'settled'
+      ? `<b>When settled:</b> the thread you put away last is first, and each row's time says when it was settled. The twelve settled together at 9:10 am come right after today's, though some last moved weeks ago. This is the iPhone's order.`
+      : `<b>Last activity:</b> the thread that last did anything is first, and each row's time is its last activity, as it is today. The twelve settled this morning sit far down the list, by when they last moved.`
+    const restore = { row: `A thread settled with its project (Field notes, Dictation tests) offers <b>Restore project</b> where the others offer Restore. The three settled projects with no threads have no row here; By project still lists them.`,
+      foot: `<b>Settled projects</b> folds at the foot of the list, each project with Restore project, the empty ones included. A thread settled with its project has no shortcut of its own.`,
+      none: `Restore project is only under <b>By project</b> in Settings. A thread settled with its project has no shortcut here; sending it a message still brings it back alone.` }[pick.restore]
+    says = `${order} ${restore} ${pick.place === 'yes' ? 'Each row names its project on a second line, as Snoozed rows do.' : 'A row is one line, its name and its time, as a finished row in Recent is; its project is in what a screen reader hears.'} ${pick.length === 'all' ? `All ${sorted.length} rows are drawn at once (387 on the laptop today).` : `Thirty rows, then <b>Show 30 more</b>, as the iPhone does; a search still finds every match.`}`
+  } else says = 'Settled is folded, as it is when Sotto starts.'
+  document.getElementById('list').innerHTML = html
+  document.getElementById('says').innerHTML = says
+  const next = new URLSearchParams(pick)
+  history.replaceState(null, '', `?${next}`)
+}
+let toastTimer = 0
+function toast(text) {
+  const box = document.getElementById('toast')
+  box.textContent = text; box.hidden = false
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => { box.hidden = true }, 3200)
+}
+document.addEventListener('click', event => {
+  const target = event.target.closest('button')
+  if (!target) return
+  const seg = target.closest('.seg')
+  if (seg) { pick[seg.dataset.key] = target.dataset.value; shown = PAGE; render(); return }
+  if (target.id === 'shelf') { shelfOpen = !shelfOpen; render(); return }
+  if (target.id === 'more') { shown += PAGE; render(); return }
+  if (target.id === 'projects') { projectsOpen = !projectsOpen; render(); return }
+  if (target.dataset.folder) { const name = target.dataset.folder; if (openFolders.has(name)) openFolders.delete(name); else openFolders.add(name); render(); return }
+  if (target.dataset.restore) { gone.add(target.dataset.restore); toast(`Restored ${target.dataset.restore}. It is back in Recent.`); render(); return }
+  if (target.dataset.restoreProject) {
+    const name = target.dataset.restoreProject
+    const n = live().filter(thread => thread.place === name).length
+    for (const thread of threads) if (thread.place === name) gone.add(thread.id)
+    gone.add(`project:${name}`)
+    toast(n ? `Restored project ${name}. Its ${n} thread${n === 1 ? ' is' : 's are'} back in Recent.` : `Restored project ${name}.`)
+    render()
+  }
+})
+render()
+</script>
+</body></html>
