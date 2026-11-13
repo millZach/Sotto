@@ -40,10 +40,11 @@ interface Progress { swarm?: string; fingerprint: string; connected: boolean; co
   /** The idle clock's timer, while one waits for the thread's next twenty minutes at rest (`restCheck`). */
   rest?: () => void
   /**
-   * The idle stretch the clock counts in: from when the thread went idle, as its progress says, which `stretch` names, how
-   * many times Watcher has been told of it, and when last. A new stretch starts when the thread's progress moves.
+   * The idle stretch the clock counts in: `from`, the thread's last progress when Sotto saw it go at rest; `since`, when
+   * Sotto saw that, which the count runs from and `stretch` names with it; how many at-rest events it has made, and when
+   * the last was made. A new stretch starts when the progress moves or the thread comes back to rest.
    */
-  rested?: { readonly from: number; readonly stretch: string; told: number; at?: number } }
+  rested?: { readonly from: number; readonly since: number; readonly stretch: string; made: number; lastMadeAt?: number } }
 /** Stops a thread's quiet and at-rest timers, as its progress is let go or starts again. */
 const stopTimers = (progress: Progress | undefined): void => { progress?.cancel?.(); delete progress?.cancel; progress?.rest?.(); delete progress?.rest }
 /**
@@ -1539,32 +1540,38 @@ export class WatcherWakeUp {
    * chose no exemption for it on November 13, 2026.
    */
   private atRest(snapshot: AgentHostSnapshot, thread: AgentThread, target: WatcherThreadTarget): boolean {
-    // At rest after a turn: a thread that never ran one has not gone idle from work.
-    if (!thread.lastTurn) return false
+    // At rest after work: a thread that never ran a turn has not gone idle from work. A thread restored after a restart can
+    // hold its history without its last turn's record, as a Claude Code thread does, and is at rest all the same.
+    if (!thread.lastTurn && !thread.messages.length && !thread.summary?.messageCount && !thread.activities?.length) return false
     if (!this.connected(snapshot, thread) || !threadCapabilities(snapshot, thread).observe || isThreadClosed(thread)
       || isWorkspaceThreadSettled(thread, this.project(snapshot, thread)) || !this.workSettled(thread, target.hostId)) return false
     if (thread.requests.length) return !thread.subagentSummary?.working
-    return thread.lastTurn.status !== 'running' && !isThreadTurnRunning(thread) && !this.active(thread)
+    return thread.lastTurn?.status !== 'running' && !isThreadTurnRunning(thread) && !this.active(thread)
   }
   /**
    * The idle clock (#1152, #2307): a watched thread that has been at rest for WATCHER_AT_REST_MS since its last progress
    * brings Watcher at-rest news, and again each WATCHER_AT_REST_AGAIN_MS after that while it stays at rest (Zach's pick on
    * November 13, 2026), or once when that is null. Progress, a reconnect or the thread no longer being at rest starts a new
-   * stretch at zero. Each wake's ID is its stretch and its count, so none is told twice. Sotto keeps no stretch across a
-   * restart: the clock starts at zero when Sotto first sees the thread, as quiet's does. The timer reads the thread again
-   * when it fires.
+   * stretch at zero, so a settled thread restored starts one too. Each event's ID is its stretch and its count, so none is
+   * told twice. Sotto keeps no stretch across a restart: the clock starts at zero when Sotto first sees the thread, as
+   * quiet's does. The timer reads the thread again when it fires.
    */
   private restCheck(snapshot: AgentHostSnapshot, thread: AgentThread, target: WatcherThreadTarget, key: string, progress: Progress, fired = false): void {
     progress.rest?.(); delete progress.rest
     if (!this.atRest(snapshot, thread, target)) { delete progress.rested; return }
     const from = Math.max(progress.progressAt, progress.connectedAt)
-    if (progress.rested?.from !== from) progress.rested = { from, stretch: observationDigest(['at-rest', target, from]), told: 0 }
+    // Counted from when Sotto saw the thread at rest: a pass follows its last progress at once, and a thread that comes back
+    // to rest with no progress of its own, as a settled thread restored does, starts from then rather than an old stretch.
+    if (progress.rested?.from !== from) {
+      const since = this.now()
+      progress.rested = { from, since, stretch: observationDigest(['at-rest', target, from, since]), made: 0 }
+    }
     const rested = progress.rested
-    if (rested.told && WATCHER_AT_REST_AGAIN_MS === null) return
-    const wait = (rested.at ?? from) + (rested.told ? WATCHER_AT_REST_AGAIN_MS ?? 0 : WATCHER_AT_REST_MS) - this.now()
+    if (rested.made && WATCHER_AT_REST_AGAIN_MS === null) return
+    const wait = (rested.lastMadeAt ?? rested.since) + (rested.made ? WATCHER_AT_REST_AGAIN_MS ?? 0 : WATCHER_AT_REST_MS) - this.now()
     if (wait <= 0) {
-      rested.told++; rested.at = this.now()
-      this.event('at-rest', target, [rested.stretch, rested.told], { ...thread.lastTurn ? { turnId: thread.lastTurn.id } : {}, revision: rested.stretch }, key)
+      rested.made++; rested.lastMadeAt = this.now()
+      this.event('at-rest', target, [rested.stretch, rested.made], { ...thread.lastTurn ? { turnId: thread.lastTurn.id } : {}, revision: rested.stretch }, key)
       if (WATCHER_AT_REST_AGAIN_MS !== null) this.restCheck(snapshot, thread, target, key, progress)
       return
     }

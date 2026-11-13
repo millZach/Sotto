@@ -2808,7 +2808,7 @@ describe('at-rest news: the idle clock (#2307, #1152)', () => {
     await f.advance(1 + WATCHER_ORDINARY_BATCH_MS)
     expect(atRest(f)).toHaveLength(1)
     expect(atRest(f)[0]!.turnId).toBe('turn-1')
-    // The clock starts again at zero after each wake (Zach's pick on November 13, 2026).
+    // The clock starts again at zero after each wake-up (Zach's pick on November 13, 2026).
     f.wakes.observe(); await f.advance(WATCHER_AT_REST_AGAIN_MS! - WATCHER_ORDINARY_BATCH_MS - 1)
     expect(atRest(f)).toHaveLength(1)
     await f.advance(1 + WATCHER_ORDINARY_BATCH_MS)
@@ -2846,6 +2846,31 @@ describe('at-rest news: the idle clock (#2307, #1152)', () => {
     settled.thread.status = 'idle'; settled.thread.lastTurn = { id: 'turn-1', status: 'completed' }; settled.thread.settledAt = centerTime
     settled.wakes.observe(); await settled.advance(WATCHER_AT_REST_MS * 2)
     expect(atRest(settled)).toHaveLength(0)
+  })
+
+  it('starts a new stretch when a settled thread is restored, and runs the clock for a restored thread with no turn record', async () => {
+    const f = await rests(false)
+    await f.advance(WATCHER_AT_REST_MS * 3)
+    expect(atRest(f)).toHaveLength(3)
+    f.thread.settledAt = new Date(f.now()).toISOString(); f.wakes.observe(); await f.advance(WATCHER_AT_REST_MS * 3)
+    expect(atRest(f)).toHaveLength(3)
+    // Restored with no progress of its own: the clock starts at zero then, under a stretch never told before.
+    f.thread.settledAt = null; f.wakes.observe(); await f.advance(WATCHER_AT_REST_MS - 1)
+    expect(atRest(f)).toHaveLength(3)
+    await f.advance(1 + WATCHER_ORDINARY_BATCH_MS)
+    expect(atRest(f)).toHaveLength(4)
+    expect(atRest(f)[3]!.revision).not.toBe(atRest(f)[0]!.revision)
+    // A Claude Code thread restored after a restart holds its history without its last turn's record.
+    const restored = fixture()
+    restored.thread.status = 'idle'; delete restored.thread.lastTurn
+    restored.thread.messages = [{ id: 'message-1', role: 'assistant', text: 'private worker output', createdAt: centerTime }]
+    restored.wakes.observe(); await restored.advance(WATCHER_AT_REST_MS + WATCHER_ORDINARY_BATCH_MS)
+    expect(atRest(restored)).toHaveLength(1)
+    // A thread that has never worked has no clock.
+    const unsent = fixture()
+    unsent.thread.status = 'idle'; delete unsent.thread.lastTurn
+    unsent.wakes.observe(); await unsent.advance(WATCHER_AT_REST_MS * 2)
+    expect(atRest(unsent)).toHaveLength(0)
   })
 
   it('starts the clock at zero when the thread works again', async () => {
