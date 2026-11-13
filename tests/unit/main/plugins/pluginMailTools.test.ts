@@ -29,6 +29,8 @@ function tools(options: {
   const stillOpen: ((() => boolean) | undefined)[] = []
   const settled = new Set<string>()
   const granted = new Set<string>()
+  /** Which copy of each account is held: it changes when an account is let go, as a host's copy is, even if one of the same ID comes back. */
+  const copies = new Map<string, number>()
   const recorded: PluginUseReport[] = []
   const searched: { account: string; search: MailSearch }[] = []
   const opened: { account: string; id: string }[] = []
@@ -58,7 +60,12 @@ function tools(options: {
     },
     ...(options.noMail ? {} : { mail: {
       granted: async (threadId, accountId) => granted.has(`${threadId} ${accountId}`),
-      grant: async (threadId, accountId) => { granted.add(`${threadId} ${accountId}`); options.whileGranting?.() },
+      copyOf: accountId => copies.get(accountId) ?? 0,
+      grant: async (threadId, accountId, copy) => {
+        if ((copies.get(accountId) ?? 0) !== copy) return false
+        granted.add(`${threadId} ${accountId}`); options.whileGranting?.()
+        return true
+      },
       threadOpen: threadId => !settled.has(threadId),
       providerOf: threadId => threadId === 'watcher' ? 'Codex' : 'Claude Code',
       search: async (account, search) => { searched.push({ account: account.name, search }); return options.search ?? FOUND },
@@ -67,7 +74,7 @@ function tools(options: {
   })
   servers.push(server)
   const read = (threadId: string, args: Record<string, unknown>, context: { waitMs?: number; signal?: AbortSignal } = {}) => server.call(threadId, PLUGIN_READ_TOOL, { plugin: 'gmail', ...args }, context)
-  return { server, world, asked, granted, recorded, searched, opened, read, stillOpen, settled }
+  return { server, world, asked, granted, recorded, searched, opened, read, stillOpen, settled, copies }
 }
 const said = (result: { content: { type: string; text?: string }[] }): string => result.content.map(part => part.text ?? '').join('\n')
 const uses = (recorded: readonly PluginUseReport[]): string[] => recorded.map(use => `${use.threadId} ${use.plugin} ${use.kind} ${use.outcome}`)
@@ -176,6 +183,20 @@ describe('reading a mail account through plugin_read (ADR-0205, decision 8)', ()
     const late = tools({ whileAsked: () => { late.settled.add('two') } })
     expect(said(await late.read('two', { search: {} }))).toContain('was settled or archived while the card waited')
     expect([late.searched, [...late.granted]]).toEqual([[], []])
+  })
+
+  it('takes a yes for the copy of the account its card asked about, and not for one that came in its place', async () => {
+    // On a paired host a copy can be let go and sent again under the same ID while a card for it waits.
+    const t = tools({ whileAsked: () => { t.copies.set(PERSONAL.id, 1) } })
+    const result = await t.read('one', { search: {} })
+    expect(result.isError).toBe(true)
+    expect(said(result)).toContain('their yes was for the one before')
+    expect([t.searched, [...t.granted]]).toEqual([[], []])
+    // The card is told the copy changed, so it goes when that is next looked at.
+    expect(t.stillOpen[0]?.()).toBe(false)
+    // Asked again, the card is for the copy that is there now.
+    expect((await t.read('one', { search: {} })).isError).toBeUndefined()
+    expect(t.asked).toHaveLength(2)
   })
 
   it('does not ask on behalf of a client that would not wait for the answer', async () => {

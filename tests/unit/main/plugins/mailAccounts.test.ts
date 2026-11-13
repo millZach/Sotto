@@ -61,7 +61,7 @@ describe('reading mail as a computer’s plugin tools do (ADR-0205)', () => {
       gitHubSignIn: async () => ({ state: 'signed-out' }), gh: async () => '[]',
       vercelFetch: async () => new Response('{}'), vercelOptions: { signal: new AbortController().signal },
       ...(fake ? { mail: {
-        grants: { has: async () => options.granted ?? false, grant: async (threadId, accountId) => { granted.push(`${threadId} ${accountId}`) }, open: threadId => threadId !== 'thread-settled' },
+        grants: { has: async () => options.granted ?? false, grant: async (threadId, accountId) => { granted.push(`${threadId} ${accountId}`); return true }, open: threadId => threadId !== 'thread-settled', generation: () => 4 },
         providerOf: () => 'Claude Code', options: { connect: fake.connect },
       } } : {}),
     }
@@ -78,7 +78,8 @@ describe('reading mail as a computer’s plugin tools do (ADR-0205)', () => {
     expect(fake.asked).toEqual([{ host: 'imap.gmail.com', port: 993 }, { host: 'imap.gmail.com', port: 993 }])
     // The grants are the computer's own to keep and to ask.
     expect(await tools.mail!.granted('thread-one', PERSONAL.id)).toBe(false)
-    await tools.mail!.grant('thread-one', PERSONAL.id)
+    expect(tools.mail!.copyOf(PERSONAL.id)).toBe(4)
+    await tools.mail!.grant('thread-one', PERSONAL.id, 4)
     expect(granted).toEqual([`thread-one ${PERSONAL.id}`])
     expect(tools.mail!.providerOf('thread-one')).toBe('Claude Code')
     // And whether a thread is open is the grants' own test, the one the grants themselves end by.

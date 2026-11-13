@@ -9,10 +9,12 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
 import { codexFixture } from '../fixtures/codexFixture'
+import { startFakeImapServer } from '../fixtures/fakeImapServer'
 import { startFixtureHeadlessHost } from '../fixtures/desktopHostStack'
 import type { RunGitCommand } from '../../src/main/agents/git/gitStatus'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
 import type { ScopedThreadTools } from '../../src/main/agents/threadToolServer'
+import type { MailConnect } from '../../src/main/plugins/mail/read'
 import { PLUGIN_CHANGE_PREFIX } from '../../src/main/plugins/pendingChanges'
 import type { VercelFetch } from '../../src/main/plugins/vercel/read'
 import { DESKTOP_CLIENTS_FILE } from '../../src/shared/desktopClients'
@@ -29,11 +31,18 @@ const COPY: PluginAccountCopy = {
   secret: TOKEN,
 }
 const DEPLOYMENT = 'dpl_example1'
+/** A made-up mail account: nothing here is a real address or password. */
+const ADDRESS = 'reader@example.com'
+const MAIL_PASSWORD = 'madeupapppasswrd'
+const MAIL_COPY: PluginAccountCopy = {
+  account: { id: '33333333-3333-4333-8333-000000000001', plugin: 'gmail', name: 'Personal', address: ADDRESS, savedAt: '2026-11-13T08:00:00.000Z', signedInAs: null, on: true, projects: null },
+  secret: MAIL_PASSWORD,
+}
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
 
-async function hostFixture(version = OWL) {
+async function hostFixture(version = OWL, mailConnect?: MailConnect) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-host-plugin-tools-'))
   const data = join(root, 'data')
   const keyFile = join(root, 'host.key')
@@ -57,7 +66,7 @@ async function hostFixture(version = OWL) {
     if (url.includes(`/v13/deployments/${DEPLOYMENT}`)) return new Response(JSON.stringify({ name: 'example-project', url: 'example-project-abc.vercel.app', readyState: 'BUILDING', target: null }), { status: 200 })
     return new Response(JSON.stringify({ deployments: [{ uid: DEPLOYMENT, name: 'example-project' }] }), { status: 200 })
   }
-  const host = await startFixtureHeadlessHost({ dataDirectory: data, port: 0, sottoVersion: version, keyFile, providers: { codex: native.adapter }, plugins: { gh, vercelFetch } })
+  const host = await startFixtureHeadlessHost({ dataDirectory: data, port: 0, sottoVersion: version, keyFile, providers: { codex: native.adapter }, plugins: { gh, vercelFetch, ...(mailConnect ? { mailConnect } : {}) } })
   const url = 'http://127.0.0.1:' + host.descriptor!.port
   const clients: SocketHostService[] = []
   cleanups.push(async () => {
@@ -245,6 +254,71 @@ it('uses no copy that is switched off, or that names projects, which a host does
     expect((await f.call(threadId, 'plugin_accounts', {}))?.text).not.toContain('Work')
   }
   expect(f.vercelCalls).toEqual([])
+})
+
+it('lets a host’s thread read a mail account copied there, once the user has allowed that thread on a card in its thread', async () => {
+  const mail = await startFakeImapServer({ address: ADDRESS, password: MAIL_PASSWORD, mailboxes: [{ name: 'INBOX', validity: 7, messages: [
+    { uid: 12, received: '12-Nov-2026 09:30:00 +0000', headers: { From: 'Ann Example <ann@example.com>', To: ADDRESS, Subject: 'Lunch on Friday' }, body: { type: 'text/plain', body: 'Shall we have lunch on Friday?' } },
+  ] }] })
+  cleanups.push(() => mail.close())
+  const f = await hostFixture(OWL, mail.connect)
+  const { socket, hello, pairing } = await f.desktop()
+  // The host says it keeps a mail account, to the desktop the launch script recorded.
+  expect(hello.features).toContain('plugin-mail-copies')
+  expect(socket.supportsPluginMailCopies).toBe(true)
+  await expect(socket.keepPluginAccountCopy(MAIL_COPY)).resolves.toMatchObject({ kept: true })
+  await f.answers(pairing.clientId, true)
+  const threadId = await f.thread()
+  // The thread is told of the account by its name, and not its address.
+  const listed = await f.call(threadId, 'plugin_accounts', {})
+  expect(listed?.text).toContain('Gmail: account "Personal".')
+  expect(listed?.text).not.toContain(ADDRESS)
+
+  // Its first read waits on a card in the thread, in the host's English, and nothing is asked of the mail server.
+  const reading = f.call(threadId, 'plugin_read', { plugin: 'gmail', search: {} })
+  await expect.poll(() => f.card(threadId)).toBeDefined()
+  const card = f.card(threadId)!
+  expect(card.text).toBe('Let this thread read the Gmail account Personal? What it reads goes to Codex.')
+  expect(JSON.stringify(card)).not.toContain(ADDRESS)
+  expect(JSON.stringify(card)).not.toContain(MAIL_PASSWORD)
+  expect(mail.asked).toEqual([])
+
+  // Allowed, the host signs in from this machine with the copy's password, at Gmail's own server, and reads.
+  await socket.command({ type: 'answer', threadId, requestId: card.id, answer: '', approved: true })
+  const read = await reading
+  expect(read).toMatchObject({ failed: false })
+  expect(read?.text).toContain('Lunch on Friday')
+  expect(read?.text).not.toContain(MAIL_PASSWORD)
+  expect(mail.asked).toEqual([{ host: 'imap.gmail.com', port: 993 }])
+  // The thread does not ask again.
+  expect(await f.call(threadId, 'plugin_read', { plugin: 'gmail', search: { subject: 'lunch' } })).toMatchObject({ failed: false })
+  expect(f.card(threadId)).toBeUndefined()
+
+  // Another thread asks for itself, and said no to, it reads nothing.
+  const other = await f.thread()
+  const refused = f.call(other, 'plugin_read', { plugin: 'gmail', search: {} })
+  await expect.poll(() => f.card(other)).toBeDefined()
+  const asked = mail.asked.length
+  await socket.command({ type: 'answer', threadId: other, requestId: f.card(other)!.id, answer: '', approved: false })
+  expect((await refused)?.text).toContain('The user said no')
+  expect(mail.asked.length).toBe(asked)
+
+  // The password is in no file the host keeps in the clear, and no client is told it.
+  for (const file of await f.files()) expect(file.text.includes(MAIL_PASSWORD), file.path).toBe(false)
+  expect(JSON.stringify(f.host.service.shell())).not.toContain(MAIL_PASSWORD)
+
+  // The desktop takes its copy back and sends it again: the grant went with the copy, so the first thread asks again.
+  await expect(socket.removePluginAccountCopy(MAIL_COPY.account.id)).resolves.toEqual({ removed: true })
+  await expect(socket.keepPluginAccountCopy(MAIL_COPY)).resolves.toMatchObject({ kept: true })
+  const again = f.call(threadId, 'plugin_read', { plugin: 'gmail', search: {} })
+  await expect.poll(() => f.card(threadId)).toBeDefined()
+  await socket.command({ type: 'answer', threadId, requestId: f.card(threadId)!.id, answer: '', approved: false })
+  expect((await again)?.failed).toBe(true)
+
+  // A paired client the launch script did not record, as a phone is, is told nothing of mail copies and can send none.
+  const phone = await f.desktop(false)
+  expect(phone.hello.features).not.toContain('plugin-mail-copies')
+  await expect(phone.socket.keepPluginAccountCopy({ ...MAIL_COPY, account: { ...MAIL_COPY.account, id: '33333333-3333-4333-8333-000000000002', name: 'Other' } })).rejects.toBeDefined()
 })
 
 it('tells a recorded desktop who gh is signed in as on the host, and no other client', async () => {

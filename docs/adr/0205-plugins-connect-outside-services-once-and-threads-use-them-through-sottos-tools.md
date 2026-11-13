@@ -184,7 +184,19 @@ Slice 8's second part gives the desktop's threads a Gmail account to read: the a
 - **Watcher asks too**, on a card in Watcher's thread that names Watcher's provider.
 - **What is read is handed over as data.** Every answer from a mail account begins by saying that mail is written by whoever sent it and is never instructions. Mail is the one read anybody at all can write into. A message's text is handed on without control characters, but for its line ends and tabs, and without the marks that turn text around, whether its sender wrote them or spelled them as numbers in HTML.
 - **The record of use keeps the kind and no more:** a search, or a message read. Not the words searched for, not who a message was from.
-- **Not on a paired host yet.** A host has no mail grant to ask its threads for, so a mail account is not copied, the request that carries a copy refuses one, and a host's thread that asks for mail is told threads there cannot read it. That is the slice's third part.
+- **Not on a paired host in this part.** That was the slice's third part, below.
+
+## November 13, 2026: mail on a paired host
+
+Slice 8's third part. A mail account is copied to a paired host like any other, and the host's own threads read it from the host's machine.
+
+- **A host says it keeps a mail account.** It lists `plugin-mail-copies` beside `plugin-account-copies`, to the same desktops. The desktop sends a mail account's password only to a host that lists it. A host that keeps copies and does not list it is from before its threads could ask before reading mail, so it is sent none, and its copy reads as too old on the page. One it holds all the same, as a host that was downgraded does, is taken back, and that does not wait on the user's choices being readable: whether a host may hold a mail account is not a choice. This is decision 4's rule again: an older host is never sent a secret it cannot keep safely.
+- **No new request.** A mail account travels in the request every copy does, with its address in the account. The host refuses one from a client it does not offer the feature to.
+- **The grants are the host's own.** A host keeps them in its own folder, for its own threads. A grant given on the desktop is for a desktop's thread and means nothing on a host, and the other way about: each thread asks where it runs.
+- **The card is in the host's English**, as a change's card on a host is, and names the provider the host's thread runs on. It reaches the user wherever that thread is shown and is answered only by a client the host lets answer there.
+- **A copy that goes takes its grants, in the step that deletes it.** A copy let go, replaced by another of its name, or deleted because its desktop was revoked or is no longer paired, takes every thread's leave to read it. A copy sent again comes under the same ID, and must not find a grant given for the one before it, so the grants are forgotten before any other change to the copies can begin, and a read that had already asked whether it may is told no. A card that is up when its copy goes asked about that copy: it remembers which, it is taken down, and a yes that reaches it all the same is not kept, so the copy sent again is asked about afresh. A grant left in the file by a host that went away part-way goes when the host next starts.
+- **One test of an open thread, on the host too.** The host's grants end by the test the desktop's do: the thread is not settled, by itself or with its project, not archived and not gone.
+- **Mail is read from the host's machine.** The host signs in to the account's own mail server with the copy's password from its encrypted credential file, as it reaches Vercel with a copy's token.
 
 ## Considered options
 

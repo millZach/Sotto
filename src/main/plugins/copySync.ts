@@ -11,6 +11,8 @@ export interface CopyTarget {
   readonly kind: 'local' | 'remote'
   readonly service: {
     readonly supportsPluginAccountCopies?: boolean | undefined
+    /** Whether the host keeps a mail account's copy: one from before it could is sent none. */
+    readonly supportsPluginMailCopies?: boolean | undefined
     keepPluginAccountCopy?(copy: PluginAccountCopy): Promise<PluginAccountCopyReceipt>
     removePluginAccountCopy?(accountId: string): Promise<PluginAccountCopyRemoved>
     pluginAccountCopies?(): Promise<HeldPluginAccountCopy[]>
@@ -34,10 +36,9 @@ const sameProjects = (one: readonly string[] | null | undefined, other: readonly
   one === other || (!!one && !!other && one.length === other.length && one.every((id, index) => id === other[index]))
 /**
  * Whether an account may have a copy anywhere else. One kept to chosen projects may not (Zach, November 12, 2026): a
- * project is a folder on this computer, which another computer does not have, so its secret stays here. A mail
- * account may not yet: a host has no mail grant to ask its threads for, so it is sent none.
+ * project is a folder on this computer, which another computer does not have, so its secret stays here.
  */
-const mayBeCopied = (account: PluginAccount): boolean => account.projects === null && !isMailPlugin(account.plugin)
+const mayBeCopied = (account: PluginAccount): boolean => account.projects === null
 /** Whether the user's choices ask for a copy of an account on a computer. */
 const chosen = (choices: Choices, accountId: string, computerId: string): boolean => choices.choices[accountId]?.[computerId] ?? choices.copyNew
 /** Whether a host holds an account as it is here. A host that does not say what it holds of it is not taken to. */
@@ -246,19 +247,25 @@ export class PluginAccountCopySync {
     // accounts as a plugin takes has room for the copy that replaces one. Taking a copy back is always safe: one asked
     // for again while this look ran is sent by the look that change asked for. An account is marked as having no copy
     // there only once the host has said so, by not listing it or by answering its removal.
+    // A mail account on a host from before it could keep one: its threads could not ask before they read it. It is
+    // sent none, and one it holds, as a host that was downgraded does, is taken back.
+    const cannotKeep = (account: PluginAccount): boolean => isMailPlugin(account.plugin) && service.supportsPluginMailCopies !== true
     const stillThere = new Set<string>()
     for (const copy of held) {
-      if (wanted.some(account => account.id === copy.id) || unsure.some(account => account.id === copy.id)) continue
+      // Whether a copy is wanted is the user's choice, and a choice that cannot be read takes nothing back. Whether
+      // a host may hold a mail account is not a choice: it is taken back all the same.
+      if ([...wanted, ...unsure].some(account => account.id === copy.id && !cannotKeep(account))) continue
       try { await service.removePluginAccountCopy(copy.id) } catch { stillThere.add(copy.id); failed = true }
     }
     for (const account of accounts) {
       if (wanted.includes(account)) continue
       states.delete(account.id); unwanted.delete(account.id)
       if (!unsure.includes(account)) unwanted.set(account.id, stillThere.has(account.id) ? 'there' : 'gone')
-      else if (held.some(copy => copy.id === account.id)) states.set(account.id, 'kept')
+      else if (!cannotKeep(account) && held.some(copy => copy.id === account.id)) states.set(account.id, 'kept')
     }
     for (const account of wanted) {
       unwanted.delete(account.id)
+      if (cannotKeep(account)) { states.set(account.id, 'too-old'); continue }
       const there = held.find(copy => copy.id === account.id)
       if (there && holdsAsHere(there, account)) { states.set(account.id, 'kept'); continue }
       // The account is read again, and nothing may have been asked for since this look began: an account narrowed or

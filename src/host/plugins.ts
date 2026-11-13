@@ -4,11 +4,13 @@ import { hostPluginAccountCopies, type HostPluginAccountCopies } from '../main/p
 import { PluginAccounts, type PluginCredentials } from '../main/plugins/accounts'
 import { wordPluginChangeInEnglish } from '../main/plugins/changeWordsPlain'
 import { readGitHubSignIn, sharedGitHubSignIn } from '../main/plugins/github/signIn'
+import type { MailConnect } from '../main/plugins/mail/read'
+import { MailGrants, mailThreadOpen } from '../main/plugins/mailGrants'
 import { PluginChangeRequests } from '../main/plugins/pendingChanges'
 import { PluginToolServer } from '../main/plugins/pluginTools'
 import { pluginToolHandlers, type PluginToolAccounts } from '../main/plugins/toolHandlers'
 import type { VercelFetch } from '../main/plugins/vercel/read'
-import type { AgentHostSnapshot } from '../shared/agents'
+import { PROVIDER_LABELS, type AgentHostSnapshot } from '../shared/agents'
 import type { GitHubSignIn } from '../shared/plugins'
 import { isThreadClosed } from '../shared/threadActivity'
 
@@ -17,6 +19,8 @@ export interface HostPluginStandIns {
   readonly gh?: RunGitCommand
   readonly vercelFetch?: VercelFetch
   readonly vercelBase?: string
+  /** How a mail server is reached, in place of TLS to the account's own. */
+  readonly mailConnect?: MailConnect
 }
 
 export interface HostPlugins {
@@ -28,6 +32,12 @@ export interface HostPlugins {
   readonly tools: PluginToolServer
   /** Who this machine's gh is signed in to GitHub as: the account this host's threads act as. A name, never a token. */
   readonly gitHubSignIn: () => Promise<GitHubSignIn>
+  /** Which of this host's threads the user has let read which mail accounts. */
+  readonly mailGrants: MailGrants
+  /** Deleted threads take their waiting cards and their mail grants with them. */
+  forgetThreads(threadIds: readonly string[]): void
+  /** Forgets the grants of copies this host no longer holds, when it starts. */
+  forgetGrantsOfGone(): Promise<void>
   close(): Promise<void>
 }
 
@@ -44,6 +54,11 @@ export interface HostPlugins {
  * the desktop. A thread is therefore asked for no project, and a copy that names projects all the same, as none
  * should, is used by no thread. The host keeps no record of use; **Recent use** on the desktop is the desktop's own.
  *
+ * A mail account's copy is read by this host's threads from this machine, each thread asking the user once (decision
+ * 8). The mail grants are the host's own, in its own folder, for its own threads: a grant given on the desktop is
+ * for a desktop's thread and means nothing here. A copy that is let go, or whose desktop is revoked, takes its
+ * grants with it, since a copy sent again comes under the same ID.
+ *
  * A copy is its sender's: a thread here uses one only while the desktop that sent it is still paired. Revoking a
  * desktop deletes its copies, but a delete can fail, or the host can go away first, and a revoked desktop can never
  * ask for it again. So who sent a copy is asked at every use, the token included, and what no paired desktop sent is
@@ -54,6 +69,8 @@ export function hostPlugins(options: {
   readonly credentials: PluginCredentials
   /** One of the host's threads as the coordinator holds it, read in place, or nothing for a thread it does not hold. */
   readonly thread: (threadId: string) => AgentHostSnapshot['threads'][number] | undefined
+  /** One of the host's projects, read in place, for whether the user settled it. */
+  readonly project?: (projectId: string) => AgentHostSnapshot['projects'][number] | undefined
   readonly admits: (threadId: string) => boolean
   /** Whether a client is still paired with this host, read in place. */
   readonly paired: (clientId: string) => boolean
@@ -67,8 +84,25 @@ export function hostPlugins(options: {
   const stop = new AbortController()
   const gh = options.standIns?.gh ?? runGitStatusCommand
   const { thread } = options
-  const changes = new PluginChangeRequests({ open: threadId => { const found = thread(threadId); return found !== undefined && !isThreadClosed(found) } })
-  const copies = hostPluginAccountCopies(options.directory, options.credentials, undefined, accounts)
+  // Whether a thread is open as a mail grant means it, by the one test the desktop's grants go by: not settled, by
+  // itself or with its project, not archived and not gone.
+  const mailGrants = new MailGrants(options.directory, { open: threadId => {
+    const found = thread(threadId)
+    const project = found ? options.project?.(found.projectId) : undefined
+    return found !== undefined && mailThreadOpen({ threads: [found], projects: project ? [project] : [] }, threadId)
+  } })
+  const changes = new PluginChangeRequests({ open: threadId => { const found = thread(threadId); return found !== undefined && !isThreadClosed(found) }, noticed: () => { mailGrants.noticed() } })
+  // A copy that goes takes every thread's leave to read it, in the step that deletes it: whether the desktop let it
+  // go, another copy of its name took its place, or its desktop was revoked. A copy sent again comes under the same
+  // ID, and must not find a grant that was given for the one before it.
+  const store = hostPluginAccountCopies(options.directory, options.credentials, undefined, accounts, accountId => { void mailGrants.forgetAccount(accountId).catch(() => undefined) })
+  // This host's threads can read a mail account and ask before they do, so it keeps one.
+  const copies: HostPluginAccountCopies = { ...store, mail: true }
+  // A grant left in the file for a copy that is gone, as a host that went away part-way leaves, goes at the next start.
+  const forgetGrantsOfGone = async (): Promise<void> => {
+    const held = new Set((await accounts.list()).map(account => account.id))
+    for (const accountId of new Set((await mailGrants.list()).map(grant => grant.accountId))) if (!held.has(accountId)) await mailGrants.forgetAccount(accountId)
+  }
   // Who sent each copy, as last read. A token is read without waiting, so it is checked against this, and against
   // whether that desktop is paired now: a copy listed a moment before its desktop was revoked hands over nothing.
   let sentBy: Readonly<Record<string, string>> = {}
@@ -92,9 +126,17 @@ export function hostPlugins(options: {
     gitHubSignIn, gh,
     vercelFetch: options.standIns?.vercelFetch ?? ((url, init) => fetch(url, init)),
     vercelOptions: { ...(options.standIns?.vercelBase ? { base: options.standIns.vercelBase } : {}), signal: stop.signal },
+    // Mail is read from this machine, with the copy's password from the host's own credential file. The card that
+    // asks names the provider the host's thread runs on, since what it reads goes there.
+    mail: {
+      grants: mailGrants,
+      providerOf: threadId => { const provider = thread(threadId)?.providerId; return provider ? PROVIDER_LABELS[provider] : '' },
+      options: { signal: stop.signal, ...(options.standIns?.mailConnect ? { connect: options.standIns.mailConnect } : {}) },
+    },
   }))
   return {
-    copies, changes, tools, gitHubSignIn,
-    close: async () => { stop.abort(); changes.close(); await tools.close() },
+    copies, changes, tools, gitHubSignIn, mailGrants, forgetGrantsOfGone,
+    forgetThreads: threadIds => { changes.forgetThreads(threadIds); void mailGrants.forgetThreads(threadIds).catch(() => undefined) },
+    close: async () => { stop.abort(); changes.close(); mailGrants.close(); await tools.close() },
   }
 }

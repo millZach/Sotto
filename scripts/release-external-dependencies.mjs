@@ -124,8 +124,8 @@ export function verifyExternalDependencyInventories(
 // The host launches Git on a worker thread too (node:events, node:worker_threads), as the desktop does.
 // The unprefixed four are pngjs's own `require('zlib')`-style spellings, kept verbatim by Rollup
 // in the picture worker it is compiled into (ADR-0203). Sorted, as the build writes them.
-// `node:tls` is how a mail account is read (ADR-0205). It comes with the plugin tools' handlers, which a host
-// shares with the desktop; a host is given no mail account and no way to read one until slice 8's third part.
+// `node:tls` is how a mail account is read (ADR-0205): a host's threads read a mail account's copy from the
+// host's own machine, over TLS to that account's mail server.
 export const HOST_EXTERNAL_IMPORTS = Object.freeze([
   'assert', 'buffer',
   'node:child_process', 'node:crypto', 'node:events', 'node:fs', 'node:fs/promises', 'node:http', 'node:net',

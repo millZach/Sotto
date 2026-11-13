@@ -17,13 +17,14 @@ const PERSONAL: PluginAccount = { ...WORK, id: '22222222-2222-4222-8222-00000000
 const tokenOf = (id: string): string => `made-up-token-for-${id.slice(-4)}`
 
 /** A paired host as the desktop reaches it, keeping what it is sent the way a real one does. */
-function fakeHost(hostId: string, options: { feature?: boolean; settings?: boolean; refuses?: PluginAccountCopyReceipt; room?: number } = {}) {
+function fakeHost(hostId: string, options: { feature?: boolean; mail?: boolean; settings?: boolean; refuses?: PluginAccountCopyReceipt; room?: number } = {}) {
   const held = new Map<string, PluginAccountCopy>()
   const calls: string[] = []
   /** `down`: nothing is answered. `keeps`: a removal is not answered. `asked`: a list waits for it, as a slow host's does. */
   const state: { down: boolean; keeps: boolean; asked?: Promise<void> } = { down: false, keeps: false }
   const target: CopyTarget = { hostId, kind: 'remote', service: {
     supportsPluginAccountCopies: options.feature !== false,
+    supportsPluginMailCopies: options.feature !== false && options.mail !== false,
     keepPluginAccountCopy: async copy => {
       calls.push(`keep ${copy.account.name}`)
       if (state.down) throw new Error('The host did not answer.')
@@ -232,21 +233,52 @@ describe('sending account copies to paired hosts (ADR-0205, amending ADR-0025)',
     expect(await d.states()).toEqual(['Work@host-forge: kept', 'Personal@host-forge: kept'])
   })
 
-  it('keeps a mail account on this computer for now: a host has no mail grant to ask its threads for', async () => {
+  it('sends a mail account to a host that keeps one, and none to a host from before it could', async () => {
     const mail: PluginAccount = { ...PERSONAL, plugin: 'gmail', name: 'Mail', address: 'reader@example.com', signedInAs: null }
     const d = await desk([WORK, mail])
     const forge = fakeHost('host-forge')
+    // A host on the build before this one keeps copies, and its threads could not ask before they read mail.
+    const anvil = fakeHost('host-anvil', { mail: false })
     d.connect(forge)
+    d.connect(anvil, 'anvil')
     await d.sync.idle()
-    expect(forge.calls).toEqual(['list', 'keep Work'])
-    expect(await d.states()).toEqual(['Work@host-forge: kept', 'Mail@host-forge: here-only'])
-    // Asking for its copy by its switch sends nothing either.
-    await d.sync.setCopy(mail.id, 'saved-host-forge', true)
+    expect(forge.calls).toEqual(['list', 'keep Work', 'keep Mail'])
+    // The copy carries the address, which is what signs in.
+    expect(forge.held.get(mail.id)).toEqual({ account: mail, secret: tokenOf(mail.id) })
+    expect(pluginAccountCopySchema.safeParse(forge.held.get(mail.id)).success).toBe(true)
+    // The older host is sent the Vercel account and never the mail account's password.
+    expect(anvil.calls).toEqual(['list', 'keep Work'])
+    expect([...anvil.held.keys()]).toEqual([WORK.id])
+    expect(await d.states()).toEqual(['Work@host-forge: kept', 'Work@host-anvil: kept', 'Mail@host-forge: kept', 'Mail@host-anvil: too-old'])
+    // Looked at again, it is still sent none.
+    anvil.calls.length = 0
+    d.sync.accountsChanged()
     await d.sync.idle()
-    expect([...forge.held.keys()]).toEqual([WORK.id])
-    // And the one request that carries a secret to a host carries no mail account's.
-    expect(pluginAccountCopySchema.safeParse({ account: mail, secret: 'made-up-password' }).success).toBe(false)
-    expect(pluginAccountCopySchema.safeParse({ account: WORK, secret: 'made-up-token' }).success).toBe(true)
+    expect(anvil.calls).toEqual(['list'])
+
+    // A host that kept a mail account and now runs a build from before it could: the copy is not said to be kept,
+    // and it is taken back, since that host's threads would not ask before they read it.
+    const older = fakeHost('host-older', { mail: false })
+    older.held.set(mail.id, { account: mail, secret: tokenOf(mail.id) })
+    d.connect(older, 'older')
+    await d.sync.idle()
+    expect(older.calls).toEqual(['list', 'remove Mail', 'keep Work'])
+    expect((await d.states()).filter(state => state.includes('host-older'))).toEqual(['Work@host-older: kept', 'Mail@host-older: too-old'])
+  })
+
+  it('takes a mail copy back from a host that cannot ask even while its record of choices cannot be read', async () => {
+    const mail: PluginAccount = { ...PERSONAL, plugin: 'gmail', name: 'Mail', address: 'reader@example.com', signedInAs: null }
+    const d = await desk([WORK, mail])
+    await writeFile(join(d.directory, 'plugin-account-copy-choices.json'), 'not json')
+    const older = fakeHost('host-older', { mail: false })
+    older.held.set(WORK.id, { account: WORK, secret: tokenOf(WORK.id) })
+    older.held.set(mail.id, { account: mail, secret: tokenOf(mail.id) })
+    d.connect(older, 'older')
+    await d.sync.idle()
+    // Nothing is sent and nothing else is taken back while the choices cannot be read; the mail copy is not a choice.
+    expect(older.calls).toEqual(['list', 'remove Mail'])
+    expect([...older.held.keys()]).toEqual([WORK.id])
+    expect(await d.states()).toEqual(['Work@host-older: kept', 'Mail@host-older: no-record'])
   })
 
   it('takes back a narrowed account’s copy from a host that was away when it was narrowed', async () => {

@@ -50,6 +50,10 @@ export class MailGrants {
   private behind = false
   private timer: ReturnType<typeof setTimeout> | undefined
   private closed = false
+  /** Accounts being forgotten, and how many times over. None of their grants is honoured, from the moment that was asked. */
+  private readonly forgetting = new Map<string, number>()
+  /** How many times each account has been forgotten in this run: which copy of it is held now. */
+  private readonly generations = new Map<string, number>()
   constructor(directory: string, private readonly options: {
     /** Whether a thread is still open: not settled, archived or gone. */
     readonly open: (threadId: string) => boolean
@@ -62,6 +66,7 @@ export class MailGrants {
   /** Whether the thread may read the account without asking. A thread that is no longer open holds no grant. */
   has(threadId: string, accountId: string): Promise<boolean> {
     return this.inTurn(async () => {
+      if (this.forgetting.has(accountId)) return false
       const grants = await this.load()
       if (!grants.some(grant => grant.threadId === threadId && grant.accountId === accountId)) return false
       if (this.isOpen(threadId)) return true
@@ -79,15 +84,27 @@ export class MailGrants {
   }
 
   /**
-   * Keeps the user's yes. It holds for this run of Sotto even where the file could not be written. A thread that is
-   * no longer open is given none.
+   * Which copy of an account is held now. It changes each time the account is forgotten, so an account that goes and
+   * comes back under the same ID, as a host's copy can, is not taken for the one before. A card remembers the copy it
+   * asked about, and its yes is for that copy alone.
    */
-  grant(threadId: string, accountId: string): Promise<void> {
+  generation(accountId: string): number {
+    return this.generations.get(accountId) ?? 0
+  }
+
+  /**
+   * Keeps the user's yes, and says whether it was kept. It holds for this run of Sotto even where the file could not
+   * be written. A thread that is no longer open is given none, and neither is a yes that was asked for about another
+   * copy of the account than the one held now (`generation`, as it stood when the card went up).
+   */
+  grant(threadId: string, accountId: string, generation?: number): Promise<boolean> {
     return this.inTurn(async () => {
-      if (!this.isOpen(threadId)) return
+      if (!this.isOpen(threadId)) return false
+      if (generation !== undefined && this.generation(accountId) !== generation) return false
       const grants = await this.load()
-      if (grants.some(grant => grant.threadId === threadId && grant.accountId === accountId)) return
+      if (grants.some(grant => grant.threadId === threadId && grant.accountId === accountId)) return true
       await this.keep([...grants, { threadId, accountId, at: (this.options.now?.() ?? new Date()).toISOString() }].slice(-GRANTS_MAX))
+      return true
     })
   }
 
@@ -113,9 +130,19 @@ export class MailGrants {
     return this.drop(grant => gone.has(grant.threadId))
   }
 
-  /** A removed account takes its grants with it. */
+  /**
+   * A removed account takes its grants with it, at once: a read that asked whether it may before this was called,
+   * and is answered after, is told no. On a host a copy that is let go can be sent again under the same ID a moment
+   * later, and a read that began for the old one must not go by its grant.
+   */
   forgetAccount(accountId: string): Promise<void> {
-    return this.drop(grant => grant.accountId === accountId)
+    this.forgetting.set(accountId, (this.forgetting.get(accountId) ?? 0) + 1)
+    // A card that is up for this account asked about the copy before: its yes is no longer for what is held.
+    this.generations.set(accountId, this.generation(accountId) + 1)
+    return this.drop(grant => grant.accountId === accountId).finally(() => {
+      const left = (this.forgetting.get(accountId) ?? 1) - 1
+      if (left > 0) this.forgetting.set(accountId, left); else this.forgetting.delete(accountId)
+    })
   }
 
   list(): Promise<MailGrant[]> {
