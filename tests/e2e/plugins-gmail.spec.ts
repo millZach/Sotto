@@ -12,7 +12,8 @@ import { resizeContentWindow } from './support/sottoWindow'
  * made-up mail server on this computer. An app password Gmail refuses saves nothing and says so; a good one, pasted
  * with the spaces Google shows it with, is kept and never shown again or written in the clear. The row fits the
  * three checked sizes in both modes. A thread's first read then waits on a card in the thread: said no to, nothing
- * is read; allowed, the thread reads, and does not ask again. Nothing reaches Gmail, and the address, the app
+ * is read; allowed, the thread reads, and does not ask again until its ··· menu's Ask before this thread reads is
+ * pressed. Nothing reaches Gmail, and the address, the app
  * passwords and the message are made up. Captures go to artifacts/plugins-gmail for the verification note.
  */
 const evidence = evidenceDirectory('artifacts/plugins-gmail')
@@ -140,6 +141,13 @@ test('A Gmail account is added from its row, and a thread reads it only once the
       await expect(deny).toBeVisible()
       // Nothing has been asked of the mailbox while the card waits.
       expect(mail.commands.some(command => command.startsWith('EXAMINE'))).toBe(false)
+      // The thread cannot read the account yet, so its ··· menu has nothing to stop.
+      const more = pane.getByRole('button', { name: 'More actions', exact: true })
+      const askAgain = page.getByRole('menuitem', { name: 'Ask before this thread reads Personal', exact: true })
+      await more.click()
+      await expect(page.getByRole('menuitem').first()).toBeVisible()
+      await expect(askAgain).toHaveCount(0)
+      await page.keyboard.press('Escape')
 
       for (const [mode, width, height] of [['dark', 1280, 800], ['light', 1280, 800], ['dark', 1600, 1000], ['dark', 820, 560]] as const) {
         await page.evaluate(async appearance => { await window.sotto!.updateSettings({ appearance }) }, mode)
@@ -174,14 +182,30 @@ test('A Gmail account is added from its row, and a thread reads it only once the
       expect((await answered(page)).isError).toBe(false)
       await expect(request).toHaveCount(0)
 
+      // Now that it can read the account, the thread's ··· menu offers to ask before it does. Pressed, the row goes,
+      // and the thread's next read waits on a card again.
+      await more.click()
+      await expect(askAgain).toBeVisible()
+      await shot(page, 'mail-grant-menu-dark-1280x800')
+      await askAgain.click()
+      await more.click()
+      await expect(page.getByRole('menuitem').first()).toBeVisible()
+      await expect(askAgain).toHaveCount(0)
+      await page.keyboard.press('Escape')
+      await read(page, threadId, { plugin: 'gmail', search: {} })
+      await expect(request).toHaveCount(1, { timeout: 30_000 })
+      await allow.click()
+      expect((await answered(page)).isError).toBe(false)
+      await expect(request).toHaveCount(0)
+
       // Settings › Plugins says what was read and what was only asked for, newest first, and nothing of the mail.
       await openPage(page, 'Settings')
       await sections.getByRole('tab', { name: 'Plugins', exact: true }).click()
       await row.click()
       const used = card.getByRole('region', { name: 'Recent use' }).getByRole('listitem')
-      await expect(used).toHaveCount(3)
+      await expect(used).toHaveCount(4)
       await expect(used.nth(0)).toContainText('Searched mail in “Check the checkout page”')
-      await expect(used.nth(2)).toContainText('Asked to search mail in “Check the checkout page” You said no.')
+      await expect(used.nth(3)).toContainText('Asked to search mail in “Check the checkout page” You said no.')
       await expect(panel).not.toContainText('Lunch on Friday')
       await shot(page, 'gmail-recent-use-dark-1280x800')
 

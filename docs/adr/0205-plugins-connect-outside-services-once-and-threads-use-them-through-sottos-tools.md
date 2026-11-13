@@ -210,6 +210,17 @@ Slice 8's fourth part puts Gmail on Settings › Plugins, in a **Mail** group of
 - **A first read the user did not allow reads as what was asked.** Recent use says "Asked to search mail" with "You said no." or "Nobody answered in time.", as it does of a change that was not made.
 - **Where a grant is stopped is the thread.** Zach decided on November 13, 2026, on a question card, from a mock-up with three answers kept as the tag `prototype/plugin-mail-grants`: a list of threads on the account's row with Stop, an item in the thread's ··· menu, or both. He picked the menu item, **Ask before this thread reads** the account, shown only while the thread can read it, as the browser's is. The page lists no threads. That is the slice's last part; until it lands a grant ends when its thread is settled, archived or deleted, or its account is removed.
 
+## November 13, 2026: stopping a mail grant
+
+Slice 8's last part builds what Zach picked that day: a grant is stopped in the thread.
+
+- **The thread's ··· menu has a row for each mail account the thread can read:** **Ask before this thread reads** the account, by the name the user gave it. It is there only while the thread holds the grant, as the browser's row is, so a thread that has never been allowed has nothing to stop. Pressed, the grant ends and the thread asks again before its next read.
+- **The window learns names, and only its own thread's.** A menu asks main for one thread's grants and is told the accounts by Sotto's ID and the user's name for each. Not an address, and nothing of another thread. Main says when some grant changed, and the menu reads its own again.
+- **A Stop that could not be written says so,** in the thread, and the row stays: the thread can still read the account. That is the grant store's rule, that a Stop is done when the file says so.
+- **This computer's threads.** A thread on a paired host keeps its grant on that host, and its menu here has no row. It ends when that thread is settled, archived or deleted, when the copy is let go, or when the account is removed. Stopping one from the desktop needs a request in the host protocol, which this slice does not add.
+- **Watcher's room has no ··· menu.** Watcher's grant ends when Watcher is replaced, since the new Watcher is another thread and asks for itself, and when the account is switched off or removed. Whether Watcher's room needs a control of its own is Zach's to say.
+- **Gmail's row says where.** Its first paragraph ends by saying that a thread is made to ask again from its ··· menu, since the card says "until you stop it".
+
 ## Considered options
 
 - **Where secrets live.** Each computer its own, as ADR-0025 has it (rejected: every account typed in on every computer). The desktop keeps them and answers a host's calls (rejected: forge's threads would lose plugins while the laptop is closed). One operating-system keychain entry per account (rejected: a native dependency, which ADR-0018 says needs its own ADR).

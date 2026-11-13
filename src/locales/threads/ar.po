@@ -2031,6 +2031,10 @@ msgstr ""
 msgid "Ask about your threads, or say what to start or send"
 msgstr ""
 
+#: src/renderer/src/agents/mailGrantMenu.tsx
+msgid "Ask before this thread reads {name}"
+msgstr ""
+
 #. A permission mode: the agent asks before it acts.
 #: src/renderer/src/agents/permissionPresentation.tsx
 msgid "Ask for approval"
@@ -8290,6 +8294,10 @@ msgstr ""
 
 #: src/renderer/src/agents/DelegatedWork.tsx
 msgid "Sotto could not stop that detached run. It may still be running."
+msgstr ""
+
+#: src/renderer/src/agents/mailGrantMenu.tsx
+msgid "Sotto could not stop this thread reading {name}, so it can still read it. Try again."
 msgstr ""
 
 #: src/renderer/src/agents/delegationWords.ts

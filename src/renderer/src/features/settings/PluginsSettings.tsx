@@ -306,7 +306,7 @@ function useAccountWords(plugin: AccountPluginId): AccountWords {
   const { t } = useLingui()
   if (isMailPlugin(plugin)) {
     return {
-      about: t`Search and read mail with an app password. Each thread asks you once, in the thread, before it reads an account’s mail, and what it reads goes to that thread’s provider. A thread cannot send, move or delete mail, and a message it reads stays unread for you.`,
+      about: t`Search and read mail with an app password. Each thread asks you once, in the thread, before it reads an account’s mail, and what it reads goes to that thread’s provider. A thread cannot send, move or delete mail, and a message it reads stays unread for you. To make a thread ask again, open its ··· menu and press Ask before this thread reads the account.`,
       add: t`Add a Gmail account`, addAnother: t`Add another Gmail account`,
       secretLabel: t`App password`,
       secretDescription: t`Sixteen characters, made at ${GOOGLE_APP_PASSWORDS_PAGE}. It needs 2-Step Verification on the Google account. Sotto checks it with Gmail before saving it, and never shows it again.`,

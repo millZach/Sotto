@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { MailGrants, mailThreadOpen } from '../../../../src/main/plugins/mailGrants'
+import { MailGrants, mailThreadOpen, ownThreadId } from '../../../../src/main/plugins/mailGrants'
 
 const folders: string[] = []
 afterEach(async () => {
@@ -176,6 +176,29 @@ describe('mail grants (ADR-0205, decision 8)', () => {
     expect(await again().list()).toEqual([])
   })
 
+  it('says when a grant is given or ended, so a thread’s menu can read its own again', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'sotto-mail-grants-'))
+    folders.push(directory)
+    const closed = new Set<string>()
+    let told = 0
+    const made = new MailGrants(directory, { open: threadId => !closed.has(threadId), changed: () => { told += 1 } })
+    await made.grant('thread-one', PERSONAL)
+    expect(told).toBe(1)
+    // Given again, nothing changed.
+    await made.grant('thread-one', PERSONAL)
+    expect(told).toBe(1)
+    expect(await made.stop('thread-one', PERSONAL)).toBe(true)
+    expect(told).toBe(2)
+    await made.grant('thread-two', PERSONAL)
+    closed.add('thread-two')
+    await made.endClosed()
+    expect(told).toBe(4)
+    // A listener that fails does not stop a grant being kept.
+    const failing = new MailGrants(directory, { open: () => true, changed: () => { throw new Error('The window has gone.') } })
+    await failing.grant('thread-three', WORK)
+    expect(await failing.has('thread-three', WORK)).toBe(true)
+  })
+
   it('takes a file it cannot read as no grants, so every thread asks again', async () => {
     const { made, again, file } = await grants()
     await writeFile(file, '{ not json')
@@ -204,4 +227,13 @@ describe('a thread that is open, as a mail grant means it', () => {
     expect([open('settled'), open('in-a-settled-project')]).toEqual([false, false])
     expect([open('archived'), open('parked'), open('marked-settled'), open('not-held')]).toEqual([false, false, false, false])
   })
+})
+
+it('reads a thread as a window names it as this computer’s own, and takes none of a paired host’s for its own', () => {
+  const here = '11111111-1111-4111-8111-111111111111', forge = '22222222-2222-4222-8222-222222222222'
+  // A window names a thread by a key that says which computer holds it.
+  expect(ownThreadId(`host:${here}:thread-one`, here)).toBe('thread-one')
+  expect(ownThreadId('thread-one', here)).toBe('thread-one')
+  // A thread on a paired host keeps its grants there: this computer has none for it and ends none.
+  expect(ownThreadId(`host:${forge}:thread-one`, here)).toBeNull()
 })

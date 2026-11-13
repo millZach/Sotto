@@ -7,6 +7,7 @@ import { isThreadArchived, isThreadClosed, isThreadTurnRunning, threadOrnamentAl
 import { continueThreadRefusal } from '../../../shared/continueThread'
 import { ThreadNameField } from './ThreadName'
 import type { AgentConnection } from './AgentContext'
+import { useMailGrantMenu } from './mailGrantMenu'
 import { PaneMenu, type PaneMenuItem } from './PaneMenu'
 import { PaneCouncilToggle, PaneTerminalOnHost, PaneTerminalToggle } from '../tools/PaneTerminalToggle'
 import { ToolsToggle } from '../tools/ToolsToggle'
@@ -416,6 +417,9 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   // Compaction is offered where it can run: the banner under the composer only ever recommends it.
   const context: PaneMenuItem[] = compactionOffered(capabilities, thread) && rowConnected && !closed && !compactionBusy(thread, threadBusy)
     ? [{ id: 'compact', label: t`Compact context`, icon: <Shrink size={15} aria-hidden="true" />, run: () => void command({ type: 'compact-thread', threadId: thread.id }) }] : []
+  // Ask before this thread reads a mail account (ADR-0205, decision 8; Owl only): there while the thread holds a
+  // grant for it, and for a thread on this computer, whose grants this computer keeps.
+  const mailGrantMenu = useMailGrantMenu(thread.id, !thread.remoteHost)
   const shelf: PaneMenuItem[] = row.settledBy === null
     ? [{ id: 'settle', label: t({ message: 'Settle', comment: 'Settle the thread: put it away on the Settled shelf.' }), icon: <Archive size={15} aria-hidden="true" />, disabled: threadBusy, shortcut: chordShown('settle'), run: () => void settleThread(thread, row.project) }]
     : row.settledBy === 'thread'
@@ -507,7 +511,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
         {tools ? <ToolsToggle threadId={thread.id} focused={focused} state={state} /> : null}
         {terminal ? <PaneTerminalToggle threadId={thread.id} /> : tools && thread.remoteHost ? <PaneTerminalOnHost host={threadMachineName(state, thread)} /> : null}
         {actions}
-        <PaneMenu groups={[[...(beside ? [beside] : []), ...paneChrome.layout], initialize, naming, [...continuing, ...moving], context, shelf, recovery, removal]} />
+        <PaneMenu groups={[[...(beside ? [beside] : []), ...paneChrome.layout], initialize, naming, [...continuing, ...moving], context, mailGrantMenu.items, shelf, recovery, removal]} />
         {close ? <button type="button" className="pane-action thread-pane__close tt-focusable" data-pane-chrome data-pane-close aria-label={close.label}
           aria-keyshortcuts={close.keys} title={close.title} onClick={close.run}><X size={16} aria-hidden="true" /></button> : null}
         {headerName.name}
@@ -519,6 +523,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     {deleteDialog}
     {thread.historySaveNotice ? <p className="agent-error thread-workspace__error" role="alert">{thread.historySaveNotice}</p> : null}
     {thread.requestNotice ? <p className="agent-error thread-workspace__error" role="alert">{thread.requestNotice}</p> : null}
+    {mailGrantMenu.problem ? <p className="agent-error thread-workspace__error" role="alert">{mailGrantMenu.problem}</p> : null}
     {error && error !== thread.requestNotice && !deliveryExplains && !answerExplains && !settingsExplains && !turnExplains && error !== toolbarExplained && error !== gitExplained ? <p className="agent-error thread-workspace__error" role="alert">{error}</p> : null}
     <ThreadWebLinks threadId={thread.id} threadTitle={thread.title} focused={focused} onPairedHost={remote}>{/* A reply's commands run only in a pane with its own Terminal drawer, never a paired host's thread (ADR-0139; Owl only). */}<RunCommands threadId={thread.id} offered={drawer != null && !thread.remoteHost}><ThreadTranscript row={row} state={state} command={command} store={store} followSignal={followSignal} watcher={ownPane} greetingSlot={greetingSlot} emptyNote={ownPane ? watcherEmpty : undefined}
       onReadingBack={slimOn ? readBack : undefined} onTypeAhead={typeAhead} onQuoted={focusAnswerComposer}>
