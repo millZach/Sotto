@@ -95,16 +95,15 @@ function fileName(...sets: readonly Map<string, string>[]): string | null {
  */
 export function mailParts(structure: ImapItem | undefined): MailPart[] {
   const parts: MailPart[] = []
-  const walk = (item: ImapItem | undefined, section: string): void => {
+  const walk = (item: ImapItem | undefined, section: string, attached: boolean): void => {
     const fields = listOf(item)
     if (fields.length === 0) return
     if (Array.isArray(fields[0])) {
-      let count = 0
-      for (const child of fields) {
-        if (!Array.isArray(child)) break
-        count += 1
-        walk(child, section ? `${section}.${count}` : String(count))
-      }
+      const count = fields.findIndex(child => !Array.isArray(child))
+      const children = count < 0 ? fields : fields.slice(0, count)
+      // Past the parts stand the group's kind, its parameters and how it was sent. A group sent as a file is files throughout.
+      const within = attached || (count >= 0 && textOf(listOf(fields[count + 2])[0]).toLowerCase() === 'attachment')
+      children.forEach((child, index) => walk(child, section ? `${section}.${index + 1}` : String(index + 1), within))
       return
     }
     const kind = textOf(fields[0]).toLowerCase()
@@ -117,16 +116,23 @@ export function mailParts(structure: ImapItem | undefined): MailPart[] {
     parts.push({
       section: section || '1', type: `${kind}/${subtype}`, charset: parameters.get('charset') || null, encoding: textOf(fields[5]).toLowerCase(),
       size: Number.isSafeInteger(size) && size >= 0 ? size : 0, name: fileName(pairs(disposition[1]), parameters),
-      attached: textOf(disposition[0]).toLowerCase() === 'attachment',
+      attached: attached || textOf(disposition[0]).toLowerCase() === 'attachment',
     })
   }
-  walk(structure, '')
+  walk(structure, '', false)
   return parts
 }
 
-/** The part that is the message's text: its plain text where it has one, or its HTML. Never a file that was attached. */
+/**
+ * The part that is the message's text: its plain text where it has one, or its HTML. Never a file: a part the sender
+ * marked as attached, or one with a file name, is not read as text. A message that is one text part and nothing else
+ * is that text, whatever it is called.
+ */
 export function textPart(parts: readonly MailPart[]): MailPart | null {
-  return parts.find(part => part.type === 'text/plain' && !part.attached) ?? parts.find(part => part.type === 'text/html' && !part.attached) ?? null
+  const [only] = parts
+  if (parts.length === 1 && only && !only.attached && (only.type === 'text/plain' || only.type === 'text/html')) return only
+  const text = (type: string): MailPart | undefined => parts.find(part => part.type === type && !part.attached && part.name === null)
+  return text('text/plain') ?? text('text/html') ?? null
 }
 
 /** The files that came with a message: every part with a name or marked as attached, and every part that is not text. */
@@ -181,16 +187,18 @@ function withoutHidden(html: string): string {
  */
 export function htmlToText(html: string): string {
   const shown = withoutHidden(html).replace(/\s+/gu, ' ')
-  // A link's address is set after its words, unless the words already say it.
-  const links: { readonly address: string; readonly from: number }[] = []
+  // A link's address is set after its words, unless the words already say it. A link does not hold another: one
+  // that opens while another is open takes its place, so each stretch of words is looked through once.
+  let link: { readonly address: string; readonly from: number } | null = null
   const linked = shown.replace(/<a\b[^<>]*>|<\/a\s*>/giu, (tag, offset: number) => {
     if (tag[1] !== '/') {
       const href = /\bhref\s*=\s*(?:"([^"]*)"|'([^']*)')/iu.exec(tag)
-      links.push({ address: (href?.[1] ?? href?.[2] ?? '').trim(), from: offset + tag.length })
+      link = { address: (href?.[1] ?? href?.[2] ?? '').trim(), from: offset + tag.length }
       return ''
     }
-    const link = links.pop()
-    return link && /^https?:/iu.test(link.address) && !shown.slice(link.from, offset).includes(link.address) ? ` (${link.address})` : ''
+    const closed = link
+    link = null
+    return closed && /^https?:/iu.test(closed.address) && !shown.slice(closed.from, offset).includes(closed.address) ? ` (${closed.address})` : ''
   })
   return linked
     .replace(/<br\b[^<>]*>/giu, '\n')

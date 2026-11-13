@@ -155,11 +155,15 @@ export async function startFakeImapServer(options: FakeImapOptions): Promise<Fak
     let open: FakeMailbox | undefined
     const say = (...lines: readonly (string | Buffer)[]): void => { if (!socket.destroyed) socket.write(cat(...lines)) }
 
-    const fetch = (tag: string, set: string, items: string): void => {
+    /** A fetch of messages named by their own numbers (`UID FETCH 12,13`) or by their places in the mailbox (`FETCH 2:4`). */
+    const fetch = (tag: string, set: string, items: string, byUid: boolean): void => {
       if (!open) return say(`${tag} NO No mailbox is open\r\n`)
-      const wanted = new Set(set.split(',').map(Number))
+      const wanted = new Set(set.split(',').flatMap(piece => {
+        const [from = 0, to = from] = piece.split(':').map(Number)
+        return Array.from({ length: Math.max(0, to - from + 1) }, (_none, step) => from + step)
+      }))
       open.messages.forEach((mail, index) => {
-        if (!wanted.has(mail.uid)) return
+        if (!wanted.has(byUid ? mail.uid : index + 1)) return
         const fields: (string | Buffer)[] = [`UID ${mail.uid}`]
         if (/\bFLAGS\b/u.test(items)) fields.push(` FLAGS (${mail.seen ? '\\Seen' : ''})`)
         if (/\bINTERNALDATE\b/u.test(items)) fields.push(` INTERNALDATE "${mail.received}"`)
@@ -214,7 +218,7 @@ export async function startFakeImapServer(options: FakeImapOptions): Promise<Fak
         if (!open) return say(`${tag} NO No mailbox is open\r\n`)
         return say(`* SEARCH${open.messages.filter(mail => matches(mail, rest)).map(mail => ` ${mail.uid}`).join('')}\r\n${tag} OK SEARCH completed (Success)\r\n`)
       }
-      if (verb === 'UID FETCH') return fetch(tag, rest[0] ?? '', rest.slice(1).join(' '))
+      if (verb === 'UID FETCH' || verb === 'FETCH') return fetch(tag, rest[0] ?? '', rest.slice(1).join(' '), uid)
       return say(`${tag} BAD Unknown command\r\n`)
     }
 

@@ -1,6 +1,6 @@
 import type { Duplex } from 'node:stream'
 import { connect as connectTls } from 'node:tls'
-import { atomOf, IMAP_LITERAL_MAX, ImapConnection, ImapProtocolError, listOf, textOf, type ImapAnswer, type ImapArg, type ImapItem } from './imapWire'
+import { atomOf, IMAP_LITERAL_MAX, ImapClosed, ImapConnection, ImapProtocolError, listOf, textOf, type ImapAnswer, type ImapArg, type ImapItem } from './imapWire'
 import { attachedParts, decodeMailboxName, decodePart, htmlToText, mailHeaders, mailParts, textPart } from './message'
 
 /**
@@ -96,10 +96,13 @@ export type MailFound = { readonly ok: true; readonly mailbox: string; /** How m
 export type MailOpened = { readonly ok: true; readonly mailbox: string; readonly message: MailMessage } | MailFailure
 
 const overTls: MailConnect = (server, signal) => new Promise((resolve, reject) => {
-  if (signal.aborted) return reject(new Error('Stopped before connecting.'))
+  if (signal.aborted) return reject(new ImapClosed())
   // The certificate is checked against the server's name, as Node does unless told otherwise.
   const socket = connectTls({ host: server.host, port: server.port })
-  const stop = (): void => { socket.destroy() }
+  const stop = (): void => {
+    socket.destroy()
+    reject(new ImapClosed())
+  }
   signal.addEventListener('abort', stop, { once: true })
   socket.once('secureConnect', () => {
     socket.off('error', reject)
@@ -125,6 +128,15 @@ const BUSY_WORDS = /too many|throttl|temporar|try again later|rate limit/iu
  * a server that says something this cannot read is `failed`.
  */
 async function signedIn<Result extends { readonly ok: true }>(server: MailServer, signIn: MailSignIn, options: MailOptions, work: (imap: ImapConnection) => Promise<Result | MailFailure>): Promise<Result | MailFailure> {
+  const result = await inSession(server, signIn, options, work)
+  // A server can repeat what it was sent. Its words are dropped where they hold the password or the address.
+  if (!isFailure(result) || result.said === undefined) return result
+  const said = result.said.toLowerCase()
+  if (!said.includes(signIn.password.toLowerCase()) && !said.includes(signIn.address.toLowerCase())) return result
+  return { ok: false, reason: result.reason, ...(result.mailboxes ? { mailboxes: result.mailboxes } : {}) }
+}
+
+async function inSession<Result extends { readonly ok: true }>(server: MailServer, signIn: MailSignIn, options: MailOptions, work: (imap: ImapConnection) => Promise<Result | MailFailure>): Promise<Result | MailFailure> {
   const controller = new AbortController()
   const stop = (): void => controller.abort()
   const timer = setTimeout(stop, options.timeoutMs ?? MAIL_TIMEOUT_MS)
@@ -134,8 +146,10 @@ async function signedIn<Result extends { readonly ok: true }>(server: MailServer
   try {
     // A read its caller has already stopped connects to nothing.
     if (controller.signal.aborted) return failure('unreachable')
+    // A connection that is never made, and never refused, ends with the time this read has.
+    const outOfTime = new Promise<never>((_resolve, reject) => { controller.signal.addEventListener('abort', () => reject(new ImapClosed()), { once: true }) })
     let socket: Duplex
-    try { socket = await (options.connect ?? overTls)(server, controller.signal) } catch { return failure('unreachable') }
+    try { socket = await Promise.race([(options.connect ?? overTls)(server, controller.signal), outOfTime]) } catch { return failure('unreachable') }
     imap = new ImapConnection(socket, controller.signal)
     const greeting = await imap.greeting()
     // A server that takes the connection as signed in already has not been told who by: it is not read from.
@@ -187,7 +201,7 @@ function receivedAt(text: string): string | null {
   return Number.isFinite(at) ? new Date(at).toISOString() : null
 }
 
-/** A search as IMAP's words, or null when it asks for something this does not read. */
+/** A search as IMAP's words, or null when it asks for something this does not read. None at all is every message. */
 function criteria(search: MailSearch): ImapArg[] | null {
   const words = ([['FROM', search.from], ['TO', search.to], ['SUBJECT', search.subject], ['TEXT', search.text]] as const).filter((entry): entry is readonly [typeof entry[0], string] => entry[1] !== undefined)
   if (words.some(([, text]) => !plain(text, MAIL_TERM_MAX))) return null
@@ -202,13 +216,13 @@ function criteria(search: MailSearch): ImapArg[] | null {
     args.push(key, written)
   }
   if (search.unread) args.push('UNSEEN')
-  return args.length === 0 ? ['ALL'] : args
+  return args
 }
 
 /** The mailboxes people name by what they are for, and the mark a server sets on each (RFC 6154). */
 const SPECIAL: Readonly<Record<string, string>> = { all: '\\ALL', sent: '\\SENT', drafts: '\\DRAFTS', trash: '\\TRASH', spam: '\\JUNK', starred: '\\FLAGGED' }
 
-interface OpenMailbox { readonly name: string; readonly validity: number }
+interface OpenMailbox { readonly name: string; readonly validity: number; /** How many messages it holds. */ readonly exists: number }
 
 /** Opens a mailbox for reading only, by what it is for or by its own name. */
 async function examine(imap: ImapConnection, wanted: string | undefined): Promise<OpenMailbox | MailFailure> {
@@ -224,7 +238,8 @@ async function examine(imap: ImapConnection, wanted: string | undefined): Promis
     }).filter(box => box.raw !== '' && !box.marks.includes('\\NOSELECT') && !box.marks.includes('\\NONEXISTENT'))
     const key = wanted.trim().toLowerCase()
     const mark = SPECIAL[key]
-    const found = (mark === undefined ? undefined : boxes.find(box => box.marks.includes(mark))) ?? boxes.find(box => box.name.toLowerCase() === key)
+    // A name is its own letters first: two mailboxes may differ only in their capitals.
+    const found = (mark === undefined ? undefined : boxes.find(box => box.marks.includes(mark))) ?? boxes.find(box => box.name === wanted.trim()) ?? boxes.find(box => box.name.toLowerCase() === key)
     if (!found) return { ...failure('mailbox'), mailboxes: boxes.slice(0, LISTED_MAX).map(box => box.name) }
     raw = found.raw
     name = found.name
@@ -233,7 +248,8 @@ async function examine(imap: ImapConnection, wanted: string | undefined): Promis
   if (opened.status !== 'OK') return failure('mailbox', opened.text)
   const validity = /^UIDVALIDITY (\d{1,10})$/u.exec(opened.notes.find(note => note.code?.startsWith('UIDVALIDITY '))?.code ?? '')
   if (!validity) return failure('failed')
-  return { name, validity: Number(validity[1]) }
+  const exists = Number(textOf(opened.data.find(line => atomOf(line[1]) === 'EXISTS')?.[0]))
+  return { name, validity: Number(validity[1]), exists: Number.isSafeInteger(exists) && exists > 0 ? exists : 0 }
 }
 
 /** What a `FETCH` answered for each message, by its number in the mailbox: each named thing and its value. */
@@ -279,20 +295,26 @@ export function searchMail(server: MailServer, signIn: MailSignIn, search: MailS
   return signedIn<Extract<MailFound, { ok: true }>>(server, signIn, options, async imap => {
     const mailbox = await examine(imap, search.mailbox)
     if (isFailure(mailbox)) return mailbox
-    const matched = await imap.run('UID', 'SEARCH', ...wanted)
-    if (matched.status !== 'OK') return failure('failed', matched.text)
-    const uids = [...new Set(matched.data.filter(line => atomOf(line[0]) === 'SEARCH').flatMap(line => line.slice(1).map(item => Number(textOf(item)))))]
-      .filter(uid => Number.isSafeInteger(uid) && uid > 0).sort((one, other) => other - one)
-    const newest = uids.slice(0, limit)
-    if (newest.length === 0) return { ok: true, mailbox: mailbox.name, found: 0, messages: [] }
-    const listed = await imap.run('UID', 'FETCH', newest.join(','), `(UID FLAGS INTERNALDATE RFC822.SIZE ${HEADERS})`)
+    const items = `(UID FLAGS INTERNALDATE RFC822.SIZE ${HEADERS})`
+    let found: number
+    let listed: ImapAnswer
+    if (wanted.length === 0) {
+      // Every message matches, so the server is not asked to number them all: the last ones in the mailbox are its newest.
+      found = mailbox.exists
+      if (found === 0) return { ok: true, mailbox: mailbox.name, found, messages: [] }
+      listed = await imap.run('FETCH', `${Math.max(1, found - limit + 1)}:${found}`, items)
+    } else {
+      const matched = await imap.run('UID', 'SEARCH', ...wanted)
+      if (matched.status !== 'OK') return failure('failed', matched.text)
+      const uids = [...new Set(matched.data.filter(line => atomOf(line[0]) === 'SEARCH').flatMap(line => line.slice(1).map(item => Number(textOf(item)))))]
+        .filter(uid => Number.isSafeInteger(uid) && uid > 0).sort((one, other) => other - one)
+      found = uids.length
+      if (found === 0) return { ok: true, mailbox: mailbox.name, found, messages: [] }
+      listed = await imap.run('UID', 'FETCH', uids.slice(0, limit).join(','), items)
+    }
     if (listed.status !== 'OK') return failure('failed', listed.text)
-    const values = fetched(listed)
-    const messages = newest.flatMap(uid => {
-      const its = values.get(uid)
-      return its ? [summary(mailbox.validity, uid, its).listed] : []
-    })
-    return { ok: true, mailbox: mailbox.name, found: uids.length, messages }
+    const messages = [...fetched(listed)].sort(([one], [other]) => other - one).slice(0, limit).map(([uid, values]) => summary(mailbox.validity, uid, values).listed)
+    return { ok: true, mailbox: mailbox.name, found, messages }
   })
 }
 

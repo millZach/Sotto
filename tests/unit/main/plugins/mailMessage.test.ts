@@ -50,6 +50,23 @@ describe('a mail message as a person reads it (ADR-0205)', () => {
     expect(mailParts(structure('NIL'))).toEqual([])
   })
 
+  it('never takes a file for the message’s text, whichever way the sender marked it', () => {
+    const html = '("text" "html" NIL NIL NIL "7bit" 30 1 NIL NIL NIL NIL)'
+    // A group of parts marked as attached: everything in it is a file.
+    const group = mailParts(structure(`(${html}(("text" "plain" NIL NIL NIL "7bit" 20 1 NIL NIL NIL NIL)("text" "plain" NIL NIL NIL "7bit" 25 1 NIL NIL NIL NIL) "mixed" ("boundary" "z") ("attachment" ("filename" "bundle")) NIL NIL) "mixed" ("boundary" "y") NIL NIL NIL)`))
+    expect(group.map(part => [part.section, part.attached])).toEqual([['1', false], ['2.1', true], ['2.2', true]])
+    expect(textPart(group)?.section).toBe('1')
+    expect(attachedParts(group, textPart(group)).map(part => part.section)).toEqual(['2.1', '2.2'])
+
+    // A text part with a file name and no mark at all is a file too.
+    const named = mailParts(structure(`(${html}("text" "plain" ("name" "notes.txt") NIL NIL "7bit" 20 1 NIL NIL NIL NIL) "mixed" ("boundary" "y") NIL NIL NIL)`))
+    expect(textPart(named)?.section).toBe('1')
+    expect(attachedParts(named, textPart(named)).map(part => part.name)).toEqual(['notes.txt'])
+    // A message that is one text part and nothing else is that text, name or no name.
+    const only = mailParts(structure('("text" "plain" ("name" "body.txt") NIL NIL "7bit" 5 1 NIL NIL NIL NIL)'))
+    expect(textPart(only)).toBe(only[0])
+  })
+
   it('reads a part’s text from base64, quoted-printable and other character sets', () => {
     expect(decodePart(Buffer.from(b64('Grüße aus Köln\r\nbis bald')), { encoding: 'base64', charset: 'utf-8' }, false)).toBe('Grüße aus Köln\nbis bald')
     expect(decodePart(Buffer.from('Gr=C3=BC=C3=9Fe=\r\n aus K=C3=B6ln'), { encoding: 'quoted-printable', charset: 'UTF-8' }, false)).toBe('Grüße aus Köln')
@@ -76,6 +93,10 @@ describe('a mail message as a person reads it (ADR-0205)', () => {
     expect(htmlToText('<!--'.repeat(50_000))).toBe('')
     expect(htmlToText(`${'<a href="https://example.com">'.repeat(20_000)}x`)).toBe('x')
     expect(htmlToText(`a${' <b> </b>'.repeat(20_000)} b`)).toBe('a b')
+    // A link inside a link is not HTML: the newest one opened is the link, and each is looked through once.
+    const nested = (count: number): string => `${Array.from({ length: count }, (_none, index) => `<a href="https://example.com/${index}">`).join('')}x${'</a>'.repeat(count)}`
+    expect(htmlToText(nested(3))).toBe('x (https://example.com/2)')
+    expect(htmlToText(nested(10_000))).toBe('x (https://example.com/9999)')
   })
 
   it('reads a mailbox’s name in its own letters', () => {

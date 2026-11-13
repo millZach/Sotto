@@ -14,38 +14,71 @@ export class ImapProtocolError extends Error {}
 /** The connection ended, or ran out of time, before the server answered. */
 export class ImapClosed extends Error {}
 
-/** The longest line read, apart from its literals. A message's structure is one line, and a long one. */
-const LINE_MAX = 200_000
+/**
+ * The longest line read, apart from its literals. A search's answer is one line with a number for every message that
+ * matched, and a mailbox can hold hundreds of thousands.
+ */
+const LINE_MAX = 4_000_000
 /** The largest literal read. A message's text is asked for in a piece no larger than this. */
 export const IMAP_LITERAL_MAX = 1_000_000
 /** The most read from one connection, whatever it is. */
 const SESSION_MAX = 24_000_000
 /** How deep lists may nest. A message's structure nests as its parts do. */
 const DEPTH_MAX = 64
+/** The start of a line that says how a command or the connection stands. */
+const STATUS_LINE = /^\S+ (?:OK|NO|BAD|BYE|PREAUTH)(?: |$)/iu
 
 /**
- * The first whole answer in what has arrived: its text, with each literal as bytes where it stood. Null while more
- * has to arrive. `used` is how many bytes it took.
+ * What a server sends, cut into whole answers as it arrives: each answer is its text, with every literal as bytes
+ * where it stood. It keeps its place between arrivals, so a long answer that comes in many pieces is looked through
+ * once and not once for every piece.
  */
-export function takeFrame(buffer: Buffer): { readonly parts: (string | Buffer)[]; readonly used: number } | null {
-  const parts: (string | Buffer)[] = []
-  let at = 0
-  for (;;) {
-    const end = buffer.indexOf('\r\n', at)
-    if ((end < 0 ? buffer.length : end) - at > LINE_MAX) throw new ImapProtocolError('A line was too long.')
-    if (end < 0) return null
-    const line = buffer.toString('latin1', at, end)
-    const literal = /\{(\d{1,10})\}$/u.exec(line)
-    if (!literal) {
-      parts.push(line)
-      return { parts, used: end + 2 }
+export class ImapFrames {
+  private buffer: Buffer = Buffer.alloc(0)
+  private parts: (string | Buffer)[] = []
+  /** How many bytes of a literal are awaited, or -1 while the end of a line is. */
+  private literal = -1
+  /** How far the awaited line has been looked through for its end. */
+  private looked = 0
+
+  add(chunk: Buffer): void {
+    this.buffer = this.buffer.length === 0 ? chunk : Buffer.concat([this.buffer, chunk])
+  }
+
+  /** The next whole answer, or null while more has to arrive. */
+  next(): (string | Buffer)[] | null {
+    for (;;) {
+      if (this.literal >= 0) {
+        if (this.buffer.length < this.literal) return null
+        this.parts.push(Buffer.from(this.buffer.subarray(0, this.literal)))
+        this.buffer = this.buffer.subarray(this.literal)
+        this.literal = -1
+        continue
+      }
+      const end = this.buffer.indexOf('\r\n', this.looked)
+      if ((end < 0 ? this.buffer.length : end) > LINE_MAX) throw new ImapProtocolError('A line was too long.')
+      if (end < 0) {
+        // The last byte may be the first half of the line's end.
+        this.looked = Math.max(0, this.buffer.length - 1)
+        return null
+      }
+      const line = this.buffer.toString('latin1', 0, end)
+      this.buffer = this.buffer.subarray(end + 2)
+      this.looked = 0
+      // A line that ends `{12}` is followed by a literal of that many bytes, and then goes on. A line that says how
+      // things stand (`* OK …`, `S1 NO …`, `+ …`) is words to its end, and words may end in anything.
+      const words = this.parts.length === 0 && (line.startsWith('+') || STATUS_LINE.test(line))
+      const open = !words && line.endsWith('}') ? line.lastIndexOf('{') : -1
+      const digits = open < 0 ? '' : line.slice(open + 1, -1)
+      if (!/^\d{1,10}$/u.test(digits)) {
+        const whole = [...this.parts, line]
+        this.parts = []
+        return whole
+      }
+      if (Number(digits) > IMAP_LITERAL_MAX) throw new ImapProtocolError('A literal was too long.')
+      this.parts.push(line.slice(0, open))
+      this.literal = Number(digits)
     }
-    const size = Number(literal[1])
-    if (size > IMAP_LITERAL_MAX) throw new ImapProtocolError('A literal was too long.')
-    const from = end + 2
-    if (buffer.length < from + size) return null
-    parts.push(line.slice(0, literal.index), Buffer.from(buffer.subarray(from, from + size)))
-    at = from + size
   }
 }
 
@@ -154,7 +187,7 @@ function statusOf(parts: readonly (string | Buffer)[]): (ImapStatus & { readonly
  * the connection does or when `signal` fires, so no read outlasts the time its caller gave it.
  */
 export class ImapConnection {
-  private buffer: Buffer = Buffer.alloc(0)
+  private readonly frames = new ImapFrames()
   private received = 0
   private failure: Error | null = null
   private wake: (() => void) | null = null
@@ -165,7 +198,7 @@ export class ImapConnection {
     socket.on('data', (chunk: Buffer) => {
       this.received += chunk.length
       if (this.received > SESSION_MAX) return this.fail(new ImapProtocolError('The server sent too much.'))
-      this.buffer = this.buffer.length === 0 ? chunk : Buffer.concat([this.buffer, chunk])
+      this.frames.add(chunk)
       this.wake?.()
     })
     socket.on('error', this.ended)
@@ -241,15 +274,12 @@ export class ImapConnection {
   /** The next whole answer. What had arrived before the connection ended is still read. */
   private async frame(): Promise<(string | Buffer)[]> {
     for (;;) {
-      let taken: ReturnType<typeof takeFrame>
-      try { taken = takeFrame(this.buffer) } catch (error) {
+      let parts: (string | Buffer)[] | null
+      try { parts = this.frames.next() } catch (error) {
         this.fail(error as Error)
         throw error
       }
-      if (taken) {
-        this.buffer = this.buffer.subarray(taken.used)
-        return taken.parts
-      }
+      if (parts) return parts
       if (this.failure) throw this.failure
       await new Promise<void>(resolve => { this.wake = resolve })
       this.wake = null
