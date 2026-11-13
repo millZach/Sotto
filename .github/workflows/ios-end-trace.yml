@@ -1,7 +1,7 @@
 name: iPhone picture end trace (temporary)
 on:
   push:
-    branches: ['test/ios-end-trace']
+    branches: ['test/ios-end-trace-hold']
 jobs:
   trace:
     strategy:

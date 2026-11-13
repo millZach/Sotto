@@ -707,7 +707,7 @@ private final class FollowBox {
     var heroTop: CGFloat = .greatestFiniteMagnitude
     var titleBottom: CGFloat = .greatestFiniteMagnitude
     /// The user is reading at the bottom, so the page follows the conversation as it grows or the reply box moves.
-    var atBottom = true { didSet { if atBottom != oldValue { pinned?(atBottom) } } }
+    var atBottom = true
     /// The user is dragging the page or letting a flick run out, so it never moves under them.
     var userScrolling = false
     /// The page was asked to follow while the user moved it, and owes that once they let go.
@@ -720,8 +720,6 @@ private final class FollowBox {
     var knowsMoves = false
     /// A hand or the scroll view's own animation, such as a tap on the status bar, is moving the page.
     var moving = false
-    /// Told when `atBottom` changes, so the page can keep its end in place as its height changes.
-    var pinned: ((Bool) -> Void)?
     func settle() { atBottom = sentinel <= dockTop + Self.slack }
 }
 
@@ -871,8 +869,6 @@ private struct Conversation: View {
     @State private var visible: CGFloat = 0
     /// The runs of steps opened on this page, by run, kept while the thread is on screen.
     @State private var openRuns: Set<String> = []
-    /// The reader is at the end, so the page keeps its end where it is when its height changes (iOS 18).
-    @State private var pinnedToEnd = true
     @Environment(\.sottoDensity) private var density
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.duoLayout) private var duo
@@ -901,7 +897,6 @@ private struct Conversation: View {
                     .benchEnvironment("EnvironmentUnderThread")
             }
             .defaultScrollAnchor(.bottom)
-            .keepsEndOnResize(pinnedToEnd)
             .scrollDismissesKeyboard(.interactively)
             .onPageMoving { moving in
                 follow.knowsMoves = true
@@ -1062,6 +1057,7 @@ private struct Conversation: View {
                               scroll: scroll)
                     }
                     .equatable()
+                    .background(HoldsPlaceBelow())
                     #if DEBUG
                     .background { if EndTrace.isOn { OlderTurnsTrace(split: split) } }
                     #endif
@@ -1151,7 +1147,6 @@ private struct Conversation: View {
         GeometryReader { proxy in
             Color.clear
                 .onAppear {
-                    follow.pinned = { [pinned = $pinnedToEnd] at in if pinned.wrappedValue != at { pinned.wrappedValue = at } }
                     #if DEBUG
                     EndTrace.describe = { [follow] in
                         "| end \(Int(follow.sentinel)) in page \(Int(follow.endInPage)) dock \(Int(follow.dockTop)) at bottom \(follow.atBottom)"
@@ -1259,6 +1254,56 @@ private struct Conversation: View {
     }
 }
 
+/// Keeps what the reader sees still while the turns made as they scroll into view, all above it, guess their height again.
+/// Their stack guesses the height of the turns it hasn't made from the ones it has, and its guess swings by thousands of
+/// points as it makes and drops them, several times a second on a thread with pictures. The scroll view keeps its offset
+/// through that, so everything below the stack, the end and the reply box's last turn among them, jumped by the swing, and
+/// a reader at the end was left far short of it (#2040, #2080). Sitting behind the stack, this sees its height change in the
+/// same layout pass and moves the page's offset by as much, so the frame drawn never shows the swing. A reader among those
+/// turns sees them as before: the stack keeps the turns it has made in place itself.
+private struct HoldsPlaceBelow: UIViewRepresentable {
+    func makeUIView(context: Context) -> Holder { Holder() }
+    func updateUIView(_ view: Holder, context: Context) {}
+
+    final class Holder: UIView {
+        private var height: CGFloat?
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            isUserInteractionEnabled = false
+            isAccessibilityElement = false
+        }
+        required init?(coder: NSCoder) { nil }
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            if window == nil { height = nil }
+        }
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            let now = bounds.height
+            defer { height = now }
+            guard let before = height, abs(now - before) > 0.5, let page = page() else { return }
+            // Where the stack ended before it changed, in the page; only a reader wholly below it is held.
+            let end = convert(CGPoint(x: 0, y: before), to: page).y
+            let top = page.contentOffset.y + page.adjustedContentInset.top
+            guard end <= top + 1 else {
+                EndTrace.mark("hold: older turns \(Int(before)) -> \(Int(now)), reader among them (end \(Int(end)), top \(Int(top)))")
+                return
+            }
+            let from = page.contentOffset.y
+            page.contentOffset.y = from + now - before
+            EndTrace.mark("hold: older turns \(Int(before)) -> \(Int(now)), offset \(Int(from)) -> \(Int(page.contentOffset.y)), page height \(Int(page.contentSize.height))")
+        }
+        private func page() -> UIScrollView? {
+            var next = superview
+            while let view = next {
+                if let page = view as? UIScrollView { return page }
+                next = view.superview
+            }
+            return nil
+        }
+    }
+}
+
 #if DEBUG
 /// Where the turns made as they scroll into view sit in the page, for `EndTrace`.
 private struct OlderTurnsTrace: View {
@@ -1301,15 +1346,6 @@ extension View {
     @ViewBuilder func onPageMoving(_ changed: @escaping (Bool) -> Void) -> some View {
         if #available(iOS 18.0, *) {
             onScrollPhaseChange { _, phase in changed(phase != .idle) }
-        } else {
-            self
-        }
-    }
-    /// While the reader is at the end, the page keeps its end where it is as its height changes, so turns above re-guessing
-    /// their heights don't swing what the reader sees (iOS 18). Otherwise the page keeps its offset, as it always has.
-    @ViewBuilder func keepsEndOnResize(_ pinned: Bool) -> some View {
-        if #available(iOS 18.0, *) {
-            defaultScrollAnchor(pinned ? .bottom : nil, for: .sizeChanges)
         } else {
             self
         }
