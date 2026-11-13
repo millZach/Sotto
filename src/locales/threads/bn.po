@@ -2035,6 +2035,10 @@ msgstr ""
 msgid "Ask before this thread reads {name}"
 msgstr ""
 
+#: src/renderer/src/agents/mailGrantMenu.tsx
+msgid "Ask before Watcher reads {name}"
+msgstr ""
+
 #. A permission mode: the agent asks before it acts.
 #: src/renderer/src/agents/permissionPresentation.tsx
 msgid "Ask for approval"
@@ -8298,6 +8302,10 @@ msgstr ""
 
 #: src/renderer/src/agents/mailGrantMenu.tsx
 msgid "Sotto could not stop this thread reading {name}, so it can still read it. Try again."
+msgstr ""
+
+#: src/renderer/src/agents/mailGrantMenu.tsx
+msgid "Sotto could not stop Watcher reading {name}, so it can still read it. Try again."
 msgstr ""
 
 #: src/renderer/src/agents/delegationWords.ts

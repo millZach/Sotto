@@ -39,6 +39,8 @@ import { nextSpeed, offeredSpeeds, speedName, speedOptions, SpeedToggle } from '
 import { effortChoices } from '../agents/permissionPresentation'
 import { SPEED_STANDARD } from '../agents/pendingSettings'
 import { ThreadPane } from '../agents/ThreadPane'
+import { PaneMenu } from '../agents/PaneMenu'
+import { useMailGrantMenu } from '../agents/mailGrantMenu'
 import { isThreadClosed } from '../../../shared/threadActivity'
 import { BrowserPageRouteContext, LinkedFileRouteContext, type LinkedFileRoute } from '../tools/webLinks'
 import { linkedFileThread } from '../tools/linkedFile'
@@ -86,7 +88,7 @@ const watcherFirstAsked = new Map<string, Promise<NextPrompt | null>>()
 const WATCHER_FIRST_SETTLE_MS = 800
 const WATCHER_PANE_ID = 'watcher-pane'
 
-/** What Watcher's header holds besides its name: All threads and its count, and, once Watcher runs, Stop all. */
+/** What Watcher's header holds besides its name: All threads and its count, and, once Watcher runs, Stop all and its ··· menu. */
 interface HeaderParts {
   readonly room: WatcherRoom | null
   readonly count: number
@@ -97,6 +99,8 @@ interface HeaderParts {
   readonly stopAll: ReactNode
   /** The Watcher and Teams tabs, while Teams is on (ADR-0186). */
   readonly tabs?: ReactNode
+  /** The ··· menu, last in the header, which draws nothing while it has no row (#2563). */
+  readonly more?: ReactNode
 }
 
 type RoomTab = 'watcher' | 'teams'
@@ -123,12 +127,12 @@ function RoomTabs({ tab, onTab, moved }: { readonly tab: RoomTab; readonly onTab
 /**
  * Watcher's header: the Sotto tile in the window's corner, named for the running build, then Watcher's name and
  * All threads, which opens the Overview over the room; once Watcher runs, Stop all at its
- * end. With Teams on, Watcher and Teams tabs follow the name (ADR-0186). Once Watcher runs the tile is also a button
+ * end, and after it a ··· menu while Watcher can read a mail account (ADR-0205, decision 8). With Teams on, Watcher and Teams tabs follow the name (ADR-0186). Once Watcher runs the tile is also a button
  * for Watcher's context and state (#1189). On macOS no
  * app mark sits beside the traffic lights: before Watcher starts there is no tile, and the button, once it runs,
  * wears Watcher's owl. The night sky spreads behind the corner. The row is the window's drag strip.
  */
-function WatcherHeader({ room, count, listOpen, listButton, onToggleList, stopAll, tabs }: HeaderParts): ReactNode {
+function WatcherHeader({ room, count, listOpen, listButton, onToggleList, stopAll, tabs, more }: HeaderParts): ReactNode {
   const { t } = useLingui()
   const started = room?.state?.current != null
   const track = useReleaseTrack()
@@ -147,7 +151,7 @@ function WatcherHeader({ room, count, listOpen, listButton, onToggleList, stopAl
         <span className="watcher-head__count" aria-hidden="true">{count}</span><ChevronDown size={13} aria-hidden="true" />
       </button>
     </div>
-    <div className="thread-workspace__actions">{started && room !== null ? stopAll : null}</div>
+    <div className="thread-workspace__actions">{started && room !== null ? <>{stopAll}{more}</> : null}</div>
   </header>
 }
 
@@ -722,15 +726,21 @@ export function WatcherView({ now: fixedNow }: {
     <WatcherStopAll room={room} conversation={{ describe, press }} fallbackFocus={() => listButton.current?.focus()} />
   </>
   const tabs = teamsBridge ? <RoomTabs tab={roomTab} onTab={setRoomTab} moved={roomTabMoved} /> : undefined
+  // The mail accounts Watcher has been let read (ADR-0205, decision 8): a ··· menu at the strip's end with Ask before
+  // Watcher reads for each (#2563; Zach's pick A of the tag `prototype/watcher-mail-grant`, November 13, 2026). Watcher
+  // is never settled, so this is where its grant is ended. The menu is there only while it has a row.
+  const mailGrants = useMailGrantMenu(watcherId ?? '', watcherRow !== undefined && watcherRow.thread.remoteHost !== true, undefined, 'watcher')
+  const more = <PaneMenu groups={[mailGrants.items]} />
   const header = <>
     <WatcherHeader room={room} count={overviewCount(groups)} listOpen={listOpen} listButton={listButton} onToggleList={() => toggleList(listButton.current)}
-      stopAll={stopAll} tabs={tabs} />
+      stopAll={stopAll} tabs={tabs} more={more} />
     {needs.length > 0 || asked.length > 0 || crossMachine ? <div className="watcher-status">
       {needs.length > 0 || asked.length > 0 ? <WatcherGlance entries={needs} questions={asked} onQuestion={focusWatcherQuestion} onOpen={openThread} onShowAll={from => toggleList(from, true)} inline={inline} onJump={jumpToAsk} allThreadsOpen={listOpen} /> : null}
       {crossMachine ? <WatcherMachines state={state} now={fixedNow} /> : null}
     </div> : null}
     {/* While Watcher's own provider is limited or failing, one band under the strip (#2234, Zach's pick A). */}
     <WatcherHoldBand room={room} now={fixedNow} />
+    {mailGrants.problem ? <p className="agent-error thread-workspace__error" role="alert">{mailGrants.problem}</p> : null}
     {askedIds.length > 0 ? <WatcherQuestionMark paneId={WATCHER_PANE_ID} open={askedIds} /> : null}
   </>
   let watcherContent: ReactNode

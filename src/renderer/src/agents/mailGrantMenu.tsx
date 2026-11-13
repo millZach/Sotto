@@ -13,8 +13,12 @@ import type { PaneMenuItem } from './PaneMenu'
  * paired host keeps its grant on that host.
  *
  * `problem` says so when a grant could not be ended. It then still stands.
+ *
+ * Watcher's room has the same rows in a ··· menu at the end of its strip (#2563; Zach's pick A of the tag
+ * `prototype/watcher-mail-grant`, November 13, 2026), which name Watcher rather than "this thread": `who` says
+ * whose words to use.
  */
-export function useMailGrantMenu(threadId: string, here: boolean, bridge: PluginsBridge | undefined = window.sotto?.plugins): { readonly items: PaneMenuItem[]; readonly problem: string | null } {
+export function useMailGrantMenu(threadId: string, here: boolean, bridge: PluginsBridge | undefined = window.sotto?.plugins, who: 'thread' | 'watcher' = 'thread'): { readonly items: PaneMenuItem[]; readonly problem: string | null } {
   const { t } = useLingui()
   const on = useOwlFeature('plugins') && here && bridge !== undefined
   const [grants, setGrants] = useState<readonly ThreadMailGrant[]>([])
@@ -47,12 +51,14 @@ export function useMailGrantMenu(threadId: string, here: boolean, bridge: Plugin
     setProblem(null)
     // An answer that arrives after the pane has gone to another thread, or has gone, is not this pane's to show.
     const still = (): boolean => shown !== null && showing.current === shown
-    const failed = (): void => { if (still()) setProblem({ accountId: grant.accountId, words: t`Sotto could not stop this thread reading ${name}, so it can still read it. Try again.` }) }
+    const failed = (): void => { if (still()) setProblem({ accountId: grant.accountId, words: who === 'watcher'
+      ? t`Sotto could not stop Watcher reading ${name}, so it can still read it. Try again.`
+      : t`Sotto could not stop this thread reading ${name}, so it can still read it. Try again.` }) }
     void bridge.stopMailGrant({ threadId, accountId: grant.accountId }).then(stopped => { if (!stopped) failed(); else if (still()) read() }, failed)
   }
   const items = !on ? [] : grants.map((grant): PaneMenuItem => {
     const name = grant.name
-    return { id: `mail-grant-${grant.accountId}`, label: t`Ask before this thread reads ${name}`, icon: <Hand size={15} aria-hidden="true" />, run: () => stop(grant) }
+    return { id: `mail-grant-${grant.accountId}`, label: who === 'watcher' ? t`Ask before Watcher reads ${name}` : t`Ask before this thread reads ${name}`, icon: <Hand size={15} aria-hidden="true" />, run: () => stop(grant) }
   })
   // Once the grant has ended some other way, as when the thread is settled or the account removed, it is no longer true.
   return { items, problem: problem !== null && grants.some(grant => grant.accountId === problem.accountId) ? problem.words : null }

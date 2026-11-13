@@ -2035,6 +2035,10 @@ msgstr "Ask about your threads, or say what to start or send"
 msgid "Ask before this thread reads {name}"
 msgstr "Ask before this thread reads {name}"
 
+#: src/renderer/src/agents/mailGrantMenu.tsx
+msgid "Ask before Watcher reads {name}"
+msgstr "Ask before Watcher reads {name}"
+
 #. A permission mode: the agent asks before it acts.
 #: src/renderer/src/agents/permissionPresentation.tsx
 msgid "Ask for approval"
@@ -8299,6 +8303,10 @@ msgstr "Sotto could not stop that detached run. It may still be running."
 #: src/renderer/src/agents/mailGrantMenu.tsx
 msgid "Sotto could not stop this thread reading {name}, so it can still read it. Try again."
 msgstr "Sotto could not stop this thread reading {name}, so it can still read it. Try again."
+
+#: src/renderer/src/agents/mailGrantMenu.tsx
+msgid "Sotto could not stop Watcher reading {name}, so it can still read it. Try again."
+msgstr "Sotto could not stop Watcher reading {name}, so it can still read it. Try again."
 
 #: src/renderer/src/agents/delegationWords.ts
 msgid "Sotto could not tell how it stood at {time}, when it last read it."

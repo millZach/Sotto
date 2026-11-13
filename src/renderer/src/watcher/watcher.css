@@ -572,6 +572,8 @@
    unavailable: no count, the muted ink and nothing on hover (the owner's ask on November 6, 2026). Narrow panes keep the
    square and the count. A hairline sets it apart from Move threads, which moves work rather than stopping it. */
 .watcher-stop-all { position: relative; display: flex; align-items: center; }
+/* Watcher's ··· menu (#2563) follows Stop all with the room Move threads keeps before it. */
+.watcher-stop-all + .pane-menu { margin-left: 4px; }
 .watcher-move-threads + .watcher-stop-all::before { flex: none; width: 1px; height: 18px; margin: 0 10px 0 4px; background: var(--tt-hairline); content: ''; }
 .watcher-stop-all__count { color: var(--tt-text-muted); font-variant-numeric: tabular-nums; }
 .watcher-stop-all__button:is(:hover, [aria-expanded='true']) > .watcher-stop-all__count { color: var(--tt-text-2); }
