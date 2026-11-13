@@ -28,7 +28,7 @@ A host could not find a client a version manager installed. The launch script st
 2. PATH;
 3. the login shell's PATH (`$SHELL -l -c`), asked once per process with five seconds and nothing on stdin, as the Node probe does; not on Windows;
 4. `~/.local/bin`;
-5. the version managers: mise's `installs/<tool>/latest` (its `bin`, its top folder for a download such as Claude Code, and `node_modules/.bin` for an npm package such as Grok Build), asdf's, nvm's and fnm's newest versions and fnm's default alias, Volta's installed packages and Node, and Homebrew (`HOMEBREW_PREFIX`, `/opt/homebrew/bin`, `/usr/local/bin`, and Linuxbrew's `/home/linuxbrew/.linuxbrew/bin` and `~/.linuxbrew/bin`); on Windows only mise, under `%LOCALAPPDATA%`;
+5. the version managers: mise's `installs/<tool>/latest` (its `bin`, its top folder for a download such as Claude Code, `node_modules/.bin` for an npm package such as Grok Build, and, for the tool named as the command, each folder a GitHub release unpacked into and its `bin`, such as gh's `gh_2.102.0_linux_amd64/bin`), asdf's, nvm's and fnm's newest versions and fnm's default alias, Volta's installed packages and Node, and Homebrew (`HOMEBREW_PREFIX`, `/opt/homebrew/bin`, `/usr/local/bin`, and Linuxbrew's `/home/linuxbrew/.linuxbrew/bin` and `~/.linuxbrew/bin`); on Windows only mise, under `%LOCALAPPDATA%`;
 6. the npm global prefix: `npm_config_prefix`, a `prefix` in `~/.npmrc`, `~/.npm-global` and `~/.local/share/npm`, and `%APPDATA%\npm` on Windows;
 7. the provider's other install folders: `~/.codex/bin` and the Devin app.
 
@@ -48,6 +48,7 @@ Two orders changed from the adapters' own. Claude Code now tries PATH before `~/
 - Update checks treat a client under mise's or asdf's installs as that manager's, so Sotto shows the command rather than running npm, which would install a second copy elsewhere.
 - The integration test runs a scripted Claude Code from a mise layout with PATH `/usr/local/bin:/usr/bin:/bin`; it and the lookup's login-shell and link cases skip on Windows and run in the Linux CI job (`npm run test:socket`).
 - **GitHub's `gh` is found the same way** (November 11, 2026, #2430). Every pull request read, branch lookup, Git action and merge-train check runs `gh`, and Sotto started it from PATH alone. forge's host runs with PATH `/usr/local/bin:/usr/bin:/bin` and gh in `~/.local/bin`, so every one of them failed there: none of its 164 threads had a pull request linked, and Watcher heard nothing of their pull requests. Off Windows, Sotto now looks for gh as for a provider's client, once per process, looks again five minutes after finding none, and starts it by the path found with the PATH the lookup gives it. Windows starts `gh` from PATH as before.
+- **And in the folder mise unpacked its release into** (November 13, 2026). forge's `~/.local/bin/gh` is a `mise x` wrapper, which the lookup passes over, and mise keeps gh one folder below `installs/gh/latest`, in `gh_2.102.0_linux_amd64/bin`, where the lookup did not look. So it found no gh, the host started plain `gh` on a PATH without it, and forge's threads still linked no pull requests after #2430. The lookup now also reads the folders inside the command's own `latest` install, and only that tool's, so a lookup reads one more folder.
 
 ## Considered options
 
