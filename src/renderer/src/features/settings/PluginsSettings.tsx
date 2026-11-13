@@ -3,7 +3,7 @@ import { Trans, useLingui } from '@lingui/react/macro'
 import { ChevronRight, Code, MonitorSmartphone } from 'lucide-react'
 import {
   PLUGIN_ACCOUNT_NAME_MAX, PLUGIN_SECRET_MAX, PLUGIN_USE_SHOWN, PLUGINS, type GitHubSignIn, type PluginAccount, type PluginAccountProblem, type PluginAccountResult,
-  type PluginAccountCopyState, type PluginCopiesView, type PluginEntry, type PluginGroupId, type PluginProject, type PluginReadKind, type PluginsBridge, type ShownPluginUse,
+  type PluginAccountCopyLeaving, type PluginAccountCopyState, type PluginCopiesView, type PluginEntry, type PluginGroupId, type PluginProject, type PluginReadKind, type PluginsBridge, type ShownPluginUse,
 } from '../../../../shared/plugins'
 import { localeFormatter } from '../../agents/localeFormat'
 import { useTransientFlag, writeClipboard } from '../../agents/richActions'
@@ -127,7 +127,8 @@ function OtherComputers({ bridge, copies, accounts, onCopies }: {
       {copies.computers.length === 0 ? <p className="tt-paragraph plugin-row__note"><Trans>No other computer is paired. Pair one in Settings › Hosts &amp; phones, and its threads can use these accounts too.</Trans></p>
         : <ul className="plugins-computers__list" aria-label={t`Other computers`}>
           {copies.computers.map(computer => {
-            const kept = copies.copies.filter(copy => copy.computerId === computer.id && copy.state === 'kept').length
+            // A copy the computer is still being told to let go is one it may hold, so it is counted until it has gone.
+            const kept = copies.copies.filter(copy => copy.computerId === computer.id && (copy.state === 'kept' || copy.leaving === 'now')).length
             const name = computer.name
             return <li key={computer.id}>
               <span className="plugin-row__dot" data-state={computer.connected ? 'signed-in' : 'none'} aria-hidden="true" />
@@ -380,7 +381,12 @@ function AccountCopies({ account, bridge, copies, onCopies }: {
     setFailed(false)
     void bridge.setCopy({ accountId: account.id, computerId, on }).then(onCopies, () => setFailed(true))
   }
-  const words = (state: PluginAccountCopyState, computer: string, connected: boolean): string => {
+  const words = (state: PluginAccountCopyState, leaving: PluginAccountCopyLeaving, computer: string, connected: boolean): string => {
+    // No copy is wanted, and only the computer can say it holds none: until it has, the line says what is still to happen.
+    if (state === 'off' && leaving === 'now') return t`No copy from now on. Sotto is making sure ${computer} holds none.`
+    if (state === 'off' && leaving === 'away') return t`No copy from now on. ${computer} is not connected: if it holds a copy, it deletes it when it next connects.`
+    if (state === 'here-only' && leaving === 'now') return t`${name} is kept to projects on this computer, so it is not copied. Sotto is making sure ${computer} holds no copy. Choose Every project to copy it.`
+    if (state === 'here-only' && leaving === 'away') return t`${name} is kept to projects on this computer, so it is not copied. ${computer} is not connected: if it holds a copy, it deletes it when it next connects. Choose Every project to copy it.`
     switch (state) {
       case 'kept': return t`A copy is kept on ${computer}.`
       case 'waiting': return connected ? t`Sending the copy to ${computer}…` : t`${computer} is not connected. Sotto sends the copy, or checks the one there, when it is.`
@@ -399,10 +405,11 @@ function AccountCopies({ account, bridge, copies, onCopies }: {
     <h4 id={headingId}><Trans>Where its secret is kept</Trans></h4>
     <p className="plugin-account__here tt-paragraph"><b><Trans>This computer</Trans></b> <span><Trans>Always, in Sotto’s encrypted store.</Trans></span></p>
     {copies.computers.map(computer => {
-      const state = copies.copies.find(copy => copy.accountId === account.id && copy.computerId === computer.id)?.state ?? 'waiting'
+      const copy = copies.copies.find(entry => entry.accountId === account.id && entry.computerId === computer.id)
+      const state = copy?.state ?? 'waiting'
       const computerName = computer.name
       return <Toggle key={computer.id} label={t`Keep a copy of ${name} on ${computerName}`} checked={state !== 'off' && state !== 'here-only'} disabled={!bridge || state === 'here-only'}
-        description={words(state, computerName, computer.connected)} onCheckedChange={on => set(computer.id, on)} />
+        description={words(state, copy?.leaving ?? 'no', computerName, computer.connected)} onCheckedChange={on => set(computer.id, on)} />
     })}
     <p className="tt-paragraph plugin-row__note"><Trans>A copy lets that computer’s threads use this account while this computer is off. It travels on the connection Sotto already holds to that computer and is kept in that computer’s own encrypted store.</Trans></p>
     {failed ? <p className="tt-field__error tt-paragraph" role="alert"><Trans>That could not be saved. Nothing was changed. Try again.</Trans></p> : null}

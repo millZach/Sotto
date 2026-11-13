@@ -551,6 +551,14 @@ msgstr ""
 msgid "{name} is connected over SSH"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "{name} is kept to projects on this computer, so it is not copied. {computer} is not connected: if it holds a copy, it deletes it when it next connects. Choose Every project to copy it."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "{name} is kept to projects on this computer, so it is not copied. Sotto is making sure {computer} holds no copy. Choose Every project to copy it."
+msgstr ""
+
 #: src/renderer/src/features/settings/HostClientUpdates.tsx
 msgid "{name} is now {installed}."
 msgstr ""
@@ -4044,6 +4052,14 @@ msgstr ""
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "No connected provider can do this work."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "No copy from now on. {computer} is not connected: if it holds a copy, it deletes it when it next connects."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "No copy from now on. Sotto is making sure {computer} holds none."
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx

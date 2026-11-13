@@ -481,25 +481,25 @@ it('calls no project gone, and lets none go, while this computer’s projects ar
 })
 
 /** A bridge with one computer paired, forge, and the account's copy there in a state the test names. */
-function copiesBridge(state: PluginCopiesView['copies'][number]['state'], options: { connected?: boolean; account?: PluginAccount } = {}) {
+function copiesBridge(state: PluginCopiesView['copies'][number]['state'], options: { connected?: boolean; account?: PluginAccount; leaving?: PluginCopiesView['copies'][number]['leaving'] } = {}) {
   const account = options.account ?? work
-  let view: PluginCopiesView = { copyNew: true, computers: [{ id: 'saved-forge', name: 'forge', connected: options.connected !== false }], copies: [{ accountId: account.id, computerId: 'saved-forge', state }] }
+  let view: PluginCopiesView = { copyNew: true, computers: [{ id: 'saved-forge', name: 'forge', connected: options.connected !== false }], copies: [{ accountId: account.id, computerId: 'saved-forge', state, leaving: options.leaving ?? 'no' }] }
   const sets: PluginCopySet[] = []
   const defaults: boolean[] = []
   let heard: (() => void) | undefined
   const bridge = vercelBridge([account], {
     copies: async () => view,
-    setCopy: async request => { sets.push(request); view = { ...view, copies: [{ accountId: account.id, computerId: 'saved-forge', state: request.on ? 'waiting' : 'off' }] }; return view },
+    setCopy: async request => { sets.push(request); view = { ...view, copies: [{ accountId: account.id, computerId: 'saved-forge', state: request.on ? 'waiting' : 'off', leaving: request.on ? 'no' : 'now' }] }; return view },
     setCopyNew: async copyNew => { defaults.push(copyNew); view = { ...view, copyNew }; return view },
     onCopiesChanged: listener => { heard = listener; return () => { heard = undefined } },
   })
-  return { bridge, sets, defaults, arrive: (next: PluginCopiesView['copies'][number]['state']) => { view = { ...view, copies: [{ accountId: account.id, computerId: 'saved-forge', state: next }] }; heard?.() }, listening: () => heard !== undefined }
+  return { bridge, sets, defaults, arrive: (next: PluginCopiesView['copies'][number]['state']) => { view = { ...view, copies: [{ accountId: account.id, computerId: 'saved-forge', state: next, leaving: 'no' }] }; heard?.() }, listening: () => heard !== undefined }
 }
 const copySwitch = (): HTMLElement => screen.getByRole('switch', { name: 'Keep a copy of Work on forge' })
 const copyLine = (): string => copySwitch().querySelector('.tt-field__description')?.textContent ?? ''
 
 it('says where an account’s secret is kept, and lets a copy on another computer be stopped and started', async () => {
-  const { bridge, sets } = copiesBridge('kept')
+  const { bridge, sets, arrive } = copiesBridge('kept')
   await act(async () => { render(<PluginsSettings bridge={bridge} />) })
   fireEvent.click(vercelRow())
   const kept = await screen.findByRole('region', { name: 'Where its secret is kept' })
@@ -511,6 +511,9 @@ it('says where an account’s secret is kept, and lets a copy on another compute
   await act(async () => { fireEvent.click(copySwitch()) })
   expect(sets).toEqual([{ accountId: work.id, computerId: 'saved-forge', on: false }])
   expect(copySwitch().getAttribute('aria-checked')).toBe('false')
+  // forge has not said yet that it let the copy go, so the page does not say there is none.
+  expect(copyLine()).toBe('No copy from now on. Sotto is making sure forge holds none.')
+  await act(async () => { arrive('off') })
   expect(copyLine()).toBe('No copy. forge’s threads cannot use this account.')
   await act(async () => { fireEvent.click(copySwitch()) })
   expect(sets.at(-1)).toEqual({ accountId: work.id, computerId: 'saved-forge', on: true })
@@ -529,6 +532,27 @@ it('says an account kept to chosen projects stays on this computer, with a switc
   expect(sets).toEqual([])
   // It is not counted as a copy forge holds.
   expect(within(screen.getByRole('list', { name: 'Other computers' })).getAllByRole('listitem').map(item => item.textContent)).toEqual(['forgeConnected. Copies kept there: 0 of 1.'])
+})
+
+it('does not say a computer holds no copy until that computer has said so', async () => {
+  const cases: [PluginCopiesView['copies'][number]['state'], PluginCopiesView['copies'][number]['leaving'], boolean, string][] = [
+    ['off', 'away', false, 'No copy from now on. forge is not connected: if it holds a copy, it deletes it when it next connects.'],
+    ['here-only', 'now', true, 'Work is kept to projects on this computer, so it is not copied. Sotto is making sure forge holds no copy. Choose Every project to copy it.'],
+    ['here-only', 'away', false, 'Work is kept to projects on this computer, so it is not copied. forge is not connected: if it holds a copy, it deletes it when it next connects. Choose Every project to copy it.'],
+  ]
+  for (const [state, leaving, connected, line] of cases) {
+    const { bridge } = copiesBridge(state, { leaving, connected, account: state === 'here-only' ? { ...work, projects: ['p-sotto'] } : work })
+    await act(async () => { render(<PluginsSettings bridge={bridge} />) })
+    fireEvent.click(vercelRow())
+    await screen.findByRole('region', { name: 'Where its secret is kept' })
+    expect(copySwitch().getAttribute('aria-checked'), line).toBe('false')
+    expect(copyLine()).toBe(line)
+    cleanup()
+  }
+  // A copy forge is still being told to let go is one it may hold, so it is still counted there.
+  const leavingNow = copiesBridge('off', { leaving: 'now' })
+  await act(async () => { render(<PluginsSettings bridge={leavingNow.bridge} />) })
+  expect((await screen.findByRole('list', { name: 'Other computers' })).textContent).toBe('forgeConnected. Copies kept there: 1 of 1.')
 })
 
 it('shows a copy arriving without being asked, and stops listening when the page goes', async () => {

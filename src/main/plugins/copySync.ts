@@ -2,7 +2,7 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { z } from 'zod'
 import type { HeldPluginAccountCopy, PluginAccountCopy, PluginAccountCopyReceipt, PluginAccountCopyRemoved } from '../../shared/pluginAccountCopies'
-import type { PluginAccount, PluginAccountCopyState, PluginCopiesView } from '../../shared/plugins'
+import type { PluginAccount, PluginAccountCopyLeaving, PluginAccountCopyState, PluginCopiesView } from '../../shared/plugins'
 import { PluginSecretLocked } from './accounts'
 
 /** A connected host as the copies reach it: its identity, and the three requests where it lists `plugin-account-copies`. */
@@ -37,6 +37,8 @@ const sameProjects = (one: readonly string[] | null | undefined, other: readonly
  * project is a folder on this computer, which another computer does not have, so its secret stays here.
  */
 const mayBeCopied = (account: PluginAccount): boolean => account.projects === null
+/** Whether the user's choices ask for a copy of an account on a computer. */
+const chosen = (choices: Choices, accountId: string, computerId: string): boolean => choices.choices[accountId]?.[computerId] ?? choices.copyNew
 /** Whether a host holds an account as it is here. A host that does not say what it holds of it is not taken to. */
 const holdsAsHere = (held: HeldPluginAccountCopy, account: PluginAccount): boolean =>
   held.savedAt === account.savedAt && held.name === account.name && held.signedInAs === account.signedInAs && held.on === account.on && held.projects !== undefined && sameProjects(held.projects, account.projects)
@@ -58,7 +60,11 @@ export class PluginAccountCopySync {
   private readonly path: string
   private kept: Choices | undefined
   private writing: Promise<unknown> = Promise.resolve()
-  /** What each connected host answered for each account, by the host's identity. */
+  /**
+   * What each host last answered for each account, by the host's identity: where a wanted copy stands, and `off` for
+   * an account the host was found, or made, to hold no copy of. Emptied when the host connects again, for what it
+   * holds may have changed while it was away.
+   */
   private readonly states = new Map<string, Map<string, PluginAccountCopyState>>()
   private readonly reconciling = new Map<string, Promise<void>>()
   /** Hosts to look at again once the look under way ends: something changed while it ran. */
@@ -66,6 +72,11 @@ export class PluginAccountCopySync {
   private readonly retries = new Map<string, { readonly timer: ReturnType<typeof setTimeout>; readonly failures: number }>()
   /** Hosts that connected before this computer had saved them, as a host being added does: looked at once they are saved. */
   private readonly unsaved = new Set<string>()
+  /**
+   * Counts every change to an account or a choice, as it is asked for. A look at a host that began before the newest
+   * one sends no secret: what it read may no longer be what the user wants, and a copy sent cannot be unsent.
+   */
+  private revision = 0
   private closed = false
 
   constructor(directory: string, private readonly options: {
@@ -82,11 +93,15 @@ export class PluginAccountCopySync {
     this.path = join(directory, 'plugin-account-copy-choices.json')
   }
 
-  /** A host connected, new or again: it is made to agree with this computer. */
-  connected(target: CopyTarget): void { this.reconcile(target) }
+  /** A host connected, new or again: it is made to agree with this computer. What it answered before is forgotten. */
+  connected(target: CopyTarget): void {
+    this.states.delete(target.hostId)
+    this.reconcile(target)
+  }
 
   /** An account was added, changed or removed here: every connected host is made to agree again. */
   accountsChanged(): void {
+    this.revision += 1
     for (const target of this.options.connections()) this.reconcile(target)
     this.options.changed?.()
   }
@@ -109,14 +124,15 @@ export class PluginAccountCopySync {
 
   /** Whether a new account, or a newly paired computer, starts with a copy. */
   async setCopyNew(copyNew: boolean): Promise<void> {
-    await this.save({ ...await this.choices(), copyNew })
+    await this.change(choices => ({ ...choices, copyNew }))
     this.options.changed?.()
   }
 
   /** The user's choice for one account on one computer. Off, the host is told to let its copy go. */
   async setCopy(accountId: string, computerId: string, on: boolean): Promise<void> {
-    const choices = await this.choices()
-    await this.save({ ...choices, choices: { ...choices.choices, [accountId]: { ...choices.choices[accountId], [computerId]: on } } })
+    // Counted before it is written down: a look at a host that is under way must not send what this may be stopping.
+    this.revision += 1
+    await this.change(choices => ({ ...choices, choices: { ...choices.choices, [accountId]: { ...choices.choices[accountId], [computerId]: on } } }))
     this.accountsChanged()
   }
 
@@ -129,10 +145,16 @@ export class PluginAccountCopySync {
       copyNew: choices.copyNew,
       computers: computers.map(computer => ({ id: computer.id, name: computer.name, connected: computer.connected })),
       copies: accounts.flatMap(account => computers.map(computer => {
-        const wanted = choices.choices[account.id]?.[computer.id] ?? choices.copyNew
-        // A copy that is wanted waits until its host has answered for it: away, or connected and being asked.
-        const state: PluginAccountCopyState = !mayBeCopied(account) ? 'here-only' : !wanted ? 'off' : !computer.connected || !computer.hostId ? 'waiting' : this.states.get(computer.hostId)?.get(account.id) ?? 'waiting'
-        return { accountId: account.id, computerId: computer.id, state }
+        const answered = computer.hostId ? this.states.get(computer.hostId)?.get(account.id) : undefined
+        if (mayBeCopied(account) && chosen(choices, account.id, computer.id)) {
+          // A copy that is wanted waits until its host has answered for it: away, or connected and being asked.
+          const state: PluginAccountCopyState = !computer.connected || answered === undefined || answered === 'off' ? 'waiting' : answered
+          return { accountId: account.id, computerId: computer.id, state, leaving: 'no' as const }
+        }
+        // No copy is wanted. Whether the host holds none is the host's to say: one that has never connected holds
+        // nothing of this computer's, one that is away is told when it is back, and one that is here is being told.
+        const leaving: PluginAccountCopyLeaving = !computer.hostId || answered === 'off' ? 'no' : computer.connected ? 'now' : 'away'
+        return { accountId: account.id, computerId: computer.id, state: mayBeCopied(account) ? 'off' as const : 'here-only' as const, leaving }
       })),
     }
   }
@@ -172,36 +194,56 @@ export class PluginAccountCopySync {
     // saved a moment after it connects, and is looked at then.
     if (!computer) { this.unsaved.add(target.hostId); return }
     this.unsaved.delete(target.hostId)
+    // What this look reads is what the user wanted when it began. Every change since is counted, and seen below.
+    const revision = this.revision
     const accounts = await this.options.accounts.list()
     const choices = await this.settled(accounts, this.options.computers())
-    const wanted = accounts.filter(account => mayBeCopied(account) && (choices.choices[account.id]?.[computer.id] ?? choices.copyNew))
-    const states = new Map<string, PluginAccountCopyState>()
-    this.states.set(target.hostId, states)
+    const wanted = accounts.filter(account => mayBeCopied(account) && chosen(choices, account.id, computer.id))
+    let states = this.states.get(target.hostId)
+    if (!states) { states = new Map(); this.states.set(target.hostId, states) }
+    for (const id of states.keys()) if (!accounts.some(account => account.id === id)) states.delete(id)
     const { service } = target
-    // An older or stable host lists no such feature, and is asked nothing and sent nothing.
+    // An older or stable host lists no such feature, and is asked nothing and sent nothing. It holds no copy either.
     if (service.supportsPluginAccountCopies !== true || !service.pluginAccountCopies || !service.keepPluginAccountCopy || !service.removePluginAccountCopy) {
-      for (const account of wanted) states.set(account.id, 'too-old')
+      for (const account of accounts) states.set(account.id, wanted.includes(account) ? 'too-old' : 'off')
       return
     }
-    const held = await service.pluginAccountCopies()
+    let held: HeldPluginAccountCopy[]
+    // A host that does not answer is not known to hold what it was last seen to: a wanted copy waits again.
+    try { held = await service.pluginAccountCopies() } catch (error) { for (const account of wanted) states.delete(account.id); throw error }
     let failed = false
     for (const account of wanted) {
       const there = held.find(copy => copy.id === account.id)
       if (there && holdsAsHere(there, account)) { states.set(account.id, 'kept'); continue }
+      // The account is read again, and nothing may have been asked for since this look began: an account narrowed or
+      // a copy switched off while the host was answering is not sent, for a copy sent cannot be unsent. The change
+      // that stopped it has already asked for another look, which sends what is still wanted. Nothing below waits
+      // between this check and the send.
+      const now = (await this.options.accounts.list()).find(entry => entry.id === account.id)
+      if (this.revision !== revision || !now || !mayBeCopied(now)) return
+      states.set(account.id, 'waiting')
       let secret: string
       try { secret = this.options.accounts.secret(account.id) } catch (error) { states.set(account.id, error instanceof PluginSecretLocked ? 'locked' : 'failed'); failed = true; continue }
       // An account whose secret is gone here is not an account any longer, and nothing of it is sent.
       if (!secret) { states.set(account.id, 'failed'); continue }
       try {
-        const receipt = await service.keepPluginAccountCopy({ account: { ...account }, secret })
+        const receipt = await service.keepPluginAccountCopy({ account: { ...now }, secret })
         states.set(account.id, receipt.kept ? 'kept' : receipt.problem === 'store' ? 'no-key' : receipt.problem === 'limit' ? 'full' : receipt.problem)
       } catch { states.set(account.id, 'failed'); failed = true }
     }
+    // A copy asked for again while this look ran is left where it is; the look that change asked for settles it.
+    if (this.revision !== revision) return
     // What the host holds of this desktop's and is no longer wanted: an account removed here, a copy switched off, or
-    // an account since kept to chosen projects.
+    // an account since kept to chosen projects. An account is marked as having no copy there only once the host has
+    // said so, by not listing it or by answering its removal.
+    const stillThere = new Set<string>()
     for (const copy of held) {
       if (wanted.some(account => account.id === copy.id)) continue
-      try { await service.removePluginAccountCopy(copy.id) } catch { failed = true }
+      try { await service.removePluginAccountCopy(copy.id) } catch { stillThere.add(copy.id); failed = true }
+    }
+    for (const account of accounts) {
+      if (wanted.includes(account)) continue
+      if (stillThere.has(account.id)) states.delete(account.id); else states.set(account.id, 'off')
     }
     if (failed) throw new Error('PLUGIN_ACCOUNT_COPIES_NOT_AGREED')
   }
@@ -233,19 +275,25 @@ export class PluginAccountCopySync {
    * starts none the user did not ask for. Choices for accounts that are gone are dropped.
    */
   private async settled(accounts: readonly PluginAccount[], computers: readonly CopyComputer[]): Promise<Choices> {
-    const choices = await this.choices()
-    const next: Record<string, Record<string, boolean>> = {}
-    let changed = Object.keys(choices.choices).some(id => !accounts.some(account => account.id === id))
-    for (const account of accounts) {
-      const mine = { ...choices.choices[account.id] }
-      for (const computer of computers) if (mine[computer.id] === undefined) { mine[computer.id] = choices.copyNew; changed = true }
-      next[account.id] = mine
+    const settle = (choices: Choices): Choices | null => {
+      const next: Record<string, Record<string, boolean>> = {}
+      let changed = Object.keys(choices.choices).some(id => !accounts.some(account => account.id === id))
+      for (const account of accounts) {
+        const mine = { ...choices.choices[account.id] }
+        for (const computer of computers) if (mine[computer.id] === undefined) { mine[computer.id] = choices.copyNew; changed = true }
+        next[account.id] = mine
+      }
+      return changed ? { ...choices, choices: next } : null
     }
-    if (!changed) return choices
-    const settled = { ...choices, choices: next }
-    // A choice that could not be written down is still followed for now, and is settled again next time.
-    await this.save(settled).catch(() => this.options.log?.('plugin-account-copy-choices-not-saved'))
-    return this.kept ?? settled
+    // Choices that cannot be read copy nothing, and say so by failing here.
+    const read = await this.choices()
+    if (!settle(read)) return read
+    try { return await this.change(settle) } catch {
+      // A choice that could not be written down is still followed for now, and is settled again next time.
+      this.options.log?.('plugin-account-copy-choices-not-saved')
+      const choices = await this.choices()
+      return settle(choices) ?? choices
+    }
   }
 
   /** Only a file that is not there yet means nothing was chosen. One that cannot be read copies nothing, rather than everything. */
@@ -259,18 +307,27 @@ export class PluginAccountCopySync {
     return (this.kept = choicesSchema.parse(JSON.parse(text)))
   }
 
-  private save(choices: Choices): Promise<void> {
+  /**
+   * One change to the choices at a time, each worked out from the choices as the change before it left them. Two
+   * choices made a moment apart would otherwise both start from the same file, and the second would undo the first.
+   * A change that changes nothing writes nothing.
+   */
+  private change(next: (choices: Choices) => Choices | null): Promise<Choices> {
     const run = this.writing.catch(() => undefined).then(async () => {
-      const next = `${this.path}.next`
+      const choices = await this.choices()
+      const changed = next(choices)
+      if (!changed) return choices
+      const file = `${this.path}.next`
       await mkdir(dirname(this.path), { recursive: true })
       try {
-        await writeFile(next, JSON.stringify(choices), { mode: 0o600 })
-        await rename(next, this.path)
+        await writeFile(file, JSON.stringify(changed), { mode: 0o600 })
+        await rename(file, this.path)
       } catch (error) {
-        await rm(next, { force: true })
+        await rm(file, { force: true })
         throw error
       }
-      this.kept = choices
+      this.kept = changed
+      return changed
     })
     this.writing = run
     return run

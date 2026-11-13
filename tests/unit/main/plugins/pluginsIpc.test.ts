@@ -26,7 +26,7 @@ function register(answer: GitHubSignIn = { state: 'signed-in', login: 'example-u
   const removeAccount = vi.fn(async (): Promise<PluginAccountResult> => ({ ok: true, accounts: [] }))
   const updateAccount = vi.fn(async (): Promise<PluginAccountResult> => ({ ok: true, accounts: [{ ...account, on: false }] }))
   const projects = vi.fn(() => [{ id: 'p-sotto', title: 'Sotto', settled: false }])
-  const view: PluginCopiesView = { copyNew: true, computers: [{ id: 'saved-forge', name: 'forge', connected: true }], copies: [{ accountId: account.id, computerId: 'saved-forge', state: 'kept' }] }
+  const view: PluginCopiesView = { copyNew: true, computers: [{ id: 'saved-forge', name: 'forge', connected: true }], copies: [{ accountId: account.id, computerId: 'saved-forge', state: 'kept', leaving: 'no' }] }
   const copies = vi.fn(async (): Promise<PluginCopiesView> => view), setCopy = vi.fn(async (): Promise<PluginCopiesView> => view), setCopyNew = vi.fn(async (): Promise<PluginCopiesView> => view)
   const close = registerPluginsIpc(registry.ipc, { gitHubSignIn, recentUse, accounts, addAccount, replaceSecret, removeAccount, updateAccount, projects, copies, setCopy, setCopyNew }, registry.trustedSenders)
   const renderer = preloadElectron().ipcRenderer

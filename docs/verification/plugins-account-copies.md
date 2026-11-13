@@ -31,13 +31,13 @@ Always, in Sotto's encrypted store.", and **Keep a copy of Work on forge** switc
 The page was checked with the copy kept in dark at 1600x1000, 1280x800 and the 820x560 minimum, and in light at
 1280x800. Nothing on it was wider than the room it sits in at any of the four.
 
-The switch was turned off from the keyboard, with focus on it and Enter. It read "No copy. forge's threads cannot
-use this account.", forge's record of accounts emptied and its credential slot went, and **Other computers** read
+The switch was turned off from the keyboard, with focus on it and Enter. Once forge had let the copy go it read "No
+copy. forge's threads cannot use this account.", forge's record of accounts emptied and its credential slot went, and **Other computers** read
 "Copies kept there: 0 of 1." Pressed again, it read "A copy is kept on forge." and forge held the account once more.
 
 The account was then kept to a project, Site, made on this computer for the run. The switch for forge turned off and
-could not be pressed, and read "No copy. Work is kept to projects on this computer, so its secret stays here. Choose
-Every project to copy it." forge let its copy go, account and secret. **Every project** was pressed: the switch could
+could not be pressed, and once forge had let its copy go, account and secret, it read "No copy. Work is kept to
+projects on this computer, so its secret stays here. Choose Every project to copy it." **Every project** was pressed: the switch could
 be pressed again, read "A copy is kept on forge.", and forge held the account again, as the switch had been left.
 
 **Remove** was pressed and confirmed. forge's record of accounts emptied and its credential slot went. The made-up
@@ -57,12 +57,14 @@ token was still in no file in the clear, and the page raised no error.
   replaced secret and the account's switch reaching the host, a copy switched off, an account removed while the host
   was away, an account kept to chosen projects never sent and taken back, the default for new copies as it stood
   when an account and a computer first met, a host that connected before it was saved, an older host asked nothing
-  and sent nothing, each reason a host keeps nothing, a locked credential store, and a failed look tried again.
+  and sent nothing, each reason a host keeps nothing, a locked credential store, and a failed look tried again. Also
+  no secret sent for an account narrowed, or a copy switched off, while the host was still answering; two choices
+  made a moment apart both kept; and a host not said to hold no copy until it has said so, away or here.
 - `tests/integration/pluginAccountCopies.test.ts`: over a real host's socket, a desktop the launch script recorded
   after its hello is answered and may then send, nothing with a secret leaves a client the host has not answered,
   and the list says what the host holds without a secret.
 - `tests/unit/renderer/features/settings/pluginsSettings.test.tsx`: where a secret is kept, each sentence a switch
-  can show, a copy arriving without the page asking, the other computers and the default, and a choice that could
+  can show, a copy that is leaving a host and one that leaves when the host is back, a copy arriving without the page asking, the other computers and the default, and a choice that could
   not be saved.
 - `tests/unit/main/plugins/pluginsIpc.test.ts`: only the main window may read the copies or change a choice.
 

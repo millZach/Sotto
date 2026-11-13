@@ -214,6 +214,13 @@ export const pluginProjectsSchema = z.array(pluginProjectSchema).max(10_000)
  */
 export const PLUGIN_ACCOUNT_COPY_STATES = ['kept', 'waiting', 'off', 'here-only', 'too-old', 'no-key', 'full', 'name-taken', 'held', 'locked', 'failed'] as const
 export type PluginAccountCopyState = typeof PLUGIN_ACCOUNT_COPY_STATES[number]
+/**
+ * Whether a computer may still hold a copy that is not wanted there, `off` or `here-only`. Only the computer can say
+ * it holds none. `no`: it said so, or no copy is leaving. `now`: it is connected and being told, or asked. `away`:
+ * it is not connected, and is told when it next is.
+ */
+export const PLUGIN_ACCOUNT_COPY_LEAVING = ['no', 'now', 'away'] as const
+export type PluginAccountCopyLeaving = typeof PLUGIN_ACCOUNT_COPY_LEAVING[number]
 /** How many computers the page is told of: more than anyone pairs. */
 const PLUGIN_COPY_COMPUTERS_MAX = 200
 const computerIdSchema = z.string().min(1).max(512)
@@ -222,7 +229,7 @@ export const pluginCopiesViewSchema = z.object({
   /** Whether a new account, or a newly paired computer, starts with a copy. */
   copyNew: z.boolean(),
   computers: z.array(z.object({ id: computerIdSchema, name: z.string().max(512), connected: z.boolean() }).strict()).max(PLUGIN_COPY_COMPUTERS_MAX),
-  copies: z.array(z.object({ accountId: z.uuid(), computerId: computerIdSchema, state: z.enum(PLUGIN_ACCOUNT_COPY_STATES) }).strict())
+  copies: z.array(z.object({ accountId: z.uuid(), computerId: computerIdSchema, state: z.enum(PLUGIN_ACCOUNT_COPY_STATES), leaving: z.enum(PLUGIN_ACCOUNT_COPY_LEAVING) }).strict())
     .max(PLUGIN_COPY_COMPUTERS_MAX * ACCOUNT_PLUGIN_IDS.length * PLUGIN_ACCOUNTS_MAX),
 }).strict()
 export type PluginCopiesView = z.infer<typeof pluginCopiesViewSchema>

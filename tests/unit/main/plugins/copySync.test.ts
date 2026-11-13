@@ -20,7 +20,8 @@ const tokenOf = (id: string): string => `made-up-token-for-${id.slice(-4)}`
 function fakeHost(hostId: string, options: { feature?: boolean; settings?: boolean; refuses?: PluginAccountCopyReceipt } = {}) {
   const held = new Map<string, PluginAccountCopy>()
   const calls: string[] = []
-  const state = { down: false }
+  /** `down`: nothing is answered. `keeps`: a removal is not answered. `asked`: a list waits for it, as a slow host's does. */
+  const state: { down: boolean; keeps: boolean; asked?: Promise<void> } = { down: false, keeps: false }
   const target: CopyTarget = { hostId, kind: 'remote', service: {
     supportsPluginAccountCopies: options.feature !== false,
     keepPluginAccountCopy: async copy => {
@@ -30,12 +31,14 @@ function fakeHost(hostId: string, options: { feature?: boolean; settings?: boole
       held.set(copy.account.id, copy)
       return { kept: true, keptAt: '2026-11-12T09:00:00.000Z' }
     },
-    removePluginAccountCopy: async id => { calls.push(`remove ${held.get(id)?.account.name ?? id}`); if (state.down) throw new Error('The host did not answer.'); held.delete(id); return { removed: true } },
+    removePluginAccountCopy: async id => { calls.push(`remove ${held.get(id)?.account.name ?? id}`); if (state.down || state.keeps) throw new Error('The host did not answer.'); held.delete(id); return { removed: true } },
     pluginAccountCopies: async () => {
       calls.push('list')
       if (state.down) throw new Error('The host did not answer.')
+      const now = [...held.values()]
+      await state.asked
       // A host from before the settings were listed says only which account and the day its secret was saved.
-      return [...held.values()].map(({ account }): HeldPluginAccountCopy => options.settings === false ? { id: account.id, plugin: account.plugin, savedAt: account.savedAt }
+      return now.map(({ account }): HeldPluginAccountCopy => options.settings === false ? { id: account.id, plugin: account.plugin, savedAt: account.savedAt }
         : { id: account.id, plugin: account.plugin, savedAt: account.savedAt, name: account.name, signedInAs: account.signedInAs, on: account.on, projects: account.projects })
     },
   } }
@@ -65,7 +68,7 @@ async function desk(start: readonly PluginAccount[] = [WORK]) {
     world.computers = world.computers.map(computer => computer.hostId === host.target.hostId ? { ...computer, connected: false } : computer)
     world.connections = world.connections.filter(target => target.hostId !== host.target.hostId)
   }
-  const states = async (): Promise<string[]> => (await sync.view()).copies.map(copy => `${world.accounts.find(account => account.id === copy.accountId)!.name}@${copy.computerId.replace('saved-', '')}: ${copy.state}`)
+  const states = async (): Promise<string[]> => (await sync.view()).copies.map(copy => `${world.accounts.find(account => account.id === copy.accountId)!.name}@${copy.computerId.replace('saved-', '')}: ${copy.state}${copy.leaving === 'no' ? '' : ` (leaving ${copy.leaving})`}`)
   return { directory, world, sync, make, connect, leave, states, events, changes: () => changes }
 }
 
@@ -243,6 +246,84 @@ describe('sending account copies to paired hosts (ADR-0205, amending ADR-0025)',
     await d.sync.idle()
     expect(forge.calls).toEqual(['list', 'remove Work'])
     expect(forge.held.size).toBe(0)
+  })
+
+  it('sends no secret for an account narrowed, or a copy switched off, while the host was still answering', async () => {
+    // A copy sent cannot be unsent, so a look that began before the change must not send what the change stops.
+    for (const change of ['narrowed', 'switched off'] as const) {
+      const d = await desk()
+      const forge = fakeHost('host-forge')
+      let answer!: () => void
+      forge.state.asked = new Promise<void>(resolve => { answer = resolve })
+      d.connect(forge)
+      // The host has been asked what it holds and has not answered yet.
+      await expect.poll(() => forge.calls).toEqual(['list'])
+      if (change === 'narrowed') { d.world.accounts = [{ ...WORK, projects: ['folder:one'] }]; d.sync.accountsChanged() }
+      else void d.sync.setCopy(WORK.id, 'saved-host-forge', false)
+      delete forge.state.asked
+      answer()
+      await d.sync.idle()
+      expect(forge.calls.filter(call => call.startsWith('keep')), change).toEqual([])
+      expect(forge.held.size, change).toBe(0)
+      expect(await d.states(), change).toEqual([change === 'narrowed' ? 'Work@host-forge: here-only' : 'Work@host-forge: off'])
+    }
+  })
+
+  it('keeps both of two choices made a moment apart', async () => {
+    const d = await desk()
+    const forge = fakeHost('host-forge')
+    const anvil = fakeHost('host-anvil')
+    d.connect(forge)
+    d.connect(anvil, 'anvil')
+    await d.sync.idle()
+    expect([forge.held.size, anvil.held.size]).toEqual([1, 1])
+    // Neither waits for the other to be written down.
+    await Promise.all([d.sync.setCopy(WORK.id, 'saved-host-forge', false), d.sync.setCopy(WORK.id, 'saved-host-anvil', false)])
+    await d.sync.idle()
+    expect(JSON.parse(await readFile(join(d.directory, 'plugin-account-copy-choices.json'), 'utf8')).choices[WORK.id]).toEqual({ 'saved-host-forge': false, 'saved-host-anvil': false })
+    expect([forge.held.size, anvil.held.size]).toEqual([0, 0])
+    expect(await d.states()).toEqual(['Work@host-forge: off', 'Work@host-anvil: off'])
+  })
+
+  it('does not say a host holds no copy until the host has said so', async () => {
+    const d = await desk()
+    const forge = fakeHost('host-forge')
+    d.connect(forge)
+    await d.sync.idle()
+    // Switched off while forge is away: forge still holds the copy, and is told when it is back.
+    d.leave(forge)
+    await d.sync.setCopy(WORK.id, 'saved-host-forge', false)
+    await d.sync.idle()
+    expect(forge.held.size).toBe(1)
+    expect(await d.states()).toEqual(['Work@host-forge: off (leaving away)'])
+    // Back, but its removal is not answered: it may still hold it.
+    forge.state.keeps = true
+    d.connect(forge)
+    await d.sync.idle()
+    expect(forge.held.size).toBe(1)
+    expect(await d.states()).toEqual(['Work@host-forge: off (leaving now)'])
+    // The removal is answered: only now is there no copy.
+    forge.state.keeps = false
+    d.sync.accountsChanged()
+    await d.sync.idle()
+    expect(forge.held.size).toBe(0)
+    expect(await d.states()).toEqual(['Work@host-forge: off'])
+    // Away again, nothing is leaving: it was seen to hold none, and nothing has been sent since.
+    d.leave(forge)
+    expect(await d.states()).toEqual(['Work@host-forge: off'])
+    // An account kept to projects says the same of a copy made before it was narrowed.
+    await d.sync.setCopy(WORK.id, 'saved-host-forge', true)
+    d.connect(forge)
+    await d.sync.idle()
+    expect(await d.states()).toEqual(['Work@host-forge: kept'])
+    d.leave(forge)
+    d.world.accounts = [{ ...WORK, projects: ['folder:one'] }]
+    d.sync.accountsChanged()
+    await d.sync.idle()
+    expect(await d.states()).toEqual(['Work@host-forge: here-only (leaving away)'])
+    d.connect(forge)
+    await d.sync.idle()
+    expect(await d.states()).toEqual(['Work@host-forge: here-only'])
   })
 
   it('follows the default for new copies as it stood when an account and a computer first met', async () => {
