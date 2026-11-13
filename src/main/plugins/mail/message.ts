@@ -30,6 +30,9 @@ function fromQuotedPrintable(text: string, header: boolean, cut = false): Buffer
   return Buffer.from(out)
 }
 
+/** Text on one line: a line end, a tab or any other character that is not a letter becomes a space, so a sender cannot write a second line into a first. */
+const oneLine = (text: string): string => [...text].map(character => character.charCodeAt(0) < 0x20 || character.charCodeAt(0) === 0x7f ? ' ' : character).join('')
+
 /** A header's value with its encoded words (RFC 2047) in their own letters: `=?utf-8?B?…?=` and `=?utf-8?Q?…?=`. */
 export function decodeWords(value: string): string {
   // White space between two encoded words is not part of the text.
@@ -44,7 +47,7 @@ export function mailHeaders(block: Buffer): Map<string, string> {
     const colon = line.indexOf(':')
     if (colon < 1) continue
     const name = line.slice(0, colon).trim().toLowerCase()
-    if (!headers.has(name)) headers.set(name, decodeWords(line.slice(colon + 1).trim()))
+    if (!headers.has(name)) headers.set(name, oneLine(decodeWords(line.slice(colon + 1).trim())))
   }
   return headers
 }
@@ -81,10 +84,10 @@ function fileName(...sets: readonly Map<string, string>[]): string | null {
       const coded = /^([^']*)'[^']*'(.*)$/u.exec(set.get(key) ?? '')
       if (!coded) continue
       const bytes = Buffer.from(coded[2]!.replace(/%([0-9A-Fa-f]{2})/gu, (_whole, hex: string) => String.fromCharCode(Number.parseInt(hex, 16))), 'latin1')
-      return inCharset(bytes, coded[1]!) || null
+      return oneLine(inCharset(bytes, coded[1]!)) || null
     }
     const plain = set.get('filename') ?? set.get('name')
-    if (plain) return decodeWords(plain)
+    if (plain) return oneLine(decodeWords(plain))
   }
   return null
 }
@@ -125,12 +128,9 @@ export function mailParts(structure: ImapItem | undefined): MailPart[] {
 
 /**
  * The part that is the message's text: its plain text where it has one, or its HTML. Never a file: a part the sender
- * marked as attached, or one with a file name, is not read as text. A message that is one text part and nothing else
- * is that text, whatever it is called.
+ * marked as attached, or one with a file name, is not read as text, even where it is the whole message (ADR-0205).
  */
 export function textPart(parts: readonly MailPart[]): MailPart | null {
-  const [only] = parts
-  if (parts.length === 1 && only && !only.attached && (only.type === 'text/plain' || only.type === 'text/html')) return only
   const text = (type: string): MailPart | undefined => parts.find(part => part.type === type && !part.attached && part.name === null)
   return text('text/plain') ?? text('text/html') ?? null
 }

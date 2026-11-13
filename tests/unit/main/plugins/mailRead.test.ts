@@ -9,6 +9,8 @@ const PASSWORD = 'made-up app password'
 const SIGN_IN = { address: ADDRESS, password: PASSWORD }
 const SERVER = { host: 'imap.mail.example', port: 993 }
 const b64 = (text: string): string => Buffer.from(text, 'utf8').toString('base64')
+/** A message's name as a search gives it: its mailbox's rebuild count, its number there, and the mailbox by the server's name for it. */
+const named = (validity: number, uid: number, mailbox = 'INBOX'): string => `${validity}-${uid}-${Buffer.from(mailbox, 'utf8').toString('base64url')}`
 
 function mailboxes(): FakeMailbox[] {
   return [
@@ -76,6 +78,20 @@ describe('checking a mail account’s address and password (ADR-0205)', () => {
     }
   })
 
+  it('drops them too when the password stands past where they are cut, or is written the way a command writes it', async () => {
+    const far = await mail({ loginSays: `NO [AUTHENTICATIONFAILED] ${'x'.repeat(180)} pass=${PASSWORD}` })
+    await expect(checkMailSignIn(SERVER, SIGN_IN, far.reach)).resolves.toEqual({ ok: false, reason: 'refused' })
+    const password = 'pa"ss\\word'
+    const escaped = await mail({ password, loginSays: 'NO Could not sign in with "pa\\"ss\\\\word"' })
+    await expect(checkMailSignIn(SERVER, { address: ADDRESS, password }, escaped.reach)).resolves.toEqual({ ok: false, reason: 'refused' })
+
+    // Words that hold neither are kept, as one line of no more than 200 characters.
+    const long = await mail({ loginSays: `NO ${'Sign in on the web first. '.repeat(20)}` })
+    const kept = await checkMailSignIn(SERVER, SIGN_IN, long.reach)
+    expect(kept).toMatchObject({ ok: false, reason: 'refused' })
+    expect(kept.ok ? '' : kept.said).toHaveLength(200)
+  })
+
   it('sends a password with quotes, slashes or letters outside ASCII so the server reads it whole', async () => {
     for (const password of ['made"up\\pass word', 'gemächt-auf "Paßwort"']) {
       const { reach } = await mail({ password })
@@ -127,9 +143,9 @@ describe('searching a mail account (ADR-0205)', () => {
   it('lists the inbox’s newest messages first, in their own letters, and marks none as read', async () => {
     const { fake, boxes, reach } = await mail()
     await expect(searchMail(SERVER, SIGN_IN, { limit: 3 }, reach)).resolves.toEqual({ ok: true, mailbox: 'INBOX', found: 4, messages: [
-      { id: '7-14', date: '2026-11-13T07:20:00.000Z', from: 'Long <long@example.org>', to: ADDRESS, subject: 'A long one', unread: false, size: 450_500 },
-      { id: '7-13', date: '2026-11-13T07:15:00.000Z', from: 'News <news@example.org>', to: ADDRESS, subject: 'This week', unread: true, size: expect.any(Number) },
-      { id: '7-12', date: '2026-11-12T14:30:00.000Z', from: 'Zoë Example <zoe@example.com>', to: ADDRESS, subject: 'Rechnung für Oktober', unread: true, size: expect.any(Number) },
+      { id: named(7, 14), date: '2026-11-13T07:20:00.000Z', from: 'Long <long@example.org>', to: ADDRESS, subject: 'A long one', unread: false, size: 450_500 },
+      { id: named(7, 13), date: '2026-11-13T07:15:00.000Z', from: 'News <news@example.org>', to: ADDRESS, subject: 'This week', unread: true, size: expect.any(Number) },
+      { id: named(7, 12), date: '2026-11-12T14:30:00.000Z', from: 'Zoë Example <zoe@example.com>', to: ADDRESS, subject: 'Rechnung für Oktober', unread: true, size: expect.any(Number) },
     ] })
     // With nothing to look for, the server is not asked to number every message: the last three in the mailbox are fetched.
     expect(await sent(fake)).toEqual([...SIGNED_IN, 'EXAMINE INBOX', `FETCH 2:4 (UID FLAGS INTERNALDATE RFC822.SIZE ${HEADERS})`, 'LOGOUT'])
@@ -137,20 +153,20 @@ describe('searching a mail account (ADR-0205)', () => {
 
     // A limit past what the mailbox holds lists all of it, and an empty mailbox is not fetched from.
     const every = await mail()
-    await expect(searchMail(SERVER, SIGN_IN, {}, every.reach)).resolves.toMatchObject({ ok: true, found: 4, messages: [{ id: '7-14' }, { id: '7-13' }, { id: '7-12' }, { id: '7-11' }] })
+    await expect(searchMail(SERVER, SIGN_IN, {}, every.reach)).resolves.toMatchObject({ ok: true, found: 4, messages: [{ id: named(7, 14) }, { id: named(7, 13) }, { id: named(7, 12) }, { id: named(7, 11) }] })
     expect(every.fake.commands[3]).toBe(`FETCH 1:4 (UID FLAGS INTERNALDATE RFC822.SIZE ${HEADERS})`)
   })
 
   it('lists the newest of the messages that match, and says how many matched', async () => {
     const { fake, reach } = await mail()
-    await expect(searchMail(SERVER, SIGN_IN, { since: '2026-11-12', limit: 2 }, reach)).resolves.toMatchObject({ ok: true, found: 3, messages: [{ id: '7-14' }, { id: '7-13' }] })
+    await expect(searchMail(SERVER, SIGN_IN, { since: '2026-11-12', limit: 2 }, reach)).resolves.toMatchObject({ ok: true, found: 3, messages: [{ id: named(7, 14) }, { id: named(7, 13) }] })
     expect(fake.commands.slice(3, 5)).toEqual(['UID SEARCH SINCE 12-Nov-2026', `UID FETCH 14,13 (UID FLAGS INTERNALDATE RFC822.SIZE ${HEADERS})`])
   })
 
   it('searches by sender, subject, words, days and unread, with letters outside ASCII sent as UTF-8', async () => {
     const { fake, reach } = await mail()
     const found = await searchMail(SERVER, SIGN_IN, { from: 'zoë', subject: 'Rechnung', text: 'oktober', since: '2026-11-11', before: '2026-11-13', unread: true }, reach)
-    expect(found).toMatchObject({ ok: true, found: 1, messages: [{ id: '7-12' }] })
+    expect(found).toMatchObject({ ok: true, found: 1, messages: [{ id: named(7, 12) }] })
     expect(fake.commands[3]).toBe('UID SEARCH CHARSET UTF-8 FROM zoë SUBJECT Rechnung TEXT oktober SINCE 11-Nov-2026 BEFORE 13-Nov-2026 UNSEEN')
 
     // Words that only look like a command are sent as words.
@@ -161,7 +177,7 @@ describe('searching a mail account (ADR-0205)', () => {
 
   it('opens a mailbox by what it is for, or by its own name in its own letters', async () => {
     const all = await mail()
-    await expect(searchMail(SERVER, SIGN_IN, { mailbox: 'All' }, all.reach)).resolves.toMatchObject({ ok: true, mailbox: '[Gmail]/All Mail', found: 1, messages: [{ id: '3-501', subject: 'From the archive' }] })
+    await expect(searchMail(SERVER, SIGN_IN, { mailbox: 'All' }, all.reach)).resolves.toMatchObject({ ok: true, mailbox: '[Gmail]/All Mail', found: 1, messages: [{ id: named(3, 501, '[Gmail]/All Mail'), subject: 'From the archive' }] })
     expect(all.fake.commands.slice(2, 4)).toEqual(['LIST  *', 'EXAMINE [Gmail]/All Mail'])
 
     const drafts = await mail()
@@ -189,7 +205,9 @@ describe('searching a mail account (ADR-0205)', () => {
     const refused = { ok: false, reason: 'input' }
     const searches: MailSearch[] = [{ limit: 0 }, { limit: 51 }, { limit: 1.5 }, { since: '2026-02-30' }, { before: 'yesterday' }, { text: 'two\nlines' }, { from: '' }, { subject: 'x'.repeat(201) }, { mailbox: 'a\rb' }]
     for (const search of searches) await expect(searchMail(SERVER, SIGN_IN, search, reach)).resolves.toEqual(refused)
-    for (const id of ['12', '7-0', 'x-1', '7-12 ', '7-12345678901']) await expect(openMail(SERVER, SIGN_IN, { id }, reach)).resolves.toEqual(refused)
+    const inbox = Buffer.from('INBOX').toString('base64url')
+    const ids = ['12', '7-12', `7-0-${inbox}`, `x-1-${inbox}`, `${named(7, 12)} `, `7-12345678901-${inbox}`, '7-12-!!', `7-12-${inbox}=`, named(7, 12, 'two\rlines'), named(7, 12, '')]
+    for (const id of ids) await expect(openMail(SERVER, SIGN_IN, { id }, reach)).resolves.toEqual(refused)
     await expect(checkMailSignIn(SERVER, { address: ADDRESS, password: '' }, reach)).resolves.toEqual(refused)
     await expect(checkMailSignIn(SERVER, { address: 'two\r\nlines', password: PASSWORD }, reach)).resolves.toEqual(refused)
     expect(fake.asked).toEqual([])
@@ -197,10 +215,26 @@ describe('searching a mail account (ADR-0205)', () => {
 })
 
 describe('opening a message (ADR-0205)', () => {
+  it('opens a message in the mailbox its search listed it in, though another mailbox numbers one the same', async () => {
+    const one = (subject: string, words: string): FakeMailbox['messages'][number] => ({ uid: 1, received: '13-Nov-2026 07:15:00 +0000', headers: { From: 'Ann Example <ann@example.com>', To: ADDRESS, Subject: subject }, body: { type: 'text/plain', body: words } })
+    // Two mailboxes may number their messages alike, and count their rebuilds alike.
+    const boxes: FakeMailbox[] = [
+      { name: 'INBOX', validity: 7, messages: [one('In the inbox', 'Inbox words.')] },
+      { name: 'Sent', marks: ['\\HasNoChildren', '\\Sent'], validity: 7, messages: [one('Sent by me', 'Sent words.')] },
+    ]
+    const { reach } = await mail({ mailboxes: boxes })
+    const sentMail = await searchMail(SERVER, SIGN_IN, { mailbox: 'sent' }, reach)
+    const inbox = await searchMail(SERVER, SIGN_IN, {}, reach)
+    const [sentId, inboxId] = [sentMail.ok ? sentMail.messages[0]!.id : '', inbox.ok ? inbox.messages[0]!.id : '']
+    expect(sentId).not.toBe(inboxId)
+    await expect(openMail(SERVER, SIGN_IN, { id: sentId }, reach)).resolves.toMatchObject({ ok: true, mailbox: 'Sent', message: { subject: 'Sent by me', text: 'Sent words.' } })
+    await expect(openMail(SERVER, SIGN_IN, { id: inboxId }, reach)).resolves.toMatchObject({ ok: true, mailbox: 'INBOX', message: { subject: 'In the inbox', text: 'Inbox words.' } })
+  })
+
   it('reads its plain text and names its files, fetching only the text and leaving it unread', async () => {
     const { fake, boxes, reach } = await mail()
-    await expect(openMail(SERVER, SIGN_IN, { id: '7-12' }, reach)).resolves.toEqual({ ok: true, mailbox: 'INBOX', message: {
-      id: '7-12', date: '2026-11-12T14:30:00.000Z', from: 'Zoë Example <zoe@example.com>', to: ADDRESS, cc: 'ann@example.com', subject: 'Rechnung für Oktober', unread: true, size: expect.any(Number),
+    await expect(openMail(SERVER, SIGN_IN, { id: named(7, 12) }, reach)).resolves.toEqual({ ok: true, mailbox: 'INBOX', message: {
+      id: named(7, 12), date: '2026-11-12T14:30:00.000Z', from: 'Zoë Example <zoe@example.com>', to: ADDRESS, cc: 'ann@example.com', subject: 'Rechnung für Oktober', unread: true, size: expect.any(Number),
       text: 'Die Rechnung für Oktober liegt bei.\n', fromHtml: false, truncated: false,
       files: [{ name: 'Rechnung für Oktober.pdf', type: 'application/pdf', size: b64('made-up pdf bytes').length }],
     } })
@@ -213,12 +247,12 @@ describe('opening a message (ADR-0205)', () => {
 
   it('reads a message that has only HTML as text, and says so', async () => {
     const { reach } = await mail()
-    await expect(openMail(SERVER, SIGN_IN, { id: '7-13' }, reach)).resolves.toMatchObject({ ok: true, message: { text: 'Three things this week.\nRead more (https://example.org/more)', fromHtml: true, truncated: false, files: [] } })
+    await expect(openMail(SERVER, SIGN_IN, { id: named(7, 13) }, reach)).resolves.toMatchObject({ ok: true, message: { text: 'Three things this week.\nRead more (https://example.org/more)', fromHtml: true, truncated: false, files: [] } })
   })
 
   it('cuts a long message and says it was cut', async () => {
     const { fake, reach } = await mail()
-    const opened = await openMail(SERVER, SIGN_IN, { id: '7-14' }, reach)
+    const opened = await openMail(SERVER, SIGN_IN, { id: named(7, 14) }, reach)
     expect(opened).toMatchObject({ ok: true, message: { truncated: true } })
     expect(opened.ok && opened.message.text).toBe('a'.repeat(MAIL_TEXT_MAX_CHARS))
     expect(fake.commands[4]).toBe('UID FETCH 14 (BODY.PEEK[1]<0.400000>)')
@@ -226,15 +260,17 @@ describe('opening a message (ADR-0205)', () => {
 
   it('says when the message is gone, and when its mailbox was rebuilt since the search', async () => {
     const { fake, reach } = await mail()
-    await expect(openMail(SERVER, SIGN_IN, { id: '7-99' }, reach)).resolves.toEqual({ ok: false, reason: 'gone' })
-    await expect(openMail(SERVER, SIGN_IN, { id: '6-12' }, reach)).resolves.toEqual({ ok: false, reason: 'moved' })
+    await expect(openMail(SERVER, SIGN_IN, { id: named(7, 99) }, reach)).resolves.toEqual({ ok: false, reason: 'gone' })
+    await expect(openMail(SERVER, SIGN_IN, { id: named(6, 12) }, reach)).resolves.toEqual({ ok: false, reason: 'moved' })
     // The number may be another message's now, so nothing is fetched by it.
     expect(fake.commands.filter(command => command.startsWith('UID FETCH'))).toHaveLength(1)
-    await expect(openMail(SERVER, SIGN_IN, { mailbox: 'all', id: '3-501' }, reach)).resolves.toMatchObject({ ok: true, mailbox: '[Gmail]/All Mail', message: { text: 'Old news.' } })
+    // A mailbox that is no longer there is said to be gone, in the server's words.
+    await expect(openMail(SERVER, SIGN_IN, { id: named(7, 12, 'Receipts') }, reach)).resolves.toEqual({ ok: false, reason: 'mailbox', said: 'Unknown Mailbox: Receipts (Failure)' })
+    await expect(openMail(SERVER, SIGN_IN, { id: named(3, 501, '[Gmail]/All Mail') }, reach)).resolves.toMatchObject({ ok: true, mailbox: '[Gmail]/All Mail', message: { text: 'Old news.' } })
   })
 
   it('stops reading a server that sends more than a message’s text can be', async () => {
     const { reach } = await mail({ claimedBytes: 2_000_000 })
-    await expect(openMail(SERVER, SIGN_IN, { id: '7-11' }, reach)).resolves.toEqual({ ok: false, reason: 'failed' })
+    await expect(openMail(SERVER, SIGN_IN, { id: named(7, 11) }, reach)).resolves.toEqual({ ok: false, reason: 'failed' })
   })
 })

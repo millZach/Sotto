@@ -17,6 +17,10 @@ describe('a mail message as a person reads it (ADR-0205)', () => {
 
     const headers = mailHeaders(Buffer.from('From: "Ann" <ann@example.com>\r\nSubject: one\r\n two\r\nsubject: second\r\nno colon here\r\n\r\n'))
     expect([...headers]).toEqual([['from', '"Ann" <ann@example.com>'], ['subject', 'one two']])
+
+    // A sender cannot write a second line into a header, or into a file's name: each is one line.
+    expect(mailHeaders(Buffer.from('Subject: =?utf-8?Q?Hi=0D=0AFrom:_ceo@corp.example=1B[2J?=\r\n\r\n')).get('subject')).toBe('Hi  From: ceo@corp.example [2J')
+    expect(mailParts(structure('("application" "pdf" ("name" "=?utf-8?Q?a=0Ab.pdf?=") NIL NIL "base64" 9 NIL NIL NIL NIL)'))[0]?.name).toBe('a b.pdf')
   })
 
   it('finds the text among a message’s parts and names the files, without opening a message sent along inside', () => {
@@ -62,9 +66,10 @@ describe('a mail message as a person reads it (ADR-0205)', () => {
     const named = mailParts(structure(`(${html}("text" "plain" ("name" "notes.txt") NIL NIL "7bit" 20 1 NIL NIL NIL NIL) "mixed" ("boundary" "y") NIL NIL NIL)`))
     expect(textPart(named)?.section).toBe('1')
     expect(attachedParts(named, textPart(named)).map(part => part.name)).toEqual(['notes.txt'])
-    // A message that is one text part and nothing else is that text, name or no name.
+    // Even where it is the whole message: it is listed as a file and not read.
     const only = mailParts(structure('("text" "plain" ("name" "body.txt") NIL NIL "7bit" 5 1 NIL NIL NIL NIL)'))
-    expect(textPart(only)).toBe(only[0])
+    expect(textPart(only)).toBeNull()
+    expect(attachedParts(only, null).map(part => part.name)).toEqual(['body.txt'])
   })
 
   it('reads a part’s text from base64, quoted-printable and other character sets', () => {

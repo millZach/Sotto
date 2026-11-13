@@ -70,7 +70,7 @@ export interface MailSearch {
 
 /** A message as a search lists it. */
 export interface MailSummary {
-  /** The message's name within its mailbox, to open it by. */
+  /** The message's name, to open it by. It says which mailbox the message is in, so it opens there and nowhere else. */
   readonly id: string
   /** When the server received it. */
   readonly date: string | null
@@ -112,11 +112,18 @@ const overTls: MailConnect = (server, signal) => new Promise((resolve, reject) =
   socket.once('close', () => signal.removeEventListener('abort', stop))
 })
 
+/** The most of a server's own words handed on. */
+const SAID_MAX = 200
+/**
+ * Why a read did not happen, with the server's words for it on one line, without anything that is not a letter a
+ * person reads. The words are whole here: `signedIn` looks through all of them before it cuts them and hands them on.
+ */
 const failure = (reason: MailFailure['reason'], said?: string): MailFailure => {
-  // The server's words on one line, without anything that is not a letter a person reads.
-  const words = [...said ?? ''].filter(character => character.charCodeAt(0) >= 0x20 && character.charCodeAt(0) !== 0x7f).join('').trim().slice(0, 200)
+  const words = [...said ?? ''].filter(character => character.charCodeAt(0) >= 0x20 && character.charCodeAt(0) !== 0x7f).join('').trim()
   return { ok: false, reason, ...(words ? { said: words } : {}) }
 }
+/** Text without the marks a command writes a string with, the quotes and the slashes before them, and without regard to capitals. */
+const bare = (text: string): string => text.replace(/["\\]/gu, '').toLowerCase()
 const isFailure = (value: unknown): value is MailFailure => typeof value === 'object' && value !== null && (value as { ok?: unknown }).ok === false
 
 /** The response codes (RFC 5530) and words a server turns a sign-in away with when the trouble is its load, not the password. */
@@ -129,11 +136,12 @@ const BUSY_WORDS = /too many|throttl|temporar|try again later|rate limit/iu
  */
 async function signedIn<Result extends { readonly ok: true }>(server: MailServer, signIn: MailSignIn, options: MailOptions, work: (imap: ImapConnection) => Promise<Result | MailFailure>): Promise<Result | MailFailure> {
   const result = await inSession(server, signIn, options, work)
-  // A server can repeat what it was sent. Its words are dropped where they hold the password or the address.
   if (!isFailure(result) || result.said === undefined) return result
-  const said = result.said.toLowerCase()
-  if (!said.includes(signIn.password.toLowerCase()) && !said.includes(signIn.address.toLowerCase())) return result
-  return { ok: false, reason: result.reason, ...(result.mailboxes ? { mailboxes: result.mailboxes } : {}) }
+  // A server can repeat what it was sent. Its words are dropped where they hold the password or the address, wherever
+  // in them that is and whether as it was typed or as a command writes it. Only then are they cut to a line.
+  const said = bare(result.said)
+  if ([signIn.password, signIn.address].some(sent => said.includes(bare(sent)))) return { ok: false, reason: result.reason, ...(result.mailboxes ? { mailboxes: result.mailboxes } : {}) }
+  return { ...result, said: result.said.slice(0, SAID_MAX) }
 }
 
 async function inSession<Result extends { readonly ok: true }>(server: MailServer, signIn: MailSignIn, options: MailOptions, work: (imap: ImapConnection) => Promise<Result | MailFailure>): Promise<Result | MailFailure> {
@@ -222,34 +230,51 @@ function criteria(search: MailSearch): ImapArg[] | null {
 /** The mailboxes people name by what they are for, and the mark a server sets on each (RFC 6154). */
 const SPECIAL: Readonly<Record<string, string>> = { all: '\\ALL', sent: '\\SENT', drafts: '\\DRAFTS', trash: '\\TRASH', spam: '\\JUNK', starred: '\\FLAGGED' }
 
-interface OpenMailbox { readonly name: string; readonly validity: number; /** How many messages it holds. */ readonly exists: number }
+/** A mailbox by the server's own name for it (`raw`) and in its own letters (`name`). */
+interface NamedMailbox { readonly raw: string; readonly name: string }
+interface OpenMailbox extends NamedMailbox { readonly validity: number; /** How many messages it holds. */ readonly exists: number }
 
-/** Opens a mailbox for reading only, by what it is for or by its own name. */
-async function examine(imap: ImapConnection, wanted: string | undefined): Promise<OpenMailbox | MailFailure> {
-  let raw = 'INBOX'
-  let name = 'INBOX'
-  if (wanted !== undefined && wanted.trim().toLowerCase() !== 'inbox') {
-    const listed = await imap.run('LIST', { text: '' }, { text: '*' })
-    if (listed.status !== 'OK') return failure('failed', listed.text)
-    const boxes = listed.data.filter(line => atomOf(line[0]) === 'LIST' && line.length >= 4).map(line => {
-      const marks = listOf(line[1]).map(mark => atomOf(mark) ?? '')
-      const itsRaw = textOf(line[3])
-      return { marks, raw: itsRaw, name: decodeMailboxName(itsRaw) }
-    }).filter(box => box.raw !== '' && !box.marks.includes('\\NOSELECT') && !box.marks.includes('\\NONEXISTENT'))
-    const key = wanted.trim().toLowerCase()
-    const mark = SPECIAL[key]
-    // A name is its own letters first: two mailboxes may differ only in their capitals.
-    const found = (mark === undefined ? undefined : boxes.find(box => box.marks.includes(mark))) ?? boxes.find(box => box.name === wanted.trim()) ?? boxes.find(box => box.name.toLowerCase() === key)
-    if (!found) return { ...failure('mailbox'), mailboxes: boxes.slice(0, LISTED_MAX).map(box => box.name) }
-    raw = found.raw
-    name = found.name
-  }
+/**
+ * A message's name: how many times its mailbox has been rebuilt, its number there, and the mailbox by the server's
+ * own name for it. Two mailboxes number their messages alike, so the number alone would open whichever mailbox was
+ * asked for.
+ */
+const messageId = (mailbox: OpenMailbox, uid: number): string => `${mailbox.validity}-${uid}-${Buffer.from(mailbox.raw, 'utf8').toString('base64url')}`
+function messageNamed(id: string): { readonly validity: number; readonly uid: number; readonly raw: string } | null {
+  const found = /^(\d{1,10})-(\d{1,10})-([A-Za-z0-9_-]{1,1400})$/u.exec(id)
+  if (!found || Number(found[2]) < 1) return null
+  const raw = Buffer.from(found[3]!, 'base64url').toString('utf8')
+  // Only a name as `messageId` writes one.
+  if (!plain(raw, 1_000) || Buffer.from(raw, 'utf8').toString('base64url') !== found[3]) return null
+  return { validity: Number(found[1]), uid: Number(found[2]), raw }
+}
+
+/** The mailbox a search means, by what it is for or by its own name. */
+async function mailboxFor(imap: ImapConnection, wanted: string | undefined): Promise<NamedMailbox | MailFailure> {
+  if (wanted === undefined || wanted.trim().toLowerCase() === 'inbox') return { raw: 'INBOX', name: 'INBOX' }
+  const listed = await imap.run('LIST', { text: '' }, { text: '*' })
+  if (listed.status !== 'OK') return failure('failed', listed.text)
+  const boxes = listed.data.filter(line => atomOf(line[0]) === 'LIST' && line.length >= 4).map(line => {
+    const marks = listOf(line[1]).map(mark => atomOf(mark) ?? '')
+    const itsRaw = textOf(line[3])
+    return { marks, raw: itsRaw, name: decodeMailboxName(itsRaw) }
+  }).filter(box => box.raw !== '' && !box.marks.includes('\\NOSELECT') && !box.marks.includes('\\NONEXISTENT'))
+  const key = wanted.trim().toLowerCase()
+  const mark = SPECIAL[key]
+  // A name is its own letters first: two mailboxes may differ only in their capitals.
+  const found = (mark === undefined ? undefined : boxes.find(box => box.marks.includes(mark))) ?? boxes.find(box => box.name === wanted.trim()) ?? boxes.find(box => box.name.toLowerCase() === key)
+  if (!found) return { ...failure('mailbox'), mailboxes: boxes.slice(0, LISTED_MAX).map(box => box.name) }
+  return { raw: found.raw, name: found.name }
+}
+
+/** Opens a mailbox for reading only. */
+async function examine(imap: ImapConnection, { raw, name }: NamedMailbox): Promise<OpenMailbox | MailFailure> {
   const opened = await imap.run('EXAMINE', { text: raw })
   if (opened.status !== 'OK') return failure('mailbox', opened.text)
   const validity = /^UIDVALIDITY (\d{1,10})$/u.exec(opened.notes.find(note => note.code?.startsWith('UIDVALIDITY '))?.code ?? '')
   if (!validity) return failure('failed')
   const exists = Number(textOf(opened.data.find(line => atomOf(line[1]) === 'EXISTS')?.[0]))
-  return { name, validity: Number(validity[1]), exists: Number.isSafeInteger(exists) && exists > 0 ? exists : 0 }
+  return { raw, name, validity: Number(validity[1]), exists: Number.isSafeInteger(exists) && exists > 0 ? exists : 0 }
 }
 
 /** What a `FETCH` answered for each message, by its number in the mailbox: each named thing and its value. */
@@ -273,13 +298,13 @@ function fetched(answer: ImapAnswer): Map<number, Map<string, ImapItem>> {
 const startingWith = (values: Map<string, ImapItem>, start: string): ImapItem | undefined => [...values].find(([key]) => key.startsWith(start))?.[1]
 
 const HEADERS = 'BODY.PEEK[HEADER.FIELDS (FROM TO CC SUBJECT)]'
-function summary(validity: number, uid: number, values: Map<string, ImapItem>): { readonly listed: MailSummary; readonly cc: string } {
+function summary(mailbox: OpenMailbox, uid: number, values: Map<string, ImapItem>): { readonly listed: MailSummary; readonly cc: string } {
   const block = startingWith(values, 'BODY[HEADER.FIELDS')
   const headers = mailHeaders(Buffer.isBuffer(block) ? block : Buffer.alloc(0))
   const size = Number(textOf(values.get('RFC822.SIZE')))
   return {
     listed: {
-      id: `${validity}-${uid}`, date: receivedAt(textOf(values.get('INTERNALDATE'))),
+      id: messageId(mailbox, uid), date: receivedAt(textOf(values.get('INTERNALDATE'))),
       from: headers.get('from') ?? '', to: headers.get('to') ?? '', subject: headers.get('subject') ?? '',
       unread: !listOf(values.get('FLAGS')).some(flag => atomOf(flag) === '\\SEEN'), size: Number.isSafeInteger(size) && size >= 0 ? size : 0,
     },
@@ -293,7 +318,9 @@ export function searchMail(server: MailServer, signIn: MailSignIn, search: MailS
   const limit = search.limit ?? MAIL_SEARCH_DEFAULT
   if (!wanted || !Number.isInteger(limit) || limit < 1 || limit > MAIL_SEARCH_MAX || (search.mailbox !== undefined && !plain(search.mailbox, MAIL_TERM_MAX))) return Promise.resolve(failure('input'))
   return signedIn<Extract<MailFound, { ok: true }>>(server, signIn, options, async imap => {
-    const mailbox = await examine(imap, search.mailbox)
+    const which = await mailboxFor(imap, search.mailbox)
+    if (isFailure(which)) return which
+    const mailbox = await examine(imap, which)
     if (isFailure(mailbox)) return mailbox
     const items = `(UID FLAGS INTERNALDATE RFC822.SIZE ${HEADERS})`
     let found: number
@@ -313,21 +340,21 @@ export function searchMail(server: MailServer, signIn: MailSignIn, search: MailS
       listed = await imap.run('UID', 'FETCH', uids.slice(0, limit).join(','), items)
     }
     if (listed.status !== 'OK') return failure('failed', listed.text)
-    const messages = [...fetched(listed)].sort(([one], [other]) => other - one).slice(0, limit).map(([uid, values]) => summary(mailbox.validity, uid, values).listed)
+    const messages = [...fetched(listed)].sort(([one], [other]) => other - one).slice(0, limit).map(([uid, values]) => summary(mailbox, uid, values).listed)
     return { ok: true, mailbox: mailbox.name, found, messages }
   })
 }
 
 /**
- * Opens one message a search listed: its header lines, its text, and the names of the files that came with it. The
- * message stays unread, and no file's contents are fetched.
+ * Opens one message a search listed, in the mailbox the search found it in: its header lines, its text, and the names
+ * of the files that came with it. The message stays unread, and no file's contents are fetched.
  */
-export function openMail(server: MailServer, signIn: MailSignIn, message: { readonly mailbox?: string; readonly id: string }, options: MailOptions = {}): Promise<MailOpened> {
-  const named = /^(\d{1,10})-(\d{1,10})$/u.exec(message.id)
-  if (!named || Number(named[2]) < 1 || (message.mailbox !== undefined && !plain(message.mailbox, MAIL_TERM_MAX))) return Promise.resolve(failure('input'))
-  const [validity, uid] = [Number(named[1]), Number(named[2])]
+export function openMail(server: MailServer, signIn: MailSignIn, message: { readonly id: string }, options: MailOptions = {}): Promise<MailOpened> {
+  const named = messageNamed(message.id)
+  if (!named) return Promise.resolve(failure('input'))
+  const { validity, uid } = named
   return signedIn<Extract<MailOpened, { ok: true }>>(server, signIn, options, async imap => {
-    const mailbox = await examine(imap, message.mailbox)
+    const mailbox = await examine(imap, { raw: named.raw, name: decodeMailboxName(named.raw) })
     if (isFailure(mailbox)) return mailbox
     // A mailbox that was rebuilt numbers its messages afresh, so the number may now be another message's.
     if (mailbox.validity !== validity) return failure('moved')
@@ -351,7 +378,7 @@ export function openMail(server: MailServer, signIn: MailSignIn, message: { read
       truncated = cut || whole.length > MAIL_TEXT_MAX_CHARS
     }
     const files = attachedParts(parts, chosen).slice(0, LISTED_MAX).map(part => ({ name: part.name, type: part.type, size: part.size }))
-    const { listed, cc } = summary(validity, uid, values)
+    const { listed, cc } = summary(mailbox, uid, values)
     return { ok: true, mailbox: mailbox.name, message: { ...listed, cc, text, fromHtml: chosen?.type === 'text/html', truncated, files } }
   })
 }
