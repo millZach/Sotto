@@ -83,6 +83,44 @@ describe('settled activity in the transcript', () => {
     expect(within(work).queryByRole('button', { name: 'npm run lint, Exit 1' })).not.toBeInTheDocument()
   })
 
+  it('opens and folds only the turn whose Worked for line is pressed, and the next thread opened starts as it was left', () => {
+    const twoTurns = (): Partial<AgentThread> => ({
+      messages: [
+        { id: 'ask-1', role: 'user', text: 'Check the parser.', createdAt: iso(-200_000) },
+        { id: 'reply-1', role: 'assistant', text: 'The parser is fine.', createdAt: iso(-150_000) },
+        { id: 'ask-2', role: 'user', text: 'Check the lexer.', createdAt: iso(-100_000) },
+        { id: 'reply-2', role: 'assistant', text: 'The lexer is fine.', createdAt: iso(-50_000) },
+      ],
+      activities: [
+        lifecycle({ status: 'completed', durationMs: 50_000, afterMessageId: 'ask-1' }),
+        activity({ id: 'parser', command: 'cat parser.ts', afterMessageId: 'ask-1' }),
+        lifecycle({ turnId: 'turn-2', status: 'completed', durationMs: 50_000, afterMessageId: 'ask-2' }),
+        activity({ id: 'lexer', turnId: 'turn-2', command: 'cat lexer.ts', afterMessageId: 'ask-2' }),
+      ],
+    })
+    const { transcript } = mount(stateWith(twoTurns()))
+    const [first, second] = within(transcript).getAllByRole('button', { name: /^Worked for/u })
+    expect(first).toHaveAttribute('aria-expanded', 'false')
+    expect(second).toHaveAttribute('aria-expanded', 'false')
+    fireEvent.click(first!)
+    expect(first).toHaveAttribute('aria-expanded', 'true')
+    expect(second).toHaveAttribute('aria-expanded', 'false')
+    expect(within(transcript).queryByRole('button', { name: /^cat lexer\.ts/u })).not.toBeInTheDocument()
+    fireEvent.click(second!)
+    expect(second).toHaveAttribute('aria-expanded', 'true')
+    fireEvent.click(first!)
+    expect(first).toHaveAttribute('aria-expanded', 'false')
+    expect(second).toHaveAttribute('aria-expanded', 'true')
+    fireEvent.click(second!)
+    fireEvent.click(second!)
+    expect(first).toHaveAttribute('aria-expanded', 'false')
+    // The folds on screen never follow a press on another, but the last press, which opened one, is how the folds of a
+    // thread opened later start.
+    cleanup()
+    const again = mount(stateWith(twoTurns()))
+    expect(within(again.transcript).getAllByRole('button', { name: /^Worked for/u }).map(fold => fold.getAttribute('aria-expanded'))).toEqual(['true', 'true'])
+  })
+
   it('says an edit once: the press beside the line goes while the fold is open, and the count while the row is', () => {
     const { transcript } = mount(stateWith({ activities: settled() }))
     const changed = (): HTMLElement | null => within(transcript).queryByRole('button', { name: 'Edited voice.ts, 1 line added, 1 line removed' })

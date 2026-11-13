@@ -24,7 +24,7 @@ import { shownCount, shownLineCount } from '../state/interfaceNumbers'
 import { focusComposerFrom, TurnFailureReason, useOwnServerTurnActions, type OwnServerTurnActions } from './OwnServerTurn'
 import { retryingWords, stillWaitingNote, stillWaitingWords, stopName, stopWords } from './ownServerTurnWords'
 import { heardFrom, LiveServerMark } from './ServerMark'
-import { foldedTurns, setStepsOpen, useStepsOpen } from './stepsOpen'
+import { readStepsOpen, setStepsOpen, turnsLeft, useStepsStart } from './stepsOpen'
 import {
   browserLineName, browserLinesByTurn, browserRunWords, browserStepWords, foldBrowserRuns, linesStartingIn, PLACE, plainWords, sentenceWords, stepUnfinished, turnBrowserLines,
   type ActivityItem, type BrowserLinesStore, type BrowserRun, type BrowserVerb, type BrowserWords, type TurnLinesView,
@@ -603,8 +603,8 @@ export const ActivityGroupView = memo(function ActivityGroupView({ group, live, 
   const { t } = useLingui()
   const [choice, setChoice] = useState<boolean | null>(null)
   const listId = useId()
-  const stepsOpen = useStepsOpen()
-  const expanded = choice ?? (live || stepsOpen)
+  const stepsStart = useStepsStart()
+  const expanded = choice ?? (live || stepsStart)
   const headline = turnHeadline(group.turn, threadRunning)
   const summary = groupSummary(group.records)
   const lineCounts = recordsLineCounts(group.records)
@@ -773,9 +773,12 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
   // The turn whose steps the user opened or folded here, so the next turn starts as the user last left any turn's steps
   // even though this line stays mounted between turns.
   const [pressed, setPressed] = useState<{ readonly turnId: string; readonly open: boolean } | null>(null)
-  const stepsOpen = useStepsOpen()
   const stepsId = useId()
   const turnId = liveTurnId(thread)
+  // Each turn starts from the answer as it stood when the turn began, so a press on another turn's fold leaves it be.
+  const [held, setHeld] = useState(() => ({ turnId, open: readStepsOpen() }))
+  const start = held.turnId === turnId ? held : { turnId, open: readStepsOpen() }
+  if (start !== held) setHeld(start)
   const turn = turnId === null ? undefined : thread.activities?.find(record => record.turnId === turnId && isTurnRecord(record))
   const activities = thread.activities
   // On Owl the calls a browser line stands for are in the transcript already (ADR-0154), so they are not here too. A call
@@ -797,7 +800,7 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
   // Its server mark stands where the pulse would (ADR-0124, November 1 amendment): hollow while OpenCode tries the server
   // again, one cell walking round while the server reads the prompt, and a step round for each piece of text it writes.
   const mark = server === undefined || turn === undefined ? null : <LiveServerMark thread={thread} turn={turn} heard={heard} attempt={server.attempt} />
-  const open = turnId !== null && (pressed?.turnId === turnId ? pressed.open : stepsOpen)
+  const open = turnId !== null && (pressed?.turnId === turnId ? pressed.open : start.open)
   const last = thread.messages.at(-1)
   // A reply from before this turn began, such as the one above a Watcher news turn, is not being written now.
   const replyId = last?.role === 'assistant' && !isVisualMessage(last) && !(turn?.startedAt && Date.parse(last.createdAt) < Date.parse(turn.startedAt)) ? last.id : undefined
@@ -825,8 +828,8 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
       <WorkingFor startedAt={turn?.startedAt ?? sendingSince} connected={connected} steps={steps} />
       <ActivityGroupView group={{ key: `live:${turnId}`, turnId, anchorMessageId: null, records: steps }} live threadRunning connected={connected} provider={provider} onDisclosure={onDisclosure} />
     </div></Fold>,
-    onToggle: event => { onDisclosure?.(event.currentTarget); setPressed({ turnId, open: !open }); setStepsOpen(!open) },
-    onKeyDown: foldOnEscape(open, summary => { onDisclosure?.(summary); setPressed({ turnId, open: false }); foldedTurns.add(turnId) }),
+    onToggle: event => { onDisclosure?.(event.currentTarget); setPressed({ turnId, open: !open }); turnsLeft.set(turnId, !open); setStepsOpen(!open) },
+    onKeyDown: foldOnEscape(open, summary => { onDisclosure?.(summary); setPressed({ turnId, open: false }); turnsLeft.set(turnId, false) }),
   }
   // Compaction holds the thread in the running state without a turn of its own, and a line saying the agent
   // is working would be the wrong thing to read while the only thing happening is the context being folded up.

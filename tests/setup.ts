@@ -63,9 +63,9 @@ if (typeof document !== 'undefined') {
   const { configure } = await import('@testing-library/react')
   await import('@testing-library/jest-dom/vitest')
   configure({ asyncUtilTimeout: 5_000 })
-  // The turns whose working line Escape folded are kept for the window's life, so each test starts with none.
-  const { foldedTurns } = await import('../src/renderer/src/agents/stepsOpen')
-  afterEach(() => foldedTurns.clear())
+  // The turns whose working line the user opened or folded are kept for the window's life, so each test starts with none.
+  const { turnsLeft } = await import('../src/renderer/src/agents/stepsOpen')
+  afterEach(() => turnsLeft.clear())
 }
 
 // ProseMirror measures selections to scroll the caret; jsdom has no layout or hit testing.
