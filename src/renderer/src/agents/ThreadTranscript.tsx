@@ -20,7 +20,7 @@ import { followupsFor } from './ThreadFollowups'
 import { deliveryFor, deliveryPending, hasDraftContent, queuedRevision, submissionStatus, useSubmissions, useThreadComposer, type Submission, type SubmissionStatus, type ThreadDraftStore } from './threadDraftStore'
 import { clockLabel, type ThreadRow } from './threadFacts'
 import { useShared } from './stateSharing'
-import { setStepsOpen, workingLineChoices, useStepsStart } from './stepsOpen'
+import { forgetWorkingLine, setStepsOpen, useStepsStart, workingLineChoice } from './stepsOpen'
 import { MessageContent, AttachmentPreviews } from './MessageContent'
 import { SentSkillsContext, useSentSkills } from './sentSkills'
 import { renderedPlainText, useTransientFlag, writeClipboard } from './richActions'
@@ -363,9 +363,13 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
     return element !== null && rows !== null ? rows.add(message.id, element) : undefined
   }, [rows, message.id])
   const workButton = useRef<HTMLButtonElement>(null)
-  const [pressedOpen, setWorkOpen] = useState<boolean | null>(null)
+  const [pressedOpen, setPressedOpen] = useState<boolean | null>(null)
   const stepsStart = useStepsStart()
-  const workOpen = pressedOpen ?? stepsStart
+  const lifecycle = workGroups?.find(group => group.turn)?.turn
+  // A news turn's work folds into this reply's header once it ends, so the header starts as its working line was left,
+  // and a press here takes over from it, as a Worked for line's does.
+  const workOpen = pressedOpen ?? (lifecycle === undefined ? undefined : workingLineChoice(threadId, lifecycle.turnId)) ?? stepsStart
+  const setWorkOpen = (open: boolean): void => { setPressedOpen(open); if (lifecycle !== undefined) forgetWorkingLine(threadId, lifecycle.turnId) }
   const workId = useId()
   const foldWork = (event: React.KeyboardEvent): void => {
     if (!workOpen || event.key !== 'Escape' || event.defaultPrevented || event.nativeEvent.isComposing || !workButton.current) return
@@ -374,7 +378,6 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
     activity?.onDisclosure(workButton.current)
     setWorkOpen(false)
   }
-  const lifecycle = workGroups?.find(group => group.turn)?.turn
   const workMark = speaker === 'watcher' && (lifecycle?.status ?? 'completed') === 'completed'
   // A wake-up babysitting sent is Sotto's, told by the host's mark and never by its text, and shows every word the
   // provider received, as it received it (ADR-0061 decision 8).
@@ -534,10 +537,10 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
     .map(({ message }) => <React.Fragment key={message.id}>{article(message)}</React.Fragment>)
   const lifecycle = groups.find(group => group.turn)?.turn
   // A turn whose working line the user opened or folded stays that way once it ends.
-  const workOpen = pressedOpen ?? (lifecycle === undefined ? undefined : workingLineChoices.get(lifecycle.turnId)) ?? stepsStart
+  const workOpen = pressedOpen ?? (lifecycle === undefined ? undefined : workingLineChoice(threadId, lifecycle.turnId)) ?? stepsStart
   // A press on the finished turn's own line takes over from its working line, so the thread opened again starts it as the
   // user last left a fold rather than as the working line was left.
-  const setWorkOpen = (open: boolean): void => { setPressedOpen(open); if (lifecycle !== undefined) workingLineChoices.delete(lifecycle.turnId) }
+  const setWorkOpen = (open: boolean): void => { setPressedOpen(open); if (lifecycle !== undefined) forgetWorkingLine(threadId, lifecycle.turnId) }
   const moments = [...turn.replies.map(message => message.createdAt), ...groups.flatMap(group => group.records.map(record => record.completedAt ?? record.startedAt))]
   // A question a folded reply asked would fold away with it, so it is quoted under the fold (#1019).
   const lifted = work.flatMap(message => message.role === 'assistant' && !isWakeUpMessage(message) && asked(message).length ? [{ message, questions: asked(message) }] : [])

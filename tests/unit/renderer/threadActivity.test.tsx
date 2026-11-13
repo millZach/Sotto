@@ -443,6 +443,21 @@ describe('the running turn', () => {
     expect(within(again.transcript).getByRole('button', { name: /^Worked for/u })).toHaveAttribute('aria-expanded', 'false')
   })
 
+  it('keeps the user’s choice on a working line when its thread is shown again, and hands it to the turn’s fold', () => {
+    const first = mount(stateWith({ status: 'running', activities: running() }))
+    fireEvent.click(within(first.transcript).getByRole('button', { name: 'Working, 2 steps so far' }))
+    // A fold folded in another thread sets the answer while this one is out of view.
+    localStorage.setItem('sotto.threads.stepsOpen', 'false')
+    cleanup()
+    const { live, transcript } = mount(stateWith({ status: 'running', activities: running() }))
+    expect(within(transcript).getByRole('button', { name: 'Working, 2 steps so far' })).toHaveAttribute('aria-expanded', 'true')
+    act(() => {
+      live.publish({ host: { ...live.state.host, threads: live.state.host.threads.map(thread => thread.id === THREAD
+        ? { ...thread, status: 'idle', activities: running().map(item => item.kind === 'turn' ? { ...item, status: 'completed', completedAt: iso(0) } : { ...item, status: 'completed' }) } : thread) } })
+    })
+    expect(within(transcript).getByRole('button', { name: /^Worked for/u })).toHaveAttribute('aria-expanded', 'true')
+  })
+
   it('says only its words until the turn reports a step, then offers the steps', () => {
     vi.useFakeTimers({ now: NOW, toFake: ['Date', 'setInterval', 'clearInterval'] })
     const { live, transcript } = mount(stateWith({ status: 'running', activities: [lifecycle({ status: 'running', startedAt: iso(-65_000) })] }))

@@ -7,11 +7,16 @@ import { useState } from 'react'
  */
 export const STEPS_OPEN_KEY = 'sotto.threads.stepsOpen'
 /**
- * Running turns whose working line the user opened or folded, so their Worked for fold starts as the line was left once
- * the turn ends, for this window's life. A press sets it, and so does Escape, which folds that turn alone; a press on the
- * finished turn's own line clears it.
+ * Running turns whose working line the user opened or folded, by thread and turn, so the line keeps that state when its
+ * thread is shown again and the turn's Worked for line or news header starts as the line was left once the turn ends, for
+ * this window's life. A press sets it, and so does Escape, which folds that turn alone; a press on the finished turn's
+ * own line clears it. A turn ID can stand in from its user message, so the thread is part of the key.
  */
 export const workingLineChoices = new Map<string, boolean>()
+const turnKey = (threadId: string | undefined, turnId: string): string => `${threadId ?? ''}\n${turnId}`
+export const workingLineChoice = (threadId: string | undefined, turnId: string): boolean | undefined => workingLineChoices.get(turnKey(threadId, turnId))
+export function chooseWorkingLine(threadId: string | undefined, turnId: string, open: boolean): void { workingLineChoices.set(turnKey(threadId, turnId), open) }
+export function forgetWorkingLine(threadId: string | undefined, turnId: string): void { workingLineChoices.delete(turnKey(threadId, turnId)) }
 /** What the user last chose when storage refused to keep it. */
 let unsaved: boolean | null = null
 
