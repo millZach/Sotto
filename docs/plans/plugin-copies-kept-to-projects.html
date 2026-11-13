@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sotto — an account kept to chosen projects, on a paired computer (prototype)</title>
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; font-display: swap; src: url('../../src/shared/fonts/figtree-latin.woff2') format('woff2'); }
+:root {
+  color-scheme: dark;
+  --tt-canvas: oklch(0.115 0.008 265);
+  --tt-surface: oklch(0.145 0.008 265);
+  --tt-surface-sunken: oklch(0.13 0.008 265);
+  --tt-text: oklch(0.985 0.005 280);
+  --tt-text-2: color-mix(in oklab, oklch(0.985 0.005 280) 55%, oklch(0.72 0.014 265));
+  --tt-text-muted: color-mix(in oklab, oklch(0.72 0.014 265) 85%, oklch(0.985 0.005 280));
+  --tt-hairline: oklch(0.305 0.02 265);
+  --tt-border: oklch(0.5 0.02 265);
+  --tt-accent: oklch(0.714 0.104 183);
+  --tt-accent-text: oklch(0.84 0.08 183);
+  --tt-accent-wash: color-mix(in srgb, oklch(0.714 0.104 183) 14%, transparent);
+  --tt-on-accent: oklch(0.16 0.012 190);
+  --tt-success: oklch(0.79 0.13 165);
+  --tt-warning-text: oklch(0.84 0.15 85);
+  --tt-font: 'Figtree', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --tt-canvas: oklch(0.978 0.004 85);
+  --tt-surface: oklch(0.99 0.003 85);
+  --tt-surface-sunken: oklch(0.955 0.006 85);
+  --tt-text: oklch(0.235 0.014 75);
+  --tt-text-2: oklch(0.34 0.014 75);
+  --tt-text-muted: oklch(0.43 0.014 75);
+  --tt-hairline: oklch(0.86 0.012 80);
+  --tt-border: oklch(0.7 0.016 80);
+  --tt-accent: oklch(0.52 0.13 235);
+  --tt-accent-text: oklch(0.42 0.13 235);
+  --tt-accent-wash: color-mix(in srgb, oklch(0.52 0.13 235) 12%, transparent);
+  --tt-on-accent: oklch(0.99 0.003 85);
+  --tt-success: oklch(0.45 0.12 160);
+  --tt-warning-text: oklch(0.44 0.12 70);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; background: #222; font-family: var(--tt-font); }
+button { font: inherit; color: inherit; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--tt-accent); outline-offset: 2px; }
+h1, h2, h3, p, ul { margin: 0; padding: 0; }
+ul { list-style: none; }
+
+.note { max-width: 900px; margin: 0 auto; padding: 18px 16px 4px; color: #ddd; font-size: 15px; line-height: 1.5; }
+.note b { color: #fff; }
+.stage { display: flex; justify-content: center; padding: 14px 12px 120px; }
+.win { width: min(980px, 100%); background: var(--tt-canvas); color: var(--tt-text); font-size: 15px; line-height: 1.45; border: 1px solid #000; border-radius: 10px; padding: 28px 32px 36px; }
+.win h1 { font-size: 26px; font-weight: 650; letter-spacing: -0.01em; }
+.win .sub { color: var(--tt-text-2); margin-top: 4px; padding-bottom: 18px; border-bottom: 1px solid var(--tt-hairline); }
+.group { margin-top: 22px; font-weight: 650; }
+.row { margin-top: 10px; border: 1px solid var(--tt-hairline); border-radius: 14px; background: var(--tt-surface); padding: 16px 18px 18px; }
+.row__head { display: flex; align-items: center; gap: 10px; font-weight: 650; font-size: 17px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--tt-success); }
+.dot[data-off] { background: var(--tt-border); }
+.row__head span { font-weight: 400; font-size: 15px; color: var(--tt-text-2); }
+.card { margin-top: 14px; border: 1px solid var(--tt-hairline); border-radius: 12px; background: var(--tt-surface-sunken); padding: 14px 16px 16px; }
+.card h2 { font-size: 16px; font-weight: 650; }
+.card .meta { color: var(--tt-text-2); margin-top: 4px; padding-bottom: 12px; border-bottom: 1px solid var(--tt-hairline); }
+.sw { display: flex; gap: 14px; align-items: flex-start; margin-top: 14px; }
+.sw button { flex: none; width: 44px; height: 24px; border-radius: 6px; border: 1px solid var(--tt-border); background: transparent; position: relative; margin-top: 1px; }
+.sw button::after { content: ''; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 3px; background: var(--tt-text-muted); transition: none; }
+.sw button[aria-checked='true'] { background: var(--tt-accent); border-color: var(--tt-accent); }
+.sw button[aria-checked='true']::after { left: 23px; background: var(--tt-on-accent); }
+.sw button[disabled] { opacity: 0.45; cursor: default; }
+.sw b { display: block; font-weight: 600; }
+.sw small { display: block; color: var(--tt-text-2); font-size: 14px; margin-top: 2px; max-width: 70ch; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.chip { border: 1px solid var(--tt-border); border-radius: 6px; padding: 5px 11px; font-weight: 600; font-size: 14px; background: transparent; }
+.chip[aria-pressed='true'] { border-color: var(--tt-accent); background: var(--tt-accent-wash); color: var(--tt-accent-text); }
+.chip small { font-weight: 400; color: var(--tt-text-muted); margin-left: 6px; }
+.say { color: var(--tt-text-2); margin-top: 10px; font-size: 14px; }
+.kept { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--tt-hairline); }
+.kept h3 { font-size: 14px; font-weight: 650; color: var(--tt-text-2); }
+.here { display: flex; gap: 10px; align-items: baseline; margin-top: 10px; }
+.here span { color: var(--tt-text-2); font-size: 14px; }
+.sub-chips { margin: 8px 0 0 58px; }
+.sub-chips p { color: var(--tt-text-2); font-size: 14px; }
+.warn { color: var(--tt-warning-text); }
+
+.bar { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); display: flex; gap: 6px; align-items: center; background: #111; border: 1px solid #444; border-radius: 12px; padding: 8px; color: #eee; font-size: 14px; box-shadow: 0 10px 30px rgb(0 0 0 / 60%); max-width: calc(100% - 20px); flex-wrap: wrap; justify-content: center; }
+.bar button { border: 1px solid #555; background: #1c1c1c; border-radius: 8px; padding: 7px 12px; color: #eee; }
+.bar button[aria-pressed='true'] { background: #e9e9e9; color: #111; border-color: #e9e9e9; font-weight: 650; }
+.bar .gap { width: 10px; }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<p class="note"><b>The question.</b> Work is a Vercel account you kept to one project, Sotto. A project is a folder on this computer, and forge has its own folders. So what does its copy on forge mean? Three answers below: <b>A</b>, <b>B</b> and <b>C</b>. The switches and chips work; nothing is saved. This is a prototype, not the app.</p>
+<div class="stage"><div class="win">
+  <h1>Plugins</h1>
+  <p class="sub">Outside services your threads can use</p>
+  <p class="group">Code and deploys</p>
+  <div class="row">
+    <div class="row__head">Vercel <i class="dot"></i><span>Work</span></div>
+    <div class="card">
+      <h2>Work</h2>
+      <p class="meta">Signed in to Vercel as example-user. Token saved November 12.</p>
+      <div class="sw"><button role="switch" aria-checked="true" aria-label="Threads may use Work"></button><div><b>Threads may use Work</b></div></div>
+      <div class="chips" aria-label="Projects that may use Work">
+        <button class="chip" aria-pressed="false">Every project</button>
+        <button class="chip" aria-pressed="true">Sotto</button>
+        <button class="chip" aria-pressed="false">Field notes</button>
+        <button class="chip" aria-pressed="false">Scratch<small data-only="A">this computer only</small></button>
+      </div>
+      <p class="say" data-only="A">Threads in Sotto may use it, on this computer and on any computer that holds a copy and has Sotto. Watcher may not.</p>
+      <p class="say" data-only="B">Threads in Sotto on this computer may use it. Watcher may not.</p>
+      <p class="say" data-only="C">Threads in Sotto on this computer may use it. Watcher may not. Each other computer has its own list below.</p>
+
+      <div class="kept">
+        <h3>Where its secret is kept</h3>
+        <div class="here"><b>This computer</b><span>Always, in Sotto’s encrypted store.</span></div>
+
+        <!-- A: the same project, found by its GitHub repository -->
+        <div data-only="A">
+          <div class="sw"><button role="switch" aria-checked="true" aria-label="Keep a copy of Work on forge" data-flip="a"></button>
+            <div><b>Keep a copy of Work on forge</b>
+              <small data-a="on">A copy is kept on forge. Threads in forge’s copy of Sotto may use it: it is the same GitHub repository, millZach/Sotto.</small>
+              <small data-a="off" hidden>No copy. forge’s threads cannot use this account.</small></div></div>
+          <p class="say">A project on another computer is the same project when it is the same GitHub repository. A folder with no GitHub repository, such as Scratch, is on this computer only.</p>
+        </div>
+
+        <!-- B: a narrowed account stays on this computer -->
+        <div data-only="B">
+          <div class="sw"><button role="switch" aria-checked="false" disabled aria-label="Keep a copy of Work on forge"></button>
+            <div><b>Keep a copy of Work on forge</b>
+              <small>No copy. Work is kept to projects on this computer, so its secret stays here. Choose Every project to copy it.</small></div></div>
+        </div>
+
+        <!-- C: each computer has its own list of projects -->
+        <div data-only="C">
+          <div class="sw"><button role="switch" aria-checked="true" aria-label="Keep a copy of Work on forge" data-flip="c"></button>
+            <div><b>Keep a copy of Work on forge</b>
+              <small data-c="on">A copy is kept on forge. Choose which of forge’s projects may use it.</small>
+              <small data-c="off" hidden>No copy. forge’s threads cannot use this account.</small></div></div>
+          <div class="sub-chips" data-c="on">
+            <div class="chips" aria-label="forge’s projects that may use Work">
+              <button class="chip" aria-pressed="false">Every project on forge</button>
+              <button class="chip" aria-pressed="true">Sotto</button>
+              <button class="chip" aria-pressed="false">renders</button>
+              <button class="chip" aria-pressed="false">blender-rig</button>
+            </div>
+            <p class="say">Threads in Sotto on forge may use it. forge’s list is read while forge is connected.</p>
+          </div>
+        </div>
+
+        <p class="say">A copy lets that computer’s threads use this account while this computer is off. It travels over your tailnet and is kept in that computer’s own encrypted store.</p>
+      </div>
+    </div>
+  </div>
+</div></div>
+
+<div class="bar" role="toolbar" aria-label="Prototype controls">
+  <button data-variant="A" aria-pressed="true">A · Same project, by repository</button>
+  <button data-variant="B" aria-pressed="false">B · Stays on this computer</button>
+  <button data-variant="C" aria-pressed="false">C · A list per computer</button>
+  <span class="gap"></span>
+  <button id="theme" aria-pressed="false">Light</button>
+</div>
+<script>
+const show = name => {
+  for (const el of document.querySelectorAll('[data-only]')) el.hidden = el.dataset.only !== name
+  for (const b of document.querySelectorAll('[data-variant]')) b.setAttribute('aria-pressed', String(b.dataset.variant === name))
+  history.replaceState(null, '', '?variant=' + name)
+}
+for (const b of document.querySelectorAll('[data-variant]')) b.addEventListener('click', () => show(b.dataset.variant))
+for (const c of document.querySelectorAll('.chip')) c.addEventListener('click', () => c.setAttribute('aria-pressed', String(c.getAttribute('aria-pressed') !== 'true')))
+for (const s of document.querySelectorAll('[role=switch]:not([disabled])')) s.addEventListener('click', () => {
+  const on = s.getAttribute('aria-checked') !== 'true'
+  s.setAttribute('aria-checked', String(on))
+  const key = s.dataset.flip
+  if (key) for (const el of document.querySelectorAll('[data-' + key + ']')) el.hidden = el.dataset[key] !== (on ? 'on' : 'off')
+})
+document.getElementById('theme').addEventListener('click', event => {
+  const light = document.documentElement.dataset.theme !== 'light'
+  document.documentElement.dataset.theme = light ? 'light' : 'dark'
+  event.currentTarget.setAttribute('aria-pressed', String(light))
+})
+show(new URLSearchParams(location.search).get('variant') || 'A')
+</script>
+</body>
+</html>
