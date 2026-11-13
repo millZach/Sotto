@@ -21,7 +21,7 @@ const OPENED: MailOpened = { ok: true, mailbox: 'INBOX', message: { ...FOUND.mes
  */
 function tools(options: {
   accounts?: PluginAccount[]; answers?: (PluginChangeAnswer | Promise<PluginChangeAnswer>)[]; noMail?: boolean
-  search?: MailFound | SecretTrouble; open?: MailOpened | SecretTrouble; whileAsked?: () => void
+  search?: MailFound | SecretTrouble; open?: MailOpened | SecretTrouble; whileAsked?: () => void; whileGranting?: () => void
 } = {}) {
   const world = { accounts: options.accounts ?? [PERSONAL] }
   const answers = [...options.answers ?? []]
@@ -55,7 +55,7 @@ function tools(options: {
     },
     ...(options.noMail ? {} : { mail: {
       granted: async (threadId, accountId) => granted.has(`${threadId} ${accountId}`),
-      grant: async (threadId, accountId) => { granted.add(`${threadId} ${accountId}`) },
+      grant: async (threadId, accountId) => { granted.add(`${threadId} ${accountId}`); options.whileGranting?.() },
       providerOf: threadId => threadId === 'watcher' ? 'Codex' : 'Claude Code',
       search: async (account, search) => { searched.push({ account: account.name, search }); return options.search ?? FOUND },
       open: async (account, id) => { opened.push({ account: account.name, id }); return options.open ?? OPENED },
@@ -73,7 +73,10 @@ describe('reading a mail account through plugin_read (ADR-0205, decision 8)', ()
     const t = tools()
     const first = await t.read('one', { search: { from: 'ann', unread: true } })
     expect(first.isError).toBeUndefined()
-    expect(t.asked).toEqual([{ threadId: 'one', change: { kind: 'mail-read', plugin: 'Gmail', account: 'Personal', address: 'reader@example.com', provider: 'Claude Code' }, waitMs: undefined }])
+    expect(t.asked).toEqual([{ threadId: 'one', change: { kind: 'mail-read', plugin: 'Gmail', account: 'Personal', provider: 'Claude Code' }, waitMs: undefined }])
+    // The card names the account as the user named it. Its address is the user's own, and a card's words can travel:
+    // a Watcher that is replaced hands its open cards' words to the next provider.
+    expect(JSON.stringify(t.asked)).not.toContain('example.com')
     expect(t.searched).toEqual([{ account: 'Personal', search: { from: 'ann', unread: true } }])
     // What was read is handed over as data: said to be mail, then what was found.
     const [note, found] = said(first).split('\n\n')
@@ -131,7 +134,7 @@ describe('reading a mail account through plugin_read (ADR-0205, decision 8)', ()
   it('asks Watcher too before it reads an account, naming Watcher’s provider', async () => {
     const t = tools()
     expect((await t.read('watcher', { search: {} })).isError).toBeUndefined()
-    expect(t.asked.map(ask => ask.change)).toEqual([{ kind: 'mail-read', plugin: 'Gmail', account: 'Personal', address: 'reader@example.com', provider: 'Codex' }])
+    expect(t.asked.map(ask => ask.change)).toEqual([{ kind: 'mail-read', plugin: 'Gmail', account: 'Personal', provider: 'Codex' }])
   })
 
   it('reads nothing through an account that was switched off or removed while its card waited, and keeps no grant', async () => {
@@ -142,6 +145,15 @@ describe('reading a mail account through plugin_read (ADR-0205, decision 8)', ()
     // An account this thread may not use is not named to it, and it is not asked about.
     expect(said(await t.read('one', { search: {} }))).toContain('No Gmail account is available to this thread')
     expect(t.asked).toHaveLength(1)
+  })
+
+  it('reads nothing through an account switched off while the user’s yes was being kept', async () => {
+    // Keeping the grant writes a file, and the account can change while that write waits.
+    const t = tools({ whileGranting: () => { t.world.accounts = [{ ...PERSONAL, on: false }] } })
+    const result = await t.read('one', { search: {} })
+    expect(result.isError).toBe(true)
+    expect(said(result)).toContain('switched off, kept to other projects or removed before it could be read')
+    expect(t.searched).toEqual([])
   })
 
   it('does not ask on behalf of a client that would not wait for the answer', async () => {

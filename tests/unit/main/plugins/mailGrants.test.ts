@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { MailGrants } from '../../../../src/main/plugins/mailGrants'
+import { MailGrants, mailThreadOpen } from '../../../../src/main/plugins/mailGrants'
 
 const folders: string[] = []
 afterEach(async () => {
@@ -126,6 +126,20 @@ describe('mail grants (ADR-0205, decision 8)', () => {
     expect((await again().list()).map(grant => grant.threadId)).toEqual(['thread-two'])
   })
 
+  it('does not call a grant stopped while the file still holds it, even when it is already gone from here', async () => {
+    const { made, again, closed, breakWrites, heal } = await grants()
+    await made.grant('thread-one', PERSONAL)
+    await breakWrites()
+    // The thread is settled, so its grant ends here; the file could not be written and still holds it.
+    closed.add('thread-one')
+    await made.endClosed()
+    closed.delete('thread-one')
+    expect(await made.stop('thread-one', PERSONAL)).toBe(false)
+    await heal()
+    expect(await made.stop('thread-one', PERSONAL)).toBe(true)
+    expect(await again().list()).toEqual([])
+  })
+
   it('takes a file it cannot read as no grants, so every thread asks again', async () => {
     const { made, again, file } = await grants()
     await writeFile(file, '{ not json')
@@ -135,5 +149,23 @@ describe('mail grants (ADR-0205, decision 8)', () => {
     // One entry that makes no sense does not take the others with it.
     await writeFile(file, JSON.stringify({ version: 1, grants: [{ threadId: 'thread-one' }, { threadId: 'thread-two', accountId: PERSONAL, at: '2026-11-13T09:00:00.000Z' }] }))
     expect((await again().list()).map(grant => grant.threadId)).toEqual(['thread-two'])
+  })
+})
+
+describe('a thread that is open, as a mail grant means it', () => {
+  const thread = (id: string, more: object = {}) => ({ id, projectId: 'project-one', ...more })
+  const at = '2026-11-13T09:00:00.000Z'
+  const snapshot = {
+    threads: [thread('open'), thread('settled', { workspaceSettledAt: at }), thread('in-a-settled-project', { projectId: 'project-two' }), thread('archived', { archivedAt: at }),
+      thread('parked', { settledAt: at }), thread('marked-settled', { settledOverride: 'settled' as const }), thread('restored', { workspaceSettledAt: null })],
+    projects: [{ id: 'project-one' }, { id: 'project-two', workspaceSettledAt: at }],
+  }
+
+  it('is one Sotto holds that is not settled, by itself or with its project, and not archived', () => {
+    const open = (id: string): boolean => mailThreadOpen(snapshot, id)
+    expect([open('open'), open('restored')]).toEqual([true, true])
+    // Settle is what the user presses, on a thread or on its project.
+    expect([open('settled'), open('in-a-settled-project')]).toEqual([false, false])
+    expect([open('archived'), open('parked'), open('marked-settled'), open('not-held')]).toEqual([false, false, false, false])
   })
 })

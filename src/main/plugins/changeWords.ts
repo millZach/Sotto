@@ -23,7 +23,8 @@ export function wordPluginChange(change: PluginChange): PluginChangeCard {
  */
 function wordMailRead(change: MailRead): PluginChangeCard {
   const { plugin, provider } = change
-  const named = change.address ? `${change.account} (${change.address})` : change.account
+  // The account as the user named it, and never its address: these words can be handed on with the card.
+  const named = change.account
   return {
     plugin,
     text: provider ? t`Let this thread read the ${plugin} account ${named}? What it reads goes to ${provider}.`

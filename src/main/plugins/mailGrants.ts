@@ -1,11 +1,27 @@
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { z } from 'zod'
+import type { AgentProject, AgentThread } from '../../shared/agents'
+import { isThreadClosed, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 
 const grantSchema = z.object({ threadId: z.string().min(1).max(200), accountId: z.uuid(), at: z.iso.datetime() }).strict()
 const fileSchema = z.object({ version: z.literal(1), grants: z.array(z.unknown()) })
 /** One thread's leave to read one mail account, and when the user gave it. */
 export type MailGrant = z.infer<typeof grantSchema>
+
+/**
+ * Whether a thread is open, as a mail grant means it: Sotto holds it, it is not archived, and it is not settled,
+ * neither the thread nor its project. Settle is what the user presses to put work aside (CONTEXT.md, Settled), and a
+ * grant ends there, so a thread restored later asks again.
+ */
+export function mailThreadOpen(snapshot: {
+  readonly threads: readonly Pick<AgentThread, 'id' | 'projectId' | 'settledAt' | 'settledOverride' | 'archivedAt' | 'workspaceSettledAt'>[]
+  readonly projects: readonly Pick<AgentProject, 'id' | 'workspaceSettledAt'>[]
+}, threadId: string): boolean {
+  const thread = snapshot.threads.find(item => item.id === threadId)
+  if (!thread || isThreadClosed(thread)) return false
+  return !isWorkspaceThreadSettled(thread, snapshot.projects.find(project => project.id === thread.projectId))
+}
 
 /** More than anyone gives. Past it the oldest grant goes, and its thread asks again. */
 const GRANTS_MAX = 500
@@ -71,7 +87,9 @@ export class MailGrants {
     return this.inTurn(async () => {
       const grants = await this.load()
       const next = grants.filter(grant => grant.threadId !== threadId || grant.accountId !== accountId)
-      if (next.length === grants.length) return true
+      // A grant already gone from here may still be in a file that could not be written then, so the file is
+      // written before this says the grant has ended.
+      if (next.length === grants.length && !this.behind) return true
       try { await this.write(next) } catch { return false }
       return true
     })

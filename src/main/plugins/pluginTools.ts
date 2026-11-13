@@ -511,7 +511,7 @@ export class PluginToolServer implements ScopedThreadTools {
     if (!asking) {
       let provider = ''
       try { provider = mail.providerOf(threadId) } catch { /* The card then says the thread's provider without its name. */ }
-      const change: PluginChange = { kind: 'mail-read', plugin: PLUGIN_NAMES[account.plugin], account: account.name, address: account.address ?? '', provider }
+      const change: PluginChange = { kind: 'mail-read', plugin: PLUGIN_NAMES[account.plugin], account: account.name, provider }
       asking = this.handlers.askChange(threadId, change, { ...(signal ? { signal } : {}), ...(room === undefined ? {} : { waitMs: room }) }).catch((): PluginChangeAnswer => 'stopped')
         .finally(() => { this.mailAsks.delete(key) })
       this.mailAsks.set(key, asking)
@@ -547,13 +547,20 @@ export class PluginToolServer implements ScopedThreadTools {
         if (refused.outcome) await kept(refused.outcome)
         return refused.result
       }
-      // The account may have been switched off, kept to other projects or removed while the card waited.
-      const now = await this.handlers.findAccount(threadId, plugin, account.name).catch(() => 'unknown' as const)
-      if (typeof now === 'string' || now.id !== account.id) {
-        await kept('failed')
-        return text(`The user allowed it, but the ${service} account was switched off, kept to other projects or removed while the card waited. ${NOTHING_READ}`, true)
+      // The account may have been switched off, kept to other projects or removed while the card waited, and again
+      // while the user's yes was being kept, which writes a file. It is looked for after each, so the read that
+      // follows is of an account that is this thread's to use now.
+      const usable = async (): Promise<boolean> => {
+        const now = await this.handlers.findAccount(threadId, plugin, account.name).catch(() => 'unknown' as const)
+        return typeof now !== 'string' && now.id === account.id
       }
+      const changed = async (when: string): Promise<ThreadToolResult> => {
+        await kept('failed')
+        return text(`The user allowed it, but the ${service} account was switched off, kept to other projects or removed ${when}. ${NOTHING_READ}`, true)
+      }
+      if (!await usable()) return changed('while the card waited')
       await mail.grant(threadId, account.id)
+      if (!await usable()) return changed('before it could be read')
     }
     const result = 'message' in wanted ? await mail.open(account, wanted.message) : await mail.search(account, wanted.search)
     if (result === 'locked') { await kept('failed'); return text(`Sotto could not read the password for the ${service} account "${account.name}", because this computer's credential store is locked. Ask the user to unlock it, then try again. ${NOTHING_READ}`, true) }

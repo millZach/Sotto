@@ -73,7 +73,7 @@ import { readHostGitHubSignIns } from './plugins/hostSignIns'
 import { PluginAccounts } from './plugins/accounts'
 import { checkMailAccount } from './plugins/mail/accounts'
 import type { MailOptions } from './plugins/mail/read'
-import { MailGrants } from './plugins/mailGrants'
+import { MailGrants, mailThreadOpen } from './plugins/mailGrants'
 import { PluginChangeRequests } from './plugins/pendingChanges'
 import { pluginFolderOfThread, pluginProjects } from './plugins/projectFolders'
 import { PluginAccountCopySync } from './plugins/copySync'
@@ -1415,8 +1415,9 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     return thread !== undefined && !isThreadClosed(thread)
   }
   // Mail grants: which threads the user has let read which mail accounts (ADR-0205, decision 8). A grant ends when
-  // its thread is settled, archived or gone, which the grants look for a moment after the coordinator publishes.
-  const mailGrants = pluginsEnabled ? new MailGrants(userDataPath, { open: pluginThreadOpen }) : undefined
+  // its thread is settled, by itself or with its project, archived or gone, which the grants look for a moment after
+  // the coordinator publishes.
+  const mailGrants = pluginsEnabled ? new MailGrants(userDataPath, { open: threadId => mailThreadOpen(agentControl.watcherSnapshot(), threadId) }) : undefined
   const pluginChanges = pluginsEnabled ? new PluginChangeRequests({ open: pluginThreadOpen, noticed: () => { mailGrants?.noticed() } }) : undefined
   // The project a thread belongs to, for an account kept to chosen projects: its folder, which is the same project
   // whichever provider the thread runs on. Watcher's threads, and a thread Sotto does not know, belong to none.

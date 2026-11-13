@@ -322,8 +322,12 @@ export type PluginChange =
      * grant for that thread and that account. It is asked on the same card a change is.
      */
     readonly kind: 'mail-read'
-    /** The plugin's name, the account's name and its address. */
-    readonly plugin: string; readonly account: string; readonly address: string
+    /**
+     * The plugin's name and the account's, as the user named it. Not its address: a card's words travel further
+     * than the card, as when a replaced Watcher hands its open cards to the next provider, and the address is the
+     * user's own until they have said yes.
+     */
+    readonly plugin: string; readonly account: string
     /** The provider the thread runs on, by name: what the thread reads goes there. */
     readonly provider: string
   }
