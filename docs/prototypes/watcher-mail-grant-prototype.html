@@ -1,0 +1,150 @@
+<!doctype html>
+<!--
+  PROTOTYPE — throwaway. Sotto, Plugins project, slice 8 (#2493), a follow-up to prototype/plugin-mail-grants.
+
+  Zach picked "in the thread" for where a mail grant is stopped: a thread's ··· menu has "Ask before this thread
+  reads <account>". Watcher's room has no ··· menu, and Watcher is never settled, so once Watcher is let to read a
+  mail account nothing ends that but replacing Watcher or removing the account.
+
+  The question: what should Watcher have? Three variants, switchable with ?v=a|b|c and the bar at the bottom:
+    a  A ··· menu in Watcher's strip.  The same row a thread has, there only while Watcher can read an account.
+    b  A line under the strip.         "Watcher can read Personal" with a button, there only while it can.
+    c  Settings › Watcher.             A row on Watcher's settings page, naming the accounts, each with Stop.
+  A fourth answer needs no picture: leave it as it is.
+
+  Nothing here is real: the account and the threads are made up.
+
+  VERDICT: Zach picked A, a ··· menu in Watcher's strip, on a question card on November 13, 2026. The line under the
+  strip (B), the group on Settings › Watcher (C) and leaving it as it is are not built. Kept as the tag
+  prototype/watcher-mail-grant.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sotto — stopping Watcher's mail grant, prototype</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root {
+  color-scheme: dark;
+  --canvas: oklch(0.115 0.008 265); --surface: oklch(0.145 0.008 265); --raised: oklch(0.185 0.008 265); --sunken: oklch(0.13 0.008 265);
+  --strip: oklch(0.16 0.03 250); --text: oklch(0.985 0.005 280); --text-2: oklch(0.86 0.01 270); --muted: oklch(0.74 0.014 265);
+  --hairline: oklch(0.305 0.02 265); --border: oklch(0.42 0.02 265); --accent: oklch(0.714 0.104 183); --accent-text: oklch(0.84 0.08 183);
+  --wash: color-mix(in srgb, oklch(0.714 0.104 183) 14%, transparent); --on-accent: oklch(0.16 0.012 190);
+  --hover: color-mix(in srgb, oklch(0.32 0.05 185) 70%, transparent); --shadow: 0 18px 50px rgb(0 0 0 / 55%);
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --canvas: oklch(0.978 0.004 85); --surface: oklch(0.99 0.003 85); --raised: oklch(0.995 0.002 85); --sunken: oklch(0.955 0.006 85);
+  --strip: oklch(0.945 0.012 240); --text: oklch(0.235 0.014 75); --text-2: oklch(0.34 0.014 75); --muted: oklch(0.43 0.014 75);
+  --hairline: oklch(0.86 0.012 80); --border: oklch(0.72 0.016 80); --accent: oklch(0.52 0.13 235); --accent-text: oklch(0.42 0.13 235);
+  --wash: color-mix(in srgb, oklch(0.52 0.13 235) 12%, transparent); --on-accent: oklch(0.99 0.003 85);
+  --hover: oklch(0.92 0.01 85); --shadow: 0 18px 50px rgb(0 0 0 / 18%);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; background: #222; font-family: 'Figtree', ui-sans-serif, system-ui, 'Segoe UI', sans-serif; }
+button { font: inherit; color: inherit; cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+h2, h3, h4, p, ul { margin: 0; padding: 0; } ul { list-style: none; }
+
+.stage { display: flex; flex-direction: column; align-items: center; gap: 14px; padding: 18px 12px 120px; }
+.what { max-width: 1100px; width: 100%; color: #ddd; font: 14px/1.5 system-ui, sans-serif; }
+.what b { color: #fff; }
+.win { width: 1100px; max-width: 100%; min-height: 560px; background: var(--canvas); color: var(--text); font-size: 14px; line-height: 1.45; border: 1px solid #000; border-radius: 10px; overflow: hidden; box-shadow: var(--shadow); display: flex; flex-direction: column; }
+.strip { display: flex; align-items: center; gap: 12px; padding: 8px 14px; background: var(--strip); border-bottom: 1px solid var(--hairline); position: relative; }
+.owl { width: 22px; height: 18px; border-radius: 7px; background: var(--text); position: relative; flex: none; }
+.owl::before, .owl::after { content: ''; position: absolute; top: 5px; width: 5px; height: 5px; border-radius: 50%; background: var(--strip); }
+.owl::before { left: 4px; } .owl::after { right: 4px; }
+.strip__name { font-weight: 650; }
+.strip__list { margin-left: auto; color: var(--text-2); font-size: 13px; border: 1px solid var(--hairline); border-radius: 7px; padding: 3px 9px; background: transparent; }
+.more { border: 1px solid var(--hairline); background: transparent; border-radius: 7px; width: 30px; height: 26px; line-height: 1; }
+.menu { position: absolute; right: 14px; top: 40px; width: 280px; background: var(--raised); border: 1px solid var(--hairline); border-radius: 10px; box-shadow: var(--shadow); padding: 5px; z-index: 2; }
+.menu li { padding: 6px 9px; border-radius: 6px; font-size: 13px; color: var(--text); background: var(--wash); display: flex; gap: 8px; align-items: center; }
+.band { display: flex; align-items: center; gap: 10px; padding: 7px 14px; background: var(--surface); border-bottom: 1px solid var(--hairline); font-size: 13px; color: var(--text-2); }
+.band b { color: var(--text); font-weight: 600; }
+.btn { border: 1px solid var(--border); background: transparent; border-radius: 7px; padding: 4px 10px; font-size: 13px; }
+.btn:hover { background: var(--hover); }
+.new { outline: 2px dashed var(--accent); outline-offset: 3px; border-radius: 8px; }
+.tag { display: inline-block; font-size: 11px; color: var(--accent-text); background: var(--wash); border-radius: 5px; padding: 1px 6px; margin-left: 6px; }
+.room { flex: 1; padding: 22px 22px 18px; display: grid; gap: 14px; align-content: start; max-width: 720px; margin: 0 auto; width: 100%; }
+.msg { color: var(--text-2); max-width: 60ch; } .msg b { color: var(--text); font-weight: 600; }
+.note { color: var(--muted); font-size: 13px; }
+
+.settings { flex: 1; display: grid; grid-template-columns: 190px minmax(0, 1fr); }
+.rail { background: var(--surface); border-right: 1px solid var(--hairline); padding: 16px 8px; }
+.rail div { padding: 6px 10px; border-radius: 8px; color: var(--text-2); }
+.rail div[aria-current] { background: var(--wash); color: var(--text); }
+.page { padding: 20px 24px; display: grid; gap: 14px; align-content: start; max-width: 640px; }
+.page h2 { font-size: 20px; font-weight: 650; }
+.group { border: 1px solid var(--hairline); border-radius: 10px; background: var(--surface); }
+.group__row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-top: 1px solid var(--hairline); }
+.group__row:first-child { border-top: 0; }
+.group__row .w { margin-left: auto; color: var(--muted); font-size: 13px; }
+.switch { width: 34px; height: 20px; border-radius: 10px; background: var(--accent); position: relative; flex: none; margin-left: auto; }
+.switch::after { content: ''; position: absolute; top: 3px; left: 17px; width: 14px; height: 14px; border-radius: 50%; background: var(--on-accent); }
+h4 { font-size: 13px; font-weight: 600; color: var(--text-2); padding: 10px 12px 0; }
+
+.bar { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); background: #111; color: #eee; border: 1px solid #444; border-radius: 12px; padding: 8px 10px; display: flex; gap: 12px; align-items: center; font: 13px system-ui, sans-serif; box-shadow: 0 10px 30px rgb(0 0 0 / 60%); flex-wrap: wrap; justify-content: center; max-width: calc(100vw - 16px); }
+.bar span { color: #aaa; } .bar .seg { display: flex; gap: 4px; }
+.bar button { background: #222; border: 1px solid #555; border-radius: 7px; padding: 4px 10px; color: #eee; }
+.bar button[aria-pressed='true'] { background: #e9e9e9; color: #111; border-color: #e9e9e9; font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="stage">
+  <p class="what" id="what"></p>
+  <div class="win" id="win"></div>
+</div>
+<div class="bar" role="toolbar" aria-label="Prototype controls">
+  <span>Watcher's Stop</span>
+  <div class="seg" id="variants"></div>
+  <button id="theme">Light</button>
+</div>
+<script>
+const VARIANTS = { a: 'A · A ··· menu in the strip', b: 'B · A line under the strip', c: 'C · Settings › Watcher' }
+const params = new URLSearchParams(location.search)
+const S = { v: VARIANTS[params.get('v')] ? params.get('v') : 'a', theme: params.get('theme') === 'light' ? 'light' : 'dark' }
+const WHAT = {
+  a: '<b>A · A ··· menu in Watcher’s strip.</b> The same row a thread has, <b>Ask before Watcher reads Personal</b>, in a ··· menu at the end of Watcher’s strip. The menu is there only while Watcher can read a mail account, so the strip looks as it does today the rest of the time. Shown open.',
+  b: '<b>B · A line under the strip.</b> While Watcher can read a mail account, a line under its strip says so, with <b>Ask before it reads</b>. Always in view while it applies; nothing to open.',
+  c: '<b>C · Settings › Watcher.</b> Watcher’s room does not change. Its settings page gets a group naming the mail accounts Watcher can read, each with <b>Stop</b>.',
+}
+const strip = extra => `<div class="strip"><span class="owl" aria-hidden="true"></span><span class="strip__name">Watcher</span><button class="strip__list">All threads 8</button>${extra}</div>`
+const room = `<div class="room">
+  <p class="msg"><b>You</b><br>Check whether the accountant replied about the filing date.</p>
+  <p class="msg"><b>Watcher</b><br>Searched mail in Personal and read one message. They replied on Tuesday: the filing date is the 30th.</p>
+  <p class="note">Watcher asked on a card before its first read, and you said yes. That is the grant this stops.</p>
+</div>`
+function win() {
+  if (S.v === 'a') return strip(`<button class="more new" aria-label="More">···</button><ul class="menu" role="menu"><li role="menuitem">Ask before Watcher reads Personal<span class="tag">new</span></li></ul>`) + room
+  if (S.v === 'b') return strip('') + `<div class="band"><span class="new" style="display:flex;gap:10px;align-items:center;padding:2px 6px"><span><b>Watcher can read Personal.</b> It asked once, and you said yes.</span><button class="btn">Ask before it reads</button><span class="tag">new</span></span></div>` + room
+  return `<div class="settings"><div class="rail"><div>Threads</div><div>Keyboard</div><div>Git &amp; worktrees</div><div aria-current="page">Watcher</div><div>Providers</div><div>Plugins</div></div>
+    <div class="page"><h2>Watcher</h2>
+      <div class="group"><div class="group__row"><span>Settle without asking</span><span class="switch" role="img" aria-label="On"></span></div><div class="group__row"><span>Restart stopped threads</span><span class="switch" role="img" aria-label="On"></span></div></div>
+      <div class="group new"><h4>Mail Watcher can read<span class="tag">new</span></h4>
+        <div class="group__row"><span><b>Personal</b> <span class="note">Gmail</span></span><span class="w">since Monday</span><button class="btn">Stop</button></div>
+        <p class="note" style="padding:0 12px 10px">Stop, and Watcher asks again before it next reads this account.</p></div>
+    </div></div>`
+}
+function render() {
+  document.documentElement.dataset.theme = S.theme
+  document.getElementById('what').innerHTML = WHAT[S.v]
+  document.getElementById('win').innerHTML = win()
+  document.getElementById('variants').innerHTML = Object.entries(VARIANTS).map(([k, label]) => `<button data-v="${k}" aria-pressed="${S.v === k}">${label}</button>`).join('')
+  document.getElementById('theme').textContent = S.theme === 'dark' ? 'Light' : 'Dark'
+  history.replaceState(null, '', `?v=${S.v}&theme=${S.theme}`)
+}
+document.querySelector('.bar').addEventListener('click', event => {
+  const button = event.target.closest('button'); if (!button) return
+  if (button.dataset.v) S.v = button.dataset.v
+  else if (button.id === 'theme') S.theme = S.theme === 'dark' ? 'light' : 'dark'
+  render()
+})
+document.addEventListener('keydown', event => {
+  const keys = Object.keys(VARIANTS); const at = keys.indexOf(S.v)
+  if (event.key === 'ArrowRight') { S.v = keys[(at + 1) % keys.length]; render() }
+  if (event.key === 'ArrowLeft') { S.v = keys[(at + keys.length - 1) % keys.length]; render() }
+})
+render()
+</script>
+</body>
+</html>
