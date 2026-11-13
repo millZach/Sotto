@@ -716,6 +716,11 @@ private final class FollowBox {
     var followRequests = 0
     /// Where the end sits within the page itself, which only what the page holds moves; scrolling moves `sentinel` alone.
     var endInPage: CGFloat = 0
+    /// The scroll view's top on the screen, and how far its content is scrolled, as the scroll view itself says (iOS 18).
+    var viewTop: CGFloat = 0
+    var offset: CGFloat?
+    /// Where the end sits on the screen worked out from the scroll view's own offset rather than read from the end.
+    var endFromOffset: CGFloat? { offset.map { viewTop + endInPage - $0 } }
     func settle() { atBottom = sentinel <= dockTop + Self.slack }
 }
 
@@ -896,13 +901,16 @@ private struct Conversation: View {
             .scrollDismissesKeyboard(.interactively)
             .onUserScrolling { scrolling in
                 follow.userScrolling = scrolling
+                EndTrace.mark("user scrolling \(scrolling) missed follow \(follow.missedFollow)")
                 guard !scrolling, follow.missedFollow else { return }
                 follow.missedFollow = false
                 // What arrived while they moved the page is followed once they let go at the bottom. A page that
                 // only moved is left where they put it.
                 follow.settle()
+                EndTrace.mark("let go: settle at bottom \(follow.atBottom), end \(Int(follow.sentinel)) dock \(Int(follow.dockTop))")
                 if follow.atBottom { toBottom(proxy) }
             }
+            .onScrollOffset { y in follow.offset = y }
             .background(barReader)
             #if DEBUG
             .overlay(alignment: .topLeading) { if Self.probesEnd { EndProbe(follow: follow) } }
@@ -923,7 +931,8 @@ private struct Conversation: View {
                     .background(dockReader(proxy))
                     .sendWatchDock()
             }
-            .onChange(of: tail) { _, _ in
+            .onChange(of: tail) { _, next in
+                EndTrace.mark("tail revision \(next.revision ?? -1) rows \(next.rows) split \(timeline.latestTurnsStart) at bottom \(follow.atBottom)")
                 if follow.atBottom { toBottom(proxy) }
             }
         }
@@ -976,6 +985,7 @@ private struct Conversation: View {
             Color.clear.frame(height: 1).id(Self.end).background(sentinelReader(scroll))
             #if DEBUG
             if SendWatch.isOn { SendWatchAnchor().frame(width: 0, height: 0) }
+            if EndTrace.isOn { EndTraceAnchor().frame(width: 0, height: 0) }
             #endif
         }
         .frame(maxWidth: .infinity, minHeight: max(0, visible - Space.s4), alignment: .topLeading)
@@ -1045,6 +1055,9 @@ private struct Conversation: View {
                               scroll: scroll)
                     }
                     .equatable()
+                    #if DEBUG
+                    .background { if EndTrace.isOn { OlderTurnsTrace(split: split) } }
+                    #endif
                 }
                 ForEach(rows[split...]) { row in
                     entry(row, provider: provider, working: working, last: last, moved: moved, movedAfter: movedAfter, scroll: scroll)
@@ -1120,9 +1133,11 @@ private struct Conversation: View {
     private var barReader: some View {
         GeometryReader { proxy in
             let bottom = proxy.frame(in: .global).minY + proxy.safeAreaInsets.top
+            let top = proxy.frame(in: .global).minY
             Color.clear
-                .onAppear { barMoved(bottom) }
+                .onAppear { follow.viewTop = top; barMoved(bottom) }
                 .onChange(of: bottom) { _, value in barMoved(value) }
+                .onChange(of: top) { _, value in follow.viewTop = value }
         }
     }
 
@@ -1130,7 +1145,14 @@ private struct Conversation: View {
     private func sentinelReader(_ scroll: ScrollViewProxy) -> some View {
         GeometryReader { proxy in
             Color.clear
-                .onAppear { endMoved(proxy.frame(in: .global).maxY, inPage: proxy.frame(in: .named(Self.pageSpace)).maxY, scroll) }
+                .onAppear {
+                    #if DEBUG
+                    EndTrace.describe = { [follow] in
+                        "| end \(Int(follow.sentinel)) from offset \(follow.endFromOffset.map { String(Int($0)) } ?? "-") in page \(Int(follow.endInPage)) dock \(Int(follow.dockTop)) at bottom \(follow.atBottom)"
+                    }
+                    #endif
+                    endMoved(proxy.frame(in: .global).maxY, inPage: proxy.frame(in: .named(Self.pageSpace)).maxY, scroll)
+                }
                 .onChange(of: proxy.frame(in: .global).maxY) { _, value in
                     endMoved(value, inPage: proxy.frame(in: .named(Self.pageSpace)).maxY, scroll)
                 }
@@ -1153,12 +1175,14 @@ private struct Conversation: View {
     private func endMoved(_ end: CGFloat, inPage: CGFloat, _ scroll: ScrollViewProxy) {
         let wasAtBottom = follow.atBottom
         let grew = abs(inPage - follow.endInPage) > 0.5
+        EndTrace.mark("end moved to \(Int(end)) in page \(Int(follow.endInPage)) -> \(Int(inPage)), dock \(Int(follow.dockTop)), was at bottom \(wasAtBottom)")
         follow.sentinel = end
         follow.endInPage = inPage
         if wasAtBottom, grew, end > follow.dockTop + 1 {
             toBottom(scroll)
         } else {
             follow.settle()
+            if wasAtBottom != follow.atBottom { EndTrace.mark("settle: at bottom \(follow.atBottom)") }
         }
     }
 
@@ -1180,6 +1204,7 @@ private struct Conversation: View {
     /// Decided on where the user stood before the reply box moved: at the bottom, the page follows it there.
     private func dockMoved(_ top: CGFloat, _ scroll: ScrollViewProxy) {
         let wasAtBottom = follow.atBottom
+        EndTrace.mark("dock moved to \(Int(top)), was at bottom \(wasAtBottom)")
         follow.dockTop = top
         updateVisible()
         if wasAtBottom { toBottom(scroll) } else { follow.settle() }
@@ -1203,21 +1228,42 @@ private struct Conversation: View {
     /// the page; the page owes it to them for when they let go.
     private func toBottom(_ scroll: ScrollViewProxy) {
         let box = follow
-        guard !box.userScrolling else { box.missedFollow = true; return }
+        guard !box.userScrolling else { box.missedFollow = true; EndTrace.mark("follow owed: user scrolling"); return }
         box.followRequests += 1
         let request = box.followRequests
         Task { @MainActor in
             await Task.yield()
             guard box.followRequests == request else { return }
-            guard !box.userScrolling else { box.missedFollow = true; return }
+            guard !box.userScrolling else { box.missedFollow = true; EndTrace.mark("follow \(request) owed: user scrolling"); return }
+            EndTrace.mark("follow \(request): scroll to end, end \(Int(box.sentinel))")
             scroll.scrollTo(Self.end, anchor: .bottom)
             try? await Task.sleep(nanoseconds: 120_000_000)
-            if box.followRequests == request, box.atBottom, !box.userScrolling { scroll.scrollTo(Self.end, anchor: .bottom) }
+            if box.followRequests == request, box.atBottom, !box.userScrolling {
+                EndTrace.mark("follow \(request): again, end \(Int(box.sentinel))")
+                scroll.scrollTo(Self.end, anchor: .bottom)
+            } else {
+                EndTrace.mark("follow \(request): no second look (latest \(box.followRequests), at bottom \(box.atBottom), scrolling \(box.userScrolling))")
+            }
         }
     }
 }
 
 #if DEBUG
+/// Where the turns made as they scroll into view sit in the page, for `EndTrace`.
+private struct OlderTurnsTrace: View {
+    let split: Int
+    var body: some View {
+        GeometryReader { proxy in
+            let frame = proxy.frame(in: .named("thread-page"))
+            Color.clear
+                .onAppear { EndTrace.mark("older turns (\(split) rows) appear: top \(Int(frame.minY)) height \(Int(frame.height))") }
+                .onChange(of: frame.height) { before, after in
+                    EndTrace.mark("older turns (\(split) rows) height \(Int(before)) -> \(Int(after)), top \(Int(frame.minY))")
+                }
+        }
+    }
+}
+
 /// The conversation's end, the reply box's top and the bar's bottom, in points from the top of the screen, as one label
 /// the simulator journeys read: in a long page an element's accessibility frame can lag its layout by thousands of
 /// points. It reads the page's place ten times a second and holds no state of the page's, so the page draws as it would
@@ -1239,6 +1285,14 @@ extension View {
     /// Says whether the user is moving the page: dragging it or letting a flick run out. A finger that rests or taps is
     /// not moving it, so pressing a run of steps at the bottom still keeps the page there. iOS 17 can't say, so there the
     /// page follows as it did before.
+    /// Reports how far the page is scrolled, as the scroll view says, on iOS 18 and later; iOS 17 can't say.
+    @ViewBuilder func onScrollOffset(_ changed: @escaping (CGFloat) -> Void) -> some View {
+        if #available(iOS 18.0, *) {
+            onScrollGeometryChange(for: CGFloat.self, of: { $0.contentOffset.y }) { _, y in changed(y) }
+        } else {
+            self
+        }
+    }
     @ViewBuilder func onUserScrolling(_ changed: @escaping (Bool) -> Void) -> some View {
         if #available(iOS 18.0, *) {
             onScrollPhaseChange { _, phase in changed(phase == .interacting || phase == .decelerating) }

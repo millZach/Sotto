@@ -1162,3 +1162,99 @@ extension View {
     func sendWatchDock() -> some View { self }
 }
 #endif
+
+// MARK: - Where the thread's end goes
+
+#if DEBUG && os(iOS)
+/// Records the conversation's scroll view, frame by frame, and each thing the page decides about following its end, for
+/// the journeys that hold a thread at its end (#2040, #2080): only with `SOTTO_END_TRACE_FILE` naming its report. A frame is
+/// kept only when the offset, the content's height or the room under it changed, and the report is written once a
+/// second while anything new came in, so the page draws as it would without it.
+@MainActor final class EndTrace {
+    static let shared: EndTrace? = {
+        guard let path = ProcessInfo.processInfo.environment["SOTTO_END_TRACE_FILE"], !path.isEmpty else { return nil }
+        return EndTrace(report: URL(fileURLWithPath: path))
+    }()
+    nonisolated static var isOn: Bool { ProcessInfo.processInfo.environment["SOTTO_END_TRACE_FILE"]?.isEmpty == false }
+    static func mark(_ name: @autoclosure () -> String) { shared?.note(name()) }
+    /// The page's own idea of where its end is, added to each frame kept.
+    static var describe: (() -> String)?
+
+    private let report: URL
+    private let started = CACurrentMediaTime()
+    private var lastFollow = ""
+    private weak var scroller: UIScrollView?
+    private var link: CADisplayLink?
+    private var lines: [String] = []
+    private var last: [Double] = []
+    private var written = 0
+    private var lastWrite: CFTimeInterval = 0
+
+    private init(report: URL) { self.report = report }
+
+    func attach(_ view: UIScrollView) {
+        guard scroller !== view else { return }
+        scroller = view
+        note("attach scroll view")
+        guard link == nil else { return }
+        let link = CADisplayLink(target: self, selector: #selector(tick))
+        link.add(to: .main, forMode: .common)
+        self.link = link
+    }
+    private func stamp() -> String { String(format: "%8.3f", CACurrentMediaTime() - started) }
+    private func note(_ name: String) { lines.append(stamp() + " * " + name) }
+    /// The offset as set and as drawn, the content's height, the view's height and the room the box takes, and whether
+    /// a finger holds the page or it coasts.
+    @objc private func tick() {
+        let now = CACurrentMediaTime()
+        if let view = scroller {
+            let drawn = Double(view.layer.presentation()?.bounds.origin.y ?? view.contentOffset.y)
+            let row = [Double(view.contentOffset.y), drawn, Double(view.contentSize.height), Double(view.bounds.height),
+                       Double(view.adjustedContentInset.bottom), view.isTracking ? 1 : 0, view.isDecelerating ? 1 : 0]
+            let follow = Self.describe?() ?? ""
+            if row != last || follow != lastFollow {
+                last = row
+                lastFollow = follow
+                let room = row[2] + row[4] - row[3]
+                lines.append(stamp() + String(format: " offset %.1f drawn %.1f height %.1f view %.1f inset %.1f bottom-gap %.1f%@%@ ",
+                                              row[0], row[1], row[2], row[3], row[4], room - row[0],
+                                              row[5] == 1 ? " finger" : "", row[6] == 1 ? " coasting" : "") + follow)
+            }
+        }
+        if lines.count > written, now - lastWrite > 1 { write() }
+    }
+    /// Adds what came in since the last write to the report.
+    private func write() {
+        lastWrite = CACurrentMediaTime()
+        let fresh = lines[written...].map { $0 + "\n" }.joined()
+        written = lines.count
+        if !FileManager.default.fileExists(atPath: report.path) { FileManager.default.createFile(atPath: report.path, contents: nil) }
+        guard let file = try? FileHandle(forWritingTo: report) else { return }
+        defer { try? file.close() }
+        _ = try? file.seekToEnd()
+        try? file.write(contentsOf: Data(fresh.utf8))
+    }
+}
+/// Hands `EndTrace` the scroll view it sits in.
+struct EndTraceAnchor: UIViewRepresentable {
+    final class Anchor: UIView {
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            guard window != nil else { return }
+            var view: UIView? = superview
+            while let next = view {
+                if let scroller = next as? UIScrollView { EndTrace.shared?.attach(scroller); return }
+                view = next.superview
+            }
+        }
+    }
+    func makeUIView(context: Context) -> Anchor { Anchor() }
+    func updateUIView(_ view: Anchor, context: Context) {}
+}
+#else
+enum EndTrace {
+    static let isOn = false
+    static var describe: (() -> String)?
+    static func mark(_ name: @autoclosure () -> String) {}
+}
+#endif

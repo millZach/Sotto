@@ -4,6 +4,8 @@ import UIKit
 /// Runs the real SwiftUI hierarchy with isolated, in-memory host data. No host or account is used.
 @MainActor final class FocusJourneyTests: XCTestCase {
     private let app = XCUIApplication()
+    /// The app's end trace for the picture journeys (`showEndTrace`), while one runs.
+    private var endTrace: URL?
     private let laptop = "11111111-1111-4111-8111-111111111111"
     private static let fixture = ["--ui-fixture", "--reset-ui-preferences"]
 
@@ -698,6 +700,11 @@ import UIKit
     }
 
     private func picturesStayAtTheEnd(streaming: Bool) {
+        // The app's record of the page and of each decision to follow its end, read when the end is lost (#2040, #2080).
+        let trace = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("end-trace-\(UUID().uuidString).txt")
+        endTrace = trace
+        app.launchEnvironment["SOTTO_END_TRACE_FILE"] = trace.path
+        defer { try? FileManager.default.removeItem(at: trace); endTrace = nil }
         launch(Self.fixture + ["--ui-long-thread", "--ui-pictures", "--ui-slow-detail", "--ui-end-probe"] + (streaming ? ["--ui-streaming"] : []))
         let thread = row("drives")
         reveal(thread)
@@ -714,9 +721,35 @@ import UIKit
         XCTAssertTrue(endProbe().away, "Reading back up leaves the end, and nothing pulls the reader down (" + endProbe().words + ")")
         var drags = 0
         while !endProbe().atEnd && drags < 40 { dragThread(towardEnd: true, above: reply); drags += 1 }
+        if !endProbe().atEnd { showEndTrace("thread-pictures-drag-down") }
         XCTAssertTrue(endProbe().atEnd, "Dragging down reaches the thread's end (" + endProbe().words + ")")
         dragThread(towardEnd: true, above: reply)
         holdsTheEnd("pictures-returned", "Back at its end, the thread stays there while its pictures load again")
+    }
+
+    /// Keeps the app's end trace with the journey's attachments, and prints its decisions and every frame in which the page's
+    /// offset or height moved by more than 200 points, so the job's log says what moved the page.
+    private func showEndTrace(_ name: String) {
+        guard let trace = endTrace, let data = try? Data(contentsOf: trace), let words = String(data: data, encoding: .utf8) else {
+            print("[end trace] \(name): no trace was written")
+            return
+        }
+        let attachment = XCTAttachment(string: words)
+        attachment.name = name + " end trace"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        var previous: (offset: Double, height: Double)?
+        var shown = 0
+        for line in words.split(separator: "\n") where shown < 800 {
+            let parts = line.split(separator: " ")
+            var keep = line.contains(" * ")
+            if let at = parts.firstIndex(of: "offset"), let hat = parts.firstIndex(of: "height"),
+               let offset = Double(parts[at + 1]), let height = Double(parts[hat + 1]) {
+                if let previous, abs(offset - previous.offset) > 200 || abs(height - previous.height) > 200 { keep = true }
+                previous = (offset, height)
+            }
+            if keep { print("[end trace] \(name) " + line); shown += 1 }
+        }
     }
 
     /// Where the conversation's end, the reply box's top and the bar's bottom sit, as the page lays them out, and whether
@@ -762,6 +795,7 @@ import UIKit
         }
         guard inARow >= 2 else {
             explain("thread-\(name)-end-never-shown", readings.joined(separator: "\n"))
+            showEndTrace("thread-\(name)-end-never-shown")
             XCTFail(message + ": the end never came into view\n" + readings.suffix(8).joined(separator: "\n"))
             return
         }
@@ -772,7 +806,7 @@ import UIKit
             Thread.sleep(forTimeInterval: 0.2)
         }
         capture("thread-\(name)")
-        if away > 0 { explain("thread-\(name)-left-the-end", readings.joined(separator: "\n")) }
+        if away > 0 { explain("thread-\(name)-left-the-end", readings.joined(separator: "\n")); showEndTrace("thread-\(name)-left-the-end") }
         XCTAssertEqual(away, 0, message + "\n" + readings.joined(separator: "\n"))
     }
 
