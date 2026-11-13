@@ -831,7 +831,7 @@ export class SocketHostService implements HostService {
   }
   shell(): AgentState {
     if (!this.cached) throw new Error(t`Connect to the host before reading its state.`)
-    return this.withRetained(structuredClone(this.cached))
+    return this.withRetained(structuredClone(this.cached), this.retainedDrafts.list(this.retainedHostId()))
   }
   /**
    * The shell without a copy of the host's push, for a reader that only reads: the router building what it publishes, a
@@ -841,12 +841,15 @@ export class SocketHostService implements HostService {
    */
   view(): AgentState {
     if (!this.cached) throw new Error(t`Connect to the host before reading its state.`)
-    return this.withRetained({ ...this.cached })
+    return this.withRetained({ ...this.cached }, this.retainedDrafts.read(this.retainedHostId()))
   }
-  /** The shell as this desktop shows it: the drafts it holds for the host laid over the host's own state. */
-  private withRetained(state: AgentState): AgentState {
+  /**
+   * The shell as this desktop shows it: the drafts it holds for the host laid over the host's own state. `drafts` are copies
+   * for `shell`, whose caller may change what it is given, and the store's own for `view`, whose reader only reads.
+   */
+  private withRetained(state: AgentState, drafts: readonly Readonly<RetainedDraft>[]): AgentState {
     state.notice = this.quietConnectionNotices.get(state.notice) ?? state.notice
-    for (const edit of this.retainedDrafts.list(this.retainedHostId())) {
+    for (const edit of drafts) {
       const draft = edit.saved && edit.hostDraftId ? { ...edit.draft, draftId: edit.hostDraftId } : edit.draft
       state.threadDrafts = [...(state.threadDrafts ?? []).filter(draft => draft.threadId !== edit.draft.threadId), draft]
       if (edit.saved && edit.hostDraftId) state.threadDraftPersistence = [...(state.threadDraftPersistence ?? []).filter(item => item.threadId !== draft.threadId),
@@ -858,10 +861,10 @@ export class SocketHostService implements HostService {
     }
     const refusal = this.recoveryError
     if (refusal && !state.error) {
-      const edit = this.retainedDrafts.get(this.retainedHostId(), refusal.threadId)
+      const edit = drafts.find(item => item.draft.threadId === refusal.threadId)
       if (edit && !edit.saved && edit.draft.draftId === refusal.draftId) state.error = refusal.message
     }
-    if (!state.error && this.retainedDrafts.list(this.retainedHostId()).some(edit => edit.sendAttempt)) state.error = i18n._(REMOTE_SEND_UNCERTAIN)
+    if (!state.error && drafts.some(edit => edit.sendAttempt)) state.error = i18n._(REMOTE_SEND_UNCERTAIN)
     return state
   }
   threadDetail(threadId: string): AgentThreadDetail | null { if (!this.threadAvailable(threadId)) return null; return structuredClone(this.details.get(threadId) ?? null) }
