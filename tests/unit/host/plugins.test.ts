@@ -137,12 +137,13 @@ describe('a host’s threads and a mail account’s copy (ADR-0205, decision 8)'
     const paired = new Set([LAPTOP])
     const thread = { id: 'a-host-thread', projectId: 'project-one', providerId: 'codex', workspaceSettledAt: null as string | null }
     const project = { id: 'project-one', workspaceSettledAt: null as string | null }
+    let connects = 0
     const plugins = hostPlugins({ directory, credentials: credentials().store, admits: () => true, paired: clientId => paired.has(clientId),
       thread: threadId => threadId === thread.id ? thread as unknown as AgentHostSnapshot['threads'][number] : undefined,
       project: projectId => projectId === project.id ? project as unknown as AgentHostSnapshot['projects'][number] : undefined,
-      standIns: { gh: async () => JSON.stringify({ hosts: {} }), mailConnect: async () => { throw new Error('No mail server is reached here.') } } })
+      standIns: { gh: async () => JSON.stringify({ hosts: {} }), mailConnect: async () => { connects += 1; throw new Error('No mail server is reached here.') } } })
     const granted = async (): Promise<boolean> => plugins.mailGrants.has(thread.id, MAIL.id)
-    return { plugins, paired, thread, project, granted }
+    return { plugins, paired, thread, project, granted, connects: () => connects }
   }
 
   it('says it keeps a mail account, and keeps one with its address', async () => {
@@ -185,6 +186,31 @@ describe('a host’s threads and a mail account’s copy (ADR-0205, decision 8)'
     await h.plugins.mailGrants.grant(h.thread.id, MAIL.id)
     await h.plugins.forgetGrantsOfGone()
     expect((await h.plugins.mailGrants.list()).map(grant => grant.accountId)).toEqual([next.account.id])
+  })
+
+  it('reads nothing on a yes given for a copy that was let go and sent again under the same ID while its card waited', async () => {
+    const h = await mailHost()
+    await h.plugins.copies.keep(COPY, LAPTOP)
+    const reading = h.plugins.tools.call(h.thread.id, 'plugin_read', { plugin: 'gmail', search: {} })
+    const card = (): string | undefined => h.plugins.changes.requests().get(h.thread.id)?.[0]?.id
+    await expect.poll(card).toBeDefined()
+    const asked = card()!
+    // The desktop takes its copy back and sends it again, with another password, while the card is still up.
+    await h.plugins.copies.remove(MAIL.id, LAPTOP)
+    await h.plugins.copies.keep({ account: MAIL, secret: 'anothermadeuppass' }, LAPTOP)
+    // The user's yes is for the copy the card asked about, which is gone. The card may have gone with it by now.
+    try { h.plugins.changes.answer(h.thread.id, asked, true) } catch { /* Taken down already: there is nothing to say yes to. */ }
+    const result = await reading
+    expect(result.isError).toBe(true)
+    expect(JSON.stringify(result)).toContain('Nothing was read.')
+    expect(await h.plugins.mailGrants.list()).toEqual([])
+    expect(h.connects()).toBe(0)
+    // Asked again, for the copy that is there now, a yes reads.
+    const again = h.plugins.tools.call(h.thread.id, 'plugin_read', { plugin: 'gmail', search: {} })
+    await expect.poll(card).toBeDefined()
+    h.plugins.changes.answer(h.thread.id, card()!, true)
+    await again
+    expect([h.connects(), (await h.plugins.mailGrants.list()).length]).toEqual([1, 1])
   })
 
   it('ends a grant when the user settles the thread or its project, by the test the desktop’s grants go by', async () => {

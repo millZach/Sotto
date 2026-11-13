@@ -252,14 +252,16 @@ export class PluginAccountCopySync {
     const cannotKeep = (account: PluginAccount): boolean => isMailPlugin(account.plugin) && service.supportsPluginMailCopies !== true
     const stillThere = new Set<string>()
     for (const copy of held) {
-      if (wanted.some(account => account.id === copy.id && !cannotKeep(account)) || unsure.some(account => account.id === copy.id)) continue
+      // Whether a copy is wanted is the user's choice, and a choice that cannot be read takes nothing back. Whether
+      // a host may hold a mail account is not a choice: it is taken back all the same.
+      if ([...wanted, ...unsure].some(account => account.id === copy.id && !cannotKeep(account))) continue
       try { await service.removePluginAccountCopy(copy.id) } catch { stillThere.add(copy.id); failed = true }
     }
     for (const account of accounts) {
       if (wanted.includes(account)) continue
       states.delete(account.id); unwanted.delete(account.id)
       if (!unsure.includes(account)) unwanted.set(account.id, stillThere.has(account.id) ? 'there' : 'gone')
-      else if (held.some(copy => copy.id === account.id)) states.set(account.id, 'kept')
+      else if (!cannotKeep(account) && held.some(copy => copy.id === account.id)) states.set(account.id, 'kept')
     }
     for (const account of wanted) {
       unwanted.delete(account.id)

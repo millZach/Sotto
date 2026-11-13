@@ -37,7 +37,7 @@ async function desk() {
     accounts: async () => [PERSONAL], findAccount: async () => PERSONAL, holdsAccount: async () => true,
     askChange: (threadId, change, wait) => cards.ask(threadId, wordPluginChangeInEnglish(change), wait),
     mail: {
-      granted: (threadId, accountId) => grants.has(threadId, accountId), grant: (threadId, accountId) => grants.grant(threadId, accountId),
+      granted: (threadId, accountId) => grants.has(threadId, accountId), grant: (threadId, accountId, copy) => grants.grant(threadId, accountId, copy), copyOf: accountId => grants.generation(accountId),
       threadOpen: threadId => grants.open(threadId), providerOf: () => 'Claude Code',
       search: async () => { searched += 1; return FOUND }, open: never,
     },

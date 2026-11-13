@@ -266,6 +266,21 @@ describe('sending account copies to paired hosts (ADR-0205, amending ADR-0025)',
     expect((await d.states()).filter(state => state.includes('host-older'))).toEqual(['Work@host-older: kept', 'Mail@host-older: too-old'])
   })
 
+  it('takes a mail copy back from a host that cannot ask even while its record of choices cannot be read', async () => {
+    const mail: PluginAccount = { ...PERSONAL, plugin: 'gmail', name: 'Mail', address: 'reader@example.com', signedInAs: null }
+    const d = await desk([WORK, mail])
+    await writeFile(join(d.directory, 'plugin-account-copy-choices.json'), 'not json')
+    const older = fakeHost('host-older', { mail: false })
+    older.held.set(WORK.id, { account: WORK, secret: tokenOf(WORK.id) })
+    older.held.set(mail.id, { account: mail, secret: tokenOf(mail.id) })
+    d.connect(older, 'older')
+    await d.sync.idle()
+    // Nothing is sent and nothing else is taken back while the choices cannot be read; the mail copy is not a choice.
+    expect(older.calls).toEqual(['list', 'remove Mail'])
+    expect([...older.held.keys()]).toEqual([WORK.id])
+    expect(await d.states()).toEqual(['Work@host-older: kept', 'Mail@host-older: no-record'])
+  })
+
   it('takes back a narrowed account’s copy from a host that was away when it was narrowed', async () => {
     const d = await desk()
     const forge = fakeHost('host-forge')

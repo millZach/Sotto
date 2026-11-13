@@ -133,8 +133,16 @@ export type SecretTrouble = 'locked' | 'no-secret'
 export interface PluginMailHandlers {
   /** Whether the thread holds a mail grant for the account: the user has let this thread read it (ADR-0205, decision 8). */
   granted(threadId: string, accountId: string): Promise<boolean>
-  /** Keeps the user's yes: this thread may read this account until they stop it or the thread is settled. */
-  grant(threadId: string, accountId: string): Promise<void>
+  /**
+   * Which copy of the account is held now: it changes when the account is let go, even where one of the same ID
+   * comes back, as a copy on a paired host can. A card asks about one copy.
+   */
+  copyOf(accountId: string): number
+  /**
+   * Keeps the user's yes: this thread may read this account until they stop it or the thread is settled. False when
+   * it was not kept: the thread is no longer open, or the yes was asked for about another copy than the one held now.
+   */
+  grant(threadId: string, accountId: string, copy: number): Promise<boolean>
   /**
    * Whether the thread is open, as a mail grant means it: not settled, by itself or with its project, not archived
    * and not gone. A thread that is not reads no mail and is not asked about any.
@@ -252,7 +260,7 @@ export class PluginToolServer implements ScopedThreadTools {
   readonly timeoutMs = PLUGIN_CHANGE_WAIT_MS + 60_000
   private readonly server: ThreadToolServer
   /** A thread's first read of a mail account, while its card waits: reads of that account asked for meanwhile share the one card. */
-  private readonly mailAsks = new Map<string, Promise<PluginChangeAnswer>>()
+  private readonly mailAsks = new Map<string, { readonly asking: Promise<PluginChangeAnswer>; readonly copy: number }>()
   constructor(private readonly handlers: PluginToolHandlers) {
     this.server = new ThreadToolServer({ name: PLUGINS_MCP_SERVER, serverName: 'sotto-plugins', instructions: INSTRUCTIONS,
       unavailable: `The plugin tools are unavailable. ${NOTHING_READ}`, failed: `The plugin could not be used. ${NOTHING_READ} Nothing was changed.` },
@@ -504,27 +512,32 @@ export class PluginToolServer implements ScopedThreadTools {
 
   /**
    * Asks the user whether this thread may read a mail account, on a card that names the account and the provider the
-   * thread runs on, and says what to tell the agent when they did not allow it. Null means allowed. Reads of the same
-   * account that this thread asks for while the card waits share it, so the user answers once.
+   * thread runs on, and says what to tell the agent when they did not allow it. Allowed, it says which copy of the
+   * account the card asked about: the yes is for that copy. Reads of the same account that this thread asks for
+   * while the card waits share it, so the user answers once.
    */
-  private async mailRefusal(threadId: string, mail: PluginMailHandlers, account: PluginAccount, call: Call): Promise<{ readonly outcome: 'denied' | 'lapsed' | null; readonly result: ThreadToolResult } | null> {
+  private async mailRefusal(threadId: string, mail: PluginMailHandlers, account: PluginAccount, call: Call): Promise<{ readonly outcome: 'denied' | 'lapsed' | null; readonly result: ThreadToolResult } | { readonly copy: number }> {
     const { signal, waitMs } = call.context
     const room = waitMs === undefined ? undefined : waitMs - (Date.now() - call.started) - CHANGE_ROOM_MS
     if (room !== undefined && room < CHANGE_CARD_MIN_MS) return { outcome: null, result: text(`This client does not wait long enough for the user to be asked first, so the user was not asked. ${NOTHING_READ}`, true) }
     const key = `${threadId}\n${account.id}`
-    let asking = this.mailAsks.get(key)
-    if (!asking) {
+    let ask = this.mailAsks.get(key)
+    if (!ask) {
       let provider = ''
       try { provider = mail.providerOf(threadId) } catch { /* The card then says the thread's provider without its name. */ }
       const change: PluginChange = { kind: 'mail-read', plugin: PLUGIN_NAMES[account.plugin], account: account.name, provider }
-      // The card goes when the thread stops being open, as the grant it asks for would.
-      const stillOpen = (): boolean => { try { return mail.threadOpen(threadId) } catch { return false } }
-      asking = this.handlers.askChange(threadId, change, { ...(signal ? { signal } : {}), ...(room === undefined ? {} : { waitMs: room }), stillOpen }).catch((): PluginChangeAnswer => 'stopped')
+      // The copy of the account the card asks about. On a paired host a copy can be let go and sent again under the
+      // same ID while its card waits, and a yes given for one is not a yes for the other.
+      const copy = mail.copyOf(account.id)
+      // The card goes when the thread stops being open, or the copy it asks about goes, as the grant would.
+      const stillOpen = (): boolean => { try { return mail.threadOpen(threadId) && mail.copyOf(account.id) === copy } catch { return false } }
+      const asking = this.handlers.askChange(threadId, change, { ...(signal ? { signal } : {}), ...(room === undefined ? {} : { waitMs: room }), stillOpen }).catch((): PluginChangeAnswer => 'stopped')
         .finally(() => { this.mailAsks.delete(key) })
-      this.mailAsks.set(key, asking)
+      ask = { asking, copy }
+      this.mailAsks.set(key, ask)
     }
-    const answer = await asking
-    if (answer === 'allowed' && this.admits(threadId) && !signal?.aborted) return null
+    const answer = await ask.asking
+    if (answer === 'allowed' && this.admits(threadId) && !signal?.aborted) return { copy: ask.copy }
     if (answer === 'denied') return { outcome: 'denied', result: text(`The user said no: this thread may not read the ${PLUGIN_NAMES[account.plugin]} account "${account.name}". ${NOTHING_READ} Do not ask again unless they tell you to.`, true) }
     if (answer === 'lapsed') return { outcome: 'lapsed', result: text(`Nobody answered in time, so the request lapsed. ${NOTHING_READ} Tell the user what you wanted to read and why, and ask again only if they tell you to.`, true) }
     return { outcome: null, result: text(`The request was stopped before it was answered. ${NOTHING_READ}`, true) }
@@ -553,10 +566,10 @@ export class PluginToolServer implements ScopedThreadTools {
     }
     // A grant that cannot be read is no grant: the user is asked.
     if (!await mail.granted(threadId, account.id).catch(() => false)) {
-      const refused = await this.mailRefusal(threadId, mail, account, call)
-      if (refused) {
-        if (refused.outcome) await kept(refused.outcome)
-        return refused.result
+      const answered = await this.mailRefusal(threadId, mail, account, call)
+      if ('result' in answered) {
+        if (answered.outcome) await kept(answered.outcome)
+        return answered.result
       }
       // The account may have been switched off, kept to other projects or removed while the card waited, and again
       // while the user's yes was being kept, which writes a file. It is looked for after each, so the read that
@@ -572,7 +585,12 @@ export class PluginToolServer implements ScopedThreadTools {
       if (!await usable()) return changed('while the card waited')
       // A yes for a thread settled a moment before it is no leave to read: the grant would have ended there.
       if (!open()) return text(`The user allowed it, but this thread was settled or archived while the card waited, so nothing may be read for it. ${NOTHING_READ}`, true)
-      await mail.grant(threadId, account.id)
+      // The yes is for the copy the card asked about. One let go and sent again meanwhile is another copy, and the
+      // user is asked about it afresh.
+      if (!await mail.grant(threadId, account.id, answered.copy)) {
+        await kept('failed')
+        return text(`The user allowed it, but the ${service} account was let go and added again while the card waited, so their yes was for the one before. ${NOTHING_READ} Call ${PLUGIN_READ_TOOL} again if it should still be read; the user will be asked again.`, true)
+      }
       if (!await usable()) return changed('before it could be read')
     }
     const result = 'message' in wanted ? await mail.open(account, wanted.message) : await mail.search(account, wanted.search)
