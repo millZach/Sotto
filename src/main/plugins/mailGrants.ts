@@ -3,6 +3,7 @@ import { dirname, join } from 'node:path'
 import { z } from 'zod'
 import type { AgentProject, AgentThread } from '../../shared/agents'
 import { parseHostEntityKey } from '../../shared/clientIdentity'
+import { isMailPlugin, pluginAccountAdmits, type PluginAccount, type ThreadMailGrant } from '../../shared/plugins'
 import { isThreadClosed, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 
 const grantSchema = z.object({ threadId: z.string().min(1).max(200), accountId: z.uuid(), at: z.iso.datetime() }).strict()
@@ -33,6 +34,18 @@ export function ownThreadId(threadKey: string, ownHostId: string | undefined): s
   const key = parseHostEntityKey(threadKey)
   if (key === null) return threadKey
   return key.hostId === ownHostId ? key.id : null
+}
+
+/**
+ * The mail accounts a thread's menu lists: those it holds a grant for and can read now. An account that is gone,
+ * switched off or kept to other projects is not one the thread can read, so it has no row, though its grant stands
+ * and holds again if the account comes back to the thread. Each by Sotto's ID and the user's name for it.
+ */
+export function mailGrantsShown(grants: readonly MailGrant[], accounts: readonly PluginAccount[], threadId: string, projectId: string | null): ThreadMailGrant[] {
+  return grants.filter(grant => grant.threadId === threadId).flatMap(grant => {
+    const account = accounts.find(entry => entry.id === grant.accountId)
+    return account && isMailPlugin(account.plugin) && pluginAccountAdmits(account, projectId) ? [{ accountId: account.id, plugin: account.plugin, name: account.name }] : []
+  })
 }
 
 /** More than anyone gives. Past it the oldest grant goes, and its thread asks again. */

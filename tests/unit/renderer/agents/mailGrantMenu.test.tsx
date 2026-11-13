@@ -105,6 +105,39 @@ it('shows another thread’s rows when the pane goes to it, and never one thread
   expect(labels(result.current.items)).toEqual(['Ask before this thread reads Work'])
 })
 
+it('lets a Stop that finishes after the pane has gone to another thread, or has gone, touch nothing', async () => {
+  owl(true)
+  const stopping = deferred<boolean>()
+  const asked: string[] = []
+  const made = {
+    mailGrants: async (threadId: string) => { asked.push(threadId); return threadId === 'one' ? [PERSONAL] : [WORK] },
+    stopMailGrant: async () => stopping.promise,
+    onMailGrantsChanged: () => () => undefined,
+  } as unknown as PluginsBridge
+  const { result, rerender } = renderHook(({ id }) => useMailGrantMenu(id, true, made), { initialProps: { id: 'one' } })
+  await act(async () => undefined)
+  act(() => { result.current.items[0]!.run() })
+  rerender({ id: 'two' })
+  await act(async () => undefined)
+  asked.length = 0
+  // The first thread's Stop could not be written. The pane shows the second thread now, and says nothing of it.
+  await act(async () => { stopping.resolve(false) })
+  expect(result.current.problem).toBeNull()
+  expect(labels(result.current.items)).toEqual(['Ask before this thread reads Work'])
+  expect(asked).toEqual([])
+
+  // And one that succeeds after the pane has gone asks main for nothing more.
+  const later = deferred<boolean>()
+  const gone = { ...made, stopMailGrant: async () => later.promise } as unknown as PluginsBridge
+  const pane = renderHook(() => useMailGrantMenu('one', true, gone))
+  await act(async () => undefined)
+  act(() => { pane.result.current.items[0]!.run() })
+  pane.unmount()
+  asked.length = 0
+  await act(async () => { later.resolve(true) })
+  expect(asked).toEqual([])
+})
+
 it('offers nothing for a thread on another computer, on stable, or without the bridge, and asks main nothing', async () => {
   owl(true)
   const b = bridge({ one: [PERSONAL] })

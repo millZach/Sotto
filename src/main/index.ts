@@ -74,7 +74,7 @@ import { PluginAccounts } from './plugins/accounts'
 import { checkMailAccount } from './plugins/mail/accounts'
 import type { MailOptions } from './plugins/mail/read'
 import { mailOnThisComputer } from './plugins/mail/standIn'
-import { MailGrants, mailThreadOpen, ownThreadId } from './plugins/mailGrants'
+import { mailGrantsShown, MailGrants, mailThreadOpen, ownThreadId } from './plugins/mailGrants'
 import { PluginChangeRequests } from './plugins/pendingChanges'
 import { pluginFolderOfThread, pluginProjects } from './plugins/projectFolders'
 import { PluginAccountCopySync } from './plugins/copySync'
@@ -2752,7 +2752,13 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         // Each change to an account here is carried to the hosts that keep a copy of it.
         addAccount: async request => { const result = await pluginAccounts?.add(request) ?? { ok: false as const, problem: 'store' as const }; if (result.ok) pluginCopySync?.accountsChanged(); return result },
         replaceSecret: async request => { const result = await pluginAccounts?.replace(request) ?? { ok: false as const, problem: 'store' as const }; if (result.ok) pluginCopySync?.accountsChanged(); return result },
-        updateAccount: async request => { const result = await pluginAccounts?.update(request) ?? { ok: false as const, problem: 'store' as const }; if (result.ok) pluginCopySync?.accountsChanged(); return result },
+        updateAccount: async request => {
+          const result = await pluginAccounts?.update(request) ?? { ok: false as const, problem: 'store' as const }
+          if (result.ok) pluginCopySync?.accountsChanged()
+          // An account switched off, or kept to other projects, is no longer one some thread can read: its menu reads again.
+          if (result.ok) windows.sendToMain(PLUGINS_MAIL_GRANTS_CHANGED, null)
+          return result
+        },
         copies: async () => await pluginCopySync?.view() ?? { copyNew: true, readable: true, computers: [], copies: [] },
         setCopy: async request => { await pluginCopySync?.setCopy(request.accountId, request.computerId, request.on); return await pluginCopySync?.view() ?? { copyNew: true, readable: true, computers: [], copies: [] } },
         setCopyNew: async copyNew => { await pluginCopySync?.setCopyNew(copyNew); return await pluginCopySync?.view() ?? { copyNew: true, readable: true, computers: [], copies: [] } },
@@ -2762,13 +2768,9 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
           // The window names a thread by a key that says whose it is; the grants are this computer's own threads'.
           const threadId = ownThreadId(threadKey, agentControl.hostId())
           if (threadId === null || !mailGrants || !pluginAccounts || !mailGrants.open(threadId)) return []
-          const held = (await mailGrants.list()).filter(grant => grant.threadId === threadId)
-          if (held.length === 0) return []
-          const accounts = await pluginAccounts.list()
-          return held.flatMap(grant => {
-            const account = accounts.find(entry => entry.id === grant.accountId)
-            return account && isMailPlugin(account.plugin) ? [{ accountId: account.id, plugin: account.plugin, name: account.name }] : []
-          })
+          const held = await mailGrants.list()
+          if (!held.some(grant => grant.threadId === threadId)) return []
+          return mailGrantsShown(held, await pluginAccounts.list(), threadId, pluginProjectOf(threadId))
         },
         // The user's Stop, from that menu: the thread asks again before it next reads the account.
         stopMailGrant: async request => {

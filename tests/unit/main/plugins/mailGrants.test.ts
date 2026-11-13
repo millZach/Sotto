@@ -3,7 +3,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { MailGrants, mailThreadOpen, ownThreadId } from '../../../../src/main/plugins/mailGrants'
+import { mailGrantsShown, MailGrants, mailThreadOpen, ownThreadId } from '../../../../src/main/plugins/mailGrants'
+import type { PluginAccount } from '../../../../src/shared/plugins'
 
 const folders: string[] = []
 afterEach(async () => {
@@ -236,4 +237,23 @@ it('reads a thread as a window names it as this computer’s own, and takes none
   expect(ownThreadId('thread-one', here)).toBe('thread-one')
   // A thread on a paired host keeps its grants there: this computer has none for it and ends none.
   expect(ownThreadId(`host:${forge}:thread-one`, here)).toBeNull()
+})
+
+it('lists in a thread’s menu only the mail accounts it holds a grant for and can read now, by name', () => {
+  const at = '2026-11-13T09:00:00.000Z'
+  const account = (id: string, name: string, more: Partial<PluginAccount> = {}): PluginAccount => ({ id, plugin: 'gmail', name, address: `${name.toLowerCase()}@example.com`, savedAt: at, signedInAs: null, on: true, projects: null, ...more })
+  const grant = (threadId: string, accountId: string) => ({ threadId, accountId, at })
+  const GONE = '33333333-3333-4333-8333-000000000009'
+  const accounts = [account(PERSONAL, 'Personal'), account(WORK, 'Work')]
+  const grants = [grant('thread-one', PERSONAL), grant('thread-one', WORK), grant('thread-one', GONE), grant('thread-two', PERSONAL)]
+  expect(mailGrantsShown(grants, accounts, 'thread-one', 'folder:site')).toEqual([{ accountId: PERSONAL, plugin: 'gmail', name: 'Personal' }, { accountId: WORK, plugin: 'gmail', name: 'Work' }])
+  // Never an address, and never another thread's.
+  expect(JSON.stringify(mailGrantsShown(grants, accounts, 'thread-one', null))).not.toContain('example.com')
+  expect(mailGrantsShown(grants, accounts, 'thread-two', null).map(shown => shown.name)).toEqual(['Personal'])
+  expect(mailGrantsShown(grants, accounts, 'thread-nine', null)).toEqual([])
+  // An account switched off, or kept to another project, is not one the thread can read: it has no row.
+  expect(mailGrantsShown(grants, [account(PERSONAL, 'Personal', { on: false }), account(WORK, 'Work', { projects: ['folder:other'] })], 'thread-one', 'folder:site')).toEqual([])
+  expect(mailGrantsShown(grants, [account(WORK, 'Work', { projects: ['folder:site'] })], 'thread-one', 'folder:site').map(shown => shown.name)).toEqual(['Work'])
+  // An account of a plugin that is not mail has no grant to show, whatever the file says.
+  expect(mailGrantsShown(grants, [account(PERSONAL, 'Deploys', { plugin: 'vercel' })], 'thread-one', null)).toEqual([])
 })

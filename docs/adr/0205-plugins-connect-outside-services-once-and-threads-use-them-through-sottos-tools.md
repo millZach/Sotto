@@ -214,11 +214,11 @@ Slice 8's fourth part puts Gmail on Settings › Plugins, in a **Mail** group of
 
 Slice 8's last part builds what Zach picked that day: a grant is stopped in the thread.
 
-- **The thread's ··· menu has a row for each mail account the thread can read:** **Ask before this thread reads** the account, by the name the user gave it. It is there only while the thread holds the grant, as the browser's row is, so a thread that has never been allowed has nothing to stop. Pressed, the grant ends and the thread asks again before its next read.
+- **The thread's ··· menu has a row for each mail account the thread can read:** **Ask before this thread reads** the account, by the name the user gave it. It is there only while the thread holds the grant and can read the account, as the browser's row is: a thread that has never been allowed has nothing to stop, and an account switched off or kept to other projects has no row, though its grant stands and holds again when the account comes back to the thread. Pressed, the grant ends and the thread asks again before its next read.
 - **The window learns names, and only its own thread's.** A menu asks main for one thread's grants and is told the accounts by Sotto's ID and the user's name for each. Not an address, and nothing of another thread. Main says when some grant changed, and the menu reads its own again.
 - **A Stop that could not be written says so,** in the thread, and the row stays: the thread can still read the account. That is the grant store's rule, that a Stop is done when the file says so.
 - **This computer's threads.** A thread on a paired host keeps its grant on that host, and its menu here has no row. It ends when that thread is settled, archived or deleted, when the copy is let go, or when the account is removed. Stopping one from the desktop needs a request in the host protocol, which this slice does not add.
-- **Watcher's room has no ··· menu.** Watcher's grant ends when Watcher is replaced, since the new Watcher is another thread and asks for itself, and when the account is switched off or removed. Whether Watcher's room needs a control of its own is Zach's to say.
+- **Watcher's room has no ··· menu.** Watcher's grant ends when Watcher is replaced, since the new Watcher is another thread and asks for itself, and when the account is removed. Switching the account off keeps Watcher from reading it without ending the grant: switched back on, Watcher reads again without asking. Whether Watcher's room needs a control of its own is Zach's to say.
 - **Gmail's row says where.** Its first paragraph ends by saying that a thread is made to ask again from its ··· menu, since the card says "until you stop it".
 
 ## Considered options

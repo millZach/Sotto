@@ -21,6 +21,9 @@ export function useMailGrantMenu(threadId: string, here: boolean, bridge: Plugin
   const [problem, setProblem] = useState<string | null>(null)
   // Only the newest read's answer is shown, and none after the pane has gone to another thread.
   const asked = useRef(0)
+  // The thread the pane shows now, as one object for as long as it shows it: what a Stop began for an earlier one
+  // finishes into nothing.
+  const showing = useRef<object | null>(null)
   const read = useCallback((): void => {
     if (!on || !bridge) return
     const mine = ++asked.current
@@ -29,17 +32,22 @@ export function useMailGrantMenu(threadId: string, here: boolean, bridge: Plugin
   useEffect(() => {
     setGrants([]); setProblem(null)
     if (!on || !bridge) return
+    const shown = {}
+    showing.current = shown
     read()
     // Main says only that some grant changed; the menu reads this thread's again.
     const off = bridge.onMailGrantsChanged(read)
-    return () => { asked.current += 1; off() }
+    return () => { asked.current += 1; if (showing.current === shown) showing.current = null; off() }
   }, [on, bridge, read])
   const stop = (grant: ThreadMailGrant): void => {
     if (!bridge) return
     const name = grant.name
+    const shown = showing.current
     setProblem(null)
-    const failed = (): void => { setProblem(t`Sotto could not stop this thread reading ${name}, so it can still read it. Try again.`) }
-    void bridge.stopMailGrant({ threadId, accountId: grant.accountId }).then(stopped => { if (stopped) read(); else failed() }, failed)
+    // An answer that arrives after the pane has gone to another thread, or has gone, is not this pane's to show.
+    const still = (): boolean => shown !== null && showing.current === shown
+    const failed = (): void => { if (still()) setProblem(t`Sotto could not stop this thread reading ${name}, so it can still read it. Try again.`) }
+    void bridge.stopMailGrant({ threadId, accountId: grant.accountId }).then(stopped => { if (!stopped) failed(); else if (still()) read() }, failed)
   }
   const items = !on ? [] : grants.map((grant): PaneMenuItem => {
     const name = grant.name
