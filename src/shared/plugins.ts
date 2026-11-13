@@ -44,10 +44,11 @@ export type GitHubSignIn = z.infer<typeof gitHubSignInSchema>
 /**
  * Who gh is signed in to GitHub as on one of the user's other computers, for Settings › Plugins. A thread there acts
  * as that account, which need not be this computer's. Besides gh's own four answers: `away`, the computer is not
- * connected, so its gh cannot be asked; `no-plugins`, its Sotto runs no plugin tools, so its threads do not use
+ * connected, so its gh cannot be asked; `too-old`, its Sotto runs plugin tools, with that computer's own gh, and is
+ * from before it could say who that is; `no-plugins`, its Sotto runs no plugin tools, so its threads do not use
  * GitHub through Sotto. A name, never a token.
  */
-export const PLUGIN_HOST_SIGN_IN_STATES = ['signed-in', 'signed-out', 'not-installed', 'unknown', 'away', 'no-plugins'] as const
+export const PLUGIN_HOST_SIGN_IN_STATES = ['signed-in', 'signed-out', 'not-installed', 'unknown', 'away', 'too-old', 'no-plugins'] as const
 export const pluginHostSignInsSchema = z.array(z.object({
   computerId: z.string().min(1).max(512), name: z.string().max(512), state: z.enum(PLUGIN_HOST_SIGN_IN_STATES),
   /** The account, where gh is signed in. */

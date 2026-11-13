@@ -246,7 +246,8 @@ function GitHubRow({ plugin, signIn, uses, elsewhere, elsewhereSignIns, onCheck 
             : computer.state === 'not-installed' ? t`gh isn’t installed there, so its threads cannot use GitHub.`
               : computer.state === 'away' ? t`Not connected, so its gh cannot be asked.`
                 : computer.state === 'asking' ? t`Asking its gh who is signed in…`
-                : computer.state === 'no-plugins' ? t`Its Sotto runs no plugin tools, so its threads do not use GitHub through Sotto.`
+                : computer.state === 'too-old' ? t`Its Sotto is too old to say who gh is signed in as there. Its threads use that computer’s gh all the same. Update Sotto on ${name} to see the account.`
+                  : computer.state === 'no-plugins' ? t`Its Sotto runs no plugin tools, so its threads do not use GitHub through Sotto.`
                   : t`Sotto couldn’t ask its gh who is signed in.`
         return <li key={computer.computerId}>
           <span className="plugin-row__dot" data-state={computer.state === 'signed-in' ? 'signed-in' : computer.state === 'signed-out' || computer.state === 'not-installed' ? 'signed-out' : 'none'} aria-hidden="true" />

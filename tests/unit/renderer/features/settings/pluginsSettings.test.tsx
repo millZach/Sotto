@@ -698,6 +698,7 @@ it('shows who gh is signed in as on each other computer, since a thread there ac
   const lines: [PluginHostSignIn['state'], string][] = [
     ['not-installed', 'forgegh isn’t installed there, so its threads cannot use GitHub.'],
     ['unknown', 'forgeSotto couldn’t ask its gh who is signed in.'],
+    ['too-old', 'forgeIts Sotto is too old to say who gh is signed in as there. Its threads use that computer’s gh all the same. Update Sotto on forge to see the account.'],
     ['no-plugins', 'forgeIts Sotto runs no plugin tools, so its threads do not use GitHub through Sotto.'],
   ]
   for (const [state, line] of lines) {
@@ -743,6 +744,16 @@ it('adds nothing about another computer whose Sotto runs no plugin tools, and fa
   const notes = (): (string | null)[] => [...document.querySelectorAll('.plugin-row__note')].map(note => note.textContent)
   expect(notes().filter(note => note === records)).toHaveLength(2)
   expect(notes()).toContain(gh)
+  cleanup()
+  // forge runs plugin tools on a Sotto from before it could say whose gh that is: its threads use its own gh, so
+  // both notes are about it.
+  const older = copiesBridge('kept', { signIn: { state: 'too-old' } })
+  await act(async () => { render(<PluginsSettings bridge={older.bridge} />) })
+  fireEvent.click(await screen.findByRole('button', { name: /^GitHub/u }))
+  fireEvent.click(vercelRow())
+  await waitFor(() => expect(elsewhereLines()).toHaveLength(1))
+  expect(notes()).toContain(`${gh} A thread on another of your computers uses the gh sign-in on that computer, which may be a different account.`)
+  expect(notes().filter(note => note === `${records} Only this computer’s threads are listed. Your other computers keep no record of use.`)).toHaveLength(2)
   cleanup()
   // The computers could not be asked: with one paired, the notes stay, and no line claims anything of its gh.
   const unread = copiesBridge('kept', { signIn: 'unread' })

@@ -3480,6 +3480,10 @@ msgid "Its record was cleared. Pieces from now on are counted here."
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Its Sotto is too old to say who gh is signed in as there. Its threads use that computer’s gh all the same. Update Sotto on {name} to see the account."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Its Sotto runs no plugin tools, so its threads do not use GitHub through Sotto."
 msgstr ""
 
