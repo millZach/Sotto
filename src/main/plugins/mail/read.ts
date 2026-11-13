@@ -1,7 +1,7 @@
 import type { Duplex } from 'node:stream'
 import { connect as connectTls } from 'node:tls'
 import { atomOf, IMAP_LITERAL_MAX, ImapClosed, ImapConnection, ImapProtocolError, listOf, textOf, type ImapAnswer, type ImapArg, type ImapItem } from './imapWire'
-import { attachedParts, decodeMailboxName, decodePart, htmlToText, mailHeaders, mailParts, textPart } from './message'
+import { attachedParts, decodeMailboxName, decodePart, htmlToText, mailHeaders, mailParts, readableText, textPart } from './message'
 
 /**
  * Reading a mail account over IMAP (ADR-0205): whether a sign-in is good, a search, and one message opened. Each
@@ -373,7 +373,7 @@ export function openMail(server: MailServer, signIn: MailSignIn, message: { read
       const bytes = startingWith(fetched(body).get(uid) ?? new Map<string, ImapItem>(), `BODY[${chosen.section}]`)
       const cut = chosen.size > piece
       const decoded = decodePart(Buffer.isBuffer(bytes) ? bytes : Buffer.alloc(0), chosen, cut)
-      const whole = chosen.type === 'text/html' ? htmlToText(decoded) : decoded
+      const whole = readableText(chosen.type === 'text/html' ? htmlToText(decoded) : decoded)
       text = whole.slice(0, MAIL_TEXT_MAX_CHARS)
       truncated = cut || whole.length > MAIL_TEXT_MAX_CHARS
     }

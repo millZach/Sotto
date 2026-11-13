@@ -30,8 +30,23 @@ function fromQuotedPrintable(text: string, header: boolean, cut = false): Buffer
   return Buffer.from(out)
 }
 
-/** Text on one line: a line end, a tab or any other character that is not a letter becomes a space, so a sender cannot write a second line into a first. */
-const oneLine = (text: string): string => [...text].map(character => character.charCodeAt(0) < 0x20 || character.charCodeAt(0) === 0x7f ? ' ' : character).join('')
+/** A control character: one a reader never sees, and a terminal may obey. */
+const isControl = (code: number): boolean => code < 0x20 || code === 0x7f
+/** A mark that turns the direction of the text around it, which can make a line read as something it is not. */
+const turnsText = (code: number): boolean => (code >= 0x202a && code <= 0x202e) || (code >= 0x2066 && code <= 0x2069)
+
+/** Text on one line: a line end, a tab or any other control character becomes a space, so a sender cannot write a second line into a first, and a mark that turns the text around is left out. */
+const oneLine = (text: string): string => [...text].map(character => { const code = character.charCodeAt(0); return isControl(code) ? ' ' : turnsText(code) ? '' : character }).join('')
+
+/**
+ * A message's text as it is handed on: its lines and tabs kept, and every other control character, and every mark
+ * that turns the text around, left out. A message is whatever its sender wrote, and what is read goes to an agent
+ * and may be shown in a terminal.
+ */
+export const readableText = (text: string): string => [...text].filter(character => {
+  const code = character.charCodeAt(0)
+  return code === 0x0a || code === 0x09 || (!isControl(code) && !turnsText(code))
+}).join('')
 
 /** A header's value with its encoded words (RFC 2047) in their own letters: `=?utf-8?B?…?=` and `=?utf-8?Q?…?=`. */
 export function decodeWords(value: string): string {

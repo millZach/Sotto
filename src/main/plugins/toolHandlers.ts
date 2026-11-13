@@ -40,7 +40,7 @@ export interface PluginToolWiring {
    * runs on, and how a mail server is reached. Left out, no thread here is offered a mail account.
    */
   readonly mail?: {
-    readonly grants: { has(threadId: string, accountId: string): Promise<boolean>; grant(threadId: string, accountId: string): Promise<void> }
+    readonly grants: { has(threadId: string, accountId: string): Promise<boolean>; grant(threadId: string, accountId: string): Promise<void>; open(threadId: string): boolean }
     readonly providerOf: (threadId: string) => string
     readonly options: MailOptions
   }
@@ -81,6 +81,7 @@ export function pluginToolHandlers(wiring: PluginToolWiring): PluginToolHandlers
     ...(mail ? { mail: {
       granted: (threadId, accountId) => mail.grants.has(threadId, accountId),
       grant: (threadId, accountId) => mail.grants.grant(threadId, accountId),
+      threadOpen: threadId => mail.grants.open(threadId),
       providerOf: mail.providerOf,
       search: async (account, search) => { const reach = mailSignIn(account); return typeof reach === 'string' ? reach : searchMail(reach.server, reach.signIn, search, mail.options) },
       open: async (account, id) => { const reach = mailSignIn(account); return typeof reach === 'string' ? reach : openMail(reach.server, reach.signIn, { id }, mail.options) },

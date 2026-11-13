@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { imapItems } from '../../../../src/main/plugins/mail/imapWire'
-import { attachedParts, decodeMailboxName, decodePart, decodeWords, htmlToText, mailHeaders, mailParts, textPart } from '../../../../src/main/plugins/mail/message'
+import { attachedParts, decodeMailboxName, decodePart, decodeWords, htmlToText, mailHeaders, mailParts, readableText, textPart } from '../../../../src/main/plugins/mail/message'
 
 const b64 = (text: string): string => Buffer.from(text, 'utf8').toString('base64')
 /** A message's structure as a server writes it, read the way an answer is. */
@@ -102,6 +102,15 @@ describe('a mail message as a person reads it (ADR-0205)', () => {
     const nested = (count: number): string => `${Array.from({ length: count }, (_none, index) => `<a href="https://example.com/${index}">`).join('')}x${'</a>'.repeat(count)}`
     expect(htmlToText(nested(3))).toBe('x (https://example.com/2)')
     expect(htmlToText(nested(10_000))).toBe('x (https://example.com/9999)')
+  })
+
+  it('hands on a message’s text without what a reader never sees but a terminal or a page may obey', () => {
+    // An escape that would clear a terminal, a mark that turns the text around, and a character with no meaning at all.
+    expect(readableText('one\u001b[2J two\u202e\u2066three\u0000\u007f\tfour\nfive')).toBe('one[2J twothree\tfour\nfive')
+    // HTML can spell them as numbers, which are letters by the time the text is made.
+    expect(readableText(htmlToText('<p>hi&#27;[2J&#8238;evil</p>'))).toBe('hi[2Jevil')
+    // A header line and a file's name lose the marks that turn text around too.
+    expect(mailHeaders(Buffer.from('Subject: =?utf-8?B?' + b64('invoice\u202Efdp.exe') + '?=\r\n\r\n')).get('subject')).toBe('invoicefdp.exe')
   })
 
   it('reads a mailbox’s name in its own letters', () => {

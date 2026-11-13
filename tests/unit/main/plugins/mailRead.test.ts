@@ -250,6 +250,13 @@ describe('opening a message (ADR-0205)', () => {
     await expect(openMail(SERVER, SIGN_IN, { id: named(7, 13) }, reach)).resolves.toMatchObject({ ok: true, message: { text: 'Three things this week.\nRead more (https://example.org/more)', fromHtml: true, truncated: false, files: [] } })
   })
 
+  it('hands over a message’s text without control characters or marks that turn the text around', async () => {
+    const boxes: FakeMailbox[] = [{ name: 'INBOX', validity: 7, messages: [{ uid: 1, received: '13-Nov-2026 07:15:00 +0000',
+      headers: { From: 'News <news@example.org>', To: ADDRESS, Subject: 'This week' }, body: { type: 'text/html', params: { charset: 'utf-8' }, body: '<p>hi&#27;[2J&#8238;evil</p>' } }] }]
+    const { reach } = await mail({ mailboxes: boxes })
+    await expect(openMail(SERVER, SIGN_IN, { id: named(7, 1) }, reach)).resolves.toMatchObject({ ok: true, message: { text: 'hi[2Jevil' } })
+  })
+
   it('cuts a long message and says it was cut', async () => {
     const { fake, reach } = await mail()
     const opened = await openMail(SERVER, SIGN_IN, { id: named(7, 14) }, reach)

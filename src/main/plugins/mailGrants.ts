@@ -70,9 +70,21 @@ export class MailGrants {
     })
   }
 
-  /** Keeps the user's yes. It holds for this run of Sotto even where the file could not be written. */
+  /**
+   * Whether a thread is open, as a grant means it. This is the one test: the grant, the card that asks for it and
+   * the read that follows a yes all go by it, so none outlasts the others. A thread that cannot be read is not open.
+   */
+  open(threadId: string): boolean {
+    return this.isOpen(threadId)
+  }
+
+  /**
+   * Keeps the user's yes. It holds for this run of Sotto even where the file could not be written. A thread that is
+   * no longer open is given none.
+   */
   grant(threadId: string, accountId: string): Promise<void> {
     return this.inTurn(async () => {
+      if (!this.isOpen(threadId)) return
       const grants = await this.load()
       if (grants.some(grant => grant.threadId === threadId && grant.accountId === accountId)) return
       await this.keep([...grants, { threadId, accountId, at: (this.options.now?.() ?? new Date()).toISOString() }].slice(-GRANTS_MAX))

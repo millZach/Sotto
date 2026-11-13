@@ -65,6 +65,16 @@ describe('mail grants (ADR-0205, decision 8)', () => {
     expect(await made.has('thread-two', PERSONAL)).toBe(false)
   })
 
+  it('gives no grant to a thread that is no longer open, and says which threads are by the one test everything goes by', async () => {
+    const { made, closed } = await grants()
+    closed.add('thread-one')
+    expect([made.open('thread-one'), made.open('thread-two')]).toEqual([false, true])
+    await made.grant('thread-one', PERSONAL)
+    closed.delete('thread-one')
+    expect(await made.list()).toEqual([])
+    expect(await made.has('thread-one', PERSONAL)).toBe(false)
+  })
+
   it('looks at its threads a moment after it is told one may have changed, and costs nothing while it holds no grant', async () => {
     vi.useFakeTimers()
     const { made, closed } = await grants()

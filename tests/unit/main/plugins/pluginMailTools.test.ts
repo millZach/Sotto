@@ -26,6 +26,8 @@ function tools(options: {
   const world = { accounts: options.accounts ?? [PERSONAL] }
   const answers = [...options.answers ?? []]
   const asked: { threadId: string; change: PluginChange; waitMs: number | undefined }[] = []
+  const stillOpen: ((() => boolean) | undefined)[] = []
+  const settled = new Set<string>()
   const granted = new Set<string>()
   const recorded: PluginUseReport[] = []
   const searched: { account: string; search: MailSearch }[] = []
@@ -50,12 +52,14 @@ function tools(options: {
     isWatcher: threadId => threadId === 'watcher',
     askChange: async (threadId, change, wait) => {
       asked.push({ threadId, change, waitMs: wait.waitMs })
+      stillOpen.push(wait.stillOpen)
       options.whileAsked?.()
       return answers.shift() ?? 'allowed'
     },
     ...(options.noMail ? {} : { mail: {
       granted: async (threadId, accountId) => granted.has(`${threadId} ${accountId}`),
       grant: async (threadId, accountId) => { granted.add(`${threadId} ${accountId}`); options.whileGranting?.() },
+      threadOpen: threadId => !settled.has(threadId),
       providerOf: threadId => threadId === 'watcher' ? 'Codex' : 'Claude Code',
       search: async (account, search) => { searched.push({ account: account.name, search }); return options.search ?? FOUND },
       open: async (account, id) => { opened.push({ account: account.name, id }); return options.open ?? OPENED },
@@ -63,7 +67,7 @@ function tools(options: {
   })
   servers.push(server)
   const read = (threadId: string, args: Record<string, unknown>, context: { waitMs?: number; signal?: AbortSignal } = {}) => server.call(threadId, PLUGIN_READ_TOOL, { plugin: 'gmail', ...args }, context)
-  return { server, world, asked, granted, recorded, searched, opened, read }
+  return { server, world, asked, granted, recorded, searched, opened, read, stillOpen, settled }
 }
 const said = (result: { content: { type: string; text?: string }[] }): string => result.content.map(part => part.text ?? '').join('\n')
 const uses = (recorded: readonly PluginUseReport[]): string[] => recorded.map(use => `${use.threadId} ${use.plugin} ${use.kind} ${use.outcome}`)
@@ -154,6 +158,24 @@ describe('reading a mail account through plugin_read (ADR-0205, decision 8)', ()
     expect(result.isError).toBe(true)
     expect(said(result)).toContain('switched off, kept to other projects or removed before it could be read')
     expect(t.searched).toEqual([])
+  })
+
+  it('holds its card to the same test of an open thread as the grant, and neither asks nor reads for a settled one', async () => {
+    const t = tools()
+    await t.read('one', { search: {} })
+    // The card is told how to see that its thread is still open, so it goes when the thread is settled.
+    expect(t.stillOpen[0]?.()).toBe(true)
+    t.settled.add('one')
+    expect(t.stillOpen[0]?.()).toBe(false)
+    // Settled, the thread is not asked and reads nothing, though it held a grant a moment ago.
+    const result = await t.read('one', { search: {} })
+    expect(said(result)).toBe('This thread is settled or archived, so it cannot read mail. Tell the user, who can restore the thread. Nothing was read.')
+    expect([t.asked.length, t.searched.length]).toEqual([1, 1])
+
+    // A yes that arrives for a thread settled while its card waited reads nothing and keeps no grant.
+    const late = tools({ whileAsked: () => { late.settled.add('two') } })
+    expect(said(await late.read('two', { search: {} }))).toContain('was settled or archived while the card waited')
+    expect([late.searched, [...late.granted]]).toEqual([[], []])
   })
 
   it('does not ask on behalf of a client that would not wait for the answer', async () => {

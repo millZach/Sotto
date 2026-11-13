@@ -195,3 +195,19 @@ it('tells its listener each time the coordinator reads the requests, which is ho
   requests.close()
   expect(noticed).toHaveBeenCalledTimes(2)
 })
+
+it('stops an ask whose own test says its thread is no longer open, though every ask’s test says it is', async () => {
+  // The mail card's thread is closed by the user's Settle, which the test a change's card goes by does not count.
+  let open = true
+  const requests = new PluginChangeRequests({ open: () => true })
+  const asked = requests.ask('thread-one', card, { stillOpen: () => open })
+  const other = requests.ask('thread-one', card)
+  open = false
+  requests.stopClosed()
+  await expect(asked).resolves.toBe('stopped')
+  expect(requests.requests().get('thread-one')).toHaveLength(1)
+  // An ask for a thread that is already closed by its own test is never shown.
+  await expect(requests.ask('thread-one', card, { stillOpen: () => false })).resolves.toBe('stopped')
+  requests.close()
+  await expect(other).resolves.toBe('stopped')
+})

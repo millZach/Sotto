@@ -61,7 +61,7 @@ describe('reading mail as a computer’s plugin tools do (ADR-0205)', () => {
       gitHubSignIn: async () => ({ state: 'signed-out' }), gh: async () => '[]',
       vercelFetch: async () => new Response('{}'), vercelOptions: { signal: new AbortController().signal },
       ...(fake ? { mail: {
-        grants: { has: async () => options.granted ?? false, grant: async (threadId, accountId) => { granted.push(`${threadId} ${accountId}`) } },
+        grants: { has: async () => options.granted ?? false, grant: async (threadId, accountId) => { granted.push(`${threadId} ${accountId}`) }, open: threadId => threadId !== 'thread-settled' },
         providerOf: () => 'Claude Code', options: { connect: fake.connect },
       } } : {}),
     }
@@ -81,6 +81,8 @@ describe('reading mail as a computer’s plugin tools do (ADR-0205)', () => {
     await tools.mail!.grant('thread-one', PERSONAL.id)
     expect(granted).toEqual([`thread-one ${PERSONAL.id}`])
     expect(tools.mail!.providerOf('thread-one')).toBe('Claude Code')
+    // And whether a thread is open is the grants' own test, the one the grants themselves end by.
+    expect([tools.mail!.threadOpen('thread-one'), tools.mail!.threadOpen('thread-settled')]).toEqual([true, false])
   })
 
   it('connects to nothing when the password cannot be read, or the account is not a mail account with an address', async () => {

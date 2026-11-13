@@ -135,6 +135,11 @@ export interface PluginMailHandlers {
   granted(threadId: string, accountId: string): Promise<boolean>
   /** Keeps the user's yes: this thread may read this account until they stop it or the thread is settled. */
   grant(threadId: string, accountId: string): Promise<void>
+  /**
+   * Whether the thread is open, as a mail grant means it: not settled, by itself or with its project, not archived
+   * and not gone. A thread that is not reads no mail and is not asked about any.
+   */
+  threadOpen(threadId: string): boolean
   /** The provider the thread runs on, by name, for the card: what the thread reads goes there. */
   providerOf(threadId: string): string
   /** Searches one mailbox of an account, with a password that stays in main. */
@@ -512,7 +517,9 @@ export class PluginToolServer implements ScopedThreadTools {
       let provider = ''
       try { provider = mail.providerOf(threadId) } catch { /* The card then says the thread's provider without its name. */ }
       const change: PluginChange = { kind: 'mail-read', plugin: PLUGIN_NAMES[account.plugin], account: account.name, provider }
-      asking = this.handlers.askChange(threadId, change, { ...(signal ? { signal } : {}), ...(room === undefined ? {} : { waitMs: room }) }).catch((): PluginChangeAnswer => 'stopped')
+      // The card goes when the thread stops being open, as the grant it asks for would.
+      const stillOpen = (): boolean => { try { return mail.threadOpen(threadId) } catch { return false } }
+      asking = this.handlers.askChange(threadId, change, { ...(signal ? { signal } : {}), ...(room === undefined ? {} : { waitMs: room }), stillOpen }).catch((): PluginChangeAnswer => 'stopped')
         .finally(() => { this.mailAsks.delete(key) })
       this.mailAsks.set(key, asking)
     }
@@ -532,6 +539,10 @@ export class PluginToolServer implements ScopedThreadTools {
     const service = PLUGIN_NAMES[plugin]
     const mail = this.handlers.mail
     if (!mail) return text(`Threads on this computer cannot read mail through Sotto. ${NOTHING_READ}`, true)
+    // A thread the user has settled, or archived, holds no grant and is given none, so it is not asked either: a
+    // settled thread whose work goes on would otherwise put a card before the user at every read.
+    const open = (): boolean => { try { return mail.threadOpen(threadId) } catch { return false } }
+    if (!open()) return text(`This thread is settled or archived, so it cannot read mail. Tell the user, who can restore the thread. ${NOTHING_READ}`, true)
     const account = await this.accountOf(threadId, plugin, named, NOTHING_READ)
     if ('content' in account) return account
     const kind: PluginReadKind = 'message' in wanted ? 'mail-message' : 'mail-search'
@@ -559,6 +570,8 @@ export class PluginToolServer implements ScopedThreadTools {
         return text(`The user allowed it, but the ${service} account was switched off, kept to other projects or removed ${when}. ${NOTHING_READ}`, true)
       }
       if (!await usable()) return changed('while the card waited')
+      // A yes for a thread settled a moment before it is no leave to read: the grant would have ended there.
+      if (!open()) return text(`The user allowed it, but this thread was settled or archived while the card waited, so nothing may be read for it. ${NOTHING_READ}`, true)
       await mail.grant(threadId, account.id)
       if (!await usable()) return changed('before it could be read')
     }
