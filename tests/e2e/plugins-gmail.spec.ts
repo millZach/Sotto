@@ -19,6 +19,8 @@ const evidence = evidenceDirectory('artifacts/plugins-gmail')
 const SIZES = [[1600, 1000], [1280, 800], [820, 560]] as const
 const ADDRESS = 'reader@example.com'
 const GOOD = 'madeupapppasswrd', BAD = 'wrongmadeuppaswd'
+/** The good app password as it is pasted: in the four groups Google shows one in. */
+const GOOD_AS_SHOWN = 'made upap ppas swrd'
 
 interface Held { __mailRead?: Promise<{ content: { type: string; text?: string }[]; isError?: boolean | undefined }> }
 
@@ -101,13 +103,14 @@ test('A Gmail account is added from its row, and a thread reads it only once the
       await shot(page, 'gmail-password-refused-dark-1280x800')
 
       // A good one, pasted in the four groups Google shows it in: the account shows with its address, and the password is gone from the page.
-      await form.getByLabel('App password').fill('made upap ppas swrd')
+      await form.getByLabel('App password').fill(GOOD_AS_SHOWN)
       await form.getByRole('button', { name: 'Add account' }).click()
       const card = panel.getByRole('region', { name: 'Gmail account Personal' })
       await expect(card).toContainText(`${ADDRESS}. App password saved`)
       await expect(row).toHaveAccessibleName('Gmail Personal')
       await expect(panel.getByRole('form', { name: 'Add a Gmail account' })).toHaveCount(0)
       expect(await page.content()).not.toContain(GOOD)
+      expect(await page.content()).not.toContain(GOOD_AS_SHOWN)
       // Both were checked by signing in, and nothing was read from the mailbox.
       expect(mail.commands.filter(command => command !== 'CAPABILITY' && command !== 'LOGIN' && command !== 'LOGOUT')).toEqual([])
 
@@ -185,11 +188,21 @@ test('A Gmail account is added from its row, and a thread reads it only once the
       // Neither app password is written in the clear anywhere in Sotto's data folder, and the grant holds no address.
       const profile = dirname(root)
       for (const file of await filesUnder(profile)) {
+        // As it is kept and as it was pasted: neither spelling is in any file.
         expect(file.text.includes(GOOD), file.path).toBe(false)
+        expect(file.text.includes(GOOD_AS_SHOWN), file.path).toBe(false)
         expect(file.text.includes(BAD), file.path).toBe(false)
       }
       const grants = JSON.parse(await readFile(join(profile, 'plugin-mail-grants.json'), 'utf8')) as { grants: Record<string, unknown>[] }
       expect(grants.grants.map(grant => Object.keys(grant).sort())).toEqual([['accountId', 'at', 'threadId']])
+      // Find a setting reaches the row by the service's name.
+      const find = page.getByRole('searchbox', { name: 'Find a setting' })
+      await sections.getByRole('tab', { name: 'Providers', exact: true }).click()
+      await find.fill('Gmail')
+      await expect(page.getByRole('list', { name: 'Settings found' }).getByRole('button').first()).toContainText('Gmail')
+      await find.press('Enter')
+      await expect(sections.getByRole('tab', { name: 'Plugins', exact: true })).toHaveAttribute('aria-selected', 'true')
+      await expect(row).toBeVisible()
       await openThreads(page)
       expect(errors).toEqual([])
     }, { owlFeatures: 'plugins=1' })

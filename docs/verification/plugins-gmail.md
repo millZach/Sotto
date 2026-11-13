@@ -41,8 +41,10 @@ the app password. A further search by the same thread came back without a card.
 
 Settings › Plugins then listed, under the account's Recent use, the two searches and "Asked to search mail in “Check the
 checkout page” You said no.", and nothing of the message. Every `.json`, `.log`, `.txt` and `.jsonl` file under the
-profile's data folder was read: neither app password was in any of them, and `plugin-mail-grants.json` held the
-thread's ID, the account's ID and a time, and nothing else.
+profile's data folder was read: neither app password was in any of them, the good one neither as it is kept nor as it
+was pasted, and `plugin-mail-grants.json` held the
+thread's ID, the account's ID and a time, and nothing else. Typing Gmail into **Find a setting** from another page offered
+the row, and Enter opened Plugins with it in view.
 
 ## Captures
 
