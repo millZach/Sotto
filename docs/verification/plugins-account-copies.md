@@ -59,7 +59,9 @@ token was still in no file in the clear, and the page raised no error.
   when an account and a computer first met, a host that connected before it was saved, an older host asked nothing
   and sent nothing, each reason a host keeps nothing, a locked credential store, and a failed look tried again. Also
   no secret sent for an account narrowed, or a copy switched off, while the host was still answering; two choices
-  made a moment apart both kept; and a host not said to hold no copy until it has said so, away or here.
+  made a moment apart both kept; a host not said to hold no copy until it has said so, away or here; no secret
+  sent by a look that begins while a copy is being switched off; another look after a choice that could not be
+  written down; and a host that keeps no copies now neither said to hold none nor counted.
 - `tests/integration/pluginAccountCopies.test.ts`: over a real host's socket, a desktop the launch script recorded
   after its hello is answered and may then send, nothing with a secret leaves a client the host has not answered,
   and the list says what the host holds without a secret.

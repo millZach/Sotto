@@ -127,12 +127,20 @@ msgid "{computer} already holds as many accounts as a plugin takes. Nothing was 
 msgstr "{computer} already holds as many accounts as a plugin takes. Nothing was kept there."
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "{computer} is not connected: if it holds a copy, it deletes it when it next connects."
+msgstr "{computer} is not connected: if it holds a copy, it deletes it when it next connects."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "{computer} is not connected. Sotto sends the copy, or checks the one there, when it is."
 msgstr "{computer} is not connected. Sotto sends the copy, or checks the one there, when it is."
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "{computer} was started without a key file, so it cannot keep a token. Nothing was kept there. On {computer}, set SOTTO_HOST_KEY_FILE to a file holding a secret of your own, start its host again, and the copy is sent."
 msgstr "{computer} was started without a key file, so it cannot keep a token. Nothing was kept there. On {computer}, set SOTTO_HOST_KEY_FILE to a file holding a secret of your own, start its host again, and the copy is sent."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "{computer}’s Sotto cannot keep account copies now, so it cannot say whether it holds one from before. Update Sotto on {computer}, and a copy it holds is deleted."
+msgstr "{computer}’s Sotto cannot keep account copies now, so it cannot say whether it holds one from before. Update Sotto on {computer}, and a copy it holds is deleted."
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "{computer}’s Sotto cannot keep account copies. Update Sotto on {computer}, and the copy is sent."
@@ -552,12 +560,8 @@ msgid "{name} is connected over SSH"
 msgstr "{name} is connected over SSH"
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
-msgid "{name} is kept to projects on this computer, so it is not copied. {computer} is not connected: if it holds a copy, it deletes it when it next connects. Choose Every project to copy it."
-msgstr "{name} is kept to projects on this computer, so it is not copied. {computer} is not connected: if it holds a copy, it deletes it when it next connects. Choose Every project to copy it."
-
-#: src/renderer/src/features/settings/PluginsSettings.tsx
-msgid "{name} is kept to projects on this computer, so it is not copied. Sotto is making sure {computer} holds no copy. Choose Every project to copy it."
-msgstr "{name} is kept to projects on this computer, so it is not copied. Sotto is making sure {computer} holds no copy. Choose Every project to copy it."
+msgid "{name} is kept to projects on this computer, so it is not copied."
+msgstr "{name} is kept to projects on this computer, so it is not copied."
 
 #: src/renderer/src/features/settings/HostClientUpdates.tsx
 msgid "{name} is now {installed}."
@@ -1781,6 +1785,10 @@ msgstr "Choose a model"
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "Choose a model for the setup thread."
 msgstr "Choose a model for the setup thread."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Choose Every project to copy it."
+msgstr "Choose Every project to copy it."
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Choose files"
@@ -4055,12 +4063,8 @@ msgid "No connected provider can do this work."
 msgstr "No connected provider can do this work."
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
-msgid "No copy from now on. {computer} is not connected: if it holds a copy, it deletes it when it next connects."
-msgstr "No copy from now on. {computer} is not connected: if it holds a copy, it deletes it when it next connects."
-
-#: src/renderer/src/features/settings/PluginsSettings.tsx
-msgid "No copy from now on. Sotto is making sure {computer} holds none."
-msgstr "No copy from now on. Sotto is making sure {computer} holds none."
+msgid "No copy from now on."
+msgstr "No copy from now on."
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "No copy. {computer}’s threads cannot use this account."
@@ -6153,6 +6157,10 @@ msgstr "Sotto is connecting to {name}, and SSH needs your key passphrase to sign
 msgid "Sotto is connecting to {name}, and SSH needs your password to sign in."
 msgstr "Sotto is connecting to {name}, and SSH needs your password to sign in."
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sotto is making sure {computer} holds no copy."
+msgstr "Sotto is making sure {computer} holds no copy."
+
 #: src/renderer/src/features/settings/HostQuestionDialog.tsx
 msgid "Sotto is signing in to {name} for a change you asked for there, and SSH has not seen this host before. Check its key, then trust it to continue."
 msgstr "Sotto is signing in to {name} for a change you asked for there, and SSH has not seen this host before. Check its key, then trust it to continue."
@@ -6164,6 +6172,10 @@ msgstr "Sotto is signing in to {name} for a change you asked for there, and SSH 
 #: src/renderer/src/features/settings/HostQuestionDialog.tsx
 msgid "Sotto is signing in to {name} for a change you asked for there, and SSH needs your password to sign in."
 msgstr "Sotto is signing in to {name} for a change you asked for there, and SSH needs your password to sign in."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sotto is taking the copy back from {computer}."
+msgstr "Sotto is taking the copy back from {computer}."
 
 #: src/renderer/src/features/settings/HostProviders.tsx
 msgid "Sotto needs {required} or later."

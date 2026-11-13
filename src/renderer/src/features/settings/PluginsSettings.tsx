@@ -127,7 +127,8 @@ function OtherComputers({ bridge, copies, accounts, onCopies }: {
       {copies.computers.length === 0 ? <p className="tt-paragraph plugin-row__note"><Trans>No other computer is paired. Pair one in Settings › Hosts &amp; phones, and its threads can use these accounts too.</Trans></p>
         : <ul className="plugins-computers__list" aria-label={t`Other computers`}>
           {copies.computers.map(computer => {
-            // A copy the computer is still being told to let go is one it may hold, so it is counted until it has gone.
+            // A copy the computer is known to hold and is being told to let go is counted until it has gone. One whose
+            // presence is not known is not: the count is of copies the computer has said it holds.
             const kept = copies.copies.filter(copy => copy.computerId === computer.id && (copy.state === 'kept' || copy.leaving === 'now')).length
             const name = computer.name
             return <li key={computer.id}>
@@ -383,10 +384,14 @@ function AccountCopies({ account, bridge, copies, onCopies }: {
   }
   const words = (state: PluginAccountCopyState, leaving: PluginAccountCopyLeaving, computer: string, connected: boolean): string => {
     // No copy is wanted, and only the computer can say it holds none: until it has, the line says what is still to happen.
-    if (state === 'off' && leaving === 'now') return t`No copy from now on. Sotto is making sure ${computer} holds none.`
-    if (state === 'off' && leaving === 'away') return t`No copy from now on. ${computer} is not connected: if it holds a copy, it deletes it when it next connects.`
-    if (state === 'here-only' && leaving === 'now') return t`${name} is kept to projects on this computer, so it is not copied. Sotto is making sure ${computer} holds no copy. Choose Every project to copy it.`
-    if (state === 'here-only' && leaving === 'away') return t`${name} is kept to projects on this computer, so it is not copied. ${computer} is not connected: if it holds a copy, it deletes it when it next connects. Choose Every project to copy it.`
+    if ((state === 'off' || state === 'here-only') && leaving !== 'no') {
+      const still = leaving === 'now' ? t`Sotto is taking the copy back from ${computer}.`
+        : leaving === 'asking' ? t`Sotto is making sure ${computer} holds no copy.`
+        : leaving === 'away' ? t`${computer} is not connected: if it holds a copy, it deletes it when it next connects.`
+        : t`${computer}’s Sotto cannot keep account copies now, so it cannot say whether it holds one from before. Update Sotto on ${computer}, and a copy it holds is deleted.`
+      return state === 'off' ? [t`No copy from now on.`, still].join(' ')
+        : [t`${name} is kept to projects on this computer, so it is not copied.`, still, t`Choose Every project to copy it.`].join(' ')
+    }
     switch (state) {
       case 'kept': return t`A copy is kept on ${computer}.`
       case 'waiting': return connected ? t`Sending the copy to ${computer}…` : t`${computer} is not connected. Sotto sends the copy, or checks the one there, when it is.`

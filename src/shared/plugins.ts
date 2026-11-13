@@ -216,10 +216,11 @@ export const PLUGIN_ACCOUNT_COPY_STATES = ['kept', 'waiting', 'off', 'here-only'
 export type PluginAccountCopyState = typeof PLUGIN_ACCOUNT_COPY_STATES[number]
 /**
  * Whether a computer may still hold a copy that is not wanted there, `off` or `here-only`. Only the computer can say
- * it holds none. `no`: it said so, or no copy is leaving. `now`: it is connected and being told, or asked. `away`:
- * it is not connected, and is told when it next is.
+ * it holds none. `no`: it said so, or no copy is leaving. `now`: it is known to hold one and is being told to let it
+ * go. `asking`: it is connected and has not yet said what it holds. `away`: it is not connected, and is told when it
+ * next is. `cannot`: its Sotto does not keep account copies now, so it can neither say what it holds nor delete one.
  */
-export const PLUGIN_ACCOUNT_COPY_LEAVING = ['no', 'now', 'away'] as const
+export const PLUGIN_ACCOUNT_COPY_LEAVING = ['no', 'now', 'asking', 'away', 'cannot'] as const
 export type PluginAccountCopyLeaving = typeof PLUGIN_ACCOUNT_COPY_LEAVING[number]
 /** How many computers the page is told of: more than anyone pairs. */
 const PLUGIN_COPY_COMPUTERS_MAX = 200

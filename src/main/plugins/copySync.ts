@@ -61,11 +61,16 @@ export class PluginAccountCopySync {
   private kept: Choices | undefined
   private writing: Promise<unknown> = Promise.resolve()
   /**
-   * What each host last answered for each account, by the host's identity: where a wanted copy stands, and `off` for
-   * an account the host was found, or made, to hold no copy of. Emptied when the host connects again, for what it
-   * holds may have changed while it was away.
+   * What each host last answered for each account whose copy is wanted, by the host's identity. Emptied when the host
+   * connects again, for what it holds may have changed while it was away.
    */
   private readonly states = new Map<string, Map<string, PluginAccountCopyState>>()
+  /**
+   * What each host is known to hold of an account whose copy is not wanted. `gone`: it did not list the account, or
+   * answered its removal. `there`: it listed it and has not answered its removal. `cannot`: it keeps no account copies
+   * now, so it can say nothing of one it was sent before. An account not here is one the host has not been asked of.
+   */
+  private readonly unwanted = new Map<string, Map<string, 'gone' | 'there' | 'cannot'>>()
   private readonly reconciling = new Map<string, Promise<void>>()
   /** Hosts to look at again once the look under way ends: something changed while it ran. */
   private readonly again = new Set<string>()
@@ -96,6 +101,7 @@ export class PluginAccountCopySync {
   /** A host connected, new or again: it is made to agree with this computer. What it answered before is forgotten. */
   connected(target: CopyTarget): void {
     this.states.delete(target.hostId)
+    this.unwanted.delete(target.hostId)
     this.reconcile(target)
   }
 
@@ -132,8 +138,9 @@ export class PluginAccountCopySync {
   async setCopy(accountId: string, computerId: string, on: boolean): Promise<void> {
     // Counted before it is written down: a look at a host that is under way must not send what this may be stopping.
     this.revision += 1
-    await this.change(choices => ({ ...choices, choices: { ...choices.choices, [accountId]: { ...choices.choices[accountId], [computerId]: on } } }))
-    this.accountsChanged()
+    // Every host is looked at again whether or not the choice could be written down: a look this stopped part way
+    // must not be the last one, or what it left unsent would stay unsent.
+    try { await this.change(choices => ({ ...choices, choices: { ...choices.choices, [accountId]: { ...choices.choices[accountId], [computerId]: on } } })) } finally { this.accountsChanged() }
   }
 
   /** What Settings › Plugins shows: the computers, the default for new copies, and where each account's copy stands. */
@@ -148,12 +155,15 @@ export class PluginAccountCopySync {
         const answered = computer.hostId ? this.states.get(computer.hostId)?.get(account.id) : undefined
         if (mayBeCopied(account) && chosen(choices, account.id, computer.id)) {
           // A copy that is wanted waits until its host has answered for it: away, or connected and being asked.
-          const state: PluginAccountCopyState = !computer.connected || answered === undefined || answered === 'off' ? 'waiting' : answered
+          const state: PluginAccountCopyState = !computer.connected || answered === undefined ? 'waiting' : answered
           return { accountId: account.id, computerId: computer.id, state, leaving: 'no' as const }
         }
-        // No copy is wanted. Whether the host holds none is the host's to say: one that has never connected holds
-        // nothing of this computer's, one that is away is told when it is back, and one that is here is being told.
-        const leaving: PluginAccountCopyLeaving = !computer.hostId || answered === 'off' ? 'no' : computer.connected ? 'now' : 'away'
+        // No copy is wanted. Whether the host holds none is the host's to say. One that has never connected holds
+        // nothing of this computer's. One that is away is told when it is back. One that is here is being told to let
+        // go of a copy it is known to hold, was last seen keeping or has listed; otherwise it is still being asked.
+        const known = computer.hostId ? this.unwanted.get(computer.hostId)?.get(account.id) : undefined
+        const leaving: PluginAccountCopyLeaving = !computer.hostId || known === 'gone' ? 'no' : !computer.connected ? 'away'
+          : known === 'cannot' ? 'cannot' : known === 'there' || answered === 'kept' ? 'now' : 'asking'
         return { accountId: account.id, computerId: computer.id, state: mayBeCopied(account) ? 'off' as const : 'here-only' as const, leaving }
       })),
     }
@@ -201,11 +211,16 @@ export class PluginAccountCopySync {
     const wanted = accounts.filter(account => mayBeCopied(account) && chosen(choices, account.id, computer.id))
     let states = this.states.get(target.hostId)
     if (!states) { states = new Map(); this.states.set(target.hostId, states) }
-    for (const id of states.keys()) if (!accounts.some(account => account.id === id)) states.delete(id)
+    let unwanted = this.unwanted.get(target.hostId)
+    if (!unwanted) { unwanted = new Map(); this.unwanted.set(target.hostId, unwanted) }
+    for (const known of [states, unwanted]) for (const id of known.keys()) if (!accounts.some(account => account.id === id)) known.delete(id)
     const { service } = target
-    // An older or stable host lists no such feature, and is asked nothing and sent nothing. It holds no copy either.
+    // An older or stable host lists no such feature, and is asked nothing and sent nothing. It cannot say what it
+    // holds either: a host that kept copies and now runs a build that does not still has what it was sent.
     if (service.supportsPluginAccountCopies !== true || !service.pluginAccountCopies || !service.keepPluginAccountCopy || !service.removePluginAccountCopy) {
-      for (const account of accounts) states.set(account.id, wanted.includes(account) ? 'too-old' : 'off')
+      for (const account of accounts) {
+        if (wanted.includes(account)) { states.set(account.id, 'too-old'); unwanted.delete(account.id) } else { states.delete(account.id); unwanted.set(account.id, 'cannot') }
+      }
       return
     }
     let held: HeldPluginAccountCopy[]
@@ -213,6 +228,7 @@ export class PluginAccountCopySync {
     try { held = await service.pluginAccountCopies() } catch (error) { for (const account of wanted) states.delete(account.id); throw error }
     let failed = false
     for (const account of wanted) {
+      unwanted.delete(account.id)
       const there = held.find(copy => copy.id === account.id)
       if (there && holdsAsHere(there, account)) { states.set(account.id, 'kept'); continue }
       // The account is read again, and nothing may have been asked for since this look began: an account narrowed or
@@ -243,7 +259,8 @@ export class PluginAccountCopySync {
     }
     for (const account of accounts) {
       if (wanted.includes(account)) continue
-      if (stillThere.has(account.id)) states.delete(account.id); else states.set(account.id, 'off')
+      states.delete(account.id)
+      unwanted.set(account.id, stillThere.has(account.id) ? 'there' : 'gone')
     }
     if (failed) throw new Error('PLUGIN_ACCOUNT_COPIES_NOT_AGREED')
   }
@@ -285,6 +302,9 @@ export class PluginAccountCopySync {
       }
       return changed ? { ...choices, choices: next } : null
     }
+    // A choice being written down is waited for: one that stops a copy is counted before it is written, and a look
+    // that began after the count must not read the choices as they stood before it.
+    await this.writing.catch(() => undefined)
     // Choices that cannot be read copy nothing, and say so by failing here.
     const read = await this.choices()
     if (!settle(read)) return read

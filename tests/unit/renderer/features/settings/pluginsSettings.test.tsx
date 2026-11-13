@@ -512,7 +512,7 @@ it('says where an account’s secret is kept, and lets a copy on another compute
   expect(sets).toEqual([{ accountId: work.id, computerId: 'saved-forge', on: false }])
   expect(copySwitch().getAttribute('aria-checked')).toBe('false')
   // forge has not said yet that it let the copy go, so the page does not say there is none.
-  expect(copyLine()).toBe('No copy from now on. Sotto is making sure forge holds none.')
+  expect(copyLine()).toBe('No copy from now on. Sotto is taking the copy back from forge.')
   await act(async () => { arrive('off') })
   expect(copyLine()).toBe('No copy. forge’s threads cannot use this account.')
   await act(async () => { fireEvent.click(copySwitch()) })
@@ -537,7 +537,10 @@ it('says an account kept to chosen projects stays on this computer, with a switc
 it('does not say a computer holds no copy until that computer has said so', async () => {
   const cases: [PluginCopiesView['copies'][number]['state'], PluginCopiesView['copies'][number]['leaving'], boolean, string][] = [
     ['off', 'away', false, 'No copy from now on. forge is not connected: if it holds a copy, it deletes it when it next connects.'],
-    ['here-only', 'now', true, 'Work is kept to projects on this computer, so it is not copied. Sotto is making sure forge holds no copy. Choose Every project to copy it.'],
+    ['off', 'asking', true, 'No copy from now on. Sotto is making sure forge holds no copy.'],
+    ['off', 'cannot', true, 'No copy from now on. forge’s Sotto cannot keep account copies now, so it cannot say whether it holds one from before. Update Sotto on forge, and a copy it holds is deleted.'],
+    ['here-only', 'now', true, 'Work is kept to projects on this computer, so it is not copied. Sotto is taking the copy back from forge. Choose Every project to copy it.'],
+    ['here-only', 'asking', true, 'Work is kept to projects on this computer, so it is not copied. Sotto is making sure forge holds no copy. Choose Every project to copy it.'],
     ['here-only', 'away', false, 'Work is kept to projects on this computer, so it is not copied. forge is not connected: if it holds a copy, it deletes it when it next connects. Choose Every project to copy it.'],
   ]
   for (const [state, leaving, connected, line] of cases) {
@@ -549,10 +552,14 @@ it('does not say a computer holds no copy until that computer has said so', asyn
     expect(copyLine()).toBe(line)
     cleanup()
   }
-  // A copy forge is still being told to let go is one it may hold, so it is still counted there.
-  const leavingNow = copiesBridge('off', { leaving: 'now' })
-  await act(async () => { render(<PluginsSettings bridge={leavingNow.bridge} />) })
-  expect((await screen.findByRole('list', { name: 'Other computers' })).textContent).toBe('forgeConnected. Copies kept there: 1 of 1.')
+  // A copy forge is known to hold and is being told to let go is still counted there. One it has not been asked of
+  // yet, or cannot speak of, is not: the count is of copies forge has said it holds.
+  for (const [leaving, count] of [['now', 1], ['asking', 0], ['cannot', 0]] as const) {
+    const { bridge } = copiesBridge('off', { leaving })
+    await act(async () => { render(<PluginsSettings bridge={bridge} />) })
+    expect((await screen.findByRole('list', { name: 'Other computers' })).textContent, leaving).toBe(`forgeConnected. Copies kept there: ${count} of 1.`)
+    cleanup()
+  }
 })
 
 it('shows a copy arriving without being asked, and stops listening when the page goes', async () => {

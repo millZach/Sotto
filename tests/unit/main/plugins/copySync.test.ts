@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -267,6 +267,69 @@ describe('sending account copies to paired hosts (ADR-0205, amending ADR-0025)',
       expect(forge.held.size, change).toBe(0)
       expect(await d.states(), change).toEqual([change === 'narrowed' ? 'Work@host-forge: here-only' : 'Work@host-forge: off'])
     }
+  })
+
+  it('sends no secret from a look that begins while a copy is being switched off', async () => {
+    const d = await desk()
+    const forge = fakeHost('host-forge')
+    d.connect(forge)
+    await d.sync.idle()
+    // forge lost what it held, as a host set up again has, so a look that still wanted a copy would send one.
+    forge.held.clear()
+    forge.calls.length = 0
+    // The choice is asked for and not yet written down when forge connects again and a new look begins.
+    const off = d.sync.setCopy(WORK.id, 'saved-host-forge', false)
+    d.connect(forge)
+    await off
+    await d.sync.idle()
+    expect(forge.calls.filter(call => call.startsWith('keep'))).toEqual([])
+    expect(forge.held.size).toBe(0)
+    expect(await d.states()).toEqual(['Work@host-forge: off'])
+  })
+
+  it('looks at a host again when a choice could not be written down, so a look it stopped is not the last', async () => {
+    const d = await desk()
+    const forge = fakeHost('host-forge')
+    d.connect(forge)
+    await d.sync.idle()
+    forge.held.clear()
+    forge.calls.length = 0
+    // A look is waiting on forge's answer when the copy is switched off, and the choice cannot be written down.
+    let answer!: () => void
+    forge.state.asked = new Promise<void>(resolve => { answer = resolve })
+    d.connect(forge)
+    await expect.poll(() => forge.calls).toEqual(['list'])
+    await mkdir(join(d.directory, 'plugin-account-copy-choices.json.next'))
+    await expect(d.sync.setCopy(WORK.id, 'saved-host-forge', false)).rejects.toThrow()
+    delete forge.state.asked
+    answer()
+    await d.sync.idle()
+    // Nothing was changed, so the copy is still wanted, and the look after the stopped one sends it.
+    expect(forge.calls.filter(call => call.startsWith('keep'))).toEqual(['keep Work'])
+    expect(await d.states()).toEqual(['Work@host-forge: kept'])
+  })
+
+  it('does not say a host that cannot speak of copies holds none, nor count one it has not been asked of', async () => {
+    // A host that kept copies and now runs a build that does not, such as stable, still has what it was sent.
+    const d = await desk()
+    const stable = fakeHost('host-forge', { feature: false })
+    d.connect(stable)
+    await d.sync.setCopy(WORK.id, 'saved-host-forge', false)
+    await d.sync.idle()
+    expect(stable.calls).toEqual([])
+    expect(await d.states()).toEqual(['Work@host-forge: off (leaving cannot)'])
+    // A host that has not answered what it holds is still being asked: nothing says it holds a copy.
+    const e = await desk()
+    await e.sync.setCopyNew(false)
+    const forge = fakeHost('host-forge')
+    forge.state.down = true
+    e.connect(forge)
+    await e.sync.idle()
+    expect(await e.states()).toEqual(['Work@host-forge: off (leaving asking)'])
+    forge.state.down = false
+    e.sync.accountsChanged()
+    await e.sync.idle()
+    expect(await e.states()).toEqual(['Work@host-forge: off'])
   })
 
   it('keeps both of two choices made a moment apart', async () => {
