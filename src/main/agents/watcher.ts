@@ -1361,10 +1361,13 @@ export class WatcherService implements WatcherControlHooks {
         return asks ? watcherCardLine(asks) : undefined
       }
       // Only what Watcher has not been told: a comment that moved once is not told again with every later turn's end.
-      // A thread at rest: where each of its open pull requests stands, as Sotto last read it (#2307).
+      // A thread at rest: whether it waits on the user's card, and where each of its open pull requests stands, as Sotto
+      // last read it (#2307, #1152).
       if (event.kind === 'at-rest') {
         const open = watcherOpenPullRequests(watcherThreadPullRequests(thread), this.wakes.evidence.read(event.target))
-        return open.length ? `Its open pull requests: ${open.map(({ pr, summary }) => `#${pr.number} (${AT_REST_CHECKS[summary.stale ? 'unknown' : summary.checks ?? 'unknown']})`).join(', ')}.` : undefined
+        const said = [...thread.requests.length ? ['It waits on the user’s card, which only they can answer.'] : [],
+          ...open.length ? [`Its open pull requests: ${open.map(({ pr, summary }) => `#${pr.number} (${AT_REST_CHECKS[summary.stale ? 'unknown' : summary.checks ?? 'unknown']})`).join(', ')}.`] : []]
+        return said.length ? said.join(' ') : undefined
       }
       if (event.kind === 'evidence-changed') return watcherPullRequestWords(this.wakes.untoldAttention(event.target), thread, this.wakes.evidence.read(event.target), this.wakes.evidence.pendingChecks(event.target))
       if (event.kind !== 'turn-finished' && event.kind !== 'turn-failed' && event.kind !== 'work-settled') return undefined

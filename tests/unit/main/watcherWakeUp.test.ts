@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { randomUUID } from 'node:crypto'
 import { EMPTY_AGENT_HOST, type AgentThread, type AgentHostSnapshot } from '../../../src/shared/agents'
-import { WATCHER_AT_REST_MS, WATCHER_QUIET_MS, watcherObservationKey, watcherOverview } from '../../../src/shared/watcherOverview'
+import { WATCHER_AT_REST_AGAIN_MS, WATCHER_AT_REST_MS, WATCHER_QUIET_MS, watcherObservationKey, watcherOverview } from '../../../src/shared/watcherOverview'
 import { WATCHER_BATCH_MAX_MS, WATCHER_BATCH_MS, WATCHER_NEWS_REPLY_CHARS, WATCHER_ORDINARY_BATCH_MAX_MS, WATCHER_ORDINARY_BATCH_MS, WATCHER_UNWATCHED_REQUEST_ID, type WatcherNews } from '../../../src/shared/watcherNews'
 import type { WatcherRecord } from '../../../src/shared/watcher'
 import { WatcherWakeUp, WAKE_UP_TRIES, WATCHER_OBSERVE_MS, watcherDelegationOwners, type WatcherWakeOptions } from '../../../src/main/agents/watcherWakeUp'
@@ -681,8 +681,9 @@ it('holds a Git-backed turn end for the read its finish starts, and tells what t
   expect(f.delivered.map(kinds)).toEqual([['turn-finished', 'evidence-changed']])
   const told = f.delivered[0]!.events.find(event => event.kind === 'evidence-changed')!
   expect(told.revision).toBe(observationDigest(f.wakes.evidence.read(centerTarget).map(fact => fact.id).sort()))
-  // A change after that is the thread at rest, told with its next turn's end, never alone.
-  move({ changedFiles: 11 }); await f.advance(20 * 60_000)
+  // A change after that is the thread at rest, told with its next turn's end, never alone. Short of the idle clock's
+  // twenty minutes, which is news of its own.
+  move({ changedFiles: 11 }); await f.advance(WATCHER_AT_REST_MS - 10_000)
   expect(f.delivered).toHaveLength(1)
   // A thread with no Git working copy has no read to wait for: its turn end goes after the usual batch.
   delete f.thread.worktree
@@ -2785,19 +2786,21 @@ describe('a thread’s message for Watcher (#2059)', () => {
   })
 })
 
-describe('at-rest news (#2307)', () => {
+describe('at-rest news: the idle clock (#2307, #1152)', () => {
   const atRest = (f: ReturnType<typeof fixture>) => f.delivered.flatMap(news => news.events).filter(event => event.kind === 'at-rest')
   /** The worker's turn ends with its pull request open and its checks still running, as a lane's does after it pushes. */
-  const rests = async () => {
+  const rests = async (pullRequest = true) => {
     const f = fixture()
     f.thread.status = 'idle'; f.thread.lastTurn = { id: 'turn-1', status: 'completed' }
-    f.thread.pullRequests = [{ url: prUrl, number: 9, title: 'Synthetic pull request', state: 'open', draft: false, source: 'created', linkedAt: centerTime }]
-    f.wakes.pullRequest({ url: prUrl, head: 'head', observedAt: new Date(f.now()).toISOString(), availability: 'available', checks: 'pending', checkCount: 1 })
+    if (pullRequest) {
+      f.thread.pullRequests = [{ url: prUrl, number: 9, title: 'Synthetic pull request', state: 'open', draft: false, source: 'created', linkedAt: centerTime }]
+      f.wakes.pullRequest({ url: prUrl, head: 'head', observedAt: new Date(f.now()).toISOString(), availability: 'available', checks: 'pending', checkCount: 1 })
+    }
     f.wakes.observe(); await f.advance(WATCHER_ORDINARY_BATCH_MS)
     return f
   }
 
-  it('tells Watcher once that a watched thread has rested twenty minutes with its pull request open, and not again for the same state', async () => {
+  it('wakes Watcher after twenty minutes at rest, then every twenty minutes while the thread stays at rest', async () => {
     const f = await rests()
     expect(atRest(f)).toHaveLength(0)
     await f.advance(WATCHER_AT_REST_MS - WATCHER_ORDINARY_BATCH_MS - 1)
@@ -2805,26 +2808,61 @@ describe('at-rest news (#2307)', () => {
     await f.advance(1 + WATCHER_ORDINARY_BATCH_MS)
     expect(atRest(f)).toHaveLength(1)
     expect(atRest(f)[0]!.turnId).toBe('turn-1')
-    f.wakes.observe(); await f.advance(WATCHER_AT_REST_MS * 3)
+    // The clock starts again at zero after each wake (Zach's pick on November 13, 2026).
+    f.wakes.observe(); await f.advance(WATCHER_AT_REST_AGAIN_MS! - WATCHER_ORDINARY_BATCH_MS - 1)
     expect(atRest(f)).toHaveLength(1)
-    // Its checks finishing is a new place for it to stand, told once more.
-    f.wakes.pullRequest({ url: prUrl, head: 'head', observedAt: new Date(f.now()).toISOString(), availability: 'available', checks: 'failed', checkCount: 1 })
-    await f.advance(WATCHER_ORDINARY_BATCH_MS)
+    await f.advance(1 + WATCHER_ORDINARY_BATCH_MS)
     expect(atRest(f)).toHaveLength(2)
-    f.wakes.observe(); await f.advance(WATCHER_AT_REST_MS * 3)
-    expect(atRest(f)).toHaveLength(2)
+    f.wakes.observe(); await f.advance(WATCHER_AT_REST_AGAIN_MS! * 2)
+    expect(atRest(f)).toHaveLength(4)
+    expect(new Set(atRest(f).map(event => event.id)).size).toBe(4)
+    expect(new Set(atRest(f).map(event => event.revision)).size).toBe(1)
   })
 
-  it('says nothing for a thread at rest with no open pull request, one that merged, or one still working', async () => {
-    const f = await rests()
-    f.thread.pullRequests = [{ ...f.thread.pullRequests![0]!, state: 'merged' }]
-    f.wakes.pullRequest({ url: prUrl, head: 'head', observedAt: new Date(f.now()).toISOString(), availability: 'available', state: 'merged', checks: 'passed', checkCount: 1 })
-    f.wakes.observe(); await f.advance(WATCHER_AT_REST_MS * 2)
-    expect(atRest(f)).toHaveLength(0)
+  it('runs the clock for a thread at rest with no pull request, and for one waiting on the user’s card', async () => {
+    const f = await rests(false)
+    await f.advance(WATCHER_AT_REST_MS)
+    expect(atRest(f)).toHaveLength(1)
+    const card = fixture()
+    // A turn held by its question is at rest while it waits: no exemption for the user's card.
+    card.thread.requests = [{ id: 'question', kind: 'question', text: 'private question', options: [] }]
+    card.wakes.observe(); await card.advance(WATCHER_AT_REST_MS + WATCHER_ORDINARY_BATCH_MS)
+    expect(atRest(card)).toHaveLength(1)
+    await card.advance(WATCHER_AT_REST_AGAIN_MS!)
+    expect(atRest(card)).toHaveLength(2)
+  })
+
+  it('runs no clock for a thread still working, one whose turn ended with background work running, or a settled one', async () => {
     const working = fixture()
-    working.thread.pullRequests = [{ url: prUrl, number: 9, title: 'Synthetic pull request', state: 'open', draft: false, source: 'created', linkedAt: centerTime }]
     working.wakes.observe(); await working.advance(WATCHER_AT_REST_MS * 2)
     expect(atRest(working)).toHaveLength(0)
+    // Its held finish's line is the one check for a wait on its own background work (#1152, November 11, 2026).
+    const busy = fixture()
+    busy.thread.status = 'idle'; busy.thread.lastTurn = { id: 'turn-1', status: 'completed' }
+    busy.thread.backgroundWork = [{ id: 'ci-watch', label: 'CI watch', type: 'command' }]
+    busy.wakes.observe(); await busy.advance(WATCHER_AT_REST_MS * 2)
+    expect(atRest(busy)).toHaveLength(0)
+    const settled = fixture()
+    settled.thread.status = 'idle'; settled.thread.lastTurn = { id: 'turn-1', status: 'completed' }; settled.thread.settledAt = centerTime
+    settled.wakes.observe(); await settled.advance(WATCHER_AT_REST_MS * 2)
+    expect(atRest(settled)).toHaveLength(0)
+  })
+
+  it('starts the clock at zero when the thread works again', async () => {
+    const f = await rests(false)
+    await f.advance(WATCHER_AT_REST_MS)
+    expect(atRest(f)).toHaveLength(1)
+    await f.advance(WATCHER_AT_REST_AGAIN_MS! / 2)
+    f.thread.status = 'running'; f.thread.lastTurn = { id: 'turn-2', status: 'running' }
+    f.wakes.observe(); await f.advance(WATCHER_AT_REST_MS)
+    expect(atRest(f)).toHaveLength(1)
+    f.thread.status = 'idle'; f.thread.lastTurn = { id: 'turn-2', status: 'completed' }
+    f.wakes.observe(); await f.advance(WATCHER_AT_REST_MS - 1)
+    expect(atRest(f)).toHaveLength(1)
+    await f.advance(1 + WATCHER_ORDINARY_BATCH_MS)
+    expect(atRest(f)).toHaveLength(2)
+    expect(atRest(f)[1]!.turnId).toBe('turn-2')
+    expect(atRest(f)[1]!.revision).not.toBe(atRest(f)[0]!.revision)
   })
 
   it('waits again from new progress, and drops news that is no longer true before it goes', async () => {
@@ -2845,6 +2883,7 @@ describe('at-rest news (#2307)', () => {
     const text = watcherNewsText({ source: 'watcher', watcher: centerTarget, omitted: 0, events: [{ id: 'rest', kind: 'at-rest', requestId: randomUUID(),
       target: centerTarget, generation: 0, observedAt: centerTime, turnId: 'turn-1', revision: 'state' }] }, () => 'Its open pull requests: #9 (checks running).')
     expect(text).toContain('at rest for twenty minutes')
+    expect(text).toContain('every twenty minutes while it stays at rest')
     expect(text).toContain('#9 (checks running)')
     expect(text).toContain('not review or merge approval')
   })

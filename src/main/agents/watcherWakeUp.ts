@@ -3,7 +3,7 @@ import { activityBodySize } from '../../shared/activityBodies'
 import type { AgentActivity } from '../../shared/agentActivity'
 import { EMPTY_AGENT_HOST, isThreadProviderConnected, type AgentCapabilities, type AgentHostSnapshot, type AgentThread } from '../../shared/agents'
 import { isThreadArchived, isThreadClosed, isThreadTurnRunning, isWorkspaceThreadSettled } from '../../shared/threadActivity'
-import { WATCHER_AT_REST_MS, WATCHER_QUIET_MS, isWatcherWorkActive, watcherObservationKey, type WatcherObservation } from '../../shared/watcherOverview'
+import { WATCHER_AT_REST_AGAIN_MS, WATCHER_AT_REST_MS, WATCHER_QUIET_MS, isWatcherWorkActive, watcherObservationKey, type WatcherObservation } from '../../shared/watcherOverview'
 import type { WatcherEvidence, WatcherRecord, WatcherThreadTarget } from '../../shared/watcher'
 import { WATCHER_BATCH_MS, WATCHER_BATCH_MAX_MS, WATCHER_ORDINARY_BATCH_MAX_MS, WATCHER_ORDINARY_BATCH_MS, WATCHER_RIDING_KINDS, WATCHER_UNWATCHED_REQUEST_ID, WATCHER_URGENT_KINDS,
   type WatcherEvent, type WatcherNews } from '../../shared/watcherNews'
@@ -13,7 +13,6 @@ import { carriesWords, eventSlot, foldWatcherEvents, foldWatcherNews, requestRev
 import type { HiddenWakeUpOutcome } from './hiddenWakeUp'
 import { isImmutableActivities, isImmutableActivity, isImmutableRecord } from './activitySnapshots'
 import { ThreadChangesDrift, verifyingThreadChanges } from './threadChanges'
-import { watcherOpenPullRequests, watcherThreadPullRequests } from './watcherSlimReads'
 import { byPlace, type WatcherHostsIndex, type WatcherHostsReader, type WatcherHostsTouched } from './watcherHosts'
 
 const RETRY_LIMIT = 8
@@ -38,8 +37,13 @@ const TURN_ENDS: ReadonlySet<WatcherEvent['kind']> = new Set(['turn-finished', '
 export const WAKE_UP_TRIES = 3
 
 interface Progress { swarm?: string; fingerprint: string; connected: boolean; connectedAt: number; progressAt: number; quiet: boolean; links?: Set<string>; cancel?: () => void
-  /** The at-rest check's timer, while one waits for the thread's twenty minutes at rest (`restCheck`). */
-  rest?: () => void }
+  /** The idle clock's timer, while one waits for the thread's next twenty minutes at rest (`restCheck`). */
+  rest?: () => void
+  /**
+   * The idle stretch the clock counts in: from when the thread went idle, as its progress says, which `stretch` names, how
+   * many times Watcher has been told of it, and when last. A new stretch starts when the thread's progress moves.
+   */
+  rested?: { readonly from: number; readonly stretch: string; told: number; at?: number } }
 /** Stops a thread's quiet and at-rest timers, as its progress is let go or starts again. */
 const stopTimers = (progress: Progress | undefined): void => { progress?.cancel?.(); delete progress?.cancel; progress?.rest?.(); delete progress?.rest }
 /**
@@ -1528,38 +1532,42 @@ export class WatcherWakeUp {
     else { progress.rest?.(); delete progress.rest }
   }
   /**
-   * Where a watched thread at rest stands with its own open pull requests, as its at-rest news is told once for (#2307): its
-   * newest turn, and each open pull request's head and whether its checks have finished. At rest is connected, a turn
-   * ended with nothing running, no sub-agent working, no work its host cannot count, and nothing asked of the user.
-   * Undefined when it is not at rest or has no open pull request.
+   * Whether a watched thread is at rest, so its idle clock runs (#1152, #2307): connected and observed, not settled or
+   * closed, after a turn of its own, with no background work, monitoring or sub-agent still counted, and either its turn
+   * ended or it waits only on the user's card. A thread whose turn ended with work still running is not: its held finish's
+   * line is the one check for that wait (Zach's pick on November 11, 2026). A thread waiting on the user's card is: Zach
+   * chose no exemption for it on November 13, 2026.
    */
-  private restState(snapshot: AgentHostSnapshot, thread: AgentThread, target: WatcherThreadTarget): string | undefined {
-    // At rest after a turn: a thread that never ran one has no turn of its own to have ended with work left.
-    if (!thread.lastTurn || thread.lastTurn.status === 'running') return undefined
-    if (!this.connected(snapshot, thread) || !threadCapabilities(snapshot, thread).observe || isThreadTurnRunning(thread) || this.active(thread)
-      || thread.requests.length || isThreadClosed(thread) || isWorkspaceThreadSettled(thread, this.project(snapshot, thread)) || !this.workSettled(thread, target.hostId)) return undefined
-    const open = watcherOpenPullRequests(watcherThreadPullRequests(thread), this.evidence.read(target))
-    if (!open.length) return undefined
-    // A failed check says the checks failed, not that they finished: one still running keeps them unfinished.
-    const pending = this.evidence.pendingChecks(target)
-    return observationDigest([thread.lastTurn?.id ?? null, ...open.map(({ pr, summary }) => {
-      // As last read, aged or not: a read growing old is not a new place to stand.
-      const prKey = pullRequestKey(pr.url) ?? pr.url, checks = summary.checks ?? 'unknown'
-      return [prKey, summary.headId ?? null, checks, (checks === 'passed' || checks === 'failed') && !pending.has(prKey)]
-    })])
+  private atRest(snapshot: AgentHostSnapshot, thread: AgentThread, target: WatcherThreadTarget): boolean {
+    // At rest after a turn: a thread that never ran one has not gone idle from work.
+    if (!thread.lastTurn) return false
+    if (!this.connected(snapshot, thread) || !threadCapabilities(snapshot, thread).observe || isThreadClosed(thread)
+      || isWorkspaceThreadSettled(thread, this.project(snapshot, thread)) || !this.workSettled(thread, target.hostId)) return false
+    if (thread.requests.length) return !thread.subagentSummary?.working
+    return thread.lastTurn.status !== 'running' && !isThreadTurnRunning(thread) && !this.active(thread)
   }
   /**
-   * At-rest news (#2307): a watched thread that has been at rest for WATCHER_AT_REST_MS since its last progress, with a pull
-   * request of its own still open, is told once for where it stands, so a lane whose turn ended with CI still to come is not
-   * left until the user notices. Its ID is the state, so the same state is told once, after a restart too; its checks
-   * finishing, a new head or a new turn is a new state. The timer reads the thread again when it fires.
+   * The idle clock (#1152, #2307): a watched thread that has been at rest for WATCHER_AT_REST_MS since its last progress
+   * brings Watcher at-rest news, and again each WATCHER_AT_REST_AGAIN_MS after that while it stays at rest (Zach's pick on
+   * November 13, 2026), or once when that is null. Progress, a reconnect or the thread no longer being at rest starts a new
+   * stretch at zero. Each wake's ID is its stretch and its count, so none is told twice. Sotto keeps no stretch across a
+   * restart: the clock starts at zero when Sotto first sees the thread, as quiet's does. The timer reads the thread again
+   * when it fires.
    */
   private restCheck(snapshot: AgentHostSnapshot, thread: AgentThread, target: WatcherThreadTarget, key: string, progress: Progress, fired = false): void {
     progress.rest?.(); delete progress.rest
-    const state = this.restState(snapshot, thread, target)
-    if (state === undefined) return
-    const wait = Math.max(progress.progressAt, progress.connectedAt) + WATCHER_AT_REST_MS - this.now()
-    if (wait <= 0) { this.event('at-rest', target, state, { ...thread.lastTurn ? { turnId: thread.lastTurn.id } : {}, revision: state }, key); return }
+    if (!this.atRest(snapshot, thread, target)) { delete progress.rested; return }
+    const from = Math.max(progress.progressAt, progress.connectedAt)
+    if (progress.rested?.from !== from) progress.rested = { from, stretch: observationDigest(['at-rest', target, from]), told: 0 }
+    const rested = progress.rested
+    if (rested.told && WATCHER_AT_REST_AGAIN_MS === null) return
+    const wait = (rested.at ?? from) + (rested.told ? WATCHER_AT_REST_AGAIN_MS ?? 0 : WATCHER_AT_REST_MS) - this.now()
+    if (wait <= 0) {
+      rested.told++; rested.at = this.now()
+      this.event('at-rest', target, [rested.stretch, rested.told], { ...thread.lastTurn ? { turnId: thread.lastTurn.id } : {}, revision: rested.stretch }, key)
+      if (WATCHER_AT_REST_AGAIN_MS !== null) this.restCheck(snapshot, thread, target, key, progress)
+      return
+    }
     // A timer that fired early waits for the next pass rather than set itself again.
     if (fired) return
     progress.rest = this.schedule(() => {
@@ -1746,16 +1754,6 @@ export class WatcherWakeUp {
       if (this.evidence.paired(fact)) changed.set(key, fact.target)
     }
     for (const [key, target] of changed) this.evidenceChanged(target, before.get(key), false, this.attentionMoved(target, attention.get(key)!))
-    if (changed.size) { const snapshot = this.options.snapshot(); for (const target of changed.values()) this.restAgain(snapshot, target) }
-  }
-  /**
-   * Checks that finished, or a pull request that ended, while a watched thread rests is a new place for it to stand (#2307).
-   * Only a watched thread keeps progress, and `event` tells only a thread a request still watches, so nothing here reads the
-   * requests again.
-   */
-  private restAgain(snapshot: AgentHostSnapshot, target: WatcherThreadTarget, thread = this.lookUp(snapshot, target)): void {
-    const key = targetKey(target), progress = this.progress.get(key)
-    if (thread && progress) this.restCheck(snapshot, thread, target, key, progress)
   }
   pullRequest(read: PullRequestObservation): void {
     if (this.closed) return
@@ -1767,7 +1765,6 @@ export class WatcherWakeUp {
       const before = this.knownEvidenceIds(target), attention = this.evidence.attention(target)
       // Checks that only start running again, a new head or a new count ride with the next news that needs Watcher (#1190).
       if (this.evidence.pullRequest(target, read)) this.evidenceChanged(target, before, false, this.attentionMoved(target, attention))
-      this.restAgain(snapshot, target, thread)
     }
     this.options.changed?.()
   }
@@ -1884,7 +1881,7 @@ export class WatcherWakeUp {
     if (!this.connected(snapshot, thread)) return false
     if (event.kind === 'needs-user') return thread.requests.some(card => card.id === event.requestCardId && requestRevision(card) === event.revision)
     if (event.kind === 'quiet') return !!this.progress.get(targetKey(event.target))?.quiet && this.mayGoQuiet(thread) && !thread.requests.length
-    if (event.kind === 'at-rest') return this.restState(snapshot, thread, event.target) === event.revision
+    if (event.kind === 'at-rest') return this.progress.get(targetKey(event.target))?.rested?.stretch === event.revision && this.atRest(snapshot, thread, event.target)
     // Work that started again withdraws it; stillDue keeps the turn owed it.
     if (event.kind === 'work-settled') return finishedTurn(thread)?.id === event.turnId && this.workSettled(thread, event.target.hostId)
     // A busy finish held for its work whose thread has begun another turn happened all the same, and is told (#1190).
