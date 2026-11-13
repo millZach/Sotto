@@ -65,9 +65,9 @@ async function ownerRoom() {
 it('hands out each thread\'s evidence again until that thread\'s evidence changes', async () => {
   const room = await ownerRoom()
   const first = room.watcher.state(), second = room.watcher.state()
-  // Every thread the owner's record names: 404 of them.
+  // Every thread the owner's record names: 405 of them.
   expect(first.watchedThreads.length).toBeGreaterThan(400)
-  expect(first.watchedThreads.every(thread => thread.evidence.length === 5)).toBe(true)
+  expect(first.watchedThreads.every(thread => thread.evidence?.length === 5)).toBe(true)
   second.watchedThreads.forEach((thread, index) => expect(thread.evidence).toBe(first.watchedThreads[index]!.evidence))
   // A fact that changes on one thread makes its list again, with the fact, and leaves every other thread's as it was.
   const changed = room.targets[7]!
@@ -76,7 +76,7 @@ it('hands out each thread\'s evidence again until that thread\'s evidence change
   for (const [index, thread] of third.watchedThreads.entries()) {
     if (key(thread.target) === key(changed)) {
       expect(thread.evidence).not.toBe(second.watchedThreads[index]!.evidence)
-      expect(thread.evidence.some(item => item.turnId === 'turn-new')).toBe(true)
+      expect(thread.evidence?.some(item => item.turnId === 'turn-new')).toBe(true)
     } else expect(thread.evidence).toBe(second.watchedThreads[index]!.evidence)
   }
 }, 60_000)
