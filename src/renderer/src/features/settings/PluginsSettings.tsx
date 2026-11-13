@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
 import { Trans, useLingui } from '@lingui/react/macro'
-import { ChevronRight, Code } from 'lucide-react'
+import { ChevronRight, Code, MonitorSmartphone } from 'lucide-react'
 import {
   PLUGIN_ACCOUNT_NAME_MAX, PLUGIN_SECRET_MAX, PLUGIN_USE_SHOWN, PLUGINS, type GitHubSignIn, type PluginAccount, type PluginAccountProblem, type PluginAccountResult,
-  type PluginEntry, type PluginGroupId, type PluginProject, type PluginReadKind, type PluginsBridge, type ShownPluginUse,
+  type PluginAccountCopyState, type PluginCopiesView, type PluginEntry, type PluginGroupId, type PluginProject, type PluginReadKind, type PluginsBridge, type ShownPluginUse,
 } from '../../../../shared/plugins'
 import { localeFormatter } from '../../agents/localeFormat'
 import { useTransientFlag, writeClipboard } from '../../agents/richActions'
@@ -70,6 +70,23 @@ export function PluginsSettings({ bridge = window.sotto?.plugins }: { readonly b
     void bridge.projects().then(value => { if (alive) setProjects(value) }).catch(() => { if (alive) setProjects('failed') })
     return () => { alive = false }
   }, [bridge])
+  // The user's other computers and each account's copy on each. Null while unread, or when it could not be read.
+  // Main says when something changed, a copy arriving or a computer connecting, and the page reads it again.
+  const [copies, setCopies] = useState<PluginCopiesView | null>(null)
+  const copiesAsked = useRef(0)
+  const readCopies = useCallback((): void => {
+    if (!bridge) return
+    const mine = ++copiesAsked.current
+    void bridge.copies().then(value => { if (copiesAsked.current === mine) setCopies(value) }).catch(() => { if (copiesAsked.current === mine) setCopies(null) })
+  }, [bridge])
+  useEffect(() => {
+    readCopies()
+    const off = bridge?.onCopiesChanged(readCopies)
+    return () => { copiesAsked.current += 1; off?.() }
+  }, [bridge, readCopies])
+  // An answer to a choice is the newest word on the copies, so an older read still on its way must not land after it.
+  const tookCopies = (view: PluginCopiesView): void => { copiesAsked.current += 1; setCopies(view) }
+  const changedAccounts = (next: readonly PluginAccount[]): void => { setAccounts(next); readCopies() }
   const groupTitle: Record<PluginGroupId, string> = { code: t`Code and deploys` }
   return <div className="plugins-settings">
     <p className="tt-paragraph plugins-lead"><Trans>A thread’s agent uses a plugin through Sotto’s tools and never holds its secret. Reading never asks you. A change, such as posting a comment, asks you first in its thread, each time.</Trans></p>
@@ -77,10 +94,50 @@ export function PluginsSettings({ bridge = window.sotto?.plugins }: { readonly b
       <div className="plugins-list">
         {PLUGINS.filter(plugin => plugin.group === 'code').map(plugin => plugin.id === 'github'
           ? <GitHubRow key={plugin.id} plugin={plugin} signIn={signIn} uses={uses} onCheck={() => { check(); readUses() }} />
-          : <VercelRow key={plugin.id} plugin={plugin} bridge={bridge} accounts={accounts} projects={projects} uses={uses} onAccounts={setAccounts} />)}
+          : <VercelRow key={plugin.id} plugin={plugin} bridge={bridge} accounts={accounts} projects={projects} copies={copies} uses={uses} onAccounts={changedAccounts} onCopies={tookCopies} />)}
       </div>
     </SettingsGroup>
+    <OtherComputers bridge={bridge} copies={copies} accounts={accounts} onCopies={tookCopies} />
   </div>
+}
+
+/**
+ * The user's other computers (ADR-0205, amending ADR-0025): whether a new account starts with a copy on them, and
+ * for each computer whether it is connected and how many accounts it holds. A copy lets a computer's threads use an
+ * account while this one is off. Each account says for itself where it is kept.
+ */
+function OtherComputers({ bridge, copies, accounts, onCopies }: {
+  readonly bridge: PluginsBridge | undefined; readonly copies: PluginCopiesView | null; readonly accounts: readonly PluginAccount[] | null
+  readonly onCopies: (view: PluginCopiesView) => void
+}): ReactNode {
+  const { t } = useLingui()
+  const [failed, setFailed] = useState(false)
+  if (!copies) return null
+  const count = accounts?.length ?? 0
+  const setCopyNew = (copyNew: boolean): void => {
+    if (!bridge) return
+    setFailed(false)
+    void bridge.setCopyNew(copyNew).then(onCopies, () => setFailed(true))
+  }
+  return <SettingsGroup title={t`Other computers`} icon={MonitorSmartphone} rows={false}>
+    <div className="plugins-computers">
+      <Toggle label={t`Copy new accounts to every computer I pair`} checked={copies.copyNew} disabled={!bridge} onCheckedChange={setCopyNew}
+        description={t`Each account’s secret is sent to the computers you paired as hosts, on the connection Sotto already holds to each, and kept in each one’s own encrypted store, so their threads work while this computer is off. You can stop the copy for any account. An account kept to chosen projects is never copied.`} />
+      {failed ? <p className="tt-field__error tt-paragraph" role="alert"><Trans>That could not be saved. Nothing was changed. Try again.</Trans></p> : null}
+      {copies.computers.length === 0 ? <p className="tt-paragraph plugin-row__note"><Trans>No other computer is paired. Pair one in Settings › Hosts &amp; phones, and its threads can use these accounts too.</Trans></p>
+        : <ul className="plugins-computers__list" aria-label={t`Other computers`}>
+          {copies.computers.map(computer => {
+            const kept = copies.copies.filter(copy => copy.computerId === computer.id && copy.state === 'kept').length
+            const name = computer.name
+            return <li key={computer.id}>
+              <span className="plugin-row__dot" data-state={computer.connected ? 'signed-in' : 'none'} aria-hidden="true" />
+              <b>{name}</b>
+              <span>{computer.connected ? t`Connected. Copies kept there: ${kept} of ${count}.` : t`Not connected. Copies wait until it is.`}</span>
+            </li>
+          })}
+        </ul>}
+    </div>
+  </SettingsGroup>
 }
 
 /** A plugin's row: its mark, its name and where it stands, and a body that opens in place. Escape closes it from anywhere inside. */
@@ -157,8 +214,9 @@ function useProblemWords(): (problem: PluginAccountProblem, replacing: boolean) 
   }
 }
 
-function VercelRow({ plugin, bridge, accounts, projects, uses, onAccounts }: {
+function VercelRow({ plugin, bridge, accounts, projects, copies, uses, onAccounts, onCopies }: {
   readonly plugin: PluginEntry; readonly bridge: PluginsBridge | undefined; readonly accounts: readonly PluginAccount[] | null; readonly projects: ProjectsView
+  readonly copies: PluginCopiesView | null; readonly onCopies: (view: PluginCopiesView) => void
   readonly uses: readonly ShownPluginUse[] | null; readonly onAccounts: (accounts: readonly PluginAccount[]) => void
 }): ReactNode {
   const { t } = useLingui()
@@ -174,7 +232,7 @@ function VercelRow({ plugin, bridge, accounts, projects, uses, onAccounts }: {
   return <PluginRow plugin={plugin} state={accounts === null ? 'unknown' : mine.some(account => account.on) ? 'signed-in' : 'none'} summary={summary}>
     <p className="tt-paragraph"><Trans>Deployments, build logs, projects and domains, read with a token you paste. Sotto keeps the token in its encrypted store and makes each read itself, so no agent ever sees it.</Trans></p>
     {accounts === null ? <p className="tt-field__error tt-paragraph" role="alert"><Trans>The accounts could not be read. Nothing was changed. Reopen Settings and try again.</Trans></p> : null}
-    {mine.map(account => <AccountCard key={account.id} account={account} bridge={bridge} projects={projects} onAccounts={onAccounts} onRemoved={() => { setAdding(false); requestAnimationFrame(() => addButton.current?.focus()) }}
+    {mine.map(account => <AccountCard key={account.id} account={account} bridge={bridge} projects={projects} copies={copies} onCopies={onCopies} onAccounts={onAccounts} onRemoved={() => { setAdding(false); requestAnimationFrame(() => addButton.current?.focus()) }}
       uses={uses === null ? null : uses.filter(use => use.accountId === account.id)} />)}
     {adding ? <AddAccount bridge={bridge} onAccounts={onAccounts} onDone={closeAdd} />
       : <div className="plugin-row__actions"><Button ref={addButton} variant="secondary" disabled={accounts === null || !bridge} onClick={() => setAdding(true)}>
@@ -229,8 +287,9 @@ function AddAccount({ bridge, onAccounts, onDone }: { readonly bridge: PluginsBr
 }
 
 /** One account: its name, when its token was saved, Replace and Remove, and its recent use. */
-function AccountCard({ account, bridge, projects, uses, onAccounts, onRemoved }: {
+function AccountCard({ account, bridge, projects, copies, uses, onAccounts, onCopies, onRemoved }: {
   readonly account: PluginAccount; readonly bridge: PluginsBridge | undefined; readonly projects: ProjectsView; readonly uses: readonly ShownPluginUse[] | null
+  readonly copies: PluginCopiesView | null; readonly onCopies: (view: PluginCopiesView) => void
   readonly onAccounts: (accounts: readonly PluginAccount[]) => void
   /** The account is gone, and its buttons with it: focus needs somewhere to go. */
   readonly onRemoved: () => void
@@ -297,7 +356,56 @@ function AccountCard({ account, bridge, projects, uses, onAccounts, onRemoved }:
     </div> : null}
     {problem ? <p className="tt-field__error tt-paragraph" role="alert">{problem}</p> : null}
     <AccountThreads account={account} bridge={bridge} projects={projects} onAccounts={onAccounts} />
+    <AccountCopies account={account} bridge={bridge} copies={copies} onCopies={onCopies} />
     <RecentUse name={name} uses={uses} />
+  </section>
+}
+
+/**
+ * Where an account's secret is kept (ADR-0205, amending ADR-0025): always on this computer, and on each of the user's
+ * other computers that holds a copy, each with its own switch. The line under a switch says where that copy stands in
+ * plain words: kept, waiting for the computer, or why the computer could not keep it. Nothing here shows a secret.
+ */
+function AccountCopies({ account, bridge, copies, onCopies }: {
+  readonly account: PluginAccount; readonly bridge: PluginsBridge | undefined; readonly copies: PluginCopiesView | null; readonly onCopies: (view: PluginCopiesView) => void
+}): ReactNode {
+  const { t } = useLingui()
+  const headingId = useId()
+  const [failed, setFailed] = useState(false)
+  // With no other computer paired there is one place it is kept, and nothing to choose.
+  if (!copies || copies.computers.length === 0) return null
+  const name = account.name
+  const set = (computerId: string, on: boolean): void => {
+    if (!bridge) return
+    setFailed(false)
+    void bridge.setCopy({ accountId: account.id, computerId, on }).then(onCopies, () => setFailed(true))
+  }
+  const words = (state: PluginAccountCopyState, computer: string, connected: boolean): string => {
+    switch (state) {
+      case 'kept': return t`A copy is kept on ${computer}.`
+      case 'waiting': return connected ? t`Sending the copy to ${computer}…` : t`${computer} is not connected. Sotto sends the copy, or checks the one there, when it is.`
+      case 'off': return t`No copy. ${computer}’s threads cannot use this account.`
+      case 'here-only': return t`No copy. ${name} is kept to projects on this computer, so its secret stays here. Choose Every project to copy it.`
+      case 'too-old': return t`${computer}’s Sotto cannot keep account copies. Update Sotto on ${computer}, and the copy is sent.`
+      case 'no-key': return t`${computer} was started without a key file, so it cannot keep a token. Nothing was kept there. On ${computer}, set SOTTO_HOST_KEY_FILE to a file holding a secret of your own, start its host again, and the copy is sent.`
+      case 'full': return t`${computer} already holds as many accounts as a plugin takes. Nothing was kept there.`
+      case 'name-taken': return t`Another of your computers already sent ${computer} an account called ${name}. Rename one of the two. Nothing was kept there.`
+      case 'held': return t`Another of your computers already sent ${computer} this account. Nothing was changed there.`
+      case 'locked': return t`This computer’s credential store is locked, so the token could not be read to send. Unlock it, and Sotto tries again.`
+      case 'failed': return t`The copy could not be sent to ${computer}. Sotto tries again.`
+    }
+  }
+  return <section className="plugin-account__copies" aria-labelledby={headingId}>
+    <h4 id={headingId}><Trans>Where its secret is kept</Trans></h4>
+    <p className="plugin-account__here tt-paragraph"><b><Trans>This computer</Trans></b> <span><Trans>Always, in Sotto’s encrypted store.</Trans></span></p>
+    {copies.computers.map(computer => {
+      const state = copies.copies.find(copy => copy.accountId === account.id && copy.computerId === computer.id)?.state ?? 'waiting'
+      const computerName = computer.name
+      return <Toggle key={computer.id} label={t`Keep a copy of ${name} on ${computerName}`} checked={state !== 'off' && state !== 'here-only'} disabled={!bridge || state === 'here-only'}
+        description={words(state, computerName, computer.connected)} onCheckedChange={on => set(computer.id, on)} />
+    })}
+    <p className="tt-paragraph plugin-row__note"><Trans>A copy lets that computer’s threads use this account while this computer is off. It travels on the connection Sotto already holds to that computer and is kept in that computer’s own encrypted store.</Trans></p>
+    {failed ? <p className="tt-field__error tt-paragraph" role="alert"><Trans>That could not be saved. Nothing was changed. Try again.</Trans></p> : null}
   </section>
 }
 

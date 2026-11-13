@@ -51,3 +51,18 @@
 .plugin-chip:active:not(:disabled) { background: var(--tt-hover-strong); }
 .plugin-chip[aria-pressed='true'] { border-color: var(--tt-accent-text); background: var(--tt-hover); color: var(--tt-text); font-weight: 600; }
 .plugin-chip:disabled { opacity: 0.45; }
+/* Where an account's secret is kept: this computer always, then a switch for each other computer with where its copy stands. */
+.plugin-account__copies { display: grid; gap: 10px; padding-top: 10px; border-top: 1px solid var(--tt-hairline); }
+.plugin-account__copies h4 { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); font-weight: 600; }
+.plugin-account__copies .tt-toggle__copy > strong { font-size: var(--tt-type-reading); font-weight: 500; overflow-wrap: anywhere; }
+.plugin-account__here { display: flex; flex-wrap: wrap; gap: 2px 8px; margin: 0; }
+.plugin-account__here b { font-weight: 500; }
+.plugin-account__here span { color: var(--tt-text-muted); font-size: var(--tt-type-small); }
+/* The user's other computers: the default for new copies, then each computer and what it holds. */
+.plugins-computers { display: grid; gap: 12px; padding: 12px 16px; border: 1px solid var(--tt-border-faint); border-radius: var(--tt-radius-card); background: var(--tt-card); }
+.plugins-computers .tt-toggle__copy > strong { font-size: var(--tt-type-reading); font-weight: 500; }
+.plugins-computers__list { display: grid; gap: 8px; margin: 0; padding: 10px 0 0; border-top: 1px solid var(--tt-hairline); list-style: none; }
+.plugins-computers__list li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
+.plugins-computers__list b { font-weight: 600; overflow-wrap: anywhere; }
+.plugins-computers__list span:last-child { color: var(--tt-text-muted); font-size: var(--tt-type-small); overflow-wrap: anywhere; }
+.plugins-computers__list .plugin-row__dot[data-state='signed-in'] { background: var(--tt-success); }

@@ -8,7 +8,7 @@ import { HOSTS_OPENCODE_SIGN_IN, HOSTS_PROVIDER_ACTION, HOSTS_SIGN_IN, HOSTS_UPD
 import { PHONES_GET, PHONES_COMMAND, PHONES_CHANGED, phonesCommandSchema, type PhonesState } from '../shared/phones'
 import { LOCAL_APPS_CHANGED, LOCAL_APPS_GET, type LocalAppsState } from '../shared/localApps'
 import {
-  gitHubSignInSchema, pluginAccountAddSchema, pluginAccountRemoveSchema, pluginAccountReplaceSchema, pluginAccountResultSchema, pluginAccountsSchema, pluginAccountUpdateSchema, pluginProjectsSchema,
+  gitHubSignInSchema, pluginCopiesViewSchema, pluginCopyNewSetSchema, pluginCopySetSchema, PLUGINS_COPIES, PLUGINS_COPIES_CHANGED, PLUGINS_COPY_NEW_SET, PLUGINS_COPY_SET, pluginAccountAddSchema, pluginAccountRemoveSchema, pluginAccountReplaceSchema, pluginAccountResultSchema, pluginAccountsSchema, pluginAccountUpdateSchema, pluginProjectsSchema,
   PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNT_UPDATE, PLUGINS_ACCOUNTS, PLUGINS_GITHUB_SIGN_IN, PLUGINS_PROJECTS, PLUGINS_RECENT_USE, shownPluginUsesSchema, type PluginsBridge,
 } from '../shared/plugins'
 import { TEAMS_CHANGED, TEAMS_COMMAND, TEAMS_GET, TEAMS_OWN_DESK, teamsCommandSchema, type TeamDesk, type TeamsBridge, type TeamsCommandResult, type TeamsState } from '../shared/teams'
@@ -674,6 +674,11 @@ export function createSottoBridge(
       removeAccount: async request => invokeParsed(renderer, PLUGINS_ACCOUNT_REMOVE, pluginAccountResultSchema, pluginAccountRemoveSchema.parse(request)),
       updateAccount: async request => invokeParsed(renderer, PLUGINS_ACCOUNT_UPDATE, pluginAccountResultSchema, pluginAccountUpdateSchema.parse(request)),
       projects: async () => invokeParsed(renderer, PLUGINS_PROJECTS, pluginProjectsSchema),
+      copies: async () => invokeParsed(renderer, PLUGINS_COPIES, pluginCopiesViewSchema),
+      setCopy: async request => invokeParsed(renderer, PLUGINS_COPY_SET, pluginCopiesViewSchema, pluginCopySetSchema.parse(request)),
+      setCopyNew: async copyNew => invokeParsed(renderer, PLUGINS_COPY_NEW_SET, pluginCopiesViewSchema, pluginCopyNewSetSchema.parse({ copyNew })),
+      // Main says only that something changed; the page reads the copies again through `copies`.
+      onCopiesChanged: listener => { const heard = (): void => { listener() }; renderer.on(PLUGINS_COPIES_CHANGED, heard); return () => { renderer.removeListener(PLUGINS_COPIES_CHANGED, heard) } },
     }),
     ...createToolsBridges(renderer),
     cloudIphone: createCloudIphoneBridge(renderer),

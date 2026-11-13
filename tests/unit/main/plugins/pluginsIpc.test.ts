@@ -4,8 +4,8 @@ vi.mock('electron', async () => (await import('../../../fixtures/preloadElectron
 import { registerPluginsIpc } from '../../../../src/main/plugins/ipc'
 import { createSottoBridge } from '../../../../src/preload'
 import {
-  PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNT_UPDATE, PLUGINS_ACCOUNTS, PLUGINS_GITHUB_SIGN_IN, PLUGINS_PROJECTS, PLUGINS_RECENT_USE,
-  type GitHubSignIn, type PluginAccount, type PluginAccountResult, type ShownPluginUse,
+  PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNT_UPDATE, PLUGINS_ACCOUNTS, PLUGINS_COPIES, PLUGINS_COPIES_CHANGED, PLUGINS_COPY_NEW_SET, PLUGINS_COPY_SET, PLUGINS_GITHUB_SIGN_IN, PLUGINS_PROJECTS, PLUGINS_RECENT_USE,
+  type GitHubSignIn, type PluginAccount, type PluginAccountResult, type PluginCopiesView, type ShownPluginUse,
 } from '../../../../src/shared/plugins'
 import { ipcRegistry } from '../../../fixtures/ipcHarness'
 import { preloadElectron } from '../../../fixtures/preloadElectron'
@@ -26,10 +26,12 @@ function register(answer: GitHubSignIn = { state: 'signed-in', login: 'example-u
   const removeAccount = vi.fn(async (): Promise<PluginAccountResult> => ({ ok: true, accounts: [] }))
   const updateAccount = vi.fn(async (): Promise<PluginAccountResult> => ({ ok: true, accounts: [{ ...account, on: false }] }))
   const projects = vi.fn(() => [{ id: 'p-sotto', title: 'Sotto', settled: false }])
-  const close = registerPluginsIpc(registry.ipc, { gitHubSignIn, recentUse, accounts, addAccount, replaceSecret, removeAccount, updateAccount, projects }, registry.trustedSenders)
+  const view: PluginCopiesView = { copyNew: true, computers: [{ id: 'saved-forge', name: 'forge', connected: true }], copies: [{ accountId: account.id, computerId: 'saved-forge', state: 'kept' }] }
+  const copies = vi.fn(async (): Promise<PluginCopiesView> => view), setCopy = vi.fn(async (): Promise<PluginCopiesView> => view), setCopyNew = vi.fn(async (): Promise<PluginCopiesView> => view)
+  const close = registerPluginsIpc(registry.ipc, { gitHubSignIn, recentUse, accounts, addAccount, replaceSecret, removeAccount, updateAccount, projects, copies, setCopy, setCopyNew }, registry.trustedSenders)
   const renderer = preloadElectron().ipcRenderer
   renderer.invoke.mockImplementation((channel: string, ...args: unknown[]) => registry.invoke(channel, args))
-  return { ...registry, gitHubSignIn, recentUse, accounts, addAccount, replaceSecret, removeAccount, updateAccount, projects, close, bridge: createSottoBridge(renderer, 'win32').plugins! }
+  return { ...registry, gitHubSignIn, recentUse, accounts, addAccount, replaceSecret, removeAccount, updateAccount, projects, copies, setCopy, setCopyNew, view, close, bridge: createSottoBridge(renderer, 'win32').plugins! }
 }
 
 describe('Settings › Plugins, from the window through preload to main (ADR-0205)', () => {
@@ -124,5 +126,32 @@ describe('Settings › Plugins, from the window through preload to main (ADR-020
     await expect(bridge.projects()).rejects.toThrow()
     close()
     for (const channel of [PLUGINS_ACCOUNT_UPDATE, PLUGINS_PROJECTS]) expect(handlers.has(channel)).toBe(false)
+  })
+
+  it('carries where copies stand to the window and a choice back to main, for the main window only, and never a secret', async () => {
+    const { bridge, invoke, widgetEvent, copies, setCopy, setCopyNew, view, close, handlers } = register()
+    await expect(bridge.copies()).resolves.toEqual(view)
+    await expect(bridge.setCopy({ accountId: account.id, computerId: 'saved-forge', on: false })).resolves.toEqual(view)
+    expect(setCopy).toHaveBeenCalledWith({ accountId: account.id, computerId: 'saved-forge', on: false })
+    await expect(bridge.setCopyNew(false)).resolves.toEqual(view)
+    expect(setCopyNew).toHaveBeenCalledWith(false)
+    setCopy.mockClear(); setCopyNew.mockClear()
+    for (const bad of [{ accountId: account.id, computerId: 'saved-forge' }, { accountId: 'not-an-id', computerId: 'saved-forge', on: true }, { accountId: account.id, computerId: '', on: true }, { accountId: account.id, computerId: 'saved-forge', on: true, secret: TOKEN }]) {
+      await expect(invoke(PLUGINS_COPY_SET, [bad]), JSON.stringify(Object.keys(bad))).rejects.toThrow('That could not be done. Nothing was changed.')
+    }
+    await expect(invoke(PLUGINS_COPY_NEW_SET, [{ copyNew: 'yes' }])).rejects.toThrow('That could not be done. Nothing was changed.')
+    await expect(invoke(PLUGINS_COPIES, [], widgetEvent)).rejects.toThrow('Open Settings in the main Sotto window.')
+    await expect(invoke(PLUGINS_COPY_SET, [{ accountId: account.id, computerId: 'saved-forge', on: true }], widgetEvent)).rejects.toThrow('Open Settings in the main Sotto window.')
+    await expect(invoke(PLUGINS_COPY_NEW_SET, [{ copyNew: false }], widgetEvent)).rejects.toThrow('Open Settings in the main Sotto window.')
+    expect(setCopy).not.toHaveBeenCalled()
+    expect(setCopyNew).not.toHaveBeenCalled()
+    // What goes back names computers, accounts and states. Anything else, a secret among it, does not cross.
+    copies.mockResolvedValueOnce({ ...view, copies: [{ ...view.copies[0]!, secret: TOKEN } as never] })
+    await expect(invoke(PLUGINS_COPIES, [])).rejects.toThrow()
+    copies.mockResolvedValueOnce({ ...view, computers: [{ ...view.computers[0]!, address: 'forge.example.ts.net' } as never] })
+    await expect(invoke(PLUGINS_COPIES, [])).rejects.toThrow()
+    expect(PLUGINS_COPIES_CHANGED).toBe('sotto:plugins:copies-changed')
+    close()
+    for (const channel of [PLUGINS_COPIES, PLUGINS_COPY_SET, PLUGINS_COPY_NEW_SET]) expect(handlers.has(channel)).toBe(false)
   })
 })

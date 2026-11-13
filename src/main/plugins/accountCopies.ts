@@ -90,7 +90,9 @@ export function hostPluginAccountCopies(directory: string, credentials: PluginCr
     }),
     list: (clientId: string): Promise<HeldPluginAccountCopy[]> => inTurn(async () => {
       const senders = await read()
-      return (await accounts.list()).filter(account => senders[account.id] === clientId).map(account => ({ id: account.id, plugin: account.plugin, savedAt: account.savedAt }))
+      // The account as it is held, without its secret: what the desktop compares with its own to see what arrived.
+      return (await accounts.list()).filter(account => senders[account.id] === clientId)
+        .map(account => ({ id: account.id, plugin: account.plugin, savedAt: account.savedAt, name: account.name, signedInAs: account.signedInAs, on: account.on, projects: account.projects }))
     }),
     forgetDesktop: (clientId: string): Promise<void> => inTurn(async () => {
       const senders = await read()
