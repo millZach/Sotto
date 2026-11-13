@@ -8,13 +8,10 @@ import { z } from 'zod'
 export const PLUGINS_FEATURE = 'plugins'
 
 /** The groups Settings › Plugins sets its rows in, in the page's order. */
-export const PLUGIN_GROUPS = ['code'] as const
+export const PLUGIN_GROUPS = ['code', 'mail'] as const
 export type PluginGroupId = typeof PLUGIN_GROUPS[number]
 
-/**
- * Every plugin a thread's agent can use. Gmail is here before it has a row on the page: its accounts, its reads and
- * the mail grant are built first, and the row that adds an account comes with the slice's last part.
- */
+/** Every plugin a thread's agent can use, each with a row on Settings › Plugins. */
 export const PLUGIN_IDS = ['github', 'vercel', 'gmail'] as const
 export type PluginId = typeof PLUGIN_IDS[number]
 /** Each plugin's name, which is the service's own and the same in every language. */
@@ -25,15 +22,14 @@ export const MAIL_PLUGIN_IDS = ['gmail'] as const
 export type MailPluginId = typeof MAIL_PLUGIN_IDS[number]
 export const isMailPlugin = (plugin: string): plugin is MailPluginId => (MAIL_PLUGIN_IDS as readonly string[]).includes(plugin)
 
-/** The plugins with a row on the page today: every plugin but mail, whose row comes with the slice's last part. */
-export type ListedPluginId = Exclude<PluginId, MailPluginId>
 /** A plugin as the page lists it. Its name is the service's own and is the same in every language. */
-export interface PluginEntry { readonly id: ListedPluginId; readonly name: string; readonly group: PluginGroupId }
+export interface PluginEntry { readonly id: PluginId; readonly name: string; readonly group: PluginGroupId }
 
 /** The rows of Settings › Plugins: the plugins a user can connect there today. */
 export const PLUGINS: readonly PluginEntry[] = [
   { id: 'github', name: 'GitHub', group: 'code' },
   { id: 'vercel', name: 'Vercel', group: 'code' },
+  { id: 'gmail', name: 'Gmail', group: 'mail' },
 ]
 
 export const PLUGINS_GITHUB_SIGN_IN = 'sotto:plugins:github-sign-in'

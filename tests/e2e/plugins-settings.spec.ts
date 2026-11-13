@@ -81,7 +81,7 @@ test('Plugins shows GitHub’s sign-in on Owl, fits every checked size, and says
     await expect(row).toHaveAttribute('aria-expanded', 'true')
     await expect(panel.getByText('Signed in as example-user through gh on this computer.')).toBeVisible()
     await expect(panel.getByText('GitHub uses the gh command’s own sign-in. Sotto stores nothing for it.')).toBeVisible()
-    await expect(panel.getByText('A thread’s agent uses a plugin through Sotto’s tools and never holds its secret. Reading never asks you. A change, such as posting a comment, asks you first in its thread, each time.')).toBeVisible()
+    await expect(panel.getByText('A thread’s agent uses a plugin through Sotto’s tools and never holds its secret. Reading never asks you, except that each thread asks once before it reads a mail account. A change, such as posting a comment, asks you first in its thread, each time.')).toBeVisible()
     const used = panel.getByRole('region', { name: 'Recent use' }).getByRole('listitem')
     await expect(used).toHaveCount(2)
     await expect(used.nth(0)).toContainText('Read pull requests in a thread that is gone It failed.')

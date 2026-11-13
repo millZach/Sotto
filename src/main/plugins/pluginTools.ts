@@ -655,15 +655,15 @@ export class PluginToolServer implements ScopedThreadTools {
     const vercel = withheld ? `no account is available to this thread: the user has switched it off or kept it to other projects, and can change that in ${SETTINGS}.`
       : added.length === 0 ? `no account added. To use it, ask the user to add one in ${SETTINGS}.`
       : `${added.length === 1 ? 'account' : 'accounts'} ${added.map(account => `"${account.name}"`).join(', ')}. Read with ${PLUGIN_READ_TOOL}, plugin "vercel"${added.length > 1 ? ' and "account" as one of those names' : ''}.`
-    // A mail plugin is listed once it has an account, where this computer's threads can read mail. The address is the
-    // user's own and is not named: the account's name is what a read is asked for by.
+    // A mail plugin is listed where this computer's threads can read mail. The address is the user's own and is not
+    // named: the account's name is what a read is asked for by.
     const mail: { readonly id: MailPluginId; readonly name: string; readonly line: string; readonly names: readonly string[] }[] = []
     for (const plugin of this.handlers.mail ? MAIL_PLUGIN_IDS : []) {
       const mine = all.filter(account => account.plugin === plugin)
       const kept = mine.length === 0 && await this.handlers.findAccount(threadId, plugin, undefined).then(found => found === 'withheld', () => false)
-      if (mine.length === 0 && !kept) continue
       mail.push({ id: plugin, name: PLUGIN_NAMES[plugin], names: mine.map(account => account.name), line: kept
         ? `no account is available to this thread: the user has switched it off or kept it to other projects, and can change that in ${SETTINGS}.`
+        : mine.length === 0 ? `no account added. To use it, ask the user to add one in ${SETTINGS}.`
         : `${mine.length === 1 ? 'account' : 'accounts'} ${mine.map(account => `"${account.name}"`).join(', ')}. Read with ${PLUGIN_READ_TOOL}, plugin "${plugin}"${mine.length > 1 ? ', "account" as one of those names' : ''} and "search" or "message". The user is asked once before this thread first reads an account.` })
     }
     return {

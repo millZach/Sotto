@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
 import { Trans, useLingui } from '@lingui/react/macro'
-import { ChevronRight, Code, MonitorSmartphone } from 'lucide-react'
+import { ChevronRight, Code, Mail, MonitorSmartphone } from 'lucide-react'
 import {
-  PLUGIN_ACCOUNT_NAME_MAX, PLUGIN_SECRET_MAX, PLUGIN_USE_SHOWN, PLUGINS, type GitHubSignIn, type PluginAccount, type PluginAccountProblem, type PluginAccountResult,
+  isMailPlugin, PLUGIN_ACCOUNT_NAME_MAX, PLUGIN_MAIL_ADDRESS_MAX, PLUGIN_SECRET_MAX, PLUGIN_USE_SHOWN, pluginMailAddressSchema, PLUGINS, type AccountPluginId, type GitHubSignIn, type PluginAccount, type PluginAccountProblem, type PluginAccountResult,
   type PluginAccountCopyLeaving, type PluginAccountCopyState, type PluginCopiesView, type PluginHostSignIn, type PluginEntry, type PluginGroupId, type PluginProject, type PluginReadKind, type PluginsBridge, type ShownPluginUse,
 } from '../../../../shared/plugins'
 import { localeFormatter } from '../../agents/localeFormat'
@@ -17,6 +17,8 @@ import './plugins.css'
 const GH_SIGN_IN_COMMAND = 'gh auth login'
 /** Where Vercel makes tokens. Shown as words to type or copy: the page opens nothing on its own. */
 const VERCEL_TOKENS_PAGE = 'vercel.com/account/tokens'
+/** Where Google makes app passwords, from its own help page (support.google.com/accounts/answer/185833, November 13, 2026). Words to type or copy, as Vercel's is. */
+const GOOGLE_APP_PASSWORDS_PAGE = 'myaccount.google.com/apppasswords'
 
 /** This computer's projects as the page knows them: read, not read yet, or a read that failed. */
 type ProjectsView = readonly PluginProject[] | null | 'failed'
@@ -124,14 +126,20 @@ export function PluginsSettings({ bridge = window.sotto?.plugins }: { readonly b
   })
   // Only a computer whose Sotto runs plugin tools counts, once each has said; until then, any paired computer.
   const elsewhere = shownElsewhere !== null ? shownElsewhere.some(computer => computer.state !== 'no-plugins') : copies !== null && copies.computers.length > 0
-  const groupTitle: Record<PluginGroupId, string> = { code: t`Code and deploys` }
+  const groupTitle: Record<PluginGroupId, string> = { code: t`Code and deploys`, mail: t`Mail` }
   return <div className="plugins-settings">
-    <p className="tt-paragraph plugins-lead"><Trans>A thread’s agent uses a plugin through Sotto’s tools and never holds its secret. Reading never asks you. A change, such as posting a comment, asks you first in its thread, each time.</Trans></p>
+    <p className="tt-paragraph plugins-lead"><Trans>A thread’s agent uses a plugin through Sotto’s tools and never holds its secret. Reading never asks you, except that each thread asks once before it reads a mail account. A change, such as posting a comment, asks you first in its thread, each time.</Trans></p>
     <SettingsGroup title={groupTitle.code} icon={Code} rows={false}>
       <div className="plugins-list">
         {PLUGINS.filter(plugin => plugin.group === 'code').map(plugin => plugin.id === 'github'
           ? <GitHubRow key={plugin.id} plugin={plugin} signIn={signIn} uses={uses} elsewhere={elsewhere} elsewhereSignIns={shownElsewhere} onCheck={() => { check(); checkElsewhere(); readUses() }} />
-          : <VercelRow key={plugin.id} plugin={plugin} bridge={bridge} accounts={accounts} projects={projects} copies={copies} uses={uses} elsewhere={elsewhere} onAccounts={changedAccounts} onCopies={tookCopies} />)}
+          : <AccountsRow key={plugin.id} plugin={plugin} bridge={bridge} accounts={accounts} projects={projects} copies={copies} uses={uses} elsewhere={elsewhere} onAccounts={changedAccounts} onCopies={tookCopies} />)}
+      </div>
+    </SettingsGroup>
+    <SettingsGroup title={groupTitle.mail} icon={Mail} rows={false}>
+      <div className="plugins-list">
+        {PLUGINS.filter(plugin => plugin.group === 'mail').map(plugin =>
+          <AccountsRow key={plugin.id} plugin={plugin} bridge={bridge} accounts={accounts} projects={projects} copies={copies} uses={uses} elsewhere={elsewhere} onAccounts={changedAccounts} onCopies={tookCopies} />)}
       </div>
     </SettingsGroup>
     <OtherComputers bridge={bridge} copies={copies} onCopies={tookCopies} />
@@ -264,23 +272,106 @@ function GitHubRow({ plugin, signIn, uses, elsewhere, elsewhereSignIns, onCheck 
 }
 
 /** What went wrong with an account, in words that say whether anything was saved and what to do next. */
-function useProblemWords(): (problem: PluginAccountProblem, replacing: boolean) => string {
+/**
+ * What the page calls a plugin's accounts. Vercel's secret is a token it issues; a mail account's is an app password
+ * that signs in beside an address. Each plugin's sentences are written out whole, so each can be put into another
+ * language as a sentence.
+ */
+interface AccountWords {
+  /** What the plugin is for, under its row. */
+  readonly about: string
+  readonly add: string
+  readonly addAnother: string
+  readonly secretLabel: string
+  readonly secretDescription: string
+  readonly secretPlaceholder: string
+  readonly newSecretLabel: string
+  readonly newSecretDescription: string
+  readonly saveSecret: string
+  readonly account: (name: string) => string
+  /** Who the account is and when its secret was saved. */
+  readonly saved: (account: PluginAccount, day: string) => string
+  readonly replace: (name: string) => string
+  readonly remove: (name: string) => string
+  readonly removeAsk: (name: string) => ReactNode
+  /** Said of an account that is switched off. */
+  readonly off: string
+  readonly noKey: (computer: string) => string
+  readonly locked: string
+  readonly tooOld: (computer: string) => string
+  readonly problem: (problem: PluginAccountProblem, replacing: boolean) => string
+}
+
+function useAccountWords(plugin: AccountPluginId): AccountWords {
   const { t } = useLingui()
-  return (problem, replacing) => {
-    const kept = replacing ? t`The token already saved was kept.` : t`Nothing was saved.`
-    switch (problem) {
-      case 'refused': return t`Vercel did not accept this token. ${kept} Make a new token at ${VERCEL_TOKENS_PAGE} and paste it here.`
-      case 'unreachable': return t`Vercel could not be reached to check the token. ${kept} Check your connection, then try again.`
-      case 'busy': return t`Vercel is turning requests away for now, so the token could not be checked. ${kept} Wait a minute, then try again.`
-      case 'name-taken': return t`There is already a Vercel account with that name. Nothing was saved. Give this one another name.`
-      case 'limit': return t`Vercel already has as many accounts as Sotto keeps for one plugin. Nothing was saved. Remove one first.`
-      case 'gone': return t`That account is no longer here. Nothing was changed.`
-      default: return t`Sotto could not keep the token. ${kept} Check that this computer’s credential store is unlocked, then try again.`
+  if (isMailPlugin(plugin)) {
+    return {
+      about: t`Search and read mail with an app password. Each thread asks you once, in the thread, before it reads an account’s mail, and what it reads goes to that thread’s provider. A thread cannot send, move or delete mail, and a message it reads stays unread for you.`,
+      add: t`Add a Gmail account`, addAnother: t`Add another Gmail account`,
+      secretLabel: t`App password`,
+      secretDescription: t`Sixteen characters, made at ${GOOGLE_APP_PASSWORDS_PAGE}. It needs 2-Step Verification on the Google account. Sotto checks it with Gmail before saving it, and never shows it again.`,
+      secretPlaceholder: t`Paste the app password`,
+      newSecretLabel: t`New app password`,
+      newSecretDescription: t`Sotto checks it with Gmail first. The app password saved now stays in use until the new one is accepted.`,
+      saveSecret: t`Save app password`,
+      account: name => t`Gmail account ${name}`,
+      saved: (account, day) => { const address = account.address ?? ''; return t`${address}. App password saved ${day}.` },
+      replace: name => t`Replace the app password for ${name}`,
+      remove: name => t`Remove the Gmail account ${name}`,
+      removeAsk: name => <Trans>Remove <b>{name}</b>? Its app password is deleted from this computer, and threads lose the account at once. Nothing changes at Gmail.</Trans>,
+      off: t`Off. No thread can see or use this account until you turn it back on. Its app password stays saved.`,
+      noKey: computer => t`${computer} was started without a key file, so it cannot keep an app password. Nothing was kept there. On ${computer}, set SOTTO_HOST_KEY_FILE to a file holding a secret of your own, start its host again, and the copy is sent.`,
+      locked: t`This computer’s credential store is locked, so the app password could not be read to send. Unlock it, and Sotto tries again.`,
+      tooOld: computer => t`${computer}’s Sotto cannot keep a mail account’s copy. Update Sotto on ${computer}, and the copy is sent.`,
+      problem: (problem, replacing) => {
+        const kept = replacing ? t`The app password already saved was kept.` : t`Nothing was saved.`
+        switch (problem) {
+          case 'refused': return t`Gmail did not accept this address and app password. ${kept} Check the address, and make a new app password at ${GOOGLE_APP_PASSWORDS_PAGE}.`
+          case 'unreachable': return t`Gmail could not be reached to check the app password. ${kept} Check your connection, then try again.`
+          case 'busy': return t`Gmail is turning sign-ins away for now, so the app password could not be checked. ${kept} Wait a few minutes, then try again.`
+          case 'name-taken': return t`There is already a Gmail account with that name. Nothing was saved. Give this one another name.`
+          case 'limit': return t`Gmail already has as many accounts as Sotto keeps for one plugin. Nothing was saved. Remove one first.`
+          case 'gone': return t`That account is no longer here. Nothing was changed.`
+          default: return t`Sotto could not keep the app password. ${kept} Check that this computer’s credential store is unlocked, then try again.`
+        }
+      },
     }
+  }
+  return {
+    about: t`Deployments, build logs, projects and domains, read with a token you paste. Sotto keeps the token in its encrypted store and makes each read itself, so no agent ever sees it.`,
+    add: t`Add a Vercel account`, addAnother: t`Add another Vercel account`,
+    secretLabel: t`Token`,
+    secretDescription: t`Make one at ${VERCEL_TOKENS_PAGE}. Sotto checks it with Vercel before saving it, and never shows it again.`,
+    secretPlaceholder: t`Paste the token`,
+    newSecretLabel: t`New token`,
+    newSecretDescription: t`Sotto checks it with Vercel first. The token saved now stays in use until the new one is accepted.`,
+    saveSecret: t`Save token`,
+    account: name => t`Vercel account ${name}`,
+    saved: (account, day) => { const signedInAs = account.signedInAs; return signedInAs ? t`Signed in to Vercel as ${signedInAs}. Token saved ${day}.` : t`Token saved ${day}.` },
+    replace: name => t`Replace the token for ${name}`,
+    remove: name => t`Remove the Vercel account ${name}`,
+    removeAsk: name => <Trans>Remove <b>{name}</b>? Its token is deleted from this computer, and threads lose the account at once. Nothing changes at Vercel.</Trans>,
+    off: t`Off. No thread can see or use this account until you turn it back on. Its token stays saved.`,
+    noKey: computer => t`${computer} was started without a key file, so it cannot keep a token. Nothing was kept there. On ${computer}, set SOTTO_HOST_KEY_FILE to a file holding a secret of your own, start its host again, and the copy is sent.`,
+    locked: t`This computer’s credential store is locked, so the token could not be read to send. Unlock it, and Sotto tries again.`,
+    tooOld: computer => t`${computer}’s Sotto cannot keep account copies. Update Sotto on ${computer}, and the copy is sent.`,
+    problem: (problem, replacing) => {
+      const kept = replacing ? t`The token already saved was kept.` : t`Nothing was saved.`
+      switch (problem) {
+        case 'refused': return t`Vercel did not accept this token. ${kept} Make a new token at ${VERCEL_TOKENS_PAGE} and paste it here.`
+        case 'unreachable': return t`Vercel could not be reached to check the token. ${kept} Check your connection, then try again.`
+        case 'busy': return t`Vercel is turning requests away for now, so the token could not be checked. ${kept} Wait a minute, then try again.`
+        case 'name-taken': return t`There is already a Vercel account with that name. Nothing was saved. Give this one another name.`
+        case 'limit': return t`Vercel already has as many accounts as Sotto keeps for one plugin. Nothing was saved. Remove one first.`
+        case 'gone': return t`That account is no longer here. Nothing was changed.`
+        default: return t`Sotto could not keep the token. ${kept} Check that this computer’s credential store is unlocked, then try again.`
+      }
+    },
   }
 }
 
-function VercelRow({ plugin, bridge, accounts, projects, copies, uses, elsewhere, onAccounts, onCopies }: {
+/** The row of a plugin whose accounts the user adds: Vercel's, and a mail plugin's. Its accounts, each with its settings, and the way to add one. */
+function AccountsRow({ plugin, bridge, accounts, projects, copies, uses, elsewhere, onAccounts, onCopies }: {
   readonly plugin: PluginEntry; readonly bridge: PluginsBridge | undefined; readonly accounts: readonly PluginAccount[] | null; readonly projects: ProjectsView
   readonly copies: PluginCopiesView | null; readonly onCopies: CopiesChoice
   readonly uses: readonly ShownPluginUse[] | null; readonly onAccounts: (accounts: readonly PluginAccount[]) => void
@@ -288,7 +379,10 @@ function VercelRow({ plugin, bridge, accounts, projects, copies, uses, elsewhere
   readonly elsewhere: boolean
 }): ReactNode {
   const { t } = useLingui()
-  const mine = (accounts ?? []).filter(account => account.plugin === 'vercel')
+  // GitHub's row is its own: its account is gh's sign-in, and nothing is added here.
+  const id: AccountPluginId = plugin.id === 'gmail' ? 'gmail' : 'vercel'
+  const words = useAccountWords(id)
+  const mine = (accounts ?? []).filter(account => account.plugin === id)
   // An account switched off says so beside its name, so the folded row does not read as one threads can use.
   const names = mine.map(account => { const name = account.name; return account.on ? name : t`${name} (off)` }).join(', ')
   const count = mine.length
@@ -298,37 +392,42 @@ function VercelRow({ plugin, bridge, accounts, projects, copies, uses, elsewhere
   const closeAdd = (): void => { setAdding(false); requestAnimationFrame(() => addButton.current?.focus()) }
   // The row's dot is lit only while some account is one a thread could use.
   return <PluginRow plugin={plugin} state={accounts === null ? 'unknown' : mine.some(account => account.on) ? 'signed-in' : 'none'} summary={summary}>
-    <p className="tt-paragraph"><Trans>Deployments, build logs, projects and domains, read with a token you paste. Sotto keeps the token in its encrypted store and makes each read itself, so no agent ever sees it.</Trans></p>
+    <p className="tt-paragraph">{words.about}</p>
     {accounts === null ? <p className="tt-field__error tt-paragraph" role="alert"><Trans>The accounts could not be read. Nothing was changed. Reopen Settings and try again.</Trans></p> : null}
     {mine.map(account => <AccountCard key={account.id} account={account} bridge={bridge} projects={projects} copies={copies} elsewhere={elsewhere} onCopies={onCopies} onAccounts={onAccounts} onRemoved={() => { setAdding(false); requestAnimationFrame(() => addButton.current?.focus()) }}
       uses={uses === null ? null : uses.filter(use => use.accountId === account.id)} />)}
-    {adding ? <AddAccount bridge={bridge} onAccounts={onAccounts} onDone={closeAdd} />
+    {adding ? <AddAccount plugin={id} bridge={bridge} onAccounts={onAccounts} onDone={closeAdd} />
       : <div className="plugin-row__actions"><Button ref={addButton} variant="secondary" disabled={accounts === null || !bridge} onClick={() => setAdding(true)}>
-        {count === 0 ? <Trans>Add a Vercel account</Trans> : <Trans>Add another Vercel account</Trans>}</Button></div>}
+        {count === 0 ? words.add : words.addAnother}</Button></div>}
   </PluginRow>
 }
 
-/** The form that adds an account: a name and the token, checked with Vercel before anything is kept. Escape cancels it. */
-function AddAccount({ bridge, onAccounts, onDone }: { readonly bridge: PluginsBridge | undefined; readonly onAccounts: (accounts: readonly PluginAccount[]) => void; readonly onDone: () => void }): ReactNode {
+/**
+ * The form that adds an account: a name and the secret, and for a mail account the address the secret signs in.
+ * They are checked with the service before anything is kept. Escape cancels it.
+ */
+function AddAccount({ plugin, bridge, onAccounts, onDone }: { readonly plugin: AccountPluginId; readonly bridge: PluginsBridge | undefined; readonly onAccounts: (accounts: readonly PluginAccount[]) => void; readonly onDone: () => void }): ReactNode {
   const { t } = useLingui()
-  const words = useProblemWords()
+  const words = useAccountWords(plugin)
+  const mail = isMailPlugin(plugin)
   const [name, setName] = useState('')
+  const [address, setAddress] = useState('')
   const [token, setToken] = useState('')
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
   const nameInput = useRef<HTMLInputElement>(null)
   useEffect(() => { nameInput.current?.focus() }, [])
-  const ready = name.trim() !== '' && token.trim() !== '' && !busy && bridge !== undefined
+  const ready = name.trim() !== '' && token.trim() !== '' && (!mail || pluginMailAddressSchema.safeParse(address).success) && !busy && bridge !== undefined
   const submit = async (event: FormEvent): Promise<void> => {
     event.preventDefault()
     if (!ready) return
     setBusy(true); setProblem(null)
     let result: PluginAccountResult
-    try { result = await bridge.addAccount({ plugin: 'vercel', name: name.trim(), secret: token.trim() }) } catch { result = { ok: false, problem: 'store' } }
+    try { result = await bridge.addAccount({ plugin, name: name.trim(), secret: token.trim(), ...(mail ? { address: address.trim() } : {}) }) } catch { result = { ok: false, problem: 'store' } }
     setBusy(false)
     // The token is not kept in the page a moment longer than the request that carried it, whether it was kept or not.
     setToken('')
-    if (!result.ok) { setProblem(words(result.problem, false)); return }
+    if (!result.ok) { setProblem(words.problem(result.problem, false)); return }
     onAccounts(result.accounts)
     onDone()
   }
@@ -339,12 +438,15 @@ function AddAccount({ bridge, onAccounts, onDone }: { readonly bridge: PluginsBr
     if (busy) return
     setToken(''); onDone()
   }
-  return <form className="plugin-account plugin-account--form" aria-label={t`Add a Vercel account`} onSubmit={event => void submit(event)} onKeyDown={cancelOnEscape}>
+  return <form className="plugin-account plugin-account--form" aria-label={words.add} onSubmit={event => void submit(event)} onKeyDown={cancelOnEscape}>
     <Field label={t`Name`} description={t`What you and your threads’ agents call this account, such as Work or Personal.`}>
       <input ref={nameInput} className="tt-input" autoComplete="off" spellCheck={false} maxLength={PLUGIN_ACCOUNT_NAME_MAX} value={name} onChange={event => setName(event.target.value)} />
     </Field>
-    <Field label={t`Token`} description={t`Make one at ${VERCEL_TOKENS_PAGE}. Sotto checks it with Vercel before saving it, and never shows it again.`}>
-      <input className="tt-input" type="password" autoComplete="off" spellCheck={false} maxLength={PLUGIN_SECRET_MAX} value={token} placeholder={t`Paste the token`} onChange={event => setToken(event.target.value)} />
+    {mail ? <Field label={t`Gmail address`} description={t`The address the app password belongs to. Sotto shows it here and never tells it to an agent.`}>
+      <input className="tt-input" type="email" autoComplete="off" spellCheck={false} maxLength={PLUGIN_MAIL_ADDRESS_MAX} value={address} onChange={event => setAddress(event.target.value)} />
+    </Field> : null}
+    <Field label={words.secretLabel} description={words.secretDescription}>
+      <input className="tt-input" type="password" autoComplete="off" spellCheck={false} maxLength={PLUGIN_SECRET_MAX} value={token} placeholder={words.secretPlaceholder} onChange={event => setToken(event.target.value)} />
     </Field>
     {problem ? <p className="tt-field__error tt-paragraph" role="alert">{problem}</p> : null}
     <div className="plugin-row__actions">
@@ -354,7 +456,7 @@ function AddAccount({ bridge, onAccounts, onDone }: { readonly bridge: PluginsBr
   </form>
 }
 
-/** One account: its name, when its token was saved, Replace and Remove, and its recent use. */
+/** One account: its name, when its secret was saved, Replace and Remove, and its recent use. */
 function AccountCard({ account, bridge, projects, copies, uses, elsewhere, onAccounts, onCopies, onRemoved }: {
   readonly account: PluginAccount; readonly bridge: PluginsBridge | undefined; readonly projects: ProjectsView; readonly uses: readonly ShownPluginUse[] | null
   readonly copies: PluginCopiesView | null; readonly onCopies: CopiesChoice; readonly elsewhere: boolean
@@ -363,7 +465,7 @@ function AccountCard({ account, bridge, projects, copies, uses, elsewhere, onAcc
   readonly onRemoved: () => void
 }): ReactNode {
   const { t } = useLingui()
-  const words = useProblemWords()
+  const words = useAccountWords(account.plugin)
   const [mode, setMode] = useState<'rest' | 'replacing' | 'removing'>('rest')
   const [token, setToken] = useState('')
   const [busy, setBusy] = useState(false)
@@ -372,7 +474,6 @@ function AccountCard({ account, bridge, projects, copies, uses, elsewhere, onAcc
   const removeButton = useRef<HTMLButtonElement>(null)
   const name = account.name
   const saved = daySaved(new Date(account.savedAt))
-  const signedInAs = account.signedInAs
   const rest = (focus: 'replace' | 'remove'): void => {
     setMode('rest'); setToken(''); setProblem(null)
     requestAnimationFrame(() => (focus === 'replace' ? replaceButton : removeButton).current?.focus())
@@ -383,7 +484,7 @@ function AccountCard({ account, bridge, projects, copies, uses, elsewhere, onAcc
     let result: PluginAccountResult
     try { result = await request() } catch { result = { ok: false, problem: 'store' } }
     setBusy(false); setToken('')
-    if (!result.ok) { setProblem(replacing ? words(result.problem, true) : t`The account could not be removed. Nothing was changed. Try again.`); return }
+    if (!result.ok) { setProblem(replacing ? words.problem(result.problem, true) : t`The account could not be removed. Nothing was changed. Try again.`); return }
     onAccounts(result.accounts)
     if (replacing) rest('replace')
     else onRemoved()
@@ -394,29 +495,29 @@ function AccountCard({ account, bridge, projects, copies, uses, elsewhere, onAcc
     if (busy) return
     rest(mode === 'replacing' ? 'replace' : 'remove')
   }
-  return <section className="plugin-account" aria-label={t`Vercel account ${name}`} onKeyDown={cancelOnEscape}>
+  return <section className="plugin-account" aria-label={words.account(name)} onKeyDown={cancelOnEscape}>
     <div className="plugin-account__top">
       <div className="plugin-account__who">
         <b>{name}</b>
-        <span>{signedInAs ? <Trans>Signed in to Vercel as {signedInAs}. Token saved {saved}.</Trans> : <Trans>Token saved {saved}.</Trans>}</span>
+        <span>{words.saved(account, saved)}</span>
       </div>
       {mode === 'rest' ? <div className="plugin-row__actions">
-        <Button ref={replaceButton} variant="secondary" disabled={!bridge} aria-label={t`Replace the token for ${name}`} onClick={() => setMode('replacing')}><Trans>Replace</Trans></Button>
-        <Button ref={removeButton} variant="ghost" disabled={!bridge} aria-label={t`Remove the Vercel account ${name}`} onClick={() => setMode('removing')}><Trans>Remove</Trans></Button>
+        <Button ref={replaceButton} variant="secondary" disabled={!bridge} aria-label={words.replace(name)} onClick={() => setMode('replacing')}><Trans>Replace</Trans></Button>
+        <Button ref={removeButton} variant="ghost" disabled={!bridge} aria-label={words.remove(name)} onClick={() => setMode('removing')}><Trans>Remove</Trans></Button>
       </div> : null}
     </div>
-    {mode === 'replacing' ? <form className="plugin-account__change" aria-label={t`Replace the token for ${name}`}
+    {mode === 'replacing' ? <form className="plugin-account__change" aria-label={words.replace(name)}
       onSubmit={event => { event.preventDefault(); if (token.trim()) void run(() => bridge!.replaceSecret({ id: account.id, secret: token.trim() }), true) }}>
-      <Field label={t`New token`} description={t`Sotto checks it with Vercel first. The token saved now stays in use until the new one is accepted.`}>
-        <input className="tt-input" type="password" autoComplete="off" spellCheck={false} maxLength={PLUGIN_SECRET_MAX} value={token} placeholder={t`Paste the token`} autoFocus onChange={event => setToken(event.target.value)} />
+      <Field label={words.newSecretLabel} description={words.newSecretDescription}>
+        <input className="tt-input" type="password" autoComplete="off" spellCheck={false} maxLength={PLUGIN_SECRET_MAX} value={token} placeholder={words.secretPlaceholder} autoFocus onChange={event => setToken(event.target.value)} />
       </Field>
       <div className="plugin-row__actions">
-        <Button type="submit" variant="primary" aria-disabled={busy || token.trim() === ''}>{busy ? t`Checking…` : t`Save token`}</Button>
+        <Button type="submit" variant="primary" aria-disabled={busy || token.trim() === ''}>{busy ? t`Checking…` : words.saveSecret}</Button>
         <Button variant="ghost" aria-disabled={busy} onClick={() => { if (!busy) rest('replace') }}><Trans>Cancel</Trans></Button>
       </div>
     </form> : null}
-    {mode === 'removing' ? <div className="plugin-account__change" role="group" aria-label={t`Remove the Vercel account ${name}`}>
-      <p className="tt-paragraph"><Trans>Remove <b>{name}</b>? Its token is deleted from this computer, and threads lose the account at once. Nothing changes at Vercel.</Trans></p>
+    {mode === 'removing' ? <div className="plugin-account__change" role="group" aria-label={words.remove(name)}>
+      <p className="tt-paragraph">{words.removeAsk(name)}</p>
       <div className="plugin-row__actions">
         <Button variant="danger" autoFocus aria-disabled={busy} onClick={() => void run(() => bridge!.removeAccount({ id: account.id }), false)}><Trans>Remove account</Trans></Button>
         <Button variant="ghost" aria-disabled={busy} onClick={() => { if (!busy) rest('remove') }}><Trans>Keep it</Trans></Button>
@@ -438,6 +539,7 @@ function AccountCopies({ account, bridge, copies, onCopies }: {
   readonly account: PluginAccount; readonly bridge: PluginsBridge | undefined; readonly copies: PluginCopiesView | null; readonly onCopies: CopiesChoice
 }): ReactNode {
   const { t } = useLingui()
+  const accountWords = useAccountWords(account.plugin)
   const headingId = useId()
   const [failed, setFailed] = useState(false)
   // With no other computer paired there is one place it is kept, and nothing to choose.
@@ -464,12 +566,12 @@ function AccountCopies({ account, bridge, copies, onCopies }: {
       case 'off': return t`No copy. ${computer}’s threads cannot use this account.`
       case 'no-record': return t`Sotto cannot read its record of which computers keep a copy, so it is not sending one to ${computer}.`
       case 'here-only': return t`No copy. ${name} is kept to projects on this computer, so its secret stays here. Choose Every project to copy it.`
-      case 'too-old': return t`${computer}’s Sotto cannot keep account copies. Update Sotto on ${computer}, and the copy is sent.`
-      case 'no-key': return t`${computer} was started without a key file, so it cannot keep a token. Nothing was kept there. On ${computer}, set SOTTO_HOST_KEY_FILE to a file holding a secret of your own, start its host again, and the copy is sent.`
+      case 'too-old': return accountWords.tooOld(computer)
+      case 'no-key': return accountWords.noKey(computer)
       case 'full': return t`${computer} already holds as many accounts as a plugin takes. Nothing was kept there.`
       case 'name-taken': return t`Another of your computers already sent ${computer} an account called ${name}. Rename one of the two. Nothing was kept there.`
       case 'held': return t`Another of your computers already sent ${computer} this account. Nothing was changed there.`
-      case 'locked': return t`This computer’s credential store is locked, so the token could not be read to send. Unlock it, and Sotto tries again.`
+      case 'locked': return accountWords.locked
       case 'failed': return t`The copy could not be sent to ${computer}. Sotto tries again.`
     }
   }
@@ -498,6 +600,7 @@ function AccountThreads({ account, bridge, projects: read, onAccounts }: {
   readonly onAccounts: (accounts: readonly PluginAccount[]) => void
 }): ReactNode {
   const { t } = useLingui()
+  const words = useAccountWords(account.plugin)
   const [failed, setFailed] = useState(false)
   const name = account.name
   const kept = account.projects
@@ -531,7 +634,7 @@ function AccountThreads({ account, bridge, projects: read, onAccounts }: {
   if (projects === null) {
     return <div className="plugin-account__threads">
       <Toggle label={t`Threads may use ${name}`} checked={account.on} disabled={!bridge} onCheckedChange={turn}
-        {...(account.on ? {} : { description: t`Off. No thread can see or use this account until you turn it back on. Its token stays saved.` })} />
+        {...(account.on ? {} : { description: words.off })} />
       {account.on ? <p className="tt-paragraph plugin-row__note">{kept === null ? <Trans>Threads in every project may use it, and so may Watcher.</Trans> : <Trans>It is kept to chosen projects.</Trans>}</p> : null}
       {account.on && read === 'failed' ? <p className="tt-field__error tt-paragraph" role="alert"><Trans>Your projects could not be read, so the projects this account is kept to cannot be changed here. Nothing was changed. Reopen Settings and try again.</Trans></p> : null}
       {failed ? <p className="tt-field__error tt-paragraph" role="alert"><Trans>That could not be saved. What is shown is what is kept. Try again.</Trans></p> : null}
@@ -543,7 +646,7 @@ function AccountThreads({ account, bridge, projects: read, onAccounts }: {
   const titles = (kept ?? []).flatMap(id => { const project = projects.find(entry => entry.id === id); return project ? [project.title] : [] }).join(', ')
   return <div className="plugin-account__threads">
     <Toggle label={t`Threads may use ${name}`} checked={account.on} disabled={!bridge} onCheckedChange={turn}
-      {...(account.on ? {} : { description: t`Off. No thread can see or use this account until you turn it back on. Its token stays saved.` })} />
+      {...(account.on ? {} : { description: words.off })} />
     {account.on ? <>
       <div className="plugin-account__projects" role="group" aria-label={t`Projects whose threads may use ${name}`}>
         <button type="button" className="plugin-chip tt-focusable" aria-pressed={kept === null} disabled={!bridge} onClick={() => { if (standing().projects !== null) keepTo(null) }}><Trans>Every project</Trans></button>
@@ -583,8 +686,10 @@ function RecentUse({ name, uses, elsewhere }: {
     comment: t`Asked to post a comment`, 'deployment-cancel': t`Asked to cancel a deployment’s build`,
     'issue-open': t`Asked to open an issue`, 'issue-close': t`Asked to close an issue`, 'issue-reopen': t`Asked to reopen an issue`,
     'deployment-promote': t`Asked to promote a deployment to production`, 'deployment-rollback': t`Asked to roll production back`,
+    'mail-search': t`Asked to search mail`, 'mail-message': t`Asked to read a message`,
   }
-  const changed = (use: ShownPluginUse): boolean => use.tool !== 'plugin_read'
+  // A change asks each time, and so does a thread's first read of a mail account: both can end with the user's no.
+  const changed = (use: ShownPluginUse): boolean => use.tool !== 'plugin_read' || use.outcome === 'denied' || use.outcome === 'lapsed'
   return <section className="plugin-use" aria-labelledby={headingId}>
     <h4 id={headingId}><Trans>Recent use</Trans></h4>
     {shown.length === 0 ? <p className="tt-paragraph plugin-row__note"><Trans>No thread has used {name} yet.</Trans></p> : <ul>

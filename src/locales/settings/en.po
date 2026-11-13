@@ -81,6 +81,10 @@ msgstr "{added} is added and connected over your tailnet. Its projects and threa
 msgid "{added} is added and connected. Its projects and threads show in the Threads sidebar with a {added} badge."
 msgstr "{added} is added and connected. Its projects and threads show in the Threads sidebar with a {added} badge."
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "{address}. App password saved {day}."
+msgstr "{address}. App password saved {day}."
+
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "{awayCount, plural, one {{providers} is not connected, so {movedCount, plural, one {# role starts new work on its next default} other {# roles start new work on their next default}} until it connects. Nothing you chose has changed.} other {{providers} are not connected, so {movedCount, plural, one {# role starts new work on its next default} other {# roles start new work on their next default}} until they connect. Nothing you chose has changed.}}"
 msgstr "{awayCount, plural, one {{providers} is not connected, so {movedCount, plural, one {# role starts new work on its next default} other {# roles start new work on their next default}} until it connects. Nothing you chose has changed.} other {{providers} are not connected, so {movedCount, plural, one {# role starts new work on its next default} other {# roles start new work on their next default}} until they connect. Nothing you chose has changed.}}"
@@ -137,6 +141,14 @@ msgstr "{computer} is not connected. Sotto sends the copy, or checks the one the
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "{computer} was started without a key file, so it cannot keep a token. Nothing was kept there. On {computer}, set SOTTO_HOST_KEY_FILE to a file holding a secret of your own, start its host again, and the copy is sent."
 msgstr "{computer} was started without a key file, so it cannot keep a token. Nothing was kept there. On {computer}, set SOTTO_HOST_KEY_FILE to a file holding a secret of your own, start its host again, and the copy is sent."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "{computer} was started without a key file, so it cannot keep an app password. Nothing was kept there. On {computer}, set SOTTO_HOST_KEY_FILE to a file holding a secret of your own, start its host again, and the copy is sent."
+msgstr "{computer} was started without a key file, so it cannot keep an app password. Nothing was kept there. On {computer}, set SOTTO_HOST_KEY_FILE to a file holding a secret of your own, start its host again, and the copy is sent."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "{computer}’s Sotto cannot keep a mail account’s copy. Update Sotto on {computer}, and the copy is sent."
+msgstr "{computer}’s Sotto cannot keep a mail account’s copy. Update Sotto on {computer}, and the copy is sent."
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "{computer}’s Sotto cannot keep account copies now, so it cannot say whether it holds one from before. Update Sotto on {computer}, and a copy it holds is deleted."
@@ -997,8 +1009,8 @@ msgid "A thread working when Sotto closes, for an update, a quit, a crash or a r
 msgstr "A thread working when Sotto closes, for an update, a quit, a crash or a restart, carries on when Sotto opens again, with a short note from Sotto in the thread."
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
-msgid "A thread’s agent uses a plugin through Sotto’s tools and never holds its secret. Reading never asks you. A change, such as posting a comment, asks you first in its thread, each time."
-msgstr "A thread’s agent uses a plugin through Sotto’s tools and never holds its secret. Reading never asks you. A change, such as posting a comment, asks you first in its thread, each time."
+msgid "A thread’s agent uses a plugin through Sotto’s tools and never holds its secret. Reading never asks you, except that each thread asks once before it reads a mail account. A change, such as posting a comment, asks you first in its thread, each time."
+msgstr "A thread’s agent uses a plugin through Sotto’s tools and never holds its secret. Reading never asks you, except that each thread asks once before it reads a mail account. A change, such as posting a comment, asks you first in its thread, each time."
 
 #. A systemd unit, the file that starts a service.
 #: src/renderer/src/features/settings/HostBootStart.tsx
@@ -1046,6 +1058,10 @@ msgstr "Action"
 msgid "Actual size"
 msgstr "Actual size"
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Add a Gmail account"
+msgstr "Add a Gmail account"
+
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
 msgid "Add a hold shortcut"
 msgstr "Add a hold shortcut"
@@ -1077,6 +1093,10 @@ msgstr "Add a Vercel account"
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Add account"
 msgstr "Add account"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Add another Gmail account"
+msgstr "Add another Gmail account"
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Add another Vercel account"
@@ -1307,6 +1327,10 @@ msgstr "Anything the agent installed on {name} stays there, and the thread {thre
 msgid "APIs and your own model servers"
 msgstr "APIs and your own model servers"
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "App password"
+msgstr "App password"
+
 #. A Settings page, named in its rail and its heading. Other messages name it as "Settings > Appearance".
 #: src/renderer/src/features/settings/AppearanceSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
@@ -1392,12 +1416,20 @@ msgid "Asked to promote a deployment to production"
 msgstr "Asked to promote a deployment to production"
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Asked to read a message"
+msgstr "Asked to read a message"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Asked to reopen an issue"
 msgstr "Asked to reopen an issue"
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Asked to roll production back"
 msgstr "Asked to roll production back"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Asked to search mail"
+msgstr "Asked to search mail"
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Asking gh who is signed in…"
@@ -3084,6 +3116,30 @@ msgstr "Global — the one set that works outside Sotto."
 msgid "Global — works outside Sotto, as the popup’s does."
 msgstr "Global — works outside Sotto, as the popup’s does."
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Gmail account {name}"
+msgstr "Gmail account {name}"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Gmail address"
+msgstr "Gmail address"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Gmail already has as many accounts as Sotto keeps for one plugin. Nothing was saved. Remove one first."
+msgstr "Gmail already has as many accounts as Sotto keeps for one plugin. Nothing was saved. Remove one first."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Gmail could not be reached to check the app password. {kept} Check your connection, then try again."
+msgstr "Gmail could not be reached to check the app password. {kept} Check your connection, then try again."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Gmail did not accept this address and app password. {kept} Check the address, and make a new app password at {GOOGLE_APP_PASSWORDS_PAGE}."
+msgstr "Gmail did not accept this address and app password. {kept} Check the address, and make a new app password at {GOOGLE_APP_PASSWORDS_PAGE}."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Gmail is turning sign-ins away for now, so the app password could not be checked. {kept} Wait a few minutes, then try again."
+msgstr "Gmail is turning sign-ins away for now, so the app password could not be checked. {kept} Wait a few minutes, then try again."
+
 #: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Group threads in the sidebar"
@@ -3740,6 +3796,10 @@ msgstr "macOS did not show it. Allow Sotto in System Settings → Notifications,
 msgid "macOS’s own Settings chord, from the app menu."
 msgstr "macOS’s own Settings chord, from the app menu."
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Mail"
+msgstr "Mail"
+
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
 #: src/renderer/src/features/settings/PhonesSettings.tsx
 msgid "Make a new code"
@@ -3990,6 +4050,10 @@ msgstr "Needs you"
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Never"
 msgstr "Never"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "New app password"
+msgstr "New app password"
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "New thread"
@@ -4377,6 +4441,10 @@ msgid "Off, Sotto doesn’t load the popup, take its shortcut or offer it in the
 msgstr "Off, Sotto doesn’t load the popup, take its shortcut or offer it in the tray."
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Off. No thread can see or use this account until you turn it back on. Its app password stays saved."
+msgstr "Off. No thread can see or use this account until you turn it back on. Its app password stays saved."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Off. No thread can see or use this account until you turn it back on. Its token stays saved."
 msgstr "Off. No thread can see or use this account until you turn it back on. Its token stays saved."
 
@@ -4754,6 +4822,10 @@ msgstr "Paste delay"
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Paste delay saved."
 msgstr "Paste delay saved."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Paste the app password"
+msgstr "Paste the app password"
 
 #: src/renderer/src/features/settings/HostProviderSignIn.tsx
 msgid "Paste the code"
@@ -5260,6 +5332,10 @@ msgid "Remove {removingName}?"
 msgstr "Remove {removingName}?"
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Remove <0>{name}</0>? Its app password is deleted from this computer, and threads lose the account at once. Nothing changes at Gmail."
+msgstr "Remove <0>{name}</0>? Its app password is deleted from this computer, and threads lose the account at once. Nothing changes at Gmail."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Remove <0>{name}</0>? Its token is deleted from this computer, and threads lose the account at once. Nothing changes at Vercel."
 msgstr "Remove <0>{name}</0>? Its token is deleted from this computer, and threads lose the account at once. Nothing changes at Vercel."
 
@@ -5316,6 +5392,10 @@ msgid "Remove shortcut, {words}"
 msgstr "Remove shortcut, {words}"
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Remove the Gmail account {name}"
+msgstr "Remove the Gmail account {name}"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Remove the Vercel account {name}"
 msgstr "Remove the Vercel account {name}"
 
@@ -5370,6 +5450,10 @@ msgstr "Replace"
 #: src/renderer/src/features/settings/CloudIphoneSettings.tsx
 msgid "Replace key"
 msgstr "Replace key"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Replace the app password for {name}"
+msgstr "Replace the app password for {name}"
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Replace the token for {name}"
@@ -5583,6 +5667,10 @@ msgstr "Same as this computer ({computerLanguage})"
 msgid "saturation {saturation}, brightness {brightness}"
 msgstr "saturation {saturation}, brightness {brightness}"
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Save app password"
+msgstr "Save app password"
+
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Save changes"
 msgstr "Save changes"
@@ -5622,6 +5710,10 @@ msgstr "Saving…"
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Screenshots, pictures it looks at and picture and video files it writes show in the thread on their own. Off, you see only what you ask it to show you and images you ask it to make."
 msgstr "Screenshots, pictures it looks at and picture and video files it writes show in the thread on their own. Off, you see only what you ask it to show you and images you ask it to make."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Search and read mail with an app password. Each thread asks you once, in the thread, before it reads an account’s mail, and what it reads goes to that thread’s provider. A thread cannot send, move or delete mail, and a message it reads stays unread for you."
+msgstr "Search and read mail with an app password. Each thread asks you once, in the thread, before it reads an account’s mail, and what it reads goes to that thread’s provider. A thread cannot send, move or delete mail, and a message it reads stays unread for you."
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Search community themes"
@@ -6012,8 +6104,8 @@ msgid "Signed in as <0>{login}</0> through gh on this computer."
 msgstr "Signed in as <0>{login}</0> through gh on this computer."
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
-msgid "Signed in to Vercel as {signedInAs}. Token saved {saved}."
-msgstr "Signed in to Vercel as {signedInAs}. Token saved {saved}."
+msgid "Signed in to Vercel as {signedInAs}. Token saved {day}."
+msgstr "Signed in to Vercel as {signedInAs}. Token saved {day}."
 
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
 msgid "Signed in. {name} is <0>{dnsName}</0> on your tailnet."
@@ -6027,6 +6119,10 @@ msgstr "Signed in. This computer is <0>{machine}</0> on your tailnet."
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Signing in…"
 msgstr "Signing in…"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sixteen characters, made at {GOOGLE_APP_PASSWORDS_PAGE}. It needs 2-Step Verification on the Google account. Sotto checks it with Gmail before saving it, and never shows it again."
+msgstr "Sixteen characters, made at {GOOGLE_APP_PASSWORDS_PAGE}. It needs 2-Step Verification on the Google account. Sotto checks it with Gmail before saving it, and never shows it again."
 
 #: src/renderer/src/features/settings/NightFallsSettings.tsx
 msgid "Slower to watch the sweep, faster to get there sooner. 1x takes under a second."
@@ -6098,6 +6194,10 @@ msgid "Sotto cannot read its record of which computers keep a copy, so it sends 
 msgstr "Sotto cannot read its record of which computers keep a copy, so it sends no copy and no choice can be changed. It still takes back the copy of an account you remove or keep to chosen projects. If a newer Sotto wrote the record, update Sotto on this computer."
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sotto checks it with Gmail first. The app password saved now stays in use until the new one is accepted."
+msgstr "Sotto checks it with Gmail first. The app password saved now stays in use until the new one is accepted."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Sotto checks it with Vercel first. The token saved now stays in use until the new one is accepted."
 msgstr "Sotto checks it with Vercel first. The token saved now stays in use until the new one is accepted."
 
@@ -6116,6 +6216,10 @@ msgstr "Sotto could not confirm the clear. Threads still listed under Settled we
 #: src/renderer/src/features/settings/hostClientUpdateWords.ts
 msgid "Sotto could not find mise on {host}, so it will not run the update itself."
 msgstr "Sotto could not find mise on {host}, so it will not run the update itself."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sotto could not keep the app password. {kept} Check that this computer’s credential store is unlocked, then try again."
+msgstr "Sotto could not keep the app password. {kept} Check that this computer’s credential store is unlocked, then try again."
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Sotto could not keep the token. {kept} Check that this computer’s credential store is unlocked, then try again."
@@ -6909,6 +7013,10 @@ msgstr "The accounts could not be read. Nothing was changed. Reopen Settings and
 msgid "The address could not be copied. Select it and copy it instead."
 msgstr "The address could not be copied. Select it and copy it instead."
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "The address the app password belongs to. Sotto shows it here and never tells it to an agent."
+msgstr "The address the app password belongs to. Sotto shows it here and never tells it to an agent."
+
 #: src/renderer/src/features/settings/HostProviders.tsx
 msgid "The agent could not be stopped. Try again."
 msgstr "The agent could not be stopped. Try again."
@@ -6920,6 +7028,10 @@ msgstr "The agent could not start. Nothing was started. Try again."
 #: src/renderer/src/features/settings/HostSetupView.tsx
 msgid "The agent wants to run a command on {name}. Answer it in the thread to carry on."
 msgstr "The agent wants to run a command on {name}. Answer it in the thread to carry on."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "The app password already saved was kept."
+msgstr "The app password already saved was kept."
 
 #: src/renderer/src/features/settings/HostDialog.tsx
 #: src/renderer/src/features/settings/HostQuestionDialog.tsx
@@ -7357,6 +7469,10 @@ msgid "Themes"
 msgstr "Themes"
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "There is already a Gmail account with that name. Nothing was saved. Give this one another name."
+msgstr "There is already a Gmail account with that name. Nothing was saved. Give this one another name."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "There is already a Vercel account with that name. Nothing was saved. Give this one another name."
 msgstr "There is already a Vercel account with that name. Nothing was saved. Give this one another name."
 
@@ -7392,6 +7508,10 @@ msgstr "This computer, other computers, and your iPhone"
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "This computer's client ID on {editingName}: <0>{clientId}</0>"
 msgstr "This computer's client ID on {editingName}: <0>{clientId}</0>"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "This computer’s credential store is locked, so the app password could not be read to send. Unlock it, and Sotto tries again."
+msgstr "This computer’s credential store is locked, so the app password could not be read to send. Unlock it, and Sotto tries again."
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "This computer’s credential store is locked, so the token could not be read to send. Unlock it, and Sotto tries again."
@@ -7539,8 +7659,8 @@ msgid "Token"
 msgstr "Token"
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
-msgid "Token saved {saved}."
-msgstr "Token saved {saved}."
+msgid "Token saved {day}."
+msgstr "Token saved {day}."
 
 #: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
 msgid "Tokens"

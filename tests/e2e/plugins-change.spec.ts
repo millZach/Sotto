@@ -110,7 +110,7 @@ test('A comment an agent asks to post on GitHub waits for the user’s answer in
       await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Plugins', exact: true }).click()
       const panel = page.getByRole('tabpanel', { name: 'Plugins', exact: true })
       await panel.getByRole('button', { name: /^GitHub/u }).click()
-      await expect(panel.getByText('Reading never asks you. A change, such as posting a comment, asks you first in its thread, each time.', { exact: false })).toBeVisible()
+      await expect(panel.getByText('Reading never asks you, except that each thread asks once before it reads a mail account. A change, such as posting a comment, asks you first in its thread, each time.', { exact: false })).toBeVisible()
       const used = panel.getByRole('region', { name: 'Recent use' }).getByRole('listitem')
       await expect(used).toHaveCount(2)
       await expect(used.nth(0)).toContainText('Posted a comment in “Check the checkout page” You allowed it.')
