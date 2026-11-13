@@ -164,6 +164,16 @@ describe('Continue on another machine… (#1178 part 2, Owl Work across machines
     await act(async () => { await Promise.resolve() })
     expect(paneMenuItems(openPaneMenu(view.head()))).not.toContain('Continue on another machine…')
   })
+  it('is left out for a thread settled with its project’s folder, though the thread itself reads open', async () => {
+    offer('connected')
+    const state = threadsStateFixture()
+    const thread = state.host.threads.find(item => item.id === THREAD)!
+    expect(thread.workspaceSettledAt ?? null).toBeNull()
+    state.host.projects.find(project => project.id === thread.projectId)!.workspaceSettledAt = '2026-10-05T20:24:23.641Z'
+    const view = mount({ state })
+    await act(async () => { await Promise.resolve() })
+    expect(paneMenuItems(openPaneMenu(view.head()))).not.toContain('Continue on another machine…')
+  })
 })
 
 describe('the manual composer', () => {
