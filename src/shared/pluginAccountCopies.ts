@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { ACCOUNT_PLUGIN_IDS, PLUGIN_ACCOUNT_PROJECTS_MAX, PLUGIN_ACCOUNTS_MAX, PLUGIN_SECRET_MAX, pluginAccountNameSchema, pluginAccountSchema } from './plugins'
+import { ACCOUNT_PLUGIN_IDS, PLUGIN_ACCOUNT_NAME_MAX, PLUGIN_ACCOUNT_PROJECTS_MAX, PLUGIN_ACCOUNTS_MAX, PLUGIN_SECRET_MAX, pluginAccountNameSchema, pluginAccountSchema } from './plugins'
 
 /**
  * Account copies (CONTEXT.md, ADR-0205, amending ADR-0025): a plugin account's secret and settings, sent by the
@@ -50,8 +50,18 @@ export type PluginAccountCopyReceipt = z.infer<typeof pluginAccountCopyReceiptSc
 export const pluginAccountCopyRemovedSchema = z.object({ removed: z.boolean() }).strict()
 export type PluginAccountCopyRemoved = z.infer<typeof pluginAccountCopyRemovedSchema>
 
-/** A copy as a host lists it: which account, and the day its secret was saved on the desktop. Never the secret. */
-export const heldPluginAccountCopySchema = z.object({ id: z.uuid(), plugin: z.enum(ACCOUNT_PLUGIN_IDS), savedAt: z.iso.datetime() }).strict()
+/**
+ * A copy as a host lists it to the desktop that sent it: the account as the host holds it now, so the desktop can
+ * tell a copy that arrived from one still waiting, a changed switch or project among them. Never the secret. The
+ * settings are optional and unknown fields are dropped, so a desktop and a host a version apart still read each
+ * other: a host from before the settings were listed says only which account and the day its secret was saved,
+ * and the desktop then sends the copy again rather than guess.
+ */
+export const heldPluginAccountCopySchema = z.object({
+  id: z.uuid(), plugin: z.enum(ACCOUNT_PLUGIN_IDS), savedAt: z.iso.datetime(),
+  name: z.string().max(PLUGIN_ACCOUNT_NAME_MAX).optional(), signedInAs: z.string().max(200).nullable().optional(),
+  on: z.boolean().optional(), projects: z.array(z.string().min(1).max(512)).max(PLUGIN_ACCOUNT_PROJECTS_MAX).nullable().optional(),
+})
 export type HeldPluginAccountCopy = z.infer<typeof heldPluginAccountCopySchema>
 export const heldPluginAccountCopiesSchema = z.array(heldPluginAccountCopySchema).max(ACCOUNT_PLUGIN_IDS.length * PLUGIN_ACCOUNTS_MAX)
 

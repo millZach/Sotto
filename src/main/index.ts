@@ -72,6 +72,7 @@ import { PluginToolServer } from './plugins/pluginTools'
 import { PluginAccounts, PluginSecretLocked } from './plugins/accounts'
 import { PluginChangeRequests } from './plugins/pendingChanges'
 import { pluginFolderOfThread, pluginProjects } from './plugins/projectFolders'
+import { PluginAccountCopySync } from './plugins/copySync'
 import { isThreadClosed } from '../shared/threadActivity'
 import { wordPluginChange } from './plugins/changeWords'
 import { commentOnGitHub, describeGitHubIssue, openGitHubIssue, setGitHubIssueState } from './plugins/github/changes'
@@ -79,7 +80,7 @@ import { cancelVercelDeployment, describeVercelDeployment, moveVercelProduction 
 import { combinedSottoRequests } from './agents/sottoRequests'
 import { checkVercelToken, readVercel, type VercelFetch } from './plugins/vercel/read'
 import { PluginUseRecord } from './plugins/useRecord'
-import { PLUGIN_USE_THREAD_TITLE_MAX, pluginAccountAdmits } from '../shared/plugins'
+import { PLUGIN_USE_THREAD_TITLE_MAX, PLUGINS_COPIES_CHANGED, pluginAccountAdmits } from '../shared/plugins'
 import { resetGhLookup } from './agents/git/ghCommand'
 import { GitUnavailableError, runGitStatusCommand, runWithGhStandIn, type RunGitCommand } from './agents/git/gitStatus'
 import { registerTeamsIpc } from './teams/ipc'
@@ -412,6 +413,9 @@ type NativeDiagnostic =
   | RecoveryNoticeLogEvent
   | 'omarchy-theme-missing'
   | 'host-browser-setting-failed'
+  | 'plugin-account-copies-reconciled'
+  | 'plugin-account-copies-failed'
+  | 'plugin-account-copy-choices-not-saved'
   | 'popup-load-failed'
   | 'popup-renderer-gone'
   | 'omarchy-theme-invalid'
@@ -1380,6 +1384,20 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const vercelOptions = { ...(vercelBase ? { base: vercelBase } : {}), signal: pluginsStop.signal }
   // Plugin accounts: a name, a plugin and a secret in the credential store, checked with its service before it is kept.
   const pluginAccounts = pluginsEnabled ? new PluginAccounts(userDataPath, { credentials, check: (_plugin, secret) => checkVercelToken(vercelFetch, secret, vercelOptions) }) : undefined
+  // Account copies (ADR-0205, amending ADR-0025): each plugin account the user keeps on a paired host is sent to it on
+  // every connection and whenever it changes here, and a copy no longer wanted is taken back. Owl `plugins` only.
+  const pluginCopySync = pluginsEnabled && pluginAccounts ? new PluginAccountCopySync(userDataPath, {
+    accounts: pluginAccounts,
+    computers: () => desktopHosts.get().hosts.map(host => ({ id: host.id, name: host.name, hostId: host.hostId, connected: host.phase === 'connected' })),
+    connections: () => hostRouter.remoteConnections(),
+    changed: () => { windows.sendToMain(PLUGINS_COPIES_CHANGED, null) },
+    log: event => logOperational(event),
+  }) : undefined
+  const stopFollowingConnections = pluginCopySync ? hostRouter.subscribeConnected(connection => { pluginCopySync.connected(connection) }) : undefined
+  // A host connecting, leaving or being saved changes what the page shows of its copies, and may be the first time a
+  // host just added can be sent them.
+  const stopFollowingHosts = pluginCopySync ? desktopHosts.subscribe(() => { pluginCopySync.computersChanged() }) : undefined
+  const stopFollowingCopies = (): void => { stopFollowingConnections?.(); stopFollowingHosts?.() }
   // Plugin changes waiting on the user: each is one of Sotto's own requests in its thread, answered there (ADR-0205).
   // A thread that is settled, archived or gone takes its waiting changes with it, read as the coordinator holds it.
   const pluginChanges = pluginsEnabled ? new PluginChangeRequests({ open: threadId => {
@@ -2728,9 +2746,13 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       const cleanupPlugins = pluginsEnabled ? registerPluginsIpc(ipcMain, {
         gitHubSignIn: pluginsGitHubSignIn,
         accounts: async () => await pluginAccounts?.list() ?? [],
-        addAccount: async request => await pluginAccounts?.add(request) ?? { ok: false, problem: 'store' },
-        replaceSecret: async request => await pluginAccounts?.replace(request) ?? { ok: false, problem: 'store' },
-        updateAccount: async request => await pluginAccounts?.update(request) ?? { ok: false, problem: 'store' },
+        // Each change to an account here is carried to the hosts that keep a copy of it.
+        addAccount: async request => { const result = await pluginAccounts?.add(request) ?? { ok: false as const, problem: 'store' as const }; if (result.ok) pluginCopySync?.accountsChanged(); return result },
+        replaceSecret: async request => { const result = await pluginAccounts?.replace(request) ?? { ok: false as const, problem: 'store' as const }; if (result.ok) pluginCopySync?.accountsChanged(); return result },
+        updateAccount: async request => { const result = await pluginAccounts?.update(request) ?? { ok: false as const, problem: 'store' as const }; if (result.ok) pluginCopySync?.accountsChanged(); return result },
+        copies: async () => await pluginCopySync?.view() ?? { copyNew: true, readable: true, computers: [], copies: [] },
+        setCopy: async request => { await pluginCopySync?.setCopy(request.accountId, request.computerId, request.on); return await pluginCopySync?.view() ?? { copyNew: true, readable: true, computers: [], copies: [] } },
+        setCopyNew: async copyNew => { await pluginCopySync?.setCopyNew(copyNew); return await pluginCopySync?.view() ?? { copyNew: true, readable: true, computers: [], copies: [] } },
         // This computer's projects, by name, for choosing which ones an account is kept to. No folder goes to the window.
         // Each folder once, whichever providers have a project in it. With no projects to read, the page is told so
         // rather than handed none: an empty list would make every project an account is kept to look gone.
@@ -2742,6 +2764,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         removeAccount: async request => {
           const result = await pluginAccounts?.remove(request) ?? { ok: false as const, problem: 'store' as const }
           if (result.ok) void pluginUse?.forgetAccount(request.id).catch(() => undefined)
+          // And every host that keeps a copy is told to let it go, now or when it next connects.
+          if (result.ok) pluginCopySync?.accountsChanged()
           return result
         },
         recentUse: async () => {
@@ -2906,6 +2930,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         pluginsStop.abort()
         pluginChanges?.close()
         cleanupPlugins?.()
+        stopFollowingCopies()
+        pluginCopySync?.close()
         checkpointIntegration.dispose()
         cleanupRequestDrafts()
         cleanupFiles()

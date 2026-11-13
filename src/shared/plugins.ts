@@ -57,6 +57,14 @@ export interface PluginsBridge {
   updateAccount(request: PluginAccountUpdate): Promise<PluginAccountResult>
   /** This computer's projects, for choosing which ones an account is kept to. */
   projects(): Promise<PluginProject[]>
+  /** The user's other computers and where each account's copy stands on each. */
+  copies(): Promise<PluginCopiesView>
+  /** Keeps a copy of an account on one of the user's other computers, or stops keeping one. */
+  setCopy(request: PluginCopySet): Promise<PluginCopiesView>
+  /** Whether a new account, or a newly paired computer, starts with a copy. */
+  setCopyNew(copyNew: boolean): Promise<PluginCopiesView>
+  /** Told when a copy arrived, a computer connected or left, or a choice changed. Returns the way to stop. */
+  onCopiesChanged(listener: () => void): () => void
 }
 
 /** The one name every client addresses the plugin tools by (ADR-0205). */
@@ -128,6 +136,10 @@ export const PLUGINS_ACCOUNT_REPLACE = 'sotto:plugins:account-replace'
 export const PLUGINS_ACCOUNT_REMOVE = 'sotto:plugins:account-remove'
 export const PLUGINS_ACCOUNT_UPDATE = 'sotto:plugins:account-update'
 export const PLUGINS_PROJECTS = 'sotto:plugins:projects'
+export const PLUGINS_COPIES = 'sotto:plugins:copies'
+export const PLUGINS_COPY_SET = 'sotto:plugins:copy-set'
+export const PLUGINS_COPY_NEW_SET = 'sotto:plugins:copy-new-set'
+export const PLUGINS_COPIES_CHANGED = 'sotto:plugins:copies-changed'
 
 /** The plugins an account is added to by pasting a secret. GitHub is not one: its account is gh's own sign-in. */
 export const ACCOUNT_PLUGIN_IDS = ['vercel'] as const
@@ -190,6 +202,44 @@ export type PluginAccountUpdate = z.infer<typeof pluginAccountUpdateSchema>
 export const pluginProjectSchema = z.object({ id: projectIdSchema, title: z.string().max(512), settled: z.boolean() }).strict()
 export type PluginProject = z.infer<typeof pluginProjectSchema>
 export const pluginProjectsSchema = z.array(pluginProjectSchema).max(10_000)
+
+/**
+ * Where an account's copy on another computer stands (ADR-0205, amending ADR-0025). `kept`: that computer holds the
+ * account as it is here. `waiting`: a copy is wanted and the computer has not answered for it, because it is not
+ * connected or is being asked now. `off`: the user keeps no copy there. `too-old`: its Sotto cannot keep copies.
+ * `no-key`: it could not keep the secret, as a host started without a key file cannot. `full`: it holds as many
+ * accounts of the plugin as a plugin takes. `name-taken`, `held`: another of the user's computers sent it an account
+ * of that name, or that very account. `locked`: this computer's credential store would not hand over the secret.
+ * `failed`: the copy could not be sent, and is tried again. `no-record`: this computer cannot read its own record of
+ * which computers keep a copy, so none is sent and this one is not taken back.
+ */
+export const PLUGIN_ACCOUNT_COPY_STATES = ['kept', 'waiting', 'off', 'here-only', 'no-record', 'too-old', 'no-key', 'full', 'name-taken', 'held', 'locked', 'failed'] as const
+export type PluginAccountCopyState = typeof PLUGIN_ACCOUNT_COPY_STATES[number]
+/**
+ * Whether a computer may still hold a copy that is not wanted there, `off` or `here-only`. Only the computer can say
+ * it holds none. `no`: it said so, or no copy is leaving. `now`: it is known to hold one and is being told to let it
+ * go. `asking`: it is connected and has not yet said what it holds. `away`: it is not connected, and is told when it
+ * next is. `cannot`: its Sotto does not keep account copies now, so it can neither say what it holds nor delete one.
+ */
+export const PLUGIN_ACCOUNT_COPY_LEAVING = ['no', 'now', 'asking', 'away', 'cannot'] as const
+export type PluginAccountCopyLeaving = typeof PLUGIN_ACCOUNT_COPY_LEAVING[number]
+/** How many computers the page is told of: more than anyone pairs. */
+const PLUGIN_COPY_COMPUTERS_MAX = 200
+const computerIdSchema = z.string().min(1).max(512)
+/** The user's other computers and each account's copy on each, for Settings › Plugins. Never a secret, and nothing of where a computer is. */
+export const pluginCopiesViewSchema = z.object({
+  /** Whether a new account, or a newly paired computer, starts with a copy. */
+  copyNew: z.boolean(),
+  /** Whether this computer could read its record of choices. Where it could not, nothing is sent and no choice can be made. */
+  readable: z.boolean(),
+  computers: z.array(z.object({ id: computerIdSchema, name: z.string().max(512), connected: z.boolean() }).strict()).max(PLUGIN_COPY_COMPUTERS_MAX),
+  copies: z.array(z.object({ accountId: z.uuid(), computerId: computerIdSchema, state: z.enum(PLUGIN_ACCOUNT_COPY_STATES), leaving: z.enum(PLUGIN_ACCOUNT_COPY_LEAVING) }).strict())
+    .max(PLUGIN_COPY_COMPUTERS_MAX * ACCOUNT_PLUGIN_IDS.length * PLUGIN_ACCOUNTS_MAX),
+}).strict()
+export type PluginCopiesView = z.infer<typeof pluginCopiesViewSchema>
+export const pluginCopySetSchema = z.object({ accountId: z.uuid(), computerId: computerIdSchema, on: z.boolean() }).strict()
+export type PluginCopySet = z.infer<typeof pluginCopySetSchema>
+export const pluginCopyNewSetSchema = z.object({ copyNew: z.boolean() }).strict()
 
 /**
  * Why an account was not saved or removed. `refused`: the service did not accept the secret. `unreachable`: the service

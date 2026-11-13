@@ -40,12 +40,15 @@ async function hostFixture({ version = OWL, key = true }: { version?: string; ke
   })
   const recorded: string[] = []
   /** A paired client. With `record`, the launch script recorded it as this host's desktop; without, it is any other paired client, as a phone is. */
-  const client = async (record: boolean) => {
+  const client = async (record: boolean | 'after hello') => {
     const pairing = await SocketHostService.pair(url, host.pairing.issuePairingCode().code, record ? 'Synthetic desktop' : 'Synthetic phone')
-    if (record) { recorded.push(pairing.clientId); await writeFile(join(data, DESKTOP_CLIENTS_FILE), JSON.stringify(recorded)) }
+    const write = async () => { recorded.push(pairing.clientId); await writeFile(join(data, DESKTOP_CLIENTS_FILE), JSON.stringify(recorded)) }
+    if (record === true) await write()
     const socket = new SocketHostService({ url, token: pairing.token, expectedHostId: pairing.hostId })
     clients.push(socket)
     const hello = await socket.connect()
+    // A host being added: the launch script records the desktop once its first hello has said which client it is.
+    if (record === 'after hello') await write()
     return { socket, pairing, hello }
   }
   /** The host's own owner forgets a paired client, as `--revoke-client` does. */
@@ -87,7 +90,7 @@ it('keeps a copy the recorded desktop sends, in the host’s own encrypted crede
   expect(receipt).toEqual({ kept: true, keptAt: expect.any(String) })
   // What the host says of the copy is which account and when its secret was saved. There is no secret to read.
   const held = await socket.pluginAccountCopies()
-  expect(held).toEqual([{ id: COPY.account.id, plugin: 'vercel', savedAt: COPY.account.savedAt }])
+  expect(held).toMatchObject([{ id: COPY.account.id, plugin: 'vercel', savedAt: COPY.account.savedAt }])
   expect(JSON.stringify([receipt, held])).not.toContain(TOKEN)
   // The record of accounts holds the account without its secret, and the secret is in no file in the clear.
   expect((await f.kept()).accounts).toEqual([{ id: COPY.account.id, plugin: 'vercel', name: 'Work', savedAt: COPY.account.savedAt, signedInAs: 'example-user' }])
@@ -97,7 +100,7 @@ it('keeps a copy the recorded desktop sends, in the host’s own encrypted crede
   // Sent again with a new secret and a narrower account, the copy is replaced, not added to.
   const replaced = { account: { ...COPY.account, savedAt: '2026-11-13T08:00:00.000Z', on: false, projects: ['folder:one'] }, secret: `${TOKEN}-replaced` }
   await expect(socket.keepPluginAccountCopy(replaced)).resolves.toMatchObject({ kept: true })
-  await expect(socket.pluginAccountCopies()).resolves.toEqual([{ id: COPY.account.id, plugin: 'vercel', savedAt: '2026-11-13T08:00:00.000Z' }])
+  await expect(socket.pluginAccountCopies()).resolves.toMatchObject([{ id: COPY.account.id, plugin: 'vercel', savedAt: '2026-11-13T08:00:00.000Z' }])
   expect((await f.kept()).accounts).toMatchObject([{ id: COPY.account.id, on: false, projects: ['folder:one'] }])
 
   // Letting it go deletes the account and its secret, and letting it go again is done already.
@@ -107,6 +110,21 @@ it('keeps a copy the recorded desktop sends, in the host’s own encrypted crede
   await expect(socket.removePluginAccountCopy(COPY.account.id)).resolves.toEqual({ removed: true })
 })
 
+it('takes a copy from a desktop the launch script recorded after its hello, as a host being added does', async () => {
+  const f = await hostFixture()
+  const { socket, hello } = await f.client('after hello')
+  // The hello came before the record, so it listed no copies. The host keeps them, which its health said.
+  expect(hello.features).not.toContain('plugin-account-copies')
+  expect(socket.supportsPluginAccountCopies).toBe(true)
+  // Nothing with a secret leaves before the host has said this desktop may send.
+  await expect(socket.keepPluginAccountCopy(COPY)).rejects.toMatchObject({ code: 'version_mismatch' })
+  expect(await f.kept()).toEqual({ version: 1, accounts: [] })
+  // The list carries none, and its answer is the host saying so.
+  await expect(socket.pluginAccountCopies()).resolves.toEqual([])
+  await expect(socket.keepPluginAccountCopy(COPY)).resolves.toMatchObject({ kept: true })
+  await expect(socket.pluginAccountCopies()).resolves.toMatchObject([{ id: COPY.account.id }])
+})
+
 it('takes a copy from no client but the recorded desktop: a paired client the launch script did not record is refused', async () => {
   const f = await hostFixture()
   // The desktop is recorded and holds a copy; another paired client, as a phone is, connects beside it.
@@ -114,10 +132,15 @@ it('takes a copy from no client but the recorded desktop: a paired client the la
   await desktop.socket.keepPluginAccountCopy(COPY)
   const other = await f.client(false)
   expect(other.hello.features).not.toContain('plugin-account-copies')
-  expect(other.socket.supportsPluginAccountCopies).toBe(false)
-  // Its own client refuses before anything leaves it.
+  // The host keeps copies, which its health says to anyone; whether this client may send them is the host's to say.
+  expect(other.socket.supportsPluginAccountCopies).toBe(true)
+  // Its own client refuses a secret before it leaves, and the host refuses the list, which carries none: a request the
+  // host would not read, which this client words as a host of another version.
   await expect(other.socket.keepPluginAccountCopy(COPY)).rejects.toMatchObject({ code: 'version_mismatch' })
+  await expect(other.socket.removePluginAccountCopy(COPY.account.id)).rejects.toMatchObject({ code: 'version_mismatch' })
   await expect(other.socket.pluginAccountCopies()).rejects.toMatchObject({ code: 'version_mismatch' })
+  // Refused, it still may not send.
+  await expect(other.socket.keepPluginAccountCopy(COPY)).rejects.toMatchObject({ code: 'version_mismatch' })
   // Sent on the wire anyway, each request is refused by the host: nothing is kept, replaced, removed or listed.
   const theirs = { account: { ...COPY.account, id: '22222222-2222-4222-8222-000000000002', name: 'Theirs' }, secret: 'made-up-token-from-another-client' }
   for (const operation of [
@@ -130,7 +153,7 @@ it('takes a copy from no client but the recorded desktop: a paired client the la
     expect(answer, operation.op).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
     expect(JSON.stringify(answer)).not.toContain('made-up-token')
   }
-  await expect(desktop.socket.pluginAccountCopies()).resolves.toEqual([{ id: COPY.account.id, plugin: 'vercel', savedAt: COPY.account.savedAt }])
+  await expect(desktop.socket.pluginAccountCopies()).resolves.toMatchObject([{ id: COPY.account.id, plugin: 'vercel', savedAt: COPY.account.savedAt }])
   for (const file of await f.files()) expect(file.text.includes('made-up-token-from-another-client'), file.path).toBe(false)
 })
 
@@ -143,12 +166,12 @@ it('keeps each recorded desktop’s copies as its own: another recorded desktop 
   await expect(tower.socket.pluginAccountCopies()).resolves.toEqual([])
   await expect(tower.socket.keepPluginAccountCopy({ ...COPY, secret: 'made-up-token-from-the-other-desktop' })).resolves.toEqual({ kept: false, problem: 'held' })
   await expect(tower.socket.removePluginAccountCopy(COPY.account.id)).resolves.toEqual({ removed: false })
-  await expect(laptop.socket.pluginAccountCopies()).resolves.toEqual([{ id: COPY.account.id, plugin: 'vercel', savedAt: COPY.account.savedAt }])
+  await expect(laptop.socket.pluginAccountCopies()).resolves.toMatchObject([{ id: COPY.account.id, plugin: 'vercel', savedAt: COPY.account.savedAt }])
   for (const file of await f.files()) expect(file.text.includes('made-up-token-from-the-other-desktop'), file.path).toBe(false)
   // Its own account it keeps, and lists, beside the laptop's.
   const theirs = { account: { ...COPY.account, id: '22222222-2222-4222-8222-000000000002', name: 'Personal' }, secret: 'made-up-token-of-the-other-desktop' }
   await expect(tower.socket.keepPluginAccountCopy(theirs)).resolves.toMatchObject({ kept: true })
-  await expect(tower.socket.pluginAccountCopies()).resolves.toEqual([{ id: theirs.account.id, plugin: 'vercel', savedAt: theirs.account.savedAt }])
+  await expect(tower.socket.pluginAccountCopies()).resolves.toMatchObject([{ id: theirs.account.id, plugin: 'vercel', savedAt: theirs.account.savedAt }])
 })
 
 it('deletes a desktop’s copies and their secrets when the host’s owner revokes it', async () => {
