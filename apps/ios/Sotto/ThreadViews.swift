@@ -1151,6 +1151,7 @@ private struct Conversation: View {
                     EndTrace.describe = { [follow] in
                         "| end \(Int(follow.sentinel)) in page \(Int(follow.endInPage)) dock \(Int(follow.dockTop)) at bottom \(follow.atBottom)"
                     }
+                    EndTrace.reading = { [follow] in follow.sentinel }
                     #endif
                     endMoved(proxy.frame(in: .global).maxY, inPage: proxy.frame(in: .named(Self.pageSpace)).maxY, scroll)
                 }

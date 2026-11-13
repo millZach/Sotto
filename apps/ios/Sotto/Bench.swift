@@ -1127,6 +1127,7 @@ struct SendWatchAnchor: UIViewRepresentable {
         override func didMoveToWindow() {
             super.didMoveToWindow()
             guard window != nil else { return }
+            EndTrace.shared?.endView = self
             var view: UIView? = superview
             while let next = view {
                 if let scroller = next as? UIScrollView { SendWatch.shared?.attach(scroller); return }
@@ -1179,6 +1180,11 @@ extension View {
     static func mark(_ name: @autoclosure () -> String) { shared?.note(name()) }
     /// The page's own idea of where its end is, added to each frame kept.
     static var describe: (() -> String)?
+    /// Where the page reads its end on the screen, from SwiftUI's geometry, set beside `describe`.
+    static var reading: (() -> CGFloat)?
+    /// The anchor drawn just after the end, whose place on the screen UIKit knows.
+    weak var endView: UIView?
+    private var readingOff = false
 
     private let report: URL
     private let started = CACurrentMediaTime()
@@ -1212,6 +1218,14 @@ extension View {
             let row = [Double(view.contentOffset.y), drawn, Double(view.contentSize.height), Double(view.bounds.height),
                        Double(view.adjustedContentInset.bottom), view.isTracking ? 1 : 0, view.isDecelerating ? 1 : 0]
             let follow = Self.describe?() ?? ""
+            if let end = endView, end.window != nil, let reading = Self.reading?() {
+                let drawn = end.convert(CGPoint.zero, to: nil).y
+                let off = abs(drawn - reading) > 20
+                if off != readingOff {
+                    readingOff = off
+                    note(off ? "end reading off: read \(Int(reading)), drawn \(Int(drawn))" : "end reading agrees again: read \(Int(reading)), drawn \(Int(drawn))")
+                }
+            }
             if row != last || follow != lastFollow {
                 last = row
                 lastFollow = follow
