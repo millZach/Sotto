@@ -50,6 +50,22 @@ token was still in no file in the clear, and the page raised no error.
 | `artifacts/plugins-account-copies/copy-kept-dark-820x560.png` | The same at the 820x560 minimum, scrolled to where its secret is kept |
 | `artifacts/plugins-account-copies/copy-off-dark-1280x800.png` | The copy switched off, and **Other computers** |
 | `artifacts/plugins-account-copies/copy-stays-here-dark-1280x800.png` | The account kept to a project: no copy, and a switch that says why |
+| `artifacts/plugins-account-copies/github-on-forge-dark-1280x800.png` | GitHub's row with who gh is signed in as on forge |
+
+## GitHub's sign-in on forge
+
+Checked again on November 13, 2026, for the fourth part of the slice, in the same journey. forge's own `gh` was a
+stand-in, signed in as the made-up account forge-user; this computer's was the journey's usual one, which is not
+installed. With forge paired, GitHub's row was opened: under this computer's own line it listed "forge Signed in as
+forge-user through gh on that computer.", read from forge over its connection, with the note that a thread on
+another computer uses that computer's gh. Nothing in the row was wider than its room at 1280x800 or the 820x560
+minimum. The earlier captures were taken again with it, since **Recent use** now says it lists this computer's
+threads only. No journey host runs the real `gh`: the fixture host answers for it.
+
+`tests/integration/hostPluginTools.test.ts` covers the read over a real host's socket: a recorded desktop is told,
+one recorded after its hello is told on that first connection, any other paired client is refused and the host's
+gh is not asked for it, and a stable host lists no such read. `tests/unit/main/plugins/hostSignIns.test.ts` covers
+a computer that is away, one that runs no plugin tools and one that does not answer.
 
 ## What unit and integration tests cover instead
 

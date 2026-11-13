@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { afterEach, expect, it, vi } from 'vitest'
 import { waitFor } from '@testing-library/react'
 import { PluginsSettings } from '../../../../../src/renderer/src/features/settings/PluginsSettings'
-import type { GitHubSignIn, PluginAccount, PluginAccountResult, PluginAccountUpdate, PluginCopiesView, PluginCopySet, PluginProject, PluginsBridge, ShownPluginUse } from '../../../../../src/shared/plugins'
+import type { GitHubSignIn, PluginAccount, PluginAccountResult, PluginAccountUpdate, PluginCopiesView, PluginCopySet, PluginHostSignIn, PluginProject, PluginsBridge, ShownPluginUse } from '../../../../../src/shared/plugins'
 import { deferred } from '../../../../fixtures/deferred'
 
 afterEach(cleanup)
@@ -16,6 +16,7 @@ const noCopies = {
   setCopy: async (): Promise<PluginCopiesView> => NO_COMPUTERS,
   setCopyNew: async (): Promise<PluginCopiesView> => NO_COMPUTERS,
   onCopiesChanged: (): (() => void) => () => undefined,
+  gitHubSignInElsewhere: async (): Promise<PluginHostSignIn[]> => [],
 }
 /** The account methods of a bridge with no accounts, for tests of GitHub's row. */
 const noAccounts = {
@@ -481,19 +482,31 @@ it('calls no project gone, and lets none go, while this computer’s projects ar
 })
 
 /** A bridge with one computer paired, forge, and the account's copy there in a state the test names. */
-function copiesBridge(state: PluginCopiesView['copies'][number]['state'], options: { connected?: boolean; account?: PluginAccount; leaving?: PluginCopiesView['copies'][number]['leaving']; readable?: boolean } = {}) {
+function copiesBridge(state: PluginCopiesView['copies'][number]['state'], options: { connected?: boolean; account?: PluginAccount; leaving?: PluginCopiesView['copies'][number]['leaving']; readable?: boolean; signIn?: Omit<PluginHostSignIn, 'computerId' | 'name'> | 'unread' | 'slow' } = {}) {
   const account = options.account ?? work
   let view: PluginCopiesView = { copyNew: true, readable: options.readable !== false, computers: [{ id: 'saved-forge', name: 'forge', connected: options.connected !== false }], copies: [{ accountId: account.id, computerId: 'saved-forge', state, leaving: options.leaving ?? 'no' }] }
   const sets: PluginCopySet[] = []
   const defaults: boolean[] = []
   let heard: (() => void) | undefined
+  let elsewhereAsked = 0
+  const signIn: { current: Omit<PluginHostSignIn, 'computerId' | 'name'> | 'unread' | 'slow' } = { current: options.signIn ?? { state: 'signed-in', login: 'host-user' } }
   const bridge = vercelBridge([account], {
     copies: async () => view,
     setCopy: async request => { sets.push(request); view = { ...view, copies: [{ accountId: account.id, computerId: 'saved-forge', state: request.on ? 'waiting' : 'off', leaving: request.on ? 'no' : 'now' }] }; return view },
     setCopyNew: async copyNew => { defaults.push(copyNew); view = { ...view, copyNew }; return view },
     onCopiesChanged: listener => { heard = listener; return () => { heard = undefined } },
+    // forge's own gh, signed in as someone other than this computer's account unless a test says otherwise.
+    gitHubSignInElsewhere: async () => {
+      elsewhereAsked += 1
+      if (signIn.current === 'unread') throw new Error('The hosts could not be asked.')
+      // A read that is still on its way, as one waiting on a slow computer is.
+      if (signIn.current === 'slow') return new Promise<PluginHostSignIn[]>(() => undefined)
+      return [{ computerId: 'saved-forge', name: 'forge', ...signIn.current }]
+    },
   })
-  return { bridge, sets, defaults, arrive: (next: PluginCopiesView['copies'][number]['state']) => { view = { ...view, copies: [{ accountId: account.id, computerId: 'saved-forge', state: next, leaving: 'no' }] }; heard?.() }, listening: () => heard !== undefined }
+  /** forge connects or leaves, and main says the copies changed. */
+  const connect = (connected: boolean): void => { view = { ...view, computers: [{ id: 'saved-forge', name: 'forge', connected }] }; heard?.() }
+  return { bridge, sets, defaults, signIn, elsewhereAsked: () => elsewhereAsked, connect, arrive: (next: PluginCopiesView['copies'][number]['state']) => { view = { ...view, copies: [{ accountId: account.id, computerId: 'saved-forge', state: next, leaving: 'no' }] }; heard?.() }, listening: () => heard !== undefined }
 }
 const copySwitch = (): HTMLElement => screen.getByRole('switch', { name: 'Keep a copy of Work on forge' })
 const copyLine = (): string => copySwitch().querySelector('.tt-field__description')?.textContent ?? ''
@@ -654,6 +667,100 @@ it('says whose threads Recent use lists, and whose gh a thread on another comput
   const notes = [...document.querySelectorAll('.plugin-row__note')].map(note => note.textContent)
   expect(notes.filter(note => note === `${records} Only this computer’s threads are listed. Your other computers keep no record of use.`)).toHaveLength(2)
   expect(notes).toContain(`${gh} A thread on another of your computers uses the gh sign-in on that computer, which may be a different account.`)
+})
+
+const elsewhereLines = (): string[] => within(screen.getByRole('list', { name: 'GitHub’s sign-in on your other computers' })).getAllByRole('listitem').map(item => item.textContent ?? '')
+
+it('shows who gh is signed in as on each other computer, since a thread there acts as that account', async () => {
+  const f = copiesBridge('kept')
+  await act(async () => { render(<PluginsSettings bridge={f.bridge} />) })
+  fireEvent.click(await screen.findByRole('button', { name: /^GitHub/u }))
+  // This computer's account, and forge's, which is another.
+  expect(screen.getByText('example-user')).toBeInTheDocument()
+  await waitFor(() => expect(elsewhereLines()).toEqual(['forgeSigned in as host-user through gh on that computer.']))
+  // Check again asks forge too.
+  const before = f.elsewhereAsked()
+  f.signIn.current = { state: 'signed-out' }
+  await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Check GitHub’s sign-in again' })) })
+  expect(f.elsewhereAsked()).toBe(before + 1)
+  await waitFor(() => expect(elsewhereLines()).toEqual(['forgegh is not signed in there, so its threads cannot use GitHub. On forge, run gh auth login.']))
+  // A copy changing asks no computer's gh again: each read starts gh there.
+  const asked = f.elsewhereAsked()
+  await act(async () => { f.arrive('kept') })
+  expect(f.elsewhereAsked()).toBe(asked)
+  // A computer leaving, or connecting, is asked without a press.
+  f.signIn.current = { state: 'away' }
+  await act(async () => { f.connect(false) })
+  await waitFor(() => expect(elsewhereLines()).toEqual(['forgeNot connected, so its gh cannot be asked.']))
+  expect(f.elsewhereAsked()).toBe(asked + 1)
+  cleanup()
+  // Each other thing a computer can say.
+  const lines: [PluginHostSignIn['state'], string][] = [
+    ['not-installed', 'forgegh isn’t installed there, so its threads cannot use GitHub.'],
+    ['unknown', 'forgeSotto couldn’t ask its gh who is signed in.'],
+    ['too-old', 'forgeIts Sotto is too old to say who gh is signed in as there. Its threads use that computer’s gh all the same. Update Sotto on forge to see the account.'],
+    ['no-plugins', 'forgeIts Sotto runs no plugin tools, so its threads do not use GitHub through Sotto.'],
+  ]
+  for (const [state, line] of lines) {
+    const { bridge } = copiesBridge('kept', { signIn: { state } })
+    await act(async () => { render(<PluginsSettings bridge={bridge} />) })
+    fireEvent.click(await screen.findByRole('button', { name: /^GitHub/u }))
+    await waitFor(() => expect(elsewhereLines(), state).toEqual([line]))
+    cleanup()
+  }
+})
+
+it('shows a computer that has left as not connected at once, whatever read is still on its way', async () => {
+  const f = copiesBridge('kept')
+  await act(async () => { render(<PluginsSettings bridge={f.bridge} />) })
+  fireEvent.click(await screen.findByRole('button', { name: /^GitHub/u }))
+  await waitFor(() => expect(elsewhereLines()).toEqual(['forgeSigned in as host-user through gh on that computer.']))
+  // forge leaves, and the read that follows waits on another computer: forge is not left reading as signed in.
+  f.signIn.current = 'slow'
+  await act(async () => { f.connect(false) })
+  expect(elsewhereLines()).toEqual(['forgeNot connected, so its gh cannot be asked.'])
+  // It connects again, and is being asked until it has answered.
+  await act(async () => { f.connect(true) })
+  expect(elsewhereLines()).toEqual(['forgeSigned in as host-user through gh on that computer.'])
+  cleanup()
+  const away = copiesBridge('waiting', { connected: false, signIn: { state: 'away' } })
+  await act(async () => { render(<PluginsSettings bridge={away.bridge} />) })
+  fireEvent.click(await screen.findByRole('button', { name: /^GitHub/u }))
+  await waitFor(() => expect(elsewhereLines()).toEqual(['forgeNot connected, so its gh cannot be asked.']))
+  away.signIn.current = 'slow'
+  await act(async () => { away.connect(true) })
+  expect(elsewhereLines()).toEqual(['forgeAsking its gh who is signed in…'])
+})
+
+it('adds nothing about another computer whose Sotto runs no plugin tools, and falls back to any paired computer while none has answered', async () => {
+  const records = 'Sotto records what was done and by which thread, never what was read or sent.'
+  const gh = 'GitHub uses the gh command’s own sign-in. Sotto stores nothing for it.'
+  // forge is a stable host: its threads use no plugin, so neither note is about it.
+  const stable = copiesBridge('too-old', { signIn: { state: 'no-plugins' } })
+  await act(async () => { render(<PluginsSettings bridge={stable.bridge} />) })
+  fireEvent.click(await screen.findByRole('button', { name: /^GitHub/u }))
+  fireEvent.click(vercelRow())
+  await waitFor(() => expect(elsewhereLines()).toHaveLength(1))
+  const notes = (): (string | null)[] => [...document.querySelectorAll('.plugin-row__note')].map(note => note.textContent)
+  expect(notes().filter(note => note === records)).toHaveLength(2)
+  expect(notes()).toContain(gh)
+  cleanup()
+  // forge runs plugin tools on a Sotto from before it could say whose gh that is: its threads use its own gh, so
+  // both notes are about it.
+  const older = copiesBridge('kept', { signIn: { state: 'too-old' } })
+  await act(async () => { render(<PluginsSettings bridge={older.bridge} />) })
+  fireEvent.click(await screen.findByRole('button', { name: /^GitHub/u }))
+  fireEvent.click(vercelRow())
+  await waitFor(() => expect(elsewhereLines()).toHaveLength(1))
+  expect(notes()).toContain(`${gh} A thread on another of your computers uses the gh sign-in on that computer, which may be a different account.`)
+  expect(notes().filter(note => note === `${records} Only this computer’s threads are listed. Your other computers keep no record of use.`)).toHaveLength(2)
+  cleanup()
+  // The computers could not be asked: with one paired, the notes stay, and no line claims anything of its gh.
+  const unread = copiesBridge('kept', { signIn: 'unread' })
+  await act(async () => { render(<PluginsSettings bridge={unread.bridge} />) })
+  fireEvent.click(await screen.findByRole('button', { name: /^GitHub/u }))
+  expect(screen.queryByRole('list', { name: 'GitHub’s sign-in on your other computers' })).toBeNull()
+  expect(notes()).toContain(`${gh} A thread on another of your computers uses the gh sign-in on that computer, which may be a different account.`)
 })
 
 it('lists the other computers with what each holds, and keeps the default for new copies', async () => {

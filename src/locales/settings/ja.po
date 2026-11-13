@@ -1407,6 +1407,10 @@ msgstr ""
 msgid "Asking GitHub..."
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Asking its gh who is signed in…"
+msgstr ""
+
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Asks the npm registry for each client’s latest version when it connects and every hour. Only the package name is sent."
 msgstr ""
@@ -3034,11 +3038,19 @@ msgid "Get the iPhone beta"
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "gh is not signed in there, so its threads cannot use GitHub. On {name}, run {GH_SIGN_IN_COMMAND}."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "gh is not signed in to GitHub on this computer. Run this in a terminal, then press Check again."
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "gh isn’t installed"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "gh isn’t installed there, so its threads cannot use GitHub."
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
@@ -3058,6 +3070,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "GitHub uses the gh command’s own sign-in. Sotto stores nothing for it."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "GitHub’s sign-in on your other computers"
 msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
@@ -3461,6 +3477,14 @@ msgstr ""
 
 #: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
 msgid "Its record was cleared. Pieces from now on are counted here."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Its Sotto is too old to say who gh is signed in as there. Its threads use that computer’s gh all the same. Update Sotto on {name} to see the account."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Its Sotto runs no plugin tools, so its threads do not use GitHub through Sotto."
 msgstr ""
 
 #. placeholder {0}: (model.medianMs / 1_000).toFixed(1)
@@ -4204,6 +4228,10 @@ msgstr ""
 #: src/renderer/src/features/settings/WorkerMachineSettings.tsx
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Not connected"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Not connected, so its gh cannot be asked."
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
@@ -5964,6 +5992,10 @@ msgid "Signed in"
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Signed in as {account} through gh on that computer."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Signed in as {login} through gh"
 msgstr ""
 
@@ -6103,6 +6135,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Sotto couldn’t ask gh who is signed in. Nothing was changed. Press Check again."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sotto couldn’t ask its gh who is signed in."
 msgstr ""
 
 #: src/renderer/src/features/settings/PhonesSettings.tsx

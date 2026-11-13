@@ -1,4 +1,5 @@
 import type { PluginAccountCopyStore } from '../../shared/pluginAccountCopies'
+import type { GitHubSignIn } from '../../shared/plugins'
 import { agentCaptures, ThreadMediaStore } from './threadMedia'
 import type { ReducedPictures } from './mediaThumbnail'
 import type { BrowserAgentTools } from './browserAgentServer'
@@ -185,6 +186,8 @@ export interface AgentRuntimeOptions {
    * where its own Owl answer turns on plugins. A desktop's own runtime has none: it holds the accounts themselves.
    */
   pluginAccountCopies?: PluginAccountCopyStore
+  /** Asks a headless host's own gh who is signed in, for a paired desktop's Plugins page (ADR-0205). With `pluginAccountCopies`. */
+  pluginGitHubSignIn?: () => Promise<GitHubSignIn>
   /**
    * A headless host runs delegation for its own threads (#1310) only where its own Owl answer turns on Work across
    * machines. It holds them to the desktop defaults the last desktop that still counts sent it, and to Ask for approval
@@ -963,6 +966,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ...(checks && options.runsAs === 'headless-host' ? { checks } : {}),
     ...(crossMachine && gitStatus ? { bringBack: true } : {}),
     ...(options.pluginAccountCopies && options.runsAs === 'headless-host' ? { pluginAccountCopies: options.pluginAccountCopies } : {}),
+    ...(options.pluginGitHubSignIn && options.runsAs === 'headless-host' ? { pluginGitHubSignIn: options.pluginGitHubSignIn } : {}),
     prompts: { threadPrompts: (threadId, beforeMessageId) => agentHost.threadPrompts(threadId, beforeMessageId) },
     ...(options.threadStartsEnabled === true ? { threadStarts: { startHandover: (threadId: string) => agentHost.startHandover(threadId) } } : {}),
     ...(options.pullRequestViewEnabled === true ? { pullRequestView: true } : {}),

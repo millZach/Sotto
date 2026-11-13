@@ -70,7 +70,7 @@ test('An account is copied to a paired host, the page says where it is kept, and
   await writeFile(keyFile, 'made-up-host-key-of-enough-length')
   const vercel = await standInVercel()
   const keys = ['SOTTO_E2E_SSH_SCRIPT', 'SOTTO_E2E_SSH_EXECUTABLE', 'FAKE_SSH_MODE_FILE', 'FAKE_SSH_ROOT', 'FAKE_SSH_RECORD', 'HOME', 'USERPROFILE',
-    'SOTTO_OWL_FEATURES', 'SOTTO_E2E_VERCEL_API_URL', 'SOTTO_E2E_HOST_OWL', 'SOTTO_HOST_KEY_FILE', 'SOTTO_E2E_NATIVE_FIXTURE_ROOT', 'SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE']
+    'SOTTO_OWL_FEATURES', 'SOTTO_E2E_VERCEL_API_URL', 'SOTTO_E2E_HOST_OWL', 'SOTTO_HOST_KEY_FILE', 'SOTTO_E2E_NATIVE_FIXTURE_ROOT', 'SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE', 'SOTTO_E2E_HOST_GH_LOGIN']
   const previous = Object.fromEntries(keys.map(key => [key, process.env[key]]))
   // A stand-in provider, so this computer has a project to keep the account to.
   const native = join(profile, 'native-fixture')
@@ -81,7 +81,9 @@ test('An account is copied to a paired host, the page says where it is kept, and
     // The host runs on this computer, so its folders would be this account's: a throwaway home keeps them apart.
     HOME: join(root, '~'), USERPROFILE: join(root, '~'),
     SOTTO_OWL_FEATURES: 'plugins=1', SOTTO_E2E_VERCEL_API_URL: vercel.url, SOTTO_E2E_HOST_OWL: '1', SOTTO_HOST_KEY_FILE: keyFile,
-    SOTTO_E2E_NATIVE_FIXTURE_ROOT: native, SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE: process.execPath })
+    SOTTO_E2E_NATIVE_FIXTURE_ROOT: native, SOTTO_E2E_NATIVE_FIXTURE_EXECUTABLE: process.execPath,
+    // forge's own gh is a stand-in, signed in as a made-up account that is not this computer's.
+    SOTTO_E2E_HOST_GH_LOGIN: 'forge-user' })
   /** The host's own data folder, where it keeps the copies it is sent. */
   const hostData = join(root, '~', '.sotto')
   const held = async (): Promise<Record<string, unknown>[]> => (JSON.parse(await readFile(join(hostData, 'plugin-accounts.json'), 'utf8').catch(() => '{"accounts":[]}')) as { accounts: Record<string, unknown>[] }).accounts
@@ -146,6 +148,21 @@ test('An account is copied to a paired host, the page says where it is kept, and
     const computers = panel.getByRole('list', { name: 'Other computers' })
     await expect(computers.getByRole('listitem')).toHaveText(['forgeConnected. Copies kept there: 1.'])
     await expect(panel.getByRole('switch', { name: 'Copy new accounts to every computer I pair' })).toHaveAttribute('aria-checked', 'true')
+
+    // GitHub's row says who gh is signed in as on forge, which is forge's own account: a thread there acts as it.
+    const github = panel.getByRole('button', { name: /^GitHub/u })
+    await github.click()
+    const elsewhere = panel.getByRole('list', { name: 'GitHub’s sign-in on your other computers' })
+    await expect(elsewhere.getByRole('listitem')).toHaveText(['forgeSigned in as forge-user through gh on that computer.'])
+    await expect(panel).toContainText('A thread on another of your computers uses the gh sign-in on that computer, which may be a different account.')
+    for (const [width, height] of [[1280, 800], [820, 560]] as const) {
+      await resizeWindow(launched, width, height)
+      await elsewhere.scrollIntoViewIfNeeded()
+      expect(await overflow(page), `GitHub’s row ${width}x${height}`).toEqual([])
+      if (width === 1280) await shot(page, 'github-on-forge-dark-1280x800')
+    }
+    await resizeWindow(launched, 1280, 800)
+    await github.click()
     await panel.getByRole('button', { name: /^Vercel/u }).click()
     const card = panel.getByRole('region', { name: 'Vercel account Work' })
     const kept = card.getByRole('region', { name: 'Where its secret is kept' })
