@@ -62,6 +62,8 @@ struct HostRefusal: Error, LocalizedError {
     static var receipts: [String: JSONValue] = [:]
     /// The computer's answer to `settled-threads`.
     static var settledPage: JSONValue = .null
+    /// The computer's answer to `earlier-steps`, given the connection it came on, which may push to it first.
+    static var earlierHandler: ((HostConnection) async throws -> JSONValue)?
     /// The computer's answer to Watcher's operations, given the operation and its request ID. Without one, a read
     /// returns the `watcher` page in the computer's shell, as a computer that runs Watcher does.
     static var watcherHandler: ((String, [String: JSONValue], String) async throws -> JSONValue)?
@@ -135,6 +137,7 @@ struct HostRefusal: Error, LocalizedError {
         }
         if op == "shell" { return Self.shells[hostID] ?? Self.shell }
         if op == "settled-threads" { return Self.settledPage }
+        if op == "earlier-steps", let handler = Self.earlierHandler { return try await handler(self) }
         if op == "receipt" { return Self.receipts[operation["commandId"]?.string ?? ""] ?? Self.receipt }
         if op == "host-folders", let handler = Self.folderHandler { return try await handler(hostID, operation["request"] ?? .null) }
         if op == "stage-attachment", let handler = Self.stageHandler { return try await handler(operation["image"] ?? .null) }

@@ -769,8 +769,9 @@ private final class TimelineCache {
     private var latestTurnsStartID: String?
     private var dates: [String: Date] = [:]
     /// `held` marks the copy kept on screen while the thread is read again. A fresh copy can carry the same revision, from
-    /// a computer whose Sotto restarted, so it is always drawn anew.
-    func rows(for detail: ThreadDetail?, held: Bool = false) -> [ConversationRow] {
+    /// a computer whose Sotto restarted, so it is always drawn anew. `copy` is the model's count of copies taken in: a step
+    /// window moved back by Show earlier messages keeps its revision and holds more (ADR-0194).
+    func rows(for detail: ThreadDetail?, held: Bool = false, copy: Int = 0) -> [ConversationRow] {
         guard let detail else {
             key = nil
             cached = []
@@ -778,7 +779,7 @@ private final class TimelineCache {
             latestTurnsStartID = nil
             return []
         }
-        let next = detail.threadId + "#" + String(detail.revision) + (held ? "#held" : "")
+        let next = detail.threadId + "#" + String(detail.revision) + "#" + String(copy) + (held ? "#held" : "")
         if next == key { return cached }
         key = next
         if dates.count > 10_000 { dates = [:] }
@@ -878,7 +879,7 @@ private struct Conversation: View {
     var body: some View {
         let _ = BenchProbe.body("Conversation")
         let detail = model.shown(for: ref)
-        let rows = timeline.rows(for: detail, held: detail != nil && model.detail(for: ref) == nil)
+        let rows = timeline.rows(for: detail, held: detail != nil && model.detail(for: ref) == nil, copy: model.detailVersion)
         let pending = model.replyRows(for: ref)
         let tail = Tail(revision: detail?.revision, rows: rows.count, last: rows.last?.id, pending: pending.map(\.id),
                         failed: model.failedReplies[ref.id] != nil)
