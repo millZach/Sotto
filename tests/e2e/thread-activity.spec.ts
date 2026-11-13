@@ -273,6 +273,28 @@ test('a turn a steer cut reads as steered, not stopped, at the minimum window', 
   } finally { await app.close() }
 })
 
+test('a press on one turn’s Worked for line opens or folds that turn alone', async () => {
+  const { app, page } = await launch()
+  try {
+    await show(page, 'steered')
+    const log = transcript(page)
+    const first = log.getByRole('button', { name: /^Worked for 2m 04s/ })
+    const steered = log.getByRole('button', { name: 'Steered after 1m 05s' })
+    const last = log.getByRole('button', { name: /^Worked for 9\.0s/ })
+    for (const fold of [first, steered, last]) await expect(fold).toHaveAttribute('aria-expanded', 'false')
+    await first.click()
+    await expect(first).toHaveAttribute('aria-expanded', 'true')
+    await expect(steered).toHaveAttribute('aria-expanded', 'false')
+    await expect(last).toHaveAttribute('aria-expanded', 'false')
+    await expect(log.getByRole('button', { name: /^rg -n "patchLength" src,/ })).toHaveCount(0)
+    await last.click()
+    await first.click()
+    await expect(first).toHaveAttribute('aria-expanded', 'false')
+    await expect(last).toHaveAttribute('aria-expanded', 'true')
+    await expect(steered).toHaveAttribute('aria-expanded', 'false')
+  } finally { await app.close() }
+})
+
 /** A text's contrast with what it sits on: its colour over every background under it, composited from the window up. */
 async function contrast(target: Locator): Promise<number> {
   return target.evaluate(element => {
