@@ -707,7 +707,7 @@ private final class FollowBox {
     var heroTop: CGFloat = .greatestFiniteMagnitude
     var titleBottom: CGFloat = .greatestFiniteMagnitude
     /// The user is reading at the bottom, so the page follows the conversation as it grows or the reply box moves.
-    var atBottom = true
+    var atBottom = true { didSet { if atBottom != oldValue { pinned?(atBottom) } } }
     /// The user is dragging the page or letting a flick run out, so it never moves under them.
     var userScrolling = false
     /// The page was asked to follow while the user moved it, and owes that once they let go.
@@ -716,11 +716,12 @@ private final class FollowBox {
     var followRequests = 0
     /// Where the end sits within the page itself, which only what the page holds moves; scrolling moves `sentinel` alone.
     var endInPage: CGFloat = 0
-    /// The scroll view's top on the screen, and how far its content is scrolled, as the scroll view itself says (iOS 18).
-    var viewTop: CGFloat = 0
-    var offset: CGFloat?
-    /// Where the end sits on the screen worked out from the scroll view's own offset rather than read from the end.
-    var endFromOffset: CGFloat? { offset.map { viewTop + endInPage - $0 } }
+    /// The scroll view says when a hand or a scroll it animates moves the page (iOS 18); before that it can't.
+    var knowsMoves = false
+    /// A hand or the scroll view's own animation, such as a tap on the status bar, is moving the page.
+    var moving = false
+    /// Told when `atBottom` changes, so the page can keep its end in place as its height changes.
+    var pinned: ((Bool) -> Void)?
     func settle() { atBottom = sentinel <= dockTop + Self.slack }
 }
 
@@ -870,6 +871,8 @@ private struct Conversation: View {
     @State private var visible: CGFloat = 0
     /// The runs of steps opened on this page, by run, kept while the thread is on screen.
     @State private var openRuns: Set<String> = []
+    /// The reader is at the end, so the page keeps its end where it is when its height changes (iOS 18).
+    @State private var pinnedToEnd = true
     @Environment(\.sottoDensity) private var density
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.duoLayout) private var duo
@@ -898,7 +901,12 @@ private struct Conversation: View {
                     .benchEnvironment("EnvironmentUnderThread")
             }
             .defaultScrollAnchor(.bottom)
+            .keepsEndOnResize(pinnedToEnd)
             .scrollDismissesKeyboard(.interactively)
+            .onPageMoving { moving in
+                follow.knowsMoves = true
+                follow.moving = moving
+            }
             .onUserScrolling { scrolling in
                 follow.userScrolling = scrolling
                 EndTrace.mark("user scrolling \(scrolling) missed follow \(follow.missedFollow)")
@@ -910,7 +918,6 @@ private struct Conversation: View {
                 EndTrace.mark("let go: settle at bottom \(follow.atBottom), end \(Int(follow.sentinel)) dock \(Int(follow.dockTop))")
                 if follow.atBottom { toBottom(proxy) }
             }
-            .onScrollOffset { y in follow.offset = y }
             .background(barReader)
             #if DEBUG
             .overlay(alignment: .topLeading) { if Self.probesEnd { EndProbe(follow: follow) } }
@@ -1133,11 +1140,9 @@ private struct Conversation: View {
     private var barReader: some View {
         GeometryReader { proxy in
             let bottom = proxy.frame(in: .global).minY + proxy.safeAreaInsets.top
-            let top = proxy.frame(in: .global).minY
             Color.clear
-                .onAppear { follow.viewTop = top; barMoved(bottom) }
+                .onAppear { barMoved(bottom) }
                 .onChange(of: bottom) { _, value in barMoved(value) }
-                .onChange(of: top) { _, value in follow.viewTop = value }
         }
     }
 
@@ -1146,9 +1151,10 @@ private struct Conversation: View {
         GeometryReader { proxy in
             Color.clear
                 .onAppear {
+                    follow.pinned = { [pinned = $pinnedToEnd] at in if pinned.wrappedValue != at { pinned.wrappedValue = at } }
                     #if DEBUG
                     EndTrace.describe = { [follow] in
-                        "| end \(Int(follow.sentinel)) from offset \(follow.endFromOffset.map { String(Int($0)) } ?? "-") in page \(Int(follow.endInPage)) dock \(Int(follow.dockTop)) at bottom \(follow.atBottom)"
+                        "| end \(Int(follow.sentinel)) in page \(Int(follow.endInPage)) dock \(Int(follow.dockTop)) at bottom \(follow.atBottom)"
                     }
                     #endif
                     endMoved(proxy.frame(in: .global).maxY, inPage: proxy.frame(in: .named(Self.pageSpace)).maxY, scroll)
@@ -1180,6 +1186,11 @@ private struct Conversation: View {
         follow.endInPage = inPage
         if wasAtBottom, grew, end > follow.dockTop + 1 {
             toBottom(scroll)
+        } else if wasAtBottom, follow.knowsMoves, !follow.moving {
+            // The page moved with no hand on it and no scroll of its own: the turns made as they scroll into view guessed
+            // their heights again, and the page swung by thousands of points for a moment (#2040). A reader at the end is
+            // still there, and taken for one who left, the page stopped following them.
+            if end > follow.dockTop + 1 { EndTrace.mark("moved by no hand: follow"); toBottom(scroll) }
         } else {
             follow.settle()
             if wasAtBottom != follow.atBottom { EndTrace.mark("settle: at bottom \(follow.atBottom)") }
@@ -1285,10 +1296,20 @@ extension View {
     /// Says whether the user is moving the page: dragging it or letting a flick run out. A finger that rests or taps is
     /// not moving it, so pressing a run of steps at the bottom still keeps the page there. iOS 17 can't say, so there the
     /// page follows as it did before.
-    /// Reports how far the page is scrolled, as the scroll view says, on iOS 18 and later; iOS 17 can't say.
-    @ViewBuilder func onScrollOffset(_ changed: @escaping (CGFloat) -> Void) -> some View {
+    /// Says whether anything moves the page: a hand, a flick running out, or a scroll the scroll view animates itself, such as
+    /// a tap on the status bar. iOS 17 can't say, and nothing is reported there.
+    @ViewBuilder func onPageMoving(_ changed: @escaping (Bool) -> Void) -> some View {
         if #available(iOS 18.0, *) {
-            onScrollGeometryChange(for: CGFloat.self, of: { $0.contentOffset.y }) { _, y in changed(y) }
+            onScrollPhaseChange { _, phase in changed(phase != .idle) }
+        } else {
+            self
+        }
+    }
+    /// While the reader is at the end, the page keeps its end where it is as its height changes, so turns above re-guessing
+    /// their heights don't swing what the reader sees (iOS 18). Otherwise the page keeps its offset, as it always has.
+    @ViewBuilder func keepsEndOnResize(_ pinned: Bool) -> some View {
+        if #available(iOS 18.0, *) {
+            defaultScrollAnchor(pinned ? .bottom : nil, for: .sizeChanges)
         } else {
             self
         }
