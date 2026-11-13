@@ -209,6 +209,23 @@ it('holds a change from a host’s thread on a card in its thread, and makes it 
   expect(f.vercelCalls.filter(made => made.method !== 'GET')).toEqual([])
 })
 
+it('makes no change allowed after the host began to close', async () => {
+  const f = await hostFixture()
+  const { socket } = await f.desktop()
+  await socket.keepPluginAccountCopy(COPY)
+  const threadId = await f.thread()
+  const cancelling = f.call(threadId, 'vercel_cancel_deployment', { deploymentId: DEPLOYMENT }).catch(() => undefined)
+  await expect.poll(() => f.card(threadId)).toBeDefined()
+  const card = f.card(threadId)!
+  // The host is told to close, and before it has closed anything it waits on, the card is allowed at the host itself.
+  const closing = f.host.close()
+  await f.host.service.command({ type: 'answer', threadId, requestId: card.id, answer: '', approved: true }, LOCAL).catch(() => undefined)
+  await closing
+  await cancelling
+  // Nothing was sent to change anything: the change stopped when the host began to close.
+  expect(f.vercelCalls.filter(made => made.method !== 'GET')).toEqual([])
+})
+
 it('uses no copy that is switched off, or that names projects, which a host does not have', async () => {
   const f = await hostFixture()
   const { socket } = await f.desktop()

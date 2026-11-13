@@ -407,6 +407,10 @@ async function startHostRuntime(options: HeadlessHostOptions) {
       service: runtime.hostService, credentials, pairing, descriptor: listener?.descriptor,
       close: (): Promise<void> => {
         closing ??= (async () => {
+          // First, and before anything here is waited on: a plugin change still waiting on its card stops, and no
+          // answer to it is taken. Phone access and the listener can take seconds to close, and a card allowed in
+          // that time would change something outside Sotto for a host that is already going away.
+          const pluginsClosed = plugins?.close()
           productEvents.stop()
           delegationRelay?.close()
           signIns.close()
@@ -419,8 +423,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
           try { await listener?.close() } finally {
             // No thread's tool call is taken once the host is closing; a call already running ends with its service. No
             // phone is left to ask for a copy, so the picture worker goes too.
-            // A plugin change still waiting on its card ends with the host: nothing is done for a call nobody hears.
-            await Promise.allSettled([...threadTools.map(tools => tools.close()), plugins?.close(), browser?.close(), pictures?.close()])
+            await Promise.allSettled([...threadTools.map(tools => tools.close()), pluginsClosed, browser?.close(), pictures?.close()])
             try { await runtime.close() } finally {
               memory?.close()
               if (listener) {
