@@ -67,20 +67,18 @@ import { HostTailscale } from './hosts/tailscale'
 import { registerLocalAppsIpc, registerPhonesIpc } from './phones/ipc'
 import { registerPluginsIpc } from './plugins/ipc'
 import { readGitHubSignIn, sharedGitHubSignIn } from './plugins/github/signIn'
-import { readGitHub } from './plugins/github/read'
 import { PluginToolServer } from './plugins/pluginTools'
-import { PluginAccounts, PluginSecretLocked } from './plugins/accounts'
+import { pluginToolHandlers } from './plugins/toolHandlers'
+import { PluginAccounts } from './plugins/accounts'
 import { PluginChangeRequests } from './plugins/pendingChanges'
 import { pluginFolderOfThread, pluginProjects } from './plugins/projectFolders'
 import { PluginAccountCopySync } from './plugins/copySync'
 import { isThreadClosed } from '../shared/threadActivity'
 import { wordPluginChange } from './plugins/changeWords'
-import { commentOnGitHub, describeGitHubIssue, openGitHubIssue, setGitHubIssueState } from './plugins/github/changes'
-import { cancelVercelDeployment, describeVercelDeployment, moveVercelProduction } from './plugins/vercel/changes'
 import { combinedSottoRequests } from './agents/sottoRequests'
-import { checkVercelToken, readVercel, type VercelFetch } from './plugins/vercel/read'
+import { checkVercelToken, type VercelFetch } from './plugins/vercel/read'
 import { PluginUseRecord } from './plugins/useRecord'
-import { PLUGIN_USE_THREAD_TITLE_MAX, PLUGINS_COPIES_CHANGED, pluginAccountAdmits } from '../shared/plugins'
+import { PLUGIN_USE_THREAD_TITLE_MAX, PLUGINS_COPIES_CHANGED } from '../shared/plugins'
 import { resetGhLookup } from './agents/git/ghCommand'
 import { GitUnavailableError, runGitStatusCommand, runWithGhStandIn, type RunGitCommand } from './agents/git/gitStatus'
 import { registerTeamsIpc } from './teams/ipc'
@@ -1408,51 +1406,16 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   // whichever provider the thread runs on. Watcher's threads, and a thread Sotto does not know, belong to none.
   const pluginProjectOf = (threadId: string): string | null => pluginFolderOfThread(agentControl.watcherSnapshot(), threadId)
   // The plugin tools, for every thread that takes Sotto's tools: stable builds no server.
-  const pluginTools = pluginUse && pluginAccounts ? new PluginToolServer({
-    admits: threadId => agentHost.admitsPluginTools(threadId), gitHubSignIn: pluginsGitHubSignIn,
-    readGitHub: (path, query) => readGitHub(pluginsGh, path, query, pluginsStop.signal), record: use => pluginUse.add(use),
-    // Which accounts a thread may use is read afresh at every call (decision 9): a switch turned off, or a project
-    // taken off an account, takes effect on the next one.
-    accounts: async threadId => { const project = pluginProjectOf(threadId); return (await pluginAccounts.list()).filter(account => pluginAccountAdmits(account, project)) },
-    findAccount: (threadId, plugin, name) => { const project = pluginProjectOf(threadId); return pluginAccounts.find(plugin, name, account => pluginAccountAdmits(account, project)) },
-    holdsAccount: async accountId => (await pluginAccounts.list()).some(account => account.id === accountId),
-    readVercel: async (accountId, path, query) => {
-      let secret: string
-      try { secret = pluginAccounts.secret(accountId) } catch (error) {
-        if (error instanceof PluginSecretLocked) return { ok: false, reason: 'locked' }
-        throw error
-      }
-      return readVercel(vercelFetch, secret, path, query, vercelOptions)
-    },
+  const pluginTools = pluginUse && pluginAccounts ? new PluginToolServer(pluginToolHandlers({
+    admits: threadId => agentHost.admitsPluginTools(threadId), accounts: pluginAccounts, projectOf: pluginProjectOf,
+    gitHubSignIn: pluginsGitHubSignIn, gh: pluginsGh, vercelFetch, vercelOptions, record: use => pluginUse.add(use),
     // A thread Sotto does not know is taken for Watcher: it changes nothing.
     isWatcher: threadId => {
       const thread = agentControl.watcherSnapshot().threads.find(item => item.id === threadId)
       return thread === undefined || thread.kind === 'watcher' || thread.kind === 'watcher-history'
     },
     askChange: async (threadId, change, wait) => await pluginChanges?.ask(threadId, wordPluginChange(change), wait) ?? 'stopped',
-    commentOnGitHub: input => commentOnGitHub(pluginsGh, input, pluginsStop.signal),
-    openGitHubIssue: input => openGitHubIssue(pluginsGh, input, pluginsStop.signal),
-    describeGitHubIssue: input => describeGitHubIssue(pluginsGh, input, pluginsStop.signal),
-    setGitHubIssueState: input => setGitHubIssueState(pluginsGh, input, pluginsStop.signal),
-    // The deployment is read for its card with the account's token; one that cannot be read shows its ID alone.
-    // A token that cannot be read at all is said before anyone is asked: locked is not the same as gone.
-    describeVercelDeployment: async (accountId, deploymentId, teamId) => {
-      let secret: string
-      try { secret = pluginAccounts.secret(accountId) } catch (error) { return error instanceof PluginSecretLocked ? 'locked' : 'no-secret' }
-      if (!secret) return 'no-secret'
-      return describeVercelDeployment(vercelFetch, secret, deploymentId, teamId, vercelOptions)
-    },
-    cancelVercelDeployment: async (accountId, deploymentId, teamId) => {
-      let secret: string
-      try { secret = pluginAccounts.secret(accountId) } catch (error) { return { ok: false, reason: error instanceof PluginSecretLocked ? 'locked' : 'no-secret' } }
-      return cancelVercelDeployment(vercelFetch, secret, deploymentId, teamId, vercelOptions)
-    },
-    moveVercelProduction: async (accountId, action, projectId, deploymentId, teamId) => {
-      let secret: string
-      try { secret = pluginAccounts.secret(accountId) } catch (error) { return { ok: false, reason: error instanceof PluginSecretLocked ? 'locked' : 'no-secret' } }
-      return moveVercelProduction(vercelFetch, secret, action, projectId, deploymentId, teamId, vercelOptions)
-    },
-  }) : undefined
+  })) : undefined
   if (pluginTools) quitHandles.pluginTools = pluginTools
   // Let an agent babysit its pull requests (ADR-0061): every Claude Code, Codex and Grok Build launch on this computer gets
   // the tool while the switch is on, read live; turned off, what agents started ends at once. Only the local host reads

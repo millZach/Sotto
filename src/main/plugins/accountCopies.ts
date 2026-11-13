@@ -24,12 +24,13 @@ type Senders = Readonly<Record<string, string>>
  * it, so the host asks no service anything. A host started without a key file cannot keep a secret; it says `store`
  * and keeps nothing.
  */
-export function hostPluginAccountCopies(directory: string, credentials: PluginCredentials, now: () => Date = () => new Date()): PluginAccountCopyStore {
-  const accounts = new PluginAccounts(directory, {
+export function hostPluginAccountCopies(directory: string, credentials: PluginCredentials, now: () => Date = () => new Date(),
+  // The host's own threads read the accounts the copies are kept in, so both are handed the one record.
+  accounts: PluginAccounts = new PluginAccounts(directory, {
     credentials,
     // A host adds no account of its own, so nothing is ever asked of a service from here.
     check: async () => ({ ok: false, problem: 'unreachable' }),
-  })
+  })): PluginAccountCopyStore {
   const path = join(directory, 'plugin-account-copy-senders.json')
   /** Only a file that is not there yet means no copies. One that cannot be read throws, so nobody is taken for a copy's sender by mistake. */
   const read = async (): Promise<Senders> => {
