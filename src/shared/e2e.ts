@@ -77,6 +77,9 @@ export const e2eSnapshotSchema = z.object({
   /** Text-free proof from the coordinator's actual owned detail tracker; native fixture runs only. */
   certifiedDetail: z.object({ trackedThreads: z.number().int().nonnegative(), ownedThreads: z.number().int().nonnegative(), reusedRecords: z.number().int().nonnegative() }).optional(),
   openedThreadFolder: z.string().nullable().optional(),
+  /** The files and folders a journey's presses would have opened in their own apps, and shown in their folders (ADR-0120). */
+  openedFiles: z.array(z.string()).optional(),
+  shownFiles: z.array(z.string()).optional(),
   /** The page Open approval page would have opened in the browser; an end-to-end run opens none. */
   openedExternalLink: z.string().nullable().optional(),
   clipboardText: z.string(),

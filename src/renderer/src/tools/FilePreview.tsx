@@ -1,5 +1,5 @@
 import React, { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { Copy, FolderOutput, RotateCw, WrapText, X } from 'lucide-react'
+import { Copy, Download, FolderOutput, RotateCw, WrapText, X } from 'lucide-react'
 import { i18n } from '@lingui/core'
 import { msg } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
@@ -38,6 +38,10 @@ export interface FilePreviewProps {
   readonly onCopyPath: () => void
   /** Absent for a thread on a paired host: its file is on that machine, so there is no folder to show here. */
   readonly onReveal?: (() => void) | undefined
+  /** Saves the file to this computer, for a file on a paired host (ADR-0120, November 12 amendment). Absent anywhere else. */
+  readonly onDownload?: (() => void) | undefined
+  /** Whether that download is under way, so a second press starts no other. */
+  readonly downloading?: boolean | undefined
   readonly onClose: () => void
   readonly onRetry: () => void
   readonly onRefreshFolder: () => void
@@ -55,11 +59,12 @@ export interface FilePreviewProps {
   readonly takesFocus?: boolean
 }
 
-function PreviewProblem({ error, onRetry, onRefreshFolder }: { error: FilesError; onRetry: () => void; onRefreshFolder: () => void }): ReactNode {
+function PreviewProblem({ error, onRetry, onRefreshFolder, downloads = false }: { error: FilesError; onRetry: () => void; onRefreshFolder: () => void; downloads?: boolean }): ReactNode {
   const { t } = useLingui()
   switch (error.code) {
     case 'binary':
-      return <div className="files-problem" role="status"><strong>{t`No preview for this file.`}</strong><p className="tt-paragraph">{t`Text, Markdown and PNG, JPEG, GIF or WebP images preview here.`}</p></div>
+      // On a paired host the file can still be saved to this computer, where its own app opens it.
+      return <div className="files-problem" role="status"><strong>{t`No preview for this file.`}</strong><p className="tt-paragraph">{downloads ? t`Text, Markdown and PNG, JPEG, GIF or WebP images preview here. Download it to open it on this computer.` : t`Text, Markdown and PNG, JPEG, GIF or WebP images preview here.`}</p></div>
     case 'too-large':
       return <div className="files-problem" role="status"><strong>{t`Too large to preview.`}</strong><p className="tt-paragraph">{error.message || t`Text previews up to 512 KB and images up to 8 MB.`}</p></div>
     case 'path-unavailable':
@@ -73,7 +78,7 @@ function PreviewProblem({ error, onRetry, onRefreshFolder }: { error: FilesError
 }
 
 /** The open file: text as text, Markdown through the transcript's safe renderer, rasters from main's data URL. */
-export function FilePreview({ files, preview, scrollTop, onScroll, onCopyPath, onReveal, onClose, onRetry, onRefreshFolder, onMarkdownView, platform, place, onReadAgain, problem, under, takesFocus = false }: FilePreviewProps): ReactNode {
+export function FilePreview({ files, preview, scrollTop, onScroll, onCopyPath, onReveal, onDownload, downloading = false, onClose, onRetry, onRefreshFolder, onMarkdownView, platform, place, onReadAgain, problem, under, takesFocus = false }: FilePreviewProps): ReactNode {
   const { t } = useLingui()
   const body = useRef<HTMLDivElement>(null)
   const [wrap, setWrap] = useState(true)
@@ -97,7 +102,7 @@ export function FilePreview({ files, preview, scrollTop, onScroll, onCopyPath, o
 
   let content: ReactNode
   if (preview.status === 'loading') content = <p className="files-preview__loading" role="status">{t`Loading…`}</p>
-  else if (preview.status === 'error') content = problem ? problem(preview.error) : <PreviewProblem error={preview.error} onRetry={onRetry} onRefreshFolder={onRefreshFolder} />
+  else if (preview.status === 'error') content = problem ? problem(preview.error) : <PreviewProblem error={preview.error} onRetry={onRetry} onRefreshFolder={onRefreshFolder} downloads={onDownload !== undefined} />
   else if (ready!.content.kind === 'image') {
     const source = trustedImageSource(ready!.content)
     content = source
@@ -122,6 +127,7 @@ export function FilePreview({ files, preview, scrollTop, onScroll, onCopyPath, o
         {renderable ? <button type="button" className="files-toggle tt-focusable" aria-pressed={!rendered} onClick={() => onMarkdownView(rendered ? 'source' : 'rendered')}>{t({ message: 'Source', comment: 'Shows a Markdown file as its source text rather than rendered.' })}</button> : null}
         {ready && ready.content.kind !== 'image' && !rendered ? <button type="button" className="files-icon tt-focusable" aria-label={t`Wrap lines`} title={wrap ? t`Wrap lines: on` : t`Wrap lines: off`} aria-pressed={wrap} onClick={() => setWrap(value => !value)}><WrapText size={16} aria-hidden="true" /></button> : null}
         {onReadAgain ? <button type="button" className="files-icon tt-focusable" aria-label={t`Read ${name} again`} title={t`Read again`} onClick={onReadAgain}><RotateCw size={16} aria-hidden="true" /></button> : null}
+        {onDownload ? <button type="button" className="files-icon tt-focusable" aria-label={t({ message: `Download ${name} to this computer`, comment: '{name} is a file name.' })} title={t`Download to this computer`} aria-disabled={downloading || undefined} onClick={() => { if (!downloading) onDownload() }}><Download size={16} aria-hidden="true" /></button> : null}
         <button type="button" className="files-icon tt-focusable" aria-label={t`Copy path of ${name}`} title={t`Copy path`} onClick={onCopyPath}><Copy size={16} aria-hidden="true" /></button>
         {onReveal ? <button type="button" className="files-icon tt-focusable" aria-label={t({ message: `${reveal}: ${name}`, comment: '{reveal} is "Show in File Explorer" or the like; {name} is a file name.' })} title={reveal} onClick={onReveal}><FolderOutput size={16} aria-hidden="true" /></button> : null}
         <button type="button" className="files-icon tt-focusable" aria-label={t`Close preview`} title={t`Close preview`} onClick={onClose}><X size={16} aria-hidden="true" /></button>

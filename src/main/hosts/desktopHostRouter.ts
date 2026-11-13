@@ -35,7 +35,7 @@ import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
 import { needsConfirmationReceipt, type GitPullRequestListRead, type GitPullRequestListRequest, type GitPullRequestRead, type GitPullRequestRequest, type PullRequestConfirmationRequest } from '../../shared/gitPullRequests'
 import type { HostFoldersClientRequest, HostFoldersRequest, HostFoldersResult } from '../../shared/hostFolders'
-import type { FileLinkPreview, FileLinkRequest, FileListing, FileListRequest, FilePath, FilePreview, FileRequest, FilesResult } from '../../shared/files'
+import type { FileLinkPreview, FileLinkRequest, FileListing, FileListRequest, FilePath, FilePreview, FileRequest, FilesResult, LinkedFile, LinkedFileRequest } from '../../shared/files'
 import type { GitChangeListing, GitPathRequest, GitReview, GitReviewRequest } from '../../shared/gitChanges'
 import type { SubagentAssignmentsPage, SubagentAssignmentsRequest, SubagentPage, SubagentPageRequest } from '../../shared/subagents'
 import type { ToolListRequest, ToolsResult } from '../../shared/tools'
@@ -145,7 +145,7 @@ function withoutClientUpdates(state: AgentState): AgentState {
 
 /** Which surface each tool read is for, as its refusals name it. */
 const TOOL_SURFACES: Record<keyof HostThreadToolReads, 'files' | 'changes' | 'agents'> = {
-  threadFiles: 'files', threadFilePreview: 'files', threadFileLink: 'files', gitChanges: 'changes', gitReview: 'changes', subagentPage: 'agents', subagentAssignments: 'agents',
+  threadFiles: 'files', threadFilePreview: 'files', threadFileLink: 'files', threadLinkedFile: 'files', gitChanges: 'changes', gitReview: 'changes', subagentPage: 'agents', subagentAssignments: 'agents',
 }
 /** A tool read's refusals, one whole sentence per surface so each language can word it. */
 const toolReadRefusal = {
@@ -1513,6 +1513,7 @@ export class DesktopHostRouter {
   async threadFiles(request: FileListRequest): Promise<FilesResult<FileListing>> { return answeredAsRefusal(() => this.threadToolRead('threadFiles', request)) }
   async threadFilePreview(request: FileRequest): Promise<FilesResult<FilePreview>> { return answeredAsRefusal(() => this.threadToolRead('threadFilePreview', request)) }
   async threadFileLink(request: FileLinkRequest): Promise<FilesResult<FileLinkPreview>> { return answeredAsRefusal(() => this.threadToolRead('threadFileLink', request)) }
+  async threadLinkedFile(request: LinkedFileRequest): Promise<FilesResult<LinkedFile>> { return answeredAsRefusal(() => this.threadToolRead('threadLinkedFile', request)) }
   async gitChanges(request: ToolListRequest): Promise<ToolsResult<GitChangeListing>> { return answeredAsRefusal(() => this.threadToolRead('gitChanges', request)) }
   async gitReview(request: GitReviewRequest): Promise<ToolsResult<GitReview>> { return answeredAsRefusal(() => this.threadToolRead('gitReview', request)) }
   subagentPage(request: SubagentPageRequest): Promise<SubagentPage> { return this.threadToolRead('subagentPage', request) }

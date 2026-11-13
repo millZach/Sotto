@@ -1,0 +1,483 @@
+<!doctype html>
+<!--
+  PROTOTYPE: throwaway. Not shipped, not tested, not wired to anything.
+
+  Question: Zach asked (November 12, 2026) for a file a reply names to be a link that opens the file or its place: on this
+  computer in its own app or its folder, and on a paired host in Tools > Files with an optional download.
+
+  What this page offers, each switchable above the window:
+    On this computer
+      A press:    A  shows the file in its folder, as today, and the right-click menu gains Open
+                  B  opens the file in its app, and the menu keeps Show in File Explorer
+                  C  asks: a small menu at the link with Open, Show in File Explorer and Copy path
+      A program:  1  is never run: Open is not offered, it is shown in its folder
+                  2  asks first
+                  3  runs like any other file opens
+    On forge (a paired host)
+      Download:   A  an icon in the file's head, beside Copy path
+                  B  a button with the word in the file's head
+                  C  a line under the file's head that is always there
+      Saves to:   1  the Downloads folder    2  asks where each time
+      Outside the thread's folder:  1  that file alone   2  its folder, browsable
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Prototype: file links that open, and files on another computer</title>
+<style>
+:root, [data-theme="dark"] {
+  color-scheme: dark;
+  --canvas: oklch(0.115 0.008 265); --surface: oklch(0.145 0.008 265); --raised: oklch(0.185 0.008 265); --overlay: oklch(0.215 0.008 265);
+  --text: oklch(0.985 0.005 280); --text-2: oklch(0.86 0.01 270); --muted: oklch(0.72 0.014 265);
+  --border: oklch(0.305 0.02 265); --hairline: oklch(0.245 0.014 265);
+  --accent: oklch(0.714403 0.104089 183.092); --accent-text: oklch(0.8 0.1 183); --accent-wash: oklch(0.32 0.05 185 / .45); --accent-ink: oklch(0.16 0.012 190);
+  --selected: oklch(0.355 0.035 188); --warning: oklch(0.82 0.14 80); --error: oklch(0.72 0.17 25); --code-bg: oklch(0.16 0.008 265); --shadow: 0 18px 60px oklch(0 0 0 / .55);
+}
+[data-theme="light"] {
+  color-scheme: light;
+  --canvas: oklch(0.978 0.004 85); --surface: oklch(0.99 0.003 85); --raised: oklch(0.955 0.006 85); --overlay: oklch(0.995 0.002 85);
+  --text: oklch(0.235 0.014 75); --text-2: oklch(0.34 0.014 75); --muted: oklch(0.5 0.014 75);
+  --border: oklch(0.85 0.008 85); --hairline: oklch(0.91 0.006 85);
+  --accent: oklch(0.53 0.095 186); --accent-text: oklch(0.42 0.09 186); --accent-wash: oklch(0.92 0.03 186); --accent-ink: oklch(0.99 0.003 85);
+  --selected: oklch(0.92 0.03 186); --warning: oklch(0.5 0.12 75); --error: oklch(0.52 0.18 25); --code-bg: oklch(0.955 0.006 85); --shadow: 0 18px 50px oklch(0.2 0.02 75 / .22);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--canvas); color: var(--text); font: 14px/1.5 Figtree, "Segoe UI", system-ui, -apple-system, sans-serif; display: flex; flex-direction: column; min-height: 100dvh; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* ---------- This page's own controls ---------- */
+.proto { flex: none; padding: 10px 14px; border-bottom: 1px solid var(--hairline); display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; background: var(--surface); }
+.proto h1 { margin: 0; font-size: 14px; font-weight: 600; flex-basis: 100%; }
+.proto h1 small { font-weight: 400; color: var(--muted); font-size: 12px; margin-left: 6px; }
+.group { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.group > span { font-size: 12px; color: var(--muted); }
+.group[hidden] { display: none; }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 9px; overflow: hidden; }
+.seg button { min-height: 34px; padding: 0 11px; border: 0; background: transparent; font-size: 13px; color: var(--muted); cursor: pointer; white-space: nowrap; }
+.seg button + button { border-left: 1px solid var(--border); }
+.seg button[aria-pressed="true"] { background: var(--accent-wash); color: var(--text); }
+.proto .plain { min-height: 34px; padding: 0 11px; border: 1px solid var(--border); border-radius: 9px; background: transparent; font-size: 13px; color: var(--text-2); cursor: pointer; }
+.state { flex: none; padding: 8px 14px calc(8px + env(safe-area-inset-bottom)); border-top: 1px solid var(--hairline); background: var(--surface); font-size: 13px; color: var(--text-2); min-height: 40px; }
+.state b { color: var(--text); font-weight: 600; }
+.stage { flex: 1; min-height: 0; display: flex; justify-content: center; padding: 10px; overflow: hidden; }
+
+/* ---------- The window ---------- */
+.window { position: relative; width: 100%; max-width: 1280px; height: 100%; min-height: 460px; max-height: 800px; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--canvas); display: flex; }
+.pane { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; flex: 1 1 0; background: var(--canvas); box-shadow: inset 0 1px 0 var(--accent); }
+.head { flex: none; display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 10px 0 14px; }
+.head strong { font-weight: 500; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.head .quiet { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.head .grow { flex: 1; }
+.transcript { flex: 1; min-height: 0; overflow: auto; padding: 12px 14px; }
+.you { margin: 0 0 14px 14px; padding: 10px 14px; background: var(--surface); border: 1px solid var(--hairline); border-radius: 12px; color: var(--text-2); }
+.who { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.who b { color: var(--text); font-weight: 500; margin-right: 6px; }
+.reply p { margin: 0 0 10px; color: var(--text-2); }
+.reply ul { margin: 0 0 10px; padding-left: 20px; color: var(--text-2); }
+.reply li { margin-bottom: 6px; }
+.link { color: var(--accent-text); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); cursor: pointer; background: none; border: 0; padding: 0; text-align: left; overflow-wrap: anywhere; -webkit-touch-callout: none; user-select: none; }
+code.link { font-family: Consolas, "SF Mono", ui-monospace, monospace; font-size: .92em; background: var(--code-bg); border-radius: 4px; padding: 1px 4px; }
+.hint { font-size: 12px; color: var(--muted); }
+.notice { margin: 2px 0 10px; font-size: 13px; color: var(--muted); }
+.composer { flex: none; margin: 0 14px 12px; min-height: 52px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 14px; color: var(--muted); font-size: 13px; }
+svg.i { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+/* ---------- Tools and Files ---------- */
+.tools { flex: 0 0 min(48%, 620px); min-width: 0; min-height: 0; display: flex; border-left: 1px solid var(--hairline); background: var(--canvas); }
+.tools-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.chrome { flex: none; display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 6px 0 16px; border-bottom: 1px solid var(--hairline); }
+.chrome b { font-weight: 500; }
+.chrome span { color: var(--muted); font-size: 12px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chrome .grow { flex: 1; }
+.outside { flex: none; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 16px; border-bottom: 1px solid var(--hairline); font-size: 12px; color: var(--muted); }
+.textbtn { background: none; border: 0; padding: 0; font-size: inherit; color: var(--accent-text); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.tree { flex: 0 1 auto; max-height: 44%; overflow: auto; padding: 6px; border-bottom: 1px solid var(--hairline); }
+.tree div { display: flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 6px; font-size: 13px; color: var(--text-2); white-space: nowrap; }
+.tree div[data-on] { background: var(--selected); color: var(--text); }
+.tree div[data-focus] { outline: 2px solid var(--accent); outline-offset: -2px; }
+.rail { flex: 0 0 56px; border-left: 1px solid var(--hairline); padding: 6px 4px; display: flex; flex-direction: column; gap: 2px; }
+.rail button { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 7px 0; border: 0; border-radius: 10px; background: transparent; color: var(--muted); font-size: 11px; }
+.rail button[data-on] { background: var(--selected); color: var(--text); }
+.preview { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.fhead { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; padding: 0 6px 0 16px; border-bottom: 1px solid var(--hairline); }
+.ftitle { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.fname { min-width: 0; overflow: hidden; color: var(--text); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.fmeta { flex: none; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.factions { display: flex; align-items: center; gap: 2px; flex: none; }
+.files-icon { display: grid; place-items: center; width: 32px; height: 32px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; }
+.files-icon:hover { background: var(--raised); color: var(--text); }
+.files-toggle { display: inline-flex; align-items: center; gap: 6px; min-height: 28px; padding: 0 10px; margin-right: 4px; border: 1px solid var(--border); border-radius: 8px; background: transparent; color: var(--text-2); font-size: 12px; cursor: pointer; white-space: nowrap; }
+.files-toggle:hover { background: var(--raised); color: var(--text); }
+.under { flex: none; display: flex; align-items: center; gap: 6px 12px; flex-wrap: wrap; padding: 7px 16px; border-bottom: 1px solid var(--hairline); font-size: 13px; color: var(--text-2); }
+.under .grow { flex: 1; min-width: 0; }
+.bar { flex: 1 1 120px; height: 4px; border-radius: 2px; background: var(--raised); overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--accent); }
+.fbody { flex: 1; min-height: 0; overflow: auto; padding: 14px 18px 24px; }
+.fbody pre { margin: 0; font: 13px/1.6 Consolas, "SF Mono", ui-monospace, monospace; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-2); }
+.fbody h2 { margin: 0 0 8px; font-size: 18px; font-weight: 600; }
+.fbody p { margin: 0 0 10px; color: var(--text-2); }
+.problem strong { display: block; font-weight: 500; margin-bottom: 6px; }
+.problem p { color: var(--muted); font-size: 13px; }
+.pathline { font: 12px/1.5 Consolas, "SF Mono", ui-monospace, monospace; color: var(--muted); overflow-wrap: anywhere; }
+
+/* ---------- Menu, dialog, and the stand-in for what the computer does ---------- */
+.menu { position: absolute; z-index: 9; min-width: 220px; padding: 4px; background: var(--overlay); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow); }
+.menu button { display: block; width: 100%; min-height: 34px; padding: 0 10px; border: 0; border-radius: 7px; background: transparent; text-align: left; font-size: 13px; cursor: pointer; color: var(--text); }
+.menu button:hover, .menu button:focus-visible { background: var(--raised); }
+.scrim { position: absolute; inset: 0; z-index: 10; background: oklch(0 0 0 / .45); display: grid; place-items: center; padding: 14px; }
+.dialog { width: min(440px, 100%); padding: 18px; background: var(--overlay); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow); }
+.dialog h2 { margin: 0 0 8px; font-size: 16px; font-weight: 600; }
+.dialog p { margin: 0 0 14px; color: var(--text-2); font-size: 13px; overflow-wrap: anywhere; }
+.dialog .row { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.btn { min-height: 34px; padding: 0 14px; border: 1px solid var(--border); border-radius: 9px; background: transparent; font-size: 13px; cursor: pointer; }
+.btn[data-main] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.os { position: absolute; left: 14px; bottom: 76px; z-index: 8; width: min(340px, calc(100% - 28px)); border: 1px dashed var(--warning); border-radius: 10px; background: var(--overlay); box-shadow: var(--shadow); cursor: pointer; }
+.os header { padding: 6px 10px; border-bottom: 1px solid var(--hairline); font-size: 12px; color: var(--warning); display: flex; justify-content: space-between; gap: 8px; }
+.os div { padding: 10px; font-size: 13px; color: var(--text-2); overflow-wrap: anywhere; }
+
+/* ---------- On a phone: the thread above, Tools beneath ---------- */
+@media (max-width: 760px) {
+  body { font-size: 13px; }
+  .proto { padding: 8px 10px; gap: 6px 10px; }
+  .proto h1 small { display: block; margin: 0; }
+  .seg button, .proto .plain { min-height: 40px; padding: 0 9px; font-size: 12px; }
+  html, body { height: auto; }
+  .stage { padding: 6px; overflow: visible; flex: none; }
+  .state { position: sticky; bottom: 0; z-index: 12; }
+  .window { flex-direction: column; min-height: 78dvh; max-height: none; height: auto; }
+  .pane { flex: 1 1 44%; min-height: 300px; }
+  .tools { flex: 1 1 56%; min-height: 380px; border-left: 0; border-top: 1px solid var(--border); }
+  .composer { display: none; }
+  .transcript { padding: 10px 8px; }
+  .you { margin-left: 0; padding: 8px 10px; }
+  .head { padding: 0 4px 0 8px; }
+  .fhead { padding: 0 2px 0 10px; }
+  .fmeta { display: none; }
+  .under, .outside { padding: 7px 10px; }
+  .fbody { padding: 12px 10px 20px; }
+  .files-icon { width: 36px; height: 36px; }
+  .rail { flex-basis: 46px; }
+  .rail button { font-size: 9px; }
+  .menu button { min-height: 42px; }
+  .os { bottom: 12px; }
+}
+</style>
+</head>
+<body data-theme="dark">
+<section class="proto" aria-label="Prototype controls">
+  <h1>File links that open, and files on another computer <small>Press a blue link. Right-click or hold one for its menu. Everything is a stand-in.</small></h1>
+  <div class="group"><span>The thread runs</span><div class="seg" id="where"></div></div>
+  <div class="group" data-for="local"><span>A press</span><div class="seg" id="press"></div></div>
+  <div class="group" data-for="local"><span>A program</span><div class="seg" id="program"></div></div>
+  <div class="group" data-for="host"><span>Download</span><div class="seg" id="dl"></div></div>
+  <div class="group" data-for="host"><span>Saves to</span><div class="seg" id="save"></div></div>
+  <div class="group" data-for="host"><span>Outside the folder</span><div class="seg" id="outside"></div></div>
+  <div class="group"><div class="seg" id="theme"></div><button type="button" class="plain" id="menuBtn">Open the first link's menu</button></div>
+</section>
+<main class="stage"><div class="window" id="win" role="application" aria-label="Sotto, stand-in"></div></main>
+<footer class="state" id="state" role="status"></footer>
+
+<script>
+const ICON = {
+  copy: '<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>',
+  reveal: '<path d="M2 7.5V5a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-3"/><path d="M2 13h10"/><path d="m9 10 3 3-3 3"/>',
+  x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  download: '<path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/>',
+  refresh: '<path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/>',
+  file: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/>',
+  folder: '<path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-8l-2-3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2z"/>',
+  diff: '<path d="M12 3v14"/><path d="M5 10h14"/><path d="M5 21h14"/>',
+  globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18"/>',
+  term: '<path d="m4 17 6-5-6-5"/><path d="M12 19h8"/>',
+}
+const icon = name => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${ICON[name]}</svg>`
+const esc = text => String(text).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
+
+/* What the replies link. */
+const LOCAL = {
+  pdf: { name: 'q3-report.pdf', path: 'D:/Reports/out/q3-report.pdf', kind: 'file', app: 'your PDF reader', folder: 'D:/Reports/out' },
+  png: { name: 'revenue.png', path: 'D:/Reports/out/figures/revenue.png', kind: 'file', app: 'Photos', folder: 'D:/Reports/out/figures', code: true },
+  dir: { name: 'out', label: 'the out folder', path: 'D:/Reports/out', kind: 'folder', folder: 'D:/Reports' },
+  md: { name: 'notes.md', path: 'D:/Reports/notes.md', kind: 'markdown', app: 'your Markdown app', folder: 'D:/Reports' },
+  bat: { name: 'build-report.bat', path: 'D:/Reports/build-report.bat', kind: 'program', folder: 'D:/Reports' },
+}
+const HOST = {
+  pdf: { name: 'q3-report.pdf', path: '/home/zach/Projects/reports/out/q3-report.pdf', rel: 'out/q3-report.pdf', kind: 'file', size: '2.4 MB', body: null },
+  ts: { name: 'build.ts', path: '/home/zach/Projects/reports/src/build.ts', rel: 'src/build.ts', kind: 'file', size: '3 KB', body: "import { readSales } from './sales'\nimport { drawRevenue } from './charts'\n\nexport async function build(quarter: string): Promise<void> {\n  const sales = await readSales('/home/zach/exports/sales.csv')\n  await drawRevenue(sales, `out/figures/revenue.png`)\n  await writeReport(quarter, sales, 'out/q3-report.pdf')\n}" },
+  dir: { name: 'out', label: 'the out folder', path: '/home/zach/Projects/reports/out', rel: 'out', kind: 'folder' },
+  md: { name: 'notes.md', path: '/home/zach/Projects/reports/notes.md', rel: 'notes.md', kind: 'markdown', size: '6 KB' },
+  csv: { name: 'sales.csv', path: '/home/zach/exports/sales.csv', kind: 'file', size: '18 KB', outside: true, body: 'month,region,revenue\n2026-07,North,418200\n2026-07,South,377950\n2026-08,North,431080\n2026-08,South,402300\n2026-09,North,455910\n2026-09,South,398640' },
+}
+
+const S = { where: 'local', press: 'A', program: '1', dl: 'A', save: '1', outside: '1', theme: 'dark',
+  tools: null,      // null, or { key, place: 'tree' | 'alone' | 'folder' | 'markdown' }
+  menu: null,       // { key, x, y, asked }
+  dialog: null,     // { kind: 'run' | 'save', key }
+  os: null,         // { title, text }
+  notice: null,     // the line under the reply
+  download: null,   // { key, phase: 'going' | 'done' | 'stopped', pct }
+  said: 'Nothing pressed yet.' }
+const files = () => S.where === 'local' ? LOCAL : HOST
+let timer = null, osTimer = null
+
+const CHOICES = {
+  where: [['local', 'On this computer'], ['host', 'On forge']],
+  press: [['A', 'A · Shows it'], ['B', 'B · Opens it'], ['C', 'C · Asks']],
+  program: [['1', '1 · Never run'], ['2', '2 · Ask first'], ['3', '3 · Run it']],
+  dl: [['A', 'A · Icon'], ['B', 'B · Button'], ['C', 'C · Line']],
+  save: [['1', '1 · Downloads'], ['2', '2 · Ask where']],
+  outside: [['1', '1 · The file alone'], ['2', '2 · Its folder']],
+  theme: [['dark', 'Dark'], ['light', 'Light']],
+}
+const SAYS = {
+  where: { local: 'The thread runs <b>on this computer</b>. Its files are here, so a link can open one or show it in its folder.', host: 'The thread runs <b>on forge</b>, a paired host. Its files are there, so a link shows the file in Tools &rsaquo; Files, where it can be downloaded.' },
+  press: { A: '<b>A · Shows it.</b> A press shows the file in its folder, as today. Open is in the right-click menu.', B: '<b>B · Opens it.</b> A press opens the file in its own app. Show in File Explorer is in the right-click menu.', C: '<b>C · Asks.</b> A press opens a small menu at the link: Open, Show in File Explorer, Copy path.' },
+  program: { 1: '<b>1 · Never run.</b> A program or script is never opened from a link. Open is not offered for it; it is shown in its folder.', 2: '<b>2 · Ask first.</b> Opening a program or script asks before it runs.', 3: '<b>3 · Run it.</b> A program or script runs like any other file opens.' },
+  dl: { A: '<b>A · Icon.</b> Download is an icon in the file\'s head, beside Copy path.', B: '<b>B · Button.</b> Download is a button with the word, in the file\'s head.', C: '<b>C · Line.</b> A line under the file\'s head says where the file is and holds Download.' },
+  save: { 1: '<b>1 · Downloads.</b> A download goes straight to this computer\'s Downloads folder.', 2: '<b>2 · Ask where.</b> Each download asks where to save.' },
+  outside: { 1: '<b>1 · The file alone.</b> A link to a file outside the thread\'s folder shows that one file. Nothing around it can be browsed.', 2: '<b>2 · Its folder.</b> A link to a file outside the thread\'s folder shows the folder it is in, and that folder can be browsed.' },
+}
+
+/* ---------- What a press does ---------- */
+function osDoes(title, text) { S.os = { title, text }; clearTimeout(osTimer); osTimer = setTimeout(() => { S.os = null; render() }, 5000) }
+function reveal(file) { osDoes('File Explorer', `${file.folder}: ${file.name} is selected. Nothing was opened.`); S.said = `Showed <b>${esc(file.name)}</b> in its folder.` }
+function openLocal(file) {
+  if (file.kind === 'program') {
+    if (S.program === '1') { reveal(file); S.notice = `${file.name} is a program, so it was shown in its folder. Nothing was run.`; S.said = `<b>${esc(file.name)}</b> is a program. It was shown in its folder and not run.`; return }
+    if (S.program === '2') { S.dialog = { kind: 'run', key: keyOf(file) }; S.said = `Asked before running <b>${esc(file.name)}</b>.`; return }
+    osDoes('Command Prompt', `${file.name} is running.`); S.said = `Ran <b>${esc(file.name)}</b> with no question.`; return
+  }
+  if (file.kind === 'folder') { osDoes('File Explorer', `${file.path} is open.`); S.said = `Opened the folder <b>${esc(file.path)}</b>.`; return }
+  osDoes(file.app, `${file.name} is open.`); S.said = `Opened <b>${esc(file.name)}</b> in ${esc(file.app)}.`
+}
+function sidePanel(file) { S.tools = { key: keyOf(file), place: 'markdown' }; S.said = `Opened <b>${esc(file.name)}</b> in the side panel, as today.` }
+const keyOf = file => Object.entries(files()).find(([, value]) => value === file)[0]
+
+function showOnHost(file) {
+  S.download = null
+  if (file.kind === 'markdown') { S.tools = { key: keyOf(file), place: 'markdown' }; S.said = `Opened <b>${esc(file.name)}</b> in the side panel, as today. It can now be downloaded too.`; return }
+  if (file.outside) { S.tools = { key: keyOf(file), place: S.outside === '1' ? 'alone' : 'folder' }; S.said = S.outside === '1' ? `<b>${esc(file.name)}</b> is outside the thread's folder on forge, so Files shows it alone.` : `<b>${esc(file.name)}</b> is outside the thread's folder on forge, so Files shows the folder it is in.`; return }
+  S.tools = { key: keyOf(file), place: 'tree' }
+  S.said = file.kind === 'folder' ? `Tools &rsaquo; Files opened on forge with the folder <b>${esc(file.name)}</b> open. A folder is not downloaded.` : `Tools &rsaquo; Files opened on forge with <b>${esc(file.name)}</b> selected.`
+}
+function startDownload(key) {
+  const file = HOST[key]
+  if (S.save === '2' && !S.dialog) { S.dialog = { kind: 'save', key }; S.said = `Asked where to save <b>${esc(file.name)}</b>.`; return }
+  S.dialog = null
+  if (!S.tools || S.tools.key !== key) showOnHost(file)
+  S.download = { key, phase: 'going', pct: 0 }
+  S.said = `Downloading <b>${esc(file.name)}</b> from forge to this computer.`
+  clearInterval(timer)
+  timer = setInterval(() => {
+    if (!S.download || S.download.phase !== 'going') return clearInterval(timer)
+    S.download.pct += 12
+    if (S.download.pct >= 100) { S.download.phase = 'done'; S.said = `Saved <b>${esc(file.name)}</b> to Downloads on this computer. Nothing opened.`; clearInterval(timer) }
+    render()
+  }, 260)
+}
+
+function press(key, element) {
+  const file = files()[key]
+  S.menu = null; S.notice = null
+  if (S.where === 'host') return showOnHost(file)
+  if (file.kind === 'markdown') return sidePanel(file)
+  if (S.press === 'A') return reveal(file)
+  if (S.press === 'B') return openLocal(file)
+  openMenu(key, element, true)
+}
+function menuItems(key) {
+  const file = files()[key]
+  if (S.where === 'host') return [
+    ...(file.kind === 'markdown' ? [['side', 'Open in side panel']] : [['files', 'Show in Files']]),
+    ...(file.kind === 'folder' ? [] : [['download', 'Download']]),
+    ['copy', 'Copy path'],
+  ]
+  const canOpen = file.kind !== 'program' || S.program !== '1'
+  return [
+    ...(file.kind === 'markdown' ? [['side', 'Open in side panel']] : []),
+    ...(canOpen ? [['open', file.kind === 'folder' ? 'Open folder' : 'Open']] : []),
+    ['reveal', 'Show in File Explorer'],
+    ['copy', 'Copy path'],
+  ]
+}
+function openMenu(key, element, asked = false) {
+  const win = document.getElementById('win').getBoundingClientRect()
+  const at = element.getBoundingClientRect()
+  S.menu = { key, x: Math.max(8, Math.min(at.left - win.left, win.width - 236)), y: Math.min(at.bottom - win.top + 4, win.height - 170), asked }
+  S.said = asked ? `The press asked what to do with <b>${esc(files()[key].name)}</b>.` : `The right-click menu of <b>${esc(files()[key].name)}</b>.`
+}
+function choose(act, key) {
+  const file = files()[key]
+  S.menu = null; S.notice = null
+  if (act === 'open') openLocal(file)
+  else if (act === 'reveal') reveal(file)
+  else if (act === 'side') S.where === 'host' ? showOnHost(file) : sidePanel(file)
+  else if (act === 'files') showOnHost(file)
+  else if (act === 'download') startDownload(key)
+  else if (act === 'copy') { S.notice = 'Path copied.'; S.said = `Copied <b>${esc(file.path)}</b>.` }
+}
+
+/* ---------- Drawing ---------- */
+function tooltip(key) {
+  const file = files()[key]
+  if (S.where === 'host') return file.kind === 'markdown' ? `Open ${file.path} in the side panel` : `Show ${file.path} in Files on forge`
+  if (file.kind === 'markdown') return `Open ${file.path} in the side panel`
+  if (S.press === 'B' && !(file.kind === 'program' && S.program === '1')) return `Open ${file.path}`
+  if (S.press === 'C') return `Open or show ${file.path}`
+  return `Show in File Explorer: ${file.path}`
+}
+function link(key, text) {
+  const file = files()[key]
+  const tag = file.code ? 'code' : 'span'
+  return `<${tag} class="link" role="link" tabindex="0" data-link="${key}" title="${esc(tooltip(key))}">${esc(text ?? file.label ?? file.name)}</${tag}>`
+}
+function transcript() {
+  const local = S.where === 'local'
+  const list = local
+    ? `<li>${link('pdf')}, the report itself</li><li>${link('png', 'D:/Reports/out/figures/revenue.png')}, the chart on page 2</li><li>${link('dir')}, with everything from this run</li><li>${link('md')}, what I changed and why</li><li>${link('bat')}, the script that builds it again</li>`
+    : `<li>${link('pdf')}, the report itself</li><li>${link('ts')}, the script that builds it</li><li>${link('dir')}, with everything from this run</li><li>${link('md')}, what I changed and why</li><li>${link('csv')}, the sales I read, which is outside this project</li>`
+  return `<div class="pane"><div class="head"><strong>Quarterly report</strong><span class="quiet">Claude Code${local ? '' : ' · on forge'}</span><span class="grow"></span></div>
+    <div class="transcript">
+      <div class="you">Build the Q3 report and tell me where everything is.</div>
+      <div class="reply"><div class="who"><b>Claude Code</b>just now</div>
+        <p>The report is built. Here is what it wrote and read:</p>
+        <ul>${list}</ul>
+        ${S.notice ? `<p class="notice" role="status">${esc(S.notice)}</p>` : ''}
+      </div>
+    </div>
+    <div class="composer">Reply…</div></div>`
+}
+function downloadLine(key) {
+  const file = HOST[key], d = S.download && S.download.key === key ? S.download : null
+  if (d?.phase === 'going') return `<div class="under" role="status"><span>Downloading from forge… ${Math.min(d.pct, 99)}%</span><span class="bar"><i style="width:${Math.min(d.pct, 100)}%"></i></span><button type="button" class="textbtn" data-act="stop">Stop</button></div>`
+  if (d?.phase === 'done') return `<div class="under" role="status"><span class="grow">Saved to Downloads on this computer.</span><button type="button" class="textbtn" data-act="saved-reveal" data-key="${key}">Show in File Explorer</button>${S.where === 'host' ? `<button type="button" class="textbtn" data-act="saved-open" data-key="${key}">Open</button>` : ''}</div>`
+  if (d?.phase === 'stopped') return `<div class="under" role="status"><span class="grow">Download stopped. Nothing was saved.</span>${S.dl === 'C' ? `<button type="button" class="files-toggle" data-act="download" data-key="${key}">${icon('download')}Download</button>` : ''}</div>`
+  if (S.dl === 'C') return `<div class="under"><span class="grow">This file is on forge${file.size ? `, ${file.size}` : ''}.</span><button type="button" class="files-toggle" data-act="download" data-key="${key}">${icon('download')}Download</button></div>`
+  return ''
+}
+function preview(key, { alone = false } = {}) {
+  const file = HOST[key]
+  const body = file.kind === 'markdown' ? `<h2>Notes on the Q3 report</h2><p>Revenue is read from <code>sales.csv</code> and drawn by region. The chart moved to page 2.</p><p>Run the build again after the September numbers are final.</p>`
+    : file.body ? `<pre>${esc(file.body)}</pre>`
+      : `<div class="problem"><strong>No preview for this file.</strong><p>Text, Markdown and PNG, JPEG, GIF or WebP images preview here. Download it to open it on this computer.</p></div>`
+  return `<section class="preview" aria-label="Preview of ${esc(file.name)}">
+    <header class="fhead"><div class="ftitle" title="${esc(file.path)}"><span class="fname">${esc(file.name)}</span><span class="fmeta">${file.size} · Read only · on forge</span></div>
+      <div class="factions">
+        ${S.dl === 'B' ? `<button type="button" class="files-toggle" data-act="download" data-key="${key}">${icon('download')}Download</button>` : ''}
+        ${S.dl === 'A' ? `<button type="button" class="files-icon" data-act="download" data-key="${key}" aria-label="Download ${esc(file.name)} to this computer" title="Download to this computer">${icon('download')}</button>` : ''}
+        <button type="button" class="files-icon" data-act="copy" data-key="${key}" aria-label="Copy path of ${esc(file.name)}" title="Copy path">${icon('copy')}</button>
+        <button type="button" class="files-icon" data-act="close-preview" aria-label="Close preview" title="Close preview">${icon('x')}</button>
+      </div></header>
+    ${downloadLine(key)}
+    ${alone ? `<div class="under"><span class="pathline">${esc(file.path)}</span></div>` : ''}
+    <div class="fbody">${body}</div></section>`
+}
+const row = (depth, kind, name, on, focus) => `<div style="padding-left:${10 + depth * 16}px"${on ? ' data-on' : ''}${focus ? ' data-focus' : ''}>${icon(kind)}${esc(name)}</div>`
+function tools() {
+  if (!S.tools) return ''
+  const { key, place } = S.tools
+  const local = S.where === 'local'
+  let main
+  if (local) {
+    const file = LOCAL[key]
+    main = `<div class="chrome"><b>Files</b><span>Reports</span><span class="grow"></span><button type="button" class="files-icon" aria-label="Refresh files">${icon('refresh')}</button></div>
+      <section class="preview"><header class="fhead"><div class="ftitle"><span class="fname">${esc(file.name)}</span><span class="fmeta">6 KB · Read only</span></div>
+        <div class="factions"><button type="button" class="files-icon" data-act="copy" data-key="${key}" aria-label="Copy path" title="Copy path">${icon('copy')}</button><button type="button" class="files-icon" data-act="local-reveal" data-key="${key}" aria-label="Show in File Explorer" title="Show in File Explorer">${icon('reveal')}</button><button type="button" class="files-icon" data-act="close-tools" aria-label="Close preview" title="Close preview">${icon('x')}</button></div></header>
+        <div class="fbody"><h2>Notes on the Q3 report</h2><p>Revenue is read from <code>sales.csv</code> and drawn by region. The chart moved to page 2.</p></div></section>`
+  } else if (place === 'markdown' || place === 'alone') {
+    main = `<div class="chrome"><b>Files</b><span>reports · on forge</span><span class="grow"></span><button type="button" class="files-icon" aria-label="Refresh files">${icon('refresh')}</button></div>${preview(key, { alone: place === 'alone' })}`
+  } else if (place === 'folder') {
+    main = `<div class="chrome"><b>Files</b><span>exports · on forge</span><span class="grow"></span><button type="button" class="files-icon" aria-label="Refresh files">${icon('refresh')}</button></div>
+      <div class="outside"><span>/home/zach/exports is outside this thread's folder.</span><button type="button" class="textbtn" data-act="back-root">Back to reports</button></div>
+      <div class="tree" role="tree" aria-label="Files in exports">${row(0, 'folder', 'archive')}${row(0, 'file', 'customers.csv')}${row(0, 'file', 'sales.csv', true)}${row(0, 'file', 'targets-2026.xlsx')}</div>${preview(key)}`
+  } else {
+    const file = HOST[key]
+    const inOut = key === 'pdf' || key === 'dir', inSrc = key === 'ts'
+    main = `<div class="chrome"><b>Files</b><span>reports · on forge</span><span class="grow"></span><button type="button" class="files-icon" aria-label="Refresh files">${icon('refresh')}</button></div>
+      <div class="tree" role="tree" aria-label="Files in reports">
+        ${row(0, 'folder', 'out', false, key === 'dir')}${inOut ? row(1, 'folder', 'figures') + row(1, 'file', 'q3-report.pdf', key === 'pdf') : ''}
+        ${row(0, 'folder', 'src')}${inSrc ? row(1, 'file', 'build.ts', true) + row(1, 'file', 'charts.ts') + row(1, 'file', 'sales.ts') : ''}
+        ${row(0, 'file', 'notes.md')}${row(0, 'file', 'package.json')}
+      </div>${file.kind === 'folder' ? '<div class="fbody"><p class="hint">Choose a file to read it or download it.</p></div>' : preview(key)}`
+  }
+  return `<aside class="tools" aria-label="Tools"><div class="tools-main">${main}</div>
+    <nav class="rail" aria-label="Tools"><button type="button" data-on>${icon('folder')}Files</button><button type="button">${icon('diff')}Changes</button><button type="button">${icon('globe')}Browser</button><button type="button">${icon('term')}Terminal</button></nav></aside>`
+}
+function overlays() {
+  let html = ''
+  if (S.menu) html += `<div class="menu" role="menu" aria-label="Link: ${esc(files()[S.menu.key].path)}" style="left:${S.menu.x}px;top:${S.menu.y}px">${menuItems(S.menu.key).map(([act, label]) => `<button type="button" role="menuitem" data-menu="${act}" data-key="${S.menu.key}">${label}</button>`).join('')}</div>`
+  if (S.dialog?.kind === 'run') { const file = LOCAL[S.dialog.key]; html += `<div class="scrim"><div class="dialog" role="alertdialog" aria-label="Run ${esc(file.name)}?"><h2>Run ${esc(file.name)}?</h2><p>A reply linked this program at ${esc(file.path)}. Opening it runs it on this computer.</p><div class="row"><button type="button" class="btn" data-act="run-reveal" data-key="${S.dialog.key}">Show in File Explorer</button><button type="button" class="btn" data-act="cancel" data-main>Don't run</button><button type="button" class="btn" data-act="run" data-key="${S.dialog.key}">Run</button></div></div></div>` }
+  if (S.dialog?.kind === 'save') { const file = HOST[S.dialog.key]; html += `<div class="scrim"><div class="dialog" role="dialog" aria-label="Save As"><h2>Save As <span class="hint">(the computer's own dialog)</span></h2><p>Downloads &rsaquo; ${esc(file.name)}</p><div class="row"><button type="button" class="btn" data-act="cancel">Cancel</button><button type="button" class="btn" data-act="download" data-key="${S.dialog.key}" data-main>Save</button></div></div></div>` }
+  if (S.os) html += `<div class="os" data-act="os-close" role="status"><header><span>${esc(S.os.title)}</span><span>stand-in for what the computer does</span></header><div>${esc(S.os.text)}</div></div>`
+  return html
+}
+function render() {
+  document.body.dataset.theme = S.theme
+  for (const [id, options] of Object.entries(CHOICES)) document.getElementById(id).innerHTML = options.map(([value, label]) => `<button type="button" data-set="${id}" data-value="${value}" aria-pressed="${S[id] === value}">${label}</button>`).join('')
+  for (const group of document.querySelectorAll('[data-for]')) group.hidden = group.dataset.for !== S.where
+  document.getElementById('win').innerHTML = transcript() + tools() + overlays()
+  document.getElementById('state').innerHTML = S.said
+  const first = document.querySelector('.menu button, .dialog [data-main]')
+  if (first) first.focus()
+}
+
+/* ---------- Input ---------- */
+let held = null, heldFired = false
+document.addEventListener('click', event => {
+  const target = event.target.closest('[data-set], [data-link], [data-menu], [data-act], #menuBtn')
+  if (!target) { if (S.menu) { S.menu = null; render() } return }
+  if (target.id === 'menuBtn') { const first = document.querySelector('[data-link]'); S.notice = null; openMenu(first.dataset.link, first) }
+  else if (target.dataset.set) {
+    const { set, value } = target.dataset
+    S[set] = value
+    if (set !== 'theme') { S.menu = null; S.dialog = null; S.notice = null; S.os = null; S.download = null; if (set === 'where' || set === 'outside') S.tools = null; S.said = SAYS[set][value] }
+  }
+  else if (target.dataset.link) { if (heldFired) { heldFired = false; return } press(target.dataset.link, target) }
+  else if (target.dataset.menu) choose(target.dataset.menu, target.dataset.key)
+  else {
+    const { act, key } = target.dataset
+    if (act === 'download') startDownload(key)
+    else if (act === 'stop') { S.download.phase = 'stopped'; S.said = 'Stopped the download. Nothing was saved.' }
+    else if (act === 'copy') { S.said = `Copied <b>${esc(files()[key].path)}</b>.` }
+    else if (act === 'close-preview') { S.tools = S.tools.place === 'tree' || S.tools.place === 'folder' ? { key: 'dir', place: 'tree' } : null; S.download = null; S.said = 'Closed the file.' }
+    else if (act === 'close-tools') { S.tools = null; S.said = 'Closed the file.' }
+    else if (act === 'back-root') { S.tools = { key: 'dir', place: 'tree' }; S.said = 'Back in the thread\'s own folder.' }
+    else if (act === 'local-reveal') reveal(LOCAL[key])
+    else if (act === 'saved-reveal') { osDoes('File Explorer', `Downloads: ${HOST[key].name} is selected. Nothing was opened.`); S.said = `Showed the saved <b>${esc(HOST[key].name)}</b> in Downloads.` }
+    else if (act === 'saved-open') { osDoes('Its own app', `${HOST[key].name} is open from Downloads.`); S.said = `Opened the saved <b>${esc(HOST[key].name)}</b> on this computer.` }
+    else if (act === 'run') { S.dialog = null; osDoes('Command Prompt', `${LOCAL[key].name} is running.`); S.said = `Ran <b>${esc(LOCAL[key].name)}</b> after asking.` }
+    else if (act === 'run-reveal') { S.dialog = null; reveal(LOCAL[key]) }
+    else if (act === 'cancel') { S.dialog = null; S.said = 'Nothing was opened.' }
+    else if (act === 'os-close') S.os = null
+  }
+  render()
+})
+document.addEventListener('contextmenu', event => {
+  const target = event.target.closest('[data-link]')
+  if (!target) return
+  event.preventDefault()
+  S.notice = null; openMenu(target.dataset.link, target); render()
+})
+/* Holding a link on a touch screen opens its menu, where no right-click exists. */
+document.addEventListener('pointerdown', event => {
+  const target = event.target.closest('[data-link]')
+  heldFired = false
+  if (!target || event.pointerType === 'mouse') return
+  clearTimeout(held)
+  held = setTimeout(() => { heldFired = true; S.notice = null; openMenu(target.dataset.link, target); render() }, 480)
+})
+for (const type of ['pointerup', 'pointercancel', 'pointermove']) document.addEventListener(type, event => { if (type !== 'pointermove' || Math.abs(event.movementX) + Math.abs(event.movementY) > 6) clearTimeout(held) })
+document.addEventListener('keydown', event => {
+  const target = event.target.closest?.('[data-link]')
+  if (event.key === 'Escape' && (S.menu || S.dialog)) { S.menu = null; S.dialog = null; S.said = 'Nothing was opened.'; render(); return }
+  if (!target) return
+  if (event.key === 'Enter') { event.preventDefault(); press(target.dataset.link, target); render() }
+  else if ((event.key === 'F10' && event.shiftKey) || event.key === 'ContextMenu') { event.preventDefault(); openMenu(target.dataset.link, target); render() }
+})
+render()
+</script>
+</body>
+</html>

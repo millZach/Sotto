@@ -1,8 +1,9 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
+import { FileDownloads } from '../../../src/main/files/downloads'
 import { registerFilesIpc, type HostedThreadFiles } from '../../../src/main/files/ipc'
 import { FilesService } from '../../../src/main/files/service'
-import { FILES_LIST, FILES_PREVIEW, FILES_COPY_PATH, FILES_REVEAL, FILES_REVEAL_LINK, FILES_PREVIEW_LINK } from '../../../src/shared/files'
+import { FILES_LIST, FILES_PREVIEW, FILES_COPY_PATH, FILES_REVEAL, FILES_REVEAL_LINK, FILES_PREVIEW_LINK, FILES_OPEN_LINK, FILES_LINKED_FILE, FILES_DOWNLOAD, FILES_DOWNLOAD_STOP, FILES_DOWNLOAD_SHOW, FILES_DOWNLOAD_OPEN } from '../../../src/shared/files'
 import type { IpcInvocationEvent } from '../../../src/main/ipc/registerIpc'
 import { ipcRegistry } from '../../fixtures/ipcHarness'
 
@@ -10,14 +11,78 @@ function fixture(hosted?: HostedThreadFiles, revealLinks = true, previewLinks = 
   const registry = ipcRegistry()
   const { ipc, handlers } = registry
   const { main, widget } = registry
-  const resolveBinding = vi.fn().mockReturnValue(null), copyPath = vi.fn(), reveal = vi.fn()
-  const files = new FilesService({ resolveBinding, copyPath, reveal })
-  const dispose = registerFilesIpc(ipc, files, () => [main, widget], hosted, revealLinks, previewLinks)
+  const resolveBinding = vi.fn().mockReturnValue(null), copyPath = vi.fn(), reveal = vi.fn(), open = vi.fn(async () => undefined)
+  const files = new FilesService({ resolveBinding, copyPath, reveal, open })
+  const part = vi.fn(async (request: { offset: number }) => ({ ok: true as const, value: { is: 'part' as const, name: 'report.pdf', size: 3, offset: request.offset, data: 'MTIz', revision: 'a'.repeat(64) } }))
+  const downloads = new FileDownloads({ part, folder: () => { throw new Error('This test writes nothing.') }, progress: () => undefined })
+  const dispose = registerFilesIpc(ipc, files, () => [main, widget], hosted, revealLinks, previewLinks, { downloads, reveal })
   const event: IpcInvocationEvent = { sender: main.webContents, senderFrame: main.webContents.mainFrame }
   const invoke = async (channel: string, source = event, ...args: unknown[]) => registry.invoke(channel, args, source)
-  return { handlers, main, widget, event, invoke, dispose, resolveBinding, copyPath, reveal }
+  return { handlers, main, widget, event, invoke, dispose, resolveBinding, copyPath, reveal, open, part }
 }
 const channels = [FILES_LIST, FILES_PREVIEW, FILES_COPY_PATH, FILES_REVEAL]
+describe('Files IPC for opening, finding and downloading a linked file (ADR-0120, November 12 amendment)', () => {
+  const onHost = { threadId: 'host:22222222-2222-4222-8222-222222222222:thread', path: '/home/me/out/report.pdf' }
+  const every = [FILES_OPEN_LINK, FILES_LINKED_FILE, FILES_DOWNLOAD, FILES_DOWNLOAD_STOP, FILES_DOWNLOAD_SHOW, FILES_DOWNLOAD_OPEN]
+
+  it('refuses all of it while the reveal-linked-files Owl answer is off, and answers only the main window', async () => {
+    const linkedFile = vi.fn()
+    const off = fixture({ list: vi.fn(), preview: vi.fn(), copyPath: vi.fn(), linkedFile } as unknown as HostedThreadFiles, false)
+    for (const channel of every) {
+      await expect(off.invoke(channel, off.event, { ...onHost, want: 'place', downloadId: '0'.repeat(32) })).resolves.toEqual({ ok: false, error: { code: 'unavailable', message: 'Showing linked files is not part of this version of Sotto. Nothing was opened.' } })
+      await expect(off.invoke(channel, { sender: off.widget.webContents, senderFrame: off.widget.webContents.mainFrame }, onHost)).rejects.toThrow('FILES_MAIN_WINDOW_REQUIRED')
+    }
+    expect(linkedFile).not.toHaveBeenCalled(); expect(off.part).not.toHaveBeenCalled(); expect(off.open).not.toHaveBeenCalled(); expect(off.reveal).not.toHaveBeenCalled()
+    off.dispose()
+    expect([...off.handlers.keys()].filter(channel => every.includes(channel))).toEqual([])
+  })
+
+  it('opens nothing that is on a paired host, and says so', async () => {
+    const f = fixture()
+    await expect(f.invoke(FILES_OPEN_LINK, f.event, onHost)).resolves.toEqual({ ok: false, error: { code: 'unavailable', message: 'This file is on the host machine, so it cannot be opened here. Nothing was opened.' } })
+    expect(f.resolveBinding).not.toHaveBeenCalled(); expect(f.open).not.toHaveBeenCalled()
+    // On this computer the service answers: here, that it has no such thread.
+    await expect(f.invoke(FILES_OPEN_LINK, f.event, { threadId: 'thread', path: '/home/me/a.pdf' })).resolves.toMatchObject({ ok: false, error: { code: 'thread-unavailable' } })
+    await expect(f.invoke(FILES_OPEN_LINK, f.event, { threadId: 'thread', path: '//evil.example/share/a.pdf' })).resolves.toMatchObject({ ok: false, error: { code: 'invalid-request' } })
+  })
+
+  it('asks a file\'s host where it is and for its preview, and never hands the window its bytes', async () => {
+    const place = { ok: true as const, value: { is: 'place' as const, name: 'report.pdf', kind: 'file' as const, size: 3, inside: null } }
+    const linkedFile = vi.fn(async () => place)
+    const f = fixture({ list: vi.fn(), preview: vi.fn(), copyPath: vi.fn(), linkedFile } as unknown as HostedThreadFiles)
+    await expect(f.invoke(FILES_LINKED_FILE, f.event, { ...onHost, want: 'place' })).resolves.toBe(place)
+    expect(linkedFile).toHaveBeenCalledWith({ ...onHost, want: 'place' })
+    // The window may not ask for a part, and a host that answers one where a place was asked is not believed.
+    await expect(f.invoke(FILES_LINKED_FILE, f.event, { ...onHost, want: 'part', offset: 0 })).resolves.toMatchObject({ ok: false, error: { code: 'invalid-request' } })
+    expect(linkedFile).toHaveBeenCalledOnce()
+    linkedFile.mockResolvedValueOnce({ ok: true, value: { is: 'part', name: 'report.pdf', size: 3, offset: 0, data: 'MTIz', revision: 'a'.repeat(64) } } as never)
+    await expect(f.invoke(FILES_LINKED_FILE, f.event, { ...onHost, want: 'place' })).resolves.toMatchObject({ ok: false, error: { code: 'unavailable' } })
+    // A file on this computer is not found or read this way: its link opens it, and the window learns nothing of where a path leads.
+    await expect(f.invoke(FILES_LINKED_FILE, f.event, { threadId: 'thread', path: '/home/me/.ssh/config', want: 'preview' })).resolves.toEqual({ ok: false, error: { code: 'unavailable', message: 'This file is on this computer, so its link opens it. Nothing was read.' } })
+    expect(f.resolveBinding).not.toHaveBeenCalled()
+    // With no host router behind it, a host's file cannot be reached at all.
+    const bare = fixture()
+    await expect(bare.invoke(FILES_LINKED_FILE, bare.event, { ...onHost, want: 'place' })).resolves.toMatchObject({ ok: false, error: { code: 'unavailable' } })
+  })
+
+  it('downloads only from a paired host, and shows or opens only a download it saved', async () => {
+    const f = fixture()
+    await expect(f.invoke(FILES_DOWNLOAD, f.event, { threadId: 'thread', path: 'out/report.pdf' })).resolves.toEqual({ ok: false, error: { code: 'unavailable', message: 'This file is already on this computer. Nothing was saved.' } })
+    await expect(f.invoke(FILES_DOWNLOAD, f.event, { ...onHost, path: 'C:a.pdf' })).resolves.toMatchObject({ ok: false, error: { code: 'invalid-request' } })
+    expect(f.part).not.toHaveBeenCalled()
+    // A host's file is asked for; this fixture's Downloads folder refuses, so nothing is written and main says so.
+    await expect(f.invoke(FILES_DOWNLOAD, f.event, onHost)).resolves.toEqual({ ok: false, error: { code: 'unavailable', message: 'Sotto could not write to the Downloads folder. Nothing was saved.' } })
+    expect(f.part).toHaveBeenCalledWith({ ...onHost, want: 'part', offset: 0 })
+    await expect(f.invoke(FILES_DOWNLOAD_STOP, f.event, onHost)).resolves.toEqual({ ok: true, value: { stopped: false } })
+    // The window names a saved file by main's handle and never by a path.
+    for (const channel of [FILES_DOWNLOAD_SHOW, FILES_DOWNLOAD_OPEN]) {
+      await expect(f.invoke(channel, f.event, { downloadId: '0'.repeat(32) })).resolves.toMatchObject({ ok: false, error: { code: 'path-unavailable', message: 'Sotto no longer knows where this download is. Look in the Downloads folder.' } })
+      await expect(f.invoke(channel, f.event, { path: '/etc/passwd' })).resolves.toMatchObject({ ok: false, error: { code: 'path-unavailable' } })
+    }
+    expect(f.reveal).not.toHaveBeenCalled(); expect(f.open).not.toHaveBeenCalled()
+  })
+})
+
 describe('Files IPC message file links', () => {
   it('reads a linked Markdown file on the machine its thread runs on, and refuses while the Owl answer is off', async () => {
     const answer = { ok: true as const, value: { name: 'plan.md', size: 1, text: 'a' } }

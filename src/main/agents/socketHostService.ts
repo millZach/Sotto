@@ -20,7 +20,7 @@ import { gitRefsPageSchema, type GitRefsPage, type GitRefsRequest } from '../../
 import { gitChangedFilesSchema, type GitChangedFiles, type GitChangedFilesRequest } from '../../shared/gitChangedFiles'
 import { gitPullRequestListResultSchema, gitPullRequestResultSchema, pullRequestConfirmationSchema, type GitPullRequestListRead, type GitPullRequestListRequest, type GitPullRequestRead, type GitPullRequestRequest, type PullRequestConfirmationRequest } from '../../shared/gitPullRequests'
 import { hostFoldersResultSchema, type HostFoldersRequest, type HostFoldersResult } from '../../shared/hostFolders'
-import { fileLinkPreviewSchema, fileListingSchema, filePreviewSchema, filesResultSchema, type FileLinkPreview, type FileLinkRequest, type FileListing, type FileListRequest, type FilePreview, type FileRequest, type FilesResult } from '../../shared/files'
+import { fileLinkPreviewSchema, fileListingSchema, filePreviewSchema, filesResultSchema, linkedFileSchema, type LinkedFile, type LinkedFileRequest, type FileLinkPreview, type FileLinkRequest, type FileListing, type FileListRequest, type FilePreview, type FileRequest, type FilesResult } from '../../shared/files'
 import { gitListingSchema, gitReviewSchema, type GitChangeListing, type GitReview, type GitReviewRequest } from '../../shared/gitChanges'
 import { subagentAssignmentsPageSchema, subagentPageSchema, type SubagentAssignmentsPage, type SubagentAssignmentsRequest, type SubagentPage, type SubagentPageRequest } from '../../shared/subagents'
 import { toolsResultSchema, type ToolListRequest, type ToolsResult } from '../../shared/tools'
@@ -66,6 +66,7 @@ const signInAnswerSchema = hostSignInSchema.nullable()
 const fileListingResultSchema = filesResultSchema(fileListingSchema)
 const filePreviewResultSchema = filesResultSchema(filePreviewSchema)
 const fileLinkPreviewResultSchema = filesResultSchema(fileLinkPreviewSchema)
+const linkedFileResultSchema = filesResultSchema(linkedFileSchema)
 const gitListingResultSchema = toolsResultSchema(gitListingSchema)
 const gitReviewResultSchema = toolsResultSchema(gitReviewSchema)
 
@@ -1504,6 +1505,10 @@ export class SocketHostService implements HostService {
   }
   threadFileLink(request: FileLinkRequest): Promise<FilesResult<FileLinkPreview>> {
     return this.large('thread-file-links', async () => this.read(fileLinkPreviewResultSchema, await this.call({ op: 'thread-file-link', request })))
+  }
+  /** A linked file's place, preview or one part of it (ADR-0120, November 12 amendment), queued as a preview is: a part is a large frame. */
+  threadLinkedFile(request: LinkedFileRequest): Promise<FilesResult<LinkedFile>> {
+    return this.large('thread-linked-files', async () => this.read(linkedFileResultSchema, await this.call({ op: 'thread-linked-file', request })))
   }
   async gitChanges(request: ToolListRequest): Promise<ToolsResult<GitChangeListing>> {
     this.offers('thread-changes')
