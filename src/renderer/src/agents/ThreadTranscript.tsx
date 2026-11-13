@@ -66,6 +66,7 @@ import { useDelegations, useDelegationsEnabled } from './delegations'
 import { finishedDelegation } from './delegationWords'
 import { MessageScrubber } from './MessageScrubber'
 import { keepReadingPlace, MessageRows, MessageRowsContext, readingPlace, revealLift, scrolledSince, scrollsTranscript, type ReadingPlace } from './readingPlace'
+import { readingWindow, type ReadingWindow } from './readingWindow'
 import { readsBack, typesIntoComposer } from './slimComposer'
 import { aboveWindow, joinedMarks, scrubberMarks, storedMarks, SCRUBBER_FEWEST, type ScrubberMark } from './messageScrubberMarks'
 import { useSlidMarks, useStoredPrompts } from './useStoredPrompts'
@@ -920,7 +921,12 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   readonly onQuoted?: (() => void) | undefined
 }): ReactNode {
   const { t } = useLingui()
-  const thread = row.thread
+  const following = useRef(true)
+  // A reader above the end keeps the turns main's window lets go of, until they are back at the end (readingWindow.ts).
+  const drawnWindow = useRef<ReadingWindow | null>(null)
+  drawnWindow.current = readingWindow(drawnWindow.current, row.thread, !following.current)
+  const thread = drawnWindow.current.thread
+  const heldAbove = drawnWindow.current.held
   const overseen = isDynamicThread(thread, useOwlFeature('dynamic-threads')) ? resolveModel(state.host.models, thread.modelId)?.name ?? thread.modelId : undefined
   const quoting = useOwlFeature('reply-quote')
   const sentSkills = useSentSkills(row, state, command)
@@ -928,7 +934,6 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const scroller = useRef<HTMLDivElement>(null)
   const content = useRef<HTMLDivElement>(null)
   const jump = useRef<HTMLButtonElement>(null)
-  const following = useRef(true)
   /** Where the scroll stood when last heard or set to the end, so a reader moving up from the end is told apart from the end moving away. */
   const lastTop = useRef(0)
   const anchor = useRef<{ readonly height: number; readonly top: number } | null>(null)
@@ -1178,7 +1183,8 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     seen.current = lastMessageId
     if (following.current) { element.scrollTop = element.scrollHeight; lastTop.current = element.scrollTop; seenUpTo.current = lastMessageId }
     else if (arrived) setUnseen(true)
-  }, [lastMessageId, pendingKey, hidden, followSignal, thread.historyStatus, toEnd])
+    // What was held above main's window goes when the reader is back at the end, which is followed as it shortens.
+  }, [lastMessageId, pendingKey, hidden, heldAbove, followSignal, thread.historyStatus, toEnd])
 
   // Late content layout, composer padding and window resizing keep a following reader at the end. Observe the
   // scroll box's content size too: a taller floating composer changes its padding without resizing the messages.
@@ -1397,7 +1403,11 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     // A press while an earlier one is still being answered waits on the same oldest message, one answer more.
     const asked = earlier.current?.threadId === thread.id ? earlier.current : null
     earlier.current = asked ? { ...asked, waiting: asked.waiting + 1 } : oldest ? { threadId: thread.id, oldestId: oldest.id, waiting: 1 } : null
-    void command({ type: 'load-earlier-messages', threadId: thread.id })
+    // Main widens its own window, which has moved on from the turns held here. It is brought back to the oldest message
+    // drawn first, so what the press adds is above that message and not among the turns already on screen.
+    const widen = (): Promise<unknown> => command({ type: 'load-earlier-messages', threadId: thread.id })
+    if (heldAbove > 0 && oldest) void command({ type: 'load-earlier-messages', threadId: thread.id, throughMessageId: oldest.id }).then(widen)
+    else void widen()
   }
 
   const empty = !thread.messages.length && !sending.length && !recovery.length && !showsActivity
