@@ -291,6 +291,8 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
         : settledWhen !== undefined
         ? <time id={timeId} className="thread-nav__time" dateTime={new Date(settledAt!).toISOString()}
           title={t({ message: `Settled ${settledWhen}`, comment: 'The tooltip of a settled thread\'s time in the sidebar. {settledWhen} is the date and time it was settled.' })}>{settledWords(settledAt!)}</time>
+        // On that shelf a settlement that names no time shows none: its last activity's would read as when it was settled.
+        : settledAt !== undefined ? <span id={timeId} className="thread-nav__time" />
         : <RowTime row={row} live={liveClock} id={timeId} />}
       <span id={detailsId} className="tt-visually-hidden">{copyDetails}</span>
       <span className="thread-nav__metadata">

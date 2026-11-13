@@ -216,6 +216,20 @@ describe('the sidebar by status (ADR-0201)', () => {
     expect(button.getAttribute('aria-describedby')!.split(' ').map(id => document.getElementById(id)?.textContent ?? '').join(' ')).toContain('workshop')
   })
 
+  it('shows no time on a settled row whose settlement names none, rather than its last activity\'s', () => {
+    app()
+    const state = threadsStateFixture()
+    // The provider settled this one without saying when.
+    state.host.threads = state.host.threads.map(thread => thread.id === 'notes-cleanup' ? { ...thread, settledAt: undefined } : thread)
+    mount(state)
+    const shelf = openSettled()
+    expect(shelfTitles(shelf).at(-1)).toBe('Notes cleanup')
+    const row = rowIn(shelf, 'Notes cleanup')
+    expect(row.querySelector('time')).toBeNull()
+    expect(row.querySelector('.thread-nav__time')).toBeEmptyDOMElement()
+    expect(rowIn(shelf, 'Benchmark rerun').querySelector('time')).not.toBeNull()
+  })
+
   it('offers Restore project on a row settled with its project, and Restore on one settled by itself', () => {
     app()
     const state = settledAt({ benchmark: NOW - 60_000 })
