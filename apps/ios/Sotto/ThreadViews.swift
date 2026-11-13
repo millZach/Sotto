@@ -1057,7 +1057,7 @@ private struct Conversation: View {
                               scroll: scroll)
                     }
                     .equatable()
-                    .background(HoldsPlaceBelow())
+                    .background(HoldsPlaceBelow(atEnd: { [follow] in follow.atBottom }))
                     #if DEBUG
                     .background { if EndTrace.isOn { OlderTurnsTrace(split: split) } }
                     #endif
@@ -1262,10 +1262,13 @@ private struct Conversation: View {
 /// same layout pass and moves the page's offset by as much, so the frame drawn never shows the swing. A reader among those
 /// turns sees them as before: the stack keeps the turns it has made in place itself.
 private struct HoldsPlaceBelow: UIViewRepresentable {
+    /// The reader is at the end, as the page's follow decides.
+    let atEnd: () -> Bool
     func makeUIView(context: Context) -> Holder { Holder() }
-    func updateUIView(_ view: Holder, context: Context) {}
+    func updateUIView(_ view: Holder, context: Context) { view.atEnd = atEnd }
 
     final class Holder: UIView {
+        var atEnd: () -> Bool = { false }
         private var height: CGFloat?
         override init(frame: CGRect) {
             super.init(frame: frame)
@@ -1290,8 +1293,13 @@ private struct HoldsPlaceBelow: UIViewRepresentable {
                 return
             }
             let from = page.contentOffset.y
-            page.contentOffset.y = from + now - before
-            EndTrace.mark("hold: older turns \(Int(before)) -> \(Int(now)), offset \(Int(from)) -> \(Int(page.contentOffset.y)), page height \(Int(page.contentSize.height))")
+            // At the end, the page's own anchor sometimes keeps its end through the swing already, so the end is held
+            // where it is, the bottom, rather than moved by the swing a second time. Up the page, the offset moves by it.
+            let bottom = max(-page.adjustedContentInset.top,
+                             page.contentSize.height - page.bounds.height + page.adjustedContentInset.bottom)
+            let to = atEnd() ? bottom : from + now - before
+            if abs(to - from) > 0.5 { page.contentOffset.y = to }
+            EndTrace.mark("hold: older turns \(Int(before)) -> \(Int(now)), at end \(atEnd()), offset \(Int(from)) -> \(Int(page.contentOffset.y)), page height \(Int(page.contentSize.height))")
         }
         private func page() -> UIScrollView? {
             var next = superview
