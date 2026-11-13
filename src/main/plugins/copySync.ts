@@ -11,6 +11,8 @@ export interface CopyTarget {
   readonly kind: 'local' | 'remote'
   readonly service: {
     readonly supportsPluginAccountCopies?: boolean | undefined
+    /** Whether the host keeps a mail account's copy: one from before it could is sent none. */
+    readonly supportsPluginMailCopies?: boolean | undefined
     keepPluginAccountCopy?(copy: PluginAccountCopy): Promise<PluginAccountCopyReceipt>
     removePluginAccountCopy?(accountId: string): Promise<PluginAccountCopyRemoved>
     pluginAccountCopies?(): Promise<HeldPluginAccountCopy[]>
@@ -34,10 +36,9 @@ const sameProjects = (one: readonly string[] | null | undefined, other: readonly
   one === other || (!!one && !!other && one.length === other.length && one.every((id, index) => id === other[index]))
 /**
  * Whether an account may have a copy anywhere else. One kept to chosen projects may not (Zach, November 12, 2026): a
- * project is a folder on this computer, which another computer does not have, so its secret stays here. A mail
- * account may not yet: a host has no mail grant to ask its threads for, so it is sent none.
+ * project is a folder on this computer, which another computer does not have, so its secret stays here.
  */
-const mayBeCopied = (account: PluginAccount): boolean => account.projects === null && !isMailPlugin(account.plugin)
+const mayBeCopied = (account: PluginAccount): boolean => account.projects === null
 /** Whether the user's choices ask for a copy of an account on a computer. */
 const chosen = (choices: Choices, accountId: string, computerId: string): boolean => choices.choices[accountId]?.[computerId] ?? choices.copyNew
 /** Whether a host holds an account as it is here. A host that does not say what it holds of it is not taken to. */
@@ -261,6 +262,8 @@ export class PluginAccountCopySync {
       unwanted.delete(account.id)
       const there = held.find(copy => copy.id === account.id)
       if (there && holdsAsHere(there, account)) { states.set(account.id, 'kept'); continue }
+      // A host from before it could keep a mail account is sent none: its threads could not ask before they read it.
+      if (isMailPlugin(account.plugin) && service.supportsPluginMailCopies !== true) { states.set(account.id, 'too-old'); continue }
       // The account is read again, and nothing may have been asked for since this look began: an account narrowed or
       // a copy switched off while the host was answering is not sent, for a copy sent cannot be unsent. The change
       // that stopped it has already asked for another look, which sends what is still wanted. Nothing below waits

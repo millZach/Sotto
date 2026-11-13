@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { hostPlugins } from '../../../src/host/plugins'
 import { pluginAccountSlot, type PluginCredentials } from '../../../src/main/plugins/accounts'
 import type { VercelFetch } from '../../../src/main/plugins/vercel/read'
+import type { AgentHostSnapshot } from '../../../src/shared/agents'
 import type { PluginAccount } from '../../../src/shared/plugins'
 
 const folders: string[] = []
@@ -121,5 +122,75 @@ describe('a host’s threads and the copies of a desktop that is no longer paire
     expect(await h.call('plugin_read', { plugin: 'vercel', account: 'Work', path: 'v2/user' })).toMatchObject({ failed: true })
     expect(h.sent).toEqual([])
     await h.plugins.close()
+  })
+})
+
+describe('a host’s threads and a mail account’s copy (ADR-0205, decision 8)', () => {
+  /** A made-up account: nothing here is a real address or password. */
+  const MAIL: PluginAccount = { id: '33333333-3333-4333-8333-000000000001', plugin: 'gmail', name: 'Personal', address: 'reader@example.com', savedAt: '2026-11-13T08:00:00.000Z', signedInAs: null, on: true, projects: null }
+  const COPY = { account: MAIL, secret: 'madeupapppasswrd' }
+  const at = '2026-11-13T10:00:00.000Z'
+
+  /** A host with one thread in one project, which the user can settle, and the desktops named as paired. */
+  async function mailHost() {
+    const directory = await mkdtemp(join(tmpdir(), 'sotto-host-mail-')); folders.push(directory)
+    const paired = new Set([LAPTOP])
+    const thread = { id: 'a-host-thread', projectId: 'project-one', providerId: 'codex', workspaceSettledAt: null as string | null }
+    const project = { id: 'project-one', workspaceSettledAt: null as string | null }
+    const plugins = hostPlugins({ directory, credentials: credentials().store, admits: () => true, paired: clientId => paired.has(clientId),
+      thread: threadId => threadId === thread.id ? thread as unknown as AgentHostSnapshot['threads'][number] : undefined,
+      project: projectId => projectId === project.id ? project as unknown as AgentHostSnapshot['projects'][number] : undefined,
+      standIns: { gh: async () => JSON.stringify({ hosts: {} }), mailConnect: async () => { throw new Error('No mail server is reached here.') } } })
+    const granted = async (): Promise<boolean> => plugins.mailGrants.has(thread.id, MAIL.id)
+    return { plugins, paired, thread, project, granted }
+  }
+
+  it('says it keeps a mail account, and keeps one with its address', async () => {
+    const h = await mailHost()
+    expect(h.plugins.copies.mail).toBe(true)
+    await expect(h.plugins.copies.keep(COPY, LAPTOP)).resolves.toMatchObject({ kept: true })
+    const listed = await h.plugins.tools.call(h.thread.id, 'plugin_accounts', {})
+    expect(JSON.stringify(listed)).toContain('Gmail: account \\"Personal\\".')
+    expect(JSON.stringify(listed)).not.toContain('reader@example.com')
+  })
+
+  it('drops a thread’s leave to read a copy when the copy is let go, or its desktop is revoked or no longer paired', async () => {
+    const h = await mailHost()
+    // A copy sent again comes under the same ID, and must not find the grant given for the one before it.
+    for (const letGo of [
+      () => h.plugins.copies.remove(MAIL.id, LAPTOP),
+      () => h.plugins.copies.forgetDesktop(LAPTOP),
+      async () => { h.paired.delete(LAPTOP); await h.plugins.copies.forgetUnpaired(clientId => h.paired.has(clientId)); h.paired.add(LAPTOP) },
+    ]) {
+      await expect(h.plugins.copies.keep(COPY, LAPTOP)).resolves.toMatchObject({ kept: true })
+      await h.plugins.mailGrants.grant(h.thread.id, MAIL.id)
+      expect(await h.granted()).toBe(true)
+      await letGo()
+      expect(await h.plugins.mailGrants.list()).toEqual([])
+    }
+  })
+
+  it('ends a grant when the user settles the thread or its project, by the test the desktop’s grants go by', async () => {
+    const h = await mailHost()
+    await h.plugins.copies.keep(COPY, LAPTOP)
+    await h.plugins.mailGrants.grant(h.thread.id, MAIL.id)
+    h.thread.workspaceSettledAt = at
+    expect(h.plugins.mailGrants.open(h.thread.id)).toBe(false)
+    expect(await h.granted()).toBe(false)
+    h.thread.workspaceSettledAt = null
+    expect(await h.granted()).toBe(false)
+
+    await h.plugins.mailGrants.grant(h.thread.id, MAIL.id)
+    h.project.workspaceSettledAt = at
+    expect(await h.granted()).toBe(false)
+    // A settled thread is told so, is shown no card and reads nothing.
+    const settled = await h.plugins.tools.call(h.thread.id, 'plugin_read', { plugin: 'gmail', search: {} })
+    expect(JSON.stringify(settled)).toContain('This thread is settled or archived, so it cannot read mail.')
+    expect(h.plugins.changes.requests().get(h.thread.id)).toBeUndefined()
+    // And a deleted thread takes its grant with it.
+    h.project.workspaceSettledAt = null
+    await h.plugins.mailGrants.grant(h.thread.id, MAIL.id)
+    h.plugins.forgetThreads([h.thread.id])
+    await expect.poll(() => h.plugins.mailGrants.list()).toEqual([])
   })
 })
