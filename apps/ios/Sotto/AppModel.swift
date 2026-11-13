@@ -3611,10 +3611,18 @@ struct RailAsk: Equatable {
             // The answer is the thread from the window's new start, at the revision the phone may already hold, so it takes
             // that copy's place; one a delta overtook on the way is read again, from the same start.
             if live[ref.hostID]?.features.contains(StepWindow.feature) == true, let current {
-                let version = detailVersion
+                var version = detailVersion
                 let wider = try await connection.call(StepWindow.earlier(threadID: ref.threadID), as: Optional<ThreadDetail>.self)
-                let applied = try applyDetail(wider, ref: ref, epoch: current, versionAtRead: version, widened: true)
-                if !applied, generations[ref.hostID] == current, selected == ref { reloadDetail(ref) }
+                var applied = try applyDetail(wider, ref: ref, epoch: current, versionAtRead: version, widened: true)
+                // An update taken in while the answer was on its way leaves it older than the copy here. The thread is read
+                // again, from the same start, and that copy is widened too: it comes at the revision the phone now holds,
+                // which a plain read would take for nothing new, and the earlier messages would never show.
+                var reads = 0
+                while !applied, reads < 3, generations[ref.hostID] == current, selected == ref {
+                    reads += 1; version = detailVersion
+                    let again = try await connection.call(["op": .string("detail"), "threadId": .string(ref.threadID)], as: Optional<ThreadDetail>.self)
+                    applied = try applyDetail(again, ref: ref, epoch: current, versionAtRead: version, widened: true)
+                }
                 return
             } else {
                 let command = try Commands.loadEarlier(threadID: ref.threadID)
