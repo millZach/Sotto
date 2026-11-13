@@ -20,7 +20,7 @@ import { followupsFor } from './ThreadFollowups'
 import { deliveryFor, deliveryPending, hasDraftContent, queuedRevision, submissionStatus, useSubmissions, useThreadComposer, type Submission, type SubmissionStatus, type ThreadDraftStore } from './threadDraftStore'
 import { clockLabel, type ThreadRow } from './threadFacts'
 import { useShared } from './stateSharing'
-import { setStepsOpen, turnsLeft, useStepsStart } from './stepsOpen'
+import { setStepsOpen, workingLineChoices, useStepsStart } from './stepsOpen'
 import { MessageContent, AttachmentPreviews } from './MessageContent'
 import { SentSkillsContext, useSentSkills } from './sentSkills'
 import { renderedPlainText, useTransientFlag, writeClipboard } from './richActions'
@@ -453,7 +453,7 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
   useInterfaceLanguageState()
   // The turn holds its fold's state: what still works after the reply stands under it only while the fold is closed. Until
   // pressed, the fold starts as the user last left any turn's steps when it first showed, and a press on another never moves it.
-  const [pressedOpen, setWorkOpen] = useState<boolean | null>(null)
+  const [pressedOpen, setPressedOpen] = useState<boolean | null>(null)
   const stepsStart = useStepsStart()
   // A fork carries finished turns, so only a finished turn's newest written reply offers one (#1028, E5b).
   // Watcher's room shows no reply its provider made of an API error while Restart stopped threads is on (#2234).
@@ -534,7 +534,10 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
     .map(({ message }) => <React.Fragment key={message.id}>{article(message)}</React.Fragment>)
   const lifecycle = groups.find(group => group.turn)?.turn
   // A turn whose working line the user opened or folded stays that way once it ends.
-  const workOpen = pressedOpen ?? (lifecycle === undefined ? undefined : turnsLeft.get(lifecycle.turnId)) ?? stepsStart
+  const workOpen = pressedOpen ?? (lifecycle === undefined ? undefined : workingLineChoices.get(lifecycle.turnId)) ?? stepsStart
+  // A press on the finished turn's own line takes over from its working line, so the thread opened again starts it as the
+  // user last left a fold rather than as the working line was left.
+  const setWorkOpen = (open: boolean): void => { setPressedOpen(open); if (lifecycle !== undefined) workingLineChoices.delete(lifecycle.turnId) }
   const moments = [...turn.replies.map(message => message.createdAt), ...groups.flatMap(group => group.records.map(record => record.completedAt ?? record.startedAt))]
   // A question a folded reply asked would fold away with it, so it is quoted under the fold (#1019).
   const lifted = work.flatMap(message => message.role === 'assistant' && !isWakeUpMessage(message) && asked(message).length ? [{ message, questions: asked(message) }] : [])

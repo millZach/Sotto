@@ -8,9 +8,10 @@ import { useState } from 'react'
 export const STEPS_OPEN_KEY = 'sotto.threads.stepsOpen'
 /**
  * Running turns whose working line the user opened or folded, so their Worked for fold starts as the line was left once
- * the turn ends, for this window's life. A press sets it, and so does Escape, which folds that turn alone.
+ * the turn ends, for this window's life. A press sets it, and so does Escape, which folds that turn alone; a press on the
+ * finished turn's own line clears it.
  */
-export const turnsLeft = new Map<string, boolean>()
+export const workingLineChoices = new Map<string, boolean>()
 /** What the user last chose when storage refused to keep it. */
 let unsaved: boolean | null = null
 

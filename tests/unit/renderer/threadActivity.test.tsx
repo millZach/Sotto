@@ -427,6 +427,22 @@ describe('the running turn', () => {
     expect(within(again.transcript).getByRole('button', { name: 'Working, 2 steps so far' })).toHaveAttribute('aria-expanded', 'true')
   })
 
+  it('lets a press on the finished turn’s own line outlast how its working line was left', () => {
+    const finished = (): Partial<AgentThread> => ({ status: 'idle', activities: running().map(item => item.kind === 'turn' ? { ...item, status: 'completed', completedAt: iso(0) } : { ...item, status: 'completed' }) })
+    const { live, transcript } = mount(stateWith({ status: 'running', activities: running() }))
+    fireEvent.click(within(transcript).getByRole('button', { name: 'Working, 2 steps so far' }))
+    act(() => {
+      live.publish({ host: { ...live.state.host, threads: live.state.host.threads.map(thread => thread.id === THREAD ? { ...thread, ...finished() } : thread) } })
+    })
+    const fold = within(transcript).getByRole('button', { name: /^Worked for/u })
+    expect(fold).toHaveAttribute('aria-expanded', 'true')
+    fireEvent.click(fold)
+    // Opened again, the thread starts the fold as the user last left it, not as its working line was left.
+    cleanup()
+    const again = mount(stateWith(finished()))
+    expect(within(again.transcript).getByRole('button', { name: /^Worked for/u })).toHaveAttribute('aria-expanded', 'false')
+  })
+
   it('says only its words until the turn reports a step, then offers the steps', () => {
     vi.useFakeTimers({ now: NOW, toFake: ['Date', 'setInterval', 'clearInterval'] })
     const { live, transcript } = mount(stateWith({ status: 'running', activities: [lifecycle({ status: 'running', startedAt: iso(-65_000) })] }))

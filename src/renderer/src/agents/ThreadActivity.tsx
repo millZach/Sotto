@@ -24,7 +24,7 @@ import { shownCount, shownLineCount } from '../state/interfaceNumbers'
 import { focusComposerFrom, TurnFailureReason, useOwnServerTurnActions, type OwnServerTurnActions } from './OwnServerTurn'
 import { retryingWords, stillWaitingNote, stillWaitingWords, stopName, stopWords } from './ownServerTurnWords'
 import { heardFrom, LiveServerMark } from './ServerMark'
-import { readStepsOpen, setStepsOpen, turnsLeft, useStepsStart } from './stepsOpen'
+import { readStepsOpen, setStepsOpen, workingLineChoices, useStepsStart } from './stepsOpen'
 import {
   browserLineName, browserLinesByTurn, browserRunWords, browserStepWords, foldBrowserRuns, linesStartingIn, PLACE, plainWords, sentenceWords, stepUnfinished, turnBrowserLines,
   type ActivityItem, type BrowserLinesStore, type BrowserRun, type BrowserVerb, type BrowserWords, type TurnLinesView,
@@ -822,14 +822,16 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
   const pictureScope = usePictureScope(steps)
   const pictures = useStepPictures(steps, !open)
   const checklist = plan ? <PlanSteps record={plan} live /> : null
+  // The line holds the user's choice, and the turn's Worked for line takes it over once the turn ends.
+  const choose = (turnId: string, open: boolean): void => { setPressed({ turnId, open }); workingLineChoices.set(turnId, open) }
   const disclosure: StepsDisclosure | undefined = turnId === null || !steps.length ? undefined : {
     id: stepsId, label: stepsLabel(steps.length), open,
     opened: <Fold open={open}><div id={stepsId} className="thread-activity-live__steps">
       <WorkingFor startedAt={turn?.startedAt ?? sendingSince} connected={connected} steps={steps} />
       <ActivityGroupView group={{ key: `live:${turnId}`, turnId, anchorMessageId: null, records: steps }} live threadRunning connected={connected} provider={provider} onDisclosure={onDisclosure} />
     </div></Fold>,
-    onToggle: event => { onDisclosure?.(event.currentTarget); setPressed({ turnId, open: !open }); turnsLeft.set(turnId, !open); setStepsOpen(!open) },
-    onKeyDown: foldOnEscape(open, summary => { onDisclosure?.(summary); setPressed({ turnId, open: false }); turnsLeft.set(turnId, false) }),
+    onToggle: event => { onDisclosure?.(event.currentTarget); choose(turnId, !open); setStepsOpen(!open) },
+    onKeyDown: foldOnEscape(open, summary => { onDisclosure?.(summary); choose(turnId, false) }),
   }
   // Compaction holds the thread in the running state without a turn of its own, and a line saying the agent
   // is working would be the wrong thing to read while the only thing happening is the context being folded up.

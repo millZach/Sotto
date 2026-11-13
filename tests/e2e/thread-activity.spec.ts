@@ -292,7 +292,6 @@ test('a press on one turn’s Worked for line opens or folds that turn alone', a
     await expect(first).toHaveAttribute('aria-expanded', 'false')
     await expect(last).toHaveAttribute('aria-expanded', 'true')
     await expect(steered).toHaveAttribute('aria-expanded', 'false')
-    await page.screenshot({ path: resolve(shots, 'one-fold-open-1280-dark.png') })
   } finally { await app.close() }
 })
 
