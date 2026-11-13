@@ -691,6 +691,14 @@ msgstr "{more, plural, one {One more question in that reply.} other {# more ques
 msgid "{more, plural, one {Show {lines} more line} other {Show {lines} more lines}}"
 msgstr "{more, plural, one {Show {lines} more line} other {Show {lines} more lines}}"
 
+#: src/renderer/src/agents/ThreadSidebar.tsx
+msgid "{more, plural, one {Show {threads} more settled thread} other {Show {threads} more settled threads}}"
+msgstr "{more, plural, one {Show {threads} more settled thread} other {Show {threads} more settled threads}}"
+
+#: src/renderer/src/agents/ThreadSidebar.tsx
+msgid "{more, plural, one {Show {threads} more} other {Show {threads} more}}"
+msgstr "{more, plural, one {Show {threads} more} other {Show {threads} more}}"
+
 #: src/renderer/src/agents/ScreenshotInput.tsx
 msgid "{most, plural, one {Attach up to # screenshot at a time.} other {Attach up to # screenshots at a time.}}"
 msgstr "{most, plural, one {Attach up to # screenshot at a time.} other {Attach up to # screenshots at a time.}}"
@@ -7276,6 +7284,7 @@ msgid "Restore branch {sent}"
 msgstr "Restore branch {sent}"
 
 #: src/renderer/src/agents/SidebarFrame.tsx
+#: src/renderer/src/agents/threadMenu.tsx
 #: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Restore project"
 msgstr "Restore project"
@@ -7683,6 +7692,11 @@ msgstr "Settle thread"
 #: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Settled"
 msgstr "Settled"
+
+#. The tooltip of a settled thread's time in the sidebar. {settledWhen} is the date and time it was settled.
+#: src/renderer/src/agents/ThreadSidebar.tsx
+msgid "Settled {settledWhen}"
+msgstr "Settled {settledWhen}"
 
 #. A toast after the user settled a thread; {title} is the thread's name.
 #: src/renderer/src/agents/SettleToast.tsx
