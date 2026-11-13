@@ -28,11 +28,19 @@ a piece of real news, at 1280x800. A watched thread finishes a turn, main sends 
 | Mid-window (offset 0 px, `scrollTop` 2070) | 0 px, but 472 px of rows leave above them with each piece of news (`scrollTop` 2070, 1598, 1126, 654), so the fifth piece of news throws them as above. | 0 px, and nothing leaves above them. |
 | At the end | Follows the end. | Follows the end: after Jump to latest the rows held go (26 rows to main's 18) and the next news lands with 0 px to the end. |
 
-Cards above a reader, on the seeded room (`watcherStandIn`), before the fix, in the order they happened: two receipt
-cards appearing (+170 px of content above), a watched thread's request card appearing (+220 px), Watcher's own question
-appearing (+299 px) and being answered (−271 px), and the request card closing (−220 px). After each, the row being read
-stood 0 px, 0 px, −0.3 px, −0.5 px and −0.5 px from where it started: under a pixel in all, which the keeper and the
-window's own anchoring already held.
+Two captures from the journey, the reader on the oldest reply at 1280x800 with the fix:
+
+- `artifacts/watcher-reader-place-window/reading-before-news-dark-1280x800.png`: the reply being read at the top of the
+  view, Jump to latest showing.
+- `artifacts/watcher-reader-place-window/reading-after-two-news-dark-1280x800.png`: after two pieces of news, the same
+  reply at the same place, the button reading "2 new".
+
+Cards above a reader, on the seeded room (`watcherStandIn`), in the order they happened: two receipt cards appearing
+(+170 px of content above), a watched thread's request card appearing (+220 px), Watcher's own question appearing
+(+299 px) and being answered (−271 px), and the request card closing (−220 px). After each, the row being read stood
+0 px, 0 px, −0.3 px, −0.5 px and −0.5 px from where it started, and the same before the fix and with it. That is not this
+bug and this change leaves it alone: the keeper and the window's own anchoring hold the row, and what is left is the
+cards' fractional heights against a scroll position the window keeps in whole pixels.
 
 ## How it was run
 
@@ -43,12 +51,14 @@ npx playwright test tests/e2e/watcher.spec.ts -g "moves main’s window on|keeps
 ```
 
 - `readingWindow.test.ts` covers what is held and when it is let go.
-- Two cases in `threadWorkspace.test.tsx` mount the real Threads page: one counts the rows kept and let go, the other reads
-  an answer from its middle while its turn leaves the window and checks the answer's offset and that its turn stays folded.
+- Three cases in `threadWorkspace.test.tsx` mount the real Threads page: one counts the rows kept and let go, one reads an
+  answer from its middle while its turn leaves the window and checks the answer's offset and that its turn stays folded,
+  and one checks that Show earlier messages first brings main's window back to the oldest turn held, so the press adds
+  messages above it rather than turns already on screen (found in review).
 - The journey in `watcher.spec.ts` is the measurement above, against main's own Watcher.
 
-With the hold switched off, the two component cases fail (the row being read is gone) and the journey fails with the
-reader on another message at +82 px. With it on, all pass. The full gates run in CI.
+With the hold switched off, the first two component cases fail (the row being read is gone) and the journey fails with
+the reader on another message at +82 px. With it on, all pass. The full gates run in CI.
 
 ## What it does not do
 

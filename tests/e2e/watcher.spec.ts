@@ -57,6 +57,8 @@ const scrubberEvidence = evidenceDirectory('artifacts/message-scrubber')
 const movesEvidence = evidenceDirectory('artifacts/move-threads-window')
 /** The band while Watcher's own provider is limited or failing (#2234, pick A): captures for its note. */
 const holdEvidence = evidenceDirectory('artifacts/watcher-hold')
+/** A reader's place as news moves main's history window on (November 13, 2026): captures for its note. */
+const readerPlaceEvidence = evidenceDirectory('artifacts/watcher-reader-place-window')
 /** Watcher's own question (#2228, Zach's pick A): its card where it asked, its row in Needs you and its answered line. */
 const questionEvidence = evidenceDirectory('artifacts/watcher-own-question')
 const FOOT = 'When Watcher asks, you can allow it once, not for good. Its instructions still tell it to hand changes to a thread.'
@@ -430,7 +432,7 @@ async function contrastHolds(page: Page, key: string): Promise<void> {
 test.describe("Watcher's room on the built app", () => {
   test.describe.configure({ mode: 'serial', timeout: 5 * 60_000 })
   test.beforeAll(async () => {
-    for (const folder of [evidenceRoot, permissionEvidence, handoverEvidence, polishEvidence, newsEvidence, answerEvidence, macEvidence, newWatcherEvidence, machinesEvidence, checksEvidence, scrubberEvidence, movesEvidence, questionEvidence, holdEvidence]) await mkdir(folder, { recursive: true })
+    for (const folder of [evidenceRoot, permissionEvidence, handoverEvidence, polishEvidence, newsEvidence, answerEvidence, macEvidence, newWatcherEvidence, machinesEvidence, checksEvidence, scrubberEvidence, movesEvidence, questionEvidence, holdEvidence, readerPlaceEvidence]) await mkdir(folder, { recursive: true })
   })
   test.afterAll(async () => {
     // Each folder gets its own readings, and a run that took none for a folder leaves that folder's file as it was.
@@ -2940,6 +2942,8 @@ test.describe("Watcher's room on the built app", () => {
       const read = await drawn()
       expect(read.offset, 'the reply being read starts at the top of the view').toBe(0)
       expect(read.fromEnd, 'the reader is away from the end').toBeGreaterThan(400)
+      await captureInto(readerPlaceEvidence, launched, 'reading-before-news-dark-1280x800.png')
+      expect(await drawn(), 'the capture moved nothing').toEqual(read)
       for (const part of [1, 2]) {
         await news(part)
         const now = await drawn()
@@ -2947,6 +2951,7 @@ test.describe("Watcher's room on the built app", () => {
         expect({ reading: now.reading, offset: now.offset }, `reading after news ${part}`).toEqual({ reading: read.reading, offset: read.offset })
         expect(now.rows, `rows kept after news ${part}`).toBeGreaterThan((await held()).count)
       }
+      await captureInto(readerPlaceEvidence, launched, 'reading-after-two-news-dark-1280x800.png')
       // Back at the end, the transcript is main's window again, and follows what arrives.
       await toLatest.click()
       await expect(toLatest).toHaveCount(0)

@@ -643,6 +643,28 @@ describe('Thread transcript scrolling', () => {
     expect(transcript.scrollTop).toBe(transcript.scrollHeight - VIEW)
   })
 
+  it('brings main’s window back to the oldest turn held before asking it for earlier messages', async () => {
+    // Main widens its own window by twenty turns from the newest. Once it has moved on from the turns held here, those
+    // twenty could all be on screen already, and the press would show nothing new.
+    const state = manualState()
+    const at = new Date(NOW).toISOString()
+    const thread = state.host.threads.find(item => item.id === 'grok-previews')!
+    thread.messages = Array.from({ length: 20 }, (_, index) => ({ id: `m${index}`, role: 'assistant' as const, text: `History ${index}`, createdAt: at }))
+    thread.earlierAvailable = true
+    const { live } = mount(state)
+    const transcript = screen.getByRole('log', { name: 'Thread transcript' })
+    transcript.scrollTop = 0
+    fireEvent.scroll(transcript)
+    act(() => { live.publish({ host: { ...live.state.host, threads: live.state.host.threads.map(item => item.id === 'grok-previews'
+      ? { ...item, messages: [...item.messages.slice(2), { id: 'news', role: 'assistant' as const, text: 'news', createdAt: at }] } : item) } }) })
+    expect(screen.getByText('History 0', { exact: true })).toBeInTheDocument()
+    vi.mocked(live.command).mockClear()
+    fireEvent.click(screen.getByRole('button', { name: 'Show earlier messages' }))
+    await waitFor(() => { expect(vi.mocked(live.command).mock.calls.map(([request]) => request)).toEqual([
+      { type: 'load-earlier-messages', threadId: 'grok-previews', throughMessageId: 'm0' },
+      { type: 'load-earlier-messages', threadId: 'grok-previews' }]) })
+  })
+
   it('keeps a reader above the end where they are when they send, and follows a send from the end', async () => {
     const state = manualState()
     const at = new Date(NOW).toISOString()

@@ -1403,7 +1403,11 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     // A press while an earlier one is still being answered waits on the same oldest message, one answer more.
     const asked = earlier.current?.threadId === thread.id ? earlier.current : null
     earlier.current = asked ? { ...asked, waiting: asked.waiting + 1 } : oldest ? { threadId: thread.id, oldestId: oldest.id, waiting: 1 } : null
-    void command({ type: 'load-earlier-messages', threadId: thread.id })
+    // Main widens its own window, which has moved on from the turns held here. It is brought back to the oldest message
+    // drawn first, so what the press adds is above that message and not among the turns already on screen.
+    const widen = (): Promise<unknown> => command({ type: 'load-earlier-messages', threadId: thread.id })
+    if (heldAbove > 0 && oldest) void command({ type: 'load-earlier-messages', threadId: thread.id, throughMessageId: oldest.id }).then(widen)
+    else void widen()
   }
 
   const empty = !thread.messages.length && !sending.length && !recovery.length && !showsActivity
