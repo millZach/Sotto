@@ -52,6 +52,7 @@ import type { HostUpdateStep } from '../../shared/hostUpdates'
 import { projectOriginsSchema, projectSetupResultSchema, type ProjectOrigins, type ProjectSetupRequest, type ProjectSetupResult } from '../../shared/workerMachine'
 import type { NextPromptEntry } from '../../shared/nextPrompt'
 import { desktopDefaultsReceiptSchema, type DesktopDefaultsInput, type DesktopDefaultsReceipt } from '../../shared/desktopDefaults'
+import { heldPluginAccountCopiesSchema, pluginAccountCopyReceiptSchema, pluginAccountCopyRemovedSchema, type HeldPluginAccountCopy, type PluginAccountCopy, type PluginAccountCopyReceipt, type PluginAccountCopyRemoved } from '../../shared/pluginAccountCopies'
 import type { DelegationRelayAsk, DelegationRemoteAsk, RelayedReply } from '../../shared/delegationRelay'
 import type { TellWatcherAnswer, WatcherTellPush } from '../../shared/tellWatcher'
 import type { DelegationNews } from '../../shared/delegation'
@@ -1578,6 +1579,24 @@ export class SocketHostService implements HostService {
   async desktopDefaults(defaults: DesktopDefaultsInput): Promise<DesktopDefaultsReceipt> {
     this.offers('host-delegation')
     return this.read(desktopDefaultsReceiptSchema, await this.call({ op: 'desktop-defaults', defaults }, undefined, undefined, 10000))
+  }
+  /**
+   * The host lists `plugin-account-copies` (ADR-0205, amending ADR-0025): it keeps a plugin account's secret and
+   * settings in its own encrypted credential file, for its own threads. An older or stable host lists none, and is
+   * never sent a secret: each call below refuses before anything leaves this computer.
+   */
+  get supportsPluginAccountCopies(): boolean { return this.features.includes('plugin-account-copies') }
+  async keepPluginAccountCopy(copy: PluginAccountCopy): Promise<PluginAccountCopyReceipt> {
+    this.offers('plugin-account-copies')
+    return this.read(pluginAccountCopyReceiptSchema, await this.call({ op: 'plugin-account-copy', copy }, undefined, undefined, 10000))
+  }
+  async removePluginAccountCopy(accountId: string): Promise<PluginAccountCopyRemoved> {
+    this.offers('plugin-account-copies')
+    return this.read(pluginAccountCopyRemovedSchema, await this.call({ op: 'plugin-account-copy-remove', accountId }, undefined, undefined, 10000))
+  }
+  async pluginAccountCopies(): Promise<HeldPluginAccountCopy[]> {
+    this.offers('plugin-account-copies')
+    return this.read(heldPluginAccountCopiesSchema, await this.call({ op: 'plugin-account-copies' }, undefined, undefined, 10000))
   }
   /**
    * The host lists `delegation-views` and this desktop accepted it (#1310): its window reads what the host's own threads
