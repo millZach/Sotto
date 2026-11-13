@@ -1685,7 +1685,10 @@ struct RailAsk: Equatable {
     private let retryJitter: @Sendable () -> Double
     private let retrySleep: @Sendable (UInt64) async throws -> Void
     private var pairGeneration = UUID()
-    private var detailVersion = 0
+    /// Counts the copies of the open thread taken in. A step window moved back (ADR-0194) arrives at the revision the phone
+    /// already holds, so the page keys its rows on this as well as the revision: on the revision alone it kept the rows it
+    /// had, and Show earlier messages showed nothing new.
+    private(set) var detailVersion = 0
     private var detailReload: Task<Void, Never>?
     private var detailReloadID: UUID?
     private var detailWantedRevision = 0
@@ -1700,6 +1703,9 @@ struct RailAsk: Equatable {
     /// The pictures journeys: the laptop hands back the long thread's pictures and photos.
     private var fixturePictures = false
     private var fixtureDetails: [String: ThreadDetail] = [:]
+    /// The long thread whole, under `--ui-step-window`, which Show earlier messages takes in at the same revision as the
+    /// window it opened on, as a computer's `earlier-steps` answers (ADR-0194).
+    private var fixtureEarlierDetails: [String: ThreadDetail] = [:]
     private var fixtureShells: [String: [String: Any]] = [:]
     /// The laptop's Watcher page in the Watcher journeys, as the laptop would send it.
     private var fixtureWatcher: [String: Any]?
@@ -1859,6 +1865,15 @@ struct RailAsk: Equatable {
             let (longMessages, longSteps) = Self.fixtureLongThread(at, pictures: fixturePictures)
             fixtureDetails[laptop + "/drives"] = decode(ThreadDetail.self, ["threadId": "drives", "revision": 1,
                 "messages": longMessages, "activities": longSteps])
+            // With --ui-step-window it opens on a step window of its newest ten turns, with thirty steps above it.
+            if arguments.contains("--ui-step-window") {
+                fixtureEarlierDetails[laptop + "/drives"] = fixtureDetails[laptop + "/drives"]
+                let start = longMessages.firstIndex { ($0["id"] as? String) == "ask-30" } ?? 0
+                let windowSteps = longSteps.filter { ($0["sequence"] as? Int ?? 0) > 30 }
+                fixtureDetails[laptop + "/drives"] = decode(ThreadDetail.self, ["threadId": "drives", "revision": 1,
+                    "messages": Array(longMessages[start...]), "activities": windowSteps,
+                    "earlierAvailable": true, "earlierSteps": longSteps.count - windowSteps.count])
+            }
         }
         fixtureSlowDetail = arguments.contains("--ui-slow-detail")
         fixtureReconnecting = arguments.contains("--ui-reconnecting")
@@ -3578,6 +3593,16 @@ struct RailAsk: Equatable {
         return true
     }
     func earlier(_ ref: ThreadRef) async {
+        #if DEBUG && os(iOS)
+        if isUIFixture {
+            // As `applyDetail` takes a widened answer: in place of the copy held, at the same revision.
+            guard selected == ref, let wider = fixtureEarlierDetails[ref.id] else { return }
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            guard selected == ref else { return }
+            openDetail = wider; detailVersion += 1
+            return
+        }
+        #endif
         guard online(ref.hostID), selected == ref, let connection = connections[ref.hostID] else { return }
         let current = generations[ref.hostID]
         do {
