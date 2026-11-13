@@ -76,7 +76,7 @@ export function LinkedFilePanel({ file, host, backTo, onClose, bridge = windowFi
   }
   return <div className="linked-file" onKeyDown={onKeyDown}>
     <FilePreview files={{ markdownView: view }} preview={preview} platform={(window.sotto as { platform?: string } | undefined)?.platform}
-      scrollTop={scroll.current} onScroll={top => { scroll.current = top }} onCopyPath={copyPath} onReveal={reveal} onDownload={download?.start} downloading={download?.state?.status === 'going'} onClose={onClose} onRetry={readAgain}
+      scrollTop={scroll.current} onScroll={top => { scroll.current = top }} onCopyPath={copyPath} onReveal={reveal} onDownload={download?.start} downloading={download?.busy} onClose={onClose} onRetry={readAgain}
       onRefreshFolder={readAgain} onMarkdownView={setView} onReadAgain={readAgain} takesFocus
       place={host === undefined ? undefined : t({ message: `on ${host}`, comment: '{host} is the name of a paired host, as in forge.' })}
       problem={error => <LinkedFileProblem error={error} markdown={markdown} downloads={download !== undefined} onRetry={readAgain} />}

@@ -20,13 +20,29 @@ const STOPPED = msg`Download stopped. Nothing was saved.`
 const NO_FOLDER = msg`Sotto could not write to the Downloads folder. Nothing was saved.`
 
 /**
+ * The most bytes of a name a download is saved under. A name holds 255 bytes on Linux and a Mac and 255 characters on
+ * Windows, and ` (999)` and `.part` still have to fit after it, with the Downloads folder's own path in front on Windows.
+ */
+const NAME_BYTES = 200
+/**
  * A name this computer can save under, from the name a host gave: no folder separators, control characters or characters
  * Windows refuses, no trailing dot or space, and never one of Windows' device names. A name that is already one is kept,
- * a leading dot included.
+ * a leading dot included. A name too long to save is cut in whole characters before its ending, so `.pdf` stays and Open
+ * still finds its app.
  */
 export function downloadName(name: string): string {
   // eslint-disable-next-line no-control-regex -- A file name must not carry control characters.
-  const clean = name.replace(/[\x00-\x1f\x7f<>:"/\\|?*]/gu, '_').slice(0, 200).replace(/[. ]+$/u, '')
+  const whole = name.replace(/[\x00-\x1f\x7f<>:"/\\|?*]/gu, '_')
+  const ending = /\.[^.]{1,16}$/u.exec(whole)?.[0] ?? ''
+  const room = NAME_BYTES - Buffer.byteLength(ending)
+  let stem = '', used = 0
+  for (const character of whole.slice(0, whole.length - ending.length)) {
+    const bytes = Buffer.byteLength(character)
+    if (used + bytes > room) break
+    stem += character
+    used += bytes
+  }
+  const clean = (stem + ending).replace(/[. ]+$/u, '')
   if (!clean) return 'download'
   return /^(?:con|conin\$|conout\$|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³])(?:\.|$)/iu.test(clean) ? `_${clean}` : clean
 }

@@ -220,6 +220,42 @@ describe('a download\'s line', () => {
     expect(screen.getByText('Saved q3-report (1).pdf to Downloads on this computer.')).toBeInTheDocument()
   })
 
+  it('starts no second download while main still holds the stopped one, and keeps a dismissed line gone', async () => {
+    const user = userEvent.setup()
+    const host = hostBridge(), store = new FileDownloadsStore()
+    const { container } = line(host, store)
+    await act(async () => { store.start(host.bridge, 'host:thread', 'out/q3-report.pdf') })
+    await user.click(screen.getByRole('button', { name: 'Stop' }))
+    // Main lets go only when the part it was reading arrives. Until then a new download would be refused as already going.
+    expect(store.busy('host:thread', 'out/q3-report.pdf')).toBe(true)
+    await act(async () => { store.start(host.bridge, 'host:thread', 'out/q3-report.pdf') })
+    expect(host.bridge.download).toHaveBeenCalledTimes(1)
+    expect(screen.getByText('Download stopped. Nothing was saved.')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Dismiss' }))
+    await host.finish({ ok: false, error: { code: 'unavailable', message: 'Download stopped. Nothing was saved.' } })
+    expect(container).toBeEmptyDOMElement()
+    expect(store.busy('host:thread', 'out/q3-report.pdf')).toBe(false)
+    // Now the next one starts, and its line is its own.
+    await act(async () => { store.start(host.bridge, 'host:thread', 'out/q3-report.pdf') })
+    expect(host.bridge.download).toHaveBeenCalledTimes(2)
+    expect(screen.getByText('Downloading from forge… 0%')).toBeInTheDocument()
+    await host.finish(saved)
+    expect(screen.getByText('Saved q3-report (1).pdf to Downloads on this computer.')).toBeInTheDocument()
+  })
+
+  it('starts the next saved file with its own line, not what Open said of the last', async () => {
+    const user = userEvent.setup()
+    const host = hostBridge({ openDownload: vi.fn(async () => ({ ok: true as const, value: { did: 'shown' as const } })) }), store = new FileDownloadsStore()
+    line(host, store)
+    await act(async () => { store.start(host.bridge, 'host:thread', 'out/q3-report.pdf') })
+    await host.finish({ ok: true, value: { downloadId: 'c'.repeat(32), name: 'setup.exe', size: 9 } })
+    await user.click(screen.getByRole('button', { name: 'Open' }))
+    expect(await screen.findByText('setup.exe is a program or script, so it was shown in its folder. Nothing was run.')).toBeInTheDocument()
+    await act(async () => { store.start(host.bridge, 'host:thread', 'out/q3-report.pdf') })
+    await host.finish({ ok: true, value: { downloadId: 'd'.repeat(32), name: 'setup (1).exe', size: 9 } })
+    expect(screen.getByText('Saved setup (1).exe to Downloads on this computer.')).toBeInTheDocument()
+  })
+
   it('says why nothing was saved in main\'s words, and what a saved program\'s Open did', async () => {
     const user = userEvent.setup()
     const host = hostBridge({ openDownload: vi.fn(async () => ({ ok: true as const, value: { did: 'shown' as const } })) }), store = new FileDownloadsStore()

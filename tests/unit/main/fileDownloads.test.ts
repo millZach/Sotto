@@ -133,4 +133,20 @@ describe('saving a file from a paired host to Downloads (ADR-0120, November 12 a
     expect(downloadName('...')).toBe('download')
     expect(downloadName('x'.repeat(400))).toHaveLength(200)
   })
+
+  it('cuts a name too long to save before its ending and in whole characters, with room left to number it', async () => {
+    const long = downloadName(`${'a'.repeat(220)}.pdf`)
+    expect(long).toBe(`${'a'.repeat(196)}.pdf`)
+    // Counted in bytes, which is what Linux and a Mac limit: 150 of these characters are 450.
+    const wide = downloadName(`${'报'.repeat(150)}.txt`)
+    expect(wide).toBe(`${'报'.repeat(65)}.txt`)
+    expect(Buffer.byteLength(`${wide} (999).part`)).toBeLessThanOrEqual(255)
+    // A character of two units is kept whole or left out.
+    const faces = downloadName('😀'.repeat(101))
+    expect(faces).toBe('😀'.repeat(50))
+    // Such a name saves, where the folder once refused it.
+    const downloads = new FileDownloads({ part: host(Buffer.from('12345678'), `${'报'.repeat(150)}.txt`), folder: () => folder, progress: () => undefined })
+    expect(await downloads.download(request)).toMatchObject({ ok: true, value: { name: wide } })
+    expect(await readdir(folder)).toEqual([wide])
+  })
 })

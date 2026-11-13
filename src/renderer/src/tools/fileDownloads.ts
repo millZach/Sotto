@@ -17,6 +17,8 @@ const keyOf = (threadId: string, path: string): string => `${threadId}\n${path}`
  */
 export class FileDownloadsStore {
   private readonly states = new Map<string, FileDownloadState>()
+  /** The downloads main has not answered yet, each with whether the reader stopped it. Main holds a file until it answers. */
+  private readonly asked = new Map<string, { stopped: boolean }>()
   private readonly listeners = new Set<() => void>()
   private heard: FilesBridge | undefined
   private unhear: (() => void) | undefined
@@ -28,23 +30,40 @@ export class FileDownloadsStore {
 
   state(threadId: string, path: string): FileDownloadState | undefined { return this.states.get(keyOf(threadId, path)) }
 
+  /**
+   * Whether main still has this file's download in hand: going, or stopped and not yet let go, which takes main until
+   * the part it was reading arrives. Download waits for that, so a new one never meets the old one's answer.
+   */
+  busy(threadId: string, path: string): boolean { return this.asked.has(keyOf(threadId, path)) }
+
   start(bridge: FilesBridge | undefined, threadId: string, path: string): void {
     const key = keyOf(threadId, path)
-    if (this.states.get(key)?.status === 'going') return
+    if (this.asked.has(key)) return
     if (!bridge?.download) { this.set(key, { status: 'failed', message: null }); return }
     this.hear(bridge)
+    const ask = { stopped: false }
+    this.asked.set(key, ask)
     this.set(key, { status: 'going', received: 0, size: 0 })
     void Promise.resolve().then(() => bridge.download!({ threadId, path })).then(result => {
-      // A stop the reader asked for is said in the window's own words, not as a failure. A file main had already saved
-      // when the stop reached it is there, so the line says so rather than that nothing was saved.
-      if (!result.ok && this.states.get(key)?.status === 'stopped') return
-      this.set(key, result.ok ? { status: 'saved', downloadId: result.value.downloadId, name: result.value.name } : { status: 'failed', message: result.error.message })
-    }, () => { if (this.states.get(key)?.status !== 'stopped') this.set(key, { status: 'failed', message: null }) })
+      this.asked.delete(key)
+      // A file main had already saved when the stop reached it is there, so the line says so rather than that nothing
+      // was saved. Any other answer to a stopped download is the stop itself, which the line already says in the
+      // window's own words, or said until the reader dismissed it.
+      if (result.ok) this.set(key, { status: 'saved', downloadId: result.value.downloadId, name: result.value.name })
+      else if (ask.stopped) this.tell()
+      else this.set(key, { status: 'failed', message: result.error.message })
+    }, () => {
+      this.asked.delete(key)
+      if (ask.stopped) this.tell()
+      else this.set(key, { status: 'failed', message: null })
+    })
   }
 
   stop(bridge: FilesBridge | undefined, threadId: string, path: string): void {
     const key = keyOf(threadId, path)
-    if (this.states.get(key)?.status !== 'going') return
+    const ask = this.asked.get(key)
+    if (!ask || this.states.get(key)?.status !== 'going') return
+    ask.stopped = true
     this.set(key, { status: 'stopped' })
     void Promise.resolve().then(() => bridge?.stopDownload?.({ threadId, path })).catch(() => undefined)
   }
@@ -53,7 +72,7 @@ export class FileDownloadsStore {
   dismiss(threadId: string, path: string): void {
     const key = keyOf(threadId, path)
     if (this.states.get(key)?.status === 'going' || !this.states.delete(key)) return
-    for (const listener of [...this.listeners]) listener()
+    this.tell()
   }
 
   /** Progress is heard from the bridge that downloads, once: the window has one, which Files hands on under its own wrapper. */
@@ -69,6 +88,10 @@ export class FileDownloadsStore {
 
   private set(key: string, state: FileDownloadState): void {
     this.states.set(key, state)
+    this.tell()
+  }
+
+  private tell(): void {
     for (const listener of [...this.listeners]) listener()
   }
 }

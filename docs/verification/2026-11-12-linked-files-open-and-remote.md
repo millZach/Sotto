@@ -12,5 +12,6 @@ November 12, 2026. Zach asked for a file a reply names to be a link that opens t
 ## Not checked here
 
 - The file's own app starting on Windows and on a Mac. Main calls Electron's `shell.openPath` there, which a journey records instead of doing. Pressing a PDF link on an installed Owl and seeing it open is a hand step.
+- A Mac handing a runnable file to Terminal. The review bot's finding rests on how Finder treats a runnable file with no ending; no Mac ran it. The rule that answers it (a file anyone may run is shown, never opened, on a Mac and on Linux) is checked on forge by `tests/unit/main/linkedFiles.test.ts`, which marks a file runnable and sees it shown.
 - The laptop paired with forge, both on this build. It needs the next Owl on both machines, since the host offers the feature only where its own Owl answer is on.
 - Windows and macOS runs of the journey. CI loads the spec (`npm run e2e:list`) and does not run it; it ran on forge, where Linux desktop journeys are checked (ADR-0062). `tests/e2e/markdown-side-panel.spec.ts` ran with it and passes; its Watcher's room test looked for "Show in the file manager" where Linux's button reads "Show in file manager", and now looks for the words the button has.

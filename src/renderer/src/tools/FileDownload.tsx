@@ -8,6 +8,8 @@ import { fileDownloads, type FileDownloadsStore, type FileDownloadState } from '
 /** One file's download: how it stands, and the press that starts it. Undefined where the file is not on a paired host. */
 export interface FileDownloadControl {
   readonly state: FileDownloadState | undefined
+  /** Main still has this file's download in hand, so another cannot start yet. */
+  readonly busy: boolean
   readonly start: () => void
 }
 
@@ -17,9 +19,10 @@ export interface FileDownloadControl {
  */
 export function useFileDownload(bridge: FilesBridge | undefined, host: string | undefined, threadId: string, path: string, store: FileDownloadsStore = fileDownloads): FileDownloadControl | undefined {
   const state = useSyncExternalStore(store.subscribe, () => store.state(threadId, path))
+  const busy = useSyncExternalStore(store.subscribe, () => store.busy(threadId, path))
   const start = useCallback(() => store.start(bridge, threadId, path), [store, bridge, threadId, path])
   const on = useOwlFeature('reveal-linked-files')
-  return !on || host === undefined || !bridge?.download ? undefined : { state, start }
+  return !on || host === undefined || !bridge?.download ? undefined : { state, busy, start }
 }
 
 /**
@@ -36,7 +39,8 @@ export function FileDownloadLine({ bridge, host, threadId, path, platform, store
 }): ReactNode {
   const { t } = useLingui()
   const state = useSyncExternalStore(store.subscribe, () => store.state(threadId, path))
-  const [after, setAfter] = useState<string | null>(null)
+  // What Show or Open last said, kept with the saved file it was said of: the next file saved here starts with its own line.
+  const [said, setSaid] = useState<{ readonly of: string; readonly words: string } | null>(null)
   if (!state) return null
   if (state.status === 'going') {
     const percent = state.size > 0 ? Math.min(99, Math.floor(state.received / state.size * 100)) : 0
@@ -48,6 +52,8 @@ export function FileDownloadLine({ bridge, host, threadId, path, platform, store
   }
   if (state.status === 'saved') {
     const { downloadId, name } = state
+    const setAfter = (words: string | null): void => setSaid(words === null ? null : { of: downloadId, words })
+    const after = said?.of === downloadId ? said.words : null
     const show = (): void => {
       void Promise.resolve().then(() => bridge?.showDownload?.({ downloadId })).then(result => setAfter(result?.ok ? null : result?.error.message ?? t`Sotto could not show this file. Nothing was opened.`), () => setAfter(t`Sotto could not show this file. Nothing was opened.`))
     }
