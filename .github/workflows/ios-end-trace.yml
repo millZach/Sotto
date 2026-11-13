@@ -1,0 +1,28 @@
+name: iPhone picture end trace (temporary)
+on:
+  push:
+    branches: ['test/ios-end-trace']
+jobs:
+  trace:
+    strategy:
+      fail-fast: false
+      matrix:
+        phone: [small, large]
+    name: Picture journeys on the ${{ matrix.phone }} iPhone
+    runs-on: macos-26
+    timeout-minutes: 80
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      SOTTO_UI_ONLY: -only-testing:SottoUITests/FocusJourneyTests/testAThreadWithPicturesStaysAtItsEnd -only-testing:SottoUITests/FocusJourneyTests/testAThreadWithPicturesStaysAtItsEndWhileAReplyStreams
+      SOTTO_UI_ITERATIONS: '6'
+    steps:
+      - uses: actions/checkout@v4
+      - run: sh apps/ios/Scripts/verify.sh
+      - run: sh apps/ios/Scripts/verify-ui.sh "${{ matrix.phone }}"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: end-trace-${{ matrix.phone }}
+          path: apps/ios/.build-ui/
+          include-hidden-files: true
+          retention-days: 3

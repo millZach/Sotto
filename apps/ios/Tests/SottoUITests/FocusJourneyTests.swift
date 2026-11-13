@@ -725,6 +725,7 @@ import UIKit
         XCTAssertTrue(endProbe().atEnd, "Dragging down reaches the thread's end (" + endProbe().words + ")")
         dragThread(towardEnd: true, above: reply)
         holdsTheEnd("pictures-returned", "Back at its end, the thread stays there while its pictures load again")
+        showEndTrace("passed-or-done")
     }
 
     /// Keeps the app's end trace with the journey's attachments, and prints its decisions and every frame in which the page's
