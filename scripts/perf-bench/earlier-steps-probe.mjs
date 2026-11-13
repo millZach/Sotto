@@ -24,6 +24,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import process from 'node:process'
+import { setTimeout } from 'node:timers'
 import { iphoneAccepts } from '../../tests/fixtures/iphoneAccepts.mjs'
 
 const args = process.argv.slice(2)
@@ -46,22 +47,34 @@ const describe = detail => detail ? `revision ${detail.revision}, ${detail.messa
 
 const { code } = await post('/v1/admin/pairing-code', listener.adminToken)
 const pairing = await post('/v1/pair', null, { v: 1, code, name: 'earlier-steps-probe' })
+let paired = true
+/** Removes the throwaway pairing once: when the probe ends, fails, or is stopped with Ctrl-C or a signal. */
+const unpair = async () => {
+  if (!paired) return
+  paired = false
+  await post('/v1/admin/revoke-client', listener.adminToken, { clientId: pairing.clientId }).catch(error => console.error(`The pairing was not removed: ${error.message}`))
+}
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.once(signal, () => { void unpair().finally(() => process.exit(130)) })
 let socket
 try {
   const { session } = await post('/v1/session', pairing.token)
   socket = new globalThis.WebSocket(`ws://127.0.0.1:${listener.port}/v1/socket`, { headers: { Authorization: `Bearer ${session}` } })
   await new Promise((resolve, reject) => { socket.onopen = resolve; socket.onerror = () => reject(new Error('The socket did not open')) })
   const waiting = new Map()
+  // A socket that closes fails every request still waiting, so the run ends and the pairing goes.
+  socket.onclose = () => { for (const [, { reject }] of waiting) reject(new Error('The socket closed')); waiting.clear() }
   socket.onmessage = event => {
     const text = typeof event.data === 'string' ? event.data : Buffer.from(event.data).toString('utf8')
     const message = JSON.parse(text)
     const answer = message.id === undefined ? undefined : waiting.get(message.id)
-    if (answer) { waiting.delete(message.id); answer({ message, bytes: Buffer.byteLength(text) }) }
+    if (answer) { waiting.delete(message.id); answer.resolve({ message, bytes: Buffer.byteLength(text) }) }
   }
   let next = 0
-  const call = (op, fields = {}) => new Promise(resolve => {
+  const call = (op, fields = {}) => new Promise((resolve, reject) => {
     const id = `probe-${++next}`
-    waiting.set(id, resolve)
+    waiting.set(id, { resolve, reject })
+    // Twice what the iPhone waits for Show earlier messages, so a slow answer is still measured.
+    setTimeout(() => { if (waiting.delete(id)) reject(new Error(`No answer to ${op} in 60 seconds`)) }, 60_000).unref()
     socket.send(JSON.stringify({ v: 1, id, session, op, ...fields }))
   })
   const timed = async (op, fields) => { const start = performance.now(); const answer = await call(op, fields); return { ...answer, ms: performance.now() - start } }
@@ -83,5 +96,5 @@ try {
   await call('observe', { threadIds: [] })
 } finally {
   try { socket?.close() } catch { /* closing a socket that never opened */ }
-  await post('/v1/admin/revoke-client', listener.adminToken, { clientId: pairing.clientId })
+  await unpair()
 }
