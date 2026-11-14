@@ -2,7 +2,7 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { z } from 'zod'
 import type { HeldPluginAccountCopy, PluginAccountCopy, PluginAccountCopyReceipt, PluginAccountCopyRemoved } from '../../shared/pluginAccountCopies'
-import { isMailPlugin, type PluginAccount, type PluginAccountCopyLeaving, type PluginAccountCopyState, type PluginCopiesView } from '../../shared/plugins'
+import { isBridgePlugin, isMailPlugin, type PluginAccount, type PluginAccountCopyLeaving, type PluginAccountCopyState, type PluginCopiesView } from '../../shared/plugins'
 import { PluginSecretLocked } from './accounts'
 
 /** A connected host as the copies reach it: its identity, and the three requests where it lists `plugin-account-copies`. */
@@ -36,9 +36,11 @@ const sameProjects = (one: readonly string[] | null | undefined, other: readonly
   one === other || (!!one && !!other && one.length === other.length && one.every((id, index) => id === other[index]))
 /**
  * Whether an account may have a copy anywhere else. One kept to chosen projects may not (Zach, November 12, 2026): a
- * project is a folder on this computer, which another computer does not have, so its secret stays here.
+ * project is a folder on this computer, which another computer does not have, so its secret stays here. Nor may a
+ * Proton Mail account (Zach, November 14, 2026): each computer's Bridge makes its own Bridge password, so this one's
+ * would be refused anywhere else.
  */
-const mayBeCopied = (account: PluginAccount): boolean => account.projects === null
+const mayBeCopied = (account: PluginAccount): boolean => account.projects === null && !isBridgePlugin(account.plugin)
 /** Whether the user's choices ask for a copy of an account on a computer. */
 const chosen = (choices: Choices, accountId: string, computerId: string): boolean => choices.choices[accountId]?.[computerId] ?? choices.copyNew
 /** Whether a host holds an account as it is here. A host that does not say what it holds of it is not taken to. */

@@ -20,7 +20,7 @@ const OPENED: MailOpened = { ok: true, mailbox: 'INBOX', message: { ...FOUND.mes
  * `answers` are taken in order; with none left the user says yes.
  */
 function tools(options: {
-  accounts?: PluginAccount[]; answers?: (PluginChangeAnswer | Promise<PluginChangeAnswer>)[]; noMail?: boolean
+  accounts?: PluginAccount[]; answers?: (PluginChangeAnswer | Promise<PluginChangeAnswer>)[]; noMail?: boolean; bridgeHere?: boolean
   search?: MailFound | SecretTrouble; open?: MailOpened | SecretTrouble; whileAsked?: () => void; whileGranting?: () => void; whileReading?: () => void
 } = {}) {
   const world = { accounts: options.accounts ?? [PERSONAL] }
@@ -70,7 +70,7 @@ function tools(options: {
       providerOf: threadId => threadId === 'watcher' ? 'Codex' : 'Claude Code',
       search: async (account, search) => { searched.push({ account: account.name, search }); options.whileReading?.(); return options.search ?? FOUND },
       open: async (account, id) => { opened.push({ account: account.name, id }); options.whileReading?.(); return options.open ?? OPENED },
-      sendTrouble: () => null, send: never,
+      sendTrouble: () => null, send: never, ...(options.bridgeHere ? { keepsBridgeAccounts: true } : {}),
     } }),
   })
   servers.push(server)
@@ -272,7 +272,7 @@ describe('reading a mail account through plugin_read (ADR-0205, decision 8)', ()
     for (const mix of mixes) {
       const result = await t.read('one', mix)
       expect(result.isError, JSON.stringify(mix)).toBe(true)
-      expect(said(result)).toContain('To read a mail account give "plugin" ("gmail")')
+      expect(said(result)).toContain('To read a mail account give "plugin" ("gmail" or "proton-mail")')
     }
     // A search is not a way to read GitHub.
     const gitHub = await t.server.call('one', PLUGIN_READ_TOOL, { plugin: 'github', search: {} })
@@ -298,5 +298,25 @@ describe('reading a mail account through plugin_read (ADR-0205, decision 8)', ()
     expect(said(result)).toBe('Threads on this computer cannot read mail through Sotto. Nothing was read.')
     expect(said(await t.server.call('one', PLUGIN_ACCOUNTS_TOOL, {}))).not.toContain('Gmail')
     expect(t.asked).toEqual([])
+  })
+})
+
+describe('a Proton Mail account through plugin_read (ADR-0205, slice 10)', () => {
+  const PRIVATE: PluginAccount = { ...PERSONAL, id: '33333333-3333-4333-8333-000000000003', plugin: 'proton-mail', name: 'Private', address: 'reader@proton.example', bridge: { imapPort: 1143, smtpPort: 1025, certificate: 'a'.repeat(64) } }
+
+  it('says Bridge is not running, or shows another certificate, and that nothing was read', async () => {
+    const away = tools({ accounts: [PRIVATE], bridgeHere: true, search: { ok: false, reason: 'unreachable' } })
+    expect(said(await away.read('one', { plugin: 'proton-mail', search: {} }))).toBe('Proton Mail Bridge isn\'t running on this computer, or isn\'t answering. Ask the user to open Bridge, then try again. Nothing was read.')
+    const changed = tools({ accounts: [PRIVATE], bridgeHere: true, search: { ok: false, reason: 'certificate' } })
+    expect(said(await changed.read('one', { plugin: 'proton-mail', search: {} }))).toContain('showed another certificate than the one Sotto keeps for the account "Private"')
+    const refused = tools({ accounts: [PRIVATE], bridgeHere: true, search: { ok: false, reason: 'refused' } })
+    expect(said(await refused.read('one', { plugin: 'proton-mail', search: {} }))).toContain('Proton Mail Bridge did not accept the Bridge password of the account "Private"')
+  })
+
+  it('tells a thread on a computer that keeps no Proton Mail account that none is there, and names the one kept here', async () => {
+    const host = tools({ accounts: [PERSONAL] })
+    expect(said(await host.server.call('one', PLUGIN_ACCOUNTS_TOOL, {}))).toContain('Proton Mail: no account is available to threads on this computer: Proton Mail accounts stay on the computer they were added on')
+    const here = tools({ accounts: [PERSONAL, PRIVATE], bridgeHere: true })
+    expect(said(await here.server.call('one', PLUGIN_ACCOUNTS_TOOL, {}))).toContain('Proton Mail: account "Private". Read with plugin_read, plugin "proton-mail"')
   })
 })

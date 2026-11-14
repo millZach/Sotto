@@ -218,7 +218,9 @@ it('turns away a copy that is not one: no secret, a secret too long to be one, o
     { account: { ...COPY.account, on: undefined }, secret: TOKEN }, { account: { ...COPY.account, projects: undefined }, secret: TOKEN },
     // Nor one the desktop could not have saved: kept to no project at all, to one twice, or under a name it would have turned away.
     { account: { ...COPY.account, projects: [] }, secret: TOKEN }, { account: { ...COPY.account, projects: ['folder:one', 'folder:one'] }, secret: TOKEN },
-    { account: { ...COPY.account, name: '   ' }, secret: TOKEN }, { account: { ...COPY.account, name: 'Work' + String.fromCharCode(7) }, secret: TOKEN }]) {
+    { account: { ...COPY.account, name: '   ' }, secret: TOKEN }, { account: { ...COPY.account, name: 'Work' + String.fromCharCode(7) }, secret: TOKEN },
+    // Nor a Proton Mail account, which stays on the computer whose Bridge made its Bridge password (ADR-0205, slice 10).
+    { account: { ...COPY.account, plugin: 'proton-mail', address: 'reader@proton.example', bridge: { imapPort: 1143, smtpPort: 1025, certificate: 'a'.repeat(64) } }, secret: TOKEN }]) {
     const answer = await f.raw(pairing.clientId, { op: 'plugin-account-copy', copy })
     expect(answer.ok, JSON.stringify(Object.keys(copy))).toBe(false)
     expect(JSON.stringify(answer)).not.toContain(TOKEN)

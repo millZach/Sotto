@@ -1,9 +1,9 @@
 import type { RunGitCommand } from '../agents/git/gitStatus'
-import { isMailPlugin, pluginAccountAdmits, type AccountPluginId, type GitHubSignIn, type PluginAccount, type PluginChange } from '../../shared/plugins'
+import { pluginAccountAdmits, type AccountPluginId, type GitHubSignIn, type PluginAccount, type PluginChange } from '../../shared/plugins'
 import { PluginSecretLocked } from './accounts'
 import { commentOnGitHub, describeGitHubIssue, openGitHubIssue, setGitHubIssueState } from './github/changes'
 import { readGitHub } from './github/read'
-import { MAIL_SEND_SERVERS, MAIL_SERVERS } from './mail/accounts'
+import { mailServersOf } from './mail/accounts'
 import { openMail, searchMail, type MailOptions, type MailServer, type MailSignIn } from './mail/read'
 import { sendMail } from './mail/send'
 import type { PluginChangeAnswer, PluginChangeWait } from './pendingChanges'
@@ -44,6 +44,8 @@ export interface PluginToolWiring {
     readonly grants: { has(threadId: string, accountId: string): Promise<boolean>; grant(threadId: string, accountId: string, generation?: number): Promise<boolean>; open(threadId: string): boolean; generation(accountId: string): number }
     readonly providerOf: (threadId: string) => string
     readonly options: MailOptions
+    /** Whether this computer keeps Proton Mail accounts, as the desktop does and a paired host never does. */
+    readonly keepsBridgeAccounts?: boolean
   }
 }
 
@@ -77,9 +79,11 @@ export function pluginToolHandlers(wiring: PluginToolWiring): PluginToolHandlers
    * store and goes to the account's own servers alone.
    */
   const mailSignIn = (account: PluginAccount): { readonly server: MailServer; readonly sendServer: MailServer; readonly signIn: MailSignIn } | SecretTrouble => {
-    if (!isMailPlugin(account.plugin) || !account.address) return 'no-secret'
+    // A Proton Mail account is reached through Bridge on this computer, with the certificate kept for it.
+    const servers = mailServersOf(account)
+    if (!servers || !account.address) return 'no-secret'
     const read = secretOf(account.id)
-    return 'reason' in read ? read.reason : { server: MAIL_SERVERS[account.plugin], sendServer: MAIL_SEND_SERVERS[account.plugin], signIn: { address: account.address, password: read.secret } }
+    return 'reason' in read ? read.reason : { server: servers.read, sendServer: servers.send, signIn: { address: account.address, password: read.secret } }
   }
   return {
     ...(mail ? { mail: {
@@ -87,7 +91,7 @@ export function pluginToolHandlers(wiring: PluginToolWiring): PluginToolHandlers
       copyOf: accountId => mail.grants.generation(accountId),
       grant: (threadId, accountId, copy) => mail.grants.grant(threadId, accountId, copy),
       threadOpen: threadId => mail.grants.open(threadId),
-      providerOf: mail.providerOf,
+      providerOf: mail.providerOf, keepsBridgeAccounts: mail.keepsBridgeAccounts === true,
       search: async (account, search) => { const reach = mailSignIn(account); return typeof reach === 'string' ? reach : searchMail(reach.server, reach.signIn, search, mail.options) },
       open: async (account, id) => { const reach = mailSignIn(account); return typeof reach === 'string' ? reach : openMail(reach.server, reach.signIn, { id }, mail.options) },
       sendTrouble: account => { const reach = mailSignIn(account); return typeof reach === 'string' ? reach : null },

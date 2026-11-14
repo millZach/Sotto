@@ -12,13 +12,13 @@ export const PLUGIN_GROUPS = ['code', 'mail'] as const
 export type PluginGroupId = typeof PLUGIN_GROUPS[number]
 
 /** Every plugin a thread's agent can use, each with a row on Settings › Plugins. */
-export const PLUGIN_IDS = ['github', 'vercel', 'gmail'] as const
+export const PLUGIN_IDS = ['github', 'vercel', 'gmail', 'proton-mail'] as const
 export type PluginId = typeof PLUGIN_IDS[number]
 /** Each plugin's name, which is the service's own and the same in every language. */
-export const PLUGIN_NAMES: Readonly<Record<PluginId, string>> = { github: 'GitHub', vercel: 'Vercel', gmail: 'Gmail' }
+export const PLUGIN_NAMES: Readonly<Record<PluginId, string>> = { github: 'GitHub', vercel: 'Vercel', gmail: 'Gmail', 'proton-mail': 'Proton Mail' }
 
 /** The plugins that are mail accounts: read over IMAP, each thread asking once (ADR-0205, decision 8). */
-export const MAIL_PLUGIN_IDS = ['gmail'] as const
+export const MAIL_PLUGIN_IDS = ['gmail', 'proton-mail'] as const
 export type MailPluginId = typeof MAIL_PLUGIN_IDS[number]
 export const isMailPlugin = (plugin: string): plugin is MailPluginId => (MAIL_PLUGIN_IDS as readonly string[]).includes(plugin)
 
@@ -185,7 +185,7 @@ export const PLUGINS_MAIL_GRANT_STOP = 'sotto:plugins:mail-grant-stop'
 export const PLUGINS_MAIL_GRANTS_CHANGED = 'sotto:plugins:mail-grants-changed'
 
 /** The plugins an account is added to by pasting a secret. GitHub is not one: its account is gh's own sign-in. */
-export const ACCOUNT_PLUGIN_IDS = ['vercel', 'gmail'] as const
+export const ACCOUNT_PLUGIN_IDS = ['vercel', 'gmail', 'proton-mail'] as const
 export type AccountPluginId = typeof ACCOUNT_PLUGIN_IDS[number]
 
 /** A mail account's address, which signs in to it beside its password: one address, with nothing a mail server would read as more. */
@@ -221,8 +221,21 @@ export const pluginAccountSchema = z.object({
    * name of Sotto's own, so it is the same project for every provider that works in that folder.
    */
   projects: z.array(projectIdSchema).max(PLUGIN_ACCOUNT_PROJECTS_MAX).nullable().default(null),
+  /**
+   * A Proton Mail account's Bridge on this computer (ADR-0205, slice 10): the ports it listens on at 127.0.0.1, and
+   * the SHA-256 of the certificate it showed when the account was added or the user last trusted it. No other
+   * plugin's account has one. Not a secret: it names a certificate and does not open anything.
+   */
+  bridge: z.object({ imapPort: z.number().int().min(1).max(65_535), smtpPort: z.number().int().min(1).max(65_535), certificate: z.string().regex(/^[0-9a-f]{64}$/u) }).strict().optional(),
 }).strict()
 export type PluginAccount = z.infer<typeof pluginAccountSchema>
+/** Bridge's ports as the user gives them when adding a Proton Mail account. */
+export const bridgePortsSchema = z.object({ imapPort: z.number().int().min(1).max(65_535), smtpPort: z.number().int().min(1).max(65_535) }).strict()
+export type BridgePorts = z.infer<typeof bridgePortsSchema>
+/** Proton Mail Bridge's own ports, which the add form starts with (Zach's pick on November 14, 2026). */
+export const BRIDGE_DEFAULT_PORTS: BridgePorts = { imapPort: 1143, smtpPort: 1025 }
+/** Whether a plugin's accounts are reached through Proton Mail Bridge on this computer, and kept on it. */
+export const isBridgePlugin = (plugin: string): plugin is 'proton-mail' => plugin === 'proton-mail'
 
 /**
  * Whether a thread may use an account: it is on, and it is either for every project or for the thread's own. A
@@ -237,7 +250,9 @@ export const pluginAccountsSchema = z.array(pluginAccountSchema).max(ACCOUNT_PLU
 /** A new account: its plugin, the name the user gives it, its secret, and for a mail account the address the secret signs in. */
 export const pluginAccountAddSchema = z.object({
   plugin: z.enum(ACCOUNT_PLUGIN_IDS), name: pluginAccountNameSchema, secret: z.string().min(1).max(PLUGIN_SECRET_MAX), address: pluginMailAddressSchema.optional(),
-}).strict().refine(account => isMailPlugin(account.plugin) === (account.address !== undefined))
+  /** For Proton Mail, and only for it: Bridge's ports on this computer. */
+  bridge: bridgePortsSchema.optional(),
+}).strict().refine(account => isMailPlugin(account.plugin) === (account.address !== undefined) && isBridgePlugin(account.plugin) === (account.bridge !== undefined))
 export type PluginAccountAdd = z.infer<typeof pluginAccountAddSchema>
 export const pluginAccountReplaceSchema = z.object({ id: z.uuid(), secret: z.string().min(1).max(PLUGIN_SECRET_MAX) }).strict()
 export type PluginAccountReplace = z.infer<typeof pluginAccountReplaceSchema>
@@ -310,9 +325,10 @@ export type MailGrantStop = z.infer<typeof mailGrantStopSchema>
 /**
  * Why an account was not saved or removed. `refused`: the service did not accept the secret. `unreachable`: the service
  * could not be asked. `busy`: the service is turning requests away for now. `name-taken`, `limit`: the plugin already has that name, or its full count of accounts.
- * `store`: Sotto could not keep the secret or the account. `gone`: the account is no longer there.
+ * `store`: Sotto could not keep the secret or the account. `gone`: the account is no longer there. `certificate`:
+ * Proton Mail Bridge showed another certificate than the one kept for the account, so nothing was sent to it.
  */
-export const PLUGIN_ACCOUNT_PROBLEMS = ['refused', 'unreachable', 'busy', 'name-taken', 'limit', 'store', 'gone'] as const
+export const PLUGIN_ACCOUNT_PROBLEMS = ['refused', 'unreachable', 'busy', 'name-taken', 'limit', 'store', 'gone', 'certificate'] as const
 export type PluginAccountProblem = typeof PLUGIN_ACCOUNT_PROBLEMS[number]
 export const pluginAccountResultSchema = z.discriminatedUnion('ok', [
   z.object({ ok: z.literal(true), accounts: pluginAccountsSchema }).strict(),

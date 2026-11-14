@@ -3,7 +3,7 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { z } from 'zod'
 import {
-  isMailPlugin, PLUGIN_ACCOUNTS_MAX, pluginAccountSchema, type AccountPluginId, type PluginAccount, type PluginAccountAdd, type PluginAccountProblem,
+  isBridgePlugin, isMailPlugin, PLUGIN_ACCOUNTS_MAX, pluginAccountSchema, type AccountPluginId, type BridgePorts, type PluginAccount, type PluginAccountAdd, type PluginAccountProblem,
   type PluginAccountRemove, type PluginAccountReplace, type PluginAccountResult, type PluginAccountUpdate,
 } from '../../shared/plugins'
 
@@ -12,9 +12,10 @@ import {
  * build reads. Version 2 holds at least one that is off or kept to projects: an older build cannot honour that, and
  * refuses the whole file rather than read such an account as open to every thread. Version 3 holds a mail account:
  * a build from before mail would drop it as an account of no plugin it knows and write the rest back without it,
- * leaving its password in the credential store with nothing to find it by, so it too refuses the whole file.
+ * leaving its password in the credential store with nothing to find it by, so it too refuses the whole file. Version
+ * 4 holds a Proton Mail account, which a build from before Proton Mail would drop the same way.
  */
-const fileSchema = z.object({ version: z.union([z.literal(1), z.literal(2), z.literal(3)]), accounts: z.array(z.unknown()) })
+const fileSchema = z.object({ version: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]), accounts: z.array(z.unknown()) })
 
 /** The part of the credential store plugin accounts use: this computer's, or a headless host's own. */
 export interface PluginCredentials {
@@ -25,8 +26,13 @@ export interface PluginCredentials {
   set(slot: string, value: string): Promise<void>
 }
 
-/** What a service said of a secret it was asked about: good, with its own name for the account, refused, or not asked. */
-export type SecretCheck = { readonly ok: true; readonly signedInAs: string | null } | { readonly ok: false; readonly problem: 'refused' | 'unreachable' | 'busy' }
+/**
+ * What a service said of a secret it was asked about: good, with its own name for the account, refused, or not asked.
+ * Proton Mail Bridge also hands back the certificate it showed, to keep, or showed another than the one kept.
+ */
+export type SecretCheck = { readonly ok: true; readonly signedInAs: string | null; readonly certificate?: string } | { readonly ok: false; readonly problem: 'refused' | 'unreachable' | 'busy' | 'certificate' }
+/** What a Proton Mail account is checked with: Bridge's ports, and the certificate kept, or `learn`. */
+export interface BridgeCheck { readonly ports: BridgePorts; readonly certificate: string | 'learn' }
 
 /** The credential store could not hand over a secret it holds: it is locked, or cannot be read right now. */
 export class PluginSecretLocked extends Error {}
@@ -57,7 +63,7 @@ export class PluginAccounts {
   constructor(directory: string, private readonly options: {
     readonly credentials: PluginCredentials
     /** Asks a plugin's service whether a secret is good. A mail account's secret is checked with its address. */
-    readonly check: (plugin: AccountPluginId, secret: string, address: string | undefined) => Promise<SecretCheck>
+    readonly check: (plugin: AccountPluginId, secret: string, address: string | undefined, bridge?: BridgeCheck) => Promise<SecretCheck>
     readonly now?: () => Date
   }) {
     this.path = join(directory, 'plugin-accounts.json')
@@ -100,12 +106,17 @@ export class PluginAccounts {
       if (mine.length >= PLUGIN_ACCOUNTS_MAX) return refusal('limit')
       // A mail account is an address and a password; any other plugin's account has no address.
       if (isMailPlugin(request.plugin) !== (request.address !== undefined)) return refusal('refused')
+      // A Proton Mail account is reached through Bridge on this computer, at the ports given, and no other is.
+      if (isBridgePlugin(request.plugin) !== (request.bridge !== undefined)) return refusal('refused')
       const secret = pluginSecretAsKept(request.plugin, request.secret)
-      const checked = await this.options.check(request.plugin, secret, request.address)
+      // Adding a Proton Mail account is when Bridge's certificate is learned (Zach's pick on November 14, 2026).
+      const checked = await this.options.check(request.plugin, secret, request.address, ...request.bridge ? [{ ports: request.bridge, certificate: 'learn' as const }] : [])
       if (!checked.ok) return refusal(checked.problem)
+      if (request.bridge && !checked.certificate) return refusal('refused')
       const account: PluginAccount = {
         id: randomUUID(), plugin: request.plugin, name: request.name, savedAt: this.now(), signedInAs: checked.signedInAs,
         ...(request.address === undefined ? {} : { address: request.address }), on: true, projects: null,
+        ...(request.bridge && checked.certificate ? { bridge: { imapPort: request.bridge.imapPort, smtpPort: request.bridge.smtpPort, certificate: checked.certificate } } : {}),
       }
       const slot = pluginAccountSlot(account.id)
       try {
@@ -127,7 +138,8 @@ export class PluginAccounts {
       const account = accounts.find(entry => entry.id === request.id)
       if (!account) return refusal('gone')
       const secret = pluginSecretAsKept(account.plugin, request.secret)
-      const checked = await this.options.check(account.plugin, secret, account.address)
+      // A new Bridge password is checked with the Bridge whose certificate is kept: replacing one trusts nothing new.
+      const checked = await this.options.check(account.plugin, secret, account.address, ...account.bridge ? [{ ports: portsOf(account.bridge), certificate: account.bridge.certificate }] : [])
       if (!checked.ok) return refusal(checked.problem)
       const next = accounts.map(entry => entry.id === account.id ? { ...entry, savedAt: this.now(), signedInAs: checked.signedInAs } : entry)
       // The day and the name are written first and the secret last, so a refusal always means the saved secret is
@@ -137,6 +149,31 @@ export class PluginAccounts {
         await this.write(accounts).catch(() => { this.accounts = accounts })
         return refusal('store')
       }
+      return { ok: true, accounts: next }
+    })
+  }
+
+  /**
+   * Trusts the certificate Proton Mail Bridge shows now, as when it was reinstalled (Zach's pick on November 14, 2026):
+   * the saved Bridge password is checked with Bridge as it is, and only a Bridge that takes the password has its
+   * certificate kept. A program that is not the user's Bridge would not know the password, so it is not trusted.
+   */
+  trustCertificate(request: PluginAccountRemove): Promise<PluginAccountResult> {
+    return this.inTurn(async () => {
+      const accounts = await this.loadOrNull()
+      if (!accounts) return refusal('store')
+      const account = accounts.find(entry => entry.id === request.id)
+      if (!account) return refusal('gone')
+      if (!account.bridge) return refusal('refused')
+      let secret: string
+      try { secret = this.secret(account.id) } catch { return refusal('store') }
+      if (!secret) return refusal('gone')
+      const checked = await this.options.check(account.plugin, secret, account.address, { ports: portsOf(account.bridge), certificate: 'learn' })
+      if (!checked.ok) return refusal(checked.problem)
+      if (!checked.certificate) return refusal('refused')
+      const certificate = checked.certificate
+      const next = accounts.map(entry => entry.id === account.id && entry.bridge ? { ...entry, bridge: { ...entry.bridge, certificate } } : entry)
+      try { await this.write(next) } catch { return refusal('store') }
       return { ok: true, accounts: next }
     })
   }
@@ -280,7 +317,7 @@ export class PluginAccounts {
       // The switch and the projects are written only where they are not the default, so a record of accounts that
       // are all on and for every project stays one an older build reads, and keeps, whole.
       const stored = accounts.map(({ on, projects, ...rest }) => ({ ...rest, ...(on ? {} : { on }), ...(projects === null ? {} : { projects }) }))
-      const version = stored.some(entry => isMailPlugin(entry.plugin)) ? 3 : stored.some(entry => 'on' in entry || 'projects' in entry) ? 2 : 1
+      const version = stored.some(entry => isBridgePlugin(entry.plugin)) ? 4 : stored.some(entry => isMailPlugin(entry.plugin)) ? 3 : stored.some(entry => 'on' in entry || 'projects' in entry) ? 2 : 1
       await writeFile(next, JSON.stringify({ version, accounts: stored }), { mode: 0o600 })
       await rename(next, this.path)
     } catch (error) {
@@ -292,5 +329,7 @@ export class PluginAccounts {
 }
 
 const refusal = (problem: PluginAccountProblem): PluginAccountResult => ({ ok: false, problem })
+/** Bridge's ports, without the certificate kept beside them. */
+const portsOf = (bridge: BridgePorts): BridgePorts => ({ imapPort: bridge.imapPort, smtpPort: bridge.smtpPort })
 /** Names are told apart the way a person reads them: without regard to case or the spaces around them. */
 const sameName = (one: string, other: string): boolean => one.trim().toLocaleLowerCase() === other.trim().toLocaleLowerCase()

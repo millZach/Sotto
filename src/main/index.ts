@@ -1401,7 +1401,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const mailOptions: MailOptions = { signal: pluginsStop.signal, ...(e2eConfiguration === null ? {}
     : { connect: mailStandIn !== undefined ? mailOnThisComputer(mailStandIn, standInPort('SOTTO_E2E_SMTP_PORT')) : async () => { throw new Error('E2E_NETWORK_DISABLED') } }) }
   const pluginAccounts = pluginsEnabled ? new PluginAccounts(userDataPath, { credentials,
-    check: (plugin, secret, address) => isMailPlugin(plugin) ? checkMailAccount(plugin, address ?? '', secret, mailOptions) : checkVercelToken(vercelFetch, secret, vercelOptions) }) : undefined
+    check: (plugin, secret, address, bridge) => isMailPlugin(plugin) ? checkMailAccount(plugin, address ?? '', secret, mailOptions, bridge) : checkVercelToken(vercelFetch, secret, vercelOptions) }) : undefined
   // Account copies (ADR-0205, amending ADR-0025): each plugin account the user keeps on a paired host is sent to it on
   // every connection and whenever it changes here, and a copy no longer wanted is taken back. Owl `plugins` only.
   const pluginCopySync = pluginsEnabled && pluginAccounts ? new PluginAccountCopySync(userDataPath, {
@@ -1443,7 +1443,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     },
     askChange: async (threadId, change, wait) => await pluginChanges?.ask(threadId, wordPluginChange(change), wait) ?? 'stopped',
     // What a thread reads from mail goes to its provider, which the card that asks names.
-    ...(mailGrants ? { mail: { grants: mailGrants, options: mailOptions, providerOf: (threadId: string) => {
+    ...(mailGrants ? { mail: { grants: mailGrants, options: mailOptions, keepsBridgeAccounts: true, providerOf: (threadId: string) => {
       const thread = agentControl.watcherSnapshot().threads.find(item => item.id === threadId)
       return thread?.providerId ? PROVIDER_LABELS[thread.providerId] : ''
     } } } : {}),

@@ -35,7 +35,7 @@ import { hostMachineReportSchema } from '../shared/hostFacts'
 import { projectOriginsSchema, projectSetupResultSchema, type ProjectOrigins } from '../shared/workerMachine'
 import { desktopDefaultsReceiptSchema } from '../shared/desktopDefaults'
 import { heldPluginAccountCopiesSchema, pluginAccountCopyReceiptSchema, pluginAccountCopyRemovedSchema } from '../shared/pluginAccountCopies'
-import { gitHubSignInSchema, isMailPlugin } from '../shared/plugins'
+import { gitHubSignInSchema, isBridgePlugin, isMailPlugin } from '../shared/plugins'
 import { ProviderSignInRefusal, type ProviderSignIns } from './providerSignIn'
 import { DEFLATE_RESPONSE, deflateOffered, SocketFrames } from './socketFrames'
 import { CutBodies } from '../shared/activityBodies'
@@ -1857,6 +1857,8 @@ export async function startSocketServer(options: SocketServerOptions) {
         if (!offers(peer, 'plugin-account-copies') || !service.keepPluginAccountCopy) throw new Refusal('invalid_request')
         // A mail account is kept only where this host's threads can read one, and ask before they do.
         if (isMailPlugin(request.copy.account.plugin) && !offers(peer, 'plugin-mail-copies')) throw new Refusal('invalid_request')
+        // A Proton Mail account is never copied: its Bridge password is the desktop's Bridge's own.
+        if (isBridgePlugin(request.copy.account.plugin)) throw new Refusal('invalid_request')
         try { return pluginAccountCopyReceiptSchema.parse(await service.keepPluginAccountCopy(request.copy, peer.client)) } catch { throw new Refusal('unavailable') }
       }
       case 'plugin-account-copy-remove': {
