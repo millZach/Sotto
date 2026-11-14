@@ -224,6 +224,21 @@ Slice 8's last part builds what Zach picked that day: a grant is stopped in the 
 - **Switching the account off** still keeps Watcher from reading it without ending the grant, and the menu has no row for it meanwhile, as a thread's has none: switched back on, Watcher reads again without asking, and the row is back.
 - **Gmail's row says where.** Its first paragraph ends by saying that a thread is made to ask again from its ··· menu, since the card says "until you stop it".
 
+## November 14, 2026: how mail is sent
+
+The first part of slice 9 (#2494): the mail adapter can send one message. Nothing calls it yet. No tool offers it to an agent and no card asks for it, so Sotto still contacts no sending server; `README.md` names it when the tool lands. What a thread may send, how many people a message goes to and what the card says are Zach's to pick before that part.
+
+- **A send is one connection, as a read is.** From sign-in to goodbye, to the one server the account's plugin names and no other, over TLS from its first byte. Gmail's is `smtp.gmail.com`, port 465, which Google's page for mail programs says "require[s] implicit SSL/TLS" (developers.google.com/workspace/gmail/imap/imap-smtp, read on November 14, 2026). For mail sent this way the same page gives 100 recipients a message, and 500 messages a day, or 2,000 from a paid Google Workspace account. It names only Sign in with Google for signing in; an app password is taken as a password, as it is for reading.
+- **A message is sent as the account, and never as anyone else.** The sender named to the server and the From line are the account's own address.
+- **Everyone is taken, or nothing is sent.** Each recipient is named to the server first. One it turns away ends the connection before any message is handed over, and the send says which one.
+- **A Bcc is named to the server and is in no line of the message.** Someone named twice is sent the message once. A host is the same host however it is capitalised; two addresses that differ only in the capitals before the at sign are two people, since only the receiving server can say otherwise.
+- **A message is plain text in UTF-8.** No HTML and no files. Its text is sent as base64 and a subject outside ASCII as encoded words, so nothing but ASCII is on the wire, no line is too long for a server, and a line of the text that is a single dot cannot be read as the message's end.
+- **What an agent writes cannot become a command or a header.** A recipient is one plain address in ASCII, with a dot in its host and none of the marks a server reads as more than an address; a subject is one line. Either is refused before a server is reached, not escaped. An address outside ASCII is refused too: sending to one needs a server that offers it, and Gmail's own addresses do not use it.
+- **The adapter says when it cannot tell.** Once the whole message has been handed over, a connection that ends before the server answers leaves it unknown whether the message went. That is its own answer, `unsure`, and it is never reported as not sent: sending again could send twice. So is a server's answer to the message that is neither a yes nor a no. Any yes is a message sent, whichever code says it, and every other failure sent nothing and says so.
+- **The password is in no error and no result.** A server's answer to the sign-in, the one command that carries the password, is never handed on: whether it was refused or busy is said, in Sotto's words. Its other words for a refusal are dropped where they repeat the password, the address, or the sign-in as it was sent, in one piece or spread over the lines of an answer.
+- **The computer is not named.** The client gives its own name to the server as `[127.0.0.1]`, and the Date line is in UTC.
+- **Checked against a made-up server.** `tests/fixtures/fakeSmtpServer.ts` speaks enough of SMTP to take one message on this computer, with a reader of its own, as the fake IMAP server has.
+
 ## Considered options
 
 - **Where secrets live.** Each computer its own, as ADR-0025 has it (rejected: every account typed in on every computer). The desktop keeps them and answers a host's calls (rejected: forge's threads would lose plugins while the laptop is closed). One operating-system keychain entry per account (rejected: a native dependency, which ADR-0018 says needs its own ADR).

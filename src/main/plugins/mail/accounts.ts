@@ -12,6 +12,16 @@ export const MAIL_SERVERS: Readonly<Record<MailPluginId, MailServer>> = {
 }
 
 /**
+ * Where each mail plugin's accounts send from. Gmail's is on the same page of Google's, read on November 14, 2026:
+ * `smtp.gmail.com`, port 465, which "require[s] implicit SSL/TLS", so the connection is TLS from the first byte, as a
+ * read's is. For mail sent this way the page gives 100 recipients a message, and 500 messages a day, or 2,000 from a
+ * paid Google Workspace account.
+ */
+export const MAIL_SEND_SERVERS: Readonly<Record<MailPluginId, MailServer>> = {
+  gmail: { host: 'smtp.gmail.com', port: 465 },
+}
+
+/**
  * Whether a mail account's address and password are good, asked of its server by signing in, as an account is
  * checked before it is kept. A server that would not answer is not the same as one that refused the password.
  */

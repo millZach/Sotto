@@ -1,3 +1,4 @@
+import { isIP } from 'node:net'
 import type { Duplex } from 'node:stream'
 import { connect as connectTls } from 'node:tls'
 import { atomOf, IMAP_LITERAL_MAX, ImapClosed, ImapConnection, ImapProtocolError, listOf, textOf, type ImapAnswer, type ImapArg, type ImapItem } from './imapWire'
@@ -95,10 +96,12 @@ export type MailCheck = { readonly ok: true } | MailFailure
 export type MailFound = { readonly ok: true; readonly mailbox: string; /** How many messages matched; `messages` is the newest of them. */ readonly found: number; readonly messages: readonly MailSummary[] } | MailFailure
 export type MailOpened = { readonly ok: true; readonly mailbox: string; readonly message: MailMessage } | MailFailure
 
-const overTls: MailConnect = (server, signal) => new Promise((resolve, reject) => {
+/** TLS to a mail server from the first byte, which a read and a send both use. */
+export const mailOverTls: MailConnect = (server, signal) => new Promise((resolve, reject) => {
   if (signal.aborted) return reject(new ImapClosed())
-  // The certificate is checked against the server's name, as Node does unless told otherwise.
-  const socket = connectTls({ host: server.host, port: server.port })
+  // The certificate is checked against the server's name, as Node does unless told otherwise. The name is also sent
+  // first (SNI), so a server with several names shows the certificate for this one. SNI carries names, never addresses.
+  const socket = connectTls({ host: server.host, port: server.port, ...(isIP(server.host) === 0 ? { servername: server.host } : {}) })
   const stop = (): void => {
     socket.destroy()
     reject(new ImapClosed())
@@ -157,7 +160,7 @@ async function inSession<Result extends { readonly ok: true }>(server: MailServe
     // A connection that is never made, and never refused, ends with the time this read has.
     const outOfTime = new Promise<never>((_resolve, reject) => { controller.signal.addEventListener('abort', () => reject(new ImapClosed()), { once: true }) })
     let socket: Duplex
-    try { socket = await Promise.race([(options.connect ?? overTls)(server, controller.signal), outOfTime]) } catch { return failure('unreachable') }
+    try { socket = await Promise.race([(options.connect ?? mailOverTls)(server, controller.signal), outOfTime]) } catch { return failure('unreachable') }
     imap = new ImapConnection(socket, controller.signal)
     const greeting = await imap.greeting()
     // A server that takes the connection as signed in already has not been told who by: it is not read from.
