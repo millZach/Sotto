@@ -16,6 +16,11 @@ import { connect as connectTls, type TLSSocket } from 'node:tls'
 export type MailCertificate = string
 /** A server's certificate is not the one kept for it. Nothing was sent over the connection. */
 export class MailCertificateChanged extends Error {}
+/**
+ * TLS could not be begun on a connection whose server had said yes to it, as when it sent something in the clear
+ * that is not TLS. That is a server that broke TLS, not one that could not be reached. Nothing was sent.
+ */
+export class MailTlsBroken extends Error {}
 
 /** Whether text is a certificate's SHA-256 as `certificateOf` writes it. */
 export const isMailCertificate = (text: string): boolean => /^[0-9a-f]{64}$/u.test(text)
@@ -64,9 +69,15 @@ export function startTls(plain: Duplex, kept: MailCertificate | 'learn', signal:
       reject(new Error('Stopped before TLS.'))
     }
     signal.addEventListener('abort', stop, { once: true })
+    // Words in the clear that arrive after the yes, rather than with it, reach TLS and break it here.
+    const broken = (): void => {
+      signal.removeEventListener('abort', stop)
+      socket.destroy()
+      reject(new MailTlsBroken())
+    }
     socket.once('secureConnect', () => {
       signal.removeEventListener('abort', stop)
-      socket.off('error', reject)
+      socket.off('error', broken)
       const raw = socket.getPeerCertificate().raw
       const certificate = raw ? certificateOf(raw) : ''
       if (!certificate || (kept !== 'learn' && certificate !== kept)) {
@@ -75,6 +86,6 @@ export function startTls(plain: Duplex, kept: MailCertificate | 'learn', signal:
       }
       resolve({ socket, certificate })
     })
-    socket.once('error', reject)
+    socket.once('error', broken)
   })
 }

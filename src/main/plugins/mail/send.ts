@@ -3,7 +3,7 @@ import type { Duplex } from 'node:stream'
 import { composeMail, draftProblem, draftRecipients, isMailAddress, mailMessageId, type MailDraft } from './compose'
 import { isLearning, mailOverTls, mayReach, type MailOptions, type MailServer, type MailSignIn } from './read'
 import { SmtpConnection, SmtpProtocolError, type SmtpReply } from './smtpWire'
-import { MailCertificateChanged, plainToThisComputer, startTls } from './startTls'
+import { MailCertificateChanged, MailTlsBroken, plainToThisComputer, startTls } from './startTls'
 
 /**
  * Sending one message from a mail account over SMTP (ADR-0205, slice 9). A send is a connection of its own, from
@@ -140,7 +140,7 @@ async function inSession(server: MailServer, signIn: MailSignIn, draft: MailDraf
     if (sent.code >= 400 && sent.code < 600) return turnedAway(sent, 'failed')
     return failure('unsure')
   } catch (error) {
-    return failure(handedOver ? 'unsure' : error instanceof MailCertificateChanged ? 'certificate' : error instanceof SmtpProtocolError ? 'failed' : 'unreachable')
+    return failure(handedOver ? 'unsure' : error instanceof MailCertificateChanged ? 'certificate' : error instanceof SmtpProtocolError || error instanceof MailTlsBroken ? 'failed' : 'unreachable')
   } finally {
     clearTimeout(timer)
     options.signal?.removeEventListener('abort', stop)

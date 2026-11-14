@@ -3,7 +3,7 @@ import type { Duplex } from 'node:stream'
 import { connect as connectTls } from 'node:tls'
 import { atomOf, IMAP_LITERAL_MAX, ImapClosed, ImapConnection, ImapProtocolError, listOf, textOf, type ImapAnswer, type ImapArg, type ImapItem } from './imapWire'
 import { attachedParts, decodeMailboxName, decodePart, htmlToText, mailHeaders, mailParts, readableText, textPart } from './message'
-import { isMailCertificate, isThisComputer, MailCertificateChanged, plainToThisComputer, startTls, type MailCertificate } from './startTls'
+import { isMailCertificate, isThisComputer, MailCertificateChanged, MailTlsBroken, plainToThisComputer, startTls, type MailCertificate } from './startTls'
 
 /**
  * Reading a mail account over IMAP (ADR-0205): whether a sign-in is good, a search, and one message opened. Each
@@ -198,7 +198,7 @@ async function inSession<Result extends { readonly ok: true }>(server: MailServe
     }
     return await work(imap, certificate)
   } catch (error) {
-    return failure(error instanceof MailCertificateChanged ? 'certificate' : error instanceof ImapProtocolError ? 'failed' : 'unreachable')
+    return failure(error instanceof MailCertificateChanged ? 'certificate' : error instanceof ImapProtocolError || error instanceof MailTlsBroken ? 'failed' : 'unreachable')
   } finally {
     clearTimeout(timer)
     options.signal?.removeEventListener('abort', stop)

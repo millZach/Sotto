@@ -31,9 +31,10 @@ export interface FakeSmtpOptions {
   readonly terse?: boolean
   /**
    * Offers STARTTLS, as Proton Mail Bridge does, and turns the connection into TLS with this key and certificate when
-   * asked. `unasked` is sent in the clear straight after its yes, as a server in the middle could.
+   * asked. `unasked` is sent in the clear straight after its yes, as a server in the middle could, or with `late` a
+   * moment later, so it arrives in a read of its own.
    */
-  readonly startTls?: { readonly key: string; readonly cert: string; readonly unasked?: string } | undefined
+  readonly startTls?: { readonly key: string; readonly cert: string; readonly unasked?: string; readonly late?: boolean } | undefined
 }
 export interface FakeSmtpMessage {
   /** Who the server was told the message is from and for: the envelope, which is where a Bcc is. */
@@ -82,16 +83,25 @@ export async function startFakeSmtpServer(options: FakeSmtpOptions): Promise<Fak
         say(['250-made-up.mail.example', ...offers.map((offer, index) => `250${index === offers.length - 1 ? ' ' : '-'}${offer}`)].join('\r\n'))
       } else if (word === 'STARTTLS' && options.startTls && !secure) {
         say('220 2.0.0 Ready to start TLS')
-        if (options.startTls.unasked) say(options.startTls.unasked)
+        const { unasked, late, key, cert } = options.startTls
         // What follows is TLS: nothing more is read in the clear, and the client says EHLO again.
         socket.off('data', heard)
+        socket.pause()
         secure = true
         buffer = Buffer.alloc(0)
         signedIn = false
-        const wrapped = new TLSSocket(socket, { isServer: true, secureContext: createSecureContext({ key: options.startTls.key, cert: options.startTls.cert }) })
-        wrapped.on('error', () => undefined)
-        wrapped.on('data', heard)
-        stream = wrapped
+        const wrap = (): void => {
+          const wrapped = new TLSSocket(socket, { isServer: true, secureContext: createSecureContext({ key, cert }) })
+          wrapped.on('error', () => undefined)
+          wrapped.on('data', heard)
+          stream = wrapped
+        }
+        // Late, the words come in a read of their own, before this side of TLS has begun.
+        if (unasked && late) setTimeout(() => { if (!socket.destroyed) socket.write(`${unasked}\r\n`); wrap() }, 50)
+        else {
+          if (unasked) say(unasked)
+          wrap()
+        }
       } else if (word === 'AUTH') {
         if (options.authSays) return say(options.authSays)
         signedIn = line === `AUTH PLAIN ${good}`

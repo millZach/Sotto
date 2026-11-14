@@ -57,9 +57,12 @@ describe('reading through STARTTLS', () => {
   })
 
   it('reads nothing a server sent in the clear after its yes to STARTTLS, and does not sign in', async () => {
-    const fake = await imap({ startTls: { ...BRIDGE_CERTIFICATE, unasked: 'S3 OK [CAPABILITY IMAP4rev1] Pretend this came over TLS\r\n' } })
-    expect(await checkMailSignIn(imapAt('learn'), SIGN_IN, { connect: fake.connect })).toMatchObject({ ok: false, reason: 'failed' })
-    expect(fake.commands).not.toContain('LOGIN')
+    // With the yes, or in a read of its own while TLS begins: either way it is a server that broke TLS, not one that is away.
+    for (const late of [false, true]) {
+      const fake = await imap({ startTls: { ...BRIDGE_CERTIFICATE, unasked: 'S3 OK [CAPABILITY IMAP4rev1] Pretend this came over TLS\r\n', late } })
+      expect(await checkMailSignIn(imapAt('learn'), SIGN_IN, { connect: fake.connect }), `late: ${late}`).toMatchObject({ ok: false, reason: 'failed' })
+      expect(fake.commands).not.toContain('LOGIN')
+    }
   })
 
   it('does not sign in to a server that offers no TLS', async () => {
@@ -103,9 +106,11 @@ describe('sending through STARTTLS', () => {
     expect(await sendMail(smtpAt(BRIDGE), SIGN_IN, DRAFT, { connect: changed.connect })).toEqual({ ok: false, reason: 'certificate' })
     const added = await smtp({ startTls: { ...BRIDGE_CERTIFICATE, unasked: '250 2.0.0 Pretend this came over TLS' } })
     expect(await sendMail(smtpAt(BRIDGE), SIGN_IN, DRAFT, { connect: added.connect })).toMatchObject({ ok: false, reason: 'failed' })
+    const addedLate = await smtp({ startTls: { ...BRIDGE_CERTIFICATE, unasked: '250 2.0.0 Pretend this came over TLS', late: true } })
+    expect(await sendMail(smtpAt(BRIDGE), SIGN_IN, DRAFT, { connect: addedLate.connect })).toMatchObject({ ok: false, reason: 'failed' })
     const none = await smtp({ startTls: undefined })
     expect(await sendMail(smtpAt(BRIDGE), SIGN_IN, DRAFT, { connect: none.connect })).toEqual({ ok: false, reason: 'failed', said: 'The mail server does not offer TLS.' })
-    for (const fake of [changed, added, none]) {
+    for (const fake of [changed, added, addedLate, none]) {
       expect(fake.commands.some(command => command.startsWith('AUTH'))).toBe(false)
       expect(fake.messages).toEqual([])
     }
