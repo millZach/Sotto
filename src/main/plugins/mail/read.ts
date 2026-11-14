@@ -232,7 +232,7 @@ export function checkMailSignIn(server: MailServer, signIn: MailSignIn, options:
  * can say whether Proton Mail Bridge is running. It is no sign-in and says nothing of the password.
  */
 export async function mailServerAnswers(server: MailServer, options: MailOptions = {}): Promise<boolean> {
-  if (!mayReach(server)) return false
+  if (!mayReach(server) || options.signal?.aborted) return false
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? 3_000)
   const stop = (): void => controller.abort()
@@ -294,7 +294,7 @@ const SPECIAL: Readonly<Record<string, string>> = { all: '\\ALL', sent: '\\SENT'
  * Their names where a server marks none, as Proton Mail Bridge does not: matched without regard to capitals, after
  * any mark and the name asked for itself.
  */
-const NAMED: Readonly<Record<string, readonly string[]>> = { all: ['all mail'], spam: ['junk'] }
+const NAMED: ReadonlyMap<string, readonly string[]> = new Map([['all', ['all mail']], ['spam', ['junk']]])
 
 /** A mailbox by the server's own name for it (`raw`) and in its own letters (`name`). */
 interface NamedMailbox { readonly raw: string; readonly name: string }
@@ -329,7 +329,7 @@ async function mailboxFor(imap: ImapConnection, wanted: string | undefined): Pro
   const mark = SPECIAL[key]
   // A name is its own letters first: two mailboxes may differ only in their capitals.
   const found = (mark === undefined ? undefined : boxes.find(box => box.marks.includes(mark))) ?? boxes.find(box => box.name === wanted.trim()) ?? boxes.find(box => box.name.toLowerCase() === key)
-    ?? boxes.find(box => NAMED[key]?.includes(box.name.toLowerCase()))
+    ?? boxes.find(box => NAMED.get(key)?.includes(box.name.toLowerCase()))
   if (!found) return { ...failure('mailbox'), mailboxes: boxes.slice(0, LISTED_MAX).map(box => box.name) }
   return { raw: found.raw, name: found.name }
 }

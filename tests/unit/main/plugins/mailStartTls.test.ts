@@ -81,6 +81,10 @@ describe('reading through STARTTLS', () => {
     expect(await searchMail(imapAt(BRIDGE), SIGN_IN, { mailbox: 'all' }, { connect: fake.connect })).toMatchObject({ ok: true, mailbox: 'All Mail' })
     expect(await searchMail(imapAt(BRIDGE), SIGN_IN, { mailbox: 'sent' }, { connect: fake.connect })).toMatchObject({ ok: true, mailbox: 'Sent' })
     expect(await searchMail(imapAt(BRIDGE), SIGN_IN, { mailbox: 'spam' }, { connect: fake.connect })).toMatchObject({ ok: true, mailbox: 'Spam' })
+    // A name that is no mailbox says so and names the ones there, whatever word it is.
+    for (const mailbox of ['constructor', '__proto__', 'Receipts']) {
+      expect(await searchMail(imapAt(BRIDGE), SIGN_IN, { mailbox }, { connect: fake.connect }), mailbox).toEqual({ ok: false, reason: 'mailbox', mailboxes: ['INBOX', 'All Mail', 'Sent', 'Spam'] })
+    }
   })
 })
 
@@ -118,6 +122,9 @@ describe('whether a server answers', () => {
   it('says whether anything is listening at a port on this computer, and sends it nothing', async () => {
     const fake = await imap()
     expect(await mailServerAnswers(imapAt(BRIDGE), { connect: fake.connect })).toBe(true)
+    // One stopped before it began connects to nothing.
+    expect(await mailServerAnswers(imapAt(BRIDGE), { connect: fake.connect, signal: AbortSignal.abort() })).toBe(false)
+    expect(fake.asked).toHaveLength(1)
     // A port nothing listens on, as Bridge's while it is closed.
     const listener = createServer()
     await new Promise<void>(resolve => listener.listen(0, '127.0.0.1', resolve))
