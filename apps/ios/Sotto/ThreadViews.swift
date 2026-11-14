@@ -1294,7 +1294,7 @@ private struct HoldsPlaceBelow: UIViewRepresentable {
             let from = page.contentOffset.y
             let bottom = max(-page.adjustedContentInset.top,
                              new.height - page.bounds.height + page.adjustedContentInset.bottom)
-            if abs(bottom - from) > 0.5 { page.contentOffset.y = bottom }
+            if abs(bottom - from) > 0.5 { page.contentOffset.y = bottom; moved(page) }
             EndTrace.mark("pin: page height \(Int(old.height)) -> \(Int(new.height)), offset \(Int(from)) -> \(Int(page.contentOffset.y))")
         }
         override func layoutSubviews() {
@@ -1315,8 +1315,22 @@ private struct HoldsPlaceBelow: UIViewRepresentable {
             let bottom = max(-page.adjustedContentInset.top,
                              page.contentSize.height - page.bounds.height + page.adjustedContentInset.bottom)
             let to = atEnd() ? bottom : from + now - before
-            if abs(to - from) > 0.5 { page.contentOffset.y = to }
+            if abs(to - from) > 0.5 { page.contentOffset.y = to; moved(page) }
             EndTrace.mark("hold: older turns \(Int(before)) -> \(Int(now)), at end \(atEnd()), offset \(Int(from)) -> \(Int(page.contentOffset.y)), page height \(Int(page.contentSize.height))")
+        }
+        private var telling = false
+        /// An offset set in the middle of SwiftUI's layout never reaches SwiftUI's own record of where the page stands:
+        /// the end's place as it reads it, and its scrolls to the end, stayed a whole move behind until a hand scrolled
+        /// the page. Once the pass is over, the page's delegate, SwiftUI's own, is told the page scrolled.
+        private func moved(_ page: UIScrollView) {
+            guard !telling else { return }
+            telling = true
+            DispatchQueue.main.async { [weak self, weak page] in
+                self?.telling = false
+                guard let page else { return }
+                page.delegate?.scrollViewDidScroll?(page)
+                EndTrace.mark("told the page it scrolled, offset \(Int(page.contentOffset.y))")
+            }
         }
         private func page() -> UIScrollView? {
             var next = superview
