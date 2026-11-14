@@ -99,6 +99,13 @@ describe('an unused new thread', () => {
     ]
     for (const candidate of used) expect(unusedNewThread(state([candidate]), project)).toBeUndefined()
   })
+
+  it('is not the thread whose first prompt is still on its way, so New thread works right after Send', () => {
+    const draftId = '33333333-3333-4333-8333-333333333333', at = '2026-09-26T00:00:00.000Z'
+    expect(unusedNewThread(state([thread({})]), project, false, [{ threadId: 'thread' }])).toBeUndefined()
+    expect(unusedNewThread({ ...state([thread({})]), deliveries: [{ threadId: 'thread', draftId, status: 'submitting', createdAt: at, updatedAt: at }] }, project)).toBeUndefined()
+    expect(unusedNewThread({ ...state([thread({})]), deliveredDrafts: [{ threadId: 'thread', draftId }] }, project)).toBeUndefined()
+  })
 })
 
 describe('a new thread shown before main confirms it', () => {

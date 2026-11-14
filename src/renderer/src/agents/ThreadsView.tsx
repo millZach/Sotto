@@ -267,7 +267,7 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, paneTools = f
   const createThreadIn = useCallback((project: AgentProject, carried?: CarriedDraft): Promise<void> => {
     if (state === null) return Promise.resolve()
     setNewThreadError(null)
-    const unused = unusedNewThread(state, project, dynamicThreads && app?.settings?.dynamicThreads?.newThreads === true)
+    const unused = unusedNewThread(state, project, dynamicThreads && app?.settings?.dynamicThreads?.newThreads === true, store.submissions())
     if (unused) {
       store.restoreRefusedCreation(unused.id, project.id)
       if (carried) placeCarriedDraft(unused.id, carried)
