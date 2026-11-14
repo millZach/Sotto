@@ -74,6 +74,17 @@ it('says so when a grant could not be ended, and leaves the row, since the threa
   expect(labels(result.current.items)).toEqual(['Ask before this thread reads Personal'])
 })
 
+it('names Watcher rather than this thread in Watcher’s room, in the row and when a grant could not be ended', async () => {
+  owl(true)
+  const b = bridge({ watcher: [PERSONAL] }, { stops: false })
+  const { result } = renderHook(() => useMailGrantMenu('watcher', true, b.made, 'watcher'))
+  await act(async () => undefined)
+  expect(labels(result.current.items)).toEqual(['Ask before Watcher reads Personal'])
+  await act(async () => { result.current.items[0]!.run() })
+  expect(b.stopped).toEqual([{ threadId: 'watcher', accountId: PERSONAL.accountId }])
+  expect(result.current.problem).toBe('Sotto could not stop Watcher reading Personal, so it can still read it. Try again.')
+})
+
 it('stops saying a grant could not be ended once the thread can no longer read that account some other way', async () => {
   owl(true)
   const held: Record<string, ThreadMailGrant[]> = { one: [PERSONAL, WORK] }

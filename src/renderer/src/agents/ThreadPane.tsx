@@ -419,7 +419,8 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     ? [{ id: 'compact', label: t`Compact context`, icon: <Shrink size={15} aria-hidden="true" />, run: () => void command({ type: 'compact-thread', threadId: thread.id }) }] : []
   // Ask before this thread reads a mail account (ADR-0205, decision 8; Owl only): there while the thread holds a
   // grant for it, and for a thread on this computer, whose grants this computer keeps.
-  const mailGrantMenu = useMailGrantMenu(thread.id, !thread.remoteHost)
+  // Watcher's own pane has no ··· menu here: its room's strip holds the rows, and says so when one could not be ended (#2563).
+  const mailGrantMenu = useMailGrantMenu(thread.id, !thread.remoteHost && !ownPane)
   const shelf: PaneMenuItem[] = row.settledBy === null
     ? [{ id: 'settle', label: t({ message: 'Settle', comment: 'Settle the thread: put it away on the Settled shelf.' }), icon: <Archive size={15} aria-hidden="true" />, disabled: threadBusy, shortcut: chordShown('settle'), run: () => void settleThread(thread, row.project) }]
     : row.settledBy === 'thread'
