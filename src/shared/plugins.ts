@@ -349,6 +349,11 @@ export type PluginChange =
     readonly plugin: string; readonly account: string
     /** The provider the thread runs on, by name: what the thread reads goes there. */
     readonly provider: string
+    /**
+     * Set when the thread is Watcher (#2565): its card names Watcher rather than "this thread", and does not speak of
+     * the thread being settled, since Watcher never is.
+     */
+    readonly watcher?: boolean
   }
   | {
     /** Promote and roll back move production: every production address of the project serves the deployment. */

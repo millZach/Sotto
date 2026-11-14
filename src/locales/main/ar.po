@@ -985,6 +985,10 @@ msgstr ""
 msgid "It cannot send, move or delete mail. Every other thread asks for itself."
 msgstr ""
 
+#: src/main/plugins/changeWords.ts
+msgid "It cannot send, move or delete mail. Every thread asks for itself."
+msgstr ""
+
 #. placeholder {0}: change.state
 #: src/main/plugins/changeWords.ts
 msgid "Its build now: {0}"
@@ -1045,6 +1049,18 @@ msgstr ""
 
 #: src/main/plugins/changeWords.ts
 msgid "Let this thread read the {plugin} account {named}? What it reads goes to this thread’s provider."
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Let Watcher read it"
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Let Watcher read the {plugin} account {named}? What it reads goes to {provider}."
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Let Watcher read the {plugin} account {named}? What it reads goes to Watcher’s provider."
 msgstr ""
 
 #: src/main/settings/retiredChats.ts
@@ -3681,11 +3697,23 @@ msgid "Wait for this thread to finish its turn, then bring its changes back. Not
 msgstr ""
 
 #: src/main/plugins/changeWords.ts
+msgid "Watcher can search this account’s mail and read its messages, until you stop it."
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
 msgid "What it reads goes to {provider}, as everything a thread reads does."
 msgstr ""
 
 #: src/main/plugins/changeWords.ts
+msgid "What it reads goes to {provider}, as everything Watcher reads does."
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
 msgid "What it reads goes to this thread’s provider, as everything a thread reads does."
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "What it reads goes to Watcher’s provider, as everything Watcher reads does."
 msgstr ""
 
 #: src/main/app/applicationMenu.ts

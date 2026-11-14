@@ -142,10 +142,13 @@ describe('reading a mail account through plugin_read (ADR-0205, decision 8)', ()
     expect([t.searched.length, t.opened.length]).toEqual([2, 1])
   })
 
-  it('asks Watcher too before it reads an account, naming Watcher’s provider', async () => {
+  it('asks Watcher too before it reads an account, naming Watcher’s provider, on a card that is marked as Watcher’s', async () => {
     const t = tools()
     expect((await t.read('watcher', { search: {} })).isError).toBeUndefined()
-    expect(t.asked.map(ask => ask.change)).toEqual([{ kind: 'mail-read', plugin: 'Gmail', account: 'Personal', provider: 'Codex' }])
+    expect(t.asked.map(ask => ask.change)).toEqual([{ kind: 'mail-read', plugin: 'Gmail', account: 'Personal', provider: 'Codex', watcher: true }])
+    // Any other thread's card carries no such mark, so it is worded as it always was.
+    expect((await t.read('one', { search: {} })).isError).toBeUndefined()
+    expect(t.asked[1]!.change).toEqual({ kind: 'mail-read', plugin: 'Gmail', account: 'Personal', provider: 'Claude Code' })
   })
 
   it('reads nothing through an account that was switched off or removed while its card waited, and keeps no grant', async () => {
