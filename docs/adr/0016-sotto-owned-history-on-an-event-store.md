@@ -434,7 +434,10 @@ Claude Code lists them in a process of its own with no session (`--no-session-pe
 **The live-session set keeps a session running.** The threads Sotto sends to unasked or waits on keep a CLI, as the whole
 watched set did: Watcher's watched threads, the threads a delegation follows, threads with a queued follow-up of the
 user's (a waiting wake-up alone still keeps none, ADR-0061), threads with an outbox entry, and a send's own thread while
-it is sent. `CONTEXT.md` has the term. The coordinator names the set to its host (`keepSessionsLive`) each time it names
+it is sent. (November 14, 2026: and a thread with a prompt of the user's on its way, from Send until it settles. A send
+that waited on its thread's lane while the user opened another thread lost its thread from the watched set before its
+outbox entry existed, so its echo was not among the messages held and the send read as unconfirmed although the provider
+took it.) `CONTEXT.md` has the term. The coordinator names the set to its host (`keepSessionsLive`) each time it names
 the watched set, just before it, and each layer passes it on the way it passes the watched set, by its own IDs; the
 workspace holds back a thread whose stored records are still on their way, as it holds back its observation. Claude
 Code's adapter starts a CLI for each thread in the set, starts only these at connect, four at a time as before, starts
