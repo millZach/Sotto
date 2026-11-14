@@ -156,6 +156,57 @@ it('shows the menu once Watcher is let read an account, as main says a grant cha
   expect(await within(head).findByRole('button', { name: MENU })).toBeInTheDocument()
 })
 
+it('moves focus to All threads when the last row is chosen from the keyboard, rather than nowhere', async () => {
+  const user = userEvent.setup()
+  const m = mail({ watcher: [PERSONAL] })
+  renderRoom(m.bridge)
+  const head = await strip()
+  const menu = await within(head).findByRole('button', { name: MENU })
+  menu.focus()
+  await user.keyboard('{Enter}')
+  expect(within(head).getByRole('menuitem', { name: 'Ask before Watcher reads Personal' })).toHaveFocus()
+  await user.keyboard('{Enter}')
+  // The grant ended, so the menu and its button are gone. Focus is on the strip's All threads, not on the page.
+  await waitFor(() => expect(within(head).queryByRole('button', { name: MENU })).toBeNull())
+  expect(m.stopped).toEqual([{ threadId: 'watcher', accountId: PERSONAL.accountId }])
+  expect(within(head).getByRole('button', { name: /^All threads, \d+\. Show the list$/u })).toHaveFocus()
+})
+
+it('closes an open menu whose last grant ends some other way, so it is closed when Watcher is next let read', async () => {
+  const user = userEvent.setup()
+  const held: Record<string, ThreadMailGrant[]> = { watcher: [PERSONAL] }
+  const m = mail(held)
+  renderRoom(m.bridge)
+  const head = await strip()
+  await user.click(await within(head).findByRole('button', { name: MENU }))
+  expect(within(head).getByRole('menu', { name: MENU })).toBeInTheDocument()
+  // The account is removed while the menu is open: the menu goes, and focus, which was on its row, goes to All threads.
+  held.watcher = []
+  await act(async () => { m.changed() })
+  await waitFor(() => expect(within(head).queryByRole('button', { name: MENU })).toBeNull())
+  expect(within(head).getByRole('button', { name: /^All threads, \d+\. Show the list$/u })).toHaveFocus()
+  // Watcher is let read an account again: the menu's button is back, closed.
+  held.watcher = [WORK]
+  await act(async () => { m.changed() })
+  const again = await within(head).findByRole('button', { name: MENU })
+  expect(again).toHaveAttribute('aria-expanded', 'false')
+  expect(within(head).queryByRole('menu')).toBeNull()
+})
+
+it('leaves focus where it is when the last grant ends while the keyboard is elsewhere', async () => {
+  const held: Record<string, ThreadMailGrant[]> = { watcher: [PERSONAL] }
+  const m = mail(held)
+  renderRoom(m.bridge)
+  const head = await strip()
+  await within(head).findByRole('button', { name: MENU })
+  const prompt = screen.getByRole('textbox', { name: 'Watcher message' })
+  prompt.focus()
+  held.watcher = []
+  await act(async () => { m.changed() })
+  await waitFor(() => expect(within(head).queryByRole('button', { name: MENU })).toBeNull())
+  expect(prompt).toHaveFocus()
+})
+
 it('says so in Watcher’s room when a grant could not be ended, and leaves the row', async () => {
   const user = userEvent.setup()
   const m = mail({ watcher: [PERSONAL] }, { stops: false })

@@ -30,14 +30,16 @@ The strip now ended in a ··· button named More actions, after Stop all. In da
 From the keyboard, Tab went from All threads to Stop all to the menu's button. Enter opened the menu with focus on its
 row, and Escape closed it and gave focus back to the button. The button does not drag the window.
 
-A second read did not ask. The row was then pressed from the keyboard. The menu went, no error showed, the grants file
-held no grant, and at all three sizes Stop all was back where it began. Watcher's agent asked to search again: the call
+A second read did not ask. The row was then pressed from the keyboard. The menu went, no error showed, focus was on
+All threads, the grants file held no grant, and at all three sizes Stop all was back where it began. Watcher's agent asked to search again: the call
 waited on a card again, **Don't allow** was pressed, the agent was told no, and the stand-in was asked for nothing more.
 
 ## Not checked here
 
 - A Stop that could not be written. `tests/unit/renderer/watcherMailGrant.test.tsx` checks that the room then says
   "Sotto could not stop Watcher reading Personal, so it can still read it. Try again." once, and keeps the row.
+- A grant that ends some other way while the menu is open. The same file checks that the menu is closed, that focus
+  goes to All threads only if the menu held it, and that the menu is closed when Watcher is next let read.
 - macOS and Linux. The strip's menu is the thread pane's own menu, and the journey runs on Windows only.
 - A real Gmail account.
 

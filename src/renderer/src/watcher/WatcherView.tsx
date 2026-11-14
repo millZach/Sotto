@@ -728,9 +728,11 @@ export function WatcherView({ now: fixedNow }: {
   const tabs = teamsBridge ? <RoomTabs tab={roomTab} onTab={setRoomTab} moved={roomTabMoved} /> : undefined
   // The mail accounts Watcher has been let read (ADR-0205, decision 8): a ··· menu at the strip's end with Ask before
   // Watcher reads for each (#2563; Zach's pick A of the tag `prototype/watcher-mail-grant`, November 13, 2026). Watcher
-  // is never settled, so this is where its grant is ended. The menu is there only while it has a row.
+  // is never settled, so this is where its grant is ended. The menu is there only while it has a row. When its last
+  // row goes while the keyboard is on it, focus goes to All threads, as it does when Stop all goes.
   const mailGrants = useMailGrantMenu(watcherId ?? '', watcherRow !== undefined && watcherRow.thread.remoteHost !== true, undefined, 'watcher')
-  const more = <PaneMenu groups={[mailGrants.items]} />
+  const focusList = useCallback((): void => { listButton.current?.focus() }, [])
+  const more = <PaneMenu groups={[mailGrants.items]} fallbackFocus={focusList} />
   const header = <>
     <WatcherHeader room={room} count={overviewCount(groups)} listOpen={listOpen} listButton={listButton} onToggleList={() => toggleList(listButton.current)}
       stopAll={stopAll} tabs={tabs} more={more} />

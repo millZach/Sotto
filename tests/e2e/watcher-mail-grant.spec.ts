@@ -203,6 +203,8 @@ test('Watcher’s strip has Ask before Watcher reads only while Watcher can read
         await page.keyboard.press('Enter')
         await expect(more(page)).toHaveCount(0)
         await expect(watcherPane(page).getByRole('alert')).toHaveCount(0)
+        // The button that held focus is gone with the menu: focus is on All threads, not lost to the page.
+        await expect(strip(page).getByRole('button', { name: /^All threads, \d+\. Show the list$/u })).toBeFocused()
         const grants = JSON.parse(await readFile(join(profile, 'plugin-mail-grants.json'), 'utf8')) as { grants: unknown[] }
         expect(grants.grants).toEqual([])
         for (const [width, height] of SIZES) {
