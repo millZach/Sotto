@@ -284,6 +284,11 @@ export class PluginToolServer implements ScopedThreadTools {
   readonly definitions: readonly ThreadToolDefinition[] = [pluginAccountsDefinition, pluginReadDefinition,
     gitHubCommentDefinition, gitHubOpenIssueDefinition, gitHubCloseIssueDefinition, gitHubReopenIssueDefinition, vercelCancelDefinition, vercelPromoteDefinition, vercelRollbackDefinition,
     mailSendDefinition]
+  /**
+   * An email's text can be long, and JSON spells some characters in up to six bytes: a call within the tool's own
+   * limits must reach it, rather than be refused for its size before any card is shown.
+   */
+  private static readonly MAX_REQUEST_BYTES = 1024 * 1024
   /** A change's call waits for the user, so a client must wait longer for it than the ask can last. */
   readonly timeoutMs = PLUGIN_CHANGE_WAIT_MS + 60_000
   private readonly server: ThreadToolServer
@@ -291,7 +296,7 @@ export class PluginToolServer implements ScopedThreadTools {
   private readonly mailAsks = new Map<string, { readonly asking: Promise<PluginChangeAnswer>; readonly copy: number }>()
   constructor(private readonly handlers: PluginToolHandlers) {
     this.server = new ThreadToolServer({ name: PLUGINS_MCP_SERVER, serverName: 'sotto-plugins', instructions: INSTRUCTIONS,
-      unavailable: `The plugin tools are unavailable. ${NOTHING_READ}`, failed: `The plugin could not be used. ${NOTHING_READ} Nothing was changed.` },
+      unavailable: `The plugin tools are unavailable. ${NOTHING_READ}`, failed: `The plugin could not be used. ${NOTHING_READ} Nothing was changed.`, maxRequestBytes: PluginToolServer.MAX_REQUEST_BYTES },
     this.definitions, (threadId, name, args, context) => this.invoke(threadId, name, args, { context, started: Date.now() }),
     threadId => this.isWatcher(threadId) ? this.definitions.filter(tool => READING_TOOLS.has(tool.name)) : this.definitions)
   }

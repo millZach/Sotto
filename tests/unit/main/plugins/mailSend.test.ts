@@ -226,7 +226,7 @@ describe('what is not sent at all', () => {
       [{ subject: 'Hello\r\nBcc: eve@example.net' }, /one line/u],
       [{ subject: 'a'.repeat(MAIL_SUBJECT_MAX + 1) }, /at most 300 characters/u],
       [{ text: ' \n ' }, /some text/u],
-      [{ text: 'a'.repeat(MAIL_SEND_TEXT_MAX + 1) }, /at most 100000 characters/u],
+      [{ text: 'a'.repeat(MAIL_SEND_TEXT_MAX + 1) }, new RegExp(`at most ${MAIL_SEND_TEXT_MAX} characters`, 'u')],
       [{ text: 'a\0b' }, /null character/u],
     ]
     for (const [patch, words] of cases) {
@@ -242,9 +242,11 @@ describe('what is not sent at all', () => {
     expect([server.asked, server.commands, server.messages]).toEqual([[], [], []])
   })
 
-  it('counts everyone once, and takes exactly as many as the most', () => {
+  it('counts everyone as named, and takes exactly as many as the most', () => {
     const many = Array.from({ length: MAIL_RECIPIENTS_MAX }, (_value, index) => `person${index}@example.com`)
-    expect(draftProblem({ ...DRAFT, to: many, cc: [many[0]!.replace('example.com', 'EXAMPLE.COM')] })).toBeNull()
+    expect(draftProblem({ ...DRAFT, to: many })).toBeNull()
+    // Someone named twice is sent the message once, but the card that asks shows every name, so each counts.
+    expect(draftProblem({ ...DRAFT, to: many, cc: [many[0]!.replace('example.com', 'EXAMPLE.COM')] })).toMatch(new RegExp(`at most ${MAIL_RECIPIENTS_MAX} addresses`, 'u'))
     expect(draftProblem({ ...DRAFT, to: many, bcc: ['one-more@example.com'] })).toMatch(new RegExp(`at most ${MAIL_RECIPIENTS_MAX} addresses`, 'u'))
   })
 })

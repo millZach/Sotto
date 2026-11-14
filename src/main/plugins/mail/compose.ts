@@ -21,8 +21,12 @@ export interface MailDraft {
  */
 export const MAIL_RECIPIENTS_MAX = 100
 export const MAIL_SUBJECT_MAX = 300
-/** The longest text sent, in characters. */
-export const MAIL_SEND_TEXT_MAX = 100_000
+/**
+ * The longest text sent, in characters. The card that asks shows all of it under a line for each of To, Cc, Bcc and
+ * the subject, and a card's details are at most 100,000 characters (`AGENT_TEXT_MAX`): with 100 addresses of the
+ * longest kind and the longest subject, this leaves the lines room.
+ */
+export const MAIL_SEND_TEXT_MAX = 70_000
 const ADDRESS_MAX = 254
 
 /**
@@ -57,7 +61,8 @@ export function draftProblem(draft: MailDraft): string | null {
   const everyone = [...draft.to, ...draft.cc ?? [], ...draft.bcc ?? []]
   const bad = everyone.find(address => !isMailAddress(address))
   if (bad !== undefined) return 'Each recipient is one plain address, such as ann@example.com, with no name, brackets or spaces around it.'
-  if (draftRecipients(draft).length > MAIL_RECIPIENTS_MAX) return `A message goes to at most ${MAIL_RECIPIENTS_MAX} addresses, To, Cc and Bcc together.`
+  // Counted as named, so naming someone twice cannot make the card that shows every line longer than it allows.
+  if (everyone.length > MAIL_RECIPIENTS_MAX) return `A message goes to at most ${MAIL_RECIPIENTS_MAX} addresses, To, Cc and Bcc together.`
   if (draft.subject.trim().length === 0) return 'Give the message a subject.'
   if (draft.subject.length > MAIL_SUBJECT_MAX) return `A subject is at most ${MAIL_SUBJECT_MAX} characters.`
   if ([...draft.subject].some(character => character.charCodeAt(0) < 0x20 || character.charCodeAt(0) === 0x7f)) return 'A subject is one line, with no line ends or control characters.'

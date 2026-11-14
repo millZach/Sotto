@@ -1,10 +1,13 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it } from 'vitest'
-import type { MailDraft } from '../../../../src/main/plugins/mail/compose'
+import { wordPluginChange } from '../../../../src/main/plugins/changeWords'
+import { wordPluginChangeInEnglish } from '../../../../src/main/plugins/changeWordsPlain'
+import { MAIL_RECIPIENTS_MAX, MAIL_SEND_TEXT_MAX, MAIL_SUBJECT_MAX, type MailDraft } from '../../../../src/main/plugins/mail/compose'
 import type { MailSendFailure, MailSent } from '../../../../src/main/plugins/mail/send'
 import type { PluginChangeAnswer } from '../../../../src/main/plugins/pendingChanges'
 import { PluginToolServer, type SecretTrouble } from '../../../../src/main/plugins/pluginTools'
 import type { PluginUseReport } from '../../../../src/main/plugins/useRecord'
+import { AGENT_TEXT_MAX } from '../../../../src/shared/agents'
 import { MAIL_SEND_TOOL, PLUGIN_ACCOUNTS_TOOL, pluginAccountAdmits, type PluginAccount, type PluginChange } from '../../../../src/shared/plugins'
 
 const servers: PluginToolServer[] = []
@@ -162,5 +165,40 @@ describe('sending an email through mail_send (ADR-0205, slice 9)', () => {
   it('tells an agent of the account that it can send, and that each email asks', async () => {
     const t = tools()
     expect(said(await t.server.call('one', PLUGIN_ACCOUNTS_TOOL, {}))).toContain('Send an email with mail_send; the user is asked before each one.')
+  })
+})
+
+describe('the longest email mail_send takes', () => {
+  /** An address of the longest kind a server takes, 254 characters, different for each `index`. */
+  const longest = (index: number): string => `${String(index).padStart(3, '0')}${'a'.repeat(61)}@${'b'.repeat(63)}.${'c'.repeat(63)}.${'d'.repeat(57)}.com`
+
+  it('fits on its card, in the desktop’s words and a host’s, within what a card may hold', async () => {
+    const t = tools({ answers: ['denied'] })
+    const everyone = Array.from({ length: MAIL_RECIPIENTS_MAX }, (_value, index) => longest(index))
+    expect(longest(0)).toHaveLength(254)
+    await t.send('one', { ...EMAIL, to: everyone.slice(0, 40), cc: everyone.slice(40, 70), bcc: everyone.slice(70), subject: 's'.repeat(MAIL_SUBJECT_MAX), text: 'x'.repeat(MAIL_SEND_TEXT_MAX) })
+    expect(t.asked).toHaveLength(1)
+    for (const card of [wordPluginChange(t.asked[0]!.change), wordPluginChangeInEnglish(t.asked[0]!.change)]) {
+      expect(card.details.length).toBeLessThanOrEqual(AGENT_TEXT_MAX)
+      expect(card.text.length).toBeLessThanOrEqual(AGENT_TEXT_MAX)
+    }
+  })
+
+  it('counts someone named twice twice, so the card cannot be made longer than the limit allows', async () => {
+    const t = tools()
+    const result = await t.send('one', { ...EMAIL, to: Array.from({ length: 60 }, () => 'ann@example.com'), cc: Array.from({ length: 41 }, () => 'ann@example.com'), bcc: [] })
+    expect(said(result)).toContain(`at most ${MAIL_RECIPIENTS_MAX} addresses`)
+    expect(t.asked).toEqual([])
+  })
+
+  it('reaches its card over the thread’s connection, however its text is spelled in bytes', async () => {
+    const t = tools({ answers: ['denied'] })
+    const endpoint = (await t.server.mcpServer('one'))!
+    // Three bytes a character in UTF-8, well past the 128 KiB a tool server takes by default.
+    const call = { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: MAIL_SEND_TOOL, arguments: { ...EMAIL, text: '中'.repeat(MAIL_SEND_TEXT_MAX) } } }
+    const response = await fetch(endpoint.url, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream', ...Object.fromEntries(endpoint.headers.map(header => [header.name, header.value])) }, body: JSON.stringify(call) })
+    expect(response.status).not.toBe(413)
+    await response.text()
+    expect(t.asked).toHaveLength(1)
   })
 })
