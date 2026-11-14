@@ -50,10 +50,10 @@ export const WATCHER_NEWS_TARGETS_MAX = 50
  * `thread-ready` comes once for each READY TO MERGE a thread sent with `ready_to_merge` (#2229), watched or not: `ready`
  * names the pull request and the head the worker says is ready, and nothing of the worker's words. It is saved the way
  * `thread-told` is, since nothing else holds it. It grants nothing: whose turn it is to merge stays Watcher's call.
- * `at-rest` comes once for each place a watched thread stands while it rests (#2307): twenty minutes after its last progress,
- * with its turn ended, nothing running and nothing asked of the user, and a pull request of its own still open. `revision`
- * is that place, its newest turn and each open pull request's head and whether its checks have finished, so a change in
- * any of them is news again. It approves nothing.
+ * `at-rest` is the idle clock's (#2307, #1152): a watched thread that has been at rest for twenty minutes since its last
+ * progress, its turn ended with its work settled or waiting only on the user's card, and again every twenty minutes while
+ * it stays at rest (Zach's pick on November 13, 2026). `revision` names the idle stretch, which progress ends. It approves
+ * nothing.
  * `user-answered` comes once for each answer the user gave on a card of Watcher's own question (#2228, ADR-0073, amendment
  * of November 5, 2026): `answered` carries the question and the user's choice, which are theirs, under the thread a settle
  * question names, or Watcher's own thread; or `skipped` and no choice, when the user pressed Skip and gave no answer

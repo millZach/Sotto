@@ -3,6 +3,7 @@ import { z } from 'zod'
 import {
   gitHubSignInSchema, pluginHostSignInsSchema, PLUGINS_GITHUB_SIGN_IN_ELSEWHERE, type PluginHostSignIn, pluginCopiesViewSchema, pluginCopyNewSetSchema, pluginCopySetSchema, PLUGINS_COPIES, PLUGINS_COPY_NEW_SET, PLUGINS_COPY_SET, pluginAccountAddSchema, pluginAccountRemoveSchema, pluginAccountReplaceSchema, pluginAccountResultSchema, pluginAccountsSchema, pluginAccountUpdateSchema, pluginProjectsSchema,
   PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNT_UPDATE, PLUGINS_ACCOUNTS, PLUGINS_GITHUB_SIGN_IN, PLUGINS_PROJECTS, PLUGINS_RECENT_USE, shownPluginUsesSchema,
+  mailGrantsOfSchema, mailGrantStopSchema, PLUGINS_MAIL_GRANT_STOP, PLUGINS_MAIL_GRANTS, threadMailGrantsSchema, type MailGrantStop, type ThreadMailGrant,
   type GitHubSignIn, type PluginAccount, type PluginAccountAdd, type PluginAccountRemove, type PluginAccountReplace, type PluginAccountResult, type PluginAccountUpdate, type PluginCopiesView, type PluginCopySet, type PluginProject, type ShownPluginUse,
 } from '../../shared/plugins'
 import { isAuthorizedIpcSender, type IpcMainAdapter, type TrustedIpcSender } from '../ipc/registerIpc'
@@ -15,6 +16,9 @@ const removeArguments = z.tuple([pluginAccountRemoveSchema])
 const updateArguments = z.tuple([pluginAccountUpdateSchema])
 const copySetArguments = z.tuple([pluginCopySetSchema])
 const copyNewArguments = z.tuple([pluginCopyNewSetSchema])
+const mailGrantsArguments = z.tuple([mailGrantsOfSchema])
+const mailGrantStopArguments = z.tuple([mailGrantStopSchema])
+const stoppedSchema = z.boolean()
 
 /** What Settings › Plugins asks of main. */
 export interface PluginsIpcHandlers {
@@ -30,6 +34,10 @@ export interface PluginsIpcHandlers {
   readonly copies: () => Promise<PluginCopiesView>
   readonly setCopy: (request: PluginCopySet) => Promise<PluginCopiesView>
   readonly setCopyNew: (copyNew: boolean) => Promise<PluginCopiesView>
+  /** The mail accounts one of this computer's threads has been let read. */
+  readonly mailGrants: (threadId: string) => Promise<readonly ThreadMailGrant[]>
+  /** Ends one. False when it could not be ended. */
+  readonly stopMailGrant: (request: MailGrantStop) => Promise<boolean>
 }
 
 /**
@@ -81,6 +89,19 @@ export function registerPluginsIpc(ipc: IpcMainAdapter, plugins: PluginsIpcHandl
     if (!parsed.success) throw new Error(t`That could not be done. Nothing was changed.`)
     return pluginCopiesViewSchema.parse(await plugins.setCopyNew(parsed.data[0].copyNew))
   })
+  // A thread's menu reads its own mail grants and ends one: the main window's, as the page's channels are.
+  ipc.handle(PLUGINS_MAIL_GRANTS, async (event, ...args) => {
+    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Open the thread in the main Sotto window.`)
+    const parsed = mailGrantsArguments.safeParse(args)
+    if (!parsed.success) throw new Error(t`That could not be done. Nothing was changed.`)
+    return threadMailGrantsSchema.parse(await plugins.mailGrants(parsed.data[0].threadId))
+  })
+  ipc.handle(PLUGINS_MAIL_GRANT_STOP, async (event, ...args) => {
+    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Open the thread in the main Sotto window.`)
+    const parsed = mailGrantStopArguments.safeParse(args)
+    if (!parsed.success) throw new Error(t`That could not be done. Nothing was changed.`)
+    return stoppedSchema.parse(await plugins.stopMailGrant(parsed.data[0]))
+  })
   const change = <Request>(channel: string, schema: z.ZodType<[Request]>, run: (request: Request) => Promise<PluginAccountResult>): void => {
     ipc.handle(channel, async (event, ...args) => {
       if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Open Settings in the main Sotto window.`)
@@ -94,6 +115,6 @@ export function registerPluginsIpc(ipc: IpcMainAdapter, plugins: PluginsIpcHandl
   change(PLUGINS_ACCOUNT_REMOVE, removeArguments, request => plugins.removeAccount(request))
   change(PLUGINS_ACCOUNT_UPDATE, updateArguments, request => plugins.updateAccount(request))
   return () => {
-    for (const channel of [PLUGINS_GITHUB_SIGN_IN, PLUGINS_GITHUB_SIGN_IN_ELSEWHERE, PLUGINS_RECENT_USE, PLUGINS_ACCOUNTS, PLUGINS_PROJECTS, PLUGINS_COPIES, PLUGINS_COPY_SET, PLUGINS_COPY_NEW_SET, PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_UPDATE]) ipc.removeHandler(channel)
+    for (const channel of [PLUGINS_MAIL_GRANTS, PLUGINS_MAIL_GRANT_STOP, PLUGINS_GITHUB_SIGN_IN, PLUGINS_GITHUB_SIGN_IN_ELSEWHERE, PLUGINS_RECENT_USE, PLUGINS_ACCOUNTS, PLUGINS_PROJECTS, PLUGINS_COPIES, PLUGINS_COPY_SET, PLUGINS_COPY_NEW_SET, PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_UPDATE]) ipc.removeHandler(channel)
   }
 }

@@ -148,6 +148,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   const plugins = owlFeatures.plugins ? hostPlugins({ directory, credentials, ...(options.plugins ? { standIns: options.plugins } : {}),
     paired: clientId => pairedNow(clientId),
     thread: threadId => startedRuntime?.agentControl.watcherSnapshot().threads.find(item => item.id === threadId),
+    project: projectId => startedRuntime?.agentControl.watcherSnapshot().projects.find(item => item.id === projectId),
     admits: threadId => startedRuntime?.agentHost.admitsPluginTools(threadId) ?? false }) : undefined
   const pluginAccountCopies = plugins?.copies
   // Its Owl answers, and every provider hosts do not take yet: DeepSeek, whose models need own servers (ADR-0138).
@@ -218,6 +219,8 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     // could not be deleted, or while this host was going away, is deleted now, before any thread starts.
     pairedNow = clientId => pairing.isPaired(clientId)
     await plugins?.copies.forgetUnpaired(pairedNow).catch(() => options.log?.('plugin-account-copies-not-forgotten'))
+    // And no thread may read a mail account by a grant given for a copy that is gone.
+    await plugins?.forgetGrantsOfGone().catch(() => undefined)
     const recordedDesktop = (clientId: string): boolean => desktops.has(clientId)
     // The desktop relay (#1316): a thread here delegates to other machines through a desktop that relays, only where the
     // Owl answer turns on Work across machines. Its record of relayed delegations is read before the threads start.
@@ -297,6 +300,8 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     if (threadTools.length) runtime.agentHost.useThreadTools(threadTools)
     // A plugin change waits on a card in its thread: one of this host's own requests, answered as its others are.
     if (plugins) runtime.agentControl.useSottoRequests(plugins.changes)
+    // A deleted thread takes its waiting cards and its mail grants with it.
+    if (plugins) { const held = plugins; runtime.agentControl.onThreadsDeleted(threadIds => { held.forgetThreads(threadIds) }) }
     // A provider signed in from a paired client's browser is connected here for that client (ADR-0037).
     const signIns = new ProviderSignIns({ ...(options.signInCommand ? { command: options.signInCommand } : {}), cursorConfigDirectory: join(directory, 'cursor', 'config'),
       connect: async (provider, clientId) => {

@@ -26,7 +26,10 @@ const copiedAccountSchema = pluginAccountSchema.extend({
   on: z.boolean(),
   projects: z.array(z.string().min(1).max(512)).min(1).max(PLUGIN_ACCOUNT_PROJECTS_MAX).refine(projects => new Set(projects).size === projects.length).nullable(),
 }).strict()
-/** An account as the desktop holds it, with its secret. The only message in the host protocol that carries one. */
+/**
+ * An account as the desktop holds it, with its secret. The only message in the host protocol that carries one. A
+ * mail account's is taken only by a host that lists `plugin-mail-copies`, and is sent to no other.
+ */
 export const pluginAccountCopySchema = z.object({ account: copiedAccountSchema, secret: z.string().min(1).max(PLUGIN_SECRET_MAX) }).strict()
 export type PluginAccountCopy = z.infer<typeof pluginAccountCopySchema>
 
@@ -67,6 +70,8 @@ export const heldPluginAccountCopiesSchema = z.array(heldPluginAccountCopySchema
 
 /** Where a headless host keeps the copies it is sent. A desktop's own local host has none: it holds the accounts themselves. */
 export interface PluginAccountCopyStore {
+  /** Whether a mail account's copy is kept here: the host's threads can read one, each asking the user once. */
+  readonly mail?: boolean
   /** Keeps a copy for the desktop that sent it. */
   keep(copy: PluginAccountCopy, clientId: string): Promise<PluginAccountCopyReceipt>
   /** Lets go of a copy that desktop sent. */

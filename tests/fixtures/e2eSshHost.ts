@@ -33,6 +33,8 @@ const PLUGIN_STAND_INS = {
     return args[0] === 'auth' ? JSON.stringify({ hosts: login ? { 'github.com': [{ active: true, login, state: 'success' }] } : {} }) : '[]'
   },
   vercelFetch: async (): Promise<Response> => { throw new Error('E2E_NETWORK_DISABLED') },
+  // An end-to-end host reaches no mail server either.
+  mailConnect: async (): Promise<never> => { throw new Error('E2E_NETWORK_DISABLED') },
 }
 /**
  * The version of the install this runs from, the way a release says it: the package.json beside its `host` folder. The

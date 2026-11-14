@@ -75,6 +75,10 @@ msgstr ""
 msgid "{file} is too large to be a theme file."
 msgstr ""
 
+#: src/main/plugins/changeWords.ts
+msgid "{first} and {more} more"
+msgstr ""
+
 #. {happened} is a system’s own error, shown as it came, such as “fetch failed”.
 #: src/main/hosts/hostFailureWords.ts
 msgid "{happened} Nothing was saved."
@@ -575,6 +579,10 @@ msgstr ""
 msgid "Auto-paste"
 msgstr "தானாக ஒட்டு"
 
+#: src/main/plugins/changeWords.ts
+msgid "Bcc: {bcc}"
+msgstr ""
+
 #: src/main/hosts/desktopHostRouter.ts
 msgid "Branches are unavailable on this host."
 msgstr ""
@@ -597,6 +605,10 @@ msgstr ""
 
 #: src/main/tools/browser.ts
 msgid "Capture the page again before selecting feedback."
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Cc: {cc}"
 msgstr ""
 
 #: src/main/hosts/desktopHostRouter.ts
@@ -858,11 +870,19 @@ msgid "Don’t add"
 msgstr ""
 
 #: src/main/plugins/changeWords.ts
+msgid "Don’t allow"
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
 msgid "Don’t open it"
 msgstr ""
 
 #: src/main/plugins/changeWords.ts
 msgid "Don’t post it"
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Don’t send it"
 msgstr ""
 
 #: src/main/hosts/hostFailureWords.ts
@@ -977,6 +997,10 @@ msgstr ""
 msgid "Issue: {title}"
 msgstr ""
 
+#: src/main/plugins/changeWords.ts
+msgid "It cannot send, move or delete mail. Every thread asks for itself."
+msgstr ""
+
 #. placeholder {0}: change.state
 #: src/main/plugins/changeWords.ts
 msgid "Its build now: {0}"
@@ -1025,6 +1049,30 @@ msgstr ""
 
 #: src/main/omarchy/setup.ts
 msgid "Left alone. Your keys still run what they did before."
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Let this thread read it"
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Let this thread read the {plugin} account {named}? What it reads goes to {provider}."
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Let this thread read the {plugin} account {named}? What it reads goes to this thread’s provider."
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Let Watcher read it"
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Let Watcher read the {plugin} account {named}? What it reads goes to {provider}."
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Let Watcher read the {plugin} account {named}? What it reads goes to Watcher’s provider."
 msgstr ""
 
 #: src/main/settings/retiredChats.ts
@@ -1200,6 +1248,10 @@ msgstr ""
 msgid "Open the issue"
 msgstr ""
 
+#: src/main/plugins/ipc.ts
+msgid "Open the thread in the main Sotto window."
+msgstr ""
+
 #: src/main/plugins/changeWords.ts
 msgid "Open this issue in {repository} on GitHub, as {login}?"
 msgstr ""
@@ -1360,6 +1412,10 @@ msgstr ""
 msgid "Quit"
 msgstr "வெளியேறு"
 
+#: src/main/plugins/changeWords.ts
+msgid "Read {plugin} mail"
+msgstr ""
+
 #: src/main/agents/nextPromptIpc.ts
 msgid "Read next prompts from the main Sotto window."
 msgstr ""
@@ -1463,6 +1519,18 @@ msgstr ""
 
 #: src/main/tools/browser.ts
 msgid "Select a thread before opening an embedded page."
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Send an email as {named}"
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Send the email"
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Send this email from the {plugin} account {named} to {who}?"
 msgstr ""
 
 #: src/main/omarchy/setup.ts
@@ -1875,6 +1943,10 @@ msgstr ""
 
 #: src/main/council/climbService.ts
 msgid "Stopped by you."
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Subject: {subject}"
 msgstr ""
 
 #: src/main/teams/teams.ts
@@ -3059,6 +3131,10 @@ msgstr ""
 msgid "This device needs to connect again or be paired on the host. Nothing was saved."
 msgstr ""
 
+#: src/main/plugins/changeWords.ts
+msgid "This does not let it send: each email it wants to send asks you first. It cannot move or delete mail. Every other thread asks for itself."
+msgstr ""
+
 #: src/main/agents/socketHostService.ts
 msgid "This draft could not be saved on the host. Reconnect and try again."
 msgstr ""
@@ -3438,6 +3514,10 @@ msgstr ""
 msgid "This thread already started a Council or a Climb for the user's message. One message asks for one. Nothing was started."
 msgstr ""
 
+#: src/main/plugins/changeWords.ts
+msgid "This thread can search this account’s mail and read its messages, until you stop it or the thread is settled."
+msgstr ""
+
 #: src/main/council/climbService.ts
 msgid "This thread has no folder for the Climb's evidence. Nothing was started."
 msgstr ""
@@ -3509,6 +3589,10 @@ msgstr ""
 
 #: src/main/hosts/hostFailureWords.ts
 msgid "To see why, run this on the SSH host:"
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "To: {to}"
 msgstr ""
 
 #: src/main/hosts/hostUpdate.ts
@@ -3646,6 +3730,26 @@ msgstr ""
 
 #: src/main/hosts/desktopHostRouter.ts
 msgid "Wait for this thread to finish its turn, then bring its changes back. Nothing changed."
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Watcher can search this account’s mail and read its messages, until you stop it."
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "What it reads goes to {provider}, as everything a thread reads does."
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "What it reads goes to {provider}, as everything Watcher reads does."
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "What it reads goes to this thread’s provider, as everything a thread reads does."
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "What it reads goes to Watcher’s provider, as everything Watcher reads does."
 msgstr ""
 
 #: src/main/app/applicationMenu.ts

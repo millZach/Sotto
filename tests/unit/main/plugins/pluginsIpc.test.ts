@@ -4,6 +4,7 @@ vi.mock('electron', async () => (await import('../../../fixtures/preloadElectron
 import { registerPluginsIpc } from '../../../../src/main/plugins/ipc'
 import { createSottoBridge } from '../../../../src/preload'
 import {
+  PLUGINS_MAIL_GRANT_STOP, PLUGINS_MAIL_GRANTS, PLUGINS_MAIL_GRANTS_CHANGED, type ThreadMailGrant,
   PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNT_UPDATE, PLUGINS_ACCOUNTS, PLUGINS_COPIES, PLUGINS_COPIES_CHANGED, PLUGINS_GITHUB_SIGN_IN_ELSEWHERE, type PluginHostSignIn, PLUGINS_COPY_NEW_SET, PLUGINS_COPY_SET, PLUGINS_GITHUB_SIGN_IN, PLUGINS_PROJECTS, PLUGINS_RECENT_USE,
   type GitHubSignIn, type PluginAccount, type PluginAccountResult, type PluginCopiesView, type ShownPluginUse,
 } from '../../../../src/shared/plugins'
@@ -30,10 +31,12 @@ function register(answer: GitHubSignIn = { state: 'signed-in', login: 'example-u
   const copies = vi.fn(async (): Promise<PluginCopiesView> => view), setCopy = vi.fn(async (): Promise<PluginCopiesView> => view), setCopyNew = vi.fn(async (): Promise<PluginCopiesView> => view)
   const elsewhere: PluginHostSignIn[] = [{ computerId: 'saved-forge', name: 'forge', state: 'signed-in', login: 'host-user' }]
   const gitHubSignInElsewhere = vi.fn(async (): Promise<PluginHostSignIn[]> => elsewhere)
-  const close = registerPluginsIpc(registry.ipc, { gitHubSignIn, gitHubSignInElsewhere, recentUse, accounts, addAccount, replaceSecret, removeAccount, updateAccount, projects, copies, setCopy, setCopyNew }, registry.trustedSenders)
+  const granted: ThreadMailGrant[] = [{ accountId: '33333333-3333-4333-8333-000000000001', plugin: 'gmail', name: 'Personal' }]
+  const mailGrants = vi.fn(async (): Promise<ThreadMailGrant[]> => granted), stopMailGrant = vi.fn(async (): Promise<boolean> => true)
+  const close = registerPluginsIpc(registry.ipc, { gitHubSignIn, gitHubSignInElsewhere, recentUse, accounts, addAccount, replaceSecret, removeAccount, updateAccount, projects, copies, setCopy, setCopyNew, mailGrants, stopMailGrant }, registry.trustedSenders)
   const renderer = preloadElectron().ipcRenderer
   renderer.invoke.mockImplementation((channel: string, ...args: unknown[]) => registry.invoke(channel, args))
-  return { ...registry, gitHubSignIn, gitHubSignInElsewhere, elsewhere, recentUse, accounts, addAccount, replaceSecret, removeAccount, updateAccount, projects, copies, setCopy, setCopyNew, view, close, bridge: createSottoBridge(renderer, 'win32').plugins! }
+  return { ...registry, gitHubSignIn, gitHubSignInElsewhere, elsewhere, recentUse, accounts, addAccount, replaceSecret, removeAccount, updateAccount, projects, copies, setCopy, setCopyNew, view, close, mailGrants, stopMailGrant, granted, bridge: createSottoBridge(renderer, 'win32').plugins! }
 }
 
 describe('Settings › Plugins, from the window through preload to main (ADR-0205)', () => {
@@ -142,6 +145,31 @@ describe('Settings › Plugins, from the window through preload to main (ADR-020
     await expect(bridge.projects()).rejects.toThrow()
     close()
     for (const channel of [PLUGINS_ACCOUNT_UPDATE, PLUGINS_PROJECTS]) expect(handlers.has(channel)).toBe(false)
+  })
+
+  it('carries a thread’s mail grants to its menu by name, and a Stop back to main, for the main window only', async () => {
+    const { bridge, invoke, widgetEvent, mailGrants, stopMailGrant, granted, close, handlers } = register()
+    await expect(bridge.mailGrants('thread-one')).resolves.toEqual(granted)
+    expect(mailGrants).toHaveBeenCalledWith('thread-one')
+    await expect(bridge.stopMailGrant({ threadId: 'thread-one', accountId: granted[0]!.accountId })).resolves.toBe(true)
+    expect(stopMailGrant).toHaveBeenCalledWith({ threadId: 'thread-one', accountId: granted[0]!.accountId })
+    // A Stop that could not be written is said to have failed, so the menu keeps its row.
+    stopMailGrant.mockResolvedValueOnce(false)
+    await expect(bridge.stopMailGrant({ threadId: 'thread-one', accountId: granted[0]!.accountId })).resolves.toBe(false)
+    mailGrants.mockClear(); stopMailGrant.mockClear()
+    // Another window is answered nothing, and a request that cannot be read is turned away in fixed words.
+    await expect(invoke(PLUGINS_MAIL_GRANTS, [{ threadId: 'thread-one' }], widgetEvent)).rejects.toThrow('Open the thread in the main Sotto window.')
+    await expect(invoke(PLUGINS_MAIL_GRANT_STOP, [{ threadId: 'thread-one', accountId: granted[0]!.accountId }], widgetEvent)).rejects.toThrow('Open the thread in the main Sotto window.')
+    for (const bad of [{}, { threadId: '' }, { threadId: 'thread-one', extra: true }]) await expect(invoke(PLUGINS_MAIL_GRANTS, [bad])).rejects.toThrow('That could not be done. Nothing was changed.')
+    for (const bad of [{ threadId: 'thread-one' }, { threadId: 'thread-one', accountId: 'not-an-id' }, { accountId: granted[0]!.accountId }]) await expect(invoke(PLUGINS_MAIL_GRANT_STOP, [bad])).rejects.toThrow('That could not be done. Nothing was changed.')
+    expect(mailGrants).not.toHaveBeenCalled()
+    expect(stopMailGrant).not.toHaveBeenCalled()
+    // What goes back names an account. Its address, or anything else, does not cross.
+    mailGrants.mockResolvedValueOnce([{ ...granted[0]!, address: 'reader@example.com' } as never])
+    await expect(invoke(PLUGINS_MAIL_GRANTS, [{ threadId: 'thread-one' }])).rejects.toThrow()
+    expect(PLUGINS_MAIL_GRANTS_CHANGED).toBe('sotto:plugins:mail-grants-changed')
+    close()
+    for (const channel of [PLUGINS_MAIL_GRANTS, PLUGINS_MAIL_GRANT_STOP]) expect(handlers.has(channel)).toBe(false)
   })
 
   it('carries where copies stand to the window and a choice back to main, for the main window only, and never a secret', async () => {

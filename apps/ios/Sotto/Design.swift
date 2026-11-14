@@ -2082,6 +2082,7 @@ private struct ToastPresenter: ViewModifier {
             .overlay(alignment: .top) {
                 if let shown = message {
                     Toast(text: shown)
+                        .swipeAway { message = nil }
                         .padding(.top, Space.s1)
                         .transition(reduceMotion ? AnyTransition.opacity : AnyTransition.move(edge: .top).combined(with: .opacity))
                         .task(id: shown) {
@@ -2098,6 +2099,36 @@ private struct ToastPresenter: ViewModifier {
 extension View {
     /// Shows `message` as a toast until it leaves on its own, then sets it back to nil.
     func toast(_ message: Binding<String?>) -> some View { modifier(ToastPresenter(message: message)) }
+    /// Lets a banner or toast be swiped away sideways, and VoiceOver's escape gesture close it.
+    func swipeAway(_ dismiss: @escaping () -> Void) -> some View { modifier(SwipeAway(dismiss: dismiss)) }
+}
+
+/// Follows a sideways drag and lets go past a third of the way, or on a flick; a shorter drag springs back. A vertical
+/// drag is left to the page, so a banner inside a list never stops it scrolling.
+private struct SwipeAway: ViewModifier {
+    let dismiss: () -> Void
+    @State private var offset: CGFloat = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    func body(content: Content) -> some View {
+        content
+            .offset(x: offset)
+            .opacity(1 - min(0.7, abs(offset) / 240))
+            .simultaneousGesture(DragGesture(minimumDistance: 16)
+                .onChanged { drag in
+                    guard offset != 0 || abs(drag.translation.width) > abs(drag.translation.height) else { return }
+                    offset = drag.translation.width
+                }
+                .onEnded { drag in
+                    guard offset != 0 else { return }
+                    let flung = drag.predictedEndTranslation.width
+                    if abs(offset) > 120 || abs(flung) > 240 {
+                        withAnimation(.easeOut(duration: reduceMotion ? 0.01 : 0.18)) { offset = flung < 0 ? -480 : 480; dismiss() }
+                    } else {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { offset = 0 }
+                    }
+                })
+            .accessibilityAction(.escape) { dismiss() }
+    }
 }
 
 // MARK: - Fields, boxes and banners

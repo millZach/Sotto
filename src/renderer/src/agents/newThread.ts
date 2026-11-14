@@ -54,9 +54,12 @@ export async function projectWorkingCopy(state: AgentState, project: AgentProjec
 /**
  * A thread the project already has that was opened and never used: still on its default title, nothing sent, at rest
  * and not settled, with the current new-thread defaults. New thread returns to it instead of leaving another
- * empty thread behind (#347), without reviving settled work or carrying older choices into new work.
+ * empty thread behind (#347), without reviving settled work or carrying older choices into new work. A prompt on its
+ * way counts as sent: the window's own submissions, then main's deliveries and receipts, cover the seconds before the
+ * provider echoes the first message, when the thread would otherwise still look unused and New thread would go nowhere.
  */
-export function unusedNewThread(state: AgentState, project: AgentProject, startsDynamic = false, startsRouted = false): AgentThread | undefined {
+export function unusedNewThread(state: AgentState, project: AgentProject, startsDynamic = false,
+  submitted: readonly { readonly threadId: string }[] = [], startsRouted = false): AgentThread | undefined {
   const { modelId, selectedModel, reasoningEffort, permission } = newThreadOptions(state, project)
   if (state.configuration.newThreadReasoningEffort && reasoningEffort === undefined) return undefined
   if (state.configuration.newThreadRuntimeMode && permission.runtimeMode === undefined && permission.providerMode === undefined) return undefined
@@ -70,7 +73,8 @@ export function unusedNewThread(state: AgentState, project: AgentProject, starts
     && threadSpeed(thread) === null
     && (thread.dynamic === true) === (startsDynamic && whyNotDynamic(thread) === undefined)
     && (thread.routed === true) === (startsRouted && whyNotRouted(thread) === undefined)
-    && (thread.summary?.messageCount ?? thread.messages.length) === 0)
+    && (thread.summary?.messageCount ?? thread.messages.length) === 0
+    && ![submitted, state.deliveries, state.deliveredDrafts].some(items => items?.some(item => item.threadId === thread.id)))
 }
 
 /**

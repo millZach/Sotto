@@ -8,6 +8,7 @@ import { HOSTS_OPENCODE_SIGN_IN, HOSTS_PROVIDER_ACTION, HOSTS_SIGN_IN, HOSTS_UPD
 import { PHONES_GET, PHONES_COMMAND, PHONES_CHANGED, phonesCommandSchema, type PhonesState } from '../shared/phones'
 import { LOCAL_APPS_CHANGED, LOCAL_APPS_GET, type LocalAppsState } from '../shared/localApps'
 import {
+  mailGrantsOfSchema, mailGrantStopSchema, PLUGINS_MAIL_GRANT_STOP, PLUGINS_MAIL_GRANTS, PLUGINS_MAIL_GRANTS_CHANGED, threadMailGrantsSchema,
   gitHubSignInSchema, pluginHostSignInsSchema, PLUGINS_GITHUB_SIGN_IN_ELSEWHERE, pluginCopiesViewSchema, pluginCopyNewSetSchema, pluginCopySetSchema, PLUGINS_COPIES, PLUGINS_COPIES_CHANGED, PLUGINS_COPY_NEW_SET, PLUGINS_COPY_SET, pluginAccountAddSchema, pluginAccountRemoveSchema, pluginAccountReplaceSchema, pluginAccountResultSchema, pluginAccountsSchema, pluginAccountUpdateSchema, pluginProjectsSchema,
   PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNT_UPDATE, PLUGINS_ACCOUNTS, PLUGINS_GITHUB_SIGN_IN, PLUGINS_PROJECTS, PLUGINS_RECENT_USE, shownPluginUsesSchema, type PluginsBridge,
 } from '../shared/plugins'
@@ -238,6 +239,8 @@ const updateResponseSchema = z.union([updateStatusSchema, unavailableSchema])
 const outputResultSchema = z.union([z.enum(['pasted', 'copied', 'clipboard-unavailable', 'empty']), unavailableSchema])
 const startupStateSchema = z.object({ enabled: z.boolean(), supported: z.boolean().optional(), approvalRequired: z.boolean().optional() }).strict()
 const voidSchema = z.undefined()
+/** Whether a thread's mail grant was ended. */
+const mailGrantStoppedSchema = z.boolean()
 const booleanSchema = z.boolean()
 const nullSchema = z.null()
 const projectDirectorySchema = z.string().min(1).max(4_096).nullable()
@@ -684,6 +687,10 @@ export function createSottoBridge(
       setCopyNew: async copyNew => invokeParsed(renderer, PLUGINS_COPY_NEW_SET, pluginCopiesViewSchema, pluginCopyNewSetSchema.parse({ copyNew })),
       // Main says only that something changed; the page reads the copies again through `copies`.
       onCopiesChanged: listener => { const heard = (): void => { listener() }; renderer.on(PLUGINS_COPIES_CHANGED, heard); return () => { renderer.removeListener(PLUGINS_COPIES_CHANGED, heard) } },
+      // A thread's own mail grants, for its menu: names, never an address or a secret.
+      mailGrants: async threadId => invokeParsed(renderer, PLUGINS_MAIL_GRANTS, threadMailGrantsSchema, mailGrantsOfSchema.parse({ threadId })),
+      stopMailGrant: async request => invokeParsed(renderer, PLUGINS_MAIL_GRANT_STOP, mailGrantStoppedSchema, mailGrantStopSchema.parse(request)),
+      onMailGrantsChanged: listener => { const heard = (): void => { listener() }; renderer.on(PLUGINS_MAIL_GRANTS_CHANGED, heard); return () => { renderer.removeListener(PLUGINS_MAIL_GRANTS_CHANGED, heard) } },
     }),
     ...createToolsBridges(renderer),
     cloudIphone: createCloudIphoneBridge(renderer),

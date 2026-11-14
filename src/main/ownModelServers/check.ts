@@ -168,7 +168,8 @@ function lmstudio(answer: unknown, models: Listed[]): boolean {
     if (!entry) continue
     const instance = Array.isArray(entry.loaded_instances) ? entry.loaded_instances.find(item => isObject(item) && text(item.id) === model.id) : undefined
     const loaded = isObject(instance) && isObject(instance.config) ? contextOf(instance.config.context_length) : undefined
-    model.context = loaded ?? contextOf(entry.loaded_context_length) ?? contextOf(entry.max_context_length)
+    // An API that answers this route with its own model list is not LM Studio, so what the list said stays.
+    model.context = loaded ?? contextOf(entry.loaded_context_length) ?? contextOf(entry.max_context_length) ?? model.context
     const capabilities = entry.capabilities
     if (isObject(capabilities)) {
       model.images = capabilities.vision === true
@@ -309,12 +310,17 @@ export function apiModel(item: Record<string, unknown>, meta?: Record<string, un
   const features = Array.isArray(item.supported_features) ? item.supported_features : undefined
   const parameters = Array.isArray(item.supported_parameters) ? item.supported_parameters : undefined
   const pricing = objectValue(item.pricing)
+  // Prices come per token (OpenRouter's names) or per million tokens (`_per_m`).
   const cost = modelCost({ input: pricing.prompt, output: pricing.completion, cache_read: pricing.input_cache_read }, 1_000_000)
+    ?? modelCost({ input: pricing.input_per_m, output: pricing.output_per_m, cache_read: pricing.cached_input_per_m })
   const context = contextOf(item.context_length) ?? contextOf(item.max_model_len) ?? contextOf(meta?.n_ctx_train)
   const output = integer(item.max_output_length) ?? integer(top.max_completion_tokens)
   const displayName = text(item.display_name) ?? text(item.name) ?? id
-  const reasoningEfforts = confirmedEfforts(item.reasoning_options)
+  // A plain `reasoning_efforts` list names the levels itself, with `off` for no thinking.
+  const reasoningEfforts = confirmedEfforts(item.reasoning_options) ?? (Array.isArray(item.reasoning_efforts)
+    ? confirmedEfforts([{ type: 'effort', values: item.reasoning_efforts.map(level => level === 'off' ? 'none' : level) }]) : undefined)
   return { id, name: displayName.slice(0, 200), ...(reasoningEfforts ? { reasoningEfforts } : {}), ...((typeof item.display_name === 'string' || typeof item.name === 'string') ? { reportedName: true } : {}), ...(context !== undefined ? { context } : {}), ...(output !== undefined && output > 0 && output <= OWN_SERVER_CONTEXT_MAX ? { output } : {}),
+    ...(typeof item.vision === 'boolean' ? { images: item.vision } : {}),
     ...(Array.isArray(modalities) ? { images: modalities.includes('image') } : {}),
     ...(features ? { thinking: features.includes('reasoning'), tools: features.includes('tools') } : {}),
     ...(parameters ? { thinking: parameters.includes('reasoning') || parameters.includes('reasoning_effort'), tools: parameters.includes('tools') } : {}),

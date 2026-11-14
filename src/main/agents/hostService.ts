@@ -168,6 +168,8 @@ export interface HostService {
    * holds; on the host they keep, delete and list. A secret goes one way: nothing here hands one back.
    */
   readonly supportsPluginAccountCopies?: boolean
+  /** The host keeps a mail account's copy too, and its own threads read it, each asking once (decision 8). */
+  readonly supportsPluginMailCopies?: boolean
   keepPluginAccountCopy?(copy: PluginAccountCopy, client?: ClientIdentity): Promise<PluginAccountCopyReceipt>
   removePluginAccountCopy?(accountId: string, client?: ClientIdentity): Promise<PluginAccountCopyRemoved>
   pluginAccountCopies?(client?: ClientIdentity): Promise<HeldPluginAccountCopy[]>
@@ -559,6 +561,7 @@ export class LocalHostService implements HostService {
     return this.options.desktopDefaults.record(client.clientId, defaults)
   }
   get supportsPluginAccountCopies(): boolean { return this.options.pluginAccountCopies !== undefined }
+  get supportsPluginMailCopies(): boolean { return this.options.pluginAccountCopies?.mail === true }
   get supportsPluginGitHubSignIn(): boolean { return this.options.pluginGitHubSignIn !== undefined }
   /** Who this machine's gh is signed in as; the socket listener answers only the desktop the launch script recorded. */
   pluginGitHubSignIn(): Promise<GitHubSignIn> {

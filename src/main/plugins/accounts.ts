@@ -3,16 +3,18 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { z } from 'zod'
 import {
-  PLUGIN_ACCOUNTS_MAX, pluginAccountSchema, type AccountPluginId, type PluginAccount, type PluginAccountAdd, type PluginAccountProblem,
+  isMailPlugin, PLUGIN_ACCOUNTS_MAX, pluginAccountSchema, type AccountPluginId, type PluginAccount, type PluginAccountAdd, type PluginAccountProblem,
   type PluginAccountRemove, type PluginAccountReplace, type PluginAccountResult, type PluginAccountUpdate,
 } from '../../shared/plugins'
 
 /**
  * The record of accounts. Version 1 holds accounts that are all on and for every project, in the shape an older
  * build reads. Version 2 holds at least one that is off or kept to projects: an older build cannot honour that, and
- * refuses the whole file rather than read such an account as open to every thread.
+ * refuses the whole file rather than read such an account as open to every thread. Version 3 holds a mail account:
+ * a build from before mail would drop it as an account of no plugin it knows and write the rest back without it,
+ * leaving its password in the credential store with nothing to find it by, so it too refuses the whole file.
  */
-const fileSchema = z.object({ version: z.union([z.literal(1), z.literal(2)]), accounts: z.array(z.unknown()) })
+const fileSchema = z.object({ version: z.union([z.literal(1), z.literal(2), z.literal(3)]), accounts: z.array(z.unknown()) })
 
 /** The part of the credential store plugin accounts use: this computer's, or a headless host's own. */
 export interface PluginCredentials {
@@ -31,6 +33,12 @@ export class PluginSecretLocked extends Error {}
 /** The record of accounts could not be read. Nothing is changed while that is so, so no account is written over. */
 export class PluginAccountsUnreadable extends Error {}
 
+/**
+ * A secret as it is checked and kept. Google shows a Gmail app password in four groups with spaces between them,
+ * and the password is the letters, so the spaces a paste carries are left out.
+ */
+export const pluginSecretAsKept = (plugin: AccountPluginId, secret: string): string => plugin === 'gmail' ? secret.replace(/\s+/gu, '') : secret
+
 /** The slot an account's secret is kept in: one each, named by Sotto's own ID for the account. */
 export const pluginAccountSlot = (id: string): string => `plugin:${id}`
 
@@ -48,8 +56,8 @@ export class PluginAccounts {
   private queue: Promise<unknown> = Promise.resolve()
   constructor(directory: string, private readonly options: {
     readonly credentials: PluginCredentials
-    /** Asks a plugin's service whether a secret is good. */
-    readonly check: (plugin: AccountPluginId, secret: string) => Promise<SecretCheck>
+    /** Asks a plugin's service whether a secret is good. A mail account's secret is checked with its address. */
+    readonly check: (plugin: AccountPluginId, secret: string, address: string | undefined) => Promise<SecretCheck>
     readonly now?: () => Date
   }) {
     this.path = join(directory, 'plugin-accounts.json')
@@ -90,12 +98,18 @@ export class PluginAccounts {
       const mine = accounts.filter(account => account.plugin === request.plugin)
       if (mine.some(account => sameName(account.name, request.name))) return refusal('name-taken')
       if (mine.length >= PLUGIN_ACCOUNTS_MAX) return refusal('limit')
-      const checked = await this.options.check(request.plugin, request.secret)
+      // A mail account is an address and a password; any other plugin's account has no address.
+      if (isMailPlugin(request.plugin) !== (request.address !== undefined)) return refusal('refused')
+      const secret = pluginSecretAsKept(request.plugin, request.secret)
+      const checked = await this.options.check(request.plugin, secret, request.address)
       if (!checked.ok) return refusal(checked.problem)
-      const account: PluginAccount = { id: randomUUID(), plugin: request.plugin, name: request.name, savedAt: this.now(), signedInAs: checked.signedInAs, on: true, projects: null }
+      const account: PluginAccount = {
+        id: randomUUID(), plugin: request.plugin, name: request.name, savedAt: this.now(), signedInAs: checked.signedInAs,
+        ...(request.address === undefined ? {} : { address: request.address }), on: true, projects: null,
+      }
       const slot = pluginAccountSlot(account.id)
       try {
-        await this.options.credentials.set(slot, request.secret)
+        await this.options.credentials.set(slot, secret)
         await this.write([...accounts, account])
       } catch {
         // A secret with no account to find it by is not left behind.
@@ -112,13 +126,14 @@ export class PluginAccounts {
       if (!accounts) return refusal('store')
       const account = accounts.find(entry => entry.id === request.id)
       if (!account) return refusal('gone')
-      const checked = await this.options.check(account.plugin, request.secret)
+      const secret = pluginSecretAsKept(account.plugin, request.secret)
+      const checked = await this.options.check(account.plugin, secret, account.address)
       if (!checked.ok) return refusal(checked.problem)
       const next = accounts.map(entry => entry.id === account.id ? { ...entry, savedAt: this.now(), signedInAs: checked.signedInAs } : entry)
       // The day and the name are written first and the secret last, so a refusal always means the saved secret is
       // still the one in use: a failed first write changed nothing, and a failed second leaves the old secret.
       try { await this.write(next) } catch { return refusal('store') }
-      try { await this.options.credentials.set(pluginAccountSlot(account.id), request.secret) } catch {
+      try { await this.options.credentials.set(pluginAccountSlot(account.id), secret) } catch {
         await this.write(accounts).catch(() => { this.accounts = accounts })
         return refusal('store')
       }
@@ -265,7 +280,7 @@ export class PluginAccounts {
       // The switch and the projects are written only where they are not the default, so a record of accounts that
       // are all on and for every project stays one an older build reads, and keeps, whole.
       const stored = accounts.map(({ on, projects, ...rest }) => ({ ...rest, ...(on ? {} : { on }), ...(projects === null ? {} : { projects }) }))
-      const version = stored.some(entry => 'on' in entry || 'projects' in entry) ? 2 : 1
+      const version = stored.some(entry => isMailPlugin(entry.plugin)) ? 3 : stored.some(entry => 'on' in entry || 'projects' in entry) ? 2 : 1
       await writeFile(next, JSON.stringify({ version, accounts: stored }), { mode: 0o600 })
       await rename(next, this.path)
     } catch (error) {

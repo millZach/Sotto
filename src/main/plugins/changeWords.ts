@@ -4,6 +4,8 @@ import type { PluginChangeCard } from './pendingChanges'
 
 type GitHubChange = Extract<PluginChange, { readonly kind: 'github-comment' | 'github-open-issue' | 'github-close-issue' | 'github-reopen-issue' }>
 type VercelChange = Extract<PluginChange, { readonly kind: 'vercel-cancel' | 'vercel-promote' | 'vercel-rollback' }>
+type MailRead = Extract<PluginChange, { readonly kind: 'mail-read' }>
+type MailSend = Extract<PluginChange, { readonly kind: 'mail-send' }>
 
 /**
  * A plugin change's card, in the interface language (ADR-0205, decision 7; ADR-0185): what will happen in plain words,
@@ -11,8 +13,83 @@ type VercelChange = Extract<PluginChange, { readonly kind: 'vercel-cancel' | 've
  * that cancels something never offers a button called Cancel. Worded when the change is asked for.
  */
 export function wordPluginChange(change: PluginChange): PluginChangeCard {
+  if (change.kind === 'mail-read') return wordMailRead(change)
+  if (change.kind === 'mail-send') return wordMailSend(change)
   // Only a Vercel change names a deployment.
   return 'deploymentId' in change ? wordVercelChange(change) : wordGitHubChange(change)
+}
+
+/**
+ * A thread's first read of a mail account (decision 8). Not a change: the user's yes lets this thread, and no other,
+ * search and read the account until they stop it or the thread is settled. The card says where what is read goes.
+ * Watcher's card says the same of Watcher, by its name.
+ */
+function wordMailRead(change: MailRead): PluginChangeCard {
+  const { plugin, provider } = change
+  // The account as the user named it, and never its address: these words can be handed on with the card.
+  const named = change.account
+  // Watcher's own card (#2565, Zach's pick on November 13, 2026): it names Watcher, which is never settled, so the
+  // grant lasts until the user stops it, from the ··· menu in Watcher's strip.
+  if (change.watcher) return {
+    plugin,
+    text: provider ? t`Let Watcher read the ${plugin} account ${named}? What it reads goes to ${provider}.`
+      : t`Let Watcher read the ${plugin} account ${named}? What it reads goes to Watcher’s provider.`,
+    action: t`Read ${plugin} mail`,
+    target: named,
+    details: [
+      t`Watcher can search this account’s mail and read its messages, until you stop it.`,
+      provider ? t`What it reads goes to ${provider}, as everything Watcher reads does.` : t`What it reads goes to Watcher’s provider, as everything Watcher reads does.`,
+      t`It cannot send, move or delete mail. Every thread asks for itself.`,
+    ].join('\n'),
+    allow: t`Let Watcher read it`,
+    deny: t`Don’t allow`,
+  }
+  return {
+    plugin,
+    text: provider ? t`Let this thread read the ${plugin} account ${named}? What it reads goes to ${provider}.`
+      : t`Let this thread read the ${plugin} account ${named}? What it reads goes to this thread’s provider.`,
+    action: t`Read ${plugin} mail`,
+    target: named,
+    details: [
+      t`This thread can search this account’s mail and read its messages, until you stop it or the thread is settled.`,
+      provider ? t`What it reads goes to ${provider}, as everything a thread reads does.` : t`What it reads goes to this thread’s provider, as everything a thread reads does.`,
+      t`This does not let it send: each email it wants to send asks you first. It cannot move or delete mail. Every other thread asks for itself.`,
+    ].join('\n'),
+    allow: t`Let this thread read it`,
+    deny: t`Don’t allow`,
+  }
+}
+
+/**
+ * One email from a mail account (slice 9). It asks every time: a mail grant never covers it. The card names the
+ * account as the user named it, not by its address (Zach's pick on November 14, 2026), and shows everything that is
+ * sent: who it goes to, the Bcc too, the subject and the whole text.
+ */
+function wordMailSend(change: MailSend): PluginChangeCard {
+  const { plugin } = change
+  const named = change.account
+  const everyone = [...change.to, ...change.cc, ...change.bcc]
+  const first = change.to.slice(0, 2).join(', ')
+  const more = everyone.length - Math.min(change.to.length, 2)
+  const who = more > 0 ? t`${first} and ${more} more` : first
+  const to = change.to.join(', '), cc = change.cc.join(', '), bcc = change.bcc.join(', ')
+  const subject = change.subject
+  return {
+    plugin,
+    text: t`Send this email from the ${plugin} account ${named} to ${who}?`,
+    action: t`Send an email as ${named}`,
+    target: who,
+    details: [
+      t`To: ${to}`,
+      ...(cc ? [t`Cc: ${cc}`] : []),
+      ...(bcc ? [t`Bcc: ${bcc}`] : []),
+      t`Subject: ${subject}`,
+      '',
+      change.text,
+    ].join('\n'),
+    allow: t`Send the email`,
+    deny: t`Don’t send it`,
+  }
 }
 
 function wordGitHubChange(change: GitHubChange): PluginChangeCard {

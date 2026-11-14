@@ -8,18 +8,28 @@ import { z } from 'zod'
 export const PLUGINS_FEATURE = 'plugins'
 
 /** The groups Settings › Plugins sets its rows in, in the page's order. */
-export const PLUGIN_GROUPS = ['code'] as const
+export const PLUGIN_GROUPS = ['code', 'mail'] as const
 export type PluginGroupId = typeof PLUGIN_GROUPS[number]
 
-export const PLUGIN_IDS = ['github', 'vercel'] as const
+/** Every plugin a thread's agent can use, each with a row on Settings › Plugins. */
+export const PLUGIN_IDS = ['github', 'vercel', 'gmail'] as const
 export type PluginId = typeof PLUGIN_IDS[number]
+/** Each plugin's name, which is the service's own and the same in every language. */
+export const PLUGIN_NAMES: Readonly<Record<PluginId, string>> = { github: 'GitHub', vercel: 'Vercel', gmail: 'Gmail' }
+
+/** The plugins that are mail accounts: read over IMAP, each thread asking once (ADR-0205, decision 8). */
+export const MAIL_PLUGIN_IDS = ['gmail'] as const
+export type MailPluginId = typeof MAIL_PLUGIN_IDS[number]
+export const isMailPlugin = (plugin: string): plugin is MailPluginId => (MAIL_PLUGIN_IDS as readonly string[]).includes(plugin)
 
 /** A plugin as the page lists it. Its name is the service's own and is the same in every language. */
 export interface PluginEntry { readonly id: PluginId; readonly name: string; readonly group: PluginGroupId }
 
+/** The rows of Settings › Plugins: the plugins a user can connect there today. */
 export const PLUGINS: readonly PluginEntry[] = [
   { id: 'github', name: 'GitHub', group: 'code' },
   { id: 'vercel', name: 'Vercel', group: 'code' },
+  { id: 'gmail', name: 'Gmail', group: 'mail' },
 ]
 
 export const PLUGINS_GITHUB_SIGN_IN = 'sotto:plugins:github-sign-in'
@@ -83,6 +93,12 @@ export interface PluginsBridge {
   setCopyNew(copyNew: boolean): Promise<PluginCopiesView>
   /** Told when a copy arrived, a computer connected or left, or a choice changed. Returns the way to stop. */
   onCopiesChanged(listener: () => void): () => void
+  /** The mail accounts a thread on this computer has been let read, for that thread's menu. */
+  mailGrants(threadId: string): Promise<ThreadMailGrant[]>
+  /** Ends a thread's leave to read a mail account, so it asks again. False when it could not be ended; it then still stands. */
+  stopMailGrant(request: MailGrantStop): Promise<boolean>
+  /** Told when some thread's mail grant was given or ended. Returns the way to stop. */
+  onMailGrantsChanged(listener: () => void): () => void
 }
 
 /** The one name every client addresses the plugin tools by (ADR-0205). */
@@ -97,7 +113,9 @@ export const GITHUB_REOPEN_ISSUE_TOOL = 'github_reopen_issue'
 export const VERCEL_CANCEL_TOOL = 'vercel_cancel_deployment'
 export const VERCEL_PROMOTE_TOOL = 'vercel_promote_deployment'
 export const VERCEL_ROLLBACK_TOOL = 'vercel_rollback_production'
-export const PLUGIN_CHANGE_TOOLS = [GITHUB_COMMENT_TOOL, GITHUB_OPEN_ISSUE_TOOL, GITHUB_CLOSE_ISSUE_TOOL, GITHUB_REOPEN_ISSUE_TOOL, VERCEL_CANCEL_TOOL, VERCEL_PROMOTE_TOOL, VERCEL_ROLLBACK_TOOL] as const
+/** Sends one email from a mail account. It asks every time, and no switch turns that off (decision 6). */
+export const MAIL_SEND_TOOL = 'mail_send'
+export const PLUGIN_CHANGE_TOOLS = [GITHUB_COMMENT_TOOL, GITHUB_OPEN_ISSUE_TOOL, GITHUB_CLOSE_ISSUE_TOOL, GITHUB_REOPEN_ISSUE_TOOL, VERCEL_CANCEL_TOOL, VERCEL_PROMOTE_TOOL, VERCEL_ROLLBACK_TOOL, MAIL_SEND_TOOL] as const
 export type PluginChangeTool = typeof PLUGIN_CHANGE_TOOLS[number]
 
 export const PLUGINS_RECENT_USE = 'sotto:plugins:recent-use'
@@ -106,17 +124,21 @@ export const PLUGINS_RECENT_USE = 'sotto:plugins:recent-use'
  * What a use was of, as far as the record keeps it: a kind of thing read or changed, never which one. A repository's
  * name, an issue's number, a comment's words and what a read returned are the user's own and stay out of the record
  * (ADR-0205, decision 10). Those from `comment` on are changes: a comment posted, an issue opened, closed or
- * reopened, a deployment's build cancelled, a deployment promoted to production, and production rolled back.
+ * reopened, a deployment's build cancelled, a deployment promoted to production, and production rolled back. Then
+ * two reads of a mail account, a search and a message opened, and an email sent, which is a change. Never who an
+ * email went to or what it said.
  */
 export const PLUGIN_READ_KINDS = ['issues', 'pull-requests', 'repository', 'commits', 'checks', 'releases', 'search', 'account', 'deployments', 'projects', 'domains', 'logs', 'other',
-  'comment', 'deployment-cancel', 'issue-open', 'issue-close', 'issue-reopen', 'deployment-promote', 'deployment-rollback'] as const
+  'comment', 'deployment-cancel', 'issue-open', 'issue-close', 'issue-reopen', 'deployment-promote', 'deployment-rollback', 'mail-search', 'mail-message', 'mail-send'] as const
 export type PluginReadKind = typeof PLUGIN_READ_KINDS[number]
 
 /**
- * How a use ended: done, refused by Sotto before anything was sent, or failed at the service. A change can also end
- * with the user saying no (`denied`) or with nobody answering its card in time (`lapsed`); nothing was sent for either.
+ * How a use ended: done, refused by Sotto before anything was sent, or failed at the service. A change, and a
+ * thread's first read of a mail account, can also end with the user saying no (`denied`) or with nobody answering its
+ * card in time (`lapsed`); nothing was sent for either. An email can also end `unsure`: the user allowed it, the whole
+ * message was handed to the mail server, and its answer never came, so Sotto cannot tell whether it was sent.
  */
-export const PLUGIN_USE_OUTCOMES = ['done', 'refused', 'failed', 'denied', 'lapsed'] as const
+export const PLUGIN_USE_OUTCOMES = ['done', 'refused', 'failed', 'denied', 'lapsed', 'unsure'] as const
 
 /** One entry of the plugin use record: the thread, the plugin, what was done and how it ended. Never its content. */
 export const pluginUseSchema = z.object({
@@ -158,10 +180,17 @@ export const PLUGINS_COPIES = 'sotto:plugins:copies'
 export const PLUGINS_COPY_SET = 'sotto:plugins:copy-set'
 export const PLUGINS_COPY_NEW_SET = 'sotto:plugins:copy-new-set'
 export const PLUGINS_COPIES_CHANGED = 'sotto:plugins:copies-changed'
+export const PLUGINS_MAIL_GRANTS = 'sotto:plugins:mail-grants'
+export const PLUGINS_MAIL_GRANT_STOP = 'sotto:plugins:mail-grant-stop'
+export const PLUGINS_MAIL_GRANTS_CHANGED = 'sotto:plugins:mail-grants-changed'
 
 /** The plugins an account is added to by pasting a secret. GitHub is not one: its account is gh's own sign-in. */
-export const ACCOUNT_PLUGIN_IDS = ['vercel'] as const
+export const ACCOUNT_PLUGIN_IDS = ['vercel', 'gmail'] as const
 export type AccountPluginId = typeof ACCOUNT_PLUGIN_IDS[number]
+
+/** A mail account's address, which signs in to it beside its password: one address, with nothing a mail server would read as more. */
+export const PLUGIN_MAIL_ADDRESS_MAX = 320
+export const pluginMailAddressSchema = z.string().trim().min(3).max(PLUGIN_MAIL_ADDRESS_MAX).regex(/^[^\s@<>"\\]+@[^\s@<>"\\]+$/u)
 
 export const PLUGIN_ACCOUNT_NAME_MAX = 40
 /** Longer than any token a plugin issues, and short enough that a pasted file is turned away. */
@@ -183,6 +212,8 @@ export const pluginAccountSchema = z.object({
   name: z.string().min(1).max(PLUGIN_ACCOUNT_NAME_MAX),
   savedAt: z.iso.datetime(),
   signedInAs: z.string().max(200).nullable(),
+  /** A mail account's address. A plugin that is not mail has none. */
+  address: pluginMailAddressSchema.optional(),
   /** Whether threads may use the account at all (ADR-0205, decision 9). An account kept before the switch existed is on. */
   on: z.boolean().default(true),
   /**
@@ -203,7 +234,10 @@ export function pluginAccountAdmits(account: Pick<PluginAccount, 'on' | 'project
 }
 export const pluginAccountsSchema = z.array(pluginAccountSchema).max(ACCOUNT_PLUGIN_IDS.length * PLUGIN_ACCOUNTS_MAX)
 
-export const pluginAccountAddSchema = z.object({ plugin: z.enum(ACCOUNT_PLUGIN_IDS), name: pluginAccountNameSchema, secret: z.string().min(1).max(PLUGIN_SECRET_MAX) }).strict()
+/** A new account: its plugin, the name the user gives it, its secret, and for a mail account the address the secret signs in. */
+export const pluginAccountAddSchema = z.object({
+  plugin: z.enum(ACCOUNT_PLUGIN_IDS), name: pluginAccountNameSchema, secret: z.string().min(1).max(PLUGIN_SECRET_MAX), address: pluginMailAddressSchema.optional(),
+}).strict().refine(account => isMailPlugin(account.plugin) === (account.address !== undefined))
 export type PluginAccountAdd = z.infer<typeof pluginAccountAddSchema>
 export const pluginAccountReplaceSchema = z.object({ id: z.uuid(), secret: z.string().min(1).max(PLUGIN_SECRET_MAX) }).strict()
 export type PluginAccountReplace = z.infer<typeof pluginAccountReplaceSchema>
@@ -260,6 +294,20 @@ export type PluginCopySet = z.infer<typeof pluginCopySetSchema>
 export const pluginCopyNewSetSchema = z.object({ copyNew: z.boolean() }).strict()
 
 /**
+ * The mail accounts one thread has been let read (ADR-0205, decision 8), for the thread's own menu: each by Sotto's
+ * ID for it and the name the user gave it. Never its address, and nothing of any other thread.
+ */
+export const threadMailGrantsSchema = z.array(z.object({ accountId: z.uuid(), plugin: z.enum(MAIL_PLUGIN_IDS), name: z.string().min(1).max(PLUGIN_ACCOUNT_NAME_MAX) }).strict())
+  .max(MAIL_PLUGIN_IDS.length * PLUGIN_ACCOUNTS_MAX)
+export type ThreadMailGrant = z.infer<typeof threadMailGrantsSchema>[number]
+/** A thread as the window names it: its ID, behind the key that says which computer holds it. */
+const grantThreadIdSchema = z.string().min(1).max(512)
+export const mailGrantsOfSchema = z.object({ threadId: grantThreadIdSchema }).strict()
+/** The user's Stop: this thread asks again before it next reads this account. */
+export const mailGrantStopSchema = z.object({ threadId: grantThreadIdSchema, accountId: z.uuid() }).strict()
+export type MailGrantStop = z.infer<typeof mailGrantStopSchema>
+
+/**
  * Why an account was not saved or removed. `refused`: the service did not accept the secret. `unreachable`: the service
  * could not be asked. `busy`: the service is turning requests away for now. `name-taken`, `limit`: the plugin already has that name, or its full count of accounts.
  * `store`: Sotto could not keep the secret or the account. `gone`: the account is no longer there.
@@ -290,6 +338,37 @@ export type PluginChange =
     /** Why it is closed, which is sent with the call: finished, or not going to be done. */
     readonly reason?: 'completed' | 'not_planned'
     readonly account?: string
+  }
+  | {
+    /**
+     * Not a change: a thread's first read of a mail account, which asks once (decision 8). The user's yes is a mail
+     * grant for that thread and that account. It is asked on the same card a change is.
+     */
+    readonly kind: 'mail-read'
+    /**
+     * The plugin's name and the account's, as the user named it. Not its address: a card's words travel further
+     * than the card, as when a replaced Watcher hands its open cards to the next provider, and the address is the
+     * user's own until they have said yes.
+     */
+    readonly plugin: string; readonly account: string
+    /** The provider the thread runs on, by name: what the thread reads goes there. */
+    readonly provider: string
+    /**
+     * Set when the thread is Watcher (#2565): its card names Watcher rather than "this thread", and does not speak of
+     * the thread being settled, since Watcher never is.
+     */
+    readonly watcher?: boolean
+  }
+  | {
+    /**
+     * One email from a mail account, which asks every time: a mail grant never covers it. The card shows everything
+     * that is sent, the Bcc too, and names the account as the user named it, not by its address (Zach's pick on
+     * November 14, 2026).
+     */
+    readonly kind: 'mail-send'
+    readonly plugin: string; readonly account: string
+    readonly to: readonly string[]; readonly cc: readonly string[]; readonly bcc: readonly string[]
+    readonly subject: string; readonly text: string
   }
   | {
     /** Promote and roll back move production: every production address of the project serves the deployment. */

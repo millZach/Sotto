@@ -691,6 +691,14 @@ msgstr "{more, plural, one {One more question in that reply.} other {# more ques
 msgid "{more, plural, one {Show {lines} more line} other {Show {lines} more lines}}"
 msgstr "{more, plural, one {Show {lines} more line} other {Show {lines} more lines}}"
 
+#: src/renderer/src/agents/ThreadSidebar.tsx
+msgid "{more, plural, one {Show {threads} more settled thread} other {Show {threads} more settled threads}}"
+msgstr "{more, plural, one {Show {threads} more settled thread} other {Show {threads} more settled threads}}"
+
+#: src/renderer/src/agents/ThreadSidebar.tsx
+msgid "{more, plural, one {Show {threads} more} other {Show {threads} more}}"
+msgstr "{more, plural, one {Show {threads} more} other {Show {threads} more}}"
+
 #: src/renderer/src/agents/ScreenshotInput.tsx
 msgid "{most, plural, one {Attach up to # screenshot at a time.} other {Attach up to # screenshots at a time.}}"
 msgstr "{most, plural, one {Attach up to # screenshot at a time.} other {Attach up to # screenshots at a time.}}"
@@ -2022,6 +2030,14 @@ msgstr "As Allow edits, but Codex’s own reviewer, a model run by OpenAI, answe
 #: src/renderer/src/agents/ThreadComposer.tsx
 msgid "Ask about your threads, or say what to start or send"
 msgstr "Ask about your threads, or say what to start or send"
+
+#: src/renderer/src/agents/mailGrantMenu.tsx
+msgid "Ask before this thread reads {name}"
+msgstr "Ask before this thread reads {name}"
+
+#: src/renderer/src/agents/mailGrantMenu.tsx
+msgid "Ask before Watcher reads {name}"
+msgstr "Ask before Watcher reads {name}"
 
 #. A permission mode: the agent asks before it acts.
 #: src/renderer/src/agents/permissionPresentation.tsx
@@ -7316,6 +7332,7 @@ msgid "Restore branch {sent}"
 msgstr "Restore branch {sent}"
 
 #: src/renderer/src/agents/SidebarFrame.tsx
+#: src/renderer/src/agents/threadMenu.tsx
 #: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Restore project"
 msgstr "Restore project"
@@ -7723,6 +7740,11 @@ msgstr "Settle thread"
 #: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Settled"
 msgstr "Settled"
+
+#. The tooltip of a settled thread's time in the sidebar. {settledWhen} is the date and time it was settled.
+#: src/renderer/src/agents/ThreadSidebar.tsx
+msgid "Settled {settledWhen}"
+msgstr "Settled {settledWhen}"
 
 #. A toast after the user settled a thread; {title} is the thread's name.
 #: src/renderer/src/agents/SettleToast.tsx
@@ -8317,6 +8339,14 @@ msgstr "Sotto could not start it or send it the brief. Nothing was sent."
 #: src/renderer/src/agents/DelegatedWork.tsx
 msgid "Sotto could not stop that detached run. It may still be running."
 msgstr "Sotto could not stop that detached run. It may still be running."
+
+#: src/renderer/src/agents/mailGrantMenu.tsx
+msgid "Sotto could not stop this thread reading {name}, so it can still read it. Try again."
+msgstr "Sotto could not stop this thread reading {name}, so it can still read it. Try again."
+
+#: src/renderer/src/agents/mailGrantMenu.tsx
+msgid "Sotto could not stop Watcher reading {name}, so it can still read it. Try again."
+msgstr "Sotto could not stop Watcher reading {name}, so it can still read it. Try again."
 
 #: src/renderer/src/agents/delegationWords.ts
 msgid "Sotto could not tell how it stood at {time}, when it last read it."
