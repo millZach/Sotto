@@ -75,14 +75,14 @@ describe('sending a message', () => {
   it('says the password was refused, and sends nothing', async () => {
     const { server, options } = await smtp()
     const result = await sendMail(SERVER, { address: ADDRESS, password: 'another made-up password' }, DRAFT, options)
-    expect(result).toEqual({ ok: false, reason: 'refused', said: '5.7.8 Username and Password not accepted' })
+    expect(result).toEqual({ ok: false, reason: 'refused' })
     expect(server.messages).toEqual([])
     expect(server.commands).not.toContain('DATA')
   })
 
   it('says the server is turning it away for now, apart from a refused password', async () => {
     const { server, options } = await smtp({ authSays: '454 4.7.0 Too many login attempts, please try again later.' })
-    expect(await sendMail(SERVER, SIGN_IN, DRAFT, options)).toEqual({ ok: false, reason: 'busy', said: '4.7.0 Too many login attempts, please try again later.' })
+    expect(await sendMail(SERVER, SIGN_IN, DRAFT, options)).toEqual({ ok: false, reason: 'busy' })
     const greeted = await smtp({ greeting: '421 4.7.0 Try again later, closing connection.' })
     expect(await sendMail(SERVER, SIGN_IN, DRAFT, greeted.options)).toMatchObject({ ok: false, reason: 'busy' })
     expect([server.messages, greeted.server.messages]).toEqual([[], []])
@@ -167,22 +167,48 @@ describe('sending a message', () => {
     expect(await sendMail(SERVER, SIGN_IN, DRAFT, web.options)).toEqual({ ok: false, reason: 'failed' })
   })
 
-  it('hands on none of a server’s words where they repeat the password, the address or the sign-in as it was sent', async () => {
+  it('hands on none of a server’s answer to the sign-in, which could repeat any part of the password', async () => {
+    const sent = Buffer.from(`\0${ADDRESS}\0${PASSWORD}`, 'utf8').toString('base64')
+    // Whole, cut short, or in pieces across the lines of an answer that repeats its finer code on each, as Gmail's do.
+    for (const authSays of [`535 5.7.8 Not accepted: ${PASSWORD}`, `501 5.5.2 Syntax error: AUTH PLAIN ${sent.slice(0, 20)}`,
+      `535-5.7.8 Not accepted: ${sent.slice(0, 12)}\r\n535 5.7.8 ${sent.slice(12)}`, `535 5.7.8 ${'Not accepted. '.repeat(40)}`]) {
+      const { options } = await smtp({ authSays })
+      const result = await sendMail(SERVER, SIGN_IN, DRAFT, options)
+      expect(result, authSays).toMatchObject({ ok: false })
+      expect(result, authSays).not.toHaveProperty('said')
+    }
+  })
+
+  it('hands on none of a server’s other words where they repeat the password, the address or the sign-in as it was sent', async () => {
     const sent = Buffer.from(`\0${ADDRESS}\0${PASSWORD}`, 'utf8').toString('base64')
     for (const echoed of [PASSWORD.toUpperCase(), ADDRESS, sent]) {
-      const { options } = await smtp({ authSays: `535 5.7.8 Not accepted: ${echoed} ${'x'.repeat(300)}` })
-      expect(await sendMail(SERVER, SIGN_IN, DRAFT, options), echoed).toEqual({ ok: false, reason: 'refused' })
+      const { options } = await smtp({ fromSays: `550 5.7.1 Not allowed: ${echoed} ${'x'.repeat(300)}` })
+      expect(await sendMail(SERVER, SIGN_IN, DRAFT, options), echoed).toEqual({ ok: false, reason: 'failed' })
     }
-    // An answer of several lines is joined with spaces. A sign-in or a password in pieces across them is still found.
+    // An answer of several lines, each starting with the same finer code as Gmail's do, carrying a secret in pieces.
     for (const [first, second] of [[sent.slice(0, 12), sent.slice(12)], [PASSWORD.slice(0, 5), PASSWORD.slice(5)]] as const) {
-      const { options } = await smtp({ authSays: `535-5.7.8 Not accepted: ${first}\r\n535 ${second}` })
-      expect(await sendMail(SERVER, SIGN_IN, DRAFT, options), first).toEqual({ ok: false, reason: 'refused' })
+      const { options } = await smtp({ fromSays: `550-5.7.1 Not allowed: ${first}\r\n550 5.7.1 ${second}` })
+      expect(await sendMail(SERVER, SIGN_IN, DRAFT, options), first).toEqual({ ok: false, reason: 'failed' })
     }
-    // Other words are handed on, cut to a line.
-    const { options } = await smtp({ authSays: `535 5.7.8 ${'Not accepted. '.repeat(40)}` })
+    // A password with a control character in it is found in words that come back without one.
+    const odd = 'abcd\u0001efgh-made-up'
+    const controlled = await startFakeSmtpServer({ address: ADDRESS, password: odd, messageSays: '552 5.3.4 Refused for abcdefgh-made-up' })
+    servers.push(controlled)
+    expect(await sendMail(SERVER, { address: ADDRESS, password: odd }, DRAFT, { connect: controlled.connect })).toEqual({ ok: false, reason: 'failed' })
+    // Other words are handed on, a finer code repeated on each line said once, cut to a line.
+    const split = await smtp({ messageSays: '552-5.3.4 Message size exceeds\r\n552 5.3.4 fixed limit' })
+    expect(await sendMail(SERVER, SIGN_IN, DRAFT, split.options)).toEqual({ ok: false, reason: 'failed', said: '5.3.4 Message size exceeds fixed limit' })
+    const { options } = await smtp({ fromSays: `550 5.7.1 ${'Not allowed. '.repeat(40)}` })
     const result = await sendMail(SERVER, SIGN_IN, DRAFT, options)
-    expect(result).toMatchObject({ ok: false, reason: 'refused' })
+    expect(result).toMatchObject({ ok: false, reason: 'failed' })
     expect(result.ok === false && result.said?.length).toBe(200)
+  })
+
+  it('hands no message to a server that has already said more than it was asked, so its answer is not misread', async () => {
+    // The extra line would be read as the answer to the message: a no for a message the server may then take.
+    const { server, options } = await smtp({ dataSays: '354 Go ahead\r\n554 5.0.0 Stale answer' })
+    expect(await sendMail(SERVER, SIGN_IN, DRAFT, options)).toEqual({ ok: false, reason: 'failed' })
+    expect(server.messages).toEqual([])
   })
 })
 
@@ -225,9 +251,10 @@ describe('what is not sent at all', () => {
 
 describe('a message as it is written', () => {
   it('takes one address and nothing a server would read as more', () => {
-    for (const good of ['ann@example.com', 'ann.b+tag@mail.example.org', "o'neil@example.co.uk"]) expect(isMailAddress(good), good).toBe(true)
+    for (const good of ['ann@example.com', 'ann.b+tag@mail.example.org', "o'neil@example.co.uk", `${'a'.repeat(64)}@example.com`]) expect(isMailAddress(good), good).toBe(true)
     for (const bad of ['', 'ann', 'ann@', '@example.com', 'ann@example', 'ann@@example.com', 'ann @example.com', 'ann@example.com ', '<ann@example.com>', 'ann@exam ple.com', 'ann@example.com,ben@example.com',
-      'ann@example.com\n', 'ann"@example.com', 'ann@-example.com', 'zoë@example.com', `${'a'.repeat(250)}@example.com`]) expect(isMailAddress(bad), JSON.stringify(bad)).toBe(false)
+      'ann@example.com\n', 'ann"@example.com', 'ann@-example.com', 'zoë@example.com', `${'a'.repeat(250)}@example.com`,
+      '.ann@example.com', 'ann.@example.com', 'ann..b@example.com', `${'a'.repeat(65)}@example.com`]) expect(isMailAddress(bad), JSON.stringify(bad)).toBe(false)
   })
 
   it('writes a short plain subject as it is, and anything else as encoded words that read back the same', () => {

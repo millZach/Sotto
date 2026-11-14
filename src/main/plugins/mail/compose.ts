@@ -25,10 +25,12 @@ const ADDRESS_MAX = 254
 /**
  * One address and nothing else: a name, an at sign and a host with a dot in it, in ASCII, with none of the marks a
  * mail server reads as more than an address (a space, a comma, a bracket, a quote, a line end). It is written into
- * a command and a header line, so anything that could end one is refused here, not escaped.
+ * a command and a header line, so anything that could end one is refused here, not escaped. The name before the at
+ * sign is at most 64 characters, and a dot in it sits between two others (RFC 5321 §4.1.2, §4.5.3.1.1).
  */
-const ADDRESS = /^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+$/u
-export const isMailAddress = (text: string): boolean => text.length <= ADDRESS_MAX && ADDRESS.test(text)
+const ADDRESS = /^[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]+)*@[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)+$/u
+const LOCAL_MAX = 64
+export const isMailAddress = (text: string): boolean => text.length <= ADDRESS_MAX && text.indexOf('@') <= LOCAL_MAX && ADDRESS.test(text)
 
 /**
  * Everyone a draft goes to, each once, whichever line named them first. A host is the same host however it is

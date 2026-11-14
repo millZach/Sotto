@@ -75,9 +75,11 @@ export class SmtpConnection {
 
   /**
    * Hands a message over, once the server has said to go on. Whether it took it is its next answer. This throws
-   * when the connection had already ended, and then nothing of the message was sent.
+   * when the connection had already ended, or when the server has already said more than it was asked, since that
+   * would be read as its answer to the message; then nothing of the message was sent.
    */
   hand(bytes: Buffer): void {
+    if (this.buffered.length > 0) throw this.broken('The server answered before it was asked.')
     this.write(smtpData(bytes))
   }
 

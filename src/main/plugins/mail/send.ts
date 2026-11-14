@@ -40,8 +40,15 @@ export interface MailSendOptions extends MailOptions {
 }
 
 const SAID_MAX = 200
-/** A server's words on one line, without anything that is not a letter a person reads. */
-const worded = (reply: SmtpReply): string => [...reply.lines.join(' ')].filter(character => character.charCodeAt(0) >= 0x20 && character.charCodeAt(0) !== 0x7f).join('').trim()
+/** Text without anything that is not a letter a person reads. */
+const readable = (text: string): string => [...text].filter(character => character.charCodeAt(0) >= 0x20 && character.charCodeAt(0) !== 0x7f).join('')
+/** The finer code a server may put at the start of every line of an answer, such as `5.7.8` (RFC 3463). */
+const ENHANCED_CODE = /^[245]\.\d{1,3}\.\d{1,3}(?:\s+|$)/u
+/**
+ * A server's words on one line. A finer code repeated at the start of each later line is said once, so the lines
+ * join as the words they are and nothing the server put between them splits what they carry.
+ */
+const worded = (reply: SmtpReply): string => readable(reply.lines.map((line, index) => index === 0 ? line : line.replace(ENHANCED_CODE, '')).join(' ')).trim()
 const failure = (reason: MailSendFailure['reason'], said?: string, recipient?: string): MailSendFailure =>
   ({ ok: false, reason, ...(said ? { said } : {}), ...(recipient ? { recipient } : {}) })
 /** A code that says not now (4xx) is `busy`; anything else that is not a yes is `otherwise`. */
@@ -63,10 +70,12 @@ export async function sendMail(server: MailServer, signIn: MailSignIn, draft: Ma
   if (!/^[A-Za-z0-9._-]{1,64}$/u.test(id)) return failure('input', 'The message could not be named.')
   const result = await inSession(server, signIn, draft, id, options)
   if (result.ok || result.said === undefined) return result
-  // A server can repeat what it was sent. Its words are dropped where they hold the password or the address, as
-  // typed or as the sign-in sent them, wherever in them that is. They are looked through without their spaces, since
-  // an answer of several lines is joined by them and could carry a secret in pieces. Only then are they cut to a line.
-  const squeezed = (text: string): string => text.toLowerCase().replace(/\s+/gu, '')
+  // A server can repeat what it was sent. Its answer to the sign-in, the one command that carries the password, is
+  // never handed on: the reason says enough. Any other words are dropped where they hold the password or the address,
+  // as typed or as the sign-in sent them, wherever in them that is. Both sides are looked through without spaces or
+  // control characters, since an answer of several lines is joined by spaces and could carry a secret in pieces.
+  // Only then are they cut to a line.
+  const squeezed = (text: string): string => readable(text).toLowerCase().replace(/\s+/gu, '')
   const said = squeezed(result.said)
   if ([signIn.password, signIn.address, plainAuth(signIn)].some(sent => said.includes(squeezed(sent)))) return failure(result.reason, undefined, result.recipient)
   return { ...result, said: result.said.slice(0, SAID_MAX) }
@@ -94,7 +103,8 @@ async function inSession(server: MailServer, signIn: MailSignIn, draft: MailDraf
     if (hello.code !== 250) return turnedAway(hello, 'failed')
     if (!hello.lines.some(line => { const words = line.toUpperCase().split(/[ =]+/u); return words[0] === 'AUTH' && words.includes('PLAIN') })) return failure('failed', 'The mail server does not take a password on this connection.')
     const auth = await smtp.command(`AUTH PLAIN ${plainAuth(signIn)}`)
-    if (auth.code !== 235) return turnedAway(auth, auth.code === 535 || auth.code === 534 || auth.code === 530 ? 'refused' : 'failed')
+    // Its words are not kept: they answer the command that carried the password, and could repeat any part of it.
+    if (auth.code !== 235) return failure(auth.code >= 400 && auth.code < 500 ? 'busy' : auth.code === 535 || auth.code === 534 || auth.code === 530 ? 'refused' : 'failed')
     const from = await smtp.command(`MAIL FROM:<${signIn.address}>`)
     if (from.code !== 250) return turnedAway(from, 'failed')
     const recipients = draftRecipients(draft)

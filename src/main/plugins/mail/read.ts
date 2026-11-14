@@ -1,3 +1,4 @@
+import { isIP } from 'node:net'
 import type { Duplex } from 'node:stream'
 import { connect as connectTls } from 'node:tls'
 import { atomOf, IMAP_LITERAL_MAX, ImapClosed, ImapConnection, ImapProtocolError, listOf, textOf, type ImapAnswer, type ImapArg, type ImapItem } from './imapWire'
@@ -98,8 +99,9 @@ export type MailOpened = { readonly ok: true; readonly mailbox: string; readonly
 /** TLS to a mail server from the first byte, which a read and a send both use. */
 export const mailOverTls: MailConnect = (server, signal) => new Promise((resolve, reject) => {
   if (signal.aborted) return reject(new ImapClosed())
-  // The certificate is checked against the server's name, as Node does unless told otherwise.
-  const socket = connectTls({ host: server.host, port: server.port })
+  // The certificate is checked against the server's name, as Node does unless told otherwise. The name is also sent
+  // first (SNI), so a server with several names shows the certificate for this one. SNI carries names, never addresses.
+  const socket = connectTls({ host: server.host, port: server.port, ...(isIP(server.host) === 0 ? { servername: server.host } : {}) })
   const stop = (): void => {
     socket.destroy()
     reject(new ImapClosed())
