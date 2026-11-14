@@ -1,5 +1,6 @@
 import { connect, createServer, type Socket } from 'node:net'
 import type { Duplex } from 'node:stream'
+import { createSecureContext, TLSSocket } from 'node:tls'
 
 /**
  * A mail server for tests: enough of IMAP (RFC 3501) to sign in, list mailboxes, open one, search it and fetch from
@@ -44,6 +45,12 @@ export interface FakeImapOptions {
   readonly dropAt?: string
   /** Makes it claim a piece of a message this many bytes long. */
   readonly claimedBytes?: number
+  /**
+   * Offers STARTTLS, as Proton Mail Bridge does, and turns the connection into TLS with this key and certificate when
+   * asked. `unasked` is sent in the clear straight after its yes, as a server in the middle could, or with `late` a
+   * moment later, so it arrives in a read of its own.
+   */
+  readonly startTls?: { readonly key: string; readonly cert: string; readonly unasked?: string; readonly late?: boolean } | undefined
 }
 export interface FakeImapServer {
   /** The port it listens on, on this computer, without TLS. */
@@ -153,7 +160,9 @@ export async function startFakeImapServer(options: FakeImapOptions): Promise<Fak
     let need = -1
     let signedIn = false
     let open: FakeMailbox | undefined
-    const say = (...lines: readonly (string | Buffer)[]): void => { if (!socket.destroyed) socket.write(cat(...lines)) }
+    let stream: Duplex = socket
+    let secure = false
+    const say = (...lines: readonly (string | Buffer)[]): void => { if (!socket.destroyed) stream.write(cat(...lines)) }
 
     /** A fetch of messages named by their own numbers (`UID FETCH 12,13`) or by their places in the mailbox (`FETCH 2:4`). */
     const fetch = (tag: string, set: string, items: string, byUid: boolean): void => {
@@ -197,7 +206,29 @@ export async function startFakeImapServer(options: FakeImapOptions): Promise<Fak
       const rest = uid ? more.slice(1) : more
       commands.push(verb === 'LOGIN' ? verb : [verb, ...rest].join(' '))
       if (options.dropAt === verb) return void socket.destroy()
-      if (verb === 'CAPABILITY') return say(`* CAPABILITY IMAP4rev1 ${(options.capabilities ?? ['UIDPLUS', 'SPECIAL-USE']).join(' ')}\r\n${tag} OK Thats all she wrote!\r\n`)
+      if (verb === 'CAPABILITY') return say(`* CAPABILITY IMAP4rev1 ${[...options.capabilities ?? ['UIDPLUS', 'SPECIAL-USE'], ...options.startTls && !secure ? ['STARTTLS'] : []].join(' ')}\r\n${tag} OK Thats all she wrote!\r\n`)
+      if (verb === 'STARTTLS' && options.startTls && !secure) {
+        say(`${tag} OK Begin TLS negotiation now\r\n`)
+        const { unasked, late, key, cert } = options.startTls
+        // What follows is TLS: nothing more is read in the clear.
+        socket.off('data', heard)
+        socket.pause()
+        secure = true
+        buffer = Buffer.alloc(0)
+        const wrap = (): void => {
+          const wrapped = new TLSSocket(socket, { isServer: true, secureContext: createSecureContext({ key, cert }) })
+          wrapped.on('error', () => undefined)
+          wrapped.on('data', heard)
+          stream = wrapped
+        }
+        // Late, the words come in a read of their own, before this side of TLS has begun.
+        if (unasked && late) setTimeout(() => { if (!socket.destroyed) socket.write(unasked); wrap() }, 50)
+        else {
+          if (unasked) say(unasked)
+          wrap()
+        }
+        return
+      }
       if (verb === 'LOGOUT') {
         say(`* BYE Logging out\r\n${tag} OK Bye\r\n`)
         return void socket.end()
@@ -222,7 +253,7 @@ export async function startFakeImapServer(options: FakeImapOptions): Promise<Fak
       return say(`${tag} BAD Unknown command\r\n`)
     }
 
-    socket.on('data', (chunk: Buffer) => {
+    const heard = (chunk: Buffer): void => {
       buffer = Buffer.concat([buffer, chunk])
       for (;;) {
         if (need >= 0) {
@@ -245,9 +276,13 @@ export async function startFakeImapServer(options: FakeImapOptions): Promise<Fak
         }
         const whole = [...pieces, line]
         pieces = []
+        const before = stream
         handle(wordsOf(whole))
+        // A command that turned the connection to TLS ends what is read in the clear.
+        if (stream !== before) return
       }
-    })
+    }
+    socket.on('data', heard)
     if (options.greeting !== null) say(`${options.greeting ?? '* OK Made-up mail server ready'}\r\n`)
   })
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))

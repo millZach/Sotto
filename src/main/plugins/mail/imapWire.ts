@@ -45,6 +45,11 @@ export class ImapFrames {
     this.buffer = this.buffer.length === 0 ? chunk : Buffer.concat([this.buffer, chunk])
   }
 
+  /** Whether anything has arrived that has not been read as an answer. */
+  get pending(): boolean {
+    return this.buffer.length > 0 || this.parts.length > 0 || this.literal >= 0
+  }
+
   /** The next whole answer, or null while more has to arrive. */
   next(): (string | Buffer)[] | null {
     for (;;) {
@@ -193,19 +198,41 @@ export class ImapConnection {
   private wake: (() => void) | null = null
   private tags = 0
   private readonly ended = (): void => this.fail(new ImapClosed())
+  private readonly heard = (chunk: Buffer): void => {
+    this.received += chunk.length
+    if (this.received > SESSION_MAX) return this.fail(new ImapProtocolError('The server sent too much.'))
+    this.frames.add(chunk)
+    this.wake?.()
+  }
 
   constructor(private readonly socket: Duplex, private readonly signal: AbortSignal) {
-    socket.on('data', (chunk: Buffer) => {
-      this.received += chunk.length
-      if (this.received > SESSION_MAX) return this.fail(new ImapProtocolError('The server sent too much.'))
-      this.frames.add(chunk)
-      this.wake?.()
-    })
+    socket.on('data', this.heard)
     socket.on('error', this.ended)
     socket.on('end', this.ended)
     socket.on('close', this.ended)
     if (signal.aborted) this.ended()
     else signal.addEventListener('abort', this.ended, { once: true })
+  }
+
+  /**
+   * Hands the connection back once the server has said yes to STARTTLS, to be made TLS. Anything the server sent
+   * after that yes came in the clear and was not asked for, as a server in the middle could add it, so it is never
+   * read as an answer: the connection ends instead. This object reads nothing more.
+   */
+  release(): Duplex {
+    if (this.failure) throw this.failure
+    if (this.frames.pending) {
+      const error = new ImapProtocolError('The server answered before it was asked.')
+      this.fail(error)
+      throw error
+    }
+    this.socket.off('data', this.heard)
+    this.socket.off('error', this.ended)
+    this.socket.off('end', this.ended)
+    this.socket.off('close', this.ended)
+    this.signal.removeEventListener('abort', this.ended)
+    this.failure = new ImapClosed()
+    return this.socket
   }
 
   /** What the server says first. */

@@ -1,5 +1,6 @@
 import { connect, createServer, type Socket } from 'node:net'
 import type { Duplex } from 'node:stream'
+import { createSecureContext, TLSSocket } from 'node:tls'
 
 /**
  * A mail server that takes mail, for tests: enough of SMTP (RFC 5321) to greet, take a sign-in, a sender, recipients
@@ -28,6 +29,12 @@ export interface FakeSmtpOptions {
   readonly dropAt?: string
   /** Answers with a code and no words wherever its answer is one line, as SMTP lets a server do. */
   readonly terse?: boolean
+  /**
+   * Offers STARTTLS, as Proton Mail Bridge does, and turns the connection into TLS with this key and certificate when
+   * asked. `unasked` is sent in the clear straight after its yes, as a server in the middle could, or with `late` a
+   * moment later, so it arrives in a read of its own.
+   */
+  readonly startTls?: { readonly key: string; readonly cert: string; readonly unasked?: string; readonly late?: boolean } | undefined
 }
 export interface FakeSmtpMessage {
   /** Who the server was told the message is from and for: the envelope, which is where a Bcc is. */
@@ -59,7 +66,9 @@ export async function startFakeSmtpServer(options: FakeSmtpOptions): Promise<Fak
     sockets.add(socket)
     socket.on('close', () => sockets.delete(socket))
     socket.on('error', () => undefined)
-    const say = (text: string): void => { if (!socket.destroyed) socket.write(`${options.terse ? text.replace(/^(\d{3}) .*$/gmu, '$1') : text}\r\n`) }
+    let stream: Duplex = socket
+    let secure = false
+    const say = (text: string): void => { if (!socket.destroyed) stream.write(`${options.terse ? text.replace(/^(\d{3}) .*$/gmu, '$1') : text}\r\n`) }
     let buffer = Buffer.alloc(0)
     let signedIn = false
     let from: string | null = null
@@ -70,8 +79,29 @@ export async function startFakeSmtpServer(options: FakeSmtpOptions): Promise<Fak
       commands.push(word === 'AUTH' ? line.split(' ').slice(0, 2).join(' ') : line)
       if (options.dropAt === word) return void socket.destroy()
       if (word === 'EHLO') {
-        const offers = options.offers ?? ['AUTH LOGIN PLAIN', '8BITMIME']
+        const offers = [...options.offers ?? ['AUTH LOGIN PLAIN', '8BITMIME'], ...options.startTls && !secure ? ['STARTTLS'] : []]
         say(['250-made-up.mail.example', ...offers.map((offer, index) => `250${index === offers.length - 1 ? ' ' : '-'}${offer}`)].join('\r\n'))
+      } else if (word === 'STARTTLS' && options.startTls && !secure) {
+        say('220 2.0.0 Ready to start TLS')
+        const { unasked, late, key, cert } = options.startTls
+        // What follows is TLS: nothing more is read in the clear, and the client says EHLO again.
+        socket.off('data', heard)
+        socket.pause()
+        secure = true
+        buffer = Buffer.alloc(0)
+        signedIn = false
+        const wrap = (): void => {
+          const wrapped = new TLSSocket(socket, { isServer: true, secureContext: createSecureContext({ key, cert }) })
+          wrapped.on('error', () => undefined)
+          wrapped.on('data', heard)
+          stream = wrapped
+        }
+        // Late, the words come in a read of their own, before this side of TLS has begun.
+        if (unasked && late) setTimeout(() => { if (!socket.destroyed) socket.write(`${unasked}\r\n`); wrap() }, 50)
+        else {
+          if (unasked) say(unasked)
+          wrap()
+        }
       } else if (word === 'AUTH') {
         if (options.authSays) return say(options.authSays)
         signedIn = line === `AUTH PLAIN ${good}`
@@ -98,7 +128,7 @@ export async function startFakeSmtpServer(options: FakeSmtpOptions): Promise<Fak
         socket.end()
       } else say('502 5.5.1 Unrecognized command')
     }
-    socket.on('data', (chunk: Buffer) => {
+    const heard = (chunk: Buffer): void => {
       buffer = Buffer.concat([buffer, chunk])
       for (;;) {
         if (taking) {
@@ -120,9 +150,13 @@ export async function startFakeSmtpServer(options: FakeSmtpOptions): Promise<Fak
         if (end < 0) return
         const line = buffer.toString('latin1', 0, end)
         buffer = buffer.subarray(end + 2)
+        const before = stream
         handle(line)
+        // A command that turned the connection to TLS ends what is read in the clear.
+        if (stream !== before) return
       }
-    })
+    }
+    socket.on('data', heard)
     if (options.greeting !== null) say(options.greeting ?? '220 made-up.mail.example ESMTP ready')
   })
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))

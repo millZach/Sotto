@@ -40,14 +40,15 @@ export class SmtpConnection {
   private failure: Error | null = null
   private wake: (() => void) | null = null
   private readonly ended = (): void => this.fail(new SmtpClosed())
+  private readonly heard = (chunk: Buffer): void => {
+    this.received += chunk.length
+    if (this.received > SESSION_MAX) return this.fail(new SmtpProtocolError('The server sent too much.'))
+    this.buffered = Buffer.concat([this.buffered, chunk])
+    this.wake?.()
+  }
 
   constructor(private readonly socket: Duplex, private readonly signal: AbortSignal) {
-    socket.on('data', (chunk: Buffer) => {
-      this.received += chunk.length
-      if (this.received > SESSION_MAX) return this.fail(new SmtpProtocolError('The server sent too much.'))
-      this.buffered = Buffer.concat([this.buffered, chunk])
-      this.wake?.()
-    })
+    socket.on('data', this.heard)
     socket.on('error', this.ended)
     socket.on('end', this.ended)
     socket.on('close', this.ended)
@@ -81,6 +82,23 @@ export class SmtpConnection {
   hand(bytes: Buffer): void {
     if (this.buffered.length > 0) throw this.broken('The server answered before it was asked.')
     this.write(smtpData(bytes))
+  }
+
+  /**
+   * Hands the connection back once the server has said yes to STARTTLS, to be made TLS. Anything the server sent
+   * after that yes came in the clear and was not asked for, as a server in the middle could add it, so it is never
+   * read as an answer: the connection ends instead. This object reads nothing more.
+   */
+  release(): Duplex {
+    if (this.failure) throw this.failure
+    if (this.buffered.length > 0) throw this.broken('The server answered before it was asked.')
+    this.socket.off('data', this.heard)
+    this.socket.off('error', this.ended)
+    this.socket.off('end', this.ended)
+    this.socket.off('close', this.ended)
+    this.signal.removeEventListener('abort', this.ended)
+    this.failure = new SmtpClosed()
+    return this.socket
   }
 
   /** Ends the connection. One that is still good says goodbye first; nothing waits for the server's answer. */
