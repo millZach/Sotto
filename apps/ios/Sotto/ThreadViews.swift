@@ -702,6 +702,8 @@ private final class FollowBox {
     /// How near the reply box the end of the conversation must be to count as reading at the bottom.
     static let slack: CGFloat = 56
     var sentinel: CGFloat = 0
+    /// Where UIKit draws the end now, which is what reaches the screen, for the journeys' probe.
+    var drawnEnd: () -> CGFloat? = { nil }
     var dockTop: CGFloat = .greatestFiniteMagnitude
     var barBottom: CGFloat = 0
     var heroTop: CGFloat = .greatestFiniteMagnitude
@@ -985,7 +987,7 @@ private struct Conversation: View {
             }
             entries(thread: thread, state: state, detail: detail, rows: rows, pending: pending, scroll: scroll)
             Color.clear.frame(height: 1).id(Self.end).background(sentinelReader(scroll))
-                .background(EndDrawn { [follow] drawn in endDrawn(drawn, scroll, read: follow.sentinel) })
+                .background(EndDrawn(follow: follow) { [follow] drawn in endDrawn(drawn, scroll, read: follow.sentinel) })
             #if DEBUG
             if SendWatch.isOn { SendWatchAnchor().frame(width: 0, height: 0) }
             if EndTrace.isOn { EndTraceAnchor().frame(width: 0, height: 0) }
@@ -1266,8 +1268,13 @@ private struct Conversation: View {
 
 /// Reports where UIKit draws the conversation's end, once each pass in which the page scrolled or changed height is over.
 private struct EndDrawn: UIViewRepresentable {
+    let follow: FollowBox
     let drawn: (CGFloat) -> Void
-    func makeUIView(context: Context) -> Marker { Marker() }
+    func makeUIView(context: Context) -> Marker {
+        let marker = Marker()
+        follow.drawnEnd = { [weak marker] in marker?.place }
+        return marker
+    }
     func updateUIView(_ view: Marker, context: Context) { view.drawn = drawn }
 
     final class Marker: UIView {
@@ -1288,14 +1295,14 @@ private struct EndDrawn: UIViewRepresentable {
             watches = [page.observe(\.contentOffset) { page, _ in changed(page) },
                        page.observe(\.contentSize) { page, _ in changed(page) }]
         }
+        var place: CGFloat? { window == nil ? nil : convert(CGPoint(x: 0, y: bounds.maxY), to: nil).y }
         private func report() {
             guard !pending else { return }
             pending = true
             DispatchQueue.main.async { [weak self] in
                 guard let self else { return }
                 pending = false
-                guard window != nil else { return }
-                drawn(convert(CGPoint(x: 0, y: bounds.maxY), to: nil).y)
+                if let place { drawn(place) }
             }
         }
         private func page() -> UIScrollView? {
@@ -1408,7 +1415,7 @@ private struct EndProbe: View {
     let follow: FollowBox
     var body: some View {
         TimelineView(.periodic(from: .now, by: 0.1)) { _ in
-            let words = [follow.sentinel, min(follow.dockTop, 99_999), follow.barBottom].map { String(Int($0.rounded())) }
+            let words = [follow.drawnEnd() ?? follow.sentinel, min(follow.dockTop, 99_999), follow.barBottom].map { String(Int($0.rounded())) }
                 .joined(separator: " ")
             Text(verbatim: words).font(.system(size: 2)).opacity(0.02).allowsHitTesting(false)
                 .accessibilityIdentifier("thread-end-probe").accessibilityLabel(Text(verbatim: words))
