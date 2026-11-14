@@ -2032,7 +2032,8 @@ private struct WatcherPermissionSheet: View {
 
 // MARK: - Watching
 
-/// What the last Watch or Stop watching press did, for eight seconds, with Undo, over that thread's reply box (`scope`).
+/// What the last Watch or Stop watching press did, for eight seconds or until swiped away, with Undo, over that thread's
+/// reply box (`scope`).
 /// It never takes focus: VoiceOver hears it, and Watch on the thread's page is the way back once it has gone.
 struct WatchToast: View {
     @EnvironmentObject var model: AppModel
@@ -2057,6 +2058,7 @@ struct WatchToast: View {
                 .padding(.trailing, Space.s2)
                 .padding(.vertical, Space.s1)
                 .glass(in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous), strong: true)
+                .swipeAway { model.dismissWatchNotice(notice.id) }
                 .transition(reduceMotion ? AnyTransition.opacity : AnyTransition.move(edge: .bottom).combined(with: .opacity))
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("watch-toast")

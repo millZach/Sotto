@@ -1439,6 +1439,8 @@ struct RailAsk: Equatable {
     /// Set while `feedback` only says a thing worked, so it leaves by itself and with the page; new for each confirmation.
     @Published private(set) var passing: UUID?
     private var passingShown: UUID?
+    /// How long the passing confirmation stays once shown: longer when it offers Undo, so there is time to reach it.
+    private var passingFor: UInt64 = 5_000_000_000
     private var feedbackExpiry: Task<Void, Never>?
     /// Answers whose own receipt the computer confirmed, as `host/thread/request`, so a Threads card can say Answered
     /// only for those. An answer whose request left without that receipt is not in here.
@@ -4637,16 +4639,16 @@ struct RailAsk: Equatable {
         feedback = words; feedbackOperations = operations
     }
     /// Says a thing worked, as the desktop's toasts do: for five seconds once a page shows it (`confirmationShown`), or
-    /// until the user leaves the page or a newer message replaces it.
-    private func confirm(_ words: String) {
-        feedback = words; passing = UUID()
+    /// until the user leaves the page or a newer message replaces it. One that offers Undo stays eight.
+    private func confirm(_ words: String, seconds: UInt64 = 5) {
+        feedback = words; passing = UUID(); passingFor = seconds * 1_000_000_000
     }
-    /// A banner shows confirmation `id`: the first one starts its five seconds and is told to announce it.
+    /// A banner shows confirmation `id`: the first one starts its time and is told to announce it.
     func confirmationShown(_ id: UUID) -> Bool {
         guard passing == id, passingShown != id else { return false }
         passingShown = id
         feedbackExpiry = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            try? await Task.sleep(nanoseconds: self?.passingFor ?? 5_000_000_000)
             guard !Task.isCancelled, self?.passing == id else { return }
             withAnimation(.easeOut(duration: 0.25)) { self?.feedback = nil }
         }
@@ -4684,8 +4686,9 @@ struct RailAsk: Equatable {
            (thread.workspaceSettledAt?.isEmpty == false) == (item.kind == "settle") {
             try forgetMarker(item.id)
             if feedback == nil || feedbackOperations.contains(item.id) {
-                feedback = item.kind == "settle" ? String(localized: "Moved to Settled.", comment: "Said once the computer confirms the user settled a thread")
-                    : String(localized: "Restored.", comment: "Said once the computer confirms the user took a thread off the Settled shelf")
+                confirm(item.kind == "settle" ? String(localized: "Moved to Settled.", comment: "Said once the computer confirms the user settled a thread")
+                    : String(localized: "Restored.", comment: "Said once the computer confirms the user took a thread off the Settled shelf"), seconds: 8)
+                // After `confirm`, whose new words clear the last Undo.
                 shelfUndo = ShelfUndo(ref: ThreadRef(hostID: item.hostID, threadID: item.threadID), action: item.kind == "settle" ? .restore : .settle)
             }
             return
