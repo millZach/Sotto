@@ -208,6 +208,12 @@ describe('what each kind of server says about its models', () => {
     expect(ok(await checkOwnServer(server.address, undefined))).toMatchObject({ kind: 'lmstudio', models: [{ id: 'llava', context: 4_096, images: true }] })
   })
 
+  it('keeps the context the model list gave when an API answers LM Studio’s route with that same list', async () => {
+    const same = list({ id: 'hosted', owned_by: 'someone', context_length: 1_048_576 })
+    const server = await fake({ 'GET /v1/models': same, 'GET /api/v1/models': same })
+    expect(ok(await checkOwnServer(server.address, undefined)).models).toMatchObject([{ id: 'hosted', context: 1_048_576 }])
+  })
+
   it('reads llama.cpp’s running context, template and vision from /props, and its trained context from the list without them', async () => {
     const server = await fake({
       'GET /v1/models': list({ id: 'gpt-oss-20b', owned_by: 'llamacpp', meta: { n_ctx_train: 131_072 } }),
