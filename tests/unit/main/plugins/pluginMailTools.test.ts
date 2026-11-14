@@ -70,6 +70,7 @@ function tools(options: {
       providerOf: threadId => threadId === 'watcher' ? 'Codex' : 'Claude Code',
       search: async (account, search) => { searched.push({ account: account.name, search }); options.whileReading?.(); return options.search ?? FOUND },
       open: async (account, id) => { opened.push({ account: account.name, id }); options.whileReading?.(); return options.open ?? OPENED },
+      sendTrouble: () => null, send: never,
     } }),
   })
   servers.push(server)

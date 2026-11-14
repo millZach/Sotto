@@ -3,8 +3,9 @@ import { isMailPlugin, pluginAccountAdmits, type AccountPluginId, type GitHubSig
 import { PluginSecretLocked } from './accounts'
 import { commentOnGitHub, describeGitHubIssue, openGitHubIssue, setGitHubIssueState } from './github/changes'
 import { readGitHub } from './github/read'
-import { MAIL_SERVERS } from './mail/accounts'
+import { MAIL_SEND_SERVERS, MAIL_SERVERS } from './mail/accounts'
 import { openMail, searchMail, type MailOptions, type MailServer, type MailSignIn } from './mail/read'
+import { sendMail } from './mail/send'
 import type { PluginChangeAnswer, PluginChangeWait } from './pendingChanges'
 import type { PluginToolHandlers, SecretTrouble } from './pluginTools'
 import { cancelVercelDeployment, describeVercelDeployment, moveVercelProduction } from './vercel/changes'
@@ -71,11 +72,14 @@ export function pluginToolHandlers(wiring: PluginToolWiring): PluginToolHandlers
     }
   }
   const { mail } = wiring
-  /** A mail account's server, address and password for one read. The password is read from the credential store and goes to that server alone. */
-  const mailSignIn = (account: PluginAccount): { readonly server: MailServer; readonly signIn: MailSignIn } | SecretTrouble => {
+  /**
+   * A mail account's servers, address and password for one read or send. The password is read from the credential
+   * store and goes to the account's own servers alone.
+   */
+  const mailSignIn = (account: PluginAccount): { readonly server: MailServer; readonly sendServer: MailServer; readonly signIn: MailSignIn } | SecretTrouble => {
     if (!isMailPlugin(account.plugin) || !account.address) return 'no-secret'
     const read = secretOf(account.id)
-    return 'reason' in read ? read.reason : { server: MAIL_SERVERS[account.plugin], signIn: { address: account.address, password: read.secret } }
+    return 'reason' in read ? read.reason : { server: MAIL_SERVERS[account.plugin], sendServer: MAIL_SEND_SERVERS[account.plugin], signIn: { address: account.address, password: read.secret } }
   }
   return {
     ...(mail ? { mail: {
@@ -86,6 +90,12 @@ export function pluginToolHandlers(wiring: PluginToolWiring): PluginToolHandlers
       providerOf: mail.providerOf,
       search: async (account, search) => { const reach = mailSignIn(account); return typeof reach === 'string' ? reach : searchMail(reach.server, reach.signIn, search, mail.options) },
       open: async (account, id) => { const reach = mailSignIn(account); return typeof reach === 'string' ? reach : openMail(reach.server, reach.signIn, { id }, mail.options) },
+      sendTrouble: account => { const reach = mailSignIn(account); return typeof reach === 'string' ? reach : null },
+      // A send goes to the account's sending server, with the same sign-in as a read.
+      send: async (account, draft) => {
+        const reach = mailSignIn(account)
+        return typeof reach === 'string' ? reach : sendMail(reach.sendServer, reach.signIn, draft, mail.options)
+      },
     } } : {}),
     admits: wiring.admits, gitHubSignIn: wiring.gitHubSignIn, record: wiring.record, isWatcher: wiring.isWatcher, askChange: wiring.askChange,
     readGitHub: (path, query) => readGitHub(gh, path, query, signal),

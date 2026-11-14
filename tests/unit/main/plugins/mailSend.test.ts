@@ -221,7 +221,7 @@ describe('what is not sent at all', () => {
       [{ to: ['ann@example.com\r\nBcc: eve@example.net'] }, /one plain address/u],
       [{ cc: ['ann@example.com, eve@example.net'] }, /one plain address/u],
       [{ bcc: ['ann@localhost'] }, /one plain address/u],
-      [{ to: Array.from({ length: MAIL_RECIPIENTS_MAX + 1 }, (_value, index) => `person${index}@example.com`) }, /at most 20 addresses/u],
+      [{ to: Array.from({ length: MAIL_RECIPIENTS_MAX + 1 }, (_value, index) => `person${index}@example.com`) }, new RegExp(`at most ${MAIL_RECIPIENTS_MAX} addresses`, 'u')],
       [{ subject: '  ' }, /a subject/u],
       [{ subject: 'Hello\r\nBcc: eve@example.net' }, /one line/u],
       [{ subject: 'a'.repeat(MAIL_SUBJECT_MAX + 1) }, /at most 300 characters/u],
@@ -245,7 +245,7 @@ describe('what is not sent at all', () => {
   it('counts everyone once, and takes exactly as many as the most', () => {
     const many = Array.from({ length: MAIL_RECIPIENTS_MAX }, (_value, index) => `person${index}@example.com`)
     expect(draftProblem({ ...DRAFT, to: many, cc: [many[0]!.replace('example.com', 'EXAMPLE.COM')] })).toBeNull()
-    expect(draftProblem({ ...DRAFT, to: many, bcc: ['one-more@example.com'] })).toMatch(/at most 20/u)
+    expect(draftProblem({ ...DRAFT, to: many, bcc: ['one-more@example.com'] })).toMatch(new RegExp(`at most ${MAIL_RECIPIENTS_MAX} addresses`, 'u'))
   })
 })
 

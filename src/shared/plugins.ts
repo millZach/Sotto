@@ -113,7 +113,9 @@ export const GITHUB_REOPEN_ISSUE_TOOL = 'github_reopen_issue'
 export const VERCEL_CANCEL_TOOL = 'vercel_cancel_deployment'
 export const VERCEL_PROMOTE_TOOL = 'vercel_promote_deployment'
 export const VERCEL_ROLLBACK_TOOL = 'vercel_rollback_production'
-export const PLUGIN_CHANGE_TOOLS = [GITHUB_COMMENT_TOOL, GITHUB_OPEN_ISSUE_TOOL, GITHUB_CLOSE_ISSUE_TOOL, GITHUB_REOPEN_ISSUE_TOOL, VERCEL_CANCEL_TOOL, VERCEL_PROMOTE_TOOL, VERCEL_ROLLBACK_TOOL] as const
+/** Sends one email from a mail account. It asks every time, and no switch turns that off (decision 6). */
+export const MAIL_SEND_TOOL = 'mail_send'
+export const PLUGIN_CHANGE_TOOLS = [GITHUB_COMMENT_TOOL, GITHUB_OPEN_ISSUE_TOOL, GITHUB_CLOSE_ISSUE_TOOL, GITHUB_REOPEN_ISSUE_TOOL, VERCEL_CANCEL_TOOL, VERCEL_PROMOTE_TOOL, VERCEL_ROLLBACK_TOOL, MAIL_SEND_TOOL] as const
 export type PluginChangeTool = typeof PLUGIN_CHANGE_TOOLS[number]
 
 export const PLUGINS_RECENT_USE = 'sotto:plugins:recent-use'
@@ -122,19 +124,21 @@ export const PLUGINS_RECENT_USE = 'sotto:plugins:recent-use'
  * What a use was of, as far as the record keeps it: a kind of thing read or changed, never which one. A repository's
  * name, an issue's number, a comment's words and what a read returned are the user's own and stay out of the record
  * (ADR-0205, decision 10). Those from `comment` on are changes: a comment posted, an issue opened, closed or
- * reopened, a deployment's build cancelled, a deployment promoted to production, and production rolled back. The last
- * two are reads of a mail account: a search, and a message opened.
+ * reopened, a deployment's build cancelled, a deployment promoted to production, and production rolled back. Then
+ * two reads of a mail account, a search and a message opened, and an email sent, which is a change. Never who an
+ * email went to or what it said.
  */
 export const PLUGIN_READ_KINDS = ['issues', 'pull-requests', 'repository', 'commits', 'checks', 'releases', 'search', 'account', 'deployments', 'projects', 'domains', 'logs', 'other',
-  'comment', 'deployment-cancel', 'issue-open', 'issue-close', 'issue-reopen', 'deployment-promote', 'deployment-rollback', 'mail-search', 'mail-message'] as const
+  'comment', 'deployment-cancel', 'issue-open', 'issue-close', 'issue-reopen', 'deployment-promote', 'deployment-rollback', 'mail-search', 'mail-message', 'mail-send'] as const
 export type PluginReadKind = typeof PLUGIN_READ_KINDS[number]
 
 /**
  * How a use ended: done, refused by Sotto before anything was sent, or failed at the service. A change, and a
  * thread's first read of a mail account, can also end with the user saying no (`denied`) or with nobody answering its
- * card in time (`lapsed`); nothing was sent for either.
+ * card in time (`lapsed`); nothing was sent for either. An email can also end `unsure`: the user allowed it, the whole
+ * message was handed to the mail server, and its answer never came, so Sotto cannot tell whether it was sent.
  */
-export const PLUGIN_USE_OUTCOMES = ['done', 'refused', 'failed', 'denied', 'lapsed'] as const
+export const PLUGIN_USE_OUTCOMES = ['done', 'refused', 'failed', 'denied', 'lapsed', 'unsure'] as const
 
 /** One entry of the plugin use record: the thread, the plugin, what was done and how it ended. Never its content. */
 export const pluginUseSchema = z.object({
@@ -354,6 +358,17 @@ export type PluginChange =
      * the thread being settled, since Watcher never is.
      */
     readonly watcher?: boolean
+  }
+  | {
+    /**
+     * One email from a mail account, which asks every time: a mail grant never covers it. The card shows everything
+     * that is sent, the Bcc too, and names the account as the user named it, not by its address (Zach's pick on
+     * November 14, 2026).
+     */
+    readonly kind: 'mail-send'
+    readonly plugin: string; readonly account: string
+    readonly to: readonly string[]; readonly cc: readonly string[]; readonly bcc: readonly string[]
+    readonly subject: string; readonly text: string
   }
   | {
     /** Promote and roll back move production: every production address of the project serves the deployment. */

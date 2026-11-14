@@ -8,6 +8,7 @@ import type { PluginChange } from '../../../../src/shared/plugins'
 
 const issue = { owner: 'example-owner', repo: 'example-repo', number: 12 }
 const deployment = { account: 'Work', deploymentId: 'dpl_example1' }
+const SEND = { plugin: 'Gmail', account: 'Personal', to: ['ann@example.com', 'ben@example.org'], cc: ['cara@example.com'], bcc: ['dan@example.net'], subject: 'October numbers by Friday', text: 'Hello Ann,\n\nThe numbers for October need to reach us by Friday.\n\nThanks,\nZ.' }
 const full = { ...deployment, project: 'example-project', projectId: 'prj_example1', target: 'production', url: 'example-project.vercel.app', state: 'READY', teamId: 'team_example1' }
 
 /** Every sentence a card can hold: each kind of change, with and without what is only sometimes known. */
@@ -32,6 +33,9 @@ const CHANGES: readonly PluginChange[] = [
   { kind: 'mail-read', plugin: 'Gmail', account: 'Personal', provider: '' },
   { kind: 'mail-read', plugin: 'Gmail', account: 'Personal', provider: 'Codex', watcher: true },
   { kind: 'mail-read', plugin: 'Gmail', account: 'Personal', provider: '', watcher: true },
+  { kind: 'mail-send', ...SEND },
+  { kind: 'mail-send', ...SEND, to: ['ann@example.com'], cc: [], bcc: [] },
+  { kind: 'mail-send', ...SEND, to: ['ann@example.com'], cc: ['cara@example.com'], bcc: [] },
 ] as PluginChange[]
 
 it('words a change’s card on a host as the desktop words it in English, sentence for sentence', () => {
@@ -78,7 +82,8 @@ it('names Watcher on the card its own mail read waits on, and leaves every other
     target: 'Personal',
     details: ['This thread can search this account’s mail and read its messages, until you stop it or the thread is settled.',
       'What it reads goes to Claude Code, as everything a thread reads does.',
-      'It cannot send, move or delete mail. Every other thread asks for itself.'].join('\n'),
+      // Zach's words of November 14, 2026 (#2494): reading does not let a thread send, and each email asks.
+      'This does not let it send: each email it wants to send asks you first. It cannot move or delete mail. Every other thread asks for itself.'].join('\n'),
     allow: 'Let this thread read it',
     deny: 'Don’t allow',
   })
@@ -88,4 +93,20 @@ it('names Watcher on the card its own mail read waits on, and leaves every other
 it('loads nothing of Lingui, which a host cannot run', async () => {
   const source = await readFile(resolve('src/main/plugins/changeWordsPlain.ts'), 'utf8')
   expect(source).not.toMatch(/from '@lingui/u)
+})
+
+it('shows everything an email sends on its card, and names the account as the user named it', () => {
+  // Zach's picks on November 14, 2026 (#2494), from the mock-up kept as the tag prototype/plugin-mail-send.
+  expect(wordPluginChange({ kind: 'mail-send', ...SEND })).toEqual({
+    plugin: 'Gmail',
+    text: 'Send this email from the Gmail account Personal to ann@example.com, ben@example.org and 2 more?',
+    action: 'Send an email as Personal',
+    target: 'ann@example.com, ben@example.org and 2 more',
+    details: ['To: ann@example.com, ben@example.org', 'Cc: cara@example.com', 'Bcc: dan@example.net', 'Subject: October numbers by Friday', '', SEND.text].join('\n'),
+    allow: 'Send the email',
+    deny: 'Don’t send it',
+  })
+  // A line with nobody on it is left off, and one person is named alone.
+  const one = wordPluginChange({ kind: 'mail-send', ...SEND, to: ['ann@example.com'], cc: [], bcc: [] })
+  expect([one.target, one.details.split('\n').slice(0, 2)]).toEqual(['ann@example.com', ['To: ann@example.com', 'Subject: October numbers by Friday']])
 })

@@ -15,8 +15,11 @@ export interface MailDraft {
   readonly text: string
 }
 
-/** The most people one message goes to, To, Cc and Bcc together. Gmail takes 100 over SMTP; this is well inside it. */
-export const MAIL_RECIPIENTS_MAX = 20
+/**
+ * The most people one message goes to, To, Cc and Bcc together: Gmail's own limit for mail sent this way, which Zach
+ * picked on November 14, 2026 (#2494). Every message still asks, so this bounds one card, not a day.
+ */
+export const MAIL_RECIPIENTS_MAX = 100
 export const MAIL_SUBJECT_MAX = 300
 /** The longest text sent, in characters. */
 export const MAIL_SEND_TEXT_MAX = 100_000

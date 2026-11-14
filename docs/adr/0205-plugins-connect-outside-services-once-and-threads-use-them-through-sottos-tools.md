@@ -239,6 +239,20 @@ The first part of slice 9 (#2494): the mail adapter can send one message. Nothin
 - **The computer is not named.** The client gives its own name to the server as `[127.0.0.1]`, and the Date line is in UTC.
 - **Checked against a made-up server.** `tests/fixtures/fakeSmtpServer.ts` speaks enough of SMTP to take one message on this computer, with a reader of its own, as the fake IMAP server has.
 
+## November 14, 2026: a thread asks before each email
+
+The second part of slice 9 (#2494): a thread's agent sends through `mail_send`, a named change. Zach picked what it sends, how many people one email reaches, the card's words, and the words of the read card and Gmail's row on a card on November 14, 2026, from a mock-up kept as the tag `prototype/plugin-mail-send`.
+
+- **A thread sends a new plain-text email.** To, Cc and Bcc, a subject and text; no HTML and no files. A reply is a new email whose subject starts with "Re:". Replies that carry the original's own name, and files from the project, were the other answers and are not built.
+- **One email goes to at most 100 people,** To, Cc and Bcc together, which is Gmail's own limit for mail sent this way. Every email still asks, so this bounds one card, not a day. Gmail's own 500 a day is Gmail's to enforce.
+- **Every email asks, with no switch** (decision 6). Being let read an account does not let a thread send from it, and Watcher, which changes nothing through a plugin, cannot send at all. The draft is checked before the user is asked, so the card never shows an email a server would refuse for its form, and a password that cannot be read is said before anyone is asked.
+- **The card names the account by the name the user gave it,** "Send an email as Personal", and not by its address: a card's words travel further than the card. Under it, the first two people the email is to and how many more; then To, Cc, Bcc, the subject and the whole text, in the box that scrolls when it is long. Its buttons are **Send the email** and **Don't send it**. A host words it in its English, sentence for sentence, as it does every card.
+- **The account is looked for again after the yes,** as for every change: one switched off, kept to other projects or removed while the card waited sends nothing.
+- **What the agent is told says whether it went.** Sent, it is told from which account and to how many addresses. One address the server turns away is named, and nobody was sent the email. An email handed over whose answer never came is neither: the agent is told that Sotto cannot tell, not to send it again, and that the user can look in Sent.
+- **Recent use says an email was sent, or asked for, never who to or what it said.** An email whose answer never came is recorded as such (`unsure`), and its line says "You allowed it, and Sotto cannot tell whether it was sent.", not that it failed, since it may have gone: Zach's pick on a question card the same day. The other answer was to read as a failure.
+- **The read card and Gmail's row no longer say a thread cannot send.** The read card's third line reads "This does not let it send: each email it wants to send asks you first. It cannot move or delete mail. Every other thread asks for itself." Watcher's card keeps "It cannot send, move or delete mail", which stays true of Watcher. The row reads "A thread asks you before each email it sends, and shows you the whole email first. It cannot move or delete mail, and a message it reads stays unread for you."
+- **`README.md` names `smtp.gmail.com`.** A thread on a paired host sends from that host, with the account's copy, on a card in the host's English.
+
 ## Considered options
 
 - **Where secrets live.** Each computer its own, as ADR-0025 has it (rejected: every account typed in on every computer). The desktop keeps them and answers a host's calls (rejected: forge's threads would lose plugins while the laptop is closed). One operating-system keychain entry per account (rejected: a native dependency, which ADR-0018 says needs its own ADR).

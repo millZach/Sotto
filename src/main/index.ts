@@ -1390,12 +1390,16 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const vercelFetch: VercelFetch = e2eConfiguration !== null && !vercelBase ? async () => { throw new Error('E2E_NETWORK_DISABLED') } : (url, init) => fetch(url, init)
   const vercelOptions = { ...(vercelBase ? { base: vercelBase } : {}), signal: pluginsStop.signal }
   // Plugin accounts: a name, a plugin and a secret in the credential store, checked with its service before it is kept.
-  // A mail account is read over IMAP, each read a connection of its own to that account's mail server. An end-to-end
-  // run reaches no mail server but the stand-in on this computer its test names, or nothing; a packaged build never
-  // reads that name.
-  const mailStandIn = e2eConfiguration !== null && !app.isPackaged ? Number(process.env['SOTTO_E2E_MAIL_PORT']) : Number.NaN
+  // A mail account is read over IMAP and sends over SMTP, each a connection of its own to that account's server. An
+  // end-to-end run reaches no mail server but the stand-ins on this computer its test names, or nothing; a packaged
+  // build never reads those names.
+  const standInPort = (name: string): number | undefined => {
+    const port = e2eConfiguration !== null && !app.isPackaged ? Number(process.env[name]) : Number.NaN
+    return Number.isInteger(port) && port > 0 ? port : undefined
+  }
+  const mailStandIn = standInPort('SOTTO_E2E_MAIL_PORT')
   const mailOptions: MailOptions = { signal: pluginsStop.signal, ...(e2eConfiguration === null ? {}
-    : { connect: Number.isInteger(mailStandIn) && mailStandIn > 0 ? mailOnThisComputer(mailStandIn) : async () => { throw new Error('E2E_NETWORK_DISABLED') } }) }
+    : { connect: mailStandIn !== undefined ? mailOnThisComputer(mailStandIn, standInPort('SOTTO_E2E_SMTP_PORT')) : async () => { throw new Error('E2E_NETWORK_DISABLED') } }) }
   const pluginAccounts = pluginsEnabled ? new PluginAccounts(userDataPath, { credentials,
     check: (plugin, secret, address) => isMailPlugin(plugin) ? checkMailAccount(plugin, address ?? '', secret, mailOptions) : checkVercelToken(vercelFetch, secret, vercelOptions) }) : undefined
   // Account copies (ADR-0205, amending ADR-0025): each plugin account the user keeps on a paired host is sent to it on

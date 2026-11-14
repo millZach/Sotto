@@ -4,6 +4,7 @@ import type { PluginChangeCard } from './pendingChanges'
 type GitHubChange = Extract<PluginChange, { readonly kind: 'github-comment' | 'github-open-issue' | 'github-close-issue' | 'github-reopen-issue' }>
 type VercelChange = Extract<PluginChange, { readonly kind: 'vercel-cancel' | 'vercel-promote' | 'vercel-rollback' }>
 type MailRead = Extract<PluginChange, { readonly kind: 'mail-read' }>
+type MailSend = Extract<PluginChange, { readonly kind: 'mail-send' }>
 
 /**
  * A plugin change's card in English, for a headless host (ADR-0205, decision 7). A host has no interface language and
@@ -14,6 +15,7 @@ type MailRead = Extract<PluginChange, { readonly kind: 'mail-read' }>
  */
 export function wordPluginChangeInEnglish(change: PluginChange): PluginChangeCard {
   if (change.kind === 'mail-read') return wordMailRead(change)
+  if (change.kind === 'mail-send') return wordMailSend(change)
   // Only a Vercel change names a deployment.
   return 'deploymentId' in change ? wordVercelChange(change) : wordGitHubChange(change)
 }
@@ -51,10 +53,42 @@ function wordMailRead(change: MailRead): PluginChangeCard {
     details: [
       'This thread can search this account’s mail and read its messages, until you stop it or the thread is settled.',
       provider ? `What it reads goes to ${provider}, as everything a thread reads does.` : `What it reads goes to this thread’s provider, as everything a thread reads does.`,
-      'It cannot send, move or delete mail. Every other thread asks for itself.',
+      'This does not let it send: each email it wants to send asks you first. It cannot move or delete mail. Every other thread asks for itself.',
     ].join('\n'),
     allow: 'Let this thread read it',
     deny: 'Don’t allow',
+  }
+}
+
+/**
+ * One email from a mail account (slice 9). It asks every time: a mail grant never covers it. The card names the
+ * account as the user named it, not by its address (Zach's pick on November 14, 2026), and shows everything that is
+ * sent: who it goes to, the Bcc too, the subject and the whole text.
+ */
+function wordMailSend(change: MailSend): PluginChangeCard {
+  const { plugin } = change
+  const named = change.account
+  const everyone = [...change.to, ...change.cc, ...change.bcc]
+  const first = change.to.slice(0, 2).join(', ')
+  const more = everyone.length - Math.min(change.to.length, 2)
+  const who = more > 0 ? `${first} and ${more} more` : first
+  const to = change.to.join(', '), cc = change.cc.join(', '), bcc = change.bcc.join(', ')
+  const subject = change.subject
+  return {
+    plugin,
+    text: `Send this email from the ${plugin} account ${named} to ${who}?`,
+    action: `Send an email as ${named}`,
+    target: who,
+    details: [
+      `To: ${to}`,
+      ...(cc ? [`Cc: ${cc}`] : []),
+      ...(bcc ? [`Bcc: ${bcc}`] : []),
+      `Subject: ${subject}`,
+      '',
+      change.text,
+    ].join('\n'),
+    allow: 'Send the email',
+    deny: 'Don’t send it',
   }
 }
 

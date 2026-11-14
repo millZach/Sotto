@@ -802,7 +802,7 @@ it('lists Gmail under Mail, and adds an account by its name, its address and an 
   expect(document.querySelector('[data-setting="plugin-gmail"]')).toContainElement(gmailRow())
   fireEvent.click(gmailRow())
   // The row says what a thread may do with mail, and that each thread asks first.
-  expect(document.getElementById(gmailRow().getAttribute('aria-controls')!)).toHaveTextContent('Each thread asks you once, in the thread, before it reads an account’s mail, and what it reads goes to that thread’s provider. A thread cannot send, move or delete mail, and a message it reads stays unread for you. To make a thread ask again, open its ··· menu and press Ask before this thread reads the account.')
+  expect(document.getElementById(gmailRow().getAttribute('aria-controls')!)).toHaveTextContent('Each thread asks you once, in the thread, before it reads an account’s mail, and what it reads goes to that thread’s provider. A thread asks you before each email it sends, and shows you the whole email first. It cannot move or delete mail, and a message it reads stays unread for you. To make a thread ask again, open its ··· menu and press Ask before this thread reads the account.')
   fireEvent.click(screen.getByRole('button', { name: 'Add a Gmail account' }))
   const form = screen.getByRole('form', { name: 'Add a Gmail account' })
   expect(within(form).getByLabelText('Name')).toHaveFocus()
@@ -896,5 +896,25 @@ it('says of a use of mail what was read, and of a first read you did not allow w
     'Asked to read a message in “Tax papers” You said no.',
     'Asked to search mail in “Tax papers” Nobody answered in time.',
     'Searched mail in “Tax papers” It failed.',
+  ])
+})
+
+it('says an email was sent, or only asked for, and never calls one that may have gone a failure', async () => {
+  // Zach's pick on November 14, 2026 (#2494): an email whose answer never came may be in someone's inbox.
+  const sent = { plugin: 'gmail' as const, accountId: personal.id, threadTitle: 'Reply to the accountant', tool: 'mail_send' as const, kind: 'mail-send' as const }
+  const uses = [
+    use(1, { ...sent }),
+    use(2, { ...sent, outcome: 'denied' }),
+    use(3, { ...sent, outcome: 'unsure' }),
+    use(4, { ...sent, outcome: 'failed' }),
+  ]
+  await act(async () => { render(<PluginsSettings bridge={vercelBridge([personal], { recentUse: async () => uses })} />) })
+  fireEvent.click(gmailRow())
+  const items = within(within(screen.getByRole('region', { name: 'Gmail account Personal' })).getByRole('region', { name: 'Recent use' })).getAllByRole('listitem')
+  expect(items.map(item => item.querySelector('span')!.textContent)).toEqual([
+    'Sent an email in “Reply to the accountant” You allowed it.',
+    'Asked to send an email in “Reply to the accountant” You said no.',
+    'Asked to send an email in “Reply to the accountant” You allowed it, and Sotto cannot tell whether it was sent.',
+    'Asked to send an email in “Reply to the accountant” You allowed it, and it failed.',
   ])
 })

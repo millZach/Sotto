@@ -306,7 +306,7 @@ function useAccountWords(plugin: AccountPluginId): AccountWords {
   const { t } = useLingui()
   if (isMailPlugin(plugin)) {
     return {
-      about: t`Search and read mail with an app password. Each thread asks you once, in the thread, before it reads an account’s mail, and what it reads goes to that thread’s provider. A thread cannot send, move or delete mail, and a message it reads stays unread for you. To make a thread ask again, open its ··· menu and press Ask before this thread reads the account.`,
+      about: t`Search and read mail with an app password. Each thread asks you once, in the thread, before it reads an account’s mail, and what it reads goes to that thread’s provider. A thread asks you before each email it sends, and shows you the whole email first. It cannot move or delete mail, and a message it reads stays unread for you. To make a thread ask again, open its ··· menu and press Ask before this thread reads the account.`,
       add: t`Add a Gmail account`, addAnother: t`Add another Gmail account`,
       secretLabel: t`App password`,
       secretDescription: t`Sixteen characters, made at ${GOOGLE_APP_PASSWORDS_PAGE}. It needs 2-Step Verification on the Google account. Sotto checks it with Gmail before saving it, and never shows it again.`,
@@ -679,14 +679,14 @@ function RecentUse({ name, uses, elsewhere }: {
     comment: t`Posted a comment`, 'deployment-cancel': t`Cancelled a deployment’s build`,
     'issue-open': t`Opened an issue`, 'issue-close': t`Closed an issue`, 'issue-reopen': t`Reopened an issue`,
     'deployment-promote': t`Promoted a deployment to production`, 'deployment-rollback': t`Rolled production back`,
-    'mail-search': t`Searched mail`, 'mail-message': t`Read a message`,
+    'mail-search': t`Searched mail`, 'mail-message': t`Read a message`, 'mail-send': t`Sent an email`,
   }
   // A change that was not made: what the agent asked to do, since nothing was done.
   const asked: Partial<Record<PluginReadKind, string>> = {
     comment: t`Asked to post a comment`, 'deployment-cancel': t`Asked to cancel a deployment’s build`,
     'issue-open': t`Asked to open an issue`, 'issue-close': t`Asked to close an issue`, 'issue-reopen': t`Asked to reopen an issue`,
     'deployment-promote': t`Asked to promote a deployment to production`, 'deployment-rollback': t`Asked to roll production back`,
-    'mail-search': t`Asked to search mail`, 'mail-message': t`Asked to read a message`,
+    'mail-search': t`Asked to search mail`, 'mail-message': t`Asked to read a message`, 'mail-send': t`Asked to send an email`,
   }
   // A change asks each time, and so does a thread's first read of a mail account: both can end with the user's no.
   const changed = (use: ShownPluginUse): boolean => use.tool !== 'plugin_read' || use.outcome === 'denied' || use.outcome === 'lapsed'
@@ -702,6 +702,8 @@ function RecentUse({ name, uses, elsewhere }: {
             : use.outcome === 'failed' ? <>{' '}{changed(use) ? <Trans>You allowed it, and it failed.</Trans> : <Trans>It failed.</Trans>}</>
               : use.outcome === 'denied' ? <>{' '}<Trans>You said no.</Trans></>
                 : use.outcome === 'lapsed' ? <>{' '}<Trans>Nobody answered in time.</Trans></>
+                  // An email handed over whose answer never came may have gone, so it is not said to have been sent.
+                  : use.outcome === 'unsure' ? <>{' '}<Trans>You allowed it, and Sotto cannot tell whether it was sent.</Trans></>
                   : changed(use) ? <>{' '}<Trans>You allowed it.</Trans></> : null}
         </span>
       </li>)}
