@@ -986,6 +986,10 @@ msgstr "Issue: {title}"
 msgid "It cannot send, move or delete mail. Every other thread asks for itself."
 msgstr "It cannot send, move or delete mail. Every other thread asks for itself."
 
+#: src/main/plugins/changeWords.ts
+msgid "It cannot send, move or delete mail. Every thread asks for itself."
+msgstr "It cannot send, move or delete mail. Every thread asks for itself."
+
 #. placeholder {0}: change.state
 #: src/main/plugins/changeWords.ts
 msgid "Its build now: {0}"
@@ -1047,6 +1051,18 @@ msgstr "Let this thread read the {plugin} account {named}? What it reads goes to
 #: src/main/plugins/changeWords.ts
 msgid "Let this thread read the {plugin} account {named}? What it reads goes to this thread’s provider."
 msgstr "Let this thread read the {plugin} account {named}? What it reads goes to this thread’s provider."
+
+#: src/main/plugins/changeWords.ts
+msgid "Let Watcher read it"
+msgstr "Let Watcher read it"
+
+#: src/main/plugins/changeWords.ts
+msgid "Let Watcher read the {plugin} account {named}? What it reads goes to {provider}."
+msgstr "Let Watcher read the {plugin} account {named}? What it reads goes to {provider}."
+
+#: src/main/plugins/changeWords.ts
+msgid "Let Watcher read the {plugin} account {named}? What it reads goes to Watcher’s provider."
+msgstr "Let Watcher read the {plugin} account {named}? What it reads goes to Watcher’s provider."
 
 #: src/main/settings/retiredChats.ts
 msgid "Local history is off, but saved Chats could not be cleared. Restore access to personal-chat/chats.json and save Settings again."
@@ -3682,12 +3698,24 @@ msgid "Wait for this thread to finish its turn, then bring its changes back. Not
 msgstr "Wait for this thread to finish its turn, then bring its changes back. Nothing changed."
 
 #: src/main/plugins/changeWords.ts
+msgid "Watcher can search this account’s mail and read its messages, until you stop it."
+msgstr "Watcher can search this account’s mail and read its messages, until you stop it."
+
+#: src/main/plugins/changeWords.ts
 msgid "What it reads goes to {provider}, as everything a thread reads does."
 msgstr "What it reads goes to {provider}, as everything a thread reads does."
 
 #: src/main/plugins/changeWords.ts
+msgid "What it reads goes to {provider}, as everything Watcher reads does."
+msgstr "What it reads goes to {provider}, as everything Watcher reads does."
+
+#: src/main/plugins/changeWords.ts
 msgid "What it reads goes to this thread’s provider, as everything a thread reads does."
 msgstr "What it reads goes to this thread’s provider, as everything a thread reads does."
+
+#: src/main/plugins/changeWords.ts
+msgid "What it reads goes to Watcher’s provider, as everything Watcher reads does."
+msgstr "What it reads goes to Watcher’s provider, as everything Watcher reads does."
 
 #: src/main/app/applicationMenu.ts
 msgid "Window"

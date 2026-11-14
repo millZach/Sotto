@@ -17,7 +17,10 @@ menu at 1600x1000, 1280x800 or the 820x560 minimum.
 
 Watcher's agent asked to search the account. The call waited on a card in Watcher's room, **Read Gmail mail**, naming
 Personal and not its address. The stand-in had been asked for nothing from the mailbox, and the strip still had no
-menu. **Let this thread read it** was pressed, and the read came back with the made-up message.
+menu. The card named Watcher (#2565, checked again the same day after that change): "Watcher can search this account's
+mail and read its messages, until you stop it.", "What it reads goes to Codex, as everything Watcher reads does." and
+"It cannot send, move or delete mail. Every thread asks for itself.", and nowhere "this thread" or "settled". **Let
+Watcher read it** was pressed, and the read came back with the made-up message.
 
 The strip now ended in a ··· button named More actions, after Stop all. In dark and light at each of the three sizes:
 
@@ -48,7 +51,7 @@ waited on a card again, **Don't allow** was pressed, the agent was told no, and 
 In `artifacts/watcher-mail-grant/`:
 
 - `strip-no-grant-dark-820x560.png`: the strip before Watcher can read a mail account, at the minimum size.
-- `card-first-read-dark-1280x800.png`: the card Watcher's first read waits on.
+- `card-first-read-dark-1280x800.png`: the card Watcher's first read waits on, naming Watcher.
 - `strip-menu-dark-1600x1000.png`, `strip-menu-dark-1280x800.png`, `strip-menu-dark-820x560.png`,
   `strip-menu-light-1600x1000.png`, `strip-menu-light-1280x800.png`, `strip-menu-light-820x560.png`: the strip with
   the menu's button at rest.

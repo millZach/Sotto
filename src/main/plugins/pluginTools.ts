@@ -525,7 +525,8 @@ export class PluginToolServer implements ScopedThreadTools {
     if (!ask) {
       let provider = ''
       try { provider = mail.providerOf(threadId) } catch { /* The card then says the thread's provider without its name. */ }
-      const change: PluginChange = { kind: 'mail-read', plugin: PLUGIN_NAMES[account.plugin], account: account.name, provider }
+      // Watcher's card names Watcher. The thread is known and open here, so this is Watcher itself and not a thread Sotto lost.
+      const change: PluginChange = { kind: 'mail-read', plugin: PLUGIN_NAMES[account.plugin], account: account.name, provider, ...(this.isWatcher(threadId) ? { watcher: true } : {}) }
       // The copy of the account the card asks about. On a paired host a copy can be let go and sent again under the
       // same ID while its card waits, and a yes given for one is not a yes for the other.
       const copy = mail.copyOf(account.id)

@@ -17,7 +17,8 @@ import { resizeContentWindow } from './support/sottoWindow'
  * Ask before Watcher reads a mail account, in a ··· menu at the end of Watcher's strip (#2563; ADR-0205, decision 8;
  * Zach's pick A on November 13, 2026, of the tag prototype/watcher-mail-grant), on Sotto Owl against main's own
  * Watcher over the fake Codex app server and a made-up mail server on this computer: nothing is seeded. Watcher's
- * strip has no menu until Watcher can read a mail account. Its first read waits on a card in its room; allowed, the
+ * strip has no menu until Watcher can read a mail account. Its first read waits on a card in its room that names
+ * Watcher (#2565); allowed, the
  * menu is there, last in the strip, at the three checked sizes in both modes: the tile, the tabs and All threads are
  * where they were, and Stop all has stepped left by the menu's own width and nothing more. The row ends the grant,
  * the menu goes, Stop all steps back, and Watcher's next read waits on a card again. Nothing reaches
@@ -128,10 +129,14 @@ test('Watcher’s strip has Ask before Watcher reads only while Watcher can read
         await expect(request).toHaveCount(1, { timeout: 30_000 })
         await expect(request.getByText('Read Gmail mail', { exact: true })).toBeVisible()
         await expect(request).not.toContainText(ADDRESS)
+        // The card names Watcher, which is never settled, and not "this thread" (#2565).
+        await expect(request.locator('.agent-request__details')).toHaveText(['Watcher can search this account’s mail and read its messages, until you stop it.',
+          'What it reads goes to Codex, as everything Watcher reads does.', 'It cannot send, move or delete mail. Every thread asks for itself.'].join('\n'))
+        await expect(request).not.toContainText(/this thread|settled/u)
         expect(mail.commands.some(command => command.startsWith('EXAMINE'))).toBe(false)
         await expect(more(page)).toHaveCount(0)
         await capture(launched, 'card-first-read-dark-1280x800')
-        await request.getByRole('button', { name: 'Let this thread read it', exact: true }).click()
+        await request.getByRole('button', { name: 'Let Watcher read it', exact: true }).click()
         const first = await answered(page)
         expect(first.isError).toBe(false)
         expect(first.text).toContain('Lunch on Friday')

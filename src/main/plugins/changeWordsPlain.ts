@@ -26,6 +26,22 @@ function wordMailRead(change: MailRead): PluginChangeCard {
   const { plugin, provider } = change
   // The account as the user named it, and never its address: these words can be handed on with the card.
   const named = change.account
+  // Watcher's own card (#2565, Zach's pick on November 13, 2026): it names Watcher, which is never settled, so the
+  // grant lasts until the user stops it, from the ··· menu in Watcher's strip.
+  if (change.watcher) return {
+    plugin,
+    text: provider ? `Let Watcher read the ${plugin} account ${named}? What it reads goes to ${provider}.`
+      : `Let Watcher read the ${plugin} account ${named}? What it reads goes to Watcher’s provider.`,
+    action: `Read ${plugin} mail`,
+    target: named,
+    details: [
+      'Watcher can search this account’s mail and read its messages, until you stop it.',
+      provider ? `What it reads goes to ${provider}, as everything Watcher reads does.` : `What it reads goes to Watcher’s provider, as everything Watcher reads does.`,
+      'It cannot send, move or delete mail. Every thread asks for itself.',
+    ].join('\n'),
+    allow: 'Let Watcher read it',
+    deny: 'Don’t allow',
+  }
   return {
     plugin,
     text: provider ? `Let this thread read the ${plugin} account ${named}? What it reads goes to ${provider}.`
