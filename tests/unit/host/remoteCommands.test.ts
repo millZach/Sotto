@@ -11,7 +11,7 @@ import { watcherToolSchemas } from '../../../src/shared/watcher'
 
 /** Commands that stay on the host machine. A new command type must land here or in REMOTE_COMMANDS. */
 // Clear now and its preview act on the computer whose Settings set them (ADR-0140 decision 7).
-const HOST_LOCAL = ['set-aside-send', 'set-thread-dynamic', 'credential', 'check-reasoning', 'update-client', 'open-thread-folder', 'preview-clear-threads', 'clear-threads']
+const HOST_LOCAL = ['set-aside-send', 'set-thread-dynamic', 'set-thread-routed', 'credential', 'check-reasoning', 'update-client', 'open-thread-folder', 'preview-clear-threads', 'clear-threads']
 /** Fields only the desktop window sends, which its router reads and never forwards to a host (ADR-0074). */
 // The desktop's router reads these and never sends them on: the host a patch or Update all's press names (ADR-0074, ADR-0077).
 // A desktop window names the machine a command acts on and its router never sends the name on (ADR-0074, ADR-0077):
@@ -21,7 +21,7 @@ const WINDOW_ONLY: Partial<Record<AgentCommand['type'], string[]>> = { configure
   // The reading the window showed, which the router names when it asks a paired host for a confirmation receipt (#1691).
   'git-pull-request-action': ['readId'],
   // A thread on another machine cannot be Dynamic (ADR-0191), so only this computer's window starts one.
-  'create-thread': ['dynamic'] }
+  'create-thread': ['dynamic', 'routed'] }
 /**
  * Fields only the host's own socket server sets, on what it tells its host service: which observed threads its paired
  * desktops show (ADR-0092). A paired client never sends them; one that tries is refused.

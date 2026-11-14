@@ -73,6 +73,8 @@ export function cacheableShell(state: AgentState): AgentState {
     deliveries: [], deliveredDrafts: [], followups: [], followupReceipts: [],
     // A choice kept for a thread's next turn lives in main's memory alone (ADR-0192), and a restart drops it.
     nextTurnSettings: undefined,
+    // A router pick carries the classifier's reason, which is about the user's words and is kept in main's memory alone (ADR-0207).
+    routerPicks: undefined,
     notice: '',
     stale: true,
   }
@@ -88,7 +90,7 @@ export function readShellCache(store: ShellCacheStorage | null = storage()): Age
     if ('speech' in state || 'voice' in state) return null
     return {
       // No lane survives a restart: a cached busy mark would dim a pane nothing is working on.
-      ...state, stale: true, globalLaneBusy: false, busyThreadIds: undefined, nextTurnSettings: undefined, error: null, connection: 'disconnected',
+      ...state, stale: true, globalLaneBusy: false, busyThreadIds: undefined, nextTurnSettings: undefined, routerPicks: undefined, error: null, connection: 'disconnected',
       host: { ...state.host, connected: false,
         threads: state.host.threads.map(thread => ({ ...thread, ...NO_LIVE_THREAD_STATE })),
         providers: state.host.providers?.map(provider => ({ ...provider, connection: 'disconnected' as const })) },

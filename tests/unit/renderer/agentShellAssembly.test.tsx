@@ -264,6 +264,16 @@ describe('the startup shell cache', () => {
     expect(readShellCache()!.nextTurnSettings).toBeUndefined()
   })
 
+  it('never keeps a router pick, whose reason is about the user’s words and lives in main’s memory alone (ADR-0207)', () => {
+    const state = { ...fullState([thread('workshop', [])]), routerPicks: [{ threadId: 'workshop', state: 'chose' as const, modelId: 'opus', reasoningEffort: 'high', reason: 'Debugging the tax export' }] }
+    writeShellCache(state)
+    expect(localStorage.getItem(SHELL_CACHE_KEY)).not.toContain('routerPicks')
+    expect(localStorage.getItem(SHELL_CACHE_KEY)).not.toContain('tax export')
+    expect(readShellCache()!.routerPicks).toBeUndefined()
+    localStorage.setItem(SHELL_CACHE_KEY, JSON.stringify(state))
+    expect(readShellCache()!.routerPicks).toBeUndefined()
+  })
+
   it('writes the last change at the end of the throttle window', async () => {
     vi.useFakeTimers()
     const state = fullState([thread('first', [])])

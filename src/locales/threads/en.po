@@ -2090,7 +2090,9 @@ msgid "Attachments must total 50 MB or less. Nothing was attached. Remove a file
 msgstr "Attachments must total 50 MB or less. Nothing was attached. Remove a file or choose smaller ones."
 
 #. A permission mode: the agent decides what to ask about.
+#. On a routed thread's model chip, in place of a model's name: model routing chooses the model.
 #: src/renderer/src/agents/permissionPresentation.tsx
+#: src/renderer/src/agents/ThreadOptions.tsx
 msgid "Auto"
 msgstr "Auto"
 
@@ -2541,6 +2543,15 @@ msgstr "Choose model"
 msgid "Choose model. {modelNameNow} oversees this thread"
 msgstr "Choose model. {modelNameNow} oversees this thread"
 
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Choose model. Model routing is on"
+msgstr "Choose model. Model routing is on"
+
+#. placeholder {0}: effortLabel(reasoning)
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Choose model. Model routing is on, now {modelNameNow}, {0}"
+msgstr "Choose model. Model routing is on, now {modelNameNow}, {0}"
+
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Choose models"
 msgstr "Choose models"
@@ -2582,6 +2593,10 @@ msgstr "Choose…"
 #: src/renderer/src/agents/MarkupEditor.tsx
 msgid "Circle"
 msgstr "Circle"
+
+#: src/renderer/src/agents/RouterSwitch.tsx
+msgid "Claude Code did not confirm the model change. The chips show what this thread runs on."
+msgstr "Claude Code did not confirm the model change. The chips show what this thread runs on."
 
 #. Empties the default projects directory.
 #: src/renderer/src/agents/ProjectsDirectoryRow.tsx
@@ -5290,6 +5305,26 @@ msgstr "Model for the forked thread"
 msgid "Model providers"
 msgstr "Model providers"
 
+#: src/renderer/src/agents/RouterSwitch.tsx
+msgid "Model routing"
+msgstr "Model routing"
+
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Model routing chooses the effort."
+msgstr "Model routing chooses the effort."
+
+#: src/renderer/src/agents/RouterSwitch.tsx
+msgid "Model routing chose {modelName}, {level}."
+msgstr "Model routing chose {modelName}, {level}."
+
+#: src/renderer/src/agents/RouterSwitch.tsx
+msgid "Model routing did not answer. Sent on {modelName}, {level}."
+msgstr "Model routing did not answer. Sent on {modelName}, {level}."
+
+#: src/renderer/src/agents/RouterSwitch.tsx
+msgid "Model routing kept {modelName}, {level}."
+msgstr "Model routing kept {modelName}, {level}."
+
 #: src/renderer/src/agents/ModelPicker.tsx
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "Model sources"
@@ -5571,6 +5606,10 @@ msgstr "New thread in {projectTitle}"
 #: src/renderer/src/agents/EmptyWorkspace.tsx
 msgid "New thread with this draft"
 msgstr "New thread with this draft"
+
+#: src/renderer/src/agents/RouterSwitch.tsx
+msgid "New threads start Dynamic. Turn Dynamic off to start them with model routing."
+msgstr "New threads start Dynamic. Turn Dynamic off to start them with model routing."
 
 #: src/renderer/src/agents/branchToolbar.logic.ts
 #: src/renderer/src/agents/ForkFromHere.tsx
@@ -6754,6 +6793,7 @@ msgstr "Prototype ready for review"
 #: src/renderer/src/agents/EffortPicker.tsx
 #: src/renderer/src/agents/FixedEffortChip.tsx
 #: src/renderer/src/agents/permissionPresentation.tsx
+#: src/renderer/src/agents/RouterSwitch.tsx
 #: src/renderer/src/agents/SplitChipEffort.tsx
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "Provider default"
@@ -9668,10 +9708,18 @@ msgstr "Try again, putting your last message back in the composer"
 msgid "Try again, sending your last message to {name} again"
 msgstr "Try again, sending your last message to {name} again"
 
+#: src/renderer/src/agents/RouterSwitch.tsx
+msgid "Turn Dynamic off to use model routing."
+msgstr "Turn Dynamic off to use model routing."
+
 #. Comes before the name of a thread whose last turn failed, in the Needs you card: Turn failed in Streaming WAV stall.
 #: src/renderer/src/agents/NeedsYouQueue.tsx
 msgid "Turn failed in"
 msgstr "Turn failed in"
+
+#: src/renderer/src/agents/DynamicSwitch.tsx
+msgid "Turn model routing off to make this thread Dynamic."
+msgstr "Turn model routing off to make this thread Dynamic."
 
 #: src/renderer/src/agents/ThreadCompaction.tsx
 msgid "Turn off"

@@ -350,6 +350,19 @@ describe('desktop host routing', () => {
     remote.state.unconfirmedSettings = [{ threadId: 'thread', runtimeMode: 'full-access' }]
     expect(router.shell().unconfirmedSettings).toEqual([{ threadId: hostEntityKey(REMOTE, 'thread'), runtimeMode: 'full-access' }])
   })
+  it("keeps this computer's router picks while another machine is the one selected (ADR-0207)", () => {
+    // The first host added is the one selected, and the shell is built on its state.
+    for (const order of [['local', 'remote'], ['remote', 'local']] as const) {
+      const router = new DesktopHostRouter(emptyDesktopState), hosts = { local: fixture(LOCAL, 'local'), remote: fixture(REMOTE, 'remote') }
+      for (const name of order) router.add(hosts[name].connection)
+      expect(router.shell().routerPicks).toBeUndefined()
+      hosts.local.state.routerPicks = [{ threadId: 'thread', state: 'chose', reasoningEffort: 'high', reason: 'Everyday debugging' }]
+      hosts.local.state.unconfirmedSettings = [{ threadId: 'thread', reasoningEffort: 'high' }]
+      const shell = router.shell()
+      // Named by the same client key every other per-thread record of that host carries.
+      expect(shell.routerPicks).toEqual([{ threadId: shell.unconfirmedSettings![0]!.threadId, state: 'chose', reasoningEffort: 'high', reason: 'Everyday debugging' }])
+    }
+  })
   it("names each host's choices kept for a thread's next turn by the thread's client key (#2158)", () => {
     const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
     router.add(local.connection); router.add(remote.connection)

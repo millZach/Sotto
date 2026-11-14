@@ -144,7 +144,7 @@ export interface PickerContinuation { readonly providers: ReadonlySet<string>; r
  * Favorites while any exist. A favorite whose provider or model has gone stays listed, unavailable, and can be unstarred.
  * Typing there searches every provider's models.
  */
-export function ModelPicker({ foot, suffix, models, modelId, disabled, onChange, note, unavailable = noUnavailable, continueOn, label = OPTION_CHIP_NAMES.model, openOnMount = false, pending = false, describedBy, ownServers, mark, card }: {
+export function ModelPicker({ foot, suffix, shownName, models, modelId, disabled, onChange, note, unavailable = noUnavailable, continueOn, label = OPTION_CHIP_NAMES.model, openOnMount = false, pending = false, describedBy, ownServers, mark, card }: {
   readonly models: AgentModel[]; readonly modelId: string; readonly disabled: boolean; readonly onChange: (id: string) => void
   /** A model the provider gave no result for: marked as the permission chip's is, and described by the line that says so. */
   readonly pending?: boolean | undefined; readonly describedBy?: string | undefined
@@ -161,6 +161,8 @@ export function ModelPicker({ foot, suffix, models, modelId, disabled, onChange,
   readonly foot?: ((close: () => void) => ReactNode) | undefined
   /** Drawn after the model's name on the chip: "oversees", on a Dynamic thread (ADR-0191). */
   readonly suffix?: string | undefined
+  /** Drawn in place of the model's name on the chip: "Auto", on a routed thread (ADR-0207). The menu still marks the model in force. */
+  readonly shownName?: string | undefined
   /** Drawn after the provider's mark: the server mark of a thread on one of the user's own servers (ADR-0124). */
   readonly mark?: ReactNode | undefined
   /**
@@ -375,7 +377,7 @@ export function ModelPicker({ foot, suffix, models, modelId, disabled, onChange,
       {pending ? <i className="thread-chip__pending" aria-hidden="true" /> : null}
       {current ? <ProviderMark provider={current.providerId} name={current.provider} size={13} /> : null}
       {mark}
-      {current?.source ? <span className="model-picker__path"><span className="model-picker__source" title={current.source} data-long={current.source.length > LONG_SOURCE || undefined}>{current.source}</span><span className="model-picker__separator" aria-hidden="true">/</span><span className="model-picker__name" title={name}>{name}</span></span> : <span className="model-picker__name" title={name}>{name}</span>}
+      {current?.source ? <span className="model-picker__path"><span className="model-picker__source" title={current.source} data-long={current.source.length > LONG_SOURCE || undefined}>{current.source}</span><span className="model-picker__separator" aria-hidden="true">/</span><span className="model-picker__name" title={name}>{name}</span></span> : <span className="model-picker__name" title={name}>{shownName ?? name}</span>}
       {suffix ? <span className="model-picker__suffix">{suffix}</span> : null}
       <ChevronDown size={12} aria-hidden="true" />
     </button>

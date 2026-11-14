@@ -363,6 +363,7 @@ import type { GitHubRateLimitEvent } from './agents/git/github'
 import type { BabysitEvent } from './agents/babysitting'
 import type { WatchedPullRequestEvent } from './agents/watchedPullRequests'
 import { ClaudeStreamJsonHost, type ClaudeAdapterEvent } from './agents/providers/claude/claude'
+import type { RouterEvent } from './agents/routedSend'
 import { CodexAppServerHost, type CodexAdapterEvent } from './agents/providers/codex/codex'
 import { BROWSER_EVENT, BROWSER_FRAME_EVENT } from '../shared/browser'
 import { GIT_CHANGES_EVENT } from '../shared/gitChanges'
@@ -447,6 +448,7 @@ type NativeDiagnostic =
   | BabysitEvent
   | WatchedPullRequestEvent
   | ClaudeAdapterEvent
+  | RouterEvent
   | CodexAdapterEvent
   | PhoneAccessEvent
   | LocalAppsEvent
@@ -897,7 +899,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     Date.now,
     platformDefaults,
     logOperational,
-    { workerRolesEnabled, dynamicThreadsEnabled: owlFeatures['dynamic-threads'], workerSwarmsEnabled: owlFeatures['worker-swarms'], dictationHoldShortcutsEnabled: owlFeatures['dictation-hold-shortcuts'], interfaceLanguageEnabled, ...(platform === 'linux' ? { omarchyTheme: () => omarchyTheme.get(), shellPillInUse: () => shellPillInUse } : {}) },
+    { workerRolesEnabled, dynamicThreadsEnabled: owlFeatures['dynamic-threads'], modelRouterEnabled: owlFeatures['model-router'], workerSwarmsEnabled: owlFeatures['worker-swarms'], dictationHoldShortcutsEnabled: owlFeatures['dictation-hold-shortcuts'], interfaceLanguageEnabled, ...(platform === 'linux' ? { omarchyTheme: () => omarchyTheme.get(), shellPillInUse: () => shellPillInUse } : {}) },
   )
   await initializeOmarchySelection(platform, omarchyTheme.get(), plainSettings)
   await history.initialize()
@@ -1156,7 +1158,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   }) : undefined
   const localRuntime: DesktopLocalRuntime = startupSettings.localHostEnabled ? await createAgentRuntime({
     ...teams ? { teams } : {},
-    directory: userDataPath, credentials, watcherEnabled, councilEnabled, threadSnoozeEnabled: owlFeatures['thread-snooze'], dynamicThreadsEnabled: owlFeatures['dynamic-threads'], heldProviders, usageEnabled, productEvents, resumeAfterRestart: owlFeatures['resume-after-restart'], restartStoppedThreads: owlFeatures['restart-stopped-threads'], streamingPublishCost: owlFeatures['streaming-publish-cost'],
+    directory: userDataPath, credentials, watcherEnabled, councilEnabled, threadSnoozeEnabled: owlFeatures['thread-snooze'], dynamicThreadsEnabled: owlFeatures['dynamic-threads'], modelRouterEnabled: owlFeatures['model-router'], heldProviders, usageEnabled, productEvents, resumeAfterRestart: owlFeatures['resume-after-restart'], restartStoppedThreads: owlFeatures['restart-stopped-threads'], streamingPublishCost: owlFeatures['streaming-publish-cost'],
     delegationEnabled, workerRolesEnabled, workerSwarmsEnabled: owlFeatures['worker-swarms'], continueEnabled, threadStartsEnabled, ...(keepMainCurrentEnabled ? { keepMainCurrent: { log: logOperational } } : {}), pullRequestViewEnabled: owlFeatures['iphone-pull-request-view'], agentsViewEnabled, crossMachineEnabled,
     // A check's snapshot time, as this computer writes a time in the interface language (#1312, Zach, October 27).
     clockTime: interfaceClockTime,
@@ -1233,6 +1235,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     ...(e2eConfiguration === null ? {} : { reasoner: e2eAgentReasoner }),
     worktreeCleanup: { ...(e2eConfiguration === null ? { pullRequestMerged: githubPullRequestMerged, pullRequestState: githubPullRequestState, openPullRequestBranches: githubOpenPullRequestBranches, baseBranchChecks: githubBaseBranchChecks } : {}), log: code => { logOperational(code) } },
     claudeSettingsLog: event => { logOperational(event) },
+    modelRouterLog: event => { logOperational(event) },
     codexLog: event => { logOperational(event) },
   }) : await inactiveLocalHost(userDataPath)
   const { agentHost, agentControl, threadRegistry, turns, hostService } = localRuntime

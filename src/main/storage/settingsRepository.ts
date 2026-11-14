@@ -13,6 +13,8 @@ export interface SettingsRepositoryOptions {
   workerRolesEnabled?: boolean
   /** The Owl list's answer for Dynamic threads (ADR-0191), read once at start. Off, its limits stay as saved, as worker roles do. */
   dynamicThreadsEnabled?: boolean
+  /** The Owl list's answer for model routing (ADR-0207), read once at start. Off, its settings stay as saved. */
+  modelRouterEnabled?: boolean
   /** Worker counts and this machine's ceiling survive saves and resets while the swarm switch is off. */
   workerSwarmsEnabled?: boolean
   /** The Owl list's answer for extra and hold dictation shortcuts, read once at start. Off, a save or a reset keeps the saved lists. */
@@ -37,6 +39,7 @@ export class SettingsRepository {
   private readonly shellPillInUse: (() => boolean) | undefined
   private readonly workerRolesEnabled: boolean
   private readonly dynamicThreadsEnabled: boolean
+  private readonly modelRouterEnabled: boolean
   private readonly workerSwarmsEnabled: boolean
   private readonly dictationHoldShortcutsEnabled: boolean
   private readonly interfaceLanguageEnabled: boolean
@@ -45,6 +48,7 @@ export class SettingsRepository {
   constructor(filePath: string, options: SettingsRepositoryOptions = {}) {
     this.workerRolesEnabled = options.workerRolesEnabled ?? true
     this.dynamicThreadsEnabled = options.dynamicThreadsEnabled ?? true
+    this.modelRouterEnabled = options.modelRouterEnabled ?? true
     this.workerSwarmsEnabled = options.workerSwarmsEnabled ?? true
     this.dictationHoldShortcutsEnabled = options.dictationHoldShortcutsEnabled ?? true
     this.interfaceLanguageEnabled = options.interfaceLanguageEnabled ?? true
@@ -89,6 +93,10 @@ export class SettingsRepository {
         throw new Error('Dynamic threads are available in Sotto Owl. Nothing was changed.')
       }
       if (!this.dynamicThreadsEnabled) delete patchSnapshot.dynamicThreads
+      if (!this.modelRouterEnabled && patchSnapshot.modelRouter !== undefined && JSON.stringify(patchSnapshot.modelRouter) !== JSON.stringify(current.modelRouter)) {
+        throw new Error('Model routing is available in Sotto Owl. Nothing was changed.')
+      }
+      if (!this.modelRouterEnabled) delete patchSnapshot.modelRouter
       if (!this.workerSwarmsEnabled) {
         if (patchSnapshot.workerCeiling !== undefined && patchSnapshot.workerCeiling !== current.workerCeiling
           || patchSnapshot.workerMachineCeilings !== undefined && JSON.stringify(patchSnapshot.workerMachineCeilings) !== JSON.stringify(current.workerMachineCeilings)
@@ -116,9 +124,9 @@ export class SettingsRepository {
 
   /** What a build without an Owl feature keeps as it was saved, whatever a whole save or a reset brings. */
   private async keepHeld(settings: AppSettings): Promise<AppSettings> {
-    if (this.workerRolesEnabled && this.dynamicThreadsEnabled && this.workerSwarmsEnabled && this.dictationHoldShortcutsEnabled && this.interfaceLanguageEnabled) return settings
+    if (this.workerRolesEnabled && this.dynamicThreadsEnabled && this.modelRouterEnabled && this.workerSwarmsEnabled && this.dictationHoldShortcutsEnabled && this.interfaceLanguageEnabled) return settings
     const saved = await this.readSettings()
-    return this.keepSwarms({ ...settings, ...(this.workerRolesEnabled ? {} : { workerRoles: saved.workerRoles }), ...(this.dynamicThreadsEnabled ? {} : { dynamicThreads: saved.dynamicThreads }),
+    return this.keepSwarms({ ...settings, ...(this.workerRolesEnabled ? {} : { workerRoles: saved.workerRoles }), ...(this.dynamicThreadsEnabled ? {} : { dynamicThreads: saved.dynamicThreads }), ...(this.modelRouterEnabled ? {} : { modelRouter: saved.modelRouter }),
       ...(this.dictationHoldShortcutsEnabled ? {} : { hotkeyStandby: saved.hotkeyStandby, pressShortcuts: saved.pressShortcuts, holdShortcuts: saved.holdShortcuts }),
       ...(this.interfaceLanguageEnabled ? {} : { interfaceLanguage: saved.interfaceLanguage }) }, saved)
   }
