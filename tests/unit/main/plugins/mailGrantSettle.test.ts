@@ -39,7 +39,7 @@ async function desk() {
     mail: {
       granted: (threadId, accountId) => grants.has(threadId, accountId), grant: (threadId, accountId, copy) => grants.grant(threadId, accountId, copy), copyOf: accountId => grants.generation(accountId),
       threadOpen: threadId => grants.open(threadId), providerOf: () => 'Claude Code',
-      search: async () => { searched += 1; return FOUND }, open: never,
+      search: async () => { searched += 1; return FOUND }, open: never, sendTrouble: () => null, send: never,
     },
   })
   closing.push(() => rm(directory, { recursive: true, force: true }), () => { grants.close(); cards.close() }, () => tools.close())

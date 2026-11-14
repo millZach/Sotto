@@ -75,6 +75,10 @@ msgstr ""
 msgid "{file} is too large to be a theme file."
 msgstr ""
 
+#: src/main/plugins/changeWords.ts
+msgid "{first} and {more} more"
+msgstr ""
+
 #. {happened} is a system’s own error, shown as it came, such as “fetch failed”.
 #: src/main/hosts/hostFailureWords.ts
 msgid "{happened} Nothing was saved."
@@ -575,6 +579,10 @@ msgstr ""
 msgid "Auto-paste"
 msgstr "স্বয়ংক্রিয় পেস্ট"
 
+#: src/main/plugins/changeWords.ts
+msgid "Bcc: {bcc}"
+msgstr ""
+
 #: src/main/hosts/desktopHostRouter.ts
 msgid "Branches are unavailable on this host."
 msgstr ""
@@ -597,6 +605,10 @@ msgstr ""
 
 #: src/main/tools/browser.ts
 msgid "Capture the page again before selecting feedback."
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Cc: {cc}"
 msgstr ""
 
 #: src/main/hosts/desktopHostRouter.ts
@@ -869,6 +881,10 @@ msgstr ""
 msgid "Don’t post it"
 msgstr ""
 
+#: src/main/plugins/changeWords.ts
+msgid "Don’t send it"
+msgstr ""
+
 #: src/main/hosts/hostFailureWords.ts
 msgid "Download {archive} from the Sotto releases page to the SSH host, then unpack it into the host installation folder there:"
 msgstr ""
@@ -979,10 +995,6 @@ msgstr ""
 
 #: src/main/plugins/changeWords.ts
 msgid "Issue: {title}"
-msgstr ""
-
-#: src/main/plugins/changeWords.ts
-msgid "It cannot send, move or delete mail. Every other thread asks for itself."
 msgstr ""
 
 #: src/main/plugins/changeWords.ts
@@ -1509,6 +1521,18 @@ msgstr ""
 msgid "Select a thread before opening an embedded page."
 msgstr ""
 
+#: src/main/plugins/changeWords.ts
+msgid "Send an email as {named}"
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Send the email"
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Send this email from the {plugin} account {named} to {who}?"
+msgstr ""
+
 #: src/main/omarchy/setup.ts
 msgid "Set up by hand. Sotto leaves these files alone."
 msgstr ""
@@ -1919,6 +1943,10 @@ msgstr ""
 
 #: src/main/council/climbService.ts
 msgid "Stopped by you."
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Subject: {subject}"
 msgstr ""
 
 #: src/main/teams/teams.ts
@@ -3103,6 +3131,10 @@ msgstr ""
 msgid "This device needs to connect again or be paired on the host. Nothing was saved."
 msgstr ""
 
+#: src/main/plugins/changeWords.ts
+msgid "This does not let it send: each email it wants to send asks you first. It cannot move or delete mail. Every other thread asks for itself."
+msgstr ""
+
 #: src/main/agents/socketHostService.ts
 msgid "This draft could not be saved on the host. Reconnect and try again."
 msgstr ""
@@ -3557,6 +3589,10 @@ msgstr ""
 
 #: src/main/hosts/hostFailureWords.ts
 msgid "To see why, run this on the SSH host:"
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "To: {to}"
 msgstr ""
 
 #: src/main/hosts/hostUpdate.ts

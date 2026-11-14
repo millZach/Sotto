@@ -77,7 +77,9 @@ describe('sotto_plugins, the tools a thread’s agent uses plugins through (ADR-
       [PLUGIN_ACCOUNTS_TOOL, true, false], [PLUGIN_READ_TOOL, true, false],
       // Every change says it is one, and the three that end a build or move production say they are destructive.
       ['github_comment', false, false], ['github_open_issue', false, false], ['github_close_issue', false, false], ['github_reopen_issue', false, false],
-      ['vercel_cancel_deployment', false, true], ['vercel_promote_deployment', false, true], ['vercel_rollback_production', false, true]])
+      ['vercel_cancel_deployment', false, true], ['vercel_promote_deployment', false, true], ['vercel_rollback_production', false, true],
+      // An email is sent and not taken back, but it overwrites and deletes nothing, as a comment does not.
+      ['mail_send', false, false]])
     await expect(server.mcpServer('someone-else')).resolves.toBeUndefined()
     const offered = await server.mcpServer('admitted')
     expect(offered).toMatchObject({ name: PLUGINS_MCP_SERVER, type: 'http' })

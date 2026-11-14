@@ -133,7 +133,7 @@ test('A Gmail account is added from its row, and a thread reads it only once the
       await expect(request).toHaveCount(1, { timeout: 30_000 })
       await expect(request.getByText('Read Gmail mail', { exact: true })).toBeVisible()
       await expect(request.getByText('Personal', { exact: true })).toBeVisible()
-      await expect(request.locator('.agent-request__details')).toContainText('It cannot send, move or delete mail. Every other thread asks for itself.')
+      await expect(request.locator('.agent-request__details')).toContainText('This does not let it send: each email it wants to send asks you first. It cannot move or delete mail. Every other thread asks for itself.')
       await expect(request).not.toContainText(ADDRESS)
       const allow = request.getByRole('button', { name: 'Let this thread read it', exact: true })
       const deny = request.getByRole('button', { name: 'Don’t allow', exact: true })

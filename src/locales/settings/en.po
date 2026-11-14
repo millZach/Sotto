@@ -1432,6 +1432,10 @@ msgid "Asked to search mail"
 msgstr "Asked to search mail"
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Asked to send an email"
+msgstr "Asked to send an email"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Asking gh who is signed in…"
 msgstr "Asking gh who is signed in…"
 
@@ -5712,8 +5716,8 @@ msgid "Screenshots, pictures it looks at and picture and video files it writes s
 msgstr "Screenshots, pictures it looks at and picture and video files it writes show in the thread on their own. Off, you see only what you ask it to show you and images you ask it to make."
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
-msgid "Search and read mail with an app password. Each thread asks you once, in the thread, before it reads an account’s mail, and what it reads goes to that thread’s provider. A thread cannot send, move or delete mail, and a message it reads stays unread for you. To make a thread ask again, open its ··· menu and press Ask before this thread reads the account."
-msgstr "Search and read mail with an app password. Each thread asks you once, in the thread, before it reads an account’s mail, and what it reads goes to that thread’s provider. A thread cannot send, move or delete mail, and a message it reads stays unread for you. To make a thread ask again, open its ··· menu and press Ask before this thread reads the account."
+msgid "Search and read mail with an app password. Each thread asks you once, in the thread, before it reads an account’s mail, and what it reads goes to that thread’s provider. A thread asks you before each email it sends, and shows you the whole email first. It cannot move or delete mail, and a message it reads stays unread for you. To make a thread ask again, open its ··· menu and press Ask before this thread reads the account."
+msgstr "Search and read mail with an app password. Each thread asks you once, in the thread, before it reads an account’s mail, and what it reads goes to that thread’s provider. A thread asks you before each email it sends, and shows you the whole email first. It cannot move or delete mail, and a message it reads stays unread for you. To make a thread ask again, open its ··· menu and press Ask before this thread reads the account."
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Search community themes"
@@ -5792,6 +5796,10 @@ msgstr "Sends the text, never audio, to OpenRouter to tidy it up. Offline, you g
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Sends your audio to the model you pick. Off, dictation is transcribed on this computer."
 msgstr "Sends your audio to the model you pick. Off, dictation is transcribed on this computer."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sent an email"
+msgstr "Sent an email"
 
 #: src/renderer/src/features/settings/CloudSpeechModelList.tsx
 msgid "Sent only to a host that keeps no audio."
@@ -8561,6 +8569,10 @@ msgstr "Yes. The controls now sit in three short cards, beside a preview."
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "You allowed it, and it failed."
 msgstr "You allowed it, and it failed."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "You allowed it, and Sotto cannot tell whether it was sent."
+msgstr "You allowed it, and Sotto cannot tell whether it was sent."
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "You allowed it."

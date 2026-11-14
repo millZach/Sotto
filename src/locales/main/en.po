@@ -75,6 +75,10 @@ msgstr "{file} is not valid JSON."
 msgid "{file} is too large to be a theme file."
 msgstr "{file} is too large to be a theme file."
 
+#: src/main/plugins/changeWords.ts
+msgid "{first} and {more} more"
+msgstr "{first} and {more} more"
+
 #. {happened} is a system’s own error, shown as it came, such as “fetch failed”.
 #: src/main/hosts/hostFailureWords.ts
 msgid "{happened} Nothing was saved."
@@ -576,6 +580,10 @@ msgstr "Attempt limit reached."
 msgid "Auto-paste"
 msgstr "Auto-paste"
 
+#: src/main/plugins/changeWords.ts
+msgid "Bcc: {bcc}"
+msgstr "Bcc: {bcc}"
+
 #: src/main/hosts/desktopHostRouter.ts
 msgid "Branches are unavailable on this host."
 msgstr "Branches are unavailable on this host."
@@ -599,6 +607,10 @@ msgstr "Cancel the build of {named} on Vercel?"
 #: src/main/tools/browser.ts
 msgid "Capture the page again before selecting feedback."
 msgstr "Capture the page again before selecting feedback."
+
+#: src/main/plugins/changeWords.ts
+msgid "Cc: {cc}"
+msgstr "Cc: {cc}"
 
 #: src/main/hosts/desktopHostRouter.ts
 msgid "Changed files are unavailable on this host."
@@ -870,6 +882,10 @@ msgstr "Don’t open it"
 msgid "Don’t post it"
 msgstr "Don’t post it"
 
+#: src/main/plugins/changeWords.ts
+msgid "Don’t send it"
+msgstr "Don’t send it"
+
 #: src/main/hosts/hostFailureWords.ts
 msgid "Download {archive} from the Sotto releases page to the SSH host, then unpack it into the host installation folder there:"
 msgstr "Download {archive} from the Sotto releases page to the SSH host, then unpack it into the host installation folder there:"
@@ -981,10 +997,6 @@ msgstr "Install that Node for the SSH account on {name}, then try again."
 #: src/main/plugins/changeWords.ts
 msgid "Issue: {title}"
 msgstr "Issue: {title}"
-
-#: src/main/plugins/changeWords.ts
-msgid "It cannot send, move or delete mail. Every other thread asks for itself."
-msgstr "It cannot send, move or delete mail. Every other thread asks for itself."
 
 #: src/main/plugins/changeWords.ts
 msgid "It cannot send, move or delete mail. Every thread asks for itself."
@@ -1510,6 +1522,18 @@ msgstr "Select a region inside the captured page."
 msgid "Select a thread before opening an embedded page."
 msgstr "Select a thread before opening an embedded page."
 
+#: src/main/plugins/changeWords.ts
+msgid "Send an email as {named}"
+msgstr "Send an email as {named}"
+
+#: src/main/plugins/changeWords.ts
+msgid "Send the email"
+msgstr "Send the email"
+
+#: src/main/plugins/changeWords.ts
+msgid "Send this email from the {plugin} account {named} to {who}?"
+msgstr "Send this email from the {plugin} account {named} to {who}?"
+
 #: src/main/omarchy/setup.ts
 msgid "Set up by hand. Sotto leaves these files alone."
 msgstr "Set up by hand. Sotto leaves these files alone."
@@ -1921,6 +1945,10 @@ msgstr "Stop the host on {name}, then connect to it again from Settings > Hosts 
 #: src/main/council/climbService.ts
 msgid "Stopped by you."
 msgstr "Stopped by you."
+
+#: src/main/plugins/changeWords.ts
+msgid "Subject: {subject}"
+msgstr "Subject: {subject}"
 
 #: src/main/teams/teams.ts
 msgid "Tailscale could not set up the link's address. Nothing was linked. Try again."
@@ -3104,6 +3132,10 @@ msgstr "This device needs to connect again or be paired on the host."
 msgid "This device needs to connect again or be paired on the host. Nothing was saved."
 msgstr "This device needs to connect again or be paired on the host. Nothing was saved."
 
+#: src/main/plugins/changeWords.ts
+msgid "This does not let it send: each email it wants to send asks you first. It cannot move or delete mail. Every other thread asks for itself."
+msgstr "This does not let it send: each email it wants to send asks you first. It cannot move or delete mail. Every other thread asks for itself."
+
 #: src/main/agents/socketHostService.ts
 msgid "This draft could not be saved on the host. Reconnect and try again."
 msgstr "This draft could not be saved on the host. Reconnect and try again."
@@ -3559,6 +3591,10 @@ msgstr "To see why the unit failed, run this on {name}:"
 #: src/main/hosts/hostFailureWords.ts
 msgid "To see why, run this on the SSH host:"
 msgstr "To see why, run this on the SSH host:"
+
+#: src/main/plugins/changeWords.ts
+msgid "To: {to}"
+msgstr "To: {to}"
 
 #: src/main/hosts/hostUpdate.ts
 msgid "Try again to download it fresh, or update it by hand on {name}."
