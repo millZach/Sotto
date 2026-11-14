@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PROTOTYPE · Proton Mail through Bridge (slice 10, #2495)</title>
+<!--
+  PROTOTYPE, throwaway. Question: how is a Proton Mail Bridge account added on Settings › Plugins, how does Sotto
+  trust Bridge's own certificate, where does "Bridge isn't running" show, and what happens on paired computers?
+  Nothing here connects to anything. Every address and password is made up.
+-->
+<style>
+  :root { --bg: #07090c; --surface: #12161c; --raised: #171c24; --hairline: #262c36; --text: #e9ecf1; --text-2: #b4bbc7; --muted: #8a93a1; --accent: #63d2c6; --warn: #f2c96b; --field: #0d1015; }
+  :root[data-theme='light'] { --bg: #f8f7f3; --surface: #efede7; --raised: #ffffff; --hairline: #d9d5cc; --text: #1c1d1f; --text-2: #4a4d52; --muted: #6b6f76; --accent: #0f766e; --warn: #8a5a00; --field: #ffffff; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 26px 30px 120px; background: var(--bg); color: var(--text); font: 15px/1.5 Figtree, "Segoe UI", system-ui, sans-serif; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 38px 0 4px; }
+  p { margin: 6px 0; color: var(--text-2); max-width: 86ch; }
+  .note { color: var(--muted); font-size: 13px; }
+  .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 18px 26px; margin-top: 12px; }
+  .label { font-weight: 650; color: var(--text); margin: 0 0 6px; }
+  .rec { color: var(--accent); font-weight: 600; font-size: 13px; }
+  .row { background: var(--surface); border-radius: 12px; padding: 12px 14px; }
+  .row__head { display: flex; align-items: center; gap: 10px; font-weight: 650; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); display: inline-block; }
+  .dot--warn { background: var(--warn); }
+  .status { font-weight: 500; font-size: 13px; color: var(--text-2); display: inline-flex; align-items: center; gap: 6px; }
+  .account { margin-top: 10px; border: 1px solid var(--hairline); border-radius: 10px; padding: 10px 12px; background: var(--raised); }
+  .field { margin: 10px 0; }
+  .field label { display: block; font-weight: 600; font-size: 14px; color: var(--text); }
+  .field .desc { font-size: 13px; color: var(--muted); margin: 2px 0 4px; }
+  .input { border: 1px solid var(--hairline); background: var(--field); border-radius: 8px; padding: 6px 10px; color: var(--text); font-size: 14px; min-height: 32px; }
+  .ports { display: flex; gap: 12px; }
+  .ports .field { flex: 1; }
+  .btn { font: inherit; font-size: 14px; font-weight: 600; border-radius: 8px; padding: 5px 12px; border: 1px solid var(--hairline); background: transparent; color: var(--text); }
+  .btn--main { background: var(--text); color: var(--bg); border-color: var(--text); }
+  .warnline { color: var(--warn); font-size: 14px; margin: 8px 0; }
+  .toggle { display: flex; gap: 10px; align-items: flex-start; margin: 8px 0; }
+  .switch { width: 34px; height: 20px; border-radius: 10px; background: var(--accent); flex: none; margin-top: 2px; }
+  .switch--off { background: var(--hairline); }
+  details summary { cursor: default; color: var(--text-2); font-size: 14px; }
+  ul { margin: 6px 0; padding-left: 20px; color: var(--text-2); }
+  .bar { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); display: flex; gap: 8px; align-items: center; background: var(--raised); border: 1px solid var(--hairline); border-radius: 999px; padding: 6px 10px; box-shadow: 0 8px 30px rgb(0 0 0 / .35); }
+  .bar button { font: inherit; font-size: 13px; border: 1px solid var(--hairline); background: transparent; color: var(--text); border-radius: 999px; padding: 4px 12px; cursor: pointer; }
+</style>
+</head>
+<body>
+<h1>Proton Mail through Proton Mail Bridge <span class="note">· prototype for slice 10 (#2495) · nothing here connects to anything</span></h1>
+<p>Already decided in ADR-0205: Proton Mail is read and sent through <b>Proton Mail Bridge on the same computer</b>, at 127.0.0.1 and nowhere else, with the Bridge address and the Bridge password. It reads and sends exactly as Gmail does: each thread asks once before it reads, and every email asks. It needs a paid Proton plan that includes Bridge. What is left is yours: four questions, each with its answers side by side.</p>
+<p class="note">What Bridge's own code says (read November 14, 2026): it listens on 127.0.0.1, IMAP port 1143 and SMTP port 1025 by default, which the user can change in Bridge and which Bridge moves when a port is taken when it is first set up. Its certificate is its own, made for 127.0.0.1, not signed by anyone a computer already trusts. And <b>each computer's Bridge makes its own Bridge password</b>: the same Proton account has a different one on each computer.</p>
+
+<h2>1 · Adding an account: Bridge's ports</h2>
+<p>Bridge shows its ports beside the Bridge password, under the account's Mailbox details. The form always has a name, the Proton address and the Bridge password; the question is how the ports are given.</p>
+<div class="cols">
+  <div>
+    <p class="label">A · Two port fields, filled in with Bridge's defaults <span class="rec">recommended</span></p>
+    <div class="row">
+      <div class="field"><label>Name</label><div class="input">Private</div></div>
+      <div class="field"><label>Proton address</label><div class="desc">The address Bridge shows for this account. Sotto shows it here and never tells it to an agent.</div><div class="input">reader@proton.me</div></div>
+      <div class="field"><label>Bridge password</label><div class="desc">The password in Bridge, under this account's Mailbox details. It is not your Proton password. Sotto checks it with Bridge before saving it, and never shows it again.</div><div class="input">Paste the Bridge password</div></div>
+      <div class="ports">
+        <div class="field"><label>IMAP port</label><div class="input">1143</div></div>
+        <div class="field"><label>SMTP port</label><div class="desc"></div><div class="input">1025</div></div>
+      </div>
+      <p class="note">Change them only if Bridge shows others.</p>
+      <button class="btn btn--main">Add account</button>
+    </div>
+  </div>
+  <div>
+    <p class="label">B · The ports folded away</p>
+    <div class="row">
+      <div class="field"><label>Name</label><div class="input">Private</div></div>
+      <div class="field"><label>Proton address</label><div class="input">reader@proton.me</div></div>
+      <div class="field"><label>Bridge password</label><div class="input">Paste the Bridge password</div></div>
+      <details><summary>Bridge uses other ports</summary></details>
+      <p class="note">Opened, it shows the two port fields from A. Closed, Sotto uses 1143 and 1025.</p>
+      <button class="btn btn--main">Add account</button>
+    </div>
+  </div>
+  <div>
+    <p class="label">C · No ports: Sotto looks for Bridge</p>
+    <div class="row">
+      <div class="field"><label>Name</label><div class="input">Private</div></div>
+      <div class="field"><label>Proton address</label><div class="input">reader@proton.me</div></div>
+      <div class="field"><label>Bridge password</label><div class="input">Paste the Bridge password</div></div>
+      <button class="btn btn--main">Add account</button>
+    </div>
+    <p class="note">Sotto tries 1143 and 1025, then the next few ports above each, as Bridge does when one is taken. A port changed by hand to anything else cannot be found.</p>
+  </div>
+</div>
+
+<h2>2 · Trusting Bridge's certificate</h2>
+<p>A mail program checks that it is talking to the server it means. Bridge's certificate is its own, so no computer trusts it already. Thunderbird asks the user to accept it once. Sotto only ever talks to 127.0.0.1, but another program on the same computer could listen on Bridge's port while Bridge is closed and be handed the Bridge password.</p>
+<div class="cols">
+  <div>
+    <p class="label">A · Remember it when the account is added <span class="rec">recommended</span></p>
+    <ul><li>Adding the account keeps the certificate Bridge showed. Afterwards Sotto talks only to a Bridge with that certificate.</li><li>If it changes, as when Bridge is reinstalled, nothing is read or sent, and the account says so:</li></ul>
+    <div class="account">
+      <b>Private</b> <span class="note">reader@proton.me. Bridge password saved November 14.</span>
+      <p class="warnline">Bridge’s certificate has changed since this account was added, so Sotto is not using it. If you reinstalled Bridge or reset it, trust the new one.</p>
+      <button class="btn">Trust Bridge’s new certificate</button>
+    </div>
+  </div>
+  <div>
+    <p class="label">B · Trust whatever answers on 127.0.0.1</p>
+    <ul><li>No certificate is remembered and nothing asks. A reinstalled Bridge just works.</li><li>A program on this computer that listens on Bridge's port while Bridge is closed would be sent the Bridge password.</li></ul>
+  </div>
+</div>
+
+<h2>3 · When Bridge isn't running</h2>
+<p>A read or a send that finds nothing on Bridge's port tells the thread "Proton Mail Bridge isn't running on this computer" either way. The question is whether the page says so too.</p>
+<div class="cols">
+  <div>
+    <p class="label">A · The row says so, looked at when the page opens <span class="rec">recommended</span></p>
+    <div class="row">
+      <div class="row__head">Proton Mail <span class="status"><span class="dot dot--warn"></span>Bridge isn’t running</span></div>
+      <div class="account"><b>Private</b> <span class="note">reader@proton.me. Bridge password saved November 14.</span>
+        <p class="warnline">Proton Mail Bridge isn’t running on this computer, so threads can’t read or send this account’s mail. Open Bridge, then look again.</p>
+        <button class="btn">Look again</button>
+      </div>
+    </div>
+    <p class="note">Sotto knocks on Bridge's port when the page opens and when Look again is pressed, and sends nothing. Running, the row reads "Private" with the usual dot.</p>
+  </div>
+  <div>
+    <p class="label">B · Only the thread is told</p>
+    <div class="row">
+      <div class="row__head">Proton Mail <span class="status"><span class="dot"></span>Private</span></div>
+    </div>
+    <p class="note">The page never knocks on Bridge. A thread whose read or send finds Bridge closed is told, and its agent tells you.</p>
+  </div>
+</div>
+
+<h2>4 · Paired computers</h2>
+<p>A Gmail account is copied to a paired computer so its threads can use it. A Proton account cannot simply be copied: each computer's Bridge has its own Bridge password, so the one from this computer would be refused there.</p>
+<div class="cols">
+  <div>
+    <p class="label">A · Proton accounts stay on this computer, for now <span class="rec">recommended</span></p>
+    <div class="account">
+      <b>Where its secret is kept</b>
+      <p><b>This computer</b> Always, in Sotto’s encrypted store.</p>
+      <p class="note">Not copied to forge: each computer’s Bridge has its own Bridge password. A thread on forge is told no Proton Mail account is available there.</p>
+    </div>
+    <p class="note">A later slice can add B.</p>
+  </div>
+  <div>
+    <p class="label">B · Each paired computer gets its own Bridge password</p>
+    <div class="account">
+      <b>Where its secret is kept</b>
+      <p><b>This computer</b> Always, in Sotto’s encrypted store.</p>
+      <div class="toggle"><span class="switch"></span><div><b>Use Private on forge</b><div class="note">With forge’s own Bridge password, checked with the Bridge on forge. Bridge isn’t running on forge.</div></div></div>
+      <div class="field"><label>Bridge password on forge</label><div class="input">Paste the Bridge password from forge’s Bridge</div></div>
+    </div>
+    <p class="note">The password goes to forge over the connection Sotto already holds, as a Gmail copy does, and forge says whether its Bridge is running.</p>
+  </div>
+</div>
+
+<div class="bar"><span>Proton Mail mock-up</span><button id="theme">Light</button></div>
+<script>
+  const button = document.getElementById('theme')
+  button.onclick = () => {
+    const light = document.documentElement.dataset.theme !== 'light'
+    document.documentElement.dataset.theme = light ? 'light' : 'dark'
+    button.textContent = light ? 'Dark' : 'Light'
+  }
+</script>
+</body>
+</html>
