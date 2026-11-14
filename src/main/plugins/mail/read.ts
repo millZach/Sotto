@@ -3,6 +3,7 @@ import type { Duplex } from 'node:stream'
 import { connect as connectTls } from 'node:tls'
 import { atomOf, IMAP_LITERAL_MAX, ImapClosed, ImapConnection, ImapProtocolError, listOf, textOf, type ImapAnswer, type ImapArg, type ImapItem } from './imapWire'
 import { attachedParts, decodeMailboxName, decodePart, htmlToText, mailHeaders, mailParts, readableText, textPart } from './message'
+import { isMailCertificate, isThisComputer, MailCertificateChanged, plainToThisComputer, startTls, type MailCertificate } from './startTls'
 
 /**
  * Reading a mail account over IMAP (ADR-0205): whether a sign-in is good, a search, and one message opened. Each
@@ -13,8 +14,16 @@ import { attachedParts, decodeMailboxName, decodePart, htmlToText, mailHeaders, 
  * and no result.
  */
 
-/** A mail server: its name and port. The connection is TLS from its first byte. */
-export interface MailServer { readonly host: string; readonly port: number }
+/**
+ * A mail server: its name and port. The connection is TLS from its first byte, checked against the usual list of
+ * certificates, unless `startTls` says otherwise: then it is a plain connection to this computer that STARTTLS makes
+ * TLS of, and the server must show the certificate kept for it (as Proton Mail Bridge does, ADR-0205 slice 10), or
+ * `learn` takes whichever it shows, for a check alone.
+ */
+export interface MailServer {
+  readonly host: string; readonly port: number
+  readonly startTls?: { readonly certificate: MailCertificate | 'learn' }
+}
 /** What signs in to it: the address, and the password the service gave for apps. */
 export interface MailSignIn { readonly address: string; readonly password: string }
 /** How this module reaches the network: TLS to the server, or a stand-in. The stream is closed when `signal` fires. */
@@ -44,11 +53,12 @@ const LISTED_MAX = 50
  * take the address and password. `busy`: it is turning sign-ins away for now. `unreachable`: it could not be reached,
  * or did not answer in time. `mailbox`: the account has no such mailbox; `mailboxes` names the ones it has. `moved`:
  * the mailbox was rebuilt since the search, so its messages have new names. `gone`: the message is no longer there.
- * `failed`: the server answered something else. `said` is the server's own words for it, where it gave any.
+ * `failed`: the server answered something else. `certificate`: the server showed another certificate than the one
+ * kept for it, so nothing was sent to it. `said` is the server's own words for it, where it gave any.
  */
 export interface MailFailure {
   readonly ok: false
-  readonly reason: 'input' | 'refused' | 'busy' | 'unreachable' | 'mailbox' | 'moved' | 'gone' | 'failed'
+  readonly reason: 'input' | 'refused' | 'busy' | 'unreachable' | 'mailbox' | 'moved' | 'gone' | 'failed' | 'certificate'
   readonly said?: string
   readonly mailboxes?: readonly string[]
 }
@@ -92,7 +102,8 @@ export interface MailMessage extends MailSummary {
   /** The files that came with it, by name. Their contents are not read. */
   readonly files: readonly MailFile[]
 }
-export type MailCheck = { readonly ok: true } | MailFailure
+/** A sign-in that was taken, with the certificate a STARTTLS server showed, for it to be kept. */
+export type MailCheck = { readonly ok: true; readonly certificate?: MailCertificate } | MailFailure
 export type MailFound = { readonly ok: true; readonly mailbox: string; /** How many messages matched; `messages` is the newest of them. */ readonly found: number; readonly messages: readonly MailSummary[] } | MailFailure
 export type MailOpened = { readonly ok: true; readonly mailbox: string; readonly message: MailMessage } | MailFailure
 
@@ -137,7 +148,8 @@ const BUSY_WORDS = /too many|throttl|temporar|try again later|rate limit/iu
  * Signs in, does one piece of work, and says goodbye. A connection that fails or runs out of time is `unreachable`;
  * a server that says something this cannot read is `failed`.
  */
-async function signedIn<Result extends { readonly ok: true }>(server: MailServer, signIn: MailSignIn, options: MailOptions, work: (imap: ImapConnection) => Promise<Result | MailFailure>): Promise<Result | MailFailure> {
+async function signedIn<Result extends { readonly ok: true }>(server: MailServer, signIn: MailSignIn, options: MailOptions, work: (imap: ImapConnection, certificate?: MailCertificate) => Promise<Result | MailFailure>): Promise<Result | MailFailure> {
+  if (!mayReach(server)) return failure('input')
   const result = await inSession(server, signIn, options, work)
   if (!isFailure(result) || result.said === undefined) return result
   // A server can repeat what it was sent. Its words are dropped where they hold the password or the address, wherever
@@ -147,7 +159,7 @@ async function signedIn<Result extends { readonly ok: true }>(server: MailServer
   return { ...result, said: result.said.slice(0, SAID_MAX) }
 }
 
-async function inSession<Result extends { readonly ok: true }>(server: MailServer, signIn: MailSignIn, options: MailOptions, work: (imap: ImapConnection) => Promise<Result | MailFailure>): Promise<Result | MailFailure> {
+async function inSession<Result extends { readonly ok: true }>(server: MailServer, signIn: MailSignIn, options: MailOptions, work: (imap: ImapConnection, certificate?: MailCertificate) => Promise<Result | MailFailure>): Promise<Result | MailFailure> {
   const controller = new AbortController()
   const stop = (): void => controller.abort()
   const timer = setTimeout(stop, options.timeoutMs ?? MAIL_TIMEOUT_MS)
@@ -160,11 +172,23 @@ async function inSession<Result extends { readonly ok: true }>(server: MailServe
     // A connection that is never made, and never refused, ends with the time this read has.
     const outOfTime = new Promise<never>((_resolve, reject) => { controller.signal.addEventListener('abort', () => reject(new ImapClosed()), { once: true }) })
     let socket: Duplex
-    try { socket = await Promise.race([(options.connect ?? mailOverTls)(server, controller.signal), outOfTime]) } catch { return failure('unreachable') }
+    try { socket = await Promise.race([(options.connect ?? (server.startTls ? plainToThisComputer : mailOverTls))(server, controller.signal), outOfTime]) } catch { return failure('unreachable') }
     imap = new ImapConnection(socket, controller.signal)
     const greeting = await imap.greeting()
     // A server that takes the connection as signed in already has not been told who by: it is not read from.
     if (greeting.status !== 'OK') return failure(greeting.status === 'BYE' ? 'busy' : 'failed', greeting.text)
+    let certificate: MailCertificate | undefined
+    if (server.startTls) {
+      // The connection began in the clear. It is made TLS before anything else is said, and the server must show
+      // the certificate kept for it; nothing it said in the clear but its greeting and its yes is read.
+      const before = await imap.run('CAPABILITY')
+      if (!before.data.some(line => line.some(item => atomOf(item) === 'STARTTLS'))) return failure('failed', 'The mail server does not offer TLS.')
+      const begun = await imap.run('STARTTLS')
+      if (begun.status !== 'OK') return failure('failed', begun.text)
+      const secure = await Promise.race([startTls(imap.release(), server.startTls.certificate, controller.signal), outOfTime])
+      certificate = secure.certificate
+      imap = new ImapConnection(secure.socket, controller.signal)
+    }
     const capability = await imap.run('CAPABILITY')
     if (capability.data.some(line => line.some(item => atomOf(item) === 'LOGINDISABLED'))) return failure('failed', 'The mail server does not take a password on this connection.')
     const login = await imap.run('LOGIN', { text: signIn.address }, { text: signIn.password })
@@ -172,9 +196,9 @@ async function inSession<Result extends { readonly ok: true }>(server: MailServe
       const busy = BUSY_CODES.has(login.code ?? '') || BUSY_WORDS.test(login.text)
       return failure(login.status === 'BAD' ? 'failed' : busy ? 'busy' : 'refused', login.text)
     }
-    return await work(imap)
+    return await work(imap, certificate)
   } catch (error) {
-    return failure(error instanceof ImapProtocolError ? 'failed' : 'unreachable')
+    return failure(error instanceof MailCertificateChanged ? 'certificate' : error instanceof ImapProtocolError ? 'failed' : 'unreachable')
   } finally {
     clearTimeout(timer)
     options.signal?.removeEventListener('abort', stop)
@@ -185,10 +209,44 @@ async function inSession<Result extends { readonly ok: true }>(server: MailServe
 /** Whether text is something to send a mail server: not empty, not too long, and with no character that is not a letter. */
 const plain = (text: string, max: number): boolean => text.length > 0 && text.length <= max && ![...text].some(character => character.charCodeAt(0) < 0x20 || character.charCodeAt(0) === 0x7f)
 
-/** Whether a server takes an address and password. It signs in and reads nothing. */
+/**
+ * Whether a server may be reached as it is described: one that begins in the clear is on this computer, and is
+ * checked against a certificate kept for it, or is learning one.
+ */
+export const mayReach = (server: MailServer): boolean => !server.startTls
+  || (isThisComputer(server.host) && (server.startTls.certificate === 'learn' || isMailCertificate(server.startTls.certificate)))
+/** Whether a server is to learn its certificate, which only a check may: a read or a send needs the one kept. */
+export const isLearning = (server: MailServer): boolean => server.startTls?.certificate === 'learn'
+
+/**
+ * Whether a server takes an address and password. It signs in and reads nothing. A STARTTLS server's certificate is
+ * handed back, to be kept: a check is the one call that may learn it.
+ */
 export function checkMailSignIn(server: MailServer, signIn: MailSignIn, options: MailOptions = {}): Promise<MailCheck> {
   if (!plain(signIn.address, 320) || !plain(signIn.password, 1_000)) return Promise.resolve(failure('input'))
-  return signedIn<{ readonly ok: true }>(server, signIn, options, async () => ({ ok: true }))
+  return signedIn<Extract<MailCheck, { ok: true }>>(server, signIn, options, async (_imap, certificate) => ({ ok: true, ...(certificate ? { certificate } : {}) }))
+}
+
+/**
+ * Whether anything answers at a server's port: a connection made and ended at once, sending nothing, so the page
+ * can say whether Proton Mail Bridge is running. It is no sign-in and says nothing of the password.
+ */
+export async function mailServerAnswers(server: MailServer, options: MailOptions = {}): Promise<boolean> {
+  if (!mayReach(server)) return false
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? 3_000)
+  const stop = (): void => controller.abort()
+  options.signal?.addEventListener('abort', stop, { once: true })
+  try {
+    const socket = await (options.connect ?? (server.startTls ? plainToThisComputer : mailOverTls))(server, controller.signal)
+    socket.destroy()
+    return true
+  } catch {
+    return false
+  } finally {
+    clearTimeout(timer)
+    options.signal?.removeEventListener('abort', stop)
+  }
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -232,6 +290,11 @@ function criteria(search: MailSearch): ImapArg[] | null {
 
 /** The mailboxes people name by what they are for, and the mark a server sets on each (RFC 6154). */
 const SPECIAL: Readonly<Record<string, string>> = { all: '\\ALL', sent: '\\SENT', drafts: '\\DRAFTS', trash: '\\TRASH', spam: '\\JUNK', starred: '\\FLAGGED' }
+/**
+ * Their names where a server marks none, as Proton Mail Bridge does not: matched without regard to capitals, after
+ * any mark and the name asked for itself.
+ */
+const NAMED: Readonly<Record<string, readonly string[]>> = { all: ['all mail'], spam: ['junk'] }
 
 /** A mailbox by the server's own name for it (`raw`) and in its own letters (`name`). */
 interface NamedMailbox { readonly raw: string; readonly name: string }
@@ -266,6 +329,7 @@ async function mailboxFor(imap: ImapConnection, wanted: string | undefined): Pro
   const mark = SPECIAL[key]
   // A name is its own letters first: two mailboxes may differ only in their capitals.
   const found = (mark === undefined ? undefined : boxes.find(box => box.marks.includes(mark))) ?? boxes.find(box => box.name === wanted.trim()) ?? boxes.find(box => box.name.toLowerCase() === key)
+    ?? boxes.find(box => NAMED[key]?.includes(box.name.toLowerCase()))
   if (!found) return { ...failure('mailbox'), mailboxes: boxes.slice(0, LISTED_MAX).map(box => box.name) }
   return { raw: found.raw, name: found.name }
 }
@@ -317,6 +381,7 @@ function summary(mailbox: OpenMailbox, uid: number, values: Map<string, ImapItem
 
 /** Searches one mailbox of an account and lists the newest messages that match. Nothing is marked as read. */
 export function searchMail(server: MailServer, signIn: MailSignIn, search: MailSearch, options: MailOptions = {}): Promise<MailFound> {
+  if (isLearning(server)) return Promise.resolve(failure('input'))
   const wanted = criteria(search)
   const limit = search.limit ?? MAIL_SEARCH_DEFAULT
   if (!wanted || !Number.isInteger(limit) || limit < 1 || limit > MAIL_SEARCH_MAX || (search.mailbox !== undefined && !plain(search.mailbox, MAIL_TERM_MAX))) return Promise.resolve(failure('input'))
@@ -353,6 +418,7 @@ export function searchMail(server: MailServer, signIn: MailSignIn, search: MailS
  * of the files that came with it. The message stays unread, and no file's contents are fetched.
  */
 export function openMail(server: MailServer, signIn: MailSignIn, message: { readonly id: string }, options: MailOptions = {}): Promise<MailOpened> {
+  if (isLearning(server)) return Promise.resolve(failure('input'))
   const named = messageNamed(message.id)
   if (!named) return Promise.resolve(failure('input'))
   const { validity, uid } = named

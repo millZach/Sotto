@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import type { Duplex } from 'node:stream'
 import { composeMail, draftProblem, draftRecipients, isMailAddress, mailMessageId, type MailDraft } from './compose'
-import { mailOverTls, type MailOptions, type MailServer, type MailSignIn } from './read'
+import { isLearning, mailOverTls, mayReach, type MailOptions, type MailServer, type MailSignIn } from './read'
 import { SmtpConnection, SmtpProtocolError, type SmtpReply } from './smtpWire'
+import { MailCertificateChanged, plainToThisComputer, startTls } from './startTls'
 
 /**
  * Sending one message from a mail account over SMTP (ADR-0205, slice 9). A send is a connection of its own, from
@@ -19,14 +20,15 @@ export const MAIL_SEND_TIMEOUT_MS = 60_000
  * Why a message was not sent, or may not have been. `input`: it is not something this sends; `said` says why.
  * `refused`: the server did not take the address and password. `busy`: it is turning this away for now. `recipient`:
  * it would not take mail for `recipient`. `unreachable`: it could not be reached, or stopped answering before the
- * message was handed over. `failed`: it answered something else. Each of those sent nothing.
+ * message was handed over. `failed`: it answered something else. `certificate`: it showed another certificate than
+ * the one kept for it, so it was sent nothing at all. Each of those sent nothing.
  *
  * `unsure` is the one that did not: the whole message was handed over and the server's answer never came, so it may
  * have been sent. Sending it again could send it twice.
  */
 export interface MailSendFailure {
   readonly ok: false
-  readonly reason: 'input' | 'refused' | 'busy' | 'recipient' | 'unreachable' | 'failed' | 'unsure'
+  readonly reason: 'input' | 'refused' | 'busy' | 'recipient' | 'unreachable' | 'failed' | 'unsure' | 'certificate'
   readonly said?: string
   readonly recipient?: string
 }
@@ -64,6 +66,8 @@ const plainAuth = (signIn: MailSignIn): string => Buffer.from(`\0${signIn.addres
  */
 export async function sendMail(server: MailServer, signIn: MailSignIn, draft: MailDraft, options: MailSendOptions = {}): Promise<MailSent | MailSendFailure> {
   if (!isMailAddress(signIn.address) || signIn.password.length === 0 || /[\r\n\0]/u.test(signIn.password)) return failure('input', 'This account\'s address or password is not one a mail server takes.')
+  // A send needs the certificate kept for a server that begins in the clear: only a check may learn one.
+  if (!mayReach(server) || isLearning(server)) return failure('input', 'This account\'s mail server is not one Sotto sends through.')
   const problem = draftProblem(draft)
   if (problem !== null) return failure('input', problem)
   const id = (options.id ?? randomUUID)()
@@ -94,13 +98,24 @@ async function inSession(server: MailServer, signIn: MailSignIn, draft: MailDraf
     if (controller.signal.aborted) return failure('unreachable')
     const outOfTime = new Promise<never>((_resolve, reject) => { controller.signal.addEventListener('abort', () => reject(new Error('Out of time.')), { once: true }) })
     let socket: Duplex
-    try { socket = await Promise.race([(options.connect ?? mailOverTls)(server, controller.signal), outOfTime]) } catch { return failure('unreachable') }
+    try { socket = await Promise.race([(options.connect ?? (server.startTls ? plainToThisComputer : mailOverTls))(server, controller.signal), outOfTime]) } catch { return failure('unreachable') }
     smtp = new SmtpConnection(socket, controller.signal)
     const greeting = await smtp.reply()
     if (greeting.code !== 220) return turnedAway(greeting, 'failed')
     // The name a client gives itself. An address of this computer's own says nothing of whose computer it is.
-    const hello = await smtp.command('EHLO [127.0.0.1]')
+    let hello = await smtp.command('EHLO [127.0.0.1]')
     if (hello.code !== 250) return turnedAway(hello, 'failed')
+    if (server.startTls) {
+      // The connection began in the clear. It is made TLS before the sign-in, and the server must show the
+      // certificate kept for it. What it offered in the clear is forgotten: it is asked again over TLS (RFC 3207).
+      if (!hello.lines.some(line => line.toUpperCase().trim() === 'STARTTLS')) return failure('failed', 'The mail server does not offer TLS.')
+      const begun = await smtp.command('STARTTLS')
+      if (begun.code !== 220) return turnedAway(begun, 'failed')
+      const secure = await Promise.race([startTls(smtp.release(), server.startTls.certificate, controller.signal), outOfTime])
+      smtp = new SmtpConnection(secure.socket, controller.signal)
+      hello = await smtp.command('EHLO [127.0.0.1]')
+      if (hello.code !== 250) return turnedAway(hello, 'failed')
+    }
     if (!hello.lines.some(line => { const words = line.toUpperCase().split(/[ =]+/u); return words[0] === 'AUTH' && words.includes('PLAIN') })) return failure('failed', 'The mail server does not take a password on this connection.')
     const auth = await smtp.command(`AUTH PLAIN ${plainAuth(signIn)}`)
     // Its words are not kept: they answer the command that carried the password, and could repeat any part of it.
@@ -125,7 +140,7 @@ async function inSession(server: MailServer, signIn: MailSignIn, draft: MailDraf
     if (sent.code >= 400 && sent.code < 600) return turnedAway(sent, 'failed')
     return failure('unsure')
   } catch (error) {
-    return failure(handedOver ? 'unsure' : error instanceof SmtpProtocolError ? 'failed' : 'unreachable')
+    return failure(handedOver ? 'unsure' : error instanceof MailCertificateChanged ? 'certificate' : error instanceof SmtpProtocolError ? 'failed' : 'unreachable')
   } finally {
     clearTimeout(timer)
     options.signal?.removeEventListener('abort', stop)
