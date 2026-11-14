@@ -263,6 +263,8 @@ const secretTrouble = (trouble: SecretTrouble, service: string, account: string,
 
 /** Proton Mail Bridge, which Proton Mail is reached through on this computer, is not answering. */
 const BRIDGE_AWAY = 'Proton Mail Bridge isn\'t running on this computer, or isn\'t answering. Ask the user to open Bridge, then try again.'
+/** A thread on a computer that keeps no Proton Mail account, as a paired host never does. */
+const BRIDGE_ELSEWHERE = 'No Proton Mail account is available to threads on this computer: Proton Mail accounts stay on the computer they were added on, which reaches Proton Mail Bridge there. Start the work in a thread on that computer.'
 /** Bridge shows another certificate than the one kept for the account, so nothing was sent to it. */
 const bridgeChanged = (account: string): string => `Proton Mail Bridge on this computer showed another certificate than the one Sotto keeps for the account "${account}", as it does once Bridge is reinstalled or reset, so Sotto sent it nothing. Ask the user to open ${SETTINGS} and, if they reinstalled or reset Bridge, trust Bridge's new certificate.`
 /** How the password of a mail account is named: Proton Mail's is Bridge's own. */
@@ -601,6 +603,8 @@ export class PluginToolServer implements ScopedThreadTools {
    */
   private async accountOf(threadId: string, plugin: AccountPluginId, named: string | undefined, nothing: string): Promise<PluginAccount | ThreadToolResult> {
     const service = PLUGIN_NAMES[plugin]
+    // Proton Mail accounts stay on the computer that added them, so none is here to add or find on a paired one.
+    if (isBridgePlugin(plugin) && this.handlers.mail?.keepsBridgeAccounts !== true) return text(`${BRIDGE_ELSEWHERE} ${nothing}`, true)
     const account = await this.handlers.findAccount(threadId, plugin, named)
     if (account === 'none') return text(`No ${service} account is added. Ask the user to add one in ${SETTINGS}. ${nothing}`, true)
     if (account === 'withheld') return text(`No ${service} account is available to this thread: the user has switched it off or kept it to other projects. Tell the user, who can change that in ${SETTINGS}. ${nothing}`, true)
@@ -773,7 +777,7 @@ export class PluginToolServer implements ScopedThreadTools {
       // Proton Mail accounts stay on the computer that added them, so a paired computer's threads have none.
       const elsewhere = isBridgePlugin(plugin) && this.handlers.mail?.keepsBridgeAccounts !== true
       mail.push({ id: plugin, name: PLUGIN_NAMES[plugin], names: mine.map(account => account.name), line: elsewhere
-        ? 'no account is available to threads on this computer: Proton Mail accounts stay on the computer they were added on, which reaches Proton Mail Bridge there.'
+        ? 'no account is available to threads on this computer: Proton Mail accounts stay on the computer they were added on, which reaches Proton Mail Bridge there. Start the work in a thread on that computer.'
         : kept ? `no account is available to this thread: the user has switched it off or kept it to other projects, and can change that in ${SETTINGS}.`
         : mine.length === 0 ? `no account added. To use it, ask the user to add one in ${SETTINGS}.`
         : `${mine.length === 1 ? 'account' : 'accounts'} ${mine.map(account => `"${account.name}"`).join(', ')}. Read with ${PLUGIN_READ_TOOL}, plugin "${plugin}"${mine.length > 1 ? ', "account" as one of those names' : ''} and "search" or "message". The user is asked once before this thread first reads an account. Send an email with ${MAIL_SEND_TOOL}; the user is asked before each one.` })

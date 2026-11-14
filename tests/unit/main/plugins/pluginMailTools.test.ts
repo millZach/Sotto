@@ -319,4 +319,14 @@ describe('a Proton Mail account through plugin_read (ADR-0205, slice 10)', () =>
     const here = tools({ accounts: [PERSONAL, PRIVATE], bridgeHere: true })
     expect(said(await here.server.call('one', PLUGIN_ACCOUNTS_TOOL, {}))).toContain('Proton Mail: account "Private". Read with plugin_read, plugin "proton-mail"')
   })
+
+  it('tells a thread on such a computer the same when it reads or sends directly, rather than to add an account it cannot', async () => {
+    const host = tools({ accounts: [PERSONAL] })
+    const read = await host.read('one', { plugin: 'proton-mail', search: {} })
+    expect(said(read)).toBe('No Proton Mail account is available to threads on this computer: Proton Mail accounts stay on the computer they were added on, which reaches Proton Mail Bridge there. Start the work in a thread on that computer. Nothing was read.')
+    const sent = await host.server.call('one', 'mail_send', { plugin: 'proton-mail', to: ['ann@example.com'], subject: 'Hello', text: 'Hello.' })
+    expect(said(sent)).toContain('Proton Mail accounts stay on the computer they were added on')
+    expect(said(sent)).toContain('Nothing was sent.')
+    expect([host.asked, host.searched]).toEqual([[], []])
+  })
 })
