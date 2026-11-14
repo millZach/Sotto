@@ -109,6 +109,10 @@ const EMPTY_MESSAGES: AgentMessage[] = []
 class AnswerDeliveryUnconfirmed extends Error {
   delivered = false
 }
+/** A prompt the provider took whose echo was not yet in its state; the banner it raised goes once the echo arrives. */
+class SendUnconfirmed extends Error {
+  constructor(readonly commandId: string) { super('The provider has not confirmed this user message in its state. Refresh to reconcile the existing send; it will not be replayed.') }
+}
 const EMPTY_ACTIVITIES: AgentActivity[] = []
 /** Stands in for a certified catalog while the shell is cloned; the catalog itself goes in afterwards, shared. */
 const EMPTY_MODELS: AgentModel[] = []
@@ -499,6 +503,8 @@ export class AgentControl {
    * not a prompt never diverts a send into the queue or holds a queued follow-up back.
    */
   private readonly threadPrompts = new Map<string, number>()
+  /** Threads a Send of a saved draft (`sendDraft`) is on its way to, kept observed as `threadPrompts` are. */
+  private readonly draftSends = new Map<string, number>()
   private readonly pumping = new Set<string>()
   private state: AgentState
   private outboxEntries: Saved['outbox'] = []
@@ -2844,8 +2850,9 @@ export class AgentControl {
    * Tell the host which threads keep a live provider session (CONTEXT.md, live-session set), then which it observes. A
    * thread on screen is only observed: its transcript is read and its messages held, and its session starts when the user
    * types, sends or acts on it (ADR-0016, November 1, 2026 amendment). Threads Sotto sends to unasked or waits on keep
-   * theirs: Watcher's, a delegation's, a queued follow-up's, an outbox entry's, and a send's own (`threadIds`). The set
-   * goes first, so an adapter never takes an observation for a start before it has heard which threads are live.
+   * theirs: Watcher's, a delegation's, a queued follow-up's, an outbox entry's, a send's own (`threadIds`), and one with a
+   * prompt of the user's on its way (`threadPrompts`). The set goes first, so an adapter never takes an observation for a
+   * start before it has heard which threads are live.
    */
   private observe(...threadIds: string[]): void {
     const host = this.dependencies.host
@@ -2857,10 +2864,15 @@ export class AgentControl {
       ...(this.state.draftThreadId && this.hasDraft() ? [this.state.draftThreadId] : []),
       ...this.viewedThreadIds.filter(id => this.threadById(id) !== undefined), ...live])].filter(id => this.threadAvailable(id)))
   }
-  /** The live-session set: the threads Sotto sends to unasked or waits on, and `extra` (a send's own thread). */
+  /**
+   * The live-session set: the threads Sotto sends to unasked or waits on, and `extra` (a send's own thread). A thread
+   * with a prompt on its way stays in it from Send until the prompt settles, whichever thread the window shows meanwhile:
+   * its messages are held only while it is observed, and the send is confirmed by its echo among them. Without it, a send
+   * waiting on its lane to a thread the user moved away from read as unconfirmed although the provider took it.
+   */
   private liveSessionIds(extra: readonly string[] = []): string[] {
     return [...new Set([...this.watcherHooks?.watchedThreadIds?.() ?? [], ...this.delegationHooks?.observedThreadIds() ?? [], ...this.councilHooks?.observedThreadIds() ?? [], ...this.queuedThreadIds(),
-      ...this.outboxEntries.flatMap(item => item.threadId ? [item.threadId] : []), ...extra])].filter(id => this.threadAvailable(id))
+      ...this.outboxEntries.flatMap(item => item.threadId ? [item.threadId] : []), ...this.threadPrompts.keys(), ...this.draftSends.keys(), ...extra])].filter(id => this.threadAvailable(id))
   }
   /**
    * Sends the host the live-session set again when what keeps a session live has changed without the window's view
@@ -3985,9 +3997,13 @@ export class AgentControl {
     })
     if (independent) {
       this.threadActions.set(laneThreadId, task)
-      const releasePrompt = command.type === 'manual-send' || command.type === 'steer' || command.type === 'steer-followup' ? this.mark(this.threadPrompts, laneThreadId) : (): void => {}
+      const prompted = command.type === 'manual-send' || command.type === 'steer' || command.type === 'steer-followup'
+      const releasePrompt = prompted ? this.mark(this.threadPrompts, laneThreadId) : (): void => {}
       void task.finally(() => {
         releasePrompt(); releaseThread()
+        // The thread a send kept observed (`liveSessionIds`) goes back to being observed only if something else asks, as
+        // the send's own last look at the observed set left it before it kept the thread. A steer leaves the set as it was.
+        if (command.type === 'manual-send' && !this.disposed) this.observe()
         if (this.threadActions.get(laneThreadId) === task) this.threadActions.delete(laneThreadId)
         this.pumpFollowups()
       }).catch(() => undefined)
@@ -5585,9 +5601,7 @@ export class AgentControl {
         if (!prompt || this.outbox.some(item => item.id === command.commandId)) throw error
       }
       await this.persist()
-      if (this.outbox.some(item => item.id === command.commandId)) throw new Error(prompt
-        ? 'The provider has not confirmed this user message in its state. Refresh to reconcile the existing send; it will not be replayed.'
-        : THREAD_SETTINGS_UNRECONCILED)
+      if (this.outbox.some(item => item.id === command.commandId)) throw prompt ? new SendUnconfirmed(command.commandId) : new Error(THREAD_SETTINGS_UNRECONCILED)
       return
     }
     if (command.type === 'answer' && result.accepted) {
@@ -5812,38 +5826,42 @@ export class AgentControl {
       turn.projectId = this.state.host.threads.find(thread => thread.id === draftThreadId)?.projectId ?? null
     }
     this.assertCanAct()
-    this.observe(...(draftThreadId ? [draftThreadId] : []))
-    const messageId = randomUUID()
-    const readStartedAt = performance.now()
-    const read = await this.readThread(draftThreadId ?? undefined, undefined, readBeforeSend(draftRequestId ? undefined : messageId))
-    // The read alone, as a typed send times it; taking in its snapshot is not part of it.
-    const readMs = performance.now() - readStartedAt
-    this.acceptSnapshot(read)
-    if (composer) this.validateComposerQuestion(composer)
-    const thread = this.thread(draftThreadId)
-    if (!draftText.trim() && !draftAttachments?.length) throw new Error('There is no prompt to send.')
-    const attachments = validatePromptAttachments(this.state.host, thread.modelId, draftAttachments, this.attachmentRules)
-    const text = draftText.trim()
-    const draftId = pickedDraftId
-    const savedDraft = staged ?? this.state.threadDrafts?.find(item => item.threadId === thread.id && item.draftId === draftId)
-    const skills = savedDraft?.skills
-    const files = savedDraft?.files
-    if (draftRequestId) {
-      if (attachments.length) throw new Error('Images cannot answer a pending question. Remove the images and answer it explicitly.')
-      const requestId = draftRequestId
-      if (!thread.requests.some(request => request.id === requestId && request.kind === 'question')) throw new Error('This question is no longer pending. Your answer is saved; review it before starting a new prompt.')
-      await this.execute({ type: 'answer', threadId: thread.id, requestId, answer: text }, turn, undefined, selectionRevision, client, undefined, composer, staged)
-      return
-    }
-    if (thread.requests.length) throw new Error('Answer the pending question or permission explicitly before sending a new prompt.')
-    if (thread.status === 'running') throw new Error('This thread is still working. Your draft is saved; wait for it to finish or explicitly stop the agent.')
-    this.sendStages(turn)?.addRead(readMs)
-    if (this.settledForWork(thread)) await this.reopenForWork(thread.id)
-    await this.dispatch({ type: 'send', commandId: randomUUID(), threadId: thread.id, messageId, text, ...(skills ? { skills } : {}), ...(files ? { files } : {}), ...(attachments.length ? { attachments } : {}), expectedLastUserMessageId: lastUserMessageIdOf(thread) }, turn, undefined, draftId, client, composer?.atomicDigest, phoneOrigin)
-    this.clearEmptyDraftBinding(thread.id, draftId)
-    if (this.manualDraftId === draftId && this.state.draftThreadId === thread.id) this.clearDraft()
-    else this.state.threadDrafts = (this.state.threadDrafts ?? []).filter(draft => draft.threadId !== thread.id || draft.draftId !== draftId)
-    this.say(`Sent to ${thread.title}.`)
+    // Kept observed until this Send settles, as a prompt in its thread's lane is (`liveSessionIds`).
+    const releaseSend = draftThreadId ? this.mark(this.draftSends, draftThreadId) : (): void => {}
+    try {
+      this.observe(...(draftThreadId ? [draftThreadId] : []))
+      const messageId = randomUUID()
+      const readStartedAt = performance.now()
+      const read = await this.readThread(draftThreadId ?? undefined, undefined, readBeforeSend(draftRequestId ? undefined : messageId))
+      // The read alone, as a typed send times it; taking in its snapshot is not part of it.
+      const readMs = performance.now() - readStartedAt
+      this.acceptSnapshot(read)
+      if (composer) this.validateComposerQuestion(composer)
+      const thread = this.thread(draftThreadId)
+      if (!draftText.trim() && !draftAttachments?.length) throw new Error('There is no prompt to send.')
+      const attachments = validatePromptAttachments(this.state.host, thread.modelId, draftAttachments, this.attachmentRules)
+      const text = draftText.trim()
+      const draftId = pickedDraftId
+      const savedDraft = staged ?? this.state.threadDrafts?.find(item => item.threadId === thread.id && item.draftId === draftId)
+      const skills = savedDraft?.skills
+      const files = savedDraft?.files
+      if (draftRequestId) {
+        if (attachments.length) throw new Error('Images cannot answer a pending question. Remove the images and answer it explicitly.')
+        const requestId = draftRequestId
+        if (!thread.requests.some(request => request.id === requestId && request.kind === 'question')) throw new Error('This question is no longer pending. Your answer is saved; review it before starting a new prompt.')
+        await this.execute({ type: 'answer', threadId: thread.id, requestId, answer: text }, turn, undefined, selectionRevision, client, undefined, composer, staged)
+        return
+      }
+      if (thread.requests.length) throw new Error('Answer the pending question or permission explicitly before sending a new prompt.')
+      if (thread.status === 'running') throw new Error('This thread is still working. Your draft is saved; wait for it to finish or explicitly stop the agent.')
+      this.sendStages(turn)?.addRead(readMs)
+      if (this.settledForWork(thread)) await this.reopenForWork(thread.id)
+      await this.dispatch({ type: 'send', commandId: randomUUID(), threadId: thread.id, messageId, text, ...(skills ? { skills } : {}), ...(files ? { files } : {}), ...(attachments.length ? { attachments } : {}), expectedLastUserMessageId: lastUserMessageIdOf(thread) }, turn, undefined, draftId, client, composer?.atomicDigest, phoneOrigin)
+      this.clearEmptyDraftBinding(thread.id, draftId)
+      if (this.manualDraftId === draftId && this.state.draftThreadId === thread.id) this.clearDraft()
+      else this.state.threadDrafts = (this.state.threadDrafts ?? []).filter(draft => draft.threadId !== thread.id || draft.draftId !== draftId)
+      this.say(`Sent to ${thread.title}.`)
+    } finally { releaseSend(); if (!this.disposed) this.observe() }
   }
   private draftRequestId(threadId: string | null): string | null {
     const thread = this.thread(threadId)
@@ -6200,6 +6218,9 @@ export class AgentControl {
         ? item.draftDigest === followupDigest({ text: this.state.draft, attachments: this.state.draftAttachments, skills: savedDraft?.skills, files: savedDraft?.files })
         : !this.state.draftAttachments?.length && this.state.draft.trim() === message.text)
       this.outbox = this.outbox.filter(o => o.id !== item.id)
+      // The banner said this send was unconfirmed; its echo has arrived, so it says nothing true any more.
+      const shown = this.visibleCommandError
+      if (shown instanceof SendUnconfirmed && shown.commandId === item.id && this.state.error === shown.message) this.setCommandError(undefined, null)
       if (message && item.draftId && item.threadId) {
         if (item.resumesSetAside) this.resumeSetAsideUpdates(item.threadId, item.resumesSetAside)
         this.setDelivery(item.threadId, item.draftId, 'accepted', { commandId: item.id, messageId: item.messageId })
