@@ -267,6 +267,35 @@ describe("independent working-copy allocation", () => {
     expect(options.branches).toContain('base')
     expect(options.worktrees).toContainEqual({ path: checkout.path!.replaceAll('\\', '/'), branch: checkout.branch })
   })
+  it('starts from origin\'s default branch when the folder is on a merged branch origin deleted, and from the branch when it has unmerged work', async () => {
+    const f = await fixture()
+    const remote = join(f.root, 'origin'); await mkdir(remote)
+    await initializeBareGitRepository(remote)
+    await git(f.project, ['remote', 'add', 'origin', remote])
+    await git(f.project, ['push', 'origin', 'HEAD:refs/heads/main'])
+    // A branch made from main and never pushed is the user's own starting point, not a merged one: it stays the base.
+    await git(f.project, ['switch', '-c', 'fix/merged'])
+    expect(await f.service.allocate(f.project, 'independent', { startFromOrigin: true })).toMatchObject({ baseBranch: 'fix/merged', originBase: 'not-on-origin' })
+    // Once pushed, merged and deleted on origin, with main moved on, the folder's branch is no longer the base.
+    await git(f.project, ['push', '-u', 'origin', 'fix/merged'])
+    await git(f.project, ['push', 'origin', '--delete', 'fix/merged'])
+    const commit = async (text: string): Promise<void> => {
+      await writeFile(join(f.project, 'tracked.txt'), text)
+      await git(f.project, ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit', '-am', text])
+    }
+    await commit('main moved on')
+    await git(f.project, ['push', 'origin', 'HEAD:refs/heads/main'])
+    await git(f.project, ['reset', '--hard', 'HEAD~1'])
+    const moved = await f.service.ensure(await f.service.allocate(f.project, 'independent', { startFromOrigin: true }))
+    expect(moved).toMatchObject({ baseBranch: 'main', originBase: 'fetched' })
+    expect(await readFile(join(moved.path!, 'tracked.txt'), 'utf8')).toBe('main moved on')
+    // Work origin's default lacks keeps the branch as the base, with the local branch notice; so does a base the user chose.
+    await git(f.project, ['reset', '--hard', 'origin/main'])
+    await commit('unmerged work')
+    expect(await f.service.allocate(f.project, 'independent', { startFromOrigin: true })).toMatchObject({ baseBranch: 'fix/merged', originBase: 'not-on-origin' })
+    await git(f.project, ['reset', '--hard', 'HEAD~1'])
+    expect(await f.service.allocate(f.project, 'independent', { baseBranch: 'fix/merged', startFromOrigin: true })).toMatchObject({ baseBranch: 'fix/merged', originBase: 'not-on-origin' })
+  })
   it('uses the origin fetch typing started while it runs and for two minutes after, and fetches again after that or a failure', async () => {
     const f = await fixture()
     const remote = join(f.root, 'origin'); await mkdir(remote)
