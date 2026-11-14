@@ -1456,7 +1456,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
         {children}
       </StepPicturesThreadContext.Provider></ThreadFolderContext.Provider></SentSkillsContext.Provider></BrowserLinesContext.Provider></OwnServerTurnContext.Provider></div>
     </div></div>
-    {greets && greetingSlot ? createPortal(<ThreadGreeting row={row} state={state} />, greetingSlot) : null}
+    {greets && greetingSlot ? createPortal(<ThreadGreeting row={row} state={state} store={store} />, greetingSlot) : null}
     {/* A request's choices and text are never covered: while a card reaches the button's band, the button steps aside. */}
     {/* Add to prompt over words selected in a reply (ADR-0129; Owl only). */}
     {quoting ? <ReplyQuoteButton threadId={thread.id} scroller={scroller} onAdded={onQuoted} /> : null}
