@@ -985,6 +985,7 @@ private struct Conversation: View {
             }
             entries(thread: thread, state: state, detail: detail, rows: rows, pending: pending, scroll: scroll)
             Color.clear.frame(height: 1).id(Self.end).background(sentinelReader(scroll))
+                .background(EndDrawn { [follow] drawn in endDrawn(drawn, scroll, read: follow.sentinel) })
             #if DEBUG
             if SendWatch.isOn { SendWatchAnchor().frame(width: 0, height: 0) }
             if EndTrace.isOn { EndTraceAnchor().frame(width: 0, height: 0) }
@@ -1192,6 +1193,15 @@ private struct Conversation: View {
         }
     }
 
+    /// Where UIKit drew the end, when it differs from where the page last read it. SwiftUI stops reporting the end's place
+    /// after the page's offset is set in the middle of its layout, by the hold or the pin below, and read a whole move
+    /// behind, the end of a page resting at it looked to be under the reply box for good (#2040).
+    private func endDrawn(_ drawn: CGFloat, _ scroll: ScrollViewProxy, read: CGFloat) {
+        guard abs(drawn - read) > 1 else { return }
+        EndTrace.mark("end drawn at \(Int(drawn)), read at \(Int(read))")
+        endMoved(drawn, inPage: follow.endInPage, scroll)
+    }
+
     /// The top of the reply box, which moves when it changes height or the keyboard opens or closes.
     private func dockReader(_ scroll: ScrollViewProxy) -> some View {
         GeometryReader { proxy in
@@ -1254,6 +1264,51 @@ private struct Conversation: View {
     }
 }
 
+/// Reports where UIKit draws the conversation's end, once each pass in which the page scrolled or changed height is over.
+private struct EndDrawn: UIViewRepresentable {
+    let drawn: (CGFloat) -> Void
+    func makeUIView(context: Context) -> Marker { Marker() }
+    func updateUIView(_ view: Marker, context: Context) { view.drawn = drawn }
+
+    final class Marker: UIView {
+        var drawn: (CGFloat) -> Void = { _ in }
+        private var watches: [NSKeyValueObservation] = []
+        private var pending = false
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            isUserInteractionEnabled = false
+            isAccessibilityElement = false
+        }
+        required init?(coder: NSCoder) { nil }
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            guard window != nil else { watches = []; return }
+            guard watches.isEmpty, let page = page() else { return }
+            let changed: (UIScrollView) -> Void = { [weak self] _ in MainActor.assumeIsolated { self?.report() } }
+            watches = [page.observe(\.contentOffset) { page, _ in changed(page) },
+                       page.observe(\.contentSize) { page, _ in changed(page) }]
+        }
+        private func report() {
+            guard !pending else { return }
+            pending = true
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                pending = false
+                guard window != nil else { return }
+                drawn(convert(CGPoint(x: 0, y: bounds.maxY), to: nil).y)
+            }
+        }
+        private func page() -> UIScrollView? {
+            var next = superview
+            while let view = next {
+                if let page = view as? UIScrollView { return page }
+                next = view.superview
+            }
+            return nil
+        }
+    }
+}
+
 /// Keeps what the reader sees still while the turns made as they scroll into view, all above it, guess their height again.
 /// Their stack guesses the height of the turns it hasn't made from the ones it has, and its guess swings by thousands of
 /// points as it makes and drops them, several times a second on a thread with pictures. The scroll view keeps its offset
@@ -1294,7 +1349,7 @@ private struct HoldsPlaceBelow: UIViewRepresentable {
             let from = page.contentOffset.y
             let bottom = max(-page.adjustedContentInset.top,
                              new.height - page.bounds.height + page.adjustedContentInset.bottom)
-            if abs(bottom - from) > 0.5 { page.contentOffset.y = bottom; moved(page) }
+            if abs(bottom - from) > 0.5 { page.contentOffset.y = bottom }
             EndTrace.mark("pin: page height \(Int(old.height)) -> \(Int(new.height)), offset \(Int(from)) -> \(Int(page.contentOffset.y))")
         }
         override func layoutSubviews() {
@@ -1315,22 +1370,8 @@ private struct HoldsPlaceBelow: UIViewRepresentable {
             let bottom = max(-page.adjustedContentInset.top,
                              page.contentSize.height - page.bounds.height + page.adjustedContentInset.bottom)
             let to = atEnd() ? bottom : from + now - before
-            if abs(to - from) > 0.5 { page.contentOffset.y = to; moved(page) }
+            if abs(to - from) > 0.5 { page.contentOffset.y = to }
             EndTrace.mark("hold: older turns \(Int(before)) -> \(Int(now)), at end \(atEnd()), offset \(Int(from)) -> \(Int(page.contentOffset.y)), page height \(Int(page.contentSize.height))")
-        }
-        private var telling = false
-        /// An offset set in the middle of SwiftUI's layout never reaches SwiftUI's own record of where the page stands:
-        /// the end's place as it reads it, and its scrolls to the end, stayed a whole move behind until a hand scrolled
-        /// the page. Once the pass is over, the page's delegate, SwiftUI's own, is told the page scrolled.
-        private func moved(_ page: UIScrollView) {
-            guard !telling else { return }
-            telling = true
-            DispatchQueue.main.async { [weak self, weak page] in
-                self?.telling = false
-                guard let page else { return }
-                page.delegate?.scrollViewDidScroll?(page)
-                EndTrace.mark("told the page it scrolled, offset \(Int(page.contentOffset.y))")
-            }
         }
         private func page() -> UIScrollView? {
             var next = superview
