@@ -11,7 +11,7 @@ import { capRuntimeMode, fitSpeed, messageNamesModel, roleHold, roleInForce, rol
 import { dynamicRecordTokens, type DynamicRecord } from './dynamicRecord'
 import { allowedProviders, DYNAMIC_WHY_MAX, isDynamicThread, providerAbilities, WORKERS_AT_ONCE_MAX, type DynamicEffort, type DynamicThreadSettings } from '../../shared/dynamicThreads'
 import { providerProfile } from '../../shared/providerProfile'
-import { effortRank } from '../../shared/reasoningEfforts'
+import { effortLevel, effortRank } from '../../shared/reasoningEfforts'
 import { reportsUsageLimits, type UsageQuotaRead } from '../../shared/usageDashboard'
 import { isThreadClosed, isThreadTurnRunning } from '../../shared/threadActivity'
 import { countWorkingThreads, machineWorkingThreadsWarning, workingThreadsWarning, THIS_COMPUTER } from '../../shared/workingThreads'
@@ -462,8 +462,8 @@ const DYNAMIC_LIMIT_READ_MS = 6_000
 function heldEffort(asked: string | undefined, efforts: readonly string[], highest: DynamicEffort): string | undefined {
   if (asked === undefined) return undefined
   const most = effortRank(highest)
-  // A level Sotto cannot place, such as a client's newest, counts as past the limit rather than slipping through it.
-  const within = (level: string): boolean => (effortRank(level) ?? Infinity) <= (most ?? Infinity)
+  // The provider's default has no level to cap. A level Sotto cannot place, such as a client's newest, stays past the limit.
+  const within = (level: string): boolean => effortLevel(level) === 'default' || (effortRank(level) ?? Infinity) <= (most ?? Infinity)
   return within(asked) ? asked : efforts.filter(within).at(-1)
 }
 const LEVEL_LIMIT = 'This thread was started by a delegated thread, and delegation goes two levels deep, so it cannot delegate. Nothing was started.'
