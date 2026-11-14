@@ -1151,7 +1151,6 @@ private struct Conversation: View {
                     EndTrace.describe = { [follow] in
                         "| end \(Int(follow.sentinel)) in page \(Int(follow.endInPage)) dock \(Int(follow.dockTop)) at bottom \(follow.atBottom)"
                     }
-                    EndTrace.reading = { [follow] in follow.sentinel }
                     #endif
                     endMoved(proxy.frame(in: .global).maxY, inPage: proxy.frame(in: .named(Self.pageSpace)).maxY, scroll)
                 }
@@ -1277,9 +1276,26 @@ private struct HoldsPlaceBelow: UIViewRepresentable {
             isAccessibilityElement = false
         }
         required init?(coder: NSCoder) { nil }
+        private var watch: NSKeyValueObservation?
         override func didMoveToWindow() {
             super.didMoveToWindow()
-            if window == nil { height = nil }
+            guard window != nil else { height = nil; watch = nil; return }
+            // The page's height changes in the layout pass that moves what it holds, before this view is told its own
+            // new size, sometimes a frame or more later, and a reply growing at the end changes it too. A reader at the
+            // end is kept there as the page grows or shrinks, so no frame drawn shows the end pushed under the reply box.
+            guard watch == nil, let page = page() else { return }
+            watch = page.observe(\.contentSize, options: [.old, .new]) { [weak self] page, change in
+                MainActor.assumeIsolated { self?.pageResized(page, from: change.oldValue, to: change.newValue) }
+            }
+        }
+        private func pageResized(_ page: UIScrollView, from old: CGSize?, to new: CGSize?) {
+            guard let old, let new, abs(new.height - old.height) > 0.5, atEnd(), !page.isTracking, !page.isDecelerating
+            else { return }
+            let from = page.contentOffset.y
+            let bottom = max(-page.adjustedContentInset.top,
+                             new.height - page.bounds.height + page.adjustedContentInset.bottom)
+            if abs(bottom - from) > 0.5 { page.contentOffset.y = bottom }
+            EndTrace.mark("pin: page height \(Int(old.height)) -> \(Int(new.height)), offset \(Int(from)) -> \(Int(page.contentOffset.y))")
         }
         override func layoutSubviews() {
             super.layoutSubviews()
