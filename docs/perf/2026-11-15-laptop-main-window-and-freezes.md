@@ -155,5 +155,5 @@ update, mostly Watcher's (#2618), rather than the wire.
 - **Sotto's, filed:** #2618 (Watcher's per-event searches, 45% of main's busy minute) and #2619 (the copy on the stream
   path in the 12.5 s hang, and the hang recording's missing stacks). Starting Claude Code blocking main is #2550.
 - **Not worth an issue now:** the window's state sharing and shell cache, Sotto's GPU process and saving's 9%.
-- **Outside Sotto:** Zach chose to cap the Rust build's parallel jobs and to pause the indexer's AutoCAD step, and to
-  leave FactoryTalk Linx running.
+- **Outside Sotto:** Zach chose to cap every Rust build on the laptop at four jobs (`[build] jobs = 4` in his user cargo
+  config), and to leave the indexer's AutoCAD step and FactoryTalk Linx as they are.
