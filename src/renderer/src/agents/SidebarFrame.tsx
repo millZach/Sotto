@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useMemo, useLayoutEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
-import { Archive, ArchiveRestore, BarChart3, Brain, CircleHelp, FolderPlus, PanelLeftClose, PanelLeftOpen, Search, Settings, X } from 'lucide-react'
+import { Archive, ArchiveRestore, BarChart3, Box, Brain, CircleHelp, FolderPlus, PanelLeftClose, PanelLeftOpen, Search, Settings, X } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { MessageDescriptor } from '@lingui/core'
 import { msg } from '@lingui/core/macro'
@@ -36,10 +36,12 @@ import { shownCount } from '../state/interfaceNumbers'
  * The page links in the foot, in the order the app footer listed them. Threads and Dictate are the room switch's own
  * tabs, and transcripts live in the Dictate room's Journal; Memory joins only while memory is switched on.
  */
-type FootPage = Extract<AppNavigation, 'usage' | 'memory' | 'settings' | 'help'>
+type FootPage = Extract<AppNavigation, 'usage' | 'memory' | 'models' | 'settings' | 'help'>
 const PAGES: ReadonlyArray<{ readonly id: FootPage; readonly label: MessageDescriptor; readonly Icon: LucideIcon }> = [
   { id: 'usage', label: msg({ message: 'Usage', comment: 'The Usage page.' }), Icon: BarChart3 },
   { id: 'memory', label: msg({ message: 'Memory', comment: 'The Memory page.' }), Icon: Brain },
+  // Between Usage and Settings, while the plugins Owl feature is on (the Meshy plan's ticket 5, Zach's pick).
+  { id: 'models', label: msg({ message: '3D models', comment: 'The 3D models page: every 3D model Meshy made for a thread.' }), Icon: Box },
   { id: 'settings', label: msg({ message: 'Settings', comment: 'The Settings page.' }), Icon: Settings },
   { id: 'help', label: msg({ message: 'Help', comment: 'The Help page.' }), Icon: CircleHelp },
 ]
@@ -104,14 +106,15 @@ export function RoomSwitch({ className, iconOnly = false }: { readonly className
   </div>
 }
 
-/** The pages the switch does not reach, as icon links: Usage, Settings and Help, and Memory while memory is switched on. */
+/** The pages the switch does not reach, as icon links: Usage, Settings and Help, Memory while memory is switched on, and 3D models with plugins. */
 export function PageLinks({ className, linkClassName }: { readonly className: string; readonly linkClassName: string }): ReactNode {
   const app = useOptionalApp()
   const memory = useMemoryEnabled()
   const usage = useOwlFeature('usage')
+  const models = useOwlFeature('plugins')
   const { t } = useLingui()
   const keys = usePageShortcutLabels()
-  const pages = PAGES.filter(page => (page.id !== 'memory' || memory) && (page.id !== 'usage' || usage)).map(page => ({ ...page, label: t(page.label) }))
+  const pages = PAGES.filter(page => (page.id !== 'memory' || memory) && (page.id !== 'usage' || usage) && (page.id !== 'models' || models)).map(page => ({ ...page, label: t(page.label) }))
   return <nav className={className} aria-label={t`Pages`}>
     {pages.map(({ id, label, Icon }) => {
       const page = pageShortcutFor(id)

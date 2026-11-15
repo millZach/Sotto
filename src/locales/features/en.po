@@ -21,6 +21,11 @@ msgstr "“{reason}”"
 msgid "{0, plural, =1 {Failing since {since}} other {Failing since {since} · # tries}}"
 msgstr "{0, plural, =1 {Failing since {since}} other {Failing since {since} · # tries}}"
 
+#. placeholder {0}: models.length
+#: src/renderer/src/features/models3d/ModelsPage.tsx
+msgid "{0, plural, one {# 3D model} other {# 3D models}}"
+msgstr "{0, plural, one {# 3D model} other {# 3D models}}"
+
 #. placeholder {0}: entry.starting
 #: src/renderer/src/watcher/WatcherMachines.tsx
 msgid "{0, plural, one {# placed here, starting} other {# placed here, starting}}"
@@ -199,6 +204,11 @@ msgstr "{calm}, nothing wrong. Show every machine"
 msgid "{clients, plural, one {# client} other {# clients}}"
 msgstr "{clients, plural, one {# client} other {# clients}}"
 
+#. {cost} is what a 3D model being made has cost so far, such as "20 credits".
+#: src/renderer/src/features/models3d/ModelsPage.tsx
+msgid "{cost}, counted while it is made"
+msgstr "{cost}, counted while it is made"
+
 #: src/renderer/src/watcher/WatcherOwnChange.tsx
 msgid "{count, plural, =1 {Hide the file} other {Hide the {files} files}}"
 msgstr "{count, plural, =1 {Hide the file} other {Hide the {files} files}}"
@@ -290,6 +300,10 @@ msgstr "{count} of {total}"
 #: src/renderer/src/watcher/WatcherMachines.tsx
 msgid "{cpus, plural, one {# CPU} other {# CPUs}}"
 msgstr "{cpus, plural, one {# CPU} other {# CPUs}}"
+
+#: src/renderer/src/features/models3d/ModelsPage.tsx
+msgid "{credits, plural, one {# credit this month} other {# credits this month}}"
+msgstr "{credits, plural, one {# credit this month} other {# credits this month}}"
 
 #: src/renderer/src/features/dictate/JournalStats.tsx
 msgid "{date}: {amount}"
@@ -839,6 +853,11 @@ msgstr "{refused} turned down."
 msgid "{rest} more in <0>Models</0>"
 msgstr "{rest} more in <0>Models</0>"
 
+#. {reveal} is "Show in File Explorer" or the like; {file} is a file's name.
+#: src/renderer/src/features/models3d/ModelsPage.tsx
+msgid "{reveal}: {file}"
+msgstr "{reveal}: {file}"
+
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "{rowInput} input"
 msgstr "{rowInput} input"
@@ -894,6 +913,10 @@ msgstr "{streak, plural, one {#-day streak} other {#-day streak}}"
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "{text} for {model}"
 msgstr "{text} for {model}"
+
+#: src/renderer/src/features/models3d/ModelsPage.tsx
+msgid "{threads, plural, one {from # thread} other {from # threads}}"
+msgstr "{threads, plural, one {from # thread} other {from # threads}}"
 
 #: src/renderer/src/watcher/WatcherHoldBand.tsx
 msgid "{threads, plural, other {All # from threads.}}"
@@ -1101,6 +1124,21 @@ msgstr "0: unusable; 5: useful with substantial gaps; 10: fully meets the goal w
 msgid "10,000 files · 100 MiB per capture · 20 MiB per binary · 1 GiB retained per Climb."
 msgstr "10,000 files · 100 MiB per capture · 20 MiB per binary · 1 GiB retained per Climb."
 
+#: src/renderer/src/features/models3d/ModelsPage.tsx
+msgid "3D model · Meshy · made from a photo"
+msgstr "3D model · Meshy · made from a photo"
+
+#: src/renderer/src/features/models3d/ModelsPage.tsx
+msgid "3D model · Meshy · made from words"
+msgstr "3D model · Meshy · made from words"
+
+#. The 3D models page: every 3D model Meshy made for a thread.
+#. The page link: the 3D models page, every 3D model Meshy made for a thread.
+#: src/renderer/src/components/AppShell.tsx
+#: src/renderer/src/features/models3d/ModelsPage.tsx
+msgid "3D models"
+msgstr "3D models"
+
 #: src/renderer/src/watcher/checkQueueWords.ts
 msgid "A check"
 msgstr "A check"
@@ -1179,6 +1217,10 @@ msgstr "A thread no longer here"
 msgid "A thread runs on an agent you already have. These are the ones Sotto looked for on this computer. Sign in opens that agent’s own sign-in."
 msgstr "A thread runs on an agent you already have. These are the ones Sotto looked for on this computer. Sign in opens that agent’s own sign-in."
 
+#: src/renderer/src/features/models3d/ModelsPage.tsx
+msgid "A thread that is no longer listed"
+msgstr "A thread that is no longer listed"
+
 #. Whose a check is: a thread delegated it.
 #: src/renderer/src/watcher/checkQueueWords.ts
 msgid "A thread’s"
@@ -1204,6 +1246,11 @@ msgstr "About <0>{average}</0> a day"
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "About <0>{perPrompt}</0> tokens per prompt"
 msgstr "About <0>{perPrompt}</0> tokens per prompt"
+
+#. {name} is the name of a 3D model, such as Oak barrel.
+#: src/renderer/src/features/models3d/ModelsPage.tsx
+msgid "About the {name}"
+msgstr "About the {name}"
 
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "About these numbers"
@@ -1960,6 +2007,7 @@ msgid "Clear saved usage?"
 msgstr "Clear saved usage?"
 
 #: src/renderer/src/features/dictate/Journal.tsx
+#: src/renderer/src/features/models3d/ModelsPage.tsx
 msgid "Clear search"
 msgstr "Clear search"
 
@@ -2226,6 +2274,11 @@ msgstr "Copy the commands that update {name} on {host}"
 #: src/renderer/src/features/dictate/Journal.tsx
 msgid "Copy transcript"
 msgstr "Copy transcript"
+
+#. A 3D model's fact: the credits it cost.
+#: src/renderer/src/features/models3d/ModelsPage.tsx
+msgid "Cost"
+msgstr "Cost"
 
 #: src/renderer/src/features/updates/useUpdateFlow.ts
 msgid "Could not check for updates"
@@ -2622,6 +2675,10 @@ msgstr "English"
 msgid "Enter your OpenRouter API key first."
 msgstr "Enter your OpenRouter API key first."
 
+#: src/renderer/src/features/models3d/ModelsPage.tsx
+msgid "Every 3D model"
+msgstr "Every 3D model"
+
 #: src/renderer/src/features/productEvents/ProductEventsDialog.tsx
 msgid "Every product event"
 msgstr "Every product event"
@@ -2704,9 +2761,17 @@ msgstr "Favourites: {liked}."
 msgid "Fields are checked against a fixed list for each event. An event with anything else on it is dropped before it can leave."
 msgstr "Fields are checked against a fixed list for each event. An event with anything else on it is dropped before it can leave."
 
+#: src/renderer/src/features/models3d/ModelsPage.tsx
+msgid "Files"
+msgstr "Files"
+
 #: src/renderer/src/watcher/WatcherOwnChange.tsx
 msgid "Files {overseer} changed"
 msgstr "Files {overseer} changed"
+
+#: src/renderer/src/features/models3d/ModelsPage.tsx
+msgid "Files gone"
+msgstr "Files gone"
 
 #: src/renderer/src/watcher/WatcherOwnChange.tsx
 msgid "Files Watcher changed"
@@ -2890,6 +2955,10 @@ msgstr "Go to the permission from {title} in this conversation"
 #: src/renderer/src/watcher/WatcherGlance.tsx
 msgid "Go to the question from {title} in this conversation"
 msgstr "Go to the question from {title} in this conversation"
+
+#: src/renderer/src/features/models3d/ModelsPage.tsx
+msgid "Go to thread"
+msgstr "Go to thread"
 
 #: src/renderer/src/watcher/WatcherGlance.tsx
 msgid "Go to Watcher’s question in this conversation: {asked}"
@@ -3258,6 +3327,19 @@ msgstr "Italian"
 msgid "Its branch is on {machine}. Starting the new thread there…"
 msgstr "Its branch is on {machine}. Starting the new thread there…"
 
+#: src/renderer/src/features/models3d/modelPanels.tsx
+#: src/renderer/src/features/models3d/ModelsPage.tsx
+msgid "Its files are gone"
+msgstr "Its files are gone"
+
+#: src/renderer/src/features/models3d/modelPanels.tsx
+msgid "Its files are gone."
+msgstr "Its files are gone."
+
+#: src/renderer/src/features/models3d/modelPanels.tsx
+msgid "Its files are there again, so it stays."
+msgstr "Its files are there again, so it stays."
+
 #: src/renderer/src/watcher/MoveThreads.tsx
 msgid "Its first turn on {machine} ended. Settling the thread here…"
 msgstr "Its first turn on {machine} ended. Settling the thread here…"
@@ -3596,6 +3678,11 @@ msgstr "Machines and what works on each"
 #: src/renderer/src/platformCopy.ts
 msgid "macOS may ask for access."
 msgstr "macOS may ask for access."
+
+#. A 3D model's fact: when it was made.
+#: src/renderer/src/features/models3d/ModelsPage.tsx
+msgid "Made"
+msgstr "Made"
 
 #: src/renderer/src/features/dictate/journalFacts.ts
 msgid "MAI-Transcribe-2 model"
@@ -3982,6 +4069,15 @@ msgstr "New Watcher"
 msgid "New Watcher on {model}."
 msgstr "New Watcher on {model}."
 
+#. {query} is what was typed in the search box.
+#: src/renderer/src/features/models3d/ModelsPage.tsx
+msgid "No 3D models match “{query}”"
+msgstr "No 3D models match “{query}”"
+
+#: src/renderer/src/features/models3d/ModelsPage.tsx
+msgid "No 3D models yet"
+msgstr "No 3D models yet"
+
 #: src/renderer/src/watcher/TeamsPage.tsx
 msgid "No answer came."
 msgstr "No answer came."
@@ -4242,6 +4338,10 @@ msgstr "Not connected"
 #: src/renderer/src/features/updates/updateAll.ts
 msgid "Not everything updated"
 msgstr "Not everything updated"
+
+#: src/renderer/src/features/models3d/ModelsPage.tsx
+msgid "not found"
+msgstr "not found"
 
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "Not matched for these prompts"
@@ -4755,6 +4855,10 @@ msgstr "Permission request in a thread it delegated to"
 #: src/renderer/src/features/setup/SetupWalk.tsx
 msgid "Phones you pair can connect."
 msgstr "Phones you pair can connect."
+
+#: src/renderer/src/features/models3d/ModelsPage.tsx
+msgid "Photo sent"
+msgstr "Photo sent"
 
 #: src/renderer/src/features/memory/questions.ts
 msgid "Planning first, architecture decisions, new dependencies, branches, and worktrees."
@@ -5278,6 +5382,10 @@ msgstr "Remove all"
 msgid "Remove criterion"
 msgstr "Remove criterion"
 
+#: src/renderer/src/features/models3d/modelPanels.tsx
+msgid "Remove from 3D models"
+msgstr "Remove from 3D models"
+
 #: src/renderer/src/watcher/TeamsPage.tsx
 msgid "Remove link"
 msgstr "Remove link"
@@ -5297,6 +5405,10 @@ msgstr "Remove the usage figures saved on {clearingList}?"
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
 msgid "Removing"
 msgstr "Removing"
+
+#: src/renderer/src/features/models3d/modelPanels.tsx
+msgid "Removing it takes it off this list. It deletes no file."
+msgstr "Removing it takes it off this list. It deletes no file."
 
 #: src/renderer/src/watcher/WatcherNew.tsx
 msgid "Reopen Sotto to try again."
@@ -5534,6 +5646,10 @@ msgstr "Scroll up to Watcher’s question"
 #: src/renderer/src/watcher/WatcherQuestions.tsx
 msgid "Scroll up to Watcher’s questions"
 msgstr "Scroll up to Watcher’s questions"
+
+#: src/renderer/src/features/models3d/ModelsPage.tsx
+msgid "Search 3D models"
+msgstr "Search 3D models"
 
 #: src/renderer/src/components/CleanupModelFields.tsx
 msgid "Search models or paste @preset/…"
@@ -5906,6 +6022,10 @@ msgstr "Sotto can't read these limits yet"
 msgid "Sotto can’t tell what stopped"
 msgstr "Sotto can’t tell what stopped"
 
+#: src/renderer/src/features/models3d/modelPanels.tsx
+msgid "Sotto cannot draw 3D models on this computer, so this is the still picture."
+msgstr "Sotto cannot draw 3D models on this computer, so this is the still picture."
+
 #: src/renderer/src/features/updates/updateAll.ts
 msgid "Sotto cannot install these itself."
 msgstr "Sotto cannot install these itself."
@@ -5953,6 +6073,10 @@ msgstr "Sotto could not do that. Nothing changed. Try again."
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "Sotto could not do that. Nothing was changed. Try again."
 msgstr "Sotto could not do that. Nothing was changed. Try again."
+
+#: src/renderer/src/features/models3d/ModelsPage.tsx
+msgid "Sotto could not find that file. It may have been moved or deleted."
+msgstr "Sotto could not find that file. It may have been moved or deleted."
 
 #: src/renderer/src/components/CleanupModelFields.tsx
 msgid "Sotto could not finish measuring. Nothing was changed. Measure again."
@@ -6752,6 +6876,11 @@ msgstr "That’s setup"
 msgid "The {name} update on {host} stopped before it finished. Nothing was changed. Try again."
 msgstr "The {name} update on {host} stopped before it finished. Nothing was changed. Try again."
 
+#. {name} is the name of a 3D model; {where} is a folder, such as models/.
+#: src/renderer/src/features/models3d/modelPanels.tsx
+msgid "The {name}’s files are no longer in {where} in its thread’s folder: they were moved, renamed or deleted."
+msgstr "The {name}’s files are no longer in {where} in its thread’s folder: they were moved, renamed or deleted."
+
 #: src/renderer/src/features/performance/MainFreezeNotice.tsx
 msgid "The activity recording was not saved. Hide why"
 msgstr "The activity recording was not saved. Hide why"
@@ -6833,6 +6962,11 @@ msgstr "The download stopped: Sotto could not reach GitHub, or GitHub did not se
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "The evidence supports: {supported}."
 msgstr "The evidence supports: {supported}."
+
+#. {where} is a folder, such as models/.
+#: src/renderer/src/features/models3d/ModelsPage.tsx
+msgid "The files go to {where} in the thread’s folder when it is done."
+msgstr "The files go to {where} in the thread’s folder when it is done."
 
 #: src/renderer/src/watcher/WatcherNew.tsx
 msgid "The handover carries it."
@@ -6964,6 +7098,11 @@ msgstr "The speech model is not ready yet."
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
 msgid "the theme"
 msgstr "the theme"
+
+#: src/renderer/src/features/models3d/modelPanels.tsx
+#: src/renderer/src/features/models3d/ModelsPage.tsx
+msgid "the thread’s folder"
+msgstr "the thread’s folder"
 
 #: src/renderer/src/features/council/CouncilView.tsx
 msgid "The thread’s message box holds an answer to its question. Send or clear it, then try again. Nothing was put there."
@@ -7123,6 +7262,8 @@ msgstr "This Watcher is new, so there is nothing to hand over yet."
 msgid "This work wasn't matched to a model."
 msgstr "This work wasn't matched to a model."
 
+#. A 3D model's fact: the thread that made it.
+#: src/renderer/src/features/models3d/ModelsPage.tsx
 #: src/renderer/src/popup/PopupApp.tsx
 msgid "Thread"
 msgstr "Thread"
@@ -7931,6 +8072,10 @@ msgstr "What’s held"
 msgid "When a teammate asks or reads your desk, your computer tells them each thread's title, project and where it stands, and its open pull requests and how their checks stand. Never its messages, code or file names. Thread titles come from your words, so untick any project they should not see."
 msgstr "When a teammate asks or reads your desk, your computer tells them each thread's title, project and where it stands, and its open pull requests and how their checks stand. Never its messages, code or file names. Thread titles come from your words, so untick any project they should not see."
 
+#: src/renderer/src/features/models3d/ModelsPage.tsx
+msgid "When a thread makes one with Meshy, it shows here, with its files and the thread it came from."
+msgstr "When a thread makes one with Meshy, it shows here, with its files and the thread it came from."
+
 #: src/renderer/src/watcher/WatcherPermissionChip.tsx
 msgid "When Watcher asks, you can allow it once, not for good. Its instructions still tell it to hand changes to a thread."
 msgstr "When Watcher asks, you can allow it once, not for good. Its instructions still tell it to hand changes to a thread."
@@ -7995,6 +8140,10 @@ msgstr "Words per minute on the {dayCount} of the last 30 days you dictated, fro
 #: src/renderer/src/features/dictate/JournalStats.tsx
 msgid "Words per minute on the {dayCount} of the last 30 days you dictated, from {slowestWpm} to {fastestWpm}, fastest on {fastestDay}."
 msgstr "Words per minute on the {dayCount} of the last 30 days you dictated, from {slowestWpm} to {fastestWpm}, fastest on {fastestDay}."
+
+#: src/renderer/src/features/models3d/ModelsPage.tsx
+msgid "Words sent"
+msgstr "Words sent"
 
 #: src/renderer/src/features/dictate/JournalStats.tsx
 msgid "words so far"

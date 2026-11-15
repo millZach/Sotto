@@ -184,8 +184,9 @@ describe('shared tools panel', () => {
     const rail = within(panel()).getByRole('tablist', { name: 'Tools' })
     expect(rail).toHaveAttribute('aria-orientation', 'vertical')
     const tabs = within(rail).getAllByRole('tab')
-    expect(tabs.map(tab => tab.textContent)).toEqual(TOOL_SURFACES.map(surface => surface.label))
-    expect(TOOL_SURFACES.map(surface => surface.id)).toEqual(['browser', 'iphone', 'terminal', 'files', 'changes', 'pull-request', 'agents'])
+    // 3D models is listed only with the plugins Owl feature on (the Meshy plan's ticket 5); modelsSurface.test.tsx has it.
+    expect(tabs.map(tab => tab.textContent)).toEqual(TOOL_SURFACES.filter(surface => surface.id !== 'models').map(surface => surface.label))
+    expect(TOOL_SURFACES.map(surface => surface.id)).toEqual(['browser', 'iphone', 'models', 'terminal', 'files', 'changes', 'pull-request', 'agents'])
     // The tile's word is short; its name is the surface's own.
     expect(within(rail).getByRole('tab', { name: 'Pull request' })).toHaveTextContent('PR')
     expect(within(panel()).getByRole('tab', { name: 'Files' })).toHaveFocus()

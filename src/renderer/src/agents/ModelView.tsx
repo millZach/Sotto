@@ -22,6 +22,11 @@ export interface ModelViewProps {
   readonly onClose: () => void
   /** This window cannot draw WebGL: the line shows the still picture, the name and the files instead. */
   readonly onUnavailable: () => void
+  /**
+   * Whether it takes focus as it opens; true in a thread, where pressing the line opens it. The 3D models page and
+   * Tools › 3D models open one as a tile is chosen, and leave focus on the tile.
+   */
+  readonly focusOnOpen?: boolean
 }
 
 const STEP = Math.PI / 12
@@ -39,7 +44,7 @@ const AUTO_TURN_PER_MS = (Math.PI * 2) / 24_000
 /** Whole degrees turned from the front, 0 to 359. */
 const degreesOf = (yaw: number): number => { const degrees = Math.round(((yaw - YAW_FRONT) * 180 / Math.PI) % 360); return degrees < 0 ? degrees + 360 : degrees }
 
-export default function ModelView({ modelId, part, name, reduced, onClose, onUnavailable }: ModelViewProps): ReactNode {
+export default function ModelView({ modelId, part, name, reduced, onClose, onUnavailable, focusOnOpen = true }: ModelViewProps): ReactNode {
   const { t } = useLingui()
   const host = useRef<HTMLDivElement>(null)
   const turn = useRef({ yaw: YAW_FRONT, pitch: PITCH_FRONT, dirty: true, touched: false, auto: !reduced })
@@ -50,7 +55,7 @@ export default function ModelView({ modelId, part, name, reduced, onClose, onUna
   const unavailable = useRef(onUnavailable)
   unavailable.current = onUnavailable
 
-  useEffect(() => { host.current?.focus() }, [])
+  useEffect(() => { if (focusOnOpen) host.current?.focus() }, [])
   // Turning by itself moves the model without a word to a screen reader, so where it faces is said once it stops.
   useEffect(() => {
     const held = turn.current

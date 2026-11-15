@@ -1225,6 +1225,10 @@ msgstr "Only an allowed action can be granted for the whole thread. Answer this 
 msgid "Only the latest completed checkpoint with unchanged native history can be reverted."
 msgstr "Only the latest completed checkpoint with unchanged native history can be reverted."
 
+#: src/main/plugins/ipc.ts
+msgid "Open 3D models in the main Sotto window."
+msgstr "Open 3D models in the main Sotto window."
+
 #: src/main/agents/subagentIpc.ts
 msgid "Open Agents in the main Sotto window."
 msgstr "Open Agents in the main Sotto window."
