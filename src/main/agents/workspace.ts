@@ -1,6 +1,7 @@
 import { assertCouncilJudgeDirectory } from '../council/councilJudge'
 import { supportsClimbJudging } from '../../shared/councilClimb'
 import { annotateWatcherOwnChanges } from './watcherOwnChanges'
+import { whyNotRouted } from '../../shared/modelRouter'
 import { dynamicNoteText, dynamicSessionAfterCompaction, isDynamicThread, overseerInstructions, overseerNoteFor, overseerSend, whyNotDynamic, type DynamicSession, type OverseerUserNote } from '../../shared/dynamicThreads'
 import { compactionPending } from '../../shared/compaction'
 import { withKeptMessageMetadata } from '../../shared/agents'
@@ -19,6 +20,7 @@ import type { ScopedThreadTools } from './threadToolServer'
 import { createHash, randomUUID } from 'node:crypto'
 import { shownMedia, type ShownMediaStore, type ShownRefusal } from './shownMedia'
 import { writtenMedia, type WrittenMedia, type WrittenMediaStore } from './writtenMedia'
+import { withDetachedRuns, type DetachedRunWatch } from './detachedRuns'
 import { placeCallouts, type CalloutRefusal, type CalloutRequest } from './shownCallouts'
 import { SHOWN_STEP_PREFIX, WRITTEN_STEP_PREFIX } from '../../shared/agentActivity'
 import { isDeepStrictEqual } from 'node:util'
@@ -191,6 +193,8 @@ function liveTurn(activities: readonly AgentActivity[], status: AgentThread['sta
 
 /** Said when the branch on a working-copy record could not be written; the folder itself was verified. */
 const BRANCH_SAVE_ERROR = 'The branch name could not be saved. Restore local storage and refresh.'
+/** Status reads whose changes are saved and published together: the save now waiting to run, and every save so far. */
+interface StatusesTogether { saving?: Promise<void>; saved?: Promise<void> }
 /** What a deletion that failed after its folders went says of them (ADR-0140 decision 5). */
 const DELETION_FOLDERS_WORDS = 'Worktree folders it already removed stay removed; their branches and commits stay.'
 /** Said when a thread's own history could not be written. The thread still works; what it said is at risk. */
@@ -1334,18 +1338,24 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   /**
    * Keep main up to date moved the checkout at `folder` (ADR-0142): each thread working in it, or in a folder inside it,
    * reads its Git status again, so its branch stops saying it is behind. Matched by path alone, so it costs no Git.
+   *
+   * The threads of one folder take one read of it, begun after the move, and are saved and published together. Each
+   * used to read the folder for itself, about five Git processes and a save a thread: with 392 threads in the project's
+   * folder, 391 of them settled, main was blocked for 1.1 to 1.6 s after every merge (November 12, 2026). Automatically
+   * pull is still decided for each thread from what the read found, as it was.
    */
   async projectCheckoutMoved(folder: string): Promise<void> {
     const key = (path: string): string => path.replace(/[\\/]+$/u, '').replace(/\\/gu, '/').toLowerCase()
-    const root = key(folder)
+    const root = key(folder), movedAt = performance.now(), together: StatusesTogether = {}
     const reads: Promise<void>[] = []
     for (const thread of this.state.snapshot.threads) {
       const own = this.statusFolder(thread.id)
       if (own === undefined) continue
       const path = key(own)
-      if (path === root || path.startsWith(`${root}/`)) reads.push(this.onLane(thread.id, () => this.readGitStatus(thread.id, true)).catch(() => undefined))
+      if (path === root || path.startsWith(`${root}/`)) reads.push(this.onLane(thread.id, () => this.readGitStatus(thread.id, false, { startedAfter: movedAt, together })).catch(() => undefined))
     }
     await Promise.all(reads)
+    await together.saved
   }
   private pullRequestMergedListener: ((url: string) => void) | undefined
   /** Told of each pull request a read finds merged, for Keep main up to date (ADR-0142); one listener, set by the runtime. */
@@ -1485,6 +1495,13 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       await this.followGitChange(threadId)
     }), () => this.workspaceSnapshot())
   }
+  /**
+   * No thread has the folder yet, so it holds no thread's Git lane: GitActions keeps one init to a folder at a time. Not
+   * `init`, which refuses a folder inside another repository; a folder create-project just made is always its own.
+   */
+  initProjectFolder(path: string): Promise<void> {
+    return this.gitActionsOrRefuse().initNewFolder(path)
+  }
   publishThreadRepository(threadId: string, options: { repository: string; visibility: 'private' | 'public' }): Promise<{ snapshot: AgentHostSnapshot; url: string }> {
     return this.thenReadRemoteStatus(threadId, this.onGitLane(threadId, async () => {
       const { url } = await this.gitActionsOrRefuse().publish(await this.gitActionFolder(threadId), options)
@@ -1526,8 +1543,48 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    */
   private readonly turnStarts = new Map<string, { at: number; folder: string; messageId: string; sequence: number | undefined }>()
   keepWrittenMedia(store: WrittenMediaStore, wanted: () => boolean): void { this.writtenMediaKept = { store, wanted } }
+  private detachedRuns: DetachedRunWatch | undefined
+  /**
+   * The runs this host's threads detach (#2476, ADR-0204): each thread's are laid over its background work, so every rule
+   * that reads background work reads them too, and the watch looks again a few seconds after any turn ends.
+   */
+  watchDetachedRuns(watch: DetachedRunWatch): void {
+    this.detachedRuns = watch
+    watch.subscribe(threadIds => this.detachedRunsChanged(threadIds))
+    watch.start()
+  }
+  /** The watch's latest look changed these threads' runs: their records take them now, and the next merge keeps them. */
+  private detachedRunsChanged(threadIds: readonly string[]): void {
+    if (!this.ready) return
+    let changed = false
+    for (const id of threadIds) {
+      const thread = this.threadById(id)
+      if (!thread || !this.visible(thread)) continue
+      const work = withDetachedRuns(thread.backgroundWork, this.detachedRuns?.runsFor(id))
+      if (work === thread.backgroundWork) continue
+      if (work) this.touched(thread).backgroundWork = work; else delete this.touched(thread).backgroundWork
+      changed = true
+    }
+    if (changed) this.publish()
+  }
+  /**
+   * A thread's live state goes when its provider is not connected, but not its detached runs: they run on their own, and
+   * their row is their only Stop, so they stay until the watch sees them end.
+   */
+  private dropLive(thread: AgentThread): void {
+    dropLiveThreadState(thread)
+    const runs = this.detachedRuns?.runsFor(thread.id)
+    if (runs?.length) thread.backgroundWork = [...runs]
+  }
+  /** Stops one of a thread's detached runs, because the user pressed its Stop. */
+  async stopDetachedRun(threadId: string, runId: string): Promise<void> {
+    await this.initialize(); this.thread(threadId)
+    if (!this.detachedRuns) throw new Error('This computer is not looking for detached runs. Nothing was stopped.')
+    await this.detachedRuns.stop(threadId, runId)
+  }
   /** A turn that may have written pictures ended: what it wrote is found off the update path and becomes a step of its own. */
   private turnEnded(threadId: string): void {
+    this.detachedRuns?.turnEnded()
     this.followTurnPullRequests(threadId)
     const start = this.turnStarts.get(threadId)
     const kept = this.writtenMediaKept
@@ -1582,6 +1639,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         await this.saveLinks()
         this.publish()
       })
+      // Told again now they are linked: Watcher takes a read only for a pull request a thread already has (#2430).
+      for (const view of found) this.observePullRequest(view)
     })().catch(() => undefined)
   }
   /** The words of a thread's newest turn's replies, read from its last turn alone. */
@@ -1613,6 +1672,11 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   admitsTellWatcher(threadId: string): boolean {
     const thread = this.threadById(threadId)
     return thread !== undefined && this.visible(thread) && thread.kind !== 'watcher' && thread.kind !== 'watcher-history' && threadTakesSottoTools(thread)
+  }
+  /** Whether an agent in this thread is offered `sotto_plugins` (ADR-0205): a thread this host holds, Watcher among them, on a provider that takes Sotto's tools. */
+  admitsPluginTools(threadId: string): boolean {
+    const thread = this.threadById(threadId)
+    return thread !== undefined && this.visible(thread) && threadTakesSottoTools(thread)
   }
   admitsShownMedia(threadId: string): boolean {
     if (!this.shownMediaStore) return false
@@ -1978,6 +2042,32 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       this.invalidateGitStatus(command.threadId)
     }), () => ({ snapshot: this.workspaceSnapshot(), notice: `${PULL_REQUEST_ACTION_DONE[command.action]}.` }))
   }
+  /**
+   * The pull request a thread's READY TO MERGE names (`ready_to_merge`, #2430), linked to it once GitHub says it is open, so
+   * Sotto holds it in the merge train and its pull request news reaches Watcher even when neither the thread's branch nor
+   * its turns named it: one opened from another branch, by a subagent, or in another repository. The worker named it as
+   * its own; GitHub only confirms it exists. One already linked is brought up to what GitHub says, such as a draft made
+   * ready since, and keeps how it was first made; the branch's own is left to its Git read. GitHub's answer is told after
+   * the link, since Watcher takes a read only for a pull request a thread already has. Never rejects.
+   */
+  async linkReadyPullRequest(threadId: string, url: string): Promise<void> {
+    const thread = this.threadById(threadId), service = this.gitPullRequests
+    if (!thread || !service || this.stopping || !this.visible(thread)) return
+    try {
+      const view = await service.view(this.threadRepositoryFolder(threadId, 'pull requests'), url)
+      if (this.stopping) return
+      await this.onLane(threadId, async () => {
+        const current = this.threadById(threadId)
+        if (!current) return
+        const link = current.pullRequests?.find(item => pullRequestKey(item.url) === pullRequestKey(view.url))
+        if (!link && (view.state !== 'open' || this.knowsPullRequest(current, view.url))) return
+        if (!this.linkPullRequestRecord(threadId, view, link?.source ?? 'linked')) return
+        await this.saveLinks()
+        this.publish()
+      })
+      this.observePullRequest(view)
+    } catch { /* GitHub could not be asked: the READY TO MERGE goes all the same, and says where the train stands. */ }
+  }
   /** Link pull request: a GitHub URL or `#42`, read through gh first so the link names a pull request that exists. */
   linkThreadPullRequest(threadId: string, reference: string): Promise<{ snapshot: AgentHostSnapshot; link: GitPullRequestLink }> {
     return this.onLane(threadId, async () => {
@@ -2148,7 +2238,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * may follow ran outside the lane. `afterRemote` is a read taking what a fetch brought, which pulls a clean
    * default branch only behind its upstream when Automatically pull is on.
    */
-  private async readGitStatus(threadId: string, afterRemote: boolean, options: { readonly startedAfter?: number } = {}): Promise<void> {
+  private async readGitStatus(threadId: string, afterRemote: boolean, options: { readonly startedAfter?: number; readonly together?: StatusesTogether } = {}): Promise<void> {
     if (!this.gitStatus || this.stopping || this.threadById(threadId)?.councilJudge) return
     const folder = this.statusFolder(threadId)
     if (folder === undefined) return
@@ -2157,7 +2247,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     // A trailing re-read takes any read of the folder begun since its timer fired (`refreshWorktreeRecord`).
     const share = afterRemote ? { fresh: true } : options.startedAfter !== undefined ? { startedAfter: options.startedAfter } : {}
     try { status = await this.gitStatus.read(folder, { remote: false, ...share }) } catch { return }
-    if (afterRemote && this.mayAutoPull(status)) status = await this.autoPull(threadId, folder) ?? status
+    // A moved checkout's threads share their read (`together`) and still decide a pull, each for its own folder: a
+    // repository of its own inside the moved one may be behind an upstream already fetched. `autoPull` decides again
+    // from a read of its own, so a shared one never pulls on what another thread's read found.
+    if ((afterRemote || options.together) && this.mayAutoPull(status)) status = await this.autoPull(threadId, folder) ?? status
     const current = this.threadById(threadId)
     if (!current?.worktree || current.worktree.status !== 'ready' || this.stopping) return
     if (gitStatusFingerprint(current.worktree.git) === gitStatusFingerprint(status)) return
@@ -2166,8 +2259,24 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     // The branch's own pull request, as this read found it, brings the thread's link to it up to date (#1147).
     if (status.pullRequest) this.followPullRequestState(threadId, status.pullRequest.url, status.pullRequest.state)
     this.dirty = true
+    if (options.together) { this.saveStatusesTogether(options.together); return }
     try { await this.flush() } catch { this.saveError = BRANCH_SAVE_ERROR }
     this.publish()
+  }
+  /**
+   * One save and one publication for every thread whose status changed in the same turn of the loop, as the threads of one
+   * folder do when they take the same read (`projectCheckoutMoved`): a save and a publication each was 392 of both for one
+   * moved checkout. A thread whose lane was busy reads later and is saved with whoever reads beside it then.
+   */
+  private saveStatusesTogether(together: StatusesTogether): void {
+    if (together.saving) return
+    const saving = new Promise<void>(resolve => setImmediate(resolve)).then(async () => {
+      if (together.saving === saving) delete together.saving
+      try { await this.flush() } catch { this.saveError = BRANCH_SAVE_ERROR }
+      this.publish()
+    })
+    together.saving = saving
+    together.saved = Promise.all([together.saved, saving]).then(() => undefined)
   }
   /** The folder whose Git status the thread shows: a ready record's, not reclaimed, or none. */
   private statusFolder(threadId: string): string | undefined {
@@ -2950,7 +3059,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       snapshot.models.forEach(model => { model.ready = false; if (model.provider === 'claude') model.provider = PROVIDER_LABELS.claude })
       snapshot.providers?.forEach(provider => { provider.connection = 'disconnected'; delete provider.error })
       delete snapshot.error
-      for (const thread of snapshot.threads.filter(thread => this.visible(thread))) dropLiveThreadState(thread)
+      for (const thread of snapshot.threads.filter(thread => this.visible(thread))) this.dropLive(thread)
       if (!this.historyEnabled()) {
         this.activityJsonFallbackAllowed = false
         for (const thread of snapshot.threads.filter(thread => this.visible(thread))) {
@@ -4372,7 +4481,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (creation && (creation.phase === 'unstarted' || creation.phase === 'retryable')) {
       const project = this.state.snapshot.projects.find(project => project.id === thread.projectId)
       if (!project || !thread.providerId) throw new Error('This thread has no available working folder.')
-      return this.withProfileRefusal(threadId, () => this.inner.listThreadSkills!(threadId, forceReload, { providerId: thread.providerId!, workingDirectory }))
+      return this.withProfileRefusal(threadId, () => this.inner.listThreadSkills!(threadId, forceReload, { providerId: thread.providerId!, workingDirectory, projectPath: project.path }))
     }
     return this.withProfileRefusal(threadId, () => this.inner.listThreadSkills!(threadId, forceReload))
   }
@@ -4778,6 +4887,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       ...(old?.delegatedBy ? { delegatedBy: old.delegatedBy } : {}),
       ...(old?.councilJudge ? { councilJudge: true as const } : {}),
       ...(old?.dynamic ? { dynamic: old.dynamic } : {}),
+      ...(old?.routed ? { routed: old.routed } : {}),
       // A compaction can lose a note, so one that told this session anything goes again with its next message (ADR-0191).
       ...(old?.dynamicSession ? { dynamicSession: compactionPending(old.compaction) && thread.compaction?.status === 'completed' ? dynamicSessionAfterCompaction(old.dynamicSession) : old.dynamicSession } : {}),
       ...(old?.continuedFrom ? { continuedFrom: old.continuedFrom } : {}),
@@ -4794,6 +4904,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       workspaceSettledAt: old?.workspaceSettledAt ?? null, nativeSessionStarted: true }
     // A stored thread keeps no list, not the provider's: an empty one saved over the store would remove every record.
     if (!activities) delete merged.activities
+    // The runs it detached are background work too (#2476); a thread with none keeps its provider's list as it is.
+    const runs = this.detachedRuns?.runsFor(thread.id)
+    if (runs) { const work = withDetachedRuns(thread.backgroundWork, runs); if (work) merged.backgroundWork = work }
     // A provider that is still loading a thread's history has published no history yet, so the
     // store keeps what it already holds and the pane keeps the window it was given.
     if (this.eventSourced) {
@@ -4865,7 +4978,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     for (const id of this.activityInputs.keys()) if (!connectedInputs.has(id)) this.activityInputs.delete(id)
     for (const id of this.storedInputs.keys()) if (!connectedInputs.has(id)) this.storedInputs.delete(id)
     this.state.snapshot = stampHostSnapshot({ ...snapshot, models: this.acceptedModels(previous.models, snapshot.models), projects: [...projects.values()], threads: [...threads.values()] }, this.hostId!)
-    for (const thread of this.state.snapshot.threads.filter(thread => this.visible(thread))) if (!isThreadProviderConnected(snapshot, thread)) dropLiveThreadState(thread)
+    for (const thread of this.state.snapshot.threads.filter(thread => this.visible(thread))) if (!isThreadProviderConnected(snapshot, thread)) this.dropLive(thread)
     // An agent that switched branches mid-turn moved HEAD without a send, so finished work asks for a re-read.
     for (const thread of this.state.snapshot.threads.filter(thread => this.visible(thread))) {
       const old = previousThreads.get(thread.id)
@@ -4921,7 +5034,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       handled++
       const stamped = stampHostThread(next, this.hostId!)
       const visible = this.visible(stamped)
-      if (visible && !isThreadProviderConnected(host, stamped)) dropLiveThreadState(stamped)
+      if (visible && !isThreadProviderConnected(host, stamped)) this.dropLive(stamped)
       if (at === undefined) threads.push(stamped)
       else threads[at] = stamped
       this.markChanged(id)
@@ -5405,11 +5518,27 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * Dynamic on or off for a thread (ADR-0191), Sotto's own record, which the provider never sees. Checked here against the
    * thread as it stands now, since what the coordinator was last told can be a moment behind a turn that just began.
    */
+  /**
+   * Model routing on or off for a thread (ADR-0207), Sotto's own record, which the provider never sees. Its next send reads
+   * it, so it changes while a turn runs too: a model pressed mid-turn turns routing off before the press is kept.
+   */
+  async setThreadRouted(threadId: string, routed: boolean): Promise<AgentHostSnapshot> {
+    await this.initialize()
+    const thread = this.thread(threadId)
+    if ((thread.routed === true) !== routed) {
+      const refused = routed ? whyNotRouted(thread) : undefined
+      if (refused) throw new Error(refused)
+      if (routed) this.touched(thread).routed = true
+      else delete this.touched(thread).routed
+      this.dirty = true; await this.flush(); this.publish()
+    }
+    return this.workspaceSnapshot()
+  }
   async setThreadDynamic(threadId: string, dynamic: boolean): Promise<AgentHostSnapshot> {
     await this.initialize()
     const thread = this.thread(threadId)
     if ((thread.dynamic === true) !== dynamic) {
-      const refused = dynamic ? whyNotDynamic(thread) : undefined
+      const refused = dynamic ? whyNotDynamic(thread) ?? (thread.routed === true ? 'This thread uses model routing. Turn model routing off to make it Dynamic. Nothing changed.' : undefined) : undefined
       if (refused) throw new Error(refused)
       if (thread.status === 'running' || thread.requests.length) throw new Error('Wait for this thread to finish and answer its pending requests before changing Dynamic. Nothing changed.')
       if (dynamic) this.touched(thread).dynamic = true
@@ -5776,6 +5905,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         worktree: command.councilJudge ? { mode: 'shared', path: command.workingDirectory!, status: 'ready' } : await this.selectedWorkingCopy(command.projectId, { ...command, workingCopy: command.workingCopy ?? this.workingCopyDefault(command.projectId) }),
         status: 'idle', messages: [], requests: [], workspaceSettledAt: null, nativeSessionStarted: false }
       if (command.dynamic && whyNotDynamic(thread) === undefined) thread.dynamic = true
+      // A thread that starts Dynamic is not routed as well: Dynamic chooses its own models (ADR-0207).
+      if (command.routed && whyNotRouted(thread) === undefined) thread.routed = true
       if (thread.worktree?.mode === 'shared') thread.workingDirectory = thread.worktree.path
       // New work reopens the folder, while the work put aside stays settled.
       // Re-read after working-copy preparation, which can accept a fresh snapshot.
@@ -6156,7 +6287,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     snapshot.models = snapshot.models.map(model => model.ready && (!provider || model.providerId === provider) ? { ...model, ready: false } : model)
     snapshot.connected = snapshot.providers?.some(item => item.connection === 'connected') ?? false
     for (const thread of snapshot.threads.filter(thread => this.visible(thread))) if (!provider || thread.providerId === provider) {
-      dropLiveThreadState(thread)
+      this.dropLive(thread)
       this.trackSubagents(thread, false)
       thread.subagentSummary = this.subagentSummaries.get(thread.id) ?? EMPTY_SUBAGENT_SUMMARY
     }

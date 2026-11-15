@@ -8,7 +8,7 @@ import { continuedWordsOf } from '../../../shared/continueThread'
 import { HANDOVER_LEAD } from '../../../shared/handover'
 import { babysittingWord } from './babysitting'
 import { restartRowWords } from './restartWords'
-import { isThreadClosed, isWorkspaceThreadSettled } from '../../../shared/threadActivity'
+import { isThreadClosed, isThreadSettled, isWorkspaceThreadSettled } from '../../../shared/threadActivity'
 import { failureUnseen } from '../../../shared/threadFailures'
 import { localeFormatKey, localeFormatter } from './localeFormat'
 import { share } from './stateSharing'
@@ -98,7 +98,7 @@ export function providerKey(provider: string): ProviderKey {
 
 /** Sotto's badge glyph for an agent provider; an unknown provider gets its initial. */
 export function providerGlyph(provider: string): string {
-  const glyphs: Readonly<Record<ProviderKey, string>> = { claude: 'C', codex: '›_', grok: 'X', devin: 'D', muse: 'M', opencode: 'O', cursor: 'Cu', deepseek: 'DS', hermes: 'H', other: provider.trim().charAt(0).toLocaleUpperCase() }
+  const glyphs: Readonly<Record<ProviderKey, string>> = { claude: 'C', codex: '›_', grok: 'X', devin: 'D', muse: 'M', opencode: 'O', cursor: 'Cu', deepseek: 'DS', hermes: 'H', pi: 'π', other: provider.trim().charAt(0).toLocaleUpperCase() }
   const glyph = glyphs[providerKey(provider)]
   return glyph === '' ? '?' : glyph
 }
@@ -109,6 +109,22 @@ export function clockLabel(at: number): string {
   const date = new Date(at)
   if (!Number.isFinite(date.valueOf())) return ''
   return clockTime(date).toLocaleLowerCase()
+}
+
+const weekday = localeFormatter({ weekday: 'short' })
+const monthDay = localeFormatter({ month: 'short', day: 'numeric' })
+const monthDayYear = localeFormatter({ month: 'short', day: 'numeric', year: 'numeric' })
+/**
+ * When a thread was settled, in a row's few words, for the Settled shelf by status, whose rows run back over months in
+ * the order they were settled: its clock today ("2:02 pm"), the day within a week ("Mon"), the date before that
+ * ("Nov 2"), and the year with it in another year. A snoozed row's wake time is worded the same way (`wakeWords`).
+ */
+export function settledWords(at: number, now: number = Date.now()): string {
+  const date = new Date(at), today = new Date(now)
+  if (!Number.isFinite(date.valueOf())) return ''
+  if (date.toDateString() === today.toDateString()) return clockLabel(at)
+  if (now - at >= 0 && now - at < 6 * DAY_MS) return weekday(date)
+  return (date.getFullYear() === today.getFullYear() ? monthDay : monthDayYear)(date)
 }
 
 /** "4 min", "2 h", "3 d": how long a working thread has been at it. */
@@ -666,6 +682,83 @@ export function holdSettledRows(open: readonly ProjectFolder[], settled: readonl
     placed.set(row.thread.id, home.id)
   }
   return { open: [...folders.values()].sort(byActivity), placed }
+}
+
+/** The open part of the sidebar grouped by status (ADR-0201): what is working, then everything else open. */
+export interface StatusGroups {
+  /** Working now: a turn, compaction or background work running, on a provider Sotto can reach. */
+  readonly working: readonly ThreadRow[]
+  /** Recent: every other open thread, the ones standing in Needs you included, which point up to its card. */
+  readonly recent: readonly ThreadRow[]
+}
+
+/**
+ * The open folders' rows in the iPhone's groups and order (ADR-0201, from `FocusThreads` in SottoCore): Working now holds
+ * rows working on a reachable provider, and Recent the rest; a thread out of reach says Disconnected in Recent rather than
+ * Working in the group above, as the iPhone's does. Inside each, rows on a reachable provider come first, then the one
+ * that last moved: its last message or the start of its running turn, whichever is later (`ThreadGroups.latest`), so a
+ * reply streaming in does not reorder the group on every update. Needs you stays the card above the groups (Zach's pick, November 10, 2026), so its
+ * threads keep their rows here, in Recent. Snoozed and Settled are not here: they keep their shelves. `pinned` keeps a
+ * row in the group it was in, whatever its thread does meanwhile: a held gap's (ADR-0167), whose place must not move.
+ */
+export type StatusGroupName = keyof StatusGroups
+export function groupByStatus(open: readonly ProjectFolder[], pinned?: ReadonlyMap<string, StatusGroupName>): StatusGroups {
+  const rows = open.flatMap(item => item.rows)
+  // Each row's time read once, not on every comparison.
+  const moved = new Map(rows.map(row => {
+    const { lastMessageAt, runningTurnStartedAt } = threadSummaryOf(row.thread)
+    const times = [parse(lastMessageAt), parse(runningTurnStartedAt)].filter(Number.isFinite)
+    return [row, times.length ? Math.max(...times) : Number.NaN]
+  }))
+  const order = (first: ThreadRow, second: ThreadRow): number => Number(second.connected) - Number(first.connected)
+    || byActivity({ activityAt: moved.get(first)!, id: first.thread.id }, { activityAt: moved.get(second)!, id: second.thread.id })
+  const groupOf = (row: ThreadRow): StatusGroupName => pinned?.get(row.thread.id) ?? (row.state === 'working' && row.connected ? 'working' : 'recent')
+  return {
+    working: rows.filter(row => groupOf(row) === 'working').sort(order),
+    recent: rows.filter(row => groupOf(row) === 'recent').sort(order),
+  }
+}
+
+/**
+ * The Snoozed shelf's rows as one flat list, newest activity first, for the sidebar by status (ADR-0201, Zach's call of
+ * November 10, 2026).
+ */
+export function snoozedShelfRows(folders: readonly ProjectFolder[]): ThreadRow[] {
+  return folders.flatMap(item => item.rows).sort((first, second) => byActivity({ activityAt: first.activityAt, id: first.thread.id }, { activityAt: second.activityAt, id: second.thread.id }))
+}
+
+/**
+ * When a settled row's thread was settled, in ms: the latest time any of its settlements names, its own Settle, its
+ * project's, an archive or its provider's. NaN for an open thread, or where none names a time. The rule is the one the
+ * host orders an iPhone's Settled shelf by (`settledSince` in `src/host/heldBackSettled.ts`), so both list alike.
+ */
+export function settledAtOf(row: Pick<ThreadRow, 'thread' | 'project' | 'settledBy'>): number {
+  if (row.settledBy === null) return Number.NaN
+  const { thread } = row
+  return [parse(thread.workspaceSettledAt), parse(row.project?.workspaceSettledAt), parse(thread.archivedAt), isThreadSettled(thread) ? parse(thread.settledAt) : Number.NaN]
+    .reduce((latest, at) => Number.isFinite(at) && (!Number.isFinite(latest) || at > latest) ? at : latest, Number.NaN)
+}
+
+/** One row of the Settled shelf by status, with when it was settled, which orders it and is the time it shows. */
+export interface SettledShelfRow {
+  readonly row: ThreadRow
+  /** When the thread was settled, in ms; NaN when no settlement names a time. */
+  readonly settledAt: number
+}
+
+/** How many rows the Settled shelf by status shows when it opens, and how many each Show more adds, as the iPhone's does. */
+export const SETTLED_SHELF_PAGE = 30
+
+/**
+ * The Settled shelf's rows as one list, newest settled first, for the sidebar by status (ADR-0201, Zach's call of
+ * November 13, 2026): no project folders, and the thread put away last leads, as on the iPhone. Threads settled at the same
+ * time, a project's or a thread's and the ones it delegated, keep the order of their last activity; one whose
+ * settlement names no time comes last. A settled project with no thread has no row here.
+ */
+export function settledShelfRows(folders: readonly ProjectFolder[]): SettledShelfRow[] {
+  return folders.flatMap(item => item.rows).map(row => ({ row, settledAt: settledAtOf(row) }))
+    .sort((first, second) => byActivity({ activityAt: first.settledAt, id: '' }, { activityAt: second.settledAt, id: '' })
+      || byActivity({ activityAt: first.row.activityAt, id: first.row.thread.id }, { activityAt: second.row.activityAt, id: second.row.thread.id }))
 }
 
 /**

@@ -11,6 +11,8 @@ import { ThreadChangesPublisher, ThreadMap, threadChangesBetween, type ActivityC
   type ThreadChangeSet } from './threadChanges'
 import type { UsageQuotaRead, UsageTokenObservation } from '../../shared/usageDashboard'
 import { isUsageHistoryThreadId, mappedSink, type UsageHistorySink } from './usageHistory/sink'
+import type { HeldThreadSession } from './sessionReaper'
+import type { RunMark } from './detachedRunScan'
 
 const bindingSchema = z.object({
   threadId: z.string().min(1), provider: z.string().min(1), sessionId: z.string().min(1),
@@ -564,6 +566,21 @@ export class SottoThreadHost implements ProviderHost {
   keepSessionsLive(threadIds: readonly string[]): void {
     this.liveSessions = [...threadIds]
     this.inner.keepSessionsLive?.(this.ownSessions(threadIds))
+  }
+  /**
+   * The sessions the adapter's reaper holds and why (#2398), each under its Sotto thread. A session no thread owns keeps
+   * its row without an ID, since its provider's own ID never crosses this boundary.
+   */
+  heldThreadSessions(): HeldThreadSession[] {
+    return (this.inner.heldSessions?.() ?? []).map(({ id, ...held }) => {
+      const threadId = this.threadFor(id)
+      return threadId ? { threadId, ...held } : held
+    })
+  }
+  /** The Sotto thread whose provider session a detached run's mark names (#2476); the provider's own ID stays here. */
+  threadForRunMark(mark: RunMark): string | undefined {
+    const sessionId = this.inner.threadForRunMark?.(mark)
+    return sessionId === undefined ? undefined : this.threadFor(sessionId)
   }
   /** The native session IDs of those of these threads bound to this adapter's provider. */
   private ownSessions(threadIds: readonly string[]): string[] {

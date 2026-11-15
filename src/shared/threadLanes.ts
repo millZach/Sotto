@@ -16,7 +16,7 @@ import type { AgentCommand } from './agents'
 export const THREAD_SCOPED_COMMAND_TYPES: ReadonlySet<AgentCommand['type']> = new Set<AgentCommand['type']>([
   'set-aside-send', 'manual-send', 'steer', 'steer-followup', 'answer', 'configure-thread-working-copy', 'configure-thread', 'compact-thread',
   'settle-thread', 'restore-thread', 'retry-thread-worktree', 'refresh-thread-worktree', 'open-thread-folder', 'restore-thread-branch',
-  'reclaim-thread-worktree', 'preview-reclaim-thread-worktree', 'load-earlier-messages', 'start-thread-session', 'set-thread-dynamic',
+  'reclaim-thread-worktree', 'preview-reclaim-thread-worktree', 'load-earlier-messages', 'start-thread-session', 'set-thread-dynamic', 'set-thread-routed',
 ])
 
 /**
@@ -27,6 +27,6 @@ export const THREAD_SCOPED_COMMAND_TYPES: ReadonlySet<AgentCommand['type']> = ne
  * main.
  */
 export const LANELESS_THREAD_COMMAND_TYPES: ReadonlySet<AgentCommand['type']> = new Set<AgentCommand['type']>([
-  'interrupt', 'select-thread', 'save-thread-draft', 'refresh-thread-skills',
+  'interrupt', 'stop-detached-run', 'select-thread', 'save-thread-draft', 'refresh-thread-skills',
   'queue-followup', 'edit-followup', 'remove-followup', 'reorder-followups', 'resume-followups',
 ])

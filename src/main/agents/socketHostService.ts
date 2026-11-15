@@ -9,7 +9,7 @@ import { open } from 'node:fs/promises'
 import { request as httpRequest } from 'node:http'
 import { request as httpsRequest } from 'node:https'
 import type { z } from 'zod'
-import { watcherHostProjectionSchema, type WatcherHostControl, type WatcherHostRead, type WatcherHostProjection, type WatcherRoomThreadInput } from '../../shared/watcherHost'
+import { watcherHostProjectionSchema, withWatcherProgress, type WatcherHostControl, type WatcherHostRead, type WatcherHostProjection, type WatcherRoomThreadInput } from '../../shared/watcherHost'
 import { watcherRoomInputs } from './watcherRoomInput'
 import { type WatcherIdentity, watcherResultFromHostV1, watcherToolSchemas } from '../../shared/watcher'
 import { DEFLATE_OFFER, deflateAccepted, SocketFrames } from '../../host/socketFrames'
@@ -20,7 +20,7 @@ import { gitRefsPageSchema, type GitRefsPage, type GitRefsRequest } from '../../
 import { gitChangedFilesSchema, type GitChangedFiles, type GitChangedFilesRequest } from '../../shared/gitChangedFiles'
 import { gitPullRequestListResultSchema, gitPullRequestResultSchema, pullRequestConfirmationSchema, type GitPullRequestListRead, type GitPullRequestListRequest, type GitPullRequestRead, type GitPullRequestRequest, type PullRequestConfirmationRequest } from '../../shared/gitPullRequests'
 import { hostFoldersResultSchema, type HostFoldersRequest, type HostFoldersResult } from '../../shared/hostFolders'
-import { fileLinkPreviewSchema, fileListingSchema, filePreviewSchema, filesResultSchema, type FileLinkPreview, type FileLinkRequest, type FileListing, type FileListRequest, type FilePreview, type FileRequest, type FilesResult } from '../../shared/files'
+import { fileLinkPreviewSchema, fileListingSchema, filePreviewSchema, filesResultSchema, linkedFileSchema, type LinkedFile, type LinkedFileRequest, type FileLinkPreview, type FileLinkRequest, type FileListing, type FileListRequest, type FilePreview, type FileRequest, type FilesResult } from '../../shared/files'
 import { gitListingSchema, gitReviewSchema, type GitChangeListing, type GitReview, type GitReviewRequest } from '../../shared/gitChanges'
 import { subagentAssignmentsPageSchema, subagentPageSchema, type SubagentAssignmentsPage, type SubagentAssignmentsRequest, type SubagentPage, type SubagentPageRequest } from '../../shared/subagents'
 import { toolsResultSchema, type ToolListRequest, type ToolsResult } from '../../shared/tools'
@@ -52,6 +52,8 @@ import type { HostUpdateStep } from '../../shared/hostUpdates'
 import { projectOriginsSchema, projectSetupResultSchema, type ProjectOrigins, type ProjectSetupRequest, type ProjectSetupResult } from '../../shared/workerMachine'
 import type { NextPromptEntry } from '../../shared/nextPrompt'
 import { desktopDefaultsReceiptSchema, type DesktopDefaultsInput, type DesktopDefaultsReceipt } from '../../shared/desktopDefaults'
+import { heldPluginAccountCopiesSchema, pluginAccountCopyReceiptSchema, pluginAccountCopyRemovedSchema, type HeldPluginAccountCopy, type PluginAccountCopy, type PluginAccountCopyReceipt, type PluginAccountCopyRemoved } from '../../shared/pluginAccountCopies'
+import { gitHubSignInSchema, type GitHubSignIn } from '../../shared/plugins'
 import type { DelegationRelayAsk, DelegationRemoteAsk, RelayedReply } from '../../shared/delegationRelay'
 import type { TellWatcherAnswer, WatcherTellPush } from '../../shared/tellWatcher'
 import type { DelegationNews } from '../../shared/delegation'
@@ -65,6 +67,7 @@ const signInAnswerSchema = hostSignInSchema.nullable()
 const fileListingResultSchema = filesResultSchema(fileListingSchema)
 const filePreviewResultSchema = filesResultSchema(filePreviewSchema)
 const fileLinkPreviewResultSchema = filesResultSchema(fileLinkPreviewSchema)
+const linkedFileResultSchema = filesResultSchema(linkedFileSchema)
 const gitListingResultSchema = toolsResultSchema(gitListingSchema)
 const gitReviewResultSchema = toolsResultSchema(gitReviewSchema)
 
@@ -179,6 +182,8 @@ export interface SocketHostServiceOptions {
 const LOOPBACK: ReadonlySet<string> = new Set(['127.0.0.1', '[::1]', 'localhost'])
 /** An `afterSeq` past any sequence a host can reach: the host has no event after it, so it sends none. */
 const NO_EVENTS_AFTER = Number.MAX_SAFE_INTEGER
+/** A scope read's projection, read and kept as its answer arrived (`keepProjection`), so its caller does not read it twice. */
+class KeptProjection { constructor(readonly projection: WatcherHostProjection) {} }
 /** One field of a frame not yet read, or undefined when it is not an object. */
 const field = (value: unknown, key: string): unknown => value !== null && typeof value === 'object' ? (value as Record<string, unknown>)[key] : undefined
 /**
@@ -211,6 +216,8 @@ export class SocketHostService implements HostService {
    */
   private hostVersion: string | undefined
   private features: readonly string[] = []
+  /** What the host's health listed before it knew who was asking: what this listener offers some client, not yet this one. */
+  private listed: readonly string[] = []
   /** Threads being read whole because a delta did not follow the revision held, so a run of them costs one read. */
   private readonly resyncing = new Set<string>()
   /** Threads whose held detail a delta could not follow. Only a whole detail stored afterwards makes one current again. */
@@ -237,11 +244,16 @@ export class SocketHostService implements HostService {
   /** The revision each raw shell `restoreCatalog` restored named, by its `host`, so its first reading can be kept. */
   private readonly namedCatalogs = new WeakMap<object, number>()
   private cachedWatcher: WatcherHostProjection | undefined
+  /**
+   * The scope reads whose answers are kept as they arrive, beside the pushes around them, for a host that lists
+   * `watcher-progress`: it measures its next progress push from the projection such an answer carried.
+   */
+  private readonly projectionReads = new Set<string>()
   /** Native ownership is immutable; an omitted later shell must not reopen a held thread. */
   private readonly dormantProviderThreads = new Map<string, DormantProviderThread>()
   /** The providers held to Owl on this run, read once at start. */
   private readonly held: HeldProviders
-  private readonly watcherListeners = new Set<(projection: WatcherHostProjection) => void>()
+  private readonly watcherListeners = new Set<(projection: WatcherHostProjection | undefined) => void>()
   private readonly delegationListeners = new Set<(change: DelegationViewsChange) => void>()
   /** The host's check queue as it last pushed it (#1312), on this connection only; undefined before a push and once it closes. */
   private checks: readonly CheckQueueEntry[] | undefined
@@ -372,7 +384,7 @@ export class SocketHostService implements HostService {
       this.hostVersion = typeof advertised === 'string' ? advertised : undefined
       throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
     }
-    this.hostVersion = health.sottoVersion; this.features = []
+    this.hostVersion = health.sottoVersion; this.features = []; this.listed = health.features
     // A host that says it is another one is not sent this device's token at all.
     if (this.options.expectedHostId && health.hostId !== this.options.expectedHostId) throw new WrongHostError()
     const response = await fetch(this.endpoint('/v1/session'), { method: 'POST', headers: { Authorization: 'Bearer ' + this.options.token }, signal: AbortSignal.any([opening.signal, AbortSignal.timeout(15000)]), redirect: 'error' })
@@ -416,7 +428,7 @@ export class SocketHostService implements HostService {
       // held on this run is hidden here as on this computer, by the held gate.
       // This connection holds no shell push's thread records yet, so the host's first push lists every one (#996).
       this.pushedThreads = createThreadReassembly()
-      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'host-update', 'activity-bodies', 'changed-thread-records', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads', 'watcher-tell', 'watcher-ready'] : [], ...this.options.crossMachineEnabled === true ? ['delegation-views', 'check-queue-views'] : [], ...this.options.pairedHostBrowser === true ? ['browser'] : [], ...this.options.nextPromptsWanted ? ['next-prompts'] : [], ...this.options.productEventAnswer ? ['product-events'] : [], ...this.relays ? ['delegation-relay', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts'] : []] as const).filter(feature => health.features.includes(feature))
+      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'host-update', 'activity-bodies', 'changed-thread-records', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads', 'watcher-tell', 'watcher-ready', 'watcher-progress'] : [], ...this.options.crossMachineEnabled === true ? ['delegation-views', 'check-queue-views'] : [], ...this.options.pairedHostBrowser === true ? ['browser'] : [], ...this.options.nextPromptsWanted ? ['next-prompts'] : [], ...this.options.productEventAnswer ? ['product-events'] : [], ...this.relays ? ['delegation-relay', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts'] : []] as const).filter(feature => health.features.includes(feature))
       const accepts = { accepts: [...accepted] }
       const hello = this.read(hostHelloSchema, await this.call({ op: 'hello', afterSeq: this.catchesUp ? this.latestSeq : NO_EVENTS_AFTER, ...accepts }))
       if (hello.hostId !== session.hostId) throw new HostConnectionError(CONNECT_FAILURES.identityChangedConnect(), 'unauthenticated')
@@ -515,6 +527,17 @@ export class SocketHostService implements HostService {
             this.notifyState()
           }
         }
+        // Pushed only to a desktop whose hello accepted `watcher-progress`: the projection held, with its progress moved on.
+        // One measured from a projection this connection does not hold is let go, so Watcher reads the projection again.
+        else if (message.event === 'watcher-progress') {
+          if (this.options.watcherEnabled === true && this.supportsWatcherProgress && this.cached) {
+            const held = this.cachedWatcher
+            const projection = held?.revision === message.progress.baseRevision ? withWatcherProgress(held, message.progress) : undefined
+            this.cachedWatcher = projection
+            for (const listener of this.watcherListeners) listener(projection)
+            this.notifyState()
+          }
+        }
         else if (message.event === 'detail') this.cacheDetail(message.threadId, message.detail)
         else if (message.event === 'detail-delta') this.applyDelta(message.threadId, message.delta)
         // Sent only to a client whose hello accepts `host-update` (ADR-0088), for the update step it asked for.
@@ -558,7 +581,7 @@ export class SocketHostService implements HostService {
         const pending = this.pending.get(message.id)
         if (!pending) { this.lateDetail(message); return }
         this.pending.delete(message.id); clearTimeout(pending.timer)
-        if (message.ok) pending.resolve(message.result)
+        if (message.ok) pending.resolve(this.projectionReads.delete(message.id) ? this.keepProjection(message.result) : message.result)
         // A host of another version refusing a request as unreadable is version skew, not a bad request.
         else if (message.error.code === 'invalid_request' && this.skewed()) pending.reject(new HostConnectionError(this.mismatchWords(), 'version_mismatch', pending.command ? message.id : undefined))
         else pending.reject(new HostConnectionError(message.error.message, message.error.code, pending.command ? message.id : undefined))
@@ -826,7 +849,7 @@ export class SocketHostService implements HostService {
   }
   shell(): AgentState {
     if (!this.cached) throw new Error(t`Connect to the host before reading its state.`)
-    return this.withRetained(structuredClone(this.cached))
+    return this.withRetained(structuredClone(this.cached), this.retainedDrafts.list(this.retainedHostId()))
   }
   /**
    * The shell without a copy of the host's push, for a reader that only reads: the router building what it publishes, a
@@ -836,12 +859,15 @@ export class SocketHostService implements HostService {
    */
   view(): AgentState {
     if (!this.cached) throw new Error(t`Connect to the host before reading its state.`)
-    return this.withRetained({ ...this.cached })
+    return this.withRetained({ ...this.cached }, this.retainedDrafts.read(this.retainedHostId()))
   }
-  /** The shell as this desktop shows it: the drafts it holds for the host laid over the host's own state. */
-  private withRetained(state: AgentState): AgentState {
+  /**
+   * The shell as this desktop shows it: the drafts it holds for the host laid over the host's own state. `drafts` are copies
+   * for `shell`, whose caller may change what it is given, and the store's own for `view`, whose reader only reads.
+   */
+  private withRetained(state: AgentState, drafts: readonly Readonly<RetainedDraft>[]): AgentState {
     state.notice = this.quietConnectionNotices.get(state.notice) ?? state.notice
-    for (const edit of this.retainedDrafts.list(this.retainedHostId())) {
+    for (const edit of drafts) {
       const draft = edit.saved && edit.hostDraftId ? { ...edit.draft, draftId: edit.hostDraftId } : edit.draft
       state.threadDrafts = [...(state.threadDrafts ?? []).filter(draft => draft.threadId !== edit.draft.threadId), draft]
       if (edit.saved && edit.hostDraftId) state.threadDraftPersistence = [...(state.threadDraftPersistence ?? []).filter(item => item.threadId !== draft.threadId),
@@ -853,10 +879,10 @@ export class SocketHostService implements HostService {
     }
     const refusal = this.recoveryError
     if (refusal && !state.error) {
-      const edit = this.retainedDrafts.get(this.retainedHostId(), refusal.threadId)
+      const edit = drafts.find(item => item.draft.threadId === refusal.threadId)
       if (edit && !edit.saved && edit.draft.draftId === refusal.draftId) state.error = refusal.message
     }
-    if (!state.error && this.retainedDrafts.list(this.retainedHostId()).some(edit => edit.sendAttempt)) state.error = i18n._(REMOTE_SEND_UNCERTAIN)
+    if (!state.error && drafts.some(edit => edit.sendAttempt)) state.error = i18n._(REMOTE_SEND_UNCERTAIN)
     return state
   }
   threadDetail(threadId: string): AgentThreadDetail | null { if (!this.threadAvailable(threadId)) return null; return structuredClone(this.details.get(threadId) ?? null) }
@@ -923,6 +949,8 @@ export class SocketHostService implements HostService {
   get supportsAtomicSend(): boolean { return this.features.includes('atomic-send') }
   get supportsWatcherControl(): boolean { return this.options.watcherEnabled === true && this.features.includes('watcher-control') }
   get supportsWatcherReads(): boolean { return this.options.watcherEnabled === true && this.features.includes('watcher-reads') }
+  /** The host sends Watcher's progress apart from its projection (`watcher-progress`, ADR-0073's November 10, 2026 amendment). */
+  get supportsWatcherProgress(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-progress') }
   get supportsWatcherStandingWatch(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-standing-watch') }
   get supportsWatcherWorkSettled(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-work-settled') }
   get supportsWatcherOutcomes(): boolean { return this.supportsWatcherReads && this.features.includes('watcher-outcomes') }
@@ -944,7 +972,7 @@ export class SocketHostService implements HostService {
     guard?.()
     return watcherToolSchemas[request.call.name].output.parse(watcherResultFromHostV1(await this.call({ op: 'watcher-control', request })))
   }
-  subscribeWatcher(listener: (projection: WatcherHostProjection) => void): () => void { this.watcherListeners.add(listener); return () => this.watcherListeners.delete(listener) }
+  subscribeWatcher(listener: (projection: WatcherHostProjection | undefined) => void): () => void { this.watcherListeners.add(listener); return () => this.watcherListeners.delete(listener) }
   cachedWatcherProjection(master: WatcherIdentity): WatcherHostProjection | undefined {
     const projection = this.cachedWatcher
     return this.options.watcherEnabled === true && projection && projection.hostId === this.cached?.host.hostId
@@ -956,16 +984,43 @@ export class SocketHostService implements HostService {
     if (request.adopt !== undefined && !this.supportsWatcherNewOwner) throw new HostConnectionError(t`Update this host before a new Watcher takes over its threads. Nothing was changed.`, 'invalid_request')
     const held = this.heldWatcherProvider(request)
     if (held) return heldWatcherRefusal(held)
-    const result = await this.call({ op: 'watcher-read', request })
-    if (request.call) return watcherToolSchemas[request.call.name].output.parse(watcherResultFromHostV1(result))
-    this.cachedWatcher = watcherHostProjectionSchema.parse(result)
-    return this.cachedWatcher
+    if (request.call) return watcherToolSchemas[request.call.name].output.parse(watcherResultFromHostV1(await this.call({ op: 'watcher-read', request })))
+    const id = randomUUID()
+    if (this.supportsWatcherProgress) this.projectionReads.add(id)
+    try {
+      const result = await this.call({ op: 'watcher-read', request }, id)
+      if (result instanceof KeptProjection) return result.projection
+      this.cachedWatcher = watcherHostProjectionSchema.parse(result)
+      return this.cachedWatcher
+    } finally { this.projectionReads.delete(id) }
+  }
+  /**
+   * Keeps the projection a scope read answered with as its answer arrives, before any push read after it, so what this
+   * connection holds is what the host measures its next progress push from (`watcher-progress`), and tells Watcher of it
+   * when it is not the projection held. An answer that is not a projection is handed on as it came, for the caller to
+   * refuse.
+   */
+  private keepProjection(result: unknown): unknown {
+    const read = watcherHostProjectionSchema.safeParse(result)
+    if (!read.success) return result
+    const moved = this.cachedWatcher?.revision !== read.data.revision
+    this.cachedWatcher = read.data
+    // The host counts this answer as written, so it pushes this projection to nobody. A read that brings a projection
+    // this connection did not hold tells Watcher here, as that push would have: a receipt, an ownership change or new
+    // evidence in it must not wait for the next push.
+    if (moved && this.options.watcherEnabled === true && this.cached) {
+      for (const listener of this.watcherListeners) listener(read.data)
+      this.notifyState()
+    }
+    return new KeptProjection(read.data)
   }
   get supportsDraftRevisions(): boolean { return this.features.includes('draft-revisions') }
   /** The host lists `pull-request-babysit`: it babysits and takes the user's Babysit pull request (ADR-0061 decision 11). */
   get supportsBabysitting(): boolean { return this.features.includes('pull-request-babysit') }
   /** The host lists `thread-delete`: it deletes one of its settled threads when asked (ADR-0140). */
   get supportsThreadDelete(): boolean { return this.features.includes('thread-delete') }
+  /** The host lists `project-git-init`: it runs `git init` in the folder a new project is made in when asked. */
+  get supportsProjectGitInit(): boolean { return this.features.includes('project-git-init') }
   async command(command: AgentCommand, _client?: ClientIdentity, commandId?: string): Promise<AgentState> {
     this.requireCommandAvailable(command)
     const refusal = managementCommandRefusal(command)
@@ -978,6 +1033,7 @@ export class SocketHostService implements HostService {
     // A host from before babysitting would refuse the command with no word of why; this says which side to update.
     if ((admitted.type === 'babysit-pull-request' || admitted.type === 'stop-babysitting') && !this.supportsBabysitting) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
     if ((admitted.type === 'delete-thread' || admitted.type === 'preview-delete-thread') && !this.supportsThreadDelete) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
+    if (admitted.type === 'create-project' && admitted.gitInit && !this.supportsProjectGitInit) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
     // A host from before the window's own refresh (#820) would refuse the field; it reads the folder as any refresh instead.
     if (admitted.type === 'refresh-thread-worktree' && admitted.background !== undefined && !this.features.includes('background-refresh')) delete admitted.background
     if (admitted.type === 'compose' && admitted.threadId !== undefined) {
@@ -1499,6 +1555,10 @@ export class SocketHostService implements HostService {
   threadFileLink(request: FileLinkRequest): Promise<FilesResult<FileLinkPreview>> {
     return this.large('thread-file-links', async () => this.read(fileLinkPreviewResultSchema, await this.call({ op: 'thread-file-link', request })))
   }
+  /** A linked file's place, preview or one part of it (ADR-0120, November 12 amendment), queued as a preview is: a part is a large frame. */
+  threadLinkedFile(request: LinkedFileRequest): Promise<FilesResult<LinkedFile>> {
+    return this.large('thread-linked-files', async () => this.read(linkedFileResultSchema, await this.call({ op: 'thread-linked-file', request })))
+  }
   async gitChanges(request: ToolListRequest): Promise<ToolsResult<GitChangeListing>> {
     this.offers('thread-changes')
     return this.read(gitListingResultSchema, await this.call({ op: 'thread-changes', request }))
@@ -1570,6 +1630,45 @@ export class SocketHostService implements HostService {
   async desktopDefaults(defaults: DesktopDefaultsInput): Promise<DesktopDefaultsReceipt> {
     this.offers('host-delegation')
     return this.read(desktopDefaultsReceiptSchema, await this.call({ op: 'desktop-defaults', defaults }, undefined, undefined, 10000))
+  }
+  /**
+   * The host lists `plugin-github-sign-in` (ADR-0205): it says who gh on its own machine is signed in to GitHub as.
+   * A host being added lists it in its health and not yet in this desktop's hello, as with account copies, so the
+   * read is asked where the health listed it: the host reads its record of desktops again before it answers.
+   */
+  get supportsPluginGitHubSignIn(): boolean { return this.features.includes('plugin-github-sign-in') || this.listed.includes('plugin-github-sign-in') }
+  async pluginGitHubSignIn(): Promise<GitHubSignIn> {
+    if (!this.supportsPluginGitHubSignIn) this.offers('plugin-github-sign-in')
+    return this.read(gitHubSignInSchema, await this.call({ op: 'plugin-github-sign-in' }, undefined, undefined, 20000))
+  }
+  /**
+   * The host lists `plugin-account-copies` (ADR-0205, amending ADR-0025): it keeps a plugin account's secret and
+   * settings in its own encrypted credential file, for its own threads. An older or stable host lists none, and is
+   * never sent a secret: each call below refuses before anything leaves this computer. Sending and removing wait for
+   * the host to have said this desktop may, in its hello or by answering the list.
+   */
+  get supportsPluginAccountCopies(): boolean { return this.features.includes('plugin-account-copies') || this.listed.includes('plugin-account-copies') }
+  /** The host lists `plugin-mail-copies`: it keeps a mail account's copy, and its threads ask before they read it. In its health for a host being added, as account copies are. */
+  get supportsPluginMailCopies(): boolean { return this.features.includes('plugin-mail-copies') || this.listed.includes('plugin-mail-copies') }
+  /** The host lists `plugin-meshy-copies`: it keeps a Meshy account's copy, and lists its switch and limit back. */
+  get supportsPluginMeshyCopies(): boolean { return this.features.includes('plugin-meshy-copies') || this.listed.includes('plugin-meshy-copies') }
+  async keepPluginAccountCopy(copy: PluginAccountCopy): Promise<PluginAccountCopyReceipt> {
+    this.offers('plugin-account-copies')
+    return this.read(pluginAccountCopyReceiptSchema, await this.call({ op: 'plugin-account-copy', copy }, undefined, undefined, 10000))
+  }
+  async removePluginAccountCopy(accountId: string): Promise<PluginAccountCopyRemoved> {
+    this.offers('plugin-account-copies')
+    return this.read(pluginAccountCopyRemovedSchema, await this.call({ op: 'plugin-account-copy-remove', accountId }, undefined, undefined, 10000))
+  }
+  async pluginAccountCopies(): Promise<HeldPluginAccountCopy[]> {
+    // A host being added records this desktop a moment after its hello, so that hello listed no copies. Its health did,
+    // for it keeps them, so the list is asked anyway: it carries no secret, and a host reads its record of desktops again
+    // before it answers. An answer is the host saying this desktop may send, as a hello now would.
+    if (this.features.includes('plugin-account-copies') || !this.listed.includes('plugin-account-copies')) this.offers('plugin-account-copies')
+    const frames = this.frames
+    const held = this.read(heldPluginAccountCopiesSchema, await this.call({ op: 'plugin-account-copies' }, undefined, undefined, 10000))
+    if (frames === this.frames && !this.features.includes('plugin-account-copies')) this.features = [...this.features, 'plugin-account-copies']
+    return held
   }
   /**
    * The host lists `delegation-views` and this desktop accepted it (#1310): its window reads what the host's own threads

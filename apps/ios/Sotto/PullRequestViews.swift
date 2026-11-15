@@ -7,9 +7,20 @@ import SottoCore
 /// thread's computer when the sheet opens and when it is pulled to refresh. Read only, but for babysitting.
 struct PullRequestSheet: View {
     @EnvironmentObject var model: AppModel
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismiss) private var systemDismiss
+    @Environment(\.sheetClose) private var sheetClose
+    /// Closes the sheet: Sotto's own over the page on the Duo held sideways, iOS's anywhere else.
+    private func dismiss() { if let sheetClose { sheetClose() } else { systemDismiss() } }
     @Environment(\.openURL) private var openURL
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.duoLayout) private var duo
+    /// Folded, the strip's width: what stands beside the clock keeps clear of it, and everything under it runs to the
+    /// sheet's own margin, as the question sheet does (Zach's pick A, November 9, 2026, round 5).
+    private var foldedStrip: CGFloat { if case .folded(let strip) = duo { return strip } else { return 0 } }
+    /// Folded, where the sheet's left edge stands on the screen, and so how far in from its right edge the strip
+    /// reaches: the state and actions row and the chips' divider end there (`DuoLayout.stripReach`).
+    @State private var sheetLeft: CGFloat = 0
+    private var stripReach: CGFloat { duo.stripReach(sheetLeft: sheetLeft) }
     let ref: ThreadRef
     let url: String
     let number: Int
@@ -26,14 +37,27 @@ struct PullRequestSheet: View {
     @State private var toast: String?
     /// Set while a press of the jump chips scrolls, so the chips don't follow the parts it passes on the way.
     @State private var jumping = false
+    /// The pull request's scroll view's height, for landing a folded jump below the clock.
+    @State private var viewport: CGFloat = 0
+    /// Folded, whether the page has scrolled from its top, which brings in the fade under the chips' line.
+    @State private var scrolled = false
+    /// Folded, how far under the chips' line a jump lands a part's top, so its heading and count clear the clock. The
+    /// chips' line stands `foldedTrim` higher than it did, so the landing reaches that much further to stay as clear.
+    private static let foldedLanding: CGFloat = Space.s6 + Space.s1 + foldedTrim
+    /// Folded, how much closer the state and actions row and the jump chips' row stand above, between and below: 8, 4
+    /// and 4 points, so the title starts 16 points higher, where the two rows took the top fifth of the screen. The
+    /// chips keep their full 44 points (Zach's round 8 pick A, November 10, 2026).
+    private static let foldedTrim: CGFloat = Space.s2 + Space.s1 + Space.s1
 
     var body: some View {
         ScrollViewReader { proxy in
             VStack(spacing: 0) {
-                header
-                if case .shown(let detail) = phase { jumpBar(detail, proxy: proxy) }
+                header.padding(.trailing, max(0, stripReach - Space.s4))
+                if case .shown(let detail) = phase { jumpBar(detail, proxy: proxy).padding(.trailing, stripReach) }
                 content
             }
+            .ignoresSafeArea(.container, edges: foldedStrip > 0 ? .trailing : [])
+            .sheetLeft($sheetLeft)
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             VStack(spacing: Space.s2) {
@@ -42,7 +66,10 @@ struct PullRequestSheet: View {
             }
             .padding(.horizontal, Space.s3)
             .padding(.bottom, Space.s2)
-            .dockFade { SheetBackdrop(wash: false) }
+            .ignoresSafeArea(.container, edges: foldedStrip > 0 ? .trailing : [])
+            // On the Duo the words fade out over a longer reach above Babysit, where a short one left half a line cut
+            // off over the dock (Zach's pick C, November 9, 2026).
+            .dockFade(reach: duo == .none ? Space.s4 : Space.s8) { SheetBackdrop(wash: false) }
         }
         .foregroundStyle(Palette.ink)
         .presentationDetents([.large])
@@ -58,12 +85,21 @@ struct PullRequestSheet: View {
 
     private var header: some View {
         HStack(spacing: Space.s2) {
+            // On the Duo the pull request's state and number stand in this row's empty start, so the title comes straight
+            // after the chips (Zach's pick B, November 9, 2026).
+            if duo != .none, case .shown(let detail) = phase {
+                HStack(spacing: Space.s2) {
+                    StatePill(state: detail.shownState)
+                    Text("#\(String(detail.number))").font(.sotto(.small, .semibold)).foregroundStyle(Palette.muted)
+                }
+                .accessibilityElement(children: .combine)
+            }
             Spacer(minLength: 0)
             if let page = PullRequests.openable(url) {
                 Button { openURL(page) } label: {
                     Image(systemName: "arrow.up.right.square").font(.system(size: 16, weight: .semibold))
                 }
-                .buttonStyle(GlassCircleStyle())
+                .buttonStyle(GlassCircleStyle(flatOnDuo: true))
                 .accessibilityLabel("Open #\(String(number)) on GitHub")
                 .accessibilityHint("Opens it in Safari.")
                 .accessibilityIdentifier("pull-request-github")
@@ -75,7 +111,7 @@ struct PullRequestSheet: View {
                 .accessibilityIdentifier("pull-request-done")
         }
         .padding(.horizontal, Space.s4)
-        .padding(.top, Space.s4)
+        .padding(.top, isFolded ? Space.s2 : Space.s4)
     }
 
     private func jumpBar(_ detail: PullRequestDetail, proxy: ScrollViewProxy) -> some View {
@@ -85,10 +121,13 @@ struct PullRequestSheet: View {
                     Button { jump(to: each, proxy: proxy) } label: {
                         HStack(spacing: 6) {
                             Text(each.title)
-                            if each.flagged(detail) { Circle().fill(Palette.danger).frame(width: 7, height: 7).accessibilityHidden(true) }
+                            // On the Duo the chips carry no dots: red ones read as unread badges and repeated the status
+                            // lines just below. VoiceOver still names a part that failed (Zach's round 7 pick A, November
+                            // 10, 2026).
+                            if each.flagged(detail) && duo == .none { Circle().fill(Palette.danger).frame(width: 7, height: 7).accessibilityHidden(true) }
                         }
                     }
-                    .buttonStyle(ChipStyle(selected: part == each))
+                    .buttonStyle(ChipStyle(selected: part == each, tight: isFolded))
                     .accessibilityLabel(each.flagged(detail) ? each.flaggedTitle : each.title)
                     .accessibilityHint("Goes to this part of the pull request.")
                     .accessibilityAddTraits(part == each ? .isSelected : [])
@@ -96,15 +135,23 @@ struct PullRequestSheet: View {
                 }
             }
             .padding(.horizontal, Space.gutter)
-            .padding(.vertical, Space.s2)
+            .padding(.vertical, isFolded ? Space.s1 : Space.s2)
         }
         .overlay(alignment: .bottom) { Rectangle().fill(Palette.hairline).frame(height: 1) }
     }
 
+    /// On the Duo's cover screen, where four jump chips of the usual width cut the last at the strip.
+    private var isFolded: Bool { if case .folded = duo { return true } else { return false } }
+
     private func jump(to target: PullRequestPart, proxy: ScrollViewProxy) {
         part = target
         jumping = true
-        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.3)) { proxy.scrollTo(target, anchor: .top) }
+        // Folded, a part's heading would land level with the clock and its count run under it, so the jump lands it a
+        // step lower: what stands beside the clock keeps clear of the strip (Zach's round 5 pick A, November 9, 2026).
+        // scrollTo lines up the anchor's point on the target with the same point on the scroll view; the target is a
+        // mark with no height at the part's top, so that top lands `lift` of the scroll view's height below its top.
+        let lift: CGFloat = isFolded && viewport > 0 ? Self.foldedLanding / viewport : 0
+        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.3)) { proxy.scrollTo(target, anchor: UnitPoint(x: 0, y: lift)) }
         Task { try? await Task.sleep(nanoseconds: 450_000_000); jumping = false }
     }
 
@@ -129,8 +176,33 @@ struct PullRequestSheet: View {
                     .padding(.horizontal, Space.s4)
                     .padding(.top, Space.s4)
                     .padding(.bottom, Space.s8)
+                    .onGeometryChange(for: Bool.self, of: { $0.frame(in: .named(PullRequestBody.space)).minY < -1 }) { scrolled = $0 }
             }
             .coordinateSpace(.named(PullRequestBody.space))
+            .overlay(alignment: .top) {
+                // Folded, a jump lands a part's top in the band under the chips' line, where the foot of the part
+                // before it showed. Once the page has scrolled, the sheet's fill covers that band and fades out at its
+                // foot, so a jump shows only the part it went to (the Duo design climb's round 6).
+                if isFolded {
+                    SheetBackdrop(wash: false)
+                        .mask {
+                            LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.6), .init(color: .clear, location: 1)],
+                                           startPoint: .top, endPoint: .bottom)
+                        }
+                        .frame(height: Self.foldedLanding)
+                        .opacity(scrolled ? 1 : 0)
+                        .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: scrolled)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                }
+            }
+            .background {
+                GeometryReader { box in
+                    Color.clear
+                        .onAppear { viewport = box.size.height }
+                        .onChange(of: box.size.height) { _, height in viewport = height }
+                }
+            }
             .onPreferenceChange(PartTops.self) { value in follow(value) }
             .refreshable { await load() }
         }
@@ -232,12 +304,17 @@ private struct PartTops: PreferenceKey {
 
 /// The pull request as one page: its header, where it stands, then each part.
 private struct PullRequestBody: View {
+    @Environment(\.duoLayout) private var duo
+    private var foldedStrip: CGFloat { if case .folded(let strip) = duo { return strip } else { return 0 } }
+    @Environment(\.sottoTheme) private var theme
     static let space = "pull-request-sheet"
     let ref: ThreadRef
     let detail: PullRequestDetail
     @State private var showPassed = false
     var body: some View {
-        VStack(alignment: .leading, spacing: Space.s5) {
+        // On the Duo the top sits closer and each status is one line, so Summary starts where it can be read without
+        // scrolling (Zach's pick C, November 9, 2026).
+        VStack(alignment: .leading, spacing: duo == .none ? Space.s5 : Space.s3) {
             heading
             standing
             part(.summary, aside: nil) { summary }
@@ -249,22 +326,27 @@ private struct PullRequestBody: View {
     }
 
     private var heading: some View {
-        VStack(alignment: .leading, spacing: Space.s2) {
-            HStack(spacing: Space.s2) {
-                StatePill(state: detail.shownState)
-                Text("#\(String(detail.number))").font(.sotto(.small, .semibold)).foregroundStyle(Palette.muted)
+        VStack(alignment: .leading, spacing: duo == .none ? Space.s2 : Space.s1 + 2) {
+            // On the Duo the state and number stand in the sheet's top row instead.
+            if duo == .none {
+                HStack(spacing: Space.s2) {
+                    StatePill(state: detail.shownState)
+                    Text("#\(String(detail.number))").font(.sotto(.small, .semibold)).foregroundStyle(Palette.muted)
+                }
+                .accessibilityElement(children: .combine)
             }
-            .accessibilityElement(children: .combine)
             Text(verbatim: detail.title)
                 .font(.sotto(.title, .bold)).headingTracking(-0.4)
                 .foregroundStyle(Palette.ink)
                 .fixedSize(horizontal: false, vertical: true)
+                // Folded, the title stands beside the clock, so it keeps clear of the strip; what follows runs wide.
+                .padding(.trailing, foldedStrip)
                 .accessibilityAddTraits(.isHeader)
                 .accessibilityIdentifier("pull-request-title")
             if !detail.headBranch.isEmpty {
                 HStack(spacing: 6) {
                     Image(systemName: "arrow.triangle.branch").iconFont(11, weight: .semibold).accessibilityHidden(true)
-                    BranchName(name: detail.headBranch)
+                    BranchName(name: detail.headBranch, wraps: duo != .none)
                     Text("into", comment: "Between two branch names, as in: feature-branch into main.")
                     BranchName(name: detail.baseBranch)
                 }
@@ -283,14 +365,30 @@ private struct PullRequestBody: View {
                 if index > 0 { Hairline() }
                 HStack(alignment: .top, spacing: Space.s3) {
                     ToneMark(tone: line.tone, size: 18)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(line.title).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)
-                        Text(line.detail).font(.sotto(.small)).foregroundStyle(Palette.muted)
+                    if duo == .none {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(line.title).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)
+                            Text(line.detail).font(.sotto(.small)).foregroundStyle(Palette.muted)
+                        }
+                        .fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        // One line while it fits; otherwise the detail drops whole to the next line rather than
+                        // breaking mid-phrase (Zach's pick B, November 9, 2026).
+                        ViewThatFits(in: .horizontal) {
+                            (Text(line.title).font(.sotto(.body, .semibold)).foregroundStyle(theme.color(.ink))
+                                + Text(verbatim: " · ").font(.sotto(.small)).foregroundStyle(theme.color(.muted))
+                                + Text(line.detail).font(.sotto(.small)).foregroundStyle(theme.color(.muted)))
+                                .lineLimit(1).fixedSize(horizontal: true, vertical: false)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(line.title).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)
+                                Text(line.detail).font(.sotto(.small)).foregroundStyle(Palette.muted)
+                            }
+                            .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
-                    .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
                 }
-                .padding(.horizontal, Space.s4).padding(.vertical, Space.s3)
+                .padding(.horizontal, Space.s4).padding(.vertical, duo == .none ? Space.s3 : Space.s2)
                 .accessibilityElement(children: .combine)
                 .accessibilityIdentifier("pull-request-standing-\(index)")
             }
@@ -299,17 +397,28 @@ private struct PullRequestBody: View {
     }
 
     private func part<Content: View>(_ which: PullRequestPart, aside: String?, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: Space.s2) {
-            HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
-                Text(which.title).font(.sotto(.small, .semibold)).foregroundStyle(Palette.muted)
-                    .accessibilityAddTraits(.isHeader)
-                Spacer(minLength: Space.s2)
-                if let aside { Text(aside).font(.sotto(.caption)).foregroundStyle(Palette.muted).multilineTextAlignment(.trailing) }
+        VStack(alignment: .leading, spacing: 0) {
+            // A jump lands on this mark at the part's top. It has no height, so the jump's anchor places the part's top
+            // exactly, whatever the part's own height.
+            Color.clear.frame(height: 0).accessibilityHidden(true).id(which)
+            VStack(alignment: .leading, spacing: Space.s2) {
+                // On the Duo, Summary drops its grey heading and starts at its own words, where the chip, the heading and
+                // "What this does" stacked three headings over two lines of text. The other parts keep theirs (Zach's
+                // round 7 pick A, November 10, 2026).
+                if which != .summary || duo == .none {
+                    HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
+                        Text(which.title).font(.sotto(.small, .semibold)).foregroundStyle(Palette.muted)
+                            .accessibilityAddTraits(.isHeader)
+                        Spacer(minLength: Space.s2)
+                        if let aside { Text(aside).font(.sotto(.caption)).foregroundStyle(Palette.muted).multilineTextAlignment(.trailing) }
+                    }
+                    .padding(.horizontal, Space.s1)
+                }
+                content()
             }
-            .padding(.horizontal, Space.s1)
-            content()
+            // A jump to this part leaves its heading room under the chips' line, on the Duo.
+            .padding(.top, duo == .none ? 0 : Space.s3)
         }
-        .id(which)
         .background(alignment: .top) {
             GeometryReader { proxy in
                 Color.clear.preference(key: PartTops.self, value: [which: proxy.frame(in: .named(Self.space)).minY])
@@ -619,11 +728,15 @@ private struct StatePill: View {
 
 private struct BranchName: View {
     let name: String
+    /// On the Duo the head branch wraps after a slash, never at a hyphen, as the ••• card writes it, rather than being
+    /// cut in the middle of a word (round 5).
+    var wraps = false
     var body: some View {
-        Text(verbatim: name)
+        Text(verbatim: wraps ? ThreadMenu.breaksAtSlashes(name) : name)
             .font(.system(.caption, design: .monospaced))
             .foregroundStyle(Palette.ink)
-            .lineLimit(1).truncationMode(.middle)
+            .lineLimit(wraps ? 2 : 1).truncationMode(.middle)
+            .fixedSize(horizontal: false, vertical: wraps)
             .padding(.horizontal, 6).padding(.vertical, 2)
             .background(Palette.fillSoft, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
@@ -656,15 +769,84 @@ private struct BabysitDock: View {
     let ref: ThreadRef
     let detail: PullRequestDetail
     @Binding var toast: String?
+    @Environment(\.duoLayout) private var duo
     @State private var pressing = false
     @State private var presses = 0
+    /// On the Duo, whether the one row shows what babysitting does.
+    @State private var explaining = false
 
     var body: some View {
         if model.offersBabysitting(ref.hostID) {
             let marks = model.babysitting(ref)
             let state = PullRequests.babysitState(babysitting: marks.current, ended: marks.ended, detail: detail,
                                                   agent: Words.provider(model.thread(ref)?.providerId))
-            card(state)
+            if duo == .none { card(state) } else { oneRow(state) }
+        }
+    }
+
+    /// On the Duo the dock is one row, with its explanation behind ⓘ: as a card it covered the sheet's reading area on the
+    /// cover screen (Zach's pick A, November 8, 2026).
+    @ViewBuilder private func oneRow(_ state: PullRequests.BabysitState) -> some View {
+        let waiting = pressing || model.babysitPress(ref) != nil
+        VStack(alignment: .leading, spacing: Space.s2) {
+            if explaining {
+                Text(explanation(state)).font(.sotto(.small)).foregroundStyle(Palette.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .paragraphDirection()
+                    .accessibilityIdentifier("pull-request-babysit-words")
+            }
+            HStack(spacing: Space.s2) {
+                switch state {
+                case .babysitting(let title, _):
+                    Image(systemName: "alarm").iconFont(17, weight: .semibold).foregroundStyle(Palette.accentText).accessibilityHidden(true)
+                    Text(title).font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink).lineLimit(2)
+                    Spacer(minLength: Space.s1)
+                    Button { press(false) } label: { waiting ? Text("Stopping…") : Text("Stop babysitting") }
+                        .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
+                        .disabled(waiting || !model.canChangeBabysitting(ref))
+                        .accessibilityLabel("Stop babysitting #\(String(detail.number))")
+                        .accessibilityIdentifier("stop-babysitting")
+                case .offered:
+                    Button { press(true) } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "alarm").accessibilityHidden(true)
+                            (waiting ? Text("Starting…", comment: "Babysitting a pull request is starting.") : Text("Babysit pull request"))
+                        }
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(PillButtonStyle(kind: .primary, wide: true))
+                    .disabled(waiting || !model.canChangeBabysitting(ref))
+                    .accessibilityLabel("Babysit pull request #\(String(detail.number))")
+                    .accessibilityIdentifier("babysit-pull-request")
+                case .finished(let title, _):
+                    Image(systemName: "alarm").iconFont(17, weight: .semibold).foregroundStyle(Palette.muted).accessibilityHidden(true)
+                    Text(title).font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink).lineLimit(2)
+                    Spacer(minLength: Space.s1)
+                }
+                Button { explaining.toggle() } label: {
+                    Image(systemName: "info.circle").iconFont(17, weight: .medium).foregroundStyle(Palette.muted)
+                        .frame(width: 44, height: 44)
+                        .background(Palette.fillSoft, in: Circle())
+                        .contentShape(Circle())
+                }
+                .buttonStyle(PressStyle())
+                .accessibilityLabel("What babysitting does")
+                .accessibilityAddTraits(explaining ? .isSelected : [])
+                .accessibilityIdentifier("pull-request-babysit-info")
+            }
+        }
+        // With the dock's own margin, this lines up with the sheet's words.
+        .padding(.horizontal, Space.s2)
+        .sensoryFeedback(.impact(weight: .medium), trigger: presses)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("pull-request-babysit")
+    }
+
+    private func explanation(_ state: PullRequests.BabysitState) -> String {
+        switch state {
+        case .babysitting(_, let words): return words
+        case .offered(let words): return words
+        case .finished(_, let words): return words
         }
     }
 

@@ -15,7 +15,7 @@ it.each(['win32', 'darwin', 'linux'] as const)('defers the corner client notice 
     getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: complete })),
     onSettingsChanged: listener => { settingsChanged = listener; return () => undefined },
   }))
-  await screen.findByRole('button', { name: 'Get started' })
+  await screen.findByRole('button', { name: 'Skip setup' })
   expect(screen.queryByRole('complementary', { name: 'Client updates' })).toBeNull()
   complete = true
   act(() => { settingsChanged!({ ...DEFAULT_SETTINGS, onboardingComplete: complete }); shell.navigate('threads') })

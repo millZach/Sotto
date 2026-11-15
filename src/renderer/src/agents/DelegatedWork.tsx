@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
-import { Bot, FlaskConical, GitFork, Laptop, MoreHorizontal, Search, Server, ShieldCheck, Sparkle, type LucideIcon } from 'lucide-react'
+import { Bot, FlaskConical, GitFork, Laptop, MoreHorizontal, Search, Server, ShieldCheck, Sparkle, SquareTerminal, type LucideIcon } from 'lucide-react'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { useInterfaceLanguageState } from '../state/interfaceLanguage'
 import { BACKGROUND_WORK_LABELS, type AgentBackgroundWork } from '../../../shared/agentMonitoring'
@@ -11,7 +11,7 @@ import { isThreadClosed, isThreadTurnRunning } from '../../../shared/threadActiv
 import type { AgentConnection } from './AgentContext'
 import { threadHostName } from './HostBadge'
 import { ProviderMark } from './ProviderMark'
-import { askedFor, DELEGATION_OUTCOME_WORDS, delegatedKind, delegatedKindWord, delegatedLine, delegatedNote, delegatedState, delegatedSummary, delegationRefusalLine, heldLine, lastReadOutcome, lastReadWord, pendingRequestOf, settledDelegation, stopLine, userTurnRunning, workingDelegatedThreads, type DelegatedKind, type DelegatedState } from './delegationWords'
+import { askedFor, DELEGATION_OUTCOME_WORDS, delegatedKind, delegatedKindWord, delegatedLine, delegatedNote, delegatedState, delegatedSummary, delegationRefusalLine, finishedDelegation, heldLine, lastReadOutcome, lastReadWord, pendingRequestOf, settledDelegation, stopLine, userTurnRunning, workingDelegatedThreads, type DelegatedKind, type DelegatedState } from './delegationWords'
 import { useDelegations, useDelegationsEnabled, useNewestBrief } from './delegations'
 import { openDelegatedThread, rosterMachine } from '../tools/delegatedRoster'
 import { useOwlFeature } from '../state/owlFeature'
@@ -21,6 +21,7 @@ import { speedName } from './ThreadOptions'
 import { RowMenu, type RowMenuPlace } from './RowMenu'
 import { CheckReplyLine, CheckTraysProvider, useCheckTrayOpen } from './CheckReply'
 import { useWatchedThreadIds } from '../watcher/watcherRoom'
+import { formatDuration } from './threadActivityView'
 import './delegation.css'
 
 /** What an overseer chose in words: "GPT-6.1 Sol, High", and any speed the user's message asked for (ADR-0191). */
@@ -246,7 +247,7 @@ export function DelegatedWorkRow({ view }: { readonly view: DelegationView }): R
   </li>
 }
 
-/** The rows of one turn, in the order the delegating thread made them: in its Worked for fold, or under its reply when nothing folds. */
+/** Rows for the given delegations, in order: callers choose all turn history or omit finished work outside a fold. */
 export function DelegatedWork({ views, label }: { readonly views: readonly DelegationView[] | undefined; readonly label?: string | null }): ReactNode {
   const { t } = useLingui()
   if (!views?.length) return null
@@ -267,9 +268,12 @@ export function DelegatedWorkSummary({ views }: { readonly views: readonly Deleg
 /**
  * The provider's agents that still run in the background, for the rows under the last reply: none where the composer's
  * ornament may not show them either, and never a command, which waits rather than works and stays the ornament's alone.
+ * A detached run is the exception: it stands whatever else holds the thread.
  */
 export function stillWorkingAgents(work: readonly AgentBackgroundWork[] | undefined, ornamentAllowed: boolean): readonly AgentBackgroundWork[] | undefined {
-  const agents = ornamentAllowed ? work?.filter(task => task.type !== 'command') : undefined
+  // A detached run's row is its only Stop (#2476), so it stands whatever else holds the thread: an error, a card waiting on
+  // the user, a settle. It goes only when the run ends.
+  const agents = work?.filter(task => task.type === 'detached-run' || (ornamentAllowed && task.type !== 'command'))
   return agents?.length ? agents : undefined
 }
 
@@ -299,6 +303,78 @@ function BackgroundWorkRow({ work }: { readonly work: AgentBackgroundWork }): Re
 }
 
 /**
+ * Stops one of the shown thread's detached runs (#2476), by its ID; resolves to why it did not, or null once it did. Absent
+ * where nothing may stop one, and then the row has no Stop.
+ */
+export const DetachedRunStopContext = createContext<((runId: string) => Promise<string | null>) | null>(null)
+
+/** How long a run has been going, counted in its own element every second so the transcript is not redrawn for a clock. */
+function RunningFor({ startedAt }: { readonly startedAt: string }): ReactNode {
+  const { t } = useLingui()
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1_000)
+    return () => window.clearInterval(timer)
+  }, [])
+  const time = formatDuration(Math.max(0, now - Date.parse(startedAt)))
+  return <span>{t({ message: `running ${time}`, comment: 'How long a detached run has been going, such as "running 20m".' })}</span>
+}
+
+/**
+ * A detached run (#2476, Zach's pick on November 11, 2026, variant 1 of docs/prototypes/detached-runs-prototype.html): an
+ * agent client the thread started and cut loose, which Sotto found running. Its kind and name, Working, and Stop; under
+ * them the client, the model and effort its command names, the folder it works in and how long it has run; then why it
+ * is here, and its command behind a disclosure. It is not a Sotto thread, so it opens nothing, and it goes when it ends.
+ */
+function DetachedRunRow({ work }: { readonly work: AgentBackgroundWork }): ReactNode {
+  const { t } = useLingui()
+  const stop = useContext(DetachedRunStopContext)
+  const [stopping, setStopping] = useState(false)
+  const [why, setWhy] = useState<string | null>(null)
+  const metaId = useId(), lineId = useId()
+  const run = work.run
+  if (!run) return null
+  const kindWord = BACKGROUND_WORK_LABELS['detached-run']
+  const label = work.label
+  const model = run.model ? run.effort ? `${run.model}, ${run.effort}` : run.model : run.effort
+  // The open command answers Escape: it closes, and focus goes back to its summary.
+  const closeOnEscape = (event: React.KeyboardEvent<HTMLDetailsElement>): void => {
+    const details = event.currentTarget
+    if (event.key !== 'Escape' || !details.open) return
+    event.preventDefault(); event.stopPropagation()
+    details.open = false
+    details.querySelector('summary')?.focus()
+  }
+  const press = (): void => {
+    if (!stop || stopping) return
+    setStopping(true); setWhy(null)
+    void stop(work.id).then(reason => { setWhy(reason); setStopping(false) }, () => { setWhy(t`Sotto could not stop that detached run. It may still be running.`); setStopping(false) })
+  }
+  return <li className="delegated-work__row" data-outcome="working" data-state="working" data-background="detached-run"
+    aria-label={t({ message: `${kindWord}: ${label}, Working`, comment: '{kindWord} is "Detached run"; {label} is the run\'s name, or its client and "run".' })} aria-describedby={`${metaId} ${lineId}`}>
+    <SquareTerminal size={14} aria-hidden="true" className="delegated-work__glyph" />
+    <span className="delegated-work__name">
+      <span className="delegated-work__kind">{kindWord}</span>
+      <span title={label}>{label}</span>
+    </span>
+    <span className="delegated-work__state" data-state="working">
+      <span className="delegation-ring" data-outcome="working" data-state="working" aria-hidden="true" />{t({ message: 'Working', comment: 'A detached run\'s state: it is running.' })}
+      {stop ? <button type="button" className="delegated-work__stop tt-focusable" disabled={stopping} aria-label={t`Stop the detached run ${label}`} onClick={press}>
+        {stopping ? t({ message: 'Stopping…', comment: 'On the Stop button of a detached run while Sotto stops it.' }) : t({ message: 'Stop', comment: 'Ends a detached run the thread started.' })}</button> : null}
+    </span>
+    <p id={metaId} className="delegated-work__meta">
+      <span>{run.client}</span>
+      {model ? <><span aria-hidden="true">·</span><span>{model}</span></> : null}
+      {run.folder ? <><span aria-hidden="true">·</span><span className="delegated-work__folder" title={run.folder}>{run.folder}</span></> : null}
+      {work.startedAt ? <><span aria-hidden="true">·</span><RunningFor startedAt={work.startedAt} /></> : null}
+    </p>
+    <p id={lineId} className="delegated-work__line"><Trans>Started from this thread and left running after its turn. Sotto found it running; its provider does not report it.</Trans></p>
+    <details className="delegated-work__command" onKeyDown={closeOnEscape}><summary className="tt-focusable">{t({ message: 'Command', comment: 'Shows the command a detached run was started with.' })}</summary><code>{run.command}</code></details>
+    {why ? <p className="delegated-work__why tt-paragraph" role="alert">{why}</p> : null}
+  </li>
+}
+
+/**
  * The work of a finished turn that outlives its reply, under the reply, so it is not folded away while the thread waits on
  * it: the turn's delegations that have not settled, such as a Muse review still running, and, under the last reply, the
  * provider's own agents still running in the background. A delegation goes once it settles, an agent once the provider says
@@ -312,18 +388,19 @@ export function StillWorking({ views, work }: { readonly views: readonly Delegat
     <p id={headingId} className="delegated-work-still__heading"><Trans>Still working after this reply</Trans></p>
     <ul className="delegated-work">
       {open.map(view => <DelegatedWorkRow key={view.id} view={view} />)}
-      {work?.map(task => <BackgroundWorkRow key={task.id} work={task} />)}
+      {work?.map(task => task.type === 'detached-run' ? <DetachedRunRow key={task.id} work={task} /> : <BackgroundWorkRow key={task.id} work={task} />)}
     </ul>
   </section>
 }
 
 /**
- * A turn's work under a reply with nothing to fold: its delegations as rows, or, while the provider's agents still run after
- * it, the settled ones as rows and everything still open under one "Still working after this reply".
+ * A turn's rows under a reply with nothing to fold, omitting answered, failed and stopped work. While the provider's
+ * agents still run, refusals, unknown outcomes and pauses stay above "Still working after this reply".
  */
 export function UnfoldedWork({ views, work }: { readonly views: readonly DelegationView[] | undefined; readonly work: readonly AgentBackgroundWork[] | undefined }): ReactNode {
-  const settled = useMemo(() => work?.length ? views?.filter(settledDelegation) : views, [views, work])
-  return <><DelegatedWork views={settled} />{work?.length ? <StillWorking views={views} work={work} /> : null}</>
+  const remaining = useMemo(() => views?.filter(view => !finishedDelegation(view)), [views])
+  const settled = useMemo(() => work?.length ? remaining?.filter(settledDelegation) : remaining, [remaining, work])
+  return <><DelegatedWork views={settled} />{work?.length ? <StillWorking views={remaining} work={work} /> : null}</>
 }
 
 /**

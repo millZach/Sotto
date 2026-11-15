@@ -270,7 +270,7 @@ export const transcriptionResultSchema = z.discriminatedUnion('ok', [
 /** Whether OpenRouter accepts the saved key, for AI cleanup (Verify key in Settings → Cleanup). */
 export const openRouterKeyCheckSchema = z.discriminatedUnion('ok', [
   z.object({ ok: z.literal(true) }).strict(),
-  z.object({ ok: z.literal(false), reason: z.enum(['unconfigured', 'unauthorized', 'http', 'network', 'timeout']) }).strict(),
+  z.object({ ok: z.literal(false), reason: z.enum(['unconfigured', 'unreadable', 'unauthorized', 'http', 'network', 'timeout']) }).strict(),
 ])
 
 /** OpenRouter's text models and active presets, for the cleanup model picker in Settings → Cleanup (ADR-0122). */
@@ -426,6 +426,7 @@ export interface SottoBridge {
   /** The popup's shortcut for Settings, and what `/open` asks the window to show (ADR-0181): only while the `popup` Owl feature is on. */
   readonly popup?: import('./popup').PopupShortcutBridge
   /** Signing Sotto's OpenCode in to model sources (#1104), present only while OpenCode's Owl feature is on. */
+  readonly pi?: import('./piSignIn').PiSignInBridge
   readonly opencode?: import('./opencodeSignIn').OpenCodeSignInBridge
   /** Signing Codex, Claude Code or Grok Build in on this computer from its row in Settings › Providers (ADR-0200). */
   readonly providerSignIn?: import('./localProviderSignIn').LocalProviderSignInBridge
@@ -454,6 +455,8 @@ export interface SottoBridge {
   readonly teams?: import('./teams').TeamsBridge
   /** Let apps on this computer connect (ADR-0180); main answers it only while the `local-apps` Owl feature is on. */
   readonly localApps?: import('./localApps').LocalAppsBridge
+  /** Settings › Plugins (ADR-0205); main answers it only while the `plugins` Owl feature is on. */
+  readonly plugins?: import('./plugins').PluginsBridge
   readonly requestDrafts?: import('./requestDrafts').RequestDraftBridge
   readonly terminal?: import('./terminal').TerminalBridge
   readonly browser?: import('./browser').BrowserBridge

@@ -1439,6 +1439,8 @@ struct RailAsk: Equatable {
     /// Set while `feedback` only says a thing worked, so it leaves by itself and with the page; new for each confirmation.
     @Published private(set) var passing: UUID?
     private var passingShown: UUID?
+    /// How long the passing confirmation stays once shown: longer when it offers Undo, so there is time to reach it.
+    private var passingFor: UInt64 = 5_000_000_000
     private var feedbackExpiry: Task<Void, Never>?
     /// Answers whose own receipt the computer confirmed, as `host/thread/request`, so a Threads card can say Answered
     /// only for those. An answer whose request left without that receipt is not in here.
@@ -1595,6 +1597,9 @@ struct RailAsk: Equatable {
     @Published var railAsked: RailAsk?
     /// The delegated thread showing over the thread it came from, if one is: the unfolded rail then carries its Back.
     @Published var railNested: ThreadRef?
+    /// How many sheets stand over a thread now: its request, its pull request or its Agents. On the Duo the thread's reply
+    /// box steps away while one is up, so nothing beside the sheet looks like a control (Zach's pick B, November 9, 2026).
+    @Published var sheetsOverThread = 0
     /// What the Threads list is searched for now, read once when the Duo unfolds from it. Not published: nothing draws it.
     var listQuery = ""
 
@@ -1682,7 +1687,10 @@ struct RailAsk: Equatable {
     private let retryJitter: @Sendable () -> Double
     private let retrySleep: @Sendable (UInt64) async throws -> Void
     private var pairGeneration = UUID()
-    private var detailVersion = 0
+    /// Counts the copies of the open thread taken in. A step window moved back (ADR-0194) arrives at the revision the phone
+    /// already holds, so the page keys its rows on this as well as the revision: on the revision alone it kept the rows it
+    /// had, and Show earlier messages showed nothing new.
+    private(set) var detailVersion = 0
     private var detailReload: Task<Void, Never>?
     private var detailReloadID: UUID?
     private var detailWantedRevision = 0
@@ -1697,6 +1705,9 @@ struct RailAsk: Equatable {
     /// The pictures journeys: the laptop hands back the long thread's pictures and photos.
     private var fixturePictures = false
     private var fixtureDetails: [String: ThreadDetail] = [:]
+    /// The long thread whole, under `--ui-step-window`, which Show earlier messages takes in at the same revision as the
+    /// window it opened on, as a computer's `earlier-steps` answers (ADR-0194).
+    private var fixtureEarlierDetails: [String: ThreadDetail] = [:]
     private var fixtureShells: [String: [String: Any]] = [:]
     /// The laptop's Watcher page in the Watcher journeys, as the laptop would send it.
     private var fixtureWatcher: [String: Any]?
@@ -1709,6 +1720,9 @@ struct RailAsk: Equatable {
     private var benchShellRevision = 0
     private var benchSequence = 1_000
     private var benchState: Data?
+    /// How many records the laptop's list has, and the time they were made from.
+    private var benchThreads = 0
+    private var benchNow = Date()
     /// Which form of the picture thread this journey measures: full, noimages (grids whose pictures never come), nomedia
     /// (the same steps, no pictures) or nosteps (only the messages).
     private var benchPictureArm: String?
@@ -1853,6 +1867,15 @@ struct RailAsk: Equatable {
             let (longMessages, longSteps) = Self.fixtureLongThread(at, pictures: fixturePictures)
             fixtureDetails[laptop + "/drives"] = decode(ThreadDetail.self, ["threadId": "drives", "revision": 1,
                 "messages": longMessages, "activities": longSteps])
+            // With --ui-step-window it opens on a step window of its newest ten turns, with thirty steps above it.
+            if arguments.contains("--ui-step-window") {
+                fixtureEarlierDetails[laptop + "/drives"] = fixtureDetails[laptop + "/drives"]
+                let start = longMessages.firstIndex { ($0["id"] as? String) == "ask-30" } ?? 0
+                let windowSteps = longSteps.filter { ($0["sequence"] as? Int ?? 0) > 30 }
+                fixtureDetails[laptop + "/drives"] = decode(ThreadDetail.self, ["threadId": "drives", "revision": 1,
+                    "messages": Array(longMessages[start...]), "activities": windowSteps,
+                    "earlierAvailable": true, "earlierSteps": longSteps.count - windowSteps.count])
+            }
         }
         fixtureSlowDetail = arguments.contains("--ui-slow-detail")
         fixtureReconnecting = arguments.contains("--ui-reconnecting")
@@ -2035,6 +2058,7 @@ struct RailAsk: Equatable {
         BenchDriver.start(model: self, chunks: number("--bench-chunks") ?? 200, journey: journey ?? "all",
                           long: ThreadRef(hostID: laptop, threadID: BenchWire.longThreadID))
         let now = Date()
+        benchThreads = threads; benchNow = now
         benchLongFrame = Task.detached(priority: .userInitiated) { BenchWire.longDetailFrame(turns: turns, now: now) }
         // With --bench-pictures, the picture thread's shape in place of the long thread, as one `detail` push.
         if let arm = arguments.firstIndex(of: "--bench-pictures").flatMap({ arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil }) {
@@ -2108,13 +2132,17 @@ struct RailAsk: Equatable {
     }
     /// Streams `chunks` words into the long thread's last reply, one every 50 ms as a computer sends them, each a
     /// `detail-delta` push; every fifth is followed by a shell push listing only the long thread's record, and every
-    /// twentieth finishes a step and starts another. `done` is called after the last, or once the thread is closed.
-    func benchStream(chunks: Int, done: @escaping @MainActor () -> Void) {
-        guard let laptop = benchLaptop, let state = benchState else { done(); return }
+    /// twentieth finishes a step and starts another. `done` is called after the last, or once the thread is closed. With
+    /// `hostSized`, each shell push also carries what a running host sends whole in every push (`BenchWire.hostSizedState`,
+    /// #2390), made before the first word.
+    func benchStream(chunks: Int, hostSized: Bool = false, done: @escaping @MainActor () -> Void) {
+        guard let laptop = benchLaptop, let small = benchState else { done(); return }
         let ref = ThreadRef(hostID: laptop, threadID: BenchWire.longThreadID)
         let steps = BenchWire.streamStepSequence(turns: benchTurns)
         Task { [weak self] in
             let now = Date()
+            var state = small
+            if hostSized { state = await Task.detached(priority: .userInitiated) { BenchWire.hostSizedState(small, now: now) }.value }
             for chunk in 1...max(1, chunks) {
                 try? await Task.sleep(nanoseconds: 50_000_000)
                 guard let self, selected == ref, let detail = openDetail else { break }
@@ -2127,6 +2155,30 @@ struct RailAsk: Equatable {
             }
             done()
         }
+    }
+    /// One list push that settles every thread the laptop's list shows working but the long one, so the long thread is
+    /// the only one working (`idle-list`, #2400).
+    func benchSettleOthers() async {
+        guard let laptop = benchLaptop, let state = benchState else { return }
+        let settled = BenchWire.othersSettled(count: benchThreads, hostID: laptop, now: benchNow)
+        await benchDeliver(BenchWire.shellFrame(state: state, revision: benchShellRevision + 1, base: benchShellRevision, changed: settled), kind: "shell")
+        benchShellRevision += 1
+    }
+    /// The long thread's turn ends as a host ends one: a `detail-delta` that finishes every step still running, then a
+    /// list push with its record settled, so its page shows no working line, running step or breathing light
+    /// (`idle-thread`, #2400).
+    func benchEndTurn() async {
+        guard let laptop = benchLaptop, let state = benchState else { return }
+        let ref = ThreadRef(hostID: laptop, threadID: BenchWire.longThreadID)
+        if selected == ref, let detail = openDetail {
+            let running = (detail.activities ?? []).filter { $0.status == "running" }
+            if !running.isEmpty {
+                await benchDeliver(BenchWire.endTurnFrame(finishing: running, revision: detail.revision, now: Date()), kind: "delta")
+            }
+        }
+        let record = BenchWire.longThreadRecord(hostID: laptop, now: Date(), running: false)
+        await benchDeliver(BenchWire.shellFrame(state: state, revision: benchShellRevision + 1, base: benchShellRevision, changed: [record]), kind: "shell")
+        benchShellRevision += 1
     }
     /// Twelve turns of a question and a long Markdown reply, a command between each, and a last step after the final reply.
     /// With `pictures`, the last fourteen turns' commands each hand back two screenshots, so pictures sit both in the latest
@@ -3543,6 +3595,16 @@ struct RailAsk: Equatable {
         return true
     }
     func earlier(_ ref: ThreadRef) async {
+        #if DEBUG && os(iOS)
+        if isUIFixture {
+            // As `applyDetail` takes a widened answer: in place of the copy held, at the same revision.
+            guard selected == ref, let wider = fixtureEarlierDetails[ref.id] else { return }
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            guard selected == ref else { return }
+            openDetail = wider; detailVersion += 1
+            return
+        }
+        #endif
         guard online(ref.hostID), selected == ref, let connection = connections[ref.hostID] else { return }
         let current = generations[ref.hostID]
         do {
@@ -3551,10 +3613,18 @@ struct RailAsk: Equatable {
             // The answer is the thread from the window's new start, at the revision the phone may already hold, so it takes
             // that copy's place; one a delta overtook on the way is read again, from the same start.
             if live[ref.hostID]?.features.contains(StepWindow.feature) == true, let current {
-                let version = detailVersion
+                var version = detailVersion
                 let wider = try await connection.call(StepWindow.earlier(threadID: ref.threadID), as: Optional<ThreadDetail>.self)
-                let applied = try applyDetail(wider, ref: ref, epoch: current, versionAtRead: version, widened: true)
-                if !applied, generations[ref.hostID] == current, selected == ref { reloadDetail(ref) }
+                var applied = try applyDetail(wider, ref: ref, epoch: current, versionAtRead: version, widened: true)
+                // An update taken in while the answer was on its way leaves it older than the copy here. The thread is read
+                // again, from the same start, and that copy is widened too: it comes at the revision the phone now holds,
+                // which a plain read would take for nothing new, and the earlier messages would never show.
+                var reads = 0
+                while !applied, reads < 3, generations[ref.hostID] == current, selected == ref {
+                    reads += 1; version = detailVersion
+                    let again = try await connection.call(["op": .string("detail"), "threadId": .string(ref.threadID)], as: Optional<ThreadDetail>.self)
+                    applied = try applyDetail(again, ref: ref, epoch: current, versionAtRead: version, widened: true)
+                }
                 return
             } else {
                 let command = try Commands.loadEarlier(threadID: ref.threadID)
@@ -4317,13 +4387,16 @@ struct RailAsk: Equatable {
     /// A photo's bytes, or an agent's picture's (ADR-0170): a sent photo by its message and attachment, an agent's picture
     /// by its step (`activityID`) and its handle (`attachmentID`). Nil when the computer has none to give, or does not keep
     /// its agents' pictures. It takes the key's parts, not the view's key type, since the model compiles without the views.
-    func photoBytes(_ ref: ThreadRef, messageID: String, attachmentID: String, activityID: String?, wanted: @escaping @MainActor () -> Bool) async -> Data? {
+    /// `edge`, for a thumbnail, asks a computer that lists `thread-media-edge` for a copy no larger than that on its longest
+    /// side (ADR-0170, November 10 amendment); any other computer, and a request without it, sends the whole picture.
+    func photoBytes(_ ref: ThreadRef, messageID: String, attachmentID: String, activityID: String?, edge: Int? = nil, wanted: @escaping @MainActor () -> Bool) async -> Data? {
         #if DEBUG && os(iOS)
         if isUIFixture { return await fixturePicture(photo: activityID == nil, wanted: wanted) }
         #endif
-        guard let activityID else { return await sentPhoto(ref, messageID: messageID, attachmentID: attachmentID, wanted: wanted) }
+        let pictureEdge = live[ref.hostID]?.features.contains(Photos.edgeFeature) == true ? edge : nil
+        guard let activityID else { return await sentPhoto(ref, messageID: messageID, attachmentID: attachmentID, edge: pictureEdge, wanted: wanted) }
         guard live[ref.hostID]?.features.contains(Photos.threadMediaFeature) == true else { return nil }
-        let operation = Photos.threadMedia(threadID: ref.threadID, activityID: activityID, mediaID: attachmentID)
+        let operation = Photos.threadMedia(threadID: ref.threadID, activityID: activityID, mediaID: attachmentID, edge: pictureEdge)
         guard let url = try? await largeRequest(on: ref.hostID, { connection -> String? in
             guard wanted() else { return nil }
             return try await connection.call(operation, as: Optional<PhotoPreview>.self)?.dataUrl
@@ -4364,14 +4437,15 @@ struct RailAsk: Equatable {
     }
     /// Whether this thread's computer shows its agents' pictures (ADR-0170).
     func showsAgentPictures(_ hostID: String) -> Bool { live[hostID]?.features.contains(Photos.threadMediaFeature) == true }
-    func sentPhoto(_ ref: ThreadRef, messageID: String, attachmentID: String, wanted: @escaping @MainActor () -> Bool) async -> Data? {
+    /// `edge` as `photoBytes` takes it, for a thread's photos; Watcher's page always sends a photo whole.
+    func sentPhoto(_ ref: ThreadRef, messageID: String, attachmentID: String, edge: Int? = nil, wanted: @escaping @MainActor () -> Bool) async -> Data? {
         // Watcher's thread is never one of this iPhone's own to read: its photos come through Watcher's page.
         let operation: [String: JSONValue]
         if let watcher = watcherPage(ref.hostID)?.current?.target, watcher.threadId == ref.threadID,
            live[ref.hostID]?.features.contains(WatcherWire.photosFeature) == true {
             operation = WatcherWire.preview(target: watcher, messageID: messageID, attachmentID: attachmentID)
         } else {
-            operation = Photos.preview(threadID: ref.threadID, messageID: messageID, attachmentID: attachmentID)
+            operation = Photos.preview(threadID: ref.threadID, messageID: messageID, attachmentID: attachmentID, edge: edge)
         }
         guard let url = try? await largeRequest(on: ref.hostID, { connection -> String? in
             guard wanted() else { return nil }
@@ -4565,16 +4639,16 @@ struct RailAsk: Equatable {
         feedback = words; feedbackOperations = operations
     }
     /// Says a thing worked, as the desktop's toasts do: for five seconds once a page shows it (`confirmationShown`), or
-    /// until the user leaves the page or a newer message replaces it.
-    private func confirm(_ words: String) {
-        feedback = words; passing = UUID()
+    /// until the user leaves the page or a newer message replaces it. One that offers Undo stays eight.
+    private func confirm(_ words: String, seconds: UInt64 = 5) {
+        feedback = words; passing = UUID(); passingFor = seconds * 1_000_000_000
     }
-    /// A banner shows confirmation `id`: the first one starts its five seconds and is told to announce it.
+    /// A banner shows confirmation `id`: the first one starts its time and is told to announce it.
     func confirmationShown(_ id: UUID) -> Bool {
         guard passing == id, passingShown != id else { return false }
         passingShown = id
         feedbackExpiry = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            try? await Task.sleep(nanoseconds: self?.passingFor ?? 5_000_000_000)
             guard !Task.isCancelled, self?.passing == id else { return }
             withAnimation(.easeOut(duration: 0.25)) { self?.feedback = nil }
         }
@@ -4612,8 +4686,9 @@ struct RailAsk: Equatable {
            (thread.workspaceSettledAt?.isEmpty == false) == (item.kind == "settle") {
             try forgetMarker(item.id)
             if feedback == nil || feedbackOperations.contains(item.id) {
-                feedback = item.kind == "settle" ? String(localized: "Moved to Settled.", comment: "Said once the computer confirms the user settled a thread")
-                    : String(localized: "Restored.", comment: "Said once the computer confirms the user took a thread off the Settled shelf")
+                confirm(item.kind == "settle" ? String(localized: "Moved to Settled.", comment: "Said once the computer confirms the user settled a thread")
+                    : String(localized: "Restored.", comment: "Said once the computer confirms the user took a thread off the Settled shelf"), seconds: 8)
+                // After `confirm`, whose new words clear the last Undo.
                 shelfUndo = ShelfUndo(ref: ThreadRef(hostID: item.hostID, threadID: item.threadID), action: item.kind == "settle" ? .restore : .settle)
             }
             return
@@ -5184,10 +5259,10 @@ extension AppModel {
     private static func fixtureSubagents(_ threadID: String) -> [String: Any] {
         let summary: [String: Any] = ["total": 2, "working": 1, "completed": 1, "failed": 0, "interrupted": 0, "unknown": 0]
         let suite: [String: Any] = ["id": "suite", "sequence": 2, "revision": 1, "assignmentId": "suite-1", "assignmentCount": 1,
-            "title": "Run the drawer tests twenty times", "description": "Run the drawer tests twenty times", "model": "gpt-6.1-sol",
+            "title": "Run the drawer tests twenty times", "description": "Run the drawer tests twenty times", "model": "fixture-model",
             "status": "running", "startedAt": fixtureStamp(1), "lastObservedAt": fixtureStamp(0)]
         let waits: [String: Any] = ["id": "waits", "sequence": 1, "revision": 1, "assignmentId": "waits-1", "assignmentCount": 1,
-            "title": "Find fixed waits in the drawer tests", "description": "Find fixed waits in the drawer tests", "model": "gpt-6.1-sol",
+            "title": "Find fixed waits in the drawer tests", "description": "Find fixed waits in the drawer tests", "model": "fixture-model",
             "status": "completed", "startedAt": fixtureStamp(14), "completedAt": fixtureStamp(13), "lastObservedAt": fixtureStamp(13), "durationMs": 48_000]
         return ["threadId": threadID, "revision": 2, "summary": summary, "rows": [suite, waits]]
     }

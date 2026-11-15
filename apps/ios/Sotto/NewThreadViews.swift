@@ -6,12 +6,23 @@ import SottoCore
 /// whole box opens its choices.
 struct NewThreadSheet: View {
     @EnvironmentObject var model: AppModel
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismiss) private var systemDismiss
+    @Environment(\.sheetClose) private var sheetClose
+    /// Closes the sheet: Sotto's own over the page on the Duo held sideways, iOS's anywhere else.
+    private func dismiss() { if let sheetClose { sheetClose() } else { systemDismiss() } }
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var typeSize
     let opened: (ThreadRef) -> Void
     private enum Step: Equatable { case computer, project, folders, options }
     @State private var step = Step.computer
+    @Environment(\.duoLayout) private var duo
+    /// Folded, the strip's width: what stands beside the clock keeps clear of it, and everything under it runs to the
+    /// sheet's own margin, as the question sheet does (Zach's pick A, November 9, 2026, round 5).
+    private var foldedStrip: CGFloat { if case .folded(let strip) = duo { return strip } else { return 0 } }
+    /// Folded, where the sheet's left edge stands on the screen, and so how far in from its right edge the strip
+    /// reaches: the title row and the step bar end there (`DuoLayout.stripReach`).
+    @State private var sheetLeft: CGFloat = 0
+    private var stripReach: CGFloat { duo.stripReach(sheetLeft: sheetLeft) }
     /// Whether the last move went forward, so the next page slides in from the side it came from.
     @State private var forward = true
     @State private var presses = 0
@@ -26,6 +37,11 @@ struct NewThreadSheet: View {
     /// A permission default that would let the thread act without asking, held back because this computer doesn't
     /// let this iPhone answer. Cleared once the user picks a permission themselves.
     @State private var heldBack = false
+    /// Folded or held sideways, how tall the sheet stands, the room its step has, and how tall the step's content stands
+    /// in its scroll view, so the sheet fits its step (`stepFit`).
+    @State private var sheetHeight: CGFloat = 0
+    @State private var pageRoom: CGFloat = 0
+    @State private var stepHeight: CGFloat?
     private var models: [ThreadModel] { model.creationModels(hostID) }
     private var chosenModel: ThreadModel? { models.first { $0.id == modelID } }
     private var busy: Bool { model.creatingHostID != nil }
@@ -36,13 +52,23 @@ struct NewThreadSheet: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            header
-            StepBar(filled: stepNumber)
-                .padding(.horizontal, Space.gutter)
-            Text(stepLabel)
-                .font(.sotto(.caption, .semibold)).foregroundStyle(Palette.muted)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, Space.gutter).padding(.top, Space.s2)
+            header.padding(.trailing, max(0, stripReach - Space.s2))
+            // On the Duo the bars and the page's own heading say where you are, so the step's words go to VoiceOver alone
+            // and the footer that only repeated them goes (Zach's pick B, November 9, 2026).
+            if duo != .none {
+                StepBar(filled: stepNumber)
+                    .padding(.horizontal, Space.gutter)
+                    .padding(.trailing, max(0, stripReach - Space.gutter))
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(stepLabel)
+            } else {
+                StepBar(filled: stepNumber)
+                    .padding(.horizontal, Space.gutter)
+                Text(stepLabel)
+                    .font(.sotto(.caption, .semibold)).foregroundStyle(Palette.muted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, Space.gutter).padding(.top, Space.s2)
+            }
             if let notice = model.shareNotice {
                 Text(notice).font(.sotto(.small)).foregroundStyle(Palette.muted)
                     .frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
@@ -51,16 +77,41 @@ struct NewThreadSheet: View {
             ZStack { page }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .clipped()
+                .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { pageRoom = $0 }
             footer
         }
+        .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { sheetHeight = $0 }
+        .sheetLeft($sheetLeft)
+        .preference(key: RequestSheetFit.self, value: sheetClose == nil ? nil : stepFit)
+        .modifier(FoldedStepDetents(on: foldedStrip > 0, fit: stepFit))
+        .ignoresSafeArea(.container, edges: foldedStrip > 0 ? .trailing : [])
         .foregroundStyle(Palette.ink)
-        .background { NewThreadBackground() }
+        // In Sotto's own sheet, held sideways on the Duo, the ground runs on up behind the grabber, where the sheet's own
+        // darker ground showed in a cap that ended in a seam across the sheet (the Duo design climb's round 6).
+        .background { NewThreadBackground().padding(.top, sheetClose == nil ? 0 : -DuoSheetLayer.grabber) }
         .environment(\.sottoOnSheet, true)
         .presentationDragIndicator(.visible)
         .interactiveDismissDisabled(busy)
+        .preference(key: DuoSheetHeld.self, value: busy)
         .onAppear { model.creationFeedback = nil; startOnTheOnlyComputer() }
         .onChange(of: modelID) { _, _ in resetOptions() }
     }
+
+    /// Held sideways, Sotto's own sheet is as tall as its step, as the question sheet fits its choices, where a full-height
+    /// sheet left its lower half blank. It never stands shorter than `stepFloor`, so the step bar and the sheet's top keep
+    /// still between the steps that hold less than that. Choosing a folder takes the full height (Zach's round 7 pick A,
+    /// November 10, 2026). Folded, iOS's sheet fits its step the same way, on the same floor, where its last choice ended
+    /// with a fifth of the sheet empty; at the accessibility text sizes it stays full height, as the question sheet does
+    /// (his round 8 pick A, November 10, 2026).
+    private var stepFit: CGFloat? {
+        guard sheetClose != nil || (foldedStrip > 0 && !typeSize.isAccessibilitySize),
+              step != .folders, let stepHeight, sheetHeight > 0 else { return nil }
+        let rest = sheetHeight - pageRoom
+        return max(rest + stepHeight, Self.stepFloor - DuoSheetLayer.grabber)
+    }
+    /// The least the fitted sheet stands, the sideways sheet's grabber included: room for the step bar, a step's heading
+    /// and two rows of choices, two to a row.
+    static let stepFloor: CGFloat = 400
 
     // MARK: Header, steps and footer
 
@@ -157,8 +208,8 @@ struct NewThreadSheet: View {
 
     @ViewBuilder private var footer: some View {
         switch step {
-        case .computer: FooterHint(text: String(localized: "Choose a computer to continue."))
-        case .project: FooterHint(text: String(localized: "Choose a project to continue."))
+        case .computer: if duo == .none { FooterHint(text: String(localized: "Choose a computer to continue.")) }
+        case .project: if duo == .none { FooterHint(text: String(localized: "Choose a project to continue.")) }
         case .folders: EmptyView()
         case .options: openButton
         }
@@ -186,7 +237,7 @@ struct NewThreadSheet: View {
         .disabled(!canCreate)
         .accessibilityIdentifier("open-new-thread")
         .padding(.horizontal, Space.gutter).padding(.vertical, Space.s3)
-        .overlay(alignment: .top) { Rectangle().fill(Palette.hairline).frame(height: 1) }
+        .overlay(alignment: .top) { Rectangle().fill(Palette.hairline).frame(height: 1).ignoresSafeArea(.container, edges: .horizontal) }
     }
 
     // MARK: Step 1: a computer
@@ -195,7 +246,7 @@ struct NewThreadSheet: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 StepTitle(title: String(localized: "Where should it run?"), subtitle: String(localized: "Threads run on a computer with Sotto open."))
-                VStack(spacing: Space.s2) {
+                PickList {
                     ForEach(model.computers, id: \.hostID) { computer in
                         Button { chooseComputer(computer.hostID) } label: {
                             PickRow(title: computer.name, detail: computerDetail(computer.hostID),
@@ -214,6 +265,7 @@ struct NewThreadSheet: View {
                 }
             }
             .pagePadding()
+            .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { stepHeight = $0 }
         }
     }
 
@@ -237,7 +289,7 @@ struct NewThreadSheet: View {
                     .padding(.bottom, Space.s5)
                 StepTitle(title: String(localized: "Which project?"), subtitle: String(localized: "The thread works in this folder."))
                 connectionNotice
-                VStack(spacing: Space.s2) {
+                PickList {
                     ForEach(model.projects(hostID)) { project in
                         Button { projectID = project.id; folder = nil; chooseOptions() } label: {
                             PickRow(title: project.title, detail: projectDetail(project)) {
@@ -263,6 +315,7 @@ struct NewThreadSheet: View {
                 }
             }
             .pagePadding()
+            .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { stepHeight = $0 }
         }
     }
 
@@ -309,6 +362,7 @@ struct NewThreadSheet: View {
                 ForEach(model.pendingCreations.filter { $0.hostID == hostID }) { CreationPendingRow(operation: $0).padding(.top, Space.s3) }
             }
             .pagePadding()
+            .onGeometryChange(for: CGFloat.self, of: { $0.size.height }) { stepHeight = $0 }
         }
     }
 
@@ -560,6 +614,23 @@ private struct PickRow<Leading: View>: View {
     }
 }
 
+/// A step's choices: one column, or on the Duo held sideways two to a row, so the sheet's wide rows no longer leave
+/// their chevrons far from their names and its lower part empty (Zach's round 6 pick B, November 10, 2026). At the
+/// accessibility text sizes half the sheet can't hold a name, so they keep one column.
+private struct PickList<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+    @Environment(\.duoLayout) private var duo
+    @Environment(\.dynamicTypeSize) private var typeSize
+    var body: some View {
+        if duo.sideways && !typeSize.isAccessibilitySize {
+            let column = GridItem(.flexible(), spacing: Space.s3, alignment: .top)
+            LazyVGrid(columns: [column, column], spacing: Space.s2) { content() }
+        } else {
+            VStack(spacing: Space.s2) { content() }
+        }
+    }
+}
+
 /// A crumb at the top of a step: what was chosen before, and a press goes back to change it.
 private struct Crumb: View {
     let symbol: String
@@ -655,7 +726,7 @@ private struct FooterHint: View {
             .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
             .paragraphDirection()
             .padding(.horizontal, Space.gutter).padding(.vertical, Space.s3)
-            .overlay(alignment: .top) { Rectangle().fill(Palette.hairline).frame(height: 1) }
+            .overlay(alignment: .top) { Rectangle().fill(Palette.hairline).frame(height: 1).ignoresSafeArea(.container, edges: .horizontal) }
     }
 }
 
@@ -721,7 +792,7 @@ private struct ComputerFolderPicker: View {
                 .disabled(loading || problem != nil || listing?.path == nil || !model.online(hostID))
                 .accessibilityIdentifier("use-project-folder")
                 .padding(.horizontal, Space.gutter).padding(.vertical, Space.s3)
-                .overlay(alignment: .top) { Rectangle().fill(Palette.hairline).frame(height: 1) }
+                .overlay(alignment: .top) { Rectangle().fill(Palette.hairline).frame(height: 1).ignoresSafeArea(.container, edges: .horizontal) }
         }
     }
 
@@ -867,5 +938,20 @@ struct CreationPendingRow: View {
         .confirmationDialog("Dismiss this unconfirmed action?", isPresented: $dismissing, titleVisibility: .visible) {
             Button("Dismiss unconfirmed action") { model.acknowledgeUnknown(operation.id) }
         } message: { Text("The computer may already have created it. Check its projects and threads first. Dismissing sends nothing.") }
+    }
+}
+
+/// Folded, iOS's New thread sheet stands as tall as its step (`NewThreadSheet.stepFit`), and full height while it has no
+/// fit, such as when choosing a folder. Anywhere else the sheet keeps iOS's own height.
+private struct FoldedStepDetents: ViewModifier {
+    let on: Bool
+    let fit: CGFloat?
+    @ViewBuilder func body(content: Content) -> some View {
+        if on {
+            let heights: Set<PresentationDetent> = if let fit { [.height(fit)] } else { [.large] }
+            content.presentationDetents(heights)
+        } else {
+            content
+        }
     }
 }

@@ -16,8 +16,9 @@ sh apps/ios/Scripts/bench.sh /tmp/bench/after
 python3 apps/ios/Scripts/bench-summary.py compare /tmp/bench/before /tmp/bench/after
 ```
 
-A run takes about 25 minutes for each side, and a few more for the change's traced journey. The workflow keeps the summaries, the logs and the app's own reports as
-the `ios-benchmarks` artifact for 30 days.
+A run takes about half an hour for each side, and about ten minutes more for the change's traced journey; the phases and
+the idle journeys added on November 10 add about a quarter of an hour a side. The workflow keeps the summaries, the logs
+and the app's own reports as the `ios-benchmarks` artifact for 30 days.
 
 ## What runs
 
@@ -36,6 +37,16 @@ run reads the same bytes:
 - **The stream:** 200 `detail-delta` pushes, one word each, one every 50 ms after the last was applied. Every fifth is
   followed by a `shell` push carrying only the long thread's record, and every twentieth finishes a step and starts
   another, as a working thread does.
+- **What a running host sends whole** (#2390): the second stream's `shell` pushes also carry the parts a host sends whole
+  in every thread list push, made up at the sizes forge's host sent a phone on November 10, 2026
+  (`docs/perf/2026-11-10-performance-and-data-audit.md`, finding 2): each thread's skill list (115 KB), the delivery
+  ledger (46 KB), the delivered and obsolete draft ledgers (13 KB each), the follow-up receipts (8 KB) and three small
+  parts no phone reads, about 200 KB a push against forge's 209 KB. The rest of forge's is its projects, providers and
+  settings, which stay as the laptop's so the list does not change. The threads the parts name are not on the list and
+  every delivery was accepted, so the phone shows nothing of them (`BenchWire.hostSizedState`).
+- **Settling for the idle phases** (#2400): one `shell` push settles the seven other threads the list shows working
+  (`BenchWire.othersSettled`), and the long thread's turn ends as a host ends one, with a `detail-delta` that finishes
+  its running step and a `shell` push with its record settled (`BenchWire.endTurnFrame`).
 
 Every frame goes through `Wire.readFrame` off the main actor, the records cache, and `AppModel.push`, the path a live
 computer's frames take.
@@ -55,13 +66,34 @@ Then:
      keyboard moves the page. Its budgets hold that this draws no part of the conversation (ADR-0184).
    - `reply-box-stream`: the same for as long as another 200 words stream in, to set against `stream`.
    - `back`: back to the Threads list, as a press on Back goes, until the list is drawn as it stands.
+   - `idle-list`: 30 seconds on the Threads list with nothing arriving and one thread working, the long one. The seven
+     others the list shows working settle first, in a phase of their own (`settle-others`).
+   - `reopen`: the long thread opened again, as `open` opened it. It is read again from its first `detail` push, so the
+     reply is as short as `stream` found it.
+   - `stream-real-push`: 200 words as `stream` sends them, each list push the size a running host sends.
+   - `idle-thread`: 30 seconds on the long thread with nothing arriving, once its turn has ended in a phase of its own
+     (`end-turn`): no working line, running step or breathing light.
 
-   Each phase lasts until half a second passes without a late frame. The scroll sets the offset from the clock every
-   frame, so a late frame jumps as a fling would.
-3. **The long thread's look**, twice from a cold launch: the app photographs the long thread at fixed distances above
+   Each phase lasts until half a second passes without a late frame, but for the idle phases, which last 30 seconds
+   whatever the screen does. The scroll sets the offset from the clock every frame, so a late frame jumps as a fling
+   would. The phases added on November 10 come after `back`, so every phase before them runs as it did and compares
+   with a base from before them.
+
+   In the idle phases the driver stops its own display link and its report's half-second timer, which would wake the
+   app's main thread at every refresh, and counts the main run loop's wake-ups instead. The display link ticks at every
+   refresh whether anything was drawn or not, so it cannot count frames drawn; a frame the app commits needs its main
+   thread awake, so the wake-ups bound them. The background wash and a working row's breathing light are Core Animation
+   loops, which the render server draws without waking the app, so the next step measures them apart. So are a working
+   card's glow and runner, which only the unfolded Duo shows and no benchmark opens.
+3. **The idle phases with the loops running and stopped**, in a short journey of their own from a cold launch
+   (`--bench-journey idle`: `settle-others`, `idle-list`, `open`, `end-turn`, `idle-thread`), three times as the app
+   runs and three times with `--ui-still`, which stops every looping animation, taking turns. The difference is what
+   the loops cost the app. What they cost the render server is not the app's: the app cannot read it, and the
+   simulator's render server is a process on the runner's Mac, not an iPhone's. Instruments on a real iPhone measures it.
+4. **The long thread's look**, twice from a cold launch: the app photographs the long thread at fixed distances above
    its end. `bench-summary.py look` fails the run when the change's photos differ from the base's at a distance where
    the base's two launches agree.
-4. **Where the main thread goes**, on the change's side only: one more journey with `--bench-sample`, in which a
+5. **Where the main thread goes**, on the change's side only: one more journey with `--bench-sample`, in which a
    background thread in the app suspends the main thread about once a millisecond, walks its frame pointers and resumes
    it (`BenchSampler`). `Scripts/bench-sample.py` names the addresses with `atos` and writes `trace.md`: for the open,
    the thread's scroll and the stream, the functions and images the main thread was in, and the app's own functions,
@@ -70,7 +102,7 @@ Then:
    ignored its time limit, and recording the whole Mac never finished saving (#1976, six runs). Each phase's frames
    longer than 50 ms get the same tables for the samples taken while they lasted. The sampler slows the app, so the
    traced journey's numbers are not summarized; read its shares, not its times.
-5. **SottoCore's share.** `SOTTO_IOS_BENCH=1 swift test -c release --filter PhoneBenchTests` times reading, merging and
+6. **SottoCore's share.** `SOTTO_IOS_BENCH=1 swift test -c release --filter PhoneBenchTests` times reading, merging and
    laying out the same frames on the runner's Mac, without the simulator.
 
 The journey is not driven by XCUITest. XCUITest turns on and reads the whole accessibility tree for every gesture, and
@@ -79,9 +111,10 @@ on the long thread that cost more than the thread: the first version of these be
 
 ## What the numbers mean
 
-Every number is the median of the five launches or the five journeys; a `core.*` timing is the median of the rounds
-`PhoneBenchTests` times it (7 to 31). Lower is better for all but `journey.completed`, which counts the journeys that
-finished. A journey that ends on `failed-<why>` (the list or the thread never drew) fails the script and is left out.
+Every number is the median of the five launches, the five journeys or the three idle journeys a side; a `core.*` timing
+is the median of the rounds `PhoneBenchTests` times it (7 to 31). Lower is better for all but `journey.completed` and
+`loops.completed`, which count the journeys that finished. A journey that ends on `failed-<why>` (the list or the thread
+never drew) fails the script and is left out.
 
 | Metric | What it is |
 | --- | --- |
@@ -94,8 +127,9 @@ finished. A journey that ends on `failed-<why>` (the list or the thread never dr
 | `<phase>.app.hitch_time_ratio` | Milliseconds of lateness for each second of the phase, as Apple's hitch time ratio counts it. |
 | `<phase>.app.longest_frame` | The longest time between two frames: the longest the screen was stuck. |
 | `<phase>.app.footprint` | The memory the system charged the app as the phase ended (`phys_footprint`, Xcode's memory gauge). |
-| `journey.app.peak_footprint` | The most it charged at any point of the journey, the kernel's high-water mark. |
+| `journey.app.peak_footprint` | The most it charged at any point of the journey up to the end of `back`, the kernel's high-water mark: the phases after `back` are left out, so it compares with runs from before them. |
 | `open.app.tap_to_drawn` | From the open to the first display frame after the frame that draws the long thread was committed. |
+| `reopen.app.*` | The same for the second open, after `back`, kept out of `open`'s rows. |
 | `open.app.<count>` | What opening it built: message bodies, Markdown blocks, text views, bytes of Markdown parsed. |
 | `<phase>.app.textview_measure`, `stream.textview_measure_per_chunk` | Time the paragraphs' text views spent measuring their words: in the phase, or per streamed word. |
 | `stream.wall_per_chunk` | Time per streamed word, including the 50 ms wait after each: 50 ms is the floor. |
@@ -103,9 +137,19 @@ finished. A journey that ends on `failed-<why>` (the list or the thread never dr
 | `stream.per_chunk.<count>` | View bodies, text view updates, Markdown parses and timeline rebuilds per streamed word. |
 | `stream.worst_per_chunk.<count>` | The Threads page's and its list's bodies per streamed word in the worst of the five journeys, for the budgets of zero. |
 | `list-scroll.worst.<count>` | Bodies of the Threads page's `SheetPage`, its list and its rows during the list's scroll in the worst of the five journeys, for the budgets of zero. |
-| `journey.page.<count>` | Over each whole journey, the Threads page coming into the window (`shown`), holding its list as it went out of sight (`holds`), holding it while still in the window (`held_in_window`), and turns of the main run loop that ended, after Core Animation's commit, with the page in the window and drawn from a held list (`stale_frames`). |
+| `journey.page.<count>` | Over each journey up to the end of `back`, the Threads page coming into the window (`shown`), holding its list as it went out of sight (`holds`), holding it while still in the window (`held_in_window`), and turns of the main run loop that ended, after Core Animation's commit, with the page in the window and drawn from a held list (`stale_frames`). |
 | `stream.bytes/decode/apply_per_push.<kind>` | The stream's pushes: bytes, reading time, applying time. |
-| `core.*` | SottoCore's timings on the runner's Mac, from `PhoneBenchTests`. |
+| `stream-real-push.*` | The same rows as `stream`'s for the stream whose list pushes are the size a running host sends. |
+| `<idle>.app.cpu` | CPU time on every thread of the app over the idle phase's 30 seconds, in the journey. |
+| `<idle>.app.wakes_per_second` | Times a second the app's main run loop woke while the idle phase lasted, with the driver's display link and timer stopped. |
+| `<idle>.app.bodies`, `<idle>.app.body.<view>` | View bodies that ran in the idle phase: all of them, and each view that ran in any journey's idle. |
+| `<idle>.worst.working_threads` | Threads working as the idle phase began, in the worst journey of any kind: 1 on the list, 0 on the thread. |
+| `<idle>.loops_on.*`, `<idle>.loops_off.*` | CPU time and wake-ups over the idle phase in the idle journeys, with the looping animations running and stopped by `--ui-still`. |
+| `<idle>.loops.app_cpu` | `loops_on.cpu` less `loops_off.cpu`: what the loops cost the app over the 30 seconds. |
+| `<idle>.loops.spread` | The most minus the least CPU time among either side's three idle journeys. A `loops.app_cpu` under it is within the runner's noise. |
+| `loops.completed` | The idle journeys that finished, of six. |
+| `journey.frames_unread` | Frames the phone could not read or place in any phase, in the worst journey of any kind: a push it refused is work the benchmark never measured. |
+| `core.*` | SottoCore's timings on the runner's Mac, from `PhoneBenchTests`; `core.shell-real.*` reads a list push the size a host sends. |
 
 Some counts have a budget, the most a change may leave them at (`BUDGETS` in `Scripts/bench-summary.py`); the workflow
 fails when the change's side is over one. Counts are the same on any runner, so a budget sits just above what the

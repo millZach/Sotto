@@ -1,0 +1,126 @@
+{
+ "runs": 7,
+ "platform": "linux",
+ "summary": {
+  "askedToWindowMs": {
+   "median": 1015,
+   "min": 992,
+   "max": 1036
+  },
+  "askedToPageStartMs": {
+   "median": 683.6,
+   "min": 670.1,
+   "max": 714.2
+  },
+  "pageStartToDomMs": {
+   "median": 321.8,
+   "min": 315.5,
+   "max": 332.6
+  },
+  "pageStartToFirstPaintMs": {
+   "median": 524,
+   "min": 520,
+   "max": 540
+  },
+  "askedToFirstPaintMs": {
+   "median": 1215.6,
+   "min": 1190.1,
+   "max": 1238
+  },
+  "processes": {
+   "median": 6,
+   "min": 6,
+   "max": 6
+  },
+  "mainMemoryMb": {
+   "median": 312.3,
+   "min": 311.9,
+   "max": 313.9
+  },
+  "mainCpuPercent": {
+   "median": 0,
+   "min": 0,
+   "max": 0
+  },
+  "rendererMemoryMb": {
+   "median": 370.5,
+   "min": 369.6,
+   "max": 372.2
+  },
+  "rendererCpuPercent": {
+   "median": 0,
+   "min": 0,
+   "max": 0
+  },
+  "renderers": {
+   "median": 2,
+   "min": 2,
+   "max": 2
+  },
+  "gpuMemoryMb": {
+   "median": 126.7,
+   "min": 124.9,
+   "max": 127.7
+  },
+  "allMemoryMb": {
+   "median": 960.8,
+   "min": 957.9,
+   "max": 964
+  },
+  "allCpuPercent": {
+   "median": 0,
+   "min": 0,
+   "max": 0
+  },
+  "askedToMainClockMs": {
+   "median": 21.7,
+   "min": 20.3,
+   "max": 25.1
+  },
+  "mark:main-bundle-evaluated": {
+   "median": 315.5,
+   "min": 312.9,
+   "max": 352.8
+  },
+  "mark:app-ready": {
+   "median": 358.4,
+   "min": 352.4,
+   "max": 398.7
+  },
+  "mark:runtime-created": {
+   "median": 622.3,
+   "min": 614.6,
+   "max": 658.1
+  },
+  "mark:main-window-created": {
+   "median": 659,
+   "min": 649.3,
+   "max": 692.2
+  },
+  "mark:main-window-loaded": {
+   "median": 991,
+   "min": 971,
+   "max": 1015.2
+  },
+  "mark:widget-created": {
+   "median": 1007.8,
+   "min": 988.4,
+   "max": 1032
+  },
+  "mark:widget-loaded": {
+   "median": 1180.3,
+   "min": 1156.8,
+   "max": 1207.8
+  },
+  "mark:main-window-shown": {
+   "median": 1183.5,
+   "min": 1160,
+   "max": 1211.4
+  },
+  "mark:launch-finished": {
+   "median": 1183.6,
+   "min": 1160.1,
+   "max": 1211.5
+  }
+ }
+}

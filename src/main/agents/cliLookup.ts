@@ -132,6 +132,10 @@ async function managerFolders(name: string, environment: NodeJS.ProcessEnv, home
     for (const tool of namedFirst(await list(join(miseData, 'installs')), name)) {
       const latest = join(miseData, 'installs', tool, 'latest')
       folders.push(join(latest, 'bin'), latest, join(latest, 'node_modules', '.bin'))
+      // A GitHub release unpacks into a folder of its own: forge's gh is `installs/gh/latest/gh_2.102.0_linux_amd64/bin/gh`,
+      // which a host whose gh is a `mise x` wrapper reached nowhere else, so it linked no pull request (#2430's fix
+      // found nothing there). Only the command's own tool is listed one level down, so a lookup reads one more folder.
+      if (tool === name) for (const unpacked of await list(latest)) if (unpacked !== 'bin' && unpacked !== 'node_modules') folders.push(join(latest, unpacked, 'bin'), join(latest, unpacked))
     }
   }
   if (windows) return folders

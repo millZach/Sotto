@@ -111,7 +111,7 @@ const connectedAs = (user: string, count: number): string =>
 export function TailscaleRow({ control }: { readonly control: TailscaleControl }): ReactNode {
   const { t } = useLingui()
   const { summary } = control
-  return <section className="hosts-tailscale" aria-label="Tailscale">
+  return <section className="hosts-tailscale" aria-label="Tailscale" data-state={summary?.state}>
     <span className="hosts-row__icon hosts-row__icon--local" aria-hidden="true"><Network size={18} /></span>
     <div className="hosts-tailscale__copy">
       <h4>Tailscale</h4>

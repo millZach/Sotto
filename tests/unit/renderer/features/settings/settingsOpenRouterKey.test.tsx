@@ -59,6 +59,7 @@ describe('SettingsView', () => {
     [{ ok: true }, 'Key verified.'],
     [{ ok: false, reason: 'unauthorized' }, 'OpenRouter rejected this key.'],
     [{ ok: false, reason: 'unconfigured' }, 'Enter your OpenRouter API key first.'],
+    [{ ok: false, reason: 'unreadable' }, 'Sotto could not read the saved key. Enter it again.'],
     [{ ok: false, reason: 'network' }, 'Could not reach OpenRouter.'],
     [{ ok: false, reason: 'timeout' }, 'Could not reach OpenRouter.'],
     [{ ok: false, reason: 'http' }, 'OpenRouter returned an error.'],

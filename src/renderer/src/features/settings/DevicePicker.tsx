@@ -78,9 +78,11 @@ function Dot({ device }: { readonly device: HostDevice }): ReactNode {
  * Tailscale and SSH setup. Machines Sotto can add come first; the ones it cannot use now are listed greyed
  * with the reason, and are read out with it. **Another SSH host…** is always last and switches the field to
  * typing a host. From the keyboard: the arrow keys, Home and End move, typed letters jump to a name, Enter
- * or Space picks, and Escape closes the list before it closes the dialog.
+ * or Space picks. Escape closes a list the user has moved in from the keyboard, opened or come back to before
+ * it closes the dialog; the list that opened by itself with the dialog is not in its way, and one Escape closes
+ * the dialog (ADR-0200).
  */
-export function DevicePicker({ devices, failed = false, tailscale, saved, value, onPick, onOther, disabled, autoFocus = false }: {
+export function DevicePicker({ devices, failed = false, tailscale, saved, value, onPick, onOther, disabled, autoFocus = false, cameBack = false }: {
   /** Null while the devices are being read. */
   readonly devices: readonly HostDevice[] | null
   /** The devices could not be read; the list still offers Another SSH host. */
@@ -92,6 +94,8 @@ export function DevicePicker({ devices, failed = false, tailscale, saved, value,
   readonly onOther: () => void
   readonly disabled: boolean
   readonly autoFocus?: boolean
+  /** The user came back to the list, from a typed host: it opened on their press, so Escape closes it before the dialog. */
+  readonly cameBack?: boolean
 }): ReactNode {
   const { t } = useLingui()
   const labelId = useId(), listId = useId()
@@ -99,6 +103,11 @@ export function DevicePicker({ devices, failed = false, tailscale, saved, value,
   // The list opens with the dialog, since choosing a machine is what Add host is for.
   const [open, setOpen] = useState(true)
   const [active, setActive] = useState(-1)
+  /**
+   * True while the list is as the dialog opened it: the user has not moved in it from the keyboard, opened it, or come
+   * back to it. The pointer passing over it does not count, since the list opens under wherever the pointer already is.
+   */
+  const untouched = useRef(!cameBack)
   const typed = useRef({ text: '', at: 0 })
   /** When Enter or Space was last handled, so the click a browser adds after it does not act twice. */
   const keyed = useRef(0)
@@ -149,7 +158,10 @@ export function DevicePicker({ devices, failed = false, tailscale, saved, value,
   }
   const onKeyDown = (event: KeyboardEvent<HTMLButtonElement>): void => {
     if (event.key === 'Enter' || event.key === ' ') keyed.current = Date.now()
+    // Escape on the list as the dialog opened it is the dialog's to answer.
+    if (event.key === 'Escape' && shown && untouched.current) return
     const letter = event.key.length === 1 && event.key !== ' ' && !event.ctrlKey && !event.metaKey && !event.altKey
+    if (letter || ['ArrowDown', 'ArrowUp', 'Home', 'End', 'PageDown', 'PageUp', 'Enter', ' '].includes(event.key)) untouched.current = false
     if (!shown) {
       if (['ArrowDown', 'ArrowUp', 'Home', 'End', 'Enter', ' '].includes(event.key) || letter) {
         event.preventDefault()
@@ -192,6 +204,7 @@ export function DevicePicker({ devices, failed = false, tailscale, saved, value,
       onClick={() => {
         // A click a screen reader sends has no key before it; one a browser adds after Enter or Space was handled already.
         if (Date.now() - keyed.current < 500) return
+        untouched.current = false
         if (shown) close(); else { setOpen(true); setActive(firstChoice()) }
       }}
       onKeyDown={onKeyDown}>

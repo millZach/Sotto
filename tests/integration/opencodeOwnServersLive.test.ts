@@ -15,7 +15,7 @@ import { join } from 'node:path'
 import { expect, it } from 'vitest'
 import { OpenCodeHost } from '../../src/main/agents/opencode'
 import { OpenCodeClient, locationQuery } from '../../src/main/agents/opencodeClient'
-import { opencodeEnvironment, opencodeFolders, opencodePassword, OpenCodeServer } from '../../src/main/agents/opencodeServer'
+import { prepareOpenCodeEnvironment, opencodeFolders, opencodePassword, OpenCodeServer } from '../../src/main/agents/opencodeServer'
 import { openCodeForOwnServers } from '../../src/main/ownModelServers/openCode'
 import { OwnServers } from '../../src/main/ownModelServers/service'
 import { OWN_SERVER_PLACEHOLDER_KEY } from '../../src/main/ownModelServers/providerBlock'
@@ -75,7 +75,7 @@ it.skipIf(!live)('lists a server under its name, signs its key in, sends the key
     const password = opencodePassword()
     const folders = opencodeFolders(join(userData, 'opencode'))
     const start = async (): Promise<OpenCodeClient> => {
-      observer = await OpenCodeServer.start({ executable: executable ?? 'opencode', cwd: root, env: opencodeEnvironment(environment, folders, password, await servers.list()), timeoutMs: 60_000 })
+      observer = await OpenCodeServer.start({ executable: executable ?? 'opencode', cwd: root, env: (await prepareOpenCodeEnvironment(environment, folders, password, await servers.list())).env, timeoutMs: 60_000 })
       return new OpenCodeClient(observer.url, password, 60_000)
     }
     let client = await start()

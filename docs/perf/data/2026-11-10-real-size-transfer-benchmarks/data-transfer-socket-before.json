@@ -1,0 +1,100 @@
+{
+ "track": "owl",
+ "long": true,
+ "helloBytes": {
+  "desktop": 416811,
+  "phone": 406374
+ },
+ "openBytes": {
+  "desktop": 1073456,
+  "phone": 854572
+ },
+ "streamThreads": 3,
+ "1 streaming": {
+  "seconds": 4,
+  "processCpuMs": 974,
+  "clientPushes": 60,
+  "desktopWindow": {
+   "broadcasts": 60,
+   "bytes": 375017
+  },
+  "desktop": {
+   "shell": {
+    "frames": 60,
+    "bytes": 730286,
+    "deflated": 118545,
+    "max": 205905
+   },
+   "detail-delta": {
+    "frames": 60,
+    "bytes": 16125,
+    "deflated": 10121,
+    "max": 269
+   }
+  },
+  "phone": {
+   "detail-delta": {
+    "frames": 60,
+    "bytes": 16125,
+    "deflated": 0,
+    "max": 269
+   },
+   "shell": {
+    "frames": 2,
+    "bytes": 211135,
+    "deflated": 0,
+    "max": 204308
+   }
+  }
+ },
+ "3 streaming": {
+  "seconds": 4,
+  "processCpuMs": 823,
+  "clientPushes": 61,
+  "desktopWindow": {
+   "broadcasts": 61,
+   "bytes": 416220
+  },
+  "desktop": {
+   "shell": {
+    "frames": 61,
+    "bytes": 791056,
+    "deflated": 118935,
+    "max": 15370
+   },
+   "detail-delta": {
+    "frames": 180,
+    "bytes": 48427,
+    "deflated": 30603,
+    "max": 271
+   }
+  },
+  "phone": {
+   "detail-delta": {
+    "frames": 180,
+    "bytes": 48427,
+    "deflated": 0,
+    "max": 271
+   }
+  }
+ },
+ "sendError": "Error: The send was refused: The draft now belongs to a different thread. Review it and send again. Your draft is kept.",
+ "send": {
+  "desktop": {
+   "shell": {
+    "frames": 2,
+    "bytes": 14376,
+    "deflated": 2887,
+    "max": 7270
+   }
+  },
+  "phone": {
+   "shell": {
+    "frames": 2,
+    "bytes": 14376,
+    "deflated": 0,
+    "max": 7270
+   }
+  }
+ }
+}

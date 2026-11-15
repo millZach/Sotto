@@ -1,0 +1,670 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>PROTOTYPE: the Duo design climb, round 3</title>
+<!--
+  THROWAWAY PROTOTYPE. Not product code.
+  Question: for each surface two or more round 2 judges marked down on the iPhone Duo, which variant should the app build?
+  Opens on the Duo and picks its posture from the window, folded, sideways or upright. Colours are the Sotto theme's,
+  measurements come from the app's captures. Upright can't be captured from the simulator, so it is a sketch.
+  Plan: docs/plans/2026-11-08-ios-duo-design-climb.md
+-->
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; font-display: swap; src: url('figtree-latin.woff2') format('woff2'); }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+body { font: 15px/1.3 'Figtree', -apple-system, system-ui, sans-serif; color: #eee; display: flex; flex-direction: column; -webkit-text-size-adjust: 100%; }
+button, select { font: inherit; color: inherit; }
+
+/* The prototype's own controls, outside the Duo's screen. */
+#bar { flex: none; background: #17181b; border-bottom: 1px solid #2c2e33; padding: 5px 8px; padding-top: max(5px, env(safe-area-inset-top)); }
+#row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+#surface { background: #26282c; border: 0; border-radius: 9px; padding: 6px 8px; font-weight: 600; font-size: 14px; max-width: 170px; }
+.seg { display: inline-flex; background: #26282c; border-radius: 9px; padding: 2px; }
+.seg button { border: 0; background: none; padding: 5px 9px; border-radius: 7px; font-size: 13px; font-weight: 600; color: #b5b8be; min-width: 30px; }
+.seg button.on { background: #47b8a9; color: #04201c; }
+.seg button.rec::after { content: ' ★'; font-size: 11px; }
+#caption { font-size: 13px; color: #c8cbd0; margin-top: 4px; line-height: 1.3; }
+#caption b { color: #fff; font-weight: 600; }
+#holder { flex: 1; min-height: 0; position: relative; overflow: hidden; background: #000; }
+#holder.actual { overflow: auto; -webkit-overflow-scrolling: touch; }
+#stage { position: absolute; left: 0; top: 0; transform-origin: 0 0; overflow: hidden; background: var(--ground); color: var(--ink); font-size: 17px; line-height: 1.32; }
+
+/* The Sotto theme. */
+.dark { --ground:#040507; --card:#111316; --sheet:#15171a; --opt:#1f2124; --soft:#26282a; --ink:#f3f4f5; --muted:#a0a5ae; --dim:#6d7178; --hair:rgba(255,255,255,.1); --accent:#47b8a9; --acctext:#6bc3b6; --accsurf:#0c3b36; --onacc:#04201c; --warn:#fe9a00; --warntext:#ffb86b; --danger:#ff4a55; --dangertext:#ff8a8a; --bubble:#13161d; --glass:rgba(58,60,64,.82); --glassdim:#85888d; --scrim:rgba(0,0,0,.42); --washa:rgba(71,184,169,.24); --washw:rgba(254,154,0,.24); --tile:#0a0c10; --rgb:71,184,169; --dimbtn:#2a5b56; --dimtext:#0d2b28; }
+.light { --ground:#f9f8f5; --card:#f2f0ec; --sheet:#fbfaf7; --opt:#f0efec; --soft:#e9e7e2; --ink:#1c1a17; --muted:#68625b; --dim:#8f8a82; --hair:rgba(0,0,0,.1); --accent:#007d74; --acctext:#1e665e; --accsurf:#cfece7; --onacc:#fdfcf9; --warn:#c96a00; --warntext:#9a5200; --danger:#d42c37; --dangertext:#b3202a; --bubble:#ebe9e3; --glass:rgba(233,231,226,.88); --glassdim:#8f8a82; --scrim:rgba(0,0,0,.22); --washa:rgba(0,125,116,.14); --washw:rgba(201,106,0,.14); --tile:#fff; --rgb:0,125,116; --dimbtn:#92c6c0; --dimtext:#2f6b65; }
+#stage { --cg: 0 6px 24px rgba(var(--rgb),.5); --ng: 0 6px 24px rgba(var(--rgb),.5); }
+#stage.glow-A { --cg: none; --ng: none; }
+#stage.glow-B { --cg: 0 3px 11px rgba(var(--rgb),.24); --ng: 0 3px 11px rgba(var(--rgb),.24); }
+#stage.glow-C { --cg: none; }
+
+svg { display: block; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+svg.solid { fill: currentColor; stroke: none; }
+.abs { position: absolute; }
+.clip { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+/* Rail */
+.circle { position: absolute; width: 44px; height: 44px; margin: -22px 0 0 -22px; border-radius: 50%; display: grid; place-items: center; color: var(--acctext); background: color-mix(in srgb, var(--accent) 10%, var(--ground)); border: 1px solid color-mix(in srgb, var(--accent) 34%, transparent); }
+.chrome { box-shadow: var(--cg); }
+.newt { box-shadow: var(--ng); }
+.pill { position: absolute; width: 58px; border-radius: 29px; background: var(--ground); border: 1px solid var(--hair); display: flex; flex-direction: column; align-items: center; }
+.tile { width: 50px; height: 50px; border-radius: 50%; display: grid; place-items: center; color: var(--muted); margin: 1px 0; position: relative; flex: none; }
+.tile.on { background: var(--accsurf); color: var(--acctext); }
+.badge { position: absolute; top: 1px; right: 0; min-width: 18px; height: 18px; border-radius: 9px; background: var(--warn); color: #201200; font-size: 12px; font-weight: 700; display: grid; place-items: center; }
+.state { font-size: 13px; font-weight: 600; text-align: center; line-height: 1.15; padding: 11px 2px 2px; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.w { background: var(--warn); box-shadow: 0 0 12px 4px color-mix(in srgb, var(--warn) 42%, transparent); }
+.g { background: var(--accent); box-shadow: 0 0 12px 4px rgba(var(--rgb),.4); }
+.r { background: var(--danger); box-shadow: 0 0 12px 4px color-mix(in srgb, var(--danger) 40%, transparent); }
+.i { background: none; border: 2px solid var(--muted); }
+.clock { position: absolute; font-weight: 700; font-size: 15px; transform: translateX(-50%); }
+.ring { position: absolute; width: 40px; height: 40px; margin: -20px 0 0 -20px; color: #35c75a; }
+
+/* Conversation */
+.conv { position: absolute; top: 0; bottom: 0; overflow: hidden; }
+.conv p { margin: 0 0 13px; }
+.conv .tbl { border: 1px solid var(--hair); border-radius: 14px; margin-bottom: 15px; background: color-mix(in srgb, var(--card) 45%, var(--ground)); font-size: 15px; overflow: hidden; }
+.tr { display: grid; padding: 9px 12px; border-top: 1px solid var(--hair); }
+.tr:first-child { border-top: 0; color: var(--muted); font-size: 14px; font-weight: 600; }
+.bub { margin: 0 0 16px auto; width: fit-content; max-width: 86%; background: var(--bubble); border: 1px solid var(--hair); border-radius: 16px; padding: 9px 15px; }
+.codex { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); margin-bottom: 7px; font-weight: 500; }
+.ctile { width: 18px; height: 18px; border-radius: 5px; background: var(--accsurf); color: var(--acctext); display: grid; place-items: center; font-size: 11px; font-weight: 700; }
+.composer { position: absolute; height: 50px; border-radius: 25px; background: #18191b; display: flex; align-items: center; padding: 0 7px; gap: 6px; color: var(--muted); }
+.light .composer { background: #e9e7e2; }
+.disc { width: 34px; height: 34px; border-radius: 50%; background: var(--soft); display: grid; place-items: center; color: var(--ink); flex: none; }
+
+/* Sidebar */
+.side { position: absolute; left: 0; top: 0; bottom: 0; width: 280px; border-right: 1px solid var(--hair); overflow-y: auto; padding: 70px 8px 16px; }
+.sidehead { position: absolute; left: 16px; top: 16px; font-size: 20px; font-weight: 700; z-index: 1; }
+.sec { font-size: 15px; color: var(--muted); font-weight: 500; padding: 10px 12px 5px; }
+.sec span { margin-left: 5px; }
+.rowt { display: flex; gap: 10px; padding: 7px 8px 7px 12px; border-radius: 14px; min-height: 54px; }
+.rowt.ch { background: var(--accsurf); }
+.rowt.ch .tt { color: var(--acctext); }
+.rowt .dot { margin-top: 7px; }
+.tt { font-weight: 600; line-height: 1.22; }
+.mt { font-size: 14px; color: var(--muted); display: flex; align-items: center; gap: 5px; margin-top: 2px; min-width: 0; }
+.mt > .clip { min-width: 0; }
+.tm { font-size: 13px; color: var(--muted); flex: none; }
+.two { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* Sheets */
+.scrim { position: absolute; inset: 0; background: var(--scrim); }
+.sheet { position: absolute; background: var(--sheet); border-radius: 26px 26px 26px 26px; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 -8px 30px rgba(0,0,0,.28); }
+.grab { flex: none; width: 36px; height: 4px; border-radius: 2px; background: var(--dim); margin: 6px auto 0; }
+.wash { position: absolute; left: 0; right: 0; top: 0; height: 120px; background: radial-gradient(90% 100% at 8% 0, var(--washa), transparent 72%), radial-gradient(70% 90% at 100% 0, var(--washw), transparent 70%); pointer-events: none; }
+.from { position: relative; font-size: 15px; color: var(--muted); display: flex; align-items: center; gap: 10px; }
+.q { position: relative; font-size: 22px; font-weight: 600; letter-spacing: -.3px; line-height: 1.22; margin-top: 11px; color: var(--ink); }
+.opt { display: flex; gap: 14px; border: 1px solid var(--hair); background: var(--opt); border-radius: 15px; padding: 11px 15px; margin-top: 8px; cursor: pointer; }
+.opt .ra { flex: none; width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--dim); margin-top: 3px; }
+.opt.on { border-color: var(--accent); }
+.opt.on .ra { border: 6px solid var(--accent); }
+.opt b { font-weight: 600; display: block; }
+.opt small { font-size: 15px; color: var(--muted); display: block; line-height: 1.26; margin-top: 1px; }
+.foot { flex: none; display: flex; gap: 8px; border-top: 1px solid var(--hair); padding: 12px 20px; }
+.btn { flex: 1; height: 44px; border-radius: 22px; display: grid; place-items: center; font-weight: 600; border: 0; }
+.btn.soft { background: var(--soft); color: var(--ink); }
+.btn.pri { background: var(--accent); color: var(--onacc); box-shadow: 0 5px 20px rgba(var(--rgb),.35); display: flex; align-items: center; justify-content: center; gap: 8px; }
+.btn.dimp { background: var(--dimbtn); color: var(--dimtext); }
+.tabs { display: flex; gap: 8px; padding: 0 20px 10px; flex: none; border-bottom: 1px solid var(--hair); overflow: hidden; }
+.tab { flex: none; height: 44px; padding: 0 16px; border-radius: 22px; background: var(--soft); display: flex; align-items: center; gap: 7px; font-weight: 500; border: 1px solid var(--hair); }
+.tab.on { background: var(--accsurf); border: 2px solid var(--accent); box-shadow: 0 2px 12px rgba(var(--rgb),.32); }
+.tabs.tight { gap: 5px; }
+.tabs.tight .tab { padding: 0 11px; height: 40px; font-size: 15px; gap: 5px; }
+.rd { width: 7px; height: 7px; border-radius: 50%; background: var(--danger); }
+.prbody { flex: 1; min-height: 0; overflow-y: auto; }
+.chipm { font: 14px ui-monospace, Menlo, monospace; background: var(--opt); padding: 3px 7px; border-radius: 7px; }
+.strow { display: flex; gap: 14px; padding: 11px 16px; }
+.strow + .strow > div:last-child { border-top: 0; }
+.st { flex: none; width: 22px; height: 22px; }
+.stt { font-weight: 600; }
+.sts { font-size: 15px; color: var(--muted); }
+.group { background: var(--card); border-radius: 18px; margin: 12px 0; }
+.dark .group { background: #191b1e; }
+.lbl { color: var(--muted); font-size: 15px; font-weight: 600; }
+.dock { flex: none; border: 1px solid var(--hair); border-radius: 22px; margin: 8px 12px 14px; padding: 12px 14px; background: var(--sheet); }
+.note { font-size: 15px; color: var(--muted); display: flex; gap: 10px; margin-bottom: 10px; }
+
+/* ••• menu */
+.menu { position: absolute; width: 250px; border-radius: 26px; background: var(--glass); -webkit-backdrop-filter: blur(22px); backdrop-filter: blur(22px); overflow: hidden; box-shadow: 0 12px 40px rgba(0,0,0,.4); }
+.mi { padding: 11px 19px; display: flex; align-items: center; gap: 12px; }
+.mi small { display: block; font-size: 13px; color: var(--muted); }
+.mh { height: 1px; background: var(--hair); margin: 0 19px; }
+.fact { display: flex; gap: 9px; font-size: 14px; color: var(--muted); padding: 3px 0; line-height: 1.24; align-items: flex-start; }
+.fact svg { flex: none; margin-top: 2px; }
+.cp { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; padding: 4px 9px; border-radius: 13px; background: color-mix(in srgb, var(--ink) 12%, transparent); color: var(--ink); max-width: 100%; }
+
+/* Pages */
+.page { position: absolute; top: 0; bottom: 0; overflow-y: auto; }
+.pt { font-size: 28px; font-weight: 700; letter-spacing: -.5px; }
+.ps { font-size: 15px; color: var(--muted); margin: 6px 0 18px; }
+.pcard { background: var(--card); border-radius: 20px; padding: 16px; margin-bottom: 12px; }
+.segs { display: flex; background: var(--soft); border-radius: 22px; padding: 3px; height: 44px; align-items: stretch; }
+.segs div { flex: 1; display: grid; place-items: center; border-radius: 19px; color: var(--muted); font-size: 15px; font-weight: 500; }
+.segs .on { background: var(--card); color: var(--ink); border: 1px solid var(--hair); }
+.sizes { display: flex; background: var(--opt); border-radius: 13px; height: 50px; align-items: center; position: relative; }
+.sizes div { flex: 1; text-align: center; font-weight: 700; color: var(--muted); }
+.sizes .on { color: var(--acctext); background: var(--card); border-radius: 10px; height: 44px; display: grid; place-items: center; border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); box-shadow: 0 0 12px rgba(var(--rgb),.3); }
+.slide { height: 7px; border-radius: 4px; background: var(--soft); position: relative; flex: 1; }
+.slide::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 50%; border-radius: 4px; background: var(--accent); }
+.slide::after { content: ''; position: absolute; left: calc(50% - 18px); top: -8px; width: 37px; height: 23px; border-radius: 12px; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.4); }
+.srow { padding: 13px 0; border-top: 1px solid var(--hair); }
+.srow:first-child { border-top: 0; padding-top: 0; }
+.srow:last-child { padding-bottom: 0; }
+.rowhead { display: flex; justify-content: space-between; font-weight: 500; margin-bottom: 9px; }
+.rowhead span { color: var(--muted); font-size: 15px; font-weight: 400; }
+.side-label { display: grid; grid-template-columns: 1fr 340px; gap: 20px; align-items: center; }
+.side-label .rowhead { margin: 0; flex-direction: column; }
+.hint { font-size: 15px; color: var(--muted); margin-top: 8px; }
+.side-label .hint { margin-top: 2px; }
+.sample { margin-top: 10px; padding: 9px 12px; border-radius: 12px; background: var(--opt); }
+.sample i { font-style: normal; font-size: 12px; color: var(--muted); font-weight: 600; display: block; margin-bottom: 2px; }
+
+/* Agents */
+.ag { padding: 12px 14px; display: flex; gap: 12px; border-top: 1px solid var(--hair); }
+.ag:first-child { border-top: 0; }
+.agt { flex: none; width: 34px; height: 34px; border-radius: 50%; background: var(--opt); display: grid; place-items: center; color: var(--ink); }
+.agb { flex: 1; min-width: 0; }
+.tag { display: inline-block; font-size: 13px; color: var(--muted); border: 1px solid var(--hair); border-radius: 11px; padding: 1px 8px; font-weight: 500; }
+.ags { display: flex; gap: 9px; align-items: center; font-size: 15px; margin-top: 4px; }
+.smeta { font-size: 13px; color: var(--muted); margin-top: 2px; }
+.sprev { font-size: 15px; color: var(--muted); }
+.open { display: inline-block; margin-top: 7px; padding: 8px 14px; background: var(--soft); border-radius: 17px; font-weight: 500; font-size: 15px; }
+.ask { color: var(--warntext); }
+.wk { color: var(--acctext); }
+.tell { position: absolute; left: 50%; top: 42%; transform: translateX(-50%); width: 78%; text-align: center; background: var(--card); border: 1px solid var(--hair); padding: 16px; border-radius: 18px; font-size: 16px; color: var(--muted); }
+/* Round 2 */
+.lt { flex: none; width: 10px; display: flex; justify-content: center; align-items: center; height: 22px; }
+.rowt .lt .dot { margin-top: 0; }
+.finA { width: 15px; height: 15px; border-radius: 50%; background: var(--accent); color: var(--onacc); display: grid; place-items: center; box-shadow: 0 0 12px 4px rgba(var(--rgb),.4); flex: none; }
+.finB { width: 12px; height: 12px; border-radius: 50%; border: 2.5px solid var(--accent); box-shadow: 0 0 12px 4px rgba(var(--rgb),.35); flex: none; }
+.finC { color: var(--acctext); filter: drop-shadow(0 0 5px rgba(var(--rgb),.75)); display: grid; place-items: center; }
+.code { border: 1px solid var(--hair); border-radius: 16px; background: color-mix(in srgb, var(--card) 45%, var(--ground)); margin-bottom: 15px; overflow: hidden; }
+.codeh { display: flex; gap: 14px; align-items: center; padding: 10px 16px; font-size: 15px; color: var(--muted); border-bottom: 1px solid var(--hair); }
+.codeb { font: 16px/1.5 ui-monospace, Menlo, monospace; padding: 12px 16px; color: var(--ink); }
+.slide-x { white-space: pre; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-right: 40px; scrollbar-width: none; }
+.slide-x::-webkit-scrollbar { display: none; }
+.fade { position: absolute; top: 0; right: 0; bottom: 0; width: 56px; background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--card) 45%, var(--ground)) 85%); pointer-events: none; }
+.cont { color: var(--dim); margin-right: 6px; }
+.wrapb { color: var(--muted); font-weight: 600; padding: 2px 10px; border-radius: 11px; border: 1px solid var(--hair); cursor: pointer; }
+.wrapb.on { color: var(--acctext); border-color: var(--accent); background: var(--accsurf); }
+.steps { margin: 8px 0 0 8px; padding-left: 14px; border-left: 2px solid var(--hair); }
+.step { display: flex; gap: 9px; align-items: center; font-size: 15px; padding: 5px 0; min-width: 0; }
+.mono { font: 14px ui-monospace, Menlo, monospace; color: var(--muted); }
+.step .ok { color: var(--acctext); flex: none; width: 17px; display: grid; place-items: center; }
+.spin { flex: none; width: 15px; height: 15px; border-radius: 50%; border: 2px solid rgba(var(--rgb),.3); border-top-color: var(--accent); margin: 0 1px; }
+.opill { height: 44px; border-radius: 22px; border: 1px solid var(--hair); background: color-mix(in srgb, var(--card) 60%, var(--ground)); display: flex; align-items: center; gap: 9px; padding: 0 15px; font-weight: 600; font-size: 16px; }
+.notice { border-radius: 18px; border: 1px solid color-mix(in srgb, var(--danger) 22%, transparent); background: color-mix(in srgb, var(--danger) 7%, var(--card)); display: flex; align-items: center; gap: 14px; padding: 0 12px 0 18px; }
+.ohead { display: flex; gap: 9px; align-items: center; font-weight: 600; padding: 0 6px 10px; }
+.ocard { background: var(--card); border-radius: 22px; padding: 14px 16px; margin-bottom: 14px; }
+.ndc { box-shadow: 0 0 28px 2px color-mix(in srgb, var(--warn) 18%, transparent); }
+.wkc { box-shadow: 0 0 24px 1px rgba(var(--rgb),.12); }
+.oh { display: flex; gap: 8px; align-items: center; font-size: 15px; }
+.ot { font-size: 19px; font-weight: 600; line-height: 1.22; margin-top: 8px; }
+.om { display: flex; gap: 6px; align-items: center; color: var(--muted); font-size: 15px; margin-top: 4px; min-width: 0; }
+.oq { margin-top: 10px; font-size: 17px; }
+
+</style>
+</head>
+<body>
+<div id="bar">
+  <div id="row">
+    <select id="surface" aria-label="Surface"></select>
+    <div class="seg" id="variants"></div>
+    <div class="seg" id="postures"></div>
+    <div class="seg" id="tools"></div>
+  </div>
+  <div id="caption"></div>
+</div>
+<div id="holder"><div id="stage"></div></div>
+
+<script>
+const I = {
+  plus: s => `<svg width="${s||22}" height="${s||22}" viewBox="0 0 24 24"><path d="M12 4v16M4 12h16"/></svg>`,
+  back: `<svg width="22" height="22" viewBox="0 0 24 24"><path d="M15 4l-8 8 8 8"/></svg>`,
+  side: `<svg width="24" height="24" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="4"/><path d="M9 4v16M4.800 8h1.700M4.800 11h1.700M4.800 14h1.700"/></svg>`,
+  owl: `<svg width="26" height="26" viewBox="0 0 24 24" class="solid"><path d="M4 3l3.500 2.500C9 5 10.500 4.800 12 4.800s3 .2 4.500.7L20 3v10c0 4.500-3.800 7-8 7s-8-2.500-8-7z"/><circle cx="8.400" cy="12" r="2.700" style="fill:var(--ground);stroke:none"/><circle cx="15.600" cy="12" r="2.700" style="fill:var(--ground);stroke:none"/><circle cx="8.800" cy="12" r="1.200"/><circle cx="16" cy="12" r="1.200"/></svg>`,
+  owlS: `<svg width="16" height="16" viewBox="0 0 24 24" class="solid"><path d="M4 3l3.500 2.500C9 5 10.500 4.800 12 4.800s3 .2 4.500.7L20 3v10c0 4.500-3.800 7-8 7s-8-2.500-8-7z"/><circle cx="8.400" cy="12" r="2.700" style="fill:var(--ground);stroke:none"/><circle cx="15.600" cy="12" r="2.700" style="fill:var(--ground);stroke:none"/></svg>`,
+  dots: `<svg width="24" height="24" viewBox="0 0 24 24" class="solid"><circle cx="5" cy="12" r="1.800"/><circle cx="12" cy="12" r="1.800"/><circle cx="19" cy="12" r="1.800"/></svg>`,
+  chat: `<svg width="26" height="26" viewBox="0 0 24 24"><path d="M6 4h12a3 3 0 013 3v7a3 3 0 01-3 3h-5l-4 3.500V17H6a3 3 0 01-3-3V7a3 3 0 013-3z"/></svg>`,
+  chatF: `<svg width="26" height="26" viewBox="0 0 24 24" class="solid"><path d="M6 4h12a3 3 0 013 3v7a3 3 0 01-3 3h-5l-4 3.500V17H6a3 3 0 01-3-3V7a3 3 0 013-3z"/></svg>`,
+  mac: `<svg width="26" height="26" viewBox="0 0 24 24" class="solid"><path d="M4 3h16a2 2 0 012 2v10a2 2 0 01-2 2h-6l.5 2.500H16V21H8v-1.500h1.500L10 17H4a2 2 0 01-2-2V5a2 2 0 012-2zm0 2v10h16V5z" fill-rule="evenodd"/></svg>`,
+  macPlus: `<svg width="24" height="24" viewBox="0 0 24 24"><path d="M12 3H4.500A2.500 2.500 0 002 5.500v8A2.500 2.500 0 004.500 16h13a2.500 2.500 0 002.500-2.500V12M12 16v4M8 20.500h8"/><path d="M18 2.500v7M14.500 6h7"/></svg>`,
+  sliders: `<svg width="26" height="26" viewBox="0 0 24 24"><path d="M3 6h9M18 6h3M3 12h3M12 12h9M3 18h10M19 18h2"/><rect x="12" y="4" width="6" height="4" rx="2"/><rect x="6" y="10" width="6" height="4" rx="2"/><rect x="13" y="16" width="6" height="4" rx="2"/></svg>`,
+  mic: `<svg width="18" height="18" viewBox="0 0 24 24"><rect x="8.500" y="2.500" width="7" height="12" rx="3.500"/><path d="M5 11a7 7 0 0014 0M12 18v3M8 21h8"/></svg>`,
+  ext: `<svg width="20" height="20" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M9 15l6-6M10 9h5v5"/></svg>`,
+  alarm: s => `<svg width="${s||20}" height="${s||20}" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 8.500V13l3 2M3.500 6L7 3M20.500 6L17 3"/></svg>`,
+  info: `<svg width="20" height="20" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 7.800v.2"/></svg>`,
+  xc: c => `<svg width="22" height="22" viewBox="0 0 24 24" style="color:${c}"><circle cx="12" cy="12" r="9.500"/><path d="M8.500 8.500l7 7M15.500 8.500l-7 7"/></svg>`,
+  cl: c => `<svg width="22" height="22" viewBox="0 0 24 24" style="color:${c}"><circle cx="12" cy="12" r="9.500"/><path d="M12 7v5H8"/></svg>`,
+  ok: c => `<svg width="22" height="22" viewBox="0 0 24 24" style="color:${c}"><circle cx="12" cy="12" r="9.500"/><path d="M8 12.500l3 3 5-6"/></svg>`,
+  branch: `<svg width="15" height="15" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2.500"/><circle cx="18" cy="5" r="2.500"/><circle cx="12" cy="19" r="2.500"/><path d="M6 7.500c0 4 6 3.500 6 9M18 7.500c0 4-6 3.500-6 9"/></svg>`,
+  pr: `<svg width="15" height="15" viewBox="0 0 24 24"><circle cx="6" cy="19" r="2.500"/><circle cx="18" cy="19" r="2.500"/><path d="M6 16.500V6M3 9l3-3.500L9 9M18 16.500V10c0-2-1-3-3-3h-3"/></svg>`,
+  place: `<svg width="15" height="15" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M12 16v4M8 20h8"/></svg>`,
+  diff: `<svg width="15" height="15" viewBox="0 0 24 24"><path d="M12 3v8M8 7h8M7 18h10"/></svg>`,
+  chev: `<svg width="15" height="15" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>`,
+  down: `<svg width="15" height="15" viewBox="0 0 24 24"><path d="M5 9l7 7 7-7"/></svg>`,
+  knot: `<svg width="15" height="15" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3c-3 4-3 14 0 18M12 3c3 4 3 14 0 18M3.500 9c5-2 12-2 17 0M3.500 15c5 2 12 2 17 0"/></svg>`,
+  star: `<svg width="15" height="15" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M5.600 5.600l12.800 12.800M18.400 5.600L5.600 18.400"/></svg>`,
+  bot: `<svg width="19" height="19" viewBox="0 0 24 24"><rect x="4" y="9" width="16" height="11" rx="3"/><path d="M12 9V5M9 14v1M15 14v1"/><circle cx="12" cy="4" r="1"/></svg>`,
+  stop: `<svg width="12" height="12" viewBox="0 0 12 12" class="solid"><rect width="12" height="12" rx="3"/></svg>`,
+  ring: `<svg width="40" height="40" viewBox="0 0 40 40"><path d="M8 29A15 15 0 1132 29" stroke-width="3"/><path d="M13 19a10 10 0 0114 0M16 23a6 6 0 018 0" stroke-width="2.200" style="stroke:var(--ink)"/><circle cx="20" cy="27" r="1.500" style="fill:var(--ink);stroke:none"/></svg>`,
+};
+I.eye = `<svg width="26" height="26" viewBox="0 0 24 24"><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3.2"/></svg>`;
+I.owlLine = `<svg width="26" height="26" viewBox="0 0 24 24"><path d="M4 3l3.5 2.5C9 5 10.5 4.8 12 4.8s3 .2 4.5.7L20 3v10c0 4.5-3.8 7-8 7s-8-2.5-8-7z"/><circle cx="8.6" cy="12" r="2.3"/><circle cx="15.4" cy="12" r="2.3"/></svg>`;
+I.owlM = `<svg width="22" height="22" viewBox="0 0 24 24" class="solid"><path d="M4 3l3.5 2.5C9 5 10.5 4.8 12 4.8s3 .2 4.5.7L20 3v10c0 4.5-3.8 7-8 7s-8-2.5-8-7z"/><circle cx="8.4" cy="12" r="2.7" style="fill:var(--ground);stroke:none"/><circle cx="15.6" cy="12" r="2.7" style="fill:var(--ground);stroke:none"/><circle cx="8.8" cy="12" r="1.2"/><circle cx="16" cy="12" r="1.2"/></svg>`;
+I.retry = `<svg width="18" height="18" viewBox="0 0 24 24"><path d="M20 12a8 8 0 11-2.3-5.6M20 4v5h-5"/></svg>`;
+I.folder = `<svg width="24" height="24" viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><path d="M3 10h18"/></svg>`;
+I.folderPlus = `<svg width="24" height="24" viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2h3M21 13v4a2 2 0 01-2 2H5a2 2 0 01-2-2V7"/><path d="M3 10h9M18 4v6M15 7h6"/></svg>`;
+
+const SIZES = { folded: { w: 466, h: 678 }, sideways: { w: 951, h: 669 }, upright: { w: 669, h: 951 } };
+
+const SURFACES = [
+  { id: 'overview', name: 'Threads overview', rec: 'B', toggles: ['can'],
+    judges: 'Sol, Opus and Fable: the Recent card cuts the computer ("Just finished · La…", "Codex · Panel tool…") while spelling out Codex beside its mark. Opus and Fable: on a card you can answer, "Review 2 requests" wraps to two lines beside Send answer. Fable: folded, the notice takes three lines.',
+    now: 'Recent rows put the time beside the name, so names wrap and the second line is cut. A card you can answer puts Review beside Send answer. Folded, the notice is two sentences over three lines. Try "Can answer" above.',
+    A: ['Shorter lines', 'Recent rows drop the provider\'s name, as the rows you picked in round 2 do: "Panel tools · Laptop". On a card you can answer, Review takes a row of its own above Send answer, lined up with the card\'s words.'],
+    B: ['A, time on the second line', 'A, and each Recent row ends its second line with the time, as the sidebar\'s rows do, so the name has the first line to itself. Folded, the notice is one line: "Can\'t reach Studio Mac." and Try again.'],
+    C: ['B, cards say it the same way', 'B, and the Needs you and Working cards also let the mark stand for the provider: "Sotto · Laptop" in place of "Claude Code on Laptop".'] },
+  { id: 'watcher', name: 'Watcher\'s question card', rec: 'B', toggles: ['can'],
+    judges: 'Sol and Fable (and Astra): Watcher says the question is the thread\'s, a line says "Your answer goes to Fix login test", then the card says this iPhone can\'t answer. What you can do comes last.',
+    now: 'A line over the card says where your answer goes, then the card ends with "This iPhone can\'t answer on Laptop yet." beside Review question. Try "Can answer" above for the card you can answer.',
+    A: ['The overview\'s foot', 'The card ends as the overview\'s cards do: "Answer it on Laptop." on its own line, then Review question on a row of its own. The line over the card stays.'],
+    B: ['A, the line only when it applies', 'A, and the line saying where your answer goes shows only when this iPhone can answer. When it can\'t, the card says where to answer and nothing above it repeats that.'],
+    C: ['B, the line inside the card', 'B, and when you can answer, the line moves into the card above Send answer as "Your answer goes to Fix login test, not Watcher."'] },
+  { id: 'watch', name: 'Watch on the rail', rec: 'B', toggles: ['on'],
+    judges: 'Sol and Fable: sideways, the thread\'s Watch and the Watcher tab are the same owl a thumb apart, and nothing says which does what.',
+    now: 'Watch in the thread\'s pill is the same solid owl as the Watcher tab below it. Try "Watching" above to see it on.',
+    A: ['An eye', 'Watch is an eye, so the owl means Watcher alone. When Watcher watches the thread, the eye sits on a teal tile.'],
+    B: ['Owl with a toggle mark', 'Watch keeps a smaller owl with a + at its corner, so it reads as something to switch on. When Watcher watches, the tile turns teal and the + becomes a check.'],
+    C: ['Owl in outline', 'Watch is the owl drawn in outline; the Watcher tab keeps the solid owl. When Watcher watches, the outline owl sits on a teal tile.'] },
+  { id: 'state', name: 'State on the rail', rec: 'A', toggles: ['st'],
+    judges: 'Opus: "Done" reads like the teal Done that closes every sheet. Opus and Fable: folded drops the working time that sideways shows. Fable: "Needs you" wraps to two lines and "12m 16s" nearly touches the pill.',
+    now: 'Sideways says Working and the time; folded says only Working. A finished thread says Done; one waiting on you says Needs you over two lines. Step through the states above.',
+    A: ['Finished, time folded too', 'A finished thread says Finished, the Agents sheet\'s word. Folded shows the working time as sideways does. Needs you stays as it is.'],
+    B: ['Light and time', 'The tile shows the light and the time only, in both postures: "12m" working, "2m" waiting on you, "18m" since it finished. The words go to VoiceOver.'],
+    C: ['A, short times', 'A, with every state carrying a short time under its word, "12m", "2m" or "18m", so nothing touches the pill\'s sides.'] },
+  { id: 'sheets', name: 'Beside a sheet', rec: 'B',
+    judges: 'Opus and Fable: sideways, the thread\'s reply box shows past a sheet\'s edge: a bright teal "Answer the question" slab beside Send answer, and the thread\'s Stop beside Babysit\'s (i).',
+    now: 'Sideways the question sheet is narrower than the screen, and the thread\'s reply box, turned teal to offer the question, shows past its right edge. The pull request sheet shows the thread\'s Stop the same way.',
+    A: ['Dim it', 'The reply box sinks under the scrim with the rest of the thread, so it shows only faintly.'],
+    B: ['Step it away', 'While a sheet is up, the thread\'s reply box fades out, so nothing beside the sheet looks like a control. It comes back when the sheet goes.'],
+    C: ['Sheet over the column', 'The sheet takes the reading column\'s width and place, so it covers the reply box. It is narrower, so its choices wrap more.'] },
+  { id: 'agents', name: 'Agents sheet, folded', rec: 'B',
+    judges: 'Sol (and Astra in both rounds): folded, the counts repeat above sections that count themselves, and a task stacks title, kind, time, brief, provider, project, computer, role and clock time, so its brief is cut after "feat/frosted-w…".',
+    now: 'A summary of counts, then sections that count again. Each task has a wide picture gutter, its brief over two lines, and provider, project, computer, role and time over two more.',
+    A: ['No repeated counts', 'The summary goes; the sections\' own counts say it. Tasks stay as they are.'],
+    B: ['A, one line of where', 'A, and each task\'s picture sits beside its title, so its words use the card\'s width. Provider, project, computer and role are one line, cut at its end; the time joins the kind line.'],
+    C: ['B, brief when opened', 'B, and the brief shows only when the task opens, so each task is a title, a kind line, a where line and its button.'] },
+  { id: 'prtop', name: 'Pull request sheet\'s top', rec: 'B',
+    judges: 'Sol and Fable (and Astra sideways): the top row holds only Open externally and Done, above a full row of chips, before the pull request says what it is. Fable: folded, a status\'s detail breaks mid-phrase.',
+    now: 'A row with Open externally and Done at its right, the chips, then Draft #721 and the title. Folded, "1 failing, 1 running, / 2 passed" breaks across lines.',
+    A: ['Draft in the top row', 'Draft and #721 move up into the top row\'s empty left, so the title comes straight after the chips.'],
+    B: ['A, details whole', 'A, and folded, a status\'s detail that can\'t finish on the first line drops whole to the next.'],
+    C: ['B, one row sideways', 'B, and sideways the chips join the top row too, between #721 and Open externally. Folded stays as B.'] },
+  { id: 'computers', name: 'Computers, sideways', rec: 'B',
+    judges: 'Fable (and Astra in both rounds): sideways, each computer is a row about 860 points wide with its name far left, its state far right and Try again back on the left; half the page is empty.',
+    now: 'Each computer is a full-width row: name and counts at the left, its state and a chevron at the far right, Try again under the name.',
+    A: ['State by the name', 'The state stands under the name with the counts, so name, state and Try again read together. Rows keep the full width.'],
+    B: ['A, two to a row', 'A, with computers as cards two to a row inside the margins, Add a computer as the last card.'],
+    C: ['A, a narrower list', 'A, in a list 600 points wide from the left margin, like a page of settings.'] },
+  { id: 'newthread', name: 'New thread sheet', rec: 'B',
+    judges: 'Opus (and Astra): the step bars, "Step 2 of 3: project", "Which project?" and a footer of only "Choose a project to continue." say the same thing four times, and the footer ends in empty sheet.',
+    now: 'Step bars, "Step 2 of 3: project", the Laptop chip, "Which project?" and its line, the projects, then a footer that says "Choose a project to continue."',
+    A: ['No footer', 'The footer and its line go; the sheet ends with its list.'],
+    B: ['A, one heading', 'A, and "Step 2 of 3: project" goes too: the bars and "Which project?" say where you are.'],
+    C: ['B, computer in the heading', 'B, and the heading says "Which project on Laptop?", so the Laptop chip goes.'] },
+];
+
+const state = { surface: 'overview', variant: 'now', posture: null, theme: 'dark', actual: false, can: false, on: false, st: 'working' };
+const params = location.hash.replace('#', '').split('/');
+if (SURFACES.some(s => s.id === params[0])) state.surface = params[0];
+if (['now', 'A', 'B', 'C'].includes(params[1])) state.variant = params[1];
+if (SIZES[params[2]]) state.posture = params[2];
+(params[3] || '').split(',').forEach(f => { if (f === 'can') state.can = true; if (f === 'on') state.on = true; if (['needs', 'done'].includes(f)) state.st = f; });
+const autoPosture = () => innerWidth < 560 ? 'folded' : innerWidth < 800 ? 'upright' : 'sideways';
+const posture = () => state.posture || autoPosture();
+const tell = words => `<div class="tell">${words}</div>`;
+
+/* ---------- Shared bits ---------- */
+const MAC = `<span style="color:var(--muted);flex:none">${'<svg width="22" height="22" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M12 16v4M8 20h8"/></svg>'}</span>`;
+const PICKER = `<div class="opill" style="flex:none"><span class="dot g"></span>All computers ${I.down}</div>`;
+const SEARCH = `<div class="opill" style="flex:1;min-width:0;color:var(--muted);font-weight:400"><svg width="18" height="18" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M16 16l5 5"/></svg><span class="clip">Search threads</span></div>`;
+const TRY = small => `<div style="flex:none;background:var(--soft);border-radius:${small ? 15 : 19}px;padding:${small ? '5px 12px' : '8px 15px'};font-weight:600;font-size:${small ? 14 : 16}px">Try again</div>`;
+const pillBtn = (t, extra) => `<div style="display:inline-flex;align-items:center;height:42px;padding:0 16px;border-radius:21px;background:var(--soft);font-weight:500;margin:0 8px 8px 0;${extra || ''}">${t}</div>`;
+const sendDim = w => `<div class="btn dimp" style="flex:none;width:${w || 120}px;height:42px">Send answer</div>`;
+const reviewLink = (t, edge) => `<div class="wk" style="font-weight:600;display:flex;align-items:center;gap:3px;${edge ? '' : 'padding-left:12px'}">${t} ${I.chev}</div>`;
+
+/* ---------- Threads overview ---------- */
+function overview(p, v) {
+  if (p !== 'sideways') return foldedList(p, v === 'B' || v === 'C');
+  const top = `<div style="position:absolute;top:14px;left:0;right:0;display:flex;gap:14px;align-items:center"><div class="pt" style="flex:none;margin-right:6px">Threads</div>${PICKER}${SEARCH}</div>
+    <div class="notice" style="position:absolute;top:70px;left:0;right:0;height:40px;padding:0 6px 0 14px">${MAC}<div style="flex:1;min-width:0" class="clip"><b style="font-weight:600">Can't reach Studio Mac.</b> <span style="color:var(--muted);font-size:15px">Showing its last shared threads.</span></div>${TRY(true)}</div>`;
+  const cardSays = v === 'C';
+  const qcard = (t, meta, owl, ask, time, more, n, choices) => {
+    let foot;
+    if (!state.can) foot = `<div style="font-size:15px;color:var(--muted);margin-top:12px">Answer it on Laptop.</div><div style="margin-top:6px">${reviewLink(n > 1 ? 'Review 2 requests' : 'Review question', v !== 'now')}</div>`;
+    else if (v === 'now') foot = `<div style="margin-top:12px">${choices.map(c => pillBtn(c)).join('')}</div><div style="display:flex;gap:10px;align-items:center;margin-top:6px"><div class="wk" style="font-weight:600;flex:1;line-height:1.2;padding-left:12px;max-width:110px">${n > 1 ? 'Review 2 requests' : 'Review question'}</div><span style="flex:1"></span>${sendDim()}</div>`;
+    else foot = `<div style="margin-top:12px">${choices.map(c => pillBtn(c)).join('')}</div><div style="margin-top:4px">${reviewLink(n > 1 ? 'Review 2 requests' : 'Review question', true)}</div><div style="display:flex;justify-content:flex-end;margin-top:10px">${sendDim(140)}</div>`;
+    return `<div class="ocard ndc"><div class="oh"><span class="dot w"></span><span class="ask" style="font-weight:600">Question</span><span style="flex:1"></span><span class="tm">${time}</span></div>
+      <div class="ot">${t}</div><div class="om">${I.star}${owl ? I.owlS : ''}<span class="clip">${cardSays ? 'Sotto · Laptop' : meta}</span></div><div class="oq">${ask}</div>${more ? '<div style="font-size:14px;color:var(--muted);margin-top:6px">1 more request in this thread</div>' : ''}${foot}</div>`;
+  };
+  const wcard = (t, meta, short, mark, owl, time, line) => `<div class="ocard wkc"><div class="oh"><span class="dot g"></span><span class="wk" style="font-weight:600">Working</span><span style="flex:1"></span><span class="tm" style="font-weight:600">${time}</span></div>
+    <div class="ot">${t}</div><div class="om">${I[mark]}${owl ? I.owlS : ''}<span class="clip">${cardSays ? short : meta}</span></div>${line ? `<div style="font-size:16px;color:var(--muted);margin-top:10px">${line}</div>` : ''}</div>`;
+  const items = [['fin', 'Add keyboard shortcuts', 'Just finished · Laptop', 'Just finished · Laptop', '18m'], ['i', 'Compare motor drive options', 'Codex · Panel tools · Laptop', 'Panel tools · Laptop', '1h'], ['i', 'Update the lighting plan', 'Can\'t reach it · Studio Mac', 'Can\'t reach it · Studio Mac', '1d']];
+  const timeLow = v === 'B' || v === 'C';
+  const recent = `<div class="ocard" style="padding:4px 0">${items.map(([d, t, mNow, mShort, time], n) => {
+    const m = v === 'now' ? mNow : mShort;
+    const first = timeLow ? `<div class="tt two">${t}</div>` : `<div style="display:flex;gap:6px"><div class="tt" style="flex:1">${t}</div><span class="tm" style="padding-top:2px">${time} ago</span></div>`;
+    const second = `<div class="mt">${I.knot}<span class="clip" style="${v === 'now' ? 'max-width:112px' : ''}">${m}</span>${timeLow ? `<span style="flex:1"></span><span class="tm">${time}</span>` : ''}</div>`;
+    return `<div style="display:flex;gap:10px;padding:10px 14px;${n ? 'border-top:1px solid var(--hair)' : ''}">${light(d, 'A')}<div style="flex:1;min-width:0">${first}${second}</div></div>`;
+  }).join('')}</div>
+    <div style="display:flex;gap:8px;align-items:center;padding:14px 6px;color:var(--muted);font-weight:500">${I.chev}<span style="flex:1">Settled</span>2</div>`;
+  const head = (dot, label, n) => `<div class="ohead">${dot ? `<span class="dot ${dot}"></span>` : ''}${label}<span style="color:var(--muted);font-weight:400">${n}</span></div>`;
+  const columns = `<div style="position:absolute;top:128px;left:0;right:0;display:grid;grid-template-columns:1fr 1fr 1fr;gap:18px;align-items:start">
+    <div>${head('w', 'Needs you', 2)}${qcard('Choose the release target', 'Claude Code on Laptop', 0, 'Which release should I prepare?', '2m ago', 1, 2, ['TestFlight', 'Desktop'])}${qcard('Fix login test', 'Claude Code on Laptop', 1, 'Which account should the login test sign in with?', '3m ago', 0, 1, ['A fresh account for each run'])}</div>
+    <div>${head('g', 'Working now', 3)}${wcard('Babysit #845 release notes', 'Codex on Laptop · Sotto', 'Sotto · Laptop', 'knot', 1, '12m 10s', '')}${wcard('Refine the iPhone thread view', 'Codex on Laptop · Sotto', 'Sotto · Laptop', 'knot', 0, '12m 10s', '')}${wcard('Clean up the wiring schedule', 'Claude Code on Laptop · Panel tools', 'Panel tools · Laptop', 'star', 0, '12m ago', 'Background agents are still working.')}</div>
+    <div>${head('', 'Recent', 3)}${recent}</div></div>`;
+  return `<div style="position:absolute;left:24px;right:99px;top:0;bottom:0;overflow:hidden">${top}${columns}</div>${rail(p, { top: ['side', 'new'], tabs: 'threads' })}`;
+}
+function foldedList(p, one) {
+  const filters = `<div style="display:flex;gap:10px;margin:10px 0 12px 4px">${PICKER}${SEARCH}</div>`;
+  const note = one
+    ? `<div class="notice" style="height:44px;padding:0 6px 0 14px;margin:0 0 8px 4px">${MAC}<b style="flex:1;min-width:0;font-weight:600" class="clip">Can't reach Studio Mac.</b>${TRY(true)}</div>`
+    : `<div class="notice" style="padding:12px 10px 12px 16px;margin:0 0 8px 4px">${MAC}<div style="flex:1"><div style="font-weight:600">Can't reach Studio Mac.</div><div style="color:var(--muted);font-size:15px">Showing its last shared threads.</div></div>${TRY()}</div>`;
+  return listPage(p, 'B', 'A').replace('Threads</div>', 'Threads</div>' + filters + note);
+}
+
+/* ---------- Watcher's question card ---------- */
+function watcher(p, v) {
+  const side = p === 'sideways';
+  const left = side ? 98 : 16, right = side ? 173 : 100;
+  const attribution = state.can ? v !== 'C' : v === 'now' || v === 'A';
+  const choices = ['A fresh account for each run', 'One shared account'];
+  let foot;
+  if (!state.can) foot = v === 'now'
+    ? `<div style="display:flex;gap:12px;align-items:center;margin-top:14px"><span style="flex:1;color:var(--muted);font-size:16px">This iPhone can't answer on Laptop yet.</span><span class="wk" style="font-weight:600;flex:none">Review question</span></div>`
+    : `<div style="font-size:15px;color:var(--muted);margin-top:14px">Answer it on Laptop.</div><div style="margin-top:6px">${reviewLink('Review question', true)}</div>`;
+  else foot = `<div style="margin-top:12px">${choices.map(c => pillBtn(c)).join('')}</div>${v === 'C' ? '<div style="font-size:14px;color:var(--muted);margin-top:4px">Your answer goes to Fix login test, not Watcher.</div>' : ''}
+    ${v === 'now' ? `<div style="display:flex;align-items:center;gap:10px;margin-top:8px"><span class="wk" style="font-weight:600;flex:1">Review question</span>${sendDim(140)}</div>` : `<div style="margin-top:6px">${reviewLink('Review question', true)}</div><div style="display:flex;justify-content:flex-end;margin-top:8px">${sendDim(140)}</div>`}`;
+  const card = `<div class="ocard ndc" style="padding:16px 18px"><div class="oh"><span class="dot w"></span><span class="ask" style="font-weight:600">Question</span></div><div class="ot">Fix login test</div><div class="om">${I.star}${I.owlS}<span class="clip">Claude Code · Sotto · Laptop</span></div><div class="oq">Which account should the login test sign in with?</div>${foot}</div>`;
+  const attr = attribution ? `<div class="note" style="margin:4px 0 10px">${I.owlS}<span>The thread's own card. Your answer goes to Fix login test, not to Watcher.</span></div>` : '';
+  const conv = `<div style="display:flex;gap:10px;margin:${side ? 30 : 16}px 0 6px"><span style="color:var(--warntext)"><svg width="20" height="20" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg></span><span><b style="font-weight:600">Watcher changed 2 files itself.</b> <span style="color:var(--muted)">Its reason: "A one-word typo in two files is smaller than briefing a thread."</span></span></div>
+    <div class="wk" style="font-weight:600;margin:0 0 18px 30px;display:flex;gap:4px;align-items:center">Show the 2 files ${I.down}</div>
+    <div class="codex"><span class="ctile" style="width:24px;height:24px">${I.owlS}</span>Watcher · 7:04 PM</div>
+    <p><b style="font-weight:600">Fix login test</b> found the cause: overlapping runs share one account. It's asking you which account to use. Only you can answer it.</p>${attr}${card}
+    <div style="display:flex;gap:12px;align-items:center;color:var(--acctext);font-weight:600;margin-top:16px"><span class="dot g"></span>Watcher is working</div>`;
+  return `<div class="conv" style="left:${left}px;right:${right}px">${conv}</div>
+    <div class="composer" style="left:${left - 4}px;right:${right - 4}px;bottom:${side ? 41 : 43}px"><span class="disc">${I.plus(16)}</span><span style="flex:1">Ask Watcher while it works</span><span class="disc">${I.mic}</span><span class="disc">${I.chev.replace('M9 5l7 7-7 7', 'M12 19V5M6 11l6-6 6 6')}</span></div>
+    ${rail(p, { top: side ? ['side', 'new'] : ['new'], tabs: 'watcher' })}`;
+}
+
+/* ---------- Rail ---------- */
+function watchTile(v, on) {
+  if (v === 'now') return `<div class="tile">${I.owl}</div>`;
+  if (v === 'A') return `<div class="tile ${on ? 'on' : ''}">${I.eye}</div>`;
+  if (v === 'C') return `<div class="tile ${on ? 'on' : ''}">${I.owlLine}</div>`;
+  const mark = on ? CHECK(9) : `<svg width="9" height="9" viewBox="0 0 24 24" style="stroke-width:4"><path d="M12 4v16M4 12h16"/></svg>`;
+  return `<div class="tile ${on ? 'on' : ''}">${I.owlM}<span style="position:absolute;right:9px;bottom:10px;width:15px;height:15px;border-radius:50%;display:grid;place-items:center;background:${on ? 'var(--accent)' : 'var(--soft)'};color:${on ? 'var(--onacc)' : 'var(--ink)'};border:1.5px solid ${on ? 'var(--accsurf)' : 'var(--ground)'}">${mark}</span></div>`;
+}
+function stateTile(p, kind, v) {
+  const m = { working: ['g', 'Working', 'wk', '12m 16s', '12m'], needs: ['w', 'Needs<br>you', 'ask', '', '2m'], done: ['i', 'Done', '', '', '18m'] }[kind];
+  let [dot, word, cls, long, short] = m;
+  if (kind === 'done' && v !== 'now') word = 'Finished';
+  let time = '';
+  if (kind === 'working') time = v === 'now' ? (p === 'folded' ? '' : long) : v === 'A' ? long : short;
+  else if (v === 'B' || v === 'C') time = short;
+  if (v === 'B') word = '';
+  const lightHtml = kind === 'done' && v !== 'now' ? `<span class="dot i" style="margin-bottom:3px"></span>` : `<span class="dot ${dot}" style="margin-bottom:3px"></span>`;
+  return `<div class="state ${cls}">${lightHtml}${word ? '<br>' + word : ''}${time ? `<div style="font-size:${v === 'B' ? 15 : 12}px;margin-top:${word ? 3 : 4}px;font-variant-numeric:tabular-nums">${time}</div>` : ''}</div>`;
+}
+function rail(p, o) {
+  const x = p === 'folded' ? 424 : p === 'sideways' ? 910 : 630;
+  const cx = p === 'folded' ? 418 : p === 'sideways' ? 904 : 626;
+  const H = SIZES[p].h, top = p === 'folded' ? 198 : p === 'sideways' ? 146 : 92;
+  const clockY = p === 'folded' ? 84 : p === 'sideways' ? 30 : 8;
+  let html = `<div class="clock" style="left:${cx}px;top:${clockY}px">9:41</div><div class="ring" style="left:${cx}px;top:${clockY + 44}px">${I.ring}</div>`;
+  (o.top || []).forEach((b, n) => {
+    html += `<div class="circle ${b === 'new' ? 'newt' : 'chrome'}" style="left:${x}px;top:${top + n * 56}px">${b === 'back' ? I.back : b === 'side' ? I.side : I.plus()}</div>`;
+  });
+  const pillX = x - 29;
+  if (o.thread) {
+    const bottom = p === 'folded' ? H - 55 : H - 275;
+    html += `<div class="pill" style="left:${pillX}px;bottom:${H - bottom}px;padding:0 0 8px">${stateTile(p, o.thread, o.stateV || 'now')}<div style="height:6px"></div>${watchTile(o.watchV || 'now', o.watchOn)}<div class="tile">${I.dots}</div></div>`;
+  }
+  if (o.tabs) {
+    const a = o.tabs;
+    html += `<div class="pill" style="left:${pillX}px;top:${H - 55 - 214}px;height:214px;padding:3px 0"><div class="tile ${a === 'threads' ? 'on' : ''}">${a === 'threads' ? I.chatF : I.chat}<span class="badge">2</span></div><div class="tile ${a === 'watcher' ? 'on' : ''}">${I.owl}</div><div class="tile ${a === 'computers' ? 'on' : ''}">${I.mac}</div><div class="tile ${a === 'settings' ? 'on' : ''}">${I.sliders}</div></div>`;
+  }
+  return html;
+}
+
+/* ---------- A thread behind sheets ---------- */
+function threadPage(p, o = {}) {
+  const sideShown = p === 'sideways' && o.sidebar !== false;
+  const left = sideShown ? 296 : p === 'folded' ? 16 : 24;
+  const right = p === 'folded' ? 100 : p === 'sideways' ? 99 : 90;
+  const compL = left - 4, compR = right - 4;
+  const composerB = p === 'folded' ? 43 : 41;
+  const inner = o.composer === 'answer'
+    ? `<span class="disc">${I.plus(16)}</span><div class="btn pri" style="height:38px;flex:1">Answer the question</div>`
+    : `<span class="disc">${I.plus(16)}</span><span style="flex:1">Reply while it works</span><span class="disc">${I.mic}</span><span class="disc" style="background:var(--ink);color:var(--ground)">${I.stop}</span>`;
+  const composer = o.composer === 'none' ? '' : `<div class="composer" style="left:${compL}px;right:${compR}px;bottom:${composerB}px;${o.composerTop ? 'z-index:3;opacity:.22' : ''}">${inner}</div>`;
+  return `<div class="conv" style="left:${left}px;right:${right}px">${conversation(p)}</div>${composer}
+    ${sideShown ? sidebar('B', 'A') : ''}
+    ${rail(p, { top: p === 'folded' ? ['back'] : p === 'sideways' ? ['side'] : ['side', 'new'], thread: o.thread || 'working', stateV: o.stateV, watchV: o.watchV, watchOn: o.watchOn, tabs: p === 'folded' ? null : 'threads' })}`;
+}
+
+/* ---------- Beside a sheet ---------- */
+function besideSheet(p, v) {
+  if (p !== 'sideways') return threadPage(p, { thread: 'needs' }) + qSheet('left:8px;right:8px;bottom:0;top:150px', 96) + tell('Folded, a sheet fills the screen, so nothing shows beside it. Turn sideways, or press Sideways above.');
+  const composer = v === 'B' ? 'none' : 'answer';
+  const page = threadPage(p, { thread: 'needs', composer });
+  const box = v === 'C' ? 'left:292px;width:564px;top:120px;bottom:8px' : 'left:150px;width:652px;top:153px;bottom:8px';
+  let html = page + qSheet(box, 20);
+  if (v === 'A') html = html.replace('<div class="scrim"></div>', '<div class="scrim" style="background:rgba(0,0,0,.62)"></div>');
+  return html;
+}
+function qSheet(box, padR) {
+  const opts = [['Ctrl+J', 'T3 Code\'s own. Free on Windows; dictation doesn\'t use it.'], ['Ctrl+`', 'What the branch uses now. Clashes when dictation holds it.'], ['No shortcut', 'Open it from the Terminal button only.'], ['Write your own answer', 'Say it in your own words.']];
+  return `<div class="scrim"></div><div class="sheet" style="${box}"><div class="wash"></div><div class="grab"></div><div style="position:relative;padding:10px ${padR}px 8px 20px;flex:1;min-height:0;overflow:hidden"><div class="from"><span class="dot w"></span>Codex · Refine the iPhone thread view</div><div class="q">Which shortcut should open the terminal drawer?</div>${opts.map(([b, s]) => `<div class="opt"><span class="ra"></span><div><b>${b}</b><small>${s}</small></div></div>`).join('')}</div><div class="foot" style="padding-right:${padR}px"><div class="btn soft">Not now</div><div class="btn dimp">Send answer</div></div></div>`;
+}
+
+/* ---------- Agents sheet ---------- */
+function sheetBox(p) {
+  return p === 'folded' ? { box: 'left:8px;right:8px;top:8px;bottom:0', padR: 96 } : { box: 'left:150px;width:653px;top:8px;bottom:0', padR: 20 };
+}
+function agents(p, v) {
+  const { box, padR } = sheetBox(p);
+  const tasks = [
+    { sec: ['w', 'Needs you', 1], icon: I.star, t: 'Review the drawer fix', kind: 'Thread', time: '4m 08s', at: '6:52 PM', brief: 'Review the change to TerminalDrawer.tsx on feat/frosted-window-and-pane-terminal and say what breaks.', where: 'Claude Code · Sotto · Laptop · Code review', act: 'Open to answer' },
+    { sec: ['g', 'Working', 1], icon: I.bot, t: 'Run the drawer tests twenty times', kind: 'Agent', time: '1m 03s', at: '6:55 PM', where: 'gpt-6.1-sol' },
+    { sec: ['i', 'Finished', 2], icon: I.knot, t: 'Check the drawer docs', kind: 'Thread', time: '3m 00s', at: '6:44 PM', brief: 'Read docs/terminal.md and say what it promises about how long the drawer takes to open.', where: 'Codex · Sotto · Laptop · Research', done: 'Answered' },
+  ];
+  const big = s => s.replace(/width="15" height="15"/, 'width="20" height="20"').replace(/width="19" height="19"/, 'width="20" height="20"');
+  const card = k => {
+    const brief = k.brief && v !== 'C' ? k.brief : '';
+    if (v === 'now' || v === 'A') {
+      return `<div class="group" style="padding:14px 12px 14px 14px;display:flex;gap:12px;align-items:center;margin:6px 0 14px"><span class="agt" style="width:40px;height:40px;align-self:flex-start">${big(k.icon)}</span><div style="flex:1;min-width:0"><div style="font-weight:600;font-size:19px;line-height:1.22">${k.t}</div><div class="smeta" style="font-size:15px">${k.kind} · ${k.time}</div>${brief ? `<div class="two" style="font-size:16px;margin-top:3px">${brief}</div>` : ''}<div class="smeta" style="font-size:15px">${k.where} · ${k.at}</div>${k.act ? `<div class="open" style="margin-top:10px;padding:10px 16px">${k.act}</div>` : ''}${k.done ? `<div class="smeta" style="font-size:15px;margin-top:6px;display:flex;gap:6px;align-items:center"><span class="dot i"></span>${k.done}</div>` : ''}</div><span style="color:var(--muted)">${I.chev}</span></div>`;
+    }
+    return `<div class="group" style="padding:12px 14px;margin:6px 0 12px"><div style="display:flex;gap:10px;align-items:center"><span class="agt" style="width:28px;height:28px">${k.icon}</span><div style="flex:1;font-weight:600;font-size:18px;line-height:1.22">${k.t}</div><span style="color:var(--muted)">${I.chev}</span></div><div class="smeta" style="font-size:15px;margin-top:4px">${k.kind} · ${k.time} · ${k.at}</div>${brief ? `<div class="two" style="font-size:16px;margin-top:3px">${brief}</div>` : ''}<div class="smeta clip" style="font-size:15px">${k.where}</div>${k.act ? `<div class="open" style="margin-top:9px;padding:9px 16px">${k.act}</div>` : ''}${k.done ? `<div class="smeta" style="font-size:15px;margin-top:5px;display:flex;gap:6px;align-items:center"><span class="dot i"></span>${k.done}</div>` : ''}</div>`;
+  };
+  const summary = v === 'now' ? `<div style="font-weight:600;margin-top:16px">2 delegated threads · 2 agents</div><div style="font-weight:600"><span class="ask">1 needs you</span> · <span class="wk">1 working</span></div>` : '';
+  const body = `<div style="display:flex;align-items:center;margin-top:10px"><div class="pt" style="flex:1">Agents</div><span style="color:var(--acctext);font-weight:600">Done</span></div><div style="color:var(--muted);margin-top:10px">Refine the iPhone thread view</div>${summary}
+    ${tasks.map(k => `<div style="display:flex;gap:10px;align-items:center;font-weight:600;color:var(--muted);margin-top:16px"><span class="dot ${k.sec[0]}"></span><span style="color:var(--ink)">${k.sec[1]}</span><span>${k.sec[2]}</span></div>${card(k)}`).join('')}`;
+  return threadPage(p, {}) + `<div class="scrim"></div><div class="sheet" style="${box};border-radius:26px 26px 0 0"><div class="grab"></div><div style="flex:1;min-height:0;overflow:hidden;padding:0 ${padR}px 0 20px">${body}</div></div>`;
+}
+
+/* ---------- Pull request sheet's top ---------- */
+function prTop(p, v) {
+  const { box } = sheetBox(p);
+  const padR = p === 'folded' ? 96 : 20;
+  const folded = p === 'folded';
+  const draft = `<span style="display:inline-flex;gap:5px;align-items:center;background:var(--soft);padding:3px 10px;border-radius:12px;font-size:14px;font-weight:600;color:var(--muted)">${I.pr} Draft</span><span style="color:var(--muted);font-weight:600">#721</span>`;
+  const tabs = [['Summary', 0, 1], ['Checks', 1], ['Reviews', 1], ['Files', 0]];
+  const chips = cls => `<div class="tabs ${cls}" style="padding:0;border:0">${tabs.map(([t, d, on]) => `<div class="tab ${on ? 'on' : ''}">${t}${d ? '<span class="rd"></span>' : ''}</div>`).join('')}</div>`;
+  const draftUp = v !== 'now';
+  const oneRow = v === 'C' && !folded;
+  const band = `<div style="flex:none;display:flex;align-items:center;gap:10px;height:${oneRow ? 58 : 48}px;padding:0 ${padR + 2}px 0 20px">${draftUp ? draft : ''}${oneRow ? `<div style="flex:1;display:flex;justify-content:center">${chips('tight')}</div>` : '<span style="flex:1"></span>'}<div class="circle" style="position:relative;margin:0;flex:none">${I.ext}</div><span style="color:var(--acctext);font-weight:600">Done</span></div>`;
+  const chipRow = oneRow ? '<div style="border-bottom:1px solid var(--hair)"></div>' : `<div style="padding:0 ${padR}px 10px 20px;border-bottom:1px solid var(--hair)">${chips(folded ? 'tight' : '')}</div>`;
+  const rows = [[I.xc('var(--dangertext)'), 'A check failed', '1 failing, 1 running, 2 passed'], [I.xc('var(--dangertext)'), 'Changes requested', 'chloe-r asked for changes'], [I.cl('var(--warntext)'), '3 commits behind main', 'No conflicts. Merges cleanly into main']];
+  const whole = folded && (v === 'B' || v === 'C');
+  const statusRows = rows.map(([ic, t, d], n) => `<div class="strow" style="padding:8px 16px;align-items:flex-start;${n ? 'border-top:1px solid var(--hair)' : ''}"><span class="st">${ic}</span><div>${whole ? `<span class="stt" style="margin-right:8px">${t}</span><span class="sts" style="display:inline-block">${d}</span>` : `<span class="stt">${t}</span> <span class="sts">· ${d}</span>`}</div></div>`).join('');
+  const body = `${draftUp ? '' : `<div style="display:flex;align-items:center;gap:10px">${draft}</div>`}
+    <div style="font-size:22px;font-weight:700;line-height:1.2;margin:${draftUp ? '2px' : '6px'} 0 6px">Let the window frost and put a terminal in the bottom third</div>
+    <div style="display:flex;align-items:center;gap:6px;color:var(--muted)">${I.branch}<span class="chipm clip" style="flex:0 1 auto;min-width:0">feat/frosted-window-and-pane-terminal</span><span style="font-size:14px">into</span><span class="chipm">main</span></div>
+    <div class="group" style="margin:10px 0">${statusRows}</div>
+    <div class="lbl" style="margin:12px 0 6px">Summary</div>
+    <div class="group" style="padding:14px 16px;margin-top:6px;font-size:16px"><div style="font-weight:600;font-size:18px;margin-bottom:8px">What this does</div>Frosts the window and puts a <b>terminal</b> in the bottom third.<div style="font-weight:600;margin:12px 0 4px">Tooltips read the theme</div>Each pane's tooltip takes its colours from the theme, so a light theme gets light tooltips.</div><div style="height:90px"></div>`;
+  const dock = `<div style="position:relative;flex:none;padding:6px 12px 22px;padding-right:${folded ? padR - 8 : 12}px;background:var(--sheet)"><div style="position:absolute;left:0;right:0;bottom:100%;height:64px;background:linear-gradient(transparent,var(--sheet));pointer-events:none"></div><div style="display:flex;gap:8px;align-items:center"><div class="btn pri" style="flex:1;height:46px">${I.alarm(18)} Babysit pull request</div><div class="disc" style="width:46px;height:46px;color:var(--muted)">${I.info}</div></div></div>`;
+  return threadPage(p, {}) + `<div class="scrim"></div><div class="sheet" style="${box};border-radius:26px 26px 0 0"><div class="grab"></div>${band}${chipRow}<div class="prbody" style="padding:12px ${padR}px 0 20px">${body}</div>${dock}</div>`;
+}
+
+/* ---------- Computers, sideways ---------- */
+function computers(p, v) {
+  const side = p === 'sideways';
+  const L = side ? 24 : 16, R = side ? 99 : 100;
+  const list = [['Laptop', '3 projects, 9 threads', 'g', 'Online', false], ['Studio Mac', '3 projects, 1 thread', 'r', 'Can\'t reach it', true]];
+  const retry = `<div style="display:inline-flex;gap:8px;align-items:center;margin-top:12px;padding:9px 16px;border-radius:20px;background:var(--soft);font-weight:500">${I.retry}Try again</div>`;
+  const status = (d, s) => `<span style="display:inline-flex;gap:8px;align-items:center;color:var(--muted);flex:none"><span class="dot ${d}"></span>${s}</span>`;
+  const card = ([n, c, d, s, down], extra) => (v === 'now' || !side)
+    ? `<div class="pcard" style="padding:18px 16px;${extra || ''}"><div style="display:flex;align-items:center;gap:10px"><div style="flex:1"><div style="font-weight:600;font-size:18px">${n}</div><div style="color:var(--muted);font-size:16px;margin-top:2px">${c}</div></div>${status(d, s)}<span style="color:var(--muted)">${I.chev}</span></div>${down ? retry : ''}</div>`
+    : `<div class="pcard" style="padding:18px 16px;margin-bottom:0;${extra || ''}"><div style="display:flex;align-items:flex-start;gap:10px"><div style="flex:1"><div style="font-weight:600;font-size:18px">${n}</div><div style="display:flex;gap:10px;align-items:center;font-size:16px;margin-top:4px">${status(d, s)}<span style="color:var(--dim)">·</span><span style="color:var(--muted)">${c}</span></div></div><span style="color:var(--muted);margin-top:4px">${I.chev}</span></div>${down ? retry : ''}</div>`;
+  const add = `<div style="border:1.5px dashed var(--hair);border-radius:20px;padding:18px 16px;display:flex;gap:12px;align-items:center;color:var(--acctext);font-weight:600;font-size:18px">${I.plus(20)}Add a computer</div>`;
+  let items;
+  if (v === 'B' && side) items = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start">${list.map(c => card(c)).join('')}${add}</div>`;
+  else items = `<div style="${v === 'C' && side ? 'width:600px' : ''}">${list.map(c => card(c, v !== 'now' && side ? 'margin-bottom:12px' : '')).join('')}${add}</div>`;
+  const page = `<div class="page" style="left:0;right:0;padding:${side ? 16 : 14}px ${R}px 40px ${L}px"><div class="pt">Computers</div><div class="ps">Each computer runs Sotto and shares its threads with this iPhone.</div>${items}</div>`;
+  return page + rail(p, { top: side ? ['side', 'new'] : ['new'], tabs: 'computers' }) + (side ? '' : tell('Folded stays as it is: the list already fits its width. Turn sideways, or press Sideways above.'));
+}
+
+/* ---------- New thread sheet ---------- */
+function newThread(p, v) {
+  const { box, padR } = sheetBox(p);
+  const bars = `<div style="display:flex;gap:8px;margin-top:6px"><div style="flex:1;height:5px;border-radius:3px;background:var(--accent);box-shadow:0 0 10px rgba(var(--rgb),.5)"></div><div style="flex:1;height:5px;border-radius:3px;background:var(--accent);box-shadow:0 0 10px rgba(var(--rgb),.5)"></div><div style="flex:1;height:5px;border-radius:3px;background:var(--soft)"></div></div>`;
+  const step = v === 'now' || v === 'A' ? `<div style="font-size:15px;color:var(--muted);font-weight:600;margin-top:10px">Step 2 of 3: project</div>` : '';
+  const chip = v === 'C' ? '' : `<div style="display:inline-flex;gap:10px;align-items:center;margin-top:${step ? 14 : 18}px;padding:10px 18px;border-radius:24px;background:var(--soft);border:1px solid var(--hair);font-weight:600">${I.place.replace(/"15"/g, '"20"')}Laptop</div>`;
+  const heading = `<div style="font-size:26px;font-weight:700;letter-spacing:-.4px;margin-top:${v === 'C' ? 22 : 18}px">${v === 'C' ? 'Which project on Laptop?' : 'Which project?'}</div><div style="color:var(--muted);margin-top:6px">The thread works in this folder.</div>`;
+  const rows = [[I.folder, 'Sotto', 'D:\\Talk to Text Application · 6 threads'], [I.folder, 'Panel tools', 'D:\\Engineering\\Panel tools · 3 threads'], [I.folder, 'House', 'D:\\House'], [I.folderPlus, 'Browse another folder', 'Folders on Laptop']];
+  const list = rows.map(([ic, t, s]) => `<div style="display:flex;gap:16px;align-items:center;border:1px solid var(--hair);background:var(--opt);border-radius:16px;padding:12px 16px;margin-top:10px"><span style="color:var(--acctext)">${ic}</span><div style="flex:1;min-width:0"><div style="font-weight:600;font-size:18px">${t}</div><div class="clip" style="color:var(--muted);font-size:15px">${s}</div></div><span style="color:var(--muted)">${I.chev}</span></div>`).join('');
+  const footer = v === 'now' ? `<div style="flex:none;border-top:1px solid var(--hair);padding:22px 20px 40px;color:var(--muted)">Choose a project to continue.</div>` : '';
+  const band = `<div style="flex:none;display:flex;align-items:center;padding:10px ${padR + 4}px 4px 16px"><span class="wk" style="font-weight:500;display:flex;gap:4px;align-items:center;flex:1">${I.back.replace(/22/g, '18')}Back</span><span style="font-weight:700;font-size:19px">New thread</span><span class="wk" style="font-weight:500;flex:1;text-align:right">Cancel</span></div>`;
+  return threadPage(p, {}) + `<div class="scrim"></div><div class="sheet" style="${box};border-radius:26px 26px 0 0"><div class="wash" style="opacity:.7"></div><div class="grab" style="position:relative"></div><div style="position:relative">${band}</div><div style="position:relative;flex:1;min-height:0;overflow:hidden;padding:0 ${padR}px 0 20px">${bars}${step}${chip}${heading}${list}</div>${footer}</div>`;
+}
+
+/* ---------- Render ---------- */
+function render() {
+  const s = SURFACES.find(x => x.id === state.surface), p = posture();
+  const v = state.variant;
+  const stage = document.getElementById('stage');
+  const size = SIZES[p];
+  stage.className = state.theme;
+  stage.style.width = size.w + 'px'; stage.style.height = size.h + 'px';
+  const html = {
+    overview: () => overview(p, v), watcher: () => watcher(p, v),
+    watch: () => threadPage(p, { watchV: v, watchOn: state.on }) + (p === 'folded' ? tell('Folded, the rail has no Watcher tab beside a thread, so the two owls meet only sideways. Turn sideways, or press Sideways above.') : ''),
+    state: () => threadPage(p, { thread: state.st, stateV: v }),
+    sheets: () => besideSheet(p, v), agents: () => agents(p, v), prtop: () => prTop(p, v),
+    computers: () => computers(p, v), newthread: () => newThread(p, v),
+  }[s.id]();
+  stage.innerHTML = p === 'upright' ? html + tell('Upright can\'t be captured from the simulator. Judge folded and sideways here; upright follows sideways.') : html;
+  document.getElementById('surface').value = s.id;
+  document.getElementById('variants').innerHTML = ['now', 'A', 'B', 'C'].map(k => `<button class="${k === v ? 'on' : ''} ${k === s.rec ? 'rec' : ''}" onclick="setV('${k}')">${k === 'now' ? 'Now' : k}</button>`).join('');
+  document.getElementById('postures').innerHTML = [['folded', 'Folded'], ['sideways', 'Sideways'], ['upright', 'Upright']].map(([k, t]) => `<button class="${k === p ? 'on' : ''}" onclick="setP('${k}')">${t}</button>`).join('');
+  const toggles = (s.toggles || []).map(t => t === 'can' ? `<button class="${state.can ? 'on' : ''}" onclick="flip('can')">Can answer</button>`
+    : t === 'on' ? `<button class="${state.on ? 'on' : ''}" onclick="flip('on')">Watching</button>`
+    : `<button class="on" onclick="cycle()">${{ working: 'Working', needs: 'Needs you', done: 'Finished' }[state.st]}</button>`).join('');
+  document.getElementById('tools').innerHTML = `${toggles}<button class="${state.theme === 'light' ? 'on' : ''}" onclick="setT()">Light</button><button class="${state.actual ? 'on' : ''}" onclick="setA()">Actual size</button>`;
+  const c = document.getElementById('caption');
+  if (v === 'now') c.innerHTML = `<b>Now.</b> ${s.now} <span style="color:#8f949b">${s.judges}</span>`;
+  else c.innerHTML = `<b>${v}: ${s[v][0]}.</b> ${s[v][1]}${v === s.rec ? ' <b style="color:#6bc3b6">Suggested.</b>' : ''}`;
+  fit();
+  const flags = [state.can && 'can', state.on && 'on', state.st !== 'working' && state.st].filter(Boolean).join(',');
+  history.replaceState(null, '', `#${s.id}/${v}${state.posture || flags ? '/' + (state.posture || posture()) : ''}${flags ? '/' + flags : ''}`);
+}
+function fit() {
+  const holder = document.getElementById('holder'), stage = document.getElementById('stage');
+  const size = SIZES[posture()];
+  holder.classList.toggle('actual', state.actual);
+  if (state.actual) { stage.style.transform = 'none'; stage.style.left = '0'; stage.style.top = '0'; return; }
+  const scale = Math.min(holder.clientWidth / size.w, holder.clientHeight / size.h, 1);
+  stage.style.transform = `scale(${scale})`;
+  stage.style.left = Math.max(0, (holder.clientWidth - size.w * scale) / 2) + 'px';
+  stage.style.top = Math.max(0, (holder.clientHeight - size.h * scale) / 2) + 'px';
+}
+window.setV = k => { state.variant = k; render(); };
+window.setP = k => { state.posture = k; render(); };
+window.setT = () => { state.theme = state.theme === 'dark' ? 'light' : 'dark'; render(); };
+window.setA = () => { state.actual = !state.actual; render(); };
+window.flip = k => { state[k] = !state[k]; render(); };
+window.cycle = () => { state.st = { working: 'needs', needs: 'done', done: 'working' }[state.st]; render(); };
+
+/* ---------- Rows ---------- */
+const TROWS = [
+  ['Needs you', [
+    { d: 'w', t: 'Choose the release target', mark: 'star', prov: 'Claude Code', project: 'Sotto', comp: 'Laptop', status: 'Asked you a question', short: 'Question', time: '2m' },
+    { d: 'w', t: 'Fix login test', mark: 'star', owl: 1, prov: 'Claude Code', project: 'Sotto', comp: 'Laptop', status: 'Asked you a question', short: 'Question', time: '22m' }]],
+  ['Working now', [
+    { d: 'g', t: 'Babysit #845 release notes', mark: 'knot', owl: 1, prov: 'Codex', project: 'Sotto', comp: 'Laptop', time: '12m' },
+    { d: 'g', t: 'Refine the iPhone thread view', mark: 'knot', prov: 'Codex', project: 'Sotto', comp: 'Laptop', time: '12m', chosen: 1 },
+    { d: 'g', t: 'Clean up the wiring schedule', mark: 'star', prov: 'Claude Code', project: 'Panel tools', comp: 'Laptop', time: '12m' }]],
+  ['Recent', [
+    { d: 'fin', t: 'Add keyboard shortcuts', mark: 'knot', prov: 'Codex', project: 'Sotto', comp: 'Laptop', status: 'Just finished', short: 'Just finished', time: '18m' },
+    { d: 'i', t: 'Compare motor drive options', mark: 'knot', prov: 'Codex', project: 'Panel tools', comp: 'Laptop', time: '1h' },
+    { d: 'i', t: 'Update the lighting plan', mark: 'knot', prov: 'Codex', project: 'Lighting', comp: 'Studio Mac', status: 'Can\'t reach it', short: 'Can\'t reach it', time: '1d' }]],
+];
+function metaLine(r, v) {
+  if (v === 'now') return r.status ? `${r.status} · ${r.comp}` : `${r.prov} · ${r.project} · ${r.comp}`;
+  if (v === 'A') return r.status ? `${r.status} · ${r.comp}` : `${r.project} · ${r.comp}`;
+  if (v === 'B') return r.status ? `${r.short} · ${r.comp}` : `${r.project} · ${r.comp}`;
+  return r.status ? `${r.short} · ${r.comp}` : `${r.comp} · ${r.project}`;
+}
+const CHECK = s => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" style="stroke-width:3.2"><path d="M6 12.5l4 4 8-9"/></svg>`;
+function light(d, fin) {
+  if (d !== 'fin' || fin === 'now') return `<span class="lt"><span class="dot ${d === 'fin' ? 'g' : d}"></span></span>`;
+  if (fin === 'A') return `<span class="lt"><span class="finA">${CHECK(10)}</span></span>`;
+  if (fin === 'B') return `<span class="lt"><span class="finB"></span></span>`;
+  return `<span class="lt"><span class="finC">${CHECK(15)}</span></span>`;
+}
+function sidebar(meta, fin) {
+  const rows = TROWS.map(([label, list]) => `<div class="sec">${label}<span>${list.length}</span></div>` + list.map(r =>
+    `<div class="rowt ${r.chosen ? 'ch' : ''}">${light(r.d, fin)}<div style="flex:1;min-width:0"><div class="tt two">${r.t}</div><div class="mt">${I[r.mark]}${r.owl ? I.owlS : ''}<span class="clip">${metaLine(r, meta)}</span><span style="flex:1"></span><span class="tm">${r.time}</span></div></div></div>`).join('')).join('');
+  return `<div class="side">${rows}</div><div class="sidehead">Threads</div><div class="circle newt" style="left:244px;top:38px">${I.plus()}</div>`;
+}
+function listPage(p, meta, fin) {
+  const R = p === 'folded' ? 100 : 90, L = p === 'folded' ? 16 : 24;
+  const rows = TROWS.map(([label, list]) => `<div class="sec" style="padding-left:4px">${label}<span>${list.length}</span></div>` + list.map(r =>
+    `<div class="rowt" style="padding-left:4px">${light(r.d, fin)}<div style="flex:1;min-width:0"><div style="display:flex;gap:8px"><div class="tt clip" style="flex:1">${r.t}</div><span class="tm" style="padding-top:2px">${r.time} ago</span></div><div class="mt">${I[r.mark]}${r.owl ? I.owlS : ''}<span class="clip">${metaLine(r, meta)}</span></div></div></div>`).join('')).join('');
+  return `<div class="page" style="left:0;right:0;padding:14px ${R}px 40px ${L}px"><div class="pt" style="margin:0 0 6px 4px">Threads</div>${rows}</div>${rail(p, { top: p === 'folded' ? ['new'] : ['side', 'new'], tabs: 'threads' })}`;
+}
+function rowsSurface(p, meta, fin) {
+  return p === 'sideways' ? threadPage(p, { meta, fin }) : listPage(p, meta, fin);
+}
+function conversation(p) {
+  const table = (rows, cols) => `<div class="tbl">${rows.map(r => `<div class="tr" style="grid-template-columns:${cols}">${r.map(c => `<div>${c}</div>`).join('')}</div>`).join('')}</div>`;
+  const records = p === 'folded'
+    ? `<div class="tbl">${[['Drawer toggle', 'Terminal mode', 'No', 'Move the toggle on screen before the drawer opens'], ['Tooltips', 'Every pane', 'No', 'Name the chord only while the shortcut is on']].map((r, n) => `<div style="padding:9px 14px;${n ? 'border-top:1px solid var(--hair)' : ''}"><div style="font-size:13px;color:var(--muted);font-weight:600">Finding</div><div style="font-size:17px;font-weight:600;margin:1px 0 5px">${r[0]}</div>${['Where', 'Fixed', 'What to do next'].map((h, k) => `<div style="display:grid;grid-template-columns:108px 1fr"><span style="color:var(--muted)">${h}</span><span>${r[k + 1]}</span></div>`).join('')}</div>`).join('')}</div>`
+    : table([['Finding', 'Where', 'Fixed', 'What to do next'], ['Drawer toggle', 'Terminal mode', 'No', 'Move the toggle on screen before the drawer opens'], ['Tooltips', 'Every pane', 'No', 'Name the chord only while the shortcut is on']], '1.4fr 1fr .5fr 1.8fr');
+  return `<p style="font-weight:600;margin-top:18px">Implemented but looks wrong</p>
+    <p>1. <b>Ctrl+\` in Terminal mode:</b> the same off-screen drawer toggle as Standards #2.</p>
+    <p>2. <b>Tooltips:</b> they always say "(Ctrl+\`)", even when dictation owns that chord and the shortcut is off.</p>
+    <p>Where the time went:</p>
+    ${table([['Step', 'Before', 'After'], ['Open the thread', '1.2 s', '0.3 s'], ['First reply', '2.4 s', '0.9 s']], '1fr 60px 60px')}
+    <p>What is left:</p>${records}
+    <div class="bub">Fix the tooltips first, then the drawer chord.</div>
+    <div class="codex"><span class="ctile">C</span>Codex</div>
+    <p>Still working through the review fixes. The tooltips are done; the drawer's chord is next.</p>
+    <div style="display:flex;gap:12px;align-items:center;color:var(--muted);font-weight:500"><span class="dot g"></span>Combing the desert ${I.chev}</div>`;
+}
+document.getElementById('surface').innerHTML = SURFACES.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+document.getElementById('surface').onchange = e => { state.surface = e.target.value; state.variant = 'now'; render(); };
+addEventListener('resize', () => render());
+addEventListener('orientationchange', () => setTimeout(render, 200));
+render();
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(fit);
+</script>
+</body>
+</html>

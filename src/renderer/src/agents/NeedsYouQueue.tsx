@@ -247,6 +247,9 @@ export function NeedsYouCard({ id, entry, state, command, anchor, trigger, place
   useLayoutEffect(() => {
     const card = surface.current
     if (!card) return
+    // Top-layer popovers keep their sidebar ancestry; leave the macOS lights' 44px row clear.
+    const topClear = card.closest('.thread-nav--mac') ? 44 : 12
+    card.style.setProperty('--needs-you-top-clear', `${topClear}px`)
     card.showPopover?.()
     const place = (): void => {
       const box = anchorRef.current()?.getBoundingClientRect()
@@ -254,9 +257,9 @@ export function NeedsYouCard({ id, entry, state, command, anchor, trigger, place
       const width = card.offsetWidth, height = card.offsetHeight
       const left = placement === 'beside' ? box.right + 8 : box.left
       const below = box.bottom + 4, above = box.top - height - 4
-      const top = placement === 'beside' ? box.top : below + height <= innerHeight - 12 ? below : above >= 12 ? above : below
+      const top = placement === 'beside' ? box.top : below + height <= innerHeight - 12 ? below : above >= topClear ? above : below
       card.style.left = `${Math.max(12, Math.min(left, innerWidth - width - 12))}px`
-      card.style.top = `${Math.max(12, Math.min(top, innerHeight - height - 12))}px`
+      card.style.top = `${Math.max(topClear, Math.min(top, innerHeight - height - 12))}px`
     }
     // The card follows what it stands beside every frame it is open, as the effort card follows its chip: the sidebar
     // scrolls, entries above it come and go, and the card itself grows as an answer sends, none of which resizes the anchor.

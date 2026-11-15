@@ -16,6 +16,8 @@ export const E2E_TRANSCRIPT = 'A deterministic local transcript.'
 export const E2E_HISTORY_CREATED_AT = Date.UTC(2026, 6, 12, 19, 30)
 export const E2E_PRESERVED_CLIPBOARD = 'Clipboard text that must survive silence.'
 export const E2E_CONFLICTING_HOTKEY = 'Ctrl+Alt+9'
+/** The name an E2E run gives this computer where Sotto would say the machine's own, as on the Phones page. */
+export const E2E_COMPUTER_NAME = 'WORKSHOP-PC'
 /** The exit code and stderr line an e2e-launched main ends with after an uncaught exception (#1577), so its test fails. */
 export const E2E_UNCAUGHT_EXIT_CODE = 70
 export const E2E_UNCAUGHT_PREFIX = '[Sotto] e2e-uncaught-exception'
@@ -31,6 +33,9 @@ export const E2E_VISUAL_TOOL_CHANNEL = 'sotto:e2e:visual-tool'
 export const e2eVisualToolSchema = z.object({ threadId: z.string().min(1).max(512), arguments: z.unknown() }).strict()
 /** Calls `sotto_media`'s show_in_thread as a thread's agent would (ADR-0170, request-only); main admits it as it would a provider's call. */
 export const E2E_MEDIA_TOOL_CHANNEL = 'sotto:e2e:media-tool'
+/** Calls one of `sotto_plugins`' tools as a thread's agent would (ADR-0205); main admits it, and asks the user about a change, as it would for a provider's call. */
+export const E2E_PLUGIN_TOOL_CHANNEL = 'sotto:e2e:plugin-tool'
+export const e2ePluginToolSchema = z.object({ threadId: z.string().min(1).max(512), name: z.string().min(1).max(80), arguments: z.unknown() }).strict()
 /** Calls one of `sotto_delegate`'s tools as a thread's agent would (ADR-0081); main admits and limits it as it would a provider's call. */
 export const E2E_DELEGATION_TOOL_CHANNEL = 'sotto:e2e:delegation-tool'
 export const e2eDelegationToolSchema = z.object({ threadId: z.string().min(1).max(512), name: z.enum(['delegate', 'read_delegation', 'cancel_delegation']), arguments: z.unknown() }).strict()
@@ -72,6 +77,9 @@ export const e2eSnapshotSchema = z.object({
   /** Text-free proof from the coordinator's actual owned detail tracker; native fixture runs only. */
   certifiedDetail: z.object({ trackedThreads: z.number().int().nonnegative(), ownedThreads: z.number().int().nonnegative(), reusedRecords: z.number().int().nonnegative() }).optional(),
   openedThreadFolder: z.string().nullable().optional(),
+  /** The files and folders a journey's presses would have opened in their own apps, and shown in their folders (ADR-0120). */
+  openedFiles: z.array(z.string()).optional(),
+  shownFiles: z.array(z.string()).optional(),
   /** The page Open approval page would have opened in the browser; an end-to-end run opens none. */
   openedExternalLink: z.string().nullable().optional(),
   clipboardText: z.string(),
@@ -100,6 +108,7 @@ export interface SottoE2EBridge {
   visualTool?(request: z.infer<typeof e2eVisualToolSchema>): Promise<z.infer<typeof e2eBrowserAgentResultSchema>>
   mediaTool?(request: z.infer<typeof e2eVisualToolSchema>): Promise<z.infer<typeof e2eBrowserAgentResultSchema>>
   delegationTool?(request: z.infer<typeof e2eDelegationToolSchema>): Promise<z.infer<typeof e2eBrowserAgentResultSchema>>
+  pluginTool?(request: z.infer<typeof e2ePluginToolSchema>): Promise<z.infer<typeof e2eBrowserAgentResultSchema>>
   agentEvent?(event: z.infer<typeof e2eAgentEventSchema>): Promise<void>
   readonly scenario: E2EScenario
   /**

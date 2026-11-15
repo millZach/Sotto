@@ -62,8 +62,8 @@ describe('Watcher\'s reads of watched pull requests', () => {
     pull.checks = [{ name: 'iPhone benchmarks', state: 'SKIPPED' }, { name: 'Changed areas', state: 'SUCCESS' }, { name: 'Gates (Windows)', state: 'QUEUED', required: true }]
     await f.pass()
     expect(f.seen(1)).toMatchObject({ checks: 'pending', requiredPassed: false, pendingChecks: { required: 2, optional: 0 } })
-    // #1994 on November 1: the required checks passed while an optional iPhone job still ran. That is a pass, and the
-    // news says the running check holds no merge.
+    // #1994 on November 1: the required checks passed while an optional iPhone job still ran. The read still says so,
+    // but the merge train waits for every check (#2432), so the news says no pass yet, only the job still running.
     pull.checks = [{ name: 'Gates (Windows)', state: 'SUCCESS', required: true }, { name: 'Package result', state: 'SUCCESS', required: true },
       { name: 'Native iOS client (macOS)', state: 'IN_PROGRESS' }]
     await f.pass()
@@ -72,7 +72,7 @@ describe('Watcher\'s reads of watched pull requests', () => {
     store.pullRequest(centerTarget, f.seen(1)!)
     const thread = { pullRequests: [{ url: url(1), number: 1, title: 'x', state: 'open' as const, draft: false, source: 'linked' as const, linkedAt: '2026-10-26T12:00:00Z' }] }
     expect(watcherPullRequestWords(store.attentionByPullRequest(centerTarget), thread, store.read(centerTarget), store.pendingChecks(centerTarget)))
-      .toMatch(/^Pull request #1: its required checks passed on its newest commit; 1 optional check is still running, which no merge waits on; Bug Bot /u)
+      .toMatch(/^Pull request #1: 1 optional check is still running, which the merge train waits for too; Bug Bot /u)
     // A stacked pull request whose base has no rules: one skipped check alone passes nothing (#2077).
     const stacked: ScriptedPull = { number: 2, base: 'feat/other', checks: [{ name: 'Changed areas', state: 'SKIPPED' }] }
     const g = harness([stacked], [url(2)])

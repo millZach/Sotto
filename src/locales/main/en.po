@@ -75,6 +75,10 @@ msgstr "{file} is not valid JSON."
 msgid "{file} is too large to be a theme file."
 msgstr "{file} is too large to be a theme file."
 
+#: src/main/plugins/changeWords.ts
+msgid "{first} and {more} more"
+msgstr "{first} and {more} more"
+
 #. {happened} is a system’s own error, shown as it came, such as “fetch failed”.
 #: src/main/hosts/hostFailureWords.ts
 msgid "{happened} Nothing was saved."
@@ -306,6 +310,10 @@ msgstr "{total, plural, one {Open it from Tools › Agents to settle it yourself
 msgid "A browser action is still running."
 msgstr "A browser action is still running."
 
+#: src/main/plugins/changeWords.ts
+msgid "A cancelled build cannot be picked up again. It has to be deployed again."
+msgstr "A cancelled build cannot be picked up again. It has to be deployed again."
+
 #: src/main/tools/checkpoints.ts
 msgid "A checkpoint file backup failed its integrity check."
 msgstr "A checkpoint file backup failed its integrity check."
@@ -450,6 +458,15 @@ msgstr "Add {host} as a host?\n"
 msgid "Add host is connecting to {host} right now. Nothing was saved. Wait for it to finish, then try again."
 msgstr "Add host is connecting to {host} right now. Nothing was saved. Wait for it to finish, then try again."
 
+#. placeholder {0}: change.url
+#: src/main/plugins/changeWords.ts
+msgid "Address: {0}"
+msgstr "Address: {0}"
+
+#: src/main/plugins/changeWords.ts
+msgid "After a rollback, Vercel keeps new pushes to the production branch out of production until a deployment is promoted."
+msgstr "After a rollback, Vercel keeps new pushes to the production branch out of production until a deployment is promoted."
+
 #: src/main/agents/subagentIpc.ts
 msgid "Agents cannot reach the host machine from this window. Nothing was changed. Restart Sotto and try again."
 msgstr "Agents cannot reach the host machine from this window. Nothing was changed. Restart Sotto and try again."
@@ -522,6 +539,10 @@ msgstr "An Omarchy palette was installed by hand. Sotto leaves it alone."
 msgid "another model"
 msgstr "another model"
 
+#: src/main/agents/piSignInIpc.ts
+msgid "Another Pi sign-in is still open. Finish or cancel it first."
+msgstr "Another Pi sign-in is still open. Finish or cancel it first."
+
 #: src/main/hosts/hostFailureWords.ts
 msgid "Another program is using the port the host last listened on. Nothing was saved. Stop it on the SSH host, then add the host again."
 msgstr "Another program is using the port the host last listened on. Nothing was saved. Stop it on the SSH host, then add the host again."
@@ -559,6 +580,10 @@ msgstr "Attempt limit reached."
 msgid "Auto-paste"
 msgstr "Auto-paste"
 
+#: src/main/plugins/changeWords.ts
+msgid "Bcc: {bcc}"
+msgstr "Bcc: {bcc}"
+
 #: src/main/hosts/desktopHostRouter.ts
 msgid "Branches are unavailable on this host."
 msgstr "Branches are unavailable on this host."
@@ -567,9 +592,25 @@ msgstr "Branches are unavailable on this host."
 msgid "Branches are unavailable."
 msgstr "Branches are unavailable."
 
+#: src/main/plugins/changeWords.ts
+msgid "Cancel a deployment on Vercel"
+msgstr "Cancel a deployment on Vercel"
+
+#: src/main/plugins/changeWords.ts
+msgid "Cancel the build"
+msgstr "Cancel the build"
+
+#: src/main/plugins/changeWords.ts
+msgid "Cancel the build of {named} on Vercel?"
+msgstr "Cancel the build of {named} on Vercel?"
+
 #: src/main/tools/browser.ts
 msgid "Capture the page again before selecting feedback."
 msgstr "Capture the page again before selecting feedback."
+
+#: src/main/plugins/changeWords.ts
+msgid "Cc: {cc}"
+msgstr "Cc: {cc}"
 
 #: src/main/hosts/desktopHostRouter.ts
 msgid "Changed files are unavailable on this host."
@@ -681,9 +722,45 @@ msgstr "Client access could not be revoked. Nothing was saved. Check the host co
 msgid "Climb needs connected Claude or Codex models for its judges, and none is ready. Tell the user to connect one. Nothing was started."
 msgstr "Climb needs connected Claude or Codex models for its judges, and none is ready. Tell the user to connect one. Nothing was started."
 
+#: src/main/plugins/changeWords.ts
+msgid "Close an issue on GitHub"
+msgstr "Close an issue on GitHub"
+
+#: src/main/plugins/changeWords.ts
+msgid "Close an issue on GitHub as {login}"
+msgstr "Close an issue on GitHub as {login}"
+
+#: src/main/plugins/changeWords.ts
+msgid "Close issue {where} on GitHub, as {login}?"
+msgstr "Close issue {where} on GitHub, as {login}?"
+
+#: src/main/plugins/changeWords.ts
+msgid "Close issue {where} on GitHub, as the account gh is signed in to?"
+msgstr "Close issue {where} on GitHub, as the account gh is signed in to?"
+
+#: src/main/plugins/changeWords.ts
+msgid "Close the issue"
+msgstr "Close the issue"
+
+#: src/main/plugins/changeWords.ts
+msgid "Closed as: completed"
+msgstr "Closed as: completed"
+
+#: src/main/plugins/changeWords.ts
+msgid "Closed as: not planned"
+msgstr "Closed as: not planned"
+
 #: src/main/council/climbService.ts
 msgid "Codex cannot judge Climbs on Windows yet. Choose Claude or run the Climb on a Mac or Linux computer."
 msgstr "Codex cannot judge Climbs on Windows yet. Choose Claude or run the Climb on a Mac or Linux computer."
+
+#: src/main/plugins/changeWords.ts
+msgid "Comment on GitHub"
+msgstr "Comment on GitHub"
+
+#: src/main/plugins/changeWords.ts
+msgid "Comment on GitHub as {login}"
+msgstr "Comment on GitHub as {login}"
 
 #: src/main/tools/checkpoints.ts
 msgid "Completed file snapshot was unavailable."
@@ -777,6 +854,10 @@ msgstr "Continuing an agent as a thread is unavailable in this window."
 msgid "Council history could not be read. Its file was kept unchanged. Update Sotto or restore councils.json before starting another Council."
 msgstr "Council history could not be read. Its file was kept unchanged. Update Sotto or restore councils.json before starting another Council."
 
+#: src/main/plugins/changeWords.ts
+msgid "Deployment: {id}"
+msgstr "Deployment: {id}"
+
 #: src/main/hosts/hostFailureWords.ts
 msgid "Desktop permissions could not be set up on the host. Nothing was replaced. Check its data folder, then reconnect."
 msgstr "Desktop permissions could not be set up on the host. Nothing was replaced. Check its data folder, then reconnect."
@@ -789,9 +870,29 @@ msgstr "Desktop permissions could not be set up on the host. Nothing was saved. 
 msgid "Don’t add"
 msgstr "Don’t add"
 
+#: src/main/plugins/changeWords.ts
+msgid "Don’t allow"
+msgstr "Don’t allow"
+
+#: src/main/plugins/changeWords.ts
+msgid "Don’t open it"
+msgstr "Don’t open it"
+
+#: src/main/plugins/changeWords.ts
+msgid "Don’t post it"
+msgstr "Don’t post it"
+
+#: src/main/plugins/changeWords.ts
+msgid "Don’t send it"
+msgstr "Don’t send it"
+
 #: src/main/hosts/hostFailureWords.ts
 msgid "Download {archive} from the Sotto releases page to the SSH host, then unpack it into the host installation folder there:"
 msgstr "Download {archive} from the Sotto releases page to the SSH host, then unpack it into the host installation folder there:"
+
+#: src/main/files/downloads.ts
+msgid "Download stopped. Nothing was saved."
+msgstr "Download stopped. Nothing was saved."
 
 #: src/main/tools/browser.ts
 msgid "Downloads are blocked here. Open this page externally to download."
@@ -893,6 +994,19 @@ msgstr "Hyprland reported an error after Sotto’s change. Hyprland said: “{sa
 msgid "Install that Node for the SSH account on {name}, then try again."
 msgstr "Install that Node for the SSH account on {name}, then try again."
 
+#: src/main/plugins/changeWords.ts
+msgid "Issue: {title}"
+msgstr "Issue: {title}"
+
+#: src/main/plugins/changeWords.ts
+msgid "It cannot send, move or delete mail. Every thread asks for itself."
+msgstr "It cannot send, move or delete mail. Every thread asks for itself."
+
+#. placeholder {0}: change.state
+#: src/main/plugins/changeWords.ts
+msgid "Its build now: {0}"
+msgstr "Its build now: {0}"
+
 #: src/main/hosts/hostSetup.ts
 msgid "Its row in Settings > Hosts & phones says what to do."
 msgstr "Its row in Settings > Hosts & phones says what to do."
@@ -905,6 +1019,11 @@ msgstr "Keep using {from}, and tell whoever publishes Sotto's releases."
 msgid "Keep using {from}, or update it by hand on {name} once one is published."
 msgstr "Keep using {from}, or update it by hand on {name} once one is published."
 
+#. placeholder {0}: change.target
+#: src/main/plugins/changeWords.ts
+msgid "Kind: {0}"
+msgstr "Kind: {0}"
+
 #: src/main/tools/checkpoints.ts
 msgid "Later edits in {path} would be overwritten."
 msgstr "Later edits in {path} would be overwritten."
@@ -913,9 +1032,49 @@ msgstr "Later edits in {path} would be overwritten."
 msgid "Later edits in {path} would be overwritten. Preserve them before reverting."
 msgstr "Later edits in {path} would be overwritten. Preserve them before reverting."
 
+#: src/main/plugins/changeWords.ts
+msgid "Leave it closed"
+msgstr "Leave it closed"
+
+#: src/main/plugins/changeWords.ts
+msgid "Leave it open"
+msgstr "Leave it open"
+
+#: src/main/plugins/changeWords.ts
+msgid "Leave it running"
+msgstr "Leave it running"
+
+#: src/main/plugins/changeWords.ts
+msgid "Leave production as it is"
+msgstr "Leave production as it is"
+
 #: src/main/omarchy/setup.ts
 msgid "Left alone. Your keys still run what they did before."
 msgstr "Left alone. Your keys still run what they did before."
+
+#: src/main/plugins/changeWords.ts
+msgid "Let this thread read it"
+msgstr "Let this thread read it"
+
+#: src/main/plugins/changeWords.ts
+msgid "Let this thread read the {plugin} account {named}? What it reads goes to {provider}."
+msgstr "Let this thread read the {plugin} account {named}? What it reads goes to {provider}."
+
+#: src/main/plugins/changeWords.ts
+msgid "Let this thread read the {plugin} account {named}? What it reads goes to this thread’s provider."
+msgstr "Let this thread read the {plugin} account {named}? What it reads goes to this thread’s provider."
+
+#: src/main/plugins/changeWords.ts
+msgid "Let Watcher read it"
+msgstr "Let Watcher read it"
+
+#: src/main/plugins/changeWords.ts
+msgid "Let Watcher read the {plugin} account {named}? What it reads goes to {provider}."
+msgstr "Let Watcher read the {plugin} account {named}? What it reads goes to {provider}."
+
+#: src/main/plugins/changeWords.ts
+msgid "Let Watcher read the {plugin} account {named}? What it reads goes to Watcher’s provider."
+msgstr "Let Watcher read the {plugin} account {named}? What it reads goes to Watcher’s provider."
 
 #: src/main/settings/retiredChats.ts
 msgid "Local history is off, but saved Chats could not be cleared. Restore access to personal-chat/chats.json and save Settings again."
@@ -1046,6 +1205,14 @@ msgstr "Only the latest completed checkpoint with unchanged native history can b
 msgid "Open Agents in the main Sotto window."
 msgstr "Open Agents in the main Sotto window."
 
+#: src/main/plugins/changeWords.ts
+msgid "Open an issue on GitHub"
+msgstr "Open an issue on GitHub"
+
+#: src/main/plugins/changeWords.ts
+msgid "Open an issue on GitHub as {login}"
+msgstr "Open an issue on GitHub as {login}"
+
 #: src/main/agents/checkQueueIpc.ts
 msgid "Open checks in the main Sotto window."
 msgstr "Open checks in the main Sotto window."
@@ -1066,6 +1233,7 @@ msgstr "Open Phones in the main Sotto window."
 #: src/main/notifications/notificationIpc.ts
 #: src/main/performance/mainActivityIpc.ts
 #: src/main/phones/ipc.ts
+#: src/main/plugins/ipc.ts
 msgid "Open Settings in the main Sotto window."
 msgstr "Open Settings in the main Sotto window."
 
@@ -1076,6 +1244,22 @@ msgstr "Open Teams in the main Sotto window."
 #: src/main/council/councilIpc.ts
 msgid "Open the Council in the main Sotto window."
 msgstr "Open the Council in the main Sotto window."
+
+#: src/main/plugins/changeWords.ts
+msgid "Open the issue"
+msgstr "Open the issue"
+
+#: src/main/plugins/ipc.ts
+msgid "Open the thread in the main Sotto window."
+msgstr "Open the thread in the main Sotto window."
+
+#: src/main/plugins/changeWords.ts
+msgid "Open this issue in {repository} on GitHub, as {login}?"
+msgstr "Open this issue in {repository} on GitHub, as {login}?"
+
+#: src/main/plugins/changeWords.ts
+msgid "Open this issue in {repository} on GitHub, as the account gh is signed in to?"
+msgstr "Open this issue in {repository} on GitHub, as the account gh is signed in to?"
 
 #: src/main/agents/usageIpc.ts
 msgid "Open Usage in the main Sotto window."
@@ -1149,6 +1333,18 @@ msgstr "Phone access on the host could not be reached. Nothing was changed. Chec
 msgid "Phone access on the host could not be reached. Nothing was saved. Nothing was changed. Check that the host is running, then try again."
 msgstr "Phone access on the host could not be reached. Nothing was saved. Nothing was changed. Check that the host is running, then try again."
 
+#: src/main/agents/piSignInIpc.ts
+msgid "Pi could not confirm sign-out. Check its model sources before trying again."
+msgstr "Pi could not confirm sign-out. Check its model sources before trying again."
+
+#: src/main/agents/piSignInIpc.ts
+msgid "Pi could not finish signing in. Check the account and try again. Your threads are kept."
+msgstr "Pi could not finish signing in. Check the account and try again. Your threads are kept."
+
+#: src/main/agents/piSignInIpc.ts
+msgid "Pi is not available for sign-in. Install Pi and try again. Your threads are kept."
+msgstr "Pi is not available for sign-in. Install Pi and try again. Your threads are kept."
+
 #: src/main/tools/browser.ts
 msgid "Point at something is not available in this version of Sotto."
 msgstr "Point at something is not available in this version of Sotto."
@@ -1161,6 +1357,18 @@ msgstr "Point at something isn't available for a page on the host machine yet. N
 msgid "Point at something needs the theme's accent colour from the window."
 msgstr "Point at something needs the theme's accent colour from the window."
 
+#: src/main/plugins/changeWords.ts
+msgid "Post the comment"
+msgstr "Post the comment"
+
+#: src/main/plugins/changeWords.ts
+msgid "Post this comment on {where} on GitHub, as {login}?"
+msgstr "Post this comment on {where} on GitHub, as {login}?"
+
+#: src/main/plugins/changeWords.ts
+msgid "Post this comment on {where} on GitHub, as the account gh is signed in to?"
+msgstr "Post this comment on {where} on GitHub, as the account gh is signed in to?"
+
 #: src/main/council/climbService.ts
 msgid "Preview the fixed reference before approving."
 msgstr "Preview the fixed reference before approving."
@@ -1168,6 +1376,30 @@ msgstr "Preview the fixed reference before approving."
 #: src/main/council/climbService.ts
 msgid "Preview the fixed reference before starting."
 msgstr "Preview the fixed reference before starting."
+
+#: src/main/plugins/changeWords.ts
+msgid "Project: {project}"
+msgstr "Project: {project}"
+
+#: src/main/plugins/changeWords.ts
+msgid "Project: {project} ({projectId})"
+msgstr "Project: {project} ({projectId})"
+
+#: src/main/plugins/changeWords.ts
+msgid "Project: {projectId}"
+msgstr "Project: {projectId}"
+
+#: src/main/plugins/changeWords.ts
+msgid "Promote a deployment to production on Vercel"
+msgstr "Promote a deployment to production on Vercel"
+
+#: src/main/plugins/changeWords.ts
+msgid "Promote this deployment of {named} to production on Vercel?"
+msgstr "Promote this deployment of {named} to production on Vercel?"
+
+#: src/main/plugins/changeWords.ts
+msgid "Promote to production"
+msgstr "Promote to production"
 
 #: src/main/hosts/desktopHostRouter.ts
 msgid "Pull requests are unavailable on this host."
@@ -1180,6 +1412,10 @@ msgstr "Pull requests are unavailable."
 #: src/main/tray/trayController.ts
 msgid "Quit"
 msgstr "Quit"
+
+#: src/main/plugins/changeWords.ts
+msgid "Read {plugin} mail"
+msgstr "Read {plugin} mail"
 
 #: src/main/agents/nextPromptIpc.ts
 msgid "Read next prompts from the main Sotto window."
@@ -1210,9 +1446,41 @@ msgstr "Removal stopped before it finished. Try again to finish removing this pi
 msgid "Removing"
 msgstr "Removing"
 
+#: src/main/plugins/changeWords.ts
+msgid "Reopen an issue on GitHub"
+msgstr "Reopen an issue on GitHub"
+
+#: src/main/plugins/changeWords.ts
+msgid "Reopen an issue on GitHub as {login}"
+msgstr "Reopen an issue on GitHub as {login}"
+
+#: src/main/plugins/changeWords.ts
+msgid "Reopen issue {where} on GitHub, as {login}?"
+msgstr "Reopen issue {where} on GitHub, as {login}?"
+
+#: src/main/plugins/changeWords.ts
+msgid "Reopen issue {where} on GitHub, as the account gh is signed in to?"
+msgstr "Reopen issue {where} on GitHub, as the account gh is signed in to?"
+
+#: src/main/plugins/changeWords.ts
+msgid "Reopen the issue"
+msgstr "Reopen the issue"
+
 #: src/main/tools/checkpoints.ts
 msgid "Revert was interrupted. Check recovery to reconcile native history and finish restoring files."
 msgstr "Revert was interrupted. Check recovery to reconcile native history and finish restoring files."
+
+#: src/main/plugins/changeWords.ts
+msgid "Roll production back"
+msgstr "Roll production back"
+
+#: src/main/plugins/changeWords.ts
+msgid "Roll production back on Vercel"
+msgstr "Roll production back on Vercel"
+
+#: src/main/plugins/changeWords.ts
+msgid "Roll production of {named} back to this deployment on Vercel?"
+msgstr "Roll production of {named} back to this deployment on Vercel?"
 
 #: src/main/hosts/hostUpdate.ts
 msgid "Run the commands below on {name} to see what the host says, then connect to it again from Settings > Hosts & phones."
@@ -1253,6 +1521,18 @@ msgstr "Select a region inside the captured page."
 #: src/main/tools/browser.ts
 msgid "Select a thread before opening an embedded page."
 msgstr "Select a thread before opening an embedded page."
+
+#: src/main/plugins/changeWords.ts
+msgid "Send an email as {named}"
+msgstr "Send an email as {named}"
+
+#: src/main/plugins/changeWords.ts
+msgid "Send the email"
+msgstr "Send the email"
+
+#: src/main/plugins/changeWords.ts
+msgid "Send this email from the {plugin} account {named} to {who}?"
+msgstr "Send this email from the {plugin} account {named} to {who}?"
 
 #: src/main/omarchy/setup.ts
 msgid "Set up by hand. Sotto leaves these files alone."
@@ -1297,6 +1577,7 @@ msgid "Sign Cursor in from the main Sotto window."
 msgstr "Sign Cursor in from the main Sotto window."
 
 #: src/main/agents/opencodeSignInIpc.ts
+#: src/main/agents/piSignInIpc.ts
 msgid "Sign in to model sources from the main Sotto window."
 msgstr "Sign in to model sources from the main Sotto window."
 
@@ -1456,6 +1737,10 @@ msgstr "Sotto could not start its SSH helper. Nothing was saved. Check Windows .
 msgid "Sotto could not start recording. Nothing was kept. Try Record a minute again."
 msgstr "Sotto could not start recording. Nothing was kept. Try Record a minute again."
 
+#: src/main/files/downloads.ts
+msgid "Sotto could not write to the Downloads folder. Nothing was saved."
+msgstr "Sotto could not write to the Downloads folder. Nothing was saved."
+
 #: src/main/agents/delegationIpc.ts
 msgid "Sotto couldn't start a worker on {model}. Nothing was started. Try again, or ask the overseer in a message to give it the piece."
 msgstr "Sotto couldn't start a worker on {model}. Nothing was started. Try again, or ask the overseer in a message to give it the piece."
@@ -1552,6 +1837,10 @@ msgstr "Sotto no longer has this page, so it is not shown."
 #: src/main/agents/delegationIpc.ts
 msgid "Sotto no longer holds what this worker was asked, so it can't hand it on. Ask the overseer in a message to give the piece to {model}. Nothing was started."
 msgstr "Sotto no longer holds what this worker was asked, so it can't hand it on. Ask the overseer in a message to give the piece to {model}. Nothing was started."
+
+#: src/main/files/ipc.ts
+msgid "Sotto no longer knows where this download is. Look in the Downloads folder."
+msgstr "Sotto no longer knows where this download is. Look in the Downloads folder."
 
 #: src/main/council/climbService.ts
 msgid "Sotto restarted. Review the held round before continuing. Unconfirmed builder turns are never sent again."
@@ -1657,6 +1946,10 @@ msgstr "Stop the host on {name}, then connect to it again from Settings > Hosts 
 msgid "Stopped by you."
 msgstr "Stopped by you."
 
+#: src/main/plugins/changeWords.ts
+msgid "Subject: {subject}"
+msgstr "Subject: {subject}"
+
 #: src/main/teams/teams.ts
 msgid "Tailscale could not set up the link's address. Nothing was linked. Try again."
 msgstr "Tailscale could not set up the link's address. Nothing was linked. Try again."
@@ -1705,6 +1998,10 @@ msgstr "Tailscale SSH asked you to approve this request, and Sotto shows an appr
 msgid "Tailscale would not let this account change Serve. Run tailscale set --operator=$USER on this computer, then try again. Nothing was linked."
 msgstr "Tailscale would not let this account change Serve. Run tailscale set --operator=$USER on this computer, then try again. Nothing was linked."
 
+#: src/main/plugins/changeWords.ts
+msgid "Team: {team}"
+msgstr "Team: {team}"
+
 #: src/main/teams/teams.ts
 msgid "Teams is still starting. Try again in a moment."
 msgstr "Teams is still starting. Try again in a moment."
@@ -1728,6 +2025,10 @@ msgstr "That code came from this computer. Send it to your teammate instead. Not
 #: src/main/hosts/desktopHostRouter.ts
 msgid "That computer is not connected. Nothing was changed. Connect it in Settings > Hosts & phones, then try again."
 msgstr "That computer is not connected. Nothing was changed. Connect it in Settings > Hosts & phones, then try again."
+
+#: src/main/plugins/ipc.ts
+msgid "That could not be done. Nothing was changed."
+msgstr "That could not be done. Nothing was changed."
 
 #: src/main/council/councilService.ts
 msgid "That Council is no longer here."
@@ -1969,6 +2270,10 @@ msgstr "The connection was closed while this computer paired."
 #: src/main/hosts/hostFailureWords.ts
 msgid "The connection was closed while this computer paired. Nothing was saved."
 msgstr "The connection was closed while this computer paired. Nothing was saved."
+
+#: src/main/files/downloads.ts
+msgid "The download did not finish. Nothing was saved. Try again."
+msgstr "The download did not finish. Nothing was saved. Try again."
 
 #: src/main/themes/openVsx.ts
 msgid "The download did not match the checksum Open VSX publishes, so it was discarded."
@@ -2408,6 +2713,14 @@ msgstr "The pairing code could not be read from the host. Check that the host is
 msgid "The pairing code could not be read from the host. Nothing was saved. Check that the host is running and try again."
 msgstr "The pairing code could not be read from the host. Nothing was saved. Check that the host is running and try again."
 
+#: src/main/agents/piSignInIpc.ts
+msgid "The Pi sign-in expired. Open the sign-in page again to start over."
+msgstr "The Pi sign-in expired. Open the sign-in page again to start over."
+
+#: src/main/agents/piSignInIpc.ts
+msgid "The Pi sign-in page could not be opened. Try Open the page again."
+msgstr "The Pi sign-in page could not be opened. Try Open the page again."
+
 #: src/main/omarchy/files.ts
 msgid "The plugin folder is not a folder. Sotto left it alone."
 msgstr "The plugin folder is not a folder. Sotto left it alone."
@@ -2419,6 +2732,14 @@ msgstr "The popup's thread is no longer available. Choose another thread or star
 #: src/main/omarchy/setup.ts
 msgid "The previous owl folder changed. Sotto left it alone. Restore it before trying again."
 msgstr "The previous owl folder changed. Sotto left it alone. Restore it before trying again."
+
+#: src/main/plugins/changeWords.ts
+msgid "The project’s production addresses will serve this deployment again, at once."
+msgstr "The project’s production addresses will serve this deployment again, at once."
+
+#: src/main/plugins/changeWords.ts
+msgid "The project’s production addresses will serve this deployment. It is not built again."
+msgstr "The project’s production addresses will serve this deployment. It is not built again."
 
 #: src/main/tools/checkpoints.ts
 msgid "The provider rejected rollback. Files are unchanged; review the native thread before retrying."
@@ -2811,6 +3132,10 @@ msgstr "This device needs to connect again or be paired on the host."
 msgid "This device needs to connect again or be paired on the host. Nothing was saved."
 msgstr "This device needs to connect again or be paired on the host. Nothing was saved."
 
+#: src/main/plugins/changeWords.ts
+msgid "This does not let it send: each email it wants to send asks you first. It cannot move or delete mail. Every other thread asks for itself."
+msgstr "This does not let it send: each email it wants to send asks you first. It cannot move or delete mail. Every other thread asks for itself."
+
 #: src/main/agents/socketHostService.ts
 msgid "This draft could not be saved on the host. Reconnect and try again."
 msgstr "This draft could not be saved on the host. Reconnect and try again."
@@ -2819,10 +3144,26 @@ msgstr "This draft could not be saved on the host. Reconnect and try again."
 msgid "This draft may already have been sent. Your copy is kept on this computer. Check the original thread before sending again."
 msgstr "This draft may already have been sent. Your copy is kept on this computer. Check the original thread before sending again."
 
+#: src/main/files/downloads.ts
+msgid "This file is already downloading."
+msgstr "This file is already downloading."
+
+#: src/main/files/ipc.ts
+msgid "This file is already on this computer. Nothing was saved."
+msgstr "This file is already on this computer. Nothing was saved."
+
+#: src/main/files/ipc.ts
+msgid "This file is on the host machine, so it cannot be opened here. Nothing was opened."
+msgstr "This file is on the host machine, so it cannot be opened here. Nothing was opened."
+
 #: src/main/files/ipc.ts
 #: src/main/tools/ipc.ts
 msgid "This file is on the host machine, so it cannot be shown in a folder here. Nothing was opened."
 msgstr "This file is on the host machine, so it cannot be shown in a folder here. Nothing was opened."
+
+#: src/main/files/ipc.ts
+msgid "This file is on this computer, so its link opens it. Nothing was read."
+msgstr "This file is on this computer, so its link opens it. Nothing was read."
 
 #: src/main/hosts/desktopHostRouter.ts
 msgid "This folder is on the host machine. Open it there."
@@ -3085,6 +3426,10 @@ msgstr "This pairing code could not be used. Nothing was saved. Make a new code 
 msgid "This path is unavailable or changed. Refresh Files and try again."
 msgstr "This path is unavailable or changed. Refresh Files and try again."
 
+#: src/main/agents/piSignInIpc.ts
+msgid "This Pi sign-in is no longer waiting. Open the sign-in page again to start over."
+msgstr "This Pi sign-in is no longer waiting. Open the sign-in page again to start over."
+
 #: src/main/agents/delegationIpc.ts
 msgid "This piece was already given to another model. Move it from the newer worker's row instead. Nothing was started."
 msgstr "This piece was already given to another model. Move it from the newer worker's row instead. Nothing was started."
@@ -3170,6 +3515,10 @@ msgstr "This thread already has a Climb. Stop or settle it first."
 msgid "This thread already started a Council or a Climb for the user's message. One message asks for one. Nothing was started."
 msgstr "This thread already started a Council or a Climb for the user's message. One message asks for one. Nothing was started."
 
+#: src/main/plugins/changeWords.ts
+msgid "This thread can search this account’s mail and read its messages, until you stop it or the thread is settled."
+msgstr "This thread can search this account’s mail and read its messages, until you stop it or the thread is settled."
+
 #: src/main/council/climbService.ts
 msgid "This thread has no folder for the Climb's evidence. Nothing was started."
 msgstr "This thread has no folder for the Climb's evidence. Nothing was started."
@@ -3223,6 +3572,10 @@ msgstr "This worktree isn’t on a branch, so nothing was brought to {target}. S
 msgid "Thread work changed while checking the checkpoint. Review it again before reverting."
 msgstr "Thread work changed while checking the checkpoint. Review it again before reverting."
 
+#: src/main/plugins/changeWords.ts
+msgid "Title: {title}"
+msgstr "Title: {title}"
+
 #: src/main/hosts/hostBootStart.ts
 msgid "To remove them, run this on {name}:"
 msgstr "To remove them, run this on {name}:"
@@ -3238,6 +3591,10 @@ msgstr "To see why the unit failed, run this on {name}:"
 #: src/main/hosts/hostFailureWords.ts
 msgid "To see why, run this on the SSH host:"
 msgstr "To see why, run this on the SSH host:"
+
+#: src/main/plugins/changeWords.ts
+msgid "To: {to}"
+msgstr "To: {to}"
 
 #: src/main/hosts/hostUpdate.ts
 msgid "Try again to download it fresh, or update it by hand on {name}."
@@ -3332,6 +3689,10 @@ msgstr "Use a host HTTP or HTTPS address without credentials in its URL. Nothing
 msgid "Use a newer Sotto build, or stop the host on {name}, keep that folder as a backup and move it aside before trying again."
 msgstr "Use a newer Sotto build, or stop the host on {name}, keep that folder as a backup and move it aside before trying again."
 
+#: src/main/plugins/changeWords.ts
+msgid "Vercel account: {account}"
+msgstr "Vercel account: {account}"
+
 #: src/main/app/applicationMenu.ts
 msgid "View"
 msgstr "View"
@@ -3371,6 +3732,26 @@ msgstr "Wait for the verdict and its fairness check before asking a follow-up."
 #: src/main/hosts/desktopHostRouter.ts
 msgid "Wait for this thread to finish its turn, then bring its changes back. Nothing changed."
 msgstr "Wait for this thread to finish its turn, then bring its changes back. Nothing changed."
+
+#: src/main/plugins/changeWords.ts
+msgid "Watcher can search this account’s mail and read its messages, until you stop it."
+msgstr "Watcher can search this account’s mail and read its messages, until you stop it."
+
+#: src/main/plugins/changeWords.ts
+msgid "What it reads goes to {provider}, as everything a thread reads does."
+msgstr "What it reads goes to {provider}, as everything a thread reads does."
+
+#: src/main/plugins/changeWords.ts
+msgid "What it reads goes to {provider}, as everything Watcher reads does."
+msgstr "What it reads goes to {provider}, as everything Watcher reads does."
+
+#: src/main/plugins/changeWords.ts
+msgid "What it reads goes to this thread’s provider, as everything a thread reads does."
+msgstr "What it reads goes to this thread’s provider, as everything a thread reads does."
+
+#: src/main/plugins/changeWords.ts
+msgid "What it reads goes to Watcher’s provider, as everything Watcher reads does."
+msgstr "What it reads goes to Watcher’s provider, as everything Watcher reads does."
 
 #: src/main/app/applicationMenu.ts
 msgid "Window"

@@ -36,7 +36,7 @@ describe('what a client publishes', () => {
     expect(clientVersionOf('fixture')).toBe('')
   })
 
-  it('asks the registry as plain JSON, and serves its answer for four minutes, less than the five between checks', async () => {
+  it('asks the registry as plain JSON, and serves its answer for four minutes to the checks that come together', async () => {
     const asked: string[] = []
     const accepted: unknown[] = []
     let now = 1_000
@@ -73,9 +73,12 @@ describe('what a client publishes', () => {
 
   it('claims nothing when the registry cannot be read', async () => {
     const clients = new ProviderClients({ fetchImpl: async () => { throw new Error('offline') } })
-    const reading = await clients.check('grok', '1.0.5', undefined)
+    const unanswered = vi.fn()
+    const reading = await clients.check('grok', '1.0.5', undefined, process.env, { unanswered })
     expect(reading).toMatchObject({ behind: false, canInstall: false })
     expect(reading.published).toBeUndefined()
+    // The caller hears it, so its next ask comes in five minutes rather than at the hourly check.
+    expect(unanswered).toHaveBeenCalledOnce()
   })
 
   it('never calls an unreadable installed version behind', async () => {
@@ -86,9 +89,12 @@ describe('what a client publishes', () => {
   it('leaves Devin to its own app and asks no registry for it', async () => {
     let asked = 0
     const clients = new ProviderClients({ fetchImpl: async () => { asked += 1; return answer('9.9.9') } })
-    const reading = await clients.check('devin', '3000.10.31', 'C:/Program Files/Devin/bin/devin.exe')
+    const unanswered = vi.fn()
+    const reading = await clients.check('devin', '3000.10.31', 'C:/Program Files/Devin/bin/devin.exe', process.env, { unanswered })
     expect(reading).toMatchObject({ channel: 'devin-app', behind: false, canInstall: false })
     expect(asked).toBe(0)
+    // Nothing was asked, so nothing went unanswered.
+    expect(unanswered).not.toHaveBeenCalled()
     expect(await clients.install('devin', undefined)).toEqual({ ok: false, detail: 'Devin updates with the Devin app.' })
   })
 })

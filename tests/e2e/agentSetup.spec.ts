@@ -10,7 +10,7 @@ import { evidenceDirectory } from '../fixtures/evidence'
 const evidence = evidenceDirectory('artifacts/agent-control-smoke')
 
 test('failed connection leaves one actionable error and allows a successful retry', async () => {
-  // First-run setup's Coding agents step connects the providers it finds, so Threads is still disconnected
+  // First-run setup's agents stop connects the providers it finds, so Threads is still disconnected
   // only on a profile that finished setup before; this one starts there.
   const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-agent-setup-' })).directory
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true }))

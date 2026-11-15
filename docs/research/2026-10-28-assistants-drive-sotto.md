@@ -2,6 +2,8 @@
 
 Decision 2026-10-28: Zach chose not to pursue this; kept for reference.
 
+Reopened 2026-11-11: Zach asked for Grok Bot to drive Sotto after Tailscale's November 9 post said Grok Bot can join a tailnet on any plan. [ADR-0206](../adr/0206-an-assistant-drives-sotto-over-the-tailnet-and-never-answers.md) decides it, on this note's Design A. The Grok Bot findings below on private networks are from October 27 and are out of date on that point.
+
 October 28, 2026. Zach asked how an outside assistant, Grok Bot or Hermes Agent, could connect to Sotto and drive it. The assistant would start and watch threads in projects, read status and replies, see what waits on Zach, steer and follow up, and report back wherever Zach talks to it, such as Grok Bot on his phone. Sotto exposes the interface. The assistant stays outside it, and Sotto neither hosts nor runs it. This note is research. It builds nothing.
 
 Each claim is labelled. **Documented** means the vendor or project says it, and the page is named. **Observed** means I read it in source code or a raw file, and the file is named. **Inferred** means my reasoning from those. **Not verified** means I did not confirm it.

@@ -31,7 +31,7 @@ import { AdapterThreadChanges, restOf } from './adapterThreadChanges'
 import type { ActivityChangesListener, ActivityChangesSubscription } from './threadChanges'
 import { ReadsBeforeSend } from './readsBeforeSend'
 import { holdTurnEnd, markSendStage, type TurnEndTimings } from './sendStages'
-import { SessionReaper } from './sessionReaper'
+import { SessionReaper, busyHolds, type HeldSession } from './sessionReaper'
 import type { BrowserAgentTools } from './browserAgentServer'
 import { ThreadMessageLog } from './threadMessageLog'
 import { scopedThreadServers, TOOL_WAIT_HEADER, type ScopedThreadTools, type ThreadMcpServer } from './threadToolServer'
@@ -622,14 +622,18 @@ export class MuseMspHost implements ProviderHost {
       ...(options.sessionIdleMs !== undefined ? { idleAfterMs: options.sessionIdleMs } : {}),
       isWatched: id => this.observed.has(id),
       isBusy: id => this.busy(id),
+      whyBusy: id => busyHolds({ busy: this.working(id), request: this.asking(id) }),
       stop: id => this.stopSession(id),
     })
   }
-  private busy(id: string): boolean {
-    const thread = this.threads.get(id)
-    return this.holds.has(id) || this.activePrompts.has(id) || this.activeTurns.has(id) || this.loading.has(id)
-      || !!thread && (thread.status === 'running' || thread.requests.length > 0)
+  /** The sessions the reaper tracks, why each is held, and each one's process (#2398). */
+  heldSessions(): HeldSession[] { return this.reaper.held(id => this.processes.get(id)?.rpc.pid) }
+  private busy(id: string): boolean { return this.working(id) || this.asking(id) }
+  /** Everything that holds a session in `busy` but an unanswered request. */
+  private working(id: string): boolean {
+    return this.holds.has(id) || this.activePrompts.has(id) || this.activeTurns.has(id) || this.loading.has(id) || this.threads.get(id)?.status === 'running'
   }
+  private asking(id: string): boolean { return !!this.threads.get(id)?.requests.length }
   private current(historyFromEvents = false): AgentHostSnapshot {
     if (historyFromEvents) return cloneActivitySnapshot(this.activitySnapshot(true))
     return cloneHostSnapshot({ ...this.state, threads: [...this.threads.values()].map(thread => this.log.publishedThread(thread)) })

@@ -28,7 +28,7 @@ import { ProviderUnavailable } from './providerProblem'
 import { adapterItemCount, ProviderSnapshotPublisher } from './providerSnapshotPublisher'
 import { AdapterThreadChanges, restOf } from './adapterThreadChanges'
 import type { ActivityChangesListener, ActivityChangesSubscription } from './threadChanges'
-import { SessionReaper } from './sessionReaper'
+import { SessionReaper, busyHolds, type HeldSession } from './sessionReaper'
 import { markSendStage } from './sendStages'
 import { settledThinking, thinkingSettledAs } from './thinkingActivity'
 import { ThreadMessageLog } from './threadMessageLog'
@@ -248,9 +248,12 @@ export class DeepSeekAcpHost implements ProviderHost {
       ...(options.sessionIdleMs === undefined ? {} : { idleAfterMs: options.sessionIdleMs }),
       isWatched: id => this.observed.has(id),
       isBusy: id => this.busy(id),
+      whyBusy: id => busyHolds({ busy: this.working(id), request: this.asking(id) }),
       stop: id => this.stopSession(id),
     })
   }
+  /** The sessions the reaper tracks, why each is held, and each one's process (#2398). */
+  heldSessions(): HeldSession[] { return this.reaper.held(id => this.connections.get(id)?.rpc.pid) }
 
   // ---- What the adapter publishes ------------------------------------------------------------------------------------
 
@@ -556,11 +559,13 @@ export class DeepSeekAcpHost implements ProviderHost {
   // ---- Sessions ------------------------------------------------------------------------------------------------------
 
   /** A thread being created or sent to, a prompt in flight, a session opening or an unanswered request hold a session open. */
-  private busy(id: string): boolean {
+  private busy(id: string): boolean { return this.working(id) || this.asking(id) }
+  /** Everything that holds a session in `busy` but an unanswered request. */
+  private working(id: string): boolean {
     const turn = this.turns.get(id)
     return this.dispatching.has(id) || this.loading.has(id) || this.stopping.has(id) || (turn !== undefined && !turn.ended)
-      || (this.threads.get(id)?.requests.length ?? 0) > 0
   }
+  private asking(id: string): boolean { return (this.threads.get(id)?.requests.length ?? 0) > 0 }
   /** This thread's session, opened on its own process when it has none. */
   private open(id: string): Promise<Connection> {
     const stopping = this.stopping.get(id)

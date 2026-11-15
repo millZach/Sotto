@@ -152,6 +152,10 @@ export default defineConfig({
       'import.meta.env.SOTTO_VISUAL_PREVIEW': JSON.stringify(visualPreviewEnvironment),
     },
     build: {
+      // electron-vite leaves the window's code unminified, and the window parses all of what it loads at start before
+      // React runs (#995, #2396). esbuild minifies its scripts and stylesheets; nothing in the renderer reads a name the
+      // build gives a function or class (`docs/perf/2026-11-10-minified-window.md`). No source maps: `out/**/*` ships.
+      minify: 'esbuild',
       rollupOptions: {
         input: {
           main: resolve(__dirname, 'src/renderer/index.html'),

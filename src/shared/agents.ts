@@ -384,6 +384,16 @@ export const agentSpeedSchema = z.enum(['fast', 'ultrafast'])
 export type AgentSpeed = z.infer<typeof agentSpeedSchema>
 export const agentModelSpeedSchema = z.object({ id: agentSpeedSchema, name: z.string().min(1).max(100), description: z.string().max(300).optional() })
 export type AgentModelSpeed = z.infer<typeof agentModelSpeedSchema>
+/**
+ * What the window is told of one routed thread's last routing (ADR-0207), in memory only: never in a log, never on disk,
+ * the startup cache included. `failed`: the classifier did not answer. `unconfirmed`: the settings change did not come
+ * back accepted, so the record names no model or effort; the chips show what the thread runs on.
+ */
+export const routerPickSchema = z.object({
+  threadId: z.string().min(1).max(256), state: z.enum(['choosing', 'chose', 'kept', 'failed', 'unconfirmed']),
+  modelId: z.string().max(512).optional(), reasoningEffort: z.string().max(64).optional(), reason: z.string().max(120).optional(),
+})
+export type RouterPick = z.infer<typeof routerPickSchema>
 export const agentThreadOptionsSchema = z.object({ modelId: providerEntityId.optional(), reasoningEffort: z.string().min(1).max(64).optional(),
   runtimeMode: agentRuntimeModeSchema.optional(), providerMode: providerEntityId.optional(),
   /** Compatibility alias for speed fast; an explicit speed takes precedence (ADR-0143). */
@@ -404,7 +414,7 @@ export const agentModelSchema = z.object({ id: providerEntityId, provider: id, p
    * The adapter puts them in that order (`orderReasoningEfforts`); a provider that lists them highest
    * first, as Grok does, is turned round there and nowhere else.
    */
-  reasoningEfforts: z.array(z.string()).optional(), defaultReasoningEffort: z.string().optional(),
+  ownServer: z.literal(true).optional(), hiddenFromMenu: z.literal(true).optional(), reasoningEfforts: z.array(z.string()).optional(), defaultReasoningEffort: z.string().optional(),
   runtimeModes: z.array(agentRuntimeModeSchema).optional(), supportsImages: z.boolean().optional(),
   /**
    * Offered in place of `runtimeModes` by a provider whose permission modes are its own, not Sotto's four.
@@ -723,6 +733,8 @@ export const agentThreadSchema = z.object({
   delegatedBy: id.optional(),
   /** The user turned Dynamic on for this thread (ADR-0191): Sotto's own record, read through `isDynamicThread`. */
   dynamic: z.literal(true).optional().catch(undefined),
+  /** The user turned model routing on for this thread (ADR-0207): Sotto's own record, read through `isRoutedThread`. */
+  routed: z.literal(true).optional().catch(undefined),
   /** What this thread's provider session has been told of Dynamic (ADR-0191), read through `overseerNoteFor`. */
   dynamicSession: z.object({ created: z.boolean(), told: z.boolean(), createdNote: dynamicNoteDigestSchema.optional(), toldNote: dynamicNoteDigestSchema.optional(),
     noteHeard: z.literal(true).optional(), noteOwed: z.literal(true).optional() }).strict().optional().catch(undefined),
@@ -1061,7 +1073,7 @@ export function isSubscriptionReasoning(provider: string): provider is Subscript
 }
 
 export const PROVIDER_LABELS: Readonly<Record<ProviderId, string>> = {
-  codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin', muse: 'Muse', opencode: 'OpenCode', cursor: 'Cursor', deepseek: 'DeepSeek', hermes: 'Hermes',
+  codex: 'Codex', claude: 'Claude Code', grok: 'Grok Build', devin: 'Devin', muse: 'Muse', opencode: 'OpenCode', cursor: 'Cursor', deepseek: 'DeepSeek', hermes: 'Hermes', pi: 'Pi',
 }
 const THREAD_PROVIDERS_CONNECTED = 'Thread providers connected'
 /** The bounded success vocabulary old hosts use, including a default provider discovered during connect. */
@@ -1240,6 +1252,8 @@ export const agentStateSchema = z.object({
    * its queue sends anything, and nothing of it reaches the provider before. Absent when none waits.
    */
   nextTurnSettings: z.array(agentThreadOptionsSchema.extend({ threadId: id })).max(1_000).optional(),
+  /** Each routed thread's last routing (CONTEXT.md **Router pick**, ADR-0207), kept in memory only. Absent when there is none. */
+  routerPicks: z.array(routerPickSchema).max(1_000).optional(),
   credentials: z.object({ reasoning: z.boolean(), secure: z.boolean() }),
   reasoningAccounts: z.array(subscriptionAccountSchema).default([]),
   /** Whether the user keeps local history; the window persists its startup shell only when true. */
@@ -1572,7 +1586,11 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('resume-followups'), threadId: id }).strict(),
   z.object({ type: z.literal('steer'), threadId: id, draftId: z.uuid(), text, attachments: agentAttachmentHandlesSchema.optional(), skills: agentSkillReferencesSchema.optional(), files: agentFileReferencesSchema.optional() }).strict(),
   z.object({ type: z.literal('cancel-draft') }).strict(),
-  z.object({ type: z.literal('create-project'), provider: providerIdSchema.optional(), title: id, path: z.string().max(4_096).optional(), useExisting: z.boolean().optional() }).strict(),
+  // `gitInit` runs `git init` in the folder the command makes, before the project is added: Watcher's add_project when the
+  // user asked for a repository (ADR-0073, November 12, 2026). Never with `useExisting`. A paired host takes it only when it
+  // lists `project-git-init`.
+  z.object({ type: z.literal('create-project'), provider: providerIdSchema.optional(), title: id, path: z.string().max(4_096).optional(), useExisting: z.boolean().optional(),
+    gitInit: z.literal(true).optional() }).strict(),
   z.object({ type: z.literal('select-project'), projectId: providerEntityId }).strict(),
   z.object({ type: z.literal('settle-project'), projectId: providerEntityId }).strict(),
   z.object({ type: z.literal('restore-project'), projectId: providerEntityId }).strict(),
@@ -1594,11 +1612,15 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('rename-thread'), threadId: id, title: z.string().max(512) }).strict(),
   /** Turn Dynamic on or off for a thread at rest (ADR-0191): a Sotto-side mark that its next send reads. */
   z.object({ type: z.literal('set-thread-dynamic'), threadId: id, dynamic: z.boolean() }).strict(),
+  /** Turn model routing on or off for a thread (ADR-0207): a Sotto-side mark that its next send reads. */
+  z.object({ type: z.literal('set-thread-routed'), threadId: id, routed: z.boolean() }).strict(),
   /** Ask the thread's own provider for its name again, on the side, replacing a generated or stand-in one. */
   z.object({ type: z.literal('regenerate-thread-title'), threadId: id }).strict(),
   z.object({ type: z.literal('create-thread'), projectId: providerEntityId, title: id, modelId: providerEntityId,
     /** The thread starts Dynamic (ADR-0191): a person's new thread, where Settings says new threads do. */
     dynamic: z.literal(true).optional(),
+    /** The thread starts routed (ADR-0207): a person's new Claude Code thread, where Settings says new threads do. */
+    routed: z.literal(true).optional(),
     /** `user` when the title is the one the user typed, `default` when it is Sotto's stand-in name. */
     titleSource: z.enum(['user', 'default']).optional(),
     /** The Sotto thread ID the window already minted and is showing. Absent from older callers, which let main mint one. */
@@ -1723,6 +1745,8 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
    * prompt, and says nothing when it cannot start: the send reports its own error (#769). */
   z.object({ type: z.literal('start-thread-session'), threadId: id }).strict(),
   z.object({ type: z.literal('interrupt'), threadId: id }).strict(),
+  /** Stop one of the thread's detached runs (#2476), by the ID its background work names: the user's own press, which answers no request. */
+  z.object({ type: z.literal('stop-detached-run'), threadId: id, runId: z.string().uuid() }).strict(),
   z.object({ type: z.literal('compact-thread'), threadId: id }).strict(),
   z.object({ type: z.literal('answer'), threadId: id, requestId: id, answer: text, approved: z.boolean().optional(), questionAnswers: agentQuestionAnswersSchema.optional(), permissionChoice: id.optional(),
     /** The user skipped a `skippable` question: its provider is told so and the turn goes on without an answer. */
@@ -1812,7 +1836,7 @@ export function hostForThread(host: AgentHostSnapshot, thread: Pick<AgentThread,
   const source = host.clientHosts?.find(item => item.hostId === thread.hostId)
   return source ? { ...host, ...source, providers: source.providers } : host
 }
-const INSTALLED_PROVIDER_ORDER = everyProvider(['codex', 'claude', 'grok', 'devin', 'muse', 'opencode', 'cursor', 'deepseek', 'hermes'])
+const INSTALLED_PROVIDER_ORDER = everyProvider(['codex', 'claude', 'grok', 'devin', 'muse', 'opencode', 'cursor', 'deepseek', 'hermes', 'pi'])
 /**
  * What Connect providers turns on: every thread client installed on this machine, Devin included, except one the user
  * turned off, added to the ones already on, as a headless host connects them all (ADR-0036). A client already on stays
@@ -1866,10 +1890,10 @@ export function defaultThreadModelId(configuration: AgentConfiguration, models: 
     const provider = configuration.reasoning
     const nativeModelId = configuration.reasoningModel || accounts.find(account => account.provider === provider)?.defaultModelId
     if (nativeModelId) return publicProviderEntityId(provider, 'model', nativeModelId)
-    const candidates = models.filter(model => model.providerId === provider)
+    const candidates = models.filter(model => model.providerId === provider && !model.hiddenFromMenu)
     return (candidates.find(model => model.ready) ?? candidates[0])?.id ?? ''
   }
-  const ready = models.filter(model => model.ready)
+  const ready = models.filter(model => model.ready && !model.hiddenFromMenu)
   return (ready.find(model => model.providerId === configuration.provider) ?? ready[0])?.id ?? ''
 }
 /**

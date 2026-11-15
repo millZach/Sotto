@@ -87,10 +87,15 @@ describe.each(['stable', 'owl'] as const)('the %s build names itself', (track) =
     expect(document.title).toBe(NAMES[track])
   })
 
-  it('in the strip over first-run setup', async () => {
-    renderApp(trackBridge(track, false))
+  it('in the sidebar top row under first-run setup’s first note, which has no strip of its own (ADR-0200)', async () => {
+    const bridge = trackBridge(track, false)
+    const state = threadsStateFixture()
+    window.sotto = { ...bridge, agents: agentWireBridge({ get: async () => state, command: async () => state, onState: () => () => undefined }) }
+    renderApp(bridge)
     await screen.findByRole('heading', { name: /talk to your computer and your coding agents/i })
-    await expectBrand(() => screen.getByRole('banner'), track)
+    await screen.findByRole('complementary', { name: 'Thread sidebar' })
+    await expectBrand(topRow, track)
+    expect(document.querySelector('.app-strip')).toBeNull()
     await waitFor(() => expect(document.title).toBe(NAMES[track]))
   })
 })
@@ -131,10 +136,14 @@ describe.each(['stable', 'owl'] as const)('the %s build on macOS', (track) => {
     expect(screen.getByRole('button', { name: 'Expand sidebar' })).toBeVisible()
   })
 
-  it('shows no mark in the strip over first-run setup', async () => {
-    renderApp(trackBridge(track, false, 'darwin'))
+  it('shows no mark beside the traffic lights under first-run setup’s first note', async () => {
+    const bridge = trackBridge(track, false, 'darwin')
+    const state = threadsStateFixture()
+    window.sotto = { ...bridge, agents: agentWireBridge({ get: async () => state, command: async () => state, onState: () => () => undefined }) }
+    renderApp(bridge)
     await screen.findByRole('heading', { name: /talk to your computer and your coding agents/i })
-    expectNoCornerBrand(() => screen.getByRole('banner'))
+    await screen.findByRole('complementary', { name: 'Thread sidebar' })
+    expectNoCornerBrand(topRow)
     await waitFor(() => expect(document.title).toBe(NAMES[track]))
   })
 })

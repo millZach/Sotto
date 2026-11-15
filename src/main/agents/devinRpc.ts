@@ -63,6 +63,8 @@ export class DevinRpc {
   private stopped = false
   private frames = Promise.resolve()
   readonly closed: Promise<void>
+  /** Devin's process, for the held-sessions read (#2398). */
+  get pid(): number | undefined { return this.child.pid }
   constructor(executable: string, args: string[], cwd: string, env: NodeJS.ProcessEnv, private readonly timeoutMs: number,
     private readonly receive: (frame: DevinFrame) => Promise<void> | void, private readonly lost: () => void) {
     this.child = spawn(executable, args, { cwd, env: withCliPath(env, executable), windowsHide: true, shell: false, stdio: 'pipe' })

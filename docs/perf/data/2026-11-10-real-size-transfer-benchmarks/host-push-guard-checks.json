@@ -1,0 +1,27 @@
+{
+ "underLoad": {
+  "how": "two copies of hostPushSizeBudget at once, ten busy-loop processes, forge's 16 cores, Node 24.22.1",
+  "afterReview": { "runs": 20, "passed": 20, "loadAverage": [8.33, 19.47], "distinctResults": 1,
+   "result": { "desktop": { "pushes": 40, "bytesPerPush": 199919, "unchangedPartsPerPush": 44 }, "phone": { "pushes": 4, "bytesPerPush": 198970, "unchangedPartsPerPush": 45 },
+    "progressOnly": { "changes": 40, "bytesPerChange": 1986099, "unchangedPartsPerChange": 8, "wholeWatcherStatePerChange": 1 } } },
+  "beforeReview": { "runs": 10, "passed": 10, "loadAverage": [5.62, 12.13], "distinctResults": 10,
+   "desktopPushes": [13, 17], "desktopBytesPerPush": [199830, 199913], "phoneBytesPerPush": 198970, "watcherStateProgressOnlyBytesPerPush": 1986099 }
+ },
+ "compressionHeldBack": {
+  "how": "every zlib.deflateRaw answer delayed on the machine's clock",
+  "afterReview": { "20ms": "passed, same result as underLoad", "100ms": "passed, same result as underLoad" },
+  "beforeReview": { "20ms": { "passed": true, "desktopPushes": 9, "desktopBytesPerPush": 199799 }, "100ms": { "passed": false, "failure": "the desktop's client did not connect" } }
+ },
+ "unchangedPartProbes": [
+  { "added": "probeUnchanged beside state in every thread list push", "bytesPerPushAdded": 22, "desktopUnchangedParts": [45, 44], "phoneUnchangedParts": [46, 45], "failed": true },
+  { "added": "probeUnchanged in the state of every thread list push", "bytesPerPushAdded": 22, "desktopUnchangedParts": [45, 44], "phoneUnchangedParts": [46, 45], "failed": true },
+  { "added": "probeUnchanged beside projection in every watcher-state", "bytesPerPushAdded": 22, "progressChangeUnchangedParts": [9, 8], "failed": true },
+  { "added": "probeUnchanged in every Watcher projection", "bytesPerPushAdded": 22, "progressChangeUnchangedParts": [9, 8], "failed": true }
+ ],
+ "withFixesMergedIn": {
+  "pr2405": { "commit": "153f6604d", "passed": true, "progressOnly": { "changes": 40, "bytesPerChange": 451, "unchangedPartsPerChange": 2, "wholeWatcherStatePerChange": 0 },
+   "phone": { "bytesPerPush": 198970, "unchangedPartsPerPush": 45 } },
+  "pr2404": { "commit": "893c83b34", "passed": true, "phone": { "pushes": 4, "bytesPerPush": 73177, "unchangedPartsPerPush": 41 },
+   "progressOnly": { "bytesPerChange": 1986099, "wholeWatcherStatePerChange": 1 } }
+ }
+}

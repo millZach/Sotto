@@ -1,6 +1,8 @@
 import { deferred } from '../../../../fixtures/deferred'
 import { host, fixture, openAddHost, typeAHost, settings, addForge } from '../../../../fixtures/renderer/hostsSettingsHarness'
-import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
+import React from 'react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { HostDialog } from '../../../../../src/renderer/src/features/settings/HostDialog'
 import userEvent from '@testing-library/user-event'
 import { expect, it, vi } from 'vitest'
 import type { HostsCommand, HostsState } from '../../../../../src/shared/hosts'
@@ -243,7 +245,6 @@ it('shows a failure on its own step with its fix to copy, and Try again and Chan
   settings(bridge)
   const { dialog: form } = await openAddHost(user)
   // A form that cannot be sent says so in the form.
-  await user.keyboard('{Escape}')
   await user.click(within(form).getByRole('button', { name: 'Add host' }))
   expect(within(form).getByRole('alert').textContent).toBe('Choose a device, or choose Another SSH host… to type one.')
   const typed = await typeAHost(user, form)
@@ -299,4 +300,15 @@ it('goes back to the form when main refuses the add before connecting', async ()
   const dialog = await screen.findByRole('dialog', { name: 'Add host' })
   expect(within(dialog).getByRole('alert').textContent).toBe('forge is already saved as Forge. Nothing was saved. Switch it on in the list instead.')
   expect(within(dialog).getByRole('combobox', { name: 'Device' }).textContent).toContain('forge')
+})
+
+it('says only "then add it" where Add host is opened without the agent choice, and offers the agent where it has it (ADR-0200)', async () => {
+  const { bridge } = fixture([])
+  const view = render(<HostDialog mode={{ kind: 'add' }} bridge={bridge} state={null} agentSetup={false} onClose={() => undefined} />)
+  const without = await screen.findByRole('dialog', { name: 'Add host' })
+  expect(within(without).getByText('Pick a machine Sotto can reach over SSH, then add it.')).toBeInTheDocument()
+  expect(within(without).queryByText(/have an agent set it up/u)).toBeNull()
+  view.unmount()
+  render(<HostDialog mode={{ kind: 'add' }} bridge={bridge} state={null} onClose={() => undefined} />)
+  expect(within(await screen.findByRole('dialog', { name: 'Add host' })).getByText('Pick a machine Sotto can reach over SSH, then add it yourself or have an agent set it up.')).toBeInTheDocument()
 })

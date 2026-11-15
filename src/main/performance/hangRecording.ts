@@ -1,10 +1,19 @@
+import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 import type { MainLoopReading } from '../../shared/mainActivity'
 import { freeRecordingName, keepNewestRecordings, OUTSIDE_SOTTO, recordingFileSystem, sottoScriptUrl, type RecordingFileSystem } from './activityRecorder'
 
-/** How many hang recordings stay; they are kept apart from Record a minute's, so neither pushes out the other. */
-export const HANG_RECORDINGS_KEPT = 5
+/**
+ * How many of main's hang recordings stay. At most three a minute are saved (`MAIN_RECORDING_GAP_MS`), so a bad stretch
+ * keeps its last few minutes; each is tens of kilobytes, so all of them stay under a megabyte.
+ */
+export const MAIN_HANG_RECORDINGS_KEPT = 10
+/**
+ * How many of the window's stay. Main's and the window's are counted apart, and apart from Record a minute's, so a busy
+ * afternoon of short freezes of main never pushes out a window that stopped, nor either an activity recording.
+ */
+export const WINDOW_HANG_RECORDINGS_KEPT = 5
 /** Frames kept per stack, from the innermost: enough to see what main was doing and where it was called from. */
 export const HANG_FRAMES_KEPT = 40
 
@@ -13,6 +22,13 @@ const HANG_PARTIAL = /^sotto-hang-.*\.partial$/u
 /** Matches no folder: for a keep that sweeps no half-written folders, or a sweep that keeps no recordings. */
 const NOTHING = /(?!)/u
 export const HANG_FILE = 'hang.json'
+
+/** The file operations a hang save makes: a recording's own, and reading a saved one's kind to count each kind apart. */
+export interface HangFileSystem extends RecordingFileSystem {
+  readFile(path: string): Promise<string>
+}
+
+export const hangFileSystem: HangFileSystem = { ...recordingFileSystem, readFile: path => readFile(path, 'utf8') }
 
 /** One frame of a stack, kept to what ADR-0098 keeps of a profile's frame: a place in Sotto's code. */
 export interface HangFrame {
@@ -86,10 +102,10 @@ export function hangRecordingName(startedAt: Date): string {
 
 /**
  * Writes a new hang recording under `directory` (Sotto's data folder's `performance-recordings`): into a `.partial`
- * folder, renamed once written, then keeps the newest few hang recordings. Resolves the folder's name; throws when it could
- * not be written, having removed what it wrote where it could. A half-written folder is removed by the next save.
+ * folder, renamed once written, then keeps the newest few of each kind. Resolves the folder's name; throws when it could
+ * not be written, having removed what it wrote where it could. A half-written folder is removed when Sotto next starts.
  */
-export async function saveHangRecording(directory: string, record: HangRecord, fs: RecordingFileSystem = recordingFileSystem): Promise<string> {
+export async function saveHangRecording(directory: string, record: HangRecord, fs: HangFileSystem = hangFileSystem): Promise<string> {
   await fs.mkdir(directory)
   const name = await freeRecordingName(directory, hangRecordingName(new Date(record.startedAt)), fs)
   const partial = join(directory, `${name}.partial`)
@@ -102,8 +118,33 @@ export async function saveHangRecording(directory: string, record: HangRecord, f
     throw error
   }
   // Another save may be writing its own half-written folder now (main's watch and the window's), so none is swept here.
-  await keepNewestRecordings(directory, HANG_NAME, NOTHING, HANG_RECORDINGS_KEPT, fs)
+  await keepNewestHangRecordings(directory, fs)
   return name
+}
+
+/**
+ * Removes all but the newest of main's hang recordings and of the window's, each kind counted apart and read from its
+ * folder's file. One whose file cannot be read counts as main's. Never throws.
+ */
+async function keepNewestHangRecordings(directory: string, fs: HangFileSystem): Promise<void> {
+  let entries: string[]
+  try { entries = await fs.readdir(directory) } catch { return }
+  const newestFirst = entries.filter(name => HANG_NAME.test(name)).sort().reverse()
+  // Too few for either kind to be over: no file is read.
+  if (newestFirst.length <= Math.min(MAIN_HANG_RECORDINGS_KEPT, WINDOW_HANG_RECORDINGS_KEPT)) return
+  const seen = { main: 0, window: 0 }
+  for (const name of newestFirst) {
+    const kind = await savedHangKind(directory, name, fs)
+    seen[kind] += 1
+    if (seen[kind] > (kind === 'window' ? WINDOW_HANG_RECORDINGS_KEPT : MAIN_HANG_RECORDINGS_KEPT)) await fs.rm(join(directory, name)).catch(() => undefined)
+  }
+}
+
+async function savedHangKind(directory: string, name: string, fs: HangFileSystem): Promise<HangRecord['kind']> {
+  try {
+    const saved = JSON.parse(await fs.readFile(join(directory, name, HANG_FILE))) as { kind?: unknown }
+    return saved.kind === 'window' ? 'window' : 'main'
+  } catch { return 'main' }
 }
 
 /** Removes the folders hang saves left half-written when Sotto last ended. Run at start, before any save. Never throws. */

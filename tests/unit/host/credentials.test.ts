@@ -94,6 +94,11 @@ describe('headless host credentials', () => {
     expect(() => parseHostArguments(['--port', '70000'], {})).toThrow(HostArgumentError)
   })
 
+  it('compresses for phones unless started with SOTTO_HOST_COMPRESS_PHONES=0 (#2394)', () => {
+    expect(parseHostArguments([], { SOTTO_HOST_DATA: './saved', SOTTO_HOST_COMPRESS_PHONES: '0' })).toEqual({ dataDirectory: resolve('saved'), port: 0, compressPhones: false })
+    for (const value of ['1', 'false', 'off', ' 0', '', undefined]) expect(parseHostArguments([], { SOTTO_HOST_DATA: './saved', SOTTO_HOST_COMPRESS_PHONES: value })).toEqual({ dataDirectory: resolve('saved'), port: 0 })
+  })
+
   it('prints what was wrong with the command line instead of the key-file hint', async () => {
     const argv = process.argv, exitCode = process.exitCode
     const printed: string[] = []

@@ -15,7 +15,12 @@ import { closeSotto, launchSotto, openPage } from './support/sottoLaunch'
 test('Phones: sets up through the checklist, pairs a phone with a code, and closes when turned off', async () => {
   test.setTimeout(240_000)
   const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-phones-' })).directory
-  const tailscale = (fixture: Record<string, unknown>) => writeFile(join(profile, 'e2e-tailscale.json'), JSON.stringify(fixture))
+  // Phone access and the Hosts page each read their own stand-in for Tailscale, and Let phones connect asks the Hosts
+  // page's before it turns on (ADR-0200), so both say the same thing: installed, and running or not.
+  const tailscale = async (fixture: Record<string, unknown>): Promise<void> => {
+    await writeFile(join(profile, 'e2e-tailscale.json'), JSON.stringify(fixture))
+    await writeFile(join(profile, 'e2e-tailscale-status.json'), JSON.stringify({ BackendState: fixture.state === 'running' ? 'Running' : 'Stopped' }))
+  }
   await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, reducedMotion: 'on' }))
   await tailscale({ state: 'not-running' })
   const launched = await launchSotto('success', profile)

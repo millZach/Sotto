@@ -52,8 +52,8 @@ export function failureWords(i18n: I18n, failure: OwnServerTurnFailure, server: 
     }
     case 'key-refused': return {
       title: i18n._(msg`${name} turned down its key.`),
-      body: i18n._(msg({ message: `Nothing in the thread was lost. In Settings › Providers › Your own model servers, remove ${name} and add it again with the right key, then try again.`,
-        comment: 'Settings › Providers › Your own model servers is where the server is kept; translate each name as the Settings page does.' })),
+      body: i18n._(msg({ message: `Nothing in the thread was lost. In Settings › Providers › APIs and your own model servers, replace the key for ${name}, then try again.`,
+        comment: 'Settings › Providers › APIs and your own model servers is where the server is kept; translate each name as the Settings page does.' })),
     }
     case 'model-gone': return {
       title: i18n._(msg({ message: `${name} no longer has ${model}.`, comment: '{model} is a model’s name, such as DeepSeek V4.1 Flash.' })),
@@ -77,4 +77,4 @@ export function tryAgainName(i18n: I18n, server: Pick<OwnServerTurn, 'name'>): s
 export const putBackName = (i18n: I18n): string => i18n._(msg`Try again, putting your last message back in the composer`)
 export const imagesNotKept = (i18n: I18n): string => i18n._(msg`The images in your last message were not kept. Attach them again, then send.`)
 export const openSettingsWords = (i18n: I18n): string => i18n._(msg`Open Settings`)
-export const openSettingsName = (i18n: I18n): string => i18n._(msg`Open Settings at Your own model servers`)
+export const openSettingsName = (i18n: I18n): string => i18n._(msg`Open Settings at APIs and your own model servers`)

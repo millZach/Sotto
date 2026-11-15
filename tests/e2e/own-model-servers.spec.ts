@@ -37,7 +37,7 @@ async function sglang(): Promise<{ readonly server: Server; readonly port: numbe
 async function providersPage(page: Page): Promise<Locator> {
   await page.getByRole('link', { name: 'Settings', exact: true }).click()
   await page.getByRole('tab', { name: 'Providers', exact: true }).click()
-  const group = page.getByRole('region', { name: 'Your own model servers', exact: true })
+  const group = page.getByRole('region', { name: 'APIs and your own model servers', exact: true })
   await expect(group).toBeVisible()
   return group
 }
@@ -61,16 +61,17 @@ async function measure(root: Locator, surfaces: Record<string, string>, size: st
     expect(ratio, `${surface} at ${size} ${appearance}`).toBeGreaterThanOrEqual(4.5)
   }
 }
-const DIALOG_TEXT = { label: '.own-field label', note: '.own-field small', who: '.own-found__who', 'context label': '.own-model__context label', 'context note': '.own-model__note', privacy: '.own-privacy' }
+const DIALOG_TEXT = { label: '.own-field label', note: '.own-field small', who: '.own-model-toolbar', 'context label': '.own-model__context', 'context note': '.own-model__note', privacy: '.own-privacy' }
 
 async function checkedDialog(page: Page, group: Locator, port: number): Promise<Locator> {
-  await group.getByRole('button', { name: 'Add a server', exact: true }).click()
-  const dialog = page.getByRole('dialog', { name: 'Add your own model server', exact: true })
+  await group.getByRole('button', { name: 'Add an API or server', exact: true }).click()
+  await page.getByRole('button', { name: 'Another address', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: 'Add by address', exact: true })
   await expect(dialog.getByLabel('Address', { exact: true })).toBeFocused()
   await dialog.getByLabel('Address', { exact: true }).fill(`127.0.0.1:${port}`)
   await dialog.getByLabel('Name', { exact: true }).fill('spark-head')
   await dialog.getByRole('button', { name: 'Check this server', exact: true }).click()
-  await expect(dialog.getByText(/^SGLang answered in \d+ ms with 2 models\.$/u)).toBeVisible()
+  await expect(dialog.getByText('2 models found', { exact: true })).toBeVisible()
   return dialog
 }
 
@@ -97,20 +98,21 @@ test('adds your own model server from Settings and from the model menu, checks i
     launched = await launchSotto('success', profile)
     const { page } = launched
     page.on('pageerror', error => pageErrors.push(error.message))
-    await page.evaluate(() => window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', reducedMotion: 'on' }))
+    await page.evaluate(() => window.sotto!.updateSettings({ onboardingComplete: true, threadListGrouping: 'project', appearance: 'dark', reducedMotion: 'on' }))
     await page.reload()
     await page.evaluate(async () => { await window.sotto!.agents!.command({ type: 'connect', provider: 'opencode' }) })
     await resizeWindow(launched, 1280, 800)
 
     // The group sits above the provider tiles and reads nothing from any server until a press.
     const group = await providersPage(page)
-    await expect(group).toContainText('None yet. Add a model server you run to use its models in OpenCode threads.')
+    await expect(group).toContainText('None yet. Add an API or a model server to use its models in threads.')
     expect(await group.evaluate(node => Boolean(node.compareDocumentPosition(document.querySelector('.providers-list')!) & Node.DOCUMENT_POSITION_FOLLOWING))).toBe(true)
     await page.screenshot({ animations: 'disabled', path: join(evidence, 'group-empty-1280-dark.png') })
 
     // A server that does not answer: said in the dialog, nothing lost, focus on the address.
-    await group.getByRole('button', { name: 'Add a server', exact: true }).click()
-    let dialog = page.getByRole('dialog', { name: 'Add your own model server', exact: true })
+    await group.getByRole('button', { name: 'Add an API or server', exact: true }).click()
+    await page.getByRole('button', { name: 'Another address', exact: true }).click()
+    let dialog = page.getByRole('dialog', { name: 'Add by address', exact: true })
     await page.screenshot({ animations: 'disabled', path: join(evidence, 'dialog-empty-1280-dark.png') })
     await dialog.getByLabel('Address', { exact: true }).fill('127.0.0.1:9')
     await dialog.getByRole('button', { name: 'Check this server', exact: true }).click()
@@ -120,13 +122,13 @@ test('adds your own model server from Settings and from the model menu, checks i
     await page.screenshot({ animations: 'disabled', path: join(evidence, 'dialog-unreachable-1280-dark.png') })
     await page.keyboard.press('Escape')
     await expect(dialog).toBeHidden()
-    await expect(group.getByRole('button', { name: 'Add a server', exact: true })).toBeFocused()
+    await expect(group.getByRole('button', { name: 'Add an API or server', exact: true })).toBeFocused()
 
     // The check: what answered, each model with its context and Thinking, and the one context nobody said.
     dialog = await checkedDialog(page, group, port)
     const unknown = dialog.getByRole('listitem').filter({ hasText: 'qwen3-coder-30b' }).getByLabel('Context, in tokens')
     await expect(unknown).toBeFocused()
-    await expect(dialog.getByRole('switch', { name: 'Thinking for deepseek-v4.1-flash' })).toHaveAttribute('aria-checked', 'true')
+    await expect(dialog.getByText(/Thinking: the model’s default/u).first()).toBeVisible()
     await expect(dialog.getByRole('button', { name: 'Add server', exact: true })).toBeDisabled()
     await fits(page, dialog)
     await measure(dialog, DIALOG_TEXT, '1280x800', 'dark')
@@ -142,20 +144,20 @@ test('adds your own model server from Settings and from the model menu, checks i
     await page.screenshot({ animations: 'disabled', path: join(evidence, 'dialog-ready-1280-dark.png') })
     await dialog.getByRole('button', { name: 'Add server', exact: true }).click()
     await expect(dialog).toBeHidden({ timeout: 60_000 })
-    await expect(group).toContainText('Added spark-head. Its models are in the model menu under spark-head, with OpenCode.')
+    await expect(group).toContainText('Saved. Its chosen models are in the model menu.')
     const row = group.getByRole('listitem').filter({ hasText: 'spark-head' })
-    await expect(row).toContainText('Runs with OpenCode · 2 models')
+    await expect(row).toContainText('Runs with OpenCode · 2 of 2 models')
 
     // Check again says what this check found on that row, and nothing more.
-    await row.getByRole('button', { name: 'Check spark-head again', exact: true }).click()
-    await expect(row.getByRole('status')).toHaveText(/^SGLang answered in \d+ ms\.$/u)
-    await measure(group, { meta: '.own-server__meta', address: '.own-server__address', check: '.own-server__check', notice: '.own-servers__notice', note: '.settings-group__note' }, '1280x800', 'dark')
+    await row.getByRole('button', { name: 'Check again', exact: true }).click()
+    await expect(group.getByRole('status')).toContainText('Models checked.')
+    await measure(group, { meta: '.own-server__meta', address: '.own-server__address', notice: '.own-servers__notice', note: '.settings-group__note' }, '1280x800', 'dark')
     await page.screenshot({ animations: 'disabled', path: join(evidence, 'group-added-1280-dark.png') })
 
     // Light, at the two sizes.
     await page.evaluate(() => window.sotto!.updateSettings({ appearance: 'light' }))
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
-    await measure(group, { meta: '.own-server__meta', address: '.own-server__address', check: '.own-server__check', note: '.settings-group__note' }, '1280x800', 'light')
+    await measure(group, { meta: '.own-server__meta', address: '.own-server__address', note: '.settings-group__note' }, '1280x800', 'light')
     await page.screenshot({ animations: 'disabled', path: join(evidence, 'group-added-1280-light.png') })
     dialog = await checkedDialog(page, group, port)
     await measure(dialog, DIALOG_TEXT, '1280x800', 'light')
@@ -180,13 +182,14 @@ test('adds your own model server from Settings and from the model menu, checks i
     const menu = page.getByRole('dialog', { name: 'Choose model', exact: true })
     await menu.getByRole('tab', { name: 'OpenCode', exact: true }).click()
     const own = menu.getByRole('group', { name: 'OpenCode model sources', exact: true }).getByRole('button').last()
-    await expect(own).toHaveAccessibleName('Your own server: add a model server you run')
+    await expect(own).toContainText('Add an API or server…')
     await page.screenshot({ animations: 'disabled', path: join(evidence, 'menu-own-server-1280-dark.png') })
     await resizeWindow(launched, 820, 560)
     await page.screenshot({ animations: 'disabled', path: join(evidence, 'menu-own-server-820-dark.png') })
     await own.click()
     await expect(menu).toBeHidden()
-    const fromMenu = page.getByRole('dialog', { name: 'Add your own model server', exact: true })
+    await page.getByRole('button', { name: 'Another address', exact: true }).click()
+    const fromMenu = page.getByRole('dialog', { name: 'Add by address', exact: true })
     await expect(fromMenu.getByLabel('Address', { exact: true })).toBeFocused()
     await fits(page, fromMenu)
     await page.screenshot({ animations: 'disabled', path: join(evidence, 'dialog-from-menu-820-dark.png') })
@@ -197,9 +200,11 @@ test('adds your own model server from Settings and from the model menu, checks i
 
     // Remove asks nothing more, says what it did and leaves focus on Add a server.
     const again = await providersPage(page)
-    await again.getByRole('button', { name: 'Remove spark-head', exact: true }).click()
-    await expect(again).toContainText('Removed spark-head.')
-    await expect(again.getByRole('button', { name: 'Add a server', exact: true })).toBeFocused()
+    await again.getByRole('button', { name: 'More for spark-head', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Remove', exact: true }).click()
+    await page.getByRole('dialog', { name: 'Remove spark-head?' }).getByRole('button', { name: 'Remove', exact: true }).click()
+    await expect(again.getByText('spark-head', { exact: true })).toBeHidden()
+    await expect(again.getByRole('button', { name: 'Add an API or server', exact: true })).toBeFocused()
 
     expect(pageErrors).toEqual([])
     await writeFile(join(evidence, 'contrast.json'), `${JSON.stringify(contrasts, null, 2)}\n`)

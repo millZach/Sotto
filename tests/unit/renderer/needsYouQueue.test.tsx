@@ -5,6 +5,7 @@ import type { AgentCommand, AgentRequest, AgentState, AgentThread } from '../../
 import { E2E_THREADS_NOW as NOW } from '../../../src/shared/e2e'
 import { describeThreads, organizeWorkspace } from '../../../src/renderer/src/agents/threadFacts'
 import { ThreadSidebar } from '../../../src/renderer/src/agents/ThreadSidebar'
+import { NeedsYouCard } from '../../../src/renderer/src/agents/NeedsYouQueue'
 import { useOptionalApp, type AppContextValue } from '../../../src/renderer/src/state/AppContext'
 import { threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 
@@ -21,7 +22,7 @@ function owl(on: boolean): void {
     owlFeatures: { 'needs-you-queue': on } } } as unknown as AppContextValue)
 }
 beforeEach(() => { vi.mocked(useOptionalApp).mockReset() })
-afterEach(cleanup)
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 const ago = (minutes: number): string => new Date(NOW - minutes * 60_000).toISOString()
 const edit = (state: AgentState, id: string, change: (thread: AgentThread) => AgentThread): AgentState =>
@@ -38,6 +39,42 @@ function mount(state: AgentState, command = vi.fn<(request: AgentCommand) => Pro
 const queue = (): HTMLElement => document.querySelector('.needs-you')!
 
 describe('the Needs you queue (ADR-0135)', () => {
+  it.each(['darwin', 'win32', 'linux'].flatMap(platform =>
+    (['below', 'beside'] as const).map(placement => ({ platform, placement }))))(
+    'keeps a tall $placement card below the top clearance on $platform', ({ platform, placement }) => {
+      owl(true)
+      const topClear = platform === 'darwin' ? 44 : 12
+      const state = threadsStateFixture()
+      const entry = organizeWorkspace(state, describeThreads(state, NOW), '', state.activeProjectId, false, NOW).needsYou.entries[0]!
+      const anchor = document.createElement('button')
+      const geometry = vi.spyOn(anchor, 'getBoundingClientRect').mockReturnValue({ top: 180, bottom: 210, left: 12, right: 76 } as DOMRect)
+      // jsdom has no layout: model an oversized card capped by the stylesheet's top clearance and bottom gap.
+      const height = vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (this: HTMLElement) {
+        return 560 - Number.parseFloat(this.style.getPropertyValue('--needs-you-top-clear') || '12') - 12
+      })
+      vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(380)
+      let nextFrame: FrameRequestCallback = () => {}
+      vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => { nextFrame = callback; return 1 })
+      vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {})
+      vi.stubGlobal('innerWidth', 820)
+      vi.stubGlobal('innerHeight', 560)
+      render(<aside className={platform === 'darwin' ? 'thread-nav thread-nav--mac' : 'thread-nav'}>
+        <NeedsYouCard id="positioned-card" entry={entry} state={state} command={vi.fn()} anchor={() => anchor} trigger={() => anchor}
+          placement={placement} dismissing={false} onClose={vi.fn()} onOpen={vi.fn()} onDismiss={vi.fn()} />
+      </aside>)
+      const card = screen.getByRole('dialog')
+      expect(card.style.top).toBe(`${topClear}px`)
+      expect(card.style.getPropertyValue('--needs-you-top-clear')).toBe(`${topClear}px`)
+      expect(Number.parseFloat(card.style.top) + card.offsetHeight).toBe(548)
+      expect(card.style.left).toBe(placement === 'beside' ? '84px' : '12px')
+      // An above placement at 36px fits elsewhere, but would enter the Mac's lights row.
+      height.mockReturnValue(300)
+      geometry.mockReturnValue({ top: 340, bottom: 370, left: 12, right: 76 } as DOMRect)
+      act(() => { nextFrame(0) })
+      expect(card.style.top).toBe(placement === 'beside' || platform === 'darwin' ? '248px' : '36px')
+    },
+  )
+
   it('leaves the sidebar as it is today while the Owl feature is off', () => {
     owl(false)
     mount(threadsStateFixture())

@@ -295,7 +295,7 @@ const watcherStateWatchingSchema = watcherStateThreadSchema.extend({ pullRequest
 /**
  * A pull request in the merge queue, which is Watcher's merge train (#2229): open, not a draft, in the train since its
  * checks first passed or its thread said READY TO MERGE, in that order. `requiredChecks` says whether a merge now would
- * land while its required checks run, and `checksRunning` how many required and other checks are still to finish on its
+ * land while its checks run, required or not (#2432), and `checksRunning` how many required and other checks are still to finish on its
  * head, where Sotto can read which are required; `head` is the commit Sotto last read it on, and `readyToMerge` the newest READY TO
  * MERGE its thread sent, with `onHead` saying whether that is still the head.
  */
@@ -362,7 +362,7 @@ export const watcherMachinesWithoutLoadOutput = result({ machines: z.array(z.obj
 export const WATCHER_OVERRIDE_REASON_MAX = 500
 /**
  * A send that is a GO MERGE (#2229): the pull request it gives its turn, and Watcher's reason when it goes while another
- * train pull request's required checks run or the base branch is red. Sotto shows that reason on the send's receipt.
+ * train pull request's checks run or the base branch is red. Sotto shows that reason on the send's receipt.
  */
 export const watcherGoMergeSchema = z.object({ pullRequest: gitPullRequestUrlSchema,
   overrideReason: z.string().trim().min(1).max(WATCHER_OVERRIDE_REASON_MAX).optional() }).strict()
@@ -486,6 +486,16 @@ export const watcherToolSchemas = {
         speeds: z.array(agentModelSpeedSchema).max(2).optional(),
         defaultPermission: permission.nullable(), permissionComparable: z.boolean() }).strict()).max(100).optional(),
       controlAvailable: z.boolean(), readsAvailable: z.boolean(), readOnlyProfileAvailable: z.boolean(), freshness }).strict()).max(100), ...page }),
+  },
+  // A folder made a project at the user's word (ADR-0073, November 12, 2026): an existing one, or one `newFolder` makes,
+  // with `gitInit` running `git init` in it first. It keeps no operation, as unsettle_thread keeps none: a retry answers
+  // the project the first call gave and adds nothing more. A paired host is never sent it as a Watcher call; the desktop
+  // sends that host the `create-project` its own Add project sends.
+  add_project: {
+    input: z.object({ ...mutation, hostId: z.uuid().optional(), path: z.string().min(1).max(4_096).optional(), title: z.string().min(1).max(512).optional(),
+      newFolder: z.boolean().optional(), gitInit: z.boolean().optional() }).strict(),
+    output: result({ project: z.object({ target: watcherProjectTargetSchema, title: z.string().max(512), displayRoot: z.string().max(4_096) }).strict(),
+      folderMade: z.boolean(), gitInitialized: z.boolean(), alreadyAdded: z.boolean() }),
   },
   keep_state: {
     // A list given whole replaces that list's open lines; add, edit, close and drop change one line each, by its ID.

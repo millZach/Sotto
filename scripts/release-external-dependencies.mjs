@@ -37,6 +37,8 @@ const reviewedInventories = Object.freeze({
       'node:stream/promises',
       'node:string_decoder',
       'node:timers/promises',
+      // A mail account is read over IMAP on a TLS connection to its own mail server (ADR-0205).
+      'node:tls',
       'node:url',
       'node:util',
       // The Git launcher's worker thread, built beside the main bundle from Node builtins alone.
@@ -120,11 +122,21 @@ export function verifyExternalDependencyInventories(
 // an explicit platform build/ABI strategy; never copy the desktop's node-pty into this archive.
 // `node:zlib` compresses a desktop's socket messages (ADR-0025, October 18 amendment).
 // The host launches Git on a worker thread too (node:events, node:worker_threads), as the desktop does.
+// The unprefixed four are pngjs's own `require('zlib')`-style spellings, kept verbatim by Rollup
+// in the picture worker it is compiled into (ADR-0203). Sorted, as the build writes them.
+// `node:tls` is how a mail account is read (ADR-0205): a host's threads read a mail account's copy from the
+// host's own machine, over TLS to that account's mail server.
 export const HOST_EXTERNAL_IMPORTS = Object.freeze([
+  'assert', 'buffer',
   'node:child_process', 'node:crypto', 'node:events', 'node:fs', 'node:fs/promises', 'node:http', 'node:net',
-  'node:os', 'node:path', 'node:sqlite', 'node:string_decoder', 'node:timers/promises',
-  'node:url', 'node:util', 'node:worker_threads', 'node:zlib', 'zod',
+  'node:os', 'node:path', 'node:sqlite', 'node:string_decoder', 'node:timers/promises', 'node:tls',
+  'node:url', 'node:util', 'node:worker_threads', 'node:zlib', 'util', 'zlib', 'zod',
 ])
+
+// What the host's bundle compiles in from node_modules, all pure JavaScript and each in
+// THIRD_PARTY_NOTICES.md: the picture worker's JPEG decoder and PNG reader and writer (ADR-0203).
+// Sorted, as the build writes them. A new name here is an ADR first, as a runtime dependency is.
+export const HOST_BUNDLED_PACKAGES = Object.freeze(['jpeg-js', 'pngjs'])
 
 export function verifyHostExternalDependencies(inventory, packagedDependencies, availableBuiltinModules = builtinModules) {
   if (inventory?.version !== 1 || inventory.scope !== 'host' ||

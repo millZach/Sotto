@@ -34,7 +34,7 @@ function withMain(): void {
   const mainActivity: MainActivityBridge = { read: vi.fn(async () => activity), command: vi.fn(async () => activity), onChanged: () => () => undefined }
   const notifications: NotificationsBridge = { test: vi.fn(async () => 'shown' as const), onOpened: () => () => undefined }
   // Your own model servers, with none saved: the group shows only with its bridge (ADR-0124).
-  const ownServers: OwnServersBridge = { list: vi.fn(async () => []), check: vi.fn(), add: vi.fn(), checkSaved: vi.fn(), remove: vi.fn() }
+  const ownServers: OwnServersBridge = { catalogue: vi.fn(async () => ({ entries: [], available: false })), chooseModels: vi.fn(), replaceKey: vi.fn(), list: vi.fn(async () => []), check: vi.fn(), add: vi.fn(), checkSaved: vi.fn(), remove: vi.fn() }
   // The popup's shortcut row (ADR-0181) shows only with its bridge.
   const popup: PopupShortcutBridge = { state: vi.fn(async () => ({ status: 'on' as const, chord: 'Alt+Shift+Space' })), onState: () => () => undefined,
     replace: vi.fn(async () => ({ ok: true as const })), onOpened: () => () => undefined }
@@ -220,9 +220,9 @@ describe('Find a setting', () => {
     render(<SettingsView {...baseProps()} />)
     await waitFor(() => expect(document.getElementById('settings-providers')?.querySelector('.own-servers')).not.toBeNull())
     await user.type(screen.getByRole('searchbox', { name: 'Find a setting' }), 'ollama')
-    await user.click(within(screen.getByRole('list', { name: 'Settings found' })).getByRole('button', { name: /Your own model servers/u }))
+    await user.click(within(screen.getByRole('list', { name: 'Settings found' })).getByRole('button', { name: /APIs and your own model servers/u }))
     expect(settingsTab('Providers')).toHaveAttribute('aria-selected', 'true')
-    expect(screen.getByRole('button', { name: 'Add a server' })).toHaveFocus()
+    expect(screen.getByRole('button', { name: 'Add an API or server' })).toHaveFocus()
   })
 
   it('finds a setting by its translated name and still by its English one, and lands on the translated control', async () => {

@@ -1,8 +1,8 @@
 import { expect, test } from '@playwright/test'
 
 import { populatedHistory, withSotto } from '../fixtures/designCaptureProfile'
-import { scales, widgetThemes, setAppearance, assertDictateState, capturePage, captureSection, captureFullSurface, captureWidget, widgetPage } from './support/designCapture'
-import { openPage } from './support/sottoLaunch'
+import { scales, widgetThemes, setAppearance, assertDictateState, capturePage, captureFullSurface, captureWidget, widgetPage } from './support/designCapture'
+import { openPage, reachSetupStop, setupNote } from './support/sottoLaunch'
 
 const captureEnabled = process.env.SOTTO_DESIGN_CAPTURE === '1'
 
@@ -13,14 +13,13 @@ test.describe('authoritative design-review captures', () => {
   test('dense scaling matrix remains bounded', async () => {
     for (const scalePercent of scales) {
       await withSotto({ onboardingComplete: false, scalePercent }, async ({ page }) => {
-        const forward = page.locator('.onboarding-actions').getByRole('button', { name: /^(Continue|Skip for now)$/ })
-        await page.getByRole('button', { name: 'Get started' }).click()
-        await forward.click()
-        await page.getByRole('button', { name: /test microphone/i }).click()
-        await expect(page.getByText('Sotto heard you. Your microphone works.')).toBeVisible()
-        await forward.click()
-        await expect(page.getByRole('heading', { name: 'Choose a speech model' })).toBeVisible()
-        await captureSection(page, page.locator('.onboarding-shell'), `scale-${scalePercent}-onboarding.png`)
+        // First-run setup's speech model stop (ADR-0200), the window with its note over Settings › Dictation.
+        await reachSetupStop(page, 'microphone')
+        await page.locator('.settings-microphone-test').getByRole('button', { name: 'Test microphone', exact: true }).click()
+        await expect(setupNote(page)).toContainText('Sotto heard you. Your microphone works.')
+        await reachSetupStop(page, 'speech-model')
+        await expect(setupNote(page).getByRole('heading', { name: 'Choose a speech model' })).toBeVisible()
+        await capturePage(page, `scale-${scalePercent}-setup.png`)
       })
 
       await withSotto({ onboardingComplete: true, history: populatedHistory, scalePercent }, async (launched) => {

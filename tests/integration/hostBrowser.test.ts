@@ -26,21 +26,40 @@ const PAGES: Record<string, string> = {
     <a id="file" href="file:///etc/hostname" style="position:absolute;left:20px;top:220px">File</a>
     <div style="height:3000px"></div></body>`,
   '/b': '<!doctype html><title>Page B</title><p>B</p>',
+  '/tall': `<!doctype html><title>Tall</title><body style="margin:0">
+    <button id="deep" style="position:absolute;left:20px;top:1500px;width:120px;height:40px">Deep</button>
+    <div style="height:3000px"></div>
+    <script>addEventListener('load', () => { scrollTo(0, 1400); document.title = 'Scrolled ' + Math.round(scrollY) })</script></body>`,
   '/frame': '<!doctype html><title>Framed</title><iframe id="inner" src="data:text/html,<p>inside</p>"></iframe>',
 }
 
 let server: Server, origin: string, profileRoot: string, browser: HostBrowser
 
-async function until(check: () => boolean, what: string): Promise<void> {
+/** Waits for `check`, giving up after 15 seconds, or at once when `stopped` is aborted (a test that ran out of time). */
+async function until(check: () => boolean, what: string, stopped?: AbortSignal): Promise<void> {
   const deadline = Date.now() + 15_000
-  while (!check()) {
+  // The abort is checked first, so a wait whose condition already holds still stops a test that ran out of time.
+  for (;;) {
+    if (stopped?.aborted) throw new Error(`Stopped waiting for ${what}: the test ran out of time.`)
+    if (check()) return
     if (Date.now() > deadline) throw new Error(`Timed out waiting for ${what}.`)
     await new Promise(resolve => setTimeout(resolve, 50))
   }
 }
-async function loaded(page: HostBrowserPage, path: string): Promise<void> {
-  await until(() => page.state.url === origin + path && page.state.status === 'ready', `${path} to load`)
+async function loaded(page: HostBrowserPage, path: string, stopped?: AbortSignal): Promise<void> {
+  await until(() => page.state.url === origin + path && page.state.status === 'ready', `${path} to load`, stopped)
 }
+
+/**
+ * The deadline of the journey that starts a real Chromium and drives it through every action. It takes about 12 seconds on
+ * CI's Linux runner (11.7 s on November 10, 2026), so the suite's 15 seconds left it no room: on a busier runner it timed
+ * out on every run while every other test of the file passed (#2426). Waiting is not the assertion (AGENTS.md), and a
+ * deadline that is never reached costs nothing. If it is reached, the journey stops at its next wait and never reaches its
+ * own close, which would otherwise dispose the workspace's browser context under a later test's open (the bug bot on
+ * #2441). A page call already in flight still finishes. It does not close the page when it stops: closing it could do the
+ * same, and the browser's own close at the end takes it.
+ */
+const REAL_CHROMIUM_JOURNEY_MS = 60_000
 
 describe.skipIf(!enabled)('a host\'s own browser against a real Chromium (requires SOTTO_REAL_BROWSER=1)', () => {
   beforeAll(async () => {
@@ -59,27 +78,27 @@ describe.skipIf(!enabled)('a host\'s own browser against a real Chromium (requir
     if (profileRoot) await rm(profileRoot, { recursive: true, force: true })
   })
 
-  it('opens, follows and drives a page as the agent and the user do', async () => {
+  it('opens, follows and drives a page as the agent and the user do', async ({ signal }) => {
     const page = await browser.open('workspace-1')
     expect((await readdir(profileRoot)).length).toBe(1)
     await page.navigate(`${origin}/a`)
-    await loaded(page, '/a')
-    await until(() => page.state.title === 'Page A', 'the title')
+    await loaded(page, '/a', signal)
+    await until(() => page.state.title === 'Page A', 'the title', signal)
 
     const inspected = JSON.parse(await page.automation.inspect()) as { url: string; elements: { name: string }[] }
     expect(inspected.url).toBe(`${origin}/a`)
     expect(inspected.elements.map(element => element.name)).toContain('Sign in')
 
     await page.automation.input({ type: 'click', x: 80, y: 40 }, () => undefined)
-    await until(() => page.state.title === 'Clicked', 'the click')
+    await until(() => page.state.title === 'Clicked', 'the click', signal)
 
     await page.input({ type: 'mouse', action: 'down', x: 60, y: 115, button: 'left', clickCount: 1, modifiers: 0 })
     await page.input({ type: 'mouse', action: 'up', x: 60, y: 115, button: 'left', clickCount: 1, modifiers: 0 })
     expect(await page.automation.target({ type: 'type', text: 'x' })).toContain('INPUT')
     await page.automation.input({ type: 'type', text: 'forge' }, () => undefined)
-    await until(() => page.state.title === 'Typed forge', 'the agent\'s typing')
+    await until(() => page.state.title === 'Typed forge', 'the agent\'s typing', signal)
     await page.input({ type: 'text', text: '!' })
-    await until(() => page.state.title === 'Typed forge!', 'the user\'s typing')
+    await until(() => page.state.title === 'Typed forge!', 'the user\'s typing', signal)
 
     const capture = await page.automation.capture(page.state.url)
     expect(capture.image.startsWith('data:image/png;base64,')).toBe(true)
@@ -92,18 +111,33 @@ describe.skipIf(!enabled)('a host\'s own browser against a real Chromium (requir
     expect((await page.automation.thumbnail())?.startsWith('data:image/jpeg;base64,')).toBe(true)
 
     await page.navigate(`${origin}/b`)
-    await loaded(page, '/b')
-    await until(() => page.state.canGoBack, 'history')
+    await loaded(page, '/b', signal)
+    await until(() => page.state.canGoBack, 'history', signal)
     await page.back()
-    await loaded(page, '/a')
-    await until(() => page.state.canGoForward, 'forward history')
+    await loaded(page, '/a', signal)
+    await until(() => page.state.canGoForward, 'forward history', signal)
     await page.forward()
-    await loaded(page, '/b')
+    await loaded(page, '/b', signal)
     await page.reload()
-    await loaded(page, '/b')
+    await loaded(page, '/b', signal)
     await page.close()
     expect(page.closed).toBe(true)
-  })
+  }, REAL_CHROMIUM_JOURNEY_MS)
+
+  it('finds what a scrolled page shows at a click\'s point, and refuses a point past the visible area in words', async ({ signal }) => {
+    const page = await browser.open('workspace-1')
+    await page.navigate(`${origin}/tall`)
+    await loaded(page, '/tall', signal)
+    // The page scrolls itself to 1400 once it loads and says so in its title at once, so the scroll is exact and the wait
+    // needs no frame: a scroll event fires only when the page draws, and a headless page on Linux CI drew none.
+    await until(() => page.state.title === 'Scrolled 1400', 'the scroll', signal)
+    // The button is 1500 pixels down the document and 100 down the scrolled view. Chromium hit-tests the target check in
+    // the document, so the view's point has to move with the scroll, or the check finds nothing there and fails. The click
+    // itself is the hidden-page e2e's to prove; dispatching one here would wait on frames as #2496's does.
+    expect(await page.automation.target({ type: 'click', x: 80, y: 120 })).toContain('BUTTON')
+    await expect(page.automation.target({ type: 'click', x: 80, y: 900 })).rejects.toMatchObject({ code: 'blocked', message: expect.stringContaining('outside the page\'s visible area') })
+    await page.close()
+  }, REAL_CHROMIUM_JOURNEY_MS)
 
   it('sends pictures to a pane at its size, newest first, until it stops watching', async () => {
     const page = await browser.open('workspace-1')

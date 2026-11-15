@@ -2,6 +2,7 @@ import { startsThread } from '../shared/threadStarts'
 import type { HostDelegationRelay, RelayDesktop } from '../main/agents/delegationRelayHost'
 import type { HostTellWatcherRelay, TellWatcherDesktop } from '../main/agents/tellWatcherRelay'
 import type { HostRemoteCallers, RemoteDesktop } from '../main/agents/delegationRemoteHost'
+import type { HostHeldSession } from '../main/agents/sessionReaper'
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import type { Duplex } from 'node:stream'
@@ -33,6 +34,8 @@ import { usageLocalClearResultSchema, usageLocalHostReadSchema, usageProvidersBe
 import { hostMachineReportSchema } from '../shared/hostFacts'
 import { projectOriginsSchema, projectSetupResultSchema, type ProjectOrigins } from '../shared/workerMachine'
 import { desktopDefaultsReceiptSchema } from '../shared/desktopDefaults'
+import { heldPluginAccountCopiesSchema, pluginAccountCopyReceiptSchema, pluginAccountCopyRemovedSchema } from '../shared/pluginAccountCopies'
+import { gitHubSignInSchema, isBridgePlugin, isMailPlugin, isSpendingPlugin } from '../shared/plugins'
 import { ProviderSignInRefusal, type ProviderSignIns } from './providerSignIn'
 import { DEFLATE_RESPONSE, deflateOffered, SocketFrames } from './socketFrames'
 import { CutBodies } from '../shared/activityBodies'
@@ -40,7 +43,7 @@ import { hostAdminPhonesCommandSchema, type HostAdminPhonesCommand, type PhonesS
 import { CommandReceipts, type CommandReceipt } from './commandReceipts'
 import { HttpBudgets } from './httpBudgets'
 import { PAGE_REQUESTS_PER_MINUTE, QUESTION_PAGE_PATH, serveQuestionPage } from './questionPageRoute'
-import type { WatcherHostRead } from '../shared/watcherHost'
+import { watcherProgressChange, type WatcherHostProjection, type WatcherHostRead } from '../shared/watcherHost'
 import type { WatcherThreadTarget } from '../shared/watcher'
 import { isWatcherQuestionRequest } from '../shared/watcherQuestions'
 import { visibleWatcherState } from '../shared/watcherVisibility'
@@ -68,6 +71,7 @@ const COMPOSER_OPS = { 'watcher-phone-open': 'open', 'watcher-phone-new': 'new',
 const adminPhonesRequest = z.object({}).strict()
 const adminPhonesCommandRequest = z.object({ command: hostAdminPhonesCommandSchema }).strict()
 const adminTailnetRequest = z.object({ enabled: z.boolean().optional() }).strict()
+const adminHeldSessionsRequest = z.object({}).strict()
 const adminClientRequest = z.object({ clientId: z.string().min(1).max(512) }).strict()
 const pairRequest = z.object({ v: z.literal(1), code: z.string().min(1).max(32), name: z.string().min(1).max(256) }).strict()
 
@@ -103,7 +107,7 @@ const TOO_LARGE: Record<Oversize, string> = {
   list: 'The thread list on this host is too large to send to this device. Nothing on the host was lost, and this device keeps the last list it received.',
 }
 /** A thread's tool reads (ADR-0025, October 5 amendment), whose answer too large to send gets the tool sentence. A file preview and a comparison also take the one-at-a-time guard below. */
-const TOOL_READS = new Set<HostRequest['op']>(['thread-files', 'thread-file-preview', 'thread-file-link', 'thread-changes', 'thread-changes-review', 'subagent-page', 'subagent-assignments'])
+const TOOL_READS = new Set<HostRequest['op']>(['thread-files', 'thread-file-preview', 'thread-file-link', 'thread-linked-file', 'thread-changes', 'thread-changes-review', 'subagent-page', 'subagent-assignments'])
 /** A refusal the client reads: its code, and a sentence, which is the code's own unless the refusal says more. */
 /** `reason` rides along on a pull request read's refusal only (#1290), so the client can say what to do next. */
 class Refusal extends Error { constructor(readonly code: HostErrorCode, message = errors[code], readonly reason?: GitPullRequestReadFailure) { super(message) } }
@@ -164,7 +168,16 @@ interface Peer { browserWatches?: Map<string, { ticket: number; stop?: () => voi
    * With `step-window` (ADR-0194), where each observed thread's window starts for this client, as cut for the last whole it
    * was sent: kept while it observes the thread, so the window only grows at its end, and moved back by `earlier-steps`.
    */
-  stepWindows?: Map<string, StepWindowCut> | undefined }
+  stepWindows?: Map<string, StepWindowCut> | undefined
+  /** Whether its hello accepted `thread-media-edge`: it may name the longest edge of a picture it asks for (ADR-0170). */
+  pictureEdges?: boolean
+  /**
+   * Whether its hello accepted `watcher-progress` beside `watcher-reads`: a Watcher projection that differs from the last one
+   * written to it only in its progress goes as a progress push (ADR-0073, November 10, 2026 amendment).
+   */
+  watcherProgress?: boolean }
+/** The Watcher projection last written to a desktop that accepted `watcher-progress`, as far as a progress push needs it. */
+interface WatcherWritten { revision: string; record: string; progress: NonNullable<WatcherHostProjection['progress']> }
 /**
  * A desktop from before history import, or from before Muse and OpenCode were counted, is sent only the Usage read its
  * strict schemas know (ADR-0083).
@@ -207,6 +220,13 @@ export interface SocketServerOptions {
    * desktop's own phone listener offers no desktop-only feature and stops whenever phone access is off.
    */
   tailnet?: TailnetAdmission
+  /**
+   * A phone that offers `permessage-deflate` is answered and sent compressed messages as a desktop is (ADR-0025, November
+   * 10 amendment). Every phone listener turns it on (`PhoneAccess`), the desktop's and a headless host's tailnet listener,
+   * unless its host was started with `SOTTO_HOST_COMPRESS_PHONES=0`. Off when left out, as on the local apps listener,
+   * where loopback gains nothing from it.
+   */
+  compressPhones?: boolean
   /** The host's tailnet address and who started it, read for each health and hello answer. */
   about?: () => HostAbout
   /** The host's phone access in its row's words, read for each hello to a desktop. */
@@ -255,6 +275,11 @@ export interface SocketServerOptions {
    * reaches this host over SSH. Absent on the desktop's phone listener, whose administrative routes are off anyway.
    */
   phones?: HostPhonesAdministration
+  /**
+   * The provider sessions the headless host's adapters hold and the rules keeping each (#2398), read on the administrative
+   * route `held-sessions` by the host machine's own measuring script. Absent on the desktop's phone listener.
+   */
+  heldSessions?: () => readonly HostHeldSession[]
   /**
    * The headless host updating itself for a desktop that asks (ADR-0088). Offered on either listener, to a client in
    * `watcherDesktops` whose `remote-answer` policy lets it answer, and only when the host can update itself at all.
@@ -370,8 +395,12 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'thread-media' || service.supportsThreadMedia === true && service.threadMedia !== undefined)
     && (feature !== 'browser' || options.browser !== undefined)
     && (feature !== 'thread-media-video' || service.supportsThreadMedia === true && service.threadMediaPart !== undefined)
+    // A copy at a longest edge needs a maker: the desktop's image tools, or a headless host's picture worker (ADR-0203).
+    && (feature !== 'thread-media-edge' || service.supportsPictureEdges === true)
     && (feature !== 'watcher-control' || service.supportsWatcherControl === true && options.watcherDesktops !== undefined)
     && (feature !== 'watcher-reads' || watcherReads)
+    // A projection's progress alone goes where the projection does (ADR-0073, November 10, 2026 amendment).
+    && (feature !== 'watcher-progress' || watcherReads)
     && (feature !== 'watcher-standing-watch' || service.supportsWatcherStandingWatch === true && options.watcherDesktops !== undefined)
     && (feature !== 'watcher-work-settled' || watcherReads)
     && (feature !== 'watcher-outcomes' || watcherReads)
@@ -415,6 +444,14 @@ export async function startSocketServer(options: SocketServerOptions) {
     // A host that keeps a check queue sends it to a recorded desktop's window (#1312), only where its Owl answer turns on
     // Work across machines; the desktop's own phone listener never lists it.
     && (feature !== 'check-queue-views' || service.supportsCheckQueueViews === true && service.checkQueue !== undefined && desktopRecords)
+    // Account copies (ADR-0205) only where the host keeps them, and only on a listener that tells its desktops apart.
+    && (feature !== 'plugin-account-copies' || service.supportsPluginAccountCopies === true && desktopRecords)
+    // A mail account's copy (ADR-0205, decision 8) only where the host's threads can read one, on the same listeners.
+    && (feature !== 'plugin-mail-copies' || service.supportsPluginMailCopies === true && desktopRecords)
+    // A Meshy account's copy, with its switch and limit, wherever account copies are kept: this build knows Meshy.
+    && (feature !== 'plugin-meshy-copies' || service.supportsPluginAccountCopies === true && desktopRecords)
+    // Who the host's own gh is signed in as (ADR-0205), where the host runs plugin tools, on the same listeners.
+    && (feature !== 'plugin-github-sign-in' || service.supportsPluginGitHubSignIn === true && service.pluginGitHubSignIn !== undefined && desktopRecords)
     // The same host answers a recorded desktop's read of those threads' delegations, for its window (#1310).
     && (feature !== 'delegation-views' || service.supportsDelegationViews === true && service.delegationViews !== undefined && desktopRecords)
     // Continuing agents and forking (#1028) only where the host's Owl answer turns them on.
@@ -451,6 +488,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     // Deleting settled threads (ADR-0140) only where the host's Owl answer turns clearing on, and only for a desktop: the
     // desktop's own phone listener, which serves no desktop, never offers it, and neither phone app deletes.
     && (feature !== 'thread-file-links' || service.supportsThreadFileLinks === true && service.threadFileLink !== undefined)
+    && (feature !== 'thread-linked-files' || service.supportsThreadLinkedFiles === true && service.threadLinkedFile !== undefined)
     && (feature !== 'thread-delete' || service.supportsThreadDelete === true && desktopListener)
     // Attached files (ADR-0131) only where the host's Owl answer turns them on and it keeps attachments at all.
     && (feature !== 'file-staging' || service.supportsFileStaging === true && service.stageAttachment !== undefined)
@@ -481,11 +519,49 @@ export async function startSocketServer(options: SocketServerOptions) {
     .filter(feature => !feature.startsWith('watcher-') || feature.startsWith('watcher-phone') || options.watcherDesktops?.has(peer.client.clientId))
     .filter(feature => feature !== 'host-update' || mayUpdate(peer))
     .filter(feature => feature !== 'branch-moves' && feature !== 'thread-move' && feature !== 'thread-move-source' && feature !== 'thread-move-keep' || (options.watcherDesktops?.has(peer.client.clientId) ?? false))
+    // An account copy carries a secret, so it comes only from the desktop the launch script recorded (ADR-0205).
+    .filter(feature => feature !== 'plugin-account-copies' && feature !== 'plugin-mail-copies' && feature !== 'plugin-meshy-copies' || options.watcherDesktops?.has(peer.client.clientId) === true)
+    // The account a host's gh is signed in to is its owner's own detail: told only to a recorded desktop.
+    .filter(feature => feature !== 'plugin-github-sign-in' || options.watcherDesktops?.has(peer.client.clientId) === true)
     // Desktop defaults come only from a client the launch script recorded as a desktop (#1310).
     .filter(feature => feature !== 'host-delegation' && feature !== 'every-agent-picture' && feature !== 'delegation-views' && feature !== 'delegation-relay' && feature !== 'delegation-relay-send' && feature !== 'delegation-remote' && feature !== 'delegation-branch-starts' && feature !== 'check-queue-views'
       || options.watcherDesktops?.has(peer.client.clientId) === true)
   const watcherScopes = new WeakMap<Peer, WatcherHostRead>()
   const watcherRevisions = new WeakMap<Peer, string>()
+  const watcherWritten = new WeakMap<Peer, WatcherWritten>()
+  /**
+   * The digest of each list a Watcher projection carries, by the list. `WatcherService` makes a projection's requests,
+   * operations and standing watches afresh whenever its record changes and never edits them, so a list it hands out
+   * again is the same list, digested once however many pushes and answers carry it. A desktop that does not know every
+   * provider is sent a projection scoped for it (`watcherFor`), whose lists are made afresh each time, so a digest is kept
+   * by the service's own list and by what that peer may not be sent: scoping the same list the same way gives the same
+   * rows. Without that, every progress push to such a desktop serialized and hashed the whole record again.
+   */
+  const watcherListDigests = new WeakMap<object, Map<string, string>>()
+  const sha256 = (text: string): string => createHash('sha256').update(text).digest('hex')
+  /**
+   * Everything a Watcher projection holds but its progress, revision and time, as one digest: two projections with the
+   * same one differ only in how far their watched threads have got, so the later can go as a progress push.
+   */
+  const watcherRecordOf = (projection: WatcherHostProjection, source: WatcherHostProjection = projection, scoped = ''): string => sha256(JSON.stringify(Object.entries(projection)
+    .filter(([name]) => name !== 'progress' && name !== 'revision' && name !== 'observedAt').sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
+    .map(([name, value]) => {
+      if (!Array.isArray(value)) return [name, value]
+      const own = (source as unknown as Record<string, unknown>)[name]
+      const list: object = Array.isArray(own) ? own : value
+      let digests = watcherListDigests.get(list)
+      if (!digests) watcherListDigests.set(list, digests = new Map())
+      let digest = digests.get(scoped)
+      if (digest === undefined) digests.set(scoped, digest = sha256(JSON.stringify(value)))
+      return [name, digest]
+    })))
+  /** What a peer may not be sent, as the key its scoped lists' digests are kept under. */
+  const watcherScoped = (peer: Peer): string => peer.unknownProviders.size ? [...peer.unknownProviders].sort().join(',') : ''
+  /** Remembers the projection a desktop that accepted `watcher-progress` was just written, pushed or in an answer. */
+  const wroteWatcher = (peer: Peer, projection: WatcherHostProjection, record: string): void => {
+    watcherRevisions.set(peer, projection.revision)
+    watcherWritten.set(peer, { revision: projection.revision, record, progress: projection.progress ?? [] })
+  }
   const offers = (peer: Peer, feature: (typeof HOST_FEATURES)[number]): boolean => featuresFor(peer).includes(feature)
   const { tailnet } = options
   const isDesktop = (clientId: string): boolean => !tailnet || tailnet.desktops.has(clientId)
@@ -493,10 +569,11 @@ export async function startSocketServer(options: SocketServerOptions) {
   const admits = (clientId: string): boolean => isDesktop(clientId) || (tailnet?.phonesAdmitted() ?? true)
   /**
    * Whether a client that offers `permessage-deflate` is sent compressed messages: a desktop, on a listener that tells
-   * desktops apart or is reached only through SSH (ADR-0025, October 18 amendment). No phone is, on any listener: the
-   * desktop's own phone listener, which serves no desktop, compresses nothing.
+   * desktops apart or is reached only through SSH (ADR-0025, October 18 amendment); and any client, a phone among them, on
+   * a listener with `compressPhones` on (the November 10 amendment). Without it a phone is not, and a listener that serves
+   * no desktop (no administrative routes and no `tailnet`) compresses nothing.
    */
-  const compresses = (clientId: string): boolean => (options.admin !== false || tailnet !== undefined) && isDesktop(clientId)
+  const compresses = (clientId: string): boolean => options.compressPhones === true || (options.admin !== false || tailnet !== undefined) && isDesktop(clientId)
   const phonesOffMessage = (): string => phonesOff(options.name?.())
   const { signIns } = options
   /** A sign-in's own refusal keeps its sentence; anything else is the host's failure to run it. */
@@ -900,6 +977,24 @@ export async function startSocketServer(options: SocketServerOptions) {
     else peer.held.delete(threadId)
   }
   const detail = (peer: Peer, threadId: string): void => { sendWhole(peer, threadId, service.threadDetail(threadId)) }
+  /**
+   * Pushes a desktop Watcher's projection, whose revision differs from the last one it was written. To a desktop that
+   * accepted `watcher-progress`, a projection whose record part and evidence are those of the last one written to it goes
+   * as a progress push: what moved in its progress, measured from what that projection carried (ADR-0073, November 10,
+   * 2026 amendment). Anything else goes whole, as to every other desktop.
+   */
+  const pushWatcher = (peer: Peer, projection: WatcherHostProjection, source: WatcherHostProjection): void => {
+    const record = peer.watcherProgress ? watcherRecordOf(projection, source, watcherScoped(peer)) : undefined
+    const written = record !== undefined ? watcherWritten.get(peer) : undefined
+    if (record !== undefined && written?.record === record && written.revision === watcherRevisions.get(peer)) {
+      const progress = { baseRevision: written.revision, revision: projection.revision, observedAt: projection.observedAt, ...watcherProgressChange(written.progress, projection.progress ?? []) }
+      if (push(peer, { v: 1, event: 'watcher-progress', progress })) wroteWatcher(peer, projection, record)
+      return
+    }
+    if (!push(peer, { v: 1, event: 'watcher-state', projection })) return
+    if (record !== undefined) wroteWatcher(peer, projection, record)
+    else watcherRevisions.set(peer, projection.revision)
+  }
   // A streaming thread changes the shell many times a second. Pushes go out at most once a window, the
   // same way the desktop's own IPC coalesces them, and each carries the state as it is when it is sent.
   // Details come through their own subscription when the service has one, so a shell change resends no history.
@@ -925,8 +1020,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     // Watcher's projection waits with the shell (#1089): the one sent once the socket drains is the newest, built then.
     const scope = watcherScopes.get(peer)
     if (scope && offers(peer, 'watcher-reads') && service.watcherProjection) {
-      const projection = watcherFor(peer, service.watcherProjection(scope, peer.client))
-      if (watcherRevisions.get(peer) !== projection.revision && push(peer, { v: 1, event: 'watcher-state', projection })) watcherRevisions.set(peer, projection.revision)
+      const source = service.watcherProjection(scope, peer.client), projection = watcherFor(peer, source)
+      if (watcherRevisions.get(peer) !== projection.revision) pushWatcher(peer, projection, source)
     }
     const wire = wireShell(peer, shell(peer, read?.())), eventPage = events(peer, peer.afterSeq)
     // To a client that accepted `changed-thread-records`, the thread records that changed since its last shell push go
@@ -1543,6 +1638,7 @@ export async function startSocketServer(options: SocketServerOptions) {
         peer.usableModels = (request.accepts?.includes('usable-models') ?? false) && offers(peer, 'usable-models')
         // A hello again keeps where each window stands; one that no longer accepts the feature is sent whole threads.
         peer.stepWindows = (request.accepts?.includes('step-window') ?? false) && offers(peer, 'step-window') ? peer.stepWindows ?? new Map() : undefined
+        peer.pictureEdges = (request.accepts?.includes('thread-media-edge') ?? false) && offers(peer, 'thread-media-edge')
         peer.activitySummaries = request.accepts?.includes('activity-summaries') ?? false
         // Summaries win over cut bodies: a client that asks for both reads summaries, as it did before cut bodies.
         peer.activityBodies = !peer.activitySummaries && (request.accepts?.includes('activity-bodies') ?? false) && offers(peer, 'activity-bodies')
@@ -1554,6 +1650,8 @@ export async function startSocketServer(options: SocketServerOptions) {
         // Watcher's box keeps its changes' outcomes under management's receipts, so it rides with management.
         peer.watcherPhoneComposer = peer.watcherPhoneManage && (request.accepts?.includes('watcher-phone-composer') ?? false) && offers(peer, 'watcher-phone-composer')
         peer.watcherReads = (request.accepts?.includes('watcher-reads') ?? false) && offers(peer, 'watcher-reads'); peer.answerReceipts = (request.accepts?.includes('answer-receipts') ?? false) && offers(peer, 'answer-receipts')
+        // A hello starts what progress pushes are measured from afresh: the next projection goes whole.
+        peer.watcherProgress = peer.watcherReads && (request.accepts?.includes('watcher-progress') ?? false) && offers(peer, 'watcher-progress'); watcherWritten.delete(peer)
         peer.usageHistory = (request.accepts?.includes('usage-history') ?? false) && offers(peer, 'usage-history')
         peer.retiredTerminals = request.accepts?.includes('terminals') ?? false
         peer.usageMuseOpenCode = (request.accepts?.includes('usage-muse-opencode') ?? false) && offers(peer, 'usage-muse-opencode')
@@ -1741,6 +1839,10 @@ export async function startSocketServer(options: SocketServerOptions) {
       case 'thread-file-link':
         if (!offers(peer, 'thread-file-links') || !service.threadFileLink) throw new Refusal('invalid_request')
         return oneAtATime(peer, () => toolRead(() => service.threadFileLink!(request.request)))
+      // Where a linked file is, its preview, or one 4 MiB part of it for a download (ADR-0120, November 12 amendment): one at a time per peer.
+      case 'thread-linked-file':
+        if (!offers(peer, 'thread-linked-files') || !service.threadLinkedFile) throw new Refusal('invalid_request')
+        return oneAtATime(peer, () => toolRead(() => service.threadLinkedFile!(request.request)))
       case 'thread-changes':
         if (!service.gitChanges) throw new Refusal('invalid_request')
         return toolRead(() => service.gitChanges!(request.request))
@@ -1825,6 +1927,39 @@ export async function startSocketServer(options: SocketServerOptions) {
         if (request.defaults.workerCeiling !== undefined && !offers(peer, 'worker-swarms')) throw new Refusal('invalid_request')
         if (request.defaults.showEveryAgentPicture !== undefined && !offers(peer, 'every-agent-picture')) throw new Refusal('invalid_request')
         try { return desktopDefaultsReceiptSchema.parse(await service.desktopDefaults(request.defaults, peer.client)) } catch { throw new Refusal('unavailable') }
+      }
+      case 'plugin-account-copy': {
+        // The one credential a client may send (ADR-0205, amending ADR-0025), and only a recorded desktop may: the list
+        // of desktops is read again first, so one taken off it since its hello sends nothing more. The copy
+        // is kept as that desktop's own. The answer says whether it was kept and never repeats what was sent; a failure
+        // says nothing of it either.
+        await options.watcherDesktops?.refresh().catch(() => undefined)
+        if (!offers(peer, 'plugin-account-copies') || !service.keepPluginAccountCopy) throw new Refusal('invalid_request')
+        // A mail account is kept only where this host's threads can read one, and ask before they do.
+        if (isMailPlugin(request.copy.account.plugin) && !offers(peer, 'plugin-mail-copies')) throw new Refusal('invalid_request')
+        // A Proton Mail account is never copied: its Bridge password is the desktop's Bridge's own.
+        if (isBridgePlugin(request.copy.account.plugin)) throw new Refusal('invalid_request')
+        // A Meshy account only to a desktop it said it keeps one for.
+        if (isSpendingPlugin(request.copy.account.plugin) && !offers(peer, 'plugin-meshy-copies')) throw new Refusal('invalid_request')
+        try { return pluginAccountCopyReceiptSchema.parse(await service.keepPluginAccountCopy(request.copy, peer.client)) } catch { throw new Refusal('unavailable') }
+      }
+      case 'plugin-account-copy-remove': {
+        await options.watcherDesktops?.refresh().catch(() => undefined)
+        if (!offers(peer, 'plugin-account-copies') || !service.removePluginAccountCopy) throw new Refusal('invalid_request')
+        try { return pluginAccountCopyRemovedSchema.parse(await service.removePluginAccountCopy(request.accountId, peer.client)) } catch { throw new Refusal('unavailable') }
+      }
+      case 'plugin-account-copies': {
+        // Which accounts this desktop sent and when each was saved. The schema names no secret, so none can be listed.
+        await options.watcherDesktops?.refresh().catch(() => undefined)
+        if (!offers(peer, 'plugin-account-copies') || !service.pluginAccountCopies) throw new Refusal('invalid_request')
+        try { return heldPluginAccountCopiesSchema.parse(await service.pluginAccountCopies(peer.client)) } catch { throw new Refusal('unavailable') }
+      }
+      case 'plugin-github-sign-in': {
+        // Who this machine's gh is signed in as, for a recorded desktop's Plugins page. The list of desktops is read
+        // again first, as for a copy. The schema names a state and a login, so nothing else of gh's can be answered.
+        await options.watcherDesktops?.refresh().catch(() => undefined)
+        if (!offers(peer, 'plugin-github-sign-in') || !service.pluginGitHubSignIn) throw new Refusal('invalid_request')
+        try { return gitHubSignInSchema.parse(await service.pluginGitHubSignIn()) } catch { throw new Refusal('unavailable') }
       }
       case 'watcher-tell-answer': {
         // The desktop's answer to a thread's message for Watcher. An answer nobody waits for is dropped.
@@ -1972,12 +2107,14 @@ export async function startSocketServer(options: SocketServerOptions) {
       case 'sign-in-cancel': return signingIn(peer, request.op, () => { signIns!.cancel(request.signInId, peer.client.clientId); return null })
       case 'opencode-sign-in': return opencodeCall(peer, request.op, request.call)
       case 'preview':
+        // Only a client that accepted `thread-media-edge` names an edge (ADR-0170, November 10 amendment).
+        if (request.request.edge !== undefined && !peer.pictureEdges) throw new Refusal('invalid_request')
         if (peer.preview) throw new Refusal('busy')
         peer.preview = true
         try { return await service.attachmentPreview?.(request.request) ?? null } finally { peer.preview = false }
       // A picture an activity record names (ADR-0170), on the same one-at-a-time guard as a preview: one large frame a socket.
       case 'thread-media':
-        if (!offers(peer, 'thread-media') || !service.threadMedia) throw new Refusal('invalid_request')
+        if (!offers(peer, 'thread-media') || !service.threadMedia || request.request.edge !== undefined && !peer.pictureEdges) throw new Refusal('invalid_request')
         if (peer.preview) throw new Refusal('busy')
         peer.preview = true
         try { return await service.threadMedia(request.request) } finally { peer.preview = false }
@@ -2079,6 +2216,11 @@ export async function startSocketServer(options: SocketServerOptions) {
         } else if (request.op === 'next-prompts-wanted') {
           // Every next prompt held now follows the answer that turned them on; each change follows it.
           pushNextPrompts(peer)
+        } else if (request.op === 'watcher-read' && !request.request.call && peer.watcherProgress) {
+          // A desktop that accepted `watcher-progress` holds the projection a scope read answers with, in the order of its
+          // frames, so the next push is measured from it. A refusal carries no projection and leaves what it holds.
+          const read = response.result as Partial<WatcherHostProjection> | null
+          if (read !== null && typeof read === 'object' && typeof read.revision === 'string' && Array.isArray(read.requests)) wroteWatcher(peer, read as WatcherHostProjection, watcherRecordOf(read as WatcherHostProjection))
         }
       }
       // A restart that went ahead waits for its own answer to be on the way before it stops this host (ADR-0088), whether or
@@ -2131,6 +2273,12 @@ export async function startSocketServer(options: SocketServerOptions) {
             if (request.url === '/v1/admin/phones') { adminPhonesRequest.parse(await body(request)); respond(response, 200, { v: 1, hostId, state: options.phones.get() }); return }
             const { command } = adminPhonesCommandRequest.parse(await body(request))
             respond(response, 200, { v: 1, hostId, ...await options.phones.command(command) }); return
+          }
+          // Names, ages, process IDs and Sotto thread IDs only: what holds each provider session, never what a thread said.
+          if (request.url === '/v1/admin/held-sessions') {
+            if (!options.heldSessions) throw new Refusal('invalid_request')
+            adminHeldSessionsRequest.parse(await body(request))
+            respond(response, 200, { v: 1, hostId, sessions: options.heldSessions() }); return
           }
           // Only here, on the listener the tailnet never reaches: a desktop turns its tailnet connections on or off over SSH.
           if (request.url === '/v1/admin/tailnet') {
@@ -2210,9 +2358,9 @@ export async function startSocketServer(options: SocketServerOptions) {
     const key = request.headers['sec-websocket-key']
     if (request.url !== '/v1/socket' || !clientId || request.headers['sec-websocket-version'] !== '13' || typeof key !== 'string' || !/^[A-Za-z0-9+/]{22}==$/.test(key) || (request.headers.origin && !originAllowed(request.headers.origin, options.origins))) { refuse(stream, '401 Unauthorized'); return }
     const offered = deflateOffered(request.headers['sec-websocket-extensions'])
-    // Compression is settled at the upgrade or not at all, so a client offering it that this listener does not know as a
-    // desktop has the record read again first: the launch script may have recorded it since the last read.
-    if (admits(clientId) && !(offered && tailnet && !isDesktop(clientId))) { open(stream, head, session, clientId, key, offered); return }
+    // Compression is settled at the upgrade or not at all, so a client offering it that this listener would not compress
+    // for has the record read again first: the launch script may have recorded it as a desktop since the last read.
+    if (admits(clientId) && !(offered && tailnet && !compresses(clientId))) { open(stream, head, session, clientId, key, offered); return }
     if (!tailnet) { refuse(stream, '403 Forbidden'); return }
     // A desktop the launch script recorded since this listener last read the record is let in; anyone else is not.
     void tailnet.desktops.refresh().catch(() => undefined).then(() => { if (admits(clientId)) open(stream, head, session, clientId, key, offered); else refuse(stream, '403 Forbidden') })

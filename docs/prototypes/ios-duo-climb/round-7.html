@@ -1,0 +1,1640 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>PROTOTYPE: the Duo design climb, round 7</title>
+<!--
+  THROWAWAY PROTOTYPE. Not product code.
+  Question: for each surface the round 6 judges marked down on the iPhone Duo, which variant should the app build?
+  Opens on the Duo and picks its posture from the window, folded, sideways or upright. Colours are the Sotto theme's,
+  measurements come from the app's captures. Upright can't be captured from the simulator, so it is a sketch.
+  Plan: docs/plans/2026-11-08-ios-duo-design-climb.md
+-->
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; font-display: swap; src: url('figtree-latin.woff2') format('woff2'); }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
+body { font: 15px/1.3 'Figtree', -apple-system, system-ui, sans-serif; color: #eee; display: flex; flex-direction: column; -webkit-text-size-adjust: 100%; }
+button, select { font: inherit; color: inherit; }
+
+/* The prototype's own controls, outside the Duo's screen. */
+#bar { flex: none; background: #17181b; border-bottom: 1px solid #2c2e33; padding: 5px 8px; padding-top: max(5px, env(safe-area-inset-top)); }
+#row { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+#surface { background: #26282c; border: 0; border-radius: 9px; padding: 6px 8px; font-weight: 600; font-size: 14px; max-width: 170px; }
+.seg { display: inline-flex; background: #26282c; border-radius: 9px; padding: 2px; }
+.seg button { border: 0; background: none; padding: 5px 9px; border-radius: 7px; font-size: 13px; font-weight: 600; color: #b5b8be; min-width: 30px; }
+.seg button.on { background: #47b8a9; color: #04201c; }
+.seg button.rec::after { content: ' ★'; font-size: 11px; }
+#caption { font-size: 13px; color: #c8cbd0; margin-top: 4px; line-height: 1.3; }
+#caption b { color: #fff; font-weight: 600; }
+#holder { flex: 1; min-height: 0; position: relative; overflow: hidden; background: #000; }
+#holder.actual { overflow: auto; -webkit-overflow-scrolling: touch; }
+#stage { position: absolute; left: 0; top: 0; transform-origin: 0 0; overflow: hidden; background: var(--ground); color: var(--ink); font-size: 17px; line-height: 1.32; }
+
+/* The Sotto theme. */
+.dark { --ground:#040507; --card:#111316; --sheet:#15171a; --opt:#1f2124; --soft:#26282a; --ink:#f3f4f5; --muted:#a0a5ae; --dim:#6d7178; --hair:rgba(255,255,255,.1); --accent:#47b8a9; --acctext:#6bc3b6; --accsurf:#0c3b36; --onacc:#04201c; --warn:#fe9a00; --warntext:#ffb86b; --danger:#ff4a55; --dangertext:#ff8a8a; --bubble:#13161d; --glass:rgba(58,60,64,.82); --glassdim:#85888d; --scrim:rgba(0,0,0,.42); --washa:rgba(71,184,169,.24); --washw:rgba(254,154,0,.24); --tile:#0a0c10; --rgb:71,184,169; --dimbtn:#2a5b56; --dimtext:#0d2b28; }
+.light { --ground:#f9f8f5; --card:#f2f0ec; --sheet:#fbfaf7; --opt:#f0efec; --soft:#e9e7e2; --ink:#1c1a17; --muted:#68625b; --dim:#8f8a82; --hair:rgba(0,0,0,.1); --accent:#007d74; --acctext:#1e665e; --accsurf:#cfece7; --onacc:#fdfcf9; --warn:#c96a00; --warntext:#9a5200; --danger:#d42c37; --dangertext:#b3202a; --bubble:#ebe9e3; --glass:rgba(233,231,226,.88); --glassdim:#8f8a82; --scrim:rgba(0,0,0,.22); --washa:rgba(0,125,116,.14); --washw:rgba(201,106,0,.14); --tile:#fff; --rgb:0,125,116; --dimbtn:#92c6c0; --dimtext:#2f6b65; }
+#stage { --cg: 0 6px 24px rgba(var(--rgb),.5); --ng: 0 6px 24px rgba(var(--rgb),.5); }
+#stage.glow-A { --cg: none; --ng: none; }
+#stage.glow-B { --cg: 0 3px 11px rgba(var(--rgb),.24); --ng: 0 3px 11px rgba(var(--rgb),.24); }
+#stage.glow-C { --cg: none; }
+
+svg { display: block; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+svg.solid { fill: currentColor; stroke: none; }
+.abs { position: absolute; }
+.clip { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+/* Rail */
+.circle { position: absolute; width: 44px; height: 44px; margin: -22px 0 0 -22px; border-radius: 50%; display: grid; place-items: center; color: var(--acctext); background: color-mix(in srgb, var(--accent) 10%, var(--ground)); border: 1px solid color-mix(in srgb, var(--accent) 34%, transparent); }
+.chrome { box-shadow: var(--cg); }
+.newt { box-shadow: var(--ng); }
+.pill { position: absolute; width: 58px; border-radius: 29px; background: var(--ground); border: 1px solid var(--hair); display: flex; flex-direction: column; align-items: center; }
+.tile { width: 50px; height: 50px; border-radius: 50%; display: grid; place-items: center; color: var(--muted); margin: 1px 0; position: relative; flex: none; }
+.tile.on { background: var(--accsurf); color: var(--acctext); }
+.badge { position: absolute; top: 1px; right: 0; min-width: 18px; height: 18px; border-radius: 9px; background: var(--warn); color: #201200; font-size: 12px; font-weight: 700; display: grid; place-items: center; }
+.state { font-size: 13px; font-weight: 600; text-align: center; line-height: 1.15; padding: 11px 2px 2px; }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.w { background: var(--warn); box-shadow: 0 0 12px 4px color-mix(in srgb, var(--warn) 42%, transparent); }
+.g { background: var(--accent); box-shadow: 0 0 12px 4px rgba(var(--rgb),.4); }
+.r { background: var(--danger); box-shadow: 0 0 12px 4px color-mix(in srgb, var(--danger) 40%, transparent); }
+.i { background: none; border: 2px solid var(--muted); }
+.clock { position: absolute; font-weight: 700; font-size: 15px; transform: translateX(-50%); }
+.ring { position: absolute; width: 40px; height: 40px; margin: -20px 0 0 -20px; color: #35c75a; }
+
+/* Conversation */
+.conv { position: absolute; top: 0; bottom: 0; overflow: hidden; }
+.conv p { margin: 0 0 13px; }
+.conv .tbl { border: 1px solid var(--hair); border-radius: 14px; margin-bottom: 15px; background: color-mix(in srgb, var(--card) 45%, var(--ground)); font-size: 15px; overflow: hidden; }
+.tr { display: grid; padding: 9px 12px; border-top: 1px solid var(--hair); }
+.tr:first-child { border-top: 0; color: var(--muted); font-size: 14px; font-weight: 600; }
+.bub { margin: 0 0 16px auto; width: fit-content; max-width: 86%; background: var(--bubble); border: 1px solid var(--hair); border-radius: 16px; padding: 9px 15px; }
+.codex { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); margin-bottom: 7px; font-weight: 500; }
+.ctile { width: 18px; height: 18px; border-radius: 5px; background: var(--accsurf); color: var(--acctext); display: grid; place-items: center; font-size: 11px; font-weight: 700; }
+.composer { position: absolute; height: 50px; border-radius: 25px; background: #18191b; display: flex; align-items: center; padding: 0 7px; gap: 6px; color: var(--muted); }
+.light .composer { background: #e9e7e2; }
+.disc { width: 34px; height: 34px; border-radius: 50%; background: var(--soft); display: grid; place-items: center; color: var(--ink); flex: none; }
+
+/* Sidebar */
+.side { position: absolute; left: 0; top: 0; bottom: 0; width: 280px; border-right: 1px solid var(--hair); overflow-y: auto; padding: 70px 8px 16px; }
+.sidehead { position: absolute; left: 16px; top: 16px; font-size: 20px; font-weight: 700; z-index: 1; }
+.sec { font-size: 15px; color: var(--muted); font-weight: 500; padding: 10px 12px 5px; }
+.sec span { margin-left: 5px; }
+.rowt { display: flex; gap: 10px; padding: 7px 8px 7px 12px; border-radius: 14px; min-height: 54px; }
+.rowt.ch { background: var(--accsurf); }
+.rowt.ch .tt { color: var(--acctext); }
+.rowt .dot { margin-top: 7px; }
+.tt { font-weight: 600; line-height: 1.22; }
+.mt { font-size: 14px; color: var(--muted); display: flex; align-items: center; gap: 5px; margin-top: 2px; min-width: 0; }
+.mt > .clip { min-width: 0; }
+.tm { font-size: 13px; color: var(--muted); flex: none; }
+.two { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* Sheets */
+.scrim { position: absolute; inset: 0; background: var(--scrim); }
+.sheet { position: absolute; background: var(--sheet); border-radius: 26px 26px 26px 26px; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 -8px 30px rgba(0,0,0,.28); }
+.grab { flex: none; width: 36px; height: 4px; border-radius: 2px; background: var(--dim); margin: 6px auto 0; }
+.wash { position: absolute; left: 0; right: 0; top: 0; height: 120px; background: radial-gradient(90% 100% at 8% 0, var(--washa), transparent 72%), radial-gradient(70% 90% at 100% 0, var(--washw), transparent 70%); pointer-events: none; }
+.from { position: relative; font-size: 15px; color: var(--muted); display: flex; align-items: center; gap: 10px; }
+.q { position: relative; font-size: 22px; font-weight: 600; letter-spacing: -.3px; line-height: 1.22; margin-top: 11px; color: var(--ink); }
+.opt { display: flex; gap: 14px; border: 1px solid var(--hair); background: var(--opt); border-radius: 15px; padding: 11px 15px; margin-top: 8px; cursor: pointer; }
+.opt .ra { flex: none; width: 22px; height: 22px; border-radius: 50%; border: 1.5px solid var(--dim); margin-top: 3px; }
+.opt.on { border-color: var(--accent); }
+.opt.on .ra { border: 6px solid var(--accent); }
+.opt b { font-weight: 600; display: block; }
+.opt small { font-size: 15px; color: var(--muted); display: block; line-height: 1.26; margin-top: 1px; }
+.foot { flex: none; display: flex; gap: 8px; border-top: 1px solid var(--hair); padding: 12px 20px; }
+.btn { flex: 1; height: 44px; border-radius: 22px; display: grid; place-items: center; font-weight: 600; border: 0; }
+.btn.soft { background: var(--soft); color: var(--ink); }
+.btn.pri { background: var(--accent); color: var(--onacc); box-shadow: 0 5px 20px rgba(var(--rgb),.35); display: flex; align-items: center; justify-content: center; gap: 8px; }
+.btn.dimp { background: var(--dimbtn); color: var(--dimtext); }
+.tabs { display: flex; gap: 8px; padding: 0 20px 10px; flex: none; border-bottom: 1px solid var(--hair); overflow: hidden; }
+.tab { flex: none; height: 44px; padding: 0 16px; border-radius: 22px; background: var(--soft); display: flex; align-items: center; gap: 7px; font-weight: 500; border: 1px solid var(--hair); }
+.tab.on { background: var(--accsurf); border: 2px solid var(--accent); box-shadow: 0 2px 12px rgba(var(--rgb),.32); }
+.tabs.tight { gap: 5px; }
+.tabs.tight .tab { padding: 0 11px; height: 40px; font-size: 15px; gap: 5px; }
+.rd { width: 7px; height: 7px; border-radius: 50%; background: var(--danger); }
+.prbody { flex: 1; min-height: 0; overflow-y: auto; }
+.chipm { font: 14px ui-monospace, Menlo, monospace; background: var(--opt); padding: 3px 7px; border-radius: 7px; }
+.strow { display: flex; gap: 14px; padding: 11px 16px; }
+.strow + .strow > div:last-child { border-top: 0; }
+.st { flex: none; width: 22px; height: 22px; }
+.stt { font-weight: 600; }
+.sts { font-size: 15px; color: var(--muted); }
+.group { background: var(--card); border-radius: 18px; margin: 12px 0; }
+.dark .group { background: #191b1e; }
+.lbl { color: var(--muted); font-size: 15px; font-weight: 600; }
+.dock { flex: none; border: 1px solid var(--hair); border-radius: 22px; margin: 8px 12px 14px; padding: 12px 14px; background: var(--sheet); }
+.note { font-size: 15px; color: var(--muted); display: flex; gap: 10px; margin-bottom: 10px; }
+
+/* ••• menu */
+.menu { position: absolute; width: 250px; border-radius: 26px; background: var(--glass); -webkit-backdrop-filter: blur(22px); backdrop-filter: blur(22px); overflow: hidden; box-shadow: 0 12px 40px rgba(0,0,0,.4); }
+.mi { padding: 11px 19px; display: flex; align-items: center; gap: 12px; }
+.mi small { display: block; font-size: 13px; color: var(--muted); }
+.mh { height: 1px; background: var(--hair); margin: 0 19px; }
+.fact { display: flex; gap: 9px; font-size: 14px; color: var(--muted); padding: 3px 0; line-height: 1.24; align-items: flex-start; }
+.fact svg { flex: none; margin-top: 2px; }
+.cp { display: inline-flex; align-items: center; gap: 5px; font-size: 13px; padding: 4px 9px; border-radius: 13px; background: color-mix(in srgb, var(--ink) 12%, transparent); color: var(--ink); max-width: 100%; }
+
+/* Pages */
+.page { position: absolute; top: 0; bottom: 0; overflow-y: auto; }
+.pt { font-size: 28px; font-weight: 700; letter-spacing: -.5px; }
+.ps { font-size: 15px; color: var(--muted); margin: 6px 0 18px; }
+.pcard { background: var(--card); border-radius: 20px; padding: 16px; margin-bottom: 12px; }
+.segs { display: flex; background: var(--soft); border-radius: 22px; padding: 3px; height: 44px; align-items: stretch; }
+.segs div { flex: 1; display: grid; place-items: center; border-radius: 19px; color: var(--muted); font-size: 15px; font-weight: 500; }
+.segs .on { background: var(--card); color: var(--ink); border: 1px solid var(--hair); }
+.sizes { display: flex; background: var(--opt); border-radius: 13px; height: 50px; align-items: center; position: relative; }
+.sizes div { flex: 1; text-align: center; font-weight: 700; color: var(--muted); }
+.sizes .on { color: var(--acctext); background: var(--card); border-radius: 10px; height: 44px; display: grid; place-items: center; border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); box-shadow: 0 0 12px rgba(var(--rgb),.3); }
+.slide { height: 7px; border-radius: 4px; background: var(--soft); position: relative; flex: 1; }
+.slide::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 50%; border-radius: 4px; background: var(--accent); }
+.slide::after { content: ''; position: absolute; left: calc(50% - 18px); top: -8px; width: 37px; height: 23px; border-radius: 12px; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.4); }
+.srow { padding: 13px 0; border-top: 1px solid var(--hair); }
+.srow:first-child { border-top: 0; padding-top: 0; }
+.srow:last-child { padding-bottom: 0; }
+.rowhead { display: flex; justify-content: space-between; font-weight: 500; margin-bottom: 9px; }
+.rowhead span { color: var(--muted); font-size: 15px; font-weight: 400; }
+.side-label { display: grid; grid-template-columns: 1fr 340px; gap: 20px; align-items: center; }
+.side-label .rowhead { margin: 0; flex-direction: column; }
+.hint { font-size: 15px; color: var(--muted); margin-top: 8px; }
+.side-label .hint { margin-top: 2px; }
+.sample { margin-top: 10px; padding: 9px 12px; border-radius: 12px; background: var(--opt); }
+.sample i { font-style: normal; font-size: 12px; color: var(--muted); font-weight: 600; display: block; margin-bottom: 2px; }
+
+/* Agents */
+.ag { padding: 12px 14px; display: flex; gap: 12px; border-top: 1px solid var(--hair); }
+.ag:first-child { border-top: 0; }
+.agt { flex: none; width: 34px; height: 34px; border-radius: 50%; background: var(--opt); display: grid; place-items: center; color: var(--ink); }
+.agb { flex: 1; min-width: 0; }
+.tag { display: inline-block; font-size: 13px; color: var(--muted); border: 1px solid var(--hair); border-radius: 11px; padding: 1px 8px; font-weight: 500; }
+.ags { display: flex; gap: 9px; align-items: center; font-size: 15px; margin-top: 4px; }
+.smeta { font-size: 13px; color: var(--muted); margin-top: 2px; }
+.sprev { font-size: 15px; color: var(--muted); }
+.open { display: inline-block; margin-top: 7px; padding: 8px 14px; background: var(--soft); border-radius: 17px; font-weight: 500; font-size: 15px; }
+.ask { color: var(--warntext); }
+.wk { color: var(--acctext); }
+.tell { position: absolute; left: 50%; top: 42%; transform: translateX(-50%); width: 78%; text-align: center; background: var(--card); border: 1px solid var(--hair); padding: 16px; border-radius: 18px; font-size: 16px; color: var(--muted); }
+/* Round 2 */
+.lt { flex: none; width: 10px; display: flex; justify-content: center; align-items: center; height: 22px; }
+.rowt .lt .dot { margin-top: 0; }
+.finA { width: 15px; height: 15px; border-radius: 50%; background: var(--accent); color: var(--onacc); display: grid; place-items: center; box-shadow: 0 0 12px 4px rgba(var(--rgb),.4); flex: none; }
+.finB { width: 12px; height: 12px; border-radius: 50%; border: 2.5px solid var(--accent); box-shadow: 0 0 12px 4px rgba(var(--rgb),.35); flex: none; }
+.finC { color: var(--acctext); filter: drop-shadow(0 0 5px rgba(var(--rgb),.75)); display: grid; place-items: center; }
+.code { border: 1px solid var(--hair); border-radius: 16px; background: color-mix(in srgb, var(--card) 45%, var(--ground)); margin-bottom: 15px; overflow: hidden; }
+.codeh { display: flex; gap: 14px; align-items: center; padding: 10px 16px; font-size: 15px; color: var(--muted); border-bottom: 1px solid var(--hair); }
+.codeb { font: 16px/1.5 ui-monospace, Menlo, monospace; padding: 12px 16px; color: var(--ink); }
+.slide-x { white-space: pre; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-right: 40px; scrollbar-width: none; }
+.slide-x::-webkit-scrollbar { display: none; }
+.fade { position: absolute; top: 0; right: 0; bottom: 0; width: 56px; background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--card) 45%, var(--ground)) 85%); pointer-events: none; }
+.cont { color: var(--dim); margin-right: 6px; }
+.wrapb { color: var(--muted); font-weight: 600; padding: 2px 10px; border-radius: 11px; border: 1px solid var(--hair); cursor: pointer; }
+.wrapb.on { color: var(--acctext); border-color: var(--accent); background: var(--accsurf); }
+.steps { margin: 8px 0 0 8px; padding-left: 14px; border-left: 2px solid var(--hair); }
+.step { display: flex; gap: 9px; align-items: center; font-size: 15px; padding: 5px 0; min-width: 0; }
+.mono { font: 14px ui-monospace, Menlo, monospace; color: var(--muted); }
+.step .ok { color: var(--acctext); flex: none; width: 17px; display: grid; place-items: center; }
+.spin { flex: none; width: 15px; height: 15px; border-radius: 50%; border: 2px solid rgba(var(--rgb),.3); border-top-color: var(--accent); margin: 0 1px; }
+.opill { height: 44px; border-radius: 22px; border: 1px solid var(--hair); background: color-mix(in srgb, var(--card) 60%, var(--ground)); display: flex; align-items: center; gap: 9px; padding: 0 15px; font-weight: 600; font-size: 16px; }
+.notice { border-radius: 18px; border: 1px solid color-mix(in srgb, var(--danger) 22%, transparent); background: color-mix(in srgb, var(--danger) 7%, var(--card)); display: flex; align-items: center; gap: 14px; padding: 0 12px 0 18px; }
+.ohead { display: flex; gap: 9px; align-items: center; font-weight: 600; padding: 0 6px 10px; }
+.ocard { background: var(--card); border-radius: 22px; padding: 14px 16px; margin-bottom: 14px; }
+.ndc { box-shadow: 0 0 28px 2px color-mix(in srgb, var(--warn) 18%, transparent); }
+.wkc { box-shadow: 0 0 24px 1px rgba(var(--rgb),.12); }
+.oh { display: flex; gap: 8px; align-items: center; font-size: 15px; }
+.ot { font-size: 19px; font-weight: 600; line-height: 1.22; margin-top: 8px; }
+.om { display: flex; gap: 6px; align-items: center; color: var(--muted); font-size: 15px; margin-top: 4px; min-width: 0; }
+.oq { margin-top: 10px; font-size: 17px; }
+/* Round 4 */
+.dark { --kbd: rgba(44,44,46,.97); --key: #5a5a5d; }
+.light { --kbd: rgba(209,212,219,.97); --key: #fff; }
+.light.gl-now .ndc { box-shadow: 0 0 46px 12px color-mix(in srgb, var(--warn) 24%, transparent); }
+.light.gl-now .wkc { box-shadow: 0 0 42px 10px rgba(var(--rgb),.2); }
+.light.gl-A .ndc { box-shadow: 0 0 14px 1px color-mix(in srgb, var(--warn) 14%, transparent); }
+.light.gl-A .wkc { box-shadow: 0 0 13px 0 rgba(var(--rgb),.11); }
+.light.gl-B .ndc { box-shadow: 0 0 14px 2px color-mix(in srgb, var(--warn) 26%, transparent); }
+.light.gl-B .wkc { box-shadow: 0 0 13px 1px rgba(var(--rgb),.2); }
+.light.gl-C .ndc { box-shadow: 0 0 46px 12px color-mix(in srgb, var(--warn) 12%, transparent); }
+.light.gl-C .wkc { box-shadow: 0 0 42px 10px rgba(var(--rgb),.1); }
+.dark .segs.segA .on { background: #3b3e43; border-color: transparent; }
+
+/* Round 6 */
+/* Figtree sets about 5% wider in Chrome than on iOS; this brings line lengths and wraps back to the captures. */
+#stage { letter-spacing: -0.25px; }
+#stage .side { letter-spacing: 0; }
+.ov6 .ot { font-size: 17.5px; }
+.ov6 .oq { font-size: 16.5px; }
+.ov6 .ohead { font-size: 16px; }
+.code6 { border: 1px solid var(--hair); border-radius: 14px; background: color-mix(in srgb, var(--card) 45%, var(--ground)); margin-bottom: 15px; overflow: hidden; }
+.code6 .h { display: flex; align-items: center; height: 43px; padding: 0 16px 0 12px; font-size: 13.5px; color: var(--muted); border-bottom: 1px solid var(--hair); }
+.code6 .h b, .code6 .cp6 { margin-left: auto; color: var(--acctext); font-weight: 600; font-size: 14.5px; font-family: 'Figtree', system-ui, sans-serif; flex: none; }
+.code6 .c { font: 13.5px/1.38 ui-monospace, Menlo, Consolas, monospace; padding: 11px 12px; color: var(--ink); }
+.code6 .c.inl { display: flex; gap: 14px; align-items: flex-start; padding-right: 16px; }
+.code6 .cp6 { line-height: 18.6px; }
+.steps6 { display: flex; gap: 6px; align-items: center; color: var(--muted); font-weight: 600; font-size: 16px; margin: 4px 0 18px; }
+.ul6 { margin: 0 0 8px; padding-left: 26px; }
+.ul6 li { margin-bottom: 5px; padding-left: 0; }
+.ul6 li::marker { color: var(--muted); }
+.ol6 { margin: 0 0 13px; padding-left: 26px; }
+.ol6 li { margin-bottom: 6px; }
+.ol6 li::marker { color: var(--muted); }
+.fsec { font-size: 16px; color: var(--muted); font-weight: 500; height: 26px; line-height: 26px; padding-left: 12px; margin-bottom: 2px; }
+.fsec span { margin-left: 8px; }
+.fsec + .frow { margin-top: 0; }
+.frow { display: flex; gap: 11px; padding: 7px 0 7px 11px; }
+.frow .tt { font-size: 17px; }
+.frow .mt { font-size: 15px; gap: 6px; }
+.frow .tm { font-size: 15px; }
+.toplight { position: absolute; left: 0; right: 0; top: 0; height: 170px; background: radial-gradient(70% 100% at 25% 0, rgba(var(--rgb),.07), transparent 75%); pointer-events: none; }
+.ccard { background: var(--card); border-radius: 20px; padding: 14px 15px 14px 17px; }
+.cname { font-weight: 600; font-size: 18px; line-height: 1.22; }
+.cline { display: flex; gap: 9px; align-items: center; font-size: 16px; color: var(--muted); margin-top: 3px; flex-wrap: wrap; }
+.addc { border: 1.5px dashed var(--hair); border-radius: 20px; height: 56px; padding: 0 16px; display: flex; gap: 12px; align-items: center; color: var(--acctext); font-weight: 600; font-size: 18px; }
+.clabel { font-size: 14px; color: var(--muted); font-weight: 500; margin: 12px 0 2px 12px; }
+.ccard .rowt { padding: 6px 4px 6px 4px; min-height: 0; }
+.nsheet { position: absolute; background: color-mix(in srgb, var(--sheet) 82%, var(--soft)); overflow: hidden; box-shadow: 0 -8px 30px rgba(0,0,0,.28); }
+.nsheet .wash6 { position: absolute; left: 0; right: 0; top: 0; height: 150px; background: radial-gradient(90% 120% at 30% 0, rgba(var(--rgb),.26), transparent 75%); pointer-events: none; }
+.nbar { position: relative; display: flex; align-items: center; height: 36px; font-size: 18px; }
+.nbar .bk { color: var(--acctext); display: flex; gap: 4px; align-items: center; }
+.nbar .ti { position: absolute; left: 0; right: 0; text-align: center; font-weight: 700; pointer-events: none; }
+.nbar .cn { margin-left: auto; color: var(--acctext); }
+.nbars { display: flex; gap: 7px; margin-top: 12px; }
+.nbars div { flex: 1; height: 4px; border-radius: 2px; background: var(--soft); }
+.nbars div.on { background: var(--accent); box-shadow: 0 0 10px rgba(var(--rgb),.45); }
+.npill { display: inline-flex; gap: 10px; align-items: center; height: 42px; padding: 0 16px; border-radius: 21px; background: var(--soft); border: 1px solid var(--hair); font-weight: 600; font-size: 17px; }
+.nq { font-size: 24px; font-weight: 700; letter-spacing: -.3px; margin-top: 22px; line-height: 1.2; }
+.nsub { font-size: 15.5px; color: var(--muted); margin-top: 6px; }
+.nrow { display: flex; align-items: center; gap: 12px; height: 69px; padding: 0 16px; border-radius: 18px; background: color-mix(in srgb, var(--sheet) 55%, var(--soft)); border: 1px solid var(--hair); }
+.nrow .ic { color: var(--acctext); flex: none; }
+.nrow b { display: block; font-weight: 600; font-size: 18px; line-height: 1.25; }
+.nrow small { display: block; font-size: 15.5px; color: var(--muted); line-height: 1.3; margin-top: 2px; }
+.m6 { position: absolute; border-radius: 26px; border: 1px solid var(--hair); box-shadow: 0 12px 40px rgba(0,0,0,.45); z-index: 6; }
+.m6 .n { font-weight: 600; font-size: 18px; line-height: 1.22; margin-bottom: 6px; }
+.m6 .f { display: flex; gap: 8px; font-size: 15.5px; color: var(--muted); padding: 2px 0; line-height: 1.26; align-items: flex-start; }
+.m6 .f svg { flex: none; width: 18px; height: 18px; margin-top: 1px; }
+.m6 .mr { display: flex; gap: 8px; align-items: center; height: 44px; padding: 0 16px; font-size: 17px; }
+.m6 .mr svg { flex: none; width: 18px; height: 18px; color: var(--muted); }
+.m6 .hr { height: 1px; background: var(--hair); }
+.m6 .ar { position: absolute; right: -9px; width: 0; height: 0; border-top: 9px solid transparent; border-bottom: 9px solid transparent; border-left: 9px solid; }
+.th6 { position: relative; border-radius: 15px; overflow: hidden; border: 1px solid rgba(255,255,255,.09); }
+.th6.sel { border: 2.5px solid var(--accent); box-shadow: 0 0 14px rgba(var(--rgb),.35); }
+.th6 i { position: absolute; display: block; border-radius: 4px; }
+.thl { font-size: 17px; font-weight: 500; margin-top: 7px; display: flex; gap: 8px; align-items: center; height: 22px; }
+.segs6 { display: flex; background: color-mix(in srgb, var(--soft) 70%, var(--card)); border-radius: 24px; padding: 3px; height: 48px; }
+.segs6 div { flex: 1; display: grid; place-items: center; border-radius: 21px; color: var(--muted); font-size: 16px; font-weight: 500; }
+.segs6 .on { background: #3b3e43; color: var(--ink); font-weight: 600; }
+.light .segs6 .on { background: var(--card); border: 1px solid var(--hair); }
+.srow6 { display: flex; align-items: center; gap: 20px; border-top: 1px solid var(--hair); }
+.srow6:first-child { border-top: 0; }
+.srow6 .lb { flex: 1; min-width: 0; font-size: 17px; font-weight: 500; }
+.srow6 .lb small { display: block; font-size: 15px; color: var(--muted); font-weight: 400; margin-top: 2px; }
+/* Glow in light: A pulls every halo in close; B keeps only the core ring. Dark is untouched. */
+.light.s-glow2.v-A .w { box-shadow: 0 0 3px 1px color-mix(in srgb, var(--warn) 45%, transparent); }
+.light.s-glow2.v-A .g, .light.s-glow2.v-A .finA { box-shadow: 0 0 3px 1px rgba(var(--rgb),.4); }
+.light.s-glow2.v-A .ndc { box-shadow: 0 0 7px 0 color-mix(in srgb, var(--warn) 28%, transparent); }
+.light.s-glow2.v-A .wkc { box-shadow: 0 0 7px 0 rgba(var(--rgb),.2); }
+.light.s-glow2.v-A .newt, .light.s-glow2.v-A .chrome { box-shadow: 0 1px 6px rgba(var(--rgb),.3); }
+.light.s-glow2.v-B .w { box-shadow: 0 0 0 2px color-mix(in srgb, var(--warn) 26%, transparent); }
+.light.s-glow2.v-B .g, .light.s-glow2.v-B .finA { box-shadow: 0 0 0 2px rgba(var(--rgb),.24); }
+.light.s-glow2.v-B .ndc { box-shadow: 0 0 0 1px color-mix(in srgb, var(--warn) 34%, transparent); }
+.light.s-glow2.v-B .wkc { box-shadow: 0 0 0 1px rgba(var(--rgb),.3); }
+.light.s-glow2.v-B .newt, .light.s-glow2.v-B .chrome { box-shadow: none; }
+/* The question sheet in light, as the app draws it. */
+.light.s-notnow .foot { background: var(--sheet); }
+.light.s-notnow .sheet { background: #f2f1ed; }
+.s-notnow .opt .ra { border: 2.5px solid var(--muted); }
+.s-notnow.v-A .btn.soft { background: transparent; border: 1.5px solid color-mix(in srgb, var(--ink) 30%, transparent); }
+
+/* Round 7 */
+/* The rail's thread pill, as the app draws it now. */
+.p7 { padding: 0; }
+.ps7 { flex: none; width: 100%; height: 57px; padding-top: 2px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3.5px; font-weight: 600; text-align: center; }
+.pw7 { white-space: nowrap; line-height: 1.15; letter-spacing: 0; }
+.pt7 { font-size: 12px; line-height: 1.15; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+.dot.i7 { width: 7px; height: 7px; background: none; border: 1.6px solid var(--ink); }
+.dot.i7m { width: 9px; height: 9px; background: none; border: 2px solid var(--muted); }
+.ans7 { position: absolute; height: 55.5px; border-radius: 28px; border: 1px solid var(--hair); background: color-mix(in srgb, var(--card) 70%, var(--ground)); padding: 5px; z-index: 2; }
+.ans7 > div { height: 100%; border-radius: 22px; background: var(--accent); color: var(--onacc); display: flex; align-items: center; justify-content: center; gap: 12px; font-weight: 600; font-size: 16.4px; box-shadow: 0 4px 22px rgba(var(--rgb),.32); }
+/* A thread's lead, as in the thread-earlier captures. */
+.h7 { font-weight: 600; margin: 4px 0 8px !important; }
+.ol7 { margin: 0 0 10px; padding-left: 30px; }
+.ol7 li { margin-bottom: 4px; padding-left: 6px; }
+.ol7 li::marker { color: var(--muted); }
+.kc7 { font: 600 .82em ui-monospace, Menlo, Consolas, monospace; background: color-mix(in srgb, var(--ink) 9%, transparent); padding: 1px 4px; border-radius: 5px; }
+/* Agents sheet */
+.asheet7 { position: absolute; z-index: 4; background: #151719; overflow: hidden; box-shadow: 0 -8px 30px rgba(0,0,0,.28); }
+.light .asheet7 { background: var(--sheet); }
+.al7 { display: flex; gap: 8px; align-items: center; height: 20px; font-size: 14.5px; font-weight: 500; color: color-mix(in srgb, var(--ink) 82%, var(--muted)); padding-left: 3px; }
+.al7 .dot { margin-right: 1px; }
+.al7 span:last-child { color: var(--muted); font-weight: 500; margin-left: 2px; }
+.acard7 { background: #18191d; border-radius: 19px; overflow: hidden; }
+.light .acard7 { background: var(--card); }
+.ai7 { position: relative; padding: 11.5px 15px 10.5px 15px; }
+.ai7 + .ai7 { padding-top: 13px; }
+.at7 { display: flex; gap: 8.6px; align-items: center; height: 22px; font-size: 16.4px; font-weight: 600; }
+.ag7 { flex: none; width: 24px; height: 24px; border-radius: 50%; background: var(--soft); display: grid; place-items: center; color: var(--ink); }
+.ag7 svg { width: 14px; height: 14px; }
+.aa7 { position: absolute; right: 11px; top: 5px; height: 40px; padding: 0 15px; border-radius: 20px; background: var(--soft); display: flex; align-items: center; font-size: 14.5px; font-weight: 500; }
+.ac7 { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); color: var(--muted); }
+.am7 { font-size: 12.8px; color: var(--muted); margin-top: 2.5px; line-height: 17px; }
+.am7 span { margin: 0 2px; }
+.ab7 { font-size: 14.5px; line-height: 17px; margin-top: 2px; }
+.aw7 { font-size: 12.5px; color: var(--muted); line-height: 17px; margin-top: 1.5px; }
+.ad7 { display: flex; gap: 7px; align-items: center; font-size: 14.5px; color: var(--muted); margin-top: 4px; height: 20px; }
+/* New thread sheet */
+.nsheet7 { position: absolute; z-index: 4; background: #111316; overflow: hidden; box-shadow: 0 -8px 30px rgba(0,0,0,.3); }
+.light .nsheet7 { background: var(--sheet); }
+.nw7 { position: absolute; left: 0; right: 0; top: 0; height: 125px; background: radial-gradient(70% 140% at 25% 0, rgba(var(--rgb),.22), transparent 78%); pointer-events: none; }
+.nb7 { position: absolute; display: flex; align-items: center; height: 20px; font-size: 16.6px; }
+.nb7 .ti { position: absolute; text-align: center; font-weight: 700; font-size: 17.2px; pointer-events: none; }
+.nbars7 { position: absolute; display: flex; gap: 6px; height: 4px; }
+.nbars7 div { flex: 1; border-radius: 2px; background: var(--soft); }
+.nbars7 div.on { background: var(--accent); box-shadow: 0 0 10px rgba(var(--rgb),.4); }
+.np7 { position: absolute; display: flex; gap: 9px; align-items: center; height: 43px; padding: 0 16px; border-radius: 22px; background: color-mix(in srgb, var(--soft) 70%, var(--sheet)); border: 1px solid var(--hair); font-weight: 600; font-size: 14.2px; }
+.nr7 { display: flex; align-items: center; gap: 15px; height: 69px; padding: 0 16px 0 17px; border-radius: 17px; background: #1b1d20; border: 1px solid var(--hair); }
+.light .nr7 { background: var(--card); }
+.nr7 .ic { color: var(--acctext); flex: none; }
+.nr7 b { display: block; font-weight: 600; font-size: 16.1px; line-height: 1.25; }
+.nr7 small { display: block; font-size: 14.5px; color: var(--muted); line-height: 1.3; margin-top: 1px; }
+/* Pull request sheet */
+.psheet7 { position: absolute; z-index: 4; background: #141619; overflow: hidden; box-shadow: 0 -8px 30px rgba(0,0,0,.28); }
+.light .psheet7 { background: var(--sheet); }
+.dc7 { display: flex; gap: 6px; align-items: center; height: 23.5px; padding: 0 10px 0 9px; border-radius: 12px; background: var(--soft); color: var(--muted); font-size: 12.2px; font-weight: 600; }
+.tb7 { height: 43px; padding: 0 15px; border-radius: 22px; background: #232528; border: 1px solid var(--hair); display: flex; align-items: center; gap: 9px; font-size: 14.5px; font-weight: 500; }
+.light .tb7 { background: var(--soft); }
+.tb7.on { background: var(--accsurf); border: 2px solid var(--accent); box-shadow: 0 0 14px rgba(var(--rgb),.3); padding: 0 15px; }
+.br7 { display: flex; align-items: center; gap: 0; height: 24px; color: var(--muted); font-size: 14.6px; }
+.br7 svg { margin-right: 6px; flex: none; }
+.mc7 { font: 13.6px ui-monospace, Menlo, Consolas, monospace; color: var(--ink); background: var(--soft); border-radius: 6px; padding: 3px 7px; letter-spacing: 0; }
+.sg7 { position: absolute; background: #18191d; border-radius: 18px; padding: 0; }
+.light .sg7, .light .sc7 { background: var(--card); }
+.sr7 { display: flex; gap: 13px; align-items: flex-start; padding: 9px 12px 9px 16.5px; min-height: 39px; }
+.sr7 svg { flex: none; margin-top: 0; }
+.sr7 > div { flex: 1; min-width: 0; font-size: 16.4px; line-height: 21px; padding-right: 8px; }
+.sr7 + .sr7 > div { border-top: 1px solid var(--hair); margin-top: -9px; padding-top: 9px; }
+.sr7 b { font-weight: 600; }
+.sd7 { font-size: 14.6px; color: var(--muted); }
+.sc7 { position: absolute; background: #18191d; border-radius: 18px; padding: 14px 16px 12px 16.5px; }
+.ul7 { margin: 6px 0 0; padding-left: 24px; font-size: 16.6px; }
+.ul7 li { margin-top: 5px; line-height: 22.5px; padding-left: 7px; }
+.ul7 li::marker { color: var(--muted); font-size: 12px; }
+.mk7 { font: 15px ui-monospace, Menlo, Consolas, monospace; background: #000; padding: 0 2px; letter-spacing: 0; }
+.light .mk7 { background: var(--soft); }
+.bb7 { position: absolute; height: 44px; border-radius: 22px; background: var(--accent); color: var(--onacc); display: flex; gap: 10px; align-items: center; justify-content: center; font-size: 16.4px; font-weight: 600; box-shadow: 0 5px 22px rgba(var(--rgb),.3); }
+/* The overview's lines, as the captures set them. */
+.om7 { font-size: 14.5px; color: var(--muted); margin-top: 12px; }
+.rv7 { margin-top: 14px; }
+.rv7 .wk { font-size: 14.4px; }
+.set7 { display: flex; gap: 8px; align-items: center; padding: 12px 14px; border-top: 1px solid var(--hair); color: var(--muted); font-weight: 500; font-size: 14.3px; }
+/* Send answer, dimmed, in dark: Now is the app's dimmed teal. */
+.btn.send7 { background: #295a55; color: #1b3b37; }
+.light .btn.send7 { background: var(--soft); color: var(--dim); }
+/* The question sheet in light, as the app draws it (round 6's Not now outline is in the app). */
+.light.s-scrimlight .foot, .light.s-sendgrey .foot { background: var(--sheet); }
+.light.s-scrimlight .sheet, .light.s-sendgrey .sheet { background: #f2f1ed; }
+.s-scrimlight .opt .ra, .s-sendgrey .opt .ra { border: 2.5px solid var(--muted); }
+.light.s-scrimlight .btn.soft, .light.s-sendgrey .btn.soft { background: transparent; border: 1.5px solid color-mix(in srgb, var(--ink) 30%, transparent); }
+/* Light glow: tight, as round 6 chose. */
+.light.r7 .w { box-shadow: 0 0 3px 1px color-mix(in srgb, var(--warn) 45%, transparent); }
+.light.r7 .g, .light.r7 .finA { box-shadow: 0 0 3px 1px rgba(var(--rgb),.4); }
+.light.r7 .ndc { box-shadow: 0 0 7px 0 color-mix(in srgb, var(--warn) 28%, transparent); }
+.light.r7 .wkc { box-shadow: 0 0 7px 0 rgba(var(--rgb),.2); }
+.light.r7 .newt, .light.r7 .chrome { box-shadow: 0 1px 6px rgba(var(--rgb),.3); }
+/* Reply box in dark: A a hairline, B a step lighter. */
+.dark.s-replyedge.v-A .composer { box-shadow: inset 0 0 0 1px rgba(255,255,255,.2); }
+.dark.s-replyedge.v-B .composer { background: #232427; }
+.dark.s-replyedge.v-B .composer .disc { background: #313336; }
+/* The sidebar, the clock and the ring, as the captures set them. */
+.r7 .side { padding-top: 74.6px; }
+.r7 .sec { font-size: 14.5px; padding: 18px 12px 0; height: 41px; line-height: 20px; margin-bottom: 0; }
+.r7 .sec:first-child { padding-top: 0; height: 23px; }
+.r7 .rowt { padding: 10.25px 8px 10.25px 12px; min-height: 0; }
+.r7 .side .tt { font-size: 16px; line-height: 19px; }
+.r7 .side .mt { margin-top: 1.5px; line-height: 18px; }
+.r7 .side .lt { height: 19px; }
+.r7 .sidehead { font-size: 21.3px; top: 20.5px; }
+.r7 .sidehead + .circle { top: 33.8px !important; left: 241.6px !important; }
+.r7 .clock { font-size: 16.5px; }
+.r7 .ring svg { transform: translateY(1.6px) scale(1.2); }
+.r7 .ring::after { content: ''; position: absolute; left: 7.75px; top: 35.45px; width: 4.5px; height: 4.5px; border-radius: 50%; background: var(--dim); box-shadow: 6.6px 2.8px 0 var(--dim), 13.3px 2.8px 0 var(--dim), 20px 0 0 var(--dim); }
+.r7 .side .tt { padding-right: 20px; }
+/* Tables size their columns by their words, numbers set right. */
+.r7 .tr[style*="123px 123px"] > div:nth-child(n+2), .r7 .tr[style*="75px 54px"] > div:nth-child(n+2) { text-align: right; }
+.r7 .tr[style*="113px 116px 53px"] > div:nth-child(3) { text-align: center; }
+.r7 .tr[style*="75px 54px"] { padding: 7.5px 12px; }
+.r7 .tr[style*="75px 54px"]:first-child { font-size: 14px; }
+/* The overview and the folded list, as the captures set them. */
+.r7 .ov6 .oh { font-size: 14px; }
+.r7 .ov6 .om { font-size: 14.2px; margin-top: 3px; }
+.r7 .ov6 .ohead { font-size: 14.7px; }
+.r7 .ov6 .notice, .r7 .ov6 .notice span { font-size: 14.5px !important; }
+.r7 .ov6 .wkc div[style*="font-size:16px"] { font-size: 14.5px !important; }
+.r7 .ov6 .ocard div[style*="height:42px;padding:0 16px"] { font-size: 15px; }
+.r7 .rv7 svg { display: none; }
+.r7 .ov6 .om7:not([style]) { margin-top: 6px; }
+.r7 .ov6 .om7[style] { margin-top: 10px !important; }
+.r7 .ov6 .rv7 { margin-top: 12px; }
+.r7 .ov6 .ocard[style*="padding:4px 0"] > div { padding-top: 13px !important; padding-bottom: 13px !important; }
+.r7 .ov6 .ocard + div[style*="padding:14px 6px"] { padding-top: 30px; font-size: 14.3px; }
+.r7 .frow { padding-right: 27px; }
+.r7 .frow .tt { font-size: 16.5px; }
+.r7 .frow .mt { font-size: 16px; margin-top: 0; }
+.r7 .frow .tm { font-size: 12.5px; }
+.r7 .notice .clip { font-size: 14.7px !important; }
+.r7 .chrome { box-shadow: none; }
+.r7 .frow { padding-top: 8.5px; padding-bottom: 8.5px; }
+.r7 .frow .mt { font-size: 15.3px; }
+.r7 .notice > div[style*="font-size:16px"] { font-size: 14.2px !important; }
+.r7 .opill[style*="height:40px"] { height: 43px !important; font-size: 14.5px !important; }
+.r7 .notice.abs[style*="top:64px"] { top: 68.5px !important; }
+.r7 div.abs[style*="top:127px"] { top: 131px !important; }
+.p-folded .tb7 { padding: 0 11.5px; }
+.p-folded .tb7.on { padding: 0 11.5px; }
+.sr7 { padding-top: 7.8px; padding-bottom: 7.8px; }
+.sr7 + .sr7 > div { margin-top: -7.8px; padding-top: 7.8px; }
+.r7.p-folded .bub { max-width: 70%; }
+.r7.p-sideways .sheet > div[style*="padding:10px 0 8px 20px"] { padding-top: 24px !important; }
+
+</style>
+</head>
+<body>
+<div id="bar">
+  <div id="row">
+    <select id="surface" aria-label="Surface"></select>
+    <div class="seg" id="variants"></div>
+    <div class="seg" id="postures"></div>
+    <div class="seg" id="tools"></div>
+  </div>
+  <div id="caption"></div>
+</div>
+<div id="holder"><div id="stage"></div></div>
+
+<script>
+const I = {
+  plus: s => `<svg width="${s||22}" height="${s||22}" viewBox="0 0 24 24"><path d="M12 4v16M4 12h16"/></svg>`,
+  back: `<svg width="22" height="22" viewBox="0 0 24 24"><path d="M15 4l-8 8 8 8"/></svg>`,
+  side: `<svg width="24" height="24" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="4"/><path d="M9 4v16M4.800 8h1.700M4.800 11h1.700M4.800 14h1.700"/></svg>`,
+  owl: `<svg width="26" height="26" viewBox="0 0 24 24" class="solid"><path d="M4 3l3.500 2.500C9 5 10.500 4.800 12 4.800s3 .2 4.500.7L20 3v10c0 4.500-3.800 7-8 7s-8-2.500-8-7z"/><circle cx="8.400" cy="12" r="2.700" style="fill:var(--ground);stroke:none"/><circle cx="15.600" cy="12" r="2.700" style="fill:var(--ground);stroke:none"/><circle cx="8.800" cy="12" r="1.200"/><circle cx="16" cy="12" r="1.200"/></svg>`,
+  owlS: `<svg width="16" height="16" viewBox="0 0 24 24" class="solid"><path d="M4 3l3.500 2.500C9 5 10.500 4.800 12 4.800s3 .2 4.500.7L20 3v10c0 4.500-3.800 7-8 7s-8-2.500-8-7z"/><circle cx="8.400" cy="12" r="2.700" style="fill:var(--ground);stroke:none"/><circle cx="15.600" cy="12" r="2.700" style="fill:var(--ground);stroke:none"/></svg>`,
+  dots: `<svg width="24" height="24" viewBox="0 0 24 24" class="solid"><circle cx="5" cy="12" r="1.800"/><circle cx="12" cy="12" r="1.800"/><circle cx="19" cy="12" r="1.800"/></svg>`,
+  chat: `<svg width="26" height="26" viewBox="0 0 24 24"><path d="M6 4h12a3 3 0 013 3v7a3 3 0 01-3 3h-5l-4 3.500V17H6a3 3 0 01-3-3V7a3 3 0 013-3z"/></svg>`,
+  chatF: `<svg width="26" height="26" viewBox="0 0 24 24" class="solid"><path d="M6 4h12a3 3 0 013 3v7a3 3 0 01-3 3h-5l-4 3.500V17H6a3 3 0 01-3-3V7a3 3 0 013-3z"/></svg>`,
+  mac: `<svg width="26" height="26" viewBox="0 0 24 24" class="solid"><path d="M4 3h16a2 2 0 012 2v10a2 2 0 01-2 2h-6l.5 2.500H16V21H8v-1.500h1.500L10 17H4a2 2 0 01-2-2V5a2 2 0 012-2zm0 2v10h16V5z" fill-rule="evenodd"/></svg>`,
+  macPlus: `<svg width="24" height="24" viewBox="0 0 24 24"><path d="M12 3H4.500A2.500 2.500 0 002 5.500v8A2.500 2.500 0 004.500 16h13a2.500 2.500 0 002.500-2.500V12M12 16v4M8 20.500h8"/><path d="M18 2.500v7M14.500 6h7"/></svg>`,
+  sliders: `<svg width="26" height="26" viewBox="0 0 24 24"><path d="M3 6h9M18 6h3M3 12h3M12 12h9M3 18h10M19 18h2"/><rect x="12" y="4" width="6" height="4" rx="2"/><rect x="6" y="10" width="6" height="4" rx="2"/><rect x="13" y="16" width="6" height="4" rx="2"/></svg>`,
+  mic: `<svg width="18" height="18" viewBox="0 0 24 24"><rect x="8.500" y="2.500" width="7" height="12" rx="3.500"/><path d="M5 11a7 7 0 0014 0M12 18v3M8 21h8"/></svg>`,
+  ext: `<svg width="20" height="20" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="M9 15l6-6M10 9h5v5"/></svg>`,
+  alarm: s => `<svg width="${s||20}" height="${s||20}" viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 8.500V13l3 2M3.500 6L7 3M20.500 6L17 3"/></svg>`,
+  info: `<svg width="20" height="20" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 7.800v.2"/></svg>`,
+  xc: c => `<svg width="22" height="22" viewBox="0 0 24 24" style="color:${c}"><circle cx="12" cy="12" r="9.500"/><path d="M8.500 8.500l7 7M15.500 8.500l-7 7"/></svg>`,
+  cl: c => `<svg width="22" height="22" viewBox="0 0 24 24" style="color:${c}"><circle cx="12" cy="12" r="9.500"/><path d="M12 7v5H8"/></svg>`,
+  ok: c => `<svg width="22" height="22" viewBox="0 0 24 24" style="color:${c}"><circle cx="12" cy="12" r="9.500"/><path d="M8 12.500l3 3 5-6"/></svg>`,
+  branch: `<svg width="15" height="15" viewBox="0 0 24 24"><circle cx="6" cy="5" r="2.500"/><circle cx="18" cy="5" r="2.500"/><circle cx="12" cy="19" r="2.500"/><path d="M6 7.500c0 4 6 3.500 6 9M18 7.500c0 4-6 3.500-6 9"/></svg>`,
+  pr: `<svg width="15" height="15" viewBox="0 0 24 24"><circle cx="6" cy="19" r="2.500"/><circle cx="18" cy="19" r="2.500"/><path d="M6 16.500V6M3 9l3-3.500L9 9M18 16.500V10c0-2-1-3-3-3h-3"/></svg>`,
+  place: `<svg width="15" height="15" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M12 16v4M8 20h8"/></svg>`,
+  diff: `<svg width="15" height="15" viewBox="0 0 24 24"><path d="M12 3v8M8 7h8M7 18h10"/></svg>`,
+  chev: `<svg width="15" height="15" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg>`,
+  down: `<svg width="15" height="15" viewBox="0 0 24 24"><path d="M5 9l7 7 7-7"/></svg>`,
+  knot: `<svg width="15" height="15" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3c-3 4-3 14 0 18M12 3c3 4 3 14 0 18M3.500 9c5-2 12-2 17 0M3.500 15c5 2 12 2 17 0"/></svg>`,
+  star: `<svg width="15" height="15" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M5.600 5.600l12.800 12.800M18.400 5.600L5.600 18.400"/></svg>`,
+  bot: `<svg width="19" height="19" viewBox="0 0 24 24"><rect x="4" y="9" width="16" height="11" rx="3"/><path d="M12 9V5M9 14v1M15 14v1"/><circle cx="12" cy="4" r="1"/></svg>`,
+  stop: `<svg width="12" height="12" viewBox="0 0 12 12" class="solid"><rect width="12" height="12" rx="3"/></svg>`,
+  ring: `<svg width="40" height="40" viewBox="0 0 40 40"><path d="M8 29A15 15 0 1132 29" stroke-width="3"/><path d="M13 19a10 10 0 0114 0M16 23a6 6 0 018 0" stroke-width="2.200" style="stroke:var(--ink)"/><circle cx="20" cy="27" r="1.500" style="fill:var(--ink);stroke:none"/></svg>`,
+};
+I.eye = `<svg width="26" height="26" viewBox="0 0 24 24"><path d="M2 12s3.5-6.5 10-6.5S22 12 22 12s-3.5 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3.2"/></svg>`;
+I.owlLine = `<svg width="26" height="26" viewBox="0 0 24 24"><path d="M4 3l3.5 2.5C9 5 10.5 4.8 12 4.8s3 .2 4.5.7L20 3v10c0 4.5-3.8 7-8 7s-8-2.5-8-7z"/><circle cx="8.6" cy="12" r="2.3"/><circle cx="15.4" cy="12" r="2.3"/></svg>`;
+I.owlM = `<svg width="22" height="22" viewBox="0 0 24 24" class="solid"><path d="M4 3l3.5 2.5C9 5 10.5 4.8 12 4.8s3 .2 4.5.7L20 3v10c0 4.5-3.8 7-8 7s-8-2.5-8-7z"/><circle cx="8.4" cy="12" r="2.7" style="fill:var(--ground);stroke:none"/><circle cx="15.6" cy="12" r="2.7" style="fill:var(--ground);stroke:none"/><circle cx="8.8" cy="12" r="1.2"/><circle cx="16" cy="12" r="1.2"/></svg>`;
+I.retry = `<svg width="18" height="18" viewBox="0 0 24 24"><path d="M20 12a8 8 0 11-2.3-5.6M20 4v5h-5"/></svg>`;
+I.folder = `<svg width="24" height="24" viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><path d="M3 10h18"/></svg>`;
+I.folderPlus = `<svg width="24" height="24" viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2h3M21 13v4a2 2 0 01-2 2H5a2 2 0 01-2-2V7"/><path d="M3 10h9M18 4v6M15 7h6"/></svg>`;
+
+const SIZES = { folded: { w: 466, h: 678 }, sideways: { w: 951, h: 669 }, upright: { w: 669, h: 951 } };
+
+const SURFACES = [
+  { id: 'below', name: 'Below the reply box', rec: 'now', toggles: ['kb', 'scr'], reversal: true,
+    judges: 'Fable asks a third time to reverse "the conversation runs on below the reply box, with no fade": sideways a table\'s last line touches the box\'s top and a bubble is cut under it; folded two table rows read on below the box (try "Scrolled" above). You kept Now in rounds 4 and 5.',
+    now: 'The conversation runs under the box and on below it to the screen\'s foot, with no fade. Try "Keyboard" and "Scrolled" above.',
+    A: ['Stop at the box\'s foot', 'As offered in round 4: the conversation still runs under the box but stops at its lower edge, so only the room\'s ground shows below it. No fade.'],
+    B: ['A short fade', 'The conversation runs on below the box as now, but fades out over the 40 points under it and behind its lower half, so a cut line reads as passing under rather than sliced. This also reverses "no fade behind it".'],
+    C: ['End at the box\'s top', 'The conversation ends at the reply box\'s top edge, so nothing shows behind or below the box; the room\'s ground fills under it. No fade.'] },
+  { id: 'computers2', name: 'Computers page', rec: 'B',
+    judges: 'Fable: folded and sideways build the same computer card two ways. Folded puts the state right of the name, makes Try again a button and still shows "3 projects, 1 thread" for a computer it can\'t reach; sideways puts the state under the name with Try again inline and no counts. Sideways, the two cards and the dashed Add a computer row fill the top third, and about 60% of the page is empty.',
+    now: 'Folded: the state right of the name, counts under it, Try again a button. Sideways: the state under the name, Try again inline, no counts for a computer it can\'t reach.',
+    A: ['One card, both postures', 'The sideways card in both postures: the state under the name, Try again inline on the state line, and no counts for a computer that can\'t be reached.'],
+    B: ['A, with its threads sideways', 'A, and sideways each card also lists that computer\'s threads that need you and are working, up to three rows each in the sidebar\'s row form, under a quiet "Needs you" or "Working now". Folded, B is the same as A.'] },
+  { id: 'threadshead', name: 'Folded Threads\' top', rec: 'A',
+    judges: 'Fable: folded, the Threads title, the computer menu and search row, and the banner take the top 35% before the first Needs you row. Sideways already puts them on the title\'s row.',
+    now: 'Folded: the title, then the computer menu and search on a row of their own, then the banner.',
+    A: ['Menu and search on the title\'s row', 'Folded, the computer menu (a compact pill) and search (a magnifier button that opens the field) stand on the title\'s row, left of the clock\'s strip. The banner stays. Sideways is unchanged.'] },
+  { id: 'newwidth', name: 'New thread sideways', rec: 'A',
+    judges: 'Opus, and Fable in round 4: sideways, the New thread sheet\'s rows are about 850 points wide, with chevrons about 750 points from their labels and an empty lower third.',
+    now: 'Sideways, the sheet\'s rows run its full width. Folded is unchanged in every variant.',
+    A: ['Capped and centred', 'Sideways, the sheet\'s content is capped at 680 points and centred in the sheet. The Back, New thread and Cancel bar stays at the sheet\'s edges.'],
+    B: ['Two cards to a row', 'Sideways, the projects stand two to a row, so four take two rows.'] },
+  { id: 'glow2', name: 'Glow in light', rec: 'A', theme: 'light',
+    judges: 'Sol: in light, status dots and working cards still carry broad, cloudy halos on the pale room. In round 4 you chose "the glow in light reaches about a third as far as in dark".',
+    now: 'In light, each dot and card carries a soft halo that spreads well past its edge. Dark is unchanged in every variant; press Light to compare.',
+    A: ['A tight falloff', 'The same cores, with a much tighter outer falloff, so each halo ends close to the dot or the card\'s edge.'],
+    B: ['The core ring only', 'No outer halo in light: each dot keeps a thin coloured ring and each card a hairline of its colour.'] },
+  { id: 'rowtime', name: 'Time in a folded row', rec: 'A',
+    judges: 'Fable: folded, a list row\'s time sits on the name\'s line, while in the sideways sidebar it ends the second line.',
+    now: 'Folded, the time ends the name\'s line. Sideways is unchanged in every variant.',
+    A: ['Time ends the second line', 'Folded rows end their second line with the time, as the sidebar does.'] },
+  { id: 'menucard', name: 'The ••• card', rec: 'A',
+    judges: 'Fable: folded, the card\'s fill is nearly the page\'s value with no dimming, so cut-off words ("Still working", "Combing") butt against its edge at full strength.',
+    now: 'The card is a solid fill close to the page\'s, with nothing dimmed behind it.',
+    A: ['A step lighter', 'The card\'s fill is a step lighter than the page, so its edge reads against what it covers.'],
+    B: ['The page dims', 'The page behind dims while the card is open; the card\'s fill is as now.'] },
+  { id: 'notnow', name: 'Not now in light', rec: 'A', theme: 'light',
+    judges: 'Opus: in light, on the question sheet, Not now and the dimmed Send answer are both flat grey pills, so the two read alike.',
+    now: 'Not now and the dimmed Send answer are the same grey pill until a choice is made.',
+    A: ['Not now as an outline', 'Not now is an outline pill on the sheet\'s own fill. Send answer is as now: grey until you choose, then teal.'] },
+  { id: 'codehead', name: 'One-line code block', rec: 'A',
+    judges: 'Opus: a one-line code block\'s header bar (the language label and Copy) is as tall as its code.',
+    now: 'Every code block has a header bar with its language and Copy over the code.',
+    A: ['Copy beside short code', 'For a block of one or two lines, Copy stands at the code\'s right end on its first line and the header bar goes. Longer blocks keep their header.'] },
+  { id: 'themegrid', name: 'Theme grid', rec: 'A',
+    judges: 'Fable: seven theme tiles three across leave Glass alone on a third row.',
+    now: 'Seven tiles three across, in both postures. Folded is unchanged in every variant.',
+    A: ['Four across sideways', 'Sideways, four across, so two rows of four and three. Folded stays three across.'] },
+];
+
+/* ---------- Round 6: shared ---------- */
+const P6 = p => p === 'upright' ? 'folded' : p;
+const big6 = p => p === 'sideways' ? 'font-size:18px;' : '';
+const fix6 = (p, html) => html.replace('<div class="conv" style="', `<div class="conv" style="${big6(p)}`);
+const steps6 = t => `<div class="steps6">${t} ${I.chev}</div>`;
+const UP6 = `<svg width="18" height="18" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></svg>`;
+const DIFF6 = `<svg width="18" height="18" viewBox="0 0 24 24"><path d="M7 4v7M3.5 7.5h7M14 20l6-10M14 17h6" /></svg>`;
+const note6 = (words, css) => `<div class="tell" style="left:16px;right:104px;width:auto;transform:none;top:auto;${css || 'bottom:110px'}">${words}</div>`;
+function code6(code, inline, lang) {
+  if (inline) return `<div class="code6"><div class="c inl"><div style="flex:1;min-width:0">${code}</div><span class="cp6">Copy</span></div></div>`;
+  return `<div class="code6"><div class="h">${lang || 'sh'}<b>Copy</b></div><div class="c">${code}</div></div>`;
+}
+function codeBlock6(p, o) {
+  const code = P6(p) === 'folded'
+    ? `npm test -- tests/unit/renderer/<br><span class="cont">↪</span>terminalDrawer.test.ts`
+    : 'npm test -- tests/unit/renderer/terminalDrawer.test.ts';
+  return `<p>The check I ran:</p>${code6(code, o.codeInline)}`;
+}
+/* A thread as the app draws it now: a code block, steps, and sideways the larger words. */
+function thread6(p, o = {}) { return fix6(p, threadPage(p, Object.assign({ code: true }, o))); }
+/* Runs fn with the list's rows rearranged, so the sidebar can show another thread chosen. */
+function withRows(rows, fn) {
+  const saved = TROWS.slice();
+  TROWS.length = 0; rows.forEach(r => TROWS.push(r));
+  try { return fn(); } finally { TROWS.length = 0; saved.forEach(r => TROWS.push(r)); }
+}
+const chooseRow = title => TROWS.map(([label, list]) => [label, list.map(r => Object.assign({}, r, { chosen: r.t === title ? 1 : 0 }))]);
+
+/* ---------- 1. Below the reply box ---------- */
+function below6(p, v) {
+  const side = p === 'sideways';
+  const H = SIZES[p].h;
+  if (state.kb) {
+    if (v !== 'C') return fix6(p, below5(p, v));
+    const kbH = p === 'folded' ? 250 : 265;
+    const top = H - kbH - 96 - (side ? 150 : 260);
+    const end = kbH + 22 + 96;
+    return fix6(p, below(p, 'now').replace(`top:${top}px;bottom:${kbH}px`, `top:${top - (end - kbH)}px;bottom:${end}px`));
+  }
+  const composerB = side ? 41 : 43;
+  if (!state.scr) {
+    if (v !== 'C') return fix6(p, below5(p, v));
+    const top = side ? -30 : -60, end = composerB + 50;
+    return fix6(p, below(p, 'now').replace(`top:${top}px;bottom:0px`, `top:${top - end + (side ? 0 : 8)}px;bottom:${end}px`));
+  }
+  // Scrolled up, as in the app's thread-earlier captures.
+  const convBottom = v === 'A' ? composerB : v === 'C' ? composerB + 50 : 0;
+  let html = thread6(p, { convTop: side ? -18 : -78, convBottom, composerB });
+  if (v === 'B') {
+    const left = side ? 296 : 16, right = side ? 99 : 100;
+    const fade = `<div style="position:absolute;left:${left - 8}px;right:${right - 8}px;bottom:0;height:${composerB + 30}px;background:linear-gradient(color-mix(in srgb, var(--ground) 0%, transparent), var(--ground) 70%);pointer-events:none;z-index:1"></div>`;
+    html = html.replace(/<div class="composer"/, fade + '<div class="composer"');
+  }
+  return html;
+}
+
+/* ---------- 2. Computers page ---------- */
+function computers6(p, v) {
+  p = P6(p);
+  const side = p === 'sideways';
+  const status = (d, s) => `<span style="display:inline-flex;gap:9px;align-items:center;flex:none"><span class="dot ${d}"></span>${s}</span>`;
+  const sep = `<span style="color:var(--dim)">·</span>`;
+  const tryInline = `<span class="wk" style="font-weight:600">Try again</span>`;
+  const retry = `<div style="display:inline-flex;gap:9px;align-items:center;margin-top:12px;height:39px;padding:0 17px 0 13px;border-radius:20px;background:var(--soft);font-weight:500;font-size:17px;color:var(--ink)">${I.retry}Try again</div>`;
+  const chev = `<span style="color:var(--muted);flex:none">${I.chev}</span>`;
+  const sideCard = (name, d, s, down, counts, extra) => `<div class="ccard"><div style="display:flex;gap:10px;align-items:flex-start"><div style="flex:1;min-width:0"><div class="cname">${name}</div><div class="cline">${status(d, s)}${sep}${down ? tryInline : `<span>${counts}</span>`}</div></div><span style="margin-top:3px">${chev}</span></div>${extra || ''}</div>`;
+  const foldCard = (name, d, s, down, counts) => `<div class="ccard"><div style="display:flex;gap:10px;align-items:center"><div style="flex:1;min-width:0"><div class="cname">${name}</div><div class="cline" style="margin-top:4px">${counts}</div></div><span style="display:inline-flex;gap:9px;align-items:center;color:var(--muted);font-size:17px">${status(d, s)}</span><span style="margin-left:6px">${chev}</span></div>${down ? retry : ''}</div>`;
+  const row = r => `<div class="rowt">${light(r.d)}<div style="flex:1;min-width:0"><div class="tt clip">${r.t}</div><div class="mt">${I[r.mark]}${r.owl ? I.owlS : ''}<span class="clip">${r.meta}</span><span style="flex:1"></span><span class="tm">${r.time}</span></div></div></div>`;
+  const lists = () => {
+    const [needs, working] = [TROWS[0][1], TROWS[1][1]];
+    return `<div style="border-top:1px solid var(--hair);margin:14px -4px 0;padding-top:2px"><div class="clabel">Needs you<span style="margin-left:7px">${needs.length}</span></div>${needs.slice(0, 3).map(row).join('')}<div class="clabel">Working now<span style="margin-left:7px">${working.length}</span></div>${working.slice(0, 3).map(r => row(Object.assign({}, r, { chosen: 0 }))).join('')}</div>`;
+  };
+  const studioQuiet = `<div style="border-top:1px solid var(--hair);margin:14px 0 0;padding-top:12px;font-size:15px;color:var(--muted)">Nothing needed you or was working when it was last reached.</div>`;
+  const add = `<div class="addc">${I.plus(20)}Add a computer</div>`;
+  let body;
+  if (side) {
+    const B = v === 'B';
+    body = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:13px;align-items:start">${sideCard('Laptop', 'g', 'Online', false, '3 projects, 9 threads', B ? lists() : '')}${sideCard('Studio Mac', 'r', 'Can\'t reach it', true, '', B ? studioQuiet : '')}${add}</div>`;
+  } else if (v === 'now') {
+    body = `<div style="display:grid;gap:12px">${foldCard('Laptop', 'g', 'Online', false, '3 projects, 9 threads')}${foldCard('Studio Mac', 'r', 'Can\'t reach it', true, '3 projects, 1 thread')}${add}</div>`;
+  } else {
+    body = `<div style="display:grid;gap:12px">${sideCard('Laptop', 'g', 'Online', false, '3 projects, 9 threads')}${sideCard('Studio Mac', 'r', 'Can\'t reach it', true, '')}${add}</div>`;
+  }
+  const pad = side ? '15px 108px 40px 24px' : '11px 104px 40px 20px';
+  const page = `<div class="page" style="left:0;right:0;padding:${pad}"><div class="pt">Computers</div><div class="ps" style="margin:${side ? '8px 0 18px' : '8px 0 22px'}">Each computer runs Sotto and shares its threads with this iPhone.</div>${body}</div>`;
+  const tellB = !side && v === 'B' ? note6('Folded, B is the same as A: there is no room beside the cards for their threads. Press Sideways above.', 'bottom:150px') : '';
+  return page + rail(p, { top: side ? ['side', 'new'] : ['new'], tabs: 'computers' }) + tellB;
+}
+
+/* ---------- Folded Threads list ---------- */
+function foldedRows(o = {}) {
+  const time = r => `<span class="tm">${r.time}</span>`;
+  return TROWS.map(([label, list], n) => `<div class="fsec" style="${n ? 'margin-top:14px' : ''}">${label}<span>${list.length}</span></div>` + list.map(r =>
+    `<div class="frow">${light(r.d)}<div style="flex:1;min-width:0"><div style="display:flex;align-items:center;gap:10px"><div class="tt clip" style="flex:1;min-width:0">${r.t}</div>${o.timeEnd ? '' : time(r)}</div><div class="mt">${I[r.mark]}${r.owl ? I.owlS : ''}<span class="clip">${r.meta}</span>${o.timeEnd ? '<span style="flex:1"></span>' + time(r) : ''}</div></div></div>`).join('')).join('');
+}
+function foldedThreads(o = {}) {
+  const p = 'folded';
+  const banner = top => `<div class="notice abs" style="left:20px;right:105px;top:${top}px;height:48px;padding:0 5px 0 18px">${MAC}<div class="clip" style="flex:1;min-width:0;font-weight:500;font-size:16.5px">Can't reach Studio Mac.</div>${TRY(false)}</div>`;
+  let head;
+  if (o.oneRow) {
+    const pill = `<div class="opill" style="height:40px;padding:0 12px;gap:8px;font-size:15px;flex:none"><span class="dot g"></span>All computers ${I.down}</div>`;
+    const mag = `<div class="opill" style="width:44px;height:44px;padding:0;justify-content:center;color:var(--muted);flex:none"><svg width="19" height="19" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M16 16l5 5"/></svg></div>`;
+    head = `<div class="abs" style="left:20px;right:105px;top:9px;height:44px;display:flex;align-items:center;gap:8px"><div class="pt" style="flex:1">Threads</div>${pill}${mag}</div>${banner(64)}`;
+  } else {
+    head = `<div class="pt abs" style="left:20px;top:13px">Threads</div><div class="abs" style="left:20px;right:105px;top:70px;display:flex;gap:13px">${PICKER.replace(' style="flex:none"', ' style="flex:none;width:148px;padding:0 12px;gap:8px;font-size:16px;white-space:nowrap"')}${SEARCH.replace('flex:1;', 'flex:1;font-size:17px;')}</div>${banner(126)}`;
+  }
+  const listTop = o.oneRow ? 127 : 189;
+  return `<div class="toplight"></div>${head}<div class="abs" style="left:20px;right:105px;top:${listTop}px">${foldedRows(o)}</div>${rail(p, { top: ['new'], tabs: 'threads' })}`;
+}
+/* The sideways overview as the app lays it out now. */
+function cards6(p) {
+  return cards(p, 'B')
+    .replace('<div style="position:absolute;left:24px;right:99px;top:0;bottom:0;overflow:hidden">', '<div class="toplight"></div><div class="ov6" style="position:absolute;left:24px;right:108px;top:0;bottom:0;overflow:hidden">')
+    .replace('<div style="position:absolute;top:14px;left:0;right:0;display:flex;gap:14px;align-items:center"><div class="pt" style="flex:none;margin-right:6px">Threads</div>', '<div style="position:absolute;top:16px;left:0;right:0;display:flex;gap:13px;align-items:center"><div class="pt" style="flex:none;width:225px">Threads</div>')
+    .replace('top:70px;left:0;right:0;height:40px', 'top:76px;left:0;right:0;height:48px')
+    .replace('top:128px;left:0;right:0;display:grid;grid-template-columns:1fr 1fr 1fr;gap:18px', 'top:156px;left:0;right:0;display:grid;grid-template-columns:1fr 1fr 1fr;gap:17px');
+}
+
+/* ---------- 3. Folded Threads' top ---------- */
+function threadsHead(p, v) {
+  if (p === 'sideways') return cards6(p) + tell('Sideways already puts the computer menu and search on the title\'s row. It is unchanged in every variant; press Folded above.');
+  return foldedThreads({ oneRow: v === 'A' });
+}
+
+/* ---------- 4. New thread sideways ---------- */
+function newThread6(p, v) {
+  p = P6(p);
+  const side = p === 'sideways';
+  const folder = `<svg width="24" height="24" viewBox="0 0 24 24"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><path d="M3 10h18"/></svg>`;
+  const rows = [['Sotto', 'D:\\Talk to Text Application · 6 threads', folder], ['Panel tools', 'D:\\Engineering\\Panel tools · 3 threads', folder], ['House', 'D:\\House', folder], ['Browse another folder', 'Folders on Laptop', I.folderPlus]]
+    .map(([t, s, ic]) => `<div class="nrow"><span class="ic">${ic}</span><div style="flex:1;min-width:0"><b class="clip">${t}</b><small class="clip">${s}</small></div><span style="color:var(--muted)">${I.chev}</span></div>`);
+  const monitor = `<svg width="22" height="22" viewBox="0 0 24 24" class="solid"><path d="M4 3h16a2 2 0 012 2v10a2 2 0 01-2 2h-6l.5 2.5H16V21H8v-1.5h1.5L10 17H4a2 2 0 01-2-2V5a2 2 0 012-2z"/></svg>`;
+  const bar = `<div class="nbar"><span class="bk"><svg width="20" height="20" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>Back</span><span class="ti">New thread</span><span class="cn">Cancel</span></div>`;
+  const content = `<div class="nbars"><div class="on"></div><div class="on"></div><div></div></div><div style="margin-top:${side ? 15 : 15}px"><span class="npill">${monitor}Laptop</span></div><div class="nq">Which project?</div><div class="nsub">The thread works in this folder.</div>`;
+  const grid = side && v === 'B' ? `display:grid;grid-template-columns:1fr 1fr;gap:9px 12px` : `display:grid;gap:${side ? 9 : 8}px`;
+  if (!side) {
+    const sheet = `<div class="nsheet" style="left:8px;right:8px;top:8px;bottom:0;border-radius:26px 26px 0 0"><div class="wash6"></div><div class="grab" style="position:relative;margin-top:6px"></div><div style="position:relative;padding:12px 20px 0"><div style="padding-right:84px">${bar}${content}</div><div style="${grid};margin-top:20px">${rows.join('')}</div></div></div>`;
+    return sheet + rail(p, { top: [] }) + (v !== 'now' ? note6('Folded is unchanged in every variant. Turn sideways, or press Sideways above.', 'bottom:40px') : '');
+  }
+  const cap = v === 'A' ? 'max-width:680px;margin:0 auto;' : '';
+  const behind = `<style>#stage .ocard, #stage .dot, #stage .finA, #stage .chrome, #stage .newt{box-shadow:none!important}</style>` + cards6(p);
+  const sheet = `<div class="scrim" style="background:rgba(0,0,0,.62)"></div><div class="nsheet" style="left:10px;width:848px;top:9px;bottom:43px;border-radius:26px"><div class="wash6"></div><div class="grab" style="position:relative;margin-top:6px"></div><div style="position:relative;padding:15px 20px 0 18px">${bar}<div style="${cap}">${content}<div style="${grid};margin-top:20px">${rows.join('')}</div></div></div></div>`;
+  return behind + sheet;
+}
+
+/* ---------- 5. Glow in light ---------- */
+function glow6(p) {
+  if (P6(p) === 'folded') return foldedThreads({});
+  return cards6(p);
+}
+
+/* ---------- 6. Time in a folded row ---------- */
+function rowTime(p, v) {
+  if (p === 'sideways') return thread6(p, { convTop: 0 }) + tell('Sideways, the sidebar already ends a row\'s second line with its time. It is unchanged; press Folded above.');
+  return foldedThreads({ timeEnd: v === 'A' });
+}
+
+/* ---------- 7. The ••• card ---------- */
+function menu6(p, v) {
+  p = P6(p);
+  const side = p === 'sideways';
+  const fill = v === 'A' ? 'color-mix(in srgb, var(--sheet) 35%, var(--soft))' : 'var(--sheet)';
+  const page = thread6(p, { scrolled: true, composer: 'none', convTop: side ? -261 : -478 });
+  const pos = side ? 'right:80px;top:259px;width:292px' : 'right:80px;bottom:25px;width:292px';
+  const arrowY = side ? 365 - 259 - 9 : null;
+  const arrow = side ? `<span class="ar" style="top:${arrowY}px;border-left-color:${fill}"></span>` : `<span class="ar" style="bottom:50px;border-left-color:${fill}"></span>`;
+  const card = `<div class="m6" style="${pos};background:${fill}">${arrow}<div style="padding:12px 16px 9px"><div class="n">Refine the iPhone thread view</div><div class="f">${I.place}<span>Codex · Sotto · Laptop</span></div><div class="f">${I.branch}<span>feat/<br><span style="white-space:nowrap">frosted-window-and-pane-terminal</span></span></div><div class="f">${DIFF6}<span><span class="wk">+212</span> <span style="color:var(--dangertext)">−48</span></span></div></div><div class="hr"></div><div class="mr">${I.pr}<span style="flex:1">#721 draft</span>${I.chev}</div><div class="hr"></div><div class="mr"><span style="width:18px;flex:none"></span>Settle</div></div>`;
+  const dim = v === 'B' ? `<div class="scrim" style="z-index:5"></div>` : '';
+  return page + dim + card;
+}
+
+/* ---------- 8. Not now in light ---------- */
+function notNow(p, v) {
+  p = P6(p);
+  if (p === 'folded') {
+    const page = thread6(p, { thread: 'needs', composer: 'none', scrolled: true, convTop: -442 });
+    return page + qSheet('left:8px;right:8px;top:115px;bottom:8px', { headR: 96, optR: 20, footR: 20, greySend: true }).replace('<div class="foot" style="', '<div class="foot" style="padding-bottom:43px;') + rail(p, { top: [] });
+  }
+  const rows = [
+    ['Needs you', [TROWS[0][1][0], TROWS[0][1][1], Object.assign({}, TROWS[1][1][1], { d: 'w', meta: 'Question · Laptop', chosen: 1 })]],
+    ['Working now', [TROWS[1][1][0], TROWS[1][1][2]]],
+    TROWS[2],
+  ];
+  const page = withRows(rows, () => thread6(p, { thread: 'needs', composer: 'none', scrolled: true, convTop: -205 })).replace('<span class="badge">2</span></div><div class="tile ', '<span class="badge">3</span></div><div class="tile ');
+  const glowOff = `<style>#stage .side .dot, #stage .lt .dot, #stage .pill .dot{box-shadow:none!important}</style>`;
+  return glowOff + page + qSheet('left:289px;width:569px;top:137px;bottom:42px', { greySend: true, scrim: 'background:rgba(0,0,0,.62)' });
+}
+
+/* ---------- 9. One-line code block ---------- */
+function codeHead(p, v) {
+  p = P6(p);
+  const inline = v === 'A';
+  if (p === 'folded') return thread6(p, { convTop: -78, codeInline: inline });
+  const point = n => `<li><b>Point ${n}:</b> the drive's rated current, its cooling and the cable run all change, so the breaker and the conduit fill need checking again before anything is ordered.</li>`;
+  const body = `<ul class="ul6">${[2, 3, 4, 5, 6].map(point).join('')}</ul><ol class="ol6"><li>Check the breaker.</li><li>Check the conduit fill.</li></ol>${code6('python compare_drives.py --option 40 --report', inline)}${steps6('1 step · 2s')}`;
+  const page = withRows(chooseRow('Compare motor drive options'), () => thread6(p, { body, thread: 'done', convTop: -51 }));
+  return page.replace('Reply while it works', 'Reply to this thread').replace(`<span class="disc" style="background:var(--ink);color:var(--ground)">${I.stop}</span>`, `<span class="disc">${UP6}</span>`);
+}
+
+/* ---------- 10. Theme grid ---------- */
+const THEMES6 = [
+  ['Sotto', '#030406', '71,184,169', '#47b8a9', '#121620'], ['Hush', '#1b1e1c', '165,185,175', '#a3b8ad', '#313935'],
+  ['Citrine', '#15130d', '205,175,30', '#f2d12e', '#34302a'], ['Graphite', '#0c0c0c', '210,210,210', '#f2f2f2', '#232323'],
+  ['Clay', '#1c110f', '225,110,70', '#f07f58', '#3d2622'], ['Fern', '#0c150f', '70,185,95', '#5ad981', '#1b2a1f'],
+  ['Glass', '#111a26', '80,150,225', '#5ab9f6', '#24324a'],
+];
+function themeTile([name, bg, glow, acc, pill], w, h, sel) {
+  const tile = `<div class="th6 ${sel ? 'sel' : ''}" style="width:${w}px;height:${h}px;background:radial-gradient(75% 95% at 0 0, rgba(${glow},.5), transparent 72%), ${bg}"><i style="left:12px;top:17px;width:53%;height:6px;background:rgba(255,255,255,.88)"></i><i style="left:12px;top:30px;width:37%;height:5px;background:rgba(255,255,255,.42)"></i><i style="left:47%;top:45px;width:44%;height:14px;border-radius:7px;background:${pill}"></i><i style="left:12px;bottom:11px;width:26px;height:12px;border-radius:6px;background:${acc};box-shadow:0 0 9px ${acc}"></i></div>`;
+  return `<div>${tile}<div class="thl">${name}${sel ? `<span class="wk">${CHECK(18).replace('stroke-width:3.2', 'stroke-width:2.2')}</span>` : ''}</div></div>`;
+}
+function themeGrid(p, v) {
+  p = P6(p);
+  const side = p === 'sideways';
+  const seg = (list, on) => `<div class="segs6" style="width:338px;flex:none">${list.map((t, n) => `<div class="${n === on ? 'on' : ''}">${t}</div>`).join('')}</div>`;
+  if (side) {
+    const four = v === 'A';
+    const w = four ? 184 : 252;
+    const slider = `<div style="width:338px;flex:none;display:flex;align-items:center;gap:16px"><span class="dot g"></span><div class="slide" style="flex:1"></div></div>`;
+    const upper = `<div class="pcard abs" style="left:24px;right:108px;top:-40px;padding:0 17px;border-radius:20px">
+      <div class="srow6" style="height:107px;align-items:flex-end;padding-bottom:18px"><div class="lb">Glow<small>50%</small></div>${slider}</div>
+      <div class="srow6" style="height:83px"><div class="lb">Message density<small>Room between messages, lists and steps.</small></div>${seg(['Comfortable', 'Compact'], 0)}</div>
+      <div class="srow6" style="height:83px"><div class="lb">Tabs when unfolded sideways<small>Upright, they stand down the right edge.</small></div>${seg(['Right', 'Left'], 0)}</div></div>`;
+    const theme = `<div class="pcard abs" style="left:24px;right:108px;top:245px;padding:14px 17px 18px;border-radius:20px"><div style="display:flex;font-size:17px;font-weight:500;height:24px;align-items:center"><span style="flex:1">Theme</span><span style="color:var(--muted);font-size:16px;font-weight:400">Sotto, dark</span></div>
+      <div style="display:grid;grid-template-columns:repeat(${four ? 4 : 3}, ${w}px);justify-content:space-between;row-gap:19px;margin-top:10px">${THEMES6.map((t, n) => themeTile(t, w, 96, n === 0)).join('')}</div>
+      <div style="font-size:15px;color:var(--muted);margin-top:20px">The theme colours the light at the top of each screen, what's working and what you can tap.</div></div>`;
+    return upper + theme + rail(p, { top: ['side', 'new'], tabs: 'settings' });
+  }
+  const upper = `<div class="pcard abs" style="left:20px;right:104px;top:-60px;height:130px;padding:0 16px;border-radius:20px"><div class="segs6" style="margin-top:22px;height:48px"><div class="on">Right</div><div>Left</div></div><div style="font-size:15.5px;color:var(--muted);margin-top:8px">Upright, they stand down the right edge.</div></div>`;
+  const theme = `<div class="pcard abs" style="left:20px;right:104px;top:83px;padding:14px 16px 22px;border-radius:20px"><div style="display:flex;font-size:18px;font-weight:600;height:24px;align-items:center"><span style="flex:1">Theme</span><span style="color:var(--muted);font-size:16px;font-weight:400">Sotto, dark</span></div>
+    <div style="display:grid;grid-template-columns:repeat(3, 94px);justify-content:space-between;row-gap:19px;margin-top:14px">${THEMES6.map((t, n) => themeTile(t, 94, 94, n === 0)).join('')}</div>
+    <div style="font-size:15.5px;color:var(--muted);margin-top:16px;line-height:1.3">The theme colours the light at the top of each screen, what's working and what you can tap.</div></div>
+    <div class="abs" style="left:24px;top:631px;font-size:17px;font-weight:600;color:var(--muted)">Notifications</div><div class="pcard abs" style="left:20px;right:104px;top:659px;height:60px"></div>`;
+  return upper + theme + rail(p, { top: ['new'], tabs: 'settings' }) + (v !== 'now' ? note6('Folded stays three across in every variant. Turn sideways, or press Sideways above.', 'bottom:40px') : '');
+}
+
+const RENDERERS_6 = (p, v) => ({
+  below: () => below6(p, v), computers2: () => computers6(p, v), threadshead: () => threadsHead(p, v),
+  newwidth: () => newThread6(p, v), glow2: () => glow6(p), rowtime: () => rowTime(p, v), menucard: () => menu6(p, v),
+  notnow: () => notNow(p, v), codehead: () => codeHead(p, v), themegrid: () => themeGrid(p, v),
+});
+
+const SURFACES5 = [
+  { id: 'title', name: 'Which thread, folded', rec: 'A', toggles: ['scr'], reversal: true,
+    judges: 'Fable asks to reverse "No bar over a thread" folded only: with no sidebar beside it, a folded thread never says which thread is open until ••• is pressed. Fable puts the cost at about 0.2 on Controls. Sideways is unchanged in every variant: the sidebar\'s chosen row names it.',
+    now: 'Folded, a thread opens straight onto its conversation. Its name, where it runs and its branch are at the top of •••. Try "Scrolled" above.',
+    A: ['The name heads the conversation', 'The thread\'s name is the conversation\'s first line, quiet and one line long, and scrolls away with it as you read. No bar: once you scroll, the page is as it is now.'],
+    B: ['The name stays, quiet', 'The thread\'s name stays as one quiet line at the top while you scroll, over a short band of the room\'s ground, so you always know which thread is open. It is a small bar.'] },
+  { id: 'below', name: 'Below the reply box', rec: 'now', toggles: ['kb'], reversal: true,
+    judges: 'Fable asks to reverse "the conversation runs on below the reply box": folded, a card\'s heading hides behind the box while its rows read on beneath it, and a bubble is cut in two. Fable sees no fix inside the decision and puts the cost at about 0.2. You looked at A in round 4 and kept the box as it is.',
+    now: 'The conversation runs under the box and on below it to the screen\'s foot, with no fade. Try "Keyboard" above.',
+    A: ['Stop at the box\'s foot', 'As offered in round 4: the conversation still runs under the box but stops at its lower edge, so only the room\'s ground shows below it. No fade.'],
+    B: ['A short fade', 'The conversation runs on below the box as now, but fades out over the 40 points under it and behind its lower half, so a cut line reads as passing under rather than sliced. This also reverses "no fade behind it".'] },
+];
+
+
+/* ---------- Round 5: which thread, folded ---------- */
+const NAME = 'Refine the iPhone thread view';
+const nameLine = top => `<div style="font-size:15px;font-weight:600;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;${top}">${NAME}</div>`;
+function titleSurface(p, v) {
+  if (p !== 'folded') return threadPage(p, {}) + tell('Sideways is unchanged in every variant: the sidebar\'s chosen row names the open thread. Press Folded above.');
+  const scr = state.scr;
+  if (v === 'A') {
+    if (scr) return threadPage(p, { scrolled: true, convTop: -60 });
+    return threadPage(p, {}).replace(/(<div class="conv"[^>]*>)/, `$1${nameLine('margin:16px 0 -6px')}`);
+  }
+  if (v === 'B') {
+    const band = `<div style="position:absolute;left:0;right:0;top:0;height:50px;background:var(--ground);z-index:2"></div><div style="position:absolute;left:16px;right:100px;top:16px;z-index:3">${nameLine('')}</div>`;
+    const page = scr ? threadPage(p, { scrolled: true, convTop: -60 }) : threadPage(p, { convTop: 40 });
+    return page + band;
+  }
+  return scr ? threadPage(p, { scrolled: true, convTop: -60 }) : threadPage(p, {});
+}
+
+/* ---------- Round 5: below the reply box ---------- */
+function below5(p, v) {
+  if (v !== 'B') return below(p, v);
+  const side = p === 'sideways';
+  const html = below(p, 'now');
+  const kbH = p === 'folded' ? 250 : 265;
+  const left = side ? (state.kb ? 98 : 296) : 16, right = side ? (state.kb ? 173 : 99) : 100;
+  const foot = state.kb ? kbH : 0;
+  const reach = state.kb ? 70 : (side ? 41 : 43) + 30;
+  const fade = `<div style="position:absolute;left:${left - 8}px;right:${right - 8}px;bottom:${foot}px;height:${reach}px;background:linear-gradient(color-mix(in srgb, var(--ground) 0%, transparent), var(--ground) 70%);pointer-events:none;z-index:1"></div>`;
+  return html.replace(/<div class="composer"/, fade + '<div class="composer"');
+}
+
+
+/* ---------- Round 5: the judges' other findings ---------- */
+SURFACES5.push(
+  { id: 'foldedwide', name: 'Folded sheets\' right side', rec: 'A',
+    judges: 'Sol (its largest cost, 0.5) and Fable: folded, the Agents, pull request and New thread sheets keep every row out of the strip for the sheet\'s whole height, so cards stop about 100 points short of the right edge and "Review the drawer fix" wraps beside Open to answer. In round 4 you chose "wide below the clock" for the question sheet.',
+    now: 'Folded, the Agents, pull request and New thread sheets keep the whole sheet clear of the clock\'s strip. The question sheet already runs wide below the clock.',
+    A: ['Wide below the clock', 'As the question sheet does: what sits beside the clock keeps clear of it, and everything below it runs to the sheet\'s own right margin. Agents is shown; the pull request and New thread sheets do the same.'] },
+  { id: 'step', name: 'A running step\'s command', rec: 'A',
+    judges: 'Sol (0.5 on Reading): with the steps open, the running command drops to small grey type; sideways it becomes a fine strand between Running and its timer.',
+    now: 'Running, the command in small grey code type and the timer on one line; folded, a command that doesn\'t fit goes whole to the line under it.',
+    A: ['Its own line, full strength', 'Running and the timer on one line; the command always on the line under them, in code type a size larger at the conversation\'s full strength.'],
+    B: ['Beside, larger', 'The command stays beside Running, a size larger and at full strength, wrapping under itself when it doesn\'t fit.'] },
+  { id: 'reading', name: 'Reading size sideways', rec: 'A',
+    judges: 'Sol (0.5 on Reading): sideways, a long conversation is a broad field of small text, harder to track line to line than folded. Claude\'s larger text gives shorter lines (claude-sideways-reading).',
+    now: 'The conversation is the same size in both postures. The reading width stays 680 points (narrower beside the sidebar) in every variant.',
+    A: ['One step larger', 'Sideways, the conversation\'s words are a step larger (about 6%). Folded is unchanged.'],
+    B: ['Two steps larger', 'Sideways, the conversation\'s words are two steps larger (about 12%), close to Claude\'s. Folded is unchanged.'] },
+  { id: 'radio', name: 'Question choices\' circles', rec: 'A',
+    judges: 'Sol (0.5): the empty circles beside each choice are much fainter than their words and sink into the choice\'s fill, so the choices look weaker than they are. Send answer stays as you chose in round 4.',
+    now: 'A thin, dim circle.',
+    A: ['A stronger ring', 'The circle\'s ring is thicker and in the words\' muted grey, so it reads at a glance in light and dark.'],
+    B: ['A, with a filled centre', 'A, and the circle is filled with the room\'s ground, so it stands out of the choice\'s fill like a hole to press.'] },
+  { id: 'sheetfoot', name: 'Below a sheet sideways', rec: 'B',
+    judges: 'Opus and Fable: under Sotto\'s own sheet sideways, a strip of the page shows below the sheet\'s foot at near full strength (the Agents sheet over a table), and a Needs you card\'s amber glow shows under the New thread sheet.',
+    now: 'The sheet stops above the screen\'s foot; the scrim dims the screen as iOS\'s sheets do.',
+    A: ['Run to the foot', 'The sheet runs down to the screen\'s foot, its lower corners into the edge, as an iPhone sheet does. The scrim is as now.'],
+    B: ['A darker scrim', 'The sheet keeps its place, and the scrim is darker, with every glow put out behind it, so nothing under it competes.'] },
+  { id: 'kbtabs', name: 'Tabs behind the keyboard', rec: 'A',
+    judges: 'Opus and Fable: sideways with the keyboard up, the tab pill\'s amber badge and teal glow show through the keyboard\'s top-right corner as a smudge. In round 4 this came bundled with "stop at the box\'s foot", which you didn\'t take; here it stands alone.',
+    now: 'The tab pill stays where it is, under the keyboard, and shows through it.',
+    A: ['Tabs step away', 'While the keyboard is up, the tab pill steps away and comes back when it goes. The thread\'s own pill above it stays.'] },
+  { id: 'wrap', name: 'Where a sidebar name wraps', rec: 'A',
+    judges: 'Opus (its largest cost, 0.3): "Refine the iPhone / thread view" and "Clean up the / wiring schedule" break at about 60% of the row while "Babysit #845 release notes" runs nearly to the time, so the column looks ragged. iOS moves a word down so no last line is a lone word.',
+    now: 'iOS\'s own wrapping: a name that needs two lines is balanced so its second line isn\'t a single word.',
+    A: ['Fill the first line', 'A name fills its first line before it wraps, even when that leaves one word on the second.'] },
+);
+
+function foldedWide(p, v) {
+  if (p !== 'folded') return agents(p, 'B') + tell('Sideways, the sheet keeps clear of the strip already. Fold it, or press Folded above.');
+  let html = agents(p, 'B');
+  if (v === 'A') {
+    html = html.replace('padding:0 96px 0 20px">', 'padding:0 20px 0 20px"><div style="float:right;width:76px;height:178px"></div>');
+    html = html.replace(/class="group" style="/g, 'class="group" style="display:flow-root;');
+  }
+  return html + `<div style="position:absolute;inset:0;z-index:9;pointer-events:none">${rail(p, {})}</div>`;
+}
+
+function stepSurface(p, v) {
+  const cmd = 'npm test -- tests/unit/renderer/terminalDrawer.test.ts';
+  const spin = `<span style="color:var(--acctext);font-size:18px;line-height:1">✳</span>`;
+  const head = `${spin}<b style="color:var(--acctext);font-weight:600">Running</b>`;
+  const timer = `<span style="margin-left:auto;color:var(--acctext);font-variant-numeric:tabular-nums;flex:none">1m 06s</span>`;
+  const small = `font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;color:var(--muted)`;
+  const big = `font-family:ui-monospace,Menlo,Consolas,monospace;font-size:15px;color:var(--ink);line-height:1.4;word-break:break-all`;
+  const rail = `border-left:2px solid var(--hair);padding:2px 0 2px 14px;margin:6px 0 0 8px`;
+  let step;
+  if (v === 'A') step = `<div style="${rail}"><div style="display:flex;gap:8px;align-items:center">${head}${timer}</div><div style="${big};margin-top:4px">${cmd}</div></div>`;
+  else if (v === 'B') step = `<div style="${rail}"><div style="display:flex;gap:8px;align-items:baseline">${head}<span style="${big};flex:1;min-width:0">${cmd}</span>${timer}</div></div>`;
+  else if (p === 'folded') step = `<div style="${rail}"><div style="display:flex;gap:8px;align-items:center">${head}${timer}</div><div style="${small};margin-top:3px;word-break:break-all">${cmd}</div></div>`;
+  else step = `<div style="${rail}"><div style="display:flex;gap:8px;align-items:baseline">${head}<span style="${small};white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1;min-width:0">${cmd}</span>${timer}</div></div>`;
+  return threadPage(p, { scrolled: true, convTop: p === 'folded' ? -330 : -200, more: step }).replace('Combing the desert ' + I.chev, 'Combing the desert ' + I.down);
+}
+
+function readingSurface(p, v) {
+  if (p !== 'sideways') return threadPage(p, {}) + tell('Folded is unchanged in every variant. Turn sideways, or press Sideways above.');
+  const size = v === 'A' ? 18 : v === 'B' ? 19 : 17;
+  const more = `<p>The drawer opens from the Terminal button and from the shortcut, so I checked both paths, timing each one twenty times on a cold start and twenty on a warm one. The button path is steady at 0.3 seconds once the pane has drawn; the shortcut path sometimes fires twice when dictation holds the chord, which is the double open you saw.</p>`;
+  return threadPage(p, { scrolled: true, convTop: -120, more }).replace('<div class="conv" style="', `<div class="conv" style="font-size:${size}px;`);
+}
+
+function radioSurface(p, v) {
+  const box = p === 'folded' ? 'left:8px;right:8px;bottom:0;top:115px' : 'left:288px;width:586px;top:153px;bottom:8px';
+  const css = v === 'A' ? '<style>#stage .opt .ra{border:2.5px solid var(--muted)}</style>'
+    : v === 'B' ? '<style>#stage .opt .ra{border:2.5px solid var(--muted);background:var(--ground)}</style>' : '';
+  return css + threadPage(p, { thread: 'needs', composer: 'none' }) + qSheet(box, { headR: p === 'folded' ? 96 : 20, optR: 20, footR: 20, greySend: state.theme === 'light' });
+}
+
+function sheetFoot(p, v) {
+  if (p !== 'sideways') return agents(p, 'B') + tell('Folded, iOS\'s own sheet runs to the foot already. Turn sideways, or press Sideways above.');
+  let html = agents(p, 'B');
+  const box = v === 'A' ? 'left:288px;width:586px;top:8px;bottom:0' : 'left:288px;width:586px;top:8px;bottom:42px';
+  html = html.replace(/left:150px;width:653px;top:8px;bottom:0;border-radius:26px 26px 0 0/, box + (v === 'A' ? ';border-radius:26px 26px 0 0' : ';border-radius:26px'));
+  if (v === 'B') html = html.replace('<div class="scrim"></div>', '<style>#stage .side .dot, #stage .lt .dot{box-shadow:none!important}</style><div class="scrim" style="background:rgba(0,0,0,.62)"></div>');
+  const foot = `<div class="abs" style="left:296px;right:107px;bottom:0;height:60px;z-index:0"><div class="tbl" style="margin:0"><div class="tr" style="grid-template-columns:1fr 60px 60px;font-weight:600;color:var(--muted)"><div>Step</div><div>Before</div><div>After</div></div></div></div>`;
+  return html.replace('<div class="scrim"', foot + '<div class="scrim"');
+}
+
+function kbTabs(p, v) {
+  if (p !== 'sideways') return tell('Folded, the tabs aren\'t beside the keyboard. Turn sideways, or press Sideways above.');
+  const saved = state.kb; state.kb = true;
+  let html = below(p, 'now');
+  state.kb = saved;
+  if (v === 'A') html = html.replace(/<div style="position:absolute;inset:0;z-index:6;opacity:\.16[\s\S]*$/, '');
+  else html = html.replace('opacity:.16', 'opacity:.3');
+  return html;
+}
+
+function wrapSurface(p, v) {
+  if (p !== 'sideways') return threadPage(p, {}) + tell('Folded has no sidebar beside a thread. Turn sideways, or press Sideways above.');
+  const css = v === 'A' ? '<style>#stage .side .tt{text-wrap:wrap}</style>' : '<style>#stage .side .tt{text-wrap:pretty}</style>';
+  return css + threadPage(p, {});
+}
+
+const RENDERERS_5 = (p, v) => ({
+  foldedwide: () => foldedWide(p, v), step: () => stepSurface(p, v), reading: () => readingSurface(p, v),
+  radio: () => radioSurface(p, v), sheetfoot: () => sheetFoot(p, v), kbtabs: () => kbTabs(p, v), wrap: () => wrapSurface(p, v),
+});
+
+// Round 5's surfaces follow round 6's, for reference; round 6's below the reply box takes its place.
+SURFACES.push(...SURFACES5.filter(s => s.id !== 'below').map(s => Object.assign({}, s, { name: 'Round 5: ' + s.name })));
+
+const SURFACES7 = [
+  { id: 'railword', name: 'State on the rail', rec: 'A', toggles: ['st'],
+    judges: 'Opus and Fable: the rail\'s thread pill sets its state word at about 11 points, the smallest words on the page, for the open thread\'s most urgent fact. Press the state button above for Working, Needs you and Finished.',
+    now: 'The pill is 50 points wide and the word shrinks to fit on one line, so "Needs you" sets smallest of all.',
+    A: ['Wider pill, larger word', 'The thread pill widens to about 64 points, and the word sets at the sidebar\'s second-line size, with the time under it as now.'],
+    B: ['Light and word only', 'The word at the larger size, and the time goes to VoiceOver only. The pill stays 50 wide, so "Needs you" breaks over two lines.'] },
+  { id: 'agentslabel', name: 'Folded Agents\' first label', rec: 'A',
+    judges: 'Fable: folded, "Needs you 1" stands beside the clock about 50 points above its card, while "Working 1" stands about 18 points above its own, so the first label reads detached. In round 6 the label was lifted beside the clock to close an empty band that Opus had marked down in round 5.',
+    now: 'Folded, the first label stands beside the clock. Sideways is unchanged in every variant.',
+    A: ['With its card', 'The label goes back below the clock, at the same gap above its card as the other labels; only the thread\'s name stands beside the clock.'] },
+  { id: 'ntfit', name: 'New thread sheet sideways', rec: 'A',
+    judges: 'Opus and Fable: sideways, the New thread sheet\'s choices, two to a row, fill the top 40 to 60%, and the rest of a full-height sheet is blank.',
+    now: 'Sideways, the sheet is full height whatever its step holds. Folded is unchanged in every variant.',
+    A: ['As tall as its step', 'Sideways, the sheet is as tall as its current step and stands on the screen\'s foot, as the question sheet does, with a floor so the step bar doesn\'t jump between steps.'] },
+  { id: 'scrimlight', name: 'Scrim in light', rec: 'A', theme: 'light',
+    judges: 'Fable: in light, behind a sideways sheet, the scrim turns the page a muddy warm brown, the heaviest thing in the light theme. In round 5 you chose "a darker scrim, glows out behind it".',
+    now: 'Behind a sideways sheet in light, the scrim is the theme\'s ink at 86%. Dark is unchanged in every variant (press Light), and folded keeps its light scrim.',
+    A: ['Dark, neutral', 'A neutral near-black at about 55%, so the page goes grey, not brown, and its words don\'t read.'],
+    B: ['Lighter, neutral', 'A neutral near-black at about 40%.'] },
+  { id: 'sendgrey', name: 'Send answer, dimmed, in dark', rec: 'A',
+    judges: 'Fable: in dark, a Send answer that can\'t be pressed yet is a dimmed teal, still the most coloured thing in view, and looks pressable. In light it is already grey until a choice is made (round 4\'s decision).',
+    now: 'In dark, Send answer is a dimmed teal until a choice is made. Light is unchanged in every variant.',
+    A: ['Grey in dark too', 'In dark, too, Send answer is the soft grey of Not now with muted words until a choice is made, and turns teal once you choose.'] },
+  { id: 'replyedge', name: 'Reply box in dark', rec: 'A', toggles: ['scr'],
+    judges: 'Fable: in dark, the floating reply box\'s fill is almost the table\'s fill under it, so the two merge where the conversation runs under the box (press "Scrolled" above). The conversation running on under the box with no fade is a kept decision, and stays in every variant.',
+    now: 'In dark, the reply box is a solid fill with no edge. Light is unchanged in every variant.',
+    A: ['A hairline', 'A 1-point hairline round the box in dark.'],
+    B: ['A step lighter', 'The box\'s fill a step lighter in dark.'] },
+  { id: 'settled', name: 'Settled on the overview', rec: 'A',
+    judges: 'Fable: sideways, the overview\'s Recent card stops about 60% down, "Settled 2" floats alone beneath it, and the lower right is empty.',
+    now: 'Sideways, "Settled 2" stands alone under the Recent card. Folded is unchanged in every variant.',
+    A: ['Settled in Recent', 'Settled becomes the Recent card\'s last row, and Recent shows more rows before it.'] },
+  { id: 'prchips', name: 'Pull request chips\' dots', rec: 'A',
+    judges: 'Opus: the red dots on the Checks and Reviews chips read as unread badges and repeat the status block below.',
+    now: 'Checks and Reviews each carry a red dot.',
+    A: ['No dots', 'The chips carry no dots.'],
+    B: ['A state glyph', 'A small ✕ in the danger colour in place of the dot.'] },
+  { id: 'prsummary', name: 'Pull request\'s Summary heading', rec: 'A',
+    judges: 'Fable: the Summary chip, a grey "Summary" label and "What this does" stack three headings over two lines of text.',
+    now: 'The Summary part opens with a grey "Summary" label over its card.',
+    A: ['No grey label on Summary', 'The Summary part drops its grey label; the other parts keep theirs.'] },
+  { id: 'cardlines', name: 'Answerable card\'s lines', rec: 'A',
+    judges: 'Opus: the first Needs you card stacks three lines ("1 more request in this thread", "Answer it on Laptop.", "Review 2 requests") which say much the same.',
+    now: 'Sideways, the first card reads "1 more request in this thread", "Answer it on Laptop." and "Review 2 requests". Folded is unchanged in every variant.',
+    A: ['One line', '"1 more request" folds into the Review link, which already says "2 requests".'] },
+];
+
+/* ---------- Round 7: shared ---------- */
+const DARKSCRIM7 = 'background:rgba(0,0,0,.85);z-index:3';
+/* The scrim behind a sideways sheet: black in dark, the theme's ink in light, as the app draws it now. */
+const scrim7 = () => state.theme === 'light' ? 'background:rgba(28,26,23,.84);z-index:3' : DARKSCRIM7;
+const TOPSTRIP7 = () => `<div class="abs" style="left:0;right:0;top:0;height:20px;background:${state.theme === 'light' ? 'rgb(192,192,188)' : '#000'}"></div>`;
+const CAMERA7 = `<div class="abs" style="left:399.5px;top:29px;width:37px;height:37px;border-radius:50%;background:#000;z-index:8"></div>`;
+const clock7 = p => `<div style="position:absolute;inset:0;z-index:7;pointer-events:none">${rail(p, { top: [] })}</div>`;
+const note7 = (words, css) => note6(words, css).replace('class="tell" style="', 'class="tell" style="z-index:9;');
+
+/* The rail's thread pill as the app draws it now, in place of the page's older pill. */
+let PILL7 = null;
+const rail6 = rail;
+rail = function (p, o) {
+  if (PILL7 && o.thread && p !== 'upright') return rail6(p, Object.assign({}, o, { thread: null, agents: null })) + pill7(p, PILL7.kind || o.thread, PILL7.v || 'now', PILL7.agents);
+  return rail6(p, o);
+};
+function pill7(p, kind, v, agents) {
+  const cx = p === 'sideways' ? 909 : 424;
+  const w = v === 'A' ? 72 : 58;
+  const top = (p === 'sideways' ? 202 : 461) - (agents ? 26 : 0);
+  const col = kind === 'needs' ? 'var(--warntext)' : kind === 'done' ? 'var(--ink)' : 'var(--acctext)';
+  const dot = kind === 'needs' ? 'w' : kind === 'done' ? 'i7' : 'g';
+  const words = { working: 'Working', needs: 'Needs you', done: 'Finished' }[kind];
+  const size = v !== 'now' ? 14 : kind === 'needs' ? 8.6 : 11;
+  const wrap = v === 'B' && kind === 'needs';
+  const word = `<div class="pw7" style="font-size:${size}px;${wrap ? 'white-space:normal;width:48px;line-height:1.08' : ''}">${words}</div>`;
+  const time = kind === 'working' && v !== 'B' ? `<div class="pt7">12m</div>` : '';
+  const ag = agents ? `<div class="tile">${I.bot.replace(/19/g, '24')}<span class="badge">${agents}</span></div>` : '';
+  return `<div class="pill p7" style="left:${cx - w / 2}px;top:${top}px;width:${w}px;height:${163 + (agents ? 53 : 0)}px"><div class="ps7" style="color:${col}"><span class="dot ${dot}"></span>${word}${time}</div>${ag}${watchTile()}<div class="tile">${I.dots}</div></div>`;
+}
+
+/* A thread as the app draws it now. */
+const kc7 = t => `<span class="kc7">${t}</span>`;
+const LEAD7 = `<ol class="ol7"><li>The frost reads the theme's ground and follows the window's transparency setting.</li></ol><p class="h7">Implemented but looks wrong</p><ol class="ol7"><li>${kc7('Ctrl+`')} <b>in Terminal mode:</b> the same off-screen drawer toggle as Standards #2.</li><li><b>Tooltips:</b> they always say "(${kc7('Ctrl+`')})", even when dictation owns that chord and the shortcut is off.</li></ol>`;
+const AUTHOR7 = `<div class="codex"><span style="color:var(--ink);display:grid;place-items:center">${I.knot.replace(/15/g, '18')}</span>Codex</div>`;
+function body7(p, kind) {
+  if (kind === 'done') return `<div class="bub" style="margin-top:${p === 'sideways' ? 24 : 22}px">Add keyboard shortcuts. Keep the changes focused.</div>${steps6('1 step')}${AUTHOR7}<p>I have the context and am checking the details. The next update will summarize the changes and anything that needs your attention.</p>`;
+  let html = conversation(p, { code: true, codeInline: true, scrolled: true })
+    .replace(/grid-template-columns:1fr 60px 60px/g, p === 'sideways' ? 'grid-template-columns:1fr 123px 123px' : 'grid-template-columns:1fr 75px 54px')
+    .replace(/grid-template-columns:1\.4fr 1fr \.5fr 1\.8fr/g, 'grid-template-columns:113px 116px 53px 1fr');
+  html = html.replace(/<p style="margin-top:14px">2\. <b>Tooltips:<\/b>[\s\S]*?<\/p>/, LEAD7);
+  if (kind === 'needs') html = html.replace(/<div style="display:flex;gap:12px;align-items:center;color:var\(--muted\);font-weight:500"><span class="dot g"><\/span>Combing the desert[\s\S]*?<\/div>/, steps6('1 step'));
+  return html;
+}
+function rows7(kind) {
+  const [needs, working, recent] = TROWS.map(([, list]) => list);
+  if (kind === 'needs' || kind === 'perm') return [
+    ['Needs you', [needs[0], needs[1], Object.assign({}, working[1], { d: 'w', meta: kind === 'perm' ? 'Permission · Laptop' : 'Question · Laptop', chosen: 1 })]],
+    ['Working now', [working[0], working[2]]], TROWS[2]];
+  if (kind === 'done') {
+    const t = (r, time, x) => Object.assign({}, r, { time, chosen: 0 }, x || {});
+    return [['Needs you', [t(needs[0], '3m'), t(needs[1], '23m')]], ['Working now', [t(working[0], '13m'), t(working[1], '13m'), t(working[2], '13m')]],
+      ['Recent', [t(recent[0], '19m', { d: 'i', meta: 'Sotto · Laptop', chosen: 1 }), recent[1], recent[2]]]];
+  }
+  return null;
+}
+const ANSICON7 = `<svg width="24" height="24" viewBox="0 0 24 24"><path d="M5 4h14a2 2 0 012 2v9a2 2 0 01-2 2h-6l-4 3.5V17H5a2 2 0 01-2-2V6a2 2 0 012-2z"/><path d="M10 8.6a2 2 0 113 1.8c-.7.4-1 .8-1 1.6M12 14.2v.1"/></svg>`;
+function answer7(p) {
+  const s = p === 'sideways';
+  const L = s ? 292 : 12.5, R = s ? 854.5 : 369.5;
+  return `<div class="ans7" style="left:${L}px;width:${R - L}px;bottom:${s ? 42 : 42.5}px"><div>${ANSICON7}Answer the question</div></div>`;
+}
+/* kind: working, needs or done. o: convTop, pv (the pill's variant), sideways extras. */
+function page7(p, kind, o = {}) {
+  const rows = rows7(o.rows || kind);
+  const opts = Object.assign({ body: o.body || body7(p, kind), thread: kind, composer: kind === 'needs' ? 'none' : undefined }, o);
+  PILL7 = { kind, v: o.pv || 'now', agents: o.agents7 };
+  let html;
+  try { html = rows ? withRows(rows, () => fix6(p, threadPage(p, opts))) : fix6(p, threadPage(p, opts)); } finally { PILL7 = null; }
+  const anchor = o.anchor || ANCHOR7[p] && ANCHOR7[p][kind];
+  if (anchor) html = html.replace('<div class="conv" ', `<div class="conv" data-a7="${anchor}" `);
+  if (kind === 'needs' || o.rows === 'perm') html = html.replace('<span class="badge">2</span>', '<span class="badge">3</span>');
+  if (kind === 'needs' && o.composer !== 'none') html += answer7(p);
+  if (kind === 'done') html = html.replace('Reply while it works', 'Reply to this thread').replace(`<span class="disc" style="background:var(--ink);color:var(--ground)">${I.stop}</span>`, `<span class="disc">${UP6}</span>`);
+  return html;
+}
+/* Where the conversation sits, as the captures show it: an element's top, in points from the screen's top. */
+const ANCHOR7 = {
+  sideways: { working: '.bub@298', needs: '.bub@335.7', done: '.bub@24.3', earlier: '.code6@224', agents: '.tbl@634' },
+  folded: { working: '.bub@288', needs: '.bub@326', done: '.bub@22', earlier: '.code6@186' },
+};
+/* Moves each [data-a7] conversation so its anchor lands where the capture has it; run after every render. */
+function align7(stage) {
+  const sr = stage.getBoundingClientRect(), k = sr.height / stage.offsetHeight || 1;
+  stage.querySelectorAll('[data-a7]').forEach(el => {
+    const [sel, y] = el.dataset.a7.split('@');
+    const t = el.querySelector(sel);
+    if (!t) return;
+    el.style.top = (el.offsetTop + (+y - (t.getBoundingClientRect().top - sr.top) / k)) + 'px';
+  });
+}
+
+/* ---------- 1. State on the rail ---------- */
+function railWord(p, v) {
+  p = P6(p);
+  const kind = state.st === 'needs' ? 'needs' : state.st === 'done' ? 'done' : 'working';
+  return page7(p, kind, { pv: v });
+}
+
+/* ---------- 2. Folded Agents' first label ---------- */
+const AGENTS7 = [
+  { sec: ['w', 'Needs you', 1], items: [{ icon: I.star, t: 'Review the drawer fix', meta: 'Thread · 4m 08s · 6:04 PM', metaS: 'Thread · 4m 06s · 6:17 PM', brief: 'Review the change to TerminalDrawer.tsx on feat/frosted-window. Say whether the chord can still fire twice, and run its tests.', where: 'Claude Code · Sotto · Laptop · Code review', act: 'Open to answer' }] },
+  { sec: ['g', 'Working', 1], items: [{ icon: I.bot, t: 'Run the drawer tests twenty times', meta: 'Agent · 1m 03s · 6:07 PM', metaS: 'Agent · 1m 01s · 6:20 PM', where: 'GPT-6.1 Sol', chev: true }] },
+  { sec: ['i', 'Finished', 2], items: [
+    { icon: I.knot, t: 'Check the drawer docs', meta: 'Thread · 3m 00s · 5:56 PM', metaS: 'Thread · 3m 00s · 6:09 PM', brief: 'Read docs/terminal.md and say what it promises about how long the drawer may take to open.', where: 'Codex · Sotto · Laptop · Research', done: 'Answered', chev: true },
+    { icon: I.bot, t: 'Find fixed waits in the drawer tests', meta: 'Agent · 48s · 5:54 PM', metaS: 'Agent · 48s · 6:07 PM', where: 'GPT-6.1 Sol', chev: true }] },
+];
+function agentsSheet7(p, v) {
+  const side = p === 'sideways';
+  const S = side ? { left: 289, top: 8.6, right: 93, bottom: 42, r: '26px' } : { left: 8.5, top: 8.5, right: 8, bottom: 0, r: '26px 26px 0 0' };
+  // Centres measured on the captures, in the sheet's own coordinates.
+  const g = side ? { title: 57.4, sub: 99.8, label: 128.8, gap: 7, x: 20 } : { title: 41.5, sub: 84, label: v === 'A' ? 151.5 : 112.5, gap: v === 'A' ? 9 : 40, x: 20.5 };
+  const item = (k, n) => `<div class="ai7" style="${n ? 'border-top:1px solid var(--hair);margin-left:15px;padding-left:0' : ''}">
+      <div class="at7" style="padding-right:${k.act ? 118 : 34}px"><span class="ag7">${k.icon}</span><span class="clip">${k.t}</span></div>
+      ${k.act ? `<div class="aa7">${k.act}</div>` : ''}${k.chev ? `<span class="ac7">${I.chev.replace(/15/g, '18')}</span>` : ''}
+      <div class="am7">${(side ? k.metaS : k.meta).replace(/ · /g, ' <span>·</span> ')}</div>${k.brief ? `<div class="ab7" style="padding-right:${k.chev ? 26 : 0}px">${k.brief}</div>` : ''}<div class="aw7">${k.where}</div>
+      ${k.done ? `<div class="ad7"><span class="finA" style="width:15px;height:15px">${CHECK(9)}</span>${k.done}</div>` : ''}</div>`;
+  const secs = AGENTS7.map((s, n) => `<div class="al7" style="margin-top:${n ? 11 : 0}px;margin-bottom:${n ? (side ? 7 : 9) : g.gap}px"><span class="dot ${s.sec[0] === 'i' ? 'i7m' : s.sec[0]}"></span>${s.sec[1]}<span>${s.sec[2]}</span></div><div class="acard7">${s.items.map(item).join('')}</div>`).join('');
+  const body = `<div class="abs" style="left:${g.x}px;top:${g.title - 12.5}px;font-size:20.5px;font-weight:700;letter-spacing:-.4px">Agents</div>
+    <div class="abs wk" style="${side ? 'right:31.6px' : 'left:300.5px'};top:${g.title - 10 + (side ? 2 : 2)}px;font-size:14px;font-weight:600">Done</div>
+    <div class="abs" style="left:${g.x}px;top:${g.sub - 9}px;font-size:14.5px;color:var(--muted)">Refine the iPhone thread view</div>
+    <div class="abs" style="left:${g.x}px;right:${side ? 20 : 21}px;top:${g.label - 10}px">${secs}</div>`;
+  return `<div class="asheet7" style="left:${S.left}px;right:${S.right}px;top:${S.top}px;bottom:${S.bottom}px;border-radius:${S.r}"><div class="grab" style="margin-top:6px;width:36px"></div>${body}</div>`;
+}
+function agentsLabel(p, v) {
+  p = P6(p);
+  if (p === 'sideways') {
+    const page = page7(p, 'working', { rows: 'perm', agents7: 1, anchor: ANCHOR7.sideways.agents });
+    return page + `<div class="scrim" style="${scrim7()}"></div>` + agentsSheet7(p, 'now') + clock7(p)
+      + (v !== 'now' ? note7('Sideways, the first label already stands with its card. It is unchanged in every variant; press Folded above.', 'bottom:150px;left:320px;right:130px') : '');
+  }
+  return TOPSTRIP7() + agentsSheet7(p, v) + CAMERA7 + clock7(p);
+}
+
+/* ---------- 3. New thread sheet sideways ---------- */
+function ntSheet7(p, v) {
+  const side = p === 'sideways';
+  const folder = I.folder;
+  const rows = [['Sotto', 'D:\\Talk to Text Application · 6 threads', folder], ['Panel tools', 'D:\\Engineering\\Panel tools · 3 threads', folder], ['House', 'D:\\House', folder], ['Browse another folder', 'Folders on Laptop', I.folderPlus]]
+    .map(([t, s, ic]) => `<div class="nr7"><span class="ic">${ic}</span><div style="flex:1;min-width:0"><b class="clip">${t}</b><small class="clip">${s}</small></div><span style="color:var(--muted)">${I.chev.replace(/15/g, '18')}</span></div>`).join('');
+  const monitor = `<svg width="20" height="20" viewBox="0 0 24 24" class="solid"><path d="M3 4h18a1.5 1.5 0 011.5 1.5v10A1.5 1.5 0 0121 17h-7l.5 2.5H17V21H7v-1.5h2.5L10 17H3a1.5 1.5 0 01-1.5-1.5v-10A1.5 1.5 0 013 4z"/></svg>`;
+  const back = `<svg width="18" height="18" viewBox="0 0 24 24" style="stroke-width:2.2"><path d="M15 5l-7 7 7 7"/></svg>`;
+  const bar = side
+    ? `<div class="nb7" style="top:42.8px;left:19.4px;right:23.5px"><span class="wk" style="display:flex;gap:6px;align-items:center">${back}Back</span><span class="ti" style="left:0;right:0">New thread</span><span class="wk" style="margin-left:auto">Cancel</span></div>`
+    : `<div class="nb7" style="top:27px;left:19.5px;width:331px"><span class="wk" style="display:flex;gap:6px;align-items:center">${back}Back</span><span class="ti" style="left:0;width:365px">New thread</span><span class="wk" style="margin-left:auto">Cancel</span></div>`;
+  const B = side ? { bars: 77, l: 19.4, r: 19, pill: 96, q: 172, sub: 201, rows: 230 } : { bars: 61.5, l: 19.5, r: 104, pill: 80.5, q: 156.5, sub: 185.5, rows: 214.2 };
+  const content = `${bar}<div class="nbars7" style="top:${B.bars - 2}px;left:${B.l}px;right:${B.r}px"><div class="on"></div><div class="on"></div><div></div></div>
+    <div class="np7" style="top:${B.pill}px;left:${B.l}px">${monitor}Laptop</div>
+    <div class="abs" style="left:${B.l}px;top:${B.q - 13}px;font-size:20.6px;font-weight:700;letter-spacing:-.3px">Which project?</div>
+    <div class="abs" style="left:${B.l}px;top:${B.sub - 9}px;font-size:14.6px;color:var(--muted)">The thread works in this folder.</div>
+    <div class="abs" style="left:${B.l}px;right:${side ? 19.6 : 21}px;top:${B.rows}px;display:grid;${side ? 'grid-template-columns:1fr 1fr;gap:9.6px 13px' : 'gap:9.5px'}">${rows}</div>`;
+  if (!side) return `<div class="nsheet7" style="left:8.5px;right:8px;top:8.5px;bottom:0;border-radius:26px 40px 0 0"><div class="nw7"></div><div class="grab" style="position:relative;margin-top:6px"></div>${content}</div>`;
+  const box = v === 'A' ? 'top:225px;bottom:42px' : 'top:8.6px;bottom:42px';
+  return `<div class="nsheet7" style="left:8.6px;width:849.4px;${box};border-radius:26px"><div class="nw7"></div><div class="grab" style="position:relative;margin-top:6px"></div>${content}</div>`;
+}
+function ntFit(p, v) {
+  p = P6(p);
+  if (p === 'folded') return TOPSTRIP7() + ntSheet7(p, v) + clock7(p)
+    + (v !== 'now' ? note7('Folded is unchanged in every variant. Turn sideways, or press Sideways above.', 'bottom:40px') : '');
+  const glowOff = `<style>#stage .ocard, #stage .dot, #stage .finA, #stage .chrome, #stage .newt{box-shadow:none!important}</style>`;
+  return glowOff + overview7(p) + `<div class="scrim" style="${scrim7()}"></div>` + ntSheet7(p, v) + clock7(p);
+}
+
+/* ---------- 4. Scrim in light ---------- */
+function scrimLight(p, v) {
+  p = P6(p);
+  const light = state.theme === 'light';
+  if (p === 'folded') {
+    PILL7 = { kind: 'needs', v: 'now' };
+    let html;
+    try { html = notNow(p, v); } finally { PILL7 = null; }
+    return html + CAMERA7.replace('z-index:8', 'z-index:2') + clock7(p) + (v !== 'now' ? note7('Folded, the light scrim over the strip above the sheet is unchanged in every variant. Turn sideways, or press Sideways above.', 'top:20px;bottom:auto;left:20px;right:110px') : '');
+  }
+  const scrim = !light ? DARKSCRIM7 : v === 'A' ? 'background:rgba(10,10,12,.55)' : v === 'B' ? 'background:rgba(10,10,12,.40)' : 'background:rgba(28,26,23,.84)';
+  PILL7 = { kind: 'needs', v: 'now' };
+  let html;
+  try { html = notNow(p, v); } finally { PILL7 = null; }
+  html = html.replace('background:rgba(0,0,0,.62)', scrim);
+  return html + clock7(p) + (!light && v !== 'now' ? note7('Dark is unchanged in every variant. Press Light above.', 'top:60px;bottom:auto;left:320px;right:130px') : '');
+}
+
+/* ---------- 5. Send answer, dimmed, in dark ---------- */
+const SENDGREY = '<div class="btn" style="background:var(--soft);color:var(--dim)">Send answer</div>';
+function sendLook(v) {
+  if (state.theme === 'light') return SENDGREY;
+  return v === 'A' ? '<div class="btn" style="background:var(--soft);color:var(--muted)">Send answer</div>' : '<div class="btn send7">Send answer</div>';
+}
+function sendGrey(p, v) {
+  p = P6(p);
+  if (p === 'folded') {
+    PILL7 = { kind: 'needs', v: 'now' };
+    let html;
+    try { html = notNow(p, v); } finally { PILL7 = null; }
+    return html.replace(SENDGREY, sendLook(v)) + clock7(p);
+  }
+  return overview7(p, { can: true, send: v === 'A' && state.theme !== 'light' ? 'grey' : 'now' });
+}
+
+/* ---------- 6. Reply box in dark ---------- */
+function replyEdge(p, v) {
+  p = P6(p);
+  return page7(p, 'working', state.scr ? { anchor: ANCHOR7[p].earlier } : {});
+}
+
+/* ---------- The overview, as the app lays it out now ---------- */
+function overview7(p, o = {}) {
+  const saved = state.can;
+  state.can = !!o.can;
+  let html;
+  try { html = cards6(p); } finally { state.can = saved; }
+  // Glow, text sizes and lines as the captures show them.
+  html = html.replace(/<div style="font-size:14px;color:var\(--muted\);margin-top:6px">1 more request in this thread<\/div>/, o.noMore ? '' : '<div class="om7">1 more request in this thread</div>');
+  html = html.replace(/<div style="font-size:15px;color:var\(--muted\);margin-top:12px">Answer it on Laptop\.<\/div><div style="margin-top:6px">/g, '<div class="om7" style="margin-top:12px">Answer it on Laptop.</div><div class="rv7">');
+  if (o.can) {
+    html = html.replace(/<div style="margin-top:4px">(<div class="wk")/g, '<div class="rv7" style="margin-top:12px">$1');
+    html = html.replace(/<div style="display:flex;justify-content:flex-end;margin-top:10px">.*?Send answer<\/div><\/div>/g,
+      `<div style="display:flex;justify-content:flex-end;margin-top:12px"><div class="btn ${o.send === 'grey' ? '' : 'send7'}" style="flex:none;width:105px;height:39px;font-size:14.5px;${o.send === 'grey' ? 'background:var(--soft);color:var(--muted)' : ''}">Send answer</div></div>`);
+    // Needs you 3 and Working now 2, as in the capture where Refine waits on a question.
+    html = html.replace('Needs you<span style="color:var(--muted);font-weight:400">2</span>', 'Needs you<span style="color:var(--muted);font-weight:400">3</span>')
+      .replace('Working now<span style="color:var(--muted);font-weight:400">3</span>', 'Working now<span style="color:var(--muted);font-weight:400">2</span>')
+      .replace(/<div class="ocard wkc">(?:(?!<div class="ocard)[\s\S])*?Refine the iPhone thread view[\s\S]*?<\/div><\/div>/, '')
+      .replace('<span class="badge">2</span>', '<span class="badge">3</span>');
+  }
+  if (o.settled) {
+    const extra = [['i', 'Draft the release checklist', 'Sotto · Laptop', '2d'], ['i', 'Tidy the panel parts list', 'Panel tools · Laptop', '3d']];
+    const row = ([d, t, m, time]) => `<div style="display:flex;gap:10px;padding:10px 14px;border-top:1px solid var(--hair)">${light(d)}<div style="flex:1;min-width:0"><div class="tt two">${t}</div><div class="mt">${I.knot}<span class="clip">${m}</span><span style="flex:1"></span><span class="tm">${time}</span></div></div></div>`;
+    html = html.replace(/(Can't reach Studio Mac<\/span><span style="flex:1"><\/span><span class="tm">1d<\/span><\/div><\/div><\/div>)<\/div>\s*<div style="display:flex;gap:8px;align-items:center;padding:14px 6px;color:var\(--muted\);font-weight:500">.*?Settled<\/span>2<\/div>/,
+      `$1${extra.map(row).join('')}<div class="set7">${I.chev}<span style="flex:1">Settled</span>2</div></div>`)
+      .replace('Recent<span style="color:var(--muted);font-weight:400">3</span>', 'Recent<span style="color:var(--muted);font-weight:400">5</span>');
+  }
+  return html;
+}
+function overviewSurface(p, v, o, words) {
+  p = P6(p);
+  if (p === 'folded') return foldedThreads({ oneRow: true, timeEnd: true }) + (v !== 'now' ? note7(words, 'bottom:40px') : '');
+  return overview7(p, o);
+}
+
+/* ---------- 7. Settled on the overview ---------- */
+const settledSurface = (p, v) => overviewSurface(p, v, { settled: v === 'A' }, 'Folded, Settled stays at the list\'s foot in every variant. Turn sideways, or press Sideways above.');
+
+/* ---------- 8 and 9. The pull request sheet ---------- */
+function prSheet7(p, o = {}) {
+  const side = p === 'sideways';
+  const dot = o.dots === 'none' ? '' : o.dots === 'x'
+    ? `<svg width="10" height="10" viewBox="0 0 24 24" style="color:var(--danger);stroke-width:4"><path d="M5 5l14 14M19 5L5 19"/></svg>` : '<span class="rd" style="width:8px;height:8px"></span>';
+  const tabs = [['Summary', 1], ['Checks'], ['Reviews'], ['Files']].map(([t, on], n) => `<div class="tb7 ${on ? 'on' : ''}">${t}${n === 1 || n === 2 ? dot : ''}</div>`).join('');
+  const merge = `<svg width="18" height="18" viewBox="0 0 24 24"><path d="M6 3v4c0 3 6 4 6 8v6M18 3v4c0 3-6 4-6 8"/></svg>`;
+  const draftIc = `<svg width="13" height="13" viewBox="0 0 24 24" style="stroke-width:2.6"><path d="M9 21V4M9 4L5 8M9 4c4 0 6 3 6 8v9"/></svg>`;
+  const open = `<svg width="20" height="20" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="17" height="17" rx="3.5"/><path d="M9.5 14.5l5-5M10.5 9.5h4v4"/></svg>`;
+  const xIc = `<svg width="20" height="20" viewBox="0 0 24 24" style="color:var(--dangertext)"><circle cx="12" cy="12" r="9.5"/><path d="M8.6 8.6l6.8 6.8M15.4 8.6l-6.8 6.8"/></svg>`;
+  const clk = `<svg width="20" height="20" viewBox="0 0 24 24" style="color:var(--warntext)"><circle cx="12" cy="12" r="9.5"/><path d="M12 7v5.5H8"/></svg>`;
+  const L = side ? { w: 569, hd: 53.4, tabs: 84, hr: 134, tl: 152, br: 217.4, st: 239, lbl: 386, card: 403.2, foot: 566.4, x: 15, tabX: 20, fold: false, tsz: 20.7 }
+    : { w: 449.5, hd: 37.5, tabs: 68, hr: 119, tl: 136.5, br: 201.5, st: 223.5, lbl: 386.5, card: 404.5, foot: 584, x: 16, tabX: 20, fold: true, tsz: 21.3 };
+  const st3 = side ? `<b>3 commits behind main</b><span class="sd7"> · No conflicts. Merges cleanly into main</span>` : `<b>3 commits behind main</b><div class="sd7" style="margin-top:3px">No conflicts. Merges cleanly into main</div>`;
+  const body = `
+    <div class="abs dc7" style="left:${L.x}px;top:${L.hd - 11.7}px">${draftIc}Draft</div>
+    <div class="abs" style="left:${side ? 85 : 85}px;top:${L.hd - 10}px;font-size:14.2px;font-weight:500">#721</div>
+    <div class="circle" style="left:${side ? 466 : 261.5}px;top:${L.hd}px;color:var(--acctext)">${open}</div>
+    <div class="abs wk" style="left:${side ? 508.6 : 304}px;top:${L.hd - 9.5}px;font-size:14px;font-weight:600">Done</div>
+    <div class="abs" style="left:${L.tabX}px;top:${L.tabs}px;display:flex;gap:${side ? 10 : 8.5}px">${tabs}</div>
+    <div class="abs" style="left:0;${side ? 'right:0' : 'width:365.5px'};top:${L.hr}px;height:1px;background:var(--hair)"></div>
+    <div class="abs" style="left:${L.x}px;right:${side ? 124 : 133}px;top:${L.tl}px;font-size:${L.tsz}px;line-height:25px;font-weight:700;letter-spacing:-.4px">Let the window frost and put a terminal in the bottom third</div>
+    <div class="abs br7" style="left:${side ? 21 : 21.5}px;top:${L.br - 12}px">${merge}<span class="mc7">feat/frosted-window-and-pane-terminal</span><span style="color:var(--muted);margin:0 6px">into</span><span class="mc7">main</span></div>
+    <div class="sg7" style="left:${L.x}px;right:${side ? 15.4 : 16}px;top:${L.st}px">
+      <div class="sr7">${xIc}<div><b>A check failed</b><span class="sd7"> · 1 failing, 1 running, 2 passed</span></div></div>
+      <div class="sr7">${xIc}<div><b>Changes requested</b><span class="sd7"> · chloe-r asked for changes</span></div></div>
+      <div class="sr7">${clk}<div>${st3}</div></div></div>
+    ${o.noLabel ? '' : `<div class="abs" style="left:${side ? 19.6 : 20}px;top:${L.lbl - 10}px;font-size:14.7px;font-weight:500;color:var(--muted)">Summary</div>`}
+    <div class="sc7" style="left:${L.x}px;right:${side ? 15.4 : 16}px;top:${o.noLabel ? L.st + (side ? 133.8 : 149.5) : L.card}px">
+      <div style="font-size:17.4px;font-weight:600">What this does</div>
+      <div style="font-size:16.6px;margin-top:${side ? 12 : 10}px;line-height:${side ? 1.4 : 22.5 / 16.6}">Frosts the window and puts a <b>terminal</b> in the bottom third.</div>
+      <ul class="ul7"><li>Tooltips read the theme</li><li>The drawer opens with <span class="mk7">Ctrl+J</span></li></ul></div>
+    <div class="bb7" style="left:${side ? 19 : 19.5}px;width:${side ? 479 : 358}px;top:${L.foot}px">${I.alarm(22)}Babysit pull request</div>
+    <div class="abs" style="left:${(side ? 528 : 407.5) - 22}px;top:${L.foot}px;width:44px;height:44px;border-radius:50%;background:var(--soft);display:grid;place-items:center;color:var(--muted)">${I.info.replace(/20/g, '22')}</div>`;
+  const box = side ? 'left:289px;width:569px;top:8.6px;bottom:42px;border-radius:26px' : 'left:8.5px;right:8px;top:8.5px;bottom:0;border-radius:26px 26px 0 0';
+  return `<div class="psheet7" style="${box}"><div class="grab" style="margin-top:6px;width:36px"></div>${body}</div>`;
+}
+function prPage7(p, o) {
+  p = P6(p);
+  if (p === 'folded') return TOPSTRIP7() + prSheet7(p, o) + clock7(p);
+  return page7(p, 'working') + `<div class="scrim" style="${scrim7()}"></div>` + prSheet7(p, o) + clock7(p);
+}
+const prChips = (p, v) => prPage7(p, { dots: v === 'A' ? 'none' : v === 'B' ? 'x' : 'dot' });
+const prSummary = (p, v) => prPage7(p, { noLabel: v === 'A' });
+
+/* ---------- 10. Answerable card's lines ---------- */
+const cardLines = (p, v) => overviewSurface(p, v, { noMore: v === 'A' }, 'Folded, Threads is a list of rows with no request lines. It is unchanged in every variant; press Sideways above.');
+
+const RENDERERS_7 = (p, v) => ({
+  railword: () => railWord(p, v), agentslabel: () => agentsLabel(p, v), ntfit: () => ntFit(p, v), scrimlight: () => scrimLight(p, v),
+  sendgrey: () => sendGrey(p, v), replyedge: () => replyEdge(p, v), settled: () => settledSurface(p, v), prchips: () => prChips(p, v),
+  prsummary: () => prSummary(p, v), cardlines: () => cardLines(p, v),
+});
+
+// Round 7's surfaces come first; round 6's and round 5's follow, labelled by round.
+SURFACES.forEach(s => { if (!/^Round \d/.test(s.name)) s.name = 'Round 6: ' + s.name; });
+SURFACES.unshift(...SURFACES7);
+
+const state = { surface: SURFACES[0].id, scr: false, variant: 'now', posture: null, theme: 'dark', actual: false, can: false, kb: false, st: 'working' };
+const params = location.hash.replace('#', '').split('/');
+if (SURFACES.some(s => s.id === params[0])) state.surface = params[0];
+const surf = () => SURFACES.find(x => x.id === state.surface);
+const varsOf = s => s.vars || ['now', 'A', 'B', 'C'].filter(k => k === 'now' || s[k]);
+if (varsOf(surf()).includes(params[1])) state.variant = params[1];
+if (SIZES[params[2]]) state.posture = params[2];
+state.theme = surf().theme || 'dark';
+(params[3] || '').split(',').forEach(f => { if (f === 'can') state.can = true; if (f === 'kb') state.kb = true; if (f === 'scr') state.scr = true; if (['needs', 'done'].includes(f)) state.st = f; if (f === 'light') state.theme = 'light'; if (f === 'dark') state.theme = 'dark'; });
+const autoPosture = () => innerWidth < 560 ? 'folded' : innerWidth < 800 ? 'upright' : 'sideways';
+const posture = () => state.posture || autoPosture();
+const tell = words => `<div class="tell">${words}</div>`;
+
+/* ---------- Shared bits ---------- */
+const MAC = `<span style="color:var(--muted);flex:none">${'<svg width="22" height="22" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M12 16v4M8 20h8"/></svg>'}</span>`;
+const PICKER = `<div class="opill" style="flex:none"><span class="dot g"></span>All computers ${I.down}</div>`;
+const SEARCH = `<div class="opill" style="flex:1;min-width:0;color:var(--muted);font-weight:400"><svg width="18" height="18" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M16 16l5 5"/></svg><span class="clip">Search threads</span></div>`;
+const TRY = small => `<div style="flex:none;background:var(--soft);border-radius:${small ? 15 : 19}px;padding:${small ? '5px 12px' : '8px 15px'};font-weight:600;font-size:${small ? 14 : 16}px">Try again</div>`;
+const pillBtn = (t, extra) => `<div style="display:inline-flex;align-items:center;height:42px;padding:0 16px;border-radius:21px;background:var(--soft);font-weight:500;margin:0 8px 8px 0;${extra || ''}">${t}</div>`;
+const sendDim = w => `<div class="btn dimp" style="flex:none;width:${w || 120}px;height:42px">Send answer</div>`;
+const reviewLink = t => `<div class="wk" style="font-weight:600;display:flex;align-items:center;gap:3px">${t} ${I.chev}</div>`;
+const CHECK = s => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" style="stroke-width:3.2"><path d="M6 12.5l4 4 8-9"/></svg>`;
+function light(d) {
+  if (d !== 'fin') return `<span class="lt"><span class="dot ${d}"></span></span>`;
+  return `<span class="lt"><span class="finA">${CHECK(10)}</span></span>`;
+}
+
+/* ---------- Rail ---------- */
+function watchTile() {
+  const mark = `<svg width="9" height="9" viewBox="0 0 24 24" style="stroke-width:4"><path d="M12 4v16M4 12h16"/></svg>`;
+  return `<div class="tile">${I.owlM}<span style="position:absolute;right:9px;bottom:10px;width:15px;height:15px;border-radius:50%;display:grid;place-items:center;background:var(--soft);color:var(--ink);border:1.5px solid var(--ground)">${mark}</span></div>`;
+}
+function stateTile(p, kind, v) {
+  if (kind === 'needs') return `<div class="state ask"><span class="dot w" style="margin-bottom:3px"></span><br>Needs<br>you</div>`;
+  if (kind === 'done') return `<div class="state"><span class="dot i" style="margin-bottom:3px"></span><br>Finished</div>`;
+  const time = v === 'B' ? '12m' : v === 'C' ? '12:14' : '12m 14s';
+  if (v === 'A') return `<div class="state wk"><span class="dot g" style="margin-bottom:5px"></span><div style="font-size:15px;font-variant-numeric:tabular-nums;margin-top:4px">12m<br>14s</div></div>`;
+  return `<div class="state wk"><span class="dot g" style="margin-bottom:3px"></span><br>Working<div style="font-size:${v === 'B' || v === 'C' ? 14 : 12}px;margin-top:3px;font-variant-numeric:tabular-nums">${time}</div></div>`;
+}
+function rail(p, o) {
+  const x = p === 'folded' ? 424 : p === 'sideways' ? 910 : 630;
+  const cx = p === 'folded' ? 418 : p === 'sideways' ? 904 : 626;
+  const H = SIZES[p].h, top = p === 'folded' ? 198 : p === 'sideways' ? 146 : 92;
+  const clockY = p === 'folded' ? 84 : p === 'sideways' ? 30 : 8;
+  let html = `<div class="clock" style="left:${cx}px;top:${clockY}px">9:41</div><div class="ring" style="left:${cx}px;top:${clockY + 44}px">${I.ring}</div>`;
+  (o.top || []).forEach((b, n) => {
+    html += `<div class="circle ${b === 'new' ? 'newt' : 'chrome'}" style="left:${x}px;top:${top + n * 56}px">${b === 'back' ? I.back : b === 'side' ? I.side : I.plus()}</div>`;
+  });
+  const pillX = x - 29;
+  if (o.thread) {
+    const bottom = p === 'folded' ? H - 55 : H - 275;
+    const ag = o.agents ? `<div class="tile">${I.bot.replace(/19/g, '24')}<span class="badge" style="${o.agents.grey ? 'background:var(--soft);color:var(--ink)' : ''}">${o.agents.n}</span></div>` : '';
+    html += `<div class="pill" style="left:${pillX}px;bottom:${H - bottom}px;padding:0 0 8px">${stateTile(p, o.thread, o.stateV || 'now')}<div style="height:6px"></div>${ag}${watchTile()}<div class="tile">${I.dots}</div></div>`;
+  }
+  if (o.tabs) {
+    const a = o.tabs;
+    html += `<div class="pill" style="left:${pillX}px;top:${H - 55 - 214}px;height:214px;padding:3px 0;${o.tabsUnder ? 'z-index:0' : ''}"><div class="tile ${a === 'threads' ? 'on' : ''}">${a === 'threads' ? I.chatF : I.chat}<span class="badge">2</span></div><div class="tile ${a === 'watcher' ? 'on' : ''}">${I.owl}</div><div class="tile ${a === 'computers' ? 'on' : ''}">${I.mac}</div><div class="tile ${a === 'settings' ? 'on' : ''}">${I.sliders}</div></div>`;
+  }
+  return html;
+}
+
+/* ---------- Rows and the sidebar ---------- */
+const TROWS = [
+  ['Needs you', [
+    { d: 'w', t: 'Choose the release target', mark: 'star', meta: 'Question · Laptop', time: '2m' },
+    { d: 'w', t: 'Fix login test', mark: 'star', owl: 1, meta: 'Question · Laptop', time: '22m' }]],
+  ['Working now', [
+    { d: 'g', t: 'Babysit #845 release notes', mark: 'knot', owl: 1, meta: 'Sotto · Laptop', time: '12m' },
+    { d: 'g', t: 'Refine the iPhone thread view', mark: 'knot', meta: 'Sotto · Laptop', time: '12m', chosen: 1 },
+    { d: 'g', t: 'Clean up the wiring schedule', mark: 'star', meta: 'Panel tools · Laptop', time: '12m' }]],
+  ['Recent', [
+    { d: 'fin', t: 'Add keyboard shortcuts', mark: 'knot', meta: 'Just finished · Laptop', time: '18m' },
+    { d: 'i', t: 'Compare motor drive options', mark: 'knot', meta: 'Panel tools · Laptop', time: '1h' },
+    { d: 'i', t: 'Update the lighting plan', mark: 'knot', meta: 'Can\'t reach it · Studio Mac', time: '1d' }]],
+];
+function sidebar(fade) {
+  const rows = TROWS.map(([label, list]) => `<div class="sec">${label}<span>${list.length}</span></div>` + list.map(r =>
+    `<div class="rowt ${r.chosen ? 'ch' : ''}">${light(r.d)}<div style="flex:1;min-width:0"><div class="tt two">${r.t}</div><div class="mt">${I[r.mark]}${r.owl ? I.owlS : ''}<span class="clip">${r.meta}</span><span style="flex:1"></span><span class="tm">${r.time}</span></div></div></div>`).join('')).join('');
+  const foot = fade ? `<div style="position:absolute;left:0;width:280px;bottom:0;height:44px;background:linear-gradient(transparent,var(--ground));pointer-events:none"></div>` : '';
+  return `<div class="side" style="overflow:hidden">${rows}</div>${foot}<div class="sidehead">Threads</div><div class="circle newt" style="left:244px;top:38px">${I.plus()}</div>`;
+}
+
+/* ---------- A thread ---------- */
+function conversation(p, o = {}) {
+  if (o.body) return o.body;
+  const table = (rows, cols) => `<div class="tbl">${rows.map(r => `<div class="tr" style="grid-template-columns:${cols}">${r.map(c => `<div>${c}</div>`).join('')}</div>`).join('')}</div>`;
+  const records = p === 'folded'
+    ? `<div class="tbl">${[['Drawer toggle', 'Terminal mode', 'No', 'Move the toggle on screen before the drawer opens'], ['Tooltips', 'Every pane', 'No', 'Name the chord only while the shortcut is on']].map((r, n) => `<div style="padding:9px 14px;${n ? 'border-top:1px solid var(--hair)' : ''}"><div style="font-size:13px;color:var(--muted);font-weight:600">Finding</div><div style="font-size:17px;font-weight:600;margin:1px 0 5px">${r[0]}</div>${['Where', 'Fixed', 'What to do next'].map((h, k) => `<div style="display:grid;grid-template-columns:108px 1fr"><span style="color:var(--muted)">${h}</span><span>${r[k + 1]}</span></div>`).join('')}</div>`).join('')}</div>`
+    : table([['Finding', 'Where', 'Fixed', 'What to do next'], ['Drawer toggle', 'Terminal mode', 'No', 'Move the toggle on screen before the drawer opens'], ['Tooltips', 'Every pane', 'No', 'Name the chord only while the shortcut is on']], '1.4fr 1fr .5fr 1.8fr');
+  const author = o.codexMark !== false ? `<div class="codex"><span style="color:var(--ink);display:grid;place-items:center">${I.knot.replace(/15/g, '18')}</span>Codex</div>` : `<div class="codex"><span class="ctile">C</span>Codex</div>`;
+  const tail = `<div class="bub">Fix the tooltips first, then the drawer chord.</div>${o.code ? steps6('3 steps · 3m 38s') : ''}${author}
+    <p>Still working through the review fixes. The tooltips are done; the drawer's chord is next.</p>
+    <div style="display:flex;gap:12px;align-items:center;color:var(--muted);font-weight:500"><span class="dot g"></span>Combing the desert ${I.chev}</div>`;
+  const lead = o.scrolled ? '' : `<p style="font-weight:600;margin-top:18px">Implemented but looks wrong</p>
+    <p>1. <b>Ctrl+\` in Terminal mode:</b> the same off-screen drawer toggle as Standards #2.</p>`;
+  return `${lead}<p${o.scrolled ? ' style="margin-top:14px"' : ''}>2. <b>Tooltips:</b> they always say "(Ctrl+\`)", even when dictation owns that chord and the shortcut is off.</p>
+    ${o.code ? codeBlock6(p, o) : ''}<p>Where the time went:</p>
+    ${table([['Step', 'Before', 'After'], ['Open the thread', '1.2 s', '0.3 s'], ['First reply', '2.4 s', '0.9 s']], '1fr 60px 60px')}
+    <p>What is left:</p>${records}${tail}${o.more || ''}`;
+}
+function threadPage(p, o = {}) {
+  const sideShown = p === 'sideways' && o.sidebar !== false;
+  const left = sideShown ? 296 : p === 'folded' ? 16 : 24;
+  const right = p === 'folded' ? 100 : p === 'sideways' ? 99 : 90;
+  const composerB = o.composerB != null ? o.composerB : p === 'folded' ? 43 : 41;
+  const inner = `<span class="disc">${I.plus(16)}</span><span style="flex:1">Reply while it works</span><span class="disc">${I.mic}</span><span class="disc" style="background:var(--ink);color:var(--ground)">${I.stop}</span>`;
+  const composer = o.composer === 'none' ? '' : `<div class="composer" style="left:${left - 4}px;right:${right - 4}px;bottom:${composerB}px">${inner}</div>`;
+  const convStyle = o.convTop != null ? `top:${o.convTop}px;` : '';
+  const convB = o.convBottom != null ? `bottom:${o.convBottom}px;` : '';
+  return `<div class="conv" style="left:${left}px;right:${right}px;${convStyle}${convB}">${conversation(p, o)}</div>${composer}
+    ${sideShown ? sidebar(o.sideFade) : ''}
+    ${rail(p, { top: p === 'folded' ? ['back'] : p === 'sideways' ? ['side'] : ['side', 'new'], thread: o.thread || 'working', stateV: o.stateV || 'B', agents: o.agents, tabs: p === 'folded' || o.noTabs ? null : 'threads' })}`;
+}
+
+/* ---------- Below the reply box ---------- */
+function keyboard(p) {
+  const H = p === 'folded' ? 250 : 265;
+  const row = (keys, pad) => `<div style="display:flex;gap:7px;justify-content:center;padding:0 ${pad}px;margin-top:9px">${keys.split('').map(k => `<div style="flex:1;max-width:${p === 'folded' ? 38 : 68}px;height:${p === 'folded' ? 40 : 40}px;border-radius:7px;background:var(--key);display:grid;place-items:center;font-size:19px">${k}</div>`).join('')}</div>`;
+  return `<div style="position:absolute;left:0;right:0;bottom:0;height:${H}px;background:var(--kbd);border-radius:22px 22px 0 0;z-index:5;padding-top:8px;color:var(--ink)"><div style="display:flex;justify-content:space-around;color:var(--muted);font-size:17px;height:30px;align-items:center"><span>I</span><span>The</span><span>I'm</span></div>${row('QWERTYUIOP', 8)}${row('ASDFGHJKL', p === 'folded' ? 24 : 60)}${row('ZXCVBNM', p === 'folded' ? 50 : 110)}<div style="margin:9px auto 0;width:50%;height:40px;border-radius:7px;background:var(--key)"></div></div>`;
+}
+function below(p, v) {
+  const side = p === 'sideways';
+  if (!state.kb) {
+    const composerB = v === 'B' ? 16 : (side ? 41 : 43);
+    const more = `<div class="bub" style="margin-top:4px">And keep the drawer's height as it is.</div><p>Noted. I'll leave the drawer's height alone and only move the toggle.</p><p>Next I'll rerun the drawer's tests twenty times.</p>`;
+    return threadPage(p, { scrolled: true, more, convTop: side ? -30 : -60, convBottom: v === 'now' ? 0 : composerB, composerB });
+  }
+  const kbH = p === 'folded' ? 250 : 265;
+  const left = side ? 98 : 16, right = side ? 173 : 100;
+  const gap = v === 'now' ? 22 : 8;
+  const boxB = kbH + gap;
+  const conv = `<div class="codex"><span class="ctile" style="width:24px;height:24px">${I.owlS}</span>Watcher · 7:04 PM</div>
+    <p><b style="font-weight:600">Fix login test</b> found the cause: overlapping runs share one account. It's asking you which account to use. Only you can answer it.</p>
+    <div class="ocard ndc" style="padding:16px 18px"><div class="oh"><span class="dot w"></span><span class="ask" style="font-weight:600">Question</span></div><div class="ot">Fix login test</div><div class="om">${I.star}${I.owlS}<span class="clip">Claude Code · Sotto · Laptop</span></div><div class="oq">Which account should the login test sign in with?</div><div style="font-size:15px;color:var(--muted);margin-top:14px">Answer it on Laptop.</div></div>`;
+  const boxH = 96;
+  const convBottom = v === 'now' ? kbH : boxB;
+  const convTop = SIZES[p].h - convBottom - boxH - (side ? 150 : 260);
+  const composer = `<div class="composer" style="left:${left - 4}px;right:${right - 4}px;bottom:${boxB}px;height:${boxH}px;flex-direction:column;align-items:stretch;padding:12px 8px 8px;gap:8px;border:1.5px solid color-mix(in srgb, var(--warn) 55%, transparent);z-index:4"><span style="color:var(--ink);padding-left:8px">What is waiting on me before lunch?</span><div style="display:flex;gap:6px;align-items:center"><span class="disc">${I.plus(16)}</span><span style="background:var(--soft);border-radius:17px;padding:6px 12px;font-size:15px;color:var(--ink);font-weight:600">GPT-6.1 Sol <span style="color:var(--muted);font-weight:500">High</span></span><span style="flex:1"></span><span class="disc">${I.mic}</span><span class="disc" style="background:var(--accent);color:var(--onacc)">${I.chev.replace('M9 5l7 7-7 7', 'M12 19V5M6 11l6-6 6 6')}</span></div></div>`;
+  const tabs = v === 'now' && side ? rail(p, { top: [], tabs: 'watcher' }).replace(/<div class="clock[\s\S]*?<\/div><div class="ring[\s\S]*?<\/svg><\/div>/, '') : '';
+  return `<div class="conv" style="left:${left}px;right:${right}px;top:${convTop}px;bottom:${convBottom}px">${conv}</div>${composer}${keyboard(p)}${rail(p, { top: side ? ['side', 'new'] : ['new'] })}${tabs ? `<div style="position:absolute;inset:0;z-index:6;opacity:.16;pointer-events:none">${tabs}</div>` : ''}`;
+}
+
+/* ---------- Overview cards ---------- */
+function cards(p, v, glowOnly) {
+  if (p !== 'sideways') return tell('Folded, Threads is the list of rows, which already reads "Sotto · Laptop" with one short time. Turn sideways, or press Sideways above.') + rail(p, { top: ['new'], tabs: 'threads' });
+  const mark = !glowOnly && v !== 'now';
+  const top = `<div style="position:absolute;top:14px;left:0;right:0;display:flex;gap:14px;align-items:center"><div class="pt" style="flex:none;margin-right:6px">Threads</div>${PICKER}${SEARCH}</div>
+    <div class="notice" style="position:absolute;top:70px;left:0;right:0;height:40px;padding:0 6px 0 14px">${MAC}<div style="flex:1;min-width:0" class="clip"><b style="font-weight:600">Can't reach Studio Mac.</b> <span style="color:var(--muted);font-size:15px">Showing its last shared threads.</span></div>${TRY(true)}</div>`;
+  const qtime = t => glowOnly || v === 'now' || v === 'A' ? t + ' ago' : t;
+  const qcard = (t, owl, ask, time, more, n, choices) => {
+    const foot = !state.can
+      ? `<div style="font-size:15px;color:var(--muted);margin-top:12px">Answer it on Laptop.</div><div style="margin-top:6px">${reviewLink(n > 1 ? 'Review 2 requests' : 'Review question')}</div>`
+      : `<div style="margin-top:12px">${choices.map(c => pillBtn(c)).join('')}</div><div style="margin-top:4px">${reviewLink(n > 1 ? 'Review 2 requests' : 'Review question')}</div><div style="display:flex;justify-content:flex-end;margin-top:10px">${sendDim(140)}</div>`;
+    return `<div class="ocard ndc"><div class="oh"><span class="dot w"></span><span class="ask" style="font-weight:600">Question</span><span style="flex:1"></span><span class="tm">${qtime(time)}</span></div>
+      <div class="ot">${t}</div><div class="om">${I.star}${owl ? I.owlS : ''}<span class="clip">${mark ? 'Sotto · Laptop' : 'Claude Code on Laptop'}</span></div><div class="oq">${ask}</div>${more ? '<div style="font-size:14px;color:var(--muted);margin-top:6px">1 more request in this thread</div>' : ''}${foot}</div>`;
+  };
+  const wtime = ended => glowOnly || v === 'now' || v === 'A' ? (ended ? '12m ago' : '12m 10s') : v === 'B' ? '12m' : '12m 10s';
+  const wcard = (t, meta, short, m, owl, ended, line) => `<div class="ocard wkc"><div class="oh"><span class="dot g"></span><span class="wk" style="font-weight:600">Working</span><span style="flex:1"></span><span class="tm" style="font-weight:600;font-variant-numeric:tabular-nums">${wtime(ended)}</span></div>
+    <div class="ot">${t}</div><div class="om">${I[m]}${owl ? I.owlS : ''}<span class="clip">${mark ? short : meta}</span></div>${line ? `<div style="font-size:16px;color:var(--muted);margin-top:10px">${line}</div>` : ''}</div>`;
+  const items = [['fin', 'Add keyboard shortcuts', 'Just finished · Laptop', '18m'], ['i', 'Compare motor drive options', 'Panel tools · Laptop', '1h'], ['i', 'Update the lighting plan', mark ? 'Can\'t reach Studio Mac' : 'Can\'t reach it · Studio Mac', '1d']];
+  const recent = `<div class="ocard" style="padding:4px 0">${items.map(([d, t, m, time], n) =>
+    `<div style="display:flex;gap:10px;padding:10px 14px;${n ? 'border-top:1px solid var(--hair)' : ''}">${light(d)}<div style="flex:1;min-width:0"><div class="tt two">${t}</div><div class="mt">${I.knot}<span class="clip">${m}</span><span style="flex:1"></span><span class="tm">${time}</span></div></div></div>`).join('')}</div>
+    <div style="display:flex;gap:8px;align-items:center;padding:14px 6px;color:var(--muted);font-weight:500">${I.chev}<span style="flex:1">Settled</span>2</div>`;
+  const head = (dot, label, n) => `<div class="ohead">${dot ? `<span class="dot ${dot}"></span>` : ''}${label}<span style="color:var(--muted);font-weight:400">${n}</span></div>`;
+  const columns = `<div style="position:absolute;top:128px;left:0;right:0;display:grid;grid-template-columns:1fr 1fr 1fr;gap:18px;align-items:start">
+    <div>${head('w', 'Needs you', 2)}${qcard('Choose the release target', 0, 'Which release should I prepare?', '2m', 1, 2, ['TestFlight', 'Desktop'])}${qcard('Fix login test', 1, 'Which account should the login test sign in with?', '3m', 0, 1, ['A fresh account for each run'])}</div>
+    <div>${head('g', 'Working now', 3)}${wcard('Babysit #845 release notes', 'Codex on Laptop · Sotto', 'Sotto · Laptop', 'knot', 1, 0, '')}${wcard('Refine the iPhone thread view', 'Codex on Laptop · Sotto', 'Sotto · Laptop', 'knot', 0, 0, '')}${wcard('Clean up the wiring schedule', 'Claude Code on Laptop · Panel tools', 'Panel tools · Laptop', 'star', 0, 1, 'Background agents are still working.')}</div>
+    <div>${head('', 'Recent', 3)}${recent}</div></div>`;
+  return `<div style="position:absolute;left:24px;right:99px;top:0;bottom:0;overflow:hidden">${top}${columns}</div>${rail(p, { top: ['side', 'new'], tabs: 'threads' })}`;
+}
+
+/* ---------- Sheets ---------- */
+function qSheet(box, o = {}) {
+  const opts = [['Ctrl+J', 'T3 Code\'s own. Free on Windows; dictation doesn\'t use it.'], ['Ctrl+`', 'What the branch uses now. Clashes when dictation holds it.'], ['No shortcut', 'Open it from the Terminal button only.'], ['Write your own answer', 'Say it in your own words.']];
+  const headR = o.headR || 20, optR = o.optR != null ? o.optR : headR, footR = o.footR != null ? o.footR : headR;
+  const send = o.greySend ? `<div class="btn" style="background:var(--soft);color:var(--dim)">Send answer</div>` : `<div class="btn dimp" style="${o.paleLabel ? 'color:rgba(255,255,255,.8)' : ''}">Send answer</div>`;
+  return `<div class="scrim" style="${o.scrim || ''}"></div><div class="sheet" style="${box}"><div class="wash"></div><div class="grab"></div><div style="position:relative;padding:10px 0 8px 20px;flex:1;min-height:0;overflow:hidden"><div style="padding-right:${headR}px"><div class="from"><span class="dot w"></span>Codex · Refine the iPhone thread view</div><div class="q">Which shortcut should open the terminal drawer?</div></div><div style="padding-right:${optR}px">${opts.map(([b, s]) => `<div class="opt"><span class="ra"></span><div><b>${b}</b><small>${s}</small></div></div>`).join('')}</div></div><div class="foot" style="padding-right:${footR}px">${o.foot !== false ? `<div class="btn soft">Not now</div>${send}` : ''}</div></div>`;
+}
+function sheetWidth(p, v) {
+  if (p !== 'sideways') return threadPage(p, { thread: 'needs', composer: 'none' }) + qSheet('left:8px;right:8px;bottom:0;top:115px', { headR: 96 }) + tell('Folded, a sheet fills the screen, so nothing shows beside it. Turn sideways, or press Sideways above.');
+  const hideSide = v === 'B';
+  const page = threadPage(p, { thread: 'needs', composer: 'none', sidebar: !hideSide });
+  const box = v === 'A' ? 'left:288px;width:586px;top:153px;bottom:8px' : 'left:150px;width:652px;top:153px;bottom:8px';
+  let html = page + qSheet(box);
+  if (v === 'C') html = html.replace('<div class="scrim" style=""></div>', '<div class="scrim"></div><div class="abs" style="left:0;top:0;bottom:0;width:288px;background:rgba(0,0,0,.5)"></div>');
+  return html;
+}
+function foldedSheet(p, v) {
+  if (p !== 'folded') return threadPage(p, { thread: 'needs', composer: 'none' }) + qSheet('left:150px;width:652px;top:153px;bottom:8px') + tell('Sideways, the sheet keeps clear of the strip already. Fold it, or press Folded above.');
+  const page = threadPage(p, { thread: 'needs', composer: 'none' });
+  return page + qSheet('left:8px;right:8px;bottom:0;top:115px', { headR: 96, optR: v === 'A' ? 20 : 96, footR: v === 'now' ? 96 : 20 });
+}
+function dimSend(p, v) {
+  const box = p === 'folded' ? 'left:8px;right:8px;bottom:0;top:115px' : 'left:150px;width:652px;top:153px;bottom:8px';
+  return threadPage(p, { thread: 'needs', composer: 'none' }) + qSheet(box, { headR: p === 'folded' ? 96 : 20, greySend: v === 'A', paleLabel: v === 'now' && state.theme === 'light' });
+}
+function sheetBox(p) {
+  return p === 'folded' ? { box: 'left:8px;right:8px;top:8px;bottom:0', padR: 96 } : { box: 'left:150px;width:653px;top:8px;bottom:0', padR: 20 };
+}
+
+/* ---------- Agents sheet ---------- */
+function agents(p, v) {
+  const { box, padR } = sheetBox(p);
+  const tasks = [
+    { sec: ['w', 'Needs you', 1], icon: I.star, t: 'Review the drawer fix', kind: 'Thread', time: '4m 07s', at: '10:06 PM', brief: 'Review the change to TerminalDrawer.tsx on feat/frosted-window. Say whether the chord can still fire twice, and run its tests.', where: 'Claude Code · Sotto · Laptop · Code review', act: 'Open to answer' },
+    { sec: ['g', 'Working', 1], icon: I.bot, t: 'Run the drawer tests twenty times', kind: 'Agent', time: '1m 01s', at: '10:09 PM', where: 'gpt-6.1-sol' },
+    { sec: ['i', 'Finished', 2], icon: I.knot, t: 'Check the drawer docs', kind: 'Thread', time: '3m 00s', at: '9:58 PM', brief: 'Read docs/terminal.md and say what it promises about how long the drawer may take to open.', where: 'Codex · Sotto · Laptop · Research', done: 'Answered' },
+  ];
+  const card = k => {
+    const inline = v === 'B' && k.act;
+    const lines = v === 'B' ? 3 : 2;
+    const btn = k.act && !inline ? `<div class="open" style="margin:9px 0 0 ${v === 'now' ? 40 : 0}px;padding:9px 16px">${k.act}</div>` : '';
+    const doneMark = v === 'now' ? `<span class="dot i"></span>` : `<span class="finA" style="width:13px;height:13px">${CHECK(8)}</span>`;
+    const end = inline ? `<div class="open" style="margin:0;padding:6px 13px;font-size:14px;flex:none">${k.act}</div>` : `<span style="color:var(--muted)">${I.chev}</span>`;
+    return `<div class="group" style="padding:12px 14px;margin:6px 0 12px"><div style="display:flex;gap:10px;align-items:center"><span class="agt" style="width:28px;height:28px">${k.icon}</span><div style="flex:1;font-weight:600;font-size:18px;line-height:1.22">${k.t}</div>${end}</div><div class="smeta" style="font-size:15px;margin-top:4px">${k.kind} · ${k.time} · ${k.at}</div>${k.brief ? `<div style="font-size:16px;margin-top:3px;display:-webkit-box;-webkit-line-clamp:${lines};-webkit-box-orient:vertical;overflow:hidden">${k.brief}</div>` : ''}<div class="smeta clip" style="font-size:15px">${k.where}</div>${btn}${k.done ? `<div class="smeta" style="font-size:15px;margin-top:5px;display:flex;gap:6px;align-items:center">${doneMark}${k.done}</div>` : ''}</div>`;
+  };
+  const body = `<div style="display:flex;align-items:center;margin-top:10px"><div class="pt" style="flex:1">Agents</div><span style="color:var(--acctext);font-weight:600">Done</span></div><div style="color:var(--muted);margin-top:10px">Refine the iPhone thread view</div>
+    ${tasks.map(k => `<div style="display:flex;gap:10px;align-items:center;font-weight:600;color:var(--muted);margin-top:16px"><span class="dot ${k.sec[0]}"></span><span style="color:var(--ink)">${k.sec[1]}</span><span>${k.sec[2]}</span></div>${card(k)}`).join('')}`;
+  const badge = v === 'now' ? { n: 4 } : v === 'C' ? { n: 4, grey: false } : { n: 1 };
+  const note = v === 'C' ? tell('C: while one needs you the badge is amber, as here. With none waiting it reads a grey 3.').replace('top: 42%', 'top:auto') : '';
+  return threadPage(p, { agents: badge }) + `<div class="scrim"></div><div class="sheet" style="${box};border-radius:26px 26px 0 0"><div class="grab"></div><div style="flex:1;min-height:0;overflow:hidden;padding:0 ${padR}px 0 20px">${body}</div></div>` + (v === 'C' && p === 'sideways' ? `<div class="abs" style="right:8px;bottom:300px;width:110px;font-size:12px;color:#fff;text-align:center;z-index:9">no one waiting:<div style="display:inline-grid;place-items:center;min-width:18px;height:18px;border-radius:9px;background:var(--soft);color:var(--ink);font-weight:700;margin-left:4px">3</div></div>` : '');
+}
+
+/* ---------- The ••• card ---------- */
+function menu(p, v) {
+  const pos = p === 'folded' ? 'right:81px;bottom:26px' : 'right:80px;bottom:250px';
+  const solid = v === 'A' || v === 'C';
+  const branch = v === 'now' ? 'feat/frosted-window-and-<br>pane-terminal' : v === 'C' ? '<span style="white-space:nowrap">feat/frosted-wi…-terminal</span>' : 'feat/<br>frosted-window-and-pane-terminal';
+  const blob = solid ? '' : `<div style="position:absolute;right:30px;bottom:18px;width:64px;height:64px;border-radius:50%;background:radial-gradient(color-mix(in srgb, var(--ink) 28%, transparent), transparent 70%);pointer-events:none"></div>`;
+  const fill = solid ? 'background:color-mix(in srgb, var(--sheet) 70%, var(--soft));-webkit-backdrop-filter:none;backdrop-filter:none;border:1px solid var(--hair)' : '';
+  const card = `<div class="menu" style="${pos};width:290px;${fill};z-index:6">${blob}<div style="padding:14px 18px 10px;position:relative"><div style="font-weight:600;line-height:1.22;margin-bottom:7px">Refine the iPhone thread view</div><div class="fact">${I.place}<span>Codex · Sotto · Laptop</span></div><div class="fact">${I.branch}<span>${branch}</span></div><div class="fact">${I.diff}<span><span class="wk">+212</span> <span style="color:var(--dangertext)">−48</span></span></div><div class="fact">${I.pr}<span>#721 draft</span></div></div><div class="mh"></div><div class="mi" style="position:relative">Settle</div></div>`;
+  return threadPage(p, { composer: v === 'now' ? '' : 'none' }) + card;
+}
+
+/* ---------- Computers, sideways ---------- */
+function computers(p, v) {
+  const side = p === 'sideways';
+  const list = [['Laptop', '3 projects, 9 threads', 'g', 'Online', false], ['Studio Mac', '3 projects, 1 thread', 'r', 'Can\'t reach it', true]];
+  const retry = `<div style="display:inline-flex;gap:8px;align-items:center;margin-top:12px;padding:9px 16px;border-radius:20px;background:var(--soft);font-weight:500">${I.retry}Try again</div>`;
+  const status = (d, s) => `<span style="display:inline-flex;gap:8px;align-items:center;color:var(--muted);flex:none"><span class="dot ${d}"></span>${s}</span>`;
+  const card = ([n, c, d, s, down]) => {
+    const tail = down && v === 'A' ? `<span style="color:var(--dim)">·</span><span class="wk" style="font-weight:600">Try again</span>` : '';
+    const end = down && v === 'C' ? `<div style="display:inline-flex;gap:6px;align-items:center;padding:6px 12px;border-radius:16px;background:var(--soft);font-weight:500;font-size:15px;flex:none">${I.retry}Try again</div>` : `<span style="color:var(--muted);margin-top:4px">${I.chev}</span>`;
+    return `<div class="pcard" style="padding:18px 16px;margin-bottom:0;${v === 'B' ? 'height:100%' : ''}"><div style="display:flex;align-items:flex-start;gap:10px"><div style="flex:1;min-width:0"><div style="font-weight:600;font-size:18px">${n}</div><div style="display:flex;gap:10px;align-items:center;font-size:16px;margin-top:4px;flex-wrap:wrap">${status(d, s)}${down && v === 'A' ? tail : `<span style="color:var(--dim)">·</span><span style="color:var(--muted)">${c}</span>`}</div></div>${end}</div>${down && (v === 'now' || v === 'B') ? retry : ''}</div>`;
+  };
+  const add = `<div style="border:1.5px dashed var(--hair);border-radius:20px;padding:18px 16px;display:flex;gap:12px;align-items:center;color:var(--acctext);font-weight:600;font-size:18px">${I.plus(20)}Add a computer</div>`;
+  const items = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:${v === 'B' ? 'stretch' : 'start'}">${list.map(c => card(c)).join('')}${add}</div>`;
+  const page = `<div class="page" style="left:0;right:0;padding:16px 99px 40px 24px"><div class="pt">Computers</div><div class="ps">Each computer runs Sotto and shares its threads with this iPhone.</div>${items}</div>`;
+  return page + rail(p, { top: ['side', 'new'], tabs: 'computers' }) + (side ? '' : tell('Folded keeps one computer to a row. Turn sideways, or press Sideways above.'));
+}
+
+/* ---------- Watcher's question card ---------- */
+function watcher(p, v) {
+  const side = p === 'sideways';
+  const left = side ? 98 : 16, right = side ? 173 : 100;
+  const name = v === 'A' ? '' : `<div class="ot">Fix login test</div>`;
+  const where = v === 'now' ? `<div class="om">${I.star}${I.owlS}<span class="clip">Claude Code · Sotto · Laptop</span></div>` : '';
+  const card = `<div class="ocard ndc" style="padding:16px 18px"><div class="oh"><span class="dot w"></span><span class="ask" style="font-weight:600">Question</span>${v === 'A' ? `<span style="color:var(--muted);font-size:14px;display:inline-flex;gap:5px;align-items:center;margin-left:4px">· ${I.star}${I.owlS}</span>` : ''}</div>${name}${where}<div class="oq" style="${v === 'A' ? 'margin-top:8px' : ''}">Which account should the login test sign in with?</div><div style="font-size:15px;color:var(--muted);margin-top:14px">Answer it on Laptop.</div><div style="margin-top:6px">${reviewLink('Review question')}</div></div>`;
+  const conv = `<div style="display:flex;gap:10px;margin:${side ? 30 : 16}px 0 6px"><span style="color:var(--warntext)"><svg width="20" height="20" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg></span><span><b style="font-weight:600">Watcher changed 2 files itself.</b> <span style="color:var(--muted)">Its reason: "A one-word typo in two files is smaller than briefing a thread."</span></span></div>
+    <div class="wk" style="font-weight:600;margin:0 0 18px 30px;display:flex;gap:4px;align-items:center">Show the 2 files ${I.down}</div>
+    <div class="codex"><span class="ctile" style="width:24px;height:24px">${I.owlS}</span>Watcher · 10:17 PM</div>
+    <p><b style="font-weight:600">Fix login test</b> found the cause: overlapping runs share one account. It's asking you which account to use. Only you can answer it.</p>${card}
+    <div style="display:flex;gap:12px;align-items:center;color:var(--acctext);font-weight:600;margin-top:16px"><span class="dot g"></span>Watcher is working</div>`;
+  return `<div class="conv" style="left:${left}px;right:${right}px;bottom:${side ? 41 : 43}px">${conv}</div>
+    <div class="composer" style="left:${left - 4}px;right:${right - 4}px;bottom:${side ? 41 : 43}px"><span class="disc">${I.plus(16)}</span><span style="flex:1">Ask Watcher while it works</span><span class="disc">${I.mic}</span><span class="disc">${I.chev.replace('M9 5l7 7-7 7', 'M12 19V5M6 11l6-6 6 6')}</span></div>
+    ${rail(p, { top: side ? ['side', 'new'] : ['new'], tabs: 'watcher' })}`;
+}
+
+/* ---------- Chosen segment ---------- */
+function segment(p, v) {
+  const side = p === 'sideways';
+  const seg = (list, on) => `<div class="segs ${v === 'A' ? 'segA' : ''}">${list.map((t, n) => `<div class="${n === on ? 'on' : ''}">${t}</div>`).join('')}</div>`;
+  const row = (label, hint, ctl) => side
+    ? `<div class="srow side-label"><div class="rowhead"><div>${label}</div><span>${hint}</span></div>${ctl}</div>`
+    : `<div class="srow"><div class="rowhead"><div>${label}</div></div>${ctl}<div class="hint">${hint}</div></div>`;
+  const page = `<div class="page" style="left:0;right:0;padding:16px ${side ? 99 : 100}px 40px ${side ? 24 : 16}px"><div class="pt">Settings</div><div class="ps">How Sotto looks on this iPhone.</div>
+    <div class="pcard">${row('Density', 'How much room rows and cards take.', seg(['Compact', 'Comfortable'], 1))}${row('Rail', 'Which edge the rail stands on.', seg(['Left', 'Right'], 1))}${row('Theme', 'Follows the computer unless you pick one.', seg(['System', 'Light', 'Dark'], 2))}</div></div>`;
+  return page + rail(p, { top: side ? ['side', 'new'] : ['new'], tabs: 'settings' });
+}
+
+
+/* ---------- Render ---------- */
+function render() {
+  const s = surf(), p = posture();
+  const v = state.variant;
+  const stage = document.getElementById('stage');
+  const size = SIZES[p];
+  stage.className = state.theme + (s.id === 'glow' ? ' gl-' + v : '') + ' s-' + s.id + ' v-' + v + (SURFACES7.includes(s) ? ' r7' : '') + ' p-' + p;
+  stage.style.width = size.w + 'px'; stage.style.height = size.h + 'px';
+  const html = Object.assign({
+    title: () => titleSurface(p, v),
+  }, RENDERERS_5(p, v), RENDERERS_6(p, v), RENDERERS_7(p, v))[s.id]();
+  stage.innerHTML = p === 'upright' ? html + tell('Upright can\'t be captured from the simulator. Judge folded and sideways here; upright follows sideways.') : html;
+  document.getElementById('surface').value = s.id;
+  document.getElementById('variants').innerHTML = varsOf(s).map(k => `<button class="${k === v ? 'on' : ''} ${k === s.rec ? 'rec' : ''}" onclick="setV('${k}')">${k === 'now' ? 'Now' : k}</button>`).join('');
+  document.getElementById('postures').innerHTML = [['folded', 'Folded'], ['sideways', 'Sideways'], ['upright', 'Upright']].map(([k, t]) => `<button class="${k === p ? 'on' : ''}" onclick="setP('${k}')">${t}</button>`).join('');
+  const toggles = (s.toggles || []).map(t => t === 'can' ? `<button class="${state.can ? 'on' : ''}" onclick="flip('can')">Can answer</button>`
+    : t === 'kb' ? `<button class="${state.kb ? 'on' : ''}" onclick="flip('kb')">Keyboard</button>`
+    : t === 'scr' ? `<button class="${state.scr ? 'on' : ''}" onclick="flip('scr')">Scrolled</button>`
+    : `<button class="on" onclick="cycle()">${{ working: 'Working', needs: 'Needs you', done: 'Finished' }[state.st]}</button>`).join('');
+  document.getElementById('tools').innerHTML = `${toggles}<button class="${state.theme === 'light' ? 'on' : ''}" onclick="setT()">Light</button><button class="${state.actual ? 'on' : ''}" onclick="setA()">Actual size</button>`;
+  const c = document.getElementById('caption');
+  if (v === 'now') c.innerHTML = `<b>Now.</b> ${s.now}${s.rec === 'now' ? ' <b style="color:#6bc3b6">Suggested.</b>' : ''} <span style="color:#8f949b">${s.reversal ? '<b>Reversal.</b> ' : ''}${s.judges}</span>`;
+  else c.innerHTML = `<b>${v}: ${s[v][0]}.</b> ${s[v][1]}${v === s.rec ? ' <b style="color:#6bc3b6">Suggested.</b>' : ''}`;
+  fit();
+  align7(stage);
+  const flags = [state.can && 'can', state.kb && 'kb', state.scr && 'scr', state.st !== 'working' && state.st, state.theme !== (s.theme || 'dark') && state.theme].filter(Boolean).join(',');
+  history.replaceState(null, '', `#${s.id}/${v}${state.posture || flags ? '/' + (state.posture || posture()) : ''}${flags ? '/' + flags : ''}`);
+}
+function fit() {
+  const holder = document.getElementById('holder'), stage = document.getElementById('stage');
+  const size = SIZES[posture()];
+  holder.classList.toggle('actual', state.actual);
+  if (state.actual) { stage.style.transform = 'none'; stage.style.left = '0'; stage.style.top = '0'; return; }
+  const scale = Math.min(holder.clientWidth / size.w, holder.clientHeight / size.h, 1);
+  stage.style.transform = `scale(${scale})`;
+  stage.style.left = Math.max(0, (holder.clientWidth - size.w * scale) / 2) + 'px';
+  stage.style.top = Math.max(0, (holder.clientHeight - size.h * scale) / 2) + 'px';
+}
+window.setV = k => { state.variant = k; render(); };
+window.setP = k => { state.posture = k; render(); };
+window.setT = () => { state.theme = state.theme === 'dark' ? 'light' : 'dark'; render(); };
+window.setA = () => { state.actual = !state.actual; render(); };
+window.flip = k => { state[k] = !state[k]; render(); };
+window.cycle = () => { state.st = { working: 'needs', needs: 'done', done: 'working' }[state.st]; render(); };
+document.getElementById('surface').innerHTML = SURFACES.map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+document.getElementById('surface').onchange = e => { state.surface = e.target.value; state.variant = 'now'; state.theme = surf().theme || 'dark'; render(); };
+addEventListener('resize', () => render());
+addEventListener('orientationchange', () => setTimeout(render, 200));
+if (location.search.includes('bare')) { document.getElementById('bar').style.display = 'none'; state.actual = true; }
+render();
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(render);
+</script>
+</body>
+</html>

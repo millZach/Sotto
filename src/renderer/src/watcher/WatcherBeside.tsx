@@ -8,6 +8,7 @@ import { PullRequestOpenerContext, type PullRequestOpener } from '../agents/Bran
 import { ForkLandingContext } from '../agents/ForkFromHere'
 import { toolsPanelStore } from '../tools/toolsPanelStore'
 import { BrowserPageRouteContext, type BrowserPageRoute } from '../tools/webLinks'
+import { isMarkdownPath } from '../../../shared/files'
 import { LinkedFilePanel } from '../tools/LinkedFilePanel'
 import { focusLinkOpener, type LinkedFile } from '../tools/linkedFile'
 import { DIVIDER_WIDTH, MIN_PANE_WIDTH, RESIZE_STEP } from '../agents/splitLayout'
@@ -212,7 +213,7 @@ export function BesideLinkedFile({ file, host, waiting, onFocus }: {
     roomView.set({ file: null })
     requestAnimationFrame(() => focusLinkOpener(() => document.getElementById(BESIDE_PROMPT_ID)?.focus()))
   }, [])
-  return <section id={BESIDE_FILE_ID} className="thread-pane watcher-beside" data-region="pane" data-under-controls="" role="region" aria-label={t`Markdown file`}
+  return <section id={BESIDE_FILE_ID} className="thread-pane watcher-beside" data-region="pane" data-under-controls="" role="region" aria-label={isMarkdownPath(file.path) ? t`Markdown file` : t({ message: 'Linked file', comment: 'A file a reply linked, shown beside Watcher.' })}
     onFocusCapture={onFocus} onPointerDownCapture={onFocus}>
     <LinkedFilePanel key={`${file.threadId}:${file.path}`} file={file} host={host} backTo={waiting} onClose={close} />
   </section>

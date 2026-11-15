@@ -72,7 +72,13 @@ const SOURCE_MODELS = startup.sourceModels ?? {
 }
 // The user's own model servers Sotto declares as provider blocks in OPENCODE_CONFIG_CONTENT (ADR-0124), listed as
 // OpenCode 2.1.4 lists a declared provider's models. A model the script lists itself is not listed twice.
-const declared = (() => { try { return JSON.parse(process.env.OPENCODE_CONFIG_CONTENT ?? '{}').providers ?? {} } catch { return {} } })()
+const declared = (() => {
+  try {
+    const file = process.env.OPENCODE_CONFIG ? JSON.parse(readFileSync(process.env.OPENCODE_CONFIG, 'utf8')).providers ?? {} : {}
+    const inline = JSON.parse(process.env.OPENCODE_CONFIG_CONTENT ?? '{}').providers ?? {}
+    return Object.fromEntries([...new Set([...Object.keys(file), ...Object.keys(inline)])].map(id => [id, { ...file[id], ...inline[id] }]))
+  } catch { return {} }
+})()
 const DECLARED_PROVIDERS = Object.entries(declared).map(([id, block]) => ({ id, name: block.name ?? id, activation: 'enabled', package: block.package }))
 const DECLARED_MODELS = Object.entries(declared).flatMap(([providerID, block]) => Object.entries(block.models ?? {}).map(([id, model]) => ({ id, modelID: id, providerID,
   name: model.name ?? id, capabilities: { tools: true, input: model.capabilities?.input ?? ['text'], output: ['text'] },

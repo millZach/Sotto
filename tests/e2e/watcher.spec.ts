@@ -57,6 +57,8 @@ const scrubberEvidence = evidenceDirectory('artifacts/message-scrubber')
 const movesEvidence = evidenceDirectory('artifacts/move-threads-window')
 /** The band while Watcher's own provider is limited or failing (#2234, pick A): captures for its note. */
 const holdEvidence = evidenceDirectory('artifacts/watcher-hold')
+/** A reader's place as news moves main's history window on (November 13, 2026): captures for its note. */
+const readerPlaceEvidence = evidenceDirectory('artifacts/watcher-reader-place-window')
 /** Watcher's own question (#2228, Zach's pick A): its card where it asked, its row in Needs you and its answered line. */
 const questionEvidence = evidenceDirectory('artifacts/watcher-own-question')
 const FOOT = 'When Watcher asks, you can allow it once, not for good. Its instructions still tell it to hand changes to a thread.'
@@ -430,7 +432,7 @@ async function contrastHolds(page: Page, key: string): Promise<void> {
 test.describe("Watcher's room on the built app", () => {
   test.describe.configure({ mode: 'serial', timeout: 5 * 60_000 })
   test.beforeAll(async () => {
-    for (const folder of [evidenceRoot, permissionEvidence, handoverEvidence, polishEvidence, newsEvidence, answerEvidence, macEvidence, newWatcherEvidence, machinesEvidence, checksEvidence, scrubberEvidence, movesEvidence, questionEvidence, holdEvidence]) await mkdir(folder, { recursive: true })
+    for (const folder of [evidenceRoot, permissionEvidence, handoverEvidence, polishEvidence, newsEvidence, answerEvidence, macEvidence, newWatcherEvidence, machinesEvidence, checksEvidence, scrubberEvidence, movesEvidence, questionEvidence, holdEvidence, readerPlaceEvidence]) await mkdir(folder, { recursive: true })
   })
   test.afterAll(async () => {
     // Each folder gets its own readings, and a run that took none for a folder leaves that folder's file as it was.
@@ -2100,7 +2102,7 @@ test.describe("Watcher's room on the built app", () => {
     }))
   })
 
-  test('Watcher’s own question is a card where it asked that holds nothing, counts in Needs you and gives way to the user’s choice', async () => {
+  test('Watcher’s own question is a card where it asked that holds nothing, counts in Needs you and gives way to the user’s choice or skip', async () => {
     const asked = 'Settle Footer links? Its pull request merged and it has nothing left to do.'
     // Watcher kept working after it asked: news replies came below the question.
     const news = ['#2240 merged. Sent Council separation to merge next.', 'Owl build asked for computer use on forge. Granted it.',
@@ -2114,9 +2116,10 @@ test.describe("Watcher's room on the built app", () => {
     const turn = (turnId: string, minute: number, sequence: number): AgentActivity => ({ id: `turn-${turnId}`, turnId, afterMessageId: turnId, sequence, kind: 'turn', status: 'completed', title: 'Turn',
       startedAt: new Date(Date.UTC(2026, 6, 12, 19, minute) - 5_000).toISOString(), completedAt: new Date(Date.UTC(2026, 6, 12, 19, minute) + 1_000).toISOString() })
     const activities = [turn('news-ask', 34, 200), ...news.map((_text, index) => turn(`news-${index}`, 36 + index, 201 + index))]
-    const question = (hostId: string, state: 'open' | 'answered'): NonNullable<WatcherRoomState['questions']>[number] => ({ id: '3f1a6c2e-5b7d-4e8f-9a0b-1c2d3e4f5a6b', watcherThreadId: CURRENT,
+    const question = (hostId: string, state: 'open' | 'answered' | 'skipped'): NonNullable<WatcherRoomState['questions']>[number] => ({ id: '3f1a6c2e-5b7d-4e8f-9a0b-1c2d3e4f5a6b', watcherThreadId: CURRENT,
       question: asked, options: [{ label: 'Settle it', description: 'Stop watching it. The thread stays in All threads.' }, { label: 'Keep watching', description: 'Keep it in view in case more work comes in.' }],
-      settle: { hostId, threadId: 'footer-links' }, state, at: new Date(Date.UTC(2026, 6, 12, 19, 35)).toISOString(), ...state === 'answered' ? { choice: 'Settle it', endedAt: new Date(Date.UTC(2026, 6, 12, 19, 44)).toISOString() } : {} })
+      settle: { hostId, threadId: 'footer-links' }, state, at: new Date(Date.UTC(2026, 6, 12, 19, 35)).toISOString(), ...state === 'answered' ? { choice: 'Settle it', endedAt: new Date(Date.UTC(2026, 6, 12, 19, 44)).toISOString() }
+        : state === 'skipped' ? { endedAt: new Date(Date.UTC(2026, 6, 12, 19, 44)).toISOString() } : {} })
     for (const [appearance, motion] of [['dark', 'normal'], ['light', 'reduced']] as const) await onReleaseTrack('owl', () => withSotto(launchOptions('t3-code', appearance, motion), async (launched) => {
       const { page } = launched
       await openThreads(page)
@@ -2128,6 +2131,8 @@ test.describe("Watcher's room on the built app", () => {
       await expect(card).toBeVisible()
       await expect(card).toContainText('Watcher asks')
       await expect(card).toContainText('Watcher keeps working while this waits')
+      // It offers the Skip a thread's card does (#2477).
+      await expect(card.getByRole('button', { name: 'Skip question' })).toBeVisible()
       // It counts in Needs you beside the two threads that wait.
       await expect(pane.locator('.watcher-glance__lead')).toHaveText('3 need you')
       // Where Watcher asked: after its reply that said so, and before the news that came while it waited.
@@ -2181,6 +2186,20 @@ test.describe("Watcher's room on the built app", () => {
         await expect.poll(() => pageBoundProblems(page), { message: `the answered line at ${width}x${height}` }).toEqual([])
         await captureInto(questionEvidence, launched, `own-question-answered-${appearance}-${width}x${height}.png`)
         await contrastHolds(page, `own-question-answered-${appearance}-${width}x${height}`)
+      }
+      // Skipped (#2477): the card gives way to one line that says so, and names no choice.
+      await seedRoom(page, { current: true, messages, activities, more: hostId => ({ questions: [question(hostId, 'skipped')] }) })
+      await openRoom(page)
+      await expect(pane.getByRole('region', { name: 'Question from Watcher' })).toHaveCount(0)
+      await expect(line).toHaveText('You skipped this question.')
+      await expect(pane.locator('.watcher-glance__lead')).toHaveText('2 need you')
+      for (const [width, height] of SIZES) {
+        await resizeContentWindow(launched, width, height)
+        await settle(page)
+        await line.scrollIntoViewIfNeeded()
+        await expect.poll(() => pageBoundProblems(page), { message: `the skipped line at ${width}x${height}` }).toEqual([])
+        await captureInto(questionEvidence, launched, `own-question-skipped-${appearance}-${width}x${height}.png`)
+        await contrastHolds(page, `own-question-skipped-${appearance}-${width}x${height}`)
       }
     }))
   })
@@ -2860,6 +2879,87 @@ test.describe("Watcher's room on the built app", () => {
       await expect(pane.getByRole('textbox', { name: 'Watcher message' })).toBeFocused()
       await expect(pane.locator('.watcher-new-note')).toContainText('The last conversation is in Watcher history on the Threads page.')
       await expect(button).toHaveAccessibleDescription('This Watcher is new, so there is nothing to hand over yet.')
+    })
+  })
+
+  test('against main’s own Watcher, a reader above the end keeps their place as news moves main’s window on, and the end is followed from the end', async () => {
+    test.setTimeout(6 * 60_000)
+    // Main holds a thread on screen as its newest ten turns (the history window) and reads them again at every publish.
+    // Each piece of news begins a turn of Watcher's, whose wake-up the conversation leaves out, so the oldest turn left the
+    // window with every piece of news: the rows above a reader went, and then the row they were reading (November 13, 2026).
+    const reply = Array.from({ length: 5 }, (_, n) => `Reply, paragraph ${n + 1}. ${'Watcher read the thread and says what changed. '.repeat(4)}`).join('\n\n')
+    await withMainWatcher('sotto-e2e-watcher-window-', { reply }, async (launched, root) => {
+      const { page } = launched
+      await resizeContentWindow(launched, 1280, 800)
+      await openRoom(page)
+      await page.getByRole('textbox', { name: 'Watcher message' }).click()
+      await page.keyboard.type('Message 0 for Watcher.')
+      await page.getByRole('button', { name: 'Start Watcher and send' }).click()
+      const pane = watcherPane(page)
+      await expect(pane.locator('[data-role="assistant"]')).toHaveCount(1)
+      const log = pane.getByRole('log', { name: 'Thread transcript' })
+      /** Main's window of Watcher's conversation, as the detail hands it to the window. */
+      const held = () => page.evaluate(async () => {
+        const state = await window.sotto!.agents!.get()
+        const watcher = state.host.threads.find(thread => thread.kind === 'watcher')
+        const messages = (watcher ? await window.sotto!.agents!.threadDetail!(watcher.id) : null)?.messages ?? []
+        return { idle: watcher?.status === 'idle', count: messages.length, first: messages[0]?.id, newest: messages.at(-1)?.id, newestRole: messages.at(-1)?.role,
+          lastSent: messages.findLast(message => message.role === 'user')?.text }
+      })
+      // More turns than the window holds, so the next one moves it.
+      const box = pane.getByRole('textbox', { name: 'Watcher message' })
+      for (let turn = 1; turn < 12; turn++) {
+        await box.click()
+        await page.keyboard.type(`Message ${turn} for Watcher.`)
+        await page.keyboard.press('Enter')
+        await expect.poll(async () => { const now = await held(); return now.idle && now.newestRole === 'assistant' && now.lastSent === `Message ${turn} for Watcher.` }, { timeout: 30_000 }).toBe(true)
+      }
+      await settle(page)
+      /** What the transcript draws: its rows, the first one reaching the top of the view and where it starts, and how far the end is. */
+      const drawn = () => log.evaluate(element => {
+        const top = element.getBoundingClientRect().top
+        const rows = [...element.querySelectorAll<HTMLElement>('.thread-message[data-message-id]')]
+        const first = rows.find(row => row.getBoundingClientRect().bottom > top + 1)
+        return { rows: rows.length, reading: first?.dataset.messageId, offset: first ? Math.round(first.getBoundingClientRect().top - top) : null,
+          fromEnd: Math.round(element.scrollHeight - element.scrollTop - element.clientHeight) }
+      })
+      expect((await drawn()).rows, 'the transcript draws main’s window').toBe((await held()).count)
+      // A watched thread, whose finished turn is news for Watcher.
+      const worker = await createWorker(page, join(root, 'worker'), 'Window worker')
+      expect(await page.evaluate(async target => window.sotto!.watcher!.watchThread!({ target }), worker.target)).toMatchObject({ status: 'ok' })
+      const news = async (part: number): Promise<void> => {
+        const before = await held()
+        await page.evaluate(async ({ threadId, text }) => window.sotto!.agents!.command({ type: 'send', draft: { threadId, text } }), { threadId: worker.id, text: `Do part ${part}.` })
+        // Watcher's reply to the news is in, and the window has moved on past its oldest turn.
+        await expect.poll(async () => { const now = await held(); return now.idle && now.newestRole === 'assistant' && now.newest !== before.newest && now.first !== before.first }, { timeout: 90_000 }).toBe(true)
+        await settle(page)
+      }
+      // Reading the oldest reply the window holds, the first to leave it.
+      await pane.locator('.thread-message[data-role="assistant"]').first().evaluate(element => element.scrollIntoView({ block: 'start' }))
+      const toLatest = pane.getByRole('button', { name: /^(Jump to latest|New messages|Jump to \d+ new messages?)$/u })
+      await expect(toLatest).toBeVisible()
+      await settle(page)
+      const read = await drawn()
+      expect(read.offset, 'the reply being read starts at the top of the view').toBe(0)
+      expect(read.fromEnd, 'the reader is away from the end').toBeGreaterThan(400)
+      await captureInto(readerPlaceEvidence, launched, 'reading-before-news-dark-1280x800.png')
+      expect(await drawn(), 'the capture moved nothing').toEqual(read)
+      for (const part of [1, 2]) {
+        await news(part)
+        const now = await drawn()
+        // The row being read is still drawn, at the pixel it stood on, with the turns the window let go above the end.
+        expect({ reading: now.reading, offset: now.offset }, `reading after news ${part}`).toEqual({ reading: read.reading, offset: read.offset })
+        expect(now.rows, `rows kept after news ${part}`).toBeGreaterThan((await held()).count)
+      }
+      await captureInto(readerPlaceEvidence, launched, 'reading-after-two-news-dark-1280x800.png')
+      // Back at the end, the transcript is main's window again, and follows what arrives.
+      await toLatest.click()
+      await expect(toLatest).toHaveCount(0)
+      await expect.poll(async () => (await drawn()).rows).toBe((await held()).count)
+      await expect.poll(async () => (await drawn()).fromEnd).toBeLessThanOrEqual(1)
+      await news(3)
+      await expect.poll(async () => (await drawn()).fromEnd).toBeLessThanOrEqual(1)
+      expect((await drawn()).rows).toBe((await held()).count)
     })
   })
 

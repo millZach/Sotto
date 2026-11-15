@@ -49,6 +49,17 @@ export function FileTree({ files, store, bridge, label }: FileTreeProps): ReactN
     if (element && document.activeElement !== element) element.focus()
   }, [tabStop, rows])
 
+  // A file chosen from elsewhere, such as a link in a reply, may sit below the fold: its row comes into view once it is drawn.
+  const shownSelection = useRef<string | null>(files.selectedPath)
+  useEffect(() => {
+    const path = files.selectedPath
+    if (path === shownSelection.current) return
+    const element = path === null ? null : items.current.get(path)
+    if (path !== null && !element) return
+    shownSelection.current = path
+    element?.scrollIntoView?.({ block: 'nearest' })
+  }, [files.selectedPath, rows])
+
   const open = (row: TreeRow): void => {
     const entry = row.entry!
     if (entry.kind === 'directory') store.toggleDirectory(bridge, threadId, entry.path)

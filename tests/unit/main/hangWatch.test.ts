@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { OUTSIDE_SOTTO } from '../../../src/main/performance/activityRecorder'
-import { cleanHangFrames, HANG_FILE, HANG_RECORDINGS_KEPT, saveHangRecording, sweepPartialHangRecordings, updateHangRecording, type HangRecord } from '../../../src/main/performance/hangRecording'
+import { cleanHangFrames, HANG_FILE, MAIN_HANG_RECORDINGS_KEPT, saveHangRecording, sweepPartialHangRecordings, updateHangRecording, WINDOW_HANG_RECORDINGS_KEPT, type HangRecord } from '../../../src/main/performance/hangRecording'
 import { MainHeartbeat, WindowHangWatch, type WatchedWindow } from '../../../src/main/performance/hangWatchdog'
 import { HEARTBEAT_SLOT, QUIT_SLOT, SHARED_SLOTS } from '../../../src/main/performance/hangWatchdogShared'
 import { HANG_STACKS, MainHangWatch, type MainDebugger, type MainHangWatchOptions } from '../../../src/main/performance/mainHangWatch'
@@ -35,23 +35,27 @@ describe('a hang recording\'s frames (#1581)', () => {
 describe('saving hang recordings', () => {
   let folder = ''
   afterEach(async () => { if (folder) await rm(folder, { recursive: true, force: true }) })
-  const record = (startedAt: string): HangRecord => ({ format: 1, kind: 'main', sottoVersion: '0.1.41', platform: 'win32', startedAt, answeredAfterMs: null, writtenAfterMs: 6_000, stacks: [] })
+  const record = (startedAt: string, kind: HangRecord['kind'] = 'main'): HangRecord => ({ format: 1, kind, sottoVersion: '0.1.41', platform: 'win32', startedAt, answeredAfterMs: null, writtenAfterMs: 6_000, stacks: [] })
 
-  it('writes a folder named for when main last answered, updates it in place, and keeps the newest five apart from Record a minute\'s', async () => {
+  it('writes a folder named for when main last answered, updates it in place, and keeps main\'s newest ten and the window\'s newest five apart from each other and from Record a minute\'s', async () => {
     folder = await mkdtemp(join(tmpdir(), 'sotto-hangs-'))
     const minute = join(folder, 'sotto-activity-2026-10-01-09-00-00')
     await import('node:fs/promises').then(fs => fs.mkdir(minute))
-    const names: string[] = []
-    for (let minuteOfHour = 0; minuteOfHour < HANG_RECORDINGS_KEPT + 2; minuteOfHour += 1) {
-      names.push(await saveHangRecording(folder, record(new Date(2026, 9, 25, 14, minuteOfHour, 7).toISOString())))
+    // The window's are older than every one of main's, and still none of main's pushes one out.
+    const windows: string[] = [], mains: string[] = []
+    for (let minuteOfHour = 0; minuteOfHour < WINDOW_HANG_RECORDINGS_KEPT + 1; minuteOfHour += 1) {
+      windows.push(await saveHangRecording(folder, record(new Date(2026, 9, 25, 13, minuteOfHour, 7).toISOString(), 'window')))
     }
-    expect(names[0]).toBe('sotto-hang-2026-10-25-14-00-07')
-    await updateHangRecording(folder, names.at(-1)!, { ...record(new Date(2026, 9, 25, 14, 6, 7).toISOString()), answeredAfterMs: 9_000 })
+    for (let minuteOfHour = 0; minuteOfHour < MAIN_HANG_RECORDINGS_KEPT + 2; minuteOfHour += 1) {
+      mains.push(await saveHangRecording(folder, record(new Date(2026, 9, 25, 14, minuteOfHour, 7).toISOString())))
+    }
+    expect(mains[0]).toBe('sotto-hang-2026-10-25-14-00-07')
+    await updateHangRecording(folder, mains.at(-1)!, { ...record(new Date(2026, 9, 25, 14, 11, 7).toISOString()), answeredAfterMs: 9_000 })
     const kept = (await readdir(folder)).sort()
-    expect(kept).toEqual(['sotto-activity-2026-10-01-09-00-00', ...names.slice(2)])
-    const saved = JSON.parse(await readFile(join(folder, names.at(-1)!, HANG_FILE), 'utf8')) as HangRecord
+    expect(kept).toEqual(['sotto-activity-2026-10-01-09-00-00', ...windows.slice(1), ...mains.slice(2)].sort())
+    const saved = JSON.parse(await readFile(join(folder, mains.at(-1)!, HANG_FILE), 'utf8')) as HangRecord
     expect(saved.answeredAfterMs).toBe(9_000)
-    expect(await readdir(join(folder, names.at(-1)!))).toEqual([HANG_FILE])
+    expect(await readdir(join(folder, mains.at(-1)!))).toEqual([HANG_FILE])
   })
 
   it('leaves another save\'s half-written folder alone, and sweeps leftovers only when asked at start', async () => {
@@ -69,61 +73,177 @@ describe('saving hang recordings', () => {
 function harness(overrides: Partial<MainHangWatchOptions> = {}) {
   const state = { now: 100_000, answered: 100_000, quitAt: 0, pauses: 0, killed: 0, saved: [] as HangRecord[], updated: [] as HangRecord[], logged: [] as string[], closed: 0,
     /** What main does while paused: nothing (still stopped), or answer (the pause landed after it had recovered). */
-    duringPause: 'stopped' as 'stopped' | 'answers', enable: 'answers' as 'answers' | 'never' }
+    duringPause: 'stopped' as 'stopped' | 'answers', enable: 'answers' as 'answers' | 'never',
+    /** Set by `stop`: when main answers again, and goes on answering from then on. */
+    answersAt: null as number | null,
+    /** The computer sleeps this long during the watch's next sleep between stacks. */
+    sleepsFor: 0,
+    /** Main is inside a native call until then: `Debugger.enable` does not land, or `Debugger.pause` does not. */
+    enableFrom: 0, pauseFrom: 0, enables: 0 }
+  /** The clock moves on, through the watch's own looks and its sleeps between stacks alike. */
+  const advance = (ms: number): void => {
+    state.now += ms
+    if (state.answersAt !== null && state.now >= state.answersAt) state.answered = state.answered < state.answersAt ? state.answersAt : state.now
+  }
   let pending: ((frames: unknown[] | null) => void) | null = null
   const debug: MainDebugger = {
     post: async method => {
-      if (method === 'Debugger.enable' && state.enable === 'never') return new Promise(() => undefined)
+      if (method === 'Debugger.enable') {
+        state.enables += 1
+        if (state.enable === 'never' || state.now < state.enableFrom) return new Promise(() => undefined)
+      }
       if (method === 'Debugger.pause') {
         state.pauses += 1
+        if (state.now < state.pauseFrom) return {}
         if (state.duringPause === 'answers') state.answered = state.now
         pending?.([{ functionName: 'saveThreads', url: appFile('out/main/index.js'), location: { lineNumber: 1, columnNumber: 2 } }])
       }
       return {}
     },
-    nextPause: async () => new Promise(resolve => { pending = resolve }),
+    nextPause: async withinMs => new Promise(resolve => { pending = resolve; setTimeout(() => resolve(null), withinMs) }),
     close: () => { state.closed += 1 },
   }
   const watch = new MainHangWatch({
     lastAnswered: () => state.answered, quitReceivedAt: () => state.quitAt, now: () => state.now, wallNow: () => state.now, connect: () => debug,
     save: async record => { state.saved.push(record); return 'sotto-hang-x' }, update: async (_name, record) => { state.updated.push(record) },
-    kill: () => { state.killed += 1 }, sleep: async ms => { state.now += ms }, log: event => { state.logged.push(event) },
+    kill: () => { state.killed += 1 }, sleep: async ms => { advance(ms + state.sleepsFor); state.sleepsFor = 0 }, log: event => { state.logged.push(event) },
     appRoots: [APP], sottoVersion: '0.1.41', platform: 'win32', debuggerWaitMs: 5, ...overrides,
   })
   /** `ms` of the computer running, the watch looking every 250 ms as its worker does; `step` is what main does meanwhile. */
   const run = async (ms: number, step: () => void = () => undefined): Promise<void> => {
     const until = state.now + ms
-    while (state.now < until) { state.now = Math.min(until, state.now + 250); step(); await watch.tick() }
+    while (state.now < until) { advance(Math.min(until, state.now + 250) - state.now); step(); await watch.tick() }
   }
-  return { state, watch, run }
+  /** Main stops now, and answers again `ms` later; for good when `ms` is omitted. */
+  const stop = (ms?: number): void => { state.answered = state.now; state.answersAt = ms === undefined ? null : state.now + ms }
+  return { state, watch, run, stop }
 }
 
 describe('the watch on main', () => {
-  it('waits out a short stop, then takes main\'s stack while it stays stopped and writes how long it lasted', async () => {
-    const { state, watch, run } = harness()
+  it('saves a 1.2 s stop with main\'s stack, taken at 1 s while main was still stopped, then how long it lasted', async () => {
+    const { state, watch, run, stop } = harness()
     await watch.tick()
-    await run(4_750)
+    stop(1_200)
+    await run(750)
     expect(state.saved).toEqual([])
     await run(250)
-    expect(state.pauses).toBe(HANG_STACKS)
+    expect(state.pauses).toBe(1)
     expect(state.saved).toHaveLength(1)
-    expect(state.saved[0]).toMatchObject({ kind: 'main', answeredAfterMs: null, startedAt: new Date(100_000).toISOString() })
+    expect(state.saved[0]).toMatchObject({ kind: 'main', answeredAfterMs: null, writtenAfterMs: 1_000, startedAt: new Date(100_000).toISOString() })
+    expect(state.saved[0]!.stacks!.map(stack => stack.atMs)).toEqual([1_000])
     expect(state.saved[0]!.stacks![0]!.frames[0]).toEqual({ functionName: 'saveThreads', url: 'sotto:///out/main/index.js', lineNumber: 1, columnNumber: 2 })
     expect(state.closed).toBe(1)
     expect(state.logged).toEqual(['hang-recording-saved'])
-    await run(250, () => { state.answered = state.now })
-    expect(state.updated.map(record => record.answeredAfterMs)).toEqual([state.answered - 100_000])
-    await run(250, () => { state.answered = state.now })
+    await run(250)
+    expect(state.updated.map(record => record.answeredAfterMs)).toEqual([1_200])
+    expect(state.updated[0]!.stacks).toHaveLength(1)
+    await run(5_000)
     expect(state.updated).toHaveLength(1)
+    expect(state.saved).toHaveLength(1)
+  })
+
+  it('saves nothing for a 0.8 s stop', async () => {
+    const { state, watch, run, stop } = harness()
+    await watch.tick()
+    stop(800)
+    await run(5_000)
+    expect(state.pauses).toBe(0)
+    expect(state.saved).toEqual([])
+  })
+
+  it('records a stop that runs past 5 s in full: a stack a second from 1 s to 9 s, rewritten while main stays stopped', async () => {
+    const { state, watch, run, stop } = harness()
+    await watch.tick()
+    stop(12_000)
+    await run(14_000)
+    expect(state.pauses).toBe(HANG_STACKS)
+    expect(state.saved).toHaveLength(1)
+    expect(state.saved[0]!.stacks!.map(stack => stack.atMs)).toEqual([1_000])
+    expect(state.updated).toHaveLength(2)
+    // The stacks a hang recording held when it was taken at 5 s are all still there.
+    expect(state.updated[0]).toMatchObject({ answeredAfterMs: null, writtenAfterMs: 9_000 })
+    expect(state.updated[0]!.stacks!.map(stack => stack.atMs)).toEqual([1_000, 2_000, 3_000, 4_000, 5_000, 6_000, 7_000, 8_000, 9_000])
+    expect(state.updated[1]).toMatchObject({ answeredAfterMs: 12_000 })
+    expect(state.updated[1]!.stacks).toHaveLength(HANG_STACKS)
+    expect(state.closed).toBe(1)
+  })
+
+  it('keeps two freezes 24 s apart, and records no more than one in 20 s', async () => {
+    const { state, watch, run, stop } = harness()
+    await watch.tick()
+    stop(1_500)
+    await run(24_000)
+    stop(1_500)
+    await run(6_000)
+    expect(state.saved.map(record => record.startedAt)).toEqual([new Date(100_000).toISOString(), new Date(124_000).toISOString()])
+    // 6 s after the second: inside the gap.
+    stop(1_500)
+    await run(14_000)
+    expect(state.saved).toHaveLength(2)
+    // Its 1 s comes 20 s after the second was taken.
+    stop(1_500)
+    await run(3_000)
+    expect(state.saved).toHaveLength(3)
+  })
+
+  it('still records a hang of main that begins inside the gap, at 5 s as before, and only once in ten minutes', async () => {
+    const { state, watch, run, stop } = harness()
+    await watch.tick()
+    stop(1_500)
+    await run(3_000)
+    expect(state.saved).toHaveLength(1)
+    stop(8_000)
+    await run(10_000)
+    expect(state.saved).toHaveLength(2)
+    expect(state.saved[1]!.stacks!.map(stack => stack.atMs)).toEqual([5_000])
+    expect(state.updated.at(-1)).toMatchObject({ answeredAfterMs: 8_000 })
+    // Another hang 2 s later: inside both gaps.
+    stop(8_000)
+    await run(10_000)
+    expect(state.saved).toHaveLength(2)
   })
 
   it('keeps no stack from a pause that landed after main had answered', async () => {
     const { state, watch, run } = harness()
     state.duringPause = 'answers'
     await watch.tick()
-    await run(6_000)
+    await run(3_000)
     expect(state.pauses).toBe(1)
     expect(state.saved[0]!.stacks).toEqual([])
+  })
+
+  it('keeps trying in the same recording when a stop begins outside JavaScript, and takes stacks once main is back in it', async () => {
+    const { state, watch, run, stop } = harness()
+    await watch.tick()
+    // A 20 s stop whose first 4 s are one native call: the debugger cannot even be enabled.
+    stop(20_000)
+    state.enableFrom = state.now + 4_000
+    await run(22_000)
+    expect(state.saved).toHaveLength(1)
+    expect(state.saved[0]!.stacks).toEqual([])
+    const last = state.updated.at(-1)!
+    expect(last.answeredAfterMs).toBe(20_000)
+    const times = last.stacks!.map(stack => stack.atMs)
+    expect(times.length).toBeGreaterThanOrEqual(5)
+    expect(times.every(atMs => atMs >= 4_000)).toBe(true)
+    // Every session the tries opened was let go.
+    expect(state.closed).toBe(state.enables)
+  })
+
+  it('keeps trying in the same recording when the debugger is enabled but its first pauses do not land', async () => {
+    const { state, watch, run, stop } = harness()
+    await watch.tick()
+    stop(20_000)
+    state.pauseFrom = state.now + 4_000
+    await run(22_000)
+    const last = state.updated.at(-1)!
+    expect(last.answeredAfterMs).toBe(20_000)
+    const times = last.stacks!.map(stack => stack.atMs)
+    expect(times.length).toBeGreaterThanOrEqual(5)
+    expect(times.every(atMs => atMs >= 4_000)).toBe(true)
+    // A session whose pause did not land is let go at once, so that pause cannot land later and leave main paused.
+    expect(state.enables).toBeGreaterThan(1)
+    expect(state.closed).toBe(state.enables)
   })
 
   it('saves the hang with no stack when main is stopped outside JavaScript', async () => {
@@ -133,15 +253,6 @@ describe('the watch on main', () => {
     await run(6_000)
     expect(state.pauses).toBe(0)
     expect(state.saved[0]!.stacks).toEqual([])
-  })
-
-  it('records one hang in ten minutes at most', async () => {
-    const { state, watch, run } = harness()
-    await watch.tick()
-    await run(6_000)
-    await run(250, () => { state.answered = state.now })
-    await run(6_000)
-    expect(state.saved).toHaveLength(1)
   })
 
   it('records a hang during quit like any other, then ends Sotto once main has been stopped 20 s into the quit', async () => {
@@ -186,9 +297,79 @@ describe('the watch on main', () => {
     const { state, watch, run } = harness({ quitForceMs: 20_000 })
     await watch.tick()
     state.quitAt = state.now
-    await run(60_000, () => { state.answered = state.now - 1_000 })
+    // Late, but answering: under the second a recording needs.
+    await run(60_000, () => { state.answered = state.now - 750 })
     expect(state.killed).toBe(0)
     expect(state.saved).toEqual([])
+  })
+
+  it('takes a stall of the whole process too short to be sleep for no freeze, though the 2 s asleep gap lets it through', async () => {
+    const { state, watch, run } = harness()
+    await watch.tick()
+    await run(1_000, () => { state.answered = state.now })
+    // Main and the watch stop alike for 1.5 s, and main beats again just after the watch's next look: its heartbeat is
+    // 1.5 s old at that look, over the second, and the gap is under ASLEEP_GAP_MS.
+    state.now += 1_500
+    await watch.tick()
+    await run(250, () => { state.answered = state.now })
+    expect(state.saved).toEqual([])
+    // The longest stall that does not restart the count, 500 ms, leaves the heartbeat at most 750 ms old a look later.
+    state.now += 500
+    await watch.tick()
+    state.now += 250
+    await watch.tick()
+    await run(250, () => { state.answered = state.now })
+    expect(state.saved).toEqual([])
+    expect(state.pauses).toBe(0)
+  })
+
+  it('keeps Quit\'s backstop as it was: a main stopped 4.75 s at the deadline cancels the quit, as before the threshold moved', async () => {
+    const { state, watch, run, stop } = harness({ quitForceMs: 20_000 })
+    await watch.tick()
+    state.quitAt = state.now
+    await run(15_250, () => { state.answered = state.now })
+    stop()
+    await run(30_000)
+    // Recorded at 1 s; its stacks stop at the deadline and the backstop decides there, on a stop of 4.75 s, not a look
+    // later on one of 5 s.
+    expect(state.saved).toHaveLength(1)
+    expect(state.updated.at(-1)!.stacks!.map(stack => stack.atMs)).toEqual([1_000, 2_000, 3_000, 4_000])
+    expect(state.killed).toBe(0)
+  })
+
+  it('takes a computer asleep between two stacks for no freeze and no stopped quit, as between two looks', async () => {
+    const { state, watch, run, stop } = harness({ quitForceMs: 20_000 })
+    await watch.tick()
+    state.quitAt = state.now
+    await run(1_000, () => { state.answered = state.now })
+    stop()
+    // Asleep for a minute during the first wait after the first stack.
+    state.sleepsFor = 60_000
+    await run(1_000)
+    expect(state.saved).toHaveLength(1)
+    expect(state.pauses).toBe(1)
+    // Awake, main still stopped for 3 s more: no hang, and no quit deadline reached.
+    await run(3_000)
+    expect(state.killed).toBe(0)
+    await run(2_000, () => { state.answered = state.now })
+    expect(state.killed).toBe(0)
+    expect(state.saved).toHaveLength(1)
+    // Stopped from 101 s, answered at 165.5 s, a minute of it asleep: 4.5 s awake.
+    expect(state.updated.at(-1)!.answeredAfterMs).toBe(4_500)
+  })
+
+  it('keeps Quit\'s backstop as it was: a main stopped 5 s or more is ended at the deadline, and not before', async () => {
+    const { state, watch, run, stop } = harness({ quitForceMs: 20_000 })
+    await watch.tick()
+    state.quitAt = state.now
+    await run(10_000, () => { state.answered = state.now })
+    stop()
+    await run(9_750)
+    expect(state.saved).toHaveLength(1)
+    expect(state.killed).toBe(0)
+    await run(250)
+    expect(state.killed).toBe(1)
+    expect(state.logged).toEqual(['hang-recording-saved', 'quit-forced'])
   })
 })
 

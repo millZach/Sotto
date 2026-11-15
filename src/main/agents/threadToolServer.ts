@@ -15,8 +15,12 @@ export interface ThreadToolResult {
  * for an answer returns before it, saying the request is still open. It can only shorten a wait, never lengthen one.
  */
 export const TOOL_WAIT_HEADER = 'Sotto-Tool-Wait'
-/** What one call knows about its caller beyond the thread: how long the client will wait for it, when it says. */
-export interface ThreadToolCallContext { readonly waitMs?: number }
+/**
+ * What one call knows about its caller beyond the thread: how long the client will wait for it, when it says, and a
+ * signal that aborts when the client goes away before the call is answered, as it does when a turn is stopped. A tool
+ * that waits for the user stops waiting then, so nothing is done for a call nobody will hear the result of.
+ */
+export interface ThreadToolCallContext { readonly waitMs?: number; readonly signal?: AbortSignal }
 /** How a native client reaches one of Sotto's tool servers for one thread: loopback HTTP and a bearer token. */
 export interface ThreadMcpServer { name: string; type: 'http'; url: string; headers: { name: string; value: string }[] }
 /**
@@ -49,7 +53,8 @@ export class ThreadToolServer {
   /** `listFor` narrows what one thread is shown, when threads get different tools from the same server; every tool otherwise. */
   constructor(protected readonly identity: ThreadToolServerIdentity, readonly definitions: readonly ThreadToolDefinition[],
     private readonly invoke: (threadId: string, name: string, args: unknown, context: ThreadToolCallContext) => Promise<ThreadToolResult>,
-    private readonly listFor?: (threadId: string) => readonly ThreadToolDefinition[]) {}
+    private readonly listFor?: (threadId: string) => readonly ThreadToolDefinition[],
+    private readonly instructionsFor?: (threadId: string) => string) {}
   async call(threadId: string, name: string, args: unknown, context: ThreadToolCallContext = {}): Promise<ThreadToolResult> {
     if (this.closed || !this.definitions.some(tool => tool.name === name)) return { isError: true, content: [{ type: 'text', text: this.identity.unavailable }] }
     try { return await this.invoke(threadId, name, args, context) }
@@ -115,7 +120,7 @@ export class ThreadToolServer {
       if (method === 'initialize') {
         const version = initializeSchema.safeParse(params)
         const protocolVersion = version.success && ['2024-11-05', '2025-03-26', '2025-06-18', '2025-11-25'].includes(version.data.protocolVersion) ? version.data.protocolVersion : '2025-06-18'
-        reply({ protocolVersion, capabilities: { tools: { listChanged: false } }, serverInfo: { name: this.identity.serverName, version: '1.0.0' }, instructions: this.identity.instructions }); return
+        reply({ protocolVersion, capabilities: { tools: { listChanged: false } }, serverInfo: { name: this.identity.serverName, version: '1.0.0' }, instructions: this.instructionsFor?.(threadId) ?? this.identity.instructions }); return
       }
       if (method === 'ping') { reply({}); return }
       if (method === 'tools/list') { reply({ tools: this.listFor?.(threadId) ?? this.definitions }); return }
@@ -124,7 +129,10 @@ export class ThreadToolServer {
         if (!call.success) { response.writeHead(400).end(); return }
         // Recheck admission after receiving the body; revoked clients cannot dispatch queued calls.
         if (this.tokens.get(authorization!.slice(7)) !== threadId) { response.writeHead(401).end(); return }
-        reply(await this.call(threadId, call.data.name, call.data.arguments ?? {}, callContext(request))); return
+        // The connection closing before the answer is written is the client giving up on this call.
+        const gone = new AbortController()
+        response.once('close', () => { if (!response.writableEnded) gone.abort() })
+        reply(await this.call(threadId, call.data.name, call.data.arguments ?? {}, { ...callContext(request), signal: gone.signal })); return
       }
       response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ jsonrpc: '2.0', id, error: { code: -32601, message: 'This method is unavailable.' } }))
     } finally { this.running-- }

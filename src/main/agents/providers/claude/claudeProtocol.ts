@@ -31,6 +31,8 @@ export class ClaudeProtocol {
   private exited = false
   private readonly exit: Promise<void>
   readonly closed: Promise<void>
+  /** The CLI's process, for the held-sessions read (#2398). */
+  get pid(): number | undefined { return this.child.pid }
   constructor(executable: string, args: string[], cwd: string, env: NodeJS.ProcessEnv, private readonly timeout: number,
     onFrame: (frame: ClaudeFrame) => void, onExit: () => void) {
     // Off Windows the CLI leads its own process group, so `halt` can end what a wrapper script started as well (#657).

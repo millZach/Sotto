@@ -53,3 +53,20 @@ describe('one name for each level (#227)', () => {
     expect(effortWords('ultra')).toBe('Ultra')
   })
 })
+
+it('fits a model-owned effort by named rank, with lower ties and Default outside the scale', async () => {
+  const { nearestModelEffort } = await import('../../../src/shared/reasoningEfforts')
+  expect(nearestModelEffort('medium', ['low', 'high', 'max'])).toBe('low')
+  expect(nearestModelEffort('none', ['low', 'high', 'max'])).toBe('low')
+  expect(nearestModelEffort('max', ['default'])).toBe('default')
+  expect(nearestModelEffort('default', ['none', 'low', 'high'])).toBe('high')
+})
+
+it('never turns thinking off for an initial, Default, or toggle-only fit', async () => {
+  const { nearestModelEffort, defaultModelEffort } = await import('../../../src/shared/reasoningEfforts')
+  for (const value of [undefined, 'default']) expect(nearestModelEffort(value, ['off', 'low', 'medium', 'high'])).toBe('medium')
+  expect(nearestModelEffort('high', ['off', 'default'])).toBe('default')
+  expect(nearestModelEffort('off', ['off', 'default'])).toBe('off')
+  expect(defaultModelEffort(['off', 'low', 'high'])).toBe('high')
+  expect(defaultModelEffort(['off', 'default'])).toBe('default')
+})

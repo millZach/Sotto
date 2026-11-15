@@ -361,6 +361,16 @@ const licenseSections = [
   ['Thread composer MIT licenses', (await Promise.all(COMPOSER_NOTICE_COMPONENTS.map(async component =>
     `${component.name}\n${await read(`${component.packagePath}/${component.name.startsWith('@tiptap/') && component.name !== '@tiptap/pm' ? 'LICENSE.md' : 'LICENSE'}`)}`))).join('\n\n')],
   ['Zod MIT license', await read('node_modules/zod/LICENSE')],
+  // The headless host's picture worker compiles in jpeg-js's decoder and pngjs's synchronous reader and writer (ADR-0203).
+  // jpeg-js's license ends some lines with spaces, which go; not a word of it changes.
+  ['Headless host picture decoder licenses', `jpeg-js (BSD 3-Clause License; the host's picture worker compiles in its decoder alone)
+${(await read('node_modules/jpeg-js/LICENSE')).replace(/[ \t]+$/gmu, '')}
+
+jpeg-js lib/decoder.js (Apache License 2.0; the full text is under "Apache License 2.0" below)
+Copyright 2011 notmasteryet
+
+pngjs
+${await read('node_modules/pngjs/LICENSE')}`],
   ['xterm.js MIT licenses', `@xterm/xterm
 ${await read('node_modules/@xterm/xterm/LICENSE')}
 
@@ -478,7 +488,7 @@ const sections = licenseSections.map(([heading, text]) =>
 
 const output = `# Third-Party Notices
 
-Sotto transcribes dictated audio on the computer with the Parakeet speech model the user chooses (NVIDIA's Parakeet v3 or v2, or Moondream's Parakeet Ultra) through sherpa-onnx, and on Apple silicon Macs it can also run the Core ML speech models already on the computer through a bundled helper built on FluidAudio. This inventory covers code included in the Electron distribution, JavaScript bundled into the renderer, the Windows updater tree compiled into the main-process bundle, and the external Node runtime dependencies retained in app.asar and its unpacked native terminal and speech engine helpers. Versions are pinned by package-lock.json.
+Sotto transcribes dictated audio on the computer with the Parakeet speech model the user chooses (NVIDIA's Parakeet v3 or v2, or Moondream's Parakeet Ultra) through sherpa-onnx, and on Apple silicon Macs it can also run the Core ML speech models already on the computer through a bundled helper built on FluidAudio. This inventory covers code included in the Electron distribution, JavaScript bundled into the renderer, the Windows updater tree compiled into the main-process bundle, the external Node runtime dependencies retained in app.asar and its unpacked native terminal and speech engine helpers, and the picture decoders compiled into the headless host's bundle. Versions are pinned by package-lock.json.
 
 Electron additionally ships its exact upstream \`LICENSE.electron.txt\` and comprehensive \`LICENSES.chromium.html\` beside \`Sotto.exe\` in the Windows installation, and inside \`Sotto.app/Contents/Resources\` on macOS. The latter contains Chromium's component-by-component notices and license texts and is the authoritative inventory for Chromium's own bundled third-party code.
 
@@ -487,6 +497,8 @@ Electron additionally ships its exact upstream \`LICENSE.electron.txt\` and comp
 ${table}
 
 \`electron-updater\` and everything below it in that list are development dependencies of this project, but the Windows update checker is compiled into the main-process bundle rather than resolved from \`node_modules\` at runtime, so their code is redistributed inside app.asar and is inventoried here. They are absent from the macOS build path only in the sense that macOS has no update feed; the same bundle ships on every platform.
+
+\`jpeg-js\` and \`pngjs\` are development dependencies too. The headless host's picture worker compiles them into the host's bundle, so they ship in the host archive, not in app.asar.
 
 ## Sotto brand asset provenance
 

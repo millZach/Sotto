@@ -27,7 +27,7 @@ afterEach(async () => {
   if (dirname(root) === tmpdir() && root.includes('sotto-host-phones-')) await rm(root, { recursive: true, force: true })
 })
 
-async function start(tailscale: PhoneAccessTailscale, options: { startedBy?: 'launch-script'; log?: (event: string) => void } = {}) {
+async function start(tailscale: PhoneAccessTailscale, options: { startedBy?: 'launch-script'; log?: (event: string) => void; compressPhones?: boolean } = {}) {
   const providers = { codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost() }
   const host = await startHeadlessHost({ dataDirectory: root, port: 0, providers, reasoner: e2eAgentReasoner, tailscale, ...options })
   hosts.push(host)
@@ -160,6 +160,39 @@ it('puts Serve back on the same Serve port, from a loopback port of its own, whe
     // The next start tries the port it listens on now.
     expect(JSON.parse(await readFile(join(root, 'phone-access.json'), 'utf8'))).toEqual({ port: moved, mapped: true })
   } finally { await new Promise<void>(resolve => holder.close(() => resolve())) }
+})
+
+it('compresses for a phone on its tailnet listener unless started with phone compression off (#2394)', async () => {
+  const stand = standInTailscale()
+  const first = await start(stand.tailscale)
+  await first.command({ type: 'set-enabled', enabled: true })
+  await vi.waitFor(async () => expect((await first.read()).phase).toBe('on'))
+  const { state: shown } = await first.command({ type: 'show-code' })
+  const paired = await (await fetch(`http://127.0.0.1:${stand.proxied()!}/v1/pair`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ v: 1, code: shown.code!.code, name: 'Zach’s iPhone' }) })).json() as { token: string }
+  /** The phone's socket on the tailnet listener, offering the extension bare, as the iPhone's URLSession does, or nothing. */
+  const phone = async (offer?: string) => {
+    const { session: token } = await (await session(stand.proxied()!, paired.token)).json() as { session: string }
+    const peer = await rawPeer(stand.proxied()!, token, offer ? { offer } : {})
+    expect(await peer.call('hello', { op: 'hello' })).toMatchObject({ ok: true })
+    peer.frames.close()
+    return peer
+  }
+  // As every host Sotto starts: the iPhone's offer is answered as a desktop's is.
+  const compressed = await phone('permessage-deflate')
+  expect(compressed.extensions).toBe('permessage-deflate; server_no_context_takeover; client_no_context_takeover')
+  expect(compressed.frames.deflate).toBe(true)
+  // A phone that offers nothing is answered with nothing.
+  const offeredNothing = await phone()
+  expect(offeredNothing.extensions).toBeUndefined()
+  expect(offeredNothing.frames.deflate).toBe(false)
+  await first.host.close()
+
+  // Started with SOTTO_HOST_COMPRESS_PHONES=0: the offer goes unanswered.
+  const second = await start(stand.tailscale, { compressPhones: false })
+  await vi.waitFor(async () => expect((await second.read()).phase).toBe('on'))
+  const plain = await phone('permessage-deflate')
+  expect(plain.extensions).toBeUndefined()
+  expect(plain.frames.deflate).toBe(false)
 })
 
 it('hands back Tailscale’s page for turning Serve on, for the desktop to open, rather than opening anything itself', async () => {

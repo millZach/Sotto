@@ -56,7 +56,7 @@ const inReadState = (rest: number) => `And ${rest} more. read_state lists them a
 
 /** The section, or an empty string when there is nothing to say. Each part appears only when it has something in it. */
 /** What a train row adds about its required checks: nothing once they passed, since the pull request's own summary says so. */
-const TRAIN_CHECKS: Readonly<Record<WatcherMergeQueueItem['requiredChecks'], string>> = { passed: '', running: ', its required checks running', failed: '', unknown: '' }
+const TRAIN_CHECKS: Readonly<Record<WatcherMergeQueueItem['requiredChecks'], string>> = { passed: '', running: ', its checks running', failed: '', unknown: '' }
 export function watcherHandoverState(input: WatcherHandoverStateInput): string {
   const carried = input.carried
   const lines = [

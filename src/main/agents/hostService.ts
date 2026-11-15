@@ -13,14 +13,15 @@ import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
 import type { GitPullRequestListRead, GitPullRequestListRequest, GitPullRequestRead, GitPullRequestRequest } from '../../shared/gitPullRequests'
 import type { HostFoldersRequest, HostFoldersResult } from '../../shared/hostFolders'
-import type { FileLinkPreview, FileLinkRequest, FileListing, FileListRequest, FilePreview, FileRequest, FilesResult } from '../../shared/files'
+import type { FileLinkPreview, FileLinkRequest, FileListing, FileListRequest, FilePreview, FileRequest, FilesResult, LinkedFile, LinkedFileRequest } from '../../shared/files'
 import type { GitChangeListing, GitReview, GitReviewRequest } from '../../shared/gitChanges'
 import type { SubagentAssignmentsPage, SubagentAssignmentsRequest, SubagentPage, SubagentPageRequest } from '../../shared/subagents'
 import type { HostThreadDelegations } from '../../shared/agentsView'
 import type { ToolListRequest, ToolsResult } from '../../shared/tools'
 import { listHostFolders } from './hostFolders'
 import type { HostThreadToolReads } from './threadToolReads'
-import type { HostAnswerTarget, HostAttachmentFile, HostAttachmentFileRequest, HostErrorCode } from '../../shared/hostProtocol'
+import type { HostAnswerTarget, HostAttachmentFile, HostAttachmentFileRequest, HostErrorCode, HostPreviewRequest, HostThreadMediaRequest } from '../../shared/hostProtocol'
+import type { ReducedPictures } from './mediaThumbnail'
 import { mayGrantLocally, REMOTE_PERMISSION_DENIED } from './authority'
 import type { HostMachineReport } from '../../shared/hostFacts'
 import type { NextPromptEntry } from '../../shared/nextPrompt'
@@ -28,6 +29,8 @@ import type { ProjectOrigins, ProjectSetupRequest, ProjectSetupResult } from '..
 import type { HostBranchMoveRequest } from '../../shared/branchMoves'
 import type { HostThreadMoveRequest } from '../../shared/threadMoves'
 import type { DesktopDefaultsInput, DesktopDefaultsReceipt } from '../../shared/desktopDefaults'
+import type { HeldPluginAccountCopy, PluginAccountCopy, PluginAccountCopyReceipt, PluginAccountCopyRemoved, PluginAccountCopyStore } from '../../shared/pluginAccountCopies'
+import type { GitHubSignIn } from '../../shared/plugins'
 import type { DelegationRelayAsk, DelegationRemoteAsk, RelayedReply } from '../../shared/delegationRelay'
 import type { TellWatcherAnswer, WatcherTellPush } from '../../shared/tellWatcher'
 import type { DelegationNews } from '../../shared/delegation'
@@ -113,7 +116,11 @@ export interface HostService {
   readonly supportsWatcherMuse?: boolean
   /** The host lists `watcher-cursor`: it takes Watcher requests whose identity names Cursor (ADR-0128). */
   readonly supportsWatcherCursor?: boolean
-  subscribeWatcher?(listener: (projection: WatcherHostProjection) => void): () => void
+  /**
+   * Tells `listener` each time the host's Watcher projection changes, with the projection now held: undefined when a
+   * progress push did not follow the one held (`watcher-progress`), so Watcher's next reconcile reads it again.
+   */
+  subscribeWatcher?(listener: (projection: WatcherHostProjection | undefined) => void): () => void
   cachedWatcherProjection?(master: WatcherIdentity): WatcherHostProjection | undefined
   watcherRoomThreads?(threadIds: readonly string[]): WatcherRoomThreadInput[]
   watcherControl?(request: WatcherHostControl, client: ClientIdentity, guard: () => void, mayAnswer?: () => boolean): Promise<unknown>
@@ -159,6 +166,24 @@ export interface HostService {
    */
   readonly supportsHostDelegation?: boolean
   desktopDefaults?(defaults: DesktopDefaultsInput, client?: ClientIdentity): Promise<DesktopDefaultsReceipt>
+  /**
+   * The host keeps account copies (ADR-0205, amending ADR-0025), present only on a headless host whose Owl answer
+   * turns on plugins. On a desktop's connection to such a host these send a copy, let one go and read which the host
+   * holds; on the host they keep, delete and list. A secret goes one way: nothing here hands one back.
+   */
+  readonly supportsPluginAccountCopies?: boolean
+  /** The host keeps a mail account's copy too, and its own threads read it, each asking once (decision 8). */
+  readonly supportsPluginMailCopies?: boolean
+  keepPluginAccountCopy?(copy: PluginAccountCopy, client?: ClientIdentity): Promise<PluginAccountCopyReceipt>
+  removePluginAccountCopy?(accountId: string, client?: ClientIdentity): Promise<PluginAccountCopyRemoved>
+  pluginAccountCopies?(client?: ClientIdentity): Promise<HeldPluginAccountCopy[]>
+  /**
+   * Who gh on the host's own machine is signed in to GitHub as (ADR-0205): the account its threads' plugin tools act
+   * as, which need not be the desktop's. Present only on a headless host whose Owl answer turns on plugins, and on a
+   * desktop's connection to one. A name, never a token.
+   */
+  readonly supportsPluginGitHubSignIn?: boolean
+  pluginGitHubSignIn?(): Promise<GitHubSignIn>
   /**
    * The host answers the desktop window's read of its own threads' delegations (#1310), present only where it runs
    * delegation for them: what a thread delegated and was sent, and a delegated thread's newest brief, never a reply. Thread
@@ -225,6 +250,8 @@ export interface HostService {
   readonly supportsPullRequestView?: boolean
   /** The host deletes its settled threads when asked (ADR-0140), present only when its Owl answer turns clearing on. */
   readonly supportsThreadDelete?: boolean
+  /** The host runs `git init` in a new project's folder when `create-project` asks (`gitInit`): it lists `project-git-init`. */
+  readonly supportsProjectGitInit?: boolean
   /** The host brings a thread's commits back to the branch of the thread it began from (#1030): it takes `bring-changes-back`. */
   readonly supportsBringBack?: boolean
   /** The words of the handover a thread that began from another goes with on its first message, or null when it has none (#1028). */
@@ -280,9 +307,13 @@ export interface HostService {
   questionPage?(token: string): QuestionPageTarget | undefined
   /** A page was opened by its token, which clears the prototype-ready mark it belongs to (ADR-0108). */
   questionPageOpened?(token: string): void
-  attachmentPreview?(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
-  /** One picture an activity record names (ADR-0170); null when the host keeps no such picture for that record. */
-  threadMedia?(request: AgentThreadMediaRequest): Promise<AgentThreadMediaResult>
+  /** One sent image, whole, or with `edge` no larger than that on its longest side (`thread-media-edge`). */
+  attachmentPreview?(request: HostPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
+  /**
+   * One picture an activity record names (ADR-0170); null when the host keeps no such picture for that record. With
+   * `edge`, a copy no larger than that on its longest side (`thread-media-edge`).
+   */
+  threadMedia?(request: HostThreadMediaRequest): Promise<AgentThreadMediaResult>
   /** One part of a video an activity record names (ADR-0170, part 4); null when it is no longer the file its handle names. */
   threadMediaPart?(request: AgentThreadMediaPartRequest): Promise<AgentThreadMediaPart>
   /** One part of a sent attached file a message carries, for the iPhone's Quick Look (ADR-0131); null for anything else. */
@@ -316,6 +347,10 @@ export interface HostService {
   readonly supportsThreadFileLinks?: boolean
   /** A Markdown file a thread's message links to, for the side panel. */
   threadFileLink?(request: FileLinkRequest): Promise<FilesResult<FileLinkPreview>>
+  /** Whether this host finds, previews and sends the files a thread's message links to: its Owl answer (ADR-0120, November 12 amendment). */
+  readonly supportsThreadLinkedFiles?: boolean
+  /** Where a linked file is, its preview, or one part of it for a download. */
+  threadLinkedFile?(request: LinkedFileRequest): Promise<FilesResult<LinkedFile>>
   /** A thread's changed files as Git's status lists them, for Changes. */
   gitChanges?(request: ToolListRequest): Promise<ToolsResult<GitChangeListing>>
   /** A thread's Working tree or Branch changes comparison, for Changes. */
@@ -330,6 +365,8 @@ export interface HostService {
   readonly supportsFileStaging?: boolean
   /** The host keeps its agents' pictures and answers `thread-media` (ADR-0170): its Owl answer turns it on. */
   readonly supportsThreadMedia?: boolean
+  /** The host makes a copy of a picture at a longest edge a phone names (`thread-media-edge`): only where it has a maker. */
+  readonly supportsPictureEdges?: boolean
   /** What delegation's record knows of each thread delegated below one thread, for the iPhone's Agents view (ADR-0103). */
   threadDelegations?(threadId: string): Promise<HostThreadDelegations>
 }
@@ -464,10 +501,18 @@ export class LocalHostService implements HostService {
     threadDelete?: boolean
     /** Reads Markdown files a thread's message links to: the Owl answer (ADR-0120, November 3 amendment). */
     threadFileLinks?: boolean
+    /** Finds, previews and sends the files a thread's message links to: the Owl answer (ADR-0120, November 12 amendment). */
+    threadLinkedFiles?: boolean
     /** Attached files that are not images (ADR-0131), true only when the host's Owl answer turns it on. */
     fileStaging?: boolean
     /** The `inline-media` Owl answer (ADR-0170): this host keeps its agents' pictures and answers for them. */
     threadMedia?: boolean
+    /**
+     * The copies of pictures phones ask for at a longest edge (`thread-media-edge`, ADR-0170's November 10 amendment): the
+     * desktop's, made with Electron's image tools, or a headless host's, made in its picture worker (ADR-0203). Absent, it
+     * answers every picture whole.
+     */
+    reducedPictures?: ReducedPictures
     /**
      * The iPhone's Agents view (ADR-0103), present only when the host's Owl answer turns it on. `delegations` is there only
      * where delegation runs (ADR-0081); without it a thread has no delegated threads to read.
@@ -479,6 +524,10 @@ export class LocalHostService implements HostService {
     setUpProject?: (request: ProjectSetupRequest) => Promise<ProjectSetupResult>
     /** Where a headless host keeps the desktop defaults (#1310), present only where it runs delegation for its own threads. */
     desktopDefaults?: { record(clientId: string, defaults: DesktopDefaultsInput): Promise<DesktopDefaultsReceipt> }
+    /** Where a headless host keeps account copies (ADR-0205), present only where its Owl answer turns on plugins. */
+    pluginAccountCopies?: PluginAccountCopyStore
+    /** Asks this machine's gh who is signed in (ADR-0205), present only where a headless host's Owl answer turns on plugins. */
+    pluginGitHubSignIn?: () => Promise<GitHubSignIn>
     workerSwarms?: boolean
     /** This host keeps what a desktop says of **Show every picture and video an agent makes** (ADR-0170, part 7). */
     everyAgentPicture?: boolean
@@ -515,6 +564,28 @@ export class LocalHostService implements HostService {
     if (!this.options.desktopDefaults) return Promise.reject(new Error('This host does not keep desktop defaults.'))
     return this.options.desktopDefaults.record(client.clientId, defaults)
   }
+  get supportsPluginAccountCopies(): boolean { return this.options.pluginAccountCopies !== undefined }
+  get supportsPluginMailCopies(): boolean { return this.options.pluginAccountCopies?.mail === true }
+  get supportsPluginGitHubSignIn(): boolean { return this.options.pluginGitHubSignIn !== undefined }
+  /** Who this machine's gh is signed in as; the socket listener answers only the desktop the launch script recorded. */
+  pluginGitHubSignIn(): Promise<GitHubSignIn> {
+    if (!this.options.pluginGitHubSignIn) return Promise.reject(new Error('This host runs no plugin tools.'))
+    return this.options.pluginGitHubSignIn()
+  }
+  /** Keeps a copy a desktop sent; the socket listener admits only the desktop the launch script recorded. */
+  /** A copy belongs to the desktop that sent it, so each of these is for one client: that desktop's own copies and no other's. */
+  keepPluginAccountCopy(copy: PluginAccountCopy, client: ClientIdentity): Promise<PluginAccountCopyReceipt> {
+    if (!this.options.pluginAccountCopies) return Promise.reject(new Error('This host does not keep account copies.'))
+    return this.options.pluginAccountCopies.keep(copy, client.clientId)
+  }
+  removePluginAccountCopy(accountId: string, client: ClientIdentity): Promise<PluginAccountCopyRemoved> {
+    if (!this.options.pluginAccountCopies) return Promise.reject(new Error('This host does not keep account copies.'))
+    return this.options.pluginAccountCopies.remove(accountId, client.clientId)
+  }
+  pluginAccountCopies(client: ClientIdentity): Promise<HeldPluginAccountCopy[]> {
+    if (!this.options.pluginAccountCopies) return Promise.reject(new Error('This host does not keep account copies.'))
+    return this.options.pluginAccountCopies.list(client.clientId)
+  }
   get supportsDelegationViews(): boolean { return this.options.delegationViews !== undefined }
   /** Read from delegation's own record, never a snapshot, as the desktop's own window reads this computer's (#1029). */
   async delegationViews(threadId: string): Promise<DelegationsRead> {
@@ -545,6 +616,7 @@ export class LocalHostService implements HostService {
   get supportsPullRequestView(): boolean { return this.options.pullRequestView === true }
   get supportsThreadDelete(): boolean { return this.options.threadDelete === true }
   get supportsThreadFileLinks(): boolean { return this.options.threadFileLinks === true }
+  get supportsThreadLinkedFiles(): boolean { return this.options.threadLinkedFiles === true }
   get supportsAgentsView(): boolean { return this.options.agentsView !== undefined }
   get supportsFileStaging(): boolean { return this.options.fileStaging === true }
   /** Reads the threads as the host last published them, without copying them. */
@@ -632,10 +704,20 @@ export class LocalHostService implements HostService {
   subscribeThreadDetail(listener: (update: AgentThreadDetailUpdate) => void): () => void { return this.control.subscribeThreadDetail?.(listener) ?? (() => undefined) }
   questionPage(token: string): QuestionPageTarget | undefined { return this.control.questionPage?.(token) }
   questionPageOpened(token: string): void { this.control.questionPageOpened?.(token) }
-  async attachmentPreview(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult> { return await this.control.attachmentPreview?.(request) ?? null }
-  async threadMedia(request: AgentThreadMediaRequest): Promise<AgentThreadMediaResult> { return this.options.threadMedia === true ? await this.control.threadMedia?.(request) ?? null : null }
+  async attachmentPreview({ edge, ...request }: HostPreviewRequest): Promise<AgentAttachmentPreviewResult> {
+    const whole = async (): Promise<AgentAttachmentPreviewResult> => await this.control.attachmentPreview?.(request) ?? null
+    const reduced = this.options.reducedPictures
+    return edge !== undefined && reduced ? await reduced.read(['preview', request.threadId, request.messageId, request.attachmentId], edge, whole) : await whole()
+  }
+  async threadMedia({ edge, ...request }: HostThreadMediaRequest): Promise<AgentThreadMediaResult> {
+    if (this.options.threadMedia !== true) return null
+    const whole = async (): Promise<AgentThreadMediaResult> => await this.control.threadMedia?.(request) ?? null
+    const reduced = this.options.reducedPictures
+    return edge !== undefined && reduced ? await reduced.read(['thread-media', request.threadId, request.activityId, request.mediaId], edge, whole) : await whole()
+  }
   async threadMediaPart(request: AgentThreadMediaPartRequest): Promise<AgentThreadMediaPart> { return this.options.threadMedia === true ? await this.control.threadMediaPart?.(request) ?? null : null }
   get supportsThreadMedia(): boolean { return this.options.threadMedia === true }
+  get supportsPictureEdges(): boolean { return this.options.reducedPictures !== undefined }
   async attachmentFile(request: HostAttachmentFileRequest): Promise<HostAttachmentFile> { return await this.control.attachmentFile?.(request) ?? null }
   stageAttachment(image: AgentAttachmentUpload): Promise<AgentAttachmentHandle> {
     if (!this.control.stageAttachment) return Promise.reject(new Error(HOST_CANNOT_STAGE_SCREENSHOTS))
@@ -674,6 +756,7 @@ export class LocalHostService implements HostService {
   async threadFiles(request: FileListRequest): Promise<FilesResult<FileListing>> { return this.reads().threadFiles(request) }
   async threadFilePreview(request: FileRequest): Promise<FilesResult<FilePreview>> { return this.reads().threadFilePreview(request) }
   async threadFileLink(request: FileLinkRequest): Promise<FilesResult<FileLinkPreview>> { return this.reads().threadFileLink(request) }
+  async threadLinkedFile(request: LinkedFileRequest): Promise<FilesResult<LinkedFile>> { return this.reads().threadLinkedFile(request) }
   async gitChanges(request: ToolListRequest): Promise<ToolsResult<GitChangeListing>> { return this.reads().gitChanges(request) }
   async gitReview(request: GitReviewRequest): Promise<ToolsResult<GitReview>> { return this.reads().gitReview(request) }
   async subagentPage(request: SubagentPageRequest): Promise<SubagentPage> { return this.reads().subagentPage(request) }

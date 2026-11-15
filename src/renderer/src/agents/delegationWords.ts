@@ -310,6 +310,9 @@ export function delegatedState(view: DelegationView, kind: DelegatedKind, asking
 /** A delegation with nothing more to come while no one sends to it: neither working nor running background work. */
 export const settledDelegation = (view: DelegationView): boolean => view.outcome !== 'working' && view.outcome !== 'background'
 
+/** Finished rows leave the open transcript; refusals, unknown outcomes and pauses still tell the user what needs attention. */
+export const finishedDelegation = (view: DelegationView): boolean => view.outcome === 'answered' || view.outcome === 'failed' || view.outcome === 'stopped'
+
 /**
  * What a delegated thread still at work waits on the user for, as its sidebar row picks it: a permission ahead of a
  * question, and nothing for a closed thread or a delegation that has settled.

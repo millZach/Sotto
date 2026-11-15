@@ -12,7 +12,7 @@ test('project defaults remain editable in Settings → Threads', async () => {
   const { page, app } = launched
   try {
     await page.evaluate(async () => {
-      await window.sotto!.updateSettings({ onboardingComplete: true })
+      await window.sotto!.updateSettings({ onboardingComplete: true, threadListGrouping: 'project' })
       await window.sotto!.agents!.command({ type: 'connect' })
     })
     await page.reload()
@@ -65,7 +65,7 @@ test('a saved host-keyed local project default is migrated before a new thread o
   let launched = await launchSotto('design-threads-empty')
   try {
     const projectId = await launched.page.evaluate(async () => {
-      await window.sotto!.updateSettings({ onboardingComplete: true })
+      await window.sotto!.updateSettings({ onboardingComplete: true, threadListGrouping: 'project' })
       const state = await window.sotto!.agents!.command({ type: 'connect' })
       const id = state.host.projects[0]!.id
       await window.sotto!.updateSettings({ projectThreadWorkingCopyDefaults: { [id]: 'independent' } })

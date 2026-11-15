@@ -58,7 +58,7 @@ export interface PullRequestObservation {
   requiredPassed?: boolean
   /**
    * Where Sotto can read which checks a merge needs: how many of them are still to finish on `head`, one GitHub has not
-   * made yet included, and how many other checks, which no merge waits on, are still running (#2116).
+   * made yet included, and how many other checks are still running (#2116), which the merge train waits for too (#2432).
    */
   pendingChecks?: { required: number; optional: number }
 }
@@ -71,6 +71,10 @@ interface PullRequestAttention { conflicting?: boolean; changesRequested?: boole
   /** What `pendingChecks` said of `head`: words for the news, never a reason to wake Watcher. */
   pending?: { head: string; required: number; optional: number }
   observedAt: string }
+/** Whether checks are still running on the commit whose required checks passed, as the last read that counted them said. */
+function checksStillRunning(said: Pick<PullRequestAttention, 'requiredPassedHead' | 'pending'>): boolean {
+  return said.requiredPassedHead !== undefined && said.pending?.head === said.requiredPassedHead && said.pending.required + said.pending.optional > 0
+}
 /** One thing a pull request says that needs Watcher, and the key that tells it from what Watcher was told before. */
 export type WatcherAttentionKind = 'checks-failed' | 'checks-passed' | 'required-passed' | 'merged' | 'closed' | 'approved' | 'changes-requested' | 'conflicting' | 'remarks' | 'bug-bot-review'
 /** `returns` counts how often the fact came back after it was gone, so checks that fail again on a commit are a new fact. */
@@ -93,7 +97,8 @@ export function attentionFactParts(key: string): { readonly pr: unknown; readonl
  * The pull request facts that wake Watcher by themselves (#2226, Zach's pick on November 5, 2026): checks failed, the
  * required checks passed (all checks passing says they did), and a merge. The rest, approved, a review asking for changes,
  * comments or reviews that moved, a Bug Bot review, a conflict and a close, ride with the next news that wakes it.
- * Required checks passing stays a wake until #2229's READY TO MERGE takes its place, since it is what sends a thread to merge.
+ * The required checks passing is a fact only once no check is still running on that commit (#2432): the merge train waits
+ * for every check, so that or every check passing is what sends a thread to merge, beside its READY TO MERGE (#2229).
  */
 export const WAKING_ATTENTION: ReadonlySet<WatcherAttentionKind> = new Set(['checks-failed', 'checks-passed', 'required-passed', 'merged'])
 /** The kinds evidence does not hold, which an evidence event compares beside its facts. */
@@ -115,9 +120,32 @@ const ENDED_KINDS: ReadonlySet<WatcherAttentionKind> = new Set(['merged', 'close
  */
 interface PullRequestLife { linkedEnded?: true; merged?: true; state?: NonNullable<PullRequestObservation['state']>; closedAt?: number }
 
+/** How long a pull request's or working copy's fact stays fresh after it was read, while its thread is connected. */
+const FRESH_MS = 5 * 60_000
+/** One thread's facts by slot. It counts its changes, so a read made since the last one can be handed out again. */
+class EvidenceSlots extends Map<string, WatcherEvidence> {
+  revision = 0
+  override set(slot: string, item: WatcherEvidence): this { this.revision++; return super.set(slot, item) }
+  override delete(slot: string): boolean { const had = super.delete(slot); if (had) this.revision++; return had }
+  override clear(): void { this.revision++; super.clear() }
+}
+/**
+ * What `read` made of one thread's facts, connected or not: the list, the slots' revision it was made at, and the span of
+ * clock times over which each fact stays as fresh or as stale as the list says.
+ */
+interface EvidenceRead { readonly revision: number; readonly from: number; readonly until: number; readonly items: WatcherEvidence[] }
+/** The read of a thread with no facts, the same list each time. */
+const NO_EVIDENCE = Object.freeze([]) as unknown as WatcherEvidence[]
+
 /** Bounded in-memory facts only. Never keep raw errors, file paths, tool inputs, output or review bodies. */
 export class WatcherEvidenceStore {
-  private readonly entries = new Map<string, Map<string, WatcherEvidence>>()
+  private readonly entries = new Map<string, EvidenceSlots>()
+  /**
+   * Each thread's last read, connected and not, kept with its slots so it goes when they do. Watcher's room reads every
+   * thread's facts on every publish, about 730 times a minute on the owner's laptop on November 13, 2026, and making each
+   * list again was most of what a room build grew by since the Owl before.
+   */
+  private readonly reads = new WeakMap<EvidenceSlots, { connected?: EvidenceRead; disconnected?: EvidenceRead }>()
   private readonly attending = new Map<string, Map<string, PullRequestAttention>>()
   /**
    * Each attention fact of a thread, whether it holds now and how often it came back after it was gone (#1190). In memory
@@ -153,7 +181,7 @@ export class WatcherEvidenceStore {
     const parsed = watcherEvidenceSchema.safeParse({ ...input, id })
     if (!parsed.success) return false
     const item = parsed.data
-    const key = targetKey(item.target), entries = this.entries.get(key) ?? new Map<string, WatcherEvidence>()
+    const key = targetKey(item.target), entries = this.entries.get(key) ?? new EvidenceSlots()
     const previous = entries.get(slot)
     if (slot.endsWith(':checks')) this.notePassing(key, slot, item, previous)
     // Clock-only refreshes preserve ordering; only a real change becomes a recent fact.
@@ -164,20 +192,36 @@ export class WatcherEvidenceStore {
     this.written.add(key)
     return previous?.id !== id
   }
-  /** `key` is the target's key, when the caller has already built it: the room reads every target's evidence on every publish. */
+  /**
+   * `key` is the target's key, when the caller has already built it: the room reads every target's evidence on every publish.
+   * The list is shared and frozen: a read with the thread's facts unchanged, and none of them turned stale or fresh by the
+   * clock since, hands out the very list the read before made.
+   */
   read(target: WatcherThreadTarget, connected = true, now = Date.now(), key = targetKey(target)): WatcherEvidence[] {
     const entries = this.entries.get(key)
-    return [...entries?.entries() ?? []].slice(-EVIDENCE_PROJECTION_MAX).map(([slot, item]) => {
+    if (!entries) return NO_EVIDENCE
+    const reads = this.reads.get(entries), kept = connected ? reads?.connected : reads?.disconnected
+    if (kept && kept.revision === entries.revision && kept.from < now && now <= kept.until) return kept.items
+    // A fact read at `at` is fresh while the clock is at most `at` + FRESH_MS, and stale after: the list holds between the
+    // moment the latest stale one turned, not counting it, and the moment the first fresh one turns.
+    let from = -Infinity, until = Infinity
+    const items = [...entries].slice(-EVIDENCE_PROJECTION_MAX).map(([slot, item]) => {
       const prefix = slot.startsWith('host:github:') ? 'host:github:' : 'pr:'
-      const unread = item.source === 'github' && item.url ? entries?.get(prefix + pullRequestKey(item.url)) : undefined
-      return { ...item,
-        ...connected ? (['github', 'working-copy'].includes(item.source) && now - Date.parse(item.observedAt) > 5 * 60_000 ? { freshness: 'stale' as const } : {})
+      const unread = item.source === 'github' && item.url ? entries.get(prefix + pullRequestKey(item.url)) : undefined
+      const turns = connected && (item.source === 'github' || item.source === 'working-copy') ? Date.parse(item.observedAt) + FRESH_MS : NaN
+      const stale = now > turns
+      if (stale) from = Math.max(from, turns); else if (!Number.isNaN(turns)) until = Math.min(until, turns)
+      return Object.freeze({ ...item,
+        ...connected ? (stale ? { freshness: 'stale' as const } : {})
           : { freshness: 'stale' as const, availability: 'unavailable' as const, reason: 'disconnected' as const },
         ...connected && unread?.availability === 'unavailable' && (unread.reason === 'read-failed' || unread.reason === 'rate-limited') ? { freshness: 'stale' as const, availability: 'unavailable' as const, ...(unread.reason ? { reason: unread.reason } : {}) } : {},
         ...item.bugBotReview && (!connected || unread?.availability === 'unavailable')
           ? { bugBotReview: { ...item.bugBotReview, coverage: 'unknown' as const } } : {},
-      }
+      })
     })
+    Object.freeze(items)
+    this.reads.set(entries, { ...reads, [connected ? 'connected' : 'disconnected']: { revision: entries.revision, from, until, items } })
+    return items
   }
   private notePassing(key: string, slot: string, item: WatcherEvidence, previous: WatcherEvidence | undefined): void {
     const passing = this.passing.get(key) ?? new Map<string, { head: string | undefined; since: string }>()
@@ -288,7 +332,7 @@ export class WatcherEvidenceStore {
     }
     const ended = new Map<string, 'merged' | 'closed'>()
     for (const [pr, { state }] of newest) if (state !== 'open') ended.set(pr, state)
-    const passed = new Set<string>(), heads = new Map<string, Set<string>>()
+    const passed = new Set<string>(), running = new Set<string>(), heads = new Map<string, Set<string>>()
     for (const item of entries?.values() ?? []) {
       if (item.source !== 'github' || !item.url || item.availability !== 'available') continue
       const pr = pullRequestKey(item.url) ?? item.url
@@ -296,6 +340,7 @@ export class WatcherEvidenceStore {
       if (item.headId) heads.set(pr, (heads.get(pr) ?? new Set()).add(item.headId))
       if (item.checksState === 'failed' || item.checksState === 'passed') add(pr, `checks-${item.checksState}`, item.headId ?? '')
       if (item.checksState === 'passed') passed.add(JSON.stringify([pr, item.headId ?? '']))
+      if (item.checksState === 'pending') running.add(JSON.stringify([pr, item.headId ?? '']))
       if (item.githubReviewApproved === true) add(pr, 'approved')
       if (item.bugBotReview) add(pr, 'bug-bot-review', JSON.stringify([item.headId, item.bugBotReview]))
     }
@@ -303,9 +348,12 @@ export class WatcherEvidenceStore {
     for (const [pr, said] of this.attending.get(key) ?? []) {
       if (ended.has(pr)) continue
       // Every check passing already says the required ones did.
-      // Only on the commit the pull request is on now, as evidence last read it.
+      // Only on the commit the pull request is on now, as evidence last read it, and only once no check is still running
+      // there (#2432): the merge train waits for every check, so a pass while others run is no news yet, and once they
+      // finish it says an optional one did not pass, which holds no merge.
       const onHead = said.requiredPassedHead !== undefined && (!heads.get(pr)?.size || heads.get(pr)!.has(said.requiredPassedHead))
-      if (onHead && !passed.has(JSON.stringify([pr, said.requiredPassedHead]))) add(pr, 'required-passed', said.requiredPassedHead!)
+      const onThatHead = JSON.stringify([pr, said.requiredPassedHead])
+      if (onHead && !checksStillRunning(said) && !running.has(onThatHead) && !passed.has(onThatHead)) add(pr, 'required-passed', said.requiredPassedHead!)
       if (said.conflicting) add(pr, 'conflicting')
       if (said.changesRequested) add(pr, 'changes-requested')
       if (said.remarksMoved) add(pr, 'remarks', String(said.remarksMoved))
@@ -447,7 +495,7 @@ export class WatcherEvidenceStore {
     this.attending.set(key, byPr)
     this.written.add(key)
     return after.conflicting !== before.conflicting || after.changesRequested !== before.changesRequested || after.remarksMoved !== before.remarksMoved
-      || after.requiredPassedHead !== before.requiredPassedHead
+      || after.requiredPassedHead !== before.requiredPassedHead || checksStillRunning(after) !== checksStillRunning(before)
   }
   /** Paired observations share fact replacement rules, but shell link summaries cannot erase owning-host facts. */
   paired(fact: WatcherEvidence): boolean {

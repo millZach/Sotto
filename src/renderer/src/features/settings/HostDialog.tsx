@@ -354,7 +354,7 @@ export function HostDialog({ mode, bridge, state, tailscale, agentSetup = true, 
       // The connected card offers to start the new host at boot, one consented press (ADR-0054).
       boot={outcome === 'connected' && addedHost ? <HostBootOffer host={addedHost} view={state?.boot?.find(item => item.id === addedHost.id)} bridge={bridge} /> : undefined}
       onOpenApproval={() => void openApproval()} onOpenGuide={openGuide} tailnet={outcome === 'connected' && tailnet.state === 'todo' ? undefined : tailnet} /> : <>
-    <p className="hosts-dialog__intro tt-paragraph">{editing ? t`Saving a new choice changes the setting on ${editingName} as well. Saving changed SSH settings connects again over SSH to check them. Either may sign in over SSH, and Tailscale may ask you to approve that.` : t`Pick a machine Sotto can reach over SSH, then add it yourself or have an agent set it up.`}</p>
+    <p className="hosts-dialog__intro tt-paragraph">{editing ? t`Saving a new choice changes the setting on ${editingName} as well. Saving changed SSH settings connects again over SSH to check them. Either may sign in over SSH, and Tailscale may ask you to approve that.` : agentSetup ? t`Pick a machine Sotto can reach over SSH, then add it yourself or have an agent set it up.` : t`Pick a machine Sotto can reach over SSH, then add it.`}</p>
     {!editing && tailscale ? <TailscalePrompt control={tailscale} /> : null}
     <form ref={formRef} className="hosts-dialog__fields" onSubmit={event => { event.preventDefault(); go() }}
       onKeyDown={event => { if (isCompositionKey(event.nativeEvent)) { event.stopPropagation(); return } const target = event.target as HTMLElement; if (event.key === 'Enter' && target instanceof HTMLInputElement && target.type !== 'radio') { event.preventDefault(); go() } }}>
@@ -367,7 +367,7 @@ export function HostDialog({ mode, bridge, state, tailscale, agentSetup = true, 
         <p className="tt-field__description tt-paragraph" id={hintId}>{editing ? t`An alias from your SSH configuration, or a host name.`
           : <>{t`A host name, an alias from your SSH configuration or user@server.`} <button type="button" className="hosts-devices__back tt-focusable" disabled={fieldsDisabled} onClick={chooseFromDevices}>{t`Choose from your devices`}</button></>}</p>
       </div> : <DevicePicker devices={devices?.devices ?? null} failed={devices?.failed === true} tailscale={tailscale?.summary ?? devices?.tailscale ?? null} saved={saved} value={picked}
-        onPick={pick} onOther={() => setEntry('typed')} disabled={fieldsDisabled} autoFocus={entry === 'back'} />}
+        onPick={pick} onOther={() => setEntry('typed')} disabled={fieldsDisabled} autoFocus={entry === 'back'} cameBack={entry === 'back'} />}
       {!editing && agentSetup ? <HostAddChoices value={how} onChange={value => { howChosen.current = true; setHow(value) }} choice={choice} modelId={setupModel}
         onModel={setModelId} disabled={fieldsDisabled} /> : null}
       {serveShown ? <p className="tt-field__description tt-paragraph" id={serveId}><Trans>Sotto turns on Tailscale Serve on the host, on your tailnet only, so this computer can reach it without signing in over SSH each time. When the tailnet doesn’t answer, Sotto uses SSH.</Trans></p> : null}

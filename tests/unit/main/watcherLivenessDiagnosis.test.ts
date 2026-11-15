@@ -19,6 +19,8 @@ function claudeWork(thread: AgentThread, working: number): void {
     id: `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`, label: 'Synthetic background agent', type: 'subagent' as const,
   }))
 }
+/** A parent whose own turn is still running, which may go quiet; an idle one only waiting on its work does not (#1152). */
+function turnRunning(thread: AgentThread): void { thread.status = 'running'; thread.lastTurn = { id: 'turn-1', status: 'running' } }
 function ciMonitor(thread: AgentThread, working: number): void {
   thread.monitoring = working ? [{ id: '00000000-0000-4000-8000-000000000099', label: 'Synthetic CI monitoring' }] : []
 }
@@ -68,7 +70,7 @@ it.each([
   ['Codex working subagent roster', (thread: AgentThread) => roster(thread, 4), 4],
   ['provider-confirmed CI monitoring', (thread: AgentThread) => ciMonitor(thread, 1), 1],
   ['Codex roster and stable CI monitoring', (thread: AgentThread) => { roster(thread, 4); ciMonitor(thread, 1) }, 5],
-] as const)('wakes once after twenty quiet minutes when the parent is idle with %s', async (_, work, count) => {
+] as const)('wakes once after twenty minutes, with its held finish and no quiet news, when the parent is idle with %s', async (_, work, count) => {
   const f = fixture(work)
   await f.advance(WATCHER_BATCH_MS)
   // The finish waits for its work to settle, or for twenty minutes, before it needs Watcher (#1190).
@@ -76,18 +78,18 @@ it.each([
   await f.advance(WATCHER_QUIET_MS - WATCHER_BATCH_MS - 1)
   expect(f.events()).toEqual([])
   await f.advance(1 + WATCHER_BATCH_MS)
-  expect(f.quiet()).toEqual([expect.objectContaining({ target: centerTarget, turnId: 'turn-1' })])
-  // Quiet and the held finish go in one wake-up.
+  // The held finish is the one check (#1152, Zach's pick on November 11, 2026): no quiet news beside it.
+  expect(f.quiet()).toEqual([])
   expect(f.delivered).toHaveLength(1)
   expect(f.events().find(event => event.kind === 'turn-finished')?.backgroundWorkCount).toBe(count)
   expect(f.events().some(event => event.kind === 'work-settled')).toBe(false)
-  // An unchanged shell does not restart the episode or keep prompting forever.
+  // An unchanged shell does not keep prompting forever.
   f.observe(); await f.advance(44 * 60_000)
-  expect(f.quiet()).toHaveLength(1)
+  expect(f.delivered).toHaveLength(1)
 })
 
-it('resets the idle parent quiet deadline when its retained Codex roster makes progress', async () => {
-  const f = fixture(thread => roster(thread, 4))
+it('resets a running parent\'s quiet deadline when its retained Codex roster makes progress', async () => {
+  const f = fixture(thread => { turnRunning(thread); roster(thread, 4) })
   await f.advance(19 * 60_000)
   // The activity window need not contain this assignment: the retained roster is authoritative.
   roster(f.thread, 3); f.observe()
@@ -114,9 +116,10 @@ it('keeps CI monitoring active after the parent agents complete', async () => {
   roster(f.thread, 0); f.observe()
   await f.advance(60_000 + WATCHER_BATCH_MS)
   expect(f.events().some(event => event.kind === 'work-settled')).toBe(false)
-  expect(f.quiet()).toHaveLength(0)
+  // Its held finish went at twenty minutes, still owed work-settled news; no quiet news comes (#1152).
+  expect(f.events().filter(event => event.kind === 'turn-finished')).toHaveLength(1)
   await f.advance(WATCHER_QUIET_MS - 60_000)
-  expect(f.quiet()).toHaveLength(1)
+  expect(f.quiet()).toHaveLength(0)
   ciMonitor(f.thread, 0); f.observe(); await f.advance(WATCHER_BATCH_MS)
   expect(f.events().filter(event => event.kind === 'work-settled')).toHaveLength(1)
 })
@@ -133,19 +136,19 @@ it('preserves owed completion across restart without calling unknown agents acti
   expect(f.events().filter(event => event.kind === 'work-settled')).toHaveLength(1)
 })
 
-it('starts a fresh quiet episode when the provider confirms restart-unknown agents working again', async () => {
+it('starts a fresh quiet episode when the provider confirms restart-unknown agents working again in a running turn', async () => {
   const f = fixture(thread => roster(thread, 0, 4))
   await f.advance(44 * 60_000)
   expect(f.quiet()).toHaveLength(0)
-  roster(f.thread, 4); f.observe()
+  turnRunning(f.thread); roster(f.thread, 4); f.observe()
   await f.advance(WATCHER_QUIET_MS - 1)
   expect(f.quiet()).toHaveLength(0)
   await f.advance(1 + WATCHER_BATCH_MS)
   expect(f.quiet()).toHaveLength(1)
 })
 
-it('requires a fresh connected episode after reconnecting to an idle parent with working agents', async () => {
-  const f = fixture(thread => roster(thread, 4))
+it('requires a fresh connected episode after reconnecting to a running parent with working agents', async () => {
+  const f = fixture(thread => { turnRunning(thread); roster(thread, 4) })
   await f.advance(19 * 60_000)
   f.snapshot.connected = false; f.observe()
   await f.advance(44 * 60_000)
@@ -160,13 +163,14 @@ it('requires a fresh connected episode after reconnecting to an idle parent with
 it.each([
   ['Codex working subagent roster', (thread: AgentThread) => roster(thread, 4)],
   ['Claude confirmed background work', (thread: AgentThread) => claudeWork(thread, 4)],
-] as const)('groups an idle parent with %s as Working, then Quiet when its quiet news is due', async (_, work) => {
+] as const)('groups an idle parent with %s as Working, then Quiet once its held finish is due', async (_, work) => {
   // Bug Bot finding 4 on #1157: the wake called the parent active while list_threads still grouped it Idle.
   const f = fixture(work)
   await f.advance(WATCHER_BATCH_MS)
   expect(f.group()).toBe('Working')
   await f.advance(WATCHER_QUIET_MS - WATCHER_BATCH_MS + 1 + WATCHER_BATCH_MS)
-  expect(f.quiet()).toHaveLength(1)
+  // Its held finish wakes Watcher, not quiet news (#1152); the list still says it has been quiet.
+  expect(f.events().filter(event => event.kind === 'turn-finished')).toHaveLength(1)
   expect(f.group()).toBe('Quiet')
 })
 

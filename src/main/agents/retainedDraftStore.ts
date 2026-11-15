@@ -13,6 +13,12 @@ const retainedDraftSchema = z.object({ hostId: z.uuid(), registrationId: z.uuid(
   sendAttempt: z.object({ commandId: z.string().min(1).max(512), draftId: z.uuid(), requestId: z.string().nullable(),
     packetDigest: z.string().regex(/^[a-f0-9]{64}$/u).optional() }).strict().optional() }).strict()
 export type RetainedDraft = z.infer<typeof retainedDraftSchema>
+/** Freezes plain data and everything in it: a draft's words, its attachments and the feedback and sizes they carry. */
+function freezeWhole(value: unknown): void {
+  if (value === null || typeof value !== 'object' || Object.isFrozen(value)) return
+  for (const item of Object.values(value)) freezeWhole(item)
+  Object.freeze(value)
+}
 const retainedDraftsSchema = z.array(retainedDraftSchema).max(1024)
 const owner = (hostId: string, threadId: string): string => JSON.stringify([hostId, threadId])
 
@@ -171,8 +177,21 @@ export class RetainedDraftStore {
     const edit = this.edits.get(owner(hostId, threadId))
     return edit && this.acceptsEdit(edit) ? structuredClone(edit) : undefined
   }
+  /** A copy of the host's drafts, for a caller that may change what it is given. */
   list(hostId: string): RetainedDraft[] {
-    return structuredClone([...this.edits.values()].filter(edit => edit.hostId === hostId && this.acceptsEdit(edit)))
+    return structuredClone([...this.read(hostId)])
+  }
+  /**
+   * The host's drafts as the store holds them, without a copy, for a reader that only reads: the socket service's view, which
+   * every Watcher pass and router build reads. Never change what this returns. A draft is never edited in place: a save
+   * replaces it, so a reader holding one holds what it read. Copying them on every read cost main 0.8 s a minute on the
+   * owner's laptop on November 13, 2026, about 1.6 ms a read, twice a read of the view. Each draft handed out is frozen, with
+   * all it holds, so a reader that writes into one fails rather than changes the user's unsent words.
+   */
+  read(hostId: string): readonly Readonly<RetainedDraft>[] {
+    const drafts = [...this.edits.values()].filter(edit => edit.hostId === hostId && this.acceptsEdit(edit))
+    for (const { draft } of drafts) if (!Object.isFrozen(draft)) freezeWhole(draft)
+    return drafts
   }
   put(edit: RetainedDraft): void {
     if (this.parksFeature(edit) || !this.acceptsEdit(edit)) return

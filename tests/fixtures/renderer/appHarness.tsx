@@ -1,10 +1,10 @@
 import React, { StrictMode } from 'react'
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, beforeEach, expect, vi } from 'vitest'
+import { afterEach, expect, vi } from 'vitest'
 import { App } from '../../../src/renderer/src/App'
 import { appearancePreview } from '../../../src/renderer/src/state/appearance'
-import type { MicrophoneTestController } from '../../../src/renderer/src/features/onboarding/microphoneTest'
+import type { MicrophoneTestController } from '../../../src/renderer/src/audio/microphoneTest'
 import { AppProvider, useApp, type AppActions, type AppControllerFactory, type AppNavigation } from '../../../src/renderer/src/state/AppContext'
 import { type SottoBridge } from '../../../src/shared/contracts'
 import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
@@ -124,38 +124,15 @@ function renderApp(
   return render(strict ? <StrictMode>{content}</StrictMode> : content)
 }
 
-async function reachMicrophoneStep(user: ReturnType<typeof userEvent.setup>): Promise<void> {
-  await waitFor(() => expect(screen.getByRole('heading', { name: /talk to your computer and your coding agents/i })).toBeVisible())
-  await user.click(screen.getByRole('button', { name: /get started/i }))
-  await waitFor(() => expect(screen.getByRole('heading', { name: /choose how sotto looks/i })).toBeVisible())
-  await user.click(screen.getByRole('button', { name: /continue/i }))
-  await waitFor(() => expect(screen.getByRole('heading', { name: /check your microphone/i })).toBeVisible())
+/** First-run setup's note (ADR-0200), once the app has settled on its first one. */
+async function firstSetupNote(): Promise<HTMLElement> {
+  return screen.findByRole('dialog', { name: 'Talk to your computer and your coding agents' })
 }
 
-/** Clicks whichever of Continue or Skip for now is offered until Finish setup is reached, without pressing it. */
-async function finishRemainingSteps(user: ReturnType<typeof userEvent.setup>): Promise<void> {
-  while (screen.queryByRole('button', { name: 'Finish setup' }) === null) {
-    await user.click(screen.getByRole('button', { name: /^(continue|skip for now)$/i }))
-  }
-}
-
-async function completeReadySetup(user: ReturnType<typeof userEvent.setup>): Promise<void> {
-  await reachMicrophoneStep(user)
-  await user.click(screen.getByRole('button', { name: /test microphone/i }))
-  await waitFor(() => expect(screen.getByText(/Sotto heard you/i)).toBeVisible())
-  await user.click(screen.getByRole('button', { name: /continue/i }))
-  await waitFor(() => expect(screen.getByRole('heading', { name: /choose a speech model/i })).toBeVisible())
-  await finishRemainingSteps(user)
-  await user.click(screen.getByRole('button', { name: /finish setup/i }))
-}
-
-function setupThreadsTourTests(): void {
-  // jsdom lays nothing out, and the tour passes over a part with no box, so every element reports one here.
-  let layout: { mockRestore: () => void } | undefined
-  beforeEach(() => {
-    layout = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({ top: 20, left: 20, width: 200, height: 40, right: 220, bottom: 60, x: 20, y: 20, toJSON: () => ({}) } as DOMRect)
-  })
-  afterEach(() => layout?.mockRestore())
+/** Ends first-run setup's walk from its first note, with Skip setup. */
+async function skipSetup(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+  await firstSetupNote()
+  await user.click(screen.getByRole('button', { name: 'Skip setup' }))
 }
 
 afterEach(() => {
@@ -169,6 +146,6 @@ afterEach(() => {
   localStorage.clear()
 })
 
-export { OK, heardStart, createBridge, createController, shell, NavigationProbe, openPage, renderApp, reachMicrophoneStep, finishRemainingSteps, completeReadySetup, setupThreadsTourTests }
+export { OK, heardStart, createBridge, createController, shell, NavigationProbe, openPage, renderApp, firstSetupNote, skipSetup }
 
 export { deferred } from '../deferred'

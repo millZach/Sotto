@@ -9,7 +9,7 @@ import { withSotto } from '../fixtures/designCaptureProfile'
 import { evidenceDirectory } from '../fixtures/evidence'
 import { onReleaseTrack, OWL_E2E_VERSION } from './support/releaseTrack'
 import { captureWindow } from './support/sottoCapture'
-import { openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { openPage, openThreads, setupNote, type LaunchedSotto } from './support/sottoLaunch'
 import { holdOwlSky } from './support/sottoOwl'
 import { resizeContentWindow } from './support/sottoWindow'
 
@@ -211,22 +211,19 @@ test.describe('Sotto Owl branding on the built app', () => {
     }))
   })
 
-  test('owl build in the strip over first-run setup', async () => {
+  test('owl build in the sidebar under first-run setup', async () => {
     await onReleaseTrack('owl', () => withSotto({ onboardingComplete: false, appearance: 'dark' }, async (launched) => {
       const { page } = launched
-      await expect(page.getByRole('button', { name: 'Get started', exact: true })).toBeVisible()
+      // A new profile opens straight on the Threads page with setup's first note over it (ADR-0200), so the brand is
+      // the sidebar's top row, as on any other visit to Threads.
+      await expect(setupNote(page)).toBeVisible()
       await resizeContentWindow(launched, 1280, 800)
       await settle(page)
-      const strip = page.getByRole('banner')
-      const tile = strip.getByRole('img', { name: 'Sotto Owl', exact: true })
-      await expect(tile).toBeVisible()
-      await expect(strip.getByLabel('Sotto application')).toHaveCount(0)
-      const box = (await tile.locator('svg').boundingBox())!, stripBox = (await strip.boundingBox())!
-      expect([Math.round(box.width), Math.round(box.height)]).toEqual([24, 24])
-      expect(Math.abs(box.y + box.height / 2 - (stripBox.y + stripBox.height / 2))).toBeLessThanOrEqual(1)
+      const row = page.getByRole('complementary', { name: 'Thread sidebar' }).locator('.thread-nav__top')
+      const brand = await checkBrand(row, 'owl')
       await expect.poll(() => windowTitles(launched)).toEqual({ window: 'Sotto Owl', document: 'Sotto Owl' })
       await captureWindow(launched.app, resolve(evidenceRoot, 'first-run-owl-dark-1280x800.png'))
-      recorded.set('owl-first-run-strip', { brand: 'tile', size: [Math.round(box.width), Math.round(box.height)] })
+      recorded.set('owl-first-run-sidebar', brand)
     }))
   })
 

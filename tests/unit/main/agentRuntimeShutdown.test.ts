@@ -17,6 +17,8 @@ import { deferred } from '../../fixtures/deferred'
 import { DesktopDelegationRelay } from '../../../src/main/agents/delegationRelayDesktop'
 import { DelegationService } from '../../../src/main/agents/delegation'
 import { WatcherService } from '../../../src/main/agents/watcher'
+import { PiHost } from '../../../src/main/agents/pi'
+import type { PiSignIn } from '../../../src/main/agents/piSignIn'
 
 const roots: string[] = []
 async function directory(): Promise<string> {
@@ -173,6 +175,66 @@ describe('host runtime shutdown', () => {
     providerRelease.resolve(); reasonerRelease.resolve()
     await assertion
     expect(dispose).toHaveBeenCalledOnce()
+  })
+
+  it.each(['close', 'prepareForShutdown'] as const)('drains providers and the reasoner after a Pi sign-in close fails during %s', async method => {
+    const providerRelease = deferred(), reasonerRelease = deferred()
+    const failure = new Error('Pi sign-in shutdown failed')
+    const signIn = { close: vi.fn(async () => { throw failure }) } as unknown as PiSignIn
+    const reasoner = { ...e2eAgentReasoner, close: vi.fn(() => reasonerRelease.promise) }
+    const provider = Object.assign(new E2EAgentHost(), { closed: vi.fn(() => providerRelease.promise) })
+    const host = await runtime({ heldProviders: new Set(), reasoner,
+      providers: { codex: provider, claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost() },
+      createPiHost: (directory, options) => new PiHost(directory, options), createPiSignIn: () => signIn })
+    const dispose = vi.spyOn(host.agentHost, 'dispose')
+    const assertion = expect(host[method]()).rejects.toBe(failure)
+    try {
+      await Promise.resolve()
+      expect(signIn.close).toHaveBeenCalledOnce()
+      expect(reasoner.close).toHaveBeenCalledOnce()
+      expect(provider.closed).toHaveBeenCalledOnce()
+      expect(dispose).not.toHaveBeenCalled()
+    } finally {
+      providerRelease.resolve(); reasonerRelease.resolve()
+      await assertion
+      if (method === 'prepareForShutdown') await expect(host.close()).rejects.toBe(failure)
+    }
+  })
+
+  it.each(['close', 'prepareForShutdown'] as const)('starts draining providers while Pi sign-in is still closing during %s', async method => {
+    const release = deferred()
+    const signIn = { close: vi.fn(() => release.promise) } as unknown as PiSignIn
+    const reasoner = { ...e2eAgentReasoner, close: vi.fn(async () => undefined) }
+    const host = await runtime({ heldProviders: new Set(), reasoner,
+      providers: { codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost() },
+      createPiHost: (directory, options) => new PiHost(directory, options), createPiSignIn: () => signIn })
+    let finished = false
+    const closing = host[method]().then(() => { finished = true })
+    try {
+      await Promise.resolve()
+      expect(signIn.close).toHaveBeenCalledOnce()
+      expect(reasoner.close).toHaveBeenCalledOnce()
+      expect(finished).toBe(false)
+    } finally {
+      release.resolve(); await closing; await host.close()
+    }
+    expect(signIn.close).toHaveBeenCalledOnce()
+  })
+
+  it('never constructs the desktop Pi sign-in service on a headless host', async () => {
+    const createPiSignIn = vi.fn(), createPiHost = vi.fn()
+    const host = await runtime({ runsAs: 'headless-host', heldProviders: new Set(), createPiSignIn, createPiHost,
+      providers: { codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost() } })
+    try { expect(createPiHost).not.toHaveBeenCalled(); expect(createPiSignIn).not.toHaveBeenCalled() } finally { await host.close() }
+  })
+
+  it('closes Pi sign-in after startup fails without replacing the startup error', async () => {
+    const failure = new Error('Watcher recovery failed')
+    vi.spyOn(WatcherService.prototype, 'recover').mockRejectedValueOnce(failure)
+    const signIn = { close: vi.fn(async () => { throw new Error('Pi sign-in shutdown failed') }) } as unknown as PiSignIn
+    await expect(runtime({ watcherEnabled: true, heldProviders: new Set(), createPiHost: (directory, options) => new PiHost(directory, options), createPiSignIn: () => signIn,
+      providers: { codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost() } })).rejects.toBe(failure)
+    expect(signIn.close).toHaveBeenCalledOnce()
   })
 
   it('preserves an unreadable workspace when initialization fails and cleanup runs', async () => {

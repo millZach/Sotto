@@ -197,7 +197,7 @@ test('workspace sends a manual prompt to the selected thread without granting ma
 test('settled work stays off the active shelf, with real timestamps and an expandable shelf', async () => {
   const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-workspace-' })).directory
   const fixture = designThreadsFixture()
-  await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true }))
+  await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, threadListGrouping: 'project' }))
   await writeFile(join(profile, 'agents.json'), JSON.stringify({
     configuration: { ...defaultAgentConfiguration(), enabled: true, },
     queue: [{ id: 'stale-settled', threadId: 'release-notes', kind: 'ready', text: 'Old closed thread update.', createdAt: new Date().toISOString(), deferred: true }],

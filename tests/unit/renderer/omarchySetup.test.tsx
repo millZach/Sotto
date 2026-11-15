@@ -3,8 +3,6 @@ import { act, cleanup, render, renderHook, screen, waitFor } from '@testing-libr
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { OmarchySetupPanel, useOmarchySetup } from '../../../src/renderer/src/features/omarchy/OmarchySetup'
-import { Onboarding, type OnboardingProps } from '../../../src/renderer/src/features/onboarding/Onboarding'
-import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
 import { setupBridgeFixture, setupState } from '../../fixtures/renderer/omarchySetup'
 import { SettingsView } from '../../../src/renderer/src/features/settings/SettingsView'
 import { baseProps } from '../../fixtures/renderer/settingsViewHarness'
@@ -242,48 +240,5 @@ describe('Omarchy setup rows', () => {
     await user.click(screen.getByRole('button', { name: 'Try the owl again' }))
     expect(f.calls).toEqual([{ type: 'setup', pieces: ['owl'], keys: 'unconfirmed' }])
     await waitFor(() => expect(document.activeElement).not.toBe(document.body))
-  })
-})
-
-const props: OnboardingProps = { settings: DEFAULT_SETTINGS, speechModels: [], speechModelChoice: null, speechModel: null, onChooseSpeechModel: vi.fn(), onRetrySpeechModel: vi.fn(),
-  microphoneState: 'ready', shortcut: 'Ctrl+Shift+Space', platform: 'linux', onUpdateSettings: vi.fn(async () => true),
-  onRequestMicrophone: vi.fn(), onComplete: vi.fn() }
-describe('Linux first-run step', () => {
-  it('re-detects a hand setup removed outside Sotto when Back and Get started reopen the step', async () => {
-    const f = setupBridgeFixture(setupState('manual')), user = userEvent.setup()
-    const get = vi.spyOn(f.bridge, 'get')
-    vi.stubGlobal('sotto', { omarchySetup: f.bridge })
-    render(<Onboarding {...props} />)
-    await user.click(screen.getByRole('button', { name: 'Get started' }))
-    await screen.findAllByText('Set up by hand')
-    const reads = get.mock.calls.length
-    await user.click(screen.getByRole('button', { name: 'Back' }))
-    get.mockResolvedValue(setupState())
-    await user.click(screen.getByRole('button', { name: 'Get started' }))
-    await screen.findByRole('button', { name: 'Set up all three' })
-    expect(get.mock.calls.length).toBeGreaterThan(reads)
-  })
-  it('sits after Welcome, can be skipped, and changes Shortcut once the keys are ready', async () => {
-    const f = setupBridgeFixture(), user = userEvent.setup()
-    vi.stubGlobal('sotto', { omarchySetup: f.bridge })
-    render(<Onboarding {...props} />)
-    await user.click(screen.getByRole('button', { name: 'Get started' }))
-    expect(screen.getByRole('heading', { name: 'Set up Sotto in Omarchy' })).toHaveFocus()
-    expect(screen.getByLabelText('Setup progress: step 2 of 10')).toBeVisible()
-    await user.click(await screen.findByRole('button', { name: 'Set up all three' }))
-    await user.click(screen.getByRole('button', { name: 'Continue' }))
-    expect(screen.getByRole('heading', { name: 'Choose how Sotto looks' })).toBeVisible()
-    for (let n = 0; n < 3; n++) await user.click(screen.getByRole('button', { name: /^(Continue|Skip for now)$/ }))
-    expect(screen.getByRole('heading', { name: 'Hold F9 to try it' })).toBeVisible()
-  })
-  it.each(['win32', 'darwin'] as const)('keeps the nine-step %s journey with Look after Welcome', async platform => {
-    const get = vi.fn()
-    vi.stubGlobal('sotto', { omarchySetup: { get } })
-    const user = userEvent.setup()
-    render(<Onboarding {...props} platform={platform} />)
-    await user.click(screen.getByRole('button', { name: 'Get started' }))
-    expect(screen.getByRole('heading', { name: 'Choose how Sotto looks' })).toBeVisible()
-    expect(screen.getByLabelText('Setup progress: step 2 of 9')).toBeVisible()
-    expect(get).not.toHaveBeenCalled()
   })
 })

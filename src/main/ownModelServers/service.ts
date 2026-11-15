@@ -1,12 +1,13 @@
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import {
-  addRequestSchema, checkRequestSchema, checkSavedRequestSchema, OWN_SERVER_ID_PREFIX, OWN_SERVER_WORDS, ownServerAddress, ownServerListSchema, ownServerSchema,
+  chooseModelsSchema, replaceKeySchema, addRequestSchema, checkRequestSchema, checkSavedRequestSchema, OWN_SERVER_ID_PREFIX, OWN_SERVER_WORDS, ownServerAddress, ownServerListSchema, ownServerSchema,
   ownServerRefusalWords, removeRequestSchema, type AddResult, type CheckResult, type FoundModel, type OwnServer, type OwnServerModel,
   type OwnServerRefusal, type RemoveResult,
 } from '../../shared/ownModelServers'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { checkOwnServer, type OwnServerCheckOptions } from './check'
+import { ModelCatalogue, mergeModelFacts } from './catalogue'
 
 /** Stable event names the user's own model servers are logged by. No address, name, model, key or server answer ever is. */
 export type OwnServerEvent = 'own-server-checked' | 'own-server-check-refused' | 'own-server-added' | 'own-server-add-refused'
@@ -64,6 +65,10 @@ export interface OwnServersOptions {
   readonly forgetHermesKey?: (sourceId: string) => Promise<void>
   /** The check, which a test replaces. */
   readonly check?: (address: string, key: string | undefined) => Promise<CheckResult>
+  readonly catalogue?: ModelCatalogue
+  readonly readKey?: (id: string) => Promise<string | undefined>
+  /** Replaces an existing Hermes file copy while its adapter is held, without creating a new keeper. */
+  readonly replaceHeldHermesKey?: (id: string, key: string) => Promise<void>
   readonly checkOptions?: OwnServerCheckOptions
   readonly log?: (event: OwnServerEvent) => void
   /** A new server's ID suffix for its address, which a test fixes. */
@@ -89,10 +94,12 @@ const refusal = (reason: OwnServerRefusal, message: string): Refusal => ({ statu
  * removing a server with Sotto's OpenCode told each time. Adds and removes take turns, so two never interleave.
  */
 export class OwnServers {
+  private readonly catalogueSource: ModelCatalogue
   private readonly store: AtomicJsonStore<OwnServer[]>
   private loaded: Promise<OwnServer[]> | undefined
   private turn: Promise<unknown> = Promise.resolve()
   constructor(private readonly options: OwnServersOptions) {
+    this.catalogueSource = options.catalogue ?? new ModelCatalogue()
     this.store = new AtomicJsonStore(join(options.directory, OWN_SERVERS_FILE), ownServerListSchema.parse, () => [])
   }
 
@@ -122,30 +129,55 @@ export class OwnServers {
   /** The servers as they are saved, in the order they were added. */
   async list(): Promise<OwnServer[]> { return [...await this.servers()] }
 
+  catalogue(): ReturnType<ModelCatalogue['load']> { return this.catalogueSource.load() }
+
+  private enrich(result: CheckResult, catalogueId?: string, previous: readonly FoundModel[] = []): CheckResult {
+    if (result.status !== 'ok') return result
+    const catalogue = this.catalogueSource.provider(result.address, catalogueId)
+    const known = new Map(previous.map(model => [model.id, model]))
+    return { ...result, models: result.models.map(model => mergeModelFacts(model, catalogue?.models.get(model.id) ?? known.get(model.id))) }
+  }
+
   /** Checks the server at an address the user typed, with the key they gave. Nothing is saved. */
   async check(request: unknown): Promise<CheckResult> {
-    const { address, key } = checkRequestSchema.parse(request)
-    return this.checked(await this.run(address, key))
+    const { address, key, catalogueId } = checkRequestSchema.parse(request)
+    return this.checked(this.enrich(await this.run(address, key), catalogueId))
   }
 
   /**
-   * Check again: the saved server as it is saved. Keys stay with providers, so a server that asks for its key has
+   * Check again: the saved server using a readable Hermes key when available. A server that asks for a key has
    * answered, and says so with `keyKept`: its models could not be read again, so they are the saved ones. The time is
    * how long it took to ask, since a check that is asked for a key sends nothing more.
    */
   async checkSaved(request: unknown): Promise<CheckResult> {
     const { id } = checkSavedRequestSchema.parse(request)
-    const server = (await this.servers()).find(item => item.id === id)
-    if (!server) return this.checked(refusal('not-found', OWN_SERVER_WORDS.notFound))
-    const now = this.options.now ?? Date.now
-    const started = now()
-    const result = await this.run(server.address, undefined)
-    if (server.keyed && result.status === 'refused' && (result.reason === 'key-needed' || result.reason === 'key-refused')) {
-      const answeredMs = Math.min(600_000, Math.max(0, Math.round(now() - started)))
-      return this.checked({ status: 'ok', address: server.address, kind: 'openai-compatible', models: server.models.map(savedAsFound), answeredMs, keyKept: true })
-    }
-    return this.checked(result)
+    return this.inTurn(async () => {
+      const servers = await this.servers(), server = servers.find(item => item.id === id)
+      if (!server) return this.checked(refusal('not-found', OWN_SERVER_WORDS.notFound))
+      // A hosted API's saved facts come from the catalogue too, and Check again may be pressed before Add ever opened.
+      if (server.address.startsWith('https://')) await this.catalogueSource.load()
+      const now = this.options.now ?? Date.now, started = now()
+      const key = server.keyed ? await this.options.readKey?.(id) : undefined
+      const result = this.enrich(await this.run(server.address, key), server.catalogueId, server.inventory ?? server.models)
+      if (server.keyed && !key && result.status === 'refused' && (result.reason === 'key-needed' || result.reason === 'key-refused')) {
+        const answeredMs = Math.min(600_000, Math.max(0, Math.round(now() - started)))
+        return this.checked({ status: 'ok', address: server.address, kind: 'openai-compatible', models: (server.inventory ?? server.models).map(savedAsFound), answeredMs, keyKept: true })
+      }
+      if (result.status === 'ok') {
+        const before = new Set((server.inventory ?? server.models).map(model => model.id))
+        const models = new Map(server.models.map(model => [model.id, model]))
+        for (const model of result.models) if (model.context !== undefined) models.set(model.id, runnable(model))
+        const updated: OwnServer = { ...server, models: [...models.values()], inventory: result.models,
+          keptModelIds: server.keptModelIds ?? server.models.map(model => model.id),
+          newModelIds: result.models.filter(model => !before.has(model.id)).map(model => model.id), checkedAt: new Date(now()).toISOString() }
+        await this.save(servers.map(item => item.id === id ? updated : item))
+        this.options.openCode()?.outdated()
+        void this.options.openCode()?.catalogAgain().catch(() => false)
+      }
+      return this.checked(result)
+    })
   }
+
   private run(address: string, key: string | undefined): Promise<CheckResult> {
     return this.options.check ? this.options.check(address, key) : checkOwnServer(address, key, this.options.checkOptions)
   }
@@ -187,8 +219,13 @@ export class OwnServers {
     for (let next = 2; taken.has(id); next++) id = `${base}-${next}`
     // A model listed twice is declared once, as OpenCode keys them by ID.
     const models = [...new Map(request.models.map(model => [model.id, model])).values()]
+    if (request.keptModelIds?.some(id => !models.some(model => model.id === id))) return refusal('failed', OWN_SERVER_WORDS.failed)
     // Checked whole before it is written, so the record never holds what it could not read back.
     const server: OwnServer = ownServerSchema.parse({ id, name: request.name, address: place.address, keyed: key !== undefined, models,
+      ...(request.catalogueId ? { catalogueId: request.catalogueId } : {}),
+      ...(this.catalogueSource.provider(place.address, request.catalogueId)?.doc ? { helpUrl: this.catalogueSource.provider(place.address, request.catalogueId)!.doc } : {}),
+      ...(request.inventory ? { inventory: request.inventory, checkedAt: new Date((this.options.now ?? Date.now)()).toISOString() } : {}),
+      ...(request.keptModelIds ? { keptModelIds: request.keptModelIds } : {}),
       ...(key !== undefined ? { keyKeeper: openCode ? 'opencode' : 'hermes' } : {}) })
     await this.save([...servers, server])
     openCode?.outdated()
@@ -214,6 +251,53 @@ export class OwnServers {
     } else if (openCode && !await openCode.catalogAgain().catch(() => false)) this.log('own-server-catalog-unread')
     this.log('own-server-added')
     return { status: 'ok', server }
+  }
+
+  chooseModels(request: unknown): Promise<AddResult> {
+    const parsed = chooseModelsSchema.parse(request)
+    return this.inTurn(async () => {
+      const servers = await this.servers(), server = servers.find(item => item.id === parsed.id)
+      if (!server) return refusal('not-found', OWN_SERVER_WORDS.notFound)
+      const models = new Map(server.models.map(model => [model.id, model]))
+      for (const model of parsed.models ?? []) {
+        const before = models.get(model.id)
+        // Choosing models changes a missing context only. Discovery, not this dialog, owns saved capabilities.
+        models.set(model.id, before ? { ...before, context: model.context } : model)
+      }
+      if (parsed.keptModelIds.some(id => !models.has(id))) return refusal('failed', OWN_SERVER_WORDS.failed)
+      const updated = ownServerSchema.parse({ ...server, models: [...models.values()], keptModelIds: [...new Set(parsed.keptModelIds)] })
+      await this.save(servers.map(item => item.id === parsed.id ? updated : item))
+      this.options.openCode()?.outdated()
+      void this.options.openCode()?.catalogAgain().catch(() => false)
+      return { status: 'ok', server: updated }
+    })
+  }
+
+  replaceKey(request: unknown): Promise<AddResult> {
+    const { id, key } = replaceKeySchema.parse(request)
+    return this.inTurn(async () => {
+      const server = (await this.servers()).find(item => item.id === id)
+      if (!server || !server.keyed) return refusal('not-found', OWN_SERVER_WORDS.notFound)
+      // Validation precedes any write to either keeper. A refused new key cannot overwrite the old one.
+      const result = await this.run(server.address, key)
+      if (result.status !== 'ok') return result
+      const openCode = this.options.openCode(), hermes = this.options.hermes?.()
+      if (server.keyKeeper === 'hermes') {
+        if (!hermes) return refusal('opencode-not-running', OWN_SERVER_WORDS.openCodeNotRunning)
+        await hermes.keepKey(id, key)
+      } else {
+        if (!openCode?.running()) return refusal('opencode-not-running', OWN_SERVER_WORDS.openCodeNotRunning)
+        if (!await openCode.signInWithKey(id, key)) return refusal('sign-in-failed', OWN_SERVER_WORDS.signInFailed(server.name))
+        try {
+          if (hermes) await hermes.keepKey(id, key)
+          else await this.options.replaceHeldHermesKey?.(id, key)
+        } catch {
+          this.log('own-server-sign-in-failed')
+          return refusal('replaced-partly', ownServerRefusalWords('replaced-partly', '', server.name))
+        }
+      }
+      return { status: 'ok', server }
+    })
   }
 
   /**
@@ -268,6 +352,10 @@ export class OwnServers {
 }
 
 /** A saved model as a check would have found it. */
-function savedAsFound(model: OwnServerModel): FoundModel {
-  return { id: model.id, name: model.name, context: model.context, ...(model.output !== undefined ? { output: model.output } : {}), thinking: model.thinking, images: model.images }
+function savedAsFound(model: FoundModel): FoundModel { return { ...model } }
+
+export function runnable(model: FoundModel): OwnServerModel {
+  if (model.context === undefined) throw new Error('A kept model needs its context.')
+  return { ...model, context: model.context, thinking: model.thinking !== false, images: model.images === true,
+    reasoningEfforts: model.reasoningEfforts ?? (model.thinking === false ? [] : ['default']) }
 }

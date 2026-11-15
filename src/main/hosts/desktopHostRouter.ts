@@ -15,9 +15,9 @@ import { heldProviderRefusal, heldProvidersOption, type HeldProviders } from '..
 import { watcherRoomInputs } from '../agents/watcherRoomInput'
 import { BABYSITTING_RETIRED } from '../agents/babysitting'
 import { visibleWatcherState, watcherThreadVisible, withoutThreads } from '../../shared/watcherVisibility'
-import { HOST_CANNOT_STAGE_VIDEOS, mediaTileScale, type AgentAttachmentFileUpload, type AgentAttachmentStageFileRequest, parsePublicProviderEntityId, providerIdSchema } from '../../shared/agents'
+import { HOST_CANNOT_STAGE_VIDEOS, PROVIDER_RESULT_UNCONFIRMED, mediaTileScale, type AgentAttachmentFileUpload, type AgentAttachmentStageFileRequest, parsePublicProviderEntityId, providerIdSchema } from '../../shared/agents'
 import { modelInForce } from '../../shared/modelLineup'
-import type { WatcherHostControl, WatcherHostRead, WatcherRemoteHosts, WatcherRoomThreadInput } from '../../shared/watcherHost'
+import { ProjectAdditionUnconfirmed, type WatcherHostControl, type WatcherHostRead, type WatcherRemoteHosts, type WatcherRoomThreadInput } from '../../shared/watcherHost'
 import { BRING_BACK_INTERFACE_WORDS, bringBackInInterfaceLanguage, hostCannotStageScreenshotsWords, inInterfaceLanguage, threadStartsUnsupportedWords, watcherDisabledWords } from '../../shared/interfaceWords'
 import { randomUUID } from 'node:crypto'
 import { isAgentThreadDetailDelta } from '../../shared/agentThreadDetail'
@@ -35,7 +35,7 @@ import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
 import { needsConfirmationReceipt, type GitPullRequestListRead, type GitPullRequestListRequest, type GitPullRequestRead, type GitPullRequestRequest, type PullRequestConfirmationRequest } from '../../shared/gitPullRequests'
 import type { HostFoldersClientRequest, HostFoldersRequest, HostFoldersResult } from '../../shared/hostFolders'
-import type { FileLinkPreview, FileLinkRequest, FileListing, FileListRequest, FilePath, FilePreview, FileRequest, FilesResult } from '../../shared/files'
+import type { FileLinkPreview, FileLinkRequest, FileListing, FileListRequest, FilePath, FilePreview, FileRequest, FilesResult, LinkedFile, LinkedFileRequest } from '../../shared/files'
 import type { GitChangeListing, GitPathRequest, GitReview, GitReviewRequest } from '../../shared/gitChanges'
 import type { SubagentAssignmentsPage, SubagentAssignmentsRequest, SubagentPage, SubagentPageRequest } from '../../shared/subagents'
 import type { ToolListRequest, ToolsResult } from '../../shared/tools'
@@ -57,7 +57,7 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   subscribeBrowserFrames?(listener: (frame: HostBrowserFrame) => void): () => void
   name: string
   kind: 'local' | 'remote'
-  service: Pick<HostService, 'subscribeWatcherTell' | 'answerWatcherTell' | 'shell' | 'activeSelection' | 'replyView' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'supportsWatcherOutcomes' | 'supportsWatcherCheckQueue' | 'supportsWatcherMuse' | 'supportsWatcherCursor' | 'supportsHostFacts' | 'supportsWorkerSwarms' | 'hostFacts' | 'supportsProjectOrigins' | 'projectOrigins' | 'supportsHostDelegation' | 'desktopDefaults' | 'supportsBranchMoves' | 'branchMove' | 'supportsThreadMove' | 'supportsThreadMoveSource' | 'supportsThreadMoveKeep' | 'threadMove' | 'supportsThreadStarts' | 'supportsFailureSeen' | 'startHandover' | 'supportsThreadDelete' | 'supportsBringBack' | 'threadPrompts' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads' | 'supportsDelegationViews' | 'delegationViews' | 'delegationBrief' | 'subscribeDelegationViews' | 'supportsCheckQueueViews' | 'checkQueue' | 'subscribeCheckQueue' | 'supportsNextPrompts' | 'nextPrompts' | 'subscribeNextPrompts' | 'setNextPromptsWanted' | 'tellProductEventAnswer' | 'supportsDelegationRelay' | 'subscribeDelegationRelay' | 'answerDelegationRelay' | 'delegationRelayNews' | 'delegationRelayName' | 'supportsWatcherCheckStop' | 'supportsWatcherNewOwner' | 'supportsProjectSetup' | 'setUpProject' | 'supportsDelegationRemote' | 'delegationRemoteAsk' | 'subscribeDelegationRemoteNews' | 'supportsDelegationBranchStarts'>
+  service: Pick<HostService, 'subscribeWatcherTell' | 'answerWatcherTell' | 'shell' | 'activeSelection' | 'replyView' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'supportsWatcherOutcomes' | 'supportsWatcherCheckQueue' | 'supportsWatcherMuse' | 'supportsWatcherCursor' | 'supportsHostFacts' | 'supportsWorkerSwarms' | 'hostFacts' | 'supportsProjectOrigins' | 'projectOrigins' | 'supportsHostDelegation' | 'desktopDefaults' | 'supportsPluginGitHubSignIn' | 'pluginGitHubSignIn' | 'supportsPluginAccountCopies' | 'supportsPluginMailCopies' | 'keepPluginAccountCopy' | 'removePluginAccountCopy' | 'pluginAccountCopies' | 'supportsBranchMoves' | 'branchMove' | 'supportsThreadMove' | 'supportsThreadMoveSource' | 'supportsThreadMoveKeep' | 'threadMove' | 'supportsThreadStarts' | 'supportsFailureSeen' | 'startHandover' | 'supportsThreadDelete' | 'supportsProjectGitInit' | 'supportsBringBack' | 'threadPrompts' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads' | 'supportsDelegationViews' | 'delegationViews' | 'delegationBrief' | 'subscribeDelegationViews' | 'supportsCheckQueueViews' | 'checkQueue' | 'subscribeCheckQueue' | 'supportsNextPrompts' | 'nextPrompts' | 'subscribeNextPrompts' | 'setNextPromptsWanted' | 'tellProductEventAnswer' | 'supportsDelegationRelay' | 'subscribeDelegationRelay' | 'answerDelegationRelay' | 'delegationRelayNews' | 'delegationRelayName' | 'supportsWatcherCheckStop' | 'supportsWatcherNewOwner' | 'supportsProjectSetup' | 'setUpProject' | 'supportsDelegationRemote' | 'delegationRemoteAsk' | 'subscribeDelegationRemoteNews' | 'supportsDelegationBranchStarts'>
   refreshRequestAnswer?(decisionId: string, target: HostAnswerTarget): Promise<void>
   detail(threadId: string): AgentThreadDetail | null | Promise<AgentThreadDetail | null>
   preview(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
@@ -145,7 +145,7 @@ function withoutClientUpdates(state: AgentState): AgentState {
 
 /** Which surface each tool read is for, as its refusals name it. */
 const TOOL_SURFACES: Record<keyof HostThreadToolReads, 'files' | 'changes' | 'agents'> = {
-  threadFiles: 'files', threadFilePreview: 'files', threadFileLink: 'files', gitChanges: 'changes', gitReview: 'changes', subagentPage: 'agents', subagentAssignments: 'agents',
+  threadFiles: 'files', threadFilePreview: 'files', threadFileLink: 'files', threadLinkedFile: 'files', gitChanges: 'changes', gitReview: 'changes', subagentPage: 'agents', subagentAssignments: 'agents',
 }
 /** A tool read's refusals, one whole sentence per surface so each language can word it. */
 const toolReadRefusal = {
@@ -223,6 +223,9 @@ async function usageDeadline<T>(read: () => Promise<T>): Promise<T> {
 export const REQUEST_DRAFT_PASS_INTERVAL_MS = 500
 
 /** Routing happens in main, before host-local IDs or privileged command schemas are decoded. */
+/** The most router picks one shell carries, which is what its schema takes (`agentStateSchema.routerPicks`); the newest are kept. */
+const ROUTER_PICKS_SHOWN_MAX = 1_000
+
 export class DesktopHostRouter {
   /** Saved host identities keep an offline computer visible when it has no live thread connection. */
   private usageSavedHostIds: readonly string[] = []
@@ -262,7 +265,8 @@ export class DesktopHostRouter {
         hostId: host.hostId, name: host.name, ...host.clientId !== undefined ? { clientId: host.clientId } : {},
         facts: host.service.supportsHostFacts === true && host.service.hostFacts !== undefined,
         origins: host.service.supportsProjectOrigins === true && host.service.projectOrigins !== undefined,
-        setUp: host.service.supportsProjectSetup === true && host.service.setUpProject !== undefined, control: host.service.supportsWatcherControl === true, reads: host.service.supportsWatcherReads === true, standingWatch: host.service.supportsWatcherStandingWatch === true,
+        setUp: host.service.supportsProjectSetup === true && host.service.setUpProject !== undefined,
+        gitInit: host.service.supportsProjectGitInit === true, control: host.service.supportsWatcherControl === true, reads: host.service.supportsWatcherReads === true, standingWatch: host.service.supportsWatcherStandingWatch === true,
         workSettled: host.service.supportsWatcherWorkSettled === true, outcomes: host.service.supportsWatcherOutcomes === true,
         // The host keeps its own check queue, which a Watcher start marked as a check waits in (#1312).
         checks: host.service.supportsWatcherCheckQueue === true,
@@ -322,6 +326,20 @@ export class DesktopHostRouter {
       setUpProject: async (id, request) => {
         const host = connection(id)
         return host.service.supportsProjectSetup === true && host.service.setUpProject ? host.service.setUpProject(request) : undefined
+      },
+      // The window's own create-project, sent without moving the window's selection: Watcher chose no project to show.
+      addProject: async (id, command) => {
+        const host = connection(id)
+        if (command.gitInit && host.service.supportsProjectGitInit !== true) throw new Error(`Update ${host.name} before Watcher sets up Git in a new project there. Nothing was added.`)
+        let result: AgentState
+        try { result = await host.service.command({ type: 'create-project', ...command }, desktopWindowClient()) }
+        catch (error) {
+          // A request that went and was never answered may have made the project there; one never sent made nothing.
+          if (error instanceof HostRequestUnanswered && error.stage !== 'unsent') throw new ProjectAdditionUnconfirmed(error.message)
+          throw error
+        }
+        if (result.error) throw result.error === PROVIDER_RESULT_UNCONFIRMED ? new ProjectAdditionUnconfirmed(result.error) : new Error(result.error)
+        return result.host.projects
       },
       branchMoves: id => {
         const entry = this.hosts.get(id)?.connection
@@ -436,6 +454,8 @@ export class DesktopHostRouter {
      * null when it cannot read it. Present only while `inline-media` is on; without it no picture is read.
      */
     mediaThumbnail?: (dataUrl: string, scale: number) => string | null
+    /** Where those thumbnails are kept: shared with the copies made for phones, so all of them keep to one budget in bytes. */
+    mediaTiles?: KeptThumbnails
     /**
      * This desktop's Owl answer for Restart stopped threads (ADR-0144), read once at start: with it, the window offers
      * Babysit pull request on no host's threads, and refuses a press that reaches it anyway.
@@ -1003,6 +1023,8 @@ export class DesktopHostRouter {
       busyThreadIds: entries.flatMap(item => item.state.busyThreadIds ?? []),
       ...(entries.some(item => item.state.unconfirmedSettings?.length) ? { unconfirmedSettings: entries.flatMap(item => item.state.unconfirmedSettings ?? []) } : {}),
       ...(entries.some(item => item.state.nextTurnSettings?.length) ? { nextTurnSettings: entries.flatMap(item => item.state.nextTurnSettings ?? []) } : {}),
+      // Every host's own, so this computer's routed threads keep their pick while another machine is the one selected (ADR-0207).
+      ...(entries.some(item => item.state.routerPicks?.length) ? { routerPicks: entries.flatMap(item => item.state.routerPicks ?? []).slice(-ROUTER_PICKS_SHOWN_MAX) } : {}),
       activeThreadId: this.selectedThreadId === undefined ? base.activeThreadId : this.selectedThreadId,
       activeProjectId: this.selectedProjectId ?? base.activeProjectId,
       ...(this.notice ? { error: this.notice.message } : {}),
@@ -1303,7 +1325,9 @@ export class DesktopHostRouter {
     return connection.preview({ ...request, threadId: id! })
   }
   /** The thumbnails made for this window, so a tile scrolled back into view is neither read nor decoded again (ADR-0170). */
-  private readonly mediaTiles = new KeptThumbnails()
+  private readonly ownMediaTiles = new KeptThumbnails()
+  /** Where they are kept: beside the copies main makes for phones, when main shares that budget, else apart. */
+  private get mediaTiles(): KeptThumbnails { return this.options.mediaTiles ?? this.ownMediaTiles }
   /**
    * One picture a thread's record names (ADR-0170), from the host that runs the thread: whole for the viewer, or at tile
    * size for a tile. The thumbnail is made here, so the window never decodes a whole picture to draw a tile, and a headless
@@ -1494,6 +1518,7 @@ export class DesktopHostRouter {
   async threadFiles(request: FileListRequest): Promise<FilesResult<FileListing>> { return answeredAsRefusal(() => this.threadToolRead('threadFiles', request)) }
   async threadFilePreview(request: FileRequest): Promise<FilesResult<FilePreview>> { return answeredAsRefusal(() => this.threadToolRead('threadFilePreview', request)) }
   async threadFileLink(request: FileLinkRequest): Promise<FilesResult<FileLinkPreview>> { return answeredAsRefusal(() => this.threadToolRead('threadFileLink', request)) }
+  async threadLinkedFile(request: LinkedFileRequest): Promise<FilesResult<LinkedFile>> { return answeredAsRefusal(() => this.threadToolRead('threadLinkedFile', request)) }
   async gitChanges(request: ToolListRequest): Promise<ToolsResult<GitChangeListing>> { return answeredAsRefusal(() => this.threadToolRead('gitChanges', request)) }
   async gitReview(request: GitReviewRequest): Promise<ToolsResult<GitReview>> { return answeredAsRefusal(() => this.threadToolRead('gitReview', request)) }
   subagentPage(request: SubagentPageRequest): Promise<SubagentPage> { return this.threadToolRead('subagentPage', request) }

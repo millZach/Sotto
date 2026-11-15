@@ -1,5 +1,5 @@
-/* Your own model servers (ADR-0124, layout B of prototype/local-model-server): the group on Settings › Providers, its
-   Add a server dialog, and the model menu's Your own server… row. Every colour is a role token; filled cards, no pills (ADR-0110). */
+/* APIs and your own model servers (ADR-0124): the group on Settings › Providers, its approved Add dialog,
+   and the model-menu shortcut. Every colour is a role token; filled cards, no pills (ADR-0110). */
 .own-servers { min-width: 0; }
 .own-servers__empty { margin: 0; padding: 16px 20px; border-radius: var(--tt-radius-lg); background: var(--tt-card); color: var(--tt-text-muted); font-size: var(--tt-type-body); line-height: 1.55; }
 .own-servers__rows { margin: 0; padding: 4px 20px; border-radius: var(--tt-radius-lg); background: var(--tt-card); list-style: none; }
@@ -22,7 +22,7 @@
 .own-servers__failed .provider-detail__error { margin: 0; justify-self: stretch; }
 @container providers (width < 480px) { .own-server { grid-template-columns: minmax(0, 1fr); } .own-server__actions { justify-content: flex-start; } }
 
-/* The dialog: one step in phase 1, address and check, then the models found. */
+/* The dialog shares its shell across API, key, address and model pages. */
 .own-dialog { display: flex; flex-direction: column; width: min(540px, 100%); max-height: calc(100vh - 40px); min-height: 0; padding: 22px 24px 20px; }
 .own-dialog .tt-dialog__description { margin: 6px 0 14px; line-height: 1.55; }
 .own-dialog__body { flex: 1 1 auto; min-height: 0; overflow-y: auto; margin: 0 -24px; padding: 2px 24px 4px; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
@@ -68,3 +68,46 @@
 /* The provider list follows the group with the room a group takes from the one before it. */
 .providers-settings > .settings-group + .providers-list { margin-top: 26px; }
 .providers-settings > .settings-group:first-child { margin-top: 4px; }
+
+/* The API picker keeps search and actions fixed around one scrolling list of unfilled rows. */
+.own-dialog { width: min(620px, 100%); }
+.own-dialog[data-page='apis'] { height: min(640px, calc(100vh - 40px)); overflow: hidden; }
+.own-dialog[data-page='apis'] .own-dialog__body { display: flex; flex-direction: column; overflow: hidden; }
+.own-api-search { position: relative; flex: none; height: 38px; color: var(--tt-text-muted); }
+.own-api-search > svg { position: absolute; left: 10px; top: 50%; translate: 0 -50%; pointer-events: none; }
+.own-api-search .tt-input { width: 100%; height: 100%; min-height: 0; padding: 0 10px 0 34px; border-color: var(--tt-field-border); background: var(--tt-canvas); }
+.own-api-search .tt-input:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 1px; }
+.own-api-list { flex: 1 1 auto; min-height: 0; margin-top: 8px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+.own-api-option { display: block; width: 100%; min-height: 36px; padding: 0 10px; text-align: left; color: var(--tt-text); background: transparent; border: 0; border-radius: var(--tt-radius-row); font-size: var(--tt-type-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.own-api-option:hover, .own-api-option:focus-visible { background: var(--tt-hover); }
+.own-api-option:focus-visible { box-shadow: inset 0 0 0 2px var(--tt-focus-ring); outline: 0; }
+.own-api-section { margin: 0; padding: 14px 10px 4px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
+.own-api-section:first-child { padding-top: 4px; }
+.own-api-message { margin: 0; padding: 6px 10px; color: var(--tt-text-2); font-size: var(--tt-type-small); }
+.own-api-privacy { flex: none; margin: 0; border-top: 1px solid var(--tt-hairline); padding-top: 10px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); line-height: 1.5; }
+.own-dialog [data-another-address] { margin-right: auto; }
+.own-key { display: flex; gap: 6px; }
+.own-key input { flex: 1; min-width: 0; }
+.own-model-toolbar { display: flex; justify-content: space-between; align-items: center; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
+.own-model-filters { display: flex; gap: 6px; margin: 8px 0; }
+.own-model-filters button { background: var(--tt-card); color: var(--tt-text-muted); border: 0; border-radius: var(--tt-radius-control); padding: 6px 10px; font-size: var(--tt-type-small); }
+.own-model-filters button[aria-pressed='true'] { color: var(--tt-text); background: var(--tt-card-inset); }
+.own-model { gap: 3px; padding: 8px 12px; }
+.own-model__choice { display: flex; align-items: center; gap: 8px; font-size: var(--tt-type-body); min-width: 0; }
+.own-model__choice strong { overflow-wrap: anywhere; }
+.own-model__choice input { flex: none; accent-color: var(--tt-accent); }
+.own-model__choice small { margin-left: auto; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
+.own-model__id { color: var(--tt-text-muted); font: var(--tt-type-caption)/1.3 var(--tt-font-mono); overflow-wrap: anywhere; }
+.own-model summary { width: fit-content; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
+.own-model summary:focus-visible, .own-model-filters button:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; }
+.own-model__details { display: grid; gap: 3px; margin-top: 6px; font-size: var(--tt-type-caption); color: var(--tt-text-muted); }
+.own-model-count { margin-right: auto; font-size: var(--tt-type-small); color: var(--tt-text-muted); }
+.own-field a { color: var(--tt-accent); font-size: var(--tt-type-caption); font-weight: 400; }
+@media (max-height: 600px) {
+  .own-dialog { max-height: calc(100vh - 20px); padding: 14px 20px 12px; }
+  .own-dialog[data-page='apis'] .own-dialog__body { margin-inline: -20px; padding-inline: 20px; }
+  .own-dialog .tt-dialog__description { margin-bottom: 8px; }
+  .own-dialog .tt-dialog__actions { padding-top: 8px; }
+  .own-models { gap: 5px; }
+  .own-model { padding: 6px 10px; }
+}

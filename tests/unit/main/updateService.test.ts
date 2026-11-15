@@ -1,8 +1,9 @@
 // @vitest-environment node
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   UPDATE_CHECK_INTERVAL_MS,
+  UPDATE_RETRY_DELAYS_MS,
   UPDATE_STARTUP_DELAY_MS,
   UpdateService,
   describeProblem,
@@ -782,5 +783,154 @@ describe('the version a host may run before Sotto restarts (ADR-0077 decision 6)
     closed.resolve()
     await flush()
     expect(order).toEqual(['close windows', 'error'])
+  })
+})
+
+/**
+ * Zach's pick, November 10, 2026: Sotto checks for an update at start and then once an hour, so a new build is offered
+ * within the hour without a press, and Check for updates still asks at once. A failed check is tried again 4, 8 and 16
+ * minutes later, and then only at the hourly check until one answers. What one check asks depends on the track (stable
+ * on Windows makes three requests, Owl two: `owlUpdates.test.ts` holds both), so the count of checks is what is held
+ * here. The counts run on a fake clock through the service's own timers.
+ */
+describe('the hourly update check', () => {
+  const MINUTE = 60 * 1_000
+  const HOUR = 60 * MINUTE
+  const DAY = 24 * HOUR
+  const [FIRST, SECOND, THIRD] = UPDATE_RETRY_DELAYS_MS as [number, number, number]
+  afterEach(() => { vi.useRealTimers() })
+
+  /** A feed that can be taken away, and the service on its own default timers. */
+  function hourly(settings: Partial<AppSettings> = {}) {
+    vi.useFakeTimers()
+    const feed = { down: false }
+    const updater = createFakeUpdater({ check: async (send) => {
+      if (feed.down) throw new Error('net::ERR_INTERNET_DISCONNECTED')
+      send({ type: 'checking' })
+      send({ type: 'not-available' })
+    } })
+    const { service } = createService({ createUpdater: () => updater.adapter }, settings)
+    return { feed, updater, service }
+  }
+
+  it('checks once at start and then 24 times a day, where every four minutes made 360', async () => {
+    expect(UPDATE_CHECK_INTERVAL_MS).toBe(HOUR)
+    const { updater, service } = hourly()
+    service.start()
+    await vi.advanceTimersByTimeAsync(UPDATE_STARTUP_DELAY_MS)
+    expect(updater.calls.check).toBe(1)
+    await vi.advanceTimersByTimeAsync(DAY - UPDATE_STARTUP_DELAY_MS)
+    expect(updater.calls.check).toBe(1 + 24)
+    service.dispose()
+  })
+
+  it('makes three checks more in a day with no connection than with one: 28, where an answered day makes 25', async () => {
+    const { feed, updater, service } = hourly()
+    feed.down = true
+    service.start()
+    await vi.advanceTimersByTimeAsync(DAY)
+    expect(updater.calls.check).toBe(1 + 3 + 24)
+    expect(service.status().phase.phase).toBe('failed')
+    service.dispose()
+  })
+
+  it('asks again 4, 8 and 16 minutes after a check that failed, then only at the hourly check', async () => {
+    expect(UPDATE_RETRY_DELAYS_MS).toEqual([4 * MINUTE, 8 * MINUTE, 16 * MINUTE])
+    const { feed, updater, service } = hourly()
+    feed.down = true
+    service.start()
+    // The check at start fails, as on a computer that woke before its connection did.
+    await vi.advanceTimersByTimeAsync(UPDATE_STARTUP_DELAY_MS)
+    expect(service.status().phase.phase).toBe('failed')
+    for (const [index, delay] of [FIRST, SECOND, THIRD].entries()) {
+      await vi.advanceTimersByTimeAsync(delay - 1)
+      expect(updater.calls.check).toBe(1 + index)
+      await vi.advanceTimersByTimeAsync(1)
+      expect(updater.calls.check).toBe(2 + index)
+    }
+    // The three are spent: nothing more is asked until the hourly check, which fails and asks nothing sooner either.
+    await vi.advanceTimersByTimeAsync(HOUR - UPDATE_STARTUP_DELAY_MS - FIRST - SECOND - THIRD - 1)
+    expect(updater.calls.check).toBe(4)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(updater.calls.check).toBe(5)
+    await vi.advanceTimersByTimeAsync(HOUR - 1)
+    expect(updater.calls.check).toBe(5)
+    service.dispose()
+  })
+
+  it('goes back to the hour once a check answers, and gives a later failure all three retries again', async () => {
+    const { feed, updater, service } = hourly()
+    feed.down = true
+    service.start()
+    await vi.advanceTimersByTimeAsync(UPDATE_STARTUP_DELAY_MS + FIRST)
+    expect(updater.calls.check).toBe(2)
+    // The connection comes back: the second retry answers, and nothing more is asked until the hourly check.
+    feed.down = false
+    await vi.advanceTimersByTimeAsync(SECOND)
+    expect(updater.calls.check).toBe(3)
+    expect(service.status().phase).toEqual({ phase: 'up-to-date' })
+    await vi.advanceTimersByTimeAsync(HOUR - UPDATE_STARTUP_DELAY_MS - FIRST - SECOND - 1)
+    expect(updater.calls.check).toBe(3)
+    // It goes again before the hourly check, which fails: the retries start over from four minutes.
+    feed.down = true
+    await vi.advanceTimersByTimeAsync(1)
+    expect(updater.calls.check).toBe(4)
+    await vi.advanceTimersByTimeAsync(FIRST + SECOND + THIRD)
+    expect(updater.calls.check).toBe(7)
+    await vi.advanceTimersByTimeAsync(HOUR - FIRST - SECOND - THIRD - 1)
+    expect(updater.calls.check).toBe(7)
+    service.dispose()
+  })
+
+  it('checks at once on a press, before the first check and between the hourly ones', async () => {
+    const { updater, service } = hourly()
+    service.start()
+    await service.check('manual')
+    expect(updater.calls.check).toBe(1)
+    await vi.advanceTimersByTimeAsync(UPDATE_STARTUP_DELAY_MS + 30 * MINUTE)
+    expect(updater.calls.check).toBe(2)
+    await service.check('manual')
+    expect(updater.calls.check).toBe(3)
+    // A press does not move the hourly check.
+    await vi.advanceTimersByTimeAsync(30 * MINUTE - UPDATE_STARTUP_DELAY_MS)
+    expect(updater.calls.check).toBe(4)
+    service.dispose()
+  })
+
+  it('asks again after a press that failed, and asks nothing then while automatic checks are off', async () => {
+    const on = hourly()
+    on.service.start()
+    await vi.advanceTimersByTimeAsync(UPDATE_STARTUP_DELAY_MS)
+    on.feed.down = true
+    await on.service.check('manual')
+    expect(on.updater.calls.check).toBe(2)
+    on.feed.down = false
+    await vi.advanceTimersByTimeAsync(FIRST - 1)
+    expect(on.updater.calls.check).toBe(2)
+    await vi.advanceTimersByTimeAsync(1)
+    expect(on.updater.calls.check).toBe(3)
+    expect(on.service.status().phase).toEqual({ phase: 'up-to-date' })
+    on.service.dispose()
+    vi.useRealTimers()
+
+    const off = hourly({ autoUpdateCheck: false })
+    off.feed.down = true
+    off.service.start()
+    await off.service.check('manual')
+    await vi.advanceTimersByTimeAsync(DAY)
+    expect(off.updater.calls.check).toBe(1)
+    off.service.dispose()
+  })
+
+  it('cancels a waiting retry on dispose', async () => {
+    const { feed, updater, service } = hourly()
+    feed.down = true
+    service.start()
+    await vi.advanceTimersByTimeAsync(UPDATE_STARTUP_DELAY_MS)
+    expect(vi.getTimerCount()).toBe(2)
+    service.dispose()
+    expect(vi.getTimerCount()).toBe(0)
+    await vi.advanceTimersByTimeAsync(DAY)
+    expect(updater.calls.check).toBe(1)
   })
 })

@@ -262,3 +262,38 @@ it('takes the newest reading across this host’s slot and a paired host’s whe
   clock += 60_000; local('closed')
   expect(kinds()).toEqual(['closed'])
 })
+it('hands out a thread\'s read again until its facts change or the clock turns one stale', () => {
+  const store = new WatcherEvidenceStore(), at = Date.parse(centerTime), other = { ...centerTarget, threadId: 'other-worker' }
+  const github = { source: 'github' as const, observedAt: centerTime, freshness: 'fresh' as const, availability: 'available' as const, url, fact: 'pull-request-observed' as const }
+  store.put('pr:github.com/o/r/pull/1', { ...github, target: centerTarget })
+  store.put('turn', { target: centerTarget, source: 'native-turn', observedAt: centerTime, freshness: 'fresh', availability: 'available', fact: 'turn-finished', turnId: 'turn' })
+  store.put('pr:github.com/o/r/pull/1', { ...github, target: other })
+  const first = store.read(centerTarget, true, at)
+  expect(Object.isFrozen(first) && first.every(item => Object.isFrozen(item))).toBe(true)
+  // A thread with no facts reads the same empty list each time.
+  const none = { ...centerTarget, threadId: 'no-facts' }
+  expect(store.read(none, true, at)).toEqual([])
+  expect(store.read(none, false, at)).toBe(store.read(none, true, at))
+  expect(store.read(centerTarget, true, at + 60_000)).toBe(first)
+  // Read connected and not, each keeps its own.
+  const away = store.read(centerTarget, false, at)
+  expect(away).not.toBe(first)
+  expect(away.every(item => item.availability === 'unavailable')).toBe(true)
+  expect(store.read(centerTarget, true, at)).toBe(first)
+  // The pull request's fact is fresh up to five minutes after it was read, and stale after; the turn's never turns.
+  expect(store.read(centerTarget, true, at + 5 * 60_000)).toBe(first)
+  const stale = store.read(centerTarget, true, at + 5 * 60_000 + 1)
+  expect(stale).not.toBe(first)
+  expect(stale.map(item => [item.source, item.freshness])).toEqual([['github', 'stale'], ['native-turn', 'fresh']])
+  expect(store.read(centerTarget, true, at + 60 * 60_000)).toBe(stale)
+  // An earlier clock, as a caller with its own may pass, reads the fact fresh again.
+  expect(store.read(centerTarget, true, at)[0]!.freshness).toBe('fresh')
+  // A change to one thread's facts makes its read again and leaves another thread's.
+  const before = store.read(other, true, at)
+  store.put('turn', { target: centerTarget, source: 'native-turn', observedAt: centerTime, freshness: 'fresh', availability: 'available', fact: 'turn-failed', turnId: 'turn-2', failureCategory: 'provider-turn-failed' })
+  expect(store.read(centerTarget, true, at).some(item => item.turnId === 'turn-2')).toBe(true)
+  expect(store.read(other, true, at)).toBe(before)
+  // A link the thread no longer has takes its facts with it.
+  store.observeThread({ id: centerTarget.threadId, projectId: 'project', title: 'Worker', modelId: 'model', status: 'running', requests: [], messages: [] }, centerTarget, centerTime)
+  expect(store.read(centerTarget, true, at).some(item => item.source === 'github')).toBe(false)
+})

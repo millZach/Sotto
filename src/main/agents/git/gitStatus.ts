@@ -4,6 +4,7 @@ import { pullRequestKey } from '../../../shared/gitPullRequests'
 import type { GitPullRequestSummary, GitStatus } from '../../../shared/gitStatus'
 import { GIT_REFS_MAX_LIMIT, type GitRef, type GitRefsPage, type GitRefsRequest } from '../../../shared/gitRefs'
 import { GIT_CHANGED_FILES_MAX, type GitChangedFile, type GitChangedFiles } from '../../../shared/gitChangedFiles'
+import { ghLaunch } from './ghCommand'
 import { launchProcess, stopProcessTree } from './gitLauncher'
 import { baseRepository, GitHubHosts, GitHubRateLimit, GitHubRateLimited, isOwnHead, readGitHubRemotes, sameRepository, type GitHubAsk, type GitHubRepository } from './github'
 import { HEAD_GATHER_MS, PullRequestHeads } from './githubPullRequestHeads'
@@ -33,8 +34,10 @@ const REDIRECTING_GIT_VARIABLES = ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE',
 /** Thrown when Git itself is missing: no status is published then, rather than a folder called "not a repository". */
 export class GitUnavailableError extends Error {}
 
-export const runGitStatusCommand: RunGitCommand = (cwd, command, args, options = {}) =>
-  spawnCommand(cwd, command, command === 'git' ? ['--no-optional-locks', '-c', 'core.quotePath=false', ...args] : [...args], options)
+export const runGitStatusCommand: RunGitCommand = (cwd, command, args, options = {}) => command === 'gh'
+  // gh where the CLI lookup finds it, which a host's short PATH can miss (#2430).
+  ? ghLaunch().then(gh => spawnCommand(cwd, gh.command, [...args], gh.path === undefined ? options : { ...options, env: { PATH: gh.path, ...options.env } }, 'gh'))
+  : spawnCommand(cwd, command, ['--no-optional-locks', '-c', 'core.quotePath=false', ...args], options)
 
 /**
  * A test seam for the running app: `gh` answered by a scripted stand-in (an executable and the arguments
@@ -47,7 +50,9 @@ export function runWithGhStandIn(standIn: { readonly executable: string; readonl
     : runGitStatusCommand(cwd, command, args, options)
 }
 
-function spawnCommand(cwd: string, command: string, args: readonly string[], options: GitCommandOptions): Promise<string> { return new Promise((accept, reject) => {
+/** `name` is what errors call the command, which is never the path it was started by: a path can name the user. */
+function spawnCommand(cwd: string, executable: string, args: readonly string[], options: GitCommandOptions, name: string = executable): Promise<string> { return new Promise((accept, reject) => {
+  const command = name
   if (options.signal?.aborted) { reject(stoppedError(command)); return }
   const env: NodeJS.ProcessEnv = { ...process.env, LC_ALL: 'C', GIT_TERMINAL_PROMPT: '0', GH_PROMPT_DISABLED: '1', GCM_INTERACTIVE: 'never' }
   // Variables Sotto inherited that would point Git at another repository or index are dropped; the ones that
@@ -58,7 +63,7 @@ function spawnCommand(cwd: string, command: string, args: readonly string[], opt
   Object.assign(env, options.env)
   // Launched off main's thread, where a Windows launch would hold the window (`gitLauncher.ts`).
   // A command that may be stopped leads its own process group off Windows, so stopping it reaches what it started.
-  const child = launchProcess(command, args, { cwd, env, ...options.stdin !== undefined ? { stdin: options.stdin } : {},
+  const child = launchProcess(executable, args, { cwd, env, ...options.stdin !== undefined ? { stdin: options.stdin } : {},
     ...options.signal && process.platform !== 'win32' ? { detached: true } : {} })
   // Its pid once it has started; undefined for one that never did. A stop that comes first waits for it.
   const started = new Promise<number | undefined>(resolve => {

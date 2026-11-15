@@ -1,0 +1,144 @@
+name: Launch time
+
+# How long the built app takes to show its window on Windows and macOS (#995, #2396): tests/e2e/launch-time.spec.ts,
+# with main's startup marks where the build has them. A stopwatch is never a gate, so this runs only when started by hand
+# from the Actions tab. Each runner builds the base and then the chosen ref, one after the other, and runs each one's own
+# spec, so the two columns differ only by the change. What each figure means: docs/perf/2026-11-10-startup-marks.md.
+on:
+  workflow_dispatch:
+    inputs:
+      base:
+        description: 'Ref to measure as the before column; empty measures only the chosen ref'
+        required: false
+        default: 'main'
+
+permissions:
+  contents: read
+
+# A second run started on the same ref waits for the first rather than cancelling it.
+concurrency:
+  group: launch-time-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  launch:
+    name: Launch time (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            os: windows-latest
+            artifact: launch-time-windows
+          - name: macOS
+            os: macos-26
+            artifact: launch-time-macos
+    runs-on: ${{ matrix.os }}
+    # Two installs, two builds and sixteen launches: about fifteen minutes. Each side has its own limit too.
+    timeout-minutes: 60
+    env:
+      CI: 'true'
+      SOTTO_PERF_BENCH: '1'
+      SOTTO_LAUNCH_RUNS: '7'
+      BASE_REF: ${{ inputs.base }}
+    defaults:
+      run:
+        # Named, so every step runs with pipefail and a failed spec is not lost in tee.
+        shell: bash
+    steps:
+      - name: Check out the change
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # The hosted runner's user temp folder is an 8.3 short path (RUNNER~1), so a path a test builds from os.tmpdir()
+      # never equals the real path the code resolves. The runner's work temp folder is a long path.
+      - name: Use a long temp path
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          "TMP=$env:RUNNER_TEMP" >> $env:GITHUB_ENV
+          "TEMP=$env:RUNNER_TEMP" >> $env:GITHUB_ENV
+
+      - name: Check out the base beside it
+        id: base
+        run: |
+          mkdir -p "$RUNNER_TEMP/launch"
+          git rev-parse HEAD > "$RUNNER_TEMP/launch/change.commit"
+          if [ -z "$BASE_REF" ]; then echo "measure=false" >> "$GITHUB_OUTPUT"; exit 0; fi
+          base=$(git rev-parse --verify "$BASE_REF^{commit}" 2>/dev/null || git rev-parse --verify "origin/$BASE_REF^{commit}")
+          git worktree add --detach "$RUNNER_TEMP/base" "$base"
+          echo "$base" > "$RUNNER_TEMP/launch/before.commit"
+          # A base from before the spec has nothing to run.
+          if [ -f "$RUNNER_TEMP/base/tests/e2e/launch-time.spec.ts" ]; then echo "measure=true" >> "$GITHUB_OUTPUT"; else echo "measure=false" >> "$GITHUB_OUTPUT"; fi
+          echo "Base: $base"
+
+      # Each side runs on the Node its .node-version names, or on CI's when it has none.
+      - name: Choose each side's Node
+        id: node
+        run: |
+          pick() { if [ -f "$1/.node-version" ]; then tr -d '[:space:]' < "$1/.node-version"; else echo 24.22.1; fi; }
+          echo "change=$(pick .)" >> "$GITHUB_OUTPUT"
+          if [ -d "$RUNNER_TEMP/base" ]; then echo "base=$(pick "$RUNNER_TEMP/base")" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Set up the base's Node
+        if: steps.base.outputs.measure == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ steps.node.outputs.base }}
+
+      # Electron 43 has no install script, so npm ci leaves node_modules/electron/dist empty; the download is its own
+      # step so the first timed launch does not wait for it.
+      - name: Measure the base
+        if: steps.base.outputs.measure == 'true'
+        timeout-minutes: 25
+        working-directory: ${{ runner.temp }}/base
+        env:
+          SOTTO_LAUNCH_OUT: ${{ runner.temp }}/launch/before.json
+        run: |
+          node --version
+          npm ci
+          node node_modules/electron/install.js
+          npm run build
+          npx playwright test tests/e2e/launch-time.spec.ts --workers=1 --reporter=list 2>&1 | tee "$RUNNER_TEMP/launch/before.log"
+
+      - name: Set up the change's Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ steps.node.outputs.change }}
+          cache: npm
+
+      - name: Measure the change
+        timeout-minutes: 25
+        env:
+          SOTTO_LAUNCH_OUT: ${{ runner.temp }}/launch/after.json
+        run: |
+          node --version
+          npm ci
+          node node_modules/electron/install.js
+          npm run build
+          npx playwright test tests/e2e/launch-time.spec.ts --workers=1 --reporter=list 2>&1 | tee "$RUNNER_TEMP/launch/after.log"
+
+      - name: Compare
+        if: always()
+        env:
+          PLATFORM_NAME: ${{ matrix.name }}
+        run: |
+          {
+            echo "## Launch time on $PLATFORM_NAME"
+            echo
+            if [ -f "$RUNNER_TEMP/launch/before.commit" ]; then echo "Base \`$(cat "$RUNNER_TEMP/launch/before.commit")\`."; fi
+            echo "Change \`$(cat "$RUNNER_TEMP/launch/change.commit")\`."
+            echo
+            node scripts/launch-time-compare.mjs "$RUNNER_TEMP/launch"
+          } | tee "$RUNNER_TEMP/launch/comparison.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            ${{ runner.temp }}/launch/
+          if-no-files-found: warn
+          retention-days: 30

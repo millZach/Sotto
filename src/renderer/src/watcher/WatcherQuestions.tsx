@@ -42,13 +42,14 @@ export function focusWatcherQuestion(questionId: string): boolean {
 
 /**
  * Watcher's own questions under one message of its conversation (#2228, Zach's pick A): while one waits, Sotto's card,
- * shaped like a watched thread's card here, which never holds Watcher; once answered, one line in the card's own words.
+ * shaped like a watched thread's card here, which never holds Watcher; once answered, one line in the card's own words,
+ * or that the user skipped it (#2477).
  */
 export function WatcherQuestionCards({ questions }: { readonly questions: readonly WatcherQuestion[] }): ReactNode {
   return <div className="watcher-asks">
     {questions.map(question => question.state === 'open' ? <WatcherQuestionCard key={question.id} question={question} />
       : <p key={question.id} className="watcher-ask-receipt tt-paragraph" data-watcher-question={question.id} tabIndex={-1}>
-        <span className="watcher-ask-receipt__words"><Trans>You answered: {question.choice}.</Trans></span>
+        <span className="watcher-ask-receipt__words">{question.state === 'skipped' ? <Trans>You skipped this question.</Trans> : <Trans>You answered: {question.choice}.</Trans>}</span>
       </p>)}
   </div>
 }

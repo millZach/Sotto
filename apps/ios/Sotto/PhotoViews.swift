@@ -49,7 +49,9 @@ import SottoCore
         if let hit = cached(key) { return hit }
         if let running = loading[key] { return await running.value }
         let task = Task { [weak self] () -> CGImage? in
-            let data = await model.photoBytes(key.ref, messageID: key.messageID, attachmentID: key.attachmentID, activityID: key.activityID) {
+            // At the thumbnail's own edge, from a computer that makes the copy (ADR-0170, November 10 amendment).
+            let data = await model.photoBytes(key.ref, messageID: key.messageID, attachmentID: key.attachmentID, activityID: key.activityID,
+                                              edge: PhotoPipeline.thumbnailEdge) {
                 (self?.shown[key] ?? 0) > 0
             }
             guard let data, let image = await PhotoPipeline.image(data, edge: PhotoPipeline.thumbnailEdge) else { return nil }

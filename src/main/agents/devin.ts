@@ -15,7 +15,7 @@ import { adapterItemCount, ProviderSnapshotPublisher } from './providerSnapshotP
 import { AdapterThreadChanges, restOf, ThreadMarkingMap } from './adapterThreadChanges'
 import type { MediaCapture } from './threadMedia'
 import type { ActivityChangesListener, ActivityChangesSubscription } from './threadChanges'
-import { SessionReaper } from './sessionReaper'
+import { SessionReaper, busyHolds, type HeldSession } from './sessionReaper'
 import { existingWorkingDirectory } from './threadWorktrees'
 import { deliverAttachments, readBackUserText, withAttachedFilesNote } from './attachedFiles'
 import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
@@ -314,10 +314,19 @@ export class DevinAcpHost implements ProviderHost {
       ...(options.reaperSweepMs === undefined ? {} : { sweepEveryMs: options.reaperSweepMs }),
       ...(options.sessionIdleMs === undefined ? {} : { idleAfterMs: options.sessionIdleMs }),
       isWatched: id => this.observed.has(id),
-      isBusy: id => this.dispatching.has(id) || this.active.has(id) || this.loading.has(id) || this.reading.has(id) || this.thread(id).requests.length > 0,
+      // Both read the thread as it is held: `thread(id)` makes a missing one and marks it changed, and neither a sweep
+      // nor saying why a session is held changes anything. A thread not held has no request.
+      isBusy: id => this.working(id) || this.asking(id),
+      whyBusy: id => busyHolds({ busy: this.working(id), request: this.asking(id) }),
       stop: id => this.stopSession(id),
     })
   }
+  /** An unanswered request on the thread as it is held. */
+  private asking(id: string): boolean { return (this.threads.get(id)?.requests.length ?? 0) > 0 }
+  /** A dispatch, a prompt, a load or a read: everything that holds a session open but an unanswered request. */
+  private working(id: string): boolean { return this.dispatching.has(id) || this.active.has(id) || this.loading.has(id) || this.reading.has(id) }
+  /** The sessions the reaper tracks, why each is held, and each one's process (#2398). */
+  heldSessions(): HeldSession[] { return this.reaper.held(id => this.connections.get(id)?.rpc.pid) }
   private persist(): Promise<void> {
     this.writing = this.aliasStore.write(structuredClone(this.aliases))
     return this.writing

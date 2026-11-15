@@ -57,9 +57,12 @@ describe('Owl GitHub updates', () => {
     expect(f.offers).toEqual(['0.1.37'])
     expect(f.updater.allowPrerelease).toBe(false)
     expect(f.updater.channel).toBeNull()
-    expect(f.requests).toContain('/millZach/Sotto-releases/releases/latest')
-    expect(f.requests).toContain('/millZach/Sotto-releases/releases/download/v0.1.37/latest.yml')
-    expect(f.requests.some(path => path.includes('owl.yml'))).toBe(false)
+    // A stable check is three requests, where Owl's below are two: the feed, the latest release's tag, its manifest.
+    expect(f.requests).toEqual([
+      '/millZach/Sotto-releases/releases.atom',
+      '/millZach/Sotto-releases/releases/latest',
+      '/millZach/Sotto-releases/releases/download/v0.1.37/latest.yml',
+    ])
   })
 
   it('offers a newer Owl only, past newer stable and superseded stable tags', async () => {

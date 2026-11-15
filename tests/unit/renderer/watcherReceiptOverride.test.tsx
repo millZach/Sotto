@@ -23,12 +23,12 @@ it('says what a GO MERGE went past and Watcher’s reason in one line, and nothi
     press: () => ({}),
   } as unknown as WatcherConversation
   render(<WatcherConversationContext.Provider value={conversation}><WatcherAfterMessage message={{ id: 'reply' } as AgentMessage} /></WatcherConversationContext.Provider>)
-  const line = 'Merge turn given early. #1959 in “Model picker” has its required checks running. Watcher’s reason: Zach asked for #2263 before the release.'
+  const line = 'Merge turn given early. #1959 in “Model picker” has checks running. Watcher’s reason: Zach asked for #2263 before the release.'
   expect(screen.getAllByText(line)).toHaveLength(1)
   expect(document.querySelector(`[data-receipt-id="${early.id}"] [data-merge-turn="early"]`)?.textContent).toBe(line)
   expect(document.querySelector(`[data-receipt-id="${plain.id}"] [data-merge-turn]`)).toBeNull()
   expect(overrideLine(undefined)).toBeNull()
   // Main red, and a pull request known only by its address, are said the same way.
   expect(overrideLine({ running: [{ url: 'https://github.com/o/r/pull/7', title: 'Docs' }], baseFailed: { branch: 'main', head: 'dddddddddddd' }, reason }))
-    .toBe('Merge turn given early. main is red: checks failed on its newest commit, dddddddddddd. https://github.com/o/r/pull/7 in “Docs” has its required checks running. Watcher’s reason: Zach asked for #2263 before the release.')
+    .toBe('Merge turn given early. main is red: checks failed on dddddddddddd, its newest commit whose checks have finished. https://github.com/o/r/pull/7 in “Docs” has checks running. Watcher’s reason: Zach asked for #2263 before the release.')
 })

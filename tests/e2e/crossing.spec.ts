@@ -12,7 +12,7 @@ test('Crossing keeps dictation, history, settings and sessions usable', async ()
   page.setDefaultTimeout(5_000)
   try {
     await completeFirstRunSetup(page, { microphone: 'test' })
-    // Onboarding hands over to Threads now, so dictation is a deliberate stop.
+    // First-run setup ends on the Threads page, so dictation is a deliberate stop.
     await openPage(page, 'Dictate')
     await page.screenshot({ animations: 'disabled', path: join(evidence, 'dictate.png') })
     await page.getByRole('button', { name: 'Start dictation', exact: true }).click()

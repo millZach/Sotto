@@ -1,0 +1,1416 @@
+{
+ "commit": "b12703555",
+ "machine": "forge, Linux, xvfb-run 1920x1080x24, empty profile",
+ "node": "24.22.1",
+ "command": "SOTTO_PERF_BENCH=1 SOTTO_LAUNCH_RUNS=7 xvfb-run -a -s \"-screen 0 1920x1080x24\" npx playwright test tests/e2e/launch-time.spec.ts",
+ "sizes": {
+  "before": {
+   "assetsOver100KB": [
+    {
+     "name": "main-Dze4XsIV.js",
+     "bytes": 4901474
+    },
+    {
+     "name": "global-sLRDrl8V.js",
+     "bytes": 1506582
+    },
+    {
+     "name": "interfaceLanguage-2w1QxweN.js",
+     "bytes": 1373270
+    },
+    {
+     "name": "cynefin-OW5HDTMX-jEuQYydk.js",
+     "bytes": 1304485
+    },
+    {
+     "name": "diagramRenderer-DbB6XblH.js",
+     "bytes": 1287577
+    },
+    {
+     "name": "cytoscape.esm-Ct9zsnh1.js",
+     "bytes": 961036
+    },
+    {
+     "name": "main-Cqc6HLJu.css",
+     "bytes": 843305
+    },
+    {
+     "name": "terminalView-CtsdYN02.js",
+     "bytes": 679612
+    },
+    {
+     "name": "katex-oVG3DVWa.js",
+     "bytes": 484523
+    },
+    {
+     "name": "architectureDiagram-5GKGNRK7-DXwAGKs5.js",
+     "bytes": 423313
+    },
+    {
+     "name": "index-VP7RgUBh.js",
+     "bytes": 336144
+    },
+    {
+     "name": "global-J5pBf7fT.css",
+     "bytes": 335105
+    },
+    {
+     "name": "swimlanes-42K2YHIH-DE5lc1sj.js",
+     "bytes": 298744
+    },
+    {
+     "name": "en-XA-BxC0r6C_.js",
+     "bytes": 218091
+    },
+    {
+     "name": "en-XA-CKSibxUR.js",
+     "bytes": 216626
+    },
+    {
+     "name": "cose-bilkent-JH36ORCC-Dnlco_nT.js",
+     "bytes": 214616
+    },
+    {
+     "name": "en-XA-Ca_QeqFM.js",
+     "bytes": 210312
+    },
+    {
+     "name": "sequenceDiagram-WJ2MYXX4-CoxOvdI0.js",
+     "bytes": 201739
+    },
+    {
+     "name": "ar-XB-CUF3r-iR.js",
+     "bytes": 190970
+    },
+    {
+     "name": "ar-XB-DABVcioV.js",
+     "bytes": 181957
+    },
+    {
+     "name": "ar-XB-DQK3H6fl.js",
+     "bytes": 179916
+    },
+    {
+     "name": "ganttDiagram-EL5Y4UJY-BDaodoD-.js",
+     "bytes": 133634
+    },
+    {
+     "name": "ar-XEjxvri8.js",
+     "bytes": 130453
+    },
+    {
+     "name": "bn-XEjxvri8.js",
+     "bytes": 130453
+    },
+    {
+     "name": "cs-XEjxvri8.js",
+     "bytes": 130453
+    },
+    {
+     "name": "da-XEjxvri8.js",
+     "bytes": 130453
+    },
+    {
+     "name": "de-XEjxvri8.js",
+     "bytes": 130453
+    },
+    {
+     "name": "el-XEjxvri8.js",
+     "bytes": 130453
+    },
+    {
+     "name": "es-ES-XEjxvri8.js",
+     "bytes": 130453
+    },
+    {
+     "name": "es-MX-XEjxvri8.js",
+     "bytes": 130453
+    },
+    {
+     "name": "fi-XEjxvri8.js",
+     "bytes": 130453
+    },
+    {
+     "name": "fr-XEjxvri8.js",
+     "bytes": 130453
+    },
+    {
+     "name": "hi-XEjxvri8.js",
+     "bytes": 130453
+    },
+    {
+     "name": "hu-XEjxvri8.js",
+     "bytes": 130453
+    },
+    {
+     "name": "it-XEjxvri8.js",
+     "bytes": 130453
+    },
+    {
+     "name": "ja-XEjxvri8.js",
+     "bytes": 130453
+    },
+    {
+     "name": "mr-XEjxvri8.js",
+     "bytes": 130453
+    },
+    {
+     "name": "nb-XEjxvri8.js",
+     "bytes": 130453
+    },
+    {
+     "name": "nl-XEjxvri8.js",
+     "bytes": 130453
+    },
+    {
+     "name": "pl-XEjxvri8.js",
+     "bytes": 130453
+    },
+    {
+     "name": "pt-BR-XEjxvri8.js",
+     "bytes": 130453
+    },
+    {
+     "name": "pt-PT-XEjxvri8.js",
+     "bytes": 130453
+    },
+    {
+     "name": "ro-XEjxvri8.js",
+     "bytes": 130453
+    },
+    {
+     "name": "sv-XEjxvri8.js",
+     "bytes": 130453
+    },
+    {
+     "name": "ta-XEjxvri8.js",
+     "bytes": 130453
+    },
+    {
+     "name": "te-XEjxvri8.js",
+     "bytes": 130453
+    },
+    {
+     "name": "tr-XEjxvri8.js",
+     "bytes": 130453
+    },
+    {
+     "name": "uk-XEjxvri8.js",
+     "bytes": 130453
+    },
+    {
+     "name": "ur-XEjxvri8.js",
+     "bytes": 130453
+    },
+    {
+     "name": "zh-Hans-XEjxvri8.js",
+     "bytes": 130453
+    },
+    {
+     "name": "zh-Hant-XEjxvri8.js",
+     "bytes": 130453
+    },
+    {
+     "name": "ta-Ccdcu6yw.js",
+     "bytes": 125297
+    },
+    {
+     "name": "te-DEnjlchm.js",
+     "bytes": 124728
+    },
+    {
+     "name": "bn-DkhgsuLY.js",
+     "bytes": 124674
+    },
+    {
+     "name": "hi-DlpF48Sb.js",
+     "bytes": 124487
+    },
+    {
+     "name": "mr-NAaXkwPu.js",
+     "bytes": 124432
+    },
+    {
+     "name": "el-6mDBxfGk.js",
+     "bytes": 124170
+    },
+    {
+     "name": "uk-CbfZIUYr.js",
+     "bytes": 123859
+    },
+    {
+     "name": "ur-kDjN7vJk.js",
+     "bytes": 123695
+    },
+    {
+     "name": "ja-C8qj1N5a.js",
+     "bytes": 123483
+    },
+    {
+     "name": "ar-CPbAKbSS.js",
+     "bytes": 123455
+    },
+    {
+     "name": "fr-rSoIAqWL.js",
+     "bytes": 123132
+    },
+    {
+     "name": "de-ClpYGbNr.js",
+     "bytes": 123109
+    },
+    {
+     "name": "ro-CcQ1qAGH.js",
+     "bytes": 123099
+    },
+    {
+     "name": "pl-BKKfCoTC.js",
+     "bytes": 123073
+    },
+    {
+     "name": "hu-Bcnzpzc9.js",
+     "bytes": 123067
+    },
+    {
+     "name": "cs-Bl-AVILw.js",
+     "bytes": 123054
+    },
+    {
+     "name": "tr-CVVgDl3f.js",
+     "bytes": 123051
+    },
+    {
+     "name": "es-ES-7Wqp5pqq.js",
+     "bytes": 123021
+    },
+    {
+     "name": "fi-BfQNkC70.js",
+     "bytes": 123021
+    },
+    {
+     "name": "sv-u6zuDK8y.js",
+     "bytes": 123010
+    },
+    {
+     "name": "pt-PT-ftopLuxN.js",
+     "bytes": 123008
+    },
+    {
+     "name": "es-MX-7d9ahQHs.js",
+     "bytes": 122991
+    },
+    {
+     "name": "pt-BR-D0PF00pT.js",
+     "bytes": 122983
+    },
+    {
+     "name": "it-gJKv5XkJ.js",
+     "bytes": 122981
+    },
+    {
+     "name": "nl-CLPLiClp.js",
+     "bytes": 122976
+    },
+    {
+     "name": "nb-BaZL28WV.js",
+     "bytes": 122963
+    },
+    {
+     "name": "da-8_ujo_gv.js",
+     "bytes": 122947
+    },
+    {
+     "name": "zh-Hans-CQZCizBd.js",
+     "bytes": 122847
+    },
+    {
+     "name": "zh-Hant-VlkWsctE.js",
+     "bytes": 122847
+    },
+    {
+     "name": "ar-Cg0lbNM2.js",
+     "bytes": 121772
+    },
+    {
+     "name": "bn-Cg0lbNM2.js",
+     "bytes": 121772
+    },
+    {
+     "name": "cs-Cg0lbNM2.js",
+     "bytes": 121772
+    },
+    {
+     "name": "da-Cg0lbNM2.js",
+     "bytes": 121772
+    },
+    {
+     "name": "de-Cg0lbNM2.js",
+     "bytes": 121772
+    },
+    {
+     "name": "el-Cg0lbNM2.js",
+     "bytes": 121772
+    },
+    {
+     "name": "es-ES-Cg0lbNM2.js",
+     "bytes": 121772
+    },
+    {
+     "name": "es-MX-Cg0lbNM2.js",
+     "bytes": 121772
+    },
+    {
+     "name": "fi-Cg0lbNM2.js",
+     "bytes": 121772
+    },
+    {
+     "name": "fr-Cg0lbNM2.js",
+     "bytes": 121772
+    },
+    {
+     "name": "hi-Cg0lbNM2.js",
+     "bytes": 121772
+    },
+    {
+     "name": "hu-Cg0lbNM2.js",
+     "bytes": 121772
+    },
+    {
+     "name": "it-Cg0lbNM2.js",
+     "bytes": 121772
+    },
+    {
+     "name": "ja-Cg0lbNM2.js",
+     "bytes": 121772
+    },
+    {
+     "name": "mr-Cg0lbNM2.js",
+     "bytes": 121772
+    },
+    {
+     "name": "nb-Cg0lbNM2.js",
+     "bytes": 121772
+    },
+    {
+     "name": "nl-Cg0lbNM2.js",
+     "bytes": 121772
+    },
+    {
+     "name": "pl-Cg0lbNM2.js",
+     "bytes": 121772
+    },
+    {
+     "name": "pt-BR-Cg0lbNM2.js",
+     "bytes": 121772
+    },
+    {
+     "name": "pt-PT-Cg0lbNM2.js",
+     "bytes": 121772
+    },
+    {
+     "name": "ro-Cg0lbNM2.js",
+     "bytes": 121772
+    },
+    {
+     "name": "sv-Cg0lbNM2.js",
+     "bytes": 121772
+    },
+    {
+     "name": "ta-Cg0lbNM2.js",
+     "bytes": 121772
+    },
+    {
+     "name": "te-Cg0lbNM2.js",
+     "bytes": 121772
+    },
+    {
+     "name": "tr-Cg0lbNM2.js",
+     "bytes": 121772
+    },
+    {
+     "name": "uk-Cg0lbNM2.js",
+     "bytes": 121772
+    },
+    {
+     "name": "ur-Cg0lbNM2.js",
+     "bytes": 121772
+    },
+    {
+     "name": "zh-Hans-Cg0lbNM2.js",
+     "bytes": 121772
+    },
+    {
+     "name": "zh-Hant-Cg0lbNM2.js",
+     "bytes": 121772
+    },
+    {
+     "name": "c4Diagram-7LVT6UL2-DZcqBCFY.js",
+     "bytes": 111200
+    },
+    {
+     "name": "flowDiagram-HODETNUW-Do2KVuVp.js",
+     "bytes": 105324
+    }
+   ],
+   "allJsBytes": 29753961,
+   "allCssBytes": 1225267,
+   "jsFiles": 255,
+   "pages": {
+    "index.html": {
+     "scripts": [
+      {
+       "name": "main-Dze4XsIV.js",
+       "bytes": 4901474
+      },
+      {
+       "name": "interfaceLanguage-2w1QxweN.js",
+       "bytes": 1373270
+      },
+      {
+       "name": "global-sLRDrl8V.js",
+       "bytes": 1506582
+      },
+      {
+       "name": "ListeningBars-CjrH2oHE.js",
+       "bytes": 7853
+      },
+      {
+       "name": "diagramSteps-BPxl_QJk.js",
+       "bytes": 16713
+      }
+     ],
+     "scriptBytes": 7805892,
+     "styles": [
+      {
+       "name": "global-J5pBf7fT.css",
+       "bytes": 335105
+      },
+      {
+       "name": "ListeningBars-D1fq1pCS.css",
+       "bytes": 2320
+      },
+      {
+       "name": "main-Cqc6HLJu.css",
+       "bytes": 843305
+      }
+     ],
+     "styleBytes": 1180730
+    },
+    "widget.html": {
+     "scripts": [
+      {
+       "name": "widget-WqhDxHAO.js",
+       "bytes": 40037
+      },
+      {
+       "name": "interfaceLanguage-2w1QxweN.js",
+       "bytes": 1373270
+      },
+      {
+       "name": "ListeningBars-CjrH2oHE.js",
+       "bytes": 7853
+      }
+     ],
+     "scriptBytes": 1421160,
+     "styles": [
+      {
+       "name": "ListeningBars-D1fq1pCS.css",
+       "bytes": 2320
+      },
+      {
+       "name": "widget-DYIh2irg.css",
+       "bytes": 24113
+      }
+     ],
+     "styleBytes": 26433
+    },
+    "popup.html": {
+     "scripts": [
+      {
+       "name": "popup-Dt6JAwM3.js",
+       "bytes": 39349
+      },
+      {
+       "name": "interfaceLanguage-2w1QxweN.js",
+       "bytes": 1373270
+      },
+      {
+       "name": "global-sLRDrl8V.js",
+       "bytes": 1506582
+      }
+     ],
+     "scriptBytes": 2919201,
+     "styles": [
+      {
+       "name": "global-J5pBf7fT.css",
+       "bytes": 335105
+      },
+      {
+       "name": "popup-xz4CgeVJ.css",
+       "bytes": 13312
+      }
+     ],
+     "styleBytes": 348417
+    }
+   },
+   "mainIndexBytes": 8923066,
+   "preloadIndexBytes": 691899
+  },
+  "after": {
+   "assetsOver100KB": [
+    {
+     "name": "main-BiiSDfNO.js",
+     "bytes": 2474719
+    },
+    {
+     "name": "interfaceLanguage-IgBErFMy.js",
+     "bytes": 843795
+    },
+    {
+     "name": "diagramRenderer-CVN0t8h4.js",
+     "bytes": 732586
+    },
+    {
+     "name": "global-BvTFGWjs.js",
+     "bytes": 704699
+    },
+    {
+     "name": "cynefin-OW5HDTMX-DVRgfWrf.js",
+     "bytes": 687746
+    },
+    {
+     "name": "main-pFtEMh2q.css",
+     "bytes": 622098
+    },
+    {
+     "name": "terminalView-9FWWZJqH.js",
+     "bytes": 518056
+    },
+    {
+     "name": "cytoscape.esm-BB4DxJjf.js",
+     "bytes": 443036
+    },
+    {
+     "name": "katex-HP8lGamR.js",
+     "bytes": 261313
+    },
+    {
+     "name": "global-Bu_ggWuz.css",
+     "bytes": 230200
+    },
+    {
+     "name": "en-XA-D7ebJCBM.js",
+     "bytes": 218081
+    },
+    {
+     "name": "en-XA-_9NaIRo5.js",
+     "bytes": 216616
+    },
+    {
+     "name": "en-XA-Cb3vWwFE.js",
+     "bytes": 210302
+    },
+    {
+     "name": "ar-XB-DJRMQoZ4.js",
+     "bytes": 190960
+    },
+    {
+     "name": "ar-XB-BXXJQNoG.js",
+     "bytes": 181947
+    },
+    {
+     "name": "ar-XB-B9PCfAAn.js",
+     "bytes": 179906
+    },
+    {
+     "name": "index-_bzZ5eIi.js",
+     "bytes": 173010
+    },
+    {
+     "name": "architectureDiagram-5GKGNRK7-2GlkLSSz.js",
+     "bytes": 151905
+    },
+    {
+     "name": "ar-CmSiRvQV.js",
+     "bytes": 130443
+    },
+    {
+     "name": "bn-CmSiRvQV.js",
+     "bytes": 130443
+    },
+    {
+     "name": "cs-CmSiRvQV.js",
+     "bytes": 130443
+    },
+    {
+     "name": "da-CmSiRvQV.js",
+     "bytes": 130443
+    },
+    {
+     "name": "de-CmSiRvQV.js",
+     "bytes": 130443
+    },
+    {
+     "name": "el-CmSiRvQV.js",
+     "bytes": 130443
+    },
+    {
+     "name": "es-ES-CmSiRvQV.js",
+     "bytes": 130443
+    },
+    {
+     "name": "es-MX-CmSiRvQV.js",
+     "bytes": 130443
+    },
+    {
+     "name": "fi-CmSiRvQV.js",
+     "bytes": 130443
+    },
+    {
+     "name": "fr-CmSiRvQV.js",
+     "bytes": 130443
+    },
+    {
+     "name": "hi-CmSiRvQV.js",
+     "bytes": 130443
+    },
+    {
+     "name": "hu-CmSiRvQV.js",
+     "bytes": 130443
+    },
+    {
+     "name": "it-CmSiRvQV.js",
+     "bytes": 130443
+    },
+    {
+     "name": "ja-CmSiRvQV.js",
+     "bytes": 130443
+    },
+    {
+     "name": "mr-CmSiRvQV.js",
+     "bytes": 130443
+    },
+    {
+     "name": "nb-CmSiRvQV.js",
+     "bytes": 130443
+    },
+    {
+     "name": "nl-CmSiRvQV.js",
+     "bytes": 130443
+    },
+    {
+     "name": "pl-CmSiRvQV.js",
+     "bytes": 130443
+    },
+    {
+     "name": "pt-BR-CmSiRvQV.js",
+     "bytes": 130443
+    },
+    {
+     "name": "pt-PT-CmSiRvQV.js",
+     "bytes": 130443
+    },
+    {
+     "name": "ro-CmSiRvQV.js",
+     "bytes": 130443
+    },
+    {
+     "name": "sv-CmSiRvQV.js",
+     "bytes": 130443
+    },
+    {
+     "name": "ta-CmSiRvQV.js",
+     "bytes": 130443
+    },
+    {
+     "name": "te-CmSiRvQV.js",
+     "bytes": 130443
+    },
+    {
+     "name": "tr-CmSiRvQV.js",
+     "bytes": 130443
+    },
+    {
+     "name": "uk-CmSiRvQV.js",
+     "bytes": 130443
+    },
+    {
+     "name": "ur-CmSiRvQV.js",
+     "bytes": 130443
+    },
+    {
+     "name": "zh-Hans-CmSiRvQV.js",
+     "bytes": 130443
+    },
+    {
+     "name": "zh-Hant-CmSiRvQV.js",
+     "bytes": 130443
+    },
+    {
+     "name": "ta-yMAVqFIn.js",
+     "bytes": 125287
+    },
+    {
+     "name": "te-BxZQBM4I.js",
+     "bytes": 124718
+    },
+    {
+     "name": "bn-D5-FmfRI.js",
+     "bytes": 124664
+    },
+    {
+     "name": "hi-Da4csImo.js",
+     "bytes": 124477
+    },
+    {
+     "name": "mr-M4vSlx79.js",
+     "bytes": 124422
+    },
+    {
+     "name": "el-CJ_8rCZz.js",
+     "bytes": 124160
+    },
+    {
+     "name": "uk-DmxntxTY.js",
+     "bytes": 123849
+    },
+    {
+     "name": "ur-C165PuPT.js",
+     "bytes": 123685
+    },
+    {
+     "name": "ja-9MCEiDKx.js",
+     "bytes": 123473
+    },
+    {
+     "name": "ar-BNEBwJQu.js",
+     "bytes": 123445
+    },
+    {
+     "name": "fr-D36iFk_r.js",
+     "bytes": 123122
+    },
+    {
+     "name": "de-BiG_E66G.js",
+     "bytes": 123099
+    },
+    {
+     "name": "ro-U2TWzsJv.js",
+     "bytes": 123089
+    },
+    {
+     "name": "pl-C3v_UBqH.js",
+     "bytes": 123063
+    },
+    {
+     "name": "hu-DF67pmAP.js",
+     "bytes": 123057
+    },
+    {
+     "name": "cs-DP0PqEN0.js",
+     "bytes": 123044
+    },
+    {
+     "name": "tr-DqsgE2pW.js",
+     "bytes": 123041
+    },
+    {
+     "name": "es-ES-C3rlUoTm.js",
+     "bytes": 123011
+    },
+    {
+     "name": "fi-CkK8YN56.js",
+     "bytes": 123011
+    },
+    {
+     "name": "sv-Bx5A6bd4.js",
+     "bytes": 123000
+    },
+    {
+     "name": "pt-PT-CEdAbcdF.js",
+     "bytes": 122998
+    },
+    {
+     "name": "es-MX-Bm21k4uh.js",
+     "bytes": 122981
+    },
+    {
+     "name": "pt-BR-Cw1z6Uge.js",
+     "bytes": 122973
+    },
+    {
+     "name": "it-Csxe4Vjz.js",
+     "bytes": 122971
+    },
+    {
+     "name": "nl-D_jJQCST.js",
+     "bytes": 122966
+    },
+    {
+     "name": "nb-BNKz_hcc.js",
+     "bytes": 122953
+    },
+    {
+     "name": "da-Cika8igV.js",
+     "bytes": 122937
+    },
+    {
+     "name": "zh-Hans-dil4sey1.js",
+     "bytes": 122837
+    },
+    {
+     "name": "zh-Hant-CzR-4g8M.js",
+     "bytes": 122837
+    },
+    {
+     "name": "ar-D3TBptv5.js",
+     "bytes": 121762
+    },
+    {
+     "name": "bn-D3TBptv5.js",
+     "bytes": 121762
+    },
+    {
+     "name": "cs-D3TBptv5.js",
+     "bytes": 121762
+    },
+    {
+     "name": "da-D3TBptv5.js",
+     "bytes": 121762
+    },
+    {
+     "name": "de-D3TBptv5.js",
+     "bytes": 121762
+    },
+    {
+     "name": "el-D3TBptv5.js",
+     "bytes": 121762
+    },
+    {
+     "name": "es-ES-D3TBptv5.js",
+     "bytes": 121762
+    },
+    {
+     "name": "es-MX-D3TBptv5.js",
+     "bytes": 121762
+    },
+    {
+     "name": "fi-D3TBptv5.js",
+     "bytes": 121762
+    },
+    {
+     "name": "fr-D3TBptv5.js",
+     "bytes": 121762
+    },
+    {
+     "name": "hi-D3TBptv5.js",
+     "bytes": 121762
+    },
+    {
+     "name": "hu-D3TBptv5.js",
+     "bytes": 121762
+    },
+    {
+     "name": "it-D3TBptv5.js",
+     "bytes": 121762
+    },
+    {
+     "name": "ja-D3TBptv5.js",
+     "bytes": 121762
+    },
+    {
+     "name": "mr-D3TBptv5.js",
+     "bytes": 121762
+    },
+    {
+     "name": "nb-D3TBptv5.js",
+     "bytes": 121762
+    },
+    {
+     "name": "nl-D3TBptv5.js",
+     "bytes": 121762
+    },
+    {
+     "name": "pl-D3TBptv5.js",
+     "bytes": 121762
+    },
+    {
+     "name": "pt-BR-D3TBptv5.js",
+     "bytes": 121762
+    },
+    {
+     "name": "pt-PT-D3TBptv5.js",
+     "bytes": 121762
+    },
+    {
+     "name": "ro-D3TBptv5.js",
+     "bytes": 121762
+    },
+    {
+     "name": "sv-D3TBptv5.js",
+     "bytes": 121762
+    },
+    {
+     "name": "ta-D3TBptv5.js",
+     "bytes": 121762
+    },
+    {
+     "name": "te-D3TBptv5.js",
+     "bytes": 121762
+    },
+    {
+     "name": "tr-D3TBptv5.js",
+     "bytes": 121762
+    },
+    {
+     "name": "uk-D3TBptv5.js",
+     "bytes": 121762
+    },
+    {
+     "name": "ur-D3TBptv5.js",
+     "bytes": 121762
+    },
+    {
+     "name": "zh-Hans-D3TBptv5.js",
+     "bytes": 121762
+    },
+    {
+     "name": "zh-Hant-D3TBptv5.js",
+     "bytes": 121762
+    },
+    {
+     "name": "sequenceDiagram-WJ2MYXX4-B66R_F5t.js",
+     "bytes": 117045
+    },
+    {
+     "name": "swimlanes-42K2YHIH-BBfYf0yL.js",
+     "bytes": 115870
+    }
+   ],
+   "allJsBytes": 22275526,
+   "allCssBytes": 882827,
+   "jsFiles": 255,
+   "pages": {
+    "index.html": {
+     "scripts": [
+      {
+       "name": "main-BiiSDfNO.js",
+       "bytes": 2474719
+      },
+      {
+       "name": "interfaceLanguage-IgBErFMy.js",
+       "bytes": 843795
+      },
+      {
+       "name": "global-BvTFGWjs.js",
+       "bytes": 704699
+      },
+      {
+       "name": "ListeningBars-C6mzfXeF.js",
+       "bytes": 4621
+      },
+      {
+       "name": "diagramSteps-DEjan2we.js",
+       "bytes": 9702
+      }
+     ],
+     "scriptBytes": 4037536,
+     "styles": [
+      {
+       "name": "global-Bu_ggWuz.css",
+       "bytes": 230200
+      },
+      {
+       "name": "ListeningBars-BEDIvnaU.css",
+       "bytes": 1231
+      },
+      {
+       "name": "main-pFtEMh2q.css",
+       "bytes": 622098
+      }
+     ],
+     "styleBytes": 853529
+    },
+    "widget.html": {
+     "scripts": [
+      {
+       "name": "widget-HeOR_kEB.js",
+       "bytes": 19682
+      },
+      {
+       "name": "interfaceLanguage-IgBErFMy.js",
+       "bytes": 843795
+      },
+      {
+       "name": "ListeningBars-C6mzfXeF.js",
+       "bytes": 4621
+      }
+     ],
+     "scriptBytes": 868098,
+     "styles": [
+      {
+       "name": "ListeningBars-BEDIvnaU.css",
+       "bytes": 1231
+      },
+      {
+       "name": "widget-DCJkdJ0x.css",
+       "bytes": 16163
+      }
+     ],
+     "styleBytes": 17394
+    },
+    "popup.html": {
+     "scripts": [
+      {
+       "name": "popup-u7jEGvjl.js",
+       "bytes": 19913
+      },
+      {
+       "name": "interfaceLanguage-IgBErFMy.js",
+       "bytes": 843795
+      },
+      {
+       "name": "global-BvTFGWjs.js",
+       "bytes": 704699
+      }
+     ],
+     "scriptBytes": 1568407,
+     "styles": [
+      {
+       "name": "global-Bu_ggWuz.css",
+       "bytes": 230200
+      },
+      {
+       "name": "popup-CQeWhMPK.css",
+       "bytes": 9539
+      }
+     ],
+     "styleBytes": 239739
+    }
+   },
+   "mainIndexBytes": 8923066,
+   "preloadIndexBytes": 691899
+  }
+ },
+ "launchRounds": [
+  {
+   "round": 1,
+   "build": "before (unminified)",
+   "startedAt": "2026-11-10T17:20:46-08:00",
+   "loadAverage": "3.94 4.58 4.33",
+   "runs": 7,
+   "platform": "linux",
+   "summary": {
+    "askedToWindowMs": {
+     "median": 1026,
+     "min": 1001,
+     "max": 1141
+    },
+    "askedToPageStartMs": {
+     "median": 705,
+     "min": 679.1,
+     "max": 803.8
+    },
+    "pageStartToDomMs": {
+     "median": 319.3,
+     "min": 306.3,
+     "max": 335.6
+    },
+    "pageStartToFirstPaintMs": {
+     "median": 532,
+     "min": 528,
+     "max": 544
+    },
+    "askedToFirstPaintMs": {
+     "median": 1233,
+     "min": 1212.2,
+     "max": 1347.8
+    },
+    "processes": {
+     "median": 6,
+     "min": 6,
+     "max": 6
+    },
+    "mainMemoryMb": {
+     "median": 321,
+     "min": 317.6,
+     "max": 322.8
+    },
+    "mainCpuPercent": {
+     "median": 0,
+     "min": 0,
+     "max": 0
+    },
+    "rendererMemoryMb": {
+     "median": 391.9,
+     "min": 389.6,
+     "max": 393.5
+    },
+    "rendererCpuPercent": {
+     "median": 0,
+     "min": 0,
+     "max": 0
+    },
+    "renderers": {
+     "median": 2,
+     "min": 2,
+     "max": 2
+    },
+    "gpuMemoryMb": {
+     "median": 137.2,
+     "min": 136.5,
+     "max": 138
+    },
+    "allMemoryMb": {
+     "median": 1018.5,
+     "min": 1013.1,
+     "max": 1021.3
+    },
+    "allCpuPercent": {
+     "median": 0,
+     "min": 0,
+     "max": 0.1
+    }
+   }
+  },
+  {
+   "round": 2,
+   "build": "after (minified)",
+   "startedAt": "2026-11-10T17:21:58-08:00",
+   "loadAverage": "2.76 4.04 4.16",
+   "runs": 7,
+   "platform": "linux",
+   "summary": {
+    "askedToWindowMs": {
+     "median": 1096,
+     "min": 990,
+     "max": 1230
+    },
+    "askedToPageStartMs": {
+     "median": 777.7,
+     "min": 696.3,
+     "max": 900.9
+    },
+    "pageStartToDomMs": {
+     "median": 314.1,
+     "min": 292.4,
+     "max": 329.9
+    },
+    "pageStartToFirstPaintMs": {
+     "median": 528,
+     "min": 496,
+     "max": 564
+    },
+    "askedToFirstPaintMs": {
+     "median": 1309.7,
+     "min": 1200.3,
+     "max": 1464.9
+    },
+    "processes": {
+     "median": 6,
+     "min": 6,
+     "max": 6
+    },
+    "mainMemoryMb": {
+     "median": 321.1,
+     "min": 317.8,
+     "max": 323.1
+    },
+    "mainCpuPercent": {
+     "median": 0,
+     "min": 0,
+     "max": 0.1
+    },
+    "rendererMemoryMb": {
+     "median": 378.7,
+     "min": 375.4,
+     "max": 383.1
+    },
+    "rendererCpuPercent": {
+     "median": 0,
+     "min": 0,
+     "max": 0
+    },
+    "renderers": {
+     "median": 2,
+     "min": 2,
+     "max": 2
+    },
+    "gpuMemoryMb": {
+     "median": 136.9,
+     "min": 136.1,
+     "max": 137.6
+    },
+    "allMemoryMb": {
+     "median": 1003.5,
+     "min": 995.6,
+     "max": 1006.1
+    },
+    "allCpuPercent": {
+     "median": 0,
+     "min": 0,
+     "max": 0.1
+    }
+   }
+  },
+  {
+   "round": 3,
+   "build": "before (unminified)",
+   "startedAt": "2026-11-10T17:23:10-08:00",
+   "loadAverage": "3.10 3.87 4.09",
+   "runs": 7,
+   "platform": "linux",
+   "summary": {
+    "askedToWindowMs": {
+     "median": 1134,
+     "min": 1039,
+     "max": 1847
+    },
+    "askedToPageStartMs": {
+     "median": 767.1,
+     "min": 714.8,
+     "max": 1211.9
+    },
+    "pageStartToDomMs": {
+     "median": 354.5,
+     "min": 322.2,
+     "max": 1038.3
+    },
+    "pageStartToFirstPaintMs": {
+     "median": 596,
+     "min": 536,
+     "max": 1380
+    },
+    "askedToFirstPaintMs": {
+     "median": 1354.4,
+     "min": 1250.8,
+     "max": 2180.2
+    },
+    "processes": {
+     "median": 6,
+     "min": 6,
+     "max": 6
+    },
+    "mainMemoryMb": {
+     "median": 320.1,
+     "min": 318.6,
+     "max": 321.9
+    },
+    "mainCpuPercent": {
+     "median": 0,
+     "min": 0,
+     "max": 0.1
+    },
+    "rendererMemoryMb": {
+     "median": 387.3,
+     "min": 380.9,
+     "max": 389.3
+    },
+    "rendererCpuPercent": {
+     "median": 0,
+     "min": 0,
+     "max": 0
+    },
+    "renderers": {
+     "median": 2,
+     "min": 2,
+     "max": 2
+    },
+    "gpuMemoryMb": {
+     "median": 136.4,
+     "min": 135.8,
+     "max": 137
+    },
+    "allMemoryMb": {
+     "median": 1009,
+     "min": 1005.6,
+     "max": 1014.5
+    },
+    "allCpuPercent": {
+     "median": 0,
+     "min": 0,
+     "max": 0.1
+    }
+   }
+  },
+  {
+   "round": 4,
+   "build": "after (minified)",
+   "startedAt": "2026-11-10T17:24:28-08:00",
+   "loadAverage": "8.04 5.47 4.65",
+   "runs": 7,
+   "platform": "linux",
+   "summary": {
+    "askedToWindowMs": {
+     "median": 1021,
+     "min": 977,
+     "max": 1095
+    },
+    "askedToPageStartMs": {
+     "median": 720.5,
+     "min": 683.8,
+     "max": 767
+    },
+    "pageStartToDomMs": {
+     "median": 316.4,
+     "min": 291.6,
+     "max": 355
+    },
+    "pageStartToFirstPaintMs": {
+     "median": 532,
+     "min": 492,
+     "max": 572
+    },
+    "askedToFirstPaintMs": {
+     "median": 1231.4,
+     "min": 1175.8,
+     "max": 1303
+    },
+    "processes": {
+     "median": 6,
+     "min": 6,
+     "max": 6
+    },
+    "mainMemoryMb": {
+     "median": 314.7,
+     "min": 314.1,
+     "max": 315.6
+    },
+    "mainCpuPercent": {
+     "median": 0,
+     "min": 0,
+     "max": 0
+    },
+    "rendererMemoryMb": {
+     "median": 365.7,
+     "min": 360.4,
+     "max": 366.6
+    },
+    "rendererCpuPercent": {
+     "median": 0,
+     "min": 0,
+     "max": 0
+    },
+    "renderers": {
+     "median": 2,
+     "min": 2,
+     "max": 2
+    },
+    "gpuMemoryMb": {
+     "median": 128.1,
+     "min": 126.3,
+     "max": 128.8
+    },
+    "allMemoryMb": {
+     "median": 960.6,
+     "min": 955.6,
+     "max": 961.4
+    },
+    "allCpuPercent": {
+     "median": 0,
+     "min": 0,
+     "max": 0
+    }
+   }
+  }
+ ]
+}
