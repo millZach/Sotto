@@ -1468,7 +1468,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     // The thread's own working folder, as Files and the terminal find it.
     folderOf: async (threadId: string) => { const found = await files.resolveWorkspace(threadId); return found.ok ? found.value.workingDirectory : null },
     // This computer's own, and what each paired host holding the account's copy last said it spent.
-    monthCredits: async (accountId: string) => meshySpending ? await meshySpending.monthCredits(accountId) : (await modelRecords.monthCredits()).get(accountId) ?? 0,
+    // A record of what hosts said that cannot be read, or is behind what they said, spends nothing (Sol's review).
+    monthCredits: async (accountId: string) => meshySpending ? await meshySpending.monthCredits(accountId).catch(() => 'unreadable' as const) : (await modelRecords.monthCredits()).get(accountId) ?? 0,
     checkPhoto, photoToSend: (root: string, checked: Parameters<typeof photoToSend>[1], path: string) => photoToSend(root, checked, path, redrawPhoto),
     make: (request: Parameters<MeshyModels['make']>[0]) => meshyModels.make(request),
     // The 3D model's line in its thread, by its ID alone; a phone or a host client reads its words.

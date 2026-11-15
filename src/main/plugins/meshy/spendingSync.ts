@@ -84,7 +84,10 @@ export class MeshySpendingSync {
     for (const target of this.options.connections()) this.tell(target)
   }
 
-  /** The account's credits this month: this computer's own and every host's as last heard. */
+  /**
+   * The account's credits this month: this computer's own and every host's as last heard. Throws `SpendingUnknown`
+   * while what hosts said cannot be read or was not written down.
+   */
   async monthCredits(accountId: string): Promise<number> {
     return ((await this.options.own()).get(accountId) ?? 0) + await this.heard.total(accountId)
   }
@@ -141,7 +144,8 @@ export class MeshySpendingSync {
   /**
    * What a host said its own threads spent: kept, and when it changed, every other host is told and Settings looks
    * again. A report older than the one held from the same run of that host is let go, so an answer that lands after a
-   * newer push cannot put back a lower count (Sol's review).
+   * newer push cannot put back a lower count (Sol's review). A count that could not be written down leaves the record
+   * behind, and nothing is counted until a later one is.
    */
   private async hear(hostId: string, reports: readonly SpendingReport[]): Promise<void> {
     if (this.closed) return

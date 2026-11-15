@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtemp, readdir, realpath, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -140,6 +140,44 @@ describe('a 3D model made on a paired host', () => {
     const bytes = Buffer.from(sent.replace('data:image/jpeg;base64,', ''), 'base64')
     expect(bytes.equals(Buffer.concat([Buffer.from([0xff, 0xd8]), ...picture, Buffer.from([0xff, 0xd9])]))).toBe(true)
     await h.plugins.close()
+  })
+})
+
+describe('a host’s copy before and without what the desktop said it spent (Sol’s review)', () => {
+  it('does not take a report it could not write down, and spends nothing until one is written', async () => {
+    const h = await host()
+    await h.plugins.copies.keep({ account: { ...STUDIO, spending: { askBefore: false, monthlyLimit: 1_000 } }, secret: FAKE_MESHY_KEY }, LAPTOP)
+    await h.plugins.spending.share([said(STUDIO.id, 0)], LAPTOP)
+    // The file can no longer be written: the desktop's 900 is not taken, and the desktop is told so.
+    await mkdir(join(h.directory, 'plugin-meshy-spending.json.next'))
+    await expect(h.plugins.spending.share([said(STUDIO.id, 900)], LAPTOP)).rejects.toThrow()
+    const refused = await h.make()
+    expect(refused.failed).toBe(true)
+    expect(refused.text).toContain('could not read or keep its record')
+    expect(meshy.created()).toEqual([])
+    // Written once more: the report counts and the copy spends again.
+    await rm(join(h.directory, 'plugin-meshy-spending.json.next'), { recursive: true })
+    await h.plugins.spending.share([said(STUDIO.id, 900)], LAPTOP)
+    expect(await h.make()).toMatchObject({ failed: false })
+    await h.plugins.close()
+  })
+
+  it('keeps a record of spending it cannot read as it is, takes no report over it, and spends nothing', async () => {
+    const h = await host()
+    await h.keep({ ...STUDIO, spending: { askBefore: false, monthlyLimit: 1_000 } })
+    await h.plugins.close()
+    const file = join(h.directory, 'plugin-meshy-spending.json')
+    await writeFile(file, '{"version":1,"heard":{"desktop-tower":{"made-up": torn')
+    // The host starts again over the same folder.
+    const again = hostPlugins({ directory: h.directory, credentials: credentials(), thread: () => ({ id: THREAD, kind: 'agent' }) as never, admits: id => id === THREAD,
+      paired: () => true, folderOf: async () => root, standIns: { meshyBase: meshy.base, meshyWait: async () => undefined } })
+    await again.copies.keep({ account: { ...STUDIO, spending: { askBefore: false, monthlyLimit: 1_000 } }, secret: FAKE_MESHY_KEY }, LAPTOP)
+    await expect(again.spending.share([said(STUDIO.id, 0)], LAPTOP)).rejects.toThrow()
+    expect(await readFile(file, 'utf8')).toBe('{"version":1,"heard":{"desktop-tower":{"made-up": torn')
+    const result = await again.tools.call(THREAD, MAKE_3D_MODEL_TOOL, BARREL)
+    expect(result.isError).toBe(true)
+    expect(meshy.created()).toEqual([])
+    await again.close()
   })
 })
 

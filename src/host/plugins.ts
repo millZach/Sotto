@@ -189,7 +189,8 @@ export function hostPlugins(options: {
       .map(account => ({ accountId: account.id, month, credits: credits.get(account.id) ?? 0, session: revisions.session, revision }))
   }
   const spending: PluginSpendingShare = {
-    // A desktop speaks only for the copies it sent: what it says of any other account is not kept.
+    // A desktop speaks only for the copies it sent: what it says of any other account is not kept. What it says is
+    // written down before it is answered, and a write that fails is no answer, so the desktop never takes it as heard.
     share: async (reports, clientId) => {
       const senders = await copies.senders()
       await heard.hear(clientId, reports.filter(report => senders[report.accountId] === clientId))
@@ -201,8 +202,11 @@ export function hostPlugins(options: {
   const { folderOf } = options
   const meshy = folderOf ? {
     folderOf,
-    // This host's own 3D models and what the copy's desktop last said, which holds every other computer's.
-    monthCredits: async (accountId: string) => ((await models.monthCredits(now())).get(accountId) ?? 0) + await heard.total(accountId),
+    // This host's own 3D models and what the copy's desktop last said, which holds every other computer's. Nothing is
+    // spent while what was said cannot be read or was not written down (Sol's review).
+    monthCredits: async (accountId: string): Promise<number | 'unreadable'> => {
+      try { return ((await models.monthCredits(now())).get(accountId) ?? 0) + await heard.total(accountId) } catch { return 'unreadable' }
+    },
     // No image library here: the photo's metadata is taken out of its file, its pixels left as they are (#2497).
     checkPhoto, photoToSend: (root: string, checked: Parameters<typeof photoToSend>[1], path: string) => photoToSend(root, checked, path, stripPhoto),
     make: (request: Parameters<MeshyModels['make']>[0]) => meshyModels.make(request),

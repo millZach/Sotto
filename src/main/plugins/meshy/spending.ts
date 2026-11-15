@@ -66,27 +66,37 @@ type Heard = z.infer<typeof heardSchema>
 /** What one computer last said an account spent, and when it said it. */
 export interface HeardReport { readonly from: string; readonly credits: number; readonly heardAt: string }
 
+/** The record of what was heard cannot be read, or what was last heard could not be written down: nothing may be spent on it. */
+export class SpendingUnknown extends Error {
+  constructor() { super('MESHY_SPENDING_UNKNOWN') }
+}
+
 /**
- * What the other computers last said each Meshy account spent this month, kept in a small file of this computer's
- * data folder so it lasts while they are away and across a restart. It holds counts and IDs, never a secret. A
- * report for an earlier month than this computer's is dropped when the file is next written; one for any other month
- * than this computer's counts for nothing.
+ * What the other computers last said each Meshy account spent, kept in a small file of this computer's data folder so
+ * it lasts while they are away and across a restart. It holds counts and IDs, never a secret. Each computer's newest
+ * report for an account is kept, of whatever month; one for any other month than this computer's counts for nothing.
+ *
+ * A report is written down before it counts, and before whoever sent it is told it was taken: a write that fails says
+ * so, and until a later one succeeds nothing is counted, so a restart can never find less than was acknowledged. Only
+ * a file that is not there yet is an empty record. One that cannot be read is left as it is, and nothing is counted
+ * or written over it until it can be read.
  */
 export class HeardSpending {
   private kept: Heard | undefined
+  /** A write failed since the last that succeeded: what is held may be behind what was said. */
+  private behind = false
   private queue: Promise<unknown> = Promise.resolve()
 
   constructor(private readonly path: string, private readonly now: () => Date = () => new Date()) {}
 
   /**
    * Keeps what one computer said of some accounts; an account it did not name keeps what it said before, and a report
-   * older than the one held from the same run is let go. Answers whether anything it said changed. A file that
-   * cannot be read starts again from what is said now.
+   * older than the one held from the same run is let go. Answers whether anything it said changed. Throws, keeping
+   * nothing, when the record cannot be read or written.
    */
   hear(from: string, reports: readonly SpendingReport[]): Promise<boolean> {
     return this.inTurn(async () => {
-      const heard = await this.read().catch((): Heard => ({ version: 1, heard: {} }))
-      const month = monthOf(this.now())
+      const heard = await this.read()
       const mine = { ...heard.heard[from] }
       let changed = false
       for (const report of reports) {
@@ -95,28 +105,22 @@ export class HeardSpending {
         if (before?.month !== report.month || before.credits !== report.credits) changed = true
         mine[report.accountId] = { month: report.month, credits: report.credits, heardAt: this.now().toISOString(), session: report.session, revision: report.revision }
       }
-      // Earlier months than this computer's count for nothing again, so they are not kept.
-      const next: Heard = { version: 1, heard: {} }
-      for (const [who, accounts] of Object.entries({ ...heard.heard, [from]: mine })) {
-        const current = Object.fromEntries(Object.entries(accounts).filter(([, entry]) => entry.month >= month))
-        if (Object.keys(current).length > 0) next.heard[who] = current
-      }
-      await this.write(next)
+      await this.write({ version: 1, heard: { ...heard.heard, [from]: mine } })
       return changed
     })
   }
 
   /**
-   * What every computer but `except` said the account spent in this computer's month. Throws when the file cannot be
-   * read, so nothing is taken for nothing spent.
+   * What every computer but `except` said the account spent in this computer's month. Throws `SpendingUnknown` when
+   * the record cannot be read or is behind what was said, so nothing is taken for nothing spent.
    */
   total(accountId: string, except?: string): Promise<number> {
-    return this.inTurn(async () => this.reports(await this.read(), accountId).filter(report => report.from !== except).reduce((sum, report) => sum + report.credits, 0))
+    return this.inTurn(async () => this.reports(await this.settled(), accountId).filter(report => report.from !== except).reduce((sum, report) => sum + report.credits, 0))
   }
 
   /** The computers that said anything of the account for this month, with what and when. */
   heardFrom(accountId: string): Promise<HeardReport[]> {
-    return this.inTurn(async () => this.reports(await this.read(), accountId))
+    return this.inTurn(async () => this.reports(await this.settled(), accountId))
   }
 
   private reports(heard: Heard, accountId: string): HeardReport[] {
@@ -127,6 +131,12 @@ export class HeardSpending {
     })
   }
 
+  private async settled(): Promise<Heard> {
+    if (this.behind) throw new SpendingUnknown()
+    try { return await this.read() } catch { throw new SpendingUnknown() }
+  }
+
+  /** The record, read again on each call until a read succeeds. Only a file that is not there yet is an empty one. */
   private async read(): Promise<Heard> {
     if (this.kept) return this.kept
     let text: string
@@ -137,15 +147,20 @@ export class HeardSpending {
     return (this.kept = heardSchema.parse(JSON.parse(text)))
   }
 
+  /** Written down first, then held: a write that fails leaves what is held as the file has it, and marks it behind. */
   private async write(heard: Heard): Promise<void> {
-    // Held in memory first, so what was heard counts even when the file cannot be written.
-    this.kept = heard
     const next = `${this.path}.next`
     try {
       await mkdir(dirname(this.path), { recursive: true })
       await writeFile(next, JSON.stringify(heard), { mode: 0o600 })
       await rename(next, this.path)
-    } catch { await rm(next, { force: true }).catch(() => undefined) }
+    } catch (error) {
+      this.behind = true
+      await rm(next, { force: true }).catch(() => undefined)
+      throw error
+    }
+    this.kept = heard
+    this.behind = false
   }
 
   private inTurn<Result>(run: () => Promise<Result>): Promise<Result> {

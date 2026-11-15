@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -120,6 +120,20 @@ describe('shared spending on the desktop', () => {
     // Meshy gave credits back: the newer report says less, and it is the one that counts.
     forge.push(850)
     await expect.poll(() => spending.monthCredits(STUDIO.id)).toBe(850)
+    spending.close()
+  })
+
+  it('refuses to count while what hosts said cannot be read, and leaves the file as it was', async () => {
+    const forge = remote('host-forge', 200)
+    const spending = sync([forge.target], { credits: 0 })
+    await writeFile(join(directory, 'plugin-meshy-spending.json'), 'not a record')
+    spending.connected(forge.target)
+    await spending.idle()
+    // A push is heard straight away, and must not write over the file either.
+    forge.push(300)
+    await spending.idle()
+    await expect(spending.monthCredits(STUDIO.id)).rejects.toThrow()
+    await expect(readFile(join(directory, 'plugin-meshy-spending.json'), 'utf8')).resolves.toBe('not a record')
     spending.close()
   })
 
