@@ -27,18 +27,23 @@ export interface ModelViewProps {
 const STEP = Math.PI / 12
 const PITCH_MIN = -0.15
 const PITCH_MAX = 1.0
-const PITCH_FRONT = 0.18
+/** The front: a three-quarter view from a little above, as in the prototype, so a model reads as solid. */
+const YAW_FRONT = -0.62
+const PITCH_FRONT = 0.38
+/** The camera's field of view, in degrees, and how much room the model is given around it. */
+const FIELD = 35
+const MARGIN = 1.18
 /** One whole turn in 24 seconds, slow enough to read the model by. */
 const AUTO_TURN_PER_MS = (Math.PI * 2) / 24_000
 
-/** Whole degrees from the front, 0 to 359. */
-const degreesOf = (yaw: number): number => { const degrees = Math.round((yaw * 180 / Math.PI) % 360); return degrees < 0 ? degrees + 360 : degrees }
+/** Whole degrees turned from the front, 0 to 359. */
+const degreesOf = (yaw: number): number => { const degrees = Math.round(((yaw - YAW_FRONT) * 180 / Math.PI) % 360); return degrees < 0 ? degrees + 360 : degrees }
 
 export default function ModelView({ modelId, part, name, reduced, onClose, onUnavailable }: ModelViewProps): ReactNode {
   const { t } = useLingui()
   const host = useRef<HTMLDivElement>(null)
   const canvas = useRef<HTMLCanvasElement>(null)
-  const turn = useRef({ yaw: 0, pitch: PITCH_FRONT, dirty: true, touched: false, auto: !reduced })
+  const turn = useRef({ yaw: YAW_FRONT, pitch: PITCH_FRONT, dirty: true, touched: false, auto: !reduced })
   const drag = useRef<{ readonly x: number; readonly y: number; readonly yaw: number; readonly pitch: number } | null>(null)
   const [degrees, setDegrees] = useState(0)
   const [drawn, setDrawn] = useState<'loading' | 'drawn' | 'unreadable'>('loading')
@@ -57,8 +62,7 @@ export default function ModelView({ modelId, part, name, reduced, onClose, onUna
     try { renderer = new WebGLRenderer({ canvas: surface, antialias: true, alpha: true }) } catch { unavailable.current(); return undefined }
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
     const scene = new Scene()
-    const camera = new PerspectiveCamera(35, 1, 0.05, 50)
-    camera.position.set(0, 0, 3.2)
+    const camera = new PerspectiveCamera(FIELD, 1, 0.05, 50)
     const pivot = new Group()
     scene.add(pivot, new HemisphereLight(0xffffff, 0x444444, 2.2))
     const sun = new DirectionalLight(0xffffff, 1.6)
@@ -72,6 +76,9 @@ export default function ModelView({ modelId, part, name, reduced, onClose, onUna
       const height = Math.max(1, element.clientHeight)
       renderer.setSize(width, height, false)
       camera.aspect = width / height
+      // Far enough back that the model, scaled to fit a sphere of radius one, fits the narrower way with room around it.
+      const half = Math.min(FIELD / 2 * Math.PI / 180, Math.atan(Math.tan(FIELD / 2 * Math.PI / 180) * camera.aspect))
+      camera.position.set(0, 0, MARGIN / Math.sin(half))
       camera.updateProjectionMatrix()
       turn.current.dirty = true
     }
@@ -124,7 +131,7 @@ export default function ModelView({ modelId, part, name, reduced, onClose, onUna
   }
   const toFront = (): void => {
     const held = turn.current
-    held.yaw = 0
+    held.yaw = YAW_FRONT
     held.pitch = PITCH_FRONT
     moved()
   }
