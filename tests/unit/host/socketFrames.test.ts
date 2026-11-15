@@ -350,7 +350,41 @@ const history = (bytes: number): string => {
   return value.slice(0, bytes)
 }
 
+/** A peer that has stopped reading: nothing the host writes ever leaves the stream, so it all stays unread. */
+function stalled(deflate: boolean) {
+  const stream = new Duplex({ read() {}, write() { /* never written out */ } })
+  const frames = new SocketFrames(stream, false, () => {}, { deflate })
+  return { frames, stream }
+}
+
 describe('permessage-deflate', () => {
+  // ADR-0025, November 15, 2026 amendment (#2446): for text messages, what is held for a peer that is not reading is
+  // counted as it is on the wire, frame headers included, and the message being sent at its uncompressed size.
+  it.each([['ASCII', history(DEFLATE_SYNC_MAX_BYTES)], ['two-byte UTF-8', 'é'.repeat(DEFLATE_SYNC_MAX_BYTES / 2)]])('closes a plain peer that stops reading once its next %s message would pass two frame limits, headers written included', (_kind, text) => {
+    const bytes = Buffer.byteLength(text), cap = HOST_MAX_FRAME_BYTES * 2
+    // A payload over 65,535 bytes goes from the host, unmasked, under a 10-byte header: 2, and an 8-byte length.
+    const header = 10, plain = stalled(false)
+    let accepted = 0
+    while (plain.frames.sendText(text)) accepted++
+    expect(plain.stream.destroyed).toBe(true)
+    expect(accepted).toBe(Math.floor((cap - bytes) / (bytes + header)) + 1)
+    expect(accepted * (bytes + header)).toBeLessThanOrEqual(cap + header)
+  })
+
+  it('holds a compressed peer that stops reading to what is written on the wire, counting the message sent at its own size', () => {
+    const text = history(DEFLATE_SYNC_MAX_BYTES), cap = HOST_MAX_FRAME_BYTES * 2
+    const accepted = Math.floor((cap - text.length) / (text.length + 10)) + 1
+    // The same messages compressed take far less of the cap, so twice as many leave the connection open.
+    const packed = stalled(true)
+    for (let sent = 0; sent < accepted * 2; sent++) expect(packed.frames.sendText(text)).toBe(true)
+    expect(packed.stream.writableLength).toBeLessThan(cap / 4)
+    expect(packed.stream.destroyed).toBe(false)
+    // Near the cap, a message that would compress to a few kilobytes still counts at its own size, and closes it.
+    Object.defineProperty(packed.stream, 'writableLength', { value: cap - text.length + 1 })
+    expect(packed.frames.sendText(text)).toBe(false)
+    expect(packed.stream.destroyed).toBe(true)
+  })
+
   it.each([[2 * 1024, 'at once'], [DEFLATE_SYNC_MAX_BYTES + 1, 'off the loop'], [4 * 1024 * 1024, 'off the loop']])('round-trips a %i-byte message compressed %s in both directions', async size => {
     const client = deflating(true), server = deflating(false), text = history(size)
     server.frames.sendText(text); await server.frames.drained()
