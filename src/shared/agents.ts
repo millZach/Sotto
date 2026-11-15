@@ -1197,7 +1197,9 @@ export const agentStateSchema = z.object({
    * `browser`: present while the host offers Sotto's browser for its own threads to this computer (ADR-0198), numbering
    * the connection it came on, so a page watched over an earlier connection is watched again over this one.
    */
-  connections: z.array(z.object({ hostId: z.uuid(), name: z.string(), kind: z.enum(['local', 'remote']), connected: z.boolean(), browser: z.number().int().positive().optional() })).optional(),
+  connections: z.array(z.object({ hostId: z.uuid(), name: z.string(), kind: z.enum(['local', 'remote']), connected: z.boolean(), browser: z.number().int().positive().optional(),
+    /** A paired host that shows its threads' 3D models here (`plugin-meshy-models`; the Meshy plan's ticket 6, part 2). */
+    models3d: z.literal(true).optional() })).optional(),
   hostId: z.uuid().optional(),
   configuration: agentConfigurationSchema,
   skillCatalogs: z.array(agentSkillCatalogSchema).optional(),

@@ -55,6 +55,7 @@ import type { NextPromptEntry } from '../../shared/nextPrompt'
 import { desktopDefaultsReceiptSchema, type DesktopDefaultsInput, type DesktopDefaultsReceipt } from '../../shared/desktopDefaults'
 import { heldPluginAccountCopiesSchema, pluginAccountCopyReceiptSchema, pluginAccountCopyRemovedSchema, type HeldPluginAccountCopy, type PluginAccountCopy, type PluginAccountCopyReceipt, type PluginAccountCopyRemoved, spendingReportsSchema, type SpendingReport } from '../../shared/pluginAccountCopies'
 import { gitHubSignInSchema, type GitHubSignIn } from '../../shared/plugins'
+import { model3dHostBytesSchema, model3dListSchema, model3dRemovalSchema, model3dViewOrNullSchema, type HostModelViews, type Model3dHostNews } from '../../shared/models3d'
 import type { DelegationRelayAsk, DelegationRemoteAsk, RelayedReply } from '../../shared/delegationRelay'
 import type { TellWatcherAnswer, WatcherTellPush } from '../../shared/tellWatcher'
 import type { DelegationNews } from '../../shared/delegation'
@@ -132,6 +133,11 @@ export interface SocketHostServiceOptions {
    * answers say at start: only then does its hello accept `browser`, so the host sends it pages, tasks and pictures.
    */
   pairedHostBrowser?: boolean
+  /**
+   * A host thread's 3D models shown here (the Meshy plan's ticket 6, part 2), as this computer's `plugins` Owl answer says
+   * at start: only then does its hello accept `plugin-meshy-models`, so the host sends 3D models' lines and their news.
+   */
+  meshyModels?: boolean
   /**
    * Whether this desktop wants a host's next prompts now (ADR-0173): present only while its `next-prompt` Owl answer is on,
    * which is what makes its hello accept `next-prompts`; read on each connection, and `setNextPromptsWanted` tells a change.
@@ -268,6 +274,7 @@ export class SocketHostService implements HostService {
   private readonly nextPromptListeners = new Set<(entry: NextPromptEntry) => void>()
   private readonly checkListeners = new Set<() => void>()
   private readonly spendingListeners = new Set<(reports?: readonly SpendingReport[]) => void>()
+  private readonly modelListeners = new Set<(news: Model3dHostNews) => void>()
   private readonly relayListeners = new Set<(askId: string, ask: DelegationRelayAsk) => void>()
   /** Asks that came before anything listened, as when a host reads its relayed delegations again during this hello (#1316). */
   private readonly heldAsks: { readonly askId: string; readonly ask: DelegationRelayAsk }[] = []
@@ -436,7 +443,7 @@ export class SocketHostService implements HostService {
       // This connection holds no shell push's thread records yet, so the host's first push lists every one (#996).
       // Nor any push's parts, so its first push keeps none (ADR-0028, November 10 amendment).
       this.pushedThreads = createThreadReassembly(); this.pushedParts = null
-      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'host-update', 'activity-bodies', 'changed-thread-records', 'kept-parts', 'plugin-meshy-spending', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads', 'watcher-tell', 'watcher-ready', 'watcher-progress'] : [], ...this.options.crossMachineEnabled === true ? ['delegation-views', 'check-queue-views'] : [], ...this.options.pairedHostBrowser === true ? ['browser'] : [], ...this.options.nextPromptsWanted ? ['next-prompts'] : [], ...this.options.productEventAnswer ? ['product-events'] : [], ...this.relays ? ['delegation-relay', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts'] : []] as const).filter(feature => health.features.includes(feature))
+      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'host-update', 'activity-bodies', 'changed-thread-records', 'kept-parts', 'plugin-meshy-spending', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads', 'watcher-tell', 'watcher-ready', 'watcher-progress'] : [], ...this.options.crossMachineEnabled === true ? ['delegation-views', 'check-queue-views'] : [], ...this.options.pairedHostBrowser === true ? ['browser'] : [], ...this.options.meshyModels === true ? ['plugin-meshy-models'] : [], ...this.options.nextPromptsWanted ? ['next-prompts'] : [], ...this.options.productEventAnswer ? ['product-events'] : [], ...this.relays ? ['delegation-relay', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts'] : []] as const).filter(feature => health.features.includes(feature))
       const accepts = { accepts: [...accepted] }
       const hello = this.read(hostHelloSchema, await this.call({ op: 'hello', afterSeq: this.catchesUp ? this.latestSeq : NO_EVENTS_AFTER, ...accepts }))
       if (hello.hostId !== session.hostId) throw new HostConnectionError(CONNECT_FAILURES.identityChangedConnect(), 'unauthenticated')
@@ -565,6 +572,8 @@ export class SocketHostService implements HostService {
         else if (message.event === 'delegations-changed') { if (this.supportsDelegationViews) this.delegationsChanged({ threadIds: message.threadIds }) }
         // Pushed only to a desktop whose hello accepted `check-queue-views` (#1312), so only where Work across machines is on.
         // Pushed only to a desktop whose hello accepted `plugin-meshy-spending`: what the host's own threads spent of its copies.
+        // Pushed only to a desktop whose hello accepted `plugin-meshy-models`: a host thread's 3D model, or records that went.
+        else if (message.event === 'plugin-meshy-models') { if (this.supportsPluginMeshyModels) for (const listener of [...this.modelListeners]) { try { listener(message.news) } catch { /* A listener's failure is its own. */ } } }
         else if (message.event === 'plugin-meshy-spending') { for (const listener of [...this.spendingListeners]) { try { listener(message.reports) } catch { /* A listener's failure is its own. */ } } }
         else if (message.event === 'check-queue') { if (this.options.crossMachineEnabled === true) { this.checks = message.checks; this.checksChanged() } }
         // Pushed only to a desktop whose hello accepted `next-prompts` and that said it wants them (ADR-0173).
@@ -1786,6 +1795,23 @@ export class SocketHostService implements HostService {
     if (!this.supportsPluginMeshySpending) this.offers('plugin-meshy-spending')
     return this.read(spendingReportsSchema, await this.call({ op: 'plugin-meshy-spending', reports: [...reports] }, undefined, undefined, 10000))
   }
+  /**
+   * The host's 3D models (`plugin-meshy-models`; the Meshy plan's ticket 6, part 2), only where this desktop's hello
+   * accepted them: in this connection's features, not its health, since the host keeps the lines for that hello alone.
+   */
+  get supportsPluginMeshyModels(): boolean { return this.options.meshyModels === true && this.features.includes('plugin-meshy-models') }
+  get pluginMeshyModels(): HostModelViews | undefined {
+    if (!this.supportsPluginMeshyModels) return undefined
+    return this.modelViews ??= {
+      list: async threadId => this.read(model3dListSchema, await this.call({ op: 'plugin-meshy-models', request: threadId === undefined ? {} : { threadId } }, undefined, undefined, 30000)),
+      view: async id => this.read(model3dViewOrNullSchema, await this.call({ op: 'plugin-meshy-model', request: { id } }, undefined, undefined, 30000)),
+      // A part is one large frame, so it waits behind previews as a picture does.
+      bytes: request => this.large('plugin-meshy-models', async () => this.read(model3dHostBytesSchema, await this.call({ op: 'plugin-meshy-model-bytes', request }))),
+      remove: async id => this.read(model3dRemovalSchema, await this.call({ op: 'plugin-meshy-model-remove', request: { id } }, undefined, undefined, 30000)),
+      subscribe: listener => { this.modelListeners.add(listener); return () => { this.modelListeners.delete(listener) } },
+    }
+  }
+  private modelViews: HostModelViews | undefined
   /** Hears the host push what its own threads spent of this desktop's copies. Returns the way to stop. */
   subscribePluginMeshySpending(listener: (reports?: readonly SpendingReport[]) => void): () => void {
     this.spendingListeners.add(listener)
