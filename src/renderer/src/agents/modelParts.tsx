@@ -9,9 +9,11 @@ import type { Model3dView } from '../../../shared/models3d'
  */
 
 /** The still picture, read once the 3D model is done, as an address the window may show. */
-export function useStill(view: Pick<Model3dView, 'id' | 'state' | 'still'> | null | undefined): string | undefined {
+export function useStill(view: Pick<Model3dView, 'id' | 'state' | 'still' | 'files'> | null | undefined): string | undefined {
   const [still, setStill] = useState<string>()
-  const wanted = view?.state === 'done' && view.still ? `${view.id}/${view.still}` : undefined
+  // Keyed on the picture's size too, so one whose file was gone when first read is read again once it is back.
+  const size = view?.files.find(file => file.name === view.still)?.bytes
+  const wanted = view?.state === 'done' && view.still ? `${view.id}/${view.still}/${size ?? 'gone'}` : undefined
   useEffect(() => {
     if (!wanted || !view) { setStill(undefined); return undefined }
     let live = true
