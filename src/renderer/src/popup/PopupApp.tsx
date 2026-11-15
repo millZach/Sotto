@@ -341,7 +341,7 @@ export function PopupApp({ bridge }: { readonly bridge: PopupBridge }): ReactNod
         const state = await bridge.shell().catch(() => null)
         const where = state === null ? null : popupProject(state, memory.projectId)
         if (state === null || where === null) { failed(msg`There is no project to start a thread in. Add one in Sotto, then send again.`); return }
-        const started = await beginNewThread(state, command, where, () => bridge.getSettings())
+        const started = await beginNewThread(state, command, where, () => bridge.getSettings(), bridge.modelRouterEnabled === true)
         if ('error' in started) { failed(started.error); return }
         id = started.thread.id
         queue = false

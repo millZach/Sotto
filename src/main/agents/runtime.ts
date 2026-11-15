@@ -20,6 +20,7 @@ import { nextPromptProject } from './nextPromptProject'
 import type { NextPromptEntry } from '../../shared/nextPrompt'
 import { CodexAppServerHost, type CodexAdapterEvent } from './providers/codex/codex'
 import { ClaudeStreamJsonHost, type ClaudeAdapterEvent } from './providers/claude/claude'
+import type { RouterEvent } from './routedSend'
 import { WorkerRoles } from './subagentRoles'
 import { subagentRoleTable } from '../../shared/workerRoles'
 import { GrokAcpHost } from './grok'
@@ -123,6 +124,9 @@ export interface AgentRuntimeOptions {
   watcherEnabled?: boolean
   /** Dynamic threads' Owl answer (ADR-0191), read once by the process owner. Absent fails closed. */
   dynamicThreadsEnabled?: boolean
+  /** Model routing's Owl answer (ADR-0207), and where its event names are logged. */
+  modelRouterEnabled?: boolean
+  modelRouterLog?: (event: RouterEvent) => void
   threadSnoozeEnabled?: boolean
   /** The providers held to Owl on this run (ADR-0072, ADR-0079), read once by the process owner. Absent holds every one. */
   heldProviders?: HeldProviders
@@ -494,7 +498,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const babysittingRetired = options.babysitting?.retired === true
   const babysitTool = (threadId: string): boolean => !babysittingRetired && options.babysitting?.agentTool?.() === true && agentHost.admitsBabysitting(threadId)
   const agentControl: AgentControl = new AgentControl({
-    directory, host: agentHost, credentials, turns, threadSnoozeEnabled: options.threadSnoozeEnabled === true, dynamicThreadsEnabled: options.dynamicThreadsEnabled === true, watcherEnabled: options.watcherEnabled ?? false,
+    directory, host: agentHost, credentials, turns, threadSnoozeEnabled: options.threadSnoozeEnabled === true, dynamicThreadsEnabled: options.dynamicThreadsEnabled === true, modelRouterEnabled: options.modelRouterEnabled === true, modelRouter: () => options.settings().modelRouter, ...(options.modelRouterLog ? { modelRouterLog: options.modelRouterLog } : {}), watcherEnabled: options.watcherEnabled ?? false,
     heldProviders: held, streamingPublishCost: options.streamingPublishCost ?? false, ...(usage ? { usage } : {}),
     ...(options.productEvents ? { productEvents: options.productEvents } : {}),
     ...(restartStopped ? { restartStoppedThreads: true } : {}),

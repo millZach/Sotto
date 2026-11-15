@@ -57,6 +57,8 @@ import { opencodeFolders } from './opencodeServer'
 import { resolveModel } from '../../shared/modelCatalog'
 import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { NextTurnChoices, pressedOnto, stillToChange, type NextTurnChoice, type NextTurnOptions } from './nextTurnChoices'
+import { RoutedSends, type RouterEvent } from './routedSend'
+import { DEFAULT_MODEL_ROUTER, type ModelRouterSettings } from '../../shared/modelRouter'
 import { compactionPending } from '../../shared/compaction'
 import { AttachmentPreviews } from './attachmentPreviews'
 import { AttachmentStore, inlineStager, type StageInline } from './attachmentStore'
@@ -529,6 +531,14 @@ export class AgentControl {
   private readonly idleCompactions = new WeakSet<object>()
   /** Each thread's choice kept for its next turn (ADR-0192), present only while `next-turn-choice` is on. */
   private readonly nextTurns = new NextTurnChoices()
+  /** Model routing's sends (ADR-0207): the classifier call and each thread's last pick live in `routedSend.ts`. */
+  private readonly routedSends = new RoutedSends({
+    thread: threadId => this.thread(threadId), models: () => this.state.host.models, settings: () => this.dependencies.modelRouter?.() ?? DEFAULT_MODEL_ROUTER,
+    classify: async (target, prompt, signal) => await this.dependencies.host.writeShortTextOn?.(target, prompt, signal) ?? null,
+    configure: (threadId, modelId, reasoningEffort) => this.configureRouted(threadId, modelId, reasoningEffort),
+    userChoiceWaits: threadId => { const choice = this.nextTurns.waiting(threadId)?.options ?? this.nextTurns.sent(threadId); return choice?.modelId !== undefined || choice?.reasoningEffort !== undefined },
+    publish: () => this.publish(), logEvent: name => this.dependencies.modelRouterLog?.(name),
+  })
   /** The commands that send a kept choice, among the machine commands above: Sotto's, never the user's or Watcher's. */
   private readonly nextTurnSends = new WeakSet<object>()
   watcherPhoneExclusions(): { threadIds: string[]; projectIds: string[] } {
@@ -1086,6 +1096,10 @@ export class AgentControl {
     watcherEnabled?: boolean
     /** Dynamic threads' Owl answer (ADR-0191): where it is off, a saved mark stays whole and nothing sets one. */
     dynamicThreadsEnabled?: boolean
+    /** Model routing's Owl answer (ADR-0207), and its settings as they stand: off, a saved mark stays whole and no send is routed. */
+    modelRouterEnabled?: boolean
+    modelRouter?: () => ModelRouterSettings
+    modelRouterLog?: (event: RouterEvent) => void
     threadSnoozeEnabled?: boolean
     /** The providers held to Owl on this run (ADR-0072); absent holds every one while retaining Owl's saved choices. */
     heldProviders?: HeldProviders
@@ -1694,6 +1708,7 @@ export class AgentControl {
     if (this.state.followupReceipts) this.state.followupReceipts = kept(this.state.followupReceipts)
     this.deliveredPromptDigests = this.deliveredPromptDigests.filter(item => !gone.has(item.threadId))
     for (const threadId of threadIds) { this.emptyDraftRevisions.delete(threadId); this.titles.forget(threadId) }
+    this.routedSends.forget(...threadIds)
     if (this.state.draftThreadId && gone.has(this.state.draftThreadId)) this.clearDraft()
     if (this.state.activeThreadId && gone.has(this.state.activeThreadId)) this.state.activeThreadId = null
     this.viewedThreadIds = this.viewedThreadIds.filter(id => !gone.has(id))
@@ -1907,6 +1922,7 @@ export class AgentControl {
     const unconfirmedSettings = this.unconfirmedSettings()
     if (unconfirmedSettings.length) state.unconfirmedSettings = unconfirmedSettings
     if (this.nextTurns.size) state.nextTurnSettings = this.nextTurns.list() as NonNullable<AgentState['nextTurnSettings']>
+    if (this.routedSends.size) state.routerPicks = this.routedSends.list() as NonNullable<AgentState['routerPicks']>
     this.attachmentPreviews.decorate(state.host)
     this.hideWatcher(state)
     return state
@@ -1971,7 +1987,7 @@ export class AgentControl {
     if (!this.threadAvailable(state.draftThreadId)) {
       state.draft = ''; state.draftThreadId = null; state.draftRequestId = null; state.draftAttachments = []; state.composing = false
     }
-    for (const key of ['threadDrafts', 'deliveries', 'deliveredDrafts', 'obsoleteDrafts', 'followups', 'followupReceipts', 'threadDraftPersistence', 'nextTurnSettings'] as const) {
+    for (const key of ['threadDrafts', 'deliveries', 'deliveredDrafts', 'obsoleteDrafts', 'followups', 'followupReceipts', 'threadDraftPersistence', 'nextTurnSettings', 'routerPicks'] as const) {
       const records = state[key]
       if (records) (state as Record<string, unknown>)[key] = kept<{ threadId: string }>(records, item => this.threadAvailable(item.threadId))
     }
@@ -2050,6 +2066,7 @@ export class AgentControl {
     if (unconfirmedSettings.length) state.unconfirmedSettings = unconfirmedSettings
     // Shared, never copied: the list is frozen and made again only when a choice changes (nextTurnChoices.ts).
     if (this.nextTurns.size) state.nextTurnSettings = this.nextTurns.list() as NonNullable<AgentState['nextTurnSettings']>
+    if (this.routedSends.size) state.routerPicks = this.routedSends.list() as NonNullable<AgentState['routerPicks']>
     this.hideWatcher(state)
     return state
   }
@@ -3036,6 +3053,8 @@ export class AgentControl {
     const host = this.dependencies.host
     const thread = this.state.host.threads.find(item => item.id === threadId)
     if (!host.startThreadSession || !thread || thread.providerSessionOpen || thread.archivedAt || !isThreadProviderConnected(this.state.host, thread)) return Promise.resolve(this.reply())
+    // A new routed thread starts only after its first message chooses a model, including where staying is on.
+    if (thread.nativeSessionStarted === false && this.dependencies.modelRouterEnabled === true && this.routedSends.routes(threadId)) return Promise.resolve(this.reply())
     const task = (this.threadActions.get(threadId) ?? Promise.resolve()).catch(() => undefined)
       .then(() => host.startThreadSession!(threadId)).catch(() => undefined)
     this.threadActions.set(threadId, task)
@@ -3548,6 +3567,24 @@ export class AgentControl {
     this.thread(command.threadId)
     if (!this.dependencies.host.setThreadDynamic) throw new Error('Dynamic threads are unavailable. Nothing changed.')
     this.acceptSnapshot(await this.dependencies.host.setThreadDynamic(command.threadId, command.dynamic))
+  }
+  /** In the thread's own lane, as Dynamic's mark is (ADR-0207). Turned off, the thread's last pick goes with it. */
+  private async setThreadRouted(command: Extract<AgentCommand, { type: 'set-thread-routed' }>): Promise<void> {
+    if (this.dependencies.modelRouterEnabled !== true) throw new Error('Model routing is available in Sotto Owl. Nothing changed.')
+    this.thread(command.threadId)
+    if (!this.dependencies.host.setThreadRouted) throw new Error('Model routing is unavailable. Nothing changed.')
+    this.acceptSnapshot(await this.dependencies.host.setThreadRouted(command.threadId, command.routed))
+    if (!command.routed) this.routedSends.forget(command.threadId)
+  }
+  /**
+   * The router's own `configure-thread`, dispatched as a chip press at rest is and never through the lane the send holds.
+   * It resolves only when the change came back accepted. Whatever it throws is the router's to report, on the chip's card,
+   * so the window's command error is left as it was.
+   */
+  private async configureRouted(threadId: string, modelId: string, reasoningEffort: string): Promise<void> {
+    const error = this.visibleCommandError, message = this.state.error
+    try { await this.dispatch({ type: 'configure-thread', commandId: randomUUID(), threadId, modelId, reasoningEffort }) }
+    catch (thrown) { this.setCommandError(error, message); throw thrown }
   }
   private async renameThread(command: Extract<AgentCommand, { type: 'rename-thread' }>): Promise<AgentState> {
     const title = command.title.trim()
@@ -4598,6 +4635,7 @@ export class AgentControl {
   private async execute(command: AgentCommand, turn?: ActiveTurn, manualRetryId?: string, selectionRevision = this.selectionRevision,
     client: ClientIdentity = this.localClient, answerDecisionId?: string, composer?: ComposerContext, sentDraft?: AgentThreadDraft): Promise<void> {
     if (command.type === 'set-thread-dynamic') return this.setThreadDynamic(command)
+    if (command.type === 'set-thread-routed') return this.setThreadRouted(command)
     const origin = this.watcherOrigins.get(command); origin?.guard()
     if (this.disposed) throw new Error('Sotto is stopping. Your draft is saved.')
     const heldChoice = heldProviderChosenBy(command, this.held)
@@ -4930,6 +4968,7 @@ export class AgentControl {
           ...(command.check ? { check: true as const } : {}),
           ...(origin?.keptSpeed ? { keptSpeed: true as const } : {}),
           ...(command.dynamic && !origin && this.dependencies.dynamicThreadsEnabled === true ? { dynamic: true as const } : {}),
+          ...(command.routed && !origin && this.dependencies.modelRouterEnabled === true ? { routed: true as const } : {}),
           ...defaults }, turn, validatePermission, undefined, client, undefined, origin)
         // A thread the popup starts stays the popup's: the window keeps what it shows (ADR-0181).
         const opens = !origin && client.keepsSelection !== true
@@ -4978,6 +5017,9 @@ export class AgentControl {
       }
       case 'configure-thread': {
         this.assertCanAct(undefined, false)
+        // Every model or effort set from outside the router comes through here, pressed at rest or kept for the next turn and
+        // sent when the thread rests: a routed thread's next message then runs on it (ADR-0207). The router's own goes by `dispatch`.
+        if (this.dependencies.modelRouterEnabled === true && (command.modelId !== undefined || command.reasoningEffort !== undefined)) this.routedSends.choseByHand(command.threadId)
         if (command.modelId === undefined && command.reasoningEffort === undefined && command.runtimeMode === undefined && command.providerMode === undefined
           && command.fastMode === undefined && command.speed === undefined) throw new Error('Choose a thread setting to change.')
         if (this.thread(command.threadId).nativeSessionStarted !== false && !capabilitiesForThread(this.state.host, this.thread(command.threadId)).configureThread) throw new Error('This provider does not support changing thread settings.')
@@ -5414,6 +5456,15 @@ export class AgentControl {
     // A model change that names no effort is saved with the new model's default, as the provider will start it on.
     const startingEffort = command.type === 'configure-thread' && command.modelId !== undefined && command.reasoningEffort === undefined
       ? resolveModel(this.state.host.models, command.modelId)?.defaultReasoningEffort : undefined
+    // A routed thread's own message is classified and the thread put on the pick before it goes (ADR-0207). Wake-ups and
+    // Watcher's, delegation's and the Council's sends are not the user's; a paired phone's are. The classifier takes
+    // seconds, and a prompt that goes at once is held in memory until the outbox write below, so it is saved first.
+    if (command.type === 'send' && this.dependencies.modelRouterEnabled === true && !wakeUp && (!origin || origin.phoneOrigin)
+      // A model or effort the user set by hand since the last message is theirs to run this one on, once (ADR-0192).
+      && !this.routedSends.takeChoiceByHand(command.threadId) && this.routedSends.routes(command.threadId)) {
+      try { await this.persist() } catch { throw new Error(PROMPT_NOT_SAVED) }
+      await this.routedSends.beforeSend(command.threadId, command.text)
+    }
     command = (this.watcherHooks?.beforeDispatch(command as AgentHostCommand, draftId, origin) ?? command) as DispatchCommand
     // A thread that began from another sends its first message with the handover ahead of the words (#1028).
     const startHandover = command.type === 'send' && this.startHandoverDue(command) ? await this.startHandoverFor(command) : undefined

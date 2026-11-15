@@ -223,6 +223,9 @@ async function usageDeadline<T>(read: () => Promise<T>): Promise<T> {
 export const REQUEST_DRAFT_PASS_INTERVAL_MS = 500
 
 /** Routing happens in main, before host-local IDs or privileged command schemas are decoded. */
+/** The most router picks one shell carries, which is what its schema takes (`agentStateSchema.routerPicks`); the newest are kept. */
+const ROUTER_PICKS_SHOWN_MAX = 1_000
+
 export class DesktopHostRouter {
   /** Saved host identities keep an offline computer visible when it has no live thread connection. */
   private usageSavedHostIds: readonly string[] = []
@@ -1020,6 +1023,8 @@ export class DesktopHostRouter {
       busyThreadIds: entries.flatMap(item => item.state.busyThreadIds ?? []),
       ...(entries.some(item => item.state.unconfirmedSettings?.length) ? { unconfirmedSettings: entries.flatMap(item => item.state.unconfirmedSettings ?? []) } : {}),
       ...(entries.some(item => item.state.nextTurnSettings?.length) ? { nextTurnSettings: entries.flatMap(item => item.state.nextTurnSettings ?? []) } : {}),
+      // Every host's own, so this computer's routed threads keep their pick while another machine is the one selected (ADR-0207).
+      ...(entries.some(item => item.state.routerPicks?.length) ? { routerPicks: entries.flatMap(item => item.state.routerPicks ?? []).slice(-ROUTER_PICKS_SHOWN_MAX) } : {}),
       activeThreadId: this.selectedThreadId === undefined ? base.activeThreadId : this.selectedThreadId,
       activeProjectId: this.selectedProjectId ?? base.activeProjectId,
       ...(this.notice ? { error: this.notice.message } : {}),

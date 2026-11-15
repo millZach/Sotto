@@ -384,6 +384,16 @@ export const agentSpeedSchema = z.enum(['fast', 'ultrafast'])
 export type AgentSpeed = z.infer<typeof agentSpeedSchema>
 export const agentModelSpeedSchema = z.object({ id: agentSpeedSchema, name: z.string().min(1).max(100), description: z.string().max(300).optional() })
 export type AgentModelSpeed = z.infer<typeof agentModelSpeedSchema>
+/**
+ * What the window is told of one routed thread's last routing (ADR-0207), in memory only: never in a log, never on disk,
+ * the startup cache included. `failed`: the classifier did not answer. `unconfirmed`: the settings change did not come
+ * back accepted, so the record names no model or effort; the chips show what the thread runs on.
+ */
+export const routerPickSchema = z.object({
+  threadId: z.string().min(1).max(256), state: z.enum(['choosing', 'chose', 'kept', 'failed', 'unconfirmed']),
+  modelId: z.string().max(512).optional(), reasoningEffort: z.string().max(64).optional(), reason: z.string().max(120).optional(),
+})
+export type RouterPick = z.infer<typeof routerPickSchema>
 export const agentThreadOptionsSchema = z.object({ modelId: providerEntityId.optional(), reasoningEffort: z.string().min(1).max(64).optional(),
   runtimeMode: agentRuntimeModeSchema.optional(), providerMode: providerEntityId.optional(),
   /** Compatibility alias for speed fast; an explicit speed takes precedence (ADR-0143). */
@@ -723,6 +733,8 @@ export const agentThreadSchema = z.object({
   delegatedBy: id.optional(),
   /** The user turned Dynamic on for this thread (ADR-0191): Sotto's own record, read through `isDynamicThread`. */
   dynamic: z.literal(true).optional().catch(undefined),
+  /** The user turned model routing on for this thread (ADR-0207): Sotto's own record, read through `isRoutedThread`. */
+  routed: z.literal(true).optional().catch(undefined),
   /** What this thread's provider session has been told of Dynamic (ADR-0191), read through `overseerNoteFor`. */
   dynamicSession: z.object({ created: z.boolean(), told: z.boolean(), createdNote: dynamicNoteDigestSchema.optional(), toldNote: dynamicNoteDigestSchema.optional(),
     noteHeard: z.literal(true).optional(), noteOwed: z.literal(true).optional() }).strict().optional().catch(undefined),
@@ -1240,6 +1252,8 @@ export const agentStateSchema = z.object({
    * its queue sends anything, and nothing of it reaches the provider before. Absent when none waits.
    */
   nextTurnSettings: z.array(agentThreadOptionsSchema.extend({ threadId: id })).max(1_000).optional(),
+  /** Each routed thread's last routing (CONTEXT.md **Router pick**, ADR-0207), kept in memory only. Absent when there is none. */
+  routerPicks: z.array(routerPickSchema).max(1_000).optional(),
   credentials: z.object({ reasoning: z.boolean(), secure: z.boolean() }),
   reasoningAccounts: z.array(subscriptionAccountSchema).default([]),
   /** Whether the user keeps local history; the window persists its startup shell only when true. */
@@ -1598,11 +1612,15 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('rename-thread'), threadId: id, title: z.string().max(512) }).strict(),
   /** Turn Dynamic on or off for a thread at rest (ADR-0191): a Sotto-side mark that its next send reads. */
   z.object({ type: z.literal('set-thread-dynamic'), threadId: id, dynamic: z.boolean() }).strict(),
+  /** Turn model routing on or off for a thread (ADR-0207): a Sotto-side mark that its next send reads. */
+  z.object({ type: z.literal('set-thread-routed'), threadId: id, routed: z.boolean() }).strict(),
   /** Ask the thread's own provider for its name again, on the side, replacing a generated or stand-in one. */
   z.object({ type: z.literal('regenerate-thread-title'), threadId: id }).strict(),
   z.object({ type: z.literal('create-thread'), projectId: providerEntityId, title: id, modelId: providerEntityId,
     /** The thread starts Dynamic (ADR-0191): a person's new thread, where Settings says new threads do. */
     dynamic: z.literal(true).optional(),
+    /** The thread starts routed (ADR-0207): a person's new Claude Code thread, where Settings says new threads do. */
+    routed: z.literal(true).optional(),
     /** `user` when the title is the one the user typed, `default` when it is Sotto's stand-in name. */
     titleSource: z.enum(['user', 'default']).optional(),
     /** The Sotto thread ID the window already minted and is showing. Absent from older callers, which let main mint one. */

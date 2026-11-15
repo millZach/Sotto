@@ -964,6 +964,10 @@ msgstr "A machine no longer saved"
 msgid "A merged thread stays put until you settle it."
 msgstr "A merged thread stays put until you settle it."
 
+#: src/renderer/src/features/settings/ModelRouterSettings.tsx
+msgid "A new model re-reads the whole conversation at full price, and a smaller one loses the earlier reasoning. On, a thread keeps the model its first message got and later messages change only the effort."
+msgstr "A new model re-reads the whole conversation at full price, and a smaller one loses the earlier reasoning. On, a thread keeps the model its first message got and later messages change only the effort."
+
 #: src/renderer/src/features/settings/PhonesSettings.tsx
 msgid "A paired phone reads threads, replies, and answers questions and permissions. Remove a phone to take that away."
 msgstr "A paired phone reads threads, replies, and answers questions and permissions. Remove a phone to take that away."
@@ -1845,6 +1849,10 @@ msgstr "Choose from your devices"
 #: src/renderer/src/features/settings/AgentAccountSettings.tsx
 msgid "Choose model. {modelName} oversees new threads"
 msgstr "Choose model. {modelName} oversees new threads"
+
+#: src/renderer/src/features/settings/AgentAccountSettings.tsx
+msgid "Choose model. New threads start with model routing"
+msgstr "Choose model. New threads start with model routing"
 
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
 msgid "Choose the light theme and the dark theme on their own."
@@ -3933,6 +3941,10 @@ msgstr "mise stopped with an error. {installed} is still installed."
 msgid "Model"
 msgstr "Model"
 
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Model routing"
+msgstr "Model routing"
+
 #: src/renderer/src/features/settings/AgentAccountSettings.tsx
 msgid "Model, reasoning effort and permissions."
 msgstr "Model, reasoning effort and permissions."
@@ -5642,6 +5654,11 @@ msgstr "Room the preview shows"
 msgid "Round table"
 msgstr "Round table"
 
+#. After a model's name on the New threads start with chip: new threads start with model routing on.
+#: src/renderer/src/features/settings/AgentAccountSettings.tsx
+msgid "routed"
+msgstr "routed"
+
 #: src/renderer/src/features/settings/HostsSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Run the local host"
@@ -6687,6 +6704,11 @@ msgstr "Startup, history, product events, updates & reset"
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Status"
 msgstr "Status"
+
+#: src/renderer/src/features/settings/ModelRouterSettings.tsx
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Stay on the first model"
+msgstr "Stay on the first model"
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Steer now"

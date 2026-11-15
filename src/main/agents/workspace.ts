@@ -1,6 +1,7 @@
 import { assertCouncilJudgeDirectory } from '../council/councilJudge'
 import { supportsClimbJudging } from '../../shared/councilClimb'
 import { annotateWatcherOwnChanges } from './watcherOwnChanges'
+import { whyNotRouted } from '../../shared/modelRouter'
 import { dynamicNoteText, dynamicSessionAfterCompaction, isDynamicThread, overseerInstructions, overseerNoteFor, overseerSend, whyNotDynamic, type DynamicSession, type OverseerUserNote } from '../../shared/dynamicThreads'
 import { compactionPending } from '../../shared/compaction'
 import { withKeptMessageMetadata } from '../../shared/agents'
@@ -4886,6 +4887,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       ...(old?.delegatedBy ? { delegatedBy: old.delegatedBy } : {}),
       ...(old?.councilJudge ? { councilJudge: true as const } : {}),
       ...(old?.dynamic ? { dynamic: old.dynamic } : {}),
+      ...(old?.routed ? { routed: old.routed } : {}),
       // A compaction can lose a note, so one that told this session anything goes again with its next message (ADR-0191).
       ...(old?.dynamicSession ? { dynamicSession: compactionPending(old.compaction) && thread.compaction?.status === 'completed' ? dynamicSessionAfterCompaction(old.dynamicSession) : old.dynamicSession } : {}),
       ...(old?.continuedFrom ? { continuedFrom: old.continuedFrom } : {}),
@@ -5516,11 +5518,27 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * Dynamic on or off for a thread (ADR-0191), Sotto's own record, which the provider never sees. Checked here against the
    * thread as it stands now, since what the coordinator was last told can be a moment behind a turn that just began.
    */
+  /**
+   * Model routing on or off for a thread (ADR-0207), Sotto's own record, which the provider never sees. Its next send reads
+   * it, so it changes while a turn runs too: a model pressed mid-turn turns routing off before the press is kept.
+   */
+  async setThreadRouted(threadId: string, routed: boolean): Promise<AgentHostSnapshot> {
+    await this.initialize()
+    const thread = this.thread(threadId)
+    if ((thread.routed === true) !== routed) {
+      const refused = routed ? whyNotRouted(thread) : undefined
+      if (refused) throw new Error(refused)
+      if (routed) this.touched(thread).routed = true
+      else delete this.touched(thread).routed
+      this.dirty = true; await this.flush(); this.publish()
+    }
+    return this.workspaceSnapshot()
+  }
   async setThreadDynamic(threadId: string, dynamic: boolean): Promise<AgentHostSnapshot> {
     await this.initialize()
     const thread = this.thread(threadId)
     if ((thread.dynamic === true) !== dynamic) {
-      const refused = dynamic ? whyNotDynamic(thread) : undefined
+      const refused = dynamic ? whyNotDynamic(thread) ?? (thread.routed === true ? 'This thread uses model routing. Turn model routing off to make it Dynamic. Nothing changed.' : undefined) : undefined
       if (refused) throw new Error(refused)
       if (thread.status === 'running' || thread.requests.length) throw new Error('Wait for this thread to finish and answer its pending requests before changing Dynamic. Nothing changed.')
       if (dynamic) this.touched(thread).dynamic = true
@@ -5887,6 +5905,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         worktree: command.councilJudge ? { mode: 'shared', path: command.workingDirectory!, status: 'ready' } : await this.selectedWorkingCopy(command.projectId, { ...command, workingCopy: command.workingCopy ?? this.workingCopyDefault(command.projectId) }),
         status: 'idle', messages: [], requests: [], workspaceSettledAt: null, nativeSessionStarted: false }
       if (command.dynamic && whyNotDynamic(thread) === undefined) thread.dynamic = true
+      // A thread that starts Dynamic is not routed as well: Dynamic chooses its own models (ADR-0207).
+      if (command.routed && whyNotRouted(thread) === undefined) thread.routed = true
       if (thread.worktree?.mode === 'shared') thread.workingDirectory = thread.worktree.path
       // New work reopens the folder, while the work put aside stays settled.
       // Re-read after working-copy preparation, which can accept a fresh snapshot.

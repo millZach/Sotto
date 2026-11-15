@@ -14,6 +14,7 @@ import {
 } from '../shared/plugins'
 import { TEAMS_CHANGED, TEAMS_COMMAND, TEAMS_GET, TEAMS_OWN_DESK, teamsCommandSchema, type TeamDesk, type TeamsBridge, type TeamsCommandResult, type TeamsState } from '../shared/teams'
 import { mapHostReferences, parseHostEntityKey } from '../shared/clientIdentity'
+import { MODEL_ROUTER_RENDERER_ARGUMENT } from '../shared/modelRouter'
 
 import { WATCHER_GET, WATCHER_OPEN, WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL, WATCHER_SET_PERMISSION, WATCHER_WATCH_THREAD, WATCHER_UNWATCH_THREAD,
   WATCHER_READ_HANDOVER, WATCHER_CONTINUE_HANDOVER, WATCHER_DISMISS_HANDOVER, WATCHER_START_NEW, WATCHER_TRY_NOW, watcherContinueHandoverRequestSchema, watcherHandoverReadSchema,
@@ -924,6 +925,7 @@ export function createSottoPopupBridge(
   platform: SottoPlatform,
   interfaceLanguage: InterfaceLanguageState | null = null,
   watcherEnabled = false,
+  modelRouterEnabled = false,
 ): PopupBridge {
   // A show sent before the page's listener is attached waits for it, as the widget's state does.
   const onShown = createBufferedSubscription(renderer, POPUP_SHOWN, popupShownSchema, 1)
@@ -931,6 +933,7 @@ export function createSottoPopupBridge(
     platform,
     ...(interfaceLanguage ? { interfaceLanguage: createInterfaceLanguageBridge(renderer, interfaceLanguage) } : {}),
     ...(watcherEnabled ? { watcher: async () => invokeParsed(renderer, WATCHER_GET, watcherRoomResultSchema) } : {}),
+    modelRouterEnabled,
     getSettings: async () => invokeParsed(renderer, SETTINGS_GET, settingsSchema),
     onSettingsChanged: listener => subscribe(renderer, SETTINGS_CHANGED, settingsChangedSchema, listener),
     shell: async () => invokeParsed(renderer, AGENT_GET, agentStateSchema),
@@ -993,7 +996,7 @@ export function exposeRendererBridge(
     return true
   }
   if (rendererRole === 'popup') {
-    context.exposeInMainWorld('sottoPopup', createSottoPopupBridge(renderer, platform, parseInterfaceLanguageArgument(arguments_), arguments_.includes(WATCHER_RENDERER_ARGUMENT)))
+    context.exposeInMainWorld('sottoPopup', createSottoPopupBridge(renderer, platform, parseInterfaceLanguageArgument(arguments_), arguments_.includes(WATCHER_RENDERER_ARGUMENT), arguments_.includes(MODEL_ROUTER_RENDERER_ARGUMENT)))
     return true
   }
   if (rendererRole === 'widget') {

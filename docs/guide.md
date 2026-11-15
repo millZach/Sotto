@@ -27,6 +27,7 @@ The [README](../README.md) says what Sotto is and how to install it. This guide 
 - [Delegation between threads](#delegation-between-threads)
 - [Worker roles](#worker-roles)
 - [Dynamic threads](#dynamic-threads)
+- [Model routing](#model-routing)
 - [Continue a thread on another provider](#continue-a-thread-on-another-provider)
 - [Continue an agent as its own thread](#continue-an-agent-as-its-own-thread)
 - [Fork a thread from a reply](#fork-a-thread-from-a-reply)
@@ -1398,6 +1399,16 @@ Each worker is a delegated thread. Its row under **Worked for** names the model 
 When a limit stops a worker, the overseer can give the piece to a model with room, and the old thread doesn't restart at the reset. If the overseer's own provider stops, the thread stops as any thread does: it restarts at the reset, or you continue on another provider with a press. Workers on other providers carry on, and their results wait.
 
 You can turn Dynamic on or off for a thread at rest, before or after its first message. Set before, the thread starts on the overseer's instructions. Claude Code and Codex keep what a thread started with, so a change later is told to the model once, with your next message. A compaction can lose that message, so Sotto sends it again after one it sees finish.
+
+## Model routing
+
+In Sotto Owl, a Claude Code thread on this computer can have **Model routing** on: before each message you send, Sotto asks your own Claude Code which model and effort the message should run on, puts the thread on them and then sends it. The switch is at the foot of the thread's model menu, under Dynamic. The model chip then reads **Auto**, followed by the model the thread runs on once one has been chosen, and the effort chip shows the chosen effort. Rest the pointer on the model chip to see what was chosen and why.
+
+The choice follows Anthropic's guide to its models, with effort one level higher than the guide's. It picks between Haiku, Sonnet, Opus and Fable, at Low to XHigh. A "yes", a "merge it" or a status question keeps what the thread has. Choosing takes two to four seconds and is one small call on your Claude subscription.
+
+A new model re-reads the whole conversation at full price, and a smaller one loses the earlier reasoning, so a thread changes model only when the work clearly changes. **Settings → Threads → Stay on the first model** holds each thread to the model its first message got; later messages then change only the effort.
+
+Pick a model yourself and routing turns off for that thread. A model or effort set from your phone, or kept for the next turn, runs the next message on your choice; the message after it is routed again. If the classifier cannot answer within 20 seconds, the message is sent on what the thread has. The reason stays in memory and disappears after a restart. A thread is routed or Dynamic, not both. To start every new Claude Code thread routed, turn the switch on in the model menu of **Settings → Threads → New threads start with**.
 
 ## Worker roles
 

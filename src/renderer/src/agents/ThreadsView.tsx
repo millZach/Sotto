@@ -179,6 +179,7 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, paneTools = f
   const delegation = useOwlFeature('thread-delegation')
   const swarms = useOwlFeature('worker-swarms')
   const dynamicThreads = useOwlFeature('dynamic-threads')
+  const modelRouter = useOwlFeature('model-router')
   const sidebarRows = useListedRows(agents.threadDrafts, rows)
   // Snoozed threads (ADR-0175; Owl only) sit on their own shelf until they wake.
   const snoozes = useThreadSnoozes(state?.host.threads)
@@ -267,17 +268,18 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, paneTools = f
   const createThreadIn = useCallback((project: AgentProject, carried?: CarriedDraft): Promise<void> => {
     if (state === null) return Promise.resolve()
     setNewThreadError(null)
-    const unused = unusedNewThread(state, project, dynamicThreads && app?.settings?.dynamicThreads?.newThreads === true, store.submissions())
+    const unused = unusedNewThread(state, project, dynamicThreads && app?.settings?.dynamicThreads?.newThreads === true, store.submissions(),
+      modelRouter && app?.settings?.modelRouter?.newThreads === true)
     if (unused) {
       store.restoreRefusedCreation(unused.id, project.id)
       if (carried) placeCarriedDraft(unused.id, carried)
       openThread(unused.id); focusNewComposer(); return Promise.resolve()
     }
-    return beginNewThread(state, command, project).then(start => {
+    return beginNewThread(state, command, project, undefined, modelRouter).then(start => {
       if ('error' in start) { setNewThreadError(start.error); return }
       handleCreationStart(start, carried)
     })
-  }, [state, command, handleCreationStart, openThread, store, placeCarriedDraft, dynamicThreads, app?.settings?.dynamicThreads?.newThreads])
+  }, [state, command, handleCreationStart, openThread, store, placeCarriedDraft, dynamicThreads, app?.settings?.dynamicThreads?.newThreads, modelRouter, app?.settings?.modelRouter?.newThreads])
   // A new thread in this project, or the chooser when there is none; with a draft, the thread opens with it.
   const startNewThread = useCallback((projectId?: string, carried?: CarriedDraft): Promise<void> => {
     setNewThreadError(null)

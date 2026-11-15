@@ -875,7 +875,7 @@ export class ClaudeStreamJsonHost implements ProviderHost {
   /** A side call for what has no session yet (ADR-0173), on the model chosen, at its least effort. */
   async writeShortTextOn(target: ShortTextTarget, prompt: ShortTextPrompt, signal?: AbortSignal): Promise<string | null> {
     if (!this.state.connected || !this.executable) return null
-    const effort = sideWritingEffort(this.state.models, target.modelId)
+    const effort = target.effort ?? sideWritingEffort(this.state.models, target.modelId)
     return this.client.write({ ...prompt, model: target.modelId, ...(effort ? { effort } : {}), workingDirectory: await existingWorkingDirectory(target.cwd ?? homedir()),
       executable: this.executable, timeoutMs: SIDE_WRITING_TIMEOUT_MS, ...(signal ? { signal } : {}) })
   }
