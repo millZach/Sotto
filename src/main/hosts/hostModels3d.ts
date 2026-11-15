@@ -34,6 +34,12 @@ export interface HostModels3dOptions {
 
 export class HostModels3d {
   private readonly kept = new Map<string, Model3dView>()
+  /**
+   * The keys of host records that went, by Remove from 3D models or with their thread. A host never uses a 3D model's ID
+   * again, so a read or a change that started before the removal and lands after it is let go rather than put back
+   * (Sol's review). At most `KEPT_VIEWS`, the oldest let go first.
+   */
+  private readonly gone = new Set<string>()
   private readonly heard = new Map<string, () => void>()
   private readonly stopConnected: () => void
 
@@ -57,7 +63,8 @@ export class HostModels3d {
       const views = this.views(connection)
       if (!views) return []
       const found = await views.list(thread?.id).catch(() => [])
-      return found.map(model => this.listed(connection, model))
+      // A record removed while the list was read is not listed, nor kept.
+      return found.flatMap(model => this.gone.has(hostEntityKey(connection.hostId, model.id)) ? [] : [this.listed(connection, model)])
     }))
     return lists.flat()
   }
@@ -67,6 +74,8 @@ export class HostModels3d {
     const target = this.target(key)
     if (!target) return this.kept.get(key) ?? null
     const view = await target.views.view(target.id).catch(() => undefined)
+    // A record removed while it was read stays removed, whatever the read says.
+    if (this.gone.has(key)) return null
     if (view === undefined) return this.kept.get(key) ?? null
     if (view === null) { this.kept.delete(key); return null }
     return this.keep(target.connection.hostId, view)
@@ -107,7 +116,7 @@ export class HostModels3d {
     const target = this.target(key)
     if (!target) return 'away'
     const removal = await target.views.remove(target.id)
-    if (removal === 'removed' || removal === 'no-record') this.kept.delete(key)
+    if (removal === 'removed' || removal === 'no-record') this.went(key)
     return removal
   }
 
@@ -115,6 +124,14 @@ export class HostModels3d {
     this.stopConnected()
     for (const stop of this.heard.values()) stop()
     this.heard.clear()
+  }
+
+  /** A host record went: its view goes, and no read or change already on its way puts it back. */
+  private went(key: string): void {
+    this.kept.delete(key)
+    this.gone.delete(key)
+    this.gone.add(key)
+    while (this.gone.size > KEPT_VIEWS) this.gone.delete(this.gone.values().next().value!)
   }
 
   /** A connected host that shows its 3D models here, with what it reads them by, for a key that names one of them. */
@@ -163,10 +180,11 @@ export class HostModels3d {
     this.heard.delete(connection.hostId)
     if (connection.kind !== 'remote' || connection.service.supportsPluginMeshyModels !== true) return
     const stop = connection.service.pluginMeshyModels?.subscribe(news => {
-      if (news.changed) this.options.changed(this.keep(connection.hostId, news.changed.view))
+      // A change the host worked out before the record went, and sent after, is let go.
+      if (news.changed && !this.gone.has(hostEntityKey(connection.hostId, news.changed.view.id))) this.options.changed(this.keep(connection.hostId, news.changed.view))
       if (news.removed) {
         const keys = news.removed.map(id => hostEntityKey(connection.hostId, id))
-        for (const key of keys) this.kept.delete(key)
+        for (const key of keys) this.went(key)
         this.options.removed(keys)
       }
     })
