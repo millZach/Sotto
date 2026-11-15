@@ -993,3 +993,21 @@ it('keeps a Proton Mail account on this computer and says why, with no copy to s
   expect(kept).toHaveTextContent('Not copied to forge: each computer’s Bridge has its own Bridge password. A thread on another computer is told no Proton Mail account is available there.')
   expect(within(kept).queryByRole('switch')).toBeNull()
 })
+
+it('does not take a look at Bridge that could not tell for one that is running, and keeps focus once Look again is done', async () => {
+  const answers: BridgeStatus[] = ['unknown', 'running']
+  const bridgeStatus = vi.fn(async (): Promise<BridgeStatus> => answers.shift() ?? 'running')
+  await act(async () => { render(<PluginsSettings bridge={vercelBridge([priv], { bridgeStatus })} />) })
+  expect(protonRow()).toHaveAccessibleName('Proton Mail Couldn’t look at Bridge')
+  fireEvent.click(protonRow())
+  const card = screen.getByRole('region', { name: 'Proton Mail account Private' })
+  expect(card).toHaveTextContent('Sotto couldn’t tell whether Proton Mail Bridge is running on this computer. Open Bridge, then look again.')
+  const again = within(card).getByRole('button', { name: 'Look again' })
+  again.focus()
+  await act(async () => { fireEvent.click(again) })
+  await act(async () => { await new Promise(resolve => requestAnimationFrame(() => resolve(undefined))) })
+  // The button went with the trouble; focus is on the account's own Replace, not lost.
+  expect(within(card).queryByRole('button', { name: 'Look again' })).toBeNull()
+  expect(within(card).getByRole('button', { name: 'Replace the Bridge password for Private' })).toHaveFocus()
+  expect(protonRow()).toHaveAccessibleName('Proton Mail Private')
+})

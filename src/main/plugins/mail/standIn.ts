@@ -15,9 +15,11 @@ const sendsThrough = (server: MailServer): boolean => Object.values(MAIL_SEND_SE
 export function mailOnThisComputer(port: number, sendPort?: number): MailConnect {
   return (server, signal) => new Promise((resolve, reject) => {
     if (signal.aborted) return reject(new Error('Stopped before connecting.'))
-    // A server on this computer already, as Proton Mail Bridge is, is reached at its own port: a test gives the
-    // stand-in's own ports as Bridge's.
-    const to = isThisComputer(server.host) ? server.port : sendsThrough(server) ? sendPort : port
+    // A server on this computer already, as Proton Mail Bridge is, is reached at its own port only where that port is
+    // one of the stand-ins the test named: a test gives the stand-ins' own ports as Bridge's. Any other port on this
+    // computer, Bridge's real 1143 and 1025 among them, is reached by nothing.
+    const to = isThisComputer(server.host) ? (server.port === port || server.port === sendPort ? server.port : undefined)
+      : sendsThrough(server) ? sendPort : port
     if (to === undefined) return reject(new Error('E2E_NETWORK_DISABLED'))
     const socket = connect({ host: '127.0.0.1', port: to })
     const stop = (): void => {

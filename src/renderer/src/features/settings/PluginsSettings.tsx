@@ -436,13 +436,15 @@ function AccountsRow({ plugin, bridge, accounts, projects, copies, uses, elsewhe
   const bridgeAccounts = isBridgePlugin(id) ? mine.map(account => account.id).join(' ') : ''
   useEffect(() => { for (const accountId of bridgeAccounts ? bridgeAccounts.split(' ') : []) look(accountId) }, [bridgeAccounts, look])
   const away = mine.some(account => statuses[account.id] === 'not-running'), changed = mine.some(account => statuses[account.id] === 'certificate')
+  // A look that could not tell is not taken for a Bridge that is running.
+  const unsure = mine.some(account => statuses[account.id] === 'unknown')
   const summary = accounts === null ? t`Couldn’t read the accounts` : count === 0 ? t`Not added` : away ? t`Bridge isn’t running` : changed ? t`Bridge’s certificate has changed`
-    : count === 1 ? names : t`${count} accounts: ${names}`
+    : unsure ? t`Couldn’t look at Bridge` : count === 1 ? names : t`${count} accounts: ${names}`
   const [adding, setAdding] = useState(false)
   const addButton = useRef<HTMLButtonElement>(null)
   const closeAdd = (): void => { setAdding(false); requestAnimationFrame(() => addButton.current?.focus()) }
   // The row's dot is lit only while some account is one a thread could use, and warns while Bridge cannot be used.
-  return <PluginRow plugin={plugin} state={accounts === null || away || changed ? 'unknown' : mine.some(account => account.on) ? 'signed-in' : 'none'} summary={summary}>
+  return <PluginRow plugin={plugin} state={accounts === null || away || changed || unsure ? 'unknown' : mine.some(account => account.on) ? 'signed-in' : 'none'} summary={summary}>
     <p className="tt-paragraph">{words.about}</p>
     {accounts === null ? <p className="tt-field__error tt-paragraph" role="alert"><Trans>The accounts could not be read. Nothing was changed. Reopen Settings and try again.</Trans></p> : null}
     {mine.map(account => <AccountCard key={account.id} account={account} bridge={bridge} projects={projects} copies={copies} elsewhere={elsewhere} onCopies={onCopies} onAccounts={onAccounts} onRemoved={() => { setAdding(false); requestAnimationFrame(() => addButton.current?.focus()) }}
@@ -542,6 +544,18 @@ function AccountCard({ account, bridge, projects, copies, uses, elsewhere, onAcc
   const words = useAccountWords(account.plugin)
   const [trusting, setTrusting] = useState(false)
   const [trustProblem, setTrustProblem] = useState<string | null>(null)
+  // Look again and Trust go once Bridge is fine: focus moves to what is left, rather than to nothing.
+  const bridgeSection = useRef<HTMLDivElement>(null)
+  const lookedFromHere = useRef(false)
+  const lookAgain = (): void => { lookedFromHere.current = true; onLook?.() }
+  useEffect(() => {
+    if (!lookedFromHere.current) return
+    lookedFromHere.current = false
+    requestAnimationFrame(() => {
+      if (document.activeElement && document.activeElement !== document.body) return
+      (bridgeSection.current?.querySelector('button') ?? replaceButton.current)?.focus()
+    })
+  }, [bridgeStatus])
   // Trusting the certificate Bridge shows now checks the saved Bridge password with it (Zach's pick, November 15, 2026).
   const trust = async (): Promise<void> => {
     if (!bridge || trusting) return
@@ -549,7 +563,7 @@ function AccountCard({ account, bridge, projects, copies, uses, elsewhere, onAcc
     let result: PluginAccountResult
     try { result = await bridge.trustCertificate({ id: account.id }) } catch { result = { ok: false, problem: 'store' } }
     setTrusting(false)
-    if (result.ok) { onAccounts(result.accounts); onLook?.(); return }
+    if (result.ok) { onAccounts(result.accounts); lookAgain(); return }
     setTrustProblem(result.problem === 'refused'
       ? t`Proton Mail Bridge did not accept the saved Bridge password, so its new certificate was not trusted. If Bridge shows a new Bridge password, remove this account and add it again.`
       : words.problem(result.problem, true))
@@ -612,14 +626,16 @@ function AccountCard({ account, bridge, projects, copies, uses, elsewhere, onAcc
       </div>
     </div> : null}
     {problem ? <p className="tt-field__error tt-paragraph" role="alert">{problem}</p> : null}
-    {bridgeStatus === 'not-running' ? <div className="plugin-account__bridge" role="status">
-      <p className="tt-paragraph plugin-account__warning"><Trans>Proton Mail Bridge isn’t running on this computer, so threads can’t read or send this account’s mail. Open Bridge, then look again.</Trans></p>
-      <div className="plugin-row__actions"><Button variant="secondary" onClick={() => onLook?.()}><Trans>Look again</Trans></Button></div>
-    </div> : bridgeStatus === 'certificate' ? <div className="plugin-account__bridge" role="status">
+    {bridgeStatus === 'not-running' || bridgeStatus === 'unknown' ? <div ref={bridgeSection} className="plugin-account__bridge" role="status">
+      <p className="tt-paragraph plugin-account__warning">{bridgeStatus === 'unknown'
+        ? <Trans>Sotto couldn’t tell whether Proton Mail Bridge is running on this computer. Open Bridge, then look again.</Trans>
+        : <Trans>Proton Mail Bridge isn’t running on this computer, so threads can’t read or send this account’s mail. Open Bridge, then look again.</Trans>}</p>
+      <div className="plugin-row__actions"><Button variant="secondary" onClick={lookAgain}><Trans>Look again</Trans></Button></div>
+    </div> : bridgeStatus === 'certificate' ? <div ref={bridgeSection} className="plugin-account__bridge" role="status">
       <p className="tt-paragraph plugin-account__warning"><Trans>Bridge’s certificate has changed since this account was added, so Sotto is not using it. If you reinstalled Bridge or reset it, trust the new one.</Trans></p>
       <div className="plugin-row__actions">
         <Button variant="secondary" aria-disabled={trusting || !bridge} onClick={() => void trust()}>{trusting ? t`Checking…` : t`Trust Bridge’s new certificate`}</Button>
-        <Button variant="ghost" onClick={() => onLook?.()}><Trans>Look again</Trans></Button>
+        <Button variant="ghost" onClick={lookAgain}><Trans>Look again</Trans></Button>
       </div>
     </div> : null}
     {trustProblem ? <p className="tt-field__error tt-paragraph" role="alert">{trustProblem}</p> : null}

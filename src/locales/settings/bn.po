@@ -2427,6 +2427,10 @@ msgid "Couldn’t check"
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Couldn’t look at Bridge"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Couldn’t read the accounts"
 msgstr ""
 
@@ -6403,6 +6407,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/PhonesSettings.tsx
 msgid "Sotto couldn’t save its phone access settings. Phone access wasn’t started. Check that Sotto can write to its data folder, then press Try again."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sotto couldn’t tell whether Proton Mail Bridge is running on this computer. Open Bridge, then look again."
 msgstr ""
 
 #: src/renderer/src/features/settings/MicrophoneSettings.tsx

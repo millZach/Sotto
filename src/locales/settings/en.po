@@ -2427,6 +2427,10 @@ msgid "Couldn’t check"
 msgstr "Couldn’t check"
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Couldn’t look at Bridge"
+msgstr "Couldn’t look at Bridge"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Couldn’t read the accounts"
 msgstr "Couldn’t read the accounts"
 
@@ -6404,6 +6408,10 @@ msgstr "Sotto couldn’t reach the host on {name} to turn on its tailnet connect
 #: src/renderer/src/features/settings/PhonesSettings.tsx
 msgid "Sotto couldn’t save its phone access settings. Phone access wasn’t started. Check that Sotto can write to its data folder, then press Try again."
 msgstr "Sotto couldn’t save its phone access settings. Phone access wasn’t started. Check that Sotto can write to its data folder, then press Try again."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sotto couldn’t tell whether Proton Mail Bridge is running on this computer. Open Bridge, then look again."
+msgstr "Sotto couldn’t tell whether Proton Mail Bridge is running on this computer. Open Bridge, then look again."
 
 #: src/renderer/src/features/settings/MicrophoneSettings.tsx
 msgid "Sotto did not hear anything. Check that the microphone is not muted."

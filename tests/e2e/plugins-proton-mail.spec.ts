@@ -71,8 +71,10 @@ test('A Proton Mail account is added with Bridge’s ports, read and sent from t
   const smtp = await startFakeSmtpServer({ address: ADDRESS, password: PASSWORD, startTls: BRIDGE_CERTIFICATE })
   let imapOpen = true
   // A run reaches only stand-ins it names. Bridge is on this computer, so the ports given in the form are the stand-ins' own.
-  const previous = process.env.SOTTO_E2E_MAIL_PORT
+  const kept = ['SOTTO_E2E_MAIL_PORT', 'SOTTO_E2E_SMTP_PORT'] as const
+  const previous = kept.map(name => process.env[name])
   process.env.SOTTO_E2E_MAIL_PORT = String(imap.port)
+  process.env.SOTTO_E2E_SMTP_PORT = String(smtp.port)
   try {
     await withShownPictureThread('sotto-e2e-plugins-proton-', async ({ launched, page, pane, threadId, root }) => {
       const errors: string[] = []
@@ -159,8 +161,7 @@ test('A Proton Mail account is added with Bridge’s ports, read and sent from t
       expect(errors).toEqual([])
     }, { owlFeatures: 'plugins=1' })
   } finally {
-    if (previous === undefined) delete process.env.SOTTO_E2E_MAIL_PORT
-    else process.env.SOTTO_E2E_MAIL_PORT = previous
+    kept.forEach((name, index) => { if (previous[index] === undefined) delete process.env[name]; else process.env[name] = previous[index] })
     await Promise.all([imapOpen ? imap.close() : Promise.resolve(), smtp.close()])
   }
 })
