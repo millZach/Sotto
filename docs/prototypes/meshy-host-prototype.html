@@ -1,0 +1,743 @@
+<!doctype html>
+<!--
+  PROTOTYPE - throwaway. Not the app. Meshy ticket 5 (#2497, ADR-0141): the 3D models page and Tools > 3D models.
+
+  Question: what variant C, "one large view with the details beside it and a filmstrip below" (Zach's pick, October 22,
+  2026, from docs/prototypes/meshy-models-prototype.html), and the Tools surface look like in today's Sotto, with what
+  tickets 2 to 4 built behind them: GLB, USDZ and a still picture per 3D model, credits counted from the 1st, records
+  whose files may be gone. The 3D drawing is the October mock-up's own small renderer; the built page draws the GLB.
+
+  State lives in the URL: ?surface=page|tools, &state=models|making|gone|empty (page), &tools=view|list,
+  &failed=thread|page, &theme=light, &motion=reduced. The bar at the bottom is the prototype's. H hides it.
+  No network, no persistence.
+-->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sotto 3D models page - prototype</title>
+<style>
+:root,[data-theme=dark]{
+  --tt-canvas:oklch(0.115 0.008 265);--tt-surface:oklch(0.145 0.008 265);--tt-surface-elevated:oklch(0.185 0.008 265);--tt-surface-overlay:oklch(0.215 0.008 265);
+  --tt-surface-sunken:oklch(0.155 0.008 265);--tt-sidebar:oklch(0.235 0.003 265);--tt-field:oklch(0.145 0.008 265);--tt-code-bg:oklch(0.155 0.008 265);
+  --tt-message-surface:oklch(0.205 0.014 265);
+  --tt-text:oklch(0.985 0.005 280);
+  --tt-text-2:color-mix(in oklab,oklch(0.985 0.005 280) 55%,oklch(0.72 0.014 265));
+  --tt-text-muted:color-mix(in oklab,oklch(0.72 0.014 265) 85%,oklch(0.985 0.005 280));
+  --tt-text-faint:oklch(0.675 0.012 270);
+  --tt-hairline:oklch(0.285 0.02 265);
+  --tt-border:color-mix(in oklab,oklch(0.375 0.024 265) 25%,oklch(0.72 0.014 265));
+  --tt-border-faint:oklch(0.305 0.02 265);
+  --tt-sidebar-row-hover:oklch(0.28 0.003 265);--tt-sidebar-row-active:oklch(0.32 0.025 190);
+  --tt-accent:oklch(0.714403 0.104089 183.092);--tt-on-accent:oklch(0.16 0.012 190);--tt-accent-text:oklch(0.83 0.08 183);
+  --tt-accent-surface:oklch(0.32 0.05 185);--tt-hover:color-mix(in srgb,oklch(0.32 0.05 185) 70%,transparent);
+  --tt-error:oklch(0.702184 0.189226 22.228);--tt-error-surface:oklch(0.29 0.04 20);
+  --tt-warning:oklch(0.829017 0.171221 81.038);--tt-warning-surface:oklch(0.315 0.032 80);
+  --tt-shadow-overlay:0 24px 72px -20px rgb(0 0 0 / 90%);--tt-scrim:rgb(0 0 0 / 55%);
+  --tt-focus-ring:oklch(0.714403 0.104089 183.092);
+  --bezel:oklch(0.2 0.006 265);--bezel-edge:oklch(0.36 0.01 265);--island:oklch(0 0 0);
+}
+[data-theme=light]{
+  --tt-canvas:oklch(0.978 0.004 85);--tt-surface:oklch(0.99 0.003 85);--tt-surface-elevated:oklch(0.955 0.006 85);--tt-surface-overlay:oklch(0.945 0.007 85);
+  --tt-surface-sunken:oklch(0.945 0.008 85);--tt-sidebar:oklch(0.955 0.008 85);--tt-field:oklch(0.99 0.003 85);--tt-code-bg:oklch(0.97 0.005 85);
+  --tt-message-surface:oklch(0.93 0.012 85);
+  --tt-text:oklch(0.235 0.014 75);
+  --tt-text-2:color-mix(in oklab,oklch(0.235 0.014 75) 55%,oklch(0.5 0.014 75));
+  --tt-text-muted:color-mix(in oklab,oklch(0.5 0.014 75) 85%,oklch(0.235 0.014 75));
+  --tt-text-faint:oklch(0.525 0.015 78);
+  --tt-hairline:oklch(0.86 0.012 80);
+  --tt-border:color-mix(in oklab,oklch(0.8 0.016 80) 25%,oklch(0.5 0.014 75));
+  --tt-border-faint:oklch(0.86 0.012 80);
+  --tt-sidebar-row-hover:oklch(0.93 0.01 85);--tt-sidebar-row-active:oklch(0.915 0.02 190);
+  --tt-accent:oklch(0.53 0.095 186);--tt-on-accent:oklch(0.99 0.003 85);--tt-accent-text:oklch(0.43 0.08 186);
+  --tt-accent-surface:oklch(0.92 0.03 186);--tt-hover:color-mix(in srgb,oklch(0.92 0.03 186) 70%,transparent);
+  --tt-error:oklch(0.509494 0.208583 28.513);--tt-error-surface:oklch(0.94 0.02 25);
+  --tt-warning:oklch(0.530927 0.155556 45.359);--tt-warning-surface:oklch(0.955 0.018 80);
+  --tt-shadow-overlay:0 24px 64px -24px rgb(0 0 0 / 45%);--tt-scrim:rgb(0 0 0 / 30%);
+  --tt-focus-ring:oklch(0.53 0.095 186);
+  --bezel:oklch(0.2 0.006 265);--bezel-edge:oklch(0.42 0.01 265);--island:oklch(0 0 0);
+}
+:root{
+  /* The models' own surface colours: what Meshy's texture would paint, the same in light and dark. */
+  --model-wood:#8a5a32;--model-wood-dark:#5e3b1f;--model-iron:#4a4c52;--model-gold:#c99a2e;
+  --model-fox:#d9772b;--model-fox-light:#f1e4d0;--model-fox-dark:#3b2a22;
+  --model-steel:#a9afb8;--model-steel-dark:#6f7680;--model-plume:#a8322d;
+  --model-glass:#6a4fb3;--model-cork:#a7825a;--model-clay:#b9b4ab;
+  /* The prototype switcher, not part of the design. */
+  --proto-bg:#111114;--proto-text:#ffffff;--proto-btn:#2a2a2e;--proto-on:#ff3d7f;--proto-line:#44444a;
+}
+
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--tt-canvas);color:var(--tt-text);font:14px/1.45 Figtree,system-ui,'Segoe UI',sans-serif;-webkit-font-smoothing:antialiased;overflow:hidden}
+button,input,select{font:inherit;color:inherit}
+button{background:none;border:0;cursor:pointer;border-radius:8px;padding:0}
+:focus-visible{outline:2px solid var(--tt-focus-ring);outline-offset:1px}
+svg.i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.mono{font-family:'Spline Sans Mono',ui-monospace,Consolas,monospace;font-size:12.5px}
+.muted{color:var(--tt-text-muted)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.drag{-webkit-app-region:drag}
+.drag button,.drag input,.drag select{-webkit-app-region:no-drag}
+
+/* ---------- model viewer ---------- */
+.mv{display:block;position:relative;background:var(--tt-surface-sunken);color:var(--tt-text);touch-action:none;overflow:hidden;min-height:0}
+.mv[data-interactive="1"]{cursor:grab}
+.mv[data-interactive="1"]:active{cursor:grabbing}
+.mv canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.mv-hint{position:absolute;left:10px;bottom:8px;font-size:12px;color:var(--tt-text-muted);pointer-events:none;background:color-mix(in srgb,var(--tt-surface-sunken) 80%,transparent);padding:1px 6px;border-radius:6px}
+.mv-over{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:12px;color:var(--tt-text-2);pointer-events:none}
+.mv-over b{display:block;color:var(--tt-text);font-weight:600}
+.mv-over span{font-size:13px;color:var(--tt-text-muted)}
+.prog{height:4px;border-radius:99px;background:var(--tt-hairline);overflow:hidden;position:relative}
+.prog i{display:block;height:100%;background:var(--tt-accent);border-radius:99px}
+.prog::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--tt-canvas) 45%,transparent),transparent);transform:translateX(-100%);animation:sweep 1.8s ease-in-out infinite}
+@keyframes sweep{to{transform:translateX(100%)}}
+.ring{width:22px;height:22px;transform:rotate(-90deg)}
+.ring circle{fill:none;stroke-width:3}
+.ring .bg{stroke:var(--tt-hairline)}
+.ring .fg{stroke:var(--tt-accent);stroke-linecap:round}
+
+/* model card shared */
+.mc{border:1px solid var(--tt-border-faint);border-radius:14px;background:var(--tt-code-bg);overflow:hidden;margin:12px 0 16px;container-type:inline-size}
+.mc-bar{display:flex;align-items:center;gap:10px;min-height:42px;padding:4px 4px 4px 14px;border-bottom:1px solid var(--tt-hairline);background:var(--tt-surface-elevated)}
+.mc-head{display:flex;flex:1;align-items:baseline;gap:10px;min-width:0;overflow:hidden}
+.mc-head h3{margin:0;font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kind{flex:none;color:var(--tt-text-muted);font-family:'Spline Sans Mono',ui-monospace,Consolas,monospace;font-size:12px;white-space:nowrap}
+.mc-acts{display:flex;flex:none;gap:2px}
+@container (max-width:380px){.kind{display:none}}
+.mc .mv.big{height:clamp(200px,40vh,380px)}
+.mc-foot{padding:10px 14px 12px;border-top:1px solid var(--tt-hairline);display:grid;gap:8px}
+.facts-line{margin:0;color:var(--tt-text-muted);font-size:13px}
+.facts-line b{color:var(--tt-text);font-weight:600}
+.fchips{display:flex;flex-wrap:wrap;gap:6px}
+.fchip{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border:1px solid var(--tt-hairline);border-radius:999px;font-size:12.5px;color:var(--tt-text-2)}
+.fchip:hover{background:var(--tt-hover);color:var(--tt-text)}
+.fchip .mono{color:var(--tt-text);font-size:12px}
+.status-line{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--tt-text-2)}
+.status-line b{color:var(--tt-text);font-weight:600}
+.status-line .pct{margin-left:auto;font-variant-numeric:tabular-nums;color:var(--tt-text-muted)}
+.problem{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;padding:12px 14px;border-top:1px solid var(--tt-hairline);background:var(--tt-error-surface)}
+.problem>svg{color:var(--tt-error);margin-top:2px}
+.problem p{margin:0;color:var(--tt-text)}
+.problem p+p{grid-column:2;color:var(--tt-text-2);font-size:13.5px}
+.problem .acts{grid-column:2;display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+
+/* A: chip that opens */
+.chip{border:1px solid var(--tt-border-faint);border-radius:14px;background:var(--tt-code-bg);margin:12px 0 16px;overflow:hidden;max-width:560px}
+.chip[data-open="1"]{max-width:none}
+.chip-row{display:flex;align-items:center;gap:12px;padding:8px 8px 8px 8px;min-width:0}
+.chip-thumb{width:48px;height:48px;border-radius:10px;flex:none;overflow:hidden;display:grid;place-items:center;background:var(--tt-surface-sunken)}
+.chip-thumb .mv{width:48px;height:48px}
+.chip-txt{flex:1;min-width:0;display:grid}
+.chip-txt b{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chip-txt span{font-size:12.5px;color:var(--tt-text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chip-txt .err{color:var(--tt-error)}
+.chip-toggle svg{transition:transform .15s}
+.chip-toggle[aria-expanded=true] svg{transform:rotate(180deg)}
+.chip-body{border-top:1px solid var(--tt-hairline)}
+.chip-body .mv{height:clamp(190px,36vh,340px)}
+.chip-body .mc-foot{border-top:1px solid var(--tt-hairline)}
+.chip .prog{margin-top:6px}
+
+/* ---------- prototype switcher (not part of the design) ---------- */
+.proto-bar{position:fixed;left:50%;bottom:12px;transform:translateX(-50%);z-index:100;display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:6px;padding:6px 8px;border-radius:20px;background:var(--proto-bg);color:var(--proto-text);font:12.5px/1 system-ui,'Segoe UI',sans-serif;box-shadow:0 10px 30px rgb(0 0 0 / 50%);border:2px solid var(--proto-on);max-width:calc(100vw - 16px)}
+.proto-bar button{white-space:nowrap;background:var(--proto-btn);color:var(--proto-text);border:0;border-radius:999px;padding:6px 10px;cursor:pointer;font:inherit}
+.proto-bar button.on{background:var(--proto-on)}
+.proto-bar button:focus-visible{outline:2px solid var(--proto-text);outline-offset:1px}
+.proto-bar .lbl{white-space:nowrap;min-width:190px;text-align:center;font-weight:600}
+.proto-bar .grp{display:flex;gap:4px;padding-left:6px;border-left:1px solid var(--proto-line)}
+.proto-bar .grp:empty{display:none}
+.proto-notes{position:fixed;left:50%;bottom:70px;transform:translateX(-50%);z-index:100;width:min(640px,calc(100vw - 24px));max-height:calc(100vh - 100px);overflow:auto;background:var(--proto-bg);color:var(--proto-text);border:2px solid var(--proto-on);border-radius:14px;padding:12px 16px;font:13px/1.5 system-ui,'Segoe UI',sans-serif}
+.proto-notes h2{font-size:14px;margin:0 0 6px}
+.proto-notes ul{margin:6px 0 0;padding-left:18px}
+.proto-show{position:fixed;right:10px;bottom:10px;z-index:100;background:var(--proto-bg);color:var(--proto-text);border:2px solid var(--proto-on);border-radius:999px;padding:5px 10px;font:12px system-ui,sans-serif}
+
+[data-motion=reduced] *,[data-motion=reduced] *::before,[data-motion=reduced] *::after{animation:none!important;transition:none!important}
+
+.proto-bar[hidden],.proto-show[hidden]{display:none}
+
+/* ---------- today's window ---------- */
+.win{display:grid;grid-template-columns:280px 1fr;height:100vh;height:100dvh}
+.win.tools{grid-template-columns:280px 1fr minmax(340px,40%) 72px}
+.side{background:var(--tt-sidebar);border-right:1px solid var(--tt-hairline);display:flex;flex-direction:column;min-width:0}
+.side-top{display:flex;align-items:center;gap:8px;height:44px;padding:0 10px 0 12px}
+.logo{width:20px;height:20px;border-radius:6px;background:var(--tt-accent);flex:none}
+.side-top .sp{flex:1}
+.side-top .new{display:inline-flex;align-items:center;gap:6px;font-size:13.5px;color:var(--tt-text);padding:4px 6px}
+.search{margin:2px 8px 10px;display:flex;align-items:center;gap:8px;height:32px;padding:0 10px;border:1px solid var(--tt-border-faint);border-radius:8px;color:var(--tt-text-muted);font-size:13.5px;background:var(--tt-field)}
+.grp-h{display:flex;align-items:center;gap:8px;padding:6px 14px;font-size:12.5px;color:var(--tt-text-2)}
+.grp-h b{font-weight:600;color:var(--tt-text)}
+.grp-h .n{margin-left:auto;color:var(--tt-text-muted)}
+.row{margin:0 6px;padding:7px 10px;border-radius:8px;display:grid;gap:2px}
+.row.on{background:var(--tt-sidebar-row-active);outline:1px solid color-mix(in srgb,var(--tt-accent) 45%,transparent)}
+.row .t{font-size:13.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .s{display:flex;gap:8px;font-size:12.5px;color:var(--tt-text-muted)}
+.row .s .r{margin-left:auto}
+.side-foot{margin-top:auto;display:flex;align-items:center;gap:2px;padding:8px 10px;color:var(--tt-text-muted)}
+.side-foot .ib.on{background:var(--tt-hover);color:var(--tt-text);box-shadow:inset 0 -2px 0 var(--tt-text)}
+.side-foot .sep{width:1px;height:18px;background:var(--tt-hairline);margin:0 4px}
+.side-foot .sp{flex:1}
+.main{display:flex;flex-direction:column;min-width:0;background:var(--tt-canvas)}
+.tbar{display:flex;align-items:center;gap:10px;height:44px;padding:0 10px 0 16px;flex:none}
+.tbar h1{margin:0;font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tbar .crumb{font-size:13px;color:var(--tt-text-muted);white-space:nowrap}
+.tbar .sp{flex:1}
+.tbtn{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border:1px solid var(--tt-border-faint);border-radius:8px;font-size:13px;color:var(--tt-text);white-space:nowrap}
+.ib{display:inline-grid;place-items:center;width:30px;height:30px;border-radius:7px;color:var(--tt-text-muted)}
+.ib:hover{background:var(--tt-hover);color:var(--tt-text)}
+.btn{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 14px;border:1px solid var(--tt-border);border-radius:8px;font-size:13.5px;color:var(--tt-text);background:transparent;white-space:nowrap}
+.btn.primary{background:var(--tt-text);color:var(--tt-canvas);border-color:var(--tt-text);font-weight:600}
+.code{font-family:'Spline Sans Mono',ui-monospace,Consolas,monospace;font-size:12.5px}
+
+/* ---------- the page, C ---------- */
+.page{flex:1;display:flex;flex-direction:column;min-height:0;padding:8px 20px 14px}
+.page-h{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin:6px 0 14px}
+.page-h h1{margin:0;font-size:26px;font-weight:700}
+.page-h .sub{color:var(--tt-text-muted);font-size:14px}
+.page-h .sp{flex:1}
+.page-h .search{margin:0;width:240px}
+.stage{flex:1;min-height:0;display:grid;grid-template-columns:1fr 340px;border-radius:16px;background:var(--tt-surface-elevated);overflow:hidden}
+.stage .mv{height:100%;background:var(--tt-canvas)}
+.stage .v{position:relative;min-height:220px}
+.stage .mv-tools{position:absolute;top:10px;right:10px;display:flex;gap:2px;background:color-mix(in srgb,var(--tt-canvas) 80%,transparent);border-radius:8px}
+.det{padding:18px 18px 16px;overflow:auto;display:grid;align-content:start;gap:12px}
+.det h2{margin:0;font-size:17px;font-weight:600}
+.det .kind{font-family:'Spline Sans Mono',ui-monospace,Consolas,monospace;font-size:12px;color:var(--tt-text-muted)}
+.det .acts{display:flex;flex-wrap:wrap;gap:8px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:0;font-size:13.5px}
+.kv dt{color:var(--tt-text-muted)}.kv dd{margin:0}
+.flist-h{margin:4px 0 0;font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--tt-text-muted)}
+.flist{list-style:none;margin:0;padding:0;border-radius:10px;background:var(--tt-canvas)}
+.flist li{display:flex;align-items:center;gap:10px;padding:8px 6px 8px 12px;font-size:13px}
+.flist li+li{border-top:1px solid var(--tt-hairline)}
+.flist .code{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.flist .size{color:var(--tt-text-muted);font-size:12.5px}
+.note{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;padding:12px 14px;border-radius:10px;background:color-mix(in srgb,var(--tt-warning-surface) 70%,var(--tt-surface-elevated));font-size:13.5px}
+.note>svg{color:var(--tt-warning);margin-top:2px}
+.note p{margin:0}.note .acts{grid-column:2;margin-top:6px}
+.making-over{position:absolute;inset:0;display:grid;place-items:center;text-align:center;color:var(--tt-text-2)}
+.making-over b{display:block;color:var(--tt-text)}
+.strip{display:flex;gap:10px;overflow-x:auto;padding:12px 2px 2px;flex:none}
+.tile{flex:none;width:118px;border-radius:12px;background:var(--tt-surface-elevated);padding:6px;display:grid;gap:4px;text-align:left;outline:2px solid transparent}
+.tile[aria-current=true]{outline-color:var(--tt-accent)}
+.tile .pic{height:70px;border-radius:8px;background:var(--tt-canvas);overflow:hidden;display:grid;place-items:center;position:relative}
+.tile .pic .mv{width:100%;height:100%}
+.tile b{font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile span{font-size:12px;color:var(--tt-text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile .gone{position:absolute;inset:0;display:grid;place-items:center;font-size:11.5px;color:var(--tt-warning);background:color-mix(in srgb,var(--tt-canvas) 70%,transparent)}
+.tile .err{color:var(--tt-error)}
+.tile .on-host{font-size:11.5px;color:var(--tt-accent-text)}
+.empty{flex:1;display:grid;place-items:center;text-align:center;color:var(--tt-text-2)}
+.empty b{display:block;color:var(--tt-text);font-size:16px;margin-bottom:6px}
+
+/* ---------- Tools > 3D models ---------- */
+.msgs{flex:1;overflow:auto;padding:20px}
+.col{max-width:680px;margin:0 auto}
+.agent p{margin:0 0 10px;font-size:15px;line-height:1.55;color:var(--tt-text-2)}
+.who{font-size:12.5px;color:var(--tt-text-2);margin-bottom:6px}.who span{color:var(--tt-text-muted);margin-left:8px}
+.you{display:flex;justify-content:flex-end;margin:0 0 24px}.you .bub{background:var(--tt-message-surface);border-radius:14px;padding:12px 16px;max-width:80%}
+.chip{margin:12px 0;background:var(--tt-surface-elevated);border:0;border-radius:16px;max-width:520px}
+.chip-thumb{background:var(--tt-canvas)}
+.panel{border-left:1px solid var(--tt-hairline);background:var(--tt-canvas);display:flex;flex-direction:column;min-width:0}
+.panel-h{display:flex;align-items:center;gap:8px;height:44px;padding:0 8px 0 16px;flex:none}
+.panel-h h2{margin:0;font-size:15px;font-weight:600;flex:1}
+.panel-b{flex:1;overflow:auto;padding:4px 14px 14px;display:grid;align-content:start;gap:12px}
+.panel-b .card{border-radius:14px;background:var(--tt-surface-elevated);overflow:hidden}
+.panel-b .card .v{position:relative}
+.panel-b .card .mv{height:200px;background:var(--tt-canvas)}
+.panel-b .card .in{padding:12px 14px;display:grid;gap:8px}
+.panel-b .card h3{margin:0;font-size:14.5px;font-weight:600}
+.facts{margin:0;color:var(--tt-text-muted);font-size:13px}
+.facts b{color:var(--tt-text);font-weight:600}
+.list-h{display:flex;font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:var(--tt-text-muted);margin-top:4px}
+.list-h .n{margin-left:auto}
+.mlist{list-style:none;margin:0;padding:0;display:grid;gap:4px}
+.mlist button{width:100%;display:flex;align-items:center;gap:10px;padding:6px;border-radius:10px;text-align:left}
+.mlist button[aria-current=true]{background:var(--tt-sidebar-row-active)}
+.mlist button:hover{background:var(--tt-hover)}
+.mlist .pic{width:40px;height:40px;border-radius:8px;background:var(--tt-surface-elevated);overflow:hidden;flex:none;display:grid;place-items:center}
+.mlist .pic .mv{width:40px;height:40px}
+.mlist .txt{flex:1;min-width:0;display:grid}
+.mlist .txt b{font-size:13.5px;font-weight:600}.mlist .txt span{font-size:12.5px;color:var(--tt-text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mlist .cr{font-size:12.5px;color:var(--tt-text-muted)}
+.panel-f{display:flex;align-items:center;gap:8px;height:40px;padding:0 14px;border-top:1px solid var(--tt-hairline);font-size:13px;color:var(--tt-text-muted);flex:none}
+.rail{border-left:1px solid var(--tt-hairline);display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px 4px;background:var(--tt-canvas)}
+.rail button{width:64px;display:grid;justify-items:center;gap:2px;padding:6px 0;border-radius:10px;font-size:12px;color:var(--tt-text-muted);position:relative}
+.rail button.on{background:var(--tt-hover);color:var(--tt-text)}
+.rail button .dot{position:absolute;top:6px;right:16px;width:7px;height:7px;border-radius:50%;background:var(--tt-accent)}
+
+/* narrow: the page stacks, the window gives way */
+@media (max-width:1000px){.stage{grid-template-columns:1fr;grid-template-rows:minmax(220px,1fr) auto}.win.tools{grid-template-columns:1fr minmax(300px,52%) 72px}.win.tools .side{display:none}}
+@media (max-width:760px){
+  .win,.win.tools{grid-template-columns:1fr}.side,.rail,.win.tools .main{display:none}
+  .page{padding:8px 12px 120px}.page-h .search{display:none}.stage{grid-template-rows:260px auto}
+}
+</style>
+</head>
+<body>
+<div class="win" id="win"></div>
+<div class="proto-notes" id="notes" hidden></div>
+<div class="proto-bar" id="bar" role="toolbar" aria-label="Prototype switcher">
+  <span class="grp" id="surf"></span>
+  <span class="grp" id="states"></span>
+  <span class="grp" id="opts"></span>
+  <span class="grp"><button id="theme"></button><button id="motion"></button><button id="notesBtn" aria-expanded="false" aria-controls="notes">Notes</button><button id="hideBar" aria-label="Hide the prototype switcher (H)">Hide</button></span>
+</div>
+<button class="proto-show" id="showBar" hidden>Show switcher (H)</button>
+<script>
+const I = {
+  search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+  threads:'<path d="M4 5h11v8H8l-4 3z"/><path d="M15 9h5v8l-3-2h-6v-2"/>',
+  term:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/>',
+  pen:'<path d="M4 20h4L19 9l-4-4L4 16z"/>',
+  panelLeft:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/>',
+  panelRight:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/>',
+  split:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 13h18"/>',
+  more:'<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
+  folder:'<path d="M3 6a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/>',
+  chevDown:'<path d="m6 9 6 6 6-6"/>', chevRight:'<path d="m9 6 6 6-6 6"/>', back:'<path d="m15 6-6 6 6 6"/>',
+  clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  gauge:'<path d="M4 18a8 8 0 1 1 16 0"/><path d="m12 14 4-5"/>',
+  cube:'<path d="M12 3 20 7.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5 12 12l8-4.5M12 12v9"/>',
+  gear:'<circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M2.5 12h3M18.5 12h3M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/>',
+  help:'<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .8-1 1.5V14M12 17.5v.01"/>',
+  refresh:'<path d="M20 12a8 8 0 1 1-2.3-5.7L20 8.5M20 4v4.5h-4.5"/>',
+  globe:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>',
+  phone:'<rect x="7" y="2" width="10" height="20" rx="2.5"/><path d="M11 18h2"/>',
+  files:'<path d="M4 4h6v6H4zM14 7h6M14 17h6M4 14h6v6H4z"/>',
+  changes:'<circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M6 8.5V14a4 4 0 0 0 4 4h5.5M18 15.5V10a4 4 0 0 0-4-4H8.5"/>',
+  pr:'<circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M6 8.5v7M18 15.5V9a3 3 0 0 0-3-3h-4"/>',
+  agents:'<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6 6 0 0 1 3.5 6"/>',
+  pin:'<path d="M9 4h6l-1 6 3 3H7l3-3zM12 13v8"/>',
+  expand:'<path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/>',
+  x:'<path d="M6 6l12 12M18 6 6 18"/>', minus:'<path d="M5 12h14"/>', square:'<rect x="5" y="5" width="14" height="14" rx="1"/>',
+  clip:'<path d="m20 11-8.5 8.5a5 5 0 0 1-7-7L13 4a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L14 7"/>',
+  up:'<path d="M12 19V5M6 11l6-6 6 6"/>', plus:'<path d="M12 5v14M5 12h14"/>',
+  reset:'<path d="M4 12a8 8 0 1 0 2.3-5.7L4 8.5M4 4v4.5h4.5"/>',
+  play:'<path d="M8 5v14l11-7z"/>',
+  pause:'<path d="M9 5v14M15 5v14"/>', play:'<path d="M7 5v14l11-7z"/>',
+  file:'<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/>',
+  reveal:'<path d="M3 6a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v3"/><path d="M3 6v12a1 1 0 0 0 1 1h7"/><circle cx="16.5" cy="16.5" r="3"/><path d="m18.7 18.7 2.3 2.3"/>',
+  alert:'<path d="M12 4 2.5 20h19z"/><path d="M12 10v4M12 17v.01"/>',
+  key:'<circle cx="8" cy="15" r="4"/><path d="m11 12 9-9M16 7l3 3"/>',
+  image:'<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/>',
+  type:'<path d="M5 6V4h14v2M12 4v16M9 20h6"/>', check:'<path d="m5 12 5 5 9-10"/>',
+  mic:'<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>',
+  wave:'<path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4"/>', sparkle:'<path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6"/>',
+  cmd:'<path d="M9 6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3z"/>',
+  server:'<rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/>',
+  cloud:'<path d="M7 18a4.5 4.5 0 0 1-.5-9A6 6 0 0 1 18 9.5a4 4 0 0 1-.5 8.5z"/>',
+  flow:'<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><path d="M10 6.5h4a3 3 0 0 1 3 3V14"/>',
+  out:'<path d="M7 17 17 7M9 7h8v8"/>', palette:'<path d="M12 3a9 9 0 1 0 0 18c1.2 0 1.6-1 1.2-2-.6-1.4.4-2.5 1.8-2.5H18a3 3 0 0 0 3-3A9 9 0 0 0 12 3z"/><circle cx="8" cy="11" r="1"/><circle cx="12" cy="7.5" r="1"/><circle cx="16" cy="10" r="1"/>',
+  sliders:'<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>',
+  branch:'<circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="8" r="2"/><path d="M6 7v10M18 10a6 6 0 0 1-6 6H6"/>',
+  info:'<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.01"/>',
+};
+const ic = (n, cls = '') => `<svg class="i ${cls}" viewBox="0 0 24 24" aria-hidden="true">${I[n]}</svg>`;
+const claudeMark = '<svg class="pmark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5v19M2.5 12h19M5.3 5.3l13.4 13.4M18.7 5.3 5.3 18.7M8.2 3.3l7.6 17.4M15.8 3.3 8.2 20.7M3.3 8.2l17.4 7.6M3.3 15.8l17.4-7.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+const codexMark = '<span class="pmark codex" aria-hidden="true">C</span>';
+const pmark = p => p === 'codex' ? codexMark : claudeMark;
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+/* =====================================================================================================
+   A small canvas-2D renderer: flat-shaded convex primitives, painter's order, back faces culled.
+   ===================================================================================================== */
+const MAT = {};
+function readMaterials() {
+  const cs = getComputedStyle(document.documentElement);
+  for (const k of ['wood', 'wood-dark', 'iron', 'gold', 'fox', 'fox-light', 'fox-dark', 'steel', 'steel-dark', 'plume', 'glass', 'cork', 'clay']) {
+    const h = cs.getPropertyValue('--model-' + k).trim().replace('#', '');
+    MAT[k] = [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+  }
+}
+const probe = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
+function tokenRGB(name) {
+  const el = document.createElement('i'); el.style.color = `var(${name})`; document.body.appendChild(el);
+  const c = getComputedStyle(el).color; el.remove();
+  probe.clearRect(0, 0, 1, 1); probe.fillStyle = '#808080'; probe.fillStyle = c; probe.fillRect(0, 0, 1, 1);
+  const d = probe.getImageData(0, 0, 1, 1).data; return [d[0], d[1], d[2]];
+}
+let INK = { text: [255, 255, 255], faint: [160, 160, 160] };
+function readInk() { INK = { text: tokenRGB('--tt-text'), faint: tokenRGB('--tt-text-faint') }; }
+
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const norm = a => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+function newell(p) { let x = 0, y = 0, z = 0; for (let i = 0; i < p.length; i++) { const a = p[i], b = p[(i + 1) % p.length]; x += (a[1] - b[1]) * (a[2] + b[2]); y += (a[2] - b[2]) * (a[0] + b[0]); z += (a[0] - b[0]) * (a[1] + b[1]); } return [x, y, z]; }
+const centroid = p => { const c = [0, 0, 0]; p.forEach(v => { c[0] += v[0]; c[1] += v[1]; c[2] += v[2]; }); return [c[0] / p.length, c[1] / p.length, c[2] / p.length]; };
+/* Every primitive is convex, so a face whose normal points at the primitive's centre is wound backwards. */
+function orient(faces, c) { for (const f of faces) { if (dot(newell(f.p), sub(centroid(f.p), c)) < 0) f.p.reverse(); } return faces; }
+function box(cx, cy, cz, w, h, d, m) {
+  const x0 = cx - w / 2, x1 = cx + w / 2, y0 = cy - h / 2, y1 = cy + h / 2, z0 = cz - d / 2, z1 = cz + d / 2;
+  return orient([
+    { p: [[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]], m }, { p: [[x1, y0, z0], [x0, y0, z0], [x0, y1, z0], [x1, y1, z0]], m },
+    { p: [[x1, y0, z1], [x1, y0, z0], [x1, y1, z0], [x1, y1, z1]], m }, { p: [[x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [x0, y1, z0]], m },
+    { p: [[x0, y1, z1], [x1, y1, z1], [x1, y1, z0], [x0, y1, z0]], m }, { p: [[x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1]], m },
+  ], [cx, cy, cz]);
+}
+function halfCylX(cx, yb, cz, len, r, n, m) {
+  const x0 = cx - len / 2, x1 = cx + len / 2, pts = [], f = [];
+  for (let i = 0; i <= n; i++) { const a = Math.PI * i / n; pts.push([yb + r * Math.sin(a), cz + r * Math.cos(a)]); }
+  for (let i = 0; i < n; i++) { const [ya, za] = pts[i], [yb2, zb] = pts[i + 1]; f.push({ p: [[x0, ya, za], [x1, ya, za], [x1, yb2, zb], [x0, yb2, zb]], m }); }
+  f.push({ p: pts.map(([y, z]) => [x0, y, z]), m }); f.push({ p: pts.map(([y, z]) => [x1, y, z]), m });
+  return orient(f, [cx, yb, cz]);
+}
+function frustum(cx, y0, cz, h, r0, r1, n, m, caps = [true, true]) {
+  const f = [], ring = (y, r) => Array.from({ length: n }, (_, i) => { const a = 2 * Math.PI * i / n; return [cx + r * Math.cos(a), y, cz + r * Math.sin(a)]; });
+  const lo = ring(y0, r0), hi = ring(y0 + h, r1);
+  for (let i = 0; i < n; i++) { const j = (i + 1) % n; f.push({ p: r1 < 1e-4 ? [lo[i], lo[j], hi[i]] : [lo[i], lo[j], hi[j], hi[i]], m }); }
+  if (caps[0]) f.push({ p: lo.slice(), m }); if (caps[1] && r1 > 1e-4) f.push({ p: hi.slice(), m });
+  return orient(f, [cx, y0 + h / 2, cz]);
+}
+function sphere(cx, cy, cz, r, lat, lon, m, s = [1, 1, 1], t0 = 0, t1 = Math.PI) {
+  const f = [], P = (t, ph) => [cx + s[0] * r * Math.sin(t) * Math.cos(ph), cy + s[1] * r * Math.cos(t), cz + s[2] * r * Math.sin(t) * Math.sin(ph)];
+  for (let i = 0; i < lat; i++) for (let j = 0; j < lon; j++) {
+    const ta = t0 + (t1 - t0) * i / lat, tb = t0 + (t1 - t0) * (i + 1) / lat, pa = 2 * Math.PI * j / lon, pb = 2 * Math.PI * (j + 1) / lon;
+    let p = [P(ta, pa), P(ta, pb), P(tb, pb), P(tb, pa)];
+    p = p.filter((v, k) => Math.hypot(...sub(v, p[(k + 1) % 4])) > 1e-6);
+    if (p.length >= 3) f.push({ p, m });
+  }
+  return orient(f, [cx, cy, cz]);
+}
+const rotXp = (p, a) => [p[0], p[1] * Math.cos(a) - p[2] * Math.sin(a), p[1] * Math.sin(a) + p[2] * Math.cos(a)];
+const rotZp = (p, a) => [p[0] * Math.cos(a) - p[1] * Math.sin(a), p[0] * Math.sin(a) + p[1] * Math.cos(a), p[2]];
+const rotYp = (p, a) => [p[0] * Math.cos(a) + p[2] * Math.sin(a), p[1], -p[0] * Math.sin(a) + p[2] * Math.cos(a)];
+const xf = (faces, fn) => faces.map(f => ({ p: f.p.map(fn), m: f.m }));
+/* Drop the faces of a part that lie inside another part (axis 0 x, 1 y; sign 0 for both directions). */
+const drop = (faces, axis, sign = 0) => faces.filter(f => { const n = norm(newell(f.p))[axis]; return sign ? !(n * sign > 0.9) : Math.abs(n) < 0.9; });
+/* Split large quads so painter's order holds where a band or a lock sits on a broad face. */
+function subdiv(faces, n) {
+  const L = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+  return faces.flatMap(f => {
+    if (f.p.length !== 4) return [f];
+    const [a, b, c, d] = f.p, P = (u, v) => L(L(a, b, u), L(d, c, u), v), out = [];
+    for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) out.push({ p: [P(i / n, j / n), P((i + 1) / n, j / n), P((i + 1) / n, (j + 1) / n), P(i / n, (j + 1) / n)], m: f.m });
+    return out;
+  });
+}
+
+const MESHES = {
+  chest: () => [
+    ...subdiv(drop(box(0, 0.4, 0, 1.6, 0.8, 1.0, 'wood'), 1, 1), 6),
+    ...subdiv(halfCylX(0, 0.8, 0, 1.6, 0.5, 9, 'wood-dark'), 6),
+    ...subdiv(drop(box(-0.52, 0.4, 0, 0.14, 0.82, 1.04, 'iron'), 0), 6), ...subdiv(drop(box(0.52, 0.4, 0, 0.14, 0.82, 1.04, 'iron'), 0), 6),
+    ...drop(halfCylX(-0.52, 0.8, 0, 0.14, 0.53, 9, 'iron'), 0), ...drop(halfCylX(0.52, 0.8, 0, 0.14, 0.53, 9, 'iron'), 0),
+    ...box(0, 0.74, 0.53, 0.2, 0.26, 0.08, 'gold'), ...drop(box(0, 0.025, 0, 1.66, 0.05, 1.06, 'iron'), 1, 1),
+  ],
+  fox: () => {
+    const snout = xf(frustum(0, 0, 0, 0.36, 0.15, 0.03, 6, 'fox-light'), p => { const r = rotXp(p, Math.PI / 2); return [r[0], r[1] + 1.18, r[2] + 0.36]; });
+    const ear = s => xf(frustum(0, 0, 0, 0.32, 0.13, 0, 4, 'fox'), p => { const r = rotZp(p, s * -0.3); return [r[0] + s * 0.19, r[1] + 1.4, r[2] + 0.04]; });
+    const tail = xf(frustum(0, 0, 0, 0.75, 0.2, 0.13, 7, 'fox'), p => { const r = rotYp(rotZp(p, -1.25), 0.5); return [r[0] + 0.2, r[1] + 0.2, r[2] - 0.32]; });
+    const tip = xf(frustum(0, 0, 0, 0.26, 0.13, 0.01, 7, 'fox-light'), p => { const r = rotYp(rotZp(p, -1.25), 0.5); const o = rotYp(rotZp([0, 0.75, 0], -1.25), 0.5); return [r[0] + 0.2 + o[0], r[1] + 0.2 + o[1], r[2] - 0.32 + o[2]]; });
+    return [
+      ...sphere(0, 0.52, 0, 0.5, 5, 9, 'fox', [0.78, 1.08, 0.9]),
+      ...sphere(0, 0.6, 0.27, 0.3, 4, 7, 'fox-light', [0.9, 1.25, 0.6]),
+      ...sphere(0, 1.18, 0.08, 0.34, 4, 8, 'fox', [1.05, 0.92, 1]),
+      ...snout, ...box(0, 1.18, 0.72, 0.07, 0.06, 0.05, 'fox-dark'),
+      ...ear(1), ...ear(-1),
+      ...box(0.16, 0.13, 0.34, 0.13, 0.26, 0.14, 'fox-dark'), ...box(-0.16, 0.13, 0.34, 0.13, 0.26, 0.14, 'fox-dark'),
+      ...tail, ...tip,
+    ];
+  },
+  helmet: () => [
+    ...sphere(0, 0.42, 0, 0.62, 4, 14, 'steel', [1, 1, 1], 0, Math.PI / 2),
+    ...frustum(0, 0, 0, 0.42, 0.6, 0.62, 14, 'steel-dark', [false, false]),
+    ...box(0, 0.3, 0.6, 0.66, 0.07, 0.08, 'iron'),
+    ...box(0, 0.16, 0.63, 0.08, 0.3, 0.06, 'steel'),
+    ...xf(halfCylX(0, 0, 0, 0.08, 0.4, 7, 'plume'), p => [p[0], p[1] + 0.92, p[2] - 0.04]),
+    ...frustum(0, 0, 0, 0.05, 0.64, 0.64, 14, 'iron', [false, false]),
+  ],
+  barrel: () => [
+    ...frustum(0, 0, 0, 0.34, 0.44, 0.52, 12, 'wood', [true, false]),
+    ...frustum(0, 0.34, 0, 0.32, 0.52, 0.52, 12, 'wood', [false, false]),
+    ...frustum(0, 0.66, 0, 0.34, 0.52, 0.44, 12, 'wood', [false, true]),
+    ...frustum(0, 0.08, 0, 0.06, 0.475, 0.49, 12, 'iron', [false, false]),
+    ...frustum(0, 0.86, 0, 0.06, 0.49, 0.475, 12, 'iron', [false, false]),
+    ...frustum(0, 0.37, 0, 0.05, 0.535, 0.535, 12, 'iron', [false, false]),
+    ...frustum(0, 0.58, 0, 0.05, 0.535, 0.535, 12, 'iron', [false, false]),
+    ...frustum(0, 1.0, 0, 0.02, 0.4, 0.4, 12, 'wood-dark', [false, true]),
+  ],
+  potion: () => [
+    ...sphere(0, 0.45, 0, 0.44, 6, 12, 'glass'),
+    ...frustum(0, 0.8, 0, 0.32, 0.15, 0.12, 10, 'glass', [false, false]),
+    ...frustum(0, 1.1, 0, 0.05, 0.16, 0.16, 10, 'glass', [true, true]),
+    ...frustum(0, 1.13, 0, 0.17, 0.11, 0.125, 10, 'cork'),
+  ],
+};
+/* Centre each mesh on the origin and scale it to a unit radius. */
+const MESH = {};
+for (const [k, build] of Object.entries(MESHES)) {
+  const faces = build(); const all = faces.flatMap(f => f.p);
+  const mn = [0, 1, 2].map(i => Math.min(...all.map(p => p[i]))), mx = [0, 1, 2].map(i => Math.max(...all.map(p => p[i])));
+  const c = [0, 1, 2].map(i => (mn[i] + mx[i]) / 2); const r = Math.max(...all.map(p => Math.hypot(...sub(p, c))));
+  MESH[k] = { faces: faces.map(f => ({ p: f.p.map(p => sub(p, c).map(v => v / r)), m: f.m })), floor: (mn[1] - c[1]) / r };
+}
+
+const LIGHT = norm([-0.45, 0.75, 0.6]);
+function draw(v) {
+  const cv = v.canvas, ctx = v.ctx, dpr = Math.min(2, devicePixelRatio || 1);
+  const w = v.el.clientWidth, h = v.el.clientHeight; if (!w || !h) return;
+  if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
+  const D = 4, f = Math.min(w, h) * 1.5 * v.zoom, cx = w / 2, cy = h / 2 + Math.min(w, h) * 0.04;
+  const cyaw = Math.cos(v.yaw), syaw = Math.sin(v.yaw), cp = Math.cos(v.pitch), sp = Math.sin(v.pitch);
+  const T = p => { const x = p[0] * cyaw + p[2] * syaw, z0 = -p[0] * syaw + p[2] * cyaw; return [x, p[1] * cp - z0 * sp, p[1] * sp + z0 * cp]; };
+  const S = p => { const d = D - p[2]; return [cx + p[0] * f / d, cy - p[1] * f / d]; };
+  const mesh = MESH[v.mesh];
+  // floor shadow
+  const fc = S(T([0, mesh.floor, 0])), rx = 0.78 * f / D;
+  ctx.fillStyle = `rgb(${INK.text.join(' ')} / ${v.mode === 'pending' ? 0.05 : 0.1})`;
+  ctx.beginPath(); ctx.ellipse(fc[0], fc[1], rx, rx * (0.12 + 0.3 * Math.abs(sp)), 0, 0, Math.PI * 2); ctx.fill();
+  if (v.mode === 'pending') {
+    const s = 0.62, corners = []; for (const x of [-s, s]) for (const y of [-s, s]) for (const z of [-s, s]) corners.push(S(T([x, y, z])));
+    const edges = [[0, 1], [2, 3], [4, 5], [6, 7], [0, 2], [1, 3], [4, 6], [5, 7], [0, 4], [1, 5], [2, 6], [3, 7]];
+    ctx.strokeStyle = `rgb(${INK.faint.join(' ')})`; ctx.lineWidth = 1.2; ctx.setLineDash([4, 5]);
+    ctx.beginPath(); for (const [a, b] of edges) { ctx.moveTo(...corners[a]); ctx.lineTo(...corners[b]); } ctx.stroke(); ctx.setLineDash([]);
+    return;
+  }
+  const list = [];
+  for (const face of mesh.faces) {
+    const tp = face.p.map(T), n = norm(newell(tp)), c = centroid(tp);
+    if (dot(n, sub([0, 0, D], c)) <= 0) continue;
+    list.push({ tp, n, z: c[2], m: face.m });
+  }
+  list.sort((a, b) => a.z - b.z);
+  const clay = v.mode === 'clay';
+  for (const it of list) {
+    const base = MAT[clay ? 'clay' : it.m];
+    const s = Math.min(1.15, 0.36 + 0.7 * Math.max(0, dot(it.n, LIGHT)) + 0.1 * Math.max(0, it.n[2]));
+    const col = `rgb(${Math.min(255, base[0] * s) | 0} ${Math.min(255, base[1] * s) | 0} ${Math.min(255, base[2] * s) | 0})`;
+    ctx.beginPath(); it.tp.forEach((p, i) => { const q2 = S(p); i ? ctx.lineTo(q2[0], q2[1]) : ctx.moveTo(q2[0], q2[1]); }); ctx.closePath();
+    ctx.fillStyle = col; ctx.fill();
+    ctx.lineJoin = 'round'; ctx.lineWidth = clay ? 0.8 : 1.1;
+    ctx.strokeStyle = clay ? `rgb(${base.map(x => (x * s * 0.72) | 0).join(' ')})` : col; ctx.stroke();
+  }
+}
+
+/* Every viewer on the page shares one animation loop; a viewer turns by itself only while nobody has turned it,
+   it is on screen, reduced motion is off and turning is on. */
+const viewers = new Set();
+const io = new IntersectionObserver(es => es.forEach(e => { const v = e.target._v; if (v) { v.visible = e.isIntersecting; v.dirty = true; } }));
+const ro = new ResizeObserver(es => es.forEach(e => { const v = e.target._v; if (v) v.dirty = true; }));
+const DEFAULT_YAW = -0.62, DEFAULT_PITCH = 0.38;
+function facing(v) {
+  let deg = Math.round(((v.yaw - DEFAULT_YAW) * 180 / Math.PI) % 360); if (deg < 0) deg += 360;
+  return deg === 0 ? 'Facing the front' : deg <= 180 ? `Turned ${deg} degrees to the right` : `Turned ${360 - deg} degrees to the left`;
+}
+function mountViewers(root) {
+  root.querySelectorAll('.mv[data-mesh]').forEach(el => {
+    if (el._v) return;
+    const cv = document.createElement('canvas'); cv.setAttribute('aria-hidden', 'true'); el.prepend(cv);
+    const v = { el, canvas: cv, ctx: cv.getContext('2d'), mesh: el.dataset.mesh, mode: el.dataset.mode || 'done', yaw: DEFAULT_YAW + (Number(el.dataset.yaw) || 0), pitch: DEFAULT_PITCH,
+      zoom: Number(el.dataset.zoom) || 1, auto: el.dataset.auto || 'always', interactive: el.dataset.interactive === '1', touched: false, hover: false, visible: true, dirty: true };
+    el._v = v; viewers.add(v); io.observe(el); ro.observe(el);
+    const host = el.closest('[data-hover-host]') || el;
+    host.addEventListener('pointerenter', () => { v.hover = true; }); host.addEventListener('pointerleave', () => { v.hover = false; });
+    host.addEventListener('focusin', () => { v.hover = true; }); host.addEventListener('focusout', () => { v.hover = false; });
+    if (!v.interactive) return;
+    const update = () => { v.dirty = true; el.setAttribute('aria-valuetext', facing(v)); let d = Math.round(((v.yaw - DEFAULT_YAW) * 180 / Math.PI) % 360); el.setAttribute('aria-valuenow', String(d < 0 ? d + 360 : d)); };
+    el.addEventListener('pointerdown', e => { el.setPointerCapture(e.pointerId); v.drag = [e.clientX, e.clientY]; v.touched = true; });
+    el.addEventListener('pointermove', e => { if (!v.drag) return; v.yaw += (e.clientX - v.drag[0]) * 0.012; v.pitch = Math.max(-0.15, Math.min(1.0, v.pitch + (e.clientY - v.drag[1]) * 0.01)); v.drag = [e.clientX, e.clientY]; update(); });
+    const end = () => { v.drag = null; }; el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
+    el.addEventListener('keydown', e => {
+      const k = e.key, step = Math.PI / 12; let hit = true;
+      if (k === 'ArrowLeft') v.yaw -= step; else if (k === 'ArrowRight') v.yaw += step;
+      else if (k === 'ArrowUp') v.pitch = Math.max(-0.15, v.pitch - 0.1); else if (k === 'ArrowDown') v.pitch = Math.min(1.0, v.pitch + 0.1);
+      else if (k === 'Home') { v.yaw = DEFAULT_YAW; v.pitch = DEFAULT_PITCH; v.zoom = Number(el.dataset.zoom) || 1; }
+      else if (k === '+' || k === '=') v.zoom = Math.min(1.8, v.zoom * 1.12); else if (k === '-') v.zoom = Math.max(0.6, v.zoom / 1.12);
+      else hit = false;
+      if (hit) { e.preventDefault(); e.stopPropagation(); v.touched = true; update(); }
+    });
+    update();
+  });
+}
+function resetViewer(el) { const v = el && el._v; if (!v) return; v.yaw = DEFAULT_YAW; v.pitch = DEFAULT_PITCH; v.zoom = Number(el.dataset.zoom) || 1; v.touched = false; v.dirty = true; el.setAttribute('aria-valuetext', facing(v)); el.setAttribute('aria-valuenow', '0'); }
+let last = performance.now();
+function loop(t) {
+  const dt = Math.min(0.05, (t - last) / 1000); last = t;
+  for (const v of viewers) {
+    if (!v.el.isConnected) { viewers.delete(v); io.unobserve(v.el); ro.unobserve(v.el); continue; }
+    const turning = !reduced() && ui.spin && !v.touched && v.visible && (v.auto === 'always' || (v.auto === 'hover' && v.hover));
+    if (turning) { v.yaw += dt * 0.42; v.dirty = true; }
+    if (v.dirty && v.visible) { draw(v); v.dirty = false; }
+  }
+  requestAnimationFrame(loop);
+}
+
+function viewer(m, o = {}) {
+  const mode = o.mode || (m.status === 'done' ? 'done' : m.status === 'shape' ? 'pending' : 'clay');
+  const a = o.interactive
+    ? `tabindex="0" role="slider" aria-roledescription="3D model" aria-label="Turn the ${lc(m.name)}. Drag, or use the arrow keys; Home puts it back." aria-valuemin="0" aria-valuemax="359" data-own-keys`
+    : 'aria-hidden="true"';
+  return `<span class="mv ${o.cls || ''}" data-mesh="${m.mesh}" data-mode="${mode}" data-interactive="${o.interactive ? 1 : 0}" data-auto="${o.auto || (o.interactive ? 'always' : 'off')}" ${o.zoom ? `data-zoom="${o.zoom}"` : ''} ${o.yaw ? `data-yaw="${o.yaw}"` : ''} ${a}>${o.over || ''}${o.interactive && o.hint !== false ? '<span class="mv-hint" aria-hidden="true">Drag or use arrow keys to turn</span>' : ''}</span>`;
+}
+const ring = (pct, size = 22) => `<svg class="ring" viewBox="0 0 24 24" style="width:${size}px;height:${size}px" aria-hidden="true"><circle class="bg" cx="12" cy="12" r="9"/><circle class="fg" cx="12" cy="12" r="9" stroke-dasharray="${(pct / 100 * 56.5).toFixed(1)} 56.5"/></svg>`;
+
+/* =====================================================================================================
+   What this prototype shows
+   ===================================================================================================== */
+const MODELS = [
+  { id: 'lamp', mesh: 'potion', name: 'Brass lamp', thread: 'Vault lighting', computer: 'forge', when: 'Today, 6:05 pm', source: 'words', words: 'A small brass oil lamp with a glass chimney, game-ready, about 10,000 polygons', credits: 30, status: 'done',
+    files: [['models/Brass lamp.png', '0.2 MB'], ['models/Brass lamp.glb', '1.1 MB'], ['models/Brass lamp.usdz', '1.4 MB']] },
+  { id: 'crate', mesh: 'barrel', name: 'Supply crate', thread: 'Vault lighting', computer: 'forge', when: 'Today, 5:58 pm', source: 'words', words: 'Wooden supply crate with rope handles', credits: 30, status: 'done', gone: true,
+    files: [['models/Supply crate.png', '0.2 MB'], ['models/Supply crate.glb', '1.3 MB'], ['models/Supply crate.usdz', '1.6 MB']] },
+  { id: 'barrel-moss', mesh: 'barrel', name: 'Mossy barrel', thread: 'Treasure room props', when: 'Today, 5:52 pm', source: 'words', words: 'Old oak barrel with moss on the lid and iron hoops, game-ready, about 20,000 polygons', credits: 30, status: 'making', step: 'Painting the texture', pct: 68, files: [] },
+  { id: 'chest', mesh: 'chest', name: 'Treasure chest', thread: 'Treasure room props', when: 'Today, 5:41 pm', source: 'words', words: 'Iron-banded oak treasure chest with a domed lid and a brass lock, game-ready, about 70,000 polygons', credits: 30, status: 'done',
+    files: [['models/Treasure chest.png', '0.3 MB'], ['models/Treasure chest.glb', '4.1 MB'], ['models/Treasure chest.usdz', '5.2 MB']] },
+  { id: 'gold', mesh: 'chest', name: 'Gold chest', thread: 'Treasure room props', when: 'Today, 5:20 pm', source: 'words', words: 'Gold-plated treasure chest with gems on the lid', credits: 20, status: 'failed', files: [] },
+  { id: 'fox', mesh: 'fox', name: 'Fox figurine', thread: 'Fox NPC', when: 'Nov 14, 3:08 pm', source: 'photo', words: 'art/fox-figurine.jpg', credits: 30, status: 'done',
+    files: [['models/Fox figurine.png', '0.2 MB'], ['models/Fox figurine.glb', '2.2 MB'], ['models/Fox figurine.usdz', '2.9 MB']] },
+  { id: 'helmet', mesh: 'helmet', name: 'Knight helmet', thread: 'Player helmet', when: 'Nov 14, 11:15 am', source: 'words', words: 'Steel knight helmet with a visor slit and a red crest, game-ready, about 18,000 polygons', credits: 30, status: 'done',
+    files: [['models/Knight helmet.png', '0.2 MB'], ['models/Knight helmet.glb', '1.7 MB'], ['models/Knight helmet.usdz', '2.0 MB']] },
+  { id: 'potion', mesh: 'potion', name: 'Potion bottle', thread: 'Treasure room props', when: 'Nov 13, 4:30 pm', source: 'words', words: 'Round purple potion bottle with a cork, game-ready, about 8,000 polygons', credits: 30, status: 'done',
+    files: [['models/Potion bottle.png', '0.1 MB'], ['models/Potion bottle.glb', '0.6 MB'], ['models/Potion bottle.usdz', '0.8 MB']] },
+  { id: 'barrel', mesh: 'barrel', name: 'Oak barrel', thread: 'Treasure room props', when: 'Nov 13, 4:12 pm', source: 'words', words: 'Oak barrel with iron hoops, game-ready, about 20,000 polygons', credits: 30, status: 'done',
+    files: [['models/Oak barrel.png', '0.2 MB'], ['models/Oak barrel.glb', '1.4 MB'], ['models/Oak barrel.usdz', '1.9 MB']] },
+]
+const q = new URLSearchParams(location.search)
+let surface = q.get('surface') === 'tools' ? 'tools' : 'page'
+const PAGE_STATES = { models: 'With forge', away: 'forge not connected', empty: 'None yet' }
+let state = PAGE_STATES[q.get('state')] ? q.get('state') : 'models'
+let toolsWay = q.get('tools') === 'list' ? 'list' : 'view'
+let failedWhere = 'thread'
+let where = ['kind', 'row', 'tile'].includes(q.get('where')) ? q.get('where') : 'kind'
+let creditsWay = q.get('credits') === 'here' ? 'here' : 'shared'
+let theme = q.get('theme') === 'light' ? 'light' : 'dark'
+let motion = q.get('motion') === 'reduced' ? 'reduced' : 'full'
+let ui = { spin: true, sel: null }
+const reduced = () => motion === 'reduced'
+const lc = s => s.toLowerCase()
+const ext = p => p.slice(p.lastIndexOf('.'))
+const base = p => p.slice(p.lastIndexOf('/') + 1)
+
+/** The 3D models the page shows, as the switcher sets them up. */
+function shown() {
+  if (state === 'empty') return []
+  return MODELS.filter(m => (state === 'making' || m.status !== 'making') && m.status !== 'failed' && (state !== 'away' || !m.computer))
+    .map(m => state === 'gone' && m.id === 'helmet' ? { ...m, gone: true } : m)
+}
+const credits = () => shown().filter(m => creditsWay === 'shared' || !m.computer).reduce((a, m) => a + m.credits, 0)
+
+/* ---------- window ---------- */
+function sidebar(on) {
+  return `<nav class="side" aria-label="Threads">
+    <div class="side-top"><span class="logo" aria-hidden="true"></span><span class="sp"></span><button class="new">${ic('pen')}New thread</button></div>
+    <div class="search">${ic('search')}Search threads</div>
+    <div class="grp-h"><b>Recent</b><span class="n">3</span></div>
+    <div class="row ${surface === 'tools' ? 'on' : ''}"><span class="t">Treasure room props</span><span class="s"><span>Godot game</span><span class="r">${state === 'making' || surface === 'tools' ? 'Working' : '5:41 pm'}</span></span></div>
+    <div class="row"><span class="t">Fox NPC</span><span class="s"><span>Godot game</span><span class="r">Yesterday</span></span></div>
+    <div class="row"><span class="t">Player helmet</span><span class="s"><span>Godot game</span><span class="r">Yesterday</span></span></div>
+    <div class="grp-h">› Settled</div>
+    <div class="side-foot"><button class="ib" aria-label="Dictate">${ic('mic')}</button><button class="ib" aria-label="Watcher">${ic('agents')}</button><button class="ib ${on === 'threads' ? 'on' : ''}" aria-label="Threads">${ic('threads')}</button><span class="sep"></span>
+      <button class="ib" aria-label="Stats">${ic('gauge')}</button><button class="ib ${on === 'models' ? 'on' : ''}" aria-label="3D models" title="3D models">${ic('cube')}</button><button class="ib" aria-label="Settings">${ic('gear')}</button><button class="ib" aria-label="Help">${ic('help')}</button><span class="sp"></span><button class="ib" aria-label="Check for updates">${ic('refresh')}</button></div></nav>`;
+}
+
+/* ---------- the page, C ---------- */
+function page() {
+  const list = shown()
+  const head = `<div class="page-h"><h1>3D models</h1><span class="sub">${list.length ? `${list.length} 3D models from ${new Set(list.map(m => m.thread)).size} threads · ${credits()} credits this month${creditsWay === 'shared' && list.some(m => m.computer) ? ', across this computer and forge' : ''}` : 'None yet'}</span><span class="sp"></span>${list.length ? `<div class="search">${ic('search')}Search 3D models</div>` : ''}</div>`
+  if (!list.length) return `<div class="page">${head}<div class="empty"><div><b>No 3D models yet</b>When a thread makes one with Meshy, it shows here, with its files and the thread it came from.</div></div></div>`
+  const sel = list.find(m => m.id === ui.sel) || list.find(m => m.status === 'done') || list[0]
+  const tile = m => `<button class="tile" data-pick="${m.id}" aria-current="${m.id === sel.id}" aria-label="${m.name}">
+    <span class="pic">${m.status === 'making' ? ring(m.pct, 30) : m.status === 'failed' ? ic('cube') : viewer(m, { auto: 'off', zoom: 1.2, mode: 'done' })}${m.gone ? '<span class="gone">Files gone</span>' : ''}</span>
+    <b>${m.name}</b>${where === 'tile' && m.computer ? `<span class="on-host">On ${m.computer}</span>` : ''}<span class="${m.status === 'failed' ? 'err' : ''}">${m.status === 'making' ? `${m.step} · ${m.pct}%` : m.status === 'failed' ? 'Could not finish' : m.when.replace(/, .*/, '')}</span></button>`
+  return `<div class="page">${head}<div class="stage">${stageView(sel)}${details(sel)}</div>
+    <div class="strip" id="strip" role="listbox" aria-label="Every 3D model">${list.map(tile).join('')}</div></div>`
+}
+function stageView(m) {
+  if (m.status === 'making') return `<div class="v">${viewer(m, { interactive: true, mode: 'clay' })}<span class="mv-tools">${toolsBtns(m)}</span></div>`
+  if (m.status === 'failed' || m.gone) return `<div class="v"><span class="mv" style="display:grid;place-items:center;color:var(--tt-text-muted)">${ic('cube')}</span></div>`
+  return `<div class="v">${viewer(m, { interactive: true })}<span class="mv-tools">${toolsBtns(m)}</span></div>`
+}
+const toolsBtns = m => `${!reduced() ? `<button class="ib" data-act="spin" aria-label="${ui.spin ? 'Stop turning' : 'Turn slowly'}">${ic(ui.spin ? 'pause' : 'play')}</button>` : ''}<button class="ib" data-act="reset" aria-label="Turn the ${lc(m.name)} back to the front">${ic('reset')}</button>`
+function details(m) {
+  const kv = `<dl class="kv">${where === 'row' && m.computer ? `<dt>Computer</dt><dd>${m.computer}</dd>` : ''}<dt>Thread</dt><dd>${m.thread} <span class="muted">· Godot game</span></dd><dt>Made</dt><dd>${m.when}</dd>
+    <dt>${m.source === 'photo' ? 'Photo sent' : 'Words sent'}</dt><dd>${m.source === 'photo' ? `<span class="code">${m.words}</span>` : m.words}</dd><dt>Cost</dt><dd>${m.credits} credits${m.status === 'making' ? ', counted while it is made' : ''}</dd></dl>`
+  const acts = `<div class="acts"><button class="btn primary">Go to thread</button>${m.status === 'done' && !m.gone && !m.computer ? '<button class="btn">Show in File Explorer</button>' : ''}</div>`
+  let below = `<p class="flist-h">Files</p><ul class="flist">${m.files.map(([p, s]) => `<li>${ic('file')}<span class="code" title="${p}">${p}</span><span class="size">${s}</span>${m.computer ? '' : `<button class="ib" aria-label="Show ${base(p)} in File Explorer">${ic('reveal')}</button>`}</li>`).join('')}</ul>`
+  if (m.status === 'making') below = `<p class="facts">${m.step} · ${m.pct}%, about 40 seconds left. The files go to <span class="code">models/</span> in the thread's folder when it is done.</p>`
+  if (m.status === 'failed') below = `<div class="note" style="background:color-mix(in srgb,var(--tt-error-surface) 70%,var(--tt-surface-elevated))">${ic('alert')}<p><b>Meshy could not finish the ${lc(m.name)}.</b> It stopped while painting the texture, so Sotto saved no files. 20 credits were counted for the shape.</p></div>`
+  if (m.gone) below = `<div class="note">${ic('alert')}<p><b>Its files are gone.</b> The ${lc(m.name)}'s files are no longer in <span class="code">models/</span> in its thread's folder${m.computer ? ` on ${m.computer}` : ''}: they were moved, renamed or deleted.</p><div class="acts"><button class="btn">Remove from 3D models</button></div></div>`
+  return `<aside class="det"><h2>${m.name}</h2><span class="kind">3D model · Meshy · made from ${m.source === 'photo' ? 'a photo' : 'words'}${where === 'kind' && m.computer ? ` · on ${m.computer}` : ''}</span>${acts}${kv}${below}</aside>`
+}
+
+/* ---------- Tools > 3D models ---------- */
+function toolsSurface() {
+  const mine = MODELS.filter(m => m.thread === 'Treasure room props' && (failedWhere === 'page' || m.status !== 'failed'))
+  const sel = mine.find(m => m.id === ui.sel) || mine.find(m => m.status === 'done')
+  const card = toolsWay === 'view' ? `<div class="card"><div class="v">${viewer(sel, { interactive: true })}<span class="mv-tools" style="position:absolute;top:8px;right:8px;display:flex;gap:2px">${toolsBtns(sel)}</span></div>
+    <div class="in"><h3>${sel.name}</h3><p class="facts">Made from words · <b>${sel.credits} credits</b></p><div class="fchips">${sel.files.map(([p, s]) => `<button class="fchip" aria-label="Show ${base(p)} in Files"><span class="mono">${ext(p)}</span>${s}</button>`).join('')}</div></div></div>` : ''
+  const row = m => `<li><button data-pick="${m.id}" aria-current="${toolsWay === 'view' && m.id === sel.id}"><span class="pic">${m.status === 'making' ? ring(m.pct, 26) : m.status === 'failed' ? ic('cube') : viewer(m, { auto: 'off', zoom: 1.2 })}</span>
+    <span class="txt"><b>${m.name}</b><span>${m.status === 'making' ? `${m.step} · ${m.pct}%` : m.status === 'failed' ? 'Could not finish · nothing saved' : `${m.when} · .png .glb .usdz`}</span></span><span class="cr">${m.credits} credits</span></button></li>`
+  return `<section class="panel" aria-label="3D models"><div class="panel-h"><h2>3D models</h2><button class="ib" aria-label="Open the 3D models page">${ic('expand')}</button><button class="ib" aria-label="Close Tools">${ic('x')}</button></div>
+    <div class="panel-b"><p class="facts">Made with the Meshy account Studio · ${mine.reduce((a, m) => a + m.credits, 0)} credits in this thread</p>${card}
+      <div class="list-h">Made in this thread<span class="n">${mine.length}</span></div><ul class="mlist">${mine.map(row).join('')}</ul></div>
+    <div class="panel-f">${ic('folder')}Godot game · <span class="code">models/</span></div></section>
+    <nav class="rail" aria-label="Tools">${[['globe', 'Browser'], ['phone', 'iPhone'], ['cube', '3D models', true], ['term', 'Terminal'], ['files', 'Files'], ['changes', 'Changes'], ['pr', 'PR'], ['agents', 'Agents']]
+      .map(([i, l, on]) => `<button class="${on ? 'on' : ''}" aria-label="${l}">${on ? '<span class="dot" title="One is being made"></span>' : ''}${ic(i)}${l}</button>`).join('')}</nav>`
+}
+function threadMain() {
+  return `<main class="main"><header class="tbar"><h1>Treasure room props</h1><span class="crumb">/ Godot game</span><span class="sp"></span><span class="tbtn">Commit</span><span class="tbtn">Watch</span></header>
+    <div class="msgs"><div class="col"><div class="you"><div class="bub">Make a mossy barrel to go beside the chest.</div></div>
+      <div class="agent"><div class="who">Claude<span>5:52 pm</span></div><p>Asking Meshy for an old oak barrel with moss on the lid.</p>
+      <div class="chip"><div class="chip-row"><span class="chip-thumb">${ring(68, 26)}</span><span class="chip-txt"><b>Mossy barrel</b><span>Step 2 of 2: painting the texture · 68%, about 40 seconds left</span></span></div></div></div></div></div></main>`
+}
+
+function render() {
+  document.documentElement.dataset.theme = theme; document.documentElement.dataset.motion = motion
+  readInk()
+  const win = document.getElementById('win')
+  win.className = surface === 'tools' ? 'win tools' : 'win'
+  win.innerHTML = surface === 'tools' ? `${sidebar('threads')}${threadMain()}${toolsSurface()}` : `${sidebar('models')}<main class="main"><header class="tbar"><span class="sp"></span></header>${page()}</main>`
+  mountViewers(win)
+  win.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => { ui.sel = b.dataset.pick; render(); document.querySelector(`[data-pick="${ui.sel}"]`)?.focus() })
+  win.querySelectorAll('[data-act=spin]').forEach(b => b.onclick = () => { ui.spin = !ui.spin; render() })
+  win.querySelectorAll('[data-act=reset]').forEach(b => b.onclick = () => resetViewer(b.closest('.v').querySelector('.mv[data-interactive="1"]')))
+  const strip = document.getElementById('strip')
+  if (strip) strip.addEventListener('keydown', e => {
+    const list = shown(); const i = list.findIndex(m => m.id === (ui.sel || document.activeElement?.dataset.pick)); let n = i
+    if (e.key === 'ArrowRight') n = Math.min(list.length - 1, i + 1); else if (e.key === 'ArrowLeft') n = Math.max(0, i - 1); else return
+    e.preventDefault(); e.stopPropagation(); ui.sel = list[n].id; render(); document.querySelector(`[data-pick="${ui.sel}"]`)?.focus()
+  })
+  document.getElementById('surf').innerHTML = [['page', '3D models page']].map(([k, l]) => `<button data-surf="${k}" class="${k === surface ? 'on' : ''}" aria-pressed="${k === surface}">${l}</button>`).join('')
+  document.getElementById('states').innerHTML = surface === 'page' ? Object.entries(PAGE_STATES).map(([k, l]) => `<button data-s="${k}" class="${k === state ? 'on' : ''}" aria-pressed="${k === state}">${l}</button>`).join('') : ''
+  document.getElementById('opts').innerHTML = `${[['kind', 'Where: in its kind line'], ['row', 'Where: a Computer row'], ['tile', 'Where: on its tile too']].map(([k, l]) => `<button data-where="${k}" class="${k === where ? 'on' : ''}" aria-pressed="${k === where}">${l}</button>`).join('')}<button data-credits="${creditsWay === 'shared' ? 'here' : 'shared'}">${creditsWay === 'shared' ? 'Credits: across computers' : 'Credits: this computer only'}</button>`
+  document.getElementById('theme').textContent = theme === 'dark' ? 'Light' : 'Dark'
+  document.getElementById('motion').textContent = reduced() ? 'Full motion' : 'Reduce motion'
+  document.getElementById('notes').innerHTML = NOTES
+  const u = new URL(location); u.search = ''
+  u.searchParams.set('state', state); u.searchParams.set('where', where); if (creditsWay === 'here') u.searchParams.set('credits', 'here')
+  if (theme === 'light') u.searchParams.set('theme', 'light'); if (reduced()) u.searchParams.set('motion', 'reduced')
+  history.replaceState(null, '', u)
+}
+const NOTES = `<h2>A paired host's 3D models on this computer's page</h2>
+<p style="margin:0">Zach picked on November 15 that the page lists a connected host's 3D models, each saying which computer it is on, with Show in File Explorer only for this computer's files. Brass lamp and Supply crate were made by a thread on forge.</p>
+<h2 style="margin-top:12px">Open choices (bottom bar)</h2><ul>
+<li><b>Where:</b> how a host's 3D model says which computer it is on: in the kind line under its name, as a Computer row in the details, or on its filmstrip tile too.</li>
+<li><b>Credits:</b> the header's credits this month across this computer and forge, as Settings now counts them, or this computer's alone.</li></ul>
+<h2 style="margin-top:12px">Also asked, without a picture</h2><ul><li>A host thread's line while forge is not connected.</li><li>Remove from 3D models for a host's 3D model whose files are gone (Supply crate).</li></ul>`
+
+document.getElementById('surf').onclick = e => { const b = e.target.closest('[data-surf]'); if (b) { surface = b.dataset.surf; ui.sel = null; render() } }
+document.getElementById('states').onclick = e => { const b = e.target.closest('[data-s]'); if (b) { state = b.dataset.s; ui.sel = state === 'models' ? 'lamp' : null; render() } }
+document.getElementById('opts').onclick = e => { const b = e.target.closest('button'); if (!b) return; if (b.dataset.where) where = b.dataset.where; if (b.dataset.credits) creditsWay = b.dataset.credits; ui.sel = null; render() }
+document.getElementById('theme').onclick = () => { theme = theme === 'dark' ? 'light' : 'dark'; render(); viewers.forEach(v => v.dirty = true) }
+document.getElementById('motion').onclick = () => { motion = reduced() ? 'full' : 'reduced'; render() }
+const notesEl = document.getElementById('notes'), notesBtn = document.getElementById('notesBtn')
+const setNotes = open => { notesEl.hidden = !open; notesBtn.setAttribute('aria-expanded', open); notesBtn.classList.toggle('on', open) }
+notesBtn.onclick = () => setNotes(notesEl.hidden)
+const setBar = show => { document.getElementById('bar').hidden = !show; document.getElementById('showBar').hidden = show; if (!show) setNotes(false) }
+document.getElementById('hideBar').onclick = () => setBar(false)
+document.getElementById('showBar').onclick = () => { setBar(true); document.getElementById('hideBar').focus() }
+addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !notesEl.hidden) { setNotes(false); notesBtn.focus(); return }
+  if (e.target.closest('input,textarea,select,[contenteditable],[data-own-keys]')) return
+  if (e.key === 'h' || e.key === 'H') setBar(document.getElementById('bar').hidden)
+})
+if (state === 'models') ui.sel = 'lamp'
+readMaterials()
+render()
+requestAnimationFrame(loop)
+</script>
+</body>
+</html>
