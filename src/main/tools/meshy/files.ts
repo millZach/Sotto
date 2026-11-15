@@ -25,26 +25,36 @@ export async function readModelFile(model: Place, name: string, maxBytes = MODEL
   if (!model.files.includes(name)) return null
   const place = await realFolder(model)
   if (!place) return null
-  const path = join(place.folder, name)
-  /** The file as it resolves now, through any link, is in the 3D model's folder. */
-  const stillInside = async (): Promise<boolean> => { try { return isInside(place.folder, await realpath(path)) && isInside(place.root, await realpath(model.folder)) } catch { return false } }
-  if (!await stillInside()) return null
-  let file: Awaited<ReturnType<typeof open>>
-  try { file = await open(path, 'r') } catch { return null }
+  const named = join(place.folder, name)
+  let real: string
+  try { real = await realpath(named) } catch { return null }
+  if (!isInside(place.folder, real)) return null
+  let bytes: Uint8Array
+  let opened: { readonly dev: bigint; readonly ino: bigint }
   try {
-    // Opened by path, so the folder and the file are looked at again once it is open.
-    if (!await stillInside()) return null
-    const info = await file.stat()
-    if (!info.isFile() || info.size === 0 || info.size > maxBytes) return null
-    const bytes = new Uint8Array(info.size)
-    let read = 0
-    while (read < bytes.byteLength) {
-      const { bytesRead } = await file.read(bytes, read, bytes.byteLength - read, read)
-      if (bytesRead === 0) break
-      read += bytesRead
-    }
-    return read === bytes.byteLength ? bytes : null
-  } catch { return null } finally { await file.close().catch(() => undefined) }
+    const file = await open(real, 'r')
+    try {
+      const info = await file.stat({ bigint: true })
+      opened = { dev: info.dev, ino: info.ino }
+      if (!info.isFile() || info.size === 0n || info.size > BigInt(maxBytes)) return null
+      bytes = new Uint8Array(Number(info.size))
+      let read = 0
+      while (read < bytes.byteLength) {
+        const { bytesRead } = await file.read(bytes, read, bytes.byteLength - read, read)
+        if (bytesRead === 0) break
+        read += bytesRead
+      }
+      if (read !== bytes.byteLength) return null
+    } finally { await file.close().catch(() => undefined) }
+  } catch { return null }
+  // Node opens by path, so the file that was open is bound to where the path leads now: a folder swapped for a link
+  // while it was opened, and put back since, leaves the path leading to another file than the one read, and nothing is
+  // handed over. The folder is looked at once more against the thread's working folder too.
+  const after = await realpath(named).catch(() => null)
+  if (after !== real || !(await realFolder(model))) return null
+  const now = await stat(real, { bigint: true }).catch(() => null)
+  if (!now || now.dev !== opened.dev || now.ino !== opened.ino) return null
+  return bytes
 }
 
 /** Each file's size as it is now, by name; a file that is gone or outside the thread's working folder has none. */
