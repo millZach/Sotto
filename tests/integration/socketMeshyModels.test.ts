@@ -94,6 +94,33 @@ describe('a host’s 3D models over its listener', () => {
     } finally { desktop.frames.close(); before.frames.close(); phone.frames.close(); await server.close() }
   })
 
+  it('sends no more 3D models’ lines, whole or in a delta, to a desktop taken off the record while still paired', async () => {
+    const views: HostModelViews = { list: async () => [], view: async () => null, bytes: async () => null, remove: async () => 'no-record', subscribe: () => () => undefined }
+    const emit: { current: (update: AgentThreadDetailUpdate) => void } = { current: () => undefined }
+    const known = new Set<string>()
+    const server = await startSocketServer({ service: modelsHost(views, emit), pairing: fixture.host.pairing,
+      watcherDesktops: { has: (clientId: string) => known.has(clientId), refresh: async () => undefined } })
+    const paired = await fixture.host.pairing.redeem(fixture.host.pairing.issuePairingCode().code, 'Desktop')
+    known.add(paired.clientId)
+    const desktop = await rawPeer(server.descriptor.port, fixture.host.pairing.signSession(paired.clientId))
+    try {
+      await desktop.call('hello', { op: 'hello', accepts: ['plugin-meshy-models', 'detail-delta'] })
+      await desktop.call('kept', { op: 'detail', threadId: 'props' })
+      expect(visualKinds((desktop.messages.find(message => message.id === 'kept') as { result: unknown }).result)).toEqual([undefined, '3d-model', undefined])
+      await desktop.call('observe', { op: 'observe', threadIds: ['props'] })
+      await expect.poll(() => desktop.messages.some(message => message.event === 'detail')).toBe(true)
+      // The record of desktops is read again and no longer names it; it is still paired and still connected.
+      known.delete(paired.clientId)
+      await desktop.call('dropped', { op: 'detail', threadId: 'props' })
+      expect(visualKinds((desktop.messages.find(message => message.id === 'dropped') as { result: unknown }).result)).toEqual([undefined, undefined, undefined])
+      const another: AgentMessage = { ...modelLine, id: 'visual:model-2', visual: { id: 'model-2', title: 'Crate', kind: '3d-model', source: 'crate' } }
+      emit.current({ threadId: 'props', baseRevision: 1, revision: 2, messageDeltas: [{ message: another }], activityDeltas: [] })
+      await expect.poll(() => desktop.messages.some(message => message.event === 'detail-delta')).toBe(true)
+      const delta = desktop.messages.find(message => message.event === 'detail-delta') as { delta: { messageDeltas: { message: AgentMessage }[] } }
+      expect(delta.delta.messageDeltas[0]!.message.visual).toBeUndefined()
+    } finally { desktop.frames.close(); await server.close() }
+  })
+
   it('offers nothing of it on a host that keeps no copies, whose desktop is sent no 3D model’s line', async () => {
     const emit: { current: (update: AgentThreadDetailUpdate) => void } = { current: () => undefined }
     const server = await startSocketServer({ service: modelsHost(undefined, emit), pairing: fixture.host.pairing,

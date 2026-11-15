@@ -960,9 +960,16 @@ export async function startSocketServer(options: SocketServerOptions) {
   const withoutVisualsOf = new WeakMap<AgentThreadDetail, AgentThreadDetail>(), withModelsOf = new WeakMap<AgentThreadDetail, AgentThreadDetail>()
   const summarised = new WeakMap<AgentThreadDetail, AgentThreadDetail>(), summarisedWithModels = new WeakMap<AgentThreadDetail, AgentThreadDetail>()
   const cutBodies = new CutBodies(), cutOf = new WeakMap<AgentThreadDetail, AgentThreadDetail>(), cutWithModelsOf = new WeakMap<AgentThreadDetail, AgentThreadDetail>()
+  /**
+   * Whether a peer is sent 3D models' lines now: its hello accepted `plugin-meshy-models`, and it is still on the record
+   * of desktops, which is all of what `offers` says of the feature that can change after hello. Read at each send, so
+   * a client taken off the record while still paired is sent no line from then on (Sol's review). The listener's own
+   * part of `offers` was read at hello and does not change.
+   */
+  const keepsModelLines = (peer: Peer): boolean => peer.meshyModels === true && options.watcherDesktops?.has(peer.client.clientId) === true
   const forPeer = (peer: Peer, detail: AgentThreadDetail | null): AgentThreadDetail | null => {
     if (detail === null) return detail
-    const models = peer.meshyModels === true
+    const models = keepsModelLines(peer)
     const visualsOf = models ? withModelsOf : withoutVisualsOf
     let withoutVisuals = visualsOf.get(detail)
     if (!withoutVisuals) visualsOf.set(detail, withoutVisuals = detailWithoutVisuals(detail, models ? MODEL_VISUAL_KIND : undefined))
@@ -1115,7 +1122,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     return {
       whole: () => whole === undefined ? (whole = service.threadDetail(update.threadId)) : whole,
       delta: peer => {
-        const models = peer.meshyModels === true
+        const models = keepsModelLines(peer)
         const these = made[models ? 1 : 0]!
         const stripped = these.stripped ??= deltaWithoutVisuals(update as AgentThreadDetailDelta, models ? MODEL_VISUAL_KIND : undefined)
         return peer.activityBodies ? (these.cut ??= cutBodies.delta(stripped)) : peer.activitySummaries ? (these.summaries ??= deltaWithActivitySummaries(stripped)) : stripped
