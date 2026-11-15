@@ -114,3 +114,39 @@ describe('Proton Mail Bridge, asked', () => {
     expect(await bridgeStatus(account(port))).toBe('not-running')
   })
 })
+
+describe('Bridge’s SMTP port', () => {
+  /** A port on this computer that nothing listens on. */
+  async function closedPort(): Promise<number> {
+    const listener = createServer()
+    await new Promise<void>(resolve => listener.listen(0, '127.0.0.1', resolve))
+    const address = listener.address()
+    await new Promise<void>(resolve => listener.close(() => resolve()))
+    return typeof address === 'object' && address ? address.port : 0
+  }
+
+  it('is checked when an account is added, so a mistyped one is said then and not at the first send', async () => {
+    const fake = await bridge()
+    const smtpPort = await closedPort()
+    expect(await checkMailAccount('proton-mail', ADDRESS, PASSWORD, {}, { ports: { imapPort: fake.port, smtpPort }, certificate: 'learn' })).toEqual({ ok: false, problem: 'unreachable' })
+    // Reached at both, it is taken.
+    const smtp = createServer(socket => socket.destroy())
+    await new Promise<void>(resolve => smtp.listen(0, '127.0.0.1', resolve))
+    closing.push(() => new Promise(resolve => smtp.close(() => resolve())))
+    const address = smtp.address()
+    const open = typeof address === 'object' && address ? address.port : 0
+    expect(await checkMailAccount('proton-mail', ADDRESS, PASSWORD, {}, { ports: { imapPort: fake.port, smtpPort: open }, certificate: 'learn' })).toEqual({ ok: true, signedInAs: null, certificate: BRIDGE })
+  })
+
+  it('makes the row say Bridge is not running when only reading answers', async () => {
+    const fake = await bridge()
+    const account: PluginAccount = { id: '33333333-3333-4333-8333-00000000000a', plugin: 'proton-mail', name: 'Private', address: ADDRESS, savedAt: '2026-11-14T08:00:00.000Z', signedInAs: null, on: true, projects: null, bridge: { imapPort: fake.port, smtpPort: await closedPort(), certificate: BRIDGE } }
+    expect(await bridgeStatus(account)).toBe('not-running')
+  })
+
+  it('is never the same port as reading', async () => {
+    const { made, asked } = await store(async () => ({ ok: true, signedInAs: null, certificate: BRIDGE }))
+    expect(await made.add({ plugin: 'proton-mail', name: 'Private', secret: PASSWORD, address: ADDRESS, bridge: { imapPort: 1143, smtpPort: 1143 } })).toEqual({ ok: false, problem: 'refused' })
+    expect(asked).not.toHaveBeenCalled()
+  })
+})

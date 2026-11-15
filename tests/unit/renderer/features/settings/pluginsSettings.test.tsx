@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { afterEach, expect, it, vi } from 'vitest'
 import { waitFor } from '@testing-library/react'
 import { PluginsSettings } from '../../../../../src/renderer/src/features/settings/PluginsSettings'
-import type { GitHubSignIn, PluginAccount, PluginAccountResult, PluginAccountUpdate, PluginCopiesView, PluginCopySet, PluginHostSignIn, PluginProject, PluginsBridge, ShownPluginUse } from '../../../../../src/shared/plugins'
+import type { BridgeStatus, GitHubSignIn, PluginAccount, PluginAccountResult, PluginAccountUpdate, PluginCopiesView, PluginCopySet, PluginHostSignIn, PluginProject, PluginsBridge, ShownPluginUse } from '../../../../../src/shared/plugins'
 import { deferred } from '../../../../fixtures/deferred'
 
 afterEach(cleanup)
@@ -29,6 +29,8 @@ const noAccounts = {
   replaceSecret: async (): Promise<PluginAccountResult> => ({ ok: false, problem: 'store' }),
   removeAccount: async (): Promise<PluginAccountResult> => ({ ok: false, problem: 'store' }),
   updateAccount: async (): Promise<PluginAccountResult> => ({ ok: false, problem: 'store' }),
+  trustCertificate: async (): Promise<PluginAccountResult> => ({ ok: false, problem: 'store' }),
+  bridgeStatus: async (): Promise<BridgeStatus> => 'running',
   projects: async (): Promise<PluginProject[]> => [],
   ...noCopies,
 }
@@ -917,4 +919,110 @@ it('says an email was sent, or only asked for, and never calls one that may have
     'Asked to send an email in “Reply to the accountant” You allowed it, and Sotto cannot tell whether it was sent.',
     'Asked to send an email in “Reply to the accountant” You allowed it, and it failed.',
   ])
+})
+
+const priv: PluginAccount = { id: '33333333-3333-4333-8333-000000000005', plugin: 'proton-mail', name: 'Private', address: 'reader@proton.example', savedAt: '2026-11-14T08:00:00.000Z', signedInAs: null, on: true, projects: null, bridge: { imapPort: 1143, smtpPort: 1025, certificate: 'a'.repeat(64) } }
+const protonRow = (): HTMLElement => screen.getByRole('button', { name: /^Proton Mail/u })
+
+it('adds a Proton Mail account through Bridge, with Bridge’s own ports filled in, and leaves no Bridge password in the page', async () => {
+  // Zach's picks on November 14, 2026, from the mock-up kept as the tag prototype/plugin-proton-mail.
+  const addAccount = vi.fn(async (): Promise<PluginAccountResult> => ({ ok: true, accounts: [priv] }))
+  await act(async () => { render(<PluginsSettings bridge={vercelBridge([], { addAccount })} />) })
+  expect(protonRow()).toHaveAccessibleName('Proton Mail Not added')
+  fireEvent.click(protonRow())
+  fireEvent.click(screen.getByRole('button', { name: 'Add a Proton Mail account' }))
+  const form = screen.getByRole('form', { name: 'Add a Proton Mail account' })
+  expect(within(form).getByLabelText('IMAP port')).toHaveValue('1143')
+  expect(within(form).getByLabelText('SMTP port')).toHaveValue('1025')
+  expect(form).toHaveTextContent('The password in Bridge, under this account’s Mailbox details. It is not your Proton password.')
+  fireEvent.change(within(form).getByLabelText('Name'), { target: { value: 'Private' } })
+  fireEvent.change(within(form).getByLabelText('Proton address'), { target: { value: 'reader@proton.example' } })
+  fireEvent.change(within(form).getByLabelText('Bridge password'), { target: { value: APP_PASSWORD } })
+  const submit = within(form).getByRole('button', { name: 'Add account' })
+  // A port that is not one holds the form back and says why.
+  fireEvent.change(within(form).getByLabelText('SMTP port'), { target: { value: '70000' } })
+  expect(submit).toHaveAttribute('aria-disabled', 'true')
+  expect(form).toHaveTextContent('A port is a number from 1 to 65535.')
+  fireEvent.change(within(form).getByLabelText('SMTP port'), { target: { value: '1026' } })
+  expect(submit).toHaveAttribute('aria-disabled', 'false')
+  await act(async () => { fireEvent.click(submit) })
+  expect(addAccount).toHaveBeenCalledWith({ plugin: 'proton-mail', name: 'Private', secret: APP_PASSWORD, address: 'reader@proton.example', bridge: { imapPort: 1143, smtpPort: 1026 } })
+  expect(screen.getByRole('region', { name: 'Proton Mail account Private' })).toHaveTextContent(/reader@proton\.example\. Bridge password saved November 1[34]\./u)
+  expect(document.body.innerHTML).not.toContain(APP_PASSWORD)
+})
+
+it('says on the row and the account when Bridge isn’t running, and looks again when asked', async () => {
+  const answers: BridgeStatus[] = ['not-running', 'running']
+  const bridgeStatus = vi.fn(async (): Promise<BridgeStatus> => answers.shift() ?? 'running')
+  await act(async () => { render(<PluginsSettings bridge={vercelBridge([priv], { bridgeStatus })} />) })
+  expect(protonRow()).toHaveAccessibleName('Proton Mail Bridge isn’t running')
+  fireEvent.click(protonRow())
+  const card = screen.getByRole('region', { name: 'Proton Mail account Private' })
+  expect(card).toHaveTextContent('Proton Mail Bridge isn’t running on this computer, so threads can’t read or send this account’s mail. Open Bridge, then look again.')
+  await act(async () => { fireEvent.click(within(card).getByRole('button', { name: 'Look again' })) })
+  expect(bridgeStatus).toHaveBeenCalledTimes(2)
+  expect(protonRow()).toHaveAccessibleName('Proton Mail Private')
+  expect(card).not.toHaveTextContent('isn’t running')
+})
+
+it('offers to trust Bridge’s new certificate, and says so when Bridge does not take the saved Bridge password', async () => {
+  const answers: PluginAccountResult[] = [{ ok: false, problem: 'refused' }, { ok: true, accounts: [priv] }]
+  const trustCertificate = vi.fn(async (): Promise<PluginAccountResult> => answers.shift()!)
+  const statuses: BridgeStatus[] = ['certificate', 'running']
+  const bridgeStatus = vi.fn(async (): Promise<BridgeStatus> => statuses.shift() ?? 'running')
+  await act(async () => { render(<PluginsSettings bridge={vercelBridge([priv], { bridgeStatus, trustCertificate })} />) })
+  expect(protonRow()).toHaveAccessibleName('Proton Mail Bridge’s certificate has changed')
+  fireEvent.click(protonRow())
+  const card = screen.getByRole('region', { name: 'Proton Mail account Private' })
+  expect(card).toHaveTextContent('Bridge’s certificate has changed since this account was added, so Sotto is not using it. If you reinstalled Bridge or reset it, trust the new one.')
+  const trust = within(card).getByRole('button', { name: 'Trust Bridge’s new certificate' })
+  await act(async () => { fireEvent.click(trust) })
+  expect(within(card).getByRole('alert')).toHaveTextContent('Proton Mail Bridge did not accept the saved Bridge password, so its new certificate was not trusted. If Bridge shows a new Bridge password, remove this account and add it again.')
+  await act(async () => { fireEvent.click(trust) })
+  expect(trustCertificate).toHaveBeenCalledWith({ id: priv.id })
+  // Trusted, Bridge is looked at again, and the account reads as one threads can use.
+  expect(bridgeStatus).toHaveBeenCalledTimes(2)
+  expect(protonRow()).toHaveAccessibleName('Proton Mail Private')
+})
+
+it('keeps a Proton Mail account on this computer and says why, with no copy to switch on', async () => {
+  const { bridge } = copiesBridge('here-only', { account: priv })
+  await act(async () => { render(<PluginsSettings bridge={bridge} />) })
+  fireEvent.click(protonRow())
+  const kept = await screen.findByRole('region', { name: 'Where its secret is kept' })
+  expect(kept).toHaveTextContent('Not copied to forge: each computer’s Bridge has its own Bridge password. A thread on another computer is told no Proton Mail account is available there.')
+  expect(within(kept).queryByRole('switch')).toBeNull()
+})
+
+it('does not take a look at Bridge that could not tell for one that is running, and keeps focus once Look again is done', async () => {
+  const answers: BridgeStatus[] = ['unknown', 'running']
+  const bridgeStatus = vi.fn(async (): Promise<BridgeStatus> => answers.shift() ?? 'running')
+  await act(async () => { render(<PluginsSettings bridge={vercelBridge([priv], { bridgeStatus })} />) })
+  expect(protonRow()).toHaveAccessibleName('Proton Mail Couldn’t look at Bridge')
+  fireEvent.click(protonRow())
+  const card = screen.getByRole('region', { name: 'Proton Mail account Private' })
+  expect(card).toHaveTextContent('Sotto couldn’t tell whether Proton Mail Bridge is running on this computer. Open Bridge, then look again.')
+  const again = within(card).getByRole('button', { name: 'Look again' })
+  again.focus()
+  await act(async () => { fireEvent.click(again) })
+  await act(async () => { await new Promise(resolve => requestAnimationFrame(() => resolve(undefined))) })
+  // The button went with the trouble; focus is on the account's own Replace, not lost.
+  expect(within(card).queryByRole('button', { name: 'Look again' })).toBeNull()
+  expect(within(card).getByRole('button', { name: 'Replace the Bridge password for Private' })).toHaveFocus()
+  expect(protonRow()).toHaveAccessibleName('Proton Mail Private')
+})
+
+it('holds the form back when Bridge’s two ports are the same, and lets a switched-off account’s trouble leave the row alone', async () => {
+  await act(async () => { render(<PluginsSettings bridge={vercelBridge([{ ...priv, on: false }], { bridgeStatus: async () => 'not-running' })} />) })
+  // The account is off, so Bridge being closed is no trouble for any thread.
+  expect(protonRow()).toHaveAccessibleName('Proton Mail Private (off)')
+  fireEvent.click(protonRow())
+  fireEvent.click(screen.getByRole('button', { name: 'Add another Proton Mail account' }))
+  const form = screen.getByRole('form', { name: 'Add a Proton Mail account' })
+  fireEvent.change(within(form).getByLabelText('Name'), { target: { value: 'Second' } })
+  fireEvent.change(within(form).getByLabelText('Proton address'), { target: { value: 'second@proton.example' } })
+  fireEvent.change(within(form).getByLabelText('Bridge password'), { target: { value: APP_PASSWORD } })
+  fireEvent.change(within(form).getByLabelText('SMTP port'), { target: { value: '1143' } })
+  expect(within(form).getByRole('button', { name: 'Add account' })).toHaveAttribute('aria-disabled', 'true')
+  expect(form).toHaveTextContent('Bridge reads on one port and sends on another, so the two are never the same.')
 })

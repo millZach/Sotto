@@ -71,7 +71,7 @@ import { PluginToolServer } from './plugins/pluginTools'
 import { pluginToolHandlers } from './plugins/toolHandlers'
 import { readHostGitHubSignIns } from './plugins/hostSignIns'
 import { PluginAccounts } from './plugins/accounts'
-import { checkMailAccount } from './plugins/mail/accounts'
+import { bridgeStatus, checkMailAccount } from './plugins/mail/accounts'
 import type { MailOptions } from './plugins/mail/read'
 import { mailOnThisComputer } from './plugins/mail/standIn'
 import { mailGrantsShown, MailGrants, mailThreadOpen, ownThreadId } from './plugins/mailGrants'
@@ -2766,6 +2766,12 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
           // An account switched off, or kept to other projects, is no longer one some thread can read: its menu reads again.
           if (result.ok) windows.sendToMain(PLUGINS_MAIL_GRANTS_CHANGED, null)
           return result
+        },
+        trustCertificate: async request => await pluginAccounts?.trustCertificate(request) ?? { ok: false as const, problem: 'store' as const },
+        // Proton Mail Bridge on this computer, looked at for its row: no sign-in, and no password sent.
+        bridgeStatus: async request => {
+          const account = (await pluginAccounts?.list().catch(() => []) ?? []).find(entry => entry.id === request.id)
+          return account ? bridgeStatus(account, mailOptions) : 'unknown'
         },
         copies: async () => await pluginCopySync?.view() ?? { copyNew: true, readable: true, computers: [], copies: [] },
         setCopy: async request => { await pluginCopySync?.setCopy(request.accountId, request.computerId, request.on); return await pluginCopySync?.view() ?? { copyNew: true, readable: true, computers: [], copies: [] } },

@@ -2,8 +2,8 @@ import React, { useCallback, useEffect, useId, useRef, useState, type FormEvent,
 import { Trans, useLingui } from '@lingui/react/macro'
 import { ChevronRight, Code, Mail, MonitorSmartphone } from 'lucide-react'
 import {
-  isMailPlugin, PLUGIN_ACCOUNT_NAME_MAX, PLUGIN_MAIL_ADDRESS_MAX, PLUGIN_SECRET_MAX, PLUGIN_USE_SHOWN, pluginMailAddressSchema, PLUGINS, type AccountPluginId, type GitHubSignIn, type PluginAccount, type PluginAccountProblem, type PluginAccountResult,
-  type PluginAccountCopyLeaving, type PluginAccountCopyState, type PluginCopiesView, type PluginHostSignIn, type PluginEntry, type PluginGroupId, type PluginProject, type PluginReadKind, type PluginsBridge, type ShownPluginUse,
+  BRIDGE_DEFAULT_PORTS, isBridgePlugin, isMailPlugin, PLUGIN_ACCOUNT_NAME_MAX, PLUGIN_MAIL_ADDRESS_MAX, PLUGIN_SECRET_MAX, PLUGIN_USE_SHOWN, pluginMailAddressSchema, PLUGINS, type AccountPluginId, type GitHubSignIn, type PluginAccount, type PluginAccountProblem, type PluginAccountResult,
+  type PluginAccountCopyLeaving, type PluginAccountCopyState, type PluginCopiesView, type PluginHostSignIn, type PluginEntry, type PluginGroupId, type PluginProject, type PluginReadKind, type PluginsBridge, type ShownPluginUse, type BridgeStatus,
 } from '../../../../shared/plugins'
 import { localeFormatter } from '../../agents/localeFormat'
 import { useTransientFlag, writeClipboard } from '../../agents/richActions'
@@ -168,7 +168,7 @@ function OtherComputers({ bridge, copies, onCopies }: {
   return <SettingsGroup title={t`Other computers`} icon={MonitorSmartphone} rows={false}>
     <div className="plugins-computers">
       <Toggle label={t`Copy new accounts to every computer I pair`} checked={copies.copyNew} disabled={!bridge || !copies.readable} onCheckedChange={setCopyNew}
-        description={t`Each account’s secret is sent to the computers you paired as hosts, on the connection Sotto already holds to each, and kept in each one’s own encrypted store, so their threads work while this computer is off. You can stop the copy for any account. An account kept to chosen projects is never copied.`} />
+        description={t`Each account’s secret is sent to the computers you paired as hosts, on the connection Sotto already holds to each, and kept in each one’s own encrypted store, so their threads work while this computer is off. You can stop the copy for any account. An account kept to chosen projects is never copied, and neither is a Proton Mail account.`} />
       {failed ? <p className="tt-field__error tt-paragraph" role="alert"><Trans>That could not be saved. Nothing was changed. Try again.</Trans></p> : null}
       {copies.readable ? null : <p className="tt-field__error tt-paragraph" role="alert"><Trans>Sotto cannot read its record of which computers keep a copy, so it sends no copy and no choice can be changed. It still takes back the copy of an account you remove or keep to chosen projects. If a newer Sotto wrote the record, update Sotto on this computer.</Trans></p>}
       {copies.computers.length === 0 ? <p className="tt-paragraph plugin-row__note"><Trans>No other computer is paired. Pair one in Settings › Hosts &amp; phones, and its threads can use these accounts too.</Trans></p>
@@ -304,6 +304,42 @@ interface AccountWords {
 
 function useAccountWords(plugin: AccountPluginId): AccountWords {
   const { t } = useLingui()
+  // Proton Mail is reached through Proton Mail Bridge on this computer, with the password Bridge shows for the account
+  // (ADR-0205, slice 10). Its accounts stay on this computer, so the words for copies elsewhere are never shown.
+  if (isBridgePlugin(plugin)) {
+    return {
+      about: t`Search, read and send mail through Proton Mail Bridge on this computer, which comes with a paid Proton plan. Each thread asks you once, in the thread, before it reads an account’s mail, and what it reads goes to that thread’s provider. A thread asks you before each email it sends, and shows you the whole email first. It cannot move or delete mail, and a message it reads stays unread for you. To make a thread ask again, open its ··· menu and press Ask before this thread reads the account.`,
+      add: t`Add a Proton Mail account`, addAnother: t`Add another Proton Mail account`,
+      secretLabel: t`Bridge password`,
+      secretDescription: t`The password in Bridge, under this account’s Mailbox details. It is not your Proton password. Sotto checks it with Bridge before saving it, and never shows it again.`,
+      secretPlaceholder: t`Paste the Bridge password`,
+      newSecretLabel: t`New Bridge password`,
+      newSecretDescription: t`Sotto checks it with Bridge first. The Bridge password saved now stays in use until the new one is accepted.`,
+      saveSecret: t`Save Bridge password`,
+      account: name => t`Proton Mail account ${name}`,
+      saved: (account, day) => { const address = account.address ?? ''; return t`${address}. Bridge password saved ${day}.` },
+      replace: name => t`Replace the Bridge password for ${name}`,
+      remove: name => t`Remove the Proton Mail account ${name}`,
+      removeAsk: name => <Trans>Remove <b>{name}</b>? Its Bridge password is deleted from this computer, and threads lose the account at once. Nothing changes in Bridge or at Proton.</Trans>,
+      off: t`Off. No thread can see or use this account until you turn it back on. Its Bridge password stays saved.`,
+      noKey: computer => t`${computer} keeps no Proton Mail account: each computer’s Bridge has its own Bridge password.`,
+      locked: t`This computer’s credential store is locked, so the Bridge password could not be read. Unlock it, then try again.`,
+      tooOld: computer => t`${computer} keeps no Proton Mail account: each computer’s Bridge has its own Bridge password.`,
+      problem: (problem, replacing) => {
+        const kept = replacing ? t`The Bridge password already saved was kept.` : t`Nothing was saved.`
+        switch (problem) {
+          case 'refused': return t`Proton Mail Bridge did not accept this address and Bridge password. ${kept} Copy both from Bridge, under this account’s Mailbox details.`
+          case 'unreachable': return t`Proton Mail Bridge isn’t answering at those ports on this computer. ${kept} Open Bridge, check the ports it shows, then try again.`
+          case 'busy': return t`Proton Mail Bridge is turning sign-ins away for now. ${kept} Wait a minute, then try again.`
+          case 'certificate': return t`Proton Mail Bridge showed another certificate than the one Sotto keeps for this account. ${kept} If you reinstalled or reset Bridge, trust its new certificate first.`
+          case 'name-taken': return t`There is already a Proton Mail account with that name. Nothing was saved. Give this one another name.`
+          case 'limit': return t`Proton Mail already has as many accounts as Sotto keeps for one plugin. Nothing was saved. Remove one first.`
+          case 'gone': return t`That account is no longer here. Nothing was changed.`
+          default: return t`Sotto could not keep the Bridge password. ${kept} Check that this computer’s credential store is unlocked, then try again.`
+        }
+      },
+    }
+  }
   if (isMailPlugin(plugin)) {
     return {
       about: t`Search and read mail with an app password. Each thread asks you once, in the thread, before it reads an account’s mail, and what it reads goes to that thread’s provider. A thread asks you before each email it sends, and shows you the whole email first. It cannot move or delete mail, and a message it reads stays unread for you. To make a thread ask again, open its ··· menu and press Ask before this thread reads the account.`,
@@ -380,22 +416,41 @@ function AccountsRow({ plugin, bridge, accounts, projects, copies, uses, elsewhe
 }): ReactNode {
   const { t } = useLingui()
   // GitHub's row is its own: its account is gh's sign-in, and nothing is added here.
-  const id: AccountPluginId = plugin.id === 'gmail' ? 'gmail' : 'vercel'
+  const id: AccountPluginId = plugin.id === 'gmail' || plugin.id === 'proton-mail' ? plugin.id : 'vercel'
   const words = useAccountWords(id)
   const mine = (accounts ?? []).filter(account => account.plugin === id)
   // An account switched off says so beside its name, so the folded row does not read as one threads can use.
   const names = mine.map(account => { const name = account.name; return account.on ? name : t`${name} (off)` }).join(', ')
   const count = mine.length
-  const summary = accounts === null ? t`Couldn’t read the accounts` : count === 0 ? t`Not added` : count === 1 ? names : t`${count} accounts: ${names}`
+  // Where Proton Mail Bridge stands for each account, looked at when the row is drawn and on Look again (Zach's pick on
+  // November 14, 2026). An account not looked at yet has no entry. Only the newest look at an account is shown.
+  const [statuses, setStatuses] = useState<Readonly<Record<string, BridgeStatus>>>({})
+  const looks = useRef(new Map<string, number>())
+  const look = useCallback((accountId: string): void => {
+    if (!bridge) return
+    const turn = (looks.current.get(accountId) ?? 0) + 1
+    looks.current.set(accountId, turn)
+    const shown = (status: BridgeStatus): void => { if (looks.current.get(accountId) === turn) setStatuses(now => ({ ...now, [accountId]: status })) }
+    void bridge.bridgeStatus({ id: accountId }).then(shown, () => shown('unknown'))
+  }, [bridge])
+  const bridgeAccounts = isBridgePlugin(id) ? mine.map(account => account.id).join(' ') : ''
+  useEffect(() => { for (const accountId of bridgeAccounts ? bridgeAccounts.split(' ') : []) look(accountId) }, [bridgeAccounts, look])
+  // Only an account threads may use speaks for the row: one switched off is no trouble while it is off.
+  const inUse = mine.filter(account => account.on)
+  const away = inUse.some(account => statuses[account.id] === 'not-running'), changed = inUse.some(account => statuses[account.id] === 'certificate')
+  // A look that could not tell is not taken for a Bridge that is running.
+  const unsure = inUse.some(account => statuses[account.id] === 'unknown')
+  const summary = accounts === null ? t`Couldn’t read the accounts` : count === 0 ? t`Not added` : away ? t`Bridge isn’t running` : changed ? t`Bridge’s certificate has changed`
+    : unsure ? t`Couldn’t look at Bridge` : count === 1 ? names : t`${count} accounts: ${names}`
   const [adding, setAdding] = useState(false)
   const addButton = useRef<HTMLButtonElement>(null)
   const closeAdd = (): void => { setAdding(false); requestAnimationFrame(() => addButton.current?.focus()) }
-  // The row's dot is lit only while some account is one a thread could use.
-  return <PluginRow plugin={plugin} state={accounts === null ? 'unknown' : mine.some(account => account.on) ? 'signed-in' : 'none'} summary={summary}>
+  // The row's dot is lit only while some account is one a thread could use, and warns while Bridge cannot be used.
+  return <PluginRow plugin={plugin} state={accounts === null || away || changed || unsure ? 'unknown' : mine.some(account => account.on) ? 'signed-in' : 'none'} summary={summary}>
     <p className="tt-paragraph">{words.about}</p>
     {accounts === null ? <p className="tt-field__error tt-paragraph" role="alert"><Trans>The accounts could not be read. Nothing was changed. Reopen Settings and try again.</Trans></p> : null}
     {mine.map(account => <AccountCard key={account.id} account={account} bridge={bridge} projects={projects} copies={copies} elsewhere={elsewhere} onCopies={onCopies} onAccounts={onAccounts} onRemoved={() => { setAdding(false); requestAnimationFrame(() => addButton.current?.focus()) }}
-      uses={uses === null ? null : uses.filter(use => use.accountId === account.id)} />)}
+      uses={uses === null ? null : uses.filter(use => use.accountId === account.id)} bridgeStatus={statuses[account.id]} onLook={() => look(account.id)} />)}
     {adding ? <AddAccount plugin={id} bridge={bridge} onAccounts={onAccounts} onDone={closeAdd} />
       : <div className="plugin-row__actions"><Button ref={addButton} variant="secondary" disabled={accounts === null || !bridge} onClick={() => setAdding(true)}>
         {count === 0 ? words.add : words.addAnother}</Button></div>}
@@ -410,6 +465,11 @@ function AddAccount({ plugin, bridge, onAccounts, onDone }: { readonly plugin: A
   const { t } = useLingui()
   const words = useAccountWords(plugin)
   const mail = isMailPlugin(plugin)
+  // Proton Mail Bridge's ports, which Bridge shows beside the Bridge password, start as its own defaults (Zach's pick).
+  const throughBridge = isBridgePlugin(plugin)
+  const [imapPort, setImapPort] = useState(String(BRIDGE_DEFAULT_PORTS.imapPort))
+  const [smtpPort, setSmtpPort] = useState(String(BRIDGE_DEFAULT_PORTS.smtpPort))
+  const portOf = (text: string): number | null => /^\d{1,5}$/u.test(text.trim()) && Number(text) >= 1 && Number(text) <= 65_535 ? Number(text) : null
   const [name, setName] = useState('')
   const [address, setAddress] = useState('')
   const [token, setToken] = useState('')
@@ -417,13 +477,16 @@ function AddAccount({ plugin, bridge, onAccounts, onDone }: { readonly plugin: A
   const [problem, setProblem] = useState<string | null>(null)
   const nameInput = useRef<HTMLInputElement>(null)
   useEffect(() => { nameInput.current?.focus() }, [])
-  const ready = name.trim() !== '' && token.trim() !== '' && (!mail || pluginMailAddressSchema.safeParse(address).success) && !busy && bridge !== undefined
+  const ports = throughBridge ? { imapPort: portOf(imapPort), smtpPort: portOf(smtpPort) } : null
+  const ready = name.trim() !== '' && token.trim() !== '' && (!mail || pluginMailAddressSchema.safeParse(address).success)
+    && (!ports || (ports.imapPort !== null && ports.smtpPort !== null && ports.imapPort !== ports.smtpPort)) && !busy && bridge !== undefined
   const submit = async (event: FormEvent): Promise<void> => {
     event.preventDefault()
     if (!ready) return
     setBusy(true); setProblem(null)
     let result: PluginAccountResult
-    try { result = await bridge.addAccount({ plugin, name: name.trim(), secret: token.trim(), ...(mail ? { address: address.trim() } : {}) }) } catch { result = { ok: false, problem: 'store' } }
+    const bridgePorts = ports && ports.imapPort !== null && ports.smtpPort !== null ? { imapPort: ports.imapPort, smtpPort: ports.smtpPort } : null
+    try { result = await bridge.addAccount({ plugin, name: name.trim(), secret: token.trim(), ...(mail ? { address: address.trim() } : {}), ...(bridgePorts ? { bridge: bridgePorts } : {}) }) } catch { result = { ok: false, problem: 'store' } }
     setBusy(false)
     // The token is not kept in the page a moment longer than the request that carried it, whether it was kept or not.
     setToken('')
@@ -442,12 +505,24 @@ function AddAccount({ plugin, bridge, onAccounts, onDone }: { readonly plugin: A
     <Field label={t`Name`} description={t`What you and your threads’ agents call this account, such as Work or Personal.`}>
       <input ref={nameInput} className="tt-input" autoComplete="off" spellCheck={false} maxLength={PLUGIN_ACCOUNT_NAME_MAX} value={name} onChange={event => setName(event.target.value)} />
     </Field>
-    {mail ? <Field label={t`Gmail address`} description={t`The address the app password belongs to. Sotto shows it here and never tells it to an agent.`}>
+    {throughBridge ? <Field label={t`Proton address`} description={t`The address Bridge shows for this account. Sotto shows it here and never tells it to an agent.`}>
+      <input className="tt-input" type="email" autoComplete="off" spellCheck={false} maxLength={PLUGIN_MAIL_ADDRESS_MAX} value={address} onChange={event => setAddress(event.target.value)} />
+    </Field> : mail ? <Field label={t`Gmail address`} description={t`The address the app password belongs to. Sotto shows it here and never tells it to an agent.`}>
       <input className="tt-input" type="email" autoComplete="off" spellCheck={false} maxLength={PLUGIN_MAIL_ADDRESS_MAX} value={address} onChange={event => setAddress(event.target.value)} />
     </Field> : null}
     <Field label={words.secretLabel} description={words.secretDescription}>
       <input className="tt-input" type="password" autoComplete="off" spellCheck={false} maxLength={PLUGIN_SECRET_MAX} value={token} placeholder={words.secretPlaceholder} onChange={event => setToken(event.target.value)} />
     </Field>
+    {throughBridge ? <div className="plugin-account__ports">
+      <Field label={t`IMAP port`} {...(portOf(imapPort) === null ? { error: t`A port is a number from 1 to 65535.` } : {})}>
+        <input className="tt-input" inputMode="numeric" autoComplete="off" spellCheck={false} maxLength={5} value={imapPort} onChange={event => setImapPort(event.target.value)} />
+      </Field>
+      <Field label={t`SMTP port`} {...(portOf(smtpPort) === null ? { error: t`A port is a number from 1 to 65535.` } : {})}>
+        <input className="tt-input" inputMode="numeric" autoComplete="off" spellCheck={false} maxLength={5} value={smtpPort} onChange={event => setSmtpPort(event.target.value)} />
+      </Field>
+      <p className="tt-paragraph plugin-row__note"><Trans>Bridge’s own ports. Change them only if Bridge shows others.</Trans></p>
+      {ports && ports.imapPort !== null && ports.imapPort === ports.smtpPort ? <p className="tt-field__error tt-paragraph" role="alert"><Trans>Bridge reads on one port and sends on another, so the two are never the same.</Trans></p> : null}
+    </div> : null}
     {problem ? <p className="tt-field__error tt-paragraph" role="alert">{problem}</p> : null}
     <div className="plugin-row__actions">
       <Button type="submit" variant="primary" aria-disabled={!ready}>{busy ? t`Checking…` : t`Add account`}</Button>
@@ -457,15 +532,45 @@ function AddAccount({ plugin, bridge, onAccounts, onDone }: { readonly plugin: A
 }
 
 /** One account: its name, when its secret was saved, Replace and Remove, and its recent use. */
-function AccountCard({ account, bridge, projects, copies, uses, elsewhere, onAccounts, onCopies, onRemoved }: {
+function AccountCard({ account, bridge, projects, copies, uses, elsewhere, onAccounts, onCopies, onRemoved, bridgeStatus, onLook }: {
   readonly account: PluginAccount; readonly bridge: PluginsBridge | undefined; readonly projects: ProjectsView; readonly uses: readonly ShownPluginUse[] | null
   readonly copies: PluginCopiesView | null; readonly onCopies: CopiesChoice; readonly elsewhere: boolean
   readonly onAccounts: (accounts: readonly PluginAccount[]) => void
   /** The account is gone, and its buttons with it: focus needs somewhere to go. */
   readonly onRemoved: () => void
+  /** Where Proton Mail Bridge stands for a Proton Mail account, once looked at; nothing for any other plugin's. */
+  readonly bridgeStatus?: BridgeStatus | undefined
+  /** Looks at Bridge again. */
+  readonly onLook?: () => void
 }): ReactNode {
   const { t } = useLingui()
   const words = useAccountWords(account.plugin)
+  const [trusting, setTrusting] = useState(false)
+  const [trustProblem, setTrustProblem] = useState<string | null>(null)
+  // Look again and Trust go once Bridge is fine: focus moves to what is left, rather than to nothing.
+  const bridgeSection = useRef<HTMLDivElement>(null)
+  const lookedFromHere = useRef(false)
+  const lookAgain = (): void => { lookedFromHere.current = true; onLook?.() }
+  useEffect(() => {
+    if (!lookedFromHere.current) return
+    lookedFromHere.current = false
+    requestAnimationFrame(() => {
+      if (document.activeElement && document.activeElement !== document.body) return
+      (bridgeSection.current?.querySelector('button') ?? replaceButton.current)?.focus()
+    })
+  }, [bridgeStatus])
+  // Trusting the certificate Bridge shows now checks the saved Bridge password with it (Zach's pick, November 15, 2026).
+  const trust = async (): Promise<void> => {
+    if (!bridge || trusting) return
+    setTrusting(true); setTrustProblem(null)
+    let result: PluginAccountResult
+    try { result = await bridge.trustCertificate({ id: account.id }) } catch { result = { ok: false, problem: 'store' } }
+    setTrusting(false)
+    if (result.ok) { onAccounts(result.accounts); lookAgain(); return }
+    setTrustProblem(result.problem === 'refused'
+      ? t`Proton Mail Bridge did not accept the saved Bridge password, so its new certificate was not trusted. If Bridge shows a new Bridge password, remove this account and add it again.`
+      : words.problem(result.problem, true))
+  }
   const [mode, setMode] = useState<'rest' | 'replacing' | 'removing'>('rest')
   const [token, setToken] = useState('')
   const [busy, setBusy] = useState(false)
@@ -484,7 +589,12 @@ function AccountCard({ account, bridge, projects, copies, uses, elsewhere, onAcc
     let result: PluginAccountResult
     try { result = await request() } catch { result = { ok: false, problem: 'store' } }
     setBusy(false); setToken('')
-    if (!result.ok) { setProblem(replacing ? words.problem(result.problem, true) : t`The account could not be removed. Nothing was changed. Try again.`); return }
+    if (!result.ok) {
+      setProblem(replacing ? words.problem(result.problem, true) : t`The account could not be removed. Nothing was changed. Try again.`)
+      // Bridge itself was the trouble: look at it again, so the account offers what fits, such as trusting its new certificate.
+      if (replacing && (result.problem === 'certificate' || result.problem === 'unreachable')) onLook?.()
+      return
+    }
     onAccounts(result.accounts)
     if (replacing) rest('replace')
     else onRemoved()
@@ -524,6 +634,19 @@ function AccountCard({ account, bridge, projects, copies, uses, elsewhere, onAcc
       </div>
     </div> : null}
     {problem ? <p className="tt-field__error tt-paragraph" role="alert">{problem}</p> : null}
+    {bridgeStatus === 'not-running' || bridgeStatus === 'unknown' ? <div ref={bridgeSection} className="plugin-account__bridge" role="status">
+      <p className="tt-paragraph plugin-account__warning">{bridgeStatus === 'unknown'
+        ? <Trans>Sotto couldn’t tell whether Proton Mail Bridge is running on this computer. Open Bridge, then look again.</Trans>
+        : <Trans>Proton Mail Bridge isn’t running on this computer, so threads can’t read or send this account’s mail. Open Bridge, then look again.</Trans>}</p>
+      <div className="plugin-row__actions"><Button variant="secondary" onClick={lookAgain}><Trans>Look again</Trans></Button></div>
+    </div> : bridgeStatus === 'certificate' ? <div ref={bridgeSection} className="plugin-account__bridge" role="status">
+      <p className="tt-paragraph plugin-account__warning"><Trans>Bridge’s certificate has changed since this account was added, so Sotto is not using it. If you reinstalled Bridge or reset it, trust the new one.</Trans></p>
+      <div className="plugin-row__actions">
+        <Button variant="secondary" aria-disabled={trusting || !bridge} onClick={() => void trust()}>{trusting ? t`Checking…` : t`Trust Bridge’s new certificate`}</Button>
+        <Button variant="ghost" onClick={lookAgain}><Trans>Look again</Trans></Button>
+      </div>
+    </div> : null}
+    {trustProblem ? <p className="tt-field__error tt-paragraph" role="alert">{trustProblem}</p> : null}
     <AccountThreads account={account} bridge={bridge} projects={projects} onAccounts={onAccounts} />
     <AccountCopies account={account} bridge={bridge} copies={copies} onCopies={onCopies} />
     <RecentUse name={name} uses={uses} elsewhere={elsewhere} />
@@ -545,6 +668,15 @@ function AccountCopies({ account, bridge, copies, onCopies }: {
   // With no other computer paired there is one place it is kept, and nothing to choose.
   if (!copies || copies.computers.length === 0) return null
   const name = account.name
+  // A Proton Mail account stays here (Zach's pick on November 14, 2026): there is nothing to choose, only why.
+  if (isBridgePlugin(account.plugin)) {
+    const computers = copies.computers.map(computer => computer.name).join(', ')
+    return <section className="plugin-account__copies" aria-labelledby={headingId}>
+      <h4 id={headingId}><Trans>Where its secret is kept</Trans></h4>
+      <p className="plugin-account__here tt-paragraph"><b><Trans>This computer</Trans></b> <span><Trans>Always, in Sotto’s encrypted store.</Trans></span></p>
+      <p className="tt-paragraph plugin-row__note"><Trans>Not copied to {computers}: each computer’s Bridge has its own Bridge password. A thread on another computer is told no Proton Mail account is available there.</Trans></p>
+    </section>
+  }
   const set = (computerId: string, on: boolean): void => {
     if (!bridge) return
     setFailed(false)

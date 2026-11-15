@@ -30,6 +30,7 @@ export const PLUGINS: readonly PluginEntry[] = [
   { id: 'github', name: 'GitHub', group: 'code' },
   { id: 'vercel', name: 'Vercel', group: 'code' },
   { id: 'gmail', name: 'Gmail', group: 'mail' },
+  { id: 'proton-mail', name: 'Proton Mail', group: 'mail' },
 ]
 
 export const PLUGINS_GITHUB_SIGN_IN = 'sotto:plugins:github-sign-in'
@@ -83,6 +84,10 @@ export interface PluginsBridge {
   removeAccount(request: PluginAccountRemove): Promise<PluginAccountResult>
   /** Switches an account on or off for threads, or keeps it to chosen projects. */
   updateAccount(request: PluginAccountUpdate): Promise<PluginAccountResult>
+  /** Keeps the certificate a Proton Mail account's Bridge shows now, once Bridge takes the saved Bridge password. */
+  trustCertificate(request: PluginAccountRemove): Promise<PluginAccountResult>
+  /** Where Proton Mail Bridge stands for an account, looked at without signing in. */
+  bridgeStatus(request: PluginAccountRemove): Promise<BridgeStatus>
   /** This computer's projects, for choosing which ones an account is kept to. */
   projects(): Promise<PluginProject[]>
   /** The user's other computers and where each account's copy stands on each. */
@@ -175,6 +180,15 @@ export const PLUGINS_ACCOUNT_ADD = 'sotto:plugins:account-add'
 export const PLUGINS_ACCOUNT_REPLACE = 'sotto:plugins:account-replace'
 export const PLUGINS_ACCOUNT_REMOVE = 'sotto:plugins:account-remove'
 export const PLUGINS_ACCOUNT_UPDATE = 'sotto:plugins:account-update'
+export const PLUGINS_ACCOUNT_TRUST = 'sotto:plugins:account-trust'
+export const PLUGINS_BRIDGE_STATUS = 'sotto:plugins:bridge-status'
+/**
+ * Where Proton Mail Bridge stands for an account on this computer: answering with the certificate kept, not running,
+ * showing another certificate, or not known, as for an account that is not Proton Mail's.
+ */
+export const BRIDGE_STATUSES = ['running', 'not-running', 'certificate', 'unknown'] as const
+export type BridgeStatus = typeof BRIDGE_STATUSES[number]
+export const bridgeStatusSchema = z.enum(BRIDGE_STATUSES)
 export const PLUGINS_PROJECTS = 'sotto:plugins:projects'
 export const PLUGINS_COPIES = 'sotto:plugins:copies'
 export const PLUGINS_COPY_SET = 'sotto:plugins:copy-set'
@@ -229,8 +243,9 @@ export const pluginAccountSchema = z.object({
   bridge: z.object({ imapPort: z.number().int().min(1).max(65_535), smtpPort: z.number().int().min(1).max(65_535), certificate: z.string().regex(/^[0-9a-f]{64}$/u) }).strict().optional(),
 }).strict()
 export type PluginAccount = z.infer<typeof pluginAccountSchema>
-/** Bridge's ports as the user gives them when adding a Proton Mail account. */
+/** Bridge's two ports, which are never the same: reading goes to one and sending to the other. */
 export const bridgePortsSchema = z.object({ imapPort: z.number().int().min(1).max(65_535), smtpPort: z.number().int().min(1).max(65_535) }).strict()
+  .refine(ports => ports.imapPort !== ports.smtpPort)
 export type BridgePorts = z.infer<typeof bridgePortsSchema>
 /** Proton Mail Bridge's own ports, which the add form starts with (Zach's pick on November 14, 2026). */
 export const BRIDGE_DEFAULT_PORTS: BridgePorts = { imapPort: 1143, smtpPort: 1025 }
