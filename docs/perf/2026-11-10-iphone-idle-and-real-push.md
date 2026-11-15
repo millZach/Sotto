@@ -174,9 +174,12 @@ Two changes since this note made a running host's list pushes to a phone smaller
 | `stream-real-push`'s list pushes | Until November 15 | From November 15 |
 | --- | ---: | ---: |
 | Parts made up beside the laptop's state | eight, 198,276 bytes | the three the phone reads, 66,842 bytes |
-| The first push | 208,925 bytes | 68,462 bytes, every part whole |
-| Each push after it | 208,925 bytes | 1,347 bytes, its parts named kept |
+| The first push | 200,499 bytes | every part whole |
+| Each push after it | 200,499 bytes | its parts named kept |
+| The run's 40 pushes | 8,019,965 bytes | 131,220 bytes, 3,280 a push |
 
-These sizes are BenchWire's frames compiled on their own. The phone puts the kept parts back from the push before (`KeptPartsCache`), as a connection to a host does. A push after the first is 26% smaller than the host's 1,826 bytes because the laptop's state holds four parts and a running host's about forty: the host's push also names those it kept. The phone reads past the names.
+The two columns are the change's iPhone benchmark run, [43738293914](https://github.com/millZach/Sotto/actions/runs/43738293914), five journeys a side, the same bytes in each. The phone puts the kept parts back from the push before (`KeptPartsCache`), as a connection to a host does. In `PhoneBenchTests`, BenchWire's frames compiled on their own, the first push is 68,462 bytes and each after it 1,347. A push after the first is smaller than the host's 1,826 bytes because the laptop's state holds four parts and a running host's about forty: the host's push also names those it kept. The phone reads past the names.
 
-So `stream-real-push`'s numbers from November 15 on aren't comparable with the earlier ones. The before column of the change's iPhone benchmark run is the last measured at the November 10 size; that run is in the pull request for #2595.
+The time went down only where the phone reads the frame alone. `core.shell-real.read` went from 1.10 ms to 0.32. In the app, `decode_per_push.shell` stayed about 100 ms (94.6 before, 109 after) and `cpu_per_chunk` about 170 ms (167, 190): that clock runs from the read to the main actor taking the frame back, and the main thread is busy for about 900 ms a second through both streams (`hitch_time_ratio`, 898 and 909). The unchanged `stream` phase moved by as much in the same run (`cpu_per_chunk` 176 and 150), so these timings don't separate the two.
+
+So `stream-real-push`'s numbers from November 15 on aren't comparable with the earlier ones. The before column of run 43738293914 is the last measured at the November 10 size.

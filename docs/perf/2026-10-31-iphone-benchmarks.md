@@ -41,7 +41,7 @@ run reads the same bytes:
   phone. The first carries the parts the phone reads, made up at the sizes forge's host sent on November 10, 2026
   (`docs/perf/2026-11-10-performance-and-data-audit.md`, finding 2): the delivery ledger (46 KB), the delivered draft
   ledger (13 KB) and the follow-up receipts (8 KB), 68 KB a push in all (`BenchWire.hostSizedState`). Each push after it
-  names those parts and the laptop's own kept, about 1.3 KB, and the phone puts them back from the push before, as a host
+  names those parts and the laptop's own kept (40 pushes came to 131 KB in run 43738293914), and the phone puts them back from the push before, as a host
   has sent since #2393 (`BenchWire.keptState`, `KeptPartsCache`). The rest of a host's state is its projects, providers
   and settings, which stay as the laptop's so the list does not change. The threads the parts name are not on the list and
   every delivery was accepted, so the phone shows nothing of them. Until November 15, 2026 every push carried eight parts
