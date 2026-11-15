@@ -1,0 +1,49 @@
+{
+ "before": {
+  "desktop": {
+   "pushes": 40,
+   "bytesPerPush": 199919,
+   "unchangedPartsPerPush": 44
+  },
+  "phone": {
+   "pushes": 4,
+   "bytesPerPush": 73177,
+   "unchangedPartsPerPush": 41
+  }
+ },
+ "after": {
+  "desktop": {
+   "pushes": 40,
+   "bytesPerPush": 2850,
+   "unchangedPartsPerPush": 7
+  },
+  "phone": {
+   "pushes": 4,
+   "bytesPerPush": 1826,
+   "unchangedPartsPerPush": 7
+  }
+ },
+ "budgets": {
+  "before": {
+   "DESKTOP_PUSH_BYTES": 204000,
+   "PHONE_PUSH_BYTES": 203000,
+   "DESKTOP_UNCHANGED_PARTS": 44,
+   "PHONE_UNCHANGED_PARTS": 45
+  },
+  "after": {
+   "DESKTOP_PUSH_BYTES": 3100,
+   "PHONE_PUSH_BYTES": 2100,
+   "DESKTOP_UNCHANGED_PARTS": 7,
+   "PHONE_UNCHANGED_PARTS": 7
+  }
+ },
+ "unchangedPartsAfter": [
+  "v",
+  "event",
+  "state.kept",
+  "state.host.kept",
+  "state.host.threads",
+  "state.host.modelsRevision",
+  "eventPage"
+ ]
+}

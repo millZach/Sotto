@@ -46,6 +46,8 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
     private var catalog = ModelCatalogCache()
     /// The thread records this connection's last shell push carried, which the next push's changed records go back on.
     private var threadRecords = ThreadRecordsCache()
+    /// The parts of the last shell push this connection applied, which the next push's kept parts go back from.
+    private var keptParts = KeptPartsCache()
     private var received = 0
     private var deadlines: [String: Task<Void, Never>] = [:]
     private var session = ""
@@ -160,7 +162,7 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
     }
     func disconnect() {
         generation = UUID(); liveness = LivenessProgress(); received = 0; answeredPing = nil; reader?.cancel(); reader = nil
-        catalog = ModelCatalogCache(); threadRecords = ThreadRecordsCache()
+        catalog = ModelCatalogCache(); threadRecords = ThreadRecordsCache(); keptParts = KeptPartsCache()
         heartbeat?.cancel(); heartbeat = nil
         socket?.cancel(with: .goingAway, reason: nil); socket = nil; session = ""
         let waiting = pending; pending.removeAll()
@@ -227,7 +229,10 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
             if let records { threadRecords.hold(records) }
             finish(id: id, result: .success(Received(Reply(data: data, catalog: catalog, records: threadRecords), sequence: received)))
         case .refusal(let id, let failure): finish(id: id, result: .failure(HostRefusal(failure: failure)))
-        case .shell(let shell):
+        case .shell(let pushed):
+            // A push whose kept parts this connection cannot put back, measured from another push or naming a part that push
+            // did not have: start again rather than show a computer with parts missing. The new connection's hello is whole.
+            guard let shell = keptParts.whole(pushed) else { disconnect(); onDisconnect?(); return }
             catalog.hold(shell)
             // A shell naming a catalog this connection was never sent: start again rather than show no models.
             guard let restored = catalog.whole(shell) else { disconnect(); onDisconnect?(); return }

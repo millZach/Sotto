@@ -1,0 +1,259 @@
+{
+ "commit": "this pull request's branch",
+ "track": "owl",
+ "long": true,
+ "accepts": {
+  "desktop": [
+   "client-liveness",
+   "detail-delta",
+   "message-aliases",
+   "answer-receipts",
+   "model-catalog-revision",
+   "activity-bodies",
+   "changed-thread-records",
+   "kept-parts",
+   "provider-opencode",
+   "provider-cursor",
+   "provider-deepseek",
+   "watcher-reads",
+   "watcher-progress"
+  ],
+  "phone": [
+   "detail-delta",
+   "client-liveness",
+   "activity-summaries",
+   "model-catalog-revision",
+   "provider-opencode",
+   "provider-cursor",
+   "provider-deepseek",
+   "changed-thread-records",
+   "reply-thread-records",
+   "provider-mode-lists",
+   "settled-threads-on-request",
+   "usable-models",
+   "command-changed-thread-records",
+   "kept-parts",
+   "step-window",
+   "watcher-phone",
+   "watcher-phone-stop-all",
+   "watcher-phone-manage",
+   "watcher-phone-steer",
+   "watcher-phone-machines",
+   "watcher-phone-composer"
+  ]
+ },
+ "helloBytes": {
+  "desktop": 610645,
+  "phone": 350776
+ },
+ "openBytes": {
+  "desktop": 1058574,
+  "phone": 87235
+ },
+ "stretches": {
+  "1 streaming": {
+   "seconds": 4,
+   "clientPushes": 60,
+   "desktopWindow": {
+    "broadcasts": 60,
+    "bytes": 167932
+   },
+   "processCpuMs": [
+    1460,
+    1565,
+    1409
+   ],
+   "desktopShellDeflatedPerFrame": [
+    1128,
+    1127,
+    1127
+   ],
+   "desktopShell": {
+    "frames": 60,
+    "bytesPerFrame": 2922,
+    "deflatedPerFrame": 1128,
+    "max": 3689,
+    "unchangedPartsPerFrame": 7,
+    "unchangedBytesPerFrame": 620,
+    "parts": {
+     "threads": {
+      "bytesPerFrame": 2199,
+      "unchanged": 0
+     },
+     "state.kept": {
+      "bytesPerFrame": 474,
+      "unchanged": 60
+     },
+     "state.host.kept": {
+      "bytesPerFrame": 77,
+      "unchanged": 60
+     },
+     "eventPage": {
+      "bytesPerFrame": 58,
+      "unchanged": 60
+     },
+     "event": {
+      "bytesPerFrame": 7,
+      "unchanged": 60
+     },
+     "state.host.threads": {
+      "bytesPerFrame": 2,
+      "unchanged": 60
+     },
+     "v": {
+      "bytesPerFrame": 1,
+      "unchanged": 60
+     },
+     "state.host.modelsRevision": {
+      "bytesPerFrame": 1,
+      "unchanged": 60
+     }
+    }
+   },
+   "phoneShell": {
+    "frames": 6,
+    "bytesPerFrame": 1882,
+    "deflatedPerFrame": 0,
+    "max": 1882,
+    "unchangedPartsPerFrame": 7,
+    "unchangedBytesPerFrame": 565,
+    "parts": {
+     "threads": {
+      "bytesPerFrame": 1214,
+      "unchanged": 0
+     },
+     "state.kept": {
+      "bytesPerFrame": 419,
+      "unchanged": 6
+     },
+     "state.host.kept": {
+      "bytesPerFrame": 77,
+      "unchanged": 6
+     },
+     "eventPage": {
+      "bytesPerFrame": 58,
+      "unchanged": 6
+     },
+     "event": {
+      "bytesPerFrame": 7,
+      "unchanged": 6
+     },
+     "state.host.threads": {
+      "bytesPerFrame": 2,
+      "unchanged": 6
+     },
+     "v": {
+      "bytesPerFrame": 1,
+      "unchanged": 6
+     },
+     "state.host.modelsRevision": {
+      "bytesPerFrame": 1,
+      "unchanged": 6
+     }
+    }
+   }
+  },
+  "3 streaming": {
+   "seconds": 4,
+   "clientPushes": 61,
+   "desktopWindow": {
+    "broadcasts": 61,
+    "bytes": 431535
+   },
+   "processCpuMs": [
+    1426,
+    1548,
+    1466
+   ],
+   "desktopShellDeflatedPerFrame": [
+    1275,
+    1275,
+    1273
+   ],
+   "desktopShell": {
+    "frames": 61,
+    "bytesPerFrame": 7146,
+    "deflatedPerFrame": 1275,
+    "max": 9553,
+    "unchangedPartsPerFrame": 7,
+    "unchangedBytesPerFrame": 620,
+    "parts": {
+     "threads": {
+      "bytesPerFrame": 6423,
+      "unchanged": 0
+     },
+     "state.kept": {
+      "bytesPerFrame": 474,
+      "unchanged": 61
+     },
+     "state.host.kept": {
+      "bytesPerFrame": 77,
+      "unchanged": 61
+     },
+     "eventPage": {
+      "bytesPerFrame": 58,
+      "unchanged": 61
+     },
+     "event": {
+      "bytesPerFrame": 7,
+      "unchanged": 61
+     },
+     "state.host.threads": {
+      "bytesPerFrame": 2,
+      "unchanged": 61
+     },
+     "v": {
+      "bytesPerFrame": 1,
+      "unchanged": 61
+     },
+     "state.host.modelsRevision": {
+      "bytesPerFrame": 1,
+      "unchanged": 61
+     }
+    }
+   },
+   "phoneShell": {
+    "frames": 6,
+    "bytesPerFrame": 4241,
+    "deflatedPerFrame": 0,
+    "max": 4242,
+    "unchangedPartsPerFrame": 7,
+    "unchangedBytesPerFrame": 565,
+    "parts": {
+     "threads": {
+      "bytesPerFrame": 3573,
+      "unchanged": 0
+     },
+     "state.kept": {
+      "bytesPerFrame": 419,
+      "unchanged": 6
+     },
+     "state.host.kept": {
+      "bytesPerFrame": 77,
+      "unchanged": 6
+     },
+     "eventPage": {
+      "bytesPerFrame": 58,
+      "unchanged": 6
+     },
+     "event": {
+      "bytesPerFrame": 7,
+      "unchanged": 6
+     },
+     "state.host.threads": {
+      "bytesPerFrame": 2,
+      "unchanged": 6
+     },
+     "v": {
+      "bytesPerFrame": 1,
+      "unchanged": 6
+     },
+     "state.host.modelsRevision": {
+      "bytesPerFrame": 1,
+      "unchanged": 6
+     }
+    }
+   }
+  }
+ }
+}

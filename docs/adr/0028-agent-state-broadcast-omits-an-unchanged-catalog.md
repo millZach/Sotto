@@ -479,3 +479,57 @@ window's state, and the window drops it. `encodeReceipt` now
 names such a reply's catalogs by the revisions they hold now, without comparing or storing its content, and the window
 resolves the newer catalog it holds. A receipt nobody numbered as it was built, such as one a test encodes directly, is
 encoded as before.
+
+## November 10, 2026: a paired host's shell pushes keep the parts that did not change (#2393)
+
+The October 30 kept parts section gave the window its kept parts and left the socket alone, so a paired host still sent
+every part of its state whole in every shell push but the thread records and the catalog. The November 10 audit measured
+it on forge's host: about 200 KB of JSON to the laptop a push, 60 KB compressed, and 209 KB to a phone, for about 4 KB of
+changed thread records. #2392 then left out of a phone's shell the five parts no phone reads, which brought a phone's push
+to about 73 KB. What was left did not change in any push the audit saw: the deliveries, the draft and follow-up receipts,
+the skill lists to a desktop, the projects, the providers and the settings.
+
+**A host lists a new feature, `kept-parts`, and the protocol stays v1** (ADR-0025). Every listener lists it, to desktops
+and phones alike. To a client whose hello accepts it beside `changed-thread-records`, a shell push leaves out each part,
+at the state's top and in its `host`, that holds what the last push written to that connection held, and names it in
+`kept` and `host.kept`, as the window's broadcast does. It is made by the window's own `withKeptParts`, told that the
+host's `threads`, `models`, `modelsRevision` and `providerModeLists` always go as made, since the threads go as changed
+thread records and the catalog by its revision. A part that changed goes whole in the push that carries the change.
+
+**Only pushes count, and the parts move with the thread records.** A push keeps parts only when its thread records are
+measured from the push before it, and the host holds each written push's parts, by reference, under that push's thread
+records' revision, on the connection's own record, so they go when the connection does. Hello, a `shell` read and a
+command's answer carry every part, as before, and give neither side parts to measure from. So the first push after a hello
+or a `shell` read, whose thread records list every record or are measured from the records the answer listed
+(`reply-thread-records`), keeps nothing, and the push after it keeps what it can. Making answers count, as
+`reply-thread-records` did for records, would have saved one whole push after each connect and each `shell` read, and
+would have had the iPhone read the answer's shell whole in socket order, a second reading of the hello that the thread
+records avoid by reading only the records; the measure is bytes per push, and pushes are what a working thread sends.
+
+**The comparison is the window's.** `samePlainData` answers by identity first. A listener reads a copy of the host's state
+for each publish, so every part is a new object and is walked, but only for a push that goes, and nothing is copied. On
+the data-transfer benchmark the process that runs the host, its clients and the window together used less CPU than
+before: what a desktop's push saves in compressing and reading is more than the walk costs.
+
+**The repeat check and Watcher's writing window read the whole state, as before.** A push whose state is byte for byte the
+last one pushed, with no events and no changed record, is not written, and moves neither the records nor the parts it
+would be measured from. A phone's push whose only news is Watcher's conversation still waits out its window. Kept parts
+are left out only once a push is going, after both checks. Watcher's page on a phone's shell carries the time it was read,
+which is new on every read, so to a phone running Watcher the page is never kept.
+
+**The clients put the parts back before anything reads the shell.** The desktop's client of a paired host puts them back
+from the push it applied last with the window's own code, moved to `src/shared/keptParts.ts`, before it reads the catalog
+or checks the shell against its schema, and holds the parts of each push it applies with its thread records. The iPhone
+(`KeptPartsCache` in SottoCore) reads which parts a push kept and carried beside its state, puts each back from the push it
+applied last, and holds the parts under the push's thread records' revision, in socket order. A push that keeps parts
+measured from another push, or names a part the push held did not have, should not happen: the desktop reads the shell
+whole with `shell`, and the host's next push keeps nothing, and the iPhone drops the connection and connects again, as
+each does for thread records it cannot place. The Android client, earlier iPhone builds and earlier desktops do not
+accept the feature and are sent every part, exactly as before.
+
+On the data-transfer benchmark at forge's size, one host thread streaming for 60 pushes, three runs before and after on
+forge: a push to a desktop fell from 200,099 bytes to 2,922 (48,290 to 48,343 deflated, to 1,127 to 1,128), and to a phone
+from 73,305 bytes to 1,882. With three threads streaming, from 204,323 to 7,146 and from 75,664 to 4,241. The parts of a
+push as the push before had them fell from 44 to 7 to a desktop and from 41 to 7 to a phone. The window was broadcast the
+same bytes as before, so the desktop's client put back the same state. The host's process used 1,409 to 1,565 ms of CPU
+for the stretch against 1,929 to 2,471 ms (`docs/perf/2026-11-10-socket-kept-parts.md`).

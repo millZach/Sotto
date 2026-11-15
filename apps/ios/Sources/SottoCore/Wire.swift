@@ -145,17 +145,18 @@ public struct Hello: Decodable, Sendable {
 }
 public struct Shell: Decodable, Equatable, Sendable {
     /// `host` is a `var` only so the connection can put back a catalog the host named by revision (`ModelCatalogCache`).
-    public let hostId: String?; public var host: HostSnapshot; public let deliveries: [Delivery]?; public let deliveredDrafts: [DeliveryReceipt]?
-    public let globalLaneBusy: Bool?; public let busyThreadIds: [String]?; public let error: String?
+    /// The parts that are `private(set)` are set again only by `putBack`, from a push's kept parts (`KeptPartsCache`).
+    public private(set) var hostId: String?; public var host: HostSnapshot; public private(set) var deliveries: [Delivery]?; public private(set) var deliveredDrafts: [DeliveryReceipt]?
+    public private(set) var globalLaneBusy: Bool?; public private(set) var busyThreadIds: [String]?; public private(set) var error: String?
     /// Authority for this paired client, refreshed with the shell. Older hosts send it only in hello.
-    public let clientCapabilities: Hello.Capabilities?
-    public let configuration: ThreadStartPreferences?
+    public private(set) var clientCapabilities: Hello.Capabilities?
+    public private(set) var configuration: ThreadStartPreferences?
     /// Present only after accepting watcher-phone from the Owl desktop running it.
     public var watcher: WatcherPhoneState? = nil
     /// Every thread's follow-up queue, in order. Older hosts send none.
-    public let followups: [Followup]?
+    public private(set) var followups: [Followup]?
     /// Queued replies the queue has taken from their delivery, by draft. Older hosts send none.
-    public let followupReceipts: [DeliveryReceipt]?
+    public private(set) var followupReceipts: [DeliveryReceipt]?
     /// Thread settings changes the provider never gave a result for, which the computer keeps (ADR-0166). Read item by item.
     public var unconfirmedSettings: ThreadList<UnconfirmedSetting>? = nil
     /// The thread records a shell push carried beside a state whose own list is empty, from a host that sends this
@@ -163,9 +164,13 @@ public struct Shell: Decodable, Equatable, Sendable {
     /// (`command-changed-thread-records`). Always nil once a shell leaves `HostConnection`, which puts the whole list back
     /// (`ThreadRecordsCache`).
     public var threadRecords: ChangedThreadRecords? = nil
+    /// What a shell push named of its parts (`kept-parts`): those it left out because they hold what the push before it
+    /// held, and those it carried. Read beside a push's state only, never an answer's. Always nil once a shell leaves
+    /// `HostConnection`, which puts the parts back (`KeptPartsCache`).
+    public var keptParts: KeptPartNames? = nil
     /// How many settled threads the computer's list leaves out, from a host that sends this phone only threads that are
     /// not settled (`settled-threads-on-request`): the Settled shelf reads them with `settled-threads`. Nil from any other.
-    public let settledHeldBack: Int?
+    public private(set) var settledHeldBack: Int?
     private enum Keys: String, CodingKey { case hostId, host, deliveries, deliveredDrafts, globalLaneBusy, busyThreadIds, error, clientCapabilities, configuration, followups, followupReceipts, watcher, unconfirmedSettings, threadRecords, settledHeldBack }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
@@ -189,20 +194,66 @@ public struct Shell: Decodable, Equatable, Sendable {
         guard hostId == hostID, host.hostId == hostID,
               host.threads.allSatisfy({ $0.hostId == nil || $0.hostId == hostID }) else { throw ClientError.invalidIdentity }
     }
+    /// Each part `names` says this push left out, put back from `held`, the push its connection applied last
+    /// (`KeptPartsCache`). A part the phone does not read needs nothing put back. The threads and the catalog are never kept.
+    mutating func putBack(_ names: KeptPartNames, from held: Shell) {
+        let kept = names.kept
+        if kept.contains("hostId") { hostId = held.hostId }
+        if kept.contains("deliveries") { deliveries = held.deliveries }
+        if kept.contains("deliveredDrafts") { deliveredDrafts = held.deliveredDrafts }
+        if kept.contains("globalLaneBusy") { globalLaneBusy = held.globalLaneBusy }
+        if kept.contains("busyThreadIds") { busyThreadIds = held.busyThreadIds }
+        if kept.contains("error") { error = held.error }
+        if kept.contains("clientCapabilities") { clientCapabilities = held.clientCapabilities }
+        if kept.contains("configuration") { configuration = held.configuration }
+        if kept.contains("watcher") { watcher = held.watcher }
+        if kept.contains("followups") { followups = held.followups }
+        if kept.contains("followupReceipts") { followupReceipts = held.followupReceipts }
+        if kept.contains("unconfirmedSettings") { unconfirmedSettings = held.unconfirmedSettings }
+        if kept.contains("settledHeldBack") { settledHeldBack = held.settledHeldBack }
+        host.putBack(names.hostKept, from: held.host)
+    }
 }
 public struct HostSnapshot: Decodable, Equatable, Sendable {
     /// `threads` is a `var` only so the connection can put back the records a push left out (`ThreadRecordsCache`).
-    public let hostId: String?; public let name: String; public var threads: [ThreadSummary]
-    public let projects: [Project]; public let providers: [Provider]?
+    /// The parts that are `private(set)` are set again only by `putBack`, from a push's kept parts (`KeptPartsCache`).
+    public private(set) var hostId: String?; public private(set) var name: String; public var threads: [ThreadSummary]
+    public private(set) var projects: [Project]; public private(set) var providers: [Provider]?
     /// Always whole once a shell leaves `HostConnection`: a catalog the host named by revision is put back there.
     public var models: [ThreadModel]?
     /// The catalog's revision, from a host that offers `model-catalog-revision`. Such a host leaves `models` out
     /// of a shell when this connection was already sent that revision whole.
     public let modelsRevision: Int?
-    public let capabilities: ProviderCapabilities
+    public private(set) var capabilities: ProviderCapabilities
     /// From a host that offers `provider-mode-lists`, each distinct list of provider modes in `models`, which a model names
     /// by its place here. Nil once a shell leaves `HostConnection`, its lists put back on each model.
     public var providerModeLists: [[ThreadModel.ProviderMode]]? = nil
+    private enum Keys: String, CodingKey { case hostId, name, threads, projects, providers, models, modelsRevision, capabilities, providerModeLists, kept }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        // A push to a phone that accepted `kept-parts` leaves out each part that holds what the push before it held, and
+        // names it in `kept`. Such a part reads empty until `KeptPartsCache` puts it back, before anything reads the shell.
+        let kept = Set(try c.decodeIfPresent([String].self, forKey: .kept) ?? [])
+        hostId = try c.decodeIfPresent(String.self, forKey: .hostId)
+        if kept.contains("name") { name = try c.decodeIfPresent(String.self, forKey: .name) ?? "" } else { name = try c.decode(String.self, forKey: .name) }
+        threads = try c.decode([ThreadSummary].self, forKey: .threads)
+        if kept.contains("projects") { projects = try c.decodeIfPresent([Project].self, forKey: .projects) ?? [] } else { projects = try c.decode([Project].self, forKey: .projects) }
+        providers = try c.decodeIfPresent([Provider].self, forKey: .providers)
+        models = try c.decodeIfPresent([ThreadModel].self, forKey: .models)
+        modelsRevision = try c.decodeIfPresent(Int.self, forKey: .modelsRevision)
+        if kept.contains("capabilities") {
+            capabilities = try c.decodeIfPresent(ProviderCapabilities.self, forKey: .capabilities) ?? ProviderCapabilities.nothingOffered
+        } else { capabilities = try c.decode(ProviderCapabilities.self, forKey: .capabilities) }
+        providerModeLists = try c.decodeIfPresent([[ThreadModel.ProviderMode]].self, forKey: .providerModeLists)
+    }
+    /// Each of the host's parts named in `kept` put back from `held` (`Shell.putBack`).
+    mutating func putBack(_ kept: Set<String>, from held: HostSnapshot) {
+        if kept.contains("hostId") { hostId = held.hostId }
+        if kept.contains("name") { name = held.name }
+        if kept.contains("projects") { projects = held.projects }
+        if kept.contains("providers") { providers = held.providers }
+        if kept.contains("capabilities") { capabilities = held.capabilities }
+    }
 }
 public struct Project: Decodable, Identifiable, Equatable, Sendable {
     public let id: String; public let title: String; public let workspaceSettledAt: String?
@@ -210,6 +261,8 @@ public struct Project: Decodable, Identifiable, Equatable, Sendable {
 }
 public struct Provider: Decodable, Equatable, Sendable { public let id: String; public let connection: String; public let capabilities: ProviderCapabilities }
 public struct ProviderCapabilities: Decodable, Equatable, Sendable {
+    /// Nothing offered: what a host's capabilities read as while a push's kept parts are not back yet (`HostSnapshot`).
+    static let nothingOffered = ProviderCapabilities(submit: false, interrupt: false, questions: false, permissions: false, projects: nil, threads: nil, steer: nil, compact: nil)
     public let submit: Bool; public let interrupt: Bool; public let questions: Bool; public let permissions: Bool
     public let projects: Bool?; public let threads: Bool?
     /// Whether the provider takes a message into a running turn, and compacts a thread's context when asked.

@@ -1,0 +1,825 @@
+{
+ "commit": "bad5165fa607c9760b18a0bc10596f4ba15da645",
+ "track": "owl",
+ "long": true,
+ "accepts": {
+  "desktop": [
+   "client-liveness",
+   "detail-delta",
+   "message-aliases",
+   "answer-receipts",
+   "model-catalog-revision",
+   "activity-bodies",
+   "changed-thread-records",
+   "provider-opencode",
+   "provider-cursor",
+   "provider-deepseek",
+   "watcher-reads",
+   "watcher-progress"
+  ],
+  "phone": [
+   "detail-delta",
+   "client-liveness",
+   "activity-summaries",
+   "model-catalog-revision",
+   "provider-opencode",
+   "provider-cursor",
+   "provider-deepseek",
+   "changed-thread-records",
+   "reply-thread-records",
+   "provider-mode-lists",
+   "settled-threads-on-request",
+   "usable-models",
+   "command-changed-thread-records",
+   "step-window",
+   "watcher-phone",
+   "watcher-phone-stop-all",
+   "watcher-phone-manage",
+   "watcher-phone-steer",
+   "watcher-phone-machines",
+   "watcher-phone-composer"
+  ]
+ },
+ "helloBytes": {
+  "desktop": 610632,
+  "phone": 350763
+ },
+ "openBytes": {
+  "desktop": 1058574,
+  "phone": 87235
+ },
+ "stretches": {
+  "1 streaming": {
+   "seconds": 4,
+   "clientPushes": 60,
+   "desktopWindow": {
+    "broadcasts": 60,
+    "bytes": 167932
+   },
+   "processCpuMs": [
+    1929,
+    2471,
+    2389
+   ],
+   "desktopShellDeflatedPerFrame": [
+    48343,
+    48290,
+    48306
+   ],
+   "desktopShell": {
+    "frames": 60,
+    "bytesPerFrame": 200099,
+    "deflatedPerFrame": 48343,
+    "max": 200866,
+    "unchangedPartsPerFrame": 44,
+    "unchangedBytesPerFrame": 197225,
+    "parts": {
+     "state.skillCatalogs": {
+      "bytesPerFrame": 112819,
+      "unchanged": 60
+     },
+     "state.deliveries": {
+      "bytesPerFrame": 44417,
+      "unchanged": 60
+     },
+     "state.deliveredDrafts": {
+      "bytesPerFrame": 12929,
+      "unchanged": 60
+     },
+     "state.obsoleteDrafts": {
+      "bytesPerFrame": 12929,
+      "unchanged": 60
+     },
+     "state.followupReceipts": {
+      "bytesPerFrame": 7980,
+      "unchanged": 60
+     },
+     "state.host.projects": {
+      "bytesPerFrame": 2764,
+      "unchanged": 60
+     },
+     "state.host.providers": {
+      "bytesPerFrame": 2263,
+      "unchanged": 60
+     },
+     "threads": {
+      "bytesPerFrame": 2199,
+      "unchanged": 0
+     },
+     "state.configuration": {
+      "bytesPerFrame": 499,
+      "unchanged": 60
+     },
+     "state.host.capabilities": {
+      "bytesPerFrame": 179,
+      "unchanged": 60
+     },
+     "state.voice": {
+      "bytesPerFrame": 58,
+      "unchanged": 60
+     },
+     "eventPage": {
+      "bytesPerFrame": 58,
+      "unchanged": 60
+     },
+     "state.credentials": {
+      "bytesPerFrame": 53,
+      "unchanged": 60
+     },
+     "state.membership": {
+      "bytesPerFrame": 45,
+      "unchanged": 60
+     },
+     "state.host.hostId": {
+      "bytesPerFrame": 38,
+      "unchanged": 60
+     },
+     "state.hostId": {
+      "bytesPerFrame": 38,
+      "unchanged": 60
+     },
+     "state.clientCapabilities": {
+      "bytesPerFrame": 19,
+      "unchanged": 60
+     },
+     "state.host.name": {
+      "bytesPerFrame": 18,
+      "unchanged": 60
+     },
+     "state.speech": {
+      "bytesPerFrame": 18,
+      "unchanged": 60
+     },
+     "state.notice": {
+      "bytesPerFrame": 17,
+      "unchanged": 60
+     },
+     "state.connection": {
+      "bytesPerFrame": 11,
+      "unchanged": 60
+     },
+     "event": {
+      "bytesPerFrame": 7,
+      "unchanged": 60
+     },
+     "state.composing": {
+      "bytesPerFrame": 5,
+      "unchanged": 60
+     },
+     "state.globalLaneBusy": {
+      "bytesPerFrame": 5,
+      "unchanged": 60
+     },
+     "state.host.connected": {
+      "bytesPerFrame": 4,
+      "unchanged": 60
+     },
+     "state.activeThreadId": {
+      "bytesPerFrame": 4,
+      "unchanged": 60
+     },
+     "state.activeProjectId": {
+      "bytesPerFrame": 4,
+      "unchanged": 60
+     },
+     "state.draftThreadId": {
+      "bytesPerFrame": 4,
+      "unchanged": 60
+     },
+     "state.draftRequestId": {
+      "bytesPerFrame": 4,
+      "unchanged": 60
+     },
+     "state.error": {
+      "bytesPerFrame": 4,
+      "unchanged": 60
+     },
+     "state.providerUpgrade": {
+      "bytesPerFrame": 4,
+      "unchanged": 60
+     },
+     "state.historyEnabled": {
+      "bytesPerFrame": 4,
+      "unchanged": 60
+     },
+     "state.host.version": {
+      "bytesPerFrame": 2,
+      "unchanged": 60
+     },
+     "state.host.threads": {
+      "bytesPerFrame": 2,
+      "unchanged": 60
+     },
+     "state.draft": {
+      "bytesPerFrame": 2,
+      "unchanged": 60
+     },
+     "state.draftAttachments": {
+      "bytesPerFrame": 2,
+      "unchanged": 60
+     },
+     "state.threadDrafts": {
+      "bytesPerFrame": 2,
+      "unchanged": 60
+     },
+     "state.reasoningAccounts": {
+      "bytesPerFrame": 2,
+      "unchanged": 60
+     },
+     "state.followups": {
+      "bytesPerFrame": 2,
+      "unchanged": 60
+     },
+     "state.threadDraftPersistence": {
+      "bytesPerFrame": 2,
+      "unchanged": 60
+     },
+     "state.assignments": {
+      "bytesPerFrame": 2,
+      "unchanged": 60
+     },
+     "state.queue": {
+      "bytesPerFrame": 2,
+      "unchanged": 60
+     },
+     "state.pendingRequest": {
+      "bytesPerFrame": 2,
+      "unchanged": 60
+     },
+     "v": {
+      "bytesPerFrame": 1,
+      "unchanged": 60
+     },
+     "state.host.modelsRevision": {
+      "bytesPerFrame": 1,
+      "unchanged": 60
+     }
+    }
+   },
+   "phoneShell": {
+    "frames": 6,
+    "bytesPerFrame": 73305,
+    "deflatedPerFrame": 0,
+    "max": 73305,
+    "unchangedPartsPerFrame": 41,
+    "unchangedBytesPerFrame": 71474,
+    "parts": {
+     "state.deliveries": {
+      "bytesPerFrame": 44417,
+      "unchanged": 6
+     },
+     "state.deliveredDrafts": {
+      "bytesPerFrame": 12929,
+      "unchanged": 6
+     },
+     "state.followupReceipts": {
+      "bytesPerFrame": 7980,
+      "unchanged": 6
+     },
+     "state.host.projects": {
+      "bytesPerFrame": 2764,
+      "unchanged": 6
+     },
+     "state.host.providers": {
+      "bytesPerFrame": 2263,
+      "unchanged": 6
+     },
+     "threads": {
+      "bytesPerFrame": 1214,
+      "unchanged": 0
+     },
+     "state.configuration": {
+      "bytesPerFrame": 499,
+      "unchanged": 6
+     },
+     "state.host.capabilities": {
+      "bytesPerFrame": 179,
+      "unchanged": 6
+     },
+     "state.voice": {
+      "bytesPerFrame": 58,
+      "unchanged": 6
+     },
+     "eventPage": {
+      "bytesPerFrame": 58,
+      "unchanged": 6
+     },
+     "state.credentials": {
+      "bytesPerFrame": 53,
+      "unchanged": 6
+     },
+     "state.membership": {
+      "bytesPerFrame": 45,
+      "unchanged": 6
+     },
+     "state.host.hostId": {
+      "bytesPerFrame": 38,
+      "unchanged": 6
+     },
+     "state.hostId": {
+      "bytesPerFrame": 38,
+      "unchanged": 6
+     },
+     "state.clientCapabilities": {
+      "bytesPerFrame": 19,
+      "unchanged": 6
+     },
+     "state.host.name": {
+      "bytesPerFrame": 18,
+      "unchanged": 6
+     },
+     "state.speech": {
+      "bytesPerFrame": 18,
+      "unchanged": 6
+     },
+     "state.notice": {
+      "bytesPerFrame": 17,
+      "unchanged": 6
+     },
+     "state.connection": {
+      "bytesPerFrame": 11,
+      "unchanged": 6
+     },
+     "event": {
+      "bytesPerFrame": 7,
+      "unchanged": 6
+     },
+     "state.composing": {
+      "bytesPerFrame": 5,
+      "unchanged": 6
+     },
+     "state.globalLaneBusy": {
+      "bytesPerFrame": 5,
+      "unchanged": 6
+     },
+     "state.host.connected": {
+      "bytesPerFrame": 4,
+      "unchanged": 6
+     },
+     "state.activeThreadId": {
+      "bytesPerFrame": 4,
+      "unchanged": 6
+     },
+     "state.activeProjectId": {
+      "bytesPerFrame": 4,
+      "unchanged": 6
+     },
+     "state.draftThreadId": {
+      "bytesPerFrame": 4,
+      "unchanged": 6
+     },
+     "state.draftRequestId": {
+      "bytesPerFrame": 4,
+      "unchanged": 6
+     },
+     "state.error": {
+      "bytesPerFrame": 4,
+      "unchanged": 6
+     },
+     "state.providerUpgrade": {
+      "bytesPerFrame": 4,
+      "unchanged": 6
+     },
+     "state.historyEnabled": {
+      "bytesPerFrame": 4,
+      "unchanged": 6
+     },
+     "state.host.version": {
+      "bytesPerFrame": 2,
+      "unchanged": 6
+     },
+     "state.host.threads": {
+      "bytesPerFrame": 2,
+      "unchanged": 6
+     },
+     "state.draft": {
+      "bytesPerFrame": 2,
+      "unchanged": 6
+     },
+     "state.draftAttachments": {
+      "bytesPerFrame": 2,
+      "unchanged": 6
+     },
+     "state.reasoningAccounts": {
+      "bytesPerFrame": 2,
+      "unchanged": 6
+     },
+     "state.followups": {
+      "bytesPerFrame": 2,
+      "unchanged": 6
+     },
+     "state.assignments": {
+      "bytesPerFrame": 2,
+      "unchanged": 6
+     },
+     "state.queue": {
+      "bytesPerFrame": 2,
+      "unchanged": 6
+     },
+     "state.pendingRequest": {
+      "bytesPerFrame": 2,
+      "unchanged": 6
+     },
+     "v": {
+      "bytesPerFrame": 1,
+      "unchanged": 6
+     },
+     "state.host.modelsRevision": {
+      "bytesPerFrame": 1,
+      "unchanged": 6
+     },
+     "state.settledHeldBack": {
+      "bytesPerFrame": 1,
+      "unchanged": 6
+     }
+    }
+   }
+  },
+  "3 streaming": {
+   "seconds": 4,
+   "clientPushes": 61,
+   "desktopWindow": {
+    "broadcasts": 61,
+    "bytes": 431535
+   },
+   "processCpuMs": [
+    1879,
+    2560,
+    2438
+   ],
+   "desktopShellDeflatedPerFrame": [
+    48511,
+    48456,
+    48472
+   ],
+   "desktopShell": {
+    "frames": 61,
+    "bytesPerFrame": 204323,
+    "deflatedPerFrame": 48511,
+    "max": 206730,
+    "unchangedPartsPerFrame": 44,
+    "unchangedBytesPerFrame": 197225,
+    "parts": {
+     "state.skillCatalogs": {
+      "bytesPerFrame": 112819,
+      "unchanged": 61
+     },
+     "state.deliveries": {
+      "bytesPerFrame": 44417,
+      "unchanged": 61
+     },
+     "state.deliveredDrafts": {
+      "bytesPerFrame": 12929,
+      "unchanged": 61
+     },
+     "state.obsoleteDrafts": {
+      "bytesPerFrame": 12929,
+      "unchanged": 61
+     },
+     "state.followupReceipts": {
+      "bytesPerFrame": 7980,
+      "unchanged": 61
+     },
+     "threads": {
+      "bytesPerFrame": 6423,
+      "unchanged": 0
+     },
+     "state.host.projects": {
+      "bytesPerFrame": 2764,
+      "unchanged": 61
+     },
+     "state.host.providers": {
+      "bytesPerFrame": 2263,
+      "unchanged": 61
+     },
+     "state.configuration": {
+      "bytesPerFrame": 499,
+      "unchanged": 61
+     },
+     "state.host.capabilities": {
+      "bytesPerFrame": 179,
+      "unchanged": 61
+     },
+     "state.voice": {
+      "bytesPerFrame": 58,
+      "unchanged": 61
+     },
+     "eventPage": {
+      "bytesPerFrame": 58,
+      "unchanged": 61
+     },
+     "state.credentials": {
+      "bytesPerFrame": 53,
+      "unchanged": 61
+     },
+     "state.membership": {
+      "bytesPerFrame": 45,
+      "unchanged": 61
+     },
+     "state.host.hostId": {
+      "bytesPerFrame": 38,
+      "unchanged": 61
+     },
+     "state.hostId": {
+      "bytesPerFrame": 38,
+      "unchanged": 61
+     },
+     "state.clientCapabilities": {
+      "bytesPerFrame": 19,
+      "unchanged": 61
+     },
+     "state.host.name": {
+      "bytesPerFrame": 18,
+      "unchanged": 61
+     },
+     "state.speech": {
+      "bytesPerFrame": 18,
+      "unchanged": 61
+     },
+     "state.notice": {
+      "bytesPerFrame": 17,
+      "unchanged": 61
+     },
+     "state.connection": {
+      "bytesPerFrame": 11,
+      "unchanged": 61
+     },
+     "event": {
+      "bytesPerFrame": 7,
+      "unchanged": 61
+     },
+     "state.composing": {
+      "bytesPerFrame": 5,
+      "unchanged": 61
+     },
+     "state.globalLaneBusy": {
+      "bytesPerFrame": 5,
+      "unchanged": 61
+     },
+     "state.host.connected": {
+      "bytesPerFrame": 4,
+      "unchanged": 61
+     },
+     "state.activeThreadId": {
+      "bytesPerFrame": 4,
+      "unchanged": 61
+     },
+     "state.activeProjectId": {
+      "bytesPerFrame": 4,
+      "unchanged": 61
+     },
+     "state.draftThreadId": {
+      "bytesPerFrame": 4,
+      "unchanged": 61
+     },
+     "state.draftRequestId": {
+      "bytesPerFrame": 4,
+      "unchanged": 61
+     },
+     "state.error": {
+      "bytesPerFrame": 4,
+      "unchanged": 61
+     },
+     "state.providerUpgrade": {
+      "bytesPerFrame": 4,
+      "unchanged": 61
+     },
+     "state.historyEnabled": {
+      "bytesPerFrame": 4,
+      "unchanged": 61
+     },
+     "state.host.version": {
+      "bytesPerFrame": 2,
+      "unchanged": 61
+     },
+     "state.host.threads": {
+      "bytesPerFrame": 2,
+      "unchanged": 61
+     },
+     "state.draft": {
+      "bytesPerFrame": 2,
+      "unchanged": 61
+     },
+     "state.draftAttachments": {
+      "bytesPerFrame": 2,
+      "unchanged": 61
+     },
+     "state.threadDrafts": {
+      "bytesPerFrame": 2,
+      "unchanged": 61
+     },
+     "state.reasoningAccounts": {
+      "bytesPerFrame": 2,
+      "unchanged": 61
+     },
+     "state.followups": {
+      "bytesPerFrame": 2,
+      "unchanged": 61
+     },
+     "state.threadDraftPersistence": {
+      "bytesPerFrame": 2,
+      "unchanged": 61
+     },
+     "state.assignments": {
+      "bytesPerFrame": 2,
+      "unchanged": 61
+     },
+     "state.queue": {
+      "bytesPerFrame": 2,
+      "unchanged": 61
+     },
+     "state.pendingRequest": {
+      "bytesPerFrame": 2,
+      "unchanged": 61
+     },
+     "v": {
+      "bytesPerFrame": 1,
+      "unchanged": 61
+     },
+     "state.host.modelsRevision": {
+      "bytesPerFrame": 1,
+      "unchanged": 61
+     }
+    }
+   },
+   "phoneShell": {
+    "frames": 6,
+    "bytesPerFrame": 75664,
+    "deflatedPerFrame": 0,
+    "max": 75665,
+    "unchangedPartsPerFrame": 41,
+    "unchangedBytesPerFrame": 71474,
+    "parts": {
+     "state.deliveries": {
+      "bytesPerFrame": 44417,
+      "unchanged": 6
+     },
+     "state.deliveredDrafts": {
+      "bytesPerFrame": 12929,
+      "unchanged": 6
+     },
+     "state.followupReceipts": {
+      "bytesPerFrame": 7980,
+      "unchanged": 6
+     },
+     "threads": {
+      "bytesPerFrame": 3573,
+      "unchanged": 0
+     },
+     "state.host.projects": {
+      "bytesPerFrame": 2764,
+      "unchanged": 6
+     },
+     "state.host.providers": {
+      "bytesPerFrame": 2263,
+      "unchanged": 6
+     },
+     "state.configuration": {
+      "bytesPerFrame": 499,
+      "unchanged": 6
+     },
+     "state.host.capabilities": {
+      "bytesPerFrame": 179,
+      "unchanged": 6
+     },
+     "state.voice": {
+      "bytesPerFrame": 58,
+      "unchanged": 6
+     },
+     "eventPage": {
+      "bytesPerFrame": 58,
+      "unchanged": 6
+     },
+     "state.credentials": {
+      "bytesPerFrame": 53,
+      "unchanged": 6
+     },
+     "state.membership": {
+      "bytesPerFrame": 45,
+      "unchanged": 6
+     },
+     "state.host.hostId": {
+      "bytesPerFrame": 38,
+      "unchanged": 6
+     },
+     "state.hostId": {
+      "bytesPerFrame": 38,
+      "unchanged": 6
+     },
+     "state.clientCapabilities": {
+      "bytesPerFrame": 19,
+      "unchanged": 6
+     },
+     "state.host.name": {
+      "bytesPerFrame": 18,
+      "unchanged": 6
+     },
+     "state.speech": {
+      "bytesPerFrame": 18,
+      "unchanged": 6
+     },
+     "state.notice": {
+      "bytesPerFrame": 17,
+      "unchanged": 6
+     },
+     "state.connection": {
+      "bytesPerFrame": 11,
+      "unchanged": 6
+     },
+     "event": {
+      "bytesPerFrame": 7,
+      "unchanged": 6
+     },
+     "state.composing": {
+      "bytesPerFrame": 5,
+      "unchanged": 6
+     },
+     "state.globalLaneBusy": {
+      "bytesPerFrame": 5,
+      "unchanged": 6
+     },
+     "state.host.connected": {
+      "bytesPerFrame": 4,
+      "unchanged": 6
+     },
+     "state.activeThreadId": {
+      "bytesPerFrame": 4,
+      "unchanged": 6
+     },
+     "state.activeProjectId": {
+      "bytesPerFrame": 4,
+      "unchanged": 6
+     },
+     "state.draftThreadId": {
+      "bytesPerFrame": 4,
+      "unchanged": 6
+     },
+     "state.draftRequestId": {
+      "bytesPerFrame": 4,
+      "unchanged": 6
+     },
+     "state.error": {
+      "bytesPerFrame": 4,
+      "unchanged": 6
+     },
+     "state.providerUpgrade": {
+      "bytesPerFrame": 4,
+      "unchanged": 6
+     },
+     "state.historyEnabled": {
+      "bytesPerFrame": 4,
+      "unchanged": 6
+     },
+     "state.host.version": {
+      "bytesPerFrame": 2,
+      "unchanged": 6
+     },
+     "state.host.threads": {
+      "bytesPerFrame": 2,
+      "unchanged": 6
+     },
+     "state.draft": {
+      "bytesPerFrame": 2,
+      "unchanged": 6
+     },
+     "state.draftAttachments": {
+      "bytesPerFrame": 2,
+      "unchanged": 6
+     },
+     "state.reasoningAccounts": {
+      "bytesPerFrame": 2,
+      "unchanged": 6
+     },
+     "state.followups": {
+      "bytesPerFrame": 2,
+      "unchanged": 6
+     },
+     "state.assignments": {
+      "bytesPerFrame": 2,
+      "unchanged": 6
+     },
+     "state.queue": {
+      "bytesPerFrame": 2,
+      "unchanged": 6
+     },
+     "state.pendingRequest": {
+      "bytesPerFrame": 2,
+      "unchanged": 6
+     },
+     "v": {
+      "bytesPerFrame": 1,
+      "unchanged": 6
+     },
+     "state.host.modelsRevision": {
+      "bytesPerFrame": 1,
+      "unchanged": 6
+     },
+     "state.settledHeldBack": {
+      "bytesPerFrame": 1,
+      "unchanged": 6
+     }
+    }
+   }
+  }
+ }
+}
