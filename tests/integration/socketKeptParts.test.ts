@@ -230,6 +230,44 @@ describe('the desktop’s client of a paired host', () => {
     } finally { off() }
   })
 
+  // #2597: the push it gave up on had carried a new catalog the host then counted as sent, so the shell it read named that
+  // revision without the catalog, and the connection started again rather than read the shell whole.
+  it('remembers the catalog a push carried when it cannot put that push back, and stays connected', async () => {
+    const { client, heard, off, reached, pushes } = await desktop()
+    const transport = client as unknown as { receive(text: string): void }
+    const recorded = transport.receive
+    let spoiled = false
+    // The push that carries the new catalog keeps a part this client does not hold, so it cannot be put back.
+    transport.receive = text => {
+      const frame = JSON.parse(text) as ShellPush & { event?: string }
+      if (!spoiled && frame.event === 'shell' && (frame.state.host as { models?: unknown }).models !== undefined && frame.threads?.base !== null) {
+        spoiled = true
+        return recorded(JSON.stringify({ ...frame, state: { ...frame.state, kept: [...frame.state.kept ?? [], 'syntheticMissingPart'] } }))
+      }
+      recorded(text)
+    }
+    // A connection that starts again has new frames: the same frames mean it kept its connection.
+    const frames = () => (client as unknown as { frames?: unknown }).frames
+    const named = (state: AgentState | undefined) => state?.host.models.some(model => model.id.endsWith('fixture-model-2597')) ?? false
+    try {
+      await reached(change())
+      await reached(change())
+      const shells = vi.spyOn(client, 'readShell'), connected = frames()
+      const native = fixture.native as unknown as { state: { models: { id: string; name: string }[] } }
+      native.state.models = [...native.state.models, { ...native.state.models[0]!, id: 'fixture-model-2597', name: 'Synthetic catalog model' }]
+      change()
+      await expect.poll(() => spoiled).toBe(true)
+      expect(shells).toHaveBeenCalledTimes(1)
+      // It read the shell whole, kept its connection, and shows the new catalog.
+      await expect.poll(() => named(heard.at(-1))).toBe(true)
+      expect(frames()).toBe(connected)
+      const after = await reached(change())
+      expect(named(after)).toBe(true)
+      expect(frames()).toBe(connected)
+      expect(pushes().length).toBeGreaterThan(0)
+    } finally { off(); transport.receive = recorded }
+  })
+
   it('reads the shell whole when a push keeps a part it does not hold, and shows nothing of that push', async () => {
     const { client, heard, off, reached, receive, pushes } = await desktop()
     try {
