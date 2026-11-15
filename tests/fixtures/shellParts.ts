@@ -59,7 +59,7 @@ export function withShellParts<Service extends { shell(): AgentState; subscribe(
 export const PHONE_SENT_STATE_PARTS = ['legacyManagement', 'worktreeReclaimPreview', 'threadDeletePreview', 'threadClearPreview', 'threadClearResult', 'checkoutHold',
   'clientScoped', 'connections', 'hostId', 'configuration', 'providerUpgrade', 'clientUpdateRun', 'clientUpdatesDismissedAt', 'installedProviders', 'connection',
   'host', 'activeThreadId', 'activeProjectId', 'draft', 'draftThreadId', 'composing', 'draftAttachments', 'deliveredDrafts', 'deliveries', 'followups',
-  'followupReceipts', 'draftRequestId', 'globalLaneBusy', 'notice', 'error', 'busyThreadIds', 'unconfirmedSettings', 'nextTurnSettings', 'credentials',
+  'followupReceipts', 'draftRequestId', 'globalLaneBusy', 'notice', 'error', 'busyThreadIds', 'unconfirmedSettings', 'nextTurnSettings', 'routerPicks', 'credentials',
   'reasoningAccounts', 'historyEnabled', 'stale'] as const
 export const PHONE_SENT_WIRE_PARTS = ['membership', 'assignments', 'queue', 'pendingRequest', 'speech', 'voice', 'clientCapabilities', 'terminals', 'watcher',
   'settledHeldBack', 'threadRecordsRevision'] as const
