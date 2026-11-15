@@ -206,11 +206,14 @@ export const PLUGINS_ACCOUNT_UPDATE = 'sotto:plugins:account-update'
 export const PLUGINS_ACCOUNT_TRUST = 'sotto:plugins:account-trust'
 export const PLUGINS_BRIDGE_STATUS = 'sotto:plugins:bridge-status'
 /**
- * The credits each Meshy account's 3D models took this month on this computer, by account ID (ADR-0141): the month
- * starts on the 1st, by this computer's clock (Zach's pick on November 15, 2026).
+ * The credits each Meshy account's 3D models took this month, by account ID (ADR-0141): the month starts on the 1st,
+ * by this computer's clock (Zach's pick on November 15, 2026). `here` is this computer's own. `credits` is the one
+ * monthly limit's count (ADR-0205): this computer's and what each paired host holding the account's copy last said it
+ * spent, and `across` names those hosts.
  */
 export const PLUGINS_MESHY_CREDITS = 'sotto:plugins:meshy-credits'
-export const meshyCreditsSchema = z.record(z.uuid(), z.number().int().nonnegative())
+const creditCount = z.number().int().nonnegative()
+export const meshyCreditsSchema = z.record(z.uuid(), z.object({ here: creditCount, credits: creditCount, across: z.array(z.string().max(200)).max(100) }).strict())
 export type MeshyCredits = z.infer<typeof meshyCreditsSchema>
 /**
  * Where Proton Mail Bridge stands for an account on this computer: answering with the certificate kept, not running,

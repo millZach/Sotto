@@ -776,7 +776,7 @@ function AccountSpending({ account, spending, bridge, onAccounts }: {
   readonly account: PluginAccount; readonly spending: PluginSpending; readonly bridge: PluginsBridge | undefined
   readonly onAccounts: (accounts: readonly PluginAccount[]) => void
 }): ReactNode {
-  const { t } = useLingui()
+  const { t, i18n } = useLingui()
   const headingId = useId()
   const [limit, setLimit] = useState(String(spending.monthlyLimit))
   const [failed, setFailed] = useState(false)
@@ -785,12 +785,13 @@ function AccountSpending({ account, spending, bridge, onAccounts }: {
   // asked for rather than one a save still on its way will replace.
   const asked = useRef(0)
   const askedLimit = useRef<number | null>(null)
-  // The credits this account's 3D models took this month on this computer, read when the row opens; none until then.
-  const [used, setUsed] = useState<number | null>(null)
+  // The credits this account's 3D models took this month, here and on the paired hosts that said what they spent of
+  // it, read when the row opens; none until then.
+  const [used, setUsed] = useState<{ readonly credits: number; readonly across: readonly string[] } | null>(null)
   useEffect(() => {
     if (!bridge) return
     let live = true
-    void bridge.meshyCredits().then(credits => { if (live) setUsed(credits[account.id] ?? 0) }, () => undefined)
+    void bridge.meshyCredits().then(credits => { if (live) setUsed(credits[account.id] ?? { credits: 0, across: [] }) }, () => undefined)
     return () => { live = false }
   }, [bridge, account.id])
   // The figure shown follows what is kept, once the newest save has answered.
@@ -809,7 +810,9 @@ function AccountSpending({ account, spending, bridge, onAccounts }: {
     // A limit that could not be saved shows the one kept. A switch that could not be saved leaves a limit being typed alone.
     else { setFailed(true); if (request.monthlyLimit !== undefined) setLimit(String(spending.monthlyLimit)) }
   }
-  const usedCredits = used === null ? null : used.toLocaleString()
+  const usedCredits = used === null ? null : used.credits.toLocaleString()
+  // Zach's pick A (the tag prototype/plugin-meshy): once a host has said what it spent, the line says where the count is from.
+  const across = used === null || used.across.length === 0 ? null : new Intl.ListFormat(i18n.locale, { type: 'conjunction' }).format([t`this computer`, ...used.across])
   const limitCredits = spending.monthlyLimit.toLocaleString()
   const saveLimit = (): void => { if (wanted !== null && wanted !== (askedLimit.current ?? spending.monthlyLimit)) void save({ monthlyLimit: wanted }) }
   return <section className="plugin-account__spending" aria-labelledby={headingId}>
@@ -822,7 +825,8 @@ function AccountSpending({ account, spending, bridge, onAccounts }: {
       <input className="tt-input plugin-account__limit" inputMode="numeric" autoComplete="off" spellCheck={false} maxLength={7} value={limit} disabled={!bridge}
         onChange={event => setLimit(event.target.value)} onBlur={saveLimit} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); saveLimit() } }} />
     </Field>
-    {usedCredits === null ? null : <p className="tt-paragraph plugin-row__note"><Trans>Credits this month: {usedCredits} of {limitCredits}.</Trans></p>}
+    {usedCredits === null ? null : <p className="tt-paragraph plugin-row__note">{across === null ? <Trans>Credits this month: {usedCredits} of {limitCredits}.</Trans>
+      : <Trans>Credits this month: {usedCredits} of {limitCredits}, across {across}.</Trans>}</p>}
     {failed ? <p className="tt-field__error tt-paragraph" role="alert"><Trans>That could not be saved. Nothing was changed. Try again.</Trans></p> : null}
   </section>
 }

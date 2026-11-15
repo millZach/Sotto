@@ -1,4 +1,4 @@
-import type { PluginAccountCopyStore } from '../../shared/pluginAccountCopies'
+import type { PluginAccountCopyStore, PluginSpendingShare } from '../../shared/pluginAccountCopies'
 import type { GitHubSignIn } from '../../shared/plugins'
 import { agentCaptures, ThreadMediaStore } from './threadMedia'
 import type { ReducedPictures } from './mediaThumbnail'
@@ -192,6 +192,8 @@ export interface AgentRuntimeOptions {
   pluginAccountCopies?: PluginAccountCopyStore
   /** Asks a headless host's own gh who is signed in, for a paired desktop's Plugins page (ADR-0205). With `pluginAccountCopies`. */
   pluginGitHubSignIn?: () => Promise<GitHubSignIn>
+  /** A headless host's shared spending for its Meshy copies (`plugin-meshy-spending`, ADR-0205). With `pluginAccountCopies`. */
+  pluginMeshySpending?: PluginSpendingShare
   /**
    * A headless host runs delegation for its own threads (#1310) only where its own Owl answer turns on Work across
    * machines. It holds them to the desktop defaults the last desktop that still counts sent it, and to Ask for approval
@@ -971,6 +973,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ...(crossMachine && gitStatus ? { bringBack: true } : {}),
     ...(options.pluginAccountCopies && options.runsAs === 'headless-host' ? { pluginAccountCopies: options.pluginAccountCopies } : {}),
     ...(options.pluginGitHubSignIn && options.runsAs === 'headless-host' ? { pluginGitHubSignIn: options.pluginGitHubSignIn } : {}),
+    ...(options.pluginMeshySpending && options.pluginAccountCopies && options.runsAs === 'headless-host' ? { pluginMeshySpending: options.pluginMeshySpending } : {}),
     prompts: { threadPrompts: (threadId, beforeMessageId) => agentHost.threadPrompts(threadId, beforeMessageId) },
     ...(options.threadStartsEnabled === true ? { threadStarts: { startHandover: (threadId: string) => agentHost.startHandover(threadId) } } : {}),
     ...(options.pullRequestViewEnabled === true ? { pullRequestView: true } : {}),

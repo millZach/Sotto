@@ -17,7 +17,7 @@ import { gitReviewRequestSchema } from './gitChanges'
 import { toolListRequestSchema } from './tools'
 import { subagentAssignmentsRequestSchema, subagentPageRequestSchema } from './subagents'
 import { desktopDefaultsSchema } from './desktopDefaults'
-import { pluginAccountCopySchema } from './pluginAccountCopies'
+import { pluginAccountCopySchema, spendingReportsSchema, type SpendingReport } from './pluginAccountCopies'
 import { projectSetupRequestSchema } from './workerMachine'
 import { DELEGATIONS_CHANGED_MAX } from './delegation'
 import { PASTED_CODE_MAX } from './hostProviders'
@@ -432,6 +432,13 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * `plugin-meshy-copies`: the host keeps a copy of a Meshy account, with its Ask before each switch and its monthly
  * limit, and lists both back (ADR-0141, ADR-0205). A host from before it could would refuse one, so it is sent none.
  * Listed as `plugin-account-copies` is, to the same desktops.
+ * `plugin-meshy-spending`: one monthly limit for a Meshy account wherever it is (ADR-0205). A desktop whose hello accepts
+ * it sends `plugin-meshy-spending` on connecting and whenever what it counts changes or its month turns: for each of its
+ * Meshy accounts, the credits spent this month on itself and on every other host, by the desktop's month. The host keeps
+ * what it is told of the copies that desktop sent, and nothing of any other, and answers with its own credits for each
+ * of them; it pushes `plugin-meshy-spending` with those to the desktop when its own count changes or its month turns.
+ * Each side counts its own and adds what it last heard. Offered only alongside `plugin-meshy-copies`, to the same
+ * desktops; a host or desktop without it is sent and told nothing of spending.
  * `watcher-progress`: to a desktop whose hello accepts it beside `watcher-reads`, a Watcher projection that differs from
  * the last one written to that connection, pushed or answered to a `watcher-read`, only in its progress goes as a
  * **progress push** (`watcher-progress`): the progress entries that changed and the targets that went, with the revision
@@ -444,7 +451,7 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * amendment). The client puts each back from the push it applied last before anything reads the shell. Hello, a `shell`
  * read and a command's answer carry every part and move nothing. Every listener lists it, to desktops and phones alike.
  */
-export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'git-pull-request-list', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-file-links', 'thread-linked-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view', 'provider-cursor', 'watcher-cursor', 'usage-background-refresh', 'client-update-not-listed', 'thread-prompts', 'file-staging', 'watcher-phone-photos', 'attachment-files', 'project-origins', 'watcher-phone-machines', 'host-delegation', 'thread-delete', 'delegation-views', 'branch-moves', 'bring-changes-back', 'delegation-relay', 'watcher-check-queue', 'watcher-check-stop', 'check-queue-views', 'project-setup', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts', 'watcher-phone-files', 'pull-request-confirmation', 'watcher-new-owner', 'thread-move', 'worker-swarms', 'every-agent-picture', 'thread-move-source', 'thread-move-keep', 'changed-thread-records', 'thread-media', 'thread-media-video', 'next-prompts', 'watcher-phone-composer', 'watcher-phone-settings-later', 'reply-thread-records', 'provider-mode-lists', 'settled-threads-on-request', 'usable-models', 'product-events', 'watcher-tell', 'command-changed-thread-records', 'step-window', 'thread-snooze', 'watcher-ready', 'browser', 'provider-deepseek', 'video-staging', 'thread-media-edge', 'provider-pi', 'project-git-init', 'plugin-account-copies', 'plugin-github-sign-in', 'plugin-mail-copies', 'plugin-meshy-copies', 'watcher-progress', 'kept-parts'] as const
+export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'git-pull-request-list', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-file-links', 'thread-linked-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view', 'provider-cursor', 'watcher-cursor', 'usage-background-refresh', 'client-update-not-listed', 'thread-prompts', 'file-staging', 'watcher-phone-photos', 'attachment-files', 'project-origins', 'watcher-phone-machines', 'host-delegation', 'thread-delete', 'delegation-views', 'branch-moves', 'bring-changes-back', 'delegation-relay', 'watcher-check-queue', 'watcher-check-stop', 'check-queue-views', 'project-setup', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts', 'watcher-phone-files', 'pull-request-confirmation', 'watcher-new-owner', 'thread-move', 'worker-swarms', 'every-agent-picture', 'thread-move-source', 'thread-move-keep', 'changed-thread-records', 'thread-media', 'thread-media-video', 'next-prompts', 'watcher-phone-composer', 'watcher-phone-settings-later', 'reply-thread-records', 'provider-mode-lists', 'settled-threads-on-request', 'usable-models', 'product-events', 'watcher-tell', 'command-changed-thread-records', 'step-window', 'thread-snooze', 'watcher-ready', 'browser', 'provider-deepseek', 'video-staging', 'thread-media-edge', 'provider-pi', 'project-git-init', 'plugin-account-copies', 'plugin-github-sign-in', 'plugin-mail-copies', 'plugin-meshy-copies', 'watcher-progress', 'kept-parts', 'plugin-meshy-spending'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
 /**
  * The features a headless host's tailnet listener offers only to a client the launch script recorded as a desktop
@@ -453,7 +460,7 @@ export type HostFeature = typeof HOST_FEATURES[number]
 /** A desktop's answer for product events, and what a sender runs by (ADR-0179). */
 export const productEventPermissionSchema = z.enum(['off', 'waiting', 'on'])
 export type ProductEventPermission = z.infer<typeof productEventPermissionSchema>
-export const HOST_DESKTOP_FEATURES: readonly HostFeature[] = ['thread-file-links', 'thread-linked-files', 'provider-sign-in', 'client-updates', 'client-update-outcomes', 'client-update-not-listed', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'watcher-cursor', 'host-update', 'opencode-sign-in', 'activity-bodies', 'thread-prompts', 'project-origins', 'host-delegation', 'delegation-views', 'branch-moves', 'delegation-relay', 'check-queue-views', 'project-setup', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts', 'watcher-new-owner', 'thread-move', 'worker-swarms', 'every-agent-picture', 'thread-move-source', 'thread-move-keep', 'next-prompts', 'product-events', 'watcher-tell', 'watcher-ready', 'browser', 'plugin-account-copies', 'plugin-github-sign-in', 'plugin-mail-copies', 'plugin-meshy-copies', 'watcher-progress']
+export const HOST_DESKTOP_FEATURES: readonly HostFeature[] = ['thread-file-links', 'thread-linked-files', 'provider-sign-in', 'client-updates', 'client-update-outcomes', 'client-update-not-listed', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'watcher-cursor', 'host-update', 'opencode-sign-in', 'activity-bodies', 'thread-prompts', 'project-origins', 'host-delegation', 'delegation-views', 'branch-moves', 'delegation-relay', 'check-queue-views', 'project-setup', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts', 'watcher-new-owner', 'thread-move', 'worker-swarms', 'every-agent-picture', 'thread-move-source', 'thread-move-keep', 'next-prompts', 'product-events', 'watcher-tell', 'watcher-ready', 'browser', 'plugin-account-copies', 'plugin-github-sign-in', 'plugin-mail-copies', 'plugin-meshy-copies', 'watcher-progress', 'plugin-meshy-spending']
 /**
  * The providers a host sends only to a client whose hello accepts their feature (#1107, ADR-0087). A desktop or phone from
  * before a provider joined Sotto reads provider IDs against a list without it, and refuses a whole shell that names one, so
@@ -741,6 +748,8 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   z.object({ ...base, op: z.literal('plugin-account-copy-remove'), accountId: z.uuid() }).strict(),
   /** Which accounts the host holds a copy of, and the day each one's secret was saved. Never a secret. */
   z.object({ ...base, op: z.literal('plugin-account-copies') }).strict(),
+  /** What this desktop counts its Meshy accounts spent this month, everywhere but the host it tells (`plugin-meshy-spending`). */
+  z.object({ ...base, op: z.literal('plugin-meshy-spending'), reports: spendingReportsSchema }).strict(),
   /** Who gh on the host's machine is signed in to GitHub as, for a recorded desktop's Plugins page (`plugin-github-sign-in`). A name, never a token. */
   z.object({ ...base, op: z.literal('plugin-github-sign-in') }).strict(),
   /** One activity record whole, for a desktop that was sent it with a cut body; read when its row opens (`activity-bodies`). */
@@ -846,6 +855,8 @@ export type HostPush = { v: 1; event: 'shell'; state: HostWireShell | KeptPartsS
   | { v: 1; event: 'watcher-state'; projection: z.infer<typeof watcherHostProjectionSchema> }
   /** What moved in Watcher's projection when only its progress did; only to a desktop whose hello accepted `watcher-progress`. */
   | { v: 1; event: 'watcher-progress'; progress: z.infer<typeof watcherHostProgressSchema> }
+  /** What the host's own threads spent this month of the Meshy copies a desktop sent it, only to that desktop (`plugin-meshy-spending`). */
+  | { v: 1; event: 'plugin-meshy-spending'; reports: SpendingReport[] }
   | { v: 1; event: 'detail-delta'; threadId: string; delta: AgentThreadDetailDelta }
   | { v: 1; event: 'answer-receipt'; acceptedAnswer: HostAnswerTarget & { decisionId: string } }
   | { v: 1; event: 'error'; threadId?: string | undefined; error: HostProtocolError }
@@ -968,6 +979,7 @@ export const hostPushSchema = z.discriminatedUnion('event', [
   /** The host's browser (`browser`), only to a desktop whose hello accepted it; pictures only while it watches the page. */
   z.object({ v: z.literal(1), event: z.literal('browser'), change: browserEventSchema }),
   z.object({ v: z.literal(1), event: z.literal('browser-frame'), frame: hostBrowserFrameSchema }),
+  z.object({ v: z.literal(1), event: z.literal('plugin-meshy-spending'), reports: spendingReportsSchema }),
   /** News of a delegation this host holds for a thread on another machine (`delegation-remote`), only to the desktop that asked. */
   z.object({ v: z.literal(1), event: z.literal('delegation-remote-news'), caller: z.string().min(1).max(DELEGATION_REMOTE_CALLER_MAX), news: delegationRelayNewsSchema, replies: relayedRepliesSchema.optional() }),
 ])

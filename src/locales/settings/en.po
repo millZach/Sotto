@@ -2539,6 +2539,10 @@ msgid "Creature shown."
 msgstr "Creature shown."
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Credits this month: {usedCredits} of {limitCredits}, across {across}."
+msgstr "Credits this month: {usedCredits} of {limitCredits}, across {across}."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Credits this month: {usedCredits} of {limitCredits}."
 msgstr "Credits this month: {usedCredits} of {limitCredits}."
 
@@ -7808,6 +7812,7 @@ msgstr "These shortcuts are Hyprland bindings, so keys Hyprland already uses can
 
 #. Stands in for this computer's name, as in "Enter this computer" on a phone.
 #: src/renderer/src/features/settings/PhonesSettings.tsx
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "this computer"
 msgstr "this computer"
 

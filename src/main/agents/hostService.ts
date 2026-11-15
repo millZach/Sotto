@@ -29,7 +29,7 @@ import type { ProjectOrigins, ProjectSetupRequest, ProjectSetupResult } from '..
 import type { HostBranchMoveRequest } from '../../shared/branchMoves'
 import type { HostThreadMoveRequest } from '../../shared/threadMoves'
 import type { DesktopDefaultsInput, DesktopDefaultsReceipt } from '../../shared/desktopDefaults'
-import type { HeldPluginAccountCopy, PluginAccountCopy, PluginAccountCopyReceipt, PluginAccountCopyRemoved, PluginAccountCopyStore } from '../../shared/pluginAccountCopies'
+import type { HeldPluginAccountCopy, PluginAccountCopy, PluginAccountCopyReceipt, PluginAccountCopyRemoved, PluginAccountCopyStore, PluginSpendingShare, SpendingReport } from '../../shared/pluginAccountCopies'
 import type { GitHubSignIn } from '../../shared/plugins'
 import type { DelegationRelayAsk, DelegationRemoteAsk, RelayedReply } from '../../shared/delegationRelay'
 import type { TellWatcherAnswer, WatcherTellPush } from '../../shared/tellWatcher'
@@ -177,6 +177,18 @@ export interface HostService {
   keepPluginAccountCopy?(copy: PluginAccountCopy, client?: ClientIdentity): Promise<PluginAccountCopyReceipt>
   removePluginAccountCopy?(accountId: string, client?: ClientIdentity): Promise<PluginAccountCopyRemoved>
   pluginAccountCopies?(client?: ClientIdentity): Promise<HeldPluginAccountCopy[]>
+  /**
+   * Shared spending for Meshy copies (`plugin-meshy-spending`, ADR-0205): one monthly limit wherever the account is.
+   * On a desktop's connection to a host that lists it, `sharePluginMeshySpending` tells the host what the account spent
+   * everywhere but there and answers with what the host spent; `subscribePluginMeshySpending` hears the host's pushes.
+   * On the host, the first keeps what a desktop said and answers with its own; the second hears its own count change,
+   * and `pluginMeshySpending` reads it for one desktop's copies.
+   */
+  readonly supportsPluginMeshySpending?: boolean
+  sharePluginMeshySpending?(reports: readonly SpendingReport[], client?: ClientIdentity): Promise<SpendingReport[]>
+  pluginMeshySpending?(client: ClientIdentity): Promise<SpendingReport[]>
+  /** On the host its listener is called with nothing; on a desktop's connection, with what the host pushed. */
+  subscribePluginMeshySpending?(listener: (reports?: readonly SpendingReport[]) => void): () => void
   /**
    * Who gh on the host's own machine is signed in to GitHub as (ADR-0205): the account its threads' plugin tools act
    * as, which need not be the desktop's. Present only on a headless host whose Owl answer turns on plugins, and on a
@@ -528,6 +540,8 @@ export class LocalHostService implements HostService {
     pluginAccountCopies?: PluginAccountCopyStore
     /** Asks this machine's gh who is signed in (ADR-0205), present only where a headless host's Owl answer turns on plugins. */
     pluginGitHubSignIn?: () => Promise<GitHubSignIn>
+    /** Shared spending for the Meshy copies this host keeps (ADR-0205), present only with `pluginAccountCopies`. */
+    pluginMeshySpending?: PluginSpendingShare
     workerSwarms?: boolean
     /** This host keeps what a desktop says of **Show every picture and video an agent makes** (ADR-0170, part 7). */
     everyAgentPicture?: boolean
@@ -586,6 +600,18 @@ export class LocalHostService implements HostService {
     if (!this.options.pluginAccountCopies) return Promise.reject(new Error('This host does not keep account copies.'))
     return this.options.pluginAccountCopies.list(client.clientId)
   }
+  get supportsPluginMeshySpending(): boolean { return this.options.pluginAccountCopies !== undefined && this.options.pluginMeshySpending !== undefined }
+  /** Keeps what a desktop said its copies spent, and answers with this host's own; the socket listener admits only a recorded desktop. */
+  sharePluginMeshySpending(reports: readonly SpendingReport[], client: ClientIdentity): Promise<SpendingReport[]> {
+    if (!this.options.pluginMeshySpending) return Promise.reject(new Error('This host does not share spending.'))
+    return this.options.pluginMeshySpending.share(reports, client.clientId)
+  }
+  pluginMeshySpending(client: ClientIdentity): Promise<SpendingReport[]> {
+    if (!this.options.pluginMeshySpending) return Promise.reject(new Error('This host does not share spending.'))
+    return this.options.pluginMeshySpending.own(client.clientId)
+  }
+  /** Hears this host's own count change; the listener reads it for each desktop with `pluginMeshySpending`. */
+  subscribePluginMeshySpending(listener: () => void): () => void { return this.options.pluginMeshySpending?.subscribe(listener) ?? (() => undefined) }
   get supportsDelegationViews(): boolean { return this.options.delegationViews !== undefined }
   /** Read from delegation's own record, never a snapshot, as the desktop's own window reads this computer's (#1029). */
   async delegationViews(threadId: string): Promise<DelegationsRead> {

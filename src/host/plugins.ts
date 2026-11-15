@@ -1,3 +1,4 @@
+import { join } from 'node:path'
 import { resetGhLookup } from '../main/agents/git/ghCommand'
 import { runGitStatusCommand, type RunGitCommand } from '../main/agents/git/gitStatus'
 import { hostPluginAccountCopies, type HostPluginAccountCopies } from '../main/plugins/accountCopies'
@@ -6,11 +7,18 @@ import { wordPluginChangeInEnglish } from '../main/plugins/changeWordsPlain'
 import { readGitHubSignIn, sharedGitHubSignIn } from '../main/plugins/github/signIn'
 import type { MailConnect } from '../main/plugins/mail/read'
 import { MailGrants, mailThreadOpen } from '../main/plugins/mailGrants'
+import { everyMonthStart, HeardSpending, monthOf, ReportRevisions } from '../main/plugins/meshy/spending'
 import { PluginChangeRequests } from '../main/plugins/pendingChanges'
 import { PluginToolServer } from '../main/plugins/pluginTools'
 import { pluginToolHandlers, type PluginToolAccounts } from '../main/plugins/toolHandlers'
 import type { VercelFetch } from '../main/plugins/vercel/read'
+import type { MeshyApiFetch } from '../main/tools/meshy/api'
+import { checkPhoto, photoToSend } from '../main/tools/meshy/photo'
+import { ModelRecords, type ThreeDModel } from '../main/tools/meshy/records'
+import { MeshyModels } from '../main/tools/meshy/service'
+import { stripPhoto } from '../main/tools/meshy/strip'
 import { PROVIDER_LABELS, type AgentHostSnapshot } from '../shared/agents'
+import type { PluginSpendingShare, SpendingReport } from '../shared/pluginAccountCopies'
 import type { GitHubSignIn } from '../shared/plugins'
 import { isThreadClosed } from '../shared/threadActivity'
 
@@ -21,6 +29,11 @@ export interface HostPluginStandIns {
   readonly vercelBase?: string
   /** How a mail server is reached, in place of TLS to the account's own. */
   readonly mailConnect?: MailConnect
+  /** A stand-in for Meshy's API and file server, on one address, and how it is reached. */
+  readonly meshyBase?: string
+  readonly meshyFetch?: MeshyApiFetch
+  readonly meshyWait?: (ms: number, signal: AbortSignal) => Promise<void>
+  readonly now?: () => Date
 }
 
 export interface HostPlugins {
@@ -34,6 +47,15 @@ export interface HostPlugins {
   readonly gitHubSignIn: () => Promise<GitHubSignIn>
   /** Which of this host's threads the user has let read which mail accounts. */
   readonly mailGrants: MailGrants
+  /** The 3D models this host's threads asked for, which follow forgetting a thread and Keep local history. */
+  readonly models: ModelRecords
+  /** Shared spending with the desktops that sent this host its Meshy copies (`plugin-meshy-spending`). */
+  readonly spending: PluginSpendingShare
+  /**
+   * Once the paired clients are read: takes the words out of the 3D models' records if Keep local history is off, and
+   * picks up the 3D models still being made when the host last stopped. Before then no copy's key may be read.
+   */
+  startModels(): Promise<void>
   /** Deleted threads take their waiting cards and their mail grants with them. */
   forgetThreads(threadIds: readonly string[]): void
   /** Forgets the grants of copies this host no longer holds, when it starts. */
@@ -74,6 +96,12 @@ export function hostPlugins(options: {
   readonly admits: (threadId: string) => boolean
   /** Whether a client is still paired with this host, read in place. */
   readonly paired: (clientId: string) => boolean
+  /** One of the host's threads' working folder, found as the host's Files finds it, or null. Left out, no thread here makes a 3D model. */
+  readonly folderOf?: (threadId: string) => Promise<string | null>
+  /** Places a 3D model's line in its thread, as the desktop does. False when it could not be placed. */
+  readonly showInThread?: (threadId: string, model: ThreeDModel) => Promise<boolean>
+  /** The host's Keep local history, read in place; off until its settings are read. */
+  readonly historyEnabled?: () => boolean
   readonly standIns?: HostPluginStandIns
 }): HostPlugins {
   const accounts = new PluginAccounts(options.directory, {
@@ -116,6 +144,80 @@ export function hostPlugins(options: {
   }
   // Each read looks for gh afresh, and reads asked for while one runs share it rather than starting gh again.
   const gitHubSignIn = sharedGitHubSignIn(() => { resetGhLookup(); return readGitHubSignIn(gh, stop.signal) })
+  // 3D models (ADR-0141, ADR-0205): this host's threads make them with the Meshy copies its desktops sent, into their
+  // own folders on this machine. Each record is this host's own, in its own folder, and Meshy's API is reached from
+  // here with the copy's key, read for one call. The key of a copy whose desktop is no longer paired is never read.
+  const now = options.standIns?.now ?? (() => new Date())
+  const historyEnabled = options.historyEnabled ?? (() => false)
+  const models = new ModelRecords(options.directory, { historyEnabled })
+  const meshyBase = options.standIns?.meshyBase
+  // One limit wherever the account is: what each copy's desktop last said it spent, with when (ADR-0205).
+  const heard = new HeardSpending(join(options.directory, 'plugin-meshy-spending.json'), now)
+  const spendingListeners = new Set<() => void>()
+  const spendingChanged = (): void => { for (const listener of [...spendingListeners]) { try { listener() } catch { /* A listener's failure is its own. */ } } }
+  // Each change to a 3D model is looked at for whether this host's count moved, and only a count that did is told.
+  // Looks asked for while one runs are one more look after it.
+  let counted = new Map<string, number>()
+  let looking: Promise<void> | undefined
+  let lookAgain = false
+  const countChanged = (): void => {
+    if (looking) { lookAgain = true; return }
+    looking = models.monthCredits(now()).then(credits => {
+      const moved = credits.size !== counted.size || [...credits].some(([id, count]) => counted.get(id) !== count)
+      counted = new Map(credits)
+      if (moved) spendingChanged()
+    }, () => undefined).finally(() => { looking = undefined; if (lookAgain) { lookAgain = false; countChanged() } })
+  }
+  const meshyModels = new MeshyModels({ records: models, signal: stop.signal,
+    fetch: options.standIns?.meshyFetch ?? ((url, init) => fetch(url, init)),
+    ...(meshyBase ? { base: meshyBase, assets: meshyBase } : {}), ...(options.standIns?.meshyWait ? { wait: options.standIns.meshyWait } : {}),
+    keyOf: async accountId => (await usable.list()).some(account => account.id === accountId && account.plugin === 'meshy') ? usable.secret(accountId) || undefined : undefined,
+    changed: () => { countChanged() },
+  })
+  const stopMonths = everyMonthStart(() => { counted = new Map(); spendingChanged() }, now)
+  const revisions = new ReportRevisions()
+  /**
+   * This host's own credits this month for each Meshy copy one desktop sent. Numbered as soon as they are counted, and
+   * counts are read one after another, so a report with a higher number never says less than was spent before it.
+   */
+  const ownFor = async (clientId: string): Promise<SpendingReport[]> => {
+    const senders = await copies.senders()
+    const credits = await models.monthCredits(now())
+    const revision = revisions.next()
+    const month = monthOf(now())
+    return (await accounts.list()).filter(account => account.plugin === 'meshy' && senders[account.id] === clientId)
+      .map(account => ({ accountId: account.id, month, credits: credits.get(account.id) ?? 0, session: revisions.session, revision }))
+  }
+  const spending: PluginSpendingShare = {
+    // A desktop speaks only for the copies it sent: what it says of any other account is not kept. What it says is
+    // written down before it is answered, and a write that fails is no answer, so the desktop never takes it as heard.
+    share: async (reports, clientId) => {
+      const senders = await copies.senders()
+      await heard.hear(clientId, reports.filter(report => senders[report.accountId] === clientId))
+      return ownFor(clientId)
+    },
+    own: ownFor,
+    subscribe: listener => { spendingListeners.add(listener); return () => { spendingListeners.delete(listener) } },
+  }
+  const { folderOf } = options
+  const meshy = folderOf ? {
+    folderOf,
+    // This host's own 3D models and what the copy's desktop last said, which holds every other computer's. A copy
+    // spends nothing until its desktop has said what the account spent (Sol's review): a copy whose report came before
+    // it, or has not come yet, would otherwise count the desktop's spending as none. Nor while what was said cannot
+    // be read or was not written down.
+    monthCredits: async (accountId: string): Promise<number | 'waiting' | 'unreadable'> => {
+      const sender = (await copies.senders().catch((): Readonly<Record<string, string>> => ({})))[accountId]
+      try {
+        if (sender === undefined || !await heard.has(sender, accountId)) return 'waiting'
+        return ((await models.monthCredits(now())).get(accountId) ?? 0) + await heard.total(accountId)
+      } catch { return 'unreadable' }
+    },
+    // No image library here: the photo's metadata is taken out of its file, its pixels left as they are (#2497).
+    checkPhoto, photoToSend: (root: string, checked: Parameters<typeof photoToSend>[1], path: string) => photoToSend(root, checked, path, stripPhoto),
+    make: (request: Parameters<MeshyModels['make']>[0]) => meshyModels.make(request),
+    showInThread: async (threadId: string, model: ThreeDModel) => await options.showInThread?.(threadId, model).catch(() => false) ?? false,
+  } : undefined
   const tools = new PluginToolServer(pluginToolHandlers({
     admits: options.admits, accounts: usable,
     projectOf: () => null,
@@ -124,6 +226,7 @@ export function hostPlugins(options: {
     askChange: (threadId, change, wait) => changes.ask(threadId, wordPluginChangeInEnglish(change), wait),
     record: async () => undefined,
     gitHubSignIn, gh,
+    ...(meshy ? { meshy } : {}),
     vercelFetch: options.standIns?.vercelFetch ?? ((url, init) => fetch(url, init)),
     vercelOptions: { ...(options.standIns?.vercelBase ? { base: options.standIns.vercelBase } : {}), signal: stop.signal },
     // Mail is read from this machine, with the copy's password from the host's own credential file. The card that
@@ -135,8 +238,14 @@ export function hostPlugins(options: {
     },
   }))
   return {
-    copies, changes, tools, gitHubSignIn, mailGrants, forgetGrantsOfGone,
-    forgetThreads: threadIds => { changes.forgetThreads(threadIds); void mailGrants.forgetThreads(threadIds).catch(() => undefined) },
-    close: async () => { stop.abort(); changes.close(); mailGrants.close(); await tools.close() },
+    copies, changes, tools, gitHubSignIn, mailGrants, forgetGrantsOfGone, models, spending,
+    startModels: async () => {
+      await models.privacyChanged().catch(() => undefined)
+      await meshyModels.resume()
+      countChanged()
+    },
+    // A forgotten thread's 3D models' records go with it; what they cost this month still counts (ADR-0141).
+    forgetThreads: threadIds => { changes.forgetThreads(threadIds); void mailGrants.forgetThreads(threadIds).catch(() => undefined); void models.forgetThreads(threadIds).catch(() => undefined) },
+    close: async () => { stop.abort(); stopMonths(); spendingListeners.clear(); changes.close(); mailGrants.close(); await tools.close() },
   }
 }

@@ -47,6 +47,8 @@ import { tellWatcherTools } from '../main/agents/tellWatcherTools'
 import { HostTellWatcherRelay } from '../main/agents/tellWatcherRelay'
 import { KeptThumbnails, ReducedPictures } from '../main/agents/mediaThumbnail'
 import { PictureMaker } from './pictureMaker'
+import { FilesService } from '../main/files/service'
+import { MODEL_VISUAL_KIND } from '../shared/models3d'
 
 /** True in a host packaged for release (`scripts/package-host.mjs`), which alone has the product events endpoint (ADR-0179). */
 declare const __SOTTO_RELEASED_HOST__: boolean | undefined
@@ -145,12 +147,29 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   // host's Owl answer turns on plugins. Its threads are read once the runtime that holds them has started.
   // Nobody is paired until the paired clients are read, below: until then no copy is anyone's to use.
   let pairedNow: (clientId: string) => boolean = () => false
+  // Keep local history as this host's settings say once they are read; until then, off.
+  let historyNow = false
+  // A thread's working folder as the host's Files finds it (the Meshy plan's ticket 6), once the runtime holds threads.
+  let threadFiles: FilesService | undefined
+  const notHere = (): never => { throw new Error('This read does not copy or open anything on the host.') }
   const plugins = owlFeatures.plugins ? hostPlugins({ directory, credentials, ...(options.plugins ? { standIns: options.plugins } : {}),
     paired: clientId => pairedNow(clientId),
+    historyEnabled: () => historyNow,
+    folderOf: async threadId => {
+      const runtime = startedRuntime
+      if (!runtime) return null
+      threadFiles ??= new FilesService({ resolveBinding: id => runtime.agentControl.filesBinding(id), copyPath: notHere, reveal: notHere })
+      const found = await threadFiles.resolveWorkspace(threadId)
+      return found.ok ? found.value.workingDirectory : null
+    },
+    // A 3D model's line in its thread, by its ID alone, as the desktop places one; a client reads its words.
+    showInThread: async (threadId, model) => (await startedRuntime?.agentHost.addVisual(threadId, { kind: MODEL_VISUAL_KIND, title: model.name, source: model.id })
+      .catch(() => ({ added: false as const })))?.added ?? false,
     thread: threadId => startedRuntime?.agentControl.watcherSnapshot().threads.find(item => item.id === threadId),
     project: projectId => startedRuntime?.agentControl.watcherSnapshot().projects.find(item => item.id === projectId),
     admits: threadId => startedRuntime?.agentHost.admitsPluginTools(threadId) ?? false }) : undefined
   const pluginAccountCopies = plugins?.copies
+  const pluginMeshySpending = plugins?.spending
   // Its Owl answers, and every provider hosts do not take yet: DeepSeek, whose models need own servers (ADR-0138).
   const heldProviders = heldOnHost(heldProvidersOf(owlFeatures))
   const resumeAfterRestart = owlFeatures['resume-after-restart']
@@ -199,6 +218,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     await repositories.settings.save(await repositories.settings.get()).catch(() => console.warn('retired-voice-settings-save-failed'))
     await removeRetiredVoiceCache(directory)
     const startup = await settings.get()
+    historyNow = startup.historyEnabled
     memory = openRuntimeMemory(join(directory, 'memory.sqlite'), event => options.log?.(event))
     // The browser is made before any thread starts, and shares this startup cleanup boundary.
     const policy = memory ? new PolicyStore(memory) : undefined
@@ -221,6 +241,8 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     await plugins?.copies.forgetUnpaired(pairedNow).catch(() => options.log?.('plugin-account-copies-not-forgotten'))
     // And no thread may read a mail account by a grant given for a copy that is gone.
     await plugins?.forgetGrantsOfGone().catch(() => undefined)
+    // 3D models still being made when this host last stopped are picked up now that whose copies are whose is known.
+    void plugins?.startModels().catch(() => undefined)
     const recordedDesktop = (clientId: string): boolean => desktops.has(clientId)
     // The desktop relay (#1316): a thread here delegates to other machines through a desktop that relays, only where the
     // Owl answer turns on Work across machines. Its record of relayed delegations is read before the threads start.
@@ -241,6 +263,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     const keptWhileOff = crossMachineEnabled ? undefined : await heldMoveWorktrees(directory)
     const runtime = startedRuntime = await createAgentRuntime({
       ...(pluginAccountCopies ? { pluginAccountCopies } : {}),
+      ...(pluginMeshySpending ? { pluginMeshySpending } : {}),
       ...(plugins ? { pluginGitHubSignIn: plugins.gitHubSignIn } : {}),
       ...owlFeatures['paired-host-browser'] && owlFeatures['quiet-browser'] ? { browserTools: resolveBinding => (browser = hostBrowserTools({ resolveBinding, withoutAsking: startup.browserWithoutAsking,
         saveWithoutAsking: async value => { await repositories.settings.update({ browserWithoutAsking: value }) } })).tools } : {},

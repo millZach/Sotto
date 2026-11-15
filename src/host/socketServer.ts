@@ -35,7 +35,7 @@ import { usageLocalClearResultSchema, usageLocalHostReadSchema, usageProvidersBe
 import { hostMachineReportSchema } from '../shared/hostFacts'
 import { projectOriginsSchema, projectSetupResultSchema, type ProjectOrigins } from '../shared/workerMachine'
 import { desktopDefaultsReceiptSchema } from '../shared/desktopDefaults'
-import { heldPluginAccountCopiesSchema, pluginAccountCopyReceiptSchema, pluginAccountCopyRemovedSchema } from '../shared/pluginAccountCopies'
+import { heldPluginAccountCopiesSchema, pluginAccountCopyReceiptSchema, pluginAccountCopyRemovedSchema, spendingReportsSchema } from '../shared/pluginAccountCopies'
 import { gitHubSignInSchema, isBridgePlugin, isMailPlugin, isSpendingPlugin } from '../shared/plugins'
 import { ProviderSignInRefusal, type ProviderSignIns } from './providerSignIn'
 import { DEFLATE_RESPONSE, deflateOffered, SocketFrames } from './socketFrames'
@@ -146,7 +146,7 @@ class Refusal extends Error { constructor(readonly code: HostErrorCode, message 
  * `browserWatches`: present while a desktop's hello accepts `browser`; per page, the newest watch or unwatch it asked for
  * (`ticket`) and the stop of the stream it holds, so a watch still starting when a later one or an unwatch came is let go.
  */
-interface Peer { browserWatches?: Map<string, { ticket: number; stop?: () => void }> | undefined; productEvents?: { answer: ProductEventPermission | null } | undefined; unknownProviders: HeldProviders; hostUpdate: boolean; delegationViews: boolean; checkQueueViews?: boolean; nextPrompts?: { wanted: boolean } | undefined; delegationRelay?: RelayDesktop | undefined; tellWatcher?: TellWatcherDesktop | undefined; delegationRemote?: RemoteDesktop | undefined; retiredTerminals: boolean; gone: AbortController; usageHistory: boolean; usageMuseOpenCode: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherPhoneSteer: boolean; watcherPhoneMachines: boolean; watcherPhoneComposer: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; shown: boolean; held: Map<string, number>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; clientUpdateNotListed: boolean; activitySummaries: boolean; activityBodies: boolean; catalogRevisions: boolean; catalogSent: number | null; shellSent: string | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget>
+interface Peer { browserWatches?: Map<string, { ticket: number; stop?: () => void }> | undefined; productEvents?: { answer: ProductEventPermission | null } | undefined; unknownProviders: HeldProviders; hostUpdate: boolean; delegationViews: boolean; checkQueueViews?: boolean; meshySpending?: boolean; meshySpendingAsked?: boolean; nextPrompts?: { wanted: boolean } | undefined; delegationRelay?: RelayDesktop | undefined; tellWatcher?: TellWatcherDesktop | undefined; delegationRemote?: RemoteDesktop | undefined; retiredTerminals: boolean; gone: AbortController; usageHistory: boolean; usageMuseOpenCode: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherPhoneSteer: boolean; watcherPhoneMachines: boolean; watcherPhoneComposer: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; shown: boolean; held: Map<string, number>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; clientUpdateNotListed: boolean; activitySummaries: boolean; activityBodies: boolean; catalogRevisions: boolean; catalogSent: number | null; shellSent: string | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget>
   /** The thread records this connection's shell pushes last carried, for a client that accepted `changed-thread-records` (#996). */
   threadRecords?: ThreadRecordsBroadcast | undefined
   /**
@@ -462,6 +462,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'plugin-mail-copies' || service.supportsPluginMailCopies === true && desktopRecords)
     // A Meshy account's copy, with its switch and limit, wherever account copies are kept: this build knows Meshy.
     && (feature !== 'plugin-meshy-copies' || service.supportsPluginAccountCopies === true && desktopRecords)
+    // Shared spending for those copies (ADR-0205), only alongside them and only where this host counts its own.
+    && (feature !== 'plugin-meshy-spending' || service.supportsPluginAccountCopies === true && service.supportsPluginMeshySpending === true && desktopRecords)
     // Who the host's own gh is signed in as (ADR-0205), where the host runs plugin tools, on the same listeners.
     && (feature !== 'plugin-github-sign-in' || service.supportsPluginGitHubSignIn === true && service.pluginGitHubSignIn !== undefined && desktopRecords)
     // The same host answers a recorded desktop's read of those threads' delegations, for its window (#1310).
@@ -532,7 +534,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     .filter(feature => feature !== 'host-update' || mayUpdate(peer))
     .filter(feature => feature !== 'branch-moves' && feature !== 'thread-move' && feature !== 'thread-move-source' && feature !== 'thread-move-keep' || (options.watcherDesktops?.has(peer.client.clientId) ?? false))
     // An account copy carries a secret, so it comes only from the desktop the launch script recorded (ADR-0205).
-    .filter(feature => feature !== 'plugin-account-copies' && feature !== 'plugin-mail-copies' && feature !== 'plugin-meshy-copies' || options.watcherDesktops?.has(peer.client.clientId) === true)
+    .filter(feature => feature !== 'plugin-account-copies' && feature !== 'plugin-mail-copies' && feature !== 'plugin-meshy-copies' && feature !== 'plugin-meshy-spending' || options.watcherDesktops?.has(peer.client.clientId) === true)
     // The account a host's gh is signed in to is its owner's own detail: told only to a recorded desktop.
     .filter(feature => feature !== 'plugin-github-sign-in' || options.watcherDesktops?.has(peer.client.clientId) === true)
     // Desktop defaults come only from a client the launch script recorded as a desktop (#1310).
@@ -1313,6 +1315,21 @@ export async function startSocketServer(options: SocketServerOptions) {
     if (closing) return
     for (const peer of peers) if (peer.ready && peer.checkQueueViews) pushChecks(peer)
   })
+  /**
+   * What this host's own threads spent this month of the Meshy copies a desktop sent (`plugin-meshy-spending`, ADR-0205),
+   * pushed to that desktop when this host's count changes or its month turns, if its hello accepted it. Each desktop
+   * is told only of its own copies. One taken off the record of desktops since its hello is told nothing.
+   */
+  const unsubscribeSpending = service.subscribePluginMeshySpending?.(() => {
+    if (closing) return
+    for (const peer of peers) {
+      if (!peer.ready || !peer.meshySpending || peer.frames.isClosed || !offers(peer, 'plugin-meshy-spending') || !service.pluginMeshySpending) continue
+      void service.pluginMeshySpending(peer.client).then(reports => {
+        // A hello again while the count was read may have taken shared spending back, or the desktop come off the record.
+        if (!closing && !peer.frames.isClosed && peer.meshySpending && offers(peer, 'plugin-meshy-spending')) push(peer, { v: 1, event: 'plugin-meshy-spending', reports: spendingReportsSchema.parse(reports) })
+      }, () => undefined)
+    }
+  })
   /** The permission settings of a new or changed thread's model that let the provider do nothing unasked. */
   const askingProviderModes = (input: AgentCommand): string[] => {
     if (input.type !== 'create-thread' && input.type !== 'configure-thread') return []
@@ -1684,6 +1701,8 @@ export async function startSocketServer(options: SocketServerOptions) {
         peer.hostUpdate = (request.accepts?.includes('host-update') ?? false) && offers(peer, 'host-update')
         peer.delegationViews = (request.accepts?.includes('delegation-views') ?? false) && offers(peer, 'delegation-views')
         peer.checkQueueViews = (request.accepts?.includes('check-queue-views') ?? false) && offers(peer, 'check-queue-views')
+        peer.meshySpendingAsked = request.accepts?.includes('plugin-meshy-spending') ?? false
+        peer.meshySpending = peer.meshySpendingAsked && offers(peer, 'plugin-meshy-spending')
         const answeredBefore = peer.productEvents?.answer
         peer.productEvents = (request.accepts?.includes('product-events') ?? false) && offers(peer, 'product-events') ? { answer: answeredBefore ?? null } : undefined
         // A second hello that no longer accepts it takes this desktop's answer back, so the host looks again.
@@ -1979,6 +1998,15 @@ export async function startSocketServer(options: SocketServerOptions) {
         await options.watcherDesktops?.refresh().catch(() => undefined)
         if (!offers(peer, 'plugin-account-copies') || !service.pluginAccountCopies) throw new Refusal('invalid_request')
         try { return heldPluginAccountCopiesSchema.parse(await service.pluginAccountCopies(peer.client)) } catch { throw new Refusal('unavailable') }
+      }
+      case 'plugin-meshy-spending': {
+        // What a recorded desktop counts its Meshy accounts spent, kept for the copies it sent and no other's, and
+        // this host's own count for those copies in answer. Counts and account IDs, never a secret.
+        await options.watcherDesktops?.refresh().catch(() => undefined)
+        if (!offers(peer, 'plugin-meshy-spending') || !service.sharePluginMeshySpending) throw new Refusal('invalid_request')
+        // A desktop recorded after its hello, as one being added is, is pushed spending from now on if it asked.
+        if (peer.meshySpendingAsked) peer.meshySpending = true
+        try { return spendingReportsSchema.parse(await service.sharePluginMeshySpending(request.reports, peer.client)) } catch { throw new Refusal('unavailable') }
       }
       case 'plugin-github-sign-in': {
         // Who this machine's gh is signed in as, for a recorded desktop's Plugins page. The list of desktops is read
@@ -2409,7 +2437,7 @@ export async function startSocketServer(options: SocketServerOptions) {
   expiry.unref()
   const stopServing = (): void => {
     if (closing) return
-    closing = true; clearInterval(expiry); unsubscribe(); unsubscribeDetails?.(); unsubscribeDelegations?.(); unsubscribeChecks?.(); unsubscribeBrowser?.(); unsubscribeNextPrompts?.(); releasePhoneAdmission?.(); shellPublisher.dispose(); detailPublisher.dispose(); waiting.clear()
+    closing = true; clearInterval(expiry); unsubscribe(); unsubscribeDetails?.(); unsubscribeDelegations?.(); unsubscribeChecks?.(); unsubscribeSpending?.(); unsubscribeBrowser?.(); unsubscribeNextPrompts?.(); releasePhoneAdmission?.(); shellPublisher.dispose(); detailPublisher.dispose(); waiting.clear()
     if (writingTimer) clearTimeout(writingTimer.timer)
     writingHeld.clear()
     server.removeAllListeners('request')

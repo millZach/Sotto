@@ -161,7 +161,7 @@ export function useMonthCredits(on: boolean, key: string): number | undefined {
   useEffect(() => {
     if (!on) return undefined
     let live = true
-    void window.sotto?.plugins?.meshyCredits().then(byAccount => { if (live) setCredits(Object.values(byAccount).reduce((sum, each) => sum + each, 0)) }, () => undefined)
+    void window.sotto?.plugins?.meshyCredits().then(byAccount => { if (live) setCredits(Object.values(byAccount).reduce((sum, each) => sum + each.here, 0)) }, () => undefined)
     return () => { live = false }
   }, [on, key])
   return credits

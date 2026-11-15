@@ -35,8 +35,12 @@ export type MakeModelInput = z.infer<typeof makeModelInputSchema>
 export interface PluginMeshyHandlers {
   /** The thread's working folder on this computer, or null when Sotto cannot find one. */
   folderOf(threadId: string): Promise<string | null>
-  /** The credits the account's 3D models took this month on this computer. */
-  monthCredits(accountId: string): Promise<number>
+  /**
+   * The credits the account's 3D models took this month, against its one monthly limit. `waiting`: a host has not yet
+   * heard from the copy's desktop what the account spent. `unreadable`: what other computers said cannot be read, or
+   * was not written down. Either way nothing may be spent.
+   */
+  monthCredits(accountId: string): Promise<number | 'waiting' | 'unreadable'>
   /** Why the account's key cannot be read for a call, or null when it can: said before the user is asked. */
   keyTrouble(account: PluginAccount): 'locked' | 'no-secret' | null
   /** The photo at a path in the thread's folder as it is now, or why it is not sent. */

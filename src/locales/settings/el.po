@@ -2539,6 +2539,10 @@ msgid "Creature shown."
 msgstr "Το πλάσμα εμφανίζεται."
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Credits this month: {usedCredits} of {limitCredits}, across {across}."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Credits this month: {usedCredits} of {limitCredits}."
 msgstr ""
 
@@ -7808,6 +7812,7 @@ msgstr ""
 
 #. Stands in for this computer's name, as in "Enter this computer" on a phone.
 #: src/renderer/src/features/settings/PhonesSettings.tsx
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "this computer"
 msgstr ""
 

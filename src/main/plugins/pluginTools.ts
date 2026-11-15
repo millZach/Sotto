@@ -640,10 +640,18 @@ export class PluginToolServer implements ScopedThreadTools {
       const still = await this.handlers.holdsAccount(account.id).catch(() => false)
       if (still) await this.record(threadId, { plugin: 'meshy', accountId: account.id, tool: MAKE_3D_MODEL_TOOL, kind: '3d-model', outcome })
     }
-    /** Why this 3D model would pass the limit as the account stands now, or null when it fits. */
+    /** The credits the account spent this month, or what to tell the agent when that cannot be known. */
+    const spent = async (now: PluginAccount): Promise<number | string> => {
+      const used = await meshy.monthCredits(now.id)
+      if (used === 'waiting') return `Sotto is waiting to hear this month's spending for the Meshy account "${now.name}" from the desktop that sent it to this computer, so it cannot tell how much of the monthly limit is left. ${NOTHING_MADE} Try again once that desktop has connected to this computer.`
+      if (used === 'unreadable') return `Sotto could not read or keep its record of what the Meshy account "${now.name}" spent on other computers this month, so it cannot tell how much of the monthly limit is left. ${NOTHING_MADE} Tell the user.`
+      return used
+    }
+    /** Why this 3D model would pass the limit as the account stands now, or cannot be known to fit, or null when it fits. */
     const overLimit = async (now: PluginAccount): Promise<string | null> => {
       const limit = now.spending?.monthlyLimit ?? MESHY_MONTHLY_LIMIT_DEFAULT
-      const used = await meshy.monthCredits(now.id)
+      const used = await spent(now)
+      if (typeof used === 'string') return used
       if (used + cost <= limit) return null
       return `This 3D model would cost about ${cost} credits, and ${used.toLocaleString('en-US')} of the account's monthly limit of ${limit.toLocaleString('en-US')} credits are used this month, so it would pass the limit. ${NOTHING_MADE} Tell the user, who can raise the limit in ${SETTINGS}.`
     }
@@ -651,9 +659,11 @@ export class PluginToolServer implements ScopedThreadTools {
     if (over) { await kept('refused'); return text(over, true) }
     /** Shows the card as the account stands, and what to tell the agent when the user did not allow it. */
     const refusal = async (shown: PluginAccount): Promise<ThreadToolResult | null> => {
+      const monthCredits = await spent(shown)
+      if (typeof monthCredits === 'string') { await kept('refused'); return text(monthCredits, true) }
       const refused = await this.refusalOf(threadId, {
         kind: 'meshy-model', account: shown.name, name, ...(words !== undefined ? { words } : { photo: photo! }), credits: cost,
-        monthCredits: await meshy.monthCredits(shown.id), monthlyLimit: shown.spending?.monthlyLimit ?? MESHY_MONTHLY_LIMIT_DEFAULT, folder,
+        monthCredits, monthlyLimit: shown.spending?.monthlyLimit ?? MESHY_MONTHLY_LIMIT_DEFAULT, folder,
       }, call, NOTHING_MADE)
       if (!refused) return null
       if (refused.outcome) await kept(refused.outcome)
