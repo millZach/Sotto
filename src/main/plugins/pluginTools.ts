@@ -317,6 +317,8 @@ export class PluginToolServer implements ScopedThreadTools {
   private readonly server: ThreadToolServer
   /** A thread's first read of a mail account, while its card waits: reads of that account asked for meanwhile share the one card. */
   private readonly mailAsks = new Map<string, { readonly asking: Promise<PluginChangeAnswer>; readonly copy: number }>()
+  /** Each Meshy account's last look at the limit and start, which the next one waits for. */
+  private readonly modelTurns = new Map<string, Promise<unknown>>()
   constructor(private readonly handlers: PluginToolHandlers) {
     this.server = new ThreadToolServer({ name: PLUGINS_MCP_SERVER, serverName: 'sotto-plugins', instructions: INSTRUCTIONS,
       unavailable: `The plugin tools are unavailable. ${NOTHING_READ}`, failed: `The plugin could not be used. ${NOTHING_READ} Nothing was changed.`, maxRequestBytes: PluginToolServer.MAX_REQUEST_BYTES },
@@ -660,19 +662,24 @@ export class PluginToolServer implements ScopedThreadTools {
       await kept('failed')
       return text(`The Meshy account was switched off, kept to other projects or removed before the 3D model could be asked for. ${NOTHING_MADE}`, true)
     }
-    const overNow = await overLimit(now)
-    if (overNow) { await kept('refused'); return text(overNow, true) }
     const sent = checked === undefined ? undefined : await meshy.photoToSend(root, checked, photo!)
     if (typeof sent === 'string') { await kept('failed'); return text(photoWords(sent, photo!), true) }
-    let started: Awaited<ReturnType<PluginMeshyHandlers['make']>>
-    try {
-      started = await meshy.make({ threadId, accountId: now.id, name, root, folder,
-        source: words !== undefined ? { kind: 'words', words } : { kind: 'photo', fileName: checked!.fileName, photo: sent!.photo },
-        ...(input.data.formats ? { formats: input.data.formats } : {}), ...(input.data.triangles !== undefined ? { triangles: input.data.triangles } : {}) })
-    } catch (error) {
-      await kept('failed')
-      return text(error instanceof DownloadError ? `The folder "${folder}" is not inside the thread's folder, or could not be made. ${NOTHING_MADE}` : `Sotto could not keep a record of the 3D model, so nothing was asked of Meshy. ${NOTHING_MADE}`, true)
-    }
+    // The last look at the limit and the start run one at a time for an account, so two 3D models asked for at once
+    // cannot both fit under it; the one started first already counts in full by the time the next one looks.
+    const turn = await this.inModelTurn(now.id, async (): Promise<Awaited<ReturnType<PluginMeshyHandlers['make']>> | ThreadToolResult> => {
+      const overNow = await overLimit(now)
+      if (overNow) { await kept('refused'); return text(overNow, true) }
+      try {
+        return await meshy.make({ threadId, accountId: now.id, name, root, folder,
+          source: words !== undefined ? { kind: 'words', words } : { kind: 'photo', fileName: checked!.fileName, photo: sent!.photo },
+          ...(input.data.formats ? { formats: input.data.formats } : {}), ...(input.data.triangles !== undefined ? { triangles: input.data.triangles } : {}) })
+      } catch (error) {
+        await kept('failed')
+        return text(error instanceof DownloadError ? `The folder "${folder}" is not inside the thread's folder, or could not be made. ${NOTHING_MADE}` : `Sotto could not keep a record of the 3D model, so nothing was asked of Meshy. ${NOTHING_MADE}`, true)
+      }
+    })
+    if ('content' in turn) return turn
+    const started = turn
     // The 3D model is made whether or not this call is still waiting; it waits while its client does.
     const { signal, waitMs } = call.context
     const room = waitMs === undefined ? undefined : waitMs - (Date.now() - call.started) - 10_000
@@ -693,6 +700,14 @@ export class PluginToolServer implements ScopedThreadTools {
     }
     await kept('failed')
     return text(`The 3D model "${name}" was not made. ${endedWords(ended)}`, true)
+  }
+
+  /** Runs one look at the limit and start after every one before it for the same Meshy account. */
+  private inModelTurn<Result>(accountId: string, run: () => Promise<Result>): Promise<Result> {
+    const turn = (this.modelTurns.get(accountId) ?? Promise.resolve()).catch(() => undefined).then(run)
+    this.modelTurns.set(accountId, turn)
+    void turn.finally(() => { if (this.modelTurns.get(accountId) === turn) this.modelTurns.delete(accountId) }).catch(() => undefined)
+    return turn
   }
 
   /**

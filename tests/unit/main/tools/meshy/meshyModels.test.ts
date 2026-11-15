@@ -317,6 +317,10 @@ describe('the record of 3D models', () => {
     expect(await records.list()).toEqual([])
     expect(Object.fromEntries(await recordsHere().monthCredits(new Date(now)))).toEqual({ 'meshy-1': 30, 'meshy-2': 30 })
     expect(await readFile(join(data, '3d-models.json'), 'utf8')).not.toContain('thread-1')
+    // One still being made counts at its full cost, before its texture is asked for.
+    const slow = models({ now: () => now, records, wait: async () => { slow.stop.abort() } })
+    await (await slow.service.make(words('Stool'))).done
+    expect((await records.monthCredits(new Date(now))).get('meshy-1')).toBe(60)
     // The next month starts at nothing.
     now = new Date(2026, 11, 1, 0, 30).getTime()
     expect(Object.fromEntries(await records.monthCredits(new Date(now)))).toEqual({})

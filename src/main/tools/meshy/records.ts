@@ -1,7 +1,7 @@
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { z } from 'zod'
-import { MESHY_FORMATS, MESHY_TASK_ID, MESHY_TRIANGLES_MAX, MESHY_TRIANGLES_MIN, MESHY_WORDS_MAX } from './api'
+import { MESHY_CREDITS, MESHY_FORMATS, MESHY_TASK_ID, MESHY_TRIANGLES_MAX, MESHY_TRIANGLES_MIN, MESHY_WORDS_MAX } from './api'
 
 /**
  * What became of a 3D model. `making` while Meshy works on it, at the `shape`, the `texture` or fetching the `files`;
@@ -167,7 +167,10 @@ export class ModelRecords {
       const records = await this.load()
       const sameMonth = (at: string): boolean => { const asked = new Date(at); return asked.getFullYear() === now.getFullYear() && asked.getMonth() === now.getMonth() }
       const credits = new Map<string, number>()
-      for (const entry of [...records, ...this.spent]) if (entry.credits > 0 && sameMonth(entry.askedAt)) credits.set(entry.accountId, (credits.get(entry.accountId) ?? 0) + entry.credits)
+      // One still being made counts at what it will cost in full, so a second asked for meanwhile cannot slip under the
+      // limit before the first one's texture is asked for.
+      const cost = (entry: ModelRecord | Spent): number => 'state' in entry && entry.state === 'making' ? Math.max(entry.credits, fullCost(entry)) : entry.credits
+      for (const entry of [...records, ...this.spent]) if (cost(entry) > 0 && sameMonth(entry.askedAt)) credits.set(entry.accountId, (credits.get(entry.accountId) ?? 0) + cost(entry))
       return credits
     })
   }
@@ -244,5 +247,8 @@ export class ModelRecords {
     this.wordsInFile = records.some(holdsWords)
   }
 }
+
+/** What a 3D model costs in full: a shape and a texture from words, or one task from a photo. */
+function fullCost(record: ModelRecord): number { return record.source.kind === 'words' ? MESHY_CREDITS.preview + MESHY_CREDITS.refine : MESHY_CREDITS.photo }
 
 function holdsWords(record: ModelRecord): boolean { return record.source.kind === 'words' && record.source.words !== undefined }

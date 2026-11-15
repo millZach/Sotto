@@ -61,6 +61,8 @@ export const MESHY_TRIANGLES_MIN = 100
 export const MESHY_TRIANGLES_MAX = 300_000
 
 export const MESHY_POLL_MS = 5_000
+/** Meshy's price table on October 22, 2026 (docs.meshy.ai/en/api/pricing): what each task costs when it is asked for. */
+export const MESHY_CREDITS: Readonly<Record<MeshyTaskKind, number>> = { preview: 20, refine: 10, photo: 30 }
 /** A `Retry-After` is followed within these bounds, so a wrong one neither hammers Meshy nor stalls a model. */
 const RETRY_AFTER_MIN_MS = 1_000
 const RETRY_AFTER_MAX_MS = 10 * 60_000

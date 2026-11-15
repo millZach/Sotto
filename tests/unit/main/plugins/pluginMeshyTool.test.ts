@@ -55,7 +55,8 @@ function tools(options: { answers?: PluginChangeAnswer[]; used?: number; ended?:
     },
     ...(options.noMeshy ? {} : { meshy: {
       folderOf: async () => root,
-      monthCredits: async () => options.used ?? 0,
+      // What this computer counts: what was used before, and each 3D model started here at its full cost.
+      monthCredits: async () => (options.used ?? 0) + made.length * MODEL_COST.words,
       keyTrouble: () => null,
       checkPhoto,
       // The redraw keeps the pixels and drops the rest; here, the bytes after the marker stand for what is dropped.
@@ -129,6 +130,14 @@ describe('making a 3D model through make_3d_model', () => {
     const t = tools({ whileAsked: world => { world.accounts = [{ ...STUDIO, spending: { askBefore: true, monthlyLimit: 10 } }] } })
     expect(said(await t.make(BARREL))).toContain('of the account\'s monthly limit of 10 credits')
     expect(t.made).toEqual([])
+  })
+
+  it('lets only one of two 3D models asked for at once fit under the limit', async () => {
+    const t = tools()
+    t.world.accounts = [{ ...STUDIO, spending: { askBefore: false, monthlyLimit: 40 } }]
+    const results = await Promise.all([t.make(BARREL), t.make({ ...BARREL, name: 'Second barrel' })])
+    expect(results.map(result => result.isError === true)).toEqual([false, true])
+    expect(t.made).toHaveLength(1)
   })
 
   it('makes one without a card once the user turned asking off, still within the limit', async () => {
