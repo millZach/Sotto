@@ -21,6 +21,7 @@
  * copying it, and do work bounded by what changed rather than by the history. The budgets only tighten: a change that
  * needs a higher one says why in its pull request. docs/perf/2026-10-20-main-lag.md has the numbers and how to read them.
  */
+import { createHook } from 'node:async_hooks'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -198,20 +199,29 @@ const STEP_MS = 5
 /** Longer than the answer-recovery pass's interval (500 ms) and every publish window, so what work sets off is counted with it. */
 const SETTLE_MS = 1_000
 const turn = globalThis.setImmediate
-const fileWorkInFlight = (): boolean => process.getActiveResourcesInfo().some(name => /^(FSReq|FileHandle|CloseReq)/u.test(name))
 /**
- * Turns of the event loop with no file work in flight that count as settled. A write's steps leave turns between them with
- * nothing in flight, and Node 26 leaves more of them than Node 24: at three, Node 26's clock moved on 20 ms while a send's
- * write was still under way, so its last changes opened a publish window of their own, and a send read as one router and
- * one coordinator shell build more (#2402). Fifteen was the fewest that gave Node 26 Node 24's counts in every scenario;
- * this is twice that. Node 24's counts are the same at three and at forty.
+ * Every file request in flight, as the runtime tells async_hooks of it: from the request's creation until its callback
+ * has run or it is gone. `process.getActiveResourcesInfo()` alone does not list them all. Under Node 26 the read inside
+ * `fs/promises`' `readFile` is a request it leaves out, so the clock moved on while a send's read of Watcher's record was
+ * still under way, and the send's last changes opened a publish window of their own: one router and one coordinator shell
+ * build more per send (#2402, and Bug Bot's L1 on #2598, which saw it at any count of quiet turns).
  */
-const QUIET_TURNS = 30
-/** Until no file read or write has been in flight for `QUIET_TURNS` turns of the event loop. */
+const fileRequests = new Set<number>()
+const FILE_REQUEST = /^(FSREQ|FILEHANDLECLOSEREQ)/u
+const fileRequestHook = createHook({
+  init(id, type) { if (FILE_REQUEST.test(type)) fileRequests.add(id) },
+  after(id) { fileRequests.delete(id) },
+  destroy(id) { fileRequests.delete(id) },
+})
+const fileWorkInFlight = (): boolean => fileRequests.size > 0 || process.getActiveResourcesInfo().some(name => /^(FSReq|FileHandle|CloseReq)/u.test(name))
+/**
+ * Until no file request has been in flight for three turns of the event loop. The wait is on the requests themselves; the
+ * three turns only let the code that runs on one request's answer start the next.
+ */
 async function filesSettled(): Promise<void> {
   const started = process.hrtime.bigint()
-  for (let quiet = 0; quiet < QUIET_TURNS;) {
-    if (process.hrtime.bigint() - started > 60_000_000_000n) throw new Error(`File work was still in flight after a minute: ${process.getActiveResourcesInfo().join(', ')}.`)
+  for (let quiet = 0; quiet < 3;) {
+    if (process.hrtime.bigint() - started > 60_000_000_000n) throw new Error(`File work was still in flight after a minute: ${fileRequests.size} file requests, ${process.getActiveResourcesInfo().join(', ')}.`)
     await new Promise<void>(resolve => { turn(resolve) })
     quiet = fileWorkInFlight() ? 0 : quiet + 1
   }
@@ -863,6 +873,7 @@ beforeAll(async () => {
   schemaError = z.config().customError as typeof schemaError
   z.config({ customError: issue => { bump('schemaErrors'); return schemaError?.(issue as never) as string | undefined } })
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', 'performance'] })
+  fileRequestHook.enable()
   for (const track of TRACKS) {
     measured[track] = {} as Record<keyof typeof SHAPES, Measured>
     for (const name of SHAPES_OF[track] as readonly (keyof typeof SHAPES)[]) measured[track][name] = await measure(track, SHAPES[name])
@@ -871,6 +882,7 @@ beforeAll(async () => {
 }, 600_000)
 
 afterAll(async () => {
+  fileRequestHook.disable()
   vi.useRealTimers()
   globalThis.structuredClone = nativeClone; JSON.stringify = nativeStringify
   visits.threadVisits.visited = undefined
@@ -900,7 +912,7 @@ const LAYERS_RUN: Record<Scenario, readonly string[]> = { '1 streaming': LAYERS,
 const WHERE = SITES ? '' : ' Run it with SOTTO_WORK_SITES=1 to see where the serializations, thread visits and copied objects that grew come from.'
 
 // The counts are the same under Node 24 and Node 26 (#2402): Node 26 read one publish more per send only while the test's
-// clock moved on during a send's file work (`QUIET_TURNS`).
+// clock moved on during a send's file work, which it now waits for (`fileRequests`).
 describe.each(TRACKS)('main\'s work at the owner\'s scale on %s (#1232)', track => {
   it('builds the owner\'s world', () => {
     expect(measured[track].owner.counts).toMatchObject({ threads: 250, remoteThreads: 40, retirements: 256, remoteRetirements: 40, operations: 150, requests: 160, watches: 5, delegations: 40 })
