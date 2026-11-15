@@ -164,6 +164,88 @@ describe('a host’s 3D models over its listener', () => {
   })
 })
 
+describe('a computer’s 3D models on a paired phone (the Meshy plan’s ticket 7)', () => {
+  /** The phone's views: one 3D model, the bytes asked for and by whom, and the listeners its news goes to. */
+  function phoneViews() {
+    const listeners = new Set<(news: Model3dHostNews) => void>()
+    const asked: { part: string; clientId: string }[] = []
+    const views: HostModelViews = {
+      list: async () => { throw new Error('a phone lists none') }, view: async id => id === 'barrel' ? view : null,
+      bytes: async (request, clientId) => { asked.push({ part: request.part, clientId }); return { data: Buffer.from('usdz').toString('base64'), total: 4, digest: 'a'.repeat(64) } },
+      remove: async () => { throw new Error('a phone removes none') }, subscribe: listener => { listeners.add(listener); return () => { listeners.delete(listener) } },
+    }
+    return { views, asked, listeners }
+  }
+
+  it('keeps 3D models’ lines for a phone that accepted them, answers its view and bytes, and pushes it their news', async () => {
+    const { views, asked, listeners } = phoneViews()
+    const emit: { current: (update: AgentThreadDetailUpdate) => void } = { current: () => undefined }
+    // The desktop's phone listener: its own threads, no host copies, and this computer's 3D models for phones.
+    const server = await startSocketServer({ service: modelsHost(undefined, emit), pairing: fixture.host.pairing, phoneModels: views })
+    const newer = await fixture.host.pairing.redeem(fixture.host.pairing.issuePairingCode().code, 'Phone')
+    const older = await fixture.host.pairing.redeem(fixture.host.pairing.issuePairingCode().code, 'Older phone')
+    const phone = await rawPeer(server.descriptor.port, fixture.host.pairing.signSession(newer.clientId))
+    const before = await rawPeer(server.descriptor.port, fixture.host.pairing.signSession(older.clientId))
+    try {
+      const hello = await phone.call('hello', { op: 'hello', accepts: ['plugin-meshy-phone'] }) as { result: { features: string[] } }
+      expect(hello.result.features).toContain('plugin-meshy-phone')
+      expect(hello.result.features).not.toContain('plugin-meshy-models')
+      await before.call('hello', { op: 'hello', accepts: [] })
+
+      // The phone keeps the 3D model's line and not the diagram, read whole and pushed as it observes; an older phone neither.
+      for (const peer of [phone, before]) await peer.call('read', { op: 'detail', threadId: 'props' })
+      const read = (peer: typeof phone) => visualKinds((peer.messages.find(message => message.id === 'read') as { result: unknown }).result)
+      expect(read(phone)).toEqual([undefined, '3d-model', undefined])
+      expect(read(before)).toEqual([undefined, undefined, undefined])
+      await phone.call('observe', { op: 'observe', threadIds: ['props'] })
+      await expect.poll(() => phone.messages.some(message => message.event === 'detail')).toBe(true)
+      expect(visualKinds((phone.messages.find(message => message.event === 'detail') as { detail: unknown }).detail)).toEqual([undefined, '3d-model', undefined])
+
+      // Its reads: the view, and the still picture and USDZ, for itself. No GLB, no list, no removal.
+      expect(await phone.call('view', { op: 'plugin-meshy-model', request: { id: 'barrel' } })).toMatchObject({ ok: true, result: view })
+      expect(await phone.call('usdz', { op: 'plugin-meshy-model-bytes', request: { id: 'barrel', part: 'usdz', offset: 0 } })).toMatchObject({ ok: true, result: { total: 4 } })
+      expect(await phone.call('still', { op: 'plugin-meshy-model-bytes', request: { id: 'barrel', part: 'still', offset: 0 } })).toMatchObject({ ok: true })
+      expect(asked).toEqual([{ part: 'usdz', clientId: newer.clientId }, { part: 'still', clientId: newer.clientId }])
+      for (const [id, request] of [['glb', { op: 'plugin-meshy-model-bytes', request: { id: 'barrel', part: 'model', offset: 0 } }], ['list', { op: 'plugin-meshy-models', request: {} }],
+        ['remove', { op: 'plugin-meshy-model-remove', request: { id: 'barrel' } }]] as const) {
+        expect(await phone.call(id, request)).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+      }
+      // An older phone reads nothing of them.
+      expect(await before.call('view', { op: 'plugin-meshy-model', request: { id: 'barrel' } })).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+      expect(await before.call('usdz', { op: 'plugin-meshy-model-bytes', request: { id: 'barrel', part: 'usdz', offset: 0 } })).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+
+      // The news goes to the phone that accepted it alone.
+      for (const listener of listeners) listener({ changed: { threadId: 'props', view: { ...view, credits: 40 } }, removed: ['gone'] })
+      await expect.poll(() => phone.messages.filter(message => message.event === 'plugin-meshy-models').length).toBe(1)
+      expect(phone.messages.find(message => message.event === 'plugin-meshy-models')).toMatchObject({ news: { changed: { view: { credits: 40 } }, removed: ['gone'] } })
+      await before.call('shell', { op: 'shell' })
+      expect(before.messages.some(message => message.event === 'plugin-meshy-models')).toBe(false)
+    } finally { phone.frames.close(); before.frames.close(); await server.close() }
+  })
+
+  it('offers phones nothing of it on a listener that keeps no 3D models, and a desktop never reads a USDZ', async () => {
+    const emit: { current: (update: AgentThreadDetailUpdate) => void } = { current: () => undefined }
+    const server = await startSocketServer({ service: modelsHost(undefined, emit), pairing: fixture.host.pairing })
+    const paired = await fixture.host.pairing.redeem(fixture.host.pairing.issuePairingCode().code, 'Phone')
+    const phone = await rawPeer(server.descriptor.port, fixture.host.pairing.signSession(paired.clientId))
+    const { views } = phoneViews()
+    const known = new Set<string>()
+    const host = await startSocketServer({ service: modelsHost(views, emit), pairing: fixture.host.pairing,
+      watcherDesktops: { has: (clientId: string) => known.has(clientId), refresh: async () => undefined } })
+    const recorded = await fixture.host.pairing.redeem(fixture.host.pairing.issuePairingCode().code, 'Desktop')
+    known.add(recorded.clientId)
+    const desktop = await rawPeer(host.descriptor.port, fixture.host.pairing.signSession(recorded.clientId))
+    try {
+      const hello = await phone.call('hello', { op: 'hello', accepts: ['plugin-meshy-phone'] }) as { result: { features: string[] } }
+      expect(hello.result.features).not.toContain('plugin-meshy-phone')
+      await phone.call('read', { op: 'detail', threadId: 'props' })
+      expect(visualKinds((phone.messages.find(message => message.id === 'read') as { result: unknown }).result)).toEqual([undefined, undefined, undefined])
+      await desktop.call('hello', { op: 'hello', accepts: ['plugin-meshy-models'] })
+      expect(await desktop.call('usdz', { op: 'plugin-meshy-model-bytes', request: { id: 'barrel', part: 'usdz', offset: 0 } })).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+    } finally { phone.frames.close(); desktop.frames.close(); await server.close(); await host.close() }
+  })
+})
+
 describe('a 3D model’s line in a detail delta', () => {
   it('is kept for a reader that keeps 3D models’ lines, and every other visual is stripped as before', () => {
     const delta = { threadId: 'props', baseRevision: 1, revision: 2, messageDeltas: [{ message: modelLine }, { message: diagram }], activityDeltas: [] }

@@ -7,6 +7,7 @@ import type { ThreeDModel } from '../../../../../src/main/tools/meshy/records'
 import { modelBytes, modelView, modelViewOf, type ModelViewSource } from '../../../../../src/main/tools/meshy/view'
 import { model3dViewSchema } from '../../../../../src/shared/models3d'
 import { glbBytes, selfContainedGlb } from '../../../../fixtures/glb'
+import { usdzBytes } from '../../../../fixtures/usdz'
 
 /** A 3D model as its thread draws it, and the bytes the window is handed by its ID alone (the Meshy plan's ticket 4). */
 let root: string
@@ -69,6 +70,23 @@ describe('a 3D model in its thread', () => {
     expect(Buffer.from((await modelBytes(source, { id: 'model-1', part: 'still' }))!)).toEqual(PNG)
     expect(await modelBytes(source, { id: 'unknown', part: 'model' })).toBeNull()
     expect(await modelBytes(source, { id: 'unknown', part: 'still' })).toBeNull()
+  })
+
+  it('hands a phone its USDZ when it is a whole one, under the cap (the Meshy plan’s ticket 7)', async () => {
+    const model = await done()
+    await writeFile(join(model.folder, 'Barrel.usdz'), usdzBytes())
+    expect(await modelBytes(sourceOf(model), { id: 'model-1', part: 'usdz' }, 1024)).toEqual(usdzBytes())
+    expect(await modelBytes(sourceOf(model), { id: 'model-1', part: 'usdz' }, 16)).toBeNull()
+    // Not a USDZ: the bytes `done` writes, a compressed first file, and a ZIP without a USD layer first.
+    expect(await modelBytes(sourceOf(await done()), { id: 'model-1', part: 'usdz' })).toBeNull()
+    for (const bytes of [usdzBytes(undefined, 8), usdzBytes([['texture.png', new Uint8Array(8)], ['model.usdc', new Uint8Array(8)]])]) {
+      await writeFile(join(model.folder, 'Barrel.usdz'), bytes)
+      expect(await modelBytes(sourceOf(model), { id: 'model-1', part: 'usdz' })).toBeNull()
+    }
+    // Cut short: its end record is gone.
+    await writeFile(join(model.folder, 'Barrel.usdz'), usdzBytes().subarray(0, usdzBytes().byteLength - 4))
+    expect(await modelBytes(sourceOf(model), { id: 'model-1', part: 'usdz' })).toBeNull()
+    expect(await modelBytes(sourceOf({ ...model, files: ['Barrel.glb'] }), { id: 'model-1', part: 'usdz' })).toBeNull()
   })
 
   it('refuses a GLB that points outside itself, and a shape that does', async () => {

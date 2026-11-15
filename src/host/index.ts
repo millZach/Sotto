@@ -394,7 +394,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
           mayAnswer: client => policy?.mayGrant(client).allowed ?? false, ...heldMoves ? { sources: heldMoves } : {} }) : undefined
         // The browser goes to both listeners; each lists it only to desktops (ADR-0198).
         const hostedBrowser = browser as HostBrowserTools | undefined
-        const listenerServices = { ...hostedBrowser ? { browser: hostedBrowser } : {}, ...tellWatcherRelay ? { tellWatcher: tellWatcherRelay } : {}, ...branchMoves ? { branchMoves } : {}, ...threadMoves ? { threadMoves } : {}, ...delegationRelay && runtime.delegation ? { delegationRelay } : {}, ...delegationRemote && runtime.delegation ? { delegationRemote } : {} }
+        const listenerServices = { ...hostedBrowser ? { browser: hostedBrowser } : {}, ...tellWatcherRelay ? { tellWatcher: tellWatcherRelay } : {}, ...branchMoves ? { branchMoves } : {}, ...threadMoves ? { threadMoves } : {}, ...delegationRelay && runtime.delegation ? { delegationRelay } : {}, ...delegationRemote && runtime.delegation ? { delegationRemote } : {}, ...pluginMeshyModels ? { phoneModels: pluginMeshyModels } : {} }
         // The host's own OpenCode signed in to model sources from a desktop (#1107), only where its OpenCode runs.
         const opencodeSignIn = runtime.opencodeSignIn ? { opencodeSignIn: runtime.opencodeSignIn } : {}
         phones = startHostPhoneAccess({ directory, service: runtime.hostService, pairing, policy, settings, startup,
