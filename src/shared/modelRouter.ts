@@ -20,6 +20,8 @@ export type RouterEffort = typeof ROUTER_EFFORTS[number]
 export const ROUTER_CLASSIFIER: { readonly tier: RouterTier; readonly effort: RouterEffort } = { tier: 'opus', effort: 'low' }
 /** How long the classifier has to answer before the message goes on the settings the thread has. */
 export const ROUTER_TIMEOUT_MS = 20_000
+/** Main passes its startup answer to the popup, which has no app context. */
+export const MODEL_ROUTER_RENDERER_ARGUMENT = '--sotto-model-router-enabled'
 /** How much of the user's message, of the message before it and of the end of the last reply the classifier reads. */
 export const ROUTER_MESSAGE_CHARACTERS = 4_000
 export const ROUTER_PREVIOUS_CHARACTERS = 300

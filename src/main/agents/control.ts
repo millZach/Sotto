@@ -5017,7 +5017,7 @@ export class AgentControl {
         this.assertCanAct(undefined, false)
         // Every model or effort set from outside the router comes through here, pressed at rest or kept for the next turn and
         // sent when the thread rests: a routed thread's next message then runs on it (ADR-0207). The router's own goes by `dispatch`.
-        if (command.modelId !== undefined || command.reasoningEffort !== undefined) this.routedSends.choseByHand(command.threadId)
+        if (this.dependencies.modelRouterEnabled === true && (command.modelId !== undefined || command.reasoningEffort !== undefined)) this.routedSends.choseByHand(command.threadId)
         if (command.modelId === undefined && command.reasoningEffort === undefined && command.runtimeMode === undefined && command.providerMode === undefined
           && command.fastMode === undefined && command.speed === undefined) throw new Error('Choose a thread setting to change.')
         if (this.thread(command.threadId).nativeSessionStarted !== false && !capabilitiesForThread(this.state.host, this.thread(command.threadId)).configureThread) throw new Error('This provider does not support changing thread settings.')

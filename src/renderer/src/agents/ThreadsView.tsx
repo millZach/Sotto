@@ -275,7 +275,7 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, paneTools = f
       if (carried) placeCarriedDraft(unused.id, carried)
       openThread(unused.id); focusNewComposer(); return Promise.resolve()
     }
-    return beginNewThread(state, command, project).then(start => {
+    return beginNewThread(state, command, project, undefined, modelRouter).then(start => {
       if ('error' in start) { setNewThreadError(start.error); return }
       handleCreationStart(start, carried)
     })

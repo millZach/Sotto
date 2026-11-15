@@ -147,7 +147,7 @@ function newThreadOptions(state: AgentState, project: AgentProject) { return new
  */
 export async function beginNewThread(state: AgentState, command: (command: AgentCommand) => Promise<{ readonly error: string | null } | null>, project: AgentProject,
   /** Settings for the working-copy default; the popup, which has no `window.sotto`, passes its own reader (ADR-0181). */
-  readSettings?: () => Promise<AppSettings>): Promise<ThreadCreationStart | { readonly error: LaterWords }> {
+  readSettings?: () => Promise<AppSettings>, modelRouterEnabled = false): Promise<ThreadCreationStart | { readonly error: LaterWords }> {
   const { modelId, selectedModel, sentEffort, reasoningEffort, permission } = newThreadOptions(state, project)
   if (!modelId) return { error: msg`No model is ready to start this thread. Connect a provider or choose one in Settings → Threads.` }
   let workingCopy: 'independent' | 'shared'
@@ -168,7 +168,7 @@ export async function beginNewThread(state: AgentState, command: (command: Agent
   const dynamic = settings?.dynamicThreads?.newThreads === true && whyNotDynamic(draft) === undefined
   const overseen = dynamic ? { ...draft, dynamic: true as const } : draft
   // Dynamic wins where Settings asks for both: an overseer chooses its own models (ADR-0207).
-  const routed = settings?.modelRouter?.newThreads === true && whyNotRouted(overseen) === undefined
+  const routed = modelRouterEnabled && settings?.modelRouter?.newThreads === true && whyNotRouted(overseen) === undefined
   const thread = routed ? { ...overseen, routed: true as const } : overseen
   // The defaults go with the creation, since a remote host would otherwise start the thread on its own (ADR-0074).
   // A provider's own permission profiles (Devin) are left to the host, which starts on the first, as before.

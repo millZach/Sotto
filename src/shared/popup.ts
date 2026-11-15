@@ -95,6 +95,8 @@ export function popupShortcutRefusal(chord: string, dictation: DictationKeys, pl
 /** What the popup's window can ask of main (`window.sottoPopup`). */
 export interface PopupBridge {
   readonly platform: SottoPlatform
+  /** Main's model routing Owl answer, read once at startup. Missing keeps new threads unrouted. */
+  readonly modelRouterEnabled?: boolean
   readonly interfaceLanguage?: InterfaceLanguageBridge
   /** Present only while Watcher is on (ADR-0072): the room, read for its current Watcher's thread. */
   readonly watcher?: () => Promise<WatcherRoomResult>

@@ -9,11 +9,31 @@ import { useAgentConnection } from '../../../src/renderer/src/agents/AgentContex
 import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftStore'
 import { requestAnswerStore } from '../../../src/renderer/src/agents/requests/requestAnswers'
 import { SHELL_CACHE_KEY, cacheableShell, readShellCache, writeShellCache } from '../../../src/renderer/src/agents/shellCache'
+import { beginNewThread } from '../../../src/renderer/src/agents/newThread'
+import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
 import { agentShell, defaultAgentConfiguration, EMPTY_AGENT_HOST, summarizeThread,
   type AgentBridge, type AgentMessage, type AgentModel, type AgentState, type AgentThread, type AgentThreadDetail,
   type AgentThreadDetailUpdate } from '../../../src/shared/agents'
 
 afterEach(() => { cleanup(); localStorage.clear(); vi.restoreAllMocks(); vi.useRealTimers() })
+
+it('starts a thread routed only when the renderer has the model routing Owl answer', async () => {
+  const state = threadsStateFixture({ cloneOverrides: false })
+  const project = state.host.projects[0]!
+  state.host.models = [{ id: 'sonnet', name: 'Sonnet', provider: 'Claude Code', providerId: 'claude', ready: true }]
+  state.configuration.newThreadModelId = 'sonnet'
+  const settings = { ...DEFAULT_SETTINGS, modelRouter: { stayOnFirstModel: false, newThreads: true } }
+  for (const enabled of [false, true]) {
+    const command = vi.fn(async (_command: import('../../../src/shared/agents').AgentCommand) => { void _command; return { error: null } })
+    const started = await beginNewThread(state, command, project, async () => settings, enabled)
+    expect('error' in started).toBe(false)
+    if ('error' in started) continue
+    await started.created
+    expect(started.thread.routed).toBe(enabled ? true : undefined)
+    expect(command.mock.calls[0]?.[0]).toMatchObject({ type: 'create-thread', ...(enabled ? { routed: true } : {}) })
+    if (!enabled) expect(command.mock.calls[0]?.[0]).not.toHaveProperty('routed')
+  }
+})
 
 const message = (id: string, role: AgentMessage['role'], text: string): AgentMessage =>
   ({ id, role, text, createdAt: `2026-01-0${id.length}T00:0${id.length}:00.000Z` })

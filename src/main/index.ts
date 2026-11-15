@@ -267,6 +267,7 @@ import { getReleaseTrack, releaseTrackName } from '../shared/releaseTrack'
 import { hostReleaseVersion, updateHostReleaseVersion } from './hosts/hostReleaseVersion'
 import { WATCHER_CHANGED, WATCHER_MACHINES_RENDERER_ARGUMENT, WATCHER_RENDERER_ARGUMENT } from '../shared/watcherRoom'
 import { runningVersion, owlFeaturesForRun } from './runningVersion'
+import { MODEL_ROUTER_RENDERER_ARGUMENT } from '../shared/modelRouter'
 import { heldProvidersOf, releasesHeldProvider } from '../shared/heldProviders'
 import { LIVING_OWL_RENDERER_ARGUMENT, type DictationCommand, type TranscriptionRequest, type TranscriptionResult } from '../shared/contracts'
 import type { WidgetSnapshot } from '../shared/dictation'
@@ -2375,7 +2376,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         htmlPath: join(__dirname, '../renderer/popup.html'),
         developmentUrl: app.isPackaged || process.env.ELECTRON_RENDERER_URL === undefined ? undefined : new URL('/popup.html', process.env.ELECTRON_RENDERER_URL),
         isPackaged: app.isPackaged,
-        extraArguments: () => [...(interfaceLanguageEnabled ? [interfaceLanguageArgument(interfaceLanguage.current())] : []), ...(watcherEnabled ? [WATCHER_RENDERER_ARGUMENT] : [])],
+        extraArguments: () => [...(interfaceLanguageEnabled ? [interfaceLanguageArgument(interfaceLanguage.current())] : []), ...(watcherEnabled ? [WATCHER_RENDERER_ARGUMENT] : []), ...(owlFeatures['model-router'] ? [MODEL_ROUTER_RENDERER_ARGUMENT] : [])],
         log: logOperational,
       },
       shortcuts: e2eShortcuts ?? globalShortcut,
