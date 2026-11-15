@@ -1,3 +1,4 @@
+import { i18n } from '@lingui/core'
 import { plural, t } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
 import { File, FolderOutput, Search, X } from 'lucide-react'
@@ -12,7 +13,7 @@ import { useOwlFeature } from '../../state/owlFeature'
 import { useReducedMotion } from '../../state/reducedMotion'
 import { revealLabel } from '../../tools/FilePreview'
 import { filesGone, folderWords, GoneNote, ModelPicture, ModelStage, modelWhen, threadOf, tileWords } from './modelPanels'
-import { modelMatches, useModelChoice, useModels3d, useMonthCredits } from './models3dList'
+import { modelMatches, modelShown, useHostsShown, useModelChoice, useModels3d, useMonthCredits } from './models3dList'
 
 /**
  * The 3D models page (ADR-0141; the Meshy plan's ticket 5, Zach's variant C): every 3D model this computer's threads
@@ -25,7 +26,13 @@ export function ModelsPage({ platform }: { readonly platform: SottoPlatform }): 
   const { t } = useLingui()
   const on = useOwlFeature('plugins')
   const list = useModels3d(on, undefined, { watchFiles: true })
-  const { models, reload } = list
+  const { reload } = list
+  // A paired host's 3D models are listed while it is connected, and read again when it comes back (the Meshy plan's
+  // ticket 6, part 2).
+  const hosts = useHostsShown()
+  const models = useMemo(() => list.models?.filter(model => modelShown(model, hosts.shown)), [list.models, hosts.shown])
+  const hostsRead = useRef(hosts.key)
+  useEffect(() => { if (hostsRead.current !== hosts.key) { hostsRead.current = hosts.key; reload() } }, [hosts.key, reload])
   const reduced = useReducedMotion(on)
   const titleId = useId()
   const [query, setQuery] = useState('')
@@ -40,7 +47,7 @@ export function ModelsPage({ platform }: { readonly platform: SottoPlatform }): 
   const threads = new Set(models?.map(model => model.threadId)).size
   const summary = models && models.length > 0
     ? [`${plural(models.length, { one: '# 3D model', other: '# 3D models' })} ${plural(threads, { one: 'from # thread', other: 'from # threads' })}`,
-      ...(credits !== undefined ? [plural(credits, { one: '# credit this month', other: '# credits this month' })] : [])].join(' · ')
+      ...(credits !== undefined ? [monthCredits(credits.credits, credits.across)] : [])].join(' · ')
     : undefined
   const focusTile = (id: string | undefined): void => {
     if (id) strip.current?.querySelector<HTMLElement>(`[data-model="${CSS.escape(id)}"]`)?.focus()
@@ -97,6 +104,8 @@ function ModelDetails({ model, platform, onRemoved, onKept }: { readonly model: 
   const reveal = revealLabel(platform)
   const gone = filesGone(model)
   const done = model.state === 'done'
+  // A paired host's files are on that host: Show in File Explorer is for this computer's own.
+  const here = model.computer === undefined
   const show = (file?: string): void => {
     const asked = model.id
     const answer = (shown: boolean): void => { if (shownId.current === asked) setStatus(shown ? '' : t`Sotto could not find that file. It may have been moved or deleted.`) }
@@ -106,7 +115,11 @@ function ModelDetails({ model, platform, onRemoved, onKept }: { readonly model: 
     if (!agents || !thread) return
     void agents.command({ type: 'select-thread', threadId: thread.id }).finally(() => app?.actions.navigate('threads'))
   }
-  const kind = model.source === 'photo' ? t`3D model · Meshy · made from a photo` : t`3D model · Meshy · made from words`
+  // A paired host's 3D model says which computer it is on at the end of its kind line (Zach's pick on #2497).
+  const computer = model.computer
+  const kind = computer === undefined ? (model.source === 'photo' ? t`3D model · Meshy · made from a photo` : t`3D model · Meshy · made from words`)
+    : model.source === 'photo' ? t({ message: `3D model · Meshy · made from a photo · on ${computer}`, comment: '{computer} is the name of the paired host that holds the 3D model, as in forge.' })
+      : t({ message: `3D model · Meshy · made from words · on ${computer}`, comment: '{computer} is the name of the paired host that holds the 3D model, as in forge.' })
   const made = new Date(model.askedAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
   const where = folderWords(model, t`the thread’s folder`)
   const name = model.name
@@ -117,7 +130,7 @@ function ModelDetails({ model, platform, onRemoved, onKept }: { readonly model: 
     <p className="models-page__kind">{kind}</p>
     <div className="models-page__actions">
       {thread ? <Button variant="primary" onClick={openThread}>{t`Go to thread`}</Button> : null}
-      {done && !gone ? <Button variant="secondary" onClick={() => show()}>{reveal}</Button> : null}
+      {done && !gone && here ? <Button variant="secondary" onClick={() => show()}>{reveal}</Button> : null}
     </div>
     <dl className="models-facts">
       <dt>{t({ message: 'Thread', comment: 'A 3D model\'s fact: the thread that made it.' })}</dt>
@@ -140,13 +153,24 @@ function ModelDetails({ model, platform, onRemoved, onKept }: { readonly model: 
           <File size={14} aria-hidden="true" />
           <span className="models-files__name" title={`${model.folder ? `${model.folder}/` : ''}${file.name}`}>{model.folder ? `${model.folder}/` : ''}{file.name}</span>
           <span className="models-files__size">{file.bytes !== undefined ? sizeWords(file.bytes) : t`not found`}</span>
-          {file.bytes !== undefined ? <button type="button" className="models-icon tt-focusable" onClick={() => show(file.name)}
+          {file.bytes !== undefined && here ? <button type="button" className="models-icon tt-focusable" onClick={() => show(file.name)}
             aria-label={revealFile(reveal, file.name)} title={revealFile(reveal, file.name)}><FolderOutput size={15} aria-hidden="true" /></button> : null}
         </li>)}
       </ul>
     </>}
     <p className="models-page__status" role="status" aria-live="polite">{status}</p>
   </aside>
+}
+
+/**
+ * The header's credits this month: the shared total, across this computer and each paired host that said what it spent,
+ * as Settings counts them: "90 credits this month, across this computer and forge".
+ */
+function monthCredits(credits: number, across: readonly string[]): string {
+  const total = plural(credits, { one: '# credit this month', other: '# credits this month' })
+  if (across.length === 0) return total
+  const where = new Intl.ListFormat(i18n.locale, { type: 'conjunction' }).format([t`this computer`, ...across])
+  return t({ message: `${total}, across ${where}`, comment: '{total} is "90 credits this month"; {where} lists computers, as in "this computer and forge".' })
 }
 
 /** A file's reveal button's name: "Show in File Explorer: Oak barrel.glb". */

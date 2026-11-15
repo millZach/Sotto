@@ -495,6 +495,11 @@ msgstr ""
 msgid "{hostName} is switched off, so its folders can't be listed. Nothing was changed. Switch it on in Settings > Hosts & phones, then try again."
 msgstr ""
 
+#. {hostName} is the name of a paired host, as in forge.
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "{hostName} isn’t connected"
+msgstr ""
+
 #: src/renderer/src/agents/ClientUpdateCard.tsx
 msgid "{hours, plural, one {Checked # hour ago} other {Checked # hours ago}}"
 msgstr ""
@@ -1610,6 +1615,11 @@ msgstr ""
 #: src/renderer/src/agents/ModelLine.tsx
 #: src/renderer/src/agents/ModelView.tsx
 msgid "3D model"
+msgstr ""
+
+#. {name} is the name of a 3D model, such as Oak barrel.
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "3D model: {name}"
 msgstr ""
 
 #. {shown} is the name of a 3D model, such as Oak barrel.

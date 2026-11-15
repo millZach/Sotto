@@ -10,6 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Model3dView } from '../../../../src/shared/models3d'
 import type { ModelViewProps } from '../../../../src/renderer/src/agents/ModelView'
 import { VisualCard } from '../../../../src/renderer/src/agents/VisualCard'
+import { ActivityBodyContext } from '../../../../src/renderer/src/agents/activityBodies'
 
 const gate = vi.hoisted(() => ({ on: true, webgl: true }))
 vi.mock('../../../../src/renderer/src/state/owlFeature', async importOriginal => ({
@@ -158,5 +159,50 @@ describe('a 3D model’s line in its thread', () => {
     expect(container).toBeEmptyDOMElement()
     expect(plugins.model3d).not.toHaveBeenCalled()
     expect(plugins.onModel3dChanged).not.toHaveBeenCalled()
+  })
+})
+
+/** A thread on a paired host, as the transcript says whose it is (the Meshy plan's ticket 6, part 2). */
+const FORGE = '33333333-3333-4333-8333-000000000001'
+const ON_FORGE = `host:${FORGE}:model-1`
+function onForge(connected: boolean): React.ReactElement {
+  return <ActivityBodyContext.Provider value={{ threadId: `host:${FORGE}:thread-1`, hostName: 'forge', connected }}>
+    <VisualCard visual={{ id: 'v1', title: 'Oak barrel', kind: '3d-model', source: 'model-1' }} threadId={`host:${FORGE}:thread-1`} />
+  </ActivityBodyContext.Provider>
+}
+
+describe('a host thread’s 3D model’s line', () => {
+  it('reads the 3D model by a key that names its host, and opens as a local one does', async () => {
+    const plugins = bridge({ ...DONE, id: ON_FORGE })
+    await act(async () => { render(onForge(true)) })
+    expect(plugins.model3d).toHaveBeenCalledWith(ON_FORGE)
+    expect(within(line()).getByText('3D model · 30 credits · 3 files')).toBeInTheDocument()
+    await userEvent.click(within(line()).getByRole('button', { name: 'Show the model' }))
+    expect(await screen.findByRole('slider', { name: 'Turn the Oak barrel.' })).toBeInTheDocument()
+    expect(plugins.model3dBytes).toHaveBeenCalledWith({ id: ON_FORGE, part: 'still' })
+    // Main's news names it by the same key; a local 3D model of the same ID is another.
+    act(() => { for (const listener of listeners) listener({ ...DONE, id: 'model-1', credits: 99 }) })
+    expect(within(line()).getByText('3D model · 30 credits · 3 files')).toBeInTheDocument()
+  })
+
+  it('says its host is away, with its name and what it cost and nothing to open, and reads it again when the host is back', async () => {
+    const plugins = bridge({ ...DONE, id: ON_FORGE })
+    const shown = render(onForge(true))
+    expect(await within(line()).findByText('3D model · 30 credits · 3 files')).toBeInTheDocument()
+    // While forge is away main has nothing newer to say; the line keeps what it last heard.
+    plugins.model3d.mockResolvedValue(null)
+    await act(async () => { shown.rerender(onForge(false)) })
+    expect(within(line()).getByText('30 credits · forge isn’t connected')).toBeInTheDocument()
+    expect(within(line()).queryByRole('button')).toBeNull()
+    plugins.model3d.mockResolvedValue({ ...DONE, id: ON_FORGE, credits: 40 })
+    await act(async () => { shown.rerender(onForge(true)) })
+    expect(await within(line()).findByText('3D model · 40 credits · 3 files')).toBeInTheDocument()
+  })
+
+  it('says only its name and that its host is away when nothing was ever heard of it', async () => {
+    bridge(null)
+    await act(async () => { render(onForge(false)) })
+    expect(within(line()).getByText('forge isn’t connected')).toBeInTheDocument()
+    expect(within(line()).queryByRole('button')).toBeNull()
   })
 })

@@ -98,6 +98,21 @@ describe('shared spending on the desktop', () => {
     spending.close()
   })
 
+  it('says when what a host said changed, which main tells the window so the shared count is read again', async () => {
+    const forge = remote('host-forge', 40)
+    const changed = vi.fn()
+    const spending = new MeshySpendingSync(directory, {
+      own: async () => new Map([[STUDIO.id, 10]]), accounts: async () => [STUDIO], connections: () => [forge.target], now: () => NOVEMBER, changed,
+    })
+    spending.connected(forge.target)
+    await spending.idle()
+    expect(changed).toHaveBeenCalledTimes(1)
+    forge.push(70)
+    await expect.poll(() => changed.mock.calls.length).toBe(2)
+    await expect(spending.monthCredits(STUDIO.id)).resolves.toBe(80)
+    spending.close()
+  })
+
   it('keeps counting what a host last said after it goes away, and after a restart', async () => {
     const forge = remote('host-forge', 200)
     const first = sync([forge.target], { credits: 0 })

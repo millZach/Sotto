@@ -57,7 +57,7 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   subscribeBrowserFrames?(listener: (frame: HostBrowserFrame) => void): () => void
   name: string
   kind: 'local' | 'remote'
-  service: Pick<HostService, 'subscribeWatcherTell' | 'answerWatcherTell' | 'shell' | 'activeSelection' | 'replyView' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'supportsWatcherOutcomes' | 'supportsWatcherCheckQueue' | 'supportsWatcherMuse' | 'supportsWatcherCursor' | 'supportsHostFacts' | 'supportsWorkerSwarms' | 'hostFacts' | 'supportsProjectOrigins' | 'projectOrigins' | 'supportsHostDelegation' | 'desktopDefaults' | 'supportsPluginGitHubSignIn' | 'pluginGitHubSignIn' | 'supportsPluginAccountCopies' | 'supportsPluginMailCopies' | 'supportsPluginMeshySpending' | 'sharePluginMeshySpending' | 'subscribePluginMeshySpending' | 'keepPluginAccountCopy' | 'removePluginAccountCopy' | 'pluginAccountCopies' | 'supportsBranchMoves' | 'branchMove' | 'supportsThreadMove' | 'supportsThreadMoveSource' | 'supportsThreadMoveKeep' | 'threadMove' | 'supportsThreadStarts' | 'supportsFailureSeen' | 'startHandover' | 'supportsThreadDelete' | 'supportsProjectGitInit' | 'supportsBringBack' | 'threadPrompts' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads' | 'supportsDelegationViews' | 'delegationViews' | 'delegationBrief' | 'subscribeDelegationViews' | 'supportsCheckQueueViews' | 'checkQueue' | 'subscribeCheckQueue' | 'supportsNextPrompts' | 'nextPrompts' | 'subscribeNextPrompts' | 'setNextPromptsWanted' | 'tellProductEventAnswer' | 'supportsDelegationRelay' | 'subscribeDelegationRelay' | 'answerDelegationRelay' | 'delegationRelayNews' | 'delegationRelayName' | 'supportsWatcherCheckStop' | 'supportsWatcherNewOwner' | 'supportsProjectSetup' | 'setUpProject' | 'supportsDelegationRemote' | 'delegationRemoteAsk' | 'subscribeDelegationRemoteNews' | 'supportsDelegationBranchStarts'>
+  service: Pick<HostService, 'subscribeWatcherTell' | 'answerWatcherTell' | 'shell' | 'activeSelection' | 'replyView' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'supportsWatcherOutcomes' | 'supportsWatcherCheckQueue' | 'supportsWatcherMuse' | 'supportsWatcherCursor' | 'supportsHostFacts' | 'supportsWorkerSwarms' | 'hostFacts' | 'supportsProjectOrigins' | 'projectOrigins' | 'supportsHostDelegation' | 'desktopDefaults' | 'supportsPluginGitHubSignIn' | 'pluginGitHubSignIn' | 'supportsPluginAccountCopies' | 'supportsPluginMailCopies' | 'supportsPluginMeshySpending' | 'sharePluginMeshySpending' | 'subscribePluginMeshySpending' | 'supportsPluginMeshyModels' | 'pluginMeshyModels' | 'keepPluginAccountCopy' | 'removePluginAccountCopy' | 'pluginAccountCopies' | 'supportsBranchMoves' | 'branchMove' | 'supportsThreadMove' | 'supportsThreadMoveSource' | 'supportsThreadMoveKeep' | 'threadMove' | 'supportsThreadStarts' | 'supportsFailureSeen' | 'startHandover' | 'supportsThreadDelete' | 'supportsProjectGitInit' | 'supportsBringBack' | 'threadPrompts' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads' | 'supportsDelegationViews' | 'delegationViews' | 'delegationBrief' | 'subscribeDelegationViews' | 'supportsCheckQueueViews' | 'checkQueue' | 'subscribeCheckQueue' | 'supportsNextPrompts' | 'nextPrompts' | 'subscribeNextPrompts' | 'setNextPromptsWanted' | 'tellProductEventAnswer' | 'supportsDelegationRelay' | 'subscribeDelegationRelay' | 'answerDelegationRelay' | 'delegationRelayNews' | 'delegationRelayName' | 'supportsWatcherCheckStop' | 'supportsWatcherNewOwner' | 'supportsProjectSetup' | 'setUpProject' | 'supportsDelegationRemote' | 'delegationRemoteAsk' | 'subscribeDelegationRemoteNews' | 'supportsDelegationBranchStarts'>
   refreshRequestAnswer?(decisionId: string, target: HostAnswerTarget): Promise<void>
   detail(threadId: string): AgentThreadDetail | null | Promise<AgentThreadDetail | null>
   preview(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
@@ -376,6 +376,7 @@ export class DesktopHostRouter {
   private readonly changeListeners = new Set<() => void>()
   /** Told once of each host connection the router takes, new or in place of one it had, as it takes it. */
   private readonly connectedListeners = new Set<(connection: DesktopHostConnection) => void>()
+  private readonly removedListeners = new Set<(hostId: string) => void>()
   private readonly browserListeners = new Set<(change: BrowserEvent) => void>()
   private readonly frameListeners = new Set<(frame: HostBrowserFrame) => void>()
   private readonly detailListeners = new Set<(detail: AgentThreadDetailUpdate) => void>()
@@ -762,6 +763,12 @@ export class DesktopHostRouter {
     this.delegations.removed(hostId)
     this.checksChanged()
     this.letGoNextPrompts(hostId)
+    for (const listener of [...this.removedListeners]) { try { listener(hostId) } catch { /* A listener's failure is its own. */ } }
+  }
+  /** Hears a host the router lets go, by its ID, as on Disconnect or Forget, so what was kept for it can go too. Returns the way to stop. */
+  subscribeRemoved(listener: (hostId: string) => void): () => void {
+    this.removedListeners.add(listener)
+    return () => { this.removedListeners.delete(listener) }
   }
   /**
    * Every connected host's own check queue as it last pushed it (#1312, fourth part), each thread by the window's key for
@@ -992,7 +999,7 @@ export class DesktopHostRouter {
     const threads = entries.flatMap(entry => entry.threads)
     const state: AgentState = {
       ...base, clientScoped: true,
-      connections: entries.map(({ connection }) => ({ hostId: connection.hostId, name: connection.name, kind: connection.kind, connected: connection.available?.() !== false, ...connection.kind === 'remote' && connection.browser ? { browser: this.hosts.get(connection.hostId)?.run ?? 1 } : {} })),
+      connections: entries.map(({ connection }) => ({ hostId: connection.hostId, name: connection.name, kind: connection.kind, connected: connection.available?.() !== false, ...connection.kind === 'remote' && connection.browser ? { browser: this.hosts.get(connection.hostId)?.run ?? 1 } : {}, ...connection.kind === 'remote' && connection.service.supportsPluginMeshyModels === true ? { models3d: true } : {} })),
       host: { ...base.host, connected: threads.some(thread => thread.clientConnected) || entries.some(item => item.state.host.connected),
         projects: entries.flatMap(item => item.state.host.projects), threads,
         // The selected host's catalog is the same array as `host.models`, which structured clone sends once:

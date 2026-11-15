@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { parseHostEntityKey } from '../../../../shared/clientIdentity'
 import type { Model3dListed, Model3dView } from '../../../../shared/models3d'
+import { useOptionalAgents } from '../../agents/AgentContext'
 
 /**
  * The 3D models the 3D models page and Tools › 3D models list (the Meshy plan's ticket 5): every one being made or done,
@@ -149,22 +151,53 @@ export function useModelChoice(list: Models3dList, shown: readonly Model3dListed
 /** Whether the page and Tools list a 3D model in this state: one being made or done. */
 const listed = (view: Pick<Model3dView, 'state'>): boolean => view.state === 'making' || view.state === 'done'
 
-/** A listed 3D model with a newer view: its thread, account, words and when it was asked for stay as they were. */
+/** A listed 3D model with a newer view: its thread, account, words, computer and when it was asked for stay as they were. */
 function merged(model: Model3dListed, view: Model3dView): Model3dListed {
-  return { ...view, threadId: model.threadId, account: model.account, askedAt: model.askedAt,
+  return { ...view, threadId: model.threadId, account: model.account, askedAt: model.askedAt, ...(model.computer !== undefined ? { computer: model.computer } : {}),
     ...(model.words !== undefined ? { words: model.words } : {}), ...(model.photo !== undefined ? { photo: model.photo } : {}) }
 }
 
-/** This month's credits across this computer's Meshy accounts, read again whenever `key` changes. */
-export function useMonthCredits(on: boolean, key: string): number | undefined {
-  const [credits, setCredits] = useState<number>()
+/**
+ * This month's credits across the Meshy accounts, read again whenever `key` changes: the shared total Settings shows,
+ * counted on this computer and on each paired host that said what it spent (the Meshy plan's ticket 6), with those
+ * hosts' names, which the page's header names after this computer.
+ */
+export function useMonthCredits(on: boolean, key: string): { readonly credits: number; readonly across: readonly string[] } | undefined {
+  const [credits, setCredits] = useState<{ readonly credits: number; readonly across: readonly string[] }>()
+  // What a host said it spent can come after the 3D model's own news, so it reads the count again too (Sol's review).
+  const [told, setTold] = useState(0)
+  useEffect(() => {
+    if (!on) return undefined
+    return window.sotto?.plugins?.onMeshyCreditsChanged?.(() => { setTold(count => count + 1) })
+  }, [on])
   useEffect(() => {
     if (!on) return undefined
     let live = true
-    void window.sotto?.plugins?.meshyCredits().then(byAccount => { if (live) setCredits(Object.values(byAccount).reduce((sum, each) => sum + each.here, 0)) }, () => undefined)
+    void window.sotto?.plugins?.meshyCredits().then(byAccount => {
+      if (!live) return
+      const each = Object.values(byAccount)
+      setCredits({ credits: each.reduce((sum, account) => sum + account.credits, 0), across: [...new Set(each.flatMap(account => account.across))] })
+    }, () => undefined)
     return () => { live = false }
-  }, [on, key])
+  }, [on, key, told])
   return credits
+}
+
+/**
+ * The paired hosts connected now that show their 3D models here, by ID: a host's 3D models are listed only while it is
+ * (Zach's pick on #2497). A string of them too, which changes only when the hosts do, to read the list again by.
+ */
+export function useHostsShown(): { readonly shown: ReadonlySet<string>; readonly key: string } {
+  const connections = useOptionalAgents()?.state?.connections
+  const key = connections?.filter(host => host.kind === 'remote' && host.connected && host.models3d === true).map(host => host.hostId).sort().join(',') ?? ''
+  return useMemo(() => ({ shown: new Set(key === '' ? [] : key.split(',')), key }), [key])
+}
+
+/** Whether a listed 3D model is this computer's, or a host's that is shown now. */
+export function modelShown(model: Pick<Model3dListed, 'id' | 'computer'>, hosts: ReadonlySet<string>): boolean {
+  if (model.computer === undefined) return true
+  const hostId = parseHostEntityKey(model.id)?.hostId
+  return hostId !== undefined && hosts.has(hostId)
 }
 
 /** Whether a 3D model's name or the words it was made from hold what was searched for. */

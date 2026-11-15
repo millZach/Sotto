@@ -170,6 +170,9 @@ describe('remote command allow-list', () => {
       // Shared spending (ADR-0205): a recorded desktop's count of its Meshy accounts' credits, kept for the copies it
       // sent, answered with the host's own count. Counts and account IDs, never a secret, and it grants nothing.
       'plugin-meshy-spending',
+      // A host thread's 3D models (the Meshy plan's ticket 6, part 2), reads for a recorded desktop's window by the host's
+      // IDs, and removing the record of one whose files the host finds gone: never a file, never a path, never a grant.
+      'plugin-meshy-models', 'plugin-meshy-model', 'plugin-meshy-model-bytes', 'plugin-meshy-model-remove',
       // A host thread's delegations and a delegated thread's newest brief, reads for a recorded desktop's window on a
       // listener that offers delegation-views (#1310), never a reply and never a grant.
       'delegation-views', 'delegation-brief',

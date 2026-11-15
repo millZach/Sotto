@@ -955,6 +955,11 @@ msgstr "{title}: {where}"
 msgid "{topShare} of prompts"
 msgstr "{topShare} of prompts"
 
+#. {total} is "90 credits this month"; {where} lists computers, as in "this computer and forge".
+#: src/renderer/src/features/models3d/ModelsPage.tsx
+msgid "{total}, across {where}"
+msgstr "{total}, across {where}"
+
 #: src/renderer/src/watcher/WatcherOwnChange.tsx
 msgid "{unnamed, plural, one {and {more} file more} other {and {more} files more}}"
 msgstr "{unnamed, plural, one {and {more} file more} other {and {more} files more}}"
@@ -1133,9 +1138,19 @@ msgstr "10,000 files · 100 MiB per capture · 20 MiB per binary · 1 GiB retain
 msgid "3D model · Meshy · made from a photo"
 msgstr "3D model · Meshy · made from a photo"
 
+#. {computer} is the name of the paired host that holds the 3D model, as in forge.
+#: src/renderer/src/features/models3d/ModelsPage.tsx
+msgid "3D model · Meshy · made from a photo · on {computer}"
+msgstr "3D model · Meshy · made from a photo · on {computer}"
+
 #: src/renderer/src/features/models3d/ModelsPage.tsx
 msgid "3D model · Meshy · made from words"
 msgstr "3D model · Meshy · made from words"
+
+#. {computer} is the name of the paired host that holds the 3D model, as in forge.
+#: src/renderer/src/features/models3d/ModelsPage.tsx
+msgid "3D model · Meshy · made from words · on {computer}"
+msgstr "3D model · Meshy · made from words · on {computer}"
 
 #. The 3D models page: every 3D model Meshy made for a thread.
 #. The page link: the 3D models page, every 3D model Meshy made for a thread.
@@ -6893,6 +6908,11 @@ msgstr "That’s setup"
 msgid "The {name} update on {host} stopped before it finished. Nothing was changed. Try again."
 msgstr "The {name} update on {host} stopped before it finished. Nothing was changed. Try again."
 
+#. {name} is the name of a 3D model; {where} is a folder, such as models/; {computer} is the paired host it was made on, as in forge.
+#: src/renderer/src/features/models3d/modelPanels.tsx
+msgid "The {name}’s files are no longer in {where} in its thread’s folder on {computer}: they were moved, renamed or deleted."
+msgstr "The {name}’s files are no longer in {where} in its thread’s folder on {computer}: they were moved, renamed or deleted."
+
 #. {name} is the name of a 3D model; {where} is a folder, such as models/.
 #: src/renderer/src/features/models3d/modelPanels.tsx
 msgid "The {name}’s files are no longer in {where} in its thread’s folder: they were moved, renamed or deleted."
@@ -7187,6 +7207,7 @@ msgid "This clears every date, provider, model and app on those computers, inclu
 msgstr "This clears every date, provider, model and app on those computers, including figures outside the current filters. Thread history, subscription limits and the clients' own records stay as they are."
 
 #. This computer, in the middle of a sentence
+#: src/renderer/src/features/models3d/ModelsPage.tsx
 #: src/renderer/src/features/usage/usagePresentation.ts
 #: src/renderer/src/watcher/TeamsPage.tsx
 msgid "this computer"

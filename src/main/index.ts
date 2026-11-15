@@ -91,8 +91,9 @@ import { MeshyModels } from './tools/meshy/service'
 import { modelBytes, modelView, modelViewOf } from './tools/meshy/view'
 import { listModels, removeGoneModel, revealModelFile, type ModelListSource } from './tools/meshy/page'
 import { checkPhoto, photoToSend, type RedrawPhoto } from './tools/meshy/photo'
-import { isMailPlugin, PLUGIN_USE_THREAD_TITLE_MAX, PLUGINS_COPIES_CHANGED, PLUGINS_MAIL_GRANTS_CHANGED } from '../shared/plugins'
-import { MODEL_VISUAL_KIND, PLUGINS_MODEL_3D_CHANGED, PLUGINS_MODELS_3D_REMOVED } from '../shared/models3d'
+import { isMailPlugin, PLUGIN_USE_THREAD_TITLE_MAX, PLUGINS_COPIES_CHANGED, PLUGINS_MAIL_GRANTS_CHANGED, PLUGINS_MESHY_CREDITS_CHANGED } from '../shared/plugins'
+import { MODEL_VISUAL_KIND, MODELS_3D_LISTED_MAX, PLUGINS_MODEL_3D_CHANGED, PLUGINS_MODELS_3D_REMOVED } from '../shared/models3d'
+import { HostModels3d } from './hosts/hostModels3d'
 import { resetGhLookup } from './agents/git/ghCommand'
 import { GitUnavailableError, runGitStatusCommand, runWithGhStandIn, type RunGitCommand } from './agents/git/gitStatus'
 import { registerTeamsIpc } from './teams/ipc'
@@ -1344,7 +1345,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const retainedDrafts = new RetainedDraftStore({ directory: userDataPath, watcherEnabled, heldProviders, historyEnabled: () => agentHistoryEnabled,
     onRecovery: () => recoveryNotices.publish({ code: 'REMOTE_DRAFTS_UNREADABLE' }),
     onWriteFailure: () => recoveryNotices.publish({ code: 'REMOTE_DRAFT_STORAGE_NOT_UPDATED' }) })
-  const desktopHosts = new DesktopHosts({ featureUsed: feature => productEvents.featureUsed(feature), directory: userDataPath, credentials, router: hostRouter, retainedDrafts, watcherEnabled, crossMachineEnabled, pairedHostBrowser,
+  const desktopHosts = new DesktopHosts({ featureUsed: feature => productEvents.featureUsed(feature), directory: userDataPath, credentials, router: hostRouter, retainedDrafts, watcherEnabled, crossMachineEnabled, pairedHostBrowser, meshyModels: pluginsEnabled,
     // Stable starts no such shell and keeps any saved record of one whole (ADR-0072).
     ...owlFeatures['paired-host-terminal'] ? { onHostLeft: (hostId: string) => { void terminalService.endHost(hostId).catch(() => logOperational('host-terminals-end-failed')) } } : {},
     ...(nextPromptEnabled ? { nextPromptsWanted: () => workingCopySettings.nextPromptSuggestions } : {}), productEventAnswer: () => productEventsPermission(workingCopySettings), relaysDelegation: delegationRelay !== undefined, heldProviders, streamingPublishCost: owlFeatures['streaming-publish-cost'], clientVersion: hostVersion,
@@ -1432,6 +1433,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   // counts its own and adds what each host last said, and tells each host what was spent everywhere but there.
   const meshySpending = modelRecords && pluginAccounts ? new MeshySpendingSync(userDataPath, {
     own: () => modelRecords.monthCredits(), accounts: () => pluginAccounts.list(), connections: () => hostRouter.remoteConnections(),
+    // What a host said it spent reaches the window, which reads the shared count again (Sol's review).
+    changed: () => { windows.sendToMain(PLUGINS_MESHY_CREDITS_CHANGED, null) },
   }) : undefined
   // Each change to a 3D model, and each of Meshy's reads of its progress, goes to the window as its view (the Meshy
   // plan's ticket 4). Views are sent in order, so a slower one never lands after a newer one.
@@ -1456,6 +1459,16 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     accountNames: async () => new Map((await pluginAccounts?.list() ?? []).filter(account => account.plugin === 'meshy').map(account => [account.id, account.name])),
     remove: (id, may) => modelRecords.remove(id, may),
   } : undefined
+  // A paired host's 3D models (the Meshy plan's ticket 6, part 2): the window names each by a key that says which host
+  // holds it, and main asks that host over its connection. Its news reaches the window as this computer's own does.
+  const hostModels = pluginsEnabled ? new HostModels3d({
+    connections: () => hostRouter.remoteConnections(), subscribeConnected: listener => hostRouter.subscribeConnected(listener),
+    subscribeRemoved: listener => hostRouter.subscribeRemoved(listener),
+    localHostId: () => agentControl.hostId(),
+    changed: view => { windows.sendToMain(PLUGINS_MODEL_3D_CHANGED, view) },
+    removed: keys => { windows.sendToMain(PLUGINS_MODELS_3D_REMOVED, keys) },
+  }) : undefined
+  pluginsStop.signal.addEventListener('abort', () => { hostModels?.close() }, { once: true })
   // A photo for a 3D model is drawn again from its pixels alone, which carries none of its location or camera details
   // (ADR-0141). PNG stays PNG, for its transparency; a redrawn PNG past Meshy's 20 MB goes as a JPEG.
   const redrawPhoto: RedrawPhoto = async (bytes, kind) => {
@@ -2865,23 +2878,30 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
             across: (await meshySpending?.reportedBy(id).catch(() => []) ?? []).flatMap(hostId => { const name = names.get(hostId); return name ? [name] : [] }),
           }] as const)))
         },
-        model3d: async id => modelViews ? await modelViewOf(modelViews, id) : null,
-        model3dBytes: async request => modelViews ? await modelBytes(modelViews, request) : null,
-        // This computer's own threads' 3D models: a thread on a paired host names none here (ticket 6 is the host's).
+        // A key that names a paired host is that host's 3D model, asked of it; any other ID is this computer's own.
+        model3d: async id => hostModels?.onHost(id) ? await hostModels.view(id) : modelViews ? await modelViewOf(modelViews, id) : null,
+        model3dBytes: async request => hostModels?.onHost(request.id) ? await hostModels.bytes(request) : modelViews ? await modelBytes(modelViews, request) : null,
+        // Every 3D model here and on each connected host, newest first; or one thread's, wherever it runs.
         models3d: async threadKey => {
-          if (!modelViews) return []
-          if (threadKey === undefined) return await listModels(modelViews)
-          const threadId = ownThreadId(threadKey, agentControl.hostId())
-          return threadId === null ? [] : await listModels(modelViews, threadId)
+          if (threadKey !== undefined && hostModels?.onHost(threadKey)) return await hostModels.list(threadKey)
+          const threadId = threadKey === undefined ? undefined : ownThreadId(threadKey, agentControl.hostId())
+          if (threadId === null) return []
+          const [own, hosts] = await Promise.all([modelViews ? listModels(modelViews, threadId) : [], threadKey === undefined ? hostModels?.list() ?? [] : []])
+          return hosts.length === 0 ? own : [...own, ...hosts].sort((a, b) => Date.parse(b.askedAt) - Date.parse(a.askedAt)).slice(0, MODELS_3D_LISTED_MAX)
         },
-        // Every list and the 3D model's line in its thread are told a removed record went, so none shows it again.
+        // Every list and the 3D model's line in its thread are told a removed record went, so none shows it again. A
+        // host's is removed on the host, which looks at its files first; one whose host is away stays.
         removeModel3d: async id => {
-          const removal = modelViews ? await removeGoneModel(modelViews, id) : 'no-record'
+          const onHost = hostModels?.onHost(id) ? await hostModels.remove(id) : undefined
+          // Nothing is removed while its host is away: the window says it could not be, and that nothing changed.
+          if (onHost === 'away') throw new Error('host-away')
+          const removal = onHost ?? (modelViews ? await removeGoneModel(modelViews, id) : 'no-record')
           if (removal === 'removed') windows.sendToMain(PLUGINS_MODELS_3D_REMOVED, [id])
           return removal
         },
-        // The folder app is shown the record's own file, never a path from the window. An end-to-end run notes it instead.
-        revealModel3d: async request => modelViews ? await revealModelFile(modelViews, request, path => { if (e2eConfiguration !== null) e2eFiles.shown.push(path); else shell.showItemInFolder(path) }) : false,
+        // The folder app is shown the record's own file, never a path from the window, and only this computer's own: a
+        // host's files are on the host. An end-to-end run notes it instead.
+        revealModel3d: async request => !hostModels?.onHost(request.id) && modelViews ? await revealModelFile(modelViews, request, path => { if (e2eConfiguration !== null) e2eFiles.shown.push(path); else shell.showItemInFolder(path) }) : false,
         copies: async () => await pluginCopySync?.view() ?? { copyNew: true, readable: true, computers: [], copies: [] },
         setCopy: async request => { await pluginCopySync?.setCopy(request.accountId, request.computerId, request.on); return await pluginCopySync?.view() ?? { copyNew: true, readable: true, computers: [], copies: [] } },
         setCopyNew: async copyNew => { await pluginCopySync?.setCopyNew(copyNew); return await pluginCopySync?.view() ?? { copyNew: true, readable: true, computers: [], copies: [] } },
