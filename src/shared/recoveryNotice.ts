@@ -16,6 +16,7 @@ export const recoveryNoticeSchema = z
       'REMOTE_DRAFT_STORAGE_NOT_UPDATED',
       'REMOTE_DRAFTS_UNREADABLE',
       'PLUGIN_USE_NOT_CLEARED',
+      'MODEL_WORDS_NOT_CLEARED',
     ]),
   })
   .strict()
