@@ -1,0 +1,668 @@
+<!doctype html>
+<!--
+  PROTOTYPE - throwaway. Not the app. Meshy ticket 4 (#2497, ADR-0141): a 3D model drawn in a thread.
+
+  Question: what variant A, "a quiet line that opens a turnable view in place" (Zach's pick, October 22, 2026, from
+  docs/prototypes/meshy-models-prototype.html), looks like in today's Sotto, with what tickets 2 and 3 built behind it:
+  GLB, USDZ and a still picture (STL when asked), 30 credits, the plugin change card that asks first, and what is
+  saved when Meshy fails. The 3D drawing is the October mock-up's own small renderer; the built view will draw the
+  real GLB.
+
+  State lives in the URL: ?state=ask|shape|texture|done|failed, &progress=step|percent, &done=closed|open,
+  &theme=light, &motion=reduced. The bar at the bottom is the prototype's, not the design. H hides it.
+  No network, no persistence.
+-->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sotto 3D model in a thread - prototype</title>
+<style>
+:root,[data-theme=dark]{
+  --tt-canvas:oklch(0.115 0.008 265);--tt-surface:oklch(0.145 0.008 265);--tt-surface-elevated:oklch(0.185 0.008 265);--tt-surface-overlay:oklch(0.215 0.008 265);
+  --tt-surface-sunken:oklch(0.155 0.008 265);--tt-sidebar:oklch(0.235 0.003 265);--tt-field:oklch(0.145 0.008 265);--tt-code-bg:oklch(0.155 0.008 265);
+  --tt-message-surface:oklch(0.205 0.014 265);
+  --tt-text:oklch(0.985 0.005 280);
+  --tt-text-2:color-mix(in oklab,oklch(0.985 0.005 280) 55%,oklch(0.72 0.014 265));
+  --tt-text-muted:color-mix(in oklab,oklch(0.72 0.014 265) 85%,oklch(0.985 0.005 280));
+  --tt-text-faint:oklch(0.675 0.012 270);
+  --tt-hairline:oklch(0.285 0.02 265);
+  --tt-border:color-mix(in oklab,oklch(0.375 0.024 265) 25%,oklch(0.72 0.014 265));
+  --tt-border-faint:oklch(0.305 0.02 265);
+  --tt-sidebar-row-hover:oklch(0.28 0.003 265);--tt-sidebar-row-active:oklch(0.32 0.025 190);
+  --tt-accent:oklch(0.714403 0.104089 183.092);--tt-on-accent:oklch(0.16 0.012 190);--tt-accent-text:oklch(0.83 0.08 183);
+  --tt-accent-surface:oklch(0.32 0.05 185);--tt-hover:color-mix(in srgb,oklch(0.32 0.05 185) 70%,transparent);
+  --tt-error:oklch(0.702184 0.189226 22.228);--tt-error-surface:oklch(0.29 0.04 20);
+  --tt-warning:oklch(0.829017 0.171221 81.038);--tt-warning-surface:oklch(0.315 0.032 80);
+  --tt-shadow-overlay:0 24px 72px -20px rgb(0 0 0 / 90%);--tt-scrim:rgb(0 0 0 / 55%);
+  --tt-focus-ring:oklch(0.714403 0.104089 183.092);
+  --bezel:oklch(0.2 0.006 265);--bezel-edge:oklch(0.36 0.01 265);--island:oklch(0 0 0);
+}
+[data-theme=light]{
+  --tt-canvas:oklch(0.978 0.004 85);--tt-surface:oklch(0.99 0.003 85);--tt-surface-elevated:oklch(0.955 0.006 85);--tt-surface-overlay:oklch(0.945 0.007 85);
+  --tt-surface-sunken:oklch(0.945 0.008 85);--tt-sidebar:oklch(0.955 0.008 85);--tt-field:oklch(0.99 0.003 85);--tt-code-bg:oklch(0.97 0.005 85);
+  --tt-message-surface:oklch(0.93 0.012 85);
+  --tt-text:oklch(0.235 0.014 75);
+  --tt-text-2:color-mix(in oklab,oklch(0.235 0.014 75) 55%,oklch(0.5 0.014 75));
+  --tt-text-muted:color-mix(in oklab,oklch(0.5 0.014 75) 85%,oklch(0.235 0.014 75));
+  --tt-text-faint:oklch(0.525 0.015 78);
+  --tt-hairline:oklch(0.86 0.012 80);
+  --tt-border:color-mix(in oklab,oklch(0.8 0.016 80) 25%,oklch(0.5 0.014 75));
+  --tt-border-faint:oklch(0.86 0.012 80);
+  --tt-sidebar-row-hover:oklch(0.93 0.01 85);--tt-sidebar-row-active:oklch(0.915 0.02 190);
+  --tt-accent:oklch(0.53 0.095 186);--tt-on-accent:oklch(0.99 0.003 85);--tt-accent-text:oklch(0.43 0.08 186);
+  --tt-accent-surface:oklch(0.92 0.03 186);--tt-hover:color-mix(in srgb,oklch(0.92 0.03 186) 70%,transparent);
+  --tt-error:oklch(0.509494 0.208583 28.513);--tt-error-surface:oklch(0.94 0.02 25);
+  --tt-warning:oklch(0.530927 0.155556 45.359);--tt-warning-surface:oklch(0.955 0.018 80);
+  --tt-shadow-overlay:0 24px 64px -24px rgb(0 0 0 / 45%);--tt-scrim:rgb(0 0 0 / 30%);
+  --tt-focus-ring:oklch(0.53 0.095 186);
+  --bezel:oklch(0.2 0.006 265);--bezel-edge:oklch(0.42 0.01 265);--island:oklch(0 0 0);
+}
+:root{
+  /* The models' own surface colours: what Meshy's texture would paint, the same in light and dark. */
+  --model-wood:#8a5a32;--model-wood-dark:#5e3b1f;--model-iron:#4a4c52;--model-gold:#c99a2e;
+  --model-fox:#d9772b;--model-fox-light:#f1e4d0;--model-fox-dark:#3b2a22;
+  --model-steel:#a9afb8;--model-steel-dark:#6f7680;--model-plume:#a8322d;
+  --model-glass:#6a4fb3;--model-cork:#a7825a;--model-clay:#b9b4ab;
+  /* The prototype switcher, not part of the design. */
+  --proto-bg:#111114;--proto-text:#ffffff;--proto-btn:#2a2a2e;--proto-on:#ff3d7f;--proto-line:#44444a;
+}
+
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--tt-canvas);color:var(--tt-text);font:14px/1.45 Figtree,system-ui,'Segoe UI',sans-serif;-webkit-font-smoothing:antialiased;overflow:hidden}
+button,input,select{font:inherit;color:inherit}
+button{background:none;border:0;cursor:pointer;border-radius:8px;padding:0}
+:focus-visible{outline:2px solid var(--tt-focus-ring);outline-offset:1px}
+svg.i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.mono{font-family:'Spline Sans Mono',ui-monospace,Consolas,monospace;font-size:12.5px}
+.muted{color:var(--tt-text-muted)}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.drag{-webkit-app-region:drag}
+.drag button,.drag input,.drag select{-webkit-app-region:no-drag}
+
+/* ---------- model viewer ---------- */
+.mv{display:block;position:relative;background:var(--tt-surface-sunken);color:var(--tt-text);touch-action:none;overflow:hidden;min-height:0}
+.mv[data-interactive="1"]{cursor:grab}
+.mv[data-interactive="1"]:active{cursor:grabbing}
+.mv canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.mv-hint{position:absolute;left:10px;bottom:8px;font-size:12px;color:var(--tt-text-muted);pointer-events:none;background:color-mix(in srgb,var(--tt-surface-sunken) 80%,transparent);padding:1px 6px;border-radius:6px}
+.mv-over{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:12px;color:var(--tt-text-2);pointer-events:none}
+.mv-over b{display:block;color:var(--tt-text);font-weight:600}
+.mv-over span{font-size:13px;color:var(--tt-text-muted)}
+.prog{height:4px;border-radius:99px;background:var(--tt-hairline);overflow:hidden;position:relative}
+.prog i{display:block;height:100%;background:var(--tt-accent);border-radius:99px}
+.prog::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--tt-canvas) 45%,transparent),transparent);transform:translateX(-100%);animation:sweep 1.8s ease-in-out infinite}
+@keyframes sweep{to{transform:translateX(100%)}}
+.ring{width:22px;height:22px;transform:rotate(-90deg)}
+.ring circle{fill:none;stroke-width:3}
+.ring .bg{stroke:var(--tt-hairline)}
+.ring .fg{stroke:var(--tt-accent);stroke-linecap:round}
+
+/* model card shared */
+.mc{border:1px solid var(--tt-border-faint);border-radius:14px;background:var(--tt-code-bg);overflow:hidden;margin:12px 0 16px;container-type:inline-size}
+.mc-bar{display:flex;align-items:center;gap:10px;min-height:42px;padding:4px 4px 4px 14px;border-bottom:1px solid var(--tt-hairline);background:var(--tt-surface-elevated)}
+.mc-head{display:flex;flex:1;align-items:baseline;gap:10px;min-width:0;overflow:hidden}
+.mc-head h3{margin:0;font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kind{flex:none;color:var(--tt-text-muted);font-family:'Spline Sans Mono',ui-monospace,Consolas,monospace;font-size:12px;white-space:nowrap}
+.mc-acts{display:flex;flex:none;gap:2px}
+@container (max-width:380px){.kind{display:none}}
+.mc .mv.big{height:clamp(200px,40vh,380px)}
+.mc-foot{padding:10px 14px 12px;border-top:1px solid var(--tt-hairline);display:grid;gap:8px}
+.facts-line{margin:0;color:var(--tt-text-muted);font-size:13px}
+.facts-line b{color:var(--tt-text);font-weight:600}
+.fchips{display:flex;flex-wrap:wrap;gap:6px}
+.fchip{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border:1px solid var(--tt-hairline);border-radius:999px;font-size:12.5px;color:var(--tt-text-2)}
+.fchip:hover{background:var(--tt-hover);color:var(--tt-text)}
+.fchip .mono{color:var(--tt-text);font-size:12px}
+.status-line{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--tt-text-2)}
+.status-line b{color:var(--tt-text);font-weight:600}
+.status-line .pct{margin-left:auto;font-variant-numeric:tabular-nums;color:var(--tt-text-muted)}
+.problem{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;padding:12px 14px;border-top:1px solid var(--tt-hairline);background:var(--tt-error-surface)}
+.problem>svg{color:var(--tt-error);margin-top:2px}
+.problem p{margin:0;color:var(--tt-text)}
+.problem p+p{grid-column:2;color:var(--tt-text-2);font-size:13.5px}
+.problem .acts{grid-column:2;display:flex;flex-wrap:wrap;gap:8px;margin-top:6px}
+
+/* A: chip that opens */
+.chip{border:1px solid var(--tt-border-faint);border-radius:14px;background:var(--tt-code-bg);margin:12px 0 16px;overflow:hidden;max-width:560px}
+.chip[data-open="1"]{max-width:none}
+.chip-row{display:flex;align-items:center;gap:12px;padding:8px 8px 8px 8px;min-width:0}
+.chip-thumb{width:48px;height:48px;border-radius:10px;flex:none;overflow:hidden;display:grid;place-items:center;background:var(--tt-surface-sunken)}
+.chip-thumb .mv{width:48px;height:48px}
+.chip-txt{flex:1;min-width:0;display:grid}
+.chip-txt b{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chip-txt span{font-size:12.5px;color:var(--tt-text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chip-txt .err{color:var(--tt-error)}
+.chip-toggle svg{transition:transform .15s}
+.chip-toggle[aria-expanded=true] svg{transform:rotate(180deg)}
+.chip-body{border-top:1px solid var(--tt-hairline)}
+.chip-body .mv{height:clamp(190px,36vh,340px)}
+.chip-body .mc-foot{border-top:1px solid var(--tt-hairline)}
+.chip .prog{margin-top:6px}
+
+/* ---------- prototype switcher (not part of the design) ---------- */
+.proto-bar{position:fixed;left:50%;bottom:12px;transform:translateX(-50%);z-index:100;display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:6px;padding:6px 8px;border-radius:20px;background:var(--proto-bg);color:var(--proto-text);font:12.5px/1 system-ui,'Segoe UI',sans-serif;box-shadow:0 10px 30px rgb(0 0 0 / 50%);border:2px solid var(--proto-on);max-width:calc(100vw - 16px)}
+.proto-bar button{white-space:nowrap;background:var(--proto-btn);color:var(--proto-text);border:0;border-radius:999px;padding:6px 10px;cursor:pointer;font:inherit}
+.proto-bar button.on{background:var(--proto-on)}
+.proto-bar button:focus-visible{outline:2px solid var(--proto-text);outline-offset:1px}
+.proto-bar .lbl{white-space:nowrap;min-width:190px;text-align:center;font-weight:600}
+.proto-bar .grp{display:flex;gap:4px;padding-left:6px;border-left:1px solid var(--proto-line)}
+.proto-bar .grp:empty{display:none}
+.proto-notes{position:fixed;left:50%;bottom:70px;transform:translateX(-50%);z-index:100;width:min(640px,calc(100vw - 24px));max-height:calc(100vh - 100px);overflow:auto;background:var(--proto-bg);color:var(--proto-text);border:2px solid var(--proto-on);border-radius:14px;padding:12px 16px;font:13px/1.5 system-ui,'Segoe UI',sans-serif}
+.proto-notes h2{font-size:14px;margin:0 0 6px}
+.proto-notes ul{margin:6px 0 0;padding-left:18px}
+.proto-show{position:fixed;right:10px;bottom:10px;z-index:100;background:var(--proto-bg);color:var(--proto-text);border:2px solid var(--proto-on);border-radius:999px;padding:5px 10px;font:12px system-ui,sans-serif}
+
+[data-motion=reduced] *,[data-motion=reduced] *::before,[data-motion=reduced] *::after{animation:none!important;transition:none!important}
+
+/* ---------- today's window ---------- */
+.win{display:grid;grid-template-columns:280px 1fr;height:100vh;height:100dvh}
+.side{background:var(--tt-sidebar);border-right:1px solid var(--tt-hairline);display:flex;flex-direction:column;min-width:0}
+.side-top{display:flex;align-items:center;gap:8px;height:44px;padding:0 10px 0 12px}
+.logo{width:20px;height:20px;border-radius:6px;background:var(--tt-accent);flex:none}
+.side-top .sp{flex:1}
+.side-top .new{display:inline-flex;align-items:center;gap:6px;font-size:13.5px;color:var(--tt-text);padding:4px 6px}
+.search{margin:2px 8px 10px;display:flex;align-items:center;gap:8px;height:32px;padding:0 10px;border:1px solid var(--tt-border-faint);border-radius:8px;color:var(--tt-text-muted);font-size:13.5px;background:var(--tt-field)}
+.grp-h{display:flex;align-items:center;gap:8px;padding:6px 14px;font-size:12.5px;color:var(--tt-text-2)}
+.grp-h b{font-weight:600;color:var(--tt-text)}
+.grp-h .n{margin-left:auto;color:var(--tt-text-muted)}
+.row{margin:0 6px;padding:7px 10px;border-radius:8px;display:grid;gap:2px}
+.row.on{background:var(--tt-sidebar-row-active);outline:1px solid color-mix(in srgb,var(--tt-accent) 45%,transparent)}
+.row .t{font-size:13.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .s{display:flex;gap:8px;font-size:12.5px;color:var(--tt-text-muted)}
+.row .s .r{margin-left:auto}
+.side-foot{margin-top:auto;display:flex;gap:4px;padding:8px 12px;color:var(--tt-text-muted)}
+.main{display:flex;flex-direction:column;min-width:0;background:var(--tt-canvas)}
+.tbar{display:flex;align-items:center;gap:10px;height:44px;padding:0 10px 0 16px;border-bottom:1px solid transparent}
+.tbar h1{margin:0;font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tbar .crumb{font-size:13px;color:var(--tt-text-muted);white-space:nowrap}
+.tbar .sp{flex:1}
+.tbtn{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border:1px solid var(--tt-border-faint);border-radius:8px;font-size:13px;color:var(--tt-text)}
+.ib{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:7px;color:var(--tt-text-muted)}
+.ib:hover{background:var(--tt-hover);color:var(--tt-text)}
+.msgs{flex:1;overflow:auto;padding:24px 20px 20px}
+.col{max-width:760px;margin:0 auto}
+.you{display:flex;justify-content:flex-end;margin:0 0 28px}
+.you .bub{background:var(--tt-message-surface);border-radius:14px;padding:12px 16px;max-width:80%}
+.who{font-size:12.5px;color:var(--tt-text-2);margin-bottom:6px}
+.who span{color:var(--tt-text-muted);margin-left:8px}
+.agent p{margin:0 0 10px;font-size:15px;line-height:1.55;color:var(--tt-text-2)}
+.agent p.after{margin-top:12px}
+.act{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--tt-text-muted);margin:6px 0 4px}
+.act .mono{color:var(--tt-text-2)}
+.composer{margin:0 auto 14px;width:min(760px,calc(100% - 40px));border-radius:16px;background:var(--tt-surface-elevated);padding:14px 16px 10px}
+.composer .ph{color:var(--tt-text-muted);height:40px}
+.composer .bar{display:flex;align-items:center;gap:12px;font-size:12.5px;color:var(--tt-text-muted)}
+.composer .bar .sp{flex:1}
+.send{width:30px;height:30px;border-radius:50%;background:var(--tt-surface-overlay);display:grid;place-items:center}
+
+/* ---------- the plugin change card, as ticket 3 built it ---------- */
+.pcard{border-radius:16px;background:var(--tt-surface-elevated);padding:16px 17px;margin:20px 0 8px}
+.pcard h3{margin:0;display:flex;align-items:center;gap:10px;font-size:15px;font-weight:600}
+.tag{font-size:12.5px;font-weight:500;padding:2px 8px;border-radius:6px;background:var(--tt-canvas);color:var(--tt-text-2)}
+.pcard .target{margin:6px 0 12px;font-family:'Spline Sans Mono',ui-monospace,Consolas,monospace;font-size:13px;color:var(--tt-text-2)}
+.pcard pre{margin:0 0 12px;padding:10px 12px;border:1px solid var(--tt-border);border-radius:8px;background:var(--tt-canvas);font:13px/1.55 'Spline Sans Mono',ui-monospace,Consolas,monospace;white-space:pre-wrap;color:var(--tt-text)}
+.btn{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 16px;border:1px solid var(--tt-border);border-radius:8px;font-size:14px;color:var(--tt-text);background:transparent}
+.btn.primary{background:var(--tt-text);color:var(--tt-canvas);border-color:var(--tt-text);font-weight:600}
+.btn.small{height:30px;padding:0 12px;font-size:13px;border-color:var(--tt-border-faint)}
+.acts{display:flex;flex-wrap:wrap;gap:8px}
+
+/* ---------- variant A in today's look ---------- */
+.chip{margin:14px 0 18px;background:var(--tt-surface-elevated);border:0;border-radius:16px}
+.chip-row{padding:10px 10px 10px 10px}
+.chip-thumb{background:var(--tt-canvas)}
+.chip-body .mv{background:var(--tt-canvas)}
+.chip-body .mc-foot{padding:12px 16px 14px}
+.chip-txt b{font-size:14.5px}
+.chip-txt span{font-size:13px}
+.chip-txt .pct{font-variant-numeric:tabular-nums}
+.chip-toggle{height:30px;padding:0 10px;border:1px solid var(--tt-border-faint);border-radius:8px;font-size:13px;display:inline-flex;align-items:center;gap:6px;color:var(--tt-text)}
+.chip-toggle:hover{background:var(--tt-hover)}
+.mv-tools{position:absolute;top:8px;right:8px;display:flex;gap:2px;background:color-mix(in srgb,var(--tt-canvas) 80%,transparent);border-radius:8px}
+.problem{background:color-mix(in srgb,var(--tt-error-surface) 70%,var(--tt-surface-elevated));border-top:0;border-radius:0 0 16px 16px}
+
+.ring.spin{animation:turn 1.1s linear infinite}
+@keyframes turn{to{transform:rotate(270deg)}}
+
+/* phone: the window gives way to the thread alone */
+@media (max-width:760px){
+  .win{grid-template-columns:1fr}.side{display:none}
+  .tbar .crumb,.tbar .tbtn,.tbar .ib.hide-narrow{display:none}
+  .msgs{padding:16px 12px 120px}.composer{width:calc(100% - 24px)}
+  .chip-toggle .lab{display:none}
+}
+</style>
+</head>
+<body>
+<div class="win" id="win"></div>
+<div class="proto-notes" id="notes" hidden></div>
+<div class="proto-bar" id="bar" role="toolbar" aria-label="Prototype switcher">
+  <span class="lbl">A · in today's Sotto</span>
+  <span class="grp" id="states"></span>
+  <span class="grp" id="opts"></span>
+  <span class="grp"><button id="theme"></button><button id="motion"></button><button id="notesBtn" aria-expanded="false" aria-controls="notes">Notes</button><button id="hideBar" aria-label="Hide the prototype switcher (H)">Hide</button></span>
+</div>
+<button class="proto-show" id="showBar" hidden>Show switcher (H)</button>
+<script>
+const I = {
+  search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
+  threads:'<path d="M4 5h11v8H8l-4 3z"/><path d="M15 9h5v8l-3-2h-6v-2"/>',
+  term:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/>',
+  pen:'<path d="M4 20h4L19 9l-4-4L4 16z"/>',
+  panelLeft:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/>',
+  panelRight:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/>',
+  split:'<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 13h18"/>',
+  more:'<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
+  folder:'<path d="M3 6a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/>',
+  chevDown:'<path d="m6 9 6 6 6-6"/>', chevRight:'<path d="m9 6 6 6-6 6"/>', back:'<path d="m15 6-6 6 6 6"/>',
+  clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  gauge:'<path d="M4 18a8 8 0 1 1 16 0"/><path d="m12 14 4-5"/>',
+  cube:'<path d="M12 3 20 7.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5 12 12l8-4.5M12 12v9"/>',
+  gear:'<circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M2.5 12h3M18.5 12h3M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/>',
+  help:'<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .8-1 1.5V14M12 17.5v.01"/>',
+  refresh:'<path d="M20 12a8 8 0 1 1-2.3-5.7L20 8.5M20 4v4.5h-4.5"/>',
+  globe:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>',
+  phone:'<rect x="7" y="2" width="10" height="20" rx="2.5"/><path d="M11 18h2"/>',
+  files:'<path d="M4 4h6v6H4zM14 7h6M14 17h6M4 14h6v6H4z"/>',
+  changes:'<circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M6 8.5V14a4 4 0 0 0 4 4h5.5M18 15.5V10a4 4 0 0 0-4-4H8.5"/>',
+  pr:'<circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="18" r="2.5"/><path d="M6 8.5v7M18 15.5V9a3 3 0 0 0-3-3h-4"/>',
+  agents:'<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.5a3.5 3.5 0 0 1 0 7M18 14a6 6 0 0 1 3.5 6"/>',
+  pin:'<path d="M9 4h6l-1 6 3 3H7l3-3zM12 13v8"/>',
+  expand:'<path d="M14 4h6v6M10 20H4v-6M20 4l-7 7M4 20l7-7"/>',
+  x:'<path d="M6 6l12 12M18 6 6 18"/>', minus:'<path d="M5 12h14"/>', square:'<rect x="5" y="5" width="14" height="14" rx="1"/>',
+  clip:'<path d="m20 11-8.5 8.5a5 5 0 0 1-7-7L13 4a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L14 7"/>',
+  up:'<path d="M12 19V5M6 11l6-6 6 6"/>', plus:'<path d="M12 5v14M5 12h14"/>',
+  reset:'<path d="M4 12a8 8 0 1 0 2.3-5.7L4 8.5M4 4v4.5h4.5"/>',
+  play:'<path d="M8 5v14l11-7z"/>',
+  pause:'<path d="M9 5v14M15 5v14"/>', play:'<path d="M7 5v14l11-7z"/>',
+  file:'<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/>',
+  reveal:'<path d="M3 6a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v3"/><path d="M3 6v12a1 1 0 0 0 1 1h7"/><circle cx="16.5" cy="16.5" r="3"/><path d="m18.7 18.7 2.3 2.3"/>',
+  alert:'<path d="M12 4 2.5 20h19z"/><path d="M12 10v4M12 17v.01"/>',
+  key:'<circle cx="8" cy="15" r="4"/><path d="m11 12 9-9M16 7l3 3"/>',
+  image:'<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/>',
+  type:'<path d="M5 6V4h14v2M12 4v16M9 20h6"/>', check:'<path d="m5 12 5 5 9-10"/>',
+  mic:'<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>',
+  wave:'<path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4"/>', sparkle:'<path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6"/>',
+  cmd:'<path d="M9 6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3z"/>',
+  server:'<rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/>',
+  cloud:'<path d="M7 18a4.5 4.5 0 0 1-.5-9A6 6 0 0 1 18 9.5a4 4 0 0 1-.5 8.5z"/>',
+  flow:'<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><path d="M10 6.5h4a3 3 0 0 1 3 3V14"/>',
+  out:'<path d="M7 17 17 7M9 7h8v8"/>', palette:'<path d="M12 3a9 9 0 1 0 0 18c1.2 0 1.6-1 1.2-2-.6-1.4.4-2.5 1.8-2.5H18a3 3 0 0 0 3-3A9 9 0 0 0 12 3z"/><circle cx="8" cy="11" r="1"/><circle cx="12" cy="7.5" r="1"/><circle cx="16" cy="10" r="1"/>',
+  sliders:'<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>',
+  branch:'<circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="8" r="2"/><path d="M6 7v10M18 10a6 6 0 0 1-6 6H6"/>',
+  info:'<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.01"/>',
+};
+const ic = (n, cls = '') => `<svg class="i ${cls}" viewBox="0 0 24 24" aria-hidden="true">${I[n]}</svg>`;
+const claudeMark = '<svg class="pmark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5v19M2.5 12h19M5.3 5.3l13.4 13.4M18.7 5.3 5.3 18.7M8.2 3.3l7.6 17.4M15.8 3.3 8.2 20.7M3.3 8.2l17.4 7.6M3.3 15.8l17.4-7.6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+const codexMark = '<span class="pmark codex" aria-hidden="true">C</span>';
+const pmark = p => p === 'codex' ? codexMark : claudeMark;
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+/* =====================================================================================================
+   A small canvas-2D renderer: flat-shaded convex primitives, painter's order, back faces culled.
+   ===================================================================================================== */
+const MAT = {};
+function readMaterials() {
+  const cs = getComputedStyle(document.documentElement);
+  for (const k of ['wood', 'wood-dark', 'iron', 'gold', 'fox', 'fox-light', 'fox-dark', 'steel', 'steel-dark', 'plume', 'glass', 'cork', 'clay']) {
+    const h = cs.getPropertyValue('--model-' + k).trim().replace('#', '');
+    MAT[k] = [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+  }
+}
+const probe = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
+function tokenRGB(name) {
+  const el = document.createElement('i'); el.style.color = `var(${name})`; document.body.appendChild(el);
+  const c = getComputedStyle(el).color; el.remove();
+  probe.clearRect(0, 0, 1, 1); probe.fillStyle = '#808080'; probe.fillStyle = c; probe.fillRect(0, 0, 1, 1);
+  const d = probe.getImageData(0, 0, 1, 1).data; return [d[0], d[1], d[2]];
+}
+let INK = { text: [255, 255, 255], faint: [160, 160, 160] };
+function readInk() { INK = { text: tokenRGB('--tt-text'), faint: tokenRGB('--tt-text-faint') }; }
+
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const norm = a => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; };
+function newell(p) { let x = 0, y = 0, z = 0; for (let i = 0; i < p.length; i++) { const a = p[i], b = p[(i + 1) % p.length]; x += (a[1] - b[1]) * (a[2] + b[2]); y += (a[2] - b[2]) * (a[0] + b[0]); z += (a[0] - b[0]) * (a[1] + b[1]); } return [x, y, z]; }
+const centroid = p => { const c = [0, 0, 0]; p.forEach(v => { c[0] += v[0]; c[1] += v[1]; c[2] += v[2]; }); return [c[0] / p.length, c[1] / p.length, c[2] / p.length]; };
+/* Every primitive is convex, so a face whose normal points at the primitive's centre is wound backwards. */
+function orient(faces, c) { for (const f of faces) { if (dot(newell(f.p), sub(centroid(f.p), c)) < 0) f.p.reverse(); } return faces; }
+function box(cx, cy, cz, w, h, d, m) {
+  const x0 = cx - w / 2, x1 = cx + w / 2, y0 = cy - h / 2, y1 = cy + h / 2, z0 = cz - d / 2, z1 = cz + d / 2;
+  return orient([
+    { p: [[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]], m }, { p: [[x1, y0, z0], [x0, y0, z0], [x0, y1, z0], [x1, y1, z0]], m },
+    { p: [[x1, y0, z1], [x1, y0, z0], [x1, y1, z0], [x1, y1, z1]], m }, { p: [[x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [x0, y1, z0]], m },
+    { p: [[x0, y1, z1], [x1, y1, z1], [x1, y1, z0], [x0, y1, z0]], m }, { p: [[x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1]], m },
+  ], [cx, cy, cz]);
+}
+function halfCylX(cx, yb, cz, len, r, n, m) {
+  const x0 = cx - len / 2, x1 = cx + len / 2, pts = [], f = [];
+  for (let i = 0; i <= n; i++) { const a = Math.PI * i / n; pts.push([yb + r * Math.sin(a), cz + r * Math.cos(a)]); }
+  for (let i = 0; i < n; i++) { const [ya, za] = pts[i], [yb2, zb] = pts[i + 1]; f.push({ p: [[x0, ya, za], [x1, ya, za], [x1, yb2, zb], [x0, yb2, zb]], m }); }
+  f.push({ p: pts.map(([y, z]) => [x0, y, z]), m }); f.push({ p: pts.map(([y, z]) => [x1, y, z]), m });
+  return orient(f, [cx, yb, cz]);
+}
+function frustum(cx, y0, cz, h, r0, r1, n, m, caps = [true, true]) {
+  const f = [], ring = (y, r) => Array.from({ length: n }, (_, i) => { const a = 2 * Math.PI * i / n; return [cx + r * Math.cos(a), y, cz + r * Math.sin(a)]; });
+  const lo = ring(y0, r0), hi = ring(y0 + h, r1);
+  for (let i = 0; i < n; i++) { const j = (i + 1) % n; f.push({ p: r1 < 1e-4 ? [lo[i], lo[j], hi[i]] : [lo[i], lo[j], hi[j], hi[i]], m }); }
+  if (caps[0]) f.push({ p: lo.slice(), m }); if (caps[1] && r1 > 1e-4) f.push({ p: hi.slice(), m });
+  return orient(f, [cx, y0 + h / 2, cz]);
+}
+function sphere(cx, cy, cz, r, lat, lon, m, s = [1, 1, 1], t0 = 0, t1 = Math.PI) {
+  const f = [], P = (t, ph) => [cx + s[0] * r * Math.sin(t) * Math.cos(ph), cy + s[1] * r * Math.cos(t), cz + s[2] * r * Math.sin(t) * Math.sin(ph)];
+  for (let i = 0; i < lat; i++) for (let j = 0; j < lon; j++) {
+    const ta = t0 + (t1 - t0) * i / lat, tb = t0 + (t1 - t0) * (i + 1) / lat, pa = 2 * Math.PI * j / lon, pb = 2 * Math.PI * (j + 1) / lon;
+    let p = [P(ta, pa), P(ta, pb), P(tb, pb), P(tb, pa)];
+    p = p.filter((v, k) => Math.hypot(...sub(v, p[(k + 1) % 4])) > 1e-6);
+    if (p.length >= 3) f.push({ p, m });
+  }
+  return orient(f, [cx, cy, cz]);
+}
+const rotXp = (p, a) => [p[0], p[1] * Math.cos(a) - p[2] * Math.sin(a), p[1] * Math.sin(a) + p[2] * Math.cos(a)];
+const rotZp = (p, a) => [p[0] * Math.cos(a) - p[1] * Math.sin(a), p[0] * Math.sin(a) + p[1] * Math.cos(a), p[2]];
+const rotYp = (p, a) => [p[0] * Math.cos(a) + p[2] * Math.sin(a), p[1], -p[0] * Math.sin(a) + p[2] * Math.cos(a)];
+const xf = (faces, fn) => faces.map(f => ({ p: f.p.map(fn), m: f.m }));
+/* Drop the faces of a part that lie inside another part (axis 0 x, 1 y; sign 0 for both directions). */
+const drop = (faces, axis, sign = 0) => faces.filter(f => { const n = norm(newell(f.p))[axis]; return sign ? !(n * sign > 0.9) : Math.abs(n) < 0.9; });
+/* Split large quads so painter's order holds where a band or a lock sits on a broad face. */
+function subdiv(faces, n) {
+  const L = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+  return faces.flatMap(f => {
+    if (f.p.length !== 4) return [f];
+    const [a, b, c, d] = f.p, P = (u, v) => L(L(a, b, u), L(d, c, u), v), out = [];
+    for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) out.push({ p: [P(i / n, j / n), P((i + 1) / n, j / n), P((i + 1) / n, (j + 1) / n), P(i / n, (j + 1) / n)], m: f.m });
+    return out;
+  });
+}
+
+const MESHES = {
+  chest: () => [
+    ...subdiv(drop(box(0, 0.4, 0, 1.6, 0.8, 1.0, 'wood'), 1, 1), 6),
+    ...subdiv(halfCylX(0, 0.8, 0, 1.6, 0.5, 9, 'wood-dark'), 6),
+    ...subdiv(drop(box(-0.52, 0.4, 0, 0.14, 0.82, 1.04, 'iron'), 0), 6), ...subdiv(drop(box(0.52, 0.4, 0, 0.14, 0.82, 1.04, 'iron'), 0), 6),
+    ...drop(halfCylX(-0.52, 0.8, 0, 0.14, 0.53, 9, 'iron'), 0), ...drop(halfCylX(0.52, 0.8, 0, 0.14, 0.53, 9, 'iron'), 0),
+    ...box(0, 0.74, 0.53, 0.2, 0.26, 0.08, 'gold'), ...drop(box(0, 0.025, 0, 1.66, 0.05, 1.06, 'iron'), 1, 1),
+  ],
+  fox: () => {
+    const snout = xf(frustum(0, 0, 0, 0.36, 0.15, 0.03, 6, 'fox-light'), p => { const r = rotXp(p, Math.PI / 2); return [r[0], r[1] + 1.18, r[2] + 0.36]; });
+    const ear = s => xf(frustum(0, 0, 0, 0.32, 0.13, 0, 4, 'fox'), p => { const r = rotZp(p, s * -0.3); return [r[0] + s * 0.19, r[1] + 1.4, r[2] + 0.04]; });
+    const tail = xf(frustum(0, 0, 0, 0.75, 0.2, 0.13, 7, 'fox'), p => { const r = rotYp(rotZp(p, -1.25), 0.5); return [r[0] + 0.2, r[1] + 0.2, r[2] - 0.32]; });
+    const tip = xf(frustum(0, 0, 0, 0.26, 0.13, 0.01, 7, 'fox-light'), p => { const r = rotYp(rotZp(p, -1.25), 0.5); const o = rotYp(rotZp([0, 0.75, 0], -1.25), 0.5); return [r[0] + 0.2 + o[0], r[1] + 0.2 + o[1], r[2] - 0.32 + o[2]]; });
+    return [
+      ...sphere(0, 0.52, 0, 0.5, 5, 9, 'fox', [0.78, 1.08, 0.9]),
+      ...sphere(0, 0.6, 0.27, 0.3, 4, 7, 'fox-light', [0.9, 1.25, 0.6]),
+      ...sphere(0, 1.18, 0.08, 0.34, 4, 8, 'fox', [1.05, 0.92, 1]),
+      ...snout, ...box(0, 1.18, 0.72, 0.07, 0.06, 0.05, 'fox-dark'),
+      ...ear(1), ...ear(-1),
+      ...box(0.16, 0.13, 0.34, 0.13, 0.26, 0.14, 'fox-dark'), ...box(-0.16, 0.13, 0.34, 0.13, 0.26, 0.14, 'fox-dark'),
+      ...tail, ...tip,
+    ];
+  },
+  helmet: () => [
+    ...sphere(0, 0.42, 0, 0.62, 4, 14, 'steel', [1, 1, 1], 0, Math.PI / 2),
+    ...frustum(0, 0, 0, 0.42, 0.6, 0.62, 14, 'steel-dark', [false, false]),
+    ...box(0, 0.3, 0.6, 0.66, 0.07, 0.08, 'iron'),
+    ...box(0, 0.16, 0.63, 0.08, 0.3, 0.06, 'steel'),
+    ...xf(halfCylX(0, 0, 0, 0.08, 0.4, 7, 'plume'), p => [p[0], p[1] + 0.92, p[2] - 0.04]),
+    ...frustum(0, 0, 0, 0.05, 0.64, 0.64, 14, 'iron', [false, false]),
+  ],
+  barrel: () => [
+    ...frustum(0, 0, 0, 0.34, 0.44, 0.52, 12, 'wood', [true, false]),
+    ...frustum(0, 0.34, 0, 0.32, 0.52, 0.52, 12, 'wood', [false, false]),
+    ...frustum(0, 0.66, 0, 0.34, 0.52, 0.44, 12, 'wood', [false, true]),
+    ...frustum(0, 0.08, 0, 0.06, 0.475, 0.49, 12, 'iron', [false, false]),
+    ...frustum(0, 0.86, 0, 0.06, 0.49, 0.475, 12, 'iron', [false, false]),
+    ...frustum(0, 0.37, 0, 0.05, 0.535, 0.535, 12, 'iron', [false, false]),
+    ...frustum(0, 0.58, 0, 0.05, 0.535, 0.535, 12, 'iron', [false, false]),
+    ...frustum(0, 1.0, 0, 0.02, 0.4, 0.4, 12, 'wood-dark', [false, true]),
+  ],
+  potion: () => [
+    ...sphere(0, 0.45, 0, 0.44, 6, 12, 'glass'),
+    ...frustum(0, 0.8, 0, 0.32, 0.15, 0.12, 10, 'glass', [false, false]),
+    ...frustum(0, 1.1, 0, 0.05, 0.16, 0.16, 10, 'glass', [true, true]),
+    ...frustum(0, 1.13, 0, 0.17, 0.11, 0.125, 10, 'cork'),
+  ],
+};
+/* Centre each mesh on the origin and scale it to a unit radius. */
+const MESH = {};
+for (const [k, build] of Object.entries(MESHES)) {
+  const faces = build(); const all = faces.flatMap(f => f.p);
+  const mn = [0, 1, 2].map(i => Math.min(...all.map(p => p[i]))), mx = [0, 1, 2].map(i => Math.max(...all.map(p => p[i])));
+  const c = [0, 1, 2].map(i => (mn[i] + mx[i]) / 2); const r = Math.max(...all.map(p => Math.hypot(...sub(p, c))));
+  MESH[k] = { faces: faces.map(f => ({ p: f.p.map(p => sub(p, c).map(v => v / r)), m: f.m })), floor: (mn[1] - c[1]) / r };
+}
+
+const LIGHT = norm([-0.45, 0.75, 0.6]);
+function draw(v) {
+  const cv = v.canvas, ctx = v.ctx, dpr = Math.min(2, devicePixelRatio || 1);
+  const w = v.el.clientWidth, h = v.el.clientHeight; if (!w || !h) return;
+  if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h);
+  const D = 4, f = Math.min(w, h) * 1.5 * v.zoom, cx = w / 2, cy = h / 2 + Math.min(w, h) * 0.04;
+  const cyaw = Math.cos(v.yaw), syaw = Math.sin(v.yaw), cp = Math.cos(v.pitch), sp = Math.sin(v.pitch);
+  const T = p => { const x = p[0] * cyaw + p[2] * syaw, z0 = -p[0] * syaw + p[2] * cyaw; return [x, p[1] * cp - z0 * sp, p[1] * sp + z0 * cp]; };
+  const S = p => { const d = D - p[2]; return [cx + p[0] * f / d, cy - p[1] * f / d]; };
+  const mesh = MESH[v.mesh];
+  // floor shadow
+  const fc = S(T([0, mesh.floor, 0])), rx = 0.78 * f / D;
+  ctx.fillStyle = `rgb(${INK.text.join(' ')} / ${v.mode === 'pending' ? 0.05 : 0.1})`;
+  ctx.beginPath(); ctx.ellipse(fc[0], fc[1], rx, rx * (0.12 + 0.3 * Math.abs(sp)), 0, 0, Math.PI * 2); ctx.fill();
+  if (v.mode === 'pending') {
+    const s = 0.62, corners = []; for (const x of [-s, s]) for (const y of [-s, s]) for (const z of [-s, s]) corners.push(S(T([x, y, z])));
+    const edges = [[0, 1], [2, 3], [4, 5], [6, 7], [0, 2], [1, 3], [4, 6], [5, 7], [0, 4], [1, 5], [2, 6], [3, 7]];
+    ctx.strokeStyle = `rgb(${INK.faint.join(' ')})`; ctx.lineWidth = 1.2; ctx.setLineDash([4, 5]);
+    ctx.beginPath(); for (const [a, b] of edges) { ctx.moveTo(...corners[a]); ctx.lineTo(...corners[b]); } ctx.stroke(); ctx.setLineDash([]);
+    return;
+  }
+  const list = [];
+  for (const face of mesh.faces) {
+    const tp = face.p.map(T), n = norm(newell(tp)), c = centroid(tp);
+    if (dot(n, sub([0, 0, D], c)) <= 0) continue;
+    list.push({ tp, n, z: c[2], m: face.m });
+  }
+  list.sort((a, b) => a.z - b.z);
+  const clay = v.mode === 'clay';
+  for (const it of list) {
+    const base = MAT[clay ? 'clay' : it.m];
+    const s = Math.min(1.15, 0.36 + 0.7 * Math.max(0, dot(it.n, LIGHT)) + 0.1 * Math.max(0, it.n[2]));
+    const col = `rgb(${Math.min(255, base[0] * s) | 0} ${Math.min(255, base[1] * s) | 0} ${Math.min(255, base[2] * s) | 0})`;
+    ctx.beginPath(); it.tp.forEach((p, i) => { const q2 = S(p); i ? ctx.lineTo(q2[0], q2[1]) : ctx.moveTo(q2[0], q2[1]); }); ctx.closePath();
+    ctx.fillStyle = col; ctx.fill();
+    ctx.lineJoin = 'round'; ctx.lineWidth = clay ? 0.8 : 1.1;
+    ctx.strokeStyle = clay ? `rgb(${base.map(x => (x * s * 0.72) | 0).join(' ')})` : col; ctx.stroke();
+  }
+}
+
+/* Every viewer on the page shares one animation loop; a viewer turns by itself only while nobody has turned it,
+   it is on screen, reduced motion is off and turning is on. */
+const viewers = new Set();
+const io = new IntersectionObserver(es => es.forEach(e => { const v = e.target._v; if (v) { v.visible = e.isIntersecting; v.dirty = true; } }));
+const ro = new ResizeObserver(es => es.forEach(e => { const v = e.target._v; if (v) v.dirty = true; }));
+const DEFAULT_YAW = -0.62, DEFAULT_PITCH = 0.38;
+function facing(v) {
+  let deg = Math.round(((v.yaw - DEFAULT_YAW) * 180 / Math.PI) % 360); if (deg < 0) deg += 360;
+  return deg === 0 ? 'Facing the front' : deg <= 180 ? `Turned ${deg} degrees to the right` : `Turned ${360 - deg} degrees to the left`;
+}
+function mountViewers(root) {
+  root.querySelectorAll('.mv[data-mesh]').forEach(el => {
+    if (el._v) return;
+    const cv = document.createElement('canvas'); cv.setAttribute('aria-hidden', 'true'); el.prepend(cv);
+    const v = { el, canvas: cv, ctx: cv.getContext('2d'), mesh: el.dataset.mesh, mode: el.dataset.mode || 'done', yaw: DEFAULT_YAW + (Number(el.dataset.yaw) || 0), pitch: DEFAULT_PITCH,
+      zoom: Number(el.dataset.zoom) || 1, auto: el.dataset.auto || 'always', interactive: el.dataset.interactive === '1', touched: false, hover: false, visible: true, dirty: true };
+    el._v = v; viewers.add(v); io.observe(el); ro.observe(el);
+    const host = el.closest('[data-hover-host]') || el;
+    host.addEventListener('pointerenter', () => { v.hover = true; }); host.addEventListener('pointerleave', () => { v.hover = false; });
+    host.addEventListener('focusin', () => { v.hover = true; }); host.addEventListener('focusout', () => { v.hover = false; });
+    if (!v.interactive) return;
+    const update = () => { v.dirty = true; el.setAttribute('aria-valuetext', facing(v)); let d = Math.round(((v.yaw - DEFAULT_YAW) * 180 / Math.PI) % 360); el.setAttribute('aria-valuenow', String(d < 0 ? d + 360 : d)); };
+    el.addEventListener('pointerdown', e => { el.setPointerCapture(e.pointerId); v.drag = [e.clientX, e.clientY]; v.touched = true; });
+    el.addEventListener('pointermove', e => { if (!v.drag) return; v.yaw += (e.clientX - v.drag[0]) * 0.012; v.pitch = Math.max(-0.15, Math.min(1.0, v.pitch + (e.clientY - v.drag[1]) * 0.01)); v.drag = [e.clientX, e.clientY]; update(); });
+    const end = () => { v.drag = null; }; el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
+    el.addEventListener('keydown', e => {
+      const k = e.key, step = Math.PI / 12; let hit = true;
+      if (k === 'ArrowLeft') v.yaw -= step; else if (k === 'ArrowRight') v.yaw += step;
+      else if (k === 'ArrowUp') v.pitch = Math.max(-0.15, v.pitch - 0.1); else if (k === 'ArrowDown') v.pitch = Math.min(1.0, v.pitch + 0.1);
+      else if (k === 'Home') { v.yaw = DEFAULT_YAW; v.pitch = DEFAULT_PITCH; v.zoom = Number(el.dataset.zoom) || 1; }
+      else if (k === '+' || k === '=') v.zoom = Math.min(1.8, v.zoom * 1.12); else if (k === '-') v.zoom = Math.max(0.6, v.zoom / 1.12);
+      else hit = false;
+      if (hit) { e.preventDefault(); e.stopPropagation(); v.touched = true; update(); }
+    });
+    update();
+  });
+}
+function resetViewer(el) { const v = el && el._v; if (!v) return; v.yaw = DEFAULT_YAW; v.pitch = DEFAULT_PITCH; v.zoom = Number(el.dataset.zoom) || 1; v.touched = false; v.dirty = true; el.setAttribute('aria-valuetext', facing(v)); el.setAttribute('aria-valuenow', '0'); }
+let last = performance.now();
+function loop(t) {
+  const dt = Math.min(0.05, (t - last) / 1000); last = t;
+  for (const v of viewers) {
+    if (!v.el.isConnected) { viewers.delete(v); io.unobserve(v.el); ro.unobserve(v.el); continue; }
+    const turning = !reduced() && ui.spin && !v.touched && v.visible && (v.auto === 'always' || (v.auto === 'hover' && v.hover));
+    if (turning) { v.yaw += dt * 0.42; v.dirty = true; }
+    if (v.dirty && v.visible) { draw(v); v.dirty = false; }
+  }
+  requestAnimationFrame(loop);
+}
+
+function viewer(m, o = {}) {
+  const mode = o.mode || (m.status === 'done' ? 'done' : m.status === 'shape' ? 'pending' : 'clay');
+  const a = o.interactive
+    ? `tabindex="0" role="slider" aria-roledescription="3D model" aria-label="Turn the ${lc(m.name)}. Drag, or use the arrow keys; Home puts it back." aria-valuemin="0" aria-valuemax="359" data-own-keys`
+    : 'aria-hidden="true"';
+  return `<span class="mv ${o.cls || ''}" data-mesh="${m.mesh}" data-mode="${mode}" data-interactive="${o.interactive ? 1 : 0}" data-auto="${o.auto || (o.interactive ? 'always' : 'off')}" ${o.zoom ? `data-zoom="${o.zoom}"` : ''} ${o.yaw ? `data-yaw="${o.yaw}"` : ''} ${a}>${o.over || ''}${o.interactive && o.hint !== false ? '<span class="mv-hint" aria-hidden="true">Drag or use arrow keys to turn</span>' : ''}</span>`;
+}
+const ring = (pct, size = 22) => `<svg class="ring" viewBox="0 0 24 24" style="width:${size}px;height:${size}px" aria-hidden="true"><circle class="bg" cx="12" cy="12" r="9"/><circle class="fg" cx="12" cy="12" r="9" stroke-dasharray="${(pct / 100 * 56.5).toFixed(1)} 56.5"/></svg>`;
+
+/* =====================================================================================================
+   What this prototype shows
+   ===================================================================================================== */
+const MODEL = { mesh: 'chest', name: 'Treasure chest', base: 'Treasure chest', credits: 30,
+  words: 'Iron-banded oak treasure chest with a domed lid and a brass lock, game-ready, about 70,000 polygons',
+  files: [['models/Treasure chest.png', '0.3 MB'], ['models/Treasure chest.glb', '4.1 MB'], ['models/Treasure chest.usdz', '5.2 MB']] };
+const STATES = { ask: 'Asks first', shape: 'Shape', texture: 'Texture', done: 'Done', failed: 'Failed' };
+const q = new URLSearchParams(location.search);
+let state = STATES[q.get('state')] ? q.get('state') : 'done';
+let progress = q.get('progress') === 'percent' ? 'percent' : 'step';
+let doneOpen = q.get('done') === 'open' ? 'open' : 'closed';
+let theme = q.get('theme') === 'light' ? 'light' : 'dark';
+let motion = q.get('motion') === 'reduced' ? 'reduced' : 'full';
+let ui = { spin: true, open: null };
+const reduced = () => motion === 'reduced';
+const lc = s => s.toLowerCase();
+const ext = p => p.slice(p.lastIndexOf('.'));
+const base = p => p.slice(p.lastIndexOf('/') + 1);
+
+/* ---------- window ---------- */
+function sidebar() {
+  return `<nav class="side" aria-label="Threads">
+    <div class="side-top"><span class="logo" aria-hidden="true"></span><span class="sp"></span><button class="ib" aria-label="New project">${ic('panelLeft')}</button><button class="new">${ic('pen')}New thread</button></div>
+    <div class="search">${ic('search')}Search threads</div>
+    <div class="grp-h"><b>Recent</b><span class="n">1</span></div>
+    <div class="row on"><span class="t">Treasure room props</span><span class="s"><span>Godot game</span><span class="r">${state === 'ask' ? 'In Needs you' : '5:41 pm'}</span></span></div>
+    <div class="row"><span class="t">Fox NPC</span><span class="s"><span>Godot game</span><span class="r">Yesterday</span></span></div>
+    <div class="grp-h">› Settled</div>
+    <div class="side-foot">${ic('search')}</div></nav>`;
+}
+function topBar() {
+  return `<header class="tbar"><h1>Treasure room props</h1><span class="crumb">/ Godot game</span><span class="crumb">master</span><span class="sp"></span>
+    <span class="tbtn">Commit</span><span class="tbtn">Watch</span><button class="ib hide-narrow" aria-label="Tools">${ic('panelRight')}</button></header>`;
+}
+
+/* ---------- the card that asks first, worded as ticket 3 built it ---------- */
+function askCard() {
+  return `<section class="pcard" aria-label="Make a 3D model with Meshy">
+    <h3>Make a 3D model with Meshy <span class="tag">Meshy</span></h3>
+    <div class="target">${MODEL.name}</div>
+    <pre>Sends Meshy these words: “${MODEL.words}”
+Meshy may use what it is sent, and the 3D models it makes, to train its own models.
+About 30 credits on the Meshy account Studio; 140 of its 1,000 credits used this month.
+The files go to models in this thread’s folder.</pre>
+    <div class="acts"><button class="btn primary">Make the model</button><button class="btn">Deny</button></div></section>`;
+}
+
+/* ---------- the line, A ---------- */
+const STEP = { shape: { words: 'Step 1 of 2: making the shape', pct: 42, left: 'about a minute left' }, texture: { words: 'Step 2 of 2: painting the texture', pct: 68, left: 'about 40 seconds left' } };
+function line() {
+  const making = state === 'shape' || state === 'texture', w = making ? STEP[state] : null;
+  const open = ui.open ?? (state === 'done' && doneOpen === 'open');
+  const canOpen = state !== 'shape';
+  // Nothing is saved when Meshy fails, so the line has no picture of it: a plain 3D model sign stands in.
+  const thumb = state === 'failed' ? ic('cube') : state === 'shape' ? (progress === 'percent' ? ring(w.pct, 26) : ring(30, 26).replace('class="ring"', 'class="ring spin"')) : viewer({ ...MODEL, status: state === 'texture' ? 'texture' : 'done' }, { auto: 'off', zoom: 1.15, mode: state === 'texture' || state === 'failed' ? 'clay' : 'done' });
+  const sub = making ? `<span>${w.words}${progress === 'percent' ? ` · <span class="pct">${w.pct}%</span>, ${w.left}` : ''}</span>`
+    : state === 'failed' ? `<span class="err">Could not finish · nothing saved · 20 credits counted</span>`
+      : `<span>3D model · ${MODEL.credits} credits · ${MODEL.files.length} files</span>`;
+  const what = state === 'failed' ? 'what happened' : state === 'texture' ? 'the shape' : 'the model';
+  const v = viewer({ ...MODEL }, { interactive: true, mode: state === 'done' ? 'done' : 'clay' });
+  const tools = `<span class="mv-tools">${!reduced() ? `<button class="ib" data-act="spin" aria-label="Stop turning">${ic('pause')}</button>` : ''}<button class="ib" data-act="reset" aria-label="Turn the ${lc(MODEL.name)} back to the front">${ic('reset')}</button></span>`;
+  const body = state === 'failed'
+    ? `<div class="problem">${ic('alert')}<p><b>Meshy could not finish the ${lc(MODEL.name)}.</b></p><p>It stopped while painting the texture, so Sotto saved no files. Meshy charged 20 credits for the shape and gave back the texture's 10. Ask the thread to try again; it will ask you first.</p></div>`
+    : `<div style="position:relative">${v.replace('</span>', '</span>')}${tools}</div><div class="mc-foot">${state === 'texture'
+      ? `<p class="facts-line">The shape is ready to turn. The texture follows, then the files go to <span class="mono">models/</span>.</p>`
+      : `<p class="facts-line">Made from words · <b>${MODEL.credits} credits</b></p><div class="fchips">${MODEL.files.map(([p, s]) => `<button class="fchip" aria-label="Show ${p} in Files"><span class="mono">${ext(p)}</span>${s}</button>`).join('')}</div>`}</div>`;
+  return `<div class="chip" data-open="${open && canOpen ? 1 : 0}" role="group" aria-label="3D model: ${MODEL.name}">
+    <div class="chip-row"><span class="chip-thumb">${thumb}</span>
+      <span class="chip-txt"><b>${MODEL.name}</b>${sub}${making && progress === 'percent' ? `<div class="prog" role="progressbar" aria-label="${w.words}" aria-valuenow="${w.pct}" aria-valuemin="0" aria-valuemax="100"><i style="width:${w.pct}%"></i></div>` : ''}</span>
+      ${canOpen ? `<button class="chip-toggle" id="chipToggle" aria-expanded="${open}" aria-controls="chipBody"><span class="lab">${open ? 'Hide' : 'Show'} ${what}</span>${ic('chevDown')}</button>` : ''}</div>
+    ${canOpen ? `<div class="chip-body" id="chipBody" ${open ? '' : 'hidden'}>${body}</div>` : ''}</div>`;
+}
+
+function conversation() {
+  const after = state === 'done' ? `<p class="after">It is in <span class="mono">models/Treasure chest.glb</span>. I added it to <span class="mono">scenes/vault.tscn</span> against the back wall.</p>` : '';
+  return `<div class="col">
+    <div class="you"><div class="bub"><div class="who">You<span>5:38 pm</span></div>Make a treasure chest for the vault room. Around 70k polygons, ready for Godot.</div></div>
+    <div class="agent"><div class="who">Claude<span>5:39 pm</span></div>
+      <p>The vault room needs one centrepiece, so I am asking Meshy for an iron-banded oak chest with a domed lid, about 70,000 polygons.</p>
+      ${state === 'ask' ? askCard() : `<div class="act">${ic('cube')}<span class="mono">make_3d_model</span><span>· Meshy</span></div>${line()}${after}`}
+    </div></div>`;
+}
+
+function render() {
+  document.documentElement.dataset.theme = theme; document.documentElement.dataset.motion = motion;
+  readInk();
+  document.getElementById('win').innerHTML = `${sidebar()}<main class="main">${topBar()}<div class="msgs" id="msgs">${conversation()}</div>
+    <div class="composer"><div class="ph">${state === 'ask' ? 'Queued until you answer the card' : 'What would you like to do next?'}</div><div class="bar"><span>${ic('clip')}</span><span class="sp"></span><span>Claude</span><span class="send">${ic('up')}</span></div></div></main>`;
+  mountViewers(document.getElementById('win'));
+  const t = document.getElementById('chipToggle');
+  if (t) t.onclick = () => { const open = t.getAttribute('aria-expanded') !== 'true'; ui.open = open; render(); document.getElementById('chipToggle')?.focus(); };
+  document.querySelectorAll('[data-act=spin]').forEach(b => b.onclick = () => { ui.spin = !ui.spin; b.setAttribute('aria-label', ui.spin ? 'Stop turning' : 'Turn slowly'); b.innerHTML = ic(ui.spin ? 'pause' : 'play'); });
+  document.querySelectorAll('[data-act=reset]').forEach(b => b.onclick = () => resetViewer(b.closest('.chip').querySelector('.mv[data-interactive="1"]')));
+  // the switcher
+  document.getElementById('states').innerHTML = Object.entries(STATES).map(([k, l]) => `<button data-s="${k}" class="${k === state ? 'on' : ''}" aria-pressed="${k === state}">${l}</button>`).join('');
+  document.getElementById('opts').innerHTML = `<button data-p="${progress === 'step' ? 'percent' : 'step'}">${progress === 'step' ? 'While making: step only' : 'While making: step and %'}</button><button data-d="${doneOpen === 'open' ? 'closed' : 'open'}">${doneOpen === 'open' ? 'Done: opens by itself' : 'Done: closed line'}</button>`;
+  document.getElementById('theme').textContent = theme === 'dark' ? 'Light' : 'Dark';
+  document.getElementById('motion').textContent = reduced() ? 'Full motion' : 'Reduce motion';
+  document.getElementById('notes').innerHTML = NOTES;
+  const u = new URL(location); u.search = '';
+  u.searchParams.set('state', state); if (progress === 'percent') u.searchParams.set('progress', 'percent'); if (doneOpen === 'open') u.searchParams.set('done', 'open');
+  if (theme === 'light') u.searchParams.set('theme', 'light'); if (reduced()) u.searchParams.set('motion', 'reduced');
+  history.replaceState(null, '', u);
+}
+const NOTES = `<h2>A, a quiet line that opens, in today's Sotto</h2>
+<p style="margin:0">Zach picked A on October 22. This shows it in today's look, with what tickets 2 and 3 built behind it. Press <b>Show the model</b> to open the turnable view in place; drag it, or focus it and use the arrow keys (Home faces the front).</p>
+<h2 style="margin-top:12px">Open choices (bottom bar)</h2><ul>
+<li><b>While making:</b> the step only, or the step with Meshy's percent and time left (needs Sotto to keep Meshy's progress as it reads each task).</li>
+<li><b>When done:</b> a closed line you open, or opened by itself in its turn.</li>
+<li><b>Failed:</b> says what happened and leaves the next try to the thread, which asks you again. No Try again button.</li></ul>
+<h2 style="margin-top:12px">Not in this prototype</h2><ul><li>The real view draws the GLB file Meshy made; this draws a stand-in chest.</li></ul>`;
+
+document.getElementById('states').onclick = e => { const b = e.target.closest('[data-s]'); if (b) { state = b.dataset.s; ui.open = null; render(); document.querySelector(`[data-s="${state}"]`)?.focus(); } };
+document.getElementById('opts').onclick = e => { const b = e.target.closest('button'); if (!b) return; if (b.dataset.p) progress = b.dataset.p; if (b.dataset.d) { doneOpen = b.dataset.d; ui.open = null; } render(); };
+document.getElementById('theme').onclick = () => { theme = theme === 'dark' ? 'light' : 'dark'; render(); viewers.forEach(v => v.dirty = true); };
+document.getElementById('motion').onclick = () => { motion = reduced() ? 'full' : 'reduced'; render(); };
+const notesEl = document.getElementById('notes'), notesBtn = document.getElementById('notesBtn');
+const setNotes = open => { notesEl.hidden = !open; notesBtn.setAttribute('aria-expanded', open); notesBtn.classList.toggle('on', open); };
+notesBtn.onclick = () => setNotes(notesEl.hidden);
+const setBar = show => { document.getElementById('bar').hidden = !show; document.getElementById('showBar').hidden = show; if (!show) setNotes(false); };
+document.getElementById('hideBar').onclick = () => setBar(false);
+document.getElementById('showBar').onclick = () => { setBar(true); document.getElementById('hideBar').focus(); };
+addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !notesEl.hidden) { setNotes(false); notesBtn.focus(); return; }
+  if (e.target.closest('input,textarea,select,[contenteditable],[data-own-keys]')) return;
+  if (e.key === 'h' || e.key === 'H') setBar(document.getElementById('bar').hidden);
+});
+readMaterials();
+render();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
