@@ -306,6 +306,15 @@ describe('the record of 3D models', () => {
     expect(await readdir(join(root, 'models'))).toContain('Chair.glb')
   })
 
+  it('keeps counting what the oldest 3D models cost once they fall out of the record', async () => {
+    const records = new ModelRecords(data, { historyEnabled: () => true, kept: 2 })
+    const { service } = models({ records })
+    for (const name of ['One', 'Two', 'Three']) await (await service.make(words(name))).done
+    expect((await records.list()).map(model => model.name)).toEqual(['Three', 'Two'])
+    expect((await records.monthCredits()).get('meshy-1')).toBe(90)
+    expect((await new ModelRecords(data, { historyEnabled: () => true, kept: 2 }).monthCredits()).get('meshy-1')).toBe(90)
+  })
+
   it('counts the month’s credits from the 1st by this computer’s clock, per account, a forgotten thread’s too', async () => {
     let now = new Date(2026, 10, 30, 23, 0).getTime()
     const { service, records } = models({ now: () => now })

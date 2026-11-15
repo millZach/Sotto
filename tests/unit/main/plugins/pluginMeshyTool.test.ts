@@ -1,8 +1,8 @@
 // @vitest-environment node
-import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, realpath, rm, symlink, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { wordPluginChange } from '../../../../src/main/plugins/changeWords'
 import { MODEL_COST } from '../../../../src/main/plugins/meshy/tool'
 import type { PluginChangeAnswer } from '../../../../src/main/plugins/pendingChanges'
@@ -26,7 +26,7 @@ const STUDIO: PluginAccount = { id: '44444444-4444-4444-8444-000000000001', plug
 const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from('made-up photo with camera details')])
 
 /** The tools for thread `one`, over one Meshy account, with the user's answers and Meshy's outcome scripted. */
-function tools(options: { answers?: PluginChangeAnswer[]; used?: number; ended?: Partial<ThreeDModel> | 'never'; noMeshy?: boolean; whileAsked?: (world: { accounts: PluginAccount[] }) => void | Promise<void> } = {}) {
+function tools(options: { answers?: PluginChangeAnswer[]; used?: number; ended?: Partial<ThreeDModel> | 'never'; noMeshy?: boolean; whileAsked?: (world: { accounts: PluginAccount[] }) => void | Promise<void>; whileCounting?: (world: { accounts: PluginAccount[] }) => void } = {}) {
   const world = { accounts: [STUDIO] }
   const answers = [...options.answers ?? []]
   const asked: PluginChange[] = []
@@ -56,7 +56,7 @@ function tools(options: { answers?: PluginChangeAnswer[]; used?: number; ended?:
     ...(options.noMeshy ? {} : { meshy: {
       folderOf: async () => root,
       // What this computer counts: what was used before, and each 3D model started here at its full cost.
-      monthCredits: async () => (options.used ?? 0) + made.length * MODEL_COST.words,
+      monthCredits: async () => { options.whileCounting?.(world); return (options.used ?? 0) + made.length * MODEL_COST.words },
       keyTrouble: () => null,
       checkPhoto,
       // The redraw keeps the pixels and drops the rest; here, the bytes after the marker stand for what is dropped.
@@ -74,7 +74,7 @@ function tools(options: { answers?: PluginChangeAnswer[]; used?: number; ended?:
     } }),
   })
   servers.push(server)
-  const make = (args: Record<string, unknown>, context: { waitMs?: number } = {}) => server.call('one', MAKE_3D_MODEL_TOOL, args, context)
+  const make = (args: Record<string, unknown>, context: { waitMs?: number; signal?: AbortSignal } = {}) => server.call('one', MAKE_3D_MODEL_TOOL, args, context)
   return { server, world, asked, recorded, made, make }
 }
 const said = (result: { content: { type: string; text?: string }[] }): string => result.content.map(part => part.text ?? '').join('\n')
@@ -181,6 +181,57 @@ describe('making a 3D model through make_3d_model', () => {
     expect((await t.make({ ...BARREL, formats: ['stl'], folder: 'art/3d' })).isError).toBeUndefined()
     expect(t.made[0]).toMatchObject({ formats: ['stl'], folder: 'art/3d' })
     expect(t.asked).toHaveLength(1)
+  })
+
+  it('shows the card after all when asking was turned back on while the call was being looked at', async () => {
+    let counted = 0
+    const t = tools({ answers: ['denied'], whileCounting: world => { if (++counted === 1) world.accounts = [{ ...STUDIO, spending: { askBefore: true, monthlyLimit: 1_000 } }] } })
+    t.world.accounts = [{ ...STUDIO, spending: { askBefore: false, monthlyLimit: 1_000 } }]
+    expect(said(await t.make(BARREL))).toContain('The user said no.')
+    expect(t.asked).toHaveLength(1)
+    expect(t.made).toEqual([])
+  })
+
+  it('sends no photo swapped after it was checked, even one of the same size and time, or one reached through a link', async () => {
+    await mkdir(join(root, 'art'))
+    const fox = join(root, 'art', 'fox.jpg')
+    await writeFile(fox, JPEG)
+    const same = Buffer.from(JPEG)
+    same[same.length - 1] = same[same.length - 1]! ^ 1
+    // The photo's time is a whole second, so the swapped one can be given exactly the same time and size.
+    const when = new Date(2026, 0, 1, 12, 0, 0)
+    await utimes(fox, when, when)
+    const swapped = tools({ whileAsked: async () => {
+      await writeFile(fox, same)
+      await utimes(fox, when, when)
+    } })
+    expect(said(await swapped.make({ name: 'Fox', photo: 'art/fox.jpg' }))).toContain('changed or moved after it was asked for')
+    expect(swapped.made).toEqual([])
+    const outside = await mkdtemp(join(tmpdir(), 'sotto-meshy-outside-'))
+    try {
+      await writeFile(join(outside, 'fox.jpg'), same)
+      await writeFile(fox, JPEG)
+      const linked = tools({ whileAsked: async () => {
+        await rm(join(root, 'art'), { recursive: true })
+        await symlink(outside, join(root, 'art'), 'junction')
+      } })
+      expect(said(await linked.make({ name: 'Fox', photo: 'art/fox.jpg' }))).toContain('changed or moved after it was asked for')
+      expect(linked.made).toEqual([])
+    } finally { await rm(outside, { recursive: true, force: true }) }
+  })
+
+  it('says a 3D model is still being made when the client gives up, or does not say how long it waits', async () => {
+    const t = tools({ ended: 'never' })
+    t.world.accounts = [{ ...STUDIO, spending: { askBefore: false, monthlyLimit: 1_000 } }]
+    const gone = new AbortController()
+    gone.abort()
+    expect(said(await t.make(BARREL, { signal: gone.signal }))).toContain('Meshy is still making the 3D model "Oak barrel"')
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const waiting = t.make(BARREL)
+      await vi.advanceTimersByTimeAsync(t.server.timeoutMs)
+      expect(said(await waiting)).toContain('Meshy is still making the 3D model "Oak barrel"')
+    } finally { vi.useRealTimers() }
   })
 
   it('says a 3D model is still being made when the client will not wait for it', async () => {

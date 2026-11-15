@@ -646,21 +646,34 @@ export class PluginToolServer implements ScopedThreadTools {
     }
     const over = await overLimit(account)
     if (over) { await kept('refused'); return text(over, true) }
-    if (account.spending?.askBefore !== false) {
+    /** Shows the card as the account stands, and what to tell the agent when the user did not allow it. */
+    const refusal = async (shown: PluginAccount): Promise<ThreadToolResult | null> => {
       const refused = await this.refusalOf(threadId, {
-        kind: 'meshy-model', account: account.name, name, ...(words !== undefined ? { words } : { photo: photo! }), credits: cost,
-        monthCredits: await meshy.monthCredits(account.id), monthlyLimit: account.spending?.monthlyLimit ?? MESHY_MONTHLY_LIMIT_DEFAULT, folder,
+        kind: 'meshy-model', account: shown.name, name, ...(words !== undefined ? { words } : { photo: photo! }), credits: cost,
+        monthCredits: await meshy.monthCredits(shown.id), monthlyLimit: shown.spending?.monthlyLimit ?? MESHY_MONTHLY_LIMIT_DEFAULT, folder,
       }, call, NOTHING_MADE)
-      if (refused) {
-        if (refused.outcome) await kept(refused.outcome)
-        return refused.result
-      }
+      if (!refused) return null
+      if (refused.outcome) await kept(refused.outcome)
+      return refused.result
+    }
+    // Whether the user answered a card for this call: only that, or asking turned off, lets it go to Meshy.
+    let allowed = false
+    if (account.spending?.askBefore !== false) {
+      const refused = await refusal(account)
+      if (refused) return refused
+      allowed = true
     }
     // The account may have been switched off, kept to other projects, removed, or its limit lowered while the card waited.
     const now = await this.handlers.findAccount(threadId, 'meshy', account.name).catch(() => 'unknown' as const)
     if (typeof now === 'string' || now.id !== account.id) {
       await kept('failed')
       return text(`The Meshy account was switched off, kept to other projects or removed before the 3D model could be asked for. ${NOTHING_MADE}`, true)
+    }
+    // Asking turned back on while this call was being looked at: the card is shown before anything goes.
+    if (!allowed && now.spending?.askBefore !== false) {
+      const refused = await refusal(now)
+      if (refused) return refused
+      allowed = true
     }
     const sent = checked === undefined ? undefined : await meshy.photoToSend(root, checked, photo!)
     if (typeof sent === 'string') { await kept('failed'); return text(photoWords(sent, photo!), true) }
@@ -682,21 +695,22 @@ export class PluginToolServer implements ScopedThreadTools {
     const started = turn
     // The 3D model is made whether or not this call is still waiting; it waits while its client does.
     const { signal, waitMs } = call.context
-    const room = waitMs === undefined ? undefined : waitMs - (Date.now() - call.started) - 10_000
-    const ended = await new Promise<ThreeDModel | undefined | 'waiting'>(resolve => {
-      const timer = room === undefined ? undefined : setTimeout(() => resolve('waiting'), Math.max(0, room))
-      const stop = (): void => resolve('waiting')
+    // A client that does not say how long it waits is given this server's own timeout, as every client here is.
+    const room = (waitMs ?? this.timeoutMs) - (Date.now() - call.started) - 10_000
+    const ended = signal?.aborted ? 'waiting' : await new Promise<ThreeDModel | undefined | 'waiting'>(resolve => {
+      const stop = (): void => { clearTimeout(timer); signal?.removeEventListener('abort', stop); resolve('waiting') }
+      const timer = setTimeout(stop, Math.max(0, room))
       signal?.addEventListener('abort', stop, { once: true })
-      void started.done.then(resolve, () => resolve(undefined)).finally(() => { clearTimeout(timer); signal?.removeEventListener('abort', stop) })
+      void started.done.then(model => model, () => undefined).then(model => { clearTimeout(timer); signal?.removeEventListener('abort', stop); resolve(model) })
     })
     const where = `${folder.replace(/[\\/]+$/u, '')}/`
     if (ended === 'waiting' || ended === undefined) {
       await kept('done')
-      return text(`${account.spending?.askBefore === false ? 'Asked of Meshy without a card, since the user turned asking off for the account.' : 'The user allowed it.'} Meshy is still making the 3D model "${name}". Sotto saves its files into ${where} in the thread's folder when it is done, named after "${name}"; about ${cost} credits.`)
+      return text(`${allowed ? 'The user allowed it.' : 'Asked of Meshy without a card, since the user turned asking off for the account.'} Meshy is still making the 3D model "${name}". Sotto saves its files into ${where} in the thread's folder when it is done, named after "${name}"; about ${cost} credits.`)
     }
     if (ended.state === 'done') {
       await kept('done')
-      return text(`${now.spending?.askBefore === false ? 'Made without a card, since the user turned asking off for the account.' : 'The user allowed it.'} The 3D model "${name}" is made, for ${ended.credits} credits. Its files, in the thread's folder: ${modelPaths(root, ended).join(', ')}.`)
+      return text(`${allowed ? 'The user allowed it.' : 'Made without a card, since the user turned asking off for the account.'} The 3D model "${name}" is made, for ${ended.credits} credits. Its files, in the thread's folder: ${modelPaths(root, ended).join(', ')}.`)
     }
     await kept('failed')
     return text(`The 3D model "${name}" was not made. ${endedWords(ended)}`, true)

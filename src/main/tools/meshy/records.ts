@@ -101,7 +101,8 @@ export class ModelRecords {
   /** Whether the file may still hold words, so turning Keep local history off knows to write it again. */
   private wordsInFile = false
   private queue: Promise<unknown> = Promise.resolve()
-  constructor(directory: string, private readonly options: { readonly historyEnabled: () => boolean }) {
+  /** `kept` is the most records kept: MODEL_RECORDS_KEPT unless a test says fewer. */
+  constructor(directory: string, private readonly options: { readonly historyEnabled: () => boolean; readonly kept?: number }) {
     this.path = join(directory, '3d-models.json')
   }
 
@@ -125,7 +126,10 @@ export class ModelRecords {
     return this.inTurn(async () => {
       const kept = this.private(recordSchema.parse(record))
       const records = await this.load()
-      await this.write([kept, ...records.filter(other => other.id !== kept.id)].slice(0, MODEL_RECORDS_KEPT))
+      const all = [kept, ...records.filter(other => other.id !== kept.id)]
+      // The oldest records past the most kept go, and what each cost stays counted, as a forgotten thread's does.
+      const dropped = all.slice(this.options.kept ?? MODEL_RECORDS_KEPT).filter(other => other.credits > 0).map(other => ({ accountId: other.accountId, askedAt: other.askedAt, credits: other.credits }))
+      await this.write(all.slice(0, this.options.kept ?? MODEL_RECORDS_KEPT), dropped.length > 0 ? [...this.spent, ...dropped] : this.spent)
       return kept
     })
   }
