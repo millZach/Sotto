@@ -76,7 +76,7 @@ export class MeshyModels {
   private readonly running = new Map<string, Promise<ThreeDModel | undefined>>()
   private readonly live = new Map<string, Live>()
   /** The shape Meshy made, by its signed link, while the texture is painted; and its bytes once the window asked. */
-  private readonly shapes = new Map<string, { readonly link: string; bytes?: Promise<Uint8Array | null> }>()
+  private readonly shapes = new Map<string, { readonly link: string; bytes?: Promise<Uint8Array | null>; stop?: AbortController }>()
   constructor(private readonly options: MeshyModelsOptions) {}
 
   /**
@@ -114,14 +114,26 @@ export class MeshyModels {
 
   /**
    * The shape Meshy made, fetched into memory from Meshy's file server the first time the window asks and never
-   * written anywhere; null once the texture is done, or when it cannot be fetched.
+   * written anywhere; null once the texture is done, or when it cannot be fetched. A fetch that failed is not kept, so
+   * the next ask tries again, and one nobody waits on any more is stopped when the shape goes (Bug Bot on #2599, N1).
    */
   shapeBytes(id: string): Promise<Uint8Array | null> {
     const shape = this.shapes.get(id)
     if (!shape) return Promise.resolve(null)
-    shape.bytes ??= fetchModelBytes(this.options.fetch, shape.link, { ...(this.options.assets ? { assets: this.options.assets } : {}),
-      ...(this.options.fileBytesMax !== undefined ? { maxBytes: this.options.fileBytesMax } : {}), signal: this.options.signal }).catch(() => null)
+    if (!shape.bytes) {
+      const stop = new AbortController()
+      shape.stop = stop
+      shape.bytes = fetchModelBytes(this.options.fetch, shape.link, { ...(this.options.assets ? { assets: this.options.assets } : {}),
+        ...(this.options.fileBytesMax !== undefined ? { maxBytes: this.options.fileBytesMax } : {}), signal: AbortSignal.any([this.options.signal, stop.signal]) })
+        .catch(() => null).then(bytes => { if (!bytes) { delete shape.bytes; delete shape.stop } return bytes })
+    }
     return shape.bytes
+  }
+
+  /** Lets a shape go, and stops its fetch if one is under way. */
+  private dropShape(id: string): void {
+    this.shapes.get(id)?.stop?.abort()
+    this.shapes.delete(id)
   }
 
   /** Picks up every 3D model still being made when Sotto last stopped. */
@@ -132,7 +144,7 @@ export class MeshyModels {
   private run(id: string, inputs: { readonly words?: string; readonly photo?: string }): Promise<ThreeDModel | undefined> {
     const held = this.running.get(id)
     if (held) return held
-    const run = this.drive(id, inputs).finally(() => { this.running.delete(id); this.live.delete(id); this.shapes.delete(id) })
+    const run = this.drive(id, inputs).finally(() => { this.running.delete(id); this.live.delete(id); this.dropShape(id) })
     this.running.set(id, run)
     return run
   }
@@ -250,7 +262,7 @@ export class MeshyModels {
   private async fetchFiles(id: string, made: MeshyTask): Promise<ThreeDModel> {
     // A try Sotto was stopped in is started again whole: what it wrote is this 3D model's own, and goes.
     await this.clearTry(await this.current(id))
-    this.shapes.delete(id)
+    this.dropShape(id)
     let record = await this.change(id, held => ({ ...held, stage: 'files', files: [] }))
     if (!made.files.glb) throw new Ending('failed', 'failed')
     let backoff = MESHY_POLL_MS

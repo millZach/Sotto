@@ -9,16 +9,18 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import ModelView from '../../../../src/renderer/src/agents/ModelView'
 
-const gl = vi.hoisted(() => ({ renders: 0, disposed: 0, lost: 0 }))
+const gl = vi.hoisted(() => ({ renders: 0, disposed: 0, lost: 0, gone: new WeakSet<object>() }))
 vi.mock('three', () => {
   class Part { position = { set: () => undefined }; rotation = { set: () => undefined }; add(): void { /* Nothing to hold. */ } }
   class PerspectiveCamera extends Part { aspect = 1; updateProjectionMatrix(): void { /* Nothing to work out. */ } }
   class WebGLRenderer {
+    // As WebGL does: a canvas whose context was given up gives a dead one back, and three cannot start on it.
+    constructor(private readonly options: { canvas: object }) { if (gl.gone.has(options.canvas)) throw new Error("Cannot read properties of null (reading 'precision')") }
     setPixelRatio(): void { /* Nothing to set. */ }
     setSize(): void { /* Nothing to size. */ }
     render(): void { gl.renders++ }
     dispose(): void { gl.disposed++ }
-    forceContextLoss(): void { gl.lost++ }
+    forceContextLoss(): void { gl.lost++; gl.gone.add(this.options.canvas) }
   }
   return { WebGLRenderer, PerspectiveCamera, Scene: Part, Group: Part, HemisphereLight: Part, DirectionalLight: Part }
 })
@@ -30,7 +32,7 @@ let seen: ((entries: { isIntersecting: boolean }[]) => void) | undefined
 const tick = (ms = 16): void => { const now = performance.now() + ms; const due = frames; frames = []; for (const frame of due) frame(now) }
 
 beforeEach(() => {
-  Object.assign(gl, { renders: 0, disposed: 0, lost: 0 })
+  Object.assign(gl, { renders: 0, disposed: 0, lost: 0, gone: new WeakSet<object>() })
   frames = []
   vi.stubGlobal('requestAnimationFrame', (frame: FrameRequestCallback) => frames.push(frame))
   vi.stubGlobal('cancelAnimationFrame', () => { frames = [] })
@@ -84,4 +86,14 @@ it('says where the model faces once it stops turning by itself', async () => {
   expect(degrees).toBeGreaterThanOrEqual(15)
   expect(degrees).toBeLessThan(25)
   expect(stage).toHaveAttribute('aria-valuetext', `Turned ${degrees} degrees from the front`)
+})
+
+it('draws again when opened once more, on a canvas of its own, as React does twice in a development build', async () => {
+  // Bug Bot on #2599, L1: a canvas kept across openings came back with its context given up, and read as no WebGL.
+  const unavailable = vi.fn()
+  await act(async () => { render(<React.StrictMode><ModelView modelId="model-1" part="model" name="Oak barrel" reduced={false} onClose={() => undefined} onUnavailable={unavailable} /></React.StrictMode>) })
+  await screen.findByText('Drag or use the arrow keys to turn')
+  expect(unavailable).not.toHaveBeenCalled()
+  expect(gl.lost).toBe(1)
+  expect(screen.getByRole('slider').querySelectorAll('canvas')).toHaveLength(1)
 })

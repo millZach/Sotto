@@ -1,3 +1,4 @@
+import { realpath } from 'node:fs/promises'
 import { isAbsolute, relative, sep } from 'node:path'
 import { bytesHaveRasterSignature } from '../../../shared/agents'
 import type { Model3dBytesRequest, Model3dView } from '../../../shared/models3d'
@@ -27,7 +28,8 @@ const STILL_TYPES: Readonly<Record<string, string>> = { png: 'image/png', jpg: '
  */
 export async function modelView(model: ThreeDModel, progress: ModelProgress | undefined, shape: boolean): Promise<Model3dView> {
   const sizes = model.files.length > 0 && model.state !== 'making' ? await modelFileSizes(model) : new Map<string, number>()
-  const folder = relative(model.root, model.folder)
+  // The record's folder is its real path, so the thread's folder is read through any link too (Bug Bot on #2599, N2).
+  const folder = relative(await realpath(model.root).catch(() => model.root), model.folder)
   const making = model.state === 'making'
   return {
     id: model.id, name: model.name, source: model.source.kind, state: model.state, credits: model.credits,

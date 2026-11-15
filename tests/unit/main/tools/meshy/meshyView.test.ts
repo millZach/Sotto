@@ -45,6 +45,16 @@ describe('a 3D model in its thread', () => {
     expect(JSON.stringify(view)).not.toContain(root)
   })
 
+  it('names its folder inside the thread’s even when the thread’s folder is reached through a link', async () => {
+    // Bug Bot on #2599, N2.
+    const model = await done()
+    const linkTo = await mkdtemp(join(tmpdir(), 'sotto-meshy-view-link-'))
+    try {
+      await symlink(root, join(linkTo, 'thread'), 'junction')
+      expect((await modelView({ ...model, root: join(linkTo, 'thread') }, undefined, false)).folder).toBe('models')
+    } finally { await rm(linkTo, { recursive: true, force: true }) }
+  })
+
   it('carries Meshy’s percent and the time left while it works, and the shape while the texture is painted', async () => {
     const making: ThreeDModel = { ...await done(), state: 'making', stage: 'texture', credits: 30, files: [] }
     delete (making as { still?: string }).still

@@ -53,7 +53,6 @@
   color: var(--tt-text);
   font: inherit;
   font-size: var(--tt-type-small);
-  cursor: pointer;
 }
 .model-line__toggle:hover { background: var(--tt-hover); }
 .model-line__toggle:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 1px; }
@@ -130,7 +129,6 @@
   border-radius: var(--tt-radius-control);
   background: transparent;
   color: var(--tt-text-muted);
-  cursor: pointer;
 }
 .model-view__tool:hover { background: var(--tt-hover); color: var(--tt-text); }
 .model-view__tool:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 1px; }

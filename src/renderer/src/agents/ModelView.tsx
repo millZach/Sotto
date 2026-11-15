@@ -42,7 +42,6 @@ const degreesOf = (yaw: number): number => { const degrees = Math.round(((yaw - 
 export default function ModelView({ modelId, part, name, reduced, onClose, onUnavailable }: ModelViewProps): ReactNode {
   const { t } = useLingui()
   const host = useRef<HTMLDivElement>(null)
-  const canvas = useRef<HTMLCanvasElement>(null)
   const turn = useRef({ yaw: YAW_FRONT, pitch: PITCH_FRONT, dirty: true, touched: false, auto: !reduced })
   const drag = useRef<{ readonly x: number; readonly y: number; readonly yaw: number; readonly pitch: number } | null>(null)
   const [degrees, setDegrees] = useState(0)
@@ -61,10 +60,14 @@ export default function ModelView({ modelId, part, name, reduced, onClose, onUna
 
   useEffect(() => {
     const element = host.current
-    const surface = canvas.current
-    if (!element || !surface) return undefined
+    if (!element) return undefined
+    // A canvas of its own each time the view opens: a context given up when it closed cannot be had back from the same
+    // canvas, which would read as a computer that cannot draw (Bug Bot on #2599, L1).
+    const surface = document.createElement('canvas')
+    surface.setAttribute('aria-hidden', 'true')
+    element.prepend(surface)
     let renderer: WebGLRenderer
-    try { renderer = new WebGLRenderer({ canvas: surface, antialias: true, alpha: true }) } catch { unavailable.current(); return undefined }
+    try { renderer = new WebGLRenderer({ canvas: surface, antialias: true, alpha: true }) } catch { surface.remove(); unavailable.current(); return undefined }
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
     const scene = new Scene()
     const camera = new PerspectiveCamera(FIELD, 1, 0.05, 50)
@@ -135,6 +138,7 @@ export default function ModelView({ modelId, part, name, reduced, onClose, onUna
       renderer.dispose()
       // The graphics context goes now rather than whenever the page lets it, so closed views hold none.
       renderer.forceContextLoss()
+      surface.remove()
     }
   }, [modelId, part])
 
@@ -184,7 +188,6 @@ export default function ModelView({ modelId, part, name, reduced, onClose, onUna
       aria-label={t({ message: `Turn the ${name}. Drag, or use the arrow keys; Home faces it to the front.`, comment: '{name} is the name of a 3D model, such as Oak barrel.' })}
       aria-valuemin={0} aria-valuemax={359} aria-valuenow={degrees} aria-valuetext={facing} aria-busy={drawn === 'loading'}
       onKeyDown={keyDown} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerUp}>
-      <canvas ref={canvas} aria-hidden="true" />
       {drawn === 'drawn' && <span className="model-view__hint" aria-hidden="true">{t`Drag or use the arrow keys to turn`}</span>}
       {drawn === 'unreadable' && <span className="model-view__over"><b>{t`Sotto could not draw this 3D model.`}</b><span>{t`Its file may have been moved or changed. The files are listed below.`}</span></span>}
     </div>

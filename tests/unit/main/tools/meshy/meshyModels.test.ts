@@ -102,6 +102,26 @@ describe('a 3D model made with Meshy', () => {
     expect(await service.shapeBytes(model.id)).toBeNull()
   })
 
+  it('tries the shape again after a fetch that failed, rather than keep the failure', async () => {
+    // Bug Bot on #2599, N1.
+    meshy.behaviour.holding.add('refine')
+    const results: (Uint8Array | null)[] = []
+    const holder: { service?: MeshyModels; id?: string } = {}
+    const { service } = models({ wait: async () => {
+      if (results.length > 0 || !holder.id || !holder.service?.hasShape(holder.id)) return
+      meshy.behaviour.answers.push({ route: 'file', status: 500 })
+      results.push(await holder.service.shapeBytes(holder.id))
+      results.push(await holder.service.shapeBytes(holder.id))
+      meshy.behaviour.holding.delete('refine')
+    } })
+    holder.service = service
+    const { model, done } = await service.make(words())
+    holder.id = model.id
+    await done
+    expect(results[0]).toBeNull()
+    expect(results[1]).toEqual(new Uint8Array(64).fill('m'.charCodeAt(0)))
+  })
+
   it('stops asking Meshy and sending progress once its thread is forgotten during the texture, and drops the shape', async () => {
     meshy.behaviour.holding.add('refine')
     const records = recordsHere()
