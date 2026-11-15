@@ -1,9 +1,10 @@
 import { realpath } from 'node:fs/promises'
 import { isAbsolute, relative, sep } from 'node:path'
 import { bytesHaveRasterSignature } from '../../../shared/agents'
-import type { Model3dBytesRequest, Model3dView } from '../../../shared/models3d'
+import type { Model3dBytesRequest, Model3dHostPart, Model3dView } from '../../../shared/models3d'
 import { modelFileSizes, readModelFile } from './files'
 import { glbProblem } from './glb'
+import { usdzProblem } from './usdz'
 import type { ThreeDModel } from './records'
 import type { ModelProgress } from './service'
 
@@ -53,9 +54,10 @@ export async function modelViewOf(source: ModelViewSource, id: string): Promise<
 /**
  * The bytes the window draws: a finished 3D model's GLB or still picture from its folder, or the shape Meshy made while
  * it paints the texture. Null when the 3D model or the file is gone, the folder is no longer inside the thread's, the
- * file is past the cap (`maxBytes`, else a download's), the picture is not one, or the GLB points outside itself.
+ * file is past the cap (`maxBytes`, else a download's), the picture is not one, or the GLB points outside itself. A
+ * host also hands a phone the USDZ (the Meshy plan's ticket 7), when it is a whole one.
  */
-export async function modelBytes(source: ModelViewSource, request: Model3dBytesRequest, maxBytes?: number): Promise<Uint8Array | null> {
+export async function modelBytes(source: ModelViewSource, request: Model3dBytesRequest | { readonly id: string; readonly part: Model3dHostPart }, maxBytes?: number): Promise<Uint8Array | null> {
   if (request.part === 'shape') {
     // Only a 3D model still in its texture step has a shape to show, and only while its record is there: one whose
     // thread was forgotten, before the bytes came or while they did, hands over nothing.
@@ -72,6 +74,12 @@ export async function modelBytes(source: ModelViewSource, request: Model3dBytesR
     if (!still || !type) return null
     const bytes = await readModelFile(model, still, maxBytes)
     return bytes && bytesHaveRasterSignature(type, bytes) ? bytes : null
+  }
+  if (request.part === 'usdz') {
+    const usdz = model.files.find(name => name.toLowerCase().endsWith('.usdz'))
+    if (!usdz) return null
+    const bytes = await readModelFile(model, usdz, maxBytes)
+    return bytes && usdzProblem(bytes) === null ? bytes : null
   }
   const glb = model.files.find(name => name.toLowerCase().endsWith('.glb'))
   if (!glb) return null

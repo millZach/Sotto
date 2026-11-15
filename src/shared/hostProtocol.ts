@@ -442,7 +442,7 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * desktops; a host or desktop without it is sent and told nothing of spending.
  * `plugin-meshy-models`: a recorded desktop shows the host's 3D models (the Meshy plan's ticket 6, part 2). To a desktop
  * whose hello accepts it, a thread's detail keeps each `3d-model` visual, a 3D model's line, and loses every other visual
- * as before; a phone or any other client is sent none. The desktop reads `plugin-meshy-models` (every 3D model being made
+ * as before; any other client is sent none but a phone that accepts `plugin-meshy-phone`. The desktop reads `plugin-meshy-models` (every 3D model being made
  * or done, newest first, or one thread's), `plugin-meshy-model` (one 3D model's view), `plugin-meshy-model-bytes` (its GLB,
  * its still picture or its shape, in parts of `MODEL_3D_HOST_PART_BYTES`, at most `MODEL_3D_HOST_BYTES_MAX` in all, from
  * a file the host checked as the desktop checks its own) and `plugin-meshy-model-remove` (the record of one whose files
@@ -460,8 +460,15 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * and the catalog's fields, that holds what that push held, and names it in `kept` and `host.kept` (ADR-0028, November 10
  * amendment). The client puts each back from the push it applied last before anything reads the shell. Hello, a `shell`
  * read and a command's answer carry every part and move nothing. Every listener lists it, to desktops and phones alike.
+ * `plugin-meshy-phone`: a phone shows its threads' 3D models (the Meshy plan's ticket 7). To a phone whose hello accepts
+ * it, a thread's detail keeps each `3d-model` visual, as `plugin-meshy-models` keeps it for a desktop. The phone reads
+ * `plugin-meshy-model` (one 3D model's view) and `plugin-meshy-model-bytes` (its still picture, or its USDZ when the user
+ * opens it, in the same parts from a file checked the same way, whole as a USDZ), and is pushed `plugin-meshy-models`
+ * with a 3D model's view as it changes and the IDs of records that went. It lists no 3D models and removes none. Listed
+ * by a listener that keeps 3D models, the desktop's phone listener and a headless host with its Meshy copies, and to
+ * phones only; host protocol version 1 is unchanged, so an older phone, which does not accept it, is sent the words alone.
  */
-export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'git-pull-request-list', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-file-links', 'thread-linked-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view', 'provider-cursor', 'watcher-cursor', 'usage-background-refresh', 'client-update-not-listed', 'thread-prompts', 'file-staging', 'watcher-phone-photos', 'attachment-files', 'project-origins', 'watcher-phone-machines', 'host-delegation', 'thread-delete', 'delegation-views', 'branch-moves', 'bring-changes-back', 'delegation-relay', 'watcher-check-queue', 'watcher-check-stop', 'check-queue-views', 'project-setup', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts', 'watcher-phone-files', 'pull-request-confirmation', 'watcher-new-owner', 'thread-move', 'worker-swarms', 'every-agent-picture', 'thread-move-source', 'thread-move-keep', 'changed-thread-records', 'thread-media', 'thread-media-video', 'next-prompts', 'watcher-phone-composer', 'watcher-phone-settings-later', 'reply-thread-records', 'provider-mode-lists', 'settled-threads-on-request', 'usable-models', 'product-events', 'watcher-tell', 'command-changed-thread-records', 'step-window', 'thread-snooze', 'watcher-ready', 'browser', 'provider-deepseek', 'video-staging', 'thread-media-edge', 'provider-pi', 'project-git-init', 'plugin-account-copies', 'plugin-github-sign-in', 'plugin-mail-copies', 'plugin-meshy-copies', 'watcher-progress', 'kept-parts', 'plugin-meshy-spending', 'plugin-meshy-models'] as const
+export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'git-pull-request-list', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-file-links', 'thread-linked-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view', 'provider-cursor', 'watcher-cursor', 'usage-background-refresh', 'client-update-not-listed', 'thread-prompts', 'file-staging', 'watcher-phone-photos', 'attachment-files', 'project-origins', 'watcher-phone-machines', 'host-delegation', 'thread-delete', 'delegation-views', 'branch-moves', 'bring-changes-back', 'delegation-relay', 'watcher-check-queue', 'watcher-check-stop', 'check-queue-views', 'project-setup', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts', 'watcher-phone-files', 'pull-request-confirmation', 'watcher-new-owner', 'thread-move', 'worker-swarms', 'every-agent-picture', 'thread-move-source', 'thread-move-keep', 'changed-thread-records', 'thread-media', 'thread-media-video', 'next-prompts', 'watcher-phone-composer', 'watcher-phone-settings-later', 'reply-thread-records', 'provider-mode-lists', 'settled-threads-on-request', 'usable-models', 'product-events', 'watcher-tell', 'command-changed-thread-records', 'step-window', 'thread-snooze', 'watcher-ready', 'browser', 'provider-deepseek', 'video-staging', 'thread-media-edge', 'provider-pi', 'project-git-init', 'plugin-account-copies', 'plugin-github-sign-in', 'plugin-mail-copies', 'plugin-meshy-copies', 'watcher-progress', 'kept-parts', 'plugin-meshy-spending', 'plugin-meshy-models', 'plugin-meshy-phone'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
 /**
  * The features a headless host's tailnet listener offers only to a client the launch script recorded as a desktop
@@ -535,7 +542,7 @@ const strippedVisual = (message: AgentMessage, keep?: string): boolean => 'visua
  * A thread's detail as a socket client is sent it: every visual message keeps its text and loses its `visual`, so the
  * iPhone shows a visual's explanation and the line saying the drawing is on the computer (ADR-0056). The same detail
  * when it holds no visual. `keep` names the one kind a reader is sent whole: a 3D model's line, to a desktop whose hello
- * accepted `plugin-meshy-models`.
+ * accepted `plugin-meshy-models` or a phone whose hello accepted `plugin-meshy-phone`.
  */
 export function detailWithoutVisuals(detail: AgentThreadDetail, keep?: string): AgentThreadDetail {
   return detail.messages.some(message => strippedVisual(message, keep)) ? { ...detail, messages: detail.messages.map(message => withoutVisual(message, keep)) } : detail
@@ -766,7 +773,10 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   z.object({ ...base, op: z.literal('plugin-account-copies') }).strict(),
   /** What this desktop counts its Meshy accounts spent this month, everywhere but the host it tells (`plugin-meshy-spending`). */
   z.object({ ...base, op: z.literal('plugin-meshy-spending'), reports: spendingReportsSchema }).strict(),
-  /** A recorded desktop's reads of the host's 3D models (`plugin-meshy-models`), by the host's IDs; and removing a record whose files are gone. */
+  /**
+   * A recorded desktop's reads of the host's 3D models (`plugin-meshy-models`), by the host's IDs; and removing a record whose
+   * files are gone. A phone whose hello accepted `plugin-meshy-phone` reads one's view and its still picture and USDZ alone.
+   */
   z.object({ ...base, op: z.literal('plugin-meshy-models'), request: model3dListRequestSchema }).strict(),
   z.object({ ...base, op: z.literal('plugin-meshy-model'), request: model3dRequestSchema }).strict(),
   z.object({ ...base, op: z.literal('plugin-meshy-model-bytes'), request: model3dHostBytesRequestSchema }).strict(),
@@ -878,7 +888,7 @@ export type HostPush = { v: 1; event: 'shell'; state: HostWireShell | KeptPartsS
   | { v: 1; event: 'watcher-progress'; progress: z.infer<typeof watcherHostProgressSchema> }
   /** What the host's own threads spent this month of the Meshy copies a desktop sent it, only to that desktop (`plugin-meshy-spending`). */
   | { v: 1; event: 'plugin-meshy-spending'; reports: SpendingReport[] }
-  /** A 3D model's view as it changes, and records that went, only to a desktop whose hello accepted `plugin-meshy-models`. */
+  /** A 3D model's view as it changes, and records that went, to a desktop whose hello accepted `plugin-meshy-models` or a phone whose hello accepted `plugin-meshy-phone`. */
   | { v: 1; event: 'plugin-meshy-models'; news: Model3dHostNews }
   | { v: 1; event: 'detail-delta'; threadId: string; delta: AgentThreadDetailDelta }
   | { v: 1; event: 'answer-receipt'; acceptedAnswer: HostAnswerTarget & { decisionId: string } }

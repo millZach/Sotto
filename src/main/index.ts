@@ -89,6 +89,7 @@ import type { MeshyApiFetch } from './tools/meshy/api'
 import { ModelRecords } from './tools/meshy/records'
 import { MeshyModels } from './tools/meshy/service'
 import { modelBytes, modelView, modelViewOf } from './tools/meshy/view'
+import { hostModelViews, type HostModelViewsWithNews } from './tools/meshy/hostViews'
 import { listModels, removeGoneModel, revealModelFile, type ModelListSource } from './tools/meshy/page'
 import { checkPhoto, photoToSend, type RedrawPhoto } from './tools/meshy/photo'
 import { isMailPlugin, PLUGIN_USE_THREAD_TITLE_MAX, PLUGINS_COPIES_CHANGED, PLUGINS_MAIL_GRANTS_CHANGED, PLUGINS_MESHY_CREDITS_CHANGED } from '../shared/plugins'
@@ -1439,6 +1440,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   // Each change to a 3D model, and each of Meshy's reads of its progress, goes to the window as its view (the Meshy
   // plan's ticket 4). Views are sent in order, so a slower one never lands after a newer one.
   let modelViewsSent: Promise<void> = Promise.resolve()
+  // This computer's 3D models as a paired phone reads them (the Meshy plan's ticket 7), made below once their source is.
+  let phoneModelViews: HostModelViewsWithNews | undefined = undefined
   const meshyModels = modelRecords && pluginAccounts ? new MeshyModels({ records: modelRecords, fetch: meshyApiFetch, signal: pluginsStop.signal, ...(meshyBase ? { base: meshyBase, assets: meshyBase } : {}),
     keyOf: async accountId => (await pluginAccounts.list()).some(account => account.id === accountId && account.plugin === 'meshy') ? pluginAccounts.secret(accountId) || undefined : undefined,
     changed: (model, progress) => {
@@ -1448,6 +1451,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       // A 3D model whose record went meanwhile, as its thread was forgotten, is not shown again.
       modelViewsSent = modelViewsSent.then(async () => await modelRecords.model(model.id) ? await modelView(model, progress, shape) : null)
         .then(view => { if (view) windows.sendToMain(PLUGINS_MODEL_3D_CHANGED, view) }, () => undefined)
+      phoneModelViews?.changed(model, progress)
     } }) : undefined
   void meshyModels?.resume().catch(() => undefined)
   const modelViews: ModelListSource | undefined = meshyModels && modelRecords ? {
@@ -1459,6 +1463,9 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     accountNames: async () => new Map((await pluginAccounts?.list() ?? []).filter(account => account.plugin === 'meshy').map(account => [account.id, account.name])),
     remove: (id, may) => modelRecords.remove(id, may),
   } : undefined
+  // A paired phone shows this computer's threads' 3D models (the Meshy plan's ticket 7) by the same code a headless host
+  // answers a desktop with: each one's view, its still picture and its USDZ, checked, and the news of each as it changes.
+  phoneModelViews = modelViews ? hostModelViews(modelViews) : undefined
   // A paired host's 3D models (the Meshy plan's ticket 6, part 2): the window names each by a key that says which host
   // holds it, and main asks that host over its connection. Its news reaches the window as this computer's own does.
   const hostModels = pluginsEnabled ? new HostModels3d({
@@ -1667,7 +1674,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     acquireStart: workspace => agentHost.acquireTerminalStart(workspace.workingDirectory),
     runCommandEnabled: owlFeatures['run-command'],
     emit: event => { windows.sendToMain(TERMINAL_EVENT, event) } })
-  const phoneAccess = new PhoneAccess({ featureUsed: feature => productEvents.featureUsed(feature), directory: userDataPath, listener: { sottoVersion: hostVersion, delegation: delegationEnabled, ...(phoneCompression ? {} : { compressPhones: false }) },
+  const phoneAccess = new PhoneAccess({ featureUsed: feature => productEvents.featureUsed(feature), directory: userDataPath, listener: { sottoVersion: hostVersion, delegation: delegationEnabled, ...(phoneCompression ? {} : { compressPhones: false }), ...(phoneModelViews ? { phoneModels: phoneModelViews } : {}) },
     service: startupSettings.localHostEnabled ? hostService : undefined,
     tailscale: e2eConfiguration === null ? new TailscaleCli() : e2eTailscale(userDataPath),
     // An E2E run names no real machine, so a capture or a check reads the same on every computer.
@@ -1702,7 +1709,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     void pluginUse?.forgetThreads(threadIds).catch(() => undefined)
     // And its 3D models' records; their files stay in its folder (ADR-0141).
     // The window lets the 3D models it lists go once their records have (the Meshy plan's ticket 5).
-    void modelRecords?.forgetThreads(threadIds).then(ids => { if (ids.length > 0) windows.sendToMain(PLUGINS_MODELS_3D_REMOVED, ids) }, () => undefined)
+    void modelRecords?.forgetThreads(threadIds).then(ids => { if (ids.length > 0) { windows.sendToMain(PLUGINS_MODELS_3D_REMOVED, ids); phoneModelViews?.removed(ids) } }, () => undefined)
     // And any change of theirs still waiting on the user stops: nothing is done for a thread that is gone.
     pluginChanges?.forgetThreads(threadIds)
     // And its mail grants go with it.
@@ -2896,7 +2903,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
           // Nothing is removed while its host is away: the window says it could not be, and that nothing changed.
           if (onHost === 'away') throw new Error('host-away')
           const removal = onHost ?? (modelViews ? await removeGoneModel(modelViews, id) : 'no-record')
-          if (removal === 'removed') windows.sendToMain(PLUGINS_MODELS_3D_REMOVED, [id])
+          if (removal === 'removed') { windows.sendToMain(PLUGINS_MODELS_3D_REMOVED, [id]); phoneModelViews?.removed([id]) }
           return removal
         },
         // The folder app is shown the record's own file, never a path from the window, and only this computer's own: a

@@ -37,7 +37,7 @@ import { projectOriginsSchema, projectSetupResultSchema, type ProjectOrigins } f
 import { desktopDefaultsReceiptSchema } from '../shared/desktopDefaults'
 import { heldPluginAccountCopiesSchema, pluginAccountCopyReceiptSchema, pluginAccountCopyRemovedSchema, spendingReportsSchema } from '../shared/pluginAccountCopies'
 import { gitHubSignInSchema, isBridgePlugin, isMailPlugin, isSpendingPlugin } from '../shared/plugins'
-import { MODEL_VISUAL_KIND, model3dHostBytesSchema, model3dHostNewsSchema, model3dListSchema, model3dRemovalSchema, model3dViewOrNullSchema } from '../shared/models3d'
+import { MODEL_VISUAL_KIND, type HostModelViews, model3dHostBytesSchema, model3dHostNewsSchema, model3dListSchema, model3dRemovalSchema, model3dViewOrNullSchema } from '../shared/models3d'
 import { ProviderSignInRefusal, type ProviderSignIns } from './providerSignIn'
 import { DEFLATE_RESPONSE, deflateOffered, SocketFrames } from './socketFrames'
 import { CutBodies } from '../shared/activityBodies'
@@ -147,7 +147,7 @@ class Refusal extends Error { constructor(readonly code: HostErrorCode, message 
  * `browserWatches`: present while a desktop's hello accepts `browser`; per page, the newest watch or unwatch it asked for
  * (`ticket`) and the stop of the stream it holds, so a watch still starting when a later one or an unwatch came is let go.
  */
-interface Peer { browserWatches?: Map<string, { ticket: number; stop?: () => void }> | undefined; productEvents?: { answer: ProductEventPermission | null } | undefined; unknownProviders: HeldProviders; hostUpdate: boolean; delegationViews: boolean; checkQueueViews?: boolean; meshySpending?: boolean; meshySpendingAsked?: boolean; meshyModels?: boolean; meshyModelsAsked?: boolean; nextPrompts?: { wanted: boolean } | undefined; delegationRelay?: RelayDesktop | undefined; tellWatcher?: TellWatcherDesktop | undefined; delegationRemote?: RemoteDesktop | undefined; retiredTerminals: boolean; gone: AbortController; usageHistory: boolean; usageMuseOpenCode: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherPhoneSteer: boolean; watcherPhoneMachines: boolean; watcherPhoneComposer: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; shown: boolean; held: Map<string, number>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; clientUpdateNotListed: boolean; activitySummaries: boolean; activityBodies: boolean; catalogRevisions: boolean; catalogSent: number | null; shellSent: string | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget>
+interface Peer { browserWatches?: Map<string, { ticket: number; stop?: () => void }> | undefined; productEvents?: { answer: ProductEventPermission | null } | undefined; unknownProviders: HeldProviders; hostUpdate: boolean; delegationViews: boolean; checkQueueViews?: boolean; meshySpending?: boolean; meshySpendingAsked?: boolean; meshyModels?: boolean; meshyModelsAsked?: boolean; meshyPhone?: boolean; nextPrompts?: { wanted: boolean } | undefined; delegationRelay?: RelayDesktop | undefined; tellWatcher?: TellWatcherDesktop | undefined; delegationRemote?: RemoteDesktop | undefined; retiredTerminals: boolean; gone: AbortController; usageHistory: boolean; usageMuseOpenCode: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherPhoneSteer: boolean; watcherPhoneMachines: boolean; watcherPhoneComposer: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; shown: boolean; held: Map<string, number>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; clientUpdateNotListed: boolean; activitySummaries: boolean; activityBodies: boolean; catalogRevisions: boolean; catalogSent: number | null; shellSent: string | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget>
   /** The thread records this connection's shell pushes last carried, for a client that accepted `changed-thread-records` (#996). */
   threadRecords?: ThreadRecordsBroadcast | undefined
   /**
@@ -204,6 +204,11 @@ interface WireShell { state: HostWireShell; carries: number | null }
 export interface SocketServerOptions {
   /** SSH-recorded desktops, required even on the administrative listener for machine origin. */
   watcherDesktops?: TailnetAdmission['desktops']
+  /**
+   * This computer's 3D models as a phone reads them (`plugin-meshy-phone`; the Meshy plan's ticket 7): the desktop's own
+   * on its phone listener, and a headless host's on its. Without them the listener offers phones no 3D models.
+   */
+  phoneModels?: HostModelViews
   service: HostService; pairing: PairedClients; port?: number; origins?: readonly string[]
   mayAnswer?: (client: ClientIdentity) => boolean
   setAnswers?: (clientId: string, allowed: boolean) => void
@@ -467,6 +472,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'plugin-meshy-spending' || service.supportsPluginAccountCopies === true && service.supportsPluginMeshySpending === true && desktopRecords)
     // Its 3D models, shown on a recorded desktop (the Meshy plan's ticket 6, part 2), alongside those copies.
     && (feature !== 'plugin-meshy-models' || service.supportsPluginAccountCopies === true && service.supportsPluginMeshyModels === true && desktopRecords)
+    // Its threads' 3D models, shown on a phone (the Meshy plan's ticket 7), where the listener keeps them.
+    && (feature !== 'plugin-meshy-phone' || options.phoneModels !== undefined)
     // Who the host's own gh is signed in as (ADR-0205), where the host runs plugin tools, on the same listeners.
     && (feature !== 'plugin-github-sign-in' || service.supportsPluginGitHubSignIn === true && service.pluginGitHubSignIn !== undefined && desktopRecords)
     // The same host answers a recorded desktop's read of those threads' delegations, for its window (#1310).
@@ -956,7 +963,8 @@ export async function startSocketServer(options: SocketServerOptions) {
    * that accepts activity summaries is sent them (#701), and a desktop that accepts activity bodies is sent records with
    * cut bodies. Each is made once however many peers are sent it, and each cut record once however many details carry it.
    */
-  // A desktop that accepted `plugin-meshy-models` keeps each 3D model's line, and is made its own copies, kept apart.
+  // A desktop that accepted `plugin-meshy-models`, and a phone that accepted `plugin-meshy-phone`, keep each 3D model's
+  // line, and are made their own copies, kept apart.
   const withoutVisualsOf = new WeakMap<AgentThreadDetail, AgentThreadDetail>(), withModelsOf = new WeakMap<AgentThreadDetail, AgentThreadDetail>()
   const summarised = new WeakMap<AgentThreadDetail, AgentThreadDetail>(), summarisedWithModels = new WeakMap<AgentThreadDetail, AgentThreadDetail>()
   const cutBodies = new CutBodies(), cutOf = new WeakMap<AgentThreadDetail, AgentThreadDetail>(), cutWithModelsOf = new WeakMap<AgentThreadDetail, AgentThreadDetail>()
@@ -964,9 +972,10 @@ export async function startSocketServer(options: SocketServerOptions) {
    * Whether a peer is sent 3D models' lines now: its hello accepted `plugin-meshy-models`, and it is still on the record
    * of desktops, which is all of what `offers` says of the feature that can change after hello. Read at each send, so
    * a client taken off the record while still paired is sent no line from then on (Sol's review). The listener's own
-   * part of `offers` was read at hello and does not change.
+   * part of `offers` was read at hello and does not change. A phone whose hello accepted `plugin-meshy-phone` is sent
+   * them too (the Meshy plan's ticket 7): nothing of that feature changes after hello.
    */
-  const keepsModelLines = (peer: Peer): boolean => peer.meshyModels === true && options.watcherDesktops?.has(peer.client.clientId) === true
+  const keepsModelLines = (peer: Peer): boolean => peer.meshyPhone === true || peer.meshyModels === true && options.watcherDesktops?.has(peer.client.clientId) === true
   const forPeer = (peer: Peer, detail: AgentThreadDetail | null): AgentThreadDetail | null => {
     if (detail === null) return detail
     const models = keepsModelLines(peer)
@@ -1358,6 +1367,13 @@ export async function startSocketServer(options: SocketServerOptions) {
     if (!parsed.success) return
     for (const peer of peers) if (peer.ready && peer.meshyModels && !peer.frames.isClosed && offers(peer, 'plugin-meshy-models')) push(peer, { v: 1, event: 'plugin-meshy-models', news: parsed.data })
   })
+  /** The same news of this computer's 3D models, to each phone whose hello accepted `plugin-meshy-phone` (the Meshy plan's ticket 7). */
+  const unsubscribePhoneModels = options.phoneModels?.subscribe(news => {
+    if (closing) return
+    const parsed = model3dHostNewsSchema.safeParse(news)
+    if (!parsed.success) return
+    for (const peer of peers) if (peer.ready && peer.meshyPhone && !peer.frames.isClosed) push(peer, { v: 1, event: 'plugin-meshy-models', news: parsed.data })
+  })
   /** The permission settings of a new or changed thread's model that let the provider do nothing unasked. */
   const askingProviderModes = (input: AgentCommand): string[] => {
     if (input.type !== 'create-thread' && input.type !== 'configure-thread') return []
@@ -1733,6 +1749,8 @@ export async function startSocketServer(options: SocketServerOptions) {
         peer.meshySpending = peer.meshySpendingAsked && offers(peer, 'plugin-meshy-spending')
         peer.meshyModelsAsked = request.accepts?.includes('plugin-meshy-models') ?? false
         peer.meshyModels = peer.meshyModelsAsked && offers(peer, 'plugin-meshy-models')
+        // Only a phone reads a USDZ: a desktop that accepts this as well is not a phone for it (Sol on ticket 7).
+        peer.meshyPhone = (request.accepts?.includes('plugin-meshy-phone') ?? false) && offers(peer, 'plugin-meshy-phone') && isPhonePeer(peer)
         const answeredBefore = peer.productEvents?.answer
         peer.productEvents = (request.accepts?.includes('product-events') ?? false) && offers(peer, 'product-events') ? { answer: answeredBefore ?? null } : undefined
         // A second hello that no longer accepts it takes this desktop's answer back, so the host looks again.
@@ -2046,6 +2064,10 @@ export async function startSocketServer(options: SocketServerOptions) {
         // The list of desktops is read again first, as for a copy: a desktop recorded after its hello, as one being added
         // is, is pushed its news, and sent 3D models' lines, from now on if it asked.
         if (request.op === 'plugin-meshy-models') await options.watcherDesktops?.refresh().catch(() => undefined)
+        // A phone reads one 3D model's view (`plugin-meshy-phone`; the Meshy plan's ticket 7). It lists none and removes none.
+        if (request.op === 'plugin-meshy-model' && peer.meshyPhone && options.phoneModels) {
+          try { return model3dViewOrNullSchema.parse(await options.phoneModels.view(request.request.id)) } catch { throw new Refusal('unavailable') }
+        }
         if (!offers(peer, 'plugin-meshy-models') || !service.pluginMeshyModels) throw new Refusal('invalid_request')
         if (peer.meshyModelsAsked && !peer.meshyModels) {
           peer.meshyModels = true
@@ -2060,12 +2082,16 @@ export async function startSocketServer(options: SocketServerOptions) {
           return model3dRemovalSchema.parse(await models.remove(request.request.id))
         } catch { throw new Refusal('unavailable') }
       }
-      // A part of a 3D model's GLB, still picture or shape, on the same one-at-a-time guard as a picture: one large frame a socket.
+      // A part of a 3D model's GLB, still picture or shape for a desktop, or of its still picture or USDZ for a phone (the
+      // Meshy plan's ticket 7), on the same one-at-a-time guard as a picture: one large frame a socket.
       case 'plugin-meshy-model-bytes': {
-        if (!offers(peer, 'plugin-meshy-models') || !service.pluginMeshyModels) throw new Refusal('invalid_request')
+        const phone = peer.meshyPhone === true && options.phoneModels !== undefined
+        const models = phone ? options.phoneModels : offers(peer, 'plugin-meshy-models') ? service.pluginMeshyModels : undefined
+        const part = request.request.part
+        if (!models || (phone ? part !== 'still' && part !== 'usdz' : part === 'usdz')) throw new Refusal('invalid_request')
         if (peer.preview) throw new Refusal('busy')
         peer.preview = true
-        try { return model3dHostBytesSchema.parse(await service.pluginMeshyModels.bytes(request.request, peer.client.clientId)) }
+        try { return model3dHostBytesSchema.parse(await models.bytes(request.request, peer.client.clientId)) }
         catch { throw new Refusal('unavailable') } finally { peer.preview = false }
       }
       case 'plugin-github-sign-in': {
@@ -2497,7 +2523,7 @@ export async function startSocketServer(options: SocketServerOptions) {
   expiry.unref()
   const stopServing = (): void => {
     if (closing) return
-    closing = true; clearInterval(expiry); unsubscribe(); unsubscribeDetails?.(); unsubscribeDelegations?.(); unsubscribeChecks?.(); unsubscribeSpending?.(); unsubscribeModels?.(); unsubscribeBrowser?.(); unsubscribeNextPrompts?.(); releasePhoneAdmission?.(); shellPublisher.dispose(); detailPublisher.dispose(); waiting.clear()
+    closing = true; clearInterval(expiry); unsubscribe(); unsubscribeDetails?.(); unsubscribeDelegations?.(); unsubscribeChecks?.(); unsubscribeSpending?.(); unsubscribeModels?.(); unsubscribePhoneModels?.(); unsubscribeBrowser?.(); unsubscribeNextPrompts?.(); releasePhoneAdmission?.(); shellPublisher.dispose(); detailPublisher.dispose(); waiting.clear()
     if (writingTimer) clearTimeout(writingTimer.timer)
     writingHeld.clear()
     server.removeAllListeners('request')

@@ -45,6 +45,12 @@ export type Model3dView = z.infer<typeof model3dViewSchema>
 /** Which bytes of a 3D model the window draws: its GLB, its still picture, or the shape while the texture is painted. */
 export const MODEL_3D_PARTS = ['model', 'still', 'shape'] as const
 export type Model3dPart = typeof MODEL_3D_PARTS[number]
+/**
+ * Which bytes a host hands over: those, and the USDZ, which only a phone reads, to turn it in the app's own 3D view
+ * (the Meshy plan's ticket 7). The window never asks for the USDZ.
+ */
+export const MODEL_3D_HOST_PARTS = [...MODEL_3D_PARTS, 'usdz'] as const
+export type Model3dHostPart = typeof MODEL_3D_HOST_PARTS[number]
 export const model3dRequestSchema = z.object({ id: z.string().min(1).max(100) }).strict()
 export const model3dBytesRequestSchema = z.object({ id: z.string().min(1).max(100), part: z.enum(MODEL_3D_PARTS) }).strict()
 export type Model3dBytesRequest = z.infer<typeof model3dBytesRequestSchema>
@@ -139,7 +145,7 @@ export const MODEL_3D_HOST_PARTS_MAX = MODEL_3D_HOST_BYTES_MAX / MODEL_3D_HOST_P
 const digest = z.string().regex(/^[0-9a-f]{64}$/u)
 /** One part of a host's 3D model's bytes, from `offset` in the file the host checked, which is `total` bytes long. */
 export const model3dHostBytesRequestSchema = z.object({
-  id: z.string().min(1).max(100), part: z.enum(MODEL_3D_PARTS),
+  id: z.string().min(1).max(100), part: z.enum(MODEL_3D_HOST_PARTS),
   offset: z.number().int().min(0).max(MODEL_3D_HOST_BYTES_MAX - 1),
   /** After the first part, the digest it carried: a file that changed since is refused rather than mixed. */
   digest: digest.optional(),

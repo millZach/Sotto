@@ -110,7 +110,7 @@ export interface PhoneAccessOptions {
    * features only they are offered, the receipts it shares with the host's other listener, and what health and hello say.
    * On any phone listener, `compressPhones: false` stops it compressing for phones, which it does otherwise (#2394).
    */
-  readonly listener?: Pick<SocketServerOptions, 'onProductEventAnswer' | 'signIns' | 'opencodeSignIn' | 'watcherDesktops' | 'clientUpdates' | 'receipts' | 'pullRequestConfirmations' | 'about' | 'phoneAccess' | 'onRevoked' | 'sottoVersion' | 'hostUpdate' | 'delegation' | 'branchMoves' | 'compressPhones'>
+  readonly listener?: Pick<SocketServerOptions, 'onProductEventAnswer' | 'signIns' | 'opencodeSignIn' | 'watcherDesktops' | 'clientUpdates' | 'receipts' | 'pullRequestConfirmations' | 'about' | 'phoneAccess' | 'onRevoked' | 'sottoVersion' | 'hostUpdate' | 'delegation' | 'branchMoves' | 'compressPhones' | 'phoneModels'>
     & { readonly desktops?: TailnetAdmission['desktops'] | undefined }
 }
 
