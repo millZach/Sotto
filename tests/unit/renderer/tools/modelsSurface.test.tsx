@@ -123,6 +123,20 @@ describe('Tools › 3D models', () => {
     await waitFor(() => expect(plugins.models3d).toHaveBeenCalledTimes(2))
   })
 
+  it('lets the last thread’s 3D models go as another thread is opened, before drawing any of them', async () => {
+    const { focus } = setup()
+    expect(await screen.findByRole('region', { name: 'Potion bottle' })).toBeInTheDocument()
+    await waitFor(() => expect(drawn).toContain('Potion bottle'))
+    // The other thread's list is slow to come.
+    const slow = new Promise<Model3dListed[]>(() => undefined)
+    plugins.models3d.mockImplementationOnce(() => slow)
+    drawn.length = 0
+    act(() => focus('grok-previews'))
+    expect(drawn).toEqual([])
+    expect(screen.queryByRole('region', { name: 'Potion bottle' })).toBeNull()
+    expect(within(rail()).getByRole('tab', { name: '3D models' }).querySelector('.tools-rail__live')).toBeNull()
+  })
+
   it('is not on the rail with the plugins Owl feature off, and reads nothing', async () => {
     gate.plugins = false
     const { store } = setup()

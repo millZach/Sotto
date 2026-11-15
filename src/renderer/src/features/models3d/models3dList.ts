@@ -34,6 +34,12 @@ export function useModels3d(on: boolean, threadId?: string | null, { watchFiles 
    * on its way says. Their IDs are never used again, so they are kept for as long as the list is.
    */
   const gone = useRef(new Set<string>())
+  // Another thread's list, or none, is not shown for a moment while the new one is read: it is let go as this render
+  // starts, before anything picks a 3D model from it, starts its view or lights the rail's dot.
+  const listing = on && threadId !== null ? threadId ?? '' : null
+  const [listedFor, setListedFor] = useState(listing)
+  const stale = listedFor !== listing
+  if (stale) { setListedFor(listing); setModels(undefined) }
 
   useEffect(() => {
     keep(undefined)
@@ -99,7 +105,7 @@ export function useModels3d(on: boolean, threadId?: string | null, { watchFiles 
 
   const drop = useCallback((id: string) => { gone.current.add(id); if (held.current) keep(held.current.filter(model => model.id !== id)) }, [keep])
   const reload = useCallback(() => { read.current() }, [])
-  return { models, drop, reload }
+  return { models: stale ? undefined : models, drop, reload }
 }
 
 /** The chosen 3D model on the page or in Tools, and the way to choose another or follow a removal. */
