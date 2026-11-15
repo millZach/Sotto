@@ -82,8 +82,12 @@ export default function ModelView({ modelId, part, name, reduced, onClose, onUna
       camera.updateProjectionMatrix()
       turn.current.dirty = true
     }
+    // A view that cannot be seen, in a pane that is hidden or scrolled out of sight, draws nothing until it can be.
+    let shown = true
+    const start = (): void => { if (frame === 0 && shown && !stopped) { last = performance.now(); frame = requestAnimationFrame(draw) } }
     const draw = (now: number): void => {
-      if (stopped) return
+      frame = 0
+      if (stopped || !shown) return
       const held = turn.current
       if (held.auto) { held.yaw += (now - last) * AUTO_TURN_PER_MS; held.dirty = true }
       last = now
@@ -96,8 +100,13 @@ export default function ModelView({ modelId, part, name, reduced, onClose, onUna
     }
     const resized = new ResizeObserver(size)
     resized.observe(element)
+    const watched = typeof IntersectionObserver === 'function' ? new IntersectionObserver(entries => {
+      shown = entries.some(entry => entry.isIntersecting)
+      if (shown) { turn.current.dirty = true; start() }
+    }) : undefined
+    watched?.observe(element)
     size()
-    frame = requestAnimationFrame(draw)
+    start()
 
     void (async () => {
       const bytes = await window.sotto?.plugins?.model3dBytes({ id: modelId, part }).catch(() => null)
@@ -116,8 +125,11 @@ export default function ModelView({ modelId, part, name, reduced, onClose, onUna
       stopped = true
       cancelAnimationFrame(frame)
       resized.disconnect()
+      watched?.disconnect()
       disposeScene(scene)
       renderer.dispose()
+      // The graphics context goes now rather than whenever the page lets it, so closed views hold none.
+      renderer.forceContextLoss()
     }
   }, [modelId, part])
 
