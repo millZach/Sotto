@@ -1573,6 +1573,10 @@ msgid "Bridge password"
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Bridge reads on one port and sends on another, so the two are never the same."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Bridge’s certificate has changed"
 msgstr ""
 

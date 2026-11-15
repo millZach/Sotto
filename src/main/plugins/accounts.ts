@@ -107,7 +107,7 @@ export class PluginAccounts {
       // A mail account is an address and a password; any other plugin's account has no address.
       if (isMailPlugin(request.plugin) !== (request.address !== undefined)) return refusal('refused')
       // A Proton Mail account is reached through Bridge on this computer, at the ports given, and no other is.
-      if (isBridgePlugin(request.plugin) !== (request.bridge !== undefined)) return refusal('refused')
+      if (isBridgePlugin(request.plugin) !== (request.bridge !== undefined) || (request.bridge && request.bridge.imapPort === request.bridge.smtpPort)) return refusal('refused')
       const secret = pluginSecretAsKept(request.plugin, request.secret)
       // Adding a Proton Mail account is when Bridge's certificate is learned (Zach's pick on November 14, 2026).
       const checked = await this.options.check(request.plugin, secret, request.address, ...request.bridge ? [{ ports: request.bridge, certificate: 'learn' as const }] : [])

@@ -435,9 +435,11 @@ function AccountsRow({ plugin, bridge, accounts, projects, copies, uses, elsewhe
   }, [bridge])
   const bridgeAccounts = isBridgePlugin(id) ? mine.map(account => account.id).join(' ') : ''
   useEffect(() => { for (const accountId of bridgeAccounts ? bridgeAccounts.split(' ') : []) look(accountId) }, [bridgeAccounts, look])
-  const away = mine.some(account => statuses[account.id] === 'not-running'), changed = mine.some(account => statuses[account.id] === 'certificate')
+  // Only an account threads may use speaks for the row: one switched off is no trouble while it is off.
+  const inUse = mine.filter(account => account.on)
+  const away = inUse.some(account => statuses[account.id] === 'not-running'), changed = inUse.some(account => statuses[account.id] === 'certificate')
   // A look that could not tell is not taken for a Bridge that is running.
-  const unsure = mine.some(account => statuses[account.id] === 'unknown')
+  const unsure = inUse.some(account => statuses[account.id] === 'unknown')
   const summary = accounts === null ? t`Couldn’t read the accounts` : count === 0 ? t`Not added` : away ? t`Bridge isn’t running` : changed ? t`Bridge’s certificate has changed`
     : unsure ? t`Couldn’t look at Bridge` : count === 1 ? names : t`${count} accounts: ${names}`
   const [adding, setAdding] = useState(false)
@@ -477,7 +479,7 @@ function AddAccount({ plugin, bridge, onAccounts, onDone }: { readonly plugin: A
   useEffect(() => { nameInput.current?.focus() }, [])
   const ports = throughBridge ? { imapPort: portOf(imapPort), smtpPort: portOf(smtpPort) } : null
   const ready = name.trim() !== '' && token.trim() !== '' && (!mail || pluginMailAddressSchema.safeParse(address).success)
-    && (!ports || (ports.imapPort !== null && ports.smtpPort !== null)) && !busy && bridge !== undefined
+    && (!ports || (ports.imapPort !== null && ports.smtpPort !== null && ports.imapPort !== ports.smtpPort)) && !busy && bridge !== undefined
   const submit = async (event: FormEvent): Promise<void> => {
     event.preventDefault()
     if (!ready) return
@@ -519,6 +521,7 @@ function AddAccount({ plugin, bridge, onAccounts, onDone }: { readonly plugin: A
         <input className="tt-input" inputMode="numeric" autoComplete="off" spellCheck={false} maxLength={5} value={smtpPort} onChange={event => setSmtpPort(event.target.value)} />
       </Field>
       <p className="tt-paragraph plugin-row__note"><Trans>Bridge’s own ports. Change them only if Bridge shows others.</Trans></p>
+      {ports && ports.imapPort !== null && ports.imapPort === ports.smtpPort ? <p className="tt-field__error tt-paragraph" role="alert"><Trans>Bridge reads on one port and sends on another, so the two are never the same.</Trans></p> : null}
     </div> : null}
     {problem ? <p className="tt-field__error tt-paragraph" role="alert">{problem}</p> : null}
     <div className="plugin-row__actions">
@@ -586,7 +589,12 @@ function AccountCard({ account, bridge, projects, copies, uses, elsewhere, onAcc
     let result: PluginAccountResult
     try { result = await request() } catch { result = { ok: false, problem: 'store' } }
     setBusy(false); setToken('')
-    if (!result.ok) { setProblem(replacing ? words.problem(result.problem, true) : t`The account could not be removed. Nothing was changed. Try again.`); return }
+    if (!result.ok) {
+      setProblem(replacing ? words.problem(result.problem, true) : t`The account could not be removed. Nothing was changed. Try again.`)
+      // Bridge itself was the trouble: look at it again, so the account offers what fits, such as trusting its new certificate.
+      if (replacing && (result.problem === 'certificate' || result.problem === 'unreachable')) onLook?.()
+      return
+    }
     onAccounts(result.accounts)
     if (replacing) rest('replace')
     else onRemoved()

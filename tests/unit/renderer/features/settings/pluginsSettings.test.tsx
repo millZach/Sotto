@@ -1011,3 +1011,18 @@ it('does not take a look at Bridge that could not tell for one that is running, 
   expect(within(card).getByRole('button', { name: 'Replace the Bridge password for Private' })).toHaveFocus()
   expect(protonRow()).toHaveAccessibleName('Proton Mail Private')
 })
+
+it('holds the form back when Bridge’s two ports are the same, and lets a switched-off account’s trouble leave the row alone', async () => {
+  await act(async () => { render(<PluginsSettings bridge={vercelBridge([{ ...priv, on: false }], { bridgeStatus: async () => 'not-running' })} />) })
+  // The account is off, so Bridge being closed is no trouble for any thread.
+  expect(protonRow()).toHaveAccessibleName('Proton Mail Private (off)')
+  fireEvent.click(protonRow())
+  fireEvent.click(screen.getByRole('button', { name: 'Add another Proton Mail account' }))
+  const form = screen.getByRole('form', { name: 'Add a Proton Mail account' })
+  fireEvent.change(within(form).getByLabelText('Name'), { target: { value: 'Second' } })
+  fireEvent.change(within(form).getByLabelText('Proton address'), { target: { value: 'second@proton.example' } })
+  fireEvent.change(within(form).getByLabelText('Bridge password'), { target: { value: APP_PASSWORD } })
+  fireEvent.change(within(form).getByLabelText('SMTP port'), { target: { value: '1143' } })
+  expect(within(form).getByRole('button', { name: 'Add account' })).toHaveAttribute('aria-disabled', 'true')
+  expect(form).toHaveTextContent('Bridge reads on one port and sends on another, so the two are never the same.')
+})

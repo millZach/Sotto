@@ -243,8 +243,9 @@ export const pluginAccountSchema = z.object({
   bridge: z.object({ imapPort: z.number().int().min(1).max(65_535), smtpPort: z.number().int().min(1).max(65_535), certificate: z.string().regex(/^[0-9a-f]{64}$/u) }).strict().optional(),
 }).strict()
 export type PluginAccount = z.infer<typeof pluginAccountSchema>
-/** Bridge's ports as the user gives them when adding a Proton Mail account. */
+/** Bridge's two ports, which are never the same: reading goes to one and sending to the other. */
 export const bridgePortsSchema = z.object({ imapPort: z.number().int().min(1).max(65_535), smtpPort: z.number().int().min(1).max(65_535) }).strict()
+  .refine(ports => ports.imapPort !== ports.smtpPort)
 export type BridgePorts = z.infer<typeof bridgePortsSchema>
 /** Proton Mail Bridge's own ports, which the add form starts with (Zach's pick on November 14, 2026). */
 export const BRIDGE_DEFAULT_PORTS: BridgePorts = { imapPort: 1143, smtpPort: 1025 }

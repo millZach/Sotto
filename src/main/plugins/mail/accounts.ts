@@ -55,6 +55,9 @@ export async function checkMailAccount(plugin: MailPluginId, address: string, pa
   if (isBridgePlugin(plugin) && !bridge) return { ok: false, problem: 'refused' }
   const server = bridge ? bridgeServers(bridge.ports, bridge.certificate).read : MAIL_SERVERS.gmail
   const checked = await checkMailSignIn(server, { address, password }, options)
+  // Bridge's SMTP port is where every send goes: one where nothing answers, as a mistyped port, is said now rather
+  // than at the first send.
+  if (checked.ok && bridge && !await mailServerAnswers(bridgeServers(bridge.ports, 'learn').send, options)) return { ok: false, problem: 'unreachable' }
   if (checked.ok) return { ok: true, signedInAs: null, ...(checked.certificate ? { certificate: checked.certificate } : {}) }
   if (checked.reason === 'certificate') return { ok: false, problem: 'certificate' }
   return { ok: false, problem: checked.reason === 'refused' || checked.reason === 'input' ? 'refused' : checked.reason === 'busy' ? 'busy' : 'unreachable' }
@@ -68,7 +71,8 @@ export async function checkMailAccount(plugin: MailPluginId, address: string, pa
 export async function bridgeStatus(account: PluginAccount, options: MailOptions = {}): Promise<'running' | 'not-running' | 'certificate' | 'unknown'> {
   const servers = mailServersOf(account)
   if (!servers || !isBridgePlugin(account.plugin)) return 'unknown'
-  if (!await mailServerAnswers(servers.read, options)) return 'not-running'
+  // Both of Bridge's ports: reading goes to one and sending to the other.
+  if (!await mailServerAnswers(servers.read, options) || !await mailServerAnswers(servers.send, options)) return 'not-running'
   const shown = await mailServerCertificate(servers.read, options)
   return shown === 'kept' ? 'running' : shown === 'other' ? 'certificate' : shown === 'unreachable' ? 'not-running' : 'unknown'
 }
