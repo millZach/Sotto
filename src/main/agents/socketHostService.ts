@@ -501,7 +501,12 @@ export class SocketHostService implements HostService {
     // whole shell. One measured from another push, or naming a part that push did not have, should not happen: the shell is
     // read whole, and the host's next push keeps nothing (ADR-0028, November 10 amendment).
     const pushed = field(raw, 'event') === 'shell' ? this.withPushedParts(raw as Record<string, unknown>) : null
-    if (pushed === undefined) { void this.readShell().catch(() => this.frames?.close()); return }
+    if (pushed === undefined) {
+      // Its catalog is remembered first, as every push's is: the host counts a catalog it carried as sent, so the shell read
+      // in its place names that revision without it (#2597). `models` and `modelsRevision` are never kept.
+      this.restoreCatalog(field(raw, 'state'))
+      void this.readShell().catch(() => this.frames?.close()); return
+    }
     // Before any reading, so a catalog carried whole by an answer that arrives too late is still remembered.
     // A shell naming a catalog this connection does not hold cannot be shown, so the connection starts again, and its
     // hello carries the catalog whole (ADR-0028, October 16 amendment).
