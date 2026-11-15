@@ -27,7 +27,7 @@ const STUDIO: PluginAccount = { id: '44444444-4444-4444-8444-000000000001', plug
 const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x00, 0x10, 0x00, 0x10, 0x03, 1, 0x22, 0, 2, 0x11, 1, 3, 0x11, 1]), Buffer.from('made-up photo with camera details')])
 
 /** The tools for thread `one`, over one Meshy account, with the user's answers and Meshy's outcome scripted. */
-function tools(options: { answers?: PluginChangeAnswer[]; used?: number; ended?: Partial<ThreeDModel> | 'never' | 'lost'; noMeshy?: boolean; folder?: string; whileAsked?: (world: { accounts: PluginAccount[] }) => void | Promise<void>; whileCounting?: (world: { accounts: PluginAccount[] }) => void } = {}) {
+function tools(options: { unshown?: boolean; answers?: PluginChangeAnswer[]; used?: number; ended?: Partial<ThreeDModel> | 'never' | 'lost'; noMeshy?: boolean; folder?: string; whileAsked?: (world: { accounts: PluginAccount[] }) => void | Promise<void>; whileCounting?: (world: { accounts: PluginAccount[] }) => void } = {}) {
   const world = { accounts: [STUDIO] }
   const answers = [...options.answers ?? []]
   const asked: PluginChange[] = []
@@ -73,7 +73,7 @@ function tools(options: { answers?: PluginChangeAnswer[]; used?: number; ended?:
           : Promise.resolve({ ...model, state: 'done' as const, credits: 30, files: ['Oak barrel.png', 'Oak barrel.glb', 'Oak barrel.usdz'], ...ended })
         return { model, done }
       },
-      showInThread: async (threadId, model) => { shown.push({ threadId, id: model.id, name: model.name }) },
+      showInThread: async (threadId, model) => { if (options.unshown) return false; shown.push({ threadId, id: model.id, name: model.name }); return true },
     } }),
   })
   servers.push(server)
@@ -128,6 +128,14 @@ describe('making a 3D model through make_3d_model', () => {
     await over.make(BARREL)
     expect([...denied.shown, ...over.shown]).toEqual([])
     expect([...denied.made, ...over.made]).toEqual([])
+  })
+
+  it('makes the 3D model all the same when its line cannot go into the thread, and tells the agent so', async () => {
+    const t = tools({ unshown: true })
+    const result = await t.make(BARREL)
+    expect(result.isError).toBeUndefined()
+    expect(said(result)).toBe('The user allowed it. The 3D model "Oak barrel" is made, for 30 credits. Its files, in the thread\'s folder: models/Oak barrel.png, models/Oak barrel.glb, models/Oak barrel.usdz. Sotto could not show the 3D model in the thread, so tell the user its name and where its files go.')
+    expect(uses(t.recorded)).toEqual(['make_3d_model 3d-model done'])
   })
 
   it('refuses one that would pass the month’s limit before asking or sending anything', async () => {

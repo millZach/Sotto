@@ -1457,9 +1457,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     checkPhoto, photoToSend: (root: string, checked: Parameters<typeof photoToSend>[1], path: string) => photoToSend(root, checked, path, redrawPhoto),
     make: (request: Parameters<MeshyModels['make']>[0]) => meshyModels.make(request),
     // The 3D model's line in its thread, by its ID alone; a phone or a host client reads its words.
-    showInThread: async (threadId: string, model: { readonly id: string; readonly name: string }) => {
-      await agentHost.addVisual(threadId, { kind: MODEL_VISUAL_KIND, title: model.name, source: model.id }).catch(() => undefined)
-    },
+    showInThread: async (threadId: string, model: { readonly id: string; readonly name: string }) =>
+      (await agentHost.addVisual(threadId, { kind: MODEL_VISUAL_KIND, title: model.name, source: model.id }).catch(() => ({ added: false as const }))).added,
   } : undefined
   // Account copies (ADR-0205, amending ADR-0025): each plugin account the user keeps on a paired host is sent to it on
   // every connection and whenever it changes here, and a copy no longer wanted is taken back. Owl `plugins` only.

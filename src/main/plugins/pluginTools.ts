@@ -709,7 +709,9 @@ export class PluginToolServer implements ScopedThreadTools {
     if ('content' in turn) return turn
     const started = turn
     // Meshy has it now: its line goes into the thread, under what the agent said, and follows it to the end.
-    await meshy.showInThread(threadId, started.model).catch(() => undefined)
+    // When it cannot go in, the 3D model is made all the same, and the agent is told so it can say where it is.
+    const shown = await meshy.showInThread(threadId, started.model).catch(() => false)
+    const unshown = shown ? '' : ` Sotto could not show the 3D model in the thread, so tell the user its name and where its files go.`
     // The 3D model is made whether or not this call is still waiting; it waits while its client does.
     const { signal, waitMs } = call.context
     // A client that does not say how long it waits is given this server's own timeout, as every client here is.
@@ -729,11 +731,11 @@ export class PluginToolServer implements ScopedThreadTools {
     }
     if (ended === 'waiting') {
       await kept('done')
-      return text(`${allowed ? 'The user allowed it.' : 'Asked of Meshy without a card, since the user turned asking off for the account.'} Meshy is still making the 3D model "${name}". Sotto saves its files into ${where} in the thread's folder when it is done, named after "${name}"; about ${cost} credits.`)
+      return text(`${allowed ? 'The user allowed it.' : 'Asked of Meshy without a card, since the user turned asking off for the account.'} Meshy is still making the 3D model "${name}". Sotto saves its files into ${where} in the thread's folder when it is done, named after "${name}"; about ${cost} credits.${unshown}`)
     }
     if (ended.state === 'done') {
       await kept('done')
-      return text(`${allowed ? 'The user allowed it.' : 'Made without a card, since the user turned asking off for the account.'} The 3D model "${name}" is made, for ${ended.credits} credits. Its files, in the thread's folder: ${modelPaths(root, ended).join(', ')}.`)
+      return text(`${allowed ? 'The user allowed it.' : 'Made without a card, since the user turned asking off for the account.'} The 3D model "${name}" is made, for ${ended.credits} credits. Its files, in the thread's folder: ${modelPaths(root, ended).join(', ')}.${unshown}`)
     }
     await kept('failed')
     return text(`The 3D model "${name}" was not made. ${endedWords(ended)}`, true)

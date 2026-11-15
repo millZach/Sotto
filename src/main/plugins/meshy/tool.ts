@@ -45,8 +45,11 @@ export interface PluginMeshyHandlers {
   photoToSend(root: string, checked: CheckedPhoto, path: string): Promise<{ readonly photo: string } | PhotoProblem>
   /** Starts one 3D model the user allowed. */
   make(request: ModelRequest): Promise<{ readonly model: ThreeDModel; readonly done: Promise<ThreeDModel | undefined> }>
-  /** Places a 3D model that was started in its thread, as its line (the Meshy plan's ticket 4). Never rejects. */
-  showInThread(threadId: string, model: ThreeDModel): Promise<void>
+  /**
+   * Places a 3D model that was started in its thread, as its line (the Meshy plan's ticket 4). False when it could not
+   * be placed, as with the thread's history unavailable; the 3D model is made all the same. Never rejects.
+   */
+  showInThread(threadId: string, model: ThreeDModel): Promise<boolean>
 }
 
 export const NOTHING_MADE = 'Nothing was sent to Meshy and nothing was charged.'

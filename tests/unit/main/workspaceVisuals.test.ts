@@ -165,11 +165,14 @@ describe('a visual through the workspace', () => {
     adapter.say(user('u0', 0))
     for (let count = 0; count < 6; count++) expect((await host.addVisual(THREAD, input())).added).toBe(true)
     expect(await host.addVisual(THREAD, input())).toEqual({ added: false, reason: 'turn-limit' })
+    // A 3D model's line is Sotto's, not an agent's drawing: it meets neither limit and takes no agent's place.
+    expect((await host.addVisual(THREAD, { kind: '3d-model', title: 'Oak barrel', source: 'model-1' })).added).toBe(true)
     for (let turn = 1; turn <= 16; turn++) {
       adapter.say(user(`u${turn}`, turn))
       for (let count = 0; count < (turn === 16 ? 4 : 6); count++) expect((await host.addVisual(THREAD, input())).added).toBe(true)
     }
     adapter.say(user('u17', 17))
     expect(await host.addVisual(THREAD, input())).toEqual({ added: false, reason: 'thread-limit' })
+    expect((await host.addVisual(THREAD, { kind: '3d-model', title: 'Brass lantern', source: 'model-2' })).added).toBe(true)
   })
 })
