@@ -14,7 +14,8 @@
 /* The page. */
 .models-page { display: flex; flex: 1; width: 100%; min-width: 0; min-height: 0; }
 .models-page__scroll { flex: 1; min-width: 0; overflow-y: auto; container: models-page / inline-size; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
-.models-page__inner { display: flex; flex-direction: column; min-height: 100%; max-width: 1480px; margin: 0 auto; padding: 4px clamp(16px, 3cqi, 32px) 20px; }
+/* As tall as the room, so the view takes what the header and the filmstrip leave and the details scroll beside it. */
+.models-page__inner { display: flex; flex-direction: column; height: 100%; min-height: 100%; max-width: 1480px; margin: 0 auto; padding: 4px clamp(16px, 3cqi, 32px) 20px; }
 .models-page__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; margin: 0 0 14px; padding-top: 8px; }
 .models-page__head h1 { margin: 0; font-size: var(--tt-type-title); font-weight: 500; line-height: 1.2; letter-spacing: -1px; }
 .models-page__sub { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); font-variant-numeric: tabular-nums; }
@@ -54,9 +55,9 @@
 
 .models-page__stage {
   display: grid;
-  flex: 1;
+  flex: 1 1 0;
   grid-template-columns: minmax(0, 1fr) 340px;
-  min-height: 320px;
+  min-height: 220px;
   overflow: hidden;
   border-radius: var(--tt-radius-card);
   background: var(--tt-surface-elevated);
@@ -133,7 +134,8 @@
 .models-tile__pic { position: relative; display: grid; height: 70px; place-items: center; overflow: hidden; border-radius: var(--tt-radius-row); background: var(--tt-canvas); color: var(--tt-text-muted); }
 .models-tile__pic img { width: 100%; height: 100%; object-fit: cover; }
 .models-tile__name { overflow: hidden; font-size: var(--tt-type-small); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.models-tile__sub { overflow: hidden; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
+/* Two lines, so the step of one being made keeps its percent; every tile keeps the same height. */
+.models-tile__sub { display: -webkit-box; min-height: 2.7em; overflow: hidden; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .models-tile__gone {
   position: absolute;
   inset: 0;
@@ -151,13 +153,15 @@
 
 /* Narrow: the view over the details, the page scrolling as a whole. */
 @container models-page (max-width: 720px) {
+  .models-page__inner { height: auto; }
   .models-page__stage { flex: none; grid-template-columns: minmax(0, 1fr); grid-template-rows: 260px auto; }
   .models-page__details { overflow: visible; }
   .models-search { flex-basis: 100%; margin-left: 0; }
 }
 
 /* Tools › 3D models. */
-.models-tool { display: grid; flex: 1; align-content: start; gap: 12px; min-height: 0; padding: 4px 14px 14px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+/* Each row as tall as what it holds: a scrolling grid would otherwise squeeze the card, which hides what overflows it. */
+.models-tool { display: grid; flex: 1; grid-auto-rows: max-content; align-content: start; gap: 12px; min-height: 0; padding: 4px 14px 14px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
 .models-tool__account { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); overflow-wrap: anywhere; }
 .models-tool__card { overflow: hidden; border-radius: var(--tt-radius-card); background: var(--tt-surface-elevated); }
 .models-tool__view { height: 220px; }

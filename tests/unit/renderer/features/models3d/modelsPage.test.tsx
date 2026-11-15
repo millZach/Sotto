@@ -15,12 +15,14 @@ vi.mock('../../../../../src/renderer/src/state/owlFeature', async importOriginal
 vi.mock('../../../../../src/renderer/src/agents/ModelView', () => ({
   default: ({ name, part }: { readonly name: string; readonly part: string }) => <div role="slider" aria-label={`Turn the ${name}`} data-part={part} tabIndex={0} />,
 }))
+const OWN_HOST = vi.hoisted(() => '11111111-1111-4111-8111-000000000001')
 const command = vi.hoisted(() => vi.fn(async () => undefined))
 const navigate = vi.hoisted(() => vi.fn())
 vi.mock('../../../../../src/renderer/src/agents/AgentContext', async importOriginal => ({
   ...await importOriginal<typeof import('../../../../../src/renderer/src/agents/AgentContext')>(),
   useOptionalAgents: () => ({ command, state: { host: {
-    threads: [{ id: 'thread-props', title: 'Treasure room props', projectId: 'game' }, { id: 'thread-fox', title: 'Fox NPC', projectId: 'game' }],
+    // The window names this computer's threads by a key that says whose they are; the record by the thread's own ID.
+    threads: [{ id: 'thread-props', title: 'Treasure room props', projectId: 'game' }, { id: `host:${OWN_HOST}:thread-fox`, title: 'Fox NPC', projectId: 'game' }],
     projects: [{ id: 'game', title: 'Godot game' }] } } }),
 }))
 vi.mock('../../../../../src/renderer/src/state/AppContext', async importOriginal => ({
@@ -109,6 +111,8 @@ describe('the 3D models page', () => {
     // One being made: its tile says its step and percent, and its details its progress.
     const mossy = within(strip()).getByRole('option', { name: 'Mossy barrel, Step 2 of 2: painting the texture · 68%' })
     expect(mossy).toHaveAttribute('aria-selected', 'true')
+    // The tile has room for little, so its percent comes first.
+    expect(mossy).toHaveTextContent('Mossy barrel68% · Step 2 of 2: painting the texture')
     const making = details('Mossy barrel')
     expect(within(making).getByText('Step 2 of 2: painting the texture · 68%, about 40 seconds left')).toBeInTheDocument()
     expect(within(making).getByRole('progressbar', { name: 'Step 2 of 2: painting the texture' })).toHaveAttribute('aria-valuenow', '68')
@@ -125,8 +129,8 @@ describe('the 3D models page', () => {
     render(<ModelsPage platform="win32" />)
     fireEvent.click(await within(await screen.findByRole('listbox', { name: 'Every 3D model' })).findByRole('option', { name: /^Mossy barrel/u }))
     expect(details('Mossy barrel')).toBeInTheDocument()
-    const { threadId: _thread, account: _account, askedAt: _asked, words: _words, ...view } = MOSSY
-    act(() => changed!({ ...view, state: 'done', credits: 30, files: files('Mossy barrel'), still: 'Mossy barrel.png', stage: undefined, percent: undefined, secondsLeft: undefined } as Model3dView))
+    // Main's view of it once done: no thread, account or words, which the page keeps from the list.
+    act(() => changed!({ id: 'mossy', name: 'Mossy barrel', source: 'words', state: 'done', credits: 30, folder: 'models', files: files('Mossy barrel'), still: 'Mossy barrel.png' }))
     expect(within(details('Mossy barrel')).getByRole('button', { name: 'Show in File Explorer' })).toBeInTheDocument()
     expect(within(details('Mossy barrel')).getByText('A mossy barrel for the treasure room')).toBeInTheDocument()
     expect(plugins.models3d).toHaveBeenCalledTimes(1)
@@ -157,7 +161,7 @@ describe('the 3D models page', () => {
   it('opens the 3D model’s thread', async () => {
     render(<ModelsPage platform="win32" />)
     fireEvent.click(await within(await screen.findByRole('complementary', { name: 'About the Fox figurine' })).findByRole('button', { name: 'Go to thread' }))
-    expect(command).toHaveBeenCalledWith({ type: 'select-thread', threadId: 'thread-fox' })
+    expect(command).toHaveBeenCalledWith({ type: 'select-thread', threadId: `host:${OWN_HOST}:thread-fox` })
     await waitFor(() => expect(navigate).toHaveBeenCalledWith('threads'))
   })
 

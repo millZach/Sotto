@@ -11,7 +11,7 @@ import { useOptionalApp } from '../../state/AppContext'
 import { useOwlFeature } from '../../state/owlFeature'
 import { useReducedMotion } from '../../state/reducedMotion'
 import { revealLabel } from '../../tools/FilePreview'
-import { filesGone, folderWords, GoneNote, ModelPicture, ModelStage, modelWhen, threadOf } from './modelPanels'
+import { filesGone, folderWords, GoneNote, ModelPicture, ModelStage, modelWhen, threadOf, tileWords } from './modelPanels'
 import { modelMatches, useModels3d, useMonthCredits } from './models3dList'
 
 /**
@@ -99,8 +99,8 @@ function ModelDetails({ model, platform, onRemoved, onKept }: { readonly model: 
       .then(shown => { setStatus(shown ? '' : t`Sotto could not find that file. It may have been moved or deleted.`) }, () => setStatus(t`Sotto could not find that file. It may have been moved or deleted.`))
   }
   const openThread = (): void => {
-    if (!agents) return
-    void agents.command({ type: 'select-thread', threadId: model.threadId }).finally(() => app?.actions.navigate('threads'))
+    if (!agents || !thread) return
+    void agents.command({ type: 'select-thread', threadId: thread.id }).finally(() => app?.actions.navigate('threads'))
   }
   const kind = model.source === 'photo' ? t`3D model · Meshy · made from a photo` : t`3D model · Meshy · made from words`
   const made = new Date(model.askedAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
@@ -175,9 +175,9 @@ const Filmstrip = React.forwardRef<HTMLDivElement, { readonly models: readonly M
         const gone = filesGone(model)
         return <div key={model.id} role="option" className="models-tile tt-focusable" data-model={model.id} aria-selected={model.id === selected} tabIndex={model.id === selected ? 0 : -1}
           onClick={() => onChoose(model.id)} aria-label={[model.name, modelWhen(model), ...(gone ? [t`Its files are gone`] : [])].join(', ')}>
-          <span className="models-tile__pic" aria-hidden="true"><ModelPicture model={model} reduced={reduced} size={30} />{gone ? <span className="models-tile__gone">{t`Files gone`}</span> : null}</span>
+          <span className="models-tile__pic" aria-hidden="true">{gone ? <span className="models-tile__gone">{t`Files gone`}</span> : <ModelPicture model={model} reduced={reduced} size={30} />}</span>
           <b className="models-tile__name" aria-hidden="true">{model.name}</b>
-          <span className="models-tile__sub" aria-hidden="true">{modelWhen(model)}</span>
+          <span className="models-tile__sub" aria-hidden="true">{tileWords(model)}</span>
         </div>
       })}
     </div>

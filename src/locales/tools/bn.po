@@ -41,11 +41,6 @@ msgstr ""
 msgid "(file did not exist)"
 msgstr ""
 
-#. placeholder {0}: models.length
-#: src/renderer/src/tools/ModelsSurface.tsx
-msgid "{0, plural, one {# 3D model} other {# 3D models}}"
-msgstr ""
-
 #. placeholder {0}: list.pullRequests.length
 #: src/renderer/src/tools/OpenPullRequests.tsx
 msgid "{0, plural, other {The # most recently updated of {total}.}}"
@@ -462,10 +457,15 @@ msgstr ""
 msgid "<0>End {name}?</0> Whatever is running in it stops."
 msgstr ""
 
+#. Short for 3D models: the Tools surface's word on the narrow rail.
+#: src/renderer/src/tools/toolsPanelStore.ts
+msgid "3D"
+msgstr ""
+
 #. The Tools surface that shows the 3D models a thread made.
 #. The Tools surface that shows the 3D models a thread made.
 #: src/renderer/src/tools/ModelsSurface.tsx
-#: src/renderer/src/tools/toolsPanelStore.ts
+#: src/renderer/src/tools/ToolsPanel.tsx
 msgid "3D models"
 msgstr ""
 

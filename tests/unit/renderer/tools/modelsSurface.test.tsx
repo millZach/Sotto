@@ -56,7 +56,9 @@ const rail = (): HTMLElement => screen.getByRole('tablist', { name: 'Tools' })
 describe('Tools › 3D models', () => {
   it('sits between iPhone and Terminal, with the chosen 3D model’s view and every one the thread made', async () => {
     setup()
-    expect(within(rail()).getAllByRole('tab').map(tab => tab.textContent)).toEqual(['Browser', 'iPhone', '3D models', 'Terminal', 'Files', 'Changes', 'PR', 'Agents'])
+    expect(within(rail()).getAllByRole('tab').map(tab => tab.textContent)).toEqual(['Browser', 'iPhone', '3D', 'Terminal', 'Files', 'Changes', 'PR', 'Agents'])
+    // The tile's word is short; its name is the surface's own.
+    expect(within(rail()).getByRole('tab', { name: '3D models' })).toHaveTextContent('3D')
     expect(await screen.findByText('Made with the Meshy account Studio · 80 credits in this thread')).toBeInTheDocument()
     expect(plugins.models3d).toHaveBeenCalledWith(THREAD)
     // The newest that is done is chosen: its view, its facts and a chip for each file.

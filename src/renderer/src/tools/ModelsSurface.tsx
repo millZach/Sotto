@@ -41,7 +41,7 @@ export function ModelsSurface({ list, onShowFile }: {
   const focusRow = (id: string | undefined): void => { if (id) rows.current?.querySelector<HTMLElement>(`[data-model="${CSS.escape(id)}"]`)?.focus() }
 
   return <>
-    <ToolsChrome title={title} detail={plural(models.length, { one: '# 3D model', other: '# 3D models' })} />
+    <ToolsChrome title={title} />
     <div className="models-tool">
       <p className="models-tool__account">{account}</p>
       <section className="models-tool__card" aria-label={selected.name}>

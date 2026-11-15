@@ -148,7 +148,7 @@ function WorkingCopyLine({ thread, project, knownBranch, host }: { readonly thre
 
 const SURFACE_ICONS: Record<ToolSurfaceId, LucideIcon> = { files: FolderTree, changes: FileDiff, 'pull-request': GitPullRequest, terminal: SquareTerminal, browser: Globe, iphone: Smartphone, models: Box, agents: Users }
 /** A surface's name where its rail word is shortened. */
-const SURFACE_NAMES: Partial<Record<ToolSurfaceId, MessageDescriptor>> = { 'pull-request': msg`Pull request` }
+const SURFACE_NAMES: Partial<Record<ToolSurfaceId, MessageDescriptor>> = { 'pull-request': msg`Pull request`, models: msg({ message: '3D models', comment: 'The Tools surface that shows the 3D models a thread made.' }) }
 /** A surface's whole name: its rail word, or the longer name where the rail word is shortened. */
 const surfaceName = (surface: ToolSurfaceId): string => {
   const name = SURFACE_NAMES[surface]

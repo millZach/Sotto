@@ -801,6 +801,11 @@ msgstr ""
 msgid "{pendingCount, plural, one {{names} has not answered in 10 seconds. Sotto keeps trying in the background.} other {{names} have not answered in 10 seconds. Sotto keeps trying in the background.}}"
 msgstr ""
 
+#. {percent} is Meshy's percent for the step it is on; {step} is that step, such as "Step 2 of 2: painting the texture".
+#: src/renderer/src/features/models3d/modelPanels.tsx
+msgid "{percent}% · {step}"
+msgstr ""
+
 #: src/renderer/src/features/updates/UpdateAllCard.tsx
 msgid "{pillText}. Show updates"
 msgstr ""

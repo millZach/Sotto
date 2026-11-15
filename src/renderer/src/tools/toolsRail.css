@@ -43,7 +43,7 @@
   border-left: 1px solid var(--tt-hairline);
 }
 .tools-rail__tabs { display: flex; flex-direction: column; gap: 2px; }
-/* Three groups, parted by air rather than rules: the pages Sotto shows the thread (Browser, iPhone), its working copy
+/* Three groups, parted by air rather than rules: the pages Sotto shows the thread (Browser, iPhone, 3D models), its working copy
    (Terminal, Files, Changes, PR), and Agents, which always follows the focused thread. The order is unchanged. */
 .tools-rail__tab:is([data-surface='terminal'], [data-surface='agents']) { margin-top: 10px; }
 .tools-rail__tab {

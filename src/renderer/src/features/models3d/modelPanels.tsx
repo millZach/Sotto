@@ -1,8 +1,10 @@
+import { t } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
 import { Box, TriangleAlert } from 'lucide-react'
 import React, { lazy, Suspense, useState, type ReactNode } from 'react'
 import { model3dFilesGone, type Model3dListed } from '../../../../shared/models3d'
 import type { AgentState } from '../../../../shared/agents'
+import { parseHostEntityKey } from '../../../../shared/clientIdentity'
 import { Button } from '../../components/Button'
 import { makingWords, progressWords, Ring, stepWords, useStill } from '../../agents/modelParts'
 import '../../agents/modelLine.css'
@@ -58,6 +60,16 @@ export function modelWhen(model: Model3dListed): string {
   return model.state === 'making' ? makingWords(model) : new Date(model.askedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
+/**
+ * A filmstrip tile's line under the name, which has room for little: the percent first while Meshy works, so a step cut
+ * short keeps it, as in "68% · Step 2 of 2: painting the texture"; else the day it was asked for.
+ */
+export function tileWords(model: Model3dListed): string {
+  if (model.state !== 'making' || model.percent === undefined) return modelWhen(model)
+  const step = stepWords(model), percent = model.percent
+  return t({ message: `${percent}% · ${step}`, comment: '{percent} is Meshy\'s percent for the step it is on; {step} is that step, such as "Step 2 of 2: painting the texture".' })
+}
+
 /** The folder its files went to, as the user knows it from the thread: "models/". */
 export function folderWords(model: Model3dListed, threadFolder: string): string {
   return model.folder ? `${model.folder}/` : threadFolder
@@ -92,9 +104,10 @@ export function GoneNote({ model, onRemoved, onKept }: { readonly model: Model3d
 }
 
 /** The thread a 3D model came from, and its project, as the window lists them now. */
-export function threadOf(state: AgentState | null | undefined, threadId: string): { readonly title: string; readonly project?: string } | undefined {
-  const thread = state?.host.threads.find(item => item.id === threadId)
+export function threadOf(state: AgentState | null | undefined, threadId: string): { readonly id: string; readonly title: string; readonly project?: string } | undefined {
+  // The record names the thread by this computer's own ID for it; the window by a key that says which computer holds it.
+  const thread = state?.host.threads.find(item => item.id === threadId || (!item.remoteHost && parseHostEntityKey(item.id)?.id === threadId))
   if (!thread) return undefined
   const project = state?.host.projects.find(item => item.id === thread.projectId)?.title
-  return { title: thread.title, ...(project ? { project } : {}) }
+  return { id: thread.id, title: thread.title, ...(project ? { project } : {}) }
 }
