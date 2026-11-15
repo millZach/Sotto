@@ -391,6 +391,10 @@ it('starts, reads positions, sends, stops and settles through the owning host wi
   expect(second).toMatchObject({ status: 'ok', limits: { promptCount: 2 } })
   expect(await f.call('stop_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target })).toMatchObject({ status: 'ok', stopRequested: true })
   await vi.waitFor(() => expect(f.socket.shell().host.threads.find(item => item.id === first.target.threadId)?.status).toBe('idle'))
+  // The master ends the watch on a settled thread at its next look for settled threads, about a second after an update
+  // (ADR-0073, October 28, 2026). This test revives that watch's stale generation below, so the look is held from before the
+  // settle: a run that took more than a second there found the watch gone (#2473).
+  vi.spyOn(f.watcher as unknown as { endSettledWatches(): Promise<void> }, 'endSettledWatches').mockResolvedValue(undefined)
   const settled = await f.call('settle_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target })
   expect(settled.status, settled.status === 'refused' ? settled.code : undefined).toBe('ok')
   const afterSettlement = { requestId: f.requestId, retryKey: randomUUID(), target: first.target, text: 'Synthetic settled refusal', delivery: 'now' }
