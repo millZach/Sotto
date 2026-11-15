@@ -102,18 +102,16 @@ public enum BenchWire {
 
     // MARK: What a running host sends whole
 
-    /// What a running host sends whole in every thread list push beside the records that changed, by name, with the bytes
-    /// of each that forge's host sent a phone while one thread worked on November 10, 2026, as `JSON.stringify` counts
-    /// them (`docs/perf/2026-11-10-performance-and-data-audit.md`, finding 2). The phone reads `deliveries`,
-    /// `deliveredDrafts` and `followupReceipts` and reads past the rest. The host's projects, providers and settings stay
-    /// as the benchmark's laptop has them, so its list and its new thread sheet do not change.
-    public static let hostParts: [(name: String, bytes: Int)] = [
-        ("skillCatalogs", 115_223), ("deliveries", 45_933), ("deliveredDrafts", 12_929), ("obsoleteDrafts", 12_929),
-        ("followupReceipts", 7_980), ("clientUpdates", 1_454), ("threadDrafts", 1_001), ("threadDraftPersistence", 827),
-    ]
+    /// What a running host sends a phone beside the records that changed, by name, with the bytes of each that forge's
+    /// host sent on November 10, 2026, as `JSON.stringify` counts them (`docs/perf/2026-11-10-performance-and-data-audit.md`,
+    /// finding 2): the parts the phone reads. The five it never read went to no phone after #2404, and since #2393 a host
+    /// sends these whole in a connection's first list push and names them kept in the pushes after it (`keptState`). The
+    /// host's projects, providers and settings stay as the benchmark's laptop has them, so its list and its new thread sheet
+    /// do not change.
+    public static let hostParts: [(name: String, bytes: Int)] = [("deliveries", 45_933), ("deliveredDrafts", 12_929), ("followupReceipts", 7_980)]
 
-    /// `state`, a shell push's state as a JSON object, with every one of `hostParts` made up at its size: the list push a
-    /// running host sends, where the benchmark's laptop sends only the record that changed (#2390). The threads the parts
+    /// `state`, a shell push's state as a JSON object, with every one of `hostParts` made up at its size: a running host's
+    /// first list push to a phone, where the benchmark's laptop sends only the record that changed (#2390). The threads the parts
     /// name are not on the list and every delivery was accepted, so nothing the phone shows changes.
     public static func hostSizedState(_ state: Data, now: Date) -> Data {
         var text = String(decoding: state, as: UTF8.self)
@@ -126,21 +124,35 @@ public enum BenchWire {
         return Data((text + "}").utf8)
     }
 
-    /// One of `hostParts`, made up `bytes` long. Each receipt is two UUIDs, 100 bytes as forge's are, so the three receipt
-    /// ledgers and the drafts' save marks are their size by their count alone; the rest are padded to it.
+    /// The parts a host sends in every list push, which a push never names kept: the threads and the catalog's fields
+    /// (`withKeptParts` in `src/main/agents/agentStateBroadcast.ts`, ADR-0028's November 10 amendment).
+    static let neverKept: Set<String> = ["threads", "models", "modelsRevision", "providerModeLists"]
+    /// `state` as a running host sends it to a phone in a list push after one that carried it whole (`kept-parts`, #2393):
+    /// each part at its top and in its host named in `kept` and left out, but the threads and the catalog's fields, which
+    /// go as they are; the host's threads go empty, as the records that changed carry them. The phone puts the rest back
+    /// from the push before (`KeptPartsCache`). A state that is not a JSON object with a host is returned as it came.
+    public static func keptState(_ state: Data) -> Data {
+        guard let object = try? JSONSerialization.jsonObject(with: state) as? [String: Any],
+              let host = object["host"] as? [String: Any] else { return state }
+        var top: [String: Any] = ["kept": object.keys.filter { $0 != "host" && !neverKept.contains($0) }.sorted()]
+        var hostKept: [String: Any] = ["kept": host.keys.filter { !neverKept.contains($0) }.sorted(), "threads": [Any]()]
+        for name in neverKept where name != "threads" {
+            if let value = object[name] { top[name] = value }
+            if let value = host[name] { hostKept[name] = value }
+        }
+        top["host"] = hostKept
+        return (try? JSONSerialization.data(withJSONObject: top, options: [.sortedKeys])) ?? state
+    }
+
+    /// One of `hostParts`, made up `bytes` long. Each receipt is two UUIDs, 100 bytes as forge's are, so the two receipt
+    /// ledgers are their size by their count alone; the deliveries are padded to it.
     public static func hostPart(_ name: String, bytes: Int, now: Date) -> String {
         switch name {
-        case "skillCatalogs": return sized(bytes, count: 6) { skillCatalog($0, pad: $1) }
         case "deliveries": return sized(bytes, count: 128) { delivery($0, pad: $1, now: now) }
         // The ledgers keep a host's last 128 drafts; forge's follow-up receipts held 79. The delivered drafts are the
         // deliveries' own.
         case "deliveredDrafts": return receipts(128, ledger: 3)
-        case "obsoleteDrafts": return receipts(128, ledger: 4)
         case "followupReceipts": return receipts(79, ledger: 5)
-        case "clientUpdates": return sized(bytes, count: 5) { clientUpdate($0, pad: $1, now: now) }
-        case "threadDrafts": return sized(bytes, count: 2) { threadDraft($0, pad: $1, now: now) }
-        case "threadDraftPersistence":
-            return "[" + (0..<7).map { #"{"threadId":"\#(madeUpID(2, $0))","draftId":"\#(madeUpID(6, $0))","status":"saved"}"# }.joined(separator: ",") + "]"
         default: return "[]"
         }
     }
@@ -154,20 +166,6 @@ public enum BenchWire {
         guard short > 0 else { return "[" + bare.joined(separator: ",") + "]" }
         return "[" + (0..<count).map { entry($0, short / count + ($0 < short % count ? 1 : 0)) }.joined(separator: ",") + "]"
     }
-    /// One thread's skill list: sixty skills, the pad shared among their descriptions.
-    private static func skillCatalog(_ index: Int, pad: Int) -> String {
-        let count = 60
-        let skills = (0..<count).map { skill -> String in
-            let name = skillWords[skill % skillWords.count] + "-" + String(skill / skillWords.count + 1)
-            let more = pad / count + (skill < pad % count ? 1 : 0)
-            var text = #"{"name":"\#(name)","path":"/home/user/.agents/skills/\#(name)/SKILL.md","#
-            text += #""description":"Use when the work needs \#(name): it reads the project notes and drawings, checks them against the schedule and writes up what changed.\#(filler(more))","#
-            return text + #""scope":"\#(skill % 6 == 0 ? "repo" : "user")","enabled":true,"userInvocable":\#(skill % 9 != 4)}"#
-        }
-        var text = #"{"threadId":"\#(madeUpID(1, index))","providerId":"\#(index % 2 == 0 ? "claude" : "codex")","#
-        text += #""cwd":"/home/user/Projects/panel/.worktrees/bench-\#(index)","status":"ready","skills":["#
-        return text + skills.joined(separator: ",") + #"],"errors":[]}"#
-    }
     /// A delivery the provider accepted, as the host keeps it; the pad lengthens its provider message ID.
     private static func delivery(_ index: Int, pad: Int, now: Date) -> String {
         var text = #"{"threadId":"\#(madeUpID(2, index % 40))","draftId":"\#(madeUpID(3, index))","status":"accepted","#
@@ -180,31 +178,12 @@ public enum BenchWire {
     private static func receipts(_ count: Int, ledger: Int) -> String {
         "[" + (0..<count).map { #"{"threadId":"\#(madeUpID(2, $0 % 40))","draftId":"\#(madeUpID(ledger, $0))"}"# }.joined(separator: ",") + "]"
     }
-    private static func clientUpdate(_ index: Int, pad: Int, now: Date) -> String {
-        let id = ["claude", "codex", "grok", "devin", "opencode"][index % 5]
-        var text = #"{"id":"\#(id)","installed":"2.\#(index + 1).0","published":"2.\#(index + 1).1","behind":true,"channel":"npm","#
-        text += #""command":"npm install --global @fixture/\#(id)-cli@2.\#(index + 1).1 --prefix /home/user/.local\#(filler(pad))","#
-        return text + #""canInstall":true,"checkedAt":"\#(stamp(now, 600))","state":"idle"}"#
-    }
-    private static func threadDraft(_ index: Int, pad: Int, now: Date) -> String {
-        var text = #"{"threadId":"\#(madeUpID(2, index))","draftId":"\#(madeUpID(6, index))","#
-        text += #""text":"Check the conduit fill for the new drive before the drawings go out.\#(filler(pad))","#
-        return text + #""attachments":[],"requestId":null,"updatedAt":"\#(stamp(now, 120))"}"#
-    }
     /// A made-up UUID, the same for the same two numbers: `kind` tells the made-up things apart, `index` the entries.
     static func madeUpID(_ kind: Int, _ index: Int) -> String { "\(hex(kind, 8))-0000-4000-8000-\(hex(index, 12))" }
     private static func hex(_ value: Int, _ width: Int) -> String {
         let digits = String(value, radix: 16)
         return String(repeating: "0", count: max(0, width - digits.count)) + digits
     }
-    /// `count` characters of plain words, for the made-up parts' free text.
-    private static func filler(_ count: Int) -> String {
-        guard count > 0 else { return "" }
-        let words = " It names the parts to check, the order to check them in, and what to write down once they pass."
-        return String(String(repeating: words, count: count / words.count + 1).prefix(count))
-    }
-    private static let skillWords = ["review", "plan", "release", "drawings", "wiring", "schedule", "estimate", "notes", "research",
-                                     "testing", "commissioning", "checkout"]
 
     // MARK: Building blocks
 

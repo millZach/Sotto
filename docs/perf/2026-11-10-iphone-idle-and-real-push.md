@@ -166,3 +166,17 @@ A share of one core is the CPU time over the phase's 30,000 ms.
   host sends than the benchmarks' stream showed; 115 KB of that push is skill catalogs the phone does not read.
 - **No view body ran in either idle phase**, in any of the five long journeys or the six short ones, so `idle-list.app.bodies` and
   `idle-thread.app.bodies` could take budgets of zero.
+
+## From November 15, 2026: the pushes a host sends a phone now
+
+Two changes since this note made a running host's list pushes to a phone smaller. #2404 left out of a phone's shell the five parts no phone reads, `skillCatalogs` among them. #2393 sends a socket client its unchanged parts once and then names them kept. In `tests/perf/hostPushSizeBudget.perf.test.ts`, a push to a phone went from 198,970 bytes to 73,177 and then to 1,826. `stream-real-push` now sends the same as a host does (#2595):
+
+| `stream-real-push`'s list pushes | Until November 15 | From November 15 |
+| --- | ---: | ---: |
+| Parts made up beside the laptop's state | eight, 198,276 bytes | the three the phone reads, 66,842 bytes |
+| The first push | 208,925 bytes | 68,462 bytes, every part whole |
+| Each push after it | 208,925 bytes | 1,347 bytes, its parts named kept |
+
+These sizes are BenchWire's frames compiled on their own. The phone puts the kept parts back from the push before (`KeptPartsCache`), as a connection to a host does. A push after the first is 26% smaller than the host's 1,826 bytes because the laptop's state holds four parts and a running host's about forty: the host's push also names those it kept. The phone reads past the names.
+
+So `stream-real-push`'s numbers from November 15 on aren't comparable with the earlier ones. The before column of the change's iPhone benchmark run is the last measured at the November 10 size; that run is in the pull request for #2595.

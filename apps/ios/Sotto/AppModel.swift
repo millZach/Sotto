@@ -2134,24 +2134,31 @@ struct RailAsk: Equatable {
     /// Streams `chunks` words into the long thread's last reply, one every 50 ms as a computer sends them, each a
     /// `detail-delta` push; every fifth is followed by a shell push listing only the long thread's record, and every
     /// twentieth finishes a step and starts another. `done` is called after the last, or once the thread is closed. With
-    /// `hostSized`, each shell push also carries what a running host sends whole in every push (`BenchWire.hostSizedState`,
-    /// #2390), made before the first word.
+    /// `hostSized`, the shell pushes are what a running host sends a phone (#2390, #2595): the first carries the parts the
+    /// phone reads whole (`BenchWire.hostSizedState`), and each after it names them and every other part kept
+    /// (`BenchWire.keptState`, `kept-parts`), made before the first word.
     func benchStream(chunks: Int, hostSized: Bool = false, done: @escaping @MainActor () -> Void) {
         guard let laptop = benchLaptop, let small = benchState else { done(); return }
         let ref = ThreadRef(hostID: laptop, threadID: BenchWire.longThreadID)
         let steps = BenchWire.streamStepSequence(turns: benchTurns)
         Task { [weak self] in
             let now = Date()
-            var state = small
-            if hostSized { state = await Task.detached(priority: .userInitiated) { BenchWire.hostSizedState(small, now: now) }.value }
+            var state = small, kept: Data? = nil
+            if hostSized {
+                state = await Task.detached(priority: .userInitiated) { BenchWire.hostSizedState(small, now: now) }.value
+                kept = await Task.detached(priority: .userInitiated) { [state] in BenchWire.keptState(state) }.value
+            }
+            var sentWhole = false
             for chunk in 1...max(1, chunks) {
                 try? await Task.sleep(nanoseconds: 50_000_000)
                 guard let self, selected == ref, let detail = openDetail else { break }
                 await benchDeliver(BenchWire.deltaFrame(chunk: chunk, revision: detail.revision, firstSequence: steps, now: now), kind: "delta")
                 if chunk % 5 == 0 {
                     let record = BenchWire.longThreadRecord(hostID: laptop, now: Date())
-                    await benchDeliver(BenchWire.shellFrame(state: state, revision: benchShellRevision + 1, base: benchShellRevision, changed: [record]), kind: "shell")
+                    let pushed = sentWhole ? (kept ?? state) : state
+                    await benchDeliver(BenchWire.shellFrame(state: pushed, revision: benchShellRevision + 1, base: benchShellRevision, changed: [record]), kind: "shell")
                     benchShellRevision += 1
+                    sentWhole = true
                 }
             }
             done()

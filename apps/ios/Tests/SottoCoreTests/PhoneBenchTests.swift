@@ -42,6 +42,31 @@ final class PhoneBenchTests: XCTestCase {
         XCTAssertEqual(next.host.threads.dropFirst().map(\.id), first.host.threads.dropFirst().map(\.id))
     }
 
+    func testAPushAfterTheFirstNamesItsPartsKeptAndIsPutBackWhole() async throws {
+        // The order `AppModel.benchDeliver` reads them in: the kept parts back first, then the thread records.
+        var parts = KeptPartsCache(), records = ThreadRecordsCache()
+        let sized = BenchWire.hostSizedState(state, now: now)
+        let full = try await shell(BenchWire.shellFrame(state: sized, revision: 1, base: nil, changed: BenchWire.threadRecords(count: 300, hostID: host, now: now)))
+        let first = try XCTUnwrap(records.whole(try XCTUnwrap(parts.whole(full))))
+        let frame = BenchWire.shellFrame(state: BenchWire.keptState(sized), revision: 2, base: 1, changed: [BenchWire.longThreadRecord(hostID: host, now: now)])
+        // A host sends a phone 1,826 bytes a push once its parts are kept (`hostPushSizeBudget.perf.test.ts`); the laptop's
+        // state names fewer parts, so this push is a little smaller, and smaller than the same push carrying its state whole.
+        XCTAssertLessThan(frame.count, 1_826)
+        XCTAssertLessThan(frame.count, BenchWire.shellFrame(state: state, revision: 2, base: 1, changed: [BenchWire.longThreadRecord(hostID: host, now: now)]).count)
+        let read = try await shell(frame)
+        XCTAssertEqual(read.keptParts?.keepsAny, true)
+        XCTAssertNil(read.deliveries)
+        let whole = try XCTUnwrap(records.whole(try XCTUnwrap(parts.whole(read))))
+        XCTAssertEqual(whole.deliveries?.count, 128)
+        XCTAssertEqual(whole.deliveredDrafts?.count, 128)
+        XCTAssertEqual(whole.followupReceipts?.count, 79)
+        XCTAssertEqual(whole.host.name, first.host.name)
+        XCTAssertEqual(whole.host.projects, first.host.projects)
+        XCTAssertEqual(whole.host.capabilities, first.host.capabilities)
+        XCTAssertEqual(whole.host.threads.count, 300)
+        XCTAssertNoThrow(try whole.validate(hostID: host))
+    }
+
     func testAListPushTheSizeAHostSendsIsReadAndShowsNothingNew() async throws {
         for part in BenchWire.hostParts {
             XCTAssertEqual(BenchWire.hostPart(part.name, bytes: part.bytes, now: now).utf8.count, part.bytes, part.name)
@@ -53,9 +78,10 @@ final class PhoneBenchTests: XCTestCase {
         let full = try await shell(BenchWire.shellFrame(state: state, revision: 1, base: nil, changed: BenchWire.threadRecords(count: 300, hostID: host, now: now)))
         _ = try XCTUnwrap(cache.whole(full))
         let frame = BenchWire.shellFrame(state: sized, revision: 2, base: 1, changed: [BenchWire.longThreadRecord(hostID: host, now: now)])
-        // forge's host sent a phone 208,925 bytes; the rest is its projects, providers and settings, kept as the laptop's.
-        XCTAssertGreaterThan(frame.count, 195_000)
-        XCTAssertLessThan(frame.count, 209_000)
+        // A host's first push to a phone carries the parts it reads, 66,842 bytes of them: 73,177 bytes a push in
+        // `hostPushSizeBudget.perf.test.ts`, where the rest is its projects, providers and settings, kept as the laptop's.
+        XCTAssertGreaterThan(frame.count, 66_842)
+        XCTAssertLessThan(frame.count, 73_177)
         let read = try await shell(frame)
         XCTAssertEqual(read.deliveries?.count, 128)
         XCTAssertEqual(read.deliveredDrafts?.count, 128)
@@ -144,12 +170,20 @@ final class PhoneBenchTests: XCTestCase {
         let fullShell = try await shell(full)
         let held = try XCTUnwrap(cache.whole(fullShell))
         var revision = 1
-        // The same push both times, the second with what a running host sends whole beside the record (#2390).
-        for (name, pushed) in [("shell-changed", state), ("shell-real", BenchWire.hostSizedState(state, now: now))] {
-            let one = { (revision: Int) in BenchWire.shellFrame(state: pushed, revision: revision + 1, base: revision, changed: [BenchWire.longThreadRecord(hostID: self.host, now: self.now)]) }
-            report("\(name).bytes", Double(one(1).count), "B")
-            report("\(name).read", try await timed { _ = cache.whole(try await self.shell(one(revision))); revision += 1 }, "ms")
-        }
+        // The same push both times, the second as a running host sends a phone, its parts named kept beside the record
+        // (#2390, #2595); its kept parts are put back as `AppModel.benchDeliver` puts them back.
+        let one = { (pushed: Data, revision: Int) in BenchWire.shellFrame(state: pushed, revision: revision + 1, base: revision, changed: [BenchWire.longThreadRecord(hostID: self.host, now: self.now)]) }
+        report("shell-changed.bytes", Double(one(state, 1).count), "B")
+        report("shell-changed.read", try await timed { _ = cache.whole(try await self.shell(one(self.state, revision))); revision += 1 }, "ms")
+        let sized = BenchWire.hostSizedState(state, now: now), kept = BenchWire.keptState(sized)
+        var parts = KeptPartsCache()
+        let whole = try await shell(one(sized, revision))
+        _ = cache.whole(try XCTUnwrap(parts.whole(whole))); revision += 1
+        report("shell-real.bytes", Double(one(kept, 1).count), "B")
+        report("shell-real.read", try await timed {
+            let read = try await self.shell(one(kept, revision))
+            _ = cache.whole(try XCTUnwrap(parts.whole(read))); revision += 1
+        }, "ms")
         let threads = ComputerThreads(hostID: host, name: "Laptop", status: .online, threads: held.host.threads)
         report("list.merged-300", try await timed { _ = ThreadGroups.merged([threads]) }, "ms")
 

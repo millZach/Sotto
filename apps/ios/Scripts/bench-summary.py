@@ -39,7 +39,7 @@ AFTER = ["reopen", "stream-real-push"]
 # running (idle-<n>.json) and stopped by `--ui-still` (still-<n>.json).
 IDLE = ["idle-list", "idle-thread"]
 LOOPS = {"idle": "loops_on", "still": "loops_off"}
-# The two streams: list pushes of the long thread's record alone, and the same pushes the size a running host sends (#2390).
+# The two streams: list pushes of the long thread's record alone, and the pushes a running host sends a phone (#2390, #2595).
 STREAMS = ["stream", "stream-real-push"]
 # The Threads page's hold while a thread covers it (`ThreadsView.held`), counted over each whole journey: the page coming
 # into sight, holds taken, holds taken while the page could still show, and frames that could have shown an old row.
