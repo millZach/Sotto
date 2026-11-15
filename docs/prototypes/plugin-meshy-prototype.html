@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PROTOTYPE · Meshy as a plugin (slice 11, #2497)</title>
+<!--
+  PROTOTYPE, throwaway. Question: now that Meshy's key is an account on Settings › Plugins (ADR-0205), where do
+  "Ask before each 3D model", the monthly credit limit, this month's credits and the training line go? ADR-0141 had them
+  in a Settings › 3D models section. Nothing here connects to anything; the key and figures are made up.
+-->
+<style>
+  :root { --bg: #07090c; --surface: #12161c; --raised: #171c24; --hairline: #262c36; --text: #e9ecf1; --text-2: #b4bbc7; --muted: #8a93a1; --accent: #63d2c6; --field: #0d1015; }
+  :root[data-theme='light'] { --bg: #f8f7f3; --surface: #efede7; --raised: #ffffff; --hairline: #d9d5cc; --text: #1c1d1f; --text-2: #4a4d52; --muted: #6b6f76; --accent: #0f766e; --field: #ffffff; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 26px 30px 120px; background: var(--bg); color: var(--text); font: 15px/1.5 Figtree, "Segoe UI", system-ui, sans-serif; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 30px 0 4px; }
+  p { margin: 6px 0; color: var(--text-2); max-width: 88ch; }
+  .note { color: var(--muted); font-size: 13px; }
+  .cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(440px, 1fr)); gap: 18px 26px; margin-top: 12px; }
+  .label { font-weight: 650; color: var(--text); margin: 0 0 6px; }
+  .rec { color: var(--accent); font-weight: 600; font-size: 13px; }
+  .panel { background: var(--surface); border-radius: 12px; padding: 12px 14px; }
+  .crumb { font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+  .row__head { display: flex; align-items: center; gap: 10px; font-weight: 650; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); display: inline-block; }
+  .status { font-weight: 500; font-size: 13px; color: var(--text-2); display: inline-flex; align-items: center; gap: 6px; }
+  .account { margin-top: 10px; border: 1px solid var(--hairline); border-radius: 10px; padding: 10px 12px; background: var(--raised); }
+  .account b { color: var(--text); }
+  .toggle { display: flex; gap: 10px; align-items: flex-start; margin: 10px 0; }
+  .switch { width: 34px; height: 20px; border-radius: 10px; background: var(--accent); flex: none; margin-top: 2px; }
+  .input { display: inline-block; border: 1px solid var(--hairline); background: var(--field); border-radius: 8px; padding: 4px 10px; color: var(--text); font-size: 14px; min-width: 90px; }
+  .field { margin: 10px 0; }
+  .field label { display: block; font-weight: 600; font-size: 14px; color: var(--text); }
+  .btn { font: inherit; font-size: 14px; font-weight: 600; border-radius: 8px; padding: 4px 12px; border: 1px solid var(--hairline); background: transparent; color: var(--text); }
+  .sub { font-weight: 600; font-size: 14px; color: var(--text); margin: 12px 0 2px; }
+  ul { margin: 4px 0; padding-left: 18px; color: var(--text-2); font-size: 14px; }
+  .bar { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); display: flex; gap: 8px; align-items: center; background: var(--raised); border: 1px solid var(--hairline); border-radius: 999px; padding: 6px 10px; box-shadow: 0 8px 30px rgb(0 0 0 / .35); }
+  .bar button { font: inherit; font-size: 13px; border: 1px solid var(--hairline); background: transparent; color: var(--text); border-radius: 999px; padding: 4px 12px; cursor: pointer; }
+</style>
+</head>
+<body>
+<h1>Meshy as a plugin <span class="note">· prototype for slice 11 (#2497) · nothing here connects to anything</span></h1>
+<p>Already decided: ADR-0141's 3D models stand as you chose them (the tool, the card that asks with what it costs, the inline line A, the page C, the Tools surface, the iPhone, the name <b>3D models</b>, 1,000 credits a month by default). ADR-0205 moved Meshy's key to a Meshy account on Settings › Plugins, copied to your paired computers, with one limit and one switch across them. ADR-0141 had put the switch, the limit, this month's credits and the training line in a Settings › 3D models section. The question is where they go now.</p>
+
+<h2>Where "Ask before each 3D model", the limit and this month's credits go</h2>
+<div class="cols">
+  <div>
+    <p class="label">A · All on the Meshy account, in Settings › Plugins <span class="rec">recommended</span></p>
+    <div class="panel">
+      <div class="crumb">Settings › Plugins</div>
+      <div class="row__head">Meshy <span class="status"><span class="dot"></span>Studio</span></div>
+      <p>Make 3D models from words or a photo with a key you paste. Meshy may use what is sent to train its own models.</p>
+      <div class="account">
+        <b>Studio</b> <span class="note">Key saved November 15.</span> <span style="float:right"><button class="btn">Replace</button></span>
+        <div class="toggle"><span class="switch"></span><div><b>Ask before each 3D model</b><div class="note">Off, a thread makes 3D models without asking until the month’s limit is reached, and each one still shows in the thread with what it cost.</div></div></div>
+        <div class="field"><label>Monthly credit limit</label><span class="input">1,000</span> <span class="note">Credits this month: 120 of 1,000, across this computer and forge.</span></div>
+        <div class="sub">Threads may use Studio · Where its secret is kept · Recent use</div>
+        <ul><li>Made a 3D model in “Game props” · 30 credits · 2 hours ago</li></ul>
+      </div>
+    </div>
+    <p class="note">One place for the key and everything about spending it. Two Meshy accounts would each have their own switch and limit. There is no Settings › 3D models section; the page and the Tools surface are still called 3D models.</p>
+  </div>
+  <div>
+    <p class="label">B · Key on Plugins, the rest in Settings › 3D models</p>
+    <div class="panel">
+      <div class="crumb">Settings › Plugins</div>
+      <div class="row__head">Meshy <span class="status"><span class="dot"></span>Studio</span></div>
+      <div class="account"><b>Studio</b> <span class="note">Key saved November 15.</span> <span style="float:right"><button class="btn">Replace</button></span>
+        <div class="sub">Threads may use Studio · Where its secret is kept · Recent use</div>
+      </div>
+    </div>
+    <div class="panel" style="margin-top:12px">
+      <div class="crumb">Settings › 3D models</div>
+      <div class="toggle"><span class="switch"></span><div><b>Ask before each 3D model</b><div class="note">Off, a thread makes 3D models without asking until the month’s limit is reached.</div></div></div>
+      <div class="field"><label>Monthly credit limit</label><span class="input">1,000</span> <span class="note">Credits this month: 120 of 1,000.</span></div>
+      <p class="note">Meshy may use what is sent to train its own models. Recent 3D models: “Game props”, 2 hours ago.</p>
+    </div>
+    <p class="note">As ADR-0141 drew it, with the key moved to Plugins. One switch and one limit for every Meshy account together, in a section of their own.</p>
+  </div>
+</div>
+
+<div class="bar"><span>Meshy mock-up</span><button id="theme">Light</button></div>
+<script>
+  const button = document.getElementById('theme')
+  button.onclick = () => {
+    const light = document.documentElement.dataset.theme !== 'light'
+    document.documentElement.dataset.theme = light ? 'light' : 'dark'
+    button.textContent = light ? 'Dark' : 'Light'
+  }
+</script>
+</body>
+</html>
