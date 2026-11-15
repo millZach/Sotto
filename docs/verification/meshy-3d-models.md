@@ -126,6 +126,11 @@ described as "A 3D model is being made". On it, Tools read "Made with the Meshy 
 thread", turned the Oak barrel with a chip for each file, and listed both under "Made in this thread", the lantern with
 its step and percent. The lantern's 30 credits count from when its texture was asked for.
 
+![The 3D tile's dot while Files is open](../../artifacts/meshy-3d-models/tools-dot-dark-1280x800.png)
+
+On its own surface the tile carries no dot, as no open surface does: the surface's own list says the lantern's step and
+percent.
+
 ![Tools while one is being made](../../artifacts/meshy-3d-models/tools-making-dark-1280x800.png)
 
 The cube at the sidebar's foot, named "3D models", sits between Usage and Settings. The page read "2 3D models from 1
@@ -194,6 +199,19 @@ The stand-in was asked only for its API and its files, and the window raised no 
   details scroll beside the view.
 - A tile being made lost its percent off the end of its step; the percent now comes first. "Files gone" was drawn over
   the cube in its tile, which now shows the words alone.
+
+## Fixed after Sol's review of the branch
+
+- The sidebar's foot, one tile wider with the cube, sent the update control to a second row at 1280x800 and 1600x1000.
+  With the cube there its gaps and its hairline's margins draw in by a pixel each, and every control is on one row; the
+  run checks it at each size. A foot without the cube is as it was. Ticket 4's captures above were taken again for it.
+- At 820x560 the eighth tile pushed Tools' Expand and Close below the window. With the 3D tile there, the rail's tiles
+  and the air between their groups draw in on a window shorter than 680px, and the run checks every rail control is in
+  the window at each size.
+- The list now keeps what it hears while a read is on its way over that read's older answer, lets a forgotten thread's
+  3D models go when main says so, and while the page or the surface is shown reads again on focus and every half
+  minute, so files moved, deleted or put back show as they are. The 3D model first shown stays chosen when another
+  finishes, and a removal answered after another was chosen moves nothing. The unit tests hold these.
 
 ## What else covers it
 

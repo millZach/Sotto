@@ -56,6 +56,29 @@ async function overflow(page: Page, room: Locator): Promise<string[]> {
   })
 }
 const shownFiles = (page: Page): Promise<string[]> => page.evaluate(async () => (await window.sottoE2E!.snapshot()).shownFiles ?? [])
+/**
+ * The sidebar foot's controls: each must be in the window, and where the sidebar is open rather than a rail, all on one
+ * row, the cube among them. Problems, in words.
+ */
+async function footProblems(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const foot = document.querySelector<HTMLElement>('.thread-nav__foot')
+    if (!foot) return ['no sidebar foot']
+    const controls = [...foot.querySelectorAll<HTMLElement>('button, a')].filter(control => control.getBoundingClientRect().width > 0)
+    const problems = controls.filter(control => control.getBoundingClientRect().bottom > window.innerHeight + 1).map(control => `${control.getAttribute('aria-label') ?? control.textContent} below the window`)
+    if (!foot.closest('.thread-nav__rail')) {
+      const rows = new Set(controls.map(control => Math.round(control.getBoundingClientRect().top)))
+      if (rows.size > 1) problems.push(`${controls.length} controls on ${rows.size} rows`)
+    }
+    return problems
+  })
+}
+/** Pin, fill and close at the Tools rail's foot, each wholly in the window. Problems, in words. */
+async function railProblems(page: Page): Promise<string[]> {
+  return page.evaluate(() => [...document.querySelectorAll<HTMLElement>('.tools-rail__foot button, .tools-rail__tab')]
+    .filter(control => control.getBoundingClientRect().bottom > window.innerHeight + 1)
+    .map(control => `${control.getAttribute('aria-label') ?? control.textContent} below the window`))
+}
 
 test('The 3D models page and Tools › 3D models show what a thread made, and say when its files are gone', async () => {
   test.skip(process.platform !== 'win32', 'Windows desktop acceptance')
@@ -106,6 +129,8 @@ test('The 3D models page and Tools › 3D models show what a thread made, and sa
       const modelsTab = rail.getByRole('tab', { name: '3D models' })
       await expect(modelsTab).toHaveAttribute('aria-description', 'A 3D model is being made', { timeout: 30_000 })
       await expect(modelsTab.locator('.tools-rail__live')).toHaveCount(1)
+      // The dot shows while another surface is open; the open surface's own line says what is being made instead.
+      await shot(page, 'tools-dot-dark-1280x800')
       await modelsTab.click()
       await expect(tools).toContainText('Made with the Meshy account Studio · 60 credits in this thread')
       const rows = tools.getByRole('list', { name: 'Made in this thread' }).getByRole('button')
@@ -178,6 +203,7 @@ test('The 3D models page and Tools › 3D models show what a thread made, and sa
           await resizeWindow(launched, width, height)
           await expect(room.getByText('Drag or use the arrow keys to turn')).toBeVisible({ timeout: 30_000 })
           expect(await overflow(page, room), `page ${width}x${height} ${mode}`).toEqual([])
+          expect(await footProblems(page), `sidebar foot ${width}x${height} ${mode}`).toEqual([])
           await shot(page, `page-${mode}-${width}x${height}`)
         }
       }
@@ -203,6 +229,8 @@ test('The 3D models page and Tools › 3D models show what a thread made, and sa
           await resizeWindow(launched, width, height)
           await expect(tools.getByRole('list', { name: 'Made in this thread' })).toBeVisible()
           expect(await overflow(page, tools.locator('.models-tool')), `tools ${width}x${height} ${mode}`).toEqual([])
+          expect(await railProblems(page), `tools rail ${width}x${height} ${mode}`).toEqual([])
+          expect(await footProblems(page), `sidebar foot ${width}x${height} ${mode}`).toEqual([])
           await shot(page, `tools-${mode}-${width}x${height}`)
         }
       }
