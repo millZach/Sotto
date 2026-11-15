@@ -1074,3 +1074,21 @@ it('keeps Ask before each 3D model and the monthly credit limit on the Meshy acc
   // No other plugin's account has these.
   expect(screen.queryAllByRole('region', { name: 'What it spends' })).toHaveLength(1)
 })
+
+it('saves the newest monthly limit when an older save answers late, and does not put the older figure back', async () => {
+  const pending: ((result: PluginAccountResult) => void)[] = []
+  const updateAccount = vi.fn((): Promise<PluginAccountResult> => new Promise<PluginAccountResult>(resolve => { pending.push(resolve) }))
+  await act(async () => { render(<PluginsSettings bridge={vercelBridge([studio], { updateAccount })} />) })
+  fireEvent.click(meshyRow())
+  const limit = within(screen.getByRole('region', { name: 'What it spends' })).getByLabelText('Monthly credit limit')
+  fireEvent.change(limit, { target: { value: '300' } })
+  fireEvent.keyDown(limit, { key: 'Enter' })
+  // Changed back before the first save answered: that is a change too, and is saved.
+  fireEvent.change(limit, { target: { value: '1000' } })
+  fireEvent.blur(limit)
+  expect(updateAccount.mock.calls.map(call => (call as unknown[])[0])).toEqual([{ id: studio.id, monthlyLimit: 300 }, { id: studio.id, monthlyLimit: 1_000 }])
+  await act(async () => { pending[0]!({ ok: true, accounts: [{ ...studio, spending: { askBefore: true, monthlyLimit: 300 } }] }) })
+  expect(limit).toHaveValue('1000')
+  await act(async () => { pending[1]!({ ok: true, accounts: [{ ...studio, spending: { askBefore: true, monthlyLimit: 1_000 } }] }) })
+  expect(limit).toHaveValue('1000')
+})

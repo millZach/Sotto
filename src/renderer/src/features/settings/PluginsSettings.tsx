@@ -780,18 +780,27 @@ function AccountSpending({ account, spending, bridge, onAccounts }: {
   const headingId = useId()
   const [limit, setLimit] = useState(String(spending.monthlyLimit))
   const [failed, setFailed] = useState(false)
-  // The figure shown follows what is kept, once a save has answered.
-  useEffect(() => { setLimit(String(spending.monthlyLimit)) }, [spending.monthlyLimit])
+  // The newest change asked for, and the limit it asked for. Only the newest change's answer is shown, so a save that
+  // answers late cannot put back a figure the user has since changed, and a figure is compared with the one last
+  // asked for rather than one a save still on its way will replace.
+  const asked = useRef(0)
+  const askedLimit = useRef<number | null>(null)
+  // The figure shown follows what is kept, once the newest save has answered.
+  useEffect(() => { if (askedLimit.current === null) setLimit(String(spending.monthlyLimit)) }, [spending.monthlyLimit])
   const wanted = /^\d{1,7}$/u.test(limit.trim()) && Number(limit) <= PLUGIN_MONTHLY_LIMIT_MAX ? Number(limit) : null
   const save = async (request: { readonly askBefore?: boolean; readonly monthlyLimit?: number }): Promise<void> => {
     if (!bridge) return
     setFailed(false)
+    const mine = ++asked.current
+    if (request.monthlyLimit !== undefined) askedLimit.current = request.monthlyLimit
     let result: PluginAccountResult
     try { result = await bridge.updateAccount({ id: account.id, ...request }) } catch { result = { ok: false, problem: 'store' } }
+    if (asked.current !== mine) return
+    askedLimit.current = null
     if (result.ok) onAccounts(result.accounts)
     else { setFailed(true); setLimit(String(spending.monthlyLimit)) }
   }
-  const saveLimit = (): void => { if (wanted !== null && wanted !== spending.monthlyLimit) void save({ monthlyLimit: wanted }) }
+  const saveLimit = (): void => { if (wanted !== null && wanted !== (askedLimit.current ?? spending.monthlyLimit)) void save({ monthlyLimit: wanted }) }
   return <section className="plugin-account__spending" aria-labelledby={headingId}>
     <h4 id={headingId}><Trans>What it spends</Trans></h4>
     <Toggle label={t`Ask before each 3D model`} checked={spending.askBefore} disabled={!bridge} onCheckedChange={askBefore => void save({ askBefore })}
