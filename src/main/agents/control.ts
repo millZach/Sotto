@@ -3053,6 +3053,8 @@ export class AgentControl {
     const host = this.dependencies.host
     const thread = this.state.host.threads.find(item => item.id === threadId)
     if (!host.startThreadSession || !thread || thread.providerSessionOpen || thread.archivedAt || !isThreadProviderConnected(this.state.host, thread)) return Promise.resolve(this.reply())
+    // A new routed thread starts only after its first message chooses a model, including where staying is on.
+    if (thread.nativeSessionStarted === false && this.dependencies.modelRouterEnabled === true && this.routedSends.routes(threadId)) return Promise.resolve(this.reply())
     const task = (this.threadActions.get(threadId) ?? Promise.resolve()).catch(() => undefined)
       .then(() => host.startThreadSession!(threadId)).catch(() => undefined)
     this.threadActions.set(threadId, task)

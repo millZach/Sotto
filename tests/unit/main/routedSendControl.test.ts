@@ -32,6 +32,10 @@ class RoutedHost extends E2EAgentHost {
   rest(): void { for (const thread of this.inner().threads) thread.status = 'idle'; (this as unknown as { emit: () => void }).emit() }
   refuseSettings(): void { (this as unknown as { settingsGate: { refuse: boolean } }).settingsGate.refuse = true }
   override async execute(command: AgentHostCommand): Promise<AgentHostResult> { this.order.push(command.type); return super.execute(command) }
+  async startThreadSession(threadId: string): Promise<void> {
+    this.order.push('start-session')
+    this.inner().threads.find(thread => thread.id === threadId)!.nativeSessionStarted = true
+  }
   async writeShortTextOn(target: ShortTextTarget, prompt: ShortTextPrompt): Promise<string | null> {
     this.order.push(`classify ${target.modelId} ${target.effort}`); this.material = prompt.material
     return this.reply
@@ -49,10 +53,10 @@ afterEach(async () => {
   }
 })
 
-async function coordinator(modelRouterEnabled = true): Promise<{ host: RoutedHost; control: AgentControl }> {
+async function coordinator(modelRouterEnabled = true, stayOnFirstModel = false): Promise<{ host: RoutedHost; control: AgentControl }> {
   const root = await mkdtemp(join(tmpdir(), 'sotto-routed-send-')); roots.push(root)
   const host = new RoutedHost()
-  const control = createAgentControl({ directory: root, host, credentials: await testCredentials(join(root, 'vault'), { mode: 'unavailable' }), reasoner: {}, modelRouterEnabled })
+  const control = createAgentControl({ directory: root, host, credentials: await testCredentials(join(root, 'vault'), { mode: 'unavailable' }), reasoner: {}, modelRouterEnabled, modelRouter: () => ({ stayOnFirstModel }) })
   cleanup.push(async () => { control.dispose(); await control.privacyChanged() })
   await control.start(); expect((await control.command({ type: 'connect' })).error).toBeNull()
   // Every write of the coordinator's own state, in the order it falls among what reaches the host.
@@ -64,6 +68,18 @@ async function coordinator(modelRouterEnabled = true): Promise<{ host: RoutedHos
 const thread = (control: AgentControl, id = 'workshop') => control.get().host.threads.find(item => item.id === id)!
 
 describe('a routed thread\'s send, in the coordinator', () => {
+  it('waits for the first routed message before starting its session, so staying keeps the first pick', async () => {
+    const { host, control } = await coordinator(true, true)
+    await control.command({ type: 'start-thread-session', threadId: 'workshop' })
+    expect(host.order).not.toContain('start-session')
+    expect((await control.command({ type: 'manual-send', threadId: 'workshop', text: 'Fix the sync bug.' })).error).toBeNull()
+    expect(thread(control)).toMatchObject({ modelId: 'opus', reasoningEffort: 'high' })
+    expect(host.material).toBe('User message:\nFix the sync bug.')
+    const stable = await coordinator(false, true)
+    await stable.control.command({ type: 'start-thread-session', threadId: 'workshop' })
+    expect(stable.host.order).toContain('start-session')
+  })
+
   it('saves the prompt, asks the classifier, puts the thread on the pick and only then sends', async () => {
     const { host, control } = await coordinator()
     expect((await control.command({ type: 'manual-send', threadId: 'workshop', text: 'Fix the sync bug.' })).error).toBeNull()
