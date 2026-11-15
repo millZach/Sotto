@@ -37,6 +37,7 @@ import { projectOriginsSchema, projectSetupResultSchema, type ProjectOrigins } f
 import { desktopDefaultsReceiptSchema } from '../shared/desktopDefaults'
 import { heldPluginAccountCopiesSchema, pluginAccountCopyReceiptSchema, pluginAccountCopyRemovedSchema, spendingReportsSchema } from '../shared/pluginAccountCopies'
 import { gitHubSignInSchema, isBridgePlugin, isMailPlugin, isSpendingPlugin } from '../shared/plugins'
+import { MODEL_VISUAL_KIND, model3dHostBytesSchema, model3dHostNewsSchema, model3dListSchema, model3dRemovalSchema, model3dViewOrNullSchema } from '../shared/models3d'
 import { ProviderSignInRefusal, type ProviderSignIns } from './providerSignIn'
 import { DEFLATE_RESPONSE, deflateOffered, SocketFrames } from './socketFrames'
 import { CutBodies } from '../shared/activityBodies'
@@ -146,7 +147,7 @@ class Refusal extends Error { constructor(readonly code: HostErrorCode, message 
  * `browserWatches`: present while a desktop's hello accepts `browser`; per page, the newest watch or unwatch it asked for
  * (`ticket`) and the stop of the stream it holds, so a watch still starting when a later one or an unwatch came is let go.
  */
-interface Peer { browserWatches?: Map<string, { ticket: number; stop?: () => void }> | undefined; productEvents?: { answer: ProductEventPermission | null } | undefined; unknownProviders: HeldProviders; hostUpdate: boolean; delegationViews: boolean; checkQueueViews?: boolean; meshySpending?: boolean; meshySpendingAsked?: boolean; nextPrompts?: { wanted: boolean } | undefined; delegationRelay?: RelayDesktop | undefined; tellWatcher?: TellWatcherDesktop | undefined; delegationRemote?: RemoteDesktop | undefined; retiredTerminals: boolean; gone: AbortController; usageHistory: boolean; usageMuseOpenCode: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherPhoneSteer: boolean; watcherPhoneMachines: boolean; watcherPhoneComposer: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; shown: boolean; held: Map<string, number>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; clientUpdateNotListed: boolean; activitySummaries: boolean; activityBodies: boolean; catalogRevisions: boolean; catalogSent: number | null; shellSent: string | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget>
+interface Peer { browserWatches?: Map<string, { ticket: number; stop?: () => void }> | undefined; productEvents?: { answer: ProductEventPermission | null } | undefined; unknownProviders: HeldProviders; hostUpdate: boolean; delegationViews: boolean; checkQueueViews?: boolean; meshySpending?: boolean; meshySpendingAsked?: boolean; meshyModels?: boolean; meshyModelsAsked?: boolean; nextPrompts?: { wanted: boolean } | undefined; delegationRelay?: RelayDesktop | undefined; tellWatcher?: TellWatcherDesktop | undefined; delegationRemote?: RemoteDesktop | undefined; retiredTerminals: boolean; gone: AbortController; usageHistory: boolean; usageMuseOpenCode: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherPhoneSteer: boolean; watcherPhoneMachines: boolean; watcherPhoneComposer: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; shown: boolean; held: Map<string, number>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; clientUpdateNotListed: boolean; activitySummaries: boolean; activityBodies: boolean; catalogRevisions: boolean; catalogSent: number | null; shellSent: string | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget>
   /** The thread records this connection's shell pushes last carried, for a client that accepted `changed-thread-records` (#996). */
   threadRecords?: ThreadRecordsBroadcast | undefined
   /**
@@ -464,6 +465,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'plugin-meshy-copies' || service.supportsPluginAccountCopies === true && desktopRecords)
     // Shared spending for those copies (ADR-0205), only alongside them and only where this host counts its own.
     && (feature !== 'plugin-meshy-spending' || service.supportsPluginAccountCopies === true && service.supportsPluginMeshySpending === true && desktopRecords)
+    // Its 3D models, shown on a recorded desktop (the Meshy plan's ticket 6, part 2), alongside those copies.
+    && (feature !== 'plugin-meshy-models' || service.supportsPluginAccountCopies === true && service.supportsPluginMeshyModels === true && desktopRecords)
     // Who the host's own gh is signed in as (ADR-0205), where the host runs plugin tools, on the same listeners.
     && (feature !== 'plugin-github-sign-in' || service.supportsPluginGitHubSignIn === true && service.pluginGitHubSignIn !== undefined && desktopRecords)
     // The same host answers a recorded desktop's read of those threads' delegations, for its window (#1310).
@@ -535,6 +538,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     .filter(feature => feature !== 'branch-moves' && feature !== 'thread-move' && feature !== 'thread-move-source' && feature !== 'thread-move-keep' || (options.watcherDesktops?.has(peer.client.clientId) ?? false))
     // An account copy carries a secret, so it comes only from the desktop the launch script recorded (ADR-0205).
     .filter(feature => feature !== 'plugin-account-copies' && feature !== 'plugin-mail-copies' && feature !== 'plugin-meshy-copies' && feature !== 'plugin-meshy-spending' || options.watcherDesktops?.has(peer.client.clientId) === true)
+    // A host thread's 3D models, their bytes and their lines go only to the desktop the launch script recorded, as its copies do.
+    .filter(feature => feature !== 'plugin-meshy-models' || options.watcherDesktops?.has(peer.client.clientId) === true)
     // The account a host's gh is signed in to is its owner's own detail: told only to a recorded desktop.
     .filter(feature => feature !== 'plugin-github-sign-in' || options.watcherDesktops?.has(peer.client.clientId) === true)
     // Desktop defaults come only from a client the launch script recorded as a desktop (#1310).
@@ -951,22 +956,27 @@ export async function startSocketServer(options: SocketServerOptions) {
    * that accepts activity summaries is sent them (#701), and a desktop that accepts activity bodies is sent records with
    * cut bodies. Each is made once however many peers are sent it, and each cut record once however many details carry it.
    */
-  const withoutVisualsOf = new WeakMap<AgentThreadDetail, AgentThreadDetail>()
-  const summarised = new WeakMap<AgentThreadDetail, AgentThreadDetail>()
-  const cutBodies = new CutBodies(), cutOf = new WeakMap<AgentThreadDetail, AgentThreadDetail>()
+  // A desktop that accepted `plugin-meshy-models` keeps each 3D model's line, and is made its own copies, kept apart.
+  const withoutVisualsOf = new WeakMap<AgentThreadDetail, AgentThreadDetail>(), withModelsOf = new WeakMap<AgentThreadDetail, AgentThreadDetail>()
+  const summarised = new WeakMap<AgentThreadDetail, AgentThreadDetail>(), summarisedWithModels = new WeakMap<AgentThreadDetail, AgentThreadDetail>()
+  const cutBodies = new CutBodies(), cutOf = new WeakMap<AgentThreadDetail, AgentThreadDetail>(), cutWithModelsOf = new WeakMap<AgentThreadDetail, AgentThreadDetail>()
   const forPeer = (peer: Peer, detail: AgentThreadDetail | null): AgentThreadDetail | null => {
     if (detail === null) return detail
-    let withoutVisuals = withoutVisualsOf.get(detail)
-    if (!withoutVisuals) withoutVisualsOf.set(detail, withoutVisuals = detailWithoutVisuals(detail))
+    const models = peer.meshyModels === true
+    const visualsOf = models ? withModelsOf : withoutVisualsOf
+    let withoutVisuals = visualsOf.get(detail)
+    if (!withoutVisuals) visualsOf.set(detail, withoutVisuals = detailWithoutVisuals(detail, models ? MODEL_VISUAL_KIND : undefined))
     if (peer.activityBodies) {
-      let cut = cutOf.get(detail)
-      if (!cut) cutOf.set(detail, cut = cutBodies.detail(withoutVisuals))
+      const cuts = models ? cutWithModelsOf : cutOf
+      let cut = cuts.get(detail)
+      if (!cut) cuts.set(detail, cut = cutBodies.detail(withoutVisuals))
       return peer.unknownProviders.size ? detailWithoutProviders(cut, peer.unknownProviders) : cut
     }
     // A handover from a thread of a provider this peer does not know loses its record of where it came from (#1107).
     if (!peer.activitySummaries) return peer.unknownProviders.size ? detailWithoutProviders(withoutVisuals, peer.unknownProviders) : withoutVisuals
-    let summary = summarised.get(detail)
-    if (!summary) summarised.set(detail, summary = detailWithActivitySummaries(withoutVisuals))
+    const summaries = models ? summarisedWithModels : summarised
+    let summary = summaries.get(detail)
+    if (!summary) summaries.set(detail, summary = detailWithActivitySummaries(withoutVisuals))
     return peer.unknownProviders.size ? detailWithoutProviders(summary, peer.unknownProviders) : summary
   }
   /**
@@ -1100,14 +1110,15 @@ export async function startSocketServer(options: SocketServerOptions) {
   interface UpdateFor { whole: () => AgentThreadDetail | null; delta: (peer: Peer) => AgentThreadDetailDelta }
   const updateFor = (update: AgentThreadDetailUpdate): UpdateFor => {
     let whole: AgentThreadDetail | null | undefined = isAgentThreadDetailDelta(update) ? undefined : update
-    let strippedDelta: AgentThreadDetailDelta | undefined
-    let summaries: AgentThreadDetailDelta | undefined
-    let cut: AgentThreadDetailDelta | undefined
+    // Made once each for the peers sent no visual and for the desktops that keep 3D models' lines.
+    const made: { stripped?: AgentThreadDetailDelta; summaries?: AgentThreadDetailDelta; cut?: AgentThreadDetailDelta }[] = [{}, {}]
     return {
       whole: () => whole === undefined ? (whole = service.threadDetail(update.threadId)) : whole,
       delta: peer => {
-        strippedDelta ??= deltaWithoutVisuals(update as AgentThreadDetailDelta)
-        return peer.activityBodies ? (cut ??= cutBodies.delta(strippedDelta)) : peer.activitySummaries ? (summaries ??= deltaWithActivitySummaries(strippedDelta)) : strippedDelta
+        const models = peer.meshyModels === true
+        const these = made[models ? 1 : 0]!
+        const stripped = these.stripped ??= deltaWithoutVisuals(update as AgentThreadDetailDelta, models ? MODEL_VISUAL_KIND : undefined)
+        return peer.activityBodies ? (these.cut ??= cutBodies.delta(stripped)) : peer.activitySummaries ? (these.summaries ??= deltaWithActivitySummaries(stripped)) : stripped
       },
     }
   }
@@ -1329,6 +1340,16 @@ export async function startSocketServer(options: SocketServerOptions) {
         if (!closing && !peer.frames.isClosed && peer.meshySpending && offers(peer, 'plugin-meshy-spending')) push(peer, { v: 1, event: 'plugin-meshy-spending', reports: spendingReportsSchema.parse(reports) })
       }, () => undefined)
     }
+  })
+  /**
+   * A host thread's 3D model as it changes, and records that went (`plugin-meshy-models`), pushed to each desktop whose
+   * hello accepted it. One taken off the record of desktops since its hello is told nothing.
+   */
+  const unsubscribeModels = service.pluginMeshyModels?.subscribe(news => {
+    if (closing) return
+    const parsed = model3dHostNewsSchema.safeParse(news)
+    if (!parsed.success) return
+    for (const peer of peers) if (peer.ready && peer.meshyModels && !peer.frames.isClosed && offers(peer, 'plugin-meshy-models')) push(peer, { v: 1, event: 'plugin-meshy-models', news: parsed.data })
   })
   /** The permission settings of a new or changed thread's model that let the provider do nothing unasked. */
   const askingProviderModes = (input: AgentCommand): string[] => {
@@ -1703,6 +1724,8 @@ export async function startSocketServer(options: SocketServerOptions) {
         peer.checkQueueViews = (request.accepts?.includes('check-queue-views') ?? false) && offers(peer, 'check-queue-views')
         peer.meshySpendingAsked = request.accepts?.includes('plugin-meshy-spending') ?? false
         peer.meshySpending = peer.meshySpendingAsked && offers(peer, 'plugin-meshy-spending')
+        peer.meshyModelsAsked = request.accepts?.includes('plugin-meshy-models') ?? false
+        peer.meshyModels = peer.meshyModelsAsked && offers(peer, 'plugin-meshy-models')
         const answeredBefore = peer.productEvents?.answer
         peer.productEvents = (request.accepts?.includes('product-events') ?? false) && offers(peer, 'product-events') ? { answer: answeredBefore ?? null } : undefined
         // A second hello that no longer accepts it takes this desktop's answer back, so the host looks again.
@@ -2008,6 +2031,31 @@ export async function startSocketServer(options: SocketServerOptions) {
         if (peer.meshySpendingAsked) peer.meshySpending = true
         try { return spendingReportsSchema.parse(await service.sharePluginMeshySpending(request.reports, peer.client)) } catch { throw new Refusal('unavailable') }
       }
+      // A host thread's 3D models (the Meshy plan's ticket 6, part 2), for a recorded desktop's window: views by the host's
+      // IDs, and removing the record of one whose files are gone, which the host looks at again first. Never a path.
+      case 'plugin-meshy-models':
+      case 'plugin-meshy-model':
+      case 'plugin-meshy-model-remove': {
+        // The list of desktops is read again first, as for a copy: a desktop recorded after its hello, as one being added
+        // is, is pushed its news, and sent 3D models' lines, from now on if it asked.
+        if (request.op === 'plugin-meshy-models') await options.watcherDesktops?.refresh().catch(() => undefined)
+        if (!offers(peer, 'plugin-meshy-models') || !service.pluginMeshyModels) throw new Refusal('invalid_request')
+        if (peer.meshyModelsAsked) peer.meshyModels = true
+        const models = service.pluginMeshyModels
+        try {
+          if (request.op === 'plugin-meshy-models') return model3dListSchema.parse(await models.list(request.request.threadId))
+          if (request.op === 'plugin-meshy-model') return model3dViewOrNullSchema.parse(await models.view(request.request.id))
+          return model3dRemovalSchema.parse(await models.remove(request.request.id))
+        } catch { throw new Refusal('unavailable') }
+      }
+      // A part of a 3D model's GLB, still picture or shape, on the same one-at-a-time guard as a picture: one large frame a socket.
+      case 'plugin-meshy-model-bytes': {
+        if (!offers(peer, 'plugin-meshy-models') || !service.pluginMeshyModels) throw new Refusal('invalid_request')
+        if (peer.preview) throw new Refusal('busy')
+        peer.preview = true
+        try { return model3dHostBytesSchema.parse(await service.pluginMeshyModels.bytes(request.request, peer.client.clientId)) }
+        catch { throw new Refusal('unavailable') } finally { peer.preview = false }
+      }
       case 'plugin-github-sign-in': {
         // Who this machine's gh is signed in as, for a recorded desktop's Plugins page. The list of desktops is read
         // again first, as for a copy. The schema names a state and a login, so nothing else of gh's can be answered.
@@ -2253,7 +2301,7 @@ export async function startSocketServer(options: SocketServerOptions) {
       if (carried || request.op.startsWith('watcher-phone-')) peer.shellSent = null
       // A revocation while an operation was pending also denies its response.
       if (!authenticated(peer)) { peer.frames.send({ v: 1, id: request.id, ok: false, error: { code: 'unauthenticated', message: errors.unauthenticated } }); peer.frames.close() }
-      else if (deliver(peer, response, request.op === 'detail' ? 'thread' : request.op === 'activity-body' ? 'body' : request.op === 'preview' || request.op === 'thread-media' || request.op === 'thread-media-part' || request.op === 'attachment-content' || request.op === 'attachment-file' ? 'preview' : TOOL_READS.has(request.op) ? 'tool' : 'list')) {
+      else if (deliver(peer, response, request.op === 'detail' ? 'thread' : request.op === 'activity-body' ? 'body' : request.op === 'preview' || request.op === 'thread-media' || request.op === 'thread-media-part' || request.op === 'plugin-meshy-model-bytes' || request.op === 'attachment-content' || request.op === 'attachment-file' ? 'preview' : TOOL_READS.has(request.op) ? 'tool' : 'list')) {
         if (carried) recordCatalog(peer, carried)
         seeded?.commit()
         if (!response.ok) return
@@ -2437,7 +2485,7 @@ export async function startSocketServer(options: SocketServerOptions) {
   expiry.unref()
   const stopServing = (): void => {
     if (closing) return
-    closing = true; clearInterval(expiry); unsubscribe(); unsubscribeDetails?.(); unsubscribeDelegations?.(); unsubscribeChecks?.(); unsubscribeSpending?.(); unsubscribeBrowser?.(); unsubscribeNextPrompts?.(); releasePhoneAdmission?.(); shellPublisher.dispose(); detailPublisher.dispose(); waiting.clear()
+    closing = true; clearInterval(expiry); unsubscribe(); unsubscribeDetails?.(); unsubscribeDelegations?.(); unsubscribeChecks?.(); unsubscribeSpending?.(); unsubscribeModels?.(); unsubscribeBrowser?.(); unsubscribeNextPrompts?.(); releasePhoneAdmission?.(); shellPublisher.dispose(); detailPublisher.dispose(); waiting.clear()
     if (writingTimer) clearTimeout(writingTimer.timer)
     writingHeld.clear()
     server.removeAllListeners('request')

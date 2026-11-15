@@ -66,16 +66,23 @@ export const PLUGINS_MODEL_3D_BYTES = 'sotto:plugins:model-3d-bytes'
  */
 export const model3dListedSchema = z.object({
   ...model3dViewSchema.shape,
-  /** The thread that made it, by this computer's own ID for it. */
+  /** The thread that made it, by this computer's own ID for it; a host thread by the window's key for it. */
   threadId: z.string().min(1).max(500),
   /** The Meshy account's name, or empty once that account is gone. */
   account: z.string().max(200),
   askedAt: z.string().datetime(),
   words: z.string().max(2_000).optional(),
   photo: fileName.optional(),
+  /**
+   * The paired host that holds it, by its name, for a host's 3D model on this computer (the Meshy plan's ticket 6, part
+   * 2): the page's kind line ends with it ("on forge"). Main sets it; a host's own answer never carries it.
+   */
+  computer: z.string().min(1).max(200).optional(),
 }).strict()
 export type Model3dListed = z.infer<typeof model3dListedSchema>
-export const model3dListSchema = z.array(model3dListedSchema).max(2_000)
+/** The most 3D models one list holds. */
+export const MODELS_3D_LISTED_MAX = 2_000
+export const model3dListSchema = z.array(model3dListedSchema).max(MODELS_3D_LISTED_MAX)
 /** Every 3D model, or one thread's, by the key the window names the thread by. */
 export const model3dListRequestSchema = z.object({ threadId: z.string().min(1).max(600).optional() }).strict()
 export type Model3dListRequest = z.infer<typeof model3dListRequestSchema>
@@ -109,3 +116,62 @@ export const PLUGINS_MODEL_3D_REVEAL = 'sotto:plugins:model-3d-reveal'
 /** Main to the window: the IDs of 3D models whose records went, with their forgotten thread or by Remove from 3D models. */
 export const PLUGINS_MODELS_3D_REMOVED = 'sotto:plugins:models-3d-removed'
 export const model3dRemovedSchema = z.array(z.string().min(1).max(100)).min(1).max(2_000)
+
+/**
+ * A paired host's 3D models on this computer (the Meshy plan's ticket 6, part 2; host feature `plugin-meshy-models`).
+ * The host answers with its own IDs: a listed 3D model names its thread by the host's ID for it. Main gives the window
+ * each one by a key that says which host holds it, as a host thread's key does (`hostEntityKey`), its thread by that
+ * thread's key, and `computer`, the host's name. The window asks for one by that key, and main sends its host the ID.
+ */
+/**
+ * A 3D model's bytes cross the connection in parts no larger than this, as a video's do, so no frame passes the socket's
+ * cap. A GLB is read whole on the host, checked as one on this computer is (inside its record's folder, under the cap,
+ * standing alone), and then handed over a part at a time from what was checked.
+ */
+export const MODEL_3D_HOST_PART_BYTES = 8 * 1024 * 1024
+/**
+ * The most a host's 3D model may be to be drawn on this computer: 64 MiB, eight parts. A GLB Meshy makes is a few MB; a
+ * larger one is drawn from its still picture rather than held whole in main and the window.
+ */
+export const MODEL_3D_HOST_BYTES_MAX = 64 * 1024 * 1024
+export const MODEL_3D_HOST_PARTS_MAX = MODEL_3D_HOST_BYTES_MAX / MODEL_3D_HOST_PART_BYTES
+/** The host's SHA-256 of the whole file it checked, in hex, which every part of it carries and the whole must match. */
+const digest = z.string().regex(/^[0-9a-f]{64}$/u)
+/** One part of a host's 3D model's bytes, from `offset` in the file the host checked, which is `total` bytes long. */
+export const model3dHostBytesRequestSchema = z.object({
+  id: z.string().min(1).max(100), part: z.enum(MODEL_3D_PARTS),
+  offset: z.number().int().min(0).max(MODEL_3D_HOST_BYTES_MAX - 1),
+  /** After the first part, the digest it carried: a file that changed since is refused rather than mixed. */
+  digest: digest.optional(),
+}).strict()
+export type Model3dHostBytesRequest = z.infer<typeof model3dHostBytesRequestSchema>
+export const model3dHostBytesSchema = z.object({
+  data: z.string().min(1).max(Math.ceil(MODEL_3D_HOST_PART_BYTES / 3) * 4).regex(/^[A-Za-z0-9+/]*={0,2}$/u),
+  total: z.number().int().positive().max(MODEL_3D_HOST_BYTES_MAX),
+  digest,
+}).strict().nullable()
+export type Model3dHostBytes = z.infer<typeof model3dHostBytesSchema>
+/**
+ * The host's news of its 3D models (`plugin-meshy-models` push): one 3D model's view, with the thread that made it by the
+ * host's ID for it, as it changes; and the IDs of 3D models whose records went, with their forgotten thread or by Remove
+ * from 3D models.
+ */
+export const model3dHostNewsSchema = z.object({
+  changed: z.object({ threadId: z.string().min(1).max(500), view: model3dViewSchema }).strict().optional(),
+  removed: model3dRemovedSchema.optional(),
+}).strict()
+export type Model3dHostNews = z.infer<typeof model3dHostNewsSchema>
+
+/**
+ * A host's 3D models as a recorded desktop reads them (`plugin-meshy-models`), by the host's own IDs: on the headless
+ * host over its records, and on the desktop's connection to it over the socket. Bytes come a part at a time, each part
+ * from the one file the host checked, for the client that asked.
+ */
+export interface HostModelViews {
+  list(threadId?: string): Promise<Model3dListed[]>
+  view(id: string): Promise<Model3dView | null>
+  bytes(request: Model3dHostBytesRequest, clientId: string): Promise<Model3dHostBytes>
+  remove(id: string): Promise<Model3dRemoval>
+  /** Hears a 3D model change, or records go. Returns the way to stop. */
+  subscribe(listener: (news: Model3dHostNews) => void): () => void
+}

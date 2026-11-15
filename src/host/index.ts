@@ -170,6 +170,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     admits: threadId => startedRuntime?.agentHost.admitsPluginTools(threadId) ?? false }) : undefined
   const pluginAccountCopies = plugins?.copies
   const pluginMeshySpending = plugins?.spending
+  const pluginMeshyModels = plugins?.views
   // Its Owl answers, and every provider hosts do not take yet: DeepSeek, whose models need own servers (ADR-0138).
   const heldProviders = heldOnHost(heldProvidersOf(owlFeatures))
   const resumeAfterRestart = owlFeatures['resume-after-restart']
@@ -264,6 +265,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     const runtime = startedRuntime = await createAgentRuntime({
       ...(pluginAccountCopies ? { pluginAccountCopies } : {}),
       ...(pluginMeshySpending ? { pluginMeshySpending } : {}),
+      ...(pluginMeshyModels ? { pluginMeshyModels } : {}),
       ...(plugins ? { pluginGitHubSignIn: plugins.gitHubSignIn } : {}),
       ...owlFeatures['paired-host-browser'] && owlFeatures['quiet-browser'] ? { browserTools: resolveBinding => (browser = hostBrowserTools({ resolveBinding, withoutAsking: startup.browserWithoutAsking,
         saveWithoutAsking: async value => { await repositories.settings.update({ browserWithoutAsking: value }) } })).tools } : {},

@@ -31,6 +31,7 @@ import type { HostThreadMoveRequest } from '../../shared/threadMoves'
 import type { DesktopDefaultsInput, DesktopDefaultsReceipt } from '../../shared/desktopDefaults'
 import type { HeldPluginAccountCopy, PluginAccountCopy, PluginAccountCopyReceipt, PluginAccountCopyRemoved, PluginAccountCopyStore, PluginSpendingShare, SpendingReport } from '../../shared/pluginAccountCopies'
 import type { GitHubSignIn } from '../../shared/plugins'
+import type { HostModelViews } from '../../shared/models3d'
 import type { DelegationRelayAsk, DelegationRemoteAsk, RelayedReply } from '../../shared/delegationRelay'
 import type { TellWatcherAnswer, WatcherTellPush } from '../../shared/tellWatcher'
 import type { DelegationNews } from '../../shared/delegation'
@@ -189,6 +190,12 @@ export interface HostService {
   pluginMeshySpending?(client: ClientIdentity): Promise<SpendingReport[]>
   /** On the host its listener is called with nothing; on a desktop's connection, with what the host pushed. */
   subscribePluginMeshySpending?(listener: (reports?: readonly SpendingReport[]) => void): () => void
+  /**
+   * A host thread's 3D models, shown on a recorded desktop (`plugin-meshy-models`; the Meshy plan's ticket 6, part 2): on
+   * the headless host its own records, and on a desktop's connection to a host that lists it, those read over the socket.
+   */
+  readonly supportsPluginMeshyModels?: boolean
+  readonly pluginMeshyModels?: HostModelViews | undefined
   /**
    * Who gh on the host's own machine is signed in to GitHub as (ADR-0205): the account its threads' plugin tools act
    * as, which need not be the desktop's. Present only on a headless host whose Owl answer turns on plugins, and on a
@@ -542,6 +549,8 @@ export class LocalHostService implements HostService {
     pluginGitHubSignIn?: () => Promise<GitHubSignIn>
     /** Shared spending for the Meshy copies this host keeps (ADR-0205), present only with `pluginAccountCopies`. */
     pluginMeshySpending?: PluginSpendingShare
+    /** This host's 3D models, for a recorded desktop's window (the Meshy plan's ticket 6, part 2), only with `pluginAccountCopies`. */
+    pluginMeshyModels?: HostModelViews
     workerSwarms?: boolean
     /** This host keeps what a desktop says of **Show every picture and video an agent makes** (ADR-0170, part 7). */
     everyAgentPicture?: boolean
@@ -610,6 +619,8 @@ export class LocalHostService implements HostService {
     if (!this.options.pluginMeshySpending) return Promise.reject(new Error('This host does not share spending.'))
     return this.options.pluginMeshySpending.own(client.clientId)
   }
+  get supportsPluginMeshyModels(): boolean { return this.options.pluginAccountCopies !== undefined && this.options.pluginMeshyModels !== undefined }
+  get pluginMeshyModels(): HostModelViews | undefined { return this.supportsPluginMeshyModels ? this.options.pluginMeshyModels : undefined }
   /** Hears this host's own count change; the listener reads it for each desktop with `pluginMeshySpending`. */
   subscribePluginMeshySpending(listener: () => void): () => void { return this.options.pluginMeshySpending?.subscribe(listener) ?? (() => undefined) }
   get supportsDelegationViews(): boolean { return this.options.delegationViews !== undefined }

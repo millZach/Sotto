@@ -17,6 +17,8 @@ import { checkPhoto, photoToSend } from '../main/tools/meshy/photo'
 import { ModelRecords, type ThreeDModel } from '../main/tools/meshy/records'
 import { MeshyModels } from '../main/tools/meshy/service'
 import { stripPhoto } from '../main/tools/meshy/strip'
+import { hostModelViews, type HostModelViewsWithNews } from '../main/tools/meshy/hostViews'
+import type { HostModelViews } from '../shared/models3d'
 import { PROVIDER_LABELS, type AgentHostSnapshot } from '../shared/agents'
 import type { PluginSpendingShare, SpendingReport } from '../shared/pluginAccountCopies'
 import type { GitHubSignIn } from '../shared/plugins'
@@ -51,6 +53,8 @@ export interface HostPlugins {
   readonly models: ModelRecords
   /** Shared spending with the desktops that sent this host its Meshy copies (`plugin-meshy-spending`). */
   readonly spending: PluginSpendingShare
+  /** This host's 3D models as a recorded desktop's window reads them (`plugin-meshy-models`). */
+  readonly views: HostModelViews
   /**
    * Once the paired clients are read: takes the words out of the 3D models' records if Keep local history is off, and
    * picks up the 3D models still being made when the host last stopped. Before then no copy's key may be read.
@@ -172,7 +176,17 @@ export function hostPlugins(options: {
     fetch: options.standIns?.meshyFetch ?? ((url, init) => fetch(url, init)),
     ...(meshyBase ? { base: meshyBase, assets: meshyBase } : {}), ...(options.standIns?.meshyWait ? { wait: options.standIns.meshyWait } : {}),
     keyOf: async accountId => (await usable.list()).some(account => account.id === accountId && account.plugin === 'meshy') ? usable.secret(accountId) || undefined : undefined,
-    changed: () => { countChanged() },
+    // Nothing changes while the service is made, so the views below are there before the first change.
+    changed: (model, progress) => { countChanged(); views.changed(model, progress) },
+  })
+  // What a recorded desktop's window reads of them (the Meshy plan's ticket 6, part 2): each 3D model's view, the bytes
+  // it is drawn from, and removing a record whose files are gone, by the same code the desktop reads its own with.
+  const views: HostModelViewsWithNews = hostModelViews({
+    model: id => models.model(id), progressOf: (id, stage) => meshyModels.progressOf(id, stage),
+    hasShape: id => meshyModels.hasShape(id), shapeBytes: id => meshyModels.shapeBytes(id),
+    list: () => models.list(),
+    accountNames: async () => new Map((await accounts.list()).filter(account => account.plugin === 'meshy').map(account => [account.id, account.name])),
+    remove: (id, may) => models.remove(id, may),
   })
   const stopMonths = everyMonthStart(() => { counted = new Map(); spendingChanged() }, now)
   const revisions = new ReportRevisions()
@@ -238,14 +252,14 @@ export function hostPlugins(options: {
     },
   }))
   return {
-    copies, changes, tools, gitHubSignIn, mailGrants, forgetGrantsOfGone, models, spending,
+    copies, changes, tools, gitHubSignIn, mailGrants, forgetGrantsOfGone, models, spending, views,
     startModels: async () => {
       await models.privacyChanged().catch(() => undefined)
       await meshyModels.resume()
       countChanged()
     },
     // A forgotten thread's 3D models' records go with it; what they cost this month still counts (ADR-0141).
-    forgetThreads: threadIds => { changes.forgetThreads(threadIds); void mailGrants.forgetThreads(threadIds).catch(() => undefined); void models.forgetThreads(threadIds).catch(() => undefined) },
-    close: async () => { stop.abort(); stopMonths(); spendingListeners.clear(); changes.close(); mailGrants.close(); await tools.close() },
+    forgetThreads: threadIds => { changes.forgetThreads(threadIds); void mailGrants.forgetThreads(threadIds).catch(() => undefined); void models.forgetThreads(threadIds).then(ids => { views.removed(ids) }, () => undefined) },
+    close: async () => { stop.abort(); stopMonths(); spendingListeners.clear(); views.close(); changes.close(); mailGrants.close(); await tools.close() },
   }
 }
