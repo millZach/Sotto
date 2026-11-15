@@ -724,6 +724,11 @@ private final class FollowBox {
     weak var page: UIScrollView?
     /// A finger is on the page or a flick it gave is running out, as the scroll view knows it now.
     var handOn: Bool { page.map { $0.isTracking || $0.isDragging || $0.isDecelerating } ?? false }
+    /// When the page last changed height, as the end's marker saw it.
+    var resizedAt: CFTimeInterval = -.greatestFiniteMagnitude
+    /// The page changed height a moment ago. A move of the page then, with no hand on it, is the height swinging; one
+    /// without is someone setting the page's offset, as VoiceOver or the bench does, and decides where the reader stands.
+    var swinging: Bool { CACurrentMediaTime() - resizedAt < 1 }
     func settle() { atBottom = sentinel <= dockTop + Self.slack }
 }
 
@@ -1169,12 +1174,13 @@ private struct Conversation: View {
         follow.endInPage = inPage
         if wasAtBottom, grew, end > follow.dockTop + 1 {
             toBottom(scroll)
-        } else if wasAtBottom, follow.knowsMoves, !follow.moving, !follow.handOn {
+        } else if wasAtBottom, follow.knowsMoves, !follow.moving, !follow.handOn, follow.swinging {
             // The page moved with no hand on it and no scroll of its own: the turns made as they scroll into view guessed
             // their heights again, and the page swung by thousands of points for a moment (#2040). A reader at the end is
             // still there, and taken for one who left, the page stopped following them. The scroll view's own word on a
             // finger is asked as well: the phase change comes a pass after the page starts moving under one, and a drag
-            // away from the end was pulled back to it (PR #2572's run 43555799514).
+            // away from the end was pulled back to it (PR #2572's run 43555799514). Only a page changing height swings:
+            // the bench's scrolls, which set the offset, were each pulled back to the end (run 43667622141).
             if end > follow.dockTop + 1 { toBottom(scroll) }
         } else {
             follow.settle()
@@ -1274,7 +1280,14 @@ private struct EndDrawn: UIViewRepresentable {
             follow?.page = page
             let changed: (UIScrollView) -> Void = { [weak self] _ in MainActor.assumeIsolated { self?.report() } }
             watches = [page.observe(\.contentOffset) { page, _ in changed(page) },
-                       page.observe(\.contentSize) { page, _ in changed(page) }]
+                       page.observe(\.contentSize, options: [.old, .new]) { [weak self] page, change in
+                           MainActor.assumeIsolated {
+                               if let old = change.oldValue, let new = change.newValue, abs(new.height - old.height) > 0.5 {
+                                   self?.follow?.resizedAt = CACurrentMediaTime()
+                               }
+                           }
+                           changed(page)
+                       }]
         }
         private func report() {
             guard !pending else { return }
