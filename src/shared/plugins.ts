@@ -247,16 +247,16 @@ export const pluginAccountSchema = z.object({
    */
   projects: z.array(projectIdSchema).max(PLUGIN_ACCOUNT_PROJECTS_MAX).nullable().default(null),
   /**
-   * A Proton Mail account's Bridge on this computer (ADR-0205, slice 10): the ports it listens on at 127.0.0.1, and
-   * the SHA-256 of the certificate it showed when the account was added or the user last trusted it. No other
-   * plugin's account has one. Not a secret: it names a certificate and does not open anything.
-   */
-  /**
    * What an account that spends may spend (ADR-0205 decision 7, ADR-0141; Zach's pick on November 15, 2026 that it
    * lives on the account): whether each paid thing asks first, on by default, and the most it spends in a month.
    * Only Meshy's accounts have it so far, in Meshy's credits.
    */
   spending: pluginSpendingSchema.optional(),
+  /**
+   * A Proton Mail account's Bridge on this computer (ADR-0205, slice 10): the ports it listens on at 127.0.0.1, and
+   * the SHA-256 of the certificate it showed when the account was added or the user last trusted it. No other
+   * plugin's account has one. Not a secret: it names a certificate and does not open anything.
+   */
   bridge: z.object({ imapPort: z.number().int().min(1).max(65_535), smtpPort: z.number().int().min(1).max(65_535), certificate: z.string().regex(/^[0-9a-f]{64}$/u) }).strict().optional(),
 }).strict()
 export type PluginAccount = z.infer<typeof pluginAccountSchema>

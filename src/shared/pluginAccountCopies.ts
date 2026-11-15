@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { ACCOUNT_PLUGIN_IDS, PLUGIN_ACCOUNT_NAME_MAX, PLUGIN_ACCOUNT_PROJECTS_MAX, PLUGIN_ACCOUNTS_MAX, PLUGIN_SECRET_MAX, pluginAccountNameSchema, pluginAccountSchema } from './plugins'
+import { ACCOUNT_PLUGIN_IDS, PLUGIN_ACCOUNT_NAME_MAX, PLUGIN_ACCOUNT_PROJECTS_MAX, PLUGIN_ACCOUNTS_MAX, PLUGIN_SECRET_MAX, pluginAccountNameSchema, pluginAccountSchema, pluginSpendingSchema } from './plugins'
 
 /**
  * Account copies (CONTEXT.md, ADR-0205, amending ADR-0025): a plugin account's secret and settings, sent by the
@@ -64,6 +64,8 @@ export const heldPluginAccountCopySchema = z.object({
   id: z.uuid(), plugin: z.enum(ACCOUNT_PLUGIN_IDS), savedAt: z.iso.datetime(),
   name: z.string().max(PLUGIN_ACCOUNT_NAME_MAX).optional(), signedInAs: z.string().max(200).nullable().optional(),
   on: z.boolean().optional(), projects: z.array(z.string().min(1).max(512)).max(PLUGIN_ACCOUNT_PROJECTS_MAX).nullable().optional(),
+  /** What a Meshy account may spend, as the host holds it, from a host that lists `plugin-meshy-copies`. */
+  spending: pluginSpendingSchema.optional(),
 })
 export type HeldPluginAccountCopy = z.infer<typeof heldPluginAccountCopySchema>
 export const heldPluginAccountCopiesSchema = z.array(heldPluginAccountCopySchema).max(ACCOUNT_PLUGIN_IDS.length * PLUGIN_ACCOUNTS_MAX)

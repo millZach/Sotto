@@ -163,6 +163,10 @@ msgid "{computer}’s Sotto cannot keep a mail account’s copy. Update Sotto on
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "{computer}’s Sotto cannot keep a Meshy account’s copy. Update Sotto on {computer}, and the copy is sent."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "{computer}’s Sotto cannot keep account copies now, so it cannot say whether it holds one from before. Update Sotto on {computer}, and a copy it holds is deleted."
 msgstr ""
 

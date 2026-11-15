@@ -35,7 +35,7 @@ import { hostMachineReportSchema } from '../shared/hostFacts'
 import { projectOriginsSchema, projectSetupResultSchema, type ProjectOrigins } from '../shared/workerMachine'
 import { desktopDefaultsReceiptSchema } from '../shared/desktopDefaults'
 import { heldPluginAccountCopiesSchema, pluginAccountCopyReceiptSchema, pluginAccountCopyRemovedSchema } from '../shared/pluginAccountCopies'
-import { gitHubSignInSchema, isBridgePlugin, isMailPlugin } from '../shared/plugins'
+import { gitHubSignInSchema, isBridgePlugin, isMailPlugin, isSpendingPlugin } from '../shared/plugins'
 import { ProviderSignInRefusal, type ProviderSignIns } from './providerSignIn'
 import { DEFLATE_RESPONSE, deflateOffered, SocketFrames } from './socketFrames'
 import { CutBodies } from '../shared/activityBodies'
@@ -439,6 +439,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'plugin-account-copies' || service.supportsPluginAccountCopies === true && desktopRecords)
     // A mail account's copy (ADR-0205, decision 8) only where the host's threads can read one, on the same listeners.
     && (feature !== 'plugin-mail-copies' || service.supportsPluginMailCopies === true && desktopRecords)
+    // A Meshy account's copy, with its switch and limit, wherever account copies are kept: this build knows Meshy.
+    && (feature !== 'plugin-meshy-copies' || service.supportsPluginAccountCopies === true && desktopRecords)
     // Who the host's own gh is signed in as (ADR-0205), where the host runs plugin tools, on the same listeners.
     && (feature !== 'plugin-github-sign-in' || service.supportsPluginGitHubSignIn === true && service.pluginGitHubSignIn !== undefined && desktopRecords)
     // The same host answers a recorded desktop's read of those threads' delegations, for its window (#1310).
@@ -509,7 +511,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     .filter(feature => feature !== 'host-update' || mayUpdate(peer))
     .filter(feature => feature !== 'branch-moves' && feature !== 'thread-move' && feature !== 'thread-move-source' && feature !== 'thread-move-keep' || (options.watcherDesktops?.has(peer.client.clientId) ?? false))
     // An account copy carries a secret, so it comes only from the desktop the launch script recorded (ADR-0205).
-    .filter(feature => feature !== 'plugin-account-copies' && feature !== 'plugin-mail-copies' || options.watcherDesktops?.has(peer.client.clientId) === true)
+    .filter(feature => feature !== 'plugin-account-copies' && feature !== 'plugin-mail-copies' && feature !== 'plugin-meshy-copies' || options.watcherDesktops?.has(peer.client.clientId) === true)
     // The account a host's gh is signed in to is its owner's own detail: told only to a recorded desktop.
     .filter(feature => feature !== 'plugin-github-sign-in' || options.watcherDesktops?.has(peer.client.clientId) === true)
     // Desktop defaults come only from a client the launch script recorded as a desktop (#1310).
@@ -1859,6 +1861,8 @@ export async function startSocketServer(options: SocketServerOptions) {
         if (isMailPlugin(request.copy.account.plugin) && !offers(peer, 'plugin-mail-copies')) throw new Refusal('invalid_request')
         // A Proton Mail account is never copied: its Bridge password is the desktop's Bridge's own.
         if (isBridgePlugin(request.copy.account.plugin)) throw new Refusal('invalid_request')
+        // A Meshy account only to a desktop it said it keeps one for.
+        if (isSpendingPlugin(request.copy.account.plugin) && !offers(peer, 'plugin-meshy-copies')) throw new Refusal('invalid_request')
         try { return pluginAccountCopyReceiptSchema.parse(await service.keepPluginAccountCopy(request.copy, peer.client)) } catch { throw new Refusal('unavailable') }
       }
       case 'plugin-account-copy-remove': {

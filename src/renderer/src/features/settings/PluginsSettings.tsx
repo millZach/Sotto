@@ -335,7 +335,7 @@ function useAccountWords(plugin: AccountPluginId): AccountWords {
       off: t`Off. No thread can see or use this account until you turn it back on. Its API key stays saved.`,
       noKey: computer => t`${computer} was started without a key file, so it cannot keep an API key. Nothing was kept there. On ${computer}, set SOTTO_HOST_KEY_FILE to a file holding a secret of your own, start its host again, and the copy is sent.`,
       locked: t`This computer’s credential store is locked, so the API key could not be read to send. Unlock it, and Sotto tries again.`,
-      tooOld: computer => t`${computer}’s Sotto cannot keep account copies. Update Sotto on ${computer}, and the copy is sent.`,
+      tooOld: computer => t`${computer}’s Sotto cannot keep a Meshy account’s copy. Update Sotto on ${computer}, and the copy is sent.`,
       problem: (problem, replacing) => {
         const kept = replacing ? t`The API key already saved was kept.` : t`Nothing was saved.`
         switch (problem) {
@@ -798,7 +798,8 @@ function AccountSpending({ account, spending, bridge, onAccounts }: {
     if (asked.current !== mine) return
     askedLimit.current = null
     if (result.ok) onAccounts(result.accounts)
-    else { setFailed(true); setLimit(String(spending.monthlyLimit)) }
+    // A limit that could not be saved shows the one kept. A switch that could not be saved leaves a limit being typed alone.
+    else { setFailed(true); if (request.monthlyLimit !== undefined) setLimit(String(spending.monthlyLimit)) }
   }
   const saveLimit = (): void => { if (wanted !== null && wanted !== (askedLimit.current ?? spending.monthlyLimit)) void save({ monthlyLimit: wanted }) }
   return <section className="plugin-account__spending" aria-labelledby={headingId}>
