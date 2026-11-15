@@ -1464,6 +1464,10 @@ msgid "Asked to close an issue"
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Asked to make a 3D model"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Asked to open an issue"
 msgstr ""
 
@@ -2533,6 +2537,10 @@ msgstr "Skapningen er lagret."
 #: src/renderer/src/features/settings/AppearanceSettings.tsx
 msgid "Creature shown."
 msgstr "Skapningen vises."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Credits this month: {usedCredits} of {limitCredits}."
+msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Cursor threads get Sotto’s browser, visual, pull request babysitting and delegation tools, and skills, and Watcher runs on Cursor. Cursor has no fork of its own and cannot be steered, so a message sent while it works waits for the turn to end; Fork from here starts the new thread from a handover. Cursor reports no token counts, so it is not in Usage. Cursor keeps its own history, and runs Auto’s checks on its servers."
@@ -3902,6 +3910,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "macOS’s own Settings chord, from the app menu."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Made a 3D model"
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx

@@ -1,7 +1,7 @@
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { z } from 'zod'
-import { MESHY_FORMATS, MESHY_TASK_ID, MESHY_TRIANGLES_MAX, MESHY_TRIANGLES_MIN, MESHY_WORDS_MAX } from './api'
+import { MESHY_CREDITS, MESHY_FORMATS, MESHY_TASK_ID, MESHY_TRIANGLES_MAX, MESHY_TRIANGLES_MIN, MESHY_WORDS_MAX } from './api'
 
 /**
  * What became of a 3D model. `making` while Meshy works on it, at the `shape`, the `texture` or fetching the `files`;
@@ -13,11 +13,12 @@ export const MODEL_STAGES = ['shape', 'texture', 'files'] as const
 /**
  * Why a 3D model was not made, in one word: Meshy `refused` the key, the account had `no-credits`, Meshy `rejected`
  * the words or the photo, Meshy `failed` making it, a file was `too-large`, the `folder` would not take the files,
- * or the Meshy account that asked is gone (`no-account`). A `lost` 3D model says `expired` when its three days passed,
+ * the Meshy account that asked is gone (`no-account`), or its key could not be read, as while the credential store is
+ * `locked`. A `lost` 3D model says `expired` when its three days passed,
  * `stopped` when Sotto stopped before it knew whether Meshy took it, and `unreachable` when Meshy gave no answer Sotto
  * could read as it was asked; those last two keep their credits counted, since Meshy may have taken them.
  */
-export const MODEL_FAILURES = ['refused', 'no-credits', 'rejected', 'failed', 'too-large', 'folder', 'unreachable', 'no-account', 'expired', 'stopped'] as const
+export const MODEL_FAILURES = ['refused', 'no-credits', 'rejected', 'failed', 'too-large', 'folder', 'unreachable', 'no-account', 'locked', 'expired', 'stopped'] as const
 
 /** How long Meshy keeps what its API made below Enterprise, and so how long Sotto keeps trying to fetch it. */
 export const MODEL_KEPT_MS = 3 * 24 * 60 * 60_000
@@ -59,7 +60,14 @@ const recordSchema = z.object({
   failure: z.enum(MODEL_FAILURES).optional(),
   job: jobSchema,
 })
-const fileSchema = z.object({ version: z.literal(1), models: z.array(z.unknown()) })
+/**
+ * What a forgotten thread's 3D model cost, kept so forgetting a thread never lowers the month's count: the account,
+ * when it was asked for and the credits, and nothing else (Bug Bot on #2593, L4). Kept for two months at most.
+ */
+const spentSchema = z.object({ accountId: z.string().min(1).max(200), askedAt: at, credits: z.number().int().positive() }).strict()
+type Spent = z.infer<typeof spentSchema>
+const SPENT_KEPT_MS = 62 * 24 * 60 * 60_000
+const fileSchema = z.object({ version: z.literal(1), models: z.array(z.unknown()), spent: z.array(z.unknown()).optional() })
 
 /** A 3D model's record as this folder keeps it, with Meshy's task IDs. */
 export type ModelRecord = z.infer<typeof recordSchema>
@@ -89,10 +97,13 @@ export function modelOf(record: ModelRecord): ThreeDModel {
 export class ModelRecords {
   private readonly path: string
   private records: ModelRecord[] | undefined
+  /** What forgotten threads' 3D models cost, read with the records. */
+  private spent: readonly Spent[] = []
   /** Whether the file may still hold words, so turning Keep local history off knows to write it again. */
   private wordsInFile = false
   private queue: Promise<unknown> = Promise.resolve()
-  constructor(directory: string, private readonly options: { readonly historyEnabled: () => boolean }) {
+  /** `kept` is the most records kept: MODEL_RECORDS_KEPT unless a test says fewer. */
+  constructor(directory: string, private readonly options: { readonly historyEnabled: () => boolean; readonly kept?: number }) {
     this.path = join(directory, '3d-models.json')
   }
 
@@ -116,7 +127,10 @@ export class ModelRecords {
     return this.inTurn(async () => {
       const kept = this.private(recordSchema.parse(record))
       const records = await this.load()
-      await this.write([kept, ...records.filter(other => other.id !== kept.id)].slice(0, MODEL_RECORDS_KEPT))
+      const all = [kept, ...records.filter(other => other.id !== kept.id)]
+      // The oldest records past the most kept go, and what each cost stays counted, as a forgotten thread's does.
+      const dropped = all.slice(this.options.kept ?? MODEL_RECORDS_KEPT).filter(other => other.credits > 0).map(other => ({ accountId: other.accountId, askedAt: other.askedAt, credits: other.credits }))
+      await this.write(all.slice(0, this.options.kept ?? MODEL_RECORDS_KEPT), dropped.length > 0 ? [...this.spent, ...dropped] : this.spent)
       return kept
     })
   }
@@ -133,13 +147,36 @@ export class ModelRecords {
     })
   }
 
-  /** Removes forgotten threads' records, all of them in one change. The files stay. */
+  /**
+   * Removes forgotten threads' records, all of them in one change. The files stay, and so does what each cost, by its
+   * account and when it was asked for alone, so the month's credits are counted the same.
+   */
   forgetThreads(threadIds: readonly string[]): Promise<void> {
     const gone = new Set(threadIds)
     return this.inTurn(async () => {
       const records = await this.load()
       const kept = records.filter(record => !gone.has(record.threadId))
-      if (kept.length !== records.length) await this.write(kept)
+      if (kept.length === records.length) return
+      const spent = records.filter(record => gone.has(record.threadId) && record.credits > 0).map(record => ({ accountId: record.accountId, askedAt: record.askedAt, credits: record.credits }))
+      await this.write(kept, [...this.spent, ...spent])
+    })
+  }
+
+  /**
+   * The credits each Meshy account's 3D models took in the month `now` falls in, by this computer's clock: from the
+   * 1st (Zach's pick on November 15, 2026). A 3D model counts from when it was asked for, while it is being made too,
+   * and less what Meshy gave back; a forgotten thread's count the same.
+   */
+  monthCredits(now: Date = new Date()): Promise<ReadonlyMap<string, number>> {
+    return this.inTurn(async () => {
+      const records = await this.load()
+      const sameMonth = (at: string): boolean => { const asked = new Date(at); return asked.getFullYear() === now.getFullYear() && asked.getMonth() === now.getMonth() }
+      const credits = new Map<string, number>()
+      // One still being made counts at what it will cost in full, so a second asked for meanwhile cannot slip under the
+      // limit before the first one's texture is asked for.
+      const cost = (entry: ModelRecord | Spent): number => 'state' in entry && entry.state === 'making' ? Math.max(entry.credits, fullCost(entry)) : entry.credits
+      for (const entry of [...records, ...this.spent]) if (cost(entry) > 0 && sameMonth(entry.askedAt)) credits.set(entry.accountId, (credits.get(entry.accountId) ?? 0) + cost(entry))
+      return credits
     })
   }
 
@@ -182,29 +219,41 @@ export class ModelRecords {
     // version cannot read is left out rather than failing the rest, and counts the same way. And words a failed
     // clearing left in the file are not read while Keep local history is off.
     if (!parsed?.success) this.wordsInFile = true
-    else records = parsed.data.models.flatMap(entry => {
-      const record = recordSchema.safeParse(entry)
-      if (!record.success || holdsWords(record.data)) this.wordsInFile = true
-      return record.success ? [this.private(record.data)] : []
-    })
+    else {
+      records = parsed.data.models.flatMap(entry => {
+        const record = recordSchema.safeParse(entry)
+        if (!record.success || holdsWords(record.data)) this.wordsInFile = true
+        return record.success ? [this.private(record.data)] : []
+      })
+      this.spent = (parsed.data.spent ?? []).flatMap(entry => { const spent = spentSchema.safeParse(entry); return spent.success ? [spent.data] : [] })
+    }
     this.records = records
     return records
   }
 
-  /** Writes the record whole and only then takes it as kept, so a failed write leaves what was kept as it was. */
-  private async write(records: ModelRecord[]): Promise<void> {
+  /**
+   * Writes the record whole and only then takes it as kept, so a failed write leaves what was kept as it was. What
+   * forgotten 3D models cost is kept for two months, which covers any month's count.
+   */
+  private async write(records: ModelRecord[], spent: readonly Spent[] = this.spent): Promise<void> {
+    const since = Date.now() - SPENT_KEPT_MS
+    const keptSpent = spent.filter(entry => Date.parse(entry.askedAt) >= since)
     const next = `${this.path}.next`
     await mkdir(dirname(this.path), { recursive: true })
     try {
-      await writeFile(next, JSON.stringify({ version: 1, models: records }), { mode: 0o600 })
+      await writeFile(next, JSON.stringify({ version: 1, models: records, ...(keptSpent.length > 0 ? { spent: keptSpent } : {}) }), { mode: 0o600 })
       await rename(next, this.path)
     } catch (error) {
       await rm(next, { force: true })
       throw error
     }
     this.records = records
+    this.spent = keptSpent
     this.wordsInFile = records.some(holdsWords)
   }
 }
+
+/** What a 3D model costs in full: a shape and a texture from words, or one task from a photo. */
+function fullCost(record: ModelRecord): number { return record.source.kind === 'words' ? MESHY_CREDITS.preview + MESHY_CREDITS.refine : MESHY_CREDITS.photo }
 
 function holdsWords(record: ModelRecord): boolean { return record.source.kind === 'words' && record.source.words !== undefined }

@@ -5,6 +5,7 @@ type GitHubChange = Extract<PluginChange, { readonly kind: 'github-comment' | 'g
 type VercelChange = Extract<PluginChange, { readonly kind: 'vercel-cancel' | 'vercel-promote' | 'vercel-rollback' }>
 type MailRead = Extract<PluginChange, { readonly kind: 'mail-read' }>
 type MailSend = Extract<PluginChange, { readonly kind: 'mail-send' }>
+type MeshyModel = Extract<PluginChange, { readonly kind: 'meshy-model' }>
 
 /**
  * A plugin change's card in English, for a headless host (ADR-0205, decision 7). A host has no interface language and
@@ -16,6 +17,7 @@ type MailSend = Extract<PluginChange, { readonly kind: 'mail-send' }>
 export function wordPluginChangeInEnglish(change: PluginChange): PluginChangeCard {
   if (change.kind === 'mail-read') return wordMailRead(change)
   if (change.kind === 'mail-send') return wordMailSend(change)
+  if (change.kind === 'meshy-model') return wordMeshyModel(change)
   // Only a Vercel change names a deployment.
   return 'deploymentId' in change ? wordVercelChange(change) : wordGitHubChange(change)
 }
@@ -89,6 +91,32 @@ function wordMailSend(change: MailSend): PluginChangeCard {
     ].join('\n'),
     allow: 'Send the email',
     deny: 'Don’t send it',
+  }
+}
+
+/**
+ * One 3D model with Meshy (ADR-0141): what goes to Meshy, the words or the photo, that Meshy may train on it, and what
+ * it costs beside the month's credits so far. The card and its buttons are the ones Zach chose in the mock-up
+ * `docs/prototypes/meshy-models-prototype.html`: Make the model and Deny.
+ */
+function wordMeshyModel(change: MeshyModel): PluginChangeCard {
+  const { name, folder } = change
+  const named = change.account
+  const credits = change.credits.toLocaleString('en-US'), month = change.monthCredits.toLocaleString('en-US'), limit = change.monthlyLimit.toLocaleString('en-US')
+  const words = change.words ?? '', photo = change.photo ?? ''
+  return {
+    plugin: 'Meshy',
+    text: `Make the 3D model ${name} with the Meshy account ${named}? About ${credits} credits.`,
+    action: `Make a 3D model with Meshy`,
+    target: name,
+    details: [
+      change.photo !== undefined ? `Sends Meshy the photo ${photo} from this thread’s folder, redrawn without its location and camera details.` : `Sends Meshy these words: “${words}”`,
+      `Meshy may use what it is sent, and the 3D models it makes, to train its own models.`,
+      `About ${credits} credits on the Meshy account ${named}; ${month} of its ${limit} credits used this month.`,
+      `The files go to ${folder} in this thread’s folder.`,
+    ].join('\n'),
+    allow: `Make the model`,
+    deny: `Deny`,
   }
 }
 

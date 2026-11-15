@@ -2,7 +2,7 @@ import { t } from '@lingui/core/macro'
 import { z } from 'zod'
 import {
   gitHubSignInSchema, pluginHostSignInsSchema, PLUGINS_GITHUB_SIGN_IN_ELSEWHERE, type PluginHostSignIn, pluginCopiesViewSchema, pluginCopyNewSetSchema, pluginCopySetSchema, PLUGINS_COPIES, PLUGINS_COPY_NEW_SET, PLUGINS_COPY_SET, pluginAccountAddSchema, pluginAccountRemoveSchema, pluginAccountReplaceSchema, pluginAccountResultSchema, pluginAccountsSchema, pluginAccountUpdateSchema, pluginProjectsSchema,
-  PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNT_TRUST, PLUGINS_ACCOUNT_UPDATE, PLUGINS_ACCOUNTS, PLUGINS_BRIDGE_STATUS, PLUGINS_GITHUB_SIGN_IN, PLUGINS_PROJECTS, PLUGINS_RECENT_USE, shownPluginUsesSchema, bridgeStatusSchema, type BridgeStatus,
+  PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNT_TRUST, PLUGINS_ACCOUNT_UPDATE, PLUGINS_ACCOUNTS, PLUGINS_BRIDGE_STATUS, PLUGINS_MESHY_CREDITS, meshyCreditsSchema, type MeshyCredits, PLUGINS_GITHUB_SIGN_IN, PLUGINS_PROJECTS, PLUGINS_RECENT_USE, shownPluginUsesSchema, bridgeStatusSchema, type BridgeStatus,
   mailGrantsOfSchema, mailGrantStopSchema, PLUGINS_MAIL_GRANT_STOP, PLUGINS_MAIL_GRANTS, threadMailGrantsSchema, type MailGrantStop, type ThreadMailGrant,
   type GitHubSignIn, type PluginAccount, type PluginAccountAdd, type PluginAccountRemove, type PluginAccountReplace, type PluginAccountResult, type PluginAccountUpdate, type PluginCopiesView, type PluginCopySet, type PluginProject, type ShownPluginUse,
 } from '../../shared/plugins'
@@ -34,6 +34,8 @@ export interface PluginsIpcHandlers {
   readonly trustCertificate: (request: PluginAccountRemove) => Promise<PluginAccountResult>
   /** Where Proton Mail Bridge stands for an account, looked at without signing in. */
   readonly bridgeStatus: (request: PluginAccountRemove) => Promise<BridgeStatus>
+  /** The credits each Meshy account's 3D models took this month on this computer. */
+  readonly meshyCredits: () => Promise<MeshyCredits>
   readonly projects: () => readonly PluginProject[]
   readonly copies: () => Promise<PluginCopiesView>
   readonly setCopy: (request: PluginCopySet) => Promise<PluginCopiesView>
@@ -125,7 +127,12 @@ export function registerPluginsIpc(ipc: IpcMainAdapter, plugins: PluginsIpcHandl
     if (!parsed.success) throw new Error(t`That could not be done. Nothing was changed.`)
     return bridgeStatusSchema.parse(await plugins.bridgeStatus(parsed.data[0]))
   })
+  ipc.handle(PLUGINS_MESHY_CREDITS, async (event, ...args) => {
+    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Open Settings in the main Sotto window.`)
+    noArguments.parse(args)
+    return meshyCreditsSchema.parse(await plugins.meshyCredits())
+  })
   return () => {
-    for (const channel of [PLUGINS_MAIL_GRANTS, PLUGINS_MAIL_GRANT_STOP, PLUGINS_GITHUB_SIGN_IN, PLUGINS_GITHUB_SIGN_IN_ELSEWHERE, PLUGINS_RECENT_USE, PLUGINS_ACCOUNTS, PLUGINS_PROJECTS, PLUGINS_COPIES, PLUGINS_COPY_SET, PLUGINS_COPY_NEW_SET, PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_UPDATE, PLUGINS_ACCOUNT_TRUST, PLUGINS_BRIDGE_STATUS]) ipc.removeHandler(channel)
+    for (const channel of [PLUGINS_MAIL_GRANTS, PLUGINS_MAIL_GRANT_STOP, PLUGINS_GITHUB_SIGN_IN, PLUGINS_GITHUB_SIGN_IN_ELSEWHERE, PLUGINS_RECENT_USE, PLUGINS_ACCOUNTS, PLUGINS_PROJECTS, PLUGINS_COPIES, PLUGINS_COPY_SET, PLUGINS_COPY_NEW_SET, PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_UPDATE, PLUGINS_ACCOUNT_TRUST, PLUGINS_BRIDGE_STATUS, PLUGINS_MESHY_CREDITS]) ipc.removeHandler(channel)
   }
 }

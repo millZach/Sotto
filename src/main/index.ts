@@ -87,6 +87,7 @@ import { PluginUseRecord } from './plugins/useRecord'
 import type { MeshyApiFetch } from './tools/meshy/api'
 import { ModelRecords } from './tools/meshy/records'
 import { MeshyModels } from './tools/meshy/service'
+import { checkPhoto, photoToSend, type RedrawPhoto } from './tools/meshy/photo'
 import { isMailPlugin, PLUGIN_USE_THREAD_TITLE_MAX, PLUGINS_COPIES_CHANGED, PLUGINS_MAIL_GRANTS_CHANGED } from '../shared/plugins'
 import { resetGhLookup } from './agents/git/ghCommand'
 import { GitUnavailableError, runGitStatusCommand, runWithGhStandIn, type RunGitCommand } from './agents/git/gitStatus'
@@ -1426,6 +1427,21 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const meshyModels = modelRecords && pluginAccounts ? new MeshyModels({ records: modelRecords, fetch: meshyApiFetch, signal: pluginsStop.signal, ...(meshyBase ? { base: meshyBase, assets: meshyBase } : {}),
     keyOf: async accountId => (await pluginAccounts.list()).some(account => account.id === accountId && account.plugin === 'meshy') ? pluginAccounts.secret(accountId) || undefined : undefined }) : undefined
   void meshyModels?.resume().catch(() => undefined)
+  // A photo for a 3D model is drawn again from its pixels alone, which carries none of its location or camera details
+  // (ADR-0141). PNG stays PNG, for its transparency; a redrawn PNG past Meshy's 20 MB goes as a JPEG.
+  const redrawPhoto: RedrawPhoto = async (bytes, kind) => {
+    const image = nativeImage.createFromBuffer(bytes)
+    if (image.isEmpty()) return null
+    const png = kind === 'image/png' ? image.toPNG() : undefined
+    return png && png.byteLength <= 20 * 1024 * 1024 ? { bytes: png, kind: 'image/png' } : { bytes: image.toJPEG(92), kind: 'image/jpeg' }
+  }
+  const meshyTools = meshyModels && modelRecords ? {
+    // The thread's own working folder, as Files and the terminal find it.
+    folderOf: async (threadId: string) => { const found = await files.resolveWorkspace(threadId); return found.ok ? found.value.workingDirectory : null },
+    monthCredits: async (accountId: string) => (await modelRecords.monthCredits()).get(accountId) ?? 0,
+    checkPhoto, photoToSend: (root: string, checked: Parameters<typeof photoToSend>[1], path: string) => photoToSend(root, checked, path, redrawPhoto),
+    make: (request: Parameters<MeshyModels['make']>[0]) => meshyModels.make(request),
+  } : undefined
   // Account copies (ADR-0205, amending ADR-0025): each plugin account the user keeps on a paired host is sent to it on
   // every connection and whenever it changes here, and a copy no longer wanted is taken back. Owl `plugins` only.
   const pluginCopySync = pluginsEnabled && pluginAccounts ? new PluginAccountCopySync(userDataPath, {
@@ -1466,6 +1482,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       return thread === undefined || thread.kind === 'watcher' || thread.kind === 'watcher-history'
     },
     askChange: async (threadId, change, wait) => await pluginChanges?.ask(threadId, wordPluginChange(change), wait) ?? 'stopped',
+    ...(meshyTools ? { meshy: meshyTools } : {}),
     // What a thread reads from mail goes to its provider, which the card that asks names.
     ...(mailGrants ? { mail: { grants: mailGrants, options: mailOptions, keepsBridgeAccounts: true, providerOf: (threadId: string) => {
       const thread = agentControl.watcherSnapshot().threads.find(item => item.id === threadId)
@@ -2799,6 +2816,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
           const account = (await pluginAccounts?.list().catch(() => []) ?? []).find(entry => entry.id === request.id)
           return account ? bridgeStatus(account, mailOptions) : 'unknown'
         },
+        meshyCredits: async () => Object.fromEntries(await modelRecords?.monthCredits() ?? new Map()),
         copies: async () => await pluginCopySync?.view() ?? { copyNew: true, readable: true, computers: [], copies: [] },
         setCopy: async request => { await pluginCopySync?.setCopy(request.accountId, request.computerId, request.on); return await pluginCopySync?.view() ?? { copyNew: true, readable: true, computers: [], copies: [] } },
         setCopyNew: async copyNew => { await pluginCopySync?.setCopyNew(copyNew); return await pluginCopySync?.view() ?? { copyNew: true, readable: true, computers: [], copies: [] } },

@@ -5,7 +5,7 @@ import { registerPluginsIpc } from '../../../../src/main/plugins/ipc'
 import { createSottoBridge } from '../../../../src/preload'
 import {
   PLUGINS_MAIL_GRANT_STOP, PLUGINS_MAIL_GRANTS, PLUGINS_MAIL_GRANTS_CHANGED, type ThreadMailGrant,
-  PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_TRUST, PLUGINS_BRIDGE_STATUS, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNT_UPDATE, PLUGINS_ACCOUNTS, PLUGINS_COPIES, PLUGINS_COPIES_CHANGED, PLUGINS_GITHUB_SIGN_IN_ELSEWHERE, type PluginHostSignIn, PLUGINS_COPY_NEW_SET, PLUGINS_COPY_SET, PLUGINS_GITHUB_SIGN_IN, PLUGINS_PROJECTS, PLUGINS_RECENT_USE,
+  PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_TRUST, PLUGINS_BRIDGE_STATUS, PLUGINS_MESHY_CREDITS, type MeshyCredits, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNT_UPDATE, PLUGINS_ACCOUNTS, PLUGINS_COPIES, PLUGINS_COPIES_CHANGED, PLUGINS_GITHUB_SIGN_IN_ELSEWHERE, type PluginHostSignIn, PLUGINS_COPY_NEW_SET, PLUGINS_COPY_SET, PLUGINS_GITHUB_SIGN_IN, PLUGINS_PROJECTS, PLUGINS_RECENT_USE,
   type BridgeStatus, type GitHubSignIn, type PluginAccount, type PluginAccountResult, type PluginCopiesView, type ShownPluginUse,
 } from '../../../../src/shared/plugins'
 import { ipcRegistry } from '../../../fixtures/ipcHarness'
@@ -27,6 +27,7 @@ function register(answer: GitHubSignIn = { state: 'signed-in', login: 'example-u
   const removeAccount = vi.fn(async (): Promise<PluginAccountResult> => ({ ok: true, accounts: [] }))
   const updateAccount = vi.fn(async (): Promise<PluginAccountResult> => ({ ok: true, accounts: [{ ...account, on: false }] }))
   const trustCertificate = vi.fn(async (): Promise<PluginAccountResult> => ({ ok: false, problem: 'refused' })), bridgeStatus = vi.fn(async (): Promise<BridgeStatus> => 'not-running')
+  const meshyCredits = vi.fn(async (): Promise<MeshyCredits> => ({ [account.id]: 120 }))
   const projects = vi.fn(() => [{ id: 'p-sotto', title: 'Sotto', settled: false }])
   const view: PluginCopiesView = { copyNew: true, readable: true, computers: [{ id: 'saved-forge', name: 'forge', connected: true }], copies: [{ accountId: account.id, computerId: 'saved-forge', state: 'kept', leaving: 'no' }] }
   const copies = vi.fn(async (): Promise<PluginCopiesView> => view), setCopy = vi.fn(async (): Promise<PluginCopiesView> => view), setCopyNew = vi.fn(async (): Promise<PluginCopiesView> => view)
@@ -34,10 +35,10 @@ function register(answer: GitHubSignIn = { state: 'signed-in', login: 'example-u
   const gitHubSignInElsewhere = vi.fn(async (): Promise<PluginHostSignIn[]> => elsewhere)
   const granted: ThreadMailGrant[] = [{ accountId: '33333333-3333-4333-8333-000000000001', plugin: 'gmail', name: 'Personal' }]
   const mailGrants = vi.fn(async (): Promise<ThreadMailGrant[]> => granted), stopMailGrant = vi.fn(async (): Promise<boolean> => true)
-  const close = registerPluginsIpc(registry.ipc, { gitHubSignIn, gitHubSignInElsewhere, recentUse, accounts, addAccount, replaceSecret, removeAccount, updateAccount, trustCertificate, bridgeStatus, projects, copies, setCopy, setCopyNew, mailGrants, stopMailGrant }, registry.trustedSenders)
+  const close = registerPluginsIpc(registry.ipc, { gitHubSignIn, gitHubSignInElsewhere, recentUse, accounts, addAccount, replaceSecret, removeAccount, updateAccount, trustCertificate, bridgeStatus, meshyCredits, projects, copies, setCopy, setCopyNew, mailGrants, stopMailGrant }, registry.trustedSenders)
   const renderer = preloadElectron().ipcRenderer
   renderer.invoke.mockImplementation((channel: string, ...args: unknown[]) => registry.invoke(channel, args))
-  return { ...registry, gitHubSignIn, gitHubSignInElsewhere, elsewhere, recentUse, accounts, addAccount, replaceSecret, removeAccount, updateAccount, trustCertificate, bridgeStatus, projects, copies, setCopy, setCopyNew, view, close, mailGrants, stopMailGrant, granted, bridge: createSottoBridge(renderer, 'win32').plugins! }
+  return { ...registry, gitHubSignIn, gitHubSignInElsewhere, elsewhere, recentUse, accounts, addAccount, replaceSecret, removeAccount, updateAccount, trustCertificate, bridgeStatus, meshyCredits, projects, copies, setCopy, setCopyNew, view, close, mailGrants, stopMailGrant, granted, bridge: createSottoBridge(renderer, 'win32').plugins! }
 }
 
 describe('Settings › Plugins, from the window through preload to main (ADR-0205)', () => {
@@ -136,6 +137,17 @@ describe('Settings › Plugins, from the window through preload to main (ADR-020
     await expect(invoke(PLUGINS_BRIDGE_STATUS, [{ id: account.id }])).rejects.toThrow()
     close()
     for (const channel of [PLUGINS_BRIDGE_STATUS, PLUGINS_ACCOUNT_TRUST]) expect(handlers.has(channel)).toBe(false)
+  })
+
+  it('reads this month’s credits for each Meshy account, for the main window only, and nothing but whole numbers', async () => {
+    const { bridge, invoke, widgetEvent, meshyCredits, close, handlers } = register()
+    await expect(bridge.meshyCredits()).resolves.toEqual({ [account.id]: 120 })
+    await expect(invoke(PLUGINS_MESHY_CREDITS, [], widgetEvent)).rejects.toThrow('Open Settings in the main Sotto window.')
+    await expect(invoke(PLUGINS_MESHY_CREDITS, ['extra'])).rejects.toThrow()
+    meshyCredits.mockResolvedValueOnce({ [account.id]: -1 })
+    await expect(invoke(PLUGINS_MESHY_CREDITS, [])).rejects.toThrow()
+    close()
+    expect(handlers.has(PLUGINS_MESHY_CREDITS)).toBe(false)
   })
 
   it('carries which threads may use an account to main, and this computer’s projects back, for the main window only', async () => {

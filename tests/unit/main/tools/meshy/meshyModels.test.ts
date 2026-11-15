@@ -123,6 +123,10 @@ describe('a 3D model made with Meshy', () => {
     }
     const { service } = models({ keyOf: () => undefined })
     expect(await (await service.make(words())).done).toMatchObject({ state: 'failed', failure: 'no-account' })
+    // A credential store that will not hand the key over ends it, with nothing sent (Bug Bot on #2594, L2).
+    const locked = models({ keyOf: () => { throw new Error('locked') } })
+    expect(await (await locked.service.make(words())).done).toMatchObject({ state: 'failed', failure: 'locked', credits: 0 })
+    expect(meshy.created()).toHaveLength(0)
   })
 
   it('keeps the credits counted, and never asks again, when Meshy may have taken it without Sotto learning its task', async () => {
@@ -304,6 +308,35 @@ describe('the record of 3D models', () => {
     await records.forgetThreads(['thread-1'])
     expect((await records.list()).map(model => model.threadId)).toEqual(['thread-2'])
     expect(await readdir(join(root, 'models'))).toContain('Chair.glb')
+  })
+
+  it('keeps counting what the oldest 3D models cost once they fall out of the record', async () => {
+    const records = new ModelRecords(data, { historyEnabled: () => true, kept: 2 })
+    const { service } = models({ records })
+    for (const name of ['One', 'Two', 'Three']) await (await service.make(words(name))).done
+    expect((await records.list()).map(model => model.name)).toEqual(['Three', 'Two'])
+    expect((await records.monthCredits()).get('meshy-1')).toBe(90)
+    expect((await new ModelRecords(data, { historyEnabled: () => true, kept: 2 }).monthCredits()).get('meshy-1')).toBe(90)
+  })
+
+  it('counts the month’s credits from the 1st by this computer’s clock, per account, a forgotten thread’s too', async () => {
+    let now = new Date(2026, 10, 30, 23, 0).getTime()
+    const { service, records } = models({ now: () => now })
+    await (await service.make(words())).done
+    await (await service.make(words('Lamp', { accountId: 'meshy-2' }))).done
+    expect(Object.fromEntries(await records.monthCredits(new Date(now)))).toEqual({ 'meshy-1': 30, 'meshy-2': 30 })
+    // Forgetting the thread takes its records, never what they cost this month (Bug Bot on #2593, L4).
+    await records.forgetThreads(['thread-1'])
+    expect(await records.list()).toEqual([])
+    expect(Object.fromEntries(await recordsHere().monthCredits(new Date(now)))).toEqual({ 'meshy-1': 30, 'meshy-2': 30 })
+    expect(await readFile(join(data, '3d-models.json'), 'utf8')).not.toContain('thread-1')
+    // One still being made counts at its full cost, before its texture is asked for.
+    const slow = models({ now: () => now, records, wait: async () => { slow.stop.abort() } })
+    await (await slow.service.make(words('Stool'))).done
+    expect((await records.monthCredits(new Date(now))).get('meshy-1')).toBe(60)
+    // The next month starts at nothing.
+    now = new Date(2026, 11, 1, 0, 30).getTime()
+    expect(Object.fromEntries(await records.monthCredits(new Date(now)))).toEqual({})
   })
 
   it('stops a 3D model whose thread was forgotten while it was being made, writing nothing more', async () => {

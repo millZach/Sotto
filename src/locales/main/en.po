@@ -444,6 +444,10 @@ msgstr "A theme include must be a relative file path."
 msgid "A thread"
 msgstr "A thread"
 
+#: src/main/plugins/changeWords.ts
+msgid "About {credits} credits on the Meshy account {named}; {month} of its {limit} credits used this month."
+msgstr "About {credits} credits on the Meshy account {named}; {month} of its {limit} credits used this month."
+
 #: src/main/hosts/hostSetup.ts
 msgid "Add {host}"
 msgstr "Add {host}"
@@ -855,6 +859,10 @@ msgid "Council history could not be read. Its file was kept unchanged. Update So
 msgstr "Council history could not be read. Its file was kept unchanged. Update Sotto or restore councils.json before starting another Council."
 
 #: src/main/plugins/changeWords.ts
+msgid "Deny"
+msgstr "Deny"
+
+#: src/main/plugins/changeWords.ts
 msgid "Deployment: {id}"
 msgstr "Deployment: {id}"
 
@@ -1088,6 +1096,18 @@ msgstr "Local history is off, but saved Chats could not be read safely. The orig
 msgid "Local history was off. This Climb's words and temporary evidence were removed. Start a new Climb."
 msgstr "Local history was off. This Climb's words and temporary evidence were removed. Start a new Climb."
 
+#: src/main/plugins/changeWords.ts
+msgid "Make a 3D model with Meshy"
+msgstr "Make a 3D model with Meshy"
+
+#: src/main/plugins/changeWords.ts
+msgid "Make the 3D model {name} with the Meshy account {named}? About {credits} credits."
+msgstr "Make the 3D model {name} with the Meshy account {named}? About {credits} credits."
+
+#: src/main/plugins/changeWords.ts
+msgid "Make the model"
+msgstr "Make the model"
+
 #: src/main/ownModelServers/ipc.ts
 msgid "Manage your own model servers from the main Sotto window."
 msgstr "Manage your own model servers from the main Sotto window."
@@ -1103,6 +1123,10 @@ msgstr "Measure your own server from the main Sotto window."
 #: src/main/memory/ipc.ts
 msgid "Memory is unavailable. Restart Sotto and try again."
 msgstr "Memory is unavailable. Restart Sotto and try again."
+
+#: src/main/plugins/changeWords.ts
+msgid "Meshy may use what it is sent, and the 3D models it makes, to train its own models."
+msgstr "Meshy may use what it is sent, and the 3D models it makes, to train its own models."
 
 #: src/main/council/climbService.ts
 msgid "Model turn limit reached."
@@ -1533,6 +1557,14 @@ msgstr "Send the email"
 #: src/main/plugins/changeWords.ts
 msgid "Send this email from the {plugin} account {named} to {who}?"
 msgstr "Send this email from the {plugin} account {named} to {who}?"
+
+#: src/main/plugins/changeWords.ts
+msgid "Sends Meshy the photo {photo} from this thread’s folder, redrawn without its location and camera details."
+msgstr "Sends Meshy the photo {photo} from this thread’s folder, redrawn without its location and camera details."
+
+#: src/main/plugins/changeWords.ts
+msgid "Sends Meshy these words: “{words}”"
+msgstr "Sends Meshy these words: “{words}”"
 
 #: src/main/omarchy/setup.ts
 msgid "Set up by hand. Sotto leaves these files alone."
@@ -2354,6 +2386,10 @@ msgstr "The extension uses a compression method Sotto does not read."
 #: src/main/themes/openVsx.ts
 msgid "The extension uses a ZIP format Sotto does not read."
 msgstr "The extension uses a ZIP format Sotto does not read."
+
+#: src/main/plugins/changeWords.ts
+msgid "The files go to {folder} in this thread’s folder."
+msgstr "The files go to {folder} in this thread’s folder."
 
 #: src/main/council/councilService.ts
 msgid "The framing can change only after it is in and before the verdict, and only to something new. Nothing was changed."

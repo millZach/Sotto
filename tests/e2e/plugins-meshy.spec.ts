@@ -98,6 +98,8 @@ test('A Meshy account is added on Plugins with its key checked for free, and kee
       const ask = spends.getByRole('switch', { name: 'Ask before each 3D model' })
       await expect(ask).toBeChecked()
       await expect(spends.getByLabel('Monthly credit limit')).toHaveValue('1000')
+      // And what this month's 3D models took against it: none yet.
+      await expect(spends).toContainText('Credits this month: 0 of 1,000.')
       for (const mode of ['dark', 'light'] as const) {
         await page.evaluate(async appearance => { await window.sotto!.updateSettings({ appearance }) }, mode)
         for (const [width, height] of SIZES) {

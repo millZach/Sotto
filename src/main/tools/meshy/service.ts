@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { lstat, readdir, realpath, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
-import { MESHY_POLL_MS, MeshyApi, MeshyApiError, type MeshyApiFetch, type MeshyFormat, type MeshyTask, type MeshyTaskKind } from './api'
+import { MESHY_CREDITS, MESHY_POLL_MS, MeshyApi, MeshyApiError, type MeshyApiFetch, type MeshyFormat, type MeshyTask, type MeshyTaskKind } from './api'
 import { DownloadError, downloadModelFile, isInside, isPartOf, modelFolder } from './download'
 import { MODEL_KEPT_MS, MODEL_STAGES, modelOf, type ModelRecord, type ModelRecords, type ThreeDModel } from './records'
 
@@ -16,8 +16,7 @@ import { MODEL_KEPT_MS, MODEL_STAGES, modelOf, type ModelRecord, type ModelRecor
  * A task Sotto was asking for when it stopped is never asked for again, since Meshy may have taken and charged it.
  */
 
-/** Meshy's price table on October 22, 2026 (docs.meshy.ai/en/api/pricing): what each task costs when it is asked for. */
-export const MESHY_CREDITS: Readonly<Record<MeshyTaskKind, number>> = { preview: 20, refine: 10, photo: 30 }
+export { MESHY_CREDITS }
 /** Where a thread's 3D models go when its agent names no folder. */
 export const MODEL_FOLDER = 'models'
 /** Always made, so the viewer and the iPhone can draw every 3D model. */
@@ -110,7 +109,9 @@ export class MeshyModels {
     try {
       const record = await this.current(id)
       this.inTime(record)
-      const key = await this.options.keyOf(record.accountId)
+      // A key the credential store will not hand over, as while it is locked, ends it here: nothing has gone to Meshy.
+      let key: string | undefined
+      try { key = await this.options.keyOf(record.accountId) } catch { throw new Ending('failed', 'locked') }
       if (!key) throw new Ending('failed', 'no-account')
       const api = new MeshyApi(this.options.fetch, key, { ...(this.options.base ? { base: this.options.base } : {}), signal: this.options.signal })
       let made: MeshyTask
