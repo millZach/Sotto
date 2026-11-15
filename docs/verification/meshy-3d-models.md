@@ -107,3 +107,112 @@ The stand-in was asked only for its API and its files, and the window raised no 
 - A 3D model from a photo in the running app; the unit test holds its one step.
 - A window that cannot draw WebGL; the unit test holds the still picture that takes the view's place.
 - A host's thread and the iPhone, which are tickets 6 and 7.
+
+# The 3D models page and Tools › 3D models
+
+Checked on Windows on November 15, 2026, in the built app, for #2497: ticket 5 of `docs/plans/2026-10-22-meshy-3d-models.md`.
+The page is Zach's variant C (ADR-0141), the prototype kept as the tag `prototype/meshy-page`, with his picks on #2497:
+the page as shown, Tools showing the chosen 3D model's view over the thread's list, and 3D models that were not made
+left as their line in their thread. The stand-in Meshy, the cube it serves and the Owl switch are as above. The run is
+`tests/e2e/plugins-meshy-page.spec.ts`.
+
+## What was done
+
+A Meshy account named Studio was added, and the thread made Oak barrel. Then it asked for Brass lantern, and the stand-in
+held its texture.
+
+With Tools open on Files, the rail's **3D** tile, between iPhone and Terminal and named "3D models", carried a dot
+described as "A 3D model is being made". On it, Tools read "Made with the Meshy account Studio · 60 credits in this
+thread", turned the Oak barrel with a chip for each file, and listed both under "Made in this thread", the lantern with
+its step and percent. The lantern's 30 credits count from when its texture was asked for.
+
+![Tools while one is being made](../../artifacts/meshy-3d-models/tools-making-dark-1280x800.png)
+
+The cube at the sidebar's foot, named "3D models", sits between Usage and Settings. The page read "2 3D models from 1
+thread · 60 credits this month". The lantern's tile led with its percent ("18% · Step 2 of 2: painting the texture"),
+and choosing it drew the shape and put its step, the time left, a bar and "The files go to models/ in the thread's folder
+when it is done." in its details, with its cost "counted while it is made". It offered no Show in File Explorer yet.
+
+![The page while one is being made](../../artifacts/meshy-3d-models/page-making-dark-1280x800.png)
+
+Once the lantern was done its tile took its date. From the keyboard, the chosen tile was the filmstrip's one Tab stop.
+The right arrow chose the Oak barrel and moved focus to it, and the left arrow came back. On the view, Home said "Facing
+the front" and the right arrow turned it 15 degrees, as in the thread.
+
+**Show in File Explorer** showed `models/Oak barrel.glb`, and the `.usdz` row's own button showed that file. Main took
+both from the record and checked them inside its folder; the run noted them where it would have opened File Explorer.
+
+The page was checked in dark and light at 1600x1000, 1280x800 and the 820x560 minimum. Nothing reached past the window,
+and only the filmstrip scrolls sideways. At the minimum the view, the details and the filmstrip all fit, and the details
+scroll beside the view.
+
+![The page in dark at 1600x1000](../../artifacts/meshy-3d-models/page-dark-1600x1000.png)
+
+![The page in light at 1280x800](../../artifacts/meshy-3d-models/page-light-1280x800.png)
+
+![The page at the 820x560 minimum](../../artifacts/meshy-3d-models/page-dark-820x560.png)
+
+With Reduce motion on, the view did not turn by itself and offered no **Stop turning**.
+
+![The page with motion reduced](../../artifacts/meshy-3d-models/page-reduced-motion-dark-1280x800.png)
+
+**Go to thread** opened the thread the barrel came from, with its line in it. Tools was checked there in dark and light
+at the three sizes, with the newest, the lantern, chosen.
+
+![Tools in dark at 1600x1000](../../artifacts/meshy-3d-models/tools-dark-1600x1000.png)
+
+![Tools in light at the 820x560 minimum](../../artifacts/meshy-3d-models/tools-light-820x560.png)
+
+The barrel's three files were then deleted outside Sotto. On the page its tile read "Files gone", and its details said
+"Its files are gone. The Oak barrel's files are no longer in models/ in its thread's folder: they were moved, renamed or
+deleted.", then "Removing it takes it off this list. It deletes no file." with **Remove from 3D models**, and no Show in
+File Explorer. It was checked in dark and light at 1280x800 and at the minimum.
+
+![Files gone](../../artifacts/meshy-3d-models/page-files-gone-dark-1280x800.png)
+
+![Files gone, in light](../../artifacts/meshy-3d-models/page-files-gone-light-1280x800.png)
+
+**Remove from 3D models** took the barrel off the page and moved focus to the lantern's tile. The lantern's three files
+were still in `models/`, and the header still counted 60 credits this month: the removed record's cost stays counted.
+With the lantern's files deleted and its record removed the same way, the page said there were none yet.
+
+![None yet](../../artifacts/meshy-3d-models/page-empty-dark-1280x800.png)
+
+The stand-in was asked only for its API and its files, and the window raised no error. Ticket 4's journey,
+`tests/e2e/plugins-meshy-model.spec.ts`, passed again after the line's still picture, ring and words moved into
+`modelParts.tsx`.
+
+## Fixed from what the running app showed
+
+- The page could not find the thread: the window names this computer's threads by a key that says which computer holds
+  them, and the record by the thread's own ID. It now reads the key as main does, and Go to thread opens it by the key.
+- "3D models" did not fit the rail's tile and read "3D mod…". The tile now reads "3D", as PR stands for Pull request,
+  and its name is "3D models".
+- At 820x560 Tools squeezed the chosen 3D model's card and hid its file chips. Each row of the surface is now as tall
+  as what it holds.
+- At 820x560 the page's details pushed the filmstrip below the window. The page now takes the room's height and the
+  details scroll beside the view.
+- A tile being made lost its percent off the end of its step; the percent now comes first. "Files gone" was drawn over
+  the cube in its tile, which now shows the words alone.
+
+## What else covers it
+
+- `tests/unit/main/tools/meshy/meshyPage.test.ts`: the list holds only 3D models made or being made, newest first, one
+  thread's when asked, and no words once Keep local history is off. Remove refuses while any file is there, removes the
+  record and no file, and keeps its credits counted. Reveal refuses an unknown ID, a name the record does not hold, a
+  folder outside the thread's, and a file that is gone.
+- `tests/unit/main/plugins/pluginsIpc.test.ts`: the three channels answer the main window only, and a path or anything the
+  schema does not name asks main nothing or does not cross.
+- `tests/unit/renderer/features/models3d/modelsPage.test.tsx`: the page with 3D models, one being made, files gone and
+  none; Finder's name on macOS; the filmstrip's keys; search by name and words; a view main sends as one finishes, a new
+  one and one that failed; Go to thread by the window's key; and nothing, the cube included, with the Owl feature off.
+- `tests/unit/renderer/tools/modelsSurface.test.tsx`: the surface's place on the rail, its chosen view, chips that open
+  Files, its rows, its dot, files gone, and no tile and no reads with the Owl feature off.
+- `tests/unit/renderer/agents/modelView.test.tsx`: the view leaves focus where it was when the page opens it.
+
+## Not checked here
+
+- A 3D model from a photo on the page; the unit test holds "Photo sent" and its file name.
+- A thread on a paired host: its Tools surface says 3D models is on the host machine, and the page lists this computer's
+  threads alone, until ticket 6.
+- File Explorer itself opening on the file: the run notes the path instead, so the laptop's own Explorer was not driven.
