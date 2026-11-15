@@ -3,7 +3,7 @@ import { lstat, readdir, realpath, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { MESHY_CREDITS, MESHY_POLL_MS, MeshyApi, MeshyApiError, type MeshyApiFetch, type MeshyFormat, type MeshyTask, type MeshyTaskKind } from './api'
-import { DownloadError, downloadModelFile, isInside, isPartOf, modelFolder } from './download'
+import { DownloadError, downloadModelFile, fetchModelBytes, isInside, isPartOf, modelFolder } from './download'
 import { MODEL_KEPT_MS, MODEL_STAGES, modelOf, type ModelRecord, type ModelRecords, type ThreeDModel } from './records'
 
 /**
@@ -54,9 +54,16 @@ export interface MeshyModelsOptions {
   readonly fileBytesMax?: number
   readonly now?: () => number
   readonly wait?: (ms: number, signal: AbortSignal) => Promise<void>
-  /** Each change to a 3D model, for whatever shows it. */
-  readonly changed?: (model: ThreeDModel) => void
+  /** Each change to a 3D model, for whatever shows it, with Meshy's progress on its step while Meshy works. */
+  readonly changed?: (model: ThreeDModel, progress: ModelProgress | undefined) => void
 }
+
+/**
+ * Meshy's percent for the step a 3D model is on, and the seconds left at the rate it has gone since Sotto first read
+ * that step. Held in memory alone, and never written to the record: a restart starts the rate again.
+ */
+export interface ModelProgress { readonly percent: number; readonly secondsLeft?: number }
+interface Live { readonly stage: (typeof MODEL_STAGES)[number]; readonly since: number; readonly from: number; percent: number; secondsLeft?: number }
 
 /** How a run ends early: a state the record takes, why, and the credits that come back, written together. */
 class Ending {
@@ -67,6 +74,9 @@ class Forgotten {}
 
 export class MeshyModels {
   private readonly running = new Map<string, Promise<ThreeDModel | undefined>>()
+  private readonly live = new Map<string, Live>()
+  /** The shape Meshy made, by its signed link, while the texture is painted; and its bytes once the window asked. */
+  private readonly shapes = new Map<string, { readonly link: string; bytes?: Promise<Uint8Array | null> }>()
   constructor(private readonly options: MeshyModelsOptions) {}
 
   /**
@@ -83,7 +93,7 @@ export class MeshyModels {
       ...(request.triangles !== undefined ? { triangles: request.triangles } : {}),
       state: 'making', stage: 'shape', credits: 0, askedAt: new Date(this.now()).toISOString(), files: [], job: {},
     })
-    this.options.changed?.(modelOf(record))
+    this.options.changed?.(modelOf(record), undefined)
     // The words and the photo are handed over here, and are not read back from the record.
     const done = this.run(record.id, request.source.kind === 'words' ? { words: request.source.words } : { photo: request.source.photo })
     return { model: modelOf(record), done }
@@ -91,6 +101,28 @@ export class MeshyModels {
 
   /** The run of a 3D model being made now, if there is one. */
   whenDone(id: string): Promise<ThreeDModel | undefined> | undefined { return this.running.get(id) }
+
+  /** Meshy's progress on a 3D model's step, while Sotto is reading it. */
+  progressOf(id: string, stage: ModelRecord['stage']): ModelProgress | undefined {
+    const held = this.live.get(id)
+    if (!held || held.stage !== stage) return undefined
+    return { percent: held.percent, ...(held.secondsLeft !== undefined ? { secondsLeft: held.secondsLeft } : {}) }
+  }
+
+  /** Whether the shape Meshy made can be drawn now, while it paints the texture. */
+  hasShape(id: string): boolean { return this.shapes.has(id) }
+
+  /**
+   * The shape Meshy made, fetched into memory from Meshy's file server the first time the window asks and never
+   * written anywhere; null once the texture is done, or when it cannot be fetched.
+   */
+  shapeBytes(id: string): Promise<Uint8Array | null> {
+    const shape = this.shapes.get(id)
+    if (!shape) return Promise.resolve(null)
+    shape.bytes ??= fetchModelBytes(this.options.fetch, shape.link, { ...(this.options.assets ? { assets: this.options.assets } : {}),
+      ...(this.options.fileBytesMax !== undefined ? { maxBytes: this.options.fileBytesMax } : {}), signal: this.options.signal }).catch(() => null)
+    return shape.bytes
+  }
 
   /** Picks up every 3D model still being made when Sotto last stopped. */
   async resume(): Promise<void> {
@@ -100,7 +132,7 @@ export class MeshyModels {
   private run(id: string, inputs: { readonly words?: string; readonly photo?: string }): Promise<ThreeDModel | undefined> {
     const held = this.running.get(id)
     if (held) return held
-    const run = this.drive(id, inputs).finally(() => this.running.delete(id))
+    const run = this.drive(id, inputs).finally(() => { this.running.delete(id); this.live.delete(id); this.shapes.delete(id) })
     this.running.set(id, run)
     return run
   }
@@ -118,7 +150,11 @@ export class MeshyModels {
       if (record.source.kind === 'words') {
         const words = inputs.words
         // A texture Meshy already has needs no second look at its shape.
-        if (record.job.refine === undefined) await this.step(id, api, 'preview', 'shape', words === undefined ? undefined : () => api.createPreview({ words, ...(record.triangles !== undefined ? { triangles: record.triangles } : {}) }))
+        if (record.job.refine === undefined) {
+          const shape = await this.step(id, api, 'preview', 'shape', words === undefined ? undefined : () => api.createPreview({ words, ...(record.triangles !== undefined ? { triangles: record.triangles } : {}) }))
+          // The shape can be turned while Meshy paints the texture.
+          if (shape.files.glb) this.shapes.set(id, { link: shape.files.glb })
+        }
         const shaped = await this.current(id)
         made = await this.step(id, api, 'refine', 'texture', () => api.createRefine(shaped.job.preview!, shaped.formats))
       } else {
@@ -178,6 +214,7 @@ export class MeshyModels {
       if (task.status === 'made') return task
       // Meshy refunds a task that failed.
       if (task.status === 'failed') throw new Ending('failed', 'failed', MESHY_CREDITS[kind])
+      if (this.observe(id, stage, task.progress)) this.options.changed?.(modelOf(record), this.progressOf(id, record.stage))
       await this.wait(task.pollAfterMs)
     }
   }
@@ -205,6 +242,7 @@ export class MeshyModels {
   private async fetchFiles(id: string, made: MeshyTask): Promise<ThreeDModel> {
     // A try Sotto was stopped in is started again whole: what it wrote is this 3D model's own, and goes.
     await this.clearTry(await this.current(id))
+    this.shapes.delete(id)
     let record = await this.change(id, held => ({ ...held, stage: 'files', files: [] }))
     if (!made.files.glb) throw new Ending('failed', 'failed')
     let backoff = MESHY_POLL_MS
@@ -284,8 +322,26 @@ export class MeshyModels {
   private async change(id: string, change: (record: ModelRecord) => ModelRecord): Promise<ModelRecord> {
     const next = await this.options.records.update(id, change)
     if (!next) throw new Forgotten()
-    this.options.changed?.(modelOf(next))
+    this.options.changed?.(modelOf(next), next.state === 'making' ? this.progressOf(id, next.stage) : undefined)
     return next
+  }
+
+  /**
+   * Keeps Meshy's percent for a step, and the seconds left at the rate since Sotto first read that step. True when
+   * either changed.
+   */
+  private observe(id: string, stage: (typeof MODEL_STAGES)[number], percent: number): boolean {
+    const now = this.now()
+    const held = this.live.get(id)
+    if (!held || held.stage !== stage) { this.live.set(id, { stage, since: now, from: percent, percent }); return true }
+    const gained = percent - held.from
+    const elapsed = now - held.since
+    const secondsLeft = gained > 0 && elapsed > 0 && percent < 100 ? Math.max(1, Math.round((100 - percent) * elapsed / gained / 1_000)) : undefined
+    if (held.percent === percent && held.secondsLeft === secondsLeft) return false
+    held.percent = percent
+    if (secondsLeft === undefined) delete held.secondsLeft
+    else held.secondsLeft = secondsLeft
+    return true
   }
 
   /** Past Meshy's three days its files are gone: the record says it was lost, and nothing more is charged. */

@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { inspectDiagramSource, MAX_DIAGRAM_SOURCE_LENGTH } from './diagramSource'
+import { MODEL_VISUAL_KIND } from './models3d'
 
 /**
  * A visual an agent draws in its thread with the `visualize` tool (ADR-0056): what it may send, what Sotto keeps, and the
@@ -31,8 +32,15 @@ export const VISUAL_KEPT_SOURCE_MAX = 200_000
 /** The kinds an agent may send: Mermaid source, or its own HTML page run sealed from the network (ADR-0060). */
 export const VISUAL_KINDS = ['diagram', 'interactive'] as const
 export type VisualKind = typeof VISUAL_KINDS[number]
+/**
+ * The kinds this version draws: an agent's, and a 3D model Meshy made for the thread (ADR-0141), which Sotto adds
+ * itself once the 3D model is asked for and no agent can send. Its source is the 3D model's Sotto ID alone.
+ */
+const DRAWN_VISUAL_KINDS: readonly string[] = [...VISUAL_KINDS, MODEL_VISUAL_KIND]
 /** Whether this version draws a visual of this kind; a visual of any other kind is shown as its words. */
-export const isKnownVisualKind = (kind: string): kind is VisualKind => (VISUAL_KINDS as readonly string[]).includes(kind)
+export const isKnownVisualKind = (kind: string): kind is VisualKind | typeof MODEL_VISUAL_KIND => DRAWN_VISUAL_KINDS.includes(kind)
+/** A 3D model's place in its thread: its name, and its Sotto ID as the source. */
+export interface ModelVisualInput { readonly kind: typeof MODEL_VISUAL_KIND; readonly title: string; readonly source: string }
 /** The prefix every visual message's ID starts with, so nothing mistakes one for a provider's message. */
 export const VISUAL_MESSAGE_PREFIX = 'visual:'
 /** The last line of every visual's text: where the drawing is for a reader that cannot show it. */
@@ -164,7 +172,8 @@ export const visualMessageId = (visualId: string): string => `${VISUAL_MESSAGE_P
  * highlight left out when there is none, and the source exactly as sent. Everything that shows a visual, the card and
  * its words alike, reads this.
  */
-export function visualFromInput(id: string, input: VisualInput): AgentVisual {
+export function visualFromInput(id: string, input: VisualInput | ModelVisualInput): AgentVisual {
+  if (input.kind === MODEL_VISUAL_KIND) return { id, title: input.title.trim(), kind: input.kind, source: input.source }
   const intro = input.intro?.trim()
   return { id, title: input.title.trim(), kind: input.kind, source: input.source,
     ...(intro ? { intro } : {}),
@@ -179,7 +188,9 @@ const listItem = (index: number, text: string): string => `${index + 1}. ${text.
  * iPhone, an older desktop and anything reading a thread's words read this. It takes the visual as `visualFromInput`
  * keeps it, so it trims nothing itself.
  */
-export function visualFallbackText(visual: Pick<AgentVisual, 'title' | 'intro' | 'steps'>): string {
+export function visualFallbackText(visual: Pick<AgentVisual, 'title' | 'intro' | 'steps'> & { readonly kind?: string }): string {
+  // A phone or a host client cannot draw a 3D model's line, so it is told the name and where the 3D model is.
+  if (visual.kind === MODEL_VISUAL_KIND) return `3D model: ${visual.title}. The 3D model is in Sotto on your computer.`
   const parts = [`**${visual.title}**`]
   if (visual.intro) parts.push(visual.intro)
   if (visual.steps?.length) parts.push(visual.steps.map((step, index) => listItem(index, step.text)).join('\n'))

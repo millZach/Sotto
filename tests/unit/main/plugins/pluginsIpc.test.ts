@@ -8,6 +8,7 @@ import {
   PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_TRUST, PLUGINS_BRIDGE_STATUS, PLUGINS_MESHY_CREDITS, type MeshyCredits, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNT_UPDATE, PLUGINS_ACCOUNTS, PLUGINS_COPIES, PLUGINS_COPIES_CHANGED, PLUGINS_GITHUB_SIGN_IN_ELSEWHERE, type PluginHostSignIn, PLUGINS_COPY_NEW_SET, PLUGINS_COPY_SET, PLUGINS_GITHUB_SIGN_IN, PLUGINS_PROJECTS, PLUGINS_RECENT_USE,
   type BridgeStatus, type GitHubSignIn, type PluginAccount, type PluginAccountResult, type PluginCopiesView, type ShownPluginUse,
 } from '../../../../src/shared/plugins'
+import { PLUGINS_MODEL_3D, PLUGINS_MODEL_3D_BYTES, type Model3dBytesRequest, type Model3dView } from '../../../../src/shared/models3d'
 import { ipcRegistry } from '../../../fixtures/ipcHarness'
 import { preloadElectron } from '../../../fixtures/preloadElectron'
 
@@ -16,6 +17,8 @@ const used: ShownPluginUse = { id: '11111111-1111-4111-8111-111111111111', at: '
 /** A made-up account and a made-up token: nothing here is a real credential. */
 const account: PluginAccount = { id: '22222222-2222-4222-8222-000000000001', plugin: 'vercel', name: 'Work', savedAt: '2026-11-12T08:00:00.000Z', signedInAs: 'example-user', on: true, projects: null }
 const TOKEN = 'made-up-vercel-token'
+const MODEL: Model3dView = { id: '55555555-5555-4555-8555-000000000001', name: 'Oak barrel', source: 'words', state: 'done', credits: 30, folder: 'models',
+  files: [{ name: 'Oak barrel.png', bytes: 300 }, { name: 'Oak barrel.glb', bytes: 4_100 }], still: 'Oak barrel.png' }
 
 function register(answer: GitHubSignIn = { state: 'signed-in', login: 'example-user' }, uses: readonly ShownPluginUse[] = [used]) {
   const registry = ipcRegistry()
@@ -35,10 +38,12 @@ function register(answer: GitHubSignIn = { state: 'signed-in', login: 'example-u
   const gitHubSignInElsewhere = vi.fn(async (): Promise<PluginHostSignIn[]> => elsewhere)
   const granted: ThreadMailGrant[] = [{ accountId: '33333333-3333-4333-8333-000000000001', plugin: 'gmail', name: 'Personal' }]
   const mailGrants = vi.fn(async (): Promise<ThreadMailGrant[]> => granted), stopMailGrant = vi.fn(async (): Promise<boolean> => true)
-  const close = registerPluginsIpc(registry.ipc, { gitHubSignIn, gitHubSignInElsewhere, recentUse, accounts, addAccount, replaceSecret, removeAccount, updateAccount, trustCertificate, bridgeStatus, meshyCredits, projects, copies, setCopy, setCopyNew, mailGrants, stopMailGrant }, registry.trustedSenders)
+  const model3d = vi.fn(async (id: string): Promise<Model3dView | null> => id === MODEL.id ? MODEL : null)
+  const model3dBytes = vi.fn(async (request: Model3dBytesRequest): Promise<Uint8Array | null> => request.id === MODEL.id ? new Uint8Array([1, 2, 3]) : null)
+  const close = registerPluginsIpc(registry.ipc, { gitHubSignIn, gitHubSignInElsewhere, recentUse, accounts, addAccount, replaceSecret, removeAccount, updateAccount, trustCertificate, bridgeStatus, meshyCredits, model3d, model3dBytes, projects, copies, setCopy, setCopyNew, mailGrants, stopMailGrant }, registry.trustedSenders)
   const renderer = preloadElectron().ipcRenderer
   renderer.invoke.mockImplementation((channel: string, ...args: unknown[]) => registry.invoke(channel, args))
-  return { ...registry, gitHubSignIn, gitHubSignInElsewhere, elsewhere, recentUse, accounts, addAccount, replaceSecret, removeAccount, updateAccount, trustCertificate, bridgeStatus, meshyCredits, projects, copies, setCopy, setCopyNew, view, close, mailGrants, stopMailGrant, granted, bridge: createSottoBridge(renderer, 'win32').plugins! }
+  return { ...registry, model3d, model3dBytes, gitHubSignIn, gitHubSignInElsewhere, elsewhere, recentUse, accounts, addAccount, replaceSecret, removeAccount, updateAccount, trustCertificate, bridgeStatus, meshyCredits, projects, copies, setCopy, setCopyNew, view, close, mailGrants, stopMailGrant, granted, bridge: createSottoBridge(renderer, 'win32').plugins! }
 }
 
 describe('Settings › Plugins, from the window through preload to main (ADR-0205)', () => {
@@ -148,6 +153,27 @@ describe('Settings › Plugins, from the window through preload to main (ADR-020
     await expect(invoke(PLUGINS_MESHY_CREDITS, [])).rejects.toThrow()
     close()
     expect(handlers.has(PLUGINS_MESHY_CREDITS)).toBe(false)
+  })
+
+  it('carries a 3D model’s view and bytes by its ID, for the main window only, and nothing a path could be', async () => {
+    const { bridge, invoke, widgetEvent, model3d, model3dBytes, close, handlers } = register()
+    await expect(bridge.model3d(MODEL.id)).resolves.toEqual(MODEL)
+    await expect(bridge.model3d('unknown')).resolves.toBeNull()
+    await expect(bridge.model3dBytes({ id: MODEL.id, part: 'model' })).resolves.toEqual(new Uint8Array([1, 2, 3]))
+    await expect(bridge.model3dBytes({ id: 'unknown', part: 'still' })).resolves.toBeNull()
+    await expect(invoke(PLUGINS_MODEL_3D, [{ id: MODEL.id }], widgetEvent)).rejects.toThrow('Open the thread in the main Sotto window.')
+    await expect(invoke(PLUGINS_MODEL_3D_BYTES, [{ id: MODEL.id, part: 'model' }], widgetEvent)).rejects.toThrow('Open the thread in the main Sotto window.')
+    // A part that is not one, or a path in place of an ID, asks main nothing.
+    model3dBytes.mockClear()
+    await expect(invoke(PLUGINS_MODEL_3D_BYTES, [{ id: MODEL.id, part: 'C:/Users/someone/secret.glb' }])).resolves.toBeNull()
+    await expect(invoke(PLUGINS_MODEL_3D_BYTES, [{ id: MODEL.id, part: 'model', path: '../elsewhere' }])).resolves.toBeNull()
+    expect(model3dBytes).not.toHaveBeenCalled()
+    // A view carrying anything beyond what the schema names does not cross.
+    model3d.mockResolvedValueOnce({ ...MODEL, root: 'C:/Users/someone/project' } as never)
+    await expect(invoke(PLUGINS_MODEL_3D, [{ id: MODEL.id }])).rejects.toThrow()
+    close()
+    expect(handlers.has(PLUGINS_MODEL_3D)).toBe(false)
+    expect(handlers.has(PLUGINS_MODEL_3D_BYTES)).toBe(false)
   })
 
   it('carries which threads may use an account to main, and this computer’s projects back, for the main window only', async () => {

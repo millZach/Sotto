@@ -28,6 +28,8 @@ export interface FakeMeshyBehaviour {
   chunked: boolean
   /** Formats a finished task leaves out, as Meshy does for one it did not make. */
   missing: Set<string>
+  /** Meshy's percent at a read of a task that has not ended, by the read's number; 40 when not given. */
+  progress?: (reads: number) => number
   /** Called before a task's file is answered, so a test can stop Sotto part way. */
   onFile?: (path: string) => void
 }
@@ -111,7 +113,7 @@ export async function startFakeMeshy(): Promise<FakeMeshy> {
         if (task.formats.includes('obj') && !behaviour.missing.has('mtl')) files.mtl = `${base}/files/${task.id}/model.mtl?Expires=1&Signature=made-up`
       }
       return json(response, 200, {
-        id: task.id, type: task.kind === 'photo' ? 'image-to-3d' : `text-to-3d-${task.kind}`, status, progress: ended ? 100 : 40,
+        id: task.id, type: task.kind === 'photo' ? 'image-to-3d' : `text-to-3d-${task.kind}`, status, progress: ended ? 100 : behaviour.progress?.(task.reads) ?? 40,
         model_urls: files, thumbnail_url: status === 'SUCCEEDED' ? `${base}/files/${task.id}/preview.png?Expires=1` : '', texture_urls: [],
         task_error: status === 'FAILED' ? { type: 'made-up', message: `made-up failure ${FAKE_MESHY_KEY}` } : null,
         consumed_credits: task.kind === 'preview' ? 20 : task.kind === 'refine' ? 10 : 30,

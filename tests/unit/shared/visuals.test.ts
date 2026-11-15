@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest'
 import { z } from 'zod'
 import { agentMessageSchema, isVisualMessage, lastWrittenMessage, summarizeThread, type AgentMessage } from '../../../src/shared/agents'
-import { agentVisualSchema, checkVisualInput, VISUAL_FALLBACK_NOTE, visualFallbackText, visualInputSchema, visualFromInput, visualMessageId, visualRefusalText, type VisualRefusal } from '../../../src/shared/visuals'
+import { agentVisualSchema, checkVisualInput, isKnownVisualKind, VISUAL_FALLBACK_NOTE, visualFallbackText, visualInputSchema, visualFromInput, visualMessageId, visualRefusalText, type VisualRefusal } from '../../../src/shared/visuals'
 
 const FLOW = 'flowchart LR\n  A[Draft] --> B{Send}\n  B --> C[Running]'
 const valid = { title: 'How a send moves', kind: 'diagram', source: FLOW, intro: 'Sotto shows the message first.', steps: [{ text: 'You send.', highlight: ['A'] }, { text: 'Codex runs it.', highlight: ['B->C'] }] }
@@ -178,5 +178,16 @@ describe('a visual on a message', () => {
     expect(summary.lastAssistant?.text).toBe('Here it is.')
     expect(summary.messageCount).toBe(2)
     expect(summary.lastMessageAt).toBe(at)
+  })
+})
+
+describe('a 3D model’s place in its thread (ADR-0141)', () => {
+  it('is a kind Sotto adds and draws, that an agent cannot send, and that a phone reads as its words', () => {
+    expect(checkVisualInput({ title: 'Oak barrel', kind: '3d-model', source: 'model-1' })).toMatchObject({ ok: false, reason: 'The kind must be one of: diagram, interactive.' })
+    expect(isKnownVisualKind('3d-model')).toBe(true)
+    const kept = visualFromInput('v1', { kind: '3d-model', title: ' Oak barrel ', source: 'model-1' })
+    expect(kept).toEqual({ id: 'v1', title: 'Oak barrel', kind: '3d-model', source: 'model-1' })
+    expect(agentVisualSchema.parse(kept)).toEqual(kept)
+    expect(visualFallbackText(kept)).toBe('3D model: Oak barrel. The 3D model is in Sotto on your computer.')
   })
 })

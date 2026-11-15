@@ -1,6 +1,7 @@
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { z } from 'zod'
+import { MODEL_3D_FAILURES, MODEL_3D_STAGES, MODEL_3D_STATES } from '../../../shared/models3d'
 import { MESHY_CREDITS, MESHY_FORMATS, MESHY_TASK_ID, MESHY_TRIANGLES_MAX, MESHY_TRIANGLES_MIN, MESHY_WORDS_MAX } from './api'
 
 /**
@@ -8,8 +9,8 @@ import { MESHY_CREDITS, MESHY_FORMATS, MESHY_TASK_ID, MESHY_TRIANGLES_MAX, MESHY
  * `done` with its files in the thread's folder; `failed` when Meshy or the folder would not have it; `lost` when Meshy
  * no longer has it, or Sotto cannot tell what became of it, and nothing more will be charged.
  */
-export const MODEL_STATES = ['making', 'done', 'failed', 'lost'] as const
-export const MODEL_STAGES = ['shape', 'texture', 'files'] as const
+export const MODEL_STATES = MODEL_3D_STATES
+export const MODEL_STAGES = MODEL_3D_STAGES
 /**
  * Why a 3D model was not made, in one word: Meshy `refused` the key, the account had `no-credits`, Meshy `rejected`
  * the words or the photo, Meshy `failed` making it, a file was `too-large`, the `folder` would not take the files,
@@ -18,7 +19,7 @@ export const MODEL_STAGES = ['shape', 'texture', 'files'] as const
  * `stopped` when Sotto stopped before it knew whether Meshy took it, and `unreachable` when Meshy gave no answer Sotto
  * could read as it was asked; those last two keep their credits counted, since Meshy may have taken them.
  */
-export const MODEL_FAILURES = ['refused', 'no-credits', 'rejected', 'failed', 'too-large', 'folder', 'unreachable', 'no-account', 'locked', 'expired', 'stopped'] as const
+export const MODEL_FAILURES = MODEL_3D_FAILURES
 
 /** How long Meshy keeps what its API made below Enterprise, and so how long Sotto keeps trying to fetch it. */
 export const MODEL_KEPT_MS = 3 * 24 * 60 * 60_000
@@ -110,6 +111,11 @@ export class ModelRecords {
   /** Every 3D model, newest first. */
   list(): Promise<readonly ThreeDModel[]> {
     return this.inTurn(async () => (await this.load()).map(modelOf))
+  }
+
+  /** One 3D model, by its ID. */
+  model(id: string): Promise<ThreeDModel | undefined> {
+    return this.inTurn(async () => { const record = (await this.load()).find(entry => entry.id === id); return record ? modelOf(record) : undefined })
   }
 
   /** One 3D model's record, with Meshy's task IDs, for this folder's own use. */

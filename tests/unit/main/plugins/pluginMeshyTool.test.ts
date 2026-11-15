@@ -33,6 +33,7 @@ function tools(options: { answers?: PluginChangeAnswer[]; used?: number; ended?:
   const asked: PluginChange[] = []
   const recorded: PluginUseReport[] = []
   const made: ModelRequest[] = []
+  const shown: { readonly threadId: string; readonly id: string; readonly name: string }[] = []
   const mine = (): PluginAccount[] => world.accounts.filter(account => pluginAccountAdmits(account, null))
   const never = async (): Promise<never> => { throw new Error('Not part of these tests.') }
   const server = new PluginToolServer({
@@ -72,11 +73,12 @@ function tools(options: { answers?: PluginChangeAnswer[]; used?: number; ended?:
           : Promise.resolve({ ...model, state: 'done' as const, credits: 30, files: ['Oak barrel.png', 'Oak barrel.glb', 'Oak barrel.usdz'], ...ended })
         return { model, done }
       },
+      showInThread: async (threadId, model) => { shown.push({ threadId, id: model.id, name: model.name }) },
     } }),
   })
   servers.push(server)
   const make = (args: Record<string, unknown>, context: { waitMs?: number; signal?: AbortSignal } = {}) => server.call('one', MAKE_3D_MODEL_TOOL, args, context)
-  return { server, world, asked, recorded, made, make }
+  return { server, world, asked, recorded, made, shown, make }
 }
 const said = (result: { content: { type: string; text?: string }[] }): string => result.content.map(part => part.text ?? '').join('\n')
 const uses = (recorded: readonly PluginUseReport[]): string[] => recorded.map(use => `${use.tool} ${use.kind} ${use.outcome}`)
@@ -114,6 +116,18 @@ describe('making a 3D model through make_3d_model', () => {
     expect(said(await t.make(BARREL))).toContain('Nobody answered in time')
     expect(t.made).toEqual([])
     expect(uses(t.recorded)).toEqual(['make_3d_model 3d-model denied', 'make_3d_model 3d-model lapsed'])
+  })
+
+  it('places the 3D model’s line in its thread once Meshy has it, and none when it is denied or refused', async () => {
+    const t = tools()
+    await t.make(BARREL)
+    expect(t.shown).toEqual([{ threadId: 'one', id: 'model-1', name: 'Oak barrel' }])
+    const denied = tools({ answers: ['denied'] })
+    await denied.make(BARREL)
+    const over = tools({ used: 980 })
+    await over.make(BARREL)
+    expect([...denied.shown, ...over.shown]).toEqual([])
+    expect([...denied.made, ...over.made]).toEqual([])
   })
 
   it('refuses one that would pass the month’s limit before asking or sending anything', async () => {

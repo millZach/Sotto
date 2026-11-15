@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import type { Model3dBytesRequest, Model3dView } from './models3d'
 
 /**
  * Plugins (ADR-0205): outside services Sotto can connect once, so every thread's agent has one known place to use
@@ -91,6 +92,12 @@ export interface PluginsBridge {
   bridgeStatus(request: PluginAccountRemove): Promise<BridgeStatus>
   /** The credits each Meshy account's 3D models took this month. */
   meshyCredits(): Promise<MeshyCredits>
+  /** One 3D model as its thread draws it, by its ID, or null when Sotto holds no such 3D model (ADR-0141). */
+  model3d(id: string): Promise<Model3dView | null>
+  /** A 3D model's GLB, still picture or shape while the texture is painted, or null when Sotto will not hand them over. */
+  model3dBytes(request: Model3dBytesRequest): Promise<Uint8Array | null>
+  /** Told each 3D model's view whenever it changes. Returns the way to stop. */
+  onModel3dChanged(listener: (view: Model3dView) => void): () => void
   /** This computer's projects, for choosing which ones an account is kept to. */
   projects(): Promise<PluginProject[]>
   /** The user's other computers and where each account's copy stands on each. */

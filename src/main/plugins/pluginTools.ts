@@ -708,6 +708,8 @@ export class PluginToolServer implements ScopedThreadTools {
     })
     if ('content' in turn) return turn
     const started = turn
+    // Meshy has it now: its line goes into the thread, under what the agent said, and follows it to the end.
+    await meshy.showInThread(threadId, started.model).catch(() => undefined)
     // The 3D model is made whether or not this call is still waiting; it waits while its client does.
     const { signal, waitMs } = call.context
     // A client that does not say how long it waits is given this server's own timeout, as every client here is.

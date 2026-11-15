@@ -87,8 +87,10 @@ import { PluginUseRecord } from './plugins/useRecord'
 import type { MeshyApiFetch } from './tools/meshy/api'
 import { ModelRecords } from './tools/meshy/records'
 import { MeshyModels } from './tools/meshy/service'
+import { modelBytes, modelView, modelViewOf, type ModelViewSource } from './tools/meshy/view'
 import { checkPhoto, photoToSend, type RedrawPhoto } from './tools/meshy/photo'
 import { isMailPlugin, PLUGIN_USE_THREAD_TITLE_MAX, PLUGINS_COPIES_CHANGED, PLUGINS_MAIL_GRANTS_CHANGED } from '../shared/plugins'
+import { MODEL_VISUAL_KIND, PLUGINS_MODEL_3D_CHANGED } from '../shared/models3d'
 import { resetGhLookup } from './agents/git/ghCommand'
 import { GitUnavailableError, runGitStatusCommand, runWithGhStandIn, type RunGitCommand } from './agents/git/gitStatus'
 import { registerTeamsIpc } from './teams/ipc'
@@ -1424,9 +1426,20 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const meshyApiFetch: MeshyApiFetch = e2eConfiguration === null ? (url, init) => fetch(url, init)
     : async (url, init) => { if (!meshyBase || !url.startsWith(`${meshyBase}/`)) throw new Error('E2E_NETWORK_DISABLED'); return fetch(url, init) }
   const modelRecords = pluginsEnabled ? new ModelRecords(userDataPath, { historyEnabled: () => agentHistoryEnabled }) : undefined
+  // Each change to a 3D model, and each of Meshy's reads of its progress, goes to the window as its view (the Meshy
+  // plan's ticket 4). Views are sent in order, so a slower one never lands after a newer one.
+  let modelViewsSent: Promise<void> = Promise.resolve()
   const meshyModels = modelRecords && pluginAccounts ? new MeshyModels({ records: modelRecords, fetch: meshyApiFetch, signal: pluginsStop.signal, ...(meshyBase ? { base: meshyBase, assets: meshyBase } : {}),
-    keyOf: async accountId => (await pluginAccounts.list()).some(account => account.id === accountId && account.plugin === 'meshy') ? pluginAccounts.secret(accountId) || undefined : undefined }) : undefined
+    keyOf: async accountId => (await pluginAccounts.list()).some(account => account.id === accountId && account.plugin === 'meshy') ? pluginAccounts.secret(accountId) || undefined : undefined,
+    changed: (model, progress) => {
+      const shape = meshyModels?.hasShape(model.id) ?? false
+      modelViewsSent = modelViewsSent.then(() => modelView(model, progress, shape)).then(view => { windows.sendToMain(PLUGINS_MODEL_3D_CHANGED, view) }, () => undefined)
+    } }) : undefined
   void meshyModels?.resume().catch(() => undefined)
+  const modelViews: ModelViewSource | undefined = meshyModels && modelRecords ? {
+    model: id => modelRecords.model(id), progressOf: (id, stage) => meshyModels.progressOf(id, stage),
+    hasShape: id => meshyModels.hasShape(id), shapeBytes: id => meshyModels.shapeBytes(id),
+  } : undefined
   // A photo for a 3D model is drawn again from its pixels alone, which carries none of its location or camera details
   // (ADR-0141). PNG stays PNG, for its transparency; a redrawn PNG past Meshy's 20 MB goes as a JPEG.
   const redrawPhoto: RedrawPhoto = async (bytes, kind) => {
@@ -1441,6 +1454,10 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     monthCredits: async (accountId: string) => (await modelRecords.monthCredits()).get(accountId) ?? 0,
     checkPhoto, photoToSend: (root: string, checked: Parameters<typeof photoToSend>[1], path: string) => photoToSend(root, checked, path, redrawPhoto),
     make: (request: Parameters<MeshyModels['make']>[0]) => meshyModels.make(request),
+    // The 3D model's line in its thread, by its ID alone; a phone or a host client reads its words.
+    showInThread: async (threadId: string, model: { readonly id: string; readonly name: string }) => {
+      await agentHost.addVisual(threadId, { kind: MODEL_VISUAL_KIND, title: model.name, source: model.id }).catch(() => undefined)
+    },
   } : undefined
   // Account copies (ADR-0205, amending ADR-0025): each plugin account the user keeps on a paired host is sent to it on
   // every connection and whenever it changes here, and a copy no longer wanted is taken back. Owl `plugins` only.
@@ -2817,6 +2834,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
           return account ? bridgeStatus(account, mailOptions) : 'unknown'
         },
         meshyCredits: async () => Object.fromEntries(await modelRecords?.monthCredits() ?? new Map()),
+        model3d: async id => modelViews ? await modelViewOf(modelViews, id) : null,
+        model3dBytes: async request => modelViews ? await modelBytes(modelViews, request) : null,
         copies: async () => await pluginCopySync?.view() ?? { copyNew: true, readable: true, computers: [], copies: [] },
         setCopy: async request => { await pluginCopySync?.setCopy(request.accountId, request.computerId, request.on); return await pluginCopySync?.view() ?? { copyNew: true, readable: true, computers: [], copies: [] } },
         setCopyNew: async copyNew => { await pluginCopySync?.setCopyNew(copyNew); return await pluginCopySync?.view() ?? { copyNew: true, readable: true, computers: [], copies: [] } },

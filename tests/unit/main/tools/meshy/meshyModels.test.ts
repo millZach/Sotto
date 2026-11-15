@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { MeshyApiFetch } from '../../../../../src/main/tools/meshy/api'
 import { ModelRecords, type ThreeDModel } from '../../../../../src/main/tools/meshy/records'
-import { MeshyModels, modelFileBase, type MeshyModelsOptions, type ModelRequest } from '../../../../../src/main/tools/meshy/service'
+import { MeshyModels, modelFileBase, type MeshyModelsOptions, type ModelProgress, type ModelRequest } from '../../../../../src/main/tools/meshy/service'
 import { FAKE_MESHY_KEY, startFakeMeshy, type FakeMeshy } from '../../../../fixtures/fakeMeshy'
 
 /**
@@ -61,6 +61,45 @@ describe('a 3D model made with Meshy', () => {
     // Nothing outside this folder sees Meshy's task IDs.
     for (const entry of [...seen, ended!]) expect(entry).not.toHaveProperty('job')
     expect(JSON.stringify(seen)).not.toContain(meshy.created('preview')[0]!.id)
+  })
+
+  it('keeps Meshy’s percent and the time left at the rate so far in memory, and sends each change with them', async () => {
+    let clock = Date.parse('2026-11-15T09:00:00.000Z')
+    meshy.behaviour.readsToFinish = 5
+    meshy.behaviour.progress = reads => [0, 0, 0, 20, 60][reads] ?? 0
+    const seen: { readonly stage: string | undefined; readonly progress: ModelProgress | undefined }[] = []
+    const { service } = models({ now: () => clock, wait: async ms => { clock += ms }, changed: (model, progress) => seen.push({ stage: model.stage, progress }) })
+    const { model, done } = await service.make(photo())
+    const ended = await done
+    // Read every five seconds: 0% at the first and again five seconds on, which sends nothing new; 20% ten seconds
+    // on, so the 80% left is about 40 seconds away; then 60% fifteen seconds on, so about 10.
+    expect(seen.filter(entry => entry.progress).map(entry => entry.progress)).toEqual([{ percent: 0 }, { percent: 20, secondsLeft: 40 }, { percent: 60, secondsLeft: 10 }])
+    expect(seen.every(entry => entry.progress === undefined || entry.stage === 'shape')).toBe(true)
+    expect(ended!.state).toBe('done')
+    // Once it ended, nothing of its progress is held, and none was ever written to its record.
+    expect(service.progressOf(model.id, 'shape')).toBeUndefined()
+    expect(await readFile(join(data, '3d-models.json'), 'utf8')).not.toMatch(/percent|secondsLeft|progress/u)
+  })
+
+  it('holds the shape Meshy made while it paints the texture, fetched into memory only when asked for', async () => {
+    let shapeShown: boolean | undefined
+    let shapeBytes: Promise<Uint8Array | null> | undefined
+    const holder: { service?: MeshyModels } = {}
+    const { service } = models({ changed: model => {
+      if (model.stage !== 'texture' || shapeShown !== undefined) return
+      shapeShown = holder.service!.hasShape(model.id)
+      shapeBytes = holder.service!.shapeBytes(model.id)
+    } })
+    holder.service = service
+    const { model, done } = await service.make(words())
+    await done
+    expect(shapeShown).toBe(true)
+    // The fake's files are its own made-up bytes; what matters is they came from the preview task, into memory.
+    expect(await shapeBytes).toEqual(new Uint8Array(64).fill('m'.charCodeAt(0)))
+    expect(await readdir(join(root, 'models'))).not.toContain('model.glb')
+    expect(meshy.requests.some(request => request.path === `/files/${meshy.created('preview')[0]!.id}/model.glb`)).toBe(true)
+    expect(service.hasShape(model.id)).toBe(false)
+    expect(await service.shapeBytes(model.id)).toBeNull()
   })
 
   it('from a photo is one task, costing 30 credits, and keeps the photo’s name but never the photo', async () => {

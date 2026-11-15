@@ -52,7 +52,7 @@ import { handoverCounts } from './watcherHandover'
 import { watcherWakeUpShown } from './watcherNews'
 import { firstMessageTitle } from '../../shared/threadTitle'
 import { placeVisuals } from './visualPlacement'
-import { visualFromInput, VISUALS_PER_THREAD_MAX, VISUALS_PER_TURN_MAX, type AgentVisual, type VisualInput } from '../../shared/visuals'
+import { visualFromInput, VISUALS_PER_THREAD_MAX, VISUALS_PER_TURN_MAX, type AgentVisual, type ModelVisualInput, type VisualInput } from '../../shared/visuals'
 import { SubagentStore, subagentActivityClassification } from './subagentStore'
 import { observedSubagentStatus, EMPTY_SUBAGENT_SUMMARY, type SubagentChange, type SubagentRow, type SubagentSummary, type SubagentPageRequest, type SubagentAssignmentsRequest } from '../../shared/subagents'
 import { validateThreadOptions } from './threadOptions'
@@ -2754,9 +2754,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * Keeps a visual an agent drew in this thread and shows it where the thread stood when the call arrived: under the
    * newest message the store holds, in the newest user message's turn (ADR-0056). Whatever the provider said before the
    * call is written first, so the visual lands after those words and before anything said after it. Nothing is shown
-   * that was not kept; with Keep local history off the store is in memory, so the visual lasts this run alone.
+   * that was not kept; with Keep local history off the store is in memory, so the visual lasts this run alone. A 3D
+   * model Meshy is making for the thread is placed the same way (ADR-0141), by `make_3d_model` and never by an agent.
    */
-  async addVisual(threadId: string, input: VisualInput): Promise<VisualAddition> {
+  async addVisual(threadId: string, input: VisualInput | ModelVisualInput): Promise<VisualAddition> {
     if (!this.threadVisible(threadId)) return { added: false, reason: 'unknown-thread' }
     await this.initialize()
     if (!this.ready || this.stopping || this.threadById(threadId) === undefined) return { added: false, reason: 'unknown-thread' }
