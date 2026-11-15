@@ -773,7 +773,10 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   z.object({ ...base, op: z.literal('plugin-account-copies') }).strict(),
   /** What this desktop counts its Meshy accounts spent this month, everywhere but the host it tells (`plugin-meshy-spending`). */
   z.object({ ...base, op: z.literal('plugin-meshy-spending'), reports: spendingReportsSchema }).strict(),
-  /** A recorded desktop's reads of the host's 3D models (`plugin-meshy-models`), by the host's IDs; and removing a record whose files are gone. */
+  /**
+   * A recorded desktop's reads of the host's 3D models (`plugin-meshy-models`), by the host's IDs; and removing a record whose
+   * files are gone. A phone whose hello accepted `plugin-meshy-phone` reads one's view and its still picture and USDZ alone.
+   */
   z.object({ ...base, op: z.literal('plugin-meshy-models'), request: model3dListRequestSchema }).strict(),
   z.object({ ...base, op: z.literal('plugin-meshy-model'), request: model3dRequestSchema }).strict(),
   z.object({ ...base, op: z.literal('plugin-meshy-model-bytes'), request: model3dHostBytesRequestSchema }).strict(),
@@ -885,7 +888,7 @@ export type HostPush = { v: 1; event: 'shell'; state: HostWireShell | KeptPartsS
   | { v: 1; event: 'watcher-progress'; progress: z.infer<typeof watcherHostProgressSchema> }
   /** What the host's own threads spent this month of the Meshy copies a desktop sent it, only to that desktop (`plugin-meshy-spending`). */
   | { v: 1; event: 'plugin-meshy-spending'; reports: SpendingReport[] }
-  /** A 3D model's view as it changes, and records that went, only to a desktop whose hello accepted `plugin-meshy-models`. */
+  /** A 3D model's view as it changes, and records that went, to a desktop whose hello accepted `plugin-meshy-models` or a phone whose hello accepted `plugin-meshy-phone`. */
   | { v: 1; event: 'plugin-meshy-models'; news: Model3dHostNews }
   | { v: 1; event: 'detail-delta'; threadId: string; delta: AgentThreadDetailDelta }
   | { v: 1; event: 'answer-receipt'; acceptedAnswer: HostAnswerTarget & { decisionId: string } }
