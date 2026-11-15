@@ -166,3 +166,20 @@ A share of one core is the CPU time over the phase's 30,000 ms.
   host sends than the benchmarks' stream showed; 115 KB of that push is skill catalogs the phone does not read.
 - **No view body ran in either idle phase**, in any of the five long journeys or the six short ones, so `idle-list.app.bodies` and
   `idle-thread.app.bodies` could take budgets of zero.
+
+## From November 15, 2026: the pushes a host sends a phone now
+
+Two changes since this note made a running host's list pushes to a phone smaller. #2404 left out of a phone's shell the five parts no phone reads, `skillCatalogs` among them. #2393 sends a socket client its unchanged parts once and then names them kept. In `tests/perf/hostPushSizeBudget.perf.test.ts`, a push to a phone went from 198,970 bytes to 73,177 and then to 1,826. `stream-real-push` now sends the same as a host does (#2595):
+
+| `stream-real-push`'s list pushes | Until November 15 | From November 15 |
+| --- | ---: | ---: |
+| Parts made up beside the laptop's state | eight, 198,276 bytes | the three the phone reads, 66,842 bytes |
+| The first push | 200,499 bytes | every part whole |
+| Each push after it | 200,499 bytes | its parts named kept |
+| The run's 40 pushes | 8,019,965 bytes | 131,220 bytes, 3,280 a push |
+
+The two columns are the change's iPhone benchmark run, [43738293914](https://github.com/millZach/Sotto/actions/runs/43738293914), five journeys a side, the same bytes in each. The phone puts the kept parts back from the push before (`KeptPartsCache`), as a connection to a host does. In `PhoneBenchTests`, BenchWire's frames compiled on their own, the first push is 68,462 bytes and each after it 1,347. A push after the first is smaller than the host's 1,826 bytes because the laptop's state holds four parts and a running host's about forty: the host's push also names those it kept. The phone reads past the names.
+
+The time went down only where the phone reads the frame alone. `core.shell-real.read` went from 1.10 ms to 0.32. In the app, `decode_per_push.shell` stayed about 100 ms (94.6 before, 109 after) and `cpu_per_chunk` about 170 ms (167, 190): that clock runs from the read to the main actor taking the frame back, and the main thread is busy for about 900 ms a second through both streams (`hitch_time_ratio`, 898 and 909). The unchanged `stream` phase moved by as much in the same run (`cpu_per_chunk` 176 and 150), so these timings don't separate the two.
+
+So `stream-real-push`'s numbers from November 15 on aren't comparable with the earlier ones. The before column of run 43738293914 is the last measured at the November 10 size.

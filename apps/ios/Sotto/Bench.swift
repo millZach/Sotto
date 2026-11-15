@@ -145,8 +145,8 @@ import UIKit
         guard await until({ self.marks["reopen-rendered"] != nil }) else { return finish("no-reopen") }
         await quiet()
 
-        // The stream again, each shell push carrying beside the long thread's record what a running host sends whole in
-        // every push, about 200 KB where `stream` sends 2 KB (#2390).
+        // The stream again, its shell pushes what a running host sends a phone (#2390, #2595): the first carries the parts
+        // the phone reads whole, about 67 KB, and each after it names them kept, about 2 KB, as `stream`'s are.
         next("stream-real-push")
         let pushed = CACurrentMediaTime()
         await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in

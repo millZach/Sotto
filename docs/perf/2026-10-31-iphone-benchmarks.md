@@ -37,13 +37,15 @@ run reads the same bytes:
 - **The stream:** 200 `detail-delta` pushes, one word each, one every 50 ms after the last was applied. Every fifth is
   followed by a `shell` push carrying only the long thread's record, and every twentieth finishes a step and starts
   another, as a working thread does.
-- **What a running host sends whole** (#2390): the second stream's `shell` pushes also carry the parts a host sends whole
-  in every thread list push, made up at the sizes forge's host sent a phone on November 10, 2026
-  (`docs/perf/2026-11-10-performance-and-data-audit.md`, finding 2): each thread's skill list (115 KB), the delivery
-  ledger (46 KB), the delivered and obsolete draft ledgers (13 KB each), the follow-up receipts (8 KB) and three small
-  parts no phone reads, about 200 KB a push against forge's 209 KB. The rest of forge's is its projects, providers and
-  settings, which stay as the laptop's so the list does not change. The threads the parts name are not on the list and
-  every delivery was accepted, so the phone shows nothing of them (`BenchWire.hostSizedState`).
+- **What a running host sends a phone** (#2390, #2595): the second stream's `shell` pushes are what a running host sends a
+  phone. The first carries the parts the phone reads, made up at the sizes forge's host sent on November 10, 2026
+  (`docs/perf/2026-11-10-performance-and-data-audit.md`, finding 2): the delivery ledger (46 KB), the delivered draft
+  ledger (13 KB) and the follow-up receipts (8 KB), 68 KB a push in all (`BenchWire.hostSizedState`). Each push after it
+  names those parts and the laptop's own kept (40 pushes came to 131 KB in run 43738293914), and the phone puts them back from the push before, as a host
+  has sent since #2393 (`BenchWire.keptState`, `KeptPartsCache`). The rest of a host's state is its projects, providers
+  and settings, which stay as the laptop's so the list does not change. The threads the parts name are not on the list and
+  every delivery was accepted, so the phone shows nothing of them. Until November 15, 2026 every push carried eight parts
+  whole, about 200 KB, five of them parts no phone reads (`docs/perf/2026-11-10-iphone-idle-and-real-push.md`).
 - **Settling for the idle phases** (#2400): one `shell` push settles the seven other threads the list shows working
   (`BenchWire.othersSettled`), and the long thread's turn ends as a host ends one, with a `detail-delta` that finishes
   its running step and a `shell` push with its record settled (`BenchWire.endTurnFrame`).
@@ -70,7 +72,7 @@ Then:
      others the list shows working settle first, in a phase of their own (`settle-others`).
    - `reopen`: the long thread opened again, as `open` opened it. It is read again from its first `detail` push, so the
      reply is as short as `stream` found it.
-   - `stream-real-push`: 200 words as `stream` sends them, each list push the size a running host sends.
+   - `stream-real-push`: 200 words as `stream` sends them, each list push what a running host sends a phone: since November 15, 2026 the first carries the parts the phone reads whole and the rest name them kept (`docs/perf/2026-11-10-iphone-idle-and-real-push.md`).
    - `idle-thread`: 30 seconds on the long thread with nothing arriving, once its turn has ended in a phase of its own
      (`end-turn`): no working line, running step or breathing light.
 
