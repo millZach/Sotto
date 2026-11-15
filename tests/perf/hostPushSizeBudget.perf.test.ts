@@ -36,14 +36,15 @@ const PHONE_PUSH_BYTES = 203_000
 const DESKTOP_UNCHANGED_PARTS = 44
 const PHONE_UNCHANGED_PARTS = 45
 /**
- * Bytes of JSON the desktop is sent for a change of where a watched thread has got and nothing else: about 1.99 MB, a
- * whole `watcher-state` with every request and operation of the desktop's Watcher in it again, eight of its eleven parts
- * as the push before had them. #2391 sends the progress alone, as `watcher-progress`.
+ * Bytes of JSON the desktop is sent for a change of where a watched thread has got and nothing else: 451, a
+ * `watcher-progress` push with the one entry that moved (#2391). Before it this was a whole `watcher-state`, about
+ * 1.99 MB, with every request and operation of the desktop's Watcher in it again. The two parts that do not change are
+ * the frame's `v` and `event`.
  */
-const PROGRESS_CHANGE_BYTES = 2_006_000
-const PROGRESS_CHANGE_UNCHANGED_PARTS = 8
-/** Whole `watcher-state` pushes per change of progress alone: every one today. #2391 makes it none. */
-const WHOLE_WATCHER_STATE_PER_PROGRESS_CHANGE = 1
+const PROGRESS_CHANGE_BYTES = 600
+const PROGRESS_CHANGE_UNCHANGED_PARTS = 2
+/** Whole `watcher-state` pushes per change of progress alone: none since #2391, where it was every one. */
+const WHOLE_WATCHER_STATE_PER_PROGRESS_CHANGE = 0
 
 const clock = stepClock()
 const roots: string[] = []
