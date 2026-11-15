@@ -32,7 +32,7 @@ describe("a 3D model's files", () => {
   it('fetch a link on the file server into the folder, sending no key and following no redirect', async () => {
     const folder = await modelFolder(root, 'models')
     const asked: Parameters<MeshyDownloadFetch>[1][] = []
-    await downloadModelFile((url, init) => { asked.push(init); return fetcher(url, init) }, fileOf('model.glb'), { root, folder, fileName: 'chair.glb' }, { assets: meshy.base })
+    await downloadModelFile((url, init) => { asked.push(init); return fetcher(url, init) }, fileOf('model.glb'), { root, folder, fileName: 'chair.glb', owner: 'model-1' }, { assets: meshy.base })
     expect(await readFile(join(folder, 'chair.glb'))).toHaveLength(64)
     expect(asked).toEqual([expect.objectContaining({ method: 'GET', headers: {}, redirect: 'manual' })])
   })
@@ -42,20 +42,20 @@ describe("a 3D model's files", () => {
     let fetched = 0
     const counting: MeshyDownloadFetch = async () => { fetched++; return new Response('x') }
     for (const address of ['http://assets.meshy.ai/x.glb', 'https://assets.meshy.ai.example.com/x.glb', 'https://api.meshy.ai/x.glb', 'https://user:pass@assets.meshy.ai/x.glb', 'file:///etc/passwd', 'not a link']) {
-      expect(await problem(downloadModelFile(counting, address, { root, folder, fileName: 'x.glb' }))).toBe('refused')
+      expect(await problem(downloadModelFile(counting, address, { root, folder, fileName: 'x.glb', owner: 'model-1' }))).toBe('refused')
     }
     expect(fetched).toBe(0)
     // The file server itself is let through.
-    await downloadModelFile(async () => new Response('glb'), 'https://assets.meshy.ai/abc/model.glb?Expires=1', { root, folder, fileName: 'x.glb' })
+    await downloadModelFile(async () => new Response('glb'), 'https://assets.meshy.ai/abc/model.glb?Expires=1', { root, folder, fileName: 'x.glb', owner: 'model-1' })
     expect(await readFile(join(folder, 'x.glb'), 'utf8')).toBe('glb')
   })
 
   it('stop at the cap, whether Meshy says the length or not, and leave no part of the file', async () => {
     const folder = await modelFolder(root, 'models')
     meshy.behaviour.fileBytes = 2_000
-    expect(await problem(downloadModelFile(fetcher, fileOf('model.glb'), { root, folder, fileName: 'a.glb' }, { assets: meshy.base, maxBytes: 1_000 }))).toBe('too-large')
+    expect(await problem(downloadModelFile(fetcher, fileOf('model.glb'), { root, folder, fileName: 'a.glb', owner: 'model-1' }, { assets: meshy.base, maxBytes: 1_000 }))).toBe('too-large')
     meshy.behaviour.chunked = true
-    expect(await problem(downloadModelFile(fetcher, fileOf('model.glb'), { root, folder, fileName: 'b.glb' }, { assets: meshy.base, maxBytes: 1_000 }))).toBe('too-large')
+    expect(await problem(downloadModelFile(fetcher, fileOf('model.glb'), { root, folder, fileName: 'b.glb', owner: 'model-1' }, { assets: meshy.base, maxBytes: 1_000 }))).toBe('too-large')
     expect(await readdir(folder)).toEqual([])
   })
 
@@ -63,7 +63,7 @@ describe("a 3D model's files", () => {
     const folder = await modelFolder(root, 'models')
     for (const [status, word] of [[400, 'gone'], [403, 'gone'], [404, 'gone'], [500, 'unreachable'], [302, 'unreachable']] as const) {
       meshy.behaviour.answers.push({ route: 'file', status })
-      expect(await problem(downloadModelFile(fetcher, fileOf('model.glb'), { root, folder, fileName: 'a.glb' }, { assets: meshy.base }))).toBe(word)
+      expect(await problem(downloadModelFile(fetcher, fileOf('model.glb'), { root, folder, fileName: 'a.glb', owner: 'model-1' }, { assets: meshy.base }))).toBe(word)
     }
     expect(await readdir(folder)).toEqual([])
   })
@@ -71,7 +71,7 @@ describe("a 3D model's files", () => {
   it('never write over a file that is already there', async () => {
     const folder = await modelFolder(root, 'models')
     await writeFile(join(folder, 'chair.glb'), 'mine')
-    expect(await problem(downloadModelFile(fetcher, fileOf('model.glb'), { root, folder, fileName: 'chair.glb' }, { assets: meshy.base }))).toBe('taken')
+    expect(await problem(downloadModelFile(fetcher, fileOf('model.glb'), { root, folder, fileName: 'chair.glb', owner: 'model-1' }, { assets: meshy.base }))).toBe('taken')
     expect(await readFile(join(folder, 'chair.glb'), 'utf8')).toBe('mine')
   })
 
@@ -84,9 +84,17 @@ describe("a 3D model's files", () => {
     const folder = await modelFolder(root, 'later')
     await rm(folder, { recursive: true })
     await symlink(outside, folder, 'junction')
-    expect(await problem(downloadModelFile(fetcher, fileOf('model.glb'), { root, folder, fileName: 'a.glb' }, { assets: meshy.base }))).toBe('folder')
+    expect(await problem(downloadModelFile(fetcher, fileOf('model.glb'), { root, folder, fileName: 'a.glb', owner: 'model-1' }, { assets: meshy.base }))).toBe('folder')
+    // And one swapped while Meshy's answer was on its way.
+    const waiting = await modelFolder(root, 'waiting')
+    const swapping: MeshyDownloadFetch = async (url, init) => {
+      await rm(waiting, { recursive: true })
+      await symlink(outside, waiting, 'junction')
+      return fetcher(url, init)
+    }
+    expect(await problem(downloadModelFile(swapping, fileOf('model.glb'), { root, folder: waiting, fileName: 'a.glb', owner: 'model-1' }, { assets: meshy.base }))).toBe('folder')
     for (const fileName of ['../a.glb', 'sub/a.glb', 'sub\\a.glb', '..', 'a:b.glb', ' a.glb']) {
-      expect(await problem(downloadModelFile(fetcher, fileOf('model.glb'), { root, folder: await modelFolder(root, 'models'), fileName }, { assets: meshy.base }))).toBe('folder')
+      expect(await problem(downloadModelFile(fetcher, fileOf('model.glb'), { root, folder: await modelFolder(root, 'models'), fileName, owner: 'model-1' }, { assets: meshy.base }))).toBe('folder')
     }
     expect(await readdir(outside)).toEqual([])
     // A folder inside it, however deep, is made.

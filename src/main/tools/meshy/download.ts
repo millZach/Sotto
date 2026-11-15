@@ -1,4 +1,5 @@
-import { mkdir, open, realpath, rm } from 'node:fs/promises'
+import { constants } from 'node:fs'
+import { copyFile, link, mkdir, open, realpath, rm } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 
 /**
@@ -56,18 +57,27 @@ export async function modelFolder(root: string, folder: string): Promise<string>
 /** A plain file name: no folder in it, nothing Windows refuses, and not `.` or `..`. */
 const FILE_NAME = /^(?!\.{1,2}$)[^\\/:*?"<>|\p{Cc}]{1,200}$/u
 
+/** A file Sotto is still writing, named so it is plainly not the user's and so a run picked up later finds its own. */
+export function partName(owner: string, fileName: string): string { return `.sotto-3d-${owner}-${fileName}.part` }
+export function isPartOf(owner: string, name: string): boolean { return name.startsWith(`.sotto-3d-${owner}-`) && name.endsWith('.part') }
+
 /**
- * Fetches one of Meshy's file links into `folder` as `fileName`. The folder is checked again against the thread's
- * working folder right before writing, since either may have changed since the 3D model was asked for. A file that
- * fails part way is removed.
+ * Fetches one of Meshy's file links into `folder` as `fileName`. It is written first under a part name of its own
+ * (`partName`), and given its name only once it is whole, never over a file that is already there, so stopping part
+ * way leaves no half file under a 3D model's name. Node opens files by path alone, so the folder is checked against
+ * the thread's working folder before the part file is made, again once it is open, and the finished file once named:
+ * a folder swapped for a link at any step has what Sotto wrote there removed, and the download is refused.
  */
-export async function downloadModelFile(fetcher: MeshyDownloadFetch, address: string, target: { readonly root: string; readonly folder: string; readonly fileName: string },
+export async function downloadModelFile(fetcher: MeshyDownloadFetch, address: string, target: { readonly root: string; readonly folder: string; readonly fileName: string; readonly owner: string },
   options: { readonly assets?: string; readonly maxBytes?: number; readonly signal?: AbortSignal } = {}): Promise<void> {
   if (!isMeshyFile(address, options.assets ?? MESHY_ASSETS)) throw new DownloadError('refused')
-  if (!FILE_NAME.test(target.fileName) || target.fileName !== target.fileName.trim()) throw new DownloadError('folder')
+  const part = partName(target.owner, target.fileName)
+  for (const name of [target.fileName, part]) if (!FILE_NAME.test(name) || name !== name.trim()) throw new DownloadError('folder')
   let realRoot: string
   let realFolder: string
   try { [realRoot, realFolder] = await Promise.all([realpath(target.root), realpath(target.folder)]) } catch { throw new DownloadError('folder') }
+  /** Whether a path, as it resolves now, is inside the thread's working folder. */
+  const stillInside = async (path: string): Promise<boolean> => { try { return isInside(realRoot, await realpath(path)) } catch { return false } }
   if (!isInside(realRoot, realFolder)) throw new DownloadError('folder')
   const maxBytes = options.maxBytes ?? MODEL_FILE_BYTES_MAX
   const timeout = AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS)
@@ -86,15 +96,25 @@ export async function downloadModelFile(fetcher: MeshyDownloadFetch, address: st
     throw new DownloadError('too-large')
   }
   const path = join(realFolder, target.fileName)
-  let file: Awaited<ReturnType<typeof open>>
-  try { file = await open(path, 'wx', 0o644) } catch (error) {
+  const partPath = join(realFolder, part)
+  // The folder as it is now, after the wait for Meshy's answer.
+  if (!await stillInside(realFolder)) {
     await response.body.cancel().catch(() => undefined)
-    throw new DownloadError(typeof error === 'object' && error !== null && 'code' in error && error.code === 'EEXIST' ? 'taken' : 'folder')
+    throw new DownloadError('folder')
   }
-  let written = 0
+  // A part file left by a run that was stopped hard is this 3D model's own, and starts again.
+  await rm(partPath, { force: true }).catch(() => undefined)
+  let file: Awaited<ReturnType<typeof open>>
+  try { file = await open(partPath, 'wx', 0o644) } catch {
+    await response.body.cancel().catch(() => undefined)
+    throw new DownloadError('folder')
+  }
   let finished = false
   const reader = response.body.getReader()
   try {
+    // The file just opened, by where it really is: one opened through a swapped folder is outside, and refused.
+    if (!await stillInside(partPath)) throw new DownloadError('folder')
+    let written = 0
     for (;;) {
       let chunk: Awaited<ReturnType<typeof reader.read>>
       try { chunk = await reader.read() } catch { throw new DownloadError('unreachable') }
@@ -107,8 +127,26 @@ export async function downloadModelFile(fetcher: MeshyDownloadFetch, address: st
   } finally {
     if (!finished) await reader.cancel().catch(() => undefined)
     await file.close().catch(() => undefined)
-    if (!finished) await rm(path, { force: true }).catch(() => undefined)
+    if (!finished) await rm(partPath, { force: true }).catch(() => undefined)
   }
+  try {
+    if (!await stillInside(partPath)) throw new DownloadError('folder')
+    await publish(partPath, path)
+    if (!await stillInside(path)) {
+      await rm(path, { force: true }).catch(() => undefined)
+      throw new DownloadError('folder')
+    }
+  } finally { await rm(partPath, { force: true }).catch(() => undefined) }
+}
+
+/**
+ * Gives a whole part file its name, never over a file already there: a second link to it where the disk allows one,
+ * and a copy where it does not.
+ */
+async function publish(partPath: string, path: string): Promise<void> {
+  const taken = (error: unknown): boolean => typeof error === 'object' && error !== null && 'code' in error && error.code === 'EEXIST'
+  try { await link(partPath, path); return } catch (error) { if (taken(error)) throw new DownloadError('taken') }
+  try { await copyFile(partPath, path, constants.COPYFILE_EXCL) } catch (error) { throw new DownloadError(taken(error) ? 'taken' : 'folder') }
 }
 
 /** Whether a link is on Meshy's file server: its origin exactly, with no name or password in it. */

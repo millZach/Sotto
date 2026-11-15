@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -155,14 +155,40 @@ describe('a 3D model still being made when Sotto stops', () => {
     expect(meshy.created().map(task => task.kind)).toEqual(['preview', 'refine'])
   })
 
-  it('is lost, and not asked for again, when Sotto stopped while Meshy was taking it', async () => {
+  it('is lost, and not asked for again, when Sotto stopped while Meshy was taking it, with that task still counted', async () => {
     const first = models({ changed: model => { if (model.stage === 'texture') first.stop.abort() } })
     const { model, done } = await first.service.make(words())
     expect(await done).toBeUndefined()
     const again = models({ records: recordsHere() })
     await again.service.resume()
-    expect(await again.service.whenDone(model.id)).toMatchObject({ state: 'lost', failure: 'stopped', credits: 20 })
+    // Meshy may have taken the texture task just as Sotto stopped, so its 10 credits stay counted.
+    expect(await again.service.whenDone(model.id)).toMatchObject({ state: 'lost', failure: 'stopped', credits: 30 })
     expect(meshy.created('refine')).toHaveLength(0)
+  })
+
+  it('starts a stopped fetch again whole, taking away what the stopped try left under its own name', async () => {
+    meshy.behaviour.readsToFinish = 3
+    const first = models({ wait: async () => { if (meshy.created('refine').length === 1) first.stop.abort() } })
+    const { model } = await first.service.make(words())
+    await first.service.whenDone(model.id)
+    // As a hard stop part way through fetching would leave it: one whole file named in the record, and a part file.
+    const folder = join(root, 'models')
+    const records = recordsHere()
+    await records.update(model.id, held => ({ ...held, files: ['Chair.png'] }))
+    await writeFile(join(folder, 'Chair.png'), 'from the stopped try')
+    await writeFile(join(folder, `.sotto-3d-${model.id}-Chair.glb.part`), 'half a file')
+    const again = models({ records })
+    await again.service.resume()
+    expect(await again.service.whenDone(model.id)).toMatchObject({ state: 'done', files: ['Chair.png', 'Chair.glb', 'Chair.usdz'] })
+    expect((await readdir(folder)).sort()).toEqual(['Chair.glb', 'Chair.png', 'Chair.usdz'])
+  })
+
+  it('stops asking a Meshy too busy to take it once its three days are up, and counts nothing', async () => {
+    let now = Date.parse('2026-11-15T12:00:00Z')
+    for (let n = 0; n < 10; n++) meshy.behaviour.answers.push({ route: 'create', status: 429, retryAfter: '600' })
+    const { service } = models({ now: () => now, wait: async () => { now += 24 * 60 * 60_000 } })
+    expect(await (await service.make(words())).done).toMatchObject({ state: 'lost', failure: 'expired', credits: 0 })
+    expect(meshy.created()).toHaveLength(0)
   })
 
   it('is lost after Meshy’s three days, and nothing more is asked of Meshy', async () => {
@@ -194,6 +220,25 @@ describe('the record of 3D models', () => {
     // A 3D model asked for with history off is made from the words it was handed, which are never kept.
     const later = await (await service.make(words('Table'))).done
     expect(later).toMatchObject({ state: 'done', source: { kind: 'words' } })
+    expect(await readFile(join(data, '3d-models.json'), 'utf8')).not.toContain('a small wooden chair')
+  })
+
+  it('takes the words out of what Sotto holds even when the file cannot be written', async () => {
+    const { service, records } = models()
+    await (await service.make(words())).done
+    // Something in the way of the file's next copy, so the write fails.
+    await mkdir(join(data, '3d-models.json.next'))
+    history = false
+    await expect(records.privacyChanged()).rejects.toThrow()
+    expect(JSON.stringify(await records.list())).not.toContain('a small wooden chair')
+  })
+
+  it('writes over a file it could not read while Keep local history is off, since it may hold words', async () => {
+    await writeFile(join(data, '3d-models.json'), '{"version":1,"models":[{"source":{"kind":"words","words":"a small wooden chair"}')
+    history = false
+    const records = recordsHere()
+    expect(await records.list()).toEqual([])
+    await records.privacyChanged()
     expect(await readFile(join(data, '3d-models.json'), 'utf8')).not.toContain('a small wooden chair')
   })
 

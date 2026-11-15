@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto'
-import { lstat, rm } from 'node:fs/promises'
+import { lstat, readdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { MESHY_POLL_MS, MeshyApi, MeshyApiError, type MeshyApiFetch, type MeshyFormat, type MeshyTask, type MeshyTaskKind } from './api'
-import { DownloadError, downloadModelFile, modelFolder } from './download'
+import { DownloadError, downloadModelFile, isPartOf, modelFolder } from './download'
 import { MODEL_KEPT_MS, MODEL_STAGES, modelOf, type ModelRecord, type ModelRecords, type ThreeDModel } from './records'
 
 /**
@@ -59,9 +59,9 @@ export interface MeshyModelsOptions {
   readonly changed?: (model: ThreeDModel) => void
 }
 
-/** How a run ends early: a state the record takes and why. */
+/** How a run ends early: a state the record takes, why, and the credits that come back, written together. */
 class Ending {
-  constructor(readonly state: 'failed' | 'lost', readonly failure: NonNullable<ModelRecord['failure']>) {}
+  constructor(readonly state: 'failed' | 'lost', readonly failure: NonNullable<ModelRecord['failure']>, readonly refund = 0) {}
 }
 /** The record went while the 3D model was being made: its thread was forgotten. Nothing more is written. */
 class Forgotten {}
@@ -146,13 +146,17 @@ export class MeshyModels {
     if (taskId === undefined) {
       // Sotto stopped while asking for it, or no longer has what it would send: what became of it cannot be told.
       if (record.job.asking === kind || !create) throw new Ending('lost', 'stopped')
-      await this.change(id, held => ({ ...held, stage, job: { ...held.job, asking: kind } }))
-      taskId = await this.ask(create)
+      // Its credits are counted as it is asked for, so a task Meshy took just as Sotto stopped is not left uncounted.
+      record = await this.change(id, held => ({ ...held, stage, credits: held.credits + MESHY_CREDITS[kind], job: { ...held.job, asking: kind } }))
+      try { taskId = await this.ask(record, create) } catch (error) {
+        // Meshy did not take it, so its credits come back.
+        throw error instanceof Ending ? new Ending(error.state, error.failure, MESHY_CREDITS[kind]) : error
+      }
       const asked = taskId
       record = await this.change(id, held => {
         const job = { ...held.job, [kind]: asked }
         delete job.asking
-        return { ...held, credits: held.credits + MESHY_CREDITS[kind], job }
+        return { ...held, job }
       })
     }
     let backoff = MESHY_POLL_MS
@@ -171,18 +175,19 @@ export class MeshyModels {
       }
       backoff = MESHY_POLL_MS
       if (task.status === 'made') return task
-      if (task.status === 'failed') {
-        // Meshy refunds a task that failed.
-        await this.change(id, held => ({ ...held, credits: Math.max(0, held.credits - MESHY_CREDITS[kind]) }))
-        throw new Ending('failed', 'failed')
-      }
+      // Meshy refunds a task that failed.
+      if (task.status === 'failed') throw new Ending('failed', 'failed', MESHY_CREDITS[kind])
       await this.wait(task.pollAfterMs)
     }
   }
 
-  /** Asks Meshy for a task. A 429 took nothing, so it is asked again when Meshy says; any other refusal ends it. */
-  private async ask(create: () => Promise<string>): Promise<string> {
+  /**
+   * Asks Meshy for a task. A 429 took nothing, so it is asked again when Meshy says, until Meshy's three days are up;
+   * any other refusal ends it.
+   */
+  private async ask(record: ModelRecord, create: () => Promise<string>): Promise<string> {
     for (;;) {
+      this.inTime(record)
       try { return await create() } catch (error) {
         this.stopping()
         const problem = error instanceof MeshyApiError ? error.problem : 'unreachable'
@@ -194,7 +199,9 @@ export class MeshyModels {
 
   /** Fetches the finished files into the folder, under one free name, the still picture first. */
   private async fetchFiles(id: string, made: MeshyTask): Promise<ThreeDModel> {
-    let record = await this.change(id, held => ({ ...held, stage: 'files' }))
+    // A try Sotto was stopped in is started again whole: what it wrote is this 3D model's own, and goes.
+    await this.clearTry(await this.current(id))
+    let record = await this.change(id, held => ({ ...held, stage: 'files', files: [] }))
     if (!made.files.glb) throw new Ending('failed', 'failed')
     let backoff = MESHY_POLL_MS
     for (;;) {
@@ -205,14 +212,18 @@ export class MeshyModels {
       const files: string[] = []
       try {
         for (const [address, fileName] of [...(still ? [[made.still!, still] as const] : []), ...wanted.map(format => [made.files[format]!, `${base}.${format}`] as const)]) {
-          await downloadModelFile(this.options.fetch, address, { root: record.root, folder: record.folder, fileName },
+          await downloadModelFile(this.options.fetch, address, { root: record.root, folder: record.folder, fileName, owner: id },
             { ...(this.options.assets ? { assets: this.options.assets } : {}), ...(this.options.fileBytesMax !== undefined ? { maxBytes: this.options.fileBytesMax } : {}), signal: this.options.signal })
           files.push(fileName)
+          // Each whole file is named in the record as it lands, so a try stopped part way knows what was its own.
+          record = await this.change(id, held => ({ ...held, files: [...files] }))
         }
       } catch (error) {
         // What this try wrote goes, so the next try starts whole or the record names no half of a 3D model.
+        if (error instanceof Forgotten) throw error
         await Promise.all(files.map(name => rm(join(record.folder, name), { force: true }).catch(() => undefined)))
         this.stopping()
+        record = await this.change(id, held => ({ ...held, files: [] }))
         const problem = error instanceof DownloadError ? error.problem : 'unreachable'
         if (problem === 'gone') throw new Ending('lost', 'expired')
         if (problem === 'too-large') throw new Ending('failed', 'too-large')
@@ -238,9 +249,16 @@ export class MeshyModels {
     throw new Ending('failed', 'folder')
   }
 
+  /** The files and part files a stopped try left, which are this 3D model's own. */
+  private async clearTry(record: ModelRecord): Promise<void> {
+    const names = await readdir(record.folder).catch(() => [] as string[])
+    const leftover = [...record.files, ...names.filter(name => isPartOf(record.id, name))]
+    await Promise.all(leftover.map(name => rm(join(record.folder, name), { force: true }).catch(() => undefined)))
+  }
+
   private async end(id: string, ending: Ending): Promise<ThreeDModel | undefined> {
     try {
-      return modelOf(await this.change(id, held => ended({ ...held, state: ending.state, failure: ending.failure }, this.now())))
+      return modelOf(await this.change(id, held => ended({ ...held, state: ending.state, failure: ending.failure, credits: Math.max(0, held.credits - ending.refund) }, this.now())))
     } catch { return undefined }
   }
 

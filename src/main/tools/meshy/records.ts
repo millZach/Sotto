@@ -146,8 +146,10 @@ export class ModelRecords {
   privacyChanged(): Promise<void> {
     return this.inTurn(async () => {
       if (this.options.historyEnabled()) return
-      const records = await this.load()
-      if (this.wordsInFile || records.some(holdsWords)) await this.write(records.map(record => this.private(record)))
+      // Memory first, so the words are gone from what Sotto holds even when the file cannot be written.
+      const records = (await this.load()).map(record => this.private(record))
+      this.records = records
+      if (this.wordsInFile) await this.write(records)
     })
   }
 
@@ -170,13 +172,17 @@ export class ModelRecords {
       const parsed = fileSchema.safeParse(JSON.parse(await readFile(this.path, 'utf8')))
       // A record this version cannot read is left out rather than failing the rest.
       // And words a failed clearing left in the file are not read while Keep local history is off.
-      if (parsed.success) records = parsed.data.models.flatMap(entry => {
+      // A file, or a record in it, that cannot be read may still hold words, so it counts as holding them.
+      if (!parsed.success) this.wordsInFile = true
+      else records = parsed.data.models.flatMap(entry => {
         const record = recordSchema.safeParse(entry)
-        if (!record.success) return []
-        if (holdsWords(record.data)) this.wordsInFile = true
-        return [this.private(record.data)]
+        if (!record.success || holdsWords(record.data)) this.wordsInFile = true
+        return record.success ? [this.private(record.data)] : []
       })
-    } catch { /* No file yet, or one that cannot be read: no records. */ }
+    } catch (error) {
+      // No file yet: nothing to clear. One that cannot be read or parsed: no records, and it is written over next.
+      if (!(typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT')) this.wordsInFile = true
+    }
     this.records = records
     return records
   }
