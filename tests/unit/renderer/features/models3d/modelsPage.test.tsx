@@ -48,7 +48,7 @@ let forgotten: ((ids: readonly string[]) => void) | undefined
 const plugins = {
   models3d: vi.fn(async () => models),
   onModel3dChanged: vi.fn((listener: (view: Model3dView) => void) => { changed = listener; return () => { changed = undefined } }),
-  meshyCredits: vi.fn(async () => ({ '22222222-2222-4222-8222-000000000001': 80 })),
+  meshyCredits: vi.fn(async () => ({ '22222222-2222-4222-8222-000000000001': { here: 80, credits: 80, across: [] } })),
   model3dBytes: vi.fn(async () => null),
   removeModel3d: vi.fn(async (): Promise<Model3dRemoval> => 'removed'),
   revealModel3d: vi.fn(async () => true),

@@ -30,7 +30,7 @@ function register(answer: GitHubSignIn = { state: 'signed-in', login: 'example-u
   const removeAccount = vi.fn(async (): Promise<PluginAccountResult> => ({ ok: true, accounts: [] }))
   const updateAccount = vi.fn(async (): Promise<PluginAccountResult> => ({ ok: true, accounts: [{ ...account, on: false }] }))
   const trustCertificate = vi.fn(async (): Promise<PluginAccountResult> => ({ ok: false, problem: 'refused' })), bridgeStatus = vi.fn(async (): Promise<BridgeStatus> => 'not-running')
-  const meshyCredits = vi.fn(async (): Promise<MeshyCredits> => ({ [account.id]: 120 }))
+  const meshyCredits = vi.fn(async (): Promise<MeshyCredits> => ({ [account.id]: { here: 120, credits: 120, across: [] } }))
   const projects = vi.fn(() => [{ id: 'p-sotto', title: 'Sotto', settled: false }])
   const view: PluginCopiesView = { copyNew: true, readable: true, computers: [{ id: 'saved-forge', name: 'forge', connected: true }], copies: [{ accountId: account.id, computerId: 'saved-forge', state: 'kept', leaving: 'no' }] }
   const copies = vi.fn(async (): Promise<PluginCopiesView> => view), setCopy = vi.fn(async (): Promise<PluginCopiesView> => view), setCopyNew = vi.fn(async (): Promise<PluginCopiesView> => view)
@@ -150,10 +150,10 @@ describe('Settings › Plugins, from the window through preload to main (ADR-020
 
   it('reads this month’s credits for each Meshy account, for the main window only, and nothing but whole numbers', async () => {
     const { bridge, invoke, widgetEvent, meshyCredits, close, handlers } = register()
-    await expect(bridge.meshyCredits()).resolves.toEqual({ [account.id]: 120 })
+    await expect(bridge.meshyCredits()).resolves.toEqual({ [account.id]: { here: 120, credits: 120, across: [] } })
     await expect(invoke(PLUGINS_MESHY_CREDITS, [], widgetEvent)).rejects.toThrow('Open Settings in the main Sotto window.')
     await expect(invoke(PLUGINS_MESHY_CREDITS, ['extra'])).rejects.toThrow()
-    meshyCredits.mockResolvedValueOnce({ [account.id]: -1 })
+    meshyCredits.mockResolvedValueOnce({ [account.id]: { here: -1, credits: 0, across: [] } })
     await expect(invoke(PLUGINS_MESHY_CREDITS, [])).rejects.toThrow()
     close()
     expect(handlers.has(PLUGINS_MESHY_CREDITS)).toBe(false)

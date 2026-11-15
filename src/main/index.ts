@@ -78,6 +78,7 @@ import { mailGrantsShown, MailGrants, mailThreadOpen, ownThreadId } from './plug
 import { PluginChangeRequests } from './plugins/pendingChanges'
 import { pluginFolderOfThread, pluginProjects } from './plugins/projectFolders'
 import { PluginAccountCopySync } from './plugins/copySync'
+import { MeshySpendingSync } from './plugins/meshy/spendingSync'
 import { isThreadClosed } from '../shared/threadActivity'
 import { wordPluginChange } from './plugins/changeWords'
 import { combinedSottoRequests } from './agents/sottoRequests'
@@ -1427,12 +1428,19 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const meshyApiFetch: MeshyApiFetch = e2eConfiguration === null ? (url, init) => fetch(url, init)
     : async (url, init) => { if (!meshyBase || !url.startsWith(`${meshyBase}/`)) throw new Error('E2E_NETWORK_DISABLED'); return fetch(url, init) }
   const modelRecords = pluginsEnabled ? new ModelRecords(userDataPath, { historyEnabled: () => agentHistoryEnabled }) : undefined
+  // One monthly limit for a Meshy account here and on every paired host holding its copy (ADR-0205): this computer
+  // counts its own and adds what each host last said, and tells each host what was spent everywhere but there.
+  const meshySpending = modelRecords && pluginAccounts ? new MeshySpendingSync(userDataPath, {
+    own: () => modelRecords.monthCredits(), accounts: () => pluginAccounts.list(), connections: () => hostRouter.remoteConnections(),
+  }) : undefined
   // Each change to a 3D model, and each of Meshy's reads of its progress, goes to the window as its view (the Meshy
   // plan's ticket 4). Views are sent in order, so a slower one never lands after a newer one.
   let modelViewsSent: Promise<void> = Promise.resolve()
   const meshyModels = modelRecords && pluginAccounts ? new MeshyModels({ records: modelRecords, fetch: meshyApiFetch, signal: pluginsStop.signal, ...(meshyBase ? { base: meshyBase, assets: meshyBase } : {}),
     keyOf: async accountId => (await pluginAccounts.list()).some(account => account.id === accountId && account.plugin === 'meshy') ? pluginAccounts.secret(accountId) || undefined : undefined,
     changed: (model, progress) => {
+      // A change in what this computer spent is told to the hosts that hold the account's copy.
+      meshySpending?.ownChanged()
       const shape = meshyModels?.hasShape(model.id) ?? false
       // A 3D model whose record went meanwhile, as its thread was forgotten, is not shown again.
       modelViewsSent = modelViewsSent.then(async () => await modelRecords.model(model.id) ? await modelView(model, progress, shape) : null)
@@ -1459,7 +1467,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const meshyTools = meshyModels && modelRecords ? {
     // The thread's own working folder, as Files and the terminal find it.
     folderOf: async (threadId: string) => { const found = await files.resolveWorkspace(threadId); return found.ok ? found.value.workingDirectory : null },
-    monthCredits: async (accountId: string) => (await modelRecords.monthCredits()).get(accountId) ?? 0,
+    // This computer's own, and what each paired host holding the account's copy last said it spent.
+    monthCredits: async (accountId: string) => meshySpending ? await meshySpending.monthCredits(accountId) : (await modelRecords.monthCredits()).get(accountId) ?? 0,
     checkPhoto, photoToSend: (root: string, checked: Parameters<typeof photoToSend>[1], path: string) => photoToSend(root, checked, path, redrawPhoto),
     make: (request: Parameters<MeshyModels['make']>[0]) => meshyModels.make(request),
     // The 3D model's line in its thread, by its ID alone; a phone or a host client reads its words.
@@ -1473,9 +1482,10 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     computers: () => desktopHosts.get().hosts.map(host => ({ id: host.id, name: host.name, hostId: host.hostId, connected: host.phase === 'connected' })),
     connections: () => hostRouter.remoteConnections(),
     changed: () => { windows.sendToMain(PLUGINS_COPIES_CHANGED, null) },
-    log: event => logOperational(event),
+    // A host that has just agreed on its copies may hold one it did not have before, so it is told what each spent.
+    log: event => { logOperational(event); if (event === 'plugin-account-copies-reconciled') meshySpending?.tellAll() },
   }) : undefined
-  const stopFollowingConnections = pluginCopySync ? hostRouter.subscribeConnected(connection => { pluginCopySync.connected(connection) }) : undefined
+  const stopFollowingConnections = pluginCopySync ? hostRouter.subscribeConnected(connection => { pluginCopySync.connected(connection); meshySpending?.connected(connection) }) : undefined
   // A host connecting, leaving or being saved changes what the page shows of its copies, and may be the first time a
   // host just added can be sent them.
   const stopFollowingHosts = pluginCopySync ? desktopHosts.subscribe(() => { pluginCopySync.computersChanged() }) : undefined
@@ -2841,7 +2851,19 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
           const account = (await pluginAccounts?.list().catch(() => []) ?? []).find(entry => entry.id === request.id)
           return account ? bridgeStatus(account, mailOptions) : 'unknown'
         },
-        meshyCredits: async () => Object.fromEntries(await modelRecords?.monthCredits() ?? new Map()),
+        // Each Meshy account's credits this month here, and across this computer and the hosts that said what they
+        // spent of it, which Settings names (Zach's pick A, the tag prototype/plugin-meshy).
+        meshyCredits: async () => {
+          const here = await modelRecords?.monthCredits() ?? new Map<string, number>()
+          const names = new Map(desktopHosts.get().hosts.flatMap(host => host.hostId ? [[host.hostId, host.name] as const] : []))
+          // Every Meshy account here, and every account this computer's 3D models were counted for, one removed since among them.
+          const ids = new Set([...(await pluginAccounts?.list() ?? []).filter(account => account.plugin === 'meshy').map(account => account.id), ...here.keys()])
+          return Object.fromEntries(await Promise.all([...ids].map(async id => [id, {
+            here: here.get(id) ?? 0,
+            credits: await meshySpending?.monthCredits(id).catch(() => undefined) ?? here.get(id) ?? 0,
+            across: (await meshySpending?.reportedBy(id).catch(() => []) ?? []).flatMap(hostId => { const name = names.get(hostId); return name ? [name] : [] }),
+          }] as const)))
+        },
         model3d: async id => modelViews ? await modelViewOf(modelViews, id) : null,
         model3dBytes: async request => modelViews ? await modelBytes(modelViews, request) : null,
         // This computer's own threads' 3D models: a thread on a paired host names none here (ticket 6 is the host's).
@@ -3059,6 +3081,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         cleanupPlugins?.()
         stopFollowingCopies()
         pluginCopySync?.close()
+        meshySpending?.close()
         checkpointIntegration.dispose()
         cleanupRequestDrafts()
         cleanupFiles()

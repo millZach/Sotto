@@ -1085,9 +1085,20 @@ it('keeps Ask before each 3D model and the monthly credit limit on the Meshy acc
 
 it('says how many credits the Meshy account’s 3D models took this month, against its limit', async () => {
   // Zach's pick A on November 15, 2026 (the tag prototype/plugin-meshy): the month's credits sit with the limit.
-  await act(async () => { render(<PluginsSettings bridge={vercelBridge([studio], { meshyCredits: async () => ({ [studio.id]: 120 }) })} />) })
+  await act(async () => { render(<PluginsSettings bridge={vercelBridge([studio], { meshyCredits: async () => ({ [studio.id]: { here: 120, credits: 120, across: [] } }) })} />) })
   await act(async () => { fireEvent.click(meshyRow()) })
   expect(screen.getByRole('region', { name: 'What it spends' })).toHaveTextContent('Credits this month: 120 of 1,000.')
+})
+
+it('says the month’s credits are shared across this computer and the hosts that said what they spent', async () => {
+  // Zach's pick A (the tag prototype/plugin-meshy): one limit wherever the account is, and the line names where (ADR-0205).
+  await act(async () => { render(<PluginsSettings bridge={vercelBridge([studio], { meshyCredits: async () => ({ [studio.id]: { here: 120, credits: 300, across: ['forge'] } }) })} />) })
+  await act(async () => { fireEvent.click(meshyRow()) })
+  expect(screen.getByRole('region', { name: 'What it spends' })).toHaveTextContent('Credits this month: 300 of 1,000, across this computer and forge.')
+  cleanup()
+  await act(async () => { render(<PluginsSettings bridge={vercelBridge([studio], { meshyCredits: async () => ({ [studio.id]: { here: 0, credits: 450, across: ['forge', 'studio-mac'] } }) })} />) })
+  await act(async () => { fireEvent.click(meshyRow()) })
+  expect(screen.getByRole('region', { name: 'What it spends' })).toHaveTextContent('Credits this month: 450 of 1,000, across this computer, forge, and studio-mac.')
 })
 
 it('saves the newest monthly limit when an older save answers late, and does not put the older figure back', async () => {

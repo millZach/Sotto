@@ -167,6 +167,9 @@ describe('remote command allow-list', () => {
       'plugin-account-copy', 'plugin-account-copy-remove', 'plugin-account-copies',
       // Who the host's own gh is signed in as (ADR-0205), a read for a recorded desktop's Plugins page: a name, never a token.
       'plugin-github-sign-in',
+      // Shared spending (ADR-0205): a recorded desktop's count of its Meshy accounts' credits, kept for the copies it
+      // sent, answered with the host's own count. Counts and account IDs, never a secret, and it grants nothing.
+      'plugin-meshy-spending',
       // A host thread's delegations and a delegated thread's newest brief, reads for a recorded desktop's window on a
       // listener that offers delegation-views (#1310), never a reply and never a grant.
       'delegation-views', 'delegation-brief',

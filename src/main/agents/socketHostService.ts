@@ -53,7 +53,7 @@ import type { HostUpdateStep } from '../../shared/hostUpdates'
 import { projectOriginsSchema, projectSetupResultSchema, type ProjectOrigins, type ProjectSetupRequest, type ProjectSetupResult } from '../../shared/workerMachine'
 import type { NextPromptEntry } from '../../shared/nextPrompt'
 import { desktopDefaultsReceiptSchema, type DesktopDefaultsInput, type DesktopDefaultsReceipt } from '../../shared/desktopDefaults'
-import { heldPluginAccountCopiesSchema, pluginAccountCopyReceiptSchema, pluginAccountCopyRemovedSchema, type HeldPluginAccountCopy, type PluginAccountCopy, type PluginAccountCopyReceipt, type PluginAccountCopyRemoved } from '../../shared/pluginAccountCopies'
+import { heldPluginAccountCopiesSchema, pluginAccountCopyReceiptSchema, pluginAccountCopyRemovedSchema, type HeldPluginAccountCopy, type PluginAccountCopy, type PluginAccountCopyReceipt, type PluginAccountCopyRemoved, spendingReportsSchema, type SpendingReport } from '../../shared/pluginAccountCopies'
 import { gitHubSignInSchema, type GitHubSignIn } from '../../shared/plugins'
 import type { DelegationRelayAsk, DelegationRemoteAsk, RelayedReply } from '../../shared/delegationRelay'
 import type { TellWatcherAnswer, WatcherTellPush } from '../../shared/tellWatcher'
@@ -267,6 +267,7 @@ export class SocketHostService implements HostService {
   private readonly nextPromptEntries = new Map<string, NextPromptEntry>()
   private readonly nextPromptListeners = new Set<(entry: NextPromptEntry) => void>()
   private readonly checkListeners = new Set<() => void>()
+  private readonly spendingListeners = new Set<(reports?: readonly SpendingReport[]) => void>()
   private readonly relayListeners = new Set<(askId: string, ask: DelegationRelayAsk) => void>()
   /** Asks that came before anything listened, as when a host reads its relayed delegations again during this hello (#1316). */
   private readonly heldAsks: { readonly askId: string; readonly ask: DelegationRelayAsk }[] = []
@@ -435,7 +436,7 @@ export class SocketHostService implements HostService {
       // This connection holds no shell push's thread records yet, so the host's first push lists every one (#996).
       // Nor any push's parts, so its first push keeps none (ADR-0028, November 10 amendment).
       this.pushedThreads = createThreadReassembly(); this.pushedParts = null
-      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'host-update', 'activity-bodies', 'changed-thread-records', 'kept-parts', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads', 'watcher-tell', 'watcher-ready', 'watcher-progress'] : [], ...this.options.crossMachineEnabled === true ? ['delegation-views', 'check-queue-views'] : [], ...this.options.pairedHostBrowser === true ? ['browser'] : [], ...this.options.nextPromptsWanted ? ['next-prompts'] : [], ...this.options.productEventAnswer ? ['product-events'] : [], ...this.relays ? ['delegation-relay', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts'] : []] as const).filter(feature => health.features.includes(feature))
+      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'host-update', 'activity-bodies', 'changed-thread-records', 'kept-parts', 'plugin-meshy-spending', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads', 'watcher-tell', 'watcher-ready', 'watcher-progress'] : [], ...this.options.crossMachineEnabled === true ? ['delegation-views', 'check-queue-views'] : [], ...this.options.pairedHostBrowser === true ? ['browser'] : [], ...this.options.nextPromptsWanted ? ['next-prompts'] : [], ...this.options.productEventAnswer ? ['product-events'] : [], ...this.relays ? ['delegation-relay', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts'] : []] as const).filter(feature => health.features.includes(feature))
       const accepts = { accepts: [...accepted] }
       const hello = this.read(hostHelloSchema, await this.call({ op: 'hello', afterSeq: this.catchesUp ? this.latestSeq : NO_EVENTS_AFTER, ...accepts }))
       if (hello.hostId !== session.hostId) throw new HostConnectionError(CONNECT_FAILURES.identityChangedConnect(), 'unauthenticated')
@@ -558,6 +559,8 @@ export class SocketHostService implements HostService {
         else if (message.event === 'host-update-step') { for (const listener of this.updateSteps) listener(message.step) }
         else if (message.event === 'delegations-changed') { if (this.supportsDelegationViews) this.delegationsChanged({ threadIds: message.threadIds }) }
         // Pushed only to a desktop whose hello accepted `check-queue-views` (#1312), so only where Work across machines is on.
+        // Pushed only to a desktop whose hello accepted `plugin-meshy-spending`: what the host's own threads spent of its copies.
+        else if (message.event === 'plugin-meshy-spending') { for (const listener of [...this.spendingListeners]) { try { listener(message.reports) } catch { /* A listener's failure is its own. */ } } }
         else if (message.event === 'check-queue') { if (this.options.crossMachineEnabled === true) { this.checks = message.checks; this.checksChanged() } }
         // Pushed only to a desktop whose hello accepted `next-prompts` and that said it wants them (ADR-0173).
         else if (message.event === 'next-prompts') {
@@ -1766,6 +1769,22 @@ export class SocketHostService implements HostService {
   subscribeDelegationRemoteNews(listener: (caller: string, news: DelegationNews, replies: readonly RelayedReply[]) => void): () => void {
     this.remoteNewsListeners.add(listener)
     return () => { this.remoteNewsListeners.delete(listener) }
+  }
+  /**
+   * The host lists `plugin-meshy-spending` (ADR-0205): one monthly limit for a Meshy account wherever it is. In its
+   * health for a host being added, as account copies are: the host reads its record of desktops again before it
+   * answers, and an answer is the host saying this desktop may.
+   */
+  get supportsPluginMeshySpending(): boolean { return this.features.includes('plugin-meshy-spending') || this.listed.includes('plugin-meshy-spending') }
+  /** Tells the host what its copies' accounts spent everywhere but there this month, and reads what they spent there. */
+  async sharePluginMeshySpending(reports: readonly SpendingReport[]): Promise<SpendingReport[]> {
+    if (!this.supportsPluginMeshySpending) this.offers('plugin-meshy-spending')
+    return this.read(spendingReportsSchema, await this.call({ op: 'plugin-meshy-spending', reports: [...reports] }, undefined, undefined, 10000))
+  }
+  /** Hears the host push what its own threads spent of this desktop's copies. Returns the way to stop. */
+  subscribePluginMeshySpending(listener: (reports?: readonly SpendingReport[]) => void): () => void {
+    this.spendingListeners.add(listener)
+    return () => { this.spendingListeners.delete(listener) }
   }
   /** Hears the host name threads whose delegations changed, and this connection closing. Returns the way to stop. */
   subscribeDelegationViews(listener: (change: DelegationViewsChange) => void): () => void {

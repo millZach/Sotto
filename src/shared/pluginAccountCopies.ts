@@ -83,3 +83,29 @@ export interface PluginAccountCopyStore {
   /** A desktop was revoked: every copy it sent is deleted, with its secret. */
   forgetDesktop(clientId: string): Promise<void>
 }
+
+/**
+ * Shared spending (`plugin-meshy-spending`, ADR-0205): one monthly limit for a Meshy account wherever it is. While a
+ * desktop and a host holding its copy are connected, each tells the other what the account spent this month by its
+ * own count, on connecting, on each change and when the month turns, and each keeps what it last heard. A desktop
+ * tells a host its own credits and every other host's; a host tells only its own. The month is the sender's, by its
+ * own clock (`YYYY-MM`), and a report for another month than the reader's counts for nothing.
+ */
+export const PLUGIN_MESHY_SPENDING_FEATURE = 'plugin-meshy-spending'
+/** The most credits one report may say: a limit can be no higher, and a count far past it is no count. */
+export const SPENDING_CREDITS_MAX = 100_000_000
+export const spendingReportSchema = z.object({
+  accountId: z.uuid(), month: z.string().regex(/^\d{4}-(?:0[1-9]|1[0-2])$/u), credits: z.number().int().min(0).max(SPENDING_CREDITS_MAX),
+}).strict()
+export type SpendingReport = z.infer<typeof spendingReportSchema>
+export const spendingReportsSchema = z.array(spendingReportSchema).max(PLUGIN_ACCOUNTS_MAX)
+
+/** A host's side of shared spending: what one desktop said its copies spent, and what this host's own threads spent of them. */
+export interface PluginSpendingShare {
+  /** Keeps what a desktop said of the copies it sent, and answers with this host's own credits for each of them. */
+  share(reports: readonly SpendingReport[], clientId: string): Promise<SpendingReport[]>
+  /** This host's own credits this month for each copy a desktop sent, for a push. */
+  own(clientId: string): Promise<SpendingReport[]>
+  /** Hears this host's own spending change, or the month turn. Returns the way to stop. */
+  subscribe(listener: () => void): () => void
+}
