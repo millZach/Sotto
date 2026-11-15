@@ -1,10 +1,11 @@
 /**
- * The turnable view of a 3D model (the Meshy plan's ticket 4; Sol on the branch, finding 4), with three.js
- * standing in, since jsdom has no WebGL: a view nobody can see draws nothing until it can be seen, and a closed one
- * gives its graphics context back.
+ * The turnable view of a 3D model (the Meshy plan's ticket 4; Sol on the branch, findings 4 and 7), with three.js
+ * standing in, since jsdom has no WebGL: a view nobody can see draws nothing until it can be seen, a closed one gives
+ * its graphics context back, and where the model faces is said once it stops turning by itself.
  */
 import React from 'react'
 import { act, cleanup, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import ModelView from '../../../../src/renderer/src/agents/ModelView'
 
@@ -68,4 +69,19 @@ it('draws nothing while it cannot be seen, draws again once it can, and gives it
   expect(gl.disposed).toBe(1)
   expect(gl.lost).toBe(1)
   expect(frames).toHaveLength(0)
+})
+
+it('says where the model faces once it stops turning by itself', async () => {
+  await view()
+  const stage = screen.getByRole('slider')
+  expect(stage).toHaveAttribute('aria-valuenow', '0')
+  // A second of turning by itself: 15 degrees, at one whole turn in 24 seconds.
+  tick(0)
+  tick(1_000)
+  await userEvent.click(screen.getByRole('button', { name: 'Stop turning' }))
+  // About 15: the real time between frames counts too.
+  const degrees = Number(stage.getAttribute('aria-valuenow'))
+  expect(degrees).toBeGreaterThanOrEqual(15)
+  expect(degrees).toBeLessThan(25)
+  expect(stage).toHaveAttribute('aria-valuetext', `Turned ${degrees} degrees from the front`)
 })

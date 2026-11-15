@@ -52,7 +52,12 @@ export default function ModelView({ modelId, part, name, reduced, onClose, onUna
   unavailable.current = onUnavailable
 
   useEffect(() => { host.current?.focus() }, [])
-  useEffect(() => { turn.current.auto = turning && !reduced && !turn.current.touched }, [turning, reduced])
+  // Turning by itself moves the model without a word to a screen reader, so where it faces is said once it stops.
+  useEffect(() => {
+    const held = turn.current
+    held.auto = turning && !reduced && !held.touched
+    if (!held.auto) setDegrees(degreesOf(held.yaw))
+  }, [turning, reduced])
 
   useEffect(() => {
     const element = host.current
