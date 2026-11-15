@@ -44,7 +44,8 @@ function hostViews() {
 function models(connections: () => DesktopHostConnection[], router?: DesktopHostRouter) {
   const changed = vi.fn(), removed = vi.fn()
   const made = new HostModels3d({ connections, localHostId: () => undefined, changed, removed,
-    subscribeConnected: listener => router?.subscribeConnected(listener) ?? (() => undefined) })
+    subscribeConnected: listener => router?.subscribeConnected(listener) ?? (() => undefined),
+    subscribeRemoved: listener => router?.subscribeRemoved(listener) ?? (() => undefined) })
   return { made, changed, removed }
 }
 
@@ -86,5 +87,17 @@ describe('a host’s 3D models kept on the desktop', () => {
     host.tell({ changed: { threadId: 'thread-1', view: { ...VIEW, credits: 40 } } })
     expect(removed).toHaveBeenCalledWith([KEY])
     expect(changed).not.toHaveBeenCalled()
+  })
+
+  it('stops hearing a host the router lets go, and drops what it kept of it', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState)
+    const host = hostViews()
+    router.add(forge(host.views, { value: true }))
+    const { made } = models(() => [...router.remoteConnections()], router)
+    await expect(made.view(KEY)).resolves.toMatchObject({ id: KEY })
+    router.remove(FORGE)
+    expect(host.stop).toHaveBeenCalledTimes(1)
+    await expect(made.view(KEY)).resolves.toBeNull()
+    made.close()
   })
 })

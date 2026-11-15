@@ -1461,6 +1461,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   // holds it, and main asks that host over its connection. Its news reaches the window as this computer's own does.
   const hostModels = pluginsEnabled ? new HostModels3d({
     connections: () => hostRouter.remoteConnections(), subscribeConnected: listener => hostRouter.subscribeConnected(listener),
+    subscribeRemoved: listener => hostRouter.subscribeRemoved(listener),
     localHostId: () => agentControl.hostId(),
     changed: view => { windows.sendToMain(PLUGINS_MODEL_3D_CHANGED, view) },
     removed: keys => { windows.sendToMain(PLUGINS_MODELS_3D_REMOVED, keys) },

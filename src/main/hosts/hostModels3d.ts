@@ -24,6 +24,8 @@ export interface HostModels3dOptions {
   readonly connections: () => Iterable<DesktopHostConnection>
   /** Hears each host connection as the router takes it, new or in place of one it had. */
   readonly subscribeConnected: (listener: (connection: DesktopHostConnection) => void) => () => void
+  /** Hears a host the router lets go, as on Disconnect or Forget. */
+  readonly subscribeRemoved: (listener: (hostId: string) => void) => () => void
   /** This computer's own host ID, whose keys name this computer's own 3D models. */
   readonly localHostId: () => string | undefined
   /** Tells the window a host's 3D model changed, by its key. */
@@ -42,9 +44,11 @@ export class HostModels3d {
   private readonly gone = new Set<string>()
   private readonly heard = new Map<string, () => void>()
   private readonly stopConnected: () => void
+  private readonly stopRemoved: () => void
 
   constructor(private readonly options: HostModels3dOptions) {
     this.stopConnected = options.subscribeConnected(connection => { this.listen(connection) })
+    this.stopRemoved = options.subscribeRemoved(hostId => { this.forget(hostId) })
     for (const connection of options.connections()) this.listen(connection)
   }
 
@@ -122,8 +126,20 @@ export class HostModels3d {
 
   close(): void {
     this.stopConnected()
+    this.stopRemoved()
     for (const stop of this.heard.values()) stop()
     this.heard.clear()
+  }
+
+  /**
+   * A host the router let go: its connection's news is no longer heard, which lets go of that connection, and the views
+   * kept for it go. Should it be paired and connected again, its 3D models are read afresh.
+   */
+  private forget(hostId: string): void {
+    this.heard.get(hostId)?.()
+    this.heard.delete(hostId)
+    const prefix = hostEntityKey(hostId, '')
+    for (const key of [...this.kept.keys()]) if (key.startsWith(prefix)) this.kept.delete(key)
   }
 
   /** A host record went: its view goes, and no read or change already on its way puts it back. */

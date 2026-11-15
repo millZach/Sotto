@@ -181,7 +181,7 @@ describe('a real headless host’s 3D models on the desktop', () => {
     await socket.connect()
     const connection = { hostId: pairing.hostId, name: 'forge', kind: 'remote', service: socket, available: () => true } as unknown as DesktopHostConnection
     const changed: Model3dView[] = []
-    const models = new HostModels3d({ connections: () => [connection], subscribeConnected: () => () => undefined, localHostId: () => undefined,
+    const models = new HostModels3d({ connections: () => [connection], subscribeConnected: () => () => undefined, subscribeRemoved: () => () => undefined, localHostId: () => undefined,
       changed: item => { changed.push(item) }, removed: () => undefined })
     cleanups.push(async () => { models.close() })
     return { socket, models, glb, thread, key: (id: string) => hostEntityKey(pairing.hostId, id), hostId: pairing.hostId }

@@ -376,6 +376,7 @@ export class DesktopHostRouter {
   private readonly changeListeners = new Set<() => void>()
   /** Told once of each host connection the router takes, new or in place of one it had, as it takes it. */
   private readonly connectedListeners = new Set<(connection: DesktopHostConnection) => void>()
+  private readonly removedListeners = new Set<(hostId: string) => void>()
   private readonly browserListeners = new Set<(change: BrowserEvent) => void>()
   private readonly frameListeners = new Set<(frame: HostBrowserFrame) => void>()
   private readonly detailListeners = new Set<(detail: AgentThreadDetailUpdate) => void>()
@@ -762,6 +763,12 @@ export class DesktopHostRouter {
     this.delegations.removed(hostId)
     this.checksChanged()
     this.letGoNextPrompts(hostId)
+    for (const listener of [...this.removedListeners]) { try { listener(hostId) } catch { /* A listener's failure is its own. */ } }
+  }
+  /** Hears a host the router lets go, by its ID, as on Disconnect or Forget, so what was kept for it can go too. Returns the way to stop. */
+  subscribeRemoved(listener: (hostId: string) => void): () => void {
+    this.removedListeners.add(listener)
+    return () => { this.removedListeners.delete(listener) }
   }
   /**
    * Every connected host's own check queue as it last pushed it (#1312, fourth part), each thread by the window's key for
