@@ -1,5 +1,10 @@
 # A thread makes 3D models with Meshy and asks before each
 
+November 15, 2026 note, from building the first part of the plan's ticket 6 (a paired host's threads make 3D models with the Meshy copy the desktop sent):
+- **Where it runs.** The host runs the same records and adapter over its own data folder, with its own `3d-models.json`, and follows forgetting a thread and Keep local history as the desktop does. Its threads' tool answers as the desktop's does, with the card reaching the user as the host's other plugin changes do.
+- **The photo.** A host has no image library, so it does not draw a photo again. It takes the metadata out of the file, its pixels left byte for byte (Zach's pick on #2497): a JPEG keeps its JFIF header and ICC colour profile and loses every other application segment and its comments; a PNG loses eXIf, tEXt, zTXt, iTXt and tIME; anything after the picture's end is left out. The checks of where the photo is, its pixel count and its fingerprint run first, as on the desktop. The desktop still redraws.
+- **One limit.** The desktop and each host that lists `plugin-meshy-spending` tell each other what the account spent this month, on connecting, on each change and when the month turns, and each keeps what it last heard, in `plugin-meshy-spending.json` in its data folder. A host tells only its own count. The desktop tells each host its own count and every other host's as last heard, so a host's count is its own plus what the desktop said, and the desktop's is its own plus every host's. A report counts only in the reader's own month, so a report from last month counts for nothing once the reader's month turns.
+
 November 15, 2026 note, from building the tool (the plan's ticket 3), with Zach's picks from a card that day:
 - **The month.** It starts on the 1st, by the clock of the computer counting it, rather than on the day Meshy resets the account's own credits.
 - **Formats.** Beyond GLB and USDZ, a thread can ask for STL only, until #2592 brings the texture maps that OBJ and FBX need.
