@@ -169,6 +169,22 @@ export class ModelRecords {
   }
 
   /**
+   * Removes one record, as the user's Remove from 3D models does for one whose files are gone (ADR-0141), and only
+   * while `may` still holds of it. The files it names are not touched. What it cost stays counted, by its account and
+   * when it was asked for alone, as a forgotten thread's does. True when it was removed.
+   */
+  remove(id: string, may: (model: ThreeDModel) => boolean): Promise<boolean> {
+    return this.inTurn(async () => {
+      const records = await this.load()
+      const record = records.find(entry => entry.id === id)
+      if (!record || !may(modelOf(record))) return false
+      const spent = record.credits > 0 ? [{ accountId: record.accountId, askedAt: record.askedAt, credits: record.credits }] : []
+      await this.write(records.filter(entry => entry.id !== id), [...this.spent, ...spent])
+      return true
+    })
+  }
+
+  /**
    * The credits each Meshy account's 3D models took in the month `now` falls in, by this computer's clock: from the
    * 1st (Zach's pick on November 15, 2026). A 3D model counts from when it was asked for, while it is being made too,
    * and less what Meshy gave back; a forgotten thread's count the same.

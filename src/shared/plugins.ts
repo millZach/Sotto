@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { Model3dBytesRequest, Model3dView } from './models3d'
+import type { Model3dBytesRequest, Model3dListed, Model3dRevealRequest, Model3dView } from './models3d'
 
 /**
  * Plugins (ADR-0205): outside services Sotto can connect once, so every thread's agent has one known place to use
@@ -98,6 +98,12 @@ export interface PluginsBridge {
   model3dBytes(request: Model3dBytesRequest): Promise<Uint8Array | null>
   /** Told each 3D model's view whenever it changes. Returns the way to stop. */
   onModel3dChanged(listener: (view: Model3dView) => void): () => void
+  /** Every 3D model being made or done, newest first, or one thread's (the Meshy plan's ticket 5). */
+  models3d(threadId?: string): Promise<Model3dListed[]>
+  /** Removes the record of a 3D model whose files are gone, never a file. False when main found its files still there. */
+  removeModel3d(id: string): Promise<boolean>
+  /** Shows one of a 3D model's files in the folder app, by its name; its GLB when none is named. */
+  revealModel3d(request: Model3dRevealRequest): Promise<boolean>
   /** This computer's projects, for choosing which ones an account is kept to. */
   projects(): Promise<PluginProject[]>
   /** The user's other computers and where each account's copy stands on each. */

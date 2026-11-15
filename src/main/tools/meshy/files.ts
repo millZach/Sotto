@@ -72,3 +72,19 @@ export async function modelFileSizes(model: Place): Promise<ReadonlyMap<string, 
   }))
   return sizes
 }
+
+/**
+ * Where one of the 3D model's files is, to show it in the folder app: its real path, only by a name its record holds,
+ * only while its folder is inside the thread's working folder and the file, through any link, is inside its folder.
+ * Null when it is not its own, is gone, is not a file, or is outside.
+ */
+export async function modelFilePath(model: Place, name: string): Promise<string | null> {
+  if (!model.files.includes(name)) return null
+  const place = await realFolder(model)
+  if (!place) return null
+  try {
+    const real = await realpath(join(place.folder, name))
+    if (!isInside(place.folder, real)) return null
+    return (await stat(real)).isFile() ? real : null
+  } catch { return null }
+}
