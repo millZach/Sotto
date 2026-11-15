@@ -18,7 +18,7 @@ export function namedNodeVersions(workflow: string): string[] {
 // `.node-version` is the one place the suite's Node version is written for a person or a version manager to read.
 // Each workflow names its own, since a job may install Node before it checks the repository out; this holds every one
 // of them to the file, so the counts a local run takes are the counts CI takes (#2339). Anything it cannot read as that
-// exact version fails: a matrix, an expression or another file would let CI move to a Node the budgets skip on.
+// exact version fails: a matrix, an expression or another file would let CI move to a Node whose counts were never read.
 /**
  * The workflows that measure two refs side by side, each on the Node its own `.node-version` names, so a base from
  * before a change of version is measured as it shipped. Their setup-node steps name the output of a step that reads the
