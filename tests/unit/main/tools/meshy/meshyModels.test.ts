@@ -306,6 +306,22 @@ describe('the record of 3D models', () => {
     expect(await readdir(join(root, 'models'))).toContain('Chair.glb')
   })
 
+  it('counts the month’s credits from the 1st by this computer’s clock, per account, a forgotten thread’s too', async () => {
+    let now = new Date(2026, 10, 30, 23, 0).getTime()
+    const { service, records } = models({ now: () => now })
+    await (await service.make(words())).done
+    await (await service.make(words('Lamp', { accountId: 'meshy-2' }))).done
+    expect(Object.fromEntries(await records.monthCredits(new Date(now)))).toEqual({ 'meshy-1': 30, 'meshy-2': 30 })
+    // Forgetting the thread takes its records, never what they cost this month (Bug Bot on #2593, L4).
+    await records.forgetThreads(['thread-1'])
+    expect(await records.list()).toEqual([])
+    expect(Object.fromEntries(await recordsHere().monthCredits(new Date(now)))).toEqual({ 'meshy-1': 30, 'meshy-2': 30 })
+    expect(await readFile(join(data, '3d-models.json'), 'utf8')).not.toContain('thread-1')
+    // The next month starts at nothing.
+    now = new Date(2026, 11, 1, 0, 30).getTime()
+    expect(Object.fromEntries(await records.monthCredits(new Date(now)))).toEqual({})
+  })
+
   it('stops a 3D model whose thread was forgotten while it was being made, writing nothing more', async () => {
     const records = recordsHere()
     const { service } = models({ records, wait: async () => { await records.forgetThreads(['thread-1']) } })

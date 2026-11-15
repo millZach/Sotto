@@ -785,6 +785,14 @@ function AccountSpending({ account, spending, bridge, onAccounts }: {
   // asked for rather than one a save still on its way will replace.
   const asked = useRef(0)
   const askedLimit = useRef<number | null>(null)
+  // The credits this account's 3D models took this month on this computer, read when the row opens; none until then.
+  const [used, setUsed] = useState<number | null>(null)
+  useEffect(() => {
+    if (!bridge) return
+    let live = true
+    void bridge.meshyCredits().then(credits => { if (live) setUsed(credits[account.id] ?? 0) }, () => undefined)
+    return () => { live = false }
+  }, [bridge, account.id])
   // The figure shown follows what is kept, once the newest save has answered.
   useEffect(() => { if (askedLimit.current === null) setLimit(String(spending.monthlyLimit)) }, [spending.monthlyLimit])
   const wanted = /^\d{1,7}$/u.test(limit.trim()) && Number(limit) <= PLUGIN_MONTHLY_LIMIT_MAX ? Number(limit) : null
@@ -801,6 +809,8 @@ function AccountSpending({ account, spending, bridge, onAccounts }: {
     // A limit that could not be saved shows the one kept. A switch that could not be saved leaves a limit being typed alone.
     else { setFailed(true); if (request.monthlyLimit !== undefined) setLimit(String(spending.monthlyLimit)) }
   }
+  const usedCredits = used === null ? null : used.toLocaleString()
+  const limitCredits = spending.monthlyLimit.toLocaleString()
   const saveLimit = (): void => { if (wanted !== null && wanted !== (askedLimit.current ?? spending.monthlyLimit)) void save({ monthlyLimit: wanted }) }
   return <section className="plugin-account__spending" aria-labelledby={headingId}>
     <h4 id={headingId}><Trans>What it spends</Trans></h4>
@@ -812,6 +822,7 @@ function AccountSpending({ account, spending, bridge, onAccounts }: {
       <input className="tt-input plugin-account__limit" inputMode="numeric" autoComplete="off" spellCheck={false} maxLength={7} value={limit} disabled={!bridge}
         onChange={event => setLimit(event.target.value)} onBlur={saveLimit} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); saveLimit() } }} />
     </Field>
+    {usedCredits === null ? null : <p className="tt-paragraph plugin-row__note"><Trans>Credits this month: {usedCredits} of {limitCredits}.</Trans></p>}
     {failed ? <p className="tt-field__error tt-paragraph" role="alert"><Trans>That could not be saved. Nothing was changed. Try again.</Trans></p> : null}
   </section>
 }
@@ -905,14 +916,14 @@ function RecentUse({ name, uses, elsewhere }: {
     comment: t`Posted a comment`, 'deployment-cancel': t`Cancelled a deployment’s build`,
     'issue-open': t`Opened an issue`, 'issue-close': t`Closed an issue`, 'issue-reopen': t`Reopened an issue`,
     'deployment-promote': t`Promoted a deployment to production`, 'deployment-rollback': t`Rolled production back`,
-    'mail-search': t`Searched mail`, 'mail-message': t`Read a message`, 'mail-send': t`Sent an email`,
+    'mail-search': t`Searched mail`, 'mail-message': t`Read a message`, 'mail-send': t`Sent an email`, '3d-model': t`Made a 3D model`,
   }
   // A change that was not made: what the agent asked to do, since nothing was done.
   const asked: Partial<Record<PluginReadKind, string>> = {
     comment: t`Asked to post a comment`, 'deployment-cancel': t`Asked to cancel a deployment’s build`,
     'issue-open': t`Asked to open an issue`, 'issue-close': t`Asked to close an issue`, 'issue-reopen': t`Asked to reopen an issue`,
     'deployment-promote': t`Asked to promote a deployment to production`, 'deployment-rollback': t`Asked to roll production back`,
-    'mail-search': t`Asked to search mail`, 'mail-message': t`Asked to read a message`, 'mail-send': t`Asked to send an email`,
+    'mail-search': t`Asked to search mail`, 'mail-message': t`Asked to read a message`, 'mail-send': t`Asked to send an email`, '3d-model': t`Asked to make a 3D model`,
   }
   // A change asks each time, and so does a thread's first read of a mail account: both can end with the user's no.
   const changed = (use: ShownPluginUse): boolean => use.tool !== 'plugin_read' || use.outcome === 'denied' || use.outcome === 'lapsed'

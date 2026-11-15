@@ -444,6 +444,10 @@ msgstr ""
 msgid "A thread"
 msgstr ""
 
+#: src/main/plugins/changeWords.ts
+msgid "About {credits} credits on the Meshy account {named}; {month} of its {limit} credits used this month."
+msgstr ""
+
 #: src/main/hosts/hostSetup.ts
 msgid "Add {host}"
 msgstr ""
@@ -854,6 +858,10 @@ msgid "Council history could not be read. Its file was kept unchanged. Update So
 msgstr ""
 
 #: src/main/plugins/changeWords.ts
+msgid "Deny"
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
 msgid "Deployment: {id}"
 msgstr ""
 
@@ -1087,6 +1095,18 @@ msgstr ""
 msgid "Local history was off. This Climb's words and temporary evidence were removed. Start a new Climb."
 msgstr ""
 
+#: src/main/plugins/changeWords.ts
+msgid "Make a 3D model with Meshy"
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Make the 3D model {name} with the Meshy account {named}? About {credits} credits."
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Make the model"
+msgstr ""
+
 #: src/main/ownModelServers/ipc.ts
 msgid "Manage your own model servers from the main Sotto window."
 msgstr ""
@@ -1101,6 +1121,10 @@ msgstr ""
 
 #: src/main/memory/ipc.ts
 msgid "Memory is unavailable. Restart Sotto and try again."
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Meshy may use what it is sent, and the 3D models it makes, to train its own models."
 msgstr ""
 
 #: src/main/council/climbService.ts
@@ -1531,6 +1555,14 @@ msgstr ""
 
 #: src/main/plugins/changeWords.ts
 msgid "Send this email from the {plugin} account {named} to {who}?"
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Sends Meshy the photo {photo} from this thread’s folder, redrawn without its location and camera details."
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Sends Meshy these words: “{words}”"
 msgstr ""
 
 #: src/main/omarchy/setup.ts
@@ -2352,6 +2384,10 @@ msgstr ""
 
 #: src/main/themes/openVsx.ts
 msgid "The extension uses a ZIP format Sotto does not read."
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "The files go to {folder} in this thread’s folder."
 msgstr ""
 
 #: src/main/council/councilService.ts

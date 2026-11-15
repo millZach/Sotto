@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { afterEach, expect, it, vi } from 'vitest'
 import { waitFor } from '@testing-library/react'
 import { PluginsSettings } from '../../../../../src/renderer/src/features/settings/PluginsSettings'
-import type { BridgeStatus, GitHubSignIn, PluginAccount, PluginAccountResult, PluginAccountUpdate, PluginCopiesView, PluginCopySet, PluginHostSignIn, PluginProject, PluginsBridge, ShownPluginUse } from '../../../../../src/shared/plugins'
+import type { BridgeStatus, GitHubSignIn, MeshyCredits, PluginAccount, PluginAccountResult, PluginAccountUpdate, PluginCopiesView, PluginCopySet, PluginHostSignIn, PluginProject, PluginsBridge, ShownPluginUse } from '../../../../../src/shared/plugins'
 import { deferred } from '../../../../fixtures/deferred'
 
 afterEach(cleanup)
@@ -31,6 +31,7 @@ const noAccounts = {
   updateAccount: async (): Promise<PluginAccountResult> => ({ ok: false, problem: 'store' }),
   trustCertificate: async (): Promise<PluginAccountResult> => ({ ok: false, problem: 'store' }),
   bridgeStatus: async (): Promise<BridgeStatus> => 'running',
+  meshyCredits: async (): Promise<MeshyCredits> => ({}),
   projects: async (): Promise<PluginProject[]> => [],
   ...noCopies,
 }
@@ -1073,6 +1074,13 @@ it('keeps Ask before each 3D model and the monthly credit limit on the Meshy acc
   expect(updateAccount).toHaveBeenLastCalledWith({ id: studio.id, monthlyLimit: 300 })
   // No other plugin's account has these.
   expect(screen.queryAllByRole('region', { name: 'What it spends' })).toHaveLength(1)
+})
+
+it('says how many credits the Meshy account’s 3D models took this month, against its limit', async () => {
+  // Zach's pick A on November 15, 2026 (the tag prototype/plugin-meshy): the month's credits sit with the limit.
+  await act(async () => { render(<PluginsSettings bridge={vercelBridge([studio], { meshyCredits: async () => ({ [studio.id]: 120 }) })} />) })
+  await act(async () => { fireEvent.click(meshyRow()) })
+  expect(screen.getByRole('region', { name: 'What it spends' })).toHaveTextContent('Credits this month: 120 of 1,000.')
 })
 
 it('saves the newest monthly limit when an older save answers late, and does not put the older figure back', async () => {

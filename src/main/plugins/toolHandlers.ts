@@ -7,6 +7,7 @@ import { mailServersOf } from './mail/accounts'
 import { openMail, searchMail, type MailOptions, type MailServer, type MailSignIn } from './mail/read'
 import { sendMail } from './mail/send'
 import type { PluginChangeAnswer, PluginChangeWait } from './pendingChanges'
+import type { PluginMeshyHandlers } from './meshy/tool'
 import type { PluginToolHandlers, SecretTrouble } from './pluginTools'
 import { cancelVercelDeployment, describeVercelDeployment, moveVercelProduction } from './vercel/changes'
 import { readVercel, type VercelFetch } from './vercel/read'
@@ -47,6 +48,11 @@ export interface PluginToolWiring {
     /** Whether this computer keeps Proton Mail accounts, as the desktop does and a paired host never does. */
     readonly keepsBridgeAccounts?: boolean
   }
+  /**
+   * Making 3D models with Meshy, on a computer whose threads can, except for whether a key can be read, which is asked
+   * of the accounts here. Left out, no thread here can make one.
+   */
+  readonly meshy?: Omit<PluginMeshyHandlers, 'keyTrouble'>
 }
 
 /**
@@ -86,6 +92,7 @@ export function pluginToolHandlers(wiring: PluginToolWiring): PluginToolHandlers
     return 'reason' in read ? read.reason : { server: servers.read, sendServer: servers.send, signIn: { address: account.address, password: read.secret } }
   }
   return {
+    ...(wiring.meshy ? { meshy: { ...wiring.meshy, keyTrouble: account => { const held = secretOf(account.id); return 'secret' in held ? null : held.reason } } } : {}),
     ...(mail ? { mail: {
       granted: (threadId, accountId) => mail.grants.has(threadId, accountId),
       copyOf: accountId => mail.grants.generation(accountId),

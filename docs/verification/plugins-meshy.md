@@ -48,9 +48,18 @@ new group on the page.
 - `tests/unit/renderer/features/settings/pluginsSettings.test.tsx`: the group, the form, the switch, and the limit
   saved on Enter or refused when it is not a number.
 
+## Ticket 3, November 15, 2026
+
+- `tests/e2e/plugins-meshy.spec.ts` now also finds **Credits this month: 0 of 1,000.** under the limit in the built
+  app, with nothing overflowing at 1600x1000, 1280x800 and 820x560 in dark and light. The screenshots above were not
+  taken again.
+- `tests/unit/main/plugins/pluginMeshyTool.test.ts`: `make_3d_model` asks on the card, makes nothing on a no, refuses
+  one past the limit before asking and again after the yes, skips the card with asking off, sends a photo redrawn and
+  refuses one outside the thread's folder, of another kind or changed since, and answers with the files' paths.
+
 ## Not yet
 
-- Making 3D models, this month's credits, and one limit shared across computers come with the plan's later tickets.
-  Until then nothing spends: a copy on a paired computer carries the switch and the limit as they were when it was
-  copied, and is not sent again when only they change.
+- Drawing a 3D model in the thread, the 3D models page, a host's threads and one limit shared across computers come
+  with the plan's tickets 4 to 7. A copy on a paired computer carries the switch and the limit as they were when it
+  was copied.
 - A real Meshy key. The check was run against the stand-in only.

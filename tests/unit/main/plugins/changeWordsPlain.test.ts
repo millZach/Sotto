@@ -36,6 +36,8 @@ const CHANGES: readonly PluginChange[] = [
   { kind: 'mail-send', ...SEND },
   { kind: 'mail-send', ...SEND, to: ['ann@example.com'], cc: [], bcc: [] },
   { kind: 'mail-send', ...SEND, to: ['ann@example.com'], cc: ['cara@example.com'], bcc: [] },
+  { kind: 'meshy-model', account: 'Studio', name: 'Oak barrel', words: 'An oak barrel with iron hoops', credits: 30, monthCredits: 140, monthlyLimit: 1000, folder: 'models' },
+  { kind: 'meshy-model', account: 'Studio', name: 'Fox', photo: 'art/fox.jpg', credits: 30, monthCredits: 0, monthlyLimit: 1000, folder: 'art/3d' },
 ] as PluginChange[]
 
 it('words a change’s card on a host as the desktop words it in English, sentence for sentence', () => {

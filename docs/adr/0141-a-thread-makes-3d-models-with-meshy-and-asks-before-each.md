@@ -1,5 +1,13 @@
 # A thread makes 3D models with Meshy and asks before each
 
+November 15, 2026 note, from building the tool (the plan's ticket 3), with Zach's picks from a card that day:
+- **The month.** It starts on the 1st, by the clock of the computer counting it, rather than on the day Meshy resets the account's own credits.
+- **Formats.** Beyond GLB and USDZ, a thread can ask for STL only, until #2592 brings the texture maps that OBJ and FBX need.
+- **The tool.** `make_3d_model` is a plugin change on `sotto_plugins` and asks on the plugin change card. The card names a photo by its path in the thread's folder; it does not draw the photo.
+- **The count.** A 3D model's credits count from the moment it is asked for. Forgetting a thread keeps what its 3D models cost this month, by account and date alone, so the month's count never drops.
+- **Two checks.** The limit is checked before the card and again after the yes. A photo is checked when asked for and again right before it is redrawn and sent.
+- **The answer.** The tool waits for the 3D model for as long as its client waits, and then says where its files will be.
+
 November 15, 2026 note, from building the adapter (the plan's ticket 2): the record of 3D models is its own small file in Sotto's data folder, `3d-models.json`, rather than a table beside the visuals. Only the words sent follow Keep local history: with it off, no record holds them, and turning it off takes out those already kept. The rest of a record stays whichever way it is set, since it names nothing the thread's folder does not already show, and it is what lets a 3D model still being made when Sotto quits be fetched on start rather than paid for and never seen, and what the month's credits are counted from. The thread store keeps history off in memory only, so a table there would lose both. Forgetting a thread still removes its records, and never its files. A task Sotto was asking Meshy for when it stopped is never asked for again, since Meshy may have taken and charged it; that 3D model is lost.
 
 November 15, 2026 amendment, from Zach's answers on cards (the mock-up is the tag `prototype/plugin-meshy`): **Ask before each 3D model**, the monthly credit limit, this month's credits and the line on Meshy's training terms live on the Meshy account in Settings › Plugins, one set per account. There is no Settings › 3D models section; the page and the Tools surface keep the name **3D models**. And 3D models ride on the `plugins` Owl feature rather than a `meshy-3d-models` feature of their own, so they reach stable when Plugins does. The Meshy row sits under a group Zach named **3D, sound and video**.

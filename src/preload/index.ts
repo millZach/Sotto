@@ -10,7 +10,7 @@ import { LOCAL_APPS_CHANGED, LOCAL_APPS_GET, type LocalAppsState } from '../shar
 import {
   mailGrantsOfSchema, mailGrantStopSchema, PLUGINS_MAIL_GRANT_STOP, PLUGINS_MAIL_GRANTS, PLUGINS_MAIL_GRANTS_CHANGED, threadMailGrantsSchema,
   gitHubSignInSchema, pluginHostSignInsSchema, PLUGINS_GITHUB_SIGN_IN_ELSEWHERE, pluginCopiesViewSchema, pluginCopyNewSetSchema, pluginCopySetSchema, PLUGINS_COPIES, PLUGINS_COPIES_CHANGED, PLUGINS_COPY_NEW_SET, PLUGINS_COPY_SET, pluginAccountAddSchema, pluginAccountRemoveSchema, pluginAccountReplaceSchema, pluginAccountResultSchema, pluginAccountsSchema, pluginAccountUpdateSchema, pluginProjectsSchema,
-  PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNT_TRUST, PLUGINS_ACCOUNT_UPDATE, PLUGINS_ACCOUNTS, PLUGINS_BRIDGE_STATUS, bridgeStatusSchema, PLUGINS_GITHUB_SIGN_IN, PLUGINS_PROJECTS, PLUGINS_RECENT_USE, shownPluginUsesSchema, type PluginsBridge,
+  PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNT_TRUST, PLUGINS_ACCOUNT_UPDATE, PLUGINS_ACCOUNTS, PLUGINS_BRIDGE_STATUS, bridgeStatusSchema, PLUGINS_MESHY_CREDITS, meshyCreditsSchema, PLUGINS_GITHUB_SIGN_IN, PLUGINS_PROJECTS, PLUGINS_RECENT_USE, shownPluginUsesSchema, type PluginsBridge,
 } from '../shared/plugins'
 import { TEAMS_CHANGED, TEAMS_COMMAND, TEAMS_GET, TEAMS_OWN_DESK, teamsCommandSchema, type TeamDesk, type TeamsBridge, type TeamsCommandResult, type TeamsState } from '../shared/teams'
 import { mapHostReferences, parseHostEntityKey } from '../shared/clientIdentity'
@@ -684,6 +684,7 @@ export function createSottoBridge(
       updateAccount: async request => invokeParsed(renderer, PLUGINS_ACCOUNT_UPDATE, pluginAccountResultSchema, pluginAccountUpdateSchema.parse(request)),
       trustCertificate: async request => invokeParsed(renderer, PLUGINS_ACCOUNT_TRUST, pluginAccountResultSchema, pluginAccountRemoveSchema.parse(request)),
       bridgeStatus: async request => invokeParsed(renderer, PLUGINS_BRIDGE_STATUS, bridgeStatusSchema, pluginAccountRemoveSchema.parse(request)),
+      meshyCredits: async () => invokeParsed(renderer, PLUGINS_MESHY_CREDITS, meshyCreditsSchema),
       projects: async () => invokeParsed(renderer, PLUGINS_PROJECTS, pluginProjectsSchema),
       copies: async () => invokeParsed(renderer, PLUGINS_COPIES, pluginCopiesViewSchema),
       setCopy: async request => invokeParsed(renderer, PLUGINS_COPY_SET, pluginCopiesViewSchema, pluginCopySetSchema.parse(request)),

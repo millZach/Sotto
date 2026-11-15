@@ -89,6 +89,8 @@ export interface PluginsBridge {
   trustCertificate(request: PluginAccountRemove): Promise<PluginAccountResult>
   /** Where Proton Mail Bridge stands for an account, looked at without signing in. */
   bridgeStatus(request: PluginAccountRemove): Promise<BridgeStatus>
+  /** The credits each Meshy account's 3D models took this month. */
+  meshyCredits(): Promise<MeshyCredits>
   /** This computer's projects, for choosing which ones an account is kept to. */
   projects(): Promise<PluginProject[]>
   /** The user's other computers and where each account's copy stands on each. */
@@ -121,7 +123,12 @@ export const VERCEL_PROMOTE_TOOL = 'vercel_promote_deployment'
 export const VERCEL_ROLLBACK_TOOL = 'vercel_rollback_production'
 /** Sends one email from a mail account. It asks every time, and no switch turns that off (decision 6). */
 export const MAIL_SEND_TOOL = 'mail_send'
-export const PLUGIN_CHANGE_TOOLS = [GITHUB_COMMENT_TOOL, GITHUB_OPEN_ISSUE_TOOL, GITHUB_CLOSE_ISSUE_TOOL, GITHUB_REOPEN_ISSUE_TOOL, VERCEL_CANCEL_TOOL, VERCEL_PROMOTE_TOOL, VERCEL_ROLLBACK_TOOL, MAIL_SEND_TOOL] as const
+/**
+ * Makes one 3D model with Meshy (ADR-0141). It asks first, unless the user turned off the account's Ask before each 3D
+ * model, and never past the month's credit limit.
+ */
+export const MAKE_3D_MODEL_TOOL = 'make_3d_model'
+export const PLUGIN_CHANGE_TOOLS = [GITHUB_COMMENT_TOOL, GITHUB_OPEN_ISSUE_TOOL, GITHUB_CLOSE_ISSUE_TOOL, GITHUB_REOPEN_ISSUE_TOOL, VERCEL_CANCEL_TOOL, VERCEL_PROMOTE_TOOL, VERCEL_ROLLBACK_TOOL, MAIL_SEND_TOOL, MAKE_3D_MODEL_TOOL] as const
 export type PluginChangeTool = typeof PLUGIN_CHANGE_TOOLS[number]
 
 export const PLUGINS_RECENT_USE = 'sotto:plugins:recent-use'
@@ -132,10 +139,10 @@ export const PLUGINS_RECENT_USE = 'sotto:plugins:recent-use'
  * (ADR-0205, decision 10). Those from `comment` on are changes: a comment posted, an issue opened, closed or
  * reopened, a deployment's build cancelled, a deployment promoted to production, and production rolled back. Then
  * two reads of a mail account, a search and a message opened, and an email sent, which is a change. Never who an
- * email went to or what it said.
+ * email went to or what it said. Last, a 3D model made with Meshy: never its words or its photo.
  */
 export const PLUGIN_READ_KINDS = ['issues', 'pull-requests', 'repository', 'commits', 'checks', 'releases', 'search', 'account', 'deployments', 'projects', 'domains', 'logs', 'other',
-  'comment', 'deployment-cancel', 'issue-open', 'issue-close', 'issue-reopen', 'deployment-promote', 'deployment-rollback', 'mail-search', 'mail-message', 'mail-send'] as const
+  'comment', 'deployment-cancel', 'issue-open', 'issue-close', 'issue-reopen', 'deployment-promote', 'deployment-rollback', 'mail-search', 'mail-message', 'mail-send', '3d-model'] as const
 export type PluginReadKind = typeof PLUGIN_READ_KINDS[number]
 
 /**
@@ -183,6 +190,13 @@ export const PLUGINS_ACCOUNT_REMOVE = 'sotto:plugins:account-remove'
 export const PLUGINS_ACCOUNT_UPDATE = 'sotto:plugins:account-update'
 export const PLUGINS_ACCOUNT_TRUST = 'sotto:plugins:account-trust'
 export const PLUGINS_BRIDGE_STATUS = 'sotto:plugins:bridge-status'
+/**
+ * The credits each Meshy account's 3D models took this month on this computer, by account ID (ADR-0141): the month
+ * starts on the 1st, by this computer's clock (Zach's pick on November 15, 2026).
+ */
+export const PLUGINS_MESHY_CREDITS = 'sotto:plugins:meshy-credits'
+export const meshyCreditsSchema = z.record(z.uuid(), z.number().int().nonnegative())
+export type MeshyCredits = z.infer<typeof meshyCreditsSchema>
 /**
  * Where Proton Mail Bridge stands for an account on this computer: answering with the certificate kept, not running,
  * showing another certificate, or not known, as for an account that is not Proton Mail's.
@@ -429,4 +443,15 @@ export type PluginChange =
     readonly teamId?: string
     /** What Vercel says of the deployment, read before asking, where it said: none of it is taken on trust for the call. */
     readonly project?: string; readonly target?: string; readonly url?: string; readonly state?: string
+  }
+  | {
+    /**
+     * One 3D model made with Meshy (ADR-0141). The card shows what goes to Meshy, the words or the photo's path in the
+     * thread's folder, says Meshy may train on it, and gives what it costs beside the month's credits so far.
+     */
+    readonly kind: 'meshy-model'; readonly account: string; readonly name: string
+    readonly words?: string; readonly photo?: string
+    readonly credits: number; readonly monthCredits: number; readonly monthlyLimit: number
+    /** The folder the files go into, relative to the thread's folder. */
+    readonly folder: string
   }

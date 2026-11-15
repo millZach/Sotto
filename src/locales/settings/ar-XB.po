@@ -1464,6 +1464,10 @@ msgid "Asked to close an issue"
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Asked to make a 3D model"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Asked to open an issue"
 msgstr ""
 
@@ -2532,6 +2536,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/AppearanceSettings.tsx
 msgid "Creature shown."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Credits this month: {usedCredits} of {limitCredits}."
 msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
@@ -3902,6 +3910,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "macOS’s own Settings chord, from the app menu."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Made a 3D model"
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
