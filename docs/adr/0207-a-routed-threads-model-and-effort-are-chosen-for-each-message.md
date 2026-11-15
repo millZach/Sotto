@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed November 13, 2026, by Drake's picks on question cards. Built on the local branch `feat/model-router`; not yet put to Zach.
+Accepted November 14, 2026, for an Owl feature pull request by the owner. The routing choices were made by Drake on November 13 question cards.
 
 It is an Owl feature (`model-router`, [ADR-0072](0072-sotto-owl-is-a-windows-preview-release-track.md)). The build order and the benchmark are in `docs/plans/model-router.md`.
 
@@ -22,7 +22,7 @@ The guide also prices a change. A new model pays the cache-write price on the wh
 
 **2. Each of the user's messages is classified first.** Before a routed thread's message goes (typed, dictated, from a paired phone, or a queued follow-up when its turn comes), main asks a classifier which model and effort it should run on, then puts the thread on them with the same `configure-thread` a chip press makes, then sends the message. Steers, wake-ups, and Watcher's, delegation's and the Council's sends are never routed.
 
-**3. The classifier is a side call on the user's own Claude Code.** It is the call ADR-0026 describes: no tools, no customisations, no session file, so it can read nothing and do nothing, and the thread's transcript never sees it. It runs on Opus 5.5 at low effort, chosen by benchmark over Haiku and Sonnet at every effort for accuracy and for giving the same answer run to run. Its instruction is Sotto's routing rules followed by the guide in full. It reads the message (to 4,000 characters) and, on a later message, what the thread runs on, the start of the user's previous message and the end of the last reply. Nothing goes to any company but the thread's own provider.
+**3. The classifier is a side call on the user's own Claude Code.** It is the call ADR-0026 describes: no tools, no customisations, no session file, so it can read nothing and do nothing, and the thread's transcript never sees it. It runs on Opus 5.5 at low effort, chosen by benchmark over Haiku and Sonnet at every effort for accuracy and for giving the same answer run to run. Its instruction is Sotto's routing rules and its own summary of the task guidance; no article text is bundled. It reads the message (to 4,000 characters) and, on a later message, what the thread runs on, the start of the user's previous message and the end of the last reply. Nothing goes to any company but the thread's own provider.
 
 **4. It chooses between Haiku, Sonnet, Opus and Fable, and between low, medium, high and xhigh.** Never `max`, never Ultracode, never speed. The models are found in the catalog by their line, not by an id written in the code.
 
@@ -38,7 +38,7 @@ The guide also prices a change. A new model pays the cache-write price on the wh
 
 **10. The reason is kept in memory only.** It is about the user's words, so it never reaches a log, the thread's saved record or the window's startup cache, and a restart drops it. Main keeps the last routing of at most 100 threads, drops a deleted thread's, and logs event names alone.
 
-**11. New threads.** The same switch sits at the foot of the model menu in Settings' **New threads start with** row. Where new threads also start Dynamic, Dynamic wins.
+**11. New threads.** The same switch sits at the foot of the model menu in Settings' **New threads start with** row. Where new threads also start Dynamic, Dynamic wins. A new routed thread waits to start its provider session until its first message has chosen a model, so typing cannot pin it to the default before that pick.
 
 ## Consequences
 
@@ -46,5 +46,5 @@ The guide also prices a change. A new model pays the cache-write price on the wh
 - A thread can change model mid-conversation, which re-reads the conversation at full price and, on a move down, loses the earlier reasoning. The rules keep this rare and **Stay on the first model** turns it off.
 - Stable changes nothing. With the Owl feature off no switch, setting or send path exists, and a saved mark stays whole.
 - A thread on another machine, a delegated thread and Watcher cannot be routed. The iPhone and Android show the model and effort a routed thread runs on, as for any thread.
-- The classifier's instruction carries Anthropic's guide as written. That suits a local build; before this is merged the instruction becomes Sotto's own summary of the guide or a file the user supplies.
+- The pre-PR review replaced the copied guide with Sotto's own task summary. The local benchmark below measured the earlier instruction, so its accuracy and latency figures do not establish the shipping summary's performance. No live provider run was authorized for this landing.
 - The benchmark ranks classifiers on 81 prompts. It does not show that routing beats always using Opus; only use will.
