@@ -73,3 +73,8 @@
 .plugins-computers__list b { font-weight: 600; overflow-wrap: anywhere; }
 .plugins-computers__list span:last-child { color: var(--tt-text-muted); font-size: var(--tt-type-small); overflow-wrap: anywhere; }
 .plugins-computers__list .plugin-row__dot[data-state='signed-in'] { background: var(--tt-success); }
+/* Proton Mail: Bridge's two ports side by side where they fit, and what stands in the way of using Bridge. */
+.plugin-account__ports { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0 12px; }
+.plugin-account__ports .plugin-row__note { grid-column: 1 / -1; margin: 0; }
+.plugin-account__bridge { display: grid; gap: 8px; }
+.plugin-account__warning { margin: 0; color: var(--tt-warning-text); overflow-wrap: anywhere; }

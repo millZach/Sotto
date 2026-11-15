@@ -2,7 +2,7 @@ import { t } from '@lingui/core/macro'
 import { z } from 'zod'
 import {
   gitHubSignInSchema, pluginHostSignInsSchema, PLUGINS_GITHUB_SIGN_IN_ELSEWHERE, type PluginHostSignIn, pluginCopiesViewSchema, pluginCopyNewSetSchema, pluginCopySetSchema, PLUGINS_COPIES, PLUGINS_COPY_NEW_SET, PLUGINS_COPY_SET, pluginAccountAddSchema, pluginAccountRemoveSchema, pluginAccountReplaceSchema, pluginAccountResultSchema, pluginAccountsSchema, pluginAccountUpdateSchema, pluginProjectsSchema,
-  PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNT_UPDATE, PLUGINS_ACCOUNTS, PLUGINS_GITHUB_SIGN_IN, PLUGINS_PROJECTS, PLUGINS_RECENT_USE, shownPluginUsesSchema,
+  PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNT_TRUST, PLUGINS_ACCOUNT_UPDATE, PLUGINS_ACCOUNTS, PLUGINS_BRIDGE_STATUS, PLUGINS_GITHUB_SIGN_IN, PLUGINS_PROJECTS, PLUGINS_RECENT_USE, shownPluginUsesSchema, bridgeStatusSchema, type BridgeStatus,
   mailGrantsOfSchema, mailGrantStopSchema, PLUGINS_MAIL_GRANT_STOP, PLUGINS_MAIL_GRANTS, threadMailGrantsSchema, type MailGrantStop, type ThreadMailGrant,
   type GitHubSignIn, type PluginAccount, type PluginAccountAdd, type PluginAccountRemove, type PluginAccountReplace, type PluginAccountResult, type PluginAccountUpdate, type PluginCopiesView, type PluginCopySet, type PluginProject, type ShownPluginUse,
 } from '../../shared/plugins'
@@ -30,6 +30,10 @@ export interface PluginsIpcHandlers {
   readonly replaceSecret: (request: PluginAccountReplace) => Promise<PluginAccountResult>
   readonly removeAccount: (request: PluginAccountRemove) => Promise<PluginAccountResult>
   readonly updateAccount: (request: PluginAccountUpdate) => Promise<PluginAccountResult>
+  /** Keeps the certificate a Proton Mail account's Bridge shows now, once Bridge takes the saved Bridge password. */
+  readonly trustCertificate: (request: PluginAccountRemove) => Promise<PluginAccountResult>
+  /** Where Proton Mail Bridge stands for an account, looked at without signing in. */
+  readonly bridgeStatus: (request: PluginAccountRemove) => Promise<BridgeStatus>
   readonly projects: () => readonly PluginProject[]
   readonly copies: () => Promise<PluginCopiesView>
   readonly setCopy: (request: PluginCopySet) => Promise<PluginCopiesView>
@@ -114,7 +118,14 @@ export function registerPluginsIpc(ipc: IpcMainAdapter, plugins: PluginsIpcHandl
   change(PLUGINS_ACCOUNT_REPLACE, replaceArguments, request => plugins.replaceSecret(request))
   change(PLUGINS_ACCOUNT_REMOVE, removeArguments, request => plugins.removeAccount(request))
   change(PLUGINS_ACCOUNT_UPDATE, updateArguments, request => plugins.updateAccount(request))
+  change(PLUGINS_ACCOUNT_TRUST, removeArguments, request => plugins.trustCertificate(request))
+  ipc.handle(PLUGINS_BRIDGE_STATUS, async (event, ...args) => {
+    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Open Settings in the main Sotto window.`)
+    const parsed = removeArguments.safeParse(args)
+    if (!parsed.success) throw new Error(t`That could not be done. Nothing was changed.`)
+    return bridgeStatusSchema.parse(await plugins.bridgeStatus(parsed.data[0]))
+  })
   return () => {
-    for (const channel of [PLUGINS_MAIL_GRANTS, PLUGINS_MAIL_GRANT_STOP, PLUGINS_GITHUB_SIGN_IN, PLUGINS_GITHUB_SIGN_IN_ELSEWHERE, PLUGINS_RECENT_USE, PLUGINS_ACCOUNTS, PLUGINS_PROJECTS, PLUGINS_COPIES, PLUGINS_COPY_SET, PLUGINS_COPY_NEW_SET, PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_UPDATE]) ipc.removeHandler(channel)
+    for (const channel of [PLUGINS_MAIL_GRANTS, PLUGINS_MAIL_GRANT_STOP, PLUGINS_GITHUB_SIGN_IN, PLUGINS_GITHUB_SIGN_IN_ELSEWHERE, PLUGINS_RECENT_USE, PLUGINS_ACCOUNTS, PLUGINS_PROJECTS, PLUGINS_COPIES, PLUGINS_COPY_SET, PLUGINS_COPY_NEW_SET, PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_UPDATE, PLUGINS_ACCOUNT_TRUST, PLUGINS_BRIDGE_STATUS]) ipc.removeHandler(channel)
   }
 }

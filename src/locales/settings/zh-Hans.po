@@ -85,6 +85,10 @@ msgstr ""
 msgid "{address}. App password saved {day}."
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "{address}. Bridge password saved {day}."
+msgstr ""
+
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "{awayCount, plural, one {{providers} is not connected, so {movedCount, plural, one {# role starts new work on its next default} other {# roles start new work on their next default}} until it connects. Nothing you chose has changed.} other {{providers} are not connected, so {movedCount, plural, one {# role starts new work on its next default} other {# roles start new work on their next default}} until they connect. Nothing you chose has changed.}}"
 msgstr ""
@@ -136,6 +140,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "{computer} is not connected. Sotto sends the copy, or checks the one there, when it is."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "{computer} keeps no Proton Mail account: each computer’s Bridge has its own Bridge password."
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
@@ -972,6 +980,10 @@ msgstr ""
 msgid "A phone cannot run the host"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "A port is a number from 1 to 65535."
+msgstr ""
+
 #: src/renderer/src/features/settings/AppearanceSettings.tsx
 msgid "A press anywhere but the composer or the sidebar sends waves of 0s and 1s in the accent through the room behind it. They never cover what you pressed. Reduced motion turns them off."
 msgstr ""
@@ -1070,6 +1082,10 @@ msgstr ""
 msgid "Add a project in Threads to set its default working copy."
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Add a Proton Mail account"
+msgstr ""
+
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
 msgid "Add a shortcut to start and stop without holding keys."
 msgstr ""
@@ -1096,6 +1112,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Add another Gmail account"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Add another Proton Mail account"
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
@@ -1542,6 +1562,26 @@ msgstr ""
 #. A group of theme colors in the theme editor
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Brand & content"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Bridge isn’t running"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Bridge password"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Bridge’s certificate has changed"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Bridge’s certificate has changed since this account was added, so Sotto is not using it. If you reinstalled Bridge or reset it, trust the new one."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Bridge’s own ports. Change them only if Bridge shows others."
 msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
@@ -2730,7 +2770,7 @@ msgid "e.g. Aurora"
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
-msgid "Each account’s secret is sent to the computers you paired as hosts, on the connection Sotto already holds to each, and kept in each one’s own encrypted store, so their threads work while this computer is off. You can stop the copy for any account. An account kept to chosen projects is never copied."
+msgid "Each account’s secret is sent to the computers you paired as hosts, on the connection Sotto already holds to each, and kept in each one’s own encrypted store, so their threads work while this computer is off. You can stop the copy for any account. An account kept to chosen projects is never copied, and neither is a Proton Mail account."
 msgstr ""
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
@@ -3353,6 +3393,10 @@ msgstr ""
 msgid "If you reset"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "IMAP port"
+msgstr ""
+
 #. placeholder {0}: use.threadTitle
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "in “{0}”"
@@ -3784,6 +3828,10 @@ msgstr ""
 msgid "Long table"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Look again"
+msgstr ""
+
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Looking for models…"
 msgstr ""
@@ -4059,6 +4107,10 @@ msgstr ""
 msgid "New app password"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "New Bridge password"
+msgstr ""
+
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "New thread"
 msgstr ""
@@ -4306,6 +4358,10 @@ msgstr ""
 msgid "Not connected. Copies wait until it is."
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Not copied to {computers}: each computer’s Bridge has its own Bridge password. A thread on another computer is told no Proton Mail account is available there."
+msgstr ""
+
 #: src/renderer/src/features/settings/HostProviders.tsx
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Not installed"
@@ -4446,6 +4502,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Off. No thread can see or use this account until you turn it back on. Its app password stays saved."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Off. No thread can see or use this account until you turn it back on. Its Bridge password stays saved."
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
@@ -4831,6 +4891,10 @@ msgstr ""
 msgid "Paste the app password"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Paste the Bridge password"
+msgstr ""
+
 #: src/renderer/src/features/settings/HostProviderSignIn.tsx
 msgid "Paste the code"
 msgstr ""
@@ -5104,6 +5168,42 @@ msgstr ""
 msgid "Promoted a deployment to production"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Proton address"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Proton Mail account {name}"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Proton Mail already has as many accounts as Sotto keeps for one plugin. Nothing was saved. Remove one first."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Proton Mail Bridge did not accept the saved Bridge password, so its new certificate was not trusted. If Bridge shows a new Bridge password, remove this account and add it again."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Proton Mail Bridge did not accept this address and Bridge password. {kept} Copy both from Bridge, under this account’s Mailbox details."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Proton Mail Bridge is turning sign-ins away for now. {kept} Wait a minute, then try again."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Proton Mail Bridge isn’t answering at those ports on this computer. {kept} Open Bridge, check the ports it shows, then try again."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Proton Mail Bridge isn’t running on this computer, so threads can’t read or send this account’s mail. Open Bridge, then look again."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Proton Mail Bridge showed another certificate than the one Sotto keeps for this account. {kept} If you reinstalled or reset Bridge, trust its new certificate first."
+msgstr ""
+
 #: src/renderer/src/features/settings/AgentAccountSettings.tsx
 msgid "Provider default"
 msgstr ""
@@ -5340,6 +5440,10 @@ msgid "Remove <0>{name}</0>? Its app password is deleted from this computer, and
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Remove <0>{name}</0>? Its Bridge password is deleted from this computer, and threads lose the account at once. Nothing changes in Bridge or at Proton."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Remove <0>{name}</0>? Its token is deleted from this computer, and threads lose the account at once. Nothing changes at Vercel."
 msgstr ""
 
@@ -5400,6 +5504,10 @@ msgid "Remove the Gmail account {name}"
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Remove the Proton Mail account {name}"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Remove the Vercel account {name}"
 msgstr ""
 
@@ -5457,6 +5565,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Replace the app password for {name}"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Replace the Bridge password for {name}"
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
@@ -5675,6 +5787,10 @@ msgstr ""
 msgid "Save app password"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Save Bridge password"
+msgstr ""
+
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Save changes"
 msgstr ""
@@ -5741,6 +5857,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Search transcripts already uses {keys}. Pick other keys."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Search, read and send mail through Proton Mail Bridge on this computer, which comes with a paid Proton plan. Each thread asks you once, in the thread, before it reads an account’s mail, and what it reads goes to that thread’s provider. A thread asks you before each email it sends, and shows you the whole email first. It cannot move or delete mail, and a message it reads stays unread for you. To make a thread ask again, open its ··· menu and press Ask before this thread reads the account."
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
@@ -6136,6 +6256,10 @@ msgstr ""
 msgid "Slower to watch the sweep, faster to get there sooner. 1x takes under a second."
 msgstr "调慢可以看清扫过的过程，调快可以更早到达。1x 用时不到一秒。"
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "SMTP port"
+msgstr ""
+
 #. A place Watcher’s night scene can be set in
 #: src/renderer/src/features/settings/themes/WatcherSceneChoice.tsx
 msgid "Snowfield"
@@ -6202,6 +6326,10 @@ msgid "Sotto cannot read its record of which computers keep a copy, so it sends 
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sotto checks it with Bridge first. The Bridge password saved now stays in use until the new one is accepted."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Sotto checks it with Gmail first. The app password saved now stays in use until the new one is accepted."
 msgstr ""
 
@@ -6227,6 +6355,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Sotto could not keep the app password. {kept} Check that this computer’s credential store is unlocked, then try again."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sotto could not keep the Bridge password. {kept} Check that this computer’s credential store is unlocked, then try again."
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
@@ -7017,6 +7149,10 @@ msgstr ""
 msgid "The accounts could not be read. Nothing was changed. Reopen Settings and try again."
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "The address Bridge shows for this account. Sotto shows it here and never tells it to an agent."
+msgstr ""
+
 #: src/renderer/src/features/settings/PhonesSettings.tsx
 msgid "The address could not be copied. Select it and copy it instead."
 msgstr ""
@@ -7044,6 +7180,10 @@ msgstr ""
 #: src/renderer/src/features/settings/HostDialog.tsx
 #: src/renderer/src/features/settings/HostQuestionDialog.tsx
 msgid "The approval page could not open. Nothing was changed. Try again."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "The Bridge password already saved was kept."
 msgstr ""
 
 #: src/renderer/src/features/settings/MicrophoneSettings.tsx
@@ -7240,6 +7380,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/MenuBarOwlSettings.tsx
 msgid "The owl's eyes in the dark side of a crescent moon, in your menu bar. Owl body colors the moon."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "The password in Bridge, under this account’s Mailbox details. It is not your Proton password. Sotto checks it with Bridge before saving it, and never shows it again."
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
@@ -7481,6 +7625,10 @@ msgid "There is already a Gmail account with that name. Nothing was saved. Give 
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "There is already a Proton Mail account with that name. Nothing was saved. Give this one another name."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "There is already a Vercel account with that name. Nothing was saved. Give this one another name."
 msgstr ""
 
@@ -7519,6 +7667,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "This computer’s credential store is locked, so the app password could not be read to send. Unlock it, and Sotto tries again."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "This computer’s credential store is locked, so the Bridge password could not be read. Unlock it, then try again."
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
@@ -7730,6 +7882,10 @@ msgstr "翻译是新功能，先在 Owl 上推出。部分文字可能仍是英�
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Trims extra spaces without changing any words."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Trust Bridge’s new certificate"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostQuestionDialog.tsx
