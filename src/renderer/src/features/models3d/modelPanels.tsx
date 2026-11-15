@@ -79,7 +79,7 @@ export function folderWords(model: Model3dListed, threadFolder: string): string 
  * A record whose files are gone (ADR-0141): what happened, and Remove from 3D models, which removes the record only. Main
  * looks again first; files that are back keep it.
  */
-export function GoneNote({ model, onRemoved, onKept }: { readonly model: Model3dListed; readonly onRemoved: () => void; readonly onKept: () => void }): ReactNode {
+export function GoneNote({ model, onRemoved, onKept }: { readonly model: Model3dListed; readonly onRemoved: (id: string) => void; readonly onKept: () => void }): ReactNode {
   const { t } = useLingui()
   const [busy, setBusy] = useState(false)
   const [kept, setKept] = useState(false)
@@ -90,7 +90,7 @@ export function GoneNote({ model, onRemoved, onKept }: { readonly model: Model3d
     if (!plugins?.removeModel3d || busy) return
     setBusy(true)
     void plugins.removeModel3d(model.id).then(removed => {
-      if (removed) { onRemoved(); return }
+      if (removed) { onRemoved(model.id); return }
       setKept(true)
       onKept()
     }, () => setKept(true)).finally(() => setBusy(false))

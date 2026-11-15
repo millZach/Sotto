@@ -12,7 +12,7 @@ import { useOwlFeature } from '../../state/owlFeature'
 import { useReducedMotion } from '../../state/reducedMotion'
 import { revealLabel } from '../../tools/FilePreview'
 import { filesGone, folderWords, GoneNote, ModelPicture, ModelStage, modelWhen, threadOf, tileWords } from './modelPanels'
-import { modelMatches, useModels3d, useMonthCredits } from './models3dList'
+import { modelMatches, useModelChoice, useModels3d, useMonthCredits } from './models3dList'
 
 /**
  * The 3D models page (ADR-0141; the Meshy plan's ticket 5, Zach's variant C): every 3D model this computer's threads
@@ -24,17 +24,17 @@ import { modelMatches, useModels3d, useMonthCredits } from './models3dList'
 export function ModelsPage({ platform }: { readonly platform: SottoPlatform }): ReactNode {
   const { t } = useLingui()
   const on = useOwlFeature('plugins')
-  const { models, drop, reload } = useModels3d(on)
+  const list = useModels3d(on, undefined, { watchFiles: true })
+  const { models, reload } = list
   const reduced = useReducedMotion(on)
   const titleId = useId()
   const [query, setQuery] = useState('')
-  const [chosen, setChosen] = useState<string | null>(null)
   const search = useRef<HTMLInputElement>(null)
   const strip = useRef<HTMLDivElement>(null)
   // This month's credits are read again as a 3D model comes, goes or costs more.
   const credits = useMonthCredits(on, models?.map(model => `${model.id}:${model.credits}`).join(',') ?? '')
   const shown = useMemo(() => models?.filter(model => modelMatches(model, query)) ?? [], [models, query])
-  const selected = shown.find(model => model.id === chosen) ?? shown.find(model => model.state === 'done') ?? shown[0]
+  const { selected, choose, removed } = useModelChoice(list, shown)
   if (!on) return null
 
   const threads = new Set(models?.map(model => model.threadId)).size
@@ -58,10 +58,10 @@ export function ModelsPage({ platform }: { readonly platform: SottoPlatform }): 
           <ModelStage model={selected} reduced={reduced} onClose={() => focusTile(selected.id)} />
         </div>
         <ModelDetails model={selected} platform={platform}
-          onRemoved={() => { const next = shown[shown.indexOf(selected) + 1] ?? shown[shown.indexOf(selected) - 1]; drop(selected.id); setChosen(next?.id ?? null); requestAnimationFrame(() => focusTile(next?.id)) }}
+          onRemoved={id => { const next = removed(id); if (next) requestAnimationFrame(() => focusTile(next)) }}
           onKept={reload} />
       </div>
-      <Filmstrip ref={strip} models={shown} selected={selected.id} reduced={reduced} onChoose={setChosen} />
+      <Filmstrip ref={strip} models={shown} selected={selected.id} reduced={reduced} onChoose={choose} />
     </>
   }
 
@@ -84,7 +84,7 @@ export function ModelsPage({ platform }: { readonly platform: SottoPlatform }): 
 }
 
 /** The details beside the view: the name and kind, Go to thread and Show in File Explorer, the facts and the files. */
-function ModelDetails({ model, platform, onRemoved, onKept }: { readonly model: Model3dListed; readonly platform: SottoPlatform; readonly onRemoved: () => void; readonly onKept: () => void }): ReactNode {
+function ModelDetails({ model, platform, onRemoved, onKept }: { readonly model: Model3dListed; readonly platform: SottoPlatform; readonly onRemoved: (id: string) => void; readonly onKept: () => void }): ReactNode {
   const { t } = useLingui()
   const app = useOptionalApp()
   const agents = useOptionalAgents()
@@ -129,7 +129,7 @@ function ModelDetails({ model, platform, onRemoved, onKept }: { readonly model: 
       <p className="models-making__words">{[stepWords(model), model.percent !== undefined ? progressWords(model.percent, model.secondsLeft) : undefined].filter(Boolean).join(' · ')}</p>
       {model.percent !== undefined ? <span className="model-line__progress" role="progressbar" aria-label={stepWords(model)} aria-valuemin={0} aria-valuemax={100} aria-valuenow={model.percent}><i style={{ width: `${model.percent}%` }} /></span> : null}
       <p className="models-making__words">{t({ message: `The files go to ${where} in the thread’s folder when it is done.`, comment: '{where} is a folder, such as models/.' })}</p>
-    </div> : gone ? <GoneNote model={model} onRemoved={onRemoved} onKept={onKept} /> : <>
+    </div> : gone ? <GoneNote key={model.id} model={model} onRemoved={onRemoved} onKept={onKept} /> : <>
       <h3 className="models-files__head">{t`Files`}</h3>
       <ul className="models-files" aria-label={t`Files`}>
         {model.files.map(file => <li key={file.name}>

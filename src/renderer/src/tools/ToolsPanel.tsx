@@ -412,7 +412,8 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   const agentsThread = delegationOn ? workingCopyThread : selectedThread
   const threads = state.host.threads
   const delegated = useMemo(() => delegationOn && agentsThread ? delegatedBelow(threads, agentsThread.id) : undefined, [delegationOn, agentsThread, threads])
-  const threadModels = useModels3d(modelsOn && open, workingCopyThread && !workingCopyThread.remoteHost ? workingCopyThread.id : null)
+  // While 3D models is the open surface, the list also looks again at whether the files are there.
+  const threadModels = useModels3d(modelsOn && open, workingCopyThread && !workingCopyThread.remoteHost ? workingCopyThread.id : null, { watchFiles: chrome.surface === 'models' })
   const live = useLiveSurfaces(store, workingCopyThread, agentsThread, changedFiles, open && chrome.surface === 'changes', cloudStore, delegated,
     threadModels.models?.some(model => model.state === 'making') ?? false)
   const attention = useMemo(() => ({ agents: (delegated?.needs ?? 0) > 0 }), [delegated])

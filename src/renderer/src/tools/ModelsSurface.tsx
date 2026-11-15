@@ -1,10 +1,10 @@
 import { plural, t } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
-import React, { useRef, useState, type ReactNode } from 'react'
+import React, { useRef, type ReactNode } from 'react'
 import type { Model3dListed } from '../../../shared/models3d'
 import { creditsWords, extensionOf, sizeWords } from '../agents/modelParts'
 import { filesGone, GoneNote, ModelPicture, ModelStage, modelWhen } from '../features/models3d/modelPanels'
-import type { Models3dList } from '../features/models3d/models3dList'
+import { useModelChoice, type Models3dList } from '../features/models3d/models3dList'
 import { useReducedMotion } from '../state/reducedMotion'
 import { ToolsChrome } from './ToolsChrome'
 
@@ -22,15 +22,15 @@ export function ModelsSurface({ list, onShowFile }: {
 }): ReactNode {
   const { t } = useLingui()
   const reduced = useReducedMotion()
-  const [chosen, setChosen] = useState<string | null>(null)
   const rows = useRef<HTMLUListElement>(null)
   const models = list.models
+  const { selected: chosen, choose, removed } = useModelChoice(list, models ?? [])
   const title = t({ message: '3D models', comment: 'The Tools surface that shows the 3D models a thread made.' })
   if (models === undefined) return <ToolsChrome title={title} />
   if (models.length === 0) return <><ToolsChrome title={title} /><div className="files-problem files-problem--root" role="status">
     <strong>{t`No 3D models in this thread yet`}</strong><p className="tt-paragraph">{t`When the thread makes one with Meshy, it shows here with its files.`}</p></div></>
 
-  const selected = models.find(model => model.id === chosen) ?? models.find(model => model.state === 'done') ?? models[0]!
+  const selected = chosen ?? models[0]!
   const accounts = [...new Set(models.map(model => model.account).filter(Boolean))]
   const spent = models.reduce((sum, model) => sum + model.credits, 0)
   const credits = plural(spent, { one: '# credit in this thread', other: '# credits in this thread' })
@@ -49,7 +49,7 @@ export function ModelsSurface({ list, onShowFile }: {
         <div className="models-tool__about">
           <h3>{selected.name}</h3>
           <ChosenFacts model={selected} />
-          {filesGone(selected) ? <GoneNote model={selected} onRemoved={() => { const next = models.find(model => model.id !== selected.id); list.drop(selected.id); setChosen(next?.id ?? null); requestAnimationFrame(() => focusRow(next?.id)) }} onKept={list.reload} />
+          {filesGone(selected) ? <GoneNote key={selected.id} model={selected} onRemoved={id => { const next = removed(id); if (next) requestAnimationFrame(() => focusRow(next)) }} onKept={list.reload} />
             : selected.state === 'done' ? <ul className="model-line__files models-tool__chips" aria-label={t`Files`}>
               {selected.files.map(file => <li key={file.name}>
                 <FileChip name={file.name} bytes={file.bytes} onShow={() => onShowFile(`${selected.folder ? `${selected.folder}/` : ''}${file.name}`)} />
@@ -60,7 +60,7 @@ export function ModelsSurface({ list, onShowFile }: {
       <h3 className="models-tool__list-head"><span>{t`Made in this thread`}</span>{' '}<span className="models-tool__count">{models.length}</span></h3>
       <ul ref={rows} className="models-tool__rows" aria-label={t`Made in this thread`}>
         {models.map(model => <li key={model.id}>
-          <button type="button" className="models-tool__row tt-focusable" data-model={model.id} aria-current={model.id === selected.id ? 'true' : undefined} onClick={() => setChosen(model.id)}>
+          <button type="button" className="models-tool__row tt-focusable" data-model={model.id} aria-current={model.id === selected.id ? 'true' : undefined} onClick={() => choose(model.id)}>
             <span className="models-tool__pic" aria-hidden="true"><ModelPicture model={model} reduced={reduced} size={26} /></span>
             <span className="models-tool__text"><b>{model.name}</b><span>{rowWords(model)}</span></span>
             <span className="models-tool__credits">{creditsWords(model.credits)}</span>

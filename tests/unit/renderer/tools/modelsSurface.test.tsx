@@ -1,5 +1,5 @@
 import React from 'react'
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Model3dListed, Model3dView } from '../../../../src/shared/models3d'
 import { ToolsPanel } from '../../../../src/renderer/src/tools/ToolsPanel'
@@ -31,6 +31,7 @@ let models: Model3dListed[]
 const plugins = {
   models3d: vi.fn(async (threadId?: string) => threadId === THREAD ? models : []),
   onModel3dChanged: vi.fn(() => () => undefined),
+  onModels3dForgotten: vi.fn(() => () => undefined),
   meshyCredits: vi.fn(async () => ({})),
   model3dBytes: vi.fn(async () => null),
   removeModel3d: vi.fn(async () => true),
@@ -106,6 +107,16 @@ describe('Tools › 3D models', () => {
     fireEvent.click(within(card).getByRole('button', { name: 'Remove from 3D models' }))
     expect(await screen.findByText('No 3D models in this thread yet')).toBeInTheDocument()
     expect(plugins.removeModel3d).toHaveBeenCalledWith('helmet')
+  })
+
+  it('looks again at whether the files are there on focus while 3D models is the open surface, and not on another', async () => {
+    const { store } = setup('files')
+    await waitFor(() => expect(plugins.models3d).toHaveBeenCalledTimes(1))
+    act(() => { window.dispatchEvent(new Event('focus')) })
+    expect(plugins.models3d).toHaveBeenCalledTimes(1)
+    act(() => store.setSurface('models'))
+    act(() => { window.dispatchEvent(new Event('focus')) })
+    await waitFor(() => expect(plugins.models3d).toHaveBeenCalledTimes(2))
   })
 
   it('is not on the rail with the plugins Owl feature off, and reads nothing', async () => {

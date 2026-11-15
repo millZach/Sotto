@@ -44,6 +44,7 @@ delete (MOSSY as { still?: string }).still
 
 let models: Model3dListed[]
 let changed: ((view: Model3dView) => void) | undefined
+let forgotten: ((ids: readonly string[]) => void) | undefined
 const plugins = {
   models3d: vi.fn(async () => models),
   onModel3dChanged: vi.fn((listener: (view: Model3dView) => void) => { changed = listener; return () => { changed = undefined } }),
@@ -51,6 +52,24 @@ const plugins = {
   model3dBytes: vi.fn(async () => null),
   removeModel3d: vi.fn(async () => true),
   revealModel3d: vi.fn(async () => true),
+  onModels3dForgotten: vi.fn((listener: (ids: readonly string[]) => void) => { forgotten = listener; return () => { forgotten = undefined } }),
+}
+/** A promise the test settles when it chooses. */
+function later<Value>(): { readonly promise: Promise<Value>; readonly settle: (value: Value) => void } {
+  let settle: (value: Value) => void = () => undefined
+  const promise = new Promise<Value>(done => { settle = done })
+  return { promise, settle }
+}
+/** A listed 3D model as main's change notification carries it: no thread, account or words. */
+function viewOf(model: Model3dListed): Model3dView {
+  const view: Partial<Model3dListed> = { ...model }
+  for (const key of ['threadId', 'account', 'askedAt', 'words', 'photo'] as const) delete view[key]
+  return view as Model3dView
+}
+const done = (model: Model3dListed): Model3dView => {
+  const view: Partial<Model3dView> = { ...viewOf(model), state: 'done', credits: 30, files: files(model.name) }
+  for (const key of ['stage', 'percent', 'secondsLeft'] as const) delete view[key]
+  return view as Model3dView
 }
 beforeEach(() => {
   gate.plugins = true
@@ -142,6 +161,72 @@ describe('the 3D models page', () => {
     act(() => changed!({ id: 'lantern', name: 'Brass lantern', source: 'words', state: 'failed', failure: 'failed', credits: 20, folder: 'models', files: [] }))
     expect(within(strip()).getAllByRole('option')).toHaveLength(2)
     expect(within(strip()).queryByRole('option', { name: /^Brass lantern/u })).toBeNull()
+  })
+
+  it('keeps what it heard while a read was on its way over that read’s older answer', async () => {
+    models = [MOSSY, FOX, BARREL]
+    render(<ModelsPage platform="win32" />)
+    await within(await screen.findByRole('listbox', { name: 'Every 3D model' })).findByRole('option', { name: /^Mossy barrel/u })
+    // The window comes back into focus: the list is read again, and its answer is slow.
+    const slow = later<Model3dListed[]>()
+    plugins.models3d.mockImplementationOnce(() => slow.promise)
+    act(() => { window.dispatchEvent(new Event('focus')) })
+    expect(plugins.models3d).toHaveBeenCalledTimes(2)
+    // Meanwhile the mossy barrel finishes and the fox fails; the read answers as things stood when it began.
+    act(() => changed!(done(MOSSY)))
+    act(() => changed!({ ...viewOf(FOX), state: 'failed', failure: 'failed' }))
+    await act(async () => { slow.settle([MOSSY, FOX, BARREL]) })
+    expect(within(strip()).getAllByRole('option').map(tile => tile.getAttribute('aria-label'))).toEqual([expect.stringMatching(/^Mossy barrel, [A-Z][a-z]{2} \d+$/u), 'Oak barrel, Nov 13'])
+  })
+
+  it('looks again at whether the files are there on focus and every half minute while shown', async () => {
+    const timers = vi.spyOn(window, 'setInterval')
+    render(<ModelsPage platform="win32" />)
+    await screen.findByRole('listbox', { name: 'Every 3D model' })
+    const [again] = timers.mock.calls.find(([, ms]) => ms === 30_000) as [() => void, number]
+    // The barrel's files were deleted meanwhile: its next read says so.
+    models = [FOX, listed('barrel', { name: 'Oak barrel', askedAt: '2026-11-13T16:12:00.000Z', files: files('Oak barrel', true) })]
+    act(() => again())
+    expect(await within(strip()).findByRole('option', { name: 'Oak barrel, Nov 13, Its files are gone' })).toBeInTheDocument()
+    // And put back: the next focus says so too.
+    models = [FOX, BARREL]
+    act(() => { window.dispatchEvent(new Event('focus')) })
+    expect(await within(strip()).findByRole('option', { name: 'Oak barrel, Nov 13' })).toBeInTheDocument()
+    timers.mockRestore()
+  })
+
+  it('lets a forgotten thread’s 3D models go', async () => {
+    render(<ModelsPage platform="win32" />)
+    await within(await screen.findByRole('listbox', { name: 'Every 3D model' })).findByRole('option', { name: 'Fox figurine, Nov 14' })
+    act(() => forgotten!(['fox']))
+    expect(within(strip()).getAllByRole('option').map(tile => tile.getAttribute('aria-label'))).toEqual(['Oak barrel, Nov 13'])
+    expect(details('Oak barrel')).toBeInTheDocument()
+    expect(screen.queryByText('fox-figurine.jpg')).toBeNull()
+  })
+
+  it('keeps the 3D model first shown when a newer one finishes', async () => {
+    models = [MOSSY, BARREL]
+    render(<ModelsPage platform="win32" />)
+    expect(await screen.findByRole('complementary', { name: 'About the Oak barrel' })).toBeInTheDocument()
+    act(() => changed!(done(MOSSY)))
+    expect(details('Oak barrel')).toBeInTheDocument()
+    expect(within(strip()).getByRole('option', { name: 'Oak barrel, Nov 13' })).toHaveAttribute('aria-selected', 'true')
+  })
+
+  it('moves the choice after a removal only when the removed one is still chosen', async () => {
+    models = [listed('helmet', { name: 'Knight helmet', files: files('Knight helmet', true) }), FOX, BARREL]
+    const pending = later<boolean>()
+    plugins.removeModel3d.mockImplementationOnce(() => pending.promise)
+    render(<ModelsPage platform="win32" />)
+    fireEvent.click(await within(await screen.findByRole('complementary', { name: 'About the Knight helmet' })).findByRole('button', { name: 'Remove from 3D models' }))
+    // The oak barrel is chosen before main answers.
+    fireEvent.click(within(strip()).getByRole('option', { name: 'Oak barrel, Nov 13' }))
+    within(strip()).getByRole('option', { name: 'Oak barrel, Nov 13' }).focus()
+    await act(async () => { pending.settle(true) })
+    await act(async () => { await new Promise(next => requestAnimationFrame(() => next(undefined))) })
+    expect(within(strip()).getAllByRole('option').map(tile => tile.getAttribute('aria-label'))).toEqual(['Fox figurine, Nov 14', 'Oak barrel, Nov 13'])
+    expect(within(strip()).getByRole('option', { name: 'Oak barrel, Nov 13' })).toHaveAttribute('aria-selected', 'true')
+    expect(within(strip()).getByRole('option', { name: 'Oak barrel, Nov 13' })).toHaveFocus()
   })
 
   it('filters by name and by the words it was made from', async () => {
