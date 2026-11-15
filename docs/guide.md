@@ -1408,7 +1408,7 @@ The choice follows Anthropic's guide to its models, with effort one level higher
 
 A new model re-reads the whole conversation at full price, and a smaller one loses the earlier reasoning, so a thread changes model only when the work clearly changes. **Settings → Threads → Stay on the first model** holds each thread to the model its first message got; later messages then change only the effort.
 
-Pick a model yourself and routing turns off for that thread. If the choice can't be made, the message is sent on what the thread has. A thread is routed or Dynamic, not both. To start every new Claude Code thread routed, turn the switch on in the model menu of **Settings → Threads → New threads start with**.
+Pick a model yourself and routing turns off for that thread. A model or effort set from your phone, or kept for the next turn, runs the next message on your choice; the message after it is routed again. If the classifier cannot answer within 20 seconds, the message is sent on what the thread has. The reason stays in memory and disappears after a restart. A thread is routed or Dynamic, not both. To start every new Claude Code thread routed, turn the switch on in the model menu of **Settings → Threads → New threads start with**.
 
 ## Worker roles
 
