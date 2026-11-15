@@ -134,7 +134,7 @@ processes and by `MessagingPlugin.exe` under `UDClientService.exe`. WMI's load i
 any one freeze, but it holds most of a core all day: 233,000 CPU seconds since November 11.
 
 That indexer keeps starting AutoCAD's `accoreconsole.exe`, which crashes in `ODISSDK.dll`: 235 crashes since
-November 14, in bursts of one every 3 to 7 s. None of the four hangs on the 15th fell inside a burst: the nearest
+November 14, in bursts of one every 3 to 7 s. None of the four hangs after 18:00 UTC on the 15th fell inside a burst: the nearest
 crash to the 12.5 s hang was more than 10 minutes away.
 
 ## Against November 10
