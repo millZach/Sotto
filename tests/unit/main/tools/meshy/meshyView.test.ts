@@ -71,6 +71,17 @@ describe('a 3D model in its thread', () => {
     expect(await modelBytes(sourceOf(making), { id: 'model-1', part: 'model' })).toBeNull()
   })
 
+  it('hands over no shape once the 3D model’s record is gone, before its bytes come or while they do', async () => {
+    const making: ThreeDModel = { ...await done(), state: 'making', stage: 'texture' }
+    expect(await modelBytes(sourceOf(undefined, selfContainedGlb()), { id: 'model-1', part: 'shape' })).toBeNull()
+    // Its thread forgotten while the shape was being fetched.
+    let held: ThreeDModel | undefined = making
+    const forgottenMeanwhile: ModelViewSource = { ...sourceOf(making), model: async () => held, shapeBytes: async () => { held = undefined; return selfContainedGlb() } }
+    expect(await modelBytes(forgottenMeanwhile, { id: 'model-1', part: 'shape' })).toBeNull()
+    // And one past its texture step has none either.
+    expect(await modelBytes(sourceOf({ ...making, stage: 'files' }, selfContainedGlb()), { id: 'model-1', part: 'shape' })).toBeNull()
+  })
+
   it('refuses its folder once it was swapped for a link outside the thread’s folder', async () => {
     const model = await done()
     await writeFile(join(outside, 'Barrel.glb'), selfContainedGlb())

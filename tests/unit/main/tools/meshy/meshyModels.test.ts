@@ -102,6 +102,32 @@ describe('a 3D model made with Meshy', () => {
     expect(await service.shapeBytes(model.id)).toBeNull()
   })
 
+  it('stops asking Meshy and sending progress once its thread is forgotten during the texture, and drops the shape', async () => {
+    meshy.behaviour.holding.add('refine')
+    const records = recordsHere()
+    let forgotten = false
+    let afterwards = 0
+    const holder: { service?: MeshyModels; id?: string } = {}
+    const { service } = models({ records,
+      changed: () => { if (forgotten) afterwards++ },
+      wait: async () => {
+        if (forgotten || !holder.service?.hasShape(holder.id!)) return
+        await records.forgetThreads(['thread-1'])
+        forgotten = true
+      } })
+    holder.service = service
+    const { model, done } = await service.make(words())
+    holder.id = model.id
+    expect(await done).toBeUndefined()
+    const reads = meshy.requests.length
+    expect(forgotten).toBe(true)
+    expect(afterwards).toBe(0)
+    expect(service.hasShape(model.id)).toBe(false)
+    expect(service.progressOf(model.id, 'texture')).toBeUndefined()
+    await new Promise(resolve => setTimeout(resolve, 50))
+    expect(meshy.requests.length).toBe(reads)
+  })
+
   it('from a photo is one task, costing 30 credits, and keeps the photo’s name but never the photo', async () => {
     const { service } = models()
     const ended = await (await service.make(photo())).done

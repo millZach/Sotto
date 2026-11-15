@@ -1433,7 +1433,9 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     keyOf: async accountId => (await pluginAccounts.list()).some(account => account.id === accountId && account.plugin === 'meshy') ? pluginAccounts.secret(accountId) || undefined : undefined,
     changed: (model, progress) => {
       const shape = meshyModels?.hasShape(model.id) ?? false
-      modelViewsSent = modelViewsSent.then(() => modelView(model, progress, shape)).then(view => { windows.sendToMain(PLUGINS_MODEL_3D_CHANGED, view) }, () => undefined)
+      // A 3D model whose record went meanwhile, as its thread was forgotten, is not shown again.
+      modelViewsSent = modelViewsSent.then(async () => await modelRecords.model(model.id) ? await modelView(model, progress, shape) : null)
+        .then(view => { if (view) windows.sendToMain(PLUGINS_MODEL_3D_CHANGED, view) }, () => undefined)
     } }) : undefined
   void meshyModels?.resume().catch(() => undefined)
   const modelViews: ModelViewSource | undefined = meshyModels && modelRecords ? {

@@ -190,7 +190,7 @@ export class MeshyModels {
         throw error instanceof Ending && error.failure !== 'unreachable' ? new Ending(error.state, error.failure, MESHY_CREDITS[kind]) : error
       }
       const asked = taskId
-      record = await this.change(id, held => {
+      await this.change(id, held => {
         const job = { ...held.job, [kind]: asked }
         delete job.asking
         return { ...held, job }
@@ -198,6 +198,9 @@ export class MeshyModels {
     }
     let backoff = MESHY_POLL_MS
     for (;;) {
+      // Read again at each turn, so a 3D model whose thread was forgotten meanwhile stops here: nothing more is asked
+      // of Meshy for it, its progress is not sent, and the shape it held goes with it.
+      record = await this.current(id)
       this.inTime(record)
       let task: MeshyTask
       try { task = await api.task(kind, taskId) } catch (error) {

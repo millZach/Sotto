@@ -55,8 +55,12 @@ export async function modelViewOf(source: ModelViewSource, id: string): Promise<
  */
 export async function modelBytes(source: ModelViewSource, request: Model3dBytesRequest): Promise<Uint8Array | null> {
   if (request.part === 'shape') {
+    // Only a 3D model still in its texture step has a shape to show, and only while its record is there: one whose
+    // thread was forgotten, before the bytes came or while they did, hands over nothing.
+    const texturing = async (): Promise<boolean> => { const model = await source.model(request.id); return model?.state === 'making' && model.stage === 'texture' }
+    if (!await texturing()) return null
     const shape = await source.shapeBytes(request.id)
-    return shape && glbProblem(shape) === null ? shape : null
+    return shape && glbProblem(shape) === null && await texturing() ? shape : null
   }
   const model = await source.model(request.id)
   if (!model || model.state !== 'done') return null
