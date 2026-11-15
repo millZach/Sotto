@@ -181,7 +181,7 @@ describe('a computer’s 3D models on a paired phone (the Meshy plan’s ticket 
     const { views, asked, listeners } = phoneViews()
     const emit: { current: (update: AgentThreadDetailUpdate) => void } = { current: () => undefined }
     // The desktop's phone listener: its own threads, no host copies, and this computer's 3D models for phones.
-    const server = await startSocketServer({ service: modelsHost(undefined, emit), pairing: fixture.host.pairing, phoneModels: views })
+    const server = await startSocketServer({ service: modelsHost(undefined, emit), pairing: fixture.host.pairing, admin: false, phoneModels: views })
     const newer = await fixture.host.pairing.redeem(fixture.host.pairing.issuePairingCode().code, 'Phone')
     const older = await fixture.host.pairing.redeem(fixture.host.pairing.issuePairingCode().code, 'Older phone')
     const phone = await rawPeer(server.descriptor.port, fixture.host.pairing.signSession(newer.clientId))
@@ -225,12 +225,13 @@ describe('a computer’s 3D models on a paired phone (the Meshy plan’s ticket 
 
   it('offers phones nothing of it on a listener that keeps no 3D models, and a desktop never reads a USDZ', async () => {
     const emit: { current: (update: AgentThreadDetailUpdate) => void } = { current: () => undefined }
-    const server = await startSocketServer({ service: modelsHost(undefined, emit), pairing: fixture.host.pairing })
+    const server = await startSocketServer({ service: modelsHost(undefined, emit), pairing: fixture.host.pairing, admin: false })
     const paired = await fixture.host.pairing.redeem(fixture.host.pairing.issuePairingCode().code, 'Phone')
     const phone = await rawPeer(server.descriptor.port, fixture.host.pairing.signSession(paired.clientId))
     const { views } = phoneViews()
     const known = new Set<string>()
-    const host = await startSocketServer({ service: modelsHost(views, emit), pairing: fixture.host.pairing,
+    // A headless host keeping 3D models for its phones; its recorded desktop accepts both features (Sol on ticket 7).
+    const host = await startSocketServer({ service: modelsHost(views, emit), pairing: fixture.host.pairing, phoneModels: views,
       watcherDesktops: { has: (clientId: string) => known.has(clientId), refresh: async () => undefined } })
     const recorded = await fixture.host.pairing.redeem(fixture.host.pairing.issuePairingCode().code, 'Desktop')
     known.add(recorded.clientId)
@@ -240,7 +241,8 @@ describe('a computer’s 3D models on a paired phone (the Meshy plan’s ticket 
       expect(hello.result.features).not.toContain('plugin-meshy-phone')
       await phone.call('read', { op: 'detail', threadId: 'props' })
       expect(visualKinds((phone.messages.find(message => message.id === 'read') as { result: unknown }).result)).toEqual([undefined, undefined, undefined])
-      await desktop.call('hello', { op: 'hello', accepts: ['plugin-meshy-models'] })
+      const both = await desktop.call('hello', { op: 'hello', accepts: ['plugin-meshy-models', 'plugin-meshy-phone'] }) as { result: { features: string[] } }
+      expect(both.result.features).toContain('plugin-meshy-phone')
       expect(await desktop.call('usdz', { op: 'plugin-meshy-model-bytes', request: { id: 'barrel', part: 'usdz', offset: 0 } })).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
     } finally { phone.frames.close(); desktop.frames.close(); await server.close(); await host.close() }
   })

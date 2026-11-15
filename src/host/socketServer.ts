@@ -1749,7 +1749,8 @@ export async function startSocketServer(options: SocketServerOptions) {
         peer.meshySpending = peer.meshySpendingAsked && offers(peer, 'plugin-meshy-spending')
         peer.meshyModelsAsked = request.accepts?.includes('plugin-meshy-models') ?? false
         peer.meshyModels = peer.meshyModelsAsked && offers(peer, 'plugin-meshy-models')
-        peer.meshyPhone = (request.accepts?.includes('plugin-meshy-phone') ?? false) && offers(peer, 'plugin-meshy-phone')
+        // Only a phone reads a USDZ: a desktop that accepts this as well is not a phone for it (Sol on ticket 7).
+        peer.meshyPhone = (request.accepts?.includes('plugin-meshy-phone') ?? false) && offers(peer, 'plugin-meshy-phone') && isPhonePeer(peer)
         const answeredBefore = peer.productEvents?.answer
         peer.productEvents = (request.accepts?.includes('product-events') ?? false) && offers(peer, 'product-events') ? { answer: answeredBefore ?? null } : undefined
         // A second hello that no longer accepts it takes this desktop's answer back, so the host looks again.
