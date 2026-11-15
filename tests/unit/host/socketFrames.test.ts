@@ -371,6 +371,27 @@ describe('permessage-deflate', () => {
     expect(accepted * (bytes + header)).toBeLessThanOrEqual(cap + header)
   })
 
+  // #2602: a pong to a ping, and a close reply, were checked against what was written alone, so a peer that stopped reading
+  // but kept pinging while large messages waited to be compressed had both full, about 64 MiB held.
+  it('closes a peer that stops reading but keeps pinging once its pongs and its queued messages would pass two frame limits', () => {
+    const { frames, stream } = stalled(true), cap = HOST_MAX_FRAME_BYTES * 2
+    const queue = frames as unknown as { queuedBytes: number }
+    // Two messages that compress off the loop, so they wait in the queue while the pings come.
+    const large = 'x'.repeat(HOST_MAX_FRAME_BYTES - 1024)
+    expect(frames.sendText(large)).toBe(true)
+    expect(frames.sendText(large)).toBe(true)
+    expect(queue.queuedBytes).toBe(2 * large.length)
+    const ping = masked(Buffer.alloc(125, 7), 9)
+    let held = 0
+    for (let sent = 0; sent < 300_000 && !stream.destroyed; sent++) {
+      frames.feed(ping)
+      if (!stream.destroyed) held = Math.max(held, stream.writableLength + queue.queuedBytes)
+    }
+    expect(stream.destroyed).toBe(true)
+    // Never more than two frame limits held, but for the header of the frame being written.
+    expect(held).toBeLessThanOrEqual(cap)
+  })
+
   it('holds a compressed peer that stops reading to what is written on the wire, counting the message sent at its own size', () => {
     const text = history(DEFLATE_SYNC_MAX_BYTES), cap = HOST_MAX_FRAME_BYTES * 2
     const accepted = Math.floor((cap - text.length) / (text.length + 10)) + 1

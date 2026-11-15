@@ -88,8 +88,8 @@ export class SocketFrames {
   /**
    * Text messages from one still being compressed off the loop on, in the order they were sent, so the wire keeps that
    * order: one being compressed, one compressed and waiting behind an earlier one, and a plain one queued behind a
-   * compression. `queuedBytes` is their uncompressed size, counted against the unread-output cap as if already written
-   * when a text message is sent; a frame checked as it is written, a control frame among them, counts what is written alone.
+   * compression. `queuedBytes` is their uncompressed size, counted against the unread-output cap as if already written,
+   * when a text message is sent and when any frame is written, a control frame among them (#2602).
    */
   private queue: Outgoing[] = []
   private queuedBytes = 0
@@ -157,7 +157,7 @@ export class SocketFrames {
   sendText(text: string): boolean {
     if (this.ended) return false
     const data = Buffer.from(text)
-    if (data.length > HOST_MAX_FRAME_BYTES || this.stream.writableLength + this.queuedBytes + data.length > HOST_MAX_FRAME_BYTES * 2) { this.close(); return false }
+    if (this.overCap(data.length)) { this.close(); return false }
     if (!this.deflate || data.length < DEFLATE_MIN_BYTES) return this.ordered(data, false)
     if (this.queue.length === 0 && data.length <= DEFLATE_SYNC_MAX_BYTES) {
       const packed = compressed(deflateRawSync(data, DEFLATE_OPTIONS), data)
@@ -199,9 +199,19 @@ export class SocketFrames {
   }
   /** Control frames are never compressed and may go between whole messages, so they skip the queue. */
   private write(opcode: number, data: Buffer): boolean { return this.frame(opcode, data, false) }
+  /**
+   * Whether `size` more bytes would be over the frame limit, or take what this connection holds for its peer past two of
+   * them: what is written and not read, and what waits in the compression queue (ADR-0025, November 15, 2026 amendment).
+   * A text message is held to it when it is sent and every frame when it is written, so the two cannot count it apart.
+   */
+  private overCap(size: number): boolean {
+    return size > HOST_MAX_FRAME_BYTES || this.stream.writableLength + this.queuedBytes + size > HOST_MAX_FRAME_BYTES * 2
+  }
   private frame(opcode: number, data: Buffer, compressed: boolean): boolean {
     if (this.ended) return false
-    if (data.length > HOST_MAX_FRAME_BYTES || this.stream.writableLength + data.length > HOST_MAX_FRAME_BYTES * 2) { this.close(); return false }
+    // What is queued counts here too, so a pong or a close reply, which skip the queue, cannot take what is held past the
+    // cap while messages wait to be compressed (#2602). `flush` takes a message's size off the queue before writing it.
+    if (this.overCap(data.length)) { this.close(); return false }
     const extended = data.length < 126 ? 0 : data.length <= 65535 ? 2 : 8
     const header = Buffer.alloc(2 + extended + (this.client ? 4 : 0))
     header[0] = 0x80 | (compressed ? 0x40 : 0) | opcode
