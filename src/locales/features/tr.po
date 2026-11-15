@@ -955,6 +955,11 @@ msgstr ""
 msgid "{topShare} of prompts"
 msgstr ""
 
+#. {total} is "90 credits this month"; {where} lists computers, as in "this computer and forge".
+#: src/renderer/src/features/models3d/ModelsPage.tsx
+msgid "{total}, across {where}"
+msgstr ""
+
 #: src/renderer/src/watcher/WatcherOwnChange.tsx
 msgid "{unnamed, plural, one {and {more} file more} other {and {more} files more}}"
 msgstr ""
@@ -1133,8 +1138,18 @@ msgstr ""
 msgid "3D model · Meshy · made from a photo"
 msgstr ""
 
+#. {computer} is the name of the paired host that holds the 3D model, as in forge.
+#: src/renderer/src/features/models3d/ModelsPage.tsx
+msgid "3D model · Meshy · made from a photo · on {computer}"
+msgstr ""
+
 #: src/renderer/src/features/models3d/ModelsPage.tsx
 msgid "3D model · Meshy · made from words"
+msgstr ""
+
+#. {computer} is the name of the paired host that holds the 3D model, as in forge.
+#: src/renderer/src/features/models3d/ModelsPage.tsx
+msgid "3D model · Meshy · made from words · on {computer}"
 msgstr ""
 
 #. The 3D models page: every 3D model Meshy made for a thread.
@@ -6893,6 +6908,11 @@ msgstr ""
 msgid "The {name} update on {host} stopped before it finished. Nothing was changed. Try again."
 msgstr ""
 
+#. {name} is the name of a 3D model; {where} is a folder, such as models/; {computer} is the paired host it was made on, as in forge.
+#: src/renderer/src/features/models3d/modelPanels.tsx
+msgid "The {name}’s files are no longer in {where} in its thread’s folder on {computer}: they were moved, renamed or deleted."
+msgstr ""
+
 #. {name} is the name of a 3D model; {where} is a folder, such as models/.
 #: src/renderer/src/features/models3d/modelPanels.tsx
 msgid "The {name}’s files are no longer in {where} in its thread’s folder: they were moved, renamed or deleted."
@@ -7187,6 +7207,7 @@ msgid "This clears every date, provider, model and app on those computers, inclu
 msgstr ""
 
 #. This computer, in the middle of a sentence
+#: src/renderer/src/features/models3d/ModelsPage.tsx
 #: src/renderer/src/features/usage/usagePresentation.ts
 #: src/renderer/src/watcher/TeamsPage.tsx
 msgid "this computer"

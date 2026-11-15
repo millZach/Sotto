@@ -46,12 +46,12 @@ beforeEach(() => {
 })
 afterEach(() => { cleanup(); vi.clearAllMocks() })
 
-function setup(surface: 'models' | 'files' = 'models') {
+function setup(surface: 'models' | 'files' = 'models', state = threadsStateFixture()) {
   const store = new ToolsPanelStore()
   store.setSurface(surface)
   store.setOpen(true)
   const bridge = fakeFilesBridge({ [THREAD]: { root: 'D:\\work\\workshop', token: TOKEN_A, tree: { models: { kind: 'directory' as const }, 'models/Potion bottle.glb': { kind: 'file' as const, content: text('glb') } } } })
-  const state = threadsStateFixture(), cloudStore = new CloudIphoneStore()
+  const cloudStore = new CloudIphoneStore()
   const ui = (focused: string) => <div className="thread-workspace__body"><ToolsPanel focusedThreadId={focused} state={state} files={bridge} store={store} cloudStore={cloudStore} /></div>
   const view = render(ui(THREAD))
   return { store, focus: (focused: string) => view.rerender(ui(focused)) }
@@ -143,6 +143,39 @@ describe('Tools › 3D models', () => {
     expect(within(rail()).queryByRole('tab', { name: '3D models' })).toBeNull()
     // A panel left on 3D models shows Files.
     await waitFor(() => expect(store.getSnapshot().surface).toBe('files'))
+    expect(plugins.models3d).not.toHaveBeenCalled()
+  })
+})
+
+/** Every thread on a paired host saved here as forge (the Meshy plan's ticket 6, part 2). */
+const FORGE = '33333333-3333-4333-8333-000000000001'
+function onForge(host: { connected: boolean; models3d?: true }) {
+  const state = threadsStateFixture()
+  state.connections = [{ hostId: FORGE, name: 'forge', kind: 'remote', ...host }]
+  state.host.threads = state.host.threads.map(thread => ({ ...thread, remoteHost: true, hostId: FORGE }))
+  return state
+}
+
+describe('Tools › 3D models on a host thread', () => {
+  it('shows the host thread’s 3D models as a local thread’s, in place of saying they are on the host', async () => {
+    setup('models', onForge({ connected: true, models3d: true }))
+    expect(await screen.findByRole('region', { name: 'Potion bottle' })).toBeInTheDocument()
+    expect(plugins.models3d).toHaveBeenCalledWith(THREAD)
+    expect(screen.queryByText('3D models is on the host machine.')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Show Potion bottle.glb in Files' })).toBeInTheDocument()
+  })
+
+  it('says the host isn’t connected while it is away, and reads nothing', async () => {
+    setup('models', onForge({ connected: false, models3d: true }))
+    expect(await screen.findByText('forge isn’t connected')).toBeInTheDocument()
+    expect(screen.getByText('Its 3D models show here again once it is.')).toBeInTheDocument()
+    expect(plugins.models3d).not.toHaveBeenCalled()
+  })
+
+  it('tells an older host apart, which cannot show its 3D models here', async () => {
+    setup('models', onForge({ connected: true }))
+    expect(await screen.findByText('This host cannot show its 3D models here yet.')).toBeInTheDocument()
+    expect(screen.getByText('Update Sotto on forge in Settings > Hosts & phones to see them here.')).toBeInTheDocument()
     expect(plugins.models3d).not.toHaveBeenCalled()
   })
 })

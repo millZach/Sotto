@@ -413,7 +413,10 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   const threads = state.host.threads
   const delegated = useMemo(() => delegationOn && agentsThread ? delegatedBelow(threads, agentsThread.id) : undefined, [delegationOn, agentsThread, threads])
   // While 3D models is the open surface, the list also looks again at whether the files are there.
-  const threadModels = useModels3d(modelsOn && open, workingCopyThread && !workingCopyThread.remoteHost ? workingCopyThread.id : null, { watchFiles: chrome.surface === 'models' })
+  // A paired host's thread lists its 3D models from that host while it is connected and shows them here (the Meshy
+  // plan's ticket 6, part 2); its list is read again when the host comes back.
+  const modelsHost = workingCopyThread?.remoteHost ? state.connections?.find(item => item.hostId === workingCopyThread.hostId) : undefined
+  const threadModels = useModels3d(modelsOn && open, workingCopyThread && (!workingCopyThread.remoteHost || modelsHost?.models3d === true && modelsHost.connected) ? workingCopyThread.id : null, { watchFiles: chrome.surface === 'models' })
   const live = useLiveSurfaces(store, workingCopyThread, agentsThread, changedFiles, open && chrome.surface === 'changes', cloudStore, delegated,
     threadModels.models?.some(model => model.state === 'making') ?? false)
   const attention = useMemo(() => ({ agents: (delegated?.needs ?? 0) > 0 }), [delegated])
@@ -512,7 +515,14 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   else if (thread.remoteHost && chrome.surface === 'browser' && pairedHostBrowser && !browserHost?.browser) body = <><ToolsChrome title={surfaceLabel} /><div className="files-problem files-problem--root" role="status">
     <strong>{t`Browser is on the host machine.`}</strong><p className="tt-paragraph">{hostName !== undefined ? t({ message: `Update Sotto on ${hostName} in Settings > Hosts & phones to use it here.`, comment: '{hostName} is the name of a paired host, as in forge.' })
       : t`Update Sotto on the host in Settings > Hosts & phones to use it here.`}</p></div></>
-  else if (thread.remoteHost && (chrome.surface === 'terminal' && !hostedTerminal || chrome.surface === 'browser' && !browserHost?.browser || chrome.surface === 'iphone' || chrome.surface === 'models')) body = <><ToolsChrome title={surfaceLabel} /><div className="files-problem files-problem--root" role="status"><strong>{t({ message: `${surfaceLabel} is on the host machine.`, comment: '{surfaceLabel} is a Tools surface\'s name, as in Terminal.' })}</strong><p className="tt-paragraph">{t`Use this tool on the host. Replies and permission answers remain available here.`}</p></div></>
+  // A host thread's 3D models show here while its host is connected; an older host's are on that machine. A host that is
+  // away is said to be first, since what it can show is known only from a connection.
+  else if (thread.remoteHost && chrome.surface === 'models' && modelsOn && modelsHost?.connected !== true) body = <><ToolsChrome title={surfaceLabel} /><div className="files-problem files-problem--root" role="status">
+    <strong>{hostName !== undefined ? t({ message: `${hostName} isn’t connected`, comment: '{hostName} is the name of a paired host, as in forge.' }) : t`The host isn’t connected`}</strong><p className="tt-paragraph">{t`Its 3D models show here again once it is.`}</p></div></>
+  else if (thread.remoteHost && chrome.surface === 'models' && modelsOn && modelsHost?.models3d !== true) body = <><ToolsChrome title={surfaceLabel} /><div className="files-problem files-problem--root" role="status">
+    <strong>{t`This host cannot show its 3D models here yet.`}</strong><p className="tt-paragraph">{hostName !== undefined ? t({ message: `Update Sotto on ${hostName} in Settings > Hosts & phones to see them here.`, comment: '{hostName} is the name of a paired host, as in forge.' })
+      : t`Update Sotto on the host in Settings > Hosts & phones to see them here.`}</p></div></>
+  else if (thread.remoteHost && (chrome.surface === 'terminal' && !hostedTerminal || chrome.surface === 'browser' && !browserHost?.browser || chrome.surface === 'iphone')) body = <><ToolsChrome title={surfaceLabel} /><div className="files-problem files-problem--root" role="status"><strong>{t({ message: `${surfaceLabel} is on the host machine.`, comment: '{surfaceLabel} is a Tools surface\'s name, as in Terminal.' })}</strong><p className="tt-paragraph">{t`Use this tool on the host. Replies and permission answers remain available here.`}</p></div></>
   // A paired host pushes no roster changes: its thread's agent counts moving in the shell read the roster again.
   else if (chrome.surface === 'agents') body = <AgentsSurface key={thread.id} threadId={thread.id} store={store.subagents} bridge={subagentsBridge}
     rosterSignal={thread.remoteHost ? JSON.stringify(thread.subagentSummary ?? null) : undefined} continuation={continuation} delegation={delegation} />

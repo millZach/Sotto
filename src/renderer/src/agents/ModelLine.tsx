@@ -3,7 +3,9 @@ import { useLingui } from '@lingui/react/macro'
 import { Box, ChevronDown, CircleAlert } from 'lucide-react'
 import React, { lazy, Suspense, useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import type { Model3dFailure, Model3dView } from '../../../shared/models3d'
+import { hostEntityKey, parseHostEntityKey } from '../../../shared/clientIdentity'
 import { useOwlFeature } from '../state/owlFeature'
+import { useActivityBodyHost } from './activityBodies'
 import { useReducedMotion } from '../state/reducedMotion'
 import { creditsWords, extensionOf, progressWords, Ring, sizeWords, stepWords, useStill } from './modelParts'
 import './modelLine.css'
@@ -20,13 +22,24 @@ const ModelView = lazy(() => import('./ModelView'))
  */
 export function ModelLine({ modelId, name }: { readonly modelId: string; readonly name: string }): ReactNode {
   const on = useOwlFeature('plugins')
-  const view = useModelView(modelId, on)
+  // A thread on a paired host names its 3D model by the host's own ID; the window asks for it by a key that says which
+  // host holds it, as it names the thread (the Meshy plan's ticket 6, part 2). The transcript says whose the thread is.
+  const host = useActivityBodyHost()
+  const hostId = host ? parseHostEntityKey(host.threadId)?.hostId : undefined
+  const key = hostId ? hostEntityKey(hostId, modelId) : modelId
+  const away = host !== null && !host.connected
+  const view = useModelView(key, on, away)
   const reduced = useReducedMotion(on)
-  return on ? <Line modelId={modelId} name={name} view={view} reduced={reduced} /> : null
+  if (!on) return null
+  // While its host is away the line says what it was and what it cost, and opens nothing until the host is back.
+  return away ? <AwayLine name={view?.name ?? name} view={view} hostName={host.hostName} /> : <Line modelId={key} name={name} view={view} reduced={reduced} />
 }
 
-/** A 3D model's view as main last sent it: undefined until it answers, null when it holds no such 3D model. */
-function useModelView(id: string, on: boolean): Model3dView | null | undefined {
+/**
+ * A 3D model's view as main last sent it: undefined until it answers, null when it holds no such 3D model. A host's 3D
+ * model is read again when its host comes back.
+ */
+function useModelView(id: string, on: boolean, away: boolean): Model3dView | null | undefined {
   const [view, setView] = useState<Model3dView | null | undefined>(undefined)
   useEffect(() => {
     if (!on) return undefined
@@ -38,10 +51,24 @@ function useModelView(id: string, on: boolean): Model3dView | null | undefined {
     // Its record went, by Remove from 3D models or with its thread: the line says Sotto no longer holds it.
     const stopRemoved = plugins.onModels3dRemoved?.(ids => { if (live && ids.includes(id)) { heard = true; setView(null) } })
     // A change heard while the read was on its way is newer than the read.
-    plugins.model3d(id).then(found => { if (live && !heard) setView(found) }, () => { if (live && !heard) setView(null) })
+    // While its host is away, main answers with the view it last heard, if any; the one held here stays otherwise.
+    plugins.model3d(id).then(found => { if (live && !heard && (found !== null || !away)) setView(found) }, () => { if (live && !heard && !away) setView(null) })
     return () => { live = false; stop?.(); stopRemoved?.() }
-  }, [id, on])
+  }, [id, on, away])
   return view
+}
+
+/** A host thread's 3D model while its host is away: its name, what it cost when that is known, and that the host is away. */
+function AwayLine({ name, view, hostName }: { readonly name: string; readonly view: Model3dView | null | undefined; readonly hostName: string }): ReactNode {
+  const { t } = useLingui()
+  const away = t({ message: `${hostName} isn’t connected`, comment: '{hostName} is the name of a paired host, as in forge.' })
+  const sub = view ? [creditsWords(view.credits), away].join(' · ') : away
+  return <div className="model-line" tabIndex={-1} role="group" aria-label={t({ message: `3D model: ${name}`, comment: '{name} is the name of a 3D model, such as Oak barrel.' })} data-open="false" data-away="true">
+    <div className="model-line__row">
+      <span className="model-line__thumb" aria-hidden="true"><Box size={22} /></span>
+      <span className="model-line__text"><b className="model-line__name">{name}</b><span className="model-line__sub">{sub}</span></span>
+    </div>
+  </div>
 }
 
 function Line({ modelId, name, view, reduced }: { readonly modelId: string; readonly name: string; readonly view: Model3dView | null | undefined; readonly reduced: boolean }): ReactNode {

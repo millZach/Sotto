@@ -84,6 +84,7 @@ export function GoneNote({ model, onRemoved, onKept }: { readonly model: Model3d
   const [busy, setBusy] = useState(false)
   const [kept, setKept] = useState<string>()
   const name = model.name
+  const computer = model.computer
   const where = folderWords(model, t`the thread’s folder`)
   const remove = (): void => {
     const plugins = window.sotto?.plugins
@@ -99,7 +100,9 @@ export function GoneNote({ model, onRemoved, onKept }: { readonly model: Model3d
   }
   return <div className="models-note" role="group" aria-label={t`Its files are gone`}>
     <TriangleAlert size={16} aria-hidden="true" />
-    <p><b>{t`Its files are gone.`}</b> {t({ message: `The ${name}’s files are no longer in ${where} in its thread’s folder: they were moved, renamed or deleted.`, comment: '{name} is the name of a 3D model; {where} is a folder, such as models/.' })}</p>
+    <p><b>{t`Its files are gone.`}</b> {computer === undefined
+      ? t({ message: `The ${name}’s files are no longer in ${where} in its thread’s folder: they were moved, renamed or deleted.`, comment: '{name} is the name of a 3D model; {where} is a folder, such as models/.' })
+      : t({ message: `The ${name}’s files are no longer in ${where} in its thread’s folder on ${computer}: they were moved, renamed or deleted.`, comment: '{name} is the name of a 3D model; {where} is a folder, such as models/; {computer} is the paired host it was made on, as in forge.' })}</p>
     <p className="models-note__more">{kept ?? t`Removing it takes it off this list. It deletes no file.`}</p>
     <div className="models-note__actions"><Button variant="secondary" onClick={remove} disabled={busy}>{t`Remove from 3D models`}</Button></div>
   </div>

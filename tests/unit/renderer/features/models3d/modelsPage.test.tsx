@@ -16,13 +16,17 @@ vi.mock('../../../../../src/renderer/src/agents/ModelView', () => ({
   default: ({ name, part }: { readonly name: string; readonly part: string }) => <div role="slider" aria-label={`Turn the ${name}`} data-part={part} tabIndex={0} />,
 }))
 const OWN_HOST = vi.hoisted(() => '11111111-1111-4111-8111-000000000001')
+/** The paired hosts the window lists, and forge's thread (the Meshy plan's ticket 6, part 2). */
+const FORGE = vi.hoisted(() => '33333333-3333-4333-8333-000000000001')
+const hosts = vi.hoisted(() => ({ connections: [] as { hostId: string; name: string; kind: 'local' | 'remote'; connected: boolean; models3d?: true }[] }))
 const command = vi.hoisted(() => vi.fn(async () => undefined))
 const navigate = vi.hoisted(() => vi.fn())
 vi.mock('../../../../../src/renderer/src/agents/AgentContext', async importOriginal => ({
   ...await importOriginal<typeof import('../../../../../src/renderer/src/agents/AgentContext')>(),
-  useOptionalAgents: () => ({ command, state: { host: {
+  useOptionalAgents: () => ({ command, state: { connections: hosts.connections, host: {
     // The window names this computer's threads by a key that says whose they are; the record by the thread's own ID.
-    threads: [{ id: 'thread-props', title: 'Treasure room props', projectId: 'game' }, { id: `host:${OWN_HOST}:thread-fox`, title: 'Fox NPC', projectId: 'game' }],
+    threads: [{ id: 'thread-props', title: 'Treasure room props', projectId: 'game' }, { id: `host:${OWN_HOST}:thread-fox`, title: 'Fox NPC', projectId: 'game' },
+      { id: `host:${FORGE}:thread-vault`, title: 'Vault lighting', projectId: 'game', remoteHost: true, hostId: FORGE }],
     projects: [{ id: 'game', title: 'Godot game' }] } } }),
 }))
 vi.mock('../../../../../src/renderer/src/state/AppContext', async importOriginal => ({
@@ -48,7 +52,7 @@ let forgotten: ((ids: readonly string[]) => void) | undefined
 const plugins = {
   models3d: vi.fn(async () => models),
   onModel3dChanged: vi.fn((listener: (view: Model3dView) => void) => { changed = listener; return () => { changed = undefined } }),
-  meshyCredits: vi.fn(async () => ({ '22222222-2222-4222-8222-000000000001': { here: 80, credits: 80, across: [] } })),
+  meshyCredits: vi.fn(async (): Promise<Record<string, { here: number; credits: number; across: string[] }>> => ({ '22222222-2222-4222-8222-000000000001': { here: 80, credits: 80, across: [] } })),
   model3dBytes: vi.fn(async () => null),
   removeModel3d: vi.fn(async (): Promise<Model3dRemoval> => 'removed'),
   revealModel3d: vi.fn(async () => true),
@@ -72,6 +76,7 @@ const done = (model: Model3dListed): Model3dView => {
   return view as Model3dView
 }
 beforeEach(() => {
+  hosts.connections = []
   gate.plugins = true
   gate.usage = false
   models = [FOX, BARREL]
@@ -353,5 +358,63 @@ describe('the 3D models page', () => {
     gate.usage = true
     render(<PageLinks className="pages" linkClassName="page" />)
     expect(screen.getAllByRole('link').map(link => link.textContent)).toEqual(['Usage', '3D models', 'Settings', 'Help'])
+  })
+})
+
+describe('a paired host’s 3D models on the page', () => {
+  const LAMP = listed(`host:${FORGE}:lamp`, { name: 'Brass lamp', threadId: `host:${FORGE}:thread-vault`, computer: 'forge', askedAt: '2026-11-15T18:05:00.000Z' })
+  const CRATE = listed(`host:${FORGE}:crate`, { name: 'Supply crate', threadId: `host:${FORGE}:thread-vault`, computer: 'forge', files: files('Supply crate', true), askedAt: '2026-11-15T17:58:00.000Z' })
+  const forge = (connected: boolean) => ({ hostId: FORGE, name: 'forge', kind: 'remote' as const, connected, models3d: true as const })
+  beforeEach(() => {
+    hosts.connections = [forge(true)]
+    models = [LAMP, CRATE, FOX, BARREL]
+    plugins.meshyCredits.mockResolvedValue({ '22222222-2222-4222-8222-000000000001': { here: 80, credits: 140, across: ['forge'] } })
+  })
+
+  it('lists them with this computer’s, says “on forge”, counts credits across computers, and offers no reveal of a host’s files', async () => {
+    render(<ModelsPage platform="win32" />)
+    expect(await screen.findByText('4 3D models from 3 threads · 140 credits this month, across this computer and forge')).toBeInTheDocument()
+    const details = screen.getByRole('complementary', { name: 'About the Brass lamp' })
+    expect(within(details).getByText('3D model · Meshy · made from words · on forge')).toBeInTheDocument()
+    expect(within(details).queryByRole('button', { name: 'Show in File Explorer' })).toBeNull()
+    expect(within(details).queryByRole('button', { name: /^Show in File Explorer:/u })).toBeNull()
+    expect(within(details).getByRole('button', { name: 'Go to thread' })).toBeInTheDocument()
+    expect(within(details).getByText('Vault lighting')).toBeInTheDocument()
+    // This computer's own still has both.
+    fireEvent.click(screen.getByRole('option', { name: /^Oak barrel/u }))
+    const own = screen.getByRole('complementary', { name: 'About the Oak barrel' })
+    expect(within(own).getByText('3D model · Meshy · made from words')).toBeInTheDocument()
+    expect(within(own).getByRole('button', { name: 'Show in File Explorer' })).toBeInTheDocument()
+  })
+
+  it('opens the host thread from Go to thread', async () => {
+    render(<ModelsPage platform="win32" />)
+    fireEvent.click(within(await screen.findByRole('complementary', { name: 'About the Brass lamp' })).getByRole('button', { name: 'Go to thread' }))
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith('threads'))
+    expect(command).toHaveBeenCalledWith({ type: 'select-thread', threadId: `host:${FORGE}:thread-vault` })
+  })
+
+  it('offers Remove from 3D models for a host’s 3D model whose files are gone, saying they were on that host', async () => {
+    render(<ModelsPage platform="win32" />)
+    fireEvent.click(await screen.findByRole('option', { name: /^Supply crate/u }))
+    const details = screen.getByRole('complementary', { name: 'About the Supply crate' })
+    expect(within(details).getByText('The Supply crate’s files are no longer in models/ in its thread’s folder on forge: they were moved, renamed or deleted.')).toBeInTheDocument()
+    fireEvent.click(within(details).getByRole('button', { name: 'Remove from 3D models' }))
+    await waitFor(() => expect(screen.queryByRole('option', { name: /^Supply crate/u })).toBeNull())
+    expect(plugins.removeModel3d).toHaveBeenCalledWith(`host:${FORGE}:crate`)
+  })
+
+  it('takes a host’s 3D models off the page while it is away, and reads the list again when it is back', async () => {
+    const shown = render(<ModelsPage platform="win32" />)
+    expect(await screen.findByRole('option', { name: /^Brass lamp/u })).toBeInTheDocument()
+    expect(plugins.models3d).toHaveBeenCalledTimes(1)
+    hosts.connections = [forge(false)]
+    shown.rerender(<ModelsPage platform="win32" />)
+    expect(screen.queryByRole('option', { name: /^Brass lamp/u })).toBeNull()
+    expect(screen.getByRole('option', { name: /^Fox figurine/u })).toBeInTheDocument()
+    hosts.connections = [forge(true)]
+    shown.rerender(<ModelsPage platform="win32" />)
+    await waitFor(() => expect(plugins.models3d).toHaveBeenCalledTimes(3))
+    expect(await screen.findByRole('option', { name: /^Brass lamp/u })).toBeInTheDocument()
   })
 })
