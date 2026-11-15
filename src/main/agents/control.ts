@@ -11,8 +11,10 @@ import { readVideo } from './shownMedia'
 import { immutableUpdates, isImmutableModels, subscribeActivitySnapshots } from './activitySnapshots'
 import { FollowupStore, followupDigest, isWaitingWakeUp, UNKNOWN_TURN, WATCHER_STOP_PAUSE, type MovedPrompt, type QueuedFollowup } from './followups'
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, stat } from 'node:fs/promises'
+import { stat } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
+import { makeProjectFolder, projectFolderKey } from './projectFolders'
+import type { ProjectAddition } from '../../shared/watcherHost'
 import { isDeepStrictEqual } from 'node:util'
 import { z } from 'zod'
 import {
@@ -55,6 +57,8 @@ import { opencodeFolders } from './opencodeServer'
 import { resolveModel } from '../../shared/modelCatalog'
 import { validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { NextTurnChoices, pressedOnto, stillToChange, type NextTurnChoice, type NextTurnOptions } from './nextTurnChoices'
+import { RoutedSends, type RouterEvent } from './routedSend'
+import { DEFAULT_MODEL_ROUTER, type ModelRouterSettings } from '../../shared/modelRouter'
 import { compactionPending } from '../../shared/compaction'
 import { AttachmentPreviews } from './attachmentPreviews'
 import { AttachmentStore, inlineStager, type StageInline } from './attachmentStore'
@@ -106,6 +110,10 @@ const EMPTY_MESSAGES: AgentMessage[] = []
 /** Tracks late answer completion and keeps socket uncertainty in the calling client’s receipt. */
 class AnswerDeliveryUnconfirmed extends Error {
   delivered = false
+}
+/** A prompt the provider took whose echo was not yet in its state; the banner it raised goes once the echo arrives. */
+class SendUnconfirmed extends Error {
+  constructor(readonly commandId: string) { super('The provider has not confirmed this user message in its state. Refresh to reconcile the existing send; it will not be replayed.') }
 }
 const EMPTY_ACTIVITIES: AgentActivity[] = []
 /** Stands in for a certified catalog while the shell is cloned; the catalog itself goes in afterwards, shared. */
@@ -497,6 +505,8 @@ export class AgentControl {
    * not a prompt never diverts a send into the queue or holds a queued follow-up back.
    */
   private readonly threadPrompts = new Map<string, number>()
+  /** Threads a Send of a saved draft (`sendDraft`) is on its way to, kept observed as `threadPrompts` are. */
+  private readonly draftSends = new Map<string, number>()
   private readonly pumping = new Set<string>()
   private state: AgentState
   private outboxEntries: Saved['outbox'] = []
@@ -521,6 +531,14 @@ export class AgentControl {
   private readonly idleCompactions = new WeakSet<object>()
   /** Each thread's choice kept for its next turn (ADR-0192), present only while `next-turn-choice` is on. */
   private readonly nextTurns = new NextTurnChoices()
+  /** Model routing's sends (ADR-0207): the classifier call and each thread's last pick live in `routedSend.ts`. */
+  private readonly routedSends = new RoutedSends({
+    thread: threadId => this.thread(threadId), models: () => this.state.host.models, settings: () => this.dependencies.modelRouter?.() ?? DEFAULT_MODEL_ROUTER,
+    classify: async (target, prompt, signal) => await this.dependencies.host.writeShortTextOn?.(target, prompt, signal) ?? null,
+    configure: (threadId, modelId, reasoningEffort) => this.configureRouted(threadId, modelId, reasoningEffort),
+    userChoiceWaits: threadId => { const choice = this.nextTurns.waiting(threadId)?.options ?? this.nextTurns.sent(threadId); return choice?.modelId !== undefined || choice?.reasoningEffort !== undefined },
+    publish: () => this.publish(), logEvent: name => this.dependencies.modelRouterLog?.(name),
+  })
   /** The commands that send a kept choice, among the machine commands above: Sotto's, never the user's or Watcher's. */
   private readonly nextTurnSends = new WeakSet<object>()
   watcherPhoneExclusions(): { threadIds: string[]; projectIds: string[] } {
@@ -784,16 +802,31 @@ export class AgentControl {
    * the project's ID; a refusal rejects with its words.
    */
   async addProjectForPlacement(title: string, path: string): Promise<string> {
-    const parsed = agentCommandSchema.parse({ type: 'create-project', title, path, useExisting: true })
-    const guard = () => { if (this.disposed) throw new Error('Sotto is stopping.') }
+    return (await this.addProjectForWatcher({ title, path, useExisting: true })).projectId
+  }
+  /**
+   * Watcher's add_project on this machine (ADR-0073, November 12, 2026), and Sotto's own setup above: the coordinator's own
+   * `create-project`, as Add project and New project run it, without moving the window's selection or announcing anything.
+   * A new folder with no path goes in the default projects directory under the title. Resolves with the project, and
+   * whether a project already had the folder; a refusal rejects with its words.
+   */
+  async addProjectForWatcher(input: ProjectAddition, allowed?: () => void): Promise<{ projectId: string; path: string; title: string; known: boolean }> {
+    const parsed = agentCommandSchema.parse({ type: 'create-project', ...input })
+    const provider = this.state.configuration.provider
+    const directory = this.state.configuration.projectsDirectory
+    const path = input.path || (directory ? join(directory, input.title) : '')
+    const find = () => path && isAbsolute(path) ? this.state.host.projects.find(item => projectFolderKey(item.path) === projectFolderKey(path) && (!item.providerId || item.providerId === provider)) : undefined
+    const before = find()
+    // A new folder a project already has is that project, so a retry after its first call made it answers as that one did.
+    if (before && !input.useExisting) return { projectId: before.id, path: before.path, title: before.title, known: true }
+    // `allowed` is Watcher's: checked again before the folder is made and before the provider hears of it.
+    const guard = () => { if (this.disposed) throw new Error('Sotto is stopping.'); allowed?.() }
     guard(); this.watcherOrigins.set(parsed, { guard })
     const answer = await this.admitCommandShell(parsed)
     if (answer.error) throw new Error(answer.error)
-    const key = (value: string): string => process.platform === 'win32' ? resolve(value).toLowerCase() : resolve(value)
-    const provider = this.state.configuration.provider
-    const project = this.state.host.projects.find(item => key(item.path) === key(path) && (!item.providerId || item.providerId === provider))
+    const project = find()
     if (!project) throw new Error('The project did not appear in the list. Try again.')
-    return project.id
+    return { projectId: project.id, path: project.path, title: project.title, known: before?.id === project.id }
   }
   /** Where new projects go by default, as the user configured it; empty for none. Read without copying the state. */
   projectsDirectory(): string { return this.state.configuration.projectsDirectory }
@@ -915,6 +948,8 @@ export class AgentControl {
   private queuedWrite: QueuedWrite | undefined
   /** Thread settings changes being dispatched now: the outbox entries that were added inside this dispatch. */
   private readonly settingsDispatching = new Set<string>()
+  /** New projects the provider definitely refused, by project ID, so create-project takes back the folder it made (#704). */
+  private readonly refusedProjects = new Set<string>()
   /**
    * Settings entries the provider confirmed inside their own dispatch, whose removal is not on disk yet. Dropping
    * one is the only change such a write would carry, so it waits for the next write that carries anything else.
@@ -1061,6 +1096,10 @@ export class AgentControl {
     watcherEnabled?: boolean
     /** Dynamic threads' Owl answer (ADR-0191): where it is off, a saved mark stays whole and nothing sets one. */
     dynamicThreadsEnabled?: boolean
+    /** Model routing's Owl answer (ADR-0207), and its settings as they stand: off, a saved mark stays whole and no send is routed. */
+    modelRouterEnabled?: boolean
+    modelRouter?: () => ModelRouterSettings
+    modelRouterLog?: (event: RouterEvent) => void
     threadSnoozeEnabled?: boolean
     /** The providers held to Owl on this run (ADR-0072); absent holds every one while retaining Owl's saved choices. */
     heldProviders?: HeldProviders
@@ -1669,6 +1708,7 @@ export class AgentControl {
     if (this.state.followupReceipts) this.state.followupReceipts = kept(this.state.followupReceipts)
     this.deliveredPromptDigests = this.deliveredPromptDigests.filter(item => !gone.has(item.threadId))
     for (const threadId of threadIds) { this.emptyDraftRevisions.delete(threadId); this.titles.forget(threadId) }
+    this.routedSends.forget(...threadIds)
     if (this.state.draftThreadId && gone.has(this.state.draftThreadId)) this.clearDraft()
     if (this.state.activeThreadId && gone.has(this.state.activeThreadId)) this.state.activeThreadId = null
     this.viewedThreadIds = this.viewedThreadIds.filter(id => !gone.has(id))
@@ -1882,6 +1922,7 @@ export class AgentControl {
     const unconfirmedSettings = this.unconfirmedSettings()
     if (unconfirmedSettings.length) state.unconfirmedSettings = unconfirmedSettings
     if (this.nextTurns.size) state.nextTurnSettings = this.nextTurns.list() as NonNullable<AgentState['nextTurnSettings']>
+    if (this.routedSends.size) state.routerPicks = this.routedSends.list() as NonNullable<AgentState['routerPicks']>
     this.attachmentPreviews.decorate(state.host)
     this.hideWatcher(state)
     return state
@@ -1946,7 +1987,7 @@ export class AgentControl {
     if (!this.threadAvailable(state.draftThreadId)) {
       state.draft = ''; state.draftThreadId = null; state.draftRequestId = null; state.draftAttachments = []; state.composing = false
     }
-    for (const key of ['threadDrafts', 'deliveries', 'deliveredDrafts', 'obsoleteDrafts', 'followups', 'followupReceipts', 'threadDraftPersistence', 'nextTurnSettings'] as const) {
+    for (const key of ['threadDrafts', 'deliveries', 'deliveredDrafts', 'obsoleteDrafts', 'followups', 'followupReceipts', 'threadDraftPersistence', 'nextTurnSettings', 'routerPicks'] as const) {
       const records = state[key]
       if (records) (state as Record<string, unknown>)[key] = kept<{ threadId: string }>(records, item => this.threadAvailable(item.threadId))
     }
@@ -2025,6 +2066,7 @@ export class AgentControl {
     if (unconfirmedSettings.length) state.unconfirmedSettings = unconfirmedSettings
     // Shared, never copied: the list is frozen and made again only when a choice changes (nextTurnChoices.ts).
     if (this.nextTurns.size) state.nextTurnSettings = this.nextTurns.list() as NonNullable<AgentState['nextTurnSettings']>
+    if (this.routedSends.size) state.routerPicks = this.routedSends.list() as NonNullable<AgentState['routerPicks']>
     this.hideWatcher(state)
     return state
   }
@@ -2825,8 +2867,9 @@ export class AgentControl {
    * Tell the host which threads keep a live provider session (CONTEXT.md, live-session set), then which it observes. A
    * thread on screen is only observed: its transcript is read and its messages held, and its session starts when the user
    * types, sends or acts on it (ADR-0016, November 1, 2026 amendment). Threads Sotto sends to unasked or waits on keep
-   * theirs: Watcher's, a delegation's, a queued follow-up's, an outbox entry's, and a send's own (`threadIds`). The set
-   * goes first, so an adapter never takes an observation for a start before it has heard which threads are live.
+   * theirs: Watcher's, a delegation's, a queued follow-up's, an outbox entry's, a send's own (`threadIds`), and one with a
+   * prompt of the user's on its way (`threadPrompts`). The set goes first, so an adapter never takes an observation for a
+   * start before it has heard which threads are live.
    */
   private observe(...threadIds: string[]): void {
     const host = this.dependencies.host
@@ -2838,10 +2881,15 @@ export class AgentControl {
       ...(this.state.draftThreadId && this.hasDraft() ? [this.state.draftThreadId] : []),
       ...this.viewedThreadIds.filter(id => this.threadById(id) !== undefined), ...live])].filter(id => this.threadAvailable(id)))
   }
-  /** The live-session set: the threads Sotto sends to unasked or waits on, and `extra` (a send's own thread). */
+  /**
+   * The live-session set: the threads Sotto sends to unasked or waits on, and `extra` (a send's own thread). A thread
+   * with a prompt on its way stays in it from Send until the prompt settles, whichever thread the window shows meanwhile:
+   * its messages are held only while it is observed, and the send is confirmed by its echo among them. Without it, a send
+   * waiting on its lane to a thread the user moved away from read as unconfirmed although the provider took it.
+   */
   private liveSessionIds(extra: readonly string[] = []): string[] {
     return [...new Set([...this.watcherHooks?.watchedThreadIds?.() ?? [], ...this.delegationHooks?.observedThreadIds() ?? [], ...this.councilHooks?.observedThreadIds() ?? [], ...this.queuedThreadIds(),
-      ...this.outboxEntries.flatMap(item => item.threadId ? [item.threadId] : []), ...extra])].filter(id => this.threadAvailable(id))
+      ...this.outboxEntries.flatMap(item => item.threadId ? [item.threadId] : []), ...this.threadPrompts.keys(), ...this.draftSends.keys(), ...extra])].filter(id => this.threadAvailable(id))
   }
   /**
    * Sends the host the live-session set again when what keeps a session live has changed without the window's view
@@ -3005,6 +3053,8 @@ export class AgentControl {
     const host = this.dependencies.host
     const thread = this.state.host.threads.find(item => item.id === threadId)
     if (!host.startThreadSession || !thread || thread.providerSessionOpen || thread.archivedAt || !isThreadProviderConnected(this.state.host, thread)) return Promise.resolve(this.reply())
+    // A new routed thread starts only after its first message chooses a model, including where staying is on.
+    if (thread.nativeSessionStarted === false && this.dependencies.modelRouterEnabled === true && this.routedSends.routes(threadId)) return Promise.resolve(this.reply())
     const task = (this.threadActions.get(threadId) ?? Promise.resolve()).catch(() => undefined)
       .then(() => host.startThreadSession!(threadId)).catch(() => undefined)
     this.threadActions.set(threadId, task)
@@ -3518,6 +3568,24 @@ export class AgentControl {
     if (!this.dependencies.host.setThreadDynamic) throw new Error('Dynamic threads are unavailable. Nothing changed.')
     this.acceptSnapshot(await this.dependencies.host.setThreadDynamic(command.threadId, command.dynamic))
   }
+  /** In the thread's own lane, as Dynamic's mark is (ADR-0207). Turned off, the thread's last pick goes with it. */
+  private async setThreadRouted(command: Extract<AgentCommand, { type: 'set-thread-routed' }>): Promise<void> {
+    if (this.dependencies.modelRouterEnabled !== true) throw new Error('Model routing is available in Sotto Owl. Nothing changed.')
+    this.thread(command.threadId)
+    if (!this.dependencies.host.setThreadRouted) throw new Error('Model routing is unavailable. Nothing changed.')
+    this.acceptSnapshot(await this.dependencies.host.setThreadRouted(command.threadId, command.routed))
+    if (!command.routed) this.routedSends.forget(command.threadId)
+  }
+  /**
+   * The router's own `configure-thread`, dispatched as a chip press at rest is and never through the lane the send holds.
+   * It resolves only when the change came back accepted. Whatever it throws is the router's to report, on the chip's card,
+   * so the window's command error is left as it was.
+   */
+  private async configureRouted(threadId: string, modelId: string, reasoningEffort: string): Promise<void> {
+    const error = this.visibleCommandError, message = this.state.error
+    try { await this.dispatch({ type: 'configure-thread', commandId: randomUUID(), threadId, modelId, reasoningEffort }) }
+    catch (thrown) { this.setCommandError(error, message); throw thrown }
+  }
   private async renameThread(command: Extract<AgentCommand, { type: 'rename-thread' }>): Promise<AgentState> {
     const title = command.title.trim()
     try {
@@ -3966,9 +4034,13 @@ export class AgentControl {
     })
     if (independent) {
       this.threadActions.set(laneThreadId, task)
-      const releasePrompt = command.type === 'manual-send' || command.type === 'steer' || command.type === 'steer-followup' ? this.mark(this.threadPrompts, laneThreadId) : (): void => {}
+      const prompted = command.type === 'manual-send' || command.type === 'steer' || command.type === 'steer-followup'
+      const releasePrompt = prompted ? this.mark(this.threadPrompts, laneThreadId) : (): void => {}
       void task.finally(() => {
         releasePrompt(); releaseThread()
+        // The thread a send kept observed (`liveSessionIds`) goes back to being observed only if something else asks, as
+        // the send's own last look at the observed set left it before it kept the thread. A steer leaves the set as it was.
+        if (command.type === 'manual-send' && !this.disposed) this.observe()
         if (this.threadActions.get(laneThreadId) === task) this.threadActions.delete(laneThreadId)
         this.pumpFollowups()
       }).catch(() => undefined)
@@ -4563,6 +4635,7 @@ export class AgentControl {
   private async execute(command: AgentCommand, turn?: ActiveTurn, manualRetryId?: string, selectionRevision = this.selectionRevision,
     client: ClientIdentity = this.localClient, answerDecisionId?: string, composer?: ComposerContext, sentDraft?: AgentThreadDraft): Promise<void> {
     if (command.type === 'set-thread-dynamic') return this.setThreadDynamic(command)
+    if (command.type === 'set-thread-routed') return this.setThreadRouted(command)
     const origin = this.watcherOrigins.get(command); origin?.guard()
     if (this.disposed) throw new Error('Sotto is stopping. Your draft is saved.')
     const heldChoice = heldProviderChosenBy(command, this.held)
@@ -4764,6 +4837,9 @@ export class AgentControl {
           ? /[<>:"/\\|?*]/u.test(command.title) || /[. ]$/u.test(command.title) || /^(con|prn|aux|nul|com[0-9¹²³]|lpt[0-9¹²³]) *(\.|$)/iu.test(command.title)
           : command.title.includes('/') || /^\.\.?$/u.test(command.title)
         if (unusableName) throw new Error('Choose a project name that can be used as a folder name.')
+        if (command.gitInit && command.useExisting) throw new Error('Sotto sets up Git only in a folder it makes. Nothing was added. Add the folder as it is, and ask a thread to set up Git there.')
+        const initFolder = this.dependencies.host.initProjectFolder?.bind(this.dependencies.host)
+        if (command.gitInit && !initFolder) throw new Error('Setting up Git is unavailable here. Nothing was added. Make the project without Git, and ask a thread to set up Git there.')
         const target = command.path || (this.state.configuration.projectsDirectory ? join(this.state.configuration.projectsDirectory, command.title) : '')
         if (!target || !isAbsolute(target)) throw new Error('Choose an absolute project folder or configure a default projects directory.')
         const path = resolve(target)
@@ -4781,10 +4857,18 @@ export class AgentControl {
           this.observe(); if (!origin || origin.userSetup) this.say(`Opened ${known.title}.`)
           return
         }
-        if (!existing) await mkdir(path, { recursive: true })
+        // Sotto's own command checks its guard before it makes anything: Watcher's request may have ended while it waited.
+        origin?.guard()
+        const made = existing ? undefined : await makeProjectFolder(path, command.gitInit ? initFolder : undefined)
         const projectId = this.dependencies.host.createProjectId?.(provider) ?? randomUUID()
         if (turn) { turn.threadId = null; turn.projectId = projectId }
-        await this.dispatch({ type: 'create-project', commandId: randomUUID(), projectId, title: command.title, path, ...(this.state.host.providers ? { provider } : {}) }, turn)
+        try { await this.dispatch({ type: 'create-project', commandId: randomUUID(), projectId, title: command.title, path, ...(this.state.host.providers ? { provider } : {}) }, turn) }
+        catch (error) {
+          // A definite refusal leaves no folder Sotto made for it (#704). An unconfirmed creation, or one the provider took
+          // whose snapshot read failed after, keeps its folder.
+          if (this.refusedProjects.delete(projectId)) await made?.undo()
+          throw error
+        }
         if (!origin && selectionRevision === this.selectionRevision) {
           this.state.activeProjectId = projectId; this.state.activeThreadId = null
         }
@@ -4884,6 +4968,7 @@ export class AgentControl {
           ...(command.check ? { check: true as const } : {}),
           ...(origin?.keptSpeed ? { keptSpeed: true as const } : {}),
           ...(command.dynamic && !origin && this.dependencies.dynamicThreadsEnabled === true ? { dynamic: true as const } : {}),
+          ...(command.routed && !origin && this.dependencies.modelRouterEnabled === true ? { routed: true as const } : {}),
           ...defaults }, turn, validatePermission, undefined, client, undefined, origin)
         // A thread the popup starts stays the popup's: the window keeps what it shows (ADR-0181).
         const opens = !origin && client.keepsSelection !== true
@@ -4932,6 +5017,9 @@ export class AgentControl {
       }
       case 'configure-thread': {
         this.assertCanAct(undefined, false)
+        // Every model or effort set from outside the router comes through here, pressed at rest or kept for the next turn and
+        // sent when the thread rests: a routed thread's next message then runs on it (ADR-0207). The router's own goes by `dispatch`.
+        if (this.dependencies.modelRouterEnabled === true && (command.modelId !== undefined || command.reasoningEffort !== undefined)) this.routedSends.choseByHand(command.threadId)
         if (command.modelId === undefined && command.reasoningEffort === undefined && command.runtimeMode === undefined && command.providerMode === undefined
           && command.fastMode === undefined && command.speed === undefined) throw new Error('Choose a thread setting to change.')
         if (this.thread(command.threadId).nativeSessionStarted !== false && !capabilitiesForThread(this.state.host, this.thread(command.threadId)).configureThread) throw new Error('This provider does not support changing thread settings.')
@@ -5311,6 +5399,8 @@ export class AgentControl {
     client: ClientIdentity = this.localClient, atomicDigest?: string, machineOrigin?: WatcherCommandOrigin, queueGuard?: () => void): Promise<void> {
     // A prompt or an answer stays as a draft when this refuses; a create, a setting or a stop has none.
     const draftKept = promptOf(command) !== null || command.type === 'answer'
+    // A new project counts as refused until its provider took it or may have (#704): any throw before then refused it.
+    if (command.type === 'create-project') this.refusedProjects.add(command.projectId)
     this.assertCanAct(undefined, draftKept)
     // Refused here, before an outbox entry exists and long before the provider hears anything.
     if (command.type === 'answer') this.guardClientGrant(client)
@@ -5366,6 +5456,15 @@ export class AgentControl {
     // A model change that names no effort is saved with the new model's default, as the provider will start it on.
     const startingEffort = command.type === 'configure-thread' && command.modelId !== undefined && command.reasoningEffort === undefined
       ? resolveModel(this.state.host.models, command.modelId)?.defaultReasoningEffort : undefined
+    // A routed thread's own message is classified and the thread put on the pick before it goes (ADR-0207). Wake-ups and
+    // Watcher's, delegation's and the Council's sends are not the user's; a paired phone's are. The classifier takes
+    // seconds, and a prompt that goes at once is held in memory until the outbox write below, so it is saved first.
+    if (command.type === 'send' && this.dependencies.modelRouterEnabled === true && !wakeUp && (!origin || origin.phoneOrigin)
+      // A model or effort the user set by hand since the last message is theirs to run this one on, once (ADR-0192).
+      && !this.routedSends.takeChoiceByHand(command.threadId) && this.routedSends.routes(command.threadId)) {
+      try { await this.persist() } catch { throw new Error(PROMPT_NOT_SAVED) }
+      await this.routedSends.beforeSend(command.threadId, command.text)
+    }
     command = (this.watcherHooks?.beforeDispatch(command as AgentHostCommand, draftId, origin) ?? command) as DispatchCommand
     // A thread that began from another sends its first message with the handover ahead of the words (#1028).
     const startHandover = command.type === 'send' && this.startHandoverDue(command) ? await this.startHandoverFor(command) : undefined
@@ -5483,6 +5582,7 @@ export class AgentControl {
         this.setDelivery(prompt.threadId, draftId, delivery?.status ?? 'submitting', { providerLatencyMs })
       }
     }
+    if (command.type === 'create-project' && (result.accepted || result.uncertain)) this.refusedProjects.delete(command.projectId)
     if (result.accepted || result.uncertain) this.watcherHooks?.dispatched?.(command as AgentHostCommand)
     else { this.watcherHooks?.dispatchAborted?.(command as AgentHostCommand); startAborted() }
     // Previews are decoration, not history: the provider hears the prompt first, and a definitive refusal records nothing.
@@ -5552,9 +5652,7 @@ export class AgentControl {
         if (!prompt || this.outbox.some(item => item.id === command.commandId)) throw error
       }
       await this.persist()
-      if (this.outbox.some(item => item.id === command.commandId)) throw new Error(prompt
-        ? 'The provider has not confirmed this user message in its state. Refresh to reconcile the existing send; it will not be replayed.'
-        : THREAD_SETTINGS_UNRECONCILED)
+      if (this.outbox.some(item => item.id === command.commandId)) throw prompt ? new SendUnconfirmed(command.commandId) : new Error(THREAD_SETTINGS_UNRECONCILED)
       return
     }
     if (command.type === 'answer' && result.accepted) {
@@ -5779,38 +5877,42 @@ export class AgentControl {
       turn.projectId = this.state.host.threads.find(thread => thread.id === draftThreadId)?.projectId ?? null
     }
     this.assertCanAct()
-    this.observe(...(draftThreadId ? [draftThreadId] : []))
-    const messageId = randomUUID()
-    const readStartedAt = performance.now()
-    const read = await this.readThread(draftThreadId ?? undefined, undefined, readBeforeSend(draftRequestId ? undefined : messageId))
-    // The read alone, as a typed send times it; taking in its snapshot is not part of it.
-    const readMs = performance.now() - readStartedAt
-    this.acceptSnapshot(read)
-    if (composer) this.validateComposerQuestion(composer)
-    const thread = this.thread(draftThreadId)
-    if (!draftText.trim() && !draftAttachments?.length) throw new Error('There is no prompt to send.')
-    const attachments = validatePromptAttachments(this.state.host, thread.modelId, draftAttachments, this.attachmentRules)
-    const text = draftText.trim()
-    const draftId = pickedDraftId
-    const savedDraft = staged ?? this.state.threadDrafts?.find(item => item.threadId === thread.id && item.draftId === draftId)
-    const skills = savedDraft?.skills
-    const files = savedDraft?.files
-    if (draftRequestId) {
-      if (attachments.length) throw new Error('Images cannot answer a pending question. Remove the images and answer it explicitly.')
-      const requestId = draftRequestId
-      if (!thread.requests.some(request => request.id === requestId && request.kind === 'question')) throw new Error('This question is no longer pending. Your answer is saved; review it before starting a new prompt.')
-      await this.execute({ type: 'answer', threadId: thread.id, requestId, answer: text }, turn, undefined, selectionRevision, client, undefined, composer, staged)
-      return
-    }
-    if (thread.requests.length) throw new Error('Answer the pending question or permission explicitly before sending a new prompt.')
-    if (thread.status === 'running') throw new Error('This thread is still working. Your draft is saved; wait for it to finish or explicitly stop the agent.')
-    this.sendStages(turn)?.addRead(readMs)
-    if (this.settledForWork(thread)) await this.reopenForWork(thread.id)
-    await this.dispatch({ type: 'send', commandId: randomUUID(), threadId: thread.id, messageId, text, ...(skills ? { skills } : {}), ...(files ? { files } : {}), ...(attachments.length ? { attachments } : {}), expectedLastUserMessageId: lastUserMessageIdOf(thread) }, turn, undefined, draftId, client, composer?.atomicDigest, phoneOrigin)
-    this.clearEmptyDraftBinding(thread.id, draftId)
-    if (this.manualDraftId === draftId && this.state.draftThreadId === thread.id) this.clearDraft()
-    else this.state.threadDrafts = (this.state.threadDrafts ?? []).filter(draft => draft.threadId !== thread.id || draft.draftId !== draftId)
-    this.say(`Sent to ${thread.title}.`)
+    // Kept observed until this Send settles, as a prompt in its thread's lane is (`liveSessionIds`).
+    const releaseSend = draftThreadId ? this.mark(this.draftSends, draftThreadId) : (): void => {}
+    try {
+      this.observe(...(draftThreadId ? [draftThreadId] : []))
+      const messageId = randomUUID()
+      const readStartedAt = performance.now()
+      const read = await this.readThread(draftThreadId ?? undefined, undefined, readBeforeSend(draftRequestId ? undefined : messageId))
+      // The read alone, as a typed send times it; taking in its snapshot is not part of it.
+      const readMs = performance.now() - readStartedAt
+      this.acceptSnapshot(read)
+      if (composer) this.validateComposerQuestion(composer)
+      const thread = this.thread(draftThreadId)
+      if (!draftText.trim() && !draftAttachments?.length) throw new Error('There is no prompt to send.')
+      const attachments = validatePromptAttachments(this.state.host, thread.modelId, draftAttachments, this.attachmentRules)
+      const text = draftText.trim()
+      const draftId = pickedDraftId
+      const savedDraft = staged ?? this.state.threadDrafts?.find(item => item.threadId === thread.id && item.draftId === draftId)
+      const skills = savedDraft?.skills
+      const files = savedDraft?.files
+      if (draftRequestId) {
+        if (attachments.length) throw new Error('Images cannot answer a pending question. Remove the images and answer it explicitly.')
+        const requestId = draftRequestId
+        if (!thread.requests.some(request => request.id === requestId && request.kind === 'question')) throw new Error('This question is no longer pending. Your answer is saved; review it before starting a new prompt.')
+        await this.execute({ type: 'answer', threadId: thread.id, requestId, answer: text }, turn, undefined, selectionRevision, client, undefined, composer, staged)
+        return
+      }
+      if (thread.requests.length) throw new Error('Answer the pending question or permission explicitly before sending a new prompt.')
+      if (thread.status === 'running') throw new Error('This thread is still working. Your draft is saved; wait for it to finish or explicitly stop the agent.')
+      this.sendStages(turn)?.addRead(readMs)
+      if (this.settledForWork(thread)) await this.reopenForWork(thread.id)
+      await this.dispatch({ type: 'send', commandId: randomUUID(), threadId: thread.id, messageId, text, ...(skills ? { skills } : {}), ...(files ? { files } : {}), ...(attachments.length ? { attachments } : {}), expectedLastUserMessageId: lastUserMessageIdOf(thread) }, turn, undefined, draftId, client, composer?.atomicDigest, phoneOrigin)
+      this.clearEmptyDraftBinding(thread.id, draftId)
+      if (this.manualDraftId === draftId && this.state.draftThreadId === thread.id) this.clearDraft()
+      else this.state.threadDrafts = (this.state.threadDrafts ?? []).filter(draft => draft.threadId !== thread.id || draft.draftId !== draftId)
+      this.say(`Sent to ${thread.title}.`)
+    } finally { releaseSend(); if (!this.disposed) this.observe() }
   }
   private draftRequestId(threadId: string | null): string | null {
     const thread = this.thread(threadId)
@@ -6167,6 +6269,9 @@ export class AgentControl {
         ? item.draftDigest === followupDigest({ text: this.state.draft, attachments: this.state.draftAttachments, skills: savedDraft?.skills, files: savedDraft?.files })
         : !this.state.draftAttachments?.length && this.state.draft.trim() === message.text)
       this.outbox = this.outbox.filter(o => o.id !== item.id)
+      // The banner said this send was unconfirmed; its echo has arrived, so it says nothing true any more.
+      const shown = this.visibleCommandError
+      if (shown instanceof SendUnconfirmed && shown.commandId === item.id && this.state.error === shown.message) this.setCommandError(undefined, null)
       if (message && item.draftId && item.threadId) {
         if (item.resumesSetAside) this.resumeSetAsideUpdates(item.threadId, item.resumesSetAside)
         this.setDelivery(item.threadId, item.draftId, 'accepted', { commandId: item.id, messageId: item.messageId })

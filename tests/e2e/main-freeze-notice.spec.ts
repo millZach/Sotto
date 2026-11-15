@@ -226,7 +226,10 @@ test('main says when it is frozen, records a minute of itself on this computer, 
 
     // The files, under Sotto's data folder, hold names, Sotto's script places and timings, and nothing else.
     const folder = join(launched.userData, 'performance-recordings')
-    const [name] = await readdir(folder)
+    // The freeze above can leave hang recordings beside it, since main stops for a second or more.
+    const activity = (await readdir(folder)).filter(entry => entry.startsWith('sotto-activity-'))
+    expect(activity).toHaveLength(1)
+    const [name] = activity
     expect(name).toMatch(/^sotto-activity-\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}$/)
     const files = (await readdir(join(folder, name!))).sort()
     expect(files).toEqual(['main.cpuprofile', 'summary.json', 'window.cpuprofile'])

@@ -691,6 +691,14 @@ msgstr ""
 msgid "{more, plural, one {Show {lines} more line} other {Show {lines} more lines}}"
 msgstr ""
 
+#: src/renderer/src/agents/ThreadSidebar.tsx
+msgid "{more, plural, one {Show {threads} more settled thread} other {Show {threads} more settled threads}}"
+msgstr ""
+
+#: src/renderer/src/agents/ThreadSidebar.tsx
+msgid "{more, plural, one {Show {threads} more} other {Show {threads} more}}"
+msgstr ""
+
 #: src/renderer/src/agents/ScreenshotInput.tsx
 msgid "{most, plural, one {Attach up to # screenshot at a time.} other {Attach up to # screenshots at a time.}}"
 msgstr ""
@@ -740,6 +748,11 @@ msgstr ""
 
 #: src/renderer/src/agents/ForkFromHere.tsx
 msgid "{name} has no fork of its own, so the new {name} thread starts from a handover of this conversation up to {time}. It goes with your first message. What’s below stays here."
+msgstr ""
+
+#. {name} is a file name.
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "{name} is a program or script, so it was shown in its folder. Nothing was run."
 msgstr ""
 
 #. {name} is a Git branch name.
@@ -2018,6 +2031,14 @@ msgstr ""
 msgid "Ask about your threads, or say what to start or send"
 msgstr ""
 
+#: src/renderer/src/agents/mailGrantMenu.tsx
+msgid "Ask before this thread reads {name}"
+msgstr ""
+
+#: src/renderer/src/agents/mailGrantMenu.tsx
+msgid "Ask before Watcher reads {name}"
+msgstr ""
+
 #. A permission mode: the agent asks before it acts.
 #: src/renderer/src/agents/permissionPresentation.tsx
 msgid "Ask for approval"
@@ -2085,7 +2106,9 @@ msgid "Attachments must total 50 MB or less. Nothing was attached. Remove a file
 msgstr ""
 
 #. A permission mode: the agent decides what to ask about.
+#. On a routed thread's model chip, in place of a model's name: model routing chooses the model.
 #: src/renderer/src/agents/permissionPresentation.tsx
+#: src/renderer/src/agents/ThreadOptions.tsx
 msgid "Auto"
 msgstr ""
 
@@ -2536,6 +2559,15 @@ msgstr ""
 msgid "Choose model. {modelNameNow} oversees this thread"
 msgstr ""
 
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Choose model. Model routing is on"
+msgstr ""
+
+#. placeholder {0}: effortLabel(reasoning)
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Choose model. Model routing is on, now {modelNameNow}, {0}"
+msgstr ""
+
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Choose models"
 msgstr ""
@@ -2576,6 +2608,10 @@ msgstr ""
 
 #: src/renderer/src/agents/MarkupEditor.tsx
 msgid "Circle"
+msgstr ""
+
+#: src/renderer/src/agents/RouterSwitch.tsx
+msgid "Claude Code did not confirm the model change. The chips show what this thread runs on."
 msgstr ""
 
 #. Empties the default projects directory.
@@ -3881,6 +3917,11 @@ msgctxt "ticked task"
 msgid "Done"
 msgstr ""
 
+#. Saves a file on another computer to this computer's Downloads folder.
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Download"
+msgstr ""
+
 #. {to} is a version number.
 #: src/renderer/src/agents/HostUpdates.tsx
 msgid "Download {to}"
@@ -5080,7 +5121,7 @@ msgstr ""
 msgid "Link copied"
 msgstr ""
 
-#. {file} is a path to a Markdown file.
+#. {file} is a path to a file.
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "Link: {file}"
 msgstr ""
@@ -5278,6 +5319,26 @@ msgstr ""
 
 #: src/renderer/src/agents/ModelPicker.tsx
 msgid "Model providers"
+msgstr ""
+
+#: src/renderer/src/agents/RouterSwitch.tsx
+msgid "Model routing"
+msgstr ""
+
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Model routing chooses the effort."
+msgstr ""
+
+#: src/renderer/src/agents/RouterSwitch.tsx
+msgid "Model routing chose {modelName}, {level}."
+msgstr ""
+
+#: src/renderer/src/agents/RouterSwitch.tsx
+msgid "Model routing did not answer. Sent on {modelName}, {level}."
+msgstr ""
+
+#: src/renderer/src/agents/RouterSwitch.tsx
+msgid "Model routing kept {modelName}, {level}."
 msgstr ""
 
 #: src/renderer/src/agents/ModelPicker.tsx
@@ -5560,6 +5621,10 @@ msgstr ""
 
 #: src/renderer/src/agents/EmptyWorkspace.tsx
 msgid "New thread with this draft"
+msgstr ""
+
+#: src/renderer/src/agents/RouterSwitch.tsx
+msgid "New threads start Dynamic. Turn Dynamic off to start them with model routing."
 msgstr ""
 
 #: src/renderer/src/agents/branchToolbar.logic.ts
@@ -5984,8 +6049,15 @@ msgid "Only the first entries of this folder are listed. Keep typing to narrow t
 msgstr ""
 
 #. A sidebar row's menu: open the thread in the focused pane.
+#. Opens a file in its own app, or a folder in the file manager.
+#: src/renderer/src/agents/MessageContent.tsx
 #: src/renderer/src/agents/threadMenu.tsx
 msgid "Open"
+msgstr ""
+
+#. {file} is a path. A press opens the file in its own app, or the folder.
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Open {file}"
 msgstr ""
 
 #. {file} is a path to a Markdown file.
@@ -6737,6 +6809,7 @@ msgstr ""
 #: src/renderer/src/agents/EffortPicker.tsx
 #: src/renderer/src/agents/FixedEffortChip.tsx
 #: src/renderer/src/agents/permissionPresentation.tsx
+#: src/renderer/src/agents/RouterSwitch.tsx
 #: src/renderer/src/agents/SplitChipEffort.tsx
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "Provider default"
@@ -7259,6 +7332,7 @@ msgid "Restore branch {sent}"
 msgstr ""
 
 #: src/renderer/src/agents/SidebarFrame.tsx
+#: src/renderer/src/agents/threadMenu.tsx
 #: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Restore project"
 msgstr ""
@@ -7667,6 +7741,11 @@ msgstr ""
 msgid "Settled"
 msgstr ""
 
+#. The tooltip of a settled thread's time in the sidebar. {settledWhen} is the date and time it was settled.
+#: src/renderer/src/agents/ThreadSidebar.tsx
+msgid "Settled {settledWhen}"
+msgstr ""
+
 #. A toast after the user settled a thread; {title} is the thread's name.
 #: src/renderer/src/agents/SettleToast.tsx
 msgid "Settled {title}"
@@ -7701,9 +7780,13 @@ msgid "Show {earlier} earlier"
 msgstr ""
 
 #. {manager} is File Explorer, Finder or the file manager; {file} is a path.
-#. {manager} is File Explorer, Finder or the file manager; {file} is a path.
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "Show {file} in {manager}"
+msgstr ""
+
+#. {file} is a path to a file on another computer. Files is the Tools surface.
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Show {file} in Files"
 msgstr ""
 
 #. {name} is the file name of an image.
@@ -7786,9 +7869,13 @@ msgid "Show in {manager}"
 msgstr ""
 
 #. {manager} is File Explorer, Finder or the file manager; {file} is a path.
-#. {manager} is File Explorer, Finder or the file manager; {file} is a path.
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "Show in {manager}: {file}"
+msgstr ""
+
+#. Shows a file on another computer in the Tools surface named Files.
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Show in Files"
 msgstr ""
 
 #: src/renderer/src/agents/BranchToolbar.tsx
@@ -8153,6 +8240,10 @@ msgstr ""
 msgid "Sotto could not discard this saved answer. It is still kept."
 msgstr ""
 
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Sotto could not download this file. Nothing was saved. Try again."
+msgstr ""
+
 #: src/renderer/src/agents/ownServerWords.ts
 msgid "Sotto could not finish adding {name} or take it off its list. Remove it, then add it again."
 msgstr ""
@@ -8179,6 +8270,10 @@ msgstr ""
 
 #: src/renderer/src/agents/InteractiveVisual.tsx
 msgid "Sotto could not open the page."
+msgstr ""
+
+#: src/renderer/src/agents/MessageContent.tsx
+msgid "Sotto could not open this file. Nothing was opened."
 msgstr ""
 
 #: src/renderer/src/agents/ownServerWords.ts
@@ -8243,6 +8338,14 @@ msgstr ""
 
 #: src/renderer/src/agents/DelegatedWork.tsx
 msgid "Sotto could not stop that detached run. It may still be running."
+msgstr ""
+
+#: src/renderer/src/agents/mailGrantMenu.tsx
+msgid "Sotto could not stop this thread reading {name}, so it can still read it. Try again."
+msgstr ""
+
+#: src/renderer/src/agents/mailGrantMenu.tsx
+msgid "Sotto could not stop Watcher reading {name}, so it can still read it. Try again."
 msgstr ""
 
 #: src/renderer/src/agents/delegationWords.ts
@@ -9635,9 +9738,17 @@ msgstr ""
 msgid "Try again, sending your last message to {name} again"
 msgstr ""
 
+#: src/renderer/src/agents/RouterSwitch.tsx
+msgid "Turn Dynamic off to use model routing."
+msgstr ""
+
 #. Comes before the name of a thread whose last turn failed, in the Needs you card: Turn failed in Streaming WAV stall.
 #: src/renderer/src/agents/NeedsYouQueue.tsx
 msgid "Turn failed in"
+msgstr ""
+
+#: src/renderer/src/agents/DynamicSwitch.tsx
+msgid "Turn model routing off to make this thread Dynamic."
 msgstr ""
 
 #: src/renderer/src/agents/ThreadCompaction.tsx

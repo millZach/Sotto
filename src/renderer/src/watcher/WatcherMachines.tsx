@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { Laptop, Server, X } from 'lucide-react'
-import type { AgentState, AgentThread } from '../../../shared/agents'
+import type { AgentProject, AgentState, AgentThread } from '../../../shared/agents'
 import { isThreadTurnRunning } from '../../../shared/threadActivity'
 import type { WatcherRoomState } from '../../../shared/watcherRoom'
 import { THIS_COMPUTER, workingThreadsByMachine } from '../../../shared/workingThreads'
@@ -28,6 +28,7 @@ const PANEL_GAP = 12
 const PANEL_MIN_HEIGHT = 160
 /** No threads yet, the same empty list each draw so the suggestion does not plan again for nothing. */
 const NO_THREADS: readonly AgentThread[] = []
+const NO_PROJECTS: readonly AgentProject[] = []
 
 /** The threads working on one machine, as its panel lists them: who started each, and its title. */
 function workingOn(entry: MachineEntry, threads: readonly AgentThread[]): readonly AgentThread[] {
@@ -283,5 +284,5 @@ export function WatcherMachines({ state, now, hosts: bridge = window.sotto?.host
       anchor={opener.current} frame={line.current} onClose={close} onChangeDefault={changeDefault} checks={opened.connected ? machineChecksOf(queues, opened) : undefined} /> : null}
   </div>
   {/* A machine short on memory or busy, and another with room, from the reading the line just took (#1309). */}
-  <WatcherMoveSuggestion entries={entries} threads={threads ?? NO_THREADS} now={now ?? Date.now()} /></>
+  <WatcherMoveSuggestion entries={entries} threads={threads ?? NO_THREADS} projects={state?.host.projects ?? NO_PROJECTS} now={now ?? Date.now()} /></>
 }

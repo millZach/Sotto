@@ -592,7 +592,7 @@ describe('a link to a Markdown file', () => {
     inThread('[plan](/home/me/plan.md)')
     const link = screen.getByRole('link', { name: 'Open /home/me/plan.md in the side panel' })
     fireEvent.contextMenu(link, { clientX: 20, clientY: 30 })
-    expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual(['Open in side panel', 'Show in File Explorer', 'Copy path'])
+    expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual(['Open in side panel', 'Open', 'Show in File Explorer', 'Copy path'])
     await user.click(screen.getByRole('menuitem', { name: 'Show in File Explorer' }))
     expect((window as unknown as { sotto: { files: { revealLink: unknown } } }).sotto.files.revealLink).toHaveBeenCalledWith({ threadId: 'thread', path: '/home/me/plan.md' })
     link.focus(); await user.keyboard('{Shift>}{F10}{/Shift}')
@@ -629,10 +629,12 @@ describe('a link to a Markdown file', () => {
     expect(opened).toHaveBeenLastCalledWith('thread', path)
   })
 
-  it('shows any other file it mends in its folder', async () => {
+  it('opens any other file it mends in its own app', async () => {
+    const openLink = vi.fn(async () => ({ ok: true as const, value: { did: 'opened' as const } }))
+    ;(window as unknown as { sotto: { files: Record<string, unknown> } }).sotto.files.openLink = openLink
     inThread('[prototype](D:\\Watcher Audit\\.prototypes\\answers.html)')
-    await userEvent.click(screen.getByRole('link', { name: /in File Explorer$/u }))
-    expect((window as unknown as { sotto: { files: { revealLink: unknown } } }).sotto.files.revealLink).toHaveBeenCalledWith({ threadId: 'thread', path: 'D:\\Watcher Audit\\.prototypes\\answers.html' })
+    await userEvent.click(screen.getByRole('link', { name: 'Open D:\\Watcher Audit\\.prototypes\\answers.html' }))
+    expect(openLink).toHaveBeenCalledWith({ threadId: 'thread', path: 'D:\\Watcher Audit\\.prototypes\\answers.html' })
   })
 
   it('leaves a link in code, a web page and an unlinked bracket as they were', () => {
@@ -641,10 +643,10 @@ describe('a link to a Markdown file', () => {
     expect(screen.getAllByRole('link').map(link => link.textContent)).toEqual(['site'])
   })
 
-  it('still shows in its folder while the Owl answer is off, and stays inert outside a thread', () => {
+  it('opens in its own app, as any file does, while the Owl answer is off, and stays inert outside a thread', () => {
     owl.panel = false
     const { unmount } = inThread('[plan](/home/me/plan.md) and `README.md`')
-    expect(screen.getByRole('link', { name: 'Show /home/me/plan.md in File Explorer' })).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Open /home/me/plan.md' })).toBeInTheDocument()
     expect(screen.getAllByRole('link')).toHaveLength(1)
     unmount()
     owl.panel = true
@@ -669,34 +671,85 @@ describe('file links in a thread', () => {
       '\\\\evil.example\\share\\a.pdf', '%5c%5cevil.example%5cshare', '%2f%2fevil.example/share', 'C:a.pdf', '', undefined]) expect(localFilePath(raw)).toBeNull()
   })
 
-  it('shows a linked file in its folder on click or Enter and says why when it cannot', async () => {
+  it('opens a linked file in its own app on click or Enter and says why when it cannot', async () => {
     const user = userEvent.setup()
-    const revealLink = vi.fn(async () => ({ ok: false as const, error: { code: 'path-unavailable' as const, message: 'This file is not on this computer, or it has moved. Nothing was opened.' } }))
-    ;(window as { sotto?: unknown }).sotto = { platform: 'darwin', files: { revealLink } }
+    const revealLink = vi.fn()
+    const openLink = vi.fn(async () => ({ ok: false as const, error: { code: 'path-unavailable' as const, message: 'This file is not on the computer this thread runs on, or it has moved. Nothing was opened.' } }))
+    ;(window as { sotto?: unknown }).sotto = { platform: 'darwin', files: { revealLink, openLink } }
     const { container } = render(<ThreadWebLinks threadId="thread" threadTitle="Thread"><MessageContent text="[Guide](</Users/me/health/guides/Guide.pdf>)" /></ThreadWebLinks>)
-    const link = screen.getByRole('link', { name: 'Show /Users/me/health/guides/Guide.pdf in Finder' })
+    const link = screen.getByRole('link', { name: 'Open /Users/me/health/guides/Guide.pdf' })
     expect(link).toHaveTextContent('Guide')
-    expect(link).toHaveAttribute('title', 'Show in Finder: /Users/me/health/guides/Guide.pdf')
+    expect(link).toHaveAttribute('title', 'Open /Users/me/health/guides/Guide.pdf')
     expect(link).not.toHaveAttribute('href')
     await user.click(link)
-    expect(revealLink).toHaveBeenCalledWith({ threadId: 'thread', path: '/Users/me/health/guides/Guide.pdf' })
-    expect(await screen.findByText('This file is not on this computer, or it has moved. Nothing was opened.')).toBeInTheDocument()
+    expect(openLink).toHaveBeenCalledWith({ threadId: 'thread', path: '/Users/me/health/guides/Guide.pdf' })
+    expect(await screen.findByText('This file is not on the computer this thread runs on, or it has moved. Nothing was opened.')).toBeInTheDocument()
     link.focus(); await user.keyboard('{Enter}')
-    expect(revealLink).toHaveBeenCalledTimes(2)
+    expect(openLink).toHaveBeenCalledTimes(2)
+    expect(revealLink).not.toHaveBeenCalled()
     assertInert(container)
   })
 
-  it('shows a file named by an inline-code path, and leaves other inline code alone', async () => {
+  it('offers Open, the folder and the path on any file link\'s menu, and shows the file in its folder from there', async () => {
     const user = userEvent.setup()
     const revealLink = vi.fn(async () => ({ ok: true as const, value: {} }))
-    ;(window as { sotto?: unknown }).sotto = { platform: 'darwin', files: { revealLink } }
+    const openLink = vi.fn(async () => ({ ok: true as const, value: { did: 'opened' as const } }))
+    ;(window as { sotto?: unknown }).sotto = { platform: 'win32', files: { revealLink, openLink } }
+    render(<ThreadWebLinks threadId="thread" threadTitle="Thread"><MessageContent text="[report](D:/Reports/out/q3-report.pdf)" /></ThreadWebLinks>)
+    const link = screen.getByRole('link', { name: 'Open D:/Reports/out/q3-report.pdf' })
+    fireEvent.contextMenu(link, { clientX: 20, clientY: 30 })
+    expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual(['Open', 'Show in File Explorer', 'Copy path'])
+    await user.click(screen.getByRole('menuitem', { name: 'Show in File Explorer' }))
+    expect(revealLink).toHaveBeenCalledWith({ threadId: 'thread', path: 'D:/Reports/out/q3-report.pdf' })
+    link.focus(); await user.keyboard('{Shift>}{F10}{/Shift}')
+    await user.click(screen.getByRole('menuitem', { name: 'Open' }))
+    expect(openLink).toHaveBeenCalledWith({ threadId: 'thread', path: 'D:/Reports/out/q3-report.pdf' })
+  })
+
+  it('never offers to open a program: its link says it is shown in its folder, and says nothing was run', async () => {
+    const user = userEvent.setup()
+    // Main decides: it shows a program in its folder and answers that it did.
+    const openLink = vi.fn(async () => ({ ok: true as const, value: { did: 'shown' as const } }))
+    ;(window as { sotto?: unknown }).sotto = { platform: 'win32', files: { revealLink: vi.fn(), openLink } }
+    render(<ThreadWebLinks threadId="thread" threadTitle="Thread"><MessageContent text="[the build script](D:/Reports/build-report.bat) and [setup](<D:/Reports/Setup Wizard.exe:3>)" /></ThreadWebLinks>)
+    const link = screen.getByRole('link', { name: 'Show D:/Reports/build-report.bat in File Explorer' })
+    expect(screen.getByRole('link', { name: 'Show D:/Reports/Setup Wizard.exe:3 in File Explorer' })).toBeInTheDocument()
+    fireEvent.contextMenu(link, { clientX: 20, clientY: 30 })
+    expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual(['Show in File Explorer', 'Copy path'])
+    await user.keyboard('{Escape}')
+    await user.click(link)
+    expect(await screen.findByText('build-report.bat is a program or script, so it was shown in its folder. Nothing was run.')).toBeInTheDocument()
+  })
+
+  it('shows a file on a paired host in Files, and offers Download rather than anything on this computer', async () => {
+    const user = userEvent.setup()
+    const revealLink = vi.fn(), openLink = vi.fn()
+    const linkedFile = vi.fn(async () => ({ ok: false as const, error: { code: 'path-unavailable' as const, message: 'English from the host' } }))
+    ;(window as { sotto?: unknown }).sotto = { platform: 'win32', files: { revealLink, openLink, linkedFile } }
+    render(<ThreadWebLinks threadId="host:thread" threadTitle="Thread" onPairedHost><MessageContent text="[report](/home/zach/Projects/reports/out/q3-report.pdf)" /></ThreadWebLinks>)
+    const link = screen.getByRole('link', { name: 'Show /home/zach/Projects/reports/out/q3-report.pdf in Files' })
+    fireEvent.contextMenu(link, { clientX: 20, clientY: 30 })
+    expect(screen.getAllByRole('menuitem').map(item => item.textContent)).toEqual(['Show in Files', 'Download', 'Copy path'])
+    await user.keyboard('{Escape}')
+    await user.click(link)
+    expect(linkedFile).toHaveBeenCalledWith({ threadId: 'host:thread', path: '/home/zach/Projects/reports/out/q3-report.pdf', want: 'place' })
+    // The host's service answers in English; the window says the refusal in its own words.
+    expect(await screen.findByText('This file is not on the computer this thread runs on, or it has moved. Nothing was opened.')).toBeInTheDocument()
+    expect(openLink).not.toHaveBeenCalled()
+    expect(revealLink).not.toHaveBeenCalled()
+  })
+
+  it('opens a file named by an inline-code path, and leaves other inline code alone', async () => {
+    const user = userEvent.setup()
+    const openLink = vi.fn(async () => ({ ok: true as const, value: { did: 'opened' as const } }))
+    ;(window as { sotto?: unknown }).sotto = { platform: 'darwin', files: { revealLink: vi.fn(), openLink } }
     render(<ThreadWebLinks threadId="thread" threadTitle="Thread"><MessageContent text="Double-click `~/Developer/santa.mobileconfig`, then run `npm test` in `src`." /></ThreadWebLinks>)
-    const link = screen.getByRole('link', { name: 'Show ~/Developer/santa.mobileconfig in Finder' })
+    const link = screen.getByRole('link', { name: 'Open ~/Developer/santa.mobileconfig' })
     expect(link.tagName).toBe('CODE')
     await user.click(link)
-    expect(revealLink).toHaveBeenCalledWith({ threadId: 'thread', path: '~/Developer/santa.mobileconfig' })
+    expect(openLink).toHaveBeenCalledWith({ threadId: 'thread', path: '~/Developer/santa.mobileconfig' })
     link.focus(); await user.keyboard('{Enter}')
-    expect(revealLink).toHaveBeenCalledTimes(2)
+    expect(openLink).toHaveBeenCalledTimes(2)
     expect(screen.getAllByRole('link')).toHaveLength(1)
   })
 
@@ -713,14 +766,14 @@ describe('file links in a thread', () => {
     expect(revealLink).not.toHaveBeenCalled()
   })
 
-  it('names File Explorer on Windows and the file manager on Linux', () => {
+  it('names File Explorer on Windows and the file manager on Linux, for a program it only shows', () => {
     ;(window as { sotto?: unknown }).sotto = { platform: 'win32', files: { revealLink: vi.fn() } }
-    render(<ThreadWebLinks threadId="thread" threadTitle="Thread"><MessageContent text="[Guide](<C:\\Users\\me\\Guide.pdf>)" /></ThreadWebLinks>)
-    expect(screen.getByRole('link', { name: 'Show C:\\Users\\me\\Guide.pdf in File Explorer' })).toBeInTheDocument()
+    render(<ThreadWebLinks threadId="thread" threadTitle="Thread"><MessageContent text="[Guide](<C:\\Users\\me\\Guide.exe>)" /></ThreadWebLinks>)
+    expect(screen.getByRole('link', { name: 'Show C:\\Users\\me\\Guide.exe in File Explorer' })).toBeInTheDocument()
     cleanup()
     ;(window as { sotto?: unknown }).sotto = { platform: 'linux', files: { revealLink: vi.fn() } }
-    render(<ThreadWebLinks threadId="thread" threadTitle="Thread"><MessageContent text="[Guide](/home/me/Guide.pdf)" /></ThreadWebLinks>)
-    expect(screen.getByRole('link', { name: 'Show /home/me/Guide.pdf in the file manager' })).toBeInTheDocument()
+    render(<ThreadWebLinks threadId="thread" threadTitle="Thread"><MessageContent text="[Guide](/home/me/Guide.sh)" /></ThreadWebLinks>)
+    expect(screen.getByRole('link', { name: 'Show /home/me/Guide.sh in the file manager' })).toBeInTheDocument()
   })
 
   it('stays inert text while the Owl feature is off, as on stable', () => {

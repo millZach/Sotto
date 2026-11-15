@@ -747,6 +747,9 @@ artifacts/watcher-news-turns/*
 !artifacts/watcher-news-turns/news-folded-dark-1280x800.png
 !artifacts/watcher-news-turns/news-open-dark-820x560.png
 !artifacts/watcher-news-turns/news-open-light-1280x800.png
+artifacts/watcher-reader-place-window/*
+!artifacts/watcher-reader-place-window/reading-before-news-dark-1280x800.png
+!artifacts/watcher-reader-place-window/reading-after-two-news-dark-1280x800.png
 
 # The Core ML speech helper's SwiftPM build (ADR-0071 follow-up)
 native/coreml-asr/.build/

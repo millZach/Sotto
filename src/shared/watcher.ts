@@ -487,6 +487,16 @@ export const watcherToolSchemas = {
         defaultPermission: permission.nullable(), permissionComparable: z.boolean() }).strict()).max(100).optional(),
       controlAvailable: z.boolean(), readsAvailable: z.boolean(), readOnlyProfileAvailable: z.boolean(), freshness }).strict()).max(100), ...page }),
   },
+  // A folder made a project at the user's word (ADR-0073, November 12, 2026): an existing one, or one `newFolder` makes,
+  // with `gitInit` running `git init` in it first. It keeps no operation, as unsettle_thread keeps none: a retry answers
+  // the project the first call gave and adds nothing more. A paired host is never sent it as a Watcher call; the desktop
+  // sends that host the `create-project` its own Add project sends.
+  add_project: {
+    input: z.object({ ...mutation, hostId: z.uuid().optional(), path: z.string().min(1).max(4_096).optional(), title: z.string().min(1).max(512).optional(),
+      newFolder: z.boolean().optional(), gitInit: z.boolean().optional() }).strict(),
+    output: result({ project: z.object({ target: watcherProjectTargetSchema, title: z.string().max(512), displayRoot: z.string().max(4_096) }).strict(),
+      folderMade: z.boolean(), gitInitialized: z.boolean(), alreadyAdded: z.boolean() }),
+  },
   keep_state: {
     // A list given whole replaces that list's open lines; add, edit, close and drop change one line each, by its ID.
     input: watcherKeepStateInputSchema,

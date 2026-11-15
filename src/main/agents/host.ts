@@ -67,7 +67,7 @@ export interface WatcherProfileTools extends ScopedThreadTools {
 
 export type AgentHostCommand =
   | { readonly type: 'create-project'; readonly provider?: ProviderId; readonly commandId: string; readonly projectId: string; readonly title: string; readonly path: string }
-  | ({ readonly type: 'create-thread'; readonly dynamic?: true; readonly commandId: string; readonly threadId: string; readonly projectId: string; readonly title: string; readonly modelId: string; readonly titleSource?: 'user' | 'default'; readonly project?: AgentProject; readonly workingCopy?: 'independent' | 'shared'; readonly baseBranch?: string; readonly startFromOrigin?: boolean; readonly existingWorktreePath?: string; readonly workingDirectory?: string; readonly startFromMove?: string; readonly madeFrom?: WorktreeMadeFrom; readonly check?: true
+  | ({ readonly type: 'create-thread'; readonly dynamic?: true; readonly routed?: true; readonly commandId: string; readonly threadId: string; readonly projectId: string; readonly title: string; readonly modelId: string; readonly titleSource?: 'user' | 'default'; readonly project?: AgentProject; readonly workingCopy?: 'independent' | 'shared'; readonly baseBranch?: string; readonly startFromOrigin?: boolean; readonly existingWorktreePath?: string; readonly workingDirectory?: string; readonly startFromMove?: string; readonly madeFrom?: WorktreeMadeFrom; readonly check?: true
     /** Main-only Watcher creation metadata, never accepted by the public command schema. */
     readonly keptSpeed?: true; readonly councilJudge?: true } & AgentThreadOptions)
   | ({ readonly type: 'configure-thread'; readonly commandId: string; readonly threadId: string
@@ -213,7 +213,7 @@ export interface ThreadReadPurpose {
  */
 /** Where a rename came from: by hand, written by the thread's own provider, or a first-message title. */
 export type ThreadRenameSource = 'user' | 'generated' | 'first-message'
-export type ShortTextPurpose = 'thread-title' | 'thread-branch' | 'commit-message' | 'pull-request-text' | 'next-prompt' | 'command-summary'
+export type ShortTextPurpose = 'thread-title' | 'thread-branch' | 'commit-message' | 'pull-request-text' | 'next-prompt' | 'command-summary' | 'model-route'
 /** The side calls Watcher's own thread may make: neither runs a tool or joins its conversation (ADR-0173, ADR-0185). */
 export const watcherMayWrite = (purpose: ShortTextPurpose | undefined): boolean => purpose === 'next-prompt' || purpose === 'command-summary'
 export interface ShortTextPrompt {
@@ -225,6 +225,8 @@ export interface ShortTextPrompt {
 /** A model a side call runs on when there is no session to run it in (ADR-0173): the model chosen, and the folder it would work in. */
 export interface ShortTextTarget {
   readonly modelId: string
+  /** The effort to run at, where the caller chose one (model routing's classifier, ADR-0207). Absent, the model's least thorough. */
+  readonly effort?: string | undefined
   readonly cwd?: string | undefined
 }
 /** `projectPath` is the project's own folder, for a provider that keeps skills by project and not by working folder. */
@@ -504,6 +506,8 @@ export interface AgentHost extends ProviderHost {
    * `user` and outranks everything later. The provider is not told. */
   renameThread?(threadId: string, title: string, source?: ThreadRenameSource): Promise<AgentHostSnapshot>
   setThreadDynamic?(threadId: string, dynamic: boolean): Promise<AgentHostSnapshot>
+  /** Model routing on or off for a thread (ADR-0207): Sotto's own mark, which its next send reads. */
+  setThreadRouted?(threadId: string, routed: boolean): Promise<AgentHostSnapshot>
   /**
    * One thread's whole history from Sotto's own store, for the few things that need more than the window
    * a pane holds — naming a thread from its first exchange. Absent on hosts that keep no history.
@@ -553,6 +557,8 @@ export interface AgentHost extends ProviderHost {
   listThreadChangedFiles?(request: GitChangedFilesRequest): Promise<GitChangedFiles>
   switchThreadBranch?(threadId: string, ref: string, create: boolean): Promise<AgentHostSnapshot>
   initThreadRepository?(threadId: string): Promise<AgentHostSnapshot>
+  /** `git init` in a folder create-project just made, before it becomes a project (`gitInit`, ADR-0073, November 12, 2026). */
+  initProjectFolder?(path: string): Promise<void>
   publishThreadRepository?(threadId: string, options: { repository: string; visibility: 'private' | 'public' }): Promise<{ snapshot: AgentHostSnapshot; url: string }>
   /** One pull request of the thread's through `gh`: by reference, else its branch's own or the one last linked (ADR-0027). */
   readThreadPullRequest?(request: GitPullRequestRequest): Promise<GitPullRequestRead>

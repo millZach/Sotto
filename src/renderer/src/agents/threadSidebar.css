@@ -324,6 +324,10 @@
 .thread-folder__preview-foot { display: flex; align-items: center; gap: 8px; padding: 5px 8px 6px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); list-style: none; }
 .thread-folder__preview-action { padding: 2px 8px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-control); background: transparent; color: var(--tt-text-2); font: inherit; font-size: var(--tt-type-caption); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .thread-folder__preview-action:hover { background: var(--threads-hover); color: var(--tt-text); }
+/* Show 30 more, the last place in the Settled shelf by status (ADR-0201, November 13, 2026): a row among the rows, so
+   the keys reach it after the last thread and a scroll rests on it as on a row. */
+.thread-nav__show-more { flex: 1; min-width: 0; min-height: 28px; padding: 0 10px; border: 0; border-radius: var(--tt-radius-control); background: transparent; color: var(--tt-text-muted); font: inherit; font-size: var(--tt-type-caption); font-weight: 600; text-align: center; }
+.thread-nav__more:hover .thread-nav__show-more, .thread-nav__show-more:focus-visible { color: var(--tt-text); }
 @keyframes thread-folder-preview { from { opacity: 0; transform: translateX(-4px); } }
 @media (prefers-reduced-motion: no-preference) {
   :root:not([data-reduced-motion='on']) .thread-folder__preview { animation: thread-folder-preview 120ms ease-out; }

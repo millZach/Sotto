@@ -1433,12 +1433,13 @@ enum Words {
 }
 
 /// Says what just happened, above whatever page is open: a problem until dismissed, a confirmation for a few seconds.
+/// Either can be swiped away.
 struct FeedbackBanner: View {
     @EnvironmentObject var model: AppModel
     var body: some View {
         Group {
             if let feedback = model.feedback {
-                HStack(alignment: .top, spacing: Space.s2) {
+                HStack(spacing: Space.s2) {
                     Text(feedback).font(.sotto(.small)).foregroundStyle(Palette.ink)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1448,7 +1449,6 @@ struct FeedbackBanner: View {
                         Button("Undo") { Task { await model.undoShelf() } }
                             .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
                             .disabled(model.actionHeld(undo.ref) != nil)
-                            .padding(.top, Space.s2)
                             .accessibilityIdentifier("feedback-undo")
                     }
                     Button { model.feedback = nil } label: {
@@ -1460,6 +1460,7 @@ struct FeedbackBanner: View {
                 }
                 .padding(.leading, Space.s4)
                 .glass(in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+                .swipeAway { model.feedback = nil }
                 .accessibilityAddTraits(.updatesFrequently)
                 .transition(.opacity)
                 .task(id: model.passing) {

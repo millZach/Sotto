@@ -2,12 +2,13 @@ import React, { useCallback, useSyncExternalStore, type ReactNode } from 'react'
 import { RotateCw, X } from 'lucide-react'
 import { useLingui } from '@lingui/react/macro'
 import type { FilesBridge, FilesError } from '../../../shared/files'
+import { FileDownloadLine, useFileDownload } from './FileDownload'
 import { FilePreview } from './FilePreview'
 import { FileTree } from './FileTree'
 import { LinkedFilePanel } from './LinkedFilePanel'
 import type { LinkedFile } from './linkedFile'
 import { ToolsChrome } from './ToolsChrome'
-import { type FilesBrowserStore, type PathAction, type ThreadFiles } from './filesBrowser'
+import { type FilesBrowserStore, type PathAction, type PreviewState, type ThreadFiles } from './filesBrowser'
 
 export function useThreadFiles(store: FilesBrowserStore, threadId: string | null): ThreadFiles | undefined {
   const read = useCallback(() => threadId === null ? undefined : store.thread(threadId), [store, threadId])
@@ -72,11 +73,19 @@ export function FilesSurface({ threadId, store, bridge, platform, onPathAction, 
     {rootError
       ? <RootProblem error={rootError} bridge={bridge !== undefined} onRetry={() => void store.refresh(bridge, threadId)} />
       : <FileTree files={files} store={store} bridge={bridge} label={label} />}
-    {preview && !rootError ? <FilePreview key={preview.path} files={files} preview={preview} platform={platform}
-      scrollTop={store.scrollOf(threadId).preview} onScroll={top => store.setScroll(threadId, 'preview', top)}
-      onCopyPath={() => onPathAction('copyPath', preview.path)} onReveal={bridge?.reveal ? () => onPathAction('reveal', preview.path) : undefined}
-      onClose={() => store.closePreview(threadId)} onRetry={() => store.openFile(bridge, threadId, preview.path)}
-      onRefreshFolder={() => store.recoverMissing(bridge, threadId, preview.path)}
-      onMarkdownView={view => store.setMarkdownView(threadId, view)} /> : null}
+    {preview && !rootError ? <TreeFilePreview key={preview.path} files={files} preview={preview} platform={platform} store={store} bridge={bridge} threadId={threadId} host={host} onPathAction={onPathAction} /> : null}
   </div></>
+}
+
+/** The file chosen in the tree. On a paired host its head offers Download, whose line of progress stands under the head. */
+function TreeFilePreview({ files, preview, platform, store, bridge, threadId, host, onPathAction }: Pick<FilesSurfaceProps, 'platform' | 'store' | 'bridge' | 'threadId' | 'host' | 'onPathAction'> & { readonly files: ThreadFiles; readonly preview: PreviewState }): ReactNode {
+  const download = useFileDownload(bridge, host, threadId, preview.path)
+  return <FilePreview files={files} preview={preview} platform={platform}
+    scrollTop={store.scrollOf(threadId).preview} onScroll={top => store.setScroll(threadId, 'preview', top)}
+    onCopyPath={() => onPathAction('copyPath', preview.path)} onReveal={bridge?.reveal ? () => onPathAction('reveal', preview.path) : undefined}
+    onDownload={download?.start} downloading={download?.busy}
+    under={download?.state && host !== undefined ? <FileDownloadLine bridge={bridge} host={host} threadId={threadId} path={preview.path} platform={platform} /> : undefined}
+    onClose={() => store.closePreview(threadId)} onRetry={() => store.openFile(bridge, threadId, preview.path)}
+    onRefreshFolder={() => store.recoverMissing(bridge, threadId, preview.path)}
+    onMarkdownView={view => store.setMarkdownView(threadId, view)} />
 }

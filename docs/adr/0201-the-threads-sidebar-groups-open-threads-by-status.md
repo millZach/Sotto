@@ -32,7 +32,7 @@ Then the **Snoozed** and **Settled** shelves, folded, as before (decision 8 says
 
 **7. The keyboard is the thread list's.** The groups are tree items of the one thread list (ADR-0164): Up, Down, Home and End walk heads and rows, Right opens a group and Left folds it or steps out of a row to its head. Moving between threads by chord follows the sidebar's order: Working now, then Recent.
 
-**8. Snoozed is flat; Settled keeps its folders.** By status, the **Snoozed** shelf lists its threads as one flat list, newest activity first, each row naming its project as the groups' rows do, with no project folder: project folders show only by project, Zach's call of November 10, 2026. The **Settled** shelf keeps its project folders, his second call the same day, so **Restore project** and a settled project's own rows are where they were. By project both shelves are as before.
+**8. Snoozed is flat; Settled keeps its folders.** By status, the **Snoozed** shelf lists its threads as one flat list, newest activity first, each row naming its project as the groups' rows do, with no project folder: project folders show only by project, Zach's call of November 10, 2026. The **Settled** shelf keeps its project folders, his second call the same day, so **Restore project** and a settled project's own rows are where they were. By project both shelves are as before. *Changed on November 13, 2026: by status Settled is one list too, newest settled first. See that day's amendment below.*
 
 ## Considered
 
@@ -56,3 +56,23 @@ Zach chose this. His screenshot of a row he was pointing at showed its second li
 
 **Why.** The row is pointed at to act on it, and the line read before then said what the shortcuts need not repeat. Its project and computer say which thread it is.
 
+
+## November 13, 2026 amendment: Settled is one list, newest settled first
+
+Zach chose this, three days after he kept Settled's folders: "For the default sidebar view I want the settled threads to be in order of most recent rather than by project". Under the folders, the thread that last did anything came first inside each one, and nothing put the projects' threads in one order. He answered four questions the same day from `prototype/settled-recent-first` (`docs/prototypes/settled-recent-first-prototype.html`), each with the choices drawn side by side.
+
+**What changed.** Decision 8's second half is replaced. By status:
+
+- **One list, newest settled first.** The Settled shelf lists its threads with no project folder, the thread settled last first. "Settled" is the latest time any of a thread's settlements names: its own Settle, its project's, an archive or its provider's. That is the rule the host orders an iPhone's Settled shelf by (`settledSince`), so the two list alike, and the iPhone did not change. Threads settled at the same moment, a project's or a thread's and the ones it delegated, keep the order they last moved in. A thread whose settlement names no time comes last and shows no time. He chose this over the order of last activity, which the folders used.
+- **The row's time says when it was settled.** Its clock today, the day within a week, the date before that and the year with it in another year, as a snoozed row words its wake time. Its tooltip says Settled and the full date and time. Every other row's time is unchanged.
+- **Restore project is on the row.** A thread settled with its project offers **Restore project** where one settled by itself offers Restore: among the row's shortcuts and in its row menu. It is the folder's own button and waits on the same lane. He chose this over a Settled projects list at the shelf's foot and over leaving Restore project to By project alone.
+- **A row is a row.** A settled thread at rest takes one line, its name and its time, as a finished row in Recent does (ADR-0135), with its project in its description. He chose this over naming the project on a second line. A settled row with more to say, one still working, watched or out of reach, keeps two lines and names its project there, so the November 11 amendment's rule for a pointed-at row applies to it as it does in Recent.
+- **Thirty at a time.** The open shelf shows thirty rows, then **Show 30 more** as the list's last place, which the arrow keys reach after the last thread and a scroll rests on. A search lists every match. The shelf is put in order only while it is open. On his laptop the shelf held 387 threads that day, and the folders had drawn only their heads.
+
+By project is as it was: a folder for each project on the Settled shelf, with Restore project on a settled project's folder.
+
+**Consequences.**
+
+- A settled project with no thread has no row by status, so it is restored from By project. On his laptop 36 of 51 settled projects held none.
+- The desktop and the iPhone now put Settled in the same order. The iPhone still has no Restore project.
+- A thread on screen that was settled long ago can be past the first thirty, as it could be inside a closed folder.

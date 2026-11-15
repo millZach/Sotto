@@ -34,6 +34,8 @@ import { usageLocalClearResultSchema, usageLocalHostReadSchema, usageProvidersBe
 import { hostMachineReportSchema } from '../shared/hostFacts'
 import { projectOriginsSchema, projectSetupResultSchema, type ProjectOrigins } from '../shared/workerMachine'
 import { desktopDefaultsReceiptSchema } from '../shared/desktopDefaults'
+import { heldPluginAccountCopiesSchema, pluginAccountCopyReceiptSchema, pluginAccountCopyRemovedSchema } from '../shared/pluginAccountCopies'
+import { gitHubSignInSchema, isBridgePlugin, isMailPlugin } from '../shared/plugins'
 import { ProviderSignInRefusal, type ProviderSignIns } from './providerSignIn'
 import { DEFLATE_RESPONSE, deflateOffered, SocketFrames } from './socketFrames'
 import { CutBodies } from '../shared/activityBodies'
@@ -105,7 +107,7 @@ const TOO_LARGE: Record<Oversize, string> = {
   list: 'The thread list on this host is too large to send to this device. Nothing on the host was lost, and this device keeps the last list it received.',
 }
 /** A thread's tool reads (ADR-0025, October 5 amendment), whose answer too large to send gets the tool sentence. A file preview and a comparison also take the one-at-a-time guard below. */
-const TOOL_READS = new Set<HostRequest['op']>(['thread-files', 'thread-file-preview', 'thread-file-link', 'thread-changes', 'thread-changes-review', 'subagent-page', 'subagent-assignments'])
+const TOOL_READS = new Set<HostRequest['op']>(['thread-files', 'thread-file-preview', 'thread-file-link', 'thread-linked-file', 'thread-changes', 'thread-changes-review', 'subagent-page', 'subagent-assignments'])
 /** A refusal the client reads: its code, and a sentence, which is the code's own unless the refusal says more. */
 /** `reason` rides along on a pull request read's refusal only (#1290), so the client can say what to do next. */
 class Refusal extends Error { constructor(readonly code: HostErrorCode, message = errors[code], readonly reason?: GitPullRequestReadFailure) { super(message) } }
@@ -442,6 +444,12 @@ export async function startSocketServer(options: SocketServerOptions) {
     // A host that keeps a check queue sends it to a recorded desktop's window (#1312), only where its Owl answer turns on
     // Work across machines; the desktop's own phone listener never lists it.
     && (feature !== 'check-queue-views' || service.supportsCheckQueueViews === true && service.checkQueue !== undefined && desktopRecords)
+    // Account copies (ADR-0205) only where the host keeps them, and only on a listener that tells its desktops apart.
+    && (feature !== 'plugin-account-copies' || service.supportsPluginAccountCopies === true && desktopRecords)
+    // A mail account's copy (ADR-0205, decision 8) only where the host's threads can read one, on the same listeners.
+    && (feature !== 'plugin-mail-copies' || service.supportsPluginMailCopies === true && desktopRecords)
+    // Who the host's own gh is signed in as (ADR-0205), where the host runs plugin tools, on the same listeners.
+    && (feature !== 'plugin-github-sign-in' || service.supportsPluginGitHubSignIn === true && service.pluginGitHubSignIn !== undefined && desktopRecords)
     // The same host answers a recorded desktop's read of those threads' delegations, for its window (#1310).
     && (feature !== 'delegation-views' || service.supportsDelegationViews === true && service.delegationViews !== undefined && desktopRecords)
     // Continuing agents and forking (#1028) only where the host's Owl answer turns them on.
@@ -478,6 +486,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     // Deleting settled threads (ADR-0140) only where the host's Owl answer turns clearing on, and only for a desktop: the
     // desktop's own phone listener, which serves no desktop, never offers it, and neither phone app deletes.
     && (feature !== 'thread-file-links' || service.supportsThreadFileLinks === true && service.threadFileLink !== undefined)
+    && (feature !== 'thread-linked-files' || service.supportsThreadLinkedFiles === true && service.threadLinkedFile !== undefined)
     && (feature !== 'thread-delete' || service.supportsThreadDelete === true && desktopListener)
     // Attached files (ADR-0131) only where the host's Owl answer turns them on and it keeps attachments at all.
     && (feature !== 'file-staging' || service.supportsFileStaging === true && service.stageAttachment !== undefined)
@@ -508,6 +517,10 @@ export async function startSocketServer(options: SocketServerOptions) {
     .filter(feature => !feature.startsWith('watcher-') || feature.startsWith('watcher-phone') || options.watcherDesktops?.has(peer.client.clientId))
     .filter(feature => feature !== 'host-update' || mayUpdate(peer))
     .filter(feature => feature !== 'branch-moves' && feature !== 'thread-move' && feature !== 'thread-move-source' && feature !== 'thread-move-keep' || (options.watcherDesktops?.has(peer.client.clientId) ?? false))
+    // An account copy carries a secret, so it comes only from the desktop the launch script recorded (ADR-0205).
+    .filter(feature => feature !== 'plugin-account-copies' && feature !== 'plugin-mail-copies' || options.watcherDesktops?.has(peer.client.clientId) === true)
+    // The account a host's gh is signed in to is its owner's own detail: told only to a recorded desktop.
+    .filter(feature => feature !== 'plugin-github-sign-in' || options.watcherDesktops?.has(peer.client.clientId) === true)
     // Desktop defaults come only from a client the launch script recorded as a desktop (#1310).
     .filter(feature => feature !== 'host-delegation' && feature !== 'every-agent-picture' && feature !== 'delegation-views' && feature !== 'delegation-relay' && feature !== 'delegation-relay-send' && feature !== 'delegation-remote' && feature !== 'delegation-branch-starts' && feature !== 'check-queue-views'
       || options.watcherDesktops?.has(peer.client.clientId) === true)
@@ -1809,6 +1822,10 @@ export async function startSocketServer(options: SocketServerOptions) {
       case 'thread-file-link':
         if (!offers(peer, 'thread-file-links') || !service.threadFileLink) throw new Refusal('invalid_request')
         return oneAtATime(peer, () => toolRead(() => service.threadFileLink!(request.request)))
+      // Where a linked file is, its preview, or one 4 MiB part of it for a download (ADR-0120, November 12 amendment): one at a time per peer.
+      case 'thread-linked-file':
+        if (!offers(peer, 'thread-linked-files') || !service.threadLinkedFile) throw new Refusal('invalid_request')
+        return oneAtATime(peer, () => toolRead(() => service.threadLinkedFile!(request.request)))
       case 'thread-changes':
         if (!service.gitChanges) throw new Refusal('invalid_request')
         return toolRead(() => service.gitChanges!(request.request))
@@ -1893,6 +1910,37 @@ export async function startSocketServer(options: SocketServerOptions) {
         if (request.defaults.workerCeiling !== undefined && !offers(peer, 'worker-swarms')) throw new Refusal('invalid_request')
         if (request.defaults.showEveryAgentPicture !== undefined && !offers(peer, 'every-agent-picture')) throw new Refusal('invalid_request')
         try { return desktopDefaultsReceiptSchema.parse(await service.desktopDefaults(request.defaults, peer.client)) } catch { throw new Refusal('unavailable') }
+      }
+      case 'plugin-account-copy': {
+        // The one credential a client may send (ADR-0205, amending ADR-0025), and only a recorded desktop may: the list
+        // of desktops is read again first, so one taken off it since its hello sends nothing more. The copy
+        // is kept as that desktop's own. The answer says whether it was kept and never repeats what was sent; a failure
+        // says nothing of it either.
+        await options.watcherDesktops?.refresh().catch(() => undefined)
+        if (!offers(peer, 'plugin-account-copies') || !service.keepPluginAccountCopy) throw new Refusal('invalid_request')
+        // A mail account is kept only where this host's threads can read one, and ask before they do.
+        if (isMailPlugin(request.copy.account.plugin) && !offers(peer, 'plugin-mail-copies')) throw new Refusal('invalid_request')
+        // A Proton Mail account is never copied: its Bridge password is the desktop's Bridge's own.
+        if (isBridgePlugin(request.copy.account.plugin)) throw new Refusal('invalid_request')
+        try { return pluginAccountCopyReceiptSchema.parse(await service.keepPluginAccountCopy(request.copy, peer.client)) } catch { throw new Refusal('unavailable') }
+      }
+      case 'plugin-account-copy-remove': {
+        await options.watcherDesktops?.refresh().catch(() => undefined)
+        if (!offers(peer, 'plugin-account-copies') || !service.removePluginAccountCopy) throw new Refusal('invalid_request')
+        try { return pluginAccountCopyRemovedSchema.parse(await service.removePluginAccountCopy(request.accountId, peer.client)) } catch { throw new Refusal('unavailable') }
+      }
+      case 'plugin-account-copies': {
+        // Which accounts this desktop sent and when each was saved. The schema names no secret, so none can be listed.
+        await options.watcherDesktops?.refresh().catch(() => undefined)
+        if (!offers(peer, 'plugin-account-copies') || !service.pluginAccountCopies) throw new Refusal('invalid_request')
+        try { return heldPluginAccountCopiesSchema.parse(await service.pluginAccountCopies(peer.client)) } catch { throw new Refusal('unavailable') }
+      }
+      case 'plugin-github-sign-in': {
+        // Who this machine's gh is signed in as, for a recorded desktop's Plugins page. The list of desktops is read
+        // again first, as for a copy. The schema names a state and a login, so nothing else of gh's can be answered.
+        await options.watcherDesktops?.refresh().catch(() => undefined)
+        if (!offers(peer, 'plugin-github-sign-in') || !service.pluginGitHubSignIn) throw new Refusal('invalid_request')
+        try { return gitHubSignInSchema.parse(await service.pluginGitHubSignIn()) } catch { throw new Refusal('unavailable') }
       }
       case 'watcher-tell-answer': {
         // The desktop's answer to a thread's message for Watcher. An answer nobody waits for is dropped.

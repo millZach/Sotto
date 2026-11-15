@@ -20,7 +20,7 @@ import { followupsFor } from './ThreadFollowups'
 import { deliveryFor, deliveryPending, hasDraftContent, queuedRevision, submissionStatus, useSubmissions, useThreadComposer, type Submission, type SubmissionStatus, type ThreadDraftStore } from './threadDraftStore'
 import { clockLabel, type ThreadRow } from './threadFacts'
 import { useShared } from './stateSharing'
-import { foldedTurns, setStepsOpen, useStepsOpen } from './stepsOpen'
+import { forgetWorkingLine, setStepsOpen, useStepsStart, workingLineChoice } from './stepsOpen'
 import { MessageContent, AttachmentPreviews } from './MessageContent'
 import { SentSkillsContext, useSentSkills } from './sentSkills'
 import { renderedPlainText, useTransientFlag, writeClipboard } from './richActions'
@@ -66,6 +66,7 @@ import { useDelegations, useDelegationsEnabled } from './delegations'
 import { finishedDelegation } from './delegationWords'
 import { MessageScrubber } from './MessageScrubber'
 import { keepReadingPlace, MessageRows, MessageRowsContext, readingPlace, revealLift, scrolledSince, scrollsTranscript, type ReadingPlace } from './readingPlace'
+import { readingWindow, type ReadingWindow } from './readingWindow'
 import { readsBack, typesIntoComposer } from './slimComposer'
 import { aboveWindow, joinedMarks, scrubberMarks, storedMarks, SCRUBBER_FEWEST, type ScrubberMark } from './messageScrubberMarks'
 import { useSlidMarks, useStoredPrompts } from './useStoredPrompts'
@@ -164,7 +165,7 @@ function TurnWork({ headline, steps, did, delegated, moment, quiet, open, setOpe
   readonly delegated?: ReactNode
   /**
    * Whether the fold is open, held by the turn, which keeps what still works under its reply only while the fold is closed.
-   * `setOpen` holds this fold only; a press also sets how every fold not yet pressed starts.
+   * `setOpen` holds this fold only; a press also sets how every fold that shows later starts.
    */
   readonly open: boolean; readonly setOpen: (open: boolean) => void
   /** The turn failed: its line is where a press that opens the thread at its failed turn lands. */
@@ -363,9 +364,13 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
     return element !== null && rows !== null ? rows.add(message.id, element) : undefined
   }, [rows, message.id])
   const workButton = useRef<HTMLButtonElement>(null)
-  const [pressedOpen, setWorkOpen] = useState<boolean | null>(null)
-  const stepsOpen = useStepsOpen()
-  const workOpen = pressedOpen ?? stepsOpen
+  const [pressedOpen, setPressedOpen] = useState<boolean | null>(null)
+  const stepsStart = useStepsStart()
+  const lifecycle = workGroups?.find(group => group.turn)?.turn
+  // A news turn's work folds into this reply's header once it ends, so the header starts as its working line was left,
+  // and a press here takes over from it, as a Worked for line's does.
+  const workOpen = pressedOpen ?? (lifecycle === undefined ? undefined : workingLineChoice(threadId, lifecycle.turnId)) ?? stepsStart
+  const setWorkOpen = (open: boolean): void => { setPressedOpen(open); if (lifecycle !== undefined) forgetWorkingLine(threadId, lifecycle.turnId) }
   const workId = useId()
   const foldWork = (event: React.KeyboardEvent): void => {
     if (!workOpen || event.key !== 'Escape' || event.defaultPrevented || event.nativeEvent.isComposing || !workButton.current) return
@@ -374,7 +379,6 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
     activity?.onDisclosure(workButton.current)
     setWorkOpen(false)
   }
-  const lifecycle = workGroups?.find(group => group.turn)?.turn
   const workMark = speaker === 'watcher' && (lifecycle?.status ?? 'completed') === 'completed'
   // A wake-up babysitting sent is Sotto's, told by the host's mark and never by its text, and shows every word the
   // provider received, as it received it (ADR-0061 decision 8).
@@ -452,9 +456,9 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
   // Its work lines are worded by helpers, so it draws again when the interface language changes.
   useInterfaceLanguageState()
   // The turn holds its fold's state: what still works after the reply stands under it only while the fold is closed. Until
-  // pressed, the fold starts as the user last left any turn's steps.
-  const [pressedOpen, setWorkOpen] = useState<boolean | null>(null)
-  const stepsOpen = useStepsOpen()
+  // pressed, the fold starts as the user last left any turn's steps when it first showed, and a press on another never moves it.
+  const [pressedOpen, setPressedOpen] = useState<boolean | null>(null)
+  const stepsStart = useStepsStart()
   // A fork carries finished turns, so only a finished turn's newest written reply offers one (#1028, E5b).
   // Watcher's room shows no reply its provider made of an API error while Restart stopped threads is on (#2234).
   const failureWords = useContext(TurnFailureWordsContext)
@@ -533,8 +537,11 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
   const shown = (from: number, to: number): ReactNode => visuals.filter(visual => visual.at > from && visual.at < to)
     .map(({ message }) => <React.Fragment key={message.id}>{article(message)}</React.Fragment>)
   const lifecycle = groups.find(group => group.turn)?.turn
-  // A turn whose working line was folded with Escape stays folded once it ends.
-  const workOpen = pressedOpen ?? (lifecycle !== undefined && foldedTurns.has(lifecycle.turnId) ? false : stepsOpen)
+  // A turn whose working line the user opened or folded stays that way once it ends.
+  const workOpen = pressedOpen ?? (lifecycle === undefined ? undefined : workingLineChoice(threadId, lifecycle.turnId)) ?? stepsStart
+  // A press on the finished turn's own line takes over from its working line, so the thread opened again starts it as the
+  // user last left a fold rather than as the working line was left.
+  const setWorkOpen = (open: boolean): void => { setPressedOpen(open); if (lifecycle !== undefined) forgetWorkingLine(threadId, lifecycle.turnId) }
   const moments = [...turn.replies.map(message => message.createdAt), ...groups.flatMap(group => group.records.map(record => record.completedAt ?? record.startedAt))]
   // A question a folded reply asked would fold away with it, so it is quoted under the fold (#1019).
   const lifted = work.flatMap(message => message.role === 'assistant' && !isWakeUpMessage(message) && asked(message).length ? [{ message, questions: asked(message) }] : [])
@@ -914,7 +921,12 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   readonly onQuoted?: (() => void) | undefined
 }): ReactNode {
   const { t } = useLingui()
-  const thread = row.thread
+  const following = useRef(true)
+  // A reader above the end keeps the turns main's window lets go of, until they are back at the end (readingWindow.ts).
+  const drawnWindow = useRef<ReadingWindow | null>(null)
+  drawnWindow.current = readingWindow(drawnWindow.current, row.thread, !following.current)
+  const thread = drawnWindow.current.thread
+  const heldAbove = drawnWindow.current.held
   const overseen = isDynamicThread(thread, useOwlFeature('dynamic-threads')) ? resolveModel(state.host.models, thread.modelId)?.name ?? thread.modelId : undefined
   const quoting = useOwlFeature('reply-quote')
   const sentSkills = useSentSkills(row, state, command)
@@ -922,7 +934,6 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const scroller = useRef<HTMLDivElement>(null)
   const content = useRef<HTMLDivElement>(null)
   const jump = useRef<HTMLButtonElement>(null)
-  const following = useRef(true)
   /** Where the scroll stood when last heard or set to the end, so a reader moving up from the end is told apart from the end moving away. */
   const lastTop = useRef(0)
   const anchor = useRef<{ readonly height: number; readonly top: number } | null>(null)
@@ -1172,7 +1183,8 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     seen.current = lastMessageId
     if (following.current) { element.scrollTop = element.scrollHeight; lastTop.current = element.scrollTop; seenUpTo.current = lastMessageId }
     else if (arrived) setUnseen(true)
-  }, [lastMessageId, pendingKey, hidden, followSignal, thread.historyStatus, toEnd])
+    // What was held above main's window goes when the reader is back at the end, which is followed as it shortens.
+  }, [lastMessageId, pendingKey, hidden, heldAbove, followSignal, thread.historyStatus, toEnd])
 
   // Late content layout, composer padding and window resizing keep a following reader at the end. Observe the
   // scroll box's content size too: a taller floating composer changes its padding without resizing the messages.
@@ -1391,7 +1403,11 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     // A press while an earlier one is still being answered waits on the same oldest message, one answer more.
     const asked = earlier.current?.threadId === thread.id ? earlier.current : null
     earlier.current = asked ? { ...asked, waiting: asked.waiting + 1 } : oldest ? { threadId: thread.id, oldestId: oldest.id, waiting: 1 } : null
-    void command({ type: 'load-earlier-messages', threadId: thread.id })
+    // Main widens its own window, which has moved on from the turns held here. It is brought back to the oldest message
+    // drawn first, so what the press adds is above that message and not among the turns already on screen.
+    const widen = (): Promise<unknown> => command({ type: 'load-earlier-messages', threadId: thread.id })
+    if (heldAbove > 0 && oldest) void command({ type: 'load-earlier-messages', threadId: thread.id, throughMessageId: oldest.id }).then(widen)
+    else void widen()
   }
 
   const empty = !thread.messages.length && !sending.length && !recovery.length && !showsActivity
@@ -1440,7 +1456,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
         {children}
       </StepPicturesThreadContext.Provider></ThreadFolderContext.Provider></SentSkillsContext.Provider></BrowserLinesContext.Provider></OwnServerTurnContext.Provider></div>
     </div></div>
-    {greets && greetingSlot ? createPortal(<ThreadGreeting row={row} state={state} />, greetingSlot) : null}
+    {greets && greetingSlot ? createPortal(<ThreadGreeting row={row} state={state} store={store} />, greetingSlot) : null}
     {/* A request's choices and text are never covered: while a card reaches the button's band, the button steps aside. */}
     {/* Add to prompt over words selected in a reply (ADR-0129; Owl only). */}
     {quoting ? <ReplyQuoteButton threadId={thread.id} scroller={scroller} onAdded={onQuoted} /> : null}

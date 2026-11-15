@@ -1,3 +1,5 @@
+import type { PluginAccountCopyStore } from '../../shared/pluginAccountCopies'
+import type { GitHubSignIn } from '../../shared/plugins'
 import { agentCaptures, ThreadMediaStore } from './threadMedia'
 import type { ReducedPictures } from './mediaThumbnail'
 import type { BrowserAgentTools } from './browserAgentServer'
@@ -18,6 +20,7 @@ import { nextPromptProject } from './nextPromptProject'
 import type { NextPromptEntry } from '../../shared/nextPrompt'
 import { CodexAppServerHost, type CodexAdapterEvent } from './providers/codex/codex'
 import { ClaudeStreamJsonHost, type ClaudeAdapterEvent } from './providers/claude/claude'
+import type { RouterEvent } from './routedSend'
 import { WorkerRoles } from './subagentRoles'
 import { subagentRoleTable } from '../../shared/workerRoles'
 import { GrokAcpHost } from './grok'
@@ -121,6 +124,9 @@ export interface AgentRuntimeOptions {
   watcherEnabled?: boolean
   /** Dynamic threads' Owl answer (ADR-0191), read once by the process owner. Absent fails closed. */
   dynamicThreadsEnabled?: boolean
+  /** Model routing's Owl answer (ADR-0207), and where its event names are logged. */
+  modelRouterEnabled?: boolean
+  modelRouterLog?: (event: RouterEvent) => void
   threadSnoozeEnabled?: boolean
   /** The providers held to Owl on this run (ADR-0072, ADR-0079), read once by the process owner. Absent holds every one. */
   heldProviders?: HeldProviders
@@ -150,6 +156,8 @@ export interface AgentRuntimeOptions {
   threadStartsEnabled?: boolean
   /** Linked Markdown files in the side panel (ADR-0120, November 3 amendment): the Owl list's answer, read once at start. Absent, models are not told to link them and a host reads none. */
   markdownSidePanel?: boolean
+  /** The `reveal-linked-files` Owl answer: this host finds, previews and sends the files its threads' messages link to (ADR-0120, November 12 amendment). */
+  revealLinkedFiles?: boolean
   /** Clearing settled threads (ADR-0140): the Owl list's answer, read once at start. Absent, nothing is deleted. */
   clearThreadsEnabled?: boolean
   /** What clearing did, as stable event names with a count or a reason's code. */
@@ -177,6 +185,13 @@ export interface AgentRuntimeOptions {
   clockTime?: (at: Date) => string
   /** How a check installs packages first in the check worktree (#1312): `npm ci` under the user's Node by default; a test gives its own. */
   checkInstaller?: PackageInstaller
+  /**
+   * Where a headless host keeps the account copies its desktop sends (ADR-0205, amending ADR-0025), present only
+   * where its own Owl answer turns on plugins. A desktop's own runtime has none: it holds the accounts themselves.
+   */
+  pluginAccountCopies?: PluginAccountCopyStore
+  /** Asks a headless host's own gh who is signed in, for a paired desktop's Plugins page (ADR-0205). With `pluginAccountCopies`. */
+  pluginGitHubSignIn?: () => Promise<GitHubSignIn>
   /**
    * A headless host runs delegation for its own threads (#1310) only where its own Owl answer turns on Work across
    * machines. It holds them to the desktop defaults the last desktop that still counts sent it, and to Ask for approval
@@ -483,7 +498,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const babysittingRetired = options.babysitting?.retired === true
   const babysitTool = (threadId: string): boolean => !babysittingRetired && options.babysitting?.agentTool?.() === true && agentHost.admitsBabysitting(threadId)
   const agentControl: AgentControl = new AgentControl({
-    directory, host: agentHost, credentials, turns, threadSnoozeEnabled: options.threadSnoozeEnabled === true, dynamicThreadsEnabled: options.dynamicThreadsEnabled === true, watcherEnabled: options.watcherEnabled ?? false,
+    directory, host: agentHost, credentials, turns, threadSnoozeEnabled: options.threadSnoozeEnabled === true, dynamicThreadsEnabled: options.dynamicThreadsEnabled === true, modelRouterEnabled: options.modelRouterEnabled === true, modelRouter: () => options.settings().modelRouter, ...(options.modelRouterLog ? { modelRouterLog: options.modelRouterLog } : {}), watcherEnabled: options.watcherEnabled ?? false,
     heldProviders: held, streamingPublishCost: options.streamingPublishCost ?? false, ...(usage ? { usage } : {}),
     ...(options.productEvents ? { productEvents: options.productEvents } : {}),
     ...(restartStopped ? { restartStoppedThreads: true } : {}),
@@ -954,11 +969,14 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     // And sends its own check queue to those desktops' windows, for the machine's panel and Tools › Agents (#1312).
     ...(checks && options.runsAs === 'headless-host' ? { checks } : {}),
     ...(crossMachine && gitStatus ? { bringBack: true } : {}),
+    ...(options.pluginAccountCopies && options.runsAs === 'headless-host' ? { pluginAccountCopies: options.pluginAccountCopies } : {}),
+    ...(options.pluginGitHubSignIn && options.runsAs === 'headless-host' ? { pluginGitHubSignIn: options.pluginGitHubSignIn } : {}),
     prompts: { threadPrompts: (threadId, beforeMessageId) => agentHost.threadPrompts(threadId, beforeMessageId) },
     ...(options.threadStartsEnabled === true ? { threadStarts: { startHandover: (threadId: string) => agentHost.startHandover(threadId) } } : {}),
     ...(options.pullRequestViewEnabled === true ? { pullRequestView: true } : {}),
     ...(options.clearThreadsEnabled === true ? { threadDelete: true } : {}),
     ...(options.markdownSidePanel === true ? { threadFileLinks: true } : {}),
+    ...(options.revealLinkedFiles === true ? { threadLinkedFiles: true } : {}),
     ...(options.attachAnyFile === true ? { fileStaging: true } : {}),
     ...(threadMedia ? { threadMedia: true } : {}),
     ...(options.reducedPictures ? { reducedPictures: options.reducedPictures } : {}),

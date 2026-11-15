@@ -15,7 +15,7 @@ import { describeSetting, findSettingControl, findSettings, isSettingsSection, r
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { msg, t as tNow } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
-import { AppWindow, Network, AudioLines, ChevronRight, ClipboardPaste, Cloud, Command, Download, Eye, FolderGit2, Gauge, PanelLeft, GitBranch, Globe, History, Keyboard, Landmark, MessageSquareText, MessagesSquare, Mic, Palette, Plug, Power, RotateCcw, Server, Settings2, ShieldCheck, Shrink, Smartphone, Sparkles, Timer } from 'lucide-react'
+import { AppWindow, Network, Split, AudioLines, ChevronRight, ClipboardPaste, Cloud, Command, Download, Eye, FolderGit2, Gauge, PanelLeft, GitBranch, Globe, History, Keyboard, Landmark, MessageSquareText, MessagesSquare, Mic, Palette, Plug, Power, RotateCcw, Server, Settings2, ShieldCheck, Shrink, Smartphone, Sparkles, Timer } from 'lucide-react'
 
 import {
   TRANSCRIPTION_PRIVACY_NOTICE,
@@ -75,6 +75,7 @@ import { GitSettings } from './GitSettings'
 import { ProjectThreadDefaults } from './ProjectThreadDefaults'
 import { ClearThreadsSettings } from './ClearThreadsSettings'
 import { DynamicThreadsSettings } from './DynamicThreadsSettings'
+import { ModelRouterSettings } from './ModelRouterSettings'
 import { WorkerRolesSettings } from './WorkerRolesSettings'
 import { CouncilSettings } from './CouncilSettings'
 import { WorkerCapacitySettings, WorkerMachineSettings } from './WorkerMachineSettings'
@@ -405,7 +406,8 @@ export function SettingsView({
   const keepMainCurrent = useOwlFeature('keep-main-current')
   const notificationsShown = useDesktopNotifications() !== undefined
   const dynamicThreadsOn = useOwlFeature('dynamic-threads')
-  const gates: Record<SettingGate, boolean> = { 'dynamic-threads': dynamicThreadsOn, 'inline-media': inlineMediaOn, dictation, 'dictation-off': dictationSwitch, watcher: watcherOn, 'worker-roles': workerRoles, 'worker-swarms': workerSwarms, 'cross-machine-work': workerMachine, 'main-freeze': performanceOn, 'resume-after-restart': resumeAfterRestart && !restartStopped, 'restart-stopped-threads': restartStopped, babysitting: !restartStopped, 'next-prompt': nextPromptOn, muse: !museHeld, 'menu-bar-owl': menuBarOwlOn, 'night-falls': nightFallsOn, notifications: notificationsShown, 'creature-toggle': creatureToggle, 'cleanup-model': dictation && cleanupModelOn, 'cloud-dictation': dictation && cloudDictationOn, 'own-model-servers': ownServersOn, plugins: pluginsOn, 'keep-main-current': keepMainCurrent, 'clear-threads': clearThreadsOn, 'click-effect': clickEffect, usage: usageOn, council: councilOn, popup: popupOn, 'popup-shortcut': popupOn && settings.popupEnabled, 'local-apps': localAppsOn }
+  const modelRouterOn = useOwlFeature('model-router')
+  const gates: Record<SettingGate, boolean> = { 'dynamic-threads': dynamicThreadsOn, 'model-router': modelRouterOn, 'inline-media': inlineMediaOn, dictation, 'dictation-off': dictationSwitch, watcher: watcherOn, 'worker-roles': workerRoles, 'worker-swarms': workerSwarms, 'cross-machine-work': workerMachine, 'main-freeze': performanceOn, 'resume-after-restart': resumeAfterRestart && !restartStopped, 'restart-stopped-threads': restartStopped, babysitting: !restartStopped, 'next-prompt': nextPromptOn, muse: !museHeld, 'menu-bar-owl': menuBarOwlOn, 'night-falls': nightFallsOn, notifications: notificationsShown, 'creature-toggle': creatureToggle, 'cleanup-model': dictation && cleanupModelOn, 'cloud-dictation': dictation && cloudDictationOn, 'own-model-servers': ownServersOn, plugins: pluginsOn, 'keep-main-current': keepMainCurrent, 'clear-threads': clearThreadsOn, 'click-effect': clickEffect, usage: usageOn, council: councilOn, popup: popupOn, 'popup-shortcut': popupOn && settings.popupEnabled, 'local-apps': localAppsOn }
   // Find a setting reaches only what the page shows now. While it holds text it reads the mounted pages: a setting
   // whose page is not showing it (Providers with the local host off, say) is left out, and what the page says about
   // each one is matched as well as its name.
@@ -627,6 +629,7 @@ export function SettingsView({
                   <ProjectThreadDefaults settings={settings} onSave={save} />
                 </SettingsGroup>
                 {dynamicThreadsOn ? <SettingsGroup title={t`Dynamic threads`} icon={Network}><DynamicThreadsSettings settings={settings.dynamicThreads} onSave={save} /></SettingsGroup> : null}
+                {modelRouterOn ? <SettingsGroup title={t`Model routing`} icon={Split}><ModelRouterSettings settings={settings.modelRouter} onSave={save} /></SettingsGroup> : null}
                 <SettingsGroup title={t`In a thread`} icon={MessageSquareText}>
                   <Field label={t`Replies in threads`} description={t`Show replies as they are written or once finished. Commands and tool calls always show as they run.`}><SegmentedControl setting="reply-streaming" label={t`Replies in threads`} value={settings.responseStreaming} onChange={value => void save({ responseStreaming: value as AppSettings['responseStreaming'] })} options={[{ value: 'live', label: t`As written` }, { value: 'complete', label: t`When finished` }]} /></Field>
                   <Toggle setting="thread-titles" label={t`Generated thread titles`} checked={settings.threadTitles} onCheckedChange={(checked) => void save({ threadTitles: checked })} description={t`The thread's own model names new threads from their first exchange, and new worktree branches from their first prompt, while local history is on. Names you choose are kept.`} />

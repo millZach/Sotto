@@ -9,6 +9,7 @@ import { chosenModelId, resolveModel } from '../../../../shared/modelCatalog'
 import { useOptionalAgents, type AgentConnection } from '../../agents/AgentContext'
 import { newThreadDefaultModelId, newThreadDefaultsCatalog, newThreadOptionsOn } from '../../agents/newThread'
 import { useNewThreadsDynamicSwitch } from '../../agents/DynamicSwitch'
+import { useNewThreadsRouterSwitch } from '../../agents/RouterSwitch'
 import { ChoiceChip } from '../../agents/ChoiceChip'
 import { effortChoices, RUNTIME_LABELS } from '../../agents/permissionPresentation'
 import { EffortPicker } from '../../agents/EffortPicker'
@@ -62,12 +63,14 @@ function NewThreadDefaultsRow({ state, command }: { readonly state: AgentState; 
   const save = (patch: Extract<AgentCommand, { type: 'configure' }>['patch']): void => { void command({ type: 'configure', patch }) }
   const modelName = model?.name ?? ''
   const dynamic = useNewThreadsDynamicSwitch({ state, provider: model?.providerId, modelName })
+  const router = useNewThreadsRouterSwitch({ provider: model?.providerId })
   return <div className="account-row account-row--chips">
     {dynamic.dialog}
     <span className="account-row__heading"><strong>{t`New threads start with`}</strong><span>{t`Model, reasoning effort and permissions.`}</span></span>
     <fieldset className="account-row__control" data-setting="thread-defaults">
       <legend className="tt-visually-hidden">{t`New threads start with`}</legend>
-      <ModelPicker foot={dynamic.foot} suffix={dynamic.suffix} label={dynamic.overseeing ? t`Choose model. ${modelName} oversees new threads` : undefined} models={models} modelId={modelId} disabled={false} onChange={pressed => save({ newThreadModelId: chosenModelId(models, pressed, modelId) })} />
+      <ModelPicker foot={dynamic.foot || router.foot ? close => <>{dynamic.foot?.(close)}{router.foot?.()}</> : undefined} suffix={router.routing ? t({ message: 'routed', comment: 'After a model\'s name on the New threads start with chip: new threads start with model routing on.' }) : dynamic.suffix}
+        label={router.routing ? t`Choose model. New threads start with model routing` : dynamic.overseeing ? t`Choose model. ${modelName} oversees new threads` : undefined} models={models} modelId={modelId} disabled={false} onChange={pressed => save({ newThreadModelId: chosenModelId(models, pressed, modelId) })} />
       {efforts.length > 0 && <EffortPicker value={reasoning} options={efforts} disabled={false}
         onChange={effort => save({ newThreadReasoningEffort: effort })} defaultValue={model?.defaultReasoningEffort} modelName={model?.name} />}
       <ChoiceChip label={t`Default permissions for new threads`} placeholder={t`Provider default`} value={chosenMode ?? ''} options={permissionOptions} disabled={false} pending={false}

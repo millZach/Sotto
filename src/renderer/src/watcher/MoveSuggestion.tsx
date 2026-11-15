@@ -1,11 +1,11 @@
 import React, { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { Trans, useLingui } from '@lingui/react/macro'
-import type { AgentThread } from '../../../shared/agents'
+import type { AgentProject, AgentThread } from '../../../shared/agents'
 import type { MachineEntry } from '../../../shared/machineLine'
 import { THIS_COMPUTER } from '../../../shared/workingThreads'
 import { Button } from '../components/Button'
 import { agoWords, machineName } from './machineWords'
-import { moveSheetStore, useMovesOffered } from './MoveThreads'
+import { moveSheetStore, projectsById, useMovesOffered } from './MoveThreads'
 import { moveSuggestionCandidates, moveSuggestionNotNow, moveSuggestionPlan, plainlyHeld, type MoveSuggestionSource } from './moveSuggestionPlan'
 
 /**
@@ -32,9 +32,11 @@ function focusAfter(from: MachineEntry): void {
  * then reports it in Watcher's conversation, and a move that would start narrower opens the sheet for that thread at the
  * same machine, where it asks first. Not now passes the machine over until it reads fine again.
  */
-export function WatcherMoveSuggestion({ entries, threads, now }: {
+export function WatcherMoveSuggestion({ entries, threads, projects, now }: {
   readonly entries: readonly MachineEntry[]
   readonly threads: readonly AgentThread[]
+  /** The threads' projects: a thread settled with its project's folder is put away too. */
+  readonly projects: readonly AgentProject[]
   readonly now: number
 }): ReactNode {
   const { t } = useLingui()
@@ -53,6 +55,9 @@ export function WatcherMoveSuggestion({ entries, threads, now }: {
   const [phase, setPhase] = useState<Phase | null>(null)
   const threadsRef = useRef(threads)
   threadsRef.current = threads
+  const byId = useMemo(() => projectsById(projects), [projects])
+  const projectsRef = useRef(byId)
+  projectsRef.current = byId
   // While the Move threads sheet is open the line asks main nothing: main keeps only a few previews at once, and the
   // line's would push out the sheet's before its Move is pressed.
   const sheetOpen = useSyncExternalStore(moveSheetStore.subscribe, moveSheetStore.get) !== null
@@ -60,7 +65,7 @@ export function WatcherMoveSuggestion({ entries, threads, now }: {
   const usable = (answer: string | null | undefined): string | null | undefined => {
     if (answer === undefined || answer === null) return answer
     const found = threadsRef.current.find(item => item.id === answer)
-    return found === undefined || plainlyHeld(found) ? null : answer
+    return found === undefined || plainlyHeld(found, projectsRef.current.get(found.projectId)) ? null : answer
   }
   // Each machine's reading asks main once which of its threads would move now, a troubled machine at a time until one has
   // a thread to name. The same reading never asks again, whatever the threads do under it, however often the line draws,
@@ -75,7 +80,7 @@ export function WatcherMoveSuggestion({ entries, threads, now }: {
     void (async () => {
       let named: string | null = null
       try {
-        for (const page of moveSuggestionCandidates(threadsRef.current, next.from).slice(0, MOVE_SUGGESTION_PAGES_MAX)) {
+        for (const page of moveSuggestionCandidates(threadsRef.current, next.from, projectsRef.current).slice(0, MOVE_SUGGESTION_PAGES_MAX)) {
           // The sheet opened meanwhile: this reading is asked again once it closes.
           if (moveSheetStore.get() !== null) { asking.current.delete(next.reading); return }
           const preview = await bridge.prepare({ threadIds: [...page], hostId: target })
@@ -99,7 +104,7 @@ export function WatcherMoveSuggestion({ entries, threads, now }: {
     if (answer !== null) { named = { source, threadId: answer }; break }
   }
   const thread = named === null ? undefined : threads.find(item => item.id === named.threadId)
-  if (bridge === undefined || plan === null || named === null || thread === undefined || plainlyHeld(thread) || handled === plan.reading) return null
+  if (bridge === undefined || plan === null || named === null || thread === undefined || plainlyHeld(thread, byId.get(thread.projectId)) || handled === plan.reading) return null
   const { to, reading } = plan
   const { from, problems } = named.source
   const fromName = machineName(from), toName = machineName(to)

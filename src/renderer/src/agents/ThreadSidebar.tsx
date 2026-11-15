@@ -14,7 +14,7 @@ import { describeWorkingCopy, useSettleThread } from './ThreadWorkingCopy'
 import { useSidebarSize } from './sidebarSize'
 import type { AgentConnection } from './AgentContext'
 import { ProjectSettleAction, SidebarFrame } from './SidebarFrame'
-import { groupByStatus, holdSettledRows, snoozedShelfRows, type StatusGroupName, rowStatus, unseenFailures, workingLabel, type ProjectFolder, type ThreadRow, type WorkspaceOrganization } from './threadFacts'
+import { groupByStatus, holdSettledRows, SETTLED_SHELF_PAGE, settledShelfRows, settledWords, snoozedShelfRows, type SettledShelfRow, type StatusGroupName, rowStatus, unseenFailures, workingLabel, type ProjectFolder, type ThreadRow, type WorkspaceOrganization } from './threadFacts'
 import { THREAD_DRAG_TYPE } from './splitLayout'
 import { HostBadge, hostIdOf, listedHosts, type ListedHost } from './HostBadge'
 import { MainCheckoutLine } from './MainCheckoutLine'
@@ -146,7 +146,18 @@ function StatusRing({ row, finished, background, queued = false }: { readonly ro
  * row whose thread the update did not touch keeps every prop it had and does not re-render. Its props stay
  * cheap to compare — no object or array is built for it here.
  */
-const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, liveClock, onOpen, command, panes, settle, angles, snoozedUntil, queued, place, host, onRenaming }: {
+const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, liveClock, onOpen, command, panes, settle, angles, snoozedUntil, queued, place, host, onRenaming, settledAt, projectRestore, projectBusy }: {
+  /**
+   * When this thread was settled, on the Settled shelf by status (ADR-0201, November 13, 2026): the shelf lists newest
+   * settled first, so the row's time says that rather than its last activity. NaN where no settlement names a time.
+   */
+  readonly settledAt?: number | undefined
+  /**
+   * On the Settled shelf by status, where no folder stands over the row: a thread settled with its project offers
+   * Restore project where another offers Restore. `projectBusy` holds it while a project is being settled or restored.
+   */
+  readonly projectRestore?: boolean | undefined
+  readonly projectBusy?: boolean | undefined
   readonly row: ThreadRow; readonly current: boolean; readonly open: boolean; readonly onOpen: (threadId: string) => void; readonly command: Command
   /**
    * The row's project, said on its second line where no folder says it: in a status group (ADR-0201). Absent under a folder.
@@ -226,13 +237,17 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
   const settleRow = (): void => void settle(row.thread, row.project, rowItem.current)
   const restoreRow = (): void => void command({ type: 'restore-thread', threadId: id })
   const wakes = snoozedUntil === undefined ? '' : wakeWords(snoozedUntil)
+  const settledWhen = settledAt !== undefined && Number.isFinite(settledAt) ? new Date(settledAt).toLocaleString() : undefined
   const snooze = canSnooze ? (): void => setSnoozeMenu('beside') : undefined
   const setSnooze = (until: number | null): void => snoozeThread(row.thread, until, command)
   const wake = canSnooze && snoozedUntil !== undefined ? (): void => setSnooze(null) : undefined
+  const restoreProject = projectRestore === true && row.settledBy === 'project' && row.project !== undefined
+    ? (): void => void command({ type: 'restore-project', projectId: row.thread.projectId }) : undefined
   // The row's actions in words, with the keys that do the same from the row: the hover icons' twin for the keyboard
   // and the right-click. Built only while the menu is open.
-  const menuGroups = (): PaneMenuItem[][] => threadMenu(row, panes, { offers, open, busy, watched, enterOpens: true }, {
+  const menuGroups = (): PaneMenuItem[][] => threadMenu(row, panes, { offers, open, busy, watched, enterOpens: true, projectBusy }, {
     open: () => onOpen(id), openBeside, rename: () => setRenaming(true), settle: settleRow, restore: restoreRow,
+    ...restoreProject ? { restoreProject } : {},
     ...wake ? { wake } : snooze ? { snooze } : {},
     watch: watchActions === null ? undefined : () => void watchActions.setThread(id, !watched),
   })
@@ -273,6 +288,11 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
         : snoozedUntil !== undefined
         ? <time id={timeId} className="thread-nav__time" dateTime={new Date(snoozedUntil).toISOString()} title={new Date(snoozedUntil).toLocaleString()}>
           {t({ message: `Until ${wakes}`, comment: '{wakes} is when a snoozed thread wakes, such as "Mon 9:00 am".' })}</time>
+        : settledWhen !== undefined
+        ? <time id={timeId} className="thread-nav__time" dateTime={new Date(settledAt!).toISOString()}
+          title={t({ message: `Settled ${settledWhen}`, comment: 'The tooltip of a settled thread\'s time in the sidebar. {settledWhen} is the date and time it was settled.' })}>{settledWords(settledAt!)}</time>
+        // On that shelf a settlement that names no time shows none: its last activity's would read as when it was settled.
+        : settledAt !== undefined ? <span id={timeId} className="thread-nav__time" />
         : <RowTime row={row} live={liveClock} id={timeId} />}
       <span id={detailsId} className="tt-visually-hidden">{copyDetails}</span>
       <span className="thread-nav__metadata">
@@ -310,6 +330,8 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
         ? <button type="button" className="thread-nav__action tt-focusable" tabIndex={-1} aria-label={t`Settle ${title}`} title={panes.settleShortcut ? `${t`Settle thread`} ${panes.settleShortcut.suffix}` : t`Settle thread`} aria-keyshortcuts={shelfKeys ? panes.settleShortcut?.keys : undefined} disabled={busy} onClick={settleRow}><Archive size={16} aria-hidden="true" /></button>
         : row.settledBy === 'thread'
           ? <button type="button" className="thread-nav__action tt-focusable" tabIndex={-1} aria-label={t`Restore ${title}`} title={panes.restoreShortcut ? `${t`Restore thread`} ${panes.restoreShortcut.suffix}` : t`Restore thread`} aria-keyshortcuts={shelfKeys ? panes.restoreShortcut?.keys : undefined} disabled={busy} onClick={restoreRow}><ArchiveRestore size={16} aria-hidden="true" /></button>
+          // Settled with its project, with no folder over it to restore the project from: the folder's own button, here.
+          : restoreProject ? <ProjectSettleAction projectId={row.thread.projectId} title={row.project?.title ?? ''} settled disabled={projectBusy === true} command={command} />
           : null}
     </span>
     {menu !== null ? <RowMenu label={t`Actions for ${title}`} groups={menuGroups()} anchor={() => rowItem.current} place={menu}
@@ -553,6 +575,37 @@ const SnoozedShelfRows = memo(function SnoozedShelfRows({ rows, panes, liveClock
     {rows.map(row => <ListPlace key={row.thread.id} row={row} gap={undefined} listed={listed} panes={panes} onOpen={onOpen} busyThreadIds={busyThreadIds}
       liveClock={liveClock} command={command} settle={settle} queued={queuedIds?.has(row.thread.id) === true} snoozedUntil={snoozes?.get(row.thread.id)}
       place={row.project?.title ?? row.provider} host={remoteHostOf(hosts, row)} />)}
+  </ul>
+})
+
+/**
+ * The Settled shelf by status (ADR-0201, Zach's call of November 13, 2026): its threads as one list, newest settled first,
+ * with no project folder. Each row's time says when it was settled, and a thread settled with its project offers Restore
+ * project where another offers Restore. It shows thirty, and Show more adds thirty, as the iPhone's shelf does, so
+ * opening it costs the same however many threads are settled; a search (`all`) lists every match. Memoised as a group is.
+ */
+const SettledShelfRows = memo(function SettledShelfRows({ rows, all, panes, liveClock, onOpen, command, settle, busyThreadIds, queuedIds, hosts, projectBusy }: {
+  readonly rows: readonly SettledShelfRow[]; readonly all: boolean; readonly panes: PaneActions; readonly liveClock: boolean; readonly onOpen: (threadId: string) => void
+  readonly command: Command; readonly settle: ListSettle; readonly busyThreadIds: readonly string[] | undefined
+  readonly queuedIds?: ReadonlySet<string> | undefined; readonly hosts: readonly ListedHost[]
+  /** A project is being settled or restored, so each row's Restore project waits, as a folder's does. */
+  readonly projectBusy: boolean
+}): ReactNode {
+  const [shown, setShown] = useState(SETTLED_SHELF_PAGE)
+  const listed = panes.listedThreadId ?? panes.currentThreadId
+  const limit = all ? rows.length : Math.min(shown, rows.length)
+  const more = Math.min(SETTLED_SHELF_PAGE, rows.length - limit)
+  return <ul className="thread-folder__rows thread-nav__shelf-rows">
+    {rows.slice(0, limit).map(({ row, settledAt }) => <ListPlace key={row.thread.id} row={row} gap={undefined} listed={listed} panes={panes} onOpen={onOpen} busyThreadIds={busyThreadIds}
+      liveClock={liveClock} command={command} settle={settle} queued={queuedIds?.has(row.thread.id) === true} settledAt={settledAt} projectRestore projectBusy={projectBusy && row.settledBy === 'project'}
+      place={row.project?.title ?? row.provider} host={remoteHostOf(hosts, row)} />)}
+    {/* A row's place in the list, so the keys reach it after the last row and a scroll rests on it as on a row. */}
+    {more > 0 ? <li className="thread-nav__row thread-nav__more">
+      <button type="button" className="thread-nav__show-more tt-focusable" {...{ [ROVING_KEY]: 'settled-more' }} onClick={() => setShown(limit + SETTLED_SHELF_PAGE)}
+        aria-label={plural(more, { one: `Show ${{ threads: shownCount(more) }} more settled thread`, other: `Show ${{ threads: shownCount(more) }} more settled threads` })}>
+        {plural(more, { one: `Show ${{ threads: shownCount(more) }} more`, other: `Show ${{ threads: shownCount(more) }} more` })}
+      </button>
+    </li> : null}
   </ul>
 })
 
@@ -934,7 +987,9 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   const snoozed = organization.snoozed ?? []
   const snoozedThreads = snoozed.reduce((count, folder) => count + folder.rows.length, 0)
   const snoozedShown = snoozedOpen || searching
-  // By status the Snoozed shelf is a flat list; Settled keeps its project folders, and Restore project with them (ADR-0201).
+  // By status each shelf is one list with no project folder (ADR-0201): Snoozed newest activity first, Settled newest
+  // settled first. Settled's is put in order only while the shelf is open, so a folded shelf costs an update nothing.
+  const settledFlat = useMemo(() => byStatus && settledShown ? settledShelfRows(settled) : undefined, [byStatus, settledShown, settled])
   const shelfFacts = { panes, liveClock, onOpen, command, settle: settleFromList, busyThreadIds: state.busyThreadIds, queuedIds, hosts }
   let owlRail: ReactNode = null
   if (railOn) {
@@ -1029,7 +1084,8 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
           <span><Trans>Settled</Trans></span>
           {!settledShown && !queueOn ? <Indicators working={settledWorking} needs={settledNeeds} /> : null}
         </button>
-        {settledShown ? <div>{settled.map(folderView('settled'))}{!settled.length ? <p className="thread-nav__empty tt-paragraph"><Trans>No settled threads.</Trans></p> : null}</div> : null}
+        {settledShown ? <div>{settledFlat ? <SettledShelfRows rows={settledFlat} all={searching} projectBusy={state.globalLaneBusy} {...shelfFacts} /> : settled.map(folderView('settled'))}
+          {!(settledFlat ?? settled).length ? <p className="thread-nav__empty tt-paragraph"><Trans>No settled threads.</Trans></p> : null}</div> : null}
       </section>
       {searching && !organization.matching ? <p className="thread-nav__empty tt-paragraph"><Trans>Nothing matches "{query}".</Trans></p> : null}
       </div>

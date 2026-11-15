@@ -55,6 +55,16 @@
 .linked-file__back-button { padding: 0; border: 0; border-radius: var(--tt-radius-mark); background: transparent; color: var(--tt-text-muted); font: inherit; font-size: var(--tt-type-small); }
 .linked-file__back-button:hover { color: var(--tt-text); }
 .linked-file__notice { flex: none; margin: 0; padding: 6px 16px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: var(--tt-type-small); }
+/* Where a file shown alone is on its computer: its whole path, since no tree beside it says. */
+.linked-file__path { flex: none; margin: 0; padding: 6px 16px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-family: var(--tt-font-mono); font-size: var(--tt-type-small); overflow-wrap: anywhere; user-select: text; }
+/* A download's line under the file's head (ADR-0120, November 12 amendment): absent until Download is pressed. */
+.file-download { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 6px 16px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-2); font-size: var(--tt-type-small); }
+.file-download__words { flex: 1 1 12ch; min-width: 0; overflow-wrap: anywhere; }
+.file-download__bar { flex: 1 1 80px; min-width: 60px; height: 4px; border: 0; border-radius: var(--tt-radius-mark); background: var(--tt-surface-elevated); accent-color: var(--tt-accent); appearance: none; overflow: hidden; }
+.file-download__bar::-webkit-progress-bar { background: var(--tt-surface-elevated); }
+.file-download__bar::-webkit-progress-value { background: var(--tt-accent); }
+.file-download .files-link { min-height: 28px; }
+:is(.tools-panel, .linked-file) .files-icon[aria-disabled='true'] { opacity: .5; }
 .linked-file .files-preview__body:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
 .watcher-room .thread-pane.watcher-beside[data-behind-file] { visibility: hidden; }
 .threads-view .watcher-beside .linked-file .files-preview__head { flex-wrap: wrap; padding-right: calc(6px + var(--threads-pane-inset, 0px)); -webkit-app-region: drag; }

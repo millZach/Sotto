@@ -3,7 +3,7 @@ import { ArrowRightLeft, Laptop, Server } from 'lucide-react'
 import { i18n } from '@lingui/core'
 import { msg, plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
-import { PROVIDER_LABELS, type AgentState, type AgentThread } from '../../../shared/agents'
+import { PROVIDER_LABELS, type AgentProject, type AgentState, type AgentThread } from '../../../shared/agents'
 import type { HostsBridge, HostsState } from '../../../shared/hosts'
 import { isThreadClosed, isWorkspaceThreadSettled } from '../../../shared/threadActivity'
 import { THREAD_MOVE_THREADS_MAX, type ThreadMoveCard, type ThreadMovePlanned, type ThreadMovePrepare, type ThreadMoveProposal, type ThreadMovesBridge, type ThreadMovesView } from '../../../shared/threadMoves'
@@ -103,8 +103,15 @@ class MoveSheetStore {
 }
 export const moveSheetStore = new MoveSheetStore()
 
-/** A thread put away: settled on the shelf, settled by its lifecycle, or archived. Nothing moves it. */
-export const isPutAway = (thread: AgentThread): boolean => isThreadClosed(thread) || isWorkspaceThreadSettled(thread)
+/**
+ * A thread put away: settled on the shelf, itself or with its project's folder (#2407), settled by its lifecycle, or
+ * archived. Nothing moves it. The project is asked for, not optional: a thread settled only with its folder reads open
+ * without it, and the move suggestion once offered such a thread (Zach, November 12, 2026).
+ */
+export const isPutAway = (thread: AgentThread, project: Pick<AgentProject, 'workspaceSettledAt'> | undefined): boolean =>
+  isThreadClosed(thread) || isWorkspaceThreadSettled(thread, project)
+/** The projects by ID, so many threads each find theirs for `isPutAway` without a search apiece. */
+export const projectsById = (projects: readonly AgentProject[]): ReadonlyMap<string, AgentProject> => new Map(projects.map(project => [project.id, project]))
 /** This computer's host ID as the window knows it. */
 export function thisComputerId(state: AgentState | null): string | undefined {
   return state?.connections?.find(item => item.kind === 'local')?.hostId ?? state?.hostId
@@ -116,8 +123,8 @@ const machineOf = (thread: AgentThread, here: string | undefined): string | unde
  * one's, Watcher's own and what is settled or archived left out, up to the hundred a preview takes.
  */
 export function movableThreadIds(state: AgentState, target: string | undefined): readonly string[] {
-  const here = thisComputerId(state)
-  return state.host.threads.filter(thread => !isPutAway(thread) && thread.kind !== 'watcher' && thread.kind !== 'watcher-history' && thread.clientConnected !== false
+  const here = thisComputerId(state), projects = projectsById(state.host.projects)
+  return state.host.threads.filter(thread => !isPutAway(thread, projects.get(thread.projectId)) && thread.kind !== 'watcher' && thread.kind !== 'watcher-history' && thread.clientConnected !== false
     && machineOf(thread, here) !== target).slice(0, THREAD_MOVE_THREADS_MAX).map(thread => thread.id)
 }
 

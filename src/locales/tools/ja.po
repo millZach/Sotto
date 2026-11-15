@@ -218,6 +218,11 @@ msgstr ""
 msgid "{name} failed: {description}"
 msgstr ""
 
+#. {name} is a file name.
+#: src/renderer/src/tools/FileDownload.tsx
+msgid "{name} is a program or script, so it was shown in its folder. Nothing was run."
+msgstr ""
+
 #: src/renderer/src/tools/AgentsSurface.tsx
 msgid "{name} is not connected. Losing the connection stops nothing on {name}."
 msgstr ""
@@ -481,6 +486,10 @@ msgstr ""
 
 #: src/renderer/src/tools/ToolsToggle.tsx
 msgid "A delegated thread needs you"
+msgstr ""
+
+#: src/renderer/src/tools/webLinks.tsx
+msgid "A folder is not downloaded. It is open in Files, where each file can be."
 msgstr ""
 
 #: src/renderer/src/tools/TerminalSurface.tsx
@@ -1501,6 +1510,7 @@ msgstr ""
 msgid "Disable auto-merge"
 msgstr ""
 
+#: src/renderer/src/tools/FileDownload.tsx
 #: src/renderer/src/tools/FilesSurface.tsx
 #: src/renderer/src/tools/PullRequestSurface.tsx
 msgid "Dismiss"
@@ -1519,6 +1529,28 @@ msgstr ""
 #. A pull request command went through.
 #: src/renderer/src/tools/PullRequestSurface.tsx
 msgid "Done."
+msgstr ""
+
+#. {name} is a file name.
+#: src/renderer/src/tools/FilePreview.tsx
+msgid "Download {name} to this computer"
+msgstr ""
+
+#: src/renderer/src/tools/FileDownload.tsx
+msgid "Download progress"
+msgstr ""
+
+#: src/renderer/src/tools/FileDownload.tsx
+msgid "Download stopped. Nothing was saved."
+msgstr ""
+
+#: src/renderer/src/tools/FilePreview.tsx
+msgid "Download to this computer"
+msgstr ""
+
+#. {host} is the name of a paired host, as in forge; {percent} is a whole number from 0 to 99.
+#: src/renderer/src/tools/FileDownload.tsx
+msgid "Downloading from {host}… {percent}%"
 msgstr ""
 
 #. A pull request's state.
@@ -1700,6 +1732,10 @@ msgstr ""
 
 #: src/renderer/src/tools/FilesSurface.tsx
 msgid "Files is busy."
+msgstr ""
+
+#: src/renderer/src/tools/webLinks.tsx
+msgid "Files is busy. Nothing was opened. Try again shortly."
 msgstr ""
 
 #: src/renderer/src/tools/filesBrowser.ts
@@ -2410,6 +2446,7 @@ msgid "No open pull request matches that search."
 msgstr ""
 
 #: src/renderer/src/tools/FilePreview.tsx
+#: src/renderer/src/tools/LinkedFilePanel.tsx
 msgid "No preview for this file."
 msgstr ""
 
@@ -2541,6 +2578,11 @@ msgstr ""
 
 #: src/renderer/src/tools/webLinks.tsx
 msgid "Only web pages open in Sotto’s browser."
+msgstr ""
+
+#. Opens a downloaded file in its own app.
+#: src/renderer/src/tools/FileDownload.tsx
+msgid "Open"
 msgstr ""
 
 #. Opens the address typed beside it as a new browser page.
@@ -3240,6 +3282,11 @@ msgstr ""
 msgid "Same folder"
 msgstr ""
 
+#. {name} is the name a downloaded file was saved under.
+#: src/renderer/src/tools/FileDownload.tsx
+msgid "Saved {name} to Downloads on this computer."
+msgstr ""
+
 #: src/renderer/src/tools/BrowserPane.tsx
 msgid "Screenshot to message"
 msgstr ""
@@ -3465,6 +3512,10 @@ msgstr ""
 msgid "someone approves it"
 msgstr ""
 
+#: src/renderer/src/tools/webLinks.tsx
+msgid "Sotto cannot open files from here. Nothing was opened."
+msgstr ""
+
 #: src/renderer/src/tools/LinkedFilePanel.tsx
 msgid "Sotto cannot read this file from here. Nothing was opened."
 msgstr ""
@@ -3493,6 +3544,15 @@ msgstr ""
 msgid "Sotto could not confirm this. Refresh to see what GitHub has."
 msgstr ""
 
+#: src/renderer/src/tools/FileDownload.tsx
+msgid "Sotto could not download this file. Nothing was saved. Try again."
+msgstr ""
+
+#: src/renderer/src/tools/FileDownload.tsx
+#: src/renderer/src/tools/webLinks.tsx
+msgid "Sotto could not open this file. Nothing was opened."
+msgstr ""
+
 #: src/renderer/src/tools/LinkedFilePanel.tsx
 msgid "Sotto could not read this file. Nothing was opened. Try again."
 msgstr ""
@@ -3501,6 +3561,7 @@ msgstr ""
 msgid "Sotto could not read this repository’s branches."
 msgstr ""
 
+#: src/renderer/src/tools/FileDownload.tsx
 #: src/renderer/src/tools/LinkedFilePanel.tsx
 #: src/renderer/src/tools/webLinks.tsx
 msgid "Sotto could not show this file. Nothing was opened."
@@ -3582,6 +3643,7 @@ msgstr ""
 msgid "Still a draft"
 msgstr ""
 
+#. Stops a file download.
 #. Stops babysitting a pull request.
 #. Stops letting this thread use the browser and test iPhone without asking.
 #. Stops letting this thread use the browser and test iPhone without asking.
@@ -3589,6 +3651,7 @@ msgstr ""
 #. Stops letting this thread use the browser without asking.
 #: src/renderer/src/tools/BrowserPlayer.tsx
 #: src/renderer/src/tools/BrowserSurface.tsx
+#: src/renderer/src/tools/FileDownload.tsx
 #: src/renderer/src/tools/IPhoneSurface.tsx
 #: src/renderer/src/tools/PhonePlayer.tsx
 #: src/renderer/src/tools/PullRequestSurface.tsx
@@ -3689,7 +3752,13 @@ msgid "Text previews up to 512 KB and images up to 8 MB."
 msgstr ""
 
 #: src/renderer/src/tools/FilePreview.tsx
+#: src/renderer/src/tools/LinkedFilePanel.tsx
 msgid "Text, Markdown and PNG, JPEG, GIF or WebP images preview here."
+msgstr ""
+
+#: src/renderer/src/tools/FilePreview.tsx
+#: src/renderer/src/tools/LinkedFilePanel.tsx
+msgid "Text, Markdown and PNG, JPEG, GIF or WebP images preview here. Download it to open it on this computer."
 msgstr ""
 
 #: src/renderer/src/tools/browserStore.ts
@@ -3931,6 +4000,7 @@ msgid "This file is no longer here."
 msgstr ""
 
 #: src/renderer/src/tools/LinkedFilePanel.tsx
+#: src/renderer/src/tools/webLinks.tsx
 msgid "This file is not on the computer this thread runs on, or it has moved. Nothing was opened."
 msgstr ""
 
@@ -3950,6 +4020,10 @@ msgstr ""
 msgid "This folder is no longer here."
 msgstr ""
 
+#: src/renderer/src/tools/webLinks.tsx
+msgid "This folder is on another computer, outside what Files shows here. Nothing was opened. Copy its path from the link’s menu instead."
+msgstr ""
+
 #: src/renderer/src/tools/filesBrowser.ts
 msgid "This folder is on the host machine. Open it there."
 msgstr ""
@@ -3963,10 +4037,15 @@ msgid "This link does not lead to a Markdown file. Nothing was opened."
 msgstr ""
 
 #: src/renderer/src/tools/LinkedFilePanel.tsx
+msgid "This link is not a file path. Nothing was opened."
+msgstr ""
+
+#: src/renderer/src/tools/LinkedFilePanel.tsx
 msgid "This link is not a file. Nothing was opened."
 msgstr ""
 
 #: src/renderer/src/tools/LinkedFilePanel.tsx
+#: src/renderer/src/tools/webLinks.tsx
 msgid "This link points outside the thread’s folder. Nothing was opened."
 msgstr ""
 
@@ -4109,6 +4188,10 @@ msgstr ""
 msgid "This thread will ask before opening, tapping or typing again"
 msgstr ""
 
+#: src/renderer/src/tools/webLinks.tsx
+msgid "This thread’s folder is not available on its computer. Nothing was opened."
+msgstr ""
+
 #. {host} is the name of a paired host, as in forge.
 #: src/renderer/src/tools/PaneTerminalToggle.tsx
 msgid "This thread’s terminal is on {host}. Open it there."
@@ -4145,6 +4228,7 @@ msgid "To do"
 msgstr ""
 
 #: src/renderer/src/tools/FilePreview.tsx
+#: src/renderer/src/tools/LinkedFilePanel.tsx
 msgid "Too large to preview."
 msgstr ""
 

@@ -3,6 +3,7 @@ import { t as translate } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
 import type { AgentState, AgentThread, ProviderId } from '../../../shared/agents'
 import { DEFAULT_DYNAMIC_THREADS, DYNAMIC_OVERSEERS, isDynamicThread, PROVIDER_COMPANIES, whyNotDynamic, type DynamicThreadSettings } from '../../../shared/dynamicThreads'
+import { isRoutedThread } from '../../../shared/modelRouter'
 import { reportsUsageLimits } from '../../../shared/usageDashboard'
 import { ConfirmationDialog } from '../components/ConfirmationDialog'
 import { Toggle } from '../components/Toggle'
@@ -97,6 +98,8 @@ export function useDynamicSwitch({ thread, state, command, modelName, fixed }: {
   const app = useOptionalApp()
   const [asking, setAsking] = useState(false)
   const overseeing = isDynamicThread(thread, enabled)
+  // A routed thread's models are the router's to choose (ADR-0207), so Dynamic waits until routing is off.
+  const routed = isRoutedThread(thread, useOwlFeature('model-router'))
   const set = (dynamic: boolean): void => { void command({ type: 'set-thread-dynamic', threadId: thread.id, dynamic }) }
   const list = app?.settings?.dynamicThreads
   const offered = enabled && whyNotDynamic(thread) === undefined
@@ -104,7 +107,7 @@ export function useDynamicSwitch({ thread, state, command, modelName, fixed }: {
   const providers = [...new Set([...thread.providerId ? [thread.providerId] : [], ...firstAllowedProviders(state)])]
   const makeList = (): Promise<boolean> | undefined => app?.actions.updateSettings({ dynamicThreads: { ...list ?? DEFAULT_DYNAMIC_THREADS, providers } })
   return { overseeing, suffix: overseeing ? t({ message: 'oversees', comment: 'After a model\'s name on a Dynamic thread\'s chip: Opus 5.5 oversees.' }) : undefined,
-    foot: !offered ? undefined : close => <Toggle label={t`Dynamic`} {...fixed ? { description: t`It can change once this turn finishes.` } : {}} checked={overseeing} disabled={fixed}
+    foot: !offered ? undefined : close => <Toggle label={t`Dynamic`} {...routed ? { description: t`Turn model routing off to make this thread Dynamic.` } : fixed ? { description: t`It can change once this turn finishes.` } : {}} checked={overseeing} disabled={fixed || routed}
       onCheckedChange={next => {
         if (next && list?.providers === undefined) { close(); setAsking(true); return }
         set(next)

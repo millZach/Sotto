@@ -32,6 +32,9 @@ and nothing else.
 Nothing changes at Vercel." **Remove account** took the account away, the row read "Not added" again, and the record of
 accounts was empty.
 
+The captures of the account were taken again on November 12, 2026, for #2490: the account now also shows its switch and
+the projects it is kept to, which `docs/verification/plugins-account-threads.md` covers. Nothing else in them changed.
+
 | Screenshot | What it shows |
 | --- | --- |
 | `artifacts/plugins-vercel/vercel-token-refused-dark-1280x800.png` | The add form after Vercel refused a token |

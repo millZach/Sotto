@@ -21,6 +21,12 @@ describe('the API catalogue and provider facts', () => {
     expect(found).toMatchObject({ name: 'API name', context: 262144, output: 512, images: true, thinking: true, tools: true, cost: { input: 3, output: 4, cacheRead: 0 } })
     expect(apiModel({ id: 'bad', context_length: 'oops', pricing: { prompt: '-1', completion: 'no' } }).cost).toBeUndefined()
   })
+  it('reads a plain list of levels, a vision flag and per-million prices', () => {
+    expect(apiModel({ id: 'model', context_length: 1048576, vision: true, reasoning_efforts: ['off', 'low', 'high', 'max', 'made-up'],
+      pricing: { currency: 'USD', input_per_m: 0.12, cached_input_per_m: 0.025, output_per_m: 0.45 } }))
+      .toMatchObject({ context: 1048576, images: true, reasoningEfforts: ['none', 'low', 'high', 'max'], cost: { input: 0.12, output: 0.45, cacheRead: 0.025 } })
+    expect(apiModel({ id: 'model', vision: false, reasoning_efforts: 'high' })).toEqual({ id: 'model', name: 'model', images: false })
+  })
   it('reads OpenRouter limits, modalities and parameters', () => {
     expect(apiModel({ id: 'model', context_length: 128000, top_provider: { max_completion_tokens: 16000 }, architecture: { input_modalities: ['text'] }, supported_parameters: ['tools', 'reasoning'] }))
       .toMatchObject({ output: 16000, images: false, thinking: true, tools: true })

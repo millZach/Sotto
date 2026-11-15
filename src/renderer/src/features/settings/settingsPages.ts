@@ -68,7 +68,7 @@ export function settingsSectionHome(id: SettingsSectionId): { readonly page: Set
 }
 
 /** What has to be on for a setting to show: dictation itself, or an Owl feature that holds it back. `babysitting` is on while restarting stopped threads (ADR-0144), which takes babysitting away, is off. */
-export type SettingGate = 'dynamic-threads' | 'inline-media' | 'popup-shortcut' | 'dictation' | 'dictation-off' | 'watcher' | 'worker-roles' | 'worker-swarms' | 'cross-machine-work' | 'main-freeze' | 'resume-after-restart' | 'next-prompt' | 'muse' | 'menu-bar-owl' | 'night-falls' | 'notifications' | 'creature-toggle' | 'cleanup-model' | 'own-model-servers' | 'plugins' | 'keep-main-current' | 'clear-threads' | 'restart-stopped-threads' | 'babysitting' | 'click-effect' | 'usage' | 'cloud-dictation' | 'council' | 'popup' | 'local-apps'
+export type SettingGate = 'dynamic-threads' | 'model-router' | 'inline-media' | 'popup-shortcut' | 'dictation' | 'dictation-off' | 'watcher' | 'worker-roles' | 'worker-swarms' | 'cross-machine-work' | 'main-freeze' | 'resume-after-restart' | 'next-prompt' | 'muse' | 'menu-bar-owl' | 'night-falls' | 'notifications' | 'creature-toggle' | 'cleanup-model' | 'own-model-servers' | 'plugins' | 'keep-main-current' | 'clear-threads' | 'restart-stopped-threads' | 'babysitting' | 'click-effect' | 'usage' | 'cloud-dictation' | 'council' | 'popup' | 'local-apps'
 
 /**
  * The attribute that marks a setting's control on its page with the setting's id: Find a setting lands on a control by
@@ -158,6 +158,7 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { id: 'command-summaries', label: msg`Generated command summaries`, section: 'settings-agents', words: 'permission approve explain' },
     { id: 'next-prompt', label: msg`Suggest a next prompt`, section: 'settings-agents', words: 'suggestions ghost tab next', gate: 'next-prompt' },
     { id: 'dynamic-threads', label: msg`Dynamic threads`, section: 'settings-agents', words: 'overseer overseeing choose model limit providers allowed list effort workers your note advice', gate: 'dynamic-threads' },
+    { id: 'model-router-stay', label: msg`Stay on the first model`, section: 'settings-agents', words: 'model routing router auto classifier choose model effort switch cache haiku sonnet opus fable', gate: 'model-router' },
     { id: 'resume-after-restart', label: msg`Resume threads after a restart`, section: 'settings-agents', gate: 'resume-after-restart' },
     { id: 'restart-stopped-threads', label: msg`Restart stopped threads`, section: 'settings-agents', words: 'usage limit resets resume continue carry on after a restart', gate: 'restart-stopped-threads' },
     { id: 'web-links', label: msg`Web links in threads`, section: 'settings-browser', words: 'open links browser' },
@@ -238,6 +239,8 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { id: 'phone-pairing', label: msg`Pairing code`, section: 'settings-phones', words: 'pair iphone' },
     { id: 'plugin-github', label: 'GitHub', section: 'settings-plugins', words: 'plugin gh sign in account issues pull requests repositories', gate: 'plugins' },
     { id: 'plugin-vercel', label: 'Vercel', section: 'settings-plugins', words: 'plugin token account deployments build logs projects domains', gate: 'plugins' },
+    { id: 'plugin-gmail', label: 'Gmail', section: 'settings-plugins', words: 'plugin mail email google app password account inbox messages', gate: 'plugins' },
+    { id: 'plugin-proton-mail', label: 'Proton Mail', section: 'settings-plugins', words: 'plugin mail email proton bridge password account inbox messages', gate: 'plugins' },
     { id: 'local-apps', label: msg`Let apps on this computer connect`, section: 'settings-hosts', words: 'agent popup menu bar token loopback', gate: 'local-apps' },
     { id: 'cloud-iphone-key', label: msg`run.cloud key`, section: 'settings-cloud-iphone', words: 'cloud iphone' },
     { id: 'cloud-iphone-cap', label: msg`Monthly cap`, section: 'settings-cloud-iphone', words: 'minutes spending cloud iphone' },

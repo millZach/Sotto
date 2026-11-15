@@ -102,13 +102,14 @@ test('a link in a paired host\'s thread opens that host\'s file in Tools > Files
         await expect(page.getByRole('region', { name: 'Preview of kept.md' }).getByRole('heading', { name: 'Kept outside' })).toBeVisible()
         await page.getByRole('button', { name: 'Close preview' }).click()
 
-        // A file that is gone says so, and any other file does what it did: on a paired host, says it cannot be shown here.
+        // A file that is gone says so, and any other file on a paired host is shown in Files (linked-files-paired-host.spec.ts).
         await log.getByRole('link', { name: 'Open docs/gone.md in the side panel' }).click()
         await expect(page.getByText('This file is not on the computer this thread runs on, or it has moved. Nothing was opened.')).toBeVisible()
         await page.screenshot({ path: join(evidence, 'threads-file-gone-1280.png'), animations: 'disabled' })
         await page.getByRole('button', { name: 'Close preview' }).click()
         await log.getByRole('link', { name: /key\.txt/u }).click()
-        await expect(page.getByText('This file is on the host machine, so it cannot be shown in a folder here. Nothing was opened.')).toBeVisible()
+        await expect(page.getByRole('region', { name: 'Preview of key.txt' }).getByText('secret')).toBeVisible()
+        await page.getByRole('button', { name: 'Close preview' }).click()
 
         // Its menu, by the keyboard.
         await link.focus()
@@ -161,7 +162,7 @@ for (const appearance of ['dark', 'light'] as const) {
           await link.click()
           const preview = page.getByRole('region', { name: 'Preview of plan.md' })
           await expect(preview.getByRole('heading', { name: 'The plan' })).toBeVisible()
-          await expect(preview.getByRole('button', { name: /Show in (?:File Explorer|Finder|the file manager)/u })).toBeVisible()
+          await expect(preview.getByRole('button', { name: /Show in (?:File Explorer|Finder|file manager)/u })).toBeVisible()
           // The name stays readable when the head is short of room: the size gives way first, then the buttons take a second
           // row, and nothing runs under Source.
           const name = await preview.locator('.files-preview__name').boundingBox()

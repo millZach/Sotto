@@ -132,6 +132,23 @@ it('holds effort to the most Settings allow, and says so, rather than refusing',
   expect(under.delegation).not.toHaveProperty('effortHeld')
 })
 
+it('starts and sends to a worker whose only effort is the provider default under the max cap', async () => {
+  const f = await fixture({ limits: { highestEffort: 'max' } }), parent = await f.overseer()
+  f.workspace.adapters.codex.state.models[0]!.reasoningEfforts = ['default']
+  f.workspace.adapters.codex.emit()
+  await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  const result = f.ok(await f.delegate(parent, f.named('codex', { effort: 'default' })))
+  expect(f.created(result.delegation.thread)).toMatchObject({ reasoningEffort: 'default' })
+  expect(result.delegation).not.toHaveProperty('effortHeld')
+  // A successful start also passes the start-time recheck. The fake reports its effort for the existing-worker check.
+  const session = f.workspace.registry.byThread(result.delegation.thread)!.sessionId
+  Object.assign(f.workspace.adapters.codex.state.threads.find(item => item.id === session)!, { status: 'idle', reasoningEffort: 'default' })
+  f.workspace.adapters.codex.emit()
+  await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  const sent = f.ok(await f.delegate(parent, { work: 'code-review', brief: 'Another brief', wait_seconds: 0, thread: result.delegation.thread }))
+  expect(sent.delegation.thread).toBe(result.delegation.thread)
+})
+
 it('turns away a worker past Workers at once without recording a row, and says what to do', async () => {
   const f = await fixture({ limits: { workersAtOnce: 1 } }), parent = await f.overseer()
   f.ok(await f.delegate(parent, f.named('codex')))
@@ -175,15 +192,16 @@ it('says on a retry what Highest effort did, and does not ask for why again of a
 
 it('treats an effort Sotto cannot place as past the limit, and refuses a model with none at or under it', async () => {
   const f = await fixture({ limits: { highestEffort: 'high' } }), parent = await f.overseer()
-  f.workspace.adapters.codex.state.models[0]!.reasoningEfforts = ['low', 'high', 'ultra']
+  f.workspace.adapters.codex.state.models[0]!.reasoningEfforts = ['low', 'high', 'future-effort']
   f.workspace.adapters.codex.emit()
   await f.control.commandShell({ type: 'refresh', provider: 'codex' })
-  const held = f.ok(await f.delegate(parent, f.named('codex', { effort: 'ultra' })))
+  const held = f.ok(await f.delegate(parent, f.named('codex', { effort: 'future-effort' })))
   expect(f.created(held.delegation.thread)).toMatchObject({ reasoningEffort: 'high' })
-  f.workspace.adapters.codex.state.models[0]!.reasoningEfforts = ['ultra']
+  expect(held.delegation.effortHeld).toContain('Its effort, future-effort, was held to high')
+  f.workspace.adapters.codex.state.models[0]!.reasoningEfforts = ['future-effort']
   f.workspace.adapters.codex.emit()
   await f.control.commandShell({ type: 'refresh', provider: 'codex' })
-  const refused = await f.delegate(parent, f.named('codex', { effort: 'ultra' }))
+  const refused = await f.delegate(parent, f.named('codex', { effort: 'future-effort' }))
   expect(refused).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
   expect((refused as { message: string }).message).toContain('offers no effort at or under high')
 })

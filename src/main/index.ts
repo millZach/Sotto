@@ -67,12 +67,23 @@ import { HostTailscale } from './hosts/tailscale'
 import { registerLocalAppsIpc, registerPhonesIpc } from './phones/ipc'
 import { registerPluginsIpc } from './plugins/ipc'
 import { readGitHubSignIn, sharedGitHubSignIn } from './plugins/github/signIn'
-import { readGitHub } from './plugins/github/read'
 import { PluginToolServer } from './plugins/pluginTools'
-import { PluginAccounts, PluginSecretLocked } from './plugins/accounts'
-import { checkVercelToken, readVercel, type VercelFetch } from './plugins/vercel/read'
+import { pluginToolHandlers } from './plugins/toolHandlers'
+import { readHostGitHubSignIns } from './plugins/hostSignIns'
+import { PluginAccounts } from './plugins/accounts'
+import { bridgeStatus, checkMailAccount } from './plugins/mail/accounts'
+import type { MailOptions } from './plugins/mail/read'
+import { mailOnThisComputer } from './plugins/mail/standIn'
+import { mailGrantsShown, MailGrants, mailThreadOpen, ownThreadId } from './plugins/mailGrants'
+import { PluginChangeRequests } from './plugins/pendingChanges'
+import { pluginFolderOfThread, pluginProjects } from './plugins/projectFolders'
+import { PluginAccountCopySync } from './plugins/copySync'
+import { isThreadClosed } from '../shared/threadActivity'
+import { wordPluginChange } from './plugins/changeWords'
+import { combinedSottoRequests } from './agents/sottoRequests'
+import { checkVercelToken, type VercelFetch } from './plugins/vercel/read'
 import { PluginUseRecord } from './plugins/useRecord'
-import { PLUGIN_USE_THREAD_TITLE_MAX } from '../shared/plugins'
+import { isMailPlugin, PLUGIN_USE_THREAD_TITLE_MAX, PLUGINS_COPIES_CHANGED, PLUGINS_MAIL_GRANTS_CHANGED } from '../shared/plugins'
 import { resetGhLookup } from './agents/git/ghCommand'
 import { GitUnavailableError, runGitStatusCommand, runWithGhStandIn, type RunGitCommand } from './agents/git/gitStatus'
 import { registerTeamsIpc } from './teams/ipc'
@@ -256,6 +267,7 @@ import { getReleaseTrack, releaseTrackName } from '../shared/releaseTrack'
 import { hostReleaseVersion, updateHostReleaseVersion } from './hosts/hostReleaseVersion'
 import { WATCHER_CHANGED, WATCHER_MACHINES_RENDERER_ARGUMENT, WATCHER_RENDERER_ARGUMENT } from '../shared/watcherRoom'
 import { runningVersion, owlFeaturesForRun } from './runningVersion'
+import { MODEL_ROUTER_RENDERER_ARGUMENT } from '../shared/modelRouter'
 import { heldProvidersOf, releasesHeldProvider } from '../shared/heldProviders'
 import { LIVING_OWL_RENDERER_ARGUMENT, type DictationCommand, type TranscriptionRequest, type TranscriptionResult } from '../shared/contracts'
 import type { WidgetSnapshot } from '../shared/dictation'
@@ -276,8 +288,8 @@ import {
   isTrustedMainE2ESender,
   snapshotE2EState,
 } from './e2e/e2eBoundary'
-import { E2E_COMPUTER_NAME, E2E_SNAPSHOT_CHANNEL, E2E_TRIGGER_SHORTCUT_CHANNEL, E2E_BROWSER_AGENT_CHANNEL, E2E_HOST_SETUP_TOOL_CHANNEL, E2E_VISUAL_TOOL_CHANNEL, E2E_MEDIA_TOOL_CHANNEL, E2E_DELEGATION_TOOL_CHANNEL, e2eBrowserAgentSchema, e2eHostSetupToolSchema, e2eVisualToolSchema, e2eDelegationToolSchema, e2eAgentEventSchema } from '../shared/e2e'
-import { AGENT_STATE, AGENT_E2E, AGENT_THREAD_DETAIL } from '../shared/agents'
+import { E2E_COMPUTER_NAME, E2E_SNAPSHOT_CHANNEL, E2E_TRIGGER_SHORTCUT_CHANNEL, E2E_BROWSER_AGENT_CHANNEL, E2E_HOST_SETUP_TOOL_CHANNEL, E2E_VISUAL_TOOL_CHANNEL, E2E_MEDIA_TOOL_CHANNEL, E2E_DELEGATION_TOOL_CHANNEL, E2E_PLUGIN_TOOL_CHANNEL, e2eBrowserAgentSchema, e2eHostSetupToolSchema, e2eVisualToolSchema, e2eDelegationToolSchema, e2ePluginToolSchema, e2eAgentEventSchema } from '../shared/e2e'
+import { AGENT_STATE, AGENT_E2E, AGENT_THREAD_DETAIL, PROVIDER_LABELS } from '../shared/agents'
 import { AgentCredentials } from './agents/credentials'
 import { migrateDesktopKey } from './settings/migrateDesktopKey'
 import { SecureSettings } from './agents/secureSettings'
@@ -328,6 +340,8 @@ import { AgentStateBroadcaster } from './agents/agentStateBroadcast'
 import { registerAgentIpc } from './agents/ipc'
 import { createAgentRuntime } from './agents/runtime'
 import { loadHostIdentity } from './agents/hostIdentity'
+import { FILES_DOWNLOAD_PROGRESS } from '../shared/files'
+import { FileDownloads } from './files/downloads'
 import { registerFilesIpc } from './files/ipc'
 import { FilesService } from './files/service'
 import { registerToolsIpc } from './tools/ipc'
@@ -354,6 +368,7 @@ import type { GitHubRateLimitEvent } from './agents/git/github'
 import type { BabysitEvent } from './agents/babysitting'
 import type { WatchedPullRequestEvent } from './agents/watchedPullRequests'
 import { ClaudeStreamJsonHost, type ClaudeAdapterEvent } from './agents/providers/claude/claude'
+import type { RouterEvent } from './agents/routedSend'
 import { CodexAppServerHost, type CodexAdapterEvent } from './agents/providers/codex/codex'
 import { BROWSER_EVENT, BROWSER_FRAME_EVENT } from '../shared/browser'
 import { GIT_CHANGES_EVENT } from '../shared/gitChanges'
@@ -405,6 +420,9 @@ type NativeDiagnostic =
   | RecoveryNoticeLogEvent
   | 'omarchy-theme-missing'
   | 'host-browser-setting-failed'
+  | 'plugin-account-copies-reconciled'
+  | 'plugin-account-copies-failed'
+  | 'plugin-account-copy-choices-not-saved'
   | 'popup-load-failed'
   | 'popup-renderer-gone'
   | 'omarchy-theme-invalid'
@@ -435,6 +453,7 @@ type NativeDiagnostic =
   | BabysitEvent
   | WatchedPullRequestEvent
   | ClaudeAdapterEvent
+  | RouterEvent
   | CodexAdapterEvent
   | PhoneAccessEvent
   | LocalAppsEvent
@@ -885,7 +904,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     Date.now,
     platformDefaults,
     logOperational,
-    { workerRolesEnabled, dynamicThreadsEnabled: owlFeatures['dynamic-threads'], workerSwarmsEnabled: owlFeatures['worker-swarms'], dictationHoldShortcutsEnabled: owlFeatures['dictation-hold-shortcuts'], interfaceLanguageEnabled, ...(platform === 'linux' ? { omarchyTheme: () => omarchyTheme.get(), shellPillInUse: () => shellPillInUse } : {}) },
+    { workerRolesEnabled, dynamicThreadsEnabled: owlFeatures['dynamic-threads'], modelRouterEnabled: owlFeatures['model-router'], workerSwarmsEnabled: owlFeatures['worker-swarms'], dictationHoldShortcutsEnabled: owlFeatures['dictation-hold-shortcuts'], interfaceLanguageEnabled, ...(platform === 'linux' ? { omarchyTheme: () => omarchyTheme.get(), shellPillInUse: () => shellPillInUse } : {}) },
   )
   await initializeOmarchySelection(platform, omarchyTheme.get(), plainSettings)
   await history.initialize()
@@ -1109,6 +1128,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     await testAgentHost.initializeWorkingFolders(join(userDataPath, 'agent-workspaces'))
   }
   let openedThreadFolder: string | null = null
+  // What a journey's presses would have opened or shown in a folder: recorded, since a test opens nothing on its machine.
+  const e2eFiles = { opened: [] as string[], shown: [] as string[] }
   // T3's rule for background Git reads: the window is showing and has the focus, or had it within the last 45 seconds.
   let windowBlurredAt = 0
   app.on('browser-window-focus', () => { windowBlurredAt = 0 })
@@ -1142,11 +1163,11 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   }) : undefined
   const localRuntime: DesktopLocalRuntime = startupSettings.localHostEnabled ? await createAgentRuntime({
     ...teams ? { teams } : {},
-    directory: userDataPath, credentials, watcherEnabled, councilEnabled, threadSnoozeEnabled: owlFeatures['thread-snooze'], dynamicThreadsEnabled: owlFeatures['dynamic-threads'], heldProviders, usageEnabled, productEvents, resumeAfterRestart: owlFeatures['resume-after-restart'], restartStoppedThreads: owlFeatures['restart-stopped-threads'], streamingPublishCost: owlFeatures['streaming-publish-cost'],
+    directory: userDataPath, credentials, watcherEnabled, councilEnabled, threadSnoozeEnabled: owlFeatures['thread-snooze'], dynamicThreadsEnabled: owlFeatures['dynamic-threads'], modelRouterEnabled: owlFeatures['model-router'], heldProviders, usageEnabled, productEvents, resumeAfterRestart: owlFeatures['resume-after-restart'], restartStoppedThreads: owlFeatures['restart-stopped-threads'], streamingPublishCost: owlFeatures['streaming-publish-cost'],
     delegationEnabled, workerRolesEnabled, workerSwarmsEnabled: owlFeatures['worker-swarms'], continueEnabled, threadStartsEnabled, ...(keepMainCurrentEnabled ? { keepMainCurrent: { log: logOperational } } : {}), pullRequestViewEnabled: owlFeatures['iphone-pull-request-view'], agentsViewEnabled, crossMachineEnabled,
     // A check's snapshot time, as this computer writes a time in the interface language (#1312, Zach, October 27).
     clockTime: interfaceClockTime,
-    attachAnyFile: owlFeatures['attach-any-file'], markdownSidePanel: owlFeatures['markdown-side-panel'],
+    attachAnyFile: owlFeatures['attach-any-file'], markdownSidePanel: owlFeatures['markdown-side-panel'], revealLinkedFiles: owlFeatures['reveal-linked-files'],
     answerImages: owlFeatures['answer-images'], nextTurnChoice: owlFeatures['next-turn-choice'],
     inlineMedia: owlFeatures['inline-media'], showEveryAgentPicture,
     // The runs threads detach (#2476). A desktop journey reads no processes unless it starts a run of its own to find.
@@ -1219,6 +1240,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     ...(e2eConfiguration === null ? {} : { reasoner: e2eAgentReasoner }),
     worktreeCleanup: { ...(e2eConfiguration === null ? { pullRequestMerged: githubPullRequestMerged, pullRequestState: githubPullRequestState, openPullRequestBranches: githubOpenPullRequestBranches, baseBranchChecks: githubBaseBranchChecks } : {}), log: code => { logOperational(code) } },
     claudeSettingsLog: event => { logOperational(event) },
+    modelRouterLog: event => { logOperational(event) },
     codexLog: event => { logOperational(event) },
   }) : await inactiveLocalHost(userDataPath)
   const { agentHost, agentControl, threadRegistry, turns, hostService } = localRuntime
@@ -1372,21 +1394,64 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const vercelFetch: VercelFetch = e2eConfiguration !== null && !vercelBase ? async () => { throw new Error('E2E_NETWORK_DISABLED') } : (url, init) => fetch(url, init)
   const vercelOptions = { ...(vercelBase ? { base: vercelBase } : {}), signal: pluginsStop.signal }
   // Plugin accounts: a name, a plugin and a secret in the credential store, checked with its service before it is kept.
-  const pluginAccounts = pluginsEnabled ? new PluginAccounts(userDataPath, { credentials, check: (_plugin, secret) => checkVercelToken(vercelFetch, secret, vercelOptions) }) : undefined
-  // The plugin tools, for every thread that takes Sotto's tools: stable builds no server.
-  const pluginTools = pluginUse && pluginAccounts ? new PluginToolServer({
-    admits: threadId => agentHost.admitsPluginTools(threadId), gitHubSignIn: pluginsGitHubSignIn,
-    readGitHub: (path, query) => readGitHub(pluginsGh, path, query, pluginsStop.signal), record: use => pluginUse.add(use),
-    accounts: () => pluginAccounts.list(), findAccount: (plugin, name) => pluginAccounts.find(plugin, name),
-    readVercel: async (accountId, path, query) => {
-      let secret: string
-      try { secret = pluginAccounts.secret(accountId) } catch (error) {
-        if (error instanceof PluginSecretLocked) return { ok: false, reason: 'locked' }
-        throw error
-      }
-      return readVercel(vercelFetch, secret, path, query, vercelOptions)
-    },
+  // A mail account is read over IMAP and sends over SMTP, each a connection of its own to that account's server. An
+  // end-to-end run reaches no mail server but the stand-ins on this computer its test names, or nothing; a packaged
+  // build never reads those names.
+  const standInPort = (name: string): number | undefined => {
+    const port = e2eConfiguration !== null && !app.isPackaged ? Number(process.env[name]) : Number.NaN
+    return Number.isInteger(port) && port > 0 ? port : undefined
+  }
+  const mailStandIn = standInPort('SOTTO_E2E_MAIL_PORT')
+  const mailOptions: MailOptions = { signal: pluginsStop.signal, ...(e2eConfiguration === null ? {}
+    : { connect: mailStandIn !== undefined ? mailOnThisComputer(mailStandIn, standInPort('SOTTO_E2E_SMTP_PORT')) : async () => { throw new Error('E2E_NETWORK_DISABLED') } }) }
+  const pluginAccounts = pluginsEnabled ? new PluginAccounts(userDataPath, { credentials,
+    check: (plugin, secret, address, bridge) => isMailPlugin(plugin) ? checkMailAccount(plugin, address ?? '', secret, mailOptions, bridge) : checkVercelToken(vercelFetch, secret, vercelOptions) }) : undefined
+  // Account copies (ADR-0205, amending ADR-0025): each plugin account the user keeps on a paired host is sent to it on
+  // every connection and whenever it changes here, and a copy no longer wanted is taken back. Owl `plugins` only.
+  const pluginCopySync = pluginsEnabled && pluginAccounts ? new PluginAccountCopySync(userDataPath, {
+    accounts: pluginAccounts,
+    computers: () => desktopHosts.get().hosts.map(host => ({ id: host.id, name: host.name, hostId: host.hostId, connected: host.phase === 'connected' })),
+    connections: () => hostRouter.remoteConnections(),
+    changed: () => { windows.sendToMain(PLUGINS_COPIES_CHANGED, null) },
+    log: event => logOperational(event),
   }) : undefined
+  const stopFollowingConnections = pluginCopySync ? hostRouter.subscribeConnected(connection => { pluginCopySync.connected(connection) }) : undefined
+  // A host connecting, leaving or being saved changes what the page shows of its copies, and may be the first time a
+  // host just added can be sent them.
+  const stopFollowingHosts = pluginCopySync ? desktopHosts.subscribe(() => { pluginCopySync.computersChanged() }) : undefined
+  const stopFollowingCopies = (): void => { stopFollowingConnections?.(); stopFollowingHosts?.() }
+  // Plugin changes waiting on the user: each is one of Sotto's own requests in its thread, answered there (ADR-0205).
+  // A thread that is settled, archived or gone takes its waiting changes with it, read as the coordinator holds it.
+  const pluginThreadOpen = (threadId: string): boolean => {
+    const thread = agentControl.watcherSnapshot().threads.find(item => item.id === threadId)
+    return thread !== undefined && !isThreadClosed(thread)
+  }
+  // Mail grants: which threads the user has let read which mail accounts (ADR-0205, decision 8). A grant ends when
+  // its thread is settled, by itself or with its project, archived or gone, which the grants look for a moment after
+  // the coordinator publishes.
+  // A thread's ··· menu lists its grants, so the window is told when one is given or ended.
+  const mailGrants = pluginsEnabled ? new MailGrants(userDataPath, { open: threadId => mailThreadOpen(agentControl.watcherSnapshot(), threadId),
+    changed: () => { windows.sendToMain(PLUGINS_MAIL_GRANTS_CHANGED, null) } }) : undefined
+  const pluginChanges = pluginsEnabled ? new PluginChangeRequests({ open: pluginThreadOpen, noticed: () => { mailGrants?.noticed() } }) : undefined
+  // The project a thread belongs to, for an account kept to chosen projects: its folder, which is the same project
+  // whichever provider the thread runs on. Watcher's threads, and a thread Sotto does not know, belong to none.
+  const pluginProjectOf = (threadId: string): string | null => pluginFolderOfThread(agentControl.watcherSnapshot(), threadId)
+  // The plugin tools, for every thread that takes Sotto's tools: stable builds no server.
+  const pluginTools = pluginUse && pluginAccounts ? new PluginToolServer(pluginToolHandlers({
+    admits: threadId => agentHost.admitsPluginTools(threadId), accounts: pluginAccounts, projectOf: pluginProjectOf,
+    gitHubSignIn: pluginsGitHubSignIn, gh: pluginsGh, vercelFetch, vercelOptions, record: use => pluginUse.add(use),
+    // A thread Sotto does not know is taken for Watcher: it changes nothing.
+    isWatcher: threadId => {
+      const thread = agentControl.watcherSnapshot().threads.find(item => item.id === threadId)
+      return thread === undefined || thread.kind === 'watcher' || thread.kind === 'watcher-history'
+    },
+    askChange: async (threadId, change, wait) => await pluginChanges?.ask(threadId, wordPluginChange(change), wait) ?? 'stopped',
+    // What a thread reads from mail goes to its provider, which the card that asks names.
+    ...(mailGrants ? { mail: { grants: mailGrants, options: mailOptions, keepsBridgeAccounts: true, providerOf: (threadId: string) => {
+      const thread = agentControl.watcherSnapshot().threads.find(item => item.id === threadId)
+      return thread?.providerId ? PROVIDER_LABELS[thread.providerId] : ''
+    } } } : {}),
+  })) : undefined
   if (pluginTools) quitHandles.pluginTools = pluginTools
   // Let an agent babysit its pull requests (ADR-0061): every Claude Code, Codex and Grok Build launch on this computer gets
   // the tool while the switch is on, read live; turned off, what agents started ends at once. Only the local host reads
@@ -1459,7 +1524,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     preloadDirectory: join(__dirname, '../preload'), fontCss: FIGTREE_FONT_FACES,
   })
   app.on('will-quit', disposeVisualSandbox)
-  agentControl.useSottoRequests(hostSetupRequests(hostSetup))
+  // Sotto's own requests in a thread: host setup's, and a plugin change waiting on the user (ADR-0205).
+  agentControl.useSottoRequests(pluginChanges ? combinedSottoRequests([hostSetupRequests(hostSetup), pluginChanges]) : hostSetupRequests(hostSetup))
   desktopHosts.useSetup(hostSetup)
   desktopHosts.useProviderJob(providerJobs)
   const busyThreads = routerBusyThreads(hostRouter)
@@ -1498,8 +1564,15 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const files = new FilesService({
     resolveBinding: threadId => agentControl.filesBinding(threadId),
     copyPath: path => copyOutput(path),
-    reveal: path => shell.showItemInFolder(path),
+    reveal: path => { if (e2eConfiguration !== null) e2eFiles.shown.push(path); else shell.showItemInFolder(path) },
+    open: async path => {
+      if (e2eConfiguration !== null) { e2eFiles.opened.push(path); return }
+      const error = await shell.openPath(path); if (error) throw new Error('No app opened this file.')
+    },
   })
+  // Files saved from paired hosts go to this computer's Downloads folder (ADR-0120, November 12 amendment).
+  const fileDownloads = new FileDownloads({ part: request => hostRouter.threadLinkedFile(request), folder: () => e2eConfiguration !== null ? join(userDataPath, 'downloads') : app.getPath('downloads'),
+    progress: progress => { windows.sendToMain(FILES_DOWNLOAD_PROGRESS, progress) } })
   // A pane drawer starts in the project folder, even for a thread with its own worktree.
   const terminalService = new TerminalService({ files, directory: userDataPath,
     // A thread on a paired host opens its terminal over the user's own SSH (ADR-0183; Owl only).
@@ -1542,6 +1615,10 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     const hostId = agentControl.hostId()
     // A forgotten thread takes its entries in the plugin use record with it (ADR-0205).
     void pluginUse?.forgetThreads(threadIds).catch(() => undefined)
+    // And any change of theirs still waiting on the user stops: nothing is done for a thread that is gone.
+    pluginChanges?.forgetThreads(threadIds)
+    // And its mail grants go with it.
+    void mailGrants?.forgetThreads(threadIds).catch(() => undefined)
     void requestDrafts.forgetThreads(new Set(threadIds.flatMap(id => [id, hostEntityKey(hostId, id)]))).catch(() => undefined)
     // And what their Settles did to delegated threads elsewhere, whether the window, Clear now, the hourly clear or a phone
     // deleted them (#1316 part 3).
@@ -2299,7 +2376,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         htmlPath: join(__dirname, '../renderer/popup.html'),
         developmentUrl: app.isPackaged || process.env.ELECTRON_RENDERER_URL === undefined ? undefined : new URL('/popup.html', process.env.ELECTRON_RENDERER_URL),
         isPackaged: app.isPackaged,
-        extraArguments: () => [...(interfaceLanguageEnabled ? [interfaceLanguageArgument(interfaceLanguage.current())] : []), ...(watcherEnabled ? [WATCHER_RENDERER_ARGUMENT] : [])],
+        extraArguments: () => [...(interfaceLanguageEnabled ? [interfaceLanguageArgument(interfaceLanguage.current())] : []), ...(watcherEnabled ? [WATCHER_RENDERER_ARGUMENT] : []), ...(owlFeatures['model-router'] ? [MODEL_ROUTER_RENDERER_ARGUMENT] : [])],
         log: logOperational,
       },
       shortcuts: e2eShortcuts ?? globalShortcut,
@@ -2499,9 +2576,9 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       // path to this computer's clipboard, in the host's format; nothing on the host is opened or written.
       const copyHostPath = async <T extends { ok: true; value: { absolutePath: string } } | { ok: false }>(result: T): Promise<T> => { if (result.ok) await copyOutput(result.value.absolutePath); return result }
       const cleanupFiles = registerFilesIpc(ipcMain, files, () => windows.getTrustedRenderers(), {
-        list: request => hostRouter.threadFiles(request), preview: request => hostRouter.threadFilePreview(request), previewLink: request => hostRouter.threadFileLink(request),
+        list: request => hostRouter.threadFiles(request), preview: request => hostRouter.threadFilePreview(request), previewLink: request => hostRouter.threadFileLink(request), linkedFile: request => hostRouter.threadLinkedFile(request),
         copyPath: async request => copyHostPath(await hostRouter.threadFilePath(request)),
-      }, owlFeatures['reveal-linked-files'], owlFeatures['markdown-side-panel'])
+      }, owlFeatures['reveal-linked-files'], owlFeatures['markdown-side-panel'], { downloads: fileDownloads, reveal: path => { if (e2eConfiguration !== null) e2eFiles.shown.push(path); else shell.showItemInFolder(path) } })
       const cleanupSubagents = registerSubagentIpc(ipcMain, agentHost, () => windows.getTrustedRenderers(), change => windows.sendToMain(SUBAGENTS_CHANGED, change), hostRouter)
       const cleanupProductEvents = registerProductEventsIpc(ipcMain, { featureUsed: tool => productEvents.featureUsed(tool), state: { canSend: productEvents.canSend, offBy: productEventsOffBy(process.env) } }, () => windows.getTrustedRenderers())
       const cleanupUsage = registerUsageIpc(ipcMain, { read: query => { productEvents.featureUsed('usage'); return hostRouter.usageRead(query) },
@@ -2676,13 +2753,59 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       // as it is now. A thread that is gone has none.
       const cleanupPlugins = pluginsEnabled ? registerPluginsIpc(ipcMain, {
         gitHubSignIn: pluginsGitHubSignIn,
+        // Each of the user's other computers has a gh of its own, and its threads act as that one's account (ADR-0205).
+        gitHubSignInElsewhere: () => readHostGitHubSignIns(
+          desktopHosts.get().hosts.map(host => ({ id: host.id, name: host.name, hostId: host.hostId, connected: host.phase === 'connected' })), () => hostRouter.remoteConnections()),
         accounts: async () => await pluginAccounts?.list() ?? [],
-        addAccount: async request => await pluginAccounts?.add(request) ?? { ok: false, problem: 'store' },
-        replaceSecret: async request => await pluginAccounts?.replace(request) ?? { ok: false, problem: 'store' },
+        // Each change to an account here is carried to the hosts that keep a copy of it.
+        addAccount: async request => { const result = await pluginAccounts?.add(request) ?? { ok: false as const, problem: 'store' as const }; if (result.ok) pluginCopySync?.accountsChanged(); return result },
+        replaceSecret: async request => { const result = await pluginAccounts?.replace(request) ?? { ok: false as const, problem: 'store' as const }; if (result.ok) pluginCopySync?.accountsChanged(); return result },
+        updateAccount: async request => {
+          const result = await pluginAccounts?.update(request) ?? { ok: false as const, problem: 'store' as const }
+          if (result.ok) pluginCopySync?.accountsChanged()
+          // An account switched off, or kept to other projects, is no longer one some thread can read: its menu reads again.
+          if (result.ok) windows.sendToMain(PLUGINS_MAIL_GRANTS_CHANGED, null)
+          return result
+        },
+        trustCertificate: async request => await pluginAccounts?.trustCertificate(request) ?? { ok: false as const, problem: 'store' as const },
+        // Proton Mail Bridge on this computer, looked at for its row: no sign-in, and no password sent.
+        bridgeStatus: async request => {
+          const account = (await pluginAccounts?.list().catch(() => []) ?? []).find(entry => entry.id === request.id)
+          return account ? bridgeStatus(account, mailOptions) : 'unknown'
+        },
+        copies: async () => await pluginCopySync?.view() ?? { copyNew: true, readable: true, computers: [], copies: [] },
+        setCopy: async request => { await pluginCopySync?.setCopy(request.accountId, request.computerId, request.on); return await pluginCopySync?.view() ?? { copyNew: true, readable: true, computers: [], copies: [] } },
+        setCopyNew: async copyNew => { await pluginCopySync?.setCopyNew(copyNew); return await pluginCopySync?.view() ?? { copyNew: true, readable: true, computers: [], copies: [] } },
+        // A thread's own mail grants, for its ··· menu: the accounts it may read, by the names the user gave them.
+        // Only a thread that is open holds one, and only an account that is still there and is a mail account.
+        mailGrants: async threadKey => {
+          // The window names a thread by a key that says whose it is; the grants are this computer's own threads'.
+          const threadId = ownThreadId(threadKey, agentControl.hostId())
+          if (threadId === null || !mailGrants || !pluginAccounts || !mailGrants.open(threadId)) return []
+          const held = await mailGrants.list()
+          if (!held.some(grant => grant.threadId === threadId)) return []
+          return mailGrantsShown(held, await pluginAccounts.list(), threadId, pluginProjectOf(threadId))
+        },
+        // The user's Stop, from that menu: the thread asks again before it next reads the account.
+        stopMailGrant: async request => {
+          const threadId = ownThreadId(request.threadId, agentControl.hostId())
+          return threadId === null ? false : await mailGrants?.stop(threadId, request.accountId) ?? false
+        },
+        // This computer's projects, by name, for choosing which ones an account is kept to. No folder goes to the window.
+        // Each folder once, whichever providers have a project in it. With no projects to read, the page is told so
+        // rather than handed none: an empty list would make every project an account is kept to look gone.
+        projects: () => {
+          if (!localRuntime) throw new Error('PLUGIN_PROJECTS_UNAVAILABLE')
+          return pluginProjects(localRuntime.agentControl.watcherSnapshot().projects)
+        },
         // A removed account takes its entries in the use record with it.
         removeAccount: async request => {
           const result = await pluginAccounts?.remove(request) ?? { ok: false as const, problem: 'store' as const }
           if (result.ok) void pluginUse?.forgetAccount(request.id).catch(() => undefined)
+          // And with every thread's leave to read it, where it was a mail account.
+          if (result.ok) void mailGrants?.forgetAccount(request.id).catch(() => undefined)
+          // And every host that keeps a copy is told to let it go, now or when it next connects.
+          if (result.ok) pluginCopySync?.accountsChanged()
           return result
         },
         recentUse: async () => {
@@ -2845,7 +2968,11 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         cleanupTeams?.()
         cleanupLocalApps?.()
         pluginsStop.abort()
+        pluginChanges?.close()
+        mailGrants?.close()
         cleanupPlugins?.()
+        stopFollowingCopies()
+        pluginCopySync?.close()
         checkpointIntegration.dispose()
         cleanupRequestDrafts()
         cleanupFiles()
@@ -2920,6 +3047,13 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         // As a provider's call does, the tool hears the Sotto thread, never the window's host-qualified ID.
         return delegationTools.call(parseHostEntityKey(request.threadId)?.id ?? request.threadId, request.name, request.arguments)
       })
+      ipcMain.handle(E2E_PLUGIN_TOOL_CHANNEL, (event, payload: unknown) => {
+        if (!isAuthorizedIpcSender(event, windows.getTrustedRenderers(), ['main'])) throw new Error('E2E_SENDER_REJECTED')
+        const request = e2ePluginToolSchema.parse(payload)
+        if (!pluginTools) throw new Error('Plugins are off in this build.')
+        // As a provider's call does, the tool hears the Sotto thread, and a change still waits for the user's answer in it.
+        return pluginTools.call(parseHostEntityKey(request.threadId)?.id ?? request.threadId, request.name, request.arguments)
+      })
       ipcMain.handle(AGENT_E2E, (event, payload: unknown) => {
         if (!isTrustedMainE2ESender(event.sender, windows.getTrustedRenderers())) throw new Error('E2E_SENDER_REJECTED')
         const parsed = e2eAgentEventSchema.parse(payload)
@@ -2948,7 +3082,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         return { ...snapshotE2EState(
           e2eState,
           BrowserWindow.getAllWindows().some((candidate) => candidate.getTitle() === buildName && candidate.isVisible()),
-        ), openedThreadFolder, openedExternalLink, ...(certifiedDetail ? { certifiedDetail } : {}) }
+        ), openedThreadFolder, openedExternalLink, openedFiles: [...e2eFiles.opened], shownFiles: [...e2eFiles.shown], ...(certifiedDetail ? { certifiedDetail } : {}) }
       })
       ipcMain.handle(E2E_TRIGGER_SHORTCUT_CHANNEL, (event) => {
         if (!isTrustedMainE2ESender(event.sender, windows.getTrustedRenderers())) {

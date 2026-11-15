@@ -1,6 +1,7 @@
 import { assertCouncilJudgeDirectory } from '../council/councilJudge'
 import { supportsClimbJudging } from '../../shared/councilClimb'
 import { annotateWatcherOwnChanges } from './watcherOwnChanges'
+import { whyNotRouted } from '../../shared/modelRouter'
 import { dynamicNoteText, dynamicSessionAfterCompaction, isDynamicThread, overseerInstructions, overseerNoteFor, overseerSend, whyNotDynamic, type DynamicSession, type OverseerUserNote } from '../../shared/dynamicThreads'
 import { compactionPending } from '../../shared/compaction'
 import { withKeptMessageMetadata } from '../../shared/agents'
@@ -192,6 +193,8 @@ function liveTurn(activities: readonly AgentActivity[], status: AgentThread['sta
 
 /** Said when the branch on a working-copy record could not be written; the folder itself was verified. */
 const BRANCH_SAVE_ERROR = 'The branch name could not be saved. Restore local storage and refresh.'
+/** Status reads whose changes are saved and published together: the save now waiting to run, and every save so far. */
+interface StatusesTogether { saving?: Promise<void>; saved?: Promise<void> }
 /** What a deletion that failed after its folders went says of them (ADR-0140 decision 5). */
 const DELETION_FOLDERS_WORDS = 'Worktree folders it already removed stay removed; their branches and commits stay.'
 /** Said when a thread's own history could not be written. The thread still works; what it said is at risk. */
@@ -1335,18 +1338,24 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   /**
    * Keep main up to date moved the checkout at `folder` (ADR-0142): each thread working in it, or in a folder inside it,
    * reads its Git status again, so its branch stops saying it is behind. Matched by path alone, so it costs no Git.
+   *
+   * The threads of one folder take one read of it, begun after the move, and are saved and published together. Each
+   * used to read the folder for itself, about five Git processes and a save a thread: with 392 threads in the project's
+   * folder, 391 of them settled, main was blocked for 1.1 to 1.6 s after every merge (November 12, 2026). Automatically
+   * pull is still decided for each thread from what the read found, as it was.
    */
   async projectCheckoutMoved(folder: string): Promise<void> {
     const key = (path: string): string => path.replace(/[\\/]+$/u, '').replace(/\\/gu, '/').toLowerCase()
-    const root = key(folder)
+    const root = key(folder), movedAt = performance.now(), together: StatusesTogether = {}
     const reads: Promise<void>[] = []
     for (const thread of this.state.snapshot.threads) {
       const own = this.statusFolder(thread.id)
       if (own === undefined) continue
       const path = key(own)
-      if (path === root || path.startsWith(`${root}/`)) reads.push(this.onLane(thread.id, () => this.readGitStatus(thread.id, true)).catch(() => undefined))
+      if (path === root || path.startsWith(`${root}/`)) reads.push(this.onLane(thread.id, () => this.readGitStatus(thread.id, false, { startedAfter: movedAt, together })).catch(() => undefined))
     }
     await Promise.all(reads)
+    await together.saved
   }
   private pullRequestMergedListener: ((url: string) => void) | undefined
   /** Told of each pull request a read finds merged, for Keep main up to date (ADR-0142); one listener, set by the runtime. */
@@ -1485,6 +1494,13 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       } else if (!thread.worktree) await this.discoverWorkingCopy(threadId).catch(() => undefined)
       await this.followGitChange(threadId)
     }), () => this.workspaceSnapshot())
+  }
+  /**
+   * No thread has the folder yet, so it holds no thread's Git lane: GitActions keeps one init to a folder at a time. Not
+   * `init`, which refuses a folder inside another repository; a folder create-project just made is always its own.
+   */
+  initProjectFolder(path: string): Promise<void> {
+    return this.gitActionsOrRefuse().initNewFolder(path)
   }
   publishThreadRepository(threadId: string, options: { repository: string; visibility: 'private' | 'public' }): Promise<{ snapshot: AgentHostSnapshot; url: string }> {
     return this.thenReadRemoteStatus(threadId, this.onGitLane(threadId, async () => {
@@ -2222,7 +2238,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * may follow ran outside the lane. `afterRemote` is a read taking what a fetch brought, which pulls a clean
    * default branch only behind its upstream when Automatically pull is on.
    */
-  private async readGitStatus(threadId: string, afterRemote: boolean, options: { readonly startedAfter?: number } = {}): Promise<void> {
+  private async readGitStatus(threadId: string, afterRemote: boolean, options: { readonly startedAfter?: number; readonly together?: StatusesTogether } = {}): Promise<void> {
     if (!this.gitStatus || this.stopping || this.threadById(threadId)?.councilJudge) return
     const folder = this.statusFolder(threadId)
     if (folder === undefined) return
@@ -2231,7 +2247,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     // A trailing re-read takes any read of the folder begun since its timer fired (`refreshWorktreeRecord`).
     const share = afterRemote ? { fresh: true } : options.startedAfter !== undefined ? { startedAfter: options.startedAfter } : {}
     try { status = await this.gitStatus.read(folder, { remote: false, ...share }) } catch { return }
-    if (afterRemote && this.mayAutoPull(status)) status = await this.autoPull(threadId, folder) ?? status
+    // A moved checkout's threads share their read (`together`) and still decide a pull, each for its own folder: a
+    // repository of its own inside the moved one may be behind an upstream already fetched. `autoPull` decides again
+    // from a read of its own, so a shared one never pulls on what another thread's read found.
+    if ((afterRemote || options.together) && this.mayAutoPull(status)) status = await this.autoPull(threadId, folder) ?? status
     const current = this.threadById(threadId)
     if (!current?.worktree || current.worktree.status !== 'ready' || this.stopping) return
     if (gitStatusFingerprint(current.worktree.git) === gitStatusFingerprint(status)) return
@@ -2240,8 +2259,24 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     // The branch's own pull request, as this read found it, brings the thread's link to it up to date (#1147).
     if (status.pullRequest) this.followPullRequestState(threadId, status.pullRequest.url, status.pullRequest.state)
     this.dirty = true
+    if (options.together) { this.saveStatusesTogether(options.together); return }
     try { await this.flush() } catch { this.saveError = BRANCH_SAVE_ERROR }
     this.publish()
+  }
+  /**
+   * One save and one publication for every thread whose status changed in the same turn of the loop, as the threads of one
+   * folder do when they take the same read (`projectCheckoutMoved`): a save and a publication each was 392 of both for one
+   * moved checkout. A thread whose lane was busy reads later and is saved with whoever reads beside it then.
+   */
+  private saveStatusesTogether(together: StatusesTogether): void {
+    if (together.saving) return
+    const saving = new Promise<void>(resolve => setImmediate(resolve)).then(async () => {
+      if (together.saving === saving) delete together.saving
+      try { await this.flush() } catch { this.saveError = BRANCH_SAVE_ERROR }
+      this.publish()
+    })
+    together.saving = saving
+    together.saved = Promise.all([together.saved, saving]).then(() => undefined)
   }
   /** The folder whose Git status the thread shows: a ready record's, not reclaimed, or none. */
   private statusFolder(threadId: string): string | undefined {
@@ -4852,6 +4887,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       ...(old?.delegatedBy ? { delegatedBy: old.delegatedBy } : {}),
       ...(old?.councilJudge ? { councilJudge: true as const } : {}),
       ...(old?.dynamic ? { dynamic: old.dynamic } : {}),
+      ...(old?.routed ? { routed: old.routed } : {}),
       // A compaction can lose a note, so one that told this session anything goes again with its next message (ADR-0191).
       ...(old?.dynamicSession ? { dynamicSession: compactionPending(old.compaction) && thread.compaction?.status === 'completed' ? dynamicSessionAfterCompaction(old.dynamicSession) : old.dynamicSession } : {}),
       ...(old?.continuedFrom ? { continuedFrom: old.continuedFrom } : {}),
@@ -5482,11 +5518,27 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * Dynamic on or off for a thread (ADR-0191), Sotto's own record, which the provider never sees. Checked here against the
    * thread as it stands now, since what the coordinator was last told can be a moment behind a turn that just began.
    */
+  /**
+   * Model routing on or off for a thread (ADR-0207), Sotto's own record, which the provider never sees. Its next send reads
+   * it, so it changes while a turn runs too: a model pressed mid-turn turns routing off before the press is kept.
+   */
+  async setThreadRouted(threadId: string, routed: boolean): Promise<AgentHostSnapshot> {
+    await this.initialize()
+    const thread = this.thread(threadId)
+    if ((thread.routed === true) !== routed) {
+      const refused = routed ? whyNotRouted(thread) : undefined
+      if (refused) throw new Error(refused)
+      if (routed) this.touched(thread).routed = true
+      else delete this.touched(thread).routed
+      this.dirty = true; await this.flush(); this.publish()
+    }
+    return this.workspaceSnapshot()
+  }
   async setThreadDynamic(threadId: string, dynamic: boolean): Promise<AgentHostSnapshot> {
     await this.initialize()
     const thread = this.thread(threadId)
     if ((thread.dynamic === true) !== dynamic) {
-      const refused = dynamic ? whyNotDynamic(thread) : undefined
+      const refused = dynamic ? whyNotDynamic(thread) ?? (thread.routed === true ? 'This thread uses model routing. Turn model routing off to make it Dynamic. Nothing changed.' : undefined) : undefined
       if (refused) throw new Error(refused)
       if (thread.status === 'running' || thread.requests.length) throw new Error('Wait for this thread to finish and answer its pending requests before changing Dynamic. Nothing changed.')
       if (dynamic) this.touched(thread).dynamic = true
@@ -5853,6 +5905,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         worktree: command.councilJudge ? { mode: 'shared', path: command.workingDirectory!, status: 'ready' } : await this.selectedWorkingCopy(command.projectId, { ...command, workingCopy: command.workingCopy ?? this.workingCopyDefault(command.projectId) }),
         status: 'idle', messages: [], requests: [], workspaceSettledAt: null, nativeSessionStarted: false }
       if (command.dynamic && whyNotDynamic(thread) === undefined) thread.dynamic = true
+      // A thread that starts Dynamic is not routed as well: Dynamic chooses its own models (ADR-0207).
+      if (command.routed && whyNotRouted(thread) === undefined) thread.routed = true
       if (thread.worktree?.mode === 'shared') thread.workingDirectory = thread.worktree.path
       // New work reopens the folder, while the work put aside stays settled.
       // Re-read after working-copy preparation, which can accept a fresh snapshot.

@@ -838,6 +838,16 @@ export class GitActions {
     })
   }
 
+  /**
+   * `git init` in a folder create-project just made (ADR-0073, November 12, 2026). It is empty, so it is its own repository
+   * whatever repository holds the folder above it, such as a dotfiles home or a monorepo: Git nests a new one there.
+   */
+  initNewFolder(cwd: string): Promise<void> {
+    return this.exclusive(cwd, async () => {
+      await this.git(cwd, ['init', '-q'], { timeoutMs: 10_000 }).catch(error => { throw new GitActionRefusal(`Git initialization failed. ${(error instanceof Error ? error.message : '').slice(0, 400)}`.trim()) })
+    })
+  }
+
   /** Publish a repository to GitHub through `gh`, adding `origin` and pushing the current branch. GitHub only (ADR-0027). */
   publish(cwd: string, options: { readonly repository: string; readonly visibility: 'private' | 'public' }): Promise<{ url: string }> {
     return this.exclusive(cwd, async () => {

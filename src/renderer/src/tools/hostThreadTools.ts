@@ -6,14 +6,21 @@ export const HOST_CHANGES_POLL_MS = 4000
 
 /**
  * What Files and Changes may ask of a thread on a paired host (ADR-0025, October 5 amendment): its host's reads and
- * Copy path, which main sends to that host. Reveal and the turn checkpoints need the thread on this computer, so they
- * are left out, and the controls they would back are absent rather than disabled.
+ * Copy path, which main sends to that host, and a download of one of its files to this computer. Reveal and the turn
+ * checkpoints need the thread on this computer, so they are left out, and the controls they would back are absent rather than disabled.
  */
 export function hostThreadFiles(bridge: FilesBridge): FilesBridge {
   return Object.freeze<FilesBridge>({
     list: request => bridge.list(request),
     preview: request => bridge.preview(request),
     copyPath: request => bridge.copyPath(request),
+    // A file on the host is saved to this computer's Downloads folder, and found and read where a link names it (ADR-0120, November 12 amendment).
+    ...(bridge.linkedFile ? { linkedFile: request => bridge.linkedFile!(request) } : {}),
+    ...(bridge.download ? { download: request => bridge.download!(request) } : {}),
+    ...(bridge.stopDownload ? { stopDownload: request => bridge.stopDownload!(request) } : {}),
+    ...(bridge.showDownload ? { showDownload: request => bridge.showDownload!(request) } : {}),
+    ...(bridge.openDownload ? { openDownload: request => bridge.openDownload!(request) } : {}),
+    ...(bridge.onDownloadProgress ? { onDownloadProgress: listener => bridge.onDownloadProgress!(listener) } : {}),
   })
 }
 
