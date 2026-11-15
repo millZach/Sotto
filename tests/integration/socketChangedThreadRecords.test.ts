@@ -251,17 +251,21 @@ describe('the desktop’s client of a paired host', () => {
       await reached(change())
       const shells = vi.spyOn(client, 'readShell')
       const pushed = wire.filter(frame => frame.event === 'shell').at(-1) as unknown as ShellPush
-      const before = heard.length
+      const before = heard.length, injected = wire.length
       receive(JSON.stringify({ ...pushed, threads: { ...pushed.threads!, revision: 1_000_000, base: 999_999 } }))
       expect(shells).toHaveBeenCalledTimes(1)
       await expect.poll(() => heard.length).toBeGreaterThan(before)
       // What it showed next is the whole shell it read, never the push it could not put back.
       expect(heard.slice(before).every(state => state.host.threads.length > 0)).toBe(true)
-      // The host lists every record in its next push, and the client shows the host's list.
+      // The host lists every record in its first push after that read, and the client shows the host's list. Later pushes
+      // are measured from that one, so the push read is the first after the read's answer on the wire, not the last (#1968).
       const workId = change()
       const after = await reached(workId)
-      const last = wire.filter(frame => frame.event === 'shell').at(-1) as unknown as ShellPush
-      expect(last.threads).toMatchObject({ base: null })
+      const answered = wire.findIndex((frame, index) => index > injected && 'id' in frame && !('event' in frame)
+        && (frame.result as { host?: unknown } | undefined)?.host !== undefined)
+      expect(answered).toBeGreaterThan(injected)
+      const first = wire.slice(answered + 1).find(frame => frame.event === 'shell') as unknown as ShellPush | undefined
+      expect(first?.threads).toMatchObject({ base: null })
       expect(after.host.threads).toEqual((await client.readShell()).host.threads)
     } finally { off() }
   })
