@@ -1,5 +1,7 @@
 # A thread makes 3D models with Meshy and asks before each
 
+November 15, 2026 amendment, from Zach's answers on cards (the mock-up is the tag `prototype/plugin-meshy`): **Ask before each 3D model**, the monthly credit limit, this month's credits and the line on Meshy's training terms live on the Meshy account in Settings › Plugins, one set per account. There is no Settings › 3D models section; the page and the Tools surface keep the name **3D models**. And 3D models ride on the `plugins` Owl feature rather than a `meshy-3d-models` feature of their own, so they reach stable when Plugins does. The Meshy row sits under a group Zach named **3D, sound and video**.
+
 November 11, 2026 amendment: [ADR-0205](0205-plugins-connect-outside-services-once-and-threads-use-them-through-sottos-tools.md) builds this as a plugin. The Meshy key is entered as a Meshy account on Settings › Plugins and copied to the user's paired hosts, rather than typed on each host. For a copied account, the monthly limit is one figure across the computers that hold it, and **Ask before each 3D model** turned off on the desktop applies to a host's threads too, where this record had a host count its own credits and always ask. Everything else here stands.
 
 ## Status

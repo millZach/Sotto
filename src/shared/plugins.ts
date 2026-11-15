@@ -8,14 +8,14 @@ import { z } from 'zod'
 export const PLUGINS_FEATURE = 'plugins'
 
 /** The groups Settings › Plugins sets its rows in, in the page's order. */
-export const PLUGIN_GROUPS = ['code', 'mail'] as const
+export const PLUGIN_GROUPS = ['code', 'mail', 'media'] as const
 export type PluginGroupId = typeof PLUGIN_GROUPS[number]
 
 /** Every plugin a thread's agent can use, each with a row on Settings › Plugins. */
-export const PLUGIN_IDS = ['github', 'vercel', 'gmail', 'proton-mail'] as const
+export const PLUGIN_IDS = ['github', 'vercel', 'gmail', 'proton-mail', 'meshy'] as const
 export type PluginId = typeof PLUGIN_IDS[number]
 /** Each plugin's name, which is the service's own and the same in every language. */
-export const PLUGIN_NAMES: Readonly<Record<PluginId, string>> = { github: 'GitHub', vercel: 'Vercel', gmail: 'Gmail', 'proton-mail': 'Proton Mail' }
+export const PLUGIN_NAMES: Readonly<Record<PluginId, string>> = { github: 'GitHub', vercel: 'Vercel', gmail: 'Gmail', 'proton-mail': 'Proton Mail', meshy: 'Meshy' }
 
 /** The plugins that are mail accounts: read over IMAP, each thread asking once (ADR-0205, decision 8). */
 export const MAIL_PLUGIN_IDS = ['gmail', 'proton-mail'] as const
@@ -31,6 +31,7 @@ export const PLUGINS: readonly PluginEntry[] = [
   { id: 'vercel', name: 'Vercel', group: 'code' },
   { id: 'gmail', name: 'Gmail', group: 'mail' },
   { id: 'proton-mail', name: 'Proton Mail', group: 'mail' },
+  { id: 'meshy', name: 'Meshy', group: 'media' },
 ]
 
 export const PLUGINS_GITHUB_SIGN_IN = 'sotto:plugins:github-sign-in'
@@ -199,7 +200,7 @@ export const PLUGINS_MAIL_GRANT_STOP = 'sotto:plugins:mail-grant-stop'
 export const PLUGINS_MAIL_GRANTS_CHANGED = 'sotto:plugins:mail-grants-changed'
 
 /** The plugins an account is added to by pasting a secret. GitHub is not one: its account is gh's own sign-in. */
-export const ACCOUNT_PLUGIN_IDS = ['vercel', 'gmail', 'proton-mail'] as const
+export const ACCOUNT_PLUGIN_IDS = ['vercel', 'gmail', 'proton-mail', 'meshy'] as const
 export type AccountPluginId = typeof ACCOUNT_PLUGIN_IDS[number]
 
 /** A mail account's address, which signs in to it beside its password: one address, with nothing a mail server would read as more. */
@@ -218,6 +219,16 @@ const projectIdSchema = z.string().min(1).max(512)
 /** A name the user gives an account: what the page shows and what an agent names it by. */
 export const pluginAccountNameSchema = z.string().trim().min(1).max(PLUGIN_ACCOUNT_NAME_MAX)
   .refine(name => [...name].every(character => character.charCodeAt(0) >= 0x20 && character.charCodeAt(0) !== 0x7f))
+
+/** The most a monthly limit can be set to: far past any plan Meshy sells, and short of nonsense. */
+export const PLUGIN_MONTHLY_LIMIT_MAX = 1_000_000
+/** Meshy's monthly credit limit when an account is added, its Pro plan's credits (ADR-0141). */
+export const MESHY_MONTHLY_LIMIT_DEFAULT = 1_000
+/** What an account that spends may spend: whether each paid thing asks first, and the most it spends in a month. */
+export const pluginSpendingSchema = z.object({ askBefore: z.boolean(), monthlyLimit: z.number().int().min(0).max(PLUGIN_MONTHLY_LIMIT_MAX) }).strict()
+export type PluginSpending = z.infer<typeof pluginSpendingSchema>
+/** Whether a plugin's accounts spend, and so carry an Ask before each switch and a monthly limit. */
+export const isSpendingPlugin = (plugin: string): plugin is 'meshy' => plugin === 'meshy'
 
 /** An account as the window sees it. `signedInAs` is the service's own name for the account, when it gave one. */
 export const pluginAccountSchema = z.object({
@@ -240,6 +251,12 @@ export const pluginAccountSchema = z.object({
    * the SHA-256 of the certificate it showed when the account was added or the user last trusted it. No other
    * plugin's account has one. Not a secret: it names a certificate and does not open anything.
    */
+  /**
+   * What an account that spends may spend (ADR-0205 decision 7, ADR-0141; Zach's pick on November 15, 2026 that it
+   * lives on the account): whether each paid thing asks first, on by default, and the most it spends in a month.
+   * Only Meshy's accounts have it so far, in Meshy's credits.
+   */
+  spending: pluginSpendingSchema.optional(),
   bridge: z.object({ imapPort: z.number().int().min(1).max(65_535), smtpPort: z.number().int().min(1).max(65_535), certificate: z.string().regex(/^[0-9a-f]{64}$/u) }).strict().optional(),
 }).strict()
 export type PluginAccount = z.infer<typeof pluginAccountSchema>
@@ -276,8 +293,10 @@ export type PluginAccountRemove = z.infer<typeof pluginAccountRemoveSchema>
 /** A change to which threads may use an account: its switch, the projects it is kept to, or both. Null is every project. */
 export const pluginAccountUpdateSchema = z.object({
   id: z.uuid(), on: z.boolean().optional(),
+  /** For an account that spends: whether each paid thing asks first, and the month's limit. */
+  askBefore: z.boolean().optional(), monthlyLimit: z.number().int().min(0).max(PLUGIN_MONTHLY_LIMIT_MAX).optional(),
   projects: z.array(projectIdSchema).min(1).max(PLUGIN_ACCOUNT_PROJECTS_MAX).nullable().optional(),
-}).strict().refine(update => update.on !== undefined || update.projects !== undefined)
+}).strict().refine(update => update.on !== undefined || update.projects !== undefined || update.askBefore !== undefined || update.monthlyLimit !== undefined)
 export type PluginAccountUpdate = z.infer<typeof pluginAccountUpdateSchema>
 
 /** A project as the page offers it for an account: its name, and whether it is settled, which keeps it off the list unless it is chosen. */

@@ -82,6 +82,7 @@ import { isThreadClosed } from '../shared/threadActivity'
 import { wordPluginChange } from './plugins/changeWords'
 import { combinedSottoRequests } from './agents/sottoRequests'
 import { checkVercelToken, type VercelFetch } from './plugins/vercel/read'
+import { checkMeshyKey, type MeshyFetch } from './plugins/meshy/account'
 import { PluginUseRecord } from './plugins/useRecord'
 import { isMailPlugin, PLUGIN_USE_THREAD_TITLE_MAX, PLUGINS_COPIES_CHANGED, PLUGINS_MAIL_GRANTS_CHANGED } from '../shared/plugins'
 import { resetGhLookup } from './agents/git/ghCommand'
@@ -1388,6 +1389,11 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const pluginsGitHubSignIn = sharedGitHubSignIn(() => { resetGhLookup(); return readGitHubSignIn(pluginsGh, pluginsStop.signal) })
   // What each plugin tool call did, by which thread, and never its content; it follows Keep local history.
   const pluginUse = pluginsEnabled ? new PluginUseRecord(userDataPath, { historyEnabled: () => agentHistoryEnabled }) : undefined
+  // Meshy (ADR-0141): a key goes to api.meshy.ai and nowhere else, checked there for free before it is kept. An
+  // end-to-end run reaches the stand-in its test names, or nothing; a packaged build never reads that name.
+  const meshyBase = e2eConfiguration !== null && !app.isPackaged ? process.env['SOTTO_E2E_MESHY_API_URL'] : undefined
+  const meshyFetch: MeshyFetch = e2eConfiguration !== null && !meshyBase ? async () => { throw new Error('E2E_NETWORK_DISABLED') } : (url, init) => fetch(url, init)
+  const meshyOptions = { ...(meshyBase ? { base: meshyBase } : {}), signal: pluginsStop.signal }
   // Vercel (ADR-0205): an account's token goes to api.vercel.com and nowhere else. An end-to-end run reaches the
   // stand-in its test names, or nothing; a packaged build never reads that name.
   const vercelBase = e2eConfiguration !== null && !app.isPackaged ? process.env['SOTTO_E2E_VERCEL_API_URL'] : undefined
@@ -1405,7 +1411,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const mailOptions: MailOptions = { signal: pluginsStop.signal, ...(e2eConfiguration === null ? {}
     : { connect: mailStandIn !== undefined ? mailOnThisComputer(mailStandIn, standInPort('SOTTO_E2E_SMTP_PORT')) : async () => { throw new Error('E2E_NETWORK_DISABLED') } }) }
   const pluginAccounts = pluginsEnabled ? new PluginAccounts(userDataPath, { credentials,
-    check: (plugin, secret, address, bridge) => isMailPlugin(plugin) ? checkMailAccount(plugin, address ?? '', secret, mailOptions, bridge) : checkVercelToken(vercelFetch, secret, vercelOptions) }) : undefined
+    check: (plugin, secret, address, bridge) => isMailPlugin(plugin) ? checkMailAccount(plugin, address ?? '', secret, mailOptions, bridge)
+      : plugin === 'meshy' ? checkMeshyKey(meshyFetch, secret, meshyOptions) : checkVercelToken(vercelFetch, secret, vercelOptions) }) : undefined
   // Account copies (ADR-0205, amending ADR-0025): each plugin account the user keeps on a paired host is sent to it on
   // every connection and whenever it changes here, and a copy no longer wanted is taken back. Owl `plugins` only.
   const pluginCopySync = pluginsEnabled && pluginAccounts ? new PluginAccountCopySync(userDataPath, {

@@ -1026,3 +1026,51 @@ it('holds the form back when Bridge’s two ports are the same, and lets a switc
   expect(within(form).getByRole('button', { name: 'Add account' })).toHaveAttribute('aria-disabled', 'true')
   expect(form).toHaveTextContent('Bridge reads on one port and sends on another, so the two are never the same.')
 })
+
+const studio: PluginAccount = { id: '33333333-3333-4333-8333-000000000007', plugin: 'meshy', name: 'Studio', savedAt: '2026-11-15T08:00:00.000Z', signedInAs: null, on: true, projects: null, spending: { askBefore: true, monthlyLimit: 1_000 } }
+const meshyRow = (): HTMLElement => screen.getByRole('button', { name: /^Meshy/u })
+
+it('lists Meshy under 3D, sound and video, and adds an account by an API key that is not left in the page', async () => {
+  // Zach named the group on November 15, 2026.
+  const addAccount = vi.fn(async (): Promise<PluginAccountResult> => ({ ok: true, accounts: [studio] }))
+  await act(async () => { render(<PluginsSettings bridge={vercelBridge([], { addAccount })} />) })
+  expect(screen.getByText('3D, sound and video', { exact: true })).toBeInTheDocument()
+  expect(meshyRow()).toHaveAccessibleName('Meshy Not added')
+  fireEvent.click(meshyRow())
+  expect(document.getElementById(meshyRow().getAttribute('aria-controls')!)).toHaveTextContent('Meshy may use what it is sent, and the 3D models it makes, to train its own models.')
+  fireEvent.click(screen.getByRole('button', { name: 'Add a Meshy account' }))
+  const form = screen.getByRole('form', { name: 'Add a Meshy account' })
+  expect(form).toHaveTextContent('Make one at meshy.ai/developers/keys, on a paid Meshy plan: the free plan has no API.')
+  fireEvent.change(within(form).getByLabelText('Name'), { target: { value: 'Studio' } })
+  fireEvent.change(within(form).getByLabelText('API key'), { target: { value: APP_PASSWORD } })
+  await act(async () => { fireEvent.click(within(form).getByRole('button', { name: 'Add account' })) })
+  expect(addAccount).toHaveBeenCalledWith({ plugin: 'meshy', name: 'Studio', secret: APP_PASSWORD })
+  expect(screen.getByRole('region', { name: 'Meshy account Studio' })).toHaveTextContent(/API key saved November 1[45]\./u)
+  expect(document.body.innerHTML).not.toContain(APP_PASSWORD)
+})
+
+it('keeps Ask before each 3D model and the monthly credit limit on the Meshy account, and saves each as it changes', async () => {
+  // Zach's pick on November 15, 2026, from the mock-up kept as the tag prototype/plugin-meshy.
+  const updateAccount = vi.fn(async (request: PluginAccountUpdate): Promise<PluginAccountResult> => ({ ok: true, accounts: [{ ...studio, spending: { askBefore: request.askBefore ?? true, monthlyLimit: request.monthlyLimit ?? 1_000 } }] }))
+  await act(async () => { render(<PluginsSettings bridge={vercelBridge([studio], { updateAccount })} />) })
+  fireEvent.click(meshyRow())
+  const card = screen.getByRole('region', { name: 'Meshy account Studio' })
+  const spends = within(card).getByRole('region', { name: 'What it spends' })
+  const ask = within(spends).getByRole('switch', { name: 'Ask before each 3D model' })
+  expect(ask).toBeChecked()
+  await act(async () => { fireEvent.click(ask) })
+  expect(updateAccount).toHaveBeenLastCalledWith({ id: studio.id, askBefore: false })
+  expect(spends).toHaveTextContent('Off, a thread makes 3D models without asking until the month’s limit is reached')
+  const limit = within(spends).getByLabelText('Monthly credit limit')
+  expect(limit).toHaveValue('1000')
+  // Something that is not a number of credits is said, and not saved.
+  fireEvent.change(limit, { target: { value: 'lots' } })
+  expect(spends).toHaveTextContent('A limit is a whole number of credits, from 0 to 1,000,000.')
+  fireEvent.blur(limit)
+  expect(updateAccount).toHaveBeenCalledTimes(1)
+  fireEvent.change(limit, { target: { value: '300' } })
+  await act(async () => { fireEvent.keyDown(limit, { key: 'Enter' }) })
+  expect(updateAccount).toHaveBeenLastCalledWith({ id: studio.id, monthlyLimit: 300 })
+  // No other plugin's account has these.
+  expect(screen.queryAllByRole('region', { name: 'What it spends' })).toHaveLength(1)
+})

@@ -241,6 +241,7 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { id: 'plugin-vercel', label: 'Vercel', section: 'settings-plugins', words: 'plugin token account deployments build logs projects domains', gate: 'plugins' },
     { id: 'plugin-gmail', label: 'Gmail', section: 'settings-plugins', words: 'plugin mail email google app password account inbox messages', gate: 'plugins' },
     { id: 'plugin-proton-mail', label: 'Proton Mail', section: 'settings-plugins', words: 'plugin mail email proton bridge password account inbox messages', gate: 'plugins' },
+    { id: 'plugin-meshy', label: 'Meshy', section: 'settings-plugins', words: 'plugin 3d models meshy api key credits limit ask before each', gate: 'plugins' },
     { id: 'local-apps', label: msg`Let apps on this computer connect`, section: 'settings-hosts', words: 'agent popup menu bar token loopback', gate: 'local-apps' },
     { id: 'cloud-iphone-key', label: msg`run.cloud key`, section: 'settings-cloud-iphone', words: 'cloud iphone' },
     { id: 'cloud-iphone-cap', label: msg`Monthly cap`, section: 'settings-cloud-iphone', words: 'minutes spending cloud iphone' },
