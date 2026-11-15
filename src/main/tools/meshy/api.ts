@@ -30,9 +30,10 @@ export type MeshyFormat = (typeof MESHY_FORMATS)[number]
 export type MeshyTaskKind = 'preview' | 'refine' | 'photo'
 
 /**
- * What went wrong, in one word. `refused`: Meshy does not take the key, or will not do this for it (401, 403).
+ * What went wrong, in one word. `refused`: Meshy does not take the key (401).
  * `no-credits`: the account has no credits left, or is on a plan without API access (402). `rejected`: Meshy will not
- * make this one (400, 409, 422), or Sotto would not send it. `gone`: Meshy no longer has the task (404). `busy`: try
+ * make this one (400, 409, 422), or not for this account, as for its moderation or an address the key does not allow
+ * (403), or Sotto would not send it. `gone`: Meshy no longer has the task (404). `busy`: try
  * again later (429). `unreachable`: no answer, or Meshy failed (5xx). `unreadable`: an answer Sotto could not read.
  */
 export type MeshyProblem = 'refused' | 'no-credits' | 'rejected' | 'gone' | 'busy' | 'unreachable' | 'unreadable'
@@ -162,11 +163,11 @@ function remeshing(triangles: number | undefined): Record<string, unknown> {
 
 function problemOf(response: Response): MeshyApiError {
   const status = response.status
-  if (status === 401 || status === 403) return new MeshyApiError('refused')
+  if (status === 401) return new MeshyApiError('refused')
   if (status === 402) return new MeshyApiError('no-credits')
   if (status === 404) return new MeshyApiError('gone')
   if (status === 429) return new MeshyApiError('busy', retryAfter(response))
-  if (status === 400 || status === 409 || status === 422) return new MeshyApiError('rejected')
+  if (status === 400 || status === 403 || status === 409 || status === 422) return new MeshyApiError('rejected')
   return new MeshyApiError('unreachable')
 }
 

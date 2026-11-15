@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto'
-import { lstat, readdir, rm } from 'node:fs/promises'
+import { lstat, readdir, realpath, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { setTimeout as sleep } from 'node:timers/promises'
 import { MESHY_POLL_MS, MeshyApi, MeshyApiError, type MeshyApiFetch, type MeshyFormat, type MeshyTask, type MeshyTaskKind } from './api'
-import { DownloadError, downloadModelFile, isPartOf, modelFolder } from './download'
+import { DownloadError, downloadModelFile, isInside, isPartOf, modelFolder } from './download'
 import { MODEL_KEPT_MS, MODEL_STAGES, modelOf, type ModelRecord, type ModelRecords, type ThreeDModel } from './records'
 
 /**
@@ -149,8 +149,8 @@ export class MeshyModels {
       // Its credits are counted as it is asked for, so a task Meshy took just as Sotto stopped is not left uncounted.
       record = await this.change(id, held => ({ ...held, stage, credits: held.credits + MESHY_CREDITS[kind], job: { ...held.job, asking: kind } }))
       try { taskId = await this.ask(record, create) } catch (error) {
-        // Meshy did not take it, so its credits come back.
-        throw error instanceof Ending ? new Ending(error.state, error.failure, MESHY_CREDITS[kind]) : error
+        // Its credits come back only when Meshy plainly did not take it. With no answer Sotto can read, it may have.
+        throw error instanceof Ending && error.failure !== 'unreachable' ? new Ending(error.state, error.failure, MESHY_CREDITS[kind]) : error
       }
       const asked = taskId
       record = await this.change(id, held => {
@@ -167,7 +167,7 @@ export class MeshyModels {
         this.stopping()
         const problem = error instanceof MeshyApiError ? error.problem : 'unreachable'
         if (problem === 'gone') throw new Ending('lost', 'expired')
-        if (problem === 'refused' || problem === 'no-credits') throw new Ending('failed', 'refused')
+        if (problem === 'refused' || problem === 'no-credits' || problem === 'rejected') throw new Ending('failed', problem === 'rejected' ? 'rejected' : 'refused')
         // Meshy says a failed read is tried again at the next one, and does not mean the task failed.
         await this.wait(problem === 'busy' && error instanceof MeshyApiError && error.retryAfterMs !== undefined ? error.retryAfterMs : backoff)
         backoff = Math.min(backoff * 2, BACKOFF_MAX_MS)
@@ -182,8 +182,10 @@ export class MeshyModels {
   }
 
   /**
-   * Asks Meshy for a task. A 429 took nothing, so it is asked again when Meshy says, until Meshy's three days are up;
-   * any other refusal ends it.
+   * Asks Meshy for a task. A 429 took nothing, so it is asked again when Meshy says, until Meshy's three days are up.
+   * A refusal (401, 402, 403, 400, 409, 422) took nothing either, and fails it. Anything else (no answer in time, a
+   * dropped connection, a 5xx, or an answer Sotto cannot read) may have been taken and charged without Sotto learning
+   * the task, so it is lost with its credits counted, and never asked for again.
    */
   private async ask(record: ModelRecord, create: () => Promise<string>): Promise<string> {
     for (;;) {
@@ -192,7 +194,8 @@ export class MeshyModels {
         this.stopping()
         const problem = error instanceof MeshyApiError ? error.problem : 'unreachable'
         if (problem === 'busy') { await this.wait(error instanceof MeshyApiError && error.retryAfterMs !== undefined ? error.retryAfterMs : MESHY_POLL_MS); continue }
-        throw new Ending('failed', problem === 'refused' || problem === 'no-credits' || problem === 'rejected' ? problem : 'unreachable')
+        if (problem === 'refused' || problem === 'no-credits' || problem === 'rejected') throw new Ending('failed', problem)
+        throw new Ending('lost', 'unreachable')
       }
     }
   }
@@ -221,9 +224,11 @@ export class MeshyModels {
       } catch (error) {
         // What this try wrote goes, so the next try starts whole or the record names no half of a 3D model.
         if (error instanceof Forgotten) throw error
-        await Promise.all(files.map(name => rm(join(record.folder, name), { force: true }).catch(() => undefined)))
+        await this.removeOwn(record, files)
+        // Written before anything else, stopping included, so the record never names files that are gone and may
+        // since be someone else's.
+        await this.change(id, held => ({ ...held, files: [] }))
         this.stopping()
-        record = await this.change(id, held => ({ ...held, files: [] }))
         const problem = error instanceof DownloadError ? error.problem : 'unreachable'
         if (problem === 'gone') throw new Ending('lost', 'expired')
         if (problem === 'too-large') throw new Ending('failed', 'too-large')
@@ -249,11 +254,18 @@ export class MeshyModels {
     throw new Ending('failed', 'folder')
   }
 
-  /** The files and part files a stopped try left, which are this 3D model's own. */
+  /** The files and part files a try stopped hard left, which are this 3D model's own. */
   private async clearTry(record: ModelRecord): Promise<void> {
     const names = await readdir(record.folder).catch(() => [] as string[])
-    const leftover = [...record.files, ...names.filter(name => isPartOf(record.id, name))]
-    await Promise.all(leftover.map(name => rm(join(record.folder, name), { force: true }).catch(() => undefined)))
+    await this.removeOwn(record, [...record.files, ...names.filter(name => isPartOf(record.id, name))])
+  }
+
+  /** Removes files this 3D model wrote, only while its folder is still inside the thread's working folder. */
+  private async removeOwn(record: ModelRecord, names: readonly string[]): Promise<void> {
+    if (names.length === 0) return
+    const inside = await Promise.all([realpath(record.root), realpath(record.folder)]).then(([root, folder]) => isInside(root, folder), () => false)
+    if (!inside) return
+    await Promise.all(names.map(name => rm(join(record.folder, name), { force: true }).catch(() => undefined)))
   }
 
   private async end(id: string, ending: Ending): Promise<ThreeDModel | undefined> {

@@ -13,8 +13,9 @@ export const MODEL_STAGES = ['shape', 'texture', 'files'] as const
 /**
  * Why a 3D model was not made, in one word: Meshy `refused` the key, the account had `no-credits`, Meshy `rejected`
  * the words or the photo, Meshy `failed` making it, a file was `too-large`, the `folder` would not take the files,
- * Meshy was `unreachable` when it was asked, or the Meshy account that asked is gone (`no-account`). A `lost` 3D model
- * says `expired` when its three days passed, and `stopped` when Sotto stopped before it knew whether Meshy took it.
+ * or the Meshy account that asked is gone (`no-account`). A `lost` 3D model says `expired` when its three days passed,
+ * `stopped` when Sotto stopped before it knew whether Meshy took it, and `unreachable` when Meshy gave no answer Sotto
+ * could read as it was asked; those last two keep their credits counted, since Meshy may have taken them.
  */
 export const MODEL_FAILURES = ['refused', 'no-credits', 'rejected', 'failed', 'too-large', 'folder', 'unreachable', 'no-account', 'expired', 'stopped'] as const
 
@@ -167,22 +168,25 @@ export class ModelRecords {
 
   private async load(): Promise<ModelRecord[]> {
     if (this.records) return this.records
-    let records: ModelRecord[] = []
-    try {
-      const parsed = fileSchema.safeParse(JSON.parse(await readFile(this.path, 'utf8')))
-      // A record this version cannot read is left out rather than failing the rest.
-      // And words a failed clearing left in the file are not read while Keep local history is off.
-      // A file, or a record in it, that cannot be read may still hold words, so it counts as holding them.
-      if (!parsed.success) this.wordsInFile = true
-      else records = parsed.data.models.flatMap(entry => {
-        const record = recordSchema.safeParse(entry)
-        if (!record.success || holdsWords(record.data)) this.wordsInFile = true
-        return record.success ? [this.private(record.data)] : []
-      })
-    } catch (error) {
-      // No file yet: nothing to clear. One that cannot be read or parsed: no records, and it is written over next.
-      if (!(typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT')) this.wordsInFile = true
+    let text: string
+    try { text = await readFile(this.path, 'utf8') } catch (error) {
+      // No file yet: no records. One that is there and could not be read now, as while something else holds it, fails
+      // this change and is read again by the next, so it is never written over with nothing.
+      if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT') { this.records = []; return this.records }
+      throw error
     }
+    let records: ModelRecord[] = []
+    let parsed: ReturnType<typeof fileSchema.safeParse> | undefined
+    try { parsed = fileSchema.safeParse(JSON.parse(text)) } catch { parsed = undefined }
+    // A file that does not parse starts over, and may still hold words, so it counts as holding them. A record this
+    // version cannot read is left out rather than failing the rest, and counts the same way. And words a failed
+    // clearing left in the file are not read while Keep local history is off.
+    if (!parsed?.success) this.wordsInFile = true
+    else records = parsed.data.models.flatMap(entry => {
+      const record = recordSchema.safeParse(entry)
+      if (!record.success || holdsWords(record.data)) this.wordsInFile = true
+      return record.success ? [this.private(record.data)] : []
+    })
     this.records = records
     return records
   }

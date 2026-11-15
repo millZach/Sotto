@@ -55,7 +55,7 @@ describe("Meshy's API", () => {
 
   it('says in one word what went wrong, and never what Meshy wrote', async () => {
     expect(await problem(api('msy_not_this_one').createPreview({ words: 'a chair' }))).toBe('refused')
-    const answers: [number, string][] = [[402, 'no-credits'], [403, 'refused'], [400, 'rejected'], [422, 'rejected'], [409, 'rejected'], [429, 'busy'], [500, 'unreachable'], [503, 'unreachable']]
+    const answers: [number, string][] = [[402, 'no-credits'], [403, 'rejected'], [400, 'rejected'], [422, 'rejected'], [409, 'rejected'], [429, 'busy'], [500, 'unreachable'], [503, 'unreachable']]
     for (const [status, word] of answers) {
       meshy.behaviour.answers.push({ route: 'create', status })
       const error = await api().createPreview({ words: 'a chair' }).catch((caught: unknown) => caught)

@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -115,7 +115,7 @@ describe('a 3D model made with Meshy', () => {
   })
 
   it('says why Meshy would not take it, and charges nothing', async () => {
-    const answers = [[401, 'refused'], [402, 'no-credits'], [422, 'rejected'], [500, 'unreachable']] as const
+    const answers = [[401, 'refused'], [402, 'no-credits'], [403, 'rejected'], [422, 'rejected']] as const
     for (const [status, failure] of answers) {
       meshy.behaviour.answers.push({ route: 'create', status })
       const { service } = models()
@@ -123,6 +123,18 @@ describe('a 3D model made with Meshy', () => {
     }
     const { service } = models({ keyOf: () => undefined })
     expect(await (await service.make(words())).done).toMatchObject({ state: 'failed', failure: 'no-account' })
+  })
+
+  it('keeps the credits counted, and never asks again, when Meshy may have taken it without Sotto learning its task', async () => {
+    // A 5xx, an answer Sotto cannot read, and no answer at all.
+    const garbled: MeshyApiFetch = async (url, init) => init.method === 'POST' ? new Response('not json', { status: 202 }) : realFetch(url, init)
+    const silent: MeshyApiFetch = async (url, init) => { if (init.method === 'POST') throw new Error('timed out'); return realFetch(url, init) }
+    for (const fetcher of [realFetch, garbled, silent]) {
+      if (fetcher === realFetch) meshy.behaviour.answers.push({ route: 'create', status: 503 })
+      const { service } = models({ fetch: fetcher })
+      expect(await (await service.make(words())).done).toMatchObject({ state: 'lost', failure: 'unreachable', credits: 20 })
+    }
+    expect(meshy.created()).toHaveLength(0)
   })
 
   it('is lost, and its half-fetched files removed, when Meshy no longer has its files', async () => {
@@ -183,6 +195,22 @@ describe('a 3D model still being made when Sotto stops', () => {
     expect((await readdir(folder)).sort()).toEqual(['Chair.glb', 'Chair.png', 'Chair.usdz'])
   })
 
+  it('names no files in the record once a stopped fetch took them away, so the next start removes nothing of anyone else’s', async () => {
+    const first = models()
+    meshy.behaviour.onFile = path => { if (path.endsWith('model.usdz')) first.stop.abort() }
+    const { model } = await first.service.make(words())
+    expect(await first.service.whenDone(model.id)).toBeUndefined()
+    expect(await recordsHere().record(model.id)).toMatchObject({ state: 'making', files: [] })
+    // The user saves a file of that name before Sotto starts again.
+    delete meshy.behaviour.onFile
+    const folder = join(root, 'models')
+    await writeFile(join(folder, 'Chair.png'), 'mine')
+    const again = models({ records: recordsHere() })
+    await again.service.resume()
+    expect(await again.service.whenDone(model.id)).toMatchObject({ state: 'done', files: ['Chair-2.png', 'Chair-2.glb', 'Chair-2.usdz'] })
+    expect(await readFile(join(folder, 'Chair.png'), 'utf8')).toBe('mine')
+  })
+
   it('stops asking a Meshy too busy to take it once its three days are up, and counts nothing', async () => {
     let now = Date.parse('2026-11-15T12:00:00Z')
     for (let n = 0; n < 10; n++) meshy.behaviour.answers.push({ route: 'create', status: 429, retryAfter: '600' })
@@ -231,6 +259,23 @@ describe('the record of 3D models', () => {
     history = false
     await expect(records.privacyChanged()).rejects.toThrow()
     expect(JSON.stringify(await records.list())).not.toContain('a small wooden chair')
+  })
+
+  it('never writes over a file it could not read just now, and reads it again on the next change', async () => {
+    const { service } = models()
+    const ended = await (await service.make(photo())).done
+    const kept = await readFile(join(data, '3d-models.json'), 'utf8')
+    const record = (await recordsHere().record(ended!.id))!
+    // Something holds the file, so reading it fails: here, a folder in its place for a moment.
+    await rename(join(data, '3d-models.json'), join(data, 'held.json'))
+    await mkdir(join(data, '3d-models.json'))
+    const records = recordsHere()
+    await expect(records.list()).rejects.toThrow()
+    await expect(records.add({ ...record, id: 'another' })).rejects.toThrow()
+    await rm(join(data, '3d-models.json'), { recursive: true })
+    await rename(join(data, 'held.json'), join(data, '3d-models.json'))
+    expect((await records.list()).map(model => model.id)).toEqual([ended!.id])
+    expect(await readFile(join(data, '3d-models.json'), 'utf8')).toBe(kept)
   })
 
   it('writes over a file it could not read while Keep local history is off, since it may hold words', async () => {
