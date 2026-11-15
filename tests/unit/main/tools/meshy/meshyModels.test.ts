@@ -128,6 +128,24 @@ describe('a 3D model made with Meshy', () => {
     expect(meshy.requests.length).toBe(reads)
   })
 
+  it('offers the shape again when picked up during the texture after Sotto stopped', async () => {
+    meshy.behaviour.holding.add('refine')
+    const first = models({ wait: async () => { if (meshy.created('refine').length === 1) first.stop.abort() } })
+    const { model, done } = await first.service.make(words())
+    expect(await done).toBeUndefined()
+    expect(first.service.hasShape(model.id)).toBe(false)
+    let shown: boolean | undefined
+    const holder: { service?: MeshyModels } = {}
+    const again = models({ records: recordsHere(), changed: changed => { if (changed.stage === 'texture' && shown === undefined) shown = holder.service!.hasShape(changed.id) } })
+    holder.service = again.service
+    await again.service.resume()
+    await expect.poll(() => shown).toBe(true)
+    // The shape's link came from reading the shape task Meshy keeps, once; no new task was asked for.
+    expect(meshy.created().map(task => task.kind)).toEqual(['preview', 'refine'])
+    meshy.behaviour.holding.delete('refine')
+    expect(await again.service.whenDone(model.id)).toMatchObject({ state: 'done' })
+  })
+
   it('from a photo is one task, costing 30 credits, and keeps the photo’s name but never the photo', async () => {
     const { service } = models()
     const ended = await (await service.make(photo())).done

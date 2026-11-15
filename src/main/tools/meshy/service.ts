@@ -154,6 +154,11 @@ export class MeshyModels {
           const shape = await this.step(id, api, 'preview', 'shape', words === undefined ? undefined : () => api.createPreview({ words, ...(record.triangles !== undefined ? { triangles: record.triangles } : {}) }))
           // The shape can be turned while Meshy paints the texture.
           if (shape.files.glb) this.shapes.set(id, { link: shape.files.glb })
+        } else if (record.job.preview !== undefined) {
+          // Picked up during the texture: the shape's link is read once more from the task Meshy keeps, so it can be
+          // turned again. Without it the texture carries on, with nothing to show meanwhile.
+          const shape = await api.task('preview', record.job.preview).catch(() => undefined)
+          if (shape?.status === 'made' && shape.files.glb) this.shapes.set(id, { link: shape.files.glb })
         }
         const shaped = await this.current(id)
         made = await this.step(id, api, 'refine', 'texture', () => api.createRefine(shaped.job.preview!, shaped.formats))
