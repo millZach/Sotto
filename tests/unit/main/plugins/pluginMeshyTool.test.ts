@@ -255,10 +255,11 @@ describe('making a 3D model through make_3d_model', () => {
     try {
       let answered = false
       const waiting = t.make(BARREL).finally(() => { answered = true })
-      // The call reads files on its way to its timer, so the clock is moved on a minute at a time while they finish.
-      for (let minute = 0; !answered && minute < 10; minute++) {
+      // The call reads and writes files on its way to its timer, which a busy machine takes longer over, so the clock is
+      // moved on ten seconds at a time, giving the files a turn each time, until it answers.
+      for (let step = 0; !answered && step < 400; step++) {
         await new Promise(resolve => setImmediate(resolve))
-        await vi.advanceTimersByTimeAsync(60_000)
+        await vi.advanceTimersByTimeAsync(10_000)
       }
       expect(said(await waiting)).toContain('Meshy is still making the 3D model "Oak barrel"')
     } finally { vi.useRealTimers() }
