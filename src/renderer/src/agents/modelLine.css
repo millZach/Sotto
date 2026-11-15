@@ -10,6 +10,8 @@
   color: var(--tt-text);
 }
 .model-line[data-open='true'] { max-width: none; }
+/* The line holds focus when what had it inside went, as when the shape gives way to saving the files. */
+.model-line:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; }
 
 .model-line__row { display: flex; align-items: center; gap: 12px; min-width: 0; padding: 10px; }
 .model-line__thumb {

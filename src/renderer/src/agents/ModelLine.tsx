@@ -61,11 +61,13 @@ function Line({ modelId, name, view, reduced }: { readonly modelId: string; read
   const [open, setOpen] = useState(false)
   const [webgl, setWebgl] = useState(true)
   const toggle = useRef<HTMLButtonElement>(null)
+  const line = useRef<HTMLDivElement>(null)
   const bodyId = useId()
   const still = useStill(view)
   const shown = view?.name ?? name
   const close = useCallback(() => { setOpen(false); toggle.current?.focus() }, [])
-  const unavailable = useCallback(() => setWebgl(false), [])
+  // The view had focus and the still picture that takes its place cannot, so focus goes to the button that opened it.
+  const unavailable = useCallback(() => { setWebgl(false); toggle.current?.focus() }, [])
 
   const making = view?.state === 'making'
   const ended = view?.state === 'failed' || view?.state === 'lost'
@@ -74,7 +76,17 @@ function Line({ modelId, name, view, reduced }: { readonly modelId: string; read
   // What a press opens: the model once done, the shape while the texture is painted, and what happened when it ended.
   const opens: 'model' | 'shape' | 'ended' | undefined = done ? 'model' : shape ? 'shape' : ended ? 'ended' : undefined
   // The shape goes while the files are saved, and an open shape closes with it; a finished 3D model starts closed.
-  useEffect(() => { if (!opens) setOpen(false) }, [opens])
+  // Once nothing opens, the button goes too; focus that was in the line stays with the line rather than fall to the page.
+  // Whether it was is read as this render starts, while the view and the button are still on the page.
+  const hadOpens = useRef(opens)
+  const focusLeft = useRef(false)
+  if (hadOpens.current && !opens) focusLeft.current = Boolean(line.current?.contains(document.activeElement))
+  hadOpens.current = opens
+  useEffect(() => {
+    if (opens) return
+    setOpen(false)
+    if (focusLeft.current) { focusLeft.current = false; line.current?.focus() }
+  }, [opens])
   const label = opens === 'model' ? (open ? t`Hide the model` : t`Show the model`)
     : opens === 'shape' ? (open ? t`Hide the shape` : t`Show the shape`)
       : open ? t`Hide what happened` : t`Show what happened`
@@ -93,7 +105,7 @@ function Line({ modelId, name, view, reduced }: { readonly modelId: string; read
     close()
   }
 
-  return <div className="model-line" role="group" aria-label={t({ message: `3D model: ${shown}`, comment: '{shown} is the name of a 3D model, such as Oak barrel.' })} data-open={open && opens ? 'true' : 'false'} onKeyDown={keyDown}>
+  return <div ref={line} className="model-line" tabIndex={-1} role="group" aria-label={t({ message: `3D model: ${shown}`, comment: '{shown} is the name of a 3D model, such as Oak barrel.' })} data-open={open && opens ? 'true' : 'false'} onKeyDown={keyDown}>
     <div className="model-line__row">
       <span className="model-line__thumb" aria-hidden="true">
         {done && still ? <img src={still} alt="" /> : making ? <Ring percent={view.percent} spin={!reduced} /> : <Box size={22} />}

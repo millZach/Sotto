@@ -19,7 +19,8 @@ vi.mock('../../../../src/renderer/src/state/owlFeature', async importOriginal =>
 vi.mock('../../../../src/renderer/src/agents/ModelView', () => ({
   default: function ModelViewStandIn({ name, part, onUnavailable }: ModelViewProps) {
     const stage = useRef<HTMLDivElement>(null)
-    useEffect(() => { if (gate.webgl) stage.current?.focus(); else onUnavailable() }, [onUnavailable])
+    // As the view does: it takes focus as it opens, and only then learns whether WebGL can draw.
+    useEffect(() => { stage.current?.focus(); if (!gate.webgl) onUnavailable() }, [onUnavailable])
     return <div ref={stage} tabIndex={0} role="slider" aria-valuenow={0} aria-label={`Turn the ${name}.`} data-part={part} />
   },
 }))
@@ -68,6 +69,8 @@ describe('a 3D model’s line in its thread', () => {
     await act(async () => { for (const listener of listeners) listener({ ...MAKING, stage: 'files', credits: 30 }) })
     expect(line()).toHaveTextContent('Saving the files')
     expect(screen.queryByRole('slider')).toBeNull()
+    // The view and its button went with the shape; the focus the view had stays with the line.
+    expect(line()).toHaveFocus()
     await act(async () => { for (const listener of listeners) listener(DONE) })
     expect(line()).toHaveTextContent('3D model · 30 credits · 3 files')
   })
@@ -109,6 +112,11 @@ describe('a 3D model’s line in its thread', () => {
     expect(await within(line()).findByRole('img', { name: 'Oak barrel' })).toHaveAttribute('src', expect.stringMatching(/^data:image\/png;base64,/u))
     expect(line()).toHaveTextContent('Sotto cannot draw 3D models on this computer, so this is the still picture.')
     expect(within(line()).getByRole('list', { name: 'Files' })).toBeInTheDocument()
+    // The view that had focus is gone; its button has it, and Escape still closes what it opened.
+    const toggle = within(line()).getByRole('button', { name: 'Hide the model' })
+    expect(toggle).toHaveFocus()
+    await userEvent.keyboard('{Escape}')
+    expect(toggle).toHaveAccessibleName('Show the model')
   })
 
   it('says what happened when Meshy could not finish, what was counted and that nothing was saved, with no Try again', async () => {
