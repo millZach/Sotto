@@ -66,6 +66,35 @@ describe('shared spending over a host’s listener', () => {
     } finally { desktop.frames.close(); older.frames.close(); await server.close() }
   })
 
+  it('pushes nothing read for a desktop whose hello took shared spending back while the read ran', async () => {
+    // Sol's review: the count is read, a second hello withdraws the feature, and then the read ends.
+    let release!: () => void
+    const share = { told: [] as { reports: readonly SpendingReport[]; clientId: string }[], own: 60, reading: new Promise<void>(resolve => { release = resolve }) }
+    const listeners = new Set<() => void>()
+    const known = new Set<string>()
+    const server = await startSocketServer({ service: spendingHost(share, listeners), pairing: fixture.host.pairing,
+      watcherDesktops: { has: (clientId: string) => known.has(clientId), refresh: async () => undefined } })
+    const paired = await fixture.host.pairing.redeem(fixture.host.pairing.issuePairingCode().code, 'Desktop')
+    known.add(paired.clientId)
+    const desktop = await rawPeer(server.descriptor.port, fixture.host.pairing.signSession(paired.clientId))
+    try {
+      await desktop.call('hello', { op: 'hello', accepts: ['plugin-meshy-spending'] })
+      await desktop.call('shell-1', { op: 'shell' })
+      // While it is accepted, a read that ends is pushed.
+      for (const listener of listeners) listener()
+      release()
+      await expect.poll(() => pushes(desktop.messages).length).toBe(1)
+      share.reading = new Promise<void>(resolve => { release = resolve })
+      for (const listener of listeners) listener()
+      await desktop.call('hello-again', { op: 'hello', accepts: [] })
+      release()
+      await share.reading
+      await desktop.call('shell-2', { op: 'shell' })
+      await desktop.call('shell-3', { op: 'shell' })
+      expect(pushes(desktop.messages)).toHaveLength(1)
+    } finally { desktop.frames.close(); await server.close() }
+  })
+
   it('offers it to no client the launch script did not record, and not at all on a host that keeps no copies', async () => {
     const share = { told: [] as { reports: readonly SpendingReport[]; clientId: string }[], own: 0 }
     const known = new Set<string>()

@@ -1325,7 +1325,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     for (const peer of peers) {
       if (!peer.ready || !peer.meshySpending || peer.frames.isClosed || !offers(peer, 'plugin-meshy-spending') || !service.pluginMeshySpending) continue
       void service.pluginMeshySpending(peer.client).then(reports => {
-        if (!closing && !peer.frames.isClosed) push(peer, { v: 1, event: 'plugin-meshy-spending', reports: spendingReportsSchema.parse(reports) })
+        // A hello again while the count was read may have taken shared spending back, or the desktop come off the record.
+        if (!closing && !peer.frames.isClosed && peer.meshySpending && offers(peer, 'plugin-meshy-spending')) push(peer, { v: 1, event: 'plugin-meshy-spending', reports: spendingReportsSchema.parse(reports) })
       }, () => undefined)
     }
   })
