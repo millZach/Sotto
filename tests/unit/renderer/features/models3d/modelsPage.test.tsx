@@ -49,6 +49,7 @@ delete (MOSSY as { still?: string }).still
 let models: Model3dListed[]
 let changed: ((view: Model3dView) => void) | undefined
 let forgotten: ((ids: readonly string[]) => void) | undefined
+let creditsTold: (() => void) | undefined
 const plugins = {
   models3d: vi.fn(async () => models),
   onModel3dChanged: vi.fn((listener: (view: Model3dView) => void) => { changed = listener; return () => { changed = undefined } }),
@@ -57,6 +58,7 @@ const plugins = {
   removeModel3d: vi.fn(async (): Promise<Model3dRemoval> => 'removed'),
   revealModel3d: vi.fn(async () => true),
   onModels3dRemoved: vi.fn((listener: (ids: readonly string[]) => void) => { forgotten = listener; return () => { forgotten = undefined } }),
+  onMeshyCreditsChanged: vi.fn((listener: () => void) => { creditsTold = listener; return () => { creditsTold = undefined } }),
 }
 /** A promise the test settles when it chooses. */
 function later<Value>(): { readonly promise: Promise<Value>; readonly settle: (value: Value) => void } {
@@ -385,6 +387,15 @@ describe('a paired host’s 3D models on the page', () => {
     const own = screen.getByRole('complementary', { name: 'About the Oak barrel' })
     expect(within(own).getByText('3D model · Meshy · made from words')).toBeInTheDocument()
     expect(within(own).getByRole('button', { name: 'Show in File Explorer' })).toBeInTheDocument()
+  })
+
+  it('reads the header’s credits again when a host’s report comes after its 3D model’s news', async () => {
+    render(<ModelsPage platform="win32" />)
+    expect(await screen.findByText('4 3D models from 3 threads · 140 credits this month, across this computer and forge')).toBeInTheDocument()
+    // The list is as it was; only what forge said it spent moved.
+    plugins.meshyCredits.mockResolvedValue({ '22222222-2222-4222-8222-000000000001': { here: 80, credits: 170, across: ['forge'] } })
+    await act(async () => { creditsTold?.() })
+    expect(await screen.findByText('4 3D models from 3 threads · 170 credits this month, across this computer and forge')).toBeInTheDocument()
   })
 
   it('opens the host thread from Go to thread', async () => {

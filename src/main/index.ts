@@ -91,7 +91,7 @@ import { MeshyModels } from './tools/meshy/service'
 import { modelBytes, modelView, modelViewOf } from './tools/meshy/view'
 import { listModels, removeGoneModel, revealModelFile, type ModelListSource } from './tools/meshy/page'
 import { checkPhoto, photoToSend, type RedrawPhoto } from './tools/meshy/photo'
-import { isMailPlugin, PLUGIN_USE_THREAD_TITLE_MAX, PLUGINS_COPIES_CHANGED, PLUGINS_MAIL_GRANTS_CHANGED } from '../shared/plugins'
+import { isMailPlugin, PLUGIN_USE_THREAD_TITLE_MAX, PLUGINS_COPIES_CHANGED, PLUGINS_MAIL_GRANTS_CHANGED, PLUGINS_MESHY_CREDITS_CHANGED } from '../shared/plugins'
 import { MODEL_VISUAL_KIND, MODELS_3D_LISTED_MAX, PLUGINS_MODEL_3D_CHANGED, PLUGINS_MODELS_3D_REMOVED } from '../shared/models3d'
 import { HostModels3d } from './hosts/hostModels3d'
 import { resetGhLookup } from './agents/git/ghCommand'
@@ -1433,6 +1433,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   // counts its own and adds what each host last said, and tells each host what was spent everywhere but there.
   const meshySpending = modelRecords && pluginAccounts ? new MeshySpendingSync(userDataPath, {
     own: () => modelRecords.monthCredits(), accounts: () => pluginAccounts.list(), connections: () => hostRouter.remoteConnections(),
+    // What a host said it spent reaches the window, which reads the shared count again (Sol's review).
+    changed: () => { windows.sendToMain(PLUGINS_MESHY_CREDITS_CHANGED, null) },
   }) : undefined
   // Each change to a 3D model, and each of Meshy's reads of its progress, goes to the window as its view (the Meshy
   // plan's ticket 4). Views are sent in order, so a slower one never lands after a newer one.

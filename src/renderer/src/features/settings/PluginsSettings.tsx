@@ -788,11 +788,14 @@ function AccountSpending({ account, spending, bridge, onAccounts }: {
   // The credits this account's 3D models took this month, here and on the paired hosts that said what they spent of
   // it, read when the row opens; none until then.
   const [used, setUsed] = useState<{ readonly credits: number; readonly across: readonly string[] } | null>(null)
+  // Read again when a paired host says what it spent of it.
   useEffect(() => {
     if (!bridge) return
     let live = true
-    void bridge.meshyCredits().then(credits => { if (live) setUsed(credits[account.id] ?? { credits: 0, across: [] }) }, () => undefined)
-    return () => { live = false }
+    const read = (): void => { void bridge.meshyCredits().then(credits => { if (live) setUsed(credits[account.id] ?? { credits: 0, across: [] }) }, () => undefined) }
+    read()
+    const stop = bridge.onMeshyCreditsChanged?.(read)
+    return () => { live = false; stop?.() }
   }, [bridge, account.id])
   // The figure shown follows what is kept, once the newest save has answered.
   useEffect(() => { if (askedLimit.current === null) setLimit(String(spending.monthlyLimit)) }, [spending.monthlyLimit])

@@ -1090,6 +1090,18 @@ it('says how many credits the Meshy account’s 3D models took this month, again
   expect(screen.getByRole('region', { name: 'What it spends' })).toHaveTextContent('Credits this month: 120 of 1,000.')
 })
 
+it('reads the month’s credits again when a host says what it spent', async () => {
+  let told: (() => void) | undefined
+  let credits = 120
+  const meshyCredits = vi.fn(async (): Promise<MeshyCredits> => ({ [studio.id]: { here: 120, credits, across: credits > 120 ? ['forge'] : [] } }))
+  await act(async () => { render(<PluginsSettings bridge={vercelBridge([studio], { meshyCredits, onMeshyCreditsChanged: listener => { told = listener; return () => { told = undefined } } })} />) })
+  await act(async () => { fireEvent.click(meshyRow()) })
+  expect(screen.getByRole('region', { name: 'What it spends' })).toHaveTextContent('Credits this month: 120 of 1,000.')
+  credits = 150
+  await act(async () => { told?.() })
+  expect(screen.getByRole('region', { name: 'What it spends' })).toHaveTextContent('Credits this month: 150 of 1,000, across this computer and forge.')
+})
+
 it('says the month’s credits are shared across this computer and the hosts that said what they spent', async () => {
   // Zach's pick A (the tag prototype/plugin-meshy): one limit wherever the account is, and the line names where (ADR-0205).
   await act(async () => { render(<PluginsSettings bridge={vercelBridge([studio], { meshyCredits: async () => ({ [studio.id]: { here: 120, credits: 300, across: ['forge'] } }) })} />) })

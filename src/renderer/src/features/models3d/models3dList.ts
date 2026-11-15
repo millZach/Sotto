@@ -164,6 +164,12 @@ function merged(model: Model3dListed, view: Model3dView): Model3dListed {
  */
 export function useMonthCredits(on: boolean, key: string): { readonly credits: number; readonly across: readonly string[] } | undefined {
   const [credits, setCredits] = useState<{ readonly credits: number; readonly across: readonly string[] }>()
+  // What a host said it spent can come after the 3D model's own news, so it reads the count again too (Sol's review).
+  const [told, setTold] = useState(0)
+  useEffect(() => {
+    if (!on) return undefined
+    return window.sotto?.plugins?.onMeshyCreditsChanged?.(() => { setTold(count => count + 1) })
+  }, [on])
   useEffect(() => {
     if (!on) return undefined
     let live = true
@@ -173,7 +179,7 @@ export function useMonthCredits(on: boolean, key: string): { readonly credits: n
       setCredits({ credits: each.reduce((sum, account) => sum + account.credits, 0), across: [...new Set(each.flatMap(account => account.across))] })
     }, () => undefined)
     return () => { live = false }
-  }, [on, key])
+  }, [on, key, told])
   return credits
 }
 

@@ -92,6 +92,8 @@ export interface PluginsBridge {
   bridgeStatus(request: PluginAccountRemove): Promise<BridgeStatus>
   /** The credits each Meshy account's 3D models took this month. */
   meshyCredits(): Promise<MeshyCredits>
+  /** Told when what a paired host said it spent changed, so the credits are read again. Returns the way to stop. */
+  onMeshyCreditsChanged?(listener: () => void): () => void
   /** One 3D model as its thread draws it, by its ID, or null when Sotto holds no such 3D model (ADR-0141). */
   model3d(id: string): Promise<Model3dView | null>
   /** A 3D model's GLB, still picture or shape while the texture is painted, or null when Sotto will not hand them over. */
@@ -212,6 +214,11 @@ export const PLUGINS_BRIDGE_STATUS = 'sotto:plugins:bridge-status'
  * spent, and `across` names those hosts.
  */
 export const PLUGINS_MESHY_CREDITS = 'sotto:plugins:meshy-credits'
+/**
+ * Main to the window: what a paired host said its threads spent of a Meshy account changed (ADR-0205), so the shared
+ * count the 3D models page and Settings show is read again. A 3D model here changing is told by its own news.
+ */
+export const PLUGINS_MESHY_CREDITS_CHANGED = 'sotto:plugins:meshy-credits-changed'
 const creditCount = z.number().int().nonnegative()
 export const meshyCreditsSchema = z.record(z.uuid(), z.object({ here: creditCount, credits: creditCount, across: z.array(z.string().max(200)).max(100) }).strict())
 export type MeshyCredits = z.infer<typeof meshyCreditsSchema>
