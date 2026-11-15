@@ -27,12 +27,13 @@ const STUDIO: PluginAccount = { id: '44444444-4444-4444-8444-000000000001', plug
 const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x00, 0x10, 0x00, 0x10, 0x03, 1, 0x22, 0, 2, 0x11, 1, 3, 0x11, 1]), Buffer.from('made-up photo with camera details')])
 
 /** The tools for thread `one`, over one Meshy account, with the user's answers and Meshy's outcome scripted. */
-function tools(options: { answers?: PluginChangeAnswer[]; used?: number; ended?: Partial<ThreeDModel> | 'never' | 'lost'; noMeshy?: boolean; folder?: string; whileAsked?: (world: { accounts: PluginAccount[] }) => void | Promise<void>; whileCounting?: (world: { accounts: PluginAccount[] }) => void } = {}) {
+function tools(options: { unshown?: boolean; answers?: PluginChangeAnswer[]; used?: number; ended?: Partial<ThreeDModel> | 'never' | 'lost'; noMeshy?: boolean; folder?: string; whileAsked?: (world: { accounts: PluginAccount[] }) => void | Promise<void>; whileCounting?: (world: { accounts: PluginAccount[] }) => void } = {}) {
   const world = { accounts: [STUDIO] }
   const answers = [...options.answers ?? []]
   const asked: PluginChange[] = []
   const recorded: PluginUseReport[] = []
   const made: ModelRequest[] = []
+  const shown: { readonly threadId: string; readonly id: string; readonly name: string }[] = []
   const mine = (): PluginAccount[] => world.accounts.filter(account => pluginAccountAdmits(account, null))
   const never = async (): Promise<never> => { throw new Error('Not part of these tests.') }
   const server = new PluginToolServer({
@@ -72,11 +73,12 @@ function tools(options: { answers?: PluginChangeAnswer[]; used?: number; ended?:
           : Promise.resolve({ ...model, state: 'done' as const, credits: 30, files: ['Oak barrel.png', 'Oak barrel.glb', 'Oak barrel.usdz'], ...ended })
         return { model, done }
       },
+      showInThread: async (threadId, model) => { if (options.unshown) return false; shown.push({ threadId, id: model.id, name: model.name }); return true },
     } }),
   })
   servers.push(server)
   const make = (args: Record<string, unknown>, context: { waitMs?: number; signal?: AbortSignal } = {}) => server.call('one', MAKE_3D_MODEL_TOOL, args, context)
-  return { server, world, asked, recorded, made, make }
+  return { server, world, asked, recorded, made, shown, make }
 }
 const said = (result: { content: { type: string; text?: string }[] }): string => result.content.map(part => part.text ?? '').join('\n')
 const uses = (recorded: readonly PluginUseReport[]): string[] => recorded.map(use => `${use.tool} ${use.kind} ${use.outcome}`)
@@ -114,6 +116,26 @@ describe('making a 3D model through make_3d_model', () => {
     expect(said(await t.make(BARREL))).toContain('Nobody answered in time')
     expect(t.made).toEqual([])
     expect(uses(t.recorded)).toEqual(['make_3d_model 3d-model denied', 'make_3d_model 3d-model lapsed'])
+  })
+
+  it('places the 3D model’s line in its thread once Meshy has it, and none when it is denied or refused', async () => {
+    const t = tools()
+    await t.make(BARREL)
+    expect(t.shown).toEqual([{ threadId: 'one', id: 'model-1', name: 'Oak barrel' }])
+    const denied = tools({ answers: ['denied'] })
+    await denied.make(BARREL)
+    const over = tools({ used: 980 })
+    await over.make(BARREL)
+    expect([...denied.shown, ...over.shown]).toEqual([])
+    expect([...denied.made, ...over.made]).toEqual([])
+  })
+
+  it('makes the 3D model all the same when its line cannot go into the thread, and tells the agent so', async () => {
+    const t = tools({ unshown: true })
+    const result = await t.make(BARREL)
+    expect(result.isError).toBeUndefined()
+    expect(said(result)).toBe('The user allowed it. The 3D model "Oak barrel" is made, for 30 credits. Its files, in the thread\'s folder: models/Oak barrel.png, models/Oak barrel.glb, models/Oak barrel.usdz. Sotto could not show the 3D model in the thread, so tell the user its name and where its files go.')
+    expect(uses(t.recorded)).toEqual(['make_3d_model 3d-model done'])
   })
 
   it('refuses one that would pass the month’s limit before asking or sending anything', async () => {
@@ -233,10 +255,11 @@ describe('making a 3D model through make_3d_model', () => {
     try {
       let answered = false
       const waiting = t.make(BARREL).finally(() => { answered = true })
-      // The call reads files on its way to its timer, so the clock is moved on a minute at a time while they finish.
-      for (let minute = 0; !answered && minute < 10; minute++) {
+      // The call reads and writes files on its way to its timer, which a busy machine takes longer over, so the clock is
+      // moved on ten seconds at a time, giving the files a turn each time, until it answers.
+      for (let step = 0; !answered && step < 400; step++) {
         await new Promise(resolve => setImmediate(resolve))
-        await vi.advanceTimersByTimeAsync(60_000)
+        await vi.advanceTimersByTimeAsync(10_000)
       }
       expect(said(await waiting)).toContain('Meshy is still making the 3D model "Oak barrel"')
     } finally { vi.useRealTimers() }

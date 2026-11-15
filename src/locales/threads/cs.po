@@ -35,6 +35,16 @@ msgstr ""
 msgid "(recommended)"
 msgstr ""
 
+#. placeholder {0}: view.credits
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "{0, plural, one {# credit was counted against this month’s limit.} other {# credits were counted against this month’s limit.}}"
+msgstr ""
+
+#. placeholder {0}: view.files.length
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "{0, plural, one {# file} other {# files}}"
+msgstr ""
+
 #. placeholder {0}: models.length
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "{0, plural, one {# model found} other {# models found}}"
@@ -317,6 +327,14 @@ msgstr ""
 msgid "{creationError} Your prompt and screenshots are kept. Open New thread in the same project to get them back."
 msgstr ""
 
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "{credits, plural, one {# credit counted} other {# credits counted}}"
+msgstr ""
+
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "{credits, plural, one {# credit} other {# credits}}"
+msgstr ""
+
 #. {day} is a day of the week, as in "Restarts Thursday at 3:00 pm".
 #: src/renderer/src/agents/restartWords.ts
 msgid "{day} at {clock}"
@@ -528,6 +546,10 @@ msgstr ""
 
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
 msgid "{items, plural, one {Delete this {itemCount} ignored item with the folder} other {Delete these {itemCount} ignored items with the folder}}"
+msgstr ""
+
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "{kilobytes} KB"
 msgstr ""
 
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
@@ -950,6 +972,16 @@ msgstr ""
 msgid "{parentTitle} works on {target} in the project folder on {machine} and sees them now."
 msgstr ""
 
+#. {percent} is Meshy's percent for the step it is on.
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "{percent}%"
+msgstr ""
+
+#. {percent} is Meshy's percent; {left} says about how long is left, such as "about 40 seconds left".
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "{percent}%, {left}"
+msgstr ""
+
 #: src/renderer/src/agents/ThreadComposer.tsx
 msgid "{provider} cannot take prompts from Sotto."
 msgstr ""
@@ -1192,6 +1224,10 @@ msgstr ""
 
 #: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "{settledThreads, plural, one {Settled {threads} thread} other {Settled {threads} threads}}"
+msgstr ""
+
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "{shown} MB"
 msgstr ""
 
 #. {shown} and {whole} are token counts such as 183k and 256k: how much of the model’s context the thread uses, of all it takes.
@@ -1566,6 +1602,16 @@ msgstr ""
 msgid "1–{suggestions} pick"
 msgstr ""
 
+#: src/renderer/src/agents/ModelLine.tsx
+#: src/renderer/src/agents/ModelView.tsx
+msgid "3D model"
+msgstr ""
+
+#. {shown} is the name of a 3D model, such as Oak barrel.
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "3D model: {shown}"
+msgstr ""
+
 #: src/renderer/src/agents/mainCheckoutLine.logic.ts
 msgid "a cherry-pick is in progress"
 msgstr ""
@@ -1584,6 +1630,14 @@ msgstr ""
 
 #: src/renderer/src/agents/EmptyWorkspace.tsx
 msgid "A draft from an earlier thread is saved."
+msgstr ""
+
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "A file Meshy made was larger than Sotto takes."
+msgstr ""
+
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "A file was too large to save"
 msgstr ""
 
 #. {trimmed} is the folder name the user typed.
@@ -1649,6 +1703,22 @@ msgstr ""
 #. Before the large figure in the speed card of a thread on the user’s own model server, such as "about 38 tokens a second": the figure is estimated from the text, not counted by the server.
 #: src/renderer/src/agents/ServerMark.tsx
 msgid "about"
+msgstr ""
+
+#. A number of minutes, at least 2.
+#. placeholder {0}: Math.round(secondsLeft / 60)
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "about {0} minutes left"
+msgstr ""
+
+#. A number of seconds, at least 5.
+#. placeholder {0}: Math.max(5, Math.round(secondsLeft / 5) * 5)
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "about {0} seconds left"
+msgstr ""
+
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "about a minute left"
 msgstr ""
 
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
@@ -3286,6 +3356,10 @@ msgstr ""
 msgid "Could not create {name}."
 msgstr ""
 
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "Could not finish"
+msgstr ""
+
 #. A step in the browser line; starts lowercase.
 #: src/renderer/src/agents/browserLine.ts
 msgid "could not finish the browser task"
@@ -3940,6 +4014,10 @@ msgstr ""
 msgid "Drag or use arrow keys to move · Scroll or +/− to zoom · 0 to fit"
 msgstr ""
 
+#: src/renderer/src/agents/ModelView.tsx
+msgid "Drag or use the arrow keys to turn"
+msgstr ""
+
 #: src/renderer/src/agents/MarkupEditor.tsx
 msgid "Drag to draw. Press where a note goes, then type. V, A, O, B, P and T pick a tool. On the picture, Enter starts a mark at the cross, the arrow keys move it, and Enter ends it. Minus and equals size a note. Escape cancels."
 msgstr ""
@@ -4174,6 +4252,14 @@ msgstr ""
 msgid "Expand sidebar"
 msgstr ""
 
+#: src/renderer/src/agents/ModelView.tsx
+msgid "Face the front"
+msgstr ""
+
+#: src/renderer/src/agents/ModelView.tsx
+msgid "Facing the front"
+msgstr ""
+
 #. An action or turn that failed.
 #. An action or turn that failed.
 #. An action or turn that failed.
@@ -4251,6 +4337,7 @@ msgid "File Explorer"
 msgstr ""
 
 #: src/renderer/src/agents/FilePicker.tsx
+#: src/renderer/src/agents/ModelLine.tsx
 msgid "Files"
 msgstr ""
 
@@ -4607,8 +4694,20 @@ msgstr ""
 msgid "Hide the list in {title}"
 msgstr ""
 
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "Hide the model"
+msgstr ""
+
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "Hide the shape"
+msgstr ""
+
 #: src/renderer/src/agents/BringChangesBack.tsx
 msgid "Hide until this branch changes"
+msgstr ""
+
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "Hide what happened"
 msgstr ""
 
 #. A reasoning effort level.
@@ -4873,6 +4972,10 @@ msgstr ""
 
 #: src/renderer/src/agents/DelegatedWork.tsx
 msgid "Its effort was held to the most you allow in Settings."
+msgstr ""
+
+#: src/renderer/src/agents/ModelView.tsx
+msgid "Its file may have been moved or changed. The files are listed below."
 msgstr ""
 
 #: src/renderer/src/agents/CheckReply.tsx
@@ -5201,6 +5304,14 @@ msgstr ""
 msgid "Low"
 msgstr ""
 
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "Made from a photo"
+msgstr ""
+
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "Made from words"
+msgstr ""
+
 #: src/renderer/src/agents/bringChangesBack.logic.ts
 msgid "Make a merge commit on {target}?"
 msgstr ""
@@ -5228,6 +5339,10 @@ msgstr ""
 #. A back control in the model menu that returns to the list of the companies that made Cursor’s models.
 #: src/renderer/src/agents/ModelPicker.tsx
 msgid "Makers"
+msgstr ""
+
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "Making the 3D model"
 msgstr ""
 
 #: src/renderer/src/agents/ThreadMediaTiles.tsx
@@ -5286,6 +5401,38 @@ msgstr ""
 
 #: src/renderer/src/agents/diagrams/diagramRenderer.ts
 msgid "Mermaid did not produce a drawing."
+msgstr ""
+
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "Meshy could not finish it, and gave back the credits of what it could not make."
+msgstr ""
+
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "Meshy did not accept the key"
+msgstr ""
+
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "Meshy did not accept the Meshy account’s key. Replace it in Settings > Plugins."
+msgstr ""
+
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "Meshy no longer has it"
+msgstr ""
+
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "Meshy no longer has the 3D model, so its files could not be fetched."
+msgstr ""
+
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "Meshy would not make a 3D model from these words."
+msgstr ""
+
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "Meshy would not make a 3D model from this photo."
+msgstr ""
+
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "Meshy would not make it"
 msgstr ""
 
 #: src/renderer/src/agents/MessageScrubber.tsx
@@ -5849,6 +5996,10 @@ msgstr ""
 msgid "Not done"
 msgstr ""
 
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "not found"
+msgstr ""
+
 #. A background agent's status.
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "Not found"
@@ -5940,6 +6091,10 @@ msgstr ""
 msgid "Nothing answered at {host}. Nothing was saved. Check the server is on and this computer can reach it, over the tailnet if it is there, then try again."
 msgstr ""
 
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "nothing charged"
+msgstr ""
+
 #. Settings › Providers › APIs and your own model servers is where the server is kept; translate each name as the Settings page does.
 #: src/renderer/src/agents/ownServerTurnWords.ts
 msgid "Nothing in the thread was lost. In Settings › Providers › APIs and your own model servers, replace the key for {name}, then try again."
@@ -5955,6 +6110,10 @@ msgstr ""
 
 #: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Nothing matches \"{query}\"."
+msgstr ""
+
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "nothing saved"
 msgstr ""
 
 #: src/renderer/src/agents/bringChangesBack.logic.ts
@@ -5983,6 +6142,10 @@ msgstr ""
 
 #: src/renderer/src/agents/ClientUpdateCard.tsx
 msgid "Nothing was changed."
+msgstr ""
+
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "Nothing was charged."
 msgstr ""
 
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
@@ -7512,6 +7675,10 @@ msgstr ""
 msgid "Saved. Its chosen models are in the model menu."
 msgstr ""
 
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "Saving the files"
+msgstr ""
+
 #. The Use this folder button while the chosen folder is saved.
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
 #: src/renderer/src/agents/OwnModelServers.tsx
@@ -7903,6 +8070,18 @@ msgstr ""
 msgid "Show source shows its HTML."
 msgstr ""
 
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "Show the model"
+msgstr ""
+
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "Show the shape"
+msgstr ""
+
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "Show what happened"
+msgstr ""
+
 #: src/renderer/src/agents/ThreadTranscript.tsx
 msgid "Show where it asked"
 msgstr ""
@@ -8143,6 +8322,10 @@ msgstr ""
 msgid "Sotto can’t read the handover from this window. It still goes with your first message."
 msgstr ""
 
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "Sotto cannot draw 3D models on this computer, so this is the still picture."
+msgstr ""
+
 #: src/renderer/src/agents/DeleteThread.tsx
 msgid "Sotto could not check this thread. Nothing was deleted. Close this and try again."
 msgstr ""
@@ -8244,6 +8427,10 @@ msgstr ""
 msgid "Sotto could not download this file. Nothing was saved. Try again."
 msgstr ""
 
+#: src/renderer/src/agents/ModelView.tsx
+msgid "Sotto could not draw this 3D model."
+msgstr ""
+
 #: src/renderer/src/agents/ownServerWords.ts
 msgid "Sotto could not finish adding {name} or take it off its list. Remove it, then add it again."
 msgstr ""
@@ -8312,6 +8499,10 @@ msgstr ""
 msgid "Sotto could not read the handover. Press Read it to try again."
 msgstr ""
 
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "Sotto could not read the Meshy account’s key, because this computer’s credential store was locked."
+msgstr ""
+
 #: src/renderer/src/agents/ContinueThread.tsx
 msgid "Sotto could not read what the handover carries. It is built again when you send."
 msgstr ""
@@ -8354,6 +8545,10 @@ msgstr ""
 
 #: src/renderer/src/agents/delegationWords.ts
 msgid "Sotto could not tell how it stood when it last read it."
+msgstr ""
+
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "Sotto could not tell whether Meshy took the request."
 msgstr ""
 
 #: src/renderer/src/agents/SkillPicker.tsx
@@ -8403,12 +8598,24 @@ msgstr ""
 msgid "Sotto keeps up to 32 servers. Remove one you no longer use, then add this one."
 msgstr ""
 
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "Sotto lost track of it"
+msgstr ""
+
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "Sotto no longer holds this 3D model."
+msgstr ""
+
 #: src/renderer/src/agents/delegationWords.ts
 msgid "Sotto restarted before the brief was sent. Nothing was sent."
 msgstr ""
 
 #: src/renderer/src/agents/delegationWords.ts
 msgid "Sotto restarted while it worked. Nothing was resent. Open it to see where it got to."
+msgstr ""
+
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "Sotto saved no files."
 msgstr ""
 
 #: src/renderer/src/agents/delegationWords.ts
@@ -8612,6 +8819,14 @@ msgstr ""
 msgid "Step {step} of 4"
 msgstr ""
 
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "Step 1 of 2: making the shape"
+msgstr ""
+
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "Step 2 of 2: painting the texture"
+msgstr ""
+
 #: src/renderer/src/agents/VisualWalkthrough.tsx
 msgid "Step through"
 msgstr ""
@@ -8689,6 +8904,10 @@ msgstr ""
 
 #: src/renderer/src/agents/DelegatedWork.tsx
 msgid "Stop this worker"
+msgstr ""
+
+#: src/renderer/src/agents/ModelView.tsx
+msgid "Stop turning"
 msgstr ""
 
 #. An action or turn that was stopped.
@@ -8862,6 +9081,11 @@ msgstr ""
 msgid "That thread's provider or model was not available, or Sotto could not save the delegation. {nothing}"
 msgstr ""
 
+#. {name} is the name of a 3D model, such as Oak barrel.
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "The {name} was not made."
+msgstr ""
+
 #: src/renderer/src/agents/AgentContext.tsx
 msgid "The action could not be confirmed. Your draft is retained; check the connection before retrying."
 msgstr ""
@@ -8974,6 +9198,14 @@ msgstr ""
 msgid "The folder where {target} is checked out has an ignored file these commits would replace, so Sotto didn’t touch it. Move it aside, then try again."
 msgstr ""
 
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "The folder would not take the files"
+msgstr ""
+
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "The folder would not take the files: it is not inside the thread’s folder, or could not be written."
+msgstr ""
+
 #: src/renderer/src/agents/ThreadStart.tsx
 msgid "The handover is no longer waiting for this thread’s first message."
 msgstr ""
@@ -9029,6 +9261,10 @@ msgstr ""
 msgid "The installer said: {error}. Another app may be using {name}. Close it, then try again."
 msgstr ""
 
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "The key could not be read"
+msgstr ""
+
 #: src/renderer/src/agents/FailedTurnNotice.tsx
 #: src/renderer/src/agents/NeedsYouQueue.tsx
 msgid "The last turn failed."
@@ -9057,6 +9293,22 @@ msgstr ""
 
 #: src/renderer/src/agents/MarkupEditor.tsx
 msgid "The marked copy goes into your reply. The picture in the thread stays as it was."
+msgstr ""
+
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "The Meshy account has no credits left"
+msgstr ""
+
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "The Meshy account has no credits left, or its plan has no API access."
+msgstr ""
+
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "The Meshy account was removed"
+msgstr ""
+
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "The Meshy account was removed before the 3D model was made."
 msgstr ""
 
 #: src/renderer/src/agents/delegationWords.ts
@@ -9185,6 +9437,11 @@ msgstr ""
 msgid "The server does not say how much context this model has. Type it from the model’s page."
 msgstr ""
 
+#. {where} is a folder inside the thread's folder, such as models/.
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "The shape is ready to turn. The texture follows, then the files go to {where}."
+msgstr ""
+
 #: src/renderer/src/agents/CursorConnection.tsx
 msgid "The sign-in page could not open. Nothing was changed. Try again."
 msgstr ""
@@ -9213,6 +9470,10 @@ msgstr ""
 #: src/renderer/src/agents/DelegatedWork.tsx
 #: src/renderer/src/agents/ThreadTranscript.tsx
 msgid "The thread that delegated"
+msgstr ""
+
+#: src/renderer/src/agents/ModelLine.tsx
+msgid "the thread’s folder"
 msgstr ""
 
 #: src/renderer/src/agents/ClientUpdateCard.tsx
@@ -9765,6 +10026,25 @@ msgstr ""
 
 #: src/renderer/src/agents/DynamicSwitch.tsx
 msgid "Turn on Dynamic for this thread?"
+msgstr ""
+
+#: src/renderer/src/agents/ModelView.tsx
+msgid "Turn slowly"
+msgstr ""
+
+#. {name} is the name of a 3D model.
+#: src/renderer/src/agents/ModelView.tsx
+msgid "Turn the {name} back to the front"
+msgstr ""
+
+#. {name} is the name of a 3D model, such as Oak barrel.
+#: src/renderer/src/agents/ModelView.tsx
+msgid "Turn the {name}. Drag, or use the arrow keys; Home faces it to the front."
+msgstr ""
+
+#. {degrees} is a whole number from 1 to 359.
+#: src/renderer/src/agents/ModelView.tsx
+msgid "Turned {degrees} degrees from the front"
 msgstr ""
 
 #: src/renderer/src/agents/FolderBrowserDialog.tsx

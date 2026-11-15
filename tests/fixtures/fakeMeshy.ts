@@ -28,6 +28,12 @@ export interface FakeMeshyBehaviour {
   chunked: boolean
   /** Formats a finished task leaves out, as Meshy does for one it did not make. */
   missing: Set<string>
+  /** Tasks of these kinds stay in progress, however often they are read, until the test lets them go. */
+  holding: Set<Kind>
+  /** What a file is answered with, by its name ("model.glb", "preview.png"), in place of made-up bytes. */
+  files: Map<string, Uint8Array>
+  /** Meshy's percent at a read of a task that has not ended, by the read's number; 40 when not given. */
+  progress?: (reads: number) => number
   /** Called before a task's file is answered, so a test can stop Sotto part way. */
   onFile?: (path: string) => void
 }
@@ -45,7 +51,7 @@ export interface FakeMeshy {
 export async function startFakeMeshy(): Promise<FakeMeshy> {
   const requests: FakeMeshyRequest[] = []
   const tasks = new Map<string, FakeMeshyTask>()
-  const behaviour: FakeMeshyBehaviour = { readsToFinish: 2, failing: new Set(), answers: [], fileBytes: 64, chunked: false, missing: new Set() }
+  const behaviour: FakeMeshyBehaviour = { readsToFinish: 2, failing: new Set(), holding: new Set(), files: new Map(), answers: [], fileBytes: 64, chunked: false, missing: new Set() }
   let base = ''
 
   const answer = (route: 'create' | 'read' | 'file', response: ServerResponse): boolean => {
@@ -74,12 +80,15 @@ export async function startFakeMeshy(): Promise<FakeMeshy> {
     if (file && request.method === 'GET') {
       behaviour.onFile?.(url.pathname)
       if (answer('file', response)) return
-      const bytes = Buffer.alloc(behaviour.fileBytes, file[2]!.charCodeAt(0))
+      const given = behaviour.files.get(file[2]!)
+      const bytes = given ? Buffer.from(given) : Buffer.alloc(behaviour.fileBytes, file[2]!.charCodeAt(0))
       response.writeHead(200, { 'Content-Type': 'application/octet-stream', ...(behaviour.chunked ? {} : { 'Content-Length': String(bytes.byteLength) }) })
       response.end(bytes)
       return
     }
     if (request.headers.authorization !== `Bearer ${FAKE_MESHY_KEY}`) return json(response, 401, { message: 'Invalid API key' })
+    // The free read a key is checked with before it is kept.
+    if (request.method === 'GET' && url.pathname === '/openapi/v1/balance') return json(response, 200, { balance: 1000, monthly_credits: 1000, permanent_credits: 0, monthly_resets_at: null })
     const route = /^\/openapi\/(v2\/text-to-3d|v1\/image-to-3d)(?:\/([^/]+))?$/u.exec(url.pathname)
     if (!route) return json(response, 404, { message: 'Not found' })
     const words = route[1] === 'v2/text-to-3d'
@@ -103,7 +112,7 @@ export async function startFakeMeshy(): Promise<FakeMeshy> {
       const task = tasks.get(route[2])
       if (!task || (task.kind === 'photo') === words) return json(response, 404, { message: 'Task not found' })
       task.reads++
-      const ended = task.reads >= behaviour.readsToFinish
+      const ended = task.reads >= behaviour.readsToFinish && !behaviour.holding.has(task.kind)
       const status = !ended ? (task.reads === 1 ? 'PENDING' : 'IN_PROGRESS') : behaviour.failing.has(task.kind) ? 'FAILED' : 'SUCCEEDED'
       const files: Record<string, string> = {}
       if (status === 'SUCCEEDED') {
@@ -111,7 +120,7 @@ export async function startFakeMeshy(): Promise<FakeMeshy> {
         if (task.formats.includes('obj') && !behaviour.missing.has('mtl')) files.mtl = `${base}/files/${task.id}/model.mtl?Expires=1&Signature=made-up`
       }
       return json(response, 200, {
-        id: task.id, type: task.kind === 'photo' ? 'image-to-3d' : `text-to-3d-${task.kind}`, status, progress: ended ? 100 : 40,
+        id: task.id, type: task.kind === 'photo' ? 'image-to-3d' : `text-to-3d-${task.kind}`, status, progress: ended ? 100 : behaviour.progress?.(task.reads) ?? 40,
         model_urls: files, thumbnail_url: status === 'SUCCEEDED' ? `${base}/files/${task.id}/preview.png?Expires=1` : '', texture_urls: [],
         task_error: status === 'FAILED' ? { type: 'made-up', message: `made-up failure ${FAKE_MESHY_KEY}` } : null,
         consumed_credits: task.kind === 'preview' ? 20 : task.kind === 'refine' ? 10 : 30,

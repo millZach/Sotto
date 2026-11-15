@@ -140,6 +140,49 @@ export async function downloadModelFile(fetcher: MeshyDownloadFetch, address: st
 }
 
 /**
+ * Fetches one of Meshy's file links into memory alone, never to disk: the shape Meshy made, drawn while it paints the
+ * texture. The same server, cap and timeout as a download.
+ */
+export async function fetchModelBytes(fetcher: MeshyDownloadFetch, address: string, options: { readonly assets?: string; readonly maxBytes?: number; readonly signal?: AbortSignal } = {}): Promise<Uint8Array> {
+  if (!isMeshyFile(address, options.assets ?? MESHY_ASSETS)) throw new DownloadError('refused')
+  const maxBytes = options.maxBytes ?? MODEL_FILE_BYTES_MAX
+  const timeout = AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS)
+  let response: Response
+  try {
+    response = await fetcher(address, { method: 'GET', headers: {}, redirect: 'manual', signal: options.signal ? AbortSignal.any([options.signal, timeout]) : timeout })
+  } catch { throw new DownloadError('unreachable') }
+  if (response.status !== 200 || !response.body) {
+    await response.body?.cancel().catch(() => undefined)
+    throw new DownloadError([400, 403, 404, 410].includes(response.status) ? 'gone' : 'unreachable')
+  }
+  const length = Number(response.headers.get('content-length'))
+  if (Number.isFinite(length) && length > maxBytes) {
+    await response.body.cancel().catch(() => undefined)
+    throw new DownloadError('too-large')
+  }
+  const reader = response.body.getReader()
+  const chunks: Uint8Array[] = []
+  let written = 0
+  try {
+    for (;;) {
+      let chunk: Awaited<ReturnType<typeof reader.read>>
+      try { chunk = await reader.read() } catch { throw new DownloadError('unreachable') }
+      if (chunk.done) break
+      written += chunk.value.byteLength
+      if (written > maxBytes) throw new DownloadError('too-large')
+      chunks.push(chunk.value)
+    }
+  } catch (error) {
+    await reader.cancel().catch(() => undefined)
+    throw error
+  }
+  const bytes = new Uint8Array(written)
+  let at = 0
+  for (const chunk of chunks) { bytes.set(chunk, at); at += chunk.byteLength }
+  return bytes
+}
+
+/**
  * Gives a whole part file its name, never over a file already there: a second link to it where the disk allows one,
  * and a copy where it does not.
  */

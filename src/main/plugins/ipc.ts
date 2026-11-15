@@ -6,6 +6,7 @@ import {
   mailGrantsOfSchema, mailGrantStopSchema, PLUGINS_MAIL_GRANT_STOP, PLUGINS_MAIL_GRANTS, threadMailGrantsSchema, type MailGrantStop, type ThreadMailGrant,
   type GitHubSignIn, type PluginAccount, type PluginAccountAdd, type PluginAccountRemove, type PluginAccountReplace, type PluginAccountResult, type PluginAccountUpdate, type PluginCopiesView, type PluginCopySet, type PluginProject, type ShownPluginUse,
 } from '../../shared/plugins'
+import { model3dBytesRequestSchema, model3dBytesSchema, model3dRequestSchema, model3dViewOrNullSchema, PLUGINS_MODEL_3D, PLUGINS_MODEL_3D_BYTES, type Model3dBytesRequest, type Model3dView } from '../../shared/models3d'
 import { isAuthorizedIpcSender, type IpcMainAdapter, type TrustedIpcSender } from '../ipc/registerIpc'
 
 /** Each call's arguments, checked against a schema built once rather than on every call. */
@@ -19,6 +20,8 @@ const copyNewArguments = z.tuple([pluginCopyNewSetSchema])
 const mailGrantsArguments = z.tuple([mailGrantsOfSchema])
 const mailGrantStopArguments = z.tuple([mailGrantStopSchema])
 const stoppedSchema = z.boolean()
+const model3dArguments = z.tuple([model3dRequestSchema])
+const model3dBytesArguments = z.tuple([model3dBytesRequestSchema])
 
 /** What Settings › Plugins asks of main. */
 export interface PluginsIpcHandlers {
@@ -36,6 +39,10 @@ export interface PluginsIpcHandlers {
   readonly bridgeStatus: (request: PluginAccountRemove) => Promise<BridgeStatus>
   /** The credits each Meshy account's 3D models took this month on this computer. */
   readonly meshyCredits: () => Promise<MeshyCredits>
+  /** One 3D model as its thread draws it, by its ID, or null when there is no such 3D model. */
+  readonly model3d: (id: string) => Promise<Model3dView | null>
+  /** A 3D model's GLB, still picture or shape, or null when Sotto will not hand them over. */
+  readonly model3dBytes: (request: Model3dBytesRequest) => Promise<Uint8Array | null>
   readonly projects: () => readonly PluginProject[]
   readonly copies: () => Promise<PluginCopiesView>
   readonly setCopy: (request: PluginCopySet) => Promise<PluginCopiesView>
@@ -132,7 +139,20 @@ export function registerPluginsIpc(ipc: IpcMainAdapter, plugins: PluginsIpcHandl
     noArguments.parse(args)
     return meshyCreditsSchema.parse(await plugins.meshyCredits())
   })
+  // A 3D model in a thread (ADR-0141): its view and the bytes it is drawn from, by its ID alone, for the main window.
+  ipc.handle(PLUGINS_MODEL_3D, async (event, ...args) => {
+    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Open the thread in the main Sotto window.`)
+    const parsed = model3dArguments.safeParse(args)
+    if (!parsed.success) return null
+    return model3dViewOrNullSchema.parse(await plugins.model3d(parsed.data[0].id))
+  })
+  ipc.handle(PLUGINS_MODEL_3D_BYTES, async (event, ...args) => {
+    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Open the thread in the main Sotto window.`)
+    const parsed = model3dBytesArguments.safeParse(args)
+    if (!parsed.success) return null
+    return model3dBytesSchema.parse(await plugins.model3dBytes(parsed.data[0]))
+  })
   return () => {
-    for (const channel of [PLUGINS_MAIL_GRANTS, PLUGINS_MAIL_GRANT_STOP, PLUGINS_GITHUB_SIGN_IN, PLUGINS_GITHUB_SIGN_IN_ELSEWHERE, PLUGINS_RECENT_USE, PLUGINS_ACCOUNTS, PLUGINS_PROJECTS, PLUGINS_COPIES, PLUGINS_COPY_SET, PLUGINS_COPY_NEW_SET, PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_UPDATE, PLUGINS_ACCOUNT_TRUST, PLUGINS_BRIDGE_STATUS, PLUGINS_MESHY_CREDITS]) ipc.removeHandler(channel)
+    for (const channel of [PLUGINS_MODEL_3D, PLUGINS_MODEL_3D_BYTES, PLUGINS_MAIL_GRANTS, PLUGINS_MAIL_GRANT_STOP, PLUGINS_GITHUB_SIGN_IN, PLUGINS_GITHUB_SIGN_IN_ELSEWHERE, PLUGINS_RECENT_USE, PLUGINS_ACCOUNTS, PLUGINS_PROJECTS, PLUGINS_COPIES, PLUGINS_COPY_SET, PLUGINS_COPY_NEW_SET, PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_UPDATE, PLUGINS_ACCOUNT_TRUST, PLUGINS_BRIDGE_STATUS, PLUGINS_MESHY_CREDITS]) ipc.removeHandler(channel)
   }
 }

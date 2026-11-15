@@ -1,0 +1,142 @@
+/* A 3D model in its thread (ADR-0141; the Meshy plan's ticket 4, Zach's variant A): a quiet line under the agent's
+   turn that opens in place into a view that turns. Every colour is a theme token, and every size and corner a step. */
+
+.model-line {
+  max-width: 560px;
+  margin: 14px 0 18px;
+  overflow: hidden;
+  border-radius: var(--tt-radius-card);
+  background: var(--tt-surface-elevated);
+  color: var(--tt-text);
+}
+.model-line[data-open='true'] { max-width: none; }
+/* The line holds focus when what had it inside went, as when the shape gives way to saving the files. */
+.model-line:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; }
+
+.model-line__row { display: flex; align-items: center; gap: 12px; min-width: 0; padding: 10px; }
+.model-line__thumb {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  overflow: hidden;
+  border-radius: var(--tt-radius-inset);
+  background: var(--tt-canvas);
+  color: var(--tt-text-muted);
+}
+.model-line__thumb img { width: 100%; height: 100%; object-fit: cover; }
+.model-line__text { display: grid; flex: 1; gap: 1px; min-width: 0; }
+.model-line__name { overflow: hidden; font-size: var(--tt-type-body); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+/* The step, the percent and the time left, or what happened, wrap rather than lose their end beside the button. */
+.model-line__sub { color: var(--tt-text-muted); font-size: var(--tt-type-small); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.model-line__sub--ended { color: var(--tt-error); }
+
+.model-line__progress { position: relative; display: block; height: 4px; margin-top: 6px; overflow: hidden; border-radius: var(--tt-radius-mark); background: var(--tt-hairline); }
+.model-line__progress i { display: block; height: 100%; border-radius: var(--tt-radius-mark); background: var(--tt-accent); }
+
+.model-line__ring { transform: rotate(-90deg); }
+.model-line__ring circle { fill: none; stroke-width: 3; }
+.model-line__ring-track { stroke: var(--tt-hairline); }
+.model-line__ring-fill { stroke: var(--tt-accent); stroke-linecap: round; }
+
+.model-line__toggle {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--tt-border-faint);
+  border-radius: var(--tt-radius-row);
+  background: transparent;
+  color: var(--tt-text);
+  font: inherit;
+  font-size: var(--tt-type-small);
+}
+.model-line__toggle:hover { background: var(--tt-hover); }
+.model-line__toggle:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 1px; }
+.model-line__toggle[aria-expanded='true'] svg { transform: rotate(180deg); }
+
+.model-line__body { border-top: 1px solid var(--tt-hairline); }
+.model-line__foot { display: grid; gap: 8px; padding: 12px 16px 14px; border-top: 1px solid var(--tt-hairline); }
+.model-line__facts { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
+.model-line__facts b { color: var(--tt-text); font-weight: 600; }
+.model-line__files { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.model-line__file {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--tt-hairline);
+  border-radius: var(--tt-radius-control);
+  color: var(--tt-text-2);
+  font-size: var(--tt-type-caption);
+  font-variant-numeric: tabular-nums;
+}
+.model-line__extension { color: var(--tt-text); font-family: var(--tt-font-mono); font-size: var(--tt-type-caption); }
+
+.model-line__still { display: grid; justify-items: center; gap: 8px; padding: 16px; background: var(--tt-canvas); color: var(--tt-text-muted); font-size: var(--tt-type-small); text-align: center; }
+.model-line__still img { max-width: 100%; max-height: 260px; border-radius: var(--tt-radius-inset); object-fit: contain; }
+
+.model-line__problem {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 10px;
+  padding: 12px 14px;
+  background: color-mix(in srgb, var(--tt-error-surface) 70%, var(--tt-surface-elevated));
+}
+.model-line__problem > svg { margin-top: 3px; color: var(--tt-error); }
+.model-line__problem p { margin: 0; color: var(--tt-text); font-size: var(--tt-type-body); }
+.model-line__problem p + p { grid-column: 2; color: var(--tt-text-2); font-size: var(--tt-type-small); }
+
+/* The turnable view. */
+.model-view { position: relative; }
+.model-view__stage {
+  position: relative;
+  display: block;
+  height: clamp(190px, 36vh, 340px);
+  overflow: hidden;
+  background: var(--tt-canvas);
+  touch-action: none;
+  cursor: grab;
+}
+.model-view__stage:active { cursor: grabbing; }
+.model-view__stage:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
+.model-view__stage canvas { position: absolute; inset: 0; display: block; width: 100%; height: 100%; }
+.model-view__hint {
+  position: absolute;
+  bottom: 8px;
+  left: 10px;
+  padding: 1px 6px;
+  border-radius: var(--tt-radius-control);
+  background: color-mix(in srgb, var(--tt-canvas) 80%, transparent);
+  color: var(--tt-text-muted);
+  font-size: var(--tt-type-caption);
+  pointer-events: none;
+}
+.model-view__over { position: absolute; inset: 0; display: grid; place-content: center; gap: 4px; padding: 12px; color: var(--tt-text-2); font-size: var(--tt-type-small); text-align: center; pointer-events: none; }
+.model-view__over b { color: var(--tt-text); font-size: var(--tt-type-body); font-weight: 600; }
+.model-view__tools { position: absolute; top: 8px; right: 8px; display: flex; gap: 2px; border-radius: var(--tt-radius-row); background: color-mix(in srgb, var(--tt-canvas) 80%, transparent); }
+.model-view__tool {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--tt-radius-control);
+  background: transparent;
+  color: var(--tt-text-muted);
+}
+.model-view__tool:hover { background: var(--tt-hover); color: var(--tt-text); }
+.model-view__tool:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 1px; }
+
+/* While Meshy has no percent yet, the ring turns; with motion reduced it holds still, and nothing slides. */
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .model-line__ring--spin { animation: model-line-turn 1.1s linear infinite; }
+  :root:not([data-reduced-motion='on']) .model-line__toggle svg { transition: transform 150ms ease; }
+  :root:not([data-reduced-motion='on']) .model-line__progress i { transition: width 400ms ease; }
+}
+@keyframes model-line-turn { from { transform: rotate(-90deg); } to { transform: rotate(270deg); } }

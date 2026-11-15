@@ -32,6 +32,9 @@ const noAccounts = {
   trustCertificate: async (): Promise<PluginAccountResult> => ({ ok: false, problem: 'store' }),
   bridgeStatus: async (): Promise<BridgeStatus> => 'running',
   meshyCredits: async (): Promise<MeshyCredits> => ({}),
+  model3d: async () => null,
+  model3dBytes: async () => null,
+  onModel3dChanged: () => () => undefined,
   projects: async (): Promise<PluginProject[]> => [],
   ...noCopies,
 }
