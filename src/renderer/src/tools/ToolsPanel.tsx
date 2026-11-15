@@ -4,7 +4,7 @@ import { i18n, type MessageDescriptor } from '@lingui/core'
 import { msg, plural } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
 import { useMark } from '../components/marks'
-import { Copy, FileDiff, Folder, FolderGit2, FolderOutput, FolderTree, GitBranch, GitPullRequest, Globe, Maximize2, Minimize2, Pin, PinOff, Server, Smartphone, SquareTerminal, Users, X, type LucideIcon } from 'lucide-react'
+import { Box, Copy, FileDiff, Folder, FolderGit2, FolderOutput, FolderTree, GitBranch, GitPullRequest, Globe, Maximize2, Minimize2, Pin, PinOff, Server, Smartphone, SquareTerminal, Users, X, type LucideIcon } from 'lucide-react'
 import { hostForThread, PROVIDER_LABELS, type AgentProject, type AgentState, type AgentThread } from '../../../shared/agents'
 import type { BrowserBridge } from '../../../shared/browser'
 import type { FilesBridge } from '../../../shared/files'
@@ -36,6 +36,8 @@ import { useBrowserOpensItself } from './browserOpensItself'
 import { useOwlFeature } from '../state/owlFeature'
 import { IPhoneSurface } from './IPhoneSurface'
 import { PhonePlayer } from './PhonePlayer'
+import { ModelsSurface } from './ModelsSurface'
+import { useModels3d } from '../features/models3d/models3dList'
 import { phonePlayerStore, type PhonePlayerStore } from './phonePlayerStore'
 import { useThreadBrowserTasks, useThreadBrowser } from './browserStore'
 import { bridgeCloudIphone, cloudIphoneStore, useCloudSession, type CloudIphoneBridgeLike, type CloudIphoneStore } from './cloudIphoneStore'
@@ -144,9 +146,9 @@ function WorkingCopyLine({ thread, project, knownBranch, host }: { readonly thre
   </div>
 }
 
-const SURFACE_ICONS: Record<ToolSurfaceId, LucideIcon> = { files: FolderTree, changes: FileDiff, 'pull-request': GitPullRequest, terminal: SquareTerminal, browser: Globe, iphone: Smartphone, agents: Users }
+const SURFACE_ICONS: Record<ToolSurfaceId, LucideIcon> = { files: FolderTree, changes: FileDiff, 'pull-request': GitPullRequest, terminal: SquareTerminal, browser: Globe, iphone: Smartphone, models: Box, agents: Users }
 /** A surface's name where its rail word is shortened. */
-const SURFACE_NAMES: Partial<Record<ToolSurfaceId, MessageDescriptor>> = { 'pull-request': msg`Pull request` }
+const SURFACE_NAMES: Partial<Record<ToolSurfaceId, MessageDescriptor>> = { 'pull-request': msg`Pull request`, models: msg({ message: '3D models', comment: 'The Tools surface that shows the 3D models a thread made.' }) }
 /** A surface's whole name: its rail word, or the longer name where the rail word is shortened. */
 const surfaceName = (surface: ToolSurfaceId): string => {
   const name = SURFACE_NAMES[surface]
@@ -158,6 +160,7 @@ const NO_THREAD: Record<ToolSurfaceId, MessageDescriptor> = {
   files: msg`Open a thread to browse its files.`, changes: msg`Open a thread to review its changes.`, 'pull-request': msg`Open a thread to see its pull request.`, terminal: msg`Open a thread to use its terminal.`,
   browser: msg`Open a thread to browse its pages.`,
   iphone: msg`Open a thread to use its test iPhone.`,
+  models: msg`Open a thread to see its 3D models.`,
   agents: msg`Open a thread to see its agents.`,
 }
 
@@ -170,19 +173,21 @@ const RAIL_STEP: Record<string, number> = { ArrowDown: 1, ArrowRight: 1, ArrowUp
  * dot, since its own line of chrome already says what is live there; a screen reader still hears the words. Only
  * implemented surfaces are listed.
  */
-function ToolsRailTabs({ value, live, attention, onChange }: { readonly value: ToolSurfaceId; readonly live: Partial<Record<ToolSurfaceId, string>>
+function ToolsRailTabs({ value, live, attention, onChange, surfaces }: { readonly value: ToolSurfaceId; readonly live: Partial<Record<ToolSurfaceId, string>>
+  /** The surfaces the rail lists: every one, less those behind an Owl feature that is off. */
+  readonly surfaces: typeof TOOL_SURFACES[number][]
   /** Surfaces whose live news needs the user: their dot takes the attention colour and stays on the open surface too. */
   readonly attention: Partial<Record<ToolSurfaceId, boolean>>; readonly onChange: (surface: ToolSurfaceId) => void }): ReactNode {
   const { t, i18n } = useLingui()
   return <div className="tools-rail__tabs" role="tablist" aria-label={t({ message: 'Tools', comment: 'The panel beside a thread that holds its browser, terminal, files, changes and agents.' })} aria-orientation="vertical">
-    {TOOL_SURFACES.map((surface, index) => <button key={surface.id} id={`tools-tab-${surface.id}`} type="button" role="tab" className="tools-rail__tab tt-focusable" data-surface={surface.id}
+    {surfaces.map((surface, index) => <button key={surface.id} id={`tools-tab-${surface.id}`} type="button" role="tab" className="tools-rail__tab tt-focusable" data-surface={surface.id}
       aria-selected={value === surface.id} aria-controls={`tools-surface-${surface.id}`} tabIndex={value === surface.id ? 0 : -1}
       aria-label={SURFACE_NAMES[surface.id] ? i18n._(SURFACE_NAMES[surface.id]!) : undefined}
       aria-description={live[surface.id]} title={live[surface.id] ? `${surfaceName(surface.id)}: ${live[surface.id]}` : surfaceName(surface.id)}
       onClick={() => onChange(surface.id)} onKeyDown={event => {
         const step = RAIL_STEP[event.key]
-        const next = event.key === 'Home' ? TOOL_SURFACES[0] : event.key === 'End' ? TOOL_SURFACES[TOOL_SURFACES.length - 1]
-          : step ? TOOL_SURFACES[(index + step + TOOL_SURFACES.length) % TOOL_SURFACES.length] : undefined
+        const next = event.key === 'Home' ? surfaces[0] : event.key === 'End' ? surfaces[surfaces.length - 1]
+          : step ? surfaces[(index + step + surfaces.length) % surfaces.length] : undefined
         if (!next) return
         event.preventDefault()
         onChange(next.id)
@@ -198,7 +203,9 @@ function ToolsRailTabs({ value, live, attention, onChange }: { readonly value: T
 /** What is live on each surface of one thread, in the words a screen reader hears for its dot. */
 function useLiveSurfaces(store: ToolsPanelStore, thread: AgentThread | undefined, agentsThread: AgentThread | undefined, changed: { readonly count: number; readonly truncated: boolean } | null, changesOpen: boolean, cloudStore: CloudIphoneStore,
   /** The delegated threads below the Agents thread (ADR-0081; Owl only). */
-  delegated?: { readonly needs: number; readonly working: number }): Partial<Record<ToolSurfaceId, string>> {
+  delegated?: { readonly needs: number; readonly working: number },
+  /** Whether one of the thread's 3D models is being made (the Meshy plan's ticket 5). */
+  modelMaking = false): Partial<Record<ToolSurfaceId, string>> {
   const { t } = useLingui()
   const tasks = useThreadBrowserTasks(store.browser, thread?.id ?? null)
   const cloudSession = useCloudSession(thread?.id ?? null, cloudStore)
@@ -212,6 +219,7 @@ function useLiveSurfaces(store: ToolsPanelStore, thread: AgentThread | undefined
     else if (phoneTasks.some(task => task.status === 'working')) live.iphone = t`An agent is working on the test iPhone`
     else if (cloudSession?.status === 'asking') live.iphone = t`A cloud iPhone request is waiting for your answer`
     else if (cloudSession?.status === 'active' || cloudSession?.status === 'starting') live.iphone = t`A cloud iPhone session is running`
+    if (modelMaking) live.models = t`A 3D model is being made`
     // Changes reads Git only while it is open. Elsewhere the working copy's own dirty mark is fresher.
     const dirty = thread.worktree?.status === 'ready' ? thread.worktree.dirty : undefined
     if (!changesOpen && dirty !== undefined) { if (dirty) live.changes = t`Has uncommitted changes` }
@@ -348,6 +356,11 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   // Files, Changes and Agents read a paired host's thread on that host. Its browser and test iPhone stay on that machine,
   // so nothing here starts them for it; its terminal runs over SSH where that is on (ADR-0183; Owl only).
   const hostedTerminal = useOwlFeature('paired-host-terminal')
+  // Tools › 3D models is part of the plugins Owl feature; with it off the rail does not list it, and a panel left on it
+  // shows Files.
+  const modelsOn = useOwlFeature('plugins')
+  const railSurfaces = useMemo(() => TOOL_SURFACES.filter(surface => surface.id !== 'models' || modelsOn), [modelsOn])
+  useEffect(() => { if (!modelsOn && chrome.surface === 'models') store.setSurface('files') }, [modelsOn, chrome.surface, store])
   const threadId = thread?.id
   const localThreadId = thread?.remoteHost ? undefined : thread?.id
   // Sotto's browser for a paired host's thread runs in that host's Chromium where both machines offer it (ADR-0198).
@@ -399,7 +412,10 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   const agentsThread = delegationOn ? workingCopyThread : selectedThread
   const threads = state.host.threads
   const delegated = useMemo(() => delegationOn && agentsThread ? delegatedBelow(threads, agentsThread.id) : undefined, [delegationOn, agentsThread, threads])
-  const live = useLiveSurfaces(store, workingCopyThread, agentsThread, changedFiles, open && chrome.surface === 'changes', cloudStore, delegated)
+  // While 3D models is the open surface, the list also looks again at whether the files are there.
+  const threadModels = useModels3d(modelsOn && open, workingCopyThread && !workingCopyThread.remoteHost ? workingCopyThread.id : null, { watchFiles: chrome.surface === 'models' })
+  const live = useLiveSurfaces(store, workingCopyThread, agentsThread, changedFiles, open && chrome.surface === 'changes', cloudStore, delegated,
+    threadModels.models?.some(model => model.state === 'making') ?? false)
   const attention = useMemo(() => ({ agents: (delegated?.needs ?? 0) > 0 }), [delegated])
   // The roster's delegated threads open in the pane and keep Tools here, pinned to this roster's thread.
   const rosterThreadId = thread?.id
@@ -496,10 +512,12 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   else if (thread.remoteHost && chrome.surface === 'browser' && pairedHostBrowser && !browserHost?.browser) body = <><ToolsChrome title={surfaceLabel} /><div className="files-problem files-problem--root" role="status">
     <strong>{t`Browser is on the host machine.`}</strong><p className="tt-paragraph">{hostName !== undefined ? t({ message: `Update Sotto on ${hostName} in Settings > Hosts & phones to use it here.`, comment: '{hostName} is the name of a paired host, as in forge.' })
       : t`Update Sotto on the host in Settings > Hosts & phones to use it here.`}</p></div></>
-  else if (thread.remoteHost && (chrome.surface === 'terminal' && !hostedTerminal || chrome.surface === 'browser' && !browserHost?.browser || chrome.surface === 'iphone')) body = <><ToolsChrome title={surfaceLabel} /><div className="files-problem files-problem--root" role="status"><strong>{t({ message: `${surfaceLabel} is on the host machine.`, comment: '{surfaceLabel} is a Tools surface\'s name, as in Terminal.' })}</strong><p className="tt-paragraph">{t`Use this tool on the host. Replies and permission answers remain available here.`}</p></div></>
+  else if (thread.remoteHost && (chrome.surface === 'terminal' && !hostedTerminal || chrome.surface === 'browser' && !browserHost?.browser || chrome.surface === 'iphone' || chrome.surface === 'models')) body = <><ToolsChrome title={surfaceLabel} /><div className="files-problem files-problem--root" role="status"><strong>{t({ message: `${surfaceLabel} is on the host machine.`, comment: '{surfaceLabel} is a Tools surface\'s name, as in Terminal.' })}</strong><p className="tt-paragraph">{t`Use this tool on the host. Replies and permission answers remain available here.`}</p></div></>
   // A paired host pushes no roster changes: its thread's agent counts moving in the shell read the roster again.
   else if (chrome.surface === 'agents') body = <AgentsSurface key={thread.id} threadId={thread.id} store={store.subagents} bridge={subagentsBridge}
     rosterSignal={thread.remoteHost ? JSON.stringify(thread.subagentSummary ?? null) : undefined} continuation={continuation} delegation={delegation} />
+  else if (chrome.surface === 'models' && modelsOn) body = <ModelsSurface key={thread.id} list={threadModels}
+    onShowFile={path => { store.closeLinkedFile(thread.id); store.files.showFile(filesFor, thread.id, path); store.setSurface('files'); requestAnimationFrame(() => document.getElementById('tools-tab-files')?.focus()) }} />
   else if (chrome.surface === 'iphone') body = <IPhoneSurface key={thread.id} threadId={thread.id} store={store.browser} bridge={browserBridge} phoneStore={phoneStore} cloudStore={cloudStore} cloudBridge={cloudBridge} />
   else if (chrome.surface === 'browser') body = <BrowserSurface key={thread.id} threadId={thread.id} store={store.browser} bridge={browserBridge} onStatus={showStatus} onFloat={canFloat ? floatBrowser : undefined} host={browserHost} />
   else if (chrome.surface === 'terminal') body = <TerminalSurface key={thread.id} threadId={thread.id} store={store.terminals} bridge={terminalBridge} viewFactory={viewFactory} viewFailed={viewFailed} machine={hostName} />
@@ -519,7 +537,7 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
         aria-valuemin={TOOLS_PANEL_MIN_WIDTH} aria-valuemax={TOOLS_PANEL_MAX_WIDTH} aria-valuenow={Math.round(width)}
         onPointerDown={startResize} onKeyDown={resizeKey} />
       <div className="tools-rail">
-        <ToolsRailTabs value={chrome.surface} live={live} attention={attention} onChange={surface => store.setSurface(surface)} />
+        <ToolsRailTabs value={chrome.surface} live={live} attention={attention} surfaces={railSurfaces} onChange={surface => store.setSurface(surface)} />
         <div className="tools-rail__foot">
           {thread && (chrome.surface !== 'agents' || delegationOn) ? <button type="button" className="files-icon tt-focusable" aria-pressed={pinned} aria-label={pinned ? t({ message: `Unpin from ${threadTitle}`, comment: '{threadTitle} is a thread\'s title.' }) : t({ message: `Pin to ${threadTitle}`, comment: '{threadTitle} is a thread\'s title.' })} title={pinned ? t({ message: `Unpin from ${threadTitle}`, comment: '{threadTitle} is a thread\'s title.' }) : t`Pin to this thread`} onClick={() => pinned ? store.unpin() : store.pin(thread.id)}>{pinned ? <PinOff size={16} aria-hidden="true" /> : <Pin size={16} aria-hidden="true" />}</button> : null}
           {/* Changes and the Pull request surface already fill a workspace too narrow to share, so expanding would change nothing. */}

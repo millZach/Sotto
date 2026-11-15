@@ -155,16 +155,34 @@ export class ModelRecords {
 
   /**
    * Removes forgotten threads' records, all of them in one change. The files stay, and so does what each cost, by its
-   * account and when it was asked for alone, so the month's credits are counted the same.
+   * account and when it was asked for alone, so the month's credits are counted the same. Resolves with the IDs of the
+   * 3D models whose records went, so whatever lists them can let them go.
    */
-  forgetThreads(threadIds: readonly string[]): Promise<void> {
+  forgetThreads(threadIds: readonly string[]): Promise<readonly string[]> {
     const gone = new Set(threadIds)
     return this.inTurn(async () => {
       const records = await this.load()
       const kept = records.filter(record => !gone.has(record.threadId))
-      if (kept.length === records.length) return
+      if (kept.length === records.length) return []
       const spent = records.filter(record => gone.has(record.threadId) && record.credits > 0).map(record => ({ accountId: record.accountId, askedAt: record.askedAt, credits: record.credits }))
       await this.write(kept, [...this.spent, ...spent])
+      return records.filter(record => gone.has(record.threadId)).map(record => record.id)
+    })
+  }
+
+  /**
+   * Removes one record, as the user's Remove from 3D models does for one whose files are gone (ADR-0141), and only
+   * while `may` still holds of it. The files it names are not touched. What it cost stays counted, by its account and
+   * when it was asked for alone, as a forgotten thread's does. True when it was removed.
+   */
+  remove(id: string, may: (model: ThreeDModel) => boolean): Promise<boolean> {
+    return this.inTurn(async () => {
+      const records = await this.load()
+      const record = records.find(entry => entry.id === id)
+      if (!record || !may(modelOf(record))) return false
+      const spent = record.credits > 0 ? [{ accountId: record.accountId, askedAt: record.askedAt, credits: record.credits }] : []
+      await this.write(records.filter(entry => entry.id !== id), [...this.spent, ...spent])
+      return true
     })
   }
 

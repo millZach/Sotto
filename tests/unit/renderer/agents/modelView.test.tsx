@@ -97,3 +97,14 @@ it('draws again when opened once more, on a canvas of its own, as React does twi
   expect(gl.lost).toBe(1)
   expect(screen.getByRole('slider').querySelectorAll('canvas')).toHaveLength(1)
 })
+
+it('takes focus as it opens in a thread, and leaves it where it was when the 3D models page opens it', async () => {
+  await view()
+  expect(screen.getByRole('slider')).toHaveFocus()
+  cleanup()
+  render(<button type="button">Oak barrel tile</button>)
+  screen.getByRole('button').focus()
+  await act(async () => { render(<ModelView modelId="model-1" part="model" name="Oak barrel" reduced={false} onClose={() => undefined} onUnavailable={() => undefined} focusOnOpen={false} />) })
+  await screen.findByText('Drag or use the arrow keys to turn')
+  expect(screen.getByRole('button', { name: 'Oak barrel tile' })).toHaveFocus()
+})

@@ -87,10 +87,11 @@ import { PluginUseRecord } from './plugins/useRecord'
 import type { MeshyApiFetch } from './tools/meshy/api'
 import { ModelRecords } from './tools/meshy/records'
 import { MeshyModels } from './tools/meshy/service'
-import { modelBytes, modelView, modelViewOf, type ModelViewSource } from './tools/meshy/view'
+import { modelBytes, modelView, modelViewOf } from './tools/meshy/view'
+import { listModels, removeGoneModel, revealModelFile, type ModelListSource } from './tools/meshy/page'
 import { checkPhoto, photoToSend, type RedrawPhoto } from './tools/meshy/photo'
 import { isMailPlugin, PLUGIN_USE_THREAD_TITLE_MAX, PLUGINS_COPIES_CHANGED, PLUGINS_MAIL_GRANTS_CHANGED } from '../shared/plugins'
-import { MODEL_VISUAL_KIND, PLUGINS_MODEL_3D_CHANGED } from '../shared/models3d'
+import { MODEL_VISUAL_KIND, PLUGINS_MODEL_3D_CHANGED, PLUGINS_MODELS_3D_REMOVED } from '../shared/models3d'
 import { resetGhLookup } from './agents/git/ghCommand'
 import { GitUnavailableError, runGitStatusCommand, runWithGhStandIn, type RunGitCommand } from './agents/git/gitStatus'
 import { registerTeamsIpc } from './teams/ipc'
@@ -1438,9 +1439,14 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         .then(view => { if (view) windows.sendToMain(PLUGINS_MODEL_3D_CHANGED, view) }, () => undefined)
     } }) : undefined
   void meshyModels?.resume().catch(() => undefined)
-  const modelViews: ModelViewSource | undefined = meshyModels && modelRecords ? {
+  const modelViews: ModelListSource | undefined = meshyModels && modelRecords ? {
     model: id => modelRecords.model(id), progressOf: (id, stage) => meshyModels.progressOf(id, stage),
     hasShape: id => meshyModels.hasShape(id), shapeBytes: id => meshyModels.shapeBytes(id),
+    // The 3D models page and Tools › 3D models (the Meshy plan's ticket 5): every record, the Meshy accounts' names,
+    // and removing the record of one whose files are gone.
+    list: () => modelRecords.list(),
+    accountNames: async () => new Map((await pluginAccounts?.list() ?? []).filter(account => account.plugin === 'meshy').map(account => [account.id, account.name])),
+    remove: (id, may) => modelRecords.remove(id, may),
   } : undefined
   // A photo for a 3D model is drawn again from its pixels alone, which carries none of its location or camera details
   // (ADR-0141). PNG stays PNG, for its transparency; a redrawn PNG past Meshy's 20 MB goes as a JPEG.
@@ -1671,7 +1677,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     // A forgotten thread takes its entries in the plugin use record with it (ADR-0205).
     void pluginUse?.forgetThreads(threadIds).catch(() => undefined)
     // And its 3D models' records; their files stay in its folder (ADR-0141).
-    void modelRecords?.forgetThreads(threadIds).catch(() => undefined)
+    // The window lets the 3D models it lists go once their records have (the Meshy plan's ticket 5).
+    void modelRecords?.forgetThreads(threadIds).then(ids => { if (ids.length > 0) windows.sendToMain(PLUGINS_MODELS_3D_REMOVED, ids) }, () => undefined)
     // And any change of theirs still waiting on the user stops: nothing is done for a thread that is gone.
     pluginChanges?.forgetThreads(threadIds)
     // And its mail grants go with it.
@@ -2837,6 +2844,21 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         meshyCredits: async () => Object.fromEntries(await modelRecords?.monthCredits() ?? new Map()),
         model3d: async id => modelViews ? await modelViewOf(modelViews, id) : null,
         model3dBytes: async request => modelViews ? await modelBytes(modelViews, request) : null,
+        // This computer's own threads' 3D models: a thread on a paired host names none here (ticket 6 is the host's).
+        models3d: async threadKey => {
+          if (!modelViews) return []
+          if (threadKey === undefined) return await listModels(modelViews)
+          const threadId = ownThreadId(threadKey, agentControl.hostId())
+          return threadId === null ? [] : await listModels(modelViews, threadId)
+        },
+        // Every list and the 3D model's line in its thread are told a removed record went, so none shows it again.
+        removeModel3d: async id => {
+          const removal = modelViews ? await removeGoneModel(modelViews, id) : 'no-record'
+          if (removal === 'removed') windows.sendToMain(PLUGINS_MODELS_3D_REMOVED, [id])
+          return removal
+        },
+        // The folder app is shown the record's own file, never a path from the window. An end-to-end run notes it instead.
+        revealModel3d: async request => modelViews ? await revealModelFile(modelViews, request, path => { if (e2eConfiguration !== null) e2eFiles.shown.push(path); else shell.showItemInFolder(path) }) : false,
         copies: async () => await pluginCopySync?.view() ?? { copyNew: true, readable: true, computers: [], copies: [] },
         setCopy: async request => { await pluginCopySync?.setCopy(request.accountId, request.computerId, request.on); return await pluginCopySync?.view() ?? { copyNew: true, readable: true, computers: [], copies: [] } },
         setCopyNew: async copyNew => { await pluginCopySync?.setCopyNew(copyNew); return await pluginCopySync?.view() ?? { copyNew: true, readable: true, computers: [], copies: [] } },

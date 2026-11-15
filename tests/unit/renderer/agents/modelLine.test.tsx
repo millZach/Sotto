@@ -31,9 +31,12 @@ const DONE: Model3dView = { id: 'model-1', name: 'Oak barrel', source: 'words', 
 const MAKING: Model3dView = { id: 'model-1', name: 'Oak barrel', source: 'words', state: 'making', stage: 'shape', credits: 20, folder: 'models', files: [] }
 
 let listeners: ((view: Model3dView) => void)[] = []
+let removedListeners: ((ids: readonly string[]) => void)[] = []
 function bridge(view: Model3dView | null) {
   listeners = []
+  removedListeners = []
   const plugins = {
+    onModels3dRemoved: vi.fn((listener: (ids: readonly string[]) => void) => { removedListeners.push(listener); return () => { removedListeners = removedListeners.filter(other => other !== listener) } }),
     model3d: vi.fn(async () => view),
     model3dBytes: vi.fn(async () => PNG),
     onModel3dChanged: vi.fn((listener: (next: Model3dView) => void) => { listeners.push(listener); return () => { listeners = listeners.filter(other => other !== listener) } }),
@@ -51,6 +54,19 @@ beforeEach(() => { gate.on = true; gate.webgl = true })
 afterEach(() => { cleanup(); delete (window as { sotto?: unknown }).sotto })
 
 describe('a 3D model’s line in its thread', () => {
+  it('says Sotto no longer holds the 3D model once its record is removed, whether it was open or not', async () => {
+    await show(DONE)
+    await userEvent.click(within(line()).getByRole('button', { name: 'Show the model' }))
+    expect(await screen.findByRole('slider', { name: 'Turn the Oak barrel.' })).toBeInTheDocument()
+    // Another 3D model's record going changes nothing here.
+    await act(async () => { for (const listener of removedListeners) listener(['model-2']) })
+    expect(screen.getByRole('slider', { name: 'Turn the Oak barrel.' })).toBeInTheDocument()
+    await act(async () => { for (const listener of removedListeners) listener(['model-1']) })
+    expect(line()).toHaveTextContent('Sotto no longer holds this 3D model.')
+    expect(screen.queryByRole('slider')).toBeNull()
+    expect(within(line()).queryByRole('button')).toBeNull()
+  })
+
   it('says the step, Meshy’s percent and the time left while Meshy makes the shape, with nothing to open yet', async () => {
     await show({ ...MAKING, percent: 42, secondsLeft: 58 })
     expect(line()).toHaveTextContent('Oak barrel')

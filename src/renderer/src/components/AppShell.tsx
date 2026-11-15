@@ -151,6 +151,7 @@ const footerLinks: ReadonlyArray<{ id: ManagementNavigation; label: MessageDescr
   { id: 'threads', label: msg({ message: 'Threads', comment: 'The room switch and page links: the Threads page' }) },
   { id: 'usage', label: msg({ message: 'Usage', comment: 'The page link: the Usage page' }) },
   { id: 'memory', label: msg({ message: 'Memory', comment: 'The page link: the Memory page' }) },
+  { id: 'models', label: msg({ message: '3D models', comment: 'The page link: the 3D models page, every 3D model Meshy made for a thread.' }) },
   { id: 'settings', label: msg({ message: 'Settings', comment: 'The page link: the Settings page' }) },
   { id: 'help', label: msg({ message: 'Help', comment: 'The page link: the Help page' }) },
 ]
@@ -165,13 +166,13 @@ export function roomFor(navigation: ManagementNavigation | null): AppRoom | null
 
 /**
  * Which layout a page takes. Threads, Watcher's room and Settings own the window, their left column wearing the
- * sidebar's frame; Dictate, Usage and Help stand beside the Threads sidebar itself; the strip and footer remain
+ * sidebar's frame; Dictate, Usage, 3D models and Help stand beside the Threads sidebar itself; the strip and footer remain
  * for the Memory surface. `threadsPage` says whether the navigation lands on the Threads page, the beta gates
  * included; Watcher's room is the Threads page while its gate is off.
  */
 export function layoutFor(navigation: AppNavigation, threadsPage: boolean): AppLayout {
   if (threadsPage || navigation === 'settings' || navigation === 'watcher') return 'page'
-  if (navigation === 'home' || navigation === 'usage' || navigation === 'help') return 'sidebar'
+  if (navigation === 'home' || navigation === 'usage' || navigation === 'models' || navigation === 'help') return 'sidebar'
   return 'strip'
 }
 
@@ -213,7 +214,8 @@ export function AppShell({
   // Memory is hidden for the beta: its link goes with it.
   const memory = useMemoryEnabled()
   const usage = useOwlFeature('usage')
-  const links = footerLinks.filter(({ id }) => (id !== 'memory' || memory) && (id !== 'usage' || usage))
+  const models = useOwlFeature('plugins')
+  const links = footerLinks.filter(({ id }) => (id !== 'memory' || memory) && (id !== 'usage' || usage) && (id !== 'models' || models))
   const pageKeys = usePageShortcutLabels()
   const keysFor = (destination: ManagementNavigation) => { const id = pageShortcutFor(destination); return id === undefined ? undefined : pageKeys[id] }
   const go = (destination: ManagementNavigation): void => { onNavigate?.(destination) }

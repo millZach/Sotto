@@ -14,6 +14,9 @@ import { SubagentsStore } from './subagentsStore'
 export const TOOL_SURFACES = [
   { id: 'browser', get label(): string { return t({ message: 'Browser', comment: 'The Tools surface that shows a thread\'s browser pages.' }) } },
   { id: 'iphone', label: 'iPhone' },
+  // Listed only while the plugins Owl feature is on (the Meshy plan's ticket 5). Its word on the rail is short, as PR's is;
+  // its name is 3D models.
+  { id: 'models', get label(): string { return t({ message: '3D', comment: 'Short for 3D models: the Tools surface\'s word on the narrow rail.' }) } },
   { id: 'terminal', get label(): string { return t({ message: 'Terminal', comment: 'A terminal\'s name, and the Tools surface that holds a thread\'s terminals.' }) } },
   { id: 'files', get label(): string { return t({ message: 'Files', comment: 'The Tools surface that shows a thread\'s working folder.' }) } },
   { id: 'changes', get label(): string { return t({ message: 'Changes', comment: 'The Tools surface that shows a thread\'s changed files.' }) } },

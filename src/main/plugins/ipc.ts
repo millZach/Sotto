@@ -6,7 +6,11 @@ import {
   mailGrantsOfSchema, mailGrantStopSchema, PLUGINS_MAIL_GRANT_STOP, PLUGINS_MAIL_GRANTS, threadMailGrantsSchema, type MailGrantStop, type ThreadMailGrant,
   type GitHubSignIn, type PluginAccount, type PluginAccountAdd, type PluginAccountRemove, type PluginAccountReplace, type PluginAccountResult, type PluginAccountUpdate, type PluginCopiesView, type PluginCopySet, type PluginProject, type ShownPluginUse,
 } from '../../shared/plugins'
-import { model3dBytesRequestSchema, model3dBytesSchema, model3dRequestSchema, model3dViewOrNullSchema, PLUGINS_MODEL_3D, PLUGINS_MODEL_3D_BYTES, type Model3dBytesRequest, type Model3dView } from '../../shared/models3d'
+import {
+  model3dBytesRequestSchema, model3dBytesSchema, model3dDoneSchema, model3dRemovalSchema, model3dListRequestSchema, model3dListSchema, model3dRequestSchema, model3dRevealRequestSchema, model3dViewOrNullSchema,
+  PLUGINS_MODEL_3D, PLUGINS_MODEL_3D_BYTES, PLUGINS_MODEL_3D_REMOVE, PLUGINS_MODEL_3D_REVEAL, PLUGINS_MODELS_3D,
+  type Model3dBytesRequest, type Model3dListed, type Model3dRemoval, type Model3dRevealRequest, type Model3dView,
+} from '../../shared/models3d'
 import { isAuthorizedIpcSender, type IpcMainAdapter, type TrustedIpcSender } from '../ipc/registerIpc'
 
 /** Each call's arguments, checked against a schema built once rather than on every call. */
@@ -22,6 +26,8 @@ const mailGrantStopArguments = z.tuple([mailGrantStopSchema])
 const stoppedSchema = z.boolean()
 const model3dArguments = z.tuple([model3dRequestSchema])
 const model3dBytesArguments = z.tuple([model3dBytesRequestSchema])
+const models3dArguments = z.tuple([model3dListRequestSchema])
+const model3dRevealArguments = z.tuple([model3dRevealRequestSchema])
 
 /** What Settings › Plugins asks of main. */
 export interface PluginsIpcHandlers {
@@ -43,6 +49,12 @@ export interface PluginsIpcHandlers {
   readonly model3d: (id: string) => Promise<Model3dView | null>
   /** A 3D model's GLB, still picture or shape, or null when Sotto will not hand them over. */
   readonly model3dBytes: (request: Model3dBytesRequest) => Promise<Uint8Array | null>
+  /** Every 3D model being made or done, newest first, or the thread's the window names by its key. */
+  readonly models3d: (threadKey: string | undefined) => Promise<readonly Model3dListed[]>
+  /** Removes the record of a 3D model whose files are gone, once main has looked again; never a file. */
+  readonly removeModel3d: (id: string) => Promise<Model3dRemoval>
+  /** Shows one of a 3D model's files in the folder app, by the name its record holds. */
+  readonly revealModel3d: (request: Model3dRevealRequest) => Promise<boolean>
   readonly projects: () => readonly PluginProject[]
   readonly copies: () => Promise<PluginCopiesView>
   readonly setCopy: (request: PluginCopySet) => Promise<PluginCopiesView>
@@ -152,7 +164,27 @@ export function registerPluginsIpc(ipc: IpcMainAdapter, plugins: PluginsIpcHandl
     if (!parsed.success) return null
     return model3dBytesSchema.parse(await plugins.model3dBytes(parsed.data[0]))
   })
+  // The 3D models page and Tools › 3D models (the Meshy plan's ticket 5): the list, removing a record whose files are
+  // gone, and showing a file in the folder app, each by a 3D model's ID and a file's name alone, for the main window.
+  ipc.handle(PLUGINS_MODELS_3D, async (event, ...args) => {
+    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Open 3D models in the main Sotto window.`)
+    const parsed = models3dArguments.safeParse(args)
+    if (!parsed.success) return []
+    return model3dListSchema.parse(await plugins.models3d(parsed.data[0].threadId))
+  })
+  ipc.handle(PLUGINS_MODEL_3D_REMOVE, async (event, ...args) => {
+    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Open 3D models in the main Sotto window.`)
+    const parsed = model3dArguments.safeParse(args)
+    if (!parsed.success) return 'no-record'
+    return model3dRemovalSchema.parse(await plugins.removeModel3d(parsed.data[0].id))
+  })
+  ipc.handle(PLUGINS_MODEL_3D_REVEAL, async (event, ...args) => {
+    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Open 3D models in the main Sotto window.`)
+    const parsed = model3dRevealArguments.safeParse(args)
+    if (!parsed.success) return false
+    return model3dDoneSchema.parse(await plugins.revealModel3d(parsed.data[0]))
+  })
   return () => {
-    for (const channel of [PLUGINS_MODEL_3D, PLUGINS_MODEL_3D_BYTES, PLUGINS_MAIL_GRANTS, PLUGINS_MAIL_GRANT_STOP, PLUGINS_GITHUB_SIGN_IN, PLUGINS_GITHUB_SIGN_IN_ELSEWHERE, PLUGINS_RECENT_USE, PLUGINS_ACCOUNTS, PLUGINS_PROJECTS, PLUGINS_COPIES, PLUGINS_COPY_SET, PLUGINS_COPY_NEW_SET, PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_UPDATE, PLUGINS_ACCOUNT_TRUST, PLUGINS_BRIDGE_STATUS, PLUGINS_MESHY_CREDITS]) ipc.removeHandler(channel)
+    for (const channel of [PLUGINS_MODEL_3D, PLUGINS_MODEL_3D_BYTES, PLUGINS_MODELS_3D, PLUGINS_MODEL_3D_REMOVE, PLUGINS_MODEL_3D_REVEAL,PLUGINS_MAIL_GRANTS, PLUGINS_MAIL_GRANT_STOP, PLUGINS_GITHUB_SIGN_IN, PLUGINS_GITHUB_SIGN_IN_ELSEWHERE, PLUGINS_RECENT_USE, PLUGINS_ACCOUNTS, PLUGINS_PROJECTS, PLUGINS_COPIES, PLUGINS_COPY_SET, PLUGINS_COPY_NEW_SET, PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_UPDATE, PLUGINS_ACCOUNT_TRUST, PLUGINS_BRIDGE_STATUS, PLUGINS_MESHY_CREDITS]) ipc.removeHandler(channel)
   }
 }

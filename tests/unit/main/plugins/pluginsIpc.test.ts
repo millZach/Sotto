@@ -8,7 +8,7 @@ import {
   PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_TRUST, PLUGINS_BRIDGE_STATUS, PLUGINS_MESHY_CREDITS, type MeshyCredits, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNT_UPDATE, PLUGINS_ACCOUNTS, PLUGINS_COPIES, PLUGINS_COPIES_CHANGED, PLUGINS_GITHUB_SIGN_IN_ELSEWHERE, type PluginHostSignIn, PLUGINS_COPY_NEW_SET, PLUGINS_COPY_SET, PLUGINS_GITHUB_SIGN_IN, PLUGINS_PROJECTS, PLUGINS_RECENT_USE,
   type BridgeStatus, type GitHubSignIn, type PluginAccount, type PluginAccountResult, type PluginCopiesView, type ShownPluginUse,
 } from '../../../../src/shared/plugins'
-import { PLUGINS_MODEL_3D, PLUGINS_MODEL_3D_BYTES, type Model3dBytesRequest, type Model3dView } from '../../../../src/shared/models3d'
+import { PLUGINS_MODEL_3D, PLUGINS_MODEL_3D_BYTES, PLUGINS_MODEL_3D_REMOVE, PLUGINS_MODEL_3D_REVEAL, PLUGINS_MODELS_3D, PLUGINS_MODELS_3D_REMOVED, type Model3dBytesRequest, type Model3dListed, type Model3dRemoval, type Model3dRevealRequest, type Model3dView } from '../../../../src/shared/models3d'
 import { ipcRegistry } from '../../../fixtures/ipcHarness'
 import { preloadElectron } from '../../../fixtures/preloadElectron'
 
@@ -40,10 +40,14 @@ function register(answer: GitHubSignIn = { state: 'signed-in', login: 'example-u
   const mailGrants = vi.fn(async (): Promise<ThreadMailGrant[]> => granted), stopMailGrant = vi.fn(async (): Promise<boolean> => true)
   const model3d = vi.fn(async (id: string): Promise<Model3dView | null> => id === MODEL.id ? MODEL : null)
   const model3dBytes = vi.fn(async (request: Model3dBytesRequest): Promise<Uint8Array | null> => request.id === MODEL.id ? new Uint8Array([1, 2, 3]) : null)
-  const close = registerPluginsIpc(registry.ipc, { gitHubSignIn, gitHubSignInElsewhere, recentUse, accounts, addAccount, replaceSecret, removeAccount, updateAccount, trustCertificate, bridgeStatus, meshyCredits, model3d, model3dBytes, projects, copies, setCopy, setCopyNew, mailGrants, stopMailGrant }, registry.trustedSenders)
+  const listed: Model3dListed = { ...MODEL, threadId: 'thread-one', account: 'Studio', askedAt: '2026-11-15T09:00:00.000Z', words: 'An oak barrel' }
+  const models3d = vi.fn(async (threadKey: string | undefined): Promise<Model3dListed[]> => threadKey === undefined || threadKey === 'thread-one' ? [listed] : [])
+  const removeModel3d = vi.fn(async (id: string): Promise<Model3dRemoval> => id === MODEL.id ? 'removed' : 'no-record')
+  const revealModel3d = vi.fn(async (request: Model3dRevealRequest): Promise<boolean> => request.id === MODEL.id)
+  const close = registerPluginsIpc(registry.ipc, { gitHubSignIn, gitHubSignInElsewhere, recentUse, accounts, addAccount, replaceSecret, removeAccount, updateAccount, trustCertificate, bridgeStatus, meshyCredits, model3d, model3dBytes, models3d, removeModel3d, revealModel3d, projects, copies, setCopy, setCopyNew, mailGrants, stopMailGrant }, registry.trustedSenders)
   const renderer = preloadElectron().ipcRenderer
   renderer.invoke.mockImplementation((channel: string, ...args: unknown[]) => registry.invoke(channel, args))
-  return { ...registry, model3d, model3dBytes, gitHubSignIn, gitHubSignInElsewhere, elsewhere, recentUse, accounts, addAccount, replaceSecret, removeAccount, updateAccount, trustCertificate, bridgeStatus, meshyCredits, projects, copies, setCopy, setCopyNew, view, close, mailGrants, stopMailGrant, granted, bridge: createSottoBridge(renderer, 'win32').plugins! }
+  return { ...registry, model3d, model3dBytes, models3d, removeModel3d, revealModel3d, listed, gitHubSignIn, gitHubSignInElsewhere, elsewhere, recentUse, accounts, addAccount, replaceSecret, removeAccount, updateAccount, trustCertificate, bridgeStatus, meshyCredits, projects, copies, setCopy, setCopyNew, view, close, mailGrants, stopMailGrant, granted, bridge: createSottoBridge(renderer, 'win32').plugins! }
 }
 
 describe('Settings › Plugins, from the window through preload to main (ADR-0205)', () => {
@@ -174,6 +178,51 @@ describe('Settings › Plugins, from the window through preload to main (ADR-020
     close()
     expect(handlers.has(PLUGINS_MODEL_3D)).toBe(false)
     expect(handlers.has(PLUGINS_MODEL_3D_BYTES)).toBe(false)
+  })
+
+  it('lists 3D models, removes a record and shows a file, by a 3D model’s ID and a file’s name, for the main window only', async () => {
+    const { bridge, invoke, widgetEvent, models3d, removeModel3d, revealModel3d, listed, close, handlers } = register()
+    await expect(bridge.models3d()).resolves.toEqual([listed])
+    await expect(bridge.models3d('thread-one')).resolves.toEqual([listed])
+    await expect(bridge.models3d('thread-two')).resolves.toEqual([])
+    expect(models3d.mock.calls).toEqual([[undefined], ['thread-one'], ['thread-two']])
+    await expect(bridge.removeModel3d(MODEL.id)).resolves.toBe('removed')
+    await expect(bridge.removeModel3d('unknown')).resolves.toBe('no-record')
+    await expect(bridge.revealModel3d({ id: MODEL.id, file: 'Oak barrel.glb' })).resolves.toBe(true)
+    await expect(bridge.revealModel3d({ id: MODEL.id })).resolves.toBe(true)
+    expect(revealModel3d.mock.calls).toEqual([[{ id: MODEL.id, file: 'Oak barrel.glb' }], [{ id: MODEL.id }]])
+    for (const [channel, args] of [[PLUGINS_MODELS_3D, [{}]], [PLUGINS_MODEL_3D_REMOVE, [{ id: MODEL.id }]], [PLUGINS_MODEL_3D_REVEAL, [{ id: MODEL.id }]]] as const) {
+      await expect(invoke(channel, [...args], widgetEvent)).rejects.toThrow('Open 3D models in the main Sotto window.')
+    }
+    // A path in place of a name, or anything the schema does not name, asks main nothing.
+    removeModel3d.mockClear()
+    revealModel3d.mockClear()
+    await expect(invoke(PLUGINS_MODEL_3D_REVEAL, [{ id: MODEL.id, path: 'C:/Users/someone/secret.glb' }])).resolves.toBe(false)
+    await expect(invoke(PLUGINS_MODEL_3D_REVEAL, [{ id: MODEL.id, file: '' }])).resolves.toBe(false)
+    await expect(invoke(PLUGINS_MODEL_3D_REMOVE, [{ id: MODEL.id, deleteFiles: true }])).resolves.toBe('no-record')
+    await expect(invoke(PLUGINS_MODELS_3D, [{ threadId: 'thread-one', root: 'C:/' }])).resolves.toEqual([])
+    expect(removeModel3d).not.toHaveBeenCalled()
+    expect(revealModel3d).not.toHaveBeenCalled()
+    // A listing carrying anything beyond what the schema names, such as a folder's path, does not cross.
+    models3d.mockResolvedValueOnce([{ ...listed, root: 'C:/Users/someone/project' } as never])
+    await expect(invoke(PLUGINS_MODELS_3D, [{}])).rejects.toThrow()
+    close()
+    for (const channel of [PLUGINS_MODELS_3D, PLUGINS_MODEL_3D_REMOVE, PLUGINS_MODEL_3D_REVEAL]) expect(handlers.has(channel)).toBe(false)
+  })
+
+  it('tells the window which 3D models went with a forgotten thread, and nothing that is not a list of IDs', () => {
+    const renderer = preloadElectron().ipcRenderer
+    const bridge = createSottoBridge(renderer, 'win32').plugins!
+    const heard: (readonly string[])[] = []
+    const stop = bridge.onModels3dRemoved(ids => heard.push(ids))
+    const [, listener] = renderer.on.mock.calls.find(([channel]) => channel === PLUGINS_MODELS_3D_REMOVED) as [string, (event: unknown, ...args: unknown[]) => void]
+    listener({}, [MODEL.id])
+    listener({}, [])
+    listener({}, 'C:/Users/someone/project')
+    listener({}, [{ id: MODEL.id }])
+    expect(heard).toEqual([[MODEL.id]])
+    stop()
+    expect(renderer.removeListener).toHaveBeenCalledWith(PLUGINS_MODELS_3D_REMOVED, listener)
   })
 
   it('carries which threads may use an account to main, and this computer’s projects back, for the main window only', async () => {

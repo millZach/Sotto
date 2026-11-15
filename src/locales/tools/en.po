@@ -385,6 +385,10 @@ msgstr "{size} · Read only"
 msgid "{skippedCount} skipped"
 msgstr "{skippedCount} skipped"
 
+#: src/renderer/src/tools/ModelsSurface.tsx
+msgid "{spent, plural, one {# credit in this thread} other {# credits in this thread}}"
+msgstr "{spent, plural, one {# credit in this thread} other {# credits in this thread}}"
+
 #: src/renderer/src/tools/BrowserTaskDetails.tsx
 msgid "{steps, plural, other {# recorded steps}}"
 msgstr "{steps, plural, other {# recorded steps}}"
@@ -453,10 +457,26 @@ msgstr "<0>{branch}</0> is the default branch."
 msgid "<0>End {name}?</0> Whatever is running in it stops."
 msgstr "<0>End {name}?</0> Whatever is running in it stops."
 
+#. Short for 3D models: the Tools surface's word on the narrow rail.
+#: src/renderer/src/tools/toolsPanelStore.ts
+msgid "3D"
+msgstr "3D"
+
+#. The Tools surface that shows the 3D models a thread made.
+#. The Tools surface that shows the 3D models a thread made.
+#: src/renderer/src/tools/ModelsSurface.tsx
+#: src/renderer/src/tools/ToolsPanel.tsx
+msgid "3D models"
+msgstr "3D models"
+
 #. {width} and {height} are sizes in pixels.
 #: src/renderer/src/tools/IPhoneSurface.tsx
 msgid "A {width} by {height} page in Sotto’s browser with iOS Safari’s user agent and touch. It is not iOS."
 msgstr "A {width} by {height} page in Sotto’s browser with iOS Safari’s user agent and touch. It is not iOS."
+
+#: src/renderer/src/tools/ToolsPanel.tsx
+msgid "A 3D model is being made"
+msgstr "A 3D model is being made"
 
 #: src/renderer/src/tools/ToolsPanel.tsx
 #: src/renderer/src/tools/ToolsToggle.tsx
@@ -1706,6 +1726,7 @@ msgstr "File tree"
 #. The Tools surface that shows a thread's working folder.
 #. The Tools surface that shows a thread's working folder.
 #: src/renderer/src/tools/FilesSurface.tsx
+#: src/renderer/src/tools/ModelsSurface.tsx
 #: src/renderer/src/tools/toolsPanelStore.ts
 msgid "Files"
 msgstr "Files"
@@ -1721,6 +1742,10 @@ msgstr "Files could not be reached."
 #: src/renderer/src/tools/FilesSurface.tsx
 msgid "Files could not read the working folder."
 msgstr "Files could not read the working folder."
+
+#: src/renderer/src/tools/ModelsSurface.tsx
+msgid "files gone"
+msgstr "files gone"
 
 #: src/renderer/src/tools/FilesSurface.tsx
 msgid "Files in {folder}"
@@ -2166,6 +2191,28 @@ msgstr "Long Markdown is shown as source."
 msgid "looked at the page"
 msgstr "looked at the page"
 
+#: src/renderer/src/tools/ModelsSurface.tsx
+msgid "Made from a photo"
+msgstr "Made from a photo"
+
+#: src/renderer/src/tools/ModelsSurface.tsx
+msgid "Made from words"
+msgstr "Made from words"
+
+#: src/renderer/src/tools/ModelsSurface.tsx
+msgid "Made in this thread"
+msgstr "Made in this thread"
+
+#. {name} is the name the user gave a Meshy account, such as Studio; {credits} is "60 credits in this thread".
+#: src/renderer/src/tools/ModelsSurface.tsx
+msgid "Made with the Meshy account {name} · {credits}"
+msgstr "Made with the Meshy account {name} · {credits}"
+
+#. {names} lists the names the user gave Meshy accounts; {credits} is "60 credits in this thread".
+#: src/renderer/src/tools/ModelsSurface.tsx
+msgid "Made with the Meshy accounts {names} · {credits}"
+msgstr "Made with the Meshy accounts {names} · {credits}"
+
 #: src/renderer/src/tools/PhonePlayer.tsx
 msgid "Make the cloud iPhone large"
 msgstr "Make the cloud iPhone large"
@@ -2384,6 +2431,10 @@ msgstr "Next match"
 msgid "Next match (Enter)"
 msgstr "Next match (Enter)"
 
+#: src/renderer/src/tools/ModelsSurface.tsx
+msgid "No 3D models in this thread yet"
+msgstr "No 3D models in this thread yet"
+
 #: src/renderer/src/tools/AgentsSurface.tsx
 msgid "No agents reported yet"
 msgstr "No agents reported yet"
@@ -2511,6 +2562,10 @@ msgstr "Not compared with {base}"
 #: src/renderer/src/tools/AgentsSurface.tsx
 msgid "not connected"
 msgstr "not connected"
+
+#: src/renderer/src/tools/ModelsSurface.tsx
+msgid "not found"
+msgstr "not found"
 
 #: src/renderer/src/tools/TerminalSurface.tsx
 msgid "Nothing it showed was kept."
@@ -2689,6 +2744,10 @@ msgstr "Open a thread to browse its pages."
 #: src/renderer/src/tools/ToolsPanel.tsx
 msgid "Open a thread to review its changes."
 msgstr "Open a thread to review its changes."
+
+#: src/renderer/src/tools/ToolsPanel.tsx
+msgid "Open a thread to see its 3D models."
+msgstr "Open a thread to see its 3D models."
 
 #: src/renderer/src/tools/ToolsPanel.tsx
 msgid "Open a thread to see its agents."
@@ -3366,6 +3425,11 @@ msgstr "Show {count} finished"
 #: src/renderer/src/tools/PullRequestDetails.tsx
 msgid "Show {count} passed"
 msgstr "Show {count} passed"
+
+#. {name} is a 3D model's file, such as Oak barrel.glb; Files is the Tools surface.
+#: src/renderer/src/tools/ModelsSurface.tsx
+msgid "Show {name} in Files"
+msgstr "Show {name} in Files"
 
 #. {checks} says how its checks stand, as in Checks passed.
 #: src/renderer/src/tools/OpenPullRequests.tsx
@@ -4495,6 +4559,10 @@ msgstr "What the agent did on the test iPhone"
 #: src/renderer/src/tools/DelegatedThreads.tsx
 msgid "When Sotto last read it"
 msgstr "When Sotto last read it"
+
+#: src/renderer/src/tools/ModelsSurface.tsx
+msgid "When the thread makes one with Meshy, it shows here with its files."
+msgstr "When the thread makes one with Meshy, it shows here with its files."
 
 #. Beside a comparison's line counts, while Hide whitespace changes is on: the counts leave whitespace-only changes out.
 #: src/renderer/src/tools/ChangesSurface.tsx

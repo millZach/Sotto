@@ -51,7 +51,8 @@ import { createUnconfiguredTranscriber, LocalTranscriber, type TranscriptionBrid
 export type AppStatus = 'loading' | 'ready' | 'unavailable'
 export type HistoryStatus = 'loading' | 'ready' | 'degraded'
 /** `watcher` is Watcher's room, reachable only while the Watcher gate is on. */
-export type AppNavigation = 'home' | 'usage' | 'watcher' | 'threads' | 'memory' | 'settings' | 'help'
+/** `models` is the 3D models page, reachable only while the `plugins` Owl feature is on (the Meshy plan's ticket 5). */
+export type AppNavigation = 'home' | 'usage' | 'watcher' | 'threads' | 'memory' | 'models' | 'settings' | 'help'
 
 /** A request to open Settings somewhere other than its first page; `key` tells two requests for the same place apart. */
 export interface SettingsRequest {

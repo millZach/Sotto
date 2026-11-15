@@ -283,6 +283,7 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/agents/settleUndo.css',
       'src/renderer/src/agents/markup.css',
       'src/renderer/src/agents/modelLine.css',
+      'src/renderer/src/features/models3d/models3d.css',
       'src/renderer/src/features/settings/hosts.css',
       'src/renderer/src/features/settings/hostDevices.css',
       'src/renderer/src/features/settings/gitSettings.css',

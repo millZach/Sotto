@@ -1,0 +1,196 @@
+/* The 3D models page and Tools › 3D models (ADR-0141; the Meshy plan's ticket 5, Zach's variant C): one large view, the
+   details beside it and a filmstrip below; and the open thread's 3D models in Tools. Every colour is a theme token, and
+   every size and corner a step. The view itself is drawn by modelLine.css, as in a thread. */
+
+/* The chosen 3D model's view, on the page and in Tools: the turnable view fills the room it is given. */
+.models-page__view, .models-tool__view { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: var(--tt-canvas); }
+.models-page__view > .model-view, .models-tool__view > .model-view { position: absolute; inset: 0; }
+.models-page__view .model-view__stage, .models-tool__view .model-view__stage { height: 100%; }
+.models-stage__over { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 8px; padding: 16px; color: var(--tt-text-2); font-size: var(--tt-type-small); text-align: center; }
+.models-stage__over b { color: var(--tt-text); font-size: var(--tt-type-body); font-weight: 600; }
+.models-stage__over img { max-width: 100%; max-height: 220px; border-radius: var(--tt-radius-inset); object-fit: contain; }
+.models-stage__over svg { color: var(--tt-text-muted); }
+
+/* The page. */
+.models-page { display: flex; flex: 1; width: 100%; min-width: 0; min-height: 0; }
+.models-page__scroll { flex: 1; min-width: 0; overflow-y: auto; container: models-page / inline-size; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+/* As tall as the room, so the view takes what the header and the filmstrip leave and the details scroll beside it. */
+.models-page__inner { display: flex; flex-direction: column; height: 100%; min-height: 100%; max-width: 1480px; margin: 0 auto; padding: 4px clamp(16px, 3cqi, 32px) 20px; }
+.models-page__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; margin: 0 0 14px; padding-top: 8px; }
+.models-page__head h1 { margin: 0; font-size: var(--tt-type-title); font-weight: 500; line-height: 1.2; letter-spacing: -1px; }
+.models-page__sub { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); font-variant-numeric: tabular-nums; }
+
+.models-search { position: relative; display: block; flex: 0 1 240px; min-width: 160px; margin-left: auto; align-self: center; }
+.models-search > svg { position: absolute; top: 50%; left: 11px; color: var(--tt-text-muted); pointer-events: none; translate: 0 -50%; }
+.models-search__input {
+  width: 100%;
+  height: 32px;
+  padding: 0 32px;
+  border: 1px solid var(--tt-field-border);
+  border-radius: var(--tt-radius-control);
+  background: var(--tt-field);
+  color: var(--tt-text);
+  font: inherit;
+  font-size: var(--tt-type-small);
+}
+.models-search__input:focus { border-color: var(--tt-field-border-focus); }
+.models-search__input::placeholder { color: var(--tt-text-faint); }
+.models-search__input::-webkit-search-cancel-button { -webkit-appearance: none; }
+.models-search__clear {
+  position: absolute;
+  top: 50%;
+  right: 5px;
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--tt-radius-control);
+  background: transparent;
+  color: var(--tt-text-muted);
+  translate: 0 -50%;
+}
+.models-search__clear:hover { background: var(--tt-hover); color: var(--tt-text); }
+
+.models-page__stage {
+  display: grid;
+  flex: 1 1 0;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  min-height: 220px;
+  overflow: hidden;
+  border-radius: var(--tt-radius-card);
+  background: var(--tt-surface-elevated);
+}
+.models-page__details { display: grid; align-content: start; gap: 12px; min-width: 0; padding: 18px 18px 16px; overflow-y: auto; }
+.models-page__details h2 { margin: 0; overflow-wrap: anywhere; font-size: var(--tt-type-heading); font-weight: 600; }
+.models-page__kind { margin: -6px 0 0; color: var(--tt-text-muted); font-family: var(--tt-font-mono); font-size: var(--tt-type-caption); }
+.models-page__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.models-page__actions:empty { display: none; }
+.models-page__status { margin: 0; color: var(--tt-text-2); font-size: var(--tt-type-small); }
+.models-page__status:empty { display: none; }
+
+.models-facts { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 14px; margin: 0; font-size: var(--tt-type-small); }
+.models-facts dt { color: var(--tt-text-muted); }
+.models-facts dd { margin: 0; overflow-wrap: anywhere; }
+.models-facts__quiet { color: var(--tt-text-muted); }
+.models-facts__file { font-family: var(--tt-font-mono); font-size: var(--tt-type-caption); }
+
+.models-files__head { margin: 4px 0 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-weight: 600; }
+.models-files { margin: 0; padding: 0; overflow: hidden; border-radius: var(--tt-radius-inset); background: var(--tt-canvas); list-style: none; }
+.models-files li { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 4px 6px 4px 12px; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
+.models-files li + li { border-top: 1px solid var(--tt-hairline); }
+.models-files__name { flex: 1; min-width: 0; overflow: hidden; color: var(--tt-text); font-family: var(--tt-font-mono); font-size: var(--tt-type-caption); text-overflow: ellipsis; white-space: nowrap; }
+.models-files__size { flex: none; font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; }
+.models-icon {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--tt-radius-row);
+  background: transparent;
+  color: var(--tt-text-muted);
+}
+.models-icon:hover { background: var(--tt-hover); color: var(--tt-text); }
+
+.models-making { display: grid; gap: 8px; }
+.models-making__words { margin: 0; color: var(--tt-text-2); font-size: var(--tt-type-small); font-variant-numeric: tabular-nums; }
+.models-making .model-line__progress { margin: 0; }
+
+/* A record whose files are gone: what happened, and Remove from 3D models. */
+.models-note {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 10px;
+  padding: 12px 14px;
+  border-radius: var(--tt-radius-inset);
+  background: color-mix(in srgb, var(--tt-warning-surface) 70%, var(--tt-surface-elevated));
+  color: var(--tt-text);
+  font-size: var(--tt-type-small);
+}
+.models-note > svg { margin-top: 2px; color: var(--tt-warning); }
+.models-note p { margin: 0; overflow-wrap: anywhere; }
+.models-note__more { grid-column: 2; color: var(--tt-text-2); }
+.models-note__actions { grid-column: 2; margin-top: 6px; }
+
+/* The filmstrip: every 3D model, newest first. */
+.models-strip { display: flex; flex: none; gap: 10px; padding: 12px 3px 4px; overflow-x: auto; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+.models-tile {
+  display: grid;
+  flex: none;
+  gap: 4px;
+  width: 118px;
+  padding: 6px;
+  border-radius: var(--tt-radius-inset);
+  background: var(--tt-surface-elevated);
+  text-align: left;
+}
+.models-tile:hover { background: color-mix(in srgb, var(--tt-hover) 60%, var(--tt-surface-elevated)); }
+.models-tile[aria-selected='true'] { box-shadow: inset 0 0 0 2px var(--tt-accent); }
+.models-tile:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; }
+.models-tile__pic { position: relative; display: grid; height: 70px; place-items: center; overflow: hidden; border-radius: var(--tt-radius-row); background: var(--tt-canvas); color: var(--tt-text-muted); }
+.models-tile__pic img { width: 100%; height: 100%; object-fit: cover; }
+.models-tile__name { overflow: hidden; font-size: var(--tt-type-small); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+/* Two lines, so the step of one being made keeps its percent; every tile keeps the same height. */
+.models-tile__sub { display: -webkit-box; min-height: 2.7em; overflow: hidden; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.models-tile__gone {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--tt-canvas) 78%, transparent);
+  color: var(--tt-text);
+  font-size: var(--tt-type-caption);
+  font-weight: 600;
+}
+
+.models-page__empty { display: grid; flex: 1; place-items: center; padding: 24px; color: var(--tt-text-2); font-size: var(--tt-type-small); text-align: center; }
+.models-page__empty b { display: block; margin-bottom: 6px; color: var(--tt-text); font-size: var(--tt-type-lead); font-weight: 600; }
+.models-page__empty p { max-width: 420px; margin: 0; }
+
+/* Narrow: the view over the details, the page scrolling as a whole. */
+@container models-page (max-width: 720px) {
+  .models-page__inner { height: auto; }
+  .models-page__stage { flex: none; grid-template-columns: minmax(0, 1fr); grid-template-rows: 260px auto; }
+  .models-page__details { overflow: visible; }
+  .models-search { flex-basis: 100%; margin-left: 0; }
+}
+
+/* Tools › 3D models. */
+/* Each row as tall as what it holds: a scrolling grid would otherwise squeeze the card, which hides what overflows it. */
+.models-tool { display: grid; flex: 1; grid-auto-rows: max-content; align-content: start; gap: 12px; min-height: 0; padding: 4px 14px 14px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
+.models-tool__account { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); overflow-wrap: anywhere; }
+.models-tool__card { overflow: hidden; border-radius: var(--tt-radius-card); background: var(--tt-surface-elevated); }
+.models-tool__view { height: 220px; }
+.models-tool__about { display: grid; gap: 8px; padding: 12px 14px; }
+.models-tool__about h3 { margin: 0; overflow-wrap: anywhere; font-size: var(--tt-type-body); font-weight: 600; }
+.models-tool__chips li { display: contents; }
+.models-tool__chip { background: transparent; font: inherit; font-size: var(--tt-type-caption); }
+.models-tool__chip:hover { background: var(--tt-hover); color: var(--tt-text); }
+.models-tool__list-head { display: flex; margin: 4px 0 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-weight: 600; }
+.models-tool__count { margin-left: auto; font-variant-numeric: tabular-nums; }
+.models-tool__rows { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.models-tool__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 6px;
+  border: 0;
+  border-radius: var(--tt-radius-inset);
+  background: transparent;
+  color: var(--tt-text);
+  font: inherit;
+  text-align: left;
+}
+.models-tool__row:hover { background: var(--tt-hover); }
+.models-tool__row[aria-current='true'] { background: var(--tt-sidebar-row-active); }
+.models-tool__pic { display: grid; flex: none; place-items: center; width: 40px; height: 40px; overflow: hidden; border-radius: var(--tt-radius-row); background: var(--tt-surface-elevated); color: var(--tt-text-muted); }
+.models-tool__pic img { width: 100%; height: 100%; object-fit: cover; }
+.models-tool__text { display: grid; flex: 1; min-width: 0; }
+.models-tool__text b { overflow: hidden; font-size: var(--tt-type-body); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.models-tool__text span { overflow: hidden; color: var(--tt-text-muted); font-size: var(--tt-type-small); font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
+.models-tool__credits { flex: none; color: var(--tt-text-muted); font-size: var(--tt-type-small); font-variant-numeric: tabular-nums; }

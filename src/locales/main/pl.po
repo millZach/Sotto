@@ -1224,6 +1224,10 @@ msgstr ""
 msgid "Only the latest completed checkpoint with unchanged native history can be reverted."
 msgstr ""
 
+#: src/main/plugins/ipc.ts
+msgid "Open 3D models in the main Sotto window."
+msgstr ""
+
 #: src/main/agents/subagentIpc.ts
 msgid "Open Agents in the main Sotto window."
 msgstr ""

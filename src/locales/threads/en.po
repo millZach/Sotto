@@ -331,7 +331,7 @@ msgstr "{creationError} Your prompt and screenshots are kept. Open New thread in
 msgid "{credits, plural, one {# credit counted} other {# credits counted}}"
 msgstr "{credits, plural, one {# credit counted} other {# credits counted}}"
 
-#: src/renderer/src/agents/ModelLine.tsx
+#: src/renderer/src/agents/modelParts.tsx
 msgid "{credits, plural, one {# credit} other {# credits}}"
 msgstr "{credits, plural, one {# credit} other {# credits}}"
 
@@ -548,7 +548,7 @@ msgstr "{items, plural, one {Delete this {itemCount} ignored item with the folde
 msgid "{items, plural, one {Delete this {itemCount} ignored item with the folder} other {Delete these {itemCount} ignored items with the folder}}"
 msgstr "{items, plural, one {Delete this {itemCount} ignored item with the folder} other {Delete these {itemCount} ignored items with the folder}}"
 
-#: src/renderer/src/agents/ModelLine.tsx
+#: src/renderer/src/agents/modelParts.tsx
 msgid "{kilobytes} KB"
 msgstr "{kilobytes} KB"
 
@@ -973,12 +973,12 @@ msgid "{parentTitle} works on {target} in the project folder on {machine} and se
 msgstr "{parentTitle} works on {target} in the project folder on {machine} and sees them now."
 
 #. {percent} is Meshy's percent for the step it is on.
-#: src/renderer/src/agents/ModelLine.tsx
+#: src/renderer/src/agents/modelParts.tsx
 msgid "{percent}%"
 msgstr "{percent}%"
 
 #. {percent} is Meshy's percent; {left} says about how long is left, such as "about 40 seconds left".
-#: src/renderer/src/agents/ModelLine.tsx
+#: src/renderer/src/agents/modelParts.tsx
 msgid "{percent}%, {left}"
 msgstr "{percent}%, {left}"
 
@@ -1226,7 +1226,7 @@ msgstr "{setLevel} is set. Choose a level this model offers."
 msgid "{settledThreads, plural, one {Settled {threads} thread} other {Settled {threads} threads}}"
 msgstr "{settledThreads, plural, one {Settled {threads} thread} other {Settled {threads} threads}}"
 
-#: src/renderer/src/agents/ModelLine.tsx
+#: src/renderer/src/agents/modelParts.tsx
 msgid "{shown} MB"
 msgstr "{shown} MB"
 
@@ -1274,6 +1274,11 @@ msgstr "{sourceName}, already signed in"
 #: src/renderer/src/agents/FilePicker.tsx
 msgid "{spaced, plural, one {# entry has a space in its name and cannot be mentioned} other {# entries have spaces in their names and cannot be mentioned}}"
 msgstr "{spaced, plural, one {# entry has a space in its name and cannot be mentioned} other {# entries have spaces in their names and cannot be mentioned}}"
+
+#. {step} is the step Meshy is on; {percent} is its percent for that step.
+#: src/renderer/src/agents/modelParts.tsx
+msgid "{step} · {percent}%"
+msgstr "{step} · {percent}%"
 
 #. The settled browser line: how many steps, and how many failed, were stopped or ended unknown. {steps} is such as 9 steps.
 #: src/renderer/src/agents/browserLine.ts
@@ -1612,6 +1617,11 @@ msgstr "3D model"
 msgid "3D model: {shown}"
 msgstr "3D model: {shown}"
 
+#. The 3D models page: every 3D model Meshy made for a thread.
+#: src/renderer/src/agents/SidebarFrame.tsx
+msgid "3D models"
+msgstr "3D models"
+
 #: src/renderer/src/agents/mainCheckoutLine.logic.ts
 msgid "a cherry-pick is in progress"
 msgstr "a cherry-pick is in progress"
@@ -1707,17 +1717,17 @@ msgstr "about"
 
 #. A number of minutes, at least 2.
 #. placeholder {0}: Math.round(secondsLeft / 60)
-#: src/renderer/src/agents/ModelLine.tsx
+#: src/renderer/src/agents/modelParts.tsx
 msgid "about {0} minutes left"
 msgstr "about {0} minutes left"
 
 #. A number of seconds, at least 5.
 #. placeholder {0}: Math.max(5, Math.round(secondsLeft / 5) * 5)
-#: src/renderer/src/agents/ModelLine.tsx
+#: src/renderer/src/agents/modelParts.tsx
 msgid "about {0} seconds left"
 msgstr "about {0} seconds left"
 
-#: src/renderer/src/agents/ModelLine.tsx
+#: src/renderer/src/agents/modelParts.tsx
 msgid "about a minute left"
 msgstr "about a minute left"
 
@@ -5341,7 +5351,7 @@ msgstr "Make the text smaller (-)"
 msgid "Makers"
 msgstr "Makers"
 
-#: src/renderer/src/agents/ModelLine.tsx
+#: src/renderer/src/agents/modelParts.tsx
 msgid "Making the 3D model"
 msgstr "Making the 3D model"
 
@@ -7675,7 +7685,7 @@ msgstr "Saved draft"
 msgid "Saved. Its chosen models are in the model menu."
 msgstr "Saved. Its chosen models are in the model menu."
 
-#: src/renderer/src/agents/ModelLine.tsx
+#: src/renderer/src/agents/modelParts.tsx
 msgid "Saving the files"
 msgstr "Saving the files"
 
@@ -8819,11 +8829,11 @@ msgstr "Step {number} of {count}"
 msgid "Step {step} of 4"
 msgstr "Step {step} of 4"
 
-#: src/renderer/src/agents/ModelLine.tsx
+#: src/renderer/src/agents/modelParts.tsx
 msgid "Step 1 of 2: making the shape"
 msgstr "Step 1 of 2: making the shape"
 
-#: src/renderer/src/agents/ModelLine.tsx
+#: src/renderer/src/agents/modelParts.tsx
 msgid "Step 2 of 2: painting the texture"
 msgstr "Step 2 of 2: painting the texture"
 

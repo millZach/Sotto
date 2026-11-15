@@ -35,6 +35,10 @@ const noAccounts = {
   model3d: async () => null,
   model3dBytes: async () => null,
   onModel3dChanged: () => () => undefined,
+  onModels3dRemoved: () => () => undefined,
+  models3d: async () => [],
+  removeModel3d: async () => 'no-record' as const,
+  revealModel3d: async () => false,
   projects: async (): Promise<PluginProject[]> => [],
   ...noCopies,
 }
