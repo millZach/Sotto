@@ -7,7 +7,7 @@ import { wordPluginChangeInEnglish } from '../main/plugins/changeWordsPlain'
 import { readGitHubSignIn, sharedGitHubSignIn } from '../main/plugins/github/signIn'
 import type { MailConnect } from '../main/plugins/mail/read'
 import { MailGrants, mailThreadOpen } from '../main/plugins/mailGrants'
-import { everyMonthStart, HeardSpending, monthOf } from '../main/plugins/meshy/spending'
+import { everyMonthStart, HeardSpending, monthOf, ReportRevisions } from '../main/plugins/meshy/spending'
 import { PluginChangeRequests } from '../main/plugins/pendingChanges'
 import { PluginToolServer } from '../main/plugins/pluginTools'
 import { pluginToolHandlers, type PluginToolAccounts } from '../main/plugins/toolHandlers'
@@ -175,13 +175,18 @@ export function hostPlugins(options: {
     changed: () => { countChanged() },
   })
   const stopMonths = everyMonthStart(() => { counted = new Map(); spendingChanged() }, now)
-  /** This host's own credits this month for each Meshy copy one desktop sent. */
+  const revisions = new ReportRevisions()
+  /**
+   * This host's own credits this month for each Meshy copy one desktop sent. Numbered as soon as they are counted, and
+   * counts are read one after another, so a report with a higher number never says less than was spent before it.
+   */
   const ownFor = async (clientId: string): Promise<SpendingReport[]> => {
     const senders = await copies.senders()
     const credits = await models.monthCredits(now())
+    const revision = revisions.next()
     const month = monthOf(now())
     return (await accounts.list()).filter(account => account.plugin === 'meshy' && senders[account.id] === clientId)
-      .map(account => ({ accountId: account.id, month, credits: credits.get(account.id) ?? 0 }))
+      .map(account => ({ accountId: account.id, month, credits: credits.get(account.id) ?? 0, session: revisions.session, revision }))
   }
   const spending: PluginSpendingShare = {
     // A desktop speaks only for the copies it sent: what it says of any other account is not kept.

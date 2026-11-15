@@ -96,6 +96,11 @@ export const PLUGIN_MESHY_SPENDING_FEATURE = 'plugin-meshy-spending'
 export const SPENDING_CREDITS_MAX = 100_000_000
 export const spendingReportSchema = z.object({
   accountId: z.uuid(), month: z.string().regex(/^\d{4}-(?:0[1-9]|1[0-2])$/u), credits: z.number().int().min(0).max(SPENDING_CREDITS_MAX),
+  /**
+   * The sender's run, and the report's number in it. A reader keeps the newest of each sender's run and lets an older
+   * one go, which a push and an answer read together can otherwise put back over it; a newer run supersedes.
+   */
+  session: z.uuid(), revision: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
 }).strict()
 export type SpendingReport = z.infer<typeof spendingReportSchema>
 export const spendingReportsSchema = z.array(spendingReportSchema).max(PLUGIN_ACCOUNTS_MAX)

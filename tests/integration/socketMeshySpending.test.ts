@@ -20,16 +20,18 @@ import { useSocketHostFixture } from '../fixtures/socketHostFixture'
 const fixture = useSocketHostFixture()
 const STUDIO: PluginAccount = { id: '44444444-4444-4444-8444-000000000001', plugin: 'meshy', name: 'Studio', savedAt: '2026-11-15T08:00:00.000Z', signedInAs: null, on: true, projects: null, spending: { askBefore: true, monthlyLimit: 1_000 } }
 const MONTH = monthOf(new Date())
+const SESSION = '66666666-6666-4666-8666-000000000001'
+const report = (credits: number, revision = 1): SpendingReport => ({ accountId: STUDIO.id, month: MONTH, credits, session: SESSION, revision })
 
 /** The fixture host's service, sharing spending as \`share\` says, or keeping no copies at all. */
-function spendingHost(share: { told: { reports: readonly SpendingReport[]; clientId: string }[]; own: number }, listeners: Set<() => void>, keeps = true): HostService {
+function spendingHost(share: { told: { reports: readonly SpendingReport[]; clientId: string }[]; own: number; reading?: Promise<void> }, listeners: Set<() => void>, keeps = true): HostService {
   const base = fixture.host.service
   return {
     shell: () => base.shell(), state: () => base.state(), threadDetail: id => base.threadDetail(id), events: () => [],
     command: (command, identity) => base.command(command, identity), subscribe: listener => base.subscribe(listener),
     supportsPluginAccountCopies: keeps, supportsPluginMeshySpending: keeps,
-    sharePluginMeshySpending: async (reports, client) => { share.told.push({ reports, clientId: client!.clientId }); return [{ accountId: STUDIO.id, month: MONTH, credits: share.own }] },
-    pluginMeshySpending: async () => [{ accountId: STUDIO.id, month: MONTH, credits: share.own }],
+    sharePluginMeshySpending: async (reports, client) => { share.told.push({ reports, clientId: client!.clientId }); return [report(share.own)] },
+    pluginMeshySpending: async () => { await share.reading; return [report(share.own, 2)] },
     subscribePluginMeshySpending: listener => { listeners.add(listener); return () => { listeners.delete(listener) } },
   }
 }
@@ -52,13 +54,13 @@ describe('shared spending over a host’s listener', () => {
       expect(hello.result.features).toContain('plugin-meshy-spending')
       // A desktop from before shared spending accepts nothing of it.
       await older.call('hello', { op: 'hello', accepts: [] })
-      const answer = await desktop.call('request', { op: 'plugin-meshy-spending', reports: [{ accountId: STUDIO.id, month: MONTH, credits: 30 }] }) as { result: unknown }
-      expect(answer.result).toEqual([{ accountId: STUDIO.id, month: MONTH, credits: 0 }])
-      expect(share.told).toEqual([{ reports: [{ accountId: STUDIO.id, month: MONTH, credits: 30 }], clientId: paired.clientId }])
+      const answer = await desktop.call('request', { op: 'plugin-meshy-spending', reports: [report(30)] }) as { result: unknown }
+      expect(answer.result).toEqual([report(0)])
+      expect(share.told).toEqual([{ reports: [report(30)], clientId: paired.clientId }])
       share.own = 60
       for (const listener of listeners) listener()
       await expect.poll(() => pushes(desktop.messages).length).toBe(1)
-      expect(pushes(desktop.messages)[0]).toEqual([{ accountId: STUDIO.id, month: MONTH, credits: 60 }])
+      expect(pushes(desktop.messages)[0]).toEqual([report(60, 2)])
       await older.call('shell', { op: 'shell' })
       expect(pushes(older.messages)).toEqual([])
     } finally { desktop.frames.close(); older.frames.close(); await server.close() }

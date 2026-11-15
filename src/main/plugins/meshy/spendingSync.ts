@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import type { SpendingReport } from '../../../shared/pluginAccountCopies'
 import type { PluginAccount } from '../../../shared/plugins'
-import { everyMonthStart, HeardSpending, monthOf } from './spending'
+import { everyMonthStart, HeardSpending, monthOf, ReportRevisions } from './spending'
 
 /** A connected host as shared spending reaches it: its identity, and the two calls where it lists `plugin-meshy-spending`. */
 export interface SpendingTarget {
@@ -26,6 +26,9 @@ export interface SpendingTarget {
  */
 export class MeshySpendingSync {
   private readonly heard: HeardSpending
+  private readonly revisions = new ReportRevisions()
+  /** What hosts said that is being written down now. */
+  private readonly hearing = new Set<Promise<void>>()
   /** The connection each host is followed on, and the way to stop following it. */
   private readonly following = new Map<string, { readonly service: SpendingTarget['service']; readonly stop: () => void }>()
   private readonly telling = new Map<string, Promise<void>>()
@@ -56,7 +59,7 @@ export class MeshySpendingSync {
     const followed = this.following.get(target.hostId)
     if (followed?.service !== target.service) {
       followed?.stop()
-      const stop = target.service.subscribePluginMeshySpending?.(reports => { if (reports) void this.hear(target.hostId, reports) }) ?? (() => undefined)
+      const stop = target.service.subscribePluginMeshySpending?.(reports => { if (reports) this.track(this.hear(target.hostId, reports)) }) ?? (() => undefined)
       this.following.set(target.hostId, { service: target.service, stop })
     }
     this.tell(target)
@@ -100,10 +103,15 @@ export class MeshySpendingSync {
 
   /** Settles once every telling started so far has ended; for tests. */
   async idle(): Promise<void> {
-    while (this.telling.size > 0 || this.looking) await Promise.allSettled([...this.telling.values(), this.looking])
+    while (this.telling.size > 0 || this.looking || this.hearing.size > 0) await Promise.allSettled([...this.telling.values(), this.looking, ...this.hearing])
   }
 
   private now(): Date { return this.options.now?.() ?? new Date() }
+
+  private track(heard: Promise<void>): void {
+    this.hearing.add(heard)
+    void heard.finally(() => { this.hearing.delete(heard) })
+  }
 
   /** One telling at a time for a host; a change while one runs is told again straight after it. */
   private tell(target: SpendingTarget): void {
@@ -122,12 +130,19 @@ export class MeshySpendingSync {
     const own = await this.options.own()
     const month = monthOf(this.now())
     const reports: SpendingReport[] = []
-    for (const account of accounts) reports.push({ accountId: account.id, month, credits: (own.get(account.id) ?? 0) + await this.heard.total(account.id, target.hostId) })
+    for (const account of accounts) reports.push({ accountId: account.id, month, credits: (own.get(account.id) ?? 0) + await this.heard.total(account.id, target.hostId), session: this.revisions.session, revision: 0 })
+    // Numbered once counted, so each host can tell this desktop's newer report from an older one.
+    const revision = this.revisions.next()
+    for (const report of reports) report.revision = revision
     const answer = await target.service.sharePluginMeshySpending!(reports)
     await this.hear(target.hostId, answer)
   }
 
-  /** What a host said its own threads spent: kept, and when it changed, every other host is told and Settings looks again. */
+  /**
+   * What a host said its own threads spent: kept, and when it changed, every other host is told and Settings looks
+   * again. A report older than the one held from the same run of that host is let go, so an answer that lands after a
+   * newer push cannot put back a lower count (Sol's review).
+   */
   private async hear(hostId: string, reports: readonly SpendingReport[]): Promise<void> {
     if (this.closed) return
     const held = new Set((await this.options.accounts().catch(() => [])).filter(account => account.plugin === 'meshy').map(account => account.id))

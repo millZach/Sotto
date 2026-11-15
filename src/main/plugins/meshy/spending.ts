@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { z } from 'zod'
@@ -41,11 +42,23 @@ export function everyMonthStart(turned: () => void, now: () => Date = () => new 
   return () => { stopped = true; if (timer) clearTimeout(timer) }
 }
 
+/**
+ * Numbers each report this computer makes in one run, so a reader can tell a newer report from an older one that
+ * arrived after it: a push and an answer read from the socket together reach the reader in either order. A new run
+ * starts a new session, which supersedes the one before it, since nothing of an earlier run can still be on its way.
+ */
+export class ReportRevisions {
+  readonly session = randomUUID()
+  private last = 0
+  next(): number { return ++this.last }
+}
+
 const heardSchema = z.object({
   version: z.literal(1),
   /** By who said it: a desktop's client ID on a host, a host's identity on the desktop. Then by the account's ID. */
   heard: z.record(z.string().min(1).max(512), z.record(z.uuid(), z.object({
     month: z.string().regex(/^\d{4}-\d{2}$/u), credits: z.number().int().min(0).max(SPENDING_CREDITS_MAX), heardAt: z.iso.datetime(),
+    session: z.uuid().optional(), revision: z.number().int().nonnegative().optional(),
   }).strict())),
 }).strict()
 type Heard = z.infer<typeof heardSchema>
@@ -66,8 +79,9 @@ export class HeardSpending {
   constructor(private readonly path: string, private readonly now: () => Date = () => new Date()) {}
 
   /**
-   * Keeps what one computer said of some accounts; an account it did not name keeps what it said before. Answers
-   * whether anything it said changed. A file that cannot be read starts again from what is said now.
+   * Keeps what one computer said of some accounts; an account it did not name keeps what it said before, and a report
+   * older than the one held from the same run is let go. Answers whether anything it said changed. A file that
+   * cannot be read starts again from what is said now.
    */
   hear(from: string, reports: readonly SpendingReport[]): Promise<boolean> {
     return this.inTurn(async () => {
@@ -77,8 +91,9 @@ export class HeardSpending {
       let changed = false
       for (const report of reports) {
         const before = mine[report.accountId]
+        if (before?.session === report.session && before.revision !== undefined && before.revision >= report.revision) continue
         if (before?.month !== report.month || before.credits !== report.credits) changed = true
-        mine[report.accountId] = { month: report.month, credits: report.credits, heardAt: this.now().toISOString() }
+        mine[report.accountId] = { month: report.month, credits: report.credits, heardAt: this.now().toISOString(), session: report.session, revision: report.revision }
       }
       // Earlier months than this computer's count for nothing again, so they are not kept.
       const next: Heard = { version: 1, heard: {} }

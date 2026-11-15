@@ -33,6 +33,11 @@ const LAPTOP = 'desktop-laptop', TOWER = 'desktop-tower'
 const THREAD = 'a-host-thread'
 const STUDIO: PluginAccount = { id: '44444444-4444-4444-8444-000000000001', plugin: 'meshy', name: 'Studio', savedAt: '2026-11-15T08:00:00.000Z', signedInAs: null, on: true, projects: null, spending: { askBefore: true, monthlyLimit: 1_000 } }
 const BARREL = { name: 'Oak barrel', words: 'An oak barrel with iron hoops' }
+/** The desktops' runs, as each one's reports name it. */
+const SESSIONS: Record<string, string> = { [LAPTOP]: '55555555-5555-4555-8555-000000000001', [TOWER]: '55555555-5555-4555-8555-000000000002' }
+let revision = 0
+/** What a desktop says an account spent elsewhere this month, as the next report of its run. */
+const said = (accountId: string, credits: number, clientId = LAPTOP, month = monthOf(new Date())) => ({ accountId, month, credits, session: SESSIONS[clientId]!, revision: ++revision })
 
 function credentials(): PluginCredentials {
   const slots = new Map<string, string>()
@@ -61,13 +66,18 @@ async function host(options: { answer?: boolean } = {}) {
     const result = await plugins.tools.call(THREAD, MAKE_3D_MODEL_TOOL, args)
     return { text: result.content.map(part => part.type === 'text' ? part.text : '').join('\n'), failed: result.isError === true }
   }
-  return { plugins, cards, make }
+  /** A desktop sends its copy, and then what the account spent elsewhere, as it does on every reconcile. */
+  const keep = async (account: PluginAccount, clientId = LAPTOP, credits = 0) => {
+    await plugins.copies.keep({ account, secret: FAKE_MESHY_KEY }, clientId)
+    await plugins.spending.share([said(account.id, credits, clientId)], clientId)
+  }
+  return { plugins, cards, make, keep, directory }
 }
 
 describe('a 3D model made on a paired host', () => {
   it('asks on the card while Ask before each is on, makes it into the host thread’s folder with the copy’s key, and asks no more once it is off', async () => {
     const h = await host()
-    await h.plugins.copies.keep({ account: STUDIO, secret: FAKE_MESHY_KEY }, LAPTOP)
+    await h.keep(STUDIO)
     const asked = await h.make()
     expect(asked.failed).toBe(false)
     expect(asked.text).toContain('The user allowed it.')
@@ -86,7 +96,7 @@ describe('a 3D model made on a paired host', () => {
 
   it('makes nothing when the user says no on the card', async () => {
     const h = await host({ answer: false })
-    await h.plugins.copies.keep({ account: STUDIO, secret: FAKE_MESHY_KEY }, LAPTOP)
+    await h.keep(STUDIO)
     expect(await h.make()).toMatchObject({ failed: true })
     expect(meshy.created()).toEqual([])
     await h.plugins.close()
@@ -95,7 +105,7 @@ describe('a 3D model made on a paired host', () => {
   it('refuses one that would pass the one monthly limit, counting what the desktop last said it spent', async () => {
     const h = await host()
     await h.plugins.copies.keep({ account: { ...STUDIO, spending: { askBefore: true, monthlyLimit: 100 } }, secret: FAKE_MESHY_KEY }, LAPTOP)
-    await h.plugins.spending.share([{ accountId: STUDIO.id, month: monthOf(new Date()), credits: 100 - MODEL_COST.words + 1 }], LAPTOP)
+    await h.plugins.spending.share([said(STUDIO.id, 100 - MODEL_COST.words + 1)], LAPTOP)
     const refused = await h.make()
     expect(refused.failed).toBe(true)
     expect(refused.text).toContain(`${100 - MODEL_COST.words + 1} of the account's monthly limit of 100 credits are used this month`)
@@ -108,7 +118,7 @@ describe('a 3D model made on a paired host', () => {
     const h = await host()
     await h.plugins.copies.keep({ account: { ...STUDIO, spending: { askBefore: false, monthlyLimit: 40 + 2 * MODEL_COST.words } }, secret: FAKE_MESHY_KEY }, LAPTOP)
     // The desktop last said 40 were spent elsewhere; then it went away.
-    await h.plugins.spending.share([{ accountId: STUDIO.id, month: monthOf(new Date()), credits: 40 }], LAPTOP)
+    await h.plugins.spending.share([said(STUDIO.id, 40)], LAPTOP)
     expect(await h.make({ ...BARREL, name: 'One' })).toMatchObject({ failed: false })
     expect(await h.make({ ...BARREL, name: 'Two' })).toMatchObject({ failed: false })
     const third = await h.make({ ...BARREL, name: 'Three' })
@@ -120,7 +130,7 @@ describe('a 3D model made on a paired host', () => {
 
   it('sends a photo with its location and camera taken out of the file, and its pixels as they were', async () => {
     const h = await host()
-    await h.plugins.copies.keep({ account: STUDIO, secret: FAKE_MESHY_KEY }, LAPTOP)
+    await h.keep(STUDIO)
     const segment = (marker: number, body: Buffer): Buffer => Buffer.concat([Buffer.from([0xff, marker, (body.byteLength + 2) >> 8, (body.byteLength + 2) & 0xff]), body])
     const picture = [segment(0xc0, Buffer.from([0x08, 0x00, 0x10, 0x00, 0x10, 0x01, 1, 0x11, 0])), segment(0xda, Buffer.from([1, 1, 0, 0, 0x3f, 0])), Buffer.from([0x12, 0x34, 0xff, 0x00])]
     const exif = segment(0xe1, Buffer.from('Exif\0\0GPS 51.5007 N 0.1246 W', 'latin1'))
@@ -138,18 +148,18 @@ describe('shared spending on a paired host (ADR-0205)', () => {
     const h = await host()
     const other: PluginAccount = { ...STUDIO, id: '44444444-4444-4444-8444-000000000002', name: 'Tower studio', spending: { askBefore: false, monthlyLimit: 1_000 } }
     await h.plugins.copies.keep({ account: { ...STUDIO, spending: { askBefore: false, monthlyLimit: 1_000 } }, secret: FAKE_MESHY_KEY }, LAPTOP)
-    await h.plugins.copies.keep({ account: other, secret: FAKE_MESHY_KEY }, TOWER)
+    await h.keep(other, TOWER)
     let told = 0
     h.plugins.spending.subscribe(() => { told += 1 })
     const month = monthOf(new Date())
-    await expect(h.plugins.spending.share([], LAPTOP)).resolves.toEqual([{ accountId: STUDIO.id, month, credits: 0 }])
+    await expect(h.plugins.spending.share([said(STUDIO.id, 0)], LAPTOP)).resolves.toEqual([{ accountId: STUDIO.id, month, credits: 0, session: expect.any(String), revision: expect.any(Number) }])
     expect(await h.make({ account: 'Studio', ...BARREL })).toMatchObject({ failed: false })
-    await expect(h.plugins.spending.own(LAPTOP)).resolves.toEqual([{ accountId: STUDIO.id, month, credits: MODEL_COST.words }])
-    await expect(h.plugins.spending.own(TOWER)).resolves.toEqual([{ accountId: other.id, month, credits: 0 }])
+    await expect(h.plugins.spending.own(LAPTOP)).resolves.toMatchObject([{ accountId: STUDIO.id, month, credits: MODEL_COST.words }])
+    await expect(h.plugins.spending.own(TOWER)).resolves.toMatchObject([{ accountId: other.id, month, credits: 0 }])
     // Its own count moved, so its desktops are told.
     await expect.poll(() => told).toBeGreaterThan(0)
     // The laptop speaks for the tower's copy: nothing of it is kept, so the tower's account is not held back.
-    await h.plugins.spending.share([{ accountId: other.id, month, credits: 1_000 }], LAPTOP)
+    await h.plugins.spending.share([said(other.id, 1_000)], LAPTOP)
     expect(await h.make({ account: 'Tower studio', ...BARREL })).toMatchObject({ failed: false })
     await h.plugins.close()
   })
