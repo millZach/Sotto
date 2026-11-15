@@ -99,3 +99,6 @@ export const PLUGINS_MODELS_3D = 'sotto:plugins:models-3d'
 export const PLUGINS_MODEL_3D_REMOVE = 'sotto:plugins:model-3d-remove'
 /** Shows one of a 3D model's files in the folder app. */
 export const PLUGINS_MODEL_3D_REVEAL = 'sotto:plugins:model-3d-reveal'
+/** Main to the window: the IDs of 3D models whose records went with their forgotten thread. */
+export const PLUGINS_MODELS_3D_FORGOTTEN = 'sotto:plugins:models-3d-forgotten'
+export const model3dForgottenSchema = z.array(z.string().min(1).max(100)).min(1).max(2_000)

@@ -91,7 +91,7 @@ import { modelBytes, modelView, modelViewOf } from './tools/meshy/view'
 import { listModels, removeGoneModel, revealModelFile, type ModelListSource } from './tools/meshy/page'
 import { checkPhoto, photoToSend, type RedrawPhoto } from './tools/meshy/photo'
 import { isMailPlugin, PLUGIN_USE_THREAD_TITLE_MAX, PLUGINS_COPIES_CHANGED, PLUGINS_MAIL_GRANTS_CHANGED } from '../shared/plugins'
-import { MODEL_VISUAL_KIND, PLUGINS_MODEL_3D_CHANGED } from '../shared/models3d'
+import { MODEL_VISUAL_KIND, PLUGINS_MODEL_3D_CHANGED, PLUGINS_MODELS_3D_FORGOTTEN } from '../shared/models3d'
 import { resetGhLookup } from './agents/git/ghCommand'
 import { GitUnavailableError, runGitStatusCommand, runWithGhStandIn, type RunGitCommand } from './agents/git/gitStatus'
 import { registerTeamsIpc } from './teams/ipc'
@@ -1677,7 +1677,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     // A forgotten thread takes its entries in the plugin use record with it (ADR-0205).
     void pluginUse?.forgetThreads(threadIds).catch(() => undefined)
     // And its 3D models' records; their files stay in its folder (ADR-0141).
-    void modelRecords?.forgetThreads(threadIds).catch(() => undefined)
+    // The window lets the 3D models it lists go once their records have (the Meshy plan's ticket 5).
+    void modelRecords?.forgetThreads(threadIds).then(ids => { if (ids.length > 0) windows.sendToMain(PLUGINS_MODELS_3D_FORGOTTEN, ids) }, () => undefined)
     // And any change of theirs still waiting on the user stops: nothing is done for a thread that is gone.
     pluginChanges?.forgetThreads(threadIds)
     // And its mail grants go with it.

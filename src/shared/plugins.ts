@@ -104,6 +104,8 @@ export interface PluginsBridge {
   removeModel3d(id: string): Promise<boolean>
   /** Shows one of a 3D model's files in the folder app, by its name; its GLB when none is named. */
   revealModel3d(request: Model3dRevealRequest): Promise<boolean>
+  /** Told the IDs of 3D models whose records went with their forgotten thread. Returns the way to stop. */
+  onModels3dForgotten(listener: (ids: readonly string[]) => void): () => void
   /** This computer's projects, for choosing which ones an account is kept to. */
   projects(): Promise<PluginProject[]>
   /** The user's other computers and where each account's copy stands on each. */

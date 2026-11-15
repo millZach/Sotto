@@ -55,6 +55,14 @@ describe('the 3D models page, from main', () => {
     expect(await listModels(sourceOf(records), 'thread-none')).toEqual([])
   })
 
+  it('tells which 3D models went with a forgotten thread, so the window can let them go', async () => {
+    const records = new ModelRecords(data, { historyEnabled: () => true })
+    for (const each of [record('barrel'), record('helmet', { threadId: 'thread-2' }), record('lantern', { state: 'making', stage: 'shape', files: [] })]) await records.add(each)
+    expect([...await records.forgetThreads(['thread-1'])].sort()).toEqual(['barrel', 'lantern'])
+    expect(await records.forgetThreads(['thread-1'])).toEqual([])
+    expect((await listModels(sourceOf(records))).map(model => model.id)).toEqual(['helmet'])
+  })
+
   it('lists no words once Keep local history is off', async () => {
     let history = true
     const records = new ModelRecords(data, { historyEnabled: () => history })

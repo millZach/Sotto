@@ -13,8 +13,8 @@ import {
   PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNT_TRUST, PLUGINS_ACCOUNT_UPDATE, PLUGINS_ACCOUNTS, PLUGINS_BRIDGE_STATUS, bridgeStatusSchema, PLUGINS_MESHY_CREDITS, meshyCreditsSchema, PLUGINS_GITHUB_SIGN_IN, PLUGINS_PROJECTS, PLUGINS_RECENT_USE, shownPluginUsesSchema, type PluginsBridge,
 } from '../shared/plugins'
 import {
-  model3dBytesRequestSchema, model3dBytesSchema, model3dDoneSchema, model3dListRequestSchema, model3dListSchema, model3dRequestSchema, model3dRevealRequestSchema, model3dViewOrNullSchema, model3dViewSchema,
-  PLUGINS_MODEL_3D, PLUGINS_MODEL_3D_BYTES, PLUGINS_MODEL_3D_CHANGED, PLUGINS_MODEL_3D_REMOVE, PLUGINS_MODEL_3D_REVEAL, PLUGINS_MODELS_3D,
+  model3dBytesRequestSchema, model3dBytesSchema, model3dDoneSchema, model3dForgottenSchema, model3dListRequestSchema, model3dListSchema, model3dRequestSchema, model3dRevealRequestSchema, model3dViewOrNullSchema, model3dViewSchema,
+  PLUGINS_MODEL_3D, PLUGINS_MODEL_3D_BYTES, PLUGINS_MODEL_3D_CHANGED, PLUGINS_MODEL_3D_REMOVE, PLUGINS_MODEL_3D_REVEAL, PLUGINS_MODELS_3D, PLUGINS_MODELS_3D_FORGOTTEN,
 } from '../shared/models3d'
 import { TEAMS_CHANGED, TEAMS_COMMAND, TEAMS_GET, TEAMS_OWN_DESK, teamsCommandSchema, type TeamDesk, type TeamsBridge, type TeamsCommandResult, type TeamsState } from '../shared/teams'
 import { mapHostReferences, parseHostEntityKey } from '../shared/clientIdentity'
@@ -697,6 +697,7 @@ export function createSottoBridge(
       models3d: async threadId => invokeParsed(renderer, PLUGINS_MODELS_3D, model3dListSchema, model3dListRequestSchema.parse(threadId === undefined ? {} : { threadId })),
       removeModel3d: async id => invokeParsed(renderer, PLUGINS_MODEL_3D_REMOVE, model3dDoneSchema, model3dRequestSchema.parse({ id })),
       revealModel3d: async request => invokeParsed(renderer, PLUGINS_MODEL_3D_REVEAL, model3dDoneSchema, model3dRevealRequestSchema.parse(request)),
+      onModels3dForgotten: listener => subscribe(renderer, PLUGINS_MODELS_3D_FORGOTTEN, model3dForgottenSchema, listener),
       projects: async () => invokeParsed(renderer, PLUGINS_PROJECTS, pluginProjectsSchema),
       copies: async () => invokeParsed(renderer, PLUGINS_COPIES, pluginCopiesViewSchema),
       setCopy: async request => invokeParsed(renderer, PLUGINS_COPY_SET, pluginCopiesViewSchema, pluginCopySetSchema.parse(request)),

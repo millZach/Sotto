@@ -35,6 +35,7 @@ const noAccounts = {
   model3d: async () => null,
   model3dBytes: async () => null,
   onModel3dChanged: () => () => undefined,
+  onModels3dForgotten: () => () => undefined,
   models3d: async () => [],
   removeModel3d: async () => false,
   revealModel3d: async () => false,

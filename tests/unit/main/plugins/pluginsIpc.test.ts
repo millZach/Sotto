@@ -8,7 +8,7 @@ import {
   PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_TRUST, PLUGINS_BRIDGE_STATUS, PLUGINS_MESHY_CREDITS, type MeshyCredits, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNT_UPDATE, PLUGINS_ACCOUNTS, PLUGINS_COPIES, PLUGINS_COPIES_CHANGED, PLUGINS_GITHUB_SIGN_IN_ELSEWHERE, type PluginHostSignIn, PLUGINS_COPY_NEW_SET, PLUGINS_COPY_SET, PLUGINS_GITHUB_SIGN_IN, PLUGINS_PROJECTS, PLUGINS_RECENT_USE,
   type BridgeStatus, type GitHubSignIn, type PluginAccount, type PluginAccountResult, type PluginCopiesView, type ShownPluginUse,
 } from '../../../../src/shared/plugins'
-import { PLUGINS_MODEL_3D, PLUGINS_MODEL_3D_BYTES, PLUGINS_MODEL_3D_REMOVE, PLUGINS_MODEL_3D_REVEAL, PLUGINS_MODELS_3D, type Model3dBytesRequest, type Model3dListed, type Model3dRevealRequest, type Model3dView } from '../../../../src/shared/models3d'
+import { PLUGINS_MODEL_3D, PLUGINS_MODEL_3D_BYTES, PLUGINS_MODEL_3D_REMOVE, PLUGINS_MODEL_3D_REVEAL, PLUGINS_MODELS_3D, PLUGINS_MODELS_3D_FORGOTTEN, type Model3dBytesRequest, type Model3dListed, type Model3dRevealRequest, type Model3dView } from '../../../../src/shared/models3d'
 import { ipcRegistry } from '../../../fixtures/ipcHarness'
 import { preloadElectron } from '../../../fixtures/preloadElectron'
 
@@ -207,6 +207,21 @@ describe('Settings › Plugins, from the window through preload to main (ADR-020
     await expect(invoke(PLUGINS_MODELS_3D, [{}])).rejects.toThrow()
     close()
     for (const channel of [PLUGINS_MODELS_3D, PLUGINS_MODEL_3D_REMOVE, PLUGINS_MODEL_3D_REVEAL]) expect(handlers.has(channel)).toBe(false)
+  })
+
+  it('tells the window which 3D models went with a forgotten thread, and nothing that is not a list of IDs', () => {
+    const renderer = preloadElectron().ipcRenderer
+    const bridge = createSottoBridge(renderer, 'win32').plugins!
+    const heard: (readonly string[])[] = []
+    const stop = bridge.onModels3dForgotten(ids => heard.push(ids))
+    const [, listener] = renderer.on.mock.calls.find(([channel]) => channel === PLUGINS_MODELS_3D_FORGOTTEN) as [string, (event: unknown, ...args: unknown[]) => void]
+    listener({}, [MODEL.id])
+    listener({}, [])
+    listener({}, 'C:/Users/someone/project')
+    listener({}, [{ id: MODEL.id }])
+    expect(heard).toEqual([[MODEL.id]])
+    stop()
+    expect(renderer.removeListener).toHaveBeenCalledWith(PLUGINS_MODELS_3D_FORGOTTEN, listener)
   })
 
   it('carries which threads may use an account to main, and this computer’s projects back, for the main window only', async () => {
