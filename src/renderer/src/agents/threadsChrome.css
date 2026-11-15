@@ -58,6 +58,11 @@
 .thread-nav__foot-rule { flex: none; align-self: center; width: 1px; height: 18px; margin: 0 4px; background: var(--tt-hairline); }
 .thread-nav__pages { display: flex; align-items: center; }
 .thread-nav__foot .thread-nav__pages { gap: 2px; }
+/* With 3D models' link (Owl, the Meshy plan's ticket 5) the row is one tile wider, and the 2px gaps and the hairline's
+   margins draw in by a pixel each so the update control stays on the row at the 280px the sidebar opens at. */
+.thread-nav__foot:has(.thread-nav__page[href='#models']) { gap: 1px; }
+.thread-nav__foot:has(.thread-nav__page[href='#models']) :is(.thread-nav__seg, .thread-nav__pages) { gap: 1px; }
+.thread-nav__foot:has(.thread-nav__page[href='#models']) .thread-nav__foot-rule { margin: 0 3px; }
 .thread-nav__page { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: var(--tt-radius-control); color: var(--tt-text-muted); text-decoration: none; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .thread-nav__page:hover, .thread-nav__page[aria-current='page'] { background: var(--tt-hover); color: var(--tt-text); }
 .thread-nav__page:active:not(:disabled):not([aria-current='page']) { background: var(--tt-hover-strong); color: var(--tt-text); }

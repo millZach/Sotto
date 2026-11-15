@@ -71,6 +71,15 @@
 .tools-rail__live[data-needs] { background: var(--tt-attention); }
 /* Pin, fill and close sit at the rail's foot, under a short rule. A pressed Pin or Restore takes the tiles' own
    selected tone, so the rail has one look for "on". */
+/* With 3D models' tile (Owl) eight tiles and the foot need about 600px. In a shorter window the tiles and the air
+   between their groups draw in, so Pin, fill and close stay in the window at the 820x560 minimum. Seven fit as they are. */
+@media (max-height: 680px) {
+  .tools-rail:has([data-surface='models']) { gap: 6px; padding-top: calc(var(--tools-chrome-height) + 2px); padding-bottom: 6px; }
+  .tools-rail:has([data-surface='models']) .tools-rail__tab { height: 42px; gap: 3px; }
+  .tools-rail:has([data-surface='models']) .tools-rail__tab:is([data-surface='terminal'], [data-surface='agents']) { margin-top: 6px; }
+  .tools-rail:has([data-surface='models']) .tools-rail__tab[aria-selected='true']::before { top: 10px; bottom: 10px; }
+  .tools-rail:has([data-surface='models']) .tools-rail__foot { padding-top: 6px; }
+}
 .tools-rail__foot { display: flex; flex-direction: column; align-items: center; gap: 2px; width: 40px; margin-top: auto; padding-top: 8px; border-top: 1px solid var(--tt-hairline); }
 .tools-panel .tools-rail__foot .files-icon[aria-pressed='true'] { background: var(--tt-selected); color: var(--tt-text); }
 
