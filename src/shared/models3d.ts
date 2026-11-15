@@ -82,8 +82,15 @@ export type Model3dListRequest = z.infer<typeof model3dListRequestSchema>
 /** One of a 3D model's files to show in the folder app, by its name in the record; its GLB, or its first file, when none is named. */
 export const model3dRevealRequestSchema = z.object({ id: z.string().min(1).max(100), file: fileName.optional() }).strict()
 export type Model3dRevealRequest = z.infer<typeof model3dRevealRequestSchema>
-/** Whether main did it: removed the record, or showed the file. */
+/** Whether main showed the file. */
 export const model3dDoneSchema = z.boolean()
+/**
+ * What became of Remove from 3D models: the record was `removed`; it stays because `files-there` (one of its files is
+ * back), because it `changed` meanwhile (it is not a finished 3D model as it was looked at); or there was `no-record`.
+ */
+export const MODEL_3D_REMOVALS = ['removed', 'files-there', 'changed', 'no-record'] as const
+export type Model3dRemoval = typeof MODEL_3D_REMOVALS[number]
+export const model3dRemovalSchema = z.enum(MODEL_3D_REMOVALS)
 
 /**
  * Whether a finished 3D model's files are all gone from its folder: none has a size, as when they were moved, renamed
@@ -99,6 +106,6 @@ export const PLUGINS_MODELS_3D = 'sotto:plugins:models-3d'
 export const PLUGINS_MODEL_3D_REMOVE = 'sotto:plugins:model-3d-remove'
 /** Shows one of a 3D model's files in the folder app. */
 export const PLUGINS_MODEL_3D_REVEAL = 'sotto:plugins:model-3d-reveal'
-/** Main to the window: the IDs of 3D models whose records went with their forgotten thread. */
-export const PLUGINS_MODELS_3D_FORGOTTEN = 'sotto:plugins:models-3d-forgotten'
-export const model3dForgottenSchema = z.array(z.string().min(1).max(100)).min(1).max(2_000)
+/** Main to the window: the IDs of 3D models whose records went, with their forgotten thread or by Remove from 3D models. */
+export const PLUGINS_MODELS_3D_REMOVED = 'sotto:plugins:models-3d-removed'
+export const model3dRemovedSchema = z.array(z.string().min(1).max(100)).min(1).max(2_000)

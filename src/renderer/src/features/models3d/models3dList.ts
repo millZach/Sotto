@@ -29,6 +29,11 @@ export function useModels3d(on: boolean, threadId?: string | null, { watchFiles 
   const held = useRef<readonly Model3dListed[] | undefined>(undefined)
   const read = useRef<() => void>(() => undefined)
   const keep = useCallback((next: readonly Model3dListed[] | undefined) => { held.current = next; setModels(next) }, [])
+  /**
+   * 3D models whose records went, removed or with their forgotten thread: never listed again, whatever a read already
+   * on its way says. Their IDs are never used again, so they are kept for as long as the list is.
+   */
+  const gone = useRef(new Set<string>())
 
   useEffect(() => {
     keep(undefined)
@@ -41,8 +46,7 @@ export function useModels3d(on: boolean, threadId?: string | null, { watchFiles 
     /** 3D models main did not list here, so a change to one does not read the list again. */
     const elsewhere = new Set<string>()
     const asked = new Set<string>()
-    /** 3D models whose records went with their forgotten thread: never listed again, whatever an older read says. */
-    const forgotten = new Set<string>()
+    const forgotten = gone.current
     /** What was heard while a read was on its way, newer than what it will answer, and laid over it. */
     const heard = new Map<string, Model3dView>()
     const list = (): void => {
@@ -75,13 +79,13 @@ export function useModels3d(on: boolean, threadId?: string | null, { watchFiles 
       if (known && current) keep(listed(view) ? current.map(model => model.id === view.id ? merged(model, view) : model) : current.filter(model => model.id !== view.id))
       else if (listed(view) && !elsewhere.has(view.id) && !reading) { asked.add(view.id); list() }
     })
-    const stopForgotten = plugins.onModels3dForgotten?.(ids => {
+    const stopRemoved = plugins.onModels3dRemoved?.(ids => {
       if (!live) return
       for (const id of ids) { forgotten.add(id); heard.delete(id) }
       if (held.current?.some(model => forgotten.has(model.id))) keep(held.current.filter(model => !forgotten.has(model.id)))
     })
     list()
-    return () => { live = false; read.current = () => undefined; stop?.(); stopForgotten?.() }
+    return () => { live = false; read.current = () => undefined; stop?.(); stopRemoved?.() }
   }, [on, threadId, keep])
 
   // Whether the files are there is read with the list, so a shown list reads it again on focus and every half minute.
@@ -93,7 +97,7 @@ export function useModels3d(on: boolean, threadId?: string | null, { watchFiles 
     return () => { window.removeEventListener('focus', again); window.clearInterval(timer) }
   }, [on, threadId, watchFiles])
 
-  const drop = useCallback((id: string) => { if (held.current) keep(held.current.filter(model => model.id !== id)) }, [keep])
+  const drop = useCallback((id: string) => { gone.current.add(id); if (held.current) keep(held.current.filter(model => model.id !== id)) }, [keep])
   const reload = useCallback(() => { read.current() }, [])
   return { models, drop, reload }
 }

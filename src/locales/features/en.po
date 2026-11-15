@@ -3275,9 +3275,17 @@ msgstr "It carries {carried} and leaves out {leftOut}."
 msgid "It carries {carried}."
 msgstr "It carries {carried}."
 
+#: src/renderer/src/features/models3d/modelPanels.tsx
+msgid "It changed meanwhile, so it stays."
+msgstr "It changed meanwhile, so it stays."
+
 #: src/renderer/src/watcher/MoveThreads.tsx
 msgid "It continues on {named} as a new thread, in the same project, on the same provider, with a handover of the thread where it is. Its first turn starts at once. Watcher’s conversation reports the move."
 msgstr "It continues on {named} as a new thread, in the same project, on the same provider, with a handover of the thread where it is. Its first turn starts at once. Watcher’s conversation reports the move."
+
+#: src/renderer/src/features/models3d/modelPanels.tsx
+msgid "It could not be removed. Nothing was changed."
+msgstr "It could not be removed. Nothing was changed."
 
 #: src/renderer/src/watcher/WatcherOwnChange.tsx
 msgid "It gave no reason."
@@ -6299,6 +6307,10 @@ msgstr "Sotto lost the answer, so the stop may or may not have reached these thr
 #: src/renderer/src/platformCopy.ts
 msgid "Sotto never updates itself on Linux. New versions come through pacman."
 msgstr "Sotto never updates itself on Linux. New versions come through pacman."
+
+#: src/renderer/src/features/models3d/modelPanels.tsx
+msgid "Sotto no longer has a record of it."
+msgstr "Sotto no longer has a record of it."
 
 #: src/renderer/src/features/productEvents/ProductEventsNotice.tsx
 msgid "Sotto now sends product events"

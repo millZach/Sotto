@@ -3275,8 +3275,16 @@ msgstr ""
 msgid "It carries {carried}."
 msgstr ""
 
+#: src/renderer/src/features/models3d/modelPanels.tsx
+msgid "It changed meanwhile, so it stays."
+msgstr ""
+
 #: src/renderer/src/watcher/MoveThreads.tsx
 msgid "It continues on {named} as a new thread, in the same project, on the same provider, with a handover of the thread where it is. Its first turn starts at once. Watcher’s conversation reports the move."
+msgstr ""
+
+#: src/renderer/src/features/models3d/modelPanels.tsx
+msgid "It could not be removed. Nothing was changed."
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherOwnChange.tsx
@@ -6298,6 +6306,10 @@ msgstr ""
 
 #: src/renderer/src/platformCopy.ts
 msgid "Sotto never updates itself on Linux. New versions come through pacman."
+msgstr ""
+
+#: src/renderer/src/features/models3d/modelPanels.tsx
+msgid "Sotto no longer has a record of it."
 msgstr ""
 
 #: src/renderer/src/features/productEvents/ProductEventsNotice.tsx

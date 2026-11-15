@@ -1,7 +1,7 @@
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Model3dListed, Model3dView } from '../../../../../src/shared/models3d'
+import type { Model3dListed, Model3dRemoval, Model3dView } from '../../../../../src/shared/models3d'
 import { ModelsPage } from '../../../../../src/renderer/src/features/models3d/ModelsPage'
 import { PageLinks } from '../../../../../src/renderer/src/agents/SidebarFrame'
 
@@ -50,9 +50,9 @@ const plugins = {
   onModel3dChanged: vi.fn((listener: (view: Model3dView) => void) => { changed = listener; return () => { changed = undefined } }),
   meshyCredits: vi.fn(async () => ({ '22222222-2222-4222-8222-000000000001': 80 })),
   model3dBytes: vi.fn(async () => null),
-  removeModel3d: vi.fn(async () => true),
+  removeModel3d: vi.fn(async (): Promise<Model3dRemoval> => 'removed'),
   revealModel3d: vi.fn(async () => true),
-  onModels3dForgotten: vi.fn((listener: (ids: readonly string[]) => void) => { forgotten = listener; return () => { forgotten = undefined } }),
+  onModels3dRemoved: vi.fn((listener: (ids: readonly string[]) => void) => { forgotten = listener; return () => { forgotten = undefined } }),
 }
 /** A promise the test settles when it chooses. */
 function later<Value>(): { readonly promise: Promise<Value>; readonly settle: (value: Value) => void } {
@@ -215,18 +215,58 @@ describe('the 3D models page', () => {
 
   it('moves the choice after a removal only when the removed one is still chosen', async () => {
     models = [listed('helmet', { name: 'Knight helmet', files: files('Knight helmet', true) }), FOX, BARREL]
-    const pending = later<boolean>()
+    const pending = later<Model3dRemoval>()
     plugins.removeModel3d.mockImplementationOnce(() => pending.promise)
     render(<ModelsPage platform="win32" />)
     fireEvent.click(await within(await screen.findByRole('complementary', { name: 'About the Knight helmet' })).findByRole('button', { name: 'Remove from 3D models' }))
     // The oak barrel is chosen before main answers.
     fireEvent.click(within(strip()).getByRole('option', { name: 'Oak barrel, Nov 13' }))
     within(strip()).getByRole('option', { name: 'Oak barrel, Nov 13' }).focus()
-    await act(async () => { pending.settle(true) })
+    await act(async () => { pending.settle('removed') })
     await act(async () => { await new Promise(next => requestAnimationFrame(() => next(undefined))) })
     expect(within(strip()).getAllByRole('option').map(tile => tile.getAttribute('aria-label'))).toEqual(['Fox figurine, Nov 14', 'Oak barrel, Nov 13'])
     expect(within(strip()).getByRole('option', { name: 'Oak barrel, Nov 13' })).toHaveAttribute('aria-selected', 'true')
     expect(within(strip()).getByRole('option', { name: 'Oak barrel, Nov 13' })).toHaveFocus()
+  })
+
+  it('keeps a removed 3D model off the list, whatever a read already on its way says, and when another list removed it', async () => {
+    const helmet = listed('helmet', { name: 'Knight helmet', files: files('Knight helmet', true) })
+    models = [helmet, FOX, BARREL]
+    render(<ModelsPage platform="win32" />)
+    await screen.findByRole('complementary', { name: 'About the Knight helmet' })
+    // A re-read is on its way, as on focus, when Remove finishes.
+    const slow = later<Model3dListed[]>()
+    plugins.models3d.mockImplementationOnce(() => slow.promise)
+    act(() => { window.dispatchEvent(new Event('focus')) })
+    fireEvent.click(within(details('Knight helmet')).getByRole('button', { name: 'Remove from 3D models' }))
+    await waitFor(() => expect(within(strip()).getAllByRole('option')).toHaveLength(2))
+    await act(async () => { slow.settle([helmet, FOX, BARREL]) })
+    expect(within(strip()).getAllByRole('option').map(tile => tile.getAttribute('aria-label'))).toEqual(['Fox figurine, Nov 14', 'Oak barrel, Nov 13'])
+    // Main says another list, such as Tools, removed the oak barrel's record.
+    act(() => forgotten!(['barrel']))
+    expect(within(strip()).getAllByRole('option').map(tile => tile.getAttribute('aria-label'))).toEqual(['Fox figurine, Nov 14'])
+  })
+
+  it.each([
+    ['no-record', 'Sotto no longer has a record of it.'],
+    ['changed', 'It changed meanwhile, so it stays.'],
+  ] as const)('says plainly why a removal did not happen (%s), and reads the list again', async (removal, words) => {
+    models = [listed('helmet', { name: 'Knight helmet', files: files('Knight helmet', true) })]
+    plugins.removeModel3d.mockResolvedValueOnce(removal)
+    render(<ModelsPage platform="win32" />)
+    fireEvent.click(await within(await screen.findByRole('complementary', { name: 'About the Knight helmet' })).findByRole('button', { name: 'Remove from 3D models' }))
+    expect(await screen.findByText(words)).toBeInTheDocument()
+    expect(screen.queryByText('Its files are there again, so it stays.')).toBeNull()
+    expect(plugins.models3d).toHaveBeenCalledTimes(2)
+  })
+
+  it('says a removal that could not be asked for changed nothing, and reads the list again', async () => {
+    models = [listed('helmet', { name: 'Knight helmet', files: files('Knight helmet', true) })]
+    plugins.removeModel3d.mockRejectedValueOnce(new Error('Open 3D models in the main Sotto window.'))
+    render(<ModelsPage platform="win32" />)
+    fireEvent.click(await within(await screen.findByRole('complementary', { name: 'About the Knight helmet' })).findByRole('button', { name: 'Remove from 3D models' }))
+    expect(await screen.findByText('It could not be removed. Nothing was changed.')).toBeInTheDocument()
+    expect(plugins.models3d).toHaveBeenCalledTimes(2)
   })
 
   it('filters by name and by the words it was made from', async () => {
@@ -270,7 +310,7 @@ describe('the 3D models page', () => {
 
   it('keeps a record main found its files for, and reads the list again', async () => {
     models = [listed('helmet', { name: 'Knight helmet', files: files('Knight helmet', true) })]
-    plugins.removeModel3d.mockResolvedValueOnce(false)
+    plugins.removeModel3d.mockResolvedValueOnce('files-there')
     render(<ModelsPage platform="win32" />)
     fireEvent.click(await within(await screen.findByRole('complementary', { name: 'About the Knight helmet' })).findByRole('button', { name: 'Remove from 3D models' }))
     expect(await screen.findByText('Its files are there again, so it stays.')).toBeInTheDocument()

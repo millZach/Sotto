@@ -7,9 +7,9 @@ import {
   type GitHubSignIn, type PluginAccount, type PluginAccountAdd, type PluginAccountRemove, type PluginAccountReplace, type PluginAccountResult, type PluginAccountUpdate, type PluginCopiesView, type PluginCopySet, type PluginProject, type ShownPluginUse,
 } from '../../shared/plugins'
 import {
-  model3dBytesRequestSchema, model3dBytesSchema, model3dDoneSchema, model3dListRequestSchema, model3dListSchema, model3dRequestSchema, model3dRevealRequestSchema, model3dViewOrNullSchema,
+  model3dBytesRequestSchema, model3dBytesSchema, model3dDoneSchema, model3dRemovalSchema, model3dListRequestSchema, model3dListSchema, model3dRequestSchema, model3dRevealRequestSchema, model3dViewOrNullSchema,
   PLUGINS_MODEL_3D, PLUGINS_MODEL_3D_BYTES, PLUGINS_MODEL_3D_REMOVE, PLUGINS_MODEL_3D_REVEAL, PLUGINS_MODELS_3D,
-  type Model3dBytesRequest, type Model3dListed, type Model3dRevealRequest, type Model3dView,
+  type Model3dBytesRequest, type Model3dListed, type Model3dRemoval, type Model3dRevealRequest, type Model3dView,
 } from '../../shared/models3d'
 import { isAuthorizedIpcSender, type IpcMainAdapter, type TrustedIpcSender } from '../ipc/registerIpc'
 
@@ -52,7 +52,7 @@ export interface PluginsIpcHandlers {
   /** Every 3D model being made or done, newest first, or the thread's the window names by its key. */
   readonly models3d: (threadKey: string | undefined) => Promise<readonly Model3dListed[]>
   /** Removes the record of a 3D model whose files are gone, once main has looked again; never a file. */
-  readonly removeModel3d: (id: string) => Promise<boolean>
+  readonly removeModel3d: (id: string) => Promise<Model3dRemoval>
   /** Shows one of a 3D model's files in the folder app, by the name its record holds. */
   readonly revealModel3d: (request: Model3dRevealRequest) => Promise<boolean>
   readonly projects: () => readonly PluginProject[]
@@ -175,8 +175,8 @@ export function registerPluginsIpc(ipc: IpcMainAdapter, plugins: PluginsIpcHandl
   ipc.handle(PLUGINS_MODEL_3D_REMOVE, async (event, ...args) => {
     if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Open 3D models in the main Sotto window.`)
     const parsed = model3dArguments.safeParse(args)
-    if (!parsed.success) return false
-    return model3dDoneSchema.parse(await plugins.removeModel3d(parsed.data[0].id))
+    if (!parsed.success) return 'no-record'
+    return model3dRemovalSchema.parse(await plugins.removeModel3d(parsed.data[0].id))
   })
   ipc.handle(PLUGINS_MODEL_3D_REVEAL, async (event, ...args) => {
     if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Open 3D models in the main Sotto window.`)

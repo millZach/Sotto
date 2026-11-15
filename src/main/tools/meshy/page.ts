@@ -1,4 +1,4 @@
-import type { Model3dListed, Model3dRevealRequest } from '../../../shared/models3d'
+import type { Model3dListed, Model3dRemoval, Model3dRevealRequest } from '../../../shared/models3d'
 import { modelFilePath, modelFileSizes } from './files'
 import type { ThreeDModel } from './records'
 import { modelView, type ModelViewSource } from './view'
@@ -38,15 +38,17 @@ export async function listModels(source: ModelListSource, threadId?: string): Pr
 
 /**
  * Removes the record of a finished 3D model whose files are all gone, looked at again here rather than taken from the
- * window. A file that is back keeps the record. Never removes a file (ADR-0141). True when the record went.
+ * window, and says what became of it. A file that is back keeps the record. Never removes a file (ADR-0141).
  */
-export async function removeGoneModel(source: ModelListSource, id: string): Promise<boolean> {
+export async function removeGoneModel(source: ModelListSource, id: string): Promise<Model3dRemoval> {
   const model = await source.model(id)
-  if (!model || model.state !== 'done') return false
-  if ((await modelFileSizes(model)).size > 0) return false
+  if (!model) return 'no-record'
+  if (model.state !== 'done') return 'changed'
+  if ((await modelFileSizes(model)).size > 0) return 'files-there'
   // The record is removed only as it was looked at: still done, naming the same files.
   const files = model.files.join('\n')
-  return source.remove(id, held => held.state === 'done' && held.files.join('\n') === files)
+  if (await source.remove(id, held => held.state === 'done' && held.files.join('\n') === files)) return 'removed'
+  return await source.model(id) ? 'changed' : 'no-record'
 }
 
 /**

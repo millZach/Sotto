@@ -35,9 +35,11 @@ function useModelView(id: string, on: boolean): Model3dView | null | undefined {
     let live = true
     let heard = false
     const stop = plugins.onModel3dChanged?.(next => { if (live && next.id === id) { heard = true; setView(next) } })
+    // Its record went, by Remove from 3D models or with its thread: the line says Sotto no longer holds it.
+    const stopRemoved = plugins.onModels3dRemoved?.(ids => { if (live && ids.includes(id)) { heard = true; setView(null) } })
     // A change heard while the read was on its way is newer than the read.
     plugins.model3d(id).then(found => { if (live && !heard) setView(found) }, () => { if (live && !heard) setView(null) })
-    return () => { live = false; stop?.() }
+    return () => { live = false; stop?.(); stopRemoved?.() }
   }, [id, on])
   return view
 }

@@ -1,7 +1,7 @@
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Model3dListed, Model3dView } from '../../../../src/shared/models3d'
+import type { Model3dListed, Model3dRemoval, Model3dView } from '../../../../src/shared/models3d'
 import { ToolsPanel } from '../../../../src/renderer/src/tools/ToolsPanel'
 import { ToolsPanelStore } from '../../../../src/renderer/src/tools/toolsPanelStore'
 import { CloudIphoneStore } from '../../../../src/renderer/src/tools/cloudIphoneStore'
@@ -14,8 +14,10 @@ vi.mock('../../../../src/renderer/src/state/owlFeature', async importOriginal =>
   const actual = await importOriginal<typeof import('../../../../src/renderer/src/state/owlFeature')>()
   return { ...actual, useOwlFeature: (id: Parameters<typeof actual.useOwlFeature>[0]) => id === 'plugins' ? gate.plugins : actual.useOwlFeature(id) }
 })
+/** The names of the 3D models a view was drawn for, in order. */
+const drawn = vi.hoisted(() => [] as string[])
 vi.mock('../../../../src/renderer/src/agents/ModelView', () => ({
-  default: ({ name, part }: { readonly name: string; readonly part: string }) => <div role="slider" aria-label={`Turn the ${name}`} data-part={part} tabIndex={0} />,
+  default: ({ name, part }: { readonly name: string; readonly part: string }) => { drawn.push(name); return <div role="slider" aria-label={`Turn the ${name}`} data-part={part} tabIndex={0} /> },
 }))
 
 const THREAD = 'visual-gate'
@@ -31,10 +33,10 @@ let models: Model3dListed[]
 const plugins = {
   models3d: vi.fn(async (threadId?: string) => threadId === THREAD ? models : []),
   onModel3dChanged: vi.fn(() => () => undefined),
-  onModels3dForgotten: vi.fn(() => () => undefined),
+  onModels3dRemoved: vi.fn(() => () => undefined),
   meshyCredits: vi.fn(async () => ({})),
   model3dBytes: vi.fn(async () => null),
-  removeModel3d: vi.fn(async () => true),
+  removeModel3d: vi.fn(async (): Promise<Model3dRemoval> => 'removed'),
   revealModel3d: vi.fn(async () => true),
 }
 beforeEach(() => {
@@ -49,8 +51,10 @@ function setup(surface: 'models' | 'files' = 'models') {
   store.setSurface(surface)
   store.setOpen(true)
   const bridge = fakeFilesBridge({ [THREAD]: { root: 'D:\\work\\workshop', token: TOKEN_A, tree: { models: { kind: 'directory' as const }, 'models/Potion bottle.glb': { kind: 'file' as const, content: text('glb') } } } })
-  render(<div className="thread-workspace__body"><ToolsPanel focusedThreadId={THREAD} state={threadsStateFixture()} files={bridge} store={store} cloudStore={new CloudIphoneStore()} /></div>)
-  return { store }
+  const state = threadsStateFixture(), cloudStore = new CloudIphoneStore()
+  const ui = (focused: string) => <div className="thread-workspace__body"><ToolsPanel focusedThreadId={focused} state={state} files={bridge} store={store} cloudStore={cloudStore} /></div>
+  const view = render(ui(THREAD))
+  return { store, focus: (focused: string) => view.rerender(ui(focused)) }
 }
 const rail = (): HTMLElement => screen.getByRole('tablist', { name: 'Tools' })
 

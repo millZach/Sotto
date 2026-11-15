@@ -80,16 +80,18 @@ describe('the 3D models page, from main', () => {
     await records.add(barrel)
     await records.add(record('lantern', { state: 'making', stage: 'shape', files: [] }))
     const source = sourceOf(records)
-    expect(await removeGoneModel(source, 'barrel')).toBe(false)
+    // Each refusal says why, so the window can say so.
+    expect(await removeGoneModel(source, 'barrel')).toBe('files-there')
     // One file left is still its files: the record stays.
     await rm(join(barrel.folder, 'barrel.glb'))
-    expect(await removeGoneModel(source, 'barrel')).toBe(false)
-    expect(await removeGoneModel(source, 'lantern')).toBe(false)
-    expect(await removeGoneModel(source, 'unknown')).toBe(false)
+    expect(await removeGoneModel(source, 'barrel')).toBe('files-there')
+    expect(await removeGoneModel(source, 'lantern')).toBe('changed')
+    expect(await removeGoneModel(source, 'unknown')).toBe('no-record')
     // A file put in its folder that is not its own is left where it is.
     await writeFile(join(barrel.folder, 'notes.txt'), 'mine')
     await rm(join(barrel.folder, 'barrel.usdz'))
-    expect(await removeGoneModel(source, 'barrel')).toBe(true)
+    expect(await removeGoneModel(source, 'barrel')).toBe('removed')
+    expect(await removeGoneModel(source, 'barrel')).toBe('no-record')
     expect((await records.list()).map(model => model.id)).toEqual(['lantern'])
     expect(await readdir(barrel.folder)).toEqual(['notes.txt'])
     // What it cost stays counted for the month.

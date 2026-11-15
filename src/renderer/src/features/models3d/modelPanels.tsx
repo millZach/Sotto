@@ -82,23 +82,25 @@ export function folderWords(model: Model3dListed, threadFolder: string): string 
 export function GoneNote({ model, onRemoved, onKept }: { readonly model: Model3dListed; readonly onRemoved: (id: string) => void; readonly onKept: () => void }): ReactNode {
   const { t } = useLingui()
   const [busy, setBusy] = useState(false)
-  const [kept, setKept] = useState(false)
+  const [kept, setKept] = useState<string>()
   const name = model.name
   const where = folderWords(model, t`the thread’s folder`)
   const remove = (): void => {
     const plugins = window.sotto?.plugins
     if (!plugins?.removeModel3d || busy) return
     setBusy(true)
-    void plugins.removeModel3d(model.id).then(removed => {
-      if (removed) { onRemoved(model.id); return }
-      setKept(true)
+    void plugins.removeModel3d(model.id).then(removal => {
+      if (removal === 'removed') { onRemoved(model.id); return }
+      setKept(removal === 'files-there' ? t`Its files are there again, so it stays.`
+        : removal === 'no-record' ? t`Sotto no longer has a record of it.`
+          : t`It changed meanwhile, so it stays.`)
       onKept()
-    }, () => setKept(true)).finally(() => setBusy(false))
+    }, () => { setKept(t`It could not be removed. Nothing was changed.`); onKept() }).finally(() => setBusy(false))
   }
   return <div className="models-note" role="group" aria-label={t`Its files are gone`}>
     <TriangleAlert size={16} aria-hidden="true" />
     <p><b>{t`Its files are gone.`}</b> {t({ message: `The ${name}’s files are no longer in ${where} in its thread’s folder: they were moved, renamed or deleted.`, comment: '{name} is the name of a 3D model; {where} is a folder, such as models/.' })}</p>
-    <p className="models-note__more">{kept ? t`Its files are there again, so it stays.` : t`Removing it takes it off this list. It deletes no file.`}</p>
+    <p className="models-note__more">{kept ?? t`Removing it takes it off this list. It deletes no file.`}</p>
     <div className="models-note__actions"><Button variant="secondary" onClick={remove} disabled={busy}>{t`Remove from 3D models`}</Button></div>
   </div>
 }
