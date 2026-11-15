@@ -266,6 +266,19 @@ describe('sending account copies to paired hosts (ADR-0205, amending ADR-0025)',
     expect((await d.states()).filter(state => state.includes('host-older'))).toEqual(['Work@host-older: kept', 'Mail@host-older: too-old'])
   })
 
+  it('keeps a Proton Mail account on this computer: never sent, and taken back from a host that holds one', async () => {
+    // Each computer's Bridge makes its own Bridge password, so this one's would be refused anywhere else (ADR-0205, slice 10).
+    const proton: PluginAccount = { ...PERSONAL, plugin: 'proton-mail', name: 'Private', address: 'reader@proton.example', signedInAs: null, bridge: { imapPort: 1143, smtpPort: 1025, certificate: 'a'.repeat(64) } }
+    const d = await desk([WORK, proton])
+    const forge = fakeHost('host-forge')
+    forge.held.set(proton.id, { account: proton, secret: tokenOf(proton.id) })
+    d.connect(forge)
+    await d.sync.idle()
+    expect(forge.calls).toEqual(['list', 'remove Private', 'keep Work'])
+    expect([...forge.held.keys()]).toEqual([WORK.id])
+    expect(await d.states()).toEqual(['Work@host-forge: kept', 'Private@host-forge: here-only'])
+  })
+
   it('takes a mail copy back from a host that cannot ask even while its record of choices cannot be read', async () => {
     const mail: PluginAccount = { ...PERSONAL, plugin: 'gmail', name: 'Mail', address: 'reader@example.com', signedInAs: null }
     const d = await desk([WORK, mail])

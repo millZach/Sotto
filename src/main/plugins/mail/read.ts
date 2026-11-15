@@ -228,6 +228,41 @@ export function checkMailSignIn(server: MailServer, signIn: MailSignIn, options:
 }
 
 /**
+ * Whether a STARTTLS server shows the certificate kept for it: `kept`, `other`, `unreachable` when nothing answers in
+ * time, or `failed` when it answers something else. It goes as far as TLS and no further: it signs in to nothing and
+ * sends no address or password, so the page can say Bridge's certificate has changed before anything is sent to it.
+ */
+export async function mailServerCertificate(server: MailServer, options: MailOptions = {}): Promise<'kept' | 'other' | 'unreachable' | 'failed'> {
+  if (!server.startTls || !mayReach(server) || isLearning(server)) return 'failed'
+  const controller = new AbortController()
+  const stop = (): void => controller.abort()
+  const timer = setTimeout(stop, options.timeoutMs ?? MAIL_TIMEOUT_MS)
+  if (options.signal?.aborted) stop()
+  options.signal?.addEventListener('abort', stop, { once: true })
+  let imap: ImapConnection | undefined
+  try {
+    if (controller.signal.aborted) return 'unreachable'
+    const outOfTime = new Promise<never>((_resolve, reject) => { controller.signal.addEventListener('abort', () => reject(new ImapClosed()), { once: true }) })
+    let socket: Duplex
+    try { socket = await Promise.race([(options.connect ?? plainToThisComputer)(server, controller.signal), outOfTime]) } catch { return 'unreachable' }
+    imap = new ImapConnection(socket, controller.signal)
+    if ((await imap.greeting()).status !== 'OK') return 'failed'
+    const offered = await imap.run('CAPABILITY')
+    if (!offered.data.some(line => line.some(item => atomOf(item) === 'STARTTLS'))) return 'failed'
+    if ((await imap.run('STARTTLS')).status !== 'OK') return 'failed'
+    const secure = await Promise.race([startTls(imap.release(), server.startTls.certificate, controller.signal), outOfTime])
+    imap = new ImapConnection(secure.socket, controller.signal)
+    return 'kept'
+  } catch (error) {
+    return error instanceof MailCertificateChanged ? 'other' : error instanceof ImapProtocolError || error instanceof MailTlsBroken ? 'failed' : 'unreachable'
+  } finally {
+    clearTimeout(timer)
+    options.signal?.removeEventListener('abort', stop)
+    imap?.close()
+  }
+}
+
+/**
  * Whether anything answers at a server's port: a connection made and ended at once, sending nothing, so the page
  * can say whether Proton Mail Bridge is running. It is no sign-in and says nothing of the password.
  */
