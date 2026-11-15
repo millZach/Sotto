@@ -720,6 +720,10 @@ private final class FollowBox {
     let knowsMoves: Bool = { if #available(iOS 18.0, *) { true } else { false } }()
     /// A hand or the scroll view's own animation, such as a tap on the status bar, is moving the page.
     var moving = false
+    /// The page itself, found by the end's marker. It knows a finger is on it at once, where `moving` hears so a pass later.
+    weak var page: UIScrollView?
+    /// A finger is on the page or a flick it gave is running out, as the scroll view knows it now.
+    var handOn: Bool { page.map { $0.isTracking || $0.isDragging || $0.isDecelerating } ?? false }
     func settle() { atBottom = sentinel <= dockTop + Self.slack }
 }
 
@@ -980,7 +984,7 @@ private struct Conversation: View {
             }
             entries(thread: thread, state: state, detail: detail, rows: rows, pending: pending, scroll: scroll)
             Color.clear.frame(height: 1).id(Self.end).background(sentinelReader(scroll))
-                .background(EndDrawn { [follow] drawn in endDrawn(drawn, scroll, read: follow.sentinel) })
+                .background(EndDrawn(follow: follow) { [follow] drawn in endDrawn(drawn, scroll, read: follow.sentinel) })
             #if DEBUG
             if SendWatch.isOn { SendWatchAnchor().frame(width: 0, height: 0) }
             #endif
@@ -1165,10 +1169,12 @@ private struct Conversation: View {
         follow.endInPage = inPage
         if wasAtBottom, grew, end > follow.dockTop + 1 {
             toBottom(scroll)
-        } else if wasAtBottom, follow.knowsMoves, !follow.moving {
+        } else if wasAtBottom, follow.knowsMoves, !follow.moving, !follow.handOn {
             // The page moved with no hand on it and no scroll of its own: the turns made as they scroll into view guessed
             // their heights again, and the page swung by thousands of points for a moment (#2040). A reader at the end is
-            // still there, and taken for one who left, the page stopped following them.
+            // still there, and taken for one who left, the page stopped following them. The scroll view's own word on a
+            // finger is asked as well: the phase change comes a pass after the page starts moving under one, and a drag
+            // away from the end was pulled back to it (PR #2572's run 43555799514).
             if end > follow.dockTop + 1 { toBottom(scroll) }
         } else {
             follow.settle()
@@ -1239,13 +1245,20 @@ private struct Conversation: View {
 }
 
 /// Reports where UIKit draws the conversation's end, once each pass in which the page scrolled or changed height is over.
+/// It also hands the page to the follow, which asks it whether a finger is on it.
 private struct EndDrawn: UIViewRepresentable {
+    let follow: FollowBox
     let drawn: (CGFloat) -> Void
     func makeUIView(context: Context) -> Marker { Marker() }
-    func updateUIView(_ view: Marker, context: Context) { view.drawn = drawn }
+    func updateUIView(_ view: Marker, context: Context) {
+        view.drawn = drawn
+        view.follow = follow
+        if let page = view.enclosingPage { follow.page = page }
+    }
 
     final class Marker: UIView {
         var drawn: (CGFloat) -> Void = { _ in }
+        weak var follow: FollowBox?
         private var watches: [NSKeyValueObservation] = []
         private var pending = false
         override init(frame: CGRect) {
@@ -1258,6 +1271,7 @@ private struct EndDrawn: UIViewRepresentable {
             super.didMoveToWindow()
             guard window != nil else { watches = []; return }
             guard watches.isEmpty, let page = enclosingPage else { return }
+            follow?.page = page
             let changed: (UIScrollView) -> Void = { [weak self] _ in MainActor.assumeIsolated { self?.report() } }
             watches = [page.observe(\.contentOffset) { page, _ in changed(page) },
                        page.observe(\.contentSize) { page, _ in changed(page) }]
