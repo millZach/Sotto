@@ -155,8 +155,12 @@ export class PluginAccounts {
 
   /**
    * Trusts the certificate Proton Mail Bridge shows now, as when it was reinstalled (Zach's pick on November 14, 2026):
-   * the saved Bridge password is checked with Bridge as it is, and only a Bridge that takes the password has its
-   * certificate kept. A program that is not the user's Bridge would not know the password, so it is not trusted.
+   * the saved Bridge password is checked with whatever answers at Bridge's port, and the certificate is kept only if
+   * the password is taken. That proves nothing about the server: like adding an account, it trusts what it first
+   * sees, and a program on that port is sent the password and could say yes to it. It is the user's own step, taken
+   * when they have reinstalled or reset Bridge. A reset that also changed the Bridge password cannot be trusted this
+   * way, and the account is removed and added again; Zach kept this one-press step over asking for the password
+   * again, on November 15, 2026.
    */
   trustCertificate(request: PluginAccountRemove): Promise<PluginAccountResult> {
     return this.inTurn(async () => {
