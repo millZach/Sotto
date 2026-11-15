@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
 import { Trans, useLingui } from '@lingui/react/macro'
-import { ChevronRight, Code, Mail, MonitorSmartphone } from 'lucide-react'
+import { Box, ChevronRight, Code, Mail, MonitorSmartphone } from 'lucide-react'
 import {
-  BRIDGE_DEFAULT_PORTS, isBridgePlugin, isMailPlugin, PLUGIN_ACCOUNT_NAME_MAX, PLUGIN_MAIL_ADDRESS_MAX, PLUGIN_SECRET_MAX, PLUGIN_USE_SHOWN, pluginMailAddressSchema, PLUGINS, type AccountPluginId, type GitHubSignIn, type PluginAccount, type PluginAccountProblem, type PluginAccountResult,
-  type PluginAccountCopyLeaving, type PluginAccountCopyState, type PluginCopiesView, type PluginHostSignIn, type PluginEntry, type PluginGroupId, type PluginProject, type PluginReadKind, type PluginsBridge, type ShownPluginUse, type BridgeStatus,
+  BRIDGE_DEFAULT_PORTS, isBridgePlugin, isMailPlugin, isSpendingPlugin, PLUGIN_MONTHLY_LIMIT_MAX, PLUGIN_ACCOUNT_NAME_MAX, PLUGIN_MAIL_ADDRESS_MAX, PLUGIN_SECRET_MAX, PLUGIN_USE_SHOWN, pluginMailAddressSchema, PLUGINS, type AccountPluginId, type GitHubSignIn, type PluginAccount, type PluginAccountProblem, type PluginAccountResult,
+  type PluginAccountCopyLeaving, type PluginAccountCopyState, type PluginCopiesView, type PluginHostSignIn, type PluginEntry, type PluginGroupId, type PluginProject, type PluginReadKind, type PluginsBridge, type ShownPluginUse, type BridgeStatus, type PluginSpending,
 } from '../../../../shared/plugins'
 import { localeFormatter } from '../../agents/localeFormat'
 import { useTransientFlag, writeClipboard } from '../../agents/richActions'
@@ -17,6 +17,8 @@ import './plugins.css'
 const GH_SIGN_IN_COMMAND = 'gh auth login'
 /** Where Vercel makes tokens. Shown as words to type or copy: the page opens nothing on its own. */
 const VERCEL_TOKENS_PAGE = 'vercel.com/account/tokens'
+/** Where Meshy's API keys are made, on a paid plan (ADR-0141). */
+const MESHY_KEYS_PAGE = 'meshy.ai/developers/keys'
 /** Where Google makes app passwords, from its own help page (support.google.com/accounts/answer/185833, November 13, 2026). Words to type or copy, as Vercel's is. */
 const GOOGLE_APP_PASSWORDS_PAGE = 'myaccount.google.com/apppasswords'
 
@@ -126,7 +128,7 @@ export function PluginsSettings({ bridge = window.sotto?.plugins }: { readonly b
   })
   // Only a computer whose Sotto runs plugin tools counts, once each has said; until then, any paired computer.
   const elsewhere = shownElsewhere !== null ? shownElsewhere.some(computer => computer.state !== 'no-plugins') : copies !== null && copies.computers.length > 0
-  const groupTitle: Record<PluginGroupId, string> = { code: t`Code and deploys`, mail: t`Mail` }
+  const groupTitle: Record<PluginGroupId, string> = { code: t`Code and deploys`, mail: t`Mail`, media: t`3D, sound and video` }
   return <div className="plugins-settings">
     <p className="tt-paragraph plugins-lead"><Trans>A thread’s agent uses a plugin through Sotto’s tools and never holds its secret. Reading never asks you, except that each thread asks once before it reads a mail account. A change, such as posting a comment, asks you first in its thread, each time.</Trans></p>
     <SettingsGroup title={groupTitle.code} icon={Code} rows={false}>
@@ -139,6 +141,13 @@ export function PluginsSettings({ bridge = window.sotto?.plugins }: { readonly b
     <SettingsGroup title={groupTitle.mail} icon={Mail} rows={false}>
       <div className="plugins-list">
         {PLUGINS.filter(plugin => plugin.group === 'mail').map(plugin =>
+          <AccountsRow key={plugin.id} plugin={plugin} bridge={bridge} accounts={accounts} projects={projects} copies={copies} uses={uses} elsewhere={elsewhere} onAccounts={changedAccounts} onCopies={tookCopies} />)}
+      </div>
+    </SettingsGroup>
+    {/* Zach named this group on November 15, 2026; ElevenLabs and Higgsfield join Meshy here. */}
+    <SettingsGroup title={groupTitle.media} icon={Box} rows={false}>
+      <div className="plugins-list">
+        {PLUGINS.filter(plugin => plugin.group === 'media').map(plugin =>
           <AccountsRow key={plugin.id} plugin={plugin} bridge={bridge} accounts={accounts} projects={projects} copies={copies} uses={uses} elsewhere={elsewhere} onAccounts={changedAccounts} onCopies={tookCopies} />)}
       </div>
     </SettingsGroup>
@@ -306,6 +315,41 @@ function useAccountWords(plugin: AccountPluginId): AccountWords {
   const { t } = useLingui()
   // Proton Mail is reached through Proton Mail Bridge on this computer, with the password Bridge shows for the account
   // (ADR-0205, slice 10). Its accounts stay on this computer, so the words for copies elsewhere are never shown.
+  // Meshy makes 3D models for a thread and spends credits (ADR-0141). Everything about spending its key is on the
+  // account (Zach's pick on November 15, 2026), and the row says plainly that Meshy may train on what it is sent.
+  if (isSpendingPlugin(plugin)) {
+    return {
+      about: t`Make 3D models from words or a photo, with a key you paste. Sotto keeps the key in its encrypted store and makes each request itself, so no agent ever sees it. Meshy may use what it is sent, and the 3D models it makes, to train its own models.`,
+      add: t`Add a Meshy account`, addAnother: t`Add another Meshy account`,
+      secretLabel: t`API key`,
+      secretDescription: t`Make one at ${MESHY_KEYS_PAGE}, on a paid Meshy plan: the free plan has no API. Sotto checks it with Meshy before saving it, without spending a credit, and never shows it again.`,
+      secretPlaceholder: t`Paste the API key`,
+      newSecretLabel: t`New API key`,
+      newSecretDescription: t`Sotto checks it with Meshy first. The key saved now stays in use until the new one is accepted.`,
+      saveSecret: t`Save API key`,
+      account: name => t`Meshy account ${name}`,
+      saved: (_account, day) => t`API key saved ${day}.`,
+      replace: name => t`Replace the API key for ${name}`,
+      remove: name => t`Remove the Meshy account ${name}`,
+      removeAsk: name => <Trans>Remove <b>{name}</b>? Its API key is deleted from this computer, and threads lose the account at once. Nothing changes at Meshy.</Trans>,
+      off: t`Off. No thread can see or use this account until you turn it back on. Its API key stays saved.`,
+      noKey: computer => t`${computer} was started without a key file, so it cannot keep an API key. Nothing was kept there. On ${computer}, set SOTTO_HOST_KEY_FILE to a file holding a secret of your own, start its host again, and the copy is sent.`,
+      locked: t`This computer’s credential store is locked, so the API key could not be read to send. Unlock it, and Sotto tries again.`,
+      tooOld: computer => t`${computer}’s Sotto cannot keep a Meshy account’s copy. Update Sotto on ${computer}, and the copy is sent.`,
+      problem: (problem, replacing) => {
+        const kept = replacing ? t`The API key already saved was kept.` : t`Nothing was saved.`
+        switch (problem) {
+          case 'refused': return t`Meshy did not accept this key. ${kept} Make a key at ${MESHY_KEYS_PAGE}: Meshy’s API needs a paid plan.`
+          case 'unreachable': return t`Meshy could not be reached to check the key. ${kept} Check your connection, then try again.`
+          case 'busy': return t`Meshy is turning requests away for now, so the key could not be checked. ${kept} Wait a minute, then try again.`
+          case 'name-taken': return t`There is already a Meshy account with that name. Nothing was saved. Give this one another name.`
+          case 'limit': return t`Meshy already has as many accounts as Sotto keeps for one plugin. Nothing was saved. Remove one first.`
+          case 'gone': return t`That account is no longer here. Nothing was changed.`
+          default: return t`Sotto could not keep the API key. ${kept} Check that this computer’s credential store is unlocked, then try again.`
+        }
+      },
+    }
+  }
   if (isBridgePlugin(plugin)) {
     return {
       about: t`Search, read and send mail through Proton Mail Bridge on this computer, which comes with a paid Proton plan. Each thread asks you once, in the thread, before it reads an account’s mail, and what it reads goes to that thread’s provider. A thread asks you before each email it sends, and shows you the whole email first. It cannot move or delete mail, and a message it reads stays unread for you. To make a thread ask again, open its ··· menu and press Ask before this thread reads the account.`,
@@ -416,7 +460,7 @@ function AccountsRow({ plugin, bridge, accounts, projects, copies, uses, elsewhe
 }): ReactNode {
   const { t } = useLingui()
   // GitHub's row is its own: its account is gh's sign-in, and nothing is added here.
-  const id: AccountPluginId = plugin.id === 'gmail' || plugin.id === 'proton-mail' ? plugin.id : 'vercel'
+  const id: AccountPluginId = plugin.id === 'github' ? 'vercel' : plugin.id
   const words = useAccountWords(id)
   const mine = (accounts ?? []).filter(account => account.plugin === id)
   // An account switched off says so beside its name, so the folded row does not read as one threads can use.
@@ -647,6 +691,7 @@ function AccountCard({ account, bridge, projects, copies, uses, elsewhere, onAcc
       </div>
     </div> : null}
     {trustProblem ? <p className="tt-field__error tt-paragraph" role="alert">{trustProblem}</p> : null}
+    {account.spending ? <AccountSpending account={account} spending={account.spending} bridge={bridge} onAccounts={onAccounts} /> : null}
     <AccountThreads account={account} bridge={bridge} projects={projects} onAccounts={onAccounts} />
     <AccountCopies account={account} bridge={bridge} copies={copies} onCopies={onCopies} />
     <RecentUse name={name} uses={uses} elsewhere={elsewhere} />
@@ -718,6 +763,55 @@ function AccountCopies({ account, bridge, copies, onCopies }: {
         description={words(state, copy?.leaving ?? 'no', computerName, computer.connected)} onCheckedChange={on => set(computer.id, on)} />
     })}
     <p className="tt-paragraph plugin-row__note"><Trans>A copy lets that computer’s threads use this account while this computer is off. It travels on the connection Sotto already holds to that computer and is kept in that computer’s own encrypted store.</Trans></p>
+    {failed ? <p className="tt-field__error tt-paragraph" role="alert"><Trans>That could not be saved. Nothing was changed. Try again.</Trans></p> : null}
+  </section>
+}
+
+/**
+ * What an account that spends may spend (ADR-0141; on the account, Zach's pick on November 15, 2026): whether each
+ * 3D model asks first, and the most it spends in a month. A change is saved as it is made; the limit is saved when the
+ * field is left or Enter is pressed, and one that could not be saved says so and shows what is kept.
+ */
+function AccountSpending({ account, spending, bridge, onAccounts }: {
+  readonly account: PluginAccount; readonly spending: PluginSpending; readonly bridge: PluginsBridge | undefined
+  readonly onAccounts: (accounts: readonly PluginAccount[]) => void
+}): ReactNode {
+  const { t } = useLingui()
+  const headingId = useId()
+  const [limit, setLimit] = useState(String(spending.monthlyLimit))
+  const [failed, setFailed] = useState(false)
+  // The newest change asked for, and the limit it asked for. Only the newest change's answer is shown, so a save that
+  // answers late cannot put back a figure the user has since changed, and a figure is compared with the one last
+  // asked for rather than one a save still on its way will replace.
+  const asked = useRef(0)
+  const askedLimit = useRef<number | null>(null)
+  // The figure shown follows what is kept, once the newest save has answered.
+  useEffect(() => { if (askedLimit.current === null) setLimit(String(spending.monthlyLimit)) }, [spending.monthlyLimit])
+  const wanted = /^\d{1,7}$/u.test(limit.trim()) && Number(limit) <= PLUGIN_MONTHLY_LIMIT_MAX ? Number(limit) : null
+  const save = async (request: { readonly askBefore?: boolean; readonly monthlyLimit?: number }): Promise<void> => {
+    if (!bridge) return
+    setFailed(false)
+    const mine = ++asked.current
+    if (request.monthlyLimit !== undefined) askedLimit.current = request.monthlyLimit
+    let result: PluginAccountResult
+    try { result = await bridge.updateAccount({ id: account.id, ...request }) } catch { result = { ok: false, problem: 'store' } }
+    if (asked.current !== mine) return
+    askedLimit.current = null
+    if (result.ok) onAccounts(result.accounts)
+    // A limit that could not be saved shows the one kept. A switch that could not be saved leaves a limit being typed alone.
+    else { setFailed(true); if (request.monthlyLimit !== undefined) setLimit(String(spending.monthlyLimit)) }
+  }
+  const saveLimit = (): void => { if (wanted !== null && wanted !== (askedLimit.current ?? spending.monthlyLimit)) void save({ monthlyLimit: wanted }) }
+  return <section className="plugin-account__spending" aria-labelledby={headingId}>
+    <h4 id={headingId}><Trans>What it spends</Trans></h4>
+    <Toggle label={t`Ask before each 3D model`} checked={spending.askBefore} disabled={!bridge} onCheckedChange={askBefore => void save({ askBefore })}
+      description={spending.askBefore ? t`Each 3D model waits on a card in its thread that says what it costs, and nothing reaches Meshy before you answer.`
+        : t`Off, a thread makes 3D models without asking until the month’s limit is reached, and each one still shows in the thread with what it cost.`} />
+    <Field label={t`Monthly credit limit`} description={t`The most Sotto spends through this account in a month, here and on the computers it is copied to. Meshy’s Pro plan gives 1,000 credits a month.`}
+      {...(wanted === null ? { error: t`A limit is a whole number of credits, from 0 to 1,000,000.` } : {})}>
+      <input className="tt-input plugin-account__limit" inputMode="numeric" autoComplete="off" spellCheck={false} maxLength={7} value={limit} disabled={!bridge}
+        onChange={event => setLimit(event.target.value)} onBlur={saveLimit} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); saveLimit() } }} />
+    </Field>
     {failed ? <p className="tt-field__error tt-paragraph" role="alert"><Trans>That could not be saved. Nothing was changed. Try again.</Trans></p> : null}
   </section>
 }

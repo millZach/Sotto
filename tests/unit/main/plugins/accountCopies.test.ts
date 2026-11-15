@@ -206,3 +206,12 @@ describe('a headless host’s account copies (ADR-0205, amending ADR-0025)', () 
     expect(await copies.list(LAPTOP)).toHaveLength(1)
   })
 })
+
+describe('a Meshy account’s copy', () => {
+  it('is listed back with its switch and its limit, so the desktop can tell when they changed', async () => {
+    const { copies } = await host()
+    const studio = { ...WORK, id: '44444444-4444-4444-8444-000000000009', plugin: 'meshy' as const, name: 'Studio', signedInAs: null, spending: { askBefore: false, monthlyLimit: 300 } }
+    await expect(copies.keep({ account: studio, secret: TOKEN }, LAPTOP)).resolves.toMatchObject({ kept: true })
+    expect((await copies.list(LAPTOP)).find(copy => copy.id === studio.id)?.spending).toEqual({ askBefore: false, monthlyLimit: 300 })
+  })
+})

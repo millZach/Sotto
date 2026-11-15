@@ -78,3 +78,7 @@
 .plugin-account__ports .plugin-row__note { grid-column: 1 / -1; margin: 0; }
 .plugin-account__bridge { display: grid; gap: 8px; }
 .plugin-account__warning { margin: 0; color: var(--tt-warning-text); overflow-wrap: anywhere; }
+/* Meshy: what an account may spend, beside which threads may use it. */
+.plugin-account__spending { display: grid; gap: 8px; padding-top: 10px; border-top: 1px solid var(--tt-hairline); }
+.plugin-account__spending h4 { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); font-weight: 600; }
+.plugin-account__limit { max-width: 160px; }

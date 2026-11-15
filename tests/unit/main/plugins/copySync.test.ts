@@ -17,7 +17,7 @@ const PERSONAL: PluginAccount = { ...WORK, id: '22222222-2222-4222-8222-00000000
 const tokenOf = (id: string): string => `made-up-token-for-${id.slice(-4)}`
 
 /** A paired host as the desktop reaches it, keeping what it is sent the way a real one does. */
-function fakeHost(hostId: string, options: { feature?: boolean; mail?: boolean; settings?: boolean; refuses?: PluginAccountCopyReceipt; room?: number } = {}) {
+function fakeHost(hostId: string, options: { feature?: boolean; mail?: boolean; meshy?: boolean; settings?: boolean; refuses?: PluginAccountCopyReceipt; room?: number } = {}) {
   const held = new Map<string, PluginAccountCopy>()
   const calls: string[] = []
   /** `down`: nothing is answered. `keeps`: a removal is not answered. `asked`: a list waits for it, as a slow host's does. */
@@ -25,6 +25,7 @@ function fakeHost(hostId: string, options: { feature?: boolean; mail?: boolean; 
   const target: CopyTarget = { hostId, kind: 'remote', service: {
     supportsPluginAccountCopies: options.feature !== false,
     supportsPluginMailCopies: options.feature !== false && options.mail !== false,
+    supportsPluginMeshyCopies: options.feature !== false && options.meshy !== false,
     keepPluginAccountCopy: async copy => {
       calls.push(`keep ${copy.account.name}`)
       if (state.down) throw new Error('The host did not answer.')
@@ -42,7 +43,7 @@ function fakeHost(hostId: string, options: { feature?: boolean; mail?: boolean; 
       await state.asked
       // A host from before the settings were listed says only which account and the day its secret was saved.
       return now.map(({ account }): HeldPluginAccountCopy => options.settings === false ? { id: account.id, plugin: account.plugin, savedAt: account.savedAt }
-        : { id: account.id, plugin: account.plugin, savedAt: account.savedAt, name: account.name, signedInAs: account.signedInAs, on: account.on, projects: account.projects })
+        : { id: account.id, plugin: account.plugin, savedAt: account.savedAt, name: account.name, signedInAs: account.signedInAs, on: account.on, projects: account.projects, ...(account.spending ? { spending: account.spending } : {}) })
     },
   } }
   return { target, held, calls, state }
@@ -91,6 +92,33 @@ describe('sending account copies to paired hosts (ADR-0205, amending ADR-0025)',
     expect(forge.calls).toEqual(['list'])
     // What happened is said in fixed names; nothing of an account or its secret is in them.
     expect(new Set(d.events)).toEqual(new Set(['plugin-account-copies-reconciled']))
+  })
+
+  it('sends a Meshy account only to a host that keeps one, and again when only its switch or limit changes', async () => {
+    const meshy: PluginAccount = { ...PERSONAL, plugin: 'meshy', name: 'Studio', signedInAs: null, spending: { askBefore: true, monthlyLimit: 1_000 } }
+    const d = await desk([WORK, meshy])
+    // A host from before Meshy would refuse the copy: it is sent none, and the page says the host is too old.
+    const older = fakeHost('host-older', { meshy: false })
+    const forge = fakeHost('host-forge')
+    d.connect(older, 'older')
+    d.connect(forge)
+    await d.sync.idle()
+    expect(older.calls).toEqual(['list', 'keep Work'])
+    expect((await d.states()).filter(state => state.startsWith('Studio'))).toEqual(['Studio@host-older: too-old', 'Studio@host-forge: kept'])
+    // The switch or the limit changed here, with the key as it was: the host's copy is sent again.
+    for (const spending of [{ askBefore: false, monthlyLimit: 1_000 }, { askBefore: false, monthlyLimit: 0 }]) {
+      forge.calls.length = 0
+      d.world.accounts = [WORK, { ...meshy, spending }]
+      d.sync.accountsChanged()
+      await d.sync.idle()
+      expect(forge.calls).toEqual(['list', 'keep Studio'])
+      expect(forge.held.get(meshy.id)!.account.spending).toEqual(spending)
+    }
+    // Nothing changed: nothing is sent.
+    forge.calls.length = 0
+    d.sync.accountsChanged()
+    await d.sync.idle()
+    expect(forge.calls).toEqual(['list'])
   })
 
   it('carries a change made here to the host: a replaced secret and the switch', async () => {
