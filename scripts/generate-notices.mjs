@@ -471,6 +471,8 @@ ${await read('node_modules/lodash-es/LICENSE')}`],
   ['marked license', `marked
 ${await read('node_modules/marked/LICENSE.md')}`],
   ['fastdom MIT license', fastdomMit],
+  ['three.js MIT license', `three
+${await read('node_modules/three/LICENSE')}`],
   ['DOMPurify Apache License 2.0', dompurifyNotice],
   ['T3 Code MIT license', t3CodeMit],
   ['Manrope SIL Open Font License 1.1', manropeOfl],

@@ -206,6 +206,8 @@ export const NOTICE_COMPONENTS = Object.freeze([
   packageComponent('stylis', '4.4.0', 'MIT', 'Sultan Tarimo'),
   packageComponent('ts-dedent', '2.3.0', 'MIT', 'Tamino Martinius'),
   packageComponent('uuid', '14.0.2', 'MIT', 'Robert Kieffer and other contributors'),
+  // A 3D model's turnable view in its thread (ADR-0141), bundled into a renderer chunk loaded when a view opens.
+  packageComponent('three', '0.187.0', 'MIT', 'three.js authors'),
   Object.freeze({ name: 'Manrope', nameSuffix: ' (font, latin + latin-ext woff2 subsets)', version: 'v20 (Google Fonts static serving)', license: 'OFL-1.1', attribution: 'The Manrope Project Authors' }),
   Object.freeze({ name: 'Spline Sans Mono', nameSuffix: ' (font, latin woff2 subset)', version: 'v13 (Google Fonts static serving)', license: 'OFL-1.1', attribution: 'The Spline Sans Mono Project Authors' }),
   Object.freeze({ name: 'Figtree', nameSuffix: ' (font, latin + latin-ext woff2 subsets)', version: 'v9 (Google Fonts static serving)', license: 'OFL-1.1', attribution: 'The Figtree Project Authors' }),
@@ -307,6 +309,7 @@ export async function verifyThirdPartyNotices(options = {}) {
     '## Mermaid diagram MIT licenses',
     'Copyright (c) 2014 - 2022 Knut Sveidqvist',
     '## Mermaid diagram ISC licenses',
+    '## three.js MIT license',
     '## DOMPurify Apache License 2.0',
     '## marked license',
     'Copyright © 2004, John Gruber',
