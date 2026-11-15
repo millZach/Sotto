@@ -6993,6 +6993,10 @@ msgstr ""
 msgid "The window {host} last read ended on {day}. Read again for the new one."
 msgstr ""
 
+#: src/renderer/src/App.tsx
+msgid "The words sent for 3D models could not be removed from their record. Its file was left in place. Repair local storage, then save Settings or restart Sotto to try again."
+msgstr ""
+
 #: src/renderer/src/popup/PopupApp.tsx
 msgid "There is no project to start a thread in. Add one in Sotto, then send again."
 msgstr ""

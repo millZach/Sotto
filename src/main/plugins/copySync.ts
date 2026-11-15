@@ -2,7 +2,7 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { z } from 'zod'
 import type { HeldPluginAccountCopy, PluginAccountCopy, PluginAccountCopyReceipt, PluginAccountCopyRemoved } from '../../shared/pluginAccountCopies'
-import { isBridgePlugin, isMailPlugin, type PluginAccount, type PluginAccountCopyLeaving, type PluginAccountCopyState, type PluginCopiesView } from '../../shared/plugins'
+import { isBridgePlugin, isMailPlugin, isSpendingPlugin, type PluginAccount, type PluginAccountCopyLeaving, type PluginAccountCopyState, type PluginCopiesView } from '../../shared/plugins'
 import { PluginSecretLocked } from './accounts'
 
 /** A connected host as the copies reach it: its identity, and the three requests where it lists `plugin-account-copies`. */
@@ -13,6 +13,8 @@ export interface CopyTarget {
     readonly supportsPluginAccountCopies?: boolean | undefined
     /** Whether the host keeps a mail account's copy: one from before it could is sent none. */
     readonly supportsPluginMailCopies?: boolean | undefined
+    /** Whether the host keeps a Meshy account's copy: one from before it knew Meshy would refuse it. */
+    readonly supportsPluginMeshyCopies?: boolean | undefined
     keepPluginAccountCopy?(copy: PluginAccountCopy): Promise<PluginAccountCopyReceipt>
     removePluginAccountCopy?(accountId: string): Promise<PluginAccountCopyRemoved>
     pluginAccountCopies?(): Promise<HeldPluginAccountCopy[]>
@@ -46,6 +48,8 @@ const chosen = (choices: Choices, accountId: string, computerId: string): boolea
 /** Whether a host holds an account as it is here. A host that does not say what it holds of it is not taken to. */
 const holdsAsHere = (held: HeldPluginAccountCopy, account: PluginAccount): boolean =>
   held.savedAt === account.savedAt && held.name === account.name && held.signedInAs === account.signedInAs && held.on === account.on && held.projects !== undefined && sameProjects(held.projects, account.projects)
+  // What an account may spend changes without its secret, so the host must hold the switch and the limit as they are here.
+  && (account.spending === undefined || (held.spending?.askBefore === account.spending.askBefore && held.spending.monthlyLimit === account.spending.monthlyLimit))
 
 /**
  * Sends account copies (ADR-0205, amending ADR-0025): each plugin account the user chose to keep on a paired host, to
@@ -251,7 +255,9 @@ export class PluginAccountCopySync {
     // there only once the host has said so, by not listing it or by answering its removal.
     // A mail account on a host from before it could keep one: its threads could not ask before they read it. It is
     // sent none, and one it holds, as a host that was downgraded does, is taken back.
-    const cannotKeep = (account: PluginAccount): boolean => isMailPlugin(account.plugin) && service.supportsPluginMailCopies !== true
+    // A Meshy account on a host from before it knew Meshy: it would refuse the copy, so it is sent none.
+    const cannotKeep = (account: PluginAccount): boolean => (isMailPlugin(account.plugin) && service.supportsPluginMailCopies !== true)
+      || (isSpendingPlugin(account.plugin) && service.supportsPluginMeshyCopies !== true)
     const stillThere = new Set<string>()
     for (const copy of held) {
       // Whether a copy is wanted is the user's choice, and a choice that cannot be read takes nothing back. Whether

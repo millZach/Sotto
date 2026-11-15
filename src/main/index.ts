@@ -82,7 +82,11 @@ import { isThreadClosed } from '../shared/threadActivity'
 import { wordPluginChange } from './plugins/changeWords'
 import { combinedSottoRequests } from './agents/sottoRequests'
 import { checkVercelToken, type VercelFetch } from './plugins/vercel/read'
+import { checkMeshyKey, type MeshyFetch } from './plugins/meshy/account'
 import { PluginUseRecord } from './plugins/useRecord'
+import type { MeshyApiFetch } from './tools/meshy/api'
+import { ModelRecords } from './tools/meshy/records'
+import { MeshyModels } from './tools/meshy/service'
 import { isMailPlugin, PLUGIN_USE_THREAD_TITLE_MAX, PLUGINS_COPIES_CHANGED, PLUGINS_MAIL_GRANTS_CHANGED } from '../shared/plugins'
 import { resetGhLookup } from './agents/git/ghCommand'
 import { GitUnavailableError, runGitStatusCommand, runWithGhStandIn, type RunGitCommand } from './agents/git/gitStatus'
@@ -1388,6 +1392,11 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const pluginsGitHubSignIn = sharedGitHubSignIn(() => { resetGhLookup(); return readGitHubSignIn(pluginsGh, pluginsStop.signal) })
   // What each plugin tool call did, by which thread, and never its content; it follows Keep local history.
   const pluginUse = pluginsEnabled ? new PluginUseRecord(userDataPath, { historyEnabled: () => agentHistoryEnabled }) : undefined
+  // Meshy (ADR-0141): a key goes to api.meshy.ai and nowhere else, checked there for free before it is kept. An
+  // end-to-end run reaches the stand-in its test names, or nothing; a packaged build never reads that name.
+  const meshyBase = e2eConfiguration !== null && !app.isPackaged ? process.env['SOTTO_E2E_MESHY_API_URL'] : undefined
+  const meshyFetch: MeshyFetch = e2eConfiguration !== null && !meshyBase ? async () => { throw new Error('E2E_NETWORK_DISABLED') } : (url, init) => fetch(url, init)
+  const meshyOptions = { ...(meshyBase ? { base: meshyBase } : {}), signal: pluginsStop.signal }
   // Vercel (ADR-0205): an account's token goes to api.vercel.com and nowhere else. An end-to-end run reaches the
   // stand-in its test names, or nothing; a packaged build never reads that name.
   const vercelBase = e2eConfiguration !== null && !app.isPackaged ? process.env['SOTTO_E2E_VERCEL_API_URL'] : undefined
@@ -1405,7 +1414,18 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const mailOptions: MailOptions = { signal: pluginsStop.signal, ...(e2eConfiguration === null ? {}
     : { connect: mailStandIn !== undefined ? mailOnThisComputer(mailStandIn, standInPort('SOTTO_E2E_SMTP_PORT')) : async () => { throw new Error('E2E_NETWORK_DISABLED') } }) }
   const pluginAccounts = pluginsEnabled ? new PluginAccounts(userDataPath, { credentials,
-    check: (plugin, secret, address, bridge) => isMailPlugin(plugin) ? checkMailAccount(plugin, address ?? '', secret, mailOptions, bridge) : checkVercelToken(vercelFetch, secret, vercelOptions) }) : undefined
+    check: (plugin, secret, address, bridge) => isMailPlugin(plugin) ? checkMailAccount(plugin, address ?? '', secret, mailOptions, bridge)
+      : plugin === 'meshy' ? checkMeshyKey(meshyFetch, secret, meshyOptions) : checkVercelToken(vercelFetch, secret, vercelOptions) }) : undefined
+  // 3D models (ADR-0141): Meshy's API behind one adapter, the files from Meshy's file server only, and the record of each
+  // 3D model, which follows Keep local history and forgetting a thread. Nothing asks for one until threads have the tool;
+  // a 3D model still being made when Sotto last stopped is picked up now, for Meshy's three days. An end-to-end run
+  // reaches only the stand-in its test names.
+  const meshyApiFetch: MeshyApiFetch = e2eConfiguration === null ? (url, init) => fetch(url, init)
+    : async (url, init) => { if (!meshyBase || !url.startsWith(`${meshyBase}/`)) throw new Error('E2E_NETWORK_DISABLED'); return fetch(url, init) }
+  const modelRecords = pluginsEnabled ? new ModelRecords(userDataPath, { historyEnabled: () => agentHistoryEnabled }) : undefined
+  const meshyModels = modelRecords && pluginAccounts ? new MeshyModels({ records: modelRecords, fetch: meshyApiFetch, signal: pluginsStop.signal, ...(meshyBase ? { base: meshyBase, assets: meshyBase } : {}),
+    keyOf: async accountId => (await pluginAccounts.list()).some(account => account.id === accountId && account.plugin === 'meshy') ? pluginAccounts.secret(accountId) || undefined : undefined }) : undefined
+  void meshyModels?.resume().catch(() => undefined)
   // Account copies (ADR-0205, amending ADR-0025): each plugin account the user keeps on a paired host is sent to it on
   // every connection and whenever it changes here, and a copy no longer wanted is taken back. Owl `plugins` only.
   const pluginCopySync = pluginsEnabled && pluginAccounts ? new PluginAccountCopySync(userDataPath, {
@@ -1615,6 +1635,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     const hostId = agentControl.hostId()
     // A forgotten thread takes its entries in the plugin use record with it (ADR-0205).
     void pluginUse?.forgetThreads(threadIds).catch(() => undefined)
+    // And its 3D models' records; their files stay in its folder (ADR-0141).
+    void modelRecords?.forgetThreads(threadIds).catch(() => undefined)
     // And any change of theirs still waiting on the user stops: nothing is done for a thread that is gone.
     pluginChanges?.forgetThreads(threadIds)
     // And its mail grants go with it.
@@ -1650,21 +1672,25 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const cleanRetiredHistory = async (): Promise<void> => {
     teams?.privacyChanged()
     delegationService?.privacyChanged()
-    const [chats, answers, remoteDrafts, pluginUses] = await Promise.allSettled([
+    const [chats, answers, remoteDrafts, pluginUses, modelWords] = await Promise.allSettled([
       Promise.resolve().then(() => retiredChatHistory.privacyChanged()),
       Promise.resolve().then(() => requestDrafts.privacyChanged(agentHistoryEnabled)),
       Promise.resolve().then(() => retainedDrafts.privacyChanged()),
       // With Keep local history off, the plugin use record keeps nothing (ADR-0205).
       Promise.resolve().then(() => agentHistoryEnabled ? undefined : pluginUse?.clear()),
+      // And no 3D model's record keeps the words sent for it (ADR-0141).
+      Promise.resolve().then(() => modelRecords?.privacyChanged()),
     ])
     if (chats.status === 'rejected') recoveryNotices.publish({ code: 'RETIRED_CHAT_HISTORY_NOT_CLEARED' })
     if (answers.status === 'rejected') recoveryNotices.publish({ code: 'ANSWER_HISTORY_NOT_CLEARED' })
     if (remoteDrafts.status === 'rejected') recoveryNotices.publish({ code: 'REMOTE_DRAFT_STORAGE_NOT_UPDATED' })
     if (pluginUses.status === 'rejected') recoveryNotices.publish({ code: 'PLUGIN_USE_NOT_CLEARED' })
+    if (modelWords.status === 'rejected') recoveryNotices.publish({ code: 'MODEL_WORDS_NOT_CLEARED' })
     if (chats.status === 'rejected') throw chats.reason
     if (answers.status === 'rejected') throw answers.reason
     if (remoteDrafts.status === 'rejected') throw remoteDrafts.reason
     if (pluginUses.status === 'rejected') throw pluginUses.reason
+    if (modelWords.status === 'rejected') throw modelWords.reason
   }
   // Retired records never start a provider. Apply the saved privacy preference once,
   // and keep startup available when inaccessible storage needs a later Settings retry.

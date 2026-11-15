@@ -1650,6 +1650,8 @@ export class SocketHostService implements HostService {
   get supportsPluginAccountCopies(): boolean { return this.features.includes('plugin-account-copies') || this.listed.includes('plugin-account-copies') }
   /** The host lists `plugin-mail-copies`: it keeps a mail account's copy, and its threads ask before they read it. In its health for a host being added, as account copies are. */
   get supportsPluginMailCopies(): boolean { return this.features.includes('plugin-mail-copies') || this.listed.includes('plugin-mail-copies') }
+  /** The host lists `plugin-meshy-copies`: it keeps a Meshy account's copy, and lists its switch and limit back. */
+  get supportsPluginMeshyCopies(): boolean { return this.features.includes('plugin-meshy-copies') || this.listed.includes('plugin-meshy-copies') }
   async keepPluginAccountCopy(copy: PluginAccountCopy): Promise<PluginAccountCopyReceipt> {
     this.offers('plugin-account-copies')
     return this.read(pluginAccountCopyReceiptSchema, await this.call({ op: 'plugin-account-copy', copy }, undefined, undefined, 10000))

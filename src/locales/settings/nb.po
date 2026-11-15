@@ -151,11 +151,19 @@ msgid "{computer} was started without a key file, so it cannot keep a token. Not
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "{computer} was started without a key file, so it cannot keep an API key. Nothing was kept there. On {computer}, set SOTTO_HOST_KEY_FILE to a file holding a secret of your own, start its host again, and the copy is sent."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "{computer} was started without a key file, so it cannot keep an app password. Nothing was kept there. On {computer}, set SOTTO_HOST_KEY_FILE to a file holding a secret of your own, start its host again, and the copy is sent."
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "{computer}’s Sotto cannot keep a mail account’s copy. Update Sotto on {computer}, and the copy is sent."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "{computer}’s Sotto cannot keep a Meshy account’s copy. Update Sotto on {computer}, and the copy is sent."
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
@@ -911,6 +919,10 @@ msgstr ""
 msgid "30 s"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "3D, sound and video"
+msgstr ""
+
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "500 entries"
 msgstr ""
@@ -958,6 +970,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "A host name, an alias from your SSH configuration or user@server."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "A limit is a whole number of credits, from 0 to 1,000,000."
 msgstr ""
 
 #: src/renderer/src/features/settings/NightFallsSettings.tsx
@@ -1082,6 +1098,10 @@ msgstr ""
 msgid "Add a hold shortcut"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Add a Meshy account"
+msgstr ""
+
 #: src/renderer/src/features/settings/ProjectThreadDefaults.tsx
 msgid "Add a project in Threads to set its default working copy."
 msgstr ""
@@ -1116,6 +1136,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Add another Gmail account"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Add another Meshy account"
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
@@ -1347,6 +1371,14 @@ msgstr ""
 msgid "Anything the agent installed on {name} stays there, and the thread {thread} stays in your Threads list."
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "API key"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "API key saved {day}."
+msgstr ""
+
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "APIs and your own model servers"
 msgstr ""
@@ -1417,6 +1449,10 @@ msgstr ""
 #: src/renderer/src/features/settings/themes/AppearancePreview.tsx
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Ask about your threads, or say what to start or send"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Ask before each 3D model"
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
@@ -2786,6 +2822,10 @@ msgid "e.g. Aurora"
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Each 3D model waits on a card in its thread that says what it costs, and nothing reaches Meshy before you answer."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Each account’s secret is sent to the computers you paired as hosts, on the connection Sotto already holds to each, and kept in each one’s own encrypted store, so their threads work while this computer is off. You can stop the copy for any account. An account kept to chosen projects is never copied, and neither is a Proton Mail account."
 msgstr ""
 
@@ -3868,9 +3908,17 @@ msgstr ""
 msgid "Mail"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Make 3D models from words or a photo, with a key you paste. Sotto keeps the key in its encrypted store and makes each request itself, so no agent ever sees it. Meshy may use what it is sent, and the 3D models it makes, to train its own models."
+msgstr ""
+
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
 #: src/renderer/src/features/settings/PhonesSettings.tsx
 msgid "Make a new code"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Make one at {MESHY_KEYS_PAGE}, on a paid Meshy plan: the free plan has no API. Sotto checks it with Meshy before saving it, without spending a credit, and never shows it again."
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
@@ -3913,6 +3961,26 @@ msgstr "Menyer, knapper og meldinger. Det du dikterer og det agentene skriver, f
 
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Merge into “{mergeTargetName}”"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Meshy account {name}"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Meshy already has as many accounts as Sotto keeps for one plugin. Nothing was saved. Remove one first."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Meshy could not be reached to check the key. {kept} Check your connection, then try again."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Meshy did not accept this key. {kept} Make a key at {MESHY_KEYS_PAGE}: Meshy’s API needs a paid plan."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Meshy is turning requests away for now, so the key could not be checked. {kept} Wait a minute, then try again."
 msgstr ""
 
 #. A family of theme colors in the theme editor
@@ -4012,6 +4080,10 @@ msgstr ""
 #: src/renderer/src/features/settings/CloudIphoneSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Monthly cap"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Monthly credit limit"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostsSettings.tsx
@@ -4121,6 +4193,10 @@ msgstr ""
 #: src/renderer/src/features/settings/ClearThreadsSettings.tsx
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Never"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "New API key"
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
@@ -4504,6 +4580,10 @@ msgstr ""
 msgid "Off on this computer. Connect to reach your other machines."
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Off, a thread makes 3D models without asking until the month’s limit is reached, and each one still shows in the thread with what it cost."
+msgstr ""
+
 #: src/renderer/src/features/settings/themes/CreatureChoice.tsx
 msgid "Off, nothing stands above the composer. The sidebar still says when a thread is working or waiting."
 msgstr ""
@@ -4518,6 +4598,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 msgid "Off, Sotto doesn’t load the popup, take its shortcut or offer it in the tray."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Off. No thread can see or use this account until you turn it back on. Its API key stays saved."
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
@@ -4905,6 +4989,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Paste delay saved."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Paste the API key"
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
@@ -5456,6 +5544,10 @@ msgid "Remove {removingName}?"
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Remove <0>{name}</0>? Its API key is deleted from this computer, and threads lose the account at once. Nothing changes at Meshy."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Remove <0>{name}</0>? Its app password is deleted from this computer, and threads lose the account at once. Nothing changes at Gmail."
 msgstr ""
 
@@ -5524,6 +5616,10 @@ msgid "Remove the Gmail account {name}"
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Remove the Meshy account {name}"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Remove the Proton Mail account {name}"
 msgstr ""
 
@@ -5581,6 +5677,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/CloudIphoneSettings.tsx
 msgid "Replace key"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Replace the API key for {name}"
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
@@ -5806,6 +5906,10 @@ msgstr "Samme som denne datamaskinen ({computerLanguage})"
 
 #: src/renderer/src/features/settings/themes/ThemeColorField.tsx
 msgid "saturation {saturation}, brightness {brightness}"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Save API key"
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
@@ -6359,6 +6463,10 @@ msgid "Sotto checks it with Gmail first. The app password saved now stays in use
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sotto checks it with Meshy first. The key saved now stays in use until the new one is accepted."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Sotto checks it with Vercel first. The token saved now stays in use until the new one is accepted."
 msgstr ""
 
@@ -6376,6 +6484,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/hostClientUpdateWords.ts
 msgid "Sotto could not find mise on {host}, so it will not run the update itself."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sotto could not keep the API key. {kept} Check that this computer’s credential store is unlocked, then try again."
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
@@ -7208,6 +7320,10 @@ msgid "The agent wants to run a command on {name}. Answer it in the thread to ca
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "The API key already saved was kept."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "The app password already saved was kept."
 msgstr ""
 
@@ -7386,6 +7502,10 @@ msgstr ""
 #. {clientName} is a provider's client, such as Claude Code.
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "The models {clientName} offers you now."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "The most Sotto spends through this account in a month, here and on the computers it is copied to. Meshy’s Pro plan gives 1,000 credits a month."
 msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
@@ -7659,6 +7779,10 @@ msgid "There is already a Gmail account with that name. Nothing was saved. Give 
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "There is already a Meshy account with that name. Nothing was saved. Give this one another name."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "There is already a Proton Mail account with that name. Nothing was saved. Give this one another name."
 msgstr ""
 
@@ -7697,6 +7821,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "This computer's client ID on {editingName}: <0>{clientId}</0>"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "This computer’s credential store is locked, so the API key could not be read to send. Unlock it, and Sotto tries again."
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
@@ -8584,6 +8712,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
 msgid "What it may use"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "What it spends"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostBootStart.tsx
