@@ -515,13 +515,14 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
   else if (thread.remoteHost && chrome.surface === 'browser' && pairedHostBrowser && !browserHost?.browser) body = <><ToolsChrome title={surfaceLabel} /><div className="files-problem files-problem--root" role="status">
     <strong>{t`Browser is on the host machine.`}</strong><p className="tt-paragraph">{hostName !== undefined ? t({ message: `Update Sotto on ${hostName} in Settings > Hosts & phones to use it here.`, comment: '{hostName} is the name of a paired host, as in forge.' })
       : t`Update Sotto on the host in Settings > Hosts & phones to use it here.`}</p></div></>
-  // A host thread's 3D models show here while its host is connected; an older host's are on that machine. A host that is
+  // A host thread's 3D models show here while its host is connected; an older host's, or one without plugins, are on that
+  // machine (Bug Bot on #2617, N2: a current host with plugins off offers none either, so it is not told to update). A host that is
   // away is said to be first, since what it can show is known only from a connection.
   else if (thread.remoteHost && chrome.surface === 'models' && modelsOn && modelsHost?.connected !== true) body = <><ToolsChrome title={surfaceLabel} /><div className="files-problem files-problem--root" role="status">
     <strong>{hostName !== undefined ? t({ message: `${hostName} isn’t connected`, comment: '{hostName} is the name of a paired host, as in forge.' }) : t`The host isn’t connected`}</strong><p className="tt-paragraph">{t`Its 3D models show here again once it is.`}</p></div></>
   else if (thread.remoteHost && chrome.surface === 'models' && modelsOn && modelsHost?.models3d !== true) body = <><ToolsChrome title={surfaceLabel} /><div className="files-problem files-problem--root" role="status">
-    <strong>{t`This host cannot show its 3D models here yet.`}</strong><p className="tt-paragraph">{hostName !== undefined ? t({ message: `Update Sotto on ${hostName} in Settings > Hosts & phones to see them here.`, comment: '{hostName} is the name of a paired host, as in forge.' })
-      : t`Update Sotto on the host in Settings > Hosts & phones to see them here.`}</p></div></>
+    <strong>{t`This host does not show its 3D models here.`}</strong><p className="tt-paragraph">{hostName !== undefined ? t({ message: `The Sotto on ${hostName} is an older one, or one without plugins. Its 3D models stay in its threads’ folders there.`, comment: '{hostName} is the name of a paired host, as in forge.' })
+      : t`The Sotto on the host is an older one, or one without plugins. Its 3D models stay in its threads’ folders there.`}</p></div></>
   else if (thread.remoteHost && (chrome.surface === 'terminal' && !hostedTerminal || chrome.surface === 'browser' && !browserHost?.browser || chrome.surface === 'iphone')) body = <><ToolsChrome title={surfaceLabel} /><div className="files-problem files-problem--root" role="status"><strong>{t({ message: `${surfaceLabel} is on the host machine.`, comment: '{surfaceLabel} is a Tools surface\'s name, as in Terminal.' })}</strong><p className="tt-paragraph">{t`Use this tool on the host. Replies and permission answers remain available here.`}</p></div></>
   // A paired host pushes no roster changes: its thread's agent counts moving in the shell read the roster again.
   else if (chrome.surface === 'agents') body = <AgentsSurface key={thread.id} threadId={thread.id} store={store.subagents} bridge={subagentsBridge}

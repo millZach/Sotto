@@ -55,7 +55,7 @@ import type { NextPromptEntry } from '../../shared/nextPrompt'
 import { desktopDefaultsReceiptSchema, type DesktopDefaultsInput, type DesktopDefaultsReceipt } from '../../shared/desktopDefaults'
 import { heldPluginAccountCopiesSchema, pluginAccountCopyReceiptSchema, pluginAccountCopyRemovedSchema, type HeldPluginAccountCopy, type PluginAccountCopy, type PluginAccountCopyReceipt, type PluginAccountCopyRemoved, spendingReportsSchema, type SpendingReport } from '../../shared/pluginAccountCopies'
 import { gitHubSignInSchema, type GitHubSignIn } from '../../shared/plugins'
-import { model3dHostBytesSchema, model3dListSchema, model3dRemovalSchema, model3dViewOrNullSchema, type HostModelViews, type Model3dHostNews } from '../../shared/models3d'
+import { model3dHostBytesSchema, model3dListSchema, model3dRemovalSchema, model3dViewOrNullSchema, type HostModelViews, type Model3dHostNews, type Model3dListed } from '../../shared/models3d'
 import type { DelegationRelayAsk, DelegationRemoteAsk, RelayedReply } from '../../shared/delegationRelay'
 import type { TellWatcherAnswer, WatcherTellPush } from '../../shared/tellWatcher'
 import type { DelegationNews } from '../../shared/delegation'
@@ -1796,19 +1796,36 @@ export class SocketHostService implements HostService {
     return this.read(spendingReportsSchema, await this.call({ op: 'plugin-meshy-spending', reports: [...reports] }, undefined, undefined, 10000))
   }
   /**
-   * The host's 3D models (`plugin-meshy-models`; the Meshy plan's ticket 6, part 2), only where this desktop's hello
-   * accepted them: in this connection's features, not its health, since the host keeps the lines for that hello alone.
+   * The host's 3D models (`plugin-meshy-models`; the Meshy plan's ticket 6, part 2), where this desktop's hello accepted
+   * them, or its health listed them, as account copies and shared spending are read (Bug Bot on #2617, L1): a host being
+   * added records this desktop a moment after its hello, so that hello listed none. The host reads its record of desktops
+   * again before it answers a list, and from that answer on keeps this desktop's lines; the list is asked as soon as the
+   * host's news is listened to, so that happens on the first connection, not the next one.
    */
-  get supportsPluginMeshyModels(): boolean { return this.options.meshyModels === true && this.features.includes('plugin-meshy-models') }
+  get supportsPluginMeshyModels(): boolean {
+    return this.options.meshyModels === true && (this.features.includes('plugin-meshy-models') || this.listed.includes('plugin-meshy-models'))
+  }
+  /** Lists the host's 3D models, and takes an answer as the host saying this desktop may, as a hello now would. */
+  private async listModels(threadId: string | undefined): Promise<Model3dListed[]> {
+    const frames = this.frames
+    const listed = this.read(model3dListSchema, await this.call({ op: 'plugin-meshy-models', request: threadId === undefined ? {} : { threadId } }, undefined, undefined, 30000))
+    if (frames === this.frames && !this.features.includes('plugin-meshy-models')) this.features = [...this.features, 'plugin-meshy-models']
+    return listed
+  }
   get pluginMeshyModels(): HostModelViews | undefined {
     if (!this.supportsPluginMeshyModels) return undefined
     return this.modelViews ??= {
-      list: async threadId => this.read(model3dListSchema, await this.call({ op: 'plugin-meshy-models', request: threadId === undefined ? {} : { threadId } }, undefined, undefined, 30000)),
+      list: threadId => this.listModels(threadId),
       view: async id => this.read(model3dViewOrNullSchema, await this.call({ op: 'plugin-meshy-model', request: { id } }, undefined, undefined, 30000)),
       // A part is one large frame, so it waits behind previews as a picture does.
       bytes: request => this.large('plugin-meshy-models', async () => this.read(model3dHostBytesSchema, await this.call({ op: 'plugin-meshy-model-bytes', request }))),
       remove: async id => this.read(model3dRemovalSchema, await this.call({ op: 'plugin-meshy-model-remove', request: { id } }, undefined, undefined, 30000)),
-      subscribe: listener => { this.modelListeners.add(listener); return () => { this.modelListeners.delete(listener) } },
+      subscribe: listener => {
+        this.modelListeners.add(listener)
+        // A desktop recorded after its hello asks once now, so the host keeps its lines and sends its news from here on.
+        if (!this.features.includes('plugin-meshy-models')) void this.listModels(undefined).catch(() => undefined)
+        return () => { this.modelListeners.delete(listener) }
+      },
     }
   }
   private modelViews: HostModelViews | undefined

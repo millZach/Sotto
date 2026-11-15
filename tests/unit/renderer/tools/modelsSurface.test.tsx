@@ -172,10 +172,12 @@ describe('Tools › 3D models on a host thread', () => {
     expect(plugins.models3d).not.toHaveBeenCalled()
   })
 
-  it('tells an older host apart, which cannot show its 3D models here', async () => {
+  it('tells a host that offers no 3D models apart, older or without plugins, and does not tell it to update', async () => {
+    // Bug Bot on #2617, N2: a current host with plugins off offers none either.
     setup('models', onForge({ connected: true }))
-    expect(await screen.findByText('This host cannot show its 3D models here yet.')).toBeInTheDocument()
-    expect(screen.getByText('Update Sotto on forge in Settings > Hosts & phones to see them here.')).toBeInTheDocument()
+    expect(await screen.findByText('This host does not show its 3D models here.')).toBeInTheDocument()
+    expect(screen.getByText('The Sotto on forge is an older one, or one without plugins. Its 3D models stay in its threads’ folders there.')).toBeInTheDocument()
+    expect(screen.queryByText(/Update Sotto/u)).toBeNull()
     expect(plugins.models3d).not.toHaveBeenCalled()
   })
 })

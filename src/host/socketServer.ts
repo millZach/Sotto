@@ -2047,7 +2047,12 @@ export async function startSocketServer(options: SocketServerOptions) {
         // is, is pushed its news, and sent 3D models' lines, from now on if it asked.
         if (request.op === 'plugin-meshy-models') await options.watcherDesktops?.refresh().catch(() => undefined)
         if (!offers(peer, 'plugin-meshy-models') || !service.pluginMeshyModels) throw new Refusal('invalid_request')
-        if (peer.meshyModelsAsked) peer.meshyModels = true
+        if (peer.meshyModelsAsked && !peer.meshyModels) {
+          peer.meshyModels = true
+          // The threads it holds were sent without their 3D models' lines: each goes again whole, with them (Bug Bot on
+          // #2617, L1).
+          for (const id of [...peer.observed]) if (peer.held.has(id)) detail(peer, id)
+        }
         const models = service.pluginMeshyModels
         try {
           if (request.op === 'plugin-meshy-models') return model3dListSchema.parse(await models.list(request.request.threadId))

@@ -3971,6 +3971,15 @@ msgstr "The selected thread is no longer listed."
 msgid "The shell could not start in this folder."
 msgstr "The shell could not start in this folder."
 
+#. {hostName} is the name of a paired host, as in forge.
+#: src/renderer/src/tools/ToolsPanel.tsx
+msgid "The Sotto on {hostName} is an older one, or one without plugins. Its 3D models stay in its threads’ folders there."
+msgstr "The Sotto on {hostName} is an older one, or one without plugins. Its 3D models stay in its threads’ folders there."
+
+#: src/renderer/src/tools/ToolsPanel.tsx
+msgid "The Sotto on the host is an older one, or one without plugins. Its 3D models stay in its threads’ folders there."
+msgstr "The Sotto on the host is an older one, or one without plugins. Its 3D models stay in its threads’ folders there."
+
 #: src/renderer/src/tools/DelegatedThreads.tsx
 msgid "The start of the brief, as Sotto last read it from {machine}."
 msgstr "The start of the brief, as Sotto last read it from {machine}."
@@ -4110,8 +4119,8 @@ msgid "This handover is thin. {providerName} keeps a subagent’s working histor
 msgstr "This handover is thin. {providerName} keeps a subagent’s working history inside its own session, where Sotto can’t fork it, so the new thread knows only the task and the result."
 
 #: src/renderer/src/tools/ToolsPanel.tsx
-msgid "This host cannot show its 3D models here yet."
-msgstr "This host cannot show its 3D models here yet."
+msgid "This host does not show its 3D models here."
+msgstr "This host does not show its 3D models here."
 
 #: src/renderer/src/tools/LinkedFilePanel.tsx
 msgid "This link does not lead to a Markdown file. Nothing was opened."
@@ -4478,17 +4487,8 @@ msgstr "Update branch"
 
 #. {hostName} is the name of a paired host, as in forge.
 #: src/renderer/src/tools/ToolsPanel.tsx
-msgid "Update Sotto on {hostName} in Settings > Hosts & phones to see them here."
-msgstr "Update Sotto on {hostName} in Settings > Hosts & phones to see them here."
-
-#. {hostName} is the name of a paired host, as in forge.
-#: src/renderer/src/tools/ToolsPanel.tsx
 msgid "Update Sotto on {hostName} in Settings > Hosts & phones to use it here."
 msgstr "Update Sotto on {hostName} in Settings > Hosts & phones to use it here."
-
-#: src/renderer/src/tools/ToolsPanel.tsx
-msgid "Update Sotto on the host in Settings > Hosts & phones to see them here."
-msgstr "Update Sotto on the host in Settings > Hosts & phones to see them here."
 
 #: src/renderer/src/tools/ToolsPanel.tsx
 msgid "Update Sotto on the host in Settings > Hosts & phones to use it here."

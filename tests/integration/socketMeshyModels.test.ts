@@ -94,6 +94,34 @@ describe('a host’s 3D models over its listener', () => {
     } finally { desktop.frames.close(); before.frames.close(); phone.frames.close(); await server.close() }
   })
 
+  it('sends a held thread again whole, with its 3D model’s line, once a desktop recorded after its hello lists them', async () => {
+    // Bug Bot on #2617, L1.
+    const views: HostModelViews = {
+      list: async () => [{ ...view, threadId: 'props', account: 'Studio', askedAt: at }], view: async () => view,
+      bytes: async () => null, remove: async () => 'files-there', subscribe: () => () => undefined,
+    }
+    const emit: { current: (update: AgentThreadDetailUpdate) => void } = { current: () => undefined }
+    const known = new Set<string>()
+    const server = await startSocketServer({ service: modelsHost(views, emit), pairing: fixture.host.pairing,
+      watcherDesktops: { has: (clientId: string) => known.has(clientId), refresh: async () => undefined } })
+    const added = await fixture.host.pairing.redeem(fixture.host.pairing.issuePairingCode().code, 'Desktop being added')
+    const desktop = await rawPeer(server.descriptor.port, fixture.host.pairing.signSession(added.clientId))
+    try {
+      const hello = await desktop.call('hello', { op: 'hello', accepts: ['plugin-meshy-models'] }) as { result: { features: string[] } }
+      expect(hello.result.features).not.toContain('plugin-meshy-models')
+      await desktop.call('observe', { op: 'observe', threadIds: ['props'] })
+      const details = () => desktop.messages.filter(message => message.event === 'detail') as { detail: unknown }[]
+      await expect.poll(() => details().length).toBeGreaterThan(0)
+      expect(visualKinds(details().at(-1)!.detail)).toEqual([undefined, undefined, undefined])
+      // Recorded now, as Settings does a moment after the hello; its first list turns its lines on.
+      known.add(added.clientId)
+      const before = details().length
+      expect(await desktop.call('list', { op: 'plugin-meshy-models', request: {} })).toMatchObject({ ok: true })
+      await expect.poll(() => details().length).toBeGreaterThan(before)
+      expect(visualKinds(details().at(-1)!.detail)).toEqual([undefined, '3d-model', undefined])
+    } finally { desktop.frames.close(); await server.close() }
+  })
+
   it('sends no more 3D models’ lines, whole or in a delta, to a desktop taken off the record while still paired', async () => {
     const views: HostModelViews = { list: async () => [], view: async () => null, bytes: async () => null, remove: async () => 'no-record', subscribe: () => () => undefined }
     const emit: { current: (update: AgentThreadDetailUpdate) => void } = { current: () => undefined }
@@ -153,7 +181,7 @@ describe('a real headless host’s 3D models on the desktop', () => {
   afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
 
   /** A host on `version` whose records hold a finished barrel in its thread's folder and a crate whose folder is outside it. */
-  async function connected(version: string) {
+  async function connected(version: string, options: { readonly recordAfterHello?: boolean } = {}) {
     const root = await mkdtemp(join(tmpdir(), 'sotto-meshy-models-host-'))
     const data = join(root, 'data')
     const thread = await realpath(await mkdtemp(join(tmpdir(), 'sotto-meshy-models-thread-')))
@@ -172,13 +200,15 @@ describe('a real headless host’s 3D models on the desktop', () => {
     const host = await startFixtureHeadlessHost({ dataDirectory: data, port: 0, sottoVersion: version, keyFile })
     const url = 'http://127.0.0.1:' + host.descriptor!.port
     const pairing = await SocketHostService.pair(url, host.pairing.issuePairingCode().code, 'Synthetic desktop')
-    await writeFile(join(data, DESKTOP_CLIENTS_FILE), JSON.stringify([pairing.clientId]))
+    if (!options.recordAfterHello) await writeFile(join(data, DESKTOP_CLIENTS_FILE), JSON.stringify([pairing.clientId]))
     const socket = new SocketHostService({ url, token: pairing.token, expectedHostId: pairing.hostId, meshyModels: true })
     cleanups.push(async () => {
       await socket.close(); await host.close()
       for (const made of [root, thread, outside]) if (dirname(made) === await realpath(tmpdir()) || dirname(made) === tmpdir()) await rm(made, { recursive: true, force: true })
     })
     await socket.connect()
+    // A host being added records its desktop a moment after the hello, as Settings does.
+    if (options.recordAfterHello) await writeFile(join(data, DESKTOP_CLIENTS_FILE), JSON.stringify([pairing.clientId]))
     const connection = { hostId: pairing.hostId, name: 'forge', kind: 'remote', service: socket, available: () => true } as unknown as DesktopHostConnection
     const changed: Model3dView[] = []
     const models = new HostModels3d({ connections: () => [connection], subscribeConnected: () => () => undefined, subscribeRemoved: () => () => undefined, localHostId: () => undefined,
@@ -208,6 +238,15 @@ describe('a real headless host’s 3D models on the desktop', () => {
     await rm(join(c.thread, 'models', 'Oak barrel.glb'))
     await expect(c.models.remove(c.key('barrel'))).resolves.toBe('removed')
     expect((await c.models.list()).map(model => model.id)).toEqual([c.key('crate')])
+  })
+
+  it('shows a newly added host’s 3D models on its first connection, whose desktop was recorded after its hello', async () => {
+    // Bug Bot on #2617, L1: the hello listed no 3D models; the host's health did.
+    const c = await connected('0.1.38-owl.20261013.1', { recordAfterHello: true })
+    expect(c.socket.supportsPluginMeshyModels).toBe(true)
+    expect((await c.models.list()).map(model => model.id)).toEqual([c.key('barrel'), c.key('crate')])
+    const bytes = await c.models.bytes({ id: c.key('barrel'), part: 'model' })
+    expect(bytes && Buffer.from(bytes).equals(Buffer.from(c.glb))).toBe(true)
   })
 
   it('tells an older host apart: one without the feature lists nothing and draws nothing', async () => {
