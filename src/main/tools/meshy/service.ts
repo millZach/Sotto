@@ -109,7 +109,9 @@ export class MeshyModels {
     try {
       const record = await this.current(id)
       this.inTime(record)
-      const key = await this.options.keyOf(record.accountId)
+      // A key the credential store will not hand over, as while it is locked, ends it here: nothing has gone to Meshy.
+      let key: string | undefined
+      try { key = await this.options.keyOf(record.accountId) } catch { throw new Ending('failed', 'locked') }
       if (!key) throw new Ending('failed', 'no-account')
       const api = new MeshyApi(this.options.fetch, key, { ...(this.options.base ? { base: this.options.base } : {}), signal: this.options.signal })
       let made: MeshyTask

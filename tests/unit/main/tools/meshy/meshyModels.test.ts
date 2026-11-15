@@ -123,6 +123,10 @@ describe('a 3D model made with Meshy', () => {
     }
     const { service } = models({ keyOf: () => undefined })
     expect(await (await service.make(words())).done).toMatchObject({ state: 'failed', failure: 'no-account' })
+    // A credential store that will not hand the key over ends it, with nothing sent (Bug Bot on #2594, L2).
+    const locked = models({ keyOf: () => { throw new Error('locked') } })
+    expect(await (await locked.service.make(words())).done).toMatchObject({ state: 'failed', failure: 'locked', credits: 0 })
+    expect(meshy.created()).toHaveLength(0)
   })
 
   it('keeps the credits counted, and never asks again, when Meshy may have taken it without Sotto learning its task', async () => {

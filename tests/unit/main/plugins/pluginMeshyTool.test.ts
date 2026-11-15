@@ -8,7 +8,7 @@ import { MODEL_COST } from '../../../../src/main/plugins/meshy/tool'
 import type { PluginChangeAnswer } from '../../../../src/main/plugins/pendingChanges'
 import { PluginToolServer } from '../../../../src/main/plugins/pluginTools'
 import type { PluginUseReport } from '../../../../src/main/plugins/useRecord'
-import { checkPhoto, photoToSend } from '../../../../src/main/tools/meshy/photo'
+import { checkPhoto, photoToSend, pixelsOf } from '../../../../src/main/tools/meshy/photo'
 import type { ThreeDModel } from '../../../../src/main/tools/meshy/records'
 import type { ModelRequest } from '../../../../src/main/tools/meshy/service'
 import { MAKE_3D_MODEL_TOOL, pluginAccountAdmits, type PluginAccount, type PluginChange } from '../../../../src/shared/plugins'
@@ -18,15 +18,16 @@ const servers: PluginToolServer[] = []
 let root: string
 beforeEach(async () => { root = await realpath(await mkdtemp(join(tmpdir(), 'sotto-meshy-tool-'))) })
 afterEach(async () => {
+  vi.useRealTimers()
   await Promise.all(servers.splice(0).map(server => server.close()))
   await rm(root, { recursive: true, force: true })
 })
 
 const STUDIO: PluginAccount = { id: '44444444-4444-4444-8444-000000000001', plugin: 'meshy', name: 'Studio', savedAt: '2026-11-15T08:00:00.000Z', signedInAs: null, on: true, projects: null, spending: { askBefore: true, monthlyLimit: 1_000 } }
-const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from('made-up photo with camera details')])
+const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x00, 0x10, 0x00, 0x10, 0x03, 1, 0x22, 0, 2, 0x11, 1, 3, 0x11, 1]), Buffer.from('made-up photo with camera details')])
 
 /** The tools for thread `one`, over one Meshy account, with the user's answers and Meshy's outcome scripted. */
-function tools(options: { answers?: PluginChangeAnswer[]; used?: number; ended?: Partial<ThreeDModel> | 'never'; noMeshy?: boolean; whileAsked?: (world: { accounts: PluginAccount[] }) => void | Promise<void>; whileCounting?: (world: { accounts: PluginAccount[] }) => void } = {}) {
+function tools(options: { answers?: PluginChangeAnswer[]; used?: number; ended?: Partial<ThreeDModel> | 'never' | 'lost'; noMeshy?: boolean; folder?: string; whileAsked?: (world: { accounts: PluginAccount[] }) => void | Promise<void>; whileCounting?: (world: { accounts: PluginAccount[] }) => void } = {}) {
   const world = { accounts: [STUDIO] }
   const answers = [...options.answers ?? []]
   const asked: PluginChange[] = []
@@ -54,7 +55,7 @@ function tools(options: { answers?: PluginChangeAnswer[]; used?: number; ended?:
       return answers.shift() ?? 'allowed'
     },
     ...(options.noMeshy ? {} : { meshy: {
-      folderOf: async () => root,
+      folderOf: async () => options.folder ?? root,
       // What this computer counts: what was used before, and each 3D model started here at its full cost.
       monthCredits: async () => { options.whileCounting?.(world); return (options.used ?? 0) + made.length * MODEL_COST.words },
       keyTrouble: () => null,
@@ -67,7 +68,7 @@ function tools(options: { answers?: PluginChangeAnswer[]; used?: number; ended?:
           source: request.source.kind === 'words' ? { kind: 'words', words: request.source.words } : { kind: 'photo', fileName: request.source.fileName },
           root: request.root, folder: join(request.root, request.folder ?? 'models'), formats: ['glb', 'usdz'], state: 'making', stage: 'shape', credits: 0, askedAt: '2026-11-15T09:00:00.000Z', files: [] }
         const ended = options.ended
-        const done = ended === 'never' ? new Promise<ThreeDModel | undefined>(() => undefined)
+        const done = ended === 'never' ? new Promise<ThreeDModel | undefined>(() => undefined) : ended === 'lost' ? Promise.resolve(undefined)
           : Promise.resolve({ ...model, state: 'done' as const, credits: 30, files: ['Oak barrel.png', 'Oak barrel.glb', 'Oak barrel.usdz'], ...ended })
         return { model, done }
       },
@@ -136,7 +137,7 @@ describe('making a 3D model through make_3d_model', () => {
     const t = tools()
     t.world.accounts = [{ ...STUDIO, spending: { askBefore: false, monthlyLimit: 40 } }]
     const results = await Promise.all([t.make(BARREL), t.make({ ...BARREL, name: 'Second barrel' })])
-    expect(results.map(result => result.isError === true)).toEqual([false, true])
+    expect(results.map(result => result.isError === true).sort()).toEqual([false, true])
     expect(t.made).toHaveLength(1)
   })
 
@@ -220,16 +221,23 @@ describe('making a 3D model through make_3d_model', () => {
     } finally { await rm(outside, { recursive: true, force: true }) }
   })
 
-  it('says a 3D model is still being made when the client gives up, or does not say how long it waits', async () => {
+  it('stops a call its client gave up on, and says a 3D model is still being made when the client does not say how long it waits', async () => {
     const t = tools({ ended: 'never' })
     t.world.accounts = [{ ...STUDIO, spending: { askBefore: false, monthlyLimit: 1_000 } }]
+    // A call its client already gave up on asks nothing of Meshy (Bug Bot on #2594, N1).
     const gone = new AbortController()
     gone.abort()
-    expect(said(await t.make(BARREL, { signal: gone.signal }))).toContain('Meshy is still making the 3D model "Oak barrel"')
+    expect(said(await t.make(BARREL, { signal: gone.signal }))).toBe('The call was stopped before the 3D model was asked for. Nothing was sent to Meshy and nothing was charged.')
+    expect(t.made).toEqual([])
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     try {
-      const waiting = t.make(BARREL)
-      await vi.advanceTimersByTimeAsync(t.server.timeoutMs)
+      let answered = false
+      const waiting = t.make(BARREL).finally(() => { answered = true })
+      // The call reads files on its way to its timer, so the clock is moved on a minute at a time while they finish.
+      for (let minute = 0; !answered && minute < 10; minute++) {
+        await new Promise(resolve => setImmediate(resolve))
+        await vi.advanceTimersByTimeAsync(60_000)
+      }
       expect(said(await waiting)).toContain('Meshy is still making the 3D model "Oak barrel"')
     } finally { vi.useRealTimers() }
   })
@@ -241,6 +249,46 @@ describe('making a 3D model through make_3d_model', () => {
     const result = await t.make(BARREL, { waitMs: 10_100 })
     expect(said(result)).toBe('Asked of Meshy without a card, since the user turned asking off for the account. Meshy is still making the 3D model "Oak barrel". Sotto saves its files into models/ in the thread\'s folder when it is done, named after "Oak barrel"; about 30 credits.')
     expect(uses(t.recorded)).toEqual(['make_3d_model 3d-model done'])
+  })
+
+  it('does not say a 3D model is still being made once Sotto lost track of it', async () => {
+    // Bug Bot on #2594, L2: the thread was removed, Sotto is stopping, or the record could not be written.
+    const t = tools({ ended: 'lost' })
+    const result = await t.make(BARREL)
+    expect(result.isError).toBe(true)
+    expect(said(result)).toMatch(/^Sotto lost track of the 3D model "Oak barrel" before it was done/u)
+    expect(uses(t.recorded)).toEqual(['make_3d_model 3d-model failed'])
+  })
+
+  it('gives the files\' paths inside the thread\'s folder when that folder is reached through a link', async () => {
+    // Bug Bot on #2594, L3.
+    const linkTo = await mkdtemp(join(tmpdir(), 'sotto-meshy-link-'))
+    const linked = join(linkTo, 'thread')
+    try {
+      await symlink(root, linked, 'junction')
+      const t = tools({ folder: linked })
+      expect(said(await t.make(BARREL))).toContain('Its files, in the thread\'s folder: models/Oak barrel.png, models/Oak barrel.glb, models/Oak barrel.usdz.')
+      expect(t.made[0]!.root).toBe(root)
+    } finally { await rm(linkTo, { recursive: true, force: true }) }
+  })
+
+  it('refuses a photo with more pixels than Sotto draws again, read from its header before anything decodes it', async () => {
+    // Bug Bot on #2594, L1: a small PNG that says it is 16,000 pixels on a side.
+    const png = Buffer.alloc(33)
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(png, 0)
+    png.writeUInt32BE(13, 8)
+    png.write('IHDR', 12, 'latin1')
+    png.writeUInt32BE(16_000, 16)
+    png.writeUInt32BE(16_000, 20)
+    await writeFile(join(root, 'huge.png'), png)
+    const t = tools()
+    expect(said(await t.make({ name: 'Huge', photo: 'huge.png' }))).toContain('has more pixels than Sotto draws again')
+    expect([t.asked, t.made]).toEqual([[], []])
+    expect(pixelsOf(png, 'image/png')).toEqual({ width: 16_000, height: 16_000 })
+    // A JPEG's size is in its first start of frame, past any other segment before it.
+    const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x04, 0x00, 0x00, 0xff, 0xc2, 0x00, 0x11, 0x08, 0x02, 0x58, 0x03, 0x20, 0x03])
+    expect(pixelsOf(jpeg, 'image/jpeg')).toEqual({ width: 800, height: 600 })
+    expect(pixelsOf(Buffer.from([0xff, 0xd8, 0xff, 0xd9]), 'image/jpeg')).toBeNull()
   })
 
   it('says plainly why one was not made, and that Meshy may have charged one it could not tell about', async () => {

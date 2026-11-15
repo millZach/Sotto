@@ -13,11 +13,12 @@ export const MODEL_STAGES = ['shape', 'texture', 'files'] as const
 /**
  * Why a 3D model was not made, in one word: Meshy `refused` the key, the account had `no-credits`, Meshy `rejected`
  * the words or the photo, Meshy `failed` making it, a file was `too-large`, the `folder` would not take the files,
- * or the Meshy account that asked is gone (`no-account`). A `lost` 3D model says `expired` when its three days passed,
+ * the Meshy account that asked is gone (`no-account`), or its key could not be read, as while the credential store is
+ * `locked`. A `lost` 3D model says `expired` when its three days passed,
  * `stopped` when Sotto stopped before it knew whether Meshy took it, and `unreachable` when Meshy gave no answer Sotto
  * could read as it was asked; those last two keep their credits counted, since Meshy may have taken them.
  */
-export const MODEL_FAILURES = ['refused', 'no-credits', 'rejected', 'failed', 'too-large', 'folder', 'unreachable', 'no-account', 'expired', 'stopped'] as const
+export const MODEL_FAILURES = ['refused', 'no-credits', 'rejected', 'failed', 'too-large', 'folder', 'unreachable', 'no-account', 'locked', 'expired', 'stopped'] as const
 
 /** How long Meshy keeps what its API made below Enterprise, and so how long Sotto keeps trying to fetch it. */
 export const MODEL_KEPT_MS = 3 * 24 * 60 * 60_000

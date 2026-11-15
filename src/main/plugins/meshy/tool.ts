@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { MAKE_3D_MODEL_TOOL, PLUGIN_ACCOUNT_NAME_MAX, PLUGIN_ACCOUNTS_TOOL, type PluginAccount } from '../../../shared/plugins'
 import type { ThreadToolDefinition } from '../../agents/threadToolServer'
 import { MESHY_TRIANGLES_MAX, MESHY_TRIANGLES_MIN, MESHY_WORDS_MAX } from '../../tools/meshy/api'
-import type { CheckedPhoto, PhotoProblem } from '../../tools/meshy/photo'
+import { PHOTO_PIXELS_MAX, PHOTO_SIDE_MAX, type CheckedPhoto, type PhotoProblem } from '../../tools/meshy/photo'
 import type { ThreeDModel } from '../../tools/meshy/records'
 import { MESHY_CREDITS, MODEL_FOLDER, type ModelRequest } from '../../tools/meshy/service'
 
@@ -68,6 +68,7 @@ export function photoWords(problem: PhotoProblem, path: string): string {
     case 'missing': return `There is no photo at "${path}" in the thread's folder. ${NOTHING_MADE}`
     case 'kind': return `"${path}" is not a JPEG or PNG photo. ${NOTHING_MADE}`
     case 'too-large': return `The photo "${path}" is larger than Meshy's 20 MB. ${NOTHING_MADE}`
+    case 'too-many-pixels': return `The photo "${path}" has more pixels than Sotto draws again: at most ${PHOTO_SIDE_MAX.toLocaleString('en-US')} on a side and ${(PHOTO_PIXELS_MAX / 1_000_000).toLocaleString('en-US')} million in all. Use a smaller copy of it. ${NOTHING_MADE}`
     case 'changed': return `The photo "${path}" changed or moved after it was asked for, so it was not sent. ${NOTHING_MADE} Ask again with the photo as it is now; the user will be asked again.`
     default: return `Sotto could not read the photo "${path}". ${NOTHING_MADE}`
   }
@@ -90,6 +91,7 @@ export function endedWords(model: ThreeDModel): string {
     case 'too-large': return `A file Meshy made was larger than Sotto takes, so it was not saved. ${credits}`
     case 'folder': return `The folder would not take the files: it is not inside the thread's folder, or could not be written. ${credits}`
     case 'no-account': return `The Meshy account was removed before the 3D model was made. ${credits}`
+    case 'locked': return `Sotto could not read the Meshy account's key, because this computer's credential store is locked. Ask the user to unlock it, then try again. ${credits}`
     case 'expired': return `Meshy no longer has the 3D model, so its files could not be fetched. ${credits}`
     default: return `Sotto could not tell whether Meshy took the request. Do not ask again for this one; tell the user. ${credits}`
   }

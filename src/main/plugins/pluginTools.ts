@@ -1,3 +1,4 @@
+import { realpath } from 'node:fs/promises'
 import { z } from 'zod'
 import {
   GITHUB_CLOSE_ISSUE_TOOL, GITHUB_COMMENT_TOOL, GITHUB_OPEN_ISSUE_TOOL, GITHUB_REOPEN_ISSUE_TOOL, isBridgePlugin, MAIL_PLUGIN_IDS, MAIL_SEND_TOOL, MAKE_3D_MODEL_TOOL, MESHY_MONTHLY_LIMIT_DEFAULT, PLUGIN_ACCOUNT_NAME_MAX, PLUGIN_ACCOUNTS_TOOL, PLUGIN_CHANGE_TOOLS, PLUGIN_NAMES,
@@ -628,7 +629,9 @@ export class PluginToolServer implements ScopedThreadTools {
     const trouble = meshy.keyTrouble(account)
     if (trouble) return text(trouble === 'locked' ? `Sotto could not read the key for the Meshy account "${account.name}", because this computer's credential store is locked. Ask the user to unlock it, then try again. ${NOTHING_MADE}`
       : `Sotto no longer holds the key for the Meshy account "${account.name}". Ask the user to replace it in ${SETTINGS}. ${NOTHING_MADE}`, true)
-    const root = await meshy.folderOf(threadId).catch(() => null)
+    // The folder as it really is, through any link, so the files' paths are said inside it (Bug Bot on #2594, L3).
+    const folderOfThread = await meshy.folderOf(threadId).catch(() => null)
+    const root = folderOfThread === null ? null : await realpath(folderOfThread).catch(() => null)
     if (!root) return text(`Sotto cannot find this thread's folder on this computer, so there is nowhere to save a 3D model. ${NOTHING_MADE}`, true)
     const checked = photo === undefined ? undefined : await meshy.checkPhoto(root, photo)
     if (typeof checked === 'string') return text(photoWords(checked, photo!), true)
@@ -680,7 +683,19 @@ export class PluginToolServer implements ScopedThreadTools {
     // The last look at the limit and the start run one at a time for an account, so two 3D models asked for at once
     // cannot both fit under it; the one started first already counts in full by the time the next one looks.
     const turn = await this.inModelTurn(now.id, async (): Promise<Awaited<ReturnType<PluginMeshyHandlers['make']>> | ThreadToolResult> => {
-      const overNow = await overLimit(now)
+      // The photo, the redraw and the turn may each have waited: the call, the thread and the account are looked at
+      // once more, right before anything is asked of Meshy (Bug Bot on #2594, N1).
+      if (call.context.signal?.aborted || !this.admits(threadId)) { await kept('failed'); return text(`The call was stopped before the 3D model was asked for. ${NOTHING_MADE}`, true) }
+      const latest = await this.handlers.findAccount(threadId, 'meshy', account.name).catch(() => 'unknown' as const)
+      if (typeof latest === 'string' || latest.id !== account.id) {
+        await kept('failed')
+        return text(`The Meshy account was switched off, kept to other projects or removed before the 3D model could be asked for. ${NOTHING_MADE}`, true)
+      }
+      if (!allowed && latest.spending?.askBefore !== false) {
+        await kept('refused')
+        return text(`The user turned asking back on for the Meshy account just now, so this 3D model was not asked for without a card. ${NOTHING_MADE} Call ${MAKE_3D_MODEL_TOOL} again; the user will be asked.`, true)
+      }
+      const overNow = await overLimit(latest)
       if (overNow) { await kept('refused'); return text(overNow, true) }
       try {
         return await meshy.make({ threadId, accountId: now.id, name, root, folder,
@@ -704,7 +719,13 @@ export class PluginToolServer implements ScopedThreadTools {
       void started.done.then(model => model, () => undefined).then(model => { clearTimeout(timer); signal?.removeEventListener('abort', stop); resolve(model) })
     })
     const where = `${folder.replace(/[\\/]+$/u, '')}/`
-    if (ended === 'waiting' || ended === undefined) {
+    // Not made and not still being made here: Sotto is stopping, the thread was removed, or the record could not be
+    // written. Its record, if it is still there, is picked up when Sotto starts again.
+    if (ended === undefined) {
+      await kept('failed')
+      return text(`Sotto lost track of the 3D model "${name}" before it was done: Sotto is stopping, this thread was removed, or its record could not be written. If Meshy took it, Sotto picks it up when it starts again. Do not ask for it again now; tell the user.`, true)
+    }
+    if (ended === 'waiting') {
       await kept('done')
       return text(`${allowed ? 'The user allowed it.' : 'Asked of Meshy without a card, since the user turned asking off for the account.'} Meshy is still making the 3D model "${name}". Sotto saves its files into ${where} in the thread's folder when it is done, named after "${name}"; about ${cost} credits.`)
     }
