@@ -1,10 +1,10 @@
 import { sendOutcome } from './sendOutcome'
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdir } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import { mkdir, realpath } from 'node:fs/promises'
+import { isAbsolute, join, posix, relative, resolve, win32 } from 'node:path'
 import { isDeepStrictEqual } from 'node:util'
 import { capabilitiesForThread, isThreadProviderConnected, lastUserMessageIdOf, PROVIDER_LABELS,
-  type AgentCommand, type AgentDelivery, type AgentHostSnapshot, type AgentModel, type AgentRuntimeMode, type AgentSpeed, type AgentThread, type HandoverCounts, isVisualMessage } from '../../shared/agents'
+  type AgentCommand, type AgentDelivery, type AgentHostSnapshot, type AgentModel, type AgentProject, type AgentRuntimeMode, type AgentSpeed, type AgentThread, type HandoverCounts, isVisualMessage, PROVIDER_RESULT_UNCONFIRMED } from '../../shared/agents'
 import { resolveModel } from '../../shared/modelCatalog'
 import { withoutUltracode } from '../../shared/ultracode'
 import { capRuntimeMode, fitSpeed, messageNamesModel, roleHold, roleStartNote, startFromRole, workerCounts, WORKER_KINDS, type HeldPermission, type RoleField, type WorkerKind, type WorkerRoleChoices } from '../../shared/workerRoles'
@@ -16,7 +16,7 @@ import { PlacementRefusal, placeWorker, type PlacementAsk, type PlacementSources
 import { branchStartWords, systemClockTime, type BranchStartReceipt } from '../../shared/branchMoves'
 import type { DesktopBranchMoves } from './branchMoves'
 import { rebuildReservations, type WatcherDraft } from './watcherRecords'
-import { archivableWatcherRequests, archivedTargetKey, closedWatcherRequests, NOTHING_ARCHIVED, returnArchivedWork, WATCHER_ARCHIVE_BATCH, WATCHER_LIVE_CLOSED_REQUESTS, type WatcherArchive, type WatcherArchived } from './watcherArchive'
+import { archivableWatcherRequests, archivedTargetKey, closedWatcherRequests, NOTHING_ARCHIVED, returnArchivedWork, stoppedParticipation, WATCHER_ARCHIVE_BATCH, WATCHER_LIVE_CLOSED_REQUESTS, type WatcherArchive, type WatcherArchived } from './watcherArchive'
 import { WATCHER_QUIET_MS, watcherOverview, type WatcherObservation } from '../../shared/watcherOverview'
 import { CHECK_HOLDS_THROUGH_BACKGROUND, checkWaitingWords, WATCHER_CHECK_STOP, WATCHER_CHECK_STOP_AWAY, type CheckQueue } from './checkQueue'
 import { checkInstallFailedWords, checkInstallWords } from './checkWorktree'
@@ -43,7 +43,7 @@ import { threadsById, WatcherHosts } from './watcherHosts'
 import type { WorkspaceHost } from './workspace'
 import { WatcherWakeUp, watcherBackgroundWorkCount, watcherRosterWork, watcherProgressFingerprint, type WatcherWakeOptions } from './watcherWakeUp'
 import { watcherEndedPullRequests, watcherHostInput, watcherOpenPullRequests, watcherPullRequestSummaries, watcherSlimRead, watcherThreadPullRequests } from './watcherSlimReads'
-import { mergeTurnHolds, watcherMergeQueue, watcherStaleNotes, type BaseBranchChecks, type WatcherKnownPullRequest, type WatcherOpenPullRequest } from './watcherComputedState'
+import { BASE_BRANCH_COMMITS_READ, mergeTurnHolds, watcherMergeQueue, watcherStaleNotes, type BaseBranchChecks, type WatcherKnownPullRequest, type WatcherOpenPullRequest } from './watcherComputedState'
 import { pullRequestKey } from '../../shared/gitPullRequests'
 import { GitHubRateLimited, retryWords } from './git/github'
 import { WATCHER_COMPACTED_NOTE, watcherRequestLine, watcherRequestNote } from './watcherRequestNote'
@@ -57,13 +57,13 @@ import type { Handover } from './handover'
 import { handoverCounts, handoverPrefix, watcherHandoverProvenance, watcherMessageAsShown } from './watcherHandover'
 import { watcherHandoverState, type WatcherCarried } from './watcherHandoverState'
 import type { WatcherEvent } from '../../shared/watcherNews'
-import { carriesWords, LATER_REQUEST_REACHES, watcherCardLine, watcherNewsText, watcherWaitingCardWords, watcherPullRequestWords, watcherReplyBefore, watcherReplyStart } from './watcherNews'
+import { carriesWords, LATER_REQUEST_REACHES, watcherCardLine, watcherNewsText, watcherPermissionCardLine, watcherWaitingCardWords, watcherPullRequestWords, watcherReplyBefore, watcherReplyStart } from './watcherNews'
 import { WATCHER_MESSAGES_MAX, WATCHER_NOT_GIT_REASON, WATCHER_ROSTER_MAX, WATCHER_SHARED_REASON_MAX, watcherProjectTargetSchema, type WatcherProjectTarget } from '../../shared/watcher'
 import { WatcherToldNews } from './watcherToldNews'
 import { WatcherQuestions } from './watcherQuestions'
 import { WATCHER_ASK_NOTE, watcherAskInputSchema, watcherQuestionChoice, watcherQuestionOf, type WatcherQuestion } from '../../shared/watcherQuestions'
 import type { TeamFacts, TeamProjectFact, TeamThreadFact } from '../../shared/teams'
-import { isToldRequest, toldRequestMessage, toldRequestRoot, toldUserMessage, type ReadyToMerge, type TellWatcherAnswer, type TellWatcherAsk, type ToldUserMessage } from '../../shared/tellWatcher'
+import { answeredRequestOf, answeredRequestRoot, isToldRequest, toldRequestMessage, toldRequestRoot, toldUserMessage, type ReadyToMerge, type TellWatcherAnswer, type TellWatcherAsk, type ToldUserMessage } from '../../shared/tellWatcher'
 import type { CheckpointObservation, PullRequestObservation } from './watcherEvidence'
 import type { WatcherCommand, WatcherCommandOrigin, WatcherControlHooks } from './watcherCommands'
 import type { HiddenWakeUpOutcome } from './hiddenWakeUp'
@@ -75,7 +75,7 @@ import { WatcherHoldState } from './watcherHold'
 import { delegatedRefusalWords, type DelegatedAction, type DelegatingThread } from './watcherDelegated'
 import { delegatingThreadOfLink } from '../../shared/clientIdentity'
 import { WATCHER_FINAL_OUTCOMES, watcherBriefTurnIsNewest, watcherLatestTurnMessageId, watcherNewestTurnReply, watcherNewestTurnSaidMore, watcherTurnOutcome } from './watcherOutcomes'
-import { watcherHostControlSchema, watcherHostReadSchema, watcherHostProjectionSchema, type WatcherHostControl, type WatcherHostRead, type WatcherHostProjection, type WatcherRemoteHosts, type WatcherRoomThreadInput } from '../../shared/watcherHost'
+import { ProjectAdditionUnconfirmed, watcherHostControlSchema, watcherHostReadSchema, watcherHostProjectionSchema, type WatcherHostControl, type WatcherHostRead, type WatcherHostProjection, type WatcherRemoteHosts, type WatcherRoomThreadInput } from '../../shared/watcherHost'
 
 const now = () => new Date().toISOString()
 const key = (target: WatcherThreadTarget) => JSON.stringify([target.hostId, target.threadId])
@@ -83,6 +83,12 @@ const key = (target: WatcherThreadTarget) => JSON.stringify([target.hostId, targ
 const WATCHER_READ_BOUND = WATCHER_READ_BYTES_MAX - 64
 /** Whether two targets name the same thread: what equal keys say, without building either key. */
 const sameTarget = (left: WatcherThreadTarget, right: WatcherThreadTarget) => left.hostId === right.hostId && left.threadId === right.threadId
+/** A list's items by ID, those sharing one in list order, so a search for an ID finds what a search of the list finds first. */
+function byId<T extends { readonly id: string }>(items: readonly T[]): Map<string, T[]> {
+  const found = new Map<string, T[]>()
+  for (const item of items) { const same = found.get(item.id); if (same) same.push(item); else found.set(item.id, [item]) }
+  return found
+}
 /** The levels Watcher may start a worker on: Ultracode is the user's own choice in a thread, never Watcher's (ADR-0148). */
 const workerEfforts = (model: AgentModel): string[] => withoutUltracode(model.reasoningEfforts ?? [])
 /** A read of every machine, as list_machines lists them before it adds where new workers start (#1032). */
@@ -176,6 +182,9 @@ export function takenOverWords(takeover: { readonly reason?: TakeoverReason; rea
 const KEEP_FROM_THREAD = 'A thread sent the message this turn answers, so a rule or decision from it is not the user’s, whatever it quotes. Nothing was kept. Keep it once the user says so in their own message to you.'
 /** What a turn a thread's message started may not do under the request it opened. */
 const TOLD_REQUEST_LIMITS = 'A thread’s message opened this request, for starting threads and sending in the turn that news started, and for sending to the threads it started after that. It allows nothing else. Nothing was changed. Ask the user.'
+/** What a turn the user's answer on a card started may not do under the request it opened (#2482). */
+const ANSWERED_REQUEST_LIMITS = 'The user’s answer on your question card opened this request, for starting threads and sending in the turn that answer’s news started, and for sending to the threads it started after that. It allows nothing else. Nothing was changed. Ask the user.'
+const toldLimits = (request: Pick<WatcherRequest, 'rootUserMessageId'>): string => answeredRequestOf(request.rootUserMessageId) === undefined ? TOLD_REQUEST_LIMITS : ANSWERED_REQUEST_LIMITS
 /** A request's ID from its root, in UUID form, so one message can open only one, whatever has become of it since. */
 function toldRequestId(root: string): string {
   const hash = createHash('sha256').update(root).digest('hex')
@@ -363,6 +372,9 @@ const STILL_DELIVERING = 'Sotto is still carrying this out, so its result is not
 const STILL_ADMITTING = 'Sotto is still checking this call, so its result is not known yet. Nothing was lost, and it will not be sent twice. Call it again with the same retryKey to read its receipt.'
 const STILL_WATCHING = 'Sotto is still carrying this out, so its result is not known yet. It may still finish, and calling it again is safe. Read list_threads to see where it stands.'
 const STILL_READING = 'This read took longer than your provider waits for a tool call. Nothing changed. Read again.'
+const STILL_ADDING = 'Sotto is still adding this project, so its result is not known yet. It may still finish. Call list_projects to see whether it was added before calling again.'
+const ADD_NOT_ALLOWED = 'Watcher adds a project only for the user\'s own message to it, or their answer to its question. Nothing was added.'
+const ADD_UNCONFIRMED = 'Sotto cannot tell whether the project was added: its machine or provider did not confirm it. Call list_projects to see whether it is there before trying again.'
 /** What a call that may outlast its client's wait has reached: the operation its start, send, stop or settle admitted. */
 interface CallProgress {
   operationId?: string
@@ -441,13 +453,6 @@ function onceEach(waiting: readonly WatcherWaitingOnUser[]): WatcherWaitingOnUse
 }
 interface StatePageRow { readonly watching: (WatcherStateThread & { pullRequests: WatcherPullRequestSummary[] }) | undefined; readonly queue: WatcherMergeQueueItem | undefined
   readonly waiting: WatcherWaitingOnUser | undefined }
-
-/**
- * A participation Watcher stopped: Watcher's own Stop of the thread, or a stopped request on a thread Watcher started.
- * It holds the thread's queue for the user's review, and the user's own command in the thread is that review (ADR-0073).
- */
-const stoppedParticipation = (request: Readonly<WatcherRequest>, participant: Readonly<WatcherRequest['participants'][number]>): boolean =>
-  participant.automationStopped === true || request.state === 'stopped' && participant.startedBy === 'watcher'
 
 /** What a read back of Watcher's archive brings to the room (`recalledRoom`), and the lists it was joined into. */
 interface RecalledRoom {
@@ -651,7 +656,7 @@ export class WatcherService implements WatcherControlHooks {
    * Each message from a thread not yet answered, by its event's ID: the request it opened, if any, and Watcher's newest
    * message when its news went, so the end of the turn it starts can be told. Empty but for those few seconds or minutes.
    */
-  private readonly toldNews = new Map<string, { readonly requestId?: string; sentHead?: string | null }>()
+  private readonly toldNews = new Map<string, { readonly requestId?: string; readonly answer?: true; sentHead?: string | null }>()
   private toldToRetell: readonly WatcherEvent[] = []
   private readonly toldSaved: WatcherToldNews
   /** Watcher's own questions (#2228): Sotto's cards in its conversation, which never hold its turn. */
@@ -737,10 +742,18 @@ export class WatcherService implements WatcherControlHooks {
   private readonly snapshotting = new Set<Promise<void>>()
   private readonly steerFallbacks = new Map<string, string>()
   /**
+   * The Watcher turn each Stop or settle fenced a standing watch's scope in, by the scope and the thread (#2435). The fence
+   * holds Watcher's sends to that thread for the rest of that turn of Watcher's only (Zach's pick on November 11, 2026); a
+   * later turn sends under a scope of its own. In memory: a restart ends Watcher's turn, so a fence with no entry is over.
+   */
+  private readonly standingFences = new Map<string, string | null>()
+  /**
    * unsettle_thread's answered calls, by request and retry key, to the target each restored: a retry answers as the first
    * did and restores nothing again, even after the thread was settled once more. Kept in memory, the newest UNSETTLES_KEPT.
    */
   private readonly unsettles = new Map<string, string>()
+  /** add_project's answered calls, by request and retry key, with what each asked: a retry answers as the first did. */
+  private readonly addedProjects = new Map<string, { readonly asked: string; readonly result: Promise<WatcherToolOutput<'add_project'>> }>()
   private settledTimer: ReturnType<typeof setTimeout> | undefined
   private endingSettled = false
   /**
@@ -1039,6 +1052,97 @@ export class WatcherService implements WatcherControlHooks {
     if (this.unsettles.size > UNSETTLES_KEPT) this.unsettles.delete(this.unsettles.keys().next().value!)
     return { status: 'ok', target, settled: false }
   }
+  /**
+   * add_project (ADR-0073, November 12, 2026): a folder on This computer or a connected host made one of its projects, so
+   * start_thread can use it at once. It runs the machine's own `create-project`, as Add project and New project do: an
+   * existing folder as it is, or with `newFolder` a folder made first, anywhere on that machine or by title in its default
+   * projects directory, and with `gitInit` set up as a Git repository. Only for the user's own message to Watcher, or their
+   * answer to Watcher's question in the turn it starts: never news, a thread's message or Watcher's own initiative. No card
+   * asks first, as none asks before start_thread. It keeps no operation, as unsettle_thread keeps none.
+   */
+  private addProject(input: WatcherToolInput<'add_project'>): Promise<WatcherToolOutput<'add_project'>> {
+    const retry = `${input.requestId}\0${input.retryKey}`, asked = digest(input), earlier = this.addedProjects.get(retry)
+    if (earlier) {
+      if (earlier.asked !== asked) refuse('RETRY_KEY_CONFLICT', 'This retry key already belongs to a different call. Nothing was added.')
+      // A call still waiting in the lane is answered when it is, rather than run a second time and told the folder exists.
+      return earlier.result
+    }
+    const result = this.addProjectNow(input)
+    this.addedProjects.set(retry, { asked, result })
+    if (this.addedProjects.size > UNSETTLES_KEPT) this.addedProjects.delete(this.addedProjects.keys().next().value!)
+    // A refusal is not kept: the same key may try again once its cause is gone.
+    result.catch(() => { if (this.addedProjects.get(retry)?.result === result) this.addedProjects.delete(retry) })
+    return result
+  }
+  private async addProjectNow(input: WatcherToolInput<'add_project'>): Promise<WatcherToolOutput<'add_project'>> {
+    // Asked again in the command's lane, so a request that ended while the add waited there makes nothing.
+    const allowed = (): void => {
+      const record = this.view(), request = record.requests.find(item => item.id === input.requestId)
+      const answer = request !== undefined && answeredRequestOf(request.rootUserMessageId) !== undefined && this.toldRequestLive(request.id)
+      if (!request || request.standingWatchId || request.state !== 'active' || !this.owns(record, request) || isToldRequest(request) && !answer) {
+        refuse('REQUEST_NOT_ACTIVE', ADD_NOT_ALLOWED)
+      }
+    }
+    allowed()
+    // What a refused or unanswered create-project tells Watcher: its own code for an ended request, a reconcile for an add the
+    // machine may have made, and otherwise the machine's words.
+    const failed = (error: unknown): never => {
+      if (error instanceof Refusal) throw error
+      const words = error instanceof Error && error.message ? error.message.slice(0, 2_000) : 'Sotto could not add the project. Nothing was added.'
+      if (words === ADD_NOT_ALLOWED) refuse('REQUEST_NOT_ACTIVE', ADD_NOT_ALLOWED)
+      if (error instanceof ProjectAdditionUnconfirmed || words === PROVIDER_RESULT_UNCONFIRMED) refuse('DELIVERY_UNCERTAIN', ADD_UNCONFIRMED, true)
+      refuse('INVALID_INPUT', words)
+    }
+    const newFolder = input.newFolder === true, gitInit = input.gitInit === true
+    if (gitInit && !newFolder) refuse('INVALID_INPUT', 'gitInit runs only in a folder Sotto makes. Set newFolder too, or add the folder as it is and ask a worker to set up Git. Nothing was added.')
+    if (!input.path && !(newFolder && input.title)) refuse('INVALID_INPUT', 'Name the folder by its absolute path, or set newFolder with a title to make it in the machine\'s default projects directory. Nothing was added.')
+    const title = input.title ?? input.path!.split(/[\\/]+/u).filter(Boolean).at(-1)
+    if (!title) refuse('INVALID_INPUT', 'Give the project a title. Nothing was added.')
+    const hostId = input.hostId ?? this.hostId(), local = hostId === this.hostId()
+    if (local && input.path && await this.insideOwnFolder(input.path)) refuse('INVALID_INPUT', 'That folder is Sotto\'s own. Choose another. Nothing was added.')
+    const command = { title, ...input.path ? { path: input.path } : {}, ...newFolder ? {} : { useExisting: true as const }, ...gitInit ? { gitInit: true as const } : {} }
+    let found: { readonly projectId: string; readonly path: string; readonly title: string; readonly known: boolean }
+    if (local) {
+      try { found = await this.options.control.addProjectForWatcher(command, allowed) } catch (error) { return failed(error) }
+    } else {
+      const host = this.remote?.hosts().find(item => item.hostId === hostId)
+      if (!host) refuse('UNKNOWN_TARGET', 'That machine is unavailable. Read list_machines again. Nothing was added.')
+      if (!host.connected) refuse('HOST_DISCONNECTED', 'That machine is disconnected. Reconnect it before adding a project there. Nothing was added.', true)
+      const remote = this.remote
+      if (!remote?.addProject) refuse('HOST_FEATURE_UNAVAILABLE', 'Watcher cannot add projects on other machines here. Nothing was added.')
+      if (gitInit && !host.gitInit) refuse('HOST_FEATURE_UNAVAILABLE', 'Update Sotto on that machine before Watcher sets up Git in a new project there. Nothing was added.')
+      // Resolved by the machine's own rules, as its create-project resolves the path, so `..` and a trailing separator match.
+      const folder = (path: string) => /^[a-z]:|\\/iu.test(path) ? win32.resolve(path).toLowerCase() : posix.resolve(path)
+      const before = this.owningSnapshot(hostId)?.projects ?? [], had = new Set(before.map(project => project.id))
+      const same = input.path !== undefined ? before.find(project => folder(project.path) === folder(input.path!)) : undefined
+      if (same && newFolder) found = { projectId: same.id, path: same.path, title: same.title, known: true }
+      else {
+        let after: readonly AgentProject[]
+        try { after = await remote.addProject(hostId, command) } catch (error) { return failed(error) }
+        const project = after.find(item => !had.has(item.id) && (input.path !== undefined ? folder(item.path) === folder(input.path) : item.title === title))
+          ?? (input.path !== undefined ? after.find(item => folder(item.path) === folder(input.path!)) : undefined)
+        if (!project) refuse('PROVIDER_UNAVAILABLE', 'The project did not appear in that machine\'s list. Call list_projects to see whether it was added before trying again.', true)
+        found = { projectId: project.id, path: project.path, title: project.title, known: had.has(project.id) }
+      }
+    }
+    const result = { status: 'ok' as const, project: { target: { hostId, projectId: found.projectId }, title: found.title, displayRoot: found.path },
+      folderMade: newFolder && !found.known, gitInitialized: gitInit && !found.known, alreadyAdded: found.known }
+    return result
+  }
+  /**
+   * Whether a folder on this computer is one of Sotto's own, Watcher's working folder or host setup's, or inside one, read
+   * through any link to it and in any case where the computer's folders ignore case.
+   */
+  private async insideOwnFolder(path: string): Promise<boolean> {
+    const fold = (value: string) => process.platform === 'win32' || process.platform === 'darwin' ? value.toLowerCase() : value
+    const real = async (value: string) => fold(await realpath(value).catch(() => resolve(value)))
+    const target = await real(path)
+    for (const own of [join(this.options.directory, 'watcher', 'workspace'), join(this.options.directory, 'host-setup')]) {
+      const between = relative(await real(own), target)
+      if (between === '' || !between.startsWith('..') && !isAbsolute(between)) return true
+    }
+    return false
+  }
   private thread(target: WatcherThreadTarget): AgentThread {
     const snapshot = this.owningSnapshot(target.hostId)
     if (!snapshot) refuse('HOST_DISCONNECTED', 'That host is disconnected. Reconnect it before continuing.', true)
@@ -1246,7 +1350,7 @@ export class WatcherService implements WatcherControlHooks {
     let snapshot: AgentHostSnapshot | undefined
     return event => {
       // Composed as the wake-up goes, so this is when the turn a thread's message starts is about to begin.
-      if (event.kind === 'thread-told') { this.toldNewsGoes(event.id); return undefined }
+      if (event.kind === 'thread-told' || event.kind === 'user-answered') { this.toldNewsGoes(event.id); return undefined }
       if (event.kind === 'thread-ready') return this.readyDetail(event)
       snapshot ??= this.snapshot()
       const index = this.hosts.index(snapshot)
@@ -1257,14 +1361,19 @@ export class WatcherService implements WatcherControlHooks {
         const holder = event.delegatedThreadId === undefined ? thread : index ? index.thread({ hostId: event.target.hostId, threadId: event.delegatedThreadId })
           : snapshot.threads.find(item => item.id === event.delegatedThreadId && (item.hostId ?? snapshot!.hostId) === event.target.hostId)
         const words = holder?.requests.find(item => item.id === event.requestCardId)
+        // A permission card says its tool and its summary alone, never its command (#2433).
+        if (words?.kind === 'permission') return watcherPermissionCardLine(words)
         const asks = words && watcherWaitingCardWords(words, cardReply(holder!))
         return asks ? watcherCardLine(asks) : undefined
       }
       // Only what Watcher has not been told: a comment that moved once is not told again with every later turn's end.
-      // A thread at rest: where each of its open pull requests stands, as Sotto last read it (#2307).
+      // A thread at rest: whether it waits on the user's card, and where each of its open pull requests stands, as Sotto
+      // last read it (#2307, #1152).
       if (event.kind === 'at-rest') {
         const open = watcherOpenPullRequests(watcherThreadPullRequests(thread), this.wakes.evidence.read(event.target))
-        return open.length ? `Its open pull requests: ${open.map(({ pr, summary }) => `#${pr.number} (${AT_REST_CHECKS[summary.stale ? 'unknown' : summary.checks ?? 'unknown']})`).join(', ')}.` : undefined
+        const said = [...thread.requests.length ? ['It waits on the user’s card, which only they can answer.'] : [],
+          ...open.length ? [`Its open pull requests: ${open.map(({ pr, summary }) => `#${pr.number} (${AT_REST_CHECKS[summary.stale ? 'unknown' : summary.checks ?? 'unknown']})`).join(', ')}.`] : []]
+        return said.length ? said.join(' ') : undefined
       }
       if (event.kind === 'evidence-changed') return watcherPullRequestWords(this.wakes.untoldAttention(event.target), thread, this.wakes.evidence.read(event.target), this.wakes.evidence.pendingChecks(event.target))
       if (event.kind !== 'turn-finished' && event.kind !== 'turn-failed' && event.kind !== 'work-settled') return undefined
@@ -1359,7 +1468,7 @@ export class WatcherService implements WatcherControlHooks {
     if (!this.isCurrent(threadId)) return watcherRefusal('NOT_CURRENT_WATCHER', 'Only the current Watcher can ask the user. Nothing was asked.')
     const parsed = watcherAskInputSchema.safeParse(args)
     if (!parsed.success) return watcherRefusal('INVALID_INPUT', 'Give the question and two to four options with their own labels, or name the thread to settle. Nothing was asked.')
-    const question = await this.questions.ask(threadId, parsed.data)
+    const question = await this.questions.ask(threadId, parsed.data, parsed.data.settle ? undefined : this.askingRequest(threadId)?.id)
     this.publish()
     return { status: 'ok', questionId: question.id, note: WATCHER_ASK_NOTE }
   }
@@ -1370,23 +1479,53 @@ export class WatcherService implements WatcherControlHooks {
   }
   /**
    * The user's answer on Watcher's own card, from this window or a phone: their choice, kept in the card's own words, and
-   * news to Watcher that says it is theirs (ADR-0073, November 5, 2026). Null when it went; otherwise what to tell the user.
+   * news to Watcher that says it is theirs (ADR-0073, November 5, 2026); or their Skip, told as news that they gave no
+   * answer (#2477). Null when it went; otherwise what to tell the user.
    */
-  async answerOwnQuestion(threadId: string, answer: { readonly requestId: string; readonly answer: string; readonly questionAnswers?: Readonly<Record<string, { readonly optionIds: readonly string[] }>> | undefined }): Promise<string | null> {
+  async answerOwnQuestion(threadId: string, answer: { readonly requestId: string; readonly answer: string; readonly skipped?: true | undefined; readonly questionAnswers?: Readonly<Record<string, { readonly optionIds: readonly string[] }>> | undefined }): Promise<string | null> {
     const id = watcherQuestionOf(answer.requestId), question = id === undefined ? undefined : this.questions.get(id)
     if (!question || question.watcherThreadId !== threadId || question.state !== 'open') return 'This question of Watcher’s no longer waits on you. Nothing was sent.'
     if (!this.isCurrent(threadId)) return 'This question belongs to an earlier Watcher. Nothing was sent. Open Watcher to see what it asks now.'
-    const choice = watcherQuestionChoice(question, answer)
-    if (choice === undefined) return 'Choose one of the answers on Watcher’s card. Nothing was sent.'
-    const answered = await this.questions.answer(question.id, choice)
+    // Only the card's own skip: the card is `skippable`, its one question is not (ADR-0135).
+    const skipped = answer.skipped === true
+    const choice = skipped ? undefined : watcherQuestionChoice(question, answer)
+    if (!skipped && choice === undefined) return 'Choose one of the answers on Watcher’s card. Nothing was sent.'
+    const answered = choice === undefined ? await this.questions.skip(question.id) : await this.questions.answer(question.id, choice)
     if (!answered) return 'This question of Watcher’s no longer waits on you. Nothing was sent.'
-    const current = this.view().current
+    const record = this.view(), current = record.current
+    // A choice on a question Watcher asked while it worked on the user's own request opens a request for the one turn its
+    // news starts (#2482), as a thread's message that names Watcher does. A Skip, a settle answer or a question a news turn
+    // asked opens none: the user never asked Watcher for that work. While the request it was asked under is still active,
+    // Watcher acts on the answer under that one, with its watch, as before.
+    const asked = answered.askedUnder ? this.questionRequest(record, answered.askedUnder) : undefined
+    const root = current && choice !== undefined && !answered.settle && asked && asked.state !== 'active'
+      ? answeredRequestRoot(answered.id, asked.id) : undefined, openedId = root && toldRequestId(root)
+    const created: WatcherRequest | undefined = current && root && openedId && !record.requests.some(request => request.id === openedId)
+      ? { id: openedId, watcher: current.target, rootUserMessageId: root, state: 'active', createdAt: now(), closedAt: null, participants: [] } : undefined
     const event = current ? this.wakes.answeredEvent(answered.settle ?? current.target, randomUUID(),
-      { questionId: answered.id, question: answered.question, choice, ...answered.settle ? { settle: true as const } : {} }) : undefined
+      { questionId: answered.id, question: answered.question, ...choice === undefined ? { skipped: true as const } : { choice }, ...answered.settle ? { settle: true as const } : {},
+        ...created ? { opened: true as const } : {} }, created?.id) : undefined
     // Saved before it goes, as a thread's own message is: nothing else holds the user's choice for Watcher.
-    if (event) { await this.toldSaved.add(event).catch(() => undefined); this.wakes.tellSaved([event]) }
+    if (event) {
+      await this.toldSaved.add(event).catch(() => undefined)
+      if (created) { this.toldNews.set(event.id, { requestId: created.id, answer: true }); await this.options.control.watcherRecords.update(next => { next.requests.push(created) }) }
+      this.wakes.tellSaved([event])
+    }
     this.publish()
     return null
+  }
+  /**
+   * The user's own request the running Watcher turn answers, for a question it asks there (#2482). Undefined in a turn
+   * news, a thread's message or an answer's news started, so an answer's turn cannot open another by asking again.
+   */
+  private askingRequest(threadId: string): WatcherRequest | undefined {
+    const request = this.turnRequest(threadId)
+    return request && !isToldRequest(request) ? request : undefined
+  }
+  /** The user's own request a question was asked under, from Watcher's record: never a told one or a standing watch's. */
+  private questionRequest(record: Readonly<WatcherRecord>, requestId: string): WatcherRequest | undefined {
+    const request = record.requests.find(item => item.id === requestId)
+    return request && !isToldRequest(request) && !request.standingWatchId && !request.remoteOrigin ? request : undefined
   }
   /** Whether the turn a thread's message opened this request for has not ended. */
   private toldRequestLive(requestId: string): boolean {
@@ -1458,7 +1597,8 @@ export class WatcherService implements WatcherControlHooks {
   /** Whether Watcher's running turn is one a thread's message started, and no message of the user's has come since. */
   private inToldTurn(): boolean {
     let sent = false
-    for (const told of this.toldNews.values()) if (told.sentHead !== undefined) { sent = true; break }
+    // An answer's turn is the user's choice, not a thread's message (#2482).
+    for (const told of this.toldNews.values()) if (told.sentHead !== undefined && !told.answer) { sent = true; break }
     if (!sent) return false
     const current = this.view().current
     return !(current && this.turnRequest(current.target.threadId))
@@ -1491,9 +1631,9 @@ export class WatcherService implements WatcherControlHooks {
     this.toldToRetell = saved.filter(event => !queuedIds.has(event.id) && !told.has(event.id))
     // A READY TO MERGE still owed puts its pull request back in the train (#2229).
     for (const event of [...queued, ...this.toldToRetell]) if (event.kind === 'thread-ready' && event.ready) this.wakes.evidence.noteReady(event.target, event.ready.pullRequest, event.ready.head, event.observedAt)
-    // READY TO MERGE and the user's answers to Watcher's own questions open no request, so only a thread's own messages are owed a turn here.
-    const owed = [...queued, ...this.toldToRetell].filter(event => event.kind === 'thread-told')
-    for (const event of owed) this.toldNews.set(event.id, event.told?.opened ? { requestId: event.requestId } : {})
+    // READY TO MERGE opens no request, so only a thread's own messages and the user's answers are owed a turn here (#2482).
+    const owed = [...queued, ...this.toldToRetell].filter(event => event.kind === 'thread-told' || event.kind === 'user-answered' && event.answered?.opened)
+    for (const event of owed) this.toldNews.set(event.id, event.kind === 'user-answered' ? { requestId: event.requestId, answer: true } : event.told?.opened ? { requestId: event.requestId } : {})
     const requests = new Set(owed.map(event => event.requestId))
     for (const request of this.view().requests) if (isToldRequest(request) && request.state === 'active' && !requests.has(request.id)) this.endToldRequest(request.id)
   }
@@ -2712,7 +2852,7 @@ export class WatcherService implements WatcherControlHooks {
   }
   /**
    * What Sotto's own reads say beside a thread's READY TO MERGE (#2229), as the news goes: the pull request's place in the
-   * train, the head Sotto last read it on, and its required checks. Nothing here is the worker's.
+   * train, the head Sotto last read it on, and its checks. Nothing here is the worker's.
    */
   private readyDetail(event: WatcherEvent): string | undefined {
     const ready = event.ready
@@ -2723,7 +2863,7 @@ export class WatcherService implements WatcherControlHooks {
     const item = queue[at]!, short = (head: string) => head.slice(0, 12)
     const head = item.head === undefined ? 'Sotto has not read its head from GitHub yet.'
       : item.head === ready.head ? `Sotto last read it on that head, ${short(item.head)}.` : `Sotto last read it on ${short(item.head)}, not the head this names.`
-    const checks = { passed: 'Its required checks passed.', running: 'Its required checks are still running.', failed: 'Its checks failed.', unknown: 'Sotto cannot say where its checks stand.' }[item.requiredChecks]
+    const checks = { passed: 'Its checks passed.', running: 'Its checks are still running.', failed: 'Its checks failed.', unknown: 'Sotto cannot say where its checks stand.' }[item.requiredChecks]
     return `It is ${at + 1} of ${queue.length} in the merge train. ${head} ${checks}`
   }
   /**
@@ -3042,8 +3182,34 @@ export class WatcherService implements WatcherControlHooks {
    * The user's own words in a request, from Sotto's record, so no agent can write them (#1202): the message that started it
    * less any handover ahead of it, which is another Watcher's, and the newest they have sent it since. For a told request,
    * the message in that thread, which only a thread on this computer's record holds. A standing watch's request has none.
+   * A request the user's answer on a card opened has the words of the request Watcher asked under (#2482). A message to
+   * Watcher also carries the user's previous request's words while no thread has been started under it (#2483): that work
+   * is still what the user asked for, so a "go" after it keeps the model they named.
    */
   private requestWords(request: WatcherRequest): readonly string[] {
+    const record = this.view(), answered = answeredRequestOf(request.rootUserMessageId)
+    if (answered) {
+      const asked = this.questionRequest(record, answered.askedUnder)
+      return asked ? this.requestWords(asked) : []
+    }
+    const own = this.ownRequestWords(request)
+    if (isToldRequest(request) || request.standingWatchId || request.remoteOrigin) return own
+    // By when it began, not its place in the record: a request a queued message started can sit before its own (#1184).
+    let previous: WatcherRequest | undefined
+    for (const item of record.requests) {
+      if (item.id === request.id || item.createdAt > request.createdAt || key(item.watcher) !== key(request.watcher) || isToldRequest(item) || item.standingWatchId || item.remoteOrigin) continue
+      if (!previous || item.createdAt >= previous.createdAt) previous = item
+    }
+    return previous && !this.startedUnder(record, previous) ? [...own, ...this.ownRequestWords(previous)] : own
+  }
+  /** Whether Watcher started a thread under a request, or under a request an answer to a question asked under it opened. */
+  private startedUnder(record: Readonly<WatcherRecord>, request: WatcherRequest): boolean {
+    const under = new Set([request.id])
+    for (const item of record.requests) if (answeredRequestOf(item.rootUserMessageId)?.askedUnder === request.id) under.add(item.id)
+    return record.operations.some(operation => operation.action === 'start' && operation.deliveryState !== 'failed' && under.has(operation.requestId))
+  }
+  /** A request's own words: its first message and its newest since, or a told request's message in its thread. */
+  private ownRequestWords(request: WatcherRequest): readonly string[] {
     const told = toldRequestMessage(request.rootUserMessageId)
     if (told) {
       const thread = this.localThread(told.threadId), message = this.options.host.threadMessage(told.threadId, told.messageId)
@@ -3168,12 +3334,42 @@ export class WatcherService implements WatcherControlHooks {
     record.localTakeovers = [...(record.localTakeovers ?? []).filter(item => item.target.hostId === this.hostId()
       && key(item.target) !== key(target) && represented.has(key(item.target))), { target, at, lastRequestId, ...(userDrafts.length ? { userDrafts } : {}) }]
   }
+  /** The current Watcher's own turn, as its thread last reported it; null when Sotto cannot say. */
+  private watcherNativeTurn(): string | null {
+    const current = this.view().current
+    return (current && this.localThread(current.target.threadId)?.lastTurn?.id) ?? null
+  }
+  /** Notes the turn a fence came in, the first time only: a receipt read again, as a paired host's reconciliation does, keeps it. */
+  private noteStandingFence(scopeId: string, target: WatcherThreadTarget): void {
+    const fence = JSON.stringify([scopeId, key(target)])
+    if (this.standingFences.has(fence)) return
+    this.standingFences.set(fence, this.watcherNativeTurn())
+    while (this.standingFences.size > ROLE_STARTS_KEPT * 10) this.standingFences.delete(this.standingFences.keys().next().value!)
+  }
+  /** Whether a Stop's or settle's fence on this scope and thread came in an earlier turn of Watcher's than this one (#2435). */
+  private standingFenceOver(scopeId: string, target: WatcherThreadTarget): boolean {
+    const fence = JSON.stringify([scopeId, key(target)])
+    if (!this.standingFences.has(fence)) return true
+    // One noted when Watcher's turn was unknown is over once a turn is known: Watcher acts from inside one.
+    const fencedIn = this.standingFences.get(fence), now = this.watcherNativeTurn()
+    return now !== null && fencedIn !== now
+  }
+  /**
+   * The standing scope a watched thread's sends go under in this turn of Watcher's: the prompt turn's, or, once a Stop or
+   * settle stopped that in an earlier turn of Watcher's, one for this turn alone (#2435). Sends and fences both use it.
+   */
+  private currentStandingScope(record: WatcherRecord, watchId: string, target: WatcherThreadTarget, promptTurnId: string): { scope: WatcherRecord['requests'][number]; created: boolean } {
+    const standing = standingScope(record, record.current!.target, watchId, promptTurnId)
+    if (standing.created || !standing.scope.participants.some(item => key(item.target) === key(target) && item.automationStopped)
+      || !this.standingFenceOver(standing.scope.id, target)) return standing
+    return standingScope(record, record.current!.target, watchId, `${promptTurnId}:${digest([this.watcherNativeTurn()]).slice(0, 16)}`)
+  }
   private fenceStandingTurn(record: WatcherRecord, target: WatcherThreadTarget): void {
     const watch = record.watches?.find(item => key(item.target) === key(target)), current = record.current
     if (!watch || !current || this.options.workerHost) return
     const master = this.localThread(current.target.threadId)
     if (!master) return
-    const { scope, created } = standingScope(record, current.target, watch.id, this.promptTurn(record, current.target).id)
+    const { scope, created } = this.currentStandingScope(record, watch.id, target, this.promptTurn(record, current.target).id)
     if (created) record.requests.push(scope)
     let participant = scope.participants.find(item => key(item.target) === key(target))
     if (!participant) {
@@ -3182,6 +3378,7 @@ export class WatcherService implements WatcherControlHooks {
       scope.participants.push(participant)
     }
     setIfChanged(participant, 'automationStopped', true)
+    this.noteStandingFence(scope.id, target)
   }
 
   async recover(): Promise<void> {
@@ -4555,7 +4752,7 @@ export class WatcherService implements WatcherControlHooks {
   }
   /** The answer to a call its client would otherwise give up on: where it stands, and how to read how it ends. */
   private stillWorking(name: WatcherToolName, progress: CallProgress): unknown {
-    if (!MUTATIONS.has(name)) return watcherRefusal('PROVIDER_UNAVAILABLE', name === 'watch_thread' || name === 'unwatch_thread' || name === 'unsettle_thread' ? STILL_WATCHING : STILL_READING, true)
+    if (!MUTATIONS.has(name)) return watcherRefusal('PROVIDER_UNAVAILABLE', name === 'watch_thread' || name === 'unwatch_thread' || name === 'unsettle_thread' ? STILL_WATCHING : name === 'add_project' ? STILL_ADDING : STILL_READING, true)
     const operation = progress.operationId ? this.view().operations.find(item => item.id === progress.operationId) : undefined
     return operation ? { ...watcherRefusal('DELIVERY_UNCERTAIN', STILL_DELIVERING, true), receipt: this.receipt(operation) }
       : watcherRefusal('DELIVERY_UNCERTAIN', STILL_ADMITTING, true)
@@ -4591,6 +4788,7 @@ export class WatcherService implements WatcherControlHooks {
         return result.status === 'refused' ? result : { status: 'ok', target: (parsed.data as WatcherToolInput<'unwatch_thread'>).target, watched: false }
       }
       if (name === 'unsettle_thread') return await this.unsettleThread(threadId, parsed.data as WatcherToolInput<'unsettle_thread'>)
+      if (name === 'add_project') return await this.addProject(parsed.data as WatcherToolInput<'add_project'>)
       if (name === 'list_machines') return this.withNewWorkersStart(await this.listMachines())
       if (name === 'keep_state') {
         const kept = await this.kept.keep(parsed.data as WatcherToolInput<'keep_state'>, now())
@@ -4741,7 +4939,7 @@ export class WatcherService implements WatcherControlHooks {
       // Before a queued check's stop, which never reaches admission's own refusal of everything but a start or a send.
       if (name !== 'send_to_thread') {
         const under = (parsed.data as { readonly requestId?: string }).requestId, asked = this.view().requests.find(request => request.id === under)
-        if (asked && isToldRequest(asked)) refuse('REQUEST_NOT_ACTIVE', TOLD_REQUEST_LIMITS)
+        if (asked && isToldRequest(asked)) refuse('REQUEST_NOT_ACTIVE', toldLimits(asked))
       }
       if (name === 'stop_thread') {
         const stopped = await this.stopWaitingCheck(threadId, parsed.data as WatcherToolInput<'stop_thread'>)
@@ -4828,7 +5026,10 @@ export class WatcherService implements WatcherControlHooks {
           return { operation: retry, retry: true, archivedWork }
         }
         // Four prompts per Watcher turn and assignment. A stopped scope stays stopped; a later turn gets a new scope.
-        const standing = standingScope(record, record.current!.target, offeredWatch.id, turnOf()!.id)
+        // A Stop or settle holds the watch for the rest of the turn of Watcher's it came in, not until the user's next message
+        // to Watcher opens another prompt turn (#2435): a later turn sends under a scope of its own, which a paired host has
+        // no stopped participation for either. The news names the watch, so it and this admission agree.
+        const standing = this.currentStandingScope(record, offeredWatch.id, offeredWatch.target, turnOf()!.id)
         request = standing.scope
         if (standing.created) newStandingRequest = request
         input = { ...input, requestId: request.id }
@@ -4866,7 +5067,7 @@ export class WatcherService implements WatcherControlHooks {
       if (remote && start && (input as WatcherToolInput<'start_thread'>).count !== undefined && !this.remote?.hosts().find(host => host.hostId === owner)?.swarms) refuse('HOST_FEATURE_UNAVAILABLE', 'Update this host before starting a swarm there. Nothing was started.')
       if (remote && request.standingWatchId && !this.remote?.hosts().find(host => host.hostId === owner)?.standingWatch) refuse('HOST_FEATURE_UNAVAILABLE', 'Update this host before Watcher manages a standing watch.')
       const target = imported?.target ?? (start ? { hostId: owner, threadId: randomUUID() } : (input as WatcherToolInput<'send_to_thread'>).target)
-      if (!imported && isToldRequest(request) && (!start && !send || !this.toldRequestLive(request.id) && (start || !record.operations.some(operation => operation.requestId === request.id && operation.action === 'start' && key(operation.target) === key(target))))) refuse('REQUEST_NOT_ACTIVE', TOLD_REQUEST_LIMITS)
+      if (!imported && isToldRequest(request) && (!start && !send || !this.toldRequestLive(request.id) && (start || !record.operations.some(operation => operation.requestId === request.id && operation.action === 'start' && key(operation.target) === key(target))))) refuse('REQUEST_NOT_ACTIVE', toldLimits(request))
       if (!imported && !record.watches?.some(watch => key(watch.target) === key(target)) && record.watchFences?.some(fence => !fence.remoteOrigin && fence.target && key(fence.target) === key(target))) refuse('REQUEST_NOT_ACTIVE', 'This thread was unwatched. Watch it again before using another automatic action.')
       if (start && this.options.control.watcherSnapshot().threads.some(item => item.id === target.threadId) && target.hostId === this.hostId()) refuse('TARGET_CHANGED', 'That thread identity already exists. Nothing was started.')
       // A stop for a check still waiting its turn has no thread to find yet (#1637): it takes the check out of its queue. Nor
@@ -5387,24 +5588,30 @@ ${operation.draftId}`)
    */
   private async askBeforeGoMerge(goMerge: WatcherGoMerge): Promise<() => MergeTurnChecked> {
     const ask = this.options.baseBranchChecks
-    let base: BaseBranchChecks | undefined, unread: string | undefined
+    let base: BaseBranchChecks | undefined, baseNote: string | undefined
     if (ask) {
       try {
         base = await ask(goMerge.pullRequest)
-        if (base.state === 'unknown') unread = `Sotto could not read the checks on ${base.branch}’s newest commit, so they held nothing.`
-      } catch { unread = 'Sotto could not ask GitHub for the checks on the branch this merges into, so they held nothing.' }
+        // The receipt names the commit it read (#2431); a failure is said in what held the send instead.
+        if (base.state === 'unknown') baseNote = `Sotto found no finished checks on ${base.branch}’s newest ${BASE_BRANCH_COMMITS_READ} commits, so they held nothing.`
+        else if (base.state === 'passed') baseNote = base.newest === undefined ? `${base.branch}’s checks passed on its newest commit, ${base.head.slice(0, 12)}.`
+          : `${base.branch}’s checks last passed on ${base.head.slice(0, 12)}; ${base.newest.slice(0, 12)}, after it, has none finished yet.`
+        else if (base.state === 'pending') baseNote = `${base.branch}’s checks are still running on its newest commit, ${base.head.slice(0, 12)}, so they held nothing.`
+      } catch { baseNote = 'Sotto could not ask GitHub for the checks on the branch this merges into, so they held nothing.' }
     }
     return () => {
       const queue = this.liveState().mergeQueue, holds = mergeTurnHolds(queue, goMerge.pullRequest, base), wanted = pullRequestKey(goMerge.pullRequest)
       const name = (item: WatcherMergeQueueItem) => `${item.pullRequest.number === undefined ? item.url ?? 'a pull request' : `#${item.pullRequest.number}`} in “${item.title.slice(0, 80)}”`
-      const held = [...holds.baseFailed ? [`${holds.baseFailed.branch} is red: checks failed on its newest commit, ${holds.baseFailed.head.slice(0, 12)}.`] : [],
-        ...holds.running.map(item => `${name(item)} has its required checks running.`)]
+      const failed = holds.baseFailed
+      const held = [...failed ? [failed.newest === undefined ? `${failed.branch} is red: checks failed on its newest commit, ${failed.head.slice(0, 12)}.`
+        : `${failed.branch} is red: checks failed on ${failed.head.slice(0, 12)}, its newest commit whose checks have finished; ${failed.newest.slice(0, 12)}, after it, has none finished yet.`] : [],
+        ...holds.running.map(item => `${name(item)} has checks running.`)]
       const outside = queue.some(item => item.url !== undefined && pullRequestKey(item.url) === wanted) ? undefined
         : 'Sotto does not hold this pull request in the merge train: read read_state to see where it stands.'
-      const note = [unread, outside].filter(Boolean).join(' ') || undefined
+      const note = [baseNote, outside].filter(Boolean).join(' ') || undefined
       if (held.length && !goMerge.overrideReason) {
         const shown = held.slice(0, 8), more = held.length - shown.length
-        refuse('MERGE_TURN_HELD', `Not its turn yet. ${shown.join(' ')}${more ? ` ${more} more train pull requests have required checks running.` : ''} A merge now would land in the middle of them, so nothing was sent.${note ? ` ${note}` : ''} ${MERGE_TURN_NEXT}`)
+        refuse('MERGE_TURN_HELD', `Not its turn yet. ${shown.join(' ')}${more ? ` ${more} more train pull requests have checks running.` : ''} A merge now would land in the middle of them, so nothing was sent.${note ? ` ${note}` : ''} ${MERGE_TURN_NEXT}`)
       }
       const reason = held.length ? goMerge.overrideReason : undefined
       return { receipt: { held, ...reason ? { overrideReason: reason } : {}, ...note ? { note } : {} },
@@ -5803,16 +6010,18 @@ ${operation.draftId}`)
       const adopts = this.adopts(host.hostId), here = (request: Readonly<WatcherRequest>, record: Readonly<WatcherRecord> = this.view()) =>
         adopts ? this.owns(record, request) : key(request.watcher) === key(master.target)
       const owned = this.view().requests.filter(request => here(request))
+      // The requests with an operation on this host, found in one walk of the operations rather than one for each request.
+      const ranHere = new Set<string>()
+      for (const item of this.view().operations) if (item.target.hostId === host.hostId) ranHere.add(item.requestId)
       // A replaced Watcher's starts and sends on this host are still tracked (#1325): their slots are freed and their receipts
       // read as the current Watcher's are, so a host where only they remain is reconciled too.
-      if (!host.standingWatch && !owned.some(request => request.participants.some(item => item.target.hostId === host.hostId)
-        || this.view().operations.some(item => item.requestId === request.id && item.target.hostId === host.hostId))
+      if (!host.standingWatch && !owned.some(request => request.participants.some(item => item.target.hostId === host.hostId) || ranHere.has(request.id))
         && !this.view().reservations.some(item => item.target.hostId === host.hostId)
         && !this.view().operations.some(item => item.target.hostId === host.hostId && ['queued', 'dispatching', 'uncertain'].includes(item.deliveryState))) continue
       let receiptFailed = false
       try {
         const stoppedRequests = this.view().requests.filter(request => request.state === 'stopped' && here(request)
-          && (request.participants.some(item => item.target.hostId === host.hostId) || this.view().operations.some(item => item.requestId === request.id && item.target.hostId === host.hostId)))
+          && (request.participants.some(item => item.target.hostId === host.hostId) || ranHere.has(request.id)))
           .slice(-1_000).map(request => ({ request: { id: request.id, watcher: master.target, rootUserMessageId: request.rootUserMessageId, createdAt: request.createdAt },
             ceiling: request.pairedPermissionCeiling ?? this.options.control.configuration().newThreadRuntimeMode ?? 'approval-required' as const }))
         const cached = !force ? this.remote.projection?.(host.hostId, master) : undefined
@@ -5849,8 +6058,12 @@ ${operation.draftId}`)
             if (receipt) this.copyRemoteReceipt(record, own, { ...receipt, updatedAt: now() })
             else this.recordRemoteRefusal(record, id, 'OPERATION_NOT_RECORDED')
           }
+          // The record's requests and operations by ID, each in record order, gathered once for the pass. A search of the
+          // whole record for each request and receipt the host projects was nearly all a pass cost: about 56 of 60 ms with
+          // the owner's record of 942 requests and 1,110 operations, once a second while a paired host pushed (November 13, 2026).
+          const requestsById = byId(record.requests)
           for (const remoteRequest of projection.requests) {
-            const request = record.requests.find(item => item.id === remoteRequest.id && here(item, record))
+            const request = requestsById.get(remoteRequest.id)?.find(item => here(item, record))
             if (!request || key(remoteRequest.watcher) !== key(master.target)
               || remoteRequest.rootUserMessageId !== request.rootUserMessageId || remoteRequest.createdAt !== request.createdAt) continue
             for (const participant of remoteRequest.participants) {
@@ -5869,16 +6082,17 @@ ${operation.draftId}`)
               if (participant.lastUserMessageId !== undefined) setIfChanged(own, 'lastUserMessageId', participant.lastUserMessageId)
             }
           }
+          const operationsById = byId(record.operations)
           for (const receipt of projection.operations) {
             if (receipt.target.hostId !== host.hostId) continue
-            const own = record.operations.find(item => item.id === receipt.id && item.requestId === receipt.requestId
-              && item.digest === receipt.digest && key(item.target) === key(receipt.target))
+            const own = operationsById.get(receipt.id)?.find(item => item.requestId === receipt.requestId
+              && item.digest === receipt.digest && sameTarget(item.target, receipt.target))
             if (!own) continue
             this.copyRemoteReceipt(record, own, receipt)
           }
           const reservations = record.reservations.filter(reservation => {
             if (reservation.target.hostId !== host.hostId) return true
-            const operations = record.operations.filter(item => key(item.target) === key(reservation.target))
+            const operations = record.operations.filter(item => sameTarget(item.target, reservation.target))
             if (operations.some(item => ['queued', 'dispatching', 'uncertain'].includes(item.deliveryState))) return true
             const thread = this.owningSnapshot(host.hostId)?.threads.find(item => item.id === reservation.target.threadId)
             if (!thread) return !operations.every(item => item.deliveryState === 'failed')

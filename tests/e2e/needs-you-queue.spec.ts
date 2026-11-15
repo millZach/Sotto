@@ -26,9 +26,15 @@ async function launchOn(): Promise<LaunchedSotto> {
   process.env['SOTTO_OWL_FEATURES'] = 'needs-you-queue=1,sidebar-rail=1'
   try { return await launchSotto() } finally { if (previous === undefined) delete process.env['SOTTO_OWL_FEATURES']; else process.env['SOTTO_OWL_FEATURES'] = previous }
 }
+/** Needs you is on stable too since November 10, 2026 (ADR-0201); the switch still turns it off for a run. */
+async function launchOff(): Promise<LaunchedSotto> {
+  const previous = process.env['SOTTO_OWL_FEATURES']
+  process.env['SOTTO_OWL_FEATURES'] = 'needs-you-queue=0'
+  try { return await launchSotto() } finally { if (previous === undefined) delete process.env['SOTTO_OWL_FEATURES']; else process.env['SOTTO_OWL_FEATURES'] = previous }
+}
 async function prepare(page: Page): Promise<void> {
   await page.evaluate(async () => {
-    await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', reducedMotion: 'on' })
+    await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', reducedMotion: 'on', threadListGrouping: 'project' })
     await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true } })
     await window.sotto!.agents!.command({ type: 'connect' })
   })
@@ -144,7 +150,7 @@ test('the queue gathers what needs you and settles a short approval and a failur
 
 test('with the Owl feature off there is no queue and the dots stand', async () => {
   test.setTimeout(240_000)
-  launched = await launchSotto()
+  launched = await launchOff()
   const { page } = launched
   await prepare(page)
   await page.evaluate(async () => window.sottoE2E!.agentEvent!({ type: 'permission', threadId: 'workshop', requestId: 'off-permission', text: 'Run the build?', status: 'running' }))

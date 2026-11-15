@@ -9,9 +9,11 @@ import {
 } from '../../../src/renderer/src/audio/audioRecorder'
 import {
   BrowserMicrophoneTest,
+  onStopMicrophoneTests,
+  stopMicrophoneTests,
   WorkletMicrophoneTest,
   type MicrophoneTestDependencies,
-} from '../../../src/renderer/src/features/onboarding/microphoneTest'
+} from '../../../src/renderer/src/audio/microphoneTest'
 
 function createHarness() {
   const events = new EventTarget()
@@ -313,5 +315,21 @@ describe('worklet microphone setup test', () => {
 
     await vi.waitFor(() => expect(onEnded).toHaveBeenCalledExactlyOnceWith('missing'))
     expect(track.stop).toHaveBeenCalledOnce()
+  })
+})
+
+describe('stopping microphone tests from outside them (ADR-0200)', () => {
+  it('stops every test that said how, and none once its surface has gone', () => {
+    const first = vi.fn(), second = vi.fn()
+    const forgetFirst = onStopMicrophoneTests(first)
+    const forgetSecond = onStopMicrophoneTests(second)
+    stopMicrophoneTests()
+    expect(first).toHaveBeenCalledTimes(1)
+    expect(second).toHaveBeenCalledTimes(1)
+    forgetFirst()
+    stopMicrophoneTests()
+    expect(first).toHaveBeenCalledTimes(1)
+    expect(second).toHaveBeenCalledTimes(2)
+    forgetSecond()
   })
 })

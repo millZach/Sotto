@@ -77,17 +77,18 @@ test.describe('empty rooms say so once (#1834), and Help explains Watcher (#1822
     }
   })
 
-  test('the Threads sidebar with empty projects: each folder its name alone, and the room says it once', async () => {
+  test('the Threads sidebar with empty projects: no group and no sentence of its own, and the room says it once', async () => {
     for (const { appearance, motion, name } of LOOKS) {
       await withSotto({ onboardingComplete: true, appearance, motion, scenario: 'design-threads-empty', agents: 'design-threads-empty' }, async (launched) => {
         const { page } = launched
         await openThreads(page)
         await expect(page.getByRole('heading', { name: 'No threads yet.' })).toBeVisible()
-        const projects = page.getByRole('complementary', { name: 'Thread sidebar' }).getByRole('region', { name: 'Projects' })
-        await expect(projects.locator('.thread-folder').first()).toBeVisible()
-        await expect(projects).not.toContainText('No open threads.')
-        await expect(projects).not.toContainText('No threads yet.')
-        await expect(projects.locator('.thread-folder__count')).toHaveCount(0)
+        // Grouped by status (ADR-0201), an empty list draws no group and says nothing the room already says.
+        const open = page.getByRole('complementary', { name: 'Thread sidebar' }).getByRole('region', { name: 'Open threads' })
+        await expect(open).toBeAttached()
+        await expect(open.locator('.thread-group')).toHaveCount(0)
+        await expect(open).not.toContainText('No threads yet.')
+        await expect(open).not.toContainText('All caught up.')
         await atEverySize(launched, `threads-${name}`)
       })
     }

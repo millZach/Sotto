@@ -2,84 +2,89 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { evidenceDirectory } from '../fixtures/evidence'
-import { closeSotto, firstRunForwardButton, launchSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, setupForwardButton, setupNote, setupStop, type SetupStopId } from './support/sottoLaunch'
 import { holdContentSize } from './support/sottoWindow'
 
 /** Sotto's default window, the smallest it allows (`src/main/windows/windowManager.ts`), and the two larger sizes every UI change is checked at. */
 const SIZES = [[1080, 720], [820, 560], [1280, 800], [1600, 1000]] as const
-/** The sizes at which no step may scroll at all (#1824); below them a step that is too tall scrolls its body as a whole. */
-const ROOMY = new Set(['1280x800', '1600x1000'])
-/** The steps most people pass without doing anything, where Skip for now is the filled button until their task starts (#1824). */
-const SKIP_FIRST = new Set(['Your coding agents', 'Choose a project folder', 'Run agents on another computer'])
+/** The note follows its control by animation frame as the page lays out, so each measurement waits this long after a change. */
+const SETTLE_MS = 600
+/** More presses than the walk has stops, so a walk that never reaches its last note fails rather than loops. */
+const MOST_STOPS = 13
 
 /**
- * First-run setup's card is as tall as its step, up to the window (#1824, ADR-0063): at 1600x1000 and 1280x800 no step
- * scrolls, and none leaves a tall empty card under its last line; at the default window and the minimum a step too tall
- * scrolls its body as a whole, with the footer under it rather than over it. The card is a fill with no outline (#1831).
- * The microphone step is measured after its test has heard a voice, and each size is captured light and dark.
+ * First-run setup is a walk of notes over the real pages (ADR-0200). At Sotto's default window, the smallest it allows
+ * and the two larger sizes every UI change is checked at, dark and light, every stop's note is inside the window, sits
+ * beside the control it lights rather than over it, shows all of itself without scrolling, and leaves the page no wider
+ * than the window. An agent is connected first, so the walk visits its project and thread stops too; the project stop
+ * is measured without opening its folder dialog. The microphone stop is measured after Settings' test has heard a voice.
  */
-test('every first-run setup step fits its card, which grows with it up to the window and never hides content under its footer', async () => {
-  test.setTimeout(420_000)
+test('every first-run setup note fits the window beside the control it lights, at every size, dark and light', async () => {
+  test.setTimeout(600_000)
   const launched = await launchSotto()
   const { page } = launched
   const evidence = evidenceDirectory('artifacts/first-run-setup-fit')
   await mkdir(evidence, { recursive: true })
   const problems: string[] = []
-  const checks: { step: string; width: number; height: number; overflow: number; spare: number }[] = []
+  const checks: { stop: SetupStopId; width: number; height: number; appearance: 'dark' | 'light'; overlap: number; scrolls: number; inWindow: boolean }[] = []
+  const visited: SetupStopId[] = []
   try {
-    await page.evaluate(async () => window.sotto!.updateSettings({ reducedMotion: 'on' }))
-    const body = page.locator('.onboarding-card__body')
-    const total = Number(/^Step 1 of (\d+)/u.exec(await page.locator('.onboarding-progress__text').textContent() ?? '')?.[1])
-    expect(total, 'the step line names how many steps there are').toBeGreaterThan(8)
-    for (let step = 1; step <= total; step += 1) {
-      const title = (await page.locator('#onboarding-heading').textContent()) ?? `step ${step}`
-      if (title === 'Check your microphone') {
-        await page.getByRole('button', { name: 'Test microphone', exact: true }).click()
-        await expect(page.getByText('Sotto heard you. Your microphone works.')).toBeVisible()
+    await page.evaluate(async () => {
+      await window.sotto!.updateSettings({ reducedMotion: 'on' })
+      await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true } })
+      await window.sotto!.agents!.command({ type: 'connect' })
+    })
+    for (let presses = 0; presses < MOST_STOPS; presses += 1) {
+      const stop = await setupStop(page)
+      visited.push(stop)
+      // With an agent ready, the walk goes on to its project and thread stops rather than passing over them.
+      if (stop === 'agents') await expect(setupForwardButton(page)).toHaveText('Continue')
+      if (stop === 'microphone') {
+        await page.locator('.settings-microphone-test').getByRole('button', { name: 'Test microphone', exact: true }).click()
+        await expect(setupNote(page)).toContainText('Sotto heard you. Your microphone works.')
       }
-      if (SKIP_FIRST.has(title) && await page.getByRole('button', { name: 'Skip for now' }).count() > 0) {
-        await expect(page.getByRole('button', { name: 'Skip for now' })).toHaveClass(/tt-button--primary/u)
-      }
-      expect(await page.locator('.onboarding-card').evaluate(card => getComputedStyle(card).borderTopWidth), 'the card has no outline').toBe('0px')
       for (const [width, height] of SIZES) {
         await holdContentSize(launched, width, height)
         for (const appearance of ['dark', 'light'] as const) {
           await page.evaluate(async appearance => window.sotto!.updateSettings({ appearance }), appearance)
           await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)
+          await page.waitForTimeout(SETTLE_MS)
           const size = `${width}x${height}`
           const measured = await page.evaluate(() => {
-            const body = document.querySelector<HTMLElement>('.onboarding-card__body')!
-            const card = document.querySelector<HTMLElement>('.onboarding-card')!.getBoundingClientRect()
-            const footer = document.querySelector<HTMLElement>('.onboarding-actions')!.getBoundingClientRect()
-            const box = body.getBoundingClientRect()
-            const last = [...body.querySelectorAll<HTMLElement>(':scope > *')].filter(child => child.getClientRects().length > 0).at(-1)
+            const note = document.querySelector<HTMLElement>('.setup-walk__note')!
+            const lit = document.querySelector<HTMLElement>('.setup-walk__lit')
+            const box = note.getBoundingClientRect(), litBox = lit?.getBoundingClientRect()
+            // The area the note and the lit control's outline share, which a note beside its control keeps at nothing.
+            const overlap = litBox
+              ? Math.max(0, Math.min(box.right, litBox.right) - Math.max(box.left, litBox.left)) * Math.max(0, Math.min(box.bottom, litBox.bottom) - Math.max(box.top, litBox.top))
+              : 0
             return {
-              overflow: body.scrollHeight - body.clientHeight,
-              // The room left in the body under its last block, which a card as tall as its step keeps to its padding.
-              spare: last === undefined ? 0 : Math.round(box.bottom - last.getBoundingClientRect().bottom),
-              footerUnderBody: footer.top >= box.bottom - 1,
-              inWindow: card.bottom <= innerHeight + 1 && card.top >= 0,
+              overlap: Math.round(overlap),
+              inWindow: box.left >= 0 && box.top >= 0 && box.right <= innerWidth && box.bottom <= innerHeight,
+              scrolls: note.scrollHeight - note.clientHeight,
               wide: document.documentElement.scrollWidth <= innerWidth,
             }
           })
-          checks.push({ step: title, width, height, overflow: measured.overflow, spare: measured.spare })
-          if (ROOMY.has(size) && measured.overflow > 0) problems.push(`${title} at ${size} ${appearance} scrolls ${measured.overflow}px`)
-          if (ROOMY.has(size) && measured.spare > 40) problems.push(`${title} at ${size} ${appearance} leaves ${measured.spare}px of empty card`)
-          if (!measured.footerUnderBody) problems.push(`${title} at ${size} ${appearance}: the footer is over the step`)
-          if (!measured.inWindow) problems.push(`${title} at ${size} ${appearance}: the card leaves the window`)
-          expect(measured.wide, `${title} at ${size} ${appearance} is wider than the window`).toBe(true)
-          await page.screenshot({ path: resolve(evidence, `step-${step}-${size}-${appearance}.png`) })
+          checks.push({ stop, width, height, appearance, overlap: measured.overlap, scrolls: measured.scrolls, inWindow: measured.inWindow })
+          if (!measured.inWindow) problems.push(`${stop} at ${size} ${appearance}: the note leaves the window`)
+          if (measured.overlap > 0) problems.push(`${stop} at ${size} ${appearance}: the note covers ${measured.overlap}px² of the control it lights`)
+          if (measured.scrolls > 0) problems.push(`${stop} at ${size} ${appearance}: the note scrolls ${measured.scrolls}px`)
+          expect(measured.wide, `${stop} at ${size} ${appearance} is wider than the window`).toBe(true)
+          await page.screenshot({ path: resolve(evidence, `${visited.length}-${stop}-${size}-${appearance}.png`) })
         }
       }
       await page.evaluate(async () => window.sotto!.updateSettings({ appearance: 'dark' }))
-      if (step === 1) await page.getByRole('button', { name: 'Get started' }).click()
-      else if (step < total) await firstRunForwardButton(page).click()
-      if (step < total) await expect(page.locator('.onboarding-progress__text')).toContainText(`Step ${step + 1} of ${total}`)
+      if (stop === 'end') break
+      // Skip for now, Continue or Continue to dictation; on the project stop this passes its folder dialog by.
+      await setupForwardButton(page).click()
+      await expect(page.locator('.setup-walk')).not.toHaveAttribute('data-stop', stop)
+      await page.waitForTimeout(SETTLE_MS)
     }
-    await expect(body).toBeVisible()
+    expect(visited, 'the walk visits its project and thread stops with an agent connected').toEqual(expect.arrayContaining(['project', 'thread']))
+    expect(visited.at(-1), 'the walk reaches its last note').toBe('end')
     expect(problems).toEqual([])
   } finally {
-    await writeFile(resolve(evidence, 'checks.json'), `${JSON.stringify(checks, null, 2)}\n`)
+    await writeFile(resolve(evidence, 'checks.json'), `${JSON.stringify({ visited, checks }, null, 2)}\n`)
     await closeSotto(launched)
   }
 })

@@ -87,7 +87,7 @@ export async function inactiveLocalHost(directory: string,
     useBrowserTools: idle, useThreadTools: idle,
     // Git actions are wired at start whichever host runs. With no local threads there is nothing to guard or to refresh.
     setMutationGuard: idle, gitActionFinished: async () => undefined,
-    admitsVisuals: unavailable, addVisual: unavailable, admitsShownMedia: unavailable, showMedia: unavailable,
+    admitsVisuals: unavailable, addVisual: unavailable, admitsShownMedia: unavailable, showMedia: unavailable, admitsPluginTools: unavailable,
     admitsTellWatcher: unavailable, threadMessage: unavailable, threadMessages: unavailable, visual: unavailable,
     acquireTerminalStart: unavailable, setWorktreeInUse: idle, workingCopyOptions: unavailable, writeShortTextOn: unavailable,
     subagentPage: unavailable, subagentAssignments: unavailable, admitsBabysitting: unavailable,
@@ -102,7 +102,7 @@ export async function inactiveLocalHost(directory: string,
     turns: { path: () => join(directory, 'turns.jsonl'), recent: async () => [] },
     hostService: { state: shell, shell, events: () => [], subscribe: unsubscribe, threadDetail: () => null, command: async () => unavailable(), setWindowFocused: () => undefined,
       // No local thread here has Files, Changes or Agents to read.
-      threadFiles: async () => unavailable(), threadFilePreview: async () => unavailable(), threadFileLink: async () => unavailable(), gitChanges: async () => unavailable(),
+      threadFiles: async () => unavailable(), threadFilePreview: async () => unavailable(), threadFileLink: async () => unavailable(), threadLinkedFile: async () => unavailable(), gitChanges: async () => unavailable(),
       hostFolders: async () => unavailable(), gitReview: async () => unavailable(), subagentPage: async () => unavailable(), subagentAssignments: async () => unavailable() },
     // With the local host off there is no thread here whose provider could write anything.
     shortTextWriter: new ShortTextWriter({ write: async () => null }),

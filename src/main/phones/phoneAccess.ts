@@ -34,7 +34,20 @@ import { servePortOwner, TailscaleAccessDenied, type ServeConfig, type ServeResu
  * On a headless host the listener is the host's tailnet listener, and carries desktops too (ADR-0053): it runs, and Serve
  * carries it, while phone access or the host's `tailnetConnections` setting is on. With phone access off and the listener
  * up for desktops, it takes no pairing, opens nothing for a client that is not a desktop, and shows no code.
+ *
+ * On the desktop and on a headless host alike, the listener compresses what it sends a phone that offers
+ * `permessage-deflate`, as a host does for a desktop (ADR-0025, November 10 amendment), unless the host was started with
+ * `SOTTO_HOST_COMPRESS_PHONES=0` (`phonesCompressed`).
  */
+
+/**
+ * Whether a host started with `env` compresses what it sends phones: yes, unless `SOTTO_HOST_COMPRESS_PHONES` is exactly
+ * `0`, which turns it off without a release should a phone misread compressed messages (#2394). A headless host and the
+ * desktop each read it once, at start.
+ */
+export function phonesCompressed(env: Readonly<Record<string, string | undefined>>): boolean {
+  return env.SOTTO_HOST_COMPRESS_PHONES !== '0'
+}
 
 /** What phone access logs: stable event names only, never a name, a code or an address. */
 export type PhoneAccessEvent =
@@ -95,8 +108,9 @@ export interface PhoneAccessOptions {
   /**
    * What a headless host's tailnet listener takes beyond a phone listener's (ADR-0053): which clients are desktops, the
    * features only they are offered, the receipts it shares with the host's other listener, and what health and hello say.
+   * On any phone listener, `compressPhones: false` stops it compressing for phones, which it does otherwise (#2394).
    */
-  readonly listener?: Pick<SocketServerOptions, 'onProductEventAnswer' | 'signIns' | 'opencodeSignIn' | 'watcherDesktops' | 'clientUpdates' | 'receipts' | 'pullRequestConfirmations' | 'about' | 'phoneAccess' | 'onRevoked' | 'sottoVersion' | 'hostUpdate' | 'delegation' | 'branchMoves'>
+  readonly listener?: Pick<SocketServerOptions, 'onProductEventAnswer' | 'signIns' | 'opencodeSignIn' | 'watcherDesktops' | 'clientUpdates' | 'receipts' | 'pullRequestConfirmations' | 'about' | 'phoneAccess' | 'onRevoked' | 'sottoVersion' | 'hostUpdate' | 'delegation' | 'branchMoves' | 'compressPhones'>
     & { readonly desktops?: TailnetAdmission['desktops'] | undefined }
 }
 
@@ -574,6 +588,8 @@ export class PhoneAccess {
     const { desktops, ...listener } = this.options.listener ?? {}
     const base = {
       ...listener,
+      // A phone that offers `permessage-deflate` is sent compressed messages, as a desktop is (ADR-0025, November 10 amendment).
+      compressPhones: listener.compressPhones !== false,
       ...(desktops ? { tailnet: { desktops, phonesAdmitted: () => this.phonesWanted() } } : {}),
       service: this.options.service!, pairing: this.pairing, admin: false,
       // Its own key: on a headless host the listener with the administrative routes observes threads over the same service.

@@ -80,6 +80,11 @@ Amended an eighth time November 10, 2026, from Zach's round 8 picks (`docs/proto
 
 After review, November 10, 2026: turning or folding the Duo keeps every page as it was, and keeps an open sheet open, moving it between Sotto's own sheet held sideways and iOS's sheet otherwise, where it had closed. A sheet that moves this way starts again inside: New thread at its first step, a question with nothing typed; the question still waits and a held share is kept. A sheet that opens over another closes the one below it.
 
+Amended a ninth time November 10, 2026, from Zach's report on his Duo held upright and his pick in `docs/prototypes/duo-upright-top-edge-prototype.html`, on the Duo held upright alone. Folded and sideways were already right, and stay as they are.
+
+- **The page runs on under the rail.** Upright, the rail stands over the page's right edge, and the page's safe area ends where the rail starts, as it ends at the strip folded and sideways. The November 1 amendment's upright `strip` let the wash run on under the rail, but the rail stood in a column of its own beside the page, and the navigation views cut the wash at the rail's edge, so the rail stood on plain black.
+- **The page runs on to the top edge (B).** Upright, the status bar runs across the top of the screen, and the fade under it was as tall as the status bar, so the Threads page, a thread and Watcher were cut off at a band level with the rail's top. Now only the 10 points at the edge fade, as folded and sideways, where the clock stands in the strip, and what scrolls up passes under the clock in the corner. This reverses, upright alone, the November 3 amendment's fade under the status bar on a thread's page and the same fade on the other pages. A soft patch behind the clock alone (A) was the other choice.
+
 ## Context
 
 The iPhone Duo folds. Folded, its cover screen gives the app 382×644 points at compact width, and Sotto looks as it does on any iPhone. Unfolded, the inner screen is landscape, 951×669 points. Beside the tab bar, which iOS 27.1 draws as a floating rail at the right edge, the app gets 867×635 points at regular width. The client had no layout for regular width, so every page stretched to the full 867 points: a thread's lines ran to about 140 characters and its tables spread across the screen.

@@ -15,6 +15,7 @@ export function verifyExternalDependencyInventories(
 ): void
 
 export const HOST_EXTERNAL_IMPORTS: readonly string[]
+export const HOST_BUNDLED_PACKAGES: readonly string[]
 export function verifyHostExternalDependencies(
   inventory: unknown,
   packagedDependencies: Readonly<Record<string, string>>,

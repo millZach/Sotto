@@ -41,6 +41,31 @@ const openDialog = async () => { fireEvent.click(screen.getByRole('button', { na
 const pick = async (name: RegExp) => { fireEvent.click(within(screen.getByRole('listbox', { name: 'Model sources' })).getByRole('option', { name })); return screen.findByRole('dialog') }
 afterEach(() => { cleanup(); vi.useRealTimers() })
 
+describe('Pi in the same Model sources block', () => {
+  it('shows an expired Pi sign-in and clears it with the existing Sign out control', async () => {
+    const api = bridge({ sources: vi.fn(async () => read({ anthropic: { signedIn: { how: 'Sign-in needs attention' }, problem: 'unavailable', models: 0 } })) })
+    render(<OpenCodeModelSources provider="Pi" bridge={api} />)
+    expect(await screen.findByText('Sign-in needs attention. Sign out and sign in again.')).toBeVisible()
+    expect(screen.queryByText('OpenCode Zen')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Sign out of Anthropic' }))
+    expect(await screen.findByText('Signed out of Anthropic. Its sign-in is gone from Sotto’s Pi.')).toBeVisible()
+    expect(api.signOut).toHaveBeenCalledWith({ sourceId: 'anthropic' })
+  })
+  it('uses the existing key dialog and says when a Pi source has no bundled models', async () => {
+    const api = bridge({ signInWithKey: vi.fn(async () => ({ status: 'ok' as const, sources: read({ anthropic: { signedIn: { how: 'API key' }, models: 0 } }) })) })
+    render(<OpenCodeModelSources provider="Pi" bridge={api} />)
+    await screen.findByRole('button', { name: 'Add a model source' })
+    await openDialog()
+    const dialog = await pick(/^Anthropic/u)
+    expect(within(dialog).getByText('Pi keeps the key in Sotto’s own Pi folder. Sotto keeps no copy.')).toBeVisible()
+    fireEvent.change(within(dialog).getByPlaceholderText('Paste the key'), { target: { value: KEY } })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Sign in to Anthropic with this key' }))
+    expect(await screen.findByText(/Signed in to Anthropic\. Pi lists no models for it yet/u)).toBeVisible()
+    expect(api.signInWithKey).toHaveBeenCalledWith({ sourceId: 'anthropic', key: KEY })
+    expect(screen.queryByDisplayValue(KEY)).toBeNull()
+  })
+})
+
 describe('the Model sources block', () => {
   it('starts with OpenCode Zen and says what signing in adds', async () => {
     await mount()

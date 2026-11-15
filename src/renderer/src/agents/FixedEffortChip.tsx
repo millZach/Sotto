@@ -19,13 +19,15 @@ export function fixedEffortReason(provider: string): string {
  * hears the same as its description (Zach's pick B, November 9, 2026, kept as the tag `prototype/grok-effort-locked`).
  * In the quiet composer it takes the split chip's place and shape; elsewhere a chip's.
  */
-export function FixedEffortChip({ level, provider, quiet, trace }: {
+export function FixedEffortChip({ level, provider, quiet, trace, reason }: {
   /** The level the thread runs at; empty for the provider's default. */
   readonly level: string
   readonly provider: string
   readonly quiet: boolean
   /** Whether the level is the model's top, where the composer's trace lights, as it does for the chip this replaces. */
   readonly trace: boolean
+  /** Why it is fixed, where the reason is not the provider's: model routing chooses a routed thread's effort (ADR-0207). */
+  readonly reason?: string | undefined
 }): ReactNode {
   const id = useId()
   const [rested, setRested] = useState(false)
@@ -57,6 +59,6 @@ export function FixedEffortChip({ level, provider, quiet, trace }: {
       <Lock size={11} aria-hidden="true" />
       <span className={quiet ? 'split-chip-effort__word' : undefined}>{word}</span>
     </button>
-    <span id={id} role="tooltip" className="effort-fixed__tip" data-shown={shown || undefined}>{fixedEffortReason(provider)}</span>
+    <span id={id} role="tooltip" className="effort-fixed__tip" data-shown={shown || undefined}>{reason ?? fixedEffortReason(provider)}</span>
   </span>
 }

@@ -2,7 +2,7 @@
 import { createHash } from 'node:crypto'
 import { i18n } from '@lingui/core'
 import { describe, expect, it, vi } from 'vitest'
-import { compareOwlHostTarget, HostUpdates, publishedAnswer, type HostUpdateCandidate, type HostUpdateClients, type HostUpdateHosts, type HostUpdateThreads } from '../../../src/main/hosts/hostUpdate'
+import { ARCHIVE_RETRY_DELAYS_MS, compareOwlHostTarget, HostUpdates, publishedAnswer, type HostUpdateCandidate, type HostUpdateClients, type HostUpdateHosts, type HostUpdateThreads } from '../../../src/main/hosts/hostUpdate'
 import type { SshHostUpdateOperation, SshHostUpdateOptions, SshHostUpdateResult } from '../../../src/main/hosts/sshLauncher'
 import { SshFailure } from '../../../src/main/hosts/sshFailure'
 import type { HostUpdateState } from '../../../src/shared/hostUpdates'
@@ -529,6 +529,7 @@ describe('Not now', () => {
 describe('the version this computer is downloading (ADR-0077 decision 6)', () => {
   const RUNNING = '0.1.38-owl.20261014.1', WAITING = '0.1.38-owl.20261014.2'
   const RELEASES = 'https://releases.example/download'
+  const FIRST = ARCHIVE_RETRY_DELAYS_MS[0]!
   const archive = (version: string, system = 'linux-x64') => `${RELEASES}/v${version}/Sotto-host-${version}-${system}.tar.gz`
   /** A releases page that publishes the files named, answers 404 for the rest, and records every request. */
   function page(published: string[]) {
@@ -643,6 +644,68 @@ describe('the version this computer is downloading (ADR-0077 decision 6)', () =>
     updates.pending(WAITING)
     await vi.waitFor(() => expect(one()).toMatchObject({ to: WAITING }))
     updates.dispose()
+  })
+
+  it('asks again in four minutes when the releases page did not answer, without waiting for the hourly update check', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const { updates, releases, one } = aimed([archive(WAITING), `${archive(WAITING)}.sha256`])
+      releases.probe.mockImplementationOnce(async (url: string) => { releases.asked.push(url); return undefined as unknown as boolean })
+      updates.pending(WAITING)
+      await vi.waitFor(() => expect(releases.asked).toHaveLength(1))
+      await vi.waitFor(() => expect(updates.checking()).toEqual([]))
+      expect(updates.state()).toEqual([])
+      vi.advanceTimersByTime(FIRST - 1_000)
+      expect(releases.asked).toHaveLength(1)
+      vi.advanceTimersByTime(1_000)
+      await vi.waitFor(() => expect(one()).toMatchObject({ to: WAITING, phase: 'needs' }))
+      expect(releases.asked).toEqual([archive(WAITING), archive(WAITING), `${archive(WAITING)}.sha256`])
+      updates.dispose()
+    } finally { vi.useRealTimers() }
+  })
+
+  it('offers an archive uploaded just after its 404 four minutes later, without waiting for the hourly update check', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const published: string[] = []
+      const { updates, releases, one } = aimed(published)
+      updates.pending(WAITING)
+      await vi.waitFor(() => expect(releases.asked).toEqual([archive(WAITING)]))
+      await vi.waitFor(() => expect(updates.checking()).toEqual([]))
+      expect(updates.state()).toEqual([])
+      // The release's host archives arrive a moment after the desktop's files.
+      published.push(archive(WAITING), `${archive(WAITING)}.sha256`)
+      vi.advanceTimersByTime(FIRST - 1_000)
+      expect(releases.asked).toHaveLength(1)
+      vi.advanceTimersByTime(1_000)
+      await vi.waitFor(() => expect(one()).toMatchObject({ to: WAITING, phase: 'needs' }))
+      expect(releases.asked).toEqual([archive(WAITING), archive(WAITING), `${archive(WAITING)}.sha256`])
+      updates.dispose()
+    } finally { vi.useRealTimers() }
+  })
+
+  it('asks about an archive that stays missing 4, 8 and 16 minutes later, then only at the next update check', async () => {
+    expect(ARCHIVE_RETRY_DELAYS_MS).toEqual([4 * 60_000, 8 * 60_000, 16 * 60_000])
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const { updates, releases } = aimed([])
+      updates.pending(WAITING)
+      await vi.waitFor(() => expect(releases.asked).toHaveLength(1))
+      for (const [index, delay] of ARCHIVE_RETRY_DELAYS_MS.entries()) {
+        await vi.waitFor(() => expect(updates.checking()).toEqual([]))
+        vi.advanceTimersByTime(delay - 1_000)
+        expect(releases.asked).toHaveLength(1 + index)
+        vi.advanceTimersByTime(1_000)
+        expect(releases.asked).toHaveLength(2 + index)
+      }
+      await vi.waitFor(() => expect(updates.checking()).toEqual([]))
+      vi.advanceTimersByTime(60 * 60_000)
+      expect(releases.asked).toHaveLength(4)
+      // The next update check moves the phase, which asks again as it always has.
+      updates.pending(WAITING)
+      expect(releases.asked).toHaveLength(5)
+      updates.dispose()
+    } finally { vi.useRealTimers() }
   })
 
   it('aims an older host at the waiting version too, and keeps a started update on the version it began with', async () => {

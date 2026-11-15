@@ -752,7 +752,8 @@ final class WashLoopView: LoopingView {
 // MARK: - A tab page that scrolls as one sheet
 
 /// A tab's page: the wash, the heading, its controls and the content all scroll together as one sheet, with no
-/// compact bar. Once the page moves, content fades out under the status bar so text never meets the clock. A second
+/// compact bar. Once the page moves, content fades out under the status bar so text never meets the clock, except on the
+/// Duo held upright, where it runs on to the screen's edge (`StatusBarFade`). A second
 /// press on the page's tab scrolls it back to its top.
 /// Apply `.refreshable` and `.scrollDismissesKeyboard` to the page; the scroll view inside reads them.
 struct SheetPage<Content: View>: View {
@@ -799,9 +800,9 @@ struct SheetPage<Content: View>: View {
                     }
                 }
                 // On the Duo the page reaches every edge of the screen (Zach, November 1, 2026): the wash goes out sideways
-                // into the strip or the rail's column, and the page runs on under the status bar, where the fade over it
-                // keeps words off the clock, and under the home indicator, rather than stopping at the safe area and
-                // leaving a band of plain ground above and below it.
+                // into the strip or under the rail, and the page runs on under the status bar to the screen's top edge, and
+                // under the home indicator, rather than stopping at the safe area and leaving a band of plain ground above
+                // and below it.
                 .scrollClipDisabled(duo.strip.leading + duo.strip.trailing > 0)
                 .clipShape(WiderRect(leading: duo.strip.leading, trailing: duo.strip.trailing,
                                      vertical: duo.strip.leading + duo.strip.trailing > 0 ? 1000 : 0))
@@ -854,21 +855,37 @@ private let sheetPageTop = "sheet-page-top"
 /// height follows the status bar's without reading it. It used to take its height from the inset a `GeometryReader`
 /// read while ignoring the safe area itself, and scrolled text ran under the clock on every tab page (#1851). Watcher's
 /// page uses it too, where it meets the status bar.
+///
+/// On the unfolded Duo held upright the page runs on under the status bar to the screen's top edge, as it does folded
+/// and sideways, where the clock stands in the strip and the safe area starts at the top: only the 10 points at the edge
+/// fade, and what scrolls up passes under the clock in the corner (Zach's pick B, November 10, 2026). The fade as tall as
+/// the status bar read there as a band cutting the page off under the rail's top.
 struct StatusBarFade: View {
+    @Environment(\.duoLayout) private var duo
     var body: some View {
-        Color.clear
-            .frame(maxWidth: .infinity)
-            .frame(height: 10)
-            .background {
-                PageGround()
-                    .mask(LinearGradient(stops: [
-                        Gradient.Stop(color: .black, location: 0.62),
-                        Gradient.Stop(color: .clear, location: 1)
-                    ], startPoint: .top, endPoint: .bottom))
-                    .ignoresSafeArea(edges: .top)
+        Group {
+            if duo == .upright {
+                VStack(spacing: 0) {
+                    fade.frame(height: 10)
+                    Spacer(minLength: 0)
+                }
+                .ignoresSafeArea(edges: .top)
+            } else {
+                Color.clear
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 10)
+                    .background { fade.ignoresSafeArea(edges: .top) }
             }
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+    }
+    private var fade: some View {
+        PageGround()
+            .mask(LinearGradient(stops: [
+                Gradient.Stop(color: .black, location: 0.62),
+                Gradient.Stop(color: .clear, location: 1)
+            ], startPoint: .top, endPoint: .bottom))
     }
 }
 
@@ -2065,6 +2082,7 @@ private struct ToastPresenter: ViewModifier {
             .overlay(alignment: .top) {
                 if let shown = message {
                     Toast(text: shown)
+                        .swipeAway { message = nil }
                         .padding(.top, Space.s1)
                         .transition(reduceMotion ? AnyTransition.opacity : AnyTransition.move(edge: .top).combined(with: .opacity))
                         .task(id: shown) {
@@ -2081,6 +2099,36 @@ private struct ToastPresenter: ViewModifier {
 extension View {
     /// Shows `message` as a toast until it leaves on its own, then sets it back to nil.
     func toast(_ message: Binding<String?>) -> some View { modifier(ToastPresenter(message: message)) }
+    /// Lets a banner or toast be swiped away sideways, and VoiceOver's escape gesture close it.
+    func swipeAway(_ dismiss: @escaping () -> Void) -> some View { modifier(SwipeAway(dismiss: dismiss)) }
+}
+
+/// Follows a sideways drag and lets go past a third of the way, or on a flick; a shorter drag springs back. A vertical
+/// drag is left to the page, so a banner inside a list never stops it scrolling.
+private struct SwipeAway: ViewModifier {
+    let dismiss: () -> Void
+    @State private var offset: CGFloat = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    func body(content: Content) -> some View {
+        content
+            .offset(x: offset)
+            .opacity(1 - min(0.7, abs(offset) / 240))
+            .simultaneousGesture(DragGesture(minimumDistance: 16)
+                .onChanged { drag in
+                    guard offset != 0 || abs(drag.translation.width) > abs(drag.translation.height) else { return }
+                    offset = drag.translation.width
+                }
+                .onEnded { drag in
+                    guard offset != 0 else { return }
+                    let flung = drag.predictedEndTranslation.width
+                    if abs(offset) > 120 || abs(flung) > 240 {
+                        withAnimation(.easeOut(duration: reduceMotion ? 0.01 : 0.18)) { offset = flung < 0 ? -480 : 480; dismiss() }
+                    } else {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { offset = 0 }
+                    }
+                })
+            .accessibilityAction(.escape) { dismiss() }
+    }
 }
 
 // MARK: - Fields, boxes and banners

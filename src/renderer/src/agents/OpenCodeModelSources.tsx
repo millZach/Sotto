@@ -58,12 +58,20 @@ function rereadingAfterLostAnswers(bridge: OpenCodeSignInBridge, lost: () => voi
  * Everything it learns comes through main; it never holds a key past the field it was typed in. With `host`, the same block
  * and dialog sign a connected host's own OpenCode in, over the host connection, and say so (#1107).
  */
-export function OpenCodeModelSources({ bridge, pollMs = 2_000, host }: {
-  readonly bridge: OpenCodeSignInBridge; readonly pollMs?: number
+export function OpenCodeModelSources({ bridge, pollMs = 2_000, host, provider = 'OpenCode' }: {
+  readonly bridge: OpenCodeSignInBridge; readonly pollMs?: number; readonly provider?: 'OpenCode' | 'Pi'
   /** The saved host whose OpenCode this signs in, by the name this computer saved it under; absent for this computer's own. */
   readonly host?: string | undefined
 }): ReactNode {
   const { t } = useLingui()
+  const isPi = provider === 'Pi'
+  const words = isPi ? {
+    notRunning: t`Pi could not read its model sources. Try again.`,
+    signedOut: (source: string) => t`Signed out of ${source}. Its sign-in is gone from Sotto’s Pi.`,
+    signOutFailed: () => t`Pi could not confirm sign-out. Check its model sources before trying again.`,
+    signedIn: (source: string, models: number) => models > 0 ? t`Signed in to ${source}. Its available models are listed under Pi.` : t`Signed in to ${source}. Pi lists no models for it yet, so none are in the model menu.`,
+    keyUnchecked: () => t`Pi checks the key when a thread first uses it. If it is refused, sign out and paste the key again.`,
+  } : SIGN_IN_WORDS
   /**
    * On a host, the browser sign-ins that turned out to finish by sending the browser back to OpenCode on that machine, by
    * source and method. OpenCode names a method's mode only when it starts, so each is learned once and then not offered.
@@ -86,7 +94,7 @@ export function OpenCodeModelSources({ bridge, pollMs = 2_000, host }: {
   }, [read, signingOut])
   useEffect(() => {
     let live = true
-    void bridge.sources().then(result => { if (live) setRead(result) }, () => { if (live) setRead({ status: 'refused', message: SIGN_IN_WORDS.notRunning }) })
+    void bridge.sources().then(result => { if (live) setRead(result) }, () => { if (live) setRead({ status: 'refused', message: words.notRunning }) })
     return () => { live = false }
   }, [bridge])
   // After a host's lost answer only a list it could read replaces the one shown, so the dialog stays open over it.
@@ -101,41 +109,41 @@ export function OpenCodeModelSources({ bridge, pollMs = 2_000, host }: {
       const result = await checked.signOut({ sourceId: source.id })
       if (result.status === 'ok') {
         setRead(result.sources)
-        setNotice([SIGN_IN_WORDS.signedOut(source.name, key), result.warning ?? ''].filter(Boolean).join(' '))
+        setNotice([words.signedOut(source.name, key), result.warning ?? ''].filter(Boolean).join(' '))
         refocus.current = true
       } else setError(result.message)
-    } catch { setError(SIGN_IN_WORDS.signOutFailed(source.name)) } finally { setSigningOut(null) }
+    } catch { setError(words.signOutFailed(source.name)) } finally { setSigningOut(null) }
   }
   const signedIn = (next: ModelSources, source: ModelSource, method: ModelSourceMethod, warning?: string): void => {
     setRead(next); setOpen(false); setError(null)
     const count = next.status === 'ok' ? next.sources.find(item => item.id === source.id)?.models ?? 0 : 0
-    setNotice([SIGN_IN_WORDS.signedIn(source.name, count), method.kind === 'key' ? SIGN_IN_WORDS.keyUnchecked(source.name) : '', warning ?? ''].filter(Boolean).join(' '))
+    setNotice([words.signedIn(source.name, count), method.kind === 'key' ? words.keyUnchecked(source.name) : '', warning ?? ''].filter(Boolean).join(' '))
   }
   // A sign-in the dialog was closed over may still have changed what OpenCode keeps, so the list is read again.
   const reread = useCallback((): void => { void bridge.sources().then(setRead, () => undefined) }, [bridge])
   return <div className="oc-sources" role="group" aria-labelledby={headingId} aria-busy={read === null}>
     <h4 id={headingId}>{host ? t({ message: `OpenCode model sources on ${host}`, comment: '{host} is the name of a saved host.' }) : t`Model sources`}</h4>
-    {read === null ? <p className="oc-empty tt-paragraph" role="status">{host ? t({ message: `Reading what Sotto’s OpenCode on ${host} is signed in to…`, comment: '{host} is the name of a saved host.' }) : t`Reading what Sotto’s OpenCode is signed in to…`}</p> : null}
+    {read === null ? <p className="oc-empty tt-paragraph" role="status">{host ? t({ message: `Reading what Sotto’s OpenCode on ${host} is signed in to…`, comment: '{host} is the name of a saved host.' }) : isPi ? t`Reading what Sotto’s Pi is signed in to…` : t`Reading what Sotto’s OpenCode is signed in to…`}</p> : null}
     {read?.status === 'refused' ? <p className="provider-detail__error" role="alert">{read.message}</p> : null}
     {read?.status === 'ok' ? <>
-      <ul className="oc-list" ref={listRef} aria-label={host ? t({ message: `Model sources Sotto’s OpenCode on ${host} can use`, comment: '{host} is the name of a saved host.' }) : t`Model sources Sotto’s OpenCode can use`}>
-        <li><span className="oc-src"><strong>OpenCode Zen</strong><small>{t`Free models. No sign-in needed.`}</small></span><span className="oc-count">{countModels(read.zenModels)}</span></li>
+      <ul className="oc-list" ref={listRef} aria-label={host ? t({ message: `Model sources Sotto’s OpenCode on ${host} can use`, comment: '{host} is the name of a saved host.' }) : isPi ? t`Model sources Sotto’s Pi can use` : t`Model sources Sotto’s OpenCode can use`}>
+        {!isPi && <li><span className="oc-src"><strong>OpenCode Zen</strong><small>{t`Free models. No sign-in needed.`}</small></span><span className="oc-count">{countModels(read.zenModels)}</span></li>}
         {signed.map(source => {
           const sourceName = source.name
           return <li key={source.id}>
-            <span className="oc-src"><strong>{source.name}</strong><small>{source.signedIn!.how}</small></span>
+            <span className="oc-src"><strong>{source.name}</strong><small>{source.problem ? t`Sign-in needs attention. Sign out and sign in again.` : isPi ? isKey(source.signedIn!.how) ? t`API key` : t`Account` : source.signedIn!.how}</small></span>
             <span className="oc-count">{countModels(source.models)}</span>
             <Button variant="ghost" aria-label={host ? t({ message: `Sign out of ${sourceName} on ${host}`, comment: '{sourceName} is a model source; {host} is the name of a saved host.' }) : t({ message: `Sign out of ${sourceName}`, comment: '{sourceName} is a model source, such as Anthropic.' })} disabled={signingOut !== null} onClick={() => void signOut(source)}>{signingOut === source.id ? t`Signing out…` : t`Sign out`}</Button>
           </li>
         })}
       </ul>
-      {!signed.length ? <p className="oc-empty tt-paragraph">{host ? t({ message: `Sign in to a model source, such as Anthropic, OpenAI or OpenRouter, to use its models in OpenCode threads on ${host}. That account pays for them.`, comment: '{host} is the name of a saved host.' }) : t`Sign in to a model source, such as Anthropic, OpenAI or OpenRouter, to use its models in OpenCode threads. That account pays for them.`}</p> : null}
+      {!signed.length ? <p className="oc-empty tt-paragraph">{host ? t({ message: `Sign in to a model source, such as Anthropic, OpenAI or OpenRouter, to use its models in OpenCode threads on ${host}. That account pays for them.`, comment: '{host} is the name of a saved host.' }) : isPi ? t`Sign in to a model source to use its models in Pi threads. That account pays for them.` : t`Sign in to a model source, such as Anthropic, OpenAI or OpenRouter, to use its models in OpenCode threads. That account pays for them.`}</p> : null}
       <div className="oc-below"><Button ref={addRef} variant="secondary" aria-haspopup="dialog" aria-expanded={open} aria-label={host ? t({ message: `Add a model source to OpenCode on ${host}`, comment: '{host} is the name of a saved host.' }) : undefined} onClick={() => { setNotice(''); setError(null); setOpen(true) }}><Plus aria-hidden="true" size={14} />{t`Add a model source`}</Button></div>
     </> : null}
     <p className="oc-notice tt-paragraph" role="status">{notice}</p>
     {error ? <p className="provider-detail__error" role="alert">{error}</p> : null}
     {open && read?.status === 'ok' ? <AddModelSourceDialog bridge={checked} sources={read.sources} pollMs={pollMs} fallbackFocus={addRef} host={host}
-      onClose={() => setOpen(false)} onSignedIn={signedIn} onLeft={reread} unreachable={unreachable}
+      provider={provider} onClose={() => setOpen(false)} onSignedIn={signedIn} onLeft={reread} unreachable={unreachable}
       onUnreachable={key => setUnreachable(current => new Set([...current, key]))} /> : null}
   </div>
 }
@@ -180,8 +188,8 @@ function sentAnswers(method: ModelSourceMethod, answers: Record<string, string>)
  * sign in. Focus stays inside, Escape closes and hands focus back to the button that opened it, and a browser sign-in
  * that is waiting is cancelled when the dialog closes.
  */
-function AddModelSourceDialog({ bridge, sources, pollMs, fallbackFocus, onClose, onSignedIn, onLeft, host, unreachable = new Set<string>(), onUnreachable }: {
-  readonly bridge: OpenCodeSignInBridge; readonly sources: readonly ModelSource[]; readonly pollMs: number; readonly host?: string | undefined
+function AddModelSourceDialog({ bridge, sources, pollMs, fallbackFocus, onClose, onSignedIn, onLeft, host, provider = 'OpenCode', unreachable = new Set<string>(), onUnreachable }: {
+  readonly bridge: OpenCodeSignInBridge; readonly sources: readonly ModelSource[]; readonly pollMs: number; readonly host?: string | undefined; readonly provider?: 'OpenCode' | 'Pi'
   readonly fallbackFocus: RefObject<HTMLButtonElement | null>
   readonly onClose: () => void; readonly onSignedIn: (next: ModelSources, source: ModelSource, method: ModelSourceMethod, warning?: string) => void
   /** A sign-in the dialog left before it answered ended without saying what was saved: the tile reads the list again. */
@@ -190,6 +198,7 @@ function AddModelSourceDialog({ bridge, sources, pollMs, fallbackFocus, onClose,
   readonly unreachable?: ReadonlySet<string>; readonly onUnreachable?: (key: string) => void
 }): ReactNode {
   const { t } = useLingui()
+  const isPi = provider === 'Pi'
   const [query, setQuery] = useState('')
   const [flow, setFlowState] = useState<Flow | null>(null)
   const [busy, setBusy] = useState(false)
@@ -287,7 +296,7 @@ function AddModelSourceDialog({ bridge, sources, pollMs, fallbackFocus, onClose,
     return <div className="tt-dialog-backdrop" role="presentation" onPointerDown={event => { if (event.target === event.currentTarget) close() }}>
       <section ref={dialogRef} className="tt-dialog oc-dialog oc-dialog--pick" role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={aboutId}>
         <h2 id={titleId}>{host ? t({ message: `Add a model source to OpenCode on ${host}`, comment: '{host} is the name of a saved host.' }) : t`Add a model source`}</h2>
-        <p className="tt-dialog__description tt-paragraph" id={aboutId}>{host ? t({ message: `Sign Sotto’s OpenCode on ${host} in to a model source to use its models in OpenCode threads there. That account pays for them.`, comment: '{host} is the name of a saved host.' }) : t`Sign Sotto’s OpenCode in to a model source to use its models in OpenCode threads. That account pays for them.`}</p>
+        <p className="tt-dialog__description tt-paragraph" id={aboutId}>{host ? t({ message: `Sign Sotto’s OpenCode on ${host} in to a model source to use its models in OpenCode threads there. That account pays for them.`, comment: '{host} is the name of a saved host.' }) : isPi ? t`Sign Sotto’s Pi in to a model source to use its models in Pi threads. That account pays for them.` : t`Sign Sotto’s OpenCode in to a model source to use its models in OpenCode threads. That account pays for them.`}</p>
         <div className="oc-search"><Search aria-hidden="true" size={14} />
           <input ref={searchRef} type="text" aria-label={t`Search model sources`} aria-controls={listId} placeholder={plural(sourceCount, { one: 'Search # model source', other: 'Search # model sources' })}
             value={query} autoComplete="off" spellCheck={false} onChange={event => setQuery(event.target.value)} onKeyDown={onSearchKey} /></div>
@@ -307,7 +316,7 @@ function AddModelSourceDialog({ bridge, sources, pollMs, fallbackFocus, onClose,
   const run = async (work: (current: Flow) => Promise<void>): Promise<void> => {
     if (busy) return
     setBusy(true)
-    try { await work(flowRef.current!) } catch { if (flowRef.current) update({ error: SIGN_IN_WORDS.notRunning }) } finally { setBusy(false) }
+    try { await work(flowRef.current!) } catch { if (flowRef.current) update({ error: isPi ? t`Pi could not read its model sources. Try again.` : SIGN_IN_WORDS.notRunning }) } finally { setBusy(false) }
   }
   /** A sign-in that answered after the dialog closed or went back: what OpenCode kept still reaches the tile. */
   const settledAfterLeaving = (result: SignInResult): void => { if (result.status === 'ok') onSignedIn(result.sources, source, method, result.warning); else onLeft() }
@@ -389,7 +398,7 @@ function AddModelSourceDialog({ bridge, sources, pollMs, fallbackFocus, onClose,
         <input data-autofocus className="tt-input" type="password" value={flow.key} placeholder={t`Paste the key`} autoComplete="off" spellCheck={false}
           aria-describedby={[flow.error ? errorId : '', noteId].filter(Boolean).join(' ')} aria-invalid={flow.error ? true : undefined}
           onChange={event => update({ key: event.target.value })} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); void submitKey() } }} /></label>
-      <p className="oc-keynote tt-paragraph" id={noteId}>{host ? hostKeySentence(host) : KEY_SENTENCE}</p>{error}</>
+      <p className="oc-keynote tt-paragraph" id={noteId}>{host ? hostKeySentence(host) : isPi ? t`Pi keeps the key in Sotto’s own Pi folder. Sotto keeps no copy.` : KEY_SENTENCE}</p>{error}</>
     actions = <>{cancel}<Button variant="primary" aria-label={t({ message: `Sign in to ${sourceName} with this key`, comment: '{sourceName} is a model source, such as Anthropic.' })} disabled={busy || !flow.key.trim() || !answered(method, flow.answers)} onClick={() => void submitKey()}>{busy ? t`Signing in…` : t`Sign in`}</Button></>
   } else if (method.kind === 'external') {
     const about = aboutMethod(source, method, host)
@@ -448,7 +457,7 @@ function AddModelSourceDialog({ bridge, sources, pollMs, fallbackFocus, onClose,
   } else {
     body = <>{formFields}<p className="oc-open tt-paragraph">{host
       ? t({ message: `Opens the ${sourceName} sign-in page in your browser on this computer. Sotto’s OpenCode on ${host} keeps the sign-in in its own folder there, and Sotto keeps no copy.`, comment: '{sourceName} is a model source; {host} is the name of a saved host.' })
-      : t({ message: `Opens the ${sourceName} sign-in page in your browser. Sotto’s OpenCode keeps the sign-in in its own folder, and Sotto keeps no copy.`, comment: '{sourceName} is a model source, such as Anthropic.' })}</p>{error}</>
+      : isPi ? t`Opens the ${sourceName} sign-in page in your browser. Pi keeps the sign-in in Sotto’s own Pi folder.` : t({ message: `Opens the ${sourceName} sign-in page in your browser. Sotto’s OpenCode keeps the sign-in in its own folder, and Sotto keeps no copy.`, comment: '{sourceName} is a model source, such as Anthropic.' })}</p>{error}</>
     actions = <>{cancel}<Button data-autofocus={!(method.form?.length) && source.methods.length < 2 ? true : undefined} variant="primary" aria-label={t({ message: `Open the ${sourceName} sign-in page in your browser`, comment: '{sourceName} is a model source, such as Anthropic.' })}
       disabled={busy || !answered(method, flow.answers)} onClick={() => void startBrowser()}><ExternalLink aria-hidden="true" size={14} />{busy ? t`Opening…` : flow.error ? t`Open sign-in page again` : t`Open sign-in page`}</Button></>
   }
@@ -462,7 +471,7 @@ function AddModelSourceDialog({ bridge, sources, pollMs, fallbackFocus, onClose,
         <h2 id={titleId}>{t({ message: `Sign in to ${sourceName}`, comment: '{sourceName} is a model source, such as Anthropic.' })}</h2>
         <p className="tt-dialog__description tt-paragraph" id={aboutId}>{host
           ? t({ message: `Its models join the model menu under OpenCode on ${host}, billed to your ${sourceName} account.`, comment: '{host} is the name of a saved host; {sourceName} is a model source.' })
-          : t({ message: `Its models join the model menu under OpenCode, billed to your ${sourceName} account.`, comment: '{sourceName} is a model source, such as Anthropic.' })}</p>
+          : isPi ? t`Its models join the model menu under Pi, billed to your ${sourceName} account.` : t({ message: `Its models join the model menu under OpenCode, billed to your ${sourceName} account.`, comment: '{sourceName} is a model source, such as Anthropic.' })}</p>
         {source.methods.length > 1 && flow.phase === 'form' ? <fieldset className="oc-methods"><legend>{t`How to sign in`}</legend>{source.methods.map((choice, index) =>
           <label key={choice.id} className="oc-method"><input data-autofocus={index === flow.method || undefined} type="radio" name="oc-method" value={choice.id} checked={index === flow.method}
             onChange={() => setFlow(freshFlow(source, index))} /><b>{choice.label}</b><small>{unreachable.has(`${source.id}:${choice.id}`) ? t({ message: `Finishes on ${hostName} itself, so not from this computer.`, comment: '{hostName} is the name of a saved host, or "the host".' }) : aboutMethod(source, choice, host)}</small></label>)}</fieldset> : null}

@@ -3,5 +3,5 @@
   "compilerOptions": {
     "types": ["node", "vite/client", "vitest/globals", "@testing-library/jest-dom"]
   },
-  "include": ["tests/**/*.tsx", "tests/setup.ts"]
+  "include": ["tests/**/*.tsx", "tests/setup.ts", "src/host/pictureLibraries.d.ts"]
 }

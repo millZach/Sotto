@@ -16,7 +16,7 @@ export interface OpenRouterKeyCheckDependencies {
 export async function checkOpenRouterKey(dependencies: OpenRouterKeyCheckDependencies): Promise<OpenRouterKeyCheck> {
   let settings: AppSettings
   try { settings = await dependencies.getSettings() }
-  catch { return { ok: false, reason: 'unconfigured' } }
+  catch { return { ok: false, reason: 'unreadable' } }
   if (!settings.llmApiKey.trim()) return { ok: false, reason: 'unconfigured' }
   const fetchFn = dependencies.fetchFn ?? globalThis.fetch.bind(globalThis)
   const signal = AbortSignal.timeout(5_000)

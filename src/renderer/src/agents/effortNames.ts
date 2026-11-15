@@ -9,6 +9,8 @@ import { wordsOf } from './interfaceWords'
  * (November 9, 2026).
  */
 const EFFORT_NAMES: Readonly<Record<string, string>> = wordsOf({
+  default: msg({ message: 'Default', comment: 'The model uses its own default thinking.' }),
+  off: msg({ message: 'Off', comment: 'Thinking is off for an API model.' }),
   none: msg({ message: 'None', comment: 'A reasoning effort level: no reasoning before the answer.' }),
   minimal: msg({ message: 'Minimal', comment: 'A reasoning effort level.' }),
   low: msg({ message: 'Low', comment: 'A reasoning effort level.' }),

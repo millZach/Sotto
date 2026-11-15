@@ -7,8 +7,14 @@ import { HOSTS_DEVICES, HOSTS_TAILSCALE, HOSTS_TAILSCALE_CONNECT, HOSTS_TAILSCAL
 import { HOSTS_OPENCODE_SIGN_IN, HOSTS_PROVIDER_ACTION, HOSTS_SIGN_IN, HOSTS_UPDATE_CLIENTS, hostOpenCodeSignInRequestSchema, hostClientUpdateRequestSchema, hostProviderActionSchema, hostProviderActionResultSchema, hostSignInRequestSchema, providerSignInResultSchema, parseHostOpenCodeAnswer } from '../shared/hostProviders'
 import { PHONES_GET, PHONES_COMMAND, PHONES_CHANGED, phonesCommandSchema, type PhonesState } from '../shared/phones'
 import { LOCAL_APPS_CHANGED, LOCAL_APPS_GET, type LocalAppsState } from '../shared/localApps'
+import {
+  mailGrantsOfSchema, mailGrantStopSchema, PLUGINS_MAIL_GRANT_STOP, PLUGINS_MAIL_GRANTS, PLUGINS_MAIL_GRANTS_CHANGED, threadMailGrantsSchema,
+  gitHubSignInSchema, pluginHostSignInsSchema, PLUGINS_GITHUB_SIGN_IN_ELSEWHERE, pluginCopiesViewSchema, pluginCopyNewSetSchema, pluginCopySetSchema, PLUGINS_COPIES, PLUGINS_COPIES_CHANGED, PLUGINS_COPY_NEW_SET, PLUGINS_COPY_SET, pluginAccountAddSchema, pluginAccountRemoveSchema, pluginAccountReplaceSchema, pluginAccountResultSchema, pluginAccountsSchema, pluginAccountUpdateSchema, pluginProjectsSchema,
+  PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNT_TRUST, PLUGINS_ACCOUNT_UPDATE, PLUGINS_ACCOUNTS, PLUGINS_BRIDGE_STATUS, bridgeStatusSchema, PLUGINS_GITHUB_SIGN_IN, PLUGINS_PROJECTS, PLUGINS_RECENT_USE, shownPluginUsesSchema, type PluginsBridge,
+} from '../shared/plugins'
 import { TEAMS_CHANGED, TEAMS_COMMAND, TEAMS_GET, TEAMS_OWN_DESK, teamsCommandSchema, type TeamDesk, type TeamsBridge, type TeamsCommandResult, type TeamsState } from '../shared/teams'
 import { mapHostReferences, parseHostEntityKey } from '../shared/clientIdentity'
+import { MODEL_ROUTER_RENDERER_ARGUMENT } from '../shared/modelRouter'
 
 import { WATCHER_GET, WATCHER_OPEN, WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL, WATCHER_SET_PERMISSION, WATCHER_WATCH_THREAD, WATCHER_UNWATCH_THREAD,
   WATCHER_READ_HANDOVER, WATCHER_CONTINUE_HANDOVER, WATCHER_DISMISS_HANDOVER, WATCHER_START_NEW, WATCHER_TRY_NOW, watcherContinueHandoverRequestSchema, watcherHandoverReadSchema,
@@ -30,11 +36,12 @@ import {
   signInFinishRequestSchema, signInKeyRequestSchema, signInMethodRequestSchema, signInResultSchema, signInStartSchema, signInWaitSchema, signOutRequestSchema,
   type OpenCodeSignInBridge,
 } from '../shared/opencodeSignIn'
+import { PI_RENDERER_ARGUMENT, PI_SIGN_IN, piSignInCallSchema, type PiSignInBridge } from '../shared/piSignIn'
 import { LOCAL_PROVIDER_SIGN_IN, localSignInRequestSchema, type LocalProviderSignInBridge } from '../shared/localProviderSignIn'
 import { CURSOR_RENDERER_ARGUMENT, CURSOR_SIGN_IN_CANCEL, CURSOR_SIGN_IN_READ, CURSOR_SIGN_IN_REOPEN, CURSOR_SIGN_IN_START, CURSOR_SIGN_OUT, cursorSignInDoneSchema,
   cursorSignInRequestSchema, cursorSignInStartSchema, cursorSignInViewSchema, type CursorSignInBridge } from '../shared/cursorSignIn'
 import {
-  addRequestSchema, addResultSchema, checkRequestSchema, checkResultSchema, checkSavedRequestSchema, OWN_SERVERS_ADD, OWN_SERVERS_CHECK, OWN_SERVERS_CHECK_SAVED,
+  catalogueResultSchema, chooseModelsSchema, replaceKeySchema, OWN_SERVERS_CATALOGUE, OWN_SERVERS_CHOOSE, OWN_SERVERS_REPLACE_KEY, addRequestSchema, addResultSchema, checkRequestSchema, checkResultSchema, checkSavedRequestSchema, OWN_SERVERS_ADD, OWN_SERVERS_CHECK, OWN_SERVERS_CHECK_SAVED,
   OWN_SERVERS_LIST, OWN_SERVERS_REMOVE, OWN_SERVERS_RENDERER_ARGUMENT, ownServerListSchema, removeRequestSchema, removeResultSchema, type OwnServersBridge,
 } from '../shared/ownModelServers'
 import {
@@ -62,7 +69,7 @@ import { createCloudIphoneBridge } from './cloudIphone'
 import { createThemesBridge } from './themes'
 import { OMARCHY_SETUP_GET, OMARCHY_SETUP_COMMAND, OMARCHY_SETUP_CHANGED, OMARCHY_SETUP_FOCUS, omarchySetupCommandSchema, omarchySetupStateSchema, type OmarchySetupBridge } from '../shared/omarchySetup'
 import { speechModelListSchema, speechModelStatusSchema } from '../shared/speechModel'
-import { FILES_LIST, FILES_PREVIEW, FILES_COPY_PATH, FILES_REVEAL, FILES_REVEAL_LINK, FILES_PREVIEW_LINK, fileLinkPreviewSchema, fileLinkRequestSchema, fileLinkSchema, fileListRequestSchema, fileRequestSchema, fileListingSchema, filePreviewSchema, filePathSchema, filesResultSchema, type FilesBridge } from '../shared/files'
+import { FILES_LIST, FILES_PREVIEW, FILES_COPY_PATH, FILES_REVEAL, FILES_REVEAL_LINK, FILES_PREVIEW_LINK, FILES_OPEN_LINK, FILES_LINKED_FILE, FILES_DOWNLOAD, FILES_DOWNLOAD_STOP, FILES_DOWNLOAD_SHOW, FILES_DOWNLOAD_OPEN, FILES_DOWNLOAD_PROGRESS, fileDownloadHandleSchema, fileDownloadProgressSchema, fileDownloadRequestSchema, fileDownloadSchema, fileDownloadStoppedSchema, fileLinkOpenedSchema, linkedFileViewRequestSchema, linkedFileViewSchema, fileLinkPreviewSchema, fileLinkRequestSchema, fileLinkSchema, fileListRequestSchema, fileRequestSchema, fileListingSchema, filePreviewSchema, filePathSchema, filesResultSchema, type FilesBridge } from '../shared/files'
 import { AGENT_CHOOSE_PROJECT_DIRECTORY, AGENT_WORKING_COPY_OPTIONS, agentWorkingCopyOptionsSchema, agentWorkingCopyOptionsRequestSchema } from '../shared/agents'
 import { AGENT_GIT_REFS, gitRefsPageSchema, gitRefsRequestSchema } from '../shared/gitRefs'
 import { AGENT_GIT_CHANGED_FILES, gitChangedFilesRequestSchema, gitChangedFilesSchema } from '../shared/gitChangedFiles'
@@ -179,7 +186,7 @@ import {
 import { settingsSchema } from '../shared/settings'
 import { pastePermissionNoticeCodeSchema, recoveryNoticeEventSchema, recoveryNoticesSchema } from '../shared/recoveryNotice'
 import {
-  E2E_BROWSER_AGENT_CHANNEL, e2eBrowserAgentSchema, e2eBrowserAgentResultSchema, E2E_HOST_SETUP_TOOL_CHANNEL, e2eHostSetupToolSchema, E2E_VISUAL_TOOL_CHANNEL, e2eVisualToolSchema, E2E_MEDIA_TOOL_CHANNEL, E2E_DELEGATION_TOOL_CHANNEL, e2eDelegationToolSchema,
+  E2E_BROWSER_AGENT_CHANNEL, e2eBrowserAgentSchema, e2eBrowserAgentResultSchema, E2E_HOST_SETUP_TOOL_CHANNEL, e2eHostSetupToolSchema, E2E_VISUAL_TOOL_CHANNEL, e2eVisualToolSchema, E2E_MEDIA_TOOL_CHANNEL, E2E_DELEGATION_TOOL_CHANNEL, e2eDelegationToolSchema, E2E_PLUGIN_TOOL_CHANNEL, e2ePluginToolSchema,
   E2E_SNAPSHOT_CHANNEL,
   E2E_TRIGGER_SHORTCUT_CHANNEL,
   e2eScenarioSchema,
@@ -233,6 +240,8 @@ const updateResponseSchema = z.union([updateStatusSchema, unavailableSchema])
 const outputResultSchema = z.union([z.enum(['pasted', 'copied', 'clipboard-unavailable', 'empty']), unavailableSchema])
 const startupStateSchema = z.object({ enabled: z.boolean(), supported: z.boolean().optional(), approvalRequired: z.boolean().optional() }).strict()
 const voidSchema = z.undefined()
+/** Whether a thread's mail grant was ended. */
+const mailGrantStoppedSchema = z.boolean()
 const booleanSchema = z.boolean()
 const nullSchema = z.null()
 const projectDirectorySchema = z.string().min(1).max(4_096).nullable()
@@ -249,6 +258,10 @@ const filePreviewResultSchema = filesResultSchema(filePreviewSchema)
 const filePathResultSchema = filesResultSchema(filePathSchema)
 const fileLinkResultSchema = filesResultSchema(fileLinkSchema)
 const fileLinkPreviewResultSchema = filesResultSchema(fileLinkPreviewSchema)
+const fileLinkOpenedResultSchema = filesResultSchema(fileLinkOpenedSchema)
+const linkedFileViewResultSchema = filesResultSchema(linkedFileViewSchema)
+const fileDownloadResultSchema = filesResultSchema(fileDownloadSchema)
+const fileDownloadStoppedResultSchema = filesResultSchema(fileDownloadStoppedSchema)
 const requestDraftsSchema = requestDraftSchema.array()
 const requestDraftResultSchema = requestDraftSchema.nullable()
 const dictationRecordResultSchema = dictationRecordSchema.nullable()
@@ -450,6 +463,7 @@ export function createSottoBridge(
   dictationTiming = false,
   /** Dynamic threads' record in Settings and Give it to another model… (ADR-0191): only while the `dynamic-threads` Owl feature is on. */
   dynamicThreadsEnabled = false,
+  piEnabled = false,
 ): SottoBridge {
   const onDictationCommand = createBufferedSubscription(
     renderer,
@@ -526,6 +540,17 @@ export function createSottoBridge(
     }) } : {}),
     // Signing Sotto's OpenCode in to model sources (#1104): only while OpenCode's Owl feature is on. A key goes to main
     // once and nothing returned carries one.
+    ...(piEnabled ? { pi: Object.freeze<PiSignInBridge>({
+      sources: async () => invokeParsed(renderer, PI_SIGN_IN, modelSourcesSchema, piSignInCallSchema.parse({ action: 'sources' })),
+      signInWithKey: async request => invokeParsed(renderer, PI_SIGN_IN, signInResultSchema, piSignInCallSchema.parse({ action: 'key', request })),
+      startBrowserSignIn: async request => invokeParsed(renderer, PI_SIGN_IN, signInStartSchema, piSignInCallSchema.parse({ action: 'browser', request })),
+      useExternalSignIn: async () => ({ status: 'refused', message: 'Pi uses its own sign-in.' }),
+      wait: async request => invokeParsed(renderer, PI_SIGN_IN, signInWaitSchema, piSignInCallSchema.parse({ action: 'wait', request })),
+      finish: async request => invokeParsed(renderer, PI_SIGN_IN, signInWaitSchema, piSignInCallSchema.parse({ action: 'finish', request })),
+      reopen: async request => invokeParsed(renderer, PI_SIGN_IN, signInDoneSchema, piSignInCallSchema.parse({ action: 'reopen', request })),
+      cancel: async request => invokeParsed(renderer, PI_SIGN_IN, signInDoneSchema, piSignInCallSchema.parse({ action: 'cancel', request })),
+      signOut: async request => invokeParsed(renderer, PI_SIGN_IN, signInResultSchema, piSignInCallSchema.parse({ action: 'sign-out', request })),
+    }) } : {}),
     ...(opencodeEnabled ? { opencode: Object.freeze<OpenCodeSignInBridge>({
       sources: async () => invokeParsed(renderer, OPENCODE_SOURCES_READ, modelSourcesSchema),
       signInWithKey: async request => invokeParsed(renderer, OPENCODE_SIGN_IN_KEY, signInResultSchema, signInKeyRequestSchema.parse(request)),
@@ -552,6 +577,9 @@ export function createSottoBridge(
     // The user's own model servers (ADR-0124): only while their Owl feature is on. A key goes to main once and nothing
     // returned carries one.
     ...(ownServersEnabled ? { ownServers: Object.freeze<OwnServersBridge>({
+      catalogue: async () => invokeParsed(renderer, OWN_SERVERS_CATALOGUE, catalogueResultSchema),
+      chooseModels: async request => invokeParsed(renderer, OWN_SERVERS_CHOOSE, addResultSchema, chooseModelsSchema.parse(request)),
+      replaceKey: async request => invokeParsed(renderer, OWN_SERVERS_REPLACE_KEY, addResultSchema, replaceKeySchema.parse(request)),
       list: async () => invokeParsed(renderer, OWN_SERVERS_LIST, ownServerListSchema),
       check: async request => invokeParsed(renderer, OWN_SERVERS_CHECK, checkResultSchema, checkRequestSchema.parse(request)),
       add: async request => invokeParsed(renderer, OWN_SERVERS_ADD, addResultSchema, addRequestSchema.parse(request)),
@@ -643,6 +671,30 @@ export function createSottoBridge(
     phones: Object.freeze<import('../shared/phones').PhonesBridge>({ get: async () => renderer.invoke(PHONES_GET) as Promise<PhonesState>, command: async command => renderer.invoke(PHONES_COMMAND, phonesCommandSchema.parse(command)) as Promise<PhonesState>, onChanged: listener => subscribe(renderer, PHONES_CHANGED, trustedState<PhonesState>('phones'), listener) }),
     teams: Object.freeze<TeamsBridge>({ get: async () => renderer.invoke(TEAMS_GET) as Promise<TeamsState>, command: async command => renderer.invoke(TEAMS_COMMAND, teamsCommandSchema.parse(command)) as Promise<TeamsCommandResult>, ownDesk: async () => renderer.invoke(TEAMS_OWN_DESK) as Promise<TeamDesk>, subscribe: listener => subscribe(renderer, TEAMS_CHANGED, trustedState<TeamsState>('links'), listener) }),
     localApps: Object.freeze<import('../shared/localApps').LocalAppsBridge>({ get: async () => renderer.invoke(LOCAL_APPS_GET) as Promise<LocalAppsState>, onChanged: listener => subscribe(renderer, LOCAL_APPS_CHANGED, trustedState<LocalAppsState>('phase'), listener) }),
+    // Settings › Plugins (ADR-0205); main answers it only while the `plugins` Owl feature is on.
+    plugins: Object.freeze<PluginsBridge>({
+      gitHubSignIn: async () => invokeParsed(renderer, PLUGINS_GITHUB_SIGN_IN, gitHubSignInSchema),
+      gitHubSignInElsewhere: async () => invokeParsed(renderer, PLUGINS_GITHUB_SIGN_IN_ELSEWHERE, pluginHostSignInsSchema),
+      recentUse: async () => invokeParsed(renderer, PLUGINS_RECENT_USE, shownPluginUsesSchema),
+      accounts: async () => invokeParsed(renderer, PLUGINS_ACCOUNTS, pluginAccountsSchema),
+      // A secret goes to main once and nothing returned carries one.
+      addAccount: async request => invokeParsed(renderer, PLUGINS_ACCOUNT_ADD, pluginAccountResultSchema, pluginAccountAddSchema.parse(request)),
+      replaceSecret: async request => invokeParsed(renderer, PLUGINS_ACCOUNT_REPLACE, pluginAccountResultSchema, pluginAccountReplaceSchema.parse(request)),
+      removeAccount: async request => invokeParsed(renderer, PLUGINS_ACCOUNT_REMOVE, pluginAccountResultSchema, pluginAccountRemoveSchema.parse(request)),
+      updateAccount: async request => invokeParsed(renderer, PLUGINS_ACCOUNT_UPDATE, pluginAccountResultSchema, pluginAccountUpdateSchema.parse(request)),
+      trustCertificate: async request => invokeParsed(renderer, PLUGINS_ACCOUNT_TRUST, pluginAccountResultSchema, pluginAccountRemoveSchema.parse(request)),
+      bridgeStatus: async request => invokeParsed(renderer, PLUGINS_BRIDGE_STATUS, bridgeStatusSchema, pluginAccountRemoveSchema.parse(request)),
+      projects: async () => invokeParsed(renderer, PLUGINS_PROJECTS, pluginProjectsSchema),
+      copies: async () => invokeParsed(renderer, PLUGINS_COPIES, pluginCopiesViewSchema),
+      setCopy: async request => invokeParsed(renderer, PLUGINS_COPY_SET, pluginCopiesViewSchema, pluginCopySetSchema.parse(request)),
+      setCopyNew: async copyNew => invokeParsed(renderer, PLUGINS_COPY_NEW_SET, pluginCopiesViewSchema, pluginCopyNewSetSchema.parse({ copyNew })),
+      // Main says only that something changed; the page reads the copies again through `copies`.
+      onCopiesChanged: listener => { const heard = (): void => { listener() }; renderer.on(PLUGINS_COPIES_CHANGED, heard); return () => { renderer.removeListener(PLUGINS_COPIES_CHANGED, heard) } },
+      // A thread's own mail grants, for its menu: names, never an address or a secret.
+      mailGrants: async threadId => invokeParsed(renderer, PLUGINS_MAIL_GRANTS, threadMailGrantsSchema, mailGrantsOfSchema.parse({ threadId })),
+      stopMailGrant: async request => invokeParsed(renderer, PLUGINS_MAIL_GRANT_STOP, mailGrantStoppedSchema, mailGrantStopSchema.parse(request)),
+      onMailGrantsChanged: listener => { const heard = (): void => { listener() }; renderer.on(PLUGINS_MAIL_GRANTS_CHANGED, heard); return () => { renderer.removeListener(PLUGINS_MAIL_GRANTS_CHANGED, heard) } },
+    }),
     ...createToolsBridges(renderer),
     cloudIphone: createCloudIphoneBridge(renderer),
     themes: createThemesBridge(renderer),
@@ -668,6 +720,14 @@ export function createSottoBridge(
       reveal: async request => invokeParsed(renderer, FILES_REVEAL, filePathResultSchema, fileRequestSchema.parse(request)),
       revealLink: async request => invokeParsed(renderer, FILES_REVEAL_LINK, fileLinkResultSchema, fileLinkRequestSchema.parse(request)),
       previewLink: async request => invokeParsed(renderer, FILES_PREVIEW_LINK, fileLinkPreviewResultSchema, fileLinkRequestSchema.parse(request)),
+      // A linked file opened here, or found, read and saved from the paired host its thread runs on (ADR-0120, November 12 amendment).
+      openLink: async request => invokeParsed(renderer, FILES_OPEN_LINK, fileLinkOpenedResultSchema, fileLinkRequestSchema.parse(request)),
+      linkedFile: async request => invokeParsed(renderer, FILES_LINKED_FILE, linkedFileViewResultSchema, linkedFileViewRequestSchema.parse(request)),
+      download: async request => invokeParsed(renderer, FILES_DOWNLOAD, fileDownloadResultSchema, fileDownloadRequestSchema.parse(request)),
+      stopDownload: async request => invokeParsed(renderer, FILES_DOWNLOAD_STOP, fileDownloadStoppedResultSchema, fileDownloadRequestSchema.parse(request)),
+      showDownload: async request => invokeParsed(renderer, FILES_DOWNLOAD_SHOW, fileLinkResultSchema, fileDownloadHandleSchema.parse(request)),
+      openDownload: async request => invokeParsed(renderer, FILES_DOWNLOAD_OPEN, fileLinkOpenedResultSchema, fileDownloadHandleSchema.parse(request)),
+      onDownloadProgress: listener => subscribe(renderer, FILES_DOWNLOAD_PROGRESS, fileDownloadProgressSchema, listener),
     }),
     memory: Object.freeze<MemoryBridge>({
       get: async () => invokeParsed(renderer, MEMORY_GET, memorySnapshotSchema),
@@ -867,6 +927,7 @@ export function createSottoPopupBridge(
   platform: SottoPlatform,
   interfaceLanguage: InterfaceLanguageState | null = null,
   watcherEnabled = false,
+  modelRouterEnabled = false,
 ): PopupBridge {
   // A show sent before the page's listener is attached waits for it, as the widget's state does.
   const onShown = createBufferedSubscription(renderer, POPUP_SHOWN, popupShownSchema, 1)
@@ -874,6 +935,7 @@ export function createSottoPopupBridge(
     platform,
     ...(interfaceLanguage ? { interfaceLanguage: createInterfaceLanguageBridge(renderer, interfaceLanguage) } : {}),
     ...(watcherEnabled ? { watcher: async () => invokeParsed(renderer, WATCHER_GET, watcherRoomResultSchema) } : {}),
+    modelRouterEnabled,
     getSettings: async () => invokeParsed(renderer, SETTINGS_GET, settingsSchema),
     onSettingsChanged: listener => subscribe(renderer, SETTINGS_CHANGED, settingsChangedSchema, listener),
     shell: async () => invokeParsed(renderer, AGENT_GET, agentStateSchema),
@@ -932,11 +994,11 @@ export function exposeRendererBridge(
       parseInterfaceLanguageArgument(arguments_), arguments_.includes(OWN_SERVERS_RENDERER_ARGUMENT), arguments_.includes(NEXT_PROMPT_RENDERER_ARGUMENT),
       arguments_.includes(OWN_SERVER_CLEANUP_RENDERER_ARGUMENT), arguments_.includes(MAIN_CHECKOUT_RENDERER_ARGUMENT),
       parseGlassWindowArguments(arguments_), arguments_.includes(COUNCIL_RENDERER_ARGUMENT), arguments_.includes(POPUP_RENDERER_ARGUMENT), arguments_.includes(DICTATION_TIMING_ARGUMENT),
-      arguments_.includes(DYNAMIC_THREADS_RENDERER_ARGUMENT)))
+      arguments_.includes(DYNAMIC_THREADS_RENDERER_ARGUMENT), arguments_.includes(PI_RENDERER_ARGUMENT)))
     return true
   }
   if (rendererRole === 'popup') {
-    context.exposeInMainWorld('sottoPopup', createSottoPopupBridge(renderer, platform, parseInterfaceLanguageArgument(arguments_), arguments_.includes(WATCHER_RENDERER_ARGUMENT)))
+    context.exposeInMainWorld('sottoPopup', createSottoPopupBridge(renderer, platform, parseInterfaceLanguageArgument(arguments_), arguments_.includes(WATCHER_RENDERER_ARGUMENT), arguments_.includes(MODEL_ROUTER_RENDERER_ARGUMENT)))
     return true
   }
   if (rendererRole === 'widget') {
@@ -964,6 +1026,7 @@ export function exposeE2EBridge(
     visualTool: async (request: Parameters<NonNullable<SottoE2EBridge['visualTool']>>[0]) => invokeParsed(renderer, E2E_VISUAL_TOOL_CHANNEL, e2eBrowserAgentResultSchema, e2eVisualToolSchema.parse(request)),
     mediaTool: async (request: Parameters<NonNullable<SottoE2EBridge['mediaTool']>>[0]) => invokeParsed(renderer, E2E_MEDIA_TOOL_CHANNEL, e2eBrowserAgentResultSchema, e2eVisualToolSchema.parse(request)),
     delegationTool: async (request: Parameters<NonNullable<SottoE2EBridge['delegationTool']>>[0]) => invokeParsed(renderer, E2E_DELEGATION_TOOL_CHANNEL, e2eBrowserAgentResultSchema, e2eDelegationToolSchema.parse(request)),
+    pluginTool: async (request: Parameters<NonNullable<SottoE2EBridge['pluginTool']>>[0]) => invokeParsed(renderer, E2E_PLUGIN_TOOL_CHANNEL, e2eBrowserAgentResultSchema, e2ePluginToolSchema.parse(request)),
     agentEvent: async (event: Parameters<NonNullable<SottoE2EBridge['agentEvent']>>[0]) => {
       const key = parseHostEntityKey(event.threadId)
       if (key === null) return invokeParsed(renderer, AGENT_E2E, voidSchema, event)

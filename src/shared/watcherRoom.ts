@@ -44,8 +44,8 @@ export const watcherNextTurnOptionsSchema = z.object({ modelId: z.string().min(1
   speed: agentSpeedSchema.nullable().optional() }).strict()
 export type WatcherNextTurnOptions = z.infer<typeof watcherNextTurnOptionsSchema>
 /**
- * What held a GO MERGE that went anyway (#2229): the train pull requests whose required checks were running, by number
- * where it has one and the title of their thread, the base branch when its newest commit's checks had failed, and Watcher's reason.
+ * What held a GO MERGE that went anyway (#2229): the train pull requests whose checks were running, by number
+ * where it has one and the title of their thread, the base branch when its newest finished checks had failed, and Watcher's reason.
  */
 export const watcherMergeTurnOverrideSchema = z.object({ operationId: z.uuid(),
   running: z.array(z.object({ number: z.number().int().positive().optional(), url: z.string().max(2_048).optional(), title: z.string().max(200) }).strict()).max(100),

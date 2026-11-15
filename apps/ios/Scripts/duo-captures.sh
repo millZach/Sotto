@@ -1,15 +1,15 @@
 #!/bin/sh
 # The Duo design captures: builds the app for testing on an iPhone Duo simulator and runs DuoCaptureTests folded, then
-# unfolded held sideways. The simulator can't turn the unfolded Duo upright, so upright is checked on a real Duo. XCTest's
+# unfolded held sideways, then unfolded upright (the Threads page, a thread and Watcher only). XCTest's
 # own screenshots on the Duo show only the cover screen, so this script takes the pictures from the host: it grabs a frame
 # about every half second while the tests run and keeps the one nearest each `DUO-SHOT` mark, and records each posture's
 # run as a video. Each `DUO-CLIP` pair is cut from it here where the runner has ffmpeg, and otherwise on any computer by
 # `duo-captures-collect.py --cut <the downloaded folder>`.
 # Everything lands in apps/ios/.build-duo/out: shots/*.png, clips/*, videos/*, the logs, and manifest.json.
-# Usage: duo-captures.sh [folded,sideways]   (both when left out)
+# Usage: duo-captures.sh [folded,sideways,upright]   (all three when left out)
 set -u
 cd "$(dirname "$0")/.."
-postures=${1:-folded,sideways}
+postures=${1:-folded,sideways,upright}
 root=.build-duo
 out=$root/out
 rm -rf "$root"
@@ -99,9 +99,15 @@ run_posture() {
     recorder=$!
     sleep 2
     touch "$root/grabbing"; grab "$display" & grabber=$!
+    # Upright, only the pages whose top and rail it changes: the Threads page, a thread and Watcher.
+    if [ "$posture" = upright ]; then
+        set -- -only-testing:SottoUITests/DuoCaptureTests/testThreadsPage -only-testing:SottoUITests/DuoCaptureTests/testThreadReading -only-testing:SottoUITests/DuoCaptureTests/testWatcher
+    else
+        set -- -only-testing:SottoUITests/DuoCaptureTests
+    fi
     TEST_RUNNER_SOTTO_DUO_POSTURE=$posture xcodebuild -project Sotto.xcodeproj -scheme Sotto -configuration Debug -sdk iphonesimulator \
         -destination "platform=iOS Simulator,id=$id" -derivedDataPath .build-native -resultBundlePath "$root/$posture.xcresult" \
-        -parallel-testing-enabled NO -only-testing:SottoUITests/DuoCaptureTests ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO \
+        -parallel-testing-enabled NO "$@" ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO \
         test-without-building > "$out/$posture.log" 2>&1
     rm -f "$root/grabbing"; wait "$grabber" 2>/dev/null
     kill -INT "$recorder" 2>/dev/null; wait "$recorder" 2>/dev/null; recorder=''
@@ -109,11 +115,29 @@ run_posture() {
     python3 Scripts/duo-captures-collect.py "$posture"
 }
 
-for posture in folded sideways; do
+# Upright: the posture tool opens the inner screen, then swaps it again with its orientation field set to 3, which turns
+# it upright (November 10, 2026; 1, 2 and 4 leave it sideways, and XCUIDevice, `--ui-orientation` and Simulator.app's
+# rotation do not reach the inner screen). A picture of it taller than wide confirms the turn.
+turn_upright() {
+    xcrun simctl spawn "$id" "$root/tool/posture" -position=open -duration=0.3 -wait | tee -a "$out/posture.txt"
+    sleep 4
+    SIMCTL_CHILD_ORIENT=3 xcrun simctl spawn "$id" "$root/tool/posture" -position=open -duration=0.3 -wait | tee -a "$out/posture.txt"
+    sleep 4
+    xcrun simctl io "$id" screenshot --display=3 "$root/upright-check.png" >/dev/null 2>&1 || return 1
+    w=$(sips -g pixelWidth "$root/upright-check.png" | awk '/pixelWidth/ {print $2}')
+    h=$(sips -g pixelHeight "$root/upright-check.png" | awk '/pixelHeight/ {print $2}')
+    echo "Inner screen after the turn: ${w}x${h}"
+    [ "${h:-0}" -gt "${w:-0}" ]
+}
+
+for posture in folded sideways upright; do
     case ",$postures," in *",$posture,"*) ;; *) continue ;; esac
     if [ "$posture" = sideways ]; then
         xcrun simctl spawn "$id" "$root/tool/posture" -position=open -duration=0.3 -wait | tee -a "$out/posture.txt"
         sleep 4
+    fi
+    if [ "$posture" = upright ]; then
+        turn_upright || { echo "The inner screen did not turn upright, so upright is skipped"; continue; }
     fi
     run_posture "$posture"
 done

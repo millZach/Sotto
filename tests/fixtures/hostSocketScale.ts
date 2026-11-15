@@ -205,7 +205,7 @@ async function built(root: string, testClock: StepClock, delivery: ReturnType<ty
 }
 
 /** Usage after another stretch of a reply: a few hundred tokens more, the context fuller. */
-function grown(usage: AgentThread['usage']): AgentThread['usage'] {
+export function grown(usage: AgentThread['usage']): AgentThread['usage'] {
   if (!usage?.latest || !usage.total) return usage
   return { ...usage, latest: { ...usage.latest, output: (usage.latest.output ?? 0) + 240 }, total: { ...usage.total, output: (usage.total.output ?? 0) + 240 },
     contextUsed: (usage.contextUsed ?? 0) + 240 }

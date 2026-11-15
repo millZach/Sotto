@@ -96,12 +96,12 @@ describe('provider lists', () => {
   })
 
   it('names the provider a list that must name every provider leaves out', () => {
-    expect(everyProvider(['cursor', 'deepseek', 'hermes', 'opencode', 'muse', 'devin', 'grok', 'claude', 'codex'])).toEqual(['cursor', 'deepseek', 'hermes', 'opencode', 'muse', 'devin', 'grok', 'claude', 'codex'])
+    expect(everyProvider(['cursor', 'deepseek', 'hermes', 'pi', 'opencode', 'muse', 'devin', 'grok', 'claude', 'codex'])).toEqual(['cursor', 'deepseek', 'hermes', 'pi', 'opencode', 'muse', 'devin', 'grok', 'claude', 'codex'])
     // @ts-expect-error Cursor is missing, and the type checker says so.
     everyProvider(['codex', 'claude', 'grok', 'devin', 'muse', 'opencode', 'deepseek'])
   })
 
   it('refuses a list of every provider that names one twice', () => {
-    expect(() => everyProvider(['codex', 'codex', 'claude', 'grok', 'devin', 'muse', 'opencode', 'cursor', 'deepseek', 'hermes'])).toThrow('codex is listed twice in a list of every provider.')
+    expect(() => everyProvider(['codex', 'codex', 'claude', 'grok', 'devin', 'muse', 'opencode', 'cursor', 'deepseek', 'hermes', 'pi'])).toThrow('codex is listed twice in a list of every provider.')
   })
 })

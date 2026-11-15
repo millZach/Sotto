@@ -28,6 +28,14 @@
 .delegated-work__machine > svg { flex: none; }
 .delegated-work__machine[data-kind='remote'] > svg { color: var(--tt-accent-text, var(--tt-text-muted)); }
 .delegated-work__line { color: var(--tt-text-2); }
+/* A detached run (#2476): Stop beside its state, its folder cut to fit, and its command behind a disclosure. */
+.delegated-work__stop { margin-left: 4px; padding: 1px 8px; border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-control); background: transparent; color: var(--tt-text); font: inherit; font-size: var(--tt-type-small); }
+.delegated-work__stop:hover:not(:disabled) { background: var(--tt-hover); }
+.delegated-work__stop:disabled { color: var(--tt-text-muted); }
+.delegated-work__folder { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.delegated-work__command { grid-column: 2 / -1; min-width: 0; color: var(--tt-text-2); font-size: var(--tt-type-caption); }
+.delegated-work__command > summary { width: fit-content; border-radius: var(--tt-radius-mark); }
+.delegated-work__command > code { display: block; margin-top: 4px; padding: 6px 8px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-control); background: var(--tt-surface-sunken, var(--tt-surface)); font-family: var(--tt-font-mono); font-size: var(--tt-type-small); line-height: 1.5; overflow-wrap: anywhere; white-space: pre-wrap; }
 .delegated-work__row[data-outcome='refused'] .delegated-work__glyph { color: var(--tt-error-text); }
 /* After the Worked for line, the turn's delegated work in a few words. */
 .thread-work__delegated { color: var(--tt-text-muted); }

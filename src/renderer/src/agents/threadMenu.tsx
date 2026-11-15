@@ -67,6 +67,11 @@ export interface ThreadActions {
   readonly snooze?: (() => void) | undefined
   /** Wakes a snoozed thread now. */
   readonly wake?: (() => void) | undefined
+  /**
+   * Restores the whole project of a thread settled with it, on the Settled shelf by status, where no folder offers it
+   * (ADR-0201, November 13, 2026). Absent under a project folder, whose head has it.
+   */
+  readonly restoreProject?: (() => void) | undefined
 }
 
 /** Where the thread stands as its menu opens. */
@@ -78,18 +83,20 @@ export interface ThreadMenuState {
   readonly busy: boolean
   /** Watcher watches it: Watch is ticked. */
   readonly watched: boolean
+  /** A project is being settled or restored, so Restore project waits. */
+  readonly projectBusy?: boolean | undefined
   /** Enter opens the thread from where the menu was opened. A rail tile whose press pops a Needs you card says no keys for Open. */
   readonly enterOpens: boolean
 }
 
 /**
- * A thread's row menu (ADR-0164): Open, Open beside, Rename, Watch and Settle or Restore, each where
+ * A thread's row menu (ADR-0164): Open, Open beside, Rename, Watch and Settle, Restore or Restore project, each where
  * the thread offers it and with the keys that do the same from its row or its rail tile. A sidebar row and a rail tile
  * build it here, so the two say the same words with the same keys. The builder is called only while a menu is open.
  */
 export function useThreadMenu(): (row: ThreadRow, panes: PaneActions, state: ThreadMenuState, actions: ThreadActions) => PaneMenuItem[][] {
   const { t } = useLingui()
-  return (row, panes, { offers, open, busy, watched, enterOpens }, actions) => [
+  return (row, panes, { offers, open, busy, watched, enterOpens, projectBusy }, actions) => [
     [{ id: 'open', label: t({ message: 'Open', comment: 'A sidebar row\'s menu: open the thread in the focused pane.' }), icon: <MessageSquare size={15} aria-hidden="true" />, shortcut: enterOpens ? { plain: 'Enter', keys: 'Enter' } : undefined, run: actions.open },
       ...offers.beside && !open ? [{ id: 'beside', label: t`Open beside`, icon: <Columns2 size={15} aria-hidden="true" />, shortcut: menuKeys(panes.openBesideChord?.label), run: actions.openBeside }] : []],
     [...offers.rename ? [{ id: 'rename', label: t({ message: 'Rename', comment: 'Rename the thread.' }), icon: <Pencil size={15} aria-hidden="true" />, shortcut: offers.renameKey ? { plain: 'F2', keys: 'F2' } : undefined, run: actions.rename }] : [],
@@ -99,6 +106,8 @@ export function useThreadMenu(): (row: ThreadRow, panes: PaneActions, state: Thr
         : actions.snooze ? [{ id: 'snooze', label: t({ message: 'Snooze…', comment: 'Open the menu that snoozes the thread until a later time.' }), icon: <AlarmClock size={15} aria-hidden="true" />, run: actions.snooze }] : [],
         { id: 'settle', label: t({ message: 'Settle', comment: 'Settle the thread: put it away on the Settled shelf.' }), icon: <Archive size={15} aria-hidden="true" />, disabled: busy, shortcut: offers.shelfKeys ? menuKeys(panes.settleShortcut) : undefined, run: actions.settle }]
       : row.settledBy === 'thread'
-        ? [{ id: 'restore', label: t({ message: 'Restore', comment: 'Restore a settled thread to open work.' }), icon: <ArchiveRestore size={15} aria-hidden="true" />, disabled: busy, shortcut: offers.shelfKeys ? menuKeys(panes.restoreShortcut) : undefined, run: actions.restore }] : [],
+        ? [{ id: 'restore', label: t({ message: 'Restore', comment: 'Restore a settled thread to open work.' }), icon: <ArchiveRestore size={15} aria-hidden="true" />, disabled: busy, shortcut: offers.shelfKeys ? menuKeys(panes.restoreShortcut) : undefined, run: actions.restore }]
+        : row.settledBy === 'project' && actions.restoreProject !== undefined
+          ? [{ id: 'restore-project', label: t`Restore project`, icon: <ArchiveRestore size={15} aria-hidden="true" />, disabled: projectBusy === true, run: actions.restoreProject }] : [],
   ]
 }

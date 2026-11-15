@@ -1,0 +1,302 @@
+<!doctype html>
+<!--
+  PROTOTYPE - throwaway. Not shipped, not tested, not wired to anything.
+
+  Question (#2476): a thread started a long agent run and detached it (nohup/setsid, or Start-Process on
+  Windows). Sotto shows the thread at rest while the run and its helpers keep working, and nothing in
+  Sotto shows the run. Where should a detached run show up, so Zach can see it and stop it, and so the
+  thread is not called at rest while it runs?
+
+  Three variants on ?variant=1..3, switchable with the bar (Left/Right arrows too). Each draws the same
+  live example from forge: thread "Horde ARPG / Tetherfall" in "2.5 shooter", whose turn ended, with
+  a detached `claude -p --name tetherfall-art-director` (Fable 5.2, high) running for 20 minutes.
+
+   1 Background work   a row under the last reply, after "Still working after this reply", like a subagent;
+                       the readout says Working · 1 detached run; Stop on the row (Recommended)
+   2 Its own thread    the run is a thread of its own in the sidebar, marked Detached, that follows the run's
+                       own transcript read-only; Stop in its header
+   3 Sidebar row       a row under the thread in the sidebar; pressing it opens a small card with Stop
+
+  Bar extras: Light, Ended (the run finishes; the thread goes back to Done). URL: variant=N, theme=light.
+
+  Picked: 1, Background work (Zach, 2026-11-11), straight to stable. ADR-0204.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sotto - detached runs, three variants</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+:root {
+  color-scheme: dark;
+  --tt-canvas: oklch(0.115 0.008 265); --tt-surface: oklch(0.145 0.008 265);
+  --tt-surface-elevated: oklch(0.185 0.008 265); --tt-surface-sunken: oklch(0.155 0.008 265);
+  --tt-hover: oklch(0.2 0.01 265);
+  --tt-text: oklch(0.985 0.005 280);
+  --tt-text-2: color-mix(in oklab, oklch(0.985 0.005 280) 55%, oklch(0.72 0.014 265));
+  --tt-text-muted: color-mix(in oklab, oklch(0.72 0.014 265) 85%, oklch(0.985 0.005 280));
+  --tt-hairline: oklch(0.305 0.02 265); --tt-field-border: oklch(0.375 0.024 265);
+  --tt-accent: oklch(0.714403 0.104089 183.092); --tt-accent-text: oklch(0.83 0.08 183);
+  --tt-error: oklch(0.72 0.17 22); --tt-success: oklch(0.79 0.13 165); --tt-warning: oklch(0.83 0.14 80);
+  --tt-message: oklch(0.2 0.01 265); --tt-selected: oklch(0.3 0.04 183);
+  --tt-font-ui: 'Figtree', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --tt-canvas: oklch(0.978 0.004 85); --tt-surface: oklch(0.99 0.003 85);
+  --tt-surface-elevated: oklch(0.955 0.006 85); --tt-surface-sunken: oklch(0.945 0.008 85);
+  --tt-hover: oklch(0.93 0.008 85);
+  --tt-text: oklch(0.235 0.014 75);
+  --tt-text-2: color-mix(in oklab, oklch(0.235 0.014 75) 55%, oklch(0.5 0.014 75));
+  --tt-text-muted: color-mix(in oklab, oklch(0.5 0.014 75) 85%, oklch(0.235 0.014 75));
+  --tt-hairline: oklch(0.86 0.012 80); --tt-field-border: oklch(0.8 0.016 80);
+  --tt-accent: oklch(0.5 0.09 183); --tt-accent-text: oklch(0.42 0.08 183);
+  --tt-error: oklch(0.52 0.18 25); --tt-success: oklch(0.5 0.12 160); --tt-warning: oklch(0.55 0.13 70);
+  --tt-message: oklch(0.94 0.006 85); --tt-selected: oklch(0.88 0.04 183);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--tt-canvas); color: var(--tt-text); font: 14px/1.5 var(--tt-font-ui); }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--tt-accent); outline-offset: 2px; border-radius: 4px; }
+body { display: grid; grid-template-rows: minmax(0, 1fr); }
+
+/* prototype bar: deliberately not Sotto */
+.pbar { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 50; display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 999px; background: #ffde59; color: #111; box-shadow: 0 6px 24px rgb(0 0 0 / 0.45); font: 600 13px/1 system-ui, sans-serif; }
+.pbar button { border: 0; background: rgb(0 0 0 / 0.08); color: #111; border-radius: 999px; padding: 6px 10px; cursor: pointer; font: inherit; }
+.pbar button[aria-pressed='true'] { background: #111; color: #ffde59; }
+.pbar .lab { min-width: 250px; text-align: center; }
+
+/* window */
+.win { display: grid; grid-template-columns: 300px minmax(0, 1fr); min-height: 0; height: 100%; }
+.side { background: var(--tt-surface); border-right: 1px solid var(--tt-hairline); display: flex; flex-direction: column; min-height: 0; padding: 12px 10px; gap: 10px; }
+.search { border: 1px solid var(--tt-hairline); border-radius: 10px; padding: 6px 10px; color: var(--tt-text-muted); font-size: 13px; }
+.proj { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 13px; padding: 4px 6px; color: var(--tt-text); }
+.proj .n { margin-left: auto; color: var(--tt-text-muted); font-weight: 400; }
+.trow { border-radius: 10px; padding: 7px 10px 7px 30px; position: relative; cursor: default; }
+.trow.sel { background: var(--tt-selected); outline: 1px solid color-mix(in oklab, var(--tt-accent) 50%, transparent); }
+.trow .t { font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.trow .m { display: flex; justify-content: space-between; font-size: 12px; color: var(--tt-text-2); }
+.trow .lead { position: absolute; left: 10px; top: 11px; }
+.trow .m .s-working { color: var(--tt-accent-text); }
+.child { margin: -2px 0 0 22px; border-radius: 8px; padding: 5px 8px 5px 26px; position: relative; font-size: 12.5px; color: var(--tt-text-2); cursor: pointer; border: 0; background: transparent; width: calc(100% - 22px); text-align: left; display: block; }
+.child:hover { background: var(--tt-hover); }
+.child .lead { position: absolute; left: 8px; top: 8px; }
+.child .t { color: var(--tt-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; }
+.child .m { display: flex; justify-content: space-between; font-size: 11.5px; }
+.tag { font-size: 10.5px; border: 1px solid var(--tt-field-border); border-radius: 4px; padding: 0 4px; color: var(--tt-text-2); margin-left: 6px; }
+.grouphead { font-size: 11.5px; color: var(--tt-text-muted); padding: 6px 6px 0; }
+
+.pane { display: grid; grid-template-rows: 48px minmax(0, 1fr) auto; min-height: 0; }
+.strip { display: flex; align-items: center; gap: 10px; padding: 0 18px; border-bottom: 1px solid var(--tt-hairline); }
+.strip strong { font-weight: 600; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.strip .folder { color: var(--tt-text-2); font-size: 13px; white-space: nowrap; }
+.strip .sp { flex: 1; }
+.scroll { overflow-y: auto; padding: 18px 24px 120px; }
+.col { max-width: 760px; margin: 0 auto; }
+.user { margin: 0 0 14px auto; max-width: 78%; width: fit-content; background: var(--tt-message); border-radius: 12px; padding: 8px 12px; }
+.fold { display: flex; align-items: center; gap: 6px; color: var(--tt-text-2); font-size: 13px; margin: 0 0 8px; }
+.prose p { margin: 0 0 8px; }
+.prose code { font-size: 12.5px; background: var(--tt-surface-elevated); border-radius: 4px; padding: 0 4px; }
+.still { color: var(--tt-text-muted); font-size: 12.5px; margin: 18px 0 6px; }
+.work { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 2px 8px; padding: 8px 0; align-items: start; }
+.work .kind { color: var(--tt-text-2); }
+.work .head { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.work .head .label { font-weight: 500; }
+.work .meta { grid-column: 2 / 4; color: var(--tt-text-2); font-size: 12.5px; display: flex; gap: 6px; flex-wrap: wrap; }
+.work .line { grid-column: 2 / 4; color: var(--tt-text-2); font-size: 12.5px; }
+.work .right { display: flex; align-items: center; gap: 10px; }
+.btn { border: 1px solid var(--tt-field-border); background: transparent; border-radius: 8px; padding: 2px 10px; font-size: 12.5px; cursor: pointer; }
+.btn:hover { background: var(--tt-hover); }
+.btn.danger { color: var(--tt-error); border-color: color-mix(in oklab, var(--tt-error) 50%, var(--tt-field-border)); }
+.st { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; white-space: nowrap; }
+.st.working { color: var(--tt-accent-text); }
+.st.ended { color: var(--tt-text-2); }
+.ring { width: 10px; height: 10px; border-radius: 50%; border: 2px solid currentColor; display: inline-block; }
+.st.working .ring, .lead.working { border-color: var(--tt-accent-text) transparent var(--tt-accent-text) var(--tt-accent-text); animation: spin 0.9s linear infinite; }
+.lead { width: 11px; height: 11px; border-radius: 50%; border: 2px solid var(--tt-text-muted); display: inline-block; }
+.lead.done { border-color: var(--tt-text-muted); }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .st.working .ring, .lead.working { animation: none; } }
+details.cmd { grid-column: 2 / 4; font-size: 12px; color: var(--tt-text-2); }
+details.cmd summary { cursor: pointer; width: fit-content; }
+details.cmd pre { white-space: pre-wrap; word-break: break-all; background: var(--tt-surface-sunken); border: 1px solid var(--tt-hairline); border-radius: 8px; padding: 8px 10px; margin: 6px 0 0; font-size: 11.5px; }
+
+.composer-wrap { padding: 0 24px 14px; position: relative; }
+.readout { position: absolute; right: 70px; top: -52px; border: 1px solid var(--tt-hairline); border-bottom: 0; background: var(--tt-surface); border-radius: 10px 10px 0 0; padding: 7px 12px; font-size: 12.5px; }
+.readout b { font-weight: 500; display: block; font-size: 13px; }
+.readout span { color: var(--tt-text-2); }
+.creature { position: absolute; right: 340px; top: -40px; display: flex; gap: 10px; align-items: end; }
+.px { width: 18px; height: 16px; background: var(--tt-accent); border-radius: 4px 4px 2px 2px; opacity: .85; }
+.px.big { width: 34px; height: 34px; }
+.composer { max-width: 760px; margin: 0 auto; border: 1px solid var(--tt-field-border); border-radius: 14px; background: var(--tt-surface); padding: 12px 14px 10px; color: var(--tt-text-muted); }
+.composer .tools { display: flex; gap: 10px; margin-top: 18px; font-size: 12.5px; color: var(--tt-text-2); }
+
+/* variant 2: its own thread */
+.banner { border: 1px solid var(--tt-hairline); background: var(--tt-surface-sunken); border-radius: 10px; padding: 10px 12px; font-size: 13px; color: var(--tt-text-2); margin-bottom: 16px; }
+.banner b { color: var(--tt-text); font-weight: 500; }
+.act { font-size: 13px; color: var(--tt-text-2); padding: 3px 0; display: flex; gap: 8px; }
+.act .k { color: var(--tt-text-muted); width: 70px; flex: none; }
+
+/* variant 3: popover card */
+.pop { position: absolute; left: 286px; top: 262px; width: 340px; background: var(--tt-surface-elevated); border: 1px solid var(--tt-field-border); border-radius: 12px; padding: 12px 14px; box-shadow: 0 10px 30px rgb(0 0 0 / .35); font-size: 13px; z-index: 5; }
+.pop h3 { margin: 0 0 4px; font-size: 14px; font-weight: 600; }
+.pop .meta { color: var(--tt-text-2); font-size: 12.5px; }
+.pop .rowb { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+.pop[hidden] { display: none; }
+
+.note { max-width: 760px; margin: 0 auto 14px; font-size: 12px; color: var(--tt-text-muted); border: 1px dashed var(--tt-field-border); border-radius: 8px; padding: 6px 10px; }
+</style>
+</head>
+<body>
+<div class="win">
+  <aside class="side" id="side"></aside>
+  <main class="pane" id="pane"></main>
+</div>
+<div class="pbar" role="toolbar" aria-label="Prototype controls">
+  <button id="prev" aria-label="Previous variant">&larr;</button>
+  <span class="lab" id="lab"></span>
+  <button id="next" aria-label="Next variant">&rarr;</button>
+  <button id="ended" aria-pressed="false">Ended</button>
+  <button id="light" aria-pressed="false">Light</button>
+</div>
+<script>
+const VARIANTS = [
+  { key: '1', name: 'Background work (Recommended)' },
+  { key: '2', name: 'Its own thread' },
+  { key: '3', name: 'Sidebar row' },
+]
+const params = new URLSearchParams(location.search)
+let variant = VARIANTS.findIndex(v => v.key === params.get('variant')); if (variant < 0) variant = 0
+let ended = params.get('ended') === '1'
+let selected = 'parent' // variant 2: which sidebar row is open
+let popOpen = false
+if (params.get('theme') === 'light') document.documentElement.dataset.theme = 'light'
+
+const RUN = {
+  name: 'tetherfall-art-director',
+  prompt: 'Read and do .zstack/studio/art-push/director.md',
+  provider: 'Claude Code', model: 'Fable 5.2', effort: 'High',
+  folder: '.claude/worktrees/art-push', machine: 'forge', elapsed: '20 min',
+  command: 'claude -p --session-id fbb9b8df-… --name tetherfall-art-director --model claude-fable-5-2 --effort high --permission-mode bypassPermissions "Read and do .zstack/studio/art-push/director.md"',
+  pid: 961128,
+}
+const esc = s => s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
+
+function sidebar() {
+  const v = VARIANTS[variant].key
+  const parentWorking = !ended
+  const parentStatus = ended ? 'Done' : (v === '2' ? 'Done' : 'Working')
+  const parentLead = ended || v === '2' ? 'done' : 'working'
+  let html = `<div class="search">Search threads</div>
+  <div class="proj">&#128193; 2.5 shooter <span class="n">${v === '2' && !ended ? 3 : 2}</span></div>
+  <div class="trow ${v !== '2' || selected === 'parent' ? 'sel' : ''}" data-open="parent"><span class="lead ${parentLead}"></span>
+    <div class="t">Horde ARPG / Tetherfall</div>
+    <div class="m"><span>Claude · forge</span><span class="${parentLead === 'working' ? 's-working' : ''}">${parentStatus}</span></div></div>`
+  if (v === '3' && !ended) {
+    html += `<button class="child" id="childrow" aria-expanded="${popOpen}" aria-label="Detached run ${RUN.name}, Working. Press to see it or stop it."><span class="lead working"></span>
+      <span class="t">${RUN.name}<span class="tag">Detached</span></span>
+      <span class="m"><span>Claude Code · ${RUN.elapsed}</span><span class="s-working" style="color:var(--tt-accent-text)">Working</span></span></button>`
+  }
+  if (v === '2' && !ended) {
+    html += `<div class="trow ${selected === 'run' ? 'sel' : ''}" data-open="run" style="margin-left:14px"><span class="lead working"></span>
+      <div class="t">${RUN.name}<span class="tag">Detached</span></div>
+      <div class="m"><span>Started by Horde ARPG / Tetherfall</span><span class="s-working">Working</span></div></div>`
+  }
+  html += `<div class="trow"><span class="lead done"></span><div class="t">Wave spawner tuning</div><div class="m"><span>Codex · forge</span><span>Done</span></div></div>
+  <div class="grouphead">&rsaquo; Settled</div>`
+  return html
+}
+
+function transcript() {
+  return `<div class="user">Push the art direction across the whole Tetherfall set. Run it as its own director so it can keep going after this turn.</div>
+  <div class="fold">&rsaquo; Worked for 3m 12s · Changed 2 files</div>
+  <div class="prose"><p>The art director is running on its own now, in <code>${RUN.folder}</code>. It reads <code>.zstack/studio/art-push/director.md</code> and drives four Opus helpers through the pass.</p>
+  <p>I'll leave it to finish. Its notes land in <code>.zstack/studio/art-push/</code>.</p></div>`
+}
+
+function runRow() {
+  const state = ended ? `<span class="st ended">Ended</span>` : `<span class="st working"><span class="ring"></span>Working</span>`
+  return `<div class="still">${ended ? 'Ended after this reply' : 'Still working after this reply'}</div>
+  <div class="work" role="group" aria-label="Detached run ${RUN.name}">
+    <span class="kind" aria-hidden="true">&#9654;&#xFE0E;</span>
+    <div class="head"><span class="t2">Detached run</span><span class="label">${RUN.name}</span></div>
+    <div class="right">${state}${ended ? '' : `<button class="btn danger" aria-label="Stop the detached run ${RUN.name}">Stop</button>`}</div>
+    <div class="meta"><span>${RUN.provider}</span><span>·</span><span>${RUN.model}, ${RUN.effort}</span><span>·</span><span>${RUN.folder}</span><span>·</span><span>${ended ? 'ran 52 min' : 'running ' + RUN.elapsed}</span></div>
+    <div class="line">${ended ? 'It ended on its own. Sotto never saw its result: open its notes in the folder.' : 'Started from this thread and left running after its turn. Sotto found it; the provider does not report it.'}</div>
+    <details class="cmd"><summary>Command</summary><pre>${esc(RUN.command)}\nProcess ${RUN.pid} on ${RUN.machine}</pre></details>
+  </div>`
+}
+
+function composer(readout) {
+  return `<div class="composer-wrap">
+    ${readout && !ended ? `<div class="creature" aria-hidden="true"><span class="px"></span><span class="px big"></span></div><div class="readout"><b>${RUN.name}</b><span>Working · 1 detached run</span></div>` : ''}
+    <div class="composer">What would you like to do next?<div class="tools"><span>Claude · Opus 5.5</span><span>High</span><span>Permissions</span></div></div></div>`
+}
+
+function pane() {
+  const v = VARIANTS[variant].key
+  if (v === '2' && selected === 'run' && !ended) {
+    return `<div class="strip"><strong>${RUN.name}</strong><span class="tag">Detached</span><span class="folder">&#128193; ${RUN.folder}</span><span class="sp"></span><button class="btn danger" aria-label="Stop the detached run ${RUN.name}">Stop</button></div>
+    <div class="scroll"><div class="col">
+      <div class="banner"><b>Started by Horde ARPG / Tetherfall</b> and left running after its turn. Sotto follows its own transcript and shows it here read-only. You can't write to it; Stop ends it.<br>${RUN.provider} · ${RUN.model}, ${RUN.effort} · running ${RUN.elapsed} · process ${RUN.pid} on forge</div>
+      <div class="user">${esc(RUN.prompt)}</div>
+      <div class="fold">&rsaquo; Worked for 20m · 4 agents</div>
+      <div class="act"><span class="k">Agent</span>Hero sheet pass (Opus 5.5) · Working</div>
+      <div class="act"><span class="k">Agent</span>Enemy silhouettes (Opus 5.5) · Working</div>
+      <div class="act"><span class="k">Agent</span>Tile palette (Opus 5.5) · Done</div>
+      <div class="act"><span class="k">Agent</span>UI icon set (Opus 5.5) · Working</div>
+      <div class="act"><span class="k">Wrote</span>.zstack/studio/art-push/pass-3-notes.md</div>
+      <div class="prose" style="margin-top:10px"><p>Pass 3 is under way. Tile palette is locked; three helpers are still painting.</p></div>
+    </div></div>
+    <div class="composer-wrap"><div class="composer" style="opacity:.6">A detached run takes no messages. Stop it, or wait for it to end.</div></div>`
+  }
+  const head = `<div class="strip"><strong>Horde ARPG / Tetherfall</strong><span class="folder">&#128193; 2.5 shooter</span><span class="sp"></span><span class="folder">&#9707;</span></div>`
+  if (v === '1') {
+    return head + `<div class="scroll"><div class="col">${transcript()}${runRow()}</div></div>` + composer(true)
+  }
+  if (v === '2') {
+    return head + `<div class="scroll"><div class="col">${transcript()}
+      ${ended ? '' : `<div class="still">Still working after this reply</div><div class="work"><span class="kind">&#9654;&#xFE0E;</span><div class="head"><span class="t2">Detached run</span><a href="#" data-open="run" style="color:var(--tt-text)">${RUN.name}</a></div><div class="right"><span class="st working"><span class="ring"></span>Working</span></div><div class="meta">Open it to follow what it does.</div></div>`}
+      </div></div>` + composer(false)
+  }
+  return head + `<div class="scroll"><div class="col">${transcript()}</div></div>` + composer(true)
+}
+
+function render() {
+  const v = VARIANTS[variant]
+  document.getElementById('lab').textContent = `${v.key} — ${v.name}`
+  document.getElementById('side').innerHTML = sidebar()
+  document.getElementById('pane').innerHTML = pane()
+  document.querySelectorAll('.pop').forEach(n => n.remove())
+  if (v.key === '3' && popOpen && !ended) {
+    const pop = document.createElement('div')
+    pop.className = 'pop'; pop.setAttribute('role', 'dialog'); pop.setAttribute('aria-label', 'Detached run')
+    pop.innerHTML = `<h3>${RUN.name}</h3>
+      <div class="meta">Detached run, started by Horde ARPG / Tetherfall<br>${RUN.provider} · ${RUN.model}, ${RUN.effort} · running ${RUN.elapsed}<br>${RUN.folder} · process ${RUN.pid} on forge</div>
+      <details class="cmd" style="margin-top:8px"><summary>Command</summary><pre>${esc(RUN.command)}</pre></details>
+      <div class="rowb"><button class="btn" id="closepop">Close</button><button class="btn danger">Stop</button></div>`
+    document.body.appendChild(pop)
+    pop.querySelector('#closepop').onclick = () => { popOpen = false; render() }
+  }
+  const child = document.getElementById('childrow'); if (child) child.onclick = () => { popOpen = !popOpen; render() }
+  document.querySelectorAll('[data-open]').forEach(n => n.onclick = e => { e.preventDefault(); selected = n.dataset.open; render() })
+  document.getElementById('ended').setAttribute('aria-pressed', String(ended))
+  document.getElementById('light').setAttribute('aria-pressed', String(document.documentElement.dataset.theme === 'light'))
+  const p = new URLSearchParams(location.search); p.set('variant', v.key); ended ? p.set('ended', '1') : p.delete('ended')
+  document.documentElement.dataset.theme === 'light' ? p.set('theme', 'light') : p.delete('theme')
+  history.replaceState(null, '', '?' + p)
+}
+const go = d => { variant = (variant + d + VARIANTS.length) % VARIANTS.length; selected = 'parent'; popOpen = false; render() }
+document.getElementById('prev').onclick = () => go(-1)
+document.getElementById('next').onclick = () => go(1)
+document.getElementById('ended').onclick = () => { ended = !ended; render() }
+document.getElementById('light').onclick = () => { const r = document.documentElement; r.dataset.theme = r.dataset.theme === 'light' ? '' : 'light'; render() }
+addEventListener('keydown', e => {
+  if (e.target.closest('input, textarea, [contenteditable]')) return
+  if (e.key === 'ArrowLeft') go(-1); if (e.key === 'ArrowRight') go(1)
+  if (e.key === 'Escape' && popOpen) { popOpen = false; render() }
+})
+render()
+</script>
+</body>
+</html>

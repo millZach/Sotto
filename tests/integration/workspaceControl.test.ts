@@ -13,6 +13,8 @@ import { immediatePublishScheduler } from '../fixtures/publishScheduler'
 import { FollowupStore } from '../../src/main/agents/followups'
 import { TurnRecorder } from '../../src/main/agents/turns'
 import { AtomicJsonStore } from '../../src/main/storage/atomicJsonStore'
+import { GitActions } from '../../src/main/agents/git/gitActions'
+import { GitStatusReader } from '../../src/main/agents/git/gitStatus'
 
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close() })
@@ -30,6 +32,10 @@ async function fixture(root?: string) {
   cleanup.push(async () => { await close(); await f.remove() })
   await control.start(); await control.command({ type: 'connect' })
   return { ...f, control, opened, recorder, close }
+}
+/** Git actions as the app's runtime gives the workspace them, so create-project's gitInit runs real Git. */
+function withGit(f: Awaited<ReturnType<typeof fixture>>) {
+  f.host.setGitActions(new GitActions({ status: new GitStatusReader({ fetchIntervalMs: () => 30_000 }), writeCommitMessage: async () => null, writePullRequestText: async () => null }))
 }
 function thread(state: AgentState) { return state.host.threads.find(thread => thread.id === state.activeThreadId)! }
 
@@ -303,6 +309,53 @@ describe('workspace controller integration', () => {
     const onFile = await f.control.command({ type: 'create-project', provider: 'codex', title: 'notes', path: file, useExisting: true })
     expect(onFile.error).toBe('A file with that name is already there. Nothing was added. Choose another name.')
     expect(onFile.host.projects).toEqual(before)
+  })
+  it('sets up Git in a folder it makes when asked, and never in one that was already there', async () => {
+    const f = await fixture()
+    withGit(f)
+    const path = join(f.root, 'outer', 'sentiment-index')
+    const made = await f.control.command({ type: 'create-project', provider: 'codex', title: 'sentiment-index', path, gitInit: true })
+    expect(made.error).toBeNull()
+    expect((await stat(join(path, '.git'))).isDirectory()).toBe(true)
+    expect(made.host.projects.filter(item => item.path === path)).toHaveLength(1)
+    const before = made.host.projects, existing = join(f.root, 'already-there')
+    await mkdir(existing)
+    const refused = await f.control.command({ type: 'create-project', provider: 'codex', title: 'already-there', path: existing, useExisting: true, gitInit: true })
+    expect(refused.error).toBe('Sotto sets up Git only in a folder it makes. Nothing was added. Add the folder as it is, and ask a thread to set up Git there.')
+    expect(refused.host.projects).toEqual(before)
+    await expect(stat(join(existing, '.git'))).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+  // #704: a refused new project left the folder it made, so trying again said the folder already exists.
+  it('takes back the folders a definitely refused new project made, Git and all, and keeps one whose creation is unconfirmed', async () => {
+    const f = await fixture()
+    withGit(f)
+    const execute = f.host.execute.bind(f.host)
+    const refuseOnce = (result: { accepted: false; uncertain?: true } | Error) => vi.spyOn(f.host, 'execute').mockImplementationOnce(async command => {
+      if (command.type !== 'create-project') return execute(command)
+      if (result instanceof Error) throw result
+      return result
+    })
+    const path = join(f.root, 'made', 'refused')
+    refuseOnce(new Error('Synthetic provider refusal'))
+    expect((await f.control.command({ type: 'create-project', provider: 'codex', title: 'refused', path, gitInit: true })).error).toBe('Synthetic provider refusal')
+    await expect(stat(join(f.root, 'made'))).rejects.toMatchObject({ code: 'ENOENT' })
+    // Trying again makes it, rather than saying the folder already exists.
+    expect((await f.control.command({ type: 'create-project', provider: 'codex', title: 'refused', path })).error).toBeNull()
+    expect((await stat(path)).isDirectory()).toBe(true)
+    // A refusal with something else put in the folder meanwhile keeps the folder, and the folder above it.
+    const busy = join(f.root, 'busy')
+    vi.spyOn(f.host, 'execute').mockImplementationOnce(async command => {
+      if (command.type !== 'create-project') return execute(command)
+      await writeFile(join(busy, 'notes.txt'), 'kept')
+      return { accepted: false }
+    })
+    expect((await f.control.command({ type: 'create-project', provider: 'codex', title: 'busy', path: busy })).error).toBeTruthy()
+    expect(await readFile(join(busy, 'notes.txt'), 'utf8')).toBe('kept')
+    // An unconfirmed creation may still use its folder.
+    const unconfirmed = join(f.root, 'unconfirmed')
+    refuseOnce({ accepted: false, uncertain: true })
+    expect((await f.control.command({ type: 'create-project', provider: 'codex', title: 'unconfirmed', path: unconfirmed })).error).toBeTruthy()
+    expect((await stat(unconfirmed)).isDirectory()).toBe(true)
   })
   it('opens existing projects without changing scope, creates multiple manual threads, and keeps coordinator settings independent', async () => {
     const f = await fixture()

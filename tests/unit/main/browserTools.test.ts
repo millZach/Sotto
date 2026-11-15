@@ -261,7 +261,7 @@ describe('browser agent boundaries', () => {
     const task = unwrap(await service.startTask({ ...target, description: 'Check the page' }))
     const request = { ...target, taskId: task.id }
     const pending = unwrap(await service.action({ ...request, action: { type: 'click', x: 20, y: 30 } }))
-    vi.mocked(view.webContents.debugger.sendCommand).mockResolvedValueOnce({ backendNodeId: 8 }).mockResolvedValueOnce({ node: { backendNodeId: 8, nodeName: 'BUTTON', attributes: ['aria-label', 'Delete'] } })
+    vi.mocked(view.webContents.debugger.sendCommand).mockResolvedValueOnce({ cssVisualViewport: { pageX: 0, pageY: 0, clientWidth: 1280, clientHeight: 800 } }).mockResolvedValueOnce({ backendNodeId: 8 }).mockResolvedValueOnce({ node: { backendNodeId: 8, nodeName: 'BUTTON', attributes: ['aria-label', 'Delete'] } })
     expect(await service.answerAction({ ...request, actionId: pending.task.pendingAction!.id, allow: true })).toMatchObject({ ok: false, error: { code: 'blocked' } })
     expect(view.webContents.debugger.sendCommand).not.toHaveBeenCalledWith('Input.dispatchMouseEvent', expect.anything())
   })
@@ -619,6 +619,49 @@ describe('browser grant (ADR-0029)', () => {
     expect(view.webContents.debugger.sendCommand).toHaveBeenCalledWith('Input.dispatchMouseEvent', expect.objectContaining({ type: 'mousePressed' }))
     const typing = unwrap(await service.action({ ...request, action: { type: 'type', text: 'hello' } }))
     expect(typing.approvalRequired).toBe(false)
+  })
+
+  it('clicks a scrolled page at the point in its screenshot, and refuses a point outside the visible area in words', async () => {
+    const { service, target } = await browserFixture()
+    const request = await grantThread(service, { threadId: target.threadId, workspaceId: target.workspaceId })
+    const send = vi.mocked(lastView().webContents.debugger.sendCommand)
+    const original = send.getMockImplementation()!
+    // As Chromium does: the page is scrolled 1400 pixels, and the hit test is in the document, so only the visible
+    // part of it, 1400 to 2200, holds a node.
+    send.mockImplementation(async (...args) => {
+      const [method, params] = args as [string, { x: number; y: number }]
+      if (method === 'Page.getLayoutMetrics') return { cssVisualViewport: { pageX: 0, pageY: 1400, clientWidth: 1280, clientHeight: 800 } }
+      if (method === 'DOM.getNodeForLocation' && (params.y < 1400 || params.y >= 2200)) throw new Error('No node found at given location')
+      return original(...args)
+    })
+    const click = unwrap(await service.action({ ...request, action: { type: 'click', x: 20, y: 30 } }))
+    expect(click.output).toBe('click completed.')
+    expect(send).toHaveBeenCalledWith('DOM.getNodeForLocation', expect.objectContaining({ x: 20, y: 1430 }))
+    expect(send).toHaveBeenCalledWith('Input.dispatchMouseEvent', expect.objectContaining({ type: 'mousePressed', x: 20, y: 30 }))
+    await expect(service.action({ ...request, action: { type: 'click', x: 20, y: 900 } })).resolves.toEqual({ ok: false, error: { code: 'blocked', message: 'That point is outside the page\'s visible area, which is 1280 by 800. Take a screenshot and use its coordinates.' } })
+    expect(unwrap(await service.action({ ...request, action: { type: 'click', x: 40, y: 50 } })).output).toBe('click completed.')
+  })
+
+  it('checks a click straight after a scroll against where the scroll left the page', async () => {
+    const { service, target } = await browserFixture()
+    const request = await grantThread(service, { threadId: target.threadId, workspaceId: target.workspaceId })
+    const send = vi.mocked(lastView().webContents.debugger.sendCommand)
+    const original = send.getMockImplementation()!
+    // As Chromium does: the wheel is acknowledged at once, and the page moves only when it next draws.
+    let pageY = 0, moving = 0
+    send.mockImplementation(async (...args) => {
+      const [method, params] = args as [string, { type?: string; deltaY?: number; awaitPromise?: boolean }]
+      if (method === 'Input.dispatchMouseEvent' && params.type === 'mouseWheel') { moving += params.deltaY ?? 0; return {} }
+      if (method === 'Runtime.evaluate' && params.awaitPromise) { pageY += moving; moving = 0; return { result: {} } }
+      if (method === 'Page.getLayoutMetrics') return { cssVisualViewport: { pageX: 0, pageY, clientWidth: 1280, clientHeight: 800 } }
+      return original(...args)
+    })
+    unwrap(await service.action({ ...request, action: { type: 'scroll', x: 300, y: 300, deltaX: 0, deltaY: 600 } }))
+    send.mockClear()
+    unwrap(await service.action({ ...request, action: { type: 'click', x: 20, y: 30 } }))
+    expect(send.mock.calls.filter(([method]) => method === 'DOM.getNodeForLocation').map(([, params]) => params)).toEqual([
+      expect.objectContaining({ x: 20, y: 630 }), expect.objectContaining({ x: 20, y: 630 }),
+    ])
   })
 
   it('a waiting action whose page changed still does not run once granted', async () => {

@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { join, dirname } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it } from 'vitest'
-import { HOST_EXTERNAL_IMPORTS, verifyHostExternalDependencies } from '../../../scripts/release-external-dependencies.mjs'
+import { HOST_BUNDLED_PACKAGES, HOST_EXTERNAL_IMPORTS, verifyHostExternalDependencies } from '../../../scripts/release-external-dependencies.mjs'
 import { inventoryFiles, sha256, verifyHostArchive } from '../../../scripts/verify-host-archive.mjs'
 
 const roots: string[] = []
@@ -21,7 +21,7 @@ async function fixture() {
     'runtime-manifest.json': JSON.stringify({ version: 1, kind: 'sotto-host', sottoVersion: '1.0.0', node: '>=24.22.1 <25', dependencies }),
     'host/index.js': '/* test artifact */',
     'host/external-dependencies.json': JSON.stringify(external()),
-    'host/bundled-dependencies.json': JSON.stringify({ version: 1, packages: [] }),
+    'host/bundled-dependencies.json': JSON.stringify({ version: 1, packages: [...HOST_BUNDLED_PACKAGES] }),
     'node_modules/zod/package.json': JSON.stringify({ version: '4.4.3' }),
     'node_modules/zod/LICENSE': 'MIT test fixture',
     'LICENSE.md': 'Sotto test fixture',
@@ -50,6 +50,14 @@ describe('headless host release boundary', () => {
   it('detects an unrecorded extra file', async () => {
     const root = await fixture(); await writeFile(join(root, 'private-workspace.json'), 'must never ship')
     await expect(verifyHostArchive(root)).rejects.toThrow('hashes do not match')
+  })
+  it('compiles in only the reviewed pure-JavaScript picture decoders (ADR-0203)', async () => {
+    expect(HOST_BUNDLED_PACKAGES).toEqual(['jpeg-js', 'pngjs'])
+    for (const packages of [[...HOST_BUNDLED_PACKAGES, 'unseen'], ['jpeg-js'], []]) {
+      const root = await fixture()
+      await writeFile(join(root, 'host/bundled-dependencies.json'), JSON.stringify({ version: 1, packages }))
+      await seal(root); await expect(verifyHostArchive(root)).rejects.toThrow('Unexpected bundled host dependency')
+    }
   })
   it('refuses an unreviewed transitive dependency', async () => {
     const root = await fixture(); await writeFile(join(root, 'node_modules/zod/package.json'), JSON.stringify({ version: '4.4.3', dependencies: { unseen: '1' } }))

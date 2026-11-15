@@ -81,6 +81,14 @@ msgstr ""
 msgid "{added} is added and connected. Its projects and threads show in the Threads sidebar with a {added} badge."
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "{address}. App password saved {day}."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "{address}. Bridge password saved {day}."
+msgstr ""
+
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "{awayCount, plural, one {{providers} is not connected, so {movedCount, plural, one {# role starts new work on its next default} other {# roles start new work on their next default}} until it connects. Nothing you chose has changed.} other {{providers} are not connected, so {movedCount, plural, one {# role starts new work on its next default} other {# roles start new work on their next default}} until they connect. Nothing you chose has changed.}}"
 msgstr ""
@@ -120,6 +128,50 @@ msgstr ""
 #. {clientName} is a provider's client, such as Claude Code.
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "{clientName} lists no model you can use now. Check your {clientName} sign-in and plan, then refresh this provider."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "{computer} already holds as many accounts as a plugin takes. Nothing was kept there."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "{computer} is not connected: if it holds a copy, it deletes it when it next connects."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "{computer} is not connected. Sotto sends the copy, or checks the one there, when it is."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "{computer} keeps no Proton Mail account: each computer’s Bridge has its own Bridge password."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "{computer} was started without a key file, so it cannot keep a token. Nothing was kept there. On {computer}, set SOTTO_HOST_KEY_FILE to a file holding a secret of your own, start its host again, and the copy is sent."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "{computer} was started without a key file, so it cannot keep an API key. Nothing was kept there. On {computer}, set SOTTO_HOST_KEY_FILE to a file holding a secret of your own, start its host again, and the copy is sent."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "{computer} was started without a key file, so it cannot keep an app password. Nothing was kept there. On {computer}, set SOTTO_HOST_KEY_FILE to a file holding a secret of your own, start its host again, and the copy is sent."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "{computer}’s Sotto cannot keep a mail account’s copy. Update Sotto on {computer}, and the copy is sent."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "{computer}’s Sotto cannot keep a Meshy account’s copy. Update Sotto on {computer}, and the copy is sent."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "{computer}’s Sotto cannot keep account copies now, so it cannot say whether it holds one from before. Update Sotto on {computer}, and a copy it holds is deleted."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "{computer}’s Sotto cannot keep account copies. Update Sotto on {computer}, and the copy is sent."
 msgstr ""
 
 #: src/renderer/src/features/settings/AgentAccountSettings.tsx
@@ -168,6 +220,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
 msgid "{count, plural, other {Remove selected ({selected})}}"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "{count} accounts: {names}"
 msgstr ""
 
 #: src/renderer/src/features/settings/WorkerMachineSettings.tsx
@@ -310,6 +366,11 @@ msgstr ""
 msgid "{installed} is installed. Sotto could not read the published version. Check again to try."
 msgstr ""
 
+#. {installed} is a version number; hermes update is a terminal command.
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "{installed} is installed. Sotto does not check for new Hermes versions. Run hermes update in a terminal to update it, then reconnect Hermes."
+msgstr ""
+
 #. {installed} is a version number; {error} is the reason the update gave.
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "{installed} is installed. The last update did not finish: {error}"
@@ -408,6 +469,10 @@ msgstr ""
 #. An option in the Ultracode effort setting. {name} is a reasoning effort level, such as XHigh, marked as the one Claude Code picks on its own.
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "{name} (Claude Code’s choice)"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "{name} (off)"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostsSettings.tsx
@@ -520,6 +585,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
 msgid "{name} is connected over SSH"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "{name} is kept to projects on this computer, so it is not copied."
 msgstr ""
 
 #: src/renderer/src/features/settings/HostClientUpdates.tsx
@@ -850,6 +919,10 @@ msgstr ""
 msgid "30 s"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "3D, sound and video"
+msgstr ""
+
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "500 entries"
 msgstr ""
@@ -866,6 +939,14 @@ msgstr ""
 msgid "A community color theme for your editor."
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "A copy is kept on {computer}."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "A copy lets that computer’s threads use this account while this computer is off. It travels on the connection Sotto already holds to that computer and is kept in that computer’s own encrypted store."
+msgstr ""
+
 #: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 msgid "A dictation shortcut already uses {keys}. Pick other keys."
 msgstr ""
@@ -879,12 +960,20 @@ msgstr ""
 msgid "A Dynamic thread's model oversees and chooses a model for each piece of work, inside these limits. Turn it on at the foot of a thread's model menu, or at the foot of the model menu under New threads for every new thread."
 msgstr ""
 
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "A folder for each project, with its threads inside."
+msgstr ""
+
 #: src/renderer/src/features/settings/DevicePicker.tsx
 msgid "A Git service, not a computer"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "A host name, an alias from your SSH configuration or user@server."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "A limit is a whole number of credits, from 0 to 1,000,000."
 msgstr ""
 
 #: src/renderer/src/features/settings/NightFallsSettings.tsx
@@ -899,6 +988,10 @@ msgstr ""
 msgid "A merged thread stays put until you settle it."
 msgstr ""
 
+#: src/renderer/src/features/settings/ModelRouterSettings.tsx
+msgid "A new model re-reads the whole conversation at full price, and a smaller one loses the earlier reasoning. On, a thread keeps the model its first message got and later messages change only the effort."
+msgstr ""
+
 #: src/renderer/src/features/settings/PhonesSettings.tsx
 msgid "A paired phone reads threads, replies, and answers questions and permissions. Remove a phone to take that away."
 msgstr ""
@@ -907,8 +1000,16 @@ msgstr ""
 msgid "A phone cannot run the host"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "A port is a number from 1 to 65535."
+msgstr ""
+
 #: src/renderer/src/features/settings/AppearanceSettings.tsx
 msgid "A press anywhere but the composer or the sidebar sends waves of 0s and 1s in the accent through the room behind it. They never cover what you pressed. Reduced motion turns them off."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "A project that is gone"
 msgstr ""
 
 #: src/renderer/src/features/settings/NotificationSettings.tsx
@@ -923,6 +1024,10 @@ msgstr ""
 msgid "A theme with the id \"{id}\" is already installed."
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "A thread on another of your computers uses the gh sign-in on that computer, which may be a different account."
+msgstr ""
+
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "A thread stopped by a usage limit or by Sotto closing waits for your next message."
 msgstr ""
@@ -933,6 +1038,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "A thread working when Sotto closes, for an update, a quit, a crash or a restart, carries on when Sotto opens again, with a short note from Sotto in the thread."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "A thread’s agent uses a plugin through Sotto’s tools and never holds its secret. Reading never asks you, except that each thread asks once before it reads a mail account. A change, such as posting a comment, asks you first in its thread, each time."
 msgstr ""
 
 #. A systemd unit, the file that starts a service.
@@ -981,12 +1090,24 @@ msgstr ""
 msgid "Actual size"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Add a Gmail account"
+msgstr ""
+
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
 msgid "Add a hold shortcut"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Add a Meshy account"
+msgstr ""
+
 #: src/renderer/src/features/settings/ProjectThreadDefaults.tsx
 msgid "Add a project in Threads to set its default working copy."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Add a Proton Mail account"
 msgstr ""
 
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
@@ -1003,6 +1124,30 @@ msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Add a theme"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Add a Vercel account"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Add account"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Add another Gmail account"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Add another Meshy account"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Add another Proton Mail account"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Add another Vercel account"
 msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
@@ -1114,6 +1259,10 @@ msgstr ""
 msgid "Always on. Every successful transcript is copied."
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Always, in Sotto’s encrypted store."
+msgstr ""
+
 #. {does} is what the agent does to the provider: installs, updates or fixes.
 #: src/renderer/src/features/settings/HostProviderAgent.tsx
 msgid "An agent {does} {name} on {hostName} from this computer, in a thread you can watch. It reaches {hostName} through this computer's SSH, and its tool works only on {hostName}. It stops once {hostName}'s host finds {name}; you then sign in."
@@ -1184,6 +1333,14 @@ msgstr ""
 msgid "Another app on {name} already uses port 8443 in Tailscale Serve. Sotto left it alone, and nothing was changed. Free port 8443 on {name}, then press Try again."
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Another of your computers already sent {computer} an account called {name}. Rename one of the two. Nothing was kept there."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Another of your computers already sent {computer} this account. Nothing was changed there."
+msgstr ""
+
 #: src/renderer/src/features/settings/DevicePicker.tsx
 msgid "Another SSH host…"
 msgstr ""
@@ -1212,6 +1369,22 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostSetupView.tsx
 msgid "Anything the agent installed on {name} stays there, and the thread {thread} stays in your Threads list."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "API key"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "API key saved {day}."
+msgstr ""
+
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "APIs and your own model servers"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "App password"
 msgstr ""
 
 #. A Settings page, named in its rail and its heading. Other messages name it as "Settings > Appearance".
@@ -1278,12 +1451,64 @@ msgstr ""
 msgid "Ask about your threads, or say what to start or send"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Ask before each 3D model"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Asked to cancel a deployment’s build"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Asked to close an issue"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Asked to open an issue"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Asked to post a comment"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Asked to promote a deployment to production"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Asked to read a message"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Asked to reopen an issue"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Asked to roll production back"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Asked to search mail"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Asked to send an email"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Asking gh who is signed in…"
+msgstr ""
+
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Asking GitHub..."
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Asking its gh who is signed in…"
+msgstr ""
+
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
-msgid "Asks the npm registry for each client’s latest version when it connects and every five minutes. Only the package name is sent."
+msgid "Asks the npm registry for each client’s latest version when it connects and every hour. Only the package name is sent."
 msgstr ""
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
@@ -1379,6 +1604,30 @@ msgstr ""
 msgid "Brand & content"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Bridge isn’t running"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Bridge password"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Bridge reads on one port and sends on another, so the two are never the same."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Bridge’s certificate has changed"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Bridge’s certificate has changed since this account was added, so Sotto is not using it. If you reinstalled Bridge or reset it, trust the new one."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Bridge’s own ports. Change them only if Bridge shows others."
+msgstr ""
+
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Bring the focused settled thread back to the sidebar."
 msgstr ""
@@ -1402,6 +1651,14 @@ msgstr ""
 #. Where one client update stands: the user has to run it themselves.
 #: src/renderer/src/features/settings/hostClientUpdateWords.ts
 msgid "By hand"
+msgstr ""
+
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "By project"
+msgstr ""
+
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "By status"
 msgstr ""
 
 #. After a step that is done, as in "Signed in by the agent".
@@ -1433,6 +1690,7 @@ msgstr ""
 #: src/renderer/src/features/settings/HostProviderAgent.tsx
 #: src/renderer/src/features/settings/HostProviderSignIn.tsx
 #: src/renderer/src/features/settings/HostsSettings.tsx
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
@@ -1472,6 +1730,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "Cancel, and leave start at boot on {name} as it is"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Cancelled a deployment’s build"
 msgstr ""
 
 #. Goes back to change which host to add.
@@ -1523,6 +1785,7 @@ msgid "Check {hostName} for {name} again"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostProviders.tsx
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Check again"
 msgstr ""
@@ -1535,6 +1798,10 @@ msgstr ""
 #: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Check for updates automatically"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Check GitHub’s sign-in again"
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
@@ -1590,20 +1857,21 @@ msgstr ""
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
 #: src/renderer/src/features/settings/HostProviders.tsx
 #: src/renderer/src/features/settings/PhonesSettings.tsx
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Checking…"
 msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
-msgid "Checks each client's published version when it connects and every five minutes. Cursor uses its install script; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates."
+msgid "Checks each client's published version when it connects and every hour. Cursor uses its install script; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates."
 msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
-msgid "Checks each client's published version when it connects and every five minutes. Muse uses its own release feed and Cursor its install script; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates."
+msgid "Checks each client's published version when it connects and every hour. Muse uses its own release feed and Cursor its install script; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates."
 msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
-msgid "Checks each client's published version when it connects and every five minutes. Muse uses its own release feed; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates."
+msgid "Checks each client's published version when it connects and every hour. Muse uses its own release feed; the other clients use the npm registry. No thread text is sent. Off, Sotto does not check versions or offer updates."
 msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeColorField.tsx
@@ -1646,6 +1914,10 @@ msgstr ""
 msgid "Choose a model for the setup thread."
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Choose Every project to copy it."
+msgstr ""
+
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Choose files"
 msgstr ""
@@ -1656,6 +1928,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/AgentAccountSettings.tsx
 msgid "Choose model. {modelName} oversees new threads"
+msgstr ""
+
+#: src/renderer/src/features/settings/AgentAccountSettings.tsx
+msgid "Choose model. New threads start with model routing"
 msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
@@ -1827,6 +2103,10 @@ msgstr ""
 msgid "Close. Stop starting at boot carries on"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Closed an issue"
+msgstr ""
+
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "Closes this dialog. {submittedName} is already added and stays added."
 msgstr ""
@@ -1852,6 +2132,10 @@ msgstr ""
 #. {spoken} is a sign-in code read one character at a time.
 #: src/renderer/src/features/settings/HostProviderSignIn.tsx
 msgid "Code {spoken}"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Code and deploys"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostProviderSignIn.tsx
@@ -2000,6 +2284,10 @@ msgstr ""
 msgid "Connected"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Connected. Copies kept there: {kept}."
+msgstr ""
+
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "Connecting over SSH…"
 msgstr ""
@@ -2059,6 +2347,7 @@ msgstr ""
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
 #: src/renderer/src/features/settings/HostsSettings.tsx
 #: src/renderer/src/features/settings/PhonesSettings.tsx
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Copied"
 msgstr ""
@@ -2080,6 +2369,7 @@ msgstr ""
 #: src/renderer/src/features/settings/HostClientUpdates.tsx
 #: src/renderer/src/features/settings/HostProviders.tsx
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Copy"
 msgstr ""
@@ -2106,6 +2396,10 @@ msgstr ""
 msgid "Copy Muse login command"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Copy new accounts to every computer I pair"
+msgstr ""
+
 #: src/renderer/src/features/settings/HostProviders.tsx
 msgid "Copy the {name} sign-in command"
 msgstr ""
@@ -2129,6 +2423,10 @@ msgstr ""
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "Copy the command to run on {name}"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Copy the gh sign-in command"
 msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
@@ -2170,6 +2468,18 @@ msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Could not update this provider. Try again."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Couldn’t check"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Couldn’t look at Bridge"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Couldn’t read the accounts"
 msgstr ""
 
 #. A Settings page, named in its rail and its heading: who sits on a Council of models. Other messages name it as "Settings > Council".
@@ -2306,6 +2616,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/ClearThreadsSettings.tsx
 msgid "Deletes a settled thread’s history once it has been quiet this long. Never clears one with uncommitted work or an open pull request. Checked every hour."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Deployments, build logs, projects and domains, read with a token you paste. Sotto keeps the token in its encrypted store and makes each read itself, so no agent ever sees it."
 msgstr ""
 
 #. A place Watcher’s night scene can be set in
@@ -2507,6 +2821,14 @@ msgstr ""
 msgid "e.g. Aurora"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Each 3D model waits on a card in its thread that says what it costs, and nothing reaches Meshy before you answer."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Each account’s secret is sent to the computers you paired as hosts, on the connection Sotto already holds to each, and kept in each one’s own encrypted store, so their threads work while this computer is off. You can stop the copy for any account. An account kept to chosen projects is never copied, and neither is a Proton Mail account."
+msgstr ""
+
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Each kind of work starts on its own model, effort and permissions. Watcher names the role when it starts a worker, and a thread names it when it delegates. Defaults come from the providers you have connected; a choice you make here stays until you reset it."
 msgstr ""
@@ -2630,6 +2952,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Every edit shows, spacing included."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Every project"
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
@@ -2843,6 +3169,26 @@ msgstr ""
 msgid "Get the iPhone beta"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "gh is not signed in there, so its threads cannot use GitHub. On {name}, run {GH_SIGN_IN_COMMAND}."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "gh is not signed in to GitHub on this computer. Run this in a terminal, then press Check again."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "gh isn’t installed"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "gh isn’t installed there, so its threads cannot use GitHub."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "gh, GitHub’s command line program, isn’t installed on this computer. Install it from cli.github.com, sign in with <0>{GH_SIGN_IN_COMMAND}</0>, then press Check again. If this still shows, quit Sotto and open it again so it can find gh."
+msgstr ""
+
 #. A Settings page, named in its rail and its heading. Other messages name it as "Settings > Git & worktrees".
 #: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/SettingsView.tsx
@@ -2854,12 +3200,49 @@ msgstr ""
 msgid "Git fetch interval"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "GitHub uses the gh command’s own sign-in. Sotto stores nothing for it."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "GitHub’s sign-in on your other computers"
+msgstr ""
+
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Global — the one set that works outside Sotto."
 msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Global — works outside Sotto, as the popup’s does."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Gmail account {name}"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Gmail address"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Gmail already has as many accounts as Sotto keeps for one plugin. Nothing was saved. Remove one first."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Gmail could not be reached to check the app password. {kept} Check your connection, then try again."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Gmail did not accept this address and app password. {kept} Check the address, and make a new app password at {GOOGLE_APP_PASSWORDS_PAGE}."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Gmail is turning sign-ins away for now, so the app password could not be checked. {kept} Wait a few minutes, then try again."
+msgstr ""
+
+#: src/renderer/src/features/settings/settingsPages.ts
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Group threads in the sidebar"
 msgstr ""
 
 #. A Council chamber layout: tiered seats round an altar, the chair at the back.
@@ -3066,8 +3449,21 @@ msgstr ""
 msgid "If you reset"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "IMAP port"
+msgstr ""
+
+#. placeholder {0}: use.threadTitle
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "in “{0}”"
+msgstr ""
+
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "In a thread"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "in a thread that is gone"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
@@ -3174,6 +3570,18 @@ msgstr ""
 msgid "It could not be copied. Select it and copy it instead."
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "It failed."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "It is kept to a project that is gone, so no thread can use it. Press Every project, or choose one."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "It is kept to chosen projects."
+msgstr ""
+
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "It is waiting for your answer there."
 msgstr ""
@@ -3231,6 +3639,14 @@ msgstr ""
 msgid "Its record was cleared. Pieces from now on are counted here."
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Its Sotto is too old to say who gh is signed in as there. Its threads use that computer’s gh all the same. Update Sotto on {name} to see the account."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Its Sotto runs no plugin tools, so its threads do not use GitHub through Sotto."
+msgstr ""
+
 #. placeholder {0}: (model.medianMs / 1_000).toFixed(1)
 #: src/renderer/src/features/settings/CloudSpeechModelList.tsx
 msgid "Its text came back in {0} s on Sotto’s test clips."
@@ -3248,6 +3664,10 @@ msgstr ""
 msgid "Keep {name} connected, now and when Sotto starts"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Keep a copy of {name} on {computerName}"
+msgstr ""
+
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Keep both"
 msgstr ""
@@ -3258,6 +3678,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "Keep host"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Keep it"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostsSettings.tsx
@@ -3460,6 +3884,10 @@ msgstr ""
 msgid "Long table"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Look again"
+msgstr ""
+
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Looking for models…"
 msgstr ""
@@ -3476,9 +3904,25 @@ msgstr ""
 msgid "macOS’s own Settings chord, from the app menu."
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Mail"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Make 3D models from words or a photo, with a key you paste. Sotto keeps the key in its encrypted store and makes each request itself, so no agent ever sees it. Meshy may use what it is sent, and the 3D models it makes, to train its own models."
+msgstr ""
+
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
 #: src/renderer/src/features/settings/PhonesSettings.tsx
 msgid "Make a new code"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Make one at {MESHY_KEYS_PAGE}, on a paid Meshy plan: the free plan has no API. Sotto checks it with Meshy before saving it, without spending a credit, and never shows it again."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Make one at {VERCEL_TOKENS_PAGE}. Sotto checks it with Vercel before saving it, and never shows it again."
 msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
@@ -3517,6 +3961,26 @@ msgstr "القوائم والأزرار والرسائل. ما تمليه وما
 
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Merge into “{mergeTargetName}”"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Meshy account {name}"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Meshy already has as many accounts as Sotto keeps for one plugin. Nothing was saved. Remove one first."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Meshy could not be reached to check the key. {kept} Check your connection, then try again."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Meshy did not accept this key. {kept} Make a key at {MESHY_KEYS_PAGE}: Meshy’s API needs a paid plan."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Meshy is turning requests away for now, so the key could not be checked. {kept} Wait a minute, then try again."
 msgstr ""
 
 #. A family of theme colors in the theme editor
@@ -3601,6 +4065,10 @@ msgstr ""
 msgid "Model"
 msgstr ""
 
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Model routing"
+msgstr ""
+
 #: src/renderer/src/features/settings/AgentAccountSettings.tsx
 msgid "Model, reasoning effort and permissions."
 msgstr ""
@@ -3612,6 +4080,10 @@ msgstr ""
 #: src/renderer/src/features/settings/CloudIphoneSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Monthly cap"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Monthly credit limit"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostsSettings.tsx
@@ -3685,6 +4157,10 @@ msgstr ""
 msgid "Muted text"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Name"
+msgstr ""
+
 #: src/renderer/src/features/settings/PhonesSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Name on phones"
@@ -3717,6 +4193,18 @@ msgstr ""
 #: src/renderer/src/features/settings/ClearThreadsSettings.tsx
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Never"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "New API key"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "New app password"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "New Bridge password"
 msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
@@ -3755,6 +4243,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "New threads, replies, the browser & visuals"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "New token"
 msgstr ""
 
 #: src/renderer/src/features/settings/WorkerMachineSettings.tsx
@@ -3814,6 +4306,18 @@ msgstr ""
 msgid "No connected provider can do this work."
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "No copy from now on."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "No copy. {computer}’s threads cannot use this account."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "No copy. {name} is kept to projects on this computer, so its secret stays here. Choose Every project to copy it."
+msgstr ""
+
 #. The last stop of the recording limit slider: a dictation runs until you stop it.
 #: src/renderer/src/features/settings/RecordingLimitSetting.tsx
 msgid "No limit"
@@ -3837,6 +4341,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "No models were returned. Refresh this provider to check again."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "No other computer is paired. Pair one in Settings › Hosts & phones, and its threads can use these accounts too."
 msgstr ""
 
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
@@ -3884,6 +4392,14 @@ msgstr ""
 msgid "No supported open-source themes found. Try a broader search."
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "No thread has used {name} yet."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Nobody answered in time."
+msgstr ""
+
 #: src/renderer/src/features/settings/ClearThreadsSettings.tsx
 msgid "None of them can go yet."
 msgstr ""
@@ -3905,6 +4421,10 @@ msgstr ""
 msgid "Not a zero-retention model: its host may keep your audio under its own terms."
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Not added"
+msgstr ""
+
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
 msgid "Not approved in Tailscale"
 msgstr ""
@@ -3924,6 +4444,18 @@ msgstr ""
 #: src/renderer/src/features/settings/WorkerMachineSettings.tsx
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Not connected"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Not connected, so its gh cannot be asked."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Not connected. Copies wait until it is."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Not copied to {computers}: each computer’s Bridge has its own Bridge password. A thread on another computer is told no Proton Mail account is available there."
 msgstr ""
 
 #: src/renderer/src/features/settings/HostProviders.tsx
@@ -3969,6 +4501,7 @@ msgid "Not set up"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostProviders.tsx
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Not signed in"
 msgstr ""
@@ -4009,6 +4542,10 @@ msgstr ""
 msgid "Nothing was saved as a host."
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Nothing was saved."
+msgstr ""
+
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Nothing written yet, so drafts follow Repository conventions, like this example."
 msgstr ""
@@ -4043,6 +4580,10 @@ msgstr ""
 msgid "Off on this computer. Connect to reach your other machines."
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Off, a thread makes 3D models without asking until the month’s limit is reached, and each one still shows in the thread with what it cost."
+msgstr ""
+
 #: src/renderer/src/features/settings/themes/CreatureChoice.tsx
 msgid "Off, nothing stands above the composer. The sidebar still says when a thread is working or waiting."
 msgstr ""
@@ -4057,6 +4598,22 @@ msgstr ""
 
 #: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 msgid "Off, Sotto doesn’t load the popup, take its shortcut or offer it in the tray."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Off. No thread can see or use this account until you turn it back on. Its API key stays saved."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Off. No thread can see or use this account until you turn it back on. Its app password stays saved."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Off. No thread can see or use this account until you turn it back on. Its Bridge password stays saved."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Off. No thread can see or use this account until you turn it back on. Its token stays saved."
 msgstr ""
 
 #: src/renderer/src/features/settings/HostBootStart.tsx
@@ -4147,6 +4704,14 @@ msgstr ""
 
 #: src/renderer/src/features/settings/WorkerMachineSettings.tsx
 msgid "Only this computer is connected, so new workers start here. Add a machine in <0>Hosts & phones</0>."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Only this computer’s threads are listed. Your other computers keep no record of use."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Only threads in {titles} may use it. Watcher belongs to no project, so it cannot."
 msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
@@ -4270,6 +4835,10 @@ msgstr ""
 msgid "Opened {page} in your browser."
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Opened an issue"
+msgstr ""
+
 #: src/renderer/src/features/settings/PhonesSettings.tsx
 msgid "Opened in your browser"
 msgstr ""
@@ -4325,6 +4894,14 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
 msgid "Other apps on {name} already use ports 8443 and 10000 in Tailscale Serve. Sotto left them alone, and nothing was changed. Free one of them on {name}, then press Try again."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Other computers"
+msgstr ""
+
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Outside services your threads can use"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostConnectionChoice.tsx
@@ -4414,8 +4991,24 @@ msgstr ""
 msgid "Paste delay saved."
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Paste the API key"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Paste the app password"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Paste the Bridge password"
+msgstr ""
+
 #: src/renderer/src/features/settings/HostProviderSignIn.tsx
 msgid "Paste the code"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Paste the token"
 msgstr ""
 
 #: src/renderer/src/features/settings/CloudIphoneSettings.tsx
@@ -4538,6 +5131,12 @@ msgstr ""
 msgid "Pieces"
 msgstr ""
 
+#. A Settings page, named in its rail and its heading: outside services such as GitHub that threads can use. Other messages name it as "Settings > Plugins".
+#: src/renderer/src/features/settings/settingsPages.ts
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Plugins"
+msgstr ""
+
 #. Precedes theme names people often search for
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Popular"
@@ -4557,6 +5156,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "Port <0>(optional)</0>"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Posted a comment"
 msgstr ""
 
 #: src/renderer/src/features/settings/AgentAccountSettings.tsx
@@ -4665,6 +5268,50 @@ msgstr ""
 msgid "Projects stay where they are until you pull. A project can turn it on for itself in Threads, Project defaults."
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Projects whose threads may use {name}"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Promoted a deployment to production"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Proton address"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Proton Mail account {name}"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Proton Mail already has as many accounts as Sotto keeps for one plugin. Nothing was saved. Remove one first."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Proton Mail Bridge did not accept the saved Bridge password, so its new certificate was not trusted. If Bridge shows a new Bridge password, remove this account and add it again."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Proton Mail Bridge did not accept this address and Bridge password. {kept} Copy both from Bridge, under this account’s Mailbox details."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Proton Mail Bridge is turning sign-ins away for now. {kept} Wait a minute, then try again."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Proton Mail Bridge isn’t answering at those ports on this computer. {kept} Open Bridge, check the ports it shows, then try again."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Proton Mail Bridge isn’t running on this computer, so threads can’t read or send this account’s mail. Open Bridge, then look again."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Proton Mail Bridge showed another certificate than the one Sotto keeps for this account. {kept} If you reinstalled or reset Bridge, trust its new certificate first."
+msgstr ""
+
 #: src/renderer/src/features/settings/AgentAccountSettings.tsx
 msgid "Provider default"
 msgstr ""
@@ -4732,6 +5379,58 @@ msgstr ""
 msgid "Reaching {name}…"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Read a build log"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Read a message"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Read a repository"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Read account details"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Read checks"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Read commits"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Read deployments"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Read domains"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Read from {name}"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Read issues"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Read projects"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Read pull requests"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Read releases"
+msgstr ""
+
 #: src/renderer/src/features/settings/CloudIphoneSettings.tsx
 msgid "Reading Cloud iPhone status…"
 msgstr ""
@@ -4767,6 +5466,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/CloudIphoneSettings.tsx
 msgid "Recent sessions"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Recent use"
 msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
@@ -4815,6 +5518,7 @@ msgstr ""
 
 #. Removes a paired phone.
 #: src/renderer/src/features/settings/phoneParts.tsx
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Remove"
 msgstr ""
 
@@ -4839,6 +5543,22 @@ msgstr ""
 msgid "Remove {removingName}?"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Remove <0>{name}</0>? Its API key is deleted from this computer, and threads lose the account at once. Nothing changes at Meshy."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Remove <0>{name}</0>? Its app password is deleted from this computer, and threads lose the account at once. Nothing changes at Gmail."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Remove <0>{name}</0>? Its Bridge password is deleted from this computer, and threads lose the account at once. Nothing changes in Bridge or at Proton."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Remove <0>{name}</0>? Its token is deleted from this computer, and threads lose the account at once. Nothing changes at Vercel."
+msgstr ""
+
 #: src/renderer/src/features/settings/GitSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Remove a worktree once its commits are in the default branch"
@@ -4852,6 +5572,10 @@ msgstr ""
 #: src/renderer/src/features/settings/GitSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Remove a worktree when its thread is settled"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Remove account"
 msgstr ""
 
 #: src/renderer/src/features/settings/GitSettings.tsx
@@ -4885,6 +5609,22 @@ msgstr ""
 #: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Remove shortcut, {words}"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Remove the Gmail account {name}"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Remove the Meshy account {name}"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Remove the Proton Mail account {name}"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Remove the Vercel account {name}"
 msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
@@ -4927,8 +5667,32 @@ msgstr ""
 msgid "Rename the thread"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Reopened an issue"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Replace"
+msgstr ""
+
 #: src/renderer/src/features/settings/CloudIphoneSettings.tsx
 msgid "Replace key"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Replace the API key for {name}"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Replace the app password for {name}"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Replace the Bridge password for {name}"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Replace the token for {name}"
 msgstr ""
 
 #: src/renderer/src/features/settings/settingsPages.ts
@@ -4937,7 +5701,11 @@ msgid "Replies in threads"
 msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
-msgid "Replies, approvals and reasoning effort, on the keyless model servers you saved under Your own model servers. Change models and permissions in a thread. Replies arrive whole rather than word by word, and questions come in the reply itself."
+msgid "Replies stream as Pi writes. Threads keep their conversation after a restart, show tool calls and context use, and can be stopped. Models come from your keyless servers and the sources you sign in to below."
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Replies, approvals and reasoning effort, on the keyless model servers you saved under APIs and your own model servers. Change models and permissions in a thread. Replies arrive whole rather than word by word, and questions come in the reply itself."
 msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
@@ -5093,6 +5861,10 @@ msgstr ""
 msgid "Retry connection"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Rolled production back"
+msgstr ""
+
 #: src/renderer/src/features/settings/themes/AppearancePreview.tsx
 msgid "Room the preview shows"
 msgstr ""
@@ -5100,6 +5872,11 @@ msgstr ""
 #. A Council chamber layout: seen from a little above, the chair at the far side.
 #: src/renderer/src/features/settings/CouncilSettings.tsx
 msgid "Round table"
+msgstr ""
+
+#. After a model's name on the New threads start with chip: new threads start with model routing on.
+#: src/renderer/src/features/settings/AgentAccountSettings.tsx
+msgid "routed"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostsSettings.tsx
@@ -5131,6 +5908,18 @@ msgstr "مثل هذا الكمبيوتر ({computerLanguage})"
 msgid "saturation {saturation}, brightness {brightness}"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Save API key"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Save app password"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Save Bridge password"
+msgstr ""
+
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Save changes"
 msgstr ""
@@ -5145,6 +5934,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "Save name"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Save token"
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
@@ -5165,6 +5958,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Screenshots, pictures it looks at and picture and video files it writes show in the thread on their own. Off, you see only what you ask it to show you and images you ask it to make."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Search and read mail with an app password. Each thread asks you once, in the thread, before it reads an account’s mail, and what it reads goes to that thread’s provider. A thread asks you before each email it sends, and shows you the whole email first. It cannot move or delete mail, and a message it reads stays unread for you. To make a thread ask again, open its ··· menu and press Ask before this thread reads the account."
 msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
@@ -5189,6 +5986,18 @@ msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Search transcripts already uses {keys}. Pick other keys."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Search, read and send mail through Proton Mail Bridge on this computer, which comes with a paid Proton plan. Each thread asks you once, in the thread, before it reads an account’s mail, and what it reads goes to that thread’s provider. A thread asks you before each email it sends, and shows you the whole email first. It cannot move or delete mail, and a message it reads stays unread for you. To make a thread ask again, open its ··· menu and press Ask before this thread reads the account."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Searched {name}"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Searched mail"
 msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
@@ -5221,6 +6030,10 @@ msgstr ""
 msgid "Send the prompt"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sending the copy to {computer}…"
+msgstr ""
+
 #: src/renderer/src/features/settings/ProductEventsSettings.tsx
 msgid "Sends Sotto’s developers which features you use, which provider and public model ran, how each turn ended, how long it took and its token counts. Events carry a random ID for this install and hashed IDs of your Claude and OpenAI accounts. Hashed is not anonymous: those IDs link your computers to one person. It never sends your words, code, file names, paths, repo or branch names, thread IDs or keys. Off stops this computer and its hosts, and drops anything waiting to go."
 msgstr ""
@@ -5231,6 +6044,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Sends your audio to the model you pick. Off, dictation is transcribed on this computer."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sent an email"
 msgstr ""
 
 #: src/renderer/src/features/settings/CloudSpeechModelList.tsx
@@ -5476,6 +6293,10 @@ msgstr ""
 msgid "Shows when the default branch is behind and leaves the pull to you."
 msgstr ""
 
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Sidebar"
+msgstr ""
+
 #. A family of theme colors in the theme editor
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Sidebar background"
@@ -5527,6 +6348,22 @@ msgstr ""
 msgid "Signed in"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Signed in as {account} through gh on that computer."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Signed in as {login} through gh"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Signed in as <0>{login}</0> through gh on this computer."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Signed in to Vercel as {signedInAs}. Token saved {day}."
+msgstr ""
+
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
 msgid "Signed in. {name} is <0>{dnsName}</0> on your tailnet."
 msgstr ""
@@ -5540,9 +6377,17 @@ msgstr ""
 msgid "Signing in…"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sixteen characters, made at {GOOGLE_APP_PASSWORDS_PAGE}. It needs 2-Step Verification on the Google account. Sotto checks it with Gmail before saving it, and never shows it again."
+msgstr ""
+
 #: src/renderer/src/features/settings/NightFallsSettings.tsx
 msgid "Slower to watch the sweep, faster to get there sooner. 1x takes under a second."
 msgstr "أبطأ لمشاهدة العبور، وأسرع للوصول في وقت أقرب. تستغرق 1x أقل من ثانية."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "SMTP port"
+msgstr ""
 
 #. A place Watcher’s night scene can be set in
 #: src/renderer/src/features/settings/themes/WatcherSceneChoice.tsx
@@ -5601,6 +6446,30 @@ msgstr ""
 msgid "Sotto cannot change sign-in startup here."
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sotto cannot read its record of which computers keep a copy, so it is not sending one to {computer}."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sotto cannot read its record of which computers keep a copy, so it sends no copy and no choice can be changed. It still takes back the copy of an account you remove or keep to chosen projects. If a newer Sotto wrote the record, update Sotto on this computer."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sotto checks it with Bridge first. The Bridge password saved now stays in use until the new one is accepted."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sotto checks it with Gmail first. The app password saved now stays in use until the new one is accepted."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sotto checks it with Meshy first. The key saved now stays in use until the new one is accepted."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sotto checks it with Vercel first. The token saved now stays in use until the new one is accepted."
+msgstr ""
+
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Sotto could not check for updates: {problem}"
 msgstr ""
@@ -5615,6 +6484,22 @@ msgstr ""
 
 #: src/renderer/src/features/settings/hostClientUpdateWords.ts
 msgid "Sotto could not find mise on {host}, so it will not run the update itself."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sotto could not keep the API key. {kept} Check that this computer’s credential store is unlocked, then try again."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sotto could not keep the app password. {kept} Check that this computer’s credential store is unlocked, then try again."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sotto could not keep the Bridge password. {kept} Check that this computer’s credential store is unlocked, then try again."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sotto could not keep the token. {kept} Check that this computer’s credential store is unlocked, then try again."
 msgstr ""
 
 #: src/renderer/src/features/settings/ClearThreadsSettings.tsx
@@ -5637,6 +6522,14 @@ msgstr ""
 msgid "Sotto could not stop signing in to {name}. Try again in Settings > Hosts & phones."
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sotto couldn’t ask gh who is signed in. Nothing was changed. Press Check again."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sotto couldn’t ask its gh who is signed in."
+msgstr ""
+
 #: src/renderer/src/features/settings/PhonesSettings.tsx
 msgid "Sotto couldn’t open its listener for phones on this computer. Nothing was changed. Press Try again, or restart Sotto."
 msgstr ""
@@ -5647,6 +6540,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/PhonesSettings.tsx
 msgid "Sotto couldn’t save its phone access settings. Phone access wasn’t started. Check that Sotto can write to its data folder, then press Try again."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sotto couldn’t tell whether Proton Mail Bridge is running on this computer. Open Bridge, then look again."
 msgstr ""
 
 #: src/renderer/src/features/settings/MicrophoneSettings.tsx
@@ -5705,6 +6602,10 @@ msgstr ""
 msgid "Sotto is connecting to {name}, and SSH needs your password to sign in."
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sotto is making sure {computer} holds no copy."
+msgstr ""
+
 #: src/renderer/src/features/settings/HostQuestionDialog.tsx
 msgid "Sotto is signing in to {name} for a change you asked for there, and SSH has not seen this host before. Check its key, then trust it to continue."
 msgstr ""
@@ -5715,6 +6616,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostQuestionDialog.tsx
 msgid "Sotto is signing in to {name} for a change you asked for there, and SSH needs your password to sign in."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sotto is taking the copy back from {computer}."
 msgstr ""
 
 #: src/renderer/src/features/settings/HostProviders.tsx
@@ -5731,6 +6636,14 @@ msgstr ""
 
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Sotto never fetches, even before a Git action. Ahead and behind use the last fetch."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sotto records what was done and by which thread, never what was read or sent."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sotto refused it."
 msgstr ""
 
 #: src/renderer/src/features/settings/HostsSettings.tsx
@@ -5751,6 +6664,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Sotto runs its own OpenCode, with its own folder and its own sign-ins. The OpenCode you run yourself stays as it is."
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Sotto runs Pi in its own folder on your keyless model servers. Pi has Full access and does not ask before running tools. Sign in below to use Pi’s other model sources."
 msgstr ""
 
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
@@ -6044,8 +6961,17 @@ msgstr ""
 msgid "Status"
 msgstr ""
 
+#: src/renderer/src/features/settings/ModelRouterSettings.tsx
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Stay on the first model"
+msgstr ""
+
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Steer now"
+msgstr ""
+
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Steering, compaction, native forks, skills, Watcher, remote hosts and phones are not available yet."
 msgstr ""
 
 #: src/renderer/src/features/settings/hostClientUpdateWords.ts
@@ -6308,6 +7234,18 @@ msgstr ""
 msgid "Text"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "That account is no longer here. Nothing was changed."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "That could not be saved. Nothing was changed. Try again."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "That could not be saved. What is shown is what is kept. Try again."
+msgstr ""
+
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "That file is {size}. Theme files are only a few KB, so this one was not read (limit {limit})."
 msgstr ""
@@ -6349,8 +7287,24 @@ msgstr ""
 msgid "That theme was removed while you were editing it. Save it under a new name to keep your changes."
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "The account could not be removed. Nothing was changed. Try again."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "The accounts could not be read. Nothing was changed. Reopen Settings and try again."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "The address Bridge shows for this account. Sotto shows it here and never tells it to an agent."
+msgstr ""
+
 #: src/renderer/src/features/settings/PhonesSettings.tsx
 msgid "The address could not be copied. Select it and copy it instead."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "The address the app password belongs to. Sotto shows it here and never tells it to an agent."
 msgstr ""
 
 #: src/renderer/src/features/settings/HostProviders.tsx
@@ -6365,9 +7319,21 @@ msgstr ""
 msgid "The agent wants to run a command on {name}. Answer it in the thread to carry on."
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "The API key already saved was kept."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "The app password already saved was kept."
+msgstr ""
+
 #: src/renderer/src/features/settings/HostDialog.tsx
 #: src/renderer/src/features/settings/HostQuestionDialog.tsx
 msgid "The approval page could not open. Nothing was changed. Try again."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "The Bridge password already saved was kept."
 msgstr ""
 
 #: src/renderer/src/features/settings/MicrophoneSettings.tsx
@@ -6390,6 +7356,10 @@ msgstr ""
 msgid "The command could not be copied. It is selected above: copy it with your keyboard’s copy shortcut."
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "The command could not be copied. Select {GH_SIGN_IN_COMMAND} and copy it yourself."
+msgstr ""
+
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "The command could not be copied. Select {loginCommand} and copy it yourself."
 msgstr ""
@@ -6406,6 +7376,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "The connection could not be saved. Nothing was changed. Try again."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "The copy could not be sent to {computer}. Sotto tries again."
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
@@ -6530,6 +7504,10 @@ msgstr ""
 msgid "The models {clientName} offers you now."
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "The most Sotto spends through this account in a month, here and on the computers it is copied to. Meshy’s Pro plan gives 1,000 credits a month."
+msgstr ""
+
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "The Muse guide could not be opened. Try again."
 msgstr ""
@@ -6556,6 +7534,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/MenuBarOwlSettings.tsx
 msgid "The owl's eyes in the dark side of a crescent moon, in your menu bar. Owl body colors the moon."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "The password in Bridge, under this account’s Mailbox details. It is not your Proton password. Sotto checks it with Bridge before saving it, and never shows it again."
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
@@ -6716,6 +7698,10 @@ msgstr ""
 msgid "The thread's own model writes a new pull request's title and body from the branch's commits and diff."
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "The token already saved was kept."
+msgstr ""
+
 #. Shown when saving the Ultracode effort setting fails. Ultracode is Claude Code’s own name; keep it as it is.
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "The Ultracode effort was not saved, so Claude threads keep the one they had. Try again."
@@ -6788,6 +7774,22 @@ msgstr ""
 msgid "Themes"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "There is already a Gmail account with that name. Nothing was saved. Give this one another name."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "There is already a Meshy account with that name. Nothing was saved. Give this one another name."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "There is already a Proton Mail account with that name. Nothing was saved. Give this one another name."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "There is already a Vercel account with that name. Nothing was saved. Give this one another name."
+msgstr ""
+
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
 msgid "These shortcuts are Hyprland bindings, so keys Hyprland already uses can’t be one of them. Press Cancel on the widget to stop without transcribing."
 msgstr ""
@@ -6799,6 +7801,7 @@ msgstr ""
 
 #. The computer Sotto runs on, named where a paired host would be.
 #: src/renderer/src/features/settings/HostsSettings.tsx
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 #: src/renderer/src/features/settings/WorkerMachineSettings.tsx
 msgid "This computer"
@@ -6818,6 +7821,22 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "This computer's client ID on {editingName}: <0>{clientId}</0>"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "This computer’s credential store is locked, so the API key could not be read to send. Unlock it, and Sotto tries again."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "This computer’s credential store is locked, so the app password could not be read to send. Unlock it, and Sotto tries again."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "This computer’s credential store is locked, so the Bridge password could not be read. Unlock it, then try again."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "This computer’s credential store is locked, so the token could not be read to send. Unlock it, and Sotto tries again."
 msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
@@ -6896,8 +7915,16 @@ msgstr ""
 msgid "Threads"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Threads in every project may use it, and so may Watcher."
+msgstr ""
+
 #: src/renderer/src/features/settings/ClearThreadsSettings.tsx
 msgid "Threads kept"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Threads may use {name}"
 msgstr ""
 
 #: src/renderer/src/features/settings/settingsPages.ts
@@ -6932,6 +7959,10 @@ msgstr ""
 msgid "Threads with OpenCode"
 msgstr ""
 
+#: src/renderer/src/features/settings/ProvidersSettings.tsx
+msgid "Threads with Pi"
+msgstr ""
+
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "Threads, pairing and settings for this host live here."
 msgstr ""
@@ -6943,6 +7974,14 @@ msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Toggle developer tools"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Token"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Token saved {day}."
 msgstr ""
 
 #: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
@@ -7005,6 +8044,10 @@ msgstr "الترجمات جديدة وتصل إلى Owl أولًا. قد تبق�
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Trims extra spaces without changing any words."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Trust Bridge’s new certificate"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostQuestionDialog.tsx
@@ -7429,6 +8472,26 @@ msgstr ""
 msgid "Usual number of {roleName} workers for one request"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Vercel account {name}"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Vercel already has as many accounts as Sotto keeps for one plugin. Nothing was saved. Remove one first."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Vercel could not be reached to check the token. {kept} Check your connection, then try again."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Vercel did not accept this token. {kept} Make a new token at {VERCEL_TOKENS_PAGE} and paste it here."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Vercel is turning requests away for now, so the token could not be checked. {kept} Wait a minute, then try again."
+msgstr ""
+
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "View source for {extensionName}"
 msgstr ""
@@ -7651,6 +8714,10 @@ msgstr ""
 msgid "What it may use"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "What it spends"
+msgstr ""
+
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "What Sotto found on {name}"
 msgstr ""
@@ -7661,6 +8728,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/themes/AppearancePreview.tsx
 msgid "What would you like to do next?"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "What you and your threads’ agents call this account, such as Work or Personal."
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
@@ -7707,6 +8778,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/AgentAccountSettings.tsx
 msgid "Where a new project goes. Each computer has its own folder."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Where its secret is kept"
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
@@ -7792,6 +8867,10 @@ msgid "Working copy…"
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Working now and Recent under Needs you, as on the iPhone. Each thread names its project."
+msgstr ""
+
+#: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Working..."
 msgstr ""
 
@@ -7809,12 +8888,28 @@ msgstr ""
 msgid "Yes. The controls now sit in three short cards, beside a preview."
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "You allowed it, and it failed."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "You allowed it, and Sotto cannot tell whether it was sent."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "You allowed it."
+msgstr ""
+
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "You are on the newest release."
 msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
 msgid "You can bring it back anytime by importing its JSON file."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "You said no."
 msgstr ""
 
 #. Stands in for the name of the user's account on a host, as in "a systemd user unit for {who}".
@@ -7895,8 +8990,8 @@ msgstr ""
 msgid "Your note to the overseer"
 msgstr ""
 
-#: src/renderer/src/features/settings/settingsPages.ts
-msgid "Your own model servers"
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Your projects could not be read, so the projects this account is kept to cannot be changed here. Nothing was changed. Reopen Settings and try again."
 msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx

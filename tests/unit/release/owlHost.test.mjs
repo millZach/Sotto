@@ -8,7 +8,7 @@ import { Buffer } from 'node:buffer'
 import process from 'node:process'
 import { URL } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { HOST_EXTERNAL_IMPORTS } from '../../../scripts/release-external-dependencies.mjs'
+import { HOST_BUNDLED_PACKAGES, HOST_EXTERNAL_IMPORTS } from '../../../scripts/release-external-dependencies.mjs'
 import { checkedOwlHostVersion, hostArchiveTar, safeHostTarInventory, verifyOwlHostArtifact } from '../../../scripts/owl-host-artifacts.mjs'
 import { owlHostArguments, packageOwlHost } from '../../../scripts/package-owl-host.mjs'
 import { owlPublicationArguments, prepareOwlRelease } from '../../../scripts/release-owl.mjs'
@@ -26,7 +26,7 @@ function contents({ source = sourceCommit, dirty = false, packagedVersion = vers
     'runtime-manifest.json': JSON.stringify({ version: 1, kind: 'sotto-host', sottoVersion: runtimeVersion, node: '>=24.22.1 <25', dependencies, platform, arch }),
     'host/index.js': '/* deterministic fixture only */',
     'host/external-dependencies.json': JSON.stringify({ version: 1, scope: 'host', imports: HOST_EXTERNAL_IMPORTS, dynamicImports: [] }),
-    'host/bundled-dependencies.json': JSON.stringify({ version: 1, packages: [] }),
+    'host/bundled-dependencies.json': JSON.stringify({ version: 1, packages: HOST_BUNDLED_PACKAGES }),
     'node_modules/zod/package.json': JSON.stringify({ version: '4.4.3' }), 'node_modules/zod/LICENSE': 'MIT test fixture',
     'LICENSE.md': 'Sotto fixture', 'THIRD_PARTY_NOTICES.md': 'zod fixture',
   }

@@ -1,0 +1,347 @@
+import { randomUUID } from 'node:crypto'
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
+import { z } from 'zod'
+import {
+  isBridgePlugin, isMailPlugin, isSpendingPlugin, MESHY_MONTHLY_LIMIT_DEFAULT, PLUGIN_ACCOUNTS_MAX, pluginAccountSchema, type AccountPluginId, type BridgePorts, type PluginAccount, type PluginAccountAdd, type PluginAccountProblem,
+  type PluginAccountRemove, type PluginAccountReplace, type PluginAccountResult, type PluginAccountUpdate,
+} from '../../shared/plugins'
+
+/**
+ * The record of accounts. Version 1 holds accounts that are all on and for every project, in the shape an older
+ * build reads. Version 2 holds at least one that is off or kept to projects: an older build cannot honour that, and
+ * refuses the whole file rather than read such an account as open to every thread. Version 3 holds a mail account:
+ * a build from before mail would drop it as an account of no plugin it knows and write the rest back without it,
+ * leaving its password in the credential store with nothing to find it by, so it too refuses the whole file. Version
+ * 4 holds a Proton Mail account, which a build from before Proton Mail would drop the same way. Version 5 holds a
+ * Meshy account, and a build from before Meshy would drop that the same way.
+ */
+const fileSchema = z.object({ version: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)]), accounts: z.array(z.unknown()) })
+
+/** The part of the credential store plugin accounts use: this computer's, or a headless host's own. */
+export interface PluginCredentials {
+  has(slot: string): boolean
+  /** The secret in a slot, or an empty string. Throws while the credential store cannot be read. */
+  get(slot: string): string
+  /** Keeps a secret in a slot; an empty value removes it. */
+  set(slot: string, value: string): Promise<void>
+}
+
+/**
+ * What a service said of a secret it was asked about: good, with its own name for the account, refused, or not asked.
+ * Proton Mail Bridge also hands back the certificate it showed, to keep, or showed another than the one kept.
+ */
+export type SecretCheck = { readonly ok: true; readonly signedInAs: string | null; readonly certificate?: string } | { readonly ok: false; readonly problem: 'refused' | 'unreachable' | 'busy' | 'certificate' }
+/** What a Proton Mail account is checked with: Bridge's ports, and the certificate kept, or `learn`. */
+export interface BridgeCheck { readonly ports: BridgePorts; readonly certificate: string | 'learn' }
+
+/** The credential store could not hand over a secret it holds: it is locked, or cannot be read right now. */
+export class PluginSecretLocked extends Error {}
+/** The record of accounts could not be read. Nothing is changed while that is so, so no account is written over. */
+export class PluginAccountsUnreadable extends Error {}
+
+/**
+ * A secret as it is checked and kept. Google shows a Gmail app password in four groups with spaces between them,
+ * and the password is the letters, so the spaces a paste carries are left out.
+ */
+export const pluginSecretAsKept = (plugin: AccountPluginId, secret: string): string => plugin === 'gmail' ? secret.replace(/\s+/gu, '') : plugin === 'meshy' ? secret.trim() : secret
+
+/** The slot an account's secret is kept in: one each, named by Sotto's own ID for the account. */
+export const pluginAccountSlot = (id: string): string => `plugin:${id}`
+
+/**
+ * Plugin accounts (ADR-0205, decision 3): each is a name the user gave, the plugin it signs in to, and a secret in the
+ * credential store in a slot of its own. The record of accounts is one small file in Sotto's data folder and never
+ * holds a secret; nothing here hands one to a window, a log or an agent. A secret is checked with its service before
+ * it is kept, and a secret that cannot be kept leaves no account behind. Changes run whole, one after another, and each
+ * is ordered so that what the user is told is true whichever write fails: a refused change leaves the secret in use
+ * as it was, and a removed account never keeps a secret.
+ */
+export class PluginAccounts {
+  private readonly path: string
+  private accounts: PluginAccount[] | undefined
+  private queue: Promise<unknown> = Promise.resolve()
+  constructor(directory: string, private readonly options: {
+    readonly credentials: PluginCredentials
+    /** Asks a plugin's service whether a secret is good. A mail account's secret is checked with its address. */
+    readonly check: (plugin: AccountPluginId, secret: string, address: string | undefined, bridge?: BridgeCheck) => Promise<SecretCheck>
+    readonly now?: () => Date
+  }) {
+    this.path = join(directory, 'plugin-accounts.json')
+  }
+
+  /** The accounts, in the order they were added. */
+  list(): Promise<PluginAccount[]> {
+    return this.inTurn(async () => [...await this.load()])
+  }
+
+  /**
+   * The account a thread's agent named, by plugin and name, or the plugin's only account when it names none. With
+   * `admits`, only the accounts the asking thread may use are looked among (decision 9), as if the others were not
+   * there: `withheld` says the plugin has accounts and none of them is for this thread.
+   */
+  async find(plugin: AccountPluginId, name: string | undefined, admits?: (account: PluginAccount) => boolean): Promise<PluginAccount | 'none' | 'withheld' | 'ambiguous' | 'unknown'> {
+    const all = (await this.list()).filter(account => account.plugin === plugin)
+    const mine = admits ? all.filter(admits) : all
+    if (mine.length === 0) return all.length === 0 ? 'none' : 'withheld'
+    if (name === undefined) return mine.length === 1 ? mine[0]! : 'ambiguous'
+    return mine.find(account => sameName(account.name, name)) ?? 'unknown'
+  }
+
+  /**
+   * An account's secret, for the adapter that makes its calls. Empty when the account holds none. A secret that is
+   * there but cannot be read, as when the credential store is locked, is not the same thing and throws.
+   */
+  secret(id: string): string {
+    const slot = pluginAccountSlot(id)
+    if (!this.options.credentials.has(slot)) return ''
+    try { return this.options.credentials.get(slot) } catch { throw new PluginSecretLocked() }
+  }
+
+  add(request: PluginAccountAdd): Promise<PluginAccountResult> {
+    return this.inTurn(async () => {
+      const accounts = await this.loadOrNull()
+      if (!accounts) return refusal('store')
+      const mine = accounts.filter(account => account.plugin === request.plugin)
+      if (mine.some(account => sameName(account.name, request.name))) return refusal('name-taken')
+      if (mine.length >= PLUGIN_ACCOUNTS_MAX) return refusal('limit')
+      // A mail account is an address and a password; any other plugin's account has no address.
+      if (isMailPlugin(request.plugin) !== (request.address !== undefined)) return refusal('refused')
+      // A Proton Mail account is reached through Bridge on this computer, at the ports given, and no other is.
+      if (isBridgePlugin(request.plugin) !== (request.bridge !== undefined) || (request.bridge && request.bridge.imapPort === request.bridge.smtpPort)) return refusal('refused')
+      const secret = pluginSecretAsKept(request.plugin, request.secret)
+      // Adding a Proton Mail account is when Bridge's certificate is learned (Zach's pick on November 14, 2026).
+      const checked = await this.options.check(request.plugin, secret, request.address, ...request.bridge ? [{ ports: request.bridge, certificate: 'learn' as const }] : [])
+      if (!checked.ok) return refusal(checked.problem)
+      if (request.bridge && !checked.certificate) return refusal('refused')
+      const account: PluginAccount = {
+        id: randomUUID(), plugin: request.plugin, name: request.name, savedAt: this.now(), signedInAs: checked.signedInAs,
+        ...(request.address === undefined ? {} : { address: request.address }), on: true, projects: null,
+        ...(request.bridge && checked.certificate ? { bridge: { imapPort: request.bridge.imapPort, smtpPort: request.bridge.smtpPort, certificate: checked.certificate } } : {}),
+        // An account that spends starts asking before each paid thing, within ADR-0141's 1,000 credits a month.
+        ...(isSpendingPlugin(request.plugin) ? { spending: { askBefore: true, monthlyLimit: MESHY_MONTHLY_LIMIT_DEFAULT } } : {}),
+      }
+      const slot = pluginAccountSlot(account.id)
+      try {
+        await this.options.credentials.set(slot, secret)
+        await this.write([...accounts, account])
+      } catch {
+        // A secret with no account to find it by is not left behind.
+        await this.options.credentials.set(slot, '').catch(() => undefined)
+        return refusal('store')
+      }
+      return { ok: true, accounts: [...accounts, account] }
+    })
+  }
+
+  replace(request: PluginAccountReplace): Promise<PluginAccountResult> {
+    return this.inTurn(async () => {
+      const accounts = await this.loadOrNull()
+      if (!accounts) return refusal('store')
+      const account = accounts.find(entry => entry.id === request.id)
+      if (!account) return refusal('gone')
+      const secret = pluginSecretAsKept(account.plugin, request.secret)
+      // A new Bridge password is checked with the Bridge whose certificate is kept: replacing one trusts nothing new.
+      const checked = await this.options.check(account.plugin, secret, account.address, ...account.bridge ? [{ ports: portsOf(account.bridge), certificate: account.bridge.certificate }] : [])
+      if (!checked.ok) return refusal(checked.problem)
+      const next = accounts.map(entry => entry.id === account.id ? { ...entry, savedAt: this.now(), signedInAs: checked.signedInAs } : entry)
+      // The day and the name are written first and the secret last, so a refusal always means the saved secret is
+      // still the one in use: a failed first write changed nothing, and a failed second leaves the old secret.
+      try { await this.write(next) } catch { return refusal('store') }
+      try { await this.options.credentials.set(pluginAccountSlot(account.id), secret) } catch {
+        await this.write(accounts).catch(() => { this.accounts = accounts })
+        return refusal('store')
+      }
+      return { ok: true, accounts: next }
+    })
+  }
+
+  /**
+   * Trusts the certificate Proton Mail Bridge shows now, as when it was reinstalled (Zach's pick on November 14, 2026):
+   * the saved Bridge password is checked with whatever answers at Bridge's port, and the certificate is kept only if
+   * the password is taken. That proves nothing about the server: like adding an account, it trusts what it first
+   * sees, and a program on that port is sent the password and could say yes to it. It is the user's own step, taken
+   * when they have reinstalled or reset Bridge. A reset that also changed the Bridge password cannot be trusted this
+   * way, and the account is removed and added again; Zach kept this one-press step over asking for the password
+   * again, on November 15, 2026.
+   */
+  trustCertificate(request: PluginAccountRemove): Promise<PluginAccountResult> {
+    return this.inTurn(async () => {
+      const accounts = await this.loadOrNull()
+      if (!accounts) return refusal('store')
+      const account = accounts.find(entry => entry.id === request.id)
+      if (!account) return refusal('gone')
+      if (!account.bridge) return refusal('refused')
+      let secret: string
+      try { secret = this.secret(account.id) } catch { return refusal('store') }
+      if (!secret) return refusal('gone')
+      const checked = await this.options.check(account.plugin, secret, account.address, { ports: portsOf(account.bridge), certificate: 'learn' })
+      if (!checked.ok) return refusal(checked.problem)
+      if (!checked.certificate) return refusal('refused')
+      const certificate = checked.certificate
+      const next = accounts.map(entry => entry.id === account.id && entry.bridge ? { ...entry, bridge: { ...entry.bridge, certificate } } : entry)
+      try { await this.write(next) } catch { return refusal('store') }
+      return { ok: true, accounts: next }
+    })
+  }
+
+  /**
+   * Deletes the secret first: until that is done nothing has changed, and once it is done the account is gone,
+   * whether or not the record of accounts could be written, since an account without its secret is never listed.
+   */
+  remove(request: PluginAccountRemove): Promise<PluginAccountResult> {
+    return this.inTurn(async () => {
+      const accounts = await this.loadOrNull()
+      if (!accounts) return refusal('store')
+      if (!accounts.some(entry => entry.id === request.id)) return refusal('gone')
+      const next = accounts.filter(entry => entry.id !== request.id)
+      try { await this.options.credentials.set(pluginAccountSlot(request.id), '') } catch { return refusal('store') }
+      await this.write(next).catch(() => { this.accounts = next })
+      return { ok: true, accounts: next }
+    })
+  }
+
+  /**
+   * Changes which threads may use an account: its switch, the projects it is kept to, or both. Only the record of
+   * accounts is written; the secret is not touched. A change that cannot be written changes nothing.
+   */
+  update(request: PluginAccountUpdate): Promise<PluginAccountResult> {
+    return this.inTurn(async () => {
+      const accounts = await this.loadOrNull()
+      if (!accounts) return refusal('store')
+      const target = accounts.find(entry => entry.id === request.id)
+      if (!target) return refusal('gone')
+      // Only an account that spends has a switch and a limit to change.
+      const spending = request.askBefore !== undefined || request.monthlyLimit !== undefined
+      if (spending && !target.spending) return refusal('refused')
+      const next = accounts.map(entry => entry.id !== request.id ? entry : {
+        ...entry, ...(request.on === undefined ? {} : { on: request.on }),
+        ...(spending && entry.spending ? { spending: { askBefore: request.askBefore ?? entry.spending.askBefore, monthlyLimit: request.monthlyLimit ?? entry.spending.monthlyLimit } } : {}),
+        // Each project once, in the order given.
+        ...(request.projects === undefined ? {} : { projects: request.projects === null ? null : [...new Set(request.projects)] }),
+      })
+      try { await this.write(next) } catch { return refusal('store') }
+      return { ok: true, accounts: next }
+    })
+  }
+
+  /**
+   * Keeps an account copy the desktop sent (ADR-0205, amending ADR-0025): the account as the desktop holds it, under
+   * the desktop's own ID for it, and its secret in this computer's credential store. The desktop checked the secret
+   * with its service before it kept it, so it is not checked again here. A copy of an account already held replaces
+   * it, secret and settings.
+   *
+   * A copy that could not be kept leaves what was held as it was, and the order of the two writes is chosen so that
+   * holds even when putting things back fails too. A new account's record is written first and its secret last: a
+   * record with no secret is never listed, so nothing is left behind. A replacement's secret is written first and
+   * its record last: the record holds who may use the account, and it is never changed by a copy the host then says
+   * it did not keep.
+   */
+  adopt(account: PluginAccount, secret: string, mine: (held: PluginAccount) => boolean = () => true): Promise<{ readonly kept: true; readonly replaced?: string } | { readonly kept: false; readonly problem: 'store' | 'limit' | 'held' | 'name-taken' }> {
+    return this.inTurn(async () => {
+      const accounts = await this.loadOrNull()
+      if (!accounts) return { kept: false, problem: 'store' }
+      const prior = accounts.find(entry => entry.id === account.id)
+      // An account another desktop sent is not this one's to replace.
+      if (prior && !mine(prior)) return { kept: false, problem: 'held' }
+      // A copy saved before the one held is a late arrival, as a retry after a lost answer is. It changes nothing.
+      if (prior && Date.parse(account.savedAt) < Date.parse(prior.savedAt)) return { kept: true }
+      // A plugin never holds two accounts of one name, or an agent that names one could be handed the other. A copy
+      // of the same name under another ID is a stale one of the sender's own, left by a removal that never arrived,
+      // and the new copy takes its place. Another desktop's account of that name stays, and the copy is refused.
+      const clash = accounts.find(entry => entry.plugin === account.plugin && entry.id !== account.id && sameName(entry.name, account.name))
+      if (clash && !mine(clash)) return { kept: false, problem: 'name-taken' }
+      const base = clash ? accounts.filter(entry => entry !== clash) : accounts
+      const held = prior !== undefined
+      if (!held && base.filter(entry => entry.plugin === account.plugin).length >= PLUGIN_ACCOUNTS_MAX) return { kept: false, problem: 'limit' }
+      const next = held ? base.map(entry => entry.id === account.id ? account : entry) : [...base, account]
+      // The stale copy's secret goes once the new one is kept. It has no record by then, so it is never used either way.
+      const done = async (): Promise<{ readonly kept: true; readonly replaced?: string }> => {
+        if (!clash) return { kept: true }
+        await this.options.credentials.set(pluginAccountSlot(clash.id), '').catch(() => undefined)
+        return { kept: true, replaced: clash.id }
+      }
+      const slot = pluginAccountSlot(account.id)
+      const refused = { kept: false, problem: 'store' } as const
+      if (held) {
+        // The secret held now, to put back if the record cannot be written. One that cannot be read cannot be put back, so nothing is tried.
+        let before: string
+        try { before = this.options.credentials.get(slot) } catch { return refused }
+        try { await this.options.credentials.set(slot, secret) } catch { return refused }
+        try { await this.write(next) } catch {
+          await this.options.credentials.set(slot, before).catch(() => undefined)
+          return refused
+        }
+        return done()
+      }
+      try { await this.write(next) } catch { return refused }
+      try { await this.options.credentials.set(slot, secret) } catch {
+        await this.write(accounts).catch(() => { this.accounts = accounts })
+        // The secret never arrived, so there is nothing of it to leave behind.
+        await this.options.credentials.set(slot, '').catch(() => undefined)
+        return refused
+      }
+      return done()
+    })
+  }
+
+  private now(): string { return (this.options.now?.() ?? new Date()).toISOString() }
+
+  /** Runs one change after every change before it, whether those succeeded or not. */
+  private inTurn<Result>(change: () => Promise<Result>): Promise<Result> {
+    const run = this.queue.catch(() => undefined).then(change)
+    this.queue = run
+    return run
+  }
+
+  /** The accounts, or null while their record cannot be read. */
+  private loadOrNull(): Promise<PluginAccount[] | null> { return this.load().catch(() => null) }
+
+  /**
+   * Reads the record of accounts once. Only a file that is not there yet means no accounts: one that cannot be read
+   * or made sense of throws and is asked for again next time, so a passing failure is never taken for an empty
+   * record and written over.
+   */
+  private async load(): Promise<PluginAccount[]> {
+    if (this.accounts) return this.accounts
+    let accounts: PluginAccount[] = []
+    let text: string | null
+    try { text = await readFile(this.path, 'utf8') } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new PluginAccountsUnreadable()
+      text = null
+    }
+    if (text !== null) {
+      let parsed: ReturnType<typeof fileSchema.safeParse>
+      try { parsed = fileSchema.safeParse(JSON.parse(text)) } catch { throw new PluginAccountsUnreadable() }
+      if (!parsed.success) throw new PluginAccountsUnreadable()
+      accounts = parsed.data.accounts.flatMap(entry => { const account = pluginAccountSchema.safeParse(entry); return account.success ? [account.data] : [] })
+    }
+    // An account whose secret is gone cannot be used and is not shown as saved.
+    this.accounts = accounts.filter(account => this.options.credentials.has(pluginAccountSlot(account.id)))
+    return this.accounts
+  }
+
+  /** Writes the accounts whole and only then takes them as kept, so a failed write leaves what was kept as it was. */
+  private async write(accounts: PluginAccount[]): Promise<void> {
+    const next = `${this.path}.next`
+    await mkdir(dirname(this.path), { recursive: true })
+    try {
+      // The switch and the projects are written only where they are not the default, so a record of accounts that
+      // are all on and for every project stays one an older build reads, and keeps, whole.
+      const stored = accounts.map(({ on, projects, ...rest }) => ({ ...rest, ...(on ? {} : { on }), ...(projects === null ? {} : { projects }) }))
+      const version = stored.some(entry => isSpendingPlugin(entry.plugin)) ? 5 : stored.some(entry => isBridgePlugin(entry.plugin)) ? 4 : stored.some(entry => isMailPlugin(entry.plugin)) ? 3 : stored.some(entry => 'on' in entry || 'projects' in entry) ? 2 : 1
+      await writeFile(next, JSON.stringify({ version, accounts: stored }), { mode: 0o600 })
+      await rename(next, this.path)
+    } catch (error) {
+      await rm(next, { force: true })
+      throw error
+    }
+    this.accounts = accounts
+  }
+}
+
+const refusal = (problem: PluginAccountProblem): PluginAccountResult => ({ ok: false, problem })
+/** Bridge's ports, without the certificate kept beside them. */
+const portsOf = (bridge: BridgePorts): BridgePorts => ({ imapPort: bridge.imapPort, smtpPort: bridge.smtpPort })
+/** Names are told apart the way a person reads them: without regard to case or the spaces around them. */
+const sameName = (one: string, other: string): boolean => one.trim().toLocaleLowerCase() === other.trim().toLocaleLowerCase()

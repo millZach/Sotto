@@ -7,6 +7,7 @@ import { INTERFACE_LANGUAGE_SETTINGS, type InterfaceLanguageSetting } from './in
 import { DEFAULT_MENU_BAR_OWL_BODY, DEFAULT_MENU_BAR_OWL_EYES, MENU_BAR_OWL_BODIES, MENU_BAR_OWL_EYES, type MenuBarOwlBody, type MenuBarOwlEyes } from './menuBarOwl'
 import { DEFAULT_WATCHER_SCENE, WATCHER_SCENES, type WatcherScene } from './watcherScene'
 import { DEFAULT_DYNAMIC_THREADS, dynamicThreadSettingsSchema, parseDynamicThreadSettings, type DynamicThreadSettings } from './dynamicThreads'
+import { DEFAULT_MODEL_ROUTER, modelRouterSettingsSchema, parseModelRouterSettings, type ModelRouterSettings } from './modelRouter'
 import { parseWorkerRoleChoices, workerRoleChoicesSchema, type WorkerRoleChoices } from './workerRoles'
 import { COUNCIL_STAGE_DEADLINE, councilChairSchema, councilLayoutSchema, councilPanelistsSchema, councilStageDeadlineSchema, DEFAULT_COUNCIL_LAYOUT, DEFAULT_COUNCIL_PANELISTS,
   parseCouncilPanelists, type CouncilLayout, type CouncilSeatChoice } from './council'
@@ -173,6 +174,12 @@ export interface AppSettings {
   webLinkDestination: 'external' | 'embedded'
   /** `live` draws assistant text as it streams; `complete` shows each reply once it is finished. Activity is always live. */
   responseStreaming: 'live' | 'complete'
+  /**
+   * How the Threads sidebar lists open threads (ADR-0201): `status` in Working now and Recent under Needs you, as the
+   * iPhone does, each row naming its project; `project` in a folder for each project, as before. Status is the default,
+   * so a saved file without the key opens on status groups.
+   */
+  threadListGrouping: 'status' | 'project'
   /** Whether a browser task introduces itself in the corner of the Threads page. Off hides only the preview; the work and Tools > Browser carry on. */
   showBrowserPreviews: boolean
   /** On by default (ADR-0029): a thread opens, navigates, clicks and types in Sotto's browser without asking, until Stop or this turns off. */
@@ -205,6 +212,8 @@ export interface AppSettings {
   workerRoles: WorkerRoleChoices
   /** Dynamic threads' limits under Settings, Threads (ADR-0191, an Owl feature): the allowed list and how far workers may go. */
   dynamicThreads: DynamicThreadSettings
+  /** Model routing under Settings, Threads (ADR-0207, an Owl feature): whether a routed thread stays on its first model, and whether new threads start routed. */
+  modelRouter: ModelRouterSettings
   /** Concurrent worker starts per machine while worker-swarms is on; saved whole on stable. */
   workerCeiling: number
   workerMachineCeilings: WorkerMachineCeilings
@@ -510,6 +519,7 @@ const fieldSchemas = {
   customThemes: customThemesSchema as z.ZodType<ThemeDefinition[]>,
   webLinkDestination: z.enum(['external', 'embedded']),
   responseStreaming: z.enum(['live', 'complete']),
+  threadListGrouping: z.enum(['status', 'project']),
   showBrowserPreviews: z.boolean(),
   browserWithoutAsking: z.boolean(),
   visualsInThreads: z.boolean(),
@@ -519,6 +529,7 @@ const fieldSchemas = {
   restartStoppedThreads: z.boolean(),
   workerRoles: workerRoleChoicesSchema,
   dynamicThreads: dynamicThreadSettingsSchema,
+  modelRouter: modelRouterSettingsSchema,
   workerCeiling: workerCeilingSchema,
   workerMachineCeilings: workerMachineCeilingsSchema,
   watcherSettlesFinishedThreads: z.boolean(),
@@ -640,6 +651,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   customThemes: [],
   webLinkDestination: 'external',
   responseStreaming: 'live',
+  threadListGrouping: 'status',
   showBrowserPreviews: true,
   browserWithoutAsking: true,
   visualsInThreads: true,
@@ -649,6 +661,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   restartStoppedThreads: true,
   workerRoles: {},
   dynamicThreads: { ...DEFAULT_DYNAMIC_THREADS },
+  modelRouter: { ...DEFAULT_MODEL_ROUTER },
   workerCeiling: DEFAULT_WORKER_CEILING,
   workerMachineCeilings: {},
   watcherSettlesFinishedThreads: true,
@@ -839,6 +852,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     customThemes,
     webLinkDestination: parseField(persisted, 'webLinkDestination', defaults),
     responseStreaming: parseField(persisted, 'responseStreaming', defaults),
+    threadListGrouping: parseField(persisted, 'threadListGrouping', defaults),
     showBrowserPreviews: parseField(persisted, 'showBrowserPreviews', defaults),
     browserWithoutAsking: parseField(persisted, 'browserWithoutAsking', defaults),
     visualsInThreads: parseField(persisted, 'visualsInThreads', defaults),
@@ -849,6 +863,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     // Row by row, so one damaged row costs only that row.
     workerRoles: persisted.workerRoles === undefined ? { ...defaults.workerRoles } : parseWorkerRoleChoices(persisted.workerRoles),
     dynamicThreads: persisted.dynamicThreads === undefined ? { ...defaults.dynamicThreads } : parseDynamicThreadSettings(persisted.dynamicThreads),
+    modelRouter: persisted.modelRouter === undefined ? { ...defaults.modelRouter } : parseModelRouterSettings(persisted.modelRouter),
     workerCeiling: parseField(persisted, 'workerCeiling', defaults),
     workerMachineCeilings: parseField(persisted, 'workerMachineCeilings', defaults),
     watcherSettlesFinishedThreads: parseField(persisted, 'watcherSettlesFinishedThreads', defaults),

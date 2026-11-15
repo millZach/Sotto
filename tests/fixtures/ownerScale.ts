@@ -60,9 +60,13 @@ export function addWatcherHistory(record: WatcherRecord, targets: readonly Watch
     const id = randomUUID()
     // The thread each request let go is one of `letGo` in turn, when there are any, so the record is the same size.
     const taking = [targets[(index * 2) % targets.length]!, letGo.length ? letGo[index % letGo.length]! : targets[(index * 2 + 1) % targets.length]!]
+    // The thread still taking part was stopped since, as Stop watching and Watcher's Stop leave every request a thread
+    // took part in: 3,036 of the 3,206 closed requests in the owner's record on November 12, 2026 were. A record whose
+    // archive kept each of them never shrank.
     return { id, watcher, rootUserMessageId: `watcher-prompt-${index}`, state: 'closed', createdAt: AT, closedAt: AT,
       participants: taking.map((target, position) => ({ target, requestId: id, startedBy: 'watcher' as const, generation: 0,
-        state: position === 0 ? 'participating' as const : 'relinquished' as const, lastUserMessageId: null, promptCount: 1 })) }
+        state: position === 0 ? 'participating' as const : 'relinquished' as const, lastUserMessageId: null, promptCount: 1,
+        ...position === 0 ? { automationStopped: true as const } : {} })) }
   })
   // Each request began its own Watcher turn, at its message, so its receipts go under that message (#1759).
   const turns: WatcherPromptTurn[] = requests.map(request => ({ id: randomUUID(), watcher, createdAt: AT, rootUserMessageId: request.rootUserMessageId }))
@@ -97,7 +101,12 @@ export function pairedDesktopWatcherWork(targets: readonly WatcherThreadTarget[]
   desktop: { readonly clientId: string; readonly master: WatcherIdentity }): { requests: WatcherRequest[]; operations: WatcherOperation[] } {
   const record = emptyWatcherRecord(), { clientId, master } = desktop
   addWatcherHistory(record, targets, counts, master.target)
-  for (const request of record.requests) request.remoteOrigin = { clientId, master, creationOperationId: master.creationOperationId, ceiling: 'approval-required' }
+  for (const request of record.requests) {
+    request.remoteOrigin = { clientId, master, creationOperationId: master.creationOperationId, ceiling: 'approval-required' }
+    // As forge's host held them when its pushes were measured (`HOST_SCALE`): the stops `addWatcherHistory` now leaves are
+    // the owner's own record's, and each would add its bytes to every whole push this work is sent in.
+    for (const participant of request.participants) delete participant.automationStopped
+  }
   const roots = new Map(record.requests.map(request => [request.id, request.rootUserMessageId]))
   for (const operation of record.operations) {
     // A desktop sends an operation without its prompt turn, which stays in the desktop's own record.

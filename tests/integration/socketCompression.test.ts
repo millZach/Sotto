@@ -1,15 +1,21 @@
 // @vitest-environment node
 /**
  * `permessage-deflate` on the host socket (ADR-0025, October 18 amendment): a desktop that offers it is sent its messages
- * compressed, and nobody else is, whatever they offer.
+ * compressed; and since the November 10 amendment (#2394) so is a phone that offers it, on a listener that compresses for
+ * phones, as every phone listener does unless its host was started with `SOTTO_HOST_COMPRESS_PHONES=0`. A listener
+ * started here without `compressPhones` stands for a phone listener on a host started so, or for the local apps listener:
+ * it compresses for no phone.
  */
+import { createHash, randomBytes } from 'node:crypto'
 import { connect, createServer, type AddressInfo, type Server } from 'node:net'
+import type { Duplex } from 'node:stream'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { DEFLATE_OFFER, SocketFrames } from '../../src/host/socketFrames'
+import { DEFLATE_OFFER, DEFLATE_RESPONSE, DEFLATE_SYNC_MAX_BYTES, deflateAccepted, SocketFrames } from '../../src/host/socketFrames'
 import { startSocketServer } from '../../src/host/socketServer'
 import type { HostService } from '../../src/main/agents/hostService'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
-import type { AgentThreadDetail, AgentThreadDetailUpdate } from '../../src/shared/agents'
+import type { AgentAttachmentHandle, AgentThreadDetail, AgentThreadDetailUpdate } from '../../src/shared/agents'
+import { PHONES_ONLY_TAILNET, serviceWithLongThread } from '../fixtures/longThreadService'
 import { rawPeer } from '../fixtures/rawHostPeer'
 import { useSocketHostFixture } from '../fixtures/socketHostFixture'
 
@@ -47,6 +53,33 @@ async function peer(port: number, token: string, offer?: string) {
   const connected = await rawPeer(port, token, offer ? { offer } : {})
   raws.push(connected.frames)
   return connected
+}
+
+/** The offer the iPhone's `URLSessionWebSocketTask` makes by itself, as forge's tailnet listener saw it (#2394). */
+const IPHONE_OFFER = 'permessage-deflate'
+/** A listener shaped like a headless host's tailnet listener, where no client is recorded as a desktop, so every peer is a phone. */
+const phoneListener = (service: HostService, compressPhones: boolean) => listen({ service, admin: false, compressPhones, tailnet: PHONES_ONLY_TAILNET })
+type WireFrame = { fin: boolean; rsv1: boolean; opcode: number; size: number }
+/**
+ * The frames a listener writes to a raw peer, read off its stream beside the peer's own reader: each frame's FIN and RSV1
+ * bits, opcode and payload size. The listener writes nothing before the peer's hello, so nothing is missed.
+ */
+function wireFrames(stream: Duplex): WireFrame[] {
+  const seen: WireFrame[] = []
+  let buffer: Buffer = Buffer.alloc(0)
+  stream.on('data', (chunk: Buffer) => {
+    buffer = buffer.length ? Buffer.concat([buffer, chunk]) : chunk
+    for (;;) {
+      if (buffer.length < 2) return
+      let size = buffer[1]! & 127, offset = 2
+      if (size === 126) { if (buffer.length < 4) return; size = buffer.readUInt16BE(2); offset = 4 }
+      else if (size === 127) { if (buffer.length < 10) return; size = Number(buffer.readBigUInt64BE(2)); offset = 10 }
+      if (buffer.length < offset + size) return
+      seen.push({ fin: (buffer[0]! & 0x80) !== 0, rsv1: (buffer[0]! & 0x40) !== 0, opcode: buffer[0]! & 15, size })
+      buffer = buffer.subarray(offset + size)
+    }
+  })
+  return seen
 }
 
 describe('compressed host socket messages', () => {
@@ -97,7 +130,7 @@ describe('compressed host socket messages', () => {
     expect(plain.frames.isClosed).toBe(false)
   })
 
-  it('accepts the offer of a desktop on a listener that tells desktops apart, and refuses a phone that offers it', async () => {
+  it('accepts the offer of a desktop on a listener that tells desktops apart, and with phone compression off refuses a phone that offers it', async () => {
     const desktop = await session('Sotto desktop'), phone = await session('Zach’s iPhone'), late = await session('Late desktop')
     const desktops = new Set([desktop.paired.clientId])
     let reads = 0
@@ -109,14 +142,22 @@ describe('compressed host socket messages', () => {
     expect(computer.frames.deflate).toBe(true)
     expect(await computer.call('hello', { op: 'hello' })).toMatchObject({ ok: true })
 
-    // An Android phone's OkHttp offers the extension by default; a phone is left uncompressed all the same.
+    // A phone is left uncompressed on a listener with phone compression off, whatever it offers: an Android phone's OkHttp
+    // offers the extension by default.
     const handset = await peer(port, phone.session, 'permessage-deflate; client_max_window_bits')
     expect(handset.extensions).toBeUndefined()
     expect(handset.frames.deflate).toBe(false)
     expect(await handset.call('hello', { op: 'hello' })).toMatchObject({ ok: true })
     expect(handset.frames.isClosed).toBe(false)
+    // So is an iPhone, whose URLSession offers the extension bare.
+    const iphone = await peer(port, phone.session, IPHONE_OFFER)
+    expect(iphone.extensions).toBeUndefined()
+    expect(iphone.frames.deflate).toBe(false)
+    expect(await iphone.call('hello', { op: 'hello' })).toMatchObject({ ok: true })
+    expect(iphone.frames.isClosed).toBe(false)
 
-    // A desktop the launch script recorded after the listener last read the record is found by reading it again.
+    // A desktop the launch script recorded after the listener last read the record is found by reading it again, which only
+    // a listener with phone compression off needs: compression is settled at the upgrade.
     const recorded = await peer(port, late.session, DEFLATE_OFFER)
     expect(recorded.frames.deflate).toBe(true)
     expect(reads).toBeGreaterThan(0)
@@ -148,16 +189,97 @@ describe('compressed host socket messages', () => {
     expect(upgrades.slice(-2)).toEqual([true, false])
   })
 
-  it('compresses nothing on the desktop’s own phone listener, and a desktop client there reads its messages uncompressed', async () => {
+  it('compresses on the desktop’s own phone listener, and with phone compression off a desktop client there reads its messages uncompressed', async () => {
+    // As phone access starts it: a client that offers is answered, whether or not it is a desktop.
+    const compressing = await listen({ admin: false, compressPhones: true })
+    const handset = await peer(compressing.descriptor.port, (await session('Zach’s iPhone', compressing.descriptor.port)).session, IPHONE_OFFER)
+    expect(handset.extensions).toBe(DEFLATE_RESPONSE)
+    expect(handset.frames.deflate).toBe(true)
+    expect(await handset.call('hello', { op: 'hello' })).toMatchObject({ ok: true })
+
+    // As phone access starts it with SOTTO_HOST_COMPRESS_PHONES=0: nothing is.
     const listener = await listen({ admin: false })
-    const phone = await session('Zach’s iPhone', listener.descriptor.port)
-    const handset = await peer(listener.descriptor.port, phone.session, DEFLATE_OFFER)
-    expect(handset.extensions).toBeUndefined()
-    expect(handset.frames.deflate).toBe(false)
+    const phone = await session('Other iPhone', listener.descriptor.port)
+    const plain = await peer(listener.descriptor.port, phone.session, DEFLATE_OFFER)
+    expect(plain.extensions).toBeUndefined()
+    expect(plain.frames.deflate).toBe(false)
     // The desktop's client offers the extension to every host; one that answers without it, as an older host does, still serves it.
     const client = new SocketHostService({ url: phone.url, token: phone.paired.token }); fixture.clients.push(client)
     await client.connect()
     expect(framesOf(client).deflate).toBe(false)
     expect(client.shell().host.hostId).toBe(fixture.host.service.shell().host.hostId)
+  })
+
+  it('answers an iPhone’s bare offer with phone compression on, and the phone reads compressed messages, one over 64 KiB among them', async () => {
+    const detail = longThread()
+    const listener = await phoneListener(serviceWithLongThread(fixture.host.service, detail), true)
+    const phone = await session('Zach’s iPhone')
+    const iphone = await peer(listener.descriptor.port, phone.session, IPHONE_OFFER)
+    // The desktop's answer, which is a valid one to an offer that asked for neither parameter (RFC 7692 section 7.1.1):
+    // a server may add `server_no_context_takeover` unasked, and a client must support `client_no_context_takeover`.
+    expect(iphone.extensions).toBe(DEFLATE_RESPONSE)
+    expect(deflateAccepted(iphone.extensions)).toBe(true)
+    expect(iphone.frames.deflate).toBe(true)
+    const wire = wireFrames(iphone.stream)
+    const inflated = inflations()
+    const hello = await iphone.call('hello', { op: 'hello' })
+    expect(hello).toMatchObject({ ok: true })
+    expect(Buffer.byteLength(JSON.stringify(hello))).toBeGreaterThan(1024)
+    // A thread read whole, too large to compress on the loop: it is compressed on the thread pool and arrives as sent.
+    const read = await iphone.call('long', { op: 'detail', threadId: 'long' })
+    expect((read.result as unknown as AgentThreadDetail).messages).toEqual(detail.messages)
+    const detailBytes = Buffer.byteLength(JSON.stringify(read))
+    expect(detailBytes).toBeGreaterThan(DEFLATE_SYNC_MAX_BYTES)
+    // Every message went as one frame, never in fragments, the hello and the thread with RSV1, and no frame on the wire
+    // came near the thread's own size.
+    expect(wire.length).toBeGreaterThanOrEqual(2)
+    expect(wire.every(frame => frame.fin && frame.opcode !== 0)).toBe(true)
+    expect(wire.filter(frame => frame.rsv1).length).toBeGreaterThanOrEqual(2)
+    expect(Math.max(...wire.map(frame => frame.size))).toBeLessThan(detailBytes / 4)
+    expect(inflated.mock.contexts.filter(context => context === iphone.frames).length).toBeGreaterThanOrEqual(2)
+    expect(iphone.frames.isClosed).toBe(false)
+  })
+
+  it('reads two photos a phone sends compressed on one connection, each inflated whole (#2394)', async () => {
+    const kept: string[] = []
+    const digest = (bytes: Uint8Array): string => createHash('sha256').update(bytes).digest('hex')
+    // Keeps nothing: the hash of what arrived is what the check reads.
+    const service = serviceWithLongThread(fixture.host.service, longThread(), { stageAttachment: image => {
+      kept.push(digest(image.bytes))
+      return Promise.resolve({ id: 'photo-' + kept.length, name: image.name, mimeType: image.mimeType, sizeBytes: image.bytes.byteLength, digest: digest(image.bytes) } as AgentAttachmentHandle)
+    } })
+    const listener = await phoneListener(service, true)
+    const phone = await session('Zach’s iPhone')
+    const iphone = await peer(listener.descriptor.port, phone.session, IPHONE_OFFER)
+    expect(await iphone.call('hello', { op: 'hello' })).toMatchObject({ ok: true })
+    const inflated = inflations()
+    // Bytes that do not compress, as a JPEG's do not, so each photo is a compressed message of about its own size: the
+    // large message a phone sends. The second is read with no context kept from the first, as the answer asked.
+    const photos = [randomBytes(300 * 1024), randomBytes(300 * 1024)]
+    for (const [index, bytes] of photos.entries()) {
+      expect(await iphone.call('photo-' + index, { op: 'stage-attachment', image: { name: `Photo ${index}.jpg`, mimeType: 'image/jpeg', data: bytes.toString('base64') } })).toMatchObject({ ok: true })
+    }
+    expect(kept).toEqual(photos.map(digest))
+    const read = inflated.mock.results.filter((result, index) => inflated.mock.contexts[index] !== iphone.frames && result.type === 'return' && (result.value as Buffer).length > 300 * 1024)
+    expect(read).toHaveLength(2)
+    expect(iphone.frames.isClosed).toBe(false)
+  })
+
+  it('sends a phone that offers nothing no compressed frame, with phone compression on or off', async () => {
+    const detail = longThread()
+    for (const compressPhones of [false, true]) {
+      const listener = await phoneListener(serviceWithLongThread(fixture.host.service, detail), compressPhones)
+      const phone = await session(compressPhones ? 'Phone on a compressing listener' : 'Phone on a plain listener')
+      const plain = await peer(listener.descriptor.port, phone.session)
+      expect(plain.extensions).toBeUndefined()
+      expect(plain.frames.deflate).toBe(false)
+      const wire = wireFrames(plain.stream)
+      expect(await plain.call('hello', { op: 'hello' })).toMatchObject({ ok: true })
+      const read = await plain.call('long', { op: 'detail', threadId: 'long' })
+      expect((read.result as unknown as AgentThreadDetail).messages).toEqual(detail.messages)
+      expect(wire.some(frame => frame.rsv1)).toBe(false)
+      expect(Math.max(...wire.map(frame => frame.size))).toBeGreaterThan(DEFLATE_SYNC_MAX_BYTES)
+      expect(plain.frames.isClosed).toBe(false)
+    }
   })
 })

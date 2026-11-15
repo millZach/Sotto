@@ -1,0 +1,177 @@
+/* First-run setup's walk (ADR-0200): the window dimmed around one lit control, with a note beside it. The layer
+   covers the drag strip too, so it opts out of dragging; colour comes only from theme roles. */
+
+.setup-walk {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  pointer-events: none;
+  -webkit-app-region: no-drag;
+}
+
+/* The dim panels take presses, so only the lit control between them and the note are live. */
+.setup-walk__dim {
+  position: fixed;
+  background: var(--tt-backdrop);
+  pointer-events: auto;
+}
+
+.setup-walk__lit {
+  position: fixed;
+  border-radius: var(--tt-radius-lg);
+  outline: 2px solid var(--tt-accent);
+  outline-offset: 0;
+  pointer-events: none;
+}
+
+.setup-walk__note {
+  position: fixed;
+  display: grid;
+  gap: 8px;
+  overflow-y: auto;
+  border: 1px solid var(--tt-hairline);
+  border-radius: var(--tt-radius-lg);
+  background: var(--tt-surface-elevated);
+  box-shadow: var(--tt-shadow-lg);
+  padding: 16px 16px 12px;
+  color: var(--tt-text);
+  pointer-events: auto;
+}
+
+.setup-walk__mark {
+  width: 40px;
+  height: 40px;
+}
+
+.setup-walk__note h2 {
+  margin: 0;
+  font-size: var(--tt-type-reading);
+  font-weight: 600;
+}
+
+.setup-walk__note h2:focus {
+  outline: none;
+}
+
+.setup-walk__note p,
+.setup-walk__left {
+  margin: 0;
+  color: var(--tt-text-muted);
+  font-size: var(--tt-type-small);
+  line-height: 1.5;
+}
+
+.setup-walk__left {
+  padding-left: 18px;
+}
+
+.setup-walk__note p.setup-walk__status {
+  color: var(--tt-text);
+  font-weight: 600;
+}
+
+.setup-walk__note p.setup-walk__failed,
+.setup-walk__waiting p.setup-walk__failed {
+  color: var(--tt-error-text);
+}
+
+.setup-walk__note p.setup-walk__aside {
+  font-size: var(--tt-type-caption);
+}
+
+.setup-walk__looks {
+  display: inline-flex;
+  justify-self: start;
+  gap: 2px;
+  border-radius: var(--tt-radius-md);
+  background: var(--tt-card-inset);
+  padding: 3px;
+}
+
+.setup-walk__look {
+  min-height: 32px;
+  border: 0;
+  border-radius: var(--tt-radius-sm);
+  background: transparent;
+  padding: 5px 12px;
+  color: var(--tt-text-muted);
+  font: inherit;
+  font-size: var(--tt-type-small);
+  font-weight: 500;
+}
+
+.setup-walk__look[aria-checked='true'] {
+  background: var(--tt-card-selected);
+  color: var(--tt-text);
+}
+
+.setup-walk__note footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-top: 4px;
+}
+
+.setup-walk__count {
+  color: var(--tt-text-muted);
+  font-size: var(--tt-type-caption);
+}
+
+.setup-walk__quit {
+  border: 0;
+  background: none;
+  padding: 6px 2px;
+  color: var(--tt-text-muted);
+  font: inherit;
+  font-size: var(--tt-type-caption);
+  text-decoration: underline;
+}
+
+.setup-walk__quit:hover:not(:disabled) {
+  color: var(--tt-text);
+}
+
+.setup-walk__actions {
+  display: flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+/* A lit control led to another page: the dim lifts and the walk waits in the window's corner, where the corner cards
+   sit once setup is over (they wait until then), with the page fully live around it. */
+.setup-walk__waiting {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  display: grid;
+  gap: 8px;
+  width: min(330px, calc(100vw - 40px));
+  border: 1px solid var(--tt-hairline);
+  border-radius: var(--tt-radius-lg);
+  background: var(--tt-surface-elevated);
+  box-shadow: var(--tt-shadow-lg);
+  padding: 14px 16px 10px;
+  color: var(--tt-text);
+  pointer-events: auto;
+}
+
+.setup-walk__waiting h2 {
+  margin: 0;
+  font-size: var(--tt-type-reading);
+  font-weight: 600;
+}
+
+.setup-walk__waiting p {
+  margin: 0;
+  color: var(--tt-text-muted);
+  font-size: var(--tt-type-small);
+  line-height: 1.5;
+}
+
+.setup-walk__waiting footer {
+  display: flex;
+  align-items: center;
+  gap: 4px 10px;
+  margin-top: 4px;
+}

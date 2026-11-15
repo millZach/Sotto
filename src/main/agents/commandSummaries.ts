@@ -2,7 +2,7 @@ import { threadProviderOf, type AgentHostSnapshot, type AgentRequest, type Agent
 import { modelSummary } from './requestInput'
 
 /** The providers with no side call to ask (ADR-0026), so their cards say from the start that no summary came. */
-const NO_SIDE_CALL: ReadonlySet<ProviderId> = new Set<ProviderId>(['devin', 'deepseek', 'hermes', 'muse'])
+const NO_SIDE_CALL: ReadonlySet<ProviderId> = new Set<ProviderId>(['devin', 'deepseek', 'hermes', 'pi', 'muse'])
 /** A client starts cold for each side call, so a burst of requests waits its turn rather than filling the machine. */
 const AT_ONCE = 2
 

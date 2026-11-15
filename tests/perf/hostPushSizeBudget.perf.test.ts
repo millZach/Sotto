@@ -23,17 +23,20 @@ import { stepClock } from '../fixtures/stepClock'
 
 /**
  * Bytes of JSON in one thread list push to a desktop while a thread streams: 2,850, the thread record that changed and the
- * names of the parts kept. Before #2393 it was about 200 KB, nearly all of it parts that did not change; now a socket
+ * names of the parts kept. Before #2393 it was 200,161, nearly all of it parts that did not change; now a socket
  * client is sent those once (`kept-parts`). The room is wider than the Watcher budget's because the changed record names
  * the host's folder twice, and a temporary folder's path is longer on Windows and macOS than on Linux.
  */
 const DESKTOP_PUSH_BYTES = 3_100
-/** Bytes of JSON in one thread list push to an iPhone: 1,826. It was about 199 KB; #2392 left out what no phone reads, and #2393 the rest. */
+/**
+ * Bytes of JSON in one thread list push to an iPhone: 1,826. It was about 199 KB; #2392 left out what no phone reads (73,177),
+ * and #2393 the rest.
+ */
 const PHONE_PUSH_BYTES = 2_100
 /**
  * The parts of a push to a desktop, and to an iPhone, that are as the push before had them: 7 each, the frame's `v` and
  * `event`, the state's `kept` and its host's, the host's empty `threads` and catalog revision, and the event page. They were
- * 44 and 45 before #2392 and #2393. A part added to every push goes as one more of them, unless it is kept.
+ * 44 and 41 before #2393, and the iPhone's 45 before #2392. A part added to every push goes as one more of them, unless it is kept.
  */
 const DESKTOP_UNCHANGED_PARTS = 7
 const PHONE_UNCHANGED_PARTS = 7

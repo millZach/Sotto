@@ -11,7 +11,7 @@ import { watcherToolSchemas } from '../../../src/shared/watcher'
 
 /** Commands that stay on the host machine. A new command type must land here or in REMOTE_COMMANDS. */
 // Clear now and its preview act on the computer whose Settings set them (ADR-0140 decision 7).
-const HOST_LOCAL = ['set-aside-send', 'set-thread-dynamic', 'credential', 'check-reasoning', 'update-client', 'open-thread-folder', 'preview-clear-threads', 'clear-threads']
+const HOST_LOCAL = ['set-aside-send', 'set-thread-dynamic', 'set-thread-routed', 'credential', 'check-reasoning', 'update-client', 'open-thread-folder', 'preview-clear-threads', 'clear-threads']
 /** Fields only the desktop window sends, which its router reads and never forwards to a host (ADR-0074). */
 // The desktop's router reads these and never sends them on: the host a patch or Update all's press names (ADR-0074, ADR-0077).
 // A desktop window names the machine a command acts on and its router never sends the name on (ADR-0074, ADR-0077):
@@ -21,7 +21,7 @@ const WINDOW_ONLY: Partial<Record<AgentCommand['type'], string[]>> = { configure
   // The reading the window showed, which the router names when it asks a paired host for a confirmation receipt (#1691).
   'git-pull-request-action': ['readId'],
   // A thread on another machine cannot be Dynamic (ADR-0191), so only this computer's window starts one.
-  'create-thread': ['dynamic'] }
+  'create-thread': ['dynamic', 'routed'] }
 /**
  * Fields only the host's own socket server sets, on what it tells its host service: which observed threads its paired
  * desktops show (ADR-0092). A paired client never sends them; one that tries is refused.
@@ -150,8 +150,8 @@ describe('remote command allow-list', () => {
       // the handover away, each naming the current Watcher (October 31, 2026). Pairing admits them, as it admits watching:
       // a new Watcher keeps the saved permission mode, and none answers anything.
       'watcher-phone-open', 'watcher-phone-new', 'watcher-phone-stop-turn', 'watcher-phone-dismiss-handover',
-      // A thread's Files, Changes and Agents: reads only, never commands (ADR-0025, October 5 amendment).
-      'thread-files', 'thread-file-preview', 'thread-file-link', 'thread-changes', 'thread-changes-review', 'subagent-page', 'subagent-assignments',
+      // A thread's Files, Changes and Agents, and a linked file's place, preview and parts (ADR-0120): reads only, never commands (ADR-0025, October 5 amendment).
+      'thread-files', 'thread-file-preview', 'thread-file-link', 'thread-linked-file', 'thread-changes', 'thread-changes-review', 'subagent-page', 'subagent-assignments',
       // The machine's host facts: numbers and the system's own name, read only by a desktop that lists host-facts (#1031).
       'host-facts',
       // Each project's GitHub repository, read only by a desktop that lists project-origins, to place a worker (#1032).
@@ -161,6 +161,12 @@ describe('remote command allow-list', () => {
       'project-setup',
       // A recorded desktop's new-thread default and worker roles for host delegation (#1310): settings, never a grant.
       'desktop-defaults',
+      // Account copies (ADR-0205, amending ADR-0025): a plugin account's secret and settings, taken only from the desktop
+      // the launch script recorded, on a host that lists plugin-account-copies. The one credential a client may send.
+      // Letting a copy go and listing which are held take the same desktop; nothing answers with a secret.
+      'plugin-account-copy', 'plugin-account-copy-remove', 'plugin-account-copies',
+      // Who the host's own gh is signed in as (ADR-0205), a read for a recorded desktop's Plugins page: a name, never a token.
+      'plugin-github-sign-in',
       // A host thread's delegations and a delegated thread's newest brief, reads for a recorded desktop's window on a
       // listener that offers delegation-views (#1310), never a reply and never a grant.
       'delegation-views', 'delegation-brief',
@@ -326,6 +332,10 @@ describe('remote command allow-list', () => {
     expect(refuse({ type: 'babysit-pull-request', threadId: 'thread', url })).toBeNull()
     expect(refuse({ type: 'stop-babysitting', threadId: 'thread', url })).toBeNull()
     expect(refuse({ type: 'babysit-pull-request', threadId: 'thread', url, startedBy: 'agent' } as AgentCommand, true)).toBe('forbidden')
+  })
+  it('takes git init on a new project from a paired client, as it takes the folder: it answers nothing and grants nothing', () => {
+    expect(refuse({ type: 'create-project', title: 'Fresh', path: '/home/zach/Fresh', gitInit: true })).toBeNull()
+    expect(refuse({ type: 'create-project', title: 'Fresh', gitInit: true })).toBeNull()
   })
   it('refuses host-local commands and fields outside the list', () => {
     for (const command of [

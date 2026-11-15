@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { WATCHER_RECORD_FILE } from '../../src/main/agents/watcherRecordFile'
@@ -18,7 +18,7 @@ import { startSocketServer } from '../../src/host/socketServer'
 import { canonicalModelId } from '../../src/shared/modelCatalog'
 import { rawPeer } from '../fixtures/rawHostPeer'
 import { WatcherToolServer } from '../../src/main/agents/watcherTools'
-import { HostConnectionError, HostRequestTimeoutError, SocketHostService } from '../../src/main/agents/socketHostService'
+import { HostConnectionError, HostRequestTimeoutError, HostRequestUnanswered, SocketHostService } from '../../src/main/agents/socketHostService'
 import { DesktopHostRouter } from '../../src/main/hosts/desktopHostRouter'
 import { emptyDesktopState } from '../../src/main/hosts/inactiveLocalHost'
 import { DESKTOP_CLIENTS_FILE } from '../../src/shared/desktopClients'
@@ -2870,4 +2870,19 @@ it('stops a check waiting on a paired host whose start’s answer was lost, once
   await expect.poll(() => f.socket.shell().host.threads.some(thread => thread.id === third.target.threadId), { timeout: 5_000 }).toBe(true)
   expect(f.socket.shell().host.threads.some(thread => thread.id === target.threadId)).toBe(false)
   expect(forget).toHaveBeenCalledTimes(1)
+})
+
+// ADR-0073, November 12, 2026, and Bug Bot on #2519, L3: add_project on a paired machine runs that machine's own
+// create-project, and an add whose answer never came back may have happened there.
+it('makes a project with Git on a paired machine that start_thread uses, and says an unanswered add may have happened', async () => {
+  const f = await master()
+  const path = join(remote.root, 'Fresh Index')
+  const made = await f.call('add_project', { requestId: f.requestId, retryKey: randomUUID(), hostId: f.pairing.hostId, path, newFolder: true, gitInit: true })
+  if (made.status !== 'ok') throw new Error(made.message)
+  expect(made).toMatchObject({ folderMade: true, gitInitialized: true, alreadyAdded: false, project: { target: { hostId: f.pairing.hostId }, displayRoot: path } })
+  expect((await stat(join(path, '.git'))).isDirectory()).toBe(true)
+  expect(await f.call('start_thread', { ...f.start(), project: made.project.target })).toMatchObject({ status: 'ok' })
+  vi.spyOn(f.socket, 'command').mockRejectedValueOnce(new HostRequestUnanswered('Synthetic closed connection', 'closed'))
+  expect(await f.call('add_project', { requestId: f.requestId, retryKey: randomUUID(), hostId: f.pairing.hostId, path: join(remote.root, 'Lost'), newFolder: true }))
+    .toMatchObject({ status: 'refused', code: 'DELIVERY_UNCERTAIN', retryable: true, message: expect.stringContaining('list_projects') })
 })

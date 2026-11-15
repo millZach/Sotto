@@ -14,6 +14,12 @@
  *
  * `--data` is the host's data folder (its `host-listener.json` holds the admin port and token, which are never printed).
  * `--no-open` leaves out the opened thread. Run it on the host's own machine.
+ *
+ * `--offer-deflate` offers `permessage-deflate` bare, as the iPhone's URLSession does (#2394). A host that answers it, as
+ * one from November 10, 2026 on does unless started with `SOTTO_HOST_COMPRESS_PHONES=0`, sends compressed messages; the
+ * report then says what the host answered (`negotiated`, null when it answered nothing) and adds `wireBytes`, the payload
+ * bytes as they came over the socket, beside `bytes`, each message's size once inflated, and `deflatedBytes`, the
+ * estimate. Without it the probe offers nothing, as before.
  */
 import { Buffer } from 'node:buffer'
 import { randomBytes } from 'node:crypto'
@@ -23,7 +29,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import process from 'node:process'
 import { clearInterval, setInterval, setTimeout } from 'node:timers'
-import { deflateRawSync, constants as zlib } from 'node:zlib'
+import { deflateRawSync, inflateRawSync, constants as zlib } from 'node:zlib'
 // The iPhone's hello `accepts`, read from its source so this never drifts from the app; the benchmarks read it the same way.
 import { iphoneAccepts } from '../../tests/fixtures/iphoneAccepts.mjs'
 
@@ -32,6 +38,7 @@ const option = (name, fallback) => { const index = args.indexOf(`--${name}`); re
 const data = String(option('data', join(homedir(), '.sotto'))).replace(/^~/u, homedir())
 const listSeconds = Number(option('list-seconds', 60)), threadSeconds = Number(option('thread-seconds', 60))
 const open = !args.includes('--no-open')
+const offerDeflate = args.includes('--offer-deflate')
 
 function post(port, path, token, body) {
   return new Promise((resolve, reject) => {
@@ -60,14 +67,35 @@ function addStateParts(state, into, { host = 'host', watcher = 'watcher', own = 
 }
 const deflated = buffer => buffer.length < 1024 ? buffer.length : Math.min(buffer.length, deflateRawSync(buffer, { level: 6, finishFlush: zlib.Z_SYNC_FLUSH }).length)
 
-/** A WebSocket client that offers no extension, as a phone the host does not compress for, and counts what it is sent. */
-function socket(port, session, onMessage) {
+/** The empty block a sync-flushed deflate ends with, which RFC 7692 has the sender drop and the reader put back. */
+const DEFLATE_TAIL = Buffer.from([0x00, 0x00, 0xff, 0xff])
+/**
+ * Whether the host's answer to the bare offer turned compression on. Each message must stand alone
+ * (`server_no_context_takeover`), since this reader inflates each one afresh; any other answer the probe cannot read ends it.
+ */
+function negotiated(answer) {
+  if (typeof answer !== 'string' || !answer.trim()) return false
+  const [name, ...params] = answer.split(';').map(part => part.trim().toLowerCase())
+  const known = params.every(param => param === 'server_no_context_takeover' || param === 'client_no_context_takeover' || /^server_max_window_bits=(8|9|1[0-5])$/u.test(param))
+  if (name !== 'permessage-deflate' || answer.includes(',') || !known || !params.includes('server_no_context_takeover')) throw new Error('The host answered the offer in a form this probe cannot read')
+  return true
+}
+
+/**
+ * A WebSocket client that counts what it is sent. It offers no extension, as a phone the host does not compress for,
+ * unless `offer` is set, and then offers `permessage-deflate` bare, as the iPhone does, and inflates what comes compressed.
+ * `onMessage` is given each message whole, inflated, and the payload bytes it took on the wire.
+ */
+function socket(port, session, onMessage, offer = false) {
   return new Promise((resolve, reject) => {
-    const request = httpRequest({ host: '127.0.0.1', port, path: '/v1/socket', headers: { Upgrade: 'websocket', Connection: 'Upgrade', 'Sec-WebSocket-Version': '13', 'Sec-WebSocket-Key': randomBytes(16).toString('base64'), Authorization: `Bearer ${session}` } })
+    const request = httpRequest({ host: '127.0.0.1', port, path: '/v1/socket', headers: { Upgrade: 'websocket', Connection: 'Upgrade', 'Sec-WebSocket-Version': '13', 'Sec-WebSocket-Key': randomBytes(16).toString('base64'), ...(offer ? { 'Sec-WebSocket-Extensions': 'permessage-deflate' } : {}), Authorization: `Bearer ${session}` } })
     request.on('error', reject)
     request.on('response', response => reject(new Error(`The socket upgrade answered ${response.statusCode}`)))
-    request.on('upgrade', (_response, stream, head) => {
-      let buffer = Buffer.from(head), fragments = null
+    request.on('upgrade', (response, stream, head) => {
+      const answer = response.headers['sec-websocket-extensions']
+      let deflate
+      try { deflate = offer && negotiated(answer) } catch (error) { stream.destroy(); reject(error); return }
+      let buffer = Buffer.from(head), fragments = null, compressed = false, wire = 0
       const write = (opcode, payload) => {
         const mask = randomBytes(4), length = payload.length
         const header = length < 126 ? Buffer.from([0x80 | opcode, 0x80 | length]) : length < 65536 ? Buffer.from([0x80 | opcode, 0x80 | 126, length >> 8, length & 255]) : (() => { const wide = Buffer.alloc(10); wide[0] = 0x80 | opcode; wide[1] = 0x80 | 127; wide.writeBigUInt64BE(BigInt(length), 2); return wide })()
@@ -77,7 +105,8 @@ function socket(port, session, onMessage) {
       const read = () => {
         for (;;) {
           if (buffer.length < 2) return
-          const opcode = buffer[0] & 15, fin = (buffer[0] & 128) !== 0
+          // RSV1 on a message's first frame marks it compressed, on a connection that negotiated it; never otherwise.
+          const opcode = buffer[0] & 15, fin = (buffer[0] & 128) !== 0, rsv1 = (buffer[0] & 64) !== 0
           let length = buffer[1] & 127, header = 2
           if (length === 126) { if (buffer.length < 4) return; length = buffer.readUInt16BE(2); header = 4 }
           else if (length === 127) { if (buffer.length < 10) return; length = Number(buffer.readBigUInt64BE(2)); header = 10 }
@@ -87,13 +116,22 @@ function socket(port, session, onMessage) {
           if (opcode === 9) { write(10, payload); continue }
           if (opcode === 10) continue
           if (opcode === 8) { stream.end(); return }
-          if (opcode === 0) { if (fragments) fragments.push(payload) } else fragments = [payload]
-          if (fin && fragments) { const whole = Buffer.concat(fragments); fragments = null; onMessage(whole) }
+          if (opcode === 0) { if (fragments) { fragments.push(payload); wire += payload.length } } else { fragments = [payload]; wire = payload.length; compressed = rsv1 }
+          // Its answers then never come, so the probe stops at its wait and still removes its pairing.
+          if (compressed && !deflate) { console.error('The host sent a compressed frame it never negotiated.'); process.exitCode = 1; stream.destroy(); return }
+          if (fin && fragments) {
+            const joined = Buffer.concat(fragments)
+            let whole
+            // At most the host's 16 MiB message cap once inflated, as the iPhone's `maximumMessageSize` is.
+            try { whole = compressed ? inflateRawSync(Buffer.concat([joined, DEFLATE_TAIL]), { maxOutputLength: 16 * 1024 * 1024, finishFlush: zlib.Z_SYNC_FLUSH }) : joined }
+            catch { console.error('A compressed message from the host could not be read.'); process.exitCode = 1; stream.destroy(); return }
+            fragments = null; onMessage(whole, wire)
+          }
         }
       }
       stream.on('data', part => { buffer = buffer.length ? Buffer.concat([buffer, part]) : part; read() })
       stream.on('error', () => undefined)
-      resolve({ send: message => write(1, Buffer.from(JSON.stringify(message))), ping: () => write(9, Buffer.alloc(0)), close: () => { write(8, Buffer.alloc(0)); stream.end() }, closed: new Promise(done => stream.on('close', done)) })
+      resolve({ negotiated: deflate ? String(answer) : null, send: message => write(1, Buffer.from(JSON.stringify(message))), ping: () => write(9, Buffer.alloc(0)), close: () => { write(8, Buffer.alloc(0)); stream.end() }, closed: new Promise(done => stream.on('close', done)) })
       read()
     })
     request.end()
@@ -101,11 +139,13 @@ function socket(port, session, onMessage) {
 }
 
 const fresh = () => ({ events: {}, shellFields: {}, hostFields: {}, watcherFields: {}, changedRecords: 0 })
-function tallyMessage(tally, raw) {
+/** `wire` is the payload bytes the message took on the socket, counted only with `--offer-deflate`. */
+function tallyMessage(tally, raw, wire) {
   const message = JSON.parse(raw.toString('utf8'))
   const name = message.event ?? (message.id ? 'reply' : 'other')
-  const entry = tally.events[name] ??= { frames: 0, bytes: 0, deflatedBytes: 0, maxBytes: 0 }
+  const entry = tally.events[name] ??= { frames: 0, bytes: 0, deflatedBytes: 0, maxBytes: 0, ...(offerDeflate ? { wireBytes: 0 } : {}) }
   entry.frames++; entry.bytes += raw.length; entry.deflatedBytes += deflated(raw); entry.maxBytes = Math.max(entry.maxBytes, raw.length)
+  if (offerDeflate) entry.wireBytes += wire
   if (name === 'shell') {
     addStateParts(message.state, tally, { host: 'hostFields', watcher: 'watcherFields', own: 'shellFields' })
     if (message.threads) { tally.shellFields['(changed thread records)'] = (tally.shellFields['(changed thread records)'] ?? 0) + size(message.threads); tally.changedRecords += message.threads.changed?.length ?? 0 }
@@ -114,7 +154,8 @@ function tallyMessage(tally, raw) {
 }
 const top = (table, limit = 12) => Object.fromEntries(Object.entries(table).sort((a, b) => b[1] - a[1]).slice(0, limit))
 const summed = tally => {
-  const totals = Object.values(tally.events).reduce((sum, entry) => ({ frames: sum.frames + entry.frames, bytes: sum.bytes + entry.bytes, deflatedBytes: sum.deflatedBytes + entry.deflatedBytes }), { frames: 0, bytes: 0, deflatedBytes: 0 })
+  const totals = Object.values(tally.events).reduce((sum, entry) => ({ frames: sum.frames + entry.frames, bytes: sum.bytes + entry.bytes, deflatedBytes: sum.deflatedBytes + entry.deflatedBytes,
+    ...(offerDeflate ? { wireBytes: sum.wireBytes + entry.wireBytes } : {}) }), { frames: 0, bytes: 0, deflatedBytes: 0, ...(offerDeflate ? { wireBytes: 0 } : {}) })
   return { ...totals, events: tally.events, changedThreadRecords: tally.changedRecords, shellBytesByField: top(tally.shellFields), shellHostBytesByField: top(tally.hostFields), shellWatcherPageBytesByField: top(tally.watcherFields) }
 }
 const wait = seconds => new Promise(resolve => setTimeout(resolve, seconds * 1000))
@@ -139,7 +180,9 @@ try {
   clientId = paired.clientId
   const { session } = await post(phonePort, '/v1/session', paired.token)
   let tally = fresh(), waiting = new Map()
-  const peer = await socket(phonePort, session, raw => { const message = tallyMessage(tally, raw); const done = message.id && waiting.get(message.id); if (done) { waiting.delete(message.id); done({ message, bytes: raw.length, deflatedBytes: deflated(raw) }) } })
+  const peer = await socket(phonePort, session, (raw, wire) => { const message = tallyMessage(tally, raw, wire); const done = message.id && waiting.get(message.id); if (done) { waiting.delete(message.id); done({ message, bytes: raw.length, deflatedBytes: deflated(raw), wireBytes: wire }) } }, offerDeflate)
+  // What the host answered the iPhone's offer: its extension answer when it compresses, null when it left the offer unanswered.
+  if (offerDeflate) report.negotiated = peer.negotiated
   const ask = (id, operation) => new Promise((resolve, reject) => { waiting.set(id, resolve); setTimeout(() => reject(new Error(`No answer to ${id}`)), 60_000).unref(); peer.send({ v: 1, id, session, ...operation }) })
   const pings = setInterval(() => peer.ping(), 25_000)
 
@@ -152,7 +195,7 @@ try {
   const parts = { own: {}, host: {}, watcher: {} }
   addStateParts(state, parts, { own: 'own' })
   const helloParts = { ...parts.own, ...Object.fromEntries(Object.entries(parts.host).map(([key, bytes]) => [`host.${key}`, bytes])), ...Object.fromEntries(Object.entries(parts.watcher).map(([key, bytes]) => [`watcher.${key}`, bytes])) }
-  report.hello = { bytes: hello.bytes, deflatedBytes: hello.deflatedBytes, threadsListed: threads.length, settledHeldBack: state?.settledHeldBack ?? null, models: state?.host?.models?.length ?? null, bytesByField: top(helloParts, 14) }
+  report.hello = { bytes: hello.bytes, deflatedBytes: hello.deflatedBytes, ...(offerDeflate ? { wireBytes: hello.wireBytes } : {}), threadsListed: threads.length, settledHeldBack: state?.settledHeldBack ?? null, models: state?.host?.models?.length ?? null, bytesByField: top(helloParts, 14) }
   await ask('observe-none', { op: 'observe', threadIds: [] })
   await wait(2)
   report.connect = summed(tally)
@@ -171,7 +214,7 @@ try {
       const observed = await ask('observe-one', { op: 'observe', threadIds: [target.id] })
       await wait(3)
       const opened = summed(tally)
-      report.openThread = { working: target.status === 'running', answerBytes: observed.bytes, ...opened }
+      report.openThread = { working: target.status === 'running', answerBytes: observed.bytes, ...(offerDeflate ? { answerWireBytes: observed.wireBytes } : {}), ...opened }
       tally = fresh()
       await wait(threadSeconds)
       report.threadOpen = { seconds: threadSeconds, working: target.status === 'running', ...summed(tally) }

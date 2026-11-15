@@ -20,7 +20,7 @@ function escapeXml(value) {
 
 await mkdir(outputRoot, { recursive: true })
 const groups = [
-  ...['onboarding', 'home', 'history', 'settings', 'help', 'scale', 'widget'].map((category) => ({ id: category, entries: manifest.entries.filter((entry) => entry.category === category) })),
+  ...['setup', 'home', 'history', 'settings', 'help', 'scale', 'widget'].map((category) => ({ id: category, entries: manifest.entries.filter((entry) => entry.category === category) })),
   ...[100, 125, 150, 200].map((scale) => ({ id: `scale-${scale}`, entries: manifest.entries.filter((entry) => entry.scalePercent === scale && entry.category === 'scale') })),
   { id: 'motion', entries: manifest.entries.filter((entry) => entry.motion === 'reduced' || /reduced-motion/u.test(entry.id)) },
   { id: 'focus', entries: manifest.entries.filter((entry) => entry.focusTarget !== undefined && entry.focusTarget !== 'none' || entry.focus === true) },

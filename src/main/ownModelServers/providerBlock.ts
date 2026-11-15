@@ -1,8 +1,8 @@
-import type { OwnServer, OwnServerModel } from '../../shared/ownModelServers'
+import { modelEfforts, type OwnServer, type OwnServerModel } from '../../shared/ownModelServers'
 
 /**
- * How a saved server reaches OpenCode (ADR-0124): one provider block per server in `OPENCODE_CONFIG_CONTENT`, built from
- * Sotto's record at each start, so nothing is written into Sotto's OpenCode folder. OpenCode never asks such a server for
+ * How a saved server reaches OpenCode (ADR-0124): one provider block per server in a key-free config snapshot, built from
+ * Sotto's record at each start. OpenCode never asks such a server for
  * its models, so each is declared with its limits, its input and whether it thinks (checked against OpenCode 2.1.4).
  */
 
@@ -13,8 +13,6 @@ export const OPENCODE_OPENAI_COMPATIBLE = '@opencode/ai/providers/openai-compati
  * secret, and a key signed in through `connect/key` wins over it.
  */
 export const OWN_SERVER_PLACEHOLDER_KEY = 'sotto-no-key'
-/** The effort levels a thinking model is given; OpenCode sends the chosen one as `reasoning_effort`. */
-const THINKING_EFFORTS = ['low', 'medium', 'high'] as const
 /** The longest answer a model is told it may give when the server does not say. */
 const OUTPUT_CAP = 32_000
 
@@ -27,11 +25,11 @@ function modelBlock(model: OwnServerModel): Record<string, unknown> {
   return {
     name: model.name,
     capabilities: {
-      tools: true,
+      tools: model.tools ?? true,
       input: model.images ? ['text', 'image'] : ['text'],
       output: ['text'],
       // Declared either way: a model that declares nothing is given effort levels by OpenCode.
-      reasoning: model.thinking ? { supported: true, effort: [...THINKING_EFFORTS] } : { supported: false },
+      reasoning: model.thinking ? { supported: true, effort: modelEfforts(model).filter(level => level !== 'default').map(level => level === 'off' ? 'none' : level) } : { supported: false },
     },
     limit: { context: model.context, output: ownModelOutput(model) },
   }
@@ -51,4 +49,12 @@ export function openCodeProviderBlock(server: OwnServer): Record<string, unknown
 export function openCodeProviders(servers: readonly OwnServer[]): Record<string, Record<string, unknown>> {
   return Object.fromEntries(servers.filter(server => !server.keyed || server.keyKeeper !== 'hermes')
     .map(server => [server.id, openCodeProviderBlock(server)]))
+}
+
+
+/** Small route overrides stay inline so a project's configuration cannot redirect a saved source or its key. */
+export function openCodeProviderRoutes(servers: readonly OwnServer[]): Record<string, unknown> {
+  return Object.fromEntries(servers.filter(server => !server.keyed || server.keyKeeper !== 'hermes').map(server => [server.id, {
+    package: OPENCODE_OPENAI_COMPATIBLE, settings: { baseURL: server.address, apiKey: OWN_SERVER_PLACEHOLDER_KEY },
+  }]))
 }

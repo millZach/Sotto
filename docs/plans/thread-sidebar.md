@@ -1,5 +1,7 @@
 # Give thread rows context and a resizable sidebar
 
+November 10, 2026: project folders are no longer the default. The sidebar groups open threads by status, and these folders are Settings' **By project** choice ([ADR-0201](../adr/0201-the-threads-sidebar-groups-open-threads-by-status.md)).
+
 Zach chose prototype A on September 19, 2026: project folders, title and time first, provider/status beneath, branch and model context at wider widths. Keep every existing symbol; specifically preserve the Lucide Settings gear. The prototype's hand-drawn icons are rejected.
 
 Acceptance checks:

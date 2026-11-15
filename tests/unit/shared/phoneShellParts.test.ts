@@ -15,9 +15,16 @@ import { PHONE_SENT_STATE_PARTS } from '../../fixtures/shellParts'
  */
 // The list of what a phone is sent is `PHONE_SENT_STATE_PARTS`, beside the fixture the listener's own test uses.
 
-/** Every source file of a native client, as one text. */
+/**
+ * Native source that writes the host's parts rather than reads them: the iPhone benchmarks make up each part a host sent a
+ * phone on November 10, 2026 at its size (`BenchWire.hostParts`), and say the phone reads past them.
+ */
+const WRITES_THE_PARTS = new Set(['SottoCore/BenchWire.swift'])
+
+/** Every source file of a native client that could read a part, as one text. */
 function sources(folder: string, extension: string): string {
-  return readdirSync(folder, { recursive: true }).map(String).filter(name => name.endsWith(extension)).map(name => readFileSync(join(folder, name), 'utf8')).join('\n')
+  return readdirSync(folder, { recursive: true }).map(String).filter(name => name.endsWith(extension) && !WRITES_THE_PARTS.has(name.replaceAll('\\', '/')))
+    .map(name => readFileSync(join(folder, name), 'utf8')).join('\n')
 }
 
 describe('the parts of a shell a phone is sent', () => {

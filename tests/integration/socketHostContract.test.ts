@@ -22,8 +22,10 @@ let buildRoot: string
 beforeAll(async () => {
   buildRoot = await mkdtemp(join(tmpdir(), 'sotto-socket-build-'))
   // The child runs this desktop's own client of the host (its host router and socket client), so it is built as main is.
+  // This one cold Vite/Lingui build can exceed the default 15 s hook limit on a loaded Windows shard (#2462).
+  // Give setup its own budget; every contract assertion, test deadline and child-readiness deadline stays unchanged.
   await bundleDesktopMain('tests/fixtures/socketHostChild.ts', join(buildRoot, 'host.cjs'))
-})
+}, 120_000)
 afterAll(async () => { if (buildRoot && dirname(buildRoot) === tmpdir() && buildRoot.includes('sotto-socket-build-')) await rm(buildRoot, { recursive: true, force: true }) })
 /**
  * A host in a child process, and a desktop's client of it. `tailnet` puts the client on the host's tailnet connection

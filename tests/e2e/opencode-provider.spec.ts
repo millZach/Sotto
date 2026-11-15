@@ -63,7 +63,7 @@ test('uses OpenCode in Owl over its own server, restores each turn under its pro
   try {
     launched = await launch()
     const { page } = launched
-    await page.evaluate(() => window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', reducedMotion: 'on' }))
+    await page.evaluate(() => window.sotto!.updateSettings({ onboardingComplete: true, threadListGrouping: 'project', appearance: 'dark', reducedMotion: 'on' }))
     await page.reload()
 
     // Settings > Providers > OpenCode: connected on Sotto's own folder, its version, and no model source signed in yet.

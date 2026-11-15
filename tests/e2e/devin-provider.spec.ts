@@ -47,7 +47,7 @@ test('uses Devin through the native adapter and preserves explicit thread decisi
   try {
     launched = await launchSotto('success', profile)
     const { page } = launched
-    await page.evaluate(() => window.sotto!.updateSettings({ onboardingComplete: true }))
+    await page.evaluate(() => window.sotto!.updateSettings({ onboardingComplete: true, threadListGrouping: 'project' }))
     await page.reload()
     await page.getByRole('link', { name: 'Settings', exact: true }).click()
     await page.getByRole('tab', { name: 'Providers', exact: true }).click()

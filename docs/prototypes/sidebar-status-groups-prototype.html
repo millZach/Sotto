@@ -1,0 +1,465 @@
+<!doctype html>
+<!-- PROTOTYPE — throwaway. Question: what should the Threads sidebar look like grouped by status, the iPhone's way?
+     Zach's picks (November 10, 2026): a choice in Settings with status groups the new default; the iPhone's groups
+     exactly (Needs you, Working now, Recent, then Snoozed and Settled folded); Needs you is the first group and a waiting
+     row pops the same card the Needs you card pops today; projects show on the row only.
+     Undecided, so drawn three ways: A = the iPhone's rows; B = today's desktop rows, grouped; C = live cards over a quiet
+     list. The bar on top compares: today's project folders, the collapsed rail (status or project trays), a remote host
+     connected, light and dark. Same twenty threads in every view. -->
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sidebar by status — prototype</title>
+<style>
+@font-face{font-family:'Manrope';font-weight:200 800;src:url('manrope-latin.woff2') format('woff2')}
+:root{
+  --canvas:oklch(0.115 0.008 265);--pane:oklch(0.145 0.008 265);--sidebar:oklch(0.205 0.004 265);--card:oklch(0.245 0.006 265);
+  --inset:oklch(0.29 0.008 265);--text:oklch(0.985 0.005 280);--text2:oklch(0.86 0.01 265);--muted:oklch(0.72 0.014 265);
+  --hair:oklch(0.305 0.02 265);--accent:oklch(0.714 0.104 183);--accent-surface:oklch(0.32 0.05 185);--attn:oklch(0.829 0.171 81);
+  --attn-ring:oklch(0.772 0.173 65);--danger:oklch(0.702 0.189 22);--success:oklch(0.76 0.15 155);--activity:oklch(0.714 0.104 183);
+  --btn:oklch(0.27 0.006 265);--pop:oklch(0.235 0.006 265);--shadow:0 12px 32px rgba(0,0,0,.55);--tray:color-mix(in oklch,var(--accent) 8%,transparent);
+  --tray-edge:color-mix(in oklch,var(--accent) 24%,transparent);
+}
+body.light{
+  --canvas:oklch(0.978 0.004 85);--pane:oklch(0.99 0.003 85);--sidebar:oklch(0.945 0.007 85);--card:oklch(0.975 0.004 85);
+  --inset:oklch(0.91 0.01 85);--text:oklch(0.235 0.014 75);--text2:oklch(0.36 0.014 75);--muted:oklch(0.47 0.014 75);
+  --hair:oklch(0.86 0.012 80);--accent:oklch(0.53 0.095 186);--accent-surface:oklch(0.9 0.04 186);--attn:oklch(0.5 0.155 45);
+  --attn-ring:oklch(0.6 0.16 50);--danger:oklch(0.51 0.209 28);--success:oklch(0.5 0.13 155);--activity:oklch(0.53 0.095 186);
+  --btn:oklch(0.93 0.01 85);--pop:oklch(0.99 0.003 85);--shadow:0 12px 32px rgba(60,40,20,.18);
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--canvas);color:var(--text);font:14px/1.35 Manrope,Figtree,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+button{font:inherit;color:inherit}
+.proto-bar{position:sticky;top:0;z-index:50;display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;padding:8px 12px;background:#111;color:#eee;font-size:12.5px;border-bottom:1px solid #333}
+.proto-bar b{font-weight:700;color:#ffcf5a;letter-spacing:.02em}
+.proto-bar .seg{display:inline-flex;border:1px solid #444;border-radius:6px;overflow:hidden}
+.proto-bar .seg button{background:#1d1d1d;border:0;padding:4px 9px;cursor:pointer;color:#ccc}
+.proto-bar .seg button[aria-pressed=true]{background:#e9e9e9;color:#111;font-weight:600}
+.proto-bar label{display:inline-flex;gap:6px;align-items:center;color:#bbb}
+.stage{display:flex;justify-content:center;padding:18px 12px 110px}
+.window{display:flex;width:1080px;height:720px;max-width:100%;border:1px solid var(--hair);border-radius:10px;overflow:hidden;background:var(--pane);box-shadow:0 20px 60px rgba(0,0,0,.35)}
+.sidebar{position:relative;flex:none;width:280px;display:flex;flex-direction:column;background:var(--sidebar);border-right:1px solid var(--hair)}
+.top{display:flex;align-items:center;gap:6px;padding:10px 10px 8px}
+.top .logo{width:22px;height:22px;border-radius:6px;background:var(--accent);margin-right:auto}
+.icon-btn{width:28px;height:28px;display:grid;place-items:center;border:0;background:transparent;border-radius:6px;color:var(--muted);cursor:pointer}
+.icon-btn:hover{background:var(--btn);color:var(--text)}
+.search-row{display:flex;gap:6px;padding:0 8px 8px}
+.search{flex:1;display:flex;align-items:center;gap:8px;height:32px;padding:0 10px;border:1px solid var(--hair);border-radius:7px;color:var(--muted);font-size:13px;background:color-mix(in oklch,var(--canvas) 40%,transparent)}
+.computers{display:flex;align-items:center;gap:6px;height:32px;padding:0 8px;border:1px solid var(--hair);border-radius:7px;background:transparent;font-size:12.5px;color:var(--text2);cursor:pointer;white-space:nowrap}
+.computers i{width:7px;height:7px;border-radius:50%;background:var(--accent)}
+.list{flex:1;overflow:auto;padding:2px 4px 8px}
+.foot{display:flex;gap:4px;align-items:center;padding:8px 10px;border-top:1px solid transparent;color:var(--muted)}
+.foot span{width:28px;height:28px;display:grid;place-items:center;border-radius:6px}
+.foot span.on{background:var(--btn);color:var(--text)}
+.pane{flex:1;display:flex;flex-direction:column;min-width:0}
+.pane-head{display:flex;align-items:center;gap:10px;height:44px;padding:0 18px;border-bottom:1px solid var(--hair);font-weight:600}
+.pane-head small{color:var(--muted);font-weight:500}
+.pane-body{flex:1;padding:22px 26px;color:var(--text2);display:flex;flex-direction:column;gap:14px}
+.bubble{align-self:flex-end;max-width:70%;background:var(--card);border-radius:12px;padding:12px 16px}
+.ghost-line{height:10px;border-radius:5px;background:var(--inset);opacity:.6}
+.composer{margin:0 18px 16px;height:74px;border-radius:14px;background:var(--card);color:var(--muted);padding:14px 16px}
+.mark{display:inline-block;flex:none;fill:currentColor;color:var(--text2)}
+.mark[data-p=claude]{color:oklch(0.7 0.13 45)}
+body.light .mark[data-p=claude]{color:oklch(0.58 0.14 45)}
+.ring{flex:none;width:12px;height:12px;border-radius:50%;border:1.5px solid var(--hair)}
+.ring[data-s=needs]{border:2px solid var(--attn-ring)}
+.ring[data-s=failed]{border:2px solid var(--danger)}
+.ring[data-s=working]{border:1.5px solid color-mix(in oklch,var(--activity) 26%,transparent);border-top-color:var(--activity);animation:spin 1.5s linear infinite}
+.ring[data-s=unread]{border:1.5px solid var(--success);background:radial-gradient(circle,var(--success) 0 28%,transparent 30%)}
+.ring[data-s=off]{border:1.5px solid var(--hair);opacity:.9}
+@keyframes spin{to{rotate:360deg}}
+@media (prefers-reduced-motion:reduce){.ring{animation:none!important}}
+body.still .ring{animation:none!important}
+/* group headings */
+.group{margin-top:6px}
+.group:first-child{margin-top:0}
+.gh{display:flex;align-items:baseline;gap:6px;padding:10px 10px 4px;font-size:12px;font-weight:600;color:var(--muted)}
+.gh .n{font-weight:500;font-variant-numeric:tabular-nums}
+.gh.toggle{width:100%;border:0;background:transparent;cursor:pointer;text-align:left;border-radius:6px}
+.gh.toggle:hover{background:color-mix(in oklch,var(--btn) 60%,transparent);color:var(--text)}
+.chev{display:inline-block;transition:rotate .15s;width:12px}
+[aria-expanded=true] .chev{rotate:90deg}
+/* rows */
+.row{position:relative;display:grid;grid-template-columns:18px minmax(0,1fr) auto;column-gap:8px;row-gap:2px;align-items:center;width:100%;padding:7px 10px 7px 10px;border:1px solid transparent;border-radius:8px;background:transparent;text-align:left;cursor:pointer}
+.row:hover{background:color-mix(in oklch,var(--btn) 70%,transparent)}
+.row.current{background:var(--accent-surface);border-color:color-mix(in oklch,var(--accent) 55%,transparent)}
+.row .ring{justify-self:center}
+.row .t{grid-column:2;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:500}
+.row .when{grid-column:3;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.row .l2{grid-column:2/4;display:flex;align-items:center;gap:6px;min-width:0;font-size:12px;color:var(--muted)}
+.row .l2 .txt{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .l2 .st{margin-left:auto;white-space:nowrap}
+.row .l2 .st[data-s=needs]{color:var(--attn)}
+.row .l2 .st[data-s=working]{color:var(--activity)}
+.row .l2 .st[data-s=unread]{color:var(--success)}
+.row .l2 .st[data-s=failed],.row .l2 .txt.failed{color:var(--danger)}
+.row .l3{grid-column:2/4;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row.rest .t{color:var(--text2);font-weight:450}
+.row.oneline{padding-block:5px}
+.row.muted .t{color:var(--text2);font-size:13px}
+.row .l2 .dismiss{color:var(--text2);font-weight:600;cursor:pointer}
+.row .dismiss:hover{color:var(--text)}
+.unread .t{font-weight:700}
+.owl{display:inline-block;width:12px;height:12px;flex:none}
+/* variant C cards */
+.cards{display:grid;gap:6px;padding:2px 4px}
+.card{display:grid;grid-template-columns:18px minmax(0,1fr) auto;column-gap:8px;row-gap:3px;align-items:center;padding:9px 10px;border-radius:10px;background:var(--card);border:1px solid transparent;text-align:left;cursor:pointer;width:100%}
+.card.current{border-color:color-mix(in oklch,var(--accent) 55%,transparent);background:var(--accent-surface)}
+.card .t{grid-column:2;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card .when{grid-column:3;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.card .say{grid-column:2/4;font-size:12.5px;color:var(--text2);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.card .l2{grid-column:2/4;display:flex;gap:6px;align-items:center;font-size:12px;color:var(--muted);min-width:0;white-space:nowrap}
+.card .l2 .pl{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.card .l2 .st{margin-left:auto}
+.card .l2 .st[data-s=needs]{color:var(--attn);font-weight:600}
+.card .l2 .st[data-s=working]{color:var(--activity)}
+.dense .row{padding-block:4px}
+.dense .row .proj{grid-column:3;font-size:12px;color:var(--muted);margin-right:0}
+/* shelves */
+.shelf{display:flex;align-items:center;gap:6px;width:100%;padding:8px 10px;border:0;background:transparent;color:var(--text2);font-weight:500;cursor:pointer;border-radius:6px;margin-top:6px}
+.shelf:hover{background:color-mix(in oklch,var(--btn) 60%,transparent)}
+.shelf .n{color:var(--muted);font-weight:500;margin-left:2px}
+.sub{padding:6px 10px 2px 28px;font-size:11.5px;color:var(--muted);font-weight:600}
+/* today: folders */
+.folder-head{display:flex;align-items:center;gap:7px;width:100%;padding:8px 10px;border:0;background:transparent;cursor:pointer;font-weight:600;color:var(--text);border-radius:6px}
+.folder-head:hover{background:color-mix(in oklch,var(--btn) 60%,transparent)}
+.folder-head .cnt{margin-left:auto;color:var(--muted);font-weight:500;font-size:12px}
+.hostbadge{font-size:10.5px;font-weight:600;color:var(--text2);background:var(--inset);border-radius:4px;padding:0 5px}
+.needs-card{margin:0 8px 8px;padding:6px 4px 4px;border-radius:10px;background:var(--card)}
+.needs-card h4{margin:2px 8px 4px;font-size:12px;color:var(--muted);font-weight:600}
+.needs-card .e{display:flex;align-items:center;gap:8px;padding:6px 8px;font-size:13px;border-radius:6px;cursor:pointer}
+.needs-card .e:hover{background:var(--btn)}
+.needs-card .e .w{margin-left:auto;font-size:12px;color:var(--muted)}
+.needs-card .e .a{font-size:12px;font-weight:600;color:var(--text);background:var(--btn);border-radius:6px;padding:2px 8px}
+.inq{color:var(--muted)!important}
+/* rail */
+.rail{width:64px;flex:none;display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px 0;background:var(--sidebar);border-right:1px solid var(--hair);overflow:auto}
+.tile{position:relative;width:38px;height:38px;flex:none;display:grid;place-items:center;border-radius:9px;background:var(--card);border:1px solid var(--hair);cursor:pointer}
+.tile.small{width:30px;height:30px;opacity:.85}
+.tile.waiting{border-color:var(--attn-ring)}
+.tile.current{border-color:color-mix(in oklch,var(--accent) 70%,transparent);background:var(--accent-surface)}
+.tile .ring{position:absolute;right:-2px;bottom:-2px;width:11px;height:11px;background:var(--sidebar)}
+.tray{display:flex;flex-direction:column;align-items:center;gap:6px;padding:6px 5px;border-radius:12px;background:var(--tray);border:1px solid var(--tray-edge);width:52px}
+.tray.rest{background:transparent;border-color:transparent}
+.tray .lab{font-size:8.5px;font-weight:700;color:var(--muted);text-align:center;line-height:1.1;max-width:46px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.watcher{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;background:var(--inset);border:1px solid var(--hair)}
+/* popover */
+.pop{position:absolute;z-index:20;width:330px;padding:14px 16px;border-radius:12px;background:var(--pop);border:1px solid var(--hair);box-shadow:var(--shadow)}
+.pop h5{margin:0 0 4px;font-size:13px}
+.pop p{margin:0 0 10px;color:var(--muted);font-size:12.5px}
+.pop code{display:block;padding:8px 10px;border:1px solid var(--hair);border-radius:7px;font:12px ui-monospace,monospace;margin-bottom:10px;color:var(--text)}
+.pop .btns{display:flex;gap:8px}
+.pop .btns button{border:1px solid var(--hair);background:transparent;border-radius:7px;padding:5px 14px;font-weight:600;cursor:pointer}
+.pop .btns button.pri{background:var(--text);color:var(--pane);border-color:var(--text)}
+.pop .btns .open{margin-left:auto;border:0;color:var(--muted);font-weight:500}
+/* settings sheet */
+.sheet{position:fixed;inset:0;z-index:60;display:none;place-items:center;background:rgba(0,0,0,.45)}
+.sheet.on{display:grid}
+.sheet .box{width:min(460px,92vw);background:var(--pane);border:1px solid var(--hair);border-radius:12px;padding:18px 20px;box-shadow:var(--shadow)}
+.sheet h3{margin:0 0 2px;font-size:15px}
+.sheet .crumb{color:var(--muted);font-size:12px;margin-bottom:14px}
+.opt{display:flex;gap:10px;align-items:flex-start;padding:10px;border-radius:8px;border:1px solid var(--hair);margin-bottom:8px;cursor:pointer}
+.opt input{margin-top:3px}
+.opt small{display:block;color:var(--muted);font-size:12px;margin-top:2px}
+.state{max-width:1080px;margin:10px auto 0;color:#999;font:12px/1.5 ui-monospace,monospace;padding:0 12px}
+/* switcher */
+.switch{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:70;display:flex;align-items:center;gap:4px;padding:5px;border-radius:999px;background:#fafafa;color:#111;box-shadow:0 6px 24px rgba(0,0,0,.45);font-size:13px}
+.switch button{width:34px;height:34px;border-radius:50%;border:0;background:#111;color:#fff;font-size:16px;cursor:pointer}
+.switch span{padding:0 12px;font-weight:600;white-space:nowrap}
+@media (max-width:760px){
+  .window{width:100%;height:auto;min-height:640px}
+  .pane{display:none}
+  .sidebar{width:100%;border-right:0}
+  .rail+.pane{display:flex}
+  .stage{padding:10px 6px 110px}
+  .pop{width:calc(100% - 24px);left:12px!important}
+}
+</style></head>
+<body>
+<div class="proto-bar">
+  <b>PROTOTYPE</b>
+  <span class="seg" id="mode"><button data-v="status">Status groups</button><button data-v="projects">Project folders (today)</button></span>
+  <span class="seg" id="side"><button data-v="open">Sidebar open</button><button data-v="rail">Collapsed rail</button></span>
+  <span class="seg" id="trays"><button data-v="status">Rail: status trays</button><button data-v="project">Rail: project trays</button></span>
+  <span class="seg" id="waitrows"><button data-v="listed">D: waiting rows also in Recent</button><button data-v="card">D: card only</button></span>
+  <label><input type="checkbox" id="remote" checked> forge connected</label>
+  <span class="seg" id="theme"><button data-v="dark">Dark</button><button data-v="light">Light</button></span>
+  <button id="settings" style="background:#1d1d1d;border:1px solid #444;border-radius:6px;padding:4px 9px;cursor:pointer;color:#ccc">Settings › Threads</button>
+</div>
+<div class="stage"><div class="window" id="win"></div></div>
+<div class="state" id="state"></div>
+<div class="sheet" id="sheet"><div class="box">
+  <h3>Group threads</h3><div class="crumb">Settings › Threads</div>
+  <label class="opt"><input type="radio" name="g" value="status"><span><b>By status</b> (default)<small>Needs you, Working now and Recent, as on the iPhone. Each row names its project.</small></span></label>
+  <label class="opt"><input type="radio" name="g" value="projects"><span><b>By project</b><small>A folder for each project, as before.</small></span></label>
+  <div style="text-align:right;margin-top:6px"><button id="close-sheet" style="border:1px solid var(--hair);background:var(--btn);border-radius:7px;padding:5px 14px;cursor:pointer">Done</button></div>
+</div></div>
+<div class="switch"><button id="prev" aria-label="Previous variant">‹</button><span id="vlabel"></span><button id="next" aria-label="Next variant">›</button></div>
+<script>
+const MARKS = {"claude": {"v": "0 0 256 257", "p": "m50.228 170.321 50.357-28.257.843-2.463-.843-1.361h-2.462l-8.426-.518-28.775-.778-24.952-1.037-24.175-1.296-6.092-1.297L0 125.796l.583-3.759 5.12-3.434 7.324.648 16.202 1.101 24.304 1.685 17.629 1.037 26.118 2.722h4.148l.583-1.685-1.426-1.037-1.101-1.037-25.147-17.045-27.22-18.017-14.258-10.37-7.713-5.25-3.888-4.925-1.685-10.758 7-7.713 9.397.649 2.398.648 9.527 7.323 20.35 15.75L94.817 91.9l3.889 3.24 1.555-1.102.195-.777-1.75-2.917-14.453-26.118-15.425-26.572-6.87-11.018-1.814-6.61c-.648-2.723-1.102-4.991-1.102-7.778l7.972-10.823L71.42 0 82.05 1.426l4.472 3.888 6.61 15.101 10.694 23.786 16.591 32.34 4.861 9.592 2.592 8.879.973 2.722h1.685v-1.556l1.36-18.211 2.528-22.36 2.463-28.776.843-8.1 4.018-9.722 7.971-5.25 6.222 2.981 5.12 7.324-.713 4.73-3.046 19.768-5.962 30.98-3.889 20.739h2.268l2.593-2.593 10.499-13.934 17.628-22.036 7.778-8.749 9.073-9.657 5.833-4.601h11.018l8.1 12.055-3.628 12.443-11.342 14.388-9.398 12.184-13.48 18.147-8.426 14.518.778 1.166 2.01-.194 30.46-6.481 16.462-2.982 19.637-3.37 8.88 4.148.971 4.213-3.5 8.62-20.998 5.184-24.628 4.926-36.682 8.685-.454.324.519.648 16.526 1.555 7.065.389h17.304l32.21 2.398 8.426 5.574 5.055 6.805-.843 5.184-12.962 6.611-17.498-4.148-40.83-9.721-14-3.5h-1.944v1.167l11.666 11.406 21.387 19.314 26.767 24.887 1.36 6.157-3.434 4.86-3.63-.518-23.526-17.693-9.073-7.972-20.545-17.304h-1.36v1.814l4.73 6.935 25.017 37.59 1.296 11.536-1.814 3.76-6.481 2.268-7.13-1.297-14.647-20.544-15.1-23.138-12.185-20.739-1.49.843-7.194 77.448-3.37 3.953-7.778 2.981-6.48-4.925-3.436-7.972 3.435-15.749 4.148-20.544 3.37-16.333 3.046-20.285 1.815-6.74-.13-.454-1.49.194-15.295 20.999-23.267 31.433-18.406 19.702-4.407 1.75-7.648-3.954.713-7.064 4.277-6.286 25.47-32.405 15.36-20.092 9.917-11.6-.065-1.686h-.583L44.07 198.125l-12.055 1.555-5.185-4.86.648-7.972 2.463-2.593 20.35-13.999-.064.065Z"}, "codex": {"v": "0 0 256 260", "p": "M239.184 106.203a64.716 64.716 0 0 0-5.576-53.103C219.452 28.459 191 15.784 163.213 21.74A65.586 65.586 0 0 0 52.096 45.22a64.716 64.716 0 0 0-43.23 31.36c-14.31 24.602-11.061 55.634 8.033 76.74a64.665 64.665 0 0 0 5.525 53.102c14.174 24.65 42.644 37.324 70.446 31.36a64.72 64.72 0 0 0 48.754 21.744c28.481.025 53.714-18.361 62.414-45.481a64.767 64.767 0 0 0 43.229-31.36c14.137-24.558 10.875-55.423-8.083-76.483Zm-97.56 136.338a48.397 48.397 0 0 1-31.105-11.255l1.535-.87 51.67-29.825a8.595 8.595 0 0 0 4.247-7.367v-72.85l21.845 12.636c.218.111.37.32.409.563v60.367c-.056 26.818-21.783 48.545-48.601 48.601Zm-104.466-44.61a48.345 48.345 0 0 1-5.781-32.589l1.534.921 51.722 29.826a8.339 8.339 0 0 0 8.441 0l63.181-36.425v25.221a.87.87 0 0 1-.358.665l-52.335 30.184c-23.257 13.398-52.97 5.431-66.404-17.803ZM23.549 85.38a48.499 48.499 0 0 1 25.58-21.333v61.39a8.288 8.288 0 0 0 4.195 7.316l62.874 36.272-21.845 12.636a.819.819 0 0 1-.767 0L41.353 151.53c-23.211-13.454-31.171-43.144-17.804-66.405v.256Zm179.466 41.695-63.08-36.63L161.73 77.86a.819.819 0 0 1 .768 0l52.233 30.184a48.6 48.6 0 0 1-7.316 87.635v-61.391a8.544 8.544 0 0 0-4.4-7.213Zm21.742-32.69-1.535-.922-51.619-30.081a8.39 8.39 0 0 0-8.492 0L99.98 99.808V74.587a.716.716 0 0 1 .307-.665l52.233-30.133a48.652 48.652 0 0 1 72.236 50.391v.205ZM88.061 139.097l-21.845-12.585a.87.87 0 0 1-.41-.614V65.685a48.652 48.652 0 0 1 79.757-37.346l-1.535.87-51.67 29.825a8.595 8.595 0 0 0-4.246 7.367l-.051 72.697Zm11.868-25.58 28.138-16.217 28.188 16.218v32.434l-28.086 16.218-28.188-16.218-.052-32.434Z"}, "grok": {"v": "0 0 24 24", "p": "M9.26905 15.284L17.2479 9.36086C17.6391 9.07047 18.1981 9.18374 18.3845 9.63478C19.3655 12.0135 18.9272 14.8721 16.9755 16.8349C15.0238 18.7976 12.3082 19.228 9.8261 18.2477L7.1146 19.5102C11.0037 22.1834 15.7263 21.5223 18.6774 18.5525C21.0182 16.1985 21.7432 12.9897 21.0653 10.0961L21.0714 10.1023C20.0884 5.85143 21.3131 4.15233 23.8218 0.677913C23.8812 0.595532 23.9406 0.513151 24 0.428711L20.6987 3.74866V3.73836L9.267 15.2861M7.62249 16.7237C4.83113 14.0422 5.3124 9.89222 7.69417 7.49905C9.45541 5.72786 12.341 5.00497 14.86 6.06768L17.5653 4.81138C17.0779 4.45714 16.4533 4.07613 15.7365 3.80839C12.4966 2.46764 8.6178 3.13492 5.98413 5.78141C3.45081 8.32904 2.65415 12.2463 4.02219 15.5889C5.04412 18.0871 3.36889 19.8541 1.68137 21.6377C1.08337 22.2699 0.483318 22.9022 0 23.5716L7.62045 16.7257"}, "devin": {"v": "48 48 330 330", "p": "M70 159.333V91.3471C70 88.3592 71.594 85.5983 74.1816 84.1044L133.043 50.1205C135.631 48.6265 138.819 48.6265 141.407 50.1205L200.269 84.1044C202.856 85.5983 204.45 88.3592 204.45 91.3471V126.068C204.708 137.606 210.806 148.734 221.531 154.926C232.256 161.117 244.942 160.834 255.063 155.289L285.132 137.929C287.719 136.435 290.907 136.435 293.495 137.929L352.357 171.913C354.944 173.406 356.538 176.167 356.538 179.155V247.123C356.538 250.111 354.944 252.872 352.357 254.366L293.495 288.35C290.907 289.844 287.719 289.844 285.132 288.35L255.306 271.13C245.146 265.456 232.344 265.117 221.534 271.358C210.809 277.55 204.711 288.678 204.453 300.215V334.926C204.453 337.914 202.859 340.675 200.271 342.169L141.41 376.153C138.822 377.647 135.634 377.647 133.046 376.153L74.1845 342.169C71.5969 340.675 70.0028 337.914 70.0028 334.926V266.959C70.0029 263.971 71.5969 261.21 74.1845 259.716L133.046 225.732C135.634 224.238 138.822 224.238 141.41 225.732L171.547 243.132C181.656 248.638 194.306 248.906 205.005 242.729C215.815 236.488 221.922 225.231 222.088 213.595C221.83 202.057 215.732 189.737 205.008 183.545C194.283 177.353 181.597 177.636 171.476 183.181L141.269 200.72C138.67 202.229 135.461 202.228 132.864 200.716L74.1576 166.562C71.5835 165.065 70 162.311 70 159.333Z"}};
+const NAMES = {claude:'Claude Code',codex:'Codex',grok:'Grok Build',devin:'Devin'};
+const MODELS = {claude:'Opus 5.5',codex:'GPT-6.1',grok:'Grok 5',devin:'Devin'};
+// state: needs-approval | needs-question | failed | working | waiting | unread | done | snoozed | settled
+const T = [
+  {id:1,t:'Run the visual gate on the widget capture',p:'Sotto',h:'',v:'claude',s:'needs-approval',wait:'12m',at:'12:41 pm',ago:'12 min ago',say:'Wants to run npm test -- tests/unit/agents in Sotto.'},
+  {id:2,t:'Which footer links stay on the new site',p:'sotto-site',h:'forge',v:'codex',s:'needs-question',wait:'4m',at:'12:49 pm',ago:'4 min ago',say:'Asks: keep Privacy and Changelog, or only Privacy?'},
+  {id:3,t:'Streaming WAV stall',p:'Sotto',h:'',v:'codex',s:'failed',wait:'',at:'10:02 am',ago:'3 h ago',say:'The turn failed: the provider closed the connection.'},
+  {id:4,t:'Sidebar by status',p:'Sotto',h:'',v:'claude',s:'working',at:'8m',ago:'8 min ago',say:'Reading how the iPhone groups its threads.',current:true},
+  {id:5,t:'Weekly note',p:'notes',h:'',v:'grok',s:'working',at:'3m',ago:'3 min ago',say:'Drafting the summary of this week’s merges.'},
+  {id:6,t:'Render the cabin at dusk',p:'cabin-game',h:'forge',v:'claude',s:'working',at:'21m',ago:'21 min ago',say:'Rendering frame 40 of 120 in Blender.',watched:true},
+  {id:7,t:'iPhone history paging',p:'Sotto',h:'forge',v:'codex',s:'waiting',at:'1h 02m',ago:'1 h ago',say:'Waiting on the macOS CI job.'},
+  {id:8,t:'Deploy the landing page',p:'sotto-site',h:'forge',v:'devin',s:'working',at:'14m',ago:'14 min ago',say:'Building and uploading the Worker.'},
+  {id:9,t:'Grok voice previews',p:'Sotto',h:'',v:'grok',s:'unread',at:'12:20 pm',ago:'33 min ago',say:'Done: previews now play from the model menu.'},
+  {id:10,t:'Fix the limit band’s reset time',p:'Sotto',h:'',v:'claude',s:'done',at:'11:58 am',ago:'55 min ago',say:'Merged #2355.'},
+  {id:11,t:'Footer contrast in light mode',p:'sotto-site',h:'forge',v:'codex',s:'done',at:'11:12 am',ago:'2 h ago',say:'Raised the footer text to 4.6:1.'},
+  {id:12,t:'Cabin roof normals',p:'cabin-game',h:'forge',v:'claude',s:'done',at:'9:40 am',ago:'3 h ago',say:'Flipped 212 faces.'},
+  {id:13,t:'Pick a font for the menus',p:'notes',h:'',v:'grok',s:'done',at:'Yesterday',ago:'1 day ago',say:'Suggested three.'},
+  {id:14,t:'Codex thread evidence on forge',p:'Sotto',h:'forge',v:'codex',s:'done',at:'Yesterday',ago:'1 day ago',say:'Found the log by pid.'},
+  {id:15,t:'Onboarding sign-in dialog',p:'Sotto',h:'',v:'claude',s:'done',at:'Mon',ago:'2 days ago',say:'Part 1 is in review.'},
+  {id:16,t:'Merge train receipt line',p:'Sotto',h:'',v:'claude',s:'snoozed',at:'Until 9:00 am',ago:'Until 9:00 am',say:''},
+  {id:17,t:'Paired host browser',p:'Sotto',h:'forge',v:'codex',s:'snoozed',at:'Until Mon',ago:'Until Mon',say:''},
+  {id:18,t:'Old pricing page',p:'sotto-site',h:'forge',v:'devin',s:'settled',at:'Nov 4',ago:'6 days ago',say:''},
+  {id:19,t:'Teams Watchers tab',p:'Sotto',h:'',v:'claude',s:'settled',at:'Nov 3',ago:'7 days ago',say:''},
+  {id:20,t:'Cabin lighting test',p:'cabin-game',h:'forge',v:'grok',s:'settled',at:'Nov 2',ago:'8 days ago',say:''},
+];
+const VARIANTS = [
+  {k:'A',name:'The iPhone’s rows'},
+  {k:'B',name:'Today’s desktop rows, grouped'},
+  {k:'C',name:'Live cards over a quiet list'},
+  {k:'D',name:'B under the Needs you card'},
+];
+const q = new URLSearchParams(location.search);
+const S = {
+  v: VARIANTS.some(x=>x.k===q.get('variant')) ? q.get('variant') : 'D',
+  mode: q.get('mode') || 'status', waitrows: q.get('waitrows') || 'listed', side: q.get('side') || 'open', trays: q.get('trays') || 'status',
+  remote: q.get('remote') !== '0', theme: q.get('theme') || 'dark', pop: null, open: {snoozed:false, settled:false},
+  folders: {Sotto:true,'sotto-site':true,notes:false,'cabin-game':false}, filter: 'all',
+};
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const mark = (p, size=12) => `<svg class="mark" data-p="${p}" width="${size}" height="${size}" viewBox="${MARKS[p].v}" aria-hidden="true"><path d="${MARKS[p].p}"/></svg>`;
+const owl = '<svg class="owl" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M3 3l2 1.5C6 4 7 3.8 8 3.8S10 4 11 4.5L13 3v6a5 5 0 0 1-10 0z" opacity=".85"/><circle cx="6" cy="8" r="1.6" fill="var(--sidebar)"/><circle cx="10" cy="8" r="1.6" fill="var(--sidebar)"/></svg>';
+const host = th => th.h || (S.remote ? 'laptop' : '');
+const visible = th => (S.remote || !th.h) && (S.filter === 'all' || (S.filter === 'laptop' ? !th.h : th.h === S.filter));
+const ringOf = th => th.s.startsWith('needs') ? 'needs' : th.s === 'failed' ? 'failed' : (th.s === 'working' || th.s === 'waiting') ? 'working' : th.s === 'unread' ? 'unread' : 'off';
+const stWords = th => ({'needs-approval':'Needs your approval','needs-question':'Needs your answer',failed:'Needs attention',working:'Working',waiting:'Waiting',unread:'Just finished',done:'Done',snoozed:'Snoozed',settled:'Settled'})[th.s];
+const place = th => [NAMES[th.v], th.p, th.h && S.remote ? th.h : (S.remote ? 'laptop' : '')].filter(Boolean).join(' · ');
+// The iPhone's rule, in its order. failedTo: 'needs' keeps the desktop's rule (Needs you), 'recent' the iPhone's.
+function groups(failedTo){
+  const rows = T.filter(visible);
+  const needs = rows.filter(th => th.s.startsWith('needs') || (failedTo === 'needs' && th.s === 'failed'));
+  const order = {'needs-approval':0,'needs-question':1,failed:2};
+  needs.sort((a,b) => order[a.s]-order[b.s]);
+  return {
+    needs, working: rows.filter(th => th.s === 'working' || th.s === 'waiting'),
+    recent: rows.filter(th => ['unread','done'].includes(th.s) || (failedTo === 'recent' && th.s === 'failed')),
+    snoozed: rows.filter(th => th.s === 'snoozed'), settled: rows.filter(th => th.s === 'settled'),
+  };
+}
+const pressRow = th => th.s.startsWith('needs') ? `data-pop="${th.id}"` : '';
+// ---------- Variant A: the iPhone's rows ----------
+function rowA(th, inNeeds){
+  const ring = ringOf(th);
+  let line;
+  if (inNeeds && th.s === 'failed') line = `<span class="txt failed">Turn failed · ${esc(th.p)}</span><span class="st dismiss">Dismiss</span>`;
+  else if (inNeeds) line = `<span class="txt">${stWords(th)} · ${esc(th.p)}${S.remote ? ' · ' + esc(host(th)) : ''}</span>`;
+  else if (th.s === 'unread') line = `<span class="txt">Just finished · ${esc(th.p)}${S.remote ? ' · ' + esc(host(th)) : ''}</span>`;
+  else if (th.s === 'failed') line = `<span class="txt failed">Turn failed · ${esc(th.p)}</span>`;
+  else line = `<span class="txt">${esc(place(th))}</span>`;
+  const when = th.s === 'snoozed' ? th.at : inNeeds ? (th.wait || th.ago) : th.ago;
+  return `<button class="row ${th.current?'current':''} ${th.s==='unread'?'unread':''} ${inNeeds&&th.s==='failed'?'muted':''}" ${pressRow(th)}>
+    <span class="ring" data-s="${ring}"></span><span class="t">${esc(th.t)}</span><span class="when">${esc(when)}</span>
+    <span class="l2">${mark(th.v)}${th.watched?owl:''}${line}</span>
+    </button>`;
+}
+function variantA(){
+  const g = groups('needs');
+  const sec = (label, rows, inNeeds) => rows.length ? `<div class="group"><div class="gh">${label} <span class="n">${rows.length}</span></div>${rows.map(th => rowA(th, inNeeds)).join('')}</div>` : '';
+  return sec('Needs you', g.needs, true) + sec('Working now', g.working) + sec('Recent', g.recent) + shelves(g, rowA);
+}
+// ---------- Variant B: today's desktop rows, grouped ----------
+function rowB(th, inNeeds){
+  const ring = ringOf(th);
+  const resting = th.s === 'done' && !th.watched;
+  const stS = th.s.startsWith('needs') ? 'needs' : ring;
+  const when = th.s === 'snoozed' ? th.at : th.at;
+  const hostBit = th.h && S.remote ? `<span class="hostbadge">${esc(th.h)}</span>` : '';
+  if (resting) return `<button class="row rest oneline"><span class="ring" data-s="off" style="visibility:hidden"></span><span class="t">${esc(th.t)}</span><span class="when">${esc(when)}</span></button>`;
+  return `<button class="row ${th.current?'current':''}" ${pressRow(th)}>
+    <span class="ring" data-s="${ring}"></span><span class="t">${esc(th.t)}</span><span class="when">${esc(when)}</span>
+    <span class="l2">${mark(th.v)}${th.watched?owl:''}<span class="txt">${esc(th.p)}</span>${hostBit}<span class="st" data-s="${stS}">${th.s==='failed'?'Turn failed':stWords(th)}</span></span></button>`;
+}
+function variantB(){
+  const g = groups('recent');
+  const S2 = S.open;
+  const sec = (key, label, rows) => {
+    if (!rows.length) return '';
+    const open = S2[key] !== false;
+    return `<div class="group"><button class="gh toggle" data-toggle="${key}" aria-expanded="${open}"><span class="chev">›</span>${label} <span class="n" style="margin-left:auto">${rows.length}</span></button>${open ? rows.map(th => rowB(th)).join('') : ''}</div>`;
+  };
+  return sec('needs','Needs you', g.needs) + sec('working','Working now', g.working) + sec('recent','Recent', g.recent) + shelves(g, rowB);
+}
+// ---------- Variant D: B's rows under the Needs you card, as the project folders have it (Zach, Nov 10) ----------
+function rowInQueue(th){
+  return `<button class="row"><span class="ring" data-s="off"></span><span class="t">${esc(th.t)}</span><span class="when">${esc(th.at)}</span>
+    <span class="l2">${mark(th.v)}<span class="txt">${esc(th.p)}</span>${th.h && S.remote ? `<span class="hostbadge">${esc(th.h)}</span>` : ''}<span class="st inq">\u2191 In Needs you</span></span></button>`;
+}
+function variantD(){
+  const g = groups('needs');
+  const sec = (key, label, rows, extra = []) => {
+    const n = rows.length + extra.length;
+    if (!n) return '';
+    const open = S.open[key] !== false;
+    return `<div class="group"><button class="gh toggle" data-toggle="${key}" aria-expanded="${open}"><span class="chev">\u203a</span>${label} <span class="n" style="margin-left:auto">${n}</span></button>${open ? extra.map(rowInQueue).join('') + rows.map(th => rowB(th)).join('') : ''}</div>`;
+  };
+  const listed = S.waitrows === 'listed' ? g.needs : [];
+  return sec('working','Working now', g.working) + sec('recent','Recent', g.recent, listed) + shelves(g, rowB);
+}
+// ---------- Variant C: live cards over a quiet list ----------
+function cardC(th){
+  const ring = ringOf(th), needs = th.s.startsWith('needs') || th.s === 'failed';
+  const st = th.s === 'failed' ? 'Turn failed' : stWords(th);
+  return `<button class="card ${th.current?'current':''} ${th.s.startsWith('needs')?'needs':''}" ${pressRow(th)}>
+    <span class="ring" data-s="${ring}"></span><span class="t">${esc(th.t)}</span><span class="when">${esc(needs ? (th.wait || th.ago) : th.at)}</span>
+    <span class="say">${esc(th.say)}</span>
+    <span class="l2">${mark(th.v)}${th.watched?owl:''}<span class="pl">${esc(place(th))}</span><span class="st" data-s="${th.s.startsWith('needs')?'needs':ring}">${st}</span></span></button>`;
+}
+function rowC(th){
+  const ring = ringOf(th);
+  return `<button class="row ${th.s==='unread'?'unread':''}"><span class="ring" data-s="${ring}"></span><span class="t">${esc(th.t)}</span><span class="when">${esc(th.s==='snoozed'?th.at:th.ago.replace(' ago',''))}</span>
+    <span class="l2">${mark(th.v,11)}<span class="txt">${esc(th.p)}${th.h&&S.remote?' · '+esc(th.h):''}</span>${th.s==='unread'?'<span class="st" data-s="unread">Just finished</span>':''}</span></button>`;
+}
+function variantC(){
+  const g = groups('needs');
+  const sec = (label, body, n) => n ? `<div class="group"><div class="gh">${label} <span class="n">${n}</span></div>${body}</div>` : '';
+  return sec('Needs you', `<div class="cards">${g.needs.map(cardC).join('')}</div>`, g.needs.length)
+    + sec('Working now', `<div class="cards">${g.working.map(cardC).join('')}</div>`, g.working.length)
+    + sec('Recent', `<div class="dense">${g.recent.map(rowC).join('')}</div>`, g.recent.length) + shelves(g, rowC);
+}
+// Snoozed (under project sub-headings, as the iPhone) and Settled, folded, in every variant.
+function shelves(g, row){
+  let out = '';
+  if (g.snoozed.length) {
+    out += `<button class="shelf" data-shelf="snoozed" aria-expanded="${S.open.snoozed}"><span class="chev">›</span>Snoozed <span class="n">${g.snoozed.length}</span></button>`;
+    if (S.open.snoozed) {
+      const byP = {}; g.snoozed.forEach(th => (byP[th.p] ??= []).push(th));
+      out += Object.entries(byP).map(([p, rows]) => `<div class="sub">${esc(p)}</div>${rows.map(th => row(th)).join('')}`).join('');
+    }
+  }
+  out += `<button class="shelf" data-shelf="settled" aria-expanded="${S.open.settled}"><span class="chev">›</span>Settled <span class="n">${g.settled.length}</span></button>`;
+  if (S.open.settled) out += g.settled.map(th => row(th)).join('');
+  return out;
+}
+// ---------- Today: project folders with the Needs you card (Owl) ----------
+function today(){
+  const rows = T.filter(visible);
+  const needs = rows.filter(th => th.s.startsWith('needs') || th.s === 'failed');
+  const card = needs.length ? `<div class="needs-card"><h4>Needs you ${needs.length}</h4>${needs.map(th => `<div class="e" ${pressRow(th)}><span class="ring" data-s="${ringOf(th)}"></span><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(th.t)}</span>${th.s==='failed'?'<span class="w">Dismiss</span>':'<span class="a">Answer</span>'}</div>`).join('')}</div>` : '';
+  const projects = [...new Set(rows.filter(th => !['snoozed','settled'].includes(th.s)).map(th => th.p + '|' + (th.h||'')))];
+  const folders = projects.map(key => {
+    const [p, h] = key.split('|');
+    const fr = rows.filter(th => th.p === p && (th.h||'') === h && !['snoozed','settled'].includes(th.s));
+    const id = key; const open = S.folders[id] ?? S.folders[p] ?? false;
+    return `<button class="folder-head" data-folder="${esc(id)}"><span class="chev" style="rotate:${open?90:0}deg">›</span>🗀 ${esc(p)} ${h && S.remote ? `<span class="hostbadge">${esc(h)}</span>` : ''}<span class="cnt">${fr.length}</span></button>`
+      + (open ? fr.map(th => {
+        const inq = th.s.startsWith('needs') || th.s === 'failed';
+        if (th.s === 'done') return `<button class="row rest oneline"><span></span><span class="t">${esc(th.t)}</span><span class="when">${th.at}</span></button>`;
+        return `<button class="row ${th.current?'current':''}"><span class="ring" data-s="${inq?'off':ringOf(th)}"></span><span class="t">${esc(th.t)}</span><span class="when">${th.at}</span><span class="l2">${mark(th.v)}${inq?'<span class="txt inq">↑ In Needs you</span>':`<span class="txt st" data-s="${ringOf(th)}" style="margin:0">${stWords(th)}</span>`}</span></button>`;
+      }).join('') : '');
+  }).join('');
+  return { card, list: folders + `<button class="shelf"><span class="chev">›</span>Snoozed</button><button class="shelf"><span class="chev">›</span>Settled</button>` };
+}
+// ---------- The collapsed rail ----------
+function rail(){
+  const rows = T.filter(visible).filter(th => th.s !== 'settled' && th.s !== 'snoozed' || th.current);
+  const tile = (th, small) => `<button class="tile ${small?'small':''} ${th.s.startsWith('needs')?'waiting':''} ${th.current?'current':''}" title="${esc(th.t)} · ${esc(th.p)} · ${stWords(th)}" ${pressRow(th)}>${mark(th.v, small?13:16)}<span class="ring" data-s="${ringOf(th)}"></span></button>`;
+  const watcher = `<div class="watcher" title="Open Watcher">${owl.replace('class="owl"','class="owl" style="width:20px;height:20px;color:var(--text2)"')}</div>`;
+  const expand = `<button class="icon-btn" title="Expand sidebar">»</button>`;
+  let body = '';
+  const waiting = rows.filter(th => th.s.startsWith('needs') || th.s === 'failed');
+  const moving = rows.filter(th => ['working','waiting','unread'].includes(th.s));
+  const resting = rows.filter(th => th.s === 'done');
+  if (S.trays === 'status') {
+    const tray = (label, list, cls='') => list.length ? `<div class="tray ${cls}"><span class="lab">${label}</span>${list.map(th => tile(th, cls==='rest')).join('')}</div>` : '';
+    body = tray('Needs you', waiting) + tray('Working', moving.filter(th=>th.s!=='unread')) + tray('Recent', [...moving.filter(th=>th.s==='unread'), ...resting], 'rest');
+  } else {
+    const awake = [...waiting, ...moving]; const byP = {};
+    awake.forEach(th => (byP[th.p] ??= []).push(th));
+    body = Object.entries(byP).map(([p, list]) => `<div class="tray"><span class="lab">${esc(p)}</span>${list.map(th => tile(th)).join('')}</div>`).join('')
+      + (resting.length ? `<div class="tray rest">${resting.map(th => tile(th, true)).join('')}</div>` : '');
+  }
+  return `<nav class="rail">${expand}${watcher}${body}</nav>`;
+}
+// ---------- Pane and frame ----------
+const pane = () => `<div class="pane"><div class="pane-head">Sidebar by status <small>/ Sotto</small></div><div class="pane-body">
+  <div class="bubble">Make the sidebar more like the iPhone's Threads page.</div>
+  <div class="ghost-line" style="width:78%"></div><div class="ghost-line" style="width:64%"></div><div class="ghost-line" style="width:70%"></div>
+  <div style="flex:1"></div></div><div class="composer">Ask for follow-up changes</div></div>`;
+function computers(){
+  if (!S.remote || S.mode !== 'status' || S.v === 'B' || S.v === 'D') return '';
+  const label = S.filter === 'all' ? 'All computers' : S.filter;
+  return `<button class="computers" id="computers" title="Show threads on one computer"><i></i>${label} ▾</button>`;
+}
+function render(){
+  document.body.classList.toggle('light', S.theme === 'light');
+  const win = document.getElementById('win');
+  if (S.side === 'rail') { win.innerHTML = rail() + pane(); }
+  else {
+    let list, card = '';
+    if (S.mode === 'projects') ({ card, list } = today());
+    else if (S.v === 'D') { card = today().card; list = variantD(); }
+    else list = S.v === 'A' ? variantA() : S.v === 'B' ? variantB() : variantC();
+    win.innerHTML = `<aside class="sidebar"><div class="top"><span class="logo"></span><button class="icon-btn" title="Add project">⊞</button><button class="icon-btn" title="New thread">✎</button><button class="icon-btn" title="Collapse sidebar">«</button></div>
+      <div class="search-row"><div class="search">⌕ Search threads</div>${computers()}</div>${card}<div class="list" id="list">${list}</div>
+      <div class="foot"><span>◎</span><span>◔</span><span class="on">☷</span><span style="margin-left:auto">⚙︎</span></div></aside>` + pane();
+  }
+  if (S.pop) drawPop();
+  for (const [id, key] of [['mode','mode'],['side','side'],['trays','trays'],['theme','theme'],['waitrows','waitrows']])
+    document.querySelectorAll(`#${id} button`).forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === S[key])));
+  document.getElementById('trays').style.display = S.side === 'rail' ? '' : 'none';
+  document.getElementById('waitrows').style.display = S.v === 'D' && S.mode === 'status' && S.side === 'open' ? '' : 'none';
+  const v = VARIANTS.find(x => x.k === S.v);
+  document.getElementById('vlabel').textContent = S.mode === 'projects' ? 'Today — project folders' : `${v.k} — ${v.name}`;
+  const p = new URLSearchParams({ waitrows: S.waitrows, variant: S.v, mode: S.mode, side: S.side, trays: S.trays, theme: S.theme, remote: S.remote ? '1' : '0' });
+  history.replaceState(null, '', '?' + p);
+  const g = groups(S.v === 'B' ? 'recent' : 'needs');
+  document.getElementById('state').textContent = `variant=${S.v} mode=${S.mode} side=${S.side} trays=${S.trays} remote=${S.remote} computers=${S.filter} pop=${S.pop ?? '-'} | Needs you ${g.needs.length} · Working now ${g.working.length} · Recent ${g.recent.length} · Snoozed ${g.snoozed.length} · Settled ${g.settled.length} | failed turn → ${S.v === 'B' ? 'Recent (iPhone rule)' : 'Needs you (desktop rule)'}`;
+}
+function drawPop(){
+  const th = T.find(x => x.id === S.pop); const anchor = document.querySelector(`[data-pop="${S.pop}"]`);
+  if (!th || !anchor) { S.pop = null; return; }
+  const win = document.getElementById('win').getBoundingClientRect(), a = anchor.getBoundingClientRect();
+  const pop = document.createElement('div'); pop.className = 'pop';
+  pop.style.left = (S.side === 'rail' ? a.right - win.left + 8 : Math.min(a.right - win.left + 8, win.width - 342)) + 'px';
+  pop.style.top = Math.max(8, a.top - win.top - 6) + 'px';
+  pop.innerHTML = th.s === 'needs-approval'
+    ? `<h5>Run a command in ${esc(th.p)}</h5><p>${esc(th.t)}</p><code>npm test -- tests/unit/agents</code><div class="btns"><button>Deny</button><button class="pri">Allow</button><button class="open">Open thread</button></div>`
+    : `<h5>${esc(th.t)}</h5><p>Keep Privacy and Changelog in the footer, or only Privacy?</p><div class="btns"><button>Both</button><button>Only Privacy</button><button class="open">Open thread</button></div>`;
+  document.getElementById('win').style.position = 'relative'; document.getElementById('win').appendChild(pop);
+}
+document.addEventListener('click', e => {
+  const seg = e.target.closest('.proto-bar .seg button');
+  if (seg) { const k = seg.parentElement.id; S[k] = seg.dataset.v; S.pop = null; return render(); }
+  if (e.target.closest('.pop')) { if (e.target.tagName === 'BUTTON') { S.pop = null; render(); } return; }
+  const popper = e.target.closest('[data-pop]');
+  if (popper && !e.target.closest('.dismiss')) { const id = +popper.dataset.pop; S.pop = S.pop === id ? null : id; return render(); }
+  const tg = e.target.closest('[data-toggle]'); if (tg) { S.open[tg.dataset.toggle] = S.open[tg.dataset.toggle] === false; return render(); }
+  const sh = e.target.closest('[data-shelf]'); if (sh) { S.open[sh.dataset.shelf] = !S.open[sh.dataset.shelf]; return render(); }
+  const fo = e.target.closest('[data-folder]'); if (fo) { const id = fo.dataset.folder; S.folders[id] = !(S.folders[id] ?? S.folders[id.split('|')[0]] ?? false); return render(); }
+  if (e.target.closest('#computers')) { const order = ['all','laptop','forge']; S.filter = order[(order.indexOf(S.filter)+1)%3]; return render(); }
+  if (e.target.id === 'settings') { document.querySelectorAll('#sheet input').forEach(i => i.checked = i.value === S.mode); document.getElementById('sheet').classList.add('on'); return; }
+  if (e.target.id === 'close-sheet' || e.target.id === 'sheet') { document.getElementById('sheet').classList.remove('on'); return; }
+  if (S.pop && !e.target.closest('.row,.card,.tile')) { S.pop = null; render(); }
+});
+document.getElementById('sheet').addEventListener('change', e => { S.mode = e.target.value; render(); });
+document.getElementById('remote').addEventListener('change', e => { S.remote = e.target.checked; S.filter = 'all'; render(); });
+document.getElementById('remote').checked = S.remote;
+const step = d => { const i = VARIANTS.findIndex(x => x.k === S.v); S.v = VARIANTS[(i + d + VARIANTS.length) % VARIANTS.length].k; S.mode = 'status'; S.pop = null; render(); };
+document.getElementById('prev').onclick = () => step(-1);
+document.getElementById('next').onclick = () => step(1);
+document.addEventListener('keydown', e => {
+  if (e.target.closest('input,textarea,[contenteditable]')) return;
+  if (e.key === 'ArrowLeft') step(-1); else if (e.key === 'ArrowRight') step(1); else if (e.key === 'Escape') { S.pop = null; document.getElementById('sheet').classList.remove('on'); render(); }
+});
+if (q.get('still') === '1') document.body.classList.add('still');
+render();
+</script>
+</body></html>

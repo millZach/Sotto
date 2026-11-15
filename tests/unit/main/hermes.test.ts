@@ -27,7 +27,7 @@ describe('Hermes', () => {
     expect(config.gateway.multiplex_profiles).toBe(true)
     expect(config.fallback_model).toEqual([])
     expect(config.updates.check).toBe(false)
-    expect(config.agent.reasoning_effort).toBe('high')
+    expect(config.agent.reasoning_effort).toBeUndefined()
     expect(config.auxiliary.title_generation).toEqual({ enabled: false, model_upgrade_enabled: false })
     expect(config.terminal.cwd).toBe('/project')
     expect(config.custom_providers).toEqual([{ name: 'own-spark', base_url: 'http://spark.local/v1', api_mode: 'chat_completions', api_key: '', models: ['deepseek-v4.1-flash'] }])

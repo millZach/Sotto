@@ -107,7 +107,7 @@ test('opens OpenCode’s model menu on its model sources, steps back with Escape
     launched = await launchSotto('success', profile)
     const { page } = launched
     page.on('pageerror', error => pageErrors.push(error.message))
-    await page.evaluate(() => window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', reducedMotion: 'on' }))
+    await page.evaluate(() => window.sotto!.updateSettings({ onboardingComplete: true, threadListGrouping: 'project', appearance: 'dark', reducedMotion: 'on' }))
     await page.reload()
 
     // An OpenCode project whose new thread starts on Claude Sonnet 5 from Anthropic.

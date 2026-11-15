@@ -63,6 +63,16 @@ Drake asked for the steps to remember being opened across the whole app: open on
 
 This replaces "starts folded" for the working line and "opens on a press" for the Worked for line in the Decision above; both still open and fold on a press, and Escape still folds one level at a time.
 
+## November 12 amendment: a press moves only the line pressed
+
+Zach reported that opening one turn's **Worked for** line opened every one in the thread, and asked that a press open only the one pressed. Each line on screen had followed the answer at once, so a press on one moved every line not yet pressed.
+
+**Each line holds what it started with.** A line reads the answer once, when it first shows, and holds that state until the user presses it; a press on another line never moves it. A press still sets the answer, so a line that shows after it starts that way: a new turn's working line, a thread opened later, and every thread after a restart. Zach chose this on November 12 over the other answer offered, every line starting folded, because it keeps what Drake asked for above while ending the jump.
+
+**A running turn hands its state to its fold.** The working line reads the answer when its turn begins, and the turn's **Worked for** line starts from the answer as it stood when the user sent the message, so the two agree. When the user opens or folds the working line, by a press or by Escape, Sotto keeps that choice by thread and turn for the window's life: the working line keeps it when its thread is shown again, and once the turn ends its Worked for line, or the header of the Watcher reply a news turn folds into, starts the same way, so the line the user left open stays open. A press on that finished line takes over from it, so the thread opened again starts the line from the answer. This takes the place of carrying a press over through the shared answer, which the turn's fold no longer follows. A Worked for line does not read the answer again when its turn ends: it would then open or fold on its own as the turn finished, away from how its working line was left.
+
+This replaces "Every one of those lines the user has not pressed while it is on screen follows it at once" in the amendment above. Groups still start from the answer without setting it, and they too hold their state once drawn. The iPhone was never affected: it keeps each step run's state by its run.
+
 ## October 26 amendment: the clock goes again
 
 Zach changed his mind on the clock: the line should be the Spaceballs words alone, with the light crossing their letters. The line now reads only the words ("Combing the desert"), and the chevron once the turn has a step. The light, the words' timing, reduced motion and the button's name are as the October 25 amendment left them.

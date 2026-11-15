@@ -40,7 +40,7 @@ test('a thread on a paired host shows its files, changes and agents in Tools', a
   await writeFile(join(folder, 'moondust', 'storyboard.md'), '1. Contact\n2. Earthrise\n')
   const install = join(root, '~', '.local', 'share', 'sotto-host', 'host')
   await buildSshHost(install)
-  await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, localHostEnabled: true, reducedMotion: 'on', appearance: 'dark' }))
+  await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, threadListGrouping: 'project', localHostEnabled: true, reducedMotion: 'on', appearance: 'dark' }))
   const modeFile = join(root, 'mode')
   await writeFile(modeFile, 'run')
   const keys = ['SOTTO_E2E_SSH_SCRIPT', 'SOTTO_E2E_SSH_EXECUTABLE', 'FAKE_SSH_MODE_FILE', 'FAKE_SSH_ROOT', 'FAKE_SSH_RECORD', 'HOME', 'USERPROFILE']

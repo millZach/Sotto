@@ -20,6 +20,12 @@ variant c, "Steps".
 Amended October 21, 2026: a new version of Sotto has every machine check its clients afresh (decision 6), so their
 updates are listed in the same card rather than after the restart.
 
+Amended November 10, 2026, by the owner's choice: Sotto checks for its own update once an hour rather than every four
+minutes (ADR-0042, November 10 amendment), so the releases page, asked about a host archive at each check, is asked
+again 4, 8 and 16 minutes after it answers 404 or gives no answer, and then at the next check, rather than only at the
+next check (decision 6). A release's host archives are uploaded just after the desktop's files, so a 404 right after a
+new version is found is ordinary.
+
 ## Context
 
 Three things in Sotto go out of date, and each had its own place: the update control for Sotto itself (Windows only),
@@ -149,7 +155,9 @@ and says "Sotto did not restart while it was updating the host on forge. Nothing
 update has finished." A quit stops a host download, as Cancel update would, and leaves an update the host has begun to
 unpack to its launch script, which finishes the install and restart on the host after the connection closes. The page is asked again when the update
 moves to another phase (never for a download's progress), so a host archive uploaded after the installer is found at
-the next check. An update already under way keeps the version it started with, and a host newer than
+the next check, within the hour. Between checks, an archive the page answered 404 for or gave no answer about is asked
+again 4, 8 and then 16 minutes later while that version still waits, each archive counting its own three, so one
+uploaded a moment after the desktop's files is offered within minutes. An update already under way keeps the version it started with, and a host newer than
 the target is never taken down, with one exception: when the pending version goes away or changes, a host update still
 downloading it stops, as Cancel update would, and the host is offered its new target. One the host has begun to unpack
 finishes, and its step says "forge was already installing X when this computer stopped updating to it, so it finished.

@@ -3,7 +3,7 @@ import { readdir, readFile } from 'node:fs/promises'
 import { resolve, join, relative, sep } from 'node:path'
 import process from 'node:process'
 import { pathToFileURL } from 'node:url'
-import { verifyHostExternalDependencies } from './release-external-dependencies.mjs'
+import { HOST_BUNDLED_PACKAGES, verifyHostExternalDependencies } from './release-external-dependencies.mjs'
 
 export const sha256 = value => createHash('sha256').update(value).digest('hex')
 export async function inventoryFiles(root, directory = root) {
@@ -31,7 +31,7 @@ export async function verifyHostArchive(directory, { expectedVersion, expectedSo
   verifyHostExternalDependencies(await json('host/external-dependencies.json'), pkg.dependencies)
   if (JSON.stringify(manifest.dependencies) !== JSON.stringify(pkg.dependencies)) throw new Error('Host dependencies differ from runtime manifest')
   const bundled = await json('host/bundled-dependencies.json')
-  if (bundled.version !== 1 || JSON.stringify(bundled.packages) !== '[]') throw new Error('Unexpected bundled host dependency')
+  if (bundled.version !== 1 || JSON.stringify(bundled.packages) !== JSON.stringify(HOST_BUNDLED_PACKAGES)) throw new Error('Unexpected bundled host dependency')
   const modules = await readdir(join(root, 'node_modules'))
   if (JSON.stringify(modules.sort()) !== '["zod"]') throw new Error('Unexpected host runtime package')
   const dependency = await json('node_modules/zod/package.json')

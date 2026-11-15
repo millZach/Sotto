@@ -8,6 +8,8 @@ It changes how an existing action answers and goes straight to stable; it is not
 
 Keeps [ADR-0041](0041-a-worktree-has-an-end.md)'s worktree question after Settle, [ADR-0081](0081-a-thread-may-delegate-work-to-threads-it-starts.md)'s delegated threads that settle and restore with the thread that delegated, [ADR-0163](0163-a-pane-header-is-the-git-action-watch-one-menu-and-close.md)'s ··· menu and [ADR-0164](0164-the-thread-list-is-one-tab-stop-and-f6-goes-round-the-regions.md)'s thread list, focus handoff included. Amends ADR-0164 in one place: while the settle toast stands, the next Tab from the thread list reaches its Undo before the sidebar's foot. Amends [ADR-0133](0133-thread-shortcuts-are-editable-on-a-keyboard-page.md): Settings › Keyboard lists Ctrl+Z under **Fixed & elsewhere** and refuses it to every thread shortcut.
 
+Amended November 10, 2026: by status ([ADR-0201](0201-the-threads-sidebar-groups-open-threads-by-status.md)), the held gap holds the settled row's place in its status group, as it held it in its folder; a group the settle emptied stands while the pointer stays.
+
 ## Context
 
 Settle acts at once because it can be taken back, and it should not ask. But nothing offered the taking back: the user had to open Settled and find Restore. Worse, the row below slid up into the settled row's place, so the next thread's Settle landed exactly under a still pointer, and a second click or a double-click settled a second thread. Two rules meet there: never use a warning when you mean undo, and nothing moves under the pointer that the user did not move.

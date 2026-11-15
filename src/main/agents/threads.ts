@@ -12,6 +12,7 @@ import { ThreadChangesPublisher, ThreadMap, threadChangesBetween, type ActivityC
 import type { UsageQuotaRead, UsageTokenObservation } from '../../shared/usageDashboard'
 import { isUsageHistoryThreadId, mappedSink, type UsageHistorySink } from './usageHistory/sink'
 import type { HeldThreadSession } from './sessionReaper'
+import type { RunMark } from './detachedRunScan'
 
 const bindingSchema = z.object({
   threadId: z.string().min(1), provider: z.string().min(1), sessionId: z.string().min(1),
@@ -575,6 +576,11 @@ export class SottoThreadHost implements ProviderHost {
       const threadId = this.threadFor(id)
       return threadId ? { threadId, ...held } : held
     })
+  }
+  /** The Sotto thread whose provider session a detached run's mark names (#2476); the provider's own ID stays here. */
+  threadForRunMark(mark: RunMark): string | undefined {
+    const sessionId = this.inner.threadForRunMark?.(mark)
+    return sessionId === undefined ? undefined : this.threadFor(sessionId)
   }
   /** The native session IDs of those of these threads bound to this adapter's provider. */
   private ownSessions(threadIds: readonly string[]): string[] {

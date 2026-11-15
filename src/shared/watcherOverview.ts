@@ -7,10 +7,17 @@ export const watcherGroupSchema = z.enum(WATCHER_GROUPS)
 export type WatcherGroup = z.infer<typeof watcherGroupSchema>
 export const WATCHER_QUIET_MS = 20 * 60 * 1_000
 /**
- * How long a watched thread rests, its turn ended with nothing running or asked, with a pull request of its own still open,
- * before Watcher hears it is at rest (#2307). The same twenty minutes as quiet, which is the working thread's.
+ * The idle clock (#1152, Zach's pick on November 13, 2026): how long a watched thread stays idle, its turn ended with its
+ * work settled or waiting only on the user's card, before Watcher hears it is at rest. The same twenty minutes as quiet,
+ * which is the working thread's. Each thread has its own clock, which starts when the thread goes idle and goes back to
+ * zero when it works again.
  */
 export const WATCHER_AT_REST_MS = WATCHER_QUIET_MS
+/**
+ * After the clock wakes Watcher, how long until it wakes it again for the same idle stretch: the clock starts again at
+ * zero (Zach's pick on November 13, 2026, "Wake every 20 min while idle"). Null wakes it once per idle stretch.
+ */
+export const WATCHER_AT_REST_AGAIN_MS: number | null = WATCHER_AT_REST_MS
 
 /** Observation times belong to the observer, not to a provider's republished snapshot. */
 export interface WatcherObservation {

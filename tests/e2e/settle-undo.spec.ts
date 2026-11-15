@@ -56,7 +56,7 @@ test('a Settle pressed with the pointer holds its row\'s place, settles nothing 
   test.setTimeout(180_000)
   await mkdir(SHOTS, { recursive: true })
   const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-settle-undo-' })).directory
-  await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'dark', accent: 'teal' }))
+  await writeFile(join(profile, 'settings.json'), JSON.stringify({ ...DEFAULT_SETTINGS, onboardingComplete: true, appearance: 'dark', accent: 'teal', threadListGrouping: 'project' }))
   await writeFile(join(profile, 'agents.json'), JSON.stringify({
     configuration: { ...defaultAgentConfiguration(), enabled: true },
     activeThreadId: 'visual-gate', activeProjectId: 'workshop', draft: '', draftThreadId: null, draftRequestId: null, composing: false, outbox: [],

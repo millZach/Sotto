@@ -34,7 +34,8 @@ export const REMOTE_COMMANDS: { readonly [T in CommandType]?: Fields<T> } = {
   'steer-followup': ['threadId', 'itemId'], 'remove-followup': ['threadId', 'itemId'],
   'reorder-followups': ['threadId', 'itemIds'], 'resume-followups': ['threadId'],
   steer: ['threadId', 'draftId', 'text', 'attachments', 'skills', 'files'],
-  'create-project': ['provider', 'title', 'path', 'useExisting'],
+  // `gitInit` came with `project-git-init`: a desktop sends it only to a host that lists that feature.
+  'create-project': ['provider', 'title', 'path', 'useExisting', 'gitInit'],
   'select-project': ['projectId'], 'settle-project': ['projectId'], 'restore-project': ['projectId'],
   'settle-thread': ['threadId'], 'restore-thread': ['threadId'],
   'rename-thread': ['threadId', 'title'], 'regenerate-thread-title': ['threadId'],
@@ -87,6 +88,8 @@ export const REMOTE_COMMANDS: { readonly [T in CommandType]?: Fields<T> } = {
   // Early start: typing in a thread's composer starts its provider session. It grants and sends nothing.
   'start-thread-session': ['threadId'],
   interrupt: ['threadId'], 'compact-thread': ['threadId'],
+  // Stopping a run the thread detached is the user's own press, like Stop on the thread; it answers no request (#2476).
+  'stop-detached-run': ['threadId', 'runId'],
   answer: ['threadId', 'requestId', 'answer', 'approved', 'questionAnswers', 'permissionChoice', 'skipped', 'attachments'],
 }
 /**

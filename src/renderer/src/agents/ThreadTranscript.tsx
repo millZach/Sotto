@@ -20,7 +20,7 @@ import { followupsFor } from './ThreadFollowups'
 import { deliveryFor, deliveryPending, hasDraftContent, queuedRevision, submissionStatus, useSubmissions, useThreadComposer, type Submission, type SubmissionStatus, type ThreadDraftStore } from './threadDraftStore'
 import { clockLabel, type ThreadRow } from './threadFacts'
 import { useShared } from './stateSharing'
-import { foldedTurns, setStepsOpen, useStepsOpen } from './stepsOpen'
+import { forgetWorkingLine, setStepsOpen, useStepsStart, workingLineChoice } from './stepsOpen'
 import { MessageContent, AttachmentPreviews } from './MessageContent'
 import { SentSkillsContext, useSentSkills } from './sentSkills'
 import { renderedPlainText, useTransientFlag, writeClipboard } from './richActions'
@@ -61,10 +61,12 @@ import { isThreadClosed, threadOrnamentAllowed } from '../../../shared/threadAct
 import type { AgentBackgroundWork } from '../../../shared/agentMonitoring'
 import { ThreadGreeting } from './ThreadGreeting'
 import type { DelegationView } from '../../../shared/delegation'
-import { DelegatedWork, DelegatedWorkSummary, DelegationWorldProvider, delegationsByTurn, StillWorking, stillWorkingAgents, UnfoldedWork, useDelegationWorld } from './DelegatedWork'
+import { DelegatedWork, DelegatedWorkSummary, DelegationWorldProvider, delegationsByTurn, DetachedRunStopContext, StillWorking, stillWorkingAgents, UnfoldedWork, useDelegationWorld } from './DelegatedWork'
 import { useDelegations, useDelegationsEnabled } from './delegations'
+import { finishedDelegation } from './delegationWords'
 import { MessageScrubber } from './MessageScrubber'
 import { keepReadingPlace, MessageRows, MessageRowsContext, readingPlace, revealLift, scrolledSince, scrollsTranscript, type ReadingPlace } from './readingPlace'
+import { readingWindow, type ReadingWindow } from './readingWindow'
 import { readsBack, typesIntoComposer } from './slimComposer'
 import { aboveWindow, joinedMarks, scrubberMarks, storedMarks, SCRUBBER_FEWEST, type ScrubberMark } from './messageScrubberMarks'
 import { useSlidMarks, useStoredPrompts } from './useStoredPrompts'
@@ -163,7 +165,7 @@ function TurnWork({ headline, steps, did, delegated, moment, quiet, open, setOpe
   readonly delegated?: ReactNode
   /**
    * Whether the fold is open, held by the turn, which keeps what still works under its reply only while the fold is closed.
-   * `setOpen` holds this fold only; a press also sets how every fold not yet pressed starts.
+   * `setOpen` holds this fold only; a press also sets how every fold that shows later starts.
    */
   readonly open: boolean; readonly setOpen: (open: boolean) => void
   /** The turn failed: its line is where a press that opens the thread at its failed turn lands. */
@@ -362,9 +364,13 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
     return element !== null && rows !== null ? rows.add(message.id, element) : undefined
   }, [rows, message.id])
   const workButton = useRef<HTMLButtonElement>(null)
-  const [pressedOpen, setWorkOpen] = useState<boolean | null>(null)
-  const stepsOpen = useStepsOpen()
-  const workOpen = pressedOpen ?? stepsOpen
+  const [pressedOpen, setPressedOpen] = useState<boolean | null>(null)
+  const stepsStart = useStepsStart()
+  const lifecycle = workGroups?.find(group => group.turn)?.turn
+  // A news turn's work folds into this reply's header once it ends, so the header starts as its working line was left,
+  // and a press here takes over from it, as a Worked for line's does.
+  const workOpen = pressedOpen ?? (lifecycle === undefined ? undefined : workingLineChoice(threadId, lifecycle.turnId)) ?? stepsStart
+  const setWorkOpen = (open: boolean): void => { setPressedOpen(open); if (lifecycle !== undefined) forgetWorkingLine(threadId, lifecycle.turnId) }
   const workId = useId()
   const foldWork = (event: React.KeyboardEvent): void => {
     if (!workOpen || event.key !== 'Escape' || event.defaultPrevented || event.nativeEvent.isComposing || !workButton.current) return
@@ -373,7 +379,6 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
     activity?.onDisclosure(workButton.current)
     setWorkOpen(false)
   }
-  const lifecycle = workGroups?.find(group => group.turn)?.turn
   const workMark = speaker === 'watcher' && (lifecycle?.status ?? 'completed') === 'completed'
   // A wake-up babysitting sent is Sotto's, told by the host's mark and never by its text, and shows every word the
   // provider received, as it received it (ADR-0061 decision 8).
@@ -451,9 +456,9 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
   // Its work lines are worded by helpers, so it draws again when the interface language changes.
   useInterfaceLanguageState()
   // The turn holds its fold's state: what still works after the reply stands under it only while the fold is closed. Until
-  // pressed, the fold starts as the user last left any turn's steps.
-  const [pressedOpen, setWorkOpen] = useState<boolean | null>(null)
-  const stepsOpen = useStepsOpen()
+  // pressed, the fold starts as the user last left any turn's steps when it first showed, and a press on another never moves it.
+  const [pressedOpen, setPressedOpen] = useState<boolean | null>(null)
+  const stepsStart = useStepsStart()
   // A fork carries finished turns, so only a finished turn's newest written reply offers one (#1028, E5b).
   // Watcher's room shows no reply its provider made of an API error while Restart stopped threads is on (#2234).
   const failureWords = useContext(TurnFailureWordsContext)
@@ -526,14 +531,17 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
   const work = final ? written.filter(message => message !== final && drawn(message) && !visuals.some(visual => visual.message === message)) : []
   // A turn whose only record is how it ended has nothing to fold; its group states the outcome itself.
   if (!final || (!work.length && !groups.some(group => group.records.length && !compactionOf(group)))) return <>
-    <ActivityGroups groups={opening} context={context} />{everything.map(plain)}<ThreadMediaTiles groups={groups} threadId={threadId} who={speaker === 'watcher' ? 'Watcher' : provider} /><UnfoldedWork views={delegations} work={final ? backgroundWork : undefined} />{continued}</>
+    <ActivityGroups groups={opening} context={context} />{everything.map(plain)}<ThreadMediaTiles groups={groups} threadId={threadId} who={speaker === 'watcher' ? 'Watcher' : provider} /><UnfoldedWork views={delegations} work={final || running && last ? backgroundWork : undefined} />{continued}</>
   const finalAt = turn.replies.indexOf(final)
   const unfolded = new Set(visuals.map(visual => visual.message))
   const shown = (from: number, to: number): ReactNode => visuals.filter(visual => visual.at > from && visual.at < to)
     .map(({ message }) => <React.Fragment key={message.id}>{article(message)}</React.Fragment>)
   const lifecycle = groups.find(group => group.turn)?.turn
-  // A turn whose working line was folded with Escape stays folded once it ends.
-  const workOpen = pressedOpen ?? (lifecycle !== undefined && foldedTurns.has(lifecycle.turnId) ? false : stepsOpen)
+  // A turn whose working line the user opened or folded stays that way once it ends.
+  const workOpen = pressedOpen ?? (lifecycle === undefined ? undefined : workingLineChoice(threadId, lifecycle.turnId)) ?? stepsStart
+  // A press on the finished turn's own line takes over from its working line, so the thread opened again starts it as the
+  // user last left a fold rather than as the working line was left.
+  const setWorkOpen = (open: boolean): void => { setPressedOpen(open); if (lifecycle !== undefined) forgetWorkingLine(threadId, lifecycle.turnId) }
   const moments = [...turn.replies.map(message => message.createdAt), ...groups.flatMap(group => group.records.map(record => record.completedAt ?? record.startedAt))]
   // A question a folded reply asked would fold away with it, so it is quoted under the fold (#1019).
   const lifted = work.flatMap(message => message.role === 'assistant' && !isWakeUpMessage(message) && asked(message).length ? [{ message, questions: asked(message) }] : [])
@@ -672,14 +680,24 @@ export const MessageList = memo(function MessageList({ messages, provider, runni
   // Turns are re-split on every arrival but hold the same messages; sharing their structure lets the
   // memoised turns below compare equal.
   const turns = useShared(useMemo(() => splitTurns(messages, placement.unshown), [messages, placement.unshown]))
+  const trailingDelegations = useMemo(() => delegations?.get('')?.filter(view => !finishedDelegation(view)), [delegations])
   // The newest turn drawn is the one being worked on while the thread runs, except in Watcher's conversation when that turn
   // ended and another turn's lifecycle runs: Watcher is then working on news, whose wake-up the conversation leaves out
   // (`watcherWakeUpsAsShown`), so the news turn has nothing drawn until its first reply. Drawn as the running turn, the
   // finished one would open while the news turn runs and fold again when it ends (#1452). Without that evidence on both
   // sides, the newest turn is the running one, as in every other thread.
   const live = running && !(speaker === 'watcher' && placement.newestTurnEnded === true)
-  // The provider's agents stand under the reply beside delegated work, so they keep to delegation's Owl switch.
-  const agents = useOwlFeature('thread-delegation') && !live ? backgroundWork : undefined
+  // The provider's agents stand under the reply beside delegated work, so they keep to delegation's Owl switch. A detached
+  // run's row went straight to stable (#2476, Zach's call on November 11, 2026), so it stands there on every track.
+  const delegationOn = useOwlFeature('thread-delegation')
+  const detachedOnly = useMemo(() => {
+    const runs = backgroundWork?.filter(task => task.type === 'detached-run')
+    return runs?.length ? runs : undefined
+  }, [backgroundWork])
+  const agents = live ? undefined : delegationOn ? backgroundWork : detachedOnly
+  // While a new turn runs, a detached run's row, its only Stop, stays under the last finished reply rather than going.
+  const agentsAt = live && detachedOnly ? Math.max(0, turns.length - 2) : turns.length - 1
+  const shownAgents = live ? detachedOnly : agents
   // Only the newest turn's reply is being written: a turn that has drawn nothing yet, such as one opened by an empty reply,
   // leaves the reply above it finished. A visual after the reply means the reply is no longer being written, and so does a
   // turn that is not writing now (`notWriting`), so no caret says the provider is still typing.
@@ -709,11 +727,11 @@ export const MessageList = memo(function MessageList({ messages, provider, runni
     <ActivityGroups groups={unshown(placement.before.get((turn.user ?? turn.replies[0])!.id))} context={context} />
     <TurnView turn={turn} provider={provider} running={live}
       last={index === turns.length - 1} writing={writing} writingBelow={index === turns.length - 1 ? writingBelow : null} placement={placement} context={context} streamText={streamText} threadId={threadId} speaker={speaker}
-      delegations={turn.user ? delegations?.get(turn.user.id) : undefined} backgroundWork={index === turns.length - 1 ? agents : undefined} briefs={briefs} continuedIn={turn.user ? continuedIn?.get(turn.user.id) : undefined} close={close} />
+      delegations={turn.user ? delegations?.get(turn.user.id) : undefined} backgroundWork={index === agentsAt ? shownAgents : undefined} briefs={briefs} continuedIn={turn.user ? continuedIn?.get(turn.user.id) : undefined} close={close} />
     {movedAfter === index ? movedLine : null}
   </React.Fragment>)}
   <ActivityGroups groups={unshown(placement.trailing)} context={context} />
-  <DelegatedWork views={delegations?.get('')} />
+  <DelegatedWork views={trailingDelegations} />
   </>
 })
 
@@ -903,7 +921,12 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   readonly onQuoted?: (() => void) | undefined
 }): ReactNode {
   const { t } = useLingui()
-  const thread = row.thread
+  const following = useRef(true)
+  // A reader above the end keeps the turns main's window lets go of, until they are back at the end (readingWindow.ts).
+  const drawnWindow = useRef<ReadingWindow | null>(null)
+  drawnWindow.current = readingWindow(drawnWindow.current, row.thread, !following.current)
+  const thread = drawnWindow.current.thread
+  const heldAbove = drawnWindow.current.held
   const overseen = isDynamicThread(thread, useOwlFeature('dynamic-threads')) ? resolveModel(state.host.models, thread.modelId)?.name ?? thread.modelId : undefined
   const quoting = useOwlFeature('reply-quote')
   const sentSkills = useSentSkills(row, state, command)
@@ -911,7 +934,6 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const scroller = useRef<HTMLDivElement>(null)
   const content = useRef<HTMLDivElement>(null)
   const jump = useRef<HTMLButtonElement>(null)
-  const following = useRef(true)
   /** Where the scroll stood when last heard or set to the end, so a reader moving up from the end is told apart from the end moving away. */
   const lastTop = useRef(0)
   const anchor = useRef<{ readonly height: number; readonly top: number } | null>(null)
@@ -1016,6 +1038,10 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   // ornament may show them too. A command waits rather than works, so it stays the ornament's alone.
   const ornamentAllowed = threadOrnamentAllowed(thread, row.connected)
   const backgroundAgents = useShared(useMemo(() => stillWorkingAgents(thread.backgroundWork, ornamentAllowed), [ornamentAllowed, thread.backgroundWork]))
+  // Stop on a detached run's row (#2476): the host that runs the thread looks again and ends that process alone.
+  const unreached = t`Sotto could not reach the computer that runs this thread. The run may still be running.`
+  const stopDetachedRun = useMemo(() => (runId: string): Promise<string | null> => command({ type: 'stop-detached-run', threadId: thread.id, runId })
+    .then(result => result === null ? unreached : result.error, () => unreached), [command, thread.id, unreached])
   const delegatingTitle = thread.delegatedBy === undefined ? undefined : state.host.threads.find(item => item.id === thread.delegatedBy)?.title ?? t`The thread that delegated`
   const briefs = useMemo<DelegatedBriefs | undefined>(() => {
     const ids = new Set(delegations.received.map(view => view.briefMessageId))
@@ -1157,7 +1183,8 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     seen.current = lastMessageId
     if (following.current) { element.scrollTop = element.scrollHeight; lastTop.current = element.scrollTop; seenUpTo.current = lastMessageId }
     else if (arrived) setUnseen(true)
-  }, [lastMessageId, pendingKey, hidden, followSignal, thread.historyStatus, toEnd])
+    // What was held above main's window goes when the reader is back at the end, which is followed as it shortens.
+  }, [lastMessageId, pendingKey, hidden, heldAbove, followSignal, thread.historyStatus, toEnd])
 
   // Late content layout, composer padding and window resizing keep a following reader at the end. Observe the
   // scroll box's content size too: a taller floating composer changes its padding without resizing the messages.
@@ -1376,7 +1403,11 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     // A press while an earlier one is still being answered waits on the same oldest message, one answer more.
     const asked = earlier.current?.threadId === thread.id ? earlier.current : null
     earlier.current = asked ? { ...asked, waiting: asked.waiting + 1 } : oldest ? { threadId: thread.id, oldestId: oldest.id, waiting: 1 } : null
-    void command({ type: 'load-earlier-messages', threadId: thread.id })
+    // Main widens its own window, which has moved on from the turns held here. It is brought back to the oldest message
+    // drawn first, so what the press adds is above that message and not among the turns already on screen.
+    const widen = (): Promise<unknown> => command({ type: 'load-earlier-messages', threadId: thread.id })
+    if (heldAbove > 0 && oldest) void command({ type: 'load-earlier-messages', threadId: thread.id, throughMessageId: oldest.id }).then(widen)
+    else void widen()
   }
 
   const empty = !thread.messages.length && !sending.length && !recovery.length && !showsActivity
@@ -1406,10 +1437,10 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
         {hidden === 0 && !thread.earlierAvailable ? <ContinuedFromNote thread={thread} state={state} command={command} /> : null}
         {startView && startNoteAtHead ? <ThreadStartNote view={startView} /> : null}
         {startView && startHandoverWaiting ? <StartHandoverCard key={thread.id} view={startView} createdAt={startView.start.at} /> : null}
-        {thread.messages.length || showsActivity ? <ActivityBodyContext.Provider value={bodyHost}><ThreadStartContext.Provider value={startView ?? (thread.startedFrom && !watcher ? 'off' : null)}><ForkContext.Provider value={forkOptions}><CouncilAskContext.Provider value={councilAsk}><DelegationWorldProvider world={delegationWorld}><ContinueLinksContext.Provider value={continueLinks}><HandoverFromContext.Provider value={handoverFrom}>
+        {thread.messages.length || showsActivity ? <ActivityBodyContext.Provider value={bodyHost}><ThreadStartContext.Provider value={startView ?? (thread.startedFrom && !watcher ? 'off' : null)}><ForkContext.Provider value={forkOptions}><CouncilAskContext.Provider value={councilAsk}><DelegationWorldProvider world={delegationWorld}><DetachedRunStopContext.Provider value={stopDetachedRun}><ContinueLinksContext.Provider value={continueLinks}><HandoverFromContext.Provider value={handoverFrom}>
           <OverseenContext.Provider value={overseen}><MessageRowsContext.Provider value={rows}><MessageList messages={messages} provider={row.provider} running={thread.status === 'running'} notWriting={notWriting} sending={sending.some(item => item.status === 'queued' || item.status === 'submitting' || item.status === 'accepted')} writingBelow={writingBelow} placement={placement} context={activity} streamText={streamText} threadId={thread.id} speaker={watcher ? 'watcher' : undefined}
           delegations={delegatedWork.size ? delegatedWork : undefined} backgroundWork={backgroundAgents} briefs={briefs} continuedIn={continuedIn?.size ? continuedIn : undefined} modelMoved={thread.modelMoved} /></MessageRowsContext.Provider></OverseenContext.Provider>
-        </HandoverFromContext.Provider></ContinueLinksContext.Provider></DelegationWorldProvider></CouncilAskContext.Provider></ForkContext.Provider></ThreadStartContext.Provider></ActivityBodyContext.Provider>
+        </HandoverFromContext.Provider></ContinueLinksContext.Provider></DetachedRunStopContext.Provider></DelegationWorldProvider></CouncilAskContext.Provider></ForkContext.Provider></ThreadStartContext.Provider></ActivityBodyContext.Provider>
           : thread.historyStatus === 'loading' ? <div className="thread-history-skeleton" aria-hidden="true"><i /><i /><i /></div>
             : thread.historyStatus === 'error' || !empty || greets || startView ? null
               : emptyNote != null && thread.status !== 'running' && thread.compaction?.status !== 'running' ? emptyNote
@@ -1425,7 +1456,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
         {children}
       </StepPicturesThreadContext.Provider></ThreadFolderContext.Provider></SentSkillsContext.Provider></BrowserLinesContext.Provider></OwnServerTurnContext.Provider></div>
     </div></div>
-    {greets && greetingSlot ? createPortal(<ThreadGreeting row={row} state={state} />, greetingSlot) : null}
+    {greets && greetingSlot ? createPortal(<ThreadGreeting row={row} state={state} store={store} />, greetingSlot) : null}
     {/* A request's choices and text are never covered: while a card reaches the button's band, the button steps aside. */}
     {/* Add to prompt over words selected in a reply (ADR-0129; Owl only). */}
     {quoting ? <ReplyQuoteButton threadId={thread.id} scroller={scroller} onAdded={onQuoted} /> : null}

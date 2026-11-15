@@ -72,8 +72,11 @@ export function PaneMenuRows({ groups, onChoose }: { readonly groups: readonly (
  * It renders inside the header instead of a portal, so the header still contains the focus it hands out and
  * the pane's own focus bookkeeping keeps working. Escape or Tab closes it and returns focus to the button,
  * as a pointer outside it does.
+ *
+ * A menu whose last row goes draws nothing, button included. It is closed then, so it does not come back open when
+ * it next has a row, and if it held the keyboard's focus, `fallbackFocus` says where that goes instead of nowhere.
  */
-export function PaneMenu({ groups, label: givenLabel, icon, text, className, buttonClassName }: {
+export function PaneMenu({ groups, label: givenLabel, icon, text, className, buttonClassName, fallbackFocus }: {
   readonly groups: readonly (readonly PaneMenuItem[])[]
   readonly label?: string
   /** The button's glyph; the ellipsis unless a control says otherwise. */
@@ -83,6 +86,8 @@ export function PaneMenu({ groups, label: givenLabel, icon, text, className, but
   readonly className?: string
   /** The icon button's own class where the menu sits on another surface's line, such as Tools' `files-icon`. */
   readonly buttonClassName?: string
+  /** Takes focus when the menu's rows run out while its button or one of its rows held it, as Watcher's strip menu's can. */
+  readonly fallbackFocus?: () => void
 }): ReactNode {
   const { t } = useLingui()
   const label = givenLabel ?? t`More actions`
@@ -102,12 +107,23 @@ export function PaneMenu({ groups, label: givenLabel, icon, text, className, but
     return () => { document.removeEventListener('pointerdown', dismiss, true); window.removeEventListener('blur', away) }
   }, [open])
   const shown = groups.filter(group => group.length > 0)
-  if (shown.length === 0) return null
+  const empty = shown.length === 0
+  // Whether focus is on the button or a row. The menu going takes them with it, and no blur says so.
+  const held = useRef(false)
+  useEffect(() => {
+    if (!empty) return
+    setOpen(false)
+    if (!held.current) return
+    held.current = false
+    fallbackFocus?.()
+  }, [empty, fallbackFocus])
+  if (empty) return null
   const close = (restore: boolean): void => {
     setOpen(false)
     if (restore) button.current?.focus()
   }
-  return <div className={className ? `pane-menu ${className}` : 'pane-menu'}>
+  return <div className={className ? `pane-menu ${className}` : 'pane-menu'} onFocus={() => { held.current = true }}
+    onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) held.current = false }}>
     <button ref={button} type="button" className={text === undefined ? `${buttonClassName ?? 'pane-action'} tt-focusable` : 'pane-menu__trigger tt-focusable'} aria-label={label} title={label}
       aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(value => !value)}
       // A menu whose every row is disabled leaves focus on the button; Escape still puts it away.

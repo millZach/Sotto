@@ -1,5 +1,6 @@
 import React, { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { useLingui } from '@lingui/react/macro'
+import { writeClipboard } from '../agents/richActions'
 import { Button } from '../components/Button'
 import { foldTeamDeskReads, TEAM_ANSWERS_PER_DAY, TEAM_NAME_MAX, TEAM_RENEW_WINDOW_MS, type TeamDeskReadsLine, type TeamLinkView, type TeammateMessage, type TeamsBridge, type TeamsCommand, type TeamsState } from '../../../shared/teams'
 import { TeamDesks } from './TeamDesks'
@@ -189,7 +190,8 @@ function TeamSetup({ state, command, busy }: { readonly state: TeamsState; reado
         <code className="teams-code__text">{code.text}</code>
         <p className="teams-muted">{t`Send this to your teammate. It works once, until ${expires}.`}</p>
         <div className="teams-actions">
-          <Button variant="secondary" onClick={() => { void navigator.clipboard.writeText(code.text).then(() => setCopied(true)) }}>{copied ? t`Copied` : t`Copy code`}</Button>
+          {/* Through main, as every copy is: the window has no clipboard permission of its own, so navigator.clipboard refuses. */}
+          <Button variant="secondary" onClick={() => { void writeClipboard(code.text).then(() => setCopied(true), () => undefined) }}>{copied ? t`Copied` : t`Copy code`}</Button>
           <Button variant="ghost" disabled={busy} onClick={() => { setCopied(false); command({ type: 'cancel-code' }) }}>{t`Cancel code`}</Button>
         </div>
       </div> : <div className="teams-actions"><Button variant="secondary" disabled={busy || !shown} onClick={() => { setCopied(false); command({ type: 'make-code', name: shown }) }}>{t`Make a code`}</Button></div>}

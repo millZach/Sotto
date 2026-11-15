@@ -29,13 +29,14 @@ export function hostClientBridge<T extends object>(bridge: T): T {
   // These members return their unsubscribe immediately. Every other call in these domains returns a Promise.
   const subscriptions = new Set([
     'agents.onState', 'agents.onThreadDetail', 'terminal.onEvent', 'browser.onEvent', 'browser.onFrame',
-    'cloudIphone.onEvent', 'gitChanges.onChanged', 'subagents.onChanged', 'requestDrafts.onChanged', 'memory.onChanged',
+    'cloudIphone.onEvent', 'gitChanges.onChanged', 'files.onDownloadProgress', 'subagents.onChanged', 'requestDrafts.onChanged', 'memory.onChanged',
   ])
   // Files, Changes and Agents read a paired host's thread through main, which sends the read to that host (ADR-0025,
   // October 5 amendment): these calls keep another host's key. Every other call naming another host is refused here.
   // A link's Markdown file is read the same way, and main itself says a link's file cannot be shown in a folder here (ADR-0120).
+  // So are a linked file's place, preview and download, and main says that a host's file cannot be opened here (November 12 amendment).
   const hostReads: Readonly<Record<string, ReadonlySet<string>>> = {
-    files: new Set(['list', 'preview', 'copyPath', 'previewLink', 'revealLink']), gitChanges: new Set(['list', 'review', 'copyPath']), subagents: new Set(['page', 'assignments']),
+    files: new Set(['list', 'preview', 'copyPath', 'previewLink', 'revealLink', 'openLink', 'linkedFile', 'download', 'stopDownload']), gitChanges: new Set(['list', 'review', 'copyPath']), subagents: new Set(['page', 'assignments']),
     // An interactive visual's page is asked of main, which says itself that a paired host's page is on another computer.
     visuals: new Set(['open']),
     // A thread on a paired host opens its terminal over SSH from this computer (ADR-0183): main knows the key names a host.

@@ -20,6 +20,7 @@ import type { UsageHistorySink, UsageRecordedUserMessage } from './usageHistory/
 import type { AgentThreadPrompts } from '../../shared/threadPrompts'
 import type { MergedSettleExpectation } from './worktreeCleanup'
 import type { HeldSession } from './sessionReaper'
+import type { RunMark } from './detachedRunScan'
 
 /**
  * A staged image as an adapter receives it (ADR-0031): its handle, and its bytes read from this host's attachment
@@ -66,7 +67,7 @@ export interface WatcherProfileTools extends ScopedThreadTools {
 
 export type AgentHostCommand =
   | { readonly type: 'create-project'; readonly provider?: ProviderId; readonly commandId: string; readonly projectId: string; readonly title: string; readonly path: string }
-  | ({ readonly type: 'create-thread'; readonly dynamic?: true; readonly commandId: string; readonly threadId: string; readonly projectId: string; readonly title: string; readonly modelId: string; readonly titleSource?: 'user' | 'default'; readonly project?: AgentProject; readonly workingCopy?: 'independent' | 'shared'; readonly baseBranch?: string; readonly startFromOrigin?: boolean; readonly existingWorktreePath?: string; readonly workingDirectory?: string; readonly startFromMove?: string; readonly madeFrom?: WorktreeMadeFrom; readonly check?: true
+  | ({ readonly type: 'create-thread'; readonly dynamic?: true; readonly routed?: true; readonly commandId: string; readonly threadId: string; readonly projectId: string; readonly title: string; readonly modelId: string; readonly titleSource?: 'user' | 'default'; readonly project?: AgentProject; readonly workingCopy?: 'independent' | 'shared'; readonly baseBranch?: string; readonly startFromOrigin?: boolean; readonly existingWorktreePath?: string; readonly workingDirectory?: string; readonly startFromMove?: string; readonly madeFrom?: WorktreeMadeFrom; readonly check?: true
     /** Main-only Watcher creation metadata, never accepted by the public command schema. */
     readonly keptSpeed?: true; readonly councilJudge?: true } & AgentThreadOptions)
   | ({ readonly type: 'configure-thread'; readonly commandId: string; readonly threadId: string
@@ -212,7 +213,7 @@ export interface ThreadReadPurpose {
  */
 /** Where a rename came from: by hand, written by the thread's own provider, or a first-message title. */
 export type ThreadRenameSource = 'user' | 'generated' | 'first-message'
-export type ShortTextPurpose = 'thread-title' | 'thread-branch' | 'commit-message' | 'pull-request-text' | 'next-prompt' | 'command-summary'
+export type ShortTextPurpose = 'thread-title' | 'thread-branch' | 'commit-message' | 'pull-request-text' | 'next-prompt' | 'command-summary' | 'model-route'
 /** The side calls Watcher's own thread may make: neither runs a tool or joins its conversation (ADR-0173, ADR-0185). */
 export const watcherMayWrite = (purpose: ShortTextPurpose | undefined): boolean => purpose === 'next-prompt' || purpose === 'command-summary'
 export interface ShortTextPrompt {
@@ -224,9 +225,12 @@ export interface ShortTextPrompt {
 /** A model a side call runs on when there is no session to run it in (ADR-0173): the model chosen, and the folder it would work in. */
 export interface ShortTextTarget {
   readonly modelId: string
+  /** The effort to run at, where the caller chose one (model routing's classifier, ADR-0207). Absent, the model's least thorough. */
+  readonly effort?: string | undefined
   readonly cwd?: string | undefined
 }
-export interface AgentSkillScope { readonly providerId: ProviderId; readonly workingDirectory: string }
+/** `projectPath` is the project's own folder, for a provider that keeps skills by project and not by working folder. */
+export interface AgentSkillScope { readonly providerId: ProviderId; readonly workingDirectory: string; readonly projectPath?: string }
 /** One thread's messages as the workspace still holds them, handed back before a connection reads history. */
 export interface RestoredThreadHistory {
   readonly threadId: string
@@ -425,6 +429,12 @@ export interface ProviderHost {
    */
   heldSessions?(): readonly HeldSession[]
   /**
+   * The thread whose provider session a detached run's mark names (#2476), by the caller's IDs: Claude Code's session for
+   * `CLAUDE_CODE_SESSION_ID`, Codex's thread for `CODEX_THREAD_ID`. Undefined for a mark this adapter does not own or a
+   * session it does not hold. Read only when the detached-run watch looks, never on the update path.
+   */
+  threadForRunMark?(mark: RunMark): string | undefined
+  /**
    * The threads the user has settled (CONTEXT.md, Settled), as a run begins, by the caller's IDs. An adapter may leave
    * them out of work it does for every saved thread once, such as Codex catching a rollout up after an update, and do it
    * when the thread is opened instead (#992, Zach's call on October 30).
@@ -488,12 +498,16 @@ export interface AgentHost extends ProviderHost {
   /** Deletes threads that pass `hold` and the workspace's own checks, finally (ADR-0140). WorkspaceHost's. */
   deleteThreads?(threadIds: readonly string[], options: { readonly automatic: boolean; readonly hold: (threadId: string) => ThreadClearKeptReason | null
     readonly worktree?: { confirmedIgnored?: readonly string[]; confirmedItems?: readonly { path: string; fileCount: number }[]; confirmedRepositories?: WorktreeReclaimPreview['repositories'] } }): Promise<{ deleted: string[]; kept: { threadId: string; reason: ThreadClearKeptReason; error?: string }[] }>
+  /** Stops one of a thread's detached runs (#2476) because the user pressed Stop; throws with words to show when it cannot. WorkspaceHost's. */
+  stopDetachedRun?(threadId: string, runId: string): Promise<void>
   /** A settled thread given new work comes back, and only it: a settled project returns with this thread alone. */
   reopenThreadForWork?(threadId: string, guard?: () => void): Promise<AgentHostSnapshot>
   /** Rename a thread in Sotto's own workspace and record where the name came from; a hand rename is
    * `user` and outranks everything later. The provider is not told. */
   renameThread?(threadId: string, title: string, source?: ThreadRenameSource): Promise<AgentHostSnapshot>
   setThreadDynamic?(threadId: string, dynamic: boolean): Promise<AgentHostSnapshot>
+  /** Model routing on or off for a thread (ADR-0207): Sotto's own mark, which its next send reads. */
+  setThreadRouted?(threadId: string, routed: boolean): Promise<AgentHostSnapshot>
   /**
    * One thread's whole history from Sotto's own store, for the few things that need more than the window
    * a pane holds — naming a thread from its first exchange. Absent on hosts that keep no history.
@@ -543,6 +557,8 @@ export interface AgentHost extends ProviderHost {
   listThreadChangedFiles?(request: GitChangedFilesRequest): Promise<GitChangedFiles>
   switchThreadBranch?(threadId: string, ref: string, create: boolean): Promise<AgentHostSnapshot>
   initThreadRepository?(threadId: string): Promise<AgentHostSnapshot>
+  /** `git init` in a folder create-project just made, before it becomes a project (`gitInit`, ADR-0073, November 12, 2026). */
+  initProjectFolder?(path: string): Promise<void>
   publishThreadRepository?(threadId: string, options: { repository: string; visibility: 'private' | 'public' }): Promise<{ snapshot: AgentHostSnapshot; url: string }>
   /** One pull request of the thread's through `gh`: by reference, else its branch's own or the one last linked (ADR-0027). */
   readThreadPullRequest?(request: GitPullRequestRequest): Promise<GitPullRequestRead>

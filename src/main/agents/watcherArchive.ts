@@ -65,6 +65,13 @@ const closed = (request: Readonly<WatcherRequest>): boolean => request.state !==
 const unsettled = (operation: Readonly<WatcherOperation>): boolean => operation.creationUncertain === true
   || operation.deliveryState === 'queued' || operation.deliveryState === 'dispatching' || operation.deliveryState === 'uncertain'
 
+/**
+ * A participation Watcher stopped: Watcher's own Stop of the thread, or a stopped request on a thread Watcher started.
+ * It holds the thread's queue for the user's review, and the user's own command in the thread is that review (ADR-0073).
+ */
+export const stoppedParticipation = (request: Readonly<WatcherRequest>, participant: Readonly<WatcherRequest['participants'][number]>): boolean =>
+  participant.automationStopped === true || request.state === 'stopped' && participant.startedBy === 'watcher'
+
 /** How many closed requests the record holds: the quick check for whether archiving could be due. */
 export function closedWatcherRequests(record: Readonly<WatcherRecord>): number {
   let count = 0
@@ -82,7 +89,15 @@ export function closedWatcherRequests(record: Readonly<WatcherRecord>): number {
  * - for each thread the user took over, the newest request that records it: a takeover with no local record, or on a
  *   paired thread, fences later requests by that participation alone;
  * - a request with an instruction still queued for Watcher (a user follow-up with no message yet);
- * - a request whose stopped participation holds its thread's queue for the user's review (`preserveUserQueue`);
+ * - for each thread with a stopped participation, the newest closed request that records one, with no work still under
+ *   way and not a paired desktop's: it holds the thread's queue for the user's review (`preserveUserQueue`, which asks only
+ *   whether any request does), and only an act on the whole thread, the user's command there, clears it.
+ *   Stop watching and Watcher's Stop mark every request the thread took part in, so keeping each of them kept nearly
+ *   every closed request of a record for good: 3,036 of 3,206 in the owner's on November 12, 2026. With it stays the
+ *   newest one of each Watcher conversation that is not a standing watch's, which the takeover line of the user's next
+ *   send there is drawn from (`watcherTakeovers`): a standing watch's request draws none. A paired desktop's
+ *   request (`remoteOrigin`) with one stays whatever its age, as before: it can come back to the record, and one that
+ *   came back after the user's review would hold the queue again;
  * - a request with an operation whose delivery is unsettled, that a reservation or an exact read's fence names, or that
  *   `retains` keeps (Watcher's own in-memory work on it: a dispatch in flight, a check holding its place, an outcome still
  *   being observed).
@@ -97,16 +112,29 @@ export function archivableWatcherRequests(record: Readonly<WatcherRecord>, retai
   for (const takeover of record.localTakeovers ?? []) if (takeover.lastRequestId !== null) keep.add(takeover.lastRequestId)
   const fenced = new Set((record.remoteAbsences ?? []).map(item => item.operationId))
   const reserved = new Set(record.reservations.map(item => item.operationId))
+  const working = new Set<string>()
   for (const operation of record.operations) {
-    if (unsettled(operation) || fenced.has(operation.id) || reserved.has(operation.id) || retains(operation)) keep.add(operation.requestId)
+    const underWay = unsettled(operation) || retains(operation)
+    if (underWay) working.add(operation.requestId)
+    if (underWay || fenced.has(operation.id) || reserved.has(operation.id)) keep.add(operation.requestId)
   }
-  const takenOver = new Set<string>()
+  const takenOver = new Set<string>(), stopped = new Set<string>(), lined = new Set<string>()
   for (let index = record.requests.length - 1; index >= 0; index--) {
     const request = record.requests[index]!
+    // A thread's stop is counted on a request only an act on the whole thread can change. An active request, one with
+    // work still under way or a paired desktop's can let go of its own participation alone, as a settle under it does,
+    // and that would end a hold the thread's older requests kept. Those stay in the record anyway.
+    const fixed = closed(request) && !working.has(request.id) && !request.remoteOrigin
     for (const participant of request.participants) {
-      if (participant.state !== 'taken-over') continue
+      const held = participant.state === 'taken-over' ? takenOver : fixed && participant.state === 'participating' && stoppedParticipation(request, participant) ? stopped : undefined
+      if (!held) continue
       const target = targetKey(participant.target)
-      if (!takenOver.has(target)) { takenOver.add(target); keep.add(request.id) }
+      if (!held.has(target)) { held.add(target); keep.add(request.id) }
+      // The user's send in a stopped thread draws its takeover line from a request of that Watcher conversation that is
+      // not a standing watch's (`watcherTakeovers`), so the newest such request stays for the line to come from.
+      if (held !== stopped || request.standingWatchId !== undefined) continue
+      const line = `${target}\n${targetKey(request.watcher)}`
+      if (!lined.has(line)) { lined.add(line); keep.add(request.id) }
     }
   }
   const archivable: string[] = []
@@ -116,10 +144,9 @@ export function archivableWatcherRequests(record: Readonly<WatcherRecord>, retai
     if (!closed(request)) continue
     if (newer < WATCHER_LIVE_CLOSED_REQUESTS) { newer++; continue }
     if (keep.has(request.id) || request.userFollowups?.some(item => item.messageId === undefined)) continue
-    // A thread whose automation was stopped holds its own queue for the user's review until the user clears it; the
-    // request that records the stop is the hold, so it stays.
-    if (request.participants.some(participant => participant.state === 'participating'
-      && (participant.automationStopped === true || request.state === 'stopped' && participant.startedBy === 'watcher'))) continue
+    // A thread whose automation was stopped holds its own queue for the user's review until the user clears it. The
+    // newest request recording each thread's stop is that hold (`keep`); a paired desktop's may come back, so it stays too.
+    if (request.remoteOrigin && request.participants.some(participant => participant.state === 'participating' && stoppedParticipation(request, participant))) continue
     archivable.push(request.id)
   }
   return archivable.reverse()

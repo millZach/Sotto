@@ -4,6 +4,7 @@ import { Trans, useLingui } from '@lingui/react/macro'
 
 import type { SottoPlatform } from '../../../../shared/platform'
 import { releaseTrackName, type ReleaseTrack } from '../../../../shared/releaseTrack'
+import { Button } from '../../components/Button'
 import { ShortcutKey } from '../../components/ShortcutKey'
 import { platformCopy } from '../../platformCopy'
 import { useWatcherEnabled } from '../../state/watcherFeature'
@@ -26,6 +27,8 @@ export interface HelpViewProps {
   readonly openTopic?: HelpRequest | null | undefined
   /** The switch's answer, so About never says product events are on while they are off. */
   readonly productEventsEnabled?: boolean | undefined
+  /** Starts first-run setup's walk again (ADR-0200). Without it, Help offers no Set up Sotto. */
+  readonly onSetUp?: (() => void) | undefined
 }
 
 interface Topic {
@@ -48,7 +51,7 @@ function TopicList({ topics }: { readonly topics: readonly Topic[] }): ReactNode
   ))
 }
 
-export function HelpView({ shortcut, holdShortcut, platform, version, releaseTrack = 'stable', openTopic = null, productEventsEnabled = true }: HelpViewProps): ReactNode {
+export function HelpView({ shortcut, holdShortcut, platform, version, releaseTrack = 'stable', openTopic = null, productEventsEnabled = true, onSetUp }: HelpViewProps): ReactNode {
   const productEventsOff = useProductEventsState()?.offBy != null || !productEventsEnabled
   const { t } = useLingui()
   const watcher = useWatcherEnabled()
@@ -123,6 +126,10 @@ export function HelpView({ shortcut, holdShortcut, platform, version, releaseTra
       <div className="help-grid">
         <div className="help-topics">
           <p className="help-topics__group"><Trans>Getting started</Trans></p>
+          {onSetUp ? <div className="help-topics__card help-setup">
+            <p className="tt-paragraph"><Trans>Walk through setup again: your first thread, dictation, other computers and your iPhone.</Trans></p>
+            <Button variant="secondary" onClick={onSetUp}><Trans>Set up Sotto</Trans></Button>
+          </div> : null}
           <div className="help-topics__card"><TopicList topics={gettingStarted} /></div>
           {watcher ? <><p className="help-topics__group">Watcher</p>
           <div className="help-topics__card"><TopicList topics={watcherTopics} /></div></> : null}

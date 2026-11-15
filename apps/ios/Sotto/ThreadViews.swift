@@ -716,6 +716,19 @@ private final class FollowBox {
     var followRequests = 0
     /// Where the end sits within the page itself, which only what the page holds moves; scrolling moves `sentinel` alone.
     var endInPage: CGFloat = 0
+    /// The scroll view says when a hand or a scroll it animates moves the page (iOS 18); before that it can't.
+    let knowsMoves: Bool = { if #available(iOS 18.0, *) { true } else { false } }()
+    /// A hand or the scroll view's own animation, such as a tap on the status bar, is moving the page.
+    var moving = false
+    /// The page itself, found by the end's marker. It knows a finger is on it at once, where `moving` hears so a pass later.
+    weak var page: UIScrollView?
+    /// A finger is on the page or a flick it gave is running out, as the scroll view knows it now.
+    var handOn: Bool { page.map { $0.isTracking || $0.isDragging || $0.isDecelerating } ?? false }
+    /// When the page last changed height, as the end's marker saw it.
+    var resizedAt: CFTimeInterval = -.greatestFiniteMagnitude
+    /// The page changed height a moment ago. A move of the page then, with no hand on it, is the height swinging; one
+    /// without is someone setting the page's offset, as VoiceOver or the bench does, and decides where the reader stands.
+    var swinging: Bool { CACurrentMediaTime() - resizedAt < 1 }
     func settle() { atBottom = sentinel <= dockTop + Self.slack }
 }
 
@@ -769,8 +782,9 @@ private final class TimelineCache {
     private var latestTurnsStartID: String?
     private var dates: [String: Date] = [:]
     /// `held` marks the copy kept on screen while the thread is read again. A fresh copy can carry the same revision, from
-    /// a computer whose Sotto restarted, so it is always drawn anew.
-    func rows(for detail: ThreadDetail?, held: Bool = false) -> [ConversationRow] {
+    /// a computer whose Sotto restarted, so it is always drawn anew. `copy` is the model's count of copies taken in: a step
+    /// window moved back by Show earlier messages keeps its revision and holds more (ADR-0194).
+    func rows(for detail: ThreadDetail?, held: Bool = false, copy: Int = 0) -> [ConversationRow] {
         guard let detail else {
             key = nil
             cached = []
@@ -778,7 +792,7 @@ private final class TimelineCache {
             latestTurnsStartID = nil
             return []
         }
-        let next = detail.threadId + "#" + String(detail.revision) + (held ? "#held" : "")
+        let next = detail.threadId + "#" + String(detail.revision) + "#" + String(copy) + (held ? "#held" : "")
         if next == key { return cached }
         key = next
         if dates.count > 10_000 { dates = [:] }
@@ -878,7 +892,7 @@ private struct Conversation: View {
     var body: some View {
         let _ = BenchProbe.body("Conversation")
         let detail = model.shown(for: ref)
-        let rows = timeline.rows(for: detail, held: detail != nil && model.detail(for: ref) == nil)
+        let rows = timeline.rows(for: detail, held: detail != nil && model.detail(for: ref) == nil, copy: model.detailVersion)
         let pending = model.replyRows(for: ref)
         let tail = Tail(revision: detail?.revision, rows: rows.count, last: rows.last?.id, pending: pending.map(\.id),
                         failed: model.failedReplies[ref.id] != nil)
@@ -894,6 +908,7 @@ private struct Conversation: View {
             }
             .defaultScrollAnchor(.bottom)
             .scrollDismissesKeyboard(.interactively)
+            .onPageMoving { moving in follow.moving = moving }
             .onUserScrolling { scrolling in
                 follow.userScrolling = scrolling
                 guard !scrolling, follow.missedFollow else { return }
@@ -974,6 +989,7 @@ private struct Conversation: View {
             }
             entries(thread: thread, state: state, detail: detail, rows: rows, pending: pending, scroll: scroll)
             Color.clear.frame(height: 1).id(Self.end).background(sentinelReader(scroll))
+                .background(EndDrawn(follow: follow) { [follow] drawn in endDrawn(drawn, scroll, read: follow.sentinel) })
             #if DEBUG
             if SendWatch.isOn { SendWatchAnchor().frame(width: 0, height: 0) }
             #endif
@@ -1045,6 +1061,7 @@ private struct Conversation: View {
                               scroll: scroll)
                     }
                     .equatable()
+                    .background(HoldsPlaceBelow(rows: split, atEnd: { [follow] in follow.atBottom }))
                 }
                 ForEach(rows[split...]) { row in
                     entry(row, provider: provider, working: working, last: last, moved: moved, movedAfter: movedAfter, scroll: scroll)
@@ -1157,9 +1174,25 @@ private struct Conversation: View {
         follow.endInPage = inPage
         if wasAtBottom, grew, end > follow.dockTop + 1 {
             toBottom(scroll)
+        } else if wasAtBottom, follow.knowsMoves, !follow.moving, !follow.handOn, follow.swinging {
+            // The page moved with no hand on it and no scroll of its own: the turns made as they scroll into view guessed
+            // their heights again, and the page swung by thousands of points for a moment (#2040). A reader at the end is
+            // still there, and taken for one who left, the page stopped following them. The scroll view's own word on a
+            // finger is asked as well: the phase change comes a pass after the page starts moving under one, and a drag
+            // away from the end was pulled back to it (PR #2572's run 43555799514). Only a page changing height swings:
+            // the bench's scrolls, which set the offset, were each pulled back to the end (run 43667622141).
+            if end > follow.dockTop + 1 { toBottom(scroll) }
         } else {
             follow.settle()
         }
+    }
+
+    /// Where UIKit drew the end, when it differs from where the page last read it. SwiftUI stops reporting the end's place
+    /// after the page's offset is set in the middle of its layout, by the hold or the pin below, and read a whole move
+    /// behind, the end of a page resting at it looked to be under the reply box for good (#2040).
+    private func endDrawn(_ drawn: CGFloat, _ scroll: ScrollViewProxy, read: CGFloat) {
+        guard abs(drawn - read) > 1 else { return }
+        endMoved(drawn, inPage: follow.endInPage, scroll)
     }
 
     /// The top of the reply box, which moves when it changes height or the keyboard opens or closes.
@@ -1217,6 +1250,152 @@ private struct Conversation: View {
     }
 }
 
+/// Reports where UIKit draws the conversation's end, once each pass in which the page scrolled or changed height is over.
+/// It also hands the page to the follow, which asks it whether a finger is on it.
+private struct EndDrawn: UIViewRepresentable {
+    let follow: FollowBox
+    let drawn: (CGFloat) -> Void
+    func makeUIView(context: Context) -> Marker { Marker() }
+    func updateUIView(_ view: Marker, context: Context) {
+        view.drawn = drawn
+        view.follow = follow
+        if let page = view.enclosingPage { follow.page = page }
+    }
+
+    final class Marker: UIView {
+        var drawn: (CGFloat) -> Void = { _ in }
+        weak var follow: FollowBox?
+        private var watches: [NSKeyValueObservation] = []
+        private var pending = false
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            isUserInteractionEnabled = false
+            isAccessibilityElement = false
+        }
+        required init?(coder: NSCoder) { nil }
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            guard window != nil else { watches = []; return }
+            guard watches.isEmpty, let page = enclosingPage else { return }
+            follow?.page = page
+            let changed: (UIScrollView) -> Void = { [weak self] _ in MainActor.assumeIsolated { self?.report() } }
+            watches = [page.observe(\.contentOffset) { page, _ in changed(page) },
+                       page.observe(\.contentSize, options: [.old, .new]) { [weak self] page, change in
+                           MainActor.assumeIsolated {
+                               if let old = change.oldValue, let new = change.newValue, abs(new.height - old.height) > 0.5 {
+                                   self?.follow?.resizedAt = CACurrentMediaTime()
+                               }
+                           }
+                           changed(page)
+                       }]
+        }
+        private func report() {
+            guard !pending else { return }
+            pending = true
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                pending = false
+                guard window != nil else { return }
+                drawn(convert(CGPoint(x: 0, y: bounds.maxY), to: nil).y)
+            }
+        }
+    }
+}
+
+/// Keeps what the reader sees still while the turns made as they scroll into view, all above it, guess their height again.
+/// Their stack guesses the height of the turns it hasn't made from the ones it has, and its guess swings by thousands of
+/// points as it makes and drops them, several times a second on a thread with pictures. The scroll view keeps its offset
+/// through that, so everything below the stack, the end and the reply box's last turn among them, jumped by the swing, and
+/// a reader at the end was left far short of it (#2040, #2080). Sitting behind the stack, this sees its height change and
+/// moves the page's offset by as much for a reader below it, and holds a reader at the end at the bottom. A reader among
+/// those turns sees them as before: the stack keeps the turns it has made in place itself.
+private struct HoldsPlaceBelow: UIViewRepresentable {
+    /// How many turns the stack holds. A turn that joins it from the newest ten, as the next one arrives, changes its height
+    /// without moving anything below it.
+    let rows: Int
+    /// The reader is at the end, as the page's follow decides.
+    let atEnd: () -> Bool
+    func makeUIView(context: Context) -> Holder { Holder() }
+    func updateUIView(_ view: Holder, context: Context) {
+        view.atEnd = atEnd
+        if view.rows != rows {
+            view.rows = rows
+            view.rowsChanged = true
+        }
+    }
+
+    final class Holder: UIView {
+        var atEnd: () -> Bool = { false }
+        var rows: Int?
+        var rowsChanged = false
+        private var height: CGFloat?
+        private var watch: NSKeyValueObservation?
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            isUserInteractionEnabled = false
+            isAccessibilityElement = false
+        }
+        required init?(coder: NSCoder) { nil }
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            guard window != nil else { height = nil; watch = nil; return }
+            // The page's height changes in the layout pass that moves what it holds, before this view is told its own
+            // new size, sometimes a frame or more later, and a reply growing at the end changes it too. A reader at the
+            // end is kept there as the page grows or shrinks, so no frame drawn shows the end pushed under the reply box.
+            guard watch == nil, let page = enclosingPage else { return }
+            watch = page.observe(\.contentSize, options: [.old, .new]) { [weak self] page, change in
+                MainActor.assumeIsolated { self?.pageResized(page, from: change.oldValue, to: change.newValue) }
+            }
+        }
+        private func pageResized(_ page: UIScrollView, from old: CGSize?, to new: CGSize?) {
+            guard let old, let new, abs(new.height - old.height) > 0.5, atEnd(), !page.isTracking, !page.isDecelerating
+            else { return }
+            let bottom = page.bottomOffset(height: new.height)
+            if abs(bottom - page.contentOffset.y) > 0.5 { page.contentOffset.y = bottom }
+        }
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            // Recorded before the offset moves, so a layout the move sets off sees this height as the one to hold from.
+            let now = bounds.height
+            let before = height
+            height = now
+            guard let before, abs(now - before) > 0.5 else { return }
+            guard !rowsChanged else { rowsChanged = false; return }
+            guard let page = enclosingPage else { return }
+            // Where the stack ended before it changed, in the page; only a reader wholly below it is held.
+            let end = convert(CGPoint(x: 0, y: before), to: page).y
+            let top = page.contentOffset.y + page.adjustedContentInset.top
+            guard end <= top + 1 else { return }
+            let from = page.contentOffset.y
+            // At the end, the page's own anchor sometimes keeps its end through the swing already, so the end is held
+            // where it is, the bottom, rather than moved by the swing a second time. Up the page, or under a finger still
+            // near the end, the offset moves by it, so nothing pulls the page from under the hand.
+            let held = atEnd() && !page.isTracking && !page.isDecelerating
+            let to = held ? page.bottomOffset(height: page.contentSize.height) : from + now - before
+            if abs(to - from) > 0.5 { page.contentOffset.y = to }
+        }
+    }
+}
+
+private extension UIScrollView {
+    /// The offset that rests the page's end at its bottom, above the reply box, for content this tall.
+    func bottomOffset(height: CGFloat) -> CGFloat {
+        max(-adjustedContentInset.top, height - bounds.height + adjustedContentInset.bottom)
+    }
+}
+
+private extension UIView {
+    /// The scroll view this view sits in: the conversation's page.
+    var enclosingPage: UIScrollView? {
+        var next = superview
+        while let view = next {
+            if let page = view as? UIScrollView { return page }
+            next = view.superview
+        }
+        return nil
+    }
+}
+
 #if DEBUG
 /// The conversation's end, the reply box's top and the bar's bottom, in points from the top of the screen, as one label
 /// the simulator journeys read: in a long page an element's accessibility frame can lag its layout by thousands of
@@ -1236,6 +1415,15 @@ private struct EndProbe: View {
 #endif
 
 extension View {
+    /// Says whether anything moves the page: a hand, a flick running out, or a scroll the scroll view animates itself, such as
+    /// a tap on the status bar. iOS 17 can't say, and nothing is reported there.
+    @ViewBuilder func onPageMoving(_ changed: @escaping (Bool) -> Void) -> some View {
+        if #available(iOS 18.0, *) {
+            onScrollPhaseChange { _, phase in changed(phase != .idle) }
+        } else {
+            self
+        }
+    }
     /// Says whether the user is moving the page: dragging it or letting a flick run out. A finger that rests or taps is
     /// not moving it, so pressing a run of steps at the bottom still keeps the page there. iOS 17 can't say, so there the
     /// page follows as it did before.

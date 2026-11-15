@@ -1,4 +1,5 @@
 import { agentAttachmentHandlesSchema, ATTACHED_FILES_NEED_A_FOLDER, imagesNotReadRefusal, isImageAttachment, SCREENSHOT_WRONG_TYPE, type AgentAttachmentHandle, type AgentHostSnapshot, type AgentSpeed, type AgentThreadOptions } from '../../shared/agents'
+import { nearestModelEffort } from '../../shared/reasoningEfforts'
 import { resolveModel } from '../../shared/modelCatalog'
 
 /** Validate against the active provider's advertised model, never a substitute. */
@@ -43,7 +44,8 @@ export function fastModeRuns(snapshot: Pick<AgentHostSnapshot, 'models'>, modelI
 export function effortAfterChange(snapshot: AgentHostSnapshot, options: AgentThreadOptions, current: string | undefined): string | undefined {
   if (options.reasoningEffort !== undefined) return options.reasoningEffort
   if (options.modelId === undefined) return current
-  return resolveModel(snapshot.models, options.modelId)?.defaultReasoningEffort
+  const model = resolveModel(snapshot.models, options.modelId)
+  return model?.ownServer ? nearestModelEffort(current, model.reasoningEfforts ?? []) : model?.defaultReasoningEffort
 }
 
 /**

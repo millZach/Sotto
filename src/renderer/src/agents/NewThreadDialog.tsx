@@ -7,6 +7,7 @@ import type { AgentConnection } from './AgentContext'
 import { Button } from '../components/Button'
 import './newThread.css'
 import { beginNewThread, type ThreadCreationStart } from './newThread'
+import { useOwlFeature } from '../state/owlFeature'
 import { creationErrorWords } from './draftThreads'
 import { shownWords, type LaterWords } from './interfaceWords'
 import { projectForFolder, useProjectChooser } from './ProjectChooser'
@@ -33,6 +34,7 @@ export function NewThreadDialog({ state, command, onClose, onCreated, onCreating
   readonly onCreating?: ((start: ThreadCreationStart) => void) | undefined
 }): ReactNode {
   const { t } = useLingui()
+  const modelRouter = useOwlFeature('model-router')
   const dialog = useRef<HTMLDialogElement>(null)
   const titleId = useId()
   // With threads from more than one host listed, New thread starts by choosing the host; its projects follow.
@@ -54,7 +56,7 @@ export function NewThreadDialog({ state, command, onClose, onCreated, onCreating
   const startThread = (project: AgentProject): void => {
     setError(null)
     setCreating(true)
-    void beginNewThread(latestState.current, command, project).then(start => {
+    void beginNewThread(latestState.current, command, project, undefined, modelRouter).then(start => {
       if ('error' in start) { creationInFlight.current = false; setCreating(false); setError(start.error); return }
       completed.current = true
       // A caller that shows the thread itself takes over from here; one that only awaits keeps the dialog

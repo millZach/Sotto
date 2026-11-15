@@ -3,7 +3,7 @@
  * and Codex adapters over the fake CLIs in `tests/fixtures/` (`SOTTO_E2E_NATIVE_FIXTURE_ROOT` in `src/main/index.ts`).
  * A Claude Code thread delegates a review to a Codex thread through `sotto_delegate`, called as the thread's agent would
  * call it (`sottoE2E.delegationTool`): its row of delegated work appears in the Claude thread with the thread as a link, Codex, This
- * computer and the wait, and its state moves to Returned when Codex answers; a delegation wider than the Claude
+ * computer and the wait, and leaves the reply when Codex answers; its Worked for row reads Returned; a delegation wider than the Claude
  * thread's own permission is refused, and its row says so with no link; the Codex thread keeps the name it was given,
  * has no row in the sidebar and is listed in the Claude thread's Tools › Agents instead (October 17, 2026), where its
  * request rolls up to the Claude thread's row and Open to answer shows it in the pane with Tools kept on the Claude
@@ -20,7 +20,7 @@ import { join } from 'node:path'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import { contrastRatio, parseThemeRgb } from '../../src/shared/themes/color'
 import { evidenceDirectory } from '../fixtures/evidence'
-import { fakeClaudePrompts } from '../fixtures/fakeClaudeRecords'
+import { fakeClaudeLaunches, fakeClaudePrompts } from '../fixtures/fakeClaudeRecords'
 import { parseProviderRecords, writeProviderAction } from '../fixtures/providerRecords'
 import { pageBoundProblems } from './support/designCapture'
 import { onReleaseTrack } from './support/releaseTrack'
@@ -231,11 +231,17 @@ test('a Claude thread delegates to a Codex thread: delegated work, the sidebar, 
       const { page } = launched
       const parentId = await delegatingThread(page, project)
       await expect.poll(() => fakeClaudePrompts(join(root, 'claude')), { timeout: 30_000 }).toBe(1)
+      const [parentLaunch] = await fakeClaudeLaunches(join(root, 'claude'))
+      const parentControl = join(root, 'claude', `control-${parentLaunch!.session}.json`)
       await page.reload()
       await resizeWindow(launched, 1280, 800)
       await openThreads(page)
       const parent = await openThread(page, PARENT)
       expect(await page.evaluate(() => window.sotto!.delegations !== undefined)).toBe(true)
+      // Two replies give the stopped turn something to fold, so its settled rows can still be inspected there.
+      await writeProviderAction(parentControl, { type: 'say', text: 'I will have the reconnect fix reviewed.' })
+      await expect.poll(() => page.evaluate(async threadId => (await window.sotto!.agents!.get()).host.threads
+        .find(thread => thread.id === threadId)?.messages.some(message => message.text === 'I will have the reconnect fix reviewed.'), parentId)).toBe(true)
 
       // The agent reads what it can delegate to, then hands the review to Codex and waits for it.
       const listing = await tool(page, parentId, 'read_delegation', {})
@@ -352,8 +358,7 @@ test('a Claude thread delegates to a Codex thread: delegated work, the sidebar, 
 
       // Codex answers: the outcome moves to Answered, and the waiting call returns the reply as the delegated thread's.
       await writeProviderAction(join(codex, 'control.json'), { type: 'complete', threadId: reviewNative, text: 'Two small nits and nothing that blocks a merge.' })
-      await expect(review.locator('.delegated-work__state')).toHaveText('Returned', { timeout: 30_000 })
-      await expect(review.locator('.delegated-work__line')).toHaveText(/^Answered in (\d+ min )?\d+ s, while this thread waited for it\. Open it to read what it found\.$|^Answered in \d+ min, while this thread waited for it\. Open it to read what it found\.$/u)
+      await expect(review).toHaveCount(0, { timeout: 30_000 })
       const answered = await page.evaluate(async () => {
         const result = await (window as unknown as { delegating: Promise<{ content: { type: string; text?: string }[] }> }).delegating
         return JSON.parse(result.content[0]!.text!) as ToolResult
@@ -419,13 +424,14 @@ test('a Claude thread delegates to a Codex thread: delegated work, the sidebar, 
       await resizeWindow(launched, 1280, 800)
       await page.evaluate(() => window.sotto!.updateSettings({ appearance: 'dark' }))
 
-      // By keyboard: the row's link opens the delegated thread, whose "Delegated by" links back.
-      const link = review.getByRole('button', { name: `Open ${REVIEW}` })
+      // The settled row has gone from the reply; the roster still opens its thread by keyboard.
+      const link = (await openAgents(page)).locator(`li[data-thread-id="${reviewId}"]`).getByRole('button', { name: `Open ${REVIEW} as a thread` })
       await link.focus()
       await expect(link).toBeFocused()
       await page.keyboard.press('Enter')
       const delegated = pane(page)
       await expect(delegated.locator('.thread-workspace__head h2')).toHaveText(REVIEW)
+      await tools(page).getByRole('button', { name: 'Close tools panel' }).click()
       const by = delegated.locator('.delegated-by')
       await expect(by).toContainText(`Delegated by ${PARENT}`)
       await expect(by.locator('.delegation-outcome')).toHaveText('Answered')
@@ -466,12 +472,19 @@ test('a Claude thread delegates to a Codex thread: delegated work, the sidebar, 
       await page.keyboard.press('Enter')
       await expect(pane(page).locator('.thread-workspace__head h2')).toHaveText(PARENT)
 
+      // The closing reply leaves the earlier reply to fold when Stop ends the turn.
+      await writeProviderAction(parentControl, { type: 'say', text: 'The Linux journeys are still running.' })
+      await expect.poll(() => page.evaluate(async threadId => (await window.sotto!.agents!.get()).host.threads
+        .find(thread => thread.id === threadId)?.messages.some(message => message.text === 'The Linux journeys are still running.'), parentId)).toBe(true)
       // One press stops the Claude thread and the Codex thread it delegated that is still working.
       await pane(page).getByRole('button', { name: 'Stop agent and the thread it delegated that is working' }).click()
       await expect(pane(page).getByRole('button', { name: /^Stop agent/ })).toHaveCount(0, { timeout: 30_000 })
       // A stopped turn can fold: its rows of delegated work are then in its Worked for fold.
       const fold = pane(page).getByRole('button', { name: /^Worked for/u }).last()
-      if (await fold.count() && await fold.getAttribute('aria-expanded') === 'false') await fold.click()
+      await expect(fold).toBeVisible()
+      if (await fold.getAttribute('aria-expanded') === 'false') await fold.click()
+      await expect(review.locator('.delegated-work__state')).toHaveText('Returned', { timeout: 30_000 })
+      await expect(review.locator('.delegated-work__line')).toHaveText(/^Answered in (\d+ min )?\d+ s, while this thread waited for it\. Open it to read what it found\.$|^Answered in \d+ min, while this thread waited for it\. Open it to read what it found\.$/u)
       await expect(journeys.locator('.delegated-work__state')).toHaveText('Stopped', { timeout: 30_000 })
       await expect(pane(page).locator('.delegation-note')).toHaveCount(0)
       const threads = await page.evaluate(async () => (await window.sotto!.agents!.get()).host.threads.map(thread => ({ title: thread.title, status: thread.status })))
@@ -497,6 +510,8 @@ test('a check\'s row says Check, quotes the first line of its reply, and Read it
       const { page } = launched
       const parentId = await delegatingThread(page, project)
       await expect.poll(() => fakeClaudePrompts(join(root, 'claude')), { timeout: 30_000 }).toBe(1)
+      const [parentLaunch] = await fakeClaudeLaunches(join(root, 'claude'))
+      const parentControl = join(root, 'claude', `control-${parentLaunch!.session}.json`)
       await page.reload()
       await resizeWindow(launched, 1280, 800)
       await openThreads(page)
@@ -521,6 +536,11 @@ test('a check\'s row says Check, quotes the first line of its reply, and Read it
       await expect.poll(() => codexPrompts(codex), { timeout: 30_000 }).toBe(1)
       const [checkNative] = await codexThreads(codex)
       await writeProviderAction(join(codex, 'control.json'), { type: 'complete', threadId: checkNative, text: CHECK_REPLY })
+      await expect(row).toHaveCount(0, { timeout: 30_000 })
+      await writeProviderAction(parentControl, { type: 'complete', thinking: 'Read the check result.', text: 'The check found two failures.' })
+      const fold = parent.getByRole('button', { name: /^Worked for/u }).first()
+      await expect(fold).toBeVisible()
+      if (await fold.getAttribute('aria-expanded') === 'false') await fold.click()
       await expect(row.locator('.delegated-work__state')).toHaveText('Answered', { timeout: 30_000 })
       await expect(row.locator('.check-excerpt q')).toHaveText('Failed: 2 of 1,214 tests.')
       await expect(row.locator('.check-excerpt')).toHaveText('It replied Failed: 2 of 1,214 tests. Read its reply')

@@ -1,7 +1,8 @@
 {
   "hiddenScrollReturned": true,
-  "scrollMs": 382,
-  "pageTitleAfter": "Fieldnotes, scrolled to 1200",
+  "scrollMs": 124,
+  "pageTitleAfter": "Fieldnotes, clicked Note 26",
   "secondActionRan": true,
+  "clickAfterScrollRan": true,
   "errors": []
 }

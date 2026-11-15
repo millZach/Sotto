@@ -292,14 +292,15 @@ export class LimitRestart {
     const reset = report.resetsAt === undefined ? Number.NaN : Date.parse(report.resetsAt)
     const due = Math.max(reset, now) + LIMIT_RESTART_GRACE_MS
     const at = Number.isFinite(reset) && due - now <= LIMIT_RESTART_HORIZON_MS ? new Date(due).toISOString() : undefined
-    // The first stop of a provider's limit: its threads still working in the background were stopped by it too.
+    // The first stop of a provider's limit: its threads still working in the background were stopped by it too. A run a
+    // thread detached is not the provider's work, and a limit stop does not end it (#2476).
     const first = ![...this.records.values()].some(record => record.provider === report.provider && !record.sent && record.cause === undefined)
     this.drop(thread.id)
     this.set({ threadId: thread.id, provider: report.provider, stoppedAt, ...(at ? { at } : {}), restarts, ...thread.lastTurn ? { turnId: thread.lastTurn.id } : {} })
     if (first) {
       for (const other of this.options.control.host().threads) {
         if (other.id === thread.id || other.providerId !== report.provider || this.records.has(other.id) || this.dormant(other.id)) continue
-        if (other.kind === 'watcher-history' || !(other.backgroundWork?.length) || isThreadTurnRunning(other) || isThreadClosed(other)) continue
+        if (other.kind === 'watcher-history' || !other.backgroundWork?.some(work => work.type !== 'detached-run') || isThreadTurnRunning(other) || isThreadClosed(other)) continue
         this.set({ threadId: other.id, provider: report.provider, stoppedAt, ...(at ? { at } : {}), restarts: 0, ...other.lastTurn ? { turnId: other.lastTurn.id } : {} })
       }
     }

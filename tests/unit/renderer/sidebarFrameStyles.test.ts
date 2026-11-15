@@ -98,4 +98,15 @@ describe('the sidebar frame in the stylesheets', () => {
     const name = styleOf(sidebar, '.thread-nav__row--details .thread-nav__title')
     expect([name.get('white-space'), name.get('overflow'), name.get('text-overflow')]).toEqual(['nowrap', 'hidden', 'ellipsis'])
   })
+
+  // Zach's pick B2 (ADR-0201, November 11, 2026): a pointed-at row in a status group lets its word and Watcher's owl make
+  // way, since its line still names its project and computer. A row under a project folder (By project, the Settled
+  // shelf) has nothing else on that line, so hiding its word there would leave the line empty.
+  it("hides a pointed-at row's word and owl only where the line names its project", () => {
+    // Whole selector text: the helper splits on every comma, the ones inside :is() included.
+    const hides = sidebar.filter(rule => rule.declarations.get('display') === 'none').map(rule => rule.selectors.join(', '))
+      .filter(selector => selector.includes(':hover') && /\.thread-nav__status|\.watched-badge/u.test(selector))
+    expect(hides.length).toBeGreaterThan(0)
+    expect(hides.filter(selector => !selector.includes('.thread-nav__standing[data-placed] >'))).toEqual([])
+  })
 })

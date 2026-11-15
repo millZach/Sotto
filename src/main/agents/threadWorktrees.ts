@@ -8,6 +8,7 @@ import { movedWorktreeWords } from '../../shared/branchMoves'
 import { CHECK_MOVED_TO, CHECK_WORKTREE_FOLDER } from './checkWorktree'
 import { COUNCIL_WORKTREE_FOLDER } from '../council/councilFolders'
 import { FolderRemovalStalled, removeFolderContents } from './folderRemoval'
+import { originDefaultBranch } from './mainCheckout'
 import { launchProcess, runToExit } from './git/gitLauncher'
 import { QUIET_GIT_ENV } from './git/gitStatus'
 import { nativeEnvironment } from './subscriptionCodex'
@@ -668,7 +669,8 @@ export class ThreadWorktrees {
 
   /**
    * Fetches a new worktree's origin base while its first message is typed (ADR-0057), so the send can use that
-   * fetch instead of making its own. Finds the base branch the way `allocate` would and fetches nothing it would not.
+   * fetch instead of making its own. Finds the base branch the way `allocate` would and fetches nothing it would not;
+   * origin's default, which `allocate` takes for a merged folder branch (`mergedBranchBase`), is left to the send.
    */
   async prefetchOriginBase(projectPath: string, baseBranch?: string): Promise<void> {
     const cwd = await existingWorkingDirectory(projectPath)
@@ -729,6 +731,25 @@ export class ThreadWorktrees {
     if (running) { try { const answer = await running; if (answer === 'fetched') return answer } catch { /* Asked again below. */ } }
     // Sends that waited on the same fetch, failed or fruitless, make one fetch between them, not one each racing for the ref.
     return this.usableOriginFetch(key) ?? this.trackOriginFetch(key, repositoryRoot, baseBranch, 'send')
+  }
+
+  /**
+   * The default base when the project folder is on a branch origin no longer has, as it is once that branch's pull
+   * request merged and GitHub deleted it (ADR-0014, amended November 14, 2026): origin's default branch, fetched, when the
+   * branch once tracked origin and the default holds every commit of it, so starting there loses nothing and the thread
+   * does not start behind. Undefined for a branch that never tracked origin, one with work the default lacks, or a
+   * default that cannot be found or fetched.
+   */
+  private async mergedBranchBase(repositoryRoot: string, branch: string): Promise<string | undefined> {
+    // An upstream is the evidence origin once had the branch; a local branch made from an older commit has none and stays.
+    if (!(await this.git(repositoryRoot, ['config', '--get', `branch.${branch}.merge`]).catch(() => '')).trim()) return undefined
+    const fallback = await originDefaultBranch((cwd, args) => this.git(cwd, [...args]), repositoryRoot)
+    if (!fallback || fallback === branch) return undefined
+    const contained = (): Promise<boolean> => this.git(repositoryRoot, ['merge-base', '--is-ancestor', `refs/heads/${branch}`, `refs/remotes/origin/${fallback}`]).then(() => true, () => false)
+    // Asked of the default as last fetched first, so a branch with unmerged work costs no fetch.
+    if (!await contained()) return undefined
+    // A failure here leaves the local branch as the base, as it was before this rule.
+    return await this.resolveOriginBase(repositoryRoot, fallback).catch(() => undefined) === 'fetched' ? fallback : undefined
   }
 
   /**
@@ -813,10 +834,13 @@ export class ThreadWorktrees {
       const token = randomUUID()
       return { mode, status: 'pending', path: join(await realpath(this.directory), this.home.folder, token), repositoryRoot: await realpath(repositoryRoot), branch: checkoutBranch, baseCommit: branchCommit, projectRelativePath: relativePath, checkoutBranch: true, temporaryBranch: false }
     }
-    const baseBranch = selection.baseBranch ?? (selection.startFromOrigin ? (await this.git(repositoryRoot, ['branch', '--show-current'])).trim() || undefined : undefined)
+    let baseBranch = selection.baseBranch ?? (selection.startFromOrigin ? (await this.git(repositoryRoot, ['branch', '--show-current'])).trim() || undefined : undefined)
     if (baseBranch) await this.git(repositoryRoot, ['check-ref-format', `refs/heads/${baseBranch}`])
     if (selection.startFromOrigin && !baseBranch) throw new Error('Choose a base branch before starting from origin.')
-    const originBase = selection.startFromOrigin && baseBranch ? await this.resolveOriginBase(repositoryRoot, baseBranch) : undefined
+    let originBase = selection.startFromOrigin && baseBranch ? await this.resolveOriginBase(repositoryRoot, baseBranch) : undefined
+    // Only a base the folder's branch supplied moves; a base the user chose stays theirs.
+    const merged = originBase === 'not-on-origin' && !selection.baseBranch && baseBranch ? await this.mergedBranchBase(repositoryRoot, baseBranch) : undefined
+    if (merged) { baseBranch = merged; originBase = 'fetched' }
     const base = baseBranch ? `${originBase === 'fetched' ? 'refs/remotes/origin/' : 'refs/heads/'}${baseBranch}` : 'HEAD'
     let baseCommit: string
     try { baseCommit = (await this.git(repositoryRoot, ['rev-parse', '--verify', `${base}^{commit}`])).trim() }

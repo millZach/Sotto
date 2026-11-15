@@ -64,7 +64,7 @@ export const dynamicNoteText = (note: string | undefined): string | undefined =>
 export const DYNAMIC_WHY_MAX = 200
 
 /** The company a provider's work goes to, which the allowed list and its first-use question name (ADR-0191 decisions 1 and 7). OpenCode has none of its own: its work goes to a model source. */
-export const PROVIDER_COMPANIES: Readonly<Record<Exclude<ProviderId, 'opencode'>, string>> = { claude: 'Anthropic', codex: 'OpenAI', grok: 'xAI', muse: 'Meta', devin: 'Cognition', cursor: 'Cursor', deepseek: 'your own model servers', hermes: 'your chosen model server' }
+export const PROVIDER_COMPANIES: Readonly<Record<Exclude<ProviderId, 'opencode'>, string>> = { claude: 'Anthropic', codex: 'OpenAI', grok: 'xAI', muse: 'Meta', devin: 'Cognition', cursor: 'Cursor', deepseek: 'your own model servers', hermes: 'your chosen model server', pi: 'your own model servers' }
 
 /** What the allowed list holds. Until the user has seen one there is none, so an overseer keeps to its own provider. */
 export const allowedProviders = (settings: DynamicThreadSettings, own: ProviderId | undefined): ReadonlySet<ProviderId> =>

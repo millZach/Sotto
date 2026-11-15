@@ -112,6 +112,7 @@ export function modeChoices(model: AgentModel | undefined, runtimeMode: AgentRun
     : modes.includes(runtimeMode) ? [] : [{ id: runtimeMode, label: RUNTIME_LABELS[runtimeMode], disabled: true }]
   return [...lead, ...modes.map(mode => {
     const line = model?.providerId === 'cursor' ? cursorModeLine(mode) : model?.providerId === 'deepseek' ? deepseekModeLine(mode)
+      : model?.providerId === 'pi' ? t`Pi has Full access and does not ask before running tools, changing files or using the network.`
       : model?.providerId === 'codex' ? codexModeLine(mode, computer) : undefined
     return { id: mode, label: RUNTIME_LABELS[mode], ...(line ? { description: line, translated: true } : {}) }
   })]

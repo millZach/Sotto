@@ -19,7 +19,7 @@ import { threadsStateFixture } from '../../fixtures/agentState'
 vi.mock('../../../src/renderer/src/state/AppContext', async importOriginal => ({ ...await importOriginal<typeof import('../../../src/renderer/src/state/AppContext')>(), useOptionalApp: vi.fn() }))
 
 function app(settings: Partial<typeof DEFAULT_SETTINGS> = {}): void {
-  vi.mocked(useOptionalApp).mockReturnValue({ navigation: 'threads', platform: 'win32', settings: { ...DEFAULT_SETTINGS, ...settings }, actions: { navigate: vi.fn() },
+  vi.mocked(useOptionalApp).mockReturnValue({ navigation: 'threads', platform: 'win32', settings: { ...DEFAULT_SETTINGS, threadListGrouping: 'project', ...settings }, actions: { navigate: vi.fn() },
     update: { currentVersion: '0.1.40', phase: { phase: 'up-to-date' }, checkedAt: null, owlFeatures: {} } } as unknown as AppContextValue)
 }
 beforeEach(() => {

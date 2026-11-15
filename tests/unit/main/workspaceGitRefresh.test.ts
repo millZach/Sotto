@@ -1,5 +1,6 @@
 // @vitest-environment node
 
+import { dirname } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 
 import { type AgentHostSnapshot } from '../../../src/shared/agents'
@@ -338,6 +339,35 @@ describe("durable project/thread organization", () => {
     await f.host.updateThreadWorktree('local', false)
     expect(pull).not.toHaveBeenCalled()
     expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.worktree).toMatchObject({ branch: 'topic', git: { branch: 'topic' } })
+  })
+
+  it('still decides an automatic pull for a checkout inside one Keep main up to date moved', async () => {
+    const f = await fixture({ worktreeRefreshDelayMs: 600_000 })
+    const snapshot = await f.host.connect()
+    const project = snapshot.projects.find(project => project.providerId === 'codex')!
+    const model = snapshot.models.find(model => model.providerId === 'codex')!
+    const record = { mode: 'shared' as const, status: 'ready' as const, path: project.path, repositoryRoot: project.path, baseCommit: 'fixture' }
+    vi.spyOn(ThreadWorktrees.prototype, 'allocate').mockResolvedValue({ ...record, branch: 'main', status: 'pending' })
+    vi.spyOn(ThreadWorktrees.prototype, 'ensure').mockImplementation(async () => ({ ...record, branch: 'main' }))
+    vi.spyOn(ThreadWorktrees.prototype, 'inspect').mockImplementation(async metadata => ({ ...metadata, status: 'ready', branch: 'main' }))
+    // A repository of its own inside the moved folder: clean, on its default branch, and behind an upstream already fetched.
+    let behind = 0
+    const status = (): GitStatus => ({ isRepository: true, branch: 'main', upstream: 'origin/main', hasRemote: true, defaultBranch: 'main', isDefaultBranch: true, dirty: false, changedFiles: 0, insertions: 0, deletions: 0, ahead: 0, behind, aheadOfDefault: null, pullRequest: null, fetchedAt: null, readAt: '2026-11-12T00:00:00.000Z' })
+    const read = vi.fn(async () => status())
+    f.host.setGitStatus({ read, readRemote: vi.fn(async () => true), invalidate: vi.fn() }, { pollIntervalMs: () => 0, autoPull: () => true })
+    const pull = vi.fn(async () => { behind = 0; return { status: 'pulled' as const, branch: 'main', upstream: 'origin/main' } })
+    f.host.setGitActions({ pull } as never)
+    await f.host.execute({ type: 'create-thread', commandId: 'create-local', threadId: 'local', projectId: project.id, title: 'New task', modelId: model.id })
+    await f.host.execute(send())
+    f.adapters.codex.state.threads.at(-1)!.status = 'idle'; f.adapters.codex.emit()
+    await vi.waitFor(() => expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.status).toBe('idle'))
+    await f.host.updateThreadWorktree('local', false)
+    expect(pull).not.toHaveBeenCalled()
+    behind = 2
+    // The folder above it was fast-forwarded: the thread reads its own folder again, and Automatically pull brings it up to date.
+    await f.host.projectCheckoutMoved(dirname(project.path))
+    expect(pull).toHaveBeenCalledTimes(1)
+    expect(f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')?.worktree?.git).toMatchObject({ behind: 0 })
   })
 
   it('decides an automatic pull again from a read of its own, not one shared with a read begun before the folder moved', async () => {

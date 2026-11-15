@@ -21,6 +21,7 @@ final class AppModelTests: XCTestCase {
         HostConnection.shells = [:]; HostConnection.commandHandler = nil; HostConnection.folderHandler = nil
         HostConnection.stageHandler = nil; HostConnection.previewHandler = nil
         HostConnection.receipts = [:]; HostConnection.features = ["host-folders"]; HostConnection.settledPage = .null
+        HostConnection.earlierHandler = nil
         let host = "00000000-0000-4000-8000-000000000001"
         let pairing = try JSONDecoder().decode(Pairing.self, from: Data(#"{"v":1,"hostId":"\#(host)","clientId":"phone","token":"fixture"}"#.utf8))
         let saved = SavedComputer(address: "https://laptop.example.ts.net:8443", pairing: pairing, reportedName: "Laptop")
@@ -991,6 +992,29 @@ final class AppModelTests: XCTestCase {
         let deadline = Date().addingTimeInterval(10)
         while model.detail(for: ref)?.revision != 10 && Date() < deadline { await Task.yield() }
         XCTAssertEqual(model.detail(for: ref)?.revision, 10)
+    }
+    /// Show earlier messages on a working thread (ADR-0194). An update taken in while the wider answer is on its way leaves
+    /// that answer older than the copy held, so the thread is read again; that read comes at the revision the phone now
+    /// holds and still takes its place, or the earlier messages never show (Zach, November 12, 2026).
+    @MainActor func testShowEarlierMessagesKeepsItsAnswerWhenAnUpdateComesFirst() async throws {
+        let (model, ref) = try fixture()
+        func json(_ text: String) throws -> JSONValue { try JSONDecoder().decode(JSONValue.self, from: Data(text.utf8)) }
+        HostConnection.features = ["host-folders", StepWindow.feature]
+        HostConnection.detail = try json(#"{"threadId":"t","revision":1,"earlierAvailable":true,"earlierSteps":200,"messages":[{"id":"m","role":"assistant","text":"Ready"}]}"#)
+        model.phase(.active); await model.waitForActivation(); await model.select(ref)
+        XCTAssertEqual(model.detail(for: ref)?.messages.map(\.id), ["m"])
+        HostConnection.earlierHandler = { connection in
+            // An update the computer sent before its answer, taken in first.
+            let delta = try JSONDecoder().decode(ThreadDetailDelta.self, from: Data(#"{"threadId":"t","baseRevision":1,"revision":2,"messageDeltas":[{"id":"m","appendText":" now"}],"activityDeltas":[]}"#.utf8))
+            connection.push(.delta(threadID: "t", value: delta))
+            // The thread read again, from the window's new start.
+            HostConnection.detail = try json(#"{"threadId":"t","revision":2,"messages":[{"id":"e","role":"user","text":"Earlier"},{"id":"m","role":"assistant","text":"Ready now"}]}"#)
+            return try json(#"{"threadId":"t","revision":1,"messages":[{"id":"e","role":"user","text":"Earlier"},{"id":"m","role":"assistant","text":"Ready"}]}"#)
+        }
+        await model.earlier(ref)
+        XCTAssertEqual(model.detail(for: ref)?.messages.map(\.id), ["e", "m"], "The earlier message shows")
+        XCTAssertEqual(model.detail(for: ref)?.messages.last?.text, "Ready now", "The update is kept")
+        XCTAssertEqual(model.detail(for: ref)?.revision, 2)
     }
     @MainActor func testAShellThatChangesNothingRedrawsNothing() async throws {
         let (model, ref) = try fixture()
