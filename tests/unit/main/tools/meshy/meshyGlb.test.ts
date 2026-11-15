@@ -1,13 +1,15 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { glbProblem } from '../../../../../src/main/tools/meshy/glb'
-import { glbBytes, selfContainedGlb } from '../../../../fixtures/glb'
+import { glbBytes, selfContainedGlb, texturedCubeGlb } from '../../../../fixtures/glb'
 
 /** A GLB the window draws must hold everything it needs (ADR-0141): any `uri` would have a viewer fetch it. */
 describe('whether a GLB stands alone', () => {
   it('takes one whose buffer and image are in its own binary chunk', () => {
     expect(glbProblem(selfContainedGlb())).toBeNull()
     expect(glbProblem(glbBytes({ asset: { version: '2.0' } }))).toBeNull()
+    // The textured cube the end-to-end journey draws.
+    expect(glbProblem(texturedCubeGlb())).toBeNull()
   })
 
   it('refuses one whose buffer or image names a uri, whatever it names', () => {

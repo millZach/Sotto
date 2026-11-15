@@ -112,6 +112,7 @@ export default tseslint.config(
       'artifacts/remote-thread-tools/**',
       'artifacts/test-iphone/**',
       'artifacts/cloud-iphone/**',
+      'artifacts/meshy-3d-models/**',
       'artifacts/new-thread-setup/**',
       'artifacts/empty-page-saved-draft/**',
       'artifacts/host-folder-browser-run/**',
