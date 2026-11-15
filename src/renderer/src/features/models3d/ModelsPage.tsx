@@ -90,13 +90,17 @@ function ModelDetails({ model, platform, onRemoved, onKept }: { readonly model: 
   const agents = useOptionalAgents()
   const [status, setStatus] = useState('')
   useEffect(() => { setStatus('') }, [model.id])
+  // A reveal answered after another 3D model was chosen says nothing under that one.
+  const shownId = useRef(model.id)
+  shownId.current = model.id
   const thread = threadOf(agents?.state, model.threadId)
   const reveal = revealLabel(platform)
   const gone = filesGone(model)
   const done = model.state === 'done'
   const show = (file?: string): void => {
-    void window.sotto?.plugins?.revealModel3d({ id: model.id, ...(file !== undefined ? { file } : {}) })
-      .then(shown => { setStatus(shown ? '' : t`Sotto could not find that file. It may have been moved or deleted.`) }, () => setStatus(t`Sotto could not find that file. It may have been moved or deleted.`))
+    const asked = model.id
+    const answer = (shown: boolean): void => { if (shownId.current === asked) setStatus(shown ? '' : t`Sotto could not find that file. It may have been moved or deleted.`) }
+    void window.sotto?.plugins?.revealModel3d({ id: asked, ...(file !== undefined ? { file } : {}) }).then(answer, () => answer(false))
   }
   const openThread = (): void => {
     if (!agents || !thread) return

@@ -269,6 +269,21 @@ describe('the 3D models page', () => {
     expect(plugins.models3d).toHaveBeenCalledTimes(2)
   })
 
+  it('says a file could not be found only under the 3D model it was asked for', async () => {
+    const answer = later<boolean>()
+    plugins.revealModel3d.mockImplementationOnce(() => answer.promise)
+    render(<ModelsPage platform="win32" />)
+    fireEvent.click(await within(await screen.findByRole('complementary', { name: 'About the Fox figurine' })).findByRole('button', { name: 'Show in File Explorer' }))
+    fireEvent.click(within(strip()).getByRole('option', { name: 'Oak barrel, Nov 13' }))
+    await act(async () => { answer.settle(false) })
+    expect(details('Oak barrel')).toBeInTheDocument()
+    expect(screen.queryByText('Sotto could not find that file. It may have been moved or deleted.')).toBeNull()
+    // Asked for the one shown, it says so.
+    plugins.revealModel3d.mockResolvedValueOnce(false)
+    fireEvent.click(within(details('Oak barrel')).getByRole('button', { name: 'Show in File Explorer' }))
+    expect(await screen.findByText('Sotto could not find that file. It may have been moved or deleted.')).toBeInTheDocument()
+  })
+
   it('filters by name and by the words it was made from', async () => {
     render(<ModelsPage platform="win32" />)
     const search = await screen.findByRole('searchbox', { name: 'Search 3D models' })
