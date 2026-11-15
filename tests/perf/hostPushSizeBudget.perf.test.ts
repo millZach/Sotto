@@ -27,14 +27,18 @@ import { stepClock } from '../fixtures/stepClock'
  * folders are in a push, and a temporary folder's path is longer on Windows and macOS than on Linux.
  */
 const DESKTOP_PUSH_BYTES = 204_000
-/** Bytes of JSON in one thread list push to an iPhone: about 199 KB. #2392 leaves out what no phone reads, and #2393 the rest. */
-const PHONE_PUSH_BYTES = 203_000
 /**
- * The parts of a push to a desktop, and to an iPhone, that are as the push before had them: 44 and 45, the frame's `v` and
- * `event` among them. A part added to every push goes as one more of them. #2392 and #2393 lower these.
+ * Bytes of JSON in one thread list push to an iPhone: about 73 KB, since #2392 left out the parts no phone reads (about
+ * 199 KB before). Its room is the desktop's, for the same folders. #2393 sends it the parts it does read once.
+ */
+const PHONE_PUSH_BYTES = 77_000
+/**
+ * The parts of a push to a desktop, and to an iPhone, that are as the push before had them: 44 and 41, the frame's `v` and
+ * `event` among them. A part added to every push goes as one more of them. #2392 took the iPhone's from 45 to 41, and #2393
+ * lowers both.
  */
 const DESKTOP_UNCHANGED_PARTS = 44
-const PHONE_UNCHANGED_PARTS = 45
+const PHONE_UNCHANGED_PARTS = 41
 /**
  * Bytes of JSON the desktop is sent for a change of where a watched thread has got and nothing else: 451, a
  * `watcher-progress` push with the one entry that moved (#2391). Before it this was a whole `watcher-state`, about
