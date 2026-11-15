@@ -86,8 +86,10 @@ export class SocketFrames {
   private lastProgress = Date.now()
   private clientLiveness = false
   /**
-   * Text messages after one still being compressed off the loop, in the order they were sent, so the wire keeps that
-   * order. `queuedBytes` is their uncompressed size, counted against the unread-output cap as if already written.
+   * Text messages from one still being compressed off the loop on, in the order they were sent, so the wire keeps that
+   * order: one being compressed, one compressed and waiting behind an earlier one, and a plain one queued behind a
+   * compression. `queuedBytes` is their uncompressed size, counted against the unread-output cap as if already written
+   * when a text message is sent; a frame checked as it is written, a control frame among them, counts what is written alone.
    */
   private queue: Outgoing[] = []
   private queuedBytes = 0
@@ -149,8 +151,8 @@ export class SocketFrames {
   /**
    * Sends one text message, compressed when the connection negotiated it and the message is large enough to gain.
    * The frame cap and the unread-output cap count the message at its own, uncompressed size; the output it is added to is
-   * what is already written as it is on the wire, compressed or not, and what is still being compressed at its own size
-   * (ADR-0025, November 15, 2026 amendment).
+   * what is already written as it is on the wire, compressed or not and with its frame headers, and every message in the
+   * compression queue at its own size (ADR-0025, November 15, 2026 amendment).
    */
   sendText(text: string): boolean {
     if (this.ended) return false
