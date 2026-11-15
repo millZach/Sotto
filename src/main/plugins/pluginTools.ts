@@ -643,6 +643,7 @@ export class PluginToolServer implements ScopedThreadTools {
     /** The credits the account spent this month, or what to tell the agent when that cannot be known. */
     const spent = async (now: PluginAccount): Promise<number | string> => {
       const used = await meshy.monthCredits(now.id)
+      if (used === 'waiting') return `Sotto is waiting to hear this month's spending for the Meshy account "${now.name}" from the desktop that sent it to this computer, so it cannot tell how much of the monthly limit is left. ${NOTHING_MADE} Try again once that desktop has connected to this computer.`
       if (used === 'unreadable') return `Sotto could not read or keep its record of what the Meshy account "${now.name}" spent on other computers this month, so it cannot tell how much of the monthly limit is left. ${NOTHING_MADE} Tell the user.`
       return used
     }

@@ -202,10 +202,16 @@ export function hostPlugins(options: {
   const { folderOf } = options
   const meshy = folderOf ? {
     folderOf,
-    // This host's own 3D models and what the copy's desktop last said, which holds every other computer's. Nothing is
-    // spent while what was said cannot be read or was not written down (Sol's review).
-    monthCredits: async (accountId: string): Promise<number | 'unreadable'> => {
-      try { return ((await models.monthCredits(now())).get(accountId) ?? 0) + await heard.total(accountId) } catch { return 'unreadable' }
+    // This host's own 3D models and what the copy's desktop last said, which holds every other computer's. A copy
+    // spends nothing until its desktop has said what the account spent (Sol's review): a copy whose report came before
+    // it, or has not come yet, would otherwise count the desktop's spending as none. Nor while what was said cannot
+    // be read or was not written down.
+    monthCredits: async (accountId: string): Promise<number | 'waiting' | 'unreadable'> => {
+      const sender = (await copies.senders().catch((): Readonly<Record<string, string>> => ({})))[accountId]
+      try {
+        if (sender === undefined || !await heard.has(sender, accountId)) return 'waiting'
+        return ((await models.monthCredits(now())).get(accountId) ?? 0) + await heard.total(accountId)
+      } catch { return 'unreadable' }
     },
     // No image library here: the photo's metadata is taken out of its file, its pixels left as they are (#2497).
     checkPhoto, photoToSend: (root: string, checked: Parameters<typeof photoToSend>[1], path: string) => photoToSend(root, checked, path, stripPhoto),

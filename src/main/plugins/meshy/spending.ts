@@ -118,6 +118,11 @@ export class HeardSpending {
     return this.inTurn(async () => this.reports(await this.settled(), accountId).filter(report => report.from !== except).reduce((sum, report) => sum + report.credits, 0))
   }
 
+  /** Whether one computer has said anything of the account, in any month. Throws as `total` does. */
+  has(from: string, accountId: string): Promise<boolean> {
+    return this.inTurn(async () => (await this.settled()).heard[from]?.[accountId] !== undefined)
+  }
+
   /** The computers that said anything of the account for this month, with what and when. */
   heardFrom(accountId: string): Promise<HeardReport[]> {
     return this.inTurn(async () => this.reports(await this.settled(), accountId))

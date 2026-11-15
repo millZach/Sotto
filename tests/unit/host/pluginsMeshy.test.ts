@@ -144,6 +144,22 @@ describe('a 3D model made on a paired host', () => {
 })
 
 describe('a host’s copy before and without what the desktop said it spent (Sol’s review)', () => {
+  it('spends nothing from a new copy until the desktop has said what the account spent this month, even when that came before the copy', async () => {
+    const h = await host()
+    // The report reaches the host before the copy does, and is not kept: the copy is not there to speak for.
+    await h.plugins.spending.share([said(STUDIO.id, 1_000)], LAPTOP)
+    await h.plugins.copies.keep({ account: { ...STUDIO, spending: { askBefore: false, monthlyLimit: 1_000 } }, secret: FAKE_MESHY_KEY }, LAPTOP)
+    const waiting = await h.make()
+    expect(waiting.failed).toBe(true)
+    expect(waiting.text).toContain(`waiting to hear this month's spending for the Meshy account "Studio" from the desktop`)
+    expect(meshy.created()).toEqual([])
+    // The desktop says it again once the copy is there: the whole limit was spent, so nothing is left.
+    await h.plugins.spending.share([said(STUDIO.id, 1_000)], LAPTOP)
+    expect((await h.make()).text).toContain('would pass the limit')
+    expect(meshy.created()).toEqual([])
+    await h.plugins.close()
+  })
+
   it('does not take a report it could not write down, and spends nothing until one is written', async () => {
     const h = await host()
     await h.plugins.copies.keep({ account: { ...STUDIO, spending: { askBefore: false, monthlyLimit: 1_000 } }, secret: FAKE_MESHY_KEY }, LAPTOP)
