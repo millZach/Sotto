@@ -253,6 +253,9 @@ it('archives a request again as it now stands when it changed after an earlier a
   const model = f.control.shell().host.models.find(item => item.providerId === 'codex')!
   expect(await service.open({ provider: 'codex', modelId: model.id })).toMatchObject({ status: 'ok' })
   const targets = ['synthetic-worker', 'synthetic-other'].map(threadId => ({ hostId: f.control.hostId()!, threadId }))
+  // Watcher's own archiving is held off, as in the test above (#1780, #2623): the history below is due for it, and a batch of
+  // its could archive the request, or let it go, around the takeover this test scripts.
+  vi.spyOn(service as unknown as { archiveWhenDue(): void }, 'archiveWhenDue').mockImplementation(() => undefined)
   await f.control.watcherRecords.update(record => addWatcherHistory(record, targets, { requests: WATCHER_LIVE_CLOSED_REQUESTS + 60, operations: WATCHER_LIVE_CLOSED_REQUESTS + 60 }))
   const id = f.control.watcherRecords.view().requests[0]!.id
   const archive = f.control.watcherRecords.archive!
