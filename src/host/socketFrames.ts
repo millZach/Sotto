@@ -148,7 +148,9 @@ export class SocketFrames {
   send(value: unknown): boolean { return this.sendText(JSON.stringify(value)) }
   /**
    * Sends one text message, compressed when the connection negotiated it and the message is large enough to gain.
-   * The frame cap and the unread-output cap both apply to the message's own size, compressed or not.
+   * The frame cap and the unread-output cap count the message at its own, uncompressed size; the output it is added to is
+   * what is already written as it is on the wire, compressed or not, and what is still being compressed at its own size
+   * (ADR-0025, November 15, 2026 amendment).
    */
   sendText(text: string): boolean {
     if (this.ended) return false
