@@ -43,7 +43,6 @@ import { ownerScalePipeline, type OwnerScalePipeline, type OwnerScaleTrack, type
 import { verifyingThreadChanges } from '../../src/main/agents/threadChanges'
 import type { OwnerScale } from '../fixtures/ownerScale'
 import { DeferredStoreWriter } from '../fixtures/deferredStoreWriter'
-import { ON_PINNED_NODE } from '../fixtures/pinnedNode'
 
 /** The kinds of work counted. Each is per update while streaming, and per action for the user's actions. */
 const KINDS = ['copies', 'copiedObjects', 'wholeStateCopies', 'wholeCopyThreads', 'wholeCopyObjects', 'unsharedPublications', 'routerShellBuilds',
@@ -200,10 +199,18 @@ const STEP_MS = 5
 const SETTLE_MS = 1_000
 const turn = globalThis.setImmediate
 const fileWorkInFlight = (): boolean => process.getActiveResourcesInfo().some(name => /^(FSReq|FileHandle|CloseReq)/u.test(name))
-/** Until no file read or write has been in flight for three turns of the event loop. */
+/**
+ * Turns of the event loop with no file work in flight that count as settled. A write's steps leave turns between them with
+ * nothing in flight, and Node 26 leaves more of them than Node 24: at three, Node 26's clock moved on 20 ms while a send's
+ * write was still under way, so its last changes opened a publish window of their own, and a send read as one router and
+ * one coordinator shell build more (#2402). Fifteen was the fewest that gave Node 26 Node 24's counts in every scenario;
+ * this is twice that. Node 24's counts are the same at three and at forty.
+ */
+const QUIET_TURNS = 30
+/** Until no file read or write has been in flight for `QUIET_TURNS` turns of the event loop. */
 async function filesSettled(): Promise<void> {
   const started = process.hrtime.bigint()
-  for (let quiet = 0; quiet < 3;) {
+  for (let quiet = 0; quiet < QUIET_TURNS;) {
     if (process.hrtime.bigint() - started > 60_000_000_000n) throw new Error(`File work was still in flight after a minute: ${process.getActiveResourcesInfo().join(', ')}.`)
     await new Promise<void>(resolve => { turn(resolve) })
     quiet = fileWorkInFlight() ? 0 : quiet + 1
@@ -892,10 +899,9 @@ const LAYERS_RUN: Record<Scenario, readonly string[]> = { '1 streaming': LAYERS,
   saveAnswerDraft: ['workspace publication'], typeInComposer: [], openThread: [], watcherToolCall: [] }
 const WHERE = SITES ? '' : ' Run it with SOTTO_WORK_SITES=1 to see where the serializations, thread visits and copied objects that grew come from.'
 
-// The counts are CI's Node major's (`tests/fixtures/pinnedNode.ts`): under another, a send publishes once more and reads
-// as over budget with nothing wrong in main (#2339), so the budgets skip there and the run says why at its start. CI
-// never skips them: a workflow moved to another major runs them and fails here, rather than pass with no budget held.
-describe.skipIf(!ON_PINNED_NODE && !process.env.CI).each(TRACKS)('main\'s work at the owner\'s scale on %s (#1232)', track => {
+// The counts are the same under Node 24 and Node 26 (#2402): Node 26 read one publish more per send only while the test's
+// clock moved on during a send's file work (`QUIET_TURNS`).
+describe.each(TRACKS)('main\'s work at the owner\'s scale on %s (#1232)', track => {
   it('builds the owner\'s world', () => {
     expect(measured[track].owner.counts).toMatchObject({ threads: 250, remoteThreads: 40, retirements: 256, remoteRetirements: 40, operations: 150, requests: 160, watches: 5, delegations: 40 })
     expect(measured[track].quarterHistory.counts).toMatchObject({ threads: 250, remoteThreads: 10, retirements: 64, operations: 38, requests: 40 })

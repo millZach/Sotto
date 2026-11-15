@@ -7,7 +7,7 @@ import { OFF_PINNED_NODE_MESSAGE, ON_PINNED_NODE } from './fixtures/pinnedNode'
  * stops here, with what to change, rather than letting the first such test reach the checkout.
  *
  * It also says, once, when the run is on another Node major than CI's (#2339): the run goes on, since most tests do not
- * depend on it, and the one budget that does skips itself.
+ * depend on it.
  */
 export default function setup(): void {
   assertTemporaryFolderOutsideRepositories()
