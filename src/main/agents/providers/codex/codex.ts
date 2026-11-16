@@ -1787,6 +1787,10 @@ export class CodexAppServerHost implements ProviderHost {
     const alias = this.aliases[id]!, thread = this.ensureThread(id)
     if (!this.rollbackCapability(id).supported || alias.pendingRollback || alias.pendingSettings || this.unconfirmedDispatchSessionIds.has(id)
       || this.dispatching.has(id) || thread.status === 'running' || thread.requests.length) throw new Error('Resolve pending Codex work before reverting.')
+    // A rewind drops the turn that started the work, and with it the ending Codex sends on that turn, so it waits, as a
+    // Claude Code thread's does (ADR-0023).
+    const work = thread.backgroundWork ?? []
+    if (work.length) throw new Error(`${work.length === 1 ? `"${work[0]!.label}" is` : `${work.length} background tasks are`} still running for this thread. Nothing was changed. Wait for ${work.length === 1 ? 'it' : 'them'} to finish, or ask Codex to stop ${work.length === 1 ? 'it' : 'them'}, before rewinding.`)
     const actualUsers = [...this.log.userMessageIds(id)]
     if (JSON.stringify(actualUsers) !== JSON.stringify(expectedUserMessageIds)) throw new Error('Codex history changed after this checkpoint was inspected.')
     this.dispatching.add(id)

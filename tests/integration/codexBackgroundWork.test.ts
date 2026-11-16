@@ -44,6 +44,16 @@ describe('Codex background work', () => {
     expect((await row(thread, 'command'))?.status).toBe('completed')
   })
 
+  it('refuses a rewind while a command left running in the background runs, since the rewind would lose its ending', async () => {
+    const { f, id, thread, act } = await open()
+    await act({ type: 'background-command', text: 'Rendering in the background.', command: 'sleep 99' })
+    await expect.poll(async () => (await thread()).backgroundWork?.length).toBe(1)
+    await expect(f.host.rollbackThread!(id, 1, ['m1'])).rejects.toThrow('"sleep 99" is still running for this thread. Nothing was changed.')
+    expect((await f.driver.requests()).filter(request => request.method === 'thread/rollback')).toHaveLength(0)
+    await act({ type: 'background-command-end' })
+    await expect.poll(async () => (await thread()).backgroundWork).toBeUndefined()
+  })
+
   it('lets background work go with a lost app-server, so nothing counts it as working any more', async () => {
     const { f, id, thread, act } = await open()
     await act({ type: 'background-agent', text: 'Started it.', description: 'GT3 RS drawing' })

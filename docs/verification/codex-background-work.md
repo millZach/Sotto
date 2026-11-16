@@ -32,6 +32,8 @@ SOTTO_CODEX_LIVE=1 npx vitest run tests/integration/codexBackgroundWorkLive.test
 - a sub-agent that outlived its turn stays background work when a later turn messages it;
 - a lost app-server stops every agent it ran, even in a row a stop had already closed, so Watcher's roster stops counting them.
 
+**After Bug Bot's review at 14c6a1f:** a rewind is refused while background work runs, as a Claude Code thread's is. Rewinding the turn that left a command running dropped the command's later completion, which names that turn, so the thread read Waiting for good and its app-server was held. A test against the fake app-server reproduced it (`{ accepted: true }`) before the fix.
+
 The review also asked for two things this PR does not do:
 - Drop a stopped or failed parent's sub-agents. They count only while their own threads say they work, which is the provider's evidence. The ADR wording that said otherwise was corrected.
 - Poll `thread/backgroundTerminals/list`, as the issue suggested. The command's own `item/completed` says when it ends, and the list agreed with it throughout the probe.
