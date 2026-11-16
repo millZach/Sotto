@@ -39,6 +39,8 @@ import { effortAfterChange, validatePromptAttachments, validateThreadOptions } f
 import { scopedThreadServers, type ScopedThreadTools, type ThreadMcpServer } from './threadToolServer'
 import { existingWorkingDirectory } from './threadWorktrees'
 import { markTurnActivity } from './turnActivity'
+import { BackgroundCommandWatch, hermesBackgroundCommand } from './backgroundCommandWatch'
+import { childProcesses } from './detachedRunScan'
 import { WatcherProfileRefusal } from './watcherProfile'
 import { heldProvidersOf, type HeldProviders } from '../../shared/heldProviders'
 
@@ -108,6 +110,8 @@ const initializeSchema = z.object({ protocolVersion: z.number(), agentCapabiliti
 const sessionNewSchema = z.object({ sessionId: z.string().min(1).max(512) }).passthrough()
 const promptAnswerSchema = z.object({ stopReason: z.string() }).passthrough()
 const PROCESS_LOST = 'Hermes stopped before this reply finished, so it may be cut short. Send a message to carry on.'
+/** How long a turn's end waits for a look at what it left running, at most (#2637). */
+const LOOK_BEFORE_END_MS = 5_000
 /**
  * Where each update of one turn belongs. Replies are counted by segment, broken by a tool or a thought; tools and
  * thoughts in order. A turn is keyed by its user message.
@@ -191,6 +195,11 @@ export class HermesAcpHost implements ProviderHost {
   private readonly indexes = new Map<string, ThreadIndex>()
   private readonly threads = new Map<string, AgentThread>()
   private readonly connections = new Map<string, Connection>()
+  /**
+   * Each thread's commands Hermes left running in the background, which it never says have ended over ACP (#2637): found
+   * as its process's own children, looked for once each turn ends.
+   */
+  private readonly backgroundCommands = new Map<string, BackgroundCommandWatch>()
   private readonly loading = new Map<string, Promise<Connection>>()
   private readonly stopping = new Map<string, Promise<void>>()
   private readonly turns = new Map<string, LiveTurn>()
@@ -575,6 +584,44 @@ export class HermesAcpHost implements ProviderHost {
   private working(id: string): boolean {
     const turn = this.turns.get(id)
     return this.dispatching.has(id) || this.loading.has(id) || this.stopping.has(id) || (turn !== undefined && !turn.ended)
+      // Its background commands run under this thread's Hermes process; stopping it would leave them unwatched (#2637).
+      || !!this.backgroundCommands.get(id)?.holds
+  }
+  private backgroundWatch(id: string): BackgroundCommandWatch {
+    let watch = this.backgroundCommands.get(id)
+    if (!watch) {
+      watch = new BackgroundCommandWatch({ children: childProcesses, command: row => hermesBackgroundCommand(this.aliases[id]?.hermesSessionId)(row),
+        changed: () => this.publishBackground(id) })
+      this.backgroundCommands.set(id, watch)
+    }
+    return watch
+  }
+  /** Look for what the thread's Hermes process left running once a turn has ended there, and again while any runs. */
+  private watchBackground(id: string): void {
+    const pid = this.connections.get(id)?.rpc.pid
+    if (pid !== undefined) this.backgroundWatch(id).turnEnded(pid)
+  }
+  /**
+   * A turn that ran a command may have left it running, which Hermes never says, so it is looked for before the turn's
+   * end is told: Watcher reads the end with its background work (#2637). A turn that ran none ends at once.
+   */
+  private async lookBeforeEnd(id: string, turnKey: string): Promise<void> {
+    const pid = this.connections.get(id)?.rpc.pid
+    if (pid === undefined || !this.threads.get(id)?.activities?.some(row => row.turnId === turnKey && row.kind === 'command')) return
+    await this.backgroundWatch(id).lookNow(pid, LOOK_BEFORE_END_MS)
+  }
+  /** The thread's Hermes process is going, and nothing it ran is watched any more. */
+  private backgroundGone(id: string): void {
+    const watch = this.backgroundCommands.get(id); if (!watch) return
+    this.backgroundCommands.delete(id); watch.stop(); this.publishBackground(id)
+  }
+  private publishBackground(id: string): void {
+    const thread = this.threads.get(id); if (!thread) return
+    const work = this.backgroundCommands.get(id)?.working ?? []
+    const before = thread.backgroundWork ?? []
+    if (before.length === work.length && before.every((item, index) => item.id === work[index]!.id)) return
+    if (work.length) thread.backgroundWork = work; else delete thread.backgroundWork
+    this.changed(id); this.emit()
   }
   private asking(id: string): boolean { return (this.threads.get(id)?.requests.length ?? 0) > 0 }
   /** This thread's session, opened on its own process when it has none. */
@@ -624,6 +671,7 @@ export class HermesAcpHost implements ProviderHost {
     const connection = this.connections.get(id)
     if (!connection) return Promise.resolve()
     const work = (async () => {
+      this.backgroundGone(id)
       this.connections.delete(id); this.outdated.delete(id)
       if (this.loaded.delete(id)) this.emit()
       this.log.release(id); this.reaper.forget(id)
@@ -635,6 +683,7 @@ export class HermesAcpHost implements ProviderHost {
   /** A thread's process ended without Sotto asking: only that thread is affected, and the next action starts a new one. */
   private processLost(id: string, connection: Connection): void {
     if (connection.closing || this.connections.get(id) !== connection) return
+    this.backgroundGone(id)
     this.connections.delete(id); this.outdated.delete(id); this.loaded.delete(id); this.log.release(id); this.reaper.forget(id)
     this.clearRequests(id)
     this.endTurn(id, 'failed', PROCESS_LOST)
@@ -825,6 +874,7 @@ export class HermesAcpHost implements ProviderHost {
     thread.activities = markTurnActivity(closed, { provider: 'hermes', turnId: turn.places.key, status, ...(error ? { error } : {}) })
     this.changed(id)
     this.reaper.touch(id)
+    this.watchBackground(id)
   }
   /** The thread's own server as its turn record names it (ADR-0124): every Hermes turn runs on one. */
   private ownServerTurn(alias: Alias): OwnServerTurn | undefined {
@@ -1098,9 +1148,12 @@ export class HermesAcpHost implements ProviderHost {
     void connection.rpc.request('session/prompt', { sessionId: alias.hermesSessionId, prompt: [{ type: 'text', text: nativeText }, ...images] }, value => {
       if (superseded()) return
       const stop = promptAnswerSchema.parse(value).stopReason
-      this.endTurn(id, stop === 'end_turn' ? 'completed' : stop === 'cancelled' ? 'interrupted' : stop === 'refusal' ? 'failed' : 'completed',
-        stop === 'refusal' ? 'Hermes refused this turn. Nothing else was lost.' : undefined)
-      this.emit()
+      void this.lookBeforeEnd(id, turn.places.key).then(() => {
+        if (superseded() || turn.ended) return
+        this.endTurn(id, stop === 'end_turn' ? 'completed' : stop === 'cancelled' ? 'interrupted' : stop === 'refusal' ? 'failed' : 'completed',
+          stop === 'refusal' ? 'Hermes refused this turn. Nothing else was lost.' : undefined)
+        this.emit()
+      })
     }, true).catch((error: unknown) => {
       if (superseded() || turn.ended) return
       this.endTurn(id, 'failed', connection.rpc.alive ? error instanceof HermesRejected ? 'Hermes refused this message. Nothing else was lost. Check the thread’s model server, then send again.' : undefined : PROCESS_LOST)
@@ -1175,6 +1228,7 @@ export class HermesAcpHost implements ProviderHost {
     this.pending.clear()
     for (const id of this.turns.keys()) this.endTurn(id, 'interrupted')
     this.turns.clear()
+    for (const id of [...this.backgroundCommands.keys()]) this.backgroundGone(id)
     for (const thread of this.threads.values()) thread.requests = []
     this.threadChanges.markAll()
     for (const connection of this.connections.values()) this.close(connection)
