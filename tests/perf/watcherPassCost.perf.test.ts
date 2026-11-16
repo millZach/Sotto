@@ -13,8 +13,9 @@
  * never time, so it runs in the default suite.
  * docs/perf/2026-10-20-main-lag.md has the numbers before and after; SOTTO_PERF_BENCH=1 prints them.
  */
+import { performance } from 'node:perf_hooks'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { PERF_BENCH } from '../fixtures/perfBench'
+import { median, PERF_BENCH } from '../fixtures/perfBench'
 import { centerTime } from '../fixtures/watcher'
 import { watcherAtScale, type ScaleOptions, type ScaleShape } from '../fixtures/watcherAtScale'
 import { prunePromptTurns, WATCHER_PROMPT_TURNS_KEPT } from '../../src/main/agents/watcherRecords'
@@ -45,7 +46,7 @@ function counted(f: Fixture, run: () => void) {
   const copies = vi.spyOn(f.control.watcherRecords, 'copy'), mutations = vi.spyOn(f.control.watcherRecords, 'mutate')
   const stringify = vi.spyOn(JSON, 'stringify'), structured = vi.spyOn(globalThis, 'structuredClone')
   counter.clones = []; counter.deepEquals = 0; counter.on = true
-  f.threadVisits.count = 0; f.threadVisits.on = true
+  f.threadVisits.count = 0; f.threadVisits.ledgerReads = 0; f.threadVisits.on = true
   try { run() } finally { counter.on = false; f.threadVisits.on = false }
   const result = {
     recordCopies: counter.clones.filter(ofRecord).length + structured.mock.calls.filter(([value]) => ofRecord(value)).length,
@@ -54,6 +55,7 @@ function counted(f: Fixture, run: () => void) {
     deepEquals: counter.deepEquals,
     keyBuilds: stringify.mock.calls.filter(([value]) => isTargetKey(value)).length,
     threadVisits: f.threadVisits.count,
+    ledgerReads: f.threadVisits.ledgerReads,
   }
   copies.mockRestore(); mutations.mockRestore(); stringify.mockRestore(); structured.mockRestore()
   return result
@@ -68,8 +70,8 @@ async function scaled(shape: ScaleShape, options?: ScaleOptions) {
 const SMALL: ScaleShape = { threads: 60, requests: 40, operations: 40, watches: 5 }
 const OWNER: ScaleShape = { threads: 250, requests: 160, operations: 144, watches: 5 }
 
-async function measure(shape: ScaleShape) {
-  const f = await scaled(shape)
+async function measure(shape: ScaleShape, options?: ScaleOptions) {
+  const f = await scaled(shape, options)
   // Nothing changed since the fixture's own first pass and publishes: this is a streamed chunk's update.
   const observe = counted(f, () => f.observe())
   const publish = counted(f, () => f.publish())
@@ -128,6 +130,41 @@ function takenOver(record: Readonly<WatcherRecord>, threadId: string) {
     operations: record.operations.filter(item => item.target.threadId === threadId).map(item => `${item.deliveryState}:${item.refusalCode ?? ''}`),
   }
 }
+
+describe('Watcher pass cost with Owl\'s worker swarms on (#2618)', () => {
+  it('asks whether a swarm\'s synthesis is to come without reading a thread, at either scale', async () => {
+    const plain = { small: await measure(SMALL, { indexed: true }), owner: await measure(OWNER, { indexed: true }) }
+    const swarms = { small: await measure(SMALL, { indexed: true, swarms: true }), owner: await measure(OWNER, { indexed: true, swarms: true }) }
+    const seen = JSON.stringify({ plain, swarms }, null, 1)
+    if (PERF_BENCH) console.log(seen)
+    // On the laptop the wake pass searched every thread for each finished turn it asked about: with 590 threads, most of
+    // Watcher's 20% of main's busy minute. The coordinator's index answers each ask without a read of the list.
+    for (const scale of ['small', 'owner'] as const) for (const work of ['observe', 'publish', 'wakePass'] as const)
+      expect(swarms[scale][work].threadVisits, `${scale} ${work} read threads to ask about swarms: ${seen}`).toBeLessThanOrEqual(plain[scale][work].threadVisits)
+  })
+
+  // SOTTO_PERF_BENCH=1: each pass's wall time at the laptop's 590 threads, the median of five rounds of 20 calls.
+  it.skipIf(!PERF_BENCH)('times each pass at the laptop\'s thread count', async () => {
+    const f = await scaled({ ...OWNER, threads: 590 }, { indexed: true, swarms: true })
+    const time = (run: () => void) => {
+      const rounds: number[] = []
+      for (let round = 0; round < 5; round++) { const start = performance.now(); for (let call = 0; call < 20; call++) run(); rounds.push((performance.now() - start) / 20) }
+      return Number(median(rounds).toFixed(3))
+    }
+    for (let warm = 0; warm < 20; warm++) { f.observe(); f.publish(); f.wakePass() }
+    console.log(JSON.stringify({ threads: 590, msPerCall: { observe: time(() => f.observe()), publish: time(() => f.publish()), wakePass: time(() => f.wakePass()) } }))
+  })
+
+  it('reads the delivery ledger no more for operations with no draft', async () => {
+    const f = await scaled(OWNER, { indexed: true, swarms: true })
+    const drafted = counted(f, () => f.observe())
+    // Every delivery names its draft, so a search of the ledger for one without found nothing, on every pass (#2618).
+    f.control.watcherRecords.mutate(next => { for (const operation of next.operations.slice(-OWNER.watches)) delete operation.draftId })
+    f.observe()
+    const undrafted = counted(f, () => f.observe()), seen = JSON.stringify({ drafted, undrafted })
+    expect(undrafted.ledgerReads, seen).toBeLessThanOrEqual(drafted.ledgerReads)
+  })
+})
 
 describe('Watcher pass changes', () => {
   it('changes the record once in a pass in which the user sent to two threads, and decides each takeover as before', async () => {

@@ -14,6 +14,7 @@ import { RequestDraftService } from '../../src/main/agents/requestDrafts'
 import { ThreadChangesPublisher, ThreadMap, verifyingThreadChanges, type ActivityChangesListener, type ActivityChangesSubscription, type AgentHostChanges } from '../../src/main/agents/threadChanges'
 import { SottoThreadHost, ThreadRegistry } from '../../src/main/agents/threads'
 import { UsageService } from '../../src/main/agents/usageService'
+import { WorkerAdmission } from '../../src/main/agents/workerAdmission'
 import { WatcherService } from '../../src/main/agents/watcher'
 import { WATCHER_LIVE_CLOSED_REQUESTS } from '../../src/main/agents/watcherArchive'
 import { CheckQueue } from '../../src/main/agents/checkQueue'
@@ -465,8 +466,10 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
   }
   const localHostId = control.hostId()!
   const idOf = (session: string): string => registry.bySession('claude', session)!.threadId
-  // Owl's Watcher keeps this computer's check queue (#1312), whose pass runs on every publish.
-  const watcher = owl ? new WatcherService({ directory: root, control, host: workspace, historyEnabled: () => true, streamingPublishCost: true, checks: new CheckQueue('This computer') }) : undefined
+  // Owl's Watcher keeps this computer's check queue (#1312), whose pass runs on every publish, and has Owl's worker swarms,
+  // as runtime.ts wires them, with no swarm running: every finished turn a pass asks about asks after a swarm (#2618).
+  const watcher = owl ? new WatcherService({ directory: root, control, host: workspace, historyEnabled: () => true, streamingPublishCost: true, checks: new CheckQueue('This computer'),
+    swarms: { admission: new WorkerAdmission({ ceiling: () => 4, working: () => new Set() }), service: () => undefined, ceiling: () => 4 } }) : undefined
   const tools = watcher ? new WatcherToolServer(watcher) : undefined
   if (tools) workspace.useWatcherTools(tools)
   // As runtime.ts does once the coordinator has started: this starts Watcher's wake-up pass, which runs on every update.
