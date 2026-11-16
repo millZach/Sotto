@@ -5,7 +5,8 @@ import { z } from 'zod'
  * `api.elevenlabs.io` with the account's key in the `xi-api-key` header, over Node's own `fetch`, with no redirect
  * followed and nothing from Electron, so a headless host can run the same code. Read from elevenlabs.io/docs on
  * November 15, 2026: speech is `POST /v1/text-to-speech/{voice_id}`, a sound effect `POST /v1/sound-generation` and
- * music `POST /v1/music`, and each answers with the MP3 itself. The account's voices are `GET /v1/voices`.
+ * music `POST /v1/music`, and each answers with the MP3 itself. The account's voices are `GET /v2/voices`, a page at a
+ * time: the older `/v1/voices` is deprecated and stops answering past 500 voices (Sol's review).
  *
  * A failure is an `ElevenLabsApiError` naming what happened in one word; it never repeats the key, an address or what
  * ElevenLabs wrote.
@@ -45,7 +46,10 @@ export const SPEECH_CHARACTERS_MAX = 10_000
 /** A sound effect's length, as ElevenLabs takes it. */
 export const EFFECT_SECONDS_MIN = 0.5
 export const EFFECT_SECONDS_MAX = 30
-/** Music's length: ElevenLabs takes 3 seconds to 5 minutes from words. */
+/**
+ * Music's length: 3 seconds to 5 minutes. ElevenLabs' music reference takes up to 10 minutes, and its pricing page says 5;
+ * Sotto holds to 5.
+ */
 export const MUSIC_SECONDS_MIN = 3
 export const MUSIC_SECONDS_MAX = 300
 /** The words a sound effect or music is made from: short, as a prompt is. */
@@ -71,11 +75,16 @@ export function soundCost(request: { readonly kind: 'speech'; readonly character
 
 /** One of the account's voices, by ElevenLabs' ID and the name the agent asks for it by. */
 export interface ElevenLabsVoice { readonly id: string; readonly name: string }
-/** The most voices Sotto reads: far past any account's, and short of a runaway answer. */
-const VOICES_MAX = 1_000
-const voicesSchema = z.object({
-  voices: z.array(z.object({ voice_id: z.string(), name: z.string() }).loose()).max(VOICES_MAX),
+/** Voices are read 100 to a page, and at most 20 pages: far past any account's, and short of a runaway answer. */
+const VOICES_PAGE = 100
+const VOICES_PAGES_MAX = 20
+const voicesPageSchema = z.object({
+  voices: z.array(z.object({ voice_id: z.string(), name: z.string() }).loose()).max(VOICES_PAGE),
+  has_more: z.boolean().optional().catch(false),
+  next_page_token: z.string().max(1_000).nullish().catch(undefined),
 }).loose()
+/** The most of a refusal Sotto reads, to find its status word. */
+const REFUSAL_BYTES_MAX = 4_096
 /** ElevenLabs' refusal names what it is in a short word, read only to tell no credits apart from a refused key. */
 const refusalSchema = z.object({ detail: z.object({ status: z.string().max(100) }).loose() }).loose()
 
@@ -95,14 +104,22 @@ export class ElevenLabsApi {
 
   /** The account's voices, by name, for the agent to choose from. A voice without an ID or a name is left out. */
   async voices(): Promise<readonly ElevenLabsVoice[]> {
-    const response = await this.call('/v1/voices', 'GET', undefined, READ_TIMEOUT_MS)
-    let read: unknown
-    try { read = await response.json() } catch { throw new ElevenLabsApiError('unreadable') }
-    const parsed = voicesSchema.safeParse(read)
-    if (!parsed.success) throw new ElevenLabsApiError('unreadable')
-    return parsed.data.voices
-      .filter(voice => VOICE_ID.test(voice.voice_id) && voice.name.trim().length > 0)
-      .map(voice => ({ id: voice.voice_id, name: voice.name.trim().slice(0, 200) }))
+    const found: ElevenLabsVoice[] = []
+    let token: string | undefined
+    for (let page = 0; page < VOICES_PAGES_MAX; page++) {
+      const query = new URLSearchParams({ page_size: String(VOICES_PAGE), ...(token ? { next_page_token: token } : {}) })
+      const response = await this.call(`/v2/voices?${query.toString()}`, 'GET', undefined, READ_TIMEOUT_MS)
+      let read: unknown
+      try { read = await response.json() } catch { throw new ElevenLabsApiError('unreadable') }
+      const parsed = voicesPageSchema.safeParse(read)
+      if (!parsed.success) throw new ElevenLabsApiError('unreadable')
+      for (const voice of parsed.data.voices) {
+        if (VOICE_ID.test(voice.voice_id) && voice.name.trim().length > 0) found.push({ id: voice.voice_id, name: voice.name.trim().slice(0, 200) })
+      }
+      token = parsed.data.has_more === true && parsed.data.next_page_token ? parsed.data.next_page_token : undefined
+      if (!token) break
+    }
+    return found
   }
 
   /** Speaks `text` in one of the account's voices. The answer's body is the MP3. */
@@ -152,7 +169,7 @@ async function problemOf(response: Response): Promise<ElevenLabsApiError> {
   const status = response.status
   if (status === 401) {
     let said: unknown
-    try { said = JSON.parse((await response.text()).slice(0, 4_096)) } catch { said = undefined }
+    try { said = JSON.parse(await firstBytes(response, REFUSAL_BYTES_MAX)) } catch { said = undefined }
     const parsed = refusalSchema.safeParse(said)
     return new ElevenLabsApiError(parsed.success && parsed.data.detail.status === 'quota_exceeded' ? 'no-credits' : 'refused')
   }
@@ -161,6 +178,23 @@ async function problemOf(response: Response): Promise<ElevenLabsApiError> {
   if (status === 429) return new ElevenLabsApiError('busy', retryAfter(response))
   if (status === 400 || status === 404 || status === 422) return new ElevenLabsApiError('rejected')
   return new ElevenLabsApiError('unreachable')
+}
+
+/** The start of an answer's body as text, reading no more than `max` bytes of it and letting the rest go. */
+async function firstBytes(response: Response, max: number): Promise<string> {
+  const reader = response.body?.getReader()
+  if (!reader) return ''
+  const parts: Uint8Array[] = []
+  let held = 0
+  try {
+    while (held < max) {
+      const chunk = await reader.read()
+      if (chunk.done) break
+      parts.push(chunk.value.subarray(0, max - held))
+      held += Math.min(chunk.value.byteLength, max - held)
+    }
+  } finally { await reader.cancel().catch(() => undefined) }
+  return new TextDecoder().decode(Buffer.concat(parts))
 }
 
 /** ElevenLabs' `Retry-After`, in seconds or as a date, held within bounds; undefined when it sent none Sotto can read. */

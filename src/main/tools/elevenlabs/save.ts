@@ -1,5 +1,5 @@
 import { constants } from 'node:fs'
-import { copyFile, link, open, realpath, rm } from 'node:fs/promises'
+import { copyFile, link, open, realpath, rename, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { isInside, modelFolder } from '../meshy/download'
 
@@ -8,6 +8,8 @@ import { isInside, modelFolder } from '../meshy/download'
  * answers a request with the MP3 itself, so the answer is written straight to a part file of its own inside the folder
  * the thread asked for, which is inside the thread's working folder, and given its name only once it is whole: never
  * over a file that is already there, and never through a folder swapped for a link elsewhere. Each sound is capped.
+ * One gap remains, as for a 3D model's files: a folder moved out of the thread's folder while a sound is written takes
+ * Sotto's part file with it. Nothing is named there, and the sound is refused.
  */
 export const SOUND_FOLDER = 'sounds'
 /** The most one sound may be: five minutes of music at 128 kbps is under 5 MB, so this stops a runaway answer only. */
@@ -83,7 +85,14 @@ export async function saveSound(answer: Response, target: { readonly root: strin
       if (chunk.done) break
       written += chunk.value.byteLength
       if (written > maxBytes) throw new SoundSaveError('too-large')
-      try { await file.write(chunk.value) } catch { throw new SoundSaveError('folder') }
+      // A write may take part of a chunk: the rest is written until the whole of it is in (Sol's review).
+      try {
+        for (let at = 0; at < chunk.value.byteLength;) {
+          const { bytesWritten } = await file.write(chunk.value, at, chunk.value.byteLength - at)
+          if (bytesWritten <= 0) throw new SoundSaveError('folder')
+          at += bytesWritten
+        }
+      } catch { throw new SoundSaveError('folder') }
     }
     if (written === 0) throw new SoundSaveError('unreachable')
     finished = true
@@ -109,14 +118,26 @@ export async function saveSound(answer: Response, target: { readonly root: strin
 }
 
 /**
- * Gives a whole part file a name, never over a file already there: a second link to it where the disk allows one, and
- * a copy where it does not. False when the name is taken.
+ * Gives a whole part file a name, never over a file already there, and never so that the name holds part of a sound:
+ * a second link to it where the disk allows one. Where it does not, the name is taken first as an empty file of
+ * Sotto's own, and a whole copy of the part file is moved over it in one step (Sol's review). False when the name is
+ * taken.
  */
 async function publish(partPath: string, path: string): Promise<boolean> {
   const taken = (error: unknown): boolean => typeof error === 'object' && error !== null && 'code' in error && error.code === 'EEXIST'
   try { await link(partPath, path); return true } catch (error) { if (taken(error)) return false }
-  try { await copyFile(partPath, path, constants.COPYFILE_EXCL); return true } catch (error) {
+  try { await (await open(path, 'wx', 0o644)).close() } catch (error) {
     if (taken(error)) return false
+    throw new SoundSaveError('folder')
+  }
+  const copy = `${partPath}.copy`
+  try {
+    await copyFile(partPath, copy, constants.COPYFILE_EXCL)
+    await rename(copy, path)
+    return true
+  } catch {
+    await rm(copy, { force: true }).catch(() => undefined)
+    await rm(path, { force: true }).catch(() => undefined)
     throw new SoundSaveError('folder')
   }
 }

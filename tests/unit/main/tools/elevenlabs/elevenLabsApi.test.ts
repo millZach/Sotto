@@ -70,6 +70,8 @@ describe('making a sound', () => {
       [new Response('{"detail":{"status":"invalid_api_key","message":"made up"}}', { status: 401 }), 'refused'],
       [new Response('{"detail":{"status":"quota_exceeded","message":"made up"}}', { status: 401 }), 'no-credits'],
       [new Response('not json', { status: 401 }), 'refused'],
+      // Only the start of a refusal is read: a long one is cut, and its status word is not found in what was read.
+      [new Response(`{"detail":{"message":"${'x'.repeat(10_000)}","status":"quota_exceeded"}}`, { status: 401 }), 'refused'],
       [new Response('{}', { status: 403 }), 'refused'],
       [new Response('{}', { status: 404 }), 'rejected'],
       [new Response('{}', { status: 422 }), 'rejected'],
@@ -85,15 +87,12 @@ describe('making a sound', () => {
 })
 
 describe('the account\'s voices', () => {
-  it('lists each voice by its ID and name, and leaves out one Sotto would not put in a path', async () => {
-    const { api, asked } = elevenLabs(() => Response.json({ voices: [
-      { voice_id: '21m00Tcm4TlvDq8ikWAM', name: 'Rachel', category: 'premade' },
-      { voice_id: 'bad/id', name: 'Odd' },
-      { voice_id: 'pNInz6obpgDQGcFmaJgB', name: '  Adam  ' },
-      { voice_id: 'abc', name: '   ' },
-    ] }))
+  it('lists each voice by its ID and name, a page at a time, and leaves out one Sotto would not put in a path', async () => {
+    const { api, asked } = elevenLabs(call => call.url.includes('next_page_token')
+      ? Response.json({ voices: [{ voice_id: 'pNInz6obpgDQGcFmaJgB', name: '  Adam  ' }, { voice_id: 'abc', name: '   ' }], has_more: false, next_page_token: null })
+      : Response.json({ voices: [{ voice_id: '21m00Tcm4TlvDq8ikWAM', name: 'Rachel', category: 'premade' }, { voice_id: 'bad/id', name: 'Odd' }], has_more: true, next_page_token: 'page two' }))
     expect(await api.voices()).toEqual([{ id: '21m00Tcm4TlvDq8ikWAM', name: 'Rachel' }, { id: 'pNInz6obpgDQGcFmaJgB', name: 'Adam' }])
-    expect(asked[0]!.url).toBe('https://api.elevenlabs.io/v1/voices')
+    expect(asked.map(call => call.url)).toEqual(['https://api.elevenlabs.io/v2/voices?page_size=100', 'https://api.elevenlabs.io/v2/voices?page_size=100&next_page_token=page+two'])
     expect(asked[0]!.init).toMatchObject({ method: 'GET', redirect: 'manual', headers: { 'xi-api-key': KEY, Accept: 'application/json' } })
     expect(await problem(elevenLabs(() => new Response('[1,2]', { status: 200 })).api.voices())).toBe('unreadable')
   })
