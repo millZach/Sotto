@@ -1785,7 +1785,8 @@ private struct MessageView: View, Equatable {
                     Text(provider).font(.sotto(.caption, .semibold)).foregroundStyle(Palette.muted)
                 }
             }
-            content(ink: Palette.ink)
+            // A 3D model's line, from a computer that shows them to this iPhone (the Meshy plan's ticket 7), in place of its words.
+            if let line = message.model3d { ModelLine3d(ref: ref, line: line, createdAt: message.createdAt) } else { content(ink: Palette.ink) }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

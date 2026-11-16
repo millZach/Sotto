@@ -1367,12 +1367,20 @@ export async function startSocketServer(options: SocketServerOptions) {
     if (!parsed.success) return
     for (const peer of peers) if (peer.ready && peer.meshyModels && !peer.frames.isClosed && offers(peer, 'plugin-meshy-models')) push(peer, { v: 1, event: 'plugin-meshy-models', news: parsed.data })
   })
-  /** The same news of this computer's 3D models, to each phone whose hello accepted `plugin-meshy-phone` (the Meshy plan's ticket 7). */
+  /**
+   * The same news of this computer's 3D models, to each phone whose hello accepted `plugin-meshy-phone` (the Meshy plan's
+   * ticket 7). A change in a thread the phone is not shown is not told it (Bug Bot on #2622, N1).
+   */
   const unsubscribePhoneModels = options.phoneModels?.subscribe(news => {
     if (closing) return
     const parsed = model3dHostNewsSchema.safeParse(news)
     if (!parsed.success) return
-    for (const peer of peers) if (peer.ready && peer.meshyPhone && !peer.frames.isClosed) push(peer, { v: 1, event: 'plugin-meshy-models', news: parsed.data })
+    for (const peer of peers) {
+      if (!peer.ready || !peer.meshyPhone || peer.frames.isClosed) continue
+      const changed = parsed.data.changed && !hiddenThread(peer, parsed.data.changed.threadId) ? parsed.data.changed : undefined
+      if (!changed && !parsed.data.removed) continue
+      push(peer, { v: 1, event: 'plugin-meshy-models', news: { ...changed ? { changed } : {}, ...parsed.data.removed ? { removed: parsed.data.removed } : {} } })
+    }
   })
   /** The permission settings of a new or changed thread's model that let the provider do nothing unasked. */
   const askingProviderModes = (input: AgentCommand): string[] => {
@@ -2064,9 +2072,16 @@ export async function startSocketServer(options: SocketServerOptions) {
         // The list of desktops is read again first, as for a copy: a desktop recorded after its hello, as one being added
         // is, is pushed its news, and sent 3D models' lines, from now on if it asked.
         if (request.op === 'plugin-meshy-models') await options.watcherDesktops?.refresh().catch(() => undefined)
-        // A phone reads one 3D model's view (`plugin-meshy-phone`; the Meshy plan's ticket 7). It lists none and removes none.
+        // A phone reads one 3D model's view, and one thread's 3D models for the words and time its sheet shows
+        // (`plugin-meshy-phone`; the Meshy plan's ticket 7): a thread it is shown, never every thread's. It removes none.
         if (request.op === 'plugin-meshy-model' && peer.meshyPhone && options.phoneModels) {
           try { return model3dViewOrNullSchema.parse(await options.phoneModels.view(request.request.id)) } catch { throw new Refusal('unavailable') }
+        }
+        if (request.op === 'plugin-meshy-models' && peer.meshyPhone && options.phoneModels) {
+          const threadId = request.request.threadId
+          if (threadId === undefined) throw new Refusal('invalid_request')
+          if (hiddenThread(peer, threadId)) throw new Refusal('forbidden')
+          try { return model3dListSchema.parse(await options.phoneModels.list(threadId)) } catch { throw new Refusal('unavailable') }
         }
         if (!offers(peer, 'plugin-meshy-models') || !service.pluginMeshyModels) throw new Refusal('invalid_request')
         if (peer.meshyModelsAsked && !peer.meshyModels) {

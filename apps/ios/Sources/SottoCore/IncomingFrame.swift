@@ -17,6 +17,8 @@ public enum IncomingFrame: Sendable {
     case shell(Shell)
     case detail(threadID: String, value: ThreadDetail?)
     case delta(threadID: String, value: ThreadDetailDelta)
+    /// The news of the computer's 3D models (`plugin-meshy-phone`; the Meshy plan's ticket 7).
+    case models3d(Model3dNews)
     case failure(WireFailure)
 }
 
@@ -24,7 +26,7 @@ public enum IncomingFrame: Sendable {
 private enum FrameEnvelope: Decodable {
     case reply(String, CarriedCatalog?, HeldThreadRecords?)
     case frame(IncomingFrame)
-    private enum Keys: String, CodingKey { case v, id, ok, result, error, event, state, threads, threadId, detail, delta }
+    private enum Keys: String, CodingKey { case v, id, ok, result, error, event, state, threads, threadId, detail, delta, news }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
         guard try c.decode(Int.self, forKey: .v) == 1 else { throw ClientError.invalidProtocol }
@@ -38,6 +40,7 @@ private enum FrameEnvelope: Decodable {
                 self = .frame(.shell(shell))
             case "detail": self = .frame(.detail(threadID: try c.decode(String.self, forKey: .threadId), value: try c.decode(Optional<ThreadDetail>.self, forKey: .detail)))
             case "detail-delta": self = .frame(.delta(threadID: try c.decode(String.self, forKey: .threadId), value: try c.decode(ThreadDetailDelta.self, forKey: .delta)))
+            case "plugin-meshy-models": self = .frame(.models3d(try c.decode(Model3dNews.self, forKey: .news)))
             case "error": self = .frame(.failure(try c.decode(WireFailure.self, forKey: .error)))
             default: throw ClientError.invalidProtocol
             }
@@ -83,11 +86,12 @@ public extension Wire {
     /// 200 steps, where a thread of a few long turns once sent every step it held (ADR-0194). `thread-media-edge` lets a
     /// tile ask for a picture at its own size rather than whole (ADR-0170, November 10 amendment). `kept-parts` has a shell push
     /// leave out each part that holds what the push before it held, such as the deliveries and the projects, which the
-    /// connection puts back from that push (`KeptPartsCache`, ADR-0028's November 10 amendment).
+    /// connection puts back from that push (`KeptPartsCache`, ADR-0028's November 10 amendment). `plugin-meshy-phone` has a
+    /// thread keep its 3D models' lines, which open a sheet that turns them (the Meshy plan's ticket 7).
     static let snapshotHello: [String: JSONValue] = ["op": .string("hello"), "afterSeq": .number(9_007_199_254_740_991),
         "accepts": .array([.string("detail-delta"), .string("client-liveness"), .string("activity-summaries"), .string("model-catalog-revision"), .string("provider-opencode"), .string("provider-cursor"), .string("provider-deepseek"), .string("changed-thread-records"),
                     .string("reply-thread-records"), .string("provider-mode-lists"), .string("settled-threads-on-request"), .string("usable-models"), .string("command-changed-thread-records"),
-                    .string(StepWindow.feature), .string(Photos.edgeFeature), .string("kept-parts")])]
+                    .string(StepWindow.feature), .string(Photos.edgeFeature), .string("kept-parts"), .string(Models3d.feature)])]
 
     // Nonisolated async functions run on the generic executor in this package's Swift 5 mode.
     // Awaiting each frame before receiving the next keeps pushes and replies in socket order.

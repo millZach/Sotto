@@ -1475,6 +1475,8 @@ struct RailAsk: Equatable {
     let detailStore = DetailStore()
     /// Watcher's pages, in `watcherStore`, which publishes on its own in the same way.
     let watcherStore = WatcherStore()
+    /// The 3D models' views (the Meshy plan's ticket 7), in `models3dStore`, which publishes on its own in the same way.
+    let models3dStore = Models3dStore()
     private var openDetail: ThreadDetail? {
         get { detailStore.detail }
         set { detailStore.detail = newValue; publishOnModelIfComparing() }
@@ -5053,6 +5055,7 @@ struct RailAsk: Equatable {
                 if let next = openDetail?.applying(delta), let epoch = generations[hostID] {
                     try applyDetail(next, ref: ref, epoch: epoch)
                 } else { detailWantedRevision = max(detailWantedRevision, delta.revision); reloadDetail(ref) }
+            case .models3d(let news): apply3dModelNews(news, from: hostID)
             case .failure(let failure):
                 // The host sends this in place of an update too large for one frame; the connection stays open.
                 feedback = failure.message
@@ -5420,4 +5423,143 @@ extension AppModel {
         return PendingThreadSettings.outcome(of: shell, kind, sent: press.value, threadID: ref.threadID)
     }
     #endif
+}
+
+// MARK: - 3D models (the Meshy plan's ticket 7)
+
+/// The views of the 3D models this iPhone's threads show, by computer and ID, in a store of their own: Meshy's progress
+/// changes one every few seconds, and only the lines and the sheet read them. A view is kept while its computer is away,
+/// so the line can still say what it cost, and read again once on each new connection, so one that finished or went
+/// while the phone was away is not left as it was.
+@MainActor final class Models3dStore: ObservableObject {
+    @Published private(set) var views: [String: Model3dView] = [:]
+    /// The 3D models whose records went on their computer: their lines and sheets say Sotto no longer holds them.
+    @Published private(set) var gone: Set<String> = []
+    /// The connection each view was last read on, so it is read again on the next one (Sol's review).
+    var readOn: [String: UUID] = [:]
+    nonisolated static func key(_ hostID: String, _ id: String) -> String { hostID + "\n" + id }
+    func view(_ hostID: String, _ id: String) -> Model3dView? { views[Self.key(hostID, id)] }
+    func isGone(_ hostID: String, _ id: String) -> Bool { gone.contains(Self.key(hostID, id)) }
+    func keep(_ view: Model3dView, from hostID: String) {
+        let key = Self.key(hostID, view.id)
+        if views[key] != view { views[key] = view }
+        if gone.contains(key) { gone.remove(key) }
+    }
+    func went(_ ids: [String], from hostID: String) {
+        for id in ids {
+            let key = Self.key(hostID, id)
+            views[key] = nil
+            gone.insert(key)
+        }
+    }
+}
+
+/// How opening a 3D model went: its USDZ in the app's cache, too large to fetch, or not fetched.
+enum Model3dOpening: Equatable { case file(URL), tooLarge, failed }
+
+extension AppModel {
+    /// Whether this computer shows its threads' 3D models to this iPhone (`plugin-meshy-phone`).
+    func shows3dModels(_ hostID: String) -> Bool { live[hostID]?.features.contains(Models3d.feature) == true }
+
+    /// Reads a 3D model's view when its line shows, once on each connection to its computer: one already read on this
+    /// connection is kept up to date by the computer's news.
+    func load3dModel(_ hostID: String, _ id: String) async {
+        let key = Models3dStore.key(hostID, id)
+        guard shows3dModels(hostID), online(hostID), !models3dStore.isGone(hostID, id), let generation = generations[hostID],
+              models3dStore.readOn[key] != generation, let connection = connections[hostID] else { return }
+        let read: Model3dView?
+        do { read = try await connection.call(Models3d.view(id: id), as: Optional<Model3dView>.self) } catch { return }
+        models3dStore.readOn[key] = generation
+        if let read { if read.id == id { models3dStore.keep(read, from: hostID) } } else { went3dModels([id], from: hostID) }
+    }
+
+    /// One of a thread's 3D models as its computer lists it, for the words and time its sheet shows; nil when it can't say.
+    func listed3dModel(_ ref: ThreadRef, _ id: String) async -> Model3dListed? {
+        guard shows3dModels(ref.hostID), online(ref.hostID), let connection = connections[ref.hostID] else { return nil }
+        let listed = try? await connection.call(Models3d.thread(threadID: ref.threadID), as: [Model3dListed].self)
+        guard let found = listed?.first(where: { $0.view.id == id }) else { return nil }
+        models3dStore.keep(found.view, from: ref.hostID)
+        return found
+    }
+
+    /// A 3D model's still picture, from the app's cache or its computer, which keeps it there for the next time. It is
+    /// kept under the file's name and size, so a still picture that changed on the computer is fetched again.
+    func still3dModel(_ hostID: String, _ view: Model3dView, wanted: @escaping @MainActor () -> Bool) async -> Data? {
+        guard let still = view.still, let bytes = view.files.first(where: { $0.name == still })?.bytes,
+              bytes > 0, bytes <= Models3d.bytesMax else { return nil }
+        let url = Self.models3dFolder(hostID, view.id).appendingPathComponent(Models3d.cacheFile(part: .still, name: still, bytes: bytes))
+        if let kept = try? Data(contentsOf: url) { return kept }
+        guard shows3dModels(hostID), await fetch3dModel(hostID, id: view.id, part: .still, to: url, progress: nil, wanted: wanted) else { return nil }
+        return try? Data(contentsOf: url)
+    }
+
+    /// A 3D model's USDZ to turn: from the app's cache, or fetched from its computer when it is opened, in parts, kept
+    /// only once its bytes are the size and digest the computer named (Zach's pick: the app's cache only). A copy is used
+    /// only while the view still names that file at that size, under the cap, so one replaced on the computer is fetched
+    /// again and one grown past 64 MB is not turned (Sol's review).
+    func open3dModel(_ hostID: String, _ view: Model3dView, progress: @escaping @MainActor (Double) -> Void,
+                     wanted: @escaping @MainActor () -> Bool) async -> Model3dOpening {
+        guard let usdz = view.usdz, let bytes = usdz.bytes else { return .failed }
+        guard view.turnsHere else { return .tooLarge }
+        let url = Self.models3dFolder(hostID, view.id).appendingPathComponent(Models3d.cacheFile(part: .usdz, name: usdz.name, bytes: bytes))
+        if FileManager.default.fileExists(atPath: url.path) { return .file(url) }
+        guard shows3dModels(hostID) else { return .failed }
+        return await fetch3dModel(hostID, id: view.id, part: .usdz, to: url, progress: progress, wanted: wanted) ? .file(url) : .failed
+    }
+
+    /// The news of a computer's 3D models: a view as it changes, and records that went.
+    func apply3dModelNews(_ news: Model3dNews, from hostID: String) {
+        if let changed = news.changed { models3dStore.keep(changed.view, from: hostID) }
+        if let removed = news.removed, !removed.isEmpty { went3dModels(removed, from: hostID) }
+    }
+
+    /// Records that went on their computer: their lines say so, and their cached copies go too, being no longer the
+    /// computer's to hand over.
+    private func went3dModels(_ ids: [String], from hostID: String) {
+        models3dStore.went(ids, from: hostID)
+        for id in ids { try? FileManager.default.removeItem(at: Self.models3dFolder(hostID, id, making: false)) }
+    }
+
+    /// The app's cache of one 3D model's still picture and USDZ, which iOS may clear when the phone needs the space.
+    nonisolated static func models3dFolder(_ hostID: String, _ id: String, making: Bool = true) -> URL {
+        let folder = (FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory)
+            .appendingPathComponent("models-3d", isDirectory: true).appendingPathComponent(Models3d.cacheFolder(hostID: hostID, id: id), isDirectory: true)
+        if making { try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true) }
+        return folder
+    }
+
+    /// Fetches a still picture or a USDZ part by part, each waiting its turn behind other large requests to that computer
+    /// and none asked for once nothing `wanted` it. The parts go to a file of this fetch's own beside `url`, which takes
+    /// its place only once they make the file the first part named, while something still wants it and the record is
+    /// still there: a fetch cut short, overlapping another or outlived by its record never leaves a file the cache would
+    /// open (Sol's review).
+    private func fetch3dModel(_ hostID: String, id: String, part: Models3d.Part, to url: URL, progress: (@MainActor (Double) -> Void)?,
+                              wanted: @escaping @MainActor () -> Bool) async -> Bool {
+        let partial = url.deletingLastPathComponent().appendingPathComponent(UUID().uuidString + ".part")
+        var download: Model3dDownload?
+        defer { try? FileManager.default.removeItem(at: partial) }
+        repeat {
+            let operation = Models3d.bytes(id: id, part: part, offset: download?.received ?? 0, digest: download?.digest)
+            let bytes: Model3dBytes?
+            do {
+                bytes = try await largeRequest(on: hostID) { connection -> Model3dBytes? in
+                    guard wanted() else { throw CancellationError() }
+                    return try await connection.call(operation, as: Optional<Model3dBytes>.self)
+                }
+            } catch { return false }
+            guard let bytes, wanted() else { return false }
+            let before = download
+            // Decoded and written off the main actor: a part is 8 MiB.
+            let next = await Task.detached { () -> Model3dDownload? in
+                guard let before else { return Model3dDownload(first: bytes, url: partial) }
+                return before.add(bytes) ? before : nil
+            }.value
+            guard let next, wanted() else { return false }
+            download = next
+            progress?(next.progress)
+        } while download?.complete == false
+        guard let download, await Task.detached(operation: { download.finish() }).value, wanted(), !models3dStore.isGone(hostID, id) else { return false }
+        try? FileManager.default.removeItem(at: url)
+        return (try? FileManager.default.moveItem(at: partial, to: url)) != nil
+    }
 }
