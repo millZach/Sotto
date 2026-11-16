@@ -35,10 +35,9 @@ const recordSchema = z.object({
   voice: z.string().min(1).max(200).optional(),
   seconds: z.number().positive().max(1_000).optional(),
   /**
-   * The thread's working folder as it was asked for, which the MP3 is read back only from inside. A record kept before
-   * the line in the thread (part 3) holds none, and is read against the thread's working folder as it is now.
+   * The real folder inside the thread's folder the MP3 goes into, and its name there once it is saved. The record holds
+   * no working folder: the MP3 is read back only from inside the thread's working folder as it is now.
    */
-  /** The real folder inside the thread's folder the MP3 goes into, and its name there once it is saved. */
   folder: z.string().min(1),
   fileName: z.string().min(1).max(200).optional(),
   bytes: z.number().int().nonnegative().optional(),
@@ -88,12 +87,21 @@ export class SoundRecords {
 
   /** One sound's record, or undefined when Sotto holds none by that ID. */
   sound(id: string): Promise<SoundRecord | undefined> {
-    return this.inTurn(async () => (await this.load()).find(record => record.id === id))
+    return this.inTurn(async () => this.current((await this.load()).find(record => record.id === id)))
   }
 
   /** Every sound, newest first. */
   list(): Promise<readonly SoundRecord[]> {
-    return this.inTurn(async () => [...await this.load()])
+    return this.inTurn(async () => (await this.load()).map(record => this.current(record)!))
+  }
+
+  /**
+   * A record as it stands, with a change that could not yet be written laid over it: a sound saved while its record's
+   * write failed reads as made, so its line shows Play and a read again agrees (Bug Bot on #2653, L2).
+   */
+  private current(record: SoundRecord | undefined): SoundRecord | undefined {
+    const change = record ? this.waiting.get(record.id) : undefined
+    return record && change ? this.private(recordSchema.parse(change(record))) : record
   }
 
   /** Keeps a new record. Rejects when it cannot be written, and then nothing should be sent to ElevenLabs. */
@@ -178,7 +186,7 @@ export class SoundRecords {
       const records = await this.load()
       const month = monthOf(now)
       const spent = new Map<string, number>()
-      for (const entry of [...records, ...this.spent]) {
+      for (const entry of [...records.map(record => this.current(record)!), ...this.spent]) {
         if (entry.cost <= 0 || monthOf(new Date(entry.askedAt)) !== month) continue
         spent.set(entry.accountId, (spent.get(entry.accountId) ?? 0) + entry.cost)
       }

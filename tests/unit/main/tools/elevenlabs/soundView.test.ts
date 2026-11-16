@@ -118,6 +118,19 @@ describe('a sound’s MP3 for the window', () => {
     ] as const) expect(looksLikeMp3(new Uint8Array(bytes)), what).toBe(false)
   })
 
+  it('asks for the folder again while Files is busy, and never calls an MP3 on disk gone for it', async () => {
+    // Bug Bot on #2653, L1: Files answers busy while more than four of its requests are in flight.
+    await saved()
+    let busy = 2
+    const asked = { sound: async () => made(), folderOf: async () => busy-- > 0 ? 'busy' as const : root }
+    expect(await soundBytes(asked, 'sound-1')).toEqual(MP3)
+    busy = 2
+    expect((await soundView(asked, made())).bytes).toBe(MP3.byteLength)
+    // Busy for good: it throws, so the window keeps what it shows and asks again, rather than being told it is gone.
+    const always = { sound: async () => made(), folderOf: async () => 'busy' as const }
+    await expect(soundView(always, made())).rejects.toThrow()
+  })
+
   it('reads a record against the thread’s working folder as it is now, so the record holds no folder of its own', async () => {
     await saved()
     const older = made()

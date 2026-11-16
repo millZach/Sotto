@@ -1506,7 +1506,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   // A sound's line in its thread (part 3) reads its record by ID, and its MP3 only from inside the thread's working folder.
   const soundViews: SoundViewSource | undefined = soundRecords ? {
     sound: id => soundRecords.sound(id),
-    folderOf: async threadId => { const found = await files.resolveWorkspace(threadId); return found.ok ? found.value.workingDirectory : null },
+    folderOf: async threadId => { const found = await files.resolveWorkspace(threadId); return found.ok ? found.value.workingDirectory : found.error.code === 'busy' ? 'busy' : null },
   } : undefined
   // Each change to a sound goes to the window as its view, in order, so its line moves from making to made or failed.
   const pushSoundView = soundViews ? soundViewPush(soundViews, view => { windows.sendToMain(PLUGINS_SOUND_CHANGED, view) }) : undefined

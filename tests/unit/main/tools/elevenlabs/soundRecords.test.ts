@@ -100,6 +100,10 @@ describe('the record of sounds', () => {
     // The next write cannot be made: its file's place is taken by a folder.
     await mkdir(join(directory, 'sounds.json.next'))
     await expect(records.update(making.id, record => ({ ...record, state: 'failed', failure: 'rejected', cost: 0 }))).rejects.toThrow()
+    // Read before it is written, the record is as the change says, and so is the month (Bug Bot on #2653, L2).
+    expect(await records.sound(making.id)).toMatchObject({ state: 'failed', cost: 0 })
+    expect((await records.list()).find(record => record.id === making.id)).toMatchObject({ state: 'failed', cost: 0 })
+    expect((await records.monthSpent()).get(STUDIO) ?? 0).toBe(0)
     await rm(join(directory, 'sounds.json.next'), { recursive: true })
     await records.add(sound({ cost: 0.1 }))
     expect((await records.list()).find(record => record.id === making.id)).toMatchObject({ state: 'failed', cost: 0 })

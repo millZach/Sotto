@@ -173,6 +173,20 @@ describe('a sound’s line in its thread', () => {
     expect(played).toEqual([])
   })
 
+  it('tries again on the next press after a file Sotto could not play, rather than turning Play off for good', async () => {
+    // Bug Bot on #2653, N1: one failed fetch, then the file is there.
+    const { plugins } = await show(MADE, null)
+    const play = within(line()).getByRole('button', { name: 'Play Opening narration' })
+    await userEvent.click(play)
+    expect(await within(line()).findByText('Speech · Sotto could not play this file · about $0.02 · ElevenLabs')).toBeInTheDocument()
+    expect(play).toBeEnabled()
+    plugins.soundBytes.mockResolvedValue(MP3)
+    await userEvent.click(play)
+    expect(played).toHaveLength(1)
+    expect(plugins.soundBytes).toHaveBeenCalledTimes(2)
+    expect(await within(line()).findByRole('button', { name: 'Pause Opening narration' })).toBeInTheDocument()
+  })
+
   it('says it could not make it, that nothing was saved and nothing spent, and what happened on a press', async () => {
     await show({ ...MAKING, state: 'failed', failure: 'rejected', cost: 0 })
     expect(line()).toHaveTextContent('Could not make it · nothing saved · nothing spent')

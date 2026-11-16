@@ -15,8 +15,11 @@ import { SOUND_BYTES_MAX } from './save'
 /** What the view, the bytes and the reveal are read from: the records, and the thread's working folder as it is now. */
 export interface SoundViewSource {
   sound(id: string): Promise<SoundRecord | undefined>
-  /** The thread's working folder now, for a record kept before records held their own; null when there is none. */
-  folderOf(threadId: string): Promise<string | null>
+  /**
+   * The thread's working folder now; null when there is none, and `busy` when Files is too busy to say just now, which
+   * is asked again rather than taken as no folder (Bug Bot on #2653, L1).
+   */
+  folderOf(threadId: string): Promise<string | null | 'busy'>
 }
 
 /** Where a made sound's MP3 is, as the 3D model's checked reads take it; undefined when there is no file to look for. */
@@ -24,8 +27,25 @@ async function placeOf(source: SoundViewSource, sound: SoundRecord): Promise<{ r
   if (sound.state !== 'made' || !sound.fileName) return undefined
   // The record holds no working folder, so a build from before the line reads it whole and keeps counting its cost
   // (Sol's review): its folder is checked against the thread's working folder as it is now.
-  const root = await source.folderOf(sound.threadId).catch(() => null)
+  const root = await folderNow(source, sound.threadId)
   return root ? { place: { root, folder: sound.folder, files: [sound.fileName] }, name: sound.fileName } : undefined
+}
+
+/** How long the folder is asked for again while Files is busy, and how often: a busy Files clears in moments. */
+const BUSY_TRIES = 20
+const BUSY_WAIT_MS = 100
+
+/**
+ * The thread's working folder, asked again while Files is busy. Still busy after that, it throws, so the window keeps
+ * what it showed and asks again later, rather than being told an MP3 on disk is gone (Bug Bot on #2653, L1).
+ */
+async function folderNow(source: SoundViewSource, threadId: string): Promise<string | null> {
+  for (let tried = 0; tried < BUSY_TRIES; tried++) {
+    const found = await source.folderOf(threadId).catch(() => null)
+    if (found !== 'busy') return found
+    await new Promise(resolve => setTimeout(resolve, BUSY_WAIT_MS))
+  }
+  throw new Error('sound-folder-busy')
 }
 
 /** The file's real path, size and when it was saved, while it is there and inside; undefined otherwise. */

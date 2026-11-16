@@ -112,6 +112,15 @@ function usePlayer(soundId: string, reread: () => void) {
   }
 
   const press = async (): Promise<void> => {
+    // A file Sotto could not play is fetched again on the next press, as it may have been put back or changed since
+    // (Bug Bot on #2653, N1).
+    if (problem === 'unplayable') {
+      audio.current?.pause()
+      audio.current = null
+      if (address.current) URL.revokeObjectURL(address.current)
+      address.current = null
+      setProblem(undefined)
+    }
     const element = audio.current
     if (element) {
       if (playing) element.pause()
@@ -207,7 +216,7 @@ function Line({ soundId, name, view, reread, reduced }: {
             aria-label={kindMakingLabel(view.kind)}><i /></span>
         </> : <span className={failed ? 'sound-line__sub sound-line__sub--failed' : 'sound-line__sub'}>{sub}</span>}
       </span>
-      {made && <button type="button" className="sound-line__button sound-line__play" aria-label={playLabel} disabled={problem !== undefined}
+      {made && <button type="button" className="sound-line__button sound-line__play" aria-label={playLabel} disabled={problem === 'gone'}
         aria-busy={player.fetching || undefined} onClick={() => { void player.press() }}>
         {player.playing ? <Pause size={16} aria-hidden="true" /> : <Play size={16} aria-hidden="true" />}
         <span className="sound-line__label" aria-hidden="true">{player.playing ? t`Pause` : t`Play`}</span>
