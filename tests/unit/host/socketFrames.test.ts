@@ -380,7 +380,8 @@ describe('permessage-deflate', () => {
     const large = 'x'.repeat(HOST_MAX_FRAME_BYTES - 1024)
     expect(frames.sendText(large)).toBe(true)
     expect(frames.sendText(large)).toBe(true)
-    expect(queue.queuedBytes).toBe(2 * large.length)
+    // Each counts a frame header's room too, 14 bytes (#2610).
+    expect(queue.queuedBytes).toBe(2 * (large.length + 14))
     const ping = masked(Buffer.alloc(125, 7), 9)
     let held = 0
     for (let sent = 0; sent < 300_000 && !stream.destroyed; sent++) {
@@ -388,8 +389,25 @@ describe('permessage-deflate', () => {
       if (!stream.destroyed) held = Math.max(held, stream.writableLength + queue.queuedBytes)
     }
     expect(stream.destroyed).toBe(true)
-    // Never more than two frame limits held, but for the header of the frame being written.
-    expect(held).toBeLessThanOrEqual(cap)
+    // Never more than two frame limits held, but for the 2-byte header of the pong written last: a pong is checked at its
+    // payload's size, at most 125 bytes (#2610).
+    expect(held).toBeLessThanOrEqual(cap + 2)
+  })
+
+  // #2610: a queued message counted at its payload alone was refused when written, the headers written before it having
+  // taken the room, and the connection closed partway through messages it had accepted.
+  it('writes every message it queued for a peer that stops reading, up to the cap', async () => {
+    const { frames, stream } = stalled(true), cap = HOST_MAX_FRAME_BYTES * 2
+    const queue = frames as unknown as { queuedBytes: number }
+    // One message compressed off the loop, and plain ones queued behind it until the next would not fit.
+    expect(frames.sendText(history(DEFLATE_SYNC_MAX_BYTES + 6 * 1024))).toBe(true)
+    const small = 'x'.repeat(1000)
+    let accepted = 0
+    while (queue.queuedBytes + small.length <= cap) { expect(frames.sendText(small)).toBe(true); accepted++ }
+    expect(accepted).toBeGreaterThan(30_000)
+    await vi.waitFor(() => expect(queue.queuedBytes).toBe(0))
+    expect(stream.destroyed).toBe(false)
+    expect(stream.writableLength).toBeLessThanOrEqual(cap)
   })
 
   it('holds a compressed peer that stops reading to what is written on the wire, counting the message sent at its own size', () => {
@@ -504,7 +522,8 @@ describe('permessage-deflate', () => {
   })
 
   it('applies the unread-output cap to the size of messages still compressing', () => {
-    const server = deflating(false), whole = history(HOST_MAX_FRAME_BYTES)
+    // Two that fill the cap with a frame header's room each, which a queued message counts too (#2610).
+    const server = deflating(false), whole = history(HOST_MAX_FRAME_BYTES - 14)
     expect(server.frames.sendText(whole)).toBe(true)
     expect(server.frames.sendText(whole)).toBe(true)
     expect(server.frames.sendText(history(2 * 1024))).toBe(false)

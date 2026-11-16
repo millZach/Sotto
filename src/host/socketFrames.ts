@@ -70,6 +70,11 @@ export function deflateAccepted(header: string | readonly string[] | undefined):
 
 /** A text message waiting its turn on the wire: `payload` is set once its compression, if any, has finished. */
 interface Outgoing { size: number; payload?: Buffer; compressed?: boolean }
+/**
+ * The most a frame's header takes: 2 bytes, an 8-byte length and a client's 4-byte mask. A queued message counts it on top
+ * of its own size, so the headers written before it cannot take the room it was accepted into (#2610).
+ */
+const FRAME_HEADER_MAX_BYTES = 14
 
 /** The RFC 6455 framing boundary, shared by the Node client and listener. No protocol bodies are logged. */
 export class SocketFrames {
@@ -88,7 +93,7 @@ export class SocketFrames {
   /**
    * Text messages from one still being compressed off the loop on, in the order they were sent, so the wire keeps that
    * order: one being compressed, one compressed and waiting behind an earlier one, and a plain one queued behind a
-   * compression. `queuedBytes` is their uncompressed size, counted against the unread-output cap as if already written,
+   * compression. `queuedBytes` is their uncompressed size and a frame header's room each, counted against the unread-output cap as if already written,
    * when a text message is sent and when any frame is written, a control frame among them (#2602).
    */
   private queue: Outgoing[] = []
@@ -164,7 +169,7 @@ export class SocketFrames {
       return this.frame(1, packed ?? data, packed !== undefined)
     }
     const entry: Outgoing = { size: data.length }
-    this.queue.push(entry); this.queuedBytes += data.length
+    this.enqueue(entry)
     deflateRaw(data, DEFLATE_OPTIONS, (error, result) => {
       const packed = error ? undefined : compressed(result, data)
       entry.payload = packed ?? data; entry.compressed = packed !== undefined
@@ -185,14 +190,16 @@ export class SocketFrames {
   /** A text message goes now unless a message sent before it is still being compressed, and then after it. */
   private ordered(payload: Buffer, compressed: boolean): boolean {
     if (this.queue.length === 0) return this.frame(1, payload, compressed)
-    this.queue.push({ size: payload.length, payload, compressed }); this.queuedBytes += payload.length
+    this.enqueue({ size: payload.length, payload, compressed })
     return true
   }
+  /** Queues a message at its own size and a frame header's room, which `flush` gives back as it writes it. */
+  private enqueue(entry: Outgoing): void { this.queue.push(entry); this.queuedBytes += entry.size + FRAME_HEADER_MAX_BYTES }
   /** Writes every message at the head of the queue that is ready, in order, and wakes a drain waiting on the queue. */
   private flush(): void {
     while (!this.ended && this.queue[0]?.payload) {
       const entry = this.queue.shift()!
-      this.queuedBytes -= entry.size
+      this.queuedBytes -= entry.size + FRAME_HEADER_MAX_BYTES
       this.frame(1, entry.payload!, entry.compressed === true)
     }
     if (this.queue.length === 0) { const waiting = [...this.flushedListeners]; this.flushedListeners.clear(); for (const listener of waiting) listener() }
@@ -202,7 +209,8 @@ export class SocketFrames {
   /**
    * Whether `size` more bytes would be over the frame limit, or take what this connection holds for its peer past two of
    * them: what is written and not read, and what waits in the compression queue (ADR-0025, November 15, 2026 amendment).
-   * A text message is held to it when it is sent and every frame when it is written, so the two cannot count it apart.
+   * A text message is held to it when it is sent and every frame when it is written. A queued message counts a header's
+   * room it gives back as it is written, so one accepted when sent is not refused when written (#2610).
    */
   private overCap(size: number): boolean {
     return size > HOST_MAX_FRAME_BYTES || this.stream.writableLength + this.queuedBytes + size > HOST_MAX_FRAME_BYTES * 2
@@ -210,7 +218,7 @@ export class SocketFrames {
   private frame(opcode: number, data: Buffer, compressed: boolean): boolean {
     if (this.ended) return false
     // What is queued counts here too, so a pong or a close reply, which skip the queue, cannot take what is held past the
-    // cap while messages wait to be compressed (#2602). `flush` takes a message's size off the queue before writing it.
+    // cap while messages wait to be compressed (#2602). `flush` takes a message's size and its header's room off the queue before writing it.
     if (this.overCap(data.length)) { this.close(); return false }
     const extended = data.length < 126 ? 0 : data.length <= 65535 ? 2 : 8
     const header = Buffer.alloc(2 + extended + (this.client ? 4 : 0))
