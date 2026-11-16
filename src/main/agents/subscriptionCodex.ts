@@ -1,4 +1,3 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { constants } from 'node:fs'
 import { access, mkdir, open, realpath } from 'node:fs/promises'
 import { homedir } from 'node:os'
@@ -9,6 +8,7 @@ import { z } from 'zod'
 import { orderReasoningEfforts } from '../../shared/reasoningEfforts'
 import type { SubscriptionAccount, SubscriptionClient } from './subscriptionTypes'
 import { findCli, isDispatcher, withCliPath, type CliLookupOptions } from './cliLookup'
+import { launchProviderProcess, type InteractiveProcess } from './git/gitLauncher'
 
 const UNAVAILABLE = 'Codex subscription request failed. Check Codex sign-in, model access and usage limits, then retry.'
 const MAX_OUTPUT_BYTES = 1_048_576
@@ -101,13 +101,14 @@ async function nativeCodex(candidate: string, windows: boolean): Promise<string 
 
 /** One owned, bounded child. No shell, persistent daemon, retries or raw error output. */
 function childOperation<T>(executable: string, args: string[], cwd: string, timeout: number,
-  operation: (child: ChildProcessWithoutNullStreams, finish: (value: T) => void, fail: (detail?: string) => void) => (line: string) => void,
+  operation: (child: InteractiveProcess, finish: (value: T) => void, fail: (detail?: string) => void) => (line: string) => void,
   signal?: AbortSignal,
   env: NodeJS.ProcessEnv = nativeEnvironment(),
 ): Promise<T> {
   return new Promise((resolve, reject) => {
     signal?.throwIfAborted()
-    const child = spawn(executable, args, { cwd, env: withCliPath(env, executable), windowsHide: true, shell: false, stdio: 'pipe' })
+    // Off this thread, as a thread's own app-server starts (#2550): a cold start of Codex held Electron's main for 1.6 s.
+    const child = launchProviderProcess(executable, args, { cwd, env: withCliPath(env, executable) })
     let finishing = false
     let closed = false
     let result: T | undefined
@@ -130,7 +131,7 @@ function childOperation<T>(executable: string, args: string[], cwd: string, time
       rejected = error
       clearTimeout(timer)
       if (closed) { settle(); return }
-      child.stdin.destroy()
+      child.stdin.end()
       child.kill()
       // Windows terminates directly; Unix SIGTERM can be ignored. Do not return
       // or remove the temporary directory until this process actually closes.
@@ -153,7 +154,9 @@ function childOperation<T>(executable: string, args: string[], cwd: string, time
     child.on('error', () => fail())
     child.stdin.on('error', () => fail())
     child.stdout.setEncoding('utf8')
-    child.stdout.on('data', (chunk: string) => {
+    child.stdout.on('data', (data: Buffer | string) => {
+      // Decoded as UTF-8 above, so each chunk is text.
+      const chunk = data as string
       bytes += Buffer.byteLength(chunk)
       if (bytes > MAX_OUTPUT_BYTES) { fail(); return }
       buffer += chunk
@@ -164,7 +167,7 @@ function childOperation<T>(executable: string, args: string[], cwd: string, time
         if (line) { try { consume(line) } catch { fail() } }
       }
     })
-    child.stderr.on('data', (chunk: Buffer) => { bytes += chunk.length; if (bytes > MAX_OUTPUT_BYTES) fail() })
+    child.stderr.on('data', (chunk: Buffer | string) => { bytes += chunk.length; if (bytes > MAX_OUTPUT_BYTES) fail() })
     child.on('close', () => {
       closed = true
       if (!finishing && buffer.trim()) { try { consume(buffer.trim()) } catch { fail() } }
@@ -212,7 +215,8 @@ export function writeWithCodexExec(request: {
     '--cd', request.workingDirectory, '--model', request.model, ...(request.effort ? ['-c', `model_reasoning_effort="${request.effort}"`] : []), ...sideWritingArguments, '-']
   return childOperation<string>(request.executable, args, request.workingDirectory, request.timeoutMs, (child, finish, fail) => {
     let text: string | undefined
-    child.stdin.end(`${request.instruction}\n\n${request.material}`)
+    child.stdin.write(`${request.instruction}\n\n${request.material}`)
+    child.stdin.end()
     return (line) => {
       const event = execEvent.parse(JSON.parse(line))
       if ((event.type === 'item.started' || event.type === 'item.completed') && event.item && !SIDE_WRITING_ITEMS.has(event.item.type)) { fail('Codex tried to use a tool while writing. Sotto stopped the call.'); return }

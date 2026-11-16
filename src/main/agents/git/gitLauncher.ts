@@ -14,6 +14,12 @@ import type { LaunchError, LauncherEvent, LauncherRequest } from './gitLauncherW
  * 3.1 s, one of them for 2.2 s (`docs/perf/2026-10-19-git-launch-off-main.md`). macOS and Linux launch off main too,
  * and nothing else about a process changes on any of them.
  *
+ * Claude Code's and Codex's thread processes and side calls start through a second launcher of their own (`providerLauncher`): the
+ * first start of Claude Code's 372 MB executable after Windows has let go of it held main for 1 to 2.6 s (#2550,
+ * `docs/perf/2026-11-16-provider-start-off-main.md`). A worker relays the output of everything it started, and is
+ * held by a slow start as main was, so a provider's start does not wait behind Git's frequent launches nor Git's
+ * reads behind a provider's slow start.
+ *
  * What a launch hands back is the part of a `ChildProcess` the callers use: its pid once it has one, its two output
  * streams, `error` and `close`, and `kill`; an interactive launch adds its standard input, kept open, and `exit`. Where
  * the worker cannot be had (no built worker file beside this one, as
@@ -50,6 +56,8 @@ export interface LaunchedInput {
   write(data: string, callback?: (error?: Error | null) => void): boolean
   end(): void
   on(event: 'error', listener: (error: Error) => void): this
+  /** Its process exited, so nothing more reaches it. */
+  on(event: 'close', listener: () => void): this
 }
 /** A process whose standard input stays open (`launchInteractive`), which also reports when it exits. */
 export interface InteractiveProcess extends LaunchedProcess {
@@ -113,12 +121,14 @@ class Output extends EventEmitter implements LaunchedOutput {
 /**
  * An interactive launch's standard input, written through the worker. What is written before the worker says it started
  * the process is kept, so a process started in this thread instead (`adopt`) is given all of it, in order. It applies no
- * backpressure: `write` always answers true and never waits on `drain`, so it suits a few small requests (Grok's and Claude
- * Code's limits probes) and not a stream; a caller that writes much would want a bounded queue paced by the flush answers first.
+ * backpressure: `write` always answers true and never waits on `drain`, so it suits callers that write whole messages
+ * (the limits probes, and Claude Code's and Codex's thread protocols, which never waited on `drain` either), not a
+ * stream; a caller that writes much would want a bounded queue paced by the flush answers first.
  */
 class Input extends EventEmitter implements LaunchedInput {
   private gone = false
   private ended = false
+  private closeSent = false
   private serial = 0
   private readonly answers = new Map<number, (error?: Error | null) => void>()
   private unstarted: Array<{ readonly data: string; readonly callback?: ((error?: Error | null) => void) | undefined } | 'end'> | undefined = []
@@ -156,11 +166,12 @@ class Input extends EventEmitter implements LaunchedInput {
     this.gone = true
     if (this.listenerCount('error')) this.emit('error', error)
   }
-  /** The process closed: a write still unanswered never reached it. */
+  /** The process exited or closed: a write still unanswered never reached it. */
   closed(): void {
     this.gone = true
     for (const answer of this.answers.values()) answer(new Error('The process closed before it took this input.'))
     this.answers.clear()
+    if (!this.closeSent) { this.closeSent = true; this.emit('close') }
   }
   /** The worker went before it started the process, which started here instead: it is given what was written. */
   adopt(stdin: Writable): void {
@@ -206,7 +217,8 @@ class OffThreadProcess extends EventEmitter implements LaunchedProcess {
       case 'stdout': this.stdout.push(event.chunk); return
       case 'stderr': this.stderr.push(event.chunk); return
       case 'error': this.emit('error', errorFrom(event.error)); return
-      case 'exit': this.emit('exit', event.code, event.signal); return
+      // Node destroys a child's input when it exits, not when its output closes, so nothing written after reaches it.
+      case 'exit': this.emit('exit', event.code, event.signal); this.stdin?.closed(); return
       case 'written': this.stdin?.written(event.serial, event.error); return
       case 'stdin-error': this.stdin?.fail(errorFrom(event.error)); return
       case 'close': this.close(event.code, event.signal)
@@ -263,8 +275,8 @@ export class GitLauncher {
    * Starts a process whose standard input stays open for the caller to write to and end, as a `spawn` with every stream
    * piped does.
    */
-  launchInteractive(command: string, args: readonly string[], options: Pick<LaunchOptions, 'cwd' | 'env'>): InteractiveProcess {
-    return this.start(command, args, { cwd: options.cwd, env: options.env }, true) as InteractiveProcess
+  launchInteractive(command: string, args: readonly string[], options: Pick<LaunchOptions, 'cwd' | 'env' | 'detached'>): InteractiveProcess {
+    return this.start(command, args, { cwd: options.cwd, env: options.env, detached: options.detached ?? false }, true) as InteractiveProcess
   }
 
   private start(command: string, args: readonly string[], options: LaunchOptions, interactive: boolean): LaunchedProcess {
@@ -378,6 +390,21 @@ export function launchProcess(command: string, args: readonly string[], options:
 /** Starts a process with its standard input left open through the shared launcher (`GitLauncher.launchInteractive`). */
 export function launchInteractiveProcess(command: string, args: readonly string[], options: Pick<LaunchOptions, 'cwd' | 'env'>): InteractiveProcess {
   return gitLauncher().launchInteractive(command, args, options)
+}
+
+let providers: GitLauncher | undefined
+/** The launcher Claude Code's and Codex's thread processes and side calls start through: the same worker code, a worker of its own (#2550). */
+export function providerLauncher(): GitLauncher { return providers ??= new GitLauncher(BUILT_WORKER) }
+/** Points the provider launcher at a worker file, or at none (null), for tests; the previous one is closed. */
+export async function useProviderLauncher(workerPath: string | null): Promise<GitLauncher> {
+  const previous = providers
+  providers = new GitLauncher(workerPath)
+  await previous?.close()
+  return providers
+}
+/** Starts a thread provider's process, its standard input left open, off the calling thread (`providerLauncher`). */
+export function launchProviderProcess(command: string, args: readonly string[], options: Pick<LaunchOptions, 'cwd' | 'env' | 'detached'>): InteractiveProcess {
+  return providerLauncher().launchInteractive(command, args, options)
 }
 /**
  * Runs a process to its end in Sotto's own folder and environment, its output unread: resolves when it exits with 0,

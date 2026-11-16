@@ -7,7 +7,8 @@ import { CLAUDE_MAX_FRAME_BYTES, ClaudeProtocol, ClaudeRejected, ClaudeWritePend
 import { runToExit } from '../../../src/main/agents/git/gitLauncher'
 
 vi.mock('node:child_process', () => ({ spawn: vi.fn() }))
-vi.mock('../../../src/main/agents/git/gitLauncher', () => ({ runToExit: vi.fn(), stopProcessTree: vi.fn() }))
+// The launch itself is the launcher's: with no built worker under the test runner it is the `spawn` mocked above.
+vi.mock('../../../src/main/agents/git/gitLauncher', async importOriginal => ({ ...await importOriginal<typeof import('../../../src/main/agents/git/gitLauncher')>(), runToExit: vi.fn(), stopProcessTree: vi.fn() }))
 
 type FakeChild = EventEmitter & { stdout: PassThrough; stderr: PassThrough; stdin: PassThrough; kill: ReturnType<typeof vi.fn> }
 
