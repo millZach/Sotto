@@ -3,7 +3,7 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { z } from 'zod'
 import {
-  isBridgePlugin, isMailPlugin, isSpendingPlugin, MESHY_MONTHLY_LIMIT_DEFAULT, PLUGIN_ACCOUNTS_MAX, pluginAccountSchema, type AccountPluginId, type BridgePorts, type PluginAccount, type PluginAccountAdd, type PluginAccountProblem,
+  isBridgePlugin, isMailPlugin, isSpendingPlugin, PLUGIN_ACCOUNTS_MAX, PLUGIN_MONTHLY_LIMIT_DEFAULTS, pluginAccountSchema, type AccountPluginId, type BridgePorts, type PluginAccount, type PluginAccountAdd, type PluginAccountProblem,
   type PluginAccountRemove, type PluginAccountReplace, type PluginAccountResult, type PluginAccountUpdate,
 } from '../../shared/plugins'
 
@@ -14,9 +14,10 @@ import {
  * a build from before mail would drop it as an account of no plugin it knows and write the rest back without it,
  * leaving its password in the credential store with nothing to find it by, so it too refuses the whole file. Version
  * 4 holds a Proton Mail account, which a build from before Proton Mail would drop the same way. Version 5 holds a
- * Meshy account, and a build from before Meshy would drop that the same way.
+ * Meshy account, and a build from before Meshy would drop that the same way. Version 6 holds an ElevenLabs account,
+ * for the same reason again.
  */
-const fileSchema = z.object({ version: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)]), accounts: z.array(z.unknown()) })
+const fileSchema = z.object({ version: z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6)]), accounts: z.array(z.unknown()) })
 
 /** The part of the credential store plugin accounts use: this computer's, or a headless host's own. */
 export interface PluginCredentials {
@@ -44,7 +45,7 @@ export class PluginAccountsUnreadable extends Error {}
  * A secret as it is checked and kept. Google shows a Gmail app password in four groups with spaces between them,
  * and the password is the letters, so the spaces a paste carries are left out.
  */
-export const pluginSecretAsKept = (plugin: AccountPluginId, secret: string): string => plugin === 'gmail' ? secret.replace(/\s+/gu, '') : plugin === 'meshy' ? secret.trim() : secret
+export const pluginSecretAsKept = (plugin: AccountPluginId, secret: string): string => plugin === 'gmail' ? secret.replace(/\s+/gu, '') : plugin === 'meshy' || plugin === 'elevenlabs' ? secret.trim() : secret
 
 /** The slot an account's secret is kept in: one each, named by Sotto's own ID for the account. */
 export const pluginAccountSlot = (id: string): string => `plugin:${id}`
@@ -118,8 +119,9 @@ export class PluginAccounts {
         id: randomUUID(), plugin: request.plugin, name: request.name, savedAt: this.now(), signedInAs: checked.signedInAs,
         ...(request.address === undefined ? {} : { address: request.address }), on: true, projects: null,
         ...(request.bridge && checked.certificate ? { bridge: { imapPort: request.bridge.imapPort, smtpPort: request.bridge.smtpPort, certificate: checked.certificate } } : {}),
-        // An account that spends starts asking before each paid thing, within ADR-0141's 1,000 credits a month.
-        ...(isSpendingPlugin(request.plugin) ? { spending: { askBefore: true, monthlyLimit: MESHY_MONTHLY_LIMIT_DEFAULT } } : {}),
+        // An account that spends starts asking before each paid thing, within its plugin's monthly limit: ADR-0141's
+        // 1,000 credits for Meshy, and $10 for ElevenLabs (Zach's pick on #2498).
+        ...(isSpendingPlugin(request.plugin) ? { spending: { askBefore: true, monthlyLimit: PLUGIN_MONTHLY_LIMIT_DEFAULTS[request.plugin] } } : {}),
       }
       const slot = pluginAccountSlot(account.id)
       try {
@@ -329,7 +331,7 @@ export class PluginAccounts {
       // The switch and the projects are written only where they are not the default, so a record of accounts that
       // are all on and for every project stays one an older build reads, and keeps, whole.
       const stored = accounts.map(({ on, projects, ...rest }) => ({ ...rest, ...(on ? {} : { on }), ...(projects === null ? {} : { projects }) }))
-      const version = stored.some(entry => isSpendingPlugin(entry.plugin)) ? 5 : stored.some(entry => isBridgePlugin(entry.plugin)) ? 4 : stored.some(entry => isMailPlugin(entry.plugin)) ? 3 : stored.some(entry => 'on' in entry || 'projects' in entry) ? 2 : 1
+      const version = stored.some(entry => entry.plugin === 'elevenlabs') ? 6 : stored.some(entry => entry.plugin === 'meshy') ? 5 : stored.some(entry => isBridgePlugin(entry.plugin)) ? 4 : stored.some(entry => isMailPlugin(entry.plugin)) ? 3 : stored.some(entry => 'on' in entry || 'projects' in entry) ? 2 : 1
       await writeFile(next, JSON.stringify({ version, accounts: stored }), { mode: 0o600 })
       await rename(next, this.path)
     } catch (error) {

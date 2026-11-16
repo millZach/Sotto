@@ -2,7 +2,7 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { z } from 'zod'
 import type { HeldPluginAccountCopy, PluginAccountCopy, PluginAccountCopyReceipt, PluginAccountCopyRemoved } from '../../shared/pluginAccountCopies'
-import { isBridgePlugin, isMailPlugin, isSpendingPlugin, type PluginAccount, type PluginAccountCopyLeaving, type PluginAccountCopyState, type PluginCopiesView } from '../../shared/plugins'
+import { isBridgePlugin, isMailPlugin, type PluginAccount, type PluginAccountCopyLeaving, type PluginAccountCopyState, type PluginCopiesView } from '../../shared/plugins'
 import { PluginSecretLocked } from './accounts'
 
 /** A connected host as the copies reach it: its identity, and the three requests where it lists `plugin-account-copies`. */
@@ -15,6 +15,8 @@ export interface CopyTarget {
     readonly supportsPluginMailCopies?: boolean | undefined
     /** Whether the host keeps a Meshy account's copy: one from before it knew Meshy would refuse it. */
     readonly supportsPluginMeshyCopies?: boolean | undefined
+    /** Whether the host keeps an ElevenLabs account's copy: one from before it knew ElevenLabs would refuse it. */
+    readonly supportsPluginElevenLabsCopies?: boolean | undefined
     keepPluginAccountCopy?(copy: PluginAccountCopy): Promise<PluginAccountCopyReceipt>
     removePluginAccountCopy?(accountId: string): Promise<PluginAccountCopyRemoved>
     pluginAccountCopies?(): Promise<HeldPluginAccountCopy[]>
@@ -255,9 +257,10 @@ export class PluginAccountCopySync {
     // there only once the host has said so, by not listing it or by answering its removal.
     // A mail account on a host from before it could keep one: its threads could not ask before they read it. It is
     // sent none, and one it holds, as a host that was downgraded does, is taken back.
-    // A Meshy account on a host from before it knew Meshy: it would refuse the copy, so it is sent none.
+    // A Meshy or ElevenLabs account on a host from before it knew that plugin: it would refuse the copy, so it is sent none.
     const cannotKeep = (account: PluginAccount): boolean => (isMailPlugin(account.plugin) && service.supportsPluginMailCopies !== true)
-      || (isSpendingPlugin(account.plugin) && service.supportsPluginMeshyCopies !== true)
+      || (account.plugin === 'meshy' && service.supportsPluginMeshyCopies !== true)
+      || (account.plugin === 'elevenlabs' && service.supportsPluginElevenLabsCopies !== true)
     const stillThere = new Set<string>()
     for (const copy of held) {
       // Whether a copy is wanted is the user's choice, and a choice that cannot be read takes nothing back. Whether

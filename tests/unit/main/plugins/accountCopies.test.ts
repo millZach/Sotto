@@ -207,6 +207,15 @@ describe('a headless host’s account copies (ADR-0205, amending ADR-0025)', () 
   })
 })
 
+describe('an ElevenLabs account’s copy', () => {
+  it('is listed back with its switch and its limit in dollars', async () => {
+    const { copies } = await host()
+    const voices = { ...WORK, id: '44444444-4444-4444-8444-000000000010', plugin: 'elevenlabs' as const, name: 'Voices', signedInAs: null, spending: { askBefore: true, monthlyLimit: 10 } }
+    await expect(copies.keep({ account: voices, secret: TOKEN }, LAPTOP)).resolves.toMatchObject({ kept: true })
+    expect((await copies.list(LAPTOP)).find(copy => copy.id === voices.id)?.spending).toEqual({ askBefore: true, monthlyLimit: 10 })
+  })
+})
+
 describe('a Meshy account’s copy', () => {
   it('is listed back with its switch and its limit, so the desktop can tell when they changed', async () => {
     const { copies } = await host()

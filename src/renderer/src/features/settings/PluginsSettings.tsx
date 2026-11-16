@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useId, useRef, useState, type FormEvent,
 import { Trans, useLingui } from '@lingui/react/macro'
 import { Box, ChevronRight, Code, Mail, MonitorSmartphone } from 'lucide-react'
 import {
-  BRIDGE_DEFAULT_PORTS, isBridgePlugin, isMailPlugin, isSpendingPlugin, PLUGIN_MONTHLY_LIMIT_MAX, PLUGIN_ACCOUNT_NAME_MAX, PLUGIN_MAIL_ADDRESS_MAX, PLUGIN_SECRET_MAX, PLUGIN_USE_SHOWN, pluginMailAddressSchema, PLUGINS, type AccountPluginId, type GitHubSignIn, type PluginAccount, type PluginAccountProblem, type PluginAccountResult,
+  BRIDGE_DEFAULT_PORTS, isBridgePlugin, isMailPlugin, PLUGIN_MONTHLY_LIMIT_MAX, PLUGIN_ACCOUNT_NAME_MAX, PLUGIN_MAIL_ADDRESS_MAX, PLUGIN_SECRET_MAX, PLUGIN_USE_SHOWN, pluginMailAddressSchema, PLUGINS, type AccountPluginId, type GitHubSignIn, type PluginAccount, type PluginAccountProblem, type PluginAccountResult,
   type PluginAccountCopyLeaving, type PluginAccountCopyState, type PluginCopiesView, type PluginHostSignIn, type PluginEntry, type PluginGroupId, type PluginProject, type PluginReadKind, type PluginsBridge, type ShownPluginUse, type BridgeStatus, type PluginSpending,
 } from '../../../../shared/plugins'
 import { localeFormatter } from '../../agents/localeFormat'
@@ -19,6 +19,8 @@ const GH_SIGN_IN_COMMAND = 'gh auth login'
 const VERCEL_TOKENS_PAGE = 'vercel.com/account/tokens'
 /** Where Meshy's API keys are made, on a paid plan (ADR-0141). */
 const MESHY_KEYS_PAGE = 'meshy.ai/developers/keys'
+/** Where ElevenLabs' API keys are made (ADR-0205, slice 12). */
+const ELEVENLABS_KEYS_PAGE = 'elevenlabs.io/app/settings/api-keys'
 /** Where Google makes app passwords, from its own help page (support.google.com/accounts/answer/185833, November 13, 2026). Words to type or copy, as Vercel's is. */
 const GOOGLE_APP_PASSWORDS_PAGE = 'myaccount.google.com/apppasswords'
 
@@ -315,9 +317,45 @@ function useAccountWords(plugin: AccountPluginId): AccountWords {
   const { t } = useLingui()
   // Proton Mail is reached through Proton Mail Bridge on this computer, with the password Bridge shows for the account
   // (ADR-0205, slice 10). Its accounts stay on this computer, so the words for copies elsewhere are never shown.
+  // ElevenLabs makes speech, sound effects and music for a thread, as files in its folder, and spends dollars at its
+  // API prices (Zach's picks on #2498, November 15, 2026). Nothing in Sotto speaks (ADR-0068): a sound plays only when
+  // Play is pressed. The row says ElevenLabs may train on what it is sent unless that is turned off there.
+  if (plugin === 'elevenlabs') {
+    return {
+      about: t`Make speech, sound effects and music as files in a thread’s folder, with a key you paste. Sotto keeps the key in its encrypted store and makes each request itself, so no agent ever sees it. Nothing plays until you press Play. ElevenLabs may use what it is sent to train its own models, unless you turn that off under Data use in your ElevenLabs account.`,
+      add: t`Add an ElevenLabs account`, addAnother: t`Add another ElevenLabs account`,
+      secretLabel: t`API key`,
+      secretDescription: t`Make one at ${ELEVENLABS_KEYS_PAGE}. Sotto checks it with ElevenLabs before saving it, without making anything, and never shows it again.`,
+      secretPlaceholder: t`Paste the API key`,
+      newSecretLabel: t`New API key`,
+      newSecretDescription: t`Sotto checks it with ElevenLabs first. The key saved now stays in use until the new one is accepted.`,
+      saveSecret: t`Save API key`,
+      account: name => t`ElevenLabs account ${name}`,
+      saved: (_account, day) => t`API key saved ${day}.`,
+      replace: name => t`Replace the API key for ${name}`,
+      remove: name => t`Remove the ElevenLabs account ${name}`,
+      removeAsk: name => <Trans>Remove <b>{name}</b>? Its API key is deleted from this computer, and threads lose the account at once. Nothing changes at ElevenLabs.</Trans>,
+      off: t`Off. No thread can see or use this account until you turn it back on. Its API key stays saved.`,
+      noKey: computer => t`${computer} was started without a key file, so it cannot keep an API key. Nothing was kept there. On ${computer}, set SOTTO_HOST_KEY_FILE to a file holding a secret of your own, start its host again, and the copy is sent.`,
+      locked: t`This computer’s credential store is locked, so the API key could not be read to send. Unlock it, and Sotto tries again.`,
+      tooOld: computer => t`${computer}’s Sotto cannot keep an ElevenLabs account’s copy. Update Sotto on ${computer}, and the copy is sent.`,
+      problem: (problem, replacing) => {
+        const kept = replacing ? t`The API key already saved was kept.` : t`Nothing was saved.`
+        switch (problem) {
+          case 'refused': return t`ElevenLabs did not accept this key. ${kept} Check the key at ${ELEVENLABS_KEYS_PAGE}. A restricted key must be allowed to read your account.`
+          case 'unreachable': return t`ElevenLabs could not be reached to check the key. ${kept} Check your connection, then try again.`
+          case 'busy': return t`ElevenLabs is turning requests away for now, so the key could not be checked. ${kept} Wait a minute, then try again.`
+          case 'name-taken': return t`There is already an ElevenLabs account with that name. Nothing was saved. Give this one another name.`
+          case 'limit': return t`ElevenLabs already has as many accounts as Sotto keeps for one plugin. Nothing was saved. Remove one first.`
+          case 'gone': return t`That account is no longer here. Nothing was changed.`
+          default: return t`Sotto could not keep the API key. ${kept} Check that this computer’s credential store is unlocked, then try again.`
+        }
+      },
+    }
+  }
   // Meshy makes 3D models for a thread and spends credits (ADR-0141). Everything about spending its key is on the
   // account (Zach's pick on November 15, 2026), and the row says plainly that Meshy may train on what it is sent.
-  if (isSpendingPlugin(plugin)) {
+  if (plugin === 'meshy') {
     return {
       about: t`Make 3D models from words or a photo, with a key you paste. Sotto keeps the key in its encrypted store and makes each request itself, so no agent ever sees it. Meshy may use what it is sent, and the 3D models it makes, to train its own models.`,
       add: t`Add a Meshy account`, addAnother: t`Add another Meshy account`,
@@ -769,7 +807,7 @@ function AccountCopies({ account, bridge, copies, onCopies }: {
 
 /**
  * What an account that spends may spend (ADR-0141; on the account, Zach's pick on November 15, 2026): whether each
- * 3D model asks first, and the most it spends in a month. A change is saved as it is made; the limit is saved when the
+ * 3D model or sound asks first, and the most it spends in a month, in Meshy's credits or ElevenLabs' US dollars. A change is saved as it is made; the limit is saved when the
  * field is left or Enter is pressed, and one that could not be saved says so and shows what is kept.
  */
 function AccountSpending({ account, spending, bridge, onAccounts }: {
@@ -788,15 +826,16 @@ function AccountSpending({ account, spending, bridge, onAccounts }: {
   // The credits this account's 3D models took this month, here and on the paired hosts that said what they spent of
   // it, read when the row opens; none until then.
   const [used, setUsed] = useState<{ readonly credits: number; readonly across: readonly string[] } | null>(null)
-  // Read again when a paired host says what it spent of it.
+  const meshy = account.plugin === 'meshy'
+  // Read again when a paired host says what it spent of it. ElevenLabs counts nothing until threads can make sounds.
   useEffect(() => {
-    if (!bridge) return
+    if (!bridge || !meshy) return
     let live = true
     const read = (): void => { void bridge.meshyCredits().then(credits => { if (live) setUsed(credits[account.id] ?? { credits: 0, across: [] }) }, () => undefined) }
     read()
     const stop = bridge.onMeshyCreditsChanged?.(read)
     return () => { live = false; stop?.() }
-  }, [bridge, account.id])
+  }, [bridge, account.id, meshy])
   // The figure shown follows what is kept, once the newest save has answered.
   useEffect(() => { if (askedLimit.current === null) setLimit(String(spending.monthlyLimit)) }, [spending.monthlyLimit])
   const wanted = /^\d{1,7}$/u.test(limit.trim()) && Number(limit) <= PLUGIN_MONTHLY_LIMIT_MAX ? Number(limit) : null
@@ -820,11 +859,16 @@ function AccountSpending({ account, spending, bridge, onAccounts }: {
   const saveLimit = (): void => { if (wanted !== null && wanted !== (askedLimit.current ?? spending.monthlyLimit)) void save({ monthlyLimit: wanted }) }
   return <section className="plugin-account__spending" aria-labelledby={headingId}>
     <h4 id={headingId}><Trans>What it spends</Trans></h4>
-    <Toggle label={t`Ask before each 3D model`} checked={spending.askBefore} disabled={!bridge} onCheckedChange={askBefore => void save({ askBefore })}
+    {meshy ? <Toggle label={t`Ask before each 3D model`} checked={spending.askBefore} disabled={!bridge} onCheckedChange={askBefore => void save({ askBefore })}
       description={spending.askBefore ? t`Each 3D model waits on a card in its thread that says what it costs, and nothing reaches Meshy before you answer.`
         : t`Off, a thread makes 3D models without asking until the month’s limit is reached, and each one still shows in the thread with what it cost.`} />
-    <Field label={t`Monthly credit limit`} description={t`The most Sotto spends through this account in a month, here and on the computers it is copied to. Meshy’s Pro plan gives 1,000 credits a month.`}
-      {...(wanted === null ? { error: t`A limit is a whole number of credits, from 0 to 1,000,000.` } : {})}>
+      : <Toggle label={t`Ask before each sound`} checked={spending.askBefore} disabled={!bridge} onCheckedChange={askBefore => void save({ askBefore })}
+        description={spending.askBefore ? t`Each sound waits on a card in its thread that says what it costs, and nothing reaches ElevenLabs before you answer.`
+          : t`Off, a thread makes sounds without asking until the month’s limit is reached, and each one still shows in the thread with what it cost.`} />}
+    <Field label={meshy ? t`Monthly credit limit` : t`Monthly limit in US dollars`}
+      description={meshy ? t`The most Sotto spends through this account in a month, here and on the computers it is copied to. Meshy’s Pro plan gives 1,000 credits a month.`
+        : t`The most Sotto spends through this account in a month, here and on the computers it is copied to, counted at ElevenLabs’ published API prices.`}
+      {...(wanted === null ? { error: meshy ? t`A limit is a whole number of credits, from 0 to 1,000,000.` : t`A limit is a whole number of dollars, from 0 to 1,000,000.` } : {})}>
       <input className="tt-input plugin-account__limit" inputMode="numeric" autoComplete="off" spellCheck={false} maxLength={7} value={limit} disabled={!bridge}
         onChange={event => setLimit(event.target.value)} onBlur={saveLimit} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); saveLimit() } }} />
     </Field>
