@@ -1,9 +1,10 @@
 import { picturesIn, rasterTypeOf, type MediaCapture, type MediaFileCapture } from '../../threadMedia'
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { isAbsolute } from 'node:path'
 import { z } from 'zod'
 import { MAX_ACTIVITY_TEXT, MAX_AGENT_ACTIVITIES, REASONING_SUMMARY_TITLE, compactAgentIdentity, wordlessReasoningSummary, mergeAgentActivities, isTerminalActivity, planSteps, type AgentActivity, type AgentActivityMedia, type ObservedAgent } from '../../../../shared/agentActivity'
 import type { AgentThread } from '../../../../shared/agents'
+import { BACKGROUND_WORK_LABELS, MAX_BACKGROUND_WORK, MAX_MONITOR_LABEL, type AgentBackgroundWork } from '../../../../shared/agentMonitoring'
 type ActivityConversation = Pick<AgentThread, 'id' | 'messages' | 'activities'> & { runtimeMode?: AgentThread['runtimeMode'] }
 
 // Display fields selected from installed codex-cli 0.154.0's generated schema; `subAgentActivity` from 0.162.1's.
@@ -100,6 +101,14 @@ const FILES_REMEMBERED = 1_000
 const MESSAGES_TIMED = 200
 /** Multi-agent v2 addresses agents by path: `/root` is the thread Sotto drives and `/root/review/tests` a child of `review`. */
 const ROOT_PATH = '/root'
+/** Words for background work: one line, no control or format characters, within the label's bound. */
+const workLabel = (value: string | undefined): string | undefined => value === undefined ? undefined
+  : value.split(/\r?\n/u)[0]!.replace(/[\p{Cc}\p{Cf}]/gu, ' ').replace(/\s+/gu, ' ').trim().slice(0, MAX_MONITOR_LABEL) || undefined
+/** A command as Codex runs it, `bash -lc '…'`, named by what it runs. */
+const commandWords = (command: string | undefined): string | undefined => {
+  const wrapped = command?.match(/^\S*\b(?:ba|z)?sh -lc (['"])([\s\S]*)\1$/u)
+  return workLabel(wrapped ? wrapped[2] : command)
+}
 const parentPath = (path: string): string => path.slice(0, path.lastIndexOf('/')) || ROOT_PATH
 const iso = (ms: number | undefined): string | undefined => ms !== undefined && Number.isFinite(ms) && Math.abs(ms) <= 8.64e15 ? new Date(ms).toISOString() : undefined
 const mappedStatus = (status: string | undefined, fallback: AgentActivity['status']): AgentActivity['status'] =>
@@ -154,6 +163,20 @@ export class CodexActivityProjection {
    */
   private readonly messageTimes = new WeakMap<ActivityConversation, Map<string, number>>()
   private readonly terminalTurns = new WeakMap<ActivityConversation, Set<string>>()
+  /**
+   * Commands still running when their live turn ended (#2634): Codex keeps a unified-exec session that outlives its
+   * turn and sends the command's own `item/completed` when it ends. By activity ID, until then or the runtime's end.
+   */
+  private readonly commandsLeft = new WeakMap<ActivityConversation, Map<string, AgentBackgroundWork>>()
+  /**
+   * Commands seen starting live and not yet completed, by activity ID, apart from the bounded rows: a turn that ends
+   * leaves those of its own in the background even when their rows have left the window (#2634).
+   */
+  private readonly openCommands = new WeakMap<ActivityConversation, Map<string, { turnId: string; work: AgentBackgroundWork }>>()
+  /** Agents that outlived the turn that started them: background work while they work, whatever turn messages them next. */
+  private readonly outlived = new WeakMap<ActivityConversation, Set<string>>()
+  /** Sotto's own ID for each agent as background work, by native ID, so it keeps its ID from one update to the next. */
+  private readonly workIds = new WeakMap<ActivityConversation, Map<string, string>>()
   private readonly seen = new WeakMap<ActivityConversation, Set<string>>()
   private readonly turnAnchors = new WeakMap<ActivityConversation, Map<string, string>>()
   /** The array `put` last installed on each thread. While the thread still holds it, it is in sequence order with one record per ID. */
@@ -300,6 +323,12 @@ export class CodexActivityProjection {
     const kind = kinds[item.type]
     if (!kind) return
     const id = codexActivityId(context.turnId, item.id)
+    if (context.phase === 'completed') { this.commandsLeft.get(thread)?.delete(id); this.openCommands.get(thread)?.delete(id) }
+    if (context.phase === 'started' && item.type === 'commandExecution' && !this.terminalTurns.get(thread)?.has(context.turnId)) {
+      const open = this.openCommands.get(thread) ?? new Map<string, { turnId: string; work: AgentBackgroundWork }>(); this.openCommands.set(thread, open)
+      if (!open.has(id) && open.size < MAX_BACKGROUND_WORK * 4) open.set(id, { turnId: context.turnId,
+        work: { id: randomUUID(), label: commandWords(item.command) ?? BACKGROUND_WORK_LABELS.command, type: 'command', startedAt: iso(context.startedAtMs) ?? iso(this.now())! } })
+    }
     const previous = thread.activities?.find(record => record.id === id)
     // Reasoning with no summary words has nothing to show (`wordlessReasoningSummary`), and each would be an empty
     // row holding a place in the bounded list. A row an earlier read kept for one goes here; the workspace drops its
@@ -526,7 +555,21 @@ export class CodexActivityProjection {
     if (isTerminalActivity(status)) {
       const terminal = this.terminalTurns.get(thread) ?? new Set<string>()
       terminal.add(turn.id); this.terminalTurns.set(thread, terminal)
+      const agentsWorking = new Set([...this.working.get(thread) ?? []].map(agentId))
+      // Seen live, a turn that ended on its own leaves a command still running in the background (a unified-exec
+      // session): it says when it ends (#2634). Kept apart from the rows, so a long turn's evicted row loses nothing.
+      const open = this.openCommands.get(thread)
+      for (const [commandId, command] of open ?? []) if (command.turnId === turn.id) {
+        open!.delete(commandId)
+        if (live && status === 'completed') this.leaveCommand(thread, commandId, command.work)
+      }
+      const left = this.commandsLeft.get(thread)
       for (const record of thread.activities ?? []) if (record.turnId === turn.id && record.status === 'running') {
+        // A row whose work still runs keeps running until its own ending, through a reread of the same history too: an
+        // agent still working in its own thread, or a command left in the background. A stopped or failed turn's
+        // commands are closed as before; nothing shows they carry on.
+        if (record.kind === 'command' && left?.has(record.id)) continue
+        if (record.kind === 'subagent' && record.agents?.some(agent => agentsWorking.has(agent.id))) continue
         // A completed turn does not prove an unacknowledged tool succeeded.
         this.put(thread, { ...record, status: status === 'completed' ? 'unknown' : status })
         this.summaries.delete(record.id)
@@ -550,7 +593,48 @@ export class CodexActivityProjection {
    * This conversation's runtime ended: what its agents' own notifications said of them is no longer live, so none of them
    * is taken as working from it. A message one was sent after it finished then waits for a completion, as history's does.
    */
-  runtimeEnded(thread: ActivityConversation): void { this.working.delete(thread) }
+  runtimeEnded(thread: ActivityConversation): void {
+    this.working.delete(thread); this.commandsLeft.delete(thread); this.openCommands.delete(thread); this.outlived.delete(thread)
+    // What it ran past a turn ended with it: no completion will come for those rows, and no agent in them is working,
+    // whatever its row says, since every agent runs in this conversation's app-server.
+    const terminal = this.terminalTurns.get(thread)
+    for (const record of thread.activities ?? []) {
+      const runningRow = record.status === 'running' && terminal?.has(record.turnId) && (record.kind === 'command' || record.kind === 'subagent')
+      const runningAgent = record.kind === 'subagent' && record.agents?.some(agent => agent.status === 'running')
+      if (!runningRow && !runningAgent) continue
+      this.put(thread, { ...record, ...(runningRow ? { status: 'unknown' as const } : {}),
+        ...(record.agents ? { agents: record.agents.map(agent => agent.status === 'running' ? { ...agent, status: 'interrupted' } : agent) } : {}) })
+    }
+  }
+
+  /**
+   * The thread's background work (#2634): its agents still working in their own threads after the turn that started them
+   * ended, and its commands still running after theirs. An agent another agent started is spawned in that agent's turn,
+   * never one of the thread's, so it is the other agent's business. Observation only, never restored from history.
+   */
+  backgroundWork(thread: ActivityConversation): AgentBackgroundWork[] {
+    const terminal = this.terminalTurns.get(thread), working = this.working.get(thread) ?? new Set<string>()
+    const outlived = this.outlived.get(thread) ?? new Set<string>(); this.outlived.set(thread, outlived)
+    for (const native of outlived) if (!working.has(native)) outlived.delete(native)
+    const agents = [...working].flatMap(native => {
+      const owner = this.owners.get(native)
+      // A message in a later turn moves the agent's record to that turn; having outlived its own, it is still background.
+      if (!owner || owner.thread !== thread || !terminal?.has(owner.turnId) && !outlived.has(native)) return []
+      outlived.add(native)
+      return [{ id: this.workId(thread, native), label: workLabel(owner.agent.title) ?? workLabel(owner.agent.description) ?? BACKGROUND_WORK_LABELS.subagent, type: 'subagent' as const,
+        ...(owner.agent.startedAt ? { startedAt: owner.agent.startedAt } : {}) }]
+    })
+    return [...agents, ...this.commandsLeft.get(thread)?.values() ?? []].slice(0, MAX_BACKGROUND_WORK)
+  }
+  private workId(thread: ActivityConversation, native: string): string {
+    const ids = this.workIds.get(thread) ?? new Map<string, string>(); this.workIds.set(thread, ids)
+    let id = ids.get(native); if (!id) { id = randomUUID(); ids.set(native, id); if (ids.size > MAX_BACKGROUND_WORK * 4) ids.delete(ids.keys().next().value!) }
+    return id
+  }
+  private leaveCommand(thread: ActivityConversation, commandId: string, work: AgentBackgroundWork): void {
+    const left = this.commandsLeft.get(thread) ?? new Map<string, AgentBackgroundWork>(); this.commandsLeft.set(thread, left)
+    if (!left.has(commandId) && left.size < MAX_BACKGROUND_WORK) left.set(commandId, work)
+  }
 
   /** The native thread of one of this conversation's agents, by its roster identity (#1028); undefined when its history names none. */
   agentThread(thread: ActivityConversation, id: string): string | undefined {
@@ -604,7 +688,10 @@ export class CodexActivityProjection {
     owner.agent = compactAgentIdentity(agent)
     const record = owner.thread.activities?.find(activity => activity.id === owner.activityId)
     // A current child remains observable after its spawn has left the bounded activity window.
-    this.put(owner.thread, record ? { ...record, agents: record.agents?.map(child => child.id === prior.id ? agent : child) }
+    const agents = record?.agents?.map(child => child.id === prior.id ? agent : child)
+    // A row kept running past its turn for this agent reads the agent's outcome once none of its agents works (#2634).
+    const settled = record?.status === 'running' && this.terminalTurns.get(owner.thread)?.has(record.turnId) && !agents?.some(child => child.status === 'running')
+    this.put(owner.thread, record ? { ...record, agents, ...(settled ? { status: mappedStatus(agent.status, 'unknown') } : {}) }
       : { id: `codex-child-state-${opaque(child, prior.assignmentId ?? '')}`, turnId: owner.turnId, sequence: 0, kind: 'subagent', title: 'Subagent', status: 'unknown', agents: [agent] })
     return owner.thread
   }
