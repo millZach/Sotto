@@ -1,4 +1,3 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { isAbsolute } from 'node:path'
@@ -7,6 +6,7 @@ import { orderReasoningEfforts } from '../../shared/reasoningEfforts'
 import { withUltracode } from '../../shared/ultracode'
 import type { SubscriptionAccount, SubscriptionClient } from './subscriptionTypes'
 import { executableFile, findCli, withCliPath, type CliLookupOptions } from './cliLookup'
+import { launchProviderProcess, type InteractiveProcess } from './git/gitLauncher'
 
 interface ClaudeSubscriptionOptions {
   executable?: string
@@ -199,11 +199,10 @@ export class ClaudeSubscriptionClient implements SubscriptionClient {
   private run(executable: string, args: string[], input: string, timeoutMs: number, signal?: AbortSignal, cwd = this.workingDirectory, keepExitOutput = false): Promise<string> {
     return new Promise((resolve, reject) => {
       signal?.throwIfAborted()
-      let child: ChildProcessWithoutNullStreams
+      let child: InteractiveProcess
       try {
-        child = spawn(executable, [...(this.options.prefixArgs ?? []), ...args], {
-          cwd, env: withCliPath(this.environment(), executable), shell: false, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
-        })
+        // Off this thread, as a thread's own Claude Code starts (#2550): a cold start of it held Electron's main for seconds.
+        child = launchProviderProcess(executable, [...(this.options.prefixArgs ?? []), ...args], { cwd, env: withCliPath(this.environment(), executable) })
       } catch {
         reject(new Error('Could not start Claude Code. Check its installation and try again.'))
         return
@@ -228,25 +227,27 @@ export class ClaudeSubscriptionClient implements SubscriptionClient {
         // inference or remove its working directory while this child is alive.
         try { child.kill('SIGKILL') } catch { /* The bounded cleanup below still applies. */ }
         terminationTimer = setTimeout(() => {
-          child.stdin.destroy(); child.stdout.destroy(); child.stderr.destroy()
+          child.stdin.end(); child.stdout.destroy(); child.stderr.destroy()
           finish(error)
         }, 2_000)
       }
       const timer = setTimeout(() => abort(new Error('Claude Code did not finish in time. Check the native client before retrying.')), timeoutMs)
       const stop = () => abort(new Error('Sotto reasoning stopped.'))
       signal?.addEventListener('abort', stop, { once: true })
-      const consume = (chunk: Buffer, stdout: boolean): void => {
+      const consume = (data: Buffer | string, stdout: boolean): void => {
+        const chunk = data as Buffer
         if (settled || failure) return
         bytes += chunk.length
         if (bytes > (this.options.outputLimitBytes ?? 256 * 1024)) { abort(new Error('Claude Code exceeded the reasoning output limit.')); return }
         if (stdout) chunks.push(chunk)
       }
-      child.stdout.on('data', (chunk: Buffer) => consume(chunk, true))
-      child.stderr.on('data', (chunk: Buffer) => consume(chunk, false))
+      child.stdout.on('data', chunk => consume(chunk, true))
+      child.stderr.on('data', chunk => consume(chunk, false))
       child.on('error', () => abort(new Error('Could not start Claude Code. Check its installation and try again.')))
       child.on('close', code => finish(failure ?? (code === 0 ? null : new ClaudeExitError(keepExitOutput ? Buffer.concat(chunks).toString('utf8') : ''))))
       child.stdin.on('error', () => abort(new Error('Claude Code could not receive the reasoning request.')))
-      child.stdin.end(input)
+      child.stdin.write(input)
+      child.stdin.end()
     })
   }
 }

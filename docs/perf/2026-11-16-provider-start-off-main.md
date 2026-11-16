@@ -40,17 +40,23 @@ prevented any of these.
 
 ## The change
 
-Claude Code's thread processes (`ClaudeProtocol`, which also reads skills) and Codex's app-servers (`CodexProcess`)
+Claude Code's thread processes (`ClaudeProtocol`, which also reads skills), Codex's app-servers (`CodexProcess`), and
+both providers' side calls for titles, drafts and version reads (`subscriptionClaude.ts`, `subscriptionCodex.ts`)
 start through the launcher Git already starts through (`gitLauncher.ts`, `docs/perf/2026-10-19-git-launch-off-main.md`),
 on a worker of their own (`providerLauncher`). The worker does only the launch: it starts the process and relays its
 output, exit and close; everything else stays in main. A slow start holds the worker instead, so the provider worker is
 separate from Git's: a provider start does not wait behind Git's frequent launches, nor a Git read behind a provider's
-slow start. The pid now arrives a moment after the start, so Claude's halt waits for it before stopping the tree.
+slow start. The pid now arrives a moment after the start, so Claude's halt waits for it before stopping the tree. A
+process's input closes when it exits, as Node's own does, so an answer a leftover child writes after Claude Code exited
+still fails.
+
+If the worker cannot start or is lost, a launch falls back to main's thread, as Git's always has: the thread still
+starts, with the old stop.
 
 ## Before and after
 
-`tests/perf/providerStartMainThread.perf.test.ts`. The default run asserts that a Claude Code start and a Codex start
-each make no launch on the test's thread through the worker (one each before), and goes red on the old code. The
+`tests/perf/providerStartMainThread.perf.test.ts`. The default run asserts that a Claude Code start, a Codex start and
+their side calls make no launch on the test's thread through the worker (one each before), and goes red on the old code. The
 benchmark (`SOTTO_PERF_BENCH=1`) starts a fresh copy of an executable each time, so every start is cold, and measures
 the longest the event loop could not turn with a chain of `setImmediate`. Same laptop as the Git note (Intel Core Ultra
 9 275HX, Windows 11, Defender on), Node 24.14.1, three runs of five cold starts each.
@@ -65,5 +71,5 @@ event loop 123 / 132 / 143 ms read in its own thread and 118 / 139 / 81 ms throu
 
 ## What was not changed
 
-Cursor, DeepSeek, Devin, Hermes, Muse, Pi, OpenCode and the subscription probes still start in main's thread. None
+Cursor, DeepSeek, Devin, Hermes, Muse, Pi and OpenCode still start in main's thread. None
 has a recorded stop; each can move to `launchProviderProcess` the same way if one does.

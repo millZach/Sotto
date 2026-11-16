@@ -27,6 +27,8 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { useProviderLauncher } from '../../src/main/agents/git/gitLauncher'
 import { ClaudeProtocol } from '../../src/main/agents/providers/claude/claudeProtocol'
 import { CodexProcess } from '../../src/main/agents/providers/codex/codexProcess'
+import { ClaudeSubscriptionClient } from '../../src/main/agents/subscriptionClaude'
+import { writeWithCodexExec } from '../../src/main/agents/subscriptionCodex'
 import { builtGitLauncherWorker } from '../fixtures/gitLauncherWorker'
 import { mainThreadLaunches, resetMainThreadLaunches } from '../fixtures/mainThreadLaunches'
 import { PERF_BENCH, round } from '../fixtures/perfBench'
@@ -90,6 +92,13 @@ async function startCodex(): Promise<void> {
   server.end(); await server.closed
 }
 
+/** The side calls a thread's title and drafts go through (ADR-0026): Claude Code's version read, and a Codex write. */
+async function sideCalls(): Promise<void> {
+  await new ClaudeSubscriptionClient(root, { prefixArgs: [script] }).version(process.execPath)
+  await writeWithCodexExec({ executable: process.execPath, prefixArgs: [script], codexHome: root, instruction: 'Name it.', material: 'A thread.',
+    model: 'gpt-test', workingDirectory: root, timeoutMs: 30_000 }).catch(() => undefined)
+}
+
 /** A start of `executable` run with `--version`, to its close. */
 async function startVersion(executable: string): Promise<void> {
   const protocol = new ClaudeProtocol(executable, ['--version'], root, process.env, 30_000, () => undefined, () => undefined)
@@ -104,19 +113,23 @@ async function measured(start: () => Promise<void>): Promise<{ launches: number;
 }
 
 describe('a thread provider start and the thread that asks for it', () => {
-  it('starts Claude Code and Codex on the provider launcher\'s worker, with no launch on this thread', async () => {
+  it('starts Claude Code and Codex, and their side calls, on the provider launcher\'s worker, with no launch on this thread', async () => {
     await useProviderLauncher(null)
     const claudeHere = await measured(() => startClaude())
     const codexHere = await measured(startCodex)
+    const sideHere = await measured(sideCalls)
     await useProviderLauncher(worker.path)
     // One start first, outside the counts, so the worker's own start is not counted against the starts it makes.
     await startClaude()
     const claudeOff = await measured(() => startClaude())
     const codexOff = await measured(startCodex)
+    const sideOff = await measured(sideCalls)
     expect(claudeHere.launches).toBe(1)
     expect(codexHere.launches).toBe(1)
+    expect(sideHere.launches).toBe(2)
     expect(claudeOff.launches).toBe(0)
     expect(codexOff.launches).toBe(0)
+    expect(sideOff.launches).toBe(0)
   }, 60_000)
 
   it.skipIf(!PERF_BENCH)('holds the event loop for a cold executable\'s start only when started in this thread', async () => {

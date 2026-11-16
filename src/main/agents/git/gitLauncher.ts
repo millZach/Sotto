@@ -14,7 +14,7 @@ import type { LaunchError, LauncherEvent, LauncherRequest } from './gitLauncherW
  * 3.1 s, one of them for 2.2 s (`docs/perf/2026-10-19-git-launch-off-main.md`). macOS and Linux launch off main too,
  * and nothing else about a process changes on any of them.
  *
- * Claude Code's and Codex's thread processes start through a second launcher of their own (`providerLauncher`): the
+ * Claude Code's and Codex's thread processes and side calls start through a second launcher of their own (`providerLauncher`): the
  * first start of Claude Code's 372 MB executable after Windows has let go of it held main for 1 to 2.6 s (#2550,
  * `docs/perf/2026-11-16-provider-start-off-main.md`). A worker relays the output of everything it started, and is
  * held by a slow start as main was, so a provider's start does not wait behind Git's frequent launches nor Git's
@@ -56,7 +56,7 @@ export interface LaunchedInput {
   write(data: string, callback?: (error?: Error | null) => void): boolean
   end(): void
   on(event: 'error', listener: (error: Error) => void): this
-  /** Its process closed, so nothing more reaches it. */
+  /** Its process exited, so nothing more reaches it. */
   on(event: 'close', listener: () => void): this
 }
 /** A process whose standard input stays open (`launchInteractive`), which also reports when it exits. */
@@ -166,7 +166,7 @@ class Input extends EventEmitter implements LaunchedInput {
     this.gone = true
     if (this.listenerCount('error')) this.emit('error', error)
   }
-  /** The process closed: a write still unanswered never reached it. */
+  /** The process exited or closed: a write still unanswered never reached it. */
   closed(): void {
     this.gone = true
     for (const answer of this.answers.values()) answer(new Error('The process closed before it took this input.'))
@@ -217,7 +217,8 @@ class OffThreadProcess extends EventEmitter implements LaunchedProcess {
       case 'stdout': this.stdout.push(event.chunk); return
       case 'stderr': this.stderr.push(event.chunk); return
       case 'error': this.emit('error', errorFrom(event.error)); return
-      case 'exit': this.emit('exit', event.code, event.signal); return
+      // Node destroys a child's input when it exits, not when its output closes, so nothing written after reaches it.
+      case 'exit': this.emit('exit', event.code, event.signal); this.stdin?.closed(); return
       case 'written': this.stdin?.written(event.serial, event.error); return
       case 'stdin-error': this.stdin?.fail(errorFrom(event.error)); return
       case 'close': this.close(event.code, event.signal)
@@ -392,7 +393,7 @@ export function launchInteractiveProcess(command: string, args: readonly string[
 }
 
 let providers: GitLauncher | undefined
-/** The launcher Claude Code's and Codex's thread processes start through: the same worker code, a worker of its own (#2550). */
+/** The launcher Claude Code's and Codex's thread processes and side calls start through: the same worker code, a worker of its own (#2550). */
 export function providerLauncher(): GitLauncher { return providers ??= new GitLauncher(BUILT_WORKER) }
 /** Points the provider launcher at a worker file, or at none (null), for tests; the previous one is closed. */
 export async function useProviderLauncher(workerPath: string | null): Promise<GitLauncher> {

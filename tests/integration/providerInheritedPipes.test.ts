@@ -78,3 +78,33 @@ createInterface({ input: process.stdin }).once('line', () => {
     await rm(root, { recursive: true, force: true, maxRetries: 3 })
   }
 })
+
+it.each(['in this thread', 'on the worker'] as const)('Claude started %s refuses an answer a descendant writes after the CLI exited', async launcher => {
+  await useProviderLauncher(launcher === 'on the worker' ? worker.path : null)
+  const root = await mkdtemp(join(tmpdir(), 'sotto-inherited-pipes-'))
+  if (dirname(resolve(root)) !== resolve(tmpdir()) || !root.includes('sotto-inherited-pipes-')) throw new Error('Unexpected fixture directory')
+  const script = join(root, 'provider.cjs'), pidFile = join(root, 'descendant.pid')
+  // The CLI hands the request's id to a descendant that keeps its output, exits, and the descendant answers 100 ms later:
+  // a reply that arrives once the CLI has gone is not the CLI's, so the request still fails (ADR-0038).
+  await writeFile(script, `
+const { spawn } = require('node:child_process');
+const { writeFileSync } = require('node:fs');
+const { createInterface } = require('node:readline');
+createInterface({ input: process.stdin }).once('line', line => {
+  const answer = JSON.stringify({ type: 'control_response', response: { subtype: 'success', request_id: JSON.parse(line).request_id, response: {} } });
+  const descendant = spawn(process.execPath, ['-e', 'process.send("ready"); setTimeout(() => process.stdout.write(process.argv[1] + String.fromCharCode(10)), 100); setTimeout(() => {}, 5000)', answer],
+    { stdio: ['ignore', process.stdout, process.stderr, 'ipc'], windowsHide: true, detached: true });
+  descendant.once('message', () => { writeFileSync(${JSON.stringify(pidFile)}, String(descendant.pid)); process.exit(0) });
+});
+`)
+  const protocol = new ClaudeProtocol(process.execPath, [script], root, process.env, 60_000, () => {}, () => {})
+  try {
+    await expect(protocol.control({ subtype: 'initialize' })).rejects.toThrow(/disconnected before acknowledg/)
+  } finally {
+    protocol.stop()
+    const pid = Number(await readFile(pidFile, 'utf8').catch(() => '0'))
+    if (pid) { try { process.kill(pid) } catch { /* Already stopped. */ } }
+    await protocol.closed
+    await rm(root, { recursive: true, force: true, maxRetries: 3 })
+  }
+})
