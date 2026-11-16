@@ -10,6 +10,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SoundView } from '../../../../src/shared/sounds'
 import { VisualCard } from '../../../../src/renderer/src/agents/VisualCard'
+import { ActivityBodyContext } from '../../../../src/renderer/src/agents/activityBodies'
 
 const gate = vi.hoisted(() => ({ on: true }))
 vi.mock('../../../../src/renderer/src/state/owlFeature', async importOriginal => ({
@@ -214,5 +215,67 @@ describe('a sound’s line in its thread', () => {
     expect(plugins.sound).not.toHaveBeenCalled()
     expect(plugins.onSoundChanged).not.toHaveBeenCalled()
     expect(plugins.soundBytes).not.toHaveBeenCalled()
+  })
+})
+
+/** A thread on a paired host, as the transcript says whose it is (the plugins plan's slice 12, part 4b). */
+const FORGE = '33333333-3333-4333-8333-000000000001'
+const ON_FORGE = `host:${FORGE}:sound-1`
+function onForge(connected: boolean): React.ReactElement {
+  return <ActivityBodyContext.Provider value={{ threadId: `host:${FORGE}:thread-1`, hostName: 'forge', connected }}>
+    <VisualCard visual={{ id: 'v1', title: 'Opening narration', kind: 'sound', source: 'sound-1' }} threadId={`host:${FORGE}:thread-1`} />
+  </ActivityBodyContext.Provider>
+}
+
+describe('a host thread’s sound’s line', () => {
+  it('reads the sound by a key that names its host, says it is on forge, and fetches its MP3 by that key on the first press of Play only', async () => {
+    const plugins = bridge({ ...MADE, id: ON_FORGE })
+    await act(async () => { render(onForge(true)) })
+    expect(plugins.sound).toHaveBeenCalledWith(ON_FORGE)
+    expect(line()).toHaveTextContent('Speech · about $0.02 · ElevenLabs · on forge')
+    expect(plugins.soundBytes).not.toHaveBeenCalled()
+    await userEvent.click(within(line()).getByRole('button', { name: 'Play Opening narration' }))
+    expect(plugins.soundBytes.mock.calls).toEqual([[ON_FORGE]])
+    expect(played).toHaveLength(1)
+    await userEvent.click(within(line()).getByRole('button', { name: 'Pause Opening narration' }))
+    await userEvent.click(within(line()).getByRole('button', { name: 'Play Opening narration' }))
+    expect(played).toHaveLength(2)
+    expect(plugins.soundBytes).toHaveBeenCalledTimes(1)
+    // Main's news names it by the same key; a local sound of the same ID is another.
+    await send({ ...MADE, id: 'sound-1', cost: 0.5 })
+    expect(line()).toHaveTextContent('about $0.02')
+  })
+
+  it('says in its details that it is on forge, and offers no Show in File Explorer, since the file is there', async () => {
+    const plugins = bridge({ ...MADE, id: ON_FORGE })
+    await act(async () => { render(onForge(true)) })
+    await userEvent.click(within(line()).getByRole('button', { name: 'Show the details' }))
+    expect(within(line()).getByText(/about \$0\.02 · made .* · on forge/u)).toBeInTheDocument()
+    expect(within(line()).queryByRole('button', { name: 'Show in File Explorer' })).toBeNull()
+    expect(plugins.revealSound).not.toHaveBeenCalled()
+  })
+
+  it('says what it cost and that its host is away, with Play off, and reads it again when the host is back', async () => {
+    const plugins = bridge({ ...MADE, id: ON_FORGE })
+    const shown = render(onForge(true))
+    await expect.poll(() => line().textContent).toContain('on forge')
+    // While forge is away main has nothing newer to say; the line keeps what it last heard.
+    plugins.sound.mockResolvedValue(null)
+    await act(async () => { shown.rerender(onForge(false)) })
+    expect(line()).toHaveTextContent('about $0.02 · forge isn’t connected')
+    expect(within(line()).getByRole('button', { name: 'Play Opening narration' })).toBeDisabled()
+    expect(within(line()).queryByRole('button', { name: 'Show the details' })).toBeNull()
+    plugins.sound.mockResolvedValue({ ...MADE, id: ON_FORGE, cost: 0.04 })
+    await act(async () => { shown.rerender(onForge(true)) })
+    await expect.poll(() => line().textContent).toContain('about $0.04')
+    expect(within(line()).getByRole('button', { name: 'Play Opening narration' })).toBeEnabled()
+    expect(plugins.soundBytes).not.toHaveBeenCalled()
+  })
+
+  it('says only its name and that its host is away when nothing was ever heard of it', async () => {
+    bridge(null)
+    await act(async () => { render(onForge(false)) })
+    expect(line()).toHaveTextContent('forge isn’t connected')
+    expect(within(line()).getByRole('button', { name: 'Play Opening narration' })).toBeDisabled()
   })
 })

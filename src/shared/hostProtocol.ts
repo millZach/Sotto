@@ -20,6 +20,7 @@ import { desktopDefaultsSchema } from './desktopDefaults'
 import { pluginAccountCopySchema, spendingReportsSchema, type SpendingReport } from './pluginAccountCopies'
 import { projectSetupRequestSchema } from './workerMachine'
 import { model3dHostBytesRequestSchema, model3dHostNewsSchema, model3dListRequestSchema, model3dRequestSchema, type Model3dHostNews } from './models3d'
+import { soundHostBytesRequestSchema, soundHostNewsSchema, soundRequestSchema, type SoundHostNews } from './sounds'
 import { DELEGATIONS_CHANGED_MAX } from './delegation'
 import { PASTED_CODE_MAX } from './hostProviders'
 import { opencodeHostCallSchema } from './opencodeSignIn'
@@ -446,7 +447,17 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * `plugin-elevenlabs-spending` in place of `plugin-meshy-spending` both ways and the same reports, each count in whole US
  * cents rather than credits: each side's own sum of dollars is rounded up to the cent, so the limit is never
  * under-counted. Offered only alongside `plugin-elevenlabs-copies`, to the same desktops. The host's threads make sounds
- * with the copy, and each sound's `sound` visual stays on the host: no client is sent it yet.
+ * with the copy, and each sound's `sound` visual reaches only a desktop that accepts `plugin-elevenlabs-sounds`.
+ * `plugin-elevenlabs-sounds`: a recorded desktop shows the host's sounds in their threads (the plugins plan's slice 12,
+ * part 4b). To a desktop whose hello accepts it, a thread's detail keeps each `sound` visual, a sound's line, beside any
+ * `3d-model` visual `plugin-meshy-models` keeps, and loses every other visual as before; a phone or any other client is
+ * sent its words. The desktop reads `plugin-elevenlabs-sound` (one sound's view) and `plugin-elevenlabs-sound-bytes` (its
+ * MP3, in parts of `SOUND_HOST_PART_BYTES`, at most `SOUND_BYTES_MAX` in all, each with the SHA-256 of the whole, from a
+ * file the host checked as the desktop checks its own: by its record's name, inside the thread's working folder, an MP3).
+ * The host pushes `plugin-elevenlabs-sounds` with a sound's view, and its thread by the host's ID, as its record changes.
+ * Everything names a sound by the host's ID and its file by its name, never a path. Offered only alongside
+ * `plugin-elevenlabs-copies`, to the same desktops; a desktop is told an older host apart by its absence, and that
+ * host's sound lines reach it as their words.
  * `plugin-meshy-models`: a recorded desktop shows the host's 3D models (the Meshy plan's ticket 6, part 2). To a desktop
  * whose hello accepts it, a thread's detail keeps each `3d-model` visual, a 3D model's line, and loses every other visual
  * as before; any other client is sent none but a phone that accepts `plugin-meshy-phone`. The desktop reads `plugin-meshy-models` (every 3D model being made
@@ -477,7 +488,7 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * with its Meshy copies, and served only to a client that listener counts as a phone (Bug Bot on #2622, N5); host
  * protocol version 1 is unchanged, so an older phone, which does not accept it, is sent the words alone.
  */
-export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'git-pull-request-list', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-file-links', 'thread-linked-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view', 'provider-cursor', 'watcher-cursor', 'usage-background-refresh', 'client-update-not-listed', 'thread-prompts', 'file-staging', 'watcher-phone-photos', 'attachment-files', 'project-origins', 'watcher-phone-machines', 'host-delegation', 'thread-delete', 'delegation-views', 'branch-moves', 'bring-changes-back', 'delegation-relay', 'watcher-check-queue', 'watcher-check-stop', 'check-queue-views', 'project-setup', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts', 'watcher-phone-files', 'pull-request-confirmation', 'watcher-new-owner', 'thread-move', 'worker-swarms', 'every-agent-picture', 'thread-move-source', 'thread-move-keep', 'changed-thread-records', 'thread-media', 'thread-media-video', 'next-prompts', 'watcher-phone-composer', 'watcher-phone-settings-later', 'reply-thread-records', 'provider-mode-lists', 'settled-threads-on-request', 'usable-models', 'product-events', 'watcher-tell', 'command-changed-thread-records', 'step-window', 'thread-snooze', 'watcher-ready', 'browser', 'provider-deepseek', 'video-staging', 'thread-media-edge', 'provider-pi', 'project-git-init', 'plugin-account-copies', 'plugin-github-sign-in', 'plugin-mail-copies', 'plugin-meshy-copies', 'watcher-progress', 'kept-parts', 'plugin-meshy-spending', 'plugin-meshy-models', 'plugin-meshy-phone', 'plugin-elevenlabs-copies', 'plugin-elevenlabs-spending'] as const
+export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'git-pull-request-list', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-file-links', 'thread-linked-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view', 'provider-cursor', 'watcher-cursor', 'usage-background-refresh', 'client-update-not-listed', 'thread-prompts', 'file-staging', 'watcher-phone-photos', 'attachment-files', 'project-origins', 'watcher-phone-machines', 'host-delegation', 'thread-delete', 'delegation-views', 'branch-moves', 'bring-changes-back', 'delegation-relay', 'watcher-check-queue', 'watcher-check-stop', 'check-queue-views', 'project-setup', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts', 'watcher-phone-files', 'pull-request-confirmation', 'watcher-new-owner', 'thread-move', 'worker-swarms', 'every-agent-picture', 'thread-move-source', 'thread-move-keep', 'changed-thread-records', 'thread-media', 'thread-media-video', 'next-prompts', 'watcher-phone-composer', 'watcher-phone-settings-later', 'reply-thread-records', 'provider-mode-lists', 'settled-threads-on-request', 'usable-models', 'product-events', 'watcher-tell', 'command-changed-thread-records', 'step-window', 'thread-snooze', 'watcher-ready', 'browser', 'provider-deepseek', 'video-staging', 'thread-media-edge', 'provider-pi', 'project-git-init', 'plugin-account-copies', 'plugin-github-sign-in', 'plugin-mail-copies', 'plugin-meshy-copies', 'watcher-progress', 'kept-parts', 'plugin-meshy-spending', 'plugin-meshy-models', 'plugin-meshy-phone', 'plugin-elevenlabs-copies', 'plugin-elevenlabs-spending', 'plugin-elevenlabs-sounds'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
 /**
  * The features a headless host's tailnet listener offers only to a client the launch script recorded as a desktop
@@ -486,7 +497,7 @@ export type HostFeature = typeof HOST_FEATURES[number]
 /** A desktop's answer for product events, and what a sender runs by (ADR-0179). */
 export const productEventPermissionSchema = z.enum(['off', 'waiting', 'on'])
 export type ProductEventPermission = z.infer<typeof productEventPermissionSchema>
-export const HOST_DESKTOP_FEATURES: readonly HostFeature[] = ['thread-file-links', 'thread-linked-files', 'provider-sign-in', 'client-updates', 'client-update-outcomes', 'client-update-not-listed', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'watcher-cursor', 'host-update', 'opencode-sign-in', 'activity-bodies', 'thread-prompts', 'project-origins', 'host-delegation', 'delegation-views', 'branch-moves', 'delegation-relay', 'check-queue-views', 'project-setup', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts', 'watcher-new-owner', 'thread-move', 'worker-swarms', 'every-agent-picture', 'thread-move-source', 'thread-move-keep', 'next-prompts', 'product-events', 'watcher-tell', 'watcher-ready', 'browser', 'plugin-account-copies', 'plugin-github-sign-in', 'plugin-mail-copies', 'plugin-meshy-copies', 'watcher-progress', 'plugin-meshy-spending', 'plugin-meshy-models', 'plugin-elevenlabs-copies', 'plugin-elevenlabs-spending']
+export const HOST_DESKTOP_FEATURES: readonly HostFeature[] = ['thread-file-links', 'thread-linked-files', 'provider-sign-in', 'client-updates', 'client-update-outcomes', 'client-update-not-listed', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'watcher-cursor', 'host-update', 'opencode-sign-in', 'activity-bodies', 'thread-prompts', 'project-origins', 'host-delegation', 'delegation-views', 'branch-moves', 'delegation-relay', 'check-queue-views', 'project-setup', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts', 'watcher-new-owner', 'thread-move', 'worker-swarms', 'every-agent-picture', 'thread-move-source', 'thread-move-keep', 'next-prompts', 'product-events', 'watcher-tell', 'watcher-ready', 'browser', 'plugin-account-copies', 'plugin-github-sign-in', 'plugin-mail-copies', 'plugin-meshy-copies', 'watcher-progress', 'plugin-meshy-spending', 'plugin-meshy-models', 'plugin-elevenlabs-copies', 'plugin-elevenlabs-spending', 'plugin-elevenlabs-sounds']
 /**
  * The providers a host sends only to a client whose hello accepts their feature (#1107, ADR-0087). A desktop or phone from
  * before a provider joined Sotto reads provider IDs against a list without it, and refuses a whole shell that names one, so
@@ -535,29 +546,32 @@ export function activitySummary(record: AgentActivity): AgentActivity {
     ...(record.generates !== undefined ? { generates: record.generates } : {}),
   }
 }
+/** The kinds of visual a reader is sent whole; every other visual is stripped. */
+type KeptVisuals = readonly string[]
 /**
- * A message without the visual Sotto drew for it (ADR-0056): its text, the visual's words, stands in. A visual of the
+ * A message without the visual Sotto drew for it (ADR-0056): its text, the visual's words, stands in. A visual of a
  * kind `keep` names stays.
  */
-function withoutVisual(message: AgentMessage, keep?: string): AgentMessage {
-  if (!('visual' in message) || keep !== undefined && message.visual?.kind === keep) return message
+function withoutVisual(message: AgentMessage, keep?: KeptVisuals): AgentMessage {
+  if (!('visual' in message) || message.visual !== undefined && keep?.includes(message.visual.kind) === true) return message
   const { visual, ...rest } = message
   void visual
   return rest
 }
-/** Whether a message carries a visual a reader keeping `keep`'s kind alone is not sent. */
-const strippedVisual = (message: AgentMessage, keep?: string): boolean => 'visual' in message && (keep === undefined || message.visual?.kind !== keep)
+/** Whether a message carries a visual a reader keeping only `keep`'s kinds is not sent. */
+const strippedVisual = (message: AgentMessage, keep?: KeptVisuals): boolean => 'visual' in message && (message.visual === undefined || keep?.includes(message.visual.kind) !== true)
 /**
  * A thread's detail as a socket client is sent it: every visual message keeps its text and loses its `visual`, so the
  * iPhone shows a visual's explanation and the line saying the drawing is on the computer (ADR-0056). The same detail
- * when it holds no visual. `keep` names the one kind a reader is sent whole: a 3D model's line, to a desktop whose hello
- * accepted `plugin-meshy-models` or a phone whose hello accepted `plugin-meshy-phone`.
+ * when it holds no visual. `keep` names the kinds a reader is sent whole: a 3D model's line, to a desktop whose hello
+ * accepted `plugin-meshy-models` or a phone whose hello accepted `plugin-meshy-phone`, and a sound's line, to a desktop
+ * whose hello accepted `plugin-elevenlabs-sounds`.
  */
-export function detailWithoutVisuals(detail: AgentThreadDetail, keep?: string): AgentThreadDetail {
+export function detailWithoutVisuals(detail: AgentThreadDetail, keep?: KeptVisuals): AgentThreadDetail {
   return detail.messages.some(message => strippedVisual(message, keep)) ? { ...detail, messages: detail.messages.map(message => withoutVisual(message, keep)) } : detail
 }
 /** The same for a detail delta: a whole message it carries loses its `visual`. Its revisions are unchanged, so it still applies. */
-export function deltaWithoutVisuals(delta: AgentThreadDetailDelta, keep?: string): AgentThreadDetailDelta {
+export function deltaWithoutVisuals(delta: AgentThreadDetailDelta, keep?: KeptVisuals): AgentThreadDetailDelta {
   return delta.messageDeltas.some(item => 'message' in item && strippedVisual(item.message, keep))
     ? { ...delta, messageDeltas: delta.messageDeltas.map(item => 'message' in item ? { message: withoutVisual(item.message, keep) } : item) } : delta
 }
@@ -792,6 +806,9 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   z.object({ ...base, op: z.literal('plugin-meshy-model'), request: model3dRequestSchema }).strict(),
   z.object({ ...base, op: z.literal('plugin-meshy-model-bytes'), request: model3dHostBytesRequestSchema }).strict(),
   z.object({ ...base, op: z.literal('plugin-meshy-model-remove'), request: model3dRequestSchema }).strict(),
+  /** A recorded desktop's reads of the host's sounds (`plugin-elevenlabs-sounds`), by the host's IDs: one's view, and its MP3 a part at a time. */
+  z.object({ ...base, op: z.literal('plugin-elevenlabs-sound'), request: soundRequestSchema }).strict(),
+  z.object({ ...base, op: z.literal('plugin-elevenlabs-sound-bytes'), request: soundHostBytesRequestSchema }).strict(),
   /** Who gh on the host's machine is signed in to GitHub as, for a recorded desktop's Plugins page (`plugin-github-sign-in`). A name, never a token. */
   z.object({ ...base, op: z.literal('plugin-github-sign-in') }).strict(),
   /** One activity record whole, for a desktop that was sent it with a cut body; read when its row opens (`activity-bodies`). */
@@ -903,6 +920,8 @@ export type HostPush = { v: 1; event: 'shell'; state: HostWireShell | KeptPartsS
   | { v: 1; event: 'plugin-elevenlabs-spending'; reports: SpendingReport[] }
   /** A 3D model's view as it changes, and records that went, to a desktop whose hello accepted `plugin-meshy-models` or a phone whose hello accepted `plugin-meshy-phone`. */
   | { v: 1; event: 'plugin-meshy-models'; news: Model3dHostNews }
+  /** A sound's view as its record changes, only to a desktop whose hello accepted `plugin-elevenlabs-sounds`. */
+  | { v: 1; event: 'plugin-elevenlabs-sounds'; news: SoundHostNews }
   | { v: 1; event: 'detail-delta'; threadId: string; delta: AgentThreadDetailDelta }
   | { v: 1; event: 'answer-receipt'; acceptedAnswer: HostAnswerTarget & { decisionId: string } }
   | { v: 1; event: 'error'; threadId?: string | undefined; error: HostProtocolError }
@@ -1028,6 +1047,7 @@ export const hostPushSchema = z.discriminatedUnion('event', [
   z.object({ v: z.literal(1), event: z.literal('plugin-meshy-spending'), reports: spendingReportsSchema }),
   z.object({ v: z.literal(1), event: z.literal('plugin-elevenlabs-spending'), reports: spendingReportsSchema }),
   z.object({ v: z.literal(1), event: z.literal('plugin-meshy-models'), news: model3dHostNewsSchema }),
+  z.object({ v: z.literal(1), event: z.literal('plugin-elevenlabs-sounds'), news: soundHostNewsSchema }),
   /** News of a delegation this host holds for a thread on another machine (`delegation-remote`), only to the desktop that asked. */
   z.object({ v: z.literal(1), event: z.literal('delegation-remote-news'), caller: z.string().min(1).max(DELEGATION_REMOTE_CALLER_MAX), news: delegationRelayNewsSchema, replies: relayedRepliesSchema.optional() }),
 ])

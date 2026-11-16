@@ -14,6 +14,7 @@ import type { VercelFetch } from '../main/plugins/vercel/read'
 import type { ElevenLabsApiFetch } from '../main/tools/elevenlabs/api'
 import { SoundRecords, type SoundRecord } from '../main/tools/elevenlabs/records'
 import { ElevenLabsSounds, type SoundRequest } from '../main/tools/elevenlabs/service'
+import { hostSoundViews, type HostSoundViewsWithNews } from '../main/tools/elevenlabs/hostViews'
 import type { MeshyApiFetch } from '../main/tools/meshy/api'
 import { checkPhoto, photoToSend } from '../main/tools/meshy/photo'
 import { ModelRecords, type ThreeDModel } from '../main/tools/meshy/records'
@@ -21,6 +22,7 @@ import { MeshyModels } from '../main/tools/meshy/service'
 import { stripPhoto } from '../main/tools/meshy/strip'
 import { hostModelViews, type HostModelViewsWithNews } from '../main/tools/meshy/hostViews'
 import type { HostModelViews } from '../shared/models3d'
+import type { HostSoundViews } from '../shared/sounds'
 import { PROVIDER_LABELS, type AgentHostSnapshot } from '../shared/agents'
 import type { PluginSpendingShare } from '../shared/pluginAccountCopies'
 import type { GitHubSignIn, PluginAccount } from '../shared/plugins'
@@ -65,6 +67,8 @@ export interface HostPlugins {
   readonly sounds: SoundRecords
   /** Shared spending with the desktops that sent this host its ElevenLabs copies (`plugin-elevenlabs-spending`). */
   readonly elevenLabsSpending: PluginSpendingShare
+  /** This host's sounds as a recorded desktop's window reads them (`plugin-elevenlabs-sounds`). */
+  readonly soundViews: HostSoundViews
   /**
    * Once the paired clients and the host's settings are read: settles the sounds cut off when the host last stopped,
    * takes the words out of the 3D models' and sounds' records if Keep local history is off, and picks up the 3D models
@@ -111,8 +115,11 @@ export function hostPlugins(options: {
   readonly admits: (threadId: string) => boolean
   /** Whether a client is still paired with this host, read in place. */
   readonly paired: (clientId: string) => boolean
-  /** One of the host's threads' working folder, found as the host's Files finds it, or null. Left out, no thread here makes a 3D model. */
-  readonly folderOf?: (threadId: string) => Promise<string | null>
+  /**
+   * One of the host's threads' working folder, found as the host's Files finds it, or null, or `busy` while Files is
+   * too busy to say. Left out, no thread here makes a 3D model.
+   */
+  readonly folderOf?: (threadId: string) => Promise<string | null | 'busy'>
   /** Places a 3D model's line in its thread, as the desktop does. False when it could not be placed. */
   readonly showInThread?: (threadId: string, model: ThreeDModel) => Promise<boolean>
   /** Places a sound's line in its thread, as the desktop does. False when it could not be placed. */
@@ -204,9 +211,15 @@ export function hostPlugins(options: {
   const elevenLabsSounds = new ElevenLabsSounds({ records: sounds, signal: stop.signal,
     fetch: options.standIns?.elevenLabsFetch ?? ((url, init) => fetch(url, init)), ...(elevenLabsBase ? { base: elevenLabsBase } : {}),
     keyOf: async accountId => (await usable.list()).some(account => account.id === accountId && account.plugin === 'elevenlabs') ? usable.secret(accountId) || undefined : undefined,
-    changed: () => { elevenLabsSpending.countChanged() },
+    // Nothing changes while the service is made, so the views below are there before the first change.
+    changed: sound => { elevenLabsSpending.countChanged(); soundViews.changed(sound) },
   })
-  const { folderOf } = options
+  const folderOfOrBusy = options.folderOf
+  // The tools take a busy Files as no folder for now, as before; a sound's line asks again (Bug Bot on #2659, L1).
+  const folderOf = folderOfOrBusy ? async (threadId: string): Promise<string | null> => { const found = await folderOfOrBusy(threadId); return found === 'busy' ? null : found } : undefined
+  // What a recorded desktop's window reads of them (part 4b): each sound's view and the MP3 it plays, by the same
+  // checked reads the desktop reads its own with, from inside the thread's working folder as the host's Files finds it.
+  const soundViews: HostSoundViewsWithNews = hostSoundViews({ sound: id => sounds.sound(id), folderOf: async threadId => folderOfOrBusy ? await folderOfOrBusy(threadId) : null })
   const meshy = folderOf ? {
     folderOf,
     // This host's own 3D models and what the copy's desktop last said, which holds every other computer's. Nothing is
@@ -255,7 +268,7 @@ export function hostPlugins(options: {
     },
   }))
   return {
-    copies, changes, tools, gitHubSignIn, mailGrants, forgetGrantsOfGone, models, spending, views, sounds, elevenLabsSpending: elevenLabsSpending.share,
+    copies, changes, tools, gitHubSignIn, mailGrants, forgetGrantsOfGone, models, spending, views, sounds, elevenLabsSpending: elevenLabsSpending.share, soundViews,
     start: async () => {
       await models.privacyChanged().catch(() => undefined)
       await sounds.settleUnfinished().catch(() => undefined)
@@ -271,6 +284,6 @@ export function hostPlugins(options: {
       void models.forgetThreads(threadIds).then(ids => { views.removed(ids) }, () => undefined)
       void sounds.forgetThreads(threadIds).catch(() => undefined)
     },
-    close: async () => { stop.abort(); meshySpending.close(); elevenLabsSpending.close(); views.close(); changes.close(); mailGrants.close(); await tools.close() },
+    close: async () => { stop.abort(); meshySpending.close(); elevenLabsSpending.close(); views.close(); soundViews.close(); changes.close(); mailGrants.close(); await tools.close() },
   }
 }

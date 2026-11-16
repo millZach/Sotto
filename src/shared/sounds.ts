@@ -62,3 +62,49 @@ export const PLUGINS_SOUND_CHANGED = 'sotto:plugins:sound-changed'
 export const PLUGINS_SOUND_BYTES = 'sotto:plugins:sound-bytes'
 /** Shows a sound's MP3 in the folder app. */
 export const PLUGINS_SOUND_REVEAL = 'sotto:plugins:sound-reveal'
+
+/** The most one sound may be: five minutes of music at 128 kbps is under 5 MB, so this stops a runaway answer only. */
+export const SOUND_BYTES_MAX = 32 * 1024 * 1024
+
+/**
+ * A paired host's sounds on this computer (the plugins plan's slice 12, part 4b; host feature `plugin-elevenlabs-sounds`).
+ * The host answers by its own IDs. Main gives the window each sound by a key that says which host holds it, as a host
+ * thread's key does (`hostEntityKey`); the window asks for one by that key, and main sends its host the ID.
+ *
+ * An MP3 crosses the connection in parts no larger than a 3D model's, so no frame passes the socket's cap. The host
+ * reads it whole, checks it as this computer checks its own (inside its thread's working folder, under the cap, an MP3),
+ * and then hands it over a part at a time from what it checked.
+ */
+export const SOUND_HOST_PART_BYTES = 8 * 1024 * 1024
+export const SOUND_HOST_PARTS_MAX = SOUND_BYTES_MAX / SOUND_HOST_PART_BYTES
+/** The host's SHA-256 of the whole MP3 it checked, in hex, which every part carries and the whole must match. */
+const digest = z.string().regex(/^[0-9a-f]{64}$/u)
+/** One part of a host's sound's MP3, from `offset` in the file the host checked. */
+export const soundHostBytesRequestSchema = z.object({
+  id: z.string().min(1).max(100),
+  offset: z.number().int().min(0).max(SOUND_BYTES_MAX - 1),
+  /** After the first part, the digest it carried: a file that changed since is refused rather than mixed. */
+  digest: digest.optional(),
+}).strict()
+export type SoundHostBytesRequest = z.infer<typeof soundHostBytesRequestSchema>
+export const soundHostBytesSchema = z.object({
+  data: z.string().min(1).max(Math.ceil(SOUND_HOST_PART_BYTES / 3) * 4).regex(/^[A-Za-z0-9+/]*={0,2}$/u),
+  total: z.number().int().positive().max(SOUND_BYTES_MAX),
+  digest,
+}).strict().nullable()
+export type SoundHostBytes = z.infer<typeof soundHostBytesSchema>
+/** The host's news of a sound (`plugin-elevenlabs-sounds` push): its view as its record changes, and the thread that made it by the host's ID. */
+export const soundHostNewsSchema = z.object({ threadId: z.string().min(1).max(500), view: soundViewSchema }).strict()
+export type SoundHostNews = z.infer<typeof soundHostNewsSchema>
+
+/**
+ * A host's sounds as a recorded desktop reads them (`plugin-elevenlabs-sounds`), by the host's own IDs: on the headless
+ * host over its records, and on the desktop's connection to it over the socket. An MP3 comes a part at a time, each part
+ * from the one file the host checked, for the client that asked.
+ */
+export interface HostSoundViews {
+  view(id: string): Promise<SoundView | null>
+  bytes(request: SoundHostBytesRequest, clientId: string): Promise<SoundHostBytes>
+  /** Hears a sound's record change. Returns the way to stop. */
+  subscribe(listener: (news: SoundHostNews) => void): () => void
+}

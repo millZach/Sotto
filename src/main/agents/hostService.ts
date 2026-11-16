@@ -32,6 +32,7 @@ import type { DesktopDefaultsInput, DesktopDefaultsReceipt } from '../../shared/
 import type { HeldPluginAccountCopy, PluginAccountCopy, PluginAccountCopyReceipt, PluginAccountCopyRemoved, PluginAccountCopyStore, PluginSpendingShare, SpendingReport } from '../../shared/pluginAccountCopies'
 import type { GitHubSignIn } from '../../shared/plugins'
 import type { HostModelViews } from '../../shared/models3d'
+import type { HostSoundViews } from '../../shared/sounds'
 import type { DelegationRelayAsk, DelegationRemoteAsk, RelayedReply } from '../../shared/delegationRelay'
 import type { TellWatcherAnswer, WatcherTellPush } from '../../shared/tellWatcher'
 import type { DelegationNews } from '../../shared/delegation'
@@ -201,6 +202,13 @@ export interface HostService {
    */
   readonly supportsPluginMeshyModels?: boolean
   readonly pluginMeshyModels?: HostModelViews | undefined
+  /**
+   * A host thread's sounds, shown on a recorded desktop (`plugin-elevenlabs-sounds`; the plugins plan's slice 12, part
+   * 4b): on the headless host its own records, and on a desktop's connection to a host that lists it, those read over
+   * the socket.
+   */
+  readonly supportsPluginElevenLabsSounds?: boolean
+  readonly pluginElevenLabsSounds?: HostSoundViews | undefined
   /**
    * Who gh on the host's own machine is signed in to GitHub as (ADR-0205): the account its threads' plugin tools act
    * as, which need not be the desktop's. Present only on a headless host whose Owl answer turns on plugins, and on a
@@ -558,6 +566,8 @@ export class LocalHostService implements HostService {
     pluginElevenLabsSpending?: PluginSpendingShare
     /** This host's 3D models, for a recorded desktop's window (the Meshy plan's ticket 6, part 2), only with `pluginAccountCopies`. */
     pluginMeshyModels?: HostModelViews
+    /** This host's sounds, for a recorded desktop's window (the plugins plan's slice 12, part 4b), only with `pluginAccountCopies`. */
+    pluginElevenLabsSounds?: HostSoundViews
     workerSwarms?: boolean
     /** This host keeps what a desktop says of **Show every picture and video an agent makes** (ADR-0170, part 7). */
     everyAgentPicture?: boolean
@@ -628,6 +638,8 @@ export class LocalHostService implements HostService {
   }
   get supportsPluginMeshyModels(): boolean { return this.options.pluginAccountCopies !== undefined && this.options.pluginMeshyModels !== undefined }
   get pluginMeshyModels(): HostModelViews | undefined { return this.supportsPluginMeshyModels ? this.options.pluginMeshyModels : undefined }
+  get supportsPluginElevenLabsSounds(): boolean { return this.options.pluginAccountCopies !== undefined && this.options.pluginElevenLabsSounds !== undefined }
+  get pluginElevenLabsSounds(): HostSoundViews | undefined { return this.supportsPluginElevenLabsSounds ? this.options.pluginElevenLabsSounds : undefined }
   /** Hears this host's own count change; the listener reads it for each desktop with `pluginMeshySpending`. */
   subscribePluginMeshySpending(listener: () => void): () => void { return this.options.pluginMeshySpending?.subscribe(listener) ?? (() => undefined) }
   get supportsPluginElevenLabsSpending(): boolean { return this.options.pluginAccountCopies !== undefined && this.options.pluginElevenLabsSpending !== undefined }

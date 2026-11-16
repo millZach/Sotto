@@ -262,11 +262,11 @@ describe('a 3D model’s line in a detail delta', () => {
   it('is kept for a reader that keeps 3D models’ lines, and every other visual is stripped as before', () => {
     const delta = { threadId: 'props', baseRevision: 1, revision: 2, messageDeltas: [{ message: modelLine }, { message: diagram }], activityDeltas: [] }
     const kinds = (made: typeof delta) => made.messageDeltas.map(item => 'message' in item ? item.message.visual?.kind : undefined)
-    expect(kinds(deltaWithoutVisuals(delta, MODEL_VISUAL_KIND) as typeof delta)).toEqual(['3d-model', undefined])
+    expect(kinds(deltaWithoutVisuals(delta, [MODEL_VISUAL_KIND]) as typeof delta)).toEqual(['3d-model', undefined])
     expect(kinds(deltaWithoutVisuals(delta) as typeof delta)).toEqual([undefined, undefined])
     // A delta with nothing to strip goes as it is.
     const plain = { ...delta, messageDeltas: [{ message: modelLine }] }
-    expect(deltaWithoutVisuals(plain, MODEL_VISUAL_KIND)).toBe(plain)
+    expect(deltaWithoutVisuals(plain, [MODEL_VISUAL_KIND])).toBe(plain)
   })
 })
 

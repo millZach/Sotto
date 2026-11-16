@@ -2,10 +2,12 @@ import { t } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
 import { AudioLines, ChevronDown, FolderOutput, Music, Pause, Play, TriangleAlert, Zap } from 'lucide-react'
 import React, { useCallback, useEffect, useId, useRef, useState, type ChangeEvent, type KeyboardEvent, type ReactNode } from 'react'
+import { hostEntityKey, parseHostEntityKey } from '../../../shared/clientIdentity'
 import { dollarFigure } from '../../../shared/plugins'
 import { soundFileGone, type SoundFailure, type SoundKind, type SoundView } from '../../../shared/sounds'
 import { useOwlFeature } from '../state/owlFeature'
 import { useReducedMotion } from '../state/reducedMotion'
+import { useActivityBodyHost } from './activityBodies'
 import { sizeWords } from './modelParts'
 import './soundLine.css'
 
@@ -17,17 +19,31 @@ import './soundLine.css'
  * its file and Show in File Explorer. While ElevenLabs makes it the line says so; when it was not made it says what
  * happened, that nothing was saved and what was counted. Part of the `plugins` Owl feature: with it off the line is not
  * there at all.
+ *
+ * A thread on a paired host names its sound by the host's own ID; the window asks for it by a key that says which host
+ * holds it, as it names the thread (part 4b), and main reads its view and MP3 over that host's connection. Its kind line
+ * ends "on forge", and its details offer no Show in File Explorer, since the file is on that host. While the host is
+ * away the line says what it cost and that the host isn't connected, with Play off.
  */
 export function SoundLine({ soundId, name }: { readonly soundId: string; readonly name: string }): ReactNode {
   const on = useOwlFeature('plugins')
-  const [view, reread] = useSoundView(soundId, on)
+  // The transcript says whose the thread is, as for a 3D model's line.
+  const host = useActivityBodyHost()
+  const hostId = host ? parseHostEntityKey(host.threadId)?.hostId : undefined
+  const key = hostId ? hostEntityKey(hostId, soundId) : soundId
+  const away = host !== null && !host.connected
+  const [view, reread] = useSoundView(key, on, away)
   const reduced = useReducedMotion(on)
   if (!on) return null
-  return <Line soundId={soundId} name={name} view={view} reread={reread} reduced={reduced} />
+  return away ? <AwayLine name={view?.name ?? name} view={view} hostName={host.hostName} />
+    : <Line soundId={key} name={name} view={view} reread={reread} reduced={reduced} {...host ? { computer: host.hostName } : {}} />
 }
 
-/** A sound's view as main last sent it: undefined until it answers, null when it holds no such sound; and a way to read it again. */
-function useSoundView(id: string, on: boolean): readonly [SoundView | null | undefined, () => void] {
+/**
+ * A sound's view as main last sent it: undefined until it answers, null when it holds no such sound; and a way to read
+ * it again. A host's sound is read again when its host comes back; while it is away, the view held here stays.
+ */
+function useSoundView(id: string, on: boolean, away: boolean): readonly [SoundView | null | undefined, () => void] {
   const [view, setView] = useState<SoundView | null | undefined>(undefined)
   const [asked, setAsked] = useState(0)
   useEffect(() => {
@@ -37,10 +53,11 @@ function useSoundView(id: string, on: boolean): readonly [SoundView | null | und
     let live = true
     let heard = false
     const stop = plugins.onSoundChanged?.(next => { if (live && next.id === id) { heard = true; setView(next) } })
-    // A change heard while the read was on its way is newer than the read.
-    plugins.sound(id).then(found => { if (live && !heard) setView(found) }, () => { if (live && !heard) setView(null) })
+    // A change heard while the read was on its way is newer than the read. While its host is away, main answers with the
+    // view it last heard, if any.
+    plugins.sound(id).then(found => { if (live && !heard && (found !== null || !away)) setView(found) }, () => { if (live && !heard && !away) setView(null) })
     return () => { live = false; stop?.() }
-  }, [id, on, asked])
+  }, [id, on, away, asked])
   const reread = useCallback(() => { setAsked(value => value + 1) }, [])
   return [view, reread] as const
 }
@@ -74,6 +91,30 @@ function revealWords(): string {
 
 function KindIcon({ kind }: { readonly kind: SoundKind }): ReactNode {
   return kind === 'speech' ? <AudioLines size={22} aria-hidden="true" /> : kind === 'effect' ? <Zap size={22} aria-hidden="true" /> : <Music size={22} aria-hidden="true" />
+}
+
+/** "on forge": the paired host a sound's file is on. */
+function onComputerWords(computer: string): string {
+  return t({ message: `on ${computer}`, comment: '{computer} is the name of the paired host that holds the sound, as in forge.' })
+}
+
+/** A host thread's sound while its host is away: its name, what it cost when that is known, that the host is away, and Play off. */
+function AwayLine({ name, view, hostName }: { readonly name: string; readonly view: SoundView | null | undefined; readonly hostName: string }): ReactNode {
+  const { t } = useLingui()
+  const away = t({ message: `${hostName} isn’t connected`, comment: '{hostName} is the name of a paired host, as in forge.' })
+  const sub = view ? [costWords(view.cost), away].join(' · ') : away
+  const shown = name
+  return <div className="sound-line" role="group" aria-label={t({ message: `Sound: ${shown}`, comment: '{shown} is the name of a sound, such as Opening narration.' })}
+    data-open="false" data-away="true">
+    <div className="sound-line__row">
+      <span className="sound-line__tile" aria-hidden="true">{view ? <KindIcon kind={view.kind} /> : <AudioLines size={22} />}</span>
+      <span className="sound-line__text"><b className="sound-line__name">{shown}</b><span className="sound-line__sub">{sub}</span></span>
+      <button type="button" className="sound-line__button sound-line__play" aria-label={t({ message: `Play ${shown}`, comment: '{shown} is the name of a sound, such as Opening narration.' })} disabled>
+        <Play size={16} aria-hidden="true" />
+        <span className="sound-line__label" aria-hidden="true">{t`Play`}</span>
+      </button>
+    </div>
+  </div>
 }
 
 /** Why Play does nothing: the file is gone from its folder, or Sotto could not play what is there. */
@@ -166,8 +207,10 @@ function usePlayer(soundId: string, reread: () => void) {
   return { press, seek, fetching, playing, at, length, problem, started }
 }
 
-function Line({ soundId, name, view, reread, reduced }: {
+function Line({ soundId, name, view, reread, reduced, computer }: {
   readonly soundId: string; readonly name: string; readonly view: SoundView | null | undefined; readonly reread: () => void; readonly reduced: boolean
+  /** The paired host the sound is on, by its name; absent for this computer's own. */
+  readonly computer?: string
 }): ReactNode {
   const { t } = useLingui()
   const [open, setOpen] = useState(false)
@@ -195,7 +238,7 @@ function Line({ soundId, name, view, reread, reduced }: {
   const sub = view === undefined ? t`Sound`
     : view === null ? t`Sotto no longer holds this sound.`
       : made ? [kindWords(view.kind), problem === 'gone' ? t`File gone` : problem === 'unplayable' ? t`Sotto could not play this file` : player.length !== undefined ? clock(player.length) : undefined,
-        costWords(view.cost), 'ElevenLabs'].filter(Boolean).join(' · ')
+        costWords(view.cost), 'ElevenLabs', computer !== undefined ? onComputerWords(computer) : undefined].filter(Boolean).join(' · ')
         : failed ? failedLine(view)
           : undefined
   const scrubbing = made && player.started && (player.playing || player.at > 0)
@@ -232,7 +275,7 @@ function Line({ soundId, name, view, reread, reduced }: {
     </div>
     {scrubbing && <Scrubber name={shown} at={player.at} length={player.length} onSeek={player.seek} />}
     {opens && <div className="sound-line__body" id={bodyId} hidden={!open}>
-      {open && view && (failed ? <Failed view={view} /> : <Details soundId={soundId} view={view} />)}
+      {open && view && (failed ? <Failed view={view} /> : <Details soundId={soundId} view={view} {...computer !== undefined ? { computer } : {}} />)}
     </div>}
   </div>
 }
@@ -258,8 +301,11 @@ function Scrubber({ name, at, length, onSeek }: { readonly name: string; readonl
   </div>
 }
 
-/** The details a press of the chevron opens: the words, the voice, the cost and when, the file and Show in File Explorer. */
-function Details({ soundId, view }: { readonly soundId: string; readonly view: SoundView }): ReactNode {
+/**
+ * The details a press of the chevron opens: the words, the voice, the cost and when, the file and Show in File Explorer.
+ * A host's sound says which host it is on instead, since its file is there.
+ */
+function Details({ soundId, view, computer }: { readonly soundId: string; readonly view: SoundView; readonly computer?: string }): ReactNode {
   const { t } = useLingui()
   const [status, setStatus] = useState('')
   const gone = soundFileGone(view)
@@ -272,6 +318,7 @@ function Details({ soundId, view }: { readonly soundId: string; readonly view: S
     view.kind === 'speech' && voice ? t({ message: `Spoken in the voice ${voice}`, comment: '{voice} is the name of an ElevenLabs voice, such as Rachel.' }) : undefined,
     costWords(view.cost),
     when ? t({ message: `made ${when}`, comment: '{when} is the time a sound was saved, such as 6:52 pm.' }) : undefined,
+    computer !== undefined ? onComputerWords(computer) : undefined,
   ].filter(Boolean).join(' · ')
   const reveal = (): void => {
     setStatus('')
@@ -285,7 +332,7 @@ function Details({ soundId, view }: { readonly soundId: string; readonly view: S
       <span className="sound-line__chip" title={view.fileName}>
         <span className="sound-line__extension">.mp3</span>{gone || view.bytes === undefined ? t`File gone` : sizeWords(view.bytes)}
       </span>
-      {!gone && <button type="button" className="sound-line__chip sound-line__chip--button" onClick={reveal}>
+      {!gone && computer === undefined && <button type="button" className="sound-line__chip sound-line__chip--button" onClick={reveal}>
         <FolderOutput size={14} aria-hidden="true" />{revealWords()}
       </button>}
     </div>

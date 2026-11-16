@@ -1,6 +1,7 @@
 import { constants } from 'node:fs'
 import { copyFile, link, open, realpath, rename, rm } from 'node:fs/promises'
 import { join } from 'node:path'
+import { SOUND_BYTES_MAX } from '../../../shared/sounds'
 import { isInside, modelFolder } from '../meshy/download'
 
 /**
@@ -12,8 +13,8 @@ import { isInside, modelFolder } from '../meshy/download'
  * Sotto's part file with it. Nothing is named there, and the sound is refused.
  */
 export const SOUND_FOLDER = 'sounds'
-/** The most one sound may be: five minutes of music at 128 kbps is under 5 MB, so this stops a runaway answer only. */
-export const SOUND_BYTES_MAX = 32 * 1024 * 1024
+/** The most one sound may be, shared with a host's sounds read over the connection. */
+export { SOUND_BYTES_MAX }
 /** How many names are tried before a sound is refused for want of one: "Name.mp3", then "Name 2.mp3" and on. */
 const NAMES_TRIED = 100
 
