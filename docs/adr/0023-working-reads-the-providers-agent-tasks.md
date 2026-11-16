@@ -150,6 +150,25 @@ has ended, Zach picked (variant n1): where it is a process that carries the thre
 holds it as **Working** while the process runs, the way detached runs are found (ADR-0204); work inside the
 provider's own process stays unseen until the provider reports it.
 
+## Amendment: Grok Build's background subagents and commands
+
+*November 15, 2026.* Issue #2633, under the amendment above. A live session of Grok Build 1.0.77 on forge showed that a
+subagent started with `background: true` returns its spawn tool call at once. Grok then sends `subagent_spawned` on the
+thread's session, answers the prompt (`turn_completed`) while the subagent runs, sends `subagent_progress` about every
+eight seconds, and sends `subagent_finished` when the subagent ends. With `will_wake: true`, Grok then starts a turn of
+its own to report the result. Commands Grok moved to the background come in `background_tasks`, the session's whole list
+with each task's status, sent again as one starts or ends (`docs/research/2026-11-15-grok-background-work-probe.md`).
+
+A subagent the thread's session started, with no `parent_subagent_id`, is the thread's background work, type
+`subagent`, once a turn has ended while it runs, and stays so through later turns until `subagent_finished`. Until
+then, a running turn may be waiting on it, so it is that turn's action. One that wakes Grok is held until Grok's report
+turn (`subagent-completed-<id>`) completes, or until a turn that began after it finished does, in case Grok dropped the
+report for that prompt. The thread reads Working through the report, as a Claude Code thread does through its own. A
+cancel needs no rule of its own: it ends the background subagents too, and Grok says so with `subagent_finished`. A task `background_tasks` lists as `running` is a `command`. A subagent's own
+subagents and commands, which come on its own session or name their parent, are its business. Both hold the session
+from the reaper. A process that ends takes them with it: its subagents' rows read unknown and their agents interrupted,
+so Watcher's roster stops counting them. Nothing new is drawn, so no mock-up was needed.
+
 ## Considered Options
 
 - **The `background_tasks_changed` level signal.** The SDK documents a frame carrying the whole set of live
@@ -165,6 +184,6 @@ provider's own process stays unseen until the provider reports it.
 
 `CONTEXT.md` gains **Background work** and amends **Monitoring task**, **Held action** and **Session reaper**.
 ADR-0021 gains an amendment for the order. Only the Claude adapter publishes background work (and, from the
-amendment above, the Cursor adapter); the adapter contract's case skips the others. T3 Code reads Codex child-agent events as agent work, which may serve a later
+amendments above, the Cursor and Grok adapters); the adapter contract's case skips the others. T3 Code reads Codex child-agent events as agent work, which may serve a later
 issue, but Codex, Grok Build and Devin were not studied for this one and publish nothing. No new setting, IPC
 channel, host or dependency.
