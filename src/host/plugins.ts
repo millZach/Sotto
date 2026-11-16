@@ -66,8 +66,9 @@ export interface HostPlugins {
   /** Shared spending with the desktops that sent this host its ElevenLabs copies (`plugin-elevenlabs-spending`). */
   readonly elevenLabsSpending: PluginSpendingShare
   /**
-   * Once the paired clients are read: takes the words out of the 3D models' and sounds' records if Keep local history
-   * is off, and picks up the 3D models still being made when the host last stopped. Before then no copy's key may be read.
+   * Once the paired clients and the host's settings are read: settles the sounds cut off when the host last stopped,
+   * takes the words out of the 3D models' and sounds' records if Keep local history is off, and picks up the 3D models
+   * still being made when the host last stopped. Before then no copy's key may be read.
    */
   start(): Promise<void>
   /** Deleted threads take their waiting cards and their mail grants with them. */
@@ -193,9 +194,9 @@ export function hostPlugins(options: {
   // Sounds (ADR-0205; the plugins plan's slice 12, part 4a): this host's threads make them with the ElevenLabs copies
   // its desktops sent, into their own folders on this machine, as the desktop's threads do. Each record is this host's
   // own, in its own folder, and ElevenLabs' API is reached from here with the copy's key, read for one call. A sound
-  // cut off when the host last stopped stays counted, and is settled before any sound can be asked for.
+  // cut off when the host last stopped stays counted, and is settled in `start`, once the host's Keep local history is
+  // read: read before, the records would be taken as kept with history off, and lose their words (Sol's review).
   const sounds = new SoundRecords(options.directory, { historyEnabled })
-  void sounds.settleUnfinished().catch(() => undefined)
   // The same one limit across computers, counted in whole cents with each side's own rounded up (ADR-0205).
   const elevenLabsSpending = hostSpending({ plugin: 'elevenlabs', directory: options.directory, senders, accounts: accountList,
     own: async () => centsByAccount(await sounds.monthSpent(now())), now })
@@ -257,6 +258,7 @@ export function hostPlugins(options: {
     copies, changes, tools, gitHubSignIn, mailGrants, forgetGrantsOfGone, models, spending, views, sounds, elevenLabsSpending: elevenLabsSpending.share,
     start: async () => {
       await models.privacyChanged().catch(() => undefined)
+      await sounds.settleUnfinished().catch(() => undefined)
       await sounds.privacyChanged().catch(() => undefined)
       elevenLabsSpending.countChanged()
       await meshyModels.resume()

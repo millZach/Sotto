@@ -43,7 +43,7 @@ function credentials(): PluginCredentials {
 }
 
 /** A host's plugins with one open thread working in `root`, its cards answered as `answer` says. */
-async function host(options: { answer?: boolean; history?: boolean; directory?: string } = {}) {
+async function host(options: { answer?: boolean; history?: boolean | (() => boolean); directory?: string } = {}) {
   const directory = options.directory ?? await mkdtemp(join(tmpdir(), 'sotto-host-sound-'))
   folders.push(directory)
   const sent: { readonly path: string; readonly key: string | undefined }[] = []
@@ -57,7 +57,7 @@ async function host(options: { answer?: boolean; history?: boolean; directory?: 
   const thread = { id: THREAD, kind: 'agent', projectId: 'project-1', providerId: 'codex' } as never
   const plugins = hostPlugins({ directory, credentials: credentials(), thread: id => id === THREAD ? thread : undefined, admits: id => id === THREAD,
     paired: clientId => clientId === LAPTOP || clientId === TOWER,
-    historyEnabled: () => options.history ?? true,
+    historyEnabled: typeof options.history === 'function' ? options.history : () => (options.history as boolean | undefined) ?? true,
     folderOf: async id => id === THREAD ? root : null,
     showSoundInThread: async (threadId, sound) => { shown.push({ threadId, sound }); return true },
     standIns: { elevenLabsFetch, gh: async () => JSON.stringify({ hosts: {} }) } })
@@ -194,6 +194,21 @@ describe('a host’s sounds’ records', () => {
     expect(await readdir(join(root, 'sounds'))).toEqual(['Door chime.mp3'])
     await expect(h.plugins.elevenLabsSpending.own(LAPTOP)).resolves.toMatchObject([{ credits: Math.ceil(CHIME_COST * 100 - 1e-6) }])
     await h.plugins.close()
+  })
+
+  it('keeps the words of sounds kept before when the host starts with Keep local history on, read only after it was built', async () => {
+    // Sol's review: the host reads its settings after its plugins are built, so history reads as off until then.
+    const first = await host({ history: true })
+    await first.keep({ ...VOICES, spending: { askBefore: false, monthlyLimit: 10 } })
+    expect(await first.make()).toMatchObject({ failed: false })
+    await first.plugins.close()
+    let history = false
+    const again = await host({ history: () => history, directory: first.directory })
+    history = true
+    await again.plugins.start()
+    expect((await again.plugins.sounds.list())[0]?.words).toBe(CHIME.words)
+    expect(await readFile(join(first.directory, 'sounds.json'), 'utf8')).toContain(CHIME.words)
+    await again.plugins.close()
   })
 
   it('takes words already kept out when the host starts with Keep local history off', async () => {
