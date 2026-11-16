@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ClaudeSessionLog } from '../../src/main/agents/providers/claude/claudeSessionLog'
+import type { AgentActivity } from '../../src/shared/agentActivity'
 import type { AgentThread } from '../../src/shared/agents'
 import { claudeFixture, savedClaudeThreads } from '../fixtures/claudeFixture'
 import { SottoThreadHost, ThreadRegistry } from '../../src/main/agents/threads'
@@ -238,6 +239,43 @@ describe('Claude transcript catch-up', () => {
     expect(after.messages.some(message => message.text.includes('Tampered'))).toBe(false)
     await append([{ type: 'user', uuid: randomUUID(), message: { role: 'user', content: 'Another line' } }])
     expect(reads).toBe(1)
+  })
+
+  it('owns the stored records a frame reads rather than copying them, so the frame copies only what changed (#2619)', async () => {
+    const session = await f.realId(id)
+    const folder = join(f.root, 'home', 'projects', f.root.replace(/[^a-zA-Z0-9]/gu, '-'))
+    await mkdir(folder, { recursive: true })
+    const path = join(folder, `${session}.jsonl`)
+    const append = async (frames: Record<string, unknown>[]) => {
+      await appendFile(path, frames.map(frame => JSON.stringify({ ...frame, sessionId: session, timestamp: new Date().toISOString() })).join('\n') + '\n')
+      await f.adapter.pollSessionLogs()
+    }
+    await append([
+      { type: 'user', uuid: randomUUID(), message: { role: 'user', content: 'Cursor anchor' } },
+      { type: 'system', subtype: 'task_started', task_id: 'stored-task', task_type: 'local_agent', description: 'Stored task' },
+    ])
+    const before = (await f.host.snapshot()).threads.find(thread => thread.id === id)!
+    f.adapter.disconnect(); await f.adapter.closed(); f = await claudeFixture(f.root)
+    // A long thread's stored records, as the workspace's read builds them for the adapter: fresh, and kept by nobody else.
+    const stored = before.activities!.find(row => row.id === 'claude-task-stored-task')!
+    const older = Array.from({ length: 1_999 }, (_, index) => ({ ...structuredClone(stored), id: `claude-stored-${index}`, title: `Stored step ${index}`, sequence: index }))
+    let handed: AgentActivity[] = []
+    f.adapter.useThreadHistory({
+      messageIdentities: () => before.messages.map(({ id: messageId, role }) => ({ id: messageId, role })),
+      hasActivities: (_threadId, epoch) => epoch === before.historyEpoch,
+      activities: () => (handed = [...structuredClone(older), structuredClone(stored)]),
+    })
+    await f.host.connect()
+    await append([{ type: 'system', subtype: 'task_notification', task_id: 'stored-task', status: 'completed', summary: 'Finished after the restart' }])
+    expect(handed).toHaveLength(2_000)
+    // What the adapter holds once the frame published: the list every publication shares. A snapshot read copies apart.
+    const held = (f.adapter as unknown as { threads: Map<string, { activities?: AgentActivity[] }> }).threads.get(id)!.activities!
+    expect(held.find(row => row.id === 'claude-task-stored-task')).toMatchObject({ status: 'completed', text: 'Finished after the restart' })
+    // Every record the frame did not change is the very record the read handed over: none was copied.
+    const kept = new Set<unknown>(handed)
+    const unchanged = held.filter(row => row.id !== 'claude-task-stored-task')
+    expect(unchanged).toHaveLength(1_999)
+    expect(unchanged.filter(row => !kept.has(row))).toHaveLength(0)
   })
 
   it.each(['messages-only restore', 'messages-only source', 'old history epoch'] as const)('replays task classification when given %s', async mode => {
