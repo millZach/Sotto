@@ -38,7 +38,6 @@ const recordSchema = z.object({
    * The thread's working folder as it was asked for, which the MP3 is read back only from inside. A record kept before
    * the line in the thread (part 3) holds none, and is read against the thread's working folder as it is now.
    */
-  root: z.string().min(1).optional(),
   /** The real folder inside the thread's folder the MP3 goes into, and its name there once it is saved. */
   folder: z.string().min(1),
   fileName: z.string().min(1).max(200).optional(),

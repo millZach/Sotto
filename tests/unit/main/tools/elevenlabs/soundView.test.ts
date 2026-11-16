@@ -24,7 +24,7 @@ afterEach(async () => { await Promise.all([root, outside].map(folder => rm(folde
 const WORDS = 'Welcome to Lumen. In the next two minutes you will set up your shop.'
 function made(overrides: Partial<SoundRecord> = {}): SoundRecord {
   return { id: 'sound-1', threadId: 'thread-one', accountId: '55555555-5555-4555-8555-000000000001', kind: 'speech', name: 'Opening narration', words: WORDS, voice: 'Rachel',
-    root, folder: join(root, 'sounds'), fileName: 'Opening narration.mp3', bytes: MP3.byteLength, cost: 0.02, askedAt: '2026-11-15T18:52:00.000Z', state: 'made', ...overrides }
+    folder: join(root, 'sounds'), fileName: 'Opening narration.mp3', bytes: MP3.byteLength, cost: 0.02, askedAt: '2026-11-15T18:52:00.000Z', state: 'made', ...overrides }
 }
 /** The records as main holds them, and the thread's working folder as it is now. */
 function source(records: readonly SoundRecord[], folder: string | null = root): SoundViewSource & { asked: string[] } {
@@ -103,13 +103,24 @@ describe('a sound’s MP3 for the window', () => {
     expect(await soundBytes(source([made()]), 'sound-1')).toBeNull()
     await saved()
     expect(await soundBytes(source([made()]), 'sound-1', MP3.byteLength - 1)).toBeNull()
-    expect(looksLikeMp3(new Uint8Array([0xff, 0xfb, 0x90]))).toBe(true)
-    expect(looksLikeMp3(new Uint8Array([0x89, 0x50, 0x4e, 0x47]))).toBe(false)
+    // An MPEG Layer III frame header, at the start or after an ID3 tag (Sol's review).
+    expect(looksLikeMp3(new Uint8Array([0xff, 0xfb, 0x90, 0x64]))).toBe(true)
+    expect(looksLikeMp3(MP3)).toBe(true)
+    for (const [what, bytes] of [
+      ['a PNG', [0x89, 0x50, 0x4e, 0x47]],
+      ['an ID3 tag with nothing after it', [0x49, 0x44, 0x33]],
+      ['an ID3 tag followed by no frame', [0x49, 0x44, 0x33, 4, 0, 0, 0, 0, 0, 0, 0x3c, 0x68, 0x74, 0x6d]],
+      ['a sync that is no layer', [0xff, 0xff, 0x90, 0x64]],
+      ['AAC in ADTS', [0xff, 0xf1, 0x50, 0x80]],
+      ['a free bitrate', [0xff, 0xfb, 0x00, 0x64]],
+      ['a sample rate that does not exist', [0xff, 0xfb, 0x9c, 0x64]],
+      ['a frame cut short', [0xff, 0xfb, 0x90]],
+    ] as const) expect(looksLikeMp3(new Uint8Array(bytes)), what).toBe(false)
   })
 
-  it('reads a record kept before records held their folder against the thread’s working folder as it is now', async () => {
+  it('reads a record against the thread’s working folder as it is now, so the record holds no folder of its own', async () => {
     await saved()
-    const older = made({ root: undefined })
+    const older = made()
     expect(await soundBytes(source([older]), 'sound-1')).toEqual(MP3)
     // A thread with no working folder now hands over nothing; nor does one whose folder no longer holds the sound's.
     expect(await soundBytes(source([older], null), 'sound-1')).toBeNull()
@@ -140,9 +151,16 @@ describe('the push of a sound’s change to the window', () => {
     const records = [made({ state: 'making', fileName: undefined, bytes: undefined })]
     const sent: SoundView[] = []
     const push = soundViewPush(source(records), view => { sent.push(view) })
-    void push(records[0]!)
-    await push(made())
+    await push(records[0]!)
+    records[0] = made()
+    await push(records[0])
     expect(sent.map(view => [view.state, view.bytes])).toEqual([['making', undefined], ['made', MP3.byteLength]])
+    // A change told with words the record has since let go, as Keep local history was turned off: the view is the
+    // record as it is now, without them (Sol's review).
+    records[0] = made({ words: undefined })
+    await push(made())
+    expect(sent[2]!.words).toBeUndefined()
+    sent.splice(2)
     // Its thread was forgotten: the record went, and its line is not told of it again.
     records.splice(0)
     await push(made({ state: 'failed', failure: 'folder' }))

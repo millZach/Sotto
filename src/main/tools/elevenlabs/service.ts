@@ -64,7 +64,7 @@ export class ElevenLabsSounds {
     const sound = await this.options.records.add({
       id: randomUUID(), threadId: request.threadId, accountId: request.accountId, kind: request.kind, name: request.name, words: request.words,
       ...(request.voice ? { voice: request.voice.name } : {}), ...(request.seconds !== undefined ? { seconds: request.seconds } : {}),
-      root: request.root, folder, cost: request.cost, askedAt: new Date(this.options.now?.() ?? Date.now()).toISOString(), state: 'making',
+      folder, cost: request.cost, askedAt: new Date(this.options.now?.() ?? Date.now()).toISOString(), state: 'making',
     })
     this.options.changed?.(sound)
     return { sound, done: this.run(sound, request) }

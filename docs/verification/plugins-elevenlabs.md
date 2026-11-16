@@ -169,8 +169,10 @@ pane. The music's line came in the same way. Meshy's journey, `plugins-meshy-mod
     and size and when it was saved, and never a path; a sound being made or failed has no file;
   - the MP3 is handed over only for a made sound, from its record's own file: not for an ID that is not a sound's or a
     path, not once its file is gone, not through a folder swapped for a link outside the thread's folder or a file
-    that is a link outside, not past the cap, and not for a file that is not an MP3;
-  - a record kept before records held their folder is read against the thread's working folder as it is now;
+    that is a link outside, not past the cap, and not for a file that does not start with an MPEG Layer III frame,
+    after an ID3 tag or without one: AAC, another layer, a tag with no frame after it and a frame cut short are refused;
+  - a record holds no working folder, so a build from before the line reads it whole and keeps counting its cost; its
+    folder is checked against the thread's working folder as it is now;
   - Show in File Explorer is given the record's own real path, and nothing once the file is gone or outside;
   - each change to a sound reaches the window as its view, in order, and none once its record went.
 - `tests/unit/main/plugins/pluginsIpc.test.ts`: the view, the MP3 and Show in File Explorer answer the main window

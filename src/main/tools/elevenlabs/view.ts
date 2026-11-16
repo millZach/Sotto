@@ -22,7 +22,9 @@ export interface SoundViewSource {
 /** Where a made sound's MP3 is, as the 3D model's checked reads take it; undefined when there is no file to look for. */
 async function placeOf(source: SoundViewSource, sound: SoundRecord): Promise<{ readonly place: { root: string; folder: string; files: string[] }; readonly name: string } | undefined> {
   if (sound.state !== 'made' || !sound.fileName) return undefined
-  const root = sound.root ?? await source.folderOf(sound.threadId).catch(() => null)
+  // The record holds no working folder, so a build from before the line reads it whole and keeps counting its cost
+  // (Sol's review): its folder is checked against the thread's working folder as it is now.
+  const root = await source.folderOf(sound.threadId).catch(() => null)
   return root ? { place: { root, folder: sound.folder, files: [sound.fileName] }, name: sound.fileName } : undefined
 }
 
@@ -59,7 +61,8 @@ export async function soundView(source: SoundViewSource, sound: SoundRecord): Pr
 export function soundViewPush(source: SoundViewSource, send: (view: SoundView) => void): (sound: SoundRecord) => Promise<void> {
   let sent: Promise<void> = Promise.resolve()
   return sound => {
-    sent = sent.then(async () => await source.sound(sound.id) ? await soundView(source, sound) : null)
+    // The record as it is now, not as it was told: words cleared since are not sent again (Sol's review).
+    sent = sent.then(async () => { const now = await source.sound(sound.id); return now ? await soundView(source, now) : null })
       .then(view => { if (view) send(view) }, () => undefined)
     return sent
   }
@@ -71,10 +74,31 @@ export async function soundViewOf(source: SoundViewSource, id: string): Promise<
   return sound ? soundView(source, sound) : null
 }
 
-/** Whether bytes open as an MP3 does: an ID3 tag, or an MPEG audio frame's sync. */
+/**
+ * Whether bytes open as an MP3 does: an MPEG audio Layer III frame header, with a version, bitrate and sample rate
+ * that exist, at the start or right after an ID3v2 tag. AAC, another layer, or a tag with nothing after it is not one
+ * (Sol's review).
+ */
 export function looksLikeMp3(bytes: Uint8Array): boolean {
-  if (bytes.byteLength >= 3 && bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) return true
-  return bytes.byteLength >= 2 && bytes[0] === 0xff && (bytes[1]! & 0xe0) === 0xe0
+  let at = 0
+  if (bytes.byteLength >= 10 && bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) {
+    const version = bytes[3]!
+    const size = [bytes[6]!, bytes[7]!, bytes[8]!, bytes[9]!]
+    if (version < 2 || version > 4 || size.some(byte => byte >= 0x80)) return false
+    // The tag's size is syncsafe, seven bits a byte; a footer adds ten more.
+    at = 10 + ((size[0]! << 21) | (size[1]! << 14) | (size[2]! << 7) | size[3]!) + ((bytes[5]! & 0x10) !== 0 ? 10 : 0)
+  }
+  return isLayer3Header(bytes, at)
+}
+
+/** An MPEG audio frame header at `at`: the sync, a version that exists, Layer III, and a bitrate and sample rate that do. */
+function isLayer3Header(bytes: Uint8Array, at: number): boolean {
+  if (bytes.byteLength < at + 4) return false
+  const [b0, b1, b2] = [bytes[at]!, bytes[at + 1]!, bytes[at + 2]!]
+  if (b0 !== 0xff || (b1 & 0xe0) !== 0xe0) return false
+  const version = (b1 >> 3) & 0x03, layer = (b1 >> 1) & 0x03
+  const bitrate = (b2 >> 4) & 0x0f, rate = (b2 >> 2) & 0x03
+  return version !== 0x01 && layer === 0x01 && bitrate !== 0x00 && bitrate !== 0x0f && rate !== 0x03
 }
 
 /**
