@@ -87,6 +87,9 @@ it('keeps a copy the recorded desktop sends, in the host’s own encrypted crede
   // This host knows Meshy, and says so to the desktop that sends copies.
   expect(hello.features).toContain('plugin-meshy-copies')
   expect(socket.supportsPluginMeshyCopies).toBe(true)
+  // And ElevenLabs.
+  expect(hello.features).toContain('plugin-elevenlabs-copies')
+  expect(socket.supportsPluginElevenLabsCopies).toBe(true)
   await expect(socket.pluginAccountCopies()).resolves.toEqual([])
 
   const receipt = await socket.keepPluginAccountCopy(COPY)
@@ -136,6 +139,7 @@ it('takes a copy from no client but the recorded desktop: a paired client the la
   const other = await f.client(false)
   expect(other.hello.features).not.toContain('plugin-account-copies')
   expect(other.hello.features).not.toContain('plugin-meshy-copies')
+  expect(other.hello.features).not.toContain('plugin-elevenlabs-copies')
   // The host keeps copies, which its health says to anyone; whether this client may send them is the host's to say.
   expect(other.socket.supportsPluginAccountCopies).toBe(true)
   // Its own client refuses a secret before it leaves, and the host refuses the list, which carries none: a request the

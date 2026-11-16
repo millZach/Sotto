@@ -13,10 +13,10 @@ export const PLUGIN_GROUPS = ['code', 'mail', 'media'] as const
 export type PluginGroupId = typeof PLUGIN_GROUPS[number]
 
 /** Every plugin a thread's agent can use, each with a row on Settings › Plugins. */
-export const PLUGIN_IDS = ['github', 'vercel', 'gmail', 'proton-mail', 'meshy'] as const
+export const PLUGIN_IDS = ['github', 'vercel', 'gmail', 'proton-mail', 'meshy', 'elevenlabs'] as const
 export type PluginId = typeof PLUGIN_IDS[number]
 /** Each plugin's name, which is the service's own and the same in every language. */
-export const PLUGIN_NAMES: Readonly<Record<PluginId, string>> = { github: 'GitHub', vercel: 'Vercel', gmail: 'Gmail', 'proton-mail': 'Proton Mail', meshy: 'Meshy' }
+export const PLUGIN_NAMES: Readonly<Record<PluginId, string>> = { github: 'GitHub', vercel: 'Vercel', gmail: 'Gmail', 'proton-mail': 'Proton Mail', meshy: 'Meshy', elevenlabs: 'ElevenLabs' }
 
 /** The plugins that are mail accounts: read over IMAP, each thread asking once (ADR-0205, decision 8). */
 export const MAIL_PLUGIN_IDS = ['gmail', 'proton-mail'] as const
@@ -33,6 +33,7 @@ export const PLUGINS: readonly PluginEntry[] = [
   { id: 'gmail', name: 'Gmail', group: 'mail' },
   { id: 'proton-mail', name: 'Proton Mail', group: 'mail' },
   { id: 'meshy', name: 'Meshy', group: 'media' },
+  { id: 'elevenlabs', name: 'ElevenLabs', group: 'media' },
 ]
 
 export const PLUGINS_GITHUB_SIGN_IN = 'sotto:plugins:github-sign-in'
@@ -239,7 +240,7 @@ export const PLUGINS_MAIL_GRANT_STOP = 'sotto:plugins:mail-grant-stop'
 export const PLUGINS_MAIL_GRANTS_CHANGED = 'sotto:plugins:mail-grants-changed'
 
 /** The plugins an account is added to by pasting a secret. GitHub is not one: its account is gh's own sign-in. */
-export const ACCOUNT_PLUGIN_IDS = ['vercel', 'gmail', 'proton-mail', 'meshy'] as const
+export const ACCOUNT_PLUGIN_IDS = ['vercel', 'gmail', 'proton-mail', 'meshy', 'elevenlabs'] as const
 export type AccountPluginId = typeof ACCOUNT_PLUGIN_IDS[number]
 
 /** A mail account's address, which signs in to it beside its password: one address, with nothing a mail server would read as more. */
@@ -259,15 +260,28 @@ const projectIdSchema = z.string().min(1).max(512)
 export const pluginAccountNameSchema = z.string().trim().min(1).max(PLUGIN_ACCOUNT_NAME_MAX)
   .refine(name => [...name].every(character => character.charCodeAt(0) >= 0x20 && character.charCodeAt(0) !== 0x7f))
 
-/** The most a monthly limit can be set to: far past any plan Meshy sells, and short of nonsense. */
+/** The most a monthly limit can be set to: far past any plan Meshy or ElevenLabs sells, and short of nonsense. */
 export const PLUGIN_MONTHLY_LIMIT_MAX = 1_000_000
 /** Meshy's monthly credit limit when an account is added, its Pro plan's credits (ADR-0141). */
 export const MESHY_MONTHLY_LIMIT_DEFAULT = 1_000
+/**
+ * ElevenLabs' monthly limit when an account is added, in whole US dollars at its published API prices (Zach's pick on
+ * #2498, November 15, 2026): ElevenLabs bills its API in dollars, not credits.
+ */
+export const ELEVENLABS_MONTHLY_LIMIT_DEFAULT = 10
 /** What an account that spends may spend: whether each paid thing asks first, and the most it spends in a month. */
 export const pluginSpendingSchema = z.object({ askBefore: z.boolean(), monthlyLimit: z.number().int().min(0).max(PLUGIN_MONTHLY_LIMIT_MAX) }).strict()
 export type PluginSpending = z.infer<typeof pluginSpendingSchema>
+/** The plugins whose accounts spend, and so carry an Ask before each switch and a monthly limit. */
+export const SPENDING_PLUGIN_IDS = ['meshy', 'elevenlabs'] as const
+export type SpendingPluginId = typeof SPENDING_PLUGIN_IDS[number]
 /** Whether a plugin's accounts spend, and so carry an Ask before each switch and a monthly limit. */
-export const isSpendingPlugin = (plugin: string): plugin is 'meshy' => plugin === 'meshy'
+export const isSpendingPlugin = (plugin: string): plugin is SpendingPluginId => (SPENDING_PLUGIN_IDS as readonly string[]).includes(plugin)
+/**
+ * Each spending plugin's monthly limit when an account is added, in the unit the service bills in: Meshy's credits,
+ * ElevenLabs' whole US dollars.
+ */
+export const PLUGIN_MONTHLY_LIMIT_DEFAULTS: Readonly<Record<SpendingPluginId, number>> = { meshy: MESHY_MONTHLY_LIMIT_DEFAULT, elevenlabs: ELEVENLABS_MONTHLY_LIMIT_DEFAULT }
 
 /** An account as the window sees it. `signedInAs` is the service's own name for the account, when it gave one. */
 export const pluginAccountSchema = z.object({
@@ -288,7 +302,7 @@ export const pluginAccountSchema = z.object({
   /**
    * What an account that spends may spend (ADR-0205 decision 7, ADR-0141; Zach's pick on November 15, 2026 that it
    * lives on the account): whether each paid thing asks first, on by default, and the most it spends in a month.
-   * Only Meshy's accounts have it so far, in Meshy's credits.
+   * Meshy's accounts have it in Meshy's credits, and ElevenLabs' in whole US dollars.
    */
   spending: pluginSpendingSchema.optional(),
   /**

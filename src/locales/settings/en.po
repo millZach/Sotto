@@ -174,6 +174,10 @@ msgstr "{computer}’s Sotto cannot keep account copies now, so it cannot say wh
 msgid "{computer}’s Sotto cannot keep account copies. Update Sotto on {computer}, and the copy is sent."
 msgstr "{computer}’s Sotto cannot keep account copies. Update Sotto on {computer}, and the copy is sent."
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "{computer}’s Sotto cannot keep an ElevenLabs account’s copy. Update Sotto on {computer}, and the copy is sent."
+msgstr "{computer}’s Sotto cannot keep an ElevenLabs account’s copy. Update Sotto on {computer}, and the copy is sent."
+
 #: src/renderer/src/features/settings/AgentAccountSettings.tsx
 msgid "{count, plural, one {{hosts} doesn’t let this computer answer permission requests yet, so its new threads start on \"{asking}\".} other {{hosts} don’t let this computer answer permission requests yet, so their new threads start on \"{asking}\".}}"
 msgstr "{count, plural, one {{hosts} doesn’t let this computer answer permission requests yet, so its new threads start on \"{asking}\".} other {{hosts} don’t let this computer answer permission requests yet, so their new threads start on \"{asking}\".}}"
@@ -976,6 +980,10 @@ msgstr "A host name, an alias from your SSH configuration or user@server."
 msgid "A limit is a whole number of credits, from 0 to 1,000,000."
 msgstr "A limit is a whole number of credits, from 0 to 1,000,000."
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "A limit is a whole number of dollars, from 0 to 1,000,000."
+msgstr "A limit is a whole number of dollars, from 0 to 1,000,000."
+
 #: src/renderer/src/features/settings/NightFallsSettings.tsx
 msgid "A line of stars sweeps across, with a faint trail behind it."
 msgstr "A line of stars sweeps across, with a faint trail behind it."
@@ -1133,6 +1141,14 @@ msgstr "Add a Vercel account"
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Add account"
 msgstr "Add account"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Add an ElevenLabs account"
+msgstr "Add an ElevenLabs account"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Add another ElevenLabs account"
+msgstr "Add another ElevenLabs account"
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Add another Gmail account"
@@ -1454,6 +1470,10 @@ msgstr "Ask about your threads, or say what to start or send"
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Ask before each 3D model"
 msgstr "Ask before each 3D model"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Ask before each sound"
+msgstr "Ask before each sound"
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Asked to cancel a deployment’s build"
@@ -2845,6 +2865,10 @@ msgstr "Each account’s secret is sent to the computers you paired as hosts, on
 msgid "Each kind of work starts on its own model, effort and permissions. Watcher names the role when it starts a worker, and a thread names it when it delegates. Defaults come from the providers you have connected; a choice you make here stays until you reset it."
 msgstr "Each kind of work starts on its own model, effort and permissions. Watcher names the role when it starts a worker, and a thread names it when it delegates. Defaults come from the providers you have connected; a choice you make here stays until you reset it."
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Each sound waits on a card in its thread that says what it costs, and nothing reaches ElevenLabs before you answer."
+msgstr "Each sound waits on a card in its thread that says what it costs, and nothing reaches ElevenLabs before you answer."
+
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
 msgid "Edit {name}"
 msgstr "Edit {name}"
@@ -2887,6 +2911,26 @@ msgstr "Effort color"
 #: src/renderer/src/features/settings/AppearanceSettings.tsx
 msgid "Effort color saved."
 msgstr "Effort color saved."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "ElevenLabs account {name}"
+msgstr "ElevenLabs account {name}"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "ElevenLabs already has as many accounts as Sotto keeps for one plugin. Nothing was saved. Remove one first."
+msgstr "ElevenLabs already has as many accounts as Sotto keeps for one plugin. Nothing was saved. Remove one first."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "ElevenLabs could not be reached to check the key. {kept} Check your connection, then try again."
+msgstr "ElevenLabs could not be reached to check the key. {kept} Check your connection, then try again."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "ElevenLabs did not accept this key. {kept} Check the key at {ELEVENLABS_KEYS_PAGE}. A restricted key must be allowed to read your account."
+msgstr "ElevenLabs did not accept this key. {kept} Check the key at {ELEVENLABS_KEYS_PAGE}. A restricted key must be allowed to read your account."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "ElevenLabs is turning requests away for now, so the key could not be checked. {kept} Wait a minute, then try again."
+msgstr "ElevenLabs is turning requests away for now, so the key could not be checked. {kept} Wait a minute, then try again."
 
 #. {label} is a provider's name.
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
@@ -3934,12 +3978,20 @@ msgid "Make a new code"
 msgstr "Make a new code"
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Make one at {ELEVENLABS_KEYS_PAGE}. Sotto checks it with ElevenLabs before saving it, without making anything, and never shows it again."
+msgstr "Make one at {ELEVENLABS_KEYS_PAGE}. Sotto checks it with ElevenLabs before saving it, without making anything, and never shows it again."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Make one at {MESHY_KEYS_PAGE}, on a paid Meshy plan: the free plan has no API. Sotto checks it with Meshy before saving it, without spending a credit, and never shows it again."
 msgstr "Make one at {MESHY_KEYS_PAGE}, on a paid Meshy plan: the free plan has no API. Sotto checks it with Meshy before saving it, without spending a credit, and never shows it again."
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Make one at {VERCEL_TOKENS_PAGE}. Sotto checks it with Vercel before saving it, and never shows it again."
 msgstr "Make one at {VERCEL_TOKENS_PAGE}. Sotto checks it with Vercel before saving it, and never shows it again."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Make speech, sound effects and music as files in a thread’s folder, with a key you paste. Sotto keeps the key in its encrypted store and makes each request itself, so no agent ever sees it. Nothing plays until you press Play. ElevenLabs may use what it is sent to train its own models, unless you turn that off under Data use in your ElevenLabs account."
+msgstr "Make speech, sound effects and music as files in a thread’s folder, with a key you paste. Sotto keeps the key in its encrypted store and makes each request itself, so no agent ever sees it. Nothing plays until you press Play. ElevenLabs may use what it is sent to train its own models, unless you turn that off under Data use in your ElevenLabs account."
 
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
 msgid "Match {system}"
@@ -4101,6 +4153,10 @@ msgstr "Monthly cap"
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Monthly credit limit"
 msgstr "Monthly credit limit"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Monthly limit in US dollars"
+msgstr "Monthly limit in US dollars"
 
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "More for {name}"
@@ -4599,6 +4655,10 @@ msgstr "Off on this computer. Connect to reach your other machines."
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Off, a thread makes 3D models without asking until the month’s limit is reached, and each one still shows in the thread with what it cost."
 msgstr "Off, a thread makes 3D models without asking until the month’s limit is reached, and each one still shows in the thread with what it cost."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Off, a thread makes sounds without asking until the month’s limit is reached, and each one still shows in the thread with what it cost."
+msgstr "Off, a thread makes sounds without asking until the month’s limit is reached, and each one still shows in the thread with what it cost."
 
 #: src/renderer/src/features/settings/themes/CreatureChoice.tsx
 msgid "Off, nothing stands above the composer. The sidebar still says when a thread is working or waiting."
@@ -5560,6 +5620,10 @@ msgid "Remove {removingName}?"
 msgstr "Remove {removingName}?"
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Remove <0>{name}</0>? Its API key is deleted from this computer, and threads lose the account at once. Nothing changes at ElevenLabs."
+msgstr "Remove <0>{name}</0>? Its API key is deleted from this computer, and threads lose the account at once. Nothing changes at ElevenLabs."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Remove <0>{name}</0>? Its API key is deleted from this computer, and threads lose the account at once. Nothing changes at Meshy."
 msgstr "Remove <0>{name}</0>? Its API key is deleted from this computer, and threads lose the account at once. Nothing changes at Meshy."
 
@@ -5626,6 +5690,10 @@ msgstr "Remove shortcut"
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Remove shortcut, {words}"
 msgstr "Remove shortcut, {words}"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Remove the ElevenLabs account {name}"
+msgstr "Remove the ElevenLabs account {name}"
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Remove the Gmail account {name}"
@@ -6473,6 +6541,10 @@ msgstr "Sotto cannot read its record of which computers keep a copy, so it sends
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Sotto checks it with Bridge first. The Bridge password saved now stays in use until the new one is accepted."
 msgstr "Sotto checks it with Bridge first. The Bridge password saved now stays in use until the new one is accepted."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sotto checks it with ElevenLabs first. The key saved now stays in use until the new one is accepted."
+msgstr "Sotto checks it with ElevenLabs first. The key saved now stays in use until the new one is accepted."
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Sotto checks it with Gmail first. The app password saved now stays in use until the new one is accepted."
@@ -7521,6 +7593,10 @@ msgid "The models {clientName} offers you now."
 msgstr "The models {clientName} offers you now."
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "The most Sotto spends through this account in a month, here and on the computers it is copied to, counted at ElevenLabs’ published API prices."
+msgstr "The most Sotto spends through this account in a month, here and on the computers it is copied to, counted at ElevenLabs’ published API prices."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "The most Sotto spends through this account in a month, here and on the computers it is copied to. Meshy’s Pro plan gives 1,000 credits a month."
 msgstr "The most Sotto spends through this account in a month, here and on the computers it is copied to. Meshy’s Pro plan gives 1,000 credits a month."
 
@@ -7805,6 +7881,10 @@ msgstr "There is already a Proton Mail account with that name. Nothing was saved
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "There is already a Vercel account with that name. Nothing was saved. Give this one another name."
 msgstr "There is already a Vercel account with that name. Nothing was saved. Give this one another name."
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "There is already an ElevenLabs account with that name. Nothing was saved. Give this one another name."
+msgstr "There is already an ElevenLabs account with that name. Nothing was saved. Give this one another name."
 
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
 msgid "These shortcuts are Hyprland bindings, so keys Hyprland already uses can’t be one of them. Press Cancel on the widget to stop without transcribing."

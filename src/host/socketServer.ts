@@ -36,7 +36,7 @@ import { hostMachineReportSchema } from '../shared/hostFacts'
 import { projectOriginsSchema, projectSetupResultSchema, type ProjectOrigins } from '../shared/workerMachine'
 import { desktopDefaultsReceiptSchema } from '../shared/desktopDefaults'
 import { heldPluginAccountCopiesSchema, pluginAccountCopyReceiptSchema, pluginAccountCopyRemovedSchema, spendingReportsSchema } from '../shared/pluginAccountCopies'
-import { gitHubSignInSchema, isBridgePlugin, isMailPlugin, isSpendingPlugin } from '../shared/plugins'
+import { gitHubSignInSchema, isBridgePlugin, isMailPlugin } from '../shared/plugins'
 import { MODEL_VISUAL_KIND, type HostModelViews, model3dHostBytesSchema, model3dHostNewsSchema, model3dListSchema, model3dRemovalSchema, model3dViewOrNullSchema } from '../shared/models3d'
 import { ProviderSignInRefusal, type ProviderSignIns } from './providerSignIn'
 import { DEFLATE_RESPONSE, deflateOffered, SocketFrames } from './socketFrames'
@@ -468,6 +468,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'plugin-mail-copies' || service.supportsPluginMailCopies === true && desktopRecords)
     // A Meshy account's copy, with its switch and limit, wherever account copies are kept: this build knows Meshy.
     && (feature !== 'plugin-meshy-copies' || service.supportsPluginAccountCopies === true && desktopRecords)
+    // An ElevenLabs account's copy, with its switch and limit, the same way: this build knows ElevenLabs.
+    && (feature !== 'plugin-elevenlabs-copies' || service.supportsPluginAccountCopies === true && desktopRecords)
     // Shared spending for those copies (ADR-0205), only alongside them and only where this host counts its own.
     && (feature !== 'plugin-meshy-spending' || service.supportsPluginAccountCopies === true && service.supportsPluginMeshySpending === true && desktopRecords)
     // Its 3D models, shown on a recorded desktop (the Meshy plan's ticket 6, part 2), alongside those copies.
@@ -544,7 +546,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     .filter(feature => feature !== 'host-update' || mayUpdate(peer))
     .filter(feature => feature !== 'branch-moves' && feature !== 'thread-move' && feature !== 'thread-move-source' && feature !== 'thread-move-keep' || (options.watcherDesktops?.has(peer.client.clientId) ?? false))
     // An account copy carries a secret, so it comes only from the desktop the launch script recorded (ADR-0205).
-    .filter(feature => feature !== 'plugin-account-copies' && feature !== 'plugin-mail-copies' && feature !== 'plugin-meshy-copies' && feature !== 'plugin-meshy-spending' || options.watcherDesktops?.has(peer.client.clientId) === true)
+    .filter(feature => feature !== 'plugin-account-copies' && feature !== 'plugin-mail-copies' && feature !== 'plugin-meshy-copies' && feature !== 'plugin-elevenlabs-copies' && feature !== 'plugin-meshy-spending' || options.watcherDesktops?.has(peer.client.clientId) === true)
     // A host thread's 3D models, their bytes and their lines go only to the desktop the launch script recorded, as its copies do.
     .filter(feature => feature !== 'plugin-meshy-models' || options.watcherDesktops?.has(peer.client.clientId) === true)
     // The account a host's gh is signed in to is its owner's own detail: told only to a recorded desktop.
@@ -2040,8 +2042,9 @@ export async function startSocketServer(options: SocketServerOptions) {
         if (isMailPlugin(request.copy.account.plugin) && !offers(peer, 'plugin-mail-copies')) throw new Refusal('invalid_request')
         // A Proton Mail account is never copied: its Bridge password is the desktop's Bridge's own.
         if (isBridgePlugin(request.copy.account.plugin)) throw new Refusal('invalid_request')
-        // A Meshy account only to a desktop it said it keeps one for.
-        if (isSpendingPlugin(request.copy.account.plugin) && !offers(peer, 'plugin-meshy-copies')) throw new Refusal('invalid_request')
+        // A Meshy or ElevenLabs account only to a desktop it said it keeps one for.
+        if (request.copy.account.plugin === 'meshy' && !offers(peer, 'plugin-meshy-copies')) throw new Refusal('invalid_request')
+        if (request.copy.account.plugin === 'elevenlabs' && !offers(peer, 'plugin-elevenlabs-copies')) throw new Refusal('invalid_request')
         try { return pluginAccountCopyReceiptSchema.parse(await service.keepPluginAccountCopy(request.copy, peer.client)) } catch { throw new Refusal('unavailable') }
       }
       case 'plugin-account-copy-remove': {
