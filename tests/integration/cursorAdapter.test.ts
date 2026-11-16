@@ -26,6 +26,52 @@ describe('Cursor ACP adapter', () => {
   const thread = async (id: string) => (await f!.host.snapshot()).threads.find(item => item.id === id)!
   const processes = async () => (await f!.requests()).filter(record => record.method === 'fixture/process').map(record => record.params as { args: string[]; environment: Record<string, string | undefined>; version: string })
 
+  // #2631: a Task subagent Cursor moves to the background keeps running after its tool call returns.
+  const subagentRow = async (id: string) => (await thread(id)).activities?.find(row => row.kind === 'subagent')
+  const backgroundTask = async (id: string, extra: Record<string, unknown> = {}) => {
+    expect(await f!.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm1', text: 'Draw the car' })).toEqual({ accepted: true })
+    await f!.action(id, { type: 'background-task', text: 'GT3 RS dimensioned drawing', ...extra })
+    // Its Task tool call has returned, and its row is still running, not completed at the return.
+    await expect.poll(async () => (await f!.requests()).filter(record => record.method === undefined && String(record.id).startsWith('cursor-')).length).toBeGreaterThanOrEqual(2)
+    expect(await subagentRow(id)).toMatchObject({ status: 'running', agents: [{ status: 'running' }] })
+    await expect.poll(async () => (await thread(id)).backgroundWork?.map(work => [work.label, work.type])).toEqual([['GT3 RS dimensioned drawing', 'subagent']])
+  }
+
+  it('keeps a subagent Cursor moved to the background running, as the thread’s background work, until Cursor says it ended', async () => {
+    const id = await open()
+    await backgroundTask(id)
+    expect(await subagentRow(id)).toMatchObject({ status: 'running', agents: [{ status: 'running' }] })
+    expect((await subagentRow(id))?.durationMs).toBeUndefined()
+    // The reply is written, but Cursor holds the prompt open while its subagent runs: the turn has not finished.
+    expect((await thread(id)).status).toBe('running')
+    await f!.action(id, { type: 'background-task-end' })
+    await expect.poll(async () => (await thread(id)).status).toBe('idle')
+    expect((await thread(id)).backgroundWork).toBeUndefined()
+    expect(await subagentRow(id)).toMatchObject({ status: 'completed', agents: [{ status: 'completed' }] })
+    expect((await thread(id)).lastTurn).toMatchObject({ status: 'completed' })
+    expect((await thread(id)).messages.at(-1)?.text).toContain('The drawing is done.')
+  })
+
+  it('lets a background subagent go with a lost Cursor process, so nothing counts it as working any more', async () => {
+    const id = await open()
+    await backgroundTask(id)
+    const started = (await f!.requests()).filter(record => record.method === 'fixture/process') as unknown as { params: { pid: number } }[]
+    process.kill(started.at(-1)!.params.pid, 'SIGKILL')
+    await expect.poll(async () => (await thread(id)).status).toBe('error')
+    expect((await thread(id)).backgroundWork).toBeUndefined()
+    expect(await subagentRow(id)).toMatchObject({ status: 'unknown', agents: [{ status: 'interrupted' }] })
+  })
+
+  it('shows what a background subagent asks on its own session, and a stop ends the subagent with the turn', async () => {
+    const id = await open()
+    await backgroundTask(id, { permission: 'Write drawing.svg' })
+    await expect.poll(async () => (await thread(id)).requests.length).toBe(1)
+    expect(await f!.host.execute({ type: 'interrupt', commandId: randomUUID(), threadId: id })).toEqual({ accepted: true })
+    await expect.poll(async () => (await thread(id)).status).toBe('idle')
+    expect((await thread(id)).backgroundWork).toBeUndefined()
+    expect((await subagentRow(id))?.status).toBe('interrupted')
+  })
+
   it('lists one model per entry, grouped by maker, with each model’s effort in Sotto’s order', async () => {
     f = await cursorFixture()
     const snapshot = await f.host.connect()

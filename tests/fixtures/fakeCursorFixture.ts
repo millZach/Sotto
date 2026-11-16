@@ -8,7 +8,7 @@ import type { AdapterContractSkips, AdapterSessionOptions, RecordedRpc } from '.
 import { parseProviderRecords, writeProviderAction } from './providerRecords'
 
 export const cursorFixtureSkips: AdapterContractSkips = {
-  backgroundWork: 'Cursor reports no work a turn leaves running.',
+  backgroundWork: 'Cursor keeps its prompt open while a subagent it moved to the background runs, so no work outlives its turn; cursorAdapter.test.ts covers it.',
   liveSettings: 'Cursor takes a model and effort before the prompt that needs them, not in place on a live turn.',
   settingsConfirmation: 'Cursor confirms a settings change in Sotto’s own record; there is no confirmation to lose.',
 }

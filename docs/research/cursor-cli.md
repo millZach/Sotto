@@ -86,6 +86,12 @@ Source: `cursor.com/docs/cli/acp.md`. The method names come from the ACP spec, `
   - `cursor/task` (subagents);
   - `cursor/generate_image`.
 - Clients that advertise a `subagents` capability get subagents as child sessions. Other clients get `cursor/task` (changelog v2026.09.15, Sep 15 2026).
+- What the `subagents` capability changes, read in Cursor 2026.11.11's own ACP code (`dist-package/6136.index.js`, November 15, 2026, #2631). A client says it with `clientCapabilities.subagents` or `clientCapabilities._meta.subagents` (`true` or an object), and Cursor answers `agentCapabilities.sessionCapabilities.subagents: {}`. Then:
+  - `session/update` `subagent_spawned` on the parent's session: `subagentSessionId`, `name` (the subagent type), `task`, `_meta.cursor.toolCallId` (the Task tool call's ID, the same one its `tool_call` updates carry), `agentId` and `model`.
+  - The subagent's own updates and requests on its own session (`subagentSessionId`), including `session/request_permission`.
+  - `subagent_state_update` on the parent's session when it ends: `state` `completed`, `failed`, `cancelled` or `disconnected`.
+  - The prompt stays open while any subagent runs, in the background or not; Cursor gives the parent each background subagent's result and the parent carries on in the same prompt. A new `session/prompt` or `session/cancel` cancels the turn's subagents.
+  - Without the capability none of that is sent. A Task moved to the background returns at once (`rawOutput` `{ durationMs, isBackground: true }`, and `cursor/task` with that `durationMs`), the prompt ends, and nothing more is said of it. `cursor/task` is sent either way.
 - Background shells that watch for output keep the prompt open until the output matches. Cancelling or sending a new prompt ends the wait (changelog v2026.10.08, Oct 8 2026).
 - If the user switches team while the ACP server runs, `session/new`, `session/load` and `session/prompt` fail. The server then exits (changelog v2026.10.08, Oct 8 2026).
 - MCP servers come from `.cursor/mcp.json` in the project or `~/.cursor/mcp.json`. Team MCP servers set in the dashboard are not supported in ACP mode.
