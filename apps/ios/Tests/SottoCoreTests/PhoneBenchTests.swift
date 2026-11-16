@@ -175,15 +175,19 @@ final class PhoneBenchTests: XCTestCase {
         let one = { (pushed: Data, revision: Int) in BenchWire.shellFrame(state: pushed, revision: revision + 1, base: revision, changed: [BenchWire.longThreadRecord(hostID: self.host, now: self.now)]) }
         report("shell-changed.bytes", Double(one(state, 1).count), "B")
         report("shell-changed.read", try await timed { _ = cache.whole(try await self.shell(one(self.state, revision))); revision += 1 }, "ms")
+        // `shell-real` the push with every part whole, as a host sends a connection's first; `shell-kept` each after it,
+        // its parts named kept (#2615).
         let sized = BenchWire.hostSizedState(state, now: now), kept = BenchWire.keptState(sized)
         var parts = KeptPartsCache()
-        let whole = try await shell(one(sized, revision))
-        _ = cache.whole(try XCTUnwrap(parts.whole(whole))); revision += 1
-        report("shell-real.bytes", Double(one(kept, 1).count), "B")
-        report("shell-real.read", try await timed {
-            let read = try await self.shell(one(kept, revision))
+        // Reads one list push of `pushed` and puts its kept parts back from the push before it.
+        func readPutBack(_ pushed: Data) async throws {
+            let read = try await self.shell(one(pushed, revision))
             _ = cache.whole(try XCTUnwrap(parts.whole(read))); revision += 1
-        }, "ms")
+        }
+        report("shell-real.bytes", Double(one(sized, 1).count), "B")
+        report("shell-real.read", try await timed { try await readPutBack(sized) }, "ms")
+        report("shell-kept.bytes", Double(one(kept, 1).count), "B")
+        report("shell-kept.read", try await timed { try await readPutBack(kept) }, "ms")
         let threads = ComputerThreads(hostID: host, name: "Laptop", status: .online, threads: held.host.threads)
         report("list.merged-300", try await timed { _ = ThreadGroups.merged([threads]) }, "ms")
 

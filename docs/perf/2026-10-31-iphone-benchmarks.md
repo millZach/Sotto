@@ -141,7 +141,7 @@ never drew) fails the script and is left out.
 | `list-scroll.worst.<count>` | Bodies of the Threads page's `SheetPage`, its list and its rows during the list's scroll in the worst of the five journeys, for the budgets of zero. |
 | `journey.page.<count>` | Over each journey up to the end of `back`, the Threads page coming into the window (`shown`), holding its list as it went out of sight (`holds`), holding it while still in the window (`held_in_window`), and turns of the main run loop that ended, after Core Animation's commit, with the page in the window and drawn from a held list (`stale_frames`). |
 | `stream.bytes/decode/apply_per_push.<kind>` | The stream's pushes: bytes, reading time, applying time. |
-| `stream-real-push.*` | The same rows as `stream`'s for the stream whose list pushes are the size a running host sends. |
+| `stream-real-push.*` | The same rows as `stream`'s for the stream whose list pushes are the size a running host sends. Its first list push, every part whole, is the kind `shell-whole`, and each after it, its parts named kept, `shell-kept` (#2615). |
 | `<idle>.app.cpu` | CPU time on every thread of the app over the idle phase's 30 seconds, in the journey. |
 | `<idle>.app.wakes_per_second` | Times a second the app's main run loop woke while the idle phase lasted, with the driver's display link and timer stopped. |
 | `<idle>.app.bodies`, `<idle>.app.body.<view>` | View bodies that ran in the idle phase: all of them, and each view that ran in any journey's idle. |
@@ -151,7 +151,7 @@ never drew) fails the script and is left out.
 | `<idle>.loops.spread` | The most minus the least CPU time among either side's three idle journeys. A `loops.app_cpu` under it is within the runner's noise. |
 | `loops.completed` | The idle journeys that finished, of six. |
 | `journey.frames_unread` | Frames the phone could not read or place in any phase, in the worst journey of any kind: a push it refused is work the benchmark never measured. |
-| `core.*` | SottoCore's timings on the runner's Mac, from `PhoneBenchTests`; `core.shell-real.*` reads a list push the size a host sends. |
+| `core.*` | SottoCore's timings on the runner's Mac, from `PhoneBenchTests`; `core.shell-real.*` reads a list push the size a host sends with every part whole, and `core.shell-kept.*` one with its parts named kept, as each push after a connection's first is (#2615). |
 
 Some counts have a budget, the most a change may leave them at (`BUDGETS` in `Scripts/bench-summary.py`); the workflow
 fails when the change's side is over one. Counts are the same on any runner, so a budget sits just above what the

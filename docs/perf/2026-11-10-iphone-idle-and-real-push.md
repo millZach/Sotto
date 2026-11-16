@@ -176,10 +176,12 @@ Two changes since this note made a running host's list pushes to a phone smaller
 | Parts made up beside the laptop's state | eight, 198,276 bytes | the three the phone reads, 66,842 bytes |
 | The first push | 200,499 bytes | every part whole |
 | Each push after it | 200,499 bytes | its parts named kept |
-| The run's 40 pushes | 8,019,965 bytes | 131,220 bytes, 3,280 a push |
+| The run's 40 pushes | 8,019,965 bytes | 131,220 bytes |
 
 The two columns are the change's iPhone benchmark run, [43738293914](https://github.com/millZach/Sotto/actions/runs/43738293914), five journeys a side, the same bytes in each. The phone puts the kept parts back from the push before (`KeptPartsCache`), as a connection to a host does. In `PhoneBenchTests`, BenchWire's frames compiled on their own, the first push is 68,462 bytes and each after it 1,347. A push after the first is smaller than the host's 1,826 bytes because the laptop's state holds four parts and a running host's about forty: the host's push also names those it kept. The phone reads past the names.
 
-The time went down only where the phone reads the frame alone. `core.shell-real.read` went from 1.10 ms to 0.32. In the app, `decode_per_push.shell` stayed about 100 ms (94.6 before, 109 after) and `cpu_per_chunk` about 170 ms (167, 190): that clock runs from the read to the main actor taking the frame back, and the main thread is busy for about 900 ms a second through both streams (`hitch_time_ratio`, 898 and 909). The unchanged `stream` phase moved by as much in the same run (`cpu_per_chunk` 176 and 150), so these timings don't separate the two.
+The 131,220 bytes are one push of about 69 KB and 39 of about 1.6 KB. That run's `bytes_per_push.shell`, 3,280, is neither size: it is the total divided by 40. From #2615 the two kinds have their own rows, `bytes_per_push.shell-whole` and `bytes_per_push.shell-kept`, and the same for decode and apply. The before column's 200,499 holds, every push being that size then.
+
+The time went down only where the phone reads the frame alone. The core row then named `core.shell-real.read` went from 1.10 ms to 0.32, but the 0.32 timed a push with its parts named kept. Since #2615 that row is `core.shell-kept.read`, and `core.shell-real.read` times the push with every part whole again. In the app, `decode_per_push.shell` stayed about 100 ms (94.6 before, 109 after) and `cpu_per_chunk` about 170 ms (167, 190): that clock runs from the read to the main actor taking the frame back, and the main thread is busy for about 900 ms a second through both streams (`hitch_time_ratio`, 898 and 909). The unchanged `stream` phase moved by as much in the same run (`cpu_per_chunk` 176 and 150), so these timings don't separate the two.
 
 So `stream-real-push`'s numbers from November 15 on aren't comparable with the earlier ones. The before column of run 43738293914 is the last measured at the November 10 size.

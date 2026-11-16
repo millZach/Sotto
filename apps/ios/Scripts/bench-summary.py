@@ -179,7 +179,9 @@ def app_metrics(folder):
         if values:
             rows[f"list-scroll.worst.{key}"] = {"value": max(values), "unit": "count", "n": len(values)}
     for name in STREAMS:
-        for kind in ["delta", "shell"]:
+        # `stream-real-push` counts its first list push, every part whole, as `shell-whole` and each after it as
+        # `shell-kept`, so each average is over pushes of one size (#2615); a kind a phase did not send has no row.
+        for kind in ["delta", "shell", "shell-whole", "shell-kept"]:
             put(f"{name}.bytes_per_push.{kind}", [c[f"bytes.{kind}"] / c[f"frames.{kind}"] if c.get(f"frames.{kind}") else None for c in counts[name]], "B")
             put(f"{name}.decode_per_push.{kind}", [ns_ms(c, f"time.decode.{kind}.ns", f"time.decode.{kind}.n") for c in counts[name]], "ms")
             put(f"{name}.apply_per_push.{kind}", [ns_ms(c, f"time.apply.{kind}.ns", f"time.apply.{kind}.n") for c in counts[name]], "ms")
