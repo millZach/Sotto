@@ -10,6 +10,7 @@ import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import type { PromptEditorElement } from '../../../src/renderer/src/agents/promptSelection'
 import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
+import { chooseSteps } from '../../../src/renderer/src/agents/stepsOpen'
 
 // The browser line (ADR-0154) is an Owl feature (ADR-0072); each test says whether this build has it.
 const gate = vi.hoisted(() => ({ on: true }))
@@ -196,7 +197,7 @@ describe('on Owl, a running turn\'s calls to Sotto\'s browser', () => {
   })
 
   it('do not draw a finished turn\'s group again when the running turn\'s records change', () => {
-    localStorage.setItem('sotto.threads.stepsOpen', 'true')
+    chooseSteps(THREAD, 'turn-0', true)
     // A finished turn that browsed, after the fixture's first exchange, then a running one after a second message.
     const earlier = [activity({ id: 'old-turn', turnId: 'turn-0', kind: 'turn', title: 'Turn', status: 'completed', startedAt: iso(-90_000), completedAt: iso(-80_000) }),
       ...run().map(item => ({ ...item, id: `old-${item.id}`, turnId: 'turn-0' }))]
@@ -234,7 +235,7 @@ describe('on stable', () => {
 
   it('keeps a finished turn\'s rows too', () => {
     gate.on = false
-    localStorage.setItem('sotto.threads.stepsOpen', 'true')
+    chooseSteps(THREAD, 'turn-1', true)
     const { transcript } = mount(stateWith({ status: 'idle', activities: [lifecycle('completed'), ...run()] }))
     expect(transcript.querySelector('.thread-browser')).toBeNull()
     expect(transcript.querySelectorAll('.thread-activity__row[data-kind="tool"]')).toHaveLength(4)

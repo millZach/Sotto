@@ -63,6 +63,18 @@ Drake asked for the steps to remember being opened across the whole app: open on
 
 This replaces "starts folded" for the working line and "opens on a press" for the Worked for line in the Decision above; both still open and fold on a press, and Escape still folds one level at a time.
 
+## November 15 amendment: only the line pressed opens
+
+Zach reported again that opening one turn's **Worked for** line opened every one in the thread. The November 12 amendment had stopped the lines on screen moving, but a press still set the answer, and a thread shown again draws its lines afresh: open one, go to another thread and come back, and every line in it came back open. Offered four answers on a question card, he wrote his own: "Only the one you click unfolds, everything else stays folded."
+
+**Every line starts folded.** The working line, the **Worked for** line and the work folded into a Watcher reply's header each start folded, and only a press on that line, Escape on it or **Show where it asked** opens or folds it. There is no answer any more: a press sets nothing for another turn, a new turn, another thread or the next window, and the value an earlier version kept in the renderer's storage is no longer read.
+
+**What the user chose is kept for the turn.** Sotto keeps each press by thread and turn for the window's life, as it kept the working line's, so a thread shown again draws each line as the user left it. A running turn's choice on its working line carries to its **Worked for** line or news header once it ends, and a press on that finished line is kept for the same turn. After a restart every line starts folded.
+
+**Groups inside an opened fold start open.** A fold draws its groups only once the user opens it, so they start open and the press shows the turn's steps, as it did. A group anywhere else starts folded, and a press on a group still keeps that group's own state without moving the fold around it.
+
+This replaces the October 26 amendment's **One answer, kept** and **Groups follow, never set**, which is what Drake asked for, and the November 12 amendment's "A press still sets the answer, so a line that shows after it starts that way". The iPhone is unchanged: it keeps each step run's state by its run.
+
 ## November 12 amendment: a press moves only the line pressed
 
 Zach reported that opening one turn's **Worked for** line opened every one in the thread, and asked that a press open only the one pressed. Each line on screen had followed the answer at once, so a press on one moved every line not yet pressed.

@@ -273,7 +273,7 @@ test('a turn a steer cut reads as steered, not stopped, at the minimum window', 
   } finally { await app.close() }
 })
 
-test('a press on one turn’s Worked for line opens or folds that turn alone', async () => {
+test('a press on one turn’s Worked for line opens or folds that turn alone, and it stays so when its thread is shown again', async () => {
   const { app, page } = await launch()
   try {
     await show(page, 'steered')
@@ -287,6 +287,13 @@ test('a press on one turn’s Worked for line opens or folds that turn alone', a
     await expect(steered).toHaveAttribute('aria-expanded', 'false')
     await expect(last).toHaveAttribute('aria-expanded', 'false')
     await expect(log.getByRole('button', { name: /^rg -n "patchLength" src,/ })).toHaveCount(0)
+    // Back from another thread, the one pressed is still the only one open (#2534 missed this: every fold came back open).
+    await page.evaluate(() => window.activityFixture!.open('footer-links'))
+    await expect(first).toHaveCount(0)
+    await page.evaluate(() => window.activityFixture!.open('wav-preview'))
+    await expect(first).toHaveAttribute('aria-expanded', 'true')
+    await expect(steered).toHaveAttribute('aria-expanded', 'false')
+    await expect(last).toHaveAttribute('aria-expanded', 'false')
     await last.click()
     await first.click()
     await expect(first).toHaveAttribute('aria-expanded', 'false')

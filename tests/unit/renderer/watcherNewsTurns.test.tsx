@@ -6,7 +6,7 @@ import type { AgentActivity } from '../../../src/shared/agentActivity'
 import type { AgentMessage } from '../../../src/shared/agents'
 import { closeReplies, MessageList, newSince, type ActivityContext } from '../../../src/renderer/src/agents/ThreadTranscript'
 import { placeActivities } from '../../../src/renderer/src/agents/threadActivityView'
-import { chooseWorkingLine } from '../../../src/renderer/src/agents/stepsOpen'
+import { chooseSteps } from '../../../src/renderer/src/agents/stepsOpen'
 
 // Watcher's conversation without its news wake-ups, as main presents it (watcherWakeUpsAsShown): each news turn's work
 // names a message the transcript does not have. Times follow Zach's Watcher thread of October 19, 2026.
@@ -123,7 +123,7 @@ describe('Watcher’s replies to news', () => {
     const { rerender } = render(<MessageList messages={shown} provider="Claude Code" running placement={placeActivities(shown, shown, live)} speaker="watcher"
       threadId="watcher" context={{ ...finished, liveTurn: 'news-2', running: true }} />)
     // The working line, drawn under the transcript, records the press this way.
-    chooseWorkingLine('watcher', 'news-2', true)
+    chooseSteps('watcher', 'news-2', true)
     rerender(<MessageList messages={shown} provider="Claude Code" running={false} placement={placeActivities(shown, shown, settled)} speaker="watcher"
       threadId="watcher" context={finished} />)
     expect(document.querySelector('[data-message-id="news-reply-2"] header button')).toHaveAttribute('aria-expanded', 'true')

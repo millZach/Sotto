@@ -20,7 +20,7 @@ import { followupsFor } from './ThreadFollowups'
 import { deliveryFor, deliveryPending, hasDraftContent, queuedRevision, submissionStatus, useSubmissions, useThreadComposer, type Submission, type SubmissionStatus, type ThreadDraftStore } from './threadDraftStore'
 import { clockLabel, type ThreadRow } from './threadFacts'
 import { useShared } from './stateSharing'
-import { forgetWorkingLine, setStepsOpen, useStepsStart, workingLineChoice } from './stepsOpen'
+import { chooseSteps, stepsOpen } from './stepsOpen'
 import { MessageContent, AttachmentPreviews } from './MessageContent'
 import { SentSkillsContext, useSentSkills } from './sentSkills'
 import { renderedPlainText, useTransientFlag, writeClipboard } from './richActions'
@@ -100,9 +100,11 @@ export interface ActivityContext {
   readonly onSeek?: ((message: HTMLElement) => void) | undefined
 }
 
-function ActivityGroups({ groups, context, outcome, bare }: {
+function ActivityGroups({ groups, context, outcome, bare, opened }: {
   readonly groups: readonly ActivityGroup[] | undefined; readonly context: ActivityContext; readonly outcome?: AgentActivity['status'] | undefined
   readonly bare?: boolean | undefined
+  /** Drawn inside a fold the user opened, so each group starts open. */
+  readonly opened?: boolean | undefined
 }): ReactNode {
   return groups?.map(group => {
     const compaction = compactionOf(group)
@@ -112,7 +114,7 @@ function ActivityGroups({ groups, context, outcome, bare }: {
       ? <CompactionLine key={group.key} record={compaction} />
       : group.turnId === context.liveTurn ? <LiveBrowserLines key={group.key} group={group} connected={context.connected} onDisclosure={context.onDisclosure} />
       : <ActivityGroupView key={group.key} group={group} live={false} threadRunning={context.running}
-        connected={context.connected} provider={context.provider} onDisclosure={context.onDisclosure} outcome={outcome} bare={bare} />
+        connected={context.connected} provider={context.provider} onDisclosure={context.onDisclosure} outcome={outcome} bare={bare} opened={opened} />
   }) ?? null
 }
 
@@ -195,7 +197,7 @@ function TurnWork({ headline, steps, did, delegated, moment, quiet, open, setOpe
     <section className="thread-work" data-expanded={open || undefined} data-moment={moment || undefined} data-quiet={quiet || undefined} data-turn-outcome={failed ? 'failed' : undefined} aria-labelledby={`${bodyId}-headline`}
       onKeyDown={foldOnEscape(open, summary => { onDisclosure(summary); setOpen(false) })}>
       <button type="button" className="thread-work__summary tt-focusable" aria-expanded={open} aria-controls={open ? bodyId : undefined}
-        onClick={event => { onDisclosure(event.currentTarget); setOpen(!open); setStepsOpen(!open) }}>
+        onClick={event => { onDisclosure(event.currentTarget); setOpen(!open) }}>
         <span id={`${bodyId}-headline`} className="thread-work__headline">{headline}{steps ? ` · ${stepsLabel(steps)}` : null}{did ? ` · ${did}` : null}{delegated}</span>
         <ChevronRight className="thread-activity__chevron" size={14} aria-hidden="true" />
       </button>
@@ -365,12 +367,12 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
   }, [rows, message.id])
   const workButton = useRef<HTMLButtonElement>(null)
   const [pressedOpen, setPressedOpen] = useState<boolean | null>(null)
-  const stepsStart = useStepsStart()
   const lifecycle = workGroups?.find(group => group.turn)?.turn
-  // A news turn's work folds into this reply's header once it ends, so the header starts as its working line was left,
-  // and a press here takes over from it, as a Worked for line's does.
-  const workOpen = pressedOpen ?? (lifecycle === undefined ? undefined : workingLineChoice(threadId, lifecycle.turnId)) ?? stepsStart
-  const setWorkOpen = (open: boolean): void => { setPressedOpen(open); if (lifecycle !== undefined) forgetWorkingLine(threadId, lifecycle.turnId) }
+  // A news turn's work folds into this reply's header once it ends, so the header starts as its working line was left, or
+  // folded, and a press here is kept for the turn, as a Worked for line's is.
+  const workTurn = lifecycle?.turnId ?? message.id
+  const workOpen = pressedOpen ?? stepsOpen(threadId, workTurn)
+  const setWorkOpen = (open: boolean): void => { setPressedOpen(open); chooseSteps(threadId, workTurn, open) }
   const workId = useId()
   const foldWork = (event: React.KeyboardEvent): void => {
     if (!workOpen || event.key !== 'Escape' || event.defaultPrevented || event.nativeEvent.isComposing || !workButton.current) return
@@ -407,12 +409,12 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
           are its name and its tooltip. One that failed, stopped or still runs says so in words, as a quiet turn's line does. */}
       {work ? <button type="button" ref={workButton} className="thread-message__work tt-focusable" aria-expanded={workOpen} aria-controls={workOpen ? workId : undefined}
         data-mark={workMark || undefined} title={workMark ? work : undefined}
-        onClick={event => { activity?.onDisclosure(event.currentTarget); setWorkOpen(!workOpen); setStepsOpen(!workOpen) }}>
+        onClick={event => { activity?.onDisclosure(event.currentTarget); setWorkOpen(!workOpen) }}>
         <span className={workMark ? 'tt-visually-hidden' : undefined}>{work}</span><ChevronRight className="thread-activity__chevron" size={13} aria-hidden="true" />
       </button> : null}</header>
     {work ? <TurnFailureReason turn={lifecycle} /> : null}
     {work && activity ? <Fold open={workOpen}><div id={workId} className="thread-message__work-body">
-      <ActivityGroups groups={folded(workGroups)} context={activity} outcome={lifecycle?.status} /></div></Fold> : null}
+      <ActivityGroups groups={folded(workGroups)} context={activity} outcome={lifecycle?.status} opened /></div></Fold> : null}
     <MessageContent text={markdown} streaming={writing} commands={message.role === 'assistant'} skills={message.role === 'user' && !wakeUp} />
     <AttachmentPreviews attachments={message.attachments ?? []} origin={threadId === undefined ? undefined : { threadId, messageId: message.id }} />
     {speaker === 'watcher' && message.role === 'assistant' && !writing ? <WatcherOwnChangeFor message={message} /> : null}
@@ -456,9 +458,8 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
   // Its work lines are worded by helpers, so it draws again when the interface language changes.
   useInterfaceLanguageState()
   // The turn holds its fold's state: what still works after the reply stands under it only while the fold is closed. Until
-  // pressed, the fold starts as the user last left any turn's steps when it first showed, and a press on another never moves it.
+  // pressed, the fold starts folded, and a press on another never moves it.
   const [pressedOpen, setPressedOpen] = useState<boolean | null>(null)
-  const stepsStart = useStepsStart()
   // A fork carries finished turns, so only a finished turn's newest written reply offers one (#1028, E5b).
   // Watcher's room shows no reply its provider made of an API error while Restart stopped threads is on (#2234).
   const failureWords = useContext(TurnFailureWordsContext)
@@ -537,11 +538,11 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
   const shown = (from: number, to: number): ReactNode => visuals.filter(visual => visual.at > from && visual.at < to)
     .map(({ message }) => <React.Fragment key={message.id}>{article(message)}</React.Fragment>)
   const lifecycle = groups.find(group => group.turn)?.turn
-  // A turn whose working line the user opened or folded stays that way once it ends.
-  const workOpen = pressedOpen ?? (lifecycle === undefined ? undefined : workingLineChoice(threadId, lifecycle.turnId)) ?? stepsStart
-  // A press on the finished turn's own line takes over from its working line, so the thread opened again starts it as the
-  // user last left a fold rather than as the working line was left.
-  const setWorkOpen = (open: boolean): void => { setPressedOpen(open); if (lifecycle !== undefined) forgetWorkingLine(threadId, lifecycle.turnId) }
+  // A turn whose working line the user opened or folded stays that way once it ends, and a press on the finished turn's own
+  // line is kept for the turn, so the thread shown again draws the fold as the user left it.
+  const workTurn = lifecycle?.turnId ?? turn.key
+  const workOpen = pressedOpen ?? stepsOpen(threadId, workTurn)
+  const setWorkOpen = (open: boolean): void => { setPressedOpen(open); chooseSteps(threadId, workTurn, open) }
   const moments = [...turn.replies.map(message => message.createdAt), ...groups.flatMap(group => group.records.map(record => record.completedAt ?? record.startedAt))]
   // A question a folded reply asked would fold away with it, so it is quoted under the fold (#1019).
   const lifted = work.flatMap(message => message.role === 'assistant' && !isWakeUpMessage(message) && asked(message).length ? [{ message, questions: asked(message) }] : [])
@@ -562,12 +563,12 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
     {turn.user ? article(turn.user) : null}
     <TurnWork records={records} headline={workHeadline(lifecycle, context.running, startedAt, moments)} steps={steps.length} did={workSummary(records)} sayOnce={sayOnce} delegated={<DelegatedWorkSummary views={delegations} />} moment={moment} quiet={quiet} open={workOpen} setOpen={setWorkOpen} turn={lifecycle} failed={lifecycle?.status === 'failed'}
       changes={turnChanges(groups)} onDisclosure={context.onDisclosure} onSeek={context.onSeek} lifted={lifted} who={speaker === 'watcher' ? 'Watcher' : provider}>
-      <ActivityGroups groups={folded(opening)} context={context} outcome={lifecycle?.status} bare={bare} />
+      <ActivityGroups groups={folded(opening)} context={context} outcome={lifecycle?.status} bare={bare} opened />
       {everything.filter(message => message !== final).map(message => <React.Fragment key={message.id}>
         {message === turn.user || unfolded.has(message) ? null : article(message)}
-        <ActivityGroups groups={folded(placement.after.get(message.id))} context={context} outcome={lifecycle?.status} bare={bare} />
+        <ActivityGroups groups={folded(placement.after.get(message.id))} context={context} outcome={lifecycle?.status} bare={bare} opened />
       </React.Fragment>)}
-      <ActivityGroups groups={folded(placement.after.get(final.id))} context={context} outcome={lifecycle?.status} bare={bare} />
+      <ActivityGroups groups={folded(placement.after.get(final.id))} context={context} outcome={lifecycle?.status} bare={bare} opened />
       <DelegatedWork views={delegations} />
     </TurnWork>
     <ThreadMediaTiles groups={groups} threadId={threadId} who={speaker === 'watcher' ? 'Watcher' : provider} />

@@ -24,7 +24,7 @@ import { shownCount, shownLineCount } from '../state/interfaceNumbers'
 import { focusComposerFrom, TurnFailureReason, useOwnServerTurnActions, type OwnServerTurnActions } from './OwnServerTurn'
 import { retryingWords, stillWaitingNote, stillWaitingWords, stopName, stopWords } from './ownServerTurnWords'
 import { heardFrom, LiveServerMark } from './ServerMark'
-import { chooseWorkingLine, readStepsOpen, setStepsOpen, useStepsStart, workingLineChoice } from './stepsOpen'
+import { chooseSteps, stepsOpen } from './stepsOpen'
 import {
   browserLineName, browserLinesByTurn, browserRunWords, browserStepWords, foldBrowserRuns, linesStartingIn, PLACE, plainWords, sentenceWords, stepUnfinished, turnBrowserLines,
   type ActivityItem, type BrowserLinesStore, type BrowserRun, type BrowserVerb, type BrowserWords, type TurnLinesView,
@@ -78,6 +78,8 @@ export interface ActivityGroupViewProps {
    * straight under that line, with no heading and no fold of their own.
    */
   readonly bare?: boolean | undefined
+  /** The group is drawn inside a fold the user opened, so it starts open and the press shows the turn's steps. */
+  readonly opened?: boolean | undefined
 }
 
 /** Whole seconds while the clock runs, so the number does not flicker through tenths. */
@@ -595,16 +597,15 @@ const ActivityRow = memo(function ActivityRow({ node, connected, provider, quiet
 /**
  * The work a provider reported after one message. Live, it lists its rows, which is how the working line shows the
  * running turn's steps once opened; settled, it folds to a single line, failures and all, and opens on a press (Zach's
- * pick, docs/prototypes/turn-steps-glow-prototype.html). Until pressed it starts as the user last left a turn's steps;
- * a press here does not change that, because the group usually sits inside a fold that follows it. Nothing here can act
- * on the provider or its agents.
+ * pick, docs/prototypes/turn-steps-glow-prototype.html). Inside a fold, which draws it once the user opens the fold, it
+ * starts open, so the press shows the turn's steps; anywhere else it starts folded. Nothing here can act on the provider
+ * or its agents.
  */
-export const ActivityGroupView = memo(function ActivityGroupView({ group, live, threadRunning, connected, provider, onDisclosure, outcome, bare = false }: ActivityGroupViewProps): ReactNode {
+export const ActivityGroupView = memo(function ActivityGroupView({ group, live, threadRunning, connected, provider, onDisclosure, outcome, bare = false, opened = false }: ActivityGroupViewProps): ReactNode {
   const { t } = useLingui()
   const [choice, setChoice] = useState<boolean | null>(null)
   const listId = useId()
-  const stepsStart = useStepsStart()
-  const expanded = choice ?? (live || stepsStart)
+  const expanded = choice ?? (live || opened)
   const headline = turnHeadline(group.turn, threadRunning)
   const summary = groupSummary(group.records)
   const lineCounts = recordsLineCounts(group.records)
@@ -751,9 +752,9 @@ function StepsButton({ steps }: { readonly steps: StepsDisclosure }): ReactNode 
     onClick={steps.onToggle}>{steps.label}<ChevronRight className="thread-activity__chevron" size={14} aria-hidden="true" /></button>
 }
 
-/** How a running turn's working line starts: as the user left it, or else from the answer as it stands now. */
+/** How a running turn's working line starts: as the user left it, or else folded. */
 function lineStart(threadId: string, turnId: string | null): { readonly threadId: string; readonly turnId: string | null; readonly open: boolean } {
-  return { threadId, turnId, open: turnId !== null && (workingLineChoice(threadId, turnId) ?? readStepsOpen()) }
+  return { threadId, turnId, open: turnId !== null && stepsOpen(threadId, turnId) }
 }
 
 /**
@@ -778,8 +779,7 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
   const stepsId = useId()
   const turnId = liveTurnId(thread)
   // The line stays mounted between turns and threads. Each turn holds what the user chose on its line, kept for the
-  // window's life so it holds when the thread is shown again; until then it starts from the answer as it stood when the
-  // turn began, so a press on another turn's fold leaves it be.
+  // window's life so it holds when the thread is shown again; until then it starts folded.
   const [held, setHeld] = useState(() => lineStart(thread.id, turnId))
   const start = held.threadId === thread.id && held.turnId === turnId ? held : lineStart(thread.id, turnId)
   if (start !== held) setHeld(start)
@@ -827,14 +827,14 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
   const pictures = useStepPictures(steps, !open)
   const checklist = plan ? <PlanSteps record={plan} live /> : null
   // The line holds the user's choice, and the turn's Worked for line takes it over once the turn ends.
-  const choose = (turnId: string, open: boolean): void => { setHeld({ threadId: thread.id, turnId, open }); chooseWorkingLine(thread.id, turnId, open) }
+  const choose = (turnId: string, open: boolean): void => { setHeld({ threadId: thread.id, turnId, open }); chooseSteps(thread.id, turnId, open) }
   const disclosure: StepsDisclosure | undefined = turnId === null || !steps.length ? undefined : {
     id: stepsId, label: stepsLabel(steps.length), open,
     opened: <Fold open={open}><div id={stepsId} className="thread-activity-live__steps">
       <WorkingFor startedAt={turn?.startedAt ?? sendingSince} connected={connected} steps={steps} />
       <ActivityGroupView group={{ key: `live:${turnId}`, turnId, anchorMessageId: null, records: steps }} live threadRunning connected={connected} provider={provider} onDisclosure={onDisclosure} />
     </div></Fold>,
-    onToggle: event => { onDisclosure?.(event.currentTarget); choose(turnId, !open); setStepsOpen(!open) },
+    onToggle: event => { onDisclosure?.(event.currentTarget); choose(turnId, !open) },
     onKeyDown: foldOnEscape(open, summary => { onDisclosure?.(summary); choose(turnId, false) }),
   }
   // Compaction holds the thread in the running state without a turn of its own, and a line saying the agent

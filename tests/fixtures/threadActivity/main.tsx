@@ -161,7 +161,12 @@ function state(scenario: Scenario): AgentState {
 }
 
 const params = new URLSearchParams(location.search)
-publishFixtureState(state((params.get('scenario') as Scenario | null) ?? 'settled'))
-window.activityFixture = { show: scenario => publishFixtureState(state(scenario)) }
+let shown: Scenario = (params.get('scenario') as Scenario | null) ?? 'settled'
+publishFixtureState(state(shown))
+// The page has no sidebar, so another thread is opened by making it the active one, as a press on its row does.
+window.activityFixture = {
+  show: scenario => { shown = scenario; publishFixtureState(state(scenario)) },
+  open: threadId => publishFixtureState({ ...state(shown), activeThreadId: threadId }),
+}
 
 createRoot(document.getElementById('root')!).render(<div style={{ display: 'flex', height: '100vh' }}><ThreadsView now={E2E_THREADS_NOW} /></div>)
