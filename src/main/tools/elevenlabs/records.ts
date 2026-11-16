@@ -49,7 +49,11 @@ const recordSchema = z.object({
  * What a forgotten thread's sound cost, kept so forgetting a thread never lowers the month's count: the account, when
  * it was asked for and the cost, and nothing else, as a 3D model's forgotten cost is. Kept for two months at most.
  */
-const spentSchema = z.object({ accountId: z.string().min(1).max(200), askedAt: at, cost: dollars.positive() }).strict()
+const spentSchema = z.object({
+  accountId: z.string().min(1).max(200), askedAt: at, cost: dollars.positive(),
+  /** A sound still being made when its record went keeps its ID, so a refusal that comes after can take its cost back. */
+  id: z.string().min(1).max(100).optional(),
+}).strict()
 type Spent = z.infer<typeof spentSchema>
 const SPENT_KEPT_MS = 62 * 24 * 60 * 60_000
 const fileSchema = z.object({ version: z.literal(1), sounds: z.array(z.unknown()), spent: z.array(z.unknown()).optional() })
@@ -72,6 +76,8 @@ export class SoundRecords {
   private spent: readonly Spent[] = []
   /** Whether the file may still hold words, so turning Keep local history off knows to write it again. */
   private wordsInFile = false
+  /** Changes that could not be written, by record, laid over the records at the next write. */
+  private readonly waiting = new Map<string, (record: SoundRecord) => SoundRecord>()
   private queue: Promise<unknown> = Promise.resolve()
   constructor(directory: string, private readonly options: { readonly historyEnabled: () => boolean; readonly kept?: number; readonly now?: () => Date }) {
     this.path = join(directory, 'sounds.json')
@@ -95,15 +101,35 @@ export class SoundRecords {
     })
   }
 
-  /** Changes one record. Undefined when it is gone, as when its thread was forgotten while it was being made. */
+  /**
+   * Changes one record. Undefined when it is gone, as when its thread was forgotten while it was being made. A change
+   * that cannot be written is kept in memory and written with the next change that can be, so a sound known to be
+   * refused is not left counted for want of one write (Sol's review); it still rejects, as the change is not yet kept.
+   */
   update(id: string, change: (record: SoundRecord) => SoundRecord): Promise<SoundRecord | undefined> {
     return this.inTurn(async () => {
       const records = await this.load()
       const index = records.findIndex(record => record.id === id)
       if (index < 0) return undefined
       const next = this.private(recordSchema.parse(change(records[index]!)))
-      await this.write(records.map((record, other) => other === index ? next : record))
+      const all = records.map((record, other) => other === index ? next : record)
+      try { await this.write(all) } catch (error) {
+        this.waiting.set(id, change)
+        throw error
+      }
       return next
+    })
+  }
+
+  /**
+   * Takes back the cost of a sound whose record went while it was made, once it is known not to have been made: its
+   * thread was forgotten, and ElevenLabs then refused it. Nothing when it was never held in the ledger.
+   */
+  refundForgotten(id: string): Promise<void> {
+    return this.inTurn(async () => {
+      await this.load()
+      if (!this.spent.some(entry => entry.id === id)) return
+      await this.write(this.records!, this.spent.filter(entry => entry.id !== id))
     })
   }
 
@@ -186,20 +212,18 @@ export class SoundRecords {
       if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT') { this.records = []; return this.records }
       throw error
     }
-    let records: SoundRecord[] = []
     let parsed: ReturnType<typeof fileSchema.safeParse> | undefined
     try { parsed = fileSchema.safeParse(JSON.parse(text)) } catch { parsed = undefined }
-    // A file that does not parse starts over, and may still hold words. A record this version cannot read is left out
-    // rather than failing the rest, and counts the same way.
-    if (!parsed?.success) this.wordsInFile = true
-    else {
-      records = parsed.data.sounds.flatMap(entry => {
-        const record = recordSchema.safeParse(entry)
-        if (!record.success || record.data.words !== undefined) this.wordsInFile = true
-        return record.success ? [this.private(record.data)] : []
-      })
-      this.spent = (parsed.data.spent ?? []).flatMap(entry => { const spent = spentSchema.safeParse(entry); return spent.success ? [spent.data] : [] })
-    }
+    // A file that does not parse is not read as no sounds, which would count the month from nothing and let the next
+    // write replace what it held: every change refuses until it can be read (Sol's review). A record this version
+    // cannot read is left out rather than failing the rest.
+    if (!parsed?.success) throw new Error('sound-records-unreadable')
+    const records = parsed.data.sounds.flatMap(entry => {
+      const record = recordSchema.safeParse(entry)
+      if (!record.success || record.data.words !== undefined) this.wordsInFile = true
+      return record.success ? [this.private(record.data)] : []
+    })
+    this.spent = (parsed.data.spent ?? []).flatMap(entry => { const spent = spentSchema.safeParse(entry); return spent.success ? [spent.data] : [] })
     this.records = records
     return records
   }
@@ -208,7 +232,12 @@ export class SoundRecords {
    * Writes the record whole and only then takes it as kept, so a failed write leaves what was kept as it was. What
    * forgotten sounds cost is kept for two months, which covers any month's count.
    */
-  private async write(records: SoundRecord[], spent: readonly Spent[] = this.spent): Promise<void> {
+  private async write(given: SoundRecord[], spent: readonly Spent[] = this.spent): Promise<void> {
+    // Changes that could not be written before go with this one.
+    const records = this.waiting.size === 0 ? given : given.map(record => {
+      const change = this.waiting.get(record.id)
+      return change ? this.private(recordSchema.parse(change(record))) : record
+    })
     const since = (this.options.now?.() ?? new Date()).getTime() - SPENT_KEPT_MS
     const keptSpent = spent.filter(entry => Date.parse(entry.askedAt) >= since)
     const next = `${this.path}.next`
@@ -222,11 +251,13 @@ export class SoundRecords {
     }
     this.records = records
     this.spent = keptSpent
+    this.waiting.clear()
     this.wordsInFile = records.some(record => record.words !== undefined)
   }
 }
 
 /** What records that go cost, by account and when each was asked for alone. */
 function spentOf(records: readonly SoundRecord[]): Spent[] {
-  return records.filter(record => record.cost > 0).map(record => ({ accountId: record.accountId, askedAt: record.askedAt, cost: record.cost }))
+  return records.filter(record => record.cost > 0)
+    .map(record => ({ accountId: record.accountId, askedAt: record.askedAt, cost: record.cost, ...(record.state === 'making' ? { id: record.id } : {}) }))
 }

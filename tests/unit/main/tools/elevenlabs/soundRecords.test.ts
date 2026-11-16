@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -70,6 +70,41 @@ describe('the record of sounds', () => {
     for (const cost of [0.1, 0.2, 0.3]) await records.add(sound({ cost }))
     expect(await records.list()).toHaveLength(2)
     expect((await records.monthSpent()).get(STUDIO)).toBeCloseTo(0.6, 9)
+  })
+
+  it('takes back the cost of a sound whose thread was forgotten while it was made, once it is known not to be made', async () => {
+    const records = new SoundRecords(directory, { historyEnabled: () => true, now: () => NOW })
+    const making = await records.add(sound({ cost: 0.5, state: 'making', fileName: undefined, bytes: undefined }))
+    await records.add(sound({ cost: 0.25, threadId: 'two' }))
+    await records.forgetThreads(['one'])
+    expect((await records.monthSpent()).get(STUDIO)).toBeCloseTo(0.75, 9)
+    expect(await records.update(making.id, record => ({ ...record, state: 'failed', cost: 0 }))).toBeUndefined()
+    await records.refundForgotten(making.id)
+    expect((await records.monthSpent()).get(STUDIO)).toBeCloseTo(0.25, 9)
+    // A made sound's cost in the ledger is never taken back.
+    await records.refundForgotten('sound-unknown')
+    expect((await records.monthSpent()).get(STUDIO)).toBeCloseTo(0.25, 9)
+  })
+
+  it('refuses to count a month from a file it cannot read, and leaves the file as it was', async () => {
+    await writeFile(join(directory, 'sounds.json'), '{"version":1,"sounds":[')
+    const records = new SoundRecords(directory, { historyEnabled: () => true, now: () => NOW })
+    await expect(records.monthSpent()).rejects.toThrow()
+    await expect(records.add(sound())).rejects.toThrow()
+    expect(await file()).toBe('{"version":1,"sounds":[')
+  })
+
+  it('writes a change it could not write with the next one, so a refused sound is not left counted', async () => {
+    const records = new SoundRecords(directory, { historyEnabled: () => true, now: () => NOW })
+    const making = await records.add(sound({ cost: 0.5, state: 'making', fileName: undefined, bytes: undefined }))
+    // The next write cannot be made: its file's place is taken by a folder.
+    await mkdir(join(directory, 'sounds.json.next'))
+    await expect(records.update(making.id, record => ({ ...record, state: 'failed', failure: 'rejected', cost: 0 }))).rejects.toThrow()
+    await rm(join(directory, 'sounds.json.next'), { recursive: true })
+    await records.add(sound({ cost: 0.1 }))
+    expect((await records.list()).find(record => record.id === making.id)).toMatchObject({ state: 'failed', cost: 0 })
+    expect((await records.monthSpent()).get(STUDIO)).toBeCloseTo(0.1, 9)
+    expect(JSON.parse(await file()).sounds.find((record: SoundRecord) => record.id === making.id).state).toBe('failed')
   })
 
   it('settles a sound cut off when Sotto last stopped as stopped, its cost still counted', async () => {

@@ -78,7 +78,10 @@ export class ElevenLabsSounds {
         : request.kind === 'effect' ? await api.soundEffect({ words: request.words, ...(request.seconds !== undefined ? { seconds: request.seconds } : {}) })
           : await api.music({ words: request.words, seconds: request.seconds ?? 0, instrumental: request.instrumental === true })
       const saved = await saveSound(answer, { root: request.root, folder: request.folder ?? SOUND_FOLDER, name: request.name })
-      return await this.end(sound.id, { state: 'made', folder: saved.folder, fileName: saved.fileName, bytes: saved.bytes })
+      const made = { state: 'made' as const, folder: saved.folder, fileName: saved.fileName, bytes: saved.bytes }
+      // The MP3 is in the thread's folder whether or not its record could be written, or its thread was forgotten:
+      // the agent is told where it is (Sol's review).
+      return await this.end(sound.id, made) ?? { ...sound, ...made }
     } catch (error) {
       // Sotto is stopping, and ElevenLabs may have made it already: the record stays as it is, counted, and is settled
       // as stopped when Sotto starts again.
@@ -86,7 +89,10 @@ export class ElevenLabsSounds {
       failure = error instanceof ElevenLabsApiError || error instanceof SoundSaveError || error instanceof SoundAccountError ? error.problem : 'unreachable'
     }
     // A sound ElevenLabs did not make, or Sotto did not save, costs nothing and is not counted (Zach's pick on #2498).
-    return await this.end(sound.id, { state: 'failed', failure, cost: 0 })
+    const ended = await this.end(sound.id, { state: 'failed', failure, cost: 0 })
+    // Its thread was forgotten while it was made: what it was counted at is taken back from the ledger (Sol's review).
+    if (ended === undefined) await this.options.records.refundForgotten(sound.id).catch(() => undefined)
+    return ended
   }
 
   /** Writes how a sound ended. Undefined when the record is gone, as with its thread forgotten, or cannot be written. */

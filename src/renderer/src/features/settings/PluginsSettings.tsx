@@ -836,16 +836,26 @@ function AccountSpending({ account, spending, bridge, onAccounts }: {
     const stop = bridge.onMeshyCreditsChanged?.(read)
     return () => { live = false; stop?.() }
   }, [bridge, account.id, meshy])
-  // What an ElevenLabs account's sounds cost this month on this computer, in US dollars, read when the row opens and
-  // again each time a sound is made or fails.
+  // What an ElevenLabs account's sounds cost this month on this computer, in US dollars, read when the row opens, again
+  // each time a sound is made or fails, and again as a new month starts by this computer's clock, so a row left open
+  // across the 1st does not show last month's figure as this month's (Sol's review).
   const [spentDollars, setSpentDollars] = useState<number | null>(null)
   useEffect(() => {
     if (!bridge?.elevenLabsSpent || meshy) return
     let live = true
+    let timer: ReturnType<typeof setTimeout> | undefined
     const read = (): void => { void bridge.elevenLabsSpent?.().then(spent => { if (live) setSpentDollars(spent[account.id] ?? 0) }, () => undefined) }
+    const atMonthStart = (): void => {
+      const now = new Date()
+      const next = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+      // A timer holds at most about 24 days, so a longer wait is looked at again part way.
+      const wait = Math.min(next.getTime() - now.getTime() + 1_000, 20 * 24 * 60 * 60_000)
+      timer = setTimeout(() => { if (Date.now() >= next.getTime()) read(); atMonthStart() }, wait)
+    }
     read()
+    atMonthStart()
     const stop = bridge.onElevenLabsSpentChanged?.(read)
-    return () => { live = false; stop?.() }
+    return () => { live = false; clearTimeout(timer); stop?.() }
   }, [bridge, account.id, meshy])
   // The figure shown follows what is kept, once the newest save has answered.
   useEffect(() => { if (askedLimit.current === null) setLimit(String(spending.monthlyLimit)) }, [spending.monthlyLimit])

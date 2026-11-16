@@ -191,6 +191,27 @@ describe('making a sound through make_sound', () => {
     expect(t.made()).toEqual([])
   })
 
+  it('sees what changed while the month’s spending was last read, before anything is sent', async () => {
+    // Asking off, so the spending is read three times: before, after the account is looked at again, and in the turn.
+    const changes: [string, (world: { accounts: PluginAccount[] }, stop: AbortController) => void, string][] = [
+      ['asking back on', world => { world.accounts = [{ ...world.accounts[0]!, spending: { askBefore: true, monthlyLimit: 10 } }] }, 'turned asking back on'],
+      ['switched off', world => { world.accounts = [{ ...world.accounts[0]!, on: false }] }, 'was switched off, kept to other projects or removed'],
+      ['limit lowered', world => { world.accounts = [{ ...world.accounts[0]!, spending: { askBefore: false, monthlyLimit: 0 } }] }, 'so it would pass the limit'],
+      ['call stopped', (_world, stop) => { stop.abort() }, 'The call was stopped before the sound was asked for.'],
+    ]
+    for (const [what, change, words] of changes) {
+      const stop = new AbortController()
+      let counted = 0
+      const t = tools({ account: { spending: { askBefore: false, monthlyLimit: 10 } }, whileCounting: world => { if (counted++ === 2) change(world, stop) } })
+      const result = await t.make({ kind: 'effect', name: 'Rain', words: 'Rain on a tin roof' }, { signal: stop.signal })
+      expect(counted, what).toBe(3)
+      expect(result.isError, what).toBe(true)
+      expect(said(result), what).toContain(words)
+      expect(t.made(), what).toEqual([])
+      expect(t.asked, what).toEqual([])
+    }
+  })
+
   it('speaks in a voice named in any case, the account’s first when none is named, and refuses one it does not have, listing its voices', async () => {
     const named = tools()
     await named.make({ ...WELCOME, voice: 'adam' })

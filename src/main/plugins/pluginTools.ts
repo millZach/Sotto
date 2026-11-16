@@ -830,13 +830,16 @@ export class PluginToolServer implements ScopedThreadTools {
         return `Sotto could not read its record of what the ElevenLabs account "${now.name}" spent this month, so it cannot tell how much of the monthly limit is left. ${NOTHING_SOUNDED} Tell the user.`
       }
     }
-    /** Why this sound would pass the limit as the account stands now, or cannot be known to fit, or null when it fits. */
-    const overLimit = async (now: PluginAccount): Promise<string | null> => {
-      const used = await spent(now)
-      if (typeof used === 'string') return used
+    /** Why this sound would pass the limit, given what the month spent, or null when it fits. */
+    const overWords = (used: number, now: PluginAccount): string | null => {
       // A hair of rounding is let through, so a sum of prices that lands on the limit is under it.
       if (used + cost <= limitOf(now) + 1e-9) return null
       return `This sound would cost ${aboutDollars(cost)}, and ${dollarWords(used)} of the account's monthly limit of ${dollarLimit(limitOf(now))} is used this month, so it would pass the limit. ${NOTHING_SOUNDED} Tell the user, who can raise the limit in ${SETTINGS}.`
+    }
+    /** Why this sound would pass the limit as the account stands now, or cannot be known to fit, or null when it fits. */
+    const overLimit = async (now: PluginAccount): Promise<string | null> => {
+      const used = await spent(now)
+      return typeof used === 'string' ? used : overWords(used, now)
     }
     const over = await overLimit(account)
     if (over) { await kept('refused'); return text(over, true) }
@@ -876,14 +879,19 @@ export class PluginToolServer implements ScopedThreadTools {
     // The last look at the limit and the start run one at a time for an account, so two sounds asked for at once
     // cannot both fit under it: the one started first is counted, at its estimate, by the time the next one looks.
     const turn = await inTurn(this.soundTurns, now.id, async (): Promise<Awaited<ReturnType<PluginElevenLabsHandlers['make']>> | ThreadToolResult> => {
-      if (call.context.signal?.aborted || !this.admits(threadId)) { await kept('failed'); return text(`The call was stopped before the sound was asked for. ${NOTHING_SOUNDED}`, true) }
+      // What the month spent is read first, and the account looked at last: everything after that look runs without
+      // waiting, so a switch turned off, asking turned back on, a lower limit or a stopped call while either was read
+      // is seen before anything goes to ElevenLabs (Sol's review).
+      const used = await spent(now)
+      if (typeof used === 'string') { await kept('refused'); return text(used, true) }
       const latest = await this.handlers.findAccount(threadId, 'elevenlabs', account.name).catch(() => 'unknown' as const)
+      if (call.context.signal?.aborted || !this.admits(threadId)) { await kept('failed'); return text(`The call was stopped before the sound was asked for. ${NOTHING_SOUNDED}`, true) }
       if (typeof latest === 'string' || latest.id !== account.id) { await kept('failed'); return text(gone, true) }
       if (!allowed && latest.spending?.askBefore !== false) {
         await kept('refused')
         return text(`The user turned asking back on for the ElevenLabs account just now, so this sound was not asked for without a card. ${NOTHING_SOUNDED} Call ${MAKE_SOUND_TOOL} again; the user will be asked.`, true)
       }
-      const overNow = await overLimit(latest)
+      const overNow = overWords(used, latest)
       if (overNow) { await kept('refused'); return text(overNow, true) }
       try {
         return await elevenlabs.make({ threadId, accountId: now.id, kind, name, words, ...(voice ? { voice } : {}), ...(seconds !== undefined ? { seconds } : {}),
