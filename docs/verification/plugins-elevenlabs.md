@@ -133,8 +133,34 @@ no error. The account journey, `plugins-elevenlabs.spec.ts`, still passes.
 ## Part 3: the line in the thread
 
 Built on November 15, 2026, for the third part of slice 12: the sound's line in its thread, Zach's variant A on #2498
-(the tag `prototype/elevenlabs`), placed and drawn as a 3D model's line is. The built app was not run for this note;
-the screenshots come separately.
+(the tag `prototype/elevenlabs`), placed and drawn as a 3D model's line is.
+
+### In the built app
+
+`tests/e2e/plugins-elevenlabs-sound.spec.ts` goes on from part 2's journey. Its stand-in now answers with a real MP3:
+two seconds of silence as 77 MPEG-1 Layer III frames, which the window can play.
+
+Once **Make the sound** was pressed, the line came in under the agent's reply. It showed the wave tile, "Opening
+narration", "Speech · under $0.01 · ElevenLabs" and **Play**. Nothing in the window was playing.
+
+![The line](../../artifacts/plugins-elevenlabs/sound-line-dark-1280x800.png)
+
+The chevron opened the words in quotes, "Spoken in the voice Rachel · under $0.01 · made …", a chip ".mp3 31 KB" and
+**Show in File Explorer**. Escape closed it and gave focus back to the chevron.
+
+![The details](../../artifacts/plugins-elevenlabs/sound-line-open-dark-1280x800.png)
+
+**Play** fetched the MP3 and played it. The button turned to **Pause**, the length "0:02" joined the line, and the
+place slider under the row read "of 0:02". **Pause** stopped it and gave **Play** back.
+
+![Playing](../../artifacts/plugins-elevenlabs/sound-line-playing-dark-1280x800.png)
+
+It was checked in light at 1280x800 and in dark at the 820x560 minimum, and nothing in it reached past the thread's
+pane. The music's line came in the same way. Meshy's journey, `plugins-meshy-model.spec.ts`, still passes beside it.
+
+![In light](../../artifacts/plugins-elevenlabs/sound-line-light-1280x800.png)
+
+![At the minimum size](../../artifacts/plugins-elevenlabs/sound-line-dark-820x560.png)
 
 ### What covers it
 
@@ -174,5 +200,6 @@ the screenshots come separately.
 
 - A real ElevenLabs key. The check was run against the stand-in only.
 - A sound effect in the built app; the unit tests hold its card with and without a length.
-- The line in the thread in the built app (part 3): light and dark, reduced motion, 820x560, and a real MP3 playing.
+- The line with motion reduced, in the built app: the unit test holds the bar still.
+- A spoken MP3 from ElevenLabs, as against the stand-in's silence: that waits for Zach's key.
 - A host's threads making sounds with the copy (part 4).
