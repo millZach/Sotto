@@ -199,6 +199,9 @@ describe('a sound’s line in its thread', () => {
     const rain = (): HTMLElement => screen.getByRole('group', { name: 'Sound: Rain on a tin roof' })
     await userEvent.click(within(line()).getByRole('button', { name: 'Play Opening narration' }))
     expect(await within(line()).findByRole('button', { name: 'Pause Opening narration' })).toBeInTheDocument()
+    // Three seconds in when the rain is pressed.
+    let place = 3
+    Object.defineProperty(played[0]!, 'currentTime', { configurable: true, get: () => place, set: (seconds: number) => { place = seconds } })
     await userEvent.click(within(rain()).getByRole('button', { name: 'Play Rain on a tin roof' }))
     expect(await within(rain()).findByRole('button', { name: 'Pause Rain on a tin roof' })).toBeInTheDocument()
     expect(within(line()).getByRole('button', { name: 'Play Opening narration' })).toBeInTheDocument()
@@ -207,6 +210,8 @@ describe('a sound’s line in its thread', () => {
     expect(await within(rain()).findByRole('button', { name: 'Play Rain on a tin roof' })).toBeInTheDocument()
     expect(played).toHaveLength(3)
     expect(played[2]).toBe(played[0])
+    // From its place: nothing put it back to the start.
+    expect(played[0]!.currentTime).toBe(3)
     expect(plugins.soundBytes).toHaveBeenCalledTimes(2)
   })
 
