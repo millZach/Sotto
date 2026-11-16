@@ -1,0 +1,350 @@
+<!doctype html>
+<!--
+  PROTOTYPE - throwaway. Not the app. Plugins slice 12 (#2498, ADR-0205): an ElevenLabs account, and a sound a thread
+  makes with it, in today's Sotto.
+
+  Question: how a sound a thread made shows in its thread, given that nothing in Sotto speaks on its own (ADR-0068),
+  and what the account and the card that asks look like. Three looks for the line:
+    A  a quiet line, as a 3D model's is, with a Play button that plays only when pressed
+    B  a small player, with the sound's shape drawn and the words under it
+    C  the file alone, opened in the computer's own player, so nothing in Sotto plays sound at all
+  Prices are ElevenLabs' published API rates on November 15, 2026: speech $0.08 for 1,000 characters, sound effects
+  $0.12 a minute, music $0.15 a minute. The limit's unit and default are open questions on the card.
+
+  State lives in the URL: ?view=thread|settings, &line=a|b|c, &kind=speech|effect|music, &state=ask|making|done|failed,
+  &theme=light, &motion=reduced. The bar at the bottom is the prototype's, not the design. H hides it.
+  No network, no persistence, and no sound: Play only pretends.
+-->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sotto ElevenLabs - prototype</title>
+<style>
+:root,[data-theme=dark]{
+  --tt-canvas:oklch(0.115 0.008 265);--tt-surface:oklch(0.145 0.008 265);--tt-surface-elevated:oklch(0.185 0.008 265);--tt-surface-overlay:oklch(0.215 0.008 265);
+  --tt-surface-sunken:oklch(0.155 0.008 265);--tt-sidebar:oklch(0.235 0.003 265);--tt-field:oklch(0.145 0.008 265);--tt-code-bg:oklch(0.155 0.008 265);
+  --tt-message-surface:oklch(0.205 0.014 265);
+  --tt-text:oklch(0.985 0.005 280);
+  --tt-text-2:color-mix(in oklab,oklch(0.985 0.005 280) 55%,oklch(0.72 0.014 265));
+  --tt-text-muted:color-mix(in oklab,oklch(0.72 0.014 265) 85%,oklch(0.985 0.005 280));
+  --tt-hairline:oklch(0.285 0.02 265);
+  --tt-border:color-mix(in oklab,oklch(0.375 0.024 265) 25%,oklch(0.72 0.014 265));
+  --tt-border-faint:oklch(0.305 0.02 265);
+  --tt-sidebar-row-active:oklch(0.32 0.025 190);
+  --tt-accent:oklch(0.714403 0.104089 183.092);--tt-on-accent:oklch(0.16 0.012 190);--tt-accent-text:oklch(0.83 0.08 183);
+  --tt-accent-surface:oklch(0.32 0.05 185);--tt-hover:color-mix(in srgb,oklch(0.32 0.05 185) 70%,transparent);
+  --tt-error:oklch(0.702184 0.189226 22.228);--tt-error-surface:oklch(0.29 0.04 20);
+  --tt-focus-ring:oklch(0.714403 0.104089 183.092);
+}
+[data-theme=light]{
+  --tt-canvas:oklch(0.978 0.004 85);--tt-surface:oklch(0.99 0.003 85);--tt-surface-elevated:oklch(0.955 0.006 85);--tt-surface-overlay:oklch(0.945 0.007 85);
+  --tt-surface-sunken:oklch(0.945 0.008 85);--tt-sidebar:oklch(0.955 0.008 85);--tt-field:oklch(0.99 0.003 85);--tt-code-bg:oklch(0.97 0.005 85);
+  --tt-message-surface:oklch(0.93 0.012 85);
+  --tt-text:oklch(0.235 0.014 75);
+  --tt-text-2:color-mix(in oklab,oklch(0.235 0.014 75) 55%,oklch(0.5 0.014 75));
+  --tt-text-muted:color-mix(in oklab,oklch(0.5 0.014 75) 85%,oklch(0.235 0.014 75));
+  --tt-hairline:oklch(0.86 0.012 80);
+  --tt-border:color-mix(in oklab,oklch(0.8 0.016 80) 25%,oklch(0.5 0.014 75));
+  --tt-border-faint:oklch(0.86 0.012 80);
+  --tt-sidebar-row-active:oklch(0.915 0.02 190);
+  --tt-accent:oklch(0.53 0.095 186);--tt-on-accent:oklch(0.99 0.003 85);--tt-accent-text:oklch(0.43 0.08 186);
+  --tt-accent-surface:oklch(0.92 0.03 186);--tt-hover:color-mix(in srgb,oklch(0.92 0.03 186) 70%,transparent);
+  --tt-error:oklch(0.509494 0.208583 28.513);--tt-error-surface:oklch(0.94 0.02 25);
+  --tt-focus-ring:oklch(0.53 0.095 186);
+}
+:root{--proto-bg:#111114;--proto-text:#ffffff;--proto-btn:#2a2a2e;--proto-on:#ff3d7f;--proto-line:#44444a}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--tt-canvas);color:var(--tt-text);font:14px/1.45 Figtree,system-ui,'Segoe UI',sans-serif;-webkit-font-smoothing:antialiased;overflow:hidden}
+button,input{font:inherit;color:inherit}
+button{background:none;border:0;cursor:pointer;border-radius:8px;padding:0}
+:focus-visible{outline:2px solid var(--tt-focus-ring);outline-offset:1px}
+svg.i{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.mono{font-family:'Spline Sans Mono',ui-monospace,Consolas,monospace}
+[data-motion=reduced] *{animation:none!important;transition:none!important}
+
+/* today's window */
+.win{display:grid;grid-template-columns:280px 1fr;height:100vh;height:100dvh}
+.side{background:var(--tt-sidebar);border-right:1px solid var(--tt-hairline);display:flex;flex-direction:column;min-width:0}
+.side-top{display:flex;align-items:center;gap:8px;height:44px;padding:0 12px}
+.logo{width:20px;height:20px;border-radius:6px;background:var(--tt-accent)}
+.search{margin:2px 8px 10px;display:flex;align-items:center;gap:8px;height:32px;padding:0 10px;border:1px solid var(--tt-border-faint);border-radius:8px;color:var(--tt-text-muted);font-size:13.5px;background:var(--tt-field)}
+.grp-h{padding:6px 14px;font-size:12.5px;color:var(--tt-text-2)}
+.row{margin:0 6px;padding:7px 10px;border-radius:8px;display:grid;gap:2px}
+.row.on{background:var(--tt-sidebar-row-active)}
+.row .t{font-size:13.5px;font-weight:500}
+.row .s{font-size:12.5px;color:var(--tt-text-muted)}
+.nav{display:grid;gap:2px;padding:4px 8px}
+.nav button{display:flex;align-items:center;gap:10px;height:36px;padding:0 10px;border-radius:8px;color:var(--tt-text-2);text-align:left}
+.nav button.on{background:var(--tt-sidebar-row-active);color:var(--tt-text)}
+.main{display:flex;flex-direction:column;min-width:0}
+.tbar{display:flex;align-items:center;gap:10px;height:44px;padding:0 16px}
+.tbar h1{margin:0;font-size:15px;font-weight:600}
+.tbar .crumb{font-size:13px;color:var(--tt-text-muted)}
+.msgs{flex:1;overflow:auto;padding:24px 20px 120px}
+.col{max-width:760px;margin:0 auto}
+.you{display:flex;justify-content:flex-end;margin:0 0 28px}
+.you .bub{background:var(--tt-message-surface);border-radius:14px;padding:12px 16px;max-width:80%}
+.who{font-size:12.5px;color:var(--tt-text-2);margin-bottom:6px}
+.agent p{margin:0 0 10px;font-size:15px;line-height:1.55;color:var(--tt-text-2)}
+.composer{margin:0 auto 14px;width:min(760px,calc(100% - 40px));border-radius:16px;background:var(--tt-surface-elevated);padding:14px 16px 10px;color:var(--tt-text-muted);height:84px}
+
+/* the plugin change card, as Meshy's is */
+.pcard{border-radius:16px;background:var(--tt-surface-elevated);padding:16px 17px;margin:20px 0 8px}
+.pcard h3{margin:0;display:flex;align-items:center;gap:10px;font-size:15px;font-weight:600}
+.tag{font-size:12.5px;font-weight:500;padding:2px 8px;border-radius:6px;background:var(--tt-canvas);color:var(--tt-text-2)}
+.pcard .target{margin:6px 0 12px;font-size:13px;color:var(--tt-text-2)}
+.pcard pre{margin:0 0 12px;padding:10px 12px;border:1px solid var(--tt-border);border-radius:8px;background:var(--tt-canvas);font:13px/1.55 'Spline Sans Mono',ui-monospace,Consolas,monospace;white-space:pre-wrap;color:var(--tt-text)}
+.btn{display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 16px;border:1px solid var(--tt-border);border-radius:8px;font-size:14px}
+.btn.primary{background:var(--tt-text);color:var(--tt-canvas);border-color:var(--tt-text);font-weight:600}
+.btn.small{height:30px;padding:0 12px;font-size:13px;border-color:var(--tt-border-faint)}
+.acts{display:flex;flex-wrap:wrap;gap:8px}
+
+/* A: the quiet line */
+.line{margin:14px 0 18px;background:var(--tt-surface-elevated);border-radius:16px;max-width:560px;overflow:hidden}
+.line[data-open="1"]{max-width:none}
+.line-row{display:flex;align-items:center;gap:12px;padding:10px}
+.tile{width:48px;height:48px;border-radius:10px;flex:none;display:grid;place-items:center;background:var(--tt-canvas);color:var(--tt-accent-text)}
+.tile svg.i{width:22px;height:22px}
+.txt{flex:1;min-width:0;display:grid}
+.txt b{font-size:14.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.txt span{font-size:13px;color:var(--tt-text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.txt .err{color:var(--tt-error)}
+.prog{height:4px;border-radius:99px;background:var(--tt-hairline);overflow:hidden;margin-top:6px;position:relative}
+.prog i{display:block;height:100%;background:var(--tt-accent);border-radius:99px}
+.prog.busy i{width:30%;animation:slide 1.4s ease-in-out infinite}
+@keyframes slide{from{transform:translateX(-100%)}to{transform:translateX(340%)}}
+.tbtn{height:30px;padding:0 10px;border:1px solid var(--tt-border-faint);border-radius:8px;font-size:13px;display:inline-flex;align-items:center;gap:6px}
+.tbtn:hover{background:var(--tt-hover)}
+.line-body{border-top:1px solid var(--tt-hairline);padding:12px 16px 14px;display:grid;gap:10px}
+.words{margin:0;color:var(--tt-text-2);font-size:14px;line-height:1.55}
+.facts{margin:0;color:var(--tt-text-muted);font-size:13px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border:1px solid var(--tt-hairline);border-radius:999px;font-size:12.5px;color:var(--tt-text-2)}
+.scrub{display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--tt-text-muted);font-variant-numeric:tabular-nums}
+.scrub .prog{flex:1;margin:0}
+.problem{padding:12px 16px;background:color-mix(in srgb,var(--tt-error-surface) 70%,var(--tt-surface-elevated));display:grid;gap:4px}
+.problem p{margin:0}.problem p+p{color:var(--tt-text-2);font-size:13.5px}
+
+/* B: a small player */
+.player{margin:14px 0 18px;background:var(--tt-surface-elevated);border-radius:16px;padding:14px 16px;display:grid;gap:10px}
+.player-head{display:flex;align-items:baseline;gap:10px}
+.player-head b{font-size:14.5px;font-weight:600}
+.player-head span{font-size:13px;color:var(--tt-text-muted)}
+.player-main{display:flex;align-items:center;gap:12px}
+.play{width:40px;height:40px;border-radius:50%;background:var(--tt-text);color:var(--tt-canvas);display:grid;place-items:center;flex:none}
+.play svg.i{fill:currentColor;stroke:none}
+.wave{flex:1;height:40px;display:flex;align-items:center;gap:2px;min-width:0}
+.wave i{flex:1;min-width:2px;border-radius:2px;background:var(--tt-border)}
+.wave i.done{background:var(--tt-accent)}
+.time{font-size:12.5px;color:var(--tt-text-muted);font-variant-numeric:tabular-nums;flex:none}
+
+/* C: the file alone */
+.fileline{margin:14px 0 18px;display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.filechip{display:inline-flex;align-items:center;gap:10px;min-height:44px;padding:6px 8px 6px 12px;border:1px solid var(--tt-border-faint);border-radius:12px;background:var(--tt-surface-elevated)}
+.filechip .n{font-size:14px}
+.filechip .m{font-size:12.5px;color:var(--tt-text-muted)}
+
+/* Settings > Plugins */
+.settings{flex:1;overflow:auto;padding:24px 28px 120px}
+.settings .col{max-width:860px}
+.sgroup{display:flex;align-items:center;gap:10px;margin:22px 0 10px;font-weight:600}
+.prow{border:1px solid var(--tt-border-faint);border-radius:14px;padding:14px 18px;margin-bottom:10px}
+.prow-head{display:flex;align-items:center;gap:12px}
+.prow-head b{font-size:15px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--tt-accent)}
+.dot.off{background:var(--tt-text-muted)}
+.prow-head .sp{flex:1}
+.prow p{margin:10px 0 0;color:var(--tt-text-2)}
+.acct{border:1px solid var(--tt-border-faint);border-radius:12px;padding:14px 18px;margin-top:14px;display:grid;gap:12px}
+.acct-head{display:flex;align-items:flex-start;gap:12px}
+.acct-head .sp{flex:1}
+.acct-head small{display:block;color:var(--tt-text-muted);font-size:13px}
+.acct h4{margin:0;font-size:13.5px;color:var(--tt-text-2);font-weight:600}
+.toggle{display:grid;grid-template-columns:auto 1fr;gap:2px 12px;align-items:center}
+.sw{width:42px;height:24px;border-radius:99px;background:var(--tt-accent);position:relative}
+.sw::after{content:"";position:absolute;right:3px;top:3px;width:18px;height:18px;border-radius:5px;background:var(--tt-canvas)}
+.toggle small{grid-column:2;color:var(--tt-text-muted);font-size:13px}
+.field label{display:block;font-weight:600;margin-bottom:4px}
+.field small{display:block;color:var(--tt-text-2);margin-bottom:6px}
+.field input{height:36px;width:160px;border:1px solid var(--tt-border-faint);border-radius:8px;background:var(--tt-field);padding:0 10px;text-align:right}
+.note{color:var(--tt-text-2);font-size:13.5px;margin:0}
+
+/* prototype switcher, not the design */
+.proto-bar{position:fixed;left:50%;bottom:12px;transform:translateX(-50%);z-index:100;display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:6px;padding:6px 8px;border-radius:20px;background:var(--proto-bg);color:var(--proto-text);font:12.5px/1 system-ui,'Segoe UI',sans-serif;box-shadow:0 10px 30px rgb(0 0 0 / 50%);border:2px solid var(--proto-on);max-width:calc(100vw - 16px)}
+.proto-bar button{white-space:nowrap;background:var(--proto-btn);color:var(--proto-text);border-radius:999px;padding:6px 10px}
+.proto-bar button.on{background:var(--proto-on)}
+.proto-bar .grp{display:flex;flex-wrap:wrap;gap:4px;padding-left:6px;border-left:1px solid var(--proto-line)}
+.proto-bar .grp:first-child{border-left:0;padding-left:0}
+.proto-show{position:fixed;right:10px;bottom:10px;z-index:100;background:var(--proto-bg);color:var(--proto-text);border:2px solid var(--proto-on);border-radius:999px;padding:5px 10px;font:12px system-ui,sans-serif}
+
+@media (max-width:760px){
+  .win{grid-template-columns:1fr}.side{display:none}
+  .msgs,.settings{padding:16px 12px 170px}.composer{width:calc(100% - 24px)}
+  .tbtn .lab{display:none}
+}
+</style>
+</head>
+<body>
+<div class="win" id="win"></div>
+<div class="proto-bar" id="bar" role="toolbar" aria-label="Prototype switcher"></div>
+<button class="proto-show" id="showBar" hidden>Show switcher (H)</button>
+<script>
+const I = {
+  wave:'<path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4"/>', bolt:'<path d="M13 3 5 14h6l-1 7 8-11h-6z"/>',
+  note:'<path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/>',
+  play:'<path d="M7 5v14l11-7z"/>', pause:'<path d="M8 5v14M16 5v14"/>', chev:'<path d="m6 9 6 6 6-6"/>',
+  file:'<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/>', folder:'<path d="M3 6a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/>',
+  out:'<path d="M7 17 17 7M9 7h8v8"/>', alert:'<path d="M12 4 2.5 20h19z"/><path d="M12 10v4M12 17v.01"/>',
+  search:'<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>', plug:'<path d="M9 3v5M15 3v5M6 8h12v3a6 6 0 0 1-12 0zM12 17v4"/>',
+  threads:'<path d="M4 5h11v8H8l-4 3z"/><path d="M15 9h5v8l-3-2h-6v-2"/>', cube:'<path d="M12 3 20 7.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5 12 12l8-4.5M12 12v9"/>',
+  gear:'<circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3"/>',
+};
+const ic = (n, fill) => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true"${fill ? ' style="fill:currentColor;stroke:none"' : ''}>${I[n]}</svg>`;
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+const KINDS = {
+  speech: { icon: 'wave', name: 'Opening narration', label: 'Speech', length: '0:08', seconds: 8, cost: 'about $0.01', file: 'Opening narration.mp3', size: '130 KB',
+    words: 'Welcome to Lumen. In the next two minutes you will set up your shop, add your first product and take your first order.', voice: 'Rachel',
+    sends: count => `Speaks these words in the voice Rachel (${count} characters):\n“Welcome to Lumen. In the next two minutes you will set up your shop, add your first product and take your first order.”`,
+    ask: 'Read the onboarding script aloud as an MP3 for the welcome video.' },
+  effect: { icon: 'bolt', name: 'Checkout chime', label: 'Sound effect', length: '0:02', seconds: 2, cost: 'under $0.01', file: 'Checkout chime.mp3', size: '33 KB',
+    words: 'A short, bright two-note chime, like a cash register in a quiet shop', sends: () => 'Makes a sound effect, 2 seconds long, from these words:\n“A short, bright two-note chime, like a cash register in a quiet shop”',
+    ask: 'Make a short chime for when an order goes through.' },
+  music: { icon: 'note', name: 'Calm intro loop', label: 'Music', length: '0:30', seconds: 30, cost: '$0.08', file: 'Calm intro loop.mp3', size: '480 KB',
+    words: 'Calm, warm acoustic guitar and soft piano, 30 seconds, no vocals, loops cleanly', sends: () => 'Makes music, 30 seconds long, with no singing, from these words:\n“Calm, warm acoustic guitar and soft piano, 30 seconds, no vocals, loops cleanly”',
+    ask: 'Make a 30 second music loop for the welcome video, no vocals.' },
+};
+const LINES = { a: 'A · quiet line', b: 'B · small player', c: 'C · file alone' };
+const STATES = ['ask', 'making', 'done', 'failed'];
+const params = new URLSearchParams(location.search);
+const st = { view: params.get('view') || 'thread', line: params.get('line') || 'a', kind: params.get('kind') || 'speech', state: params.get('state') || 'done',
+  theme: params.get('theme') || 'dark', motion: params.get('motion') || 'full', open: false, playing: false, at: 0 };
+let timer = null;
+function save() {
+  const p = new URLSearchParams({ view: st.view, line: st.line, kind: st.kind, state: st.state });
+  if (st.theme === 'light') p.set('theme', 'light'); if (st.motion === 'reduced') p.set('motion', 'reduced');
+  history.replaceState(null, '', '?' + p);
+}
+const clock = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+
+function card(k) {
+  const used = '$1.20 of its $10 used this month';
+  return `<section class="pcard" aria-label="Make a sound with ElevenLabs">
+    <h3>Make a sound with ElevenLabs <span class="tag">ElevenLabs</span></h3>
+    <div class="target">${esc(k.label)} · ${esc(k.name)}</div>
+    <pre>${esc(k.sends(k.words.length))}
+ElevenLabs may use what it is sent to train its own models, unless that is turned off in the ElevenLabs account.
+About ${esc(k.cost)} on the ElevenLabs account Studio; ${used}.
+The file goes to sounds in this thread’s folder. Nothing plays until you press Play.</pre>
+    <div class="acts"><button class="btn primary">Make the sound</button><button class="btn">Deny</button></div>
+  </section>`;
+}
+function sub(k) {
+  if (st.state === 'making') return `<span>Making the ${esc(k.label.toLowerCase())} with ElevenLabs…</span><div class="prog busy" role="progressbar" aria-label="Making the ${esc(k.label.toLowerCase())}"><i></i></div>`;
+  if (st.state === 'failed') return `<span class="err">Could not make it · nothing saved · nothing spent</span>`;
+  return `<span>${esc(k.label)} · ${k.length} · ${esc(k.cost)} · ElevenLabs</span>`;
+}
+function lineA(k) {
+  const done = st.state === 'done';
+  const playBtn = done ? `<button class="tbtn" id="play" aria-label="${st.playing ? 'Pause' : 'Play'} ${esc(k.name)}">${ic(st.playing ? 'pause' : 'play', !st.playing)}<span class="lab">${st.playing ? 'Pause' : 'Play'}</span></button>` : '';
+  const more = st.state === 'failed' ? `<button class="tbtn" id="toggle" aria-expanded="${st.open}">Show what happened ${ic('chev')}</button>`
+    : done ? `<button class="tbtn" id="toggle" aria-expanded="${st.open}" aria-label="${st.open ? 'Hide' : 'Show'} the details">${ic('chev')}</button>` : '';
+  const scrub = done && (st.playing || st.at > 0) ? `<div class="scrub" style="padding:0 12px 10px 70px"><span>${clock(st.at)}</span><div class="prog"><i style="width:${(st.at / k.seconds) * 100}%"></i></div><span>${k.length}</span></div>` : '';
+  let body = '';
+  if (st.open && done) body = `<div class="line-body"><p class="words">${st.kind === 'speech' ? `“${esc(k.words)}”` : `Made from “${esc(k.words)}”`}</p>
+      <p class="facts">${st.kind === 'speech' ? `Spoken in the voice ${k.voice} · ` : ''}${esc(k.cost)} · made 6:52 pm</p>
+      <div class="chips"><button class="chip">${ic('file')}<span class="mono">.mp3</span> ${k.size}</button><button class="chip">${ic('folder')} Show in Files</button></div></div>`;
+  if (st.open && st.state === 'failed') body = `<div class="problem"><p>The ${esc(k.name)} was not made.</p><p>ElevenLabs did not accept these words. Sotto saved no file, and nothing was counted against this month’s limit.</p></div>`;
+  return `<div class="line" role="group" aria-label="Sound: ${esc(k.name)}" data-open="${st.open ? 1 : 0}">
+    <div class="line-row"><div class="tile">${ic(st.state === 'failed' ? 'alert' : k.icon)}</div><div class="txt"><b>${esc(k.name)}</b>${sub(k)}</div>${playBtn}${more}</div>${scrub}${body}</div>`;
+}
+function lineB(k) {
+  if (st.state !== 'done') return lineA(k);
+  const bars = Array.from({ length: 64 }, (_, i) => { const h = 18 + Math.abs(Math.sin(i * 0.7) * 50 + Math.sin(i * 0.23) * 30); return `<i class="${i / 64 < st.at / k.seconds ? 'done' : ''}" style="height:${Math.min(100, h)}%"></i>`; }).join('');
+  return `<div class="player" role="group" aria-label="Sound: ${esc(k.name)}">
+    <div class="player-head"><b>${esc(k.name)}</b><span>${esc(k.label)} · ${esc(k.cost)} · ElevenLabs</span></div>
+    <div class="player-main"><button class="play" id="play" aria-label="${st.playing ? 'Pause' : 'Play'} ${esc(k.name)}">${ic(st.playing ? 'pause' : 'play', true)}</button><div class="wave" aria-hidden="true">${bars}</div><span class="time">${clock(st.at)} / ${k.length}</span></div>
+    <p class="words">${st.kind === 'speech' ? `“${esc(k.words)}”` : `Made from “${esc(k.words)}”`}</p>
+    <div class="chips"><button class="chip">${ic('file')}<span class="mono">.mp3</span> ${k.size}</button><button class="chip">${ic('folder')} Show in Files</button></div></div>`;
+}
+function lineC(k) {
+  if (st.state !== 'done') return lineA(k);
+  return `<div class="fileline" role="group" aria-label="Sound: ${esc(k.name)}">
+    <div class="filechip">${ic(k.icon)}<span><span class="n">sounds/${esc(k.file)}</span><br><span class="m">${esc(k.label)} · ${k.length} · ${esc(k.cost)} · ElevenLabs</span></span>
+    <button class="tbtn">${ic('out')}<span class="lab">Open</span></button></div>
+    <span class="m" style="color:var(--tt-text-muted);font-size:12.5px">Opens in your computer’s own player.</span></div>`;
+}
+function thread() {
+  const k = KINDS[st.kind];
+  const line = st.state === 'ask' ? card(k) : (st.line === 'b' ? lineB : st.line === 'c' ? lineC : lineA)(k);
+  return `<div class="tbar"><h1>Welcome video</h1><span class="crumb">/ Lumen shop</span></div>
+    <div class="msgs"><div class="col">
+      <div class="you"><div class="bub"><div class="who">You · 6:51 pm</div>${esc(k.ask)}</div></div>
+      <div class="agent"><div class="who">Claude Code · 6:52 pm</div><p>${st.state === 'ask' ? 'I’ll make it with ElevenLabs.' : 'Here it is, made with ElevenLabs.'}</p>${line}</div>
+    </div></div>
+    <div class="composer">${st.state === 'ask' ? 'Queued until you answer the card' : 'Reply…'}</div>`;
+}
+function settings() {
+  return `<div class="tbar"><h1>Settings</h1><span class="crumb">/ Plugins</span></div>
+  <div class="settings"><div class="col">
+    <div class="sgroup">${ic('cube')} 3D, sound and video</div>
+    <div class="prow"><div class="prow-head">${ic('cube')}<b>Meshy</b><span class="dot"></span><span>Studio</span><span class="sp"></span>${ic('chev')}</div></div>
+    <div class="prow"><div class="prow-head">${ic('wave')}<b>ElevenLabs</b><span class="dot"></span><span>Studio</span><span class="sp"></span>${ic('chev')}</div>
+      <p>Make speech, sound effects and music as files in a thread’s folder, with a key you paste. Sotto keeps the key in its encrypted store and makes each request itself, so no agent ever sees it. Nothing plays until you press Play. ElevenLabs may use what it is sent to train its own models, unless you turn that off under Data use in your ElevenLabs account.</p>
+      <div class="acct">
+        <div class="acct-head"><div><b>Studio</b><small>API key saved November 15 · Creator plan</small></div><span class="sp"></span><button class="btn small">Replace</button><button class="btn small" style="border:0;color:var(--tt-text-muted)">Remove</button></div>
+        <h4>What it spends</h4>
+        <div class="toggle"><span class="sw" aria-hidden="true"></span><b>Ask before each sound</b><small>Each sound waits on a card in its thread that says what it costs, and nothing reaches ElevenLabs before you answer.</small></div>
+        <div class="field"><label for="lim">Monthly limit</label><small>The most Sotto spends through this account in a month, here and on the computers it is copied to, at ElevenLabs’ API prices.</small><input id="lim" value="$10"></div>
+        <p class="note">Spent this month: $1.20 of $10.</p>
+        <h4>Recent use</h4>
+        <p class="note">Nov 15, 6:52 PM · Made speech in “Welcome video” · You allowed it.</p>
+      </div>
+    </div>
+  </div></div>`;
+}
+function render() {
+  document.documentElement.dataset.theme = st.theme;
+  document.documentElement.dataset.motion = st.motion;
+  document.getElementById('win').innerHTML = `<aside class="side"><div class="side-top"><span class="logo"></span></div><div class="search">${ic('search')} Search threads</div>
+    <div class="grp-h">Recent</div><div class="row on"><span class="t">Welcome video</span><span class="s">Lumen shop · 6:52 pm</span></div>
+    <div style="margin-top:auto" class="nav"><button class="${st.view === 'thread' ? 'on' : ''}" data-view="thread">${ic('threads')} Threads</button><button class="${st.view === 'settings' ? 'on' : ''}" data-view="settings">${ic('gear')} Settings › Plugins</button></div></aside>
+    <main class="main">${st.view === 'settings' ? settings() : thread()}</main>`;
+  bar(); save();
+}
+function bar() {
+  const b = (label, on, data) => `<button class="${on ? 'on' : ''}" ${data}>${label}</button>`;
+  document.getElementById('bar').innerHTML =
+    `<span class="grp">${b('Thread', st.view === 'thread', 'data-view="thread"')}${b('Account', st.view === 'settings', 'data-view="settings"')}</span>` +
+    `<span class="grp">${Object.entries(LINES).map(([k, v]) => b(v, st.line === k, `data-line="${k}"`)).join('')}</span>` +
+    `<span class="grp">${['speech', 'effect', 'music'].map(k => b(KINDS[k].label, st.kind === k, `data-kind="${k}"`)).join('')}</span>` +
+    `<span class="grp">${STATES.map(s => b({ ask: 'Asks', making: 'Making', done: 'Done', failed: 'Failed' }[s], st.state === s, `data-state="${s}"`)).join('')}</span>` +
+    `<span class="grp">${b(st.theme === 'light' ? 'Light' : 'Dark', false, 'data-theme-toggle')}${b(st.motion === 'reduced' ? 'Motion reduced' : 'Motion', false, 'data-motion-toggle')}${b('Hide', false, 'data-hide')}</span>`;
+}
+function stop() { clearInterval(timer); timer = null; st.playing = false; }
+document.addEventListener('click', e => {
+  const t = e.target.closest('button'); if (!t) return;
+  if (t.dataset.view) { st.view = t.dataset.view; }
+  else if (t.dataset.line) { st.line = t.dataset.line; stop(); st.at = 0; }
+  else if (t.dataset.kind) { st.kind = t.dataset.kind; stop(); st.at = 0; st.open = false; }
+  else if (t.dataset.state) { st.state = t.dataset.state; stop(); st.at = 0; st.open = false; }
+  else if ('themeToggle' in t.dataset) { st.theme = st.theme === 'light' ? 'dark' : 'light'; }
+  else if ('motionToggle' in t.dataset) { st.motion = st.motion === 'reduced' ? 'full' : 'reduced'; }
+  else if ('hide' in t.dataset) { document.getElementById('bar').hidden = true; document.getElementById('showBar').hidden = false; return; }
+  else if (t.id === 'showBar') { document.getElementById('bar').hidden = false; t.hidden = true; return; }
+  else if (t.id === 'toggle') { st.open = !st.open; }
+  else if (t.id === 'play') {
+    const k = KINDS[st.kind];
+    if (st.playing) stop();
+    else { st.playing = true; if (st.at >= k.seconds) st.at = 0; timer = setInterval(() => { st.at = Math.min(k.seconds, st.at + 0.25); if (st.at >= k.seconds) stop(); render(); document.getElementById('play')?.focus(); }, 250); }
+  } else return;
+  render();
+  if (t.id) document.getElementById(t.id)?.focus();
+});
+document.addEventListener('keydown', e => { if (e.key === 'h' || e.key === 'H') { const bar = document.getElementById('bar'); bar.hidden = !bar.hidden; document.getElementById('showBar').hidden = !bar.hidden; } });
+render();
+</script>
+</body>
+</html>
