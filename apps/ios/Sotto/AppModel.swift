@@ -2138,7 +2138,8 @@ struct RailAsk: Equatable {
     /// twentieth finishes a step and starts another. `done` is called after the last, or once the thread is closed. With
     /// `hostSized`, the shell pushes are what a running host sends a phone (#2390, #2595): the first carries the parts the
     /// phone reads whole (`BenchWire.hostSizedState`), and each after it names them and every other part kept
-    /// (`BenchWire.keptState`, `kept-parts`), made before the first word.
+    /// (`BenchWire.keptState`, `kept-parts`), made before the first word. Those are counted as `shell-whole` and
+    /// `shell-kept`, so each kind's average is over pushes of one size (#2615).
     func benchStream(chunks: Int, hostSized: Bool = false, done: @escaping @MainActor () -> Void) {
         guard let laptop = benchLaptop, let small = benchState else { done(); return }
         let ref = ThreadRef(hostID: laptop, threadID: BenchWire.longThreadID)
@@ -2157,8 +2158,8 @@ struct RailAsk: Equatable {
                 await benchDeliver(BenchWire.deltaFrame(chunk: chunk, revision: detail.revision, firstSequence: steps, now: now), kind: "delta")
                 if chunk % 5 == 0 {
                     let record = BenchWire.longThreadRecord(hostID: laptop, now: Date())
-                    let pushed = sentWhole ? (kept ?? state) : state
-                    await benchDeliver(BenchWire.shellFrame(state: pushed, revision: benchShellRevision + 1, base: benchShellRevision, changed: [record]), kind: "shell")
+                    let pushed = sentWhole ? (kept ?? state) : state, kind = !hostSized ? "shell" : sentWhole ? "shell-kept" : "shell-whole"
+                    await benchDeliver(BenchWire.shellFrame(state: pushed, revision: benchShellRevision + 1, base: benchShellRevision, changed: [record]), kind: kind)
                     benchShellRevision += 1
                     sentWhole = true
                 }
