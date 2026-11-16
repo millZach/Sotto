@@ -115,6 +115,32 @@ describe('a host’s sounds on the desktop', () => {
     }
   })
 
+  it('keeps no read that answers after newer news, nor one that answers after its host was let go', async () => {
+    // Sol's review: a slow read put back an older view, or a removed host's view with its words.
+    const up = { value: true }
+    const host = hostViews()
+    let answer: (view: SoundView) => void = () => undefined
+    host.views.view.mockImplementation(() => new Promise<SoundView>(resolve => { answer = resolve }))
+    const router = new DesktopHostRouter(emptyDesktopState)
+    router.add(forge(host.views, up))
+    const { made } = sounds(() => [...router.remoteConnections()], router)
+    const key = KEY
+    const slow = made.view(key)
+    host.tell({ threadId: 'props', view: { ...VIEW, state: 'made' } })
+    answer({ ...VIEW, state: 'making' })
+    expect((await slow)?.state).toBe('made')
+    up.value = false
+    expect((await made.view(key))?.state).toBe('made')
+    up.value = true
+    const late = made.view(key)
+    router.remove(FORGE)
+    answer({ ...VIEW, state: 'making', words: 'Words of a host let go' })
+    expect(await late).toBeNull()
+    up.value = false
+    expect(await made.view(key)).toBeNull()
+    made.close()
+  })
+
   it('stops hearing a host the router lets go, and drops what it kept of it', async () => {
     const router = new DesktopHostRouter(emptyDesktopState)
     const host = hostViews()

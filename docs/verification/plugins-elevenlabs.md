@@ -248,7 +248,8 @@ in a temporary folder, and nothing reached ElevenLabs.
 
 - `tests/unit/main/tools/elevenlabs/soundHostViews.test.ts`, the host's side: a sound's view by the host's ID with no
   path, and none for an unknown ID; its MP3 in 8 MiB parts cut from the one file it checked, so a file that changes
-  between parts is not mixed and a later part with nothing held is refused; nothing for an unknown ID, a folder outside
+  between parts is not mixed, and a later part with nothing held reads the file again and is refused unless the file is
+  still the one its digest names; nothing for an unknown ID, a folder outside
   the thread's, a file that is not an MP3 or one past 32 MiB; and news of each change as the record is now, with its
   thread, in order, and none once its thread is forgotten.
 - `tests/unit/main/hostSounds.test.ts`, the desktop's side: a host's sound is named by a key that names the host, and

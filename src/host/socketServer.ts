@@ -2158,9 +2158,11 @@ export async function startSocketServer(options: SocketServerOptions) {
       // A host thread's sounds (the plugins plan's slice 12, part 4b), for a recorded desktop's window: one sound's view by
       // the host's ID. Never a path.
       case 'plugin-elevenlabs-sound': {
-        // A desktop that asked at its hello but was recorded after it, as one being added is, has the list of desktops read
-        // again first, and from this answer on is sent sounds' lines and pushed their news.
-        const late = peer.elevenLabsSoundsAsked === true && peer.elevenLabsSounds !== true
+        // Only for a desktop whose hello asked for sounds: one that did not is told nothing of them, words or bytes
+        // (Sol's review). A desktop that asked at its hello but was recorded after it, as one being added is, has the list
+        // of desktops read again first, and from this answer on is sent sounds' lines and pushed their news.
+        if (peer.elevenLabsSoundsAsked !== true) throw new Refusal('invalid_request')
+        const late = peer.elevenLabsSounds !== true
         if (late) await options.watcherDesktops?.refresh().catch(() => undefined)
         if (!offers(peer, 'plugin-elevenlabs-sounds') || !service.pluginElevenLabsSounds) throw new Refusal('invalid_request')
         if (late) {
@@ -2172,7 +2174,7 @@ export async function startSocketServer(options: SocketServerOptions) {
       }
       // A part of a sound's MP3, on the same one-at-a-time guard as a picture: one large frame a socket.
       case 'plugin-elevenlabs-sound-bytes': {
-        if (!offers(peer, 'plugin-elevenlabs-sounds') || !service.pluginElevenLabsSounds) throw new Refusal('invalid_request')
+        if (peer.elevenLabsSounds !== true || !offers(peer, 'plugin-elevenlabs-sounds') || !service.pluginElevenLabsSounds) throw new Refusal('invalid_request')
         if (peer.preview) throw new Refusal('busy')
         peer.preview = true
         try { return soundHostBytesSchema.parse(await service.pluginElevenLabsSounds.bytes(request.request, peer.client.clientId)) }

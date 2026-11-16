@@ -33,6 +33,10 @@ export interface HostSoundsOptions {
 export class HostSounds {
   private readonly kept = new Map<string, SoundView>()
   private readonly heard = new Map<string, () => void>()
+  /** How many times each host was let go, so a read it was asked before then keeps nothing (Sol's review). */
+  private readonly lettings = new Map<string, number>()
+  /** How many views were kept for each key, so a read that answers after newer news keeps nothing of its own. */
+  private readonly versions = new Map<string, number>()
   private readonly stopConnected: () => void
   private readonly stopRemoved: () => void
 
@@ -52,10 +56,17 @@ export class HostSounds {
   async view(key: string): Promise<SoundView | null> {
     const target = this.target(key)
     if (!target) return this.kept.get(key) ?? null
+    const hostId = target.connection.hostId
+    const letting = this.lettings.get(hostId) ?? 0
+    const version = this.versions.get(key) ?? 0
     const view = await target.views.view(target.id).catch(() => undefined)
+    // The host was let go while this was asked: nothing of it is kept again.
+    if ((this.lettings.get(hostId) ?? 0) !== letting) return null
+    // Newer news came while this was asked: that is kept, and this older answer is not.
+    if ((this.versions.get(key) ?? 0) !== version) return this.kept.get(key) ?? null
     if (view === undefined) return this.kept.get(key) ?? null
     if (view === null) { this.kept.delete(key); return null }
-    return this.keep(target.connection.hostId, view)
+    return this.keep(hostId, view)
   }
 
   /**
@@ -98,8 +109,10 @@ export class HostSounds {
   private forget(hostId: string): void {
     this.heard.get(hostId)?.()
     this.heard.delete(hostId)
+    this.lettings.set(hostId, (this.lettings.get(hostId) ?? 0) + 1)
     const prefix = hostEntityKey(hostId, '')
     for (const key of [...this.kept.keys()]) if (key.startsWith(prefix)) this.kept.delete(key)
+    for (const key of [...this.versions.keys()]) if (key.startsWith(prefix)) this.versions.delete(key)
   }
 
   /** A connected host that shows its sounds here, with what it reads them by, for a key that names one of them. */
@@ -123,6 +136,7 @@ export class HostSounds {
   private keep(hostId: string, view: SoundView): SoundView {
     const key = hostEntityKey(hostId, view.id)
     const keyed: SoundView = { ...view, id: key }
+    this.versions.set(key, (this.versions.get(key) ?? 0) + 1)
     this.kept.delete(key)
     this.kept.set(key, keyed)
     while (this.kept.size > KEPT_VIEWS) this.kept.delete(this.kept.keys().next().value!)

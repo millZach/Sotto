@@ -99,6 +99,10 @@ describe('a host’s sounds over its listener', () => {
       // A client that is not a recorded desktop may not read them.
       expect(await phone.call('view', { op: 'plugin-elevenlabs-sound', request: { id: 'narration' } })).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
       expect(await phone.call('bytes', { op: 'plugin-elevenlabs-sound-bytes', request: { id: 'narration', offset: 0 } })).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+      // Nor may a recorded desktop whose hello did not ask for sounds, words or bytes (Sol's review).
+      expect(await before.call('view', { op: 'plugin-elevenlabs-sound', request: { id: 'narration' } })).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+      expect(await before.call('bytes', { op: 'plugin-elevenlabs-sound-bytes', request: { id: 'narration', offset: 0 } })).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+      expect(asked).toEqual([`narration:${recorded.clientId}`])
 
       // The news goes to the desktops that accepted it alone.
       for (const listener of listeners) listener({ threadId: 'props', view: { ...view, cost: 0.03 } })
