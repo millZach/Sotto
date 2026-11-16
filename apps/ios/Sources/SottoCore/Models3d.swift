@@ -29,10 +29,14 @@ public enum Models3d {
         if let digest { request["digest"] = .string(digest) }
         return ["op": .string("plugin-meshy-model-bytes"), "request": .object(request)]
     }
-    /// The file a 3D model's USDZ is kept under in the app's cache: one per computer and 3D model, named by neither's words.
-    public static func cacheName(hostID: String, id: String) -> String {
-        SHA256.hash(data: Data((hostID + "\n" + id).utf8)).map { String(format: "%02x", $0) }.joined() + ".usdz"
+    /// The folder a 3D model's copies are kept in, in the app's cache: one per computer and 3D model, named by neither's words.
+    public static func cacheFolder(hostID: String, id: String) -> String { hex(hostID + "\n" + id) }
+    /// The file one copy is kept under in that folder: named by the part, the file's name and its size as the view gives
+    /// them, so a file replaced on the computer is not taken for the copy kept before.
+    public static func cacheFile(part: Part, name: String, bytes: Int) -> String {
+        hex(part.rawValue + "\n" + name + "\n" + String(bytes)) + (part == .usdz ? ".usdz" : ".still")
     }
+    private static func hex(_ text: String) -> String { SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined() }
 }
 
 /// A 3D model's line in its thread: the message's visual, by the 3D model's ID, and its name.

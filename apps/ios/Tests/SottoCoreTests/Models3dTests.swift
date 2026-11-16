@@ -76,9 +76,14 @@ final class Models3dTests: XCTestCase {
         let later = Models3d.bytes(id: "barrel", part: .usdz, offset: 8 * mebibyte, digest: String(repeating: "a", count: 64))
         XCTAssertEqual(later["request"]?["offset"], .number(Double(8 * mebibyte)))
         XCTAssertEqual(later["request"]?["digest"], .string(String(repeating: "a", count: 64)))
-        // Named by neither the computer's nor the 3D model's words, one file each.
-        XCTAssertNotEqual(Models3d.cacheName(hostID: "a", id: "b"), Models3d.cacheName(hostID: "b", id: "a"))
-        XCTAssertTrue(Models3d.cacheName(hostID: "a", id: "b").hasSuffix(".usdz"))
+        // Kept in a folder named by neither the computer's nor the 3D model's words, one each, and under a file name that
+        // changes when the file does, so one replaced on the computer is fetched again (Sol's review).
+        XCTAssertNotEqual(Models3d.cacheFolder(hostID: "a", id: "b"), Models3d.cacheFolder(hostID: "b", id: "a"))
+        XCTAssertFalse(Models3d.cacheFolder(hostID: "forge", id: "barrel").contains("forge"))
+        let kept = Models3d.cacheFile(part: .usdz, name: "Oak barrel.usdz", bytes: 8192)
+        XCTAssertTrue(kept.hasSuffix(".usdz"))
+        XCTAssertNotEqual(kept, Models3d.cacheFile(part: .usdz, name: "Oak barrel.usdz", bytes: 8193))
+        XCTAssertNotEqual(kept, Models3d.cacheFile(part: .still, name: "Oak barrel.usdz", bytes: 8192))
     }
 
     func testAUSDZIsWrittenPartByPartAndKeptOnlyWhenItIsTheFileNamed() throws {

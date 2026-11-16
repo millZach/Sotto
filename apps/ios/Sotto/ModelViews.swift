@@ -62,8 +62,8 @@ private struct ModelLineRow: View {
         .onDisappear { shown = false }
         .task(id: model.online(ref.hostID)) { await model.load3dModel(ref.hostID, line.id) }
         .task(id: isDone(state)) {
-            guard isDone(state), still == nil else { return }
-            if let data = await model.still3dModel(ref.hostID, line.id, wanted: { shown }) { still = UIImage(data: data) }
+            guard case .done(let view) = state, still == nil else { return }
+            if let data = await model.still3dModel(ref.hostID, view, wanted: { shown }) { still = UIImage(data: data) }
         }
         .sheet(isPresented: $open) {
             ModelSheet3d(ref: ref, line: line, createdAt: createdAt, still: still, store: store).environmentObject(model)
@@ -222,7 +222,11 @@ private struct ModelSheet3d: View {
     private func stage(computer: String) -> some View {
         ZStack(alignment: .bottom) {
             RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Palette.raised)
-            if let scene, case .file = opening {
+            // A record that went while the sheet is open is no longer turned (Sol's review).
+            if store.isGone(ref.hostID, line.id) {
+                Text("Sotto no longer holds this 3D model.").font(.sotto(.small)).foregroundStyle(Palette.muted)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity).padding(Space.s4)
+            } else if let scene, case .file = opening {
                 ModelScene(scene: scene, label: String(localized: "Turn the \(line.name)", comment: "%@ is the name of a 3D model. Read by VoiceOver on the view that turns."))
                 Text("Drag to turn · pinch to zoom").font(.sotto(.caption)).foregroundStyle(Palette.muted).padding(.bottom, Space.s2).accessibilityHidden(true)
             } else {
