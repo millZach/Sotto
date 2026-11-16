@@ -130,8 +130,11 @@ export function useModelChoice(list: Models3dList, shown: readonly Model3dListed
   const [chosen, setChosen] = useState<string | null>(null)
   const selected = shown.find(model => model.id === chosen) ?? shown.find(model => model.state === 'done') ?? shown[0]
   const models = list.models
+  // The first 3D model shown is taken as chosen only while nothing else is: a click that lands before this effect runs
+  // is the newer choice and stays (main's run 43780549897, where a click on a host's 3D model was overwritten).
   useEffect(() => {
-    if (selected && (chosen === null || !models?.some(model => model.id === chosen))) setChosen(selected.id)
+    if (!selected) return
+    setChosen(now => now === null || !models?.some(model => model.id === now) ? selected.id : now)
   }, [selected, chosen, models])
   const current = useRef({ selected: selected?.id, shown })
   current.current = { selected: selected?.id, shown }
