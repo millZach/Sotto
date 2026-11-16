@@ -44,6 +44,11 @@ export interface PluginElevenLabsHandlers {
   voices(accountId: string): Promise<readonly ElevenLabsVoice[]>
   /** Starts one sound the user allowed, its record kept, counting its cost, before anything is sent. */
   make(request: SoundRequest): Promise<{ readonly sound: SoundRecord; readonly done: Promise<SoundRecord | undefined> }>
+  /**
+   * Places a sound that was started in its thread, as its line (the plugins plan's slice 12, part 3). False when it
+   * could not be placed, as with the thread's history unavailable; the sound is made all the same. Never rejects.
+   */
+  showInThread(threadId: string, sound: SoundRecord): Promise<boolean>
 }
 
 export const NOTHING_SOUNDED = 'Nothing was sent to ElevenLabs, and nothing was counted.'

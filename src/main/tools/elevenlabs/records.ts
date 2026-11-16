@@ -2,21 +2,20 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { z } from 'zod'
 import { monthOf } from '../../plugins/meshy/spending'
-import { SOUND_KINDS, SPEECH_CHARACTERS_MAX } from './api'
+import { SOUND_FAILURES, SOUND_KINDS, SOUND_STATES, SPEECH_CHARACTERS_MAX, type SoundFailure } from '../../../shared/sounds'
 
 /**
  * What became of a sound. `making` while ElevenLabs makes it and Sotto saves it, `made` with its MP3 in the thread's
  * folder, `failed` when ElevenLabs or the folder would not have it.
  */
-export const SOUND_STATES = ['making', 'made', 'failed'] as const
+export { SOUND_STATES }
 /**
  * Why a sound was not made, in one word: ElevenLabs' own (`refused`, `no-credits`, `rejected`, `busy`, `unreachable`,
  * `unreadable`), the save's (`folder`, `too-large`, and `unreachable` again for an answer that stopped), the account
  * gone (`no-account`) or its key unreadable (`locked`), or `stopped` when Sotto stopped while it was being made and
  * cannot tell whether ElevenLabs charged for it.
  */
-export const SOUND_FAILURES = ['refused', 'no-credits', 'rejected', 'busy', 'unreachable', 'unreadable', 'folder', 'too-large', 'no-account', 'locked', 'stopped'] as const
-export type SoundFailure = (typeof SOUND_FAILURES)[number]
+export { SOUND_FAILURES, type SoundFailure }
 
 /** The newest records kept. A record is small; this only stops the file growing without end. */
 export const SOUND_RECORDS_KEPT = 2_000
@@ -35,7 +34,10 @@ const recordSchema = z.object({
   /** The voice speech was spoken in, by its name in the account. */
   voice: z.string().min(1).max(200).optional(),
   seconds: z.number().positive().max(1_000).optional(),
-  /** The real folder inside the thread's folder the MP3 goes into, and its name there once it is saved. */
+  /**
+   * The real folder inside the thread's folder the MP3 goes into, and its name there once it is saved. The record holds
+   * no working folder: the MP3 is read back only from inside the thread's working folder as it is now.
+   */
   folder: z.string().min(1),
   fileName: z.string().min(1).max(200).optional(),
   bytes: z.number().int().nonnegative().optional(),
@@ -83,9 +85,23 @@ export class SoundRecords {
     this.path = join(directory, 'sounds.json')
   }
 
+  /** One sound's record, or undefined when Sotto holds none by that ID. */
+  sound(id: string): Promise<SoundRecord | undefined> {
+    return this.inTurn(async () => this.current((await this.load()).find(record => record.id === id)))
+  }
+
   /** Every sound, newest first. */
   list(): Promise<readonly SoundRecord[]> {
-    return this.inTurn(async () => [...await this.load()])
+    return this.inTurn(async () => (await this.load()).map(record => this.current(record)!))
+  }
+
+  /**
+   * A record as it stands, with a change that could not yet be written laid over it: a sound saved while its record's
+   * write failed reads as made, so its line shows Play and a read again agrees (Bug Bot on #2653, L2).
+   */
+  private current(record: SoundRecord | undefined): SoundRecord | undefined {
+    const change = record ? this.waiting.get(record.id) : undefined
+    return record && change ? this.private(recordSchema.parse(change(record))) : record
   }
 
   /** Keeps a new record. Rejects when it cannot be written, and then nothing should be sent to ElevenLabs. */
@@ -170,7 +186,7 @@ export class SoundRecords {
       const records = await this.load()
       const month = monthOf(now)
       const spent = new Map<string, number>()
-      for (const entry of [...records, ...this.spent]) {
+      for (const entry of [...records.map(record => this.current(record)!), ...this.spent]) {
         if (entry.cost <= 0 || monthOf(new Date(entry.askedAt)) !== month) continue
         spent.set(entry.accountId, (spent.get(entry.accountId) ?? 0) + entry.cost)
       }

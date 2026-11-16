@@ -16,7 +16,12 @@ import { openPage, openThreads, resizeWindow } from './support/sottoLaunch'
  */
 const evidence = evidenceDirectory('artifacts/plugins-elevenlabs')
 const KEY = 'sk_made_up_elevenlabs_key_0123456789'
-const MP3 = Buffer.from([0x49, 0x44, 0x33, 4, 0, 0, 0, 0, 0, 0, ...Array.from({ length: 2_000 }, (_, index) => index % 251)])
+/**
+ * A real MP3 the window can play: two seconds of silence as 77 MPEG-1 Layer III frames at 128 kbps and 44.1 kHz, each
+ * a 4-byte header and 413 zero bytes, which decoders read as silence.
+ */
+const FRAME = Buffer.concat([Buffer.from([0xff, 0xfb, 0x90, 0x64]), Buffer.alloc(413)])
+const MP3 = Buffer.concat(Array.from({ length: 77 }, () => FRAME))
 const SPEECH = { kind: 'speech', name: 'Opening narration', voice: 'Rachel', words: 'Welcome to Lumen. In the next two minutes you will set up your shop, add your first product and take your first order.' }
 const MUSIC = { kind: 'music', name: 'Calm intro loop', words: 'Calm, warm acoustic guitar and soft piano, loops cleanly', seconds: 30, instrumental: true }
 
@@ -105,6 +110,43 @@ test('A thread makes speech and music with ElevenLabs after the card is answered
       expect(spoken.text).toContain('sounds/Opening narration.mp3')
       expect(new Uint8Array(await readFile(join(project, 'sounds', 'Opening narration.mp3')))).toEqual(new Uint8Array(MP3))
 
+      // Part 3: the sound is a quiet line under the reply, with Play, and nothing plays until it is pressed.
+      const line = pane.getByRole('group', { name: 'Sound: Opening narration' })
+      await expect(line).toBeVisible({ timeout: 30_000 })
+      const play = line.getByRole('button', { name: 'Play Opening narration' })
+      await expect(play).toBeEnabled({ timeout: 30_000 })
+      await expect(line).toContainText('Speech')
+      expect(await page.evaluate(() => [...document.querySelectorAll('audio, video')].some(element => !(element as HTMLMediaElement).paused))).toBe(false)
+      await line.scrollIntoViewIfNeeded()
+      await shot(page, 'sound-line-dark-1280x800')
+      await line.getByRole('button', { name: 'Show the details' }).click()
+      await expect(line).toContainText(SPEECH.words)
+      await expect(line).toContainText('Spoken in the voice Rachel')
+      await expect(line.getByRole('button', { name: /^Show in (?:File Explorer|Finder|the file manager)$/u })).toBeVisible()
+      await shot(page, 'sound-line-open-dark-1280x800')
+      await page.keyboard.press('Escape')
+      await expect(line.getByRole('button', { name: 'Show the details' })).toBeFocused()
+      // Play fetches the MP3 and plays it; Pause stops it.
+      await play.click()
+      await expect(line.getByRole('button', { name: 'Pause Opening narration' })).toBeVisible({ timeout: 15_000 })
+      await expect(line.getByRole('slider', { name: 'Place in Opening narration' })).toHaveAttribute('aria-valuetext', /of 0:02$/u, { timeout: 15_000 })
+      await shot(page, 'sound-line-playing-dark-1280x800')
+      await line.getByRole('button', { name: 'Pause Opening narration' }).click()
+      await expect(line.getByRole('button', { name: 'Play Opening narration' })).toBeVisible()
+      for (const [mode, width, height] of [['light', 1280, 800], ['dark', 820, 560]] as const) {
+        await page.evaluate(async appearance => { await window.sotto!.updateSettings({ appearance }) }, mode)
+        await resizeWindow(launched, width, height)
+        await line.scrollIntoViewIfNeeded()
+        const outside = await line.evaluate((element, paneElement) => {
+          const room = paneElement!.getBoundingClientRect()
+          return [element, ...element.querySelectorAll<HTMLElement>('*')].filter(part => { const box = part.getBoundingClientRect(); return box.width > 0 && (box.right > room.right + 1 || box.left < room.left - 1) }).length
+        }, await pane.elementHandle())
+        expect(outside, `line ${width}x${height} ${mode}`).toBe(0)
+        await shot(page, `sound-line-${mode}-${width}x${height}`)
+      }
+      await page.evaluate(async () => { await window.sotto!.updateSettings({ appearance: 'dark' }) })
+      await resizeWindow(launched, 1280, 800)
+
       // Music, in light: thirty seconds with no singing, and the month now counts the speech.
       await page.evaluate(async () => { await window.sotto!.updateSettings({ appearance: 'light' }) })
       await make(page, threadId, MUSIC)
@@ -116,7 +158,8 @@ test('A thread makes speech and music with ElevenLabs after the card is answered
       await musicCard.getByRole('button', { name: 'Make the sound', exact: true }).click()
       expect((await answered(page, MUSIC.name)).isError).toBe(false)
       await readFile(join(project, 'sounds', 'Calm intro loop.mp3'))
-      // Nothing in the window played a sound.
+      await expect(pane.getByRole('group', { name: 'Sound: Calm intro loop' })).toBeVisible({ timeout: 30_000 })
+      // Nothing in the window is playing a sound now.
       expect(await page.evaluate(() => [...document.querySelectorAll('audio, video')].some(element => !(element as HTMLMediaElement).paused))).toBe(false)
 
       // The account says what the month spent, and Recent use says what was made.

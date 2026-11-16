@@ -191,3 +191,14 @@ describe('a 3D model’s place in its thread (ADR-0141)', () => {
     expect(visualFallbackText(kept)).toBe('3D model: Oak barrel. The 3D model is in Sotto on your computer.')
   })
 })
+
+describe('a sound’s place in its thread (ADR-0205)', () => {
+  it('is a kind Sotto adds and draws, that an agent cannot send, and that a phone reads as its words', () => {
+    expect(checkVisualInput({ title: 'Opening narration', kind: 'sound', source: 'sound-1' })).toMatchObject({ ok: false, reason: 'The kind must be one of: diagram, interactive.' })
+    expect(isKnownVisualKind('sound')).toBe(true)
+    const kept = visualFromInput('v1', { kind: 'sound', title: ' Opening narration ', source: 'sound-1' })
+    expect(kept).toEqual({ id: 'v1', title: 'Opening narration', kind: 'sound', source: 'sound-1' })
+    expect(agentVisualSchema.parse(kept)).toEqual(kept)
+    expect(visualFallbackText(kept)).toBe('Sound: Opening narration. The sound is in Sotto on your computer.')
+  })
+})

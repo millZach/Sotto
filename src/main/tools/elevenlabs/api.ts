@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { SOUND_KINDS, SPEECH_CHARACTERS_MAX, type SoundKind } from '../../../shared/sounds'
 
 /**
  * ElevenLabs' API behind one adapter (ADR-0205; the plugins plan's slice 12, part 2). Every call goes to
@@ -23,8 +24,7 @@ export type ElevenLabsApiFetch = (url: string, init: {
 }) => Promise<Response>
 
 /** What a thread can make with ElevenLabs (Zach's pick on #2498): words spoken, a sound effect, or music. */
-export const SOUND_KINDS = ['speech', 'effect', 'music'] as const
-export type SoundKind = (typeof SOUND_KINDS)[number]
+export { SOUND_KINDS, type SoundKind }
 
 /**
  * What went wrong, in one word. `refused`: ElevenLabs does not take the key (401), or the key may not do this (403).
@@ -42,7 +42,7 @@ export class ElevenLabsApiError extends Error {
 export const SOUND_FORMAT = 'mp3_44100_128'
 /** The speech model: Multilingual v2, which takes up to 10,000 characters a request. */
 export const SPEECH_MODEL = 'eleven_multilingual_v2'
-export const SPEECH_CHARACTERS_MAX = 10_000
+export { SPEECH_CHARACTERS_MAX }
 /** A sound effect's length, as ElevenLabs takes it. */
 export const EFFECT_SECONDS_MIN = 0.5
 export const EFFECT_SECONDS_MAX = 30

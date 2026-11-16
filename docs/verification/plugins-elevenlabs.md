@@ -130,8 +130,78 @@ no error. The account journey, `plugins-elevenlabs.spec.ts`, still passes.
   of $10.", "under $0.01" below a cent, and reads it again when a sound is made; Recent use says "Made speech", "Made a
   sound effect" and "Made music", or what was only asked for.
 
+## Part 3: the line in the thread
+
+Built on November 15, 2026, for the third part of slice 12: the sound's line in its thread, Zach's variant A on #2498
+(the tag `prototype/elevenlabs`), placed and drawn as a 3D model's line is.
+
+### In the built app
+
+`tests/e2e/plugins-elevenlabs-sound.spec.ts` goes on from part 2's journey. Its stand-in now answers with a real MP3:
+two seconds of silence as 77 MPEG-1 Layer III frames, which the window can play.
+
+Once **Make the sound** was pressed, the line came in under the agent's reply. It showed the wave tile, "Opening
+narration", "Speech · under $0.01 · ElevenLabs" and **Play**. Nothing in the window was playing.
+
+![The line](../../artifacts/plugins-elevenlabs/sound-line-dark-1280x800.png)
+
+The chevron opened the words in quotes, "Spoken in the voice Rachel · under $0.01 · made …", a chip ".mp3 31 KB" and
+**Show in File Explorer**. Escape closed it and gave focus back to the chevron.
+
+![The details](../../artifacts/plugins-elevenlabs/sound-line-open-dark-1280x800.png)
+
+**Play** fetched the MP3 and played it. The button turned to **Pause**, the length "0:02" joined the line, and the
+place slider under the row read "of 0:02". **Pause** stopped it and gave **Play** back.
+
+![Playing](../../artifacts/plugins-elevenlabs/sound-line-playing-dark-1280x800.png)
+
+It was checked in light at 1280x800 and in dark at the 820x560 minimum, and nothing in it reached past the thread's
+pane. The music's line came in the same way. Meshy's journey, `plugins-meshy-model.spec.ts`, still passes beside it.
+
+![In light](../../artifacts/plugins-elevenlabs/sound-line-light-1280x800.png)
+
+![At the minimum size](../../artifacts/plugins-elevenlabs/sound-line-dark-820x560.png)
+
+### What covers it
+
+- `tests/unit/main/tools/elevenlabs/soundView.test.ts`, main's side, each by a sound's ID alone:
+  - the view names the sound, its kind, voice, cost, the words while Keep local history keeps them, its file by name
+    and size and when it was saved, and never a path; a sound being made or failed has no file;
+  - the MP3 is handed over only for a made sound, from its record's own file: not for an ID that is not a sound's or a
+    path, not once its file is gone, not through a folder swapped for a link outside the thread's folder or a file
+    that is a link outside, not past the cap, and not for a file that does not start with an MPEG Layer III frame,
+    after an ID3 tag or without one: AAC, another layer, a tag with no frame after it and a frame cut short are refused;
+  - a record holds no working folder, so a build from before the line reads it whole and keeps counting its cost; its
+    folder is checked against the thread's working folder as it is now;
+  - Show in File Explorer is given the record's own real path, and nothing once the file is gone or outside;
+  - each change to a sound reaches the window as its view, in order, and none once its record went.
+- `tests/unit/main/plugins/pluginsIpc.test.ts`: the view, the MP3 and Show in File Explorer answer the main window
+  only, ask main nothing for a request with a path or anything the schema does not name, and send back nothing beyond
+  the schema; the window hears each change as a view and nothing else.
+- `tests/unit/main/plugins/pluginSoundTool.test.ts`: `make_sound` places the line, by the sound's ID and name, once
+  its record is kept and while it is still being made, and none when it is denied or refused; when the line cannot go
+  in, the sound is made all the same and the agent is told.
+- `tests/unit/main/workspaceVisuals.test.ts` and `tests/unit/shared/visuals.test.ts`: a sound's line meets neither of
+  the limits on what agents draw, an agent cannot send one, and a phone reads it as its words.
+- `tests/unit/renderer/agents/soundLine.test.tsx`, the line:
+  - while it is made, "Making the speech with ElevenLabs…" and a bar with no percent, which holds still with motion
+    reduced, and nothing to press; it moves to made when main says so;
+  - nothing is fetched, no audio element is made and nothing plays before Play is pressed, and the length is left out
+    until the audio says it;
+  - the first press fetches the MP3 once, plays it from an address of its own, and shows the length and the place in
+    it; Pause pauses, Space and Enter press Play and Pause as any button, and the address is let go when the line goes;
+  - the chevron opens the words, the voice, the cost and when it was made, and Show in File Explorer by the sound's
+    ID; Escape closes it and gives focus back to the chevron;
+  - an effect says what it was made from;
+  - a file that is gone says "File gone" with Play off, and one that went after the line was drawn is found on a press;
+  - a failure says "Could not make it · nothing saved · nothing spent" and what happened, and a charged one "Could not
+    save it · nothing saved · about $0.02 counted" and that its cost was counted;
+  - with the `plugins` Owl feature off the line is not there and asks main nothing.
+
 ## Not checked here
 
 - A real ElevenLabs key. The check was run against the stand-in only.
 - A sound effect in the built app; the unit tests hold its card with and without a length.
-- The line in the thread with Play (part 3), and a host's threads making sounds with the copy (part 4).
+- The line with motion reduced, in the built app: the unit test holds the bar still.
+- A spoken MP3 from ElevenLabs, as against the stand-in's silence: that waits for Zach's key.
+- A host's threads making sounds with the copy (part 4).

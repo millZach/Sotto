@@ -902,6 +902,11 @@ export class PluginToolServer implements ScopedThreadTools {
       }
     })
     if ('content' in turn) return turn
+    // ElevenLabs has it now: its line goes into the thread, under what the agent said, and follows it to the end, as a
+    // 3D model's does (Zach's pick on #2498, variant A). When it cannot go in, the sound is made all the same, and the
+    // agent is told so it can say where it is.
+    const shown = await elevenlabs.showInThread(threadId, turn.sound).catch(() => false)
+    const unshown = shown ? '' : ` Sotto could not show the sound in the thread, so tell the user its name and where it is saved.`
     // The sound is made and saved whether or not this call is still waiting; it waits while its client does.
     const { signal, waitMs } = call.context
     const room = (waitMs ?? this.timeoutMs) - (Date.now() - call.started) - 10_000
@@ -915,7 +920,7 @@ export class PluginToolServer implements ScopedThreadTools {
     const where = `${folder.replace(/[\\/]+$/u, '')}/`
     if (ended === 'waiting') {
       await kept('done')
-      return text(`${how} ElevenLabs is still making the sound "${name}". Sotto saves it into ${where} in the thread's folder when it is done, named after "${name}"; ${aboutDollars(cost)}. Nothing plays on its own.`)
+      return text(`${how} ElevenLabs is still making the sound "${name}". Sotto saves it into ${where} in the thread's folder when it is done, named after "${name}"; ${aboutDollars(cost)}. Nothing plays on its own.${unshown}`)
     }
     // Sotto is stopping while the sound is made. ElevenLabs may have made it, so its cost stays counted.
     if (ended === undefined) {
@@ -924,7 +929,7 @@ export class PluginToolServer implements ScopedThreadTools {
     }
     if (ended.state === 'made') {
       await kept('done')
-      return text(`${how} The sound "${name}" is made and saved in the thread's folder at ${soundPath(root, ended)}, for ${aboutDollars(ended.cost)} at ElevenLabs' published prices${voice ? `, spoken in the voice ${voice.name}` : ''}. Nothing plays on its own; tell the user where it is.`)
+      return text(`${how} The sound "${name}" is made and saved in the thread's folder at ${soundPath(root, ended)}, for ${aboutDollars(ended.cost)} at ElevenLabs' published prices${voice ? `, spoken in the voice ${voice.name}` : ''}. Nothing plays on its own; tell the user where it is.${unshown}`)
     }
     await kept('failed')
     // Made and charged for, and not saved: its cost is counted, and the agent is told so.

@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { Model3dBytesRequest, Model3dListed, Model3dRemoval, Model3dRevealRequest, Model3dView } from './models3d'
+import type { SoundView } from './sounds'
 
 /**
  * Plugins (ADR-0205): outside services Sotto can connect once, so every thread's agent has one known place to use
@@ -113,6 +114,14 @@ export interface PluginsBridge {
   revealModel3d(request: Model3dRevealRequest): Promise<boolean>
   /** Told the IDs of 3D models whose records went, with their forgotten thread or by Remove from 3D models. Returns the way to stop. */
   onModels3dRemoved(listener: (ids: readonly string[]) => void): () => void
+  /** One sound as its thread draws it, by its ID, or null when Sotto holds no such sound (the plugins plan's slice 12, part 3). */
+  sound?(id: string): Promise<SoundView | null>
+  /** A made sound's MP3, or null when Sotto will not hand it over. Asked for only when the user presses Play. */
+  soundBytes?(id: string): Promise<Uint8Array | null>
+  /** Shows a made sound's MP3 in the folder app. */
+  revealSound?(id: string): Promise<boolean>
+  /** Told each sound's view whenever its record changes. Returns the way to stop. */
+  onSoundChanged?(listener: (view: SoundView) => void): () => void
   /** This computer's projects, for choosing which ones an account is kept to. */
   projects(): Promise<PluginProject[]>
   /** The user's other computers and where each account's copy stands on each. */
