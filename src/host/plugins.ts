@@ -115,8 +115,11 @@ export function hostPlugins(options: {
   readonly admits: (threadId: string) => boolean
   /** Whether a client is still paired with this host, read in place. */
   readonly paired: (clientId: string) => boolean
-  /** One of the host's threads' working folder, found as the host's Files finds it, or null. Left out, no thread here makes a 3D model. */
-  readonly folderOf?: (threadId: string) => Promise<string | null>
+  /**
+   * One of the host's threads' working folder, found as the host's Files finds it, or null, or `busy` while Files is
+   * too busy to say. Left out, no thread here makes a 3D model.
+   */
+  readonly folderOf?: (threadId: string) => Promise<string | null | 'busy'>
   /** Places a 3D model's line in its thread, as the desktop does. False when it could not be placed. */
   readonly showInThread?: (threadId: string, model: ThreeDModel) => Promise<boolean>
   /** Places a sound's line in its thread, as the desktop does. False when it could not be placed. */
@@ -211,10 +214,12 @@ export function hostPlugins(options: {
     // Nothing changes while the service is made, so the views below are there before the first change.
     changed: sound => { elevenLabsSpending.countChanged(); soundViews.changed(sound) },
   })
-  const { folderOf } = options
+  const folderOfOrBusy = options.folderOf
+  // The tools take a busy Files as no folder for now, as before; a sound's line asks again (Bug Bot on #2659, L1).
+  const folderOf = folderOfOrBusy ? async (threadId: string): Promise<string | null> => { const found = await folderOfOrBusy(threadId); return found === 'busy' ? null : found } : undefined
   // What a recorded desktop's window reads of them (part 4b): each sound's view and the MP3 it plays, by the same
   // checked reads the desktop reads its own with, from inside the thread's working folder as the host's Files finds it.
-  const soundViews: HostSoundViewsWithNews = hostSoundViews({ sound: id => sounds.sound(id), folderOf: async threadId => folderOf ? await folderOf(threadId) : null })
+  const soundViews: HostSoundViewsWithNews = hostSoundViews({ sound: id => sounds.sound(id), folderOf: async threadId => folderOfOrBusy ? await folderOfOrBusy(threadId) : null })
   const meshy = folderOf ? {
     folderOf,
     // This host's own 3D models and what the copy's desktop last said, which holds every other computer's. Nothing is

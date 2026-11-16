@@ -54,7 +54,8 @@ export function hostSoundViews(source: SoundViewSource): HostSoundViewsWithNews 
     view: async id => soundViewOf(source, id),
     bytes: async (request, clientId): Promise<SoundHostBytes> => {
       const file = await checked(request, clientId)
-      if (!file || request.offset >= file.bytes.byteLength) return null
+      // A part past the end lets go of the file held for it, rather than holding it the full minute (Bug Bot on #2659, N3).
+      if (!file || request.offset >= file.bytes.byteLength) { letGo(clientId); return null }
       const end = Math.min(file.bytes.byteLength, request.offset + SOUND_HOST_PART_BYTES)
       if (end === file.bytes.byteLength) letGo(clientId)
       return { data: Buffer.from(file.bytes.buffer, file.bytes.byteOffset + request.offset, end - request.offset).toString('base64'), total: file.bytes.byteLength, digest: file.digest }

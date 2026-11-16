@@ -73,6 +73,37 @@ describe('a host’s sounds for a recorded desktop', () => {
     views.close()
   })
 
+  it('asks for the thread’s folder again while the host’s Files is busy, and never says an MP3 on disk is gone for it', async () => {
+    // Bug Bot on #2659, L1: the fix #2653 made on the desktop, on the host.
+    const bytes = mp3(100)
+    await saved('narration.mp3', bytes)
+    let busy = 2
+    const views = hostSoundViews({ sound: async id => id === 'narration' ? made('narration') : undefined, folderOf: async () => busy-- > 0 ? 'busy' : root })
+    await expect(views.view('narration')).resolves.toMatchObject({ bytes: bytes.byteLength })
+    busy = 2
+    await expect(views.bytes({ id: 'narration', offset: 0 }, 'desktop')).resolves.toMatchObject({ total: bytes.byteLength })
+    views.close()
+    // Busy for good: the read fails, so the desktop keeps the view it showed rather than taking the file for gone.
+    const stuck = hostSoundViews({ sound: async () => made('narration'), folderOf: async () => 'busy' })
+    await expect(stuck.view('narration')).rejects.toThrow()
+    stuck.close()
+  })
+
+  it('lets go of the MP3 it held when a part is asked for past its end', async () => {
+    // Bug Bot on #2659, N3: the file is read again for the next first part, rather than held for a minute.
+    const sound = twoParts(3)
+    await saved('narration.mp3', sound)
+    const records = [made('narration')]
+    let reads = 0
+    const views = hostSoundViews({ sound: async id => { reads += 1; return records.find(record => record.id === id) }, folderOf: async () => root })
+    const first = await views.bytes({ id: 'narration', offset: 0 }, 'desktop')
+    await expect(views.bytes({ id: 'narration', offset: sound.byteLength + 10, digest: first!.digest }, 'desktop')).resolves.toBeNull()
+    const before = reads
+    await views.bytes({ id: 'narration', offset: SOUND_HOST_PART_BYTES, digest: first!.digest }, 'desktop')
+    expect(reads).toBeGreaterThan(before)
+    views.close()
+  })
+
   it('hands over nothing past the cap', async () => {
     await saved('huge.mp3', mp3(SOUND_BYTES_MAX))
     await expect(hostSoundViews(source([made('huge')])).bytes({ id: 'huge', offset: 0 }, 'desktop')).resolves.toBeNull()

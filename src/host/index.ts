@@ -161,7 +161,8 @@ async function startHostRuntime(options: HeadlessHostOptions) {
       if (!runtime) return null
       threadFiles ??= new FilesService({ resolveBinding: id => runtime.agentControl.filesBinding(id), copyPath: notHere, reveal: notHere })
       const found = await threadFiles.resolveWorkspace(threadId)
-      return found.ok ? found.value.workingDirectory : null
+      // Files too busy to say is not no folder: a sound's line asks again rather than saying its file is gone (Bug Bot on #2659, L1).
+      return found.ok ? found.value.workingDirectory : found.error.code === 'busy' ? 'busy' : null
     },
     // A 3D model's line in its thread, by its ID alone, as the desktop places one; a client reads its words.
     showInThread: async (threadId, model) => (await startedRuntime?.agentHost.addVisual(threadId, { kind: MODEL_VISUAL_KIND, title: model.name, source: model.id })

@@ -139,7 +139,12 @@ export class HostSounds {
     this.versions.set(key, (this.versions.get(key) ?? 0) + 1)
     this.kept.delete(key)
     this.kept.set(key, keyed)
-    while (this.kept.size > KEPT_VIEWS) this.kept.delete(this.kept.keys().next().value!)
+    while (this.kept.size > KEPT_VIEWS) {
+      const oldest = this.kept.keys().next().value!
+      this.kept.delete(oldest)
+      // Its count of views goes with it, so the counts never outgrow what is kept (Bug Bot on #2659, N2).
+      this.versions.delete(oldest)
+    }
     return keyed
   }
 
