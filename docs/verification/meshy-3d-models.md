@@ -106,7 +106,7 @@ The stand-in was asked only for its API and its files, and the window raised no 
   stand-in gives the same textured cube. That waits for Zach's key on a paid plan.
 - A 3D model from a photo in the running app; the unit test holds its one step.
 - A window that cannot draw WebGL; the unit test holds the still picture that takes the view's place.
-- A host's thread and the iPhone, which are tickets 6 and 7.
+- A host's thread and the iPhone, which came with tickets 6 and 7: see [the last part of this note](#a-paired-hosts-3d-models-and-the-iphone).
 
 # The 3D models page and Tools › 3D models
 
@@ -231,6 +231,81 @@ The stand-in was asked only for its API and its files, and the window raised no 
 ## Not checked here
 
 - A 3D model from a photo on the page; the unit test holds "Photo sent" and its file name.
-- A thread on a paired host: its Tools surface says 3D models is on the host machine, and the page lists this computer's
-  threads alone, until ticket 6.
+- A thread on a paired host, which ticket 6 brought to the page and Tools: see [the last part of this note](#a-paired-hosts-3d-models-and-the-iphone).
 - File Explorer itself opening on the file: the run notes the path instead, so the laptop's own Explorer was not driven.
+
+# The card that asks, and the month's credits
+
+Checked on Windows on November 15, 2026, in the built app, for #2497: ticket 8 of `docs/plans/2026-10-22-meshy-3d-models.md`,
+which captures ticket 3's card and the account's count for this note. The run is ticket 4's,
+`tests/e2e/plugins-meshy-model.spec.ts`, with the same stand-in Meshy and made-up key, now taking three captures more.
+The captures above were not taken again.
+
+## What was done
+
+When the thread asked for the Oak barrel, its card read **Make a 3D model with Meshy**, with the account's plugin, the
+name, "Sends Meshy these words: “An oak barrel with iron hoops and moss on the lid”", the line on Meshy's training, "About
+30 credits on the Meshy account Studio; 0 of its 1,000 credits used this month." and where the files go, over **Make the
+model** and **Deny**. The reply box read "Queued until you answer the card".
+
+![The card, in dark](../../artifacts/meshy-3d-models/card-dark-1280x800.png)
+
+The Brass lantern's card, asked for once the barrel was made, counted the barrel: "30 of its 1,000 credits used this
+month". It was checked in light, under the barrel's closed line.
+
+![The card, in light](../../artifacts/meshy-3d-models/card-light-1280x800.png)
+
+After the barrel (30 credits) and the lantern whose texture failed (20 counted), the Studio account on Settings › Plugins
+read "Credits this month: 50 of 1,000." under its limit. Its Recent use said "Made a 3D model" and "Asked to make a 3D
+model … You allowed it, and it failed.", each with the thread's name.
+
+![The account's credits](../../artifacts/meshy-3d-models/account-credits-dark-1280x800.png)
+
+The run passed in 26 seconds, and the window raised no error.
+
+## What else covers it
+
+- `tests/unit/main/plugins/pluginMeshyTool.test.ts`: the card's words, nothing made on Deny, a 3D model past the limit
+  refused before the card and again after the yes, no card with asking off, and a photo redrawn or refused.
+- `tests/e2e/plugins-meshy.spec.ts`: the account, its switch and its limit in the built app, and "Credits this month: 0
+  of 1,000." before anything is spent (`docs/verification/plugins-meshy.md`).
+
+# A paired host's 3D models and the iPhone
+
+Tickets 6 and 7 were checked by their tests and CI, not in a running app, because both need a second device: a
+paired computer with a Meshy account copy, and an iPhone. No screenshots were taken of either.
+
+## What covers it
+
+- **One limit across computers.** `tests/unit/main/plugins/meshySpending.test.ts`,
+  `tests/integration/socketMeshySpending.test.ts` and `tests/unit/host/pluginsMeshy.test.ts`: a host's threads make 3D
+  models with the account copy, asking as its switch says, and the month's credits are one figure the desktop and its
+  hosts share.
+- **A host's 3D models on the desktop.** `tests/unit/main/hostModels3d.test.ts`, `tests/integration/socketMeshyModels.test.ts`,
+  the host's lines in `tests/unit/renderer/agents/modelLine.test.tsx`, and the "a paired host's 3D models on the page" part of `tests/unit/renderer/features/models3d/modelsPage.test.tsx`:
+  - the list and the views over `plugin-meshy-models`;
+  - the bytes in 8 MiB parts, up to 64 MiB;
+  - "on forge" in the kind line;
+  - the line while the host is away;
+  - Remove from 3D models removing the host's record only.
+- **The phone's reads.** `tests/integration/socketMeshyModels.test.ts`'s phone part:
+  - `plugin-meshy-phone` is served only to a phone;
+  - the phone reads one thread's 3D models, and only one it is shown;
+  - news of a thread it isn't shown is dropped;
+  - the USDZ is checked before it is handed over, and never to a desktop.
+- **The iPhone app.** `apps/ios/Tests/SottoCoreTests/Models3dTests.swift` in the macOS iOS job:
+  - the line read from a message's `3d-model` visual;
+  - the view, a thread's list and the news frame;
+  - the requests, and the cache's names;
+  - a USDZ kept only when its parts make the file the computer named.
+
+  The app compiled in that job's journeys on both iPhones, at #2626's head `7a105e2`.
+
+## Not checked here
+
+- A paired host's 3D models in the running desktop, and the iPhone's line and sheet on a phone. Both wait for Zach's
+  hand test with a paid Meshy key. On the iPhone:
+  - make one from a laptop thread and watch its line while it is made;
+  - open it, turn it, close it and open it again, which should be instant;
+  - stop Sotto on the laptop and see the line say the computer isn't connected.
+- The native iOS journeys place no 3D model in a thread, so they take no picture of the line or the sheet.
