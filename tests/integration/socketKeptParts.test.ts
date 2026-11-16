@@ -268,6 +268,25 @@ describe('the desktop’s client of a paired host', () => {
     } finally { off(); transport.receive = recorded }
   })
 
+  // #2609: the host counts a push's event page as sent, so a page dropped with a push it gave up on was never sent again.
+  it('keeps the events of a push it cannot put back', async () => {
+    const { client, off, reached, receive, pushes } = await desktop()
+    try {
+      await reached(change())
+      await reached(change())
+      const shells = vi.spyOn(client, 'readShell')
+      const last = pushes().at(-1) as ShellPush & { eventPage: { latestSeq: number } }
+      const seq = last.eventPage.latestSeq + 1, at = '2026-11-16T00:00:00.000Z'
+      const events = [{ seq, threadId: 'workshop', event: { kind: 'messages-reset', at } }, { seq: seq + 1, threadId: 'workshop', event: { kind: 'messages-reset', at } }]
+      // Measured from the push it applied last, but naming a part that push did not have, and carrying the next events.
+      receive(JSON.stringify({ ...last, state: { ...last.state, kept: [...last.state.kept ?? [], 'syntheticMissingPart'] },
+        threads: { ...last.threads!, revision: last.threads!.revision + 1_000, base: last.threads!.revision, changed: [] },
+        eventPage: { events, latestSeq: seq + 1, hasMore: false } }))
+      expect(shells).toHaveBeenCalledTimes(1)
+      expect(client.events(seq - 1).map(event => event.seq)).toEqual([seq, seq + 1])
+    } finally { off() }
+  })
+
   it('reads the shell whole when a push keeps a part it does not hold, and shows nothing of that push', async () => {
     const { client, heard, off, reached, receive, pushes } = await desktop()
     try {

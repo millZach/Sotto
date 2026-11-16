@@ -521,6 +521,10 @@ export class SocketHostService implements HostService {
       // Its catalog is remembered first, as every push's is: the host counts a catalog it carried as sent, so the shell read
       // in its place names that revision without it (#2597). `models` and `modelsRevision` are never kept.
       this.restoreCatalog(field(raw, 'state'))
+      // So is its event page: the host counts it as sent too, and neither the shell read nor a later push carries it (#2609).
+      // The push is not parsed on this path, so the page is read with its own schema.
+      const page = this.catchesUp ? hostEventPageSchema.safeParse(field(raw, 'eventPage')) : undefined
+      if (page?.success) this.pushedEvents(page.data)
       void this.readShell().catch(() => this.frames?.close()); return
     }
     // Before any reading, so a catalog carried whole by an answer that arrives too late is still remembered.
@@ -538,7 +542,7 @@ export class SocketHostService implements HostService {
         // hostPushSchema has already read the shell and the detail with their own schemas, catalog required; a shell or a
         // detail can be megabytes, so neither is read a second time.
         if (message.event === 'shell') {
-          if (message.eventPage && this.catchesUp) { this.cacheEvents(message.eventPage); if (message.eventPage.hasMore) this.catchUp() }
+          if (message.eventPage && this.catchesUp) this.pushedEvents(message.eventPage)
           const state = message.state as AgentState
           this.adoptCatalog(field(raw, 'state'), state)
           // The thread records that changed since the last shell push, put back on the records it carried (#996): those
@@ -778,6 +782,8 @@ export class SocketHostService implements HostService {
     this.tooLarge.add(threadId); this.pushErrorThread = threadId; this.options.onPushError?.(error.message)
     return true
   }
+  /** Keeps the event page a shell push carried, and reads on when the page says there is more. */
+  private pushedEvents(page: HostEventPage): void { this.cacheEvents(page); if (page.hasMore) this.catchUp() }
   private catchUp(): void {
     if (this.catchup) return
     const task = (async () => {
