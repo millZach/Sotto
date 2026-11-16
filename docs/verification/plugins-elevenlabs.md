@@ -68,8 +68,44 @@ Meshy's account journey (`plugins-meshy.spec.ts`) still passes with the new row 
   - the switch, and the limit in whole dollars;
   - no credits read for the account.
 
+## Part 2: making a sound
+
+Built on November 15, 2026, for the second part of slice 12: the tool `make_sound`, the card that asks, the monthly
+limit in dollars, the record of sounds and the MP3 in the thread's folder. This part is covered by unit tests; the
+built-app journey is Zach's to run. In every test ElevenLabs is a stand-in in the test's own process, with a made-up
+key, and the sound is made by Sotto's own service and saved by its own save.
+
+- `tests/unit/main/plugins/pluginSoundTool.test.ts`, the tool's flow, the way `make_3d_model` asks, counts and
+  refuses:
+  - the card shows everything that goes to ElevenLabs, the voice, the cost and the month's spending; after the yes the
+    MP3 is in `sounds/`, the answer gives its path in the thread's folder and what it cost, and the cost is counted;
+  - a no, or a card nobody answers, sends nothing, saves nothing and counts nothing;
+  - a sound that would pass the limit is refused before the card, and again after the yes when the limit was lowered
+    while the card waited;
+  - of two sounds asked for at once, only one fits under the limit;
+  - with asking off, no card is shown; when asking is turned back on while the call is looked at, the card is shown;
+  - a voice is found by its name in any case, the account's first is used when none is named, and an unknown one is
+    refused with up to 20 of the account's voices named and nothing sent;
+  - ElevenLabs' refusals (no credits, rejected, busy, unreachable) are said plainly, save nothing and count nothing;
+  - each kind takes only what it can (a voice for speech, seconds for an effect or music, no singing for music), and a
+    folder outside the thread's is refused;
+  - a computer whose threads cannot make sounds says so;
+  - the card's words for speech, an effect with and without a length, and music with and without singing, in dollars.
+- `tests/unit/main/tools/elevenlabs/soundRecords.test.ts`, the record of sounds:
+  - the month counts from the 1st by this computer's clock, sounds made and being made, and no failed one;
+  - the words follow Keep local history, in memory and in the file, across a restart;
+  - forgetting a thread removes its records and keeps what they cost, by account and when alone;
+  - a sound cut off when Sotto stopped is settled as stopped with its cost still counted.
+- `tests/unit/main/plugins/changeWordsPlain.test.ts`: a host words each sound's card as the desktop does.
+- `tests/unit/main/plugins/pluginsIpc.test.ts`: the month's spending is read by the main window only, and never below
+  nothing.
+- `tests/unit/renderer/features/settings/pluginsSettings.test.tsx`: **What it spends** says "Spent this month: $1.20
+  of $10.", "under $0.01" below a cent, and reads it again when a sound is made; Recent use says "Made speech", "Made a
+  sound effect" and "Made music", or what was only asked for.
+
 ## Not checked here
 
 - A real ElevenLabs key. The check was run against the stand-in only.
-- Making a sound, the card that asks, the line in the thread, and a host's threads using the copy. Those come with the
-  slice's later parts.
+- Making a sound in the built app: the card in a thread, the MP3 in its folder and the Settings line. Zach runs that
+  journey.
+- The line in the thread with Play (part 3), and a host's threads making sounds with the copy (part 4).
