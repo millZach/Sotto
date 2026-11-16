@@ -552,6 +552,45 @@ function control(action) {
     turn.items.push(item); save()
     notify('item/completed', { threadId: thread.id, turnId: turn.id, item })
   }
+  // Work that outlives its turn, shaped on codex-cli 0.169.0's live frames (#2634). `background-agent` starts a sub-agent
+  // in a thread of its own (`/root/<description>`) whose own turn runs on, then ends the parent's turn with `text`;
+  // `background-agent-end` ends the sub-agent's turn and tells the parent, on the turn that started it.
+  // `background-command` leaves a unified-exec command running as the turn ends; `background-command-end` finishes it.
+  else if (action.type === 'background-agent') {
+    const turn = thread.turns.at(-1), child = action.childId ?? randomUUID(), at = Date.now()
+    const item = { type: 'subAgentActivity', model: 'gpt-fixture', id: `call_${randomUUID()}`, kind: 'started', agentThreadId: child, agentPath: `/root/${action.description}`, startedAtMs: at, completedAtMs: null }
+    notify('item/started', { threadId: thread.id, turnId: turn.id, item, startedAtMs: at })
+    notify('item/completed', { threadId: thread.id, turnId: turn.id, item: { ...item, completedAtMs: at }, completedAtMs: at })
+    const childTurn = { id: randomUUID(), rootTurnId: turn.id, items: [], status: 'inProgress', startedAt: Math.floor(at / 1000), completedAt: null }
+    state.backgroundAgents = { ...state.backgroundAgents, [thread.id]: { child, path: item.agentPath, turnId: turn.id, childTurn } }
+    notify('turn/started', { threadId: child, turn: childTurn })
+    if (typeof action.text === 'string') complete(thread, action.text); else save()
+  }
+  else if (action.type === 'background-agent-end') {
+    const running = state.backgroundAgents?.[thread.id]
+    if (running) {
+      delete state.backgroundAgents[thread.id]; save()
+      const at = Date.now()
+      notify('turn/completed', { threadId: running.child, turn: { ...running.childTurn, status: action.status ?? 'completed', completedAt: Math.floor(at / 1000) } })
+      const item = { type: 'subAgentActivity', model: null, id: `subagent-completed-${running.childTurn.id}`, kind: action.status === 'interrupted' ? 'interrupted' : 'completed', agentThreadId: running.child, agentPath: running.path, startedAtMs: at, completedAtMs: null }
+      notify('item/started', { threadId: thread.id, turnId: running.turnId, item, startedAtMs: at })
+      notify('item/completed', { threadId: thread.id, turnId: running.turnId, item: { ...item, completedAtMs: at }, completedAtMs: at })
+    }
+  }
+  else if (action.type === 'background-command') {
+    const turn = thread.turns.at(-1)
+    const item = { type: 'commandExecution', id: `exec-${randomUUID()}`, command: `/usr/bin/bash -lc '${action.command}'`, cwd: thread.cwd ?? '/', processId: '4242', source: 'unifiedExecStartup', status: 'inProgress', aggregatedOutput: null, exitCode: null }
+    state.backgroundCommands = { ...state.backgroundCommands, [thread.id]: { item, turnId: turn.id } }
+    notify('item/started', { threadId: thread.id, turnId: turn.id, item, startedAtMs: Date.now() })
+    if (typeof action.text === 'string') complete(thread, action.text); else save()
+  }
+  else if (action.type === 'background-command-end') {
+    const running = state.backgroundCommands?.[thread.id]
+    if (running) {
+      delete state.backgroundCommands[thread.id]; save()
+      notify('item/completed', { threadId: thread.id, turnId: running.turnId, item: { ...running.item, status: 'completed', aggregatedOutput: '', exitCode: 0 }, completedAtMs: Date.now() })
+    }
+  }
   else if (action.type === 'notify-burst') {
     process.stdout.write(action.frames.map(frame => JSON.stringify(frame) + '\n').join(''))
   }

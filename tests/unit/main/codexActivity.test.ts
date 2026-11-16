@@ -120,12 +120,21 @@ describe('Codex activity projection', () => {
     projection.turn(t, { id: context.turnId, status: 'interrupted' }, true)
     expect(t.activities?.find(record => record.kind === 'tool')).toMatchObject({ status: 'failed', error: 'Fixture resource unavailable' })
     expect(t.activities?.find(record => record.kind === 'command')?.status).toBe('interrupted')
+    // A command still running when its turn ends on its own carries on in the background (codex-cli 0.169.0, #2634):
+    // it stays running, never inferred to have succeeded, until its own completion says how it ended.
     const unfinished = thread()
     projection.item(unfinished, codexItemSchema.parse(activityItems.command), context)
     projection.turn(unfinished, { id: context.turnId, status: 'completed' }, true)
-    expect(unfinished.activities?.find(record => record.kind === 'command')?.status).toBe('unknown')
+    expect(unfinished.activities?.find(record => record.kind === 'command')?.status).toBe('running')
+    expect(projection.backgroundWork(unfinished).map(work => work.type)).toEqual(['command'])
     projection.delta(unfinished, 'item/commandExecution/outputDelta', { turnId: context.turnId, itemId: activityItems.command.id, delta: 'late' })
-    expect(unfinished.activities?.find(record => record.kind === 'command')?.status).toBe('unknown')
+    expect(unfinished.activities?.find(record => record.kind === 'command')?.status).toBe('running')
+    // Read from history, the same turn proves nothing of what still runs.
+    const read = thread()
+    projection.item(read, codexItemSchema.parse(activityItems.command), { ...context, phase: 'history' })
+    projection.turn(read, { id: context.turnId, status: 'completed' })
+    expect(read.activities?.find(record => record.kind === 'command')?.status).toBe('unknown')
+    expect(projection.backgroundWork(read)).toEqual([])
   })
 
   it('keeps a declined change, which the user denied, apart from one that failed (#2159)', () => {
@@ -219,5 +228,56 @@ describe('Codex activity projection', () => {
     expect(t.activities?.[0]?.agents?.[0]?.status).toBe('running')
     expect(projection.childNotification('native-child', 'turn/completed', { turn: { id: 'child-turn', status: 'completed', startedAt: 4, completedAt: 6, durationMs: 1_500 } })).toBe(t)
     expect(t.activities?.[0]?.agents?.[0]).toMatchObject({ status: 'completed', durationMs: 1_500, startedAt: new Date(4_000).toISOString(), completedAt: new Date(6_000).toISOString() })
+  })
+})
+
+// #2634, after review: background work follows what Codex said live, not what the bounded rows or a reread keep.
+describe('Codex background work in the projection', () => {
+  const agentStarted = (child: string, id = `call-${child}`) => codexItemSchema.parse({ type: 'subAgentActivity', id, kind: 'started', agentThreadId: child, agentPath: `/root/${child}` })
+  const startAgent = (projection: CodexActivityProjection, t: AgentThread, child: string) => {
+    projection.item(t, agentStarted(child), context)
+    projection.childNotification(child, 'turn/started', { threadId: child, turn: { id: `${child}-turn`, status: 'inProgress' } })
+  }
+
+  it('keeps rows a live turn left running through a reread of the same history', () => {
+    const t = thread(); const projection = new CodexActivityProjection()
+    startAgent(projection, t, 'draw')
+    projection.item(t, codexItemSchema.parse(activityItems.command), context)
+    projection.turn(t, { id: context.turnId, status: 'completed' }, true)
+    // The same turn read back from history, as a refresh or a check before a send reads it.
+    projection.turn(t, { id: context.turnId, status: 'completed' })
+    expect(t.activities?.filter(record => record.kind === 'command' || record.kind === 'subagent').map(record => [record.kind, record.status])).toEqual([['subagent', 'running'], ['command', 'running']])
+    expect(projection.backgroundWork(t).map(work => work.type)).toEqual(['subagent', 'command'])
+  })
+
+  it('leaves a command running in the background even once its row has left the bounded window', () => {
+    const t = thread(); const projection = new CodexActivityProjection()
+    projection.item(t, codexItemSchema.parse(activityItems.command), context)
+    // The command's row is evicted, as a long turn's later steps push it out.
+    t.activities = t.activities!.filter(record => record.kind !== 'command')
+    projection.turn(t, { id: context.turnId, status: 'completed' }, true)
+    expect(projection.backgroundWork(t).map(work => [work.type, work.label])).toEqual([['command', 'npm test']])
+    projection.item(t, codexItemSchema.parse(activityItems.commandDone), { ...context, phase: 'completed' })
+    expect(projection.backgroundWork(t)).toEqual([])
+  })
+
+  it('keeps an agent that outlived its turn as background work when a later turn messages it', () => {
+    const t = thread(); const projection = new CodexActivityProjection()
+    startAgent(projection, t, 'draw')
+    projection.turn(t, { id: context.turnId, status: 'completed' }, true)
+    const [before] = projection.backgroundWork(t)
+    expect(before).toMatchObject({ type: 'subagent', label: 'draw' })
+    projection.item(t, codexItemSchema.parse({ type: 'subAgentActivity', id: 'call-message', kind: 'interacted', agentThreadId: 'draw', agentPath: '/root/draw' }), { ...context, turnId: 'turn-2' })
+    expect(projection.backgroundWork(t)).toEqual([before])
+  })
+
+  it('stops every agent the runtime ran when it ends, even in a row a stop had already closed', () => {
+    const t = thread(); const projection = new CodexActivityProjection()
+    startAgent(projection, t, 'draw')
+    projection.turn(t, { id: context.turnId, status: 'interrupted' }, true)
+    expect(t.activities?.find(record => record.kind === 'subagent')?.agents?.[0]?.status).toBe('running')
+    projection.runtimeEnded(t)
+    expect(t.activities?.find(record => record.kind === 'subagent')?.agents?.[0]?.status).toBe('interrupted')
+    expect(projection.backgroundWork(t)).toEqual([])
   })
 })

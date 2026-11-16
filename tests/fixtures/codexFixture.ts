@@ -9,7 +9,6 @@ import { SottoThreadHost, ThreadRegistry } from '../../src/main/agents/threads'
 import type { AdapterContractSkips, AdapterSessionOptions, RecordedRpc } from './adapterFixture'
 
 export const codexFixtureSkips: AdapterContractSkips = {
-  backgroundWork: 'The fixture has no background-work driver.',
   liveSettings: 'The fixture must apply settings to a live provider session.',
 }
 
@@ -68,6 +67,8 @@ export async function codexFixture(root?: string, wrapped = false, requestTimeou
   /** Whether the fake has carried out the action `action` answered with this ID. */
   const acted = async (id: string): Promise<boolean> => (await readFile(join(root, 'actions.jsonl'), 'utf8').catch(() => ''))
     .split('\n').some(line => line === JSON.stringify({ id }))
+  /** Waits until the fake has carried out an action, so a test can hand it another. */
+  const carriedOut = async (id: string): Promise<void> => { while (!await acted(id)) await new Promise(resolve => setTimeout(resolve, 10)) }
   /** Write input typed in another Codex process to the session log, as Codex does, without the adapter polling it. */
   const typeUnseen = async (id: string, text: string): Promise<void> => {
     const codexThreadId = await realId(id)
@@ -88,6 +89,11 @@ export async function codexFixture(root?: string, wrapped = false, requestTimeou
     driver: {
       typeInProvider: async (id: string, text: string) => { await typeUnseen(id, text); await adapter.pollSessionLogs() },
       completeTurn: async (id: string, text: string) => { await action(id, { type: 'complete', text }) },
+      // Each waits for the fake to carry it out, so the next action cannot overwrite it unread.
+      backgroundWork: {
+        completeLeaving: async (id: string, text: string, description: string) => { await carriedOut(await action(id, { type: 'background-agent', text, description })) },
+        end: async (id: string) => { await carriedOut(await action(id, { type: 'background-agent-end' })) },
+      },
       raiseQuestion: async (id: string, text: string) => { await action(id, { type: 'question', text }) },
       raisePermission: async (id: string, text: string) => { await action(id, { type: 'permission', text }) },
       delayNextAck: (method: string) => script({ delay: { method, ms: requestTimeoutMs + 1000 }, suppressNotifications: true }),
@@ -109,7 +115,7 @@ export async function codexFixture(root?: string, wrapped = false, requestTimeou
       },
       stopped: async (id: string) => !adapter.resumedThreads().includes(wrapped ? registry.byThread(id)!.sessionId : id),
     },
-    action, acted,
+    action, acted, carriedOut,
     cleanup: async () => {
       host.disconnect(); await adapter.closed(); await registry.flush()
       if (dirname(resolve(root)) !== resolve(tmpdir()) || !root.includes('sotto-codex-')) throw new Error('Unexpected temporary test directory')

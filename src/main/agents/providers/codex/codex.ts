@@ -605,6 +605,17 @@ export class CodexAppServerHost implements ProviderHost {
     return this.dispatching.has(id) || this.creating.has(id) || this.runningTurns.has(id) || this.unconfirmedDispatchSessionIds.has(id)
       || this.resuming.has(id) || this.opening.has(id) || this.threadReads.has(id) || this.launching.has(id) || !!this.runtimes.get(id)?.server.owed
       || this.threads.get(id)?.status === 'running' || !!this.aliases[id]?.pendingSettings || !!this.aliases[id]?.pendingRollback
+      // Its agents and commands in the background run in this app-server; stopping it would end them (#2634).
+      || !!this.threads.get(id)?.backgroundWork?.length
+  }
+  /** The thread's background work as its activity has it now (#2634). */
+  private publishBackground(id: string): void {
+    const thread = this.threads.get(id); if (!thread) return
+    const work = this.activity.backgroundWork(thread)
+    const before = thread.backgroundWork ?? []
+    if (before.length === work.length && before.every((item, index) => item.id === work[index]!.id && item.label === work[index]!.label)) return
+    if (work.length) thread.backgroundWork = work; else delete thread.backgroundWork
+    this.changed(id)
   }
   private asking(id: string): boolean { return !!this.threads.get(id)?.requests.length }
   /**
@@ -625,7 +636,7 @@ export class CodexAppServerHost implements ProviderHost {
     // An idle app-server is let go gently: its input closes and it has the request deadline to finish writing.
     if (runtime) { this.runtimes.delete(id); this.endServer(runtime.server, 'gently') }
     const thread = this.threads.get(id)
-    if (thread) { this.activity.runtimeEnded(thread); this.changed(id) }
+    if (thread) { this.activity.runtimeEnded(thread); this.publishBackground(id); this.changed(id) }
   }
   /**
    * Codex's own rollouts on this computer, for Usage (ADR-0083). A thread this adapter owns reports under its own ID,
@@ -848,7 +859,7 @@ export class CodexAppServerHost implements ProviderHost {
     if (this.runtimes.get(id) !== runtime) return
     this.runtimes.delete(id); this.live.delete(id); this.outdated.delete(id); this.reaper.forget(id); this.log.release(id)
     const lost = this.threads.get(id)
-    if (lost) { this.activity.runtimeEnded(lost); this.changed(id) }
+    if (lost) { this.activity.runtimeEnded(lost); this.publishBackground(id); this.changed(id) }
     // What it asked can no longer be answered.
     for (const [key, pending] of [...this.requests]) if (pending.server === runtime.server) this.removeRequest(key)
     this.settingsConfirmations.get(id)?.settle(false)
@@ -2332,7 +2343,7 @@ export class CodexAppServerHost implements ProviderHost {
     const params = parsed.data; const id = this.sessionId(params.threadId)
     if (!id) {
       const owner = this.activity.childNotification(params.threadId, frame.method!, params)
-      if (owner) { this.touch(owner.id); this.changed(owner.id); this.emit(true) }
+      if (owner) { this.touch(owner.id); this.publishBackground(owner.id); this.changed(owner.id); this.emit(true) }
       return
     }
     this.touch(id); this.worked(id)
@@ -2382,6 +2393,7 @@ export class CodexAppServerHost implements ProviderHost {
       }
     }
     if (frame.method === 'serverRequest/resolved' && params.requestId !== undefined) this.removeRequest(heldKey(server, params.requestId))
+    this.publishBackground(id)
     this.changed(id)
     this.emit(frame.method !== 'turn/started' && frame.method !== 'turn/completed'
       && frame.method !== 'error' && frame.method !== 'serverRequest/resolved')
@@ -2436,7 +2448,11 @@ export class CodexAppServerHost implements ProviderHost {
     for (const confirmation of this.settingsConfirmations.values()) confirmation.settle(false)
     this.settingsConfirmations.clear()
     this.requests.clear(); this.inFlightRequestIds.clear()
-    for (const thread of this.threads.values()) thread.requests = []
+    for (const thread of this.threads.values()) {
+      thread.requests = []
+      // Every app-server is ending, and what each ran in the background ends with it (#2634).
+      if (thread.backgroundWork) { this.activity.runtimeEnded(thread); delete thread.backgroundWork }
+    }
     this.threadChanges.markAll()
   }
   disconnect(): void { this.shutdown(true) }

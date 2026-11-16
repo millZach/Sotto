@@ -169,6 +169,29 @@ subagents and commands, which come on its own session or name their parent, are 
 from the reaper. A process that ends takes them with it: its subagents' rows read unknown and their agents interrupted,
 so Watcher's roster stops counting them. Nothing new is drawn, so no mock-up was needed.
 
+## Amendment: Codex's sub-agents and commands left running
+
+*November 16, 2026.* Issue #2634, under the amendments above. Live sessions of codex-cli 0.169.0 on forge showed both
+(`docs/research/2026-11-16-codex-background-work-probe.md`).
+
+A sub-agent started with `spawn_agent`, not waited for, runs in a thread of its own: its own `turn/started`, the parent's
+`turn/completed`, then the sub-agent's own `turn/completed` and a `subAgentActivity` item of kind `completed` on the turn
+that started it. Codex does not wake the parent.
+
+A command run with `exec_command` that is still running when its yield time passes stays a unified-exec session. Its
+`commandExecution` item is still `inProgress` when the turn completes, and the item's own `item/completed` comes when the
+command ends. `thread/backgroundTerminals/list` lists it in between.
+
+So Sotto reads both from Codex's own notifications, without polling. A sub-agent of the thread's that its own
+notifications show working (the projection's `working`), once its spawning turn has ended, is background work of type
+`subagent` until its own turn ends, whatever later turn messages it. One spawned in a sub-agent's turn is that
+sub-agent's business. A command seen starting live and still running when its turn completes on its own is a `command`
+until its own completion. It is tracked apart from the rows, so a long turn whose bounded rows dropped it loses nothing.
+Each keeps its row running until its ending, through a reread of the same history too. A stopped or failed turn's
+commands are closed as before, since nothing shows they carry on. Its sub-agents count only while their own threads say
+they work. The thread's app-server holds its session from the reaper while either runs. When the app-server ends, or
+Codex is disconnected, they end: their rows read unknown and every agent in them reads interrupted.
+
 ## Considered Options
 
 - **The `background_tasks_changed` level signal.** The SDK documents a frame carrying the whole set of live
@@ -184,6 +207,6 @@ so Watcher's roster stops counting them. Nothing new is drawn, so no mock-up was
 
 `CONTEXT.md` gains **Background work** and amends **Monitoring task**, **Held action** and **Session reaper**.
 ADR-0021 gains an amendment for the order. Only the Claude adapter publishes background work (and, from the
-amendments above, the Cursor and Grok adapters); the adapter contract's case skips the others. T3 Code reads Codex child-agent events as agent work, which may serve a later
+amendments above, the Cursor, Grok and Codex adapters); the adapter contract's case skips the others. T3 Code reads Codex child-agent events as agent work, which may serve a later
 issue, but Codex, Grok Build and Devin were not studied for this one and publish nothing. No new setting, IPC
 channel, host or dependency.
