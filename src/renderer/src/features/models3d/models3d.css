@@ -1,4 +1,4 @@
-/* The 3D models page and Tools › 3D models (ADR-0141; the Meshy plan's ticket 5, Zach's variant C): one large view, the
+/* Settings › 3D models and Tools › 3D models (ADR-0141; the Meshy plan's ticket 5, Zach's variant C): one large view, the
    details beside it and a filmstrip below; and the open thread's 3D models in Tools. Every colour is a theme token, and
    every size and corner a step. The view itself is drawn by modelLine.css, as in a thread. */
 
@@ -11,13 +11,10 @@
 .models-stage__over img { max-width: 100%; max-height: 220px; border-radius: var(--tt-radius-inset); object-fit: contain; }
 .models-stage__over svg { color: var(--tt-text-muted); }
 
-/* The page. */
-.models-page { display: flex; flex: 1; width: 100%; min-width: 0; min-height: 0; }
-.models-page__scroll { flex: 1; min-width: 0; overflow-y: auto; container: models-page / inline-size; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
-/* As tall as the room, so the view takes what the header and the filmstrip leave and the details scroll beside it. */
-.models-page__inner { display: flex; flex-direction: column; height: 100%; min-height: 100%; max-width: 1480px; margin: 0 auto; padding: 4px clamp(16px, 3cqi, 32px) 20px; }
-.models-page__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; margin: 0 0 14px; padding-top: 8px; }
-.models-page__head h1 { margin: 0; font-size: var(--tt-type-title); font-weight: 500; line-height: 1.2; letter-spacing: -1px; }
+/* The page, a Settings page: Settings' room scrolls it, and its column sets how wide it is. */
+.models-page { display: flex; flex-direction: column; min-width: 0; container: models-page / inline-size; }
+.models-page__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; margin: 0 0 20px; }
+.models-page__head h2 { margin: 0; font-size: var(--tt-type-title); font-weight: 500; line-height: 1.2; letter-spacing: -1px; font-variation-settings: 'opsz' 96; }
 .models-page__sub { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); font-variant-numeric: tabular-nums; }
 
 .models-search { position: relative; display: block; flex: 0 1 240px; min-width: 160px; margin-left: auto; align-self: center; }
@@ -55,15 +52,15 @@
 
 .models-page__stage {
   display: grid;
-  flex: 1 1 0;
   grid-template-columns: minmax(0, 1fr) 340px;
-  min-height: 220px;
+  /* As tall as the window allows, so the view and the filmstrip below it fit in one screen at 1280x800. */
+  height: clamp(300px, calc(100vh - 330px), 560px);
   overflow: hidden;
   border-radius: var(--tt-radius-card);
   background: var(--tt-surface-elevated);
 }
 .models-page__details { display: grid; align-content: start; gap: 12px; min-width: 0; padding: 18px 18px 16px; overflow-y: auto; }
-.models-page__details h2 { margin: 0; overflow-wrap: anywhere; font-size: var(--tt-type-heading); font-weight: 600; }
+.models-page__details > h3 { margin: 0; overflow-wrap: anywhere; font-size: var(--tt-type-heading); font-weight: 600; }
 .models-page__kind { margin: -6px 0 0; color: var(--tt-text-muted); font-family: var(--tt-font-mono); font-size: var(--tt-type-caption); }
 .models-page__actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .models-page__actions:empty { display: none; }
@@ -147,14 +144,13 @@
   font-weight: 600;
 }
 
-.models-page__empty { display: grid; flex: 1; place-items: center; padding: 24px; color: var(--tt-text-2); font-size: var(--tt-type-small); text-align: center; }
+.models-page__empty { display: grid; min-height: 240px; place-items: center; padding: 24px; color: var(--tt-text-2); font-size: var(--tt-type-small); text-align: center; }
 .models-page__empty b { display: block; margin-bottom: 6px; color: var(--tt-text); font-size: var(--tt-type-lead); font-weight: 600; }
 .models-page__empty p { max-width: 420px; margin: 0; }
 
 /* Narrow: the view over the details, the page scrolling as a whole. */
 @container models-page (max-width: 720px) {
-  .models-page__inner { height: auto; }
-  .models-page__stage { flex: none; grid-template-columns: minmax(0, 1fr); grid-template-rows: 260px auto; }
+  .models-page__stage { height: auto; grid-template-columns: minmax(0, 1fr); grid-template-rows: 260px auto; }
   .models-page__details { overflow: visible; }
   .models-search { flex-basis: 100%; margin-left: 0; }
 }

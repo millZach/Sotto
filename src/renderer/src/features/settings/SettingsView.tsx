@@ -3,6 +3,7 @@ import { PhonesSettings } from './PhonesSettings'
 import { TeamLinksOnHosts } from '../../watcher/TeamsPage'
 import { LocalAppsSettings } from './LocalAppsSettings'
 import { PluginsSettings } from './PluginsSettings'
+import { ModelsPage } from '../models3d/ModelsPage'
 import { DictationShortcuts } from './DictationShortcuts'
 import { LinuxDictationShortcuts } from './LinuxDictationShortcuts'
 import { ThreadShortcutsSettings } from './ThreadShortcutsSettings'
@@ -15,7 +16,7 @@ import { describeSetting, findSettingControl, findSettings, isSettingsSection, r
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { msg, t as tNow } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
-import { AppWindow, Network, Split, AudioLines, ChevronRight, ClipboardPaste, Cloud, Command, Download, Eye, FolderGit2, Gauge, PanelLeft, GitBranch, Globe, History, Keyboard, Landmark, MessageSquareText, MessagesSquare, Mic, Palette, Plug, Power, RotateCcw, Server, Settings2, ShieldCheck, Shrink, Smartphone, Sparkles, Timer } from 'lucide-react'
+import { AppWindow, Network, Split, AudioLines, Box, ChevronRight, ClipboardPaste, Cloud, Command, Download, Eye, FolderGit2, Gauge, PanelLeft, GitBranch, Globe, History, Keyboard, Landmark, MessageSquareText, MessagesSquare, Mic, Palette, Plug, Power, RotateCcw, Server, Settings2, ShieldCheck, Shrink, Smartphone, Sparkles, Timer } from 'lucide-react'
 
 import {
   TRANSCRIPTION_PRIVACY_NOTICE,
@@ -144,6 +145,8 @@ const PAGE_ICONS: Record<SettingsPageId, RailIcon> = {
   'settings-providers': Command,
   // Plugins (ADR-0205), an Owl feature: shown only while the Owl list turns `plugins` on.
   'settings-plugins': Plug,
+  // 3D models (ADR-0141), with Plugins.
+  'settings-models': Box,
   'settings-hosts': Server,
   'settings-cloud-iphone': Cloud,
   'settings-appearance': Palette,
@@ -381,7 +384,7 @@ export function SettingsView({
   // Owl `dictation-off`: with dictation off, only the switch stays in Dictation, and its sections leave the rail.
   const dictationSwitch = useOwlFeature('dictation-off')
   const dictation = dictationOn(settings, dictationSwitch)
-  const sections = SETTINGS_PAGES.filter(section => (section.id !== 'settings-watcher' || watcherOn) && (section.id !== 'settings-performance' || performanceOn) && (section.id !== 'settings-council' || councilOn) && (section.id !== 'settings-plugins' || pluginsOn)
+  const sections = SETTINGS_PAGES.filter(section => (section.id !== 'settings-watcher' || watcherOn) && (section.id !== 'settings-performance' || performanceOn) && (section.id !== 'settings-council' || councilOn) && (section.id !== 'settings-plugins' || pluginsOn) && (section.id !== 'settings-models' || pluginsOn)
     && (dictation || !DICTATION_ONLY_PAGES.has(section.id)))
   const museHeld = useHeldProviders().has('muse')
   const menuBarOwlOn = useOwlFeature('menu-bar-owl')
@@ -699,6 +702,10 @@ export function SettingsView({
               {pluginsOn ? <Card className="settings-section" id="settings-plugins" {...panelProps('settings-plugins')}>
                 <div className="settings-section__heading"><h2><Trans>Plugins</Trans></h2><p className="tt-paragraph"><Trans>Outside services your threads can use</Trans></p></div>
                 <PluginsSettings /></Card> : null}
+
+              {/* Every 3D model the threads made (ADR-0141). Only the open page reads the list and watches its files. */}
+              {pluginsOn ? <Card className="settings-section settings-models" id="settings-models" {...panelProps('settings-models')}>
+                <ModelsPage platform={platform} shown={activeSection === 'settings-models'} /></Card> : null}
 
               <Card className="settings-section" id="settings-hosts" {...panelProps('settings-hosts')}>
                 <div className="settings-section__heading"><h2><Trans>Hosts &amp; phones</Trans></h2><p className="tt-paragraph"><Trans>This computer, other computers, and your iPhone</Trans></p></div>

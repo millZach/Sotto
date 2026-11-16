@@ -8,7 +8,8 @@ import { withShownPictureThread } from './support/shownPictureThread'
 import { openPage, openThreads, resizeWindow } from './support/sottoLaunch'
 
 /**
- * The 3D models page and Tools › 3D models (ADR-0141; the Meshy plan's ticket 5, Zach's variant C), on Owl, against the
+ * Settings › 3D models and Tools › 3D models (ADR-0141; the Meshy plan's ticket 5, Zach's variant C, in Settings since
+ * November 16, 2026), on Owl, against the
  * made-up Meshy ticket 4's journey uses. A thread makes two 3D models; while the second is being made, Tools › 3D models
  * lights its rail item and lists both, and the page shows its step in its tile. Once both are done the page turns the
  * chosen one, moves along the filmstrip from the keyboard, shows a file in the folder app, and goes to the thread. With
@@ -73,6 +74,18 @@ async function footProblems(page: Page): Promise<string[]> {
     return problems
   })
 }
+/** Settings › 3D models, the page directly below Plugins: the sidebar's foot has no cube to open it by (Zach's pick A). */
+async function openModels(page: Page): Promise<Locator> {
+  await openPage(page, 'Settings')
+  await expect(page.locator('.thread-nav__foot').getByRole('link', { name: '3D models' })).toHaveCount(0)
+  const sections = page.getByRole('tablist', { name: 'Settings sections' })
+  const names = await sections.getByRole('tab').allTextContents()
+  expect(names.indexOf('3D models')).toBe(names.indexOf('Plugins') + 1)
+  await sections.getByRole('tab', { name: '3D models', exact: true }).click()
+  const room = page.getByRole('tabpanel', { name: '3D models', exact: true })
+  await expect(room.getByRole('heading', { level: 2, name: '3D models' })).toBeVisible()
+  return room
+}
 /** Pin, fill and close at the Tools rail's foot, each wholly in the window. Problems, in words. */
 async function railProblems(page: Page): Promise<string[]> {
   return page.evaluate(() => [...document.querySelectorAll<HTMLElement>('.tools-rail__foot button, .tools-rail__tab')]
@@ -80,7 +93,7 @@ async function railProblems(page: Page): Promise<string[]> {
     .map(control => `${control.getAttribute('aria-label') ?? control.textContent} below the window`))
 }
 
-test('The 3D models page and Tools › 3D models show what a thread made, and say when its files are gone', async () => {
+test('Settings › 3D models and Tools › 3D models show what a thread made, and say when its files are gone', async () => {
   test.skip(process.platform !== 'win32', 'Windows desktop acceptance')
   test.setTimeout(480_000)
   await mkdir(evidence, { recursive: true })
@@ -142,13 +155,11 @@ test('The 3D models page and Tools › 3D models show what a thread made, and sa
       await expect(card.getByRole('list', { name: 'Files' }).getByRole('button')).toHaveCount(3)
       await shot(page, 'tools-making-dark-1280x800')
 
-      // The page, from the cube at the sidebar's foot: the lantern's tile says its step while it is made.
-      await page.getByRole('link', { name: '3D models', exact: true }).click()
-      const room = page.getByRole('region', { name: '3D models' })
-      await expect(room.getByRole('heading', { level: 1, name: '3D models' })).toBeVisible()
+      // The page, Settings › 3D models: the lantern's tile says its step while it is made.
+      let room = await openModels(page)
       // The lantern's texture is counted from when it was asked for.
       await expect(room).toContainText('2 3D models from 1 thread · 60 credits this month')
-      const strip = room.getByRole('listbox', { name: 'Every 3D model' })
+      let strip = room.getByRole('listbox', { name: 'Every 3D model' })
       await expect(strip.getByRole('option')).toHaveCount(2)
       const lanternTile = strip.getByRole('option', { name: /^Brass lantern, Step 2 of 2: painting the texture · \d+%$/u })
       await lanternTile.click()
@@ -173,7 +184,7 @@ test('The 3D models page and Tools › 3D models show what a thread made, and sa
       await page.keyboard.press('ArrowRight')
       await expect(strip.getByRole('option', { name: /^Oak barrel/u })).toHaveAttribute('aria-selected', 'true')
       await expect(strip.getByRole('option', { name: /^Oak barrel/u })).toBeFocused()
-      const barrelDetails = room.getByRole('complementary', { name: 'About the Oak barrel' })
+      let barrelDetails = room.getByRole('complementary', { name: 'About the Oak barrel' })
       await expect(barrelDetails).toBeVisible()
       await page.keyboard.press('ArrowLeft')
       await expect(strip.getByRole('option', { name: /^Brass lantern/u })).toHaveAttribute('aria-selected', 'true')
@@ -240,7 +251,9 @@ test('The 3D models page and Tools › 3D models show what a thread made, and sa
       // The barrel's files are deleted outside Sotto: the page says so, and Remove from 3D models takes the record only.
       const folder = join(project, 'models')
       for (const name of await readdir(folder)) if (name.startsWith('Oak barrel.')) await rm(join(folder, name))
-      await page.getByRole('link', { name: '3D models', exact: true }).click()
+      room = await openModels(page)
+      strip = room.getByRole('listbox', { name: 'Every 3D model' })
+      barrelDetails = room.getByRole('complementary', { name: 'About the Oak barrel' })
       const goneTile = strip.getByRole('option', { name: /^Oak barrel, [A-Z][a-z]{2} \d{1,2}, Its files are gone$/u })
       await goneTile.click()
       const gone = room.getByRole('group', { name: 'Its files are gone' })
@@ -264,7 +277,7 @@ test('The 3D models page and Tools › 3D models show what a thread made, and sa
       // With the lantern's files gone and removed too, the page says there are none yet; its credits stay counted.
       for (const name of await readdir(folder)) await rm(join(folder, name))
       await openThreads(page)
-      await page.getByRole('link', { name: '3D models', exact: true }).click()
+      room = await openModels(page)
       await room.getByRole('group', { name: 'Its files are gone' }).getByRole('button', { name: 'Remove from 3D models' }).click()
       await expect(room.getByText('No 3D models yet')).toBeVisible()
       await shot(page, 'page-empty-dark-1280x800')

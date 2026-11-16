@@ -2,7 +2,7 @@ import { i18n } from '@lingui/core'
 import { plural, t } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
 import { File, FolderOutput, Search, X } from 'lucide-react'
-import React, { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import React, { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
 import type { Model3dListed } from '../../../../shared/models3d'
 import type { SottoPlatform } from '../../../../shared/platform'
 import { useOptionalAgents } from '../../agents/AgentContext'
@@ -16,16 +16,20 @@ import { filesGone, folderWords, GoneNote, ModelPicture, ModelStage, modelWhen, 
 import { modelMatches, modelShown, useHostsShown, useModelChoice, useModels3d, useMonthCredits } from './models3dList'
 
 /**
- * The 3D models page (ADR-0141; the Meshy plan's ticket 5, Zach's variant C): every 3D model this computer's threads
- * made or are making, newest first. One large view of the chosen one with its details beside it, Go to thread and
+ * Settings › 3D models (ADR-0141; the Meshy plan's ticket 5, Zach's variant C, moved into Settings on November 16, 2026,
+ * Zach's pick A): every 3D model this computer's threads made or are making, newest first. One large view of the chosen one with its details beside it, Go to thread and
  * Show in File Explorer, its facts and its files; a filmstrip of every 3D model below, which the arrow keys move
  * along. A record whose files are gone says so and offers to remove itself, never a file. Failed and lost 3D models
  * stay as their line in their thread (Zach's pick on November 15, 2026). Part of the `plugins` Owl feature.
+ *
+ * Settings draws every page and hides all but the open one, so `shown` says whether this one is open: only then does it
+ * read the list, watch the files and count the month's credits. The heading stays for Find a setting either way.
  */
-export function ModelsPage({ platform }: { readonly platform: SottoPlatform }): ReactNode {
+export function ModelsPage({ platform, shown: open = true }: { readonly platform: SottoPlatform; readonly shown?: boolean }): ReactNode {
   const { t } = useLingui()
   const on = useOwlFeature('plugins')
-  const list = useModels3d(on, undefined, { watchFiles: true })
+  const reading = on && open
+  const list = useModels3d(reading, undefined, { watchFiles: true })
   const { reload } = list
   // A paired host's 3D models are listed while it is connected, and read again when it comes back (the Meshy plan's
   // ticket 6, part 2).
@@ -34,12 +38,11 @@ export function ModelsPage({ platform }: { readonly platform: SottoPlatform }): 
   const hostsRead = useRef(hosts.key)
   useEffect(() => { if (hostsRead.current !== hosts.key) { hostsRead.current = hosts.key; reload() } }, [hosts.key, reload])
   const reduced = useReducedMotion(on)
-  const titleId = useId()
   const [query, setQuery] = useState('')
   const search = useRef<HTMLInputElement>(null)
   const strip = useRef<HTMLDivElement>(null)
   // This month's credits are read again as a 3D model comes, goes or costs more.
-  const credits = useMonthCredits(on, models?.map(model => `${model.id}:${model.credits}`).join(',') ?? '')
+  const credits = useMonthCredits(reading, models?.map(model => `${model.id}:${model.credits}`).join(',') ?? '')
   const shown = useMemo(() => models?.filter(model => modelMatches(model, query)) ?? [], [models, query])
   const { selected, choose, removed } = useModelChoice(list, shown)
   if (!on) return null
@@ -72,9 +75,9 @@ export function ModelsPage({ platform }: { readonly platform: SottoPlatform }): 
     </>
   }
 
-  return <section className="models-page" aria-labelledby={titleId}><div className="models-page__scroll"><div className="models-page__inner">
+  return <div className="models-page">
     <header className="models-page__head">
-      <h1 id={titleId}>{t({ message: '3D models', comment: 'The 3D models page: every 3D model Meshy made for a thread.' })}</h1>
+      <h2 data-setting="models-3d">{t({ message: '3D models', comment: 'A Settings page, named in its rail and its heading: every 3D model Meshy made for a thread. Other messages name it as "Settings > 3D models".' })}</h2>
       {summary ? <p className="models-page__sub">{summary}</p> : null}
       {models && models.length > 0 ? <label className="models-search">
         <span className="tt-visually-hidden">{t`Search 3D models`}</span>
@@ -87,7 +90,7 @@ export function ModelsPage({ platform }: { readonly platform: SottoPlatform }): 
       </label> : null}
     </header>
     {body}
-  </div></div></section>
+  </div>
 }
 
 /** The details beside the view: the name and kind, Go to thread and Show in File Explorer, the facts and the files. */
@@ -126,7 +129,7 @@ function ModelDetails({ model, platform, onRemoved, onKept }: { readonly model: 
   const cost = creditsWords(model.credits)
 
   return <aside className="models-page__details" aria-label={t({ message: `About the ${name}`, comment: '{name} is the name of a 3D model, such as Oak barrel.' })}>
-    <h2>{model.name}</h2>
+    <h3>{model.name}</h3>
     <p className="models-page__kind">{kind}</p>
     <div className="models-page__actions">
       {thread ? <Button variant="primary" onClick={openThread}>{t`Go to thread`}</Button> : null}
@@ -147,7 +150,7 @@ function ModelDetails({ model, platform, onRemoved, onKept }: { readonly model: 
       {model.percent !== undefined ? <span className="model-line__progress" role="progressbar" aria-label={stepWords(model)} aria-valuemin={0} aria-valuemax={100} aria-valuenow={model.percent}><i style={{ width: `${model.percent}%` }} /></span> : null}
       <p className="models-making__words">{t({ message: `The files go to ${where} in the thread’s folder when it is done.`, comment: '{where} is a folder, such as models/.' })}</p>
     </div> : gone ? <GoneNote key={model.id} model={model} onRemoved={onRemoved} onKept={onKept} /> : <>
-      <h3 className="models-files__head">{t`Files`}</h3>
+      <h4 className="models-files__head">{t`Files`}</h4>
       <ul className="models-files" aria-label={t`Files`}>
         {model.files.map(file => <li key={file.name}>
           <File size={14} aria-hidden="true" />

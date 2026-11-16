@@ -138,6 +138,17 @@ describe('Find a setting', () => {
     expect(screen.getByRole('combobox', { name: 'Default merge method' })).toHaveFocus()
   })
 
+  it('opens 3D models, the page directly below Plugins, and puts focus on its heading', async () => {
+    const user = userEvent.setup()
+    withAgents()
+    render(<SettingsView {...baseProps()} />)
+    const tabs = within(screen.getByRole('tablist', { name: 'Settings sections' })).getAllByRole('tab').map(tab => tab.textContent)
+    expect(tabs.indexOf('3D models')).toBe(tabs.indexOf('Plugins') + 1)
+    await user.type(screen.getByRole('searchbox', { name: 'Find a setting' }), 'meshy glb{Enter}')
+    expect(settingsTab('3D models')).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByRole('heading', { level: 2, name: '3D models' })).toHaveFocus()
+  })
+
   it('finds a setting by what the page says under it', async () => {
     const user = userEvent.setup()
     render(<SettingsView {...baseProps()} />)

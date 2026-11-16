@@ -1152,9 +1152,7 @@ msgstr "3D model · Meshy · made from words"
 msgid "3D model · Meshy · made from words · on {computer}"
 msgstr "3D model · Meshy · made from words · on {computer}"
 
-#. The 3D models page: every 3D model Meshy made for a thread.
-#. The page link: the 3D models page, every 3D model Meshy made for a thread.
-#: src/renderer/src/components/AppShell.tsx
+#. A Settings page, named in its rail and its heading: every 3D model Meshy made for a thread. Other messages name it as "Settings > 3D models".
 #: src/renderer/src/features/models3d/ModelsPage.tsx
 msgid "3D models"
 msgstr "3D models"
