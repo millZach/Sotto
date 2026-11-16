@@ -71,7 +71,7 @@ Zach reported again that opening one turn's **Worked for** line opened every one
 
 **What the user chose is kept for the turn.** Sotto keeps each press by thread and turn for the window's life, as it kept the working line's, so a thread shown again draws each line as the user left it. A running turn's choice on its working line carries to its **Worked for** line or news header once it ends, and a press on that finished line is kept for the same turn. After a restart every line starts folded.
 
-**Groups inside an opened fold start open.** A fold draws its groups only once the user opens it, so they start open and the press shows the turn's steps, as it did. A group anywhere else starts folded, and a press on a group still keeps that group's own state without moving the fold around it.
+**A press shows its turn's steps.** The groups inside a fold ("Ran 2 commands, changed 1 file") are drawn only once the user opens the fold, and they start open, so a press on a **Worked for** line shows that turn's steps, as it did. Zach chose this on a second card the same day, over the groups starting folded too. A group anywhere else starts folded, and a press on a group opens or folds that group alone, without moving the fold around it; the group keeps that state only while its fold stays open.
 
 This replaces the October 26 amendment's **One answer, kept** and **Groups follow, never set**, which is what Drake asked for, and the November 12 amendment's "A press still sets the answer, so a line that shows after it starts that way". The iPhone is unchanged: it keeps each step run's state by its run.
 

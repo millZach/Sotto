@@ -1,3 +1,5 @@
+import { useState } from 'react'
+
 /**
  * Whether a turn's steps are open: the working line, the Worked for fold and the work folded into a Watcher reply's
  * header. Each starts folded and opens only on a press on its own line (Zach, November 15, 2026: only the one you click
@@ -11,3 +13,9 @@ const turnKey = (threadId: string | undefined, turnId: string): string => `${thr
 /** Whether the user left this turn's steps open, folded when they never pressed it. */
 export const stepsOpen = (threadId: string | undefined, turnId: string): boolean => stepsChoices.get(turnKey(threadId, turnId)) ?? false
 export function chooseSteps(threadId: string | undefined, turnId: string, open: boolean): void { stepsChoices.set(turnKey(threadId, turnId), open) }
+
+/** A finished turn's line: open as the user left this turn, and a press kept for it. */
+export function useTurnSteps(threadId: string | undefined, turnId: string): readonly [boolean, (open: boolean) => void] {
+  const [pressed, setPressed] = useState<boolean | null>(null)
+  return [pressed ?? stepsOpen(threadId, turnId), open => { setPressed(open); chooseSteps(threadId, turnId, open) }]
+}

@@ -20,7 +20,7 @@ import { followupsFor } from './ThreadFollowups'
 import { deliveryFor, deliveryPending, hasDraftContent, queuedRevision, submissionStatus, useSubmissions, useThreadComposer, type Submission, type SubmissionStatus, type ThreadDraftStore } from './threadDraftStore'
 import { clockLabel, type ThreadRow } from './threadFacts'
 import { useShared } from './stateSharing'
-import { chooseSteps, stepsOpen } from './stepsOpen'
+import { useTurnSteps } from './stepsOpen'
 import { MessageContent, AttachmentPreviews } from './MessageContent'
 import { SentSkillsContext, useSentSkills } from './sentSkills'
 import { renderedPlainText, useTransientFlag, writeClipboard } from './richActions'
@@ -366,13 +366,10 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
     return element !== null && rows !== null ? rows.add(message.id, element) : undefined
   }, [rows, message.id])
   const workButton = useRef<HTMLButtonElement>(null)
-  const [pressedOpen, setPressedOpen] = useState<boolean | null>(null)
   const lifecycle = workGroups?.find(group => group.turn)?.turn
   // A news turn's work folds into this reply's header once it ends, so the header starts as its working line was left, or
   // folded, and a press here is kept for the turn, as a Worked for line's is.
-  const workTurn = lifecycle?.turnId ?? message.id
-  const workOpen = pressedOpen ?? stepsOpen(threadId, workTurn)
-  const setWorkOpen = (open: boolean): void => { setPressedOpen(open); chooseSteps(threadId, workTurn, open) }
+  const [workOpen, setWorkOpen] = useTurnSteps(threadId, lifecycle?.turnId ?? message.id)
   const workId = useId()
   const foldWork = (event: React.KeyboardEvent): void => {
     if (!workOpen || event.key !== 'Escape' || event.defaultPrevented || event.nativeEvent.isComposing || !workButton.current) return
@@ -459,7 +456,6 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
   useInterfaceLanguageState()
   // The turn holds its fold's state: what still works after the reply stands under it only while the fold is closed. Until
   // pressed, the fold starts folded, and a press on another never moves it.
-  const [pressedOpen, setPressedOpen] = useState<boolean | null>(null)
   // A fork carries finished turns, so only a finished turn's newest written reply offers one (#1028, E5b).
   // Watcher's room shows no reply its provider made of an API error while Restart stopped threads is on (#2234).
   const failureWords = useContext(TurnFailureWordsContext)
@@ -505,6 +501,10 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
   // A viewer opened from any line of the turn steps through the turn's pictures, as its tiles did (ADR-0170, pictures in steps).
   const turnRecords = useMemo(() => groups.flatMap(group => group.records), [groups])
   const pictureScope = usePictureScope(turnRecords)
+  const lifecycle = groups.find(group => group.turn)?.turn
+  // A turn whose working line the user opened or folded stays that way once it ends, and a press on the finished turn's own
+  // line is kept for the turn, so the thread shown again draws the fold as the user left it.
+  const [workOpen, setWorkOpen] = useTurnSteps(threadId, lifecycle?.turnId ?? turn.key)
   const picturesShown = useOwlFeature('inline-media')
   // A compaction is where the conversation lost its history, so it stays in view instead of folding with the work.
   const boundaries = groups.filter(group => compactionOf(group))
@@ -513,7 +513,6 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
   // Watcher's conversation leaves out only Sotto's news wake-ups (watcherWakeUpsAsShown), so its unshown turns are news
   // turns. Each has no line of its own: its work folds into the header of the first reply it wrote, and every reply stays.
   if (speaker === 'watcher' && turn.unshown && final) {
-    const lifecycle = groups.find(group => group.turn)?.turn
     const records = groups.flatMap(group => group.records)
     const head = written.find(message => message.role === 'assistant' && drawn(message))
     const replyWork = head && records.some(record => record.kind !== 'compaction') ? {
@@ -537,12 +536,6 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
   const unfolded = new Set(visuals.map(visual => visual.message))
   const shown = (from: number, to: number): ReactNode => visuals.filter(visual => visual.at > from && visual.at < to)
     .map(({ message }) => <React.Fragment key={message.id}>{article(message)}</React.Fragment>)
-  const lifecycle = groups.find(group => group.turn)?.turn
-  // A turn whose working line the user opened or folded stays that way once it ends, and a press on the finished turn's own
-  // line is kept for the turn, so the thread shown again draws the fold as the user left it.
-  const workTurn = lifecycle?.turnId ?? turn.key
-  const workOpen = pressedOpen ?? stepsOpen(threadId, workTurn)
-  const setWorkOpen = (open: boolean): void => { setPressedOpen(open); chooseSteps(threadId, workTurn, open) }
   const moments = [...turn.replies.map(message => message.createdAt), ...groups.flatMap(group => group.records.map(record => record.completedAt ?? record.startedAt))]
   // A question a folded reply asked would fold away with it, so it is quoted under the fold (#1019).
   const lifted = work.flatMap(message => message.role === 'assistant' && !isWakeUpMessage(message) && asked(message).length ? [{ message, questions: asked(message) }] : [])
