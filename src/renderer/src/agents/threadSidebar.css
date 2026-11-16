@@ -149,10 +149,15 @@
 .thread-nav[data-mode] .thread-nav__scroll::before, .thread-nav[data-mode] .thread-nav__scroll::after { content: ''; position: sticky; z-index: 2; display: block; margin-inline: -4px; background: var(--threads-sidebar); pointer-events: none; }
 .thread-nav[data-mode] .thread-nav__scroll::before { top: 0; height: 6px; }
 /* The foot's band: the hairline and 6px of the sidebar, after the list's end room. */
-.thread-nav[data-mode] .thread-nav__scroll::after { bottom: 0; height: 7px; margin-top: var(--list-end-room, 0px); }
+.thread-nav[data-mode] .thread-nav__scroll::after { bottom: 0; height: 7px; }
 @container scroll-state(scrollable: bottom) {
   .thread-nav[data-mode] .thread-nav__scroll::after { background: linear-gradient(var(--tt-hairline), var(--tt-hairline)) 0 0 / 100% 1px no-repeat, var(--list-edge-fill); }
 }
+/* The end room is a clear border over the band, never a margin: a margin merged with the last shelf's, so the room added
+   less than it said, and a list a pixel or two too tall for its sidebar took the room and gave it back each time it was
+   measured, its scrollbar coming and going with it. The border lies over the band's 7px rather than inside them, and,
+   unpainted, lets the rows show through. */
+.thread-nav[data-mode] .thread-nav__scroll::after { box-sizing: content-box; border-top: var(--list-end-room, 0px) solid transparent; background-clip: padding-box; }
 /* A scrolled list keeps the name of the project its rows belong to: each open folder's head stays under the band while its
    rows pass beneath it, and once stuck it ends in a hairline, so the list under Needs you always starts at a named folder,
    as a sidebar's sections do. A head sticks only inside its own folder, so the next one pushes it on, and a closed

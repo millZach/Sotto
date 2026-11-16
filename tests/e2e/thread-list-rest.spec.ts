@@ -33,6 +33,55 @@ const offset = (list: Locator): Promise<number> => list.evaluate(element => {
   return row === undefined ? 0 : row.getBoundingClientRect().top - line
 })
 
+test('a thread list a pixel or two taller than its room keeps its end room and scrollbar still', async () => {
+  test.setTimeout(180_000)
+  await withSotto({ onboardingComplete: true, appearance: 'dark', scenario: 'phase3-workspace', agents: 'design-threads', history: populatedHistory }, async launched => {
+    const page = launched.page
+    await holdContentSize(launched, 1280, 800, [820, 560])
+    await openThreads(page)
+    const list = page.locator('.thread-nav[data-mode] .thread-nav__scroll')
+    await expect(list.locator('.thread-folder__rows > .thread-nav__row').first()).toBeVisible({ timeout: 30_000 })
+    // The list at its whole height, then a room a fraction of a pixel to two pixels short of it. The end room's margin once
+    // merged with the Settled shelf's, so there each measure of the list took the room or gave it back, and where the list
+    // overflowed by less than a pixel the scrollbar came and went with it every frame, jolting every row's status and
+    // time sideways. Each short height is measured again, as any change to a row would, and must hold.
+    const changes = await list.evaluate(async (element: HTMLElement) => {
+      const frame = (): Promise<void> => new Promise(done => requestAnimationFrame(() => done()))
+      const frames = async (count: number): Promise<void> => { for (let index = 0; index < count; index += 1) await frame() }
+      const room = (): string => element.style.getPropertyValue('--list-end-room') || '0px'
+      const scrollbarWidth = (): number => element.offsetWidth - element.clientWidth
+      element.style.flex = '0 0 auto'
+      element.style.height = 'auto'
+      await frames(10)
+      const whole = element.getBoundingClientRect().height
+      const found: string[] = []
+      for (let short = 0.125; short <= 2; short += 0.125) {
+        element.style.height = `${whole - short}px`
+        await frames(10)
+        const settled = { room: room(), scrollbar: scrollbarWidth() }
+        // A theme change asks the list to measure its end room again without resizing anything.
+        document.documentElement.setAttribute('data-end-room-probe', String(short))
+        let flips = 0, last = scrollbarWidth()
+        for (let index = 0; index < 30; index += 1) {
+          await frame()
+          if (scrollbarWidth() !== last) flips += 1
+          last = scrollbarWidth()
+        }
+        if (room() !== settled.room || scrollbarWidth() !== settled.scrollbar || flips > 0) found.push(`${short}px short: room ${settled.room} then ${room()}, scrollbar changed ${flips} times`)
+      }
+      document.documentElement.removeAttribute('data-end-room-probe')
+      // The room adds just what it says to how far the list scrolls, above the band's own 7px.
+      element.style.height = `${whole - 1}px`
+      await frames(10)
+      const endRoomPx = Number.parseFloat(room()), scrollHeightWithRoom = element.scrollHeight
+      element.style.setProperty('--list-end-room', '0px')
+      if (endRoomPx <= 0 || scrollHeightWithRoom - element.scrollHeight !== endRoomPx) found.push(`a ${endRoomPx}px room added ${scrollHeightWithRoom - element.scrollHeight}px`)
+      return found
+    })
+    expect(changes).toEqual([])
+  })
+})
+
 test('a small scroll of the thread list moves it a row and comes to rest on a whole row', async () => {
   test.setTimeout(180_000)
   await withSotto({ onboardingComplete: true, appearance: 'dark', scenario: 'phase3-workspace', agents: 'design-threads', history: populatedHistory }, async launched => {
