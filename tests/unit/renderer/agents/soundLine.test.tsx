@@ -188,6 +188,28 @@ describe('a sound’s line in its thread', () => {
     expect(await within(line()).findByRole('button', { name: 'Pause Opening narration' })).toBeInTheDocument()
   })
 
+  it('pauses the sound playing when Play is pressed on another, and plays the first on again from its place', async () => {
+    // Zach's pick on #2654: only one sound plays at a time.
+    const plugins = bridge(MADE)
+    plugins.sound.mockImplementation((async (id: string): Promise<SoundView> => id === 'sound-2' ? { ...MADE, id: 'sound-2', name: 'Rain on a tin roof', kind: 'effect' } : MADE) as never)
+    await act(async () => render(<>
+      <VisualCard visual={{ id: 'v1', title: 'Opening narration', kind: 'sound', source: 'sound-1' }} />
+      <VisualCard visual={{ id: 'v2', title: 'Rain on a tin roof', kind: 'sound', source: 'sound-2' }} />
+    </>))
+    const rain = (): HTMLElement => screen.getByRole('group', { name: 'Sound: Rain on a tin roof' })
+    await userEvent.click(within(line()).getByRole('button', { name: 'Play Opening narration' }))
+    expect(await within(line()).findByRole('button', { name: 'Pause Opening narration' })).toBeInTheDocument()
+    await userEvent.click(within(rain()).getByRole('button', { name: 'Play Rain on a tin roof' }))
+    expect(await within(rain()).findByRole('button', { name: 'Pause Rain on a tin roof' })).toBeInTheDocument()
+    expect(within(line()).getByRole('button', { name: 'Play Opening narration' })).toBeInTheDocument()
+    // The first plays on: the element it had, not a new fetch, and the rain pauses in turn.
+    await userEvent.click(within(line()).getByRole('button', { name: 'Play Opening narration' }))
+    expect(await within(rain()).findByRole('button', { name: 'Play Rain on a tin roof' })).toBeInTheDocument()
+    expect(played).toHaveLength(3)
+    expect(played[2]).toBe(played[0])
+    expect(plugins.soundBytes).toHaveBeenCalledTimes(2)
+  })
+
   it('says it could not make it, that nothing was saved and nothing spent, and what happened on a press', async () => {
     await show({ ...MAKING, state: 'failed', failure: 'rejected', cost: 0 })
     expect(line()).toHaveTextContent('Could not make it · nothing saved · nothing spent')
