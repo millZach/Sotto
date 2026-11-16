@@ -496,6 +496,26 @@ public struct Message: Decodable, Identifiable, Equatable, Sendable {
     public let attachments: [Attachment]?
     /// When the message was written, as the host sends it (ISO 8601). The thread page places steps by it.
     public var createdAt: String? = nil
+    /// A 3D model's line (the Meshy plan's ticket 7), from a computer that keeps the message's `3d-model` visual for a phone
+    /// that accepted `plugin-meshy-phone`. Every other visual reaches the phone as its words alone, as does a visual this
+    /// build cannot read.
+    public var model3d: Model3dLine? = nil
+}
+extension Message {
+    private enum Keys: String, CodingKey { case id, role, text, commandId, attachments, createdAt, visual }
+    private struct Visual: Decodable { let kind: String; let title: String; let source: String }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: Keys.self)
+        id = try c.decode(String.self, forKey: .id)
+        role = try c.decode(String.self, forKey: .role)
+        text = try c.decode(String.self, forKey: .text)
+        commandId = try c.decodeIfPresent(String.self, forKey: .commandId)
+        attachments = try c.decodeIfPresent([Attachment].self, forKey: .attachments)
+        createdAt = try c.decodeIfPresent(String.self, forKey: .createdAt)
+        if let visual = c.tolerant(Visual.self, .visual), visual.kind == Models3d.visualKind, !visual.source.isEmpty, !visual.title.isEmpty {
+            model3d = Model3dLine(id: visual.source, name: visual.title)
+        }
+    }
 }
 /// An image a message carries. Its bytes stay on the computer; `preview` says the computer keeps a copy
 /// it will hand back by message and attachment ID (the `preview` request).
