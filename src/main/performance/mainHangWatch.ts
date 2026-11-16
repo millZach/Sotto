@@ -202,16 +202,16 @@ export class MainHangWatch {
       const stacks: HangStack[] = []
       // The tries that got no stack while main stayed stopped, which the recording says (#2619): a stop of 12.5 s
       // with one stack in it said nothing of why the other tries came back empty.
-      const tried = { missed: 0 }
-      const next = async (): Promise<void> => {
+      let stacksMissed = 0
+      const tryForStack = async (): Promise<void> => {
         const stack = await this.take(session, answeredAt)
         if (stack) stacks.push(stack)
-        else if (this.options.lastAnswered() === answeredAt) tried.missed += 1
+        else if (this.options.lastAnswered() === answeredAt) stacksMissed += 1
       }
-      await next()
-      if (!await this.save(answeredAt, stacks, tried.missed)) return
-      for (let tries = 1; stacks.length < HANG_STACKS && tries < HANG_TRIES && await this.whileStopped(answeredAt, HANG_STACK_EVERY_MS); tries += 1) await next()
-      await this.rewrite(answeredAt, stacks, tried.missed)
+      await tryForStack()
+      if (!await this.save(answeredAt, stacks, stacksMissed)) return
+      for (let tries = 1; stacks.length < HANG_STACKS && tries < HANG_TRIES && await this.whileStopped(answeredAt, HANG_STACK_EVERY_MS); tries += 1) await tryForStack()
+      await this.rewrite(answeredAt, stacks, stacksMissed)
     } finally { if (session.debug) release(session.debug) }
   }
 

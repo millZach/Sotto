@@ -266,14 +266,22 @@ describe('Claude transcript catch-up', () => {
       activities: () => (handed = [...structuredClone(older), structuredClone(stored)]),
     })
     await f.host.connect()
-    await append([{ type: 'system', subtype: 'task_notification', task_id: 'stored-task', status: 'completed', summary: 'Finished after the restart' }])
+    // The thread changes the window's layers take, so the frame publishes and certifies the thread's list, as on the
+    // stream path the laptop's 12.5 s stop was in: `AdapterThreadChanges.build` → `activityThread` → `certifyActivityView`.
+    let published: readonly AgentActivity[] | undefined
+    const unsubscribe = f.adapter.subscribeActivityChanges(changes => {
+      const thread = changes.upserts.find(item => item.id === id)
+      if (thread?.activities) published = thread.activities
+    })
+    try {
+      await append([{ type: 'system', subtype: 'task_notification', task_id: 'stored-task', status: 'completed', summary: 'Finished after the restart' }])
+    } finally { unsubscribe() }
     expect(handed).toHaveLength(2_000)
-    // What the adapter holds once the frame published: the list every publication shares. A snapshot read copies apart.
-    const held = (f.adapter as unknown as { threads: Map<string, { activities?: AgentActivity[] }> }).threads.get(id)!.activities!
-    expect(held.find(row => row.id === 'claude-task-stored-task')).toMatchObject({ status: 'completed', text: 'Finished after the restart' })
-    // Every record the frame did not change is the very record the read handed over: none was copied.
+    expect(published).toBeDefined()
+    expect(published!.find(row => row.id === 'claude-task-stored-task')).toMatchObject({ status: 'completed', text: 'Finished after the restart' })
+    // Every record the frame did not change is published as the very record the read handed over: the certify copied none.
     const kept = new Set<unknown>(handed)
-    const unchanged = held.filter(row => row.id !== 'claude-task-stored-task')
+    const unchanged = published!.filter(row => row.id !== 'claude-task-stored-task')
     expect(unchanged).toHaveLength(1_999)
     expect(unchanged.filter(row => !kept.has(row))).toHaveLength(0)
   })
