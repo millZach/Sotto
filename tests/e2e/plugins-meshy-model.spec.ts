@@ -39,10 +39,15 @@ async function answered(page: Page, name: string): Promise<{ text: string; isErr
   const result = await page.evaluate(key => (window as unknown as Held).__made![key]!, name)
   return { text: result.content.map(part => part.text ?? '').join('\n'), isError: result.isError === true }
 }
-/** Answers the 3D model's card with Make the model. */
-async function allow(pane: Locator): Promise<void> {
+/** Answers the 3D model's card with Make the model, captured first under `capture` when named. */
+async function allow(pane: Locator, capture?: string): Promise<void> {
   const card = pane.locator('section.agent-request[data-kind="permission"]')
   await expect(card).toHaveCount(1, { timeout: 30_000 })
+  if (capture) {
+    await expect(card).toContainText('Make the model')
+    await card.scrollIntoViewIfNeeded()
+    await shot(pane.page(), capture)
+  }
   await card.getByRole('button', { name: 'Make the model', exact: true }).click()
   await expect(card).toHaveCount(0)
 }
@@ -98,7 +103,7 @@ test('A 3D model Meshy makes for a thread is a quiet line in it that opens into 
       await resizeWindow(launched, 1280, 800)
       meshy.behaviour.holding.add('preview')
       await make(page, threadId, BARREL)
-      await allow(pane)
+      await allow(pane, 'card-dark-1280x800')
       const line = pane.getByRole('group', { name: '3D model: Oak barrel' })
       await expect(line).toBeVisible({ timeout: 30_000 })
 
@@ -208,8 +213,9 @@ test('A 3D model Meshy makes for a thread is a quiet line in it that opens into 
 
       // A second 3D model whose texture fails: the line says what happened, that nothing was saved and what was counted.
       meshy.behaviour.failing.add('refine')
+      await page.evaluate(async () => { await window.sotto!.updateSettings({ appearance: 'light' }) })
       await make(page, threadId, LANTERN)
-      await allow(pane)
+      await allow(pane, 'card-light-1280x800')
       const failed = pane.getByRole('group', { name: '3D model: Brass lantern' })
       await expect(failed).toContainText('Could not finish · nothing saved · 20 credits counted', { timeout: 60_000 })
       const failedAnswer = await answered(page, LANTERN.name)
@@ -229,6 +235,17 @@ test('A 3D model Meshy makes for a thread is a quiet line in it that opens into 
       await page.keyboard.press('Escape')
       await expect(what).toBeFocused()
       await expect(what).toHaveAttribute('aria-expanded', 'false')
+
+      // The account counts what the month spent: the barrel's 30 credits and the lantern's 20.
+      await page.evaluate(async () => { await window.sotto!.updateSettings({ appearance: 'dark' }) })
+      await resizeWindow(launched, 1280, 800)
+      await openPage(page, 'Settings')
+      await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Plugins', exact: true }).click()
+      const studio = panel.getByRole('region', { name: 'Meshy account Studio' })
+      if (await studio.count() === 0) await panel.getByRole('button', { name: /^Meshy/u }).click()
+      await expect(studio).toContainText('Credits this month: 50 of 1,000.', { timeout: 30_000 })
+      await studio.scrollIntoViewIfNeeded()
+      await shot(page, 'account-credits-dark-1280x800')
 
       // Only Meshy's made-up API and files were reached, and the window saw no error.
       expect(meshy.requests.every(request => request.path.startsWith('/openapi/') || request.path.startsWith('/files/'))).toBe(true)

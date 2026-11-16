@@ -259,6 +259,9 @@ artifacts/meshy-3d-models/*
 !artifacts/meshy-3d-models/tools-light-1600x1000.png
 !artifacts/meshy-3d-models/tools-light-820x560.png
 !artifacts/meshy-3d-models/tools-making-dark-1280x800.png
+!artifacts/meshy-3d-models/card-dark-1280x800.png
+!artifacts/meshy-3d-models/card-light-1280x800.png
+!artifacts/meshy-3d-models/account-credits-dark-1280x800.png
 artifacts/new-thread-setup/
 artifacts/empty-page-saved-draft/
 artifacts/host-folder-browser-run/
