@@ -56,6 +56,7 @@ import { desktopDefaultsReceiptSchema, type DesktopDefaultsInput, type DesktopDe
 import { heldPluginAccountCopiesSchema, pluginAccountCopyReceiptSchema, pluginAccountCopyRemovedSchema, type HeldPluginAccountCopy, type PluginAccountCopy, type PluginAccountCopyReceipt, type PluginAccountCopyRemoved, spendingReportsSchema, type SpendingReport } from '../../shared/pluginAccountCopies'
 import { gitHubSignInSchema, type GitHubSignIn } from '../../shared/plugins'
 import { model3dHostBytesSchema, model3dListSchema, model3dRemovalSchema, model3dViewOrNullSchema, type HostModelViews, type Model3dHostNews, type Model3dListed } from '../../shared/models3d'
+import { soundHostBytesSchema, soundViewOrNullSchema, type HostSoundViews, type SoundHostNews, type SoundView } from '../../shared/sounds'
 import type { DelegationRelayAsk, DelegationRemoteAsk, RelayedReply } from '../../shared/delegationRelay'
 import type { TellWatcherAnswer, WatcherTellPush } from '../../shared/tellWatcher'
 import type { DelegationNews } from '../../shared/delegation'
@@ -138,6 +139,11 @@ export interface SocketHostServiceOptions {
    * at start: only then does its hello accept `plugin-meshy-models`, so the host sends 3D models' lines and their news.
    */
   meshyModels?: boolean
+  /**
+   * A host thread's sounds shown here (the plugins plan's slice 12, part 4b), as this computer's `plugins` Owl answer
+   * says at start: only then does its hello accept `plugin-elevenlabs-sounds`, so the host sends sounds' lines and news.
+   */
+  elevenLabsSounds?: boolean
   /**
    * Whether this desktop wants a host's next prompts now (ADR-0173): present only while its `next-prompt` Owl answer is on,
    * which is what makes its hello accept `next-prompts`; read on each connection, and `setNextPromptsWanted` tells a change.
@@ -276,6 +282,7 @@ export class SocketHostService implements HostService {
   private readonly spendingListeners = new Set<(reports?: readonly SpendingReport[]) => void>()
   private readonly elevenLabsSpendingListeners = new Set<(reports?: readonly SpendingReport[]) => void>()
   private readonly modelListeners = new Set<(news: Model3dHostNews) => void>()
+  private readonly soundListeners = new Set<(news: SoundHostNews) => void>()
   private readonly relayListeners = new Set<(askId: string, ask: DelegationRelayAsk) => void>()
   /** Asks that came before anything listened, as when a host reads its relayed delegations again during this hello (#1316). */
   private readonly heldAsks: { readonly askId: string; readonly ask: DelegationRelayAsk }[] = []
@@ -444,7 +451,7 @@ export class SocketHostService implements HostService {
       // This connection holds no shell push's thread records yet, so the host's first push lists every one (#996).
       // Nor any push's parts, so its first push keeps none (ADR-0028, November 10 amendment).
       this.pushedThreads = createThreadReassembly(); this.pushedParts = null
-      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'host-update', 'activity-bodies', 'changed-thread-records', 'kept-parts', 'plugin-meshy-spending', 'plugin-elevenlabs-spending', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads', 'watcher-tell', 'watcher-ready', 'watcher-progress'] : [], ...this.options.crossMachineEnabled === true ? ['delegation-views', 'check-queue-views'] : [], ...this.options.pairedHostBrowser === true ? ['browser'] : [], ...this.options.meshyModels === true ? ['plugin-meshy-models'] : [], ...this.options.nextPromptsWanted ? ['next-prompts'] : [], ...this.options.productEventAnswer ? ['product-events'] : [], ...this.relays ? ['delegation-relay', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts'] : []] as const).filter(feature => health.features.includes(feature))
+      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'host-update', 'activity-bodies', 'changed-thread-records', 'kept-parts', 'plugin-meshy-spending', 'plugin-elevenlabs-spending', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads', 'watcher-tell', 'watcher-ready', 'watcher-progress'] : [], ...this.options.crossMachineEnabled === true ? ['delegation-views', 'check-queue-views'] : [], ...this.options.pairedHostBrowser === true ? ['browser'] : [], ...this.options.meshyModels === true ? ['plugin-meshy-models'] : [], ...this.options.elevenLabsSounds === true ? ['plugin-elevenlabs-sounds'] : [], ...this.options.nextPromptsWanted ? ['next-prompts'] : [], ...this.options.productEventAnswer ? ['product-events'] : [], ...this.relays ? ['delegation-relay', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts'] : []] as const).filter(feature => health.features.includes(feature))
       const accepts = { accepts: [...accepted] }
       const hello = this.read(hostHelloSchema, await this.call({ op: 'hello', afterSeq: this.catchesUp ? this.latestSeq : NO_EVENTS_AFTER, ...accepts }))
       if (hello.hostId !== session.hostId) throw new HostConnectionError(CONNECT_FAILURES.identityChangedConnect(), 'unauthenticated')
@@ -575,6 +582,8 @@ export class SocketHostService implements HostService {
         // Pushed only to a desktop whose hello accepted `plugin-meshy-spending`: what the host's own threads spent of its copies.
         // Pushed only to a desktop whose hello accepted `plugin-meshy-models`: a host thread's 3D model, or records that went.
         else if (message.event === 'plugin-meshy-models') { if (this.supportsPluginMeshyModels) for (const listener of [...this.modelListeners]) { try { listener(message.news) } catch { /* A listener's failure is its own. */ } } }
+        // Pushed only to a desktop whose hello accepted `plugin-elevenlabs-sounds`: a host thread's sound as its record changes.
+        else if (message.event === 'plugin-elevenlabs-sounds') { if (this.supportsPluginElevenLabsSounds) for (const listener of [...this.soundListeners]) { try { listener(message.news) } catch { /* A listener's failure is its own. */ } } }
         else if (message.event === 'plugin-meshy-spending') { for (const listener of [...this.spendingListeners]) { try { listener(message.reports) } catch { /* A listener's failure is its own. */ } } }
         // And the same for its ElevenLabs copies, pushed only to a desktop whose hello accepted `plugin-elevenlabs-spending`.
         else if (message.event === 'plugin-elevenlabs-spending') { for (const listener of [...this.elevenLabsSpendingListeners]) { try { listener(message.reports) } catch { /* A listener's failure is its own. */ } } }
@@ -1845,6 +1854,38 @@ export class SocketHostService implements HostService {
     }
   }
   private modelViews: HostModelViews | undefined
+  /**
+   * The host's sounds (`plugin-elevenlabs-sounds`; the plugins plan's slice 12, part 4b), where this desktop's hello
+   * accepted them or its health listed them, as its 3D models are read: a host being added records this desktop a
+   * moment after its hello. The host reads its record of desktops again before it answers this desktop's first view,
+   * and from that answer on keeps this desktop's lines; that view is asked as soon as the host's news is listened to.
+   */
+  get supportsPluginElevenLabsSounds(): boolean {
+    return this.options.elevenLabsSounds === true && (this.features.includes('plugin-elevenlabs-sounds') || this.listed.includes('plugin-elevenlabs-sounds'))
+  }
+  /** Reads a sound's view, and takes an answer as the host saying this desktop may, as a hello now would. */
+  private async soundView(id: string): Promise<SoundView | null> {
+    const frames = this.frames
+    const view = this.read(soundViewOrNullSchema, await this.call({ op: 'plugin-elevenlabs-sound', request: { id } }, undefined, undefined, 30000))
+    if (frames === this.frames && !this.features.includes('plugin-elevenlabs-sounds')) this.features = [...this.features, 'plugin-elevenlabs-sounds']
+    return view
+  }
+  get pluginElevenLabsSounds(): HostSoundViews | undefined {
+    if (!this.supportsPluginElevenLabsSounds) return undefined
+    return this.soundViews ??= {
+      view: id => this.soundView(id),
+      // A part is one large frame, so it waits behind previews as a picture does.
+      bytes: request => this.large('plugin-elevenlabs-sounds', async () => this.read(soundHostBytesSchema, await this.call({ op: 'plugin-elevenlabs-sound-bytes', request }))),
+      subscribe: listener => {
+        this.soundListeners.add(listener)
+        // A desktop recorded after its hello asks once now, for a sound no host holds, so the host keeps its lines and
+        // sends its news from here on. Sound IDs are never "-", so the answer is null.
+        if (!this.features.includes('plugin-elevenlabs-sounds')) void this.soundView('-').catch(() => undefined)
+        return () => { this.soundListeners.delete(listener) }
+      },
+    }
+  }
+  private soundViews: HostSoundViews | undefined
   /** Hears the host push what its own threads spent of this desktop's copies. Returns the way to stop. */
   subscribePluginMeshySpending(listener: (reports?: readonly SpendingReport[]) => void): () => void {
     this.spendingListeners.add(listener)

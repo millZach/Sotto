@@ -237,11 +237,47 @@ is a stand-in with a made-up key, and nothing reached ElevenLabs.
   of $10, across this computer and forge." once a host has reported, and has no "across" before.
 - `tests/unit/host/remoteCommands.test.ts`: `plugin-elevenlabs-spending` is on the host's list of requests.
 
+## Part 4b: a paired computer's sounds on this computer
+
+Built on November 16, 2026, for the second half of slice 12's part 4: this computer shows a paired host's sounds in
+their threads, over `plugin-elevenlabs-sounds`, mirroring Meshy's ticket 6, part 2 (#2617), with the looks Zach picked
+for a host's 3D models on #2497. This was proved by tests alone. In every test the host's sounds are made-up MP3 bytes
+in a temporary folder, and nothing reached ElevenLabs.
+
+### What covers it
+
+- `tests/unit/main/tools/elevenlabs/soundHostViews.test.ts`, the host's side: a sound's view by the host's ID with no
+  path, and none for an unknown ID; its MP3 in 8 MiB parts cut from the one file it checked, so a file that changes
+  between parts is not mixed and a later part with nothing held is refused; nothing for an unknown ID, a folder outside
+  the thread's, a file that is not an MP3 or one past 32 MiB; and news of each change as the record is now, with its
+  thread, in order, and none once its thread is forgotten.
+- `tests/unit/main/hostSounds.test.ts`, the desktop's side: a host's sound is named by a key that names the host, and
+  this computer's by its own ID; the last view heard is kept while the host is away and read again once it is back; the
+  MP3 is put together from its parts and refused when a part is of another file or short, the digest is wrong, it is
+  past the cap or it is not an MP3; and a host the router lets go is no longer heard.
+- `tests/integration/socketElevenLabsSounds.test.ts`, over the host's real listener: the feature is offered beside
+  `plugin-elevenlabs-copies` to a recorded desktop alone, never to a phone or on a host that keeps no sounds; a desktop
+  that accepted it keeps the sound's line, and one that accepted 3D models too keeps both, while an older desktop and a
+  phone keep neither; a desktop taken off the record is sent no more lines, whole or in a delta; one recorded after its
+  hello is sent its held threads again, with their lines, after its first view; a view and the MP3 by ID only, with
+  nothing a path could be; news to the desktops that accepted it alone. Over the desktop's real connection, the MP3
+  crosses in two parts and is whole, and a change reaches the window by its key. A real Owl headless host offers it,
+  also to a desktop recorded after its hello, and an older host does not.
+- `tests/unit/renderer/agents/soundLine.test.tsx`: a host thread's line reads its sound by the key, says "Speech · about
+  $0.02 · ElevenLabs · on forge", fetches the MP3 by that key on the first press of Play only, and says "on forge" in
+  its details with no Show in File Explorer; while the host is away it says "about $0.02 · forge isn’t connected" with
+  Play off, or only that when nothing was heard, and reads the sound again once the host is back.
+- `tests/unit/main/plugins/pluginsIpc.test.ts`: a host's sound's view and MP3 cross the bridge by its key, for the main
+  window only.
+- `tests/unit/host/remoteCommands.test.ts`: `plugin-elevenlabs-sound` and `plugin-elevenlabs-sound-bytes` are on the
+  host's list of requests.
+
 ## Not checked here
 
 - A real ElevenLabs key. The check was run against the stand-in only.
 - A sound effect in the built app; the unit tests hold its card with and without a length.
 - The line with motion reduced, in the built app: the unit test holds the bar still.
 - A spoken MP3 from ElevenLabs, as against the stand-in's silence: that waits for Zach's key.
+- A host's sound in the built app, with forge connected and then away: the tests hold both.
 - A host's threads making a sound with a real key, and Settings' shared count, on forge: that waits for Zach's key.
 - The desktop showing a host's sounds (part 4b).

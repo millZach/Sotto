@@ -38,6 +38,7 @@ import { desktopDefaultsReceiptSchema } from '../shared/desktopDefaults'
 import { heldPluginAccountCopiesSchema, pluginAccountCopyReceiptSchema, pluginAccountCopyRemovedSchema, spendingReportsSchema } from '../shared/pluginAccountCopies'
 import { gitHubSignInSchema, isBridgePlugin, isMailPlugin } from '../shared/plugins'
 import { MODEL_VISUAL_KIND, type HostModelViews, model3dHostBytesSchema, model3dHostNewsSchema, model3dListSchema, model3dRemovalSchema, model3dViewOrNullSchema } from '../shared/models3d'
+import { SOUND_VISUAL_KIND, soundHostBytesSchema, soundHostNewsSchema, soundViewOrNullSchema } from '../shared/sounds'
 import { ProviderSignInRefusal, type ProviderSignIns } from './providerSignIn'
 import { DEFLATE_RESPONSE, deflateOffered, SocketFrames } from './socketFrames'
 import { CutBodies } from '../shared/activityBodies'
@@ -147,7 +148,7 @@ class Refusal extends Error { constructor(readonly code: HostErrorCode, message 
  * `browserWatches`: present while a desktop's hello accepts `browser`; per page, the newest watch or unwatch it asked for
  * (`ticket`) and the stop of the stream it holds, so a watch still starting when a later one or an unwatch came is let go.
  */
-interface Peer { browserWatches?: Map<string, { ticket: number; stop?: () => void }> | undefined; productEvents?: { answer: ProductEventPermission | null } | undefined; unknownProviders: HeldProviders; hostUpdate: boolean; delegationViews: boolean; checkQueueViews?: boolean; meshySpending?: boolean; meshySpendingAsked?: boolean; elevenLabsSpending?: boolean; elevenLabsSpendingAsked?: boolean; meshyModels?: boolean; meshyModelsAsked?: boolean; meshyPhone?: boolean; nextPrompts?: { wanted: boolean } | undefined; delegationRelay?: RelayDesktop | undefined; tellWatcher?: TellWatcherDesktop | undefined; delegationRemote?: RemoteDesktop | undefined; retiredTerminals: boolean; gone: AbortController; usageHistory: boolean; usageMuseOpenCode: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherPhoneSteer: boolean; watcherPhoneMachines: boolean; watcherPhoneComposer: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; shown: boolean; held: Map<string, number>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; clientUpdateNotListed: boolean; activitySummaries: boolean; activityBodies: boolean; catalogRevisions: boolean; catalogSent: number | null; shellSent: string | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget>
+interface Peer { browserWatches?: Map<string, { ticket: number; stop?: () => void }> | undefined; productEvents?: { answer: ProductEventPermission | null } | undefined; unknownProviders: HeldProviders; hostUpdate: boolean; delegationViews: boolean; checkQueueViews?: boolean; meshySpending?: boolean; meshySpendingAsked?: boolean; elevenLabsSpending?: boolean; elevenLabsSpendingAsked?: boolean; meshyModels?: boolean; meshyModelsAsked?: boolean; meshyPhone?: boolean; elevenLabsSounds?: boolean; elevenLabsSoundsAsked?: boolean; nextPrompts?: { wanted: boolean } | undefined; delegationRelay?: RelayDesktop | undefined; tellWatcher?: TellWatcherDesktop | undefined; delegationRemote?: RemoteDesktop | undefined; retiredTerminals: boolean; gone: AbortController; usageHistory: boolean; usageMuseOpenCode: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherPhoneSteer: boolean; watcherPhoneMachines: boolean; watcherPhoneComposer: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; shown: boolean; held: Map<string, number>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; clientUpdateNotListed: boolean; activitySummaries: boolean; activityBodies: boolean; catalogRevisions: boolean; catalogSent: number | null; shellSent: string | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget>
   /** The thread records this connection's shell pushes last carried, for a client that accepted `changed-thread-records` (#996). */
   threadRecords?: ThreadRecordsBroadcast | undefined
   /**
@@ -475,6 +476,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'plugin-elevenlabs-spending' || service.supportsPluginAccountCopies === true && service.supportsPluginElevenLabsSpending === true && desktopRecords)
     // Its 3D models, shown on a recorded desktop (the Meshy plan's ticket 6, part 2), alongside those copies.
     && (feature !== 'plugin-meshy-models' || service.supportsPluginAccountCopies === true && service.supportsPluginMeshyModels === true && desktopRecords)
+    // Its threads' sounds, shown on a recorded desktop (the plugins plan's slice 12, part 4b), alongside its ElevenLabs copies.
+    && (feature !== 'plugin-elevenlabs-sounds' || service.supportsPluginAccountCopies === true && service.supportsPluginElevenLabsSounds === true && desktopRecords)
     // Its threads' 3D models, shown on a phone (the Meshy plan's ticket 7), where the listener keeps them.
     && (feature !== 'plugin-meshy-phone' || options.phoneModels !== undefined)
     // Who the host's own gh is signed in as (ADR-0205), where the host runs plugin tools, on the same listeners.
@@ -550,6 +553,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     .filter(feature => feature !== 'plugin-account-copies' && feature !== 'plugin-mail-copies' && feature !== 'plugin-meshy-copies' && feature !== 'plugin-elevenlabs-copies' && feature !== 'plugin-meshy-spending' && feature !== 'plugin-elevenlabs-spending' || options.watcherDesktops?.has(peer.client.clientId) === true)
     // A host thread's 3D models, their bytes and their lines go only to the desktop the launch script recorded, as its copies do.
     .filter(feature => feature !== 'plugin-meshy-models' || options.watcherDesktops?.has(peer.client.clientId) === true)
+    // So do its sounds, their MP3s and their lines.
+    .filter(feature => feature !== 'plugin-elevenlabs-sounds' || options.watcherDesktops?.has(peer.client.clientId) === true)
     // The account a host's gh is signed in to is its owner's own detail: told only to a recorded desktop.
     .filter(feature => feature !== 'plugin-github-sign-in' || options.watcherDesktops?.has(peer.client.clientId) === true)
     // Desktop defaults come only from a client the launch script recorded as a desktop (#1310).
@@ -967,10 +972,12 @@ export async function startSocketServer(options: SocketServerOptions) {
    * cut bodies. Each is made once however many peers are sent it, and each cut record once however many details carry it.
    */
   // A desktop that accepted `plugin-meshy-models`, and a phone that accepted `plugin-meshy-phone`, keep each 3D model's
-  // line, and are made their own copies, kept apart.
-  const withoutVisualsOf = new WeakMap<AgentThreadDetail, AgentThreadDetail>(), withModelsOf = new WeakMap<AgentThreadDetail, AgentThreadDetail>()
-  const summarised = new WeakMap<AgentThreadDetail, AgentThreadDetail>(), summarisedWithModels = new WeakMap<AgentThreadDetail, AgentThreadDetail>()
-  const cutBodies = new CutBodies(), cutOf = new WeakMap<AgentThreadDetail, AgentThreadDetail>(), cutWithModelsOf = new WeakMap<AgentThreadDetail, AgentThreadDetail>()
+  // line; a desktop that accepted `plugin-elevenlabs-sounds` keeps each sound's. Each mix of what is kept is made its own
+  // copies, kept apart, by `keptLines`: nothing, 3D models', sounds', or both.
+  const KEPT_LINES: readonly (readonly string[] | undefined)[] = [undefined, [MODEL_VISUAL_KIND], [SOUND_VISUAL_KIND], [MODEL_VISUAL_KIND, SOUND_VISUAL_KIND]]
+  const eachKept = (): WeakMap<AgentThreadDetail, AgentThreadDetail>[] => KEPT_LINES.map(() => new WeakMap<AgentThreadDetail, AgentThreadDetail>())
+  const withoutVisualsOf = eachKept(), summarised = eachKept(), cutOf = eachKept()
+  const cutBodies = new CutBodies()
   /**
    * Whether a peer is sent 3D models' lines now: its hello accepted `plugin-meshy-models`, and it is still on the record
    * of desktops, which is all of what `offers` says of the feature that can change after hello. Read at each send, so
@@ -979,21 +986,25 @@ export async function startSocketServer(options: SocketServerOptions) {
    * them too (the Meshy plan's ticket 7): nothing of that feature changes after hello.
    */
   const keepsModelLines = (peer: Peer): boolean => peer.meshyPhone === true || peer.meshyModels === true && options.watcherDesktops?.has(peer.client.clientId) === true
+  /** The same for sounds' lines (`plugin-elevenlabs-sounds`), which only a recorded desktop is sent. */
+  const keepsSoundLines = (peer: Peer): boolean => peer.elevenLabsSounds === true && options.watcherDesktops?.has(peer.client.clientId) === true
+  /** Which of `KEPT_LINES` a peer is sent now. */
+  const keptLines = (peer: Peer): number => (keepsModelLines(peer) ? 1 : 0) + (keepsSoundLines(peer) ? 2 : 0)
   const forPeer = (peer: Peer, detail: AgentThreadDetail | null): AgentThreadDetail | null => {
     if (detail === null) return detail
-    const models = keepsModelLines(peer)
-    const visualsOf = models ? withModelsOf : withoutVisualsOf
+    const kept = keptLines(peer)
+    const visualsOf = withoutVisualsOf[kept]!
     let withoutVisuals = visualsOf.get(detail)
-    if (!withoutVisuals) visualsOf.set(detail, withoutVisuals = detailWithoutVisuals(detail, models ? MODEL_VISUAL_KIND : undefined))
+    if (!withoutVisuals) visualsOf.set(detail, withoutVisuals = detailWithoutVisuals(detail, KEPT_LINES[kept]))
     if (peer.activityBodies) {
-      const cuts = models ? cutWithModelsOf : cutOf
+      const cuts = cutOf[kept]!
       let cut = cuts.get(detail)
       if (!cut) cuts.set(detail, cut = cutBodies.detail(withoutVisuals))
       return peer.unknownProviders.size ? detailWithoutProviders(cut, peer.unknownProviders) : cut
     }
     // A handover from a thread of a provider this peer does not know loses its record of where it came from (#1107).
     if (!peer.activitySummaries) return peer.unknownProviders.size ? detailWithoutProviders(withoutVisuals, peer.unknownProviders) : withoutVisuals
-    const summaries = models ? summarisedWithModels : summarised
+    const summaries = summarised[kept]!
     let summary = summaries.get(detail)
     if (!summary) summaries.set(detail, summary = detailWithActivitySummaries(withoutVisuals))
     return peer.unknownProviders.size ? detailWithoutProviders(summary, peer.unknownProviders) : summary
@@ -1129,14 +1140,14 @@ export async function startSocketServer(options: SocketServerOptions) {
   interface UpdateFor { whole: () => AgentThreadDetail | null; delta: (peer: Peer) => AgentThreadDetailDelta }
   const updateFor = (update: AgentThreadDetailUpdate): UpdateFor => {
     let whole: AgentThreadDetail | null | undefined = isAgentThreadDetailDelta(update) ? undefined : update
-    // Made once each for the peers sent no visual and for the desktops that keep 3D models' lines.
-    const made: { stripped?: AgentThreadDetailDelta; summaries?: AgentThreadDetailDelta; cut?: AgentThreadDetailDelta }[] = [{}, {}]
+    // Made once each for each mix of lines peers keep, as `KEPT_LINES` lists them.
+    const made: { stripped?: AgentThreadDetailDelta; summaries?: AgentThreadDetailDelta; cut?: AgentThreadDetailDelta }[] = KEPT_LINES.map(() => ({}))
     return {
       whole: () => whole === undefined ? (whole = service.threadDetail(update.threadId)) : whole,
       delta: peer => {
-        const models = keepsModelLines(peer)
-        const these = made[models ? 1 : 0]!
-        const stripped = these.stripped ??= deltaWithoutVisuals(update as AgentThreadDetailDelta, models ? MODEL_VISUAL_KIND : undefined)
+        const kept = keptLines(peer)
+        const these = made[kept]!
+        const stripped = these.stripped ??= deltaWithoutVisuals(update as AgentThreadDetailDelta, KEPT_LINES[kept])
         return peer.activityBodies ? (these.cut ??= cutBodies.delta(stripped)) : peer.activitySummaries ? (these.summaries ??= deltaWithActivitySummaries(stripped)) : stripped
       },
     }
@@ -1379,6 +1390,16 @@ export async function startSocketServer(options: SocketServerOptions) {
     const parsed = model3dHostNewsSchema.safeParse(news)
     if (!parsed.success) return
     for (const peer of peers) if (peer.ready && peer.meshyModels && !peer.frames.isClosed && offers(peer, 'plugin-meshy-models')) push(peer, { v: 1, event: 'plugin-meshy-models', news: parsed.data })
+  })
+  /**
+   * A host thread's sound as its record changes (`plugin-elevenlabs-sounds`), pushed to each desktop whose hello accepted
+   * it. One taken off the record of desktops since its hello is told nothing.
+   */
+  const unsubscribeSounds = service.pluginElevenLabsSounds?.subscribe(news => {
+    if (closing) return
+    const parsed = soundHostNewsSchema.safeParse(news)
+    if (!parsed.success) return
+    for (const peer of peers) if (peer.ready && peer.elevenLabsSounds && !peer.frames.isClosed && offers(peer, 'plugin-elevenlabs-sounds')) push(peer, { v: 1, event: 'plugin-elevenlabs-sounds', news: parsed.data })
   })
   /**
    * The same news of this computer's 3D models, to each phone whose hello accepted `plugin-meshy-phone` (the Meshy plan's
@@ -1772,6 +1793,8 @@ export async function startSocketServer(options: SocketServerOptions) {
         peer.elevenLabsSpending = peer.elevenLabsSpendingAsked && offers(peer, 'plugin-elevenlabs-spending')
         peer.meshyModelsAsked = request.accepts?.includes('plugin-meshy-models') ?? false
         peer.meshyModels = peer.meshyModelsAsked && offers(peer, 'plugin-meshy-models')
+        peer.elevenLabsSoundsAsked = request.accepts?.includes('plugin-elevenlabs-sounds') ?? false
+        peer.elevenLabsSounds = peer.elevenLabsSoundsAsked && offers(peer, 'plugin-elevenlabs-sounds')
         // Only a phone reads a USDZ: a desktop that accepts this as well is not a phone for it (Sol on ticket 7).
         peer.meshyPhone = (request.accepts?.includes('plugin-meshy-phone') ?? false) && offers(peer, 'plugin-meshy-phone') && isPhonePeer(peer)
         const answeredBefore = peer.productEvents?.answer
@@ -2132,6 +2155,29 @@ export async function startSocketServer(options: SocketServerOptions) {
         try { return model3dHostBytesSchema.parse(await models.bytes(request.request, peer.client.clientId)) }
         catch { throw new Refusal('unavailable') } finally { peer.preview = false }
       }
+      // A host thread's sounds (the plugins plan's slice 12, part 4b), for a recorded desktop's window: one sound's view by
+      // the host's ID. Never a path.
+      case 'plugin-elevenlabs-sound': {
+        // A desktop that asked at its hello but was recorded after it, as one being added is, has the list of desktops read
+        // again first, and from this answer on is sent sounds' lines and pushed their news.
+        const late = peer.elevenLabsSoundsAsked === true && peer.elevenLabsSounds !== true
+        if (late) await options.watcherDesktops?.refresh().catch(() => undefined)
+        if (!offers(peer, 'plugin-elevenlabs-sounds') || !service.pluginElevenLabsSounds) throw new Refusal('invalid_request')
+        if (late) {
+          peer.elevenLabsSounds = true
+          // The threads it holds were sent without their sounds' lines: each goes again whole, with them.
+          for (const id of [...peer.observed]) if (peer.held.has(id)) detail(peer, id)
+        }
+        try { return soundViewOrNullSchema.parse(await service.pluginElevenLabsSounds.view(request.request.id)) } catch { throw new Refusal('unavailable') }
+      }
+      // A part of a sound's MP3, on the same one-at-a-time guard as a picture: one large frame a socket.
+      case 'plugin-elevenlabs-sound-bytes': {
+        if (!offers(peer, 'plugin-elevenlabs-sounds') || !service.pluginElevenLabsSounds) throw new Refusal('invalid_request')
+        if (peer.preview) throw new Refusal('busy')
+        peer.preview = true
+        try { return soundHostBytesSchema.parse(await service.pluginElevenLabsSounds.bytes(request.request, peer.client.clientId)) }
+        catch { throw new Refusal('unavailable') } finally { peer.preview = false }
+      }
       case 'plugin-github-sign-in': {
         // Who this machine's gh is signed in as, for a recorded desktop's Plugins page. The list of desktops is read
         // again first, as for a copy. The schema names a state and a login, so nothing else of gh's can be answered.
@@ -2377,7 +2423,7 @@ export async function startSocketServer(options: SocketServerOptions) {
       if (carried || request.op.startsWith('watcher-phone-')) peer.shellSent = null
       // A revocation while an operation was pending also denies its response.
       if (!authenticated(peer)) { peer.frames.send({ v: 1, id: request.id, ok: false, error: { code: 'unauthenticated', message: errors.unauthenticated } }); peer.frames.close() }
-      else if (deliver(peer, response, request.op === 'detail' ? 'thread' : request.op === 'activity-body' ? 'body' : request.op === 'preview' || request.op === 'thread-media' || request.op === 'thread-media-part' || request.op === 'plugin-meshy-model-bytes' || request.op === 'attachment-content' || request.op === 'attachment-file' ? 'preview' : TOOL_READS.has(request.op) ? 'tool' : 'list')) {
+      else if (deliver(peer, response, request.op === 'detail' ? 'thread' : request.op === 'activity-body' ? 'body' : request.op === 'preview' || request.op === 'thread-media' || request.op === 'thread-media-part' || request.op === 'plugin-meshy-model-bytes' || request.op === 'plugin-elevenlabs-sound-bytes' || request.op === 'attachment-content' || request.op === 'attachment-file' ? 'preview' : TOOL_READS.has(request.op) ? 'tool' : 'list')) {
         if (carried) recordCatalog(peer, carried)
         seeded?.commit()
         if (!response.ok) return
@@ -2561,7 +2607,7 @@ export async function startSocketServer(options: SocketServerOptions) {
   expiry.unref()
   const stopServing = (): void => {
     if (closing) return
-    closing = true; clearInterval(expiry); unsubscribe(); unsubscribeDetails?.(); unsubscribeDelegations?.(); unsubscribeChecks?.(); unsubscribeSpending?.(); unsubscribeElevenLabsSpending?.(); unsubscribeModels?.(); unsubscribePhoneModels?.(); unsubscribeBrowser?.(); unsubscribeNextPrompts?.(); releasePhoneAdmission?.(); shellPublisher.dispose(); detailPublisher.dispose(); waiting.clear()
+    closing = true; clearInterval(expiry); unsubscribe(); unsubscribeDetails?.(); unsubscribeDelegations?.(); unsubscribeChecks?.(); unsubscribeSpending?.(); unsubscribeElevenLabsSpending?.(); unsubscribeModels?.(); unsubscribeSounds?.(); unsubscribePhoneModels?.(); unsubscribeBrowser?.(); unsubscribeNextPrompts?.(); releasePhoneAdmission?.(); shellPublisher.dispose(); detailPublisher.dispose(); waiting.clear()
     if (writingTimer) clearTimeout(writingTimer.timer)
     writingHeld.clear()
     server.removeAllListeners('request')

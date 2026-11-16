@@ -1,5 +1,6 @@
 import type { PluginAccountCopyStore, PluginSpendingShare } from '../../shared/pluginAccountCopies'
 import type { HostModelViews } from '../../shared/models3d'
+import type { HostSoundViews } from '../../shared/sounds'
 import type { GitHubSignIn } from '../../shared/plugins'
 import { agentCaptures, ThreadMediaStore } from './threadMedia'
 import type { ReducedPictures } from './mediaThumbnail'
@@ -199,6 +200,8 @@ export interface AgentRuntimeOptions {
   pluginElevenLabsSpending?: PluginSpendingShare
   /** A headless host's 3D models, for a recorded desktop's window (the Meshy plan's ticket 6, part 2). */
   pluginMeshyModels?: HostModelViews
+  /** A headless host's sounds, for a recorded desktop's window (the plugins plan's slice 12, part 4b). */
+  pluginElevenLabsSounds?: HostSoundViews
   /**
    * A headless host runs delegation for its own threads (#1310) only where its own Owl answer turns on Work across
    * machines. It holds them to the desktop defaults the last desktop that still counts sent it, and to Ask for approval
@@ -981,6 +984,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ...(options.pluginMeshySpending && options.pluginAccountCopies && options.runsAs === 'headless-host' ? { pluginMeshySpending: options.pluginMeshySpending } : {}),
     ...(options.pluginElevenLabsSpending && options.pluginAccountCopies && options.runsAs === 'headless-host' ? { pluginElevenLabsSpending: options.pluginElevenLabsSpending } : {}),
     ...(options.pluginMeshyModels && options.pluginAccountCopies && options.runsAs === 'headless-host' ? { pluginMeshyModels: options.pluginMeshyModels } : {}),
+    ...(options.pluginElevenLabsSounds && options.pluginAccountCopies && options.runsAs === 'headless-host' ? { pluginElevenLabsSounds: options.pluginElevenLabsSounds } : {}),
     prompts: { threadPrompts: (threadId, beforeMessageId) => agentHost.threadPrompts(threadId, beforeMessageId) },
     ...(options.threadStartsEnabled === true ? { threadStarts: { startHandover: (threadId: string) => agentHost.startHandover(threadId) } } : {}),
     ...(options.pullRequestViewEnabled === true ? { pullRequestView: true } : {}),

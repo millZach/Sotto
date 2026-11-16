@@ -174,6 +174,9 @@ describe('remote command allow-list', () => {
       // A host thread's 3D models (the Meshy plan's ticket 6, part 2), reads for a recorded desktop's window by the host's
       // IDs, and removing the record of one whose files the host finds gone: never a file, never a path, never a grant.
       'plugin-meshy-models', 'plugin-meshy-model', 'plugin-meshy-model-bytes', 'plugin-meshy-model-remove',
+      // A host thread's sounds (the plugins plan's slice 12, part 4b), reads for a recorded desktop's window by the host's
+      // IDs: one sound's view and its MP3 in parts. Never a path, never a grant.
+      'plugin-elevenlabs-sound', 'plugin-elevenlabs-sound-bytes',
       // A host thread's delegations and a delegated thread's newest brief, reads for a recorded desktop's window on a
       // listener that offers delegation-views (#1310), never a reply and never a grant.
       'delegation-views', 'delegation-brief',

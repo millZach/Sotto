@@ -501,7 +501,9 @@ msgid "{hostName} is switched off, so its folders can't be listed. Nothing was c
 msgstr "{hostName} is switched off, so its folders can't be listed. Nothing was changed. Switch it on in Settings > Hosts & phones, then try again."
 
 #. {hostName} is the name of a paired host, as in forge.
+#. {hostName} is the name of a paired host, as in forge.
 #: src/renderer/src/agents/ModelLine.tsx
+#: src/renderer/src/agents/SoundLine.tsx
 msgid "{hostName} isn’t connected"
 msgstr "{hostName} isn’t connected"
 
@@ -6317,6 +6319,11 @@ msgstr "now {to} tokens"
 msgid "Off"
 msgstr "Off"
 
+#. {computer} is the name of the paired host that holds the sound, as in forge.
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "on {computer}"
+msgstr "on {computer}"
+
 #. When babysitting ended before today, as in "Ended on Oct 7 at 4:05 pm".
 #. {date} is a month and day, as in "Restarts on Oct 30 at 3:00 pm".
 #: src/renderer/src/agents/babysitting.ts
@@ -6986,6 +6993,7 @@ msgstr "Plans the work and runs it as a team of agents. Uses many more tokens."
 msgid "Play"
 msgstr "Play"
 
+#. {shown} is the name of a sound, such as Opening narration.
 #. {shown} is the name of a sound, such as Opening narration.
 #: src/renderer/src/agents/SoundLine.tsx
 msgid "Play {shown}"
@@ -8872,6 +8880,7 @@ msgstr "Sound"
 msgid "Sound effect"
 msgstr "Sound effect"
 
+#. {shown} is the name of a sound, such as Opening narration.
 #. {shown} is the name of a sound, such as Opening narration.
 #: src/renderer/src/agents/SoundLine.tsx
 msgid "Sound: {shown}"

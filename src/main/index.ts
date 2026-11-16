@@ -101,6 +101,7 @@ import { PLUGINS_SOUND_CHANGED, SOUND_VISUAL_KIND } from '../shared/sounds'
 import { isMailPlugin, PLUGIN_USE_THREAD_TITLE_MAX, PLUGINS_COPIES_CHANGED, PLUGINS_ELEVENLABS_SPENT_CHANGED, PLUGINS_MAIL_GRANTS_CHANGED, PLUGINS_MESHY_CREDITS_CHANGED } from '../shared/plugins'
 import { MODEL_VISUAL_KIND, MODELS_3D_LISTED_MAX, PLUGINS_MODEL_3D_CHANGED, PLUGINS_MODELS_3D_REMOVED } from '../shared/models3d'
 import { HostModels3d } from './hosts/hostModels3d'
+import { HostSounds } from './hosts/hostSounds'
 import { resetGhLookup } from './agents/git/ghCommand'
 import { GitUnavailableError, runGitStatusCommand, runWithGhStandIn, type RunGitCommand } from './agents/git/gitStatus'
 import { registerTeamsIpc } from './teams/ipc'
@@ -1352,7 +1353,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const retainedDrafts = new RetainedDraftStore({ directory: userDataPath, watcherEnabled, heldProviders, historyEnabled: () => agentHistoryEnabled,
     onRecovery: () => recoveryNotices.publish({ code: 'REMOTE_DRAFTS_UNREADABLE' }),
     onWriteFailure: () => recoveryNotices.publish({ code: 'REMOTE_DRAFT_STORAGE_NOT_UPDATED' }) })
-  const desktopHosts = new DesktopHosts({ featureUsed: feature => productEvents.featureUsed(feature), directory: userDataPath, credentials, router: hostRouter, retainedDrafts, watcherEnabled, crossMachineEnabled, pairedHostBrowser, meshyModels: pluginsEnabled,
+  const desktopHosts = new DesktopHosts({ featureUsed: feature => productEvents.featureUsed(feature), directory: userDataPath, credentials, router: hostRouter, retainedDrafts, watcherEnabled, crossMachineEnabled, pairedHostBrowser, meshyModels: pluginsEnabled, elevenLabsSounds: pluginsEnabled,
     // Stable starts no such shell and keeps any saved record of one whole (ADR-0072).
     ...owlFeatures['paired-host-terminal'] ? { onHostLeft: (hostId: string) => { void terminalService.endHost(hostId).catch(() => logOperational('host-terminals-end-failed')) } } : {},
     ...(nextPromptEnabled ? { nextPromptsWanted: () => workingCopySettings.nextPromptSuggestions } : {}), productEventAnswer: () => productEventsPermission(workingCopySettings), relaysDelegation: delegationRelay !== undefined, heldProviders, streamingPublishCost: owlFeatures['streaming-publish-cost'], clientVersion: hostVersion,
@@ -1516,6 +1517,15 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   } : undefined
   // Each change to a sound goes to the window as its view, in order, so its line moves from making to made or failed.
   const pushSoundView = soundViews ? soundViewPush(soundViews, view => { windows.sendToMain(PLUGINS_SOUND_CHANGED, view) }) : undefined
+  // A paired host's sounds (part 4b): the window names each by a key that says which host holds it, and main asks that
+  // host over its connection. Its news reaches the window as this computer's own does.
+  const hostSounds = pluginsEnabled ? new HostSounds({
+    connections: () => hostRouter.remoteConnections(), subscribeConnected: listener => hostRouter.subscribeConnected(listener),
+    subscribeRemoved: listener => hostRouter.subscribeRemoved(listener),
+    localHostId: () => agentControl.hostId(),
+    changed: view => { windows.sendToMain(PLUGINS_SOUND_CHANGED, view) },
+  }) : undefined
+  pluginsStop.signal.addEventListener('abort', () => { hostSounds?.close() }, { once: true })
   const elevenLabsSounds = soundRecords && pluginAccounts ? new ElevenLabsSounds({ records: soundRecords, fetch: elevenLabsApiFetch, signal: pluginsStop.signal, ...(elevenLabsBase ? { base: elevenLabsBase } : {}),
     keyOf: async accountId => (await pluginAccounts.list()).some(account => account.id === accountId && account.plugin === 'elevenlabs') ? pluginAccounts.secret(accountId) || undefined : undefined,
     changed: sound => {
@@ -2982,11 +2992,12 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         // The folder app is shown the record's own file, never a path from the window, and only this computer's own: a
         // host's files are on the host. An end-to-end run notes it instead.
         revealModel3d: async request => !hostModels?.onHost(request.id) && modelViews ? await revealModelFile(modelViews, request, path => { if (e2eConfiguration !== null) e2eFiles.shown.push(path); else shell.showItemInFolder(path) }) : false,
-        // A sound's line in its thread: this computer's own, as a host's sounds are not shown here yet. The folder app is
-        // shown the record's own file, never a path from the window; an end-to-end run notes it instead.
-        sound: async id => soundViews ? await soundViewOf(soundViews, id) : null,
-        soundBytes: async id => soundViews ? await soundBytes(soundViews, id) : null,
-        revealSound: async id => soundViews ? await revealSoundFile(soundViews, id, path => { if (e2eConfiguration !== null) e2eFiles.shown.push(path); else shell.showItemInFolder(path) }) : false,
+        // A sound's line in its thread. A key that names a paired host is that host's sound, asked of it; any other ID is
+        // this computer's own. The folder app is shown the record's own file, never a path from the window, and only this
+        // computer's own: a host's file is on the host. An end-to-end run notes it instead.
+        sound: async id => hostSounds?.onHost(id) ? await hostSounds.view(id) : soundViews ? await soundViewOf(soundViews, id) : null,
+        soundBytes: async id => hostSounds?.onHost(id) ? await hostSounds.bytes(id) : soundViews ? await soundBytes(soundViews, id) : null,
+        revealSound: async id => !hostSounds?.onHost(id) && soundViews ? await revealSoundFile(soundViews, id, path => { if (e2eConfiguration !== null) e2eFiles.shown.push(path); else shell.showItemInFolder(path) }) : false,
         copies: async () => await pluginCopySync?.view() ?? { copyNew: true, readable: true, computers: [], copies: [] },
         setCopy: async request => { await pluginCopySync?.setCopy(request.accountId, request.computerId, request.on); return await pluginCopySync?.view() ?? { copyNew: true, readable: true, computers: [], copies: [] } },
         setCopyNew: async copyNew => { await pluginCopySync?.setCopyNew(copyNew); return await pluginCopySync?.view() ?? { copyNew: true, readable: true, computers: [], copies: [] } },

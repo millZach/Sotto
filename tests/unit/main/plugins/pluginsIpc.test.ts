@@ -260,6 +260,25 @@ describe('Settings › Plugins, from the window through preload to main (ADR-020
     for (const channel of [PLUGINS_SOUND, PLUGINS_SOUND_BYTES, PLUGINS_SOUND_REVEAL]) expect(handlers.has(channel)).toBe(false)
   })
 
+  it('carries a host’s sound by the key that names its host, for the main window only (part 4b)', async () => {
+    const { bridge, invoke, widgetEvent, sound, soundBytes, close } = register()
+    const key = 'host:33333333-3333-4333-8333-000000000001:66666666-6666-4666-8666-000000000001'
+    sound.mockResolvedValueOnce({ ...SOUND, id: key })
+    soundBytes.mockResolvedValueOnce(new Uint8Array([0xff, 0xfb, 0x90, 0x64]))
+    await expect(bridge.sound!(key)).resolves.toEqual({ ...SOUND, id: key })
+    await expect(bridge.soundBytes!(key)).resolves.toEqual(new Uint8Array([0xff, 0xfb, 0x90, 0x64]))
+    expect(sound).toHaveBeenCalledWith(key)
+    expect(soundBytes).toHaveBeenCalledWith(key)
+    sound.mockClear()
+    soundBytes.mockClear()
+    for (const channel of [PLUGINS_SOUND, PLUGINS_SOUND_BYTES, PLUGINS_SOUND_REVEAL]) {
+      await expect(invoke(channel, [{ id: key }], widgetEvent)).rejects.toThrow('Open the thread in the main Sotto window.')
+    }
+    expect(sound).not.toHaveBeenCalled()
+    expect(soundBytes).not.toHaveBeenCalled()
+    close()
+  })
+
   it('tells the window each change to a sound as its view, and nothing that is not one', () => {
     const renderer = preloadElectron().ipcRenderer
     const bridge = createSottoBridge(renderer, 'win32').plugins!

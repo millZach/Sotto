@@ -166,8 +166,8 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     // A 3D model's line in its thread, by its ID alone, as the desktop places one; a client reads its words.
     showInThread: async (threadId, model) => (await startedRuntime?.agentHost.addVisual(threadId, { kind: MODEL_VISUAL_KIND, title: model.name, source: model.id })
       .catch(() => ({ added: false as const })))?.added ?? false,
-    // A sound's line the same way (the plugins plan's slice 12, part 4a). No client is sent it yet: the listener sends
-    // only 3D models' lines, and the desktop showing a host's sounds is part 4b.
+    // A sound's line the same way (the plugins plan's slice 12, part 4a), which the listener keeps for a recorded desktop
+    // whose hello accepted `plugin-elevenlabs-sounds` (part 4b); every other client reads its words.
     showSoundInThread: async (threadId, sound) => (await startedRuntime?.agentHost.addVisual(threadId, { kind: SOUND_VISUAL_KIND, title: sound.name, source: sound.id })
       .catch(() => ({ added: false as const })))?.added ?? false,
     thread: threadId => startedRuntime?.agentControl.watcherSnapshot().threads.find(item => item.id === threadId),
@@ -177,6 +177,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   const pluginMeshySpending = plugins?.spending
   const pluginElevenLabsSpending = plugins?.elevenLabsSpending
   const pluginMeshyModels = plugins?.views
+  const pluginElevenLabsSounds = plugins?.soundViews
   // Its Owl answers, and every provider hosts do not take yet: DeepSeek, whose models need own servers (ADR-0138).
   const heldProviders = heldOnHost(heldProvidersOf(owlFeatures))
   const resumeAfterRestart = owlFeatures['resume-after-restart']
@@ -274,6 +275,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
       ...(pluginMeshySpending ? { pluginMeshySpending } : {}),
       ...(pluginElevenLabsSpending ? { pluginElevenLabsSpending } : {}),
       ...(pluginMeshyModels ? { pluginMeshyModels } : {}),
+      ...(pluginElevenLabsSounds ? { pluginElevenLabsSounds } : {}),
       ...(plugins ? { pluginGitHubSignIn: plugins.gitHubSignIn } : {}),
       ...owlFeatures['paired-host-browser'] && owlFeatures['quiet-browser'] ? { browserTools: resolveBinding => (browser = hostBrowserTools({ resolveBinding, withoutAsking: startup.browserWithoutAsking,
         saveWithoutAsking: async value => { await repositories.settings.update({ browserWithoutAsking: value }) } })).tools } : {},
