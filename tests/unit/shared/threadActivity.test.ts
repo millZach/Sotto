@@ -1,7 +1,7 @@
 // @vitest-environment node
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { agentThreadSchema } from '../../../src/shared/agents'
-import { isThreadClosed, isThreadSettled, isWatcherWakeUpTurn } from '../../../src/shared/threadActivity'
+import { isThreadClosed, isThreadSettled, isWatcherWakeUpTurn, isWorkspaceThreadSettled } from '../../../src/shared/threadActivity'
 
 const AT = '2026-09-10T11:00:00.000Z'
 const base = { id: 'thread', projectId: 'project', title: 'Thread', modelId: '', status: 'idle', messages: [], requests: [] }
@@ -26,6 +26,21 @@ describe('shared thread lifecycle contract', () => {
     expect(thread).toMatchObject(metadata)
     expect(isThreadSettled(thread)).toBe(settled)
     expect(isThreadClosed(thread)).toBe(closed)
+  })
+})
+
+describe('settled times read once (#2618)', () => {
+  it('parses each timestamp once however often a publish asks, and still answers as a parse does', () => {
+    const settled = Array.from({ length: 600 }, (_, index) => ({ workspaceSettledAt: new Date(Date.parse(AT) + index * 60_000).toISOString() }))
+    const unreadable = { workspaceSettledAt: 'not a time' }
+    for (const thread of [...settled, unreadable]) isWorkspaceThreadSettled(thread)
+    const parse = vi.spyOn(Date, 'parse')
+    try {
+      expect(settled.every(thread => isWorkspaceThreadSettled(thread))).toBe(true)
+      expect(isWorkspaceThreadSettled(unreadable)).toBe(false)
+      expect(isWorkspaceThreadSettled({ workspaceSettledAt: null }, { workspaceSettledAt: AT })).toBe(true)
+      expect(parse).not.toHaveBeenCalled()
+    } finally { parse.mockRestore() }
   })
 })
 

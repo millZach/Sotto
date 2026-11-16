@@ -9,7 +9,9 @@ import { join } from 'node:path'
 import { vi } from 'vitest'
 import { WatcherService } from '../../src/main/agents/watcher'
 import type { WatcherWakeUp } from '../../src/main/agents/watcherWakeUp'
-import { EMPTY_AGENT_HOST, type AgentDelivery, type AgentFollowup, type AgentHostSnapshot } from '../../src/shared/agents'
+import { WorkerAdmission } from '../../src/main/agents/workerAdmission'
+import { EMPTY_AGENT_HOST, isWatcherKind, type AgentDelivery, type AgentFollowup, type AgentHostSnapshot, type AgentThread } from '../../src/shared/agents'
+import type { HostThreadsView } from '../../src/main/agents/control'
 import type { WatcherRecord } from '../../src/shared/watcher'
 import { agentControlFixture } from './agentControlFixture'
 import { centerHostId, centerTime, watcherRecordFixture } from './watcher'
@@ -36,16 +38,44 @@ export interface ScaleOptions {
    * what is loaded is what main reads at start, and the first pass after loading is the test's own.
    */
   savedPromptTurns?: number
+  /**
+   * Owl's worker swarms on, as `runtime.ts` wires them, with no swarm running. Every finished turn then asks whether a
+   * swarm's synthesis is still to come, and on the laptop that asking was a search of every thread (#2618).
+   */
+  swarms?: boolean
+  /**
+   * The coordinator's index of its host snapshot (`AgentControl.hostThreadsOf`), which main always has for its own
+   * snapshot and the mocked snapshot otherwise lacks, so look-ups read as main's do. Main builds it once for each
+   * snapshot it accepts; here it is built once, from the plain list, outside what is counted, so a test that asks for it
+   * changes no thread in the list afterwards.
+   */
+  indexed?: boolean
 }
 
-/** Counts every read of a thread out of the snapshot's thread list while `on`: each loop step, search step and spread. */
-export interface ThreadVisits { on: boolean; count: number }
+/**
+ * Counts every read of a thread out of the snapshot's thread list while `on`: each loop step, search step and spread.
+ * `ledgerReads` counts the same of the delivery ledger main's send records hand Watcher.
+ */
+export interface ThreadVisits { on: boolean; count: number; ledgerReads: number }
 
 /**
  * `observe()` is the pass main runs for every snapshot it accepts. `publish()` runs what main runs for Watcher on every
  * coordinator change, with a room listener attached so the room state is built, as the window's room bridge does.
  * `wakePass()` is the wake-up pass a publish runs at most every WATCHER_OBSERVE_MS.
  */
+/** The coordinator's index of a host snapshot's threads, as `AgentControl.hostThreadsOf` hands it, over the plain list. */
+function indexOf(threads: readonly AgentThread[]): HostThreadsView {
+  const byId = new Map<string, number>(), delegated = new Map<string, Set<string>>(), watcherKinds = new Set<string>()
+  threads.forEach((thread, position) => {
+    if (byId.has(thread.id)) return
+    byId.set(thread.id, position)
+    if (isWatcherKind(thread)) watcherKinds.add(thread.id)
+    if (thread.delegatedBy !== undefined) delegated.set(thread.delegatedBy, (delegated.get(thread.delegatedBy) ?? new Set<string>()).add(thread.id))
+  })
+  return { thread: id => { const at = byId.get(id); return at === undefined ? undefined : threads[at] }, position: id => byId.get(id),
+    delegatedFrom: parent => delegated.get(parent), watcherKinds, foreign: false }
+}
+
 export async function watcherAtScale(shape: ScaleShape, options: ScaleOptions = {}) {
   const workspace = await workspaceFixture(undefined, { history: false, watcherEnabled: true })
   const cleanups: (() => Promise<unknown> | void)[] = [workspace.remove, workspace.stop]
@@ -98,15 +128,19 @@ export async function watcherAtScale(shape: ScaleShape, options: ScaleOptions = 
       draftId: uuid(80_000 + index), requestId: record.requests.at(-1)!.id, target: target(index), deliveryState: 'accepted', messageId: head(index),
       outcome: 'unknown', turnMessageId: head(index), nativeTurnId: `turn-${index}` })
     // Every read of a thread out of the snapshot's list, counted only while a test asks.
-    const threadVisits: ThreadVisits = { on: false, count: 0 }
+    const threadVisits: ThreadVisits = { on: false, count: 0, ledgerReads: 0 }
+    const plainThreads = snapshot.threads
     snapshot.threads = new Proxy(snapshot.threads, { get(target, property, receiver) {
       if (threadVisits.on && typeof property === 'string' && /^\d+$/u.test(property)) threadVisits.count++
       return Reflect.get(target, property, receiver)
     } })
     // What main's queue and delivery records say, which a test may change before a pass.
     const sends: { followups: AgentFollowup[]; deliveries: AgentDelivery[] } = {
-      followups: [], deliveries: record.operations.map(operation => ({
-        threadId: operation.target.threadId, draftId: operation.draftId!, status: 'accepted', createdAt: centerTime, updatedAt: centerTime })) }
+      followups: [], deliveries: new Proxy(record.operations.map((operation): AgentDelivery => ({
+        threadId: operation.target.threadId, draftId: operation.draftId!, status: 'accepted', createdAt: centerTime, updatedAt: centerTime })), { get(target, property, receiver) {
+        if (threadVisits.on && typeof property === 'string' && /^\d+$/u.test(property)) threadVisits.ledgerReads++
+        return Reflect.get(target, property, receiver)
+      } }) }
     /**
      * Watcher on `control` as main runs it, recovered, with the first pass and publishes it makes on start behind it. A
      * restart of a record Watcher has already recovered and settled leaves its first pass to the test.
@@ -117,6 +151,11 @@ export async function watcherAtScale(shape: ScaleShape, options: ScaleOptions = 
       const snapshotSpy = vi.spyOn(control, 'watcherSnapshot').mockReturnValue(snapshot)
       const pendingSpy = vi.spyOn(control, 'hasPendingThreadWork').mockReturnValue(false)
       const sendsSpy = vi.spyOn(control, 'watcherSendRecords').mockImplementation(() => sends)
+      if (options.indexed) {
+        const index = indexOf(plainThreads)
+        const indexSpy = vi.spyOn(control, 'hostThreadsOf').mockImplementation(of => of === snapshot ? index : undefined)
+        detach.push(() => { indexSpy.mockRestore() })
+      }
       // The coordinator listener Watcher adds, kept so a test can run it as main does on every change.
       let coordinatorChanged: (() => void) | undefined
       const subscribeSpy = vi.spyOn(control, 'subscribe').mockImplementationOnce(listener => {
@@ -125,7 +164,8 @@ export async function watcherAtScale(shape: ScaleShape, options: ScaleOptions = 
       })
       detach.push(() => { subscribeSpy.mockRestore(); sendsSpy.mockRestore(); pendingSpy.mockRestore(); snapshotSpy.mockRestore(); hostIdSpy.mockRestore() })
       const service = new WatcherService({ directory: workspace.root, host: workspace.host, control,
-        historyEnabled: () => false, streamingPublishCost: true })
+        historyEnabled: () => false, streamingPublishCost: true,
+        ...options.swarms ? { swarms: { admission: new WorkerAdmission({ ceiling: () => 4, working: () => new Set() }), service: () => undefined, ceiling: () => 4 } } : {} })
       detach.push(() => service.close())
       let rooms = 0
       const unsubscribeRoom = service.subscribe(() => { rooms++ })

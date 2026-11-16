@@ -842,8 +842,9 @@ export class WatcherService implements WatcherControlHooks {
       // The pass hands the target's key, the same JSON `key` makes, so it builds none for each watched thread (#1248).
       progress: (_target, targetKey) => this.remoteProgress.get(targetKey)?.fingerprint,
       ...options.swarms ? { swarmPending: (target: WatcherThreadTarget) => {
+        // By look-up: a pass asks this for every finished turn, and a search of every thread here was most of a pass (#2618).
         const service = options.swarms!.service(), row = service?.swarmForThread(target.threadId)
-          ?? this.owningSnapshot(target.hostId)?.threads.find(thread => thread.id === target.threadId)?.swarm
+          ?? this.owningThread(target.hostId, target.threadId)?.swarm
         return row?.leadThreadId === target.threadId && row.synthesisDone !== true && !row.synthesisFailed && row.stopped !== true
       } } : {},
       reportsWork: () => {
@@ -4335,7 +4336,9 @@ export class WatcherService implements WatcherControlHooks {
     for (const item of sends.deliveries) if (!deliveries.has(`${item.threadId}\n${item.draftId}`)) deliveries.set(`${item.threadId}\n${item.draftId}`, item)
     const failedDrafts = new Set(sends.followups.flatMap(item => item.status === 'failed' ? [item.draftId] : []))
     const aside = this.setAsideDrafts(sends.deliveries)
-    const delivery = (operation: Readonly<WatcherOperation>) => operation.draftId === undefined ? sends.deliveries.find(item => item.draftId === undefined && item.threadId === operation.target.threadId)
+    // Every delivery names its draft (`agentDeliverySchema`), so an operation with none has no delivery. A search of the
+    // whole ledger for one, once per such operation on every pass, found nothing and was 285 ms of a busy minute (#2618).
+    const delivery = (operation: Readonly<WatcherOperation>) => operation.draftId === undefined ? undefined
       : deliveries.get(`${operation.target.threadId}\n${operation.draftId}`)
     const passHost = this.options.control.hostId()
     // A record loaded with prompt turns nothing reads lets go of them on its first pass, as every pass once did.

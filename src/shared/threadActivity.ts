@@ -7,8 +7,22 @@ export function isWorkspaceThreadSettled(thread: Pick<AgentThread, 'workspaceSet
 
 type ThreadLifecycle = Pick<AgentThread, 'settledAt' | 'settledOverride' | 'archivedAt'>
 
-const hasTimestamp = (value: string | null | undefined): boolean =>
-  typeof value === 'string' && Number.isFinite(Date.parse(value))
+/**
+ * Whether each timestamp string read parses, kept rather than parsed again. A publish asks it of every thread, and on the
+ * laptop's 590 settled threads `Date.parse` was 264 ms of main's busy minute (#2618). The same few strings come back on
+ * every read; the list is let go of whole when it gets long, so it never grows with the history.
+ */
+const TIMESTAMPS_KEPT = 4_096
+const parsedTimestamps = new Map<string, boolean>()
+const hasTimestamp = (value: string | null | undefined): boolean => {
+  if (typeof value !== 'string') return false
+  let parses = parsedTimestamps.get(value)
+  if (parses === undefined) {
+    if (parsedTimestamps.size >= TIMESTAMPS_KEPT) parsedTimestamps.clear()
+    parsedTimestamps.set(value, parses = Number.isFinite(Date.parse(value)))
+  }
+  return parses
+}
 
 /** Explicitly parked work. Idle/error and unknown metadata never imply settlement. */
 export function isThreadSettled(thread: ThreadLifecycle): boolean {
