@@ -10,6 +10,7 @@ import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import type { PromptEditorElement } from '../../../src/renderer/src/agents/promptSelection'
 import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
+import { stepsChoices } from '../../../src/renderer/src/agents/stepsOpen'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
 
@@ -83,7 +84,7 @@ describe('settled activity in the transcript', () => {
     expect(within(work).queryByRole('button', { name: 'npm run lint, Exit 1' })).not.toBeInTheDocument()
   })
 
-  it('opens and folds only the turn whose Worked for line is pressed, and the next thread opened starts as it was left', () => {
+  it('opens and folds only the turn whose Worked for line is pressed, and keeps each so when its thread is shown again', () => {
     const twoTurns = (): Partial<AgentThread> => ({
       messages: [
         { id: 'ask-1', role: 'user', text: 'Check the parser.', createdAt: iso(-200_000) },
@@ -111,14 +112,20 @@ describe('settled activity in the transcript', () => {
     fireEvent.click(first!)
     expect(first).toHaveAttribute('aria-expanded', 'false')
     expect(second).toHaveAttribute('aria-expanded', 'true')
-    fireEvent.click(second!)
-    fireEvent.click(second!)
-    expect(first).toHaveAttribute('aria-expanded', 'false')
-    // The folds on screen never follow a press on another, but the last press, which opened one, is how the folds of a
-    // thread opened later start.
+    // Shown again, each fold is as the user left it: the last press, which opened the second, opens nothing else (Zach,
+    // November 15: only the one you click unfolds).
     cleanup()
     const again = mount(stateWith(twoTurns()))
-    expect(within(again.transcript).getAllByRole('button', { name: /^Worked for/u }).map(fold => fold.getAttribute('aria-expanded'))).toEqual(['true', 'true'])
+    expect(within(again.transcript).getAllByRole('button', { name: /^Worked for/u }).map(fold => fold.getAttribute('aria-expanded'))).toEqual(['false', 'true'])
+    // A turn the user never pressed starts folded, whatever was pressed last.
+    cleanup()
+    stepsChoices.clear()
+    fireEvent.click(within(mount(stateWith(twoTurns())).transcript).getAllByRole('button', { name: /^Worked for/u })[0]!)
+    cleanup()
+    const third = mount(stateWith(twoTurns()))
+    const [opened, untouched] = within(third.transcript).getAllByRole('button', { name: /^Worked for/u })
+    expect(opened).toHaveAttribute('aria-expanded', 'true')
+    expect(untouched).toHaveAttribute('aria-expanded', 'false')
   })
 
   it('says an edit once: the press beside the line goes while the fold is open, and the count while the row is', () => {
@@ -402,7 +409,7 @@ describe('the running turn', () => {
     expect(within(transcript).queryByRole('button', { name: 'npm ci, completed in 9.0s' })).not.toBeInTheDocument()
   })
 
-  it('starts every turn’s steps as the user last left any of them, after a restart too', () => {
+  it('starts every other turn’s steps folded after a press opened one, in a new window too', () => {
     const { live, transcript } = mount(stateWith({ status: 'running', activities: running() }))
     fireEvent.click(within(transcript).getByRole('button', { name: 'Working, 2 steps so far' }))
     const publish = (patch: Partial<AgentThread>): void => act(() => {
@@ -410,21 +417,19 @@ describe('the running turn', () => {
     })
     publish({ status: 'idle', activities: running().map(item => item.kind === 'turn' ? { ...item, status: 'completed', completedAt: iso(0) } : { ...item, status: 'completed' }) })
     // Opened while it ran, the finished turn's fold and its group open too.
-    const fold = within(transcript).getByRole('button', { name: /^Worked for/u })
-    expect(fold).toHaveAttribute('aria-expanded', 'true')
+    expect(within(transcript).getByRole('button', { name: /^Worked for/u })).toHaveAttribute('aria-expanded', 'true')
     expect(within(transcript).getByRole('button', { name: /^npm ci, completed/u })).toBeVisible()
-    // Folded by hand, the next turn starts folded.
-    fireEvent.click(fold)
-    expect(localStorage.getItem('sotto.threads.stepsOpen')).toBe('false')
+    // The next turn starts folded all the same: only the line pressed opens.
     publish({ status: 'running', activities: [...live.state.host.threads.find(thread => thread.id === THREAD)!.activities!,
       lifecycle({ turnId: 'turn-2', status: 'running', startedAt: iso(0) }), activity({ id: 'next', turnId: 'turn-2', command: 'git status' })] })
     expect(within(transcript).getByRole('button', { name: 'Working, 1 step so far' })).toHaveAttribute('aria-expanded', 'false')
     expect(within(transcript).queryByRole('button', { name: /^git status/u })).not.toBeInTheDocument()
-    // What the user last chose outlives the window.
+    // A new window starts every line folded, whatever an earlier version kept in storage.
     cleanup()
+    stepsChoices.clear()
     localStorage.setItem('sotto.threads.stepsOpen', 'true')
     const again = mount(stateWith({ status: 'running', activities: running() }))
-    expect(within(again.transcript).getByRole('button', { name: 'Working, 2 steps so far' })).toHaveAttribute('aria-expanded', 'true')
+    expect(within(again.transcript).getByRole('button', { name: 'Working, 2 steps so far' })).toHaveAttribute('aria-expanded', 'false')
   })
 
   it('lets a press on the finished turn’s own line outlast how its working line was left', () => {
@@ -437,7 +442,7 @@ describe('the running turn', () => {
     const fold = within(transcript).getByRole('button', { name: /^Worked for/u })
     expect(fold).toHaveAttribute('aria-expanded', 'true')
     fireEvent.click(fold)
-    // Opened again, the thread starts the fold as the user last left it, not as its working line was left.
+    // Shown again, the thread draws the fold as the user last left it, not as its working line was left.
     cleanup()
     const again = mount(stateWith(finished()))
     expect(within(again.transcript).getByRole('button', { name: /^Worked for/u })).toHaveAttribute('aria-expanded', 'false')
@@ -446,8 +451,6 @@ describe('the running turn', () => {
   it('keeps the user’s choice on a working line when its thread is shown again, and hands it to the turn’s fold', () => {
     const first = mount(stateWith({ status: 'running', activities: running() }))
     fireEvent.click(within(first.transcript).getByRole('button', { name: 'Working, 2 steps so far' }))
-    // A fold folded in another thread sets the answer while this one is out of view.
-    localStorage.setItem('sotto.threads.stepsOpen', 'false')
     cleanup()
     const { live, transcript } = mount(stateWith({ status: 'running', activities: running() }))
     expect(within(transcript).getByRole('button', { name: 'Working, 2 steps so far' })).toHaveAttribute('aria-expanded', 'true')
