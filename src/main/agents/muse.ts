@@ -57,8 +57,13 @@ const MUSE_DEFAULT_EFFORT = 'high'
 const museRuntimeModes = ['approval-required', 'auto', 'full-access'] as const
 type MuseRuntimeMode = typeof museRuntimeModes[number]
 const museRuntimeModeSchema = z.enum(museRuntimeModes)
-/** An agent status that says it has ended, Muse's own or a generic item one; any other is taken as still running. */
-const ENDED_AGENT = new Set(['completed', 'failed', 'cancelled', 'interrupted', 'closed', 'declined'])
+/**
+ * An agent status that says it is still running: Muse's `SubagentControlStatus` before a result, or the generic item
+ * word. Any other, `resultReady`, `timedOut` or `rejected` among them, is an ending a host's loss must not overwrite.
+ */
+const RUNNING_AGENT = new Set(['running', 'accepted', 'starting', 'inProgress'])
+/** The item kinds that can run past their turn (#2636). */
+const BACKGROUND_KINDS = new Set(['toolCall', 'workflow', 'subagent'])
 const MSP_MODE: Readonly<Record<MuseRuntimeMode, string>> = { 'approval-required': 'promptUnmatched', auto: 'onRequest', 'full-access': 'allowAll' }
 function runtimeModeOf(mspMode: string | undefined): MuseRuntimeMode {
   return mspMode === 'allowAll' ? 'full-access' : mspMode === 'onRequest' ? 'auto' : 'approval-required'
@@ -648,13 +653,19 @@ export class MuseMspHost implements ProviderHost {
   private backgroundGone(id: string): void {
     const work = this.background.get(id); if (!work) return
     this.background.delete(id)
-    // Every agent the host ran ends with it too, a workflow's own included, so Watcher's roster stops counting them.
-    const rows = new Set(work.clear().map(itemId => `muse-item-${itemId}`)), thread = this.threads.get(id)
-    const runningAgent = (record: AgentActivity): boolean => record.kind === 'subagent' && (record.status === 'running' || !!record.agents?.some(agent => !ENDED_AGENT.has(agent.status)))
-    if (thread?.activities) thread.activities = thread.activities.map(record => (rows.has(record.id) && record.status === 'running') || runningAgent(record)
-      ? { ...record, status: record.status === 'running' ? 'unknown' as const : record.status,
-        ...(record.agents ? { agents: record.agents.map(agent => ENDED_AGENT.has(agent.status) ? agent : { ...agent, status: 'interrupted' }) } : {}) } : record)
+    // Only the items it still ran end with it, a workflow's own agents included (they are tracked too), so Watcher's
+    // roster stops counting them. A row whose item had already ended keeps how it ended.
+    this.endRows(id, new Set(work.clear().map(itemId => `muse-item-${itemId}`)))
     this.publishBackground(id)
+  }
+  /** These rows' items will never say how they ended: each reads unknown, and its agents that ran, interrupted. */
+  private endRows(id: string, rows: ReadonlySet<string>): void {
+    const thread = this.threads.get(id)
+    if (!thread?.activities || !rows.size) return
+    thread.activities = thread.activities.map(record => rows.has(record.id)
+      ? { ...record, status: record.status === 'running' ? 'unknown' as const : record.status,
+        ...(record.agents ? { agents: record.agents.map(agent => RUNNING_AGENT.has(agent.status) ? { ...agent, status: 'interrupted' } : agent) } : {}) } : record)
+    this.changed(id)
   }
   private busy(id: string): boolean { return this.working(id) || this.asking(id) }
   /** Everything that holds a session in `busy` but an unanswered request. */
@@ -904,7 +915,8 @@ export class MuseMspHost implements ProviderHost {
     for (const id of [...this.outdated]) {
       const entry = this.processes.get(id)
       if (!entry || entry.clientRevision === this.clientRevision) { this.outdated.delete(id); continue }
-      if (this.busy(id)) continue
+      // Background work runs in this host and would end with it, so the update waits for it, as Claude Code's does (#2636).
+      if (this.busy(id) || this.inBackground(id)) continue
       this.outdated.delete(id)
       const generation = this.generation
       void this.stopSession(id).then(() => {
@@ -1541,7 +1553,13 @@ export class MuseMspHost implements ProviderHost {
     const forked = alias.forkedMessages?.length ? new Set(alias.forkedMessages) : undefined
     for (const item of items) this.foldItem(id, item, forked?.has(item.itemId) === true)
     // A history read, after a gap, may show an item ended whose completion never came live (#2636).
-    if (this.background.get(id)?.history(items)) this.publishBackground(id)
+    const work = this.background.get(id)
+    if (work?.history(items)) this.publishBackground(id)
+    // Read with no live tracker, after a host was lost or stopped, one it shows still open outside the turn running now was
+    // that host's: nothing will close its row, so it ends here, rather than reading running for good.
+    const active = this.activeTurns.get(id)?.turnId
+    if (!work) this.endRows(id, new Set(items.filter(item => item.status === 'inProgress' && BACKGROUND_KINDS.has(item.kind) && item.turnId !== active)
+      .map(item => `muse-item-${item.itemId}`)))
   }
   /** Settle a turn Muse ended: its record, the thread's state, and any work it left showing as running. */
   /** Output of the thread's running turn arrived: an item, a delta or a token record, never the user's own message. */

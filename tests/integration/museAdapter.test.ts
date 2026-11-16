@@ -896,6 +896,51 @@ describe('Muse background work', () => {
     } finally { await f.cleanup() }
   })
 
+  it('leaves an agent that already ended as it ended when the host goes, as Muse’s resultReady or timedOut (#2655, L1)', async () => {
+    const { f, id, thread } = await open()
+    try {
+      await f.actionAndWait(id, { type: 'background', kind: 'subagent', description: 'Draw the car', text: 'Started it.' })
+      await expect.poll(async () => (await thread()).backgroundWork?.length).toBe(1)
+      await f.actionAndWait(id, { type: 'background-end', controlStatus: 'resultReady', report: false })
+      await expect.poll(async () => (await thread()).backgroundWork).toBeUndefined()
+      await f.action(id, { type: 'exit' })
+      await expect.poll(async () => (await f.host.snapshot()).threads.find(item => item.id === id)?.activities?.find(row => row.kind === 'subagent')?.agents?.[0]?.status).toBe('resultReady')
+      await new Promise(resolve => setTimeout(resolve, 300))
+      expect((await thread()).activities?.find(row => row.kind === 'subagent')?.agents?.[0]?.status).toBe('resultReady')
+    } finally { await f.cleanup() }
+  })
+
+  it('holds a client update until the background work in its host has ended, as Claude Code’s does (#2655, L2)', async () => {
+    const { f, id, thread } = await open()
+    try {
+      await f.actionAndWait(id, { type: 'background', kind: 'command', command: 'sleep 45', description: 'Render', text: 'Started it.' })
+      await expect.poll(async () => (await thread()).backgroundWork?.length).toBe(1)
+      const starts = await f.sessions!.starts(id)
+      await f.clientUpdate!.install()
+      await f.host.clientUpdated!()
+      await new Promise(resolve => setTimeout(resolve, 500))
+      // The host still runs the work; it has not been stopped and opened again on the new client.
+      expect(await f.sessions!.starts(id)).toBe(starts)
+      expect((await thread()).backgroundWork).toHaveLength(1)
+      await f.actionAndWait(id, { type: 'background-end' })
+      await expect.poll(async () => (await thread()).backgroundWork).toBeUndefined()
+      await expect.poll(async () => f.sessions!.starts(id), { timeout: 30_000 }).toBeGreaterThan(starts)
+    } finally { await f.cleanup() }
+  })
+
+  it('ends a row its lost host left open when the history is read again with no live host (#2655, L3)', async () => {
+    const { f, id, thread } = await open()
+    try {
+      await f.actionAndWait(id, { type: 'background', kind: 'command', command: 'sleep 45', description: 'Render', text: 'Started it.' })
+      await expect.poll(async () => (await thread()).backgroundWork?.length).toBe(1)
+      await f.action(id, { type: 'exit' })
+      await expect.poll(async () => (await thread()).backgroundWork).toBeUndefined()
+      // The next read starts a new host and folds the saved history, where the item is still in progress.
+      await f.host.refreshThread!(id)
+      await expect.poll(async () => (await thread()).activities?.find(row => row.title === 'exec_command' || row.kind === 'command' || row.kind === 'tool')?.status).toBe('unknown')
+    } finally { await f.cleanup() }
+  })
+
   it('counts a workflow, never the agents inside it, and lets both go with a lost host', async () => {
     const { f, id, thread } = await open()
     try {

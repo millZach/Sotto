@@ -269,9 +269,12 @@ brings back work that has ended. Only a turn that completed leaves work running:
 with it, while work earlier turns left keeps to its own ending. A history read after a gap ends any item it shows
 ended. A workflow counts once, and its agents are not counted beside it, though their rows run while they do. The turn's
 end and the work it left are told together, so Watcher reads them as one. Rows stay running until their items end.
-History never brings any back. The work holds the host from the reaper only, which names it background. When the host
-goes, it all ends, and every agent row it was running, a workflow's included, reads interrupted, so Watcher's roster stops
-counting them. A command is named by its own model-written `description` or `command` argument, which Muse sends
+History never brings any back. The work holds the host from the reaper, which names it background, and it holds a client
+update until it ends, as a Claude Code thread's does, since the work runs in the host and would end with it. Other
+actions are not held. When the host goes, the items it still ran end with it: their rows read unknown, and their agents
+that ran, a workflow's own included, read interrupted, so Watcher's roster stops counting them. An agent that had already
+ended keeps how it ended, such as Muse's `resultReady`. A history read with no live host, after the host was lost or
+stopped, ends any such item it shows still open outside the running turn, since nothing will close its row. A command is named by its own model-written `description` or `command` argument, which Muse sends
 verbatim, never by anything a shell expanded.
 
 ## Considered Options

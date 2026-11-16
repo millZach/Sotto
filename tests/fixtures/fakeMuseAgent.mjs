@@ -199,7 +199,8 @@ function check() {
   else if (action.type === 'background-end') {
     const item = (session.backgroundItems ?? []).shift(); save()
     if (item) {
-      addItem(session, { ...item, status: action.status ?? 'completed', revision: item.revision + 1, ...(item.kind === 'subagent' ? { controlStatus: 'closed' } : {}) })
+      // `controlStatus` gives a subagent's own ending, such as Muse's `resultReady`, `timedOut` or `rejected`.
+      addItem(session, { ...item, status: action.status ?? 'completed', revision: item.revision + 1, ...(item.kind === 'subagent' ? { controlStatus: action.controlStatus ?? 'closed' } : {}) })
       if (action.report !== false) {
         const turnId = `turn-${randomUUID()}`
         session.activeTurnId = turnId; session.turns = (session.turns ?? 0) + 1; save()

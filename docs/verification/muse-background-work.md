@@ -22,7 +22,7 @@ SOTTO_MUSE_LIVE=1 npx vitest run tests/integration/museAdapterLive.test.ts -t "c
 **The fix:**
 - a command the turn left running is background work, with its row running, until its own completion and Muse's report turn, and the row then reads completed;
 - a workflow counts once, never the agents inside it;
-- a lost host ends both, and every agent row it was running, the workflow's own included, stops counting as running;
+- a lost host ends the items it still ran, and their agents, the workflow's own included, stop counting as running;
 - the contract's case passes: kept past the turn, ended by the provider, and never restored after a restart.
 
 Across the Muse, Watcher-on-Muse and guard files, 315 passed and 7 skipped.
@@ -34,6 +34,15 @@ Across the Muse, Watcher-on-Muse and guard files, 315 passed and 7 skipped.
 - an item is counted until its own end however many turns follow, rather than dropping out after 256;
 - a workflow's own agents keep their rows running past the turn's end, uncounted;
 - a history read after a gap ends any item it shows ended.
+
+**After Bug Bot's review at a354a06**, each with a test that failed on that head:
+- **L1:** a host's stop ends only the items it still ran, and an agent that had already ended keeps Muse's own ending (`resultReady`, `timedOut`, `rejected`) rather than reading interrupted.
+- **L2:** a client update waits for the background work in the host to end, as Claude Code's does, and then moves the thread to the new client.
+- **L3:** a history read with no live host ends any background-kind item it shows still open outside the running turn, so its row does not read running for good.
+- **N2:** a history read records the item's revision, so an older one arriving live later cannot open it again.
+- **N5:** the wording above now says which rows a lost host ends.
+
+Bug Bot's N1 and N3 are on #2645.
 
 One point is filed on #2645 rather than fixed here: when the host is lost, an agent whose row has already left the 2,000-row activity window can't be marked interrupted, so the roster may still count it. That limit is the activity window's, for every provider.
 

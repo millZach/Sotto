@@ -65,5 +65,8 @@ describe('MuseBackgroundWork (#2636)', () => {
     work.item(command('c', 't1', 'inProgress', 1)); work.turnEnded('t1', true)
     expect(work.history([command('c', 't1', 'completed', 4)])).toBe(true)
     expect(work.working).toEqual([])
+    // An older revision arriving live afterwards does not open it again (#2655, N2).
+    expect(work.item(command('c', 't1', 'inProgress', 3))).toBe(false)
+    expect(work.working).toEqual([])
   })
 })

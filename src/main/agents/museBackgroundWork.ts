@@ -85,7 +85,13 @@ export class MuseBackgroundWork {
   /** A history read served these items: one it shows ended has ended, however its completion was missed live. */
   history(items: readonly MuseItem[]): boolean {
     let changed = false
-    for (const item of items) if (item.status !== OPEN && this.open.has(item.itemId)) changed = this.close(item.itemId) || changed
+    for (const item of items) {
+      if (item.status === OPEN || !this.open.has(item.itemId)) continue
+      // Its revision too, so an older one arriving live later cannot open it again.
+      const known = this.revisions.get(item.itemId)
+      if (known === undefined || item.revision > known) { this.revisions.delete(item.itemId); this.revisions.set(item.itemId, item.revision) }
+      changed = this.close(item.itemId) || changed
+    }
     return changed
   }
 
