@@ -1717,6 +1717,8 @@ export class SocketHostService implements HostService {
   get supportsPluginMeshyCopies(): boolean { return this.features.includes('plugin-meshy-copies') || this.listed.includes('plugin-meshy-copies') }
   /** The host lists `plugin-elevenlabs-copies`: it keeps an ElevenLabs account's copy, and lists its switch and limit back. */
   get supportsPluginElevenLabsCopies(): boolean { return this.features.includes('plugin-elevenlabs-copies') || this.listed.includes('plugin-elevenlabs-copies') }
+  /** The host lists `plugin-higgsfield-copies`: it keeps a Higgsfield account's copy, and lists its switch and limit back. */
+  get supportsPluginHiggsfieldCopies(): boolean { return this.features.includes('plugin-higgsfield-copies') || this.listed.includes('plugin-higgsfield-copies') }
   async keepPluginAccountCopy(copy: PluginAccountCopy): Promise<PluginAccountCopyReceipt> {
     this.offers('plugin-account-copies')
     return this.read(pluginAccountCopyReceiptSchema, await this.call({ op: 'plugin-account-copy', copy }, undefined, undefined, 10000))

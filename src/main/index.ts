@@ -85,6 +85,7 @@ import { combinedSottoRequests } from './agents/sottoRequests'
 import { checkVercelToken, type VercelFetch } from './plugins/vercel/read'
 import { checkMeshyKey, type MeshyFetch } from './plugins/meshy/account'
 import { checkElevenLabsKey, type ElevenLabsFetch } from './plugins/elevenlabs/account'
+import { checkHiggsfieldKey, type HiggsfieldFetch } from './plugins/higgsfield/account'
 import { PluginUseRecord } from './plugins/useRecord'
 import type { MeshyApiFetch } from './tools/meshy/api'
 import { ModelRecords } from './tools/meshy/records'
@@ -1416,6 +1417,11 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const elevenLabsBase = e2eConfiguration !== null && !app.isPackaged ? process.env['SOTTO_E2E_ELEVENLABS_API_URL'] : undefined
   const elevenLabsFetch: ElevenLabsFetch = e2eConfiguration !== null && !elevenLabsBase ? async () => { throw new Error('E2E_NETWORK_DISABLED') } : (url, init) => fetch(url, init)
   const elevenLabsOptions = { ...(elevenLabsBase ? { base: elevenLabsBase } : {}), signal: pluginsStop.signal }
+  // Higgsfield (ADR-0205, slice 13): a key ID and key secret go to api.higgsfield.ai and nowhere else, checked there by
+  // reading its usage report, which makes nothing. An end-to-end run reaches the stand-in its test names, or nothing.
+  const higgsfieldBase = e2eConfiguration !== null && !app.isPackaged ? process.env['SOTTO_E2E_HIGGSFIELD_API_URL'] : undefined
+  const higgsfieldFetch: HiggsfieldFetch = e2eConfiguration !== null && !higgsfieldBase ? async () => { throw new Error('E2E_NETWORK_DISABLED') } : (url, init) => fetch(url, init)
+  const higgsfieldOptions = { ...(higgsfieldBase ? { base: higgsfieldBase } : {}), signal: pluginsStop.signal }
   // Vercel (ADR-0205): an account's token goes to api.vercel.com and nowhere else. An end-to-end run reaches the
   // stand-in its test names, or nothing; a packaged build never reads that name.
   const vercelBase = e2eConfiguration !== null && !app.isPackaged ? process.env['SOTTO_E2E_VERCEL_API_URL'] : undefined
@@ -1435,7 +1441,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const pluginAccounts = pluginsEnabled ? new PluginAccounts(userDataPath, { credentials,
     check: (plugin, secret, address, bridge) => isMailPlugin(plugin) ? checkMailAccount(plugin, address ?? '', secret, mailOptions, bridge)
       : plugin === 'meshy' ? checkMeshyKey(meshyFetch, secret, meshyOptions) : plugin === 'elevenlabs' ? checkElevenLabsKey(elevenLabsFetch, secret, elevenLabsOptions)
-      : checkVercelToken(vercelFetch, secret, vercelOptions) }) : undefined
+      : plugin === 'higgsfield' ? checkHiggsfieldKey(higgsfieldFetch, secret, higgsfieldOptions) : checkVercelToken(vercelFetch, secret, vercelOptions) }) : undefined
   // 3D models (ADR-0141): Meshy's API behind one adapter, the files from Meshy's file server only, and the record of each
   // 3D model, which follows Keep local history and forgetting a thread. Nothing asks for one until threads have the tool;
   // a 3D model still being made when Sotto last stopped is picked up now, for Meshy's three days. An end-to-end run

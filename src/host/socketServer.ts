@@ -471,6 +471,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'plugin-meshy-copies' || service.supportsPluginAccountCopies === true && desktopRecords)
     // An ElevenLabs account's copy, with its switch and limit, the same way: this build knows ElevenLabs.
     && (feature !== 'plugin-elevenlabs-copies' || service.supportsPluginAccountCopies === true && desktopRecords)
+    // A Higgsfield account's copy, with its switch and limit, the same way: this build knows Higgsfield.
+    && (feature !== 'plugin-higgsfield-copies' || service.supportsPluginAccountCopies === true && desktopRecords)
     // Shared spending for those copies (ADR-0205), only alongside them and only where this host counts its own.
     && (feature !== 'plugin-meshy-spending' || service.supportsPluginAccountCopies === true && service.supportsPluginMeshySpending === true && desktopRecords)
     && (feature !== 'plugin-elevenlabs-spending' || service.supportsPluginAccountCopies === true && service.supportsPluginElevenLabsSpending === true && desktopRecords)
@@ -550,7 +552,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     .filter(feature => feature !== 'host-update' || mayUpdate(peer))
     .filter(feature => feature !== 'branch-moves' && feature !== 'thread-move' && feature !== 'thread-move-source' && feature !== 'thread-move-keep' || (options.watcherDesktops?.has(peer.client.clientId) ?? false))
     // An account copy carries a secret, so it comes only from the desktop the launch script recorded (ADR-0205).
-    .filter(feature => feature !== 'plugin-account-copies' && feature !== 'plugin-mail-copies' && feature !== 'plugin-meshy-copies' && feature !== 'plugin-elevenlabs-copies' && feature !== 'plugin-meshy-spending' && feature !== 'plugin-elevenlabs-spending' || options.watcherDesktops?.has(peer.client.clientId) === true)
+    .filter(feature => feature !== 'plugin-account-copies' && feature !== 'plugin-mail-copies' && feature !== 'plugin-meshy-copies' && feature !== 'plugin-elevenlabs-copies' && feature !== 'plugin-higgsfield-copies' && feature !== 'plugin-meshy-spending' && feature !== 'plugin-elevenlabs-spending' || options.watcherDesktops?.has(peer.client.clientId) === true)
     // A host thread's 3D models, their bytes and their lines go only to the desktop the launch script recorded, as its copies do.
     .filter(feature => feature !== 'plugin-meshy-models' || options.watcherDesktops?.has(peer.client.clientId) === true)
     // So do its sounds, their MP3s and their lines.
@@ -2078,9 +2080,10 @@ export async function startSocketServer(options: SocketServerOptions) {
         if (isMailPlugin(request.copy.account.plugin) && !offers(peer, 'plugin-mail-copies')) throw new Refusal('invalid_request')
         // A Proton Mail account is never copied: its Bridge password is the desktop's Bridge's own.
         if (isBridgePlugin(request.copy.account.plugin)) throw new Refusal('invalid_request')
-        // A Meshy or ElevenLabs account only to a desktop it said it keeps one for.
+        // A Meshy, ElevenLabs or Higgsfield account only to a desktop it said it keeps one for.
         if (request.copy.account.plugin === 'meshy' && !offers(peer, 'plugin-meshy-copies')) throw new Refusal('invalid_request')
         if (request.copy.account.plugin === 'elevenlabs' && !offers(peer, 'plugin-elevenlabs-copies')) throw new Refusal('invalid_request')
+        if (request.copy.account.plugin === 'higgsfield' && !offers(peer, 'plugin-higgsfield-copies')) throw new Refusal('invalid_request')
         try { return pluginAccountCopyReceiptSchema.parse(await service.keepPluginAccountCopy(request.copy, peer.client)) } catch { throw new Refusal('unavailable') }
       }
       case 'plugin-account-copy-remove': {

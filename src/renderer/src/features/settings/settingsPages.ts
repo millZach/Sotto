@@ -243,6 +243,7 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { id: 'plugin-proton-mail', label: 'Proton Mail', section: 'settings-plugins', words: 'plugin mail email proton bridge password account inbox messages', gate: 'plugins' },
     { id: 'plugin-meshy', label: 'Meshy', section: 'settings-plugins', words: 'plugin 3d models meshy api key credits limit ask before each', gate: 'plugins' },
     { id: 'plugin-elevenlabs', label: 'ElevenLabs', section: 'settings-plugins', words: 'plugin elevenlabs eleven labs sound speech voice music sound effects api key dollars limit ask before each', gate: 'plugins' },
+    { id: 'plugin-higgsfield', label: 'Higgsfield', section: 'settings-plugins', words: 'plugin higgsfield video videos key id key secret dollars limit ask before each', gate: 'plugins' },
     { id: 'local-apps', label: msg`Let apps on this computer connect`, section: 'settings-hosts', words: 'agent popup menu bar token loopback', gate: 'local-apps' },
     { id: 'cloud-iphone-key', label: msg`run.cloud key`, section: 'settings-cloud-iphone', words: 'cloud iphone' },
     { id: 'cloud-iphone-cap', label: msg`Monthly cap`, section: 'settings-cloud-iphone', words: 'minutes spending cloud iphone' },

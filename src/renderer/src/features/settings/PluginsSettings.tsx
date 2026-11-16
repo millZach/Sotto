@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useId, useRef, useState, type FormEvent,
 import { Trans, useLingui } from '@lingui/react/macro'
 import { Box, ChevronRight, Code, Mail, MonitorSmartphone } from 'lucide-react'
 import {
-  BRIDGE_DEFAULT_PORTS, dollarFigure, dollarLimit, isBridgePlugin, isMailPlugin, PLUGIN_MONTHLY_LIMIT_MAX, PLUGIN_ACCOUNT_NAME_MAX, PLUGIN_MAIL_ADDRESS_MAX, PLUGIN_SECRET_MAX, PLUGIN_USE_SHOWN, pluginMailAddressSchema, PLUGINS, type AccountPluginId, type GitHubSignIn, type PluginAccount, type PluginAccountProblem, type PluginAccountResult,
+  BRIDGE_DEFAULT_PORTS, dollarFigure, dollarLimit, isBridgePlugin, isMailPlugin, PLUGIN_MONTHLY_LIMIT_MAX, PLUGIN_ACCOUNT_NAME_MAX, PLUGIN_MAIL_ADDRESS_MAX, PLUGIN_KEY_PART_MAX, PLUGIN_SECRET_MAX, PLUGIN_USE_SHOWN, pluginKeyPartSchema, pluginMailAddressSchema, PLUGINS, type AccountPluginId, type GitHubSignIn, type PluginAccount, type PluginAccountProblem, type PluginAccountResult,
   type PluginAccountCopyLeaving, type PluginAccountCopyState, type PluginCopiesView, type PluginHostSignIn, type PluginEntry, type PluginGroupId, type PluginProject, type PluginReadKind, type PluginsBridge, type ShownPluginUse, type BridgeStatus, type PluginSpending,
 } from '../../../../shared/plugins'
 import { localeFormatter } from '../../agents/localeFormat'
@@ -21,6 +21,8 @@ const VERCEL_TOKENS_PAGE = 'vercel.com/account/tokens'
 const MESHY_KEYS_PAGE = 'meshy.ai/developers/keys'
 /** Where ElevenLabs' API keys are made (ADR-0205, slice 12). */
 const ELEVENLABS_KEYS_PAGE = 'elevenlabs.io/app/settings/api-keys'
+/** Where Higgsfield's keys are made, in its console (ADR-0205, slice 13). */
+const HIGGSFIELD_KEYS_PAGE = 'open.higgsfield.ai'
 /** Where Google makes app passwords, from its own help page (support.google.com/accounts/answer/185833, November 13, 2026). Words to type or copy, as Vercel's is. */
 const GOOGLE_APP_PASSWORDS_PAGE = 'myaccount.google.com/apppasswords'
 
@@ -293,6 +295,15 @@ interface AccountWords {
   readonly about: string
   readonly add: string
   readonly addAnother: string
+  /**
+   * For a plugin whose secret is a key ID and a key secret, as Higgsfield's is: the key ID's own field, asked for
+   * before the secret, and what each field says when what is in it is not one line a header can carry.
+   */
+  readonly keyId?: {
+    readonly label: string; readonly description: string; readonly placeholder: string
+    readonly newLabel: string; readonly newDescription: string
+    readonly malformed: string; readonly secretMalformed: string
+  }
   readonly secretLabel: string
   readonly secretDescription: string
   readonly secretPlaceholder: string
@@ -320,6 +331,51 @@ function useAccountWords(plugin: AccountPluginId): AccountWords {
   // ElevenLabs makes speech, sound effects and music for a thread, as files in its folder, and spends dollars at its
   // API prices (Zach's picks on #2498, November 15, 2026). Nothing in Sotto speaks (ADR-0068): a sound plays only when
   // Play is pressed. The row says ElevenLabs may train on what it is sent unless that is turned off there.
+  // Higgsfield makes videos for a thread and spends dollars at its published prices (Zach's picks on #2499, November
+  // 16, 2026). Its key is a key ID and a key secret, asked for as two fields and kept together. The row says Higgsfield
+  // may train on what it is sent unless that is turned off in its console.
+  if (plugin === 'higgsfield') {
+    return {
+      about: t`Make videos from words, with a key you paste. Sotto keeps the key in its encrypted store and makes each request itself, so no agent ever sees it. Higgsfield may use what it is sent, and the videos it makes, to train its own models, unless you turn on Exclude data from training in Higgsfield’s console settings.`,
+      add: t`Add a Higgsfield account`, addAnother: t`Add another Higgsfield account`,
+      keyId: {
+        label: t`Key ID`,
+        description: t`Make a key at ${HIGGSFIELD_KEYS_PAGE}. It comes as a key ID and a key secret: paste each in its own field.`,
+        placeholder: t`Paste the key ID`,
+        newLabel: t`New key ID`,
+        newDescription: t`The new key’s ID, from ${HIGGSFIELD_KEYS_PAGE}.`,
+        malformed: t`A key ID is one line with no spaces or colons. Copy it again from Higgsfield’s console.`,
+        secretMalformed: t`A key secret is one line with no spaces or colons. Copy it again from Higgsfield’s console.`,
+      },
+      secretLabel: t`Key secret`,
+      secretDescription: t`Sotto checks the key ID and secret with Higgsfield before saving them, without making anything, and never shows the secret again.`,
+      secretPlaceholder: t`Paste the key secret`,
+      newSecretLabel: t`New key secret`,
+      newSecretDescription: t`Sotto checks the new key with Higgsfield first. The key saved now stays in use until the new one is accepted.`,
+      saveSecret: t`Save key`,
+      account: name => t`Higgsfield account ${name}`,
+      saved: (_account, day) => t`Key saved ${day}.`,
+      replace: name => t`Replace the key for ${name}`,
+      remove: name => t`Remove the Higgsfield account ${name}`,
+      removeAsk: name => <Trans>Remove <b>{name}</b>? Its key ID and secret are deleted from this computer, and threads lose the account at once. Nothing changes at Higgsfield.</Trans>,
+      off: t`Off. No thread can see or use this account until you turn it back on. Its key stays saved.`,
+      noKey: computer => t`${computer} was started without a key file, so it cannot keep a Higgsfield key. Nothing was kept there. On ${computer}, set SOTTO_HOST_KEY_FILE to a file holding a secret of your own, start its host again, and the copy is sent.`,
+      locked: t`This computer’s credential store is locked, so the Higgsfield key could not be read to send. Unlock it, and Sotto tries again.`,
+      tooOld: computer => t`${computer}’s Sotto cannot keep a Higgsfield account’s copy. Update Sotto on ${computer}, and the copy is sent.`,
+      problem: (problem, replacing) => {
+        const kept = replacing ? t`The key already saved was kept.` : t`Nothing was saved.`
+        switch (problem) {
+          case 'refused': return t`Higgsfield did not accept this key ID and secret. ${kept} Check both in Higgsfield’s console at ${HIGGSFIELD_KEYS_PAGE}.`
+          case 'unreachable': return t`Higgsfield could not be reached to check the key. ${kept} Check your connection, then try again.`
+          case 'busy': return t`Higgsfield is turning requests away for now, so the key could not be checked. ${kept} Wait a minute, then try again.`
+          case 'name-taken': return t`There is already a Higgsfield account with that name. Nothing was saved. Give this one another name.`
+          case 'limit': return t`Higgsfield already has as many accounts as Sotto keeps for one plugin. Nothing was saved. Remove one first.`
+          case 'gone': return t`That account is no longer here. Nothing was changed.`
+          default: return t`Sotto could not keep the key. ${kept} Check that this computer’s credential store is unlocked, then try again.`
+        }
+      },
+    }
+  }
   if (plugin === 'elevenlabs') {
     return {
       about: t`Make speech, sound effects and music as files in a thread’s folder, with a key you paste. Sotto keeps the key in its encrypted store and makes each request itself, so no agent ever sees it. Nothing plays until you press Play. ElevenLabs may use what it is sent to train its own models, unless you turn that off under Data use in your ElevenLabs account.`,
@@ -540,7 +596,18 @@ function AccountsRow({ plugin, bridge, accounts, projects, copies, uses, elsewhe
 }
 
 /**
+ * Where a key ID and a key secret stand as they are typed: each is wrong once it holds a colon or anything a header
+ * cannot carry, and the two are ready when each is one part.
+ */
+function keyPartsOf(keyId: string, secret: string): { readonly ready: boolean; readonly idMalformed: boolean; readonly secretMalformed: boolean } {
+  const idFits = pluginKeyPartSchema.safeParse(keyId).success
+  const secretFits = pluginKeyPartSchema.safeParse(secret).success
+  return { ready: idFits && secretFits, idMalformed: keyId.trim() !== '' && !idFits, secretMalformed: secret.trim() !== '' && !secretFits }
+}
+
+/**
  * The form that adds an account: a name and the secret, and for a mail account the address the secret signs in.
+ * A Higgsfield account's secret is its key ID and key secret, each in its own field.
  * They are checked with the service before anything is kept. Escape cancels it.
  */
 function AddAccount({ plugin, bridge, onAccounts, onDone }: { readonly plugin: AccountPluginId; readonly bridge: PluginsBridge | undefined; readonly onAccounts: (accounts: readonly PluginAccount[]) => void; readonly onDone: () => void }): ReactNode {
@@ -555,12 +622,17 @@ function AddAccount({ plugin, bridge, onAccounts, onDone }: { readonly plugin: A
   const [name, setName] = useState('')
   const [address, setAddress] = useState('')
   const [token, setToken] = useState('')
+  // Higgsfield's key ID, asked for beside its key secret; no other plugin's form has one.
+  const keyWords = words.keyId
+  const [keyId, setKeyId] = useState('')
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
   const nameInput = useRef<HTMLInputElement>(null)
   useEffect(() => { nameInput.current?.focus() }, [])
   const ports = throughBridge ? { imapPort: portOf(imapPort), smtpPort: portOf(smtpPort) } : null
+  const keyParts = keyWords ? keyPartsOf(keyId, token) : null
   const ready = name.trim() !== '' && token.trim() !== '' && (!mail || pluginMailAddressSchema.safeParse(address).success)
+    && (!keyParts || keyParts.ready)
     && (!ports || (ports.imapPort !== null && ports.smtpPort !== null && ports.imapPort !== ports.smtpPort)) && !busy && bridge !== undefined
   const submit = async (event: FormEvent): Promise<void> => {
     event.preventDefault()
@@ -568,7 +640,10 @@ function AddAccount({ plugin, bridge, onAccounts, onDone }: { readonly plugin: A
     setBusy(true); setProblem(null)
     let result: PluginAccountResult
     const bridgePorts = ports && ports.imapPort !== null && ports.smtpPort !== null ? { imapPort: ports.imapPort, smtpPort: ports.smtpPort } : null
-    try { result = await bridge.addAccount({ plugin, name: name.trim(), secret: token.trim(), ...(mail ? { address: address.trim() } : {}), ...(bridgePorts ? { bridge: bridgePorts } : {}) }) } catch { result = { ok: false, problem: 'store' } }
+    try {
+      result = await bridge.addAccount({ plugin, name: name.trim(), secret: token.trim(), ...(mail ? { address: address.trim() } : {}), ...(bridgePorts ? { bridge: bridgePorts } : {}),
+        ...(keyWords ? { keyId: keyId.trim() } : {}) })
+    } catch { result = { ok: false, problem: 'store' } }
     setBusy(false)
     // The token is not kept in the page a moment longer than the request that carried it, whether it was kept or not.
     setToken('')
@@ -592,8 +667,11 @@ function AddAccount({ plugin, bridge, onAccounts, onDone }: { readonly plugin: A
     </Field> : mail ? <Field label={t`Gmail address`} description={t`The address the app password belongs to. Sotto shows it here and never tells it to an agent.`}>
       <input className="tt-input" type="email" autoComplete="off" spellCheck={false} maxLength={PLUGIN_MAIL_ADDRESS_MAX} value={address} onChange={event => setAddress(event.target.value)} />
     </Field> : null}
-    <Field label={words.secretLabel} description={words.secretDescription}>
-      <input className="tt-input" type="password" autoComplete="off" spellCheck={false} maxLength={PLUGIN_SECRET_MAX} value={token} placeholder={words.secretPlaceholder} onChange={event => setToken(event.target.value)} />
+    {keyWords ? <Field label={keyWords.label} description={keyWords.description} {...(keyParts?.idMalformed ? { error: keyWords.malformed } : {})}>
+      <input className="tt-input" autoComplete="off" spellCheck={false} maxLength={PLUGIN_KEY_PART_MAX} value={keyId} placeholder={keyWords.placeholder} onChange={event => setKeyId(event.target.value)} />
+    </Field> : null}
+    <Field label={words.secretLabel} description={words.secretDescription} {...(keyWords && keyParts?.secretMalformed ? { error: keyWords.secretMalformed } : {})}>
+      <input className="tt-input" type="password" autoComplete="off" spellCheck={false} maxLength={keyWords ? PLUGIN_KEY_PART_MAX : PLUGIN_SECRET_MAX} value={token} placeholder={words.secretPlaceholder} onChange={event => setToken(event.target.value)} />
     </Field>
     {throughBridge ? <div className="plugin-account__ports">
       <Field label={t`IMAP port`} {...(portOf(imapPort) === null ? { error: t`A port is a number from 1 to 65535.` } : {})}>
@@ -655,6 +733,11 @@ function AccountCard({ account, bridge, projects, copies, uses, elsewhere, onAcc
   }
   const [mode, setMode] = useState<'rest' | 'replacing' | 'removing'>('rest')
   const [token, setToken] = useState('')
+  // A Higgsfield key is replaced whole: a new key ID beside its new key secret.
+  const keyWords = words.keyId
+  const [keyId, setKeyId] = useState('')
+  const keyParts = keyWords ? keyPartsOf(keyId, token) : null
+  const replaceReady = token.trim() !== '' && (!keyParts || keyParts.ready)
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
   const replaceButton = useRef<HTMLButtonElement>(null)
@@ -662,7 +745,7 @@ function AccountCard({ account, bridge, projects, copies, uses, elsewhere, onAcc
   const name = account.name
   const saved = daySaved(new Date(account.savedAt))
   const rest = (focus: 'replace' | 'remove'): void => {
-    setMode('rest'); setToken(''); setProblem(null)
+    setMode('rest'); setToken(''); setKeyId(''); setProblem(null)
     requestAnimationFrame(() => (focus === 'replace' ? replaceButton : removeButton).current?.focus())
   }
   const run = async (request: () => Promise<PluginAccountResult>, replacing: boolean): Promise<void> => {
@@ -699,12 +782,19 @@ function AccountCard({ account, bridge, projects, copies, uses, elsewhere, onAcc
       </div> : null}
     </div>
     {mode === 'replacing' ? <form className="plugin-account__change" aria-label={words.replace(name)}
-      onSubmit={event => { event.preventDefault(); if (token.trim()) void run(() => bridge!.replaceSecret({ id: account.id, secret: token.trim() }), true) }}>
-      <Field label={words.newSecretLabel} description={words.newSecretDescription}>
-        <input className="tt-input" type="password" autoComplete="off" spellCheck={false} maxLength={PLUGIN_SECRET_MAX} value={token} placeholder={words.secretPlaceholder} autoFocus onChange={event => setToken(event.target.value)} />
+      onSubmit={event => {
+        event.preventDefault()
+        if (replaceReady) void run(() => bridge!.replaceSecret({ id: account.id, secret: token.trim(), ...(keyWords ? { keyId: keyId.trim() } : {}) }), true)
+      }}>
+      {keyWords ? <Field label={keyWords.newLabel} description={keyWords.newDescription} {...(keyParts?.idMalformed ? { error: keyWords.malformed } : {})}>
+        <input className="tt-input" autoComplete="off" spellCheck={false} maxLength={PLUGIN_KEY_PART_MAX} value={keyId} placeholder={keyWords.placeholder} autoFocus onChange={event => setKeyId(event.target.value)} />
+      </Field> : null}
+      <Field label={words.newSecretLabel} description={words.newSecretDescription} {...(keyWords && keyParts?.secretMalformed ? { error: keyWords.secretMalformed } : {})}>
+        <input className="tt-input" type="password" autoComplete="off" spellCheck={false} maxLength={keyWords ? PLUGIN_KEY_PART_MAX : PLUGIN_SECRET_MAX} value={token} placeholder={words.secretPlaceholder} autoFocus={!keyWords}
+          onChange={event => setToken(event.target.value)} />
       </Field>
       <div className="plugin-row__actions">
-        <Button type="submit" variant="primary" aria-disabled={busy || token.trim() === ''}>{busy ? t`Checking…` : words.saveSecret}</Button>
+        <Button type="submit" variant="primary" aria-disabled={busy || !replaceReady}>{busy ? t`Checking…` : words.saveSecret}</Button>
         <Button variant="ghost" aria-disabled={busy} onClick={() => { if (!busy) rest('replace') }}><Trans>Cancel</Trans></Button>
       </div>
     </form> : null}
@@ -807,8 +897,8 @@ function AccountCopies({ account, bridge, copies, onCopies }: {
 
 /**
  * What an account that spends may spend (ADR-0141; on the account, Zach's pick on November 15, 2026): whether each
- * 3D model or sound asks first, and the most it spends in a month, in Meshy's credits or ElevenLabs' US dollars. A change is saved as it is made; the limit is saved when the
- * field is left or Enter is pressed, and one that could not be saved says so and shows what is kept.
+ * 3D model, sound or video asks first, and the most it spends in a month, in Meshy's credits or ElevenLabs' or
+ * Higgsfield's US dollars. A change is saved as it is made; the limit is saved when the field is left or Enter is pressed, and one that could not be saved says so and shows what is kept.
  */
 function AccountSpending({ account, spending, bridge, onAccounts }: {
   readonly account: PluginAccount; readonly spending: PluginSpending; readonly bridge: PluginsBridge | undefined
@@ -827,6 +917,7 @@ function AccountSpending({ account, spending, bridge, onAccounts }: {
   // it, read when the row opens; none until then.
   const [used, setUsed] = useState<{ readonly credits: number; readonly across: readonly string[] } | null>(null)
   const meshy = account.plugin === 'meshy'
+  const elevenLabs = account.plugin === 'elevenlabs'
   // Read again when a paired host says what it spent of it.
   useEffect(() => {
     if (!bridge || !meshy) return
@@ -842,7 +933,7 @@ function AccountSpending({ account, spending, bridge, onAccounts }: {
   // figure as this month's (Sol's review).
   const [spentDollars, setSpentDollars] = useState<{ readonly spent: number; readonly across: readonly string[] } | null>(null)
   useEffect(() => {
-    if (!bridge?.elevenLabsSpent || meshy) return
+    if (!bridge?.elevenLabsSpent || !elevenLabs) return
     let live = true
     let timer: ReturnType<typeof setTimeout> | undefined
     const read = (): void => { void bridge.elevenLabsSpent?.().then(spent => { if (live) setSpentDollars(spent[account.id] ?? { spent: 0, across: [] }) }, () => undefined) }
@@ -857,7 +948,7 @@ function AccountSpending({ account, spending, bridge, onAccounts }: {
     atMonthStart()
     const stop = bridge.onElevenLabsSpentChanged?.(read)
     return () => { live = false; clearTimeout(timer); stop?.() }
-  }, [bridge, account.id, meshy])
+  }, [bridge, account.id, elevenLabs])
   // The figure shown follows what is kept, once the newest save has answered.
   useEffect(() => { if (askedLimit.current === null) setLimit(String(spending.monthlyLimit)) }, [spending.monthlyLimit])
   const wanted = /^\d{1,7}$/u.test(limit.trim()) && Number(limit) <= PLUGIN_MONTHLY_LIMIT_MAX ? Number(limit) : null
@@ -890,19 +981,23 @@ function AccountSpending({ account, spending, bridge, onAccounts }: {
     {meshy ? <Toggle label={t`Ask before each 3D model`} checked={spending.askBefore} disabled={!bridge} onCheckedChange={askBefore => void save({ askBefore })}
       description={spending.askBefore ? t`Each 3D model waits on a card in its thread that says what it costs, and nothing reaches Meshy before you answer.`
         : t`Off, a thread makes 3D models without asking until the month’s limit is reached, and each one still shows in the thread with what it cost.`} />
-      : <Toggle label={t`Ask before each sound`} checked={spending.askBefore} disabled={!bridge} onCheckedChange={askBefore => void save({ askBefore })}
+      : elevenLabs ? <Toggle label={t`Ask before each sound`} checked={spending.askBefore} disabled={!bridge} onCheckedChange={askBefore => void save({ askBefore })}
         description={spending.askBefore ? t`Each sound waits on a card in its thread that says what it costs, and nothing reaches ElevenLabs before you answer.`
-          : t`Off, a thread makes sounds without asking until the month’s limit is reached, and each one still shows in the thread with what it cost.`} />}
+          : t`Off, a thread makes sounds without asking until the month’s limit is reached, and each one still shows in the thread with what it cost.`} />
+        : <Toggle label={t`Ask before each video`} checked={spending.askBefore} disabled={!bridge} onCheckedChange={askBefore => void save({ askBefore })}
+          description={spending.askBefore ? t`Each video waits on a card in its thread that says what it costs, and nothing reaches Higgsfield before you answer.`
+            : t`Off, a thread makes videos without asking until the month’s limit is reached, and each one still shows in the thread with what it cost.`} />}
     <Field label={meshy ? t`Monthly credit limit` : t`Monthly limit in US dollars`}
       description={meshy ? t`The most Sotto spends through this account in a month, here and on the computers it is copied to. Meshy’s Pro plan gives 1,000 credits a month.`
-        : t`The most Sotto spends through this account in a month, here and on the computers it is copied to, counted at ElevenLabs’ published API prices.`}
+        : elevenLabs ? t`The most Sotto spends through this account in a month, here and on the computers it is copied to, counted at ElevenLabs’ published API prices.`
+          : t`The most Sotto spends through this account in a month, here and on the computers it is copied to, counted at Higgsfield’s published prices.`}
       {...(wanted === null ? { error: meshy ? t`A limit is a whole number of credits, from 0 to 1,000,000.` : t`A limit is a whole number of dollars, from 0 to 1,000,000.` } : {})}>
       <input className="tt-input plugin-account__limit" inputMode="numeric" autoComplete="off" spellCheck={false} maxLength={7} value={limit} disabled={!bridge}
         onChange={event => setLimit(event.target.value)} onBlur={saveLimit} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); saveLimit() } }} />
     </Field>
     {usedCredits === null ? null : <p className="tt-paragraph plugin-row__note">{across === null ? <Trans>Credits this month: {usedCredits} of {limitCredits}.</Trans>
       : <Trans>Credits this month: {usedCredits} of {limitCredits}, across {across}.</Trans>}</p>}
-    {meshy || spentWords === null ? null : <p className="tt-paragraph plugin-row__note">{spentAcross === null ? <Trans>Spent this month: {spentWords} of {limitDollars}.</Trans>
+    {!elevenLabs || spentWords === null ? null : <p className="tt-paragraph plugin-row__note">{spentAcross === null ? <Trans>Spent this month: {spentWords} of {limitDollars}.</Trans>
       : <Trans>Spent this month: {spentWords} of {limitDollars}, across {spentAcross}.</Trans>}</p>}
     {failed ? <p className="tt-field__error tt-paragraph" role="alert"><Trans>That could not be saved. Nothing was changed. Try again.</Trans></p> : null}
   </section>

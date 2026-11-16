@@ -17,6 +17,8 @@ export interface CopyTarget {
     readonly supportsPluginMeshyCopies?: boolean | undefined
     /** Whether the host keeps an ElevenLabs account's copy: one from before it knew ElevenLabs would refuse it. */
     readonly supportsPluginElevenLabsCopies?: boolean | undefined
+    /** Whether the host keeps a Higgsfield account's copy: one from before it knew Higgsfield would refuse it. */
+    readonly supportsPluginHiggsfieldCopies?: boolean | undefined
     keepPluginAccountCopy?(copy: PluginAccountCopy): Promise<PluginAccountCopyReceipt>
     removePluginAccountCopy?(accountId: string): Promise<PluginAccountCopyRemoved>
     pluginAccountCopies?(): Promise<HeldPluginAccountCopy[]>
@@ -257,10 +259,12 @@ export class PluginAccountCopySync {
     // there only once the host has said so, by not listing it or by answering its removal.
     // A mail account on a host from before it could keep one: its threads could not ask before they read it. It is
     // sent none, and one it holds, as a host that was downgraded does, is taken back.
-    // A Meshy or ElevenLabs account on a host from before it knew that plugin: it would refuse the copy, so it is sent none.
+    // A Meshy, ElevenLabs or Higgsfield account on a host from before it knew that plugin: it would refuse the copy, so it
+    // is sent none.
     const cannotKeep = (account: PluginAccount): boolean => (isMailPlugin(account.plugin) && service.supportsPluginMailCopies !== true)
       || (account.plugin === 'meshy' && service.supportsPluginMeshyCopies !== true)
       || (account.plugin === 'elevenlabs' && service.supportsPluginElevenLabsCopies !== true)
+      || (account.plugin === 'higgsfield' && service.supportsPluginHiggsfieldCopies !== true)
     const stillThere = new Set<string>()
     for (const copy of held) {
       // Whether a copy is wanted is the user's choice, and a choice that cannot be read takes nothing back. Whether

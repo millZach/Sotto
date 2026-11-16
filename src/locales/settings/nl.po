@@ -147,6 +147,10 @@ msgid "{computer} keeps no Proton Mail account: each computer’s Bridge has its
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "{computer} was started without a key file, so it cannot keep a Higgsfield key. Nothing was kept there. On {computer}, set SOTTO_HOST_KEY_FILE to a file holding a secret of your own, start its host again, and the copy is sent."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "{computer} was started without a key file, so it cannot keep a token. Nothing was kept there. On {computer}, set SOTTO_HOST_KEY_FILE to a file holding a secret of your own, start its host again, and the copy is sent."
 msgstr ""
 
@@ -156,6 +160,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "{computer} was started without a key file, so it cannot keep an app password. Nothing was kept there. On {computer}, set SOTTO_HOST_KEY_FILE to a file holding a secret of your own, start its host again, and the copy is sent."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "{computer}’s Sotto cannot keep a Higgsfield account’s copy. Update Sotto on {computer}, and the copy is sent."
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
@@ -977,6 +985,14 @@ msgid "A host name, an alias from your SSH configuration or user@server."
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "A key ID is one line with no spaces or colons. Copy it again from Higgsfield’s console."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "A key secret is one line with no spaces or colons. Copy it again from Higgsfield’s console."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "A limit is a whole number of credits, from 0 to 1,000,000."
 msgstr ""
 
@@ -1102,6 +1118,10 @@ msgstr ""
 msgid "Add a Gmail account"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Add a Higgsfield account"
+msgstr ""
+
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
 msgid "Add a hold shortcut"
 msgstr ""
@@ -1152,6 +1172,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Add another Gmail account"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Add another Higgsfield account"
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
@@ -1473,6 +1497,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Ask before each sound"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Ask before each video"
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
@@ -2881,6 +2909,10 @@ msgstr ""
 msgid "Each sound waits on a card in its thread that says what it costs, and nothing reaches ElevenLabs before you answer."
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Each video waits on a card in its thread that says what it costs, and nothing reaches Higgsfield before you answer."
+msgstr ""
+
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
 msgid "Edit {name}"
 msgstr ""
@@ -3348,6 +3380,26 @@ msgstr ""
 msgid "Hide whitespace changes"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Higgsfield account {name}"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Higgsfield already has as many accounts as Sotto keeps for one plugin. Nothing was saved. Remove one first."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Higgsfield could not be reached to check the key. {kept} Check your connection, then try again."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Higgsfield did not accept this key ID and secret. {kept} Check both in Higgsfield’s console at {HIGGSFIELD_KEYS_PAGE}."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Higgsfield is turning requests away for now, so the key could not be checked. {kept} Wait a minute, then try again."
+msgstr ""
+
 #: src/renderer/src/features/settings/DynamicThreadsSettings.tsx
 msgid "Highest effort"
 msgstr ""
@@ -3796,6 +3848,10 @@ msgstr ""
 msgid "Key"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Key ID"
+msgstr ""
+
 #: src/renderer/src/features/settings/HostQuestionDialog.tsx
 #: src/renderer/src/features/settings/HostSshQuestion.tsx
 msgid "Key passphrase"
@@ -3809,8 +3865,16 @@ msgstr ""
 msgid "Key saved"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Key saved {day}."
+msgstr ""
+
 #: src/renderer/src/features/settings/CloudIphoneSettings.tsx
 msgid "Key saved."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Key secret"
 msgstr ""
 
 #. A Settings page, named in its rail and its heading: the keyboard shortcuts for working in threads. Other messages name it as "Settings > Keyboard".
@@ -3996,6 +4060,10 @@ msgstr ""
 msgid "Make 3D models from words or a photo, with a key you paste. Sotto keeps the key in its encrypted store and makes each request itself, so no agent ever sees it. Meshy may use what it is sent, and the 3D models it makes, to train its own models."
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Make a key at {HIGGSFIELD_KEYS_PAGE}. It comes as a key ID and a key secret: paste each in its own field."
+msgstr ""
+
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
 #: src/renderer/src/features/settings/PhonesSettings.tsx
 msgid "Make a new code"
@@ -4015,6 +4083,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Make speech, sound effects and music as files in a thread’s folder, with a key you paste. Sotto keeps the key in its encrypted store and makes each request itself, so no agent ever sees it. Nothing plays until you press Play. ElevenLabs may use what it is sent to train its own models, unless you turn that off under Data use in your ElevenLabs account."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Make videos from words, with a key you paste. Sotto keeps the key in its encrypted store and makes each request itself, so no agent ever sees it. Higgsfield may use what it is sent, and the videos it makes, to train its own models, unless you turn on Exclude data from training in Higgsfield’s console settings."
 msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeGallery.tsx
@@ -4301,6 +4373,14 @@ msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "New Bridge password"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "New key ID"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "New key secret"
 msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
@@ -4684,6 +4764,10 @@ msgstr ""
 msgid "Off, a thread makes sounds without asking until the month’s limit is reached, and each one still shows in the thread with what it cost."
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Off, a thread makes videos without asking until the month’s limit is reached, and each one still shows in the thread with what it cost."
+msgstr ""
+
 #: src/renderer/src/features/settings/themes/CreatureChoice.tsx
 msgid "Off, nothing stands above the composer. The sidebar still says when a thread is working or waiting."
 msgstr ""
@@ -4710,6 +4794,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Off. No thread can see or use this account until you turn it back on. Its Bridge password stays saved."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Off. No thread can see or use this account until you turn it back on. Its key stays saved."
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
@@ -5105,6 +5193,14 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostProviderSignIn.tsx
 msgid "Paste the code"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Paste the key ID"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Paste the key secret"
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
@@ -5660,6 +5756,10 @@ msgid "Remove <0>{name}</0>? Its Bridge password is deleted from this computer, 
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Remove <0>{name}</0>? Its key ID and secret are deleted from this computer, and threads lose the account at once. Nothing changes at Higgsfield."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Remove <0>{name}</0>? Its token is deleted from this computer, and threads lose the account at once. Nothing changes at Vercel."
 msgstr ""
 
@@ -5721,6 +5821,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Remove the Gmail account {name}"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Remove the Higgsfield account {name}"
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
@@ -5797,6 +5901,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Replace the Bridge password for {name}"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Replace the key for {name}"
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
@@ -6037,6 +6145,7 @@ msgid "Save connection"
 msgstr ""
 
 #: src/renderer/src/features/settings/CloudIphoneSettings.tsx
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Save key"
 msgstr ""
 
@@ -6582,6 +6691,14 @@ msgstr ""
 msgid "Sotto checks it with Vercel first. The token saved now stays in use until the new one is accepted."
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sotto checks the key ID and secret with Higgsfield before saving them, without making anything, and never shows the secret again."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sotto checks the new key with Higgsfield first. The key saved now stays in use until the new one is accepted."
+msgstr ""
+
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Sotto could not check for updates: {problem}"
 msgstr ""
@@ -6608,6 +6725,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Sotto could not keep the Bridge password. {kept} Check that this computer’s credential store is unlocked, then try again."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Sotto could not keep the key. {kept} Check that this computer’s credential store is unlocked, then try again."
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
@@ -7595,6 +7716,10 @@ msgstr ""
 msgid "The installer stopped with an error. {installed} is still installed."
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "The key already saved was kept."
+msgstr ""
+
 #: src/renderer/src/features/settings/CloudIphoneSettings.tsx
 msgid "The key could not be saved. Nothing was changed."
 msgstr ""
@@ -7629,6 +7754,10 @@ msgid "The most Sotto spends through this account in a month, here and on the co
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "The most Sotto spends through this account in a month, here and on the computers it is copied to, counted at Higgsfield’s published prices."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "The most Sotto spends through this account in a month, here and on the computers it is copied to. Meshy’s Pro plan gives 1,000 credits a month."
 msgstr ""
 
@@ -7642,6 +7771,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "The name could not be saved. Try again."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "The new key’s ID, from {HIGGSFIELD_KEYS_PAGE}."
 msgstr ""
 
 #: src/renderer/src/features/settings/HostProviders.tsx
@@ -7903,6 +8036,10 @@ msgid "There is already a Gmail account with that name. Nothing was saved. Give 
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "There is already a Higgsfield account with that name. Nothing was saved. Give this one another name."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "There is already a Meshy account with that name. Nothing was saved. Give this one another name."
 msgstr ""
 
@@ -7962,6 +8099,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "This computer’s credential store is locked, so the Bridge password could not be read. Unlock it, then try again."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "This computer’s credential store is locked, so the Higgsfield key could not be read to send. Unlock it, and Sotto tries again."
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx

@@ -14,10 +14,10 @@ export const PLUGIN_GROUPS = ['code', 'mail', 'media'] as const
 export type PluginGroupId = typeof PLUGIN_GROUPS[number]
 
 /** Every plugin a thread's agent can use, each with a row on Settings › Plugins. */
-export const PLUGIN_IDS = ['github', 'vercel', 'gmail', 'proton-mail', 'meshy', 'elevenlabs'] as const
+export const PLUGIN_IDS = ['github', 'vercel', 'gmail', 'proton-mail', 'meshy', 'elevenlabs', 'higgsfield'] as const
 export type PluginId = typeof PLUGIN_IDS[number]
 /** Each plugin's name, which is the service's own and the same in every language. */
-export const PLUGIN_NAMES: Readonly<Record<PluginId, string>> = { github: 'GitHub', vercel: 'Vercel', gmail: 'Gmail', 'proton-mail': 'Proton Mail', meshy: 'Meshy', elevenlabs: 'ElevenLabs' }
+export const PLUGIN_NAMES: Readonly<Record<PluginId, string>> = { github: 'GitHub', vercel: 'Vercel', gmail: 'Gmail', 'proton-mail': 'Proton Mail', meshy: 'Meshy', elevenlabs: 'ElevenLabs', higgsfield: 'Higgsfield' }
 
 /** The plugins that are mail accounts: read over IMAP, each thread asking once (ADR-0205, decision 8). */
 export const MAIL_PLUGIN_IDS = ['gmail', 'proton-mail'] as const
@@ -35,6 +35,7 @@ export const PLUGINS: readonly PluginEntry[] = [
   { id: 'proton-mail', name: 'Proton Mail', group: 'mail' },
   { id: 'meshy', name: 'Meshy', group: 'media' },
   { id: 'elevenlabs', name: 'ElevenLabs', group: 'media' },
+  { id: 'higgsfield', name: 'Higgsfield', group: 'media' },
 ]
 
 export const PLUGINS_GITHUB_SIGN_IN = 'sotto:plugins:github-sign-in'
@@ -284,7 +285,7 @@ export const PLUGINS_MAIL_GRANT_STOP = 'sotto:plugins:mail-grant-stop'
 export const PLUGINS_MAIL_GRANTS_CHANGED = 'sotto:plugins:mail-grants-changed'
 
 /** The plugins an account is added to by pasting a secret. GitHub is not one: its account is gh's own sign-in. */
-export const ACCOUNT_PLUGIN_IDS = ['vercel', 'gmail', 'proton-mail', 'meshy', 'elevenlabs'] as const
+export const ACCOUNT_PLUGIN_IDS = ['vercel', 'gmail', 'proton-mail', 'meshy', 'elevenlabs', 'higgsfield'] as const
 export type AccountPluginId = typeof ACCOUNT_PLUGIN_IDS[number]
 
 /** A mail account's address, which signs in to it beside its password: one address, with nothing a mail server would read as more. */
@@ -304,7 +305,18 @@ const projectIdSchema = z.string().min(1).max(512)
 export const pluginAccountNameSchema = z.string().trim().min(1).max(PLUGIN_ACCOUNT_NAME_MAX)
   .refine(name => [...name].every(character => character.charCodeAt(0) >= 0x20 && character.charCodeAt(0) !== 0x7f))
 
-/** The most a monthly limit can be set to: far past any plan Meshy or ElevenLabs sells, and short of nonsense. */
+/**
+ * A Higgsfield account's secret is a key ID and a key secret (ADR-0205, the plugins plan's slice 13). Higgsfield takes
+ * them in one header as `Key <KEY_ID>:<KEY_SECRET>`, so Sotto keeps them the same way, joined by a colon in the one
+ * credential slot the account has, and a copy to a host carries them unchanged. Each part is one line of characters a
+ * header can carry, with no colon, so the two can always be told apart.
+ */
+export const PLUGIN_KEY_PART_MAX = 400
+export const pluginKeyPartSchema = z.string().trim().min(1).max(PLUGIN_KEY_PART_MAX).regex(/^[\x21-\x39\x3b-\x7e]+$/u)
+/** Whether a plugin's secret is a key ID and a key secret, asked for as two fields and kept as `<KEY_ID>:<KEY_SECRET>`. */
+export const hasKeyId = (plugin: string): plugin is 'higgsfield' => plugin === 'higgsfield'
+
+/** The most a monthly limit can be set to: far past any plan Meshy, ElevenLabs or Higgsfield sells, and short of nonsense. */
 export const PLUGIN_MONTHLY_LIMIT_MAX = 1_000_000
 /** Meshy's monthly credit limit when an account is added, its Pro plan's credits (ADR-0141). */
 export const MESHY_MONTHLY_LIMIT_DEFAULT = 1_000
@@ -313,19 +325,24 @@ export const MESHY_MONTHLY_LIMIT_DEFAULT = 1_000
  * #2498, November 15, 2026): ElevenLabs bills its API in dollars, not credits.
  */
 export const ELEVENLABS_MONTHLY_LIMIT_DEFAULT = 10
+/**
+ * Higgsfield's monthly limit when an account is added, in whole US dollars at its published prices (Zach's pick on
+ * #2499, November 16, 2026): Higgsfield is paid from a prepaid balance in dollars.
+ */
+export const HIGGSFIELD_MONTHLY_LIMIT_DEFAULT = 10
 /** What an account that spends may spend: whether each paid thing asks first, and the most it spends in a month. */
 export const pluginSpendingSchema = z.object({ askBefore: z.boolean(), monthlyLimit: z.number().int().min(0).max(PLUGIN_MONTHLY_LIMIT_MAX) }).strict()
 export type PluginSpending = z.infer<typeof pluginSpendingSchema>
 /** The plugins whose accounts spend, and so carry an Ask before each switch and a monthly limit. */
-export const SPENDING_PLUGIN_IDS = ['meshy', 'elevenlabs'] as const
+export const SPENDING_PLUGIN_IDS = ['meshy', 'elevenlabs', 'higgsfield'] as const
 export type SpendingPluginId = typeof SPENDING_PLUGIN_IDS[number]
 /** Whether a plugin's accounts spend, and so carry an Ask before each switch and a monthly limit. */
 export const isSpendingPlugin = (plugin: string): plugin is SpendingPluginId => (SPENDING_PLUGIN_IDS as readonly string[]).includes(plugin)
 /**
  * Each spending plugin's monthly limit when an account is added, in the unit the service bills in: Meshy's credits,
- * ElevenLabs' whole US dollars.
+ * ElevenLabs' and Higgsfield's whole US dollars.
  */
-export const PLUGIN_MONTHLY_LIMIT_DEFAULTS: Readonly<Record<SpendingPluginId, number>> = { meshy: MESHY_MONTHLY_LIMIT_DEFAULT, elevenlabs: ELEVENLABS_MONTHLY_LIMIT_DEFAULT }
+export const PLUGIN_MONTHLY_LIMIT_DEFAULTS: Readonly<Record<SpendingPluginId, number>> = { meshy: MESHY_MONTHLY_LIMIT_DEFAULT, elevenlabs: ELEVENLABS_MONTHLY_LIMIT_DEFAULT, higgsfield: HIGGSFIELD_MONTHLY_LIMIT_DEFAULT }
 
 /** An account as the window sees it. `signedInAs` is the service's own name for the account, when it gave one. */
 export const pluginAccountSchema = z.object({
@@ -346,7 +363,7 @@ export const pluginAccountSchema = z.object({
   /**
    * What an account that spends may spend (ADR-0205 decision 7, ADR-0141; Zach's pick on November 15, 2026 that it
    * lives on the account): whether each paid thing asks first, on by default, and the most it spends in a month.
-   * Meshy's accounts have it in Meshy's credits, and ElevenLabs' in whole US dollars.
+   * Meshy's accounts have it in Meshy's credits, and ElevenLabs' and Higgsfield's in whole US dollars.
    */
   spending: pluginSpendingSchema.optional(),
   /**
@@ -376,14 +393,27 @@ export function pluginAccountAdmits(account: Pick<PluginAccount, 'on' | 'project
 }
 export const pluginAccountsSchema = z.array(pluginAccountSchema).max(ACCOUNT_PLUGIN_IDS.length * PLUGIN_ACCOUNTS_MAX)
 
-/** A new account: its plugin, the name the user gives it, its secret, and for a mail account the address the secret signs in. */
+/**
+ * Whether a secret and a key ID go together for a plugin: for Higgsfield, a key ID and a key secret that are each one
+ * part as `pluginKeyPartSchema` says; for any other plugin, no key ID.
+ */
+export const pluginKeyIdFits = (plugin: string, secret: string, keyId: string | undefined): boolean =>
+  hasKeyId(plugin) ? keyId !== undefined && pluginKeyPartSchema.safeParse(keyId).success && pluginKeyPartSchema.safeParse(secret).success : keyId === undefined
+/**
+ * A new account: its plugin, the name the user gives it, its secret, for a mail account the address the secret signs
+ * in, and for Higgsfield the key ID that goes with the key secret.
+ */
 export const pluginAccountAddSchema = z.object({
   plugin: z.enum(ACCOUNT_PLUGIN_IDS), name: pluginAccountNameSchema, secret: z.string().min(1).max(PLUGIN_SECRET_MAX), address: pluginMailAddressSchema.optional(),
   /** For Proton Mail, and only for it: Bridge's ports on this computer. */
   bridge: bridgePortsSchema.optional(),
-}).strict().refine(account => isMailPlugin(account.plugin) === (account.address !== undefined) && isBridgePlugin(account.plugin) === (account.bridge !== undefined))
+  /** For Higgsfield, and only for it: the key ID, with the key secret as `secret`. */
+  keyId: pluginKeyPartSchema.optional(),
+}).strict().refine(account => isMailPlugin(account.plugin) === (account.address !== undefined) && isBridgePlugin(account.plugin) === (account.bridge !== undefined)
+  && pluginKeyIdFits(account.plugin, account.secret, account.keyId))
 export type PluginAccountAdd = z.infer<typeof pluginAccountAddSchema>
-export const pluginAccountReplaceSchema = z.object({ id: z.uuid(), secret: z.string().min(1).max(PLUGIN_SECRET_MAX) }).strict()
+/** A new secret for an account. A Higgsfield account's comes with its key ID; main checks that against the account's plugin. */
+export const pluginAccountReplaceSchema = z.object({ id: z.uuid(), secret: z.string().min(1).max(PLUGIN_SECRET_MAX), keyId: pluginKeyPartSchema.optional() }).strict()
 export type PluginAccountReplace = z.infer<typeof pluginAccountReplaceSchema>
 export const pluginAccountRemoveSchema = z.object({ id: z.uuid() }).strict()
 export type PluginAccountRemove = z.infer<typeof pluginAccountRemoveSchema>

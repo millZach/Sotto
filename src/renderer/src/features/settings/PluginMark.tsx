@@ -8,6 +8,8 @@ import type { PluginId } from '../../../../shared/plugins'
 // checked November 13, 2026. Proton Mail's is its envelope as Simple Icons draws it (simple-icons protonmail.svg, CC0),
 // checked November 14, 2026. Meshy publishes no mark under an open licence, so its row shows a plain cube drawn here.
 // ElevenLabs' is its two bars as Simple Icons draws it (simple-icons elevenlabs.svg, CC0), checked November 15, 2026.
+// Simple Icons has no Higgsfield mark (checked November 16, 2026) and Higgsfield publishes none under an open licence,
+// so its row shows a plain frame with a play triangle drawn here.
 // The marks identify each service; the trademarks belong to their owners.
 const MARKS: Readonly<Record<PluginId, { readonly viewBox: string; readonly path: string }>> = {
   github: {
@@ -16,6 +18,7 @@ const MARKS: Readonly<Record<PluginId, { readonly viewBox: string; readonly path
   },
   vercel: { viewBox: '0 0 24 24', path: 'm12 1.608 12 20.784H0Z' },
   elevenlabs: { viewBox: '0 0 24 24', path: 'M4.6035 0v24h4.9317V0zm9.8613 0v24h4.9317V0z' },
+  higgsfield: { viewBox: '0 0 24 24', path: 'M1.5 4h21v16h-21Zm2 2v12h17V6ZM10 8.5l5.5 3.5-5.5 3.5Z' },
   meshy: { viewBox: '0 0 24 24', path: 'M12 1.5 21.5 7v10L12 22.5 2.5 17V7Zm0 2.3L5.6 7.5 12 11.2l6.4-3.7ZM4.5 9.2v6.6l6.5 3.8v-6.7Zm15 0-6.5 3.7v6.7l6.5-3.8Z' },
   'proton-mail': {
     viewBox: '0 0 24 24',
@@ -30,5 +33,5 @@ const MARKS: Readonly<Record<PluginId, { readonly viewBox: string; readonly path
 /** A plugin's own mark. Decorative: the row names the plugin in text. */
 export function PluginMark({ plugin, size = 20 }: { readonly plugin: PluginId; readonly size?: number }): ReactNode {
   const mark = MARKS[plugin]
-  return <svg className="plugin-mark" data-plugin={plugin} width={size} height={size} viewBox={mark.viewBox} aria-hidden="true" focusable="false"><path d={mark.path} {...(plugin === 'meshy' ? { fillRule: 'evenodd' as const } : {})} /></svg>
+  return <svg className="plugin-mark" data-plugin={plugin} width={size} height={size} viewBox={mark.viewBox} aria-hidden="true" focusable="false"><path d={mark.path} {...(plugin === 'meshy' || plugin === 'higgsfield' ? { fillRule: 'evenodd' as const } : {})} /></svg>
 }

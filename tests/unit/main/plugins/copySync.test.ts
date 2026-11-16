@@ -17,7 +17,7 @@ const PERSONAL: PluginAccount = { ...WORK, id: '22222222-2222-4222-8222-00000000
 const tokenOf = (id: string): string => `made-up-token-for-${id.slice(-4)}`
 
 /** A paired host as the desktop reaches it, keeping what it is sent the way a real one does. */
-function fakeHost(hostId: string, options: { feature?: boolean; mail?: boolean; meshy?: boolean; elevenLabs?: boolean; settings?: boolean; refuses?: PluginAccountCopyReceipt; room?: number } = {}) {
+function fakeHost(hostId: string, options: { feature?: boolean; mail?: boolean; meshy?: boolean; elevenLabs?: boolean; higgsfield?: boolean; settings?: boolean; refuses?: PluginAccountCopyReceipt; room?: number } = {}) {
   const held = new Map<string, PluginAccountCopy>()
   const calls: string[] = []
   /** `down`: nothing is answered. `keeps`: a removal is not answered. `asked`: a list waits for it, as a slow host's does. */
@@ -27,6 +27,7 @@ function fakeHost(hostId: string, options: { feature?: boolean; mail?: boolean; 
     supportsPluginMailCopies: options.feature !== false && options.mail !== false,
     supportsPluginMeshyCopies: options.feature !== false && options.meshy !== false,
     supportsPluginElevenLabsCopies: options.feature !== false && options.elevenLabs !== false,
+    supportsPluginHiggsfieldCopies: options.feature !== false && options.higgsfield !== false,
     keepPluginAccountCopy: async copy => {
       calls.push(`keep ${copy.account.name}`)
       if (state.down) throw new Error('The host did not answer.')
@@ -93,6 +94,20 @@ describe('sending account copies to paired hosts (ADR-0205, amending ADR-0025)',
     expect(forge.calls).toEqual(['list'])
     // What happened is said in fixed names; nothing of an account or its secret is in them.
     expect(new Set(d.events)).toEqual(new Set(['plugin-account-copies-reconciled']))
+  })
+
+  it('sends a Higgsfield account only to a host that keeps one, which a host that keeps ElevenLabs\' alone does not', async () => {
+    const videos: PluginAccount = { ...PERSONAL, plugin: 'higgsfield', name: 'Videos', signedInAs: null, spending: { askBefore: true, monthlyLimit: 10 } }
+    const d = await desk([WORK, videos])
+    // A host from before Higgsfield would refuse the copy: it is sent none, and the page says the host is too old.
+    const older = fakeHost('host-older', { higgsfield: false })
+    const forge = fakeHost('host-forge')
+    d.connect(older, 'older')
+    d.connect(forge)
+    await d.sync.idle()
+    expect(older.calls).toEqual(['list', 'keep Work'])
+    expect((await d.states()).filter(state => state.startsWith('Videos'))).toEqual(['Videos@host-older: too-old', 'Videos@host-forge: kept'])
+    expect(forge.held.get(videos.id)!.account.spending).toEqual({ askBefore: true, monthlyLimit: 10 })
   })
 
   it('sends an ElevenLabs account only to a host that keeps one, which a host that keeps Meshy\'s alone does not', async () => {

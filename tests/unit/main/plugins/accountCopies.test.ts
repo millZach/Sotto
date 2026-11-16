@@ -207,6 +207,18 @@ describe('a headless host’s account copies (ADR-0205, amending ADR-0025)', () 
   })
 })
 
+describe('a Higgsfield account’s copy', () => {
+  it('keeps the key ID and secret as one secret, and is listed back with its switch and its limit in dollars', async () => {
+    const { copies, accounts, directory } = await host()
+    const videos = { ...WORK, id: '44444444-4444-4444-8444-000000000011', plugin: 'higgsfield' as const, name: 'Videos', signedInAs: null, spending: { askBefore: true, monthlyLimit: 10 } }
+    await expect(copies.keep({ account: videos, secret: 'made-up-key-id:made_up_key_secret' }, LAPTOP)).resolves.toMatchObject({ kept: true })
+    expect((await copies.list(LAPTOP)).find(copy => copy.id === videos.id)?.spending).toEqual({ askBefore: true, monthlyLimit: 10 })
+    // The pair arrives as the desktop keeps it, and the host's record goes to the version older builds refuse.
+    expect(accounts().secret(videos.id)).toBe('made-up-key-id:made_up_key_secret')
+    expect((JSON.parse(await readFile(join(directory, 'plugin-accounts.json'), 'utf8')) as { version: number }).version).toBe(7)
+  })
+})
+
 describe('an ElevenLabs account’s copy', () => {
   it('is listed back with its switch and its limit in dollars', async () => {
     const { copies } = await host()
