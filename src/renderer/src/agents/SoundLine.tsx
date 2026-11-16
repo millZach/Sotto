@@ -121,6 +121,17 @@ function AwayLine({ name, view, hostName }: { readonly name: string; readonly vi
 type PlayProblem = 'gone' | 'unplayable'
 
 /**
+ * The sound playing in this window now, of any thread's line: pressing Play on one pauses the one before, so only one
+ * plays at a time, and the paused one keeps its place (Zach's pick on #2654, November 16, 2026).
+ */
+let playingNow: HTMLAudioElement | null = null
+/**
+ * How many presses of Play or Pause there have been, on any line: a sound whose first fetch answers after a newer press
+ * is made ready and not played, so the latest press always wins (Bug Bot on #2669, L1).
+ */
+let presses = 0
+
+/**
  * The MP3 as one press of Play asks for it: nothing is fetched and no audio element exists until then. The element the
  * press makes is never on the page and never told to play by anything but a press. Its address is let go when the line
  * goes.
@@ -143,6 +154,7 @@ function usePlayer(soundId: string, reread: () => void) {
       const element = audio.current
       audio.current = null
       if (element) { element.pause(); element.removeAttribute('src') }
+      if (playingNow === element) playingNow = null
       if (address.current) URL.revokeObjectURL(address.current)
       address.current = null
     }
@@ -153,6 +165,7 @@ function usePlayer(soundId: string, reread: () => void) {
   }
 
   const press = async (): Promise<void> => {
+    const mine = ++presses
     // A file Sotto could not play is fetched again on the next press, as it may have been put back or changed since
     // (Bug Bot on #2653, N1).
     if (problem === 'unplayable') {
@@ -186,15 +199,20 @@ function usePlayer(soundId: string, reread: () => void) {
     made.addEventListener('loadedmetadata', known)
     made.addEventListener('durationchange', known)
     made.addEventListener('timeupdate', () => { setAt(made.currentTime) })
-    made.addEventListener('play', () => { setPlaying(true) })
-    made.addEventListener('pause', () => { setPlaying(false) })
-    made.addEventListener('ended', () => { setPlaying(false); setAt(Number.isFinite(made.duration) ? made.duration : made.currentTime) })
+    made.addEventListener('play', () => {
+      if (playingNow && playingNow !== made) playingNow.pause()
+      playingNow = made
+      setPlaying(true)
+    })
+    made.addEventListener('pause', () => { if (playingNow === made) playingNow = null; setPlaying(false) })
+    made.addEventListener('ended', () => { if (playingNow === made) playingNow = null; setPlaying(false); setAt(Number.isFinite(made.duration) ? made.duration : made.currentTime) })
     made.addEventListener('error', () => { setPlaying(false); setProblem('unplayable') })
     address.current = URL.createObjectURL(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: 'audio/mpeg' }))
     made.src = address.current
     audio.current = made
     setStarted(true)
-    start(made)
+    // Another press came while this was fetched: that one wins, and this sound waits for its own Play.
+    if (mine === presses) start(made)
   }
 
   const seek = (seconds: number): void => {

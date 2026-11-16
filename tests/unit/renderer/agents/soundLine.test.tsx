@@ -188,6 +188,59 @@ describe('a sound’s line in its thread', () => {
     expect(await within(line()).findByRole('button', { name: 'Pause Opening narration' })).toBeInTheDocument()
   })
 
+  it('pauses the sound playing when Play is pressed on another, and plays the first on again from its place', async () => {
+    // Zach's pick on #2654: only one sound plays at a time.
+    const plugins = bridge(MADE)
+    plugins.sound.mockImplementation((async (id: string): Promise<SoundView> => id === 'sound-2' ? { ...MADE, id: 'sound-2', name: 'Rain on a tin roof', kind: 'effect' } : MADE) as never)
+    await act(async () => render(<>
+      <VisualCard visual={{ id: 'v1', title: 'Opening narration', kind: 'sound', source: 'sound-1' }} />
+      <VisualCard visual={{ id: 'v2', title: 'Rain on a tin roof', kind: 'sound', source: 'sound-2' }} />
+    </>))
+    const rain = (): HTMLElement => screen.getByRole('group', { name: 'Sound: Rain on a tin roof' })
+    await userEvent.click(within(line()).getByRole('button', { name: 'Play Opening narration' }))
+    expect(await within(line()).findByRole('button', { name: 'Pause Opening narration' })).toBeInTheDocument()
+    // Three seconds in when the rain is pressed.
+    let place = 3
+    Object.defineProperty(played[0]!, 'currentTime', { configurable: true, get: () => place, set: (seconds: number) => { place = seconds } })
+    await userEvent.click(within(rain()).getByRole('button', { name: 'Play Rain on a tin roof' }))
+    expect(await within(rain()).findByRole('button', { name: 'Pause Rain on a tin roof' })).toBeInTheDocument()
+    expect(within(line()).getByRole('button', { name: 'Play Opening narration' })).toBeInTheDocument()
+    // The first plays on: the element it had, not a new fetch, and the rain pauses in turn.
+    await userEvent.click(within(line()).getByRole('button', { name: 'Play Opening narration' }))
+    expect(await within(rain()).findByRole('button', { name: 'Play Rain on a tin roof' })).toBeInTheDocument()
+    expect(played).toHaveLength(3)
+    expect(played[2]).toBe(played[0])
+    // From its place: nothing put it back to the start.
+    expect(played[0]!.currentTime).toBe(3)
+    expect(plugins.soundBytes).toHaveBeenCalledTimes(2)
+  })
+
+  it('lets the latest press win when a sound’s first fetch answers after Play was pressed on another', async () => {
+    // Bug Bot on #2669, L1: the narration's MP3 is still on its way when the rain is pressed.
+    const plugins = bridge(MADE)
+    plugins.sound.mockImplementation((async (id: string): Promise<SoundView> => id === 'sound-2' ? { ...MADE, id: 'sound-2', name: 'Rain on a tin roof', kind: 'effect' } : MADE) as never)
+    let arrive: (bytes: Uint8Array) => void = () => undefined
+    plugins.soundBytes.mockImplementation(((id: string) => id === 'sound-1' ? new Promise<Uint8Array>(resolve => { arrive = resolve }) : Promise.resolve(MP3)) as never)
+    await act(async () => render(<>
+      <VisualCard visual={{ id: 'v1', title: 'Opening narration', kind: 'sound', source: 'sound-1' }} />
+      <VisualCard visual={{ id: 'v2', title: 'Rain on a tin roof', kind: 'sound', source: 'sound-2' }} />
+    </>))
+    const rain = (): HTMLElement => screen.getByRole('group', { name: 'Sound: Rain on a tin roof' })
+    await userEvent.click(within(line()).getByRole('button', { name: 'Play Opening narration' }))
+    await userEvent.click(within(rain()).getByRole('button', { name: 'Play Rain on a tin roof' }))
+    expect(await within(rain()).findByRole('button', { name: 'Pause Rain on a tin roof' })).toBeInTheDocument()
+    // The narration's MP3 arrives now: it is made ready, not played, and the rain plays on.
+    await act(async () => { arrive(MP3) })
+    expect(played).toHaveLength(1)
+    expect(within(rain()).getByRole('button', { name: 'Pause Rain on a tin roof' })).toBeInTheDocument()
+    expect(within(line()).getByRole('button', { name: 'Play Opening narration' })).toBeEnabled()
+    // Its own Play then plays it, from what arrived, and the rain pauses.
+    await userEvent.click(within(line()).getByRole('button', { name: 'Play Opening narration' }))
+    expect(await within(rain()).findByRole('button', { name: 'Play Rain on a tin roof' })).toBeInTheDocument()
+    expect(within(line()).getByRole('button', { name: 'Pause Opening narration' })).toBeInTheDocument()
+    expect(plugins.soundBytes).toHaveBeenCalledTimes(2)
+  })
+
   it('says it could not make it, that nothing was saved and nothing spent, and what happened on a press', async () => {
     await show({ ...MAKING, state: 'failed', failure: 'rejected', cost: 0 })
     expect(line()).toHaveTextContent('Could not make it · nothing saved · nothing spent')
