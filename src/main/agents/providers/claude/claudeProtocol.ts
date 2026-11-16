@@ -1,9 +1,8 @@
 import { stderrRateExceeded } from '../../stderrRate'
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { AGENT_MAX_ATTACHMENT_BYTES } from '../../../../shared/agents'
 import { withCliPath } from '../../cliLookup'
-import { runToExit, stopProcessTree } from '../../git/gitLauncher'
+import { launchProviderProcess, runToExit, stopProcessTree, type InteractiveProcess } from '../../git/gitLauncher'
 
 export type ClaudeFrame = Record<string, unknown>
 class ClaudeUncertain extends Error {}
@@ -23,7 +22,9 @@ const OUTPUT_DRAIN_GRACE_MS = 300
 
 /** Native newline-framed control channel. Deadlines never resend a mutation. */
 export class ClaudeProtocol {
-  private readonly child: ChildProcessWithoutNullStreams
+  private readonly child: InteractiveProcess
+  /** Settles once the CLI has a pid, or never will: the launcher's worker reports its start after the constructor returns. */
+  private readonly started: Promise<void>
   private readonly waiters = new Map<string, { resolve: (value: ClaudeFrame) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>()
   private readonly writes = new Set<(error: Error) => void>()
   private ended = false
@@ -36,7 +37,10 @@ export class ClaudeProtocol {
   constructor(executable: string, args: string[], cwd: string, env: NodeJS.ProcessEnv, private readonly timeout: number,
     onFrame: (frame: ClaudeFrame) => void, onExit: () => void) {
     // Off Windows the CLI leads its own process group, so `halt` can end what a wrapper script started as well (#657).
-    this.child = spawn(executable, args, { cwd, env: withCliPath(env, executable), windowsHide: true, shell: false, stdio: 'pipe', detached: process.platform !== 'win32' })
+    // Started off this thread: on Windows CreateProcess runs where it is called, and the first start of a large
+    // executable Windows has let go of held Electron's main for 1 to 2.6 s (#2550).
+    this.child = launchProviderProcess(executable, args, { cwd, env: withCliPath(env, executable), detached: process.platform !== 'win32' })
+    this.started = new Promise(resolve => { this.child.once('spawn', resolve); this.child.once('close', () => resolve()) })
     this.closed = new Promise(resolve => this.child.once('close', () => { this.fail(); resolve(); if (!this.stopping) onExit() }))
     this.exit = new Promise(resolve => this.child.once('exit', () => { this.exited = true; resolve() }))
     // Let final output drain, then release handles a descendant may still hold.
@@ -48,7 +52,9 @@ export class ClaudeProtocol {
     // many chunks costs one pass over each chunk and one join, not a rescan of everything so far.
     let fragments: string[] = []; let pendingBytes = 0
     this.child.stdout.setEncoding('utf8')
-    this.child.stdout.on('data', (chunk: string) => {
+    this.child.stdout.on('data', (data: Buffer | string) => {
+      // Decoded as UTF-8 above, so each chunk is text.
+      const chunk = data as string
       if (this.ended) return
       pendingBytes += Buffer.byteLength(chunk)
       if (pendingBytes > CLAUDE_MAX_FRAME_BYTES) { fragments = []; this.abort(); return }
@@ -84,7 +90,7 @@ export class ClaudeProtocol {
       }
     })
     const stderrExceeded = stderrRateExceeded()
-    this.child.stderr.on('data', (chunk: Buffer) => { if (stderrExceeded(chunk.length)) this.abort() })
+    this.child.stderr.on('data', (chunk: Buffer | string) => { if (stderrExceeded(chunk.length)) this.abort() })
     this.child.on('error', () => this.abort()); this.child.stdin.on('error', () => this.abort()); this.child.stdin.on('close', () => this.fail())
   }
   control(request: ClaudeFrame): Promise<ClaudeFrame> {
@@ -133,7 +139,7 @@ export class ClaudeProtocol {
       this.child.stdin.write(`${JSON.stringify({ type: 'control_request', request_id: randomUUID(), request: { subtype: 'interrupt' } })}\n`)
       this.child.stdin.end()
     } catch { /* Its input is already closed. */ }
-    const pid = this.child.pid
+    const pid = await this.startedPid()
     if (pid === undefined) return true
     try { await stopProcessTree(pid); return true }
     catch { try { this.child.kill('SIGKILL') } catch { /* Gone. */ } return false }
@@ -147,7 +153,7 @@ export class ClaudeProtocol {
   private async haltTree(): Promise<boolean> {
     const end = (): void => { try { this.child.stdin.end() } catch { /* Its input is already closed. */ } }
     try { this.child.stdin.write(`${JSON.stringify({ type: 'control_request', request_id: randomUUID(), request: { subtype: 'interrupt' } })}\n`) } catch { /* Its input is already closed. */ }
-    const pid = this.child.pid
+    const pid = await this.startedPid()
     if (pid === undefined) { end(); return true }
     if (this.exited) { end(); return false }
     let killed = true
@@ -159,6 +165,11 @@ export class ClaudeProtocol {
     const seen = await Promise.race([this.exit.then(() => true), new Promise<boolean>(resolve => { timer = setTimeout(() => resolve(false), 5_000) })])
     clearTimeout(timer)
     return seen
+  }
+  /** The CLI's pid once its start is reported; undefined when it never started. */
+  private async startedPid(): Promise<number | undefined> {
+    if (this.child.pid === undefined) await this.started
+    return this.child.pid
   }
   private abort(): void { this.fail(); this.child.kill() }
   private fail(): void {

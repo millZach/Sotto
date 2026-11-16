@@ -2,12 +2,21 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, expect, it, vi } from 'vitest'
+import { useProviderLauncher } from '../../src/main/agents/git/gitLauncher'
 import { ClaudeProtocol } from '../../src/main/agents/providers/claude/claudeProtocol'
 import { CodexProcess } from '../../src/main/agents/providers/codex/codexProcess'
 import { GrokSubscriptionClient } from '../../src/main/agents/subscriptionGrok'
+import { builtGitLauncherWorker } from '../fixtures/gitLauncherWorker'
 
-it.each(['Codex', 'Claude', 'Grok'] as const)('%s settles after exit while a descendant holds its output pipes', async provider => {
+// Claude Code and Codex start on the provider launcher's worker in the app (#2550); under the test runner there is no
+// built worker, so each case runs once started in this thread and once through the worker.
+let worker: Awaited<ReturnType<typeof builtGitLauncherWorker>>
+beforeAll(async () => { worker = await builtGitLauncherWorker() })
+afterAll(async () => { await useProviderLauncher(null); await worker?.dispose() })
+
+it.each([['Codex', 'in this thread'], ['Codex', 'on the worker'], ['Claude', 'in this thread'], ['Claude', 'on the worker'], ['Grok', 'in this thread']] as const)('%s started %s settles after exit while a descendant holds its output pipes', async (provider, launcher) => {
+  await useProviderLauncher(launcher === 'on the worker' ? worker.path : null)
   const root = await mkdtemp(join(tmpdir(), 'sotto-inherited-pipes-'))
   if (dirname(resolve(root)) !== resolve(tmpdir()) || !root.includes('sotto-inherited-pipes-')) throw new Error('Unexpected fixture directory')
   const script = join(root, 'provider.cjs'), pidFile = join(root, 'descendant.pid')

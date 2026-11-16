@@ -1,6 +1,6 @@
 import { OversizedLine } from './codexOversizedLine'
 import { stderrRateExceeded } from '../../stderrRate'
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { launchProviderProcess, type InteractiveProcess } from '../../git/gitLauncher'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 
@@ -61,7 +61,7 @@ export class CodexProcess {
   /** Native request counters restart; saved answer identities must also distinguish desktop restarts. */
   readonly nonce = randomUUID()
   readonly closed: Promise<void>
-  private readonly child: ChildProcessWithoutNullStreams
+  private readonly child: InteractiveProcess
   /** What Sotto asked and is owed an answer to. A waiter outlives its deadline, so a late reply can still be applied. */
   private readonly waiters = new Map<string, Waiter>()
   private nextId = 0
@@ -72,7 +72,9 @@ export class CodexProcess {
   get pid(): number | undefined { return this.child.pid }
 
   constructor(private readonly options: CodexProcessOptions) {
-    const child = spawn(options.executable, [...options.args], { cwd: options.cwd, env: options.env, windowsHide: true, shell: false, stdio: 'pipe' })
+    // Started off this thread: on Windows CreateProcess runs where it is called, and a cold start of the app-server held
+    // Electron's main for 1.6 s (#2550).
+    const child = launchProviderProcess(options.executable, options.args, { cwd: options.cwd, env: options.env })
     this.child = child
     const maxFrameBytes = options.maxFrameBytes ?? MAX_FRAME_BYTES, maxQueuedBytes = maxFrameBytes * 2
     let buffer: string[] = []; let bufferedBytes = 0; let queuedBytes = 0
@@ -88,7 +90,9 @@ export class CodexProcess {
     child.on('error', () => this.abort())
     child.stdin.on('error', () => this.abort())
     child.stdout.setEncoding('utf8')
-    child.stdout.on('data', (chunk: string) => {
+    child.stdout.on('data', (data: Buffer | string) => {
+      // Decoded as UTF-8 above, so each chunk is text.
+      const chunk = data as string
       if (this.lost) return
       let start = 0
       while (start < chunk.length) {
@@ -129,7 +133,7 @@ export class CodexProcess {
       }
     })
     const stderrExceeded = stderrRateExceeded()
-    child.stderr.on('data', (chunk: Buffer) => { if (stderrExceeded(chunk.length)) this.abort() })
+    child.stderr.on('data', (chunk: Buffer | string) => { if (stderrExceeded(chunk.length)) this.abort() })
   }
 
   /** Whether an answer to something Sotto asked is still owed, a late one included: a late answer is still applied. */

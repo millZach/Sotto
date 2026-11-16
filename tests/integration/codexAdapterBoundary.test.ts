@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { createAgentControl } from '../fixtures/agentControlFixture'
 import { testCredentials } from '../fixtures/testCredentials'
+import type { ChildProcessWithoutNullStreams } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -29,8 +30,9 @@ async function create(f: Awaited<ReturnType<typeof fixture>>, threadId = randomU
   return { threadId, result }
 }
 /** The thread's own app-server process, for a test that holds its pipes. */
+/** The thread's app-server process. Under the test runner the provider launcher has no worker, so it is the `spawn` child. */
 function threadChild(f: Awaited<ReturnType<typeof codexFixture>>, threadId: string) {
-  return (f.adapter as unknown as { runtimes: Map<string, { server: CodexProcess }> }).runtimes.get(threadId)!.server['child']
+  return (f.adapter as unknown as { runtimes: Map<string, { server: CodexProcess }> }).runtimes.get(threadId)!.server['child'] as unknown as ChildProcessWithoutNullStreams
 }
 async function startControl(f: Awaited<ReturnType<typeof fixture>>) {
   const credentials = await testCredentials(join(f.root, 'vault'), { mode: 'plain' })
