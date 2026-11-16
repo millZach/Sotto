@@ -65,6 +65,7 @@ const recoveryMessages = {
   REMOTE_DRAFT_STORAGE_NOT_UPDATED: msg`Unsent remote draft storage could not be updated. Draft text may not be saved, and older disk copies may remain. Keep a copy before quitting. Repair local storage, then save Settings or restart Sotto to try again.`,
   PLUGIN_USE_NOT_CLEARED: msg`The record of plugin use could not be cleared. Its file was left in place. Repair local storage, then save Settings or restart Sotto to try again.`,
   MODEL_WORDS_NOT_CLEARED: msg`The words sent for 3D models could not be removed from their record. Its file was left in place. Repair local storage, then save Settings or restart Sotto to try again.`,
+  SOUND_WORDS_NOT_CLEARED: msg`The words sent for sounds could not be removed from their record. Its file was left in place. Repair local storage, then save Settings or restart Sotto to try again.`,
   REMOTE_DRAFTS_UNREADABLE: msg`Unsent remote drafts could not be read. The original file was preserved. Repair local storage, then restart Sotto to try again.`,
   OPENROUTER_KEY_MIGRATION_FAILED: msg`The OpenRouter key could not be stored securely. Enter it again in Settings → Cleanup.`,
   SETTINGS_RECOVERED: msg`Sotto restored default settings after a local settings file could not be read. The original file was preserved.`,

@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { afterEach, expect, it, vi } from 'vitest'
 import { waitFor } from '@testing-library/react'
 import { PluginsSettings } from '../../../../../src/renderer/src/features/settings/PluginsSettings'
-import type { BridgeStatus, GitHubSignIn, MeshyCredits, PluginAccount, PluginAccountResult, PluginAccountUpdate, PluginCopiesView, PluginCopySet, PluginHostSignIn, PluginProject, PluginsBridge, ShownPluginUse } from '../../../../../src/shared/plugins'
+import type { BridgeStatus, ElevenLabsSpent, GitHubSignIn, MeshyCredits, PluginAccount, PluginAccountResult, PluginAccountUpdate, PluginCopiesView, PluginCopySet, PluginHostSignIn, PluginProject, PluginsBridge, ShownPluginUse } from '../../../../../src/shared/plugins'
 import { deferred } from '../../../../fixtures/deferred'
 
 afterEach(cleanup)
@@ -1173,7 +1173,41 @@ it('keeps Ask before each sound and a monthly limit in US dollars on the ElevenL
   fireEvent.change(limit, { target: { value: '25' } })
   await act(async () => { fireEvent.keyDown(limit, { key: 'Enter' }) })
   expect(updateAccount).toHaveBeenLastCalledWith({ id: voices.id, monthlyLimit: 25 })
-  // Nothing is spent through it until threads make sounds, so there is no count of credits to show.
+  // It spends dollars, not Meshy's credits, so there is no count of credits to show.
   expect(meshyCredits).not.toHaveBeenCalled()
   expect(spends).not.toHaveTextContent('Credits this month')
+})
+
+it('says of each sound which kind was made, or only asked for, in Recent use', async () => {
+  const sound = (id: number, kind: ShownPluginUse['kind'], outcome: ShownPluginUse['outcome']): ShownPluginUse =>
+    use(id, { plugin: 'elevenlabs', accountId: voices.id, tool: 'make_sound', kind, outcome, threadTitle: 'Welcome video' })
+  const uses = [sound(1, 'sound-speech', 'done'), sound(2, 'sound-effect', 'done'), sound(3, 'sound-music', 'denied'), sound(4, 'sound-speech', 'refused')]
+  await act(async () => { render(<PluginsSettings bridge={vercelBridge([voices], { recentUse: async () => uses })} />) })
+  await act(async () => { fireEvent.click(elevenLabsRow()) })
+  expect(within(screen.getByRole('region', { name: 'Recent use' })).getAllByRole('listitem').map(item => item.querySelector('span')!.textContent)).toEqual([
+    'Made speech in “Welcome video” You allowed it.',
+    'Made a sound effect in “Welcome video” You allowed it.',
+    'Asked to make music in “Welcome video” You said no.',
+    'Asked to make speech in “Welcome video” Sotto refused it.',
+  ])
+})
+
+it('says what the ElevenLabs account’s sounds cost this month against its limit, and reads it again when a sound is made', async () => {
+  // The card's money words (Zach's pick on #2498): two decimals, "under $0.01" below a cent, and the limit in whole dollars.
+  let told: (() => void) | undefined
+  let spent = 0
+  const elevenLabsSpent = vi.fn(async (): Promise<ElevenLabsSpent> => ({ [voices.id]: spent }))
+  const meshyCredits = vi.fn(async (): Promise<MeshyCredits> => ({}))
+  await act(async () => { render(<PluginsSettings bridge={vercelBridge([voices], { elevenLabsSpent, meshyCredits, onElevenLabsSpentChanged: listener => { told = listener; return () => { told = undefined } } })} />) })
+  await act(async () => { fireEvent.click(elevenLabsRow()) })
+  const spends = (): HTMLElement => within(screen.getByRole('region', { name: 'ElevenLabs account Voices' })).getByRole('region', { name: 'What it spends' })
+  expect(spends()).toHaveTextContent('Spent this month: $0.00 of $10.')
+  spent = 0.004
+  await act(async () => { told?.() })
+  expect(spends()).toHaveTextContent('Spent this month: under $0.01 of $10.')
+  spent = 1.2
+  await act(async () => { told?.() })
+  expect(spends()).toHaveTextContent('Spent this month: $1.20 of $10.')
+  expect(elevenLabsSpent).toHaveBeenCalledTimes(3)
+  expect(meshyCredits).not.toHaveBeenCalled()
 })

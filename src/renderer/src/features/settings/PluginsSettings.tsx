@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useId, useRef, useState, type FormEvent,
 import { Trans, useLingui } from '@lingui/react/macro'
 import { Box, ChevronRight, Code, Mail, MonitorSmartphone } from 'lucide-react'
 import {
-  BRIDGE_DEFAULT_PORTS, isBridgePlugin, isMailPlugin, PLUGIN_MONTHLY_LIMIT_MAX, PLUGIN_ACCOUNT_NAME_MAX, PLUGIN_MAIL_ADDRESS_MAX, PLUGIN_SECRET_MAX, PLUGIN_USE_SHOWN, pluginMailAddressSchema, PLUGINS, type AccountPluginId, type GitHubSignIn, type PluginAccount, type PluginAccountProblem, type PluginAccountResult,
+  BRIDGE_DEFAULT_PORTS, dollarFigure, dollarLimit, isBridgePlugin, isMailPlugin, PLUGIN_MONTHLY_LIMIT_MAX, PLUGIN_ACCOUNT_NAME_MAX, PLUGIN_MAIL_ADDRESS_MAX, PLUGIN_SECRET_MAX, PLUGIN_USE_SHOWN, pluginMailAddressSchema, PLUGINS, type AccountPluginId, type GitHubSignIn, type PluginAccount, type PluginAccountProblem, type PluginAccountResult,
   type PluginAccountCopyLeaving, type PluginAccountCopyState, type PluginCopiesView, type PluginHostSignIn, type PluginEntry, type PluginGroupId, type PluginProject, type PluginReadKind, type PluginsBridge, type ShownPluginUse, type BridgeStatus, type PluginSpending,
 } from '../../../../shared/plugins'
 import { localeFormatter } from '../../agents/localeFormat'
@@ -827,7 +827,7 @@ function AccountSpending({ account, spending, bridge, onAccounts }: {
   // it, read when the row opens; none until then.
   const [used, setUsed] = useState<{ readonly credits: number; readonly across: readonly string[] } | null>(null)
   const meshy = account.plugin === 'meshy'
-  // Read again when a paired host says what it spent of it. ElevenLabs counts nothing until threads can make sounds.
+  // Read again when a paired host says what it spent of it.
   useEffect(() => {
     if (!bridge || !meshy) return
     let live = true
@@ -835,6 +835,27 @@ function AccountSpending({ account, spending, bridge, onAccounts }: {
     read()
     const stop = bridge.onMeshyCreditsChanged?.(read)
     return () => { live = false; stop?.() }
+  }, [bridge, account.id, meshy])
+  // What an ElevenLabs account's sounds cost this month on this computer, in US dollars, read when the row opens, again
+  // each time a sound is made or fails, and again as a new month starts by this computer's clock, so a row left open
+  // across the 1st does not show last month's figure as this month's (Sol's review).
+  const [spentDollars, setSpentDollars] = useState<number | null>(null)
+  useEffect(() => {
+    if (!bridge?.elevenLabsSpent || meshy) return
+    let live = true
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const read = (): void => { void bridge.elevenLabsSpent?.().then(spent => { if (live) setSpentDollars(spent[account.id] ?? 0) }, () => undefined) }
+    const atMonthStart = (): void => {
+      const now = new Date()
+      const next = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+      // A timer holds at most about 24 days, so a longer wait is looked at again part way.
+      const wait = Math.min(next.getTime() - now.getTime() + 1_000, 20 * 24 * 60 * 60_000)
+      timer = setTimeout(() => { if (Date.now() >= next.getTime()) read(); atMonthStart() }, wait)
+    }
+    read()
+    atMonthStart()
+    const stop = bridge.onElevenLabsSpentChanged?.(read)
+    return () => { live = false; clearTimeout(timer); stop?.() }
   }, [bridge, account.id, meshy])
   // The figure shown follows what is kept, once the newest save has answered.
   useEffect(() => { if (askedLimit.current === null) setLimit(String(spending.monthlyLimit)) }, [spending.monthlyLimit])
@@ -856,6 +877,9 @@ function AccountSpending({ account, spending, bridge, onAccounts }: {
   // Zach's pick A (the tag prototype/plugin-meshy): once a host has said what it spent, the line says where the count is from.
   const across = used === null || used.across.length === 0 ? null : new Intl.ListFormat(i18n.locale, { type: 'conjunction' }).format([t`this computer`, ...used.across])
   const limitCredits = spending.monthlyLimit.toLocaleString()
+  // Dollars as the sound's card says them (Zach's pick on #2498): "$0.03", "under $0.01", and the limit as "$10".
+  const spentWords = spentDollars === null ? null : dollarFigure(spentDollars) ?? t`under $0.01`
+  const limitDollars = dollarLimit(spending.monthlyLimit)
   const saveLimit = (): void => { if (wanted !== null && wanted !== (askedLimit.current ?? spending.monthlyLimit)) void save({ monthlyLimit: wanted }) }
   return <section className="plugin-account__spending" aria-labelledby={headingId}>
     <h4 id={headingId}><Trans>What it spends</Trans></h4>
@@ -874,6 +898,7 @@ function AccountSpending({ account, spending, bridge, onAccounts }: {
     </Field>
     {usedCredits === null ? null : <p className="tt-paragraph plugin-row__note">{across === null ? <Trans>Credits this month: {usedCredits} of {limitCredits}.</Trans>
       : <Trans>Credits this month: {usedCredits} of {limitCredits}, across {across}.</Trans>}</p>}
+    {meshy || spentWords === null ? null : <p className="tt-paragraph plugin-row__note"><Trans>Spent this month: {spentWords} of {limitDollars}.</Trans></p>}
     {failed ? <p className="tt-field__error tt-paragraph" role="alert"><Trans>That could not be saved. Nothing was changed. Try again.</Trans></p> : null}
   </section>
 }
@@ -968,6 +993,7 @@ function RecentUse({ name, uses, elsewhere }: {
     'issue-open': t`Opened an issue`, 'issue-close': t`Closed an issue`, 'issue-reopen': t`Reopened an issue`,
     'deployment-promote': t`Promoted a deployment to production`, 'deployment-rollback': t`Rolled production back`,
     'mail-search': t`Searched mail`, 'mail-message': t`Read a message`, 'mail-send': t`Sent an email`, '3d-model': t`Made a 3D model`,
+    'sound-speech': t`Made speech`, 'sound-effect': t`Made a sound effect`, 'sound-music': t`Made music`,
   }
   // A change that was not made: what the agent asked to do, since nothing was done.
   const asked: Partial<Record<PluginReadKind, string>> = {
@@ -975,6 +1001,7 @@ function RecentUse({ name, uses, elsewhere }: {
     'issue-open': t`Asked to open an issue`, 'issue-close': t`Asked to close an issue`, 'issue-reopen': t`Asked to reopen an issue`,
     'deployment-promote': t`Asked to promote a deployment to production`, 'deployment-rollback': t`Asked to roll production back`,
     'mail-search': t`Asked to search mail`, 'mail-message': t`Asked to read a message`, 'mail-send': t`Asked to send an email`, '3d-model': t`Asked to make a 3D model`,
+    'sound-speech': t`Asked to make speech`, 'sound-effect': t`Asked to make a sound effect`, 'sound-music': t`Asked to make music`,
   }
   // A change asks each time, and so does a thread's first read of a mail account: both can end with the user's no.
   const changed = (use: ShownPluginUse): boolean => use.tool !== 'plugin_read' || use.outcome === 'denied' || use.outcome === 'lapsed'

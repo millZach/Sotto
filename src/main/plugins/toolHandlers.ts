@@ -7,6 +7,7 @@ import { mailServersOf } from './mail/accounts'
 import { openMail, searchMail, type MailOptions, type MailServer, type MailSignIn } from './mail/read'
 import { sendMail } from './mail/send'
 import type { PluginChangeAnswer, PluginChangeWait } from './pendingChanges'
+import type { PluginElevenLabsHandlers } from './elevenlabs/tool'
 import type { PluginMeshyHandlers } from './meshy/tool'
 import type { PluginToolHandlers, SecretTrouble } from './pluginTools'
 import { cancelVercelDeployment, describeVercelDeployment, moveVercelProduction } from './vercel/changes'
@@ -53,6 +54,11 @@ export interface PluginToolWiring {
    * of the accounts here. Left out, no thread here can make one.
    */
   readonly meshy?: Omit<PluginMeshyHandlers, 'keyTrouble'>
+  /**
+   * Making sounds with ElevenLabs, on a computer whose threads can, except for whether a key can be read, which is
+   * asked of the accounts here. Left out, no thread here can make one.
+   */
+  readonly elevenlabs?: Omit<PluginElevenLabsHandlers, 'keyTrouble'>
 }
 
 /**
@@ -93,6 +99,7 @@ export function pluginToolHandlers(wiring: PluginToolWiring): PluginToolHandlers
   }
   return {
     ...(wiring.meshy ? { meshy: { ...wiring.meshy, keyTrouble: account => { const held = secretOf(account.id); return 'secret' in held ? null : held.reason } } } : {}),
+    ...(wiring.elevenlabs ? { elevenlabs: { ...wiring.elevenlabs, keyTrouble: account => { const held = secretOf(account.id); return 'secret' in held ? null : held.reason } } } : {}),
     ...(mail ? { mail: {
       granted: (threadId, accountId) => mail.grants.has(threadId, accountId),
       copyOf: accountId => mail.grants.generation(accountId),

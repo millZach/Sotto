@@ -445,6 +445,10 @@ msgid "A thread"
 msgstr "A thread"
 
 #: src/main/plugins/changeWords.ts
+msgid "About {cost} on the ElevenLabs account {named}; {spent} of its {limit} used this month."
+msgstr "About {cost} on the ElevenLabs account {named}; {spent} of its {limit} used this month."
+
+#: src/main/plugins/changeWords.ts
 msgid "About {credits} credits on the Meshy account {named}; {month} of its {limit} credits used this month."
 msgstr "About {credits} credits on the Meshy account {named}; {month} of its {limit} credits used this month."
 
@@ -914,6 +918,10 @@ msgstr "Each shortcut can be in only one row, once. Pick other keys."
 msgid "Edit"
 msgstr "Edit"
 
+#: src/main/plugins/changeWords.ts
+msgid "ElevenLabs may use what it is sent to train its own models, unless that is turned off in the ElevenLabs account."
+msgstr "ElevenLabs may use what it is sent to train its own models, unless that is turned off in the ElevenLabs account."
+
 #: src/main/hosts/sshHostValidation.ts
 msgid "Enter an SSH host such as forge or user@forge. Put SSH options in your SSH configuration."
 msgstr "Enter an SSH host such as forge or user@forge. Put SSH options in your SSH configuration."
@@ -1101,12 +1109,48 @@ msgid "Make a 3D model with Meshy"
 msgstr "Make a 3D model with Meshy"
 
 #: src/main/plugins/changeWords.ts
+msgid "Make a sound with ElevenLabs"
+msgstr "Make a sound with ElevenLabs"
+
+#: src/main/plugins/changeWords.ts
 msgid "Make the 3D model {name} with the Meshy account {named}? About {credits} credits."
 msgstr "Make the 3D model {name} with the Meshy account {named}? About {credits} credits."
 
 #: src/main/plugins/changeWords.ts
 msgid "Make the model"
 msgstr "Make the model"
+
+#: src/main/plugins/changeWords.ts
+msgid "Make the sound"
+msgstr "Make the sound"
+
+#: src/main/plugins/changeWords.ts
+msgid "Make the sound {name} with the ElevenLabs account {named}? About {cost}."
+msgstr "Make the sound {name} with the ElevenLabs account {named}? About {cost}."
+
+#: src/main/plugins/changeWords.ts
+msgid "Make the sound {name} with the ElevenLabs account {named}? Under $0.01."
+msgstr "Make the sound {name} with the ElevenLabs account {named}? Under $0.01."
+
+#: src/main/plugins/changeWords.ts
+msgid "Makes a sound effect, {seconds} seconds long, from these words:"
+msgstr "Makes a sound effect, {seconds} seconds long, from these words:"
+
+#: src/main/plugins/changeWords.ts
+msgid "Makes a sound effect, 1 second long, from these words:"
+msgstr "Makes a sound effect, 1 second long, from these words:"
+
+#: src/main/plugins/changeWords.ts
+msgid "Makes a sound effect, as long as ElevenLabs judges, up to 30 seconds, from these words:"
+msgstr "Makes a sound effect, as long as ElevenLabs judges, up to 30 seconds, from these words:"
+
+#: src/main/plugins/changeWords.ts
+msgid "Makes music, {seconds} seconds long, from these words:"
+msgstr "Makes music, {seconds} seconds long, from these words:"
+
+#: src/main/plugins/changeWords.ts
+msgid "Makes music, {seconds} seconds long, with no singing, from these words:"
+msgstr "Makes music, {seconds} seconds long, with no singing, from these words:"
 
 #: src/main/ownModelServers/ipc.ts
 msgid "Manage your own model servers from the main Sotto window."
@@ -1135,6 +1179,10 @@ msgstr "Model turn limit reached."
 #: src/main/agents/threadMovesIpc.ts
 msgid "Move threads from the main Sotto window."
 msgstr "Move threads from the main Sotto window."
+
+#: src/main/plugins/changeWords.ts
+msgid "Music · {name}"
+msgstr "Music · {name}"
 
 #: src/main/council/climbService.ts
 msgid "Name the evidence as paths inside this thread's folder, such as src/settings, with no .. or drive letters. Nothing was started."
@@ -1910,6 +1958,18 @@ msgstr "Sotto’s keys could not be checked with luac. Your file is as it was. I
 msgid "Sotto’s owl did not pass Omarchy’s plugin check. Install Sotto again, then try again."
 msgstr "Sotto’s owl did not pass Omarchy’s plugin check. Install Sotto again, then try again."
 
+#: src/main/plugins/changeWords.ts
+msgid "Sound effect · {name}"
+msgstr "Sound effect · {name}"
+
+#: src/main/plugins/changeWords.ts
+msgid "Speaks these words in the voice {voice} ({characters} characters):"
+msgstr "Speaks these words in the voice {voice} ({characters} characters):"
+
+#: src/main/plugins/changeWords.ts
+msgid "Speech · {name}"
+msgstr "Speech · {name}"
+
 #: src/main/hosts/hostFailureWords.ts
 msgid "SSH could not connect to the host. Check the host name and SSH access, then reconnect."
 msgstr "SSH could not connect to the host. Check the host name and SSH access, then reconnect."
@@ -2390,6 +2450,10 @@ msgstr "The extension uses a compression method Sotto does not read."
 #: src/main/themes/openVsx.ts
 msgid "The extension uses a ZIP format Sotto does not read."
 msgstr "The extension uses a ZIP format Sotto does not read."
+
+#: src/main/plugins/changeWords.ts
+msgid "The file goes to {folder} in this thread’s folder. Nothing plays on its own."
+msgstr "The file goes to {folder} in this thread’s folder. Nothing plays on its own."
 
 #: src/main/plugins/changeWords.ts
 msgid "The files go to {folder} in this thread’s folder."
@@ -3671,6 +3735,14 @@ msgstr "Turn on the local host in Settings > Hosts & phones and restart Sotto be
 #: src/main/themes/openVsx.ts
 msgid "Type up to 100 characters to search."
 msgstr "Type up to 100 characters to search."
+
+#: src/main/plugins/changeWords.ts
+msgid "under $0.01"
+msgstr "under $0.01"
+
+#: src/main/plugins/changeWords.ts
+msgid "Under $0.01 on the ElevenLabs account {named}; {spent} of its {limit} used this month."
+msgstr "Under $0.01 on the ElevenLabs account {named}; {spent} of its {limit} used this month."
 
 #: src/main/hosts/desktopHostRouter.ts
 msgid "Update {host} to delete its threads. Nothing was deleted."

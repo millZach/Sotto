@@ -2,7 +2,7 @@ import { t } from '@lingui/core/macro'
 import { z } from 'zod'
 import {
   gitHubSignInSchema, pluginHostSignInsSchema, PLUGINS_GITHUB_SIGN_IN_ELSEWHERE, type PluginHostSignIn, pluginCopiesViewSchema, pluginCopyNewSetSchema, pluginCopySetSchema, PLUGINS_COPIES, PLUGINS_COPY_NEW_SET, PLUGINS_COPY_SET, pluginAccountAddSchema, pluginAccountRemoveSchema, pluginAccountReplaceSchema, pluginAccountResultSchema, pluginAccountsSchema, pluginAccountUpdateSchema, pluginProjectsSchema,
-  PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNT_TRUST, PLUGINS_ACCOUNT_UPDATE, PLUGINS_ACCOUNTS, PLUGINS_BRIDGE_STATUS, PLUGINS_MESHY_CREDITS, meshyCreditsSchema, type MeshyCredits, PLUGINS_GITHUB_SIGN_IN, PLUGINS_PROJECTS, PLUGINS_RECENT_USE, shownPluginUsesSchema, bridgeStatusSchema, type BridgeStatus,
+  PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNT_TRUST, PLUGINS_ACCOUNT_UPDATE, PLUGINS_ACCOUNTS, PLUGINS_BRIDGE_STATUS, PLUGINS_MESHY_CREDITS, meshyCreditsSchema, type MeshyCredits, PLUGINS_ELEVENLABS_SPENT, elevenLabsSpentSchema, type ElevenLabsSpent, PLUGINS_GITHUB_SIGN_IN, PLUGINS_PROJECTS, PLUGINS_RECENT_USE, shownPluginUsesSchema, bridgeStatusSchema, type BridgeStatus,
   mailGrantsOfSchema, mailGrantStopSchema, PLUGINS_MAIL_GRANT_STOP, PLUGINS_MAIL_GRANTS, threadMailGrantsSchema, type MailGrantStop, type ThreadMailGrant,
   type GitHubSignIn, type PluginAccount, type PluginAccountAdd, type PluginAccountRemove, type PluginAccountReplace, type PluginAccountResult, type PluginAccountUpdate, type PluginCopiesView, type PluginCopySet, type PluginProject, type ShownPluginUse,
 } from '../../shared/plugins'
@@ -45,6 +45,8 @@ export interface PluginsIpcHandlers {
   readonly bridgeStatus: (request: PluginAccountRemove) => Promise<BridgeStatus>
   /** The credits each Meshy account's 3D models took this month on this computer. */
   readonly meshyCredits: () => Promise<MeshyCredits>
+  /** What each ElevenLabs account's sounds cost this month on this computer, in US dollars. */
+  readonly elevenLabsSpent: () => Promise<ElevenLabsSpent>
   /** One 3D model as its thread draws it, by its ID, or null when there is no such 3D model. */
   readonly model3d: (id: string) => Promise<Model3dView | null>
   /** A 3D model's GLB, still picture or shape, or null when Sotto will not hand them over. */
@@ -151,6 +153,11 @@ export function registerPluginsIpc(ipc: IpcMainAdapter, plugins: PluginsIpcHandl
     noArguments.parse(args)
     return meshyCreditsSchema.parse(await plugins.meshyCredits())
   })
+  ipc.handle(PLUGINS_ELEVENLABS_SPENT, async (event, ...args) => {
+    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Open Settings in the main Sotto window.`)
+    noArguments.parse(args)
+    return elevenLabsSpentSchema.parse(await plugins.elevenLabsSpent())
+  })
   // A 3D model in a thread (ADR-0141): its view and the bytes it is drawn from, by its ID alone, for the main window.
   ipc.handle(PLUGINS_MODEL_3D, async (event, ...args) => {
     if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Open the thread in the main Sotto window.`)
@@ -185,6 +192,6 @@ export function registerPluginsIpc(ipc: IpcMainAdapter, plugins: PluginsIpcHandl
     return model3dDoneSchema.parse(await plugins.revealModel3d(parsed.data[0]))
   })
   return () => {
-    for (const channel of [PLUGINS_MODEL_3D, PLUGINS_MODEL_3D_BYTES, PLUGINS_MODELS_3D, PLUGINS_MODEL_3D_REMOVE, PLUGINS_MODEL_3D_REVEAL,PLUGINS_MAIL_GRANTS, PLUGINS_MAIL_GRANT_STOP, PLUGINS_GITHUB_SIGN_IN, PLUGINS_GITHUB_SIGN_IN_ELSEWHERE, PLUGINS_RECENT_USE, PLUGINS_ACCOUNTS, PLUGINS_PROJECTS, PLUGINS_COPIES, PLUGINS_COPY_SET, PLUGINS_COPY_NEW_SET, PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_UPDATE, PLUGINS_ACCOUNT_TRUST, PLUGINS_BRIDGE_STATUS, PLUGINS_MESHY_CREDITS]) ipc.removeHandler(channel)
+    for (const channel of [PLUGINS_MODEL_3D, PLUGINS_MODEL_3D_BYTES, PLUGINS_MODELS_3D, PLUGINS_MODEL_3D_REMOVE, PLUGINS_MODEL_3D_REVEAL,PLUGINS_MAIL_GRANTS, PLUGINS_MAIL_GRANT_STOP, PLUGINS_GITHUB_SIGN_IN, PLUGINS_GITHUB_SIGN_IN_ELSEWHERE, PLUGINS_RECENT_USE, PLUGINS_ACCOUNTS, PLUGINS_PROJECTS, PLUGINS_COPIES, PLUGINS_COPY_SET, PLUGINS_COPY_NEW_SET, PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_UPDATE, PLUGINS_ACCOUNT_TRUST, PLUGINS_BRIDGE_STATUS, PLUGINS_MESHY_CREDITS, PLUGINS_ELEVENLABS_SPENT]) ipc.removeHandler(channel)
   }
 }
