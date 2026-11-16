@@ -126,6 +126,9 @@ struct MainTabs: View {
     @State private var sheetHost = DuoSheetHost()
     /// The Duo was last folded, on the Threads list, so unfolding it opens the list's top row (`openTopRow`).
     @State private var foldedOnList = false
+    /// This window has been laid out as the Duo's, so its pages can keep clear of the upright rail (`clearOfUprightRail`).
+    /// It never turns back: a page's layout must not change with it once it is showing.
+    @State private var onDuo = false
     /// How much of the page shows: below one while a change that isn't a push or a pop fades it (`crossfade`, `fadeIn`).
     @State private var pageShown = 1.0
     enum Tab: Hashable { case threads, watcher, computers, settings }
@@ -140,7 +143,7 @@ struct MainTabs: View {
         let _ = revision
         GeometryReader { frame in
             let duo = duoLayout(frame.safeAreaInsets)
-            tabs(duo: duo).environment(\.duoLayout, duo)
+            tabs(duo: duo).environment(\.duoLayout, duo).environment(\.onDuo, onDuo || duo != .none)
         }
         .modifier(ModelWatch(read: { MainTabsInputs($0) }, revision: $revision))
     }
@@ -270,6 +273,7 @@ struct MainTabs: View {
         }
         .onChange(of: sidebarAvailable) { _, available in if !available { drawer = false } }
         .onChange(of: duo, initial: true) { before, now in
+            if now != .none { onDuo = true }
             drawer = false
             if reduceMotion, before != now { fadeIn() }
             unfolded(to: now)
@@ -742,12 +746,21 @@ extension View {
     /// clear of the rail while the ground and wash run on under it, as they do under the strip folded and sideways. A
     /// safe area set around the tabs doesn't reach the pages inside their navigation stacks, so each page and each page
     /// pushed onto one sets it itself.
+    ///
+    /// Anywhere but the Duo the page is left as it is. A safe area padding, even of nothing, laid a thread out again with
+    /// every word of a streaming reply, which measured each new paragraph three times (#2613). On the Duo the padding stays
+    /// on in every posture, so turning it keeps an open thread's page rather than making it again.
     func clearOfUprightRail() -> some View { modifier(ClearOfUprightRail()) }
 }
 private struct ClearOfUprightRail: ViewModifier {
     @Environment(\.duoLayout) private var duo
-    func body(content: Content) -> some View {
-        content.safeAreaPadding(.trailing, duo == .upright ? DuoLayout.uprightRail : 0)
+    @Environment(\.onDuo) private var onDuo
+    @ViewBuilder func body(content: Content) -> some View {
+        if onDuo {
+            content.safeAreaPadding(.trailing, duo == .upright ? DuoLayout.uprightRail : 0)
+        } else {
+            content
+        }
     }
 }
 
@@ -798,10 +811,16 @@ extension View {
     }
 }
 private struct DuoLayoutKey: EnvironmentKey { static let defaultValue = DuoLayout.none }
+private struct OnDuoKey: EnvironmentKey { static let defaultValue = false }
 extension EnvironmentValues {
     var duoLayout: DuoLayout {
         get { self[DuoLayoutKey.self] }
         set { self[DuoLayoutKey.self] = newValue }
+    }
+    /// The window has been laid out as the iPhone Duo's in any posture, and stays so (`MainTabs.onDuo`).
+    var onDuo: Bool {
+        get { self[OnDuoKey.self] }
+        set { self[OnDuoKey.self] = newValue }
     }
 }
 
