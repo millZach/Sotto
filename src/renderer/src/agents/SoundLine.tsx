@@ -125,6 +125,11 @@ type PlayProblem = 'gone' | 'unplayable'
  * plays at a time, and the paused one keeps its place (Zach's pick on #2654, November 16, 2026).
  */
 let playingNow: HTMLAudioElement | null = null
+/**
+ * How many presses of Play or Pause there have been, on any line: a sound whose first fetch answers after a newer press
+ * is made ready and not played, so the latest press always wins (Bug Bot on #2669, L1).
+ */
+let presses = 0
 
 /**
  * The MP3 as one press of Play asks for it: nothing is fetched and no audio element exists until then. The element the
@@ -160,6 +165,7 @@ function usePlayer(soundId: string, reread: () => void) {
   }
 
   const press = async (): Promise<void> => {
+    const mine = ++presses
     // A file Sotto could not play is fetched again on the next press, as it may have been put back or changed since
     // (Bug Bot on #2653, N1).
     if (problem === 'unplayable') {
@@ -205,7 +211,8 @@ function usePlayer(soundId: string, reread: () => void) {
     made.src = address.current
     audio.current = made
     setStarted(true)
-    start(made)
+    // Another press came while this was fetched: that one wins, and this sound waits for its own Play.
+    if (mine === presses) start(made)
   }
 
   const seek = (seconds: number): void => {
