@@ -38,6 +38,7 @@ import { verifyFileMentions } from './promptFiles'
 import { deliverAttachments, readBackUserText, withAttachedFilesNote } from './attachedFiles'
 import { effortAfterChange, validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { cutThinking, grokActivities, keepStreamedThinking } from './grokActivity'
+import { GrokBackgroundWork } from './grokBackgroundWork'
 import { markTurnActivity } from './turnActivity'
 import { grokToolAdmission, grokPending, grokAnswer, type GrokPending } from './grokRequests'
 import { needsPerson, unreadableRequest } from './nativeRequests'
@@ -122,6 +123,8 @@ function clientRefusal(client: GrokClient): GrokUnsupported | undefined {
   return undefined
 }
 const updateSchema = z.object({ sessionId: z.string(), _meta: z.object({ eventId: z.string().optional(), agentTimestampMs: z.number().optional(), promptId: z.string().optional(), streamStartMs: z.number().optional() }).optional(), update: z.object({ sessionUpdate: z.string(), content: z.unknown().optional(), stop_reason: z.string().optional(), stopReason: z.string().optional(), tool_call_id: z.string().optional() }).passthrough() })
+/** The live updates that start or end a thread's background work, or end its turn (#2633). */
+const BACKGROUND_UPDATES = new Set(['subagent_spawned', 'subagent_finished', 'turn_completed', 'background_tasks', 'user_message_chunk'])
 const emptyResponse = z.object({})
 const closeSessionResponse = z.object({ result: z.object({ success: z.literal(true), outcome: z.enum(['closed', 'notResident']) }) })
 const newSessionResponse = z.object({ sessionId: z.string().uuid(), models: catalogSchema })
@@ -267,7 +270,7 @@ export class GrokAcpHost implements ProviderHost {
   }
   /** A profile failure ends the process even if native close/cancel would refuse or time out. */
   private revokeProfile(id: string, profile: WatcherLaunchProfile | undefined, reason: string): void {
-    this.endTurn(id, 'failed')
+    this.endTurn(id, 'failed'); this.backgroundGone(id)
     const entry = this.processes.get(id)
     this.processes.delete(id); this.loaded.delete(id); this.outdated.delete(id); this.histories.delete(id); this.reaper.forget(id)
     this.activePrompts.delete(id); this.log.release(id)
@@ -390,6 +393,8 @@ export class GrokAcpHost implements ProviderHost {
   private readonly outdated = new Set<string>()
   /** Creates and sends still between their awaits, by thread: neither shows in the thread until it reaches Grok. */
   private readonly holds = new Map<string, number>()
+  /** Each thread's background work, from its own process's live stream (#2633). */
+  private readonly background = new Map<string, GrokBackgroundWork>()
   /** Every Grok process still running, so the shutdown barrier waits for them all. */
   private readonly exits = new Set<Promise<void>>()
   /** The client new processes start from, found again when the client is updated. */
@@ -557,6 +562,7 @@ export class GrokAcpHost implements ProviderHost {
   /** Everything that holds a session in `busy` but an unanswered request. */
   private working(id: string): boolean {
     return this.holds.has(id) || this.activePrompts.has(id) || this.loading.has(id) || this.threads.get(id)?.status === 'running'
+      || !!this.background.get(id)?.holds
       || !!this.aliases[id]?.pendingRuntimeMode
   }
   private asking(id: string): boolean { return !!this.threads.get(id)?.requests.length }
@@ -603,6 +609,7 @@ export class GrokAcpHost implements ProviderHost {
     this.histories.delete(id)
     this.log.release(id)
     if (!entry) return
+    this.backgroundGone(id)
     // The slot is free at once: an action that arrives while the close is in flight starts a new process
     // rather than loading its session onto one about to end.
     this.processes.delete(id); this.outdated.delete(id)
@@ -720,6 +727,7 @@ export class GrokAcpHost implements ProviderHost {
     this.processes.delete(id); this.outdated.delete(id)
     this.loaded.delete(id); this.histories.delete(id); this.log.release(id); this.reaper.forget(id)
     for (const pending of [...this.pending.values()]) if (pending.threadId === id) this.pending.delete(pending.request.id)
+    this.backgroundGone(id)
     const thread = this.threads.get(id)
     if (thread) {
       thread.requests = []; this.cutThoughts(id)
@@ -1384,6 +1392,8 @@ export class GrokAcpHost implements ProviderHost {
               catch (error) { throw error instanceof GrokUncertain ? new Error('Grok history could not be verified before changing the permission mode.', { cause: error }) : error }
               const thread = this.thread(command.threadId)
               if (this.activePrompts.has(command.threadId) || thread.status === 'running' || thread.requests.length) throw new Error('Wait for this Grok thread to finish and answer its pending requests before changing its permission mode.')
+              // The change reloads the session, which would end what it runs in the background (ADR-0023).
+              if (this.background.get(command.threadId)?.holds) throw new Error('This Grok thread has background work still running. Wait for it to finish before changing its permission mode. Nothing was changed.')
               watcherGuard?.()
               const previousPending = alias.pendingRuntimeMode, previousConfirmed = alias.settingsConfirmed, previousStatus = thread.status
               let modeWritten = false
@@ -1617,10 +1627,39 @@ export class GrokAcpHost implements ProviderHost {
         this.markTurn(id, turnOutcome(update.stop_reason ?? update.stopReason))
       }
       if (update.sessionUpdate === 'interaction_resolved') for (const pending of this.pending.values()) if (pending.threadId === id && pending.toolCallId === update.tool_call_id) this.removeRequest(pending)
+      if (BACKGROUND_UPDATES.has(update.sessionUpdate)) {
+        let work = this.background.get(id)
+        if (!work) { work = new GrokBackgroundWork(); this.background.set(id, work) }
+        // A user message starts a turn, which holds the thread's subagents as its own until it ends.
+        work.apply(update); this.publishBackground(id)
+      }
       if (!appended || !this.appendLive(id, appended.streamId, appended.text)) this.record(id, thread.status)
       this.changed(id)
       this.emit(!['user_message_chunk', 'turn_completed', 'interaction_resolved'].includes(update.sessionUpdate))
     }
+  }
+  /** The thread's background work as its tracker has it now; a running turn holds its own subagents. */
+  private publishBackground(id: string): void {
+    const thread = this.threads.get(id); if (!thread) return
+    const work = this.background.get(id)?.working(thread.status === 'running') ?? []
+    const before = thread.backgroundWork ?? []
+    if (before.length === work.length && before.every((item, index) => item.id === work[index]!.id && item.label === work[index]!.label)) return
+    if (work.length) thread.backgroundWork = work; else delete thread.backgroundWork
+    this.changed(id)
+  }
+  /**
+   * The thread's process is gone, and what it ran in the background went with it. A subagent Grok never said had
+   * finished has an outcome nobody saw, and its agent is no longer running, so Watcher's roster stops counting it.
+   */
+  private backgroundGone(id: string): void {
+    if (!this.background.delete(id)) return
+    const thread = this.threads.get(id); if (!thread) return
+    // Every subagent the process ran ends with it, a subagent's own included: each runs inside Grok's process.
+    const closed = (thread.activities ?? []).flatMap(row => row.kind === 'subagent' && (row.status === 'running' || row.agents?.some(agent => agent.status === 'running'))
+      ? [{ ...row, status: row.status === 'running' ? 'unknown' as const : row.status, agents: row.agents?.map(agent => agent.status === 'running' ? { ...agent, status: 'interrupted' } : agent) }] : [])
+    if (closed.length) thread.activities = mergeAgentActivities(thread.activities, closed)
+    if (thread.backgroundWork) delete thread.backgroundWork
+    this.changed(id)
   }
   /**
    * A thought still running when its process ended or its prompt failed was cut off. Grok's history never records
@@ -1662,7 +1701,7 @@ export class GrokAcpHost implements ProviderHost {
     this.deliveries.clear()
     // Each thread's turn ends with its process, and Grok's history will never say so.
     let ended = false
-    for (const id of this.processes.keys()) { this.cutThoughts(id); ended = this.endTurn(id, 'interrupted') || ended }
+    for (const id of this.processes.keys()) { this.cutThoughts(id); this.backgroundGone(id); ended = this.endTurn(id, 'interrupted') || ended }
     if (ended) void this.persist().catch(() => undefined)
     for (const entry of this.processes.values()) this.closeProcess(entry)
     this.processes.clear(); this.outdated.clear(); this.state.connected = false; this.emit()

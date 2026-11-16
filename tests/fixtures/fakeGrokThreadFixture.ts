@@ -8,7 +8,6 @@ import type { GrokRpc } from '../../src/main/agents/grokRpc'
 import type { AdapterContractSkips, AdapterSessionOptions, RecordedRpc } from './adapterFixture'
 
 export const grokFixtureSkips: AdapterContractSkips = {
- backgroundWork: 'The fixture has no background-work driver.',
  liveSettings: 'The fixture must apply settings to a live provider session.',
  settingsConfirmation: 'The fixture cannot lose a settings-change confirmation.',
 }
@@ -125,6 +124,7 @@ export async function grokFixture(root?: string, requestTimeoutMs = 15_000, poll
    stopped:async(id:string)=>{const native=await realId(id);return (await requests()).findLast(record=>record.method==='fixture/session-resident'&&record.params?.sessionId===native)?.params?.resident===false},
   },
   driver:{typeInProvider:(id:string,text:string)=>action(id,{type:'takeover',text}),completeTurn:(id:string,text:string)=>action(id,{type:'complete',text}),raiseQuestion:(id:string,text:string)=>action(id,{type:'question',text}),raisePermission:(id:string,text:string)=>action(id,{type:'permission',text}),delayNextAck,requests,
+   backgroundWork:{completeLeaving:(id:string,text:string,description:string)=>action(id,{type:'background-agent',text,description}),end:(id:string)=>action(id,{type:'background-agent-end'})},
    restart:async()=>{adapter.disconnect();await adapter.closed();return grokFixture(root,requestTimeoutMs,pollIntervalMs,session,options)}},
   cleanup:async()=>{adapter.disconnect();await adapter.closed();if(dirname(resolve(root))!==resolve(tmpdir())||!root.includes('sotto-grok-thread-'))throw new Error('Unexpected temporary directory');try{await checkViolations()}finally{await rm(root,{recursive:true,force:true})}}
  }

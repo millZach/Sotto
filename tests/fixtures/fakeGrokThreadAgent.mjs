@@ -282,6 +282,23 @@ function run(command) {
   const last = entries.at(-1)
   if (last) { sessions[command.sessionId].updates = sessions[command.sessionId].updates.filter(entry => !entries.includes(entry) || entry === last); last.params.update.content.text = text; save() }
  }
+ // A subagent Grok runs in the background, shaped on Grok 1.0.77's live frames (#2633): spawned on the parent's session, then
+ // the turn ends while it runs; `background-agent-end` finishes it, and with `wake` Grok starts a turn of its own to report.
+ // `parent` makes it a subagent's own subagent; `shells` sends Grok's list of the session's background tasks.
+ if (command.type === 'background-agent') {
+  const subagent = command.subagentId ?? 'native-background-agent'
+  update(command.sessionId,{sessionUpdate:'subagent_spawned',subagent_id:subagent,attempt_id:`attempt-${subagent}`,parent_session_id:command.sessionId,child_session_id:subagent,subagent_type:'general-purpose',description:command.description,...(command.parent?{parent_subagent_id:command.parent}:{})},true)
+  if (typeof command.text === 'string') complete(command.sessionId,command.text)
+ }
+ if (command.type === 'background-agent-end') {
+  const subagent = command.subagentId ?? 'native-background-agent'
+  update(command.sessionId,{sessionUpdate:'subagent_finished',subagent_id:subagent,attempt_id:`attempt-${subagent}`,child_session_id:subagent,status:command.status ?? 'completed',output:'Done.',will_wake:command.wake === true},true)
+ }
+ if (command.type === 'wake-turn') {
+  update(command.sessionId,{sessionUpdate:'agent_message_chunk',content:{type:'text',text:command.text}})
+  update(command.sessionId,{sessionUpdate:'turn_completed',prompt_id:`subagent-completed-${command.subagentId ?? 'native-background-agent'}`,stop_reason:'end_turn'},true)
+ }
+ if (command.type === 'shells') update(command.sessionId,{sessionUpdate:'background_tasks',tasks:command.tasks},true)
  if (command.type === 'activity') update(command.sessionId,command.update,command.extension ?? false,command.notify ?? true)
  if (command.type === 'replay') { const entry = sessions[command.sessionId].updates.at(-1); if (entry) send(entry) }
  if (command.type === 'malformed') process.stdout.write('{bad json}\n')
