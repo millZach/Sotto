@@ -52,8 +52,7 @@ import { handoverCounts } from './watcherHandover'
 import { watcherWakeUpShown } from './watcherNews'
 import { firstMessageTitle } from '../../shared/threadTitle'
 import { placeVisuals } from './visualPlacement'
-import { MODEL_VISUAL_KIND } from '../../shared/models3d'
-import { visualFromInput, VISUALS_PER_THREAD_MAX, VISUALS_PER_TURN_MAX, type AgentVisual, type ModelVisualInput, type VisualInput } from '../../shared/visuals'
+import { isSottoLineKind, visualFromInput, VISUALS_PER_THREAD_MAX, VISUALS_PER_TURN_MAX, type AgentVisual, type ModelVisualInput, type SoundVisualInput, type VisualInput } from '../../shared/visuals'
 import { SubagentStore, subagentActivityClassification } from './subagentStore'
 import { observedSubagentStatus, EMPTY_SUBAGENT_SUMMARY, type SubagentChange, type SubagentRow, type SubagentSummary, type SubagentPageRequest, type SubagentAssignmentsRequest } from '../../shared/subagents'
 import { validateThreadOptions } from './threadOptions'
@@ -2756,9 +2755,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * newest message the store holds, in the newest user message's turn (ADR-0056). Whatever the provider said before the
    * call is written first, so the visual lands after those words and before anything said after it. Nothing is shown
    * that was not kept; with Keep local history off the store is in memory, so the visual lasts this run alone. A 3D
-   * model Meshy is making for the thread is placed the same way (ADR-0141), by `make_3d_model` and never by an agent.
+   * model Meshy is making for the thread is placed the same way (ADR-0141), by `make_3d_model`, and a sound ElevenLabs is
+   * making for it by `make_sound` (ADR-0205), never by an agent.
    */
-  async addVisual(threadId: string, input: VisualInput | ModelVisualInput): Promise<VisualAddition> {
+  async addVisual(threadId: string, input: VisualInput | ModelVisualInput | SoundVisualInput): Promise<VisualAddition> {
     if (!this.threadVisible(threadId)) return { added: false, reason: 'unknown-thread' }
     await this.initialize()
     if (!this.ready || this.stopping || this.threadById(threadId) === undefined) return { added: false, reason: 'unknown-thread' }
@@ -2769,10 +2769,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     let stored: StoredVisual
     try {
       const newest = this.threadStore.newestMessages(threadId)
-      // The limits are on what agents draw. A 3D model's line is Sotto's, for a 3D model the user already pays for, so it
-      // neither meets them nor counts toward them; the month's credit limit bounds how many there are.
-      if (input.kind !== MODEL_VISUAL_KIND) {
-        const drawn = this.threadStore.readVisuals(threadId).filter(item => item.visual.kind !== MODEL_VISUAL_KIND)
+      // The limits are on what agents draw. A 3D model's or a sound's line is Sotto's, for something the user already
+      // pays for, so it neither meets them nor counts toward them; the account's monthly limit bounds how many there are.
+      if (!isSottoLineKind(input.kind)) {
+        const drawn = this.threadStore.readVisuals(threadId).filter(item => !isSottoLineKind(item.visual.kind))
         if (drawn.length >= VISUALS_PER_THREAD_MAX) return { added: false, reason: 'thread-limit' }
         if (drawn.filter(item => item.anchorUserMessageId === newest.userMessageId).length >= VISUALS_PER_TURN_MAX) return { added: false, reason: 'turn-limit' }
       }

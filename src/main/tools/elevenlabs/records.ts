@@ -2,21 +2,20 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { z } from 'zod'
 import { monthOf } from '../../plugins/meshy/spending'
-import { SOUND_KINDS, SPEECH_CHARACTERS_MAX } from './api'
+import { SOUND_FAILURES, SOUND_KINDS, SOUND_STATES, SPEECH_CHARACTERS_MAX, type SoundFailure } from '../../../shared/sounds'
 
 /**
  * What became of a sound. `making` while ElevenLabs makes it and Sotto saves it, `made` with its MP3 in the thread's
  * folder, `failed` when ElevenLabs or the folder would not have it.
  */
-export const SOUND_STATES = ['making', 'made', 'failed'] as const
+export { SOUND_STATES }
 /**
  * Why a sound was not made, in one word: ElevenLabs' own (`refused`, `no-credits`, `rejected`, `busy`, `unreachable`,
  * `unreadable`), the save's (`folder`, `too-large`, and `unreachable` again for an answer that stopped), the account
  * gone (`no-account`) or its key unreadable (`locked`), or `stopped` when Sotto stopped while it was being made and
  * cannot tell whether ElevenLabs charged for it.
  */
-export const SOUND_FAILURES = ['refused', 'no-credits', 'rejected', 'busy', 'unreachable', 'unreadable', 'folder', 'too-large', 'no-account', 'locked', 'stopped'] as const
-export type SoundFailure = (typeof SOUND_FAILURES)[number]
+export { SOUND_FAILURES, type SoundFailure }
 
 /** The newest records kept. A record is small; this only stops the file growing without end. */
 export const SOUND_RECORDS_KEPT = 2_000
@@ -35,6 +34,11 @@ const recordSchema = z.object({
   /** The voice speech was spoken in, by its name in the account. */
   voice: z.string().min(1).max(200).optional(),
   seconds: z.number().positive().max(1_000).optional(),
+  /**
+   * The thread's working folder as it was asked for, which the MP3 is read back only from inside. A record kept before
+   * the line in the thread (part 3) holds none, and is read against the thread's working folder as it is now.
+   */
+  root: z.string().min(1).optional(),
   /** The real folder inside the thread's folder the MP3 goes into, and its name there once it is saved. */
   folder: z.string().min(1),
   fileName: z.string().min(1).max(200).optional(),
@@ -81,6 +85,11 @@ export class SoundRecords {
   private queue: Promise<unknown> = Promise.resolve()
   constructor(directory: string, private readonly options: { readonly historyEnabled: () => boolean; readonly kept?: number; readonly now?: () => Date }) {
     this.path = join(directory, 'sounds.json')
+  }
+
+  /** One sound's record, or undefined when Sotto holds none by that ID. */
+  sound(id: string): Promise<SoundRecord | undefined> {
+    return this.inTurn(async () => (await this.load()).find(record => record.id === id))
   }
 
   /** Every sound, newest first. */

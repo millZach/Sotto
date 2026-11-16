@@ -9,6 +9,7 @@ import {
   type BridgeStatus, type GitHubSignIn, type PluginAccount, type PluginAccountResult, type PluginCopiesView, type ShownPluginUse,
 } from '../../../../src/shared/plugins'
 import { PLUGINS_MODEL_3D, PLUGINS_MODEL_3D_BYTES, PLUGINS_MODEL_3D_REMOVE, PLUGINS_MODEL_3D_REVEAL, PLUGINS_MODELS_3D, PLUGINS_MODELS_3D_REMOVED, type Model3dBytesRequest, type Model3dListed, type Model3dRemoval, type Model3dRevealRequest, type Model3dView } from '../../../../src/shared/models3d'
+import { PLUGINS_SOUND, PLUGINS_SOUND_BYTES, PLUGINS_SOUND_CHANGED, PLUGINS_SOUND_REVEAL, type SoundView } from '../../../../src/shared/sounds'
 import { ipcRegistry } from '../../../fixtures/ipcHarness'
 import { preloadElectron } from '../../../fixtures/preloadElectron'
 
@@ -19,6 +20,8 @@ const account: PluginAccount = { id: '22222222-2222-4222-8222-000000000001', plu
 const TOKEN = 'made-up-vercel-token'
 const MODEL: Model3dView = { id: '55555555-5555-4555-8555-000000000001', name: 'Oak barrel', source: 'words', state: 'done', credits: 30, folder: 'models',
   files: [{ name: 'Oak barrel.png', bytes: 300 }, { name: 'Oak barrel.glb', bytes: 4_100 }], still: 'Oak barrel.png' }
+const SOUND: SoundView = { id: '66666666-6666-4666-8666-000000000001', name: 'Opening narration', kind: 'speech', state: 'made', cost: 0.02, voice: 'Rachel',
+  words: 'Welcome to Lumen.', fileName: 'Opening narration.mp3', bytes: 130_000, madeAt: '2026-11-15T18:52:00.000Z' }
 
 function register(answer: GitHubSignIn = { state: 'signed-in', login: 'example-user' }, uses: readonly ShownPluginUse[] = [used]) {
   const registry = ipcRegistry()
@@ -45,10 +48,13 @@ function register(answer: GitHubSignIn = { state: 'signed-in', login: 'example-u
   const models3d = vi.fn(async (threadKey: string | undefined): Promise<Model3dListed[]> => threadKey === undefined || threadKey === 'thread-one' ? [listed] : [])
   const removeModel3d = vi.fn(async (id: string): Promise<Model3dRemoval> => id === MODEL.id ? 'removed' : 'no-record')
   const revealModel3d = vi.fn(async (request: Model3dRevealRequest): Promise<boolean> => request.id === MODEL.id)
-  const close = registerPluginsIpc(registry.ipc, { gitHubSignIn, gitHubSignInElsewhere, recentUse, accounts, addAccount, replaceSecret, removeAccount, updateAccount, trustCertificate, bridgeStatus, meshyCredits, elevenLabsSpent, model3d, model3dBytes, models3d, removeModel3d, revealModel3d, projects, copies, setCopy, setCopyNew, mailGrants, stopMailGrant }, registry.trustedSenders)
+  const sound = vi.fn(async (id: string): Promise<SoundView | null> => id === SOUND.id ? SOUND : null)
+  const soundBytes = vi.fn(async (id: string): Promise<Uint8Array | null> => id === SOUND.id ? new Uint8Array([0x49, 0x44, 0x33]) : null)
+  const revealSound = vi.fn(async (id: string): Promise<boolean> => id === SOUND.id)
+  const close = registerPluginsIpc(registry.ipc, { gitHubSignIn, gitHubSignInElsewhere, recentUse, accounts, addAccount, replaceSecret, removeAccount, updateAccount, trustCertificate, bridgeStatus, meshyCredits, elevenLabsSpent, model3d, model3dBytes, models3d, removeModel3d, revealModel3d, sound, soundBytes, revealSound, projects, copies, setCopy, setCopyNew, mailGrants, stopMailGrant }, registry.trustedSenders)
   const renderer = preloadElectron().ipcRenderer
   renderer.invoke.mockImplementation((channel: string, ...args: unknown[]) => registry.invoke(channel, args))
-  return { ...registry, model3d, model3dBytes, models3d, removeModel3d, revealModel3d, listed, gitHubSignIn, gitHubSignInElsewhere, elsewhere, recentUse, accounts, addAccount, replaceSecret, removeAccount, updateAccount, trustCertificate, bridgeStatus, meshyCredits, elevenLabsSpent, projects, copies, setCopy, setCopyNew, view, close, mailGrants, stopMailGrant, granted, bridge: createSottoBridge(renderer, 'win32').plugins! }
+  return { ...registry, model3d, model3dBytes, models3d, removeModel3d, revealModel3d, sound, soundBytes, revealSound, listed, gitHubSignIn, gitHubSignInElsewhere, elsewhere, recentUse, accounts, addAccount, replaceSecret, removeAccount, updateAccount, trustCertificate, bridgeStatus, meshyCredits, elevenLabsSpent, projects, copies, setCopy, setCopyNew, view, close, mailGrants, stopMailGrant, granted, bridge: createSottoBridge(renderer, 'win32').plugins! }
 }
 
 describe('Settings › Plugins, from the window through preload to main (ADR-0205)', () => {
@@ -220,6 +226,52 @@ describe('Settings › Plugins, from the window through preload to main (ADR-020
     await expect(invoke(PLUGINS_MODELS_3D, [{}])).rejects.toThrow()
     close()
     for (const channel of [PLUGINS_MODELS_3D, PLUGINS_MODEL_3D_REMOVE, PLUGINS_MODEL_3D_REVEAL]) expect(handlers.has(channel)).toBe(false)
+  })
+
+  it('carries a sound’s view, its MP3 and Show in the folder app by its ID alone, for the main window only, and nothing a path could be', async () => {
+    const { bridge, invoke, widgetEvent, sound, soundBytes, revealSound, close, handlers } = register()
+    await expect(bridge.sound!(SOUND.id)).resolves.toEqual(SOUND)
+    await expect(bridge.sound!('unknown')).resolves.toBeNull()
+    await expect(bridge.soundBytes!(SOUND.id)).resolves.toEqual(new Uint8Array([0x49, 0x44, 0x33]))
+    await expect(bridge.soundBytes!('unknown')).resolves.toBeNull()
+    await expect(bridge.revealSound!(SOUND.id)).resolves.toBe(true)
+    await expect(bridge.revealSound!('unknown')).resolves.toBe(false)
+    for (const channel of [PLUGINS_SOUND, PLUGINS_SOUND_BYTES, PLUGINS_SOUND_REVEAL]) {
+      await expect(invoke(channel, [{ id: SOUND.id }], widgetEvent)).rejects.toThrow('Open the thread in the main Sotto window.')
+    }
+    // A path, a file's name or anything the schema does not name asks main nothing.
+    sound.mockClear()
+    soundBytes.mockClear()
+    revealSound.mockClear()
+    await expect(invoke(PLUGINS_SOUND, [{ id: SOUND.id, path: 'C:/Users/someone/secret.mp3' }])).resolves.toBeNull()
+    await expect(invoke(PLUGINS_SOUND_BYTES, [{ id: SOUND.id, file: '../elsewhere.mp3' }])).resolves.toBeNull()
+    await expect(invoke(PLUGINS_SOUND_BYTES, ['C:/Users/someone/secret.mp3'])).resolves.toBeNull()
+    await expect(invoke(PLUGINS_SOUND_REVEAL, [{ id: '' }])).resolves.toBe(false)
+    await expect(invoke(PLUGINS_SOUND_REVEAL, [{ id: SOUND.id }, { path: 'C:/' }])).resolves.toBe(false)
+    expect(sound).not.toHaveBeenCalled()
+    expect(soundBytes).not.toHaveBeenCalled()
+    expect(revealSound).not.toHaveBeenCalled()
+    // A view carrying anything beyond what the schema names, such as its folder, does not cross; nor do bytes that are none.
+    sound.mockResolvedValueOnce({ ...SOUND, folder: 'C:/Users/someone/project/sounds' } as never)
+    await expect(invoke(PLUGINS_SOUND, [{ id: SOUND.id }])).rejects.toThrow()
+    soundBytes.mockResolvedValueOnce('C:/Users/someone/secret.mp3' as never)
+    await expect(invoke(PLUGINS_SOUND_BYTES, [{ id: SOUND.id }])).rejects.toThrow()
+    close()
+    for (const channel of [PLUGINS_SOUND, PLUGINS_SOUND_BYTES, PLUGINS_SOUND_REVEAL]) expect(handlers.has(channel)).toBe(false)
+  })
+
+  it('tells the window each change to a sound as its view, and nothing that is not one', () => {
+    const renderer = preloadElectron().ipcRenderer
+    const bridge = createSottoBridge(renderer, 'win32').plugins!
+    const heard: SoundView[] = []
+    const stop = bridge.onSoundChanged!(view => heard.push(view))
+    const [, listener] = renderer.on.mock.calls.find(([channel]) => channel === PLUGINS_SOUND_CHANGED) as [string, (event: unknown, ...args: unknown[]) => void]
+    listener({}, SOUND)
+    listener({}, { ...SOUND, root: 'C:/Users/someone/project' })
+    listener({}, 'C:/Users/someone/project/sounds/Opening narration.mp3')
+    expect(heard).toEqual([SOUND])
+    stop()
+    expect(renderer.removeListener).toHaveBeenCalledWith(PLUGINS_SOUND_CHANGED, listener)
   })
 
   it('tells the window which 3D models went with a forgotten thread, and nothing that is not a list of IDs', () => {

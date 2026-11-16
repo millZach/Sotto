@@ -96,6 +96,8 @@ import { checkPhoto, photoToSend, type RedrawPhoto } from './tools/meshy/photo'
 import type { ElevenLabsApiFetch } from './tools/elevenlabs/api'
 import { SoundRecords } from './tools/elevenlabs/records'
 import { ElevenLabsSounds, type SoundRequest } from './tools/elevenlabs/service'
+import { revealSoundFile, soundBytes, soundViewOf, soundViewPush, type SoundViewSource } from './tools/elevenlabs/view'
+import { PLUGINS_SOUND_CHANGED, SOUND_VISUAL_KIND } from '../shared/sounds'
 import { isMailPlugin, PLUGIN_USE_THREAD_TITLE_MAX, PLUGINS_COPIES_CHANGED, PLUGINS_ELEVENLABS_SPENT_CHANGED, PLUGINS_MAIL_GRANTS_CHANGED, PLUGINS_MESHY_CREDITS_CHANGED } from '../shared/plugins'
 import { MODEL_VISUAL_KIND, MODELS_3D_LISTED_MAX, PLUGINS_MODEL_3D_CHANGED, PLUGINS_MODELS_3D_REMOVED } from '../shared/models3d'
 import { HostModels3d } from './hosts/hostModels3d'
@@ -1501,16 +1503,29 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     : async (url, init) => { if (!elevenLabsBase || !url.startsWith(`${elevenLabsBase}/`)) throw new Error('E2E_NETWORK_DISABLED'); return fetch(url, init) }
   const soundRecords = pluginsEnabled ? new SoundRecords(userDataPath, { historyEnabled: () => agentHistoryEnabled }) : undefined
   void soundRecords?.settleUnfinished().catch(() => undefined)
+  // A sound's line in its thread (part 3) reads its record by ID, and its MP3 only from inside the thread's working folder.
+  const soundViews: SoundViewSource | undefined = soundRecords ? {
+    sound: id => soundRecords.sound(id),
+    folderOf: async threadId => { const found = await files.resolveWorkspace(threadId); return found.ok ? found.value.workingDirectory : null },
+  } : undefined
+  // Each change to a sound goes to the window as its view, in order, so its line moves from making to made or failed.
+  const pushSoundView = soundViews ? soundViewPush(soundViews, view => { windows.sendToMain(PLUGINS_SOUND_CHANGED, view) }) : undefined
   const elevenLabsSounds = soundRecords && pluginAccounts ? new ElevenLabsSounds({ records: soundRecords, fetch: elevenLabsApiFetch, signal: pluginsStop.signal, ...(elevenLabsBase ? { base: elevenLabsBase } : {}),
     keyOf: async accountId => (await pluginAccounts.list()).some(account => account.id === accountId && account.plugin === 'elevenlabs') ? pluginAccounts.secret(accountId) || undefined : undefined,
-    // Settings reads what each account spent again once a sound is made or fails.
-    changed: () => { windows.sendToMain(PLUGINS_ELEVENLABS_SPENT_CHANGED, null) } }) : undefined
+    changed: sound => {
+      // Settings reads what each account spent again once a sound is made or fails.
+      windows.sendToMain(PLUGINS_ELEVENLABS_SPENT_CHANGED, null)
+      void pushSoundView?.(sound)
+    } }) : undefined
   const elevenLabsTools = elevenLabsSounds && soundRecords ? {
     folderOf: async (threadId: string) => { const found = await files.resolveWorkspace(threadId); return found.ok ? found.value.workingDirectory : null },
     // This computer's own: threads on a paired host make no sounds yet.
     monthSpent: async (accountId: string) => (await soundRecords.monthSpent()).get(accountId) ?? 0,
     voices: (accountId: string) => elevenLabsSounds.voices(accountId),
     make: (request: SoundRequest) => elevenLabsSounds.make(request),
+    // The sound's line in its thread, by its ID alone, as a 3D model's is; a phone or a host client reads its words.
+    showInThread: async (threadId: string, sound: { readonly id: string; readonly name: string }) =>
+      (await agentHost.addVisual(threadId, { kind: SOUND_VISUAL_KIND, title: sound.name, source: sound.id }).catch(() => ({ added: false as const }))).added,
   } : undefined
   const meshyTools = meshyModels && modelRecords ? {
     // The thread's own working folder, as Files and the terminal find it.
@@ -2950,6 +2965,11 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         // The folder app is shown the record's own file, never a path from the window, and only this computer's own: a
         // host's files are on the host. An end-to-end run notes it instead.
         revealModel3d: async request => !hostModels?.onHost(request.id) && modelViews ? await revealModelFile(modelViews, request, path => { if (e2eConfiguration !== null) e2eFiles.shown.push(path); else shell.showItemInFolder(path) }) : false,
+        // A sound's line in its thread: this computer's own, as threads on a paired host make none yet. The folder app is
+        // shown the record's own file, never a path from the window; an end-to-end run notes it instead.
+        sound: async id => soundViews ? await soundViewOf(soundViews, id) : null,
+        soundBytes: async id => soundViews ? await soundBytes(soundViews, id) : null,
+        revealSound: async id => soundViews ? await revealSoundFile(soundViews, id, path => { if (e2eConfiguration !== null) e2eFiles.shown.push(path); else shell.showItemInFolder(path) }) : false,
         copies: async () => await pluginCopySync?.view() ?? { copyNew: true, readable: true, computers: [], copies: [] },
         setCopy: async request => { await pluginCopySync?.setCopy(request.accountId, request.computerId, request.on); return await pluginCopySync?.view() ?? { copyNew: true, readable: true, computers: [], copies: [] } },
         setCopyNew: async copyNew => { await pluginCopySync?.setCopyNew(copyNew); return await pluginCopySync?.view() ?? { copyNew: true, readable: true, computers: [], copies: [] } },

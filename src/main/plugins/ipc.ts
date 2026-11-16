@@ -11,6 +11,7 @@ import {
   PLUGINS_MODEL_3D, PLUGINS_MODEL_3D_BYTES, PLUGINS_MODEL_3D_REMOVE, PLUGINS_MODEL_3D_REVEAL, PLUGINS_MODELS_3D,
   type Model3dBytesRequest, type Model3dListed, type Model3dRemoval, type Model3dRevealRequest, type Model3dView,
 } from '../../shared/models3d'
+import { PLUGINS_SOUND, PLUGINS_SOUND_BYTES, PLUGINS_SOUND_REVEAL, soundBytesSchema, soundDoneSchema, soundRequestSchema, soundViewOrNullSchema, type SoundView } from '../../shared/sounds'
 import { isAuthorizedIpcSender, type IpcMainAdapter, type TrustedIpcSender } from '../ipc/registerIpc'
 
 /** Each call's arguments, checked against a schema built once rather than on every call. */
@@ -28,6 +29,7 @@ const model3dArguments = z.tuple([model3dRequestSchema])
 const model3dBytesArguments = z.tuple([model3dBytesRequestSchema])
 const models3dArguments = z.tuple([model3dListRequestSchema])
 const model3dRevealArguments = z.tuple([model3dRevealRequestSchema])
+const soundArguments = z.tuple([soundRequestSchema])
 
 /** What Settings › Plugins asks of main. */
 export interface PluginsIpcHandlers {
@@ -57,6 +59,12 @@ export interface PluginsIpcHandlers {
   readonly removeModel3d: (id: string) => Promise<Model3dRemoval>
   /** Shows one of a 3D model's files in the folder app, by the name its record holds. */
   readonly revealModel3d: (request: Model3dRevealRequest) => Promise<boolean>
+  /** One sound as its thread draws it, by its ID, or null when there is no such sound. */
+  readonly sound: (id: string) => Promise<SoundView | null>
+  /** A made sound's MP3, or null when Sotto will not hand it over. */
+  readonly soundBytes: (id: string) => Promise<Uint8Array | null>
+  /** Shows a made sound's MP3 in the folder app, by its record's own path. */
+  readonly revealSound: (id: string) => Promise<boolean>
   readonly projects: () => readonly PluginProject[]
   readonly copies: () => Promise<PluginCopiesView>
   readonly setCopy: (request: PluginCopySet) => Promise<PluginCopiesView>
@@ -191,7 +199,27 @@ export function registerPluginsIpc(ipc: IpcMainAdapter, plugins: PluginsIpcHandl
     if (!parsed.success) return false
     return model3dDoneSchema.parse(await plugins.revealModel3d(parsed.data[0]))
   })
+  // A sound in a thread (the plugins plan's slice 12, part 3): its view, its MP3 and its file shown in the folder app,
+  // each by its ID alone, for the main window. A request that cannot be read asks main nothing.
+  ipc.handle(PLUGINS_SOUND, async (event, ...args) => {
+    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Open the thread in the main Sotto window.`)
+    const parsed = soundArguments.safeParse(args)
+    if (!parsed.success) return null
+    return soundViewOrNullSchema.parse(await plugins.sound(parsed.data[0].id))
+  })
+  ipc.handle(PLUGINS_SOUND_BYTES, async (event, ...args) => {
+    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Open the thread in the main Sotto window.`)
+    const parsed = soundArguments.safeParse(args)
+    if (!parsed.success) return null
+    return soundBytesSchema.parse(await plugins.soundBytes(parsed.data[0].id))
+  })
+  ipc.handle(PLUGINS_SOUND_REVEAL, async (event, ...args) => {
+    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Open the thread in the main Sotto window.`)
+    const parsed = soundArguments.safeParse(args)
+    if (!parsed.success) return false
+    return soundDoneSchema.parse(await plugins.revealSound(parsed.data[0].id))
+  })
   return () => {
-    for (const channel of [PLUGINS_MODEL_3D, PLUGINS_MODEL_3D_BYTES, PLUGINS_MODELS_3D, PLUGINS_MODEL_3D_REMOVE, PLUGINS_MODEL_3D_REVEAL,PLUGINS_MAIL_GRANTS, PLUGINS_MAIL_GRANT_STOP, PLUGINS_GITHUB_SIGN_IN, PLUGINS_GITHUB_SIGN_IN_ELSEWHERE, PLUGINS_RECENT_USE, PLUGINS_ACCOUNTS, PLUGINS_PROJECTS, PLUGINS_COPIES, PLUGINS_COPY_SET, PLUGINS_COPY_NEW_SET, PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_UPDATE, PLUGINS_ACCOUNT_TRUST, PLUGINS_BRIDGE_STATUS, PLUGINS_MESHY_CREDITS, PLUGINS_ELEVENLABS_SPENT]) ipc.removeHandler(channel)
+    for (const channel of [PLUGINS_SOUND, PLUGINS_SOUND_BYTES, PLUGINS_SOUND_REVEAL, PLUGINS_MODEL_3D, PLUGINS_MODEL_3D_BYTES, PLUGINS_MODELS_3D, PLUGINS_MODEL_3D_REMOVE, PLUGINS_MODEL_3D_REVEAL,PLUGINS_MAIL_GRANTS, PLUGINS_MAIL_GRANT_STOP, PLUGINS_GITHUB_SIGN_IN, PLUGINS_GITHUB_SIGN_IN_ELSEWHERE, PLUGINS_RECENT_USE, PLUGINS_ACCOUNTS, PLUGINS_PROJECTS, PLUGINS_COPIES, PLUGINS_COPY_SET, PLUGINS_COPY_NEW_SET, PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_UPDATE, PLUGINS_ACCOUNT_TRUST, PLUGINS_BRIDGE_STATUS, PLUGINS_MESHY_CREDITS, PLUGINS_ELEVENLABS_SPENT]) ipc.removeHandler(channel)
   }
 }

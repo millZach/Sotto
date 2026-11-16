@@ -16,6 +16,7 @@ import {
   model3dBytesRequestSchema, model3dBytesSchema, model3dDoneSchema, model3dRemovalSchema, model3dRemovedSchema, model3dListRequestSchema, model3dListSchema, model3dRequestSchema, model3dRevealRequestSchema, model3dViewOrNullSchema, model3dViewSchema,
   PLUGINS_MODEL_3D, PLUGINS_MODEL_3D_BYTES, PLUGINS_MODEL_3D_CHANGED, PLUGINS_MODEL_3D_REMOVE, PLUGINS_MODEL_3D_REVEAL, PLUGINS_MODELS_3D, PLUGINS_MODELS_3D_REMOVED,
 } from '../shared/models3d'
+import { PLUGINS_SOUND, PLUGINS_SOUND_BYTES, PLUGINS_SOUND_CHANGED, PLUGINS_SOUND_REVEAL, soundBytesSchema, soundDoneSchema, soundRequestSchema, soundViewOrNullSchema, soundViewSchema } from '../shared/sounds'
 import { TEAMS_CHANGED, TEAMS_COMMAND, TEAMS_GET, TEAMS_OWN_DESK, teamsCommandSchema, type TeamDesk, type TeamsBridge, type TeamsCommandResult, type TeamsState } from '../shared/teams'
 import { mapHostReferences, parseHostEntityKey } from '../shared/clientIdentity'
 import { MODEL_ROUTER_RENDERER_ARGUMENT } from '../shared/modelRouter'
@@ -701,6 +702,12 @@ export function createSottoBridge(
       removeModel3d: async id => invokeParsed(renderer, PLUGINS_MODEL_3D_REMOVE, model3dRemovalSchema, model3dRequestSchema.parse({ id })),
       revealModel3d: async request => invokeParsed(renderer, PLUGINS_MODEL_3D_REVEAL, model3dDoneSchema, model3dRevealRequestSchema.parse(request)),
       onModels3dRemoved: listener => subscribe(renderer, PLUGINS_MODELS_3D_REMOVED, model3dRemovedSchema, listener),
+      // A sound in a thread (the plugins plan's slice 12, part 3), by its ID alone: its view, its MP3, its file shown in
+      // the folder app, and each change.
+      sound: async id => invokeParsed(renderer, PLUGINS_SOUND, soundViewOrNullSchema, soundRequestSchema.parse({ id })),
+      soundBytes: async id => invokeParsed(renderer, PLUGINS_SOUND_BYTES, soundBytesSchema, soundRequestSchema.parse({ id })),
+      revealSound: async id => invokeParsed(renderer, PLUGINS_SOUND_REVEAL, soundDoneSchema, soundRequestSchema.parse({ id })),
+      onSoundChanged: listener => subscribe(renderer, PLUGINS_SOUND_CHANGED, soundViewSchema, listener),
       projects: async () => invokeParsed(renderer, PLUGINS_PROJECTS, pluginProjectsSchema),
       copies: async () => invokeParsed(renderer, PLUGINS_COPIES, pluginCopiesViewSchema),
       setCopy: async request => invokeParsed(renderer, PLUGINS_COPY_SET, pluginCopiesViewSchema, pluginCopySetSchema.parse(request)),

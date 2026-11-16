@@ -51,6 +51,8 @@ interface Options {
   whileCounting?: (world: { accounts: PluginAccount[] }) => void
   /** ElevenLabs answers 200, and so has charged, but the MP3 stops part way. */
   cutOff?: boolean
+  /** The sound's line cannot go into the thread. */
+  unshown?: boolean
 }
 
 /** The tools for thread `one`, over one ElevenLabs account, with the user's answers and ElevenLabs' answers scripted. */
@@ -60,6 +62,7 @@ function tools(options: Options = {}) {
   const asked: PluginChange[] = []
   const recorded: PluginUseReport[] = []
   const sent: string[] = []
+  const shown: { readonly threadId: string; readonly id: string; readonly name: string; readonly state: string }[] = []
   const records = new SoundRecords(data, { historyEnabled: () => true })
   const fetcher: ElevenLabsApiFetch = async (url, init) => {
     const { pathname } = new URL(url)
@@ -105,13 +108,14 @@ function tools(options: Options = {}) {
       keyTrouble: () => null,
       voices: accountId => sounds.voices(accountId),
       make: request => sounds.make(request),
+      showInThread: async (threadId, sound) => { if (options.unshown) return false; shown.push({ threadId, id: sound.id, name: sound.name, state: sound.state }); return true },
     } }),
   })
   servers.push(server)
   const make = (args: Record<string, unknown>, context: { waitMs?: number; signal?: AbortSignal } = {}) => server.call('one', MAKE_SOUND_TOOL, args, context)
   const made = (): string[] => sent.filter(call => call.startsWith('POST'))
   const spent = async (): Promise<number> => (await records.monthSpent()).get(VOICES.id) ?? 0
-  return { server, world, asked, recorded, sent, made, records, spent, make }
+  return { server, world, asked, recorded, sent, shown, made, records, spent, make }
 }
 const said = (result: { content: { type: string; text?: string }[] }): string => result.content.map(part => part.text ?? '').join('\n')
 const uses = (recorded: readonly PluginUseReport[]): string[] => recorded.map(use => `${use.tool} ${use.kind} ${use.outcome}`)
@@ -145,6 +149,28 @@ describe('making a sound through make_sound', () => {
       expect(await t.spent()).toBe(0)
       expect(uses(t.recorded)).toEqual([`make_sound sound-speech ${answer}`])
     }
+  })
+
+  it('places the sound’s line in its thread once its record is kept, and none when it is denied or refused', async () => {
+    const t = tools()
+    await t.make(WELCOME)
+    const [sound] = await t.records.list()
+    // The line goes in while the sound is still being made, by the sound's Sotto ID and its name.
+    expect(t.shown).toEqual([{ threadId: 'one', id: sound!.id, name: 'Welcome video', state: 'making' }])
+    const denied = tools({ answers: ['denied'] })
+    await denied.make(WELCOME)
+    const over = tools({ used: 10 })
+    await over.make(WELCOME)
+    expect([...denied.shown, ...over.shown]).toEqual([])
+    expect([...denied.made(), ...over.made()]).toEqual([])
+  })
+
+  it('makes the sound all the same when its line cannot go into the thread, and tells the agent so', async () => {
+    const t = tools({ unshown: true })
+    const result = await t.make(WELCOME)
+    expect(result.isError).toBeUndefined()
+    expect(said(result)).toBe("The user allowed it. The sound \"Welcome video\" is made and saved in the thread's folder at sounds/Welcome video.mp3, for under $0.01 at ElevenLabs' published prices, spoken in the voice Rachel. Nothing plays on its own; tell the user where it is. Sotto could not show the sound in the thread, so tell the user its name and where it is saved.")
+    expect(uses(t.recorded)).toEqual(['make_sound sound-speech done'])
   })
 
   it('refuses one that would pass the month’s limit before asking or sending anything', async () => {

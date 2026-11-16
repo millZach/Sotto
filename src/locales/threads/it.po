@@ -201,6 +201,11 @@ msgstr ""
 msgid "{commands, plural, one {ran {commandCount} command} other {ran {commandCount} commands}}"
 msgstr ""
 
+#. {cost} is a cost in US dollars, such as about $0.08.
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "{cost} counted"
+msgstr ""
+
 #: src/renderer/src/agents/SwarmAngles.tsx
 msgid "{count, plural, one {{done} of # angle done} other {{done} of # angles done}}"
 msgstr ""
@@ -987,6 +992,11 @@ msgstr ""
 msgid "{percent}%, {left}"
 msgstr ""
 
+#. A place in a sound and its length, such as 0:03 of 0:08.
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "{place} of {whole}"
+msgstr ""
+
 #: src/renderer/src/agents/ThreadComposer.tsx
 msgid "{provider} cannot take prompts from Sotto."
 msgstr ""
@@ -1735,6 +1745,11 @@ msgstr ""
 #. placeholder {0}: Math.max(5, Math.round(secondsLeft / 5) * 5)
 #: src/renderer/src/agents/modelParts.tsx
 msgid "about {0} seconds left"
+msgstr ""
+
+#. {figure} is a cost in US dollars, such as $0.08.
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "about {figure}"
 msgstr ""
 
 #: src/renderer/src/agents/modelParts.tsx
@@ -3428,6 +3443,10 @@ msgstr ""
 msgid "could not look at the screen"
 msgstr ""
 
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "Could not make it"
+msgstr ""
+
 #: src/renderer/src/agents/MarkupEditor.tsx
 msgid "Could not make the marked copy. Nothing was added, and your marks are still here. Try again."
 msgstr ""
@@ -3515,6 +3534,10 @@ msgstr ""
 
 #: src/renderer/src/agents/BranchToolbar.tsx
 msgid "Could not record the starting branch. Your choice is retained."
+msgstr ""
+
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "Could not save it"
 msgstr ""
 
 #: src/renderer/src/agents/ProjectsDirectoryRow.tsx
@@ -4128,6 +4151,46 @@ msgstr ""
 msgid "Effort"
 msgstr ""
 
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "ElevenLabs could not be reached, or stopped before the whole sound came back."
+msgstr ""
+
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "ElevenLabs did not accept the ElevenLabs account’s key, or the key may not do this. Replace it in Settings > Plugins."
+msgstr ""
+
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "ElevenLabs gave an answer Sotto could not read."
+msgstr ""
+
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "ElevenLabs made it and charged for it, but it was larger than Sotto saves."
+msgstr ""
+
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "ElevenLabs made it and charged for it, but its answer stopped before the whole file arrived."
+msgstr ""
+
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "ElevenLabs made it and charged for it, but the folder would not take the file: it is not inside the thread’s folder, or could not be written."
+msgstr ""
+
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "ElevenLabs was turning requests away. The agent can ask again in a few minutes."
+msgstr ""
+
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "ElevenLabs would not make this music from these words."
+msgstr ""
+
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "ElevenLabs would not make this sound effect from these words."
+msgstr ""
+
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "ElevenLabs would not make this speech from these words in this voice."
+msgstr ""
+
 #. A body its host sent cut shows only this part.
 #: src/renderer/src/agents/ActivityBody.tsx
 msgid "End of the output only"
@@ -4354,6 +4417,10 @@ msgstr ""
 #. Windows' own name for its file manager, as Windows shows it in this language.
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "File Explorer"
+msgstr ""
+
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "File gone"
 msgstr ""
 
 #: src/renderer/src/agents/FilePicker.tsx
@@ -4706,6 +4773,10 @@ msgstr ""
 msgid "Hide it"
 msgstr ""
 
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "Hide the details"
+msgstr ""
+
 #: src/renderer/src/agents/ThreadStart.tsx
 msgid "Hide the handover"
 msgstr ""
@@ -4727,6 +4798,7 @@ msgid "Hide until this branch changes"
 msgstr ""
 
 #: src/renderer/src/agents/ModelLine.tsx
+#: src/renderer/src/agents/SoundLine.tsx
 msgid "Hide what happened"
 msgstr ""
 
@@ -4984,6 +5056,11 @@ msgstr ""
 
 #: src/renderer/src/agents/HostUpdates.tsx
 msgid "Its checksum has to match the release’s."
+msgstr ""
+
+#. {cost} is a cost in US dollars, such as about $0.08.
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "Its cost, {cost}, was counted against this month’s limit."
 msgstr ""
 
 #: src/renderer/src/agents/ThreadTranscript.tsx
@@ -5324,6 +5401,16 @@ msgstr ""
 msgid "Low"
 msgstr ""
 
+#. {when} is the time a sound was saved, such as 6:52 pm.
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "made {when}"
+msgstr ""
+
+#. {said} is what a sound effect or music was made from, in the words sent.
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "Made from “{said}”"
+msgstr ""
+
 #: src/renderer/src/agents/ModelLine.tsx
 msgid "Made from a photo"
 msgstr ""
@@ -5367,6 +5454,30 @@ msgstr ""
 
 #: src/renderer/src/agents/ThreadMediaTiles.tsx
 msgid "Making the image"
+msgstr ""
+
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "Making the music"
+msgstr ""
+
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "Making the music with ElevenLabs…"
+msgstr ""
+
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "Making the sound effect"
+msgstr ""
+
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "Making the sound effect with ElevenLabs…"
+msgstr ""
+
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "Making the speech"
+msgstr ""
+
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "Making the speech with ElevenLabs…"
 msgstr ""
 
 #: src/renderer/src/agents/ThreadComposer.tsx
@@ -5652,6 +5763,10 @@ msgstr ""
 #. A kind of delegated work: a code review done on Muse.
 #: src/renderer/src/agents/delegationWords.ts
 msgid "Muse review"
+msgstr ""
+
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "Music"
 msgstr ""
 
 #: src/renderer/src/agents/OwnModelServers.tsx
@@ -6133,7 +6248,12 @@ msgid "Nothing matches \"{query}\"."
 msgstr ""
 
 #: src/renderer/src/agents/ModelLine.tsx
+#: src/renderer/src/agents/SoundLine.tsx
 msgid "nothing saved"
+msgstr ""
+
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "nothing spent"
 msgstr ""
 
 #: src/renderer/src/agents/bringChangesBack.logic.ts
@@ -6707,6 +6827,15 @@ msgstr ""
 msgid "Path copied."
 msgstr ""
 
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "Pause"
+msgstr ""
+
+#. {shown} is the name of a sound, such as Opening narration.
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "Pause {shown}"
+msgstr ""
+
 #. A queued message's state: the queue is paused.
 #. A queued message's state: the queue is paused.
 #. The large figure in the speed card of a thread on the user’s own model server: no tokens have come for a moment.
@@ -6816,6 +6945,11 @@ msgstr ""
 msgid "Pictures: {0}"
 msgstr ""
 
+#. {name} is the name of a sound, such as Opening narration.
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "Place in {name}"
+msgstr ""
+
 #: src/renderer/src/agents/MarkupEditor.tsx
 msgid "Plain ink"
 msgstr ""
@@ -6846,6 +6980,15 @@ msgstr ""
 #. What the Ultracode effort level does.
 #: src/renderer/src/agents/EffortPicker.tsx
 msgid "Plans the work and runs it as a team of agents. Uses many more tokens."
+msgstr ""
+
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "Play"
+msgstr ""
+
+#. {shown} is the name of a sound, such as Opening narration.
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "Play {shown}"
 msgstr ""
 
 #. {number} is the place of an agent's GIF among the pictures of one turn.
@@ -8060,9 +8203,21 @@ msgstr ""
 msgid "Show in {manager}: {file}"
 msgstr ""
 
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "Show in File Explorer"
+msgstr ""
+
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "Show in file manager"
+msgstr ""
+
 #. Shows a file on another computer in the Tools surface named Files.
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "Show in Files"
+msgstr ""
+
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "Show in Finder"
 msgstr ""
 
 #: src/renderer/src/agents/BranchToolbar.tsx
@@ -8090,6 +8245,10 @@ msgstr ""
 msgid "Show source shows its HTML."
 msgstr ""
 
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "Show the details"
+msgstr ""
+
 #: src/renderer/src/agents/ModelLine.tsx
 msgid "Show the model"
 msgstr ""
@@ -8099,6 +8258,7 @@ msgid "Show the shape"
 msgstr ""
 
 #: src/renderer/src/agents/ModelLine.tsx
+#: src/renderer/src/agents/SoundLine.tsx
 msgid "Show what happened"
 msgstr ""
 
@@ -8451,6 +8611,10 @@ msgstr ""
 msgid "Sotto could not draw this 3D model."
 msgstr ""
 
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "Sotto could not find the file. It may have been moved or deleted."
+msgstr ""
+
 #: src/renderer/src/agents/ownServerWords.ts
 msgid "Sotto could not finish adding {name} or take it off its list. Remove it, then add it again."
 msgstr ""
@@ -8483,6 +8647,10 @@ msgstr ""
 msgid "Sotto could not open this file. Nothing was opened."
 msgstr ""
 
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "Sotto could not play this file"
+msgstr ""
+
 #: src/renderer/src/agents/ownServerWords.ts
 msgid "Sotto could not reach its own side of this. Nothing was changed. Try again."
 msgstr ""
@@ -8505,6 +8673,10 @@ msgstr ""
 
 #: src/renderer/src/agents/MainCheckoutLine.tsx
 msgid "Sotto could not read the changes. Open the folder to look."
+msgstr ""
+
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "Sotto could not read the ElevenLabs account’s key, because this computer’s credential store was locked."
 msgstr ""
 
 #: src/renderer/src/agents/ThreadStart.tsx
@@ -8626,6 +8798,10 @@ msgstr ""
 msgid "Sotto no longer holds this 3D model."
 msgstr ""
 
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "Sotto no longer holds this sound."
+msgstr ""
+
 #: src/renderer/src/agents/delegationWords.ts
 msgid "Sotto restarted before the brief was sent. Nothing was sent."
 msgstr ""
@@ -8634,8 +8810,24 @@ msgstr ""
 msgid "Sotto restarted while it worked. Nothing was resent. Open it to see where it got to."
 msgstr ""
 
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "Sotto saved no file, and nothing was counted against this month’s limit."
+msgstr ""
+
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "Sotto saved no file."
+msgstr ""
+
 #: src/renderer/src/agents/ModelLine.tsx
 msgid "Sotto saved no files."
+msgstr ""
+
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "Sotto stopped before it was saved"
+msgstr ""
+
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "Sotto stopped while the sound was being made, so it cannot tell whether ElevenLabs made it."
 msgstr ""
 
 #: src/renderer/src/agents/delegationWords.ts
@@ -8672,9 +8864,31 @@ msgstr ""
 msgid "Sotto’s OpenCode holds the key for {name} and is not running, so nothing was removed. Connect OpenCode under Providers, then remove the server again."
 msgstr ""
 
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "Sound"
+msgstr ""
+
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "Sound effect"
+msgstr ""
+
+#. {shown} is the name of a sound, such as Opening narration.
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "Sound: {shown}"
+msgstr ""
+
 #. A heading over the ways to choose a folder for a new thread.
 #: src/renderer/src/agents/ProjectChooser.tsx
 msgid "Sources"
+msgstr ""
+
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "Speech"
+msgstr ""
+
+#. {voice} is the name of an ElevenLabs voice, such as Rachel.
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "Spoken in the voice {voice}"
 msgstr ""
 
 #. A thread speed: the model's usual speed and price.
@@ -9101,9 +9315,16 @@ msgstr ""
 msgid "That thread's provider or model was not available, or Sotto could not save the delegation. {nothing}"
 msgstr ""
 
+#. {name} is the name of a 3D model or a sound, such as Oak barrel or Opening narration.
 #. {name} is the name of a 3D model, such as Oak barrel.
 #: src/renderer/src/agents/ModelLine.tsx
+#: src/renderer/src/agents/SoundLine.tsx
 msgid "The {name} was not made."
+msgstr ""
+
+#. {name} is the name of a sound, such as Opening narration.
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "The {name} was not saved."
 msgstr ""
 
 #: src/renderer/src/agents/AgentContext.tsx
@@ -9205,6 +9426,14 @@ msgstr ""
 msgid "The draft is deleted and cannot be brought back."
 msgstr ""
 
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "The ElevenLabs account has no credits left for this."
+msgstr ""
+
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "The ElevenLabs account was removed before the sound was made."
+msgstr ""
+
 #. Linux: what shows a file in its folder. Read inside "Show in {manager}: {file}".
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "the file manager"
@@ -9216,6 +9445,10 @@ msgstr ""
 
 #: src/renderer/src/agents/bringChangesBack.logic.ts
 msgid "The folder where {target} is checked out has an ignored file these commits would replace, so Sotto didn’t touch it. Move it aside, then try again."
+msgstr ""
+
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "The folder would not take the file: it is not inside the thread’s folder, or could not be written."
 msgstr ""
 
 #: src/renderer/src/agents/ModelLine.tsx
@@ -9464,6 +9697,10 @@ msgstr ""
 
 #: src/renderer/src/agents/CursorConnection.tsx
 msgid "The sign-in page could not open. Nothing was changed. Try again."
+msgstr ""
+
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "The sound ElevenLabs sent back was larger than Sotto takes."
 msgstr ""
 
 #: src/renderer/src/agents/diagrams/diagramRenderer.ts
@@ -10147,6 +10384,10 @@ msgstr ""
 
 #: src/renderer/src/agents/requests/RequestDraftRecovery.tsx
 msgid "Unconfirmed answer"
+msgstr ""
+
+#: src/renderer/src/agents/SoundLine.tsx
+msgid "under $0.01"
 msgstr ""
 
 #: src/renderer/src/agents/MarkupEditor.tsx

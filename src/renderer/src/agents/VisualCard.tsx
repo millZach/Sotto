@@ -2,12 +2,14 @@ import React, { memo, useMemo, type ReactNode } from 'react'
 import { useLingui } from '@lingui/react/macro'
 import { isVisualMessage, type AgentMessage } from '../../../shared/agents'
 import { MODEL_VISUAL_KIND } from '../../../shared/models3d'
+import { SOUND_VISUAL_KIND } from '../../../shared/sounds'
 import { isKnownVisualKind, type AgentVisual } from '../../../shared/visuals'
 import { DiagramExpanded, DiagramStage, diagramFrameState, useDiagramFrame } from './diagrams/DiagramFrame'
 import { useMermaidRendering } from './diagrams/MermaidDiagram'
 import { stepImage } from './diagrams/diagramSteps'
 import { InteractiveVisualCard } from './InteractiveVisualCard'
 import { ModelLine } from './ModelLine'
+import { SoundLine } from './SoundLine'
 import { VisualCardShell } from './VisualCardShell'
 import { useWalkthroughPlace, walkthroughView } from './VisualWalkthrough'
 import './visualCard.css'
@@ -32,6 +34,8 @@ export function isDrawableVisual(message: AgentMessage): message is AgentMessage
 export const VisualCard = memo(function VisualCard({ visual, threadId }: { readonly visual: AgentVisual; readonly threadId?: string | undefined }): ReactNode {
   // A 3D model Meshy made for the thread is its quiet line (ADR-0141), named by its Sotto ID.
   if (visual.kind === MODEL_VISUAL_KIND) return <ModelLine modelId={visual.source} name={visual.title} />
+  // A sound ElevenLabs made for the thread is its quiet line too (Zach's pick on #2498, variant A), named by its Sotto ID.
+  if (visual.kind === SOUND_VISUAL_KIND) return <SoundLine soundId={visual.source} name={visual.title} />
   // An agent's own page runs sealed (ADR-0060), in a card with the same header, walkthrough and explanation.
   return visual.kind === 'interactive' ? <InteractiveVisualCard visual={visual} threadId={threadId} /> : <DiagramVisualCard visual={visual} />
 })
