@@ -10,9 +10,10 @@ import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { ActivitySubscribers, certifyActivityView, cloneActivitySnapshot } from './activitySnapshots'
 import { BROWSER_MCP_SERVER, type BrowserAgentTools } from './browserAgentServer'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
-import { cursorActivities, cursorImage, cursorToolId, cursorTask, cursorTodos, CURSOR_THINKING_ID_PREFIX, type CursorPlace } from './cursorActivity'
+import { cursorActivities, cursorImage, cursorToolId, cursorTask, cursorTaskEnded, cursorTodos, CURSOR_THINKING_ID_PREFIX, type CursorPlace } from './cursorActivity'
 import { cursorCatalog, cursorModeArguments, cursorModelListSchema, cursorRuntimeMode, leastEffort, CURSOR_RUNTIME_MODES, type CursorModelFacts, type CursorRuntimeMode } from './cursorModels'
 import { cursorAnswer, cursorDecline, cursorPending, type CursorPending } from './cursorRequests'
+import { CursorSubagents } from './cursorSubagents'
 import { compareCursorVersions, cursorEnvironment, CursorRejected, CursorRpc, CursorUncertain, CURSOR_ACP_VERSION, CURSOR_CLI_VERSION, findCursorProgram,
   readCursorSignIn, readCursorVersion, writeCursorConfig, writeCursorSideConfig, type CursorFrame, type CursorProgram } from './cursorRpc'
 import type { ActivitySubscriptionOptions, ProviderHost, AgentHostCommand, AgentHostResult, AgentSkillScope, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent,
@@ -182,6 +183,8 @@ class TurnPlaces {
     if (this.current !== 'thought') { this.current = 'thought'; this.thoughts++ }
     return `${this.key}-${this.thoughts - 1}`
   }
+  /** The key a tool call already has in this turn, without giving it one. */
+  known(nativeId: string): string | undefined { return this.toolKeys.get(nativeId) }
   tool(nativeId: string, opens: boolean): string {
     let key = this.toolKeys.get(nativeId)
     if (!key) { key = `${this.key}-${this.tools++}`; this.toolKeys.set(nativeId, key) }
@@ -231,6 +234,8 @@ interface Connection {
   effort: string | undefined
   replay: Replay | undefined
   commands: AgentSkillCatalog['skills'] | undefined
+  /** The subagents this process's session has running, as Cursor announces them (#2631). */
+  readonly subagents: CursorSubagents
 }
 type Pending = CursorPending & { readonly connection: Connection }
 
@@ -528,7 +533,8 @@ export class CursorAcpHost implements ProviderHost {
   private async handshake(rpc: CursorRpc): Promise<CursorClient> {
     let client: CursorClient | undefined
     await rpc.request('initialize', { protocolVersion: CURSOR_ACP_VERSION, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false,
-      _meta: { parameterizedModelPicker: true } }, clientInfo: { name: 'sotto', version: appVersion } }, value => { client = initializeSchema.parse(value) }, false, this.options.startTimeoutMs ?? 30_000)
+      // `subagents`: Cursor then announces each subagent and says when it really ends, which it does not say otherwise (#2631).
+      _meta: { parameterizedModelPicker: true, subagents: true } }, clientInfo: { name: 'sotto', version: appVersion } }, value => { client = initializeSchema.parse(value) }, false, this.options.startTimeoutMs ?? 30_000)
     if (client!.protocolVersion !== CURSOR_ACP_VERSION) throw new ProviderUnavailable('cannot-start', `Sotto speaks ACP ${CURSOR_ACP_VERSION}, and this Cursor client answered ACP ${client!.protocolVersion}.`)
     return client!
   }
@@ -538,7 +544,7 @@ export class CursorAcpHost implements ProviderHost {
     if (!program || !this.state.connected) throw new Error('Connect Cursor before using its threads.')
     await writeCursorConfig(this.configDirectory, this.serverNames())
     const connection: Connection = { rpc: undefined as unknown as CursorRpc, nonce: randomUUID(), clientRevision: this.clientRevision, mode: alias.runtimeMode, watcher,
-      closing: false, model: undefined, effort: undefined, replay: undefined, commands: undefined }
+      closing: false, model: undefined, effort: undefined, replay: undefined, commands: undefined, subagents: new CursorSubagents() }
     const rpc = this.spawn(program, [...cursorModeArguments(alias.runtimeMode), 'acp'], cwd, frame => this.frame(id, connection, frame), () => this.processLost(id, connection))
     ;(connection as { rpc: CursorRpc }).rpc = rpc
     try { await this.handshake(rpc) }
@@ -713,6 +719,7 @@ export class CursorAcpHost implements ProviderHost {
     if (!connection) return Promise.resolve()
     const work = (async () => {
       this.connections.delete(id); this.outdated.delete(id)
+      connection.subagents.clear(); this.publishSubagents(id, undefined)
       if (this.loaded.delete(id)) this.emit()
       this.log.release(id); this.reaper.forget(id)
       this.close(connection); await connection.rpc.closed
@@ -728,6 +735,7 @@ export class CursorAcpHost implements ProviderHost {
     if (connection.closing || this.connections.get(id) !== connection) return
     this.connections.delete(id); this.outdated.delete(id); this.loaded.delete(id); this.log.release(id); this.reaper.forget(id)
     this.clearRequests(id)
+    connection.subagents.clear(); this.publishSubagents(id, undefined)
     this.endTurn(id, 'failed', PROCESS_LOST)
     this.emit()
   }
@@ -791,9 +799,13 @@ export class CursorAcpHost implements ProviderHost {
     if (!alias || connection.closing) return
     const params = record(frame.params)
     if (frame.method === 'session/update') {
-      if (!params || (alias.cursorSessionId && params.sessionId !== alias.cursorSessionId)) return
-      const update = record(params.update)
-      if (!update) return
+      const update = record(params?.update)
+      if (!params || !update) return
+      if (alias.cursorSessionId && params.sessionId !== alias.cursorSessionId) {
+        // A running subagent's own session: only the subagents it starts and ends are read, so its requests reach the thread.
+        if (!connection.replay && this.connections.get(id) === connection && connection.subagents.owns(params.sessionId)) connection.subagents.apply(update, false)
+        return
+      }
       if (connection.replay) { this.replayUpdate(id, alias, connection.replay, update); return }
       if (this.connections.get(id) !== connection) return
       this.liveUpdate(id, alias, connection, update)
@@ -808,15 +820,19 @@ export class CursorAcpHost implements ProviderHost {
     if (['cursor/update_todos', 'cursor/task', 'cursor/generate_image'].includes(frame.method)) {
       // Cursor tells the client about these and waits for nothing but an acknowledgement.
       const thread = this.thread(id), previous = thread.activities ?? []
+      const task = frame.method === 'cursor/task' && typeof params?.toolCallId === 'string' ? params.toolCallId : undefined
+      if (task) connection.subagents.describe(task, params?.description)
       const rows = frame.method === 'cursor/update_todos' ? cursorTodos(frame.params, place(undefined, false), previous)
-        : frame.method === 'cursor/task' ? cursorTask(frame.params, place(params?.toolCallId, false), previous, true)
+        : frame.method === 'cursor/task' ? cursorTask(frame.params, place(params?.toolCallId, false), previous, true, task !== undefined && connection.subagents.running(task))
         : cursorImage(frame.params, place(params?.toolCallId, false), previous)
       if (rows.length) { thread.activities = mergeAgentActivities(previous, rows); this.emit(true) }
       if (frame.method === 'cursor/generate_image') this.generatedImage(id, alias.cwd, rows[0])
       void connection.rpc.reply(frame.id, {}).catch(() => undefined)
       return
     }
-    if (frame.method === 'session/request_permission' && alias.cursorSessionId && params?.sessionId !== alias.cursorSessionId) { connection.rpc.refuse(frame.id); return }
+    // A running subagent asks on its own session; what it asks is the thread's, as it was before Cursor named its sessions.
+    if (frame.method === 'session/request_permission' && alias.cursorSessionId && params?.sessionId !== alias.cursorSessionId
+      && !connection.subagents.owns(params?.sessionId)) { connection.rpc.refuse(frame.id); return }
     const asked = cursorPending(frame.id, frame.method, frame.params, id)
     if (!asked) {
       connection.rpc.refuse(frame.id)
@@ -854,6 +870,7 @@ export class CursorAcpHost implements ProviderHost {
       return
     }
     if (kind === 'config_option_update') { this.readSettings(connection, update); return }
+    if (kind === 'subagent_spawned' || kind === 'subagent_state_update') { this.taken(id); this.subagentChanged(id, connection, connection.subagents.apply(update, true)); return }
     if (!['user_message_chunk', 'agent_message_chunk', 'agent_thought_chunk', 'tool_call', 'tool_call_update', 'plan'].includes(kind)) { this.taken(id); return }
     const content = record(update.content)
     const words = content?.type === 'text' && typeof content.text === 'string' ? content.text : undefined
@@ -895,6 +912,29 @@ export class CursorAcpHost implements ProviderHost {
       : typeof update.toolCallId === 'string' && (kind === 'tool_call' || kind === 'tool_call_update') ? turn.places.tool(update.toolCallId, kind === 'tool_call') : undefined
     const rows = cursorActivities(update, { turnId: turn.places.key, afterMessageId: this.log.lastMessageId(id), cwd: alias.cwd, key }, thread.activities, true, this.options.captureMedia)
     if (rows.length) { thread.activities = mergeAgentActivities(thread.activities, rows); this.emit(kind === 'agent_thought_chunk') }
+    // A Task tool call that returns with `isBackground` has moved its subagent to the background, still running.
+    if (kind === 'tool_call_update' && typeof update.toolCallId === 'string' && record(update.rawOutput)?.isBackground === true
+      && connection.subagents.backgrounded(update.toolCallId)) this.publishSubagents(id, connection)
+  }
+  /** A subagent of the thread's own session started or ended. An ending settles its row; the thread's background work follows. */
+  private subagentChanged(id: string, connection: Connection, change: ReturnType<CursorSubagents['apply']>): void {
+    if (!change) return
+    if (typeof change === 'object' && change.toolCallId) {
+      const thread = this.thread(id), key = this.turns.get(id)?.places.known(change.toolCallId)
+      const row = key ? thread.activities?.find(item => item.id === `cursor-agent-${key}`) : undefined
+      if (row && row.status === 'running') thread.activities = mergeAgentActivities(thread.activities, [cursorTaskEnded(row, change.ended)])
+      if (row) this.emit()
+    }
+    this.publishSubagents(id, connection)
+  }
+  /** The thread's background work is its own process's subagents in the background; a process that is not the thread's has none. */
+  private publishSubagents(id: string, connection: Connection | undefined): void {
+    const thread = this.threads.get(id); if (!thread) return
+    const working = connection && this.connections.get(id) === connection ? connection.subagents.working : []
+    const before = thread.backgroundWork ?? []
+    if (before.length === working.length && before.every((work, index) => work.id === working[index]!.id && work.label === working[index]!.label)) return
+    if (working.length) thread.backgroundWork = working; else delete thread.backgroundWork
+    this.changed(id); this.emit()
   }
   /** One update of a `session/load` replay: whole messages and finished work, in order, with no time or ID of Cursor's own. */
   private replayUpdate(id: string, alias: Alias, replay: Replay, update: Record<string, unknown>): void {
@@ -968,6 +1008,10 @@ export class CursorAcpHost implements ProviderHost {
     if (!turn || turn.ended) return
     turn.ended = true; turn.taken = true; turn.wake?.()
     const thread = this.threads.get(id); if (!thread) return
+    // Cursor answers a prompt only once every subagent it started has ended (or, on a stop, been told to), so none still
+    // runs; a process lost with the turn took its subagents with it.
+    this.connections.get(id)?.subagents.clear()
+    if (thread.backgroundWork) delete thread.backgroundWork
     thread.status = status === 'failed' ? 'error' : 'idle'
     thread.lastTurn = { id: turn.places.key, status }
     const thoughts = settledThinking(CURSOR_THINKING_ID_PREFIX, thread.activities ?? [], thinkingSettledAs(status), true)
@@ -1323,7 +1367,8 @@ export class CursorAcpHost implements ProviderHost {
       if (signal?.aborted) return null
       await this.handshake(writer)
       await writer.request('session/new', { cwd, mcpServers: [] }, value => { sessionId = sessionNewSchema.parse(value).sessionId })
-      const side: Connection = { rpc: writer, nonce: '', clientRevision: this.clientRevision, mode: 'approval-required', watcher: false, closing: false, model: undefined, effort: undefined, replay: undefined, commands: undefined }
+      const side: Connection = { rpc: writer, nonce: '', clientRevision: this.clientRevision, mode: 'approval-required', watcher: false, closing: false, model: undefined, effort: undefined, replay: undefined, commands: undefined,
+        subagents: new CursorSubagents() }
       await this.applySettings(alias, side, writer, sessionId, alias.modelId, leastEffort(this.model(alias.modelId)))
       await writer.request('session/set_config_option', { sessionId, configId: 'mode', value: 'ask' })
       let ended = ''

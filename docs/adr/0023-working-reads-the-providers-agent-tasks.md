@@ -121,6 +121,35 @@ Clarified September 30, 2026 after review: that wait applies only to changed ret
 The adapter logs which path each change took, as event names and nothing else: `claude-settings-applied-live`,
 `claude-settings-applied-restart`, `claude-settings-live-rejected` and `claude-settings-unconfirmed`.
 
+## Amendment: Cursor's subagents, and work no provider says has ended
+
+*November 15, 2026.* Issue #2631. A Cursor thread started a Task subagent that Cursor moved to the background. Its Task
+tool call returned at once, with `isBackground: true`, and Sotto read that return as the subagent's end: the thread
+read Idle, its turn counted as finished, and Watcher never heard when the subagent, which wrote files for another
+eleven minutes, really ended. Zach asked that any provider's background subagent or task show as running until it
+really ends and count as background work.
+
+Cursor says when a subagent ends only to a client that says it takes subagents (the `subagents` client capability,
+read in Cursor 2026.11.11's own ACP code): `subagent_spawned` on the session that started one, then
+`subagent_state_update` (`completed`, `failed`, `cancelled` or `disconnected`) on the same session when it ends. Sotto
+now says it takes them. Cursor then keeps the prompt open until the subagents it started have ended, and hands its
+agent their results, which it answers in the same turn. A new prompt would cancel them, so Sotto, which queues
+Cursor follow-ups rather than steering, holds them until the turn ends; **Stop** ends the subagents with the turn.
+Zach picked this over leaving Cursor as it was, from `docs/prototypes/provider-background-work-prototype.html`
+(variant c1). A subagent whose Task call returned while it runs is the thread's background work, type `subagent`,
+until its own ending, the same rule as a Claude Code subagent moved to the background; its row reads **Working**
+until then. One a subagent started is not counted; it is tracked only so that a permission it asks for on its own
+session reaches the thread's cards, as it did before Cursor named those sessions.
+
+The other providers, as their own code and documents say (#2631 has the survey): Grok Build and Codex send a start
+and an end for their subagents, which Watcher's roster already counts, but publish no background work; OpenCode 2
+runs subagents and shells in the background and shows their end only in its job list; Muse's background items need
+a live check; Hermes's background `delegate_task` and `terminal`, and Devin's background shells, have no ending over
+their protocols; Pi and DeepSeek Harness run none of their own. Each has its own follow-up. For work no provider says
+has ended, Zach picked (variant n1): where it is a process that carries the thread's session mark, Sotto finds it and
+holds it as **Working** while the process runs, the way detached runs are found (ADR-0204); work inside the
+provider's own process stays unseen until the provider reports it.
+
 ## Considered Options
 
 - **The `background_tasks_changed` level signal.** The SDK documents a frame carrying the whole set of live
@@ -135,7 +164,7 @@ The adapter logs which path each change took, as event names and nothing else: `
 ## Consequences
 
 `CONTEXT.md` gains **Background work** and amends **Monitoring task**, **Held action** and **Session reaper**.
-ADR-0021 gains an amendment for the order. Only the Claude adapter publishes background work; the adapter
-contract's case skips the others. T3 Code reads Codex child-agent events as agent work, which may serve a later
+ADR-0021 gains an amendment for the order. Only the Claude adapter publishes background work (and, from the
+amendment above, the Cursor adapter); the adapter contract's case skips the others. T3 Code reads Codex child-agent events as agent work, which may serve a later
 issue, but Codex, Grok Build and Devin were not studied for this one and publish nothing. No new setting, IPC
 channel, host or dependency.

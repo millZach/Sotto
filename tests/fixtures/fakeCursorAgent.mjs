@@ -6,6 +6,9 @@
 // says the client takes no HTTP MCP servers. The `mcp-call` action calls one tool on one of a session's servers over HTTP,
 // as Cursor's model would, and records `fixture/mcp-call` with what the server answered. `dropPromptAck` loses the next prompt's
 // acknowledgement. oneshot.json scripts a side call: its `text`, `fail`, or `tool` for a model that reads a file first.
+// `background-task` starts a subagent and moves it to the background, the way Cursor 2026.11 does (#2631): a client that
+// said it takes `subagents` hears it spawned, keeps its prompt open while it runs and hears it end on `background-task-end`;
+// any other client has its prompt answered at once and hears nothing more of it.
 import { createInterface } from 'node:readline'
 import { randomUUID } from 'node:crypto'
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
@@ -84,6 +87,9 @@ const keepServers = (sessionId, servers) => sessionServers.set(sessionId, new Ma
 
 const pending = new Map(); let serial = 0
 let prompt
+/** Whether the client said it takes subagents, and each session's subagent running in the background. */
+let takesSubagents = false
+const backgroundTasks = new Map()
 function finish(reason) {
   if (!prompt) return
   send({ id: prompt.id, result: { stopReason: reason } })
@@ -141,11 +147,13 @@ createInterface({ input: process.stdin }).on('line', line => {
   }
   const script = read('script.json', {})
   if (frame.method === 'initialize') {
+    const said = value => value === true || (value !== null && typeof value === 'object')
+    takesSubagents = said(p.clientCapabilities?.subagents) || said(p.clientCapabilities?._meta?.subagents)
     if (p.clientCapabilities?._meta?.parameterizedModelPicker !== true) violation('Sotto must ask for the parameterized model picker')
     if (p.clientCapabilities?.fs?.writeTextFile !== false || p.clientCapabilities?.terminal !== false) violation('Sotto offers no file or terminal capability')
     // `startDelayMs` holds the answer as a slow start would, the way Cursor's own 256 MB bundle can on a busy machine.
     const ready = () => send({ id: frame.id, result: { protocolVersion: script.protocolVersion ?? 1, agentCapabilities: { loadSession: true, mcpCapabilities: { http: script.httpMcp !== false, sse: true },
-      promptCapabilities: { audio: false, embeddedContext: false, image: true }, sessionCapabilities: { list: {} } },
+      promptCapabilities: { audio: false, embeddedContext: false, image: true }, sessionCapabilities: { list: {}, ...(takesSubagents ? { subagents: {} } : {}) } },
       authMethods: [{ id: 'cursor_login', name: 'Cursor Login', description: 'Run agent login first.' }] } })
     if (script.startDelayMs) setTimeout(ready, script.startDelayMs); else ready()
   } else if (frame.method === 'cursor/list_available_models') {
@@ -196,6 +204,9 @@ createInterface({ input: process.stdin }).on('line', line => {
     // meanwhile, or the fixture merging a script of its own, never reads half a file and takes it for none.
     if (script.dropPromptAck) { const staged = path(`script.json.${process.pid}.tmp`); writeFileSync(staged, JSON.stringify({ ...script, dropPromptAck: undefined })); renameSync(staged, path('script.json')) }
   } else if (frame.method === 'session/cancel') {
+    // A stop ends the prompt's subagents too, and Cursor says so before it answers the prompt.
+    const running = backgroundTasks.get(p.sessionId); backgroundTasks.delete(p.sessionId)
+    if (running) update(p.sessionId, { sessionUpdate: 'subagent_state_update', subagentSessionId: running.child, state: 'cancelled', _meta: running.meta }, false)
     finish('cancelled')
   } else if (frame.id !== undefined) send({ id: frame.id, error: { code: -32601, message: 'Method not found' } })
 }).on('close', () => {
@@ -259,6 +270,34 @@ function run(command) {
   if (command.type === 'mcp-call') void callTool(sessionId, command)
   // An image Cursor made: told once while it works, with no file, and again with the file it saved (ADR-0170).
   if (command.type === 'image') ask('ack', 'cursor/generate_image', { toolCallId: command.toolCallId ?? 'call_image', description: command.text, ...(command.filePath ? { filePath: command.filePath } : {}) })
+  if (command.type === 'background-task') {
+    const toolCallId = `call_${randomUUID()}\nfc_fixture`, child = randomUUID(), meta = { cursor: { toolCallId, agentId: child } }
+    const task = { toolCallId, description: command.text, prompt: `${command.text}\nWrite the drawing to the folder.`, subagentType: 'generalPurpose' }
+    update(sessionId, { sessionUpdate: 'tool_call', toolCallId, title: 'Task', kind: 'other', status: 'pending', rawInput: { ...task, runInBackground: true } }, false)
+    if (takesSubagents) update(sessionId, { sessionUpdate: 'subagent_spawned', subagentSessionId: child, name: 'generalPurpose', task: task.prompt, capabilities: {}, _meta: meta }, false)
+    ask('ack', 'cursor/task', task)
+    // The Task tool call returns as the subagent moves to the background: with how long that took, and `isBackground`.
+    update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId, status: 'completed', rawOutput: { durationMs: 12, isBackground: true } }, false)
+    ask('ack', 'cursor/task', { ...task, durationMs: 12 })
+    update(sessionId, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Started it in the background.' } }, false)
+    backgroundTasks.set(sessionId, { child, meta })
+    if (!takesSubagents) { finish('end_turn'); return }
+    // The subagent's own session goes on working, and can ask the user something on it.
+    update(child, { sessionUpdate: 'tool_call', toolCallId: `call_${randomUUID()}\nfc_fixture`, title: 'Write drawing.svg', kind: 'edit', status: 'pending' }, false)
+    if (command.permission) ask('permission', 'session/request_permission', { sessionId: child, toolCall: { toolCallId: `call_${serial}`, title: command.permission, kind: 'execute', status: 'pending' },
+      options: [{ optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' }, { optionId: 'reject-once', name: 'Reject', kind: 'reject_once' }] })
+  }
+  if (command.type === 'background-task-end') {
+    const running = backgroundTasks.get(sessionId)
+    backgroundTasks.delete(sessionId)
+    record({ method: 'fixture/background-task-ended', params: { sessionId, told: takesSubagents && running !== undefined } })
+    // Only a client that takes subagents hears the end; Cursor then hands the parent the result and answers the prompt.
+    if (takesSubagents && running) {
+      update(sessionId, { sessionUpdate: 'subagent_state_update', subagentSessionId: running.child, state: command.state ?? 'completed', _meta: running.meta }, false)
+      update(sessionId, { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'The drawing is done.' } }, false)
+      finish('end_turn')
+    }
+  }
   if (command.type === 'task') ask('ack', 'cursor/task', { toolCallId: command.toolCallId ?? `call_task`, description: command.text, prompt: command.text, subagentType: 'explore', ...(command.durationMs === undefined ? {} : { durationMs: command.durationMs }) })
 }
 

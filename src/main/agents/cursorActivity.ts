@@ -95,15 +95,18 @@ export function cursorTodos(params: unknown, place: CursorPlace, previous: reado
 
 /**
  * `cursor/task`: one of Cursor's subagents, as a subagent row. Cursor says it once when the task starts and again, with
- * how long it took, when it is done.
+ * how long it took, when its Task tool call returns. That return is the subagent's end unless Cursor moved it to the
+ * background (`stillRunning`: its session still runs it), when it is only how long the move took; the subagent's own
+ * ending settles the row then (`cursorTaskEnded`, #2631).
  */
-export function cursorTask(params: unknown, place: CursorPlace, previous: readonly AgentActivity[], live: boolean): AgentActivity[] {
+export function cursorTask(params: unknown, place: CursorPlace, previous: readonly AgentActivity[], live: boolean, stillRunning = false): AgentActivity[] {
   const value = object(params)
   if (typeof value?.toolCallId !== 'string' || !place.key) return []
   const { bounded, truncated } = bounder()
   const id = `cursor-agent-${place.key}`; const old = previous.find(row => row.id === id); const oldAgent = old?.agents?.[0]
-  const durationMs = typeof value.durationMs === 'number' && Number.isFinite(value.durationMs) && value.durationMs >= 0 ? value.durationMs : undefined
-  const status = durationMs !== undefined ? 'completed' : old?.status ?? 'running'
+  const returned = typeof value.durationMs === 'number' && Number.isFinite(value.durationMs) && value.durationMs >= 0 ? value.durationMs : undefined
+  const durationMs = stillRunning ? undefined : returned
+  const status = stillRunning ? 'running' : durationMs !== undefined ? 'completed' : old?.status ?? 'running'
   const description = typeof value.description === 'string' && value.description ? bounded(value.description) : undefined
   const prompt = typeof value.prompt === 'string' && value.prompt ? bounded(value.prompt) : undefined
   const title = description ?? prompt?.split(/\r?\n/u)[0] ?? oldAgent?.title ?? 'Subagent'
@@ -117,6 +120,16 @@ export function cursorTask(params: unknown, place: CursorPlace, previous: readon
       ...(status === 'completed' && observedAt ? { completedAt: oldAgent?.completedAt ?? observedAt } : {}),
       ...(durationMs !== undefined ? { durationMs } : {}) }],
     ...(durationMs !== undefined ? { durationMs, timingSource: 'provider' as const } : {}), ...(truncated() ? { truncated: true } : {}) }]
+}
+
+/** A subagent's row once its own session has ended, timed from when Sotto saw it start to now. */
+export function cursorTaskEnded(row: AgentActivity, status: 'completed' | 'failed' | 'interrupted' | 'unknown'): AgentActivity {
+  const completedAt = new Date().toISOString()
+  const agent = row.agents?.[0]
+  const started = agent?.startedAt ? Date.parse(agent.startedAt) : Number.NaN
+  const durationMs = Number.isFinite(started) ? Math.max(0, Date.parse(completedAt) - started) : undefined
+  return { ...row, status, ...(durationMs !== undefined ? { durationMs, timingSource: 'observed' as const } : {}),
+    ...(agent ? { agents: [{ ...agent, status, completedAt, ...(durationMs !== undefined ? { durationMs } : {}) }, ...row.agents!.slice(1)] } : {}) }
 }
 
 /** `cursor/generate_image`: an image Cursor made, named by what it shows and where Cursor saved it. */
