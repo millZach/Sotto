@@ -1,13 +1,12 @@
 import { parseProviderRecords, writeProviderAction } from './providerRecords'
 import { randomUUID } from 'node:crypto'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { MuseMspHost, type MuseMspOptions } from '../../src/main/agents/muse'
 import type { AdapterContractSkips, AdapterSessionOptions, RecordedRpc } from './adapterFixture'
 
 export const museFixtureSkips: AdapterContractSkips = {
-  backgroundWork: 'The fixture has no background-work driver, and the adapter reports none.',
   liveSettings: 'The fixture must apply settings to a live provider session.',
   settingsConfirmation: 'The fixture cannot lose a settings-change confirmation.',
 }
@@ -31,7 +30,12 @@ export async function museFixture(root?: string, requestTimeoutMs = 2000, sessio
   const realId = async (id: string): Promise<string> => JSON.parse(await readFile(join(root, 'muse-threads.json'), 'utf8'))[id].museSessionId
   // Each thread session has its own fake host. The one holding the session takes the command.
   const action = async (id: string, value: Record<string, unknown>) => { await writeProviderAction(join(root, 'control.json'), value, { sessionId: await realId(id) }, randomUUID()) }
-  return { host: adapter, adapter, root, providerId: 'muse' as const, projectId: 'project', modelId: 'fixture-model', realId, script, action, hostArguments, restartStatus: 'idle' as const, skips: museFixtureSkips,
+  /** An action the fake has read: it takes `control.json` away once it has, so the next cannot overwrite this one unread. */
+  const actionAndWait = async (id: string, value: Record<string, unknown>) => {
+    await action(id, value)
+    while (await stat(join(root, 'control.json')).then(() => true, () => false)) await new Promise(resolve => setTimeout(resolve, 10))
+  }
+  return { host: adapter, adapter, root, providerId: 'muse' as const, projectId: 'project', modelId: 'fixture-model', realId, script, action, actionAndWait, hostArguments, restartStatus: 'idle' as const, skips: museFixtureSkips,
     // A settings change comes back with the snapshot the adapter itself confirmed (#318).
     settings: { snapshot: true },
     // Every Muse process started from now on reports the newer client.
@@ -42,7 +46,9 @@ export async function museFixture(root?: string, requestTimeoutMs = 2000, sessio
       starts: async (id: string) => { const native = await realId(id); return (await requests()).filter(record => record.method === 'session/resume' && record.params?.sessionId === native).length },
       stopped: async (id: string) => { const native = await realId(id); return (await requests()).findLast(record => record.method === 'fixture/session-resident' && record.params?.sessionId === native)?.params?.resident === false },
     },
-    driver: { typeInProvider: (id: string, text: string) => action(id, { type: 'takeover', text }), completeTurn: (id: string, text: string) => action(id, { type: 'complete', text }), raiseQuestion: (id: string, text: string) => action(id, { type: 'question', text }), raisePermission: (id: string, text: string) => action(id, { type: 'permission', text }), delayNextAck: async () => script({ delayTurnMs: requestTimeoutMs + 1000 }), requests,
+    driver: { backgroundWork: { completeLeaving: (id: string, text: string, description: string) => actionAndWait(id, { type: 'background', kind: 'subagent', text, description }),
+      end: (id: string) => actionAndWait(id, { type: 'background-end' }) },
+      typeInProvider: (id: string, text: string) => action(id, { type: 'takeover', text }), completeTurn: (id: string, text: string) => action(id, { type: 'complete', text }), raiseQuestion: (id: string, text: string) => action(id, { type: 'question', text }), raisePermission: (id: string, text: string) => action(id, { type: 'permission', text }), delayNextAck: async () => script({ delayTurnMs: requestTimeoutMs + 1000 }), requests,
       restart: async () => { adapter.disconnect(); await adapter.closed(); return museFixture(root, requestTimeoutMs, session, options) } },
     cleanup: async () => { adapter.disconnect(); await adapter.closed(); if (dirname(resolve(root)) !== resolve(tmpdir()) || !root.includes('sotto-muse-thread-')) throw new Error('Unexpected temporary directory'); try { await checkViolations() } finally { await rm(root, { recursive: true, force: true }) } },
   }

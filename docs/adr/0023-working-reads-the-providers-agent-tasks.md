@@ -249,6 +249,31 @@ Hermes reports it.
 Devin's background shells have no ending over ACP either. Devin is installed on forge but not signed in, so whether its
 commands carry a mark is unchecked, and it has its own issue (#2649).
 
+## Amendment: Muse's commands, workflows and subagents left running
+
+*November 16, 2026.* Issue #2636. Live sessions of Muse Code 1.4.20 on forge, and its own exported MSP schema
+(`docs/research/2026-11-16-muse-background-work-probe.md`), showed that Muse completes a turn (`turn/completed`) while an
+item it opened in that turn is still `inProgress`. That item may be:
+
+- a `toolCall` whose command yielded and runs on;
+- a `workflow` it launched, whose agents are its own `subagent` items carrying the workflow's `workflowRunId`;
+- a standalone `subagent`.
+
+The item's own `item/completed` is its end. Muse then starts a turn of its own to report it.
+
+So an item of those kinds, seen live and still open when its turn completes, is the thread's background work, of type
+`command`, `workflow` or `subagent`, until its own completion. An item that opens after its turn completed is background
+from the start, as a workflow's agents are. Only `inProgress` is open, as MSP's `ItemStatus` says; any other value, an
+unknown one included, is an ending. Item revisions only go up (MSP's replace-iff-higher), so a late older one never
+brings back work that has ended. Only a turn that completed leaves work running: a failed or stopped turn's items settle
+with it, while work earlier turns left keeps to its own ending. A history read after a gap ends any item it shows
+ended. A workflow counts once, and its agents are not counted beside it, though their rows run while they do. The turn's
+end and the work it left are told together, so Watcher reads them as one. Rows stay running until their items end.
+History never brings any back. The work holds the host from the reaper only, which names it background. When the host
+goes, it all ends, and every agent row it was running, a workflow's included, reads interrupted, so Watcher's roster stops
+counting them. A command is named by its own model-written `description` or `command` argument, which Muse sends
+verbatim, never by anything a shell expanded.
+
 ## Considered Options
 
 - **The `background_tasks_changed` level signal.** The SDK documents a frame carrying the whole set of live
@@ -264,6 +289,6 @@ commands carry a mark is unchecked, and it has its own issue (#2649).
 
 `CONTEXT.md` gains **Background work** and amends **Monitoring task**, **Held action** and **Session reaper**.
 ADR-0021 gains an amendment for the order. Only the Claude adapter publishes background work (and, from the
-amendments above, the Cursor, Grok, Codex and OpenCode adapters); the adapter contract's case skips the others. T3 Code reads Codex child-agent events as agent work, which may serve a later
+amendments above, the Cursor, Grok, Codex, OpenCode, Hermes and Muse adapters); the adapter contract's case skips the others. T3 Code reads Codex child-agent events as agent work, which may serve a later
 issue, but Codex, Grok Build and Devin were not studied for this one and publish nothing. No new setting, IPC
 channel, host or dependency.
