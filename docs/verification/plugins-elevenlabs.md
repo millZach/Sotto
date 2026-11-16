@@ -71,9 +71,36 @@ Meshy's account journey (`plugins-meshy.spec.ts`) still passes with the new row 
 ## Part 2: making a sound
 
 Built on November 15, 2026, for the second part of slice 12: the tool `make_sound`, the card that asks, the monthly
-limit in dollars, the record of sounds and the MP3 in the thread's folder. This part is covered by unit tests; the
-built-app journey is Zach's to run. In every test ElevenLabs is a stand-in in the test's own process, with a made-up
-key, and the sound is made by Sotto's own service and saved by its own save.
+limit in dollars, the record of sounds and the MP3 in the thread's folder. In every test ElevenLabs is a stand-in
+with a made-up key, and nothing reached ElevenLabs.
+
+### In the built app
+
+The run is `tests/e2e/plugins-elevenlabs-sound.spec.ts`, against a stand-in on this computer that answers the
+subscription, the voices and the three ways to make a sound with a small MP3. An ElevenLabs account named Studio was
+added on Settings › Plugins, and the thread asked for speech with `make_sound`.
+
+The card read **Make a sound with ElevenLabs**, "Speech · Opening narration", "Speaks these words in the voice Rachel
+(118 characters):" and the words, the line on ElevenLabs' training, "Under $0.01 on the ElevenLabs account Studio; $0.00
+of its $10 used this month." and "The file goes to sounds in this thread's folder. Nothing plays on its own.", over
+**Make the sound** and **Deny**. Nothing had been sent to ElevenLabs. After **Make the sound**, the agent was told
+where the MP3 is, and `sounds/Opening narration.mp3` held the stand-in's bytes.
+
+![The card for speech](../../artifacts/plugins-elevenlabs/sound-card-dark-1280x800.png)
+
+Music was asked for next, in light: "Makes music, 30 seconds long, with no singing, from these words:" and "About $0.08
+on the ElevenLabs account Studio; under $0.01 of its $10 used this month.", the speech now counted. Once it was made,
+nothing in the window was playing.
+
+![The card for music](../../artifacts/plugins-elevenlabs/sound-card-light-1280x800.png)
+
+The account then read "Spent this month: $0.08 of $10.", and its Recent use "Made music" and "Made speech", each in the
+thread, with "You allowed it." The stand-in was sent one request for each sound and nothing else, and the window raised
+no error. The account journey, `plugins-elevenlabs.spec.ts`, still passes.
+
+![The month's spending](../../artifacts/plugins-elevenlabs/sound-spent-dark-1280x800.png)
+
+### What else covers it
 
 - `tests/unit/main/plugins/pluginSoundTool.test.ts`, the tool's flow, the way `make_3d_model` asks, counts and
   refuses:
@@ -106,6 +133,5 @@ key, and the sound is made by Sotto's own service and saved by its own save.
 ## Not checked here
 
 - A real ElevenLabs key. The check was run against the stand-in only.
-- Making a sound in the built app: the card in a thread, the MP3 in its folder and the Settings line. Zach runs that
-  journey.
+- A sound effect in the built app; the unit tests hold its card with and without a length.
 - The line in the thread with Play (part 3), and a host's threads making sounds with the copy (part 4).

@@ -99,7 +99,7 @@ test('An ElevenLabs account is added on Plugins with its key checked without mak
       const ask = spends.getByRole('switch', { name: 'Ask before each sound' })
       await expect(ask).toBeChecked()
       await expect(spends.getByLabel('Monthly limit in US dollars')).toHaveValue('10')
-      // Nothing is counted against it until threads make sounds.
+      // Nothing is spent through it yet this month.
       await expect(spends).not.toContainText('Credits this month')
       for (const mode of ['dark', 'light'] as const) {
         await page.evaluate(async appearance => { await window.sotto!.updateSettings({ appearance }) }, mode)

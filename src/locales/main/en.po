@@ -1129,6 +1129,10 @@ msgid "Make the sound {name} with the ElevenLabs account {named}? About {cost}."
 msgstr "Make the sound {name} with the ElevenLabs account {named}? About {cost}."
 
 #: src/main/plugins/changeWords.ts
+msgid "Make the sound {name} with the ElevenLabs account {named}? Under $0.01."
+msgstr "Make the sound {name} with the ElevenLabs account {named}? Under $0.01."
+
+#: src/main/plugins/changeWords.ts
 msgid "Makes a sound effect, {seconds} seconds long, from these words:"
 msgstr "Makes a sound effect, {seconds} seconds long, from these words:"
 
@@ -3735,6 +3739,10 @@ msgstr "Type up to 100 characters to search."
 #: src/main/plugins/changeWords.ts
 msgid "under $0.01"
 msgstr "under $0.01"
+
+#: src/main/plugins/changeWords.ts
+msgid "Under $0.01 on the ElevenLabs account {named}; {spent} of its {limit} used this month."
+msgstr "Under $0.01 on the ElevenLabs account {named}; {spent} of its {limit} used this month."
 
 #: src/main/hosts/desktopHostRouter.ts
 msgid "Update {host} to delete its threads. Nothing was deleted."

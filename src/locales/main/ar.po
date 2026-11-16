@@ -1128,6 +1128,10 @@ msgid "Make the sound {name} with the ElevenLabs account {named}? About {cost}."
 msgstr ""
 
 #: src/main/plugins/changeWords.ts
+msgid "Make the sound {name} with the ElevenLabs account {named}? Under $0.01."
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
 msgid "Makes a sound effect, {seconds} seconds long, from these words:"
 msgstr ""
 
@@ -3733,6 +3737,10 @@ msgstr ""
 
 #: src/main/plugins/changeWords.ts
 msgid "under $0.01"
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
+msgid "Under $0.01 on the ElevenLabs account {named}; {spent} of its {limit} used this month."
 msgstr ""
 
 #: src/main/hosts/desktopHostRouter.ts

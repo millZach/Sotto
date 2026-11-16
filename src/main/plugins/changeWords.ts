@@ -132,7 +132,7 @@ function wordElevenLabsSound(change: ElevenLabsSound): PluginChangeCard {
   const { name, folder, words } = change
   const named = change.account
   const money = (amount: number): string => dollarFigure(amount) ?? t`under $0.01`
-  const cost = money(change.cost), spent = money(change.monthSpent), limit = dollarLimit(change.monthlyLimit)
+  const cost = dollarFigure(change.cost), spent = money(change.monthSpent), limit = dollarLimit(change.monthlyLimit)
   const seconds = (change.seconds ?? 0).toLocaleString('en-US')
   const voice = change.voice ?? ''
   const characters = words.length.toLocaleString('en-US')
@@ -144,14 +144,15 @@ function wordElevenLabsSound(change: ElevenLabsSound): PluginChangeCard {
       : change.instrumental ? t`Makes music, ${seconds} seconds long, with no singing, from these words:` : t`Makes music, ${seconds} seconds long, from these words:`
   return {
     plugin: 'ElevenLabs',
-    text: t`Make the sound ${name} with the ElevenLabs account ${named}? About ${cost}.`,
+    // Under a cent reads as one, not "About under $0.01".
+    text: cost === null ? t`Make the sound ${name} with the ElevenLabs account ${named}? Under $0.01.` : t`Make the sound ${name} with the ElevenLabs account ${named}? About ${cost}.`,
     action: t`Make a sound with ElevenLabs`,
     target,
     details: [
       what,
       `“${words}”`,
       t`ElevenLabs may use what it is sent to train its own models, unless that is turned off in the ElevenLabs account.`,
-      t`About ${cost} on the ElevenLabs account ${named}; ${spent} of its ${limit} used this month.`,
+      cost === null ? t`Under $0.01 on the ElevenLabs account ${named}; ${spent} of its ${limit} used this month.` : t`About ${cost} on the ElevenLabs account ${named}; ${spent} of its ${limit} used this month.`,
       t`The file goes to ${folder} in this thread’s folder. Nothing plays on its own.`,
     ].join('\n'),
     allow: t`Make the sound`,

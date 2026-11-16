@@ -267,10 +267,10 @@ describe('the card a sound waits on', () => {
     const change: PluginChange = { ...base, sound: 'speech', words: 'Welcome to Lumen.', voice: 'Rachel' }
     expect(wordPluginChange(change)).toEqual({
       plugin: 'ElevenLabs',
-      text: 'Make the sound Welcome video with the ElevenLabs account Studio? About under $0.01.',
+      text: 'Make the sound Welcome video with the ElevenLabs account Studio? Under $0.01.',
       action: 'Make a sound with ElevenLabs', target: 'Speech · Welcome video',
       details: ['Speaks these words in the voice Rachel (17 characters):', '“Welcome to Lumen.”', TRAINS,
-        'About under $0.01 on the ElevenLabs account Studio; $1.20 of its $10 used this month.', GOES].join('\n'),
+        'Under $0.01 on the ElevenLabs account Studio; $1.20 of its $10 used this month.', GOES].join('\n'),
       allow: 'Make the sound', deny: 'Deny',
     })
     expect(wordPluginChangeInEnglish(change)).toEqual(wordPluginChange(change))
