@@ -236,3 +236,33 @@ it.skipIf(!live)('allows Sotto’s browser tools on a thread given only the brow
     await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
   }
 })
+
+// #2635: a subagent and a shell OpenCode runs in the background are the thread's background work until each ends, and
+// OpenCode's own report of their ending is never shown as the user's words. Each card is allowed once by the test.
+it.skipIf(!live)('keeps OpenCode 2’s background subagent and shell as background work until each ends', { timeout: 480_000 }, async () => {
+  const root = await mkdtemp(join(tmpdir(), 'sotto-opencode-live-'))
+  const project = join(root, 'project')
+  const options = { ...(process.env.SOTTO_OPENCODE_EXECUTABLE ? { executable: process.env.SOTTO_OPENCODE_EXECUTABLE } : {}), requestTimeoutMs: 60_000, environment: await scratchHome(root) }
+  const host = new OpenCodeHost(join(root, 'sotto'), options)
+  const seen: string[] = []
+  try {
+    execFileSync('git', ['init', '-q', project])
+    await host.connect()
+    await host.execute({ type: 'create-project', commandId: randomUUID(), projectId: 'live', title: 'Live', path: project })
+    const id = randomUUID()
+    await host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: 'live', modelId: MODEL, title: 'Background probe', runtimeMode: 'full-access' })
+    host.observeThreads([id])
+    expect(await host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'background', text: 'Do two things, then end your turn at once with one short sentence. 1. Start one subagent (task tool) whose job is to run the shell command `sleep 30` and then write the word done to a file named agent.txt. 2. Start the shell command `sleep 40 && echo done > bg.txt` in the background. Do not wait for either, and do not check on them.' })).toEqual({ accepted: true })
+    const answered = new Set<string>()
+    const look = async () => {
+      const thread = (await host.snapshot()).threads.find(candidate => candidate.id === id)!
+      for (const request of thread.requests) if (!answered.has(request.id)) { answered.add(request.id); void host.execute({ type: 'answer', threadId: id, commandId: randomUUID(), requestId: request.id, answer: '', approved: true }).catch(() => undefined) }
+      const state = `${thread.status} work=${(thread.backgroundWork ?? []).map(work => `${work.type}:${work.label}`).join(',')} users=${thread.messages.filter(message => message.role === 'user').length}`
+      if (seen.at(-1) !== state) seen.push(state)
+      return thread
+    }
+    await expect.poll(async () => { const thread = await look(); return thread.status !== 'running' && (thread.backgroundWork?.length ?? 0) > 0 }, { timeout: 180_000, interval: 500 }).toBe(true)
+    await expect.poll(async () => { const thread = await look(); return thread.status !== 'running' && !thread.backgroundWork?.length }, { timeout: 240_000, interval: 1000 }).toBe(true)
+    expect((await look()).messages.filter(message => message.role === 'user').map(message => message.id)).toEqual(['background'])
+  } finally { console.log(seen.join('\n')); host.disconnect(); await host.closed(); await rm(root, { recursive: true, force: true }) }
+})

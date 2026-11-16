@@ -205,6 +205,46 @@ function tool(session, action) {
   save()
 }
 
+/**
+ * Work OpenCode 2.3.0 leaves in the background, shaped on its live frames (#2635). A subagent's `task` call or a shell
+ * call succeeds at once with `status: running`, naming the child session or the shell; `text` then ends the turn. Its end
+ * is the child's own run ending, or `shell.exited`; OpenCode then puts a `<subagent>` or `<shell>` report in the
+ * session's inbox and runs it, the way it wakes a session.
+ */
+function background(session, action) {
+  const assistantMessageID = id('msg'), callId = `call_${randomUUID()}`, started = now()
+  const child = action.kind === 'subagent' ? id('ses') : undefined, shell = action.kind === 'shell' ? id('sh') : undefined
+  const input = child ? { agent: 'general', description: action.description, prompt: action.description } : { command: action.command, background: true }
+  emit('session.step.started', { sessionID: session.id, agent: 'build', model: session.model, assistantMessageID, started })
+  emit('session.tool.input.started', { sessionID: session.id, assistantMessageID, id: callId, name: child ? 'task' : 'shell' })
+  emit('session.tool.called', { sessionID: session.id, assistantMessageID, id: callId, input, executed: false })
+  if (child) {
+    emit('session.created', { sessionID: child, parentID: session.id, title: action.description, agent: 'general', location: session.location })
+    emit('session.execution.started', { sessionID: child })
+  } else emit('shell.created', { info: { id: shell, status: 'running', command: action.command } })
+  // `endFirst`: a quick shell exits before its call is answered, so its end comes first and nothing is left to end.
+  if (action.endFirst && shell) emit('shell.exited', { id: shell, exit: 0, status: 'exited' })
+  emit('session.tool.success', { sessionID: session.id, assistantMessageID, id: callId, executed: false,
+    content: [{ type: 'text', text: child ? `The subagent is working in the background (sessionID: ${child}).` : `Command moved to the background (shell ID: ${shell}).` }],
+    metadata: child ? { sessionID: child, status: 'running' } : { status: 'running', truncated: false, shellID: shell } })
+  emit('session.step.ended', { sessionID: session.id, assistantMessageID, finish: 'tool-calls', cost: 0, tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } }, snapshot: 'fixture-snapshot', files: [] })
+  if (!action.endFirst) { session.backgroundWork = [...session.backgroundWork ?? [], { child, shell, description: action.description ?? action.command }]; save() }
+  if (typeof action.text === 'string') { reply(session, action.text); finish(session, 'succeeded') }
+}
+function backgroundEnd(session, action) {
+  const work = (session.backgroundWork ?? []).shift(); save()
+  if (!work) return
+  if (work.child) emit(`session.execution.${action.outcome ?? 'succeeded'}`, { sessionID: work.child })
+  else emit('shell.exited', { id: work.shell, exit: action.exit ?? 0, status: 'exited' })
+  if (action.report === false) return
+  const source = work.child ? 'subagent' : 'shell', inboxID = id('msg')
+  const text = work.child ? `<subagent sessionID="${work.child}" state="completed" description="${work.description}">\ndone\n</subagent>` : `<shell id="${work.shell}" state="completed">\n(no output)\n</shell>`
+  emit('session.inbox.enqueued', { inboxID, sessionID: session.id, item: { type: 'synthetic', payload: { text, description: work.description, metadata: { source } } } })
+  if (!session.executing) { session.executing = true; delete session.outcome; emit('session.execution.started', { sessionID: session.id }) }
+  emit('session.inbox.delivered', { sessionID: session.id, inboxID })
+  reply(session, action.reply ?? 'It finished.'); finish(session, 'succeeded')
+}
+
 let seen
 function check() {
   const action = read('control.json', undefined)
@@ -226,6 +266,8 @@ function check() {
       error: { type: 'provider.transport', message: action.message ?? 'ECONNREFUSED: Unable to connect. Is the computer able to access the url?' } })
   }
   else if (action.type === 'tool') tool(session, action)
+  else if (action.type === 'background') background(session, action)
+  else if (action.type === 'background-end') backgroundEnd(session, action)
   else if (action.type === 'exit') process.exit(0)
   else if (action.type === 'malformed') emit('session.text.delta', { sessionID: session.id, assistantMessageID: 7 })
   else if (action.type === 'child') {

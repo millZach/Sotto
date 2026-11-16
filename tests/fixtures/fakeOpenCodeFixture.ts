@@ -1,6 +1,6 @@
 import { parseProviderRecords, writeProviderAction } from './providerRecords'
 import { randomUUID } from 'node:crypto'
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { OpenCodeHost, type OpenCodeHostOptions } from '../../src/main/agents/opencode'
@@ -8,7 +8,6 @@ import type { AdapterContractSkips, AdapterSessionOptions, RecordedRpc } from '.
 
 /** The contract cases this fixture cannot drive, each with the reason (`tests/integration/adapterContract.ts`). */
 export const opencodeFixtureSkips: AdapterContractSkips = {
-  backgroundWork: 'OpenCode reports no work a turn leaves running, and the fixture drives none.',
   liveSettings: 'OpenCode takes a model, effort or permission change on the live provider session and has no refusal to recover from by starting it again; opencodeAdapter.test.ts checks the live change itself.',
   // Traced on forge (#1162): the coordinator answered the send a few milliseconds before the publish that carries running.
   sendAnswerRunning: 'OpenCode echoes a prompt before it answers the prompt request, so the echo settles the send and the coordinator reads nothing after it (#765); running reaches the host in the next publish.',
@@ -40,6 +39,11 @@ export async function opencodeFixture(root?: string, requestTimeoutMs = 3000, se
   const realId = async (id: string): Promise<string> => JSON.parse(await readFile(join(root, 'opencode-threads.json'), 'utf8'))[id].sessionId
   // Each thread has its own fake server. The one holding the session takes the action.
   const action = async (id: string, value: Record<string, unknown>) => { await writeProviderAction(join(root, 'control.json'), value, { sessionId: await realId(id) }, randomUUID()) }
+  /** An action the fake has read: it takes `control.json` away once it has, so the next cannot overwrite this one unread. */
+  const actionAndWait = async (id: string, value: Record<string, unknown>) => {
+    await action(id, value)
+    while (await stat(join(root, 'control.json')).then(() => true, () => false)) await new Promise(resolve => setTimeout(resolve, 10))
+  }
   const holder = async (id: string): Promise<number | undefined> => {
     const native = await realId(id)
     const names = await readdir(join(root, 'holders')).catch(() => [] as string[])
@@ -53,7 +57,7 @@ export async function opencodeFixture(root?: string, requestTimeoutMs = 3000, se
     // A server may be writing the file as it is read; a torn read counts as not there yet, and the caller polls again.
     try { return text ? Object.values((JSON.parse(text) as { sessions: Record<string, { id: string; title?: string; metadata?: unknown }> }).sessions) : [] } catch { return [] }
   }
-  return { host: adapter, adapter, root, events, providerId: 'opencode' as const, projectId: 'project', modelId: 'opencode/fixture-model', realId, script, scriptAlso, sideCalls, action, holder, processes, nativeSessions, running, restartStatus: 'idle' as const, skips: opencodeFixtureSkips, nativePdf: true,
+  return { host: adapter, adapter, root, events, providerId: 'opencode' as const, projectId: 'project', modelId: 'opencode/fixture-model', realId, script, scriptAlso, sideCalls, action, actionAndWait, holder, processes, nativeSessions, running, restartStatus: 'idle' as const, skips: opencodeFixtureSkips, nativePdf: true,
     // Side writing goes to the thread's own server, on the stateless generation route (ADR-0026, ADR-0087).
     sideWriting: {
       answer: (text: string) => scriptAlso({ generate: { text } }),
@@ -70,7 +74,9 @@ export async function opencodeFixture(root?: string, requestTimeoutMs = 3000, se
       starts: async (id: string) => { const native = await realId(id); return (await requests()).filter(record => record.method === 'session.get' && record.params?.sessionID === native).length },
       stopped: async (id: string) => { const pid = await holder(id); return pid === undefined || !running(pid) },
     },
-    driver: { typeInProvider: (id: string, text: string) => action(id, { type: 'takeover', text }), completeTurn: (id: string, text: string) => action(id, { type: 'complete', text }),
+    driver: { backgroundWork: { completeLeaving: (id: string, text: string, description: string) => actionAndWait(id, { type: 'background', kind: 'subagent', text, description }),
+      end: (id: string) => actionAndWait(id, { type: 'background-end' }) },
+      typeInProvider: (id: string, text: string) => action(id, { type: 'takeover', text }), completeTurn: (id: string, text: string) => action(id, { type: 'complete', text }),
       raiseQuestion: (id: string, text: string) => action(id, { type: 'question', text }), raisePermission: (id: string, text: string) => action(id, { type: 'permission', text }),
       delayNextAck: async (method: string) => script({ delay: { [method]: requestTimeoutMs + 1000 } }), requests,
       restart: async () => { adapter.disconnect(); await adapter.closed(); return opencodeFixture(root, requestTimeoutMs, session, options) } },

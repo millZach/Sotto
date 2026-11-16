@@ -729,3 +729,49 @@ it('retires a thread that was opening during an update once its opening complete
     expect((await f.host.snapshot()).version).toContain('2.0.40')
   } finally { await f.cleanup() }
 })
+
+// #2635: OpenCode 2.3.0 runs a subagent or a shell in the background past its turn, on frames read from it live.
+it('keeps a background subagent as background work through the report OpenCode wakes the session for, and never as the user’s words', async () => {
+  const { f, id } = await open()
+  try {
+    await send(f, id, 'first')
+    await f.actionAndWait(id, { type: 'background', kind: 'subagent', text: 'Started it.', description: 'GT3 RS drawing' })
+    await expect.poll(async () => (await thread(f, id)).backgroundWork?.map(work => [work.label, work.type])).toEqual([['GT3 RS drawing', 'subagent']])
+    expect((await thread(f, id)).status).toBe('idle')
+    expect((await thread(f, id)).activities?.find(row => row.title === 'task')?.status).toBe('running')
+    await f.actionAndWait(id, { type: 'background-end', reply: 'The drawing is done.' })
+    await expect.poll(async () => (await thread(f, id)).backgroundWork).toBeUndefined()
+    expect((await thread(f, id)).activities?.find(row => row.title === 'task')?.status).toBe('completed')
+    const messages = (await thread(f, id)).messages
+    expect(messages.filter(message => message.role === 'user').map(message => message.id)).toEqual(['first'])
+    expect(messages.some(message => message.text.includes('<subagent'))).toBe(false)
+    expect(messages.at(-1)?.text).toContain('The drawing is done.')
+  } finally { await f.cleanup() }
+})
+
+it('keeps a shell OpenCode moved to the background as a command until it exits, and lets both go with a lost server', async () => {
+  const { f, id } = await open()
+  try {
+    await send(f, id, 'first')
+    await f.actionAndWait(id, { type: 'background', kind: 'shell', command: 'npm run render' })
+    await f.actionAndWait(id, { type: 'background', kind: 'subagent', text: 'Started both.', description: 'GT3 RS drawing' })
+    await expect.poll(async () => (await thread(f, id)).backgroundWork?.map(work => [work.label, work.type])).toEqual([['npm run render', 'command'], ['GT3 RS drawing', 'subagent']])
+    await f.actionAndWait(id, { type: 'background-end' })
+    await expect.poll(async () => (await thread(f, id)).backgroundWork?.map(work => work.type)).toEqual(['subagent'])
+    expect((await thread(f, id)).activities?.find(row => row.kind === 'command')?.status).toBe('completed')
+    await f.action(id, { type: 'exit' })
+    await expect.poll(async () => (await thread(f, id)).backgroundWork).toBeUndefined()
+    expect((await thread(f, id)).activities?.find(row => row.title === 'task')?.status).toBe('unknown')
+  } finally { await f.cleanup() }
+})
+
+it('takes a quick shell whose end came before its call was answered, as a fresh server’s first, as already ended', async () => {
+  const { f, id } = await open()
+  try {
+    await send(f, id, 'first')
+    await f.actionAndWait(id, { type: 'background', kind: 'shell', command: 'ls', endFirst: true, text: 'Listed.' })
+    await expect.poll(async () => (await thread(f, id)).status).toBe('idle')
+    expect((await thread(f, id)).backgroundWork).toBeUndefined()
+    expect((await thread(f, id)).activities?.find(row => row.kind === 'command')?.status).toBe('completed')
+  } finally { await f.cleanup() }
+})

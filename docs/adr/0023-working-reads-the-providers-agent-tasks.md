@@ -192,6 +192,27 @@ commands are closed as before, since nothing shows they carry on. Its sub-agents
 they work. The thread's app-server holds its session from the reaper while either runs. When the app-server ends, or
 Codex is disconnected, they end: their rows read unknown and every agent in them reads interrupted.
 
+## Amendment: OpenCode's background subagents and shells
+
+*November 16, 2026.* Issue #2635, under the amendments above. A live session of OpenCode 2.3.0 on forge showed both
+(`docs/research/2026-11-16-opencode-background-work-probe.md`).
+
+Every subagent runs in the background. Its `task` call succeeds at once with `metadata.status: running` and the child
+session's `sessionID`. The child's own `session.execution.succeeded` (or `failed`, `interrupted`) is its end.
+
+A shell command moved to the background succeeds with `status: running` and a `shellID`. `shell.exited` with that ID is
+its end.
+
+When either ends, OpenCode puts a `<subagent>` or `<shell>` report in the session's inbox (`type: synthetic`, with
+`metadata.source`) and runs the session to read it. The job list (`GET /api/experimental/job`) agreed throughout, but
+the events say the same and need no polling.
+
+So each is the thread's background work, of type `subagent` or `command`, from its call's success until its end. It is
+held through the run OpenCode wakes the session for, as a Claude Code thread reads Working through its own report. The
+call's row runs until the work ends and then reads how it ended. OpenCode's own report is not recorded as the user's
+message. What a subagent starts comes on its own session and is its business. The thread's server is held from the
+reaper while any of this runs, and when the server ends it all ends, its rows reading unknown.
+
 ## Considered Options
 
 - **The `background_tasks_changed` level signal.** The SDK documents a frame carrying the whole set of live
@@ -207,6 +228,6 @@ Codex is disconnected, they end: their rows read unknown and every agent in them
 
 `CONTEXT.md` gains **Background work** and amends **Monitoring task**, **Held action** and **Session reaper**.
 ADR-0021 gains an amendment for the order. Only the Claude adapter publishes background work (and, from the
-amendments above, the Cursor, Grok and Codex adapters); the adapter contract's case skips the others. T3 Code reads Codex child-agent events as agent work, which may serve a later
+amendments above, the Cursor, Grok, Codex and OpenCode adapters); the adapter contract's case skips the others. T3 Code reads Codex child-agent events as agent work, which may serve a later
 issue, but Codex, Grok Build and Devin were not studied for this one and publish nothing. No new setting, IPC
 channel, host or dependency.

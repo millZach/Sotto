@@ -19,6 +19,7 @@ import { cloneHostSnapshot } from './cloneHostSnapshot'
 import { compareClientVersions } from './clientVersions'
 import type { ActivitySubscriptionOptions, ProviderHost, AgentHostCommand, AgentHostResult, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadLaunchProfiles, ThreadReadPurpose, ThreadSessionDraft } from './host'
 import { opencodeReasoningActivity, opencodeStepFilesActivity, opencodeTextMessageId, opencodeToolActivity, opencodeToolOutput, opencodeToolStatus, type OpenCodeTool } from './opencodeActivity'
+import { OpenCodeBackgroundWork } from './opencodeBackgroundWork'
 import { openCodeEffort } from './opencodeEffort'
 import { locationQuery, OpenCodeClient, OpenCodeRejected, type OpenCodeEvent } from './opencodeClient'
 import { OPENCODE_DECLINED, OPENCODE_FORM_UNSHOWN, opencodeFormAnswer, opencodeFormPending, opencodeFormSchema, opencodePermissionDecision, opencodePermissionPending, opencodePermissionSchema, type OpenCodePending } from './opencodeRequests'
@@ -195,6 +196,10 @@ const toolEventSchema = ofSession.extend({ id: z.string().min(1), name: z.string
   content: z.unknown().optional(), error: z.looseObject({ type: z.string().optional(), message: z.string().optional() }).optional() })
 const stepStartedSchema = ofSession.extend({ assistantMessageID: z.string().min(1), started: z.number().optional() })
 const executionEndSchema = ofSession.extend({ error: z.looseObject({ type: z.string().optional() }).optional() })
+/** How a session's run ended, for a subagent's child session (#2635). */
+const EXECUTION_ENDS: Readonly<Record<string, 'completed' | 'failed' | 'interrupted'>> = { 'session.execution.succeeded': 'completed', 'session.execution.failed': 'failed', 'session.execution.interrupted': 'interrupted' }
+/** OpenCode's own report that a subagent or background shell ended, which it puts in the session's inbox (2.3.0). */
+const OPENCODE_REPORT = z.looseObject({ type: z.literal('synthetic'), payload: z.looseObject({ metadata: z.looseObject({ source: z.enum(['subagent', 'shell']) }) }) })
 /**
  * OpenCode is trying the model source again after a failed request (2.0.31 and 2.1.4): `attempt` numbers the request it
  * will make next, so the first retry is attempt 2 and the last attempt 11, ten retries over about a minute and a half.
@@ -373,6 +378,8 @@ export class OpenCodeHost implements ProviderHost {
   }, () => adapterItemCount(this.log, this.threads.values()))
   private readonly processes = new Map<string, ThreadServer>()
   private readonly holds = new Map<string, number>()
+  /** Each thread's background work on its own server (#2635). */
+  private readonly background = new Map<string, OpenCodeBackgroundWork>()
   private readonly exits = new Set<Promise<void>>()
   /** Servers whose thread's session is ending: out of `processes`, and still taking their tool servers off. */
   private readonly stopping = new Set<ThreadServer>()
@@ -437,6 +444,49 @@ export class OpenCodeHost implements ProviderHost {
   private working(id: string): boolean {
     return this.holds.has(id) || this.activePrompts.has(id) || this.activeTurns.has(id) || this.loading.has(id)
       || this.threads.get(id)?.status === 'running' || this.awaitingPrompt(id)
+      // Its subagents and background shells run on this server; stopping it would end them (#2635).
+      || !!this.background.get(id)?.holds
+  }
+  /** The thread's background work as its server reports it now (#2635). */
+  private publishBackground(id: string): void {
+    const thread = this.threads.get(id); if (!thread) return
+    const work = this.background.get(id)?.working ?? []
+    const before = thread.backgroundWork ?? []
+    if (before.length === work.length && before.every((item, index) => item.id === work[index]!.id)) return
+    if (work.length) thread.backgroundWork = work; else delete thread.backgroundWork
+    this.changed(id)
+  }
+  /** A tool call whose work ran in the background reads how that work ended, in the turn it was made in. */
+  private settleBackgroundTool(id: string, toolId: string, status: 'completed' | 'failed' | 'interrupted' | 'unknown'): void {
+    const tool = this.folds.get(id)?.tools.get(toolId), thread = this.threads.get(id)
+    if (!tool || !thread) return
+    const settled: OpenCodeTool = { ...tool, status, completedAt: new Date().toISOString() }
+    this.fold(id).tools.set(toolId, settled)
+    const fresh = opencodeToolActivity(settled, ''), row = thread.activities?.find(record => record.id === fresh.id)
+    if (row) thread.activities = mergeAgentActivities(thread.activities, [{ ...row, status, completedAt: settled.completedAt! }])
+  }
+  /** The thread's server is gone, and what it ran in the background went with it: no ending will come for those calls. */
+  private backgroundGone(id: string): void {
+    const work = this.background.get(id); if (!work) return
+    this.background.delete(id)
+    for (const toolId of work.clear()) this.settleBackgroundTool(id, toolId, 'unknown')
+    this.publishBackground(id)
+  }
+  /**
+   * An event that ends background work comes from elsewhere than the thread's own session: a child session's run, or a
+   * shell (`shell.exited` names no session). Says whether it was one, which nothing else reads.
+   */
+  private backgroundEvent(id: string, event: OpenCodeEvent, data: Record<string, unknown>): boolean {
+    const ending = event.type === 'shell.exited' && typeof data.id === 'string' ? { key: `shell:${data.id}` as const, status: data.exit === 0 ? 'completed' as const : 'failed' as const }
+      : EXECUTION_ENDS[event.type] && typeof data.sessionID === 'string' && data.sessionID !== this.aliases[id]?.sessionId
+        ? { key: `session:${data.sessionID}` as const, status: EXECUTION_ENDS[event.type]! } : undefined
+    if (!ending) return false
+    // Made here too, so an ending that comes before the thread's first call succeeds is kept, as a quick shell's can (#2646).
+    let work = this.background.get(id)
+    if (!work) { work = new OpenCodeBackgroundWork(); this.background.set(id, work) }
+    const toolId = work.ended(ending.key)
+    if (toolId) { this.settleBackgroundTool(id, toolId, ending.status); this.changed(id); this.emit() }
+    return true
   }
   private asking(id: string): boolean { return !!this.threads.get(id)?.requests.length }
   /** The sessions the reaper tracks, why each is held, and each one's process (#2398). */
@@ -769,6 +819,7 @@ export class OpenCodeHost implements ProviderHost {
     if (entry.closing) return
     this.closeProcess(entry)
     if (this.processes.get(id) !== entry) return
+    this.backgroundGone(id)
     this.processes.delete(id); this.loaded.delete(id); this.folds.delete(id); this.log.release(id); this.reaper.forget(id)
     for (const pending of [...this.pending.values()]) if (pending.threadId === id) this.pending.delete(pending.request.id)
     const sending = this.activePrompts.delete(id)
@@ -807,6 +858,7 @@ export class OpenCodeHost implements ProviderHost {
   private async stopSession(id: string): Promise<void> {
     const entry = this.processes.get(id)
     if (this.loaded.delete(id)) this.emit()
+    this.backgroundGone(id)
     this.folds.delete(id); this.log.release(id)
     if (!entry) return
     this.processes.delete(id)
@@ -1342,7 +1394,9 @@ export class OpenCodeHost implements ProviderHost {
     this.log.dropEmpty(id)
     thread.status = outcome === 'failed' ? 'error' : 'idle'
     thread.lastTurn = { id: messageId, status: outcome }
-    if (thread.activities?.length) thread.activities = thread.activities.map(record => record.kind !== 'turn' && record.status === 'running' && record.turnId === messageId
+    // A call whose work runs on in the background keeps its row running until that work ends (#2635).
+    const background = new Set([...this.background.get(id)?.runningTools ?? []].map(tool => opencodeToolActivity({ id: tool, name: '', status: 'running', startedAt: '' }, '').id))
+    if (thread.activities?.length) thread.activities = thread.activities.map(record => record.kind !== 'turn' && record.status === 'running' && record.turnId === messageId && !background.has(record.id)
       ? { ...record, status: outcome === 'completed' ? 'unknown' : outcome } : record)
     this.markTurn(id, outcome, messageId, error, ownServer)
   }
@@ -1485,6 +1539,7 @@ export class OpenCodeHost implements ProviderHost {
     const data = (event.data ?? {}) as Record<string, unknown>
     const session = typeof data.sessionID === 'string' ? data.sessionID
       : typeof (data.form as { sessionID?: unknown } | undefined)?.sessionID === 'string' ? (data.form as { sessionID: string }).sessionID : undefined
+    if (alias && this.backgroundEvent(id, event, data)) return
     if (!alias || session === undefined || session !== alias.sessionId) return
     this.reaper.touch(id); this.touched(id)
     const thread = this.thread(id)
@@ -1492,6 +1547,8 @@ export class OpenCodeHost implements ProviderHost {
       switch (event.type) {
         case 'session.inbox.enqueued': {
           const parsed = inboxEnqueuedSchema.parse(data)
+          // OpenCode's own report that a subagent or a background shell ended wakes the session; the user wrote none of it.
+          if (OPENCODE_REPORT.safeParse(data.item).success) return
           this.recordUser(id, parsed.inboxID, parsed.item?.payload?.text ?? '', event.created)
           this.emit(true); return
         }
@@ -1540,14 +1597,19 @@ export class OpenCodeHost implements ProviderHost {
           this.ownServerAnswered(id)
           const known = this.fold(id).tools.get(parsed.id)
           const output = opencodeToolOutput(parsed.content)
-          const done = event.type === 'session.tool.success' || event.type === 'session.tool.failed'
+          // A call that succeeds with its work still running left it in the background (#2635): its row runs until it ends.
+          let work = this.background.get(id)
+          if (!work && event.type === 'session.tool.success') { work = new OpenCodeBackgroundWork(); this.background.set(id, work) }
+          const background = event.type === 'session.tool.success' && work!.started(parsed.id, parsed.input ?? known?.input, data.metadata)
+          const done = (event.type === 'session.tool.success' || event.type === 'session.tool.failed') && !background
           this.recordTool(id, {
             id: parsed.id, name: parsed.name ?? known?.name ?? 'Tool', input: parsed.input ?? known?.input,
-            status: event.type === 'session.tool.success' ? 'completed' : event.type === 'session.tool.failed' ? 'failed' : 'running',
+            status: background ? 'running' : event.type === 'session.tool.success' ? 'completed' : event.type === 'session.tool.failed' ? 'failed' : 'running',
             ...(output ?? known?.output ? { output: output ?? known?.output } : {}),
             ...(parsed.error?.message ? { error: parsed.error.message } : {}),
             startedAt: known?.startedAt ?? iso(event.created), ...(done ? { completedAt: iso(event.created) } : {}),
           })
+          if (background) this.publishBackground(id)
           this.emit(true); return
         }
         case 'session.step.ended': {
@@ -1589,6 +1651,7 @@ export class OpenCodeHost implements ProviderHost {
           if (messageId && server && failure) this.endTurn(id, messageId, 'failed', ownServerTurnText(failure, server), { ...server, failure })
           else if (messageId) this.endTurn(id, messageId, outcome, outcome === 'failed' ? parsed.error?.type === 'provider.auth' ? this.sourceRefused(id) : TURN_FAILED : undefined)
           else thread.status = outcome === 'failed' ? 'error' : 'idle'
+          if (this.background.get(id)?.reported()) this.publishBackground(id)
           this.emit(); return
         }
         case 'permission.asked': {
@@ -1937,6 +2000,7 @@ export class OpenCodeHost implements ProviderHost {
     }
     this.activeTurns.clear()
     if (ended) void this.persist().catch(() => undefined)
+    for (const id of [...this.background.keys()]) this.backgroundGone(id)
     for (const entry of [...this.processes.values(), ...this.stopping]) void this.closeProcess(entry)
     this.processes.clear()
     this.probeClosed.abort()
