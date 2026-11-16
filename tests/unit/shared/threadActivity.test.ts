@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it, vi } from 'vitest'
 import { agentThreadSchema } from '../../../src/shared/agents'
-import { isThreadClosed, isThreadSettled, isWatcherWakeUpTurn, isWorkspaceThreadSettled } from '../../../src/shared/threadActivity'
+import { isThreadClosed, isThreadSettled, isWatcherWakeUpTurn, isWorkspaceThreadSettled, TIMESTAMPS_KEPT } from '../../../src/shared/threadActivity'
 
 const AT = '2026-09-10T11:00:00.000Z'
 const base = { id: 'thread', projectId: 'project', title: 'Thread', modelId: '', status: 'idle', messages: [], requests: [] }
@@ -40,6 +40,17 @@ describe('settled times read once (#2618)', () => {
       expect(isWorkspaceThreadSettled(unreadable)).toBe(false)
       expect(isWorkspaceThreadSettled({ workspaceSettledAt: null }, { workspaceSettledAt: AT })).toBe(true)
       expect(parse).not.toHaveBeenCalled()
+    } finally { parse.mockRestore() }
+  })
+
+  it('keeps answering from the times it kept once it is full, parsing only the rest on each pass', () => {
+    const many = Array.from({ length: TIMESTAMPS_KEPT + 100 }, (_, index) => ({ workspaceSettledAt: new Date(Date.parse('2027-01-01T00:00:00.000Z') + index * 1_000).toISOString() }))
+    for (const thread of many) isWorkspaceThreadSettled(thread)
+    const parse = vi.spyOn(Date, 'parse')
+    try {
+      expect(many.every(thread => isWorkspaceThreadSettled(thread))).toBe(true)
+      // The 100 past the limit, and the few hundred the test above kept first: never every one, as clearing it whole did.
+      expect(parse.mock.calls.length).toBeLessThan(1_000)
     } finally { parse.mockRestore() }
   })
 })

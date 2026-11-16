@@ -9,17 +9,18 @@ type ThreadLifecycle = Pick<AgentThread, 'settledAt' | 'settledOverride' | 'arch
 
 /**
  * Whether each timestamp string read parses, kept rather than parsed again. A publish asks it of every thread, and on the
- * laptop's 590 settled threads `Date.parse` was 264 ms of main's busy minute (#2618). The same few strings come back on
- * every read; the list is let go of whole when it gets long, so it never grows with the history.
+ * laptop's 590 settled threads `Date.parse` was 264 ms of main's busy minute (#2618). The same strings come back on every
+ * read. Once `TIMESTAMPS_KEPT` are kept, a new one is parsed and not kept: the ones kept still answer, so a history with
+ * more distinct times than that parses only the rest on each pass, never all of them, and memory stays bounded.
  */
-const TIMESTAMPS_KEPT = 4_096
+export const TIMESTAMPS_KEPT = 16_384
 const parsedTimestamps = new Map<string, boolean>()
 const hasTimestamp = (value: string | null | undefined): boolean => {
   if (typeof value !== 'string') return false
   let parses = parsedTimestamps.get(value)
   if (parses === undefined) {
-    if (parsedTimestamps.size >= TIMESTAMPS_KEPT) parsedTimestamps.clear()
-    parsedTimestamps.set(value, parses = Number.isFinite(Date.parse(value)))
+    parses = Number.isFinite(Date.parse(value))
+    if (parsedTimestamps.size < TIMESTAMPS_KEPT) parsedTimestamps.set(value, parses)
   }
   return parses
 }

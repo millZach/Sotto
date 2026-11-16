@@ -15,7 +15,7 @@
  */
 import { performance } from 'node:perf_hooks'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { PERF_BENCH } from '../fixtures/perfBench'
+import { median, PERF_BENCH } from '../fixtures/perfBench'
 import { centerTime } from '../fixtures/watcher'
 import { watcherAtScale, type ScaleOptions, type ScaleShape } from '../fixtures/watcherAtScale'
 import { prunePromptTurns, WATCHER_PROMPT_TURNS_KEPT } from '../../src/main/agents/watcherRecords'
@@ -149,7 +149,7 @@ describe('Watcher pass cost with Owl\'s worker swarms on (#2618)', () => {
     const time = (run: () => void) => {
       const rounds: number[] = []
       for (let round = 0; round < 5; round++) { const start = performance.now(); for (let call = 0; call < 20; call++) run(); rounds.push((performance.now() - start) / 20) }
-      return Number(rounds.sort((a, b) => a - b)[2]!.toFixed(3))
+      return Number(median(rounds).toFixed(3))
     }
     for (let warm = 0; warm < 20; warm++) { f.observe(); f.publish(); f.wakePass() }
     console.log(JSON.stringify({ threads: 590, msPerCall: { observe: time(() => f.observe()), publish: time(() => f.publish()), wakePass: time(() => f.wakePass()) } }))

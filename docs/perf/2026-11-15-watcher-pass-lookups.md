@@ -12,11 +12,13 @@ November 15, 2026. A minute of main on Zach's laptop (#2397, `docs/perf/2026-11-
 
 - `swarmPending` reads the thread through the host's index (`WatcherHosts.owning`), the coordinator's `hostThreadsOf` for this computer and the list's index for a paired host.
 - An operation with no draft has no delivery, so `delivery` returns none without searching.
-- `hasTimestamp` keeps whether each timestamp string parses, up to 4,096 strings, and lets go of the whole list when it is full.
+- `hasTimestamp` keeps whether each timestamp string parses, up to 16,384 strings. Past that, a new string is parsed and not kept, so the ones kept still answer and a pass never parses every one again.
 
 ## Why the owner-scale budgets missed it
 
 `ownerScaleWorkBudget.perf.test.ts` and `watcherPassCost.perf.test.ts` build Watcher without Owl's worker swarms, so `swarmPending` never ran. The scale fixture also mocked the coordinator's snapshot without its index, so every look-up there fell back to a search. And the extra reads grow with due events times threads: the per-thread ratio those tests check stays flat when the pass reads every thread once more for each of a fixed number of events.
+
+The owner-scale pipeline now builds Owl's Watcher with swarms too, so it runs the laptop's path. Its budget still passes on the old code: it asks that work stay flat as the history grows and not grow faster than the threads, and a search of every thread for each of a fixed number of due events does neither. The check that fails on the old code is `watcherPassCost.perf.test.ts`, below. The owner-scale budget does not count `Date.parse`; `threadActivity.test.ts` holds the timestamps to one parse each.
 
 `watcherAtScale` now takes `swarms` (wired as `runtime.ts` wires them, with no swarm running) and `indexed` (the coordinator's index, as main has it). `watcherPassCost.perf.test.ts` asks that swarms add no thread reads to any pass, and that operations with no draft add no ledger reads. Both fail on the old code.
 
