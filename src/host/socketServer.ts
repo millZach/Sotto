@@ -147,7 +147,7 @@ class Refusal extends Error { constructor(readonly code: HostErrorCode, message 
  * `browserWatches`: present while a desktop's hello accepts `browser`; per page, the newest watch or unwatch it asked for
  * (`ticket`) and the stop of the stream it holds, so a watch still starting when a later one or an unwatch came is let go.
  */
-interface Peer { browserWatches?: Map<string, { ticket: number; stop?: () => void }> | undefined; productEvents?: { answer: ProductEventPermission | null } | undefined; unknownProviders: HeldProviders; hostUpdate: boolean; delegationViews: boolean; checkQueueViews?: boolean; meshySpending?: boolean; meshySpendingAsked?: boolean; meshyModels?: boolean; meshyModelsAsked?: boolean; meshyPhone?: boolean; nextPrompts?: { wanted: boolean } | undefined; delegationRelay?: RelayDesktop | undefined; tellWatcher?: TellWatcherDesktop | undefined; delegationRemote?: RemoteDesktop | undefined; retiredTerminals: boolean; gone: AbortController; usageHistory: boolean; usageMuseOpenCode: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherPhoneSteer: boolean; watcherPhoneMachines: boolean; watcherPhoneComposer: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; shown: boolean; held: Map<string, number>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; clientUpdateNotListed: boolean; activitySummaries: boolean; activityBodies: boolean; catalogRevisions: boolean; catalogSent: number | null; shellSent: string | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget>
+interface Peer { browserWatches?: Map<string, { ticket: number; stop?: () => void }> | undefined; productEvents?: { answer: ProductEventPermission | null } | undefined; unknownProviders: HeldProviders; hostUpdate: boolean; delegationViews: boolean; checkQueueViews?: boolean; meshySpending?: boolean; meshySpendingAsked?: boolean; elevenLabsSpending?: boolean; elevenLabsSpendingAsked?: boolean; meshyModels?: boolean; meshyModelsAsked?: boolean; meshyPhone?: boolean; nextPrompts?: { wanted: boolean } | undefined; delegationRelay?: RelayDesktop | undefined; tellWatcher?: TellWatcherDesktop | undefined; delegationRemote?: RemoteDesktop | undefined; retiredTerminals: boolean; gone: AbortController; usageHistory: boolean; usageMuseOpenCode: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherPhoneSteer: boolean; watcherPhoneMachines: boolean; watcherPhoneComposer: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; shown: boolean; held: Map<string, number>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; clientUpdateNotListed: boolean; activitySummaries: boolean; activityBodies: boolean; catalogRevisions: boolean; catalogSent: number | null; shellSent: string | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget>
   /** The thread records this connection's shell pushes last carried, for a client that accepted `changed-thread-records` (#996). */
   threadRecords?: ThreadRecordsBroadcast | undefined
   /**
@@ -472,6 +472,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'plugin-elevenlabs-copies' || service.supportsPluginAccountCopies === true && desktopRecords)
     // Shared spending for those copies (ADR-0205), only alongside them and only where this host counts its own.
     && (feature !== 'plugin-meshy-spending' || service.supportsPluginAccountCopies === true && service.supportsPluginMeshySpending === true && desktopRecords)
+    && (feature !== 'plugin-elevenlabs-spending' || service.supportsPluginAccountCopies === true && service.supportsPluginElevenLabsSpending === true && desktopRecords)
     // Its 3D models, shown on a recorded desktop (the Meshy plan's ticket 6, part 2), alongside those copies.
     && (feature !== 'plugin-meshy-models' || service.supportsPluginAccountCopies === true && service.supportsPluginMeshyModels === true && desktopRecords)
     // Its threads' 3D models, shown on a phone (the Meshy plan's ticket 7), where the listener keeps them.
@@ -546,7 +547,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     .filter(feature => feature !== 'host-update' || mayUpdate(peer))
     .filter(feature => feature !== 'branch-moves' && feature !== 'thread-move' && feature !== 'thread-move-source' && feature !== 'thread-move-keep' || (options.watcherDesktops?.has(peer.client.clientId) ?? false))
     // An account copy carries a secret, so it comes only from the desktop the launch script recorded (ADR-0205).
-    .filter(feature => feature !== 'plugin-account-copies' && feature !== 'plugin-mail-copies' && feature !== 'plugin-meshy-copies' && feature !== 'plugin-elevenlabs-copies' && feature !== 'plugin-meshy-spending' || options.watcherDesktops?.has(peer.client.clientId) === true)
+    .filter(feature => feature !== 'plugin-account-copies' && feature !== 'plugin-mail-copies' && feature !== 'plugin-meshy-copies' && feature !== 'plugin-elevenlabs-copies' && feature !== 'plugin-meshy-spending' && feature !== 'plugin-elevenlabs-spending' || options.watcherDesktops?.has(peer.client.clientId) === true)
     // A host thread's 3D models, their bytes and their lines go only to the desktop the launch script recorded, as its copies do.
     .filter(feature => feature !== 'plugin-meshy-models' || options.watcherDesktops?.has(peer.client.clientId) === true)
     // The account a host's gh is signed in to is its owner's own detail: told only to a recorded desktop.
@@ -1359,6 +1360,16 @@ export async function startSocketServer(options: SocketServerOptions) {
       }, () => undefined)
     }
   })
+  /** The same for the ElevenLabs copies a desktop sent (`plugin-elevenlabs-spending`), in whole US cents. */
+  const unsubscribeElevenLabsSpending = service.subscribePluginElevenLabsSpending?.(() => {
+    if (closing) return
+    for (const peer of peers) {
+      if (!peer.ready || !peer.elevenLabsSpending || peer.frames.isClosed || !offers(peer, 'plugin-elevenlabs-spending') || !service.pluginElevenLabsSpending) continue
+      void service.pluginElevenLabsSpending(peer.client).then(reports => {
+        if (!closing && !peer.frames.isClosed && peer.elevenLabsSpending && offers(peer, 'plugin-elevenlabs-spending')) push(peer, { v: 1, event: 'plugin-elevenlabs-spending', reports: spendingReportsSchema.parse(reports) })
+      }, () => undefined)
+    }
+  })
   /**
    * A host thread's 3D model as it changes, and records that went (`plugin-meshy-models`), pushed to each desktop whose
    * hello accepted it. One taken off the record of desktops since its hello is told nothing.
@@ -1757,6 +1768,8 @@ export async function startSocketServer(options: SocketServerOptions) {
         peer.checkQueueViews = (request.accepts?.includes('check-queue-views') ?? false) && offers(peer, 'check-queue-views')
         peer.meshySpendingAsked = request.accepts?.includes('plugin-meshy-spending') ?? false
         peer.meshySpending = peer.meshySpendingAsked && offers(peer, 'plugin-meshy-spending')
+        peer.elevenLabsSpendingAsked = request.accepts?.includes('plugin-elevenlabs-spending') ?? false
+        peer.elevenLabsSpending = peer.elevenLabsSpendingAsked && offers(peer, 'plugin-elevenlabs-spending')
         peer.meshyModelsAsked = request.accepts?.includes('plugin-meshy-models') ?? false
         peer.meshyModels = peer.meshyModelsAsked && offers(peer, 'plugin-meshy-models')
         // Only a phone reads a USDZ: a desktop that accepts this as well is not a phone for it (Sol on ticket 7).
@@ -2066,6 +2079,13 @@ export async function startSocketServer(options: SocketServerOptions) {
         // A desktop recorded after its hello, as one being added is, is pushed spending from now on if it asked.
         if (peer.meshySpendingAsked) peer.meshySpending = true
         try { return spendingReportsSchema.parse(await service.sharePluginMeshySpending(request.reports, peer.client)) } catch { throw new Refusal('unavailable') }
+      }
+      case 'plugin-elevenlabs-spending': {
+        // The same for its ElevenLabs accounts, each count in whole US cents.
+        await options.watcherDesktops?.refresh().catch(() => undefined)
+        if (!offers(peer, 'plugin-elevenlabs-spending') || !service.sharePluginElevenLabsSpending) throw new Refusal('invalid_request')
+        if (peer.elevenLabsSpendingAsked) peer.elevenLabsSpending = true
+        try { return spendingReportsSchema.parse(await service.sharePluginElevenLabsSpending(request.reports, peer.client)) } catch { throw new Refusal('unavailable') }
       }
       // A host thread's 3D models (the Meshy plan's ticket 6, part 2), for a recorded desktop's window: views by the host's
       // IDs, and removing the record of one whose files are gone, which the host looks at again first. Never a path.
@@ -2541,7 +2561,7 @@ export async function startSocketServer(options: SocketServerOptions) {
   expiry.unref()
   const stopServing = (): void => {
     if (closing) return
-    closing = true; clearInterval(expiry); unsubscribe(); unsubscribeDetails?.(); unsubscribeDelegations?.(); unsubscribeChecks?.(); unsubscribeSpending?.(); unsubscribeModels?.(); unsubscribePhoneModels?.(); unsubscribeBrowser?.(); unsubscribeNextPrompts?.(); releasePhoneAdmission?.(); shellPublisher.dispose(); detailPublisher.dispose(); waiting.clear()
+    closing = true; clearInterval(expiry); unsubscribe(); unsubscribeDetails?.(); unsubscribeDelegations?.(); unsubscribeChecks?.(); unsubscribeSpending?.(); unsubscribeElevenLabsSpending?.(); unsubscribeModels?.(); unsubscribePhoneModels?.(); unsubscribeBrowser?.(); unsubscribeNextPrompts?.(); releasePhoneAdmission?.(); shellPublisher.dispose(); detailPublisher.dispose(); waiting.clear()
     if (writingTimer) clearTimeout(writingTimer.timer)
     writingHeld.clear()
     server.removeAllListeners('request')

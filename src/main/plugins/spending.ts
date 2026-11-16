@@ -2,12 +2,15 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { z } from 'zod'
-import { SPENDING_CREDITS_MAX, type SpendingReport } from '../../../shared/pluginAccountCopies'
+import { SPENDING_CREDITS_MAX, type SpendingReport } from '../../shared/pluginAccountCopies'
 
 /**
- * Shared spending for a Meshy account (ADR-0205): one monthly limit wherever the account is. Each computer counts its
- * own 3D models and adds what the others last said, so a host that cannot reach its desktop keeps to what was left
- * when it last heard, and no more. Used by the desktop and by a paired host alike; neither imports Electron.
+ * Shared spending for a Meshy or ElevenLabs account (ADR-0205): one monthly limit wherever the account is. Each
+ * computer counts its own 3D models or sounds and adds what the others last said, so a host that cannot reach its
+ * desktop keeps to what was left when it last heard, and no more. Used by the desktop and by a paired host alike;
+ * neither imports Electron.
+ *
+ * A count is a whole number in the plugin's own unit: Meshy's credits, or US cents for ElevenLabs.
  */
 
 /** A month by this computer's own clock, as `YYYY-MM`: the month starts on the 1st (Zach's pick for ticket 3). */
@@ -68,11 +71,11 @@ export interface HeardReport { readonly from: string; readonly credits: number; 
 
 /** The record of what was heard cannot be read, or what was last heard could not be written down: nothing may be spent on it. */
 export class SpendingUnknown extends Error {
-  constructor() { super('MESHY_SPENDING_UNKNOWN') }
+  constructor() { super('PLUGIN_SPENDING_UNKNOWN') }
 }
 
 /**
- * What the other computers last said each Meshy account spent, kept in a small file of this computer's data folder so
+ * What the other computers last said each account of one plugin spent, kept in a small file of this computer's data folder so
  * it lasts while they are away and across a restart. It holds counts and IDs, never a secret. Each computer's newest
  * report for an account is kept, of whatever month; one for any other month than this computer's counts for nothing.
  *

@@ -3,8 +3,8 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { everyMonthStart, HeardSpending, monthOf } from '../../../../src/main/plugins/meshy/spending'
-import { MeshySpendingSync, type SpendingTarget } from '../../../../src/main/plugins/meshy/spendingSync'
+import { everyMonthStart, HeardSpending, monthOf } from '../../../../src/main/plugins/spending'
+import { PluginSpendingSync, type SpendingTarget } from '../../../../src/main/plugins/spendingSync'
 import type { SpendingReport } from '../../../../src/shared/pluginAccountCopies'
 import type { PluginAccount } from '../../../../src/shared/plugins'
 
@@ -42,7 +42,7 @@ function remote(hostId: string, own: number, supports = true) {
 }
 
 function sync(connected: SpendingTarget[], own: { credits: number }) {
-  const spending = new MeshySpendingSync(directory, {
+  const spending = new PluginSpendingSync(directory, { plugin: 'meshy',
     own: async () => new Map([[STUDIO.id, own.credits]]), accounts: async () => [STUDIO], connections: () => connected, now: () => NOVEMBER,
   })
   return spending
@@ -56,7 +56,7 @@ describe('shared spending on the desktop', () => {
     spending.connected(forge.target)
     await spending.idle()
     expect(forge.told).toMatchObject([[{ accountId: STUDIO.id, month: MONTH, credits: 30 }]])
-    await expect(spending.monthCredits(STUDIO.id)).resolves.toBe(120)
+    await expect(spending.monthTotal(STUDIO.id)).resolves.toBe(120)
     await expect(spending.reportedBy(STUDIO.id)).resolves.toEqual(['host-forge'])
     spending.close()
   })
@@ -94,14 +94,14 @@ describe('shared spending on the desktop', () => {
     expect(tower.told.at(-1)).toMatchObject([{ accountId: STUDIO.id, month: MONTH, credits: 50 }])
     forge.push(70)
     await expect.poll(() => tower.told.at(-1)?.[0]?.credits).toBe(80)
-    await expect(spending.monthCredits(STUDIO.id)).resolves.toBe(80)
+    await expect(spending.monthTotal(STUDIO.id)).resolves.toBe(80)
     spending.close()
   })
 
   it('says when what a host said changed, which main tells the window so the shared count is read again', async () => {
     const forge = remote('host-forge', 40)
     const changed = vi.fn()
-    const spending = new MeshySpendingSync(directory, {
+    const spending = new PluginSpendingSync(directory, { plugin: 'meshy',
       own: async () => new Map([[STUDIO.id, 10]]), accounts: async () => [STUDIO], connections: () => [forge.target], now: () => NOVEMBER, changed,
     })
     spending.connected(forge.target)
@@ -109,7 +109,7 @@ describe('shared spending on the desktop', () => {
     expect(changed).toHaveBeenCalledTimes(1)
     forge.push(70)
     await expect.poll(() => changed.mock.calls.length).toBe(2)
-    await expect(spending.monthCredits(STUDIO.id)).resolves.toBe(80)
+    await expect(spending.monthTotal(STUDIO.id)).resolves.toBe(80)
     spending.close()
   })
 
@@ -120,7 +120,7 @@ describe('shared spending on the desktop', () => {
     await first.idle()
     first.close()
     const again = sync([], { credits: 5 })
-    await expect(again.monthCredits(STUDIO.id)).resolves.toBe(205)
+    await expect(again.monthTotal(STUDIO.id)).resolves.toBe(205)
     again.close()
   })
 
@@ -131,10 +131,10 @@ describe('shared spending on the desktop', () => {
     forge.host.beforeReply = () => { forge.host.beforeReply = undefined; forge.push(900) }
     spending.connected(forge.target)
     await spending.idle()
-    await expect(spending.monthCredits(STUDIO.id)).resolves.toBe(900)
+    await expect(spending.monthTotal(STUDIO.id)).resolves.toBe(900)
     // Meshy gave credits back: the newer report says less, and it is the one that counts.
     forge.push(850)
-    await expect.poll(() => spending.monthCredits(STUDIO.id)).toBe(850)
+    await expect.poll(() => spending.monthTotal(STUDIO.id)).toBe(850)
     spending.close()
   })
 
@@ -147,7 +147,7 @@ describe('shared spending on the desktop', () => {
     // A push is heard straight away, and must not write over the file either.
     forge.push(300)
     await spending.idle()
-    await expect(spending.monthCredits(STUDIO.id)).rejects.toThrow()
+    await expect(spending.monthTotal(STUDIO.id)).rejects.toThrow()
     await expect(readFile(join(directory, 'plugin-meshy-spending.json'), 'utf8')).resolves.toBe('not a record')
     spending.close()
   })
@@ -158,7 +158,7 @@ describe('shared spending on the desktop', () => {
     spending.connected(older.target)
     await spending.idle()
     expect(older.told).toEqual([])
-    await expect(spending.monthCredits(STUDIO.id)).resolves.toBe(0)
+    await expect(spending.monthTotal(STUDIO.id)).resolves.toBe(0)
     spending.close()
   })
 })

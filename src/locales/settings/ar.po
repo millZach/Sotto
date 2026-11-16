@@ -6872,6 +6872,10 @@ msgid "Spending"
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Spent this month: {spentWords} of {limitDollars}, across {spentAcross}."
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Spent this month: {spentWords} of {limitDollars}."
 msgstr ""
 

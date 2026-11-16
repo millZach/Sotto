@@ -826,9 +826,14 @@ export class PluginToolServer implements ScopedThreadTools {
     const limitOf = (now: PluginAccount): number => now.spending?.monthlyLimit ?? ELEVENLABS_MONTHLY_LIMIT_DEFAULT
     /** What the account spent this month, or what to tell the agent when that cannot be read. */
     const spent = async (now: PluginAccount): Promise<number | string> => {
-      try { return await elevenlabs.monthSpent(now.id) } catch {
+      let used: number | 'waiting' | 'unreadable'
+      try { used = await elevenlabs.monthSpent(now.id) } catch {
         return `Sotto could not read its record of what the ElevenLabs account "${now.name}" spent this month, so it cannot tell how much of the monthly limit is left. ${NOTHING_SOUNDED} Tell the user.`
       }
+      // The same words as a 3D model's, on a paired host or with what other computers said unreadable.
+      if (used === 'waiting') return `Sotto is waiting to hear this month's spending for the ElevenLabs account "${now.name}" from the desktop that sent it to this computer, so it cannot tell how much of the monthly limit is left. ${NOTHING_SOUNDED} Try again once that desktop has connected to this computer.`
+      if (used === 'unreadable') return `Sotto could not read or keep its record of what the ElevenLabs account "${now.name}" spent on other computers this month, so it cannot tell how much of the monthly limit is left. ${NOTHING_SOUNDED} Tell the user.`
+      return used
     }
     /** Why this sound would pass the limit, given what the month spent, or null when it fits. */
     const overWords = (used: number, now: PluginAccount): string | null => {

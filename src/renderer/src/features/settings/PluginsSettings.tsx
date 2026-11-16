@@ -836,15 +836,16 @@ function AccountSpending({ account, spending, bridge, onAccounts }: {
     const stop = bridge.onMeshyCreditsChanged?.(read)
     return () => { live = false; stop?.() }
   }, [bridge, account.id, meshy])
-  // What an ElevenLabs account's sounds cost this month on this computer, in US dollars, read when the row opens, again
-  // each time a sound is made or fails, and again as a new month starts by this computer's clock, so a row left open
-  // across the 1st does not show last month's figure as this month's (Sol's review).
-  const [spentDollars, setSpentDollars] = useState<number | null>(null)
+  // What an ElevenLabs account's sounds cost this month in US dollars, here and on the paired hosts that said what they
+  // spent of it, read when the row opens, again each time a sound is made or fails or a host says what it spent, and
+  // again as a new month starts by this computer's clock, so a row left open across the 1st does not show last month's
+  // figure as this month's (Sol's review).
+  const [spentDollars, setSpentDollars] = useState<{ readonly spent: number; readonly across: readonly string[] } | null>(null)
   useEffect(() => {
     if (!bridge?.elevenLabsSpent || meshy) return
     let live = true
     let timer: ReturnType<typeof setTimeout> | undefined
-    const read = (): void => { void bridge.elevenLabsSpent?.().then(spent => { if (live) setSpentDollars(spent[account.id] ?? 0) }, () => undefined) }
+    const read = (): void => { void bridge.elevenLabsSpent?.().then(spent => { if (live) setSpentDollars(spent[account.id] ?? { spent: 0, across: [] }) }, () => undefined) }
     const atMonthStart = (): void => {
       const now = new Date()
       const next = new Date(now.getFullYear(), now.getMonth() + 1, 1)
@@ -875,10 +876,13 @@ function AccountSpending({ account, spending, bridge, onAccounts }: {
   }
   const usedCredits = used === null ? null : used.credits.toLocaleString()
   // Zach's pick A (the tag prototype/plugin-meshy): once a host has said what it spent, the line says where the count is from.
-  const across = used === null || used.across.length === 0 ? null : new Intl.ListFormat(i18n.locale, { type: 'conjunction' }).format([t`this computer`, ...used.across])
+  const acrossOf = (hosts: readonly string[] | undefined): string | null => hosts === undefined || hosts.length === 0 ? null : new Intl.ListFormat(i18n.locale, { type: 'conjunction' }).format([t`this computer`, ...hosts])
+  const across = acrossOf(used?.across)
   const limitCredits = spending.monthlyLimit.toLocaleString()
   // Dollars as the sound's card says them (Zach's pick on #2498): "$0.03", "under $0.01", and the limit as "$10".
-  const spentWords = spentDollars === null ? null : dollarFigure(spentDollars) ?? t`under $0.01`
+  const spentWords = spentDollars === null ? null : dollarFigure(spentDollars.spent) ?? t`under $0.01`
+  // The same words as the credits line once a host has said what it spent.
+  const spentAcross = acrossOf(spentDollars?.across)
   const limitDollars = dollarLimit(spending.monthlyLimit)
   const saveLimit = (): void => { if (wanted !== null && wanted !== (askedLimit.current ?? spending.monthlyLimit)) void save({ monthlyLimit: wanted }) }
   return <section className="plugin-account__spending" aria-labelledby={headingId}>
@@ -898,7 +902,8 @@ function AccountSpending({ account, spending, bridge, onAccounts }: {
     </Field>
     {usedCredits === null ? null : <p className="tt-paragraph plugin-row__note">{across === null ? <Trans>Credits this month: {usedCredits} of {limitCredits}.</Trans>
       : <Trans>Credits this month: {usedCredits} of {limitCredits}, across {across}.</Trans>}</p>}
-    {meshy || spentWords === null ? null : <p className="tt-paragraph plugin-row__note"><Trans>Spent this month: {spentWords} of {limitDollars}.</Trans></p>}
+    {meshy || spentWords === null ? null : <p className="tt-paragraph plugin-row__note">{spentAcross === null ? <Trans>Spent this month: {spentWords} of {limitDollars}.</Trans>
+      : <Trans>Spent this month: {spentWords} of {limitDollars}, across {spentAcross}.</Trans>}</p>}
     {failed ? <p className="tt-field__error tt-paragraph" role="alert"><Trans>That could not be saved. Nothing was changed. Try again.</Trans></p> : null}
   </section>
 }

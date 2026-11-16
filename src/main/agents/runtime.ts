@@ -195,6 +195,8 @@ export interface AgentRuntimeOptions {
   pluginGitHubSignIn?: () => Promise<GitHubSignIn>
   /** A headless host's shared spending for its Meshy copies (`plugin-meshy-spending`, ADR-0205). With `pluginAccountCopies`. */
   pluginMeshySpending?: PluginSpendingShare
+  /** The same for its ElevenLabs copies (`plugin-elevenlabs-spending`, ADR-0205), in whole cents. With `pluginAccountCopies`. */
+  pluginElevenLabsSpending?: PluginSpendingShare
   /** A headless host's 3D models, for a recorded desktop's window (the Meshy plan's ticket 6, part 2). */
   pluginMeshyModels?: HostModelViews
   /**
@@ -977,6 +979,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ...(options.pluginAccountCopies && options.runsAs === 'headless-host' ? { pluginAccountCopies: options.pluginAccountCopies } : {}),
     ...(options.pluginGitHubSignIn && options.runsAs === 'headless-host' ? { pluginGitHubSignIn: options.pluginGitHubSignIn } : {}),
     ...(options.pluginMeshySpending && options.pluginAccountCopies && options.runsAs === 'headless-host' ? { pluginMeshySpending: options.pluginMeshySpending } : {}),
+    ...(options.pluginElevenLabsSpending && options.pluginAccountCopies && options.runsAs === 'headless-host' ? { pluginElevenLabsSpending: options.pluginElevenLabsSpending } : {}),
     ...(options.pluginMeshyModels && options.pluginAccountCopies && options.runsAs === 'headless-host' ? { pluginMeshyModels: options.pluginMeshyModels } : {}),
     prompts: { threadPrompts: (threadId, beforeMessageId) => agentHost.threadPrompts(threadId, beforeMessageId) },
     ...(options.threadStartsEnabled === true ? { threadStarts: { startHandover: (threadId: string) => agentHost.startHandover(threadId) } } : {}),

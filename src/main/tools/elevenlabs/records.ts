@@ -1,7 +1,7 @@
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { z } from 'zod'
-import { monthOf } from '../../plugins/meshy/spending'
+import { monthOf } from '../../plugins/spending'
 import { SOUND_FAILURES, SOUND_KINDS, SOUND_STATES, SPEECH_CHARACTERS_MAX, type SoundFailure } from '../../../shared/sounds'
 
 /**

@@ -190,6 +190,11 @@ export interface HostService {
   pluginMeshySpending?(client: ClientIdentity): Promise<SpendingReport[]>
   /** On the host its listener is called with nothing; on a desktop's connection, with what the host pushed. */
   subscribePluginMeshySpending?(listener: (reports?: readonly SpendingReport[]) => void): () => void
+  /** The same for ElevenLabs copies (`plugin-elevenlabs-spending`, ADR-0205), each count in whole US cents. */
+  readonly supportsPluginElevenLabsSpending?: boolean
+  sharePluginElevenLabsSpending?(reports: readonly SpendingReport[], client?: ClientIdentity): Promise<SpendingReport[]>
+  pluginElevenLabsSpending?(client: ClientIdentity): Promise<SpendingReport[]>
+  subscribePluginElevenLabsSpending?(listener: (reports?: readonly SpendingReport[]) => void): () => void
   /**
    * A host thread's 3D models, shown on a recorded desktop (`plugin-meshy-models`; the Meshy plan's ticket 6, part 2): on
    * the headless host its own records, and on a desktop's connection to a host that lists it, those read over the socket.
@@ -549,6 +554,8 @@ export class LocalHostService implements HostService {
     pluginGitHubSignIn?: () => Promise<GitHubSignIn>
     /** Shared spending for the Meshy copies this host keeps (ADR-0205), present only with `pluginAccountCopies`. */
     pluginMeshySpending?: PluginSpendingShare
+    /** Shared spending for the ElevenLabs copies this host keeps, in whole cents, present only with `pluginAccountCopies`. */
+    pluginElevenLabsSpending?: PluginSpendingShare
     /** This host's 3D models, for a recorded desktop's window (the Meshy plan's ticket 6, part 2), only with `pluginAccountCopies`. */
     pluginMeshyModels?: HostModelViews
     workerSwarms?: boolean
@@ -623,6 +630,17 @@ export class LocalHostService implements HostService {
   get pluginMeshyModels(): HostModelViews | undefined { return this.supportsPluginMeshyModels ? this.options.pluginMeshyModels : undefined }
   /** Hears this host's own count change; the listener reads it for each desktop with `pluginMeshySpending`. */
   subscribePluginMeshySpending(listener: () => void): () => void { return this.options.pluginMeshySpending?.subscribe(listener) ?? (() => undefined) }
+  get supportsPluginElevenLabsSpending(): boolean { return this.options.pluginAccountCopies !== undefined && this.options.pluginElevenLabsSpending !== undefined }
+  /** As `sharePluginMeshySpending`, for the ElevenLabs copies a desktop sent, in whole cents. */
+  sharePluginElevenLabsSpending(reports: readonly SpendingReport[], client: ClientIdentity): Promise<SpendingReport[]> {
+    if (!this.options.pluginElevenLabsSpending) return Promise.reject(new Error('This host does not share spending.'))
+    return this.options.pluginElevenLabsSpending.share(reports, client.clientId)
+  }
+  pluginElevenLabsSpending(client: ClientIdentity): Promise<SpendingReport[]> {
+    if (!this.options.pluginElevenLabsSpending) return Promise.reject(new Error('This host does not share spending.'))
+    return this.options.pluginElevenLabsSpending.own(client.clientId)
+  }
+  subscribePluginElevenLabsSpending(listener: () => void): () => void { return this.options.pluginElevenLabsSpending?.subscribe(listener) ?? (() => undefined) }
   get supportsDelegationViews(): boolean { return this.options.delegationViews !== undefined }
   /** Read from delegation's own record, never a snapshot, as the desktop's own window reads this computer's (#1029). */
   async delegationViews(threadId: string): Promise<DelegationsRead> {

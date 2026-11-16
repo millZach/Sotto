@@ -34,7 +34,7 @@ function register(answer: GitHubSignIn = { state: 'signed-in', login: 'example-u
   const updateAccount = vi.fn(async (): Promise<PluginAccountResult> => ({ ok: true, accounts: [{ ...account, on: false }] }))
   const trustCertificate = vi.fn(async (): Promise<PluginAccountResult> => ({ ok: false, problem: 'refused' })), bridgeStatus = vi.fn(async (): Promise<BridgeStatus> => 'not-running')
   const meshyCredits = vi.fn(async (): Promise<MeshyCredits> => ({ [account.id]: { here: 120, credits: 120, across: [] } }))
-  const elevenLabsSpent = vi.fn(async (): Promise<ElevenLabsSpent> => ({ [account.id]: 1.2 }))
+  const elevenLabsSpent = vi.fn(async (): Promise<ElevenLabsSpent> => ({ [account.id]: { spent: 1.2, across: [] } }))
   const projects = vi.fn(() => [{ id: 'p-sotto', title: 'Sotto', settled: false }])
   const view: PluginCopiesView = { copyNew: true, readable: true, computers: [{ id: 'saved-forge', name: 'forge', connected: true }], copies: [{ accountId: account.id, computerId: 'saved-forge', state: 'kept', leaving: 'no' }] }
   const copies = vi.fn(async (): Promise<PluginCopiesView> => view), setCopy = vi.fn(async (): Promise<PluginCopiesView> => view), setCopyNew = vi.fn(async (): Promise<PluginCopiesView> => view)
@@ -168,10 +168,10 @@ describe('Settings › Plugins, from the window through preload to main (ADR-020
 
   it('reads what each ElevenLabs account’s sounds cost this month, for the main window only, and no sum below nothing', async () => {
     const { bridge, invoke, widgetEvent, elevenLabsSpent, close, handlers } = register()
-    await expect(bridge.elevenLabsSpent!()).resolves.toEqual({ [account.id]: 1.2 })
+    await expect(bridge.elevenLabsSpent!()).resolves.toEqual({ [account.id]: { spent: 1.2, across: [] } })
     await expect(invoke(PLUGINS_ELEVENLABS_SPENT, [], widgetEvent)).rejects.toThrow('Open Settings in the main Sotto window.')
     await expect(invoke(PLUGINS_ELEVENLABS_SPENT, ['extra'])).rejects.toThrow()
-    elevenLabsSpent.mockResolvedValueOnce({ [account.id]: -1 })
+    elevenLabsSpent.mockResolvedValueOnce({ [account.id]: { spent: -1, across: [] } })
     await expect(invoke(PLUGINS_ELEVENLABS_SPENT, [])).rejects.toThrow()
     close()
     expect(handlers.has(PLUGINS_ELEVENLABS_SPENT)).toBe(false)

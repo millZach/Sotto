@@ -241,18 +241,21 @@ export const PLUGINS_MESHY_CREDITS = 'sotto:plugins:meshy-credits'
  * count the 3D models page and Settings show is read again. A 3D model here changing is told by its own news.
  */
 export const PLUGINS_MESHY_CREDITS_CHANGED = 'sotto:plugins:meshy-credits-changed'
-/** Main to the window: a sound was made or failed on this computer, so what each ElevenLabs account spent is read again. */
+/**
+ * Main to the window: a sound was made or failed on this computer, or a paired host said what it spent of an ElevenLabs
+ * account, so what each account spent is read again.
+ */
 export const PLUGINS_ELEVENLABS_SPENT_CHANGED = 'sotto:plugins:elevenlabs-spent-changed'
 const creditCount = z.number().int().nonnegative()
 export const meshyCreditsSchema = z.record(z.uuid(), z.object({ here: creditCount, credits: creditCount, across: z.array(z.string().max(200)).max(100) }).strict())
 export type MeshyCredits = z.infer<typeof meshyCreditsSchema>
 /**
- * What each ElevenLabs account's sounds cost this month on this computer, in US dollars at ElevenLabs' published API
- * prices, by account ID (ADR-0205, slice 12): the month starts on the 1st, by this computer's clock. Threads on a
- * paired host make none yet, so it is this computer's count alone.
+ * What each ElevenLabs account's sounds cost this month, in US dollars at ElevenLabs' published API prices, by account
+ * ID (ADR-0205, slice 12): the month starts on the 1st, by this computer's clock. `spent` is this computer's and every
+ * paired host's that said what it spent of the account, and `across` names those hosts, as a Meshy account's credits are.
  */
 export const PLUGINS_ELEVENLABS_SPENT = 'sotto:plugins:elevenlabs-spent'
-export const elevenLabsSpentSchema = z.record(z.uuid(), z.number().nonnegative().max(10_000_000))
+export const elevenLabsSpentSchema = z.record(z.uuid(), z.object({ spent: z.number().nonnegative().max(10_000_000), across: z.array(z.string().max(200)).max(100) }).strict())
 export type ElevenLabsSpent = z.infer<typeof elevenLabsSpentSchema>
 /**
  * A sum in US dollars as Sotto says it, with two decimals: "$0.03". Null for one above nothing and below a cent, which
