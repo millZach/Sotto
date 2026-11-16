@@ -8,8 +8,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { startSocketServer } from '../../src/host/socketServer'
 import type { HostService } from '../../src/main/agents/hostService'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
-import { monthOf } from '../../src/main/plugins/meshy/spending'
-import { MeshySpendingSync } from '../../src/main/plugins/meshy/spendingSync'
+import { monthOf } from '../../src/main/plugins/spending'
+import { PluginSpendingSync } from '../../src/main/plugins/spendingSync'
 import { DESKTOP_CLIENTS_FILE } from '../../src/shared/desktopClients'
 import type { SpendingReport } from '../../src/shared/pluginAccountCopies'
 import type { PluginAccount } from '../../src/shared/plugins'
@@ -138,7 +138,7 @@ describe('shared spending between a desktop and a real headless host', () => {
     })
     await socket.connect()
     const target = { hostId: pairing.hostId, kind: 'remote' as const, service: socket }
-    const spending = new MeshySpendingSync(desktopData, { own: async () => new Map([[STUDIO.id, 30]]), accounts: async () => [STUDIO], connections: () => [target] })
+    const spending = new PluginSpendingSync(desktopData, { plugin: 'meshy', own: async () => new Map([[STUDIO.id, 30]]), accounts: async () => [STUDIO], connections: () => [target] })
     cleanups.push(async () => { spending.close() })
     return { socket, spending, target, data, pairing }
   }
@@ -152,7 +152,7 @@ describe('shared spending between a desktop and a real headless host', () => {
     const kept = JSON.parse(await readFile(join(c.data, 'plugin-meshy-spending.json'), 'utf8')) as { heard: Record<string, Record<string, { credits: number }>> }
     expect(kept.heard[c.pairing.clientId]?.[STUDIO.id]?.credits).toBe(30)
     await expect(c.spending.reportedBy(STUDIO.id)).resolves.toEqual([c.pairing.hostId])
-    await expect(c.spending.monthCredits(STUDIO.id)).resolves.toBe(30)
+    await expect(c.spending.monthTotal(STUDIO.id)).resolves.toBe(30)
   })
 
   it('tells a stable host nothing, which lists no shared spending', async () => {

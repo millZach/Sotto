@@ -1,4 +1,3 @@
-import { join } from 'node:path'
 import { resetGhLookup } from '../main/agents/git/ghCommand'
 import { runGitStatusCommand, type RunGitCommand } from '../main/agents/git/gitStatus'
 import { hostPluginAccountCopies, type HostPluginAccountCopies } from '../main/plugins/accountCopies'
@@ -7,11 +6,14 @@ import { wordPluginChangeInEnglish } from '../main/plugins/changeWordsPlain'
 import { readGitHubSignIn, sharedGitHubSignIn } from '../main/plugins/github/signIn'
 import type { MailConnect } from '../main/plugins/mail/read'
 import { MailGrants, mailThreadOpen } from '../main/plugins/mailGrants'
-import { everyMonthStart, HeardSpending, monthOf, ReportRevisions } from '../main/plugins/meshy/spending'
 import { PluginChangeRequests } from '../main/plugins/pendingChanges'
 import { PluginToolServer } from '../main/plugins/pluginTools'
+import { centsByAccount } from '../main/plugins/spendingSync'
 import { pluginToolHandlers, type PluginToolAccounts } from '../main/plugins/toolHandlers'
 import type { VercelFetch } from '../main/plugins/vercel/read'
+import type { ElevenLabsApiFetch } from '../main/tools/elevenlabs/api'
+import { SoundRecords, type SoundRecord } from '../main/tools/elevenlabs/records'
+import { ElevenLabsSounds, type SoundRequest } from '../main/tools/elevenlabs/service'
 import type { MeshyApiFetch } from '../main/tools/meshy/api'
 import { checkPhoto, photoToSend } from '../main/tools/meshy/photo'
 import { ModelRecords, type ThreeDModel } from '../main/tools/meshy/records'
@@ -20,9 +22,10 @@ import { stripPhoto } from '../main/tools/meshy/strip'
 import { hostModelViews, type HostModelViewsWithNews } from '../main/tools/meshy/hostViews'
 import type { HostModelViews } from '../shared/models3d'
 import { PROVIDER_LABELS, type AgentHostSnapshot } from '../shared/agents'
-import type { PluginSpendingShare, SpendingReport } from '../shared/pluginAccountCopies'
-import type { GitHubSignIn } from '../shared/plugins'
+import type { PluginSpendingShare } from '../shared/pluginAccountCopies'
+import type { GitHubSignIn, PluginAccount } from '../shared/plugins'
 import { isThreadClosed } from '../shared/threadActivity'
+import { hostSpending } from './pluginSpending'
 
 /** Tests stand in for this machine's `gh` and for Vercel; a host runs its own `gh` and reaches api.vercel.com. */
 export interface HostPluginStandIns {
@@ -35,6 +38,9 @@ export interface HostPluginStandIns {
   readonly meshyBase?: string
   readonly meshyFetch?: MeshyApiFetch
   readonly meshyWait?: (ms: number, signal: AbortSignal) => Promise<void>
+  /** A stand-in for ElevenLabs' API, and how it is reached. */
+  readonly elevenLabsBase?: string
+  readonly elevenLabsFetch?: ElevenLabsApiFetch
   readonly now?: () => Date
 }
 
@@ -55,11 +61,16 @@ export interface HostPlugins {
   readonly spending: PluginSpendingShare
   /** This host's 3D models as a recorded desktop's window reads them (`plugin-meshy-models`). */
   readonly views: HostModelViews
+  /** The sounds this host's threads asked for, which follow forgetting a thread and Keep local history. */
+  readonly sounds: SoundRecords
+  /** Shared spending with the desktops that sent this host its ElevenLabs copies (`plugin-elevenlabs-spending`). */
+  readonly elevenLabsSpending: PluginSpendingShare
   /**
-   * Once the paired clients are read: takes the words out of the 3D models' records if Keep local history is off, and
-   * picks up the 3D models still being made when the host last stopped. Before then no copy's key may be read.
+   * Once the paired clients and the host's settings are read: settles the sounds cut off when the host last stopped,
+   * takes the words out of the 3D models' and sounds' records if Keep local history is off, and picks up the 3D models
+   * still being made when the host last stopped. Before then no copy's key may be read.
    */
-  startModels(): Promise<void>
+  start(): Promise<void>
   /** Deleted threads take their waiting cards and their mail grants with them. */
   forgetThreads(threadIds: readonly string[]): void
   /** Forgets the grants of copies this host no longer holds, when it starts. */
@@ -104,6 +115,8 @@ export function hostPlugins(options: {
   readonly folderOf?: (threadId: string) => Promise<string | null>
   /** Places a 3D model's line in its thread, as the desktop does. False when it could not be placed. */
   readonly showInThread?: (threadId: string, model: ThreeDModel) => Promise<boolean>
+  /** Places a sound's line in its thread, as the desktop does. False when it could not be placed. */
+  readonly showSoundInThread?: (threadId: string, sound: SoundRecord) => Promise<boolean>
   /** The host's Keep local history, read in place; off until its settings are read. */
   readonly historyEnabled?: () => boolean
   readonly standIns?: HostPluginStandIns
@@ -155,23 +168,12 @@ export function hostPlugins(options: {
   const historyEnabled = options.historyEnabled ?? (() => false)
   const models = new ModelRecords(options.directory, { historyEnabled })
   const meshyBase = options.standIns?.meshyBase
-  // One limit wherever the account is: what each copy's desktop last said it spent, with when (ADR-0205).
-  const heard = new HeardSpending(join(options.directory, 'plugin-meshy-spending.json'), now)
-  const spendingListeners = new Set<() => void>()
-  const spendingChanged = (): void => { for (const listener of [...spendingListeners]) { try { listener() } catch { /* A listener's failure is its own. */ } } }
+  // One limit wherever the account is: what each copy's desktop last said it spent, and this host's own (ADR-0205).
+  const senders = (): Promise<Readonly<Record<string, string>>> => copies.senders()
+  const accountList = (): Promise<readonly PluginAccount[]> => accounts.list()
+  const meshySpending = hostSpending({ plugin: 'meshy', directory: options.directory, senders, accounts: accountList, own: () => models.monthCredits(now()), now })
   // Each change to a 3D model is looked at for whether this host's count moved, and only a count that did is told.
-  // Looks asked for while one runs are one more look after it.
-  let counted = new Map<string, number>()
-  let looking: Promise<void> | undefined
-  let lookAgain = false
-  const countChanged = (): void => {
-    if (looking) { lookAgain = true; return }
-    looking = models.monthCredits(now()).then(credits => {
-      const moved = credits.size !== counted.size || [...credits].some(([id, count]) => counted.get(id) !== count)
-      counted = new Map(credits)
-      if (moved) spendingChanged()
-    }, () => undefined).finally(() => { looking = undefined; if (lookAgain) { lookAgain = false; countChanged() } })
-  }
+  const countChanged = (): void => { meshySpending.countChanged() }
   const meshyModels = new MeshyModels({ records: models, signal: stop.signal,
     fetch: options.standIns?.meshyFetch ?? ((url, init) => fetch(url, init)),
     ...(meshyBase ? { base: meshyBase, assets: meshyBase } : {}), ...(options.standIns?.meshyWait ? { wait: options.standIns.meshyWait } : {}),
@@ -188,49 +190,49 @@ export function hostPlugins(options: {
     accountNames: async () => new Map((await accounts.list()).filter(account => account.plugin === 'meshy').map(account => [account.id, account.name])),
     remove: (id, may) => models.remove(id, may),
   })
-  const stopMonths = everyMonthStart(() => { counted = new Map(); spendingChanged() }, now)
-  const revisions = new ReportRevisions()
-  /**
-   * This host's own credits this month for each Meshy copy one desktop sent. Numbered as soon as they are counted, and
-   * counts are read one after another, so a report with a higher number never says less than was spent before it.
-   */
-  const ownFor = async (clientId: string): Promise<SpendingReport[]> => {
-    const senders = await copies.senders()
-    const credits = await models.monthCredits(now())
-    const revision = revisions.next()
-    const month = monthOf(now())
-    return (await accounts.list()).filter(account => account.plugin === 'meshy' && senders[account.id] === clientId)
-      .map(account => ({ accountId: account.id, month, credits: credits.get(account.id) ?? 0, session: revisions.session, revision }))
-  }
-  const spending: PluginSpendingShare = {
-    // A desktop speaks only for the copies it sent: what it says of any other account is not kept. What it says is
-    // written down before it is answered, and a write that fails is no answer, so the desktop never takes it as heard.
-    share: async (reports, clientId) => {
-      const senders = await copies.senders()
-      await heard.hear(clientId, reports.filter(report => senders[report.accountId] === clientId))
-      return ownFor(clientId)
-    },
-    own: ownFor,
-    subscribe: listener => { spendingListeners.add(listener); return () => { spendingListeners.delete(listener) } },
-  }
+  const spending = meshySpending.share
+  // Sounds (ADR-0205; the plugins plan's slice 12, part 4a): this host's threads make them with the ElevenLabs copies
+  // its desktops sent, into their own folders on this machine, as the desktop's threads do. Each record is this host's
+  // own, in its own folder, and ElevenLabs' API is reached from here with the copy's key, read for one call. A sound
+  // cut off when the host last stopped stays counted, and is settled in `start`, once the host's Keep local history is
+  // read: read before, the records would be taken as kept with history off, and lose their words (Sol's review).
+  const sounds = new SoundRecords(options.directory, { historyEnabled })
+  // The same one limit across computers, counted in whole cents with each side's own rounded up (ADR-0205).
+  const elevenLabsSpending = hostSpending({ plugin: 'elevenlabs', directory: options.directory, senders, accounts: accountList,
+    own: async () => centsByAccount(await sounds.monthSpent(now())), now })
+  const elevenLabsBase = options.standIns?.elevenLabsBase
+  const elevenLabsSounds = new ElevenLabsSounds({ records: sounds, signal: stop.signal,
+    fetch: options.standIns?.elevenLabsFetch ?? ((url, init) => fetch(url, init)), ...(elevenLabsBase ? { base: elevenLabsBase } : {}),
+    keyOf: async accountId => (await usable.list()).some(account => account.id === accountId && account.plugin === 'elevenlabs') ? usable.secret(accountId) || undefined : undefined,
+    changed: () => { elevenLabsSpending.countChanged() },
+  })
   const { folderOf } = options
   const meshy = folderOf ? {
     folderOf,
-    // This host's own 3D models and what the copy's desktop last said, which holds every other computer's. A copy
-    // spends nothing until its desktop has said what the account spent (Sol's review): a copy whose report came before
-    // it, or has not come yet, would otherwise count the desktop's spending as none. Nor while what was said cannot
-    // be read or was not written down.
+    // This host's own 3D models and what the copy's desktop last said, which holds every other computer's. Nothing is
+    // spent while that desktop's word is awaited, or what it said cannot be read or kept.
     monthCredits: async (accountId: string): Promise<number | 'waiting' | 'unreadable'> => {
-      const sender = (await copies.senders().catch((): Readonly<Record<string, string>> => ({})))[accountId]
-      try {
-        if (sender === undefined || !await heard.has(sender, accountId)) return 'waiting'
-        return ((await models.monthCredits(now())).get(accountId) ?? 0) + await heard.total(accountId)
-      } catch { return 'unreadable' }
+      const others = await meshySpending.others(accountId)
+      if (typeof others === 'string') return others
+      try { return ((await models.monthCredits(now())).get(accountId) ?? 0) + others } catch { return 'unreadable' }
     },
     // No image library here: the photo's metadata is taken out of its file, its pixels left as they are (#2497).
     checkPhoto, photoToSend: (root: string, checked: Parameters<typeof photoToSend>[1], path: string) => photoToSend(root, checked, path, stripPhoto),
     make: (request: Parameters<MeshyModels['make']>[0]) => meshyModels.make(request),
     showInThread: async (threadId: string, model: ThreeDModel) => await options.showInThread?.(threadId, model).catch(() => false) ?? false,
+  } : undefined
+  const elevenlabs = folderOf ? {
+    folderOf,
+    // This host's own sounds in dollars, and what the copy's desktop last said in cents, held as Meshy's credits are.
+    // A record of this host's own sounds that cannot be read throws, and the tool says so.
+    monthSpent: async (accountId: string): Promise<number | 'waiting' | 'unreadable'> => {
+      const others = await elevenLabsSpending.others(accountId)
+      if (typeof others === 'string') return others
+      return ((await sounds.monthSpent(now())).get(accountId) ?? 0) + others / 100
+    },
+    voices: (accountId: string) => elevenLabsSounds.voices(accountId),
+    make: (request: SoundRequest) => elevenLabsSounds.make(request),
+    showInThread: async (threadId: string, sound: SoundRecord) => await options.showSoundInThread?.(threadId, sound).catch(() => false) ?? false,
   } : undefined
   const tools = new PluginToolServer(pluginToolHandlers({
     admits: options.admits, accounts: usable,
@@ -241,6 +243,7 @@ export function hostPlugins(options: {
     record: async () => undefined,
     gitHubSignIn, gh,
     ...(meshy ? { meshy } : {}),
+    ...(elevenlabs ? { elevenlabs } : {}),
     vercelFetch: options.standIns?.vercelFetch ?? ((url, init) => fetch(url, init)),
     vercelOptions: { ...(options.standIns?.vercelBase ? { base: options.standIns.vercelBase } : {}), signal: stop.signal },
     // Mail is read from this machine, with the copy's password from the host's own credential file. The card that
@@ -252,14 +255,22 @@ export function hostPlugins(options: {
     },
   }))
   return {
-    copies, changes, tools, gitHubSignIn, mailGrants, forgetGrantsOfGone, models, spending, views,
-    startModels: async () => {
+    copies, changes, tools, gitHubSignIn, mailGrants, forgetGrantsOfGone, models, spending, views, sounds, elevenLabsSpending: elevenLabsSpending.share,
+    start: async () => {
       await models.privacyChanged().catch(() => undefined)
+      await sounds.settleUnfinished().catch(() => undefined)
+      await sounds.privacyChanged().catch(() => undefined)
+      elevenLabsSpending.countChanged()
       await meshyModels.resume()
       countChanged()
     },
-    // A forgotten thread's 3D models' records go with it; what they cost this month still counts (ADR-0141).
-    forgetThreads: threadIds => { changes.forgetThreads(threadIds); void mailGrants.forgetThreads(threadIds).catch(() => undefined); void models.forgetThreads(threadIds).then(ids => { views.removed(ids) }, () => undefined) },
-    close: async () => { stop.abort(); stopMonths(); spendingListeners.clear(); views.close(); changes.close(); mailGrants.close(); await tools.close() },
+    // A forgotten thread's 3D models' and sounds' records go with it; what they cost this month still counts (ADR-0141).
+    forgetThreads: threadIds => {
+      changes.forgetThreads(threadIds)
+      void mailGrants.forgetThreads(threadIds).catch(() => undefined)
+      void models.forgetThreads(threadIds).then(ids => { views.removed(ids) }, () => undefined)
+      void sounds.forgetThreads(threadIds).catch(() => undefined)
+    },
+    close: async () => { stop.abort(); meshySpending.close(); elevenLabsSpending.close(); views.close(); changes.close(); mailGrants.close(); await tools.close() },
   }
 }

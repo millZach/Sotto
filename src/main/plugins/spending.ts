@@ -2,12 +2,15 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { z } from 'zod'
-import { SPENDING_CREDITS_MAX, type SpendingReport } from '../../../shared/pluginAccountCopies'
+import { SPENDING_CREDITS_MAX, type SpendingReport } from '../../shared/pluginAccountCopies'
 
 /**
- * Shared spending for a Meshy account (ADR-0205): one monthly limit wherever the account is. Each computer counts its
- * own 3D models and adds what the others last said, so a host that cannot reach its desktop keeps to what was left
- * when it last heard, and no more. Used by the desktop and by a paired host alike; neither imports Electron.
+ * Shared spending for a Meshy or ElevenLabs account (ADR-0205): one monthly limit wherever the account is. Each
+ * computer counts its own 3D models or sounds and adds what the others last said, so a host that cannot reach its
+ * desktop keeps to what was left when it last heard, and no more. Used by the desktop and by a paired host alike;
+ * neither imports Electron.
+ *
+ * A count is a whole number in the plugin's own unit: Meshy's credits, or US cents for ElevenLabs.
  */
 
 /** A month by this computer's own clock, as `YYYY-MM`: the month starts on the 1st (Zach's pick for ticket 3). */
@@ -63,18 +66,28 @@ const heardSchema = z.object({
 }).strict()
 type Heard = z.infer<typeof heardSchema>
 
+/**
+ * Where a computer's report for another month than its newest is kept: beside it, under its own sender key, so the
+ * file stays one an older build reads and counts rightly, by the reader's month alone (Bug Bot on #2656, L1).
+ */
+const EARLIER = '#earlier'
+const senderOf = (key: string): string => key.endsWith(EARLIER) ? key.slice(0, -EARLIER.length) : key
+
 /** What one computer last said an account spent, and when it said it. */
 export interface HeardReport { readonly from: string; readonly credits: number; readonly heardAt: string }
 
 /** The record of what was heard cannot be read, or what was last heard could not be written down: nothing may be spent on it. */
 export class SpendingUnknown extends Error {
-  constructor() { super('MESHY_SPENDING_UNKNOWN') }
+  constructor() { super('PLUGIN_SPENDING_UNKNOWN') }
 }
 
 /**
- * What the other computers last said each Meshy account spent, kept in a small file of this computer's data folder so
+ * What the other computers last said each account of one plugin spent, kept in a small file of this computer's data folder so
  * it lasts while they are away and across a restart. It holds counts and IDs, never a secret. Each computer's newest
- * report for an account is kept, of whatever month; one for any other month than this computer's counts for nothing.
+ * report for an account is kept, and beside it its report for the month before. Computers' clocks turn the month at
+ * different hours, so a computer already in the new month says 0 while this one is still in the old: what it said
+ * for the old month still counts here until this one turns too (Bug Bot on #2656, L1). A report for any other month
+ * than this computer's counts for nothing.
  *
  * A report is written down before it counts, and before whoever sent it is told it was taken: a write that fails says
  * so, and until a later one succeeds nothing is counted, so a restart can never find less than was acknowledged. Only
@@ -83,8 +96,11 @@ export class SpendingUnknown extends Error {
  */
 export class HeardSpending {
   private kept: Heard | undefined
-  /** A write failed since the last that succeeded: what is held may be behind what was said. */
-  private behind = false
+  /**
+   * The accounts a write failed for since one for them succeeded: what is held of them may be behind what was said.
+   * Only they wait; the rest are counted as they are (Bug Bot on #2656, L2).
+   */
+  private readonly behind = new Set<string>()
   private queue: Promise<unknown> = Promise.resolve()
 
   constructor(private readonly path: string, private readonly now: () => Date = () => new Date()) {}
@@ -98,14 +114,24 @@ export class HeardSpending {
     return this.inTurn(async () => {
       const heard = await this.read()
       const mine = { ...heard.heard[from] }
+      const earlier = { ...heard.heard[from + EARLIER] }
       let changed = false
       for (const report of reports) {
         const before = mine[report.accountId]
         if (before?.session === report.session && before.revision !== undefined && before.revision >= report.revision) continue
+        const entry = { month: report.month, credits: report.credits, heardAt: this.now().toISOString(), session: report.session, revision: report.revision }
+        if (before && report.month < before.month) {
+          // A report for the month before the newest, as one sent just before the month turned and heard after.
+          if ((earlier[report.accountId]?.month ?? '') <= report.month) { earlier[report.accountId] = entry; changed = true }
+          continue
+        }
+        if (before && report.month > before.month) earlier[report.accountId] = before
         if (before?.month !== report.month || before.credits !== report.credits) changed = true
-        mine[report.accountId] = { month: report.month, credits: report.credits, heardAt: this.now().toISOString(), session: report.session, revision: report.revision }
+        mine[report.accountId] = entry
       }
-      await this.write({ version: 1, heard: { ...heard.heard, [from]: mine } })
+      const next: Heard['heard'] = { ...heard.heard, [from]: mine }
+      if (Object.keys(earlier).length > 0) next[from + EARLIER] = earlier
+      await this.write({ version: 1, heard: next }, reports.map(report => report.accountId))
       return changed
     })
   }
@@ -115,29 +141,39 @@ export class HeardSpending {
    * the record cannot be read or is behind what was said, so nothing is taken for nothing spent.
    */
   total(accountId: string, except?: string): Promise<number> {
-    return this.inTurn(async () => this.reports(await this.settled(), accountId).filter(report => report.from !== except).reduce((sum, report) => sum + report.credits, 0))
+    return this.inTurn(async () => this.reports(await this.settled(accountId), accountId).filter(report => report.from !== except).reduce((sum, report) => sum + report.credits, 0))
   }
 
   /** Whether one computer has said anything of the account, in any month. Throws as `total` does. */
   has(from: string, accountId: string): Promise<boolean> {
-    return this.inTurn(async () => (await this.settled()).heard[from]?.[accountId] !== undefined)
+    return this.inTurn(async () => (await this.settled(accountId)).heard[from]?.[accountId] !== undefined)
+  }
+
+  /**
+   * Whether one computer has said what the account spent in this computer's month. A report only for another month
+   * says nothing of this one: across the 1st, a computer that has not been heard from since is not taken to have spent
+   * nothing (Bug Bot on #2656, N2). Throws as `total` does.
+   */
+  hasThisMonth(from: string, accountId: string): Promise<boolean> {
+    return this.inTurn(async () => this.reports(await this.settled(accountId), accountId).some(report => report.from === from))
   }
 
   /** The computers that said anything of the account for this month, with what and when. */
   heardFrom(accountId: string): Promise<HeardReport[]> {
-    return this.inTurn(async () => this.reports(await this.settled(), accountId))
+    return this.inTurn(async () => this.reports(await this.settled(accountId), accountId))
   }
 
+  /** Each computer's report for this computer's month, its newest or the one before. */
   private reports(heard: Heard, accountId: string): HeardReport[] {
     const month = monthOf(this.now())
-    return Object.entries(heard.heard).flatMap(([from, accounts]) => {
+    return Object.entries(heard.heard).flatMap(([key, accounts]) => {
       const entry = accounts[accountId]
-      return entry && entry.month === month ? [{ from, credits: entry.credits, heardAt: entry.heardAt }] : []
+      return entry && entry.month === month ? [{ from: senderOf(key), credits: entry.credits, heardAt: entry.heardAt }] : []
     })
   }
 
-  private async settled(): Promise<Heard> {
-    if (this.behind) throw new SpendingUnknown()
+  private async settled(accountId: string): Promise<Heard> {
+    if (this.behind.has(accountId)) throw new SpendingUnknown()
     try { return await this.read() } catch { throw new SpendingUnknown() }
   }
 
@@ -152,20 +188,23 @@ export class HeardSpending {
     return (this.kept = heardSchema.parse(JSON.parse(text)))
   }
 
-  /** Written down first, then held: a write that fails leaves what is held as the file has it, and marks it behind. */
-  private async write(heard: Heard): Promise<void> {
+  /**
+   * Written down first, then held: a write that fails leaves what is held as the file has it, and marks the accounts
+   * it was for behind until a write for them succeeds.
+   */
+  private async write(heard: Heard, accountIds: readonly string[]): Promise<void> {
     const next = `${this.path}.next`
     try {
       await mkdir(dirname(this.path), { recursive: true })
       await writeFile(next, JSON.stringify(heard), { mode: 0o600 })
       await rename(next, this.path)
     } catch (error) {
-      this.behind = true
+      for (const id of accountIds) this.behind.add(id)
       await rm(next, { force: true }).catch(() => undefined)
       throw error
     }
     this.kept = heard
-    this.behind = false
+    for (const id of accountIds) this.behind.delete(id)
   }
 
   private inTurn<Result>(run: () => Promise<Result>): Promise<Result> {

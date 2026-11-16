@@ -1196,7 +1196,7 @@ it('says what the ElevenLabs account’s sounds cost this month against its limi
   // The card's money words (Zach's pick on #2498): two decimals, "under $0.01" below a cent, and the limit in whole dollars.
   let told: (() => void) | undefined
   let spent = 0
-  const elevenLabsSpent = vi.fn(async (): Promise<ElevenLabsSpent> => ({ [voices.id]: spent }))
+  const elevenLabsSpent = vi.fn(async (): Promise<ElevenLabsSpent> => ({ [voices.id]: { spent, across: [] } }))
   const meshyCredits = vi.fn(async (): Promise<MeshyCredits> => ({}))
   await act(async () => { render(<PluginsSettings bridge={vercelBridge([voices], { elevenLabsSpent, meshyCredits, onElevenLabsSpentChanged: listener => { told = listener; return () => { told = undefined } } })} />) })
   await act(async () => { fireEvent.click(elevenLabsRow()) })
@@ -1210,4 +1210,20 @@ it('says what the ElevenLabs account’s sounds cost this month against its limi
   expect(spends()).toHaveTextContent('Spent this month: $1.20 of $10.')
   expect(elevenLabsSpent).toHaveBeenCalledTimes(3)
   expect(meshyCredits).not.toHaveBeenCalled()
+})
+
+it('says the month’s spending is shared across this computer and the hosts that said what they spent of the ElevenLabs account', async () => {
+  // As the Meshy credits line (Zach's pick A, the tag prototype/plugin-meshy), once a host has reported.
+  let told: (() => void) | undefined
+  let spending: { spent: number; across: string[] } = { spent: 1.2, across: [] }
+  const elevenLabsSpent = vi.fn(async (): Promise<ElevenLabsSpent> => ({ [voices.id]: spending }))
+  await act(async () => { render(<PluginsSettings bridge={vercelBridge([voices], { elevenLabsSpent, meshyCredits: async () => ({}), onElevenLabsSpentChanged: listener => { told = listener; return () => { told = undefined } } })} />) })
+  await act(async () => { fireEvent.click(elevenLabsRow()) })
+  const spends = (): HTMLElement => within(screen.getByRole('region', { name: 'ElevenLabs account Voices' })).getByRole('region', { name: 'What it spends' })
+  expect(spends()).toHaveTextContent('Spent this month: $1.20 of $10.')
+  expect(spends()).not.toHaveTextContent('across')
+  // forge says what its threads spent: the figure is the shared total, and the line names where it is from.
+  spending = { spent: 3.45, across: ['forge'] }
+  await act(async () => { told?.() })
+  expect(spends()).toHaveTextContent('Spent this month: $3.45 of $10, across this computer and forge.')
 })

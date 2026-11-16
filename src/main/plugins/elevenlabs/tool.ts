@@ -36,8 +36,13 @@ export type MakeSoundInput = z.infer<typeof makeSoundInputSchema>
 export interface PluginElevenLabsHandlers {
   /** The thread's working folder on this computer, or null when Sotto cannot find one. */
   folderOf(threadId: string): Promise<string | null>
-  /** What the account's sounds cost this month, in US dollars at ElevenLabs' published prices. */
-  monthSpent(accountId: string): Promise<number>
+  /**
+   * What the account's sounds cost this month, in US dollars at ElevenLabs' published prices: this computer's own and
+   * what the other computers holding it last said. `waiting` on a paired host until the desktop that sent the copy
+   * has said what the account spent, and `unreadable` while what the others said cannot be read or kept. Throws when
+   * this computer's own record cannot be read.
+   */
+  monthSpent(accountId: string): Promise<number | 'waiting' | 'unreadable'>
   /** Why the account's key cannot be read for a call, or null when it can: said before the user is asked. */
   keyTrouble(account: PluginAccount): 'locked' | 'no-secret' | null
   /** The account's voices, by name. Throws an `ElevenLabsApiError` or a `SoundAccountError`; nothing is made. */

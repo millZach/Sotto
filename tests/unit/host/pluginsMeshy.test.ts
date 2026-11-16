@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { hostPlugins } from '../../../src/host/plugins'
 import type { PluginCredentials } from '../../../src/main/plugins/accounts'
 import { MODEL_COST } from '../../../src/main/plugins/meshy/tool'
-import { monthOf } from '../../../src/main/plugins/meshy/spending'
+import { monthOf } from '../../../src/main/plugins/spending'
 import { MAKE_3D_MODEL_TOOL, type PluginAccount } from '../../../src/shared/plugins'
 import { FAKE_MESHY_KEY, startFakeMeshy, type FakeMeshy } from '../../fixtures/fakeMeshy'
 

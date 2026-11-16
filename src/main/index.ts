@@ -78,7 +78,7 @@ import { mailGrantsShown, MailGrants, mailThreadOpen, ownThreadId } from './plug
 import { PluginChangeRequests } from './plugins/pendingChanges'
 import { pluginFolderOfThread, pluginProjects } from './plugins/projectFolders'
 import { PluginAccountCopySync } from './plugins/copySync'
-import { MeshySpendingSync } from './plugins/meshy/spendingSync'
+import { centsByAccount, PluginSpendingSync } from './plugins/spendingSync'
 import { isThreadClosed } from '../shared/threadActivity'
 import { wordPluginChange } from './plugins/changeWords'
 import { combinedSottoRequests } from './agents/sottoRequests'
@@ -1444,7 +1444,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const modelRecords = pluginsEnabled ? new ModelRecords(userDataPath, { historyEnabled: () => agentHistoryEnabled }) : undefined
   // One monthly limit for a Meshy account here and on every paired host holding its copy (ADR-0205): this computer
   // counts its own and adds what each host last said, and tells each host what was spent everywhere but there.
-  const meshySpending = modelRecords && pluginAccounts ? new MeshySpendingSync(userDataPath, {
+  const meshySpending = modelRecords && pluginAccounts ? new PluginSpendingSync(userDataPath, { plugin: 'meshy',
     own: () => modelRecords.monthCredits(), accounts: () => pluginAccounts.list(), connections: () => hostRouter.remoteConnections(),
     // What a host said it spent reaches the window, which reads the shared count again (Sol's review).
     changed: () => { windows.sendToMain(PLUGINS_MESHY_CREDITS_CHANGED, null) },
@@ -1503,6 +1503,12 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     : async (url, init) => { if (!elevenLabsBase || !url.startsWith(`${elevenLabsBase}/`)) throw new Error('E2E_NETWORK_DISABLED'); return fetch(url, init) }
   const soundRecords = pluginsEnabled ? new SoundRecords(userDataPath, { historyEnabled: () => agentHistoryEnabled }) : undefined
   void soundRecords?.settleUnfinished().catch(() => undefined)
+  // The same one limit for an ElevenLabs account here and on every paired host holding its copy (the plugins plan's
+  // slice 12, part 4a), told in whole cents, this computer's own sum of dollars rounded up to the cent.
+  const elevenLabsSpending = soundRecords && pluginAccounts ? new PluginSpendingSync(userDataPath, { plugin: 'elevenlabs',
+    own: async () => centsByAccount(await soundRecords.monthSpent()), accounts: () => pluginAccounts.list(), connections: () => hostRouter.remoteConnections(),
+    changed: () => { windows.sendToMain(PLUGINS_ELEVENLABS_SPENT_CHANGED, null) },
+  }) : undefined
   // A sound's line in its thread (part 3) reads its record by ID, and its MP3 only from inside the thread's working folder.
   const soundViews: SoundViewSource | undefined = soundRecords ? {
     sound: id => soundRecords.sound(id),
@@ -1513,14 +1519,20 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const elevenLabsSounds = soundRecords && pluginAccounts ? new ElevenLabsSounds({ records: soundRecords, fetch: elevenLabsApiFetch, signal: pluginsStop.signal, ...(elevenLabsBase ? { base: elevenLabsBase } : {}),
     keyOf: async accountId => (await pluginAccounts.list()).some(account => account.id === accountId && account.plugin === 'elevenlabs') ? pluginAccounts.secret(accountId) || undefined : undefined,
     changed: sound => {
-      // Settings reads what each account spent again once a sound is made or fails.
+      // Settings reads what each account spent again once a sound is made or fails, and the hosts holding its copy are told.
       windows.sendToMain(PLUGINS_ELEVENLABS_SPENT_CHANGED, null)
+      elevenLabsSpending?.ownChanged()
       void pushSoundView?.(sound)
     } }) : undefined
   const elevenLabsTools = elevenLabsSounds && soundRecords ? {
     folderOf: async (threadId: string) => { const found = await files.resolveWorkspace(threadId); return found.ok ? found.value.workingDirectory : null },
-    // This computer's own: threads on a paired host make no sounds yet.
-    monthSpent: async (accountId: string) => (await soundRecords.monthSpent()).get(accountId) ?? 0,
+    // This computer's own, and what each paired host holding the account's copy last said it spent, in cents. A record of
+    // what hosts said that cannot be read, or is behind what they said, spends nothing, as a Meshy account's does.
+    monthSpent: async (accountId: string): Promise<number | 'unreadable'> => {
+      const here = (await soundRecords.monthSpent()).get(accountId) ?? 0
+      const others = elevenLabsSpending ? await elevenLabsSpending.others(accountId).catch(() => 'unreadable' as const) : 0
+      return typeof others === 'string' ? others : here + others / 100
+    },
     voices: (accountId: string) => elevenLabsSounds.voices(accountId),
     make: (request: SoundRequest) => elevenLabsSounds.make(request),
     // The sound's line in its thread, by its ID alone, as a 3D model's is; a phone or a host client reads its words.
@@ -1532,7 +1544,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     folderOf: async (threadId: string) => { const found = await files.resolveWorkspace(threadId); return found.ok ? found.value.workingDirectory : null },
     // This computer's own, and what each paired host holding the account's copy last said it spent.
     // A record of what hosts said that cannot be read, or is behind what they said, spends nothing (Sol's review).
-    monthCredits: async (accountId: string) => meshySpending ? await meshySpending.monthCredits(accountId).catch(() => 'unreadable' as const) : (await modelRecords.monthCredits()).get(accountId) ?? 0,
+    monthCredits: async (accountId: string) => meshySpending ? await meshySpending.monthTotal(accountId).catch(() => 'unreadable' as const) : (await modelRecords.monthCredits()).get(accountId) ?? 0,
     checkPhoto, photoToSend: (root: string, checked: Parameters<typeof photoToSend>[1], path: string) => photoToSend(root, checked, path, redrawPhoto),
     make: (request: Parameters<MeshyModels['make']>[0]) => meshyModels.make(request),
     // The 3D model's line in its thread, by its ID alone; a phone or a host client reads its words.
@@ -1547,9 +1559,9 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     connections: () => hostRouter.remoteConnections(),
     changed: () => { windows.sendToMain(PLUGINS_COPIES_CHANGED, null) },
     // A host that has just agreed on its copies may hold one it did not have before, so it is told what each spent.
-    log: event => { logOperational(event); if (event === 'plugin-account-copies-reconciled') meshySpending?.tellAll() },
+    log: event => { logOperational(event); if (event === 'plugin-account-copies-reconciled') { meshySpending?.tellAll(); elevenLabsSpending?.tellAll() } },
   }) : undefined
-  const stopFollowingConnections = pluginCopySync ? hostRouter.subscribeConnected(connection => { pluginCopySync.connected(connection); meshySpending?.connected(connection) }) : undefined
+  const stopFollowingConnections = pluginCopySync ? hostRouter.subscribeConnected(connection => { pluginCopySync.connected(connection); meshySpending?.connected(connection); elevenLabsSpending?.connected(connection) }) : undefined
   // A host connecting, leaving or being saved changes what the page shows of its copies, and may be the first time a
   // host just added can be sent them.
   const stopFollowingHosts = pluginCopySync ? desktopHosts.subscribe(() => { pluginCopySync.computersChanged() }) : undefined
@@ -2931,15 +2943,20 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
           const ids = new Set([...(await pluginAccounts?.list() ?? []).filter(account => account.plugin === 'meshy').map(account => account.id), ...here.keys()])
           return Object.fromEntries(await Promise.all([...ids].map(async id => [id, {
             here: here.get(id) ?? 0,
-            credits: await meshySpending?.monthCredits(id).catch(() => undefined) ?? here.get(id) ?? 0,
+            credits: await meshySpending?.monthTotal(id).catch(() => undefined) ?? here.get(id) ?? 0,
             across: (await meshySpending?.reportedBy(id).catch(() => []) ?? []).flatMap(hostId => { const name = names.get(hostId); return name ? [name] : [] }),
           }] as const)))
         },
-        // What each ElevenLabs account's sounds cost this month on this computer, which Settings shows on its row.
+        // What each ElevenLabs account's sounds cost this month, in dollars, here and on the hosts that said what they
+        // spent of it, which Settings names as a Meshy account's credits are.
         elevenLabsSpent: async () => {
           const here = await soundRecords?.monthSpent() ?? new Map<string, number>()
+          const names = new Map(desktopHosts.get().hosts.flatMap(host => host.hostId ? [[host.hostId, host.name] as const] : []))
           const ids = new Set([...(await pluginAccounts?.list() ?? []).filter(account => account.plugin === 'elevenlabs').map(account => account.id), ...here.keys()])
-          return Object.fromEntries([...ids].map(id => [id, here.get(id) ?? 0] as const))
+          return Object.fromEntries(await Promise.all([...ids].map(async id => [id, {
+            spent: (here.get(id) ?? 0) + (await elevenLabsSpending?.others(id).catch(() => 0) ?? 0) / 100,
+            across: (await elevenLabsSpending?.reportedBy(id).catch(() => []) ?? []).flatMap(hostId => { const name = names.get(hostId); return name ? [name] : [] }),
+          }] as const)))
         },
         // A key that names a paired host is that host's 3D model, asked of it; any other ID is this computer's own.
         model3d: async id => hostModels?.onHost(id) ? await hostModels.view(id) : modelViews ? await modelViewOf(modelViews, id) : null,
@@ -2965,7 +2982,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         // The folder app is shown the record's own file, never a path from the window, and only this computer's own: a
         // host's files are on the host. An end-to-end run notes it instead.
         revealModel3d: async request => !hostModels?.onHost(request.id) && modelViews ? await revealModelFile(modelViews, request, path => { if (e2eConfiguration !== null) e2eFiles.shown.push(path); else shell.showItemInFolder(path) }) : false,
-        // A sound's line in its thread: this computer's own, as threads on a paired host make none yet. The folder app is
+        // A sound's line in its thread: this computer's own, as a host's sounds are not shown here yet. The folder app is
         // shown the record's own file, never a path from the window; an end-to-end run notes it instead.
         sound: async id => soundViews ? await soundViewOf(soundViews, id) : null,
         soundBytes: async id => soundViews ? await soundBytes(soundViews, id) : null,
@@ -3171,6 +3188,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         stopFollowingCopies()
         pluginCopySync?.close()
         meshySpending?.close()
+        elevenLabsSpending?.close()
         checkpointIntegration.dispose()
         cleanupRequestDrafts()
         cleanupFiles()

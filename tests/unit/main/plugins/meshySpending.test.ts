@@ -1,10 +1,10 @@
 // @vitest-environment node
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { everyMonthStart, HeardSpending, monthOf } from '../../../../src/main/plugins/meshy/spending'
-import { MeshySpendingSync, type SpendingTarget } from '../../../../src/main/plugins/meshy/spendingSync'
+import { everyMonthStart, HeardSpending, monthOf } from '../../../../src/main/plugins/spending'
+import { PluginSpendingSync, type SpendingTarget } from '../../../../src/main/plugins/spendingSync'
 import type { SpendingReport } from '../../../../src/shared/pluginAccountCopies'
 import type { PluginAccount } from '../../../../src/shared/plugins'
 
@@ -42,7 +42,7 @@ function remote(hostId: string, own: number, supports = true) {
 }
 
 function sync(connected: SpendingTarget[], own: { credits: number }) {
-  const spending = new MeshySpendingSync(directory, {
+  const spending = new PluginSpendingSync(directory, { plugin: 'meshy',
     own: async () => new Map([[STUDIO.id, own.credits]]), accounts: async () => [STUDIO], connections: () => connected, now: () => NOVEMBER,
   })
   return spending
@@ -56,7 +56,7 @@ describe('shared spending on the desktop', () => {
     spending.connected(forge.target)
     await spending.idle()
     expect(forge.told).toMatchObject([[{ accountId: STUDIO.id, month: MONTH, credits: 30 }]])
-    await expect(spending.monthCredits(STUDIO.id)).resolves.toBe(120)
+    await expect(spending.monthTotal(STUDIO.id)).resolves.toBe(120)
     await expect(spending.reportedBy(STUDIO.id)).resolves.toEqual(['host-forge'])
     spending.close()
   })
@@ -94,14 +94,14 @@ describe('shared spending on the desktop', () => {
     expect(tower.told.at(-1)).toMatchObject([{ accountId: STUDIO.id, month: MONTH, credits: 50 }])
     forge.push(70)
     await expect.poll(() => tower.told.at(-1)?.[0]?.credits).toBe(80)
-    await expect(spending.monthCredits(STUDIO.id)).resolves.toBe(80)
+    await expect(spending.monthTotal(STUDIO.id)).resolves.toBe(80)
     spending.close()
   })
 
   it('says when what a host said changed, which main tells the window so the shared count is read again', async () => {
     const forge = remote('host-forge', 40)
     const changed = vi.fn()
-    const spending = new MeshySpendingSync(directory, {
+    const spending = new PluginSpendingSync(directory, { plugin: 'meshy',
       own: async () => new Map([[STUDIO.id, 10]]), accounts: async () => [STUDIO], connections: () => [forge.target], now: () => NOVEMBER, changed,
     })
     spending.connected(forge.target)
@@ -109,7 +109,7 @@ describe('shared spending on the desktop', () => {
     expect(changed).toHaveBeenCalledTimes(1)
     forge.push(70)
     await expect.poll(() => changed.mock.calls.length).toBe(2)
-    await expect(spending.monthCredits(STUDIO.id)).resolves.toBe(80)
+    await expect(spending.monthTotal(STUDIO.id)).resolves.toBe(80)
     spending.close()
   })
 
@@ -120,7 +120,7 @@ describe('shared spending on the desktop', () => {
     await first.idle()
     first.close()
     const again = sync([], { credits: 5 })
-    await expect(again.monthCredits(STUDIO.id)).resolves.toBe(205)
+    await expect(again.monthTotal(STUDIO.id)).resolves.toBe(205)
     again.close()
   })
 
@@ -131,10 +131,10 @@ describe('shared spending on the desktop', () => {
     forge.host.beforeReply = () => { forge.host.beforeReply = undefined; forge.push(900) }
     spending.connected(forge.target)
     await spending.idle()
-    await expect(spending.monthCredits(STUDIO.id)).resolves.toBe(900)
+    await expect(spending.monthTotal(STUDIO.id)).resolves.toBe(900)
     // Meshy gave credits back: the newer report says less, and it is the one that counts.
     forge.push(850)
-    await expect.poll(() => spending.monthCredits(STUDIO.id)).toBe(850)
+    await expect.poll(() => spending.monthTotal(STUDIO.id)).toBe(850)
     spending.close()
   })
 
@@ -147,7 +147,7 @@ describe('shared spending on the desktop', () => {
     // A push is heard straight away, and must not write over the file either.
     forge.push(300)
     await spending.idle()
-    await expect(spending.monthCredits(STUDIO.id)).rejects.toThrow()
+    await expect(spending.monthTotal(STUDIO.id)).rejects.toThrow()
     await expect(readFile(join(directory, 'plugin-meshy-spending.json'), 'utf8')).resolves.toBe('not a record')
     spending.close()
   })
@@ -158,7 +158,7 @@ describe('shared spending on the desktop', () => {
     spending.connected(older.target)
     await spending.idle()
     expect(older.told).toEqual([])
-    await expect(spending.monthCredits(STUDIO.id)).resolves.toBe(0)
+    await expect(spending.monthTotal(STUDIO.id)).resolves.toBe(0)
     spending.close()
   })
 })
@@ -176,6 +176,51 @@ describe('what is heard, by month', () => {
     // December starts: November's report counts for nothing.
     now = new Date(2026, 11, 1, 0, 0, 1)
     await expect(heard.total(STUDIO.id)).resolves.toBe(0)
+  })
+
+  it('keeps counting a computer’s report for this month when its clock reaches the next month first', async () => {
+    // Bug Bot on #2656, L1: forge is already in December and says 0, while this computer is still in November.
+    let now = new Date(2026, 10, 30, 20)
+    const heard = new HeardSpending(join(directory, 'heard.json'), () => now)
+    const session = '66666666-6666-4666-8666-000000000010'
+    await heard.hear('host-forge', [{ accountId: STUDIO.id, month: '2026-11', credits: 950, session, revision: 1 }])
+    await heard.hear('host-forge', [{ accountId: STUDIO.id, month: '2026-12', credits: 0, session, revision: 2 }])
+    await expect(heard.total(STUDIO.id)).resolves.toBe(950)
+    await expect(heard.hasThisMonth('host-forge', STUDIO.id)).resolves.toBe(true)
+    await expect(heard.heardFrom(STUDIO.id)).resolves.toEqual([expect.objectContaining({ from: 'host-forge', credits: 950 })])
+    // A late November report, from another run, still lands in November and does not take December's place.
+    await heard.hear('host-forge', [{ accountId: STUDIO.id, month: '2026-11', credits: 980, session: '66666666-6666-4666-8666-000000000011', revision: 1 }])
+    await expect(heard.total(STUDIO.id)).resolves.toBe(980)
+    // This computer reaches December: forge's December report counts, and November's no longer does.
+    now = new Date(2026, 11, 1, 0, 0, 1)
+    await expect(heard.total(STUDIO.id)).resolves.toBe(0)
+    // Read again from the file, as after a restart, the same holds.
+    now = new Date(2026, 10, 30, 21)
+    await expect(new HeardSpending(join(directory, 'heard.json'), () => now).total(STUDIO.id)).resolves.toBe(980)
+  })
+
+  it('says a computer heard from only in another month has not said what it spent this month', async () => {
+    // Bug Bot on #2656, N2.
+    const heard = new HeardSpending(join(directory, 'heard.json'), () => NOVEMBER)
+    await heard.hear('laptop', [{ accountId: STUDIO.id, month: '2026-10', credits: 40, session: '66666666-6666-4666-8666-000000000012', revision: 1 }])
+    await expect(heard.has('laptop', STUDIO.id)).resolves.toBe(true)
+    await expect(heard.hasThisMonth('laptop', STUDIO.id)).resolves.toBe(false)
+  })
+
+  it('stops counting only the accounts a failed write was for, until a write for them succeeds', async () => {
+    // Bug Bot on #2656, L2: one failed write refused every account, those never copied to a host included.
+    const heard = new HeardSpending(join(directory, 'heard.json'), () => NOVEMBER)
+    const session = '66666666-6666-4666-8666-000000000013'
+    const other = '44444444-4444-4444-8444-000000000003'
+    await heard.hear('host-forge', [{ accountId: other, month: MONTH, credits: 10, session, revision: 1 }])
+    await mkdir(join(directory, 'heard.json.next'))
+    await expect(heard.hear('host-forge', [{ accountId: STUDIO.id, month: MONTH, credits: 70, session, revision: 2 }])).rejects.toThrow()
+    await expect(heard.total(STUDIO.id)).rejects.toThrow()
+    await expect(heard.total(other)).resolves.toBe(10)
+    await expect(heard.total('44444444-4444-4444-8444-000000000004')).resolves.toBe(0)
+    await rm(join(directory, 'heard.json.next'), { recursive: true })
+    await heard.hear('host-forge', [{ accountId: STUDIO.id, month: MONTH, credits: 70, session, revision: 3 }])
+    await expect(heard.total(STUDIO.id)).resolves.toBe(70)
   })
 
   it('calls when a month starts by this computer’s clock', () => {

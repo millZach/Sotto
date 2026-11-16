@@ -198,10 +198,50 @@ pane. The music's line came in the same way. Meshy's journey, `plugins-meshy-mod
     save it · nothing saved · about $0.02 counted" and that its cost was counted;
   - with the `plugins` Owl feature off the line is not there and asks main nothing.
 
+## Part 4a: a paired computer's threads
+
+Built on November 15, 2026, for the first half of slice 12's part 4: a paired host's threads make sounds with the
+ElevenLabs copy its desktop sent, and the desktop and each host share what they spent this month under one limit, as
+`plugin-elevenlabs-spending`. It mirrors Meshy's host 3D models (#2612), on the same spending code, which now serves
+both plugins: Meshy's feature, messages, file and words are as they were. Counts cross the wire as whole cents, each
+side's own sum of dollars rounded up to the cent. This was proved by tests alone; the desktop does not show a host's
+sounds yet (part 4b), so there is nothing new to see in the built app but the Settings line. In every test ElevenLabs
+is a stand-in with a made-up key, and nothing reached ElevenLabs.
+
+### What covers it
+
+- `tests/unit/host/pluginsElevenLabs.test.ts`, a host's plugins over a stand-in for ElevenLabs:
+  - with **Ask before each sound** on, the card asks; the MP3 goes into the host thread's own folder, made with the
+    copy's key, and its line goes into the thread; once the desktop sends the copy again with asking off, the next
+    sound asks nothing;
+  - a no on the card sends nothing;
+  - a copy whose desktop has not yet said what the account spent makes nothing, with Meshy's words, even when the
+    report came before the copy; what Meshy's report says counts for nothing here;
+  - a report that cannot be written down is not taken, and nothing is made while it cannot;
+  - a sound that would pass the limit, counting the desktop's cents, is refused before any card;
+  - each desktop is told, in cents rounded up, what the host's threads spent of its own copies alone, and nothing it
+    says of another desktop's copy is kept;
+  - with Keep local history off no record keeps the words, and starting with it off takes out those kept; a forgotten
+    thread's records go, its MP3 stays, and what it cost is still reported.
+- `tests/unit/main/plugins/elevenLabsSpending.test.ts`, the desktop's side: cents round up without a hair of
+  floating-point error counting as a cent; a host is told in cents what was spent here, its answer and pushes are
+  counted and kept in their own file; a host that lists only Meshy's spending is told nothing of ElevenLabs.
+- `tests/integration/socketElevenLabsSpending.test.ts`, over the host's real listener: a recorded desktop is offered
+  `plugin-elevenlabs-spending` beside `plugin-elevenlabs-copies`, told the host's own count in answer and pushed it on
+  change, and an older desktop is pushed nothing; it is not offered to a client the launch script did not record, nor
+  on a host without copies, nor on one that counts none of its own. Against a real headless host, the desktop's count
+  is kept once its copy is there, and a stable host is told nothing.
+- `tests/unit/main/plugins/meshySpending.test.ts`, `tests/unit/host/pluginsMeshy.test.ts` and
+  `tests/integration/socketMeshySpending.test.ts` still pass on the shared code.
+- `tests/unit/renderer/features/settings/pluginsSettings.test.tsx`: the account's line reads "Spent this month: $3.45
+  of $10, across this computer and forge." once a host has reported, and has no "across" before.
+- `tests/unit/host/remoteCommands.test.ts`: `plugin-elevenlabs-spending` is on the host's list of requests.
+
 ## Not checked here
 
 - A real ElevenLabs key. The check was run against the stand-in only.
 - A sound effect in the built app; the unit tests hold its card with and without a length.
 - The line with motion reduced, in the built app: the unit test holds the bar still.
 - A spoken MP3 from ElevenLabs, as against the stand-in's silence: that waits for Zach's key.
-- A host's threads making sounds with the copy (part 4).
+- A host's threads making a sound with a real key, and Settings' shared count, on forge: that waits for Zach's key.
+- The desktop showing a host's sounds (part 4b).

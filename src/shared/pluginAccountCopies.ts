@@ -92,7 +92,12 @@ export interface PluginAccountCopyStore {
  * own clock (`YYYY-MM`), and a report for another month than the reader's counts for nothing.
  */
 export const PLUGIN_MESHY_SPENDING_FEATURE = 'plugin-meshy-spending'
-/** The most credits one report may say: a limit can be no higher, and a count far past it is no count. */
+/**
+ * The same for an ElevenLabs account (`plugin-elevenlabs-spending`; the plugins plan's slice 12, part 4a), with the same
+ * reports: there `credits` is a count of whole US cents, each side's own sum of dollars rounded up to the cent.
+ */
+export const PLUGIN_ELEVENLABS_SPENDING_FEATURE = 'plugin-elevenlabs-spending'
+/** The most credits, or cents, one report may say: a limit can be no higher, and a count far past it is no count. */
 export const SPENDING_CREDITS_MAX = 100_000_000
 export const spendingReportSchema = z.object({
   accountId: z.uuid(), month: z.string().regex(/^\d{4}-(?:0[1-9]|1[0-2])$/u), credits: z.number().int().min(0).max(SPENDING_CREDITS_MAX),
@@ -105,7 +110,7 @@ export const spendingReportSchema = z.object({
 export type SpendingReport = z.infer<typeof spendingReportSchema>
 export const spendingReportsSchema = z.array(spendingReportSchema).max(PLUGIN_ACCOUNTS_MAX)
 
-/** A host's side of shared spending: what one desktop said its copies spent, and what this host's own threads spent of them. */
+/** A host's side of shared spending for one plugin: what one desktop said its copies spent, and what this host's own threads spent of them. */
 export interface PluginSpendingShare {
   /** Keeps what a desktop said of the copies it sent, and answers with this host's own credits for each of them. */
   share(reports: readonly SpendingReport[], clientId: string): Promise<SpendingReport[]>

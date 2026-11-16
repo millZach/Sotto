@@ -167,9 +167,10 @@ describe('remote command allow-list', () => {
       'plugin-account-copy', 'plugin-account-copy-remove', 'plugin-account-copies',
       // Who the host's own gh is signed in as (ADR-0205), a read for a recorded desktop's Plugins page: a name, never a token.
       'plugin-github-sign-in',
-      // Shared spending (ADR-0205): a recorded desktop's count of its Meshy accounts' credits, kept for the copies it
-      // sent, answered with the host's own count. Counts and account IDs, never a secret, and it grants nothing.
-      'plugin-meshy-spending',
+      // Shared spending (ADR-0205): a recorded desktop's count of its Meshy accounts' credits, or its ElevenLabs accounts'
+      // cents, kept for the copies it sent, answered with the host's own count. Counts and account IDs, never a secret,
+      // and it grants nothing.
+      'plugin-meshy-spending', 'plugin-elevenlabs-spending',
       // A host thread's 3D models (the Meshy plan's ticket 6, part 2), reads for a recorded desktop's window by the host's
       // IDs, and removing the record of one whose files the host finds gone: never a file, never a path, never a grant.
       'plugin-meshy-models', 'plugin-meshy-model', 'plugin-meshy-model-bytes', 'plugin-meshy-model-remove',

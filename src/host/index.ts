@@ -49,6 +49,7 @@ import { KeptThumbnails, ReducedPictures } from '../main/agents/mediaThumbnail'
 import { PictureMaker } from './pictureMaker'
 import { FilesService } from '../main/files/service'
 import { MODEL_VISUAL_KIND } from '../shared/models3d'
+import { SOUND_VISUAL_KIND } from '../shared/sounds'
 
 /** True in a host packaged for release (`scripts/package-host.mjs`), which alone has the product events endpoint (ADR-0179). */
 declare const __SOTTO_RELEASED_HOST__: boolean | undefined
@@ -165,11 +166,16 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     // A 3D model's line in its thread, by its ID alone, as the desktop places one; a client reads its words.
     showInThread: async (threadId, model) => (await startedRuntime?.agentHost.addVisual(threadId, { kind: MODEL_VISUAL_KIND, title: model.name, source: model.id })
       .catch(() => ({ added: false as const })))?.added ?? false,
+    // A sound's line the same way (the plugins plan's slice 12, part 4a). No client is sent it yet: the listener sends
+    // only 3D models' lines, and the desktop showing a host's sounds is part 4b.
+    showSoundInThread: async (threadId, sound) => (await startedRuntime?.agentHost.addVisual(threadId, { kind: SOUND_VISUAL_KIND, title: sound.name, source: sound.id })
+      .catch(() => ({ added: false as const })))?.added ?? false,
     thread: threadId => startedRuntime?.agentControl.watcherSnapshot().threads.find(item => item.id === threadId),
     project: projectId => startedRuntime?.agentControl.watcherSnapshot().projects.find(item => item.id === projectId),
     admits: threadId => startedRuntime?.agentHost.admitsPluginTools(threadId) ?? false }) : undefined
   const pluginAccountCopies = plugins?.copies
   const pluginMeshySpending = plugins?.spending
+  const pluginElevenLabsSpending = plugins?.elevenLabsSpending
   const pluginMeshyModels = plugins?.views
   // Its Owl answers, and every provider hosts do not take yet: DeepSeek, whose models need own servers (ADR-0138).
   const heldProviders = heldOnHost(heldProvidersOf(owlFeatures))
@@ -242,8 +248,9 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     await plugins?.copies.forgetUnpaired(pairedNow).catch(() => options.log?.('plugin-account-copies-not-forgotten'))
     // And no thread may read a mail account by a grant given for a copy that is gone.
     await plugins?.forgetGrantsOfGone().catch(() => undefined)
-    // 3D models still being made when this host last stopped are picked up now that whose copies are whose is known.
-    void plugins?.startModels().catch(() => undefined)
+    // 3D models still being made when this host last stopped are picked up now that whose copies are whose is known,
+    // and the words kept with 3D models and sounds follow Keep local history.
+    void plugins?.start().catch(() => undefined)
     const recordedDesktop = (clientId: string): boolean => desktops.has(clientId)
     // The desktop relay (#1316): a thread here delegates to other machines through a desktop that relays, only where the
     // Owl answer turns on Work across machines. Its record of relayed delegations is read before the threads start.
@@ -265,6 +272,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     const runtime = startedRuntime = await createAgentRuntime({
       ...(pluginAccountCopies ? { pluginAccountCopies } : {}),
       ...(pluginMeshySpending ? { pluginMeshySpending } : {}),
+      ...(pluginElevenLabsSpending ? { pluginElevenLabsSpending } : {}),
       ...(pluginMeshyModels ? { pluginMeshyModels } : {}),
       ...(plugins ? { pluginGitHubSignIn: plugins.gitHubSignIn } : {}),
       ...owlFeatures['paired-host-browser'] && owlFeatures['quiet-browser'] ? { browserTools: resolveBinding => (browser = hostBrowserTools({ resolveBinding, withoutAsking: startup.browserWithoutAsking,
