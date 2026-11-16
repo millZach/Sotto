@@ -255,8 +255,9 @@ export class HermesAcpHost implements ProviderHost {
       ...(options.reaperSweepMs === undefined ? {} : { sweepEveryMs: options.reaperSweepMs }),
       ...(options.sessionIdleMs === undefined ? {} : { idleAfterMs: options.sessionIdleMs }),
       isWatched: id => this.observed.has(id),
-      isBusy: id => this.busy(id),
-      whyBusy: id => busyHolds({ busy: this.working(id), request: this.asking(id) }),
+      // Background commands hold the session from the reaper, which would leave them unwatched, but nothing else (#2652).
+      isBusy: id => this.busy(id) || this.inBackground(id),
+      whyBusy: id => busyHolds({ busy: this.working(id), request: this.asking(id), background: this.inBackground(id) }),
       stop: id => this.stopSession(id),
     })
   }
@@ -584,14 +585,14 @@ export class HermesAcpHost implements ProviderHost {
   private working(id: string): boolean {
     const turn = this.turns.get(id)
     return this.dispatching.has(id) || this.loading.has(id) || this.stopping.has(id) || (turn !== undefined && !turn.ended)
-      // Its background commands run under this thread's Hermes process; stopping it would leave them unwatched (#2637).
-      || !!this.backgroundCommands.get(id)?.holds
   }
+  /** Background commands run under this thread's Hermes process, which the reaper must not stop (#2637). */
+  private inBackground(id: string): boolean { return !!this.backgroundCommands.get(id)?.holds }
   private backgroundWatch(id: string): BackgroundCommandWatch {
     let watch = this.backgroundCommands.get(id)
     if (!watch) {
       watch = new BackgroundCommandWatch({ children: childProcesses, command: row => hermesBackgroundCommand(this.aliases[id]?.hermesSessionId)(row),
-        changed: () => this.publishBackground(id) })
+        changed: () => this.publishBackground(id), admitting: () => { const turn = this.turns.get(id); return turn === undefined || turn.ended } })
       this.backgroundCommands.set(id, watch)
     }
     return watch

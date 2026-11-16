@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HermesAcpHost } from '../../../src/main/agents/hermes'
+import { BackgroundCommandWatch, hermesBackgroundCommand } from '../../../src/main/agents/backgroundCommandWatch'
 import { hermesConfig, hermesProjectHome, hermesSharedSkills } from '../../../src/main/agents/hermesRuntime'
 import { discoverHermesSkills, hermesSkillPrompt, hermesSkillSlug, invokedHermesSkill } from '../../../src/main/agents/hermesSkills'
 import type { AgentHostSnapshot } from '../../../src/shared/agents'
@@ -156,4 +157,22 @@ describe('Hermes skills', () => {
     // Ordinary words, and a slash word that names no skill, are steered as before.
     await expect(steer('/tmp/x is the file')).rejects.toThrow('opened')
   })
+})
+
+// #2652, L3: a background command holds the thread's session from the reaper, and nothing else: a permission change and a
+// client update go ahead, and the reaper's read names the hold as background work.
+it('holds a Hermes session from the reaper for its background commands, and from nothing else', async () => {
+  const base = await mkdtemp(join(tmpdir(), 'sotto-hermes-host-')); folders.push(base)
+  const host = new HermesAcpHost(base)
+  const watch = new BackgroundCommandWatch({ children: async () => [{ pid: 41, startedAt: 1, argv: ['sleep', '60'], marks: [{ name: 'HERMES_SESSION_KEY', value: 'acp-1' }] }],
+    command: hermesBackgroundCommand('acp-1'), changed: () => undefined, admitting: () => true })
+  await watch.lookNow(4000, 5_000)
+  ;(Reflect.get(host, 'backgroundCommands') as Map<string, BackgroundCommandWatch>).set('thread-1', watch)
+  const call = (name: string) => (Reflect.get(host, name) as (id: string) => boolean).call(host, 'thread-1')
+  expect(call('busy')).toBe(false)
+  expect(call('working')).toBe(false)
+  const options = Reflect.get(Reflect.get(host, 'reaper') as object, 'options') as { isBusy(id: string): boolean; whyBusy(id: string): string[] }
+  expect(options.isBusy('thread-1')).toBe(true)
+  expect(options.whyBusy('thread-1')).toEqual(['background'])
+  watch.stop()
 })

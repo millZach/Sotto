@@ -9,17 +9,20 @@ const LOOK_EVERY_MS = 15_000
 const words = (text: string): string | undefined => text.split(/\r?\n/u)[0]!.replace(/[\p{Cc}\p{Cf}]/gu, ' ').replace(/\s+/gu, ' ').trim().slice(0, MAX_MONITOR_LABEL) || undefined
 
 /**
- * The command Hermes runs in the background with `terminal(background=true)`, named from its process. Hermes 0.19.0
- * starts it, and only it, as `[shell, "-lic", "set +m; <command>"]` (`tools/process_registry.py`, `spawn_local`); the
- * shell may then replace itself with the command, keeping its process, so a command line without that form is read as
- * it stands. macOS lists a command line without quotes, so the form is also found within the joined line.
+ * The words a Hermes background command is named by, from its process (#2637, Zach's choice on November 16, 2026). Hermes
+ * 0.19.0 starts it as `[shell, "-lic", "set +m; <command>"]` (`tools/process_registry.py`, `spawn_local`); that script is
+ * the command as Hermes was asked to run it, before the shell expands anything, as the thread's own step shows it, and is
+ * named in full. macOS lists it without quotes, so it is also found in the joined line. Once the shell has replaced
+ * itself with the command, its arguments hold expanded values, which may be a key or a token, so only the program's
+ * name is shown then.
  */
 export function hermesCommandWords(argv: readonly string[]): string {
-  const joined = argv.join(' ')
-  const marker = joined.indexOf(' -lic set +m; ')
-  const script = argv[argv.indexOf('-lic') + 1]
-  return (argv.indexOf('-lic') >= 1 && script?.startsWith('set +m; ') ? words(script.slice(8))
-    : marker >= 0 ? words(joined.slice(marker + ' -lic set +m; '.length)) : words(joined)) ?? BACKGROUND_WORK_LABELS.command
+  const at = argv.indexOf('-lic'), script = at >= 1 ? argv[at + 1] : undefined
+  if (script?.startsWith('set +m; ')) return words(script.slice('set +m; '.length)) ?? BACKGROUND_WORK_LABELS.command
+  const joined = argv.join(' '), marker = joined.indexOf(' -lic set +m; ')
+  if (marker >= 0) return words(joined.slice(marker + ' -lic set +m; '.length)) ?? BACKGROUND_WORK_LABELS.command
+  const program = argv[0]?.replace(/\\/gu, '/').split('/').pop()?.replace(/\.exe$/iu, '')
+  return (program && words(program)) ?? BACKGROUND_WORK_LABELS.command
 }
 
 /**
@@ -40,6 +43,11 @@ export interface BackgroundCommandWatchOptions {
   readonly command: (row: ChildProcessRow) => string | undefined
   /** Called when what runs has changed. */
   readonly changed: () => void
+  /**
+   * Whether a look may take a child it does not know yet: not while a turn runs, whose own commands carry the same mark
+   * and are not background work. A look then only keeps or lets go of what it knew.
+   */
+  readonly admitting: () => boolean
 }
 
 /**
@@ -50,6 +58,8 @@ export interface BackgroundCommandWatchOptions {
  */
 export class BackgroundCommandWatch {
   private readonly known = new Map<string, Watched>()
+  /** Each look's number; one that comes back after a newer one started is out of date and is dropped. */
+  private looks = 0
   private timer: ReturnType<typeof setTimeout> | undefined
   private parentPid: number | undefined
   private stopped = false
@@ -73,7 +83,8 @@ export class BackgroundCommandWatch {
   async lookNow(parentPid: number | undefined, withinMs: number): Promise<void> {
     if (this.stopped || !this.follow(parentPid)) return
     let timer: ReturnType<typeof setTimeout> | undefined
-    await Promise.race([this.look(), new Promise<void>(done => { timer = setTimeout(done, withinMs) })])
+    // Asked as a turn ends, before the adapter has told it ended: what runs now was left by that turn.
+    await Promise.race([this.look(true), new Promise<void>(done => { timer = setTimeout(done, withinMs) })])
     clearTimeout(timer)
   }
 
@@ -99,18 +110,19 @@ export class BackgroundCommandWatch {
     this.timer.unref?.()
   }
 
-  private async look(): Promise<void> {
-    const parentPid = this.parentPid
+  private async look(admit = this.options.admitting()): Promise<void> {
+    const parentPid = this.parentPid, look = ++this.looks
     if (this.stopped || parentPid === undefined) return
     let rows: readonly ChildProcessRow[]
-    try { rows = await this.options.children(parentPid) } catch { if (this.holds) this.schedule(LOOK_EVERY_MS); return }
-    if (this.stopped || this.parentPid !== parentPid) return
+    try { rows = await this.options.children(parentPid) } catch { if (look === this.looks && this.holds) this.schedule(LOOK_EVERY_MS); return }
+    if (this.stopped || this.parentPid !== parentPid || look !== this.looks) return
     const found = new Map<string, Watched>()
     for (const row of rows) {
       const label = this.options.command(row)
       if (label === undefined || found.size >= MAX_BACKGROUND_WORK) continue
       // The same process keeps its ID from look to look; a number taken over by another start is another process.
       const key = `${row.pid}:${row.startedAt ?? ''}`
+      if (!admit && !this.known.has(key)) continue
       found.set(key, this.known.get(key) ?? { id: randomUUID(), label, startedAt: row.startedAt === undefined ? undefined : new Date(row.startedAt).toISOString() })
     }
     const same = found.size === this.known.size && [...found.keys()].every(key => this.known.has(key))

@@ -228,8 +228,17 @@ carries. Hermes's MCP servers get a filtered environment without it (`_build_saf
 ended with their turn. So a child carrying the thread's own ACP session is a command left in the background, and is the
 thread's background work, of type `command`, until its process is gone. The mark is read rather than the command line
 because the shell may replace itself with the command, and macOS lists command lines without quotes; the command line
-only names it. Sotto looks again every 15 seconds while it finds any, keeps the session from the reaper meanwhile, and
-forgets them when the Hermes process goes. A look that fails keeps what was known.
+only names it. Sotto looks again every 15 seconds while it finds any, and forgets them when the Hermes process goes. A
+look that fails keeps what was known, and one that comes back after a newer one started is dropped. A look made while a
+turn runs takes no command it did not know: that turn's own commands carry the same mark. The commands hold the session
+from the reaper, which would leave them unwatched, but nothing else. A permission change and a client update go ahead,
+and since the commands run in sessions of their own they carry on, but are no longer counted once Hermes restarts.
+
+How a command is named was Zach's choice too (November 16, 2026, after Bug Bot's review of #2652): **literal, else
+program**. While the process still shows Hermes's `set +m; <command>`, that text is shown: it is the command as Hermes
+was asked to run it, before the shell expands anything, and the thread's own step shows it already. Once the shell has
+replaced itself with the command, its arguments hold expanded values, which may be a token, so only the program's name
+is shown. Never an expanded value reaches the readout, Watcher or a host's snapshot.
 
 How it shows was Zach's choice (November 16, 2026, over a "Background command" row with Stop as drawn in n1, and over
 the detached-run row): **count it only**. The readout reads Waiting with the command's name, the sidebar row reads

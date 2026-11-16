@@ -2,7 +2,7 @@
 import { spawn } from 'node:child_process'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { expect, it } from 'vitest'
 import { hermesBackgroundCommand } from '../../src/main/agents/backgroundCommandWatch'
 import { childProcesses } from '../../src/main/agents/detachedRunScan'
@@ -18,7 +18,8 @@ it('lists the children a process started, with their commands and marks, and not
     await new Promise<void>(resolve => child.once('spawn', () => resolve()))
     const found = (await childProcesses(process.pid)).find(row => row.pid === child.pid)
     expect(found?.marks).toContainEqual({ name: 'HERMES_SESSION_KEY', value: 'acp-session-1' })
-    expect(found && hermesBackgroundCommand('acp-session-1')(found)).toContain('stand-in.mjs render')
+    // Not in Hermes's own form, so it is named by its program alone, never its arguments.
+    expect(found && hermesBackgroundCommand('acp-session-1')(found)).toBe(basename(process.execPath).replace(/\.exe$/iu, ''))
     child.kill()
     await new Promise<void>(resolve => child.once('exit', () => resolve()))
     expect((await childProcesses(process.pid)).some(row => row.pid === child.pid)).toBe(false)

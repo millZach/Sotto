@@ -33,6 +33,14 @@ npx vitest run tests/unit/main/hermes*.test.ts tests/unit/main/detachedRun*.test
 - The glossary no longer calls detached runs the only work Sotto finds itself.
 - Two timing options nothing used are gone.
 
+**After Bug Bot's review at 529bed8**, each with a test that failed on that head:
+- **L1:** a command the shell has replaced itself with is named by its program alone, so a token its arguments expanded to is never shown. This was Zach's choice on a question card: literal, else program.
+- **L2:** a look while a turn runs no longer takes that turn's own commands, which carry the same mark.
+- **L3:** the commands hold the session from the reaper only, which reads them as background. A permission change and a client update are no longer refused or held.
+- **N2:** a look that comes back after a newer one started is dropped, so an ended command is not brought back.
+
+Bug Bot's other nits (N3–N5) are on #2645.
+
 ## Not checked here
 
 - **Live Hermes.** Hermes is not installed on forge and has no model credentials there, and was not installed for this. So no live Hermes session has shown a background command found and counted, and the adapter's wiring is checked by its types and the tests above, not by a Hermes process. There is no fake Hermes client in the adapter contract to drive it.
