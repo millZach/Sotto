@@ -181,7 +181,11 @@ describe('the gateway', () => {
       runtime.stop()
       expect(runFile).toHaveBeenCalledWith('taskkill', ['/PID', '4242', '/T', '/F'], expect.objectContaining({ windowsHide: true }), expect.any(Function))
       expect(children[0]!.kill).not.toHaveBeenCalled()
-    } finally { Object.defineProperty(process, 'platform', descriptor) }
+    } finally {
+      // Its close clears the five-second kill, which must never reach the fake process ID on another platform.
+      children[0]?.emit('close', 0)
+      Object.defineProperty(process, 'platform', descriptor)
+    }
   })
 
   it('stops a gateway an earlier Sotto left in its folder before starting its own', async () => {
