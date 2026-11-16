@@ -170,7 +170,7 @@ describe('a computer’s 3D models on a paired phone (the Meshy plan’s ticket 
     const listeners = new Set<(news: Model3dHostNews) => void>()
     const asked: { part: string; clientId: string }[] = []
     const views: HostModelViews = {
-      list: async () => { throw new Error('a phone lists none') }, view: async id => id === 'barrel' ? view : null,
+      list: async threadId => threadId === 'props' ? [{ ...view, threadId: 'props', account: 'Studio', askedAt: at, words: 'An oak barrel' }] : [], view: async id => id === 'barrel' ? view : null,
       bytes: async (request, clientId) => { asked.push({ part: request.part, clientId }); return { data: Buffer.from('usdz').toString('base64'), total: 4, digest: 'a'.repeat(64) } },
       remove: async () => { throw new Error('a phone removes none') }, subscribe: listener => { listeners.add(listener); return () => { listeners.delete(listener) } },
     }
@@ -181,7 +181,9 @@ describe('a computer’s 3D models on a paired phone (the Meshy plan’s ticket 
     const { views, asked, listeners } = phoneViews()
     const emit: { current: (update: AgentThreadDetailUpdate) => void } = { current: () => undefined }
     // The desktop's phone listener: its own threads, no host copies, and this computer's 3D models for phones.
-    const server = await startSocketServer({ service: modelsHost(undefined, emit), pairing: fixture.host.pairing, admin: false, phoneModels: views })
+    // A thread Watcher's phone exclusions name is not the phone's to read.
+    const service: HostService = { ...modelsHost(undefined, emit), watcherPhoneExclusions: () => ({ threadIds: ['secret'], projectIds: [] }) }
+    const server = await startSocketServer({ service, pairing: fixture.host.pairing, admin: false, phoneModels: views })
     const newer = await fixture.host.pairing.redeem(fixture.host.pairing.issuePairingCode().code, 'Phone')
     const older = await fixture.host.pairing.redeem(fixture.host.pairing.issuePairingCode().code, 'Older phone')
     const phone = await rawPeer(server.descriptor.port, fixture.host.pairing.signSession(newer.clientId))
@@ -201,7 +203,9 @@ describe('a computer’s 3D models on a paired phone (the Meshy plan’s ticket 
       await expect.poll(() => phone.messages.some(message => message.event === 'detail')).toBe(true)
       expect(visualKinds((phone.messages.find(message => message.event === 'detail') as { detail: unknown }).detail)).toEqual([undefined, '3d-model', undefined])
 
-      // Its reads: the view, and the still picture and USDZ, for itself. No GLB, no list, no removal.
+      // Its reads: the view, one thread's 3D models with their words and time, and the still picture and USDZ, for itself.
+      expect(await phone.call('thread', { op: 'plugin-meshy-models', request: { threadId: 'props' } })).toMatchObject({ ok: true, result: [{ id: 'barrel', words: 'An oak barrel', askedAt: at }] })
+      expect(await phone.call('hidden', { op: 'plugin-meshy-models', request: { threadId: 'secret' } })).toMatchObject({ ok: false, error: { code: 'forbidden' } })
       expect(await phone.call('view', { op: 'plugin-meshy-model', request: { id: 'barrel' } })).toMatchObject({ ok: true, result: view })
       expect(await phone.call('usdz', { op: 'plugin-meshy-model-bytes', request: { id: 'barrel', part: 'usdz', offset: 0 } })).toMatchObject({ ok: true, result: { total: 4 } })
       expect(await phone.call('still', { op: 'plugin-meshy-model-bytes', request: { id: 'barrel', part: 'still', offset: 0 } })).toMatchObject({ ok: true })
@@ -214,6 +218,12 @@ describe('a computer’s 3D models on a paired phone (the Meshy plan’s ticket 
       expect(await before.call('view', { op: 'plugin-meshy-model', request: { id: 'barrel' } })).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
       expect(await before.call('usdz', { op: 'plugin-meshy-model-bytes', request: { id: 'barrel', part: 'usdz', offset: 0 } })).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
 
+      // A change in a thread the phone is not shown is not told it (Bug Bot on #2622, N1); a removal still is.
+      for (const listener of listeners) listener({ changed: { threadId: 'secret', view: { ...view, credits: 50 } } })
+      for (const listener of listeners) listener({ changed: { threadId: 'secret', view: { ...view, credits: 60 } }, removed: ['other'] })
+      await expect.poll(() => phone.messages.filter(message => message.event === 'plugin-meshy-models').length).toBe(1)
+      expect(phone.messages.find(message => message.event === 'plugin-meshy-models')).toEqual({ v: 1, event: 'plugin-meshy-models', news: { removed: ['other'] } })
+      phone.messages.splice(0, phone.messages.length)
       // The news goes to the phone that accepted it alone.
       for (const listener of listeners) listener({ changed: { threadId: 'props', view: { ...view, credits: 40 } }, removed: ['gone'] })
       await expect.poll(() => phone.messages.filter(message => message.event === 'plugin-meshy-models').length).toBe(1)
