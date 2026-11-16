@@ -182,6 +182,33 @@ function check() {
   else if (action.type === 'complete') completeReply(session, action.text)
   else if (action.type === 'reply-start') addItem(session, { itemId: `item-${randomUUID()}`, kind: 'agentMessage', status: 'inProgress', revision: 1,
     turnId: session.activeTurnId ?? null, recordedAt: stamp(), text: action.text })
+  // Work a turn leaves running, shaped on Muse Code 1.4.20's live frames (#2636): `background` opens a toolCall (`kind:
+  // 'command'`), a workflow or a standalone subagent and, with `text`, completes the turn while it is still in progress.
+  // `background-end` completes it on the turn that started it, and Muse then runs a turn of its own to report it.
+  else if (action.type === 'background') {
+    // Muse's items always name a turn; with none running, the work comes in a turn of Muse's own.
+    if (!session.activeTurnId) { session.activeTurnId = `turn-${randomUUID()}`; save(); notify('turn/started', { sessionId: session.sessionId, turnId: session.activeTurnId, viewCursor: cursor(session) }) }
+    const kind = action.kind ?? 'command', itemId = `item-${randomUUID()}`
+    const item = kind === 'workflow' ? { itemId, kind: 'workflow', status: 'inProgress', revision: 1, turnId: session.activeTurnId ?? null, recordedAt: stamp(), entryId: action.description, fallbackText: `Workflow: ${action.description}` }
+      : kind === 'subagent' ? { itemId, kind: 'subagent', status: 'inProgress', revision: 1, turnId: session.activeTurnId ?? null, recordedAt: stamp(), controlStatus: 'running', objective: action.description, ...(action.workflowRunId ? { workflowRunId: action.workflowRunId } : {}) }
+      : { itemId, kind: 'toolCall', status: 'inProgress', revision: 1, turnId: session.activeTurnId ?? null, recordedAt: stamp(), tool: 'exec_command', callId: `call-${randomUUID()}`, args: JSON.stringify({ command: action.command ?? 'sleep 45', description: action.description }) }
+    session.backgroundItems = [...session.backgroundItems ?? [], item]; save()
+    addItem(session, item)
+    if (typeof action.text === 'string') completeReply(session, action.text)
+  }
+  else if (action.type === 'background-end') {
+    const item = (session.backgroundItems ?? []).shift(); save()
+    if (item) {
+      // `controlStatus` gives a subagent's own ending, such as Muse's `resultReady`, `timedOut` or `rejected`.
+      addItem(session, { ...item, status: action.status ?? 'completed', revision: item.revision + 1, ...(item.kind === 'subagent' ? { controlStatus: action.controlStatus ?? 'closed' } : {}) })
+      if (action.report !== false) {
+        const turnId = `turn-${randomUUID()}`
+        session.activeTurnId = turnId; session.turns = (session.turns ?? 0) + 1; save()
+        notify('turn/started', { sessionId: session.sessionId, turnId, viewCursor: cursor(session) })
+        completeReply(session, action.reply ?? 'It finished.')
+      }
+    }
+  }
   else if (action.type === 'tool-item') addItem(session, { itemId: `item-${randomUUID()}`, kind: 'toolCall', status: 'completed', revision: 1,
     turnId: session.activeTurnId ?? null, recordedAt: stamp(), tool: action.tool ?? 'read_file', callId: `call-${randomUUID()}`, args: '{}' })
   else if (action.type === 'exit') process.exit(0)

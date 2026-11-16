@@ -2,7 +2,7 @@
 import { randomUUID } from 'node:crypto'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { describeAdapterContract } from './adapterContract'
 import { museFixture, museFixtureSkips } from '../fixtures/museFixture'
 import type { RecordedRpc } from '../fixtures/adapterFixture'
@@ -866,4 +866,90 @@ it('reports how long Muse took to its first output and from its last output to f
     expect(stages.turnEndTimings()).toEqual({ turnFirstOutputMs: expect.any(Number), turnFinishWaitMs: expect.any(Number) })
     for (const value of Object.values(stages.turnEndTimings()!)) expect(Number.isInteger(value) && value! >= 0).toBe(true)
   } finally { await f.cleanup() }
+})
+
+// #2636: Muse Code 1.4.20 completes a turn while a command, workflow or subagent it started runs on, on its live frames.
+describe('Muse background work', () => {
+  const open = async () => {
+    const f = await museFixture()
+    await f.host.connect()
+    await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
+    const id = randomUUID()
+    await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: f.projectId, modelId: f.modelId, title: 'Muse thread' })
+    f.host.observeThreads?.([id])
+    expect(await f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm1', text: 'Render in the background' })).toEqual({ accepted: true })
+    const thread = async () => (await f.host.snapshot()).threads.find(item => item.id === id)!
+    return { f, id, thread }
+  }
+
+  it('keeps a command the turn left running as background work, its row running, until its own completion and Muse’s report', async () => {
+    const { f, id, thread } = await open()
+    try {
+      await f.actionAndWait(id, { type: 'background', kind: 'command', command: 'sleep 45 && echo done > bg.txt', description: 'Run delayed file write', text: 'Started it.' })
+      await expect.poll(async () => (await thread()).backgroundWork?.map(work => [work.label, work.type])).toEqual([['Run delayed file write', 'command']])
+      expect((await thread()).status).toBe('idle')
+      expect((await thread()).activities?.find(row => row.kind === 'command' || row.kind === 'tool')?.status).toBe('running')
+      await f.actionAndWait(id, { type: 'background-end' })
+      await expect.poll(async () => (await thread()).backgroundWork).toBeUndefined()
+      await expect.poll(async () => (await thread()).status).toBe('idle')
+      expect((await thread()).activities?.find(row => row.kind === 'command' || row.kind === 'tool')?.status).toBe('completed')
+    } finally { await f.cleanup() }
+  })
+
+  it('leaves an agent that already ended as it ended when the host goes, as Muse’s resultReady or timedOut (#2655, L1)', async () => {
+    const { f, id, thread } = await open()
+    try {
+      await f.actionAndWait(id, { type: 'background', kind: 'subagent', description: 'Draw the car', text: 'Started it.' })
+      await expect.poll(async () => (await thread()).backgroundWork?.length).toBe(1)
+      await f.actionAndWait(id, { type: 'background-end', controlStatus: 'resultReady', report: false })
+      await expect.poll(async () => (await thread()).backgroundWork).toBeUndefined()
+      await f.action(id, { type: 'exit' })
+      await expect.poll(async () => (await f.host.snapshot()).threads.find(item => item.id === id)?.activities?.find(row => row.kind === 'subagent')?.agents?.[0]?.status).toBe('resultReady')
+      await new Promise(resolve => setTimeout(resolve, 300))
+      expect((await thread()).activities?.find(row => row.kind === 'subagent')?.agents?.[0]?.status).toBe('resultReady')
+    } finally { await f.cleanup() }
+  })
+
+  it('holds a client update until the background work in its host has ended, as Claude Code’s does (#2655, L2)', async () => {
+    const { f, id, thread } = await open()
+    try {
+      await f.actionAndWait(id, { type: 'background', kind: 'command', command: 'sleep 45', description: 'Render', text: 'Started it.' })
+      await expect.poll(async () => (await thread()).backgroundWork?.length).toBe(1)
+      const starts = await f.sessions!.starts(id)
+      await f.clientUpdate!.install()
+      await f.host.clientUpdated!()
+      await new Promise(resolve => setTimeout(resolve, 500))
+      // The host still runs the work; it has not been stopped and opened again on the new client.
+      expect(await f.sessions!.starts(id)).toBe(starts)
+      expect((await thread()).backgroundWork).toHaveLength(1)
+      await f.actionAndWait(id, { type: 'background-end' })
+      await expect.poll(async () => (await thread()).backgroundWork).toBeUndefined()
+      await expect.poll(async () => f.sessions!.starts(id), { timeout: 30_000 }).toBeGreaterThan(starts)
+    } finally { await f.cleanup() }
+  })
+
+  it('ends a row its lost host left open when the history is read again with no live host (#2655, L3)', async () => {
+    const { f, id, thread } = await open()
+    try {
+      await f.actionAndWait(id, { type: 'background', kind: 'command', command: 'sleep 45', description: 'Render', text: 'Started it.' })
+      await expect.poll(async () => (await thread()).backgroundWork?.length).toBe(1)
+      await f.action(id, { type: 'exit' })
+      await expect.poll(async () => (await thread()).backgroundWork).toBeUndefined()
+      // The next read starts a new host and folds the saved history, where the item is still in progress.
+      await f.host.refreshThread!(id)
+      await expect.poll(async () => (await thread()).activities?.find(row => row.title === 'exec_command' || row.kind === 'command' || row.kind === 'tool')?.status).toBe('unknown')
+    } finally { await f.cleanup() }
+  })
+
+  it('counts a workflow, never the agents inside it, and lets both go with a lost host', async () => {
+    const { f, id, thread } = await open()
+    try {
+      await f.actionAndWait(id, { type: 'background', kind: 'workflow', description: 'Sleep then write file' })
+      await f.actionAndWait(id, { type: 'background', kind: 'subagent', description: 'Run sleep 40', workflowRunId: 'run-1', text: 'Started it.' })
+      await expect.poll(async () => (await thread()).backgroundWork?.map(work => [work.label, work.type])).toEqual([['Sleep then write file', 'workflow']])
+      await f.action(id, { type: 'exit' })
+      await expect.poll(async () => (await thread()).backgroundWork).toBeUndefined()
+      expect((await thread()).activities?.filter(row => row.kind === 'subagent').every(row => row.status !== 'running' && row.agents?.every(agent => agent.status !== 'running'))).toBe(true)
+    } finally { await f.cleanup() }
+  })
 })

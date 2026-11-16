@@ -36,4 +36,29 @@ describe('requires SOTTO_MUSE_LIVE=1', () => {
       expect(reopened.connected).toBe(true)
     } finally { host.disconnect(); await host.closed(); await rm(root, { recursive: true, force: true }) }
   }, 180_000)
+  // #2636: a command Muse leaves running past its turn is the thread's background work until its own completion. Muse then
+  // runs a turn of its own to report it. Each card is allowed once by the test.
+  it.skipIf(process.env.SOTTO_MUSE_LIVE !== '1')('native Muse keeps a command it left running as background work until it ends', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'sotto-muse-live-'))
+    const host = new MuseMspHost(root)
+    const seen: string[] = []
+    try {
+      const initial = await host.connect()
+      const threadId = randomUUID()
+      await host.execute({ type: 'create-project', commandId: randomUUID(), projectId: 'smoke', title: 'Synthetic smoke', path: root })
+      await host.execute({ type: 'create-thread', commandId: randomUUID(), threadId, projectId: 'smoke', title: 'Background probe', modelId: initial.models[0]!.id, runtimeMode: 'full-access' })
+      host.observeThreads?.([threadId])
+      expect(await host.execute({ type: 'send', commandId: randomUUID(), threadId, messageId: 'background-prompt', text: 'Run the shell command `sleep 40 && echo done > bg.txt` so it keeps running in the background after your turn (use a short yield so the call returns while it is still running). Do not wait for it, do not poll it, do not start a workflow or a subagent. End your turn right after with one short sentence.' })).toEqual({ accepted: true })
+      const answered = new Set<string>()
+      const look = async () => {
+        const thread = (await host.snapshot()).threads[0]!
+        for (const request of thread.requests) if (!answered.has(request.id)) { answered.add(request.id); void host.execute({ type: 'answer', commandId: randomUUID(), threadId, requestId: request.id, answer: 'Allow once', approved: true }).catch(() => undefined) }
+        const state = `${thread.status} work=${(thread.backgroundWork ?? []).map(work => `${work.type}:${work.label}`).join(',')}`
+        if (seen.at(-1) !== state) seen.push(state)
+        return thread
+      }
+      await expect.poll(async () => { const thread = await look(); return thread.status !== 'running' && (thread.backgroundWork?.length ?? 0) > 0 }, { timeout: 180_000, interval: 500 }).toBe(true)
+      await expect.poll(async () => { const thread = await look(); return thread.status !== 'running' && !thread.backgroundWork?.length }, { timeout: 240_000, interval: 1000 }).toBe(true)
+    } finally { console.log(seen.join('\n')); host.disconnect(); await host.closed(); await rm(root, { recursive: true, force: true }) }
+  }, 480_000)
 })
