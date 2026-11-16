@@ -128,6 +128,17 @@ export function soundFailedWords(failure: SoundFailure | undefined, kind: SoundR
   }
 }
 
+/**
+ * Why a sound ElevenLabs made and charged for was not saved, and that its cost is counted: the answer cut off, too
+ * large, or a folder that would not take it (Bug Bot on #2648, L1).
+ */
+export function soundUnsavedWords(failure: SoundFailure | undefined, cost: string): string {
+  const why = failure === 'folder' ? 'the folder would not take the file: it is not inside the thread\'s folder, or could not be written'
+    : failure === 'too-large' ? 'it was larger than Sotto saves'
+      : 'its answer stopped before the whole file arrived'
+  return `ElevenLabs made it and charged for it, but ${why}. Nothing was saved. Its cost, ${cost}, is counted against this month's limit. Tell the user before asking for it again.`
+}
+
 /** A saved sound's file, as a path relative to the thread's folder. */
 export function soundPath(root: string, sound: SoundRecord): string {
   const folder = relative(root, sound.folder)

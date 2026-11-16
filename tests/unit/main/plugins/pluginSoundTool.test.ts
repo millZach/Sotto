@@ -49,6 +49,8 @@ interface Options {
   noElevenLabs?: boolean
   whileAsked?: (world: { accounts: PluginAccount[] }) => void | Promise<void>
   whileCounting?: (world: { accounts: PluginAccount[] }) => void
+  /** ElevenLabs answers 200, and so has charged, but the MP3 stops part way. */
+  cutOff?: boolean
 }
 
 /** The tools for thread `one`, over one ElevenLabs account, with the user's answers and ElevenLabs' answers scripted. */
@@ -66,6 +68,10 @@ function tools(options: Options = {}) {
     if (init.method === 'GET') return Response.json({ voices: options.voices ?? ACCOUNT_VOICES, has_more: false })
     if (options.status === 401) return Response.json({ detail: { status: 'quota_exceeded' } }, { status: 401 })
     if (options.status !== undefined) return new Response(null, { status: options.status })
+    if (options.cutOff) {
+      const body = new ReadableStream<Uint8Array>({ start(controller) { controller.enqueue(MP3.slice(0, 4)); controller.error(new Error('made-up cut off')) } })
+      return new Response(body, { status: 200, headers: { 'content-type': 'audio/mpeg' } })
+    }
     return new Response(MP3, { status: 200, headers: { 'content-type': 'audio/mpeg' } })
   }
   const stop = new AbortController()
@@ -243,6 +249,23 @@ describe('making a sound through make_sound', () => {
       expect((await t.records.list())[0]).toMatchObject({ state: 'failed', cost: 0 })
       expect(uses(t.recorded)).toEqual(['make_sound sound-speech failed'])
     }
+  })
+
+  it('counts a sound ElevenLabs made and charged for when Sotto could not save it, and says so', async () => {
+    // Bug Bot on #2648, L1: a 200 is a charge, whatever becomes of the file.
+    const t = tools({ cutOff: true, account: { spending: { askBefore: false, monthlyLimit: 10 } } })
+    const result = await t.make({ kind: 'effect', name: 'Chime', words: 'A bright two-note chime', seconds: 30 })
+    expect(result.isError).toBe(true)
+    expect(said(result)).toBe('The sound "Chime" was not saved. ElevenLabs made it and charged for it, but its answer stopped before the whole file arrived. Nothing was saved. Its cost, about $0.06, is counted against this month\'s limit. Tell the user before asking for it again.')
+    expect(t.made()).toEqual(['POST /v1/sound-generation'])
+    expect(await files()).toEqual([])
+    expect(await t.spent()).toBeCloseTo(soundCost({ kind: 'effect', seconds: 30 }), 9)
+    expect((await t.records.list())[0]).toMatchObject({ state: 'failed', failure: 'unreachable' })
+    // A refusal before ElevenLabs made anything still costs nothing.
+    const refused = tools({ status: 422, account: { spending: { askBefore: false, monthlyLimit: 10 } } })
+    const before = await refused.spent()
+    await refused.make({ kind: 'effect', name: 'Chime', words: 'A bright two-note chime', seconds: 30 })
+    expect(await refused.spent()).toBeCloseTo(before, 9)
   })
 
   it('takes only what each kind of sound can be, and a folder inside the thread’s', async () => {

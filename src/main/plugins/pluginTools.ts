@@ -13,7 +13,7 @@ import { MAIL_SEARCH_DEFAULT, MAIL_SEARCH_MAX, MAIL_TERM_MAX, type MailFailure, 
 import type { MailSendFailure, MailSent } from './mail/send'
 import { endedWords, folderProblem, makeModelDefinition, makeModelInputSchema, MODEL_COST, modelPaths, NOTHING_MADE, photoWords, type PluginMeshyHandlers } from './meshy/tool'
 import { DownloadError } from '../tools/meshy/download'
-import { aboutDollars, dollarWords, makeSoundDefinition, makeSoundInputSchema, NOTHING_SOUNDED, pickVoice, soundFailedWords, soundInputProblem, soundPath, voicesWords, type PluginElevenLabsHandlers } from './elevenlabs/tool'
+import { aboutDollars, dollarWords, makeSoundDefinition, makeSoundInputSchema, NOTHING_SOUNDED, pickVoice, soundFailedWords, soundInputProblem, soundPath, soundUnsavedWords, voicesWords, type PluginElevenLabsHandlers } from './elevenlabs/tool'
 import { ElevenLabsApiError, soundCost, type ElevenLabsVoice } from '../tools/elevenlabs/api'
 import type { SoundRecord } from '../tools/elevenlabs/records'
 import { SOUND_FOLDER } from '../tools/elevenlabs/save'
@@ -917,17 +917,18 @@ export class PluginToolServer implements ScopedThreadTools {
       await kept('done')
       return text(`${how} ElevenLabs is still making the sound "${name}". Sotto saves it into ${where} in the thread's folder when it is done, named after "${name}"; ${aboutDollars(cost)}. Nothing plays on its own.`)
     }
-    // Not made and not still being made here: Sotto is stopping, this thread was removed, or the record could not be
-    // written. ElevenLabs may have made it, so its cost stays counted.
+    // Sotto is stopping while the sound is made. ElevenLabs may have made it, so its cost stays counted.
     if (ended === undefined) {
       await kept('failed')
-      return text(`Sotto lost track of the sound "${name}" before it was saved: Sotto is stopping, this thread was removed, or its record could not be written. Its cost stays counted. Do not ask for it again now; tell the user.`, true)
+      return text(`Sotto stopped before the sound "${name}" was saved, so it cannot tell whether ElevenLabs made it. Its cost stays counted. Do not ask for it again now; tell the user.`, true)
     }
     if (ended.state === 'made') {
       await kept('done')
       return text(`${how} The sound "${name}" is made and saved in the thread's folder at ${soundPath(root, ended)}, for ${aboutDollars(ended.cost)} at ElevenLabs' published prices${voice ? `, spoken in the voice ${voice.name}` : ''}. Nothing plays on its own; tell the user where it is.`)
     }
     await kept('failed')
+    // Made and charged for, and not saved: its cost is counted, and the agent is told so.
+    if (ended.cost > 0) return text(`The sound "${name}" was not saved. ${soundUnsavedWords(ended.failure, aboutDollars(ended.cost))}`, true)
     return text(`The sound "${name}" was not made. ${soundFailedWords(ended.failure, kind)}`, true)
   }
 

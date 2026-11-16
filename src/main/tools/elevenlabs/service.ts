@@ -72,37 +72,46 @@ export class ElevenLabsSounds {
 
   private async run(sound: SoundRecord, request: SoundRequest): Promise<SoundRecord | undefined> {
     let failure: SoundFailure
+    // Whether ElevenLabs answered with the sound: from then on it has charged for it, whatever becomes of the file.
+    let billed = false
     try {
       const api = await this.api(request.accountId)
       const answer = request.kind === 'speech' ? await api.speech({ voiceId: request.voice?.id ?? '', text: request.words })
         : request.kind === 'effect' ? await api.soundEffect({ words: request.words, ...(request.seconds !== undefined ? { seconds: request.seconds } : {}) })
           : await api.music({ words: request.words, seconds: request.seconds ?? 0, instrumental: request.instrumental === true })
+      billed = true
       const saved = await saveSound(answer, { root: request.root, folder: request.folder ?? SOUND_FOLDER, name: request.name })
-      const made = { state: 'made' as const, folder: saved.folder, fileName: saved.fileName, bytes: saved.bytes }
       // The MP3 is in the thread's folder whether or not its record could be written, or its thread was forgotten:
       // the agent is told where it is (Sol's review).
-      return await this.end(sound.id, made) ?? { ...sound, ...made }
+      return await this.end(sound, { state: 'made', folder: saved.folder, fileName: saved.fileName, bytes: saved.bytes })
     } catch (error) {
       // Sotto is stopping, and ElevenLabs may have made it already: the record stays as it is, counted, and is settled
       // as stopped when Sotto starts again.
       if (this.options.signal.aborted) return undefined
       failure = error instanceof ElevenLabsApiError || error instanceof SoundSaveError || error instanceof SoundAccountError ? error.problem : 'unreachable'
     }
-    // A sound ElevenLabs did not make, or Sotto did not save, costs nothing and is not counted (Zach's pick on #2498).
-    const ended = await this.end(sound.id, { state: 'failed', failure, cost: 0 })
-    // Its thread was forgotten while it was made: what it was counted at is taken back from the ledger (Sol's review).
-    if (ended === undefined) await this.options.records.refundForgotten(sound.id).catch(() => undefined)
-    return ended
+    // A sound ElevenLabs did not make costs nothing and is not counted (Zach's pick on #2498). One it made and charged
+    // for, which Sotto then could not save (the answer cut off, too large, or a folder that would not take it), stays
+    // counted at its estimate, so the limit sees what was spent (Bug Bot on #2648, L1).
+    return this.end(sound, billed ? { state: 'failed', failure } : { state: 'failed', failure, cost: 0 })
   }
 
-  /** Writes how a sound ended. Undefined when the record is gone, as with its thread forgotten, or cannot be written. */
-  private async end(id: string, ending: Partial<SoundRecord>): Promise<SoundRecord | undefined> {
+  /**
+   * Writes how a sound ended, and says so. A record that is gone, as with its thread forgotten, or that cannot be
+   * written now, still ends as said here: a cost taken back comes out of the ledger, a change not written goes with
+   * the next write, and the window hears of it either way (Bug Bot on #2648, N1).
+   */
+  private async end(sound: SoundRecord, ending: Partial<SoundRecord>): Promise<SoundRecord> {
     let ended: SoundRecord | undefined
-    try { ended = await this.options.records.update(id, record => ({ ...record, ...ending })) } catch {
+    try { ended = await this.options.records.update(sound.id, record => ({ ...record, ...ending })) } catch {
       console.warn('elevenlabs-sound-record-not-written')
-      return undefined
     }
-    if (ended) this.options.changed?.(ended)
+    if (!ended) {
+      ended = { ...sound, ...ending }
+      // Its thread was forgotten while it was made: what it was counted at is taken back, if nothing was charged.
+      if (ending.cost === 0) await this.options.records.refundForgotten(sound.id).catch(() => undefined)
+    }
+    this.options.changed?.(ended)
     return ended
   }
 
