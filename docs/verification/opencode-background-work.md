@@ -31,6 +31,8 @@ Across the OpenCode, contract and guard files, 244 passed and 9 skipped.
 - An ending that comes before its call's success, as a quick shell's can, is kept. That call's work is then taken as already ended, not left running for good (`opencodeBackgroundWork.test.ts`).
 - The fixture's waiting action is named for what it waits for, and the running-tools selection lives in one place.
 
+**After Bug Bot's review at 008261c:** an ending that comes before the thread's first background call is answered is kept too. Before, a fresh server's quick first background shell stayed running for good and held the server. A test against the fake server reproduced it before the fix.
+
 The review's two other points were looked at and left:
 - **OpenCode's report run has no turn of its own.** It runs under the last user turn, as Claude Code's report run does: Claude Code's `<task-notification>` is likewise kept out of the user's messages. A new kind of turn with no user message behind it is out of this PR's scope.
 - **Reading the job list.** The issue suggested reading it after each turn and report. The events say the same, and early endings are now kept, so it is not read.

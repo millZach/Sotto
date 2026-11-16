@@ -222,11 +222,13 @@ function background(session, action) {
     emit('session.created', { sessionID: child, parentID: session.id, title: action.description, agent: 'general', location: session.location })
     emit('session.execution.started', { sessionID: child })
   } else emit('shell.created', { info: { id: shell, status: 'running', command: action.command } })
+  // `endFirst`: a quick shell exits before its call is answered, so its end comes first and nothing is left to end.
+  if (action.endFirst && shell) emit('shell.exited', { id: shell, exit: 0, status: 'exited' })
   emit('session.tool.success', { sessionID: session.id, assistantMessageID, id: callId, executed: false,
     content: [{ type: 'text', text: child ? `The subagent is working in the background (sessionID: ${child}).` : `Command moved to the background (shell ID: ${shell}).` }],
     metadata: child ? { sessionID: child, status: 'running' } : { status: 'running', truncated: false, shellID: shell } })
   emit('session.step.ended', { sessionID: session.id, assistantMessageID, finish: 'tool-calls', cost: 0, tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } }, snapshot: 'fixture-snapshot', files: [] })
-  session.backgroundWork = [...session.backgroundWork ?? [], { child, shell, description: action.description ?? action.command }]; save()
+  if (!action.endFirst) { session.backgroundWork = [...session.backgroundWork ?? [], { child, shell, description: action.description ?? action.command }]; save() }
   if (typeof action.text === 'string') { reply(session, action.text); finish(session, 'succeeded') }
 }
 function backgroundEnd(session, action) {

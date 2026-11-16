@@ -764,3 +764,14 @@ it('keeps a shell OpenCode moved to the background as a command until it exits, 
     expect((await thread(f, id)).activities?.find(row => row.title === 'task')?.status).toBe('unknown')
   } finally { await f.cleanup() }
 })
+
+it('takes a quick shell whose end came before its call was answered, as a fresh server’s first, as already ended', async () => {
+  const { f, id } = await open()
+  try {
+    await send(f, id, 'first')
+    await f.actionAndWait(id, { type: 'background', kind: 'shell', command: 'ls', endFirst: true, text: 'Listed.' })
+    await expect.poll(async () => (await thread(f, id)).status).toBe('idle')
+    expect((await thread(f, id)).backgroundWork).toBeUndefined()
+    expect((await thread(f, id)).activities?.find(row => row.kind === 'command')?.status).toBe('completed')
+  } finally { await f.cleanup() }
+})

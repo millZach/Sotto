@@ -477,12 +477,13 @@ export class OpenCodeHost implements ProviderHost {
    * shell (`shell.exited` names no session). Says whether it was one, which nothing else reads.
    */
   private backgroundEvent(id: string, event: OpenCodeEvent, data: Record<string, unknown>): boolean {
-    const work = this.background.get(id)
-    if (!work) return false
     const ending = event.type === 'shell.exited' && typeof data.id === 'string' ? { key: `shell:${data.id}` as const, status: data.exit === 0 ? 'completed' as const : 'failed' as const }
       : EXECUTION_ENDS[event.type] && typeof data.sessionID === 'string' && data.sessionID !== this.aliases[id]?.sessionId
         ? { key: `session:${data.sessionID}` as const, status: EXECUTION_ENDS[event.type]! } : undefined
     if (!ending) return false
+    // Made here too, so an ending that comes before the thread's first call succeeds is kept, as a quick shell's can (#2646).
+    let work = this.background.get(id)
+    if (!work) { work = new OpenCodeBackgroundWork(); this.background.set(id, work) }
     const toolId = work.ended(ending.key)
     if (toolId) { this.settleBackgroundTool(id, toolId, ending.status); this.changed(id); this.emit() }
     return true
