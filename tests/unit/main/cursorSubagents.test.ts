@@ -15,7 +15,7 @@ describe('CursorSubagents (#2631)', () => {
     subagents.describe('call_1', 'GT3 RS dimensioned drawing')
     expect(subagents.backgrounded('call_1')).toBe(true)
     expect(subagents.working).toMatchObject([{ label: 'GT3 RS dimensioned drawing', type: 'subagent' }])
-    expect(subagents.apply(ended('child', 'completed'), true)).toEqual({ toolCallId: 'call_1', ended: 'completed', background: true })
+    expect(subagents.apply(ended('child', 'completed'), true)).toEqual({ toolCallId: 'call_1', ended: 'completed' })
     expect(subagents.working).toEqual([])
     expect(subagents.running('call_1')).toBe(false)
   })

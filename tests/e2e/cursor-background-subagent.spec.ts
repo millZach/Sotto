@@ -15,7 +15,7 @@ async function seen(page: Page, threadId: string): Promise<Seen> {
   return page.evaluate(async id => {
     const agents = window.sotto!.agents!
     const thread = (await agents.get()).host.threads.find(item => item.id === id)
-    const row = (await agents.threadDetail(id))?.activities?.find(item => item.kind === 'subagent')
+    const row = (await agents.threadDetail!(id))?.activities?.find(item => item.kind === 'subagent')
     return { status: thread?.status ?? 'missing', ...(thread?.lastTurn ? { lastTurn: thread.lastTurn.status } : {}), background: (thread?.backgroundWork ?? []).map(work => `${work.type}:${work.label}`),
       ...(row ? { subagent: row.status, agent: row.agents?.[0]?.status ?? 'none' } : {}) }
   }, threadId)
@@ -76,11 +76,16 @@ test('shows a Cursor subagent moved to the background as working until Cursor sa
     await expect(page.getByText('Started it in the background.')).toBeVisible()
     await expect(row).toContainText('Working')
     journey.whileRunning = await seen(page, threadId)
-    for (const appearance of ['dark', 'light'] as const) {
-      await page.evaluate(value => window.sotto!.updateSettings({ appearance: value }), appearance)
-      await page.mouse.move(0, 0)
-      await page.screenshot({ animations: 'disabled', path: join(evidence, `running-1280-${appearance}.png`) })
+    // Nothing new is drawn, but the working thread is looked at at every size the app supports, in dark and light.
+    for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {
+      await resizeWindow(launched, width, height)
+      for (const appearance of ['dark', 'light'] as const) {
+        await page.evaluate(value => window.sotto!.updateSettings({ appearance: value }), appearance)
+        await page.mouse.move(0, 0)
+        await page.screenshot({ animations: 'disabled', path: join(evidence, `running-${width}-${appearance}.png`) })
+      }
     }
+    await resizeWindow(launched, 1280, 800)
 
     // Cursor says the subagent ended; its agent replies with the result and only then answers the prompt.
     await act({ type: 'background-task-end' })

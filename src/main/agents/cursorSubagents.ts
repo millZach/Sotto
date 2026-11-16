@@ -48,7 +48,7 @@ export class CursorSubagents {
    * subagent's. Returns what changed: a root subagent's ending, with its Task tool call and how it ended, or `true` when
    * only the record did, `false` when nothing did.
    */
-  apply(update: Record<string, unknown>, root: boolean): { toolCallId: string | undefined; ended: CursorSubagentEnd; background: boolean } | boolean {
+  apply(update: Record<string, unknown>, root: boolean): { toolCallId: string | undefined; ended: CursorSubagentEnd } | boolean {
     const session = typeof update.subagentSessionId === 'string' && update.subagentSessionId.length <= 512 ? update.subagentSessionId : undefined
     if (!session) return false
     const cursor = record(record(update._meta)?.cursor)
@@ -63,7 +63,7 @@ export class CursorSubagents {
     const child = this.children.get(session)
     if (!ended || !child) return false
     this.children.delete(session)
-    return child.root ? { toolCallId: child.toolCallId, ended, background: child.background } : true
+    return child.root ? { toolCallId: child.toolCallId, ended } : true
   }
 
   /** The Task tool call returned with its subagent still running: that subagent is background work now. */

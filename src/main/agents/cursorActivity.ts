@@ -122,14 +122,18 @@ export function cursorTask(params: unknown, place: CursorPlace, previous: readon
     ...(durationMs !== undefined ? { durationMs, timingSource: 'provider' as const } : {}), ...(truncated() ? { truncated: true } : {}) }]
 }
 
-/** A subagent's row once its own session has ended, timed from when Sotto saw it start to now. */
+/**
+ * A subagent's row once its own session has ended, timed from when Sotto saw it start to now. A disconnect leaves the
+ * row's outcome unknown, but its agent has stopped: the roster counts an unknown agent as possibly working, so it reads
+ * interrupted.
+ */
 export function cursorTaskEnded(row: AgentActivity, status: 'completed' | 'failed' | 'interrupted' | 'unknown'): AgentActivity {
-  const completedAt = new Date().toISOString()
+  const completedAt = new Date().toISOString(), agentStatus = status === 'unknown' ? 'interrupted' : status
   const agent = row.agents?.[0]
   const started = agent?.startedAt ? Date.parse(agent.startedAt) : Number.NaN
   const durationMs = Number.isFinite(started) ? Math.max(0, Date.parse(completedAt) - started) : undefined
   return { ...row, status, ...(durationMs !== undefined ? { durationMs, timingSource: 'observed' as const } : {}),
-    ...(agent ? { agents: [{ ...agent, status, completedAt, ...(durationMs !== undefined ? { durationMs } : {}) }, ...row.agents!.slice(1)] } : {}) }
+    ...(agent ? { agents: [{ ...agent, status: agentStatus, completedAt, ...(durationMs !== undefined ? { durationMs } : {}) }, ...row.agents!.slice(1)] } : {}) }
 }
 
 /** `cursor/generate_image`: an image Cursor made, named by what it shows and where Cursor saved it. */

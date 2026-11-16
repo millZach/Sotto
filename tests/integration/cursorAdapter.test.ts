@@ -52,6 +52,16 @@ describe('Cursor ACP adapter', () => {
     expect((await thread(id)).messages.at(-1)?.text).toContain('The drawing is done.')
   })
 
+  it('lets a background subagent go with a lost Cursor process, so nothing counts it as working any more', async () => {
+    const id = await open()
+    await backgroundTask(id)
+    const started = (await f!.requests()).filter(record => record.method === 'fixture/process') as unknown as { params: { pid: number } }[]
+    process.kill(started.at(-1)!.params.pid, 'SIGKILL')
+    await expect.poll(async () => (await thread(id)).status).toBe('error')
+    expect((await thread(id)).backgroundWork).toBeUndefined()
+    expect(await subagentRow(id)).toMatchObject({ status: 'unknown', agents: [{ status: 'interrupted' }] })
+  })
+
   it('shows what a background subagent asks on its own session, and a stop ends the subagent with the turn', async () => {
     const id = await open()
     await backgroundTask(id, { permission: 'Write drawing.svg' })

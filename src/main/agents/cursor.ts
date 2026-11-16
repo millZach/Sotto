@@ -1017,8 +1017,11 @@ export class CursorAcpHost implements ProviderHost {
     const thoughts = settledThinking(CURSOR_THINKING_ID_PREFIX, thread.activities ?? [], thinkingSettledAs(status), true)
     const settled = thoughts.length ? mergeAgentActivities(thread.activities, thoughts) : thread.activities
     // Work still running when its turn ended has an outcome nobody saw, unless the turn was stopped.
+    // A subagent's own agent ended with the turn too, whatever the row can say of its outcome: the roster must not count it
+    // as working for good (#2631).
     const closed = settled?.map(row => row.status === 'running' && row.kind !== 'turn' && row.kind !== 'plan' && row.turnId === turn.places.key
-      ? { ...row, status: status === 'completed' ? 'completed' as const : status === 'interrupted' ? 'interrupted' as const : 'unknown' as const } : row)
+      ? { ...row, status: status === 'completed' ? 'completed' as const : status === 'interrupted' ? 'interrupted' as const : 'unknown' as const,
+        ...(row.agents ? { agents: row.agents.map(agent => agent.status === 'running' ? { ...agent, status: status === 'completed' ? 'completed' : 'interrupted' } : agent) } : {}) } : row)
     thread.activities = markTurnActivity(closed, { provider: 'cursor', turnId: turn.places.key, status, ...(error ? { error } : {}) })
     this.changed(id)
     this.reaper.touch(id)

@@ -27,15 +27,18 @@ xvfb-run -a -s "-screen 0 1920x1200x24" npx playwright test tests/e2e/cursor-bac
 - a permission the subagent asks for on its own session becomes the thread's card;
 - **Stop** ends the subagent with the turn and its row reads `interrupted`;
 - a subagent started by a subagent is never the thread's work;
-- `cancelled` reads as interrupted and `disconnected` as unknown.
+- `cancelled` reads as interrupted and `disconnected` as unknown;
+- when Cursor's process is lost while the subagent runs, the background work clears and the subagent's agent reads interrupted, so Watcher's roster stops counting it (found in review).
 
-**In the built app** (`tests/e2e/cursor-background-subagent.spec.ts`, the real Cursor adapter over the fake client, at 1280x800, dark and light, reduced motion on). While the subagent ran, the sidebar row read **Working**, and the readout named **GT3 RS dimensioned drawing** with **Working** and the creature. The composer said Cursor is working and a follow-up would queue. Once Cursor said the subagent ended, the thread read Done, its background work was empty, its row read `completed`, and the agent's reply with the result was shown (`artifacts/cursor-background-subagent/journey.json`).
+**In the built app** (`tests/e2e/cursor-background-subagent.spec.ts`, the real Cursor adapter over the fake client, reduced motion on). The working thread was captured at 1600x1000, 1280x800 and 820x560, each in dark and light; the ended thread at 1280x800. While the subagent ran, the sidebar row read **Working**, and the readout named **GT3 RS dimensioned drawing** with **Working** and the creature. The composer said Cursor is working and a follow-up would queue. Once Cursor said the subagent ended, the thread read Done, its background work was empty, its row read `completed`, and the agent's reply with the result was shown (`artifacts/cursor-background-subagent/journey.json`).
 
 ![While the subagent runs](../../artifacts/cursor-background-subagent/running-1280-dark.png)
 
+![At the minimum window, in light](../../artifacts/cursor-background-subagent/running-820-light.png)
+
 ![After it ends](../../artifacts/cursor-background-subagent/ended-1280-light.png)
 
-No new look: the change reuses the readout, the creature and the sidebar's Working state, so no design capture was regenerated and only 1280x800 was captured.
+No new look: the change reuses the readout, the creature and the sidebar's Working state, so no design capture was regenerated. At 820x560 the sidebar folds to its rail and the readout's name is cut with an ellipsis, as it is for a Claude Code subagent.
 
 ## Not checked here
 
