@@ -1,6 +1,6 @@
 name: iPhone benchmarks
 
-# The iPhone benchmarks (docs/perf/2026-10-31-iphone-benchmarks.md), apart from CI because they take most of an hour on
+# The iPhone benchmarks (docs/perf/2026-10-31-iphone-benchmarks.md), apart from CI because they take up to two hours on
 # a macOS runner. They run when asked for: on a pull request carrying the `ios-perf` label, at every push while it
 # carries it, or by hand from the Actions tab. Each run measures the pull request's base and its head on the same runner, so the two columns differ only by the change.
 on:
@@ -28,9 +28,10 @@ jobs:
     name: iPhone benchmarks (macOS)
     if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'ios-perf')
     runs-on: macos-26
-    # Two optimized builds, each with five launches and five journeys: about an hour. Each side has its own limit
-    # too, so a hung simulator or profiler ends the run long before this one.
-    timeout-minutes: 120
+    # Two optimized builds, each with five launches, five journeys, three idle and three still journeys, two look
+    # launches and SottoCore's timings, and the change's sampled journey: 50 to 106 minutes on November 15 and 16, 2026.
+    # Each side has its own limit too, so a hung simulator or profiler ends the run long before this one (#2661).
+    timeout-minutes: 170
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
       HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -56,11 +57,16 @@ jobs:
           echo "Base: $base"
       - name: Measure the base
         if: steps.base.outputs.measure == 'true'
-        timeout-minutes: 50
+        # Main's side took 23 to 47 minutes when it finished on November 15 and 16, 2026, and ran past the former 50 in
+        # five of ten runs with nothing hung: on a slow runner the build and launches took 20, the journeys 22 and the
+        # idle and still journeys 8, which with the rest comes to about 58 (#2661).
+        timeout-minutes: 75
         run: sh "$RUNNER_TEMP/base/apps/ios/Scripts/bench.sh" "$RUNNER_TEMP/bench/before"
       - name: Measure the change
         # The change's side also samples where the main thread goes in one more journey (trace.md, here and in the summary).
-        timeout-minutes: 60
+        # That journey adds about 6 minutes: this side took up to 58 on November 15 and 16, 2026, and once ran past the
+        # former 60 still taking SottoCore's timings, the last step, with nothing hung (#2661).
+        timeout-minutes: 85
         env:
           BENCH_TRACE: '1'
         run: sh apps/ios/Scripts/bench.sh "$RUNNER_TEMP/bench/after"
