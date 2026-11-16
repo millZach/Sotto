@@ -3,6 +3,7 @@ import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child
 import { z } from 'zod'
 import { realpath } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { findCli, withCliPath, type CliLookupOptions } from './cliLookup'
 
@@ -51,9 +52,18 @@ export function hermesEnvironment(homeDirectory: string, keys: Readonly<Record<s
 /**
  * The user's own `hermes`, found as every other provider's CLI is, then followed to the file itself: pipx, uv and a
  * hand-made link put a symlink on PATH, and Hermes's private Python sits beside the real script, not beside the link.
+ * Hermes's official installer keeps its own launcher in a folder of its own, tried after every other place:
+ * - On Linux it links `~/.local/bin/hermes` to that launcher only when no other file is there. On Omarchy one is, a stub
+ *   that runs another Hermes through mise, which the lookup passes over.
+ * - On Windows it adds `%LOCALAPPDATA%\hermes\bin` to the account's PATH, which a Sotto started before the install does
+ *   not have.
  */
 export async function findHermesExecutable(environment: NodeJS.ProcessEnv = process.env, lookup: Omit<CliLookupOptions, 'environment'> = {}): Promise<string | undefined> {
-  const found = await findCli({ name: 'hermes' }, { ...lookup, environment })
+  const platform = lookup.platform ?? process.platform
+  const localAppData = platform === 'win32' ? Object.entries(environment).find(([name]) => name.toLowerCase() === 'localappdata')?.[1] : undefined
+  const official = platform === 'linux' ? join(lookup.home ?? homedir(), '.hermes', 'hermes-agent', '.hermes', 'bin')
+    : localAppData ? join(localAppData, 'hermes', 'bin') : undefined
+  const found = await findCli({ name: 'hermes', ...(official ? { last: [official] } : {}) }, { ...lookup, environment })
   return found && await realpath(found).catch(() => found)
 }
 

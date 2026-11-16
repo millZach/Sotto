@@ -208,7 +208,13 @@ export class HermesRuntime {
     if (!child) return
     const kill = (signal: NodeJS.Signals): void => {
       if (!child.pid) return
-      try { if (process.platform === 'win32') child.kill(signal); else process.kill(-child.pid, signal) } catch { /* Already gone. */ }
+      try {
+        if (process.platform !== 'win32') process.kill(-child.pid, signal)
+        // Windows has no process groups. The official `hermes.exe` is a launcher that runs the gateway in Python, and
+        // what the gateway starts, a background command among them, outlives the launcher, so taskkill /T ends the tree.
+        else if (signal === 'SIGTERM') execFile('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true }, () => undefined)
+        else child.kill(signal)
+      } catch { /* Already gone. */ }
     }
     kill('SIGTERM')
     const timer = setTimeout(() => kill('SIGKILL'), 5000); timer.unref()

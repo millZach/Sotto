@@ -389,8 +389,8 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     // Pi starts only on this computer, where its own-model-server record lives.
     pi: adapter('pi', () => options.providers?.pi ?? (options.runsAs === 'headless-host' ? new HeldProviderHost('pi')
       : (piHost = options.createPiHost?.(directory, { heldProviders: held, ...captureMedia, ...(options.ownServers ? { servers: options.ownServers } : {}) })) ?? new HeldProviderHost('pi'))),
-    // This local Hermes build runs only on the Mac. Its gateway and model routes belong to this computer.
-    hermes: adapter('hermes', () => options.providers?.hermes ?? (options.runsAs === 'headless-host' || process.platform !== 'darwin' ? new HeldProviderHost('hermes')
+    // Hermes starts only on this computer, on macOS, Windows and Linux: its gateway and model routes belong here.
+    hermes: adapter('hermes', () => options.providers?.hermes ?? (options.runsAs === 'headless-host' ? new HeldProviderHost('hermes')
       : new HermesAcpHost(directory, { heldProviders: held, ...captureMedia, ...(options.ownServers ? { servers: options.ownServers } : {}) }))),
     // DeepSeek Harness runs only the user's own model servers, whose record is this computer's in this phase, so a
     // headless host holds it back as OpenCode was held before its hosts slice (ADR-0138).
