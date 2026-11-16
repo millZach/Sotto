@@ -75,7 +75,7 @@
     "clonePlainData(": 1
   },
   "src/main/agents/providers/claude/claude.ts": {
-    "structuredClone(": 3,
+    "structuredClone(": 1,
     "cloneHostSnapshot(": 1,
     "cloneActivitySnapshot(": 1
   },

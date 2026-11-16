@@ -210,6 +210,8 @@ describe('the watch on main', () => {
     await run(3_000)
     expect(state.pauses).toBe(1)
     expect(state.saved[0]!.stacks).toEqual([])
+    // Main had answered, so the try that got nothing is no miss.
+    expect(state.saved[0]!.stacksMissed).toBe(0)
   })
 
   it('keeps trying in the same recording when a stop begins outside JavaScript, and takes stacks once main is back in it', async () => {
@@ -228,6 +230,9 @@ describe('the watch on main', () => {
     expect(times.every(atMs => atMs >= 4_000)).toBe(true)
     // Every session the tries opened was let go.
     expect(state.closed).toBe(state.enables)
+    // The tries in the first 4 s that got nothing are counted, so a recording with few stacks says why (#2619).
+    expect(state.saved[0]!.stacksMissed).toBe(1)
+    expect(last.stacksMissed).toBeGreaterThanOrEqual(2)
   })
 
   it('keeps trying in the same recording when the debugger is enabled but its first pauses do not land', async () => {
@@ -253,6 +258,7 @@ describe('the watch on main', () => {
     await run(6_000)
     expect(state.pauses).toBe(0)
     expect(state.saved[0]!.stacks).toEqual([])
+    expect(state.updated.at(-1)!.stacksMissed).toBeGreaterThan(1)
   })
 
   it('records a hang during quit like any other, then ends Sotto once main has been stopped 20 s into the quit', async () => {

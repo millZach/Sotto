@@ -44,6 +44,17 @@ export function ownBuiltActivity(activity: AgentActivity): AgentActivity {
 }
 
 /**
+ * Owns a list of records its caller was handed for itself, built for the call and kept by nobody else, as a thread
+ * history's read hands them (`ThreadHistorySource.activities`): every record and the list are frozen and owned where they
+ * are, so the publication after it copies none of them. A Claude thread's first stream frame after a restart read up to
+ * 2,000 stored records, cloned them, and then copied every one again to own it; main stopped for 12.5 s in that copy (#2619).
+ */
+export function ownBuiltActivities(activities: AgentActivity[]): AgentActivity[] {
+  ownInPlace(activities)
+  return activities
+}
+
+/**
  * Owns a record its caller has just built and nobody else holds, whose every part is already owned, such as a thread
  * record a layer renamed by spreading an owned one (#925): it is frozen where it is and its parts are shared, so handing
  * on a thread costs the fields the layer changed rather than a copy. A record holding a part that is not owned is copied

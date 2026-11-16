@@ -252,7 +252,10 @@ export interface ThreadHistorySource {
   messageIdentities(threadId: string): readonly StoredMessageIdentity[]
   /** One indexed message, for checking a native identity repair against the saved words. */
   message?(threadId: string, messageId: string): AgentMessage | undefined
-  /** Bounded activity evidence for this history epoch; undefined means it must be read afresh. */
+  /**
+   * Bounded activity evidence for this history epoch; undefined means it must be read afresh. The records are built for
+   * this call and kept by nobody else, so the caller may own them where they are (`ownBuiltActivities`, #2619).
+   */
   activities?(threadId: string, historyEpoch?: string): readonly AgentActivity[] | undefined
   /**
    * Whether `activities` would answer for this history epoch, without reading the records. An adapter that resumes on

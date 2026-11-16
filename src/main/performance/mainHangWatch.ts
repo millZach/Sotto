@@ -200,14 +200,18 @@ export class MainHangWatch {
     const session: Session = { debug: null }
     try {
       const stacks: HangStack[] = []
-      const first = await this.take(session, answeredAt)
-      if (first) stacks.push(first)
-      if (!await this.save(answeredAt, stacks)) return
-      for (let tries = 1; stacks.length < HANG_STACKS && tries < HANG_TRIES && await this.whileStopped(answeredAt, HANG_STACK_EVERY_MS); tries += 1) {
-        const next = await this.take(session, answeredAt)
-        if (next) stacks.push(next)
+      // The tries that got no stack while main stayed stopped, which the recording says (#2619): a stop of 12.5 s
+      // with one stack in it said nothing of why the other tries came back empty.
+      let stacksMissed = 0
+      const tryForStack = async (): Promise<void> => {
+        const stack = await this.take(session, answeredAt)
+        if (stack) stacks.push(stack)
+        else if (this.options.lastAnswered() === answeredAt) stacksMissed += 1
       }
-      await this.rewrite(answeredAt, stacks)
+      await tryForStack()
+      if (!await this.save(answeredAt, stacks, stacksMissed)) return
+      for (let tries = 1; stacks.length < HANG_STACKS && tries < HANG_TRIES && await this.whileStopped(answeredAt, HANG_STACK_EVERY_MS); tries += 1) await tryForStack()
+      await this.rewrite(answeredAt, stacks, stacksMissed)
     } finally { if (session.debug) release(session.debug) }
   }
 
@@ -279,12 +283,12 @@ export class MainHangWatch {
     } catch { return null }
   }
 
-  private async save(answeredAt: number, stacks: readonly HangStack[]): Promise<boolean> {
+  private async save(answeredAt: number, stacks: readonly HangStack[], stacksMissed: number): Promise<boolean> {
     const { now } = this.options
     const wallNow = this.options.wallNow ?? Date.now
     const record: HangRecord = { format: 1, kind: 'main', sottoVersion: this.options.sottoVersion, platform: this.options.platform,
       startedAt: new Date(wallNow() - (now() - answeredAt)).toISOString(), answeredAfterMs: null,
-      writtenAfterMs: now() - answeredAt, stacks: [...stacks] }
+      writtenAfterMs: now() - answeredAt, stacks: [...stacks], stacksMissed }
     try {
       this.recording = { name: await this.options.save(record), record, answeredAt, asleepMs: 0 }
       this.options.log('hang-recording-saved')
@@ -296,14 +300,14 @@ export class MainHangWatch {
    * The saved recording again, with every stack taken while main stayed stopped, and how long it lasted if main has
    * answered meanwhile. Not written when neither has changed.
    */
-  private async rewrite(answeredAt: number, stacks: readonly HangStack[]): Promise<void> {
+  private async rewrite(answeredAt: number, stacks: readonly HangStack[], stacksMissed: number): Promise<void> {
     const current = this.recording
     if (!current || current.answeredAt !== answeredAt) return
     const answered = this.options.lastAnswered()
     const answeredAfterMs = answered === answeredAt ? null : answered - answeredAt - current.asleepMs
-    if (answeredAfterMs === null && stacks.length === (current.record.stacks?.length ?? 0)) return
+    if (answeredAfterMs === null && stacks.length === (current.record.stacks?.length ?? 0) && stacksMissed === current.record.stacksMissed) return
     await this.write({ ...current.record, answeredAfterMs,
-      writtenAfterMs: Math.min(this.options.now() - answeredAt - current.asleepMs, answeredAfterMs ?? Number.POSITIVE_INFINITY), stacks: [...stacks] })
+      writtenAfterMs: Math.min(this.options.now() - answeredAt - current.asleepMs, answeredAfterMs ?? Number.POSITIVE_INFINITY), stacks: [...stacks], stacksMissed })
   }
 
   /** How long main was stopped, leaving out any time the computer slept between two of the recording's stacks. */

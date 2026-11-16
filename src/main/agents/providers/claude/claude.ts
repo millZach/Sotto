@@ -40,7 +40,7 @@ import { assertWatcherPermission, assertWatcherPermissionChoice, watcherThreadTo
 import { SIDE_WRITING_TIMEOUT_MS, sideWritingEffort } from '../../sideWriting'
 import { ThreadMessageLog } from '../../threadMessageLog'
 import { cloneHostSnapshot } from '../../cloneHostSnapshot'
-import { ActivitySubscribers, certifyActivityView, cloneActivitySnapshot } from '../../activitySnapshots'
+import { ActivitySubscribers, certifyActivityView, cloneActivitySnapshot, immutableActivities, ownBuiltActivities } from '../../activitySnapshots'
 import type { AgentSkillCatalog } from '../../../../shared/agentSkills'
 import type { AgentBackgroundWork } from '../../../../shared/agentMonitoring'
 import { claudeSkillPrompt, discoverClaudeSkills } from './claudeSkills'
@@ -2276,7 +2276,8 @@ export class ClaudeStreamJsonHost implements ProviderHost {
     const activities = matching?.activities ?? (evidence ? undefined : this.history?.activities?.(id, alias.historyEpoch))
     if (!stored.length || activities === undefined && !evidence) { replayAll(); return }
     this.messageLog.seed(id, stored)
-    if (activities) { this.threads.get(id)!.activities = structuredClone(activities.slice(-MAX_AGENT_ACTIVITIES)); this.changed(id) }
+    // A restored snapshot's records are its caller's, so they are copied, once, and owned (#2619).
+    if (activities) { this.threads.get(id)!.activities = immutableActivities(activities.slice(-MAX_AGENT_ACTIVITIES)); this.changed(id) }
     else this.activityHistoryPending.add(id)
     // A later block of an assistant message already projected must add to its text, not replace it.
     for (const message of matching?.messages ?? []) if (message.role === 'assistant') this.assistantBlocks.set(`${id}:${message.id}`, new Map([['restored', message.text]]))
@@ -2305,7 +2306,8 @@ export class ClaudeStreamJsonHost implements ProviderHost {
     const thread = this.threads.get(id)
     if (thread && this.activityHistoryPending.delete(id)) {
       const activities = this.history?.activities?.(id, this.aliases[id]?.historyEpoch)
-      if (activities) { thread.activities = structuredClone(activities.slice(-MAX_AGENT_ACTIVITIES)); this.changed(id) }
+      // Built for this read and kept by nobody else, so owned where they are: the frame that read them copies none (#2619).
+      if (activities) { thread.activities = ownBuiltActivities(activities.slice(-MAX_AGENT_ACTIVITIES)); this.changed(id) }
     }
     return thread
   }

@@ -70,6 +70,11 @@ export interface HangRecord {
   readonly writtenAfterMs: number
   /** Main hangs: stacks taken while main was still stopped. Empty when main was stopped outside JavaScript. */
   readonly stacks?: readonly HangStack[]
+  /**
+   * Main hangs: the tries at a stack, made once a second, that got none while main stayed stopped, as when main was in a
+   * long native call or a garbage collection. A recording without it was written before Sotto counted them (#2619).
+   */
+  readonly stacksMissed?: number
   /** Window hangs: each Sotto process when the window was found not answering. */
   readonly processes?: readonly HangProcess[]
   /** Window hangs: main's own minute, which says whether main was busy too. */
