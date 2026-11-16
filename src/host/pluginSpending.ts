@@ -87,7 +87,8 @@ export function hostSpending(options: {
     others: async accountId => {
       const sender = (await senders().catch((): Readonly<Record<string, string>> => ({})))[accountId]
       try {
-        if (sender === undefined || !await heard.has(sender, accountId)) return 'waiting'
+        // Heard from, and for this month: one heard from only before the 1st has not said what it spent since.
+        if (sender === undefined || !await heard.hasThisMonth(sender, accountId)) return 'waiting'
         return await heard.total(accountId)
       } catch { return 'unreadable' }
     },
