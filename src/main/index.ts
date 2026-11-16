@@ -93,7 +93,10 @@ import { modelBytes, modelView, modelViewOf } from './tools/meshy/view'
 import { hostModelViews, type HostModelViewsWithNews } from './tools/meshy/hostViews'
 import { listModels, removeGoneModel, revealModelFile, type ModelListSource } from './tools/meshy/page'
 import { checkPhoto, photoToSend, type RedrawPhoto } from './tools/meshy/photo'
-import { isMailPlugin, PLUGIN_USE_THREAD_TITLE_MAX, PLUGINS_COPIES_CHANGED, PLUGINS_MAIL_GRANTS_CHANGED, PLUGINS_MESHY_CREDITS_CHANGED } from '../shared/plugins'
+import type { ElevenLabsApiFetch } from './tools/elevenlabs/api'
+import { SoundRecords } from './tools/elevenlabs/records'
+import { ElevenLabsSounds, type SoundRequest } from './tools/elevenlabs/service'
+import { isMailPlugin, PLUGIN_USE_THREAD_TITLE_MAX, PLUGINS_COPIES_CHANGED, PLUGINS_ELEVENLABS_SPENT_CHANGED, PLUGINS_MAIL_GRANTS_CHANGED, PLUGINS_MESHY_CREDITS_CHANGED } from '../shared/plugins'
 import { MODEL_VISUAL_KIND, MODELS_3D_LISTED_MAX, PLUGINS_MODEL_3D_CHANGED, PLUGINS_MODELS_3D_REMOVED } from '../shared/models3d'
 import { HostModels3d } from './hosts/hostModels3d'
 import { resetGhLookup } from './agents/git/ghCommand'
@@ -1491,6 +1494,24 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     const png = kind === 'image/png' ? image.toPNG() : undefined
     return png && png.byteLength <= 20 * 1024 * 1024 ? { bytes: png, kind: 'image/png' } : { bytes: image.toJPEG(92), kind: 'image/jpeg' }
   }
+  // Sounds (ADR-0205; the plugins plan's slice 12, part 2): ElevenLabs' API behind one adapter, and the record of each
+  // sound, which follows Keep local history and forgetting a thread and is what the month's spending is counted from.
+  // A sound cut off when Sotto last stopped stays counted. An end-to-end run reaches only the stand-in its test names.
+  const elevenLabsApiFetch: ElevenLabsApiFetch = e2eConfiguration === null ? (url, init) => fetch(url, init)
+    : async (url, init) => { if (!elevenLabsBase || !url.startsWith(`${elevenLabsBase}/`)) throw new Error('E2E_NETWORK_DISABLED'); return fetch(url, init) }
+  const soundRecords = pluginsEnabled ? new SoundRecords(userDataPath, { historyEnabled: () => agentHistoryEnabled }) : undefined
+  void soundRecords?.settleUnfinished().catch(() => undefined)
+  const elevenLabsSounds = soundRecords && pluginAccounts ? new ElevenLabsSounds({ records: soundRecords, fetch: elevenLabsApiFetch, signal: pluginsStop.signal, ...(elevenLabsBase ? { base: elevenLabsBase } : {}),
+    keyOf: async accountId => (await pluginAccounts.list()).some(account => account.id === accountId && account.plugin === 'elevenlabs') ? pluginAccounts.secret(accountId) || undefined : undefined,
+    // Settings reads what each account spent again once a sound is made or fails.
+    changed: () => { windows.sendToMain(PLUGINS_ELEVENLABS_SPENT_CHANGED, null) } }) : undefined
+  const elevenLabsTools = elevenLabsSounds && soundRecords ? {
+    folderOf: async (threadId: string) => { const found = await files.resolveWorkspace(threadId); return found.ok ? found.value.workingDirectory : null },
+    // This computer's own: threads on a paired host make no sounds yet.
+    monthSpent: async (accountId: string) => (await soundRecords.monthSpent()).get(accountId) ?? 0,
+    voices: (accountId: string) => elevenLabsSounds.voices(accountId),
+    make: (request: SoundRequest) => elevenLabsSounds.make(request),
+  } : undefined
   const meshyTools = meshyModels && modelRecords ? {
     // The thread's own working folder, as Files and the terminal find it.
     folderOf: async (threadId: string) => { const found = await files.resolveWorkspace(threadId); return found.ok ? found.value.workingDirectory : null },
@@ -1545,6 +1566,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     },
     askChange: async (threadId, change, wait) => await pluginChanges?.ask(threadId, wordPluginChange(change), wait) ?? 'stopped',
     ...(meshyTools ? { meshy: meshyTools } : {}),
+    ...(elevenLabsTools ? { elevenlabs: elevenLabsTools } : {}),
     // What a thread reads from mail goes to its provider, which the card that asks names.
     ...(mailGrants ? { mail: { grants: mailGrants, options: mailOptions, keepsBridgeAccounts: true, providerOf: (threadId: string) => {
       const thread = agentControl.watcherSnapshot().threads.find(item => item.id === threadId)
@@ -1717,6 +1739,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     // And its 3D models' records; their files stay in its folder (ADR-0141).
     // The window lets the 3D models it lists go once their records have (the Meshy plan's ticket 5).
     void modelRecords?.forgetThreads(threadIds).then(ids => { if (ids.length > 0) { windows.sendToMain(PLUGINS_MODELS_3D_REMOVED, ids); phoneModelViews?.removed(ids) } }, () => undefined)
+    // And its sounds' records, with what they cost kept counted; their MP3s stay in its folder.
+    void soundRecords?.forgetThreads(threadIds).catch(() => undefined)
     // And any change of theirs still waiting on the user stops: nothing is done for a thread that is gone.
     pluginChanges?.forgetThreads(threadIds)
     // And its mail grants go with it.
@@ -1752,7 +1776,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const cleanRetiredHistory = async (): Promise<void> => {
     teams?.privacyChanged()
     delegationService?.privacyChanged()
-    const [chats, answers, remoteDrafts, pluginUses, modelWords] = await Promise.allSettled([
+    const [chats, answers, remoteDrafts, pluginUses, modelWords, soundWords] = await Promise.allSettled([
       Promise.resolve().then(() => retiredChatHistory.privacyChanged()),
       Promise.resolve().then(() => requestDrafts.privacyChanged(agentHistoryEnabled)),
       Promise.resolve().then(() => retainedDrafts.privacyChanged()),
@@ -1760,17 +1784,21 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       Promise.resolve().then(() => agentHistoryEnabled ? undefined : pluginUse?.clear()),
       // And no 3D model's record keeps the words sent for it (ADR-0141).
       Promise.resolve().then(() => modelRecords?.privacyChanged()),
+      // And no sound's record keeps the words sent for it.
+      Promise.resolve().then(() => soundRecords?.privacyChanged()),
     ])
     if (chats.status === 'rejected') recoveryNotices.publish({ code: 'RETIRED_CHAT_HISTORY_NOT_CLEARED' })
     if (answers.status === 'rejected') recoveryNotices.publish({ code: 'ANSWER_HISTORY_NOT_CLEARED' })
     if (remoteDrafts.status === 'rejected') recoveryNotices.publish({ code: 'REMOTE_DRAFT_STORAGE_NOT_UPDATED' })
     if (pluginUses.status === 'rejected') recoveryNotices.publish({ code: 'PLUGIN_USE_NOT_CLEARED' })
     if (modelWords.status === 'rejected') recoveryNotices.publish({ code: 'MODEL_WORDS_NOT_CLEARED' })
+    if (soundWords.status === 'rejected') recoveryNotices.publish({ code: 'SOUND_WORDS_NOT_CLEARED' })
     if (chats.status === 'rejected') throw chats.reason
     if (answers.status === 'rejected') throw answers.reason
     if (remoteDrafts.status === 'rejected') throw remoteDrafts.reason
     if (pluginUses.status === 'rejected') throw pluginUses.reason
     if (modelWords.status === 'rejected') throw modelWords.reason
+    if (soundWords.status === 'rejected') throw soundWords.reason
   }
   // Retired records never start a provider. Apply the saved privacy preference once,
   // and keep startup available when inaccessible storage needs a later Settings retry.
@@ -2891,6 +2919,12 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
             credits: await meshySpending?.monthCredits(id).catch(() => undefined) ?? here.get(id) ?? 0,
             across: (await meshySpending?.reportedBy(id).catch(() => []) ?? []).flatMap(hostId => { const name = names.get(hostId); return name ? [name] : [] }),
           }] as const)))
+        },
+        // What each ElevenLabs account's sounds cost this month on this computer, which Settings shows on its row.
+        elevenLabsSpent: async () => {
+          const here = await soundRecords?.monthSpent() ?? new Map<string, number>()
+          const ids = new Set([...(await pluginAccounts?.list() ?? []).filter(account => account.plugin === 'elevenlabs').map(account => account.id), ...here.keys()])
+          return Object.fromEntries([...ids].map(id => [id, here.get(id) ?? 0] as const))
         },
         // A key that names a paired host is that host's 3D model, asked of it; any other ID is this computer's own.
         model3d: async id => hostModels?.onHost(id) ? await hostModels.view(id) : modelViews ? await modelViewOf(modelViews, id) : null,

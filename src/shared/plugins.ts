@@ -95,6 +95,10 @@ export interface PluginsBridge {
   meshyCredits(): Promise<MeshyCredits>
   /** Told when what a paired host said it spent changed, so the credits are read again. Returns the way to stop. */
   onMeshyCreditsChanged?(listener: () => void): () => void
+  /** What each ElevenLabs account's sounds cost this month on this computer, in US dollars. */
+  elevenLabsSpent?(): Promise<ElevenLabsSpent>
+  /** Told when a sound was made or failed here, so what was spent is read again. Returns the way to stop. */
+  onElevenLabsSpentChanged?(listener: () => void): () => void
   /** One 3D model as its thread draws it, by its ID, or null when Sotto holds no such 3D model (ADR-0141). */
   model3d(id: string): Promise<Model3dView | null>
   /** A 3D model's GLB, still picture or shape while the texture is painted, or null when Sotto will not hand them over. */
@@ -146,7 +150,13 @@ export const MAIL_SEND_TOOL = 'mail_send'
  * model, and never past the month's credit limit.
  */
 export const MAKE_3D_MODEL_TOOL = 'make_3d_model'
-export const PLUGIN_CHANGE_TOOLS = [GITHUB_COMMENT_TOOL, GITHUB_OPEN_ISSUE_TOOL, GITHUB_CLOSE_ISSUE_TOOL, GITHUB_REOPEN_ISSUE_TOOL, VERCEL_CANCEL_TOOL, VERCEL_PROMOTE_TOOL, VERCEL_ROLLBACK_TOOL, MAIL_SEND_TOOL, MAKE_3D_MODEL_TOOL] as const
+/**
+ * Makes one sound with ElevenLabs, as an MP3 in the thread's folder (ADR-0205, slice 12): speech, a sound effect or
+ * music. It asks first, unless the user turned off the account's Ask before each sound, and never past the month's
+ * limit in dollars.
+ */
+export const MAKE_SOUND_TOOL = 'make_sound'
+export const PLUGIN_CHANGE_TOOLS = [GITHUB_COMMENT_TOOL, GITHUB_OPEN_ISSUE_TOOL, GITHUB_CLOSE_ISSUE_TOOL, GITHUB_REOPEN_ISSUE_TOOL, VERCEL_CANCEL_TOOL, VERCEL_PROMOTE_TOOL, VERCEL_ROLLBACK_TOOL, MAIL_SEND_TOOL, MAKE_3D_MODEL_TOOL, MAKE_SOUND_TOOL] as const
 export type PluginChangeTool = typeof PLUGIN_CHANGE_TOOLS[number]
 
 export const PLUGINS_RECENT_USE = 'sotto:plugins:recent-use'
@@ -157,10 +167,12 @@ export const PLUGINS_RECENT_USE = 'sotto:plugins:recent-use'
  * (ADR-0205, decision 10). Those from `comment` on are changes: a comment posted, an issue opened, closed or
  * reopened, a deployment's build cancelled, a deployment promoted to production, and production rolled back. Then
  * two reads of a mail account, a search and a message opened, and an email sent, which is a change. Never who an
- * email went to or what it said. Last, a 3D model made with Meshy: never its words or its photo.
+ * email went to or what it said. Then a 3D model made with Meshy: never its words or its photo. Last, a sound made
+ * with ElevenLabs, by its kind alone, speech, a sound effect or music: never its words, its voice or its name.
  */
 export const PLUGIN_READ_KINDS = ['issues', 'pull-requests', 'repository', 'commits', 'checks', 'releases', 'search', 'account', 'deployments', 'projects', 'domains', 'logs', 'other',
-  'comment', 'deployment-cancel', 'issue-open', 'issue-close', 'issue-reopen', 'deployment-promote', 'deployment-rollback', 'mail-search', 'mail-message', 'mail-send', '3d-model'] as const
+  'comment', 'deployment-cancel', 'issue-open', 'issue-close', 'issue-reopen', 'deployment-promote', 'deployment-rollback', 'mail-search', 'mail-message', 'mail-send', '3d-model',
+  'sound-speech', 'sound-effect', 'sound-music'] as const
 export type PluginReadKind = typeof PLUGIN_READ_KINDS[number]
 
 /**
@@ -220,9 +232,29 @@ export const PLUGINS_MESHY_CREDITS = 'sotto:plugins:meshy-credits'
  * count the 3D models page and Settings show is read again. A 3D model here changing is told by its own news.
  */
 export const PLUGINS_MESHY_CREDITS_CHANGED = 'sotto:plugins:meshy-credits-changed'
+/** Main to the window: a sound was made or failed on this computer, so what each ElevenLabs account spent is read again. */
+export const PLUGINS_ELEVENLABS_SPENT_CHANGED = 'sotto:plugins:elevenlabs-spent-changed'
 const creditCount = z.number().int().nonnegative()
 export const meshyCreditsSchema = z.record(z.uuid(), z.object({ here: creditCount, credits: creditCount, across: z.array(z.string().max(200)).max(100) }).strict())
 export type MeshyCredits = z.infer<typeof meshyCreditsSchema>
+/**
+ * What each ElevenLabs account's sounds cost this month on this computer, in US dollars at ElevenLabs' published API
+ * prices, by account ID (ADR-0205, slice 12): the month starts on the 1st, by this computer's clock. Threads on a
+ * paired host make none yet, so it is this computer's count alone.
+ */
+export const PLUGINS_ELEVENLABS_SPENT = 'sotto:plugins:elevenlabs-spent'
+export const elevenLabsSpentSchema = z.record(z.uuid(), z.number().nonnegative().max(10_000_000))
+export type ElevenLabsSpent = z.infer<typeof elevenLabsSpentSchema>
+/**
+ * A sum in US dollars as Sotto says it, with two decimals: "$0.03". Null for one above nothing and below a cent, which
+ * is said in words, "under $0.01", by whoever shows it in the interface language.
+ */
+export function dollarFigure(amount: number): string | null {
+  if (amount > 0 && amount < 0.01) return null
+  return `$${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+}
+/** A monthly limit in whole US dollars as Sotto says it: "$10". */
+export const dollarLimit = (limit: number): string => `$${limit.toLocaleString('en-US')}`
 /**
  * Where Proton Mail Bridge stands for an account on this computer: answering with the certificate kept, not running,
  * showing another certificate, or not known, as for an account that is not Proton Mail's.
@@ -492,5 +524,24 @@ export type PluginChange =
     readonly words?: string; readonly photo?: string
     readonly credits: number; readonly monthCredits: number; readonly monthlyLimit: number
     /** The folder the files go into, relative to the thread's folder. */
+    readonly folder: string
+  }
+  | {
+    /**
+     * One sound made with ElevenLabs (ADR-0205, slice 12): speech, a sound effect or music, as one MP3 in the thread's
+     * folder. The card shows everything that goes to ElevenLabs, says it may train on it, and gives what it costs at
+     * the published prices beside what the account spent this month, in US dollars (Zach's picks on #2498).
+     */
+    readonly kind: 'elevenlabs-sound'; readonly account: string; readonly name: string
+    readonly sound: 'speech' | 'effect' | 'music'
+    /** The words spoken, or what the effect or music is made from. */
+    readonly words: string
+    /** The voice speech is spoken in, by its name in the account. */
+    readonly voice?: string
+    /** How long an effect or music is; an effect without one is as long as ElevenLabs judges. */
+    readonly seconds?: number
+    readonly instrumental?: boolean
+    readonly cost: number; readonly monthSpent: number; readonly monthlyLimit: number
+    /** The folder the file goes into, relative to the thread's folder. */
     readonly folder: string
   }

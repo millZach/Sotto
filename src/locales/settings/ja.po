@@ -1488,6 +1488,18 @@ msgid "Asked to make a 3D model"
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Asked to make a sound effect"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Asked to make music"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Asked to make speech"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Asked to open an issue"
 msgstr ""
 
@@ -3962,6 +3974,18 @@ msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Made a 3D model"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Made a sound effect"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Made music"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Made speech"
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
@@ -6847,6 +6871,10 @@ msgstr ""
 msgid "Spending"
 msgstr ""
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Spent this month: {spentWords} of {limitDollars}."
+msgstr ""
+
 #. A diff layout: old and new side by side
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Split"
@@ -8242,6 +8270,10 @@ msgstr ""
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Ultracode effort"
+msgstr ""
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "under $0.01"
 msgstr ""
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx

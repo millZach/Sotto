@@ -18,6 +18,7 @@ const ALL_CODES = [
   { code: 'REMOTE_DRAFTS_UNREADABLE' },
   { code: 'PLUGIN_USE_NOT_CLEARED' },
   { code: 'MODEL_WORDS_NOT_CLEARED' },
+  { code: 'SOUND_WORDS_NOT_CLEARED' },
 ] as const
 
 describe('recoveryNoticeSchema', () => {

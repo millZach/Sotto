@@ -10,7 +10,7 @@ import { LOCAL_APPS_CHANGED, LOCAL_APPS_GET, type LocalAppsState } from '../shar
 import {
   mailGrantsOfSchema, mailGrantStopSchema, PLUGINS_MAIL_GRANT_STOP, PLUGINS_MAIL_GRANTS, PLUGINS_MAIL_GRANTS_CHANGED, threadMailGrantsSchema,
   gitHubSignInSchema, pluginHostSignInsSchema, PLUGINS_GITHUB_SIGN_IN_ELSEWHERE, pluginCopiesViewSchema, pluginCopyNewSetSchema, pluginCopySetSchema, PLUGINS_COPIES, PLUGINS_COPIES_CHANGED, PLUGINS_COPY_NEW_SET, PLUGINS_COPY_SET, pluginAccountAddSchema, pluginAccountRemoveSchema, pluginAccountReplaceSchema, pluginAccountResultSchema, pluginAccountsSchema, pluginAccountUpdateSchema, pluginProjectsSchema,
-  PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNT_TRUST, PLUGINS_ACCOUNT_UPDATE, PLUGINS_ACCOUNTS, PLUGINS_BRIDGE_STATUS, bridgeStatusSchema, PLUGINS_MESHY_CREDITS, PLUGINS_MESHY_CREDITS_CHANGED, meshyCreditsSchema, PLUGINS_GITHUB_SIGN_IN, PLUGINS_PROJECTS, PLUGINS_RECENT_USE, shownPluginUsesSchema, type PluginsBridge,
+  PLUGINS_ACCOUNT_ADD, PLUGINS_ACCOUNT_REMOVE, PLUGINS_ACCOUNT_REPLACE, PLUGINS_ACCOUNT_TRUST, PLUGINS_ACCOUNT_UPDATE, PLUGINS_ACCOUNTS, PLUGINS_BRIDGE_STATUS, bridgeStatusSchema, PLUGINS_MESHY_CREDITS, PLUGINS_MESHY_CREDITS_CHANGED, meshyCreditsSchema, PLUGINS_ELEVENLABS_SPENT, PLUGINS_ELEVENLABS_SPENT_CHANGED, elevenLabsSpentSchema, PLUGINS_GITHUB_SIGN_IN, PLUGINS_PROJECTS, PLUGINS_RECENT_USE, shownPluginUsesSchema, type PluginsBridge,
 } from '../shared/plugins'
 import {
   model3dBytesRequestSchema, model3dBytesSchema, model3dDoneSchema, model3dRemovalSchema, model3dRemovedSchema, model3dListRequestSchema, model3dListSchema, model3dRequestSchema, model3dRevealRequestSchema, model3dViewOrNullSchema, model3dViewSchema,
@@ -690,6 +690,8 @@ export function createSottoBridge(
       bridgeStatus: async request => invokeParsed(renderer, PLUGINS_BRIDGE_STATUS, bridgeStatusSchema, pluginAccountRemoveSchema.parse(request)),
       meshyCredits: async () => invokeParsed(renderer, PLUGINS_MESHY_CREDITS, meshyCreditsSchema),
       onMeshyCreditsChanged: listener => { const heard = (): void => { listener() }; renderer.on(PLUGINS_MESHY_CREDITS_CHANGED, heard); return () => { renderer.removeListener(PLUGINS_MESHY_CREDITS_CHANGED, heard) } },
+      elevenLabsSpent: async () => invokeParsed(renderer, PLUGINS_ELEVENLABS_SPENT, elevenLabsSpentSchema),
+      onElevenLabsSpentChanged: listener => { const heard = (): void => { listener() }; renderer.on(PLUGINS_ELEVENLABS_SPENT_CHANGED, heard); return () => { renderer.removeListener(PLUGINS_ELEVENLABS_SPENT_CHANGED, heard) } },
       // A 3D model in a thread (ADR-0141), by its ID alone: its view, the bytes it is drawn from, and each change.
       model3d: async id => invokeParsed(renderer, PLUGINS_MODEL_3D, model3dViewOrNullSchema, model3dRequestSchema.parse({ id })),
       model3dBytes: async request => invokeParsed(renderer, PLUGINS_MODEL_3D_BYTES, model3dBytesSchema, model3dBytesRequestSchema.parse(request)),

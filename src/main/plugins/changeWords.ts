@@ -1,5 +1,5 @@
 import { t } from '@lingui/core/macro'
-import type { PluginChange } from '../../shared/plugins'
+import { dollarFigure, dollarLimit, type PluginChange } from '../../shared/plugins'
 import type { PluginChangeCard } from './pendingChanges'
 
 type GitHubChange = Extract<PluginChange, { readonly kind: 'github-comment' | 'github-open-issue' | 'github-close-issue' | 'github-reopen-issue' }>
@@ -7,6 +7,7 @@ type VercelChange = Extract<PluginChange, { readonly kind: 'vercel-cancel' | 've
 type MailRead = Extract<PluginChange, { readonly kind: 'mail-read' }>
 type MailSend = Extract<PluginChange, { readonly kind: 'mail-send' }>
 type MeshyModel = Extract<PluginChange, { readonly kind: 'meshy-model' }>
+type ElevenLabsSound = Extract<PluginChange, { readonly kind: 'elevenlabs-sound' }>
 
 /**
  * A plugin change's card, in the interface language (ADR-0205, decision 7; ADR-0185): what will happen in plain words,
@@ -17,6 +18,7 @@ export function wordPluginChange(change: PluginChange): PluginChangeCard {
   if (change.kind === 'mail-read') return wordMailRead(change)
   if (change.kind === 'mail-send') return wordMailSend(change)
   if (change.kind === 'meshy-model') return wordMeshyModel(change)
+  if (change.kind === 'elevenlabs-sound') return wordElevenLabsSound(change)
   // Only a Vercel change names a deployment.
   return 'deploymentId' in change ? wordVercelChange(change) : wordGitHubChange(change)
 }
@@ -116,6 +118,43 @@ function wordMeshyModel(change: MeshyModel): PluginChangeCard {
       t`The files go to ${folder} in this thread’s folder.`,
     ].join('\n'),
     allow: t`Make the model`,
+    deny: t`Deny`,
+  }
+}
+
+/**
+ * One sound with ElevenLabs (ADR-0205; the plugins plan's slice 12): everything that goes to ElevenLabs, the words and
+ * for speech the voice, that ElevenLabs may train on it, and what it costs at the published prices beside what the
+ * account spent this month. The words and buttons are the ones Zach chose in the mock-up on #2498 (the tag
+ * prototype/elevenlabs): Make the sound and Deny. Nothing plays on its own (ADR-0068).
+ */
+function wordElevenLabsSound(change: ElevenLabsSound): PluginChangeCard {
+  const { name, folder, words } = change
+  const named = change.account
+  const money = (amount: number): string => dollarFigure(amount) ?? t`under $0.01`
+  const cost = money(change.cost), spent = money(change.monthSpent), limit = dollarLimit(change.monthlyLimit)
+  const seconds = (change.seconds ?? 0).toLocaleString('en-US')
+  const voice = change.voice ?? ''
+  const characters = words.length.toLocaleString('en-US')
+  const target = change.sound === 'speech' ? t`Speech · ${name}` : change.sound === 'effect' ? t`Sound effect · ${name}` : t`Music · ${name}`
+  const what = change.sound === 'speech' ? t`Speaks these words in the voice ${voice} (${characters} characters):`
+    : change.sound === 'effect'
+      ? change.seconds === undefined ? t`Makes a sound effect, as long as ElevenLabs judges, up to 30 seconds, from these words:`
+        : change.seconds === 1 ? t`Makes a sound effect, 1 second long, from these words:` : t`Makes a sound effect, ${seconds} seconds long, from these words:`
+      : change.instrumental ? t`Makes music, ${seconds} seconds long, with no singing, from these words:` : t`Makes music, ${seconds} seconds long, from these words:`
+  return {
+    plugin: 'ElevenLabs',
+    text: t`Make the sound ${name} with the ElevenLabs account ${named}? About ${cost}.`,
+    action: t`Make a sound with ElevenLabs`,
+    target,
+    details: [
+      what,
+      `“${words}”`,
+      t`ElevenLabs may use what it is sent to train its own models, unless that is turned off in the ElevenLabs account.`,
+      t`About ${cost} on the ElevenLabs account ${named}; ${spent} of its ${limit} used this month.`,
+      t`The file goes to ${folder} in this thread’s folder. Nothing plays on its own.`,
+    ].join('\n'),
+    allow: t`Make the sound`,
     deny: t`Deny`,
   }
 }

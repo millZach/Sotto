@@ -81,7 +81,9 @@ describe('sotto_plugins, the tools a thread’s agent uses plugins through (ADR-
       // An email is sent and not taken back, but it overwrites and deletes nothing, as a comment does not.
       ['mail_send', false, false],
       // A 3D model costs credits, and makes files without touching any.
-      ['make_3d_model', false, false]])
+      ['make_3d_model', false, false],
+      // A sound costs money, and makes one file without touching any.
+      ['make_sound', false, false]])
     await expect(server.mcpServer('someone-else')).resolves.toBeUndefined()
     const offered = await server.mcpServer('admitted')
     expect(offered).toMatchObject({ name: PLUGINS_MCP_SERVER, type: 'http' })

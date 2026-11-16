@@ -38,6 +38,12 @@ const CHANGES: readonly PluginChange[] = [
   { kind: 'mail-send', ...SEND, to: ['ann@example.com'], cc: ['cara@example.com'], bcc: [] },
   { kind: 'meshy-model', account: 'Studio', name: 'Oak barrel', words: 'An oak barrel with iron hoops', credits: 30, monthCredits: 140, monthlyLimit: 1000, folder: 'models' },
   { kind: 'meshy-model', account: 'Studio', name: 'Fox', photo: 'art/fox.jpg', credits: 30, monthCredits: 0, monthlyLimit: 1000, folder: 'art/3d' },
+  { kind: 'elevenlabs-sound', account: 'Studio', name: 'Welcome video', sound: 'speech', words: 'Welcome to Lumen.', voice: 'Rachel', cost: 0.0096, monthSpent: 1.2, monthlyLimit: 10, folder: 'sounds' },
+  { kind: 'elevenlabs-sound', account: 'Studio', name: 'Chime', sound: 'effect', words: 'A bright chime', seconds: 2, cost: 0.004, monthSpent: 0, monthlyLimit: 10, folder: 'sounds' },
+  { kind: 'elevenlabs-sound', account: 'Studio', name: 'Click', sound: 'effect', words: 'A soft click', seconds: 1, cost: 0.002, monthSpent: 0, monthlyLimit: 10, folder: 'sounds' },
+  { kind: 'elevenlabs-sound', account: 'Studio', name: 'Rain', sound: 'effect', words: 'Rain on a tin roof', cost: 0.06, monthSpent: 0.004, monthlyLimit: 10, folder: 'audio' },
+  { kind: 'elevenlabs-sound', account: 'Studio', name: 'Theme', sound: 'music', words: 'A calm piano theme', seconds: 90, cost: 0.225, monthSpent: 2, monthlyLimit: 25, folder: 'sounds' },
+  { kind: 'elevenlabs-sound', account: 'Studio', name: 'Theme', sound: 'music', words: 'A calm piano theme', seconds: 90, instrumental: true, cost: 0.225, monthSpent: 2, monthlyLimit: 25, folder: 'sounds' },
 ] as PluginChange[]
 
 it('words a change’s card on a host as the desktop words it in English, sentence for sentence', () => {
