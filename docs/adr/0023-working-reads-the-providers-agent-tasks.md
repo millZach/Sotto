@@ -213,6 +213,42 @@ call's row runs until the work ends and then reads how it ended. OpenCode's own 
 message. What a subagent starts comes on its own session and is its business. The thread's server is held from the
 reaper while any of this runs, and when the server ends it all ends, its rows reading unknown.
 
+## Amendment: Hermes's background commands, found by their process
+
+*November 16, 2026.* Issue #2637, under Zach's pick n1 above (find its process). Hermes 0.19.0's own source
+(`docs/research/2026-11-16-hermes-background-commands-source.md`) shows that `terminal(background=true)` starts the
+command, and only such a command, as `[shell, "-lic", "set +m; <command>"]`. It is a child of Hermes's own process, in a
+new session of its own, and carries the thread's ACP session as `HERMES_SESSION_KEY`. Hermes's ACP adapter never says it
+ended: the completion goes to a queue only its CLI and TUI read.
+
+Sotto runs one Hermes process per thread. When a turn that ran a command ends, Sotto lists that process's children before
+the turn's end goes out (for at most 5 seconds), so Watcher reads the end together with its background work; it looks
+again 3 seconds after any turn ends. It reads, as the detached-run scan does, only the `HERMES_SESSION_KEY` each child
+carries. Hermes's MCP servers get a filtered environment without it (`_build_safe_env`), and foreground commands have
+ended with their turn. So a child carrying the thread's own ACP session is a command left in the background, and is the
+thread's background work, of type `command`, until its process is gone. The mark is read rather than the command line
+because the shell may replace itself with the command, and macOS lists command lines without quotes; the command line
+only names it. Sotto looks again every 15 seconds while it finds any, and forgets them when the Hermes process goes. A
+look that fails keeps what was known, and one that comes back after a newer one started is dropped. A look made while a
+turn runs takes no command it did not know: that turn's own commands carry the same mark. The commands hold the session
+from the reaper, which would leave them unwatched, but nothing else. A permission change and a client update go ahead,
+and since the commands run in sessions of their own they carry on, but are no longer counted once Hermes restarts.
+
+How a command is named was Zach's choice too (November 16, 2026, after Bug Bot's review of #2652): **literal, else
+program**. While the process still shows Hermes's `set +m; <command>`, that text is shown: it is the command as Hermes
+was asked to run it, before the shell expands anything, and the thread's own step shows it already. Once the shell has
+replaced itself with the command, its arguments hold expanded values, which may be a token, so only the program's name
+is shown. Never an expanded value reaches the readout, Watcher or a host's snapshot.
+
+How it shows was Zach's choice (November 16, 2026, over a "Background command" row with Stop as drawn in n1, and over
+the detached-run row): **count it only**. The readout reads Waiting with the command's name, the sidebar row reads
+Working, and Watcher waits, as for a Claude Code background command. There is no row and no Stop. Work Hermes runs
+inside its own process, such as `delegate_task(background=true)`, has no process of its own and stays unseen until
+Hermes reports it.
+
+Devin's background shells have no ending over ACP either. Devin is installed on forge but not signed in, so whether its
+commands carry a mark is unchecked, and it has its own issue (#2649).
+
 ## Considered Options
 
 - **The `background_tasks_changed` level signal.** The SDK documents a frame carrying the whole set of live

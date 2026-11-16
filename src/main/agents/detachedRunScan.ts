@@ -12,8 +12,11 @@ import { readdir, readFile, readlink } from 'node:fs/promises'
 import { basename } from 'node:path'
 import { MAX_DETACHED_RUN_COMMAND, MAX_MONITOR_LABEL } from '../../shared/agentMonitoring'
 
-/** The environment variables that name the provider session a process was started from. */
-export const RUN_MARKS = ['CLAUDE_CODE_SESSION_ID', 'CODEX_THREAD_ID'] as const
+/**
+ * The environment variables that name the provider session a process was started from. `HERMES_SESSION_KEY` is the ACP
+ * session Hermes binds for the commands it runs (#2637); no Hermes client is an agent client a thread detaches with it.
+ */
+export const RUN_MARKS = ['CLAUDE_CODE_SESSION_ID', 'CODEX_THREAD_ID', 'HERMES_SESSION_KEY'] as const
 export type RunMarkName = typeof RUN_MARKS[number]
 export interface RunMark { readonly name: RunMarkName; readonly value: string }
 
@@ -185,7 +188,11 @@ export function parseLinuxStat(stat: string): { readonly parentPid: number; read
 /** Linux's clock ticks a second, which `getconf CLK_TCK` says is 100 on every architecture Sotto runs on. */
 const LINUX_TICKS = 100
 
-async function scanLinux(include: Parameters<ScanProcesses>[0]): Promise<ProcessTable> {
+/** Which processes a read takes a closer look at: what to call one it takes, or undefined for one it leaves. */
+type ChooseProcess = (listed: ListedProcess, argv: readonly string[]) => string | undefined
+const agentClients: ChooseProcess = (_listed, argv) => agentClient(argv)
+
+async function scanLinux(include: Parameters<ScanProcesses>[0], pick: ChooseProcess = agentClients): Promise<ProcessTable> {
   const bootLine = /^btime\s+(\d+)$/mu.exec(await readFile('/proc/stat', 'utf8').catch(() => ''))
   const boot = bootLine ? Number(bootLine[1]) * 1000 : undefined
   const processes = new Map<number, ListedProcess>()
@@ -199,7 +206,7 @@ async function scanLinux(include: Parameters<ScanProcesses>[0]): Promise<Process
     processes.set(pid, listed)
     const raw = await readFile(`/proc/${pid}/cmdline`, 'utf8').catch(() => '')
     const argv = raw.split('\0').filter((arg, at, all) => at < all.length - 1 || arg !== '')
-    const client = agentClient(argv)
+    const client = pick(listed, argv)
     if (client) found.push({ listed, client, argv })
   }
   const agents: AgentProcess[] = []
@@ -262,7 +269,7 @@ interface Candidate { readonly listed: ListedProcess; readonly client: string; r
  * A system that shows each command only as a line (macOS, Windows): every row listed for its parents, and the agent clients
  * `include` keeps once all are listed, their lines split into arguments.
  */
-function candidates(rows: readonly ListedRow[], include: Parameters<ScanProcesses>[0]): { processes: Map<number, ListedProcess>; wanted: Candidate[] } {
+function candidates(rows: readonly ListedRow[], include: Parameters<ScanProcesses>[0], pick: ChooseProcess): { processes: Map<number, ListedProcess>; wanted: Candidate[] } {
   const processes = new Map<number, ListedProcess>()
   const found: Candidate[] = []
   for (const row of rows) {
@@ -270,14 +277,14 @@ function candidates(rows: readonly ListedRow[], include: Parameters<ScanProcesse
     processes.set(row.pid, listed)
     if (!row.commandLine) continue
     const argv = splitCommandLine(row.commandLine)
-    const client = agentClient(argv)
+    const client = pick(listed, argv)
     if (client) found.push({ listed, client, commandLine: row.commandLine, argv })
   }
   return { processes, wanted: found.filter(item => include({ ...item.listed, client: item.client }, processes)) }
 }
 
-async function scanMac(include: Parameters<ScanProcesses>[0]): Promise<ProcessTable> {
-  const { processes, wanted } = candidates(parseMacTable(await run('/bin/ps', ['-axww', '-o', 'pid=,ppid=,lstart=,command='], { env: { ...process.env, LC_ALL: 'C' } })), include)
+async function scanMac(include: Parameters<ScanProcesses>[0], pick: ChooseProcess = agentClients): Promise<ProcessTable> {
+  const { processes, wanted } = candidates(parseMacTable(await run('/bin/ps', ['-axww', '-o', 'pid=,ppid=,lstart=,command='], { env: { ...process.env, LC_ALL: 'C' } })), include, pick)
   if (!wanted.length) return { processes, agents: [] }
   const pids = wanted.map(item => item.listed.pid).join(',')
   // With -E, ps puts the environment after the command, which it reads only for this user's own processes.
@@ -390,8 +397,8 @@ export function parseWindowsTable(output: string): { pid: number; parentPid: num
   })
 }
 
-async function scanWindows(include: Parameters<ScanProcesses>[0]): Promise<ProcessTable> {
-  const { processes, wanted } = candidates(parseWindowsTable(await run('powershell.exe', encoded(WINDOWS_TABLE), { timeout: 60_000 })), include)
+async function scanWindows(include: Parameters<ScanProcesses>[0], pick: ChooseProcess = agentClients): Promise<ProcessTable> {
+  const { processes, wanted } = candidates(parseWindowsTable(await run('powershell.exe', encoded(WINDOWS_TABLE), { timeout: 60_000 })), include, pick)
   if (!wanted.length) return { processes, agents: [] }
   const names = RUN_MARKS.map(name => `'${name}'`).join(',')
   const script = `$ErrorActionPreference = 'Stop'
@@ -424,6 +431,21 @@ export const scanProcesses: ScanProcesses = include => process.platform === 'lin
   : process.platform === 'darwin' ? scanMac(include)
   : process.platform === 'win32' ? scanWindows(include)
   : Promise.resolve({ processes: new Map(), agents: [] })
+
+/** One process a parent started that still runs, with its command and the marks its environment carries. */
+export interface ChildProcessRow { readonly pid: number; readonly startedAt: number | undefined; readonly argv: readonly string[]; readonly marks: readonly RunMark[] }
+
+/**
+ * The processes `parentPid` started that still run (#2637), read as the detached-run scan reads agent clients: the
+ * table, then only these processes' marks. A system Sotto does not run on lists none.
+ */
+export async function childProcesses(parentPid: number): Promise<ChildProcessRow[]> {
+  const pick: ChooseProcess = listed => listed.parentPid === parentPid ? 'child' : undefined
+  const keep = (): boolean => true
+  const table = process.platform === 'linux' ? await scanLinux(keep, pick) : process.platform === 'darwin' ? await scanMac(keep, pick)
+    : process.platform === 'win32' ? await scanWindows(keep, pick) : { processes: new Map(), agents: [] }
+  return table.agents.map(child => ({ pid: child.pid, startedAt: child.startedAt, argv: child.argv, marks: child.marks }))
+}
 
 /**
  * Whether `pid` runs under `root`, walking the parents the table records. A parent that started after its child is a
