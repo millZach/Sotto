@@ -27,6 +27,9 @@ export const SETTINGS_PAGES = [
   settingsPage('settings-providers', msg({ message: 'Providers', comment: 'A Settings page, named in its rail and its heading. Other messages name it as "Settings > Providers".' }), 2),
   // Plugins (ADR-0205), an Owl feature: directly below Providers, shown only while the Owl list turns `plugins` on.
   settingsPage('settings-plugins', msg({ message: 'Plugins', comment: 'A Settings page, named in its rail and its heading: outside services such as GitHub that threads can use. Other messages name it as "Settings > Plugins".' }), 2),
+  // 3D models (ADR-0141), part of the `plugins` Owl feature: directly below Plugins, where the sidebar's cube led until
+  // November 16, 2026 (Zach's pick A).
+  settingsPage('settings-models', msg({ message: '3D models', comment: 'A Settings page, named in its rail and its heading: every 3D model Meshy made for a thread. Other messages name it as "Settings > 3D models".' }), 2),
   settingsPage('settings-hosts', msg({ message: 'Hosts & phones', comment: 'A Settings page, named in its rail and its heading. Other messages name it as "Settings > Hosts & phones".' }), 2),
   settingsPage('settings-cloud-iphone', msg({ message: 'Cloud iPhone', comment: 'A Settings page, named in its rail and its heading: a simulated iPhone on run.cloud. Other messages name it as "Settings > Cloud iPhone".' }), 2),
   settingsPage('settings-appearance', msg({ message: 'Appearance', comment: 'A Settings page, named in its rail and its heading. Other messages name it as "Settings > Appearance".' }), 3),
@@ -242,6 +245,7 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { id: 'plugin-gmail', label: 'Gmail', section: 'settings-plugins', words: 'plugin mail email google app password account inbox messages', gate: 'plugins' },
     { id: 'plugin-proton-mail', label: 'Proton Mail', section: 'settings-plugins', words: 'plugin mail email proton bridge password account inbox messages', gate: 'plugins' },
     { id: 'plugin-meshy', label: 'Meshy', section: 'settings-plugins', words: 'plugin 3d models meshy api key credits limit ask before each', gate: 'plugins' },
+    { id: 'models-3d', label: msg`3D models`, section: 'settings-models', words: 'meshy 3d models gallery viewer turn glb usdz files credits', gate: 'plugins' },
     { id: 'plugin-elevenlabs', label: 'ElevenLabs', section: 'settings-plugins', words: 'plugin elevenlabs eleven labs sound speech voice music sound effects api key dollars limit ask before each', gate: 'plugins' },
     { id: 'local-apps', label: msg`Let apps on this computer connect`, section: 'settings-hosts', words: 'agent popup menu bar token loopback', gate: 'local-apps' },
     { id: 'cloud-iphone-key', label: msg`run.cloud key`, section: 'settings-cloud-iphone', words: 'cloud iphone' },

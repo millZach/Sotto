@@ -1639,11 +1639,6 @@ msgstr "3D model: {name}"
 msgid "3D model: {shown}"
 msgstr "3D model: {shown}"
 
-#. The 3D models page: every 3D model Meshy made for a thread.
-#: src/renderer/src/agents/SidebarFrame.tsx
-msgid "3D models"
-msgstr "3D models"
-
 #: src/renderer/src/agents/mainCheckoutLine.logic.ts
 msgid "a cherry-pick is in progress"
 msgstr "a cherry-pick is in progress"

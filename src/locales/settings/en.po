@@ -923,6 +923,11 @@ msgstr "25 entries"
 msgid "30 s"
 msgstr "30 s"
 
+#. A Settings page, named in its rail and its heading: every 3D model Meshy made for a thread. Other messages name it as "Settings > 3D models".
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "3D models"
+msgstr "3D models"
+
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "3D, sound and video"
 msgstr "3D, sound and video"

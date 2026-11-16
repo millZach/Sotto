@@ -5,7 +5,7 @@ import type { Model3dListed, Model3dRemoval, Model3dView } from '../../../../../
 import { ModelsPage } from '../../../../../src/renderer/src/features/models3d/ModelsPage'
 import { PageLinks } from '../../../../../src/renderer/src/agents/SidebarFrame'
 
-/** The 3D models page (the Meshy plan's ticket 5, Zach's variant C), against a made-up bridge. */
+/** Settings › 3D models (the Meshy plan's ticket 5, Zach's variant C; in Settings since November 16, 2026), against a made-up bridge. */
 const gate = vi.hoisted(() => ({ plugins: true, usage: false }))
 vi.mock('../../../../../src/renderer/src/state/owlFeature', async importOriginal => {
   const actual = await importOriginal<typeof import('../../../../../src/renderer/src/state/owlFeature')>()
@@ -92,7 +92,7 @@ const details = (name: string): HTMLElement => screen.getByRole('complementary',
 describe('the 3D models page', () => {
   it('shows the chosen 3D model large, with its details and files, and a filmstrip of every one', async () => {
     render(<ModelsPage platform="win32" />)
-    expect(await screen.findByRole('heading', { level: 1, name: '3D models' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { level: 2, name: '3D models' })).toBeInTheDocument()
     await waitFor(() => expect(screen.getByText('2 3D models from 2 threads · 80 credits this month')).toBeInTheDocument())
     expect(within(strip()).getAllByRole('option').map(tile => tile.getAttribute('aria-label'))).toEqual(['Fox figurine, Nov 14', 'Oak barrel, Nov 13'])
     // The newest that is done is chosen first.
@@ -356,10 +356,21 @@ describe('the 3D models page', () => {
     expect(plugins.models3d).not.toHaveBeenCalled()
   })
 
-  it('puts a cube at the sidebar’s foot, between Usage and Settings, with plugins on', () => {
+  it('leaves the sidebar’s foot without a cube with plugins on: 3D models are a Settings page', () => {
     gate.usage = true
     render(<PageLinks className="pages" linkClassName="page" />)
-    expect(screen.getAllByRole('link').map(link => link.textContent)).toEqual(['Usage', '3D models', 'Settings', 'Help'])
+    expect(screen.getAllByRole('link').map(link => link.textContent)).toEqual(['Usage', 'Settings', 'Help'])
+  })
+
+  it('reads nothing while its Settings page is closed, keeps its heading for Find a setting, and reads once it opens', async () => {
+    const page = render(<ModelsPage platform="win32" shown={false} />)
+    expect(screen.getByRole('heading', { level: 2, name: '3D models' })).toHaveAttribute('data-setting', 'models-3d')
+    expect(plugins.models3d).not.toHaveBeenCalled()
+    expect(plugins.meshyCredits).not.toHaveBeenCalled()
+    expect(screen.queryByRole('listbox')).toBeNull()
+    page.rerender(<ModelsPage platform="win32" shown />)
+    expect(await screen.findByRole('listbox', { name: 'Every 3D model' })).toBeInTheDocument()
+    expect(plugins.models3d).toHaveBeenCalled()
   })
 })
 
