@@ -122,6 +122,23 @@ it('follows a hermes link on PATH to the real script, so its private Python is f
   expect(await findHermesExecutable({ HOME: root, PATH: links }, { home: root, platform: 'darwin', loginShellPath: async () => links })).toBe(await realpath(join(bin, 'hermes')))
 })
 
+it('finds the official installer’s Linux launcher past an Omarchy stub that runs another Hermes through mise', async () => {
+  root = await mkdtemp(join(tmpdir(), 'sotto-hermes-linux-'))
+  const localBin = join(root, '.local', 'bin'), official = join(root, '.hermes', 'hermes-agent', '.hermes', 'bin')
+  await mkdir(localBin, { recursive: true }); await mkdir(official, { recursive: true })
+  await writeFile(join(localBin, 'hermes'), '#!/bin/bash\nexec env -u UV_PYTHON mise x \'pipx:hermes-agent[extras=all]\' -- hermes "$@"\n', { mode: 0o755 })
+  await writeFile(join(official, 'hermes'), '#!/bin/sh\nexec /hermes/tools/python3 -I -c launcher "$@"\n', { mode: 0o755 })
+  expect(await findHermesExecutable({ HOME: root, PATH: localBin }, { home: root, platform: 'linux', loginShellPath: async () => localBin })).toBe(await realpath(join(official, 'hermes')))
+})
+
+it('finds hermes.exe in the official Windows installer’s folder when PATH does not name it yet', async () => {
+  root = await mkdtemp(join(tmpdir(), 'sotto-hermes-windows-'))
+  const localAppData = join(root, 'AppData', 'Local'), bin = join(localAppData, 'hermes', 'bin')
+  await mkdir(bin, { recursive: true })
+  await writeFile(join(bin, 'hermes.exe'), '')
+  expect(await findHermesExecutable({ USERPROFILE: root, LocalAppData: localAppData, PATH: '' }, { home: root, platform: 'win32' })).toBe(await realpath(join(bin, 'hermes.exe')))
+})
+
 describe('the gateway', () => {
   const fakeChild = () => Object.assign(new EventEmitter(), { stdin: new PassThrough(), stdout: new PassThrough(), stderr: new PassThrough(), kill: vi.fn() }) as unknown as ChildProcess
   const setup = async () => {
@@ -151,6 +168,20 @@ describe('the gateway', () => {
     void runtime.start(executable).catch(() => undefined)
     await vi.waitFor(() => expect(spawnProcess).toHaveBeenCalledTimes(2))
     runtime.stop()
+  })
+
+  it('ends the gateway and everything it started with taskkill on Windows, which has no process groups', async () => {
+    const { executable, children, spawnProcess, runFile, runtime } = await setup()
+    const descriptor = Object.getOwnPropertyDescriptor(process, 'platform')!
+    Object.defineProperty(process, 'platform', { ...descriptor, value: 'win32' })
+    try {
+      void runtime.start(executable).catch(() => undefined)
+      await vi.waitFor(() => expect(spawnProcess).toHaveBeenCalledTimes(1))
+      Object.assign(children[0]!, { pid: 4242 })
+      runtime.stop()
+      expect(runFile).toHaveBeenCalledWith('taskkill', ['/PID', '4242', '/T', '/F'], expect.objectContaining({ windowsHide: true }), expect.any(Function))
+      expect(children[0]!.kill).not.toHaveBeenCalled()
+    } finally { Object.defineProperty(process, 'platform', descriptor) }
   })
 
   it('stops a gateway an earlier Sotto left in its folder before starting its own', async () => {
