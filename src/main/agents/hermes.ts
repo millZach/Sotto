@@ -18,7 +18,7 @@ import { hermesActivities, HERMES_THINKING_ID_PREFIX } from './hermesActivity'
 import { hermesCatalog, hermesModelRoute, hermesModelValue, hermesSettingsOf, hermesEffortValue, hermesHasEffort, isHermesChatGptModel, HERMES_CHATGPT_SOURCE, HERMES_RUNTIME_MODES } from './hermesModels'
 import { hermesAnswer, hermesDecline, hermesPending, type HermesPending, type HermesToolDetail } from './hermesRequests'
 import { compareHermesVersions, HermesRejected, HermesRpc, HermesUncertain, HERMES_ACP_VERSION, HERMES_CLI_VERSION,
-  findHermesExecutable, readHermesVersion, type HermesFrame } from './hermesRpc'
+  findHermesExecutable, hermesAcpCommand, readHermesVersion, type HermesFrame } from './hermesRpc'
 import { HermesRuntime, hermesProjectHome, hermesServers, hermesSharedSkills } from './hermesRuntime'
 import { discoverHermesSkills, hermesSkillPrompt, invokedHermesSkill } from './hermesSkills'
 import type { AgentSkillCatalog } from '../../shared/agentSkills'
@@ -390,8 +390,8 @@ export class HermesAcpHost implements ProviderHost {
 
   // ---- Processes -----------------------------------------------------------------------------------------------------
 
-  private spawn(args: string[], cwd: string, home: string, receive: (frame: HermesFrame, rpc: HermesRpc) => void, lost: () => void): HermesRpc {
-    const rpc: HermesRpc = new HermesRpc(this.executable!, args, cwd, this.runtime.env(home, cwd), this.options.requestTimeoutMs ?? 30_000, frame => receive(frame, rpc), lost)
+  private spawn(executable: string, command: ReturnType<typeof hermesAcpCommand>, cwd: string, home: string, receive: (frame: HermesFrame) => void, lost: () => void): HermesRpc {
+    const rpc = new HermesRpc(command.executable, command.args, cwd, this.runtime.env(home, cwd), this.options.requestTimeoutMs ?? 30_000, receive, lost, executable)
     this.processes.add(rpc); void rpc.closed.then(() => this.processes.delete(rpc))
     return rpc
   }
@@ -428,7 +428,8 @@ export class HermesAcpHost implements ProviderHost {
   }
   /** This thread's own process, started in the thread's permission mode with the current overlay, ready for a session. */
   private async startProcess(id: string, alias: Alias, cwd: string): Promise<Connection> {
-    if (!this.executable || !this.state.connected) throw new Error('Connect Hermes before using its threads.')
+    const executable = this.executable
+    if (!executable || !this.state.connected) throw new Error('Connect Hermes before using its threads.')
     // The revision is read before the overlay is written, so a change during the write leaves this process outdated.
     const patchRevision = this.patchRevision, stops = this.runtime.stops
     await this.writePatch()
@@ -436,8 +437,11 @@ export class HermesAcpHost implements ProviderHost {
     const connection: Connection = { rpc: undefined as unknown as HermesRpc, nonce: randomUUID(), clientRevision: this.clientRevision,
       patchRevision, mode: alias.runtimeMode, closing: false, replaying: false, model: undefined, effort: undefined, tools: new Map() }
     const project = this.state.projects.find(project => project.id === alias.projectId)
-    const home = await this.runtime.project(this.executable, project?.path ?? cwd, this.servers, stops, this.chatGptModels[0])
-    const rpc = this.spawn([...(this.options.executableArgs ?? []), 'acp'], cwd, home, frame => this.frame(id, connection, frame), () => this.processLost(id, connection))
+    const home = await this.runtime.project(executable, project?.path ?? cwd, this.servers, stops, this.chatGptModels[0])
+    // Hermes builds an editor picker during session creation. Its cold Windows inventory can block the session ID.
+    const skipChatGptInventory = process.platform === 'win32' && isHermesChatGptModel(alias.modelId)
+    const command = hermesAcpCommand(executable, this.options.executableArgs ?? [], skipChatGptInventory)
+    const rpc = this.spawn(executable, command, cwd, home, frame => this.frame(id, connection, frame), () => this.processLost(id, connection))
     ;(connection as { rpc: HermesRpc }).rpc = rpc
     try { this.readHarnessImages(connection, await this.handshake(rpc)) }
     catch (error) { connection.closing = true; rpc.close(); throw error }

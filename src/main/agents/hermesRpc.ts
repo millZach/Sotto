@@ -83,11 +83,33 @@ export function withHermesPath(environment: NodeJS.ProcessEnv, executable: strin
   return { ...env, [key]: (env[key] ?? '').split(delimiter).filter(folder => folder !== privateBin).join(delimiter) }
 }
 
-/** The stock launchers expose --run-module. A venv entry runs beside its own Python. */
+/** The stock launchers expose --run-module. Keep the working folder off a venv Python's import path, too. */
 export function hermesPythonCommand(executable: string, script: string): { executable: string; args: string[] } {
   const python = hermesPython(executable)
-  return python ? { executable: python, args: ['-c', script] }
+  return python ? { executable: python, args: ['-I', '-c', script] }
     : { executable, args: ['--run-module', 'timeit', '--number', '1', '--repeat', '1', script] }
+}
+
+/** Keep the ACP response on Hermes's current-model fallback when Sotto supplies the ChatGPT picker. */
+export function hermesAcpCommand(executable: string, prefixArgs: readonly string[], skipChatGptInventory: boolean): { executable: string; args: string[] } {
+  if (!skipChatGptInventory || prefixArgs.length) return { executable, args: [...prefixArgs, 'acp'] }
+  return hermesPythonCommand(executable, `import gc
+import sys
+from acp_adapter import model_catalog
+
+build_model_state = model_catalog.build_model_state
+def current_chatgpt_model(model, provider, base_url):
+    if provider == "openai-codex":
+        return None
+    return build_model_state(model, provider, base_url)
+model_catalog.build_model_state = current_chatgpt_model
+
+from hermes_cli.main import main
+sys.argv = ["hermes", "acp"]
+# The stock launcher's timeit wrapper disables GC and prints timing on exit.
+gc.enable()
+main()
+sys.stdout = sys.stderr`)
 }
 
 const OUTPUT_LIMIT = 64 * 1024
@@ -135,8 +157,8 @@ export class HermesRpc {
   private frames = Promise.resolve()
   readonly closed: Promise<void>
   constructor(executable: string, args: readonly string[], cwd: string, env: NodeJS.ProcessEnv, private readonly timeoutMs: number,
-    private readonly receive: (frame: HermesFrame) => Promise<void> | void, private readonly lost: () => void) {
-    this.child = spawn(executable, [...args], { cwd, env: withHermesPath(env, executable), windowsHide: true, shell: false, stdio: 'pipe' })
+    private readonly receive: (frame: HermesFrame) => Promise<void> | void, private readonly lost: () => void, pathExecutable = executable) {
+    this.child = spawn(executable, [...args], { cwd, env: withHermesPath(env, pathExecutable), windowsHide: true, shell: false, stdio: 'pipe' })
     this.closed = new Promise(resolve => this.child.once('close', () => { this.fail(); void this.frames.then(resolve, resolve) }))
     this.child.once('exit', () => { this.child.stdout.destroy(); this.child.stderr.destroy() })
     this.child.on('error', () => this.fail()); this.child.stdin.on('error', () => this.fail())

@@ -6,7 +6,7 @@ import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { PassThrough } from 'node:stream'
-import { findHermesExecutable, HermesRpc, readHermesVersion } from '../../../src/main/agents/hermesRpc'
+import { findHermesExecutable, hermesAcpCommand, HermesRpc, readHermesVersion } from '../../../src/main/agents/hermesRpc'
 import { HermesRuntime } from '../../../src/main/agents/hermesRuntime'
 import { resetCliLookup, withCliPath } from '../../../src/main/agents/cliLookup'
 
@@ -62,17 +62,18 @@ it.each([
   const env = runtime.env()
   const launchEnv = { ...env, PATH: sharedPath.filter(folder => layout !== 'venv' || folder !== bin).join(delimiter) }
   expect(await readHermesVersion(executable, env)).toBe('0.23.0')
-  const rpc = new HermesRpc(executable, ['acp'], root, env, 1000, () => {}, () => {})
+  const command = hermesAcpCommand(executable, [], layout === 'venv')
+  const rpc = new HermesRpc(command.executable, command.args, root, env, 1000, () => {}, () => {}, executable)
   await runtime.project(executable, root, [])
 
   expect(spawnProcess).toHaveBeenCalledTimes(2)
-  expect(spawnProcess).toHaveBeenNthCalledWith(1, executable, ['acp'], expect.objectContaining({ env: launchEnv }))
+  expect(spawnProcess).toHaveBeenNthCalledWith(1, layout === 'venv' ? join(bin, 'python') : executable, command.args, expect.objectContaining({ env: launchEnv }))
   expect(spawnProcess).toHaveBeenNthCalledWith(2, executable, ['gateway', 'run', '--quiet', '--no-supervise', '--external-supervisor'], expect.objectContaining({ env: launchEnv }))
   expect(runFile).toHaveBeenCalledTimes(3)
   expect(runFile).toHaveBeenNthCalledWith(1, executable, ['--version'], expect.objectContaining({ env: launchEnv }), expect.any(Function))
   for (const call of runFile.mock.calls.slice(1)) {
     expect(call[0]).toBe(layout === 'venv' ? join(bin, 'python') : executable)
-    expect(call[1]?.slice(0, -1)).toEqual(layout === 'venv' ? ['-c'] : ['--run-module', 'timeit', '--number', '1', '--repeat', '1'])
+    expect(call[1]?.slice(0, -1)).toEqual(layout === 'venv' ? ['-I', '-c'] : ['--run-module', 'timeit', '--number', '1', '--repeat', '1'])
     expect(call[2]).toEqual(expect.objectContaining({ env: launchEnv }))
   }
   expect(runFile.mock.calls[1]![1]?.at(-1)).toContain('discover_gateway_endpoint')
@@ -129,6 +130,17 @@ it('finds the official installer’s Linux launcher past an Omarchy stub that ru
   await writeFile(join(localBin, 'hermes'), '#!/bin/bash\nexec env -u UV_PYTHON mise x \'pipx:hermes-agent[extras=all]\' -- hermes "$@"\n', { mode: 0o755 })
   await writeFile(join(official, 'hermes'), '#!/bin/sh\nexec /hermes/tools/python3 -I -c launcher "$@"\n', { mode: 0o755 })
   expect(await findHermesExecutable({ HOME: root, PATH: localBin }, { home: root, platform: 'linux', loginShellPath: async () => localBin })).toBe(await realpath(join(official, 'hermes')))
+})
+
+it('starts the stock ChatGPT ACP process with Sotto’s inventory fallback', async () => {
+  root = await mkdtemp(join(tmpdir(), 'sotto-hermes-acp-'))
+  const executable = join(root, 'hermes')
+  expect(hermesAcpCommand(executable, [], false)).toEqual({ executable, args: ['acp'] })
+  expect(hermesAcpCommand(executable, ['fixture.cjs'], true)).toEqual({ executable, args: ['fixture.cjs', 'acp'] })
+  const command = hermesAcpCommand(executable, [], true)
+  expect(command.executable).toBe(executable)
+  expect(command.args.slice(0, -1)).toEqual(['--run-module', 'timeit', '--number', '1', '--repeat', '1'])
+  expect(command.args.at(-1)).toContain('model_catalog.build_model_state = current_chatgpt_model')
 })
 
 it('finds hermes.exe in the official Windows installer’s folder when PATH does not name it yet', async () => {
