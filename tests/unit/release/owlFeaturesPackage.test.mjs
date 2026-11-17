@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { URL } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { assertOwnedProfile, assertPackagedFeatureStatus } from '../../../scripts/verify-owl-features-package.mjs'
+import { assertOwnedProfile, assertPackagedFeatureStatus, contraryOverrides } from '../../../scripts/verify-owl-features-package.mjs'
 import { OWL_FEATURES } from '../../../src/shared/owlFeatures'
 
 const features = [
@@ -27,6 +27,17 @@ describe('packaged Owl feature protection', () => {
     expect(() => assertPackagedFeatureStatus(status('stable', { owlFeatures: {} }), 'stable', features)).toThrow('Watcher must be off')
     expect(() => assertPackagedFeatureStatus(status('owl'), 'stable', features)).toThrow('stable track')
     expect(() => assertPackagedFeatureStatus(status('owl', { watcherEnabled: false }), 'owl', features)).toThrow('compatibility answer')
+  })
+  it('asks the packaged build for the opposite of every answer, so one that obeyed overrides fails whichever way the list points', () => {
+    expect(contraryOverrides('stable', features)).toEqual({ SOTTO_OWL_FEATURES: 'watcher=1,second=1,graduated=0', SOTTO_WATCHER_ENABLED: '1' })
+    expect(contraryOverrides('owl', features)).toEqual({ SOTTO_OWL_FEATURES: 'watcher=0,second=0,graduated=0', SOTTO_WATCHER_ENABLED: '0' })
+    // With every real feature sent, both tracks ask for every feature off; a build that obeyed would fail each entry.
+    for (const track of ['stable', 'owl']) {
+      const asked = Object.fromEntries(contraryOverrides(track).SOTTO_OWL_FEATURES.split(',').map(entry => entry.split('=')))
+      expect(Object.keys(asked)).toEqual(OWL_FEATURES.map(feature => feature.id))
+      const obeyed = { releaseTrack: track, owlFeatures: Object.fromEntries(Object.entries(asked).map(([id, value]) => [id, value === '1'])), watcherEnabled: asked.watcher === '1' }
+      expect(() => assertPackagedFeatureStatus(obeyed, track)).toThrow(/must be (on|off)/)
+    }
   })
   it.each(['stable', 'owl'])('checks every real Owl feature by default in %s', track => {
     const owlFeatures = Object.fromEntries(OWL_FEATURES.map(feature => [feature.id, track === 'owl' || feature.sentToStable]))
