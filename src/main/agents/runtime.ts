@@ -1033,7 +1033,9 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     connect: async provider => {
       const hermes = provider === 'hermes' ? connectedHermes() : undefined
       if (hermes) return await hermes.refreshChatGptModels() ? undefined : 'Hermes did not return any ChatGPT models.'
-      return whyNotConnected(await agentControl.command({ type: 'connect', provider, notice: false }), provider)
+      const failure = whyNotConnected(await agentControl.command({ type: 'connect', provider, notice: false }), provider)
+      if (failure) return failure
+      return provider === 'hermes' && connectedHermes()?.hasChatGptModels() === false ? 'Hermes did not return any ChatGPT models.' : undefined
     },
   }) : undefined
   idleCompaction.start()

@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { execFile, spawn, type ChildProcess, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { EventEmitter } from 'node:events'
-import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { PassThrough } from 'node:stream'
@@ -140,7 +140,7 @@ it('starts the stock ChatGPT ACP process with Sotto’s inventory fallback', asy
   const command = hermesAcpCommand(executable, [], true)
   expect(command.executable).toBe(executable)
   expect(command.args.slice(0, -1)).toEqual(['--run-module', 'timeit', '--number', '1', '--repeat', '1'])
-  expect(command.args.at(-1)).toContain('model_catalog.build_model_state = current_chatgpt_model')
+  expect(command.args.at(-1)).toContain('model_catalog.build_model_state = current_model_only')
 })
 
 it('finds hermes.exe in the official Windows installer’s folder when PATH does not name it yet', async () => {
@@ -174,6 +174,10 @@ describe('the gateway', () => {
       return new EventEmitter() as ChildProcess
     }) as typeof execFile)
     expect(await runtime.chatGptModels(executable)).toEqual(['gpt-6.1-sol'])
+    expect(await runtime.chatGptAuthChanged()).toBe(false)
+    await unlink(join(root!, 'auth.json'))
+    expect(await runtime.chatGptAuthChanged()).toBe(true)
+    expect(await runtime.chatGptModels(executable)).toEqual([])
     await runtime.writeConfig(root!, [])
     expect(JSON.parse(await readFile(join(root!, 'config.yaml'), 'utf8'))._config_version).toBe(53)
     expect(runFile).toHaveBeenCalledWith(executable, expect.any(Array), expect.objectContaining({

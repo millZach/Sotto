@@ -347,7 +347,8 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         const client = { clientId, user: pairing.list().find(item => item.clientId === clientId)?.name ?? 'Paired client', transport: 'socket' as const }
         const state = await runtime.hostService.command({ type: 'connect', provider }, client)
         const status = state.host.providers?.find(item => item.id === provider)
-        return status?.connection === 'connected' ? undefined : status?.error ?? state.error ?? 'It did not confirm the connection.'
+        if (status?.connection !== 'connected') return status?.error ?? state.error ?? 'It did not confirm the connection.'
+        return provider === 'hermes' && runtime.connectedHermes()?.hasChatGptModels() === false ? 'Hermes did not return any ChatGPT models.' : undefined
       } })
     let listener: Awaited<ReturnType<typeof startSocketServer>> | undefined
     let phones: HostPhoneAccess | undefined

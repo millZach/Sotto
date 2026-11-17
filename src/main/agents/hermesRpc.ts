@@ -90,19 +90,16 @@ export function hermesPythonCommand(executable: string, script: string): { execu
     : { executable, args: ['--run-module', 'timeit', '--number', '1', '--repeat', '1', script] }
 }
 
-/** Keep the ACP response on Hermes's current-model fallback when Sotto supplies the ChatGPT picker. */
+/** Sotto already supplies the picker. A ChatGPT thread can initially load on a saved model server. */
 export function hermesAcpCommand(executable: string, prefixArgs: readonly string[], skipChatGptInventory: boolean): { executable: string; args: string[] } {
   if (!skipChatGptInventory || prefixArgs.length) return { executable, args: [...prefixArgs, 'acp'] }
   return hermesPythonCommand(executable, `import gc
 import sys
 from acp_adapter import model_catalog
 
-build_model_state = model_catalog.build_model_state
-def current_chatgpt_model(model, provider, base_url):
-    if provider == "openai-codex":
-        return None
-    return build_model_state(model, provider, base_url)
-model_catalog.build_model_state = current_chatgpt_model
+def current_model_only(model, provider, base_url):
+    return None
+model_catalog.build_model_state = current_model_only
 
 from hermes_cli.main import main
 sys.argv = ["hermes", "acp"]

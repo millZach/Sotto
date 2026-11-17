@@ -291,6 +291,7 @@ export class HermesAcpHost implements ProviderHost {
   /** Sotto's private Hermes root; project profiles live beneath it. */
   get folder(): string { return this.homeDirectory }
   isConnected(): boolean { return this.state.connected }
+  hasChatGptModels(): boolean { return this.chatGptModels.length > 0 }
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
   subscribeActivitySnapshots(listener: (snapshot: AgentHostSnapshot) => void, options?: ActivitySubscriptionOptions): () => void {
     return this.activityListeners.add(listener, options)
@@ -1027,8 +1028,9 @@ export class HermesAcpHost implements ProviderHost {
   private model(modelId: string): AgentModel | undefined { return this.state.models.find(model => model.id === modelId) }
   /** Put the session on the thread's model and effort before a prompt that needs them, read back from the answer. */
   private async applySettings(alias: Alias, connection: Connection, id: string): Promise<void> {
-    if (isHermesChatGptModel(alias.modelId) && !this.chatGptModels.length) {
-      throw new Error('Sign in with ChatGPT for Hermes on this computer, then try again. Your thread is kept.')
+    if (isHermesChatGptModel(alias.modelId)) {
+      if (this.hasChatGptModels() && await this.runtime.chatGptAuthChanged()) await this.refreshChatGptModels()
+      if (!this.hasChatGptModels()) throw new Error('Sign in with ChatGPT for Hermes on this computer, then try again. Your thread is kept.')
     }
     const value = hermesModelValue(alias.modelId)
     if (value === undefined) throw new Error('This thread’s model is not one of your own model servers. Choose a model your servers offer, then send.')

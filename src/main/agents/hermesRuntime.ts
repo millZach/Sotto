@@ -1,5 +1,4 @@
 import { execFile, spawn, type ChildProcess } from 'node:child_process'
-import { existsSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
@@ -123,6 +122,7 @@ export class HermesRuntime {
   private writes = Promise.resolve()
   private stopCount = 0
   private configVersion = 52
+  private catalogAuthStamp: string | undefined
   constructor(readonly root: string, private readonly lost: () => void, private readonly environment: NodeJS.ProcessEnv = process.env) {
     this.keys = new HermesKeys(join(root, 'own-server-keys.json'))
   }
@@ -158,9 +158,16 @@ export class HermesRuntime {
         timeout: 65_000, maxBuffer: 16_384 }, (error, stdout) => error ? reject(new Error('Hermes gateway did not become ready. Reconnect Hermes to retry.')) : resolve(stdout))
     })
   }
+  private async authStamp(): Promise<string | undefined> {
+    const auth = await stat(join(this.root, 'auth.json')).catch(() => undefined)
+    return auth && `${auth.ino}:${auth.size}:${auth.mtimeMs}:${auth.ctimeMs}`
+  }
+  async chatGptAuthChanged(): Promise<boolean> { return await this.authStamp() !== this.catalogAuthStamp }
+
   /** Ask Hermes for its own subscription catalog. Only model IDs leave its process. */
   async chatGptModels(executable: string): Promise<string[]> {
-    if (!existsSync(join(this.root, 'auth.json'))) return []
+    const auth = await this.authStamp()
+    if (!auth) { this.catalogAuthStamp = undefined; return [] }
     const stdout = await this.python(executable, [
       'import json',
       'from hermes_cli.auth import _codex_access_token_is_expiring, resolve_codex_runtime_credentials',
@@ -177,6 +184,7 @@ export class HermesRuntime {
       ' models = []',
       'print("sotto-hermes-models:" + json.dumps({"version": DEFAULT_CONFIG["_config_version"], "models": models[:100]}))',
     ].join('\n'))
+    this.catalogAuthStamp = auth
     const row = stdout.split(/\r?\n/u).find(line => line.startsWith('sotto-hermes-models:'))
     if (!row) return []
     const catalog = JSON.parse(row.slice('sotto-hermes-models:'.length)) as { version?: unknown; models?: unknown } | null
