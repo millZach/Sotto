@@ -61,6 +61,7 @@ const customSettings = {
   newWorkerMachine: '0f6c2a8e-4d3b-4b1a-9c7e-2f5d8a1b3c4d',
   watcherCompactAtTokens: 650_000,
   watcherCompactAtMoved: true,
+  sentToStableCarried: true,
   councilPanelists: [{ modelId: 'claude:model:opus', reasoningEffort: 'high' }, null, { modelId: 'codex:model:gpt-6.1-sol', reasoningEffort: null }],
   councilChair: { modelId: 'grok:model:grok-4.7-build', reasoningEffort: 'high' },
   councilLayout: 'round-table',
@@ -263,7 +264,8 @@ describe('settings', () => {
       gitWritingStyle: 'haiku', gitWritingInstructions: 'x'.repeat(GIT_WRITING_INSTRUCTIONS_MAX_CHARACTERS + 1), followPullRequestTemplates: 'no',
       autoSettleMergedThreads: null, proactivePanels: 'sometimes',
     }
-    expect(parseSettings({ ...unusable, gitFetchIntervalSeconds: 60 })).toMatchObject({ ...DEFAULT_SETTINGS, gitFetchIntervalSeconds: 60 })
+    // A file without the November 17 mark also starts Clear settled threads after on Never (sentToStableCarried).
+    expect(parseSettings({ ...unusable, gitFetchIntervalSeconds: 60 })).toMatchObject({ ...DEFAULT_SETTINGS, gitFetchIntervalSeconds: 60, clearSettledThreadsAfterDays: null })
   })
   it('keeps main up to date by default, and keeps each project\'s own answer while dropping one it cannot read (ADR-0142)', () => {
     expect(parseSettings({})).toMatchObject({ keepMainCurrent: true, projectKeepMainCurrent: {} })
@@ -469,6 +471,7 @@ describe('settings', () => {
       newWorkerMachine: 'this-computer',
       watcherCompactAtTokens: 250_000,
       watcherCompactAtMoved: true,
+      sentToStableCarried: true,
       councilPanelists: [null, null, null],
       councilChair: null,
       councilLayout: 'long-table',
@@ -661,7 +664,8 @@ describe('settings', () => {
   it('drops the retired widget style key from persisted settings', () => {
     const parsed = parseSettings({ widgetStyle: 'orb' })
     expect(parsed).not.toHaveProperty('widgetStyle')
-    expect(parsed).toEqual(DEFAULT_SETTINGS)
+    // A file this old was saved before November 17, 2026, so Clear settled threads after starts on Never (sentToStableCarried).
+    expect(parsed).toEqual({ ...DEFAULT_SETTINGS, clearSettledThreadsAfterDays: null })
   })
 
   it('defaults the AI formatting pass off and recovers invalid values', () => {
@@ -817,6 +821,30 @@ describe('Compact Watcher at', () => {
     delete chosen.watcherCompactAtMoved
     expect(parseSettings(chosen).watcherCompactAtTokens).toBe(650_000)
     expect(parseSettings({}).watcherCompactAtMoved).toBe(true)
+  })
+
+  it('carries a profile saved before every Owl feature went to stable over once: Never unless it chose an age, and Resume off kept (November 17, 2026)', () => {
+    // As stable 0.1.42 saved it: Clear settled threads after at 30 days and Restart stopped threads on, neither ever shown.
+    const before: Record<string, unknown> = { ...DEFAULT_SETTINGS, clearSettledThreadsAfterDays: 30, restartStoppedThreads: true, resumeThreadsAfterRestart: false }
+    delete before.sentToStableCarried
+    const carried = parseSettings(before)
+    expect(carried).toMatchObject({ clearSettledThreadsAfterDays: null, restartStoppedThreads: false, resumeThreadsAfterRestart: false, sentToStableCarried: true })
+    // A file with no value at all starts on Never too, and Resume on leaves Restart stopped threads as saved.
+    const bare: Record<string, unknown> = { ...DEFAULT_SETTINGS, restartStoppedThreads: false }
+    delete bare.sentToStableCarried; delete bare.clearSettledThreadsAfterDays
+    expect(parseSettings(bare)).toMatchObject({ clearSettledThreadsAfterDays: null, restartStoppedThreads: false, resumeThreadsAfterRestart: true })
+    // 90 and 180 are ages only a choice on Owl could save, and Never stays Never.
+    for (const days of [90, 180, null] as const) {
+      const chosen: Record<string, unknown> = { ...DEFAULT_SETTINGS, clearSettledThreadsAfterDays: days }
+      delete chosen.sentToStableCarried
+      expect(parseSettings(chosen).clearSettledThreadsAfterDays, String(days)).toBe(days)
+    }
+    // Once carried, every read keeps what is saved: a 30 chosen afterwards, and Restart on beside Resume off.
+    for (const days of [30, 90, 180] as const) expect(parseSettings({ ...carried, clearSettledThreadsAfterDays: days }).clearSettledThreadsAfterDays).toBe(days)
+    expect(parseSettings({ ...carried, restartStoppedThreads: true }).restartStoppedThreads).toBe(true)
+    // A new install starts carried, on 30 days.
+    expect(DEFAULT_SETTINGS).toMatchObject({ clearSettledThreadsAfterDays: 30, sentToStableCarried: true })
+    expect(parseSettings(DEFAULT_SETTINGS).clearSettledThreadsAfterDays).toBe(30)
   })
 })
 

@@ -26,6 +26,26 @@ afterEach(async () => {
 })
 
 describe('SettingsRepository', () => {
+  it('carries a profile saved before every Owl feature went to stable over at its first read, and saves it so (November 17, 2026)', async () => {
+    const { filePath, repository } = await createRepository()
+    // As stable 0.1.42 saved it: Clear settled threads after and Restart stopped threads at their defaults, never shown.
+    const before: Record<string, unknown> = { ...DEFAULT_SETTINGS, clearSettledThreadsAfterDays: 30, restartStoppedThreads: true, resumeThreadsAfterRestart: false }
+    delete before.sentToStableCarried
+    await writeFile(filePath, JSON.stringify(before), 'utf8')
+    const carried = { clearSettledThreadsAfterDays: null, restartStoppedThreads: false, resumeThreadsAfterRestart: false, sentToStableCarried: true }
+    expect(await repository.get()).toMatchObject(carried)
+    // Main saves what it read at every start, so the carried answers are on disk before anything acts on them.
+    await repository.save(await repository.get())
+    expect(JSON.parse(await readFile(filePath, 'utf8'))).toMatchObject(carried)
+    expect(await new SettingsRepository(filePath).get()).toMatchObject(carried)
+    // What the user chooses afterwards is kept on every later start.
+    await repository.update({ restartStoppedThreads: true, clearSettledThreadsAfterDays: 30 })
+    expect(await new SettingsRepository(filePath).get()).toMatchObject({ restartStoppedThreads: true, clearSettledThreadsAfterDays: 30 })
+  })
+  it('starts a new install carried, on 30 days and Restart stopped threads on', async () => {
+    const { repository } = await createRepository()
+    expect(await repository.get()).toMatchObject({ clearSettledThreadsAfterDays: 30, restartStoppedThreads: true, sentToStableCarried: true })
+  })
   it('loads a settings file that still holds the Threads in flight limit and drops it at the next save (#1183)', async () => {
     const { filePath, repository } = await createRepository()
     await writeFile(filePath, JSON.stringify({ ...DEFAULT_SETTINGS, hotkey: 'Alt+D', watcherInFlightLimit: 6 }), 'utf8')

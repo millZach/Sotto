@@ -203,7 +203,8 @@ export interface AppSettings {
    */
   resumeThreadsAfterRestart: boolean
   /** Restart stopped threads (ADR-0144, an Owl feature): a thread a usage limit or Sotto closing stopped while it worked
-   * carries on when the limit resets or Sotto opens again. Read in place of `resumeThreadsAfterRestart` while the feature is on. */
+   * carries on when the limit resets or Sotto opens again. Read in place of `resumeThreadsAfterRestart` while the feature is on.
+   * A profile saved before every held Owl feature went to stable takes a saved Resume off here ({@link AppSettings.sentToStableCarried}). */
   restartStoppedThreads: boolean
   /**
    * Worker roles (#1041, an Owl feature): the rows the user chose under Settings, Watcher, by role. A role left out follows
@@ -240,6 +241,15 @@ export interface AppSettings {
    * 400K to the new default, and every read after keeps whatever is saved. Not shown in Settings.
    */
   watcherCompactAtMoved: boolean
+  /**
+   * Whether this profile has been carried over to the day every held Owl feature went to stable (ADR-0072, November 17,
+   * 2026). Settings are saved whole, and stable saved Clear settled threads after at 30 days and Restart stopped threads on
+   * without showing either, so neither can be told from a choice. The first read without this mark sets Clear settled
+   * threads after to Never unless it holds 90 or 180, and Restart stopped threads off where Resume threads after a restart
+   * was saved off (Zach, November 17, 2026); every read after keeps whatever is saved. A new install has it from the
+   * start. Not shown in Settings.
+   */
+  sentToStableCarried: boolean
   /**
    * The Council's panel (ADR-0177), under Settings, Council, part of the Owl feature `council`: one entry per seat, two to
    * five, each the model and effort the user chose or null for a seat Sotto fills from the providers connected now, so
@@ -306,9 +316,10 @@ export interface AppSettings {
    */
   autoSettleMergedThreads: boolean
   /**
-   * 30 days by default; null is Never. A number of days, and this computer's settled threads quiet longer than that are
-   * cleared on their own at start, every hour and when it changes, beside the worktree cleanup (ADR-0140). Saved on every
-   * track; only Owl acts on it until the feature goes to stable.
+   * 30 days by default on a new install; null is Never. A number of days, and this computer's settled threads quiet longer
+   * than that are cleared on their own at start, every hour and when it changes, beside the worktree cleanup (ADR-0140). A
+   * profile saved before every held Owl feature went to stable starts on Never unless it holds 90 or 180, which only a
+   * choice could save ({@link AppSettings.sentToStableCarried}).
    */
   clearSettledThreadsAfterDays: ClearSettledThreadsAfterDays
   /** Off by default. On, Changes opens on its own after a turn that changed at least 3 files or 50 lines. */
@@ -488,7 +499,7 @@ export interface AppSettings {
 }
 
 export type SettingsPatch = Partial<
-  Omit<AppSettings, 'hotkey' | 'hotkeyStandby' | 'pressShortcuts' | 'holdShortcuts' | 'launchAtStartup' | 'worktreeCleanup' | 'omarchyTheme' | 'shellPillInUse' | 'watcherCompactAtMoved'>
+  Omit<AppSettings, 'hotkey' | 'hotkeyStandby' | 'pressShortcuts' | 'holdShortcuts' | 'launchAtStartup' | 'worktreeCleanup' | 'omarchyTheme' | 'shellPillInUse' | 'watcherCompactAtMoved' | 'sentToStableCarried'>
 > & {
   /** Merge only the supplied cleanup rules with the latest saved settings. */
   worktreeCleanup?: Partial<WorktreeCleanupRules>
@@ -536,6 +547,7 @@ const fieldSchemas = {
   newWorkerMachine: workerMachineSettingSchema,
   watcherCompactAtTokens: z.number().int().min(WATCHER_COMPACT_AT.min).max(WATCHER_COMPACT_AT.max).multipleOf(WATCHER_COMPACT_AT.step),
   watcherCompactAtMoved: z.boolean(),
+  sentToStableCarried: z.boolean(),
   councilPanelists: councilPanelistsSchema,
   councilChair: councilChairSchema,
   councilLayout: councilLayoutSchema,
@@ -668,6 +680,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   newWorkerMachine: DEFAULT_WORKER_MACHINE,
   watcherCompactAtTokens: WATCHER_COMPACT_AT.default,
   watcherCompactAtMoved: true,
+  sentToStableCarried: true,
   councilPanelists: [...DEFAULT_COUNCIL_PANELISTS],
   councilChair: null,
   councilLayout: DEFAULT_COUNCIL_LAYOUT,
@@ -810,6 +823,8 @@ function parseField<Key extends keyof AppSettings>(
 /** `allowOmarchy` is passed only on Linux, where it also reads shortcuts saved before Sotto wrote Linux's keys (ADR-0097). */
 export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SETTINGS, allowOmarchy = false): AppSettings {
   const persisted = isRecord(input) ? input : {}
+  // Saved since every held Owl feature went to stable, or a new install's defaults (sentToStableCarried).
+  const carried = !isRecord(input) || persisted.sentToStableCarried === true
   // Before the recorder, Linux's keys were always the Hyprland bindings F9 and Super+Ctrl+X, whatever `hotkey` said:
   // Wayland never let Sotto register it. A Linux profile saved before `holdShortcuts` existed takes those keys, and so
   // does one an unreleased build of the recorder saved with the old, unused default and nothing held: Linux's rows
@@ -859,7 +874,8 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     showEveryAgentPicture: parseField(persisted, 'showEveryAgentPicture', defaults),
     babysitPullRequests: parseField(persisted, 'babysitPullRequests', defaults),
     resumeThreadsAfterRestart: parseField(persisted, 'resumeThreadsAfterRestart', defaults),
-    restartStoppedThreads: parseField(persisted, 'restartStoppedThreads', defaults),
+    // A profile from before November 17, 2026 keeps a saved Resume off as Restart stopped threads off (sentToStableCarried).
+    restartStoppedThreads: !carried && persisted.resumeThreadsAfterRestart === false ? false : parseField(persisted, 'restartStoppedThreads', defaults),
     // Row by row, so one damaged row costs only that row.
     workerRoles: persisted.workerRoles === undefined ? { ...defaults.workerRoles } : parseWorkerRoleChoices(persisted.workerRoles),
     dynamicThreads: persisted.dynamicThreads === undefined ? { ...defaults.dynamicThreads } : parseDynamicThreadSettings(persisted.dynamicThreads),
@@ -872,6 +888,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     watcherCompactAtTokens: persisted.watcherCompactAtMoved !== true && persisted.watcherCompactAtTokens === WATCHER_COMPACT_AT_FORMER_DEFAULT
       ? defaults.watcherCompactAtTokens : parseField(persisted, 'watcherCompactAtTokens', defaults),
     watcherCompactAtMoved: true,
+    sentToStableCarried: true,
     // Seat by seat, so one damaged seat costs only that seat.
     councilPanelists: persisted.councilPanelists === undefined ? [...defaults.councilPanelists] : parseCouncilPanelists(persisted.councilPanelists),
     councilChair: parseField(persisted, 'councilChair', defaults),
@@ -945,7 +962,9 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     gitWritingInstructions: parseField(persisted, 'gitWritingInstructions', defaults),
     followPullRequestTemplates: parseField(persisted, 'followPullRequestTemplates', defaults),
     autoSettleMergedThreads: parseField(persisted, 'autoSettleMergedThreads', defaults),
-    clearSettledThreadsAfterDays: parseField(persisted, 'clearSettledThreadsAfterDays', defaults),
+    // A profile from before November 17, 2026 starts on Never unless it holds an age only a choice could save (sentToStableCarried).
+    clearSettledThreadsAfterDays: carried ? parseField(persisted, 'clearSettledThreadsAfterDays', defaults)
+      : persisted.clearSettledThreadsAfterDays === 90 || persisted.clearSettledThreadsAfterDays === 180 ? persisted.clearSettledThreadsAfterDays : null,
     proactivePanels: parseField(persisted, 'proactivePanels', defaults),
     productEventsEnabled: parseField(persisted, 'productEventsEnabled', defaults),
     productEventsNoticeAnswered: parseField(persisted, 'productEventsNoticeAnswered', defaults),

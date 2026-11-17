@@ -58,7 +58,7 @@ describe('clearing settled threads (ADR-0140)', () => {
     expect(DEFAULT_SETTINGS.clearSettledThreadsAfterDays).toBe(30)
     expect(parseSettings({ clearSettledThreadsAfterDays: 180 }).clearSettledThreadsAfterDays).toBe(180)
     expect(parseSettings({ clearSettledThreadsAfterDays: null }).clearSettledThreadsAfterDays).toBeNull()
-    expect(parseSettings({ clearSettledThreadsAfterDays: 14 }).clearSettledThreadsAfterDays).toBe(30)
+    expect(parseSettings({ clearSettledThreadsAfterDays: 14, sentToStableCarried: true }).clearSettledThreadsAfterDays).toBe(30)
     expect(OWL_FEATURES.find(feature => feature.id === 'clear-threads')?.sentToStable).toBe(true)
     expect(isOwlFeatureEnabled('clear-threads', 'owl')).toBe(true)
     expect(isOwlFeatureEnabled('clear-threads', 'stable')).toBe(true)

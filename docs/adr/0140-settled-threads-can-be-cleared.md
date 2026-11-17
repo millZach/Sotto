@@ -6,6 +6,8 @@ Accepted October 23, 2026, as an Owl feature (`clear-threads`). Zach's picks on 
 
 Amended October 25, 2026: Zach chose 30 days as the default for **Clear settled threads after**, in place of Never, which stays a choice. See decision 2.
 
+Amended November 17, 2026, when the feature went to stable with every other held Owl feature ([ADR-0072](0072-sotto-owl-is-a-windows-preview-release-track.md)): nobody who has not chosen an age loses a thread to the automatic rule. Asked what the first start of the next stable should do, Zach picked "Start them on Never": a profile that has not chosen keeps every thread until its user picks 30, 90 or 180 days in Settings, a new install still starts at 30 days, and an Owl user who never chose stops clearing until they pick. It replaces the paragraph under decision 2 that gave an Owl user who never chose 30 days on the first start.
+
 ## Context
 
 Zach asked for "a way to clear old threads from Sotto history", the way T3 Code has one. Nothing in Sotto removes a thread. Settle files it away, and the Settled shelf only grows. ADR-0041 refused a delete because "Sotto's threads are its history and there is no delete", and gave back the disk by reclaiming worktree folders instead. What remains is the history: a long Settled shelf to scroll past, and words kept on disk that the user no longer wants kept.
@@ -23,7 +25,7 @@ Sotto keeps a thread in more places than its history: the organization record in
 - **Clear now…** in Settings → Threads, **Clearing threads**, clears this computer's settled threads that have been quiet longer than an age the user picks (7, 30 or 90 days, or any age). It opens **Clear settled threads**, which lists the threads that go and the threads kept with the reason for each, and clears on **Clear N threads**.
 - **Clear settled threads after** in the same section (Never, 30, 90 or 180 days; 30 days by default) clears them on its own. It runs at start, every hour, and when the setting changes, beside the worktree sweep (ADR-0041), on the computer whose setting it is.
 
-An Owl user who never chose has no saved value, so the first start with the feature takes 30 days and its first run clears what has been quiet that long. That run keeps back everything decision 3 keeps back, as every run does, and starts only once the coordinator, Watcher and delegation have recovered what they hold, so a thread queued, babysat or watched before the restart is still kept.
+A new install starts at 30 days. A profile saved before November 17, 2026 starts on Never: settings are saved whole, and stable saved 30 days without ever showing the setting, so a saved 30 cannot be told from a choice. Its first read sets Never unless it holds 90 or 180, which only a choice on Owl could save, and records that it was carried over (`sentToStableCarried` in settings), so a 30 chosen afterwards is kept; main saves that read back before anything sweeps. Every run keeps back everything decision 3 keeps back, and starts only once the coordinator, Watcher and delegation have recovered what they hold, so a thread queued, babysat or watched before the restart is still kept.
 
 A thread's age here is the time since the later of its settle and its last activity, so a thread that is settled but still being written to is not old.
 
