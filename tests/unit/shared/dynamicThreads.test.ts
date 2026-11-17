@@ -3,9 +3,9 @@ import { DEFAULT_DYNAMIC_THREADS, DYNAMIC_NOTE_MAX_CHARACTERS, dynamicNoteText, 
 import { isOwlFeatureEnabled } from '../../../src/shared/owlFeatures'
 
 describe('Dynamic threads (ADR-0191)', () => {
-  it('holds the feature in Owl until Zach sends it', () => {
+  it('is on in Owl, and on stable since Zach sent it on November 17, 2026', () => {
     expect(isOwlFeatureEnabled('dynamic-threads', 'owl')).toBe(true)
-    expect(isOwlFeatureEnabled('dynamic-threads', 'stable')).toBe(false)
+    expect(isOwlFeatureEnabled('dynamic-threads', 'stable')).toBe(true)
   })
 
   it('loses only the value that is damaged', () => {

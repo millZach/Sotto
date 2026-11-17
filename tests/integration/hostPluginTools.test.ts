@@ -11,6 +11,7 @@ import { afterEach, expect, it } from 'vitest'
 import { codexFixture } from '../fixtures/codexFixture'
 import { startFakeImapServer } from '../fixtures/fakeImapServer'
 import { startFixtureHeadlessHost } from '../fixtures/desktopHostStack'
+import { holding } from '../fixtures/heldOwlFeatures'
 import type { RunGitCommand } from '../../src/main/agents/git/gitStatus'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
 import type { ScopedThreadTools } from '../../src/main/agents/threadToolServer'
@@ -22,6 +23,8 @@ import type { PluginAccountCopy } from '../../src/shared/pluginAccountCopies'
 
 const OWL = '0.1.38-owl.20261013.1'
 const STABLE = '0.1.38'
+/** A host whose version holds Plugins, as stable did until November 17, 2026 (ADR-0072). */
+const HOLDS_PLUGINS = holding('plugins')
 /** The window on the host machine itself, which may give any permission, as the user at that machine may. */
 const LOCAL = { clientId: 'host-window', user: 'Synthetic user at the host', transport: 'ipc' } as const
 /** A made-up account and a made-up token: nothing here is a real credential. */
@@ -42,7 +45,7 @@ const MAIL_COPY: PluginAccountCopy = {
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
 
-async function hostFixture(version = OWL, mailConnect?: MailConnect) {
+async function hostFixture(version = OWL, mailConnect?: MailConnect, owlFeatures?: ReturnType<typeof holding>) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-host-plugin-tools-'))
   const data = join(root, 'data')
   const keyFile = join(root, 'host.key')
@@ -66,7 +69,7 @@ async function hostFixture(version = OWL, mailConnect?: MailConnect) {
     if (url.includes(`/v13/deployments/${DEPLOYMENT}`)) return new Response(JSON.stringify({ name: 'example-project', url: 'example-project-abc.vercel.app', readyState: 'BUILDING', target: null }), { status: 200 })
     return new Response(JSON.stringify({ deployments: [{ uid: DEPLOYMENT, name: 'example-project' }] }), { status: 200 })
   }
-  const host = await startFixtureHeadlessHost({ dataDirectory: data, port: 0, sottoVersion: version, keyFile, providers: { codex: native.adapter }, plugins: { gh, vercelFetch, ...(mailConnect ? { mailConnect } : {}) } })
+  const host = await startFixtureHeadlessHost({ dataDirectory: data, port: 0, sottoVersion: version, keyFile, ...owlFeatures ? { owlFeatures } : {}, providers: { codex: native.adapter }, plugins: { gh, vercelFetch, ...(mailConnect ? { mailConnect } : {}) } })
   const url = 'http://127.0.0.1:' + host.descriptor!.port
   const clients: SocketHostService[] = []
   cleanups.push(async () => {
@@ -341,8 +344,8 @@ it('tells a recorded desktop who gh is signed in as on the host, and no other cl
   expect(f.ghCalls.length).toBe(asked)
 })
 
-it('gives a stable host’s threads no plugin tools', async () => {
-  const f = await hostFixture(STABLE)
+it('gives no plugin tools to the threads of a host that holds Plugins', async () => {
+  const f = await hostFixture(STABLE, undefined, HOLDS_PLUGINS)
   // And it has no sign-in to tell a desktop of: a desktop asks it nothing.
   const { socket, hello } = await f.desktop()
   expect(hello.features).not.toContain('plugin-github-sign-in')

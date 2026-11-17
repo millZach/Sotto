@@ -16,7 +16,7 @@ const special = [
   { id: 'watcher-current', kind: 'watcher' as const, title: 'Saved Watcher' },
   { id: 'watcher-earlier', kind: 'watcher-history' as const, title: 'Saved Watcher history' },
 ]
-/** On Owl the current Watcher lives in Watcher's room, not in the Threads list; its history stays listed. Stable lists neither. */
+/** On Owl the current Watcher lives in Watcher's room, not in the Threads list; its history stays listed. A build that holds Watcher lists neither. */
 const listed = (track: 'stable' | 'owl', thread: typeof special[number]): number => track === 'owl' && thread.kind === 'watcher-history' ? 1 : 0
 
 async function settle(page: Page): Promise<void> {
@@ -29,6 +29,9 @@ async function settle(page: Page): Promise<void> {
 
 test.describe('Watcher follows the running release track', () => {
   test.setTimeout(120_000)
+  // Watcher went to stable on October 23, 2026 and night falls on November 17 (ADR-0072), so the stable run holds Watcher,
+  // and with it night falls, Let apps on this computer connect and the living night scene, whose Settings name Watcher, as a
+  // build whose version still held them did.
   for (const track of ['stable', 'owl'] as const) test(`${track} keeps saved special kinds and ordinary thread actions`, async () => {
     await onReleaseTrack(track, async () => {
       const profile = await ownedE2EProfile({ prefix: 'sotto-e2e-watcher-gate-', settings: {
@@ -116,7 +119,7 @@ test.describe('Watcher follows the running release track', () => {
             .filter(element => element.closest('#settings-watcher, #tab-settings-watcher, #settings-night-falls, .appearance-preview') === null).map(element => element.textContent))).toEqual([])
         }
         await expect(page.getByRole('spinbutton', { name: /Watcher/ })).toHaveCount(0)
-        // Night falls' look is held with its switch (ADR-0119, decision 6): stable shows no row for it, Owl shows Band and Stars.
+        // Night falls' look is held with its switch (ADR-0119, decision 6): a build that holds it shows no row for it, Owl shows Band and Stars.
         await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Appearance', exact: true }).click()
         await expect(page.getByRole('switch', { name: /Night falls between Dictate or Threads and Watcher/ })).toHaveCount(track === 'owl' ? 1 : 0)
         await expect(page.getByRole('radiogroup', { name: 'Night falls look' })).toHaveCount(track === 'owl' ? 1 : 0)
@@ -178,7 +181,7 @@ test.describe('Watcher follows the running release track', () => {
         if (launched) await closeSotto(launched)
         await profile.dispose()
       }
-    })
+    }, track === 'stable' ? { held: ['watcher', 'night-falls', 'local-apps', 'living-night-scene'] } : {})
   })
 })
 

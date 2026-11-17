@@ -1,8 +1,8 @@
 /**
  * Clearing settled threads (ADR-0140) in the built app with the `clear-threads` Owl feature on: Settings → Threads,
  * Clearing threads, lists what goes and what is kept and clears it; Delete thread… in a settled thread's pane menu asks
- * first and deletes it. The real controller, workspace, store and IPC run; only the provider is the E2E fixture. A stable
- * build shows neither.
+ * first and deletes it. The real controller, workspace, store and IPC run; only the provider is the E2E fixture. A build
+ * that holds the feature shows neither.
  *
  *   npm run build && npx playwright test tests/e2e/clear-threads.spec.ts
  *
@@ -161,7 +161,7 @@ test('an Owl build clears settled threads from Settings and deletes one from its
   } finally { await closeSotto(sotto) }
 })
 
-test('a stable build shows neither the Settings group nor Delete thread…', async () => {
+test('a build that holds the feature shows neither the Settings group nor Delete thread…', async () => {
   test.setTimeout(90_000)
   const sotto = await launch(false)
   try {

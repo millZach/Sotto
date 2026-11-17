@@ -13,7 +13,7 @@ import { evidenceDirectory } from '../fixtures/evidence'
 import { fakeClaudeLaunches, fakeClaudePrompts, fakeClaudeRecords } from '../fixtures/fakeClaudeRecords'
 import { writeProviderAction } from '../fixtures/providerRecords'
 import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
-import { onReleaseTrack } from './support/releaseTrack'
+import { onBuildHolding, onReleaseTrack } from './support/releaseTrack'
 import { pageBoundProblems } from './support/designCapture'
 import { settingsLayoutProblems, settingsTextContrast } from './support/settingsChecks'
 import { closeSotto, launchSotto, openPage, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
@@ -347,7 +347,8 @@ test('the model menu turns Dynamic on, asking once which companies it may use, a
       await chip.click()
       const dynamic = page.getByRole('switch', { name: 'Dynamic' })
       await expect(dynamic).toHaveAttribute('aria-checked', 'false')
-      await expect(page.locator('.model-picker__foot')).toHaveText('Dynamic')
+      // Model routing's switch sits under Dynamic's (ADR-0207), on stable too since November 17, 2026.
+      await expect(page.locator('.model-picker__foot')).toHaveText('DynamicModel routing')
       await dynamic.click()
       // The first time, a question names the companies, once.
       const asked = page.getByRole('dialog', { name: 'Turn on Dynamic for this thread?' })
@@ -484,12 +485,12 @@ test('the switch, a worker\'s row and the Settings card hold in both themes at e
   }
 })
 
-test('stable sets nothing', async () => {
+test('a build that holds Dynamic threads sets nothing', async () => {
   test.setTimeout(120_000)
   const { profile, project, restore } = await fixture()
   let launched: LaunchedSotto | undefined
   try {
-    await onReleaseTrack('stable', async () => {
+    await onBuildHolding(['dynamic-threads'], async () => {
       launched = await launchSotto('success', profile)
       const id = await newThread(launched.page, project)
       expect(await command(launched.page, { type: 'set-thread-dynamic', threadId: id, dynamic: true })).toContain('available in Sotto Owl')

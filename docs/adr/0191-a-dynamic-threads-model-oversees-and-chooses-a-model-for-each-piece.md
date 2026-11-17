@@ -6,6 +6,8 @@ Accepted November 4, 2026, by Zach's picks on question cards, from the prototype
 
 It is an Owl feature (`dynamic-threads`, [ADR-0072](0072-sotto-owl-is-a-windows-preview-release-track.md)). The build order is `docs/plans/dynamic-threads.md`.
 
+Amended November 17, 2026: sent to stable with every other held Owl feature ([ADR-0072](0072-sotto-owl-is-a-windows-preview-release-track.md), November 17 amendment). The comparison the plan runs before stable (part 7) was run on November 5, 2026 and its limit half failed (`docs/verification/2026-11-05-dynamic-threads-comparison.md`); Zach sent the feature knowing that it is days old. Part 8's later steps are not built.
+
 It amends [ADR-0081](0081-a-thread-may-delegate-work-to-threads-it-starts.md) (decisions 7 and 9), [ADR-0091](0091-worker-roles-say-what-each-kind-of-work-starts-on.md) (decisions 4 and 9), [ADR-0144](0144-stopped-threads-restart-when-their-limit-resets.md) (a moved piece's restart) and [ADR-0172](0172-zachs-composer-is-the-only-composer-and-its-effort-word-offers-a-level.md) (no effort offer on a Dynamic thread). It changes nothing in [ADR-0002](0002-sotto-owned-thread-identity.md), [ADR-0004](0004-authority-in-policy-records.md), [ADR-0089](0089-a-thread-continues-on-another-provider-as-a-new-linked-thread.md) or [ADR-0148](0148-ultracode-is-the-effort-level-past-max-on-claude.md).
 
 ## Context

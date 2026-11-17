@@ -28,7 +28,7 @@ async function clipped(page: Page, selector: string): Promise<string[]> {
     .map(element => `${element.tagName.toLowerCase()}.${[...element.classList].join('.')}`))
 }
 
-test('signs Cursor in from its row, groups its models by maker, offers its three modes, and stays out of stable', async () => {
+test('signs Cursor in from its row, groups its models by maker, offers its three modes, and stays out of a build that holds it', async () => {
   test.setTimeout(300_000)
   const profile = (await ownedE2EProfile({ prefix: 'sotto-e2e-cursor-' })).directory
   const root = join(profile, 'cursor-fixture')
@@ -227,7 +227,7 @@ test('signs Cursor in from its row, groups its models by maker, offers its three
     await closeSotto(launched)
     launched = undefined
 
-    // Stable: Cursor's Owl feature is off, so nothing of Cursor shows, and its records are kept for Owl.
+    // A build that holds Cursor's Owl feature shows nothing of Cursor, and keeps its records for a build that runs it.
     process.env.SOTTO_OWL_FEATURES = 'cursor=0'
     launched = await launchSotto('success', profile)
     const stable = await providerList(launched.page)
@@ -236,7 +236,7 @@ test('signs Cursor in from its row, groups its models by maker, offers its three
     await expect(launched.page.getByRole('button', { name: 'Cursor', exact: true })).toHaveCount(0)
     await expect(launched.page.getByRole('switch', { name: 'Enable Cursor', exact: true })).toHaveCount(0)
     await expect(launched.page.getByText(/Cursor uses its install script|Cursor its install script/u)).toHaveCount(0)
-    // OpenCode's is the last row stable has: the capture shows the list's end, where Cursor's row would be, and the note after it.
+    // The capture shows OpenCode's row and the rows after it, where Cursor's row would be.
     await showRow(stable.getByRole('button', { name: 'OpenCode', exact: true }))
     await launched.page.screenshot({ animations: 'disabled', path: join(evidence, 'stable-providers.png') })
     expect(existsSync(join(profile, 'cursor-projects.json'))).toBe(true)

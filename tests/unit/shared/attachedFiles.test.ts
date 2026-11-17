@@ -56,11 +56,11 @@ describe('attached files in the shared schemas (ADR-0131)', () => {
     expect(imagesNotReadRefusal('screenshot.png')).toBe('This model does not read images. Choose a model with image support, or remove screenshot.png.')
   })
 
-  it('lists attaching any file as an Owl feature, off on stable and on Owl, and a host feature for it', () => {
-    expect(OWL_FEATURES).toContainEqual({ id: 'attach-any-file', name: 'Attach any file', owlSince: '2026-10-24', owner: 'docs/adr/0131-any-file-can-be-attached.md', sentToStable: false })
-    expect(isOwlFeatureEnabled('attach-any-file', 'stable')).toBe(false)
+  it('lists attaching any file as an Owl feature sent to stable on November 17, 2026, and a host feature for it', () => {
+    expect(OWL_FEATURES).toContainEqual({ id: 'attach-any-file', name: 'Attach any file', owlSince: '2026-10-24', owner: 'docs/adr/0131-any-file-can-be-attached.md', sentToStable: true })
+    expect(isOwlFeatureEnabled('attach-any-file', 'stable')).toBe(true)
     expect(isOwlFeatureEnabled('attach-any-file', 'owl')).toBe(true)
-    expect(owlFeaturesForTrack('stable')['attach-any-file']).toBe(false)
+    expect(owlFeaturesForTrack('stable')['attach-any-file']).toBe(true)
     expect(HOST_FEATURES).toContain('file-staging')
   })
 })

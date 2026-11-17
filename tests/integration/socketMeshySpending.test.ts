@@ -14,6 +14,7 @@ import { DESKTOP_CLIENTS_FILE } from '../../src/shared/desktopClients'
 import type { SpendingReport } from '../../src/shared/pluginAccountCopies'
 import type { PluginAccount } from '../../src/shared/plugins'
 import { startFixtureHeadlessHost } from '../fixtures/desktopHostStack'
+import { holding } from '../fixtures/heldOwlFeatures'
 import { rawPeer } from '../fixtures/rawHostPeer'
 import { useSocketHostFixture } from '../fixtures/socketHostFixture'
 
@@ -121,12 +122,12 @@ describe('shared spending between a desktop and a real headless host', () => {
   const cleanups: (() => Promise<void>)[] = []
   afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
 
-  async function connected(version: string) {
+  async function connected(version: string, owlFeatures?: ReturnType<typeof holding>) {
     const root = await mkdtemp(join(tmpdir(), 'sotto-meshy-spending-host-'))
     const keyFile = join(root, 'host.key')
     await writeFile(keyFile, 'made-up-host-key-of-enough-length')
     const data = join(root, 'data')
-    const host = await startFixtureHeadlessHost({ dataDirectory: data, port: 0, sottoVersion: version, keyFile })
+    const host = await startFixtureHeadlessHost({ dataDirectory: data, port: 0, sottoVersion: version, keyFile, ...owlFeatures ? { owlFeatures } : {} })
     const url = 'http://127.0.0.1:' + host.descriptor!.port
     const pairing = await SocketHostService.pair(url, host.pairing.issuePairingCode().code, 'Synthetic desktop')
     await writeFile(join(data, DESKTOP_CLIENTS_FILE), JSON.stringify([pairing.clientId]))
@@ -155,8 +156,8 @@ describe('shared spending between a desktop and a real headless host', () => {
     await expect(c.spending.monthTotal(STUDIO.id)).resolves.toBe(30)
   })
 
-  it('tells a stable host nothing, which lists no shared spending', async () => {
-    const c = await connected('0.1.38')
+  it('tells a host that holds Plugins nothing, which lists no shared spending', async () => {
+    const c = await connected('0.1.38', holding('plugins'))
     expect(c.socket.supportsPluginMeshySpending).toBe(false)
     c.spending.connected(c.target)
     await c.spending.idle()

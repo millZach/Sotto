@@ -2,6 +2,8 @@
 
 October 26, 2026 amendment: on Owl, with `restart-stopped-threads` on, [ADR-0144](0144-stopped-threads-restart-when-their-limit-resets.md) supersedes the thread wake-ups below (decisions 1 to 12, 14 and the look). The reader of #823 and decision 13's cost stay, reading watched threads' pull requests for Watcher. Stable keeps this record as written until that feature goes to stable.
 
+November 17, 2026 amendment: `restart-stopped-threads` went to stable with every other held Owl feature ([ADR-0072](0072-sotto-owl-is-a-windows-preview-release-track.md), November 17 amendment), so from the next stable release ADR-0144 supersedes the same decisions on both tracks. This record as written describes stable 0.1.42 and earlier.
+
 October 9, 2026 amendment: [ADR-0068](0068-remove-voice-control-and-thread-management.md) records the removal. The voice coordinator gate, managed assignments and supervision exception referenced below are historical. Explicit babysitting remains and grants no authority; wake-ups no longer wait for a managed assignment, while pending requests, busy work, outbox entries and a paused follow-up queue still hold them.
 
 ## Status

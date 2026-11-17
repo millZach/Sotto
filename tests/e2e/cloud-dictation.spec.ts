@@ -97,7 +97,7 @@ test('an Owl build turns on Transcribe with OpenRouter and picks a model from th
   }
 })
 
-test('stable shows no Transcribe with OpenRouter, and keeps the speech model picker', async () => {
+test('a build that holds the feature shows no Transcribe with OpenRouter, and keeps the speech model picker', async () => {
   test.setTimeout(60_000)
   const sotto = await launch(false)
   try {

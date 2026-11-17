@@ -155,7 +155,8 @@ test('daily mixed-provider workspace joins independent work, tools, reviewed com
     await focusThread(page, first, 'Daily implementation')
     await panel.getByRole('tab', { name: 'Browser', exact: true }).click()
     await panel.getByRole('textbox', { name: /^Address/ }).fill(url); await page.keyboard.press('Enter')
-    await expect(panel.getByRole('tab', { name: /Daily local preview/ })).toBeVisible()
+    // The quiet browser pane (ADR-0154), on stable since November 17, 2026, names the page's panel by its title and shows no page tabs for one page.
+    await expect(panel.getByRole('tabpanel', { name: 'Daily local preview', exact: true })).toBeVisible()
     expect(await app.evaluate(async ({ webContents }, url) => {
       const view = webContents.getAllWebContents().find(view => view.getURL() === url)!
       return view.executeJavaScript('({title: document.title, bridge: typeof window.sotto, require: typeof window.require})')

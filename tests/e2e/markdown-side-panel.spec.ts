@@ -13,7 +13,7 @@ import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { withSotto } from '../fixtures/designCaptureProfile'
 import { evidenceDirectory } from '../fixtures/evidence'
 import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
-import { OWL_E2E_VERSION, onReleaseTrack } from './support/releaseTrack'
+import { OWL_E2E_VERSION, onBuildHolding, onReleaseTrack } from './support/releaseTrack'
 import { closeSotto, launchSotto, openThreads, resizeWindow } from './support/sottoLaunch'
 import { resizeContentWindow } from './support/sottoWindow'
 import { seedWatcherRoom } from './support/watcherRoom'
@@ -241,9 +241,9 @@ test('a link opens its file however the agent wrote the path', async () => {
   }
 })
 
-test('on stable main refuses to read a linked Markdown file', async () => {
+test('on a build that holds the side panel, main refuses to read a linked Markdown file', async () => {
   test.setTimeout(90_000)
-  await onReleaseTrack('stable', () => withSotto({ onboardingComplete: true, appearance: 'dark', scenario: 'phase3-workspace', agents: 'design-threads', motion: 'reduced' }, async ({ page }) => {
+  await onBuildHolding(['markdown-side-panel'], () => withSotto({ onboardingComplete: true, appearance: 'dark', scenario: 'phase3-workspace', agents: 'design-threads', motion: 'reduced' }, async ({ page }) => {
     const refused = await page.evaluate(async () => window.sotto!.files!.previewLink!({ threadId: 'release-notes', path: 'plan.md' }))
     expect(refused).toMatchObject({ ok: false, error: { code: 'unavailable', message: 'Opening Markdown files in the side panel is not part of this version of Sotto. Nothing was opened.' } })
   }))

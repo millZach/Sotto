@@ -75,7 +75,7 @@ describe('Settings > Appearance > Language', () => {
     expect(within(japanese).getByText('日本語')).toHaveAttribute('lang', 'ja')
     const arabic = options.find(option => option.textContent?.startsWith('العربية'))!
     expect(within(arabic).getByText('العربية')).toHaveAttribute('dir', 'rtl')
-    expect(screen.getByText('Translations are new and ship on Owl first. Some words may still be in English.')).toBeVisible()
+    expect(screen.getByText('Translations are new. Some words may still be in English.')).toBeVisible()
   })
 
   it('is complete from the keyboard: arrows and letters move, Enter picks, Escape closes without choosing', async () => {

@@ -38,8 +38,8 @@ const checks = (host: Awaited<ReturnType<typeof runtime>>) => (host.delegation a
 /** Watcher's queue for its starts marked as checks (#1312), which must be delegation's own: one queue per machine. */
 const watcherChecks = (host: Awaited<ReturnType<typeof runtime>>) => (host.watcher as unknown as { options: { checks?: { machine: string } } } | undefined)?.options.checks
 
-it('is off on stable and on in Owl', () => {
-  expect(owlFeaturesForTrack('stable')['cross-machine-work']).toBe(false)
+it('is on in Owl, and on stable since Zach sent it on November 17, 2026', () => {
+  expect(owlFeaturesForTrack('stable')['cross-machine-work']).toBe(true)
   expect(owlFeaturesForTrack('owl')['cross-machine-work']).toBe(true)
 })
 

@@ -44,9 +44,9 @@ function glassRoom(mode: Mode, desk: Rgba, contrast = 100): Map<string, string> 
 }
 
 describe('Glass, the see-through theme (ADR-0150)', () => {
-  it('is an Owl feature held from stable', () => {
-    expect(OWL_FEATURES.find(feature => feature.id === 'glass-theme')?.sentToStable).toBe(false)
-    expect(isOwlFeatureEnabled('glass-theme', 'stable')).toBe(false)
+  it('is an Owl feature Zach sent to stable on November 17, 2026', () => {
+    expect(OWL_FEATURES.find(feature => feature.id === 'glass-theme')?.sentToStable).toBe(true)
+    expect(isOwlFeatureEnabled('glass-theme', 'stable')).toBe(true)
     expect(isOwlFeatureEnabled('glass-theme', 'owl')).toBe(true)
   })
 

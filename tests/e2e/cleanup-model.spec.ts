@@ -73,7 +73,7 @@ test('an Owl build chooses the cleanup model and mode in Settings → Cleanup', 
   } finally { await closeSotto(sotto) }
 })
 
-test('a stable build shows neither control', async () => {
+test('a build that holds the feature shows neither control', async () => {
   test.setTimeout(60_000)
   const sotto = await launch(false)
   try {

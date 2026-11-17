@@ -28,6 +28,7 @@ import { MOVE_HANDOVER_CLOSE, THREAD_MOVE_WORDS, type ThreadMovePrepare, type Th
 import { agentControlFixture } from '../fixtures/agentControlFixture'
 import { commitFile, git } from '../fixtures/branchRepositories'
 import { startFixtureHeadlessHost } from '../fixtures/desktopHostStack'
+import { holding } from '../fixtures/heldOwlFeatures'
 import { rawPeer } from '../fixtures/rawHostPeer'
 import { useSocketHostFixture } from '../fixtures/socketHostFixture'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
@@ -47,7 +48,9 @@ async function machines() {
   await remote.host.close()
   // Forge's Codex reports each turn, running and then completed, as a real adapter does; these fakes send no history events.
   remote.native = new E2EAgentHost('queued-steering')
-  remote.host = await startFixtureHeadlessHost({ dataDirectory: remote.root, port: 0, providers: { codex: remote.native }, sottoVersion: OWL })
+  // Cursor's real adapter sends events, so forge reads its threads' history from them, as a real host does; the fixture's
+  // own Cursor fake, there since Cursor went to stable on November 17, 2026, would leave no adapter that sends any.
+  remote.host = await startFixtureHeadlessHost({ dataDirectory: remote.root, port: 0, providers: { codex: remote.native, cursor: undefined }, sottoVersion: OWL })
   remote.url = 'http://127.0.0.1:' + remote.host.descriptor!.port
   const pairing = await SocketHostService.pair(remote.url, remote.host.pairing.issuePairingCode().code, 'Synthetic desktop')
   await writeFile(join(remote.root, DESKTOP_CLIENTS_FILE), JSON.stringify([pairing.clientId]))
@@ -283,9 +286,10 @@ describe('a paired host’s own thread as a move’s source (#1178 part 3)', () 
 
 describe('the thread-move host feature (#1178, ADR-0072)', () => {
   it('is listed only where the host’s own Owl answer turns on Work across machines', async () => {
-    for (const [sottoVersion, offered] of [[OWL, true], ['0.1.37', false]] as const) {
+    // The older host's version holds Work across machines, as stable did until November 17, 2026 (ADR-0072).
+    for (const [sottoVersion, owlFeatures, offered] of [[OWL, {}, true], ['0.1.37', holding('cross-machine-work'), false]] as const) {
       const directory = join(remote.root, 'host-' + String(offered)); await mkdir(directory, { recursive: true })
-      const host = await startFixtureHeadlessHost({ dataDirectory: directory, port: 0, sottoVersion })
+      const host = await startFixtureHeadlessHost({ dataDirectory: directory, port: 0, sottoVersion, owlFeatures })
       try { expect(host.descriptor!.features.includes('thread-move')).toBe(offered) } finally { await host.close() }
     }
   })

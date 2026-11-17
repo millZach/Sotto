@@ -238,6 +238,8 @@ The first usable slice is panel-only Climb inside the current drawer with Git/fo
 
 **User decision — Owl-only:** the user chose to keep Climb behind Council's current Owl gate. This amendment does not send Council or Climb to stable. The current Council feature entry has not been sent to stable. ([owlFeatures.ts:68][C33])
 
+Amended November 17, 2026: Zach sent `council` to stable with every other held Owl feature ([ADR-0072](0072-sotto-owl-is-a-windows-preview-release-track.md), November 17 amendment). Climb stays behind the Council's switch, as decided above, so it reaches stable with the Council; the decision to keep it Owl-only is superseded.
+
 Implementation verification runs on GitHub CI, with deterministic provider/process fixtures and no-Git cases, plus forge/CI visual evidence where needed. No Sotto app, CI gates or graphical tests run on this Mac for this work. Windowless typecheck, lint and individual unit files are allowed. A controlled same-budget comparison and independent final assessment should determine whether Climb earns wider use. No claimed success rate, calibrated score threshold or speedup is accepted by this amendment.
 
 ## A thread's agent asks the Council (amendment, November 5, 2026)

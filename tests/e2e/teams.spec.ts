@@ -6,7 +6,7 @@ import { expect, test, type Page } from '@playwright/test'
 import { withSotto } from '../fixtures/designCaptureProfile'
 import { evidenceDirectory } from '../fixtures/evidence'
 import { pageBoundProblems } from './support/designCapture'
-import { onReleaseTrack } from './support/releaseTrack'
+import { onBuildHolding, onReleaseTrack } from './support/releaseTrack'
 import { captureWindow } from './support/sottoCapture'
 import { openPage, openThreads } from './support/sottoLaunch'
 import { resizeContentWindow } from './support/sottoWindow'
@@ -50,8 +50,8 @@ async function openRoom(page: Page): Promise<void> {
 test.describe('Teams', () => {
   test.describe.configure({ timeout: 5 * 60_000 })
 
-  test('stable shows none of it', async () => {
-    await onReleaseTrack('stable', () => withSotto(options('dark'), async ({ page }) => {
+  test('a build that holds Teams shows none of it', async () => {
+    await onBuildHolding(['teams'], () => withSotto(options('dark'), async ({ page }) => {
       await openRoom(page)
       await expect(page.getByRole('tab', { name: 'Teams', exact: true })).toHaveCount(0)
       await expect(page.locator('.teammate-message')).toHaveCount(0)

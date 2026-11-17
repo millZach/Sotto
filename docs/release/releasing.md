@@ -70,7 +70,7 @@ electron-builder's publish config and the Windows auto-update feed point at `mil
 
 ## Cutting a Sotto Owl build
 
-Sotto Owl is the preview track for Windows, Apple silicon Macs and Linux (Omarchy, x64), installed in place of Sotto (ADR-0072, ADR-0093, ADR-0099). Owl carries every Owl feature Zach has not yet sent to stable; on October 23, 2026 he sent all nineteen, so none is held until he names a new one. Owl is built from `main` once a night when something has merged and passed CI, rather than after every merge. The **Sotto Owl nightly** workflow does that at midnight UTC with no computer of Zach's switched on ([below](#the-nightly-owl)). A hand cut on the Windows PC ([after it](#cutting-an-owl-by-hand)) follows the same rules and stays available.
+Sotto Owl is the preview track for Windows, Apple silicon Macs and Linux (Omarchy, x64), installed in place of Sotto (ADR-0072, ADR-0093, ADR-0099). Owl carries every Owl feature Zach has not yet sent to stable. He sent all nineteen on October 23, 2026, and every feature still held on November 17, 2026, so none is held until he names a new one. Owl is built from `main` once a night when something has merged and passed CI, rather than after every merge. The **Sotto Owl nightly** workflow does that at midnight UTC with no computer of Zach's switched on ([below](#the-nightly-owl)). A hand cut on the Windows PC ([after it](#cutting-an-owl-by-hand)) follows the same rules and stays available.
 
 ### The nightly Owl
 

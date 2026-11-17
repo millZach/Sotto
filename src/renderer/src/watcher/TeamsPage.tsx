@@ -279,7 +279,7 @@ export function TeamsPage({ bridge, state }: { readonly bridge: TeamsBridge; rea
       {state === null ? <p className="teams-muted" role="status">{t`Opening Teams…`}</p> : !linked ? <>
         <header className="teams-page__intro">
           <h2 className="teams-page__title">{t`Link with a teammate`}</h2>
-          <p className="teams-page__sub">{t`Your Watcher and a teammate's can ask each other what you're working on, and you can open your desks side by side. Both of you need Sotto Owl and Tailscale, and each of you does these steps.`}</p>
+          <p className="teams-page__sub">{t`Your Watcher and a teammate's can ask each other what you're working on, and you can open your desks side by side. Both of you need Tailscale and a current Sotto, and each of you does these steps.`}</p>
         </header>
         <TeamSetup state={state} command={command} busy={busy} />
       </> : <>

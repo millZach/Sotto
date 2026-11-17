@@ -42,7 +42,7 @@ async function acting(page: Page, agoMs: number): Promise<void> {
   await event(page, { type: 'stream', threadId: 'workshop', messageId: 'wait-said', text: 'Running the suite.', status: 'running', activities })
 }
 
-/** Sotto with Lardo's Owl feature on, as an Owl build has it; `held` launches it as stable does. */
+/** Sotto with Lardo's Owl feature on; `held` launches it as a build that still holds Lardo does. */
 async function launch(held = false): Promise<LaunchedSotto> {
   const previous = process.env.SOTTO_OWL_FEATURES
   process.env.SOTTO_OWL_FEATURES = `lardo-creature=${held ? 0 : 1}`
