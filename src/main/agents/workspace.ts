@@ -42,6 +42,7 @@ import { samePlainData } from './agentStateBroadcast'
 import { confirmedSettingsSnapshot, type ActivitySubscriptionOptions, type AgentContinuation, type AgentHost, type ProviderHost, type ReplyFork, type AgentHostCommand, type AgentHostResult, type ShortTextPrompt, type ShortTextTarget, type StartHandoverSent, type StoredMessageIdentity, type ThreadReadPurpose, type ThreadRenameSource } from './host'
 import { agentHandover, type AgentHandover } from './agentHandover'
 import { AGENT_HANDOVER_UNAVAILABLE, AGENT_NOT_SEEN_FINISHING, AGENT_STILL_WORKING, FORK_REPLY_GONE, FORK_TURN_RUNNING, NATIVE_FORKS } from '../../shared/threadStarts'
+import { slowStoreReads } from './slowStoreReads'
 import { EMPTY_WINDOW, FIRST_WINDOW_TURNS, LATER_WINDOW_TURNS, RECORDED_USER_MESSAGES_MAX, replacementEvents, summaryOf, ThreadStore, type RecordedUserMessageIdentity, type StoredVisual, type ThreadMessageWindow } from './threadStore'
 import { BUILT_STORE_WORKER, CLOSE_LIMIT_MS, type StoreWorkerOptions } from './storeWorker'
 import { NO_EVENTS, throwIfFailed, writeFailed, ThreadStoreWriterOnWorker, type ActivityReadBack, type ThreadStoreWrite, type ThreadStoreWriteOutcome, type ThreadStoreWriter } from './threadStoreWriter'
@@ -503,11 +504,11 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   /** `touch`, answering the thread, for a write made on the spot: `this.touched(thread).title = title`. */
   private touched(thread: AgentThread): AgentThread { this.touch(thread.id); return thread }
   /** The next publication, save and release look at this thread again. An accept marks what it merged this way. */
-  private markChanged(id: string): void { this.unpublished.add(id); this.unsaved.add(id); this.releasable.add(id); this.text.invalidate(id) }
+  private markChanged(id: string): void { this.unpublished.add(id); this.unsaved.add(id); this.releasable.add(id); this.text.invalidate(id); this.watcherMarked.delete(id) }
   /** Anything about any thread may have changed: the next accept takes the inner host's publication in whole. */
   private touchAll(): void { this.remergeAll = true; this.markAllChanged() }
   /** The next publication, save and release look at every thread. */
-  private markAllChanged(): void { this.unpublishedAll = true; this.unsavedAll = true; this.releasableAll = true; this.text.invalidateAll() }
+  private markAllChanged(): void { this.unpublishedAll = true; this.unsavedAll = true; this.releasableAll = true; this.text.invalidateAll(); this.watcherMarked.clear() }
   /**
    * Where the state lists a thread, without walking the list. The index is read again whenever the list is another or a
    * different length, and when what it names is not there; a thread taken in place keeps its place.
@@ -1190,6 +1191,11 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   private historyRetryDelay = 1_000
   /** The threads whose window and summary the next publish has to read again. */
   private readonly eventChanged = new Set<string>()
+  /**
+   * Watcher threads out of view whose stored window was marked (`markWatcherReplies`) since anything of theirs last changed:
+   * a change marks the thread (`markChanged`), and an event names it (`eventChanged`), and either lets it go from here.
+   */
+  private readonly watcherMarked = new Set<string>()
 
   private workingCopyDefault: (projectId: string) => 'independent' | 'shared' = () => 'shared'
   private branchNameWriter: ((threadId: string, prompt: string) => Promise<string | null>) | undefined
@@ -2964,6 +2970,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     this.worktrees = new ThreadWorktrees(directory)
     const preserveThread = watcherEnabled && this.councilEnabled && !this.held.size ? undefined : (id: string): boolean => !this.threadVisible(id)
     this.threadStore = new ThreadStore(join(directory, 'threads.sqlite'), preserveThread, storeWorker)
+    this.threadStore.onSlowRead(slowStoreReads(directory))
     this.writes = storeWriter(this.threadStore)
     this.subagentStore = new SubagentStore(join(directory, 'subagents.sqlite'), preserveThread)
     const parseWorkspace = (input: unknown): Workspace => { this.text.invalidateAll(); this.babysitRecords = savedBabysitting(input); this.wakeUpRecords = savedWakeUps(input); this.hiddenWakeUpRecords = savedHiddenWakeUps(input); this.wakeUpAskRecords = savedWakeUpAsks(input); const parsed = workspaceSchema.parse(input);
@@ -3839,6 +3846,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     const changed = [...this.eventChanged]
     this.eventChanged.clear()
     for (const id of changed) {
+      this.watcherMarked.delete(id)
       const thread = this.threadById(id)
       if (!thread) continue
       if (this.watched.has(id) || !this.declared) this.loadWindow(id)
@@ -3848,11 +3856,25 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     }
     this.markWatcherReplies()
   }
-  /** Retain observed changes from history even while no pane holds Watcher's message window. */
+  /**
+   * Retain observed changes from history even while no pane holds Watcher's message window. Out of view, Watcher's window
+   * is read from the store to be marked, so it is read again only once something of Watcher's has changed since its last
+   * mark (`watcherMarked`): a publish for another thread reads none of it. Every publish read it until November 17, 2026,
+   * when one of the owner's main freezes was caught inside that read.
+   */
   private markWatcherReplies(): void {
     if (!this.eventSourced || !this.watcherEnabled) return
     let changed = false
-    for (const thread of this.state.snapshot.threads) if (thread.kind === 'watcher' && this.markOwnChanges(thread)) changed = true
+    for (const thread of this.state.snapshot.threads) {
+      if (thread.kind !== 'watcher') continue
+      if (thread.messages.length) { if (this.markOwnChangesIn(thread, thread.messages)) changed = true; continue }
+      if (this.watcherMarked.has(thread.id)) continue
+      const window = this.readWindow(thread.id, FIRST_WINDOW_TURNS)
+      if (!window) continue
+      if (this.markOwnChangesIn(thread, window.messages)) changed = true
+      // A mark's own replacements come back as an event, which reads it once more and finds nothing more to mark.
+      this.watcherMarked.add(thread.id)
+    }
     if (changed) this.writeEvents()
   }
   /** One thread's replies marked for the files its turn changed. Whether anything changed, for the caller to write. */
@@ -3860,7 +3882,11 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     // Pane visibility cannot decide whether early edits survive the activity window. This temporary
     // history read includes the current user turn without putting a background transcript in the shell.
     const messages = thread.messages.length ? thread.messages : this.readWindow(thread.id, FIRST_WINDOW_TURNS)?.messages
-    if (!messages?.length) return false
+    return messages ? this.markOwnChangesIn(thread, messages) : false
+  }
+  /** `markOwnChanges` over a window already in hand: the thread's own, or one read from the store. */
+  private markOwnChangesIn(thread: AgentThread, messages: AgentMessage[]): boolean {
+    if (!messages.length) return false
     const annotated = annotateWatcherOwnChanges({ ...thread, messages })
     let replaced = false
     for (const [index, message] of annotated.entries()) if (message !== messages[index]) {
@@ -4073,17 +4099,31 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * Every message the user sent before `beforeMessageId`, read from the store for the message scrubber (ADR-0109): the
    * prompts above the window a pane holds. Wake-ups are Sotto's, so they are left out, as the window leaves them unmarked.
    * Read only when a pane asks, and never published. Null when the store cannot answer.
+   *
+   * The query runs on the store worker, behind every write posted before it, so a store that answers slowly holds the
+   * worker rather than main: on November 17, 2026 this read held the owner's main 1.8 s while a pane opened. With no
+   * worker, or with writes held unsent, it reads here, as before.
    */
   async threadPrompts(threadId: string, beforeMessageId: string): Promise<AgentThreadPrompts | null> {
     const thread = this.threadById(threadId)
     if (!thread || !this.visible(thread) || this.storeUnavailable) return null
     await this.settled(threadId)
     if (this.storeUnavailable) return null
+    let skip: ReadonlySet<string>
     try {
-      const skip = new Set([...this.wakeUpRecords.get(threadId) ?? [], ...this.hiddenWakeUpRecords.get(threadId) ?? [],
+      skip = new Set([...this.wakeUpRecords.get(threadId) ?? [], ...this.hiddenWakeUpRecords.get(threadId) ?? [],
         ...this.threadStore.wakeUps(threadId), ...this.threadStore.hiddenWakeUps(threadId)])
-      return this.threadStore.promptsBefore(threadId, beforeMessageId, skip)
     } catch { return null }
+    const offMain = this.writes.readPrompts?.(threadId, beforeMessageId, skip)
+    if (offMain) {
+      const read = await offMain
+      if ('prompts' in read) return read.prompts
+      if ('unreadable' in read) return null
+      // The worker went before answering: what it had not answered is finished on main, and the read follows it there.
+      await this.settled(threadId)
+      if (this.storeUnavailable) return null
+    }
+    try { return this.threadStore.promptsBefore(threadId, beforeMessageId, skip) } catch { return null }
   }
   /** A thread no pane is looking at goes back to its summary alone. */
   private unloadWindow(threadId: string): void {

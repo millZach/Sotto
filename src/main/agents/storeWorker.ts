@@ -4,11 +4,11 @@ import { MessageChannel, receiveMessageOnPort, Worker, type MessagePort } from '
 import type { AgentActivity } from '../../shared/agentActivity'
 import { SAVE_SYNCHRONOUS } from '../storage/sqliteDurability'
 import { isImmutableActivities, isImmutableActivity, ownBuiltActivity } from './activitySnapshots'
-import type { ActivityListEntry, ActivityReadBack, ThreadStoreWrite, ThreadStoreWriteOutcome } from './threadStoreWriter'
-import { CONTROL, LIFE, type StoreWorkerData, type WireActivityEntry, type WireWrite, type WorkerAnswer, type WorkerMessage, type WorkerReadAnswer, type WorkerRequest } from './storeWorkerProtocol'
+import type { ActivityListEntry, ActivityReadBack, PromptsReadBack, ThreadStoreWrite, ThreadStoreWriteOutcome } from './threadStoreWriter'
+import { CONTROL, LIFE, type StoreWorkerData, type WireActivityEntry, type WireWrite, type WorkerAnswer, type WorkerMessage, type WorkerPromptsAnswer, type WorkerReadAnswer, type WorkerRequest } from './storeWorkerProtocol'
 
 export { CHECKPOINT, CONTROL, LIFE } from './storeWorkerProtocol'
-export type { StoreWorkerData, WireActivityEntry, WireWrite, WorkerAnswer, WorkerMessage, WorkerReadAnswer, WorkerRequest } from './storeWorkerProtocol'
+export type { StoreWorkerData, WireActivityEntry, WireWrite, WorkerAnswer, WorkerMessage, WorkerPromptsAnswer, WorkerReadAnswer, WorkerRequest } from './storeWorkerProtocol'
 
 /**
  * Main's side of the store worker (#1457, ADR-0016's October 26 amendment): the worker thread (`threadStoreWorker.ts`)
@@ -72,6 +72,8 @@ export class StoreWorker {
   /** Stored threads' activity being read back, each heard once: its records, that they could not be read, or lost. */
   private readonly reads = new Map<number, { readonly settle: (result: ActivityReadBack) => void; readonly records: AgentActivity[]; readonly threadId: string; readonly version: number }>()
   private nextRead = 1
+  /** The message scrubber's reads on their way, each heard once: its prompts, that they could not be read, or lost. */
+  private readonly promptReads = new Map<number, (result: PromptsReadBack) => void>()
   private readonly sent = new Map<string, SentList>()
   /**
    * The read whose list becomes each thread's last sent once it arrives whole (#1645). The worker keeps the list it read
@@ -145,6 +147,18 @@ export class StoreWorker {
     this.port.postMessage({ kind: 'read-activities', read, threadId, version } satisfies WorkerRequest)
   }
 
+  /**
+   * Reads the prompts above a pane's window on the worker (ADR-0109), behind every write posted before it; `settle` hears
+   * once what came back. A worker that goes or stops first answers it lost, and the caller reads on main.
+   */
+  readPrompts(threadId: string, beforeMessageId: string, skip: ReadonlySet<string>, settle: (result: PromptsReadBack) => void): void {
+    if (this.gone || this.stopping) { settle({ lost: true }); return }
+    const read = this.nextRead++
+    this.promptReads.set(read, settle)
+    this.port.ref()
+    this.port.postMessage({ kind: 'read-prompts', read, threadId, beforeMessageId, skip: [...skip] } satisfies WorkerRequest)
+  }
+
   /** Whether the worker has begun this write, so what it commits may already show to main's reads. */
   started(id: number): boolean { return Atomics.load(this.control, CONTROL.APPLYING) >= id }
 
@@ -200,8 +214,17 @@ export class StoreWorker {
   async terminate(): Promise<void> { await this.worker.terminate() }
 
   private heard(message: WorkerMessage): void {
-    if ('read' in message) this.readAnswered(message)
+    if ('prompts' in message) this.promptsAnswered(message)
+    else if ('read' in message) this.readAnswered(message)
     else this.answered(message)
+  }
+
+  private promptsAnswered(answer: WorkerPromptsAnswer): void {
+    const settle = this.promptReads.get(answer.prompts)
+    if (!settle) return
+    this.promptReads.delete(answer.prompts)
+    this.unrefIfIdle()
+    settle(answer.answer === undefined ? { unreadable: true } : { prompts: answer.answer })
   }
 
   private readAnswered(answer: WorkerReadAnswer): void {
@@ -231,11 +254,14 @@ export class StoreWorker {
     const reads = [...this.reads.values()]
     this.reads.clear()
     for (const { settle } of reads) settle({ lost: true })
+    const prompts = [...this.promptReads.values()]
+    this.promptReads.clear()
+    for (const settle of prompts) settle({ lost: true })
   }
 
   /** Lets the port go once nothing waits for an answer, so an idle worker keeps nothing alive. */
   private unrefIfIdle(): void {
-    if (!this.pending.size && !this.reads.size && !this.gone) this.port.unref()
+    if (!this.pending.size && !this.reads.size && !this.promptReads.size && !this.gone) this.port.unref()
   }
 
   private answered(answer: WorkerAnswer): void {

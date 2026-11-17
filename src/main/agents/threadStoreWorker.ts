@@ -8,7 +8,7 @@ import type { MessagePort } from 'node:worker_threads'
 import { workerData } from 'node:worker_threads'
 import type { AgentActivity } from '../../shared/agentActivity'
 import { immutableActivities, ownBuiltActivity } from './activitySnapshots'
-import { CHECKPOINT, CONTROL, LIFE, READ_PIECE_RECORDS, type StoreWorkerData, type WireActivityEntry, type WireWrite, type WorkerAnswer, type WorkerReadAnswer, type WorkerRequest } from './storeWorkerProtocol'
+import { CHECKPOINT, CONTROL, LIFE, READ_PIECE_RECORDS, type StoreWorkerData, type WireActivityEntry, type WireWrite, type WorkerAnswer, type WorkerPromptsAnswer, type WorkerReadAnswer, type WorkerRequest } from './storeWorkerProtocol'
 import { ThreadStore } from './threadStore'
 import { applyWrite, writeThreads, type ActivityListEntry, type ThreadStoreWrite, type ThreadStoreWriteOutcome } from './threadStoreWriter'
 
@@ -133,6 +133,11 @@ function piece(read: number, activities: readonly AgentActivity[], from: number)
   return { read, activities: activities.slice(from, to), ...(to < activities.length ? { more: true as const } : {}) }
 }
 
+/** The message scrubber's read of the prompts above a pane's window; one that fails answers with none, and main says so. */
+function promptsRead(request: Extract<WorkerRequest, { kind: 'read-prompts' }>): WorkerPromptsAnswer {
+  try { return { prompts: request.read, answer: store.promptsBefore(request.threadId, request.beforeMessageId, new Set(request.skip)) } } catch { return { prompts: request.read } }
+}
+
 /** The next piece of a list main is receiving; one the worker does not hold answers as a read it could not make. */
 function readMore(read: number): WorkerReadAnswer {
   const left = readsLeft.get(read)
@@ -204,6 +209,7 @@ if (Atomics.compareExchange(control, CONTROL.LIFE, STARTING, OPEN) === STARTING)
     // A read changes nothing and is not a write main may finish itself, so it leaves the write identities alone.
     if (request.kind === 'read-activities') { port.postMessage(readBack(request)); return }
     if (request.kind === 'read-more') { port.postMessage(readMore(request.read)); return }
+    if (request.kind === 'read-prompts') { port.postMessage(promptsRead(request)); return }
     Atomics.store(control, APPLYING, request.id)
     let outcome: ThreadStoreWriteOutcome & { memory?: true }
     try { outcome = apply(request.write) } catch (error) { outcome = { failed: new Set(writeThreads(request.write as ThreadStoreWrite)), error } }

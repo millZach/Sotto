@@ -8,6 +8,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import type { StoreWorker } from '../../src/main/agents/storeWorker'
 import type { ThreadStoreWriter } from '../../src/main/agents/threadStoreWriter'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
+import { ThreadStore } from '../../src/main/agents/threadStore'
 import { builtStoreWorker } from '../fixtures/storeWorker'
 import { added, aliased, appended, answer, cleanUp, cleanup, compareShown, EventProvider, fixture, runEquivalence, shown, storedMessages, WORKSHOP } from '../fixtures/storeWriterEquivalence'
 import { heldProvidersOf } from '../../src/shared/heldProviders'
@@ -133,5 +134,27 @@ describe('the workspace over the store worker', () => {
     host.disconnect()
     await host.close()
     expect(storedMessages(directory).map(item => item.text)).toEqual(['Before and during', 'Next', 'After'])
+  })
+
+  it('reads the message scrubber’s prompts on the worker rather than on main, and on main once the worker has gone', async () => {
+    const { adapter, host, store, writes } = await workspace()
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    for (let turn = 0; turn < 4; turn++) { adapter.publish(added(`u${turn}`, `Prompt ${turn}`, 'user')); adapter.publish(added(`a${turn}`, `Reply ${turn}`)) }
+    host.workspaceSnapshot()
+    await writes.confirmed()
+    // The spy sees main's store only: the worker runs its own copy of the module on its own thread.
+    const onMain = vi.spyOn(ThreadStore.prototype, 'promptsBefore')
+    // Posted behind a write the read must follow, so it answers with the turn that write adds.
+    adapter.publish(added('u4', 'Prompt 4', 'user'))
+    const read = await host.threadPrompts(WORKSHOP, 'u4')
+    expect(read?.prompts.map(prompt => [prompt.id, prompt.text, prompt.reply?.text])).toEqual([0, 1, 2, 3].map(turn => [`u${turn}`, `Prompt ${turn}`, `Reply ${turn}`]))
+    expect(onMain).not.toHaveBeenCalled()
+    void store.worker!.terminate()
+    for (let waited = 0; store.worker !== undefined; waited++) {
+      if (waited > 200) throw new Error('The worker never went')
+      await delay(20)
+    }
+    expect(await host.threadPrompts(WORKSHOP, 'u4')).toEqual(read)
+    expect(onMain).toHaveBeenCalledTimes(1)
   })
 })

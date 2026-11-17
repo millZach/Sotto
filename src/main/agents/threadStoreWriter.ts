@@ -1,6 +1,7 @@
 import type { AgentActivity } from '../../shared/agentActivity'
 import type { ThreadEvent } from '../../shared/threadEvents'
 import type { WatcherAsk } from '../../shared/watcherAsks'
+import type { AgentThreadPrompts } from '../../shared/threadPrompts'
 import type { StoreWorker, StoreWorkerResult, UnansweredWrite } from './storeWorker'
 import type { StoredVisual, ThreadStore } from './threadStore'
 
@@ -50,6 +51,12 @@ export type ActivityReadBack =
   | { readonly unreadable: true }
   | { readonly lost: true }
 
+/** What came back of the message scrubber's read off main: the prompts, that they could not be read, or nothing (lost). */
+export type PromptsReadBack =
+  | { readonly prompts: AgentThreadPrompts }
+  | { readonly unreadable: true }
+  | { readonly lost: true }
+
 /** What one write did, once it committed or failed. */
 export interface ThreadStoreWriteOutcome {
   /** The threads whose part did not commit. Empty when all of it did. */
@@ -88,6 +95,11 @@ export interface ThreadStoreWriter {
    * cannot, as with no store worker, or while writes wait unsent: the caller reads on main, as before.
    */
   readActivities?(threadId: string): Promise<ActivityReadBack> | undefined
+  /**
+   * Reads the prompts above a pane's window off main (ADR-0109), behind every write posted before it. Undefined where this
+   * writer cannot, as `readActivities` is: the caller reads on main, as before.
+   */
+  readPrompts?(threadId: string, beforeMessageId: string, skip: ReadonlySet<string>): Promise<PromptsReadBack> | undefined
 }
 
 export const NO_EVENTS: readonly ThreadEvent[] = Object.freeze([])
@@ -266,6 +278,13 @@ export class ThreadStoreWriterOnWorker implements ThreadStoreWriter {
     const worker = this.store.writer
     if (!worker || this.held > 0 || this.switching || this.recovering) return undefined
     return new Promise(resolve => { worker.read(threadId, resolve) })
+  }
+
+  /** On the worker, behind every write sent before it, as `readActivities` is; with writes held unsent, the caller reads on main. */
+  readPrompts(threadId: string, beforeMessageId: string, skip: ReadonlySet<string>): Promise<PromptsReadBack> | undefined {
+    const worker = this.store.writer
+    if (!worker || this.held > 0 || this.switching || this.recovering) return undefined
+    return new Promise(resolve => { worker.readPrompts(threadId, beforeMessageId, skip, resolve) })
   }
 
   confirmed(threadId?: string): Promise<void> {
