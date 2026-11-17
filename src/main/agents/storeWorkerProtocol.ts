@@ -60,7 +60,7 @@ export type WorkerRequest =
   | { readonly kind: 'write'; readonly id: number; readonly write: WireWrite }
   | { readonly kind: 'read-activities'; readonly read: number; readonly threadId: string; readonly version: number }
   | { readonly kind: 'read-more'; readonly read: number }
-  | { readonly kind: 'read-prompts'; readonly read: number; readonly threadId: string; readonly beforeMessageId: string; readonly skip: readonly string[] }
+  | { readonly kind: 'read-prompts'; readonly read: number; readonly threadId: string; readonly beforeMessageId: string; readonly wakeUps: readonly string[] }
   | { readonly kind: 'stop' }
 
 /**
@@ -91,12 +91,13 @@ export interface WorkerReadAnswer {
 }
 
 /**
- * The worker's answer to the message scrubber's read (`read-prompts`, ADR-0109): the prompts above a pane's window, or none
- * when it could not read them. Read here, behind every write posted before it, so a store that answers slowly holds the
+ * The worker's answer to the message scrubber's read (`read-prompts`, ADR-0109): which read it answers, and the prompts
+ * above a pane's window, or none when it could not read them. The request names only the wake-ups main holds in memory,
+ * which are bounded; the worker adds those its own store holds for the thread. Read here, behind every write posted before it, so a store that answers slowly holds the
  * worker rather than main (November 17, 2026: one such read held main 1.8 s).
  */
 export interface WorkerPromptsAnswer {
-  readonly prompts: number
+  readonly promptsRead: number
   readonly answer?: AgentThreadPrompts | undefined
 }
 

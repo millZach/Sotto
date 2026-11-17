@@ -494,7 +494,7 @@ of the owner's 1.5 GB store held main at least 1.8 s on the live file. Off main,
 worker and the scrubber's marks, not the window. While writes wait unsent, or where the worker cannot run, it reads on
 main as before; a worker that goes before answering is waited out, and main reads behind what it finishes.
 
-Main's other reads of the store stay on main. Each read on main that takes 250 ms or more is noted, by its query and how
-long it took, in `store-read-diagnostics.jsonl` in Sotto's data folder, since main's log reaches no file in a packaged
+Main's other reads of the store stay on main. Each query main's connection runs once the store is open (a prepared
+statement's `get` or `all`) that takes 250 ms or more is noted, by its query and how long it took, in `store-read-diagnostics.jsonl` in Sotto's data folder, since main's log reaches no file in a packaged
 build and a hang recording cannot see inside a native call. The query is Sotto's own, with every value a parameter, so a
 line holds nothing a thread said. The numbers are in `docs/perf/2026-11-17-store-reads-off-main.md`.

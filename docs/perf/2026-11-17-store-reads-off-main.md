@@ -43,7 +43,8 @@ not reproduced. A 25-minute probe of main's event loop afterwards (14,488 reques
 2. **Watcher's window is read again only once something of Watcher's changed.** Out of view, `markWatcherReplies` read
    it from the store on every publish, for every thread's update. Now a mark that read it holds until a change to the
    Watcher thread (`markChanged`) or an event for it.
-3. **Slow reads on main are noted.** Any `get` or `all` on main's connection that takes 250 ms or more is appended to
+3. **Slow reads on main are noted.** Any `get` or `all` of a prepared statement on main's connection, once the store
+   is open, that takes 250 ms or more is appended to
    `store-read-diagnostics.jsonl` (query and milliseconds, at most 200 lines a run), since main's log reaches no file in
    a packaged build.
 
@@ -74,6 +75,9 @@ To run it:
   Watcher's has changed": ten updates on another thread read Watcher's window 0 times. On the old code they read it 10
   times: it fails.
 - `tests/unit/main/slowStoreReads.test.ts`: a read past the threshold is named by its query, never its values.
+
+After the review, the scrubber's request names only the wake-ups main holds in memory, which are bounded; the worker
+adds the ones its own store holds, so the request does not grow with the thread's history.
 
 ## The other stops of 1 s or more that day, left for follow-ups
 

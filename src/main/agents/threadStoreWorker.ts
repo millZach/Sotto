@@ -133,9 +133,15 @@ function piece(read: number, activities: readonly AgentActivity[], from: number)
   return { read, activities: activities.slice(from, to), ...(to < activities.length ? { more: true as const } : {}) }
 }
 
-/** The message scrubber's read of the prompts above a pane's window; one that fails answers with none, and main says so. */
+/**
+ * The message scrubber's read of the prompts above a pane's window, leaving out every wake-up: those main named, and those
+ * this store holds for the thread. One that fails answers with none, and main says so.
+ */
 function promptsRead(request: Extract<WorkerRequest, { kind: 'read-prompts' }>): WorkerPromptsAnswer {
-  try { return { prompts: request.read, answer: store.promptsBefore(request.threadId, request.beforeMessageId, new Set(request.skip)) } } catch { return { prompts: request.read } }
+  try {
+    const skip = new Set([...request.wakeUps, ...store.wakeUps(request.threadId), ...store.hiddenWakeUps(request.threadId)])
+    return { promptsRead: request.read, answer: store.promptsBefore(request.threadId, request.beforeMessageId, skip) }
+  } catch { return { promptsRead: request.read } }
 }
 
 /** The next piece of a list main is receiving; one the worker does not hold answers as a read it could not make. */

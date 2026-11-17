@@ -4109,12 +4109,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (!thread || !this.visible(thread) || this.storeUnavailable) return null
     await this.settled(threadId)
     if (this.storeUnavailable) return null
-    let skip: ReadonlySet<string>
-    try {
-      skip = new Set([...this.wakeUpRecords.get(threadId) ?? [], ...this.hiddenWakeUpRecords.get(threadId) ?? [],
-        ...this.threadStore.wakeUps(threadId), ...this.threadStore.hiddenWakeUps(threadId)])
-    } catch { return null }
-    const offMain = this.writes.readPrompts?.(threadId, beforeMessageId, skip)
+    // This run's own wake-up records are bounded (WAKE_UP_IDS_KEPT); those the store holds grow with the thread, so the
+    // worker reads them on its own connection rather than main copying them to it.
+    const ownWakeUps = new Set([...this.wakeUpRecords.get(threadId) ?? [], ...this.hiddenWakeUpRecords.get(threadId) ?? []])
+    const offMain = this.writes.readPrompts?.(threadId, beforeMessageId, ownWakeUps)
     if (offMain) {
       const read = await offMain
       if ('prompts' in read) return read.prompts
@@ -4123,7 +4121,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       await this.settled(threadId)
       if (this.storeUnavailable) return null
     }
-    try { return this.threadStore.promptsBefore(threadId, beforeMessageId, skip) } catch { return null }
+    try {
+      const skip = new Set([...ownWakeUps, ...this.threadStore.wakeUps(threadId), ...this.threadStore.hiddenWakeUps(threadId)])
+      return this.threadStore.promptsBefore(threadId, beforeMessageId, skip)
+    } catch { return null }
   }
   /** A thread no pane is looking at goes back to its summary alone. */
   private unloadWindow(threadId: string): void {

@@ -542,8 +542,8 @@ export class ThreadStore {
   }
 
   /**
-   * Hears every read on this connection that took `SLOW_READ_MS` or more: the statement, collapsed to one line, and how
-   * long. Main's store is given one before it opens, so a freeze inside a read names the read (November 17, 2026).
+   * Hears every read through this connection's prepared statements (`get` and `all`) that took `SLOW_READ_MS` or more:
+   * the statement, collapsed to one line, and how long. Opening the store and its projection rebuild are not timed. Main's store is given one before it opens, so a freeze inside a read names the read (November 17, 2026).
    */
   onSlowRead(listener: ((statement: string, ms: number) => void) | undefined): void { this.slowRead = listener }
 
@@ -656,7 +656,7 @@ export class ThreadStore {
    * them still carries words the roster lacks (#918). Until then a start reads every record, as each start used to.
    */
   subagentWordsMoved(): boolean {
-    return readMeta(this.requireOpen(), 'subagentWordsMoved') === '1'
+    return this.statement('SELECT value FROM meta WHERE key = ?').get('subagentWordsMoved')?.value === '1'
   }
 
   markSubagentWordsMoved(): void {

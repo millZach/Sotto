@@ -148,15 +148,16 @@ export class StoreWorker {
   }
 
   /**
-   * Reads the prompts above a pane's window on the worker (ADR-0109), behind every write posted before it; `settle` hears
+   * Reads the prompts above a pane's window on the worker (ADR-0109), behind every write posted before it, leaving out the
+   * wake-ups main names and those the worker's store holds; `settle` hears
    * once what came back. A worker that goes or stops first answers it lost, and the caller reads on main.
    */
-  readPrompts(threadId: string, beforeMessageId: string, skip: ReadonlySet<string>, settle: (result: PromptsReadBack) => void): void {
+  readPrompts(threadId: string, beforeMessageId: string, wakeUps: ReadonlySet<string>, settle: (result: PromptsReadBack) => void): void {
     if (this.gone || this.stopping) { settle({ lost: true }); return }
     const read = this.nextRead++
     this.promptReads.set(read, settle)
     this.port.ref()
-    this.port.postMessage({ kind: 'read-prompts', read, threadId, beforeMessageId, skip: [...skip] } satisfies WorkerRequest)
+    this.port.postMessage({ kind: 'read-prompts', read, threadId, beforeMessageId, wakeUps: [...wakeUps] } satisfies WorkerRequest)
   }
 
   /** Whether the worker has begun this write, so what it commits may already show to main's reads. */
@@ -214,15 +215,15 @@ export class StoreWorker {
   async terminate(): Promise<void> { await this.worker.terminate() }
 
   private heard(message: WorkerMessage): void {
-    if ('prompts' in message) this.promptsAnswered(message)
+    if ('promptsRead' in message) this.promptsAnswered(message)
     else if ('read' in message) this.readAnswered(message)
     else this.answered(message)
   }
 
   private promptsAnswered(answer: WorkerPromptsAnswer): void {
-    const settle = this.promptReads.get(answer.prompts)
+    const settle = this.promptReads.get(answer.promptsRead)
     if (!settle) return
-    this.promptReads.delete(answer.prompts)
+    this.promptReads.delete(answer.promptsRead)
     this.unrefIfIdle()
     settle(answer.answer === undefined ? { unreadable: true } : { prompts: answer.answer })
   }

@@ -96,10 +96,11 @@ export interface ThreadStoreWriter {
    */
   readActivities?(threadId: string): Promise<ActivityReadBack> | undefined
   /**
-   * Reads the prompts above a pane's window off main (ADR-0109), behind every write posted before it. Undefined where this
-   * writer cannot, as `readActivities` is: the caller reads on main, as before.
+   * Reads the prompts above a pane's window off main (ADR-0109), behind every write posted before it, leaving out
+   * `wakeUps` (main's own records) and the wake-ups the store holds. Undefined where this writer cannot, as
+   * `readActivities` is: the caller reads on main, as before.
    */
-  readPrompts?(threadId: string, beforeMessageId: string, skip: ReadonlySet<string>): Promise<PromptsReadBack> | undefined
+  readPrompts?(threadId: string, beforeMessageId: string, wakeUps: ReadonlySet<string>): Promise<PromptsReadBack> | undefined
 }
 
 export const NO_EVENTS: readonly ThreadEvent[] = Object.freeze([])
@@ -281,10 +282,10 @@ export class ThreadStoreWriterOnWorker implements ThreadStoreWriter {
   }
 
   /** On the worker, behind every write sent before it, as `readActivities` is; with writes held unsent, the caller reads on main. */
-  readPrompts(threadId: string, beforeMessageId: string, skip: ReadonlySet<string>): Promise<PromptsReadBack> | undefined {
+  readPrompts(threadId: string, beforeMessageId: string, wakeUps: ReadonlySet<string>): Promise<PromptsReadBack> | undefined {
     const worker = this.store.writer
     if (!worker || this.held > 0 || this.switching || this.recovering) return undefined
-    return new Promise(resolve => { worker.readPrompts(threadId, beforeMessageId, skip, resolve) })
+    return new Promise(resolve => { worker.readPrompts(threadId, beforeMessageId, wakeUps, resolve) })
   }
 
   confirmed(threadId?: string): Promise<void> {
