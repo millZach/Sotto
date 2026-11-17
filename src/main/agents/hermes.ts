@@ -110,6 +110,7 @@ const initializeSchema = z.object({ protocolVersion: z.number(), agentCapabiliti
 const sessionNewSchema = z.object({ sessionId: z.string().min(1).max(512) }).passthrough()
 const promptAnswerSchema = z.object({ stopReason: z.string() }).passthrough()
 const PROCESS_LOST = 'Hermes stopped before this reply finished, so it may be cut short. Send a message to carry on.'
+const CHATGPT_SIGN_IN_REQUIRED = 'Sign in with ChatGPT for Hermes on this computer, then try again. Your thread is kept.'
 /** How long a turn's end waits for a look at what it left running, at most (#2637). */
 const LOOK_BEFORE_END_MS = 5_000
 /**
@@ -1028,9 +1029,8 @@ export class HermesAcpHost implements ProviderHost {
   private model(modelId: string): AgentModel | undefined { return this.state.models.find(model => model.id === modelId) }
   /** Put the session on the thread's model and effort before a prompt that needs them, read back from the answer. */
   private async applySettings(alias: Alias, connection: Connection, id: string): Promise<void> {
-    if (isHermesChatGptModel(alias.modelId)) {
-      if (this.hasChatGptModels() && await this.runtime.chatGptAuthChanged()) await this.refreshChatGptModels()
-      if (!this.hasChatGptModels()) throw new Error('Sign in with ChatGPT for Hermes on this computer, then try again. Your thread is kept.')
+    if (isHermesChatGptModel(alias.modelId) && !this.hasChatGptModels()) {
+      throw new Error(CHATGPT_SIGN_IN_REQUIRED)
     }
     const value = hermesModelValue(alias.modelId)
     if (value === undefined) throw new Error('This thread’s model is not one of your own model servers. Choose a model your servers offer, then send.')
@@ -1183,8 +1183,14 @@ export class HermesAcpHost implements ProviderHost {
     index.add(origin); alias.turns++
     // A record that cannot be written takes the origin back out, so the same command can be sent again.
     try { await this.persist() } catch (error) { index.remove(origin); alias.turns--; throw error }
-    current()
-    try { watcherGuard?.() } catch (error) { index.remove(origin); alias.turns--; await this.persist(); throw error }
+    try {
+      if (isHermesChatGptModel(alias.modelId)) {
+        if (this.hasChatGptModels() && await this.runtime.chatGptAuthChanged()) await this.refreshChatGptModels()
+        if (!this.hasChatGptModels()) throw new Error(CHATGPT_SIGN_IN_REQUIRED)
+      }
+      current()
+      watcherGuard?.()
+    } catch (error) { index.remove(origin); alias.turns--; await this.persist(); throw error }
     const thread = this.thread(id)
     delete thread.requestNotice
     const turn: LiveTurn = { places: new TurnPlaces(origin.messageId), origin, taken: false, ended: false, wake: undefined }
