@@ -47,7 +47,7 @@ export const OWL_FEATURES = [
   { id: 'reply-quote', name: 'Quote a reply in the prompt', owlSince: '2026-10-24', owner: 'docs/adr/0129-words-from-a-reply-can-be-quoted-in-the-next-prompt.md', sentToStable: false },
   { id: 'next-prompt', name: 'Next prompt suggestions', owlSince: '2026-10-24', owner: 'docs/adr/0132-a-finished-turn-suggests-the-next-prompt.md', sentToStable: false },
   { id: 'pi', name: 'Pi provider', owlSince: '2026-11-10', owner: 'docs/adr/0202-pi-is-a-thread-provider.md', sentToStable: false },
-  { id: 'hermes', name: 'Hermes provider', owlSince: '2026-11-06', owner: 'src/main/agents/hermes.ts', sentToStable: false },
+  { id: 'hermes', name: 'Hermes provider', owlSince: '2026-11-06', owner: 'src/main/agents/hermes.ts', sentToStable: true },
   { id: 'deepseek', name: 'DeepSeek provider', owlSince: '2026-10-24', owner: 'docs/adr/0138-deepseek-harness-is-a-thread-provider.md', sentToStable: false },
   { id: 'cross-machine-work', name: 'Work across machines', owlSince: '2026-10-22', owner: 'docs/adr/0082-work-moves-between-a-desktops-machines-over-its-own-ssh-link.md', sentToStable: false },
   { id: 'own-server-cleanup', name: 'AI cleanup on your own model server', owlSince: '2026-10-25', owner: 'docs/adr/0136-ai-cleanup-can-run-on-your-own-model-server.md', sentToStable: false },

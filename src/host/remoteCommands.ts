@@ -99,7 +99,7 @@ export const REMOTE_COMMANDS: { readonly [T in CommandType]?: Fields<T> } = {
  * does not. Signing a provider in on the host answers no permission request, so it needs no `remote-answer` policy; it is
  * the same trust as `connect`, which pairing already gives, and the iPhone client does not send them.
  */
-export const REMOTE_SIGN_IN_OPERATIONS = ['sign-in-start', 'sign-in-read', 'sign-in-code', 'sign-in-cancel'] as const
+export const REMOTE_SIGN_IN_OPERATIONS = ['sign-in-start', 'sign-in-read', 'sign-in-code', 'sign-in-cancel', 'hermes-sign-out'] as const
 /**
  * The host's own OpenCode signed in to a model source, or out of one, for the desktop that asks (#1107): the same trust as a
  * provider's sign-in above. It answers no permission request and signs in the user's own account, finished in the user's

@@ -184,7 +184,7 @@ describe('signing a host\'s provider in from a paired client', () => {
       const providers = () => Object.fromEntries((desktop.shell().host.providers ?? []).map(status => [status.id, [status.connection, status.problem ?? null]]))
       // A host tries every provider it runs at start (ADR-0036): Muse and OpenCode too, on either track, since 0.1.40.
       await expect.poll(providers).toEqual({ codex: ['error', 'signed-out'], claude: ['error', 'signed-out'], grok: ['error', 'signed-out'], devin: ['error', 'not-installed'],
-        muse: ['error', 'signed-out'], opencode: ['error', 'signed-out'] })
+        muse: ['error', 'signed-out'], opencode: ['error', 'signed-out'], hermes: ['error', 'signed-out'] })
 
       // Device code: the code comes back to the client that asked and to no other, and the host connects Codex itself.
       const codex = await desktop.signIn({ op: 'sign-in-start', provider: 'codex' }) as HostSignIn
@@ -194,6 +194,14 @@ describe('signing a host\'s provider in from a paired client', () => {
       await writeFile(join(root, 'codex.approved'), '')
       await expect.poll(async () => (await desktop.signIn({ op: 'sign-in-read', signInId: codex.id }))?.stage).toBe('connected')
       await expect.poll(() => providers().codex).toEqual(['connected', null])
+
+      const hermes = await desktop.signIn({ op: 'sign-in-start', provider: 'hermes' }) as HostSignIn
+      expect(hermes).toMatchObject({ stage: 'waiting', code: 'WDJB-MJHTQ', url: 'https://auth.openai.com/codex/device' })
+      expect(await other.signIn({ op: 'sign-in-read', signInId: hermes.id })).toBeNull()
+      expect(JSON.parse(await readFile(join(root, 'hermes.args.json'), 'utf8'))).toEqual(['auth', 'add', 'openai-codex', '--type', 'oauth', '--no-browser'])
+      await writeFile(join(root, 'hermes.approved'), '')
+      await expect.poll(async () => (await desktop.signIn({ op: 'sign-in-read', signInId: hermes.id }))?.stage).toBe('connected')
+      await expect.poll(() => providers().hermes).toEqual(['connected', null])
 
       // Code pasted back: a refused code, then the right one.
       const refused = await desktop.signIn({ op: 'sign-in-start', provider: 'claude' }) as HostSignIn

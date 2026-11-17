@@ -389,9 +389,9 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     // Pi starts only on this computer, where its own-model-server record lives.
     pi: adapter('pi', () => options.providers?.pi ?? (options.runsAs === 'headless-host' ? new HeldProviderHost('pi')
       : (piHost = options.createPiHost?.(directory, { heldProviders: held, ...captureMedia, ...(options.ownServers ? { servers: options.ownServers } : {}) })) ?? new HeldProviderHost('pi'))),
-    // Hermes starts only on this computer, on macOS, Windows and Linux: its gateway and model routes belong here.
-    hermes: adapter('hermes', () => options.providers?.hermes ?? (options.runsAs === 'headless-host' ? new HeldProviderHost('hermes')
-      : new HermesAcpHost(directory, { heldProviders: held, ...captureMedia, ...(options.ownServers ? { servers: options.ownServers } : {}) }))),
+    // Hermes uses the account on the machine running the thread. The desktop also supplies its own model servers.
+    hermes: adapter('hermes', () => options.providers?.hermes ?? new HermesAcpHost(directory, { heldProviders: held,
+      ...captureMedia, ...(options.ownServers ? { servers: options.ownServers } : {}) })),
     // DeepSeek Harness runs only the user's own model servers, whose record is this computer's in this phase, so a
     // headless host holds it back as OpenCode was held before its hosts slice (ADR-0138).
     deepseek: adapter('deepseek', () => options.providers?.deepseek ?? (options.runsAs === 'headless-host' ? new HeldProviderHost('deepseek')
@@ -1022,12 +1022,20 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   }) : undefined
   // Signing Codex, Claude Code or Grok Build in from its row on this computer (ADR-0200); a headless host's are signed
   // in by a desktop through the provider sign-in request instead (ADR-0037).
+  const connectedHermes = (): HermesAcpHost | undefined =>
+    providers.hermes instanceof HermesAcpHost && providers.hermes.isConnected() ? providers.hermes : undefined
+  const hermesAccountChanged = async (): Promise<void> => { await connectedHermes()?.refreshChatGptModels() }
   const providerSignIn = options.runsAs !== 'headless-host' ? new LocalProviderSignIn({
+    ...(providers.hermes instanceof HermesAcpHost ? { hermesHome: providers.hermes.folder, hermesSignedOut: hermesAccountChanged } : {}),
     openExternal: async url => { await options.openExternal(url) },
     ...(options.signInCommand ? { command: options.signInCommand } : {}),
     // Settings connections leave Threads quiet (ADR-0068): the row and the dialog say how it went.
-    connect: async provider => whyNotConnected(await agentControl.command({ type: 'connect', provider, notice: false }), provider),
+    connect: async provider => {
+      const hermes = provider === 'hermes' ? connectedHermes() : undefined
+      if (hermes) return await hermes.refreshChatGptModels() ? undefined : 'Hermes did not return any ChatGPT models.'
+      return whyNotConnected(await agentControl.command({ type: 'connect', provider, notice: false }), provider)
+    },
   }) : undefined
   idleCompaction.start()
-  return { piSignIn, agentHost, agentControl, threadRegistry, turns, hostService, heldSessions, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, mainCheckout, watcher, watcherTools, delegation, dynamicRecord, delegationRelay, delegationRemote, continuation, threadMoves, workerRoles, opencodeSignIn, ownServersOpenCode, ownServersDeepSeek, ownServersHermes, cursorSignIn, providerSignIn, branchMoves, branchBundles, checks, workerAdmission, prepareForShutdown, close }
+  return { piSignIn, agentHost, agentControl, threadRegistry, turns, hostService, heldSessions, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, mainCheckout, watcher, watcherTools, delegation, dynamicRecord, delegationRelay, delegationRemote, continuation, threadMoves, workerRoles, opencodeSignIn, ownServersOpenCode, ownServersDeepSeek, ownServersHermes, cursorSignIn, providerSignIn, hermesAccountChanged, connectedHermes, branchMoves, branchBundles, checks, workerAdmission, prepareForShutdown, close }
 }

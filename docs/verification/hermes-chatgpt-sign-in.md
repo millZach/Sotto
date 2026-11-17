@@ -1,0 +1,9 @@
+# Verify native ChatGPT sign-in for Hermes
+
+November 17, 2026. [ADR-0208](../adr/0208-hermes-threads-use-the-chatgpt-subscription.md).
+
+- The built stable Windows app shows [the inline ChatGPT source](../../artifacts/hermes-chatgpt-sign-in/local-chatgpt.png) under Settings > Providers > Hermes. Both Providers baselines include the Hermes row.
+- The paired-host Playwright journey runs a real headless Sotto host over scripted SSH. It opens the ChatGPT sign-in dialog, opens OpenAI’s device page and reports Hermes connected after scripted approval. The [dark](../../artifacts/hermes-chatgpt-sign-in/paired-device-code-dark.png) and [minimum-size light](../../artifacts/hermes-chatgpt-sign-in/paired-device-code-light.png) screenshots contain fixture codes.
+- On Windows, the isolated Sotto desktop signed in against OpenAI with Hermes 0.23.2 and offered 17 ChatGPT models. In the already-initialized project, the model picker selected GPT-6.1 Sol and the desktop showed [the expected reply](../../artifacts/hermes-chatgpt-sign-in/windows-subscription-reply.png) 25 seconds after Send. Hermes’s database tied that reply to billing provider `openai-codex` and billing mode `subscription_included`. Sotto signed out the isolated profile after the check.
+- Creating a new Windows session with five MCP servers stalled in the ACP handshake. Creating the session and then attaching the same five servers completed in about three seconds in the standalone ACP probe. The successful desktop turn also attached all five tools. Sotto now starts warming the Windows gateway at connect and writes new project overlays at the schema version Hermes reports.
+- A first send in a brand-new Windows project still returned **Native thread creation is not confirmed**. Hermes created a session, and Sotto kept the prompt unsent because it received no session ID. The successful run used an already-initialized project. Live sign-in and a live turn on Forge remain unverified.

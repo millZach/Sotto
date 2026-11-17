@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path'
 import type { OwnServer } from '../../shared/ownModelServers'
 import { hasErrorCode } from '../storage/atomicJsonStore'
 import { endWithSotto } from './opencodeServer'
-import { hermesEnvironment, withHermesPath } from './hermesRpc'
+import { hermesEnvironment, hermesPythonCommand, withHermesPath } from './hermesRpc'
 
 const HERMES_STOPPED = 'Hermes was disconnected before its gateway started. Your thread is kept. Connect Hermes again.'
 
@@ -71,10 +71,10 @@ export function hermesSharedSkills(root: string): string { return join(root, 'sk
  * profile reads skills from beside its own: Hermes keeps skills per home, so without it a profile sees only what its
  * own threads wrote.
  */
-export function hermesConfig(servers: readonly OwnServer[], cwd?: string, sharedSkills?: string): string {
+export function hermesConfig(servers: readonly OwnServer[], cwd?: string, sharedSkills?: string, codexModel?: string, configVersion = 52): string {
   const first = servers[0]
   return JSON.stringify({
-    _config_version: 52,
+    _config_version: configVersion,
     auth: { adopt_external_logins: false }, approvals: { mode: 'off' },
     gateway: { multiplex_profiles: true }, updates: { check: false }, plugins: { auto_update_check_hours: 0, auto_apply: false },
     fallback_model: [], agent: {},
@@ -84,7 +84,8 @@ export function hermesConfig(servers: readonly OwnServer[], cwd?: string, shared
     ...(cwd ? { terminal: { cwd } } : {}),
     ...(sharedSkills ? { skills: { external_dirs: [sharedSkills] } } : {}),
     ...(first ? { model: { provider: `custom:${first.id}`, default: first.models[0]?.id, base_url: first.address, api_mode: 'chat_completions', context_length: first.models[0]?.context,
-      ...(first.keyed ? { key_env: hermesKeyVariable(first.id) } : {}) } } : {}),
+      ...(first.keyed ? { key_env: hermesKeyVariable(first.id) } : {}) } }
+      : codexModel ? { model: { provider: 'openai-codex', default: codexModel } } : {}),
     // Hermes 0.23.0 resolves a key only on its keyed `providers` map; its legacy `custom_providers` list runs keyless.
     ...(servers.some(server => server.keyed) ? { providers: Object.fromEntries(servers.filter(server => server.keyed).map(server => [server.id,
       { base_url: server.address, api_mode: 'chat_completions', key_env: hermesKeyVariable(server.id), models: server.models.map(model => model.id) }])) } : {}),
@@ -121,18 +122,19 @@ export class HermesRuntime {
   readonly keys: HermesKeys
   private writes = Promise.resolve()
   private stopCount = 0
+  private configVersion = 52
   constructor(readonly root: string, private readonly lost: () => void, private readonly environment: NodeJS.ProcessEnv = process.env) {
     this.keys = new HermesKeys(join(root, 'own-server-keys.json'))
   }
 
   env(home = this.root, cwd = this.root): NodeJS.ProcessEnv {
-    return { ...hermesEnvironment(home, {}, this.environment), PWD: cwd }
+    return { ...hermesEnvironment(home, { CODEX_HOME: join(this.root, 'codex') }, this.environment), PWD: cwd }
   }
-  writeConfig(home: string, servers: readonly OwnServer[], cwd?: string): Promise<void> {
+  writeConfig(home: string, servers: readonly OwnServer[], cwd?: string, codexModel?: string): Promise<void> {
     return this.inOrder(async () => {
       await mkdir(home, { recursive: true })
       const keys = await this.keys.read()
-      const config = hermesConfig(servers, cwd, home === this.root ? undefined : hermesSharedSkills(this.root))
+      const config = hermesConfig(servers, cwd, home === this.root ? undefined : hermesSharedSkills(this.root), codexModel, this.configVersion)
       for (const [name, text] of [['config.yaml', config], ['.env', hermesEnvFile(servers, keys)]] as const) {
         const path = join(home, name)
         if (await readFile(path, 'utf8').catch(() => '') !== text) await writeFile(path, text, { mode: 0o600 })
@@ -147,16 +149,46 @@ export class HermesRuntime {
     this.writes = run.catch(() => undefined)
     return run
   }
-  private python(executable: string, script: string): Promise<void> {
-    const python = join(dirname(executable), 'python')
-    const venv = existsSync(python)
+  private python(executable: string, script: string): Promise<string> {
+    const command = hermesPythonCommand(executable, script)
     // timeit's standard-library CLI runs the statement once and propagates failure. The published launcher
     // selects its own Python and dependencies; no shell text or bootstrap code needs to be interpreted here.
     return new Promise((resolve, reject) => {
-      execFile(venv ? python : executable, venv ? ['-c', script] : ['--run-module', 'timeit', '--number', '1', '--repeat', '1', script], { cwd: this.root, env: withHermesPath(this.env(), executable),
-        timeout: 65_000, maxBuffer: 4096 }, error => error ? reject(new Error('Hermes gateway did not become ready. Reconnect Hermes to retry.')) : resolve())
+      execFile(command.executable, command.args, { cwd: this.root, env: withHermesPath(this.env(), executable),
+        timeout: 65_000, maxBuffer: 16_384 }, (error, stdout) => error ? reject(new Error('Hermes gateway did not become ready. Reconnect Hermes to retry.')) : resolve(stdout))
     })
   }
+  /** Ask Hermes for its own subscription catalog. Only model IDs leave its process. */
+  async chatGptModels(executable: string): Promise<string[]> {
+    if (!existsSync(join(this.root, 'auth.json'))) return []
+    const stdout = await this.python(executable, [
+      'import json',
+      'from hermes_cli.auth import _codex_access_token_is_expiring, resolve_codex_runtime_credentials',
+      'from hermes_cli.auth_constants import AuthError, CODEX_ACCESS_TOKEN_REFRESH_SKEW_SECONDS',
+      'from hermes_cli.codex_models import get_codex_model_ids',
+      'from hermes_cli.config_defaults import DEFAULT_CONFIG',
+      'try:',
+      ' credentials = resolve_codex_runtime_credentials(read_only=True)',
+      ' if _codex_access_token_is_expiring(credentials["api_key"], CODEX_ACCESS_TOKEN_REFRESH_SKEW_SECONDS):',
+      '  credentials = resolve_codex_runtime_credentials(force_refresh=True)',
+      ' key = credentials["api_key"]',
+      ' models = get_codex_model_ids(key, credentials.get("base_url")) if key else []',
+      'except AuthError:',
+      ' models = []',
+      'print("sotto-hermes-models:" + json.dumps({"version": DEFAULT_CONFIG["_config_version"], "models": models[:100]}))',
+    ].join('\n'))
+    const row = stdout.split(/\r?\n/u).find(line => line.startsWith('sotto-hermes-models:'))
+    if (!row) return []
+    const catalog = JSON.parse(row.slice('sotto-hermes-models:'.length)) as { version?: unknown; models?: unknown } | null
+    if (!catalog) return []
+    const { version, models } = catalog
+    // These overlays are generated from scratch. Use the installed schema so Hermes does not
+    // migrate the overlay during ACP startup and reload the profile while a session is opening.
+    if (typeof version === 'number' && Number.isSafeInteger(version) && version >= 52) this.configVersion = version
+    return Array.isArray(models) ? [...new Set(models.filter((model): model is string =>
+      typeof model === 'string' && /^[a-z0-9][a-z0-9._-]{0,96}$/u.test(model)))].slice(0, 100) : []
+  }
+
   /** How many times `stop` has run: a start begun before a stop never spawns a gateway after it. */
   get stops(): number { return this.stopCount }
   start(executable: string, stops = this.stopCount): Promise<void> {
@@ -178,7 +210,7 @@ export class HermesRuntime {
       // Its own process group outlives Sotto unless signalled: an exit that skips `stop` ends it as OpenCode's server is ended.
       endWithSotto(child, this.closedWork)
       // Readiness only: discovery never starts a second owner, unlike `gateway ensure`.
-      return this.python(executable, 'import time\nfrom pathlib import Path\nfrom hermes_cli.gateway_runtime import discover_gateway_endpoint, attachable\nfrom hermes_constants import get_hermes_home\nend=time.monotonic()+55\nwhile time.monotonic()<end:\n if attachable(discover_gateway_endpoint(get_hermes_home(), timeout=1)): break\n time.sleep(.2)\nelse: raise SystemExit(1)')
+      return this.python(executable, 'import time\nfrom pathlib import Path\nfrom hermes_cli.gateway_runtime import discover_gateway_endpoint, attachable\nfrom hermes_constants import get_hermes_home\nend=time.monotonic()+55\nwhile time.monotonic()<end:\n if attachable(discover_gateway_endpoint(get_hermes_home(), timeout=1)): break\n time.sleep(.2)\nelse: raise SystemExit(1)').then(() => undefined)
     }).finally(() => { if (this.starting === starting) this.starting = undefined })
     this.starting = starting
     return starting
@@ -194,9 +226,9 @@ export class HermesRuntime {
     })
   }
   /** `stops` is the count its caller saw before its own waits, so a Disconnect during them leaves no gateway behind. */
-  async project(executable: string, projectPath: string, servers: readonly OwnServer[], stops = this.stopCount): Promise<string> {
+  async project(executable: string, projectPath: string, servers: readonly OwnServer[], stops = this.stopCount, codexModel?: string): Promise<string> {
     const home = hermesProjectHome(this.root, projectPath)
-    await this.writeConfig(home, servers, projectPath)
+    await this.writeConfig(home, servers, projectPath, codexModel)
     await this.start(executable, stops)
     await this.python(executable, 'from pathlib import Path\nfrom gateway.control_socket import rescan_gateway_profiles\nfrom hermes_constants import get_hermes_home\nr=rescan_gateway_profiles(get_hermes_home(), timeout=30)\nassert isinstance(r,dict)')
     return home

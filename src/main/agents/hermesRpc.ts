@@ -67,14 +67,27 @@ export async function findHermesExecutable(environment: NodeJS.ProcessEnv = proc
   return found && await realpath(found).catch(() => found)
 }
 
+function hermesPython(executable: string): string | undefined {
+  const bin = dirname(executable)
+  const names = process.platform === 'win32' ? ['python.exe', 'python'] : ['python']
+  return names.map(name => join(bin, name)).find(path => existsSync(path))
+}
+
 /** Keep discovered user tools, but not Hermes's private interpreter, on the toolchain PATH. */
 export function withHermesPath(environment: NodeJS.ProcessEnv, executable: string): NodeJS.ProcessEnv {
   const env = withCliPath(environment, executable)
   // The official launcher lives among the user's other tools, not in a private venv.
-  if (!existsSync(join(dirname(executable), 'python'))) return env
+  if (!hermesPython(executable)) return env
   const key = Object.keys(env).find(name => name.toLowerCase() === 'path') ?? 'PATH'
   const privateBin = dirname(executable)
   return { ...env, [key]: (env[key] ?? '').split(delimiter).filter(folder => folder !== privateBin).join(delimiter) }
+}
+
+/** The stock launchers expose --run-module. A venv entry runs beside its own Python. */
+export function hermesPythonCommand(executable: string, script: string): { executable: string; args: string[] } {
+  const python = hermesPython(executable)
+  return python ? { executable: python, args: ['-c', script] }
+    : { executable, args: ['--run-module', 'timeit', '--number', '1', '--repeat', '1', script] }
 }
 
 const OUTPUT_LIMIT = 64 * 1024

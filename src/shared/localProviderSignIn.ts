@@ -10,7 +10,7 @@ import { PASTED_CODE_MAX, PROVIDER_SIGN_IN_SHAPES, type ProviderSignInView } fro
 export const LOCAL_PROVIDER_SIGN_IN = 'sotto:providers:sign-in'
 
 /** The providers whose own sign-in prints a page and a code Sotto can show: Codex, Claude Code and Grok Build. Cursor signs in from its own row (ADR-0128). */
-export const LOCAL_SIGN_IN_PROVIDERS = ['codex', 'claude', 'grok'] as const
+export const LOCAL_SIGN_IN_PROVIDERS = ['codex', 'claude', 'grok', 'hermes'] as const
 export const localSignInProviderSchema = z.enum(LOCAL_SIGN_IN_PROVIDERS)
 export type LocalSignInProvider = z.infer<typeof localSignInProviderSchema>
 
@@ -21,6 +21,7 @@ export function signsInHere(provider: ProviderId): provider is LocalSignInProvid
 
 /** What the dialog asks of a sign-in: a host's request (`hostSignInRequestSchema`) without the host. */
 export const localSignInRequestSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('hermes-sign-out') }).strict(),
   z.object({ type: z.literal('start'), provider: localSignInProviderSchema }).strict(),
   z.object({ type: z.literal('read'), signInId: z.uuid() }).strict(),
   z.object({ type: z.literal('code'), signInId: z.uuid(), code: z.string().min(1).max(PASTED_CODE_MAX) }).strict(),

@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { execFile, spawn, type ChildProcess, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { EventEmitter } from 'node:events'
-import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { PassThrough } from 'node:stream'
@@ -150,6 +150,24 @@ describe('the gateway', () => {
     const runFile = vi.mocked(execFile).mockImplementation(((() => new EventEmitter() as ChildProcess) as unknown) as typeof execFile)
     return { executable, children, spawnProcess, runFile, runtime: new HermesRuntime(root, () => {}, { HOME: root, PATH: '' }) }
   }
+
+  it('gets only the subscription model IDs from Sotto’s own Hermes credentials', async () => {
+    const { executable, runFile, runtime } = await setup()
+    expect(await runtime.chatGptModels(executable)).toEqual([])
+    expect(runFile).not.toHaveBeenCalled()
+    await writeFile(join(root!, 'auth.json'), '{}')
+    runFile.mockImplementationOnce(((...args: unknown[]) => {
+      const callback = args.at(-1) as (error: Error | null, stdout: string, stderr: string) => void
+      callback(null, 'sotto-hermes-models:{"version":53,"models":["gpt-6.1-sol","gpt-6.1-sol","other/route"]}\n1 loop', '')
+      return new EventEmitter() as ChildProcess
+    }) as typeof execFile)
+    expect(await runtime.chatGptModels(executable)).toEqual(['gpt-6.1-sol'])
+    await runtime.writeConfig(root!, [])
+    expect(JSON.parse(await readFile(join(root!, 'config.yaml'), 'utf8'))._config_version).toBe(53)
+    expect(runFile).toHaveBeenCalledWith(executable, expect.any(Array), expect.objectContaining({
+      env: expect.objectContaining({ HERMES_HOME: root, CODEX_HOME: join(root!, 'codex') }),
+    }), expect.any(Function))
+  })
 
   it('spawns nothing for a start that began before a Disconnect', async () => {
     const { executable, spawnProcess, runtime } = await setup()

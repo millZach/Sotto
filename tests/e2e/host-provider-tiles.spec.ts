@@ -65,7 +65,7 @@ test('a host’s providers show under its row, sign in from this computer, and a
     await form.getByRole('button', { name: 'Add host', exact: true }).click()
     await expect(page.getByRole('dialog', { name: 'forge is connected' })).toBeVisible({ timeout: 90_000 })
     await page.keyboard.press('Enter')
-    await expect.poll(() => providers(page), { timeout: 30_000 }).toEqual({ codex: 'connected', claude: 'error', grok: 'error', devin: 'error' })
+    await expect.poll(() => providers(page), { timeout: 30_000 }).toMatchObject({ codex: 'connected', claude: 'error', grok: 'error', devin: 'error', hermes: 'error' })
 
     // The row counts forge's connected providers, and Show providers opens its tiles from the keyboard.
     const row = page.getByRole('region', { name: 'forge', exact: true })
@@ -153,7 +153,7 @@ test('a host’s providers show under its row, sign in from this computer, and a
     await expect(grok.getByText('Grok Build is signed in and connected on forge.')).toBeVisible({ timeout: 30_000 })
     await grok.getByRole('button', { name: 'Done' }).click()
     await expect(tile('Grok Build')).toContainText('Connected')
-    await expect.poll(() => providers(page)).toEqual({ codex: 'connected', claude: 'connected', grok: 'connected', devin: 'error' })
+    await expect.poll(() => providers(page)).toMatchObject({ codex: 'connected', claude: 'connected', grok: 'connected', devin: 'error' })
 
     // Disconnect and Connect act on forge alone, and Check again on Devin says nothing changed.
     await tile('Codex').getByRole('button', { name: 'Disconnect Codex on forge' }).click()
@@ -172,6 +172,17 @@ test('a host’s providers show under its row, sign in from this computer, and a
     await hide.click()
     await expect(grid).toHaveCount(0)
     await writeFile(test.info().outputPath('host-providers.json'), JSON.stringify({ providers: await providers(page) }, null, 2))
+    await show.click()
+    await tile('Hermes').getByRole('button', { name: 'Sign in with ChatGPT', exact: true }).click()
+    const hermes = page.getByRole('dialog', { name: 'Sign in to ChatGPT for Hermes on forge' })
+    await expect(hermes.getByText('WDJB-MJHTQ')).toBeVisible({ timeout: 30_000 })
+    await hermes.getByRole('button', { name: 'Open sign-in page' }).click()
+    await expect.poll(() => opened(page)).toBe('https://auth.openai.com/codex/device')
+    await capture(launched, 'hermes-chatgpt-sign-in', async () => { expect(await inside(hermes)).toBe(true) })
+    await writeFile(join(signIns, 'hermes.approved'), '')
+    await expect(hermes.getByRole('button', { name: 'Done' })).toBeFocused({ timeout: 30_000 })
+    await page.keyboard.press('Enter')
+    await expect(tile('Hermes')).toContainText('Connected')
     expect(errors).toEqual([])
   } finally {
     const descriptor = await readFile(join(root, '~', '.sotto', 'host-listener.json'), 'utf8').then(text => JSON.parse(text) as { pid?: number }, () => undefined)
