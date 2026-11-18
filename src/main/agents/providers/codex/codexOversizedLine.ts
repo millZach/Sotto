@@ -8,7 +8,9 @@ const BASE64_RUN = /[A-Za-z0-9+/=]*/uy
 const NEXT_RUN = /[A-Za-z0-9+/=]+/gu
 /** Where a nested JSON string opens, so a picture's bytes can follow: an escaped quote, then perhaps a `data:` URL's start. */
 const NESTED_OPENING = /"(?:data:[\w.+-]+\/[\w.+-]+;base64,)?$/u
-/** How much of a string's latest text is kept to find a nested string's opening split between pieces. */
+/** The backslashes that end a string's latest text: an odd count escapes the next character. */
+const TRAILING_BACKSLASHES = /\\*$/u
+/** How much of a string's latest text is kept to find a nested string's opening, or an escape, split between pieces. */
 const RECENT_CHARS = 128
 /** How much of a string is held before its opening is judged whole; each later piece is judged alone. */
 const OPENING_CHARS = 256
@@ -26,10 +28,11 @@ const HEAD_CHARS = 64
  * that took 4,294 of them with one 260 MiB line. Codex cuts a long result in its middle (`…169519 chars truncated…`),
  * so a screenshot's bytes may open the nested string without closing it, or close it without opening it. A run of more
  * than `PICTURE_CHARS` base64 letters that opens or closes on an escaped quote, a `data:` URL's start allowed after the
- * opening, is such a picture's, and is left out too. Sotto shows no picture from a text result (`picturesIn`), so that
- * loses nothing it shows either. Everything else is kept as it came. A string is held while it may still be a picture
- * and judged once it ends, so a long run of base64 letters followed by words, outside a nested string, is kept whole. `size` counts what is kept and held, so the caller can
- * tell a line that is still too long.
+ * opening, is such a picture's, and is left out too, in whichever string it sits. Sotto shows no picture from a text
+ * result (`picturesIn`), so that loses none it shows; a base64 literal that long quoted in a message or a command's
+ * output is left out with it. Everything else is kept as it came. A string is held while it may still be a picture
+ * and judged once it ends, so a long run of base64 letters followed by words, outside a nested string, is kept whole.
+ * `size` counts what is kept and held, so the caller can tell a line that is still too long.
  */
 export class OversizedLine {
   /** UTF-8 bytes kept so far. */
@@ -51,8 +54,10 @@ export class OversizedLine {
   private runOpened = false
   /** The run ended on a backslash, the last character of a piece, so the next piece says whether a quote closed it. */
   private closing = false
+  /** Characters of an escape still to keep as they are, when a piece ended inside it. */
+  private escapeLeft = 0
 
-  /** What the line holds now: the bytes kept and the characters of a string still held. */
+  /** What the line holds now: the bytes kept and the characters of a string or a run still held. */
   get size(): number { return this.bytes + this.heldChars + this.runChars }
 
   push(text: string): void {
@@ -100,6 +105,11 @@ export class OversizedLine {
   private text(content: string): void {
     let index = 0
     while (index < content.length) {
+      if (this.escapeLeft) {
+        const end = Math.min(content.length, index + this.escapeLeft)
+        this.kept(content.slice(index, end)); this.escapeLeft -= end - index; index = end
+        continue
+      }
       if (this.closing) {
         // The backslash that ended the run was left for this piece's first character to explain.
         this.closing = false
@@ -124,6 +134,9 @@ export class OversizedLine {
         const end = found.index + found[0].length
         if (found[0].length <= PICTURE_CHARS && end < content.length) { index = end; continue }
         this.kept(content.slice(from, found.index)); index = found.index
+        // A run that starts on an escape's letter (`\n`, `A`) would take the letter with it and leave its backslash
+        // bare, so the escape is kept as it is and the run, if any, starts after it.
+        if (TRAILING_BACKSLASHES.exec(this.recent)![0].length % 2 === 1) { this.escapeLeft = content[index] === 'u' ? 5 : 1; break }
         this.run = []; this.runChars = 0; this.runOpened = NESTED_OPENING.test(this.recent)
         break
       }
@@ -132,9 +145,9 @@ export class OversizedLine {
 
   /** The run of base64 letters ended: long enough to be a picture's and opening or closing a nested string, it is left out. */
   private endRun(closedByQuote: boolean): void {
-    const run = this.run!.join(''), picture = (closedByQuote || this.runOpened) && this.runChars > PICTURE_CHARS
+    const run = this.run!, picture = (closedByQuote || this.runOpened) && this.runChars > PICTURE_CHARS
     this.run = undefined; this.runChars = 0
-    if (!picture) this.kept(run)
+    if (!picture) this.kept(run.join(''))
   }
 
   /** Keep a string's text, remembering its end to find a nested string's opening. */

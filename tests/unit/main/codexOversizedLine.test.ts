@@ -54,6 +54,16 @@ describe('a Codex line too long for one frame (#2268)', () => {
     for (const size of [1, 2, 3, 7, 4096, at, at + 1, reply.length]) expect(JSON.parse(kept(reply, size))).toEqual(expected)
   })
 
+  it('keeps an escape whole when a picture-long run starts on its letter, however it is split', () => {
+    const run = 'A'.repeat(PICTURE_CHARS + 100)
+    for (const escape of ['\n', '\t', '\u0001']) {
+      const reply = JSON.stringify({ id: 1, result: { text: `line${escape}${run}"tail` } })
+      // The escape stays whole, its hex digits included; the run after it closes a nested string, so it is a picture's.
+      const expected = { id: 1, result: { text: `line${escape}"tail` } }
+      for (const size of [1, 2, 3, 7, 4096, reply.length]) expect(JSON.parse(kept(reply, size))).toEqual(expected)
+    }
+  })
+
   it('fails only the request a line still too long answered, whichever way round, and goes on reading the app-server', async () => {
     // An app-server that answers its first two requests with lines of words longer than the budget, the first with its
     // ID after the result and the second before it, and its third as usual.
