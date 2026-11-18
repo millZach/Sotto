@@ -13,6 +13,7 @@ import { ThreadWorktrees, runWorktreeGit as git } from '../../src/main/agents/th
 import { WorkspaceHost } from '../../src/main/agents/workspace'
 import { SettingsRepository } from '../../src/main/storage/settingsRepository'
 import { defaultAgentConfiguration, type AgentCommand } from '../../src/shared/agents'
+import { providerIdSchema } from '../../src/shared/providerIds'
 import { DEFAULT_WORKTREE_CLEANUP } from '../../src/shared/settings'
 import { FakeProviderHost } from '../fixtures/fakeProviderHost'
 import { startFixtureHeadlessHost } from '../fixtures/desktopHostStack'
@@ -41,7 +42,9 @@ async function host() {
   await new SettingsRepository(join(data, 'settings.json')).update({ worktreeCleanup: { ...DEFAULT_WORKTREE_CLEANUP, onSettle: true } })
   // A host connects every provider not turned off when it starts (ADR-0036). The scripted ones here hold stand-in
   // sessions in a folder that does not exist, which would make sole ownership unprovable, so only Codex is left on.
-  await writeFile(join(data, 'agents.json'), JSON.stringify({ configuration: { ...defaultAgentConfiguration(), enabledProviders: ['codex'], disconnectedProviders: ['claude', 'grok', 'devin', 'muse', 'opencode', 'cursor'] },
+  // Every other provider is named from the list itself: Hermes, sent to stable after this list last named its providers,
+  // kept a stand-in thread in C:/sotto-test, which on Linux is no absolute path, so the sweep kept both worktrees.
+  await writeFile(join(data, 'agents.json'), JSON.stringify({ configuration: { ...defaultAgentConfiguration(), enabledProviders: ['codex'], disconnectedProviders: providerIdSchema.options.filter(id => id !== 'codex') },
     activeThreadId: null, activeProjectId: null, draft: '', draftThreadId: null, composing: false, outbox: [] }))
   // The fake's stand-in sessions name a folder that does not exist, which would make sole ownership unprovable.
   const codex = new FakeProviderHost()
