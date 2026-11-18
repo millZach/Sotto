@@ -1367,7 +1367,8 @@ export class CodexAppServerHost implements ProviderHost {
   private async confirmNewestTurn(id: string, generation: number): Promise<boolean> {
     const alias = this.aliases[id]!, thread = this.ensureThread(id)
     const newest = alias.messageIdentities.at(-1)
-    if (!this.turnsListSupported || !this.histories.has(id) || !newest || !this.terminalTurns.has(turnKey(id, newest.turnId)) || alias.historyMode === 'paginated'
+    // A paginated thread is checked too: its whole read pages every turn through this same request.
+    if (!this.turnsListSupported || !this.histories.has(id) || !newest || !this.terminalTurns.has(turnKey(id, newest.turnId))
       || alias.pendingSettings || alias.pendingRollback || compactionPending(alias.compaction) || this.unconfirmedDispatchSessionIds.has(id)
       || this.pendingLogMessages.has(id) || this.runningTurns.has(id) || thread.status !== 'idle' || thread.requests.length || thread.historyStatus) return false
     const revision = this.revisions.get(id)

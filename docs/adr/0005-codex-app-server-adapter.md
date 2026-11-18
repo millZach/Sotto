@@ -94,7 +94,7 @@ The check passes only when the newest turn is the one Sotto already holds, has e
 
 Anything else reads the whole transcript, as it always did. This is the full list, and the condition in `confirmNewestTurn` is the same list in code:
 
-- a thread not yet read on this connection, or a paginated one;
+- a thread not yet read on this connection (a paginated one was on this list until November 18, 2026; see below);
 - work or a request in flight, or delivery that is uncertain;
 - a settings change, rewind or compaction not yet confirmed;
 - session-log input not yet shown;
@@ -137,6 +137,12 @@ Each thread's app-server owns its comparison and any pending refresh. Other thre
 File metadata is a change signal, not a parser or a promise that every config edit changed MCP settings. An unrelated global config edit may cause one reload. Project config files are outside this check. See [the verification note](../verification/codex-computer-use-refresh.md) for the regression and live evidence.
 
 The metadata probe is best effort. A missing file is a known state; another stat failure leaves the change signal unavailable and does not block runtime creation, a send or steering. The last successful metadata remains intact, so a later successful probe can still detect a change. This differs from a reload request that fails after a change was detected: that failure keeps the prompt unsent and retryable.
+
+## Amendment: the newest-turn check on a paginated thread (November 18, 2026)
+
+A paginated thread used to skip the check, so every send paged its whole history with `thread/turns/list` at full detail, 100 turns a page. Codex hands some threads back paginated even though Sotto starts them legacy: 39 of the owner's 402 Codex threads are, including the Slaker thread that 4,294 Computer Use screenshots made unreadable (#2680). For that thread, each send paged 260 MiB. The check now covers paginated threads too. Codex 0.170.0 answers `limit: 1`, `sortDirection: 'desc'`, `itemsView: 'full'` for a paginated thread with the same turn IDs, statuses and items that the paged read applies, since the paged read uses the same request. Every other condition on the list above still holds.
+
+The check stays on `full` items. Codex's `summary` view of a turn holds only its first prompt and final answer. A prompt typed into a running turn appears only in `full`, as a second `userMessage`, and catching such input is what the check is for.
 
 ## Amendment: one read before a send (October 5, 2026, #765)
 
