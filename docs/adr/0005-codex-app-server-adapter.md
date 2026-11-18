@@ -94,7 +94,7 @@ The check passes only when the newest turn is the one Sotto already holds, has e
 
 Anything else reads the whole transcript, as it always did. This is the full list, and the condition in `confirmNewestTurn` is the same list in code:
 
-- a thread not yet read on this connection (a paginated one was on this list until November 18, 2026; see below);
+- a thread not yet read on this connection;
 - work or a request in flight, or delivery that is uncertain;
 - a settings change, rewind or compaction not yet confirmed;
 - session-log input not yet shown;
@@ -102,6 +102,8 @@ Anything else reads the whole transcript, as it always did. This is the full lis
 - a reply that does not say it carries the full items, or a message Sotto cannot match;
 - a reply that arrived after the thread moved on;
 - any refusal, or no reply in time. A reply that comes later is dropped, as a late whole read is.
+
+A paginated thread was on this list too until November 18, 2026 (the amendment of that date below).
 
 A refusal that says Codex does not have the request, or does not know a value the request sends, stops Sotto asking on that connection: JSON-RPC's "method not found", or the invalid request naming an unknown variant that 0.157.1 sends for either. The check sends the same values every time, so such a Codex would refuse every send's check and each would cost a whole read on top. Any other refusal is asked again on the next send.
 
@@ -137,12 +139,6 @@ Each thread's app-server owns its comparison and any pending refresh. Other thre
 File metadata is a change signal, not a parser or a promise that every config edit changed MCP settings. An unrelated global config edit may cause one reload. Project config files are outside this check. See [the verification note](../verification/codex-computer-use-refresh.md) for the regression and live evidence.
 
 The metadata probe is best effort. A missing file is a known state; another stat failure leaves the change signal unavailable and does not block runtime creation, a send or steering. The last successful metadata remains intact, so a later successful probe can still detect a change. This differs from a reload request that fails after a change was detected: that failure keeps the prompt unsent and retryable.
-
-## Amendment: the newest-turn check on a paginated thread (November 18, 2026)
-
-A paginated thread used to skip the check, so every send paged its whole history with `thread/turns/list` at full detail, 100 turns a page. Codex hands some threads back paginated even though Sotto starts them legacy: 39 of the owner's 402 Codex threads are, including the Slaker thread that 4,294 Computer Use screenshots made unreadable (#2680). For that thread, each send paged 260 MiB. The check now covers paginated threads too. Codex 0.170.0 answers `limit: 1`, `sortDirection: 'desc'`, `itemsView: 'full'` for a paginated thread with the same turn IDs, statuses and items that the paged read applies, since the paged read uses the same request. Every other condition on the list above still holds.
-
-The check stays on `full` items. Codex's `summary` view of a turn holds only its first prompt and final answer. A prompt typed into a running turn appears only in `full`, as a second `userMessage`, and catching such input is what the check is for.
 
 ## Amendment: one read before a send (October 5, 2026, #765)
 
@@ -348,3 +344,11 @@ paste, and with **Keep local history** on the Journal keeps the transcript of wh
 The 128 MiB frame cap ended the app-server, and that was more than a limit on one read. Codex 0.166.0 keeps each generated picture's base64 bytes in its `imageGeneration` item. A whole `thread/read` of a thread that had made 106 paintings was one 341 MB line, 340.5 MB of it pictures. Sotto killed the thread's app-server for it in the middle of its turn, and dropped the question that turn had open. Every later send, stop and Watcher read asked for the same read, so each started another app-server and killed it too. Codex 0.166.0 cannot page that history: `thread/items/list` is not supported yet, and the history is one turn.
 
 A line past the cap is now read on by `OversizedLine`. Each string in it longer than 16 KiB that is only base64, or a base64 `data:` URL, is kept as an empty string, and everything else as it came. That thread's line keeps 353 KB. A generated picture is then read from its `savedPath`, and a record that holds a picture already keeps it (ADR-0170), so the read loses nothing Sotto shows. A line still past the cap without its pictures is skipped. The request it answered fails as unconfirmed, and the app-server goes on, since the lines around it are whole. Lines under the cap are read exactly as before. The cap still bounds what one read holds; it no longer ends a thread's session. Watcher's read of a thread whose provider cannot read it back, or has said it could not, now gives the stored history, marked unavailable, as a provider that is not connected already did. A Stop that the thread's app-server takes but does not answer within the request deadline now ends that app-server and marks the turn interrupted. Before, the hung process stayed the thread's runtime and every later action waited on it. The thread's next action starts it again, as after any lost app-server. A resume Codex does not answer in time lets its app-server go, as a refused one already did, so the next action starts a new one rather than waiting on the hung one again. One picture string longer than the whole cap still has its line skipped, since holding it to the end would pass the cap. See [verification](../verification/codex-oversized-history-line.md).
+
+## Amendment: the newest-turn check on a paginated thread (November 18, 2026)
+
+A paginated thread used to skip the newest-turn check, so every send paged its whole history first, at full detail and 100 turns a page. The exclusion came in with #324, before Sotto could page a history at all, and stayed when `readPaged` was added; it was a gap in that ticket's evidence, not a known hazard. Codex hands some threads back paginated even though Sotto starts them legacy: 39 of the owner's 402 Codex threads are. One is the Slaker thread, whose 4,294 Computer Use screenshots made its history 260 MiB (#2680).
+
+The check now covers paginated threads too. It asks the same endpoint the paged read does, at the same detail, newest first and one turn. Against the installed Codex 0.170.0, read-only on the Slaker thread, `limit: 3`, `sortDirection: 'desc'`, `itemsView: 'full'` gave the three newest turns, each marked `itemsView: 'full'`, with the same IDs, statuses and count of each kind of item as the last three of the paged read. Every other condition on the list above still holds, so a paginated thread's first send on a connection still pages its whole history.
+
+The check stays on `full` items. Codex's `summary` view holds only a turn's first prompt and final answer. On that thread, a second prompt typed into a running turn (`item-76`) appeared only in `full`, and catching such input is what the check is for.

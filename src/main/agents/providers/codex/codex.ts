@@ -1367,7 +1367,6 @@ export class CodexAppServerHost implements ProviderHost {
   private async confirmNewestTurn(id: string, generation: number): Promise<boolean> {
     const alias = this.aliases[id]!, thread = this.ensureThread(id)
     const newest = alias.messageIdentities.at(-1)
-    // A paginated thread is checked too: its whole read pages every turn through this same request.
     if (!this.turnsListSupported || !this.histories.has(id) || !newest || !this.terminalTurns.has(turnKey(id, newest.turnId))
       || alias.pendingSettings || alias.pendingRollback || compactionPending(alias.compaction) || this.unconfirmedDispatchSessionIds.has(id)
       || this.pendingLogMessages.has(id) || this.runningTurns.has(id) || thread.status !== 'idle' || thread.requests.length || thread.historyStatus) return false
@@ -1915,8 +1914,8 @@ export class CodexAppServerHost implements ProviderHost {
   }
   /**
    * A paginated thread's whole history: Codex 0.162.1 answers `thread/read` for one with its metadata but no turns, and
-   * pages the turns out with `thread/turns/list` (the e5-fork spike, #1028). A forked sub-agent is the only such thread
-   * Sotto holds; the threads it starts keep legacy history. The pages are put together and applied as one read.
+   * pages the turns out with `thread/turns/list` (the e5-fork spike, #1028). A forked sub-agent is one; Codex also
+   * hands back paginated some threads Sotto started as legacy. The pages are put together and applied as one read.
    */
   private async readPaged(id: string, apply: (value: unknown) => Promise<void>): Promise<void> {
     const alias = this.aliases[id]!
