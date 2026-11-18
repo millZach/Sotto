@@ -101,9 +101,9 @@ describe('the night falls front', () => {
 })
 
 describe('the night falls Owl gate', () => {
-  it('is on in Owl and off in stable, and needs Watcher\'s room as well as its own feature', () => {
+  it('is on in Owl and, since November 17, 2026, on stable, and needs Watcher\'s room as well as its own feature', () => {
     expect(nightFallsShipped({ owlFeatures: owlFeaturesForTrack('owl') } as never)).toBe(true)
-    expect(nightFallsShipped({ owlFeatures: owlFeaturesForTrack('stable') } as never)).toBe(false)
+    expect(nightFallsShipped({ owlFeatures: owlFeaturesForTrack('stable') } as never)).toBe(true)
     expect(nightFallsShipped({ owlFeatures: { ...owlFeaturesForTrack('owl'), watcher: false } } as never)).toBe(false)
     expect(nightFallsShipped({ owlFeatures: { ...owlFeaturesForTrack('owl'), 'night-falls': false } } as never)).toBe(false)
   })
@@ -137,7 +137,8 @@ describe('the run a move plays', () => {
   })
 
   it('plays nothing where night falls is not shipped, whatever look is set', () => {
-    expect(nightFallsRun('threads', 'watcher', { owlFeatures: owlFeaturesForTrack('stable') } as never, stars)).toBeNull()
+    // A build whose version still holds the feature.
+    expect(nightFallsRun('threads', 'watcher', { owlFeatures: { ...owlFeaturesForTrack('stable'), 'night-falls': false } } as never, stars)).toBeNull()
     expect(nightFallsRun('threads', 'watcher', null, stars)).toBeNull()
   })
 

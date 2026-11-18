@@ -182,9 +182,10 @@ describe('signing a host\'s provider in from a paired client', () => {
       const desktop = await pair('Sotto desktop'), other = await pair('Another client')
       expect(desktop.offersSignIn()).toBe(true)
       const providers = () => Object.fromEntries((desktop.shell().host.providers ?? []).map(status => [status.id, [status.connection, status.problem ?? null]]))
-      // A host tries every provider it runs at start (ADR-0036): Muse and OpenCode too, on either track, since 0.1.40.
+      // A host tries every provider it runs at start (ADR-0036): Muse and OpenCode too, on either track, since 0.1.40, and Cursor
+      // since Zach sent it to stable on November 17, 2026.
       await expect.poll(providers).toEqual({ codex: ['error', 'signed-out'], claude: ['error', 'signed-out'], grok: ['error', 'signed-out'], devin: ['error', 'not-installed'],
-        muse: ['error', 'signed-out'], opencode: ['error', 'signed-out'], hermes: ['error', 'signed-out'] })
+        muse: ['error', 'signed-out'], opencode: ['error', 'signed-out'], hermes: ['error', 'signed-out'], cursor: ['error', 'signed-out'] })
 
       // Device code: the code comes back to the client that asked and to no other, and the host connects Codex itself.
       const codex = await desktop.signIn({ op: 'sign-in-start', provider: 'codex' }) as HostSignIn

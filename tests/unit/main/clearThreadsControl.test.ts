@@ -3,7 +3,7 @@
  * The coordinator's side of clearing settled threads (ADR-0140): the Owl gate, what it keeps back, the plain words of its
  * answers and notices, the automatic rule, and what of a deleted thread it lets go.
  */
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -11,6 +11,7 @@ import type { AgentControl } from '../../../src/main/agents/control'
 import type { AgentHost } from '../../../src/main/agents/host'
 import { clearsOnItsOwn } from '../../../src/main/agents/runtime'
 import { WorktreeCleanup } from '../../../src/main/agents/worktreeCleanup'
+import { SettingsRepository } from '../../../src/main/storage/settingsRepository'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import { EMPTY_AGENT_HOST, type AgentCommand, type AgentHostSnapshot, type AgentThread } from '../../../src/shared/agents'
 import { DEFAULT_SETTINGS, DEFAULT_WORKTREE_CLEANUP, parseSettings } from '../../../src/shared/settings'
@@ -168,10 +169,17 @@ describe('clearing settled threads in the coordinator (ADR-0140)', () => {
 
 describe('the automatic rule beside the worktree sweep (ADR-0140 decision 2)', () => {
   const host = { workspaceSnapshot: (): AgentHostSnapshot => ({ ...EMPTY_AGENT_HOST, threads: [] }), reclaimThreadWorktree: async () => undefined, subscribe: () => () => undefined }
-  it('takes 30 days on an upgrade with no saved value, and its first sweep clears only what nothing keeps back', async () => {
-    // An Owl user who never chose has no saved value; Never stays a choice they can save.
+  /** Settings as main reads them at start, from a profile folder of the test's own. */
+  const settingsAt = async (saved?: Record<string, unknown>) => {
+    const directory = await mkdtemp(join(tmpdir(), 'sotto-clear-threads-')); roots.push(directory)
+    const file = join(directory, 'settings.json')
+    if (saved) await writeFile(file, JSON.stringify(saved), 'utf8')
+    return { settings: new SettingsRepository(file), file }
+  }
+  it('takes 30 days on a new install, and its first sweep clears only what nothing keeps back', async () => {
+    // A new install has no settings file, and starts on the default; Never stays a choice it can save.
     expect(DEFAULT_SETTINGS.clearSettledThreadsAfterDays).toBe(30)
-    const afterDays = parseSettings({ onboardingComplete: true }).clearSettledThreadsAfterDays
+    const afterDays = (await (await settingsAt()).settings.get()).clearSettledThreadsAfterDays
     expect(afterDays).toBe(30)
     expect(parseSettings({ clearSettledThreadsAfterDays: null }).clearSettledThreadsAfterDays).toBeNull()
 
@@ -224,6 +232,43 @@ describe('the automatic rule beside the worktree sweep (ADR-0140 decision 2)', (
     await sweep.sweep()
     expect(threads.deleted.flat().sort()).toEqual(['closed-on-github', 'old'])
     expect(logged).toEqual(['threads-cleared 2'])
+  })
+  it('clears nothing at start on a profile saved before November 17, 2026, and clears once an age is saved (Zach\'s pick)', async () => {
+    // As stable 0.1.42 saved every profile: 30 days written whole though never shown, and no mark.
+    const before: Record<string, unknown> = { ...DEFAULT_SETTINGS, clearSettledThreadsAfterDays: 30 }
+    delete before.sentToStableCarried
+    const { settings, file } = await settingsAt(before)
+    // What main does at start, before anything sweeps: read, and save the carried settings back.
+    await settings.save(await settings.get())
+    const { host: threads, control } = await start()
+    threads.add('old')
+    await control.command({ type: 'refresh' })
+    const sweep = new WorktreeCleanup({ host, rules: () => DEFAULT_WORKTREE_CLEANUP, intervalMs: 60_000_000, openPullRequestBranches: async () => new Set(),
+      clearSettledThreads: { afterDays: () => current, clear: (days, keep) => control.clearSettledThreads(days, keep) } })
+    let current = (await settings.get()).clearSettledThreadsAfterDays
+    expect(current).toBeNull()
+    await sweep.sweep()
+    expect(threads.deleted.flat()).toEqual([])
+    expect(control.shell().host.threads.map(thread => thread.id)).toContain('old')
+    // Never is saved, so the next start reads it again.
+    expect((await new SettingsRepository(file).get()).clearSettledThreadsAfterDays).toBeNull()
+    // Each age the user picks afterwards is kept, and the sweep clears with it.
+    for (const days of [180, 90, 30] as const) {
+      current = (await settings.update({ clearSettledThreadsAfterDays: days })).clearSettledThreadsAfterDays
+      expect((await new SettingsRepository(file).get()).clearSettledThreadsAfterDays).toBe(days)
+    }
+    await sweep.sweep()
+    expect(threads.deleted.flat()).toEqual(['old'])
+  })
+  it('keeps an age an Owl profile chose before November 17, 2026, and clears with it at start', async () => {
+    for (const days of [90, 180] as const) {
+      const before: Record<string, unknown> = { ...DEFAULT_SETTINGS, clearSettledThreadsAfterDays: days }
+      delete before.sentToStableCarried
+      const clear = vi.fn(async () => undefined)
+      const afterDays = (await (await settingsAt(before)).settings.get()).clearSettledThreadsAfterDays
+      await new WorktreeCleanup({ host, rules: () => DEFAULT_WORKTREE_CLEANUP, clearSettledThreads: { afterDays: () => afterDays, clear }, intervalMs: 60_000_000 }).sweep()
+      expect(clear).toHaveBeenCalledWith(days, undefined)
+    }
   })
   it('clears nothing while the setting is Never, and the chosen age once it is set', async () => {
     let days: number | null = null

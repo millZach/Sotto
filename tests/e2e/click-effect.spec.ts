@@ -5,7 +5,7 @@ import { expect, test, type Page } from '@playwright/test'
 
 import { withSotto } from '../fixtures/designCaptureProfile'
 import { evidenceDirectory } from '../fixtures/evidence'
-import { onReleaseTrack } from './support/releaseTrack'
+import { onBuildHolding, onReleaseTrack } from './support/releaseTrack'
 import { captureWindow } from './support/sottoCapture'
 import { openPage, openThreads } from './support/sottoLaunch'
 import { resizeContentWindow } from './support/sottoWindow'
@@ -200,8 +200,8 @@ test.describe('the click effect', () => {
     }))
   })
 
-  test('stable holds it, and reduced motion leaves nothing of it', async () => {
-    await onReleaseTrack('stable', () => withSotto(launchOptions('dark'), async ({ page }) => {
+  test('a build that holds it shows nothing of it, and reduced motion leaves nothing of it', async () => {
+    await onBuildHolding(['click-effect'], () => withSotto(launchOptions('dark'), async ({ page }) => {
       await openConversation(page)
       await expect(layer(page)).toHaveCount(0)
     }))

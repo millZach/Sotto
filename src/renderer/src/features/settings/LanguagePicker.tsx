@@ -139,7 +139,7 @@ export function LanguagePicker({ value, onChoose }: {
       </button>
       {/* Pressing inside the list keeps focus on the button, which owns the keyboard. */}
       <div className="language-picker__popup" hidden={!open} onMouseDown={event => event.preventDefault()}>
-        <p className="language-picker__note tt-paragraph"><span className="language-picker__badge">{t`Preview`}</span> {t`Translations are new and ship on Owl first. Some words may still be in English.`}</p>
+        <p className="language-picker__note tt-paragraph"><span className="language-picker__badge">{t`Preview`}</span> {t`Translations are new. Some words may still be in English.`}</p>
         <ul className="language-picker__list" id={listId} role="listbox" aria-labelledby={labelId}>
           {choices.map((choice, index) => (
             <li key={choice.value} id={optionId(index)} role="option" aria-selected={index === chosen}

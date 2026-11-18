@@ -17,6 +17,7 @@ import { DESKTOP_CLIENTS_FILE } from '../../src/shared/desktopClients'
 import { deltaWithoutVisuals } from '../../src/shared/hostProtocol'
 import { MODEL_3D_HOST_PART_BYTES, MODEL_VISUAL_KIND, type HostModelViews, type Model3dHostNews, type Model3dView } from '../../src/shared/models3d'
 import { startFixtureHeadlessHost } from '../fixtures/desktopHostStack'
+import { holding } from '../fixtures/heldOwlFeatures'
 import { glbBytes, selfContainedGlb } from '../fixtures/glb'
 import { rawPeer } from '../fixtures/rawHostPeer'
 import { useSocketHostFixture } from '../fixtures/socketHostFixture'
@@ -275,7 +276,7 @@ describe('a real headless host’s 3D models on the desktop', () => {
   afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
 
   /** A host on `version` whose records hold a finished barrel in its thread's folder and a crate whose folder is outside it. */
-  async function connected(version: string, options: { readonly recordAfterHello?: boolean } = {}) {
+  async function connected(version: string, options: { readonly recordAfterHello?: boolean } = {}, owlFeatures?: ReturnType<typeof holding>) {
     const root = await mkdtemp(join(tmpdir(), 'sotto-meshy-models-host-'))
     const data = join(root, 'data')
     const thread = await realpath(await mkdtemp(join(tmpdir(), 'sotto-meshy-models-thread-')))
@@ -291,7 +292,7 @@ describe('a real headless host’s 3D models on the desktop', () => {
       record('barrel', 'Oak barrel', join(thread, 'models'), '2026-11-15T10:00:00.000Z'), record('crate', 'Crate', join(outside, 'models'), '2026-11-15T09:00:00.000Z')] }))
     const keyFile = join(root, 'host.key')
     await writeFile(keyFile, 'made-up-host-key-of-enough-length')
-    const host = await startFixtureHeadlessHost({ dataDirectory: data, port: 0, sottoVersion: version, keyFile })
+    const host = await startFixtureHeadlessHost({ dataDirectory: data, port: 0, sottoVersion: version, keyFile, ...owlFeatures ? { owlFeatures } : {} })
     const url = 'http://127.0.0.1:' + host.descriptor!.port
     const pairing = await SocketHostService.pair(url, host.pairing.issuePairingCode().code, 'Synthetic desktop')
     if (!options.recordAfterHello) await writeFile(join(data, DESKTOP_CLIENTS_FILE), JSON.stringify([pairing.clientId]))
@@ -344,7 +345,8 @@ describe('a real headless host’s 3D models on the desktop', () => {
   })
 
   it('tells an older host apart: one without the feature lists nothing and draws nothing', async () => {
-    const c = await connected('0.1.38')
+    // An older host's version holds Plugins, as stable did until November 17, 2026 (ADR-0072).
+    const c = await connected('0.1.38', {}, holding('plugins'))
     expect(c.socket.supportsPluginMeshyModels).toBe(false)
     expect(c.socket.pluginMeshyModels).toBeUndefined()
     await expect(c.models.list()).resolves.toEqual([])

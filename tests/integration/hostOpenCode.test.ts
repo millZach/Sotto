@@ -13,6 +13,7 @@ import { HostCredentialEncryption } from '../../src/host/credentials'
 import { SshHostLauncher, type SshCallbacks, type SshHostConfiguration, type SshHostConnection } from '../../src/main/hosts/sshLauncher'
 import { HOST_ANSWER_LOST, opencodeHostNeedsUpdate, opencodeSignInComesBack, SIGN_IN_WORDS, type ModelSources } from '../../src/shared/opencodeSignIn'
 import { startFixtureHeadlessHost } from '../fixtures/desktopHostStack'
+import { holding } from '../fixtures/heldOwlFeatures'
 import { owlFeaturesForTrack, type OwlFeatureStates } from '../../src/shared/owlFeatures'
 import { getReleaseTrack } from '../../src/shared/releaseTrack'
 import { DesktopHostRouter } from '../../src/main/hosts/desktopHostRouter'
@@ -200,13 +201,15 @@ it('keeps waiting on a host’s sign-in through a lost answer, and says it canno
 })
 
 // A host gives its threads none of this computer's tool servers: visuals and pull request tools are this computer's own
-// (docs/agent-control.md). What a host has is its own: delegation (#1310), on Owl with Work across machines on, and on Owl
-// its own browser in the host's Chromium (ADR-0198) and the plugin tools over its account copies (ADR-0205), OpenCode's
-// threads as Codex's; on stable only the way to Watcher.
-it.each([['Owl', OWL, ['sotto_browser', 'sotto_delegate', 'sotto_media', 'sotto_plugins', 'sotto_watcher']], ['stable', STABLE, ['sotto_watcher']]] as [string, string, string[]][])('gives an OpenCode thread on a host only the host’s own tools, its way to Watcher, delegation and on Owl the media tool, its browser and the plugin tools, as its other threads: %s', { timeout: 90_000 }, async (_track, sottoVersion, servers) => {
+// (docs/agent-control.md). What a host has is its own: delegation (#1310) with Work across machines on, and the media tool,
+// its own browser in the host's Chromium (ADR-0198) and the plugin tools over its account copies (ADR-0205) where their Owl
+// answers are on, OpenCode's threads as Codex's; on a host whose version holds all of those, as stable did until November 17,
+// 2026, only the way to Watcher.
+const HOLDS_HOST_TOOLS = holding('cross-machine-work', 'inline-media', 'paired-host-browser', 'plugins')
+it.each([['Owl', OWL, {}, ['sotto_browser', 'sotto_delegate', 'sotto_media', 'sotto_plugins', 'sotto_watcher']], ['a host whose version holds them', STABLE, HOLDS_HOST_TOOLS, ['sotto_watcher']]] as [string, string, Partial<OwlFeatureStates>, string[]][])('gives an OpenCode thread on a host only the host’s own tools, its way to Watcher, and where their answers are on delegation, the media tool, its browser and the plugin tools, as its other threads: %s', { timeout: 90_000 }, async (_track, sottoVersion, owlFeatures, servers) => {
   const f = await opencodeFixture()
   cleanup.push(f.cleanup)
-  const host = await startHeadlessHost({ dataDirectory: await scratch('sotto-host-opencode-tools-'), providers: { opencode: f.host }, reasoner: e2eAgentReasoner, sottoVersion })
+  const host = await startHeadlessHost({ dataDirectory: await scratch('sotto-host-opencode-tools-'), providers: { opencode: f.host }, reasoner: e2eAgentReasoner, sottoVersion, owlFeatures })
   cleanup.push(host.close)
   const client = desktopWindowClient('host-opencode-tools')
   const command = (value: Parameters<typeof host.service.command>[0]) => host.service.command(value, client)

@@ -174,9 +174,9 @@ test('follows the computer\'s language under Same as this computer', async () =>
   }
 })
 
-// While Language is hidden, Owl is English as stable is (#1684).
-for (const build of INTERFACE_LANGUAGE_SHOWN ? ['stable'] as const : ['stable', 'Owl'] as const) {
-  test(`${build} has no Language row and stays in English, whatever the computer's language`, async () => {
+// While Language is hidden, Owl is English as a build that holds the feature is (#1684).
+for (const build of INTERFACE_LANGUAGE_SHOWN ? ['held'] as const : ['held', 'Owl'] as const) {
+  test(`${build === 'held' ? 'A build that holds Language' : build} has no Language row and stays in English, whatever the computer's language`, async () => {
     test.setTimeout(120_000)
     const launched = await launch({ enabled: build === 'Owl', systemLanguages: 'ja-JP' })
     try {

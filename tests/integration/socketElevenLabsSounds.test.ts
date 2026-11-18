@@ -21,6 +21,7 @@ import type { HostModelViews } from '../../src/shared/models3d'
 import { MODEL_VISUAL_KIND } from '../../src/shared/models3d'
 import { SOUND_HOST_PART_BYTES, SOUND_VISUAL_KIND, type HostSoundViews, type SoundHostNews, type SoundView } from '../../src/shared/sounds'
 import { startFixtureHeadlessHost } from '../fixtures/desktopHostStack'
+import { holding } from '../fixtures/heldOwlFeatures'
 import { rawPeer } from '../fixtures/rawHostPeer'
 import { useSocketHostFixture } from '../fixtures/socketHostFixture'
 
@@ -257,7 +258,7 @@ describe('a real headless host’s sounds on the desktop', () => {
   afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
 
   /** A host on `version` whose records hold a sound made in a thread it does not hold, so it has no folder to read. */
-  async function connected(version: string, options: { readonly recordAfterHello?: boolean } = {}) {
+  async function connected(version: string, options: { readonly recordAfterHello?: boolean } = {}, owlFeatures?: ReturnType<typeof holding>) {
     const root = await mkdtemp(join(tmpdir(), 'sotto-elevenlabs-sounds-host-'))
     const data = join(root, 'data')
     await mkdir(data, { recursive: true })
@@ -265,7 +266,7 @@ describe('a real headless host’s sounds on the desktop', () => {
       kind: 'speech', name: 'Opening narration', folder: join(root, 'sounds'), fileName: 'Opening narration.mp3', cost: 0.02, askedAt: at, state: 'made' }] }))
     const keyFile = join(root, 'host.key')
     await writeFile(keyFile, 'made-up-host-key-of-enough-length')
-    const host = await startFixtureHeadlessHost({ dataDirectory: data, port: 0, sottoVersion: version, keyFile })
+    const host = await startFixtureHeadlessHost({ dataDirectory: data, port: 0, sottoVersion: version, keyFile, ...owlFeatures ? { owlFeatures } : {} })
     const url = 'http://127.0.0.1:' + host.descriptor!.port
     const pairing = await SocketHostService.pair(url, host.pairing.issuePairingCode().code, 'Synthetic desktop')
     if (!options.recordAfterHello) await writeFile(join(data, DESKTOP_CLIENTS_FILE), JSON.stringify([pairing.clientId]))
@@ -298,7 +299,8 @@ describe('a real headless host’s sounds on the desktop', () => {
   })
 
   it('tells an older host apart: one without the feature shows nothing', async () => {
-    const c = await connected('0.1.38')
+    // An older host's version holds Plugins, as stable did until November 17, 2026 (ADR-0072).
+    const c = await connected('0.1.38', {}, holding('plugins'))
     expect(c.socket.supportsPluginElevenLabsSounds).toBe(false)
     expect(c.socket.pluginElevenLabsSounds).toBeUndefined()
     await expect(c.sounds.view(c.key('narration'))).resolves.toBeNull()

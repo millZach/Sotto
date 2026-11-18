@@ -29,6 +29,7 @@ import { useSocketHostFixture } from '../fixtures/socketHostFixture'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
 import { startFixtureHeadlessHost } from '../fixtures/desktopHostStack'
+import { holding } from '../fixtures/heldOwlFeatures'
 import { codexFixture } from '../fixtures/codexFixture'
 import { deferred, heldOperation } from '../fixtures/deferred'
 import type { CodexAppServerHost } from '../../src/main/agents/providers/codex/codex'
@@ -71,11 +72,14 @@ async function pairedDesktop(record = true, gate = true) {
  * `machines` runs the desktop and the paired host with the Owl answer for Work across machines on (ADR-0082): `true` for
  * that alone, or where this computer's new workers start (#1032) as well.
  */
-async function master(native?: CodexAppServerHost, usage = false, machines?: boolean | { setting: () => WorkerMachineSetting }) {
+/** A host whose version holds Work across machines, as stable did until November 17, 2026 (ADR-0072). */
+const HOLDS_CROSS_MACHINE = holding('cross-machine-work')
+
+async function master(native?: CodexAppServerHost, usage = false, machines?: boolean | { setting: () => WorkerMachineSetting }, owlFeatures?: ReturnType<typeof holding>) {
   const crossMachine = machines !== undefined && machines !== false, placing = typeof machines === 'object' ? machines : undefined
   const owl = usage || crossMachine
-  if (native || owl) { await remote.host.close(); remote.host = await startFixtureHeadlessHost({ dataDirectory: remote.root, port: 0, providers: { codex: native ?? remote.native },
-    ...(owl ? { sottoVersion: '0.1.38-owl.20261013.1' } : {}) }); remote.url = 'http://127.0.0.1:' + remote.host.descriptor!.port }
+  if (native || owl || owlFeatures) { await remote.host.close(); remote.host = await startFixtureHeadlessHost({ dataDirectory: remote.root, port: 0, providers: { codex: native ?? remote.native },
+    ...(owl ? { sottoVersion: '0.1.38-owl.20261013.1' } : {}), ...(owlFeatures ? { owlFeatures } : {}) }); remote.url = 'http://127.0.0.1:' + remote.host.descriptor!.port }
   const paired = await pairedDesktop()
   const workspace = await workspaceFixture(undefined, { history: false })
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host,
@@ -2445,7 +2449,7 @@ it('counts a start the paired machine lists before its first prompt is confirmed
 })
 
 it('refuses a machine or system while Work across machines is off, and lists no default (#1032)', async () => {
-  const f = await master()
+  const f = await master(undefined, false, undefined, HOLDS_CROSS_MACHINE)
   expect(f.hello.features).not.toContain('project-origins')
   expect(f.hello.features).not.toContain('project-setup')
   expect(await f.call('start_thread', { ...f.start(), machine: f.pairing.hostId })).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
@@ -2460,8 +2464,8 @@ it('refuses a machine or system while Work across machines is off, and lists no 
   expect(room.status === 'ok' && room.state.receiptPlacements).toBeFalsy()
 })
 
-it('refuses a start that names a move on a Stable host, even from a desktop that sends one (#1033)', async () => {
-  const f = await master()
+it('refuses a start that names a move on a host that holds Work across machines, even from a desktop that sends one (#1033)', async () => {
+  const f = await master(undefined, false, undefined, HOLDS_CROSS_MACHINE)
   // A desktop that puts a move in the start it sends, with the digest made to match, as only Owl's Watcher would.
   const control = f.socket.watcherControl.bind(f.socket)
   vi.spyOn(f.socket, 'watcherControl').mockImplementation(async (request, ...rest) => {
@@ -2676,7 +2680,7 @@ it('keeps the branch a stopped check waiting on a paired host would have started
 })
 
 it('has a host whose Owl answer is off refuse a start marked as a check, starting nothing (#1312)', async () => {
-  const f = await master()
+  const f = await master(undefined, false, undefined, HOLDS_CROSS_MACHINE)
   expect(f.hello.features).not.toContain('watcher-check-queue')
   // A stable desktop never sends the flag; this one is made to, as an older Owl desktop could.
   const mutate = (f.watcher as unknown as { mutate(threadId: string, name: string, input: unknown): Promise<unknown> }).mutate.bind(f.watcher)

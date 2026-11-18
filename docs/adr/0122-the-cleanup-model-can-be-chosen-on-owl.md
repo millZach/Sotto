@@ -4,6 +4,8 @@
 
 Accepted October 23, 2026, at Drake Morey's request, as an Owl feature (`cleanup-model`, [ADR-0072](0072-sotto-owl-is-a-windows-preview-release-track.md)). On Owl it supersedes decisions 5 and 6 of [ADR-0069](0069-one-model-does-ai-cleanup.md) and the line in its Consequences that a new cleanup model is never an option in Settings. Stable keeps ADR-0069 whole until Zach sends the feature. **Number provisional until merge** (docs/agents/domain.md).
 
+Amended November 17, 2026: the cleanup model can be chosen on stable too. Zach sent `cleanup-model` to stable with every other held Owl feature ([ADR-0072](0072-sotto-owl-is-a-windows-preview-release-track.md), November 17 amendment), so from the next stable release this record supersedes ADR-0069's decisions 5 and 6 on both tracks. The title and decision 1's "on Owl only" now describe stable 0.1.42 and earlier, which keep ADR-0069 whole.
+
 He asked to choose the OpenRouter model that cleans up dictation, and the mode OpenRouter routes it in (Default, Nitro and so on), in Settings → Cleanup under the OpenRouter key, the way his YouTube summary extension does. He chose a live list with search, the modes Default, Nitro and Floor, and Mercury 2 kept as the backup.
 
 ## Context

@@ -8453,7 +8453,7 @@ msgid "Your transcripts on this computer are being read."
 msgstr ""
 
 #: src/renderer/src/watcher/TeamsPage.tsx
-msgid "Your Watcher and a teammate's can ask each other what you're working on, and you can open your desks side by side. Both of you need Sotto Owl and Tailscale, and each of you does these steps."
+msgid "Your Watcher and a teammate's can ask each other what you're working on, and you can open your desks side by side. Both of you need Tailscale and a current Sotto, and each of you does these steps."
 msgstr ""
 
 #: src/renderer/src/watcher/TeamDesks.tsx

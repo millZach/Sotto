@@ -64,7 +64,7 @@ let launched: LaunchedSotto | undefined
 test.afterEach(async () => { if (launched) await closeSotto(launched); launched = undefined })
 
 async function start(): Promise<LaunchedSotto> {
-  // An E2E run counts as stable, where the Owl list keeps the feature off, so the run turns it on as other specs do.
+  // An E2E run counts as stable. The feature is on there since October 23, 2026 (ADR-0072); the run still names it, as other specs do.
   const previous = process.env.SOTTO_OWL_FEATURES
   process.env.SOTTO_OWL_FEATURES = 'desktop-notifications=1'
   try { launched = await launchSotto() } finally { if (previous === undefined) delete process.env.SOTTO_OWL_FEATURES; else process.env.SOTTO_OWL_FEATURES = previous }

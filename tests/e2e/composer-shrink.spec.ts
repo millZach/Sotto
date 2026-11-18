@@ -6,7 +6,7 @@ import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './supp
 import { evidenceDirectory } from '../fixtures/evidence'
 import { READING_BACK_PX } from '../../src/renderer/src/agents/slimComposer'
 
-// The slim composer (ADR-0125; Owl only, the user's pick B of docs/prototypes/composer-shrink-prototype.html): reading
+// The slim composer (ADR-0125; an Owl feature, on stable since November 17, 2026, the user's pick B of docs/prototypes/composer-shrink-prototype.html): reading
 // back through a thread steps the floating composer down to one line with its disc, and the end, a click, a key typed
 // into the transcript or a draft bring it back full. The transcript keeps the full composer's room the whole time.
 // Captures go to disposable run evidence; `SOTTO_E2E_EVIDENCE=publish` writes artifacts/composer-shrink.

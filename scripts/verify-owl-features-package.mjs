@@ -26,6 +26,18 @@ export function assertPackagedFeatureStatus(status, track, features = OWL_FEATUR
   if (status.watcherEnabled !== status.owlFeatures?.watcher) throw new Error('The Watcher compatibility answer differs from the Owl feature list.')
 }
 
+/**
+ * Development overrides that ask for the opposite of every answer the packaged build must give. A packaged build ignores
+ * them, so its answers stay the list's; one that obeyed them would fail every entry, whichever way the list points.
+ */
+export function contraryOverrides(track, features = OWL_FEATURES) {
+  const expected = feature => isOwlFeatureEnabled(feature.id, track, features)
+  return {
+    SOTTO_OWL_FEATURES: features.map(feature => `${feature.id}=${expected(feature) ? 0 : 1}`).join(','),
+    SOTTO_WATCHER_ENABLED: isOwlFeatureEnabled('watcher', track, features) ? '0' : '1',
+  }
+}
+
 // Paths are compared after resolving links: on macOS the temporary folder sits under /var, a link to /private/var,
 // and the app may report either form of the same profile.
 export async function assertOwnedProfile(identity, status, userData) {
@@ -51,8 +63,9 @@ export async function verifyOwlFeaturesPackage(target, track) {
     for (const key of Object.keys(environment)) {
       if (key.startsWith('SOTTO_') || ['ELECTRON_RUN_AS_NODE', 'NODE_OPTIONS'].includes(key)) delete environment[key]
     }
-    environment.SOTTO_OWL_FEATURES = OWL_FEATURES.map(feature => `${feature.id}=1`).join(',')
-    environment.SOTTO_WATCHER_ENABLED = '1'
+    const overrides = contraryOverrides(track)
+    environment.SOTTO_OWL_FEATURES = overrides.SOTTO_OWL_FEATURES
+    environment.SOTTO_WATCHER_ENABLED = overrides.SOTTO_WATCHER_ENABLED
     application = await electron.launch({ executablePath: profile.executablePath(resolve(target)),
       args: [`--user-data-dir=${userData}`, ...profile.smokeArgs], env: environment, timeout: 45_000 })
     const identity = await application.evaluate(({ app }) => ({ version: app.getVersion(), name: app.getName(), packaged: app.isPackaged, userData: app.getPath('userData') }))
@@ -75,7 +88,7 @@ export async function verifyOwlFeaturesPackage(target, track) {
     await page.screenshot()
     await page.screenshot({ path: join(output, `owl-features-${track}-package.png`) })
     const result = { version: identity.version, name: identity.name, packaged: true, isolatedProfile: true,
-      overrides: { SOTTO_OWL_FEATURES: environment.SOTTO_OWL_FEATURES, SOTTO_WATCHER_ENABLED: '1' }, status }
+      overrides, status }
     await writeFile(join(output, `owl-features-${track}-package-status.json`), JSON.stringify(result, null, 2) + '\n')
     process.stdout.write(JSON.stringify(result, null, 2) + '\n')
     return result

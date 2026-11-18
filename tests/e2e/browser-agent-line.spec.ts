@@ -11,7 +11,7 @@ import { elementContrast } from './support/elementContrast'
 import { hostKeysPerTest } from './support/hostKeys'
 import { evidenceDirectory } from '../fixtures/evidence'
 
-// The browser line (ADR-0154; Owl only): a turn's calls to Sotto's own browser fold into one quiet line that updates in
+// The browser line (ADR-0154; an Owl feature, on stable since November 17, 2026): a turn's calls to Sotto's own browser fold into one quiet line that updates in
 // place, "Browsing localhost:5173 · clicked in the page" while they run and "Browsed localhost:5173 · N steps" once the turn
 // moves on, and a press opens the steps. Captures go to disposable run evidence; `SOTTO_E2E_EVIDENCE=publish` writes
 // artifacts/browser-agent-line.
@@ -160,7 +160,7 @@ test('an agent\'s calls to Sotto\'s browser read as one line that updates in pla
   } finally { await closeSotto(launched) }
 })
 
-test('stable keeps a row for every call to Sotto\'s browser', async () => {
+test('a build that holds the quiet browser keeps a row for every call to Sotto\'s browser', async () => {
   const launched = await launch(false)
   try {
     const page = await prepare(launched)

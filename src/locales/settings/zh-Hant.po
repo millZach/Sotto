@@ -8197,8 +8197,8 @@ msgid "Transcript history cleared."
 msgstr ""
 
 #: src/renderer/src/features/settings/LanguagePicker.tsx
-msgid "Translations are new and ship on Owl first. Some words may still be in English."
-msgstr "翻譯是新功能，會先在 Owl 推出。部分文字可能仍為英文。"
+msgid "Translations are new. Some words may still be in English."
+msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Trims extra spaces without changing any words."

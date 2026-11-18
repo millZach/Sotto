@@ -14,6 +14,7 @@ import type { HostOperation } from '../../src/shared/hostProtocol'
 import { commitFile, git, incompressible, twoMachines } from '../fixtures/branchRepositories'
 import { useSocketHostFixture } from '../fixtures/socketHostFixture'
 import { startFixtureHeadlessHost } from '../fixtures/desktopHostStack'
+import { holding } from '../fixtures/heldOwlFeatures'
 
 const fixture = useSocketHostFixture()
 let machines: Awaited<ReturnType<typeof twoMachines>>
@@ -170,8 +171,9 @@ describe('the cross-machine-work Owl answer (ADR-0072)', () => {
   })
 
   it('has a headless host list branch moves only where its own answer is on', async () => {
-    for (const [sottoVersion, offered] of [['0.1.37-owl.20261023.1', true], ['0.1.37', false]] as const) {
-      const host = await startFixtureHeadlessHost({ dataDirectory: join(machines.root, 'host-' + String(offered)), port: 0, sottoVersion })
+    // The older host's version holds Work across machines, as stable did until November 17, 2026 (ADR-0072).
+    for (const [sottoVersion, owlFeatures, offered] of [['0.1.37-owl.20261023.1', {}, true], ['0.1.37', holding('cross-machine-work'), false]] as const) {
+      const host = await startFixtureHeadlessHost({ dataDirectory: join(machines.root, 'host-' + String(offered)), port: 0, sottoVersion, owlFeatures })
       try { expect(host.descriptor!.features.includes('branch-moves')).toBe(offered) } finally { await host.close() }
     }
   })

@@ -74,6 +74,8 @@ The services' own facts, read from their documentation on November 11, 2026, are
 
 13. **Owl only.** Stable shows no page and serves no plugin tools, and keeps accounts, copies and records whole, so a return to Owl finds them.
 
+Amended November 17, 2026: Zach sent `plugins` to stable with every other held Owl feature ([ADR-0072](0072-sotto-owl-is-a-windows-preview-release-track.md), November 17 amendment), so decision 13 describes stable 0.1.42 and earlier, and the next stable release serves the page and the tools as Owl does. What is built goes with it: GitHub, Vercel, Gmail, Proton Mail, Meshy and ElevenLabs, account copies on paired hosts, and the mail grant. Ask before each preview deploy (#2491), Higgsfield (#2499), X (#2500) and the assistant pairing and Grok Bot of ADR-0206 (#2501, #2502) are not built.
+
 ## November 12, 2026: what Vercel's pages say, and how its reads are held
 
 Slice 3 confirmed Vercel's row of the table on Vercel's own documentation on November 12, 2026, and found more than decision 6's refuse list allowed for.

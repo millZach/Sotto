@@ -21,16 +21,19 @@ import { rawPeer } from '../fixtures/rawHostPeer'
 import { hostEntityKey } from '../../src/shared/clientIdentity'
 import { DesktopDelegationRelay, type RelayHostConnection } from '../../src/main/agents/delegationRelayDesktop'
 import { isReadyToMergeAsk, type TellWatcherAsk } from '../../src/shared/tellWatcher'
+import { holding } from '../fixtures/heldOwlFeatures'
 
 const OWL = '0.1.38-owl.20261013.1'
 const STABLE = '0.1.38'
+/** A host whose version holds Work across machines, as stable did until November 17, 2026 (ADR-0072). */
+const HOLDS_CROSS_MACHINE = holding('cross-machine-work')
 /** The window on the host machine itself, which may give any permission, as the user at that machine may. */
 const LOCAL = { clientId: 'host-window', user: 'Synthetic user at the host', transport: 'ipc' } as const
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
 
-async function hostFixture(version = OWL) {
+async function hostFixture(version = OWL, owlFeatures?: ReturnType<typeof holding>) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-host-delegation-'))
   // Codex's own app server, faked as a child process, which takes Sotto's tool servers at each launch as the real one does.
   const provider = { tools: [] as readonly ScopedThreadTools[] }
@@ -38,7 +41,7 @@ async function hostFixture(version = OWL) {
     const native = await codexFixture(undefined, false, 10_000); cleanups.push(native.cleanup)
     const useThreadTools = native.adapter.useThreadTools.bind(native.adapter)
     native.adapter.useThreadTools = tools => { provider.tools = tools; useThreadTools(tools) }
-    return { native, host: await startFixtureHeadlessHost({ dataDirectory: root, port: 0, sottoVersion: version, providers: { codex: native.adapter } }) }
+    return { native, host: await startFixtureHeadlessHost({ dataDirectory: root, port: 0, sottoVersion: version, ...owlFeatures ? { owlFeatures } : {}, providers: { codex: native.adapter } }) }
   }
   let { native, host } = await launch()
   let url = 'http://127.0.0.1:' + host.descriptor!.port
@@ -295,8 +298,8 @@ it('starts a desktop\'s remote delegation over the real socket for an Owl deskto
   await expect(a.socket.delegationRemoteAsk!(ask('approval-required'), 30_000)).rejects.toMatchObject({ code: 'forbidden' })
 }, 60_000)
 
-it('starts nothing for a desktop on a stable host: no feature, and the ask is refused', async () => {
-  const f = await hostFixture(STABLE)
+it('starts nothing for a desktop on a host that holds Work across machines: no feature, and the ask is refused', async () => {
+  const f = await hostFixture(STABLE, HOLDS_CROSS_MACHINE)
   const { hello, pairing, socket } = await f.desktop(true, true, true)
   expect(hello.features).not.toContain('delegation-remote')
   expect(hello.features).not.toContain('delegation-relay-send')
@@ -462,8 +465,8 @@ it('keeps what a recorded desktop says of the picture switch across a restart (A
   expect(await kept()).toBe(false)
 })
 
-it('starts nothing on a stable host: no tool, no feature, and desktop defaults are refused', async () => {
-  const f = await hostFixture(STABLE)
+it('starts nothing on a host that holds Work across machines: no tool, no feature, and desktop defaults are refused', async () => {
+  const f = await hostFixture(STABLE, HOLDS_CROSS_MACHINE)
   const { socket, hello, pairing } = await f.desktop()
   expect(hello.features).not.toContain('host-delegation')
   expect(hello.features).not.toContain('every-agent-picture')

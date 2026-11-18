@@ -3,7 +3,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, onTestFinished } from 'vitest'
 import { version as packageVersion } from '../../package.json'
 import { startSocketServer } from '../../src/host/socketServer'
 import { desktopWindowClient, type HostService } from '../../src/main/agents/hostService'
@@ -18,6 +18,8 @@ import { HOST_FACTS_REFRESH_MS } from '../../src/shared/hostFacts'
 import { syntheticModelCatalog } from '../fixtures/modelCatalog'
 import { rawPeer } from '../fixtures/rawHostPeer'
 import { SAME_VERSION_HELD, useSocketHostFixture } from '../fixtures/socketHostFixture'
+import { startFixtureHeadlessHost } from '../fixtures/desktopHostStack'
+import { holding } from '../fixtures/heldOwlFeatures'
 
 const fixture = useSocketHostFixture()
 
@@ -221,14 +223,34 @@ describe('host version and features', () => {
   const LISTED: readonly HostFeature[] = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'git-pull-request-list', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'provider-opencode', 'activity-bodies', 'failure-seen', 'client-update-outcomes', 'provider-cursor', 'watcher-cursor', 'client-update-not-listed', 'thread-prompts', 'pull-request-confirmation', 'watcher-new-owner', 'changed-thread-records', 'reply-thread-records', 'provider-mode-lists', 'settled-threads-on-request', 'usable-models', 'product-events', 'watcher-tell', 'command-changed-thread-records', 'step-window', 'watcher-ready', 'provider-deepseek', 'provider-pi', 'provider-hermes', 'project-git-init', 'watcher-progress', 'kept-parts']
   const GREETED: readonly HostFeature[] = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'git-pull-request-list', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'host-facts', 'provider-opencode', 'activity-bodies', 'failure-seen', 'client-update-outcomes', 'provider-cursor', 'client-update-not-listed', 'thread-prompts', 'pull-request-confirmation', 'changed-thread-records', 'reply-thread-records', 'provider-mode-lists', 'settled-threads-on-request', 'usable-models', 'product-events', 'command-changed-thread-records', 'step-window', 'provider-deepseek', 'provider-pi', 'provider-hermes', 'project-git-init', 'kept-parts']
   /**
-   * Features a host offers only where its own version's Owl answer is on (ADR-0072), and the answer each reads. Its OpenCode
-   * sign-in also needs OpenCode's own adapter, which this host's fake is not; `hostOpenCode.test.ts` has that one.
+   * Features a host offers only where its own version's Owl answers are all on (ADR-0072), and the answers each reads. Its
+   * OpenCode sign-in also needs OpenCode's own adapter, which this host's fake is not; `hostOpenCode.test.ts` has that one.
    */
-  const OWL_GATED: Partial<Record<HostFeature, OwlFeatureId>> = { 'usage-dashboard': 'usage', 'usage-history': 'usage', 'thread-starts': 'continue-agent-thread',
-    'usage-muse-opencode': 'usage', 'usage-background-refresh': 'usage', 'pull-request-view': 'iphone-pull-request-view', 'agents-view': 'iphone-agents-view', 'thread-delete': 'clear-threads', 'thread-file-links': 'markdown-side-panel', 'thread-linked-files': 'reveal-linked-files' }
-  const offered = (always: readonly HostFeature[]): HostFeature[] => {
+  const CROSS_MACHINE: readonly OwlFeatureId[] = ['cross-machine-work']
+  const OWL_GATED: Partial<Record<HostFeature, readonly OwlFeatureId[]>> = { 'usage-dashboard': ['usage'], 'usage-history': ['usage'], 'thread-starts': ['continue-agent-thread'],
+    'usage-muse-opencode': ['usage'], 'usage-background-refresh': ['usage'], 'pull-request-view': ['iphone-pull-request-view'], 'agents-view': ['iphone-agents-view'], 'thread-delete': ['clear-threads'],
+    'thread-file-links': ['markdown-side-panel'], 'thread-linked-files': ['reveal-linked-files'], 'file-staging': ['attach-any-file'], 'attachment-files': ['attach-any-file'], 'video-staging': ['attach-any-file'],
+    'project-origins': CROSS_MACHINE, 'host-delegation': CROSS_MACHINE, 'delegation-views': CROSS_MACHINE, 'branch-moves': CROSS_MACHINE, 'bring-changes-back': CROSS_MACHINE, 'delegation-relay': CROSS_MACHINE,
+    'watcher-check-queue': CROSS_MACHINE, 'watcher-check-stop': CROSS_MACHINE, 'check-queue-views': CROSS_MACHINE, 'project-setup': CROSS_MACHINE, 'delegation-relay-send': CROSS_MACHINE, 'delegation-remote': CROSS_MACHINE,
+    'delegation-branch-starts': CROSS_MACHINE, 'thread-move': CROSS_MACHINE, 'thread-move-source': CROSS_MACHINE, 'thread-move-keep': CROSS_MACHINE, 'worker-swarms': ['worker-swarms'],
+    'every-agent-picture': ['cross-machine-work', 'inline-media'], 'thread-media': ['inline-media'], 'thread-media-video': ['inline-media'], 'next-prompts': ['next-prompt'], 'thread-snooze': ['thread-snooze'],
+    'browser': ['paired-host-browser', 'quiet-browser'], 'plugin-account-copies': ['plugins'], 'plugin-github-sign-in': ['plugins'], 'plugin-mail-copies': ['plugins'], 'plugin-meshy-copies': ['plugins'],
+    'plugin-meshy-spending': ['plugins'], 'plugin-meshy-models': ['plugins'], 'plugin-meshy-phone': ['plugins'], 'plugin-elevenlabs-copies': ['plugins'], 'plugin-elevenlabs-spending': ['plugins'], 'plugin-elevenlabs-sounds': ['plugins'] }
+  /** Features a host stops listing once its Owl answer is on: Restart stopped threads retires babysitting (ADR-0144). */
+  const OWL_RETIRED: Partial<Record<HostFeature, OwlFeatureId>> = { 'pull-request-babysit': 'restart-stopped-threads' }
+  /**
+   * What the listener tells only a desktop the launch script recorded, which `pair` does not make: Watcher's own features,
+   * moves, account copies and what a host's plugins made, and desktop defaults and delegation (ADR-0053, ADR-0205, #1310).
+   */
+  const RECORDED_ONLY: readonly HostFeature[] = ['branch-moves', 'thread-move', 'thread-move-source', 'thread-move-keep', 'plugin-account-copies', 'plugin-mail-copies', 'plugin-meshy-copies',
+    'plugin-elevenlabs-copies', 'plugin-meshy-spending', 'plugin-elevenlabs-spending', 'plugin-meshy-models', 'plugin-elevenlabs-sounds', 'plugin-github-sign-in', 'host-delegation', 'every-agent-picture',
+    'delegation-views', 'delegation-relay', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts', 'check-queue-views']
+  const toldUnrecorded = (feature: HostFeature): boolean => !RECORDED_ONLY.includes(feature) && (!feature.startsWith('watcher-') || feature.startsWith('watcher-phone'))
+  const offered = (always: readonly HostFeature[], greeted = false): HostFeature[] => {
     const answers = owlFeaturesForTrack(getReleaseTrack(packageVersion))
-    return HOST_FEATURES.filter(feature => always.includes(feature) || OWL_GATED[feature] !== undefined && answers[OWL_GATED[feature]!])
+    return HOST_FEATURES.filter(feature => (always.includes(feature) || OWL_GATED[feature]?.every(id => answers[id]) === true)
+      && !(OWL_RETIRED[feature] !== undefined && answers[OWL_RETIRED[feature]!])
+      && (!greeted || always.includes(feature) || toldUnrecorded(feature)))
   }
 
   // The to-do list is gone from the protocol (ADR-0188, reversed). A desktop on an older Owl build still asks for it by name.
@@ -250,7 +272,7 @@ describe('host version and features', () => {
 
   it('advertises the Sotto version and features in health, the listener file and the hello reply', async () => {
     // Its own features, and those its version's Owl answers turn on, in the protocol's order.
-    const listed = offered(LISTED), greeted = offered(GREETED)
+    const listed = offered(LISTED), greeted = offered(GREETED, true)
     const health = await (await fetch(fixture.url + '/v1/health')).json() as Record<string, unknown>
     expect(health).toMatchObject({ v: 1, status: 'ready', sottoVersion: packageVersion, features: listed })
     const listener = JSON.parse(await readFile(join(fixture.root, 'host-listener.json'), 'utf8')) as Record<string, unknown>
@@ -259,8 +281,15 @@ describe('host version and features', () => {
     expect(await client.connect()).toMatchObject({ sottoVersion: packageVersion, features: greeted, capabilities: { mayAnswer: false } })
   })
 
-  it('takes the user’s Babysit pull request from a paired client, and refuses one the thread does not know in words (ADR-0061)', async () => {
-    const { client } = await pair()
+  it('takes the user’s Babysit pull request from a paired client on a host that holds Restart stopped threads, and refuses one the thread does not know in words (ADR-0061)', async () => {
+    // Restart stopped threads retires babysitting (ADR-0144); a host whose version holds it still babysits.
+    const root = await mkdtemp(join(tmpdir(), 'sotto-socket-babysit-'))
+    const host = await startFixtureHeadlessHost({ dataDirectory: root, port: 0, owlFeatures: holding('restart-stopped-threads') })
+    const url = 'http://127.0.0.1:' + host.descriptor!.port
+    const paired = await SocketHostService.pair(url, host.pairing.issuePairingCode().code, 'Socket test')
+    const client = new SocketHostService({ url, token: paired.token, expectedHostId: paired.hostId, heldProviders: SAME_VERSION_HELD })
+    onTestFinished(async () => { await client.close(); await host.close(); await rm(root, { recursive: true, force: true }) })
+    await client.connect()
     expect(client.supportsBabysitting).toBe(true)
     await client.command({ type: 'configure', patch: { provider: 'codex', enabledProviders: ['codex'] } })
     await client.command({ type: 'connect', provider: 'codex' })

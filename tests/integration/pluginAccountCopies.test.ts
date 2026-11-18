@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
 import { startFixtureHeadlessHost } from '../fixtures/desktopHostStack'
+import { holding } from '../fixtures/heldOwlFeatures'
 import { rawPeer } from '../fixtures/rawHostPeer'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
 import { DESKTOP_CLIENTS_FILE } from '../../src/shared/desktopClients'
@@ -14,6 +15,8 @@ import type { PluginAccountCopy } from '../../src/shared/pluginAccountCopies'
 
 const OWL = '0.1.38-owl.20261013.1'
 const STABLE = '0.1.38'
+/** A host whose version holds Plugins, as stable did until November 17, 2026 (ADR-0072). */
+const HOLDS_PLUGINS = holding('plugins')
 /** A made-up account and a made-up token: nothing here is a real credential. */
 const TOKEN = 'made-up-vercel-token-for-a-copy'
 const COPY: PluginAccountCopy = {
@@ -25,11 +28,11 @@ const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
 
 /** A headless host on its real listener. With `key`, it was started with a key file, as a host that keeps credentials is. */
-async function hostFixture({ version = OWL, key = true }: { version?: string; key?: boolean } = {}) {
+async function hostFixture({ version = OWL, key = true, owlFeatures }: { version?: string; key?: boolean; owlFeatures?: ReturnType<typeof holding> } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-plugin-account-copies-'))
   const keyFile = join(root, 'host.key')
   await writeFile(keyFile, 'made-up-host-key-of-enough-length')
-  const host = await startFixtureHeadlessHost({ dataDirectory: join(root, 'data'), port: 0, sottoVersion: version, ...(key ? { keyFile } : {}) })
+  const host = await startFixtureHeadlessHost({ dataDirectory: join(root, 'data'), port: 0, sottoVersion: version, ...(key ? { keyFile } : {}), ...owlFeatures ? { owlFeatures } : {} })
   const data = join(root, 'data')
   const url = 'http://127.0.0.1:' + host.descriptor!.port
   const clients: SocketHostService[] = []
@@ -206,8 +209,8 @@ it('keeps nothing on a host started without a key file, and says it could not be
   for (const file of await f.files()) expect(file.text.includes(TOKEN), file.path).toBe(false)
 })
 
-it('offers and takes nothing on a stable host', async () => {
-  const f = await hostFixture({ version: STABLE })
+it('offers and takes nothing on a host that holds Plugins', async () => {
+  const f = await hostFixture({ version: STABLE, owlFeatures: HOLDS_PLUGINS })
   const { socket, hello, pairing } = await f.client(true)
   expect(hello.features).not.toContain('plugin-account-copies')
   await expect(socket.keepPluginAccountCopy(COPY)).rejects.toMatchObject({ code: 'version_mismatch' })

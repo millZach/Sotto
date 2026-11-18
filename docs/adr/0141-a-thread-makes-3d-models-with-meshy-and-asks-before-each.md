@@ -87,6 +87,8 @@ Zach decided, against the mock-up `docs/prototypes/meshy-models-prototype.html`:
 
 **Owl only.** The feature is `meshy-3d-models` in `src/shared/owlFeatures.ts`. Stable shows no tool, no Settings section, no gallery and no Tools surface, starts no task, and keeps the key and the records whole, so a return to Owl finds them.
 
+Amended November 17, 2026: 3D models were built as part of Plugins (`docs/plans/2026-11-11-plugins.md`, slice 11), behind the `plugins` entry; the list never had a `meshy-3d-models` entry. Zach sent `plugins` to stable with every other held Owl feature ([ADR-0072](0072-sotto-owl-is-a-windows-preview-release-track.md), November 17 amendment), so the paragraph above describes stable 0.1.42 and earlier. Asking before each 3D model, and turning that off, work the same on both tracks.
+
 ## Consequences
 
 - `README.md` names `api.meshy.ai` and `assets.meshy.ai` under "Privacy and cost", as hosts used only once you add a Meshy key, and says that Meshy may train on what is sent. `AGENTS.md` names this record beside ADR-0029 as a standing exception.

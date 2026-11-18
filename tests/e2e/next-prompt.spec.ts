@@ -6,7 +6,7 @@ import { expectPromptText, promptField } from './support/prompt'
 import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
 
-// The next prompt (ADR-0132; Owl only, Drake's pick 6 "Picker" of docs/prototypes/next-prompt-prototype.html): when a Codex
+// The next prompt (ADR-0132; an Owl feature, on stable since November 17, 2026, Drake's pick 6 "Picker" of docs/prototypes/next-prompt-prototype.html): when a Codex
 // turn ends with an answer, Sotto asks the thread's own Codex on the side, over the fake app server's `codex exec`, what
 // the user will type next. The ghost sits in the empty prompt, Up opens the Next list over the transcript, and a send takes
 // it away. Captures go to disposable run evidence; `SOTTO_E2E_EVIDENCE=publish` writes artifacts/next-prompt.
