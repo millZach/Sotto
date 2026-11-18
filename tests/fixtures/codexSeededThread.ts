@@ -8,7 +8,7 @@ import { codexFixture } from './codexFixture'
 // it is about 4.4 KB a turn.
 
 export type CodexFixture = Awaited<ReturnType<typeof codexFixture>>
-export type FakeThread = { turns: { id: string; items: { type: string }[] }[] }
+export type FakeThread = { turns: { id: string; items: { type: string }[] }[]; historyMode?: 'legacy' | 'paginated' }
 
 /** One completed turn of the shape a coding turn has: a prompt, a reasoning summary, a command and a reply. */
 export function seededTurn(index: number, cwd: string): Record<string, unknown> {
@@ -26,9 +26,9 @@ export function seededTurn(index: number, cwd: string): Record<string, unknown> 
  * adapter holds no history for it and the first open reads it whole. `wrapped` puts the adapter behind the Sotto
  * thread host, so the coordinator addresses it by Sotto thread ID. The workspace and provider hosts the app also
  * puts between them hand a read's purpose on unchanged (threadReadPurpose.test.ts) and are left out. `script` is
- * handed to the restarted fake.
+ * handed to the restarted fake. `paginated` gives the thread paginated history, as Codex hands some threads back.
  */
-export async function seededCodexThread(turns: number, wrapped = false, script: Record<string, unknown> = {}): Promise<{ f: CodexFixture; id: string }> {
+export async function seededCodexThread(turns: number, wrapped = false, script: Record<string, unknown> = {}, paginated = false): Promise<{ f: CodexFixture; id: string }> {
   const first = await codexFixture(undefined, wrapped, 60_000)
   await first.host.connect()
   await first.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: first.projectId, title: 'Bench', path: first.root })
@@ -39,6 +39,7 @@ export async function seededCodexThread(turns: number, wrapped = false, script: 
   const statePath = join(first.root, 'state.json')
   const state = JSON.parse(await readFile(statePath, 'utf8')) as { threads: Record<string, FakeThread> }
   state.threads[codexThreadId]!.turns = Array.from({ length: turns }, (_, index) => seededTurn(index, first.root)) as FakeThread['turns']
+  if (paginated) state.threads[codexThreadId]!.historyMode = 'paginated'
   await writeFile(statePath, JSON.stringify(state))
   const f = await first.driver.restart() as CodexFixture
   await f.script(script)
