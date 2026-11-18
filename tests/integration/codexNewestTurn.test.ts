@@ -80,6 +80,28 @@ describe('Codex send checks the newest turn before reading the whole transcript'
       .flatMap(own => [['user', `Prompt ${own}`], ['assistant', `Reply to ${own}`]]))
   })
 
+  it('sends a thread with paginated history on the newest turn alone, without paging the whole history', async () => {
+    const { f, id } = await answeredThread({ paginatedThreads: true })
+    const from = (await f.driver.requests()).length
+    await turn(f, id, 'own-2', 'own-1')
+    const reads = (await f.driver.requests()).slice(from).filter(request => request.method === 'thread/turns/list' || request.method === 'thread/read')
+    expect(reads.map(request => request.params)).toEqual([{ threadId: await f.realId(id), limit: 1, sortDirection: 'desc', itemsView: 'full' }])
+    const messages = (await f.host.snapshot()).threads.find(thread => thread.id === id)!.messages
+    expect(messages.filter(message => message.role === 'user').map(message => message.id)).toEqual(['own-1', 'own-2'])
+  })
+
+  it('pages the whole history of a paginated thread and refuses a stale reply when another Codex process added a turn', async () => {
+    const { f, id } = await answeredThread({ paginatedThreads: true })
+    await elsewhere(f, id, { type: 'native-turn', text: 'Typed in another Codex' })
+    const from = (await f.driver.requests()).length
+    await expect(send(f, id, 'stale', 'own-1')).rejects.toThrow('changed')
+    const lists = (await f.driver.requests()).slice(from).filter(request => request.method === 'thread/turns/list')
+    expect(lists.map(request => (request.params as { sortDirection?: string }).sortDirection)).toEqual(['desc', 'asc'])
+    const thread = (await f.host.snapshot()).threads.find(candidate => candidate.id === id)!
+    expect(thread.messages.some(message => message.role === 'user' && message.text === 'Typed in another Codex' && message.commandId === undefined)).toBe(true)
+    expect((await f.driver.requests()).slice(from).some(request => request.method === 'turn/start')).toBe(false)
+  })
+
   it('saves the thread record after the check only when the newest turn taught it something', async () => {
     const saves = async (script: Record<string, unknown>): Promise<number> => {
       const { f, id } = await answeredThread(script)

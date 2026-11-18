@@ -94,7 +94,7 @@ The check passes only when the newest turn is the one Sotto already holds, has e
 
 Anything else reads the whole transcript, as it always did. This is the full list, and the condition in `confirmNewestTurn` is the same list in code:
 
-- a thread not yet read on this connection, or a paginated one;
+- a thread not yet read on this connection;
 - work or a request in flight, or delivery that is uncertain;
 - a settings change, rewind or compaction not yet confirmed;
 - session-log input not yet shown;
@@ -102,6 +102,8 @@ Anything else reads the whole transcript, as it always did. This is the full lis
 - a reply that does not say it carries the full items, or a message Sotto cannot match;
 - a reply that arrived after the thread moved on;
 - any refusal, or no reply in time. A reply that comes later is dropped, as a late whole read is.
+
+A paginated thread was on this list too until November 18, 2026 (the amendment of that date below).
 
 A refusal that says Codex does not have the request, or does not know a value the request sends, stops Sotto asking on that connection: JSON-RPC's "method not found", or the invalid request naming an unknown variant that 0.157.1 sends for either. The check sends the same values every time, so such a Codex would refuse every send's check and each would cost a whole read on top. Any other refusal is asked again on the next send.
 
@@ -344,3 +346,11 @@ The 128 MiB frame cap ended the app-server, and that was more than a limit on on
 A line past the cap is now read on by `OversizedLine`. Each string in it longer than 16 KiB that is only base64, or a base64 `data:` URL, is kept as an empty string, and everything else as it came. That thread's line keeps 353 KB. A generated picture is then read from its `savedPath`, and a record that holds a picture already keeps it (ADR-0170), so the read loses nothing Sotto shows. A line still past the cap without its pictures is skipped. The request it answered fails as unconfirmed, and the app-server goes on, since the lines around it are whole. Lines under the cap are read exactly as before. The cap still bounds what one read holds; it no longer ends a thread's session. Watcher's read of a thread whose provider cannot read it back, or has said it could not, now gives the stored history, marked unavailable, as a provider that is not connected already did. A Stop that the thread's app-server takes but does not answer within the request deadline now ends that app-server and marks the turn interrupted. Before, the hung process stayed the thread's runtime and every later action waited on it. The thread's next action starts it again, as after any lost app-server. A resume Codex does not answer in time lets its app-server go, as a refused one already did, so the next action starts a new one rather than waiting on the hung one again. One picture string longer than the whole cap still has its line skipped, since holding it to the end would pass the cap. See [verification](../verification/codex-oversized-history-line.md).
 
 November 18, 2026: pictures nested in a tool result's text are left out too. Computer Use's `node_repl` tool returns each screenshot as JSON inside its text result, `{"content":[{"type":"image","data":"..."}]}`, so its base64 is part of a longer string. Codex also cuts a long result in its middle (`…169519 chars truncated…`), which splits those bytes in two. A Slaker thread that took 4,294 screenshots had a `thread/turns/list` answer of one 260 MiB line, and `OversizedLine` kept all of it. Every send's read before sending failed as too long, and so did the read after compacting, since a paged read still returns every turn. A run of more than 16 KiB of base64 letters inside a string is now left out when it opens or closes a nested string on an escaped quote, a `data:` URL's start allowed after the opening. That line keeps 29 MiB and reads in under 3 seconds. Sotto shows no picture from a text result, so no picture it shows is lost; a base64 literal that long quoted in a message or a command's output is left out with the pictures, and only from a line already past the cap. A run never starts on an escape's letter, so the line stays valid JSON. A long run of base64 letters that neither opens nor closes a nested string is still kept whole.
+
+## Amendment: the newest-turn check on a paginated thread (November 18, 2026)
+
+A paginated thread used to skip the newest-turn check, so every send paged its whole history first, at full detail and 100 turns a page. The exclusion came in with #324, before Sotto could page a history at all, and stayed when `readPaged` was added; it was a gap in that ticket's evidence, not a known hazard. Codex hands some threads back paginated even though Sotto starts them legacy: 39 of the owner's 402 Codex threads are. One is the Slaker thread, whose 4,294 Computer Use screenshots made its history 260 MiB (#2680).
+
+The check now covers paginated threads too. It asks the same endpoint the paged read does, at the same detail, newest first and one turn. Against the installed Codex 0.170.0, read-only on the Slaker thread, `limit: 3`, `sortDirection: 'desc'`, `itemsView: 'full'` gave the three newest turns, each marked `itemsView: 'full'`, with the same IDs, statuses and count of each kind of item as the last three of the paged read. Every other condition on the list above still holds, so a paginated thread's first send on a connection still pages its whole history.
+
+The check stays on `full` items. Codex's `summary` view holds only a turn's first prompt and final answer. On that thread, a second prompt typed into a running turn (`item-76`) appeared only in `full`, and catching such input is what the check is for.

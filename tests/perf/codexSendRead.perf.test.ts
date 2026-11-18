@@ -13,10 +13,12 @@
  * way the Threads page does, through the coordinator over the wrapped adapter, and counts the whole reads each send
  * made before `turn/start` and after it, and the newest-turn checks before it (#765). Counters, sizes and timers only; every seeded text is filler. It asserts no time, so it runs only under `SOTTO_PERF_BENCH=1`
  * (`tests/fixtures/perfBench.ts`). Add `SOTTO_PERF_WITHOUT_TURNS_LIST=1` for the same run with the check switched
- * off, which is how a send read before #324:
+ * off, which is how a send read before #324, and `SOTTO_PERF_PAGINATED=1` to seed a thread with paginated history,
+ * whose whole read pages every turn with `thread/turns/list`:
  *
  *   SOTTO_PERF_BENCH=1 npx vitest run tests/perf/codexSendRead.perf.test.ts --maxWorkers=1 --disable-console-intercept
  *   SOTTO_PERF_BENCH=1 SOTTO_PERF_WITHOUT_TURNS_LIST=1 npx vitest run tests/perf/codexSendRead.perf.test.ts --maxWorkers=1 --disable-console-intercept
+ *   SOTTO_PERF_BENCH=1 SOTTO_PERF_PAGINATED=1 npx vitest run tests/perf/codexSendRead.perf.test.ts --maxWorkers=1 --disable-console-intercept
  */
 import { randomUUID } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
@@ -31,6 +33,8 @@ import { median, PERF_BENCH, round } from '../fixtures/perfBench'
 const SENDS = 5
 /** Measure the send as it was before #324: the fake refuses `thread/turns/list` as a Codex without it does. */
 const WITHOUT_TURNS_LIST = process.env.SOTTO_PERF_WITHOUT_TURNS_LIST === '1'
+/** Seed the thread with paginated history. */
+const PAGINATED = process.env.SOTTO_PERF_PAGINATED === '1'
 const SIZES = [50, 500, 2000] as const
 type Stage = 'refreshThread' | 'read' | 'newestTurn' | 'applyThread' | 'persist'
 const STAGES = ['refreshThread', 'read', 'newestTurn', 'applyThread', 'persist'] as const
@@ -84,7 +88,7 @@ async function replies(root: string): Promise<{ method: string; bytes: number }[
  * transcript as it did before #324: that run gives the "before" figures.
  */
 const seededFixture = (turns: number, wrapped = false) =>
-  seededCodexThread(turns, wrapped, { recordReplyBytes: true, ...(WITHOUT_TURNS_LIST ? { withoutTurnsList: true } : {}) })
+  seededCodexThread(turns, wrapped, { recordReplyBytes: true, ...(WITHOUT_TURNS_LIST ? { withoutTurnsList: true } : {}) }, PAGINATED)
 /** A seeded thread opened the way the Threads page opens it, on the adapter alone. */
 async function seeded(turns: number): Promise<{ f: Fixture; id: string; openMs: number }> {
   const { f, id } = await seededFixture(turns)

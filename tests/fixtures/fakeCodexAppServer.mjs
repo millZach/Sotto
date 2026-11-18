@@ -308,7 +308,10 @@ createInterface({ input: process.stdin }).on('line', line => withState(() => {
   else if (method === 'model/list') reply(script.modelPages?.[params.cursor ?? 'first'] ?? { data: script.models ?? [{ id: 'model', model: 'fixture-model', displayName: 'Fixture Codex', isDefault: true,
     defaultReasoningEffort: 'low', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }] }], nextCursor: null })
   else if (method === 'thread/start') {
+    // `paginatedThreads` stands for a Codex that starts a thread with paginated history whatever it was asked for, as
+    // the Slaker thread on Codex 0.170.0 was (#2680).
     const thread = { id: randomUUID(), cwd: params.cwd, model: params.model, createdAt: Math.floor(Date.now() / 1000), status: { type: 'idle' }, turns: [],
+      ...(script.paginatedThreads ? { historyMode: 'paginated' } : {}),
       defaultModeRequestUserInput: params.config?.['features.default_mode_request_user_input'] === true,
       approvalPolicy: params.approvalPolicy, approvalsReviewer: params.approvalsReviewer, sandbox: params.sandbox, reasoningEffort: params.config?.model_reasoning_effort ?? 'low',
       serviceTier: serviceTierFrom(method, params.model, params.serviceTier, script.defaultServiceTier ?? 'default') }
