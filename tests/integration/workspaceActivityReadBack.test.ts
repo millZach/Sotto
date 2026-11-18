@@ -113,7 +113,7 @@ describe('a stored thread read back on the store worker', () => {
     const release = (): void => { holding = false; for (const message of held.splice(0)) heard(message) }
     vi.spyOn(handle, 'heard').mockImplementation(message => {
       if ('read' in message && holding) { held.push(message); return }
-      if (!('read' in message) && message.id === beforeId) release()
+      if ('id' in message && message.id === beforeId) release()
       heard(message)
     })
     return { release, held: () => held.length }

@@ -482,3 +482,19 @@ scrambled before this keeps that order: this change repairs none.
 ## Amendment: what Show earlier messages brings from the store shows above the reader (November 9, 2026, #214)
 
 Once a pane shows every message it holds, **Show earlier messages** asks the store for the window before them. That press let go of the first row the pane kept, so when the older messages arrived the pane fell back to its newest 80: none of what arrived showed, and rows the reader had were taken away. Zach chose, from the prototype kept at the tag `prototype/show-earlier-messages`, that the press shows what arrived ("B. Show what arrived"), over keeping the rows as they were with the arrivals hidden above and counted on the button. The pane now keeps its rows while the store answers, shows every message that arrives above the oldest one it held, and holds the reader on the message they were reading.
+
+## Amendment: the message scrubber's read runs on the worker (November 17, 2026)
+
+This changes the October 26 amendment's "A read whose caller can wait waits until the worker has committed what was
+posted for that thread, then reads" for one read: the prompts the message scrubber marks above a pane's window
+(ADR-0109). It still waits for what was posted for its thread, then goes to the store worker behind every write sent
+before it, and the worker runs the query and answers with the prompts. On November 17, 2026 the owner's main stopped for
+4.3 s while a pane opened, and the stop ended inside this query on main: a read that takes a few milliseconds on a copy
+of the owner's 1.5 GB store held main at least 1.8 s on the live file. Off main, a store that answers slowly holds the
+worker and the scrubber's marks, not the window. While writes wait unsent, or where the worker cannot run, it reads on
+main as before; a worker that goes before answering is waited out, and main reads behind what it finishes.
+
+Main's other reads of the store stay on main. Each query main's connection runs once the store is open (a prepared
+statement's `get` or `all`) that takes 250 ms or more is noted, by its query and how long it took, in `store-read-diagnostics.jsonl` in Sotto's data folder, since main's log reaches no file in a packaged
+build and a hang recording cannot see inside a native call. The query is Sotto's own, with every value a parameter, so a
+line holds nothing a thread said. The numbers are in `docs/perf/2026-11-17-store-reads-off-main.md`.

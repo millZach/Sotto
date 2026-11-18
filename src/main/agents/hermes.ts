@@ -15,10 +15,10 @@ import { acpImageBlocks, deliverAttachments, withAttachedFilesNote } from './att
 import type { BrowserAgentTools } from './browserAgentServer'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
 import { hermesActivities, HERMES_THINKING_ID_PREFIX } from './hermesActivity'
-import { hermesCatalog, hermesModelRoute, hermesModelValue, hermesSettingsOf, hermesEffortValue, hermesHasEffort, HERMES_RUNTIME_MODES } from './hermesModels'
+import { hermesCatalog, hermesModelRoute, hermesModelValue, hermesSettingsOf, hermesEffortValue, hermesHasEffort, isHermesChatGptModel, HERMES_CHATGPT_SOURCE, HERMES_RUNTIME_MODES } from './hermesModels'
 import { hermesAnswer, hermesDecline, hermesPending, type HermesPending, type HermesToolDetail } from './hermesRequests'
 import { compareHermesVersions, HermesRejected, HermesRpc, HermesUncertain, HERMES_ACP_VERSION, HERMES_CLI_VERSION,
-  findHermesExecutable, readHermesVersion, type HermesFrame } from './hermesRpc'
+  findHermesExecutable, hermesAcpCommand, readHermesVersion, type HermesFrame } from './hermesRpc'
 import { HermesRuntime, hermesProjectHome, hermesServers, hermesSharedSkills } from './hermesRuntime'
 import { discoverHermesSkills, hermesSkillPrompt, invokedHermesSkill } from './hermesSkills'
 import type { AgentSkillCatalog } from '../../shared/agentSkills'
@@ -110,6 +110,7 @@ const initializeSchema = z.object({ protocolVersion: z.number(), agentCapabiliti
 const sessionNewSchema = z.object({ sessionId: z.string().min(1).max(512) }).passthrough()
 const promptAnswerSchema = z.object({ stopReason: z.string() }).passthrough()
 const PROCESS_LOST = 'Hermes stopped before this reply finished, so it may be cut short. Send a message to carry on.'
+const CHATGPT_SIGN_IN_REQUIRED = 'Sign in with ChatGPT for Hermes on this computer, then try again. Your thread is kept.'
 /** How long a turn's end waits for a look at what it left running, at most (#2637). */
 const LOOK_BEFORE_END_MS = 5_000
 /**
@@ -240,6 +241,7 @@ export class HermesAcpHost implements ProviderHost {
   private harnessImages = false
   private generation = 0
   private writing = Promise.resolve()
+  private chatGptModels: readonly string[] = []
   private state: AgentHostSnapshot = { connected: false, name: 'Hermes', version: '', projects: [], models: [], threads: [],
     capabilities: { projects: true, threads: true, submit: true, observe: true, questions: false, permissions: true, interrupt: true, messageOrigin: true,
       reconcile: true, configureThread: true, configureThreadModel: true, skills: true, steer: true, compact: false } }
@@ -290,6 +292,7 @@ export class HermesAcpHost implements ProviderHost {
   /** Sotto's private Hermes root; project profiles live beneath it. */
   get folder(): string { return this.homeDirectory }
   isConnected(): boolean { return this.state.connected }
+  hasChatGptModels(): boolean { return this.chatGptModels.length > 0 }
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
   subscribeActivitySnapshots(listener: (snapshot: AgentHostSnapshot) => void, options?: ActivitySubscriptionOptions): () => void {
     return this.activityListeners.add(listener, options)
@@ -389,8 +392,8 @@ export class HermesAcpHost implements ProviderHost {
 
   // ---- Processes -----------------------------------------------------------------------------------------------------
 
-  private spawn(args: string[], cwd: string, home: string, receive: (frame: HermesFrame, rpc: HermesRpc) => void, lost: () => void): HermesRpc {
-    const rpc: HermesRpc = new HermesRpc(this.executable!, args, cwd, this.runtime.env(home, cwd), this.options.requestTimeoutMs ?? 30_000, frame => receive(frame, rpc), lost)
+  private spawn(executable: string, command: ReturnType<typeof hermesAcpCommand>, cwd: string, home: string, receive: (frame: HermesFrame) => void, lost: () => void): HermesRpc {
+    const rpc = new HermesRpc(command.executable, command.args, cwd, this.runtime.env(home, cwd), this.options.requestTimeoutMs ?? 30_000, receive, lost, executable)
     this.processes.add(rpc); void rpc.closed.then(() => this.processes.delete(rpc))
     return rpc
   }
@@ -413,21 +416,22 @@ export class HermesAcpHost implements ProviderHost {
   private readHarnessImages(connection: Connection, images: boolean): void {
     if (this.stale(connection) || images === this.harnessImages) return
     this.harnessImages = images
-    this.state.models = hermesCatalog(this.servers, images, this.harnessEffort)
+    this.state.models = hermesCatalog(this.servers, images, this.harnessEffort, this.chatGptModels)
     this.emit()
   }
   /** The overlay from the current record, written whenever it changed: a record change makes processes outdated. */
   /** One write at a time, so an older overlay never lands on disk after a newer one. */
   private writePatch(): Promise<void> {
     this.patching = this.patching.catch(() => undefined).then(async () => {
-      await this.runtime.writeConfig(this.homeDirectory, this.servers)
+      await this.runtime.writeConfig(this.homeDirectory, this.servers, undefined, this.chatGptModels[0])
       this.patchText = JSON.stringify(this.servers)
     })
     return this.patching
   }
   /** This thread's own process, started in the thread's permission mode with the current overlay, ready for a session. */
   private async startProcess(id: string, alias: Alias, cwd: string): Promise<Connection> {
-    if (!this.executable || !this.state.connected) throw new Error('Connect Hermes before using its threads.')
+    const executable = this.executable
+    if (!executable || !this.state.connected) throw new Error('Connect Hermes before using its threads.')
     // The revision is read before the overlay is written, so a change during the write leaves this process outdated.
     const patchRevision = this.patchRevision, stops = this.runtime.stops
     await this.writePatch()
@@ -435,8 +439,11 @@ export class HermesAcpHost implements ProviderHost {
     const connection: Connection = { rpc: undefined as unknown as HermesRpc, nonce: randomUUID(), clientRevision: this.clientRevision,
       patchRevision, mode: alias.runtimeMode, closing: false, replaying: false, model: undefined, effort: undefined, tools: new Map() }
     const project = this.state.projects.find(project => project.id === alias.projectId)
-    const home = await this.runtime.project(this.executable, project?.path ?? cwd, this.servers, stops)
-    const rpc = this.spawn([...(this.options.executableArgs ?? []), 'acp'], cwd, home, frame => this.frame(id, connection, frame), () => this.processLost(id, connection))
+    const home = await this.runtime.project(executable, project?.path ?? cwd, this.servers, stops, this.chatGptModels[0])
+    // Hermes builds an editor picker during session creation. Its cold Windows inventory can block the session ID.
+    const skipChatGptInventory = process.platform === 'win32' && isHermesChatGptModel(alias.modelId)
+    const command = hermesAcpCommand(executable, this.options.executableArgs ?? [], skipChatGptInventory)
+    const rpc = this.spawn(executable, command, cwd, home, frame => this.frame(id, connection, frame), () => this.processLost(id, connection))
     ;(connection as { rpc: HermesRpc }).rpc = rpc
     try { this.readHarnessImages(connection, await this.handshake(rpc)) }
     catch (error) { connection.closing = true; rpc.close(); throw error }
@@ -445,6 +452,12 @@ export class HermesAcpHost implements ProviderHost {
   private close(connection: Connection): void { connection.closing = true; connection.rpc.close() }
 
   // ---- Connecting ----------------------------------------------------------------------------------------------------
+
+  /** Warm the Windows gateway while the user chooses a ChatGPT model. First send shares this same startup. */
+  private warmChatGptGateway(executable: string): void {
+    if (process.platform !== 'win32' || !this.chatGptModels.length) return
+    void this.runtime.start(executable, this.runtime.stops).catch(() => undefined)
+  }
 
   async connect(): Promise<AgentHostSnapshot> {
     this.disconnect(); await this.closed()
@@ -462,16 +475,23 @@ export class HermesAcpHost implements ProviderHost {
       // Images wait for the harness to say it takes them, which a process started on this overlay does.
       this.harnessImages = false
       this.harnessEffort = compareHermesVersions(version, '0.22.6') >= 0
-      const models = hermesCatalog(this.servers, false, this.harnessEffort)
-      if (!models.length) throw new ProviderUnavailable('signed-out', 'Hermes has no models it can run yet. Add a model server, or an API provider’s OpenAI-compatible address and key, under Your own model servers. Then connect again. Your threads are kept.', version)
+      const chatGptModels = await this.runtime.chatGptModels(executable).catch(() => [])
+      this.assertGeneration(generation)
+      this.chatGptModels = chatGptModels
+      const models = hermesCatalog(this.servers, false, this.harnessEffort, chatGptModels)
+      if (!models.length) throw new ProviderUnavailable('signed-out', 'Sign in with ChatGPT or add a model server for Hermes, then connect again. Your threads are kept.', version)
       this.executable = executable
       await this.writePatch()
+      this.assertGeneration(generation)
+      this.warmChatGptGateway(executable)
       const [aliases, projects] = await Promise.all([this.aliasStore.read(), this.projectStore.read()])
       this.assertGeneration(generation)
       for (const id of this.forgottenAliasIds) delete aliases[id]
       this.aliases = aliases; this.aliasesLoaded = true; this.indexes.clear(); this.state.projects = projects; this.state.models = models
       this.threads.clear(); this.threadChanges.markAll(); this.log.forgetAll()
       for (const id of Object.keys(this.aliases)) { this.thread(id); this.log.seed(id, this.history?.messageIdentities(id) ?? []) }
+      if (chatGptModels.length) this.state.account = HERMES_CHATGPT_SOURCE
+      else delete this.state.account
       this.state.connected = true; this.state.version = `${version} / ACP ${HERMES_ACP_VERSION}`
       delete this.state.error; delete this.state.problem; delete this.state.requiredVersion
       if (compareHermesVersions(version, HERMES_CLI_VERSION) > 0) this.state.verifiedVersion = HERMES_CLI_VERSION
@@ -512,7 +532,7 @@ export class HermesAcpHost implements ProviderHost {
       const servers = saved ? hermesServers(saved, await this.runtime.keys.read()) : undefined
       if (!servers || generation !== this.generation) return
       this.servers = servers
-      this.state.models = hermesCatalog(servers, this.harnessImages, this.harnessEffort)
+      this.state.models = hermesCatalog(servers, this.harnessImages, this.harnessEffort, this.chatGptModels)
       // Only a new overlay outdates a process: a save that leaves it the same, such as a keyed server's, restarts nothing.
       if (JSON.stringify(servers) !== this.patchText) {
         this.patchRevision++
@@ -521,6 +541,27 @@ export class HermesAcpHost implements ProviderHost {
       this.emit()
     })().catch(() => undefined)
   }
+  /** Refresh only the catalog when the user signs in or out while Hermes has open threads. */
+  async refreshChatGptModels(): Promise<boolean> {
+    const executable = this.executable, generation = this.generation
+    if (!executable || !this.state.connected) return false
+    const models = await this.runtime.chatGptModels(executable)
+    this.assertGeneration(generation)
+    this.chatGptModels = models
+    if (models.length) this.state.account = HERMES_CHATGPT_SOURCE
+    else delete this.state.account
+    this.state.models = hermesCatalog(this.servers, this.harnessImages, this.harnessEffort, models)
+    this.patchRevision++
+    for (const [id, connection] of this.connections) if (this.stale(connection)) this.outdated.add(id)
+    if (models.length) {
+      await this.writePatch()
+      this.assertGeneration(generation)
+      this.warmChatGptGateway(executable)
+    }
+    this.emit()
+    return models.length > 0
+  }
+
   /** A keyed server was added (ADR-0124): Hermes keeps its own copy of the key, as OpenCode does, and can run it from now on. */
   async keepKey(id: string, key: string): Promise<void> {
     await this.runtime.keys.keep(id, key)
@@ -725,14 +766,14 @@ export class HermesAcpHost implements ProviderHost {
       connection.supportsEffort = true
       if (!this.harnessEffort) {
         this.harnessEffort = true
-        this.state.models = hermesCatalog(this.servers, this.harnessImages, true)
+        this.state.models = hermesCatalog(this.servers, this.harnessImages, true, this.chatGptModels)
       }
     }
     if (record(value)?.configOptions && !hermesHasEffort(value)) {
       connection.supportsEffort = false
       if (this.harnessEffort) {
         this.harnessEffort = false
-        this.state.models = hermesCatalog(this.servers, this.harnessImages)
+        this.state.models = hermesCatalog(this.servers, this.harnessImages, false, this.chatGptModels)
         this.emit()
       }
     }
@@ -960,10 +1001,18 @@ export class HermesAcpHost implements ProviderHost {
       const mcpServers = await this.toolServers(command.threadId)
       this.assertGeneration(generation)
       watcherGuard?.()
-      await connection.rpc.request('session/new', { cwd: alias.cwd, mcpServers }, async value => {
+      // Windows Hermes can stall when a new ChatGPT session creates and attaches its HTTP tool servers together.
+      // Persist the confirmed session first, then attach the same tools before the thread can send anything.
+      const attachAfterCreate = process.platform === 'win32' && isHermesChatGptModel(alias.modelId) && mcpServers.length > 0
+      await connection.rpc.request('session/new', { cwd: alias.cwd, mcpServers: attachAfterCreate ? [] : mcpServers }, async value => {
         alias.hermesSessionId = sessionNewSchema.parse(value).sessionId; this.readSettings(connection, value); await this.persist()
       })
       this.assertGeneration(generation)
+      if (attachAfterCreate) {
+        await connection.rpc.request('session/load', { sessionId: alias.hermesSessionId, cwd: alias.cwd, mcpServers },
+          value => this.readSettings(connection, value))
+        this.assertGeneration(generation)
+      }
       await this.applySettings(alias, connection, command.threadId)
     } catch (error) {
       if (this.connections.get(command.threadId) === connection) this.connections.delete(command.threadId)
@@ -980,6 +1029,9 @@ export class HermesAcpHost implements ProviderHost {
   private model(modelId: string): AgentModel | undefined { return this.state.models.find(model => model.id === modelId) }
   /** Put the session on the thread's model and effort before a prompt that needs them, read back from the answer. */
   private async applySettings(alias: Alias, connection: Connection, id: string): Promise<void> {
+    if (isHermesChatGptModel(alias.modelId) && !this.hasChatGptModels()) {
+      throw new Error(CHATGPT_SIGN_IN_REQUIRED)
+    }
     const value = hermesModelValue(alias.modelId)
     if (value === undefined) throw new Error('This thread’s model is not one of your own model servers. Choose a model your servers offer, then send.')
     await connection.rpc.request('session/set_mode', { sessionId: alias.hermesSessionId, modeId: 'dont_ask' })
@@ -1012,7 +1064,7 @@ export class HermesAcpHost implements ProviderHost {
         // evidence that other sessions lack the feature and must not disable their controls.
         connection.supportsEffort = false
         this.harnessEffort = false
-        this.state.models = hermesCatalog(this.servers, this.harnessImages)
+        this.state.models = hermesCatalog(this.servers, this.harnessImages, false, this.chatGptModels)
       }
     }
   }
@@ -1131,8 +1183,14 @@ export class HermesAcpHost implements ProviderHost {
     index.add(origin); alias.turns++
     // A record that cannot be written takes the origin back out, so the same command can be sent again.
     try { await this.persist() } catch (error) { index.remove(origin); alias.turns--; throw error }
-    current()
-    try { watcherGuard?.() } catch (error) { index.remove(origin); alias.turns--; await this.persist(); throw error }
+    try {
+      if (isHermesChatGptModel(alias.modelId)) {
+        if (this.hasChatGptModels() && await this.runtime.chatGptAuthChanged()) await this.refreshChatGptModels()
+        if (!this.hasChatGptModels()) throw new Error(CHATGPT_SIGN_IN_REQUIRED)
+      }
+      current()
+      watcherGuard?.()
+    } catch (error) { index.remove(origin); alias.turns--; await this.persist(); throw error }
     const thread = this.thread(id)
     delete thread.requestNotice
     const turn: LiveTurn = { places: new TurnPlaces(origin.messageId), origin, taken: false, ended: false, wake: undefined }

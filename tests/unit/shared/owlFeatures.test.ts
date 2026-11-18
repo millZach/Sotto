@@ -6,13 +6,14 @@ import { OWL_FEATURES, isOwlFeatureEnabled, owlFeaturesForTrack, type OwlFeature
 const SENT_ON_OCTOBER_23 = ['watcher', 'muse', 'usage', 'resume-after-restart', 'update-all', 'streaming-publish-cost', 'thread-delegation',
   'worker-roles', 'continue-on-provider', 'continue-agent-thread', 'opencode', 'dictation-hold-shortcuts', 'main-freeze', 'iphone-pull-request-view',
   'iphone-agents-view', 'dictation-off', 'message-scrubber', 'menu-bar-owl', 'desktop-notifications']
-// In list order: Needs you went with status groups on November 10 (ADR-0201), the quiet composer on October 30.
-const SENT_LATER = ['needs-you-queue', 'quiet-composer']
+// In list order: Hermes went with ChatGPT sign-in on November 18 (ADR-0208), Needs you with status groups on November 10 (ADR-0201),
+// the quiet composer on October 30.
+const SENT_LATER = ['hermes', 'needs-you-queue', 'quiet-composer']
 // Zach sent every feature still held on November 17, 2026, so stable is a frozen copy of Owl (ADR-0072), in list order.
 const SENT_ON_NOVEMBER_17 = [
   'restart-stopped-threads', 'worker-swarms', 'recent-projects', 'creature-toggle', 'lardo-creature', 'night-falls', 'reveal-linked-files',
   'markdown-side-panel', 'cursor', 'cleanup-model', 'interface-language', 'own-model-servers', 'clear-threads', 'composer-shrink', 'attach-any-file',
-  'reply-quote', 'next-prompt', 'pi', 'hermes', 'deepseek', 'cross-machine-work', 'own-server-cleanup', 'folder-peek', 'paired-host-terminal',
+  'reply-quote', 'next-prompt', 'pi', 'deepseek', 'cross-machine-work', 'own-server-cleanup', 'folder-peek', 'paired-host-terminal',
   'run-command', 'model-favorites', 'keep-main-current', 'glass-theme', 'click-effect', 'sidebar-rail', 'inline-media', 'thread-snooze',
   'cloud-dictation', 'quiet-browser', 'answer-images', 'council', 'living-widget-owl', 'local-apps', 'teams', 'popup', 'next-turn-choice',
   'hide-menu-bar-icon', 'dynamic-threads', 'paired-host-browser', 'living-night-scene', 'model-router', 'plugins']

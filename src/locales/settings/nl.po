@@ -1821,6 +1821,10 @@ msgstr ""
 msgid "Changes shortcut"
 msgstr ""
 
+#: src/renderer/src/features/settings/HostProviderSignIn.tsx
+msgid "ChatGPT for Hermes"
+msgstr ""
+
 #: src/renderer/src/features/settings/HostProviders.tsx
 msgid "Check {hostName} for {name} again"
 msgstr ""
@@ -3207,7 +3211,7 @@ msgid "From your SSH configuration"
 msgstr ""
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
-msgid "Full access on this computer. Uses your model servers or an API provider’s OpenAI-compatible address and key. Project memory and skills are shared across models. Hermes keeps prompt logs and fetches the models.dev catalog."
+msgid "Full access on this computer. Uses ChatGPT or your model servers. Project memory and skills are shared across models. Hermes keeps prompt logs and fetches the models.dev catalog."
 msgstr ""
 
 #: src/renderer/src/features/settings/settingsPages.ts
@@ -3334,6 +3338,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostSetupView.tsx
 msgid "Have my agent set this up"
+msgstr ""
+
+#: src/renderer/src/features/settings/HermesChatGptSource.tsx
+msgid "Hermes could not finish signing out. Try again."
 msgstr ""
 
 #: src/renderer/src/features/settings/HostProviders.tsx
@@ -6453,12 +6461,24 @@ msgstr ""
 msgid "Sign in to Tailscale in your browser. Sotto lists your devices once you have."
 msgstr ""
 
+#: src/renderer/src/features/settings/HermesChatGptSource.tsx
+msgid "Sign in with ChatGPT"
+msgstr ""
+
+#: src/renderer/src/features/settings/HermesChatGptSource.tsx
+msgid "Sign out"
+msgstr ""
+
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Sign-in steps"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
 msgid "Signed in"
+msgstr ""
+
+#: src/renderer/src/features/settings/HermesChatGptSource.tsx
+msgid "Signed in · Uses your ChatGPT subscription"
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
@@ -6488,6 +6508,10 @@ msgstr ""
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Signing in…"
+msgstr ""
+
+#: src/renderer/src/features/settings/HermesChatGptSource.tsx
+msgid "Signing out…"
 msgstr ""
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
@@ -8549,6 +8573,10 @@ msgstr ""
 #: src/renderer/src/features/settings/PopupShortcutSetting.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Use the popup"
+msgstr ""
+
+#: src/renderer/src/features/settings/HermesChatGptSource.tsx
+msgid "Use your ChatGPT subscription for Hermes threads."
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx

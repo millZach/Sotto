@@ -29,6 +29,27 @@ export interface RecordedUserMessageIdentity { readonly threadId: string; readon
 const TAKE_OVER_PATIENCE_MS = 10_000
 
 /**
+ * A read on main this long or longer is reported (`onSlowRead`). Every read of a pane is a few milliseconds even at the
+ * owner's 1.5 GB store, yet on November 17, 2026 one held main 1.8 s, and a hang recording cannot see inside a native call.
+ */
+export const SLOW_READ_MS = 250
+
+/** Times each `get` and `all` of a statement, and reports one that took `SLOW_READ_MS` or more, by its SQL on one line. */
+function reportSlowReads(statement: StatementSync, sql: string, report: (statement: string, ms: number) => void): void {
+  const name = sql.replace(/\s+/gu, ' ').trim().slice(0, 160)
+  for (const method of ['get', 'all'] as const) {
+    const read = statement[method]
+    Object.defineProperty(statement, method, { configurable: true, value: (...args: unknown[]): unknown => {
+      const started = performance.now()
+      try { return Reflect.apply(read, statement, args) } finally {
+        const ms = performance.now() - started
+        if (ms >= SLOW_READ_MS) report(name, ms)
+      }
+    } })
+  }
+}
+
+/**
  * The projection's shape. A change here means the `messages` table is rebuilt from `events` on the next
  * open, so nothing about a thread's history depends on a projection written by an older run.
  */
@@ -284,6 +305,8 @@ export class ThreadStore {
   private unansweredListener: ((unanswered: readonly UnansweredWrite[]) => void) | undefined
   /** How long this connection waits for the write lock, as it was opened with. */
   private busyTimeoutMs = 5_000
+  /** Hears each read that held this connection's thread `SLOW_READ_MS` or more (`onSlowRead`). */
+  private slowRead: ((statement: string, ms: number) => void) | undefined
 
   /**
    * The main runtime supplies a path under `app.getPath('userData')`. `storeWorker` is the built store worker, or null to
@@ -518,10 +541,17 @@ export class ThreadStore {
     this.memory = false
   }
 
+  /**
+   * Hears every read through this connection's prepared statements (`get` and `all`) that took `SLOW_READ_MS` or more:
+   * the statement, collapsed to one line, and how long. Opening the store and its projection rebuild are not timed. Main's store is given one before it opens, so a freeze inside a read names the read (November 17, 2026).
+   */
+  onSlowRead(listener: ((statement: string, ms: number) => void) | undefined): void { this.slowRead = listener }
+
   private statement(sql: string): StatementSync {
     let statement = this.statements.get(sql)
     if (statement === undefined) {
       statement = this.requireOpen().prepare(sql)
+      if (this.slowRead) reportSlowReads(statement, sql, (name, ms) => { this.slowRead?.(name, ms) })
       this.statements.set(sql, statement)
     }
     return statement
@@ -626,7 +656,7 @@ export class ThreadStore {
    * them still carries words the roster lacks (#918). Until then a start reads every record, as each start used to.
    */
   subagentWordsMoved(): boolean {
-    return readMeta(this.requireOpen(), 'subagentWordsMoved') === '1'
+    return this.statement('SELECT value FROM meta WHERE key = ?').get('subagentWordsMoved')?.value === '1'
   }
 
   markSubagentWordsMoved(): void {

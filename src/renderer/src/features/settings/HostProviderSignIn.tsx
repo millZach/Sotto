@@ -42,7 +42,7 @@ export function HostProviderSignIn({ place, provider, signIn, onClose }: {
   readonly place: string; readonly provider: HostProviderId; readonly signIn: (step: ProviderSignInStep) => Promise<ProviderSignInView | null>; readonly onClose: () => void
 }): ReactNode {
   const { t } = useLingui()
-  const name = PROVIDER_LABELS[provider]
+  const name = provider === 'hermes' ? t`ChatGPT for Hermes` : PROVIDER_LABELS[provider]
   const hostName = place
   // The newest sender, so a caller that builds one each render does not restart the sign-in.
   const sender = useRef(signIn)

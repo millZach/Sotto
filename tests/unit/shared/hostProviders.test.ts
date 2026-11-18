@@ -5,7 +5,7 @@ import { isOpenCodeSignInPage, OPENCODE_HOST_ANSWERS, opencodeHostCallSchema } f
 import { hostsCommandSchema } from '../../../src/shared/hosts'
 
 describe('the pages a host sign-in may open (ADR-0037)', () => {
-  it('opens only https pages on each provider’s own sign-in host, exactly', () => {
+  it('opens only https pages on each providerâ€™s own sign-in host, exactly', () => {
     expect(isProviderSignInPage('codex', 'https://auth.openai.com/codex/device')).toBe(true)
     expect(isProviderSignInPage('grok', 'https://accounts.x.ai/oauth2/device?user_code=K7PX-2QRM')).toBe(true)
     expect(isProviderSignInPage('claude', 'https://claude.com/cai/oauth/authorize?code=true&state=x')).toBe(true)
@@ -18,7 +18,7 @@ describe('the pages a host sign-in may open (ADR-0037)', () => {
     ] as const) expect(isProviderSignInPage(provider, page), page).toBe(false)
   })
   it('signs Codex and Grok Build in with a device code, Claude Code with a code pasted back, Cursor on a page alone, and leaves Devin to its terminal', () => {
-    expect(PROVIDER_SIGN_IN_SHAPES).toEqual({ codex: 'device-code', grok: 'device-code', claude: 'paste-code', devin: null, muse: null, opencode: null, cursor: 'page', deepseek: null, hermes: null, pi: null })
+    expect(PROVIDER_SIGN_IN_SHAPES).toEqual({ codex: 'device-code', grok: 'device-code', claude: 'paste-code', devin: null, muse: null, opencode: null, cursor: 'page', deepseek: null, hermes: 'device-code', pi: null })
     expect(isProviderSignInPage('cursor', 'https://cursor.com/loginDeepControl?challenge=x&uuid=y&mode=login')).toBe(true)
     expect(isProviderSignInPage('cursor', 'https://cursor.sh/loginDeepControl')).toBe(false)
   })
@@ -26,17 +26,17 @@ describe('the pages a host sign-in may open (ADR-0037)', () => {
 
 describe('the providers a host offers', () => {
   const HOST = '22222222-2222-4222-8222-222222222222'
-  it('takes OpenCode and Cursor, but keeps DeepSeek, Hermes and Pi on this computer', () => {
-    expect(HOST_PROVIDERS).toEqual(['claude', 'codex', 'grok', 'devin', 'muse', 'opencode', 'cursor'])
-    expect([...heldOnHost(new Set())]).toEqual(['deepseek', 'hermes', 'pi'])
-    expect([...heldOnHost(new Set(['opencode']))]).toEqual(['opencode', 'deepseek', 'hermes', 'pi'])
+  it('takes OpenCode, Cursor and Hermes and keeps DeepSeek and Pi local', () => {
+    expect(HOST_PROVIDERS).toEqual(['claude', 'codex', 'grok', 'devin', 'muse', 'opencode', 'cursor', 'hermes'])
+    expect([...heldOnHost(new Set())]).toEqual(['deepseek', 'pi'])
+    expect([...heldOnHost(new Set(['opencode']))]).toEqual(['opencode', 'deepseek', 'pi'])
   })
   it('takes a host connect, sign-in or agent job for OpenCode, as for every provider', () => {
     expect(hostProviderActionSchema.safeParse({ id: HOST, provider: 'opencode', action: 'connect' }).success).toBe(true)
     expect(hostSignInRequestSchema.safeParse({ type: 'start', id: HOST, provider: 'opencode' }).success).toBe(true)
     expect(hostsCommandSchema.safeParse({ type: 'start-provider-job', id: HOST, hostId: HOST, provider: 'opencode', modelId: 'claude:opus' }).success).toBe(true)
   })
-  it('lets the window ask a host’s OpenCode for its dialog’s calls, and never for a page’s address', () => {
+  it('lets the window ask a hostâ€™s OpenCode for its dialogâ€™s calls, and never for a pageâ€™s address', () => {
     const attempt = { attemptId: 'con_1' }
     expect(hostOpenCodeSignInRequestSchema.safeParse({ id: HOST, call: { action: 'reopen', request: attempt } }).success).toBe(true)
     expect(hostOpenCodeSignInRequestSchema.safeParse({ id: HOST, call: { action: 'page', request: attempt } }).success).toBe(false)

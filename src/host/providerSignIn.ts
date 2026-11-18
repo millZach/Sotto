@@ -1,13 +1,17 @@
-import { spawn, type ChildProcess } from 'node:child_process'
+import { execFile, spawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
+import { mkdir } from 'node:fs/promises'
+import { join } from 'node:path'
 import { PROVIDER_LABELS, type ProviderId } from '../shared/agents'
 import { PROVIDER_SIGN_IN_LIFETIME_MS, PROVIDER_SIGN_IN_SHAPES, SIGN_IN_MESSAGE_MAX, isProviderSignInPage, type HostSignIn, type ProviderSignInShape } from '../shared/hostProviders'
 import { withCliPath } from '../main/agents/cliLookup'
+import { stopProcessTree } from '../main/agents/git/gitLauncher'
 import { findExecutable as findCodex, nativeEnvironment as codexEnvironment } from '../main/agents/subscriptionCodex'
 import { claudeEnvironment, findClaudeExecutable } from '../main/agents/subscriptionClaude'
 import { findGrokExecutable, grokEnvironment } from '../main/agents/grokRpc'
 import { cursorEnvironment, findCursorProgram } from '../main/agents/cursorRpc'
+import { findHermesExecutable, hermesEnvironment, hermesPythonCommand, withHermesPath } from '../main/agents/hermesRpc'
 
 /**
  * A provider's own sign-in, run on this host for a paired client and finished by the user in that client's browser
@@ -28,6 +32,8 @@ export interface ProviderSignInOptions {
   readonly command?: (provider: ProviderId) => Promise<SignInCommand | undefined>
   /** Sotto's own Cursor folder, which Cursor's sign-in runs with (ADR-0128): the host's data directory's, or this computer's user data's. */
   readonly cursorConfigDirectory?: string
+  readonly hermesHome?: string
+  readonly hermesSignedOut?: () => Promise<void>
   /** Connects the provider once its client says it signed in, for the client that asked; answers the provider's error when it did not connect. */
   readonly connect: (provider: ProviderId, clientId: string) => Promise<string | undefined>
   readonly lifetimeMs?: number
@@ -54,16 +60,37 @@ const EXPIRES = /expires in (\d{1,2}) minutes?/iu
 
 /** The client's own sign-in, never an API key: Codex's and Grok Build's device codes, Claude Code's subscription only, and Cursor's page. */
 export const PROVIDER_SIGN_IN_ARGS: Readonly<Record<ProviderId, readonly string[] | null>> = {
-  codex: ['login', '--device-auth'], grok: ['login', '--device-auth'], claude: ['auth', 'login', '--claudeai'], devin: null, muse: null, opencode: null, cursor: ['login'], deepseek: null, hermes: null, pi: null,
+  codex: ['login', '--device-auth'], grok: ['login', '--device-auth'], claude: ['auth', 'login', '--claudeai'], devin: null, muse: null, opencode: null, cursor: ['login'], deepseek: null, hermes: ['auth', 'add', 'openai-codex', '--type', 'oauth', '--no-browser'], pi: null,
+}
+
+async function hermesAccountCommand(hermesHome: string, args: readonly string[]): Promise<SignInCommand | undefined> {
+  const executable = await findHermesExecutable()
+  if (!executable) return undefined
+  await mkdir(hermesHome, { recursive: true })
+  const env = hermesEnvironment(hermesHome, { CODEX_HOME: join(hermesHome, 'codex') })
+  // The official launcher uses isolated Python, which ignores PYTHONUNBUFFERED. The
+  // device code must reach the window before Hermes starts polling for authorization.
+  const script = [
+    'import sys',
+    'sys.stdout.reconfigure(line_buffering=True)',
+    'from hermes_cli.main import main',
+    `sys.argv = ${JSON.stringify(['hermes', ...args])}`,
+    'try:',
+    ' main()',
+    'except SystemExit as error:',
+    ' if error.code not in (None, 0): raise',
+  ].join('\n')
+  return { ...hermesPythonCommand(executable, script), env: withHermesPath(env, executable) }
 }
 
 /**
  * Where each client is, found the way its adapter finds it (ADR-0036), with the environment its adapter gives it. Cursor's
  * runs with Sotto's own Cursor folder, `cursorConfigDirectory`, and prints its page rather than opening a browser.
  */
-export async function defaultSignInCommand(provider: ProviderId, cursorConfigDirectory?: string): Promise<SignInCommand | undefined> {
+export async function defaultSignInCommand(provider: ProviderId, cursorConfigDirectory?: string, hermesHome?: string): Promise<SignInCommand | undefined> {
   const args = PROVIDER_SIGN_IN_ARGS[provider]
   if (!args) return undefined
+  if (provider === 'hermes') return hermesHome ? hermesAccountCommand(hermesHome, args) : undefined
   if (provider === 'cursor') {
     const program = await findCursorProgram()
     if (!program || !cursorConfigDirectory) return undefined
@@ -96,6 +123,7 @@ interface Entry {
 export class ProviderSignIns {
   private readonly entries = new Map<string, Entry>()
   private closed = false
+  private hermesSigningOut = false
   constructor(private readonly options: ProviderSignInOptions) {}
   private get here(): boolean { return this.options.place === 'computer' }
   /** "on this host", or "on this computer" for the desktop's own sign-ins. */
@@ -108,6 +136,7 @@ export class ProviderSignIns {
    */
   async start(provider: ProviderId, clientId: string): Promise<HostSignIn> {
     if (this.closed) throw new ProviderSignInRefusal(this.here ? 'Sotto is closing. Nothing was signed in.' : 'This host is stopping. Nothing was signed in. Connect again and try once more.')
+    if (provider === 'hermes' && this.hermesSigningOut) throw new ProviderSignInRefusal('Hermes is signing out. Try again in a moment.')
     const shape = PROVIDER_SIGN_IN_SHAPES[provider]
     const name = PROVIDER_LABELS[provider]
     if (!shape) throw new ProviderSignInRefusal(`${name} signs in from a terminal ${this.here ? 'on this computer' : 'on the host'}. Nothing was changed.`)
@@ -118,7 +147,7 @@ export class ProviderSignIns {
     const entry: Entry = { view: { id, provider, shape, stage: 'starting' }, clientId, shape, output: '', codeSent: false, timers: [] }
     this.entries.set(id, entry)
     let command: SignInCommand | undefined
-    try { command = await (this.options.command ? this.options.command(provider) : defaultSignInCommand(provider, this.options.cursorConfigDirectory)) } catch { command = undefined }
+    try { command = await (this.options.command ? this.options.command(provider) : defaultSignInCommand(provider, this.options.cursorConfigDirectory, this.options.hermesHome)) } catch { command = undefined }
     if (this.closed || this.entries.get(id) !== entry || ended(entry.view)) return this.copy(entry)
     if (!command) {
       this.entries.delete(id)
@@ -149,6 +178,24 @@ export class ProviderSignIns {
     for (const timer of entry.timers) timer.unref()
     await printed
     return this.copy(entry)
+  }
+
+  async signOutHermes(): Promise<void> {
+    if (this.closed || !this.options.hermesHome || this.hermesSigningOut
+      || [...this.entries.values()].some(entry => entry.view.provider === 'hermes' && !ended(entry.view))) {
+      throw new ProviderSignInRefusal('Hermes cannot sign out right now. Close any sign-in and try again.')
+    }
+    this.hermesSigningOut = true
+    try {
+      const command = await hermesAccountCommand(this.options.hermesHome, ['logout', '--provider', 'openai-codex'])
+      if (!command || this.closed) throw new ProviderSignInRefusal('Hermes could not start to sign out. Try again.')
+      await new Promise<void>((resolve, reject) => {
+        execFile(command.executable, command.args, {
+          env: command.env, windowsHide: true, timeout: 30_000, maxBuffer: OUTPUT_LIMIT,
+        }, error => error ? reject(new ProviderSignInRefusal('Hermes could not finish signing out. Check the connection and try again.')) : resolve())
+      })
+      await this.options.hermesSignedOut?.()
+    } finally { this.hermesSigningOut = false }
   }
 
   /** Where a sign-in stands, for the client that started it; null for any other client, or once it is gone. */
@@ -238,7 +285,11 @@ export class ProviderSignIns {
     if (!entry) return
     const child = entry.child
     entry.child = undefined
-    if (child && child.exitCode === null && child.signalCode === null) child.kill()
+    if (child && child.exitCode === null && child.signalCode === null) {
+      if (entry.view.provider === 'hermes' && process.platform === 'win32' && child.pid) {
+        void stopProcessTree(child.pid).catch(() => child.kill())
+      } else child.kill()
+    }
     for (const timer of entry.timers) clearTimeout(timer)
     entry.output = ''; entry.codeSent = false
     // The provider's own error can make the sentence long; a message the client's schema refuses would leave it waiting.

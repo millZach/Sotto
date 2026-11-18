@@ -1821,6 +1821,10 @@ msgstr "Changes opens only when you open it."
 msgid "Changes shortcut"
 msgstr "Changes shortcut"
 
+#: src/renderer/src/features/settings/HostProviderSignIn.tsx
+msgid "ChatGPT for Hermes"
+msgstr "ChatGPT for Hermes"
+
 #: src/renderer/src/features/settings/HostProviders.tsx
 msgid "Check {hostName} for {name} again"
 msgstr "Check {hostName} for {name} again"
@@ -3207,8 +3211,8 @@ msgid "From your SSH configuration"
 msgstr "From your SSH configuration"
 
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
-msgid "Full access on this computer. Uses your model servers or an API provider’s OpenAI-compatible address and key. Project memory and skills are shared across models. Hermes keeps prompt logs and fetches the models.dev catalog."
-msgstr "Full access on this computer. Uses your model servers or an API provider’s OpenAI-compatible address and key. Project memory and skills are shared across models. Hermes keeps prompt logs and fetches the models.dev catalog."
+msgid "Full access on this computer. Uses ChatGPT or your model servers. Project memory and skills are shared across models. Hermes keeps prompt logs and fetches the models.dev catalog."
+msgstr "Full access on this computer. Uses ChatGPT or your model servers. Project memory and skills are shared across models. Hermes keeps prompt logs and fetches the models.dev catalog."
 
 #: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/SettingsView.tsx
@@ -3335,6 +3339,10 @@ msgstr "Have my agent fix this"
 #: src/renderer/src/features/settings/HostSetupView.tsx
 msgid "Have my agent set this up"
 msgstr "Have my agent set this up"
+
+#: src/renderer/src/features/settings/HermesChatGptSource.tsx
+msgid "Hermes could not finish signing out. Try again."
+msgstr "Hermes could not finish signing out. Try again."
 
 #: src/renderer/src/features/settings/HostProviders.tsx
 msgid "Hide providers"
@@ -6453,6 +6461,14 @@ msgstr "Sign in to {name} on {hostName} from this computer"
 msgid "Sign in to Tailscale in your browser. Sotto lists your devices once you have."
 msgstr "Sign in to Tailscale in your browser. Sotto lists your devices once you have."
 
+#: src/renderer/src/features/settings/HermesChatGptSource.tsx
+msgid "Sign in with ChatGPT"
+msgstr "Sign in with ChatGPT"
+
+#: src/renderer/src/features/settings/HermesChatGptSource.tsx
+msgid "Sign out"
+msgstr "Sign out"
+
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Sign-in steps"
 msgstr "Sign-in steps"
@@ -6460,6 +6476,10 @@ msgstr "Sign-in steps"
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
 msgid "Signed in"
 msgstr "Signed in"
+
+#: src/renderer/src/features/settings/HermesChatGptSource.tsx
+msgid "Signed in · Uses your ChatGPT subscription"
+msgstr "Signed in · Uses your ChatGPT subscription"
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Signed in as {account} through gh on that computer."
@@ -6489,6 +6509,10 @@ msgstr "Signed in. This computer is <0>{machine}</0> on your tailnet."
 #: src/renderer/src/features/settings/ProvidersSettings.tsx
 msgid "Signing in…"
 msgstr "Signing in…"
+
+#: src/renderer/src/features/settings/HermesChatGptSource.tsx
+msgid "Signing out…"
+msgstr "Signing out…"
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Sixteen characters, made at {GOOGLE_APP_PASSWORDS_PAGE}. It needs 2-Step Verification on the Google account. Sotto checks it with Gmail before saving it, and never shows it again."
@@ -8550,6 +8574,10 @@ msgstr "Use the Git setting (On)"
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Use the popup"
 msgstr "Use the popup"
+
+#: src/renderer/src/features/settings/HermesChatGptSource.tsx
+msgid "Use your ChatGPT subscription for Hermes threads."
+msgstr "Use your ChatGPT subscription for Hermes threads."
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Used for AI cleanup and for transcribing with OpenRouter, and kept in your system’s credential store."

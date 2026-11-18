@@ -116,6 +116,7 @@ export default tseslint.config(
       'artifacts/new-thread-setup/**',
       'artifacts/empty-page-saved-draft/**',
       'artifacts/host-folder-browser-run/**',
+      'artifacts/hermes-chatgpt-sign-in/**',
       'artifacts/command-receipt/**',
       'artifacts/linux-shutdown-drain/**',
       'artifacts/linux-release-command/**',

@@ -20,6 +20,7 @@ import { useTransientFlag, writeClipboard } from '../../agents/richActions'
 import { localHostId, localProviders } from '../../agents/localAgents'
 import { PROVIDER_INSTALL_GUIDES } from '../../../../shared/hostProviders'
 import { signsInHere, type LocalSignInProvider, type LocalSignInRequest } from '../../../../shared/localProviderSignIn'
+import { HermesChatGptSource } from './HermesChatGptSource'
 import { HostProviderSignIn } from './HostProviderSignIn'
 import { COMPACT_IDLE_SETTING, onProviderAimed, takeAimedProvider } from './settingsTarget'
 import { shownWords, type LaterWords } from '../../agents/interfaceWords'
@@ -329,13 +330,16 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
         : <div className="provider-connection">
           <div>
             <h4>{t`Local connection`}</h4>
-            <p className="tt-paragraph">{provider === 'devin' ? t`Install Devin CLI and run devin auth login before connecting.` : provider === 'muse' ? t`Uses your Muse sign-in on this computer. Run muse login in a terminal before connecting.` : provider === 'opencode' ? t`Sotto runs its own OpenCode, with its own folder and its own sign-ins. The OpenCode you run yourself stays as it is.` : provider === 'pi' ? t`Sotto runs Pi in its own folder on your keyless model servers. Pi has Full access and does not ask before running tools. Sign in below to use Pi’s other model sources.` : provider === 'hermes' ? t`Full access on this computer. Uses your model servers or an API provider’s OpenAI-compatible address and key. Project memory and skills are shared across models. Hermes keeps prompt logs and fetches the models.dev catalog.` : provider === 'deepseek' ? t`Sotto runs DeepSeek with its own folder, on the models of your own model servers below. The DeepSeek you run yourself stays as it is.` : t({ message: `Uses your ${clientName} sign-in on this computer.`, comment: '{clientName} is a provider\'s client, such as Claude Code.' })}</p>
+            <p className="tt-paragraph">{provider === 'devin' ? t`Install Devin CLI and run devin auth login before connecting.` : provider === 'muse' ? t`Uses your Muse sign-in on this computer. Run muse login in a terminal before connecting.` : provider === 'opencode' ? t`Sotto runs its own OpenCode, with its own folder and its own sign-ins. The OpenCode you run yourself stays as it is.` : provider === 'pi' ? t`Sotto runs Pi in its own folder on your keyless model servers. Pi has Full access and does not ask before running tools. Sign in below to use Pi’s other model sources.` : provider === 'hermes' ? t`Full access on this computer. Uses ChatGPT or your model servers. Project memory and skills are shared across models. Hermes keeps prompt logs and fetches the models.dev catalog.` : provider === 'deepseek' ? t`Sotto runs DeepSeek with its own folder, on the models of your own model servers below. The DeepSeek you run yourself stays as it is.` : t({ message: `Uses your ${clientName} sign-in on this computer.`, comment: '{clientName} is a provider\'s client, such as Claude Code.' })}</p>
             {provider === 'devin' && <div className="provider-login"><code>devin auth login</code><Button variant="ghost" disabled={copyingLogin} aria-label={t`Copy Devin login command`} onClick={() => void copyLogin('devin', 'devin auth login')}>{loginCopied === 'devin' ? t`Copied` : t`Copy`}</Button><span className="tt-visually-hidden" role="status">{loginCopied === 'devin' ? t`Devin login command copied.` : ''}</span></div>}
             {named && status.error ? <p className="provider-connection__said tt-paragraph">{shownWords(status.error)}</p> : null}
             {provider === 'muse' && <div className="provider-login"><code>muse login</code><Button variant="ghost" disabled={copyingLogin} aria-label={t`Copy Muse login command`} onClick={() => void copyLogin('muse', 'muse login')}>{loginCopied === 'muse' ? t`Copied` : t`Copy`}</Button><Button variant="ghost" onClick={() => void openMuseGuide()}>{t`Sign-in steps`}</Button><span className="tt-visually-hidden" role="status">{loginCopied === 'muse' ? t`Muse login command copied.` : ''}</span></div>}
           </div>
           <div className="provider-client__actions">{connectButtons}</div>
         </div>}
+        {provider === 'hermes' && window.sotto?.providerSignIn && problem !== 'not-installed' && problem !== 'too-old'
+          ? <HermesChatGptSource signedIn={'account' in status && status.account === 'ChatGPT'} onSignIn={() => setSignInFor('hermes')}
+            signOut={() => window.sotto!.providerSignIn!.signIn({ type: 'hermes-sign-out' })} /> : null}
         {provider === 'pi' && window.sotto?.pi ? <OpenCodeModelSources provider="Pi" bridge={window.sotto.pi} /> : null}
         {provider === 'opencode' && connected && window.sotto?.opencode ? <OpenCodeModelSources bridge={window.sotto.opencode} /> : null}
         {/* A small field rather than the whole list, so one provider's models never fill the page. Cursor's models arrive
@@ -441,7 +445,7 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
     const error = cursorExplains(provider, status) ? undefined : (clientsOwn ? undefined : pressed) ?? (plain ? undefined : status.error)
     const id = `${rowId}-${provider}`
     // Sign in runs the client's own sign-in in a dialog (ADR-0200); Cursor signs in from its opened row (ADR-0128).
-    const signInHere = problem === 'signed-out' && signsInHere(provider) && window.sotto?.providerSignIn !== undefined && !connecting
+    const signInHere = problem === 'signed-out' && provider !== 'hermes' && signsInHere(provider) && window.sotto?.providerSignIn !== undefined && !connecting
     const installGuide = plain && (problem === 'not-installed' || problem === 'too-old') && !connecting
     // Closes the open row from anywhere in it and gives focus back to its header; a dialog's own Escape is its own.
     const closeOnEscape = (event: KeyboardEvent<HTMLLIElement>): void => {

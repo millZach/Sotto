@@ -1,12 +1,21 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest'
-import { hermesCatalog, hermesSettingsOf, hermesEffortValue, hermesHasEffort } from '../../../src/main/agents/hermesModels'
+import { hermesCatalog, hermesModelValue, hermesSettingsOf, hermesEffortValue, hermesHasEffort } from '../../../src/main/agents/hermesModels'
 import type { OwnServer } from '../../../src/shared/ownModelServers'
 const server: OwnServer = { id: 'own-test', name: 'Example', address: 'https://example.test/v1', keyed: false, keptModelIds: ['one'], models: [
   { id: 'one', name: 'One', context: 128000, images: false, thinking: true, reasoningEfforts: ['none', 'low', 'high', 'max'] },
   { id: 'two', name: 'Two', context: 128000, images: false, thinking: true, reasoningEfforts: ['default'] },
 ] }
-describe('Hermes model thinking', () => {
+describe('Hermes models', () => {
+  it('selects ChatGPT models on the native route alongside model servers', () => {
+    const models = hermesCatalog([server], false, false, ['gpt-6.1-sol'])
+    expect(models[0]).toMatchObject({ id: 'openai-codex/gpt-6.1-sol', provider: 'Hermes', source: 'ChatGPT', ready: true })
+    expect(models[0]?.ownServer).toBeUndefined()
+    expect(hermesModelValue(models[0]!.id)).toBe('openai-codex:gpt-6.1-sol')
+    expect(hermesSettingsOf({ models: { currentModelId: 'openai-codex:gpt-6.1-sol' } }).model).toBe(models[0]?.id)
+    expect(hermesModelValue(models[1]!.id)).toBe('custom:own-test:one')
+    expect(hermesSettingsOf({ models: { currentModelId: 'custom:own-test:one' } }).model).toBe(models[1]?.id)
+  })
   it('uses only confirmed model levels when the harness supports the option', () => {
     expect(hermesCatalog([server], false, true)[0]!.defaultReasoningEffort).toBe('high')
     expect(hermesCatalog([server], false, true)[0]!.reasoningEfforts).toEqual(['off', 'low', 'high', 'max'])

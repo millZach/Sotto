@@ -2114,7 +2114,7 @@ export class SocketHostService implements HostService {
    * the caller hands the window neither the address nor anything to keep. A host that does not list `provider-sign-in`
    * is from before it; the version sentence says which side to bring up to date, and nothing is sent.
    */
-  async signIn(operation: { op: 'sign-in-start'; provider: ProviderId } | { op: 'sign-in-read' | 'sign-in-cancel'; signInId: string } | { op: 'sign-in-code'; signInId: string; code: string }): Promise<HostSignIn | null> {
+  async signIn(operation: { op: 'hermes-sign-out' } | { op: 'sign-in-start'; provider: ProviderId } | { op: 'sign-in-read' | 'sign-in-cancel'; signInId: string } | { op: 'sign-in-code'; signInId: string; code: string }): Promise<HostSignIn | null> {
     if (!this.offersSignIn()) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
     return this.read(signInAnswerSchema, await this.call(operation))
   }
