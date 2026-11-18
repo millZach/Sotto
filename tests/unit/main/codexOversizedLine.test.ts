@@ -33,6 +33,27 @@ describe('a Codex line too long for one frame (#2268)', () => {
     for (const size of [1000, 4096, reply.length]) expect(JSON.parse(kept(reply, size))).toEqual({ id: 1, result: { short, mixed } })
   })
 
+  it('leaves out a picture nested as a JSON string in a tool result\'s text, wherever the pieces split it', () => {
+    // Computer Use's node_repl tool hands back a screenshot inside its text result as JSON of its own.
+    // Codex cuts a long result in its middle, so a picture's bytes can open the nested string or close it, not both.
+    const cut = `${picture}…169519 chars truncated…${picture}`
+    const screenshot = JSON.stringify({ content: [{ type: 'image', data: picture }, { type: 'image', data: `data:image/jpeg;base64,${picture}` },
+      { type: 'image', data: cut }] })
+    // A long run of base64 letters that is not a nested string of its own, or is too short to be a picture, stays.
+    const words = `before ${'A'.repeat(PICTURE_CHARS + 10)} after`
+    const short = JSON.stringify({ data: 'A'.repeat(PICTURE_CHARS) })
+    const reply = JSON.stringify({ id: 3, result: { data: [{ items: [
+      { type: 'mcpToolCall', server: 'node_repl', tool: 'js', result: { content: [{ type: 'text', text: screenshot }] } },
+      { type: 'agentMessage', text: words },
+      { type: 'commandExecution', aggregatedOutput: short },
+    ] }] } })
+    const expected = JSON.parse(reply)
+    expected.result.data[0].items[0].result.content[0].text = JSON.stringify({ content: [{ type: 'image', data: '' }, { type: 'image', data: 'data:image/jpeg;base64,' },
+      { type: 'image', data: '…169519 chars truncated…' }] })
+    const at = reply.indexOf('\\"', reply.indexOf(picture.slice(-8)))
+    for (const size of [1, 2, 3, 7, 4096, at, at + 1, reply.length]) expect(JSON.parse(kept(reply, size))).toEqual(expected)
+  })
+
   it('fails only the request a line still too long answered, whichever way round, and goes on reading the app-server', async () => {
     // An app-server that answers its first two requests with lines of words longer than the budget, the first with its
     // ID after the result and the second before it, and its third as usual.
