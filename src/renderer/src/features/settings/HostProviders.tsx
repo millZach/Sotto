@@ -13,6 +13,7 @@ import { Button } from '../../components/Button'
 import { ProviderMark } from '../../agents/ProviderMark'
 import { useOptionalAgents } from '../../agents/AgentContext'
 import { useOptionalApp } from '../../state/AppContext'
+import { HermesChatGptSource } from './HermesChatGptSource'
 import { HostProviderSignIn } from './HostProviderSignIn'
 import { OpenCodeModelSources } from '../../agents/OpenCodeModelSources'
 import { hostOpenCodeBridge } from './hostOpenCode'
@@ -222,7 +223,7 @@ function ProviderTile({ host, provider, status, bridge, job, onSignIn, onAgent, 
     if (tile.kind === 'off') return <Button variant="secondary" disabled={pending !== null} aria-label={t`Connect ${name} on ${hostName}`} onClick={() => void act('connect')}>{pending ? i18n._(PENDING_LABEL[pending]) : t({ message: 'Connect', comment: 'Connects a provider on a host.' })}</Button>
     if (tile.kind === 'signed-out') {
       // OpenCode connects with no sign-in and signs in to model sources under the tiles instead (#1107).
-      if (provider === 'opencode') return null
+      if (provider === 'opencode' || provider === 'hermes') return null
       if (!PROVIDER_SIGN_IN_SHAPES[provider]) return <SignInCommand host={host.name} provider={provider} />
       return <Button variant="primary" aria-label={t`Sign in to ${name} on ${hostName} from this computer`} onClick={() => onSignIn(provider)}>{t`Sign in`}</Button>
     }
@@ -243,6 +244,9 @@ function ProviderTile({ host, provider, status, bridge, job, onSignIn, onAgent, 
     <p className="host-provider__state"><span className="host-provider__dot" aria-hidden="true" />{tile.state}</p>
     {working ? <p className="host-provider__detail tt-paragraph"><Trans>In the thread <b>{workingThread}</b> on this computer.</Trans></p>
       : tile.detail ? <p className="host-provider__detail">{tile.detail}</p> : null}
+    {provider === 'hermes' && !working && (tile.kind === 'connected' || tile.kind === 'signed-out')
+      ? <HermesChatGptSource compact signedIn={status?.account === 'ChatGPT'} onSignIn={() => onSignIn('hermes')}
+        signOut={() => bridge.signIn({ type: 'hermes-sign-out', id: host.id })} /> : null}
     {parts.line}{parts.below ? <div className="host-client-update__below">{parts.below}</div> : null}
     <div ref={actions} className="host-provider__act" onFocus={focusIn} onBlur={focusOut}>{action()}</div>
     <p className={typeof shownNote === 'string' ? 'host-provider__note' : 'host-provider__note tt-paragraph'} role="status">{shownWords(shownNote)}</p>
@@ -279,7 +283,7 @@ export function HostProviders({ host, providers, bridge, job, choice, updates, r
   const opencodeConnected = providers.some(item => item.id === 'opencode' && item.connection === 'connected')
   // A host from before #1107, or one whose OpenCode is held, sends no OpenCode row: it gets no tile to connect (#1143).
   const opencodeOnHost = providers.some(item => item.id === 'opencode')
-  const shownProviders = HOST_PROVIDER_ORDER.filter(provider => !heldProviders.has(provider) && (provider !== 'opencode' || opencodeOnHost))
+  const shownProviders = HOST_PROVIDER_ORDER.filter(provider => !heldProviders.has(provider) && (provider !== 'opencode' || opencodeOnHost) && (provider !== 'hermes' || providers.some(item => item.id === 'hermes')))
   const view = useHostClientUpdates(host.id, updates, HOST_PROVIDER_ORDER)
   const [sending, setSending] = useState(false)
   const [refusal, setRefusal] = useState<TileUpdates['refusal']>()

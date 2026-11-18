@@ -265,6 +265,12 @@ artifacts/meshy-3d-models/*
 artifacts/new-thread-setup/
 artifacts/empty-page-saved-draft/
 artifacts/host-folder-browser-run/
+artifacts/hermes-chatgpt-sign-in/*
+!artifacts/hermes-chatgpt-sign-in/local-chatgpt.png
+!artifacts/hermes-chatgpt-sign-in/paired-device-code-dark.png
+!artifacts/hermes-chatgpt-sign-in/paired-device-code-light.png
+!artifacts/hermes-chatgpt-sign-in/windows-subscription-reply.png
+!artifacts/hermes-chatgpt-sign-in/windows-fresh-project-reply.png
 artifacts/command-receipt/
 artifacts/sidebar-question/
 artifacts/tools-rail-run/

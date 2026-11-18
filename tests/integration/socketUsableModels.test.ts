@@ -7,6 +7,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import type { SocketFrames } from '../../src/host/socketFrames'
 import type { AgentHostSnapshot, AgentModel } from '../../src/shared/agents'
+import { PROVIDER_HOST_FEATURES } from '../../src/shared/hostProtocol'
 import { rawPeer } from '../fixtures/rawHostPeer'
 import { useSocketHostFixture } from '../fixtures/socketHostFixture'
 
@@ -15,7 +16,7 @@ const raws: SocketFrames[] = []
 afterEach(() => { for (const frames of raws.splice(0)) frames.close() })
 
 /** Every provider the fixture runs, so a phone is sent each one's threads and models. */
-const PROVIDERS = ['provider-opencode', 'provider-cursor', 'provider-deepseek']
+const PROVIDERS = Object.values(PROVIDER_HOST_FEATURES)
 
 /** The fake provider's catalog now: one ready model and one it reports not ready. The models it listed before stay, not ready. */
 async function catalog(): Promise<void> {

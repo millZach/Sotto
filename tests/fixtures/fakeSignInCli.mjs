@@ -54,8 +54,12 @@ if (provider === 'claude') {
     if (existsSync(file('denied'))) { process.stderr.write('Login failed\n'); process.exit(1) }
   }, 50)
 } else {
-  const code = provider === 'codex' ? 'WDJB-MJHTQ' : 'K7PX-2QRM'
-  if (provider === 'codex') {
+  const code = provider === 'codex' || provider === 'hermes' ? 'WDJB-MJHTQ' : 'K7PX-2QRM'
+  if (provider === 'hermes') {
+    say('To continue, follow these steps:\n\n  1. Open this URL in your browser:\n')
+    say(`     ${blue(page ?? 'https://auth.openai.com/codex/device')}\n\n  2. Enter this code:\n`)
+    say(`     ${blue(code)}\n\nWaiting for sign-in... (press Ctrl+C to cancel)\n`)
+  } else if (provider === 'codex') {
     say(`\nWelcome to Codex [v${grey('0.158.0')}]\n${grey("OpenAI's command-line coding agent")}\n\n`)
     say('Follow these steps to sign in with ChatGPT using device code authorization:\n\n')
     say(`1. Open this link in your browser and sign in to your account\n   ${blue(page ?? 'https://auth.openai.com/codex/device')}\n\n`)

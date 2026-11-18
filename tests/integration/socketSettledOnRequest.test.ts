@@ -6,6 +6,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import type { SocketFrames } from '../../src/host/socketFrames'
 import type { AgentHostSnapshot, AgentThread } from '../../src/shared/agents'
+import { PROVIDER_HOST_FEATURES } from '../../src/shared/hostProtocol'
 import { rawPeer } from '../fixtures/rawHostPeer'
 import { useSocketHostFixture } from '../fixtures/socketHostFixture'
 
@@ -38,7 +39,7 @@ async function phone(accepts: string[]) {
 }
 const OLDER = ['Billing reconcile', 'Owl stars', 'Billing export']
 /** Every provider the fixture runs, so a phone is sent each one's threads. */
-const PROVIDERS = ['provider-opencode', 'provider-cursor', 'provider-deepseek']
+const PROVIDERS = Object.values(PROVIDER_HOST_FEATURES)
 
 describe('settled threads on request', () => {
   it('leaves every settled thread out of the list, however recently settled, and says how many it left out', async () => {

@@ -5,6 +5,11 @@ import { type OwnServer } from '../../shared/ownModelServers'
 
 /** Full access is the only mode Sotto runs Hermes in. */
 export const HERMES_RUNTIME_MODES: readonly AgentRuntimeMode[] = ['full-access']
+export const HERMES_CHATGPT_SOURCE = 'ChatGPT'
+// Saved server IDs always start with own-, so their namespace stays separate.
+const CODEX_PROVIDER = 'openai-codex'
+
+export function isHermesChatGptModel(id: string): boolean { return id.startsWith(`${CODEX_PROVIDER}/`) }
 
 /** A saved or chosen model, split into the server and model IDs its wire pair names. */
 export function hermesModelRoute(modelId: string): { serverId: string; model: string } | undefined {
@@ -17,8 +22,8 @@ export function hermesModelRoute(modelId: string): { serverId: string; model: st
  * The catalog's models, from the servers `hermesServers` kept: the keyless ones and each keyed one Hermes holds a key for. `harnessImages` is whether the harness
  * advertised image prompts; until it has, and when it said no, no model offers images.
  */
-export function hermesCatalog(servers: readonly OwnServer[], harnessImages = false, harnessEffort = false): AgentModel[] {
-  return servers.flatMap(server => server.models.map((model): AgentModel => {
+export function hermesCatalog(servers: readonly OwnServer[], harnessImages = false, harnessEffort = false, chatGptModels: readonly string[] = []): AgentModel[] {
+  const ownModels = servers.flatMap(server => server.models.map((model): AgentModel => {
     const efforts = (model.reasoningEfforts ?? ['default']).map(level => level === 'none' ? 'off' : level)
     return {
     id: `${server.id}/${model.id}`,
@@ -33,12 +38,17 @@ export function hermesCatalog(servers: readonly OwnServer[], harnessImages = fal
 
     }
   }))
+  return [...chatGptModels.map((model): AgentModel => ({
+    id: `${CODEX_PROVIDER}/${model}`, provider: 'Hermes', name: model, source: HERMES_CHATGPT_SOURCE,
+    runtimeModes: [...HERMES_RUNTIME_MODES], ready: true,
+  })), ...ownModels]
 }
 
 /** The `model` config option's value, as the harness encodes the chosen route and model. */
 export function hermesModelValue(modelId: string): string | undefined {
   const route = hermesModelRoute(modelId)
-  return route ? `custom:${route.serverId}:${route.model}` : undefined
+  if (!route) return undefined
+  return route.serverId === CODEX_PROVIDER ? `${CODEX_PROVIDER}:${route.model}` : `custom:${route.serverId}:${route.model}`
 }
 
 const optionsSchema = z.object({
@@ -49,8 +59,8 @@ const optionsSchema = z.object({
 export function hermesSettingsOf(value: unknown): { model: string | undefined; effort: string | undefined } {
   const parsed = optionsSchema.safeParse(value)
   const wire = parsed.success ? parsed.data.models?.currentModelId : undefined
-  const match = wire?.match(/^custom:([^:]+):(.+)$/u)
-  return { model: match ? `${match[1]}/${match[2]}` : undefined, effort: parsed.success ? sottoEffort(parsed.data.configOptions?.find(option => option.id === 'reasoning_effort')?.currentValue) : undefined }
+  const match = wire?.match(/^(?:custom:([^:]+)|(openai-codex)):(.+)$/u)
+  return { model: match ? `${match[1] ?? match[2]}/${match[3]}` : undefined, effort: parsed.success ? sottoEffort(parsed.data.configOptions?.find(option => option.id === 'reasoning_effort')?.currentValue) : undefined }
 }
 
 export function hermesEffortValue(effort: string | undefined): string { return effort === 'off' ? 'none' : effort ?? 'default' }

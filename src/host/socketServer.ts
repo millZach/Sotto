@@ -273,7 +273,7 @@ export interface SocketServerOptions {
    * A headless host's providers' own sign-ins, run here for the paired client that asks (ADR-0037). Absent on the
    * desktop's phone listener, which then neither lists `provider-sign-in` nor answers its requests.
    */
-  signIns?: Pick<ProviderSignIns, 'start' | 'read' | 'code' | 'cancel'>
+  signIns?: Pick<ProviderSignIns, 'start' | 'read' | 'code' | 'cancel'> & Partial<Pick<ProviderSignIns, 'signOutHermes'>>
   /**
    * A headless host's own OpenCode sign-ins to model sources (#1107), run here for the desktop that asks. Present only where
    * the host's OpenCode runs; without it the listener neither lists `opencode-sign-in` nor answers its request.
@@ -2327,7 +2327,14 @@ export async function startSocketServer(options: SocketServerOptions) {
         } finally { peer.preview = false }
       }
       // Only the client that started a sign-in reads it, sends its code or cancels it (ADR-0037).
-      case 'sign-in-start': return signingIn(peer, request.op, () => signIns!.start(request.provider, peer.client.clientId))
+      case 'hermes-sign-out': {
+        if (peer.unknownProviders.has('hermes') || !signIns?.signOutHermes) throw new Refusal('forbidden')
+        return signingIn(peer, request.op, async () => { await signIns.signOutHermes!(); return null })
+      }
+      case 'sign-in-start': {
+        if (peer.unknownProviders.has(request.provider)) throw new Refusal('forbidden')
+        return signingIn(peer, request.op, () => signIns!.start(request.provider, peer.client.clientId))
+      }
       case 'sign-in-read': return signingIn(peer, request.op, () => signIns!.read(request.signInId, peer.client.clientId))
       case 'sign-in-code': return signingIn(peer, request.op, () => signIns!.code(request.signInId, peer.client.clientId, request.code))
       case 'sign-in-cancel': return signingIn(peer, request.op, () => { signIns!.cancel(request.signInId, peer.client.clientId); return null })

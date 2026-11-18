@@ -1058,6 +1058,7 @@ export class DesktopHosts {
     const { host, socket } = this.connectedSocket(request.id)
     if (!socket.offersSignIn()) throw new Error(t`The host on ${{ host: host.name }} cannot sign in its providers from here. Nothing was changed. Put this computer's version of the host on ${{ host: host.name }}, stop the host and connect again.`)
     let view: HostSignIn | null
+    if (request.type === 'hermes-sign-out') { await socket.signIn({ op: 'hermes-sign-out' }); return null }
     if (request.type === 'start') view = await socket.signIn({ op: 'sign-in-start', provider: request.provider })
     else if (request.type === 'read') view = await socket.signIn({ op: 'sign-in-read', signInId: request.signInId })
     else if (request.type === 'code') view = await socket.signIn({ op: 'sign-in-code', signInId: request.signInId, code: request.code })

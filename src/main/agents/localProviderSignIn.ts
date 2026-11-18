@@ -22,6 +22,8 @@ export interface LocalProviderSignInOptions {
   readonly openExternal: (url: string) => Promise<void>
   /** Each provider's sign-in command; found the way its adapter finds it by default. A test stands fake clients in here. */
   readonly command?: (provider: LocalSignInProvider) => Promise<SignInCommand | undefined>
+  readonly hermesHome?: string
+  readonly hermesSignedOut?: () => Promise<void>
   readonly lifetimeMs?: number
   readonly startTimeoutMs?: number
 }
@@ -49,7 +51,9 @@ export class LocalProviderSignIn {
   constructor(private readonly options: LocalProviderSignInOptions) {
     this.signIns = new ProviderSignIns({
       place: 'computer',
-      command: async provider => withoutOwnBrowser(provider as LocalSignInProvider, await (options.command ? options.command(provider as LocalSignInProvider) : defaultSignInCommand(provider))),
+      ...(options.hermesHome ? { hermesHome: options.hermesHome } : {}),
+      ...(options.hermesSignedOut ? { hermesSignedOut: options.hermesSignedOut } : {}),
+      command: async provider => withoutOwnBrowser(provider as LocalSignInProvider, await (options.command ? options.command(provider as LocalSignInProvider) : defaultSignInCommand(provider, undefined, options.hermesHome))),
       connect: async provider => options.connect(provider as LocalSignInProvider),
       ...(options.lifetimeMs !== undefined ? { lifetimeMs: options.lifetimeMs } : {}),
       ...(options.startTimeoutMs !== undefined ? { startTimeoutMs: options.startTimeoutMs } : {}),
@@ -59,6 +63,7 @@ export class LocalProviderSignIn {
   /** One step of a sign-in, answered as a host answers its own: the view without the page's address, or null once it is gone. */
   async request(request: LocalSignInRequest): Promise<ProviderSignInView | null> {
     let view: HostSignIn | null
+    if (request.type === 'hermes-sign-out') { await this.signIns.signOutHermes(); return null }
     if (request.type === 'start') view = await this.signIns.start(request.provider, DESKTOP)
     else if (request.type === 'read') view = this.signIns.read(request.signInId, DESKTOP)
     else if (request.type === 'code') view = this.signIns.code(request.signInId, DESKTOP, request.code)

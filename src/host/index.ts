@@ -340,11 +340,15 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     if (plugins) { const held = plugins; runtime.agentControl.onThreadsDeleted(threadIds => { held.forgetThreads(threadIds) }) }
     // A provider signed in from a paired client's browser is connected here for that client (ADR-0037).
     const signIns = new ProviderSignIns({ ...(options.signInCommand ? { command: options.signInCommand } : {}), cursorConfigDirectory: join(directory, 'cursor', 'config'),
+      ...(heldProviders.has('hermes') ? {} : { hermesHome: join(directory, 'hermes'), hermesSignedOut: runtime.hermesAccountChanged }),
       connect: async (provider, clientId) => {
+        const hermes = provider === 'hermes' ? runtime.connectedHermes() : undefined
+        if (hermes) return await hermes.refreshChatGptModels() ? undefined : 'Hermes did not return any ChatGPT models.'
         const client = { clientId, user: pairing.list().find(item => item.clientId === clientId)?.name ?? 'Paired client', transport: 'socket' as const }
         const state = await runtime.hostService.command({ type: 'connect', provider }, client)
         const status = state.host.providers?.find(item => item.id === provider)
-        return status?.connection === 'connected' ? undefined : status?.error ?? state.error ?? 'It did not confirm the connection.'
+        if (status?.connection !== 'connected') return status?.error ?? state.error ?? 'It did not confirm the connection.'
+        return provider === 'hermes' && runtime.connectedHermes()?.hasChatGptModels() === false ? 'Hermes did not return any ChatGPT models.' : undefined
       } })
     let listener: Awaited<ReturnType<typeof startSocketServer>> | undefined
     let phones: HostPhoneAccess | undefined

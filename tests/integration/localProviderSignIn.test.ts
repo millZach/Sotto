@@ -28,20 +28,21 @@ describe('signing a provider in on this computer', () => {
     return { signIn, opened, connected }
   }
 
-  it('shows Codex’s code without the page’s address, opens the page on a press, and connects Codex once the code is entered', async () => {
+  it.each(['codex', 'hermes'] as const)('shows %s’s code without the page’s address, opens the page on a press, and connects it once the code is entered', async provider => {
     const { signIn, opened, connected } = make()
-    const started = await signIn.request({ type: 'start', provider: 'codex' })
-    expect(started).toMatchObject({ provider: 'codex', shape: 'device-code', stage: 'waiting', page: 'auth.openai.com', code: 'WDJB-MJHTQ' })
+    const started = await signIn.request({ type: 'start', provider })
+    expect(started).toMatchObject({ provider, shape: 'device-code', stage: 'waiting', page: 'auth.openai.com', code: 'WDJB-MJHTQ' })
     // The window is told where the sign-in stands and never where it points; nothing opens until Open sign-in page.
     expect(JSON.stringify(started)).not.toContain('https://')
     expect(opened).toEqual([])
-    expect(JSON.parse(await readFile(join(root, 'codex.args.json'), 'utf8'))).toEqual(['login', '--device-auth'])
+    expect(JSON.parse(await readFile(join(root, `${provider}.args.json`), 'utf8'))).toEqual(provider === 'hermes'
+      ? ['auth', 'add', 'openai-codex', '--type', 'oauth', '--no-browser'] : ['login', '--device-auth'])
     const afterOpen = await signIn.request({ type: 'open', signInId: started!.id })
     expect(opened).toEqual(['https://auth.openai.com/codex/device'])
     expect(JSON.stringify(afterOpen)).not.toContain('https://')
-    await writeFile(join(root, 'codex.approved'), '')
+    await writeFile(join(root, `${provider}.approved`), '')
     await expect.poll(async () => (await signIn.request({ type: 'read', signInId: started!.id }))?.stage).toBe('connected')
-    expect(connected).toEqual(['codex'])
+    expect(connected).toEqual([provider])
   })
 
   it('hands Claude Code the code pasted back from its page, and connects it', async () => {

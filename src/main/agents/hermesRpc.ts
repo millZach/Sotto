@@ -67,14 +67,46 @@ export async function findHermesExecutable(environment: NodeJS.ProcessEnv = proc
   return found && await realpath(found).catch(() => found)
 }
 
+function hermesPython(executable: string): string | undefined {
+  const bin = dirname(executable)
+  const names = process.platform === 'win32' ? ['python.exe', 'python'] : ['python']
+  return names.map(name => join(bin, name)).find(path => existsSync(path))
+}
+
 /** Keep discovered user tools, but not Hermes's private interpreter, on the toolchain PATH. */
 export function withHermesPath(environment: NodeJS.ProcessEnv, executable: string): NodeJS.ProcessEnv {
   const env = withCliPath(environment, executable)
   // The official launcher lives among the user's other tools, not in a private venv.
-  if (!existsSync(join(dirname(executable), 'python'))) return env
+  if (!hermesPython(executable)) return env
   const key = Object.keys(env).find(name => name.toLowerCase() === 'path') ?? 'PATH'
   const privateBin = dirname(executable)
   return { ...env, [key]: (env[key] ?? '').split(delimiter).filter(folder => folder !== privateBin).join(delimiter) }
+}
+
+/** The stock launchers expose --run-module. Keep the working folder off a venv Python's import path, too. */
+export function hermesPythonCommand(executable: string, script: string): { executable: string; args: string[] } {
+  const python = hermesPython(executable)
+  return python ? { executable: python, args: ['-I', '-c', script] }
+    : { executable, args: ['--run-module', 'timeit', '--number', '1', '--repeat', '1', script] }
+}
+
+/** Sotto already supplies the picker. A ChatGPT thread can initially load on a saved model server. */
+export function hermesAcpCommand(executable: string, prefixArgs: readonly string[], skipChatGptInventory: boolean): { executable: string; args: string[] } {
+  if (!skipChatGptInventory || prefixArgs.length) return { executable, args: [...prefixArgs, 'acp'] }
+  return hermesPythonCommand(executable, `import gc
+import sys
+from acp_adapter import model_catalog
+
+def current_model_only(model, provider, base_url):
+    return None
+model_catalog.build_model_state = current_model_only
+
+from hermes_cli.main import main
+sys.argv = ["hermes", "acp"]
+# The stock launcher's timeit wrapper disables GC and prints timing on exit.
+gc.enable()
+main()
+sys.stdout = sys.stderr`)
 }
 
 const OUTPUT_LIMIT = 64 * 1024
@@ -122,8 +154,8 @@ export class HermesRpc {
   private frames = Promise.resolve()
   readonly closed: Promise<void>
   constructor(executable: string, args: readonly string[], cwd: string, env: NodeJS.ProcessEnv, private readonly timeoutMs: number,
-    private readonly receive: (frame: HermesFrame) => Promise<void> | void, private readonly lost: () => void) {
-    this.child = spawn(executable, [...args], { cwd, env: withHermesPath(env, executable), windowsHide: true, shell: false, stdio: 'pipe' })
+    private readonly receive: (frame: HermesFrame) => Promise<void> | void, private readonly lost: () => void, pathExecutable = executable) {
+    this.child = spawn(executable, [...args], { cwd, env: withHermesPath(env, pathExecutable), windowsHide: true, shell: false, stdio: 'pipe' })
     this.closed = new Promise(resolve => this.child.once('close', () => { this.fail(); void this.frames.then(resolve, resolve) }))
     this.child.once('exit', () => { this.child.stdout.destroy(); this.child.stderr.destroy() })
     this.child.on('error', () => this.fail()); this.child.stdin.on('error', () => this.fail())
