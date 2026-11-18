@@ -28,3 +28,7 @@ What stays as ADR-0001 decided: Apple silicon only, ad-hoc signed with `identity
 - The workflow file is read from `main` when started, so it can build only once this change has merged.
 - The disk image carries an attestation tied to the source repository and the run, which a hand build never had. The Gatekeeper steps in the release notes do not change: the app is still ad-hoc signed.
 - Functional checks on a real Mac (the microphone prompt, auto-paste, the Gatekeeper flow) are no longer part of making the build. They remain the `macos-bringup.md` checklist, run on a downloaded disk image when a change touches the Mac.
+
+## Amendment, November 18, 2026: the Mac host archive
+
+Every stable release attaches a host archive for each platform paired hosts run on, and the Apple silicon Mac's was still built by hand on a Mac. The lead cutting 0.1.43 could reach none, and Zach chose to build it in GitHub. **Sotto stable for Mac** now builds it in the same run, after the disk image is kept: `npm run test:socket`, then `npm run package:host:release -- --version X.Y.Z` with the same read-only token for the release check, kept as the artifact `sotto-stable-mac-host-X.Y.Z`. It is not attested, as the Owl Mac host archive is not; its own provenance names the source commit, which the lead checks before attaching it. Building it by hand on a Mac stays the fallback.

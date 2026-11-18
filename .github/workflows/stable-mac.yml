@@ -1,8 +1,9 @@
 # Builds the Apple silicon Mac half of a stable Sotto release (ADR-0096) from the checked main commit and stable version
 # the Windows release uses. Runs only when started by hand; never on a push or a pull request. It publishes nothing: it
 # attests the disk image and its blockmap and keeps them, with the packaging receipt and release-check evidence, as a
-# workflow artifact the release lead downloads and attaches. The build is ad-hoc signed, not notarized and has no
-# updater (ADR-0001), and it reads no secrets.
+# workflow artifact the release lead downloads and attaches. It also builds the Apple silicon Mac host archive from the
+# same commit and version, kept as a second artifact. The build is ad-hoc signed, not notarized and has no updater
+# (ADR-0001), and it reads no secrets.
 name: Sotto stable for Mac
 
 on:
@@ -125,6 +126,33 @@ jobs:
         with:
           name: sotto-stable-mac-${{ inputs.version }}
           path: ${{ steps.files.outputs.upload }}
+          if-no-files-found: error
+          retention-days: 14
+
+      # Every stable carries a Mac host archive at its own version, so a paired Mac host can update to it (ADR-0096,
+      # November 18 amendment). It is built after the disk image is kept, so a failure here never costs the desktop build.
+      # The socket contract runs first, as the hand path on a Mac does. package:host:release runs release:check again,
+      # verifies the archive's bytes and smoke-starts the packaged host. COPYFILE_DISABLE keeps macOS tar from adding
+      # AppleDouble files, which the archive's inventory check would refuse.
+      - name: Check the socket host contract
+        run: npm run test:socket
+
+      - name: Package and verify the Mac host archive
+        env:
+          COPYFILE_DISABLE: '1'
+          SOTTO_RELEASE_CHECK_TOKEN: ${{ github.token }}
+        run: npm run package:host:release -- --version "$VERSION"
+
+      # Its own artifact, because the desktop folder must hold only the files its receipt lists. The release lead
+      # downloads it with `gh run download <run-id> --repo millZach/Sotto --name sotto-stable-mac-host-<version>
+      # --dir release/stable-mac-host` and attaches the archive and its .sha256 sidecar.
+      - name: Retain the Mac host archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: sotto-stable-mac-host-${{ inputs.version }}
+          path: |
+            release/Sotto-host-${{ inputs.version }}-darwin-arm64.tar.gz
+            release/Sotto-host-${{ inputs.version }}-darwin-arm64.tar.gz.sha256
           if-no-files-found: error
           retention-days: 14
 
