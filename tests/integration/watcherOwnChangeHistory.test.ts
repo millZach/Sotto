@@ -2,7 +2,7 @@
 import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
 import { ThreadStore } from '../../src/main/agents/threadStore'
 import { ThreadMessageLog } from '../../src/main/agents/threadMessageLog'
@@ -219,4 +219,26 @@ it('redacts already saved file paths and reasons when local history is turned of
   const disk = (await Promise.all((await readdir(f.directory)).map(name => readFile(join(f.directory, name), 'latin1').catch(() => '')))).join(' ')
   expect(disk).not.toContain(privatePath)
   expect(disk).not.toContain(privateReason)
+})
+
+it('reads Watcher’s stored window again only once something of Watcher’s has changed, not on every publish for another thread', async () => {
+  const f = await fixture(true)
+  await f.send(f.messages, f.activities)
+  f.host.observeThreads([])
+  f.host.workspaceSnapshot()
+  const provider = f.provider as EventProvider
+  const other = provider.state.threads[1]!.id
+  const read = vi.spyOn(ThreadStore.prototype, 'readMessages')
+  const watcherReads = (): number => read.mock.calls.filter(([threadId]) => threadId === f.id).length
+  // Another thread streams a reply while Watcher, out of view, has nothing new: each update publishes, and none reads Watcher.
+  for (let update = 0; update < 10; update++) {
+    provider.log.add(other, message(`other-${update}`, 'assistant', `Update ${update}`))
+    f.host.workspaceSnapshot()
+  }
+  expect(watcherReads()).toBe(0)
+  // Watcher's own turn ends with a reply: its window is read and marked as before.
+  const later = [...f.messages, message('next', 'user', 'Again'), message('next-reply', 'assistant', 'Nothing changed.')]
+  await f.send(later, f.activities)
+  expect(watcherReads()).toBeGreaterThan(0)
+  expect(f.host.threadMessages(f.id).find(item => item.id === 'reply')?.watcherOwnChange).toMatchObject({ files: [privatePath], reason: privateReason })
 })
