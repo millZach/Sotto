@@ -2153,8 +2153,14 @@ for (const answer of ['accepted', 'uncertain'] as const) {
       expect(await control(request, ...rest)).toMatchObject({ status: 'ok' })
       throw new Error('synthetic-lost-answer')
     })
-    // The paired machine's receipt for the start reads as `answer`: the stand-in provider never confirms a first prompt,
-    // so a real start there reads uncertain, and an accepted one is staged.
+    // The paired machine's receipt for the start reads as `answer`. For uncertain, its provider answers the first prompt
+    // uncertain and never shows it in the thread, so the host's own receipt stays uncertain however often it looks again;
+    // the stand-in would otherwise show it, and any later pass on the host, as one a provider connecting late brings
+    // (Cursor's stand-in, since every Owl feature went to stable), reads it accepted. An accepted one is staged.
+    if (answer === 'uncertain') {
+      const execute = remote.native.execute.bind(remote.native)
+      vi.spyOn(remote.native, 'execute').mockImplementation(async command => command.type === 'send' ? { accepted: false, uncertain: true } : execute(command))
+    }
     const read = f.socket.watcherRead.bind(f.socket)
     let operationId: string | undefined
     const reported = (value: unknown): unknown => {
