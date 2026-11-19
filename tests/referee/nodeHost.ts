@@ -26,3 +26,12 @@ export async function buildNodeRefereeHost(folder: string): Promise<HostCommand>
   await bundleDesktopMain('tests/fixtures/refereeNodeHost.ts', outfile, { plugins: [withoutHostCommandLine] })
   return [process.execPath, outfile, '--data', '{data}', '--provider', '{provider}']
 }
+
+/** SOTTO_REFEREE_HOST: the host's command line as a JSON array, with `{data}` and `{provider}` where it takes them. */
+export function namedRefereeHost(): HostCommand | undefined {
+  const text = process.env.SOTTO_REFEREE_HOST
+  if (!text) return undefined
+  const command = JSON.parse(text) as unknown
+  if (!Array.isArray(command) || command.length === 0 || !command.every(part => typeof part === 'string')) throw new Error('SOTTO_REFEREE_HOST must be a JSON array of strings, such as ["sotto-host", "--data", "{data}", "--fake", "{provider}"].')
+  return command
+}

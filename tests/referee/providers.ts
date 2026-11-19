@@ -45,22 +45,68 @@ export const REFEREE_FAKES = {
 export type RefereeProvider = keyof typeof REFEREE_FAKES
 export const REFEREE_PROVIDERS = Object.keys(REFEREE_FAKES) as RefereeProvider[]
 
-/** One action a scenario asks of a fake: the same vocabulary as the contract's driver (`AdapterFixture['driver']`). */
+/**
+ * One action a scenario asks of a fake: the same vocabulary as the contract's driver (`AdapterFixture['driver']`).
+ * `lose-acknowledgement` is its `delayNextAck` for the next prompt, and `acknowledge-again` takes it back.
+ */
 export type DriverAction =
   | { readonly type: 'complete'; readonly thread: string; readonly text: string }
   | { readonly type: 'question'; readonly thread: string; readonly text: string }
   | { readonly type: 'permission'; readonly thread: string; readonly text: string }
+  | { readonly type: 'lose-acknowledgement' }
+  | { readonly type: 'acknowledge-again' }
+
+/** The script that has the next prompt's acknowledgement come a second after the fake's adapter stops waiting for it. */
+type LostAcknowledgement = (data: string) => Promise<void>
+/** A script file's contents with `value` laid over them. */
+const scriptAlso = async (data: string, value: Record<string, unknown>): Promise<void> => {
+  const current = await readJson(join(data, 'script.json')).catch(() => ({})) as Record<string, unknown>
+  await writeFile(join(data, 'script.json'), JSON.stringify({ ...current, ...value }))
+}
+
+/**
+ * The fakes that lose an acknowledgement through their files alone, each a second past its adapter's deadline in the
+ * referee host (the fixture's own, `tests/referee/fixtures.ts`), as each fixture's `delayNextAck` does. Each forgets the
+ * delay once it has used it; Codex's also stops its notifications, so the turn says nothing until it is told to again. Grok Build's, Devin's
+ * and Cursor's fixtures shorten their adapter's deadline in process instead, so a host cannot be made to lose theirs.
+ */
+export const LOSES_ACKNOWLEDGEMENT: Readonly<Partial<Record<RefereeProvider, { lose: LostAcknowledgement; restore: LostAcknowledgement }>>> = {
+  codex: { lose: data => scriptAlso(data, { delay: { method: 'turn/start', ms: 3000 }, suppressNotifications: true }), restore: data => scriptAlso(data, { suppressNotifications: false }) },
+  claude: { lose: data => writeFile(join(data, 'script.json'), JSON.stringify({ delay: 3000 })), restore: async () => undefined },
+  muse: { lose: data => scriptAlso(data, { delayTurnMs: 3000 }), restore: async () => undefined },
+  opencode: { lose: data => scriptAlso(data, { delay: { 'session.prompt': 4000 } }), restore: async () => undefined },
+}
 
 async function readJson(path: string): Promise<unknown> {
   return JSON.parse(await readFile(path, 'utf8')) as unknown
 }
 
+/** The adapter's own ID for a Sotto thread, as the host's `threads.json` binds it now, or a sentence saying it binds none. */
+async function boundId(data: string, threadId: string): Promise<string | Error> {
+  const registry = await readJson(join(data, 'threads.json')).catch(() => undefined) as { bindings?: { threadId: string; sessionId: string }[] } | undefined
+  return registry?.bindings?.find(binding => binding.threadId === threadId)?.sessionId
+    ?? new Error(`The host's threads.json binds no session to thread ${threadId}, so the fake cannot be driven.`)
+}
+
+/** Reads `find` again until it answers, for a host that writes its records a little after the thread shows it. */
+async function settled<T>(find: () => Promise<T | Error>, deadlineMs: number): Promise<T> {
+  const deadline = Date.now() + deadlineMs
+  for (;;) {
+    const found = await find()
+    if (!(found instanceof Error)) return found
+    if (Date.now() > deadline) throw found
+    await new Promise(resolve => setTimeout(resolve, 10))
+  }
+}
+
+/** The adapter's own ID for a Sotto thread: what a fixture's driver, written against the adapter, names the thread by. */
+export const adapterSession = (data: string, threadId: string, deadlineMs = 15_000): Promise<string> => settled(() => boundId(data, threadId), deadlineMs)
+
 /** The native session of a Sotto thread as the host's records name it now, or a sentence saying which record lacks it. */
 async function recordedSession(data: string, provider: RefereeProvider, threadId: string): Promise<string | Error> {
   const layout: FakeLayout = REFEREE_FAKES[provider]
-  const registry = await readJson(join(data, 'threads.json')).catch(() => undefined) as { bindings?: { threadId: string; sessionId: string }[] } | undefined
-  const adapterId = registry?.bindings?.find(binding => binding.threadId === threadId)?.sessionId
-  if (!adapterId) return new Error(`The host's threads.json binds no session to thread ${threadId}, so the fake cannot be driven.`)
+  const adapterId = await boundId(data, threadId)
+  if (adapterId instanceof Error) return adapterId
   const records = await readJson(join(data, layout.record)).catch(() => undefined) as Record<string, Record<string, unknown>> | undefined
   const native = records?.[adapterId]?.[layout.native]
   return typeof native === 'string' ? native : new Error(`The host's ${layout.record} names no ${layout.native} for session ${adapterId}.`)
@@ -70,14 +116,8 @@ async function recordedSession(data: string, provider: RefereeProvider, threadId
  * The native session of a Sotto thread. A host may write its records a little after the thread shows running, so they are
  * read again until they name it; the deadline is generous, and a host that never writes them fails with the sentence.
  */
-export async function nativeSession(data: string, provider: RefereeProvider, threadId: string, deadlineMs = 15_000): Promise<string> {
-  const deadline = Date.now() + deadlineMs
-  for (;;) {
-    const found = await recordedSession(data, provider, threadId)
-    if (typeof found === 'string') return found
-    if (Date.now() > deadline) throw found
-    await new Promise(resolve => setTimeout(resolve, 10))
-  }
+export function nativeSession(data: string, provider: RefereeProvider, threadId: string, deadlineMs = 15_000): Promise<string> {
+  return settled(() => recordedSession(data, provider, threadId), deadlineMs)
 }
 
 /**
@@ -89,8 +129,14 @@ export async function prepareFake(data: string, provider: RefereeProvider): Prom
   if (provider === 'codex') await writeFile(join(data, 'script.json'), JSON.stringify({ requestIdBase: 1000 }))
 }
 
-/** Hands the fake one action for a thread, as its control file takes it. */
+/** Hands the fake one action for a thread, as its control file takes it, or changes its script. */
 export async function drive(data: string, provider: RefereeProvider, action: DriverAction): Promise<void> {
+  if (action.type === 'lose-acknowledgement' || action.type === 'acknowledge-again') {
+    const fake = LOSES_ACKNOWLEDGEMENT[provider]
+    if (!fake) throw new Error(`The ${provider} fake cannot lose an acknowledgement through its files.`)
+    await (action.type === 'lose-acknowledgement' ? fake.lose : fake.restore)(data)
+    return
+  }
   const layout: FakeLayout = REFEREE_FAKES[provider]
   const native = await nativeSession(data, provider, action.thread)
   const value = Object.fromEntries(Object.entries(action).filter(([key]) => key !== 'thread'))
