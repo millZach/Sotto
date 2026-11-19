@@ -31,7 +31,8 @@ def tree(pid):
 
 def ours():
     root = os.path.realpath(app)
-    return [(p, c[:120]) for p, _, c in table() if root in c]
+    # Processes whose executable is inside the bundle; not every command that names the bundle (the driver does).
+    return [(p, c[:120]) for p, _, c in table() if c.startswith(root + '/Contents/')]
 
 results = []
 left = ours()

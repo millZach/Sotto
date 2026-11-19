@@ -19,6 +19,7 @@ has() { [[ " $PHASES " == *" $1 "* ]]; }
 run() { $PY "$HERE/run.py" "$APP" "$RUNS" "$@"; }
 clean() { rm -rf "$RUNS/$1/cache"; }   # profiles are not evidence; keep the artifact small
 pid_of() { cat "$RUNS/$1/pid" 2>/dev/null; }
+inside() { ps -A -o pid=,command= | grep -F "$APP/Contents/" | grep -v -e grep -e ci.sh | cut -c1-160 || true; [ -n "$(ps -A -o command= | grep -F "$APP/Contents/" | grep -v -e grep -e ci.sh)" ] || echo none; }
 
 # ---------------------------------------------------------------- servers
 $PY "$SPIKE/server/testserver.py" --pages "$SPIKE/server/pages" > "$OUT/server.log" 2>&1 &
@@ -128,7 +129,7 @@ if has remote; then
   cp "$RUNS/remote-input/tree.json" "$SUM/q3-remote-input-tree.json" 2>/dev/null
   [ -f "$RUNS/remote-input/shot.bmp" ] && sips -s format png "$RUNS/remote-input/shot.bmp" --out "$SUM/q3-remote-typed.png" > /dev/null 2>&1
   rm -rf "$RUNS"/remote-input/helper*/cache
-  echo "bundle processes alive after the remote runs:" > "$SUM/q3-left.txt"; pgrep -fl "$APP" >> "$SUM/q3-left.txt" || echo none >> "$SUM/q3-left.txt"
+  echo "bundle processes alive after the remote runs:" > "$SUM/q3-left.txt"; inside >> "$SUM/q3-left.txt"
 fi
 
 # ---------------------------------------------------------------- 4. accessibility from outside: CEF's own window
@@ -145,7 +146,7 @@ if has ax; then
     screencapture -x "$SUM/q4-screen-windowed.png" 2>> "$SUM/screencapture.txt"
   fi
   wait $bg; clean windowed
-  sleep 2; { echo "bundle processes alive 2 s after the windowed run:"; pgrep -fl "$APP" || echo none; } > "$SUM/q4-windowed-left.txt"
+  sleep 2; { echo "bundle processes alive 2 s after the windowed run:"; inside; } > "$SUM/q4-windowed-left.txt"
   if ! grep -q "AXIsProcessTrusted true" "$SUM/ax-trust.txt" 2>/dev/null; then
     # Not trusted: try granting the probe in the system TCC database (works only where SIP lets root write it), then
     # say what the walk sees. This changes only this throwaway runner.
