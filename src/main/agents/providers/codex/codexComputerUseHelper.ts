@@ -19,8 +19,12 @@ import { z } from 'zod'
 const PIPE = 'SKY_CUA_NATIVE_PIPE'
 /** A server or plugin name that can stand in a config key and a folder name. */
 const plainName = /^[\w-]+$/u
-/** The plugin versions Codex can order (`active_plugin_version` in Codex 0.170.0): `local`, or a plain release. */
-const release = /^(\d+)\.(\d+)\.(\d+)$/u
+/** A version folder's name as Codex 0.170.0 allows it (`validate_plugin_version_segment`). */
+const versionSegment = /^[A-Za-z0-9._+-]+$/u
+/** A plain release as semver parses it: no leading zeros, no pre-release or build part. */
+const release = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u
+/** A semver with a pre-release or build part, whose order against another Sotto does not reproduce. */
+const semverWithExtras = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-[0-9A-Za-z.-]+(?:\+[0-9A-Za-z.-]+)?|\+[0-9A-Za-z.-]+)$/u
 const LOCAL_VERSION = 'local'
 const effectiveConfig = z.object({ config: z.object({
   mcp_servers: z.record(z.string(), z.unknown()).nullish(),
@@ -55,14 +59,26 @@ export async function computerUseHelperServers(codexHome: string, value: unknown
   return servers
 }
 
-/** The version Codex loads: `local` if there is one, else the highest release; none when a folder is not one of those. */
+/**
+ * Codex's order of two versions (`compare_plugin_versions`): as releases when both are, otherwise as bytes. A version
+ * with a pre-release or build part is a semver Sotto does not order, so it answers none.
+ */
+function compareVersions(left: string, right: string): number | undefined {
+  if (semverWithExtras.test(left) || semverWithExtras.test(right)) return undefined
+  const a = release.exec(left), b = release.exec(right)
+  if (a && b) return Number(a[1]) - Number(b[1]) || Number(a[2]) - Number(b[2]) || Number(a[3]) - Number(b[3])
+  return left < right ? -1 : left > right ? 1 : 0
+}
+
+/**
+ * The version Codex loads (`active_plugin_version`): of the folders its rule allows, `local` if there is one, else the
+ * one above every other. None when Sotto cannot be sure which that is, which leaves Codex's own definition in place.
+ */
 async function activeVersion(folder: string): Promise<string | undefined> {
-  const versions = (await readdir(folder, { withFileTypes: true }).catch(() => [])).filter(entry => entry.isDirectory()).map(entry => entry.name)
+  const versions = (await readdir(folder, { withFileTypes: true }).catch(() => [])).filter(entry => entry.isDirectory())
+    .map(entry => entry.name).filter(name => versionSegment.test(name) && name !== '.' && name !== '..')
   if (versions.includes(LOCAL_VERSION)) return LOCAL_VERSION
-  const releases = versions.map(version => release.exec(version)).filter(match => match !== null)
-  if (releases.length !== versions.length) return undefined
-  return releases.map(match => ({ version: match[0], parts: match.slice(1).map(Number) }))
-    .sort((a, b) => a.parts[0]! - b.parts[0]! || a.parts[1]! - b.parts[1]! || a.parts[2]! - b.parts[2]!).at(-1)?.version
+  return versions.find(candidate => versions.every(other => other === candidate || (compareVersions(candidate, other) ?? 0) > 0))
 }
 
 /** The active version's servers that use the app's pipe, each with the switch off. */

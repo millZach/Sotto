@@ -45,6 +45,12 @@ describe('Computer Use without the Codex app', () => {
     expect(await computerUseHelperServers(home, read(enabled()))).toEqual({})
   })
 
+  it('orders a name that is not a release as Codex does, by its bytes', async () => {
+    await plugin('26.1111.21308', { cua_repl: piped('0') })
+    await plugin('latest', { cua_repl: piped() })
+    expect(Object.keys(await computerUseHelperServers(home, read(enabled())))).toEqual(['cua_repl'])
+  })
+
   it('leaves a plugin alone when it is off, has the user\'s own policy for the server, or its server is not as expected', async () => {
     await plugin('1.0.0', { cua_repl: piped(), relative: { ...piped(), command: 'node.exe' }, gone: { ...piped(), command: join(home, 'missing.exe') } })
     expect(await computerUseHelperServers(home, read({ plugins: { 'unified-computer-use@openai-bundled': { enabled: false } } }))).toEqual({})
@@ -66,7 +72,7 @@ describe('Computer Use without the Codex app', () => {
     expect(await computerUseHelperServers(home, read(enabled()))).toEqual({})
     await rm(join(home, 'plugins'), { recursive: true })
     await plugin('1.0.0', { cua_repl: piped() })
-    await plugin('latest', { cua_repl: piped() })
+    await plugin('1.1.0-beta.1', { cua_repl: piped() })
     expect(await computerUseHelperServers(home, read(enabled()))).toEqual({})
     expect(await computerUseHelperServers(home, undefined)).toEqual({})
     expect(await computerUseHelperServers(home, read({ plugins: { '../escape@openai-bundled': { enabled: true } }, mcp_servers: { 'a.b': piped() } }))).toEqual({})
