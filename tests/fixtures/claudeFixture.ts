@@ -30,6 +30,11 @@ export async function savedClaudeThreads(root: string, count: number, transcript
 
 export { storedClaudeOrigins } from './claudeOrigins'
 
+/** Where the fake CLI saves a session's transcript, for a thread working in the fixture's own folder. */
+export function claudeTranscriptPath(root: string, session: string): string {
+  return join(root, 'home', 'projects', root.replace(/[^a-zA-Z0-9]/gu, '-'), `${session}.jsonl`)
+}
+
 /** What the fake client's one-shot mode recorded for each of Sotto's side calls (ADR-0026). */
 async function oneShots(root: string): Promise<Record<string, unknown>[]> {
   return parseProviderRecords<Record<string, unknown>>(await readFile(join(root, 'oneshot.jsonl'), 'utf8').catch(() => ''))
@@ -97,8 +102,8 @@ export async function claudeFixture(root?: string, requestTimeoutMs = 2000, envi
     },
     driver: {
       typeInProvider: async (id, text) => {
-        const session = await realId(id); const folder = join(root, 'home', 'projects', root.replace(/[^a-zA-Z0-9]/gu, '-'))
-        await mkdir(folder, { recursive: true }); await appendFile(join(folder, `${session}.jsonl`), JSON.stringify({ type: 'user', uuid: randomUUID(), sessionId: session, timestamp: new Date().toISOString(), entrypoint: 'cli', origin: { kind: 'human' }, message: { role: 'user', content: text } }) + '\n')
+        const session = await realId(id), path = claudeTranscriptPath(root, session)
+        await mkdir(dirname(path), { recursive: true }); await appendFile(path, JSON.stringify({ type: 'user', uuid: randomUUID(), sessionId: session, timestamp: new Date().toISOString(), entrypoint: 'cli', origin: { kind: 'human' }, message: { role: 'user', content: text } }) + '\n')
         await adapter.pollSessionLogs()
       },
       completeTurn: (id, text) => action(id, { type: 'complete', text }),

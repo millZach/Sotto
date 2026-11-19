@@ -541,13 +541,6 @@ export class ClaudeStreamJsonHost implements ProviderHost {
   private readonly activityHistoryPending = new Set<string>()
   /** The assistant message a stream has opened per thread, so its deltas are recorded as appends. */
   private readonly streaming = new Map<string, string>()
-  /**
-   * Per thread, the newest reply the record holds and the time it was recorded with. Claude Code reports one reply up to
-   * three times: its stream, which opens it at the moment Sotto hears it, then the finished message on the CLI's output
-   * and the transcript line, both dated by the CLI. A later report keeps the first time, so the same words are never
-   * recorded again as a change, whichever report arrives first (#2698).
-   */
-  private readonly replyTimes = new Map<string, { messageId: string; createdAt: string }>()
   /** The CLI each thread's /compact was written to, until that CLI's result for it or its exit. */
   private readonly compacting = new Map<string, Runtime>()
   /** Threads whose compaction is recorded but whose /compact is not yet written: Claude may still start a turn of its own. */
@@ -746,7 +739,7 @@ export class ClaudeStreamJsonHost implements ProviderHost {
       threadId: id, messages: this.messageLog.messages(id), ...(this.activityHistoryPending.has(id) ? {} : { activities: thread.activities ?? [] }), ...(thread.historyEpoch ? { historyEpoch: thread.historyEpoch } : {}),
     }]))
     this.messageLog.forgetAll()
-    this.threads.clear(); this.threadChanges.markAll(); this.activityHistoryPending.clear(); this.logs.clear(); this.activity.clear(); this.subagentModels.clear(); this.logOrigins.clear(); this.lastLogDigest.clear(); this.replays.clear(); this.readsBeforeSend.clear(); this.nativeTakeovers.clear(); this.completedOrigins.clear(); this.steers.clear(); this.foldedSteers.clear(); this.toolsRunning.clear(); this.selfTurns.clear(); this.queries.clear(); this.interrupting.clear(); this.assistantBlocks.clear(); this.replyTimes.clear()
+    this.threads.clear(); this.threadChanges.markAll(); this.activityHistoryPending.clear(); this.logs.clear(); this.activity.clear(); this.subagentModels.clear(); this.logOrigins.clear(); this.lastLogDigest.clear(); this.replays.clear(); this.readsBeforeSend.clear(); this.nativeTakeovers.clear(); this.completedOrigins.clear(); this.steers.clear(); this.foldedSteers.clear(); this.toolsRunning.clear(); this.selfTurns.clear(); this.queries.clear(); this.interrupting.clear(); this.assistantBlocks.clear()
     for (const [id, stored] of Object.entries(aliases)) {
       if (stored.kind === 'personal') continue
       let alias = stored
@@ -1015,7 +1008,7 @@ export class ClaudeStreamJsonHost implements ProviderHost {
       const next = await this.finishRollback(id, alias)
       // A confirmed rewind is the one change that takes words back: the thread's record starts again.
       this.messageLog.reset(id, next.historyEpoch)
-      this.logs.delete(id); this.activity.delete(id); this.subagentModels.delete(id); this.logOrigins.delete(id); this.lastLogDigest.delete(id); this.replays.delete(id); this.nativeTakeovers.delete(id); this.replyTimes.delete(id)
+      this.logs.delete(id); this.activity.delete(id); this.subagentModels.delete(id); this.logOrigins.delete(id); this.lastLogDigest.delete(id); this.replays.delete(id); this.nativeTakeovers.delete(id)
       for (const key of this.assistantBlocks.keys()) if (key.startsWith(`${id}:`)) this.assistantBlocks.delete(key)
       this.ensureThread(id, next); await this.readLog(id)
       if (generation !== this.generation || !this.state.connected) return { accepted: false, uncertain: true }
@@ -1958,8 +1951,8 @@ export class ClaudeStreamJsonHost implements ProviderHost {
     let monitoring = this.monitoring.get(id)
     if (!monitoring) { monitoring = new ClaudeMonitoring(); this.monitoring.set(id, monitoring) }
     if (monitoring.apply(frame)) this.workEndedAt.set(id, Date.now())
-    // Written as background work is, only while there is any: a stop clears it while the stopped turn's result may still
-    // be on its way, and an empty list written by whichever came last made the record differ from run to run (#2698).
+    // Written as background work is, only while a monitoring task runs: a stop clears it while the stopped turn's result
+    // may still be on its way, and an empty list written by whichever came last made the record differ run to run (#2698).
     const watching = monitoring.current
     if (watching.length) thread.monitoring = watching; else delete thread.monitoring
     const working = monitoring.working
@@ -2559,10 +2552,13 @@ export class ClaudeStreamJsonHost implements ProviderHost {
       const held = replay.words?.get(message.id)
       if (held !== undefined && held.length > message.text.length && held.startsWith(message.text)) return
     }
+    // Claude Code reports one reply up to three times: its stream opens it, dated when Sotto hears it, then the finished
+    // message comes on the CLI's output and as a transcript line, dated by the CLI. A reply the record holds keeps the
+    // time it was recorded with, so a later report, in either order or read back after a restart, records the same words
+    // again as no change (#2698). Every caller hands over a message of its own, so the time is set on it in place.
     if (message.role === 'assistant') {
-      const first = this.replyTimes.get(id)
-      if (first?.messageId === message.id) { if (first.createdAt !== message.createdAt) message = { ...message, createdAt: first.createdAt } }
-      else if (!this.messageLog.has(id, message.id)) this.replyTimes.set(id, { messageId: message.id, createdAt: message.createdAt })
+      const recorded = this.messageLog.recordedAt(id, message.id)
+      if (recorded !== undefined) message.createdAt = recorded
     }
     this.messageLog.add(id, message)
   }
@@ -2601,7 +2597,7 @@ export class ClaudeStreamJsonHost implements ProviderHost {
     this.streaming.delete(id); this.compacting.delete(id)
     this.activityHistoryPending.delete(id); this.logs.delete(id); this.activity.delete(id)
     this.subagentModels.delete(id); this.logOrigins.delete(id); this.lastLogDigest.delete(id); this.replays.delete(id)
-    this.nativeTakeovers.delete(id); this.completedOrigins.delete(id); this.assistantBlocks.delete(id); this.replyTimes.delete(id)
+    this.nativeTakeovers.delete(id); this.completedOrigins.delete(id); this.assistantBlocks.delete(id)
     this.configuring.delete(id); this.configurationGuards.delete(id); this.configurationLaunches.delete(id)
     this.dispatching.delete(id); this.outdated.delete(id); this.savedCursors.delete(id)
     this.turnFailures.delete(id); this.assistantErrors.delete(id); this.usageGroups.delete(id)
