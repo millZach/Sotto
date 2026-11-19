@@ -17,6 +17,15 @@ public struct FocusThreads {
     /// The top of each delegated thread's delegation, by row ID, which has the row the list shows in its place.
     private var tops: [String: String] = [:]
     public let searching: Bool
+    /// The rows the search found only by what was said in their threads (`thread-words`), by row ID. Each lists after the
+    /// rows of its group the search found by their own words, and shows a quote of its match (Zach's pick A, November 19,
+    /// 2026).
+    public private(set) var wordOnly: Set<String> = []
+    /// The search, trimmed, and while there is one, the threads it found by what was said in them, by row ID.
+    private let query: String
+    private let words: [String: ThreadWordMatch]
+    /// The rows the list holds that the search found by their own words and by what was said in them, which show no quote.
+    private var foundOwn: Set<String> = []
     /// The thread open on this iPhone. It reads as opened at once, before its computer's next list says so.
     public let opened: ThreadRef?
     public var isEmpty: Bool { questions.isEmpty && working.isEmpty && recent.isEmpty && settled.isEmpty && snoozed.isEmpty }
@@ -27,11 +36,15 @@ public struct FocusThreads {
     public var unreadFinishedCount: Int { recent.filter { isUnreadFinish($0) }.count }
 
     /// `holding` names the unsent threads this iPhone holds something for, by row ID. Any other unsent thread has no row
-    /// unless it is open here: opening New thread and backing out leaves nothing behind, as on the desktop.
+    /// unless it is open here: opening New thread and backing out leaves nothing behind, as on the desktop. `words` names
+    /// the threads the computers found by what was said in them, by row ID (`ThreadWordsSearch.matches`), which the search
+    /// finds too.
     public init(_ computers: [ComputerThreads], show: ComputerFilter = .all, query: String = "", opened: ThreadRef? = nil,
-                holding: Set<String> = [], now: Date = Date()) {
+                holding: Set<String> = [], words: [String: ThreadWordMatch] = [:], now: Date = Date()) {
         let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
         searching = !query.isEmpty
+        self.query = query
+        self.words = query.isEmpty ? [:] : words
         self.opened = opened
         let rows = ThreadGroups.merged(computers, show: show)
         let tops = ThreadGroups.delegationTops(rows)
@@ -46,18 +59,56 @@ public struct FocusThreads {
                 below[top] = row
             }
         }
+        // The rows found only by what was said in their threads, by group, which list after the rest of it.
+        var said: [Group: [HostedThread]] = [:]
         for row in rows where tops[row.id] == nil {
             if !row.settled && ThreadGroups.isUnsent(row.thread) && row.ref != opened && !holding.contains(row.id) { continue }
             let delegated = below[row.id]
-            guard query.isEmpty || Self.searchable(row, delegated).localizedStandardContains(query) else { continue }
+            var onlySaid = false
+            if !query.isEmpty {
+                let own = Self.searchable(row, delegated).localizedStandardContains(query), found = self.words[row.id] != nil
+                guard own || found else { continue }
+                if !own { onlySaid = true } else if found { foundOwn.insert(row.id) }
+            }
             let state = ThreadState(row.thread)
-            if row.reachable && state.waitsOnYou { questions.append(row) }
-            else if let delegated, row.reachable { waitingIn[row.id] = delegated; questions.append(row) }
-            else if row.settled { settled.append(row) }
-            else if !row.failed, let until = row.thread.snoozedUntil.flatMap(Stamp.date), until > now { snoozed.append(row) }
-            else if row.reachable && state.workInProgress { working.append(row) }
-            else { recent.append(row) }
+            let group: Group
+            if row.reachable && state.waitsOnYou { group = .questions }
+            else if let delegated, row.reachable { waitingIn[row.id] = delegated; group = .questions }
+            else if row.settled { group = .settled }
+            else if !row.failed, let until = row.thread.snoozedUntil.flatMap(Stamp.date), until > now { group = .snoozed }
+            else if row.reachable && state.workInProgress { group = .working }
+            else { group = .recent }
+            if onlySaid { wordOnly.insert(row.id); said[group, default: []].append(row) } else { add(row, to: group) }
         }
+        for (group, later) in said { for row in later { add(row, to: group) } }
+    }
+
+    private enum Group: Hashable { case questions, working, recent, settled, snoozed }
+    private mutating func add(_ row: HostedThread, to group: Group) {
+        switch group {
+        case .questions: questions.append(row)
+        case .working: working.append(row)
+        case .recent: recent.append(row)
+        case .settled: settled.append(row)
+        case .snoozed: snoozed.append(row)
+        }
+    }
+
+    /// The quote a row shows under its name: the search found its thread only by what was said in it. A row the list holds
+    /// was tested as it was grouped; a settled row read from its computer, which the list leaves out, is tested here the
+    /// same way.
+    public func quote(_ row: HostedThread) -> ThreadWordQuote? {
+        guard let match = words[row.id], !foundOwn.contains(row.id) else { return nil }
+        guard wordOnly.contains(row.id) || !Self.searchable(row, nil).localizedStandardContains(query) else { return nil }
+        return ThreadWordQuote(match: match, query: query)
+    }
+    /// `rows` with those the search found by their own words first, then those it found only by what was said in them,
+    /// each in its order: the Settled shelf's rows while Threads is searched, with those read from the computers.
+    public func ownWordsFirst(_ rows: [HostedThread]) -> [HostedThread] {
+        guard !words.isEmpty else { return rows }
+        var own: [HostedThread] = [], said: [HostedThread] = []
+        for row in rows { if quote(row) == nil { own.append(row) } else { said.append(row) } }
+        return own + said
     }
 
     public struct SnoozedProject: Identifiable {
@@ -83,6 +134,13 @@ public struct FocusThreads {
             else {
                 indices[key] = projects.count
                 projects.append(SnoozedProject(id: key, title: row.project ?? row.computer, rows: [row], activity: item.at))
+            }
+        }
+        // A project's threads the search found only by what was said in them list after the rest of its threads.
+        if !wordOnly.isEmpty {
+            for index in projects.indices {
+                let rows = projects[index].rows
+                projects[index].rows = rows.filter { !wordOnly.contains($0.id) } + rows.filter { wordOnly.contains($0.id) }
             }
         }
         return projects.sorted { $0.activity == $1.activity ? $0.id < $1.id : $0.activity > $1.activity }

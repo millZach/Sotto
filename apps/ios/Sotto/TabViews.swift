@@ -52,6 +52,12 @@ private struct SettledSearchKey: Hashable {
     let query: String; let show: ComputerFilter; let sources: [String]
 }
 
+/// What Threads' search of what was said in the computers' threads depends on: the words as a computer reads them, the
+/// computer menu, and which computers can be asked.
+private struct ThreadWordsKey: Hashable {
+    let query: String; let show: ComputerFilter; let sources: [String]
+}
+
 /// The search field's frame, kept outside SwiftUI's state so scrolling doesn't redraw the page.
 private final class FrameBox {
     var frame: CGRect = .zero
@@ -180,6 +186,13 @@ struct ThreadsView: View, Equatable {
             if !query.isEmpty { try? await Task.sleep(nanoseconds: 400_000_000) }
             guard !Task.isCancelled else { return }
             await model.searchSettled(query, show: model.show)
+        }
+        // It also asks them what was said in their threads, a moment after typing stops, so a thread found only by its
+        // words lists with a quote of them (Zach's pick A, November 19, 2026).
+        .task(id: ThreadWordsKey(query: Wire.threadWordsQuery(query), show: model.show, sources: model.threadWordsSources(show: model.show))) {
+            if !query.isEmpty { try? await Task.sleep(nanoseconds: 200_000_000) }
+            guard !Task.isCancelled else { return }
+            await model.searchThreadWords(query, show: model.show)
         }
     }
 
@@ -313,7 +326,7 @@ struct ThreadsView: View, Equatable {
             if settledExpanded || groups.searching {
                 let watched = model.watchedThreadIDs
                 let row = { (row: HostedThread) in
-                    ThreadListRow(row: row, kind: .recent(unread: groups.isUnreadFinish(row)), watched: watched.contains(row.id), chosen: false,
+                    ThreadListRow(row: row, kind: .recent(unread: groups.isUnreadFinish(row)), quote: groups.quote(row), watched: watched.contains(row.id), chosen: false,
                                   canWatch: model.offersWatch(row), shelf: model.shelfOffer(row), identifier: "thread-",
                                   open: { open(row.ref) },
                                   setWatched: { on in Task { await model.setWatched(row.ref, on, title: row.thread.title) } },
@@ -346,9 +359,11 @@ struct ThreadsView: View, Equatable {
 
     /// The shelf's rows as it shows them. While a computer holds settled threads back, what the list carries, such as a
     /// thread settled since this phone connected, and what was read from the computers, as one list, newest settled first.
-    /// Otherwise, and while searching, the list's rows then what was found.
+    /// Otherwise the list's rows then what was found, and while searching, those found by their own words before those
+    /// found only by what was said in them.
     private func shelfRows(_ settled: [HostedThread], _ shelf: Shelf, _ groups: FocusThreads) -> [HostedThread] {
-        guard !groups.searching && (shelf.heldBack > 0 || !shelf.older.isEmpty) else { return settled + shelf.older }
+        if groups.searching { return groups.ownWordsFirst(settled + shelf.older) }
+        guard shelf.heldBack > 0 || !shelf.older.isEmpty else { return settled + shelf.older }
         return ThreadGroups.newestSettledFirst(settled + shelf.older)
     }
 
@@ -430,7 +445,7 @@ struct ThreadsView: View, Equatable {
         let workingColumn = VStack(alignment: .leading, spacing: 0) {
             SectionHeading(String(localized: "Working now"), count: working.count, light: .accent)
             VStack(spacing: Space.s3) {
-                ForEach(working) { row in WorkingCard(row: row) }
+                ForEach(working) { row in WorkingCard(row: row, quote: groups.quote(row)) }
             }
         }
         // Held sideways, Settled is the Recent card's last row, inside the card, where it stood alone under the card with the
@@ -443,22 +458,22 @@ struct ThreadsView: View, Equatable {
                 if settledInRecent {
                     let rows = shelfRows(settled, shelf, groups)
                     VStack(spacing: 0) {
-                        ThreadRowList(rows: recent, unread: unread, watched: watched, carded: false)
+                        ThreadRowList(rows: recent, unread: unread, watched: watched, carded: false, quote: { groups.quote($0) })
                         Rectangle().fill(Palette.hairline).frame(height: 1)
                         settledToggle(settled.count + shelf.heldBack, inCard: true)
                         if settledExpanded && !rows.isEmpty {
                             Rectangle().fill(Palette.hairline).frame(height: 1)
-                            ThreadRowList(rows: rows, unread: unread, watched: watched, carded: false)
+                            ThreadRowList(rows: rows, unread: unread, watched: watched, carded: false, quote: { groups.quote($0) })
                         }
                     }
                     .sottoCard(.plain)
                     if settledExpanded { olderControls(groups) }
                 } else {
-                    ThreadRowList(rows: recent, unread: unread, watched: watched)
+                    ThreadRowList(rows: recent, unread: unread, watched: watched, quote: { groups.quote($0) })
                 }
             }
             SnoozedSection(groups: groups) { row in
-                ThreadListRow(row: row, kind: .snoozed, watched: watched.contains(row.id), chosen: false,
+                ThreadListRow(row: row, kind: .snoozed, quote: groups.quote(row), watched: watched.contains(row.id), chosen: false,
                               canWatch: false, shelf: nil, identifier: "snoozed-thread-", open: { open(row.ref) },
                               setWatched: { _ in }, shelve: { _ in })
             }
@@ -470,7 +485,7 @@ struct ThreadsView: View, Equatable {
                 }
                 if settledExpanded || groups.searching {
                     let rows = shelfRows(settled, shelf, groups)
-                    if !rows.isEmpty { ThreadRowList(rows: rows, unread: unread, watched: watched) }
+                    if !rows.isEmpty { ThreadRowList(rows: rows, unread: unread, watched: watched, quote: { groups.quote($0) }) }
                     olderControls(groups)
                 }
             }
@@ -478,12 +493,14 @@ struct ThreadsView: View, Equatable {
         if inColumns && duo == .upright {
             // Upright, beside the rail, the width holds two columns (Zach's pick, November 1, 2026): what needs you over
             // what finished, and what works beside them. A column with nothing in it gives its width to the other.
-            let quiet = !needs.isEmpty || !recent.isEmpty || !settled.isEmpty || !groups.snoozed.isEmpty
+            // Settled counts as the shelf does elsewhere, so a search whose only matches a computer read for it still shows.
+            let shelved = shows(shelf, settled: settled, groups)
+            let quiet = !needs.isEmpty || !recent.isEmpty || shelved || !groups.snoozed.isEmpty
             HStack(alignment: .top, spacing: Space.s4) {
                 if quiet {
                     VStack(alignment: .leading, spacing: 0) {
                         if !needs.isEmpty { needsColumn }
-                        if !recent.isEmpty || !settled.isEmpty || !groups.snoozed.isEmpty { recentColumn }
+                        if !recent.isEmpty || shelved || !groups.snoozed.isEmpty { recentColumn }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -1114,6 +1131,8 @@ private struct WorkingCard: View {
     /// The height of the name's first line, which the light and the time centre on when they stand on its row.
     @ScaledMetric(relativeTo: .body) private var titleLine: CGFloat = TextScale.lead.size * 1.2
     let row: HostedThread
+    /// What was said in the thread, when Threads' search found it only by that.
+    var quote: ThreadWordQuote? = nil
     private var state: ThreadState { ThreadState(row.thread) }
     var body: some View {
         Group {
@@ -1164,6 +1183,9 @@ private struct WorkingCard: View {
                     CardTitle(title: row.thread.title)
                         .padding(.top, Space.s2)
                 }
+                if let quote {
+                    SaidQuote(quote: quote, provider: Words.provider(row.thread.providerId)).padding(.top, Space.s1)
+                }
                 PlaceLine(providerID: row.thread.providerId, watched: model.watchedByWatcher(row.ref),
                           text: duo != .none ? Words.placeWithoutProvider(row) : place)
                     .padding(.top, Space.s1)
@@ -1191,7 +1213,7 @@ private struct WorkingCard: View {
     }
     /// The card as VoiceOver reads it.
     private var spokenLabel: String {
-        let label = "\(row.thread.title), \(state.words), \(place)"
+        let label = SaidQuote.heard("\(row.thread.title), \(state.words), \(place)", quote, provider: Words.provider(row.thread.providerId))
         return model.watchedByWatcher(row.ref)
             ? String(localized: "\(label), watched by Watcher", comment: "%@ is what VoiceOver reads of the thread before this: its title and where it runs.")
             : label
@@ -1219,6 +1241,8 @@ private struct ThreadRowList: View {
     var watched: Set<String> = []
     /// On a card of their own; false for rows inside a card that holds more, such as Recent's with Settled under it.
     var carded = true
+    /// What was said in a row's thread, when Threads' search found it only by that.
+    var quote: (HostedThread) -> ThreadWordQuote? = { _ in nil }
     var body: some View {
         let _ = BenchProbe.body("ThreadRowList")
         let list = VStack(spacing: 0) {
@@ -1226,7 +1250,7 @@ private struct ThreadRowList: View {
                 if index > 0 {
                     Rectangle().fill(Palette.hairline).frame(height: 1).padding(.leading, Space.s4 + 20)
                 }
-                ThreadRow(row: row, unread: unread.contains(row.id), watched: watched.contains(row.id))
+                ThreadRow(row: row, unread: unread.contains(row.id), watched: watched.contains(row.id), quote: quote(row))
             }
         }
         if carded { list.sottoCard(.plain) } else { list }
@@ -1241,6 +1265,8 @@ private struct ThreadRow: View {
     let unread: Bool
     /// Watcher works with it: the owl follows its provider's logo.
     var watched = false
+    /// What was said in the thread, when Threads' search found it only by that.
+    var quote: ThreadWordQuote? = nil
     @EnvironmentObject var model: AppModel
     @Environment(\.sottoDensity) private var density
     @Environment(\.duoLayout) private var duo
@@ -1285,6 +1311,7 @@ private struct ThreadRow: View {
                         Text(verbatim: row.thread.title).font(.sotto(.body, unread ? .bold : .semibold)).foregroundStyle(Palette.ink)
                             .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                     }
+                    if let quote { SaidQuote(quote: quote, provider: Words.provider(row.thread.providerId)) }
                     HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
                         PlaceLine(providerID: row.thread.providerId, watched: watched, text: line,
                                   tone: failed ? Palette.dangerText : Palette.muted)
@@ -1312,8 +1339,10 @@ private struct ThreadRow: View {
         // The provider's mark stands for its name, as in the thread rows (Zach's pick B, November 9, 2026).
         return Words.placeWithoutProvider(row)
     }
-    /// The row as VoiceOver reads it; a thread that finished out of sight says so right after its name.
-    private var label: String {
+    /// The row as VoiceOver reads it, with what was said in it when the search found it only by that.
+    private var label: String { SaidQuote.heard(spoken, quote, provider: Words.provider(row.thread.providerId)) }
+    /// The row's own words as VoiceOver reads them; a thread that finished out of sight says so right after its name.
+    private var spoken: String {
         if unread {
             let place = Words.place(row)
             return String(localized: "\(row.thread.title), just finished, not opened yet, \(place)",

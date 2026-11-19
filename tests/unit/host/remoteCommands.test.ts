@@ -190,6 +190,9 @@ describe('remote command allow-list', () => {
       'thread-delegations',
       // The prompts above a pane's window, a read for the message scrubber on a listener that offers thread-prompts (ADR-0109).
       'thread-prompts',
+      // The threads whose messages hold a search's words, for Search threads, on a listener that offers thread-words: a
+      // read of quotes, never a thread's whole history.
+      'thread-words',
       // Moves this client's own step window back (ADR-0194): a read, which may widen the thread's window as Show earlier
       // messages does, on a listener that offers step-window.
       'earlier-steps',
