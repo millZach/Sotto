@@ -11,7 +11,7 @@ Two earlier notes studied the same question: [native app options](../research/20
 | Question | Pick | What it rules out |
 | --- | --- | --- |
 | Front end | A native Rust UI, chosen by a bake-off of GPUI and Slint on one hard screen | The React renderer in a webview, bundled or the system's |
-| Web panes | Chromium stays as a component for Sotto's browser, the test iPhone and sealed pages, loaded only while such a pane shows | Rebuilding the browser tools on WKWebView and WebKitGTK |
+| Web panes | Chromium stays as a component for Sotto's browser, the test iPhone and sealed pages, loaded only while such a pane shows. It is the component's published build, so H.264 and AAC video stop playing in a web pane (picked November 19; VP9, AV1, Opus and MP3 still play). | Rebuilding the browser tools on WKWebView and WebKitGTK; compiling Chromium ourselves for every update; Electron as the pane's helper |
 | Feature work | Paused. Once the newest Owl is released, the only work is the port, and fixes. This replaces the November 14 pick, which kept features landing in TypeScript. | A port that chases a moving target |
 | Stable | All 47 Owl features held on November 17 are sent to stable, so stable is what Owl is today. After that it takes no new features. It still takes fixes, and each hidden stage (1 to 3) once Owl has proved it. | A stable with no releases, which breaks when a provider's CLI changes; and a stable that takes all five stages in one update |
 | Repository | One: a Cargo workspace in this repository | A second repository pinned to this one |
@@ -34,7 +34,7 @@ Crate names are suggestions.
 | `sotto-host` | The headless host: the core and the socket server in one static binary for each system. A remote machine needs no Node. |
 | `sotto` | The desktop app: the core in process, the native UI, the tray, the hotkey, the widget and the popup |
 | Speech helper | Parakeet through the `sherpa-onnx` crate on Windows and Linux. The Swift Core ML helper stays on macOS. |
-| Web pane component | Chromium Embedded Framework, started when a web pane shows and stopped when the last one closes |
+| Web pane component | Chromium Embedded Framework's published build, in a helper process of its own that is started when a web pane shows and ended when the last one closes. Each page is drawn off screen and reaches the window as a shared texture; input goes the other way. |
 
 What stays as it is: the files on disk (`threads.sqlite`, `subagents.sqlite`, `usage.sqlite`, `memory.sqlite` and the JSON records), the provider CLIs, protocol version 1, and every rule in `AGENTS.md` under "What Sotto is".
 
@@ -62,7 +62,7 @@ Nothing here ships to users, except the freeze. All of it is needed before the f
    - Must pass: Narrator, VoiceOver and Orca read it; the keyboard path works; Arabic and Urdu lay out right to left; Japanese and Chinese input compose in the composer; it runs under Hyprland on Wayland; reduced motion holds.
    - Must pass, for design review: three variants of one component reach Zach through a link that opens on his laptop and his phone, as the real toolkit running in a page or as captures of it, and the time from an edit to the screen is recorded. An HTML draft still settles a direction; this settles the look that ships.
    - The feel is Zach's to judge. If neither toolkit passes, the question goes back to him before anything else is built.
-2. **The web pane spike.** Run `pageAutomation.ts`'s fixed command list through the Chromium component on all three systems. Rebuild ADR-0060's seal (no network, no permissions, no downloads, its own scheme) and try to break it. Check the test iPhone's emulation, and the shared-texture path under Wayland on forge.
+2. **The web pane spike.** Run `pageAutomation.ts`'s fixed command list through the Chromium component on all three systems. Rebuild ADR-0060's seal (no network, no permissions, no downloads, its own scheme) and try to break it. Check the test iPhone's emulation, and the shared-texture path under Wayland on forge. Done on November 19, 2026, on forge, the Windows laptop and a GitHub macOS runner (issue #2690): the command list, the seal, the test iPhone and the shared texture all work on the three systems, and the hardened component makes no request of its own. What it changes is under "What the web pane needs" in stage 4. The code, three notes (`docs/research/2026-11-19-web-pane-chromium-component.md` and its `-windows` and `-macos` halves) and the evidence are on `prototype/web-pane-chromium`.
 3. **The referee harness.** Record the TypeScript host's wire frames across the 23 fake provider programs. Build a runner that starts either host binary, replays the same script and compares frames, with IDs and times normalised. Move `adapterContract.ts` to run across the socket: today it imports TypeScript, so it cannot be pointed at a Rust binary.
 4. **Baselines at the owner's scale** for what the port claims to change, so every stage reports against the same figures.
 5. **The ADR** recording the direction and the toolkit the bake-off chose, the workspace layout, a Rust job in CI on three systems, and the dependency rule.
@@ -124,6 +124,17 @@ What each web library becomes:
 
 What holds: ADR-0011 and ADR-0169 (colour from theme roles, sizes and corners from the scale), the three window sizes, light, dark and reduced motion, 4.5:1 contrast, and the keyboard rules in `AGENTS.md`. Their tests are rebuilt for Rust.
 
+What the web pane needs, from the spike:
+
+- **A helper process.** The component starts once in a process and holds 145 to 212 MB with no page open, so stopping it means ending a process. The link is built on all three systems: a dmabuf over a Unix socket, a duplicated D3D11 handle over a named pipe, an IOSurface as a Mach port. A frame's round trip is 1 to 2.5 ms on real graphics hardware.
+- **An accessibility bridge, built with the pane and not after it.** Drawn off screen, a page gives Narrator, VoiceOver and Orca nothing but the window. The component hands over the page's tree, with no call for a screen reader to act on a node, so Sotto carries the tree into AccessKit and routes a screen reader's actions back to the page itself. On macOS there is no other way: a view cannot sit in another process's window.
+- **The same graphics chip as the window.** On a laptop with two, a mismatch gives a blank pane and no error. Sotto puts the helper on the window's chip and falls back to software frames when a shared frame cannot be opened.
+- **A toolkit that takes a shared texture.** GPUI has no way to import one today; a frame copied through the CPU is the fallback until it does.
+- **What a native view would have done for nothing:** input methods, drop-down lists, cursors, drag and drop, the file picker and the context menu. The component has a callback for each, and Sotto draws or forwards every one. On macOS key events are built from the real keyboard event.
+- **The hardening list as a release check.** As shipped the component downloads Chrome's add-ons, runs Safe Browsing, fetches spell-check dictionaries, looks for a proxy on the local network, installs extensions other programs registered for Chrome, and writes to the login keychain on macOS. A fixed list of switches and preferences stops all of it. Their names change between Chromium versions, so every component update reruns the ten-minute capture on each system before it ships.
+- **Release work.** Pin the component archive's SHA-256 for each system. Sign its libraries on Windows, and the framework and five helper apps on macOS, inside out. Its `CREDITS.html` takes the place of `LICENSES.chromium.html`.
+- **Video.** H.264, AAC and HEVC do not play. `README.md` and `docs/guide.md` say so when the pane ships.
+
 How a room is proved: its Playwright journeys are re-made against the platform's accessibility tree, by role and name as `getByRole` does today, so the accessibility tree becomes something the tests depend on. The design gate gets new baselines for each room as it lands and retires the old ones. A room is done when its journeys pass on three systems and Zach has used it.
 
 `AGENTS.md` changes when this stage starts: an HTML draft stays a way to explore a look, but it is no longer the medium that ships.
@@ -164,7 +175,7 @@ While a room exists in both windows, a change to it is made twice. With features
 | Two implementations while providers keep changing | Fake providers updated once, run against both |
 | A feature slipping in during the freeze | Each one is work the port does twice. `AGENTS.md` carries the freeze, and lifting it is Zach's call. |
 | Screen readers, right-to-left and input methods in the toolkit | Must-pass rows in the bake-off, before any room is built |
-| The Chromium component: size, Wayland, its own network calls | The web pane spike, before stage 4 depends on it |
+| The Chromium component: a screen reader sees nothing of an off-screen page, and its network calls come back when a switch is renamed | The accessibility bridge is part of the web pane in stage 4; the capture reruns on every component update |
 | Three systems' worth of UI tests rebuilt | Room by room, each with its journeys |
 | Rust build folders in many worktrees | One shared build cache for each machine; forge has 16 GB |
 | UI work in Rust is slower to iterate than React and CSS | Measured in the bake-off as time from edit to screen |
@@ -173,7 +184,10 @@ While a room exists in both windows, a change to it is made twice. With features
 
 - Screen reader support, right-to-left layout and input methods in upstream GPUI. Searches on November 14 found AccessKit work in forks and on a `gpui-component` branch, and nothing from Zed itself.
 - Whether Slint can draw a long, selectable, streaming transcript and a terminal fast enough.
-- Chromium's shared-texture path under Wayland, and which of its network calls can be turned off.
+- The web pane on a real Mac: frame cost on Apple graphics at Retina scale, VoiceOver by ear, a keychain prompt between two differently signed builds, and Gatekeeper on a first launch. The spike ran on a GitHub runner with a virtual display.
+- The web pane on AMD or Intel graphics under Linux, and on X11.
+- Packet captures of the hardened component and the seal on Windows, which need an elevated shell; the component's own network log showed nothing leaving.
+- Whether the component's builds meet the LGPL for ffmpeg, which they link into the main library where Electron ships it as a separate file. This needs an answer before a release carries the component.
 - A Rust Mermaid renderer, and an ICU message formatter that reads Lingui's catalogues.
 - `alacritty_terminal`'s and the Chromium binding's licences against Sotto's terms.
 - Every figure marked *(November note)*.
@@ -184,4 +198,4 @@ While a room exists in both windows, a change to it is made twice. With features
 2. The freeze: send the 47 held Owl features to stable, cut a stable, and stop feature work once the newest Owl is out. Done on November 18, 2026.
 3. The referee harness, which makes the boundary tests stronger even if the port stops there.
 4. The bake-off, on `prototype/native-ui-gpui` and `prototype/native-ui-slint`, kept as tags when finished.
-5. The web pane spike.
+5. The web pane spike. Done on November 19, 2026, but for the hand tests in its notes.
