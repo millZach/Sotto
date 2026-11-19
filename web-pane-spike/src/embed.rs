@@ -227,7 +227,7 @@ pub fn apply_to_host(host: &BrowserHost, m: &Msg, view: &Mutex<(i32, i32)>) {
         RESIZE => { *view.lock().unwrap() = (m.i(1), m.i(2)); host.was_resized(); }
         KEY => {
             let stage = m.i(1);
-            let mut k = cef::KeyEvent { windows_key_code: m.i(2), native_key_code: m.i(2), ..Default::default() };
+            let mut k = cef::KeyEvent { windows_key_code: m.i(2), native_key_code: crate::wire::native_key_code(m.i(2)), ..Default::default() };
             k.type_ = KeyEventType::from(match stage { 0 => sys::cef_key_event_type_t::KEYEVENT_RAWKEYDOWN, 1 => sys::cef_key_event_type_t::KEYEVENT_CHAR, _ => sys::cef_key_event_type_t::KEYEVENT_KEYUP });
             if stage == 1 { k.character = m.0[3] as u16; k.unmodified_character = m.0[3] as u16; k.windows_key_code = m.0[3] as i32; }
             host.send_key_event(Some(&k));

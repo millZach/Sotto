@@ -14,6 +14,7 @@ EXE="$APP/Contents/MacOS/webpane"
 HARD="$(grep -v '^\s*$' "$SPIKE/config/hardened-switches.txt" | paste -sd ';' -)"
 PREFS="$SPIKE/config/hardened-prefs.json"
 log() { echo "[ci $(date +%H:%M:%S)] $*"; }
+keychain_names() { security dump-keychain 2>/dev/null | grep -E '"svce"|"labl"' | grep -i -E "safe storage|chromium|webpane|cef" | sort | uniq -c; }
 has() { [[ " $PHASES " == *" $1 "* ]]; }
 run() { $PY "$HERE/run.py" "$APP" "$RUNS" "$@"; }
 clean() { rm -rf "$RUNS/$1/cache"; }   # profiles are not evidence; keep the artifact small
@@ -33,6 +34,7 @@ if has info; then
     echo "user: $(id -un) groups: $(id -Gn)"
     echo "console user: $(stat -f %Su /dev/console)"
   } > "$SUM/info.txt" 2>&1
+  { echo "keychain items naming Chromium, CEF or the spike before any run:"; keychain_names; } > "$SUM/q5-keychain.txt"
   swiftc -O "$SPIKE/tools/macprobe.swift" -o "$TOOLS/macprobe" > "$SUM/macprobe-build.txt" 2>&1 || true
   "$TOOLS/macprobe" trust > "$SUM/ax-trust.txt" 2>&1 || true
   # Which clients the runner's own TCC database already allows (paths only; read, not changed, here).
@@ -45,6 +47,7 @@ if has cdp; then
   run cdp cdp 180 WP_NO_SANDBOX=1
   $PY "$SPIKE/scripts/summarize.py" "$RUNS/cdp/cdp.json" > "$SUM/q1-cdp.txt" 2>&1
   cp "$RUNS/cdp/cdp.json" "$SUM/q1-cdp.json" 2>/dev/null; clean cdp
+  { echo "after one run with CEF's defaults (cdp, no use-mock-keychain):"; keychain_names; } >> "$SUM/q5-keychain.txt"
 fi
 if has iphone; then
   log iphone
@@ -104,7 +107,7 @@ if has remote; then
   rm -rf "$RUNS"/remote-cycles/helper*/cache
   log remote-input
   # One pane for 40 s: the window's own scripted input at 1.5 s, then real clicks and keys from outside.
-  run embed remote-input 90 WP_NO_SANDBOX=1 WP_REMOTE=1 WP_REMOTE_HOLD_S=30 WP_VIEW=1280x800 WP_SCALE=1 WP_EMBED_SECONDS=40 WP_SELF_INPUT=1 WP_SHOT="$RUNS/remote-input/shot.bmp" WP_SHOT_FRAMES=240 &
+  run embed remote-input 90 WP_NO_SANDBOX=1 WP_REMOTE=1 WP_REMOTE_HOLD_S=30 WP_VIEW=1280x800 WP_SCALE=1 WP_EMBED_SECONDS=40 WP_SELF_INPUT=1 WP_SWITCHES=force-renderer-accessibility WP_SHOT="$RUNS/remote-input/shot.bmp" WP_SHOT_FRAMES=240 &
   bg=$!; sleep 9
   p="$(pid_of remote-input)"
   if [ -n "$p" ]; then
@@ -131,7 +134,7 @@ fi
 # ---------------------------------------------------------------- 4. accessibility from outside: CEF's own window
 if has ax; then
   log ax-windowed
-  run windowed windowed 80 WP_NO_SANDBOX=1 WP_HOLD_S=25 &
+  run windowed windowed 80 WP_NO_SANDBOX=1 WP_HOLD_S=25 WP_SWITCHES=force-renderer-accessibility &
   bg=$!
   for i in $(seq 1 60); do grep -q WINDOW_READY "$RUNS/windowed/stdout.log" 2>/dev/null && break; sleep 0.5; done
   p="$(pid_of windowed)"
@@ -142,6 +145,7 @@ if has ax; then
     screencapture -x "$SUM/q4-screen-windowed.png" 2>> "$SUM/screencapture.txt"
   fi
   wait $bg; clean windowed
+  sleep 2; { echo "bundle processes alive 2 s after the windowed run:"; pgrep -fl "$APP" || echo none; } > "$SUM/q4-windowed-left.txt"
   if ! grep -q "AXIsProcessTrusted true" "$SUM/ax-trust.txt" 2>/dev/null; then
     # Not trusted: try granting the probe in the system TCC database (works only where SIP lets root write it), then
     # say what the walk sees. This changes only this throwaway runner.
@@ -172,7 +176,9 @@ if has static; then
     echo "== sizes (KB)"; du -sk "$FW" "$FW/Libraries" "$FW/Resources" "$APP" 2>&1
     echo "locales: $(ls -d "$FW/Resources/"*.lproj | wc -l) folders, $(du -ck "$FW/Resources/"*.lproj | tail -1)"
     echo "== compressed, all locales"; tar -C "$(dirname "$FW")" -cf - "$(basename "$FW")" | zstd -12 -T0 -q -c | wc -c
-    echo "== compressed, en only"; tar -C "$(dirname "$FW")" --exclude '*.lproj' -cf - "$(basename "$FW")" | zstd -12 -T0 -q -c | wc -c
+    EN="$RUNNER_TEMP/fw-en"; rm -rf "$EN"; mkdir -p "$EN"; rsync -a --exclude '*.lproj' "$FW" "$EN/"; cp -R "$FW/Resources/en.lproj" "$EN/$(basename "$FW")/Resources/"
+    echo "== installed, en.lproj only (KB)"; du -sk "$EN/$(basename "$FW")"
+    echo "== compressed, en.lproj only"; tar -C "$EN" -cf - "$(basename "$FW")" | zstd -12 -T0 -q -c | wc -c; rm -rf "$EN"
     echo "== files"; (cd "$FW" && find . -type f | sed 's|/[^/]*\.lproj/.*|/*.lproj/...|' | sort | uniq -c | sort -rn | head -40)
     echo "== libraries"; ls -l "$FW/Libraries"
     echo "== architecture"; lipo -info "$FW/Chromium Embedded Framework"
@@ -219,7 +225,6 @@ net_capture_stop() {
   sudo rm -f "$r/pktap.pcapng" "$r/pflog.pcap"   # packet dumps never leave the runner
 }
 group_setup() { sudo dseditgroup -o read wpnet > /dev/null 2>&1 || sudo dseditgroup -o create -i 3901 wpnet; }
-keychain_names() { security dump-keychain 2>/dev/null | grep -E '"svce"|"labl"' | grep -i -E "safe storage|chromium|webpane|cef" | sort | uniq -c; }
 
 if has netdefault; then
   # CEF's defaults, 240 s with no page then 60 s with one, with extensions planted where Chrome on macOS reads other

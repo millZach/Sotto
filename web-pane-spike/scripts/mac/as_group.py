@@ -5,7 +5,7 @@ import grp, os, pwd, sys
 user, group, cmd = sys.argv[1], sys.argv[2], sys.argv[3:]
 pw = pwd.getpwnam(user)
 gid = grp.getgrnam(group).gr_gid
-os.setgroups(sorted(set(os.getgrouplist(user, pw.pw_gid)) | {gid}))
+os.setgroups([gid, pw.pw_gid])  # macOS allows 16 here; the runner's user is in 20 groups
 os.setgid(gid)
 os.setuid(pw.pw_uid)
 os.execv(cmd[0], cmd)

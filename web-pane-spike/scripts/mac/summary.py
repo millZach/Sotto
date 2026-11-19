@@ -85,6 +85,7 @@ def net(run):
             print(f'{extra}:'); print(open(f'{run}/{extra}').read().rstrip())
 
 def seal(run, t0, t1, canaries):
+    if not os.path.exists(f'{run}/seal.json'): print('no seal.json: the run did not finish'); netlog(run); return
     d = json.load(open(f'{run}/seal.json', encoding='utf-8'))
     print('layers:', d.get('seal'))
     if 'error' in d: print('ERROR', d['error'])

@@ -76,8 +76,10 @@ fn main() -> ExitCode {
     #[cfg(target_os = "macos")]
     let _framework = mac::load_framework();
     let _ = api_hash(sys::CEF_API_VERSION_LAST, 0);
+    // Only the browser process gets an NSApplication: CEF's helpers make none, and a sandboxed helper that does crashes
+    // ("required built-in appearance SystemAppearance not found").
     #[cfg(target_os = "macos")]
-    if !mac::setup_application() {
+    if !std::env::args().any(|a| a.starts_with("--type=")) && !mac::setup_application() {
         eprintln!("NSApp is not the spike's CefAppProtocol application");
     }
     let cmd = args.as_cmd_line().unwrap();

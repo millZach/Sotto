@@ -34,7 +34,11 @@ def ours():
     return [(p, c[:120]) for p, _, c in table() if root in c]
 
 results = []
-assert not ours(), 'a process from this bundle is already running'
+left = ours()
+if left:
+    print(json.dumps({'note': 'processes from the bundle were already running and were ended first', 'left': left}), flush=True)
+    for pid, _ in left: subprocess.run(['kill', '-9', str(pid)])
+    time.sleep(1)
 for i in range(pairs * 2):
     cold = i % 2 == 0
     if cold: subprocess.run(['sudo', 'purge'], check=False)

@@ -196,7 +196,8 @@ fn click(x: i32, y: i32, button: sys::cef_mouse_button_type_t) {
 fn key(code: i32) {
     host(move |h| {
         for t in [sys::cef_key_event_type_t::KEYEVENT_RAWKEYDOWN, sys::cef_key_event_type_t::KEYEVENT_KEYUP] {
-            let k = KeyEvent { type_: KeyEventType::from(t), windows_key_code: code, native_key_code: code, ..Default::default() };
+            let ch = if code == 0x0D { '\r' as u16 } else { 0 };
+            let k = KeyEvent { type_: KeyEventType::from(t), windows_key_code: code, native_key_code: crate::wire::native_key_code(code), character: ch, unmodified_character: ch, ..Default::default() };
             h.send_key_event(Some(&k));
         }
     });
@@ -261,12 +262,13 @@ pub fn run_osr() -> Json {
     });
     pause(300);
     let composing = eval("document.getElementById('text').value");
+    let focused = eval("(document.activeElement && document.activeElement.id) + ' hasFocus=' + document.hasFocus()");
     host(|h| h.ime_commit_text(Some(&CefString::from("日本")), Some(&Range { from: u32::MAX, to: u32::MAX }), 0));
     pause(300);
     let log = page_log();
     let value = eval("document.getElementById('text').value");
     let kinds: Vec<Json> = log.iter().map(|e| e["type"].clone()).collect();
-    check("IME: ime_set_composition gives compositionstart/update with the text, ime_commit_text gives compositionend and the value", kinds.contains(&json!("compositionstart")) && kinds.contains(&json!("compositionend")) && value == "日本", json!({ "while_composing": composing, "value": value, "events": log }));
+    check("IME: ime_set_composition gives compositionstart/update with the text, ime_commit_text gives compositionend and the value", kinds.contains(&json!("compositionstart")) && kinds.contains(&json!("compositionend")) && value == "日本", json!({ "while_composing": composing, "value": value, "events": log, "focused": focused }));
     check("IME: CEF reports where the composition is (on_ime_composition_range_changed), so the pane can place the candidate window", !seen("on_ime_composition_range_changed").is_empty(), json!(seen("on_ime_composition_range_changed").into_iter().take(2).collect::<Vec<_>>()));
 
     // Drag out of the page: press on the draggable box and move with the button held.

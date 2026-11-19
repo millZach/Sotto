@@ -19,6 +19,21 @@ pub const SOFTWARE: u32 = 9;
 /// Windows windowed helper: its page finished loading (no frames cross in that shape).
 pub const LOADED: u32 = 10;
 
+/// The key code CEF reads as `native_key_code`: on macOS the Carbon virtual key code (kVK_*), which CEF uses to build
+/// the NSEvent and the page's `KeyboardEvent.key`; elsewhere the Windows virtual key code the spike already sends.
+pub fn native_key_code(windows_code: i32) -> i32 {
+    if !cfg!(target_os = "macos") { return windows_code }
+    let letters = [0x00, 0x0B, 0x08, 0x02, 0x0E, 0x03, 0x05, 0x04, 0x22, 0x26, 0x28, 0x25, 0x2E, 0x2D, 0x1F, 0x23, 0x0C, 0x0F, 0x01, 0x11, 0x20, 0x09, 0x0D, 0x07, 0x10, 0x06];
+    let digits = [0x1D, 0x12, 0x13, 0x14, 0x15, 0x17, 0x16, 0x1A, 0x1C, 0x19];
+    match windows_code {
+        0x41..=0x5A => letters[(windows_code - 0x41) as usize],
+        0x30..=0x39 => digits[(windows_code - 0x30) as usize],
+        0x0D => 0x24, 0x09 => 0x30, 0x20 => 0x31, 0x08 => 0x33, 0x1B => 0x35,
+        0x25 => 0x7B, 0x27 => 0x7C, 0x28 => 0x7D, 0x26 => 0x7E,
+        _ => windows_code,
+    }
+}
+
 /// Sixteen little-endian u32 fields; field 0 is the kind. Frames carry u64s split over two fields.
 #[derive(Clone, Copy, Default, Debug)]
 pub struct Msg(pub [u32; 16]);
