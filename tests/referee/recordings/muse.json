@@ -2289,6 +2289,7 @@
       {"path":["shell","host","threads",0,"summary","lastMessageAt"],"value":"<time>"},
       {"path":["shell","host","threads",0,"summary","lastUser"],"value":{"createdAt":"<time>","id":"<id:9>","text":"Referee prompt one"}},
       {"path":["shell","host","threads",0,"summary","messageCount"],"value":1},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"value":"<time>"},
       {"path":["shell","notice"],"value":"Sent to Referee thread."}
      ]
     },
@@ -2334,6 +2335,7 @@
       {"path":["shell","host","threads",0,"summary","lastMessageAt"],"value":"<time>"},
       {"path":["shell","host","threads",0,"summary","lastUser"],"value":{"createdAt":"<time>","id":"<id:9>","text":"Referee prompt one"}},
       {"path":["shell","host","threads",0,"summary","messageCount"],"value":1},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"value":"<time>"},
       {"path":["shell","notice"],"value":"Sent to Referee thread."}
      ]
     },
@@ -2391,6 +2393,7 @@
       {"path":["shell","host","threads",0,"summary","lastMessageAt"],"value":"<time>"},
       {"path":["shell","host","threads",0,"summary","lastUser"],"value":{"createdAt":"<time>","id":"<id:9>","text":"Referee prompt one"}},
       {"path":["shell","host","threads",0,"summary","messageCount"],"value":1},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"value":"<time>"},
       {"path":["shell","notice"],"value":"Sent to Referee thread."}
      ]
     }
@@ -2413,6 +2416,7 @@
       },
       {"path":["shell","host","threads",0,"lastTurn","status"],"value":"completed"},
       {"path":["shell","host","threads",0,"status"],"value":"idle"},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"remove":true},
       {"path":["shell","host","threads",0,"summary","activityCount"],"value":1},
       {
        "path": ["shell","host","threads",0,"summary","lastAssistant"],
@@ -2432,6 +2436,7 @@
       },
       {"path":["shell","host","threads",0,"lastTurn","status"],"value":"completed"},
       {"path":["shell","host","threads",0,"status"],"value":"idle"},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"remove":true},
       {"path":["shell","host","threads",0,"summary","activityCount"],"value":1},
       {
        "path": ["shell","host","threads",0,"summary","lastAssistant"],
@@ -2452,6 +2457,7 @@
       },
       {"path":["shell","host","threads",0,"lastTurn","status"],"value":"completed"},
       {"path":["shell","host","threads",0,"status"],"value":"idle"},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"remove":true},
       {"path":["shell","host","threads",0,"summary","activityCount"],"value":1},
       {
        "path": ["shell","host","threads",0,"summary","lastAssistant"],
@@ -2515,7 +2521,8 @@
       {"path":["shell","host","threads",0,"status"],"value":"running"},
       {"path":["shell","host","threads",0,"summary","lastUser","id"],"value":"<id:11>"},
       {"path":["shell","host","threads",0,"summary","lastUser","text"],"value":"Referee prompt two"},
-      {"path":["shell","host","threads",0,"summary","messageCount"],"value":3}
+      {"path":["shell","host","threads",0,"summary","messageCount"],"value":3},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"value":"<time>"}
      ]
     },
     "iphone": {
@@ -2580,7 +2587,8 @@
       {"path":["shell","host","threads",0,"status"],"value":"running"},
       {"path":["shell","host","threads",0,"summary","lastUser","id"],"value":"<id:11>"},
       {"path":["shell","host","threads",0,"summary","lastUser","text"],"value":"Referee prompt two"},
-      {"path":["shell","host","threads",0,"summary","messageCount"],"value":3}
+      {"path":["shell","host","threads",0,"summary","messageCount"],"value":3},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"value":"<time>"}
      ]
     },
     "plain": {
@@ -2625,7 +2633,8 @@
       {"path":["shell","host","threads",0,"status"],"value":"running"},
       {"path":["shell","host","threads",0,"summary","lastUser","id"],"value":"<id:11>"},
       {"path":["shell","host","threads",0,"summary","lastUser","text"],"value":"Referee prompt two"},
-      {"path":["shell","host","threads",0,"summary","messageCount"],"value":3}
+      {"path":["shell","host","threads",0,"summary","messageCount"],"value":3},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"value":"<time>"}
      ]
     }
    }
@@ -2773,6 +2782,7 @@
       },
       {"path":["shell","host","threads",0,"lastTurn","status"],"value":"completed"},
       {"path":["shell","host","threads",0,"status"],"value":"idle"},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"remove":true},
       {"path":["shell","host","threads",0,"summary","activityCount"],"value":2},
       {"path":["shell","host","threads",0,"summary","lastAssistant","id"],"value":"muse-msg-item-<id:15>"},
       {"path":["shell","host","threads",0,"summary","lastAssistant","text"],"value":"Referee reply two"},
@@ -2790,6 +2800,7 @@
       },
       {"path":["shell","host","threads",0,"lastTurn","status"],"value":"completed"},
       {"path":["shell","host","threads",0,"status"],"value":"idle"},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"remove":true},
       {"path":["shell","host","threads",0,"summary","activityCount"],"value":2},
       {"path":["shell","host","threads",0,"summary","lastAssistant","id"],"value":"muse-msg-item-<id:15>"},
       {"path":["shell","host","threads",0,"summary","lastAssistant","text"],"value":"Referee reply two"},
@@ -2808,6 +2819,7 @@
       },
       {"path":["shell","host","threads",0,"lastTurn","status"],"value":"completed"},
       {"path":["shell","host","threads",0,"status"],"value":"idle"},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"remove":true},
       {"path":["shell","host","threads",0,"summary","activityCount"],"value":2},
       {"path":["shell","host","threads",0,"summary","lastAssistant","id"],"value":"muse-msg-item-<id:15>"},
       {"path":["shell","host","threads",0,"summary","lastAssistant","text"],"value":"Referee reply two"},
@@ -2870,6 +2882,7 @@
       {"path":["shell","host","threads",0,"summary","lastUser","id"],"value":"<id:16>"},
       {"path":["shell","host","threads",0,"summary","lastUser","text"],"value":"Referee prompt three"},
       {"path":["shell","host","threads",0,"summary","messageCount"],"value":5},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"value":"<time>"},
       {"path":["shell","notice"],"value":"Sent to Referee thread."}
      ]
     },
@@ -2906,6 +2919,7 @@
       {"path":["shell","host","threads",0,"summary","lastUser","id"],"value":"<id:16>"},
       {"path":["shell","host","threads",0,"summary","lastUser","text"],"value":"Referee prompt three"},
       {"path":["shell","host","threads",0,"summary","messageCount"],"value":5},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"value":"<time>"},
       {"path":["shell","notice"],"value":"Sent to Referee thread."}
      ]
     },
@@ -2983,6 +2997,7 @@
       {"path":["shell","host","threads",0,"summary","lastUser","id"],"value":"<id:16>"},
       {"path":["shell","host","threads",0,"summary","lastUser","text"],"value":"Referee prompt three"},
       {"path":["shell","host","threads",0,"summary","messageCount"],"value":5},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"value":"<time>"},
       {"path":["shell","notice"],"value":"Sent to Referee thread."}
      ]
     }
@@ -3095,6 +3110,7 @@
       },
       {"path":["shell","host","threads",0,"lastTurn","status"],"value":"completed"},
       {"path":["shell","host","threads",0,"status"],"value":"idle"},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"remove":true},
       {"path":["shell","host","threads",0,"summary","activityCount"],"value":3},
       {"path":["shell","host","threads",0,"summary","lastAssistant","id"],"value":"muse-msg-item-<id:21>"},
       {"path":["shell","host","threads",0,"summary","lastAssistant","text"],"value":"Referee reply three"},
@@ -3112,6 +3128,7 @@
       },
       {"path":["shell","host","threads",0,"lastTurn","status"],"value":"completed"},
       {"path":["shell","host","threads",0,"status"],"value":"idle"},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"remove":true},
       {"path":["shell","host","threads",0,"summary","activityCount"],"value":3},
       {"path":["shell","host","threads",0,"summary","lastAssistant","id"],"value":"muse-msg-item-<id:21>"},
       {"path":["shell","host","threads",0,"summary","lastAssistant","text"],"value":"Referee reply three"},
@@ -3130,6 +3147,7 @@
       },
       {"path":["shell","host","threads",0,"lastTurn","status"],"value":"completed"},
       {"path":["shell","host","threads",0,"status"],"value":"idle"},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"remove":true},
       {"path":["shell","host","threads",0,"summary","activityCount"],"value":3},
       {"path":["shell","host","threads",0,"summary","lastAssistant","id"],"value":"muse-msg-item-<id:21>"},
       {"path":["shell","host","threads",0,"summary","lastAssistant","text"],"value":"Referee reply three"},
@@ -3223,6 +3241,7 @@
       {"path":["shell","host","threads",0,"summary","lastUser","id"],"value":"<id:24>"},
       {"path":["shell","host","threads",0,"summary","lastUser","text"],"value":"Referee prompt four"},
       {"path":["shell","host","threads",0,"summary","messageCount"],"value":7},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"value":"<time>"},
       {"path":["shell","notice"],"value":"Sent to Referee thread."}
      ]
     },
@@ -3259,6 +3278,7 @@
       {"path":["shell","host","threads",0,"summary","lastUser","id"],"value":"<id:24>"},
       {"path":["shell","host","threads",0,"summary","lastUser","text"],"value":"Referee prompt four"},
       {"path":["shell","host","threads",0,"summary","messageCount"],"value":7},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"value":"<time>"},
       {"path":["shell","notice"],"value":"Sent to Referee thread."}
      ]
     },
@@ -3305,6 +3325,7 @@
       {"path":["shell","host","threads",0,"summary","lastUser","id"],"value":"<id:24>"},
       {"path":["shell","host","threads",0,"summary","lastUser","text"],"value":"Referee prompt four"},
       {"path":["shell","host","threads",0,"summary","messageCount"],"value":7},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"value":"<time>"},
       {"path":["shell","notice"],"value":"Sent to Referee thread."}
      ]
     }
@@ -3321,7 +3342,11 @@
        "id": "desktop-9",
        "ok": true,
        "result": {
-        "$shellPatch": [{"path":["host","threads",0,"lastTurn","status"],"value":"interrupted"},{"path":["host","threads",0,"status"],"value":"idle"}]
+        "$shellPatch": [
+         {"path":["host","threads",0,"lastTurn","status"],"value":"interrupted"},
+         {"path":["host","threads",0,"status"],"value":"idle"},
+         {"path":["host","threads",0,"summary","runningTurnStartedAt"],"remove":true}
+        ]
        },
        "v": 1
       }
@@ -3331,7 +3356,8 @@
       {"path":["details","<id:6>","activities",3,"status"],"value":"interrupted"},
       {"path":["details","<id:6>","activities",3,"title"],"value":"Turn interrupted"},
       {"path":["shell","host","threads",0,"lastTurn","status"],"value":"interrupted"},
-      {"path":["shell","host","threads",0,"status"],"value":"idle"}
+      {"path":["shell","host","threads",0,"status"],"value":"idle"},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"remove":true}
      ]
     },
     "iphone": {
@@ -3340,7 +3366,8 @@
       {"path":["details","<id:6>","activities",3,"status"],"value":"interrupted"},
       {"path":["details","<id:6>","activities",3,"title"],"value":"Turn interrupted"},
       {"path":["shell","host","threads",0,"lastTurn","status"],"value":"interrupted"},
-      {"path":["shell","host","threads",0,"status"],"value":"idle"}
+      {"path":["shell","host","threads",0,"status"],"value":"idle"},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"remove":true}
      ]
     },
     "plain": {
@@ -3350,7 +3377,8 @@
       {"path":["details","<id:6>","activities",3,"status"],"value":"interrupted"},
       {"path":["details","<id:6>","activities",3,"title"],"value":"Turn interrupted"},
       {"path":["shell","host","threads",0,"lastTurn","status"],"value":"interrupted"},
-      {"path":["shell","host","threads",0,"status"],"value":"idle"}
+      {"path":["shell","host","threads",0,"status"],"value":"idle"},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"remove":true}
      ]
     }
    }

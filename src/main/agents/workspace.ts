@@ -32,7 +32,7 @@ import { immutableActivities, immutableModels, immutableUpdates, isImmutableActi
 import { readdir, stat, unlink } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { z } from 'zod'
-import { agentHostSnapshotSchema, dropLiveThreadState, threadProviderOf, EMPTY_AGENT_HOST, NO_LIVE_THREAD_STATE, isThreadProviderConnected, threadTakesSottoTools, PROVIDER_LABELS, isVisualMessage, RESTORE_BRANCH_NEEDS_CONFIRMATION, summarizeThread, THREAD_CONTINUED_IN_MAX, WAKE_UP_MESSAGE_IDS_MAX, type ThreadContinuedFrom, type ThreadContinuedIn, type WorktreeReclaimPreview, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentHostSnapshot, type AgentModel, type AgentProject, type AgentMessage, type AgentThread, type AgentThreadStart, type AgentThreadSummary, type AgentWorktree, type ProviderId } from '../../shared/agents'
+import { agentHostSnapshotSchema, dropLiveThreadState, threadProviderOf, EMPTY_AGENT_HOST, NO_LIVE_THREAD_STATE, isThreadProviderConnected, threadTakesSottoTools, PROVIDER_LABELS, isVisualMessage, RESTORE_BRANCH_NEEDS_CONFIRMATION, runningTurnStart, summarizeThread, THREAD_CONTINUED_IN_MAX, WAKE_UP_MESSAGE_IDS_MAX, type ThreadContinuedFrom, type ThreadContinuedIn, type WorktreeReclaimPreview, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentHostSnapshot, type AgentModel, type AgentProject, type AgentMessage, type AgentThread, type AgentThreadStart, type AgentThreadSummary, type AgentWorktree, type ProviderId } from '../../shared/agents'
 import type { AgentSkillReference } from '../../shared/agentSkills'
 import { isUsageProviderId, type UsageQuotaRead, type UsageTokenObservation } from '../../shared/usageDashboard'
 import { isUsageHistoryThreadId, mappedSink, type UsageHistorySink, type UsageRecordedUserMessage } from './usageHistory/sink'
@@ -191,6 +191,32 @@ function liveTurn(activities: readonly AgentActivity[], status: AgentThread['sta
     if (!newest || record.sequence > newest.sequence) newest = record
   }
   return latest?.turnId ?? (status === 'running' ? newest?.turnId : undefined)
+}
+
+/** The running turn's start for each frozen list of records, which is never written into, so a list published again is read once. */
+const runningTurnStarts = new WeakMap<readonly AgentActivity[], { readonly startedAt: string | undefined }>()
+/**
+ * `summary` with the running turn the thread now says: the start of its turn's running activity record while the thread is
+ * running, and none once it is not. A provider ends a turn in its status and its records, in one update or in two, and a
+ * summary kept from before them would go on saying the turn runs until the thread's history next changed (#2697). The same
+ * summary while it already says that, so a thread record whose turn did not change stays the record it was.
+ */
+function withRunningTurn(summary: AgentThreadSummary, thread: Pick<AgentThread, 'status' | 'activities'>): AgentThreadSummary {
+  const { activities } = thread
+  let startedAt: string | undefined
+  if (thread.status === 'running') {
+    let held = activities && isImmutableActivities(activities) ? runningTurnStarts.get(activities) : undefined
+    if (!held) {
+      held = { startedAt: runningTurnStart(activities) }
+      if (activities && isImmutableActivities(activities)) runningTurnStarts.set(activities, held)
+    }
+    startedAt = held.startedAt
+  }
+  if (summary.runningTurnStartedAt === startedAt) return summary
+  if (startedAt !== undefined) return { ...summary, runningTurnStartedAt: startedAt }
+  const ended = { ...summary }
+  delete ended.runningTurnStartedAt
+  return ended
 }
 
 /** Said when the branch on a working-copy record could not be written; the folder itself was verified. */
@@ -3388,7 +3414,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         for (const held of read.held) {
           const current = this.threadById(threadId)!
           this.acceptingRead = read.forRecord && held.read
-          this.touched(current).activities = this.mergeActivities(held.thread, current)
+          const touched = this.touched(current)
+          touched.activities = this.mergeActivities(held.thread, current)
+          if (touched.summary) touched.summary = withRunningTurn(touched.summary, touched)
         }
       } finally { this.mergingReadBack = false; this.acceptingRead = accepting }
       if (read.held.length) {
@@ -3494,9 +3522,14 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   }
   /**
    * The sidebar's facts about a thread. With the history in hand they come from it; without it they come
-   * from the store's projection, with the activity counted from the records the thread still carries.
+   * from the store's projection, with the activity counted from the records the thread still carries. A turn runs in it
+   * only while the thread does (`withRunningTurn`).
    */
   private threadSummary(thread: AgentThread, messages?: readonly AgentMessage[]): AgentThreadSummary {
+    return withRunningTurn(this.historySummary(thread, messages), thread)
+  }
+  /** The sidebar's facts as the thread's history and records give them, before its status has its say. */
+  private historySummary(thread: AgentThread, messages?: readonly AgentMessage[]): AgentThreadSummary {
     const beside = this.withStoredCount(thread, summarizeThread({ messages: [], activities: thread.activities }))
     if (messages !== undefined) return this.withStoredCount(thread, summarizeThread({ messages: [...messages], activities: thread.activities }))
     if (this.storeUnavailable) return beside
@@ -4986,11 +5019,12 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       // is the window this host loaded, which only an event or an observation changes.
       merged.messages = old?.messages ?? []
       if (old?.earlierAvailable) merged.earlierAvailable = true
-      merged.summary = old?.summary ?? this.threadSummary(merged)
+      // Its history's facts are the summary's; the records just merged say whether a turn still runs.
+      merged.summary = old?.summary ? withRunningTurn(old.summary, merged) : this.threadSummary(merged)
       if (!old) this.eventChanged.add(thread.id)
     } else if ((thread.historyStatus === 'loading' || thread.historyStatus === 'error') && !thread.messages.length) {
       merged.messages = old?.messages ?? []
-      merged.summary = old?.summary ?? this.threadSummary(merged)
+      merged.summary = old?.summary ? withRunningTurn(old.summary, merged) : this.threadSummary(merged)
     } else {
       const nativeMessages = this.legacyMessages(merged, thread.messages)
       const retained = new Map(old?.messages.filter(message => message.watcherOwnChange || message.watcherObservedChanges).map(message => [message.id, message]) ?? [])
