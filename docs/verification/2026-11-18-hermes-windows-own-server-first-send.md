@@ -43,7 +43,8 @@ thread on Obsidian and send "Hello. Reply with one short sentence." The installe
 - `npx vitest run tests/unit/main/hermesEnvironment.test.ts tests/unit/main/hermes.test.ts`: 29 passed.
 - `npm run typecheck` and `npx eslint` on the changed files passed.
 
-These ran on Node 24.14.1, not the pinned 24.22.1. The full suite was left to GitHub CI.
+The tests ran on the pinned Node 24.22.1 (`npx node@24.22.1 node_modules/vitest/vitest.mjs run …`). The full suite was
+left to GitHub CI.
 
 ## Not checked here
 
