@@ -7,8 +7,8 @@ import { diff, describeDifferences, equal, patch, type Op } from './diff'
 import { ClientFold, FOLDED_PUSHES, type Held } from './fold'
 import { Normaliser } from './normalise'
 import { drive, prepareFake, REFEREE_OWL_VERSION, type RefereeProvider } from './providers'
-import { CLIENTS, PROFILES, script, started, type ClientName, type Step } from './scenario'
-import { openSocket, pairClient, startHost, type HostCommand, type RunningHost, type Socket } from './wire'
+import { CLIENTS, PROFILES, script, started, type ClientName, type ScenarioName, type Step } from './scenario'
+import { openSession, openSocket, pairClient, startHost, type HostCommand, type RunningHost, type Socket } from './wire'
 
 export const RECORDING_FORMAT = 1
 
@@ -17,7 +17,7 @@ export interface RecordedClientStep { readonly frames: unknown[]; readonly held:
 
 export interface RecordedStep {
   readonly say: string
-  readonly by: ClientName | 'fake'
+  readonly by: ClientName | 'fake' | 'host'
   /** The request a client sent, or the action the fake was handed. */
   readonly sent: unknown
   readonly clients: Readonly<Record<ClientName, RecordedClientStep>>
@@ -26,6 +26,8 @@ export interface RecordedStep {
 export interface Recording {
   readonly format: typeof RECORDING_FORMAT
   readonly provider: RefereeProvider
+  /** The script it plays, when it is not `main`. */
+  readonly scenario?: Exclude<ScenarioName, 'main'>
   readonly sottoVersion: string
   /** Each client's pairing over HTTP and the extension its socket was answered with. */
   readonly setup: Readonly<Record<ClientName, { readonly http: unknown[]; readonly extensions: string | null }>>
@@ -62,6 +64,8 @@ export type Tamper = (frame: Record<string, unknown>, emit: (frame: Record<strin
 export interface RunOptions {
   readonly command: HostCommand
   readonly provider: RefereeProvider
+  /** Which of the provider's scripts to play; `main` when left out. */
+  readonly scenario?: ScenarioName
   /** Record, or compare with this recording. */
   readonly against?: Recording
   readonly tamper?: Partial<Record<ClientName, Tamper>>
@@ -105,9 +109,13 @@ function decodeFrame(frame: unknown, base: unknown): unknown {
 
 interface Client {
   readonly name: ClientName
-  readonly socket: Socket
-  readonly session: string
-  readonly fold: ClientFold
+  /** Its pairing's token, which opens a new session after the host starts again. */
+  readonly token: string
+  socket: Socket
+  session: string
+  fold: ClientFold
+  /** The handles the host answered this client's staging with, in order. */
+  readonly staged: Record<string, unknown>[]
   /** The frames compared one by one since the step began, decoded as the client reads them. */
   frames: unknown[]
   /** Requests this client sent and is waiting on, by ID, with their operation. */
@@ -142,6 +150,7 @@ function readArrivals(client: Client): void {
           : request.op === 'command' ? client.fold.commandAnswer(frame.result) : frame.result
       // The host pushes each thread an `observe` names whole before it answers (docs/host-protocol.md, "Requests").
       if (request.op === 'observe') for (const threadId of request.threadIds as string[]) if (!(threadId in client.fold.held.details)) client.fold.problems.push(`The host answered observe before it pushed thread ${threadId}.`)
+      if ((request.op === 'stage-attachment' || request.op === 'stage-file-part') && result !== null && typeof result === 'object') client.staged.push(result as Record<string, unknown>)
       client.frames.push({ ...frame, result })
     } else client.frames.push(frame)
   }
@@ -184,6 +193,9 @@ function material(normaliser: Normaliser, client: Client, provider: RefereeProvi
 
 export async function runScenario(options: RunOptions): Promise<RunResult> {
   const { provider, against } = options
+  const scenario = options.scenario ?? 'main'
+  const plan = script(provider, scenario)
+  if (!plan) throw new Error(`${provider} has no ${scenario} script.`)
   const stepDeadlineMs = options.stepDeadlineMs ?? 20_000
   const data = await realpath(await mkdtemp(join(tmpdir(), `sotto-referee-${provider}-`)))
   let normaliser = new Normaliser({ data, repo: resolve('.') })
@@ -194,36 +206,38 @@ export async function runScenario(options: RunOptions): Promise<RunResult> {
   let host: RunningHost | undefined
   try {
     await prepareFake(data, provider)
-    host = await startHost(options.command, data, provider)
     // A host says it is ready before its providers have connected, and a hello answers whatever it holds then. So a client
     // the referee does not compare says hello first and waits for start-up to settle; the recorded clients come after it.
-    {
-      const warm = await pairClient(host.port, data, 'Referee start-up')
-      const socket = await openSocket(host.port, warm.session, undefined)
-      const client: Client = { name: 'plain', socket, session: warm.session, fold: new ClientFold(), frames: [], pending: new Map(), sends: new Set(), read: 0, next: 0, reported: 0 }
+    const start = async (): Promise<RunningHost> => {
+      const fresh = await startHost(options.command, data, provider)
+      host = fresh
+      const warm = await pairClient(fresh.port, data, 'Referee start-up')
+      const socket = await openSocket(fresh.port, warm.session, undefined)
+      const client: Client = { name: 'plain', token: warm.token, socket, session: warm.session, fold: new ClientFold(), staged: [], frames: [], pending: new Map(), sends: new Set(), read: 0, next: 0, reported: 0 }
       socket.send({ v: 1, id: 'start-up', session: warm.session, op: 'hello', ...PROFILES.plain.hello })
       client.pending.set('start-up', { op: 'hello' })
       const settled = await settle([client], () => !client.pending.has('start-up') && client.fold.held.shell !== undefined && started(provider)(client.fold.held), stepDeadlineMs)
       socket.close()
       if (!settled) throw new Error('The host never finished starting: its provider did not connect, or another provider was still connecting.')
+      return fresh
     }
+    let running = await start()
     for (const name of CLIENTS) {
-      const paired = await pairClient(host.port, data, `Referee ${name}`)
-      const socket = await openSocket(host.port, paired.session, PROFILES[name].offer, options.tamper?.[name])
-      clients.push({ name, socket, session: paired.session, fold: new ClientFold(), frames: [], pending: new Map(), sends: new Set(), read: 0, next: 0, reported: 0 })
+      const paired = await pairClient(running.port, data, `Referee ${name}`)
+      const socket = await openSocket(running.port, paired.session, PROFILES[name].offer, options.tamper?.[name])
+      clients.push({ name, token: paired.token, socket, session: paired.session, fold: new ClientFold(), staged: [], frames: [], pending: new Map(), sends: new Set(), read: 0, next: 0, reported: 0 })
       setup[name] = { http: paired.exchanges.map(exchange => ({ method: exchange.method, path: exchange.path, status: exchange.status, body: normaliser.http(exchange.path, exchange.body) })), extensions: socket.extensions ?? null }
       if (against && !equal(against.setup[name], setup[name])) failures.push(`Pairing ${name}: ${describeDifferences(against.setup[name], setup[name]).join('; ')}`)
     }
     const byName = (name: ClientName): Client => clients.find(client => client.name === name)!
     const lastHeld = Object.fromEntries(CLIENTS.map(name => [name, EMPTY_HELD])) as Record<ClientName, unknown>
     const recordedHeld = Object.fromEntries(CLIENTS.map(name => [name, EMPTY_HELD])) as Record<ClientName, unknown>
-    const plan: Step[] = script(provider)
-    for (const [index, step] of plan.entries()) {
+    for (const [index, step] of (plan as Step[]).entries()) {
       const label = `Step ${index + 1} (${step.say})`
       const expected = against?.steps[index]
       if (against && (!expected || expected.say !== step.say)) { failures.push(`${label}: the recording has ${expected ? `"${expected.say}"` : 'no such step'} here. The script changed; record again.`); break }
-      const actor = step.by === 'fake' ? undefined : byName(step.by)
-      const context = { provider, data, held: (actor ?? byName('desktop')).fold.snapshot() }
+      const actor = step.by === 'fake' || step.by === 'host' ? undefined : byName(step.by)
+      const context = { provider, data, held: (actor ?? byName('desktop')).fold.snapshot(), staged: actor?.staged ?? [] }
       let sent: unknown
       let waitingOn: string | undefined
       if (actor && step.request) {
@@ -233,6 +247,19 @@ export async function runScenario(options: RunOptions): Promise<RunResult> {
         if (frame.op === 'command' && (frame.command as { type?: unknown } | undefined)?.type === 'manual-send') actor.sends.add(id)
         actor.socket.send(frame)
         sent = normaliser.value(frame)
+      } else if (step.by === 'host') {
+        // What the clients were sent before the host stopped is this step's; then each starts again on a new session and a
+        // new socket, holding nothing, as a client does once its host has gone.
+        for (const client of clients) { readArrivals(client); client.socket.close() }
+        failures.push(...newProblems(clients, label))
+        await running.stop()
+        running = await start()
+        for (const client of clients) {
+          client.session = await openSession(running.port, client.token)
+          client.socket = await openSocket(running.port, client.session, PROFILES[client.name].offer, options.tamper?.[client.name])
+          client.fold = new ClientFold(); client.pending.clear(); client.read = 0; client.reported = 0
+        }
+        sent = { restart: true }
       } else if (step.drive) {
         const action = step.drive(context)
         sent = normaliser.value(action)
@@ -303,7 +330,7 @@ export async function runScenario(options: RunOptions): Promise<RunResult> {
     if (failures.length === 0) await rm(data, { recursive: true, force: true })
     else failures.push(`The run's data folder is kept at ${data}.`)
   }
-  return { recording: { format: RECORDING_FORMAT, provider, sottoVersion: REFEREE_OWL_VERSION, setup, steps }, failures }
+  return { recording: { format: RECORDING_FORMAT, provider, ...(scenario !== 'main' ? { scenario } : {}), sottoVersion: REFEREE_OWL_VERSION, setup, steps }, failures }
 }
 
 /** What a step that never matched shows, client by client: frames first, then what the client holds. */
