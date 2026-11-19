@@ -1,0 +1,12 @@
+
+edit 1: save to screen: 66 ms (576 pixels changed)
+edit 2: save to screen: 50 ms (576 pixels changed)
+edit 3: save to screen: 33 ms (576 pixels changed)
+
+tsx edit 1: no change within 30 s
+tsx edit 2: no change within 30 s
+tsx edit 3: no change within 30 s
+
+tsx edit 1 (inline style on the composer form): no change within 30 s
+tsx edit 2 (inline style on the composer form): no change within 30 s
+tsx edit 3 (inline style on the composer form): no change within 30 s

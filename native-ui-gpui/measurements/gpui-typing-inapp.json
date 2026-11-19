@@ -1,0 +1,12 @@
+{
+  "long_frames_at_ms_work_ms_reply_char": [[0, 97.9, 0]],
+  "stream_ms": 20401,
+  "frames": 1354,
+  "streaming_frames": 1354,
+  "frame_work_ms": {"count": 1354, "median": 1.94, "p95": 2.84, "p99": 3.22, "max": 97.94},
+  "frame_interval_ms": {"count": 1353, "median": 16.53, "p95": 19.40, "p99": 34.05, "max": 99.95},
+  "key_to_paint_ms": {"count": 160, "median": 1.86, "p95": 3.06, "p99": 3.73, "max": 3.92},
+  "first_paint_ms": 500.6,
+  "working_set_mb": 253.6,
+  "private_mb": 231.1
+}

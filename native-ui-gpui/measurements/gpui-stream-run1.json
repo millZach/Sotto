@@ -1,0 +1,13 @@
+{
+  "long_frames_at_ms_work_ms_reply_char": [],
+  "stream_ms": 20401,
+  "frames": 1224,
+  "streaming_frames": 1224,
+  "frame_work_ms": {"count": 1224, "median": 2.23, "p95": 4.00, "p99": 5.12, "max": 5.86},
+  "frame_interval_ms": {"count": 1223, "median": 16.67, "p95": 18.17, "p99": 18.74, "max": 19.64},
+  "key_to_paint_ms": null,
+  "first_paint_ms": 408.6,
+  "working_set_mb": 281.8,
+  "private_mb": 258.8
+}
+// probe, process tree: processes: 4, working set: 379.4 MB, private bytes: 321.4 MB

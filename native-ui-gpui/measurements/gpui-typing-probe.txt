@@ -1,0 +1,2 @@
+keypress to pixels (ms): n=40 median=33.5 p95=34.3 p99=36.0 max=36.0 min=30.4
+keypress to pixels (ms): n=40 median=33.4 p95=34.5 p99=35.5 max=35.5 min=31.0

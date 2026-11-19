@@ -1,0 +1,96 @@
+{
+  "build": "electron",
+  "when": "2026-11-19T07:45:59.551Z",
+  "versions": {
+    "electron": "43.8.3",
+    "chrome": "150.0.7871.250",
+    "node": "24.22.0"
+  },
+  "window": {
+    "width": 1600,
+    "height": 1000,
+    "theme": "dark"
+  },
+  "history_messages": 201,
+  "reply_chars": 25502,
+  "launch_to_window_ms_playwright": 3823,
+  "chunks": 1276,
+  "updates": 1253,
+  "late_chunks": 0,
+  "stream_sent_ms": 20416,
+  "stream_ms": 20416,
+  "end_shown": true,
+  "frames": 1218,
+  "frame_interval_ms": {
+    "count": 1217,
+    "median": 16.7,
+    "p95": 16.8,
+    "p99": 17,
+    "max": 83.6
+  },
+  "frames_over_16_7ms": 446,
+  "frames_over_33ms": 2,
+  "long_animation_frames": {
+    "count": 2,
+    "duration_ms": {
+      "count": 2,
+      "median": 78.7,
+      "p95": 78.7,
+      "p99": 78.7,
+      "max": 78.7
+    },
+    "blocking_ms": {
+      "count": 2,
+      "median": 18.8,
+      "p95": 18.8,
+      "p99": 18.8,
+      "max": 18.8
+    },
+    "total_ms": 148
+  },
+  "device_pixel_ratio": 1.5,
+  "inner": [
+    1600,
+    1000
+  ],
+  "memory_3s_after": {
+    "processes": 6,
+    "working_set_mb": 1263,
+    "private_mb": 1014.8,
+    "probe": "processes: 6, working set: 1263.0 MB, private bytes: 1014.8 MB"
+  },
+  "electron_app_metrics": [
+    {
+      "pid": 80996,
+      "type": "Browser",
+      "working_set_mb": 325.5,
+      "private_mb": 305.6
+    },
+    {
+      "pid": 87116,
+      "type": "GPU",
+      "working_set_mb": 290.9,
+      "private_mb": 240.4
+    },
+    {
+      "pid": 105244,
+      "type": "Utility",
+      "working_set_mb": 54.6,
+      "private_mb": 12.7
+    },
+    {
+      "pid": 68084,
+      "type": "Tab",
+      "working_set_mb": 434.4,
+      "private_mb": 365.1
+    },
+    {
+      "pid": 71748,
+      "type": "Tab",
+      "working_set_mb": 149.6,
+      "private_mb": 83.6
+    }
+  ],
+  "screenshot": "C:\\Users\\zache\\AppData\\Roaming\\sotto\\thread-worktrees\\dce9348c-0a4c-4ba9-9eea-3c6cabbf570a\\native-ui-gpui\\electron-baseline\\mid-stream.png",
+  "plain_launch": "$env:SOTTO_E2E='1'; $env:SOTTO_E2E_SCENARIO='success'; $env:SOTTO_E2E_USER_DATA='C:\\Users\\zache\\AppData\\Local\\Temp\\sotto-e2e-electron-baseline'; & 'C:\\Users\\zache\\AppData\\Roaming\\sotto\\thread-worktrees\\dce9348c-0a4c-4ba9-9eea-3c6cabbf570a\\node_modules\\electron\\dist\\electron.exe' 'C:\\Users\\zache\\AppData\\Roaming\\sotto\\thread-worktrees\\dce9348c-0a4c-4ba9-9eea-3c6cabbf570a\\out\\main\\index.js'"
+}

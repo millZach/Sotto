@@ -1,0 +1,40 @@
+Dark: reading text on canvas: 13.54:1
+Dark: reading text-2 (prose) on canvas: 10.32:1
+Dark: headings on canvas: 13.05:1
+Dark: transcript muted on canvas: 7.92:1
+Dark: bubble text on bubble: 16.78:1
+Dark: code text on code well: 11.51:1
+Dark: keyword on code well: 8.46:1
+Dark: string on code well: 11.12:1
+Dark: number on code well: 7.80:1
+Dark: type on code well: 9.48:1
+Dark: comment on code well: 9.51:1
+Dark: code text on added line: 9.89:1
+Dark: link on canvas: 11.88:1
+Dark: composer text on composer card: 17.85:1
+Dark: composer hint on composer card: 6.34:1
+Dark: chip text on composer card: 8.67:1
+Dark: pill ink on pill: 19.51:1
+Dark: strip text on chrome: 18.58:1
+Dark: terminal text on terminal: 18.58:1
+Dark: accent text on canvas: 11.88:1
+Light: reading text on canvas: 15.66:1
+Light: reading text-2 (prose) on canvas: 10.45:1
+Light: headings on canvas: 14.96:1
+Light: transcript muted on canvas: 8.12:1
+Light: bubble text on bubble: 13.58:1
+Light: code text on code well: 14.86:1
+Light: keyword on code well: 5.44:1
+Light: string on code well: 7.17:1
+Light: number on code well: 7.87:1
+Light: type on code well: 5.73:1
+Light: comment on code well: 7.03:1
+Light: code text on added line: 12.75:1
+Light: link on canvas: 7.24:1
+Light: composer text on composer card: 14.35:1
+Light: composer hint on composer card: 4.64:1
+Light: chip text on composer card: 6.13:1
+Light: pill ink on pill: 15.66:1
+Light: strip text on chrome: 15.66:1
+Light: terminal text on terminal: 15.66:1
+Light: accent text on canvas: 7.24:1

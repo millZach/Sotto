@@ -1,0 +1,96 @@
+{
+  "build": "electron",
+  "when": "2026-11-19T08:11:04.379Z",
+  "versions": {
+    "electron": "43.8.3",
+    "chrome": "150.0.7871.250",
+    "node": "24.22.0"
+  },
+  "window": {
+    "width": 1600,
+    "height": 1000,
+    "theme": "dark"
+  },
+  "history_messages": 201,
+  "reply_chars": 25502,
+  "launch_to_window_ms_playwright": 1256,
+  "chunks": 1276,
+  "updates": 1268,
+  "late_chunks": 0,
+  "stream_sent_ms": 20416,
+  "stream_ms": 20533,
+  "end_shown": true,
+  "frames": 1225,
+  "frame_interval_ms": {
+    "count": 1224,
+    "median": 16.7,
+    "p95": 16.8,
+    "p99": 17,
+    "max": 83.7
+  },
+  "frames_over_16_7ms": 482,
+  "frames_over_33ms": 3,
+  "long_animation_frames": {
+    "count": 2,
+    "duration_ms": {
+      "count": 2,
+      "median": 109.3,
+      "p95": 109.3,
+      "p99": 109.3,
+      "max": 109.3
+    },
+    "blocking_ms": {
+      "count": 2,
+      "median": 50.9,
+      "p95": 50.9,
+      "p99": 50.9,
+      "max": 50.9
+    },
+    "total_ms": 163
+  },
+  "device_pixel_ratio": 1.5,
+  "inner": [
+    1600,
+    1000
+  ],
+  "memory_3s_after": {
+    "processes": 6,
+    "working_set_mb": 1250.1,
+    "private_mb": 1000.5,
+    "probe": "processes: 6, working set: 1250.1 MB, private bytes: 1000.5 MB"
+  },
+  "electron_app_metrics": [
+    {
+      "pid": 14968,
+      "type": "Browser",
+      "working_set_mb": 328.1,
+      "private_mb": 308.6
+    },
+    {
+      "pid": 68148,
+      "type": "GPU",
+      "working_set_mb": 279,
+      "private_mb": 228.4
+    },
+    {
+      "pid": 45036,
+      "type": "Utility",
+      "working_set_mb": 54.8,
+      "private_mb": 12.6
+    },
+    {
+      "pid": 73000,
+      "type": "Tab",
+      "working_set_mb": 430.2,
+      "private_mb": 359.2
+    },
+    {
+      "pid": 106088,
+      "type": "Tab",
+      "working_set_mb": 150.1,
+      "private_mb": 84.2
+    }
+  ],
+  "screenshot": null,
+  "plain_launch": "$env:SOTTO_E2E='1'; $env:SOTTO_E2E_SCENARIO='success'; $env:SOTTO_E2E_USER_DATA='C:\\Users\\zache\\AppData\\Local\\Temp\\sotto-e2e-electron-baseline'; & 'C:\\Users\\zache\\AppData\\Roaming\\sotto\\thread-worktrees\\dce9348c-0a4c-4ba9-9eea-3c6cabbf570a\\node_modules\\electron\\dist\\electron.exe' 'C:\\Users\\zache\\AppData\\Roaming\\sotto\\thread-worktrees\\dce9348c-0a4c-4ba9-9eea-3c6cabbf570a\\out\\main\\index.js'"
+}

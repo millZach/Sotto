@@ -1,0 +1,10 @@
+gpui run 1: window visible: 365 ms, first painted frame: 459 ms
+gpui run 2: window visible: 411 ms, first painted frame: 493 ms
+gpui run 3: window visible: 551 ms, first painted frame: 627 ms
+gpui run 4: window visible: 361 ms, first painted frame: 413 ms
+gpui run 5: window visible: 399 ms, first painted frame: 473 ms
+electron run 1: window visible: 3920 ms, first painted frame: 3988 ms
+electron run 2: window visible: 1444 ms, first painted frame: 1490 ms
+electron run 3: window visible: 1420 ms, first painted frame: 1463 ms
+electron run 4: window visible: 1748 ms, first painted frame: 1810 ms
+electron run 5: window visible: 1690 ms, first painted frame: 1737 ms

@@ -1,0 +1,9 @@
+Variant A (card padding):
+release: save to build done 7,704 ms, then launch to first painted frame 985 ms, total 8,689 ms
+release: save to build done 9,420 ms, then launch to first painted frame 807 ms, total 10,227 ms
+Variant B (corner radius):
+release: save to build done 7,827 ms, then launch to first painted frame 1,034 ms, total 8,861 ms
+release: save to build done 9,040 ms, then launch to first painted frame 1,038 ms, total 10,078 ms
+Variant C (pill radius):
+release: save to build done 12,762 ms, then launch to first painted frame 967 ms, total 13,729 ms
+release: save to build done 12,182 ms, then launch to first painted frame 879 ms, total 13,061 ms

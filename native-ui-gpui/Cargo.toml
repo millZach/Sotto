@@ -1,0 +1,61 @@
+[package]
+name = "sotto-gpui-bakeoff"
+version = "0.1.0"
+edition = "2024"
+license = "UNLICENSED"
+publish = false
+description = "Sotto's native UI bake-off: the hard screen in GPUI (issue #2689). Never merges into main."
+
+# A workspace of its own, so it never joins a parent manifest.
+[workspace]
+
+[features]
+# GPUI's hot reload (Subsecond, debug builds only): `dx serve --hot-patch --features hot-reload`.
+hot-reload = ["gpui/hot-reload"]
+
+[[bin]]
+name = "sotto-gpui"
+path = "src/main.rs"
+
+[[bin]]
+name = "probe"
+path = "tools/probe.rs"
+
+[dependencies]
+# GPUI from Zed's repository, pinned to main on November 19, 2026. Only the Apache-2.0
+# GPUI crates are used; Zed's GPL application crates (editor, markdown, terminal_view,
+# ui, ...) are not, and none of their code was read.
+gpui = { git = "https://github.com/zed-industries/zed", rev = "4e161e70b5c02b0f63a50beb6937f9cd249c1678" }
+gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "4e161e70b5c02b0f63a50beb6937f9cd249c1678" }
+
+pulldown-cmark = { version = "0.13", default-features = false }          # MIT
+syntect = { version = "5.3", default-features = false, features = ["parsing", "regex-fancy", "default-syntaxes"] } # MIT
+two-face = { version = "0.5", default-features = false, features = ["syntect-fancy"] } # MIT OR Apache-2.0
+alacritty_terminal = "0.26"                                               # Apache-2.0
+unicode-segmentation = "1.10"                                             # MIT OR Apache-2.0
+async-channel = "2.5"                                                     # Apache-2.0 OR MIT
+image = { version = "0.25", default-features = false }                   # MIT OR Apache-2.0
+raw-window-handle = "0.6"                                                 # MIT OR Apache-2.0 OR Zlib
+smallvec = "1"                                                            # MIT OR Apache-2.0
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = [                               # MIT OR Apache-2.0
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_System_LibraryLoader",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_HiDpi",
+    "Win32_System_Threading",
+    "Win32_System_ProcessStatus",
+    "Win32_Graphics_Dwm",
+    "Win32_UI_Input_Ime",
+    "Win32_Globalization",
+    "Win32_System_Diagnostics_ToolHelp",
+] }
+
+[profile.release]
+debug = "line-tables-only"
+
+[dev-dependencies]
+gpui = { git = "https://github.com/zed-industries/zed", rev = "4e161e70b5c02b0f63a50beb6937f9cd249c1678", features = ["test-support"] }

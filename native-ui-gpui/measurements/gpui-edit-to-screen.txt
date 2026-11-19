@@ -1,0 +1,6 @@
+release: save to build done 25,176 ms, then launch to first painted frame 948 ms, total 26,124 ms
+release: save to build done 7,914 ms, then launch to first painted frame 997 ms, total 8,911 ms
+release: save to build done 8,883 ms, then launch to first painted frame 1,237 ms, total 10,120 ms
+debug: save to build done 46,900 ms, then launch to first painted frame 1,626 ms, total 48,526 ms
+debug: save to build done 5,763 ms, then launch to first painted frame 1,731 ms, total 7,494 ms
+debug: save to build done 4,139 ms, then launch to first painted frame 1,624 ms, total 5,763 ms
