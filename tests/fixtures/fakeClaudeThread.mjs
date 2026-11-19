@@ -114,7 +114,10 @@ const cut = afterTools => {
   turnEnded()
 }
 /**
- * A finished reply. With `thinking` it opens on a thinking block, streamed the way Claude Code 2.1.289 streams one
+ * A finished reply. `datedBeforeStream` dates the finished message a millisecond before its stream began, so its date is
+ * never the moment Sotto heard the stream open, as Claude Code's own date, written once the reply is finished, never is.
+ * Without it the date is when the fake finishes, which on a fast machine can be that same millisecond (#2698).
+ * With `thinking` it opens on a thinking block, streamed the way Claude Code 2.1.289 streams one
  * (start, thinking deltas, a signature delta, stop), and written to the transcript as its own line with
  * `apiBlockIndex` and `thinkingDurationMs`. `thinking: ''` is a block with no words and `redacted: true` a
  * redacted one. `holdInThinking` names a file in the fixture root the block's second half waits for, and
@@ -129,6 +132,7 @@ async function complete(action) {
   // nothing ends it before the result, so the work must outlive the result to be seen afterwards.
   const agent = action.background ? { tool: randomUUID(), task: action.background.taskId ?? randomUUID() } : undefined
   echoHeld()
+  const opened = Date.now()
   output({ type: 'stream_event', session_id: session, event: { type: 'message_start', message: { id, role: 'assistant' } } })
   const thinking = typeof action.thinking === 'string' || action.redacted === true
   if (thinking) {
@@ -151,7 +155,8 @@ async function complete(action) {
   }
   if (agent) output({ type: 'stream_event', session_id: session, parent_tool_use_id: null, event: { type: 'content_block_start', index: thinking ? 1 : 0, content_block: { type: 'tool_use', id: agent.tool, name: 'Agent', input: {} } } })
   output({ type: 'stream_event', session_id: session, event: { type: 'content_block_delta', ...(thinking ? { index: 1 } : {}), delta: { type: 'text_delta', text: action.text } } })
-  const frame = { type: 'assistant', uuid: randomUUID(), session_id: session, message: { id, role: 'assistant', content: [{ type: 'text', text: action.text }] } }
+  const frame = { type: 'assistant', uuid: randomUUID(), session_id: session, ...(action.datedBeforeStream ? { timestamp: new Date(opened - 1).toISOString() } : {}),
+    message: { id, role: 'assistant', content: [{ type: 'text', text: action.text }] } }
   if (agent) output({ type: 'system', subtype: 'task_started', session_id: session, uuid: randomUUID(), task_id: agent.task, tool_use_id: agent.tool,
     description: action.background.description, subagent_type: 'general-purpose', is_backgrounded: true, spawn_depth: 1, task_type: 'local_agent' })
   output(persist(frame)); output({ type: 'result', subtype: 'success', session_id: session, is_error: false, result: action.text })
