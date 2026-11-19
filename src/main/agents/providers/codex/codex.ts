@@ -43,7 +43,7 @@ import { answerRequest, declineRequest, pendingRequest, type CodexPendingRequest
 import { needsPerson, unreadableRequest } from '../../nativeRequests'
 import { effortAfterChange, speedAfterChange, speedRuns, validatePromptAttachments, validateThreadOptions } from '../../threadOptions'
 import { CodexActivityProjection, codexItemSchema } from './codexActivity'
-import { computerUseHelperConfig } from './codexComputerUseHelper'
+import { computerUseHelperServers } from './codexComputerUseHelper'
 import { ProviderUnavailable } from '../../providerProblem'
 import { SessionReaper, busyHolds, type HeldSession } from '../../sessionReaper'
 import type { RunMark } from '../../detachedRunScan'
@@ -372,9 +372,8 @@ export class CodexAppServerHost implements ProviderHost {
   private async addComputerUseHelper(config: Record<string, unknown>): Promise<void> {
     let effective: unknown
     try { await this.rpc('config/read', { includeLayers: false }, value => { effective = value }) } catch { return }
-    const helper = await computerUseHelperConfig(this.codexHome(), effective)
-    Object.assign(config, helper.keys)
-    if (Object.keys(helper.servers).length) config.mcp_servers = { ...(config.mcp_servers as Record<string, unknown> | undefined), ...helper.servers }
+    const servers = await computerUseHelperServers(this.codexHome(), effective)
+    if (Object.keys(servers).length) config.mcp_servers = { ...(config.mcp_servers as Record<string, unknown> | undefined), ...servers }
   }
   /** `providerError` is false for an earlier Watcher conversation, whose refusal says nothing about Codex itself. */
   private stopUnverifiedProfile(id: string, reason: string, providerError = true): void {
