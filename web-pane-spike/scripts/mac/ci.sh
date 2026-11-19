@@ -5,7 +5,11 @@
 # Needs passwordless sudo (pf, tcpdump, purge), which GitHub's macOS runners have. Nothing here signs anything.
 set -uo pipefail
 APP="$(cd "$(dirname "$1")" && pwd)/$(basename "$1")"; CEF="$2"; OUT="$3"; shift 3
-PHASES="${*:-info cdp iphone sandbox osr media embed remote ax lifecycle static netdefault nethardened seal}"
+# A phase argument of the form NAME=value sets a variable instead (SEAL_VARIANTS="all:csp,... ..." picks seal runs).
+ARGS=(); for a in "$@"; do if [[ "$a" == *=* ]]; then export "${a%%=*}=${a#*=}"; else ARGS+=("$a"); fi; done; set -- "${ARGS[@]+"${ARGS[@]}"}"
+PHASES="${*:-info cdp iphone sandbox osr media embed remote ax lifecycle static netdefault nethardened seal keychain extensions}"
+SEAL_VARIANTS="${SEAL_VARIANTS:-none:none pageonly:csp,filter,deny all:csp,filter,proxy,webrtc,deny all-hardened:csp,filter,proxy,webrtc,deny}"
+SEAL_VARIANTS="${SEAL_VARIANTS//+/ }"   # phases.txt is split on spaces, so it joins variants with +
 HERE="$(cd "$(dirname "$0")" && pwd)"; SPIKE="$(cd "$HERE/../.." && pwd)"
 RUNS="$OUT/runs"; SUM="$OUT/summaries"; TOOLS="$OUT/tools"
 mkdir -p "$RUNS" "$SUM" "$TOOLS"
@@ -269,11 +273,11 @@ if has seal; then
   $PY "$SPIKE/server/testserver.py" --pages "$SPIKE/server/pages" --bind "$IP2" > "$OUT/canary-second.log" 2>&1 &
   sleep 1
   sudo ifconfig pflog0 create 2>/dev/null
-  for variant in "none:none" "pageonly:csp,filter,deny" "all:csp,filter,proxy,webrtc,deny" "all-hardened:csp,filter,proxy,webrtc,deny"; do
+  for variant in $SEAL_VARIANTS; do
     name="seal-${variant%%:*}"; layers="${variant#*:}"; log "$name"
     r="$RUNS/$name"; mkdir -p "$r"
     {
-      echo "pass out quick on lo0 all"
+      echo "pass quick on lo0 all no state"
       echo "block drop out log quick proto { tcp udp } group wpnet"
     } > "$r/pf.conf"
     sudo pfctl -a com.apple/wpspike -f "$r/pf.conf" > "$r/pfctl.txt" 2>&1; sudo pfctl -E >> "$r/pfctl.txt" 2>&1
@@ -294,6 +298,47 @@ if has seal; then
     $PY "$HERE/summary.py" seal "$r" "$t0" "$t1" "$OUT/server.log" "$OUT/canary-second.log" > "$SUM/q6-$name.txt" 2>&1
     sudo rm -rf "$r/cache"
   done
+fi
+
+# ---------------------------------------------------------------- 5, macOS only: the keychain
+if has keychain; then
+  # Delete CEF's Safe Storage item, run one page with use-mock-keychain, then one with CEF's defaults as the control.
+  log keychain
+  k="$SUM/q5-keychain-mock.txt"
+  security delete-generic-password -s "Chromium Safe Storage" > /dev/null 2>&1
+  { echo "after deleting the item:"; keychain_names; } > "$k"
+  run eval kc-mock 60 WP_NO_SANDBOX=1 WP_URL=http://127.0.0.1:8765/idle.html WP_SWITCHES=use-mock-keychain
+  { echo "after one page with use-mock-keychain:"; keychain_names; } >> "$k"; clean kc-mock
+  run eval kc-default 60 WP_NO_SANDBOX=1 WP_URL=http://127.0.0.1:8765/idle.html
+  { echo "after one page with CEF's defaults:"; keychain_names; } >> "$k"; clean kc-default
+fi
+
+# ---------------------------------------------------------------- 5, macOS only: other programs' extensions
+if has extensions; then
+  # One planted folder at a time, CEF's defaults, 45 s; then all four with the hardened settings.
+  EXT='{"external_update_url": "https://clients2.google.com/service/update2/crx"}'; ID=ghbmnnjooekpmoecnnnilnnbdlolhkhi
+  U="$HOME/Library/Application Support"; S="/Library/Application Support"
+  e="$SUM/q5-extensions.txt"; : > "$e"
+  for case in "user-chrome:$U/Google/Chrome" "user-chromium:$U/Chromium" "system-chrome:$S/Google/Chrome" "system-chromium:$S/Chromium" "hardened-all:ALL"; do
+    name="ext-${case%%:*}"; where="${case#*:}"; log "$name"
+    sudo rm -rf "$U/Google/Chrome/External Extensions" "$U/Chromium/External Extensions" "$S/Google/Chrome/External Extensions" "$S/Chromium/External Extensions"
+    if [ "$where" = ALL ]; then dirs=("$U/Google/Chrome" "$U/Chromium" "$S/Google/Chrome" "$S/Chromium"); else dirs=("$where"); fi
+    for d in "${dirs[@]}"; do sudo mkdir -p "$d/External Extensions"; echo "$EXT" | sudo tee "$d/External Extensions/$ID.json" > /dev/null; done
+    r="$RUNS/$name"; mkdir -p "$r"
+    if [ "$where" = ALL ]; then
+      run net "$name" 120 WP_NO_SANDBOX=1 WP_IDLE_S=45 WP_PAGE_S=5 WP_PREFS="$PREFS" "WP_SWITCHES=log-net-log=$r/netlog.json;net-log-capture-mode=Default;use-mock-keychain;$HARD"
+    else
+      run net "$name" 120 WP_NO_SANDBOX=1 WP_IDLE_S=45 WP_PAGE_S=5 "WP_SWITCHES=log-net-log=$r/netlog.json;net-log-capture-mode=Default"
+    fi
+    {
+      echo "== $name (planted in: $where)"
+      echo "Web Store and extension downloads in the NetLog: $(grep -c -E 'chromewebstore.googleapis.com|service/update2/crx|googleusercontent.com/crx' "$r/netlog.json" 2>/dev/null)"
+      echo "extension folders in the profile: $(find "$r/cache" -type d -path '*/Extensions/*' -maxdepth 4 2>/dev/null | wc -l | tr -d ' ')"
+      echo "profile files: $(find "$r/cache" -maxdepth 2 -name Preferences 2>/dev/null | sed "s|$r/||")"
+    } >> "$e"
+    clean "$name"
+  done
+  sudo rm -rf "$U/Google/Chrome/External Extensions" "$U/Chromium/External Extensions" "$S/Google/Chrome/External Extensions" "$S/Chromium/External Extensions"
 fi
 
 log "done"

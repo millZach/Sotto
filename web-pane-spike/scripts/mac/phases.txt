@@ -1,1 +1,1 @@
-info lifecycle static netdefault nethardened seal
+info seal keychain extensions SEAL_VARIANTS=all:csp,filter,proxy,webrtc,deny+all-hardened:csp,filter,proxy,webrtc,deny
