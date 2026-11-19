@@ -2833,8 +2833,9 @@ struct RailAsk: Equatable {
         computers.map(\.hostID).filter { show.admits($0) && online($0) && offersThreadWords($0) }
     }
     /// Asks each computer that offers it for the threads whose messages hold `query`, as Threads' search is typed. Each
-    /// computer searches its own threads. An empty search clears what was found. An answer to a search the field has since
-    /// left is dropped, and until the new answer comes, the list keeps the last one's matches that still hold the search
+    /// computer searches its own threads, and all are asked at once, each answer showing as it comes, so one slow to answer
+    /// holds back none of the others. An empty search clears what was found. An answer to a search the field has since left
+    /// is dropped, and until a computer's new answer comes, the list keeps its last one's matches that still hold the search
     /// (`ThreadWordsSearch.matches`). A computer that can't answer finds nothing, as one without the read does.
     func searchThreadWords(_ query: String, show: ComputerFilter) async {
         let words = Wire.threadWordsQuery(query)
@@ -2845,18 +2846,23 @@ struct RailAsk: Equatable {
             if threadWords != ThreadWordsSearch() { threadWords = ThreadWordsSearch() }
             return
         }
-        var found: [String: [ThreadWordMatch]] = [:]
-        for hostID in sources {
-            guard let connection = connections[hostID] else { continue }
-            let epoch = generations[hostID]
-            do {
-                let answer = try await connection.call(operation, as: Optional<ThreadWordsAnswer>.self)
-                // An answer over a connection that has since been replaced is left out, as the settled search leaves one out.
-                if generations[hostID] == epoch, let answer { found[hostID] = answer.found }
-            } catch {}
-            guard threadWordsAsked == words, !Task.isCancelled else { return }
+        // A computer no longer asked has nothing to say of this search.
+        var asked = threadWords
+        asked.keep(Set(sources))
+        if asked != threadWords { threadWords = asked }
+        await withTaskGroup(of: Void.self) { group in
+            for hostID in sources { group.addTask { await self.readThreadWords(on: hostID, operation, for: words) } }
         }
-        threadWords = ThreadWordsSearch(query: words, found: found)
+    }
+    /// One computer's answer to Threads' search for `words`, taken unless the field has left that search or the answer came
+    /// over a connection that has since been replaced, as the settled search leaves one out.
+    private func readThreadWords(on hostID: String, _ operation: [String: JSONValue], for words: String) async {
+        guard let connection = connections[hostID] else { return }
+        let epoch = generations[hostID]
+        let found: [ThreadWordMatch]
+        do { found = try await connection.call(operation, as: Optional<ThreadWordsAnswer>.self)?.found ?? [] } catch { found = [] }
+        guard threadWordsAsked == words, generations[hostID] == epoch, !Task.isCancelled else { return }
+        threadWords.take(found, for: words, from: hostID)
     }
     func mayAnswer(_ hostID: String) -> Bool { live[hostID]?.mayAnswer ?? false }
     /// The thread the user is reading now: the open thread while the app is on screen, or Watcher's own while its tab is.

@@ -52,27 +52,39 @@ public extension Wire {
     }
 }
 
-/// What Threads' search last read of what was said in the computers' threads: the search it answers, and each computer's
-/// matches by its own thread ID. A computer that could not answer has none.
+/// What Threads' search last read of what was said in the computers' threads: each computer's last answer, the search it
+/// answers and its matches by the computer's own thread ID. Each computer answers on its own, so one slow to answer holds
+/// back none of the others. A computer that could not answer found nothing.
 public struct ThreadWordsSearch: Equatable, Sendable {
-    public let query: String
-    public let found: [String: [String: ThreadWordMatch]]
-    /// `found` is each computer's answer by host ID, newest match first; a thread named twice keeps its newest.
-    public init(query: String = "", found: [String: [ThreadWordMatch]] = [:]) {
-        self.query = query
-        self.found = found.mapValues { matches in Dictionary(matches.map { ($0.threadId, $0) }, uniquingKeysWith: { first, _ in first }) }
+    /// One computer's answer: the search it answers, and its matches by thread ID.
+    public struct Answer: Equatable, Sendable {
+        public let query: String; public let found: [String: ThreadWordMatch]
     }
-    /// The matches the list shows for `query`, by row ID (`ThreadRef.id`): this answer's, when it answers that search. While
-    /// the answer to a longer search that holds this one is on its way, only the matches whose quote still holds the longer
-    /// search stay, so a row found by what was said does not leave and come back with each key. Nothing for any other search.
+    /// Each computer's last answer, by host ID.
+    public private(set) var answers: [String: Answer] = [:]
+    /// Every computer in `found` answering `query`, each with its matches newest first.
+    public init(query: String = "", found: [String: [ThreadWordMatch]] = [:]) {
+        for (hostID, matches) in found { take(matches, for: query, from: hostID) }
+    }
+    /// Takes a computer's answer to `query`, newest match first, in place of its last. A thread named twice keeps its newest.
+    public mutating func take(_ matches: [ThreadWordMatch], for query: String, from hostID: String) {
+        answers[hostID] = Answer(query: query, found: Dictionary(matches.map { ($0.threadId, $0) }, uniquingKeysWith: { first, _ in first }))
+    }
+    /// Keeps only the answers of the computers in `hostIDs`: one no longer asked has nothing to say of a new search.
+    public mutating func keep(_ hostIDs: Set<String>) { answers = answers.filter { hostIDs.contains($0.key) } }
+    /// The matches the list shows for `query`, by row ID (`ThreadRef.id`): each computer's, when its answer is to that search.
+    /// While a computer's answer to a longer search that holds its last one is on its way, only the matches whose quote still
+    /// holds the longer search stay, so a row found by what was said does not leave and come back with each key. Nothing
+    /// from a computer whose answer is to any other search.
     public func matches(for query: String) -> [String: ThreadWordMatch] {
         let words = Wire.threadWordsQuery(query)
-        guard !words.isEmpty, !self.query.isEmpty else { return [:] }
-        let same = words == self.query
-        guard same || ThreadWordQuote.holds(words, self.query) else { return [:] }
+        guard !words.isEmpty else { return [:] }
+        let line = ThreadWordQuote.oneLine(words)
         var matches: [String: ThreadWordMatch] = [:]
-        for (hostID, threads) in found {
-            for (threadID, match) in threads where same || ThreadWordQuote.holds(match.quote, words) {
+        for (hostID, answer) in answers where !answer.query.isEmpty {
+            let same = words == answer.query
+            guard same || ThreadWordQuote.holds(line, ThreadWordQuote.oneLine(answer.query)) else { continue }
+            for (threadID, match) in answer.found where same || ThreadWordQuote.holds(match.quote, line) {
                 matches[ThreadRef(hostID: hostID, threadID: threadID).id] = match
             }
         }
@@ -94,10 +106,12 @@ public struct ThreadWordQuote: Equatable, Sendable {
     public init(match: ThreadWordMatch, query: String) { self.match = match; self.query = query }
     /// The quote in parts, with the first place it holds the search's words marked.
     public var parts: [Part] { Self.parts(match.quote, query: query) }
-    /// `quote` in parts, with the first place it holds `query` marked, whatever the case or accents. A quote that doesn't
+    /// `quote` in parts, with the first place it holds `query` marked, whatever the case or accents. A computer puts a quote
+    /// on one line, each run of spaces and line ends one space, so the search is read the same way. A quote that doesn't
     /// hold it is one unmarked part.
     public static func parts(_ quote: String, query: String) -> [Part] {
-        guard !query.isEmpty, let hit = quote.range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) else {
+        let words = oneLine(query)
+        guard !words.isEmpty, let hit = quote.range(of: words, options: [.caseInsensitive, .diacriticInsensitive]) else {
             return [Part(text: quote, hit: false)]
         }
         var parts: [Part] = []
@@ -109,5 +123,9 @@ public struct ThreadWordQuote: Equatable, Sendable {
     /// Whether `text` holds `words`, whatever the case or accents.
     static func holds(_ text: String, _ words: String) -> Bool {
         text.range(of: words, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+    }
+    /// `text` on one line, as a computer writes a quote: each run of spaces and line ends one space, none at either end.
+    static func oneLine(_ text: String) -> String {
+        text.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
     }
 }

@@ -57,6 +57,10 @@ final class ThreadWordsTests: XCTestCase {
         XCTAssertEqual(ThreadWordQuote.parts("Rust first", query: "RUST"), [.init(text: "Rust", hit: true), .init(text: " first", hit: false)])
         XCTAssertEqual(ThreadWordQuote.parts("ends in café", query: "cafe"), [.init(text: "ends in ", hit: false), .init(text: "café", hit: true)])
         XCTAssertEqual(ThreadWordQuote.parts("nothing here", query: "rust"), [.init(text: "nothing here", hit: false)])
+        // A computer writes a quote on one line, each run of spaces one space, so a search is read the same way.
+        XCTAssertEqual(ThreadWordQuote.parts("…the Rust port, then", query: "rust   \n port"), [
+            .init(text: "…the ", hit: false), .init(text: "Rust port", hit: true), .init(text: ", then", hit: false),
+        ])
         XCTAssertEqual(ThreadWordQuote(match: match("a", "a flake"), query: "flake").parts.last, ThreadWordQuote.Part(text: "flake", hit: true))
     }
 
@@ -72,6 +76,22 @@ final class ThreadWordsTests: XCTestCase {
         XCTAssertTrue(search.matches(for: "flake").isEmpty)
         XCTAssertTrue(search.matches(for: "").isEmpty)
         XCTAssertTrue(ThreadWordsSearch().matches(for: "rust").isEmpty)
+    }
+
+    func testEachComputerAnswersOnItsOwnAndOneNoLongerAskedKeepsNothing() {
+        var search = ThreadWordsSearch(query: "rust", found: ["laptop": [match("a", "the Rust port")],
+                                                              "forge": [match("b", "rust belt"), match("c", "Rust port on forge")]])
+        // The laptop answers the longer search first; until forge does, its last answer shows what still holds it.
+        search.take([match("d", "a rust port")], for: "rust port", from: "laptop")
+        XCTAssertEqual(Set(search.matches(for: "rust port").keys), ["laptop/d", "forge/c"])
+        XCTAssertEqual(Set(search.matches(for: "rust").keys), ["forge/b", "forge/c"])
+        // A search with runs of spaces reads quotes as a computer writes them, on one line.
+        XCTAssertEqual(Set(search.matches(for: "rust   port").keys), ["laptop/d", "forge/c"])
+        search.keep(["laptop"])
+        XCTAssertEqual(Set(search.answers.keys), ["laptop"])
+        XCTAssertEqual(Set(search.matches(for: "rust port").keys), ["laptop/d"])
+        search.take([], for: "rust port", from: "laptop")
+        XCTAssertTrue(search.matches(for: "rust port").isEmpty, "A computer that could not answer found nothing")
     }
 
     func testAThreadFoundOnlyByWhatWasSaidListsAfterTitleMatchesInItsGroup() throws {

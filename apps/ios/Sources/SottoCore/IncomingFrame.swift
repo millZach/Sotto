@@ -79,8 +79,9 @@ public extension Wire {
     /// changed rather than every record again; `provider-mode-lists` has a catalog list each provider's modes once rather
     /// than on every model (ADR-0028's November 1 amendment). The connection puts both back before anything reads them.
     /// `settled-threads-on-request` has the list leave out settled threads, which the Settled shelf reads with
-    /// `settled-threads` (`SettledShelf.swift`). `usable-models` has the catalog leave out models that are not ready and
-    /// that nothing names, which no menu here offers. `command-changed-thread-records` has a command's answer carry only
+    /// `settled-threads` (`SettledShelf.swift`). `thread-words` has a `settled-threads` search also find the settled threads
+    /// whose words match, which Threads' search quotes from `thread-words` (`ThreadWords.swift`). `usable-models` has the
+    /// catalog leave out models that are not ready and that nothing names, which no menu here offers. `command-changed-thread-records` has a command's answer carry only
     /// the thread records that changed, which the connection puts back against what it held at that place in the socket
     /// (ADR-0028's November 2 amendment). `step-window` has each thread's detail start at the message before its newest
     /// 200 steps, where a thread of a few long turns once sent every step it held (ADR-0194). `thread-media-edge` lets a
@@ -90,7 +91,7 @@ public extension Wire {
     /// thread keep its 3D models' lines, which open a sheet that turns them (the Meshy plan's ticket 7).
     static let snapshotHello: [String: JSONValue] = ["op": .string("hello"), "afterSeq": .number(9_007_199_254_740_991),
         "accepts": .array([.string("detail-delta"), .string("client-liveness"), .string("activity-summaries"), .string("model-catalog-revision"), .string("provider-opencode"), .string("provider-cursor"), .string("provider-deepseek"), .string("changed-thread-records"),
-                    .string("reply-thread-records"), .string("provider-mode-lists"), .string("settled-threads-on-request"), .string("usable-models"), .string("command-changed-thread-records"),
+                    .string("reply-thread-records"), .string("provider-mode-lists"), .string("settled-threads-on-request"), .string(Wire.threadWordsFeature), .string("usable-models"), .string("command-changed-thread-records"),
                     .string(StepWindow.feature), .string(Photos.edgeFeature), .string("kept-parts"), .string(Models3d.feature)])]
 
     // Nonisolated async functions run on the generic executor in this package's Swift 5 mode.

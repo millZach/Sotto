@@ -493,12 +493,14 @@ struct ThreadsView: View, Equatable {
         if inColumns && duo == .upright {
             // Upright, beside the rail, the width holds two columns (Zach's pick, November 1, 2026): what needs you over
             // what finished, and what works beside them. A column with nothing in it gives its width to the other.
-            let quiet = !needs.isEmpty || !recent.isEmpty || !settled.isEmpty || !groups.snoozed.isEmpty
+            // Settled counts as the shelf does elsewhere, so a search whose only matches a computer read for it still shows.
+            let shelved = shows(shelf, settled: settled, groups)
+            let quiet = !needs.isEmpty || !recent.isEmpty || shelved || !groups.snoozed.isEmpty
             HStack(alignment: .top, spacing: Space.s4) {
                 if quiet {
                     VStack(alignment: .leading, spacing: 0) {
                         if !needs.isEmpty { needsColumn }
-                        if !recent.isEmpty || !settled.isEmpty || !groups.snoozed.isEmpty { recentColumn }
+                        if !recent.isEmpty || shelved || !groups.snoozed.isEmpty { recentColumn }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }

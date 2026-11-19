@@ -1218,10 +1218,12 @@ struct SaidQuote: View {
     @Environment(\.sottoTheme) private var theme
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
+            // The quote is a message, so in Arabic and Urdu it runs from the right edge of its box.
             Text(Self.line(quote, provider: provider, theme: theme))
                 .font(.sotto(.small))
                 .lineLimit(lines)
                 .fixedSize(horizontal: false, vertical: true)
+                .paragraphDirection()
             if quote.match.more > 0 {
                 Text(Self.more(quote.match.more)).font(.sotto(.caption)).foregroundStyle(Palette.muted).lineLimit(1)
             }
