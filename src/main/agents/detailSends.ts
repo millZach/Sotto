@@ -36,6 +36,8 @@ export class DetailSends {
    * the targets themselves: a thread that leaves the viewed set frees its snapshot on the next broadcast.
    */
   private readonly detailSnapshots = new Map<string, AgentThreadDetail>()
+  /** Per thread, the messages whose preview markers moved since its listeners were sent them: each goes whole in the next delta. */
+  private readonly redecorated = new Map<string, Set<string>>()
 
   constructor(private readonly context: DetailSendsContext) {}
 
@@ -47,18 +49,42 @@ export class DetailSends {
   keepOnly(targets: readonly string[]): void {
     for (const threadId of this.publishedDetail.keys()) if (!targets.includes(threadId)) this.publishedDetail.delete(threadId)
     for (const threadId of this.detailSnapshots.keys()) if (!targets.includes(threadId)) this.detailSnapshots.delete(threadId)
+    for (const threadId of this.redecorated.keys()) if (!targets.includes(threadId)) this.redecorated.delete(threadId)
   }
-  /** One thread goes out whole on the next send, as a message its listeners hold undecorated must. */
-  forget(threadId: string): void { this.publishedDetail.delete(threadId); this.detailSnapshots.delete(threadId) }
+  /**
+   * The preview markers one message of a thread is shown with now, as text to compare, or undefined when the thread does
+   * not hold it. Only that message's attachments are copied, and only for a send that carried some. The message is looked
+   * for from the end, where a send's own is.
+   */
+  markersOf(threadId: string, messageId: string): string | undefined {
+    const thread = this.context.threadById(threadId), message = thread?.messages.findLast(item => item.id === messageId)
+    if (!thread || !message) return undefined
+    const shown = { ...message, ...(message.attachments ? { attachments: message.attachments.map(attachment => ({ ...attachment })) } : {}) }
+    this.context.decorate({ ...this.state.host, threads: [{ ...thread, messages: [shown] }] })
+    return JSON.stringify(shown.attachments ?? null)
+  }
+  /**
+   * A message's preview markers moved (#2699): the next delta carries it whole, decorated as it is then, at the new
+   * revision the caller has made the thread stand at. A listener that holds it without its markers is sent them as any
+   * other change, rather than the thread whole again at the revision it holds.
+   */
+  redecorate(threadId: string, messageId: string): void {
+    if (!this.detailSnapshots.has(threadId)) return
+    let messages = this.redecorated.get(threadId)
+    if (!messages) this.redecorated.set(threadId, messages = new Set())
+    messages.add(messageId)
+  }
   /** History privacy changed: every listener is sent whole details next, without the markers. */
   privacyChanged(): void {
     this.publishedDetail.clear()
     this.detailSnapshots.clear()
+    this.redecorated.clear()
   }
   /** Lets go of every listener and what was sent, on dispose. */
   close(): void {
     this.detailListeners.clear()
     this.detailSnapshots.clear()
+    this.redecorated.clear()
   }
   /**
    * One thread's history — its messages and the activity beside them — for a window looking at it.
@@ -95,6 +121,7 @@ export class DetailSends {
       ...(activities === undefined ? {} : { activities: this.context.dependencies.streamingPublishCost === true
         ? immutableActivities(pane!) : activities }) })
     this.publishedDetail.set(threadId, revision)
+    this.redecorated.delete(threadId)
     this.context.decorate({ ...this.state.host, threads: [{ ...thread, messages }] })
     return { threadId, revision, messages, ...(activities === undefined ? {} : { activities }),
       ...(thread.earlierAvailable ? { earlierAvailable: true } : {}) }
@@ -152,10 +179,29 @@ export class DetailSends {
           ? pane as AgentActivity[] : immutableActivities(advanced.activities)
         this.detailSnapshots.set(thread.id, advanced)
         this.publishedDetail.set(thread.id, revision)
-        return this.decorateDetailDelta(thread, delta)
+        return this.decorateDetailDelta(thread, this.withRedecorated(thread, delta))
       }
     }
     return this.wholeDetail(thread, revision, pane)
+  }
+  /**
+   * The delta with each message whose markers moved carried whole, in place of an append to it, as the thread shows it now.
+   * Its text is what the listener holds plus the delta's, so the history the delta brings is the same.
+   */
+  private withRedecorated(thread: AgentThread, delta: AgentThreadDetailDelta): AgentThreadDetailDelta {
+    const again = this.redecorated.get(thread.id)
+    if (!again) return delta
+    this.redecorated.delete(thread.id)
+    const messageDeltas = [...delta.messageDeltas], presented = this.context.presentedMessages(thread)
+    // Each is looked for from the end, where a send's own message is, rather than reading the whole history.
+    for (const id of again) {
+      const message = presented.findLast(item => item.id === id)
+      if (!message) continue
+      const position = messageDeltas.findIndex(item => ('appendText' in item ? item.id : item.message.id) === message.id)
+      if (position === -1) messageDeltas.push({ message })
+      else if ('appendText' in messageDeltas[position]!) messageDeltas[position] = { message }
+    }
+    return { ...delta, messageDeltas }
   }
   /** A delta's whole messages carry the same preview markers a full detail's would; its appends carry text alone. */
   private decorateDetailDelta(thread: AgentThread, delta: AgentThreadDetailDelta): AgentThreadDetailDelta {

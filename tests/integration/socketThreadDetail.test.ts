@@ -709,6 +709,23 @@ describe('thread detail over the socket', () => {
     } finally { vi.useRealTimers(); phone.frames.close(); await client.close(); await server.close() }
   })
 
+  it('does not send a client a whole detail again at the revision it holds (#2699)', async () => {
+    const { stream, server, session } = await streamingHost()
+    const phone = await rawPeer(server.descriptor.port, session())
+    const wholes = () => phone.messages.filter(item => item.event === 'detail' && item.threadId === 'streaming')
+    try {
+      await phone.call('hello', { op: 'hello', accepts: ['detail-delta'] })
+      await phone.call('observe', { op: 'observe', threadIds: ['streaming'] })
+      expect(wholes()).toHaveLength(1)
+      // The service publishes the thread whole at the revision the phone holds, and then a change: only the change goes.
+      stream.emit(structuredClone(stream.current))
+      stream.current = { threadId: 'streaming', revision: 2, messages: [message('Hello, world')] }
+      stream.emit(delta(1, 2, ', world'))
+      await expect.poll(() => phone.messages.some(item => item.event === 'detail-delta' && item.threadId === 'streaming')).toBe(true)
+      expect(wholes()).toHaveLength(1)
+    } finally { phone.frames.close(); await server.close() }
+  })
+
   it('finishes a reconnect with an observed thread too large to send, reporting the thread instead of failing the connection', async () => {
     const { stream, server, client, pushErrors, connected } = await streamingHost()
     try {

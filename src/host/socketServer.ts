@@ -1181,8 +1181,10 @@ export async function startSocketServer(options: SocketServerOptions) {
   }
   const sendUpdate = (peer: Peer, update: AgentThreadDetailUpdate, made: UpdateFor): void => {
     const threadId = update.threadId
-    if (!isAgentThreadDetailDelta(update)) { if (!peer.sentAhead.has(update)) sendWhole(peer, threadId, update); return }
     const held = peer.held.get(threadId)
+    // A whole no newer than what the client holds is what it holds already, since a revision names what the thread holds,
+    // and goes no second time (#2699): one the service published again, as a read made while recovering from a delta can.
+    if (!isAgentThreadDetailDelta(update)) { if (!peer.sentAhead.has(update) && !(held !== undefined && update.revision <= held)) sendWhole(peer, threadId, update); return }
     if (peer.opening.has(threadId) || held !== undefined && update.revision <= held) return
     if (!peer.deltas) { sendWhole(peer, threadId, made.whole()); return }
     // A delta that starts before the revision the client holds, and ends past it, goes as the thread whole instead (#2700):

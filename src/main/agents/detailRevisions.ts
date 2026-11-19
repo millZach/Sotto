@@ -46,9 +46,23 @@ export class DetailRevisions {
       for (const threadId of this.detailMessageKeys.keys()) if (!targets.includes(threadId)) this.detailMessageKeys.delete(threadId)
     }
   }
-  /** History privacy changed: every window is sent whole details next, so what they were measured from goes. */
+  /**
+   * History privacy changed: every window is sent whole details next, so what they were measured from goes, and each is at
+   * a new revision, since the preview markers in it went (#2699). Under the streaming cost gate the revisions start again
+   * from each thread's counter; without it each thread's moves on.
+   */
   privacyChanged(): void {
     if (this.context.dependencies.streamingPublishCost === true) { this.certifiedDetailRevisions.clear(); this.detailRevisions.clear(); this.detailMessageKeys.clear() }
+    else for (const threadId of [...this.detailRevisions.keys()]) this.moved(threadId)
+  }
+  /**
+   * Something a thread's detail shows moved that its messages and activity do not say, such as a picture's preview marker
+   * arriving (#2699): the next revision read is a new one, since a revision names what the detail holds.
+   */
+  moved(threadId: string): void {
+    const certified = this.certifiedDetailRevisions.get(threadId), legacy = this.detailRevisions.get(threadId)
+    if (certified) this.certifiedDetailRevisions.set(threadId, { ...certified, messages: -1 })
+    if (legacy) this.detailRevisions.set(threadId, { ...legacy, messages: -1 })
   }
   /** Lets go of the certified records on dispose. */
   close(): void {

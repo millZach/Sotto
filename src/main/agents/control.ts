@@ -5689,12 +5689,18 @@ export class AgentControl {
    * write leaves the preview unavailable, which is all a lost thumbnail costs; the message was already sent.
    */
   private rememberPreviews(threadId: string, messageId: string, commandId: string, attachments: readonly AgentAttachmentHandle[]): void {
+    const before = this.sends.markersOf(threadId, messageId), kept = this.attachmentPreviews.messages()
     void this.attachmentPreviews.remember(threadId, messageId, commandId, attachments).catch(() => undefined)
-    // The provider's echo of this message can land while it is still being sent, and a window that already
-    // holds it undecorated would never be sent it again: the thread goes out whole on the next publish.
-    if (this.state.host.threads.find(thread => thread.id === threadId)?.messages.some(message => message.id === messageId)) {
-      this.sends.forget(threadId); this.publish()
-    }
+    // The provider's echo of this message can land while it is still being sent, and a listener that already holds it
+    // without its preview markers would never be sent them. They are a change like any other: the thread's revision
+    // moves and the message goes whole in the next delta (#2699). A send whose markers did not move, such as one with
+    // files alone, sends nothing again. An older message whose entry this one pushed out under the size limit loses its
+    // markers the same way.
+    const moved: { readonly threadId: string; readonly messageId: string }[] = before !== undefined && this.sends.markersOf(threadId, messageId) !== before ? [{ threadId, messageId }] : []
+    const still = this.attachmentPreviews.messages()
+    for (const [key, gone] of kept) if (!still.has(key)) moved.push(gone)
+    for (const message of moved) { this.revisions.moved(message.threadId); this.sends.redecorate(message.threadId, message.messageId) }
+    if (moved.length) this.publish()
   }
   private hasSetAsideUpdateHold(threadId: string): boolean {
     return this.pendingSetAsideDeliveries.has(threadId)
