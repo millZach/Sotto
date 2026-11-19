@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
 import { assertDevinWorkingDirectory, DEVIN_SOTTO_SERVERS, devinPolicyPath, prepareDevinPolicy, verifyDevinMcpList, verifyDevinPluginInfo, verifyDevinPluginList, verifyDevinPolicy, verifyDevinSkillFile, verifyDevinSkillShow } from '../../../src/main/agents/devinPolicy'
@@ -171,7 +172,9 @@ it('lets a plugin through only when it brings nothing but skills, as 3000.14 pri
 })
 
 it('reads a plugin skill’s base directory from skills show, and refuses any detail that lets tools run', () => {
-  const base = 'C:\\Users\\private\\AppData\\Roaming\\devin\\cli\\plugins_cache\\cache\\account-upload_devin_playbooks-455304b6\\f36d\\skills\\hi-i-m-devin'
+  // Devin prints the base directory in its own system's form, which this computer's path rules read as absolute: a Windows
+  // path on Windows, a POSIX one on Linux and macOS.
+  const base = join(tmpdir(), 'devin', 'cli', 'plugins_cache', 'cache', 'account-upload_devin_playbooks-455304b6', 'f36d', 'skills', 'hi-i-m-devin')
   // As 3000.14.30821 prints it on November 18, 2026.
   const show = ['Skill: devin-playbooks:hi-i-m-devin', '', 'Provider: Devin', "Description: Hi, I'm Devin. Overview.", `Base directory: ${base}`, 'Triggers: user, model', '',
     'Content:', '\u2500'.repeat(60), '## Overview', 'Allowed tools: words in the content are content', '\u2500'.repeat(60), ''].join('\r\n')
