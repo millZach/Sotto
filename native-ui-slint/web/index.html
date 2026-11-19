@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sotto composer in Slint (WebAssembly)</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0e0d0b; }
+  canvas { display: block; outline: none; }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<script type="module">
+  import init from './pkg/sotto_slint_composer_web.js';
+  init();
+</script>
+</body>
+</html>

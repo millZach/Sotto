@@ -1,0 +1,34 @@
+# From the composer (focused at start): forward through the composer, into the tools, back with F6
+-k Tab
+-k Tab
+-k Return
+-k Down
+-k Down
+@shot keyboard-menu
+-k Escape
+-k Tab
+-k Tab
+-k Tab
+-k Tab
+-k F6
+# The transcript: read up, open a folded row, copy a code block
+-k F6
+-k F6
+-k Up
+-k Up
+-k Up
+-k Up
+-k Up
+-k Return
+@shot keyboard-folded-open
+-k Up
+-k Return
+@shot keyboard-copied
+# Back up the window: Shift+Tab from the transcript reaches the strip
+-P Shift_L -k Tab -p Shift_L
+-P Shift_L -k Tab -p Shift_L
+-P Shift_L -k Tab -p Shift_L
+-P Shift_L -k Tab -p Shift_L
+-P Shift_L -k Tab -p Shift_L
+-P Shift_L -k Tab -p Shift_L
+@shot keyboard-strip

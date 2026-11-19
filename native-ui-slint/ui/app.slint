@@ -1,0 +1,339 @@
+// Sotto's thread screen, built in Slint for the native UI bake-off (issue #2689).
+import "../../apps/ios/Sotto/Resources/Figtree.ttf";
+import "../../apps/ios/Sotto/Resources/Figtree-SemiBold.ttf";
+import "../../apps/ios/Sotto/Resources/Figtree-Bold.ttf";
+import { Theme } from "generated/theme.slint";
+import { Motion, Fonts, Icons, Icon, QuietButton, FocusRing, MenuItem } from "base.slint";
+import { Transcript, Row, DiffLine, TableRow } from "transcript.slint";
+import { Composer, PillRect, KeyAction } from "composer.slint";
+import { TerminalPane, TermRow, TermRun } from "terminal.slint";
+import { WebPane } from "webpane.slint";
+
+export { Theme, Motion, Fonts, Row, DiffLine, TableRow, PillRect, KeyAction, TermRow, TermRun, MenuItem }
+
+component WindowButton inherits Rectangle {
+    in property <string> icon;
+    in property <string> name;
+    in property <bool> danger;
+    callback clicked();
+    width: 40px;
+    height: 32px;
+    border-radius: Theme.radius-row;
+    background: touch.has-hover ? (root.danger ? Theme.error : Theme.toolbar-control-hover) : transparent;
+    accessible-role: button;
+    accessible-label: root.name;
+    accessible-action-default => { root.clicked(); }
+    forward-focus: fs;
+    Icon { path: root.icon; ink: touch.has-hover && root.danger ? Theme.on-accent : Theme.toolbar-text; size: 15px; x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; }
+    touch := TouchArea { clicked => { root.clicked(); } }
+    fs := FocusScope {
+        key-pressed(event) => {
+            if event.text == Key.Return || event.text == " " { root.clicked(); return accept; }
+            reject
+        }
+    }
+    FocusRing { width: parent.width + 6px; height: parent.height + 6px; shown: fs.has-focus; radius: Theme.radius-row; }
+}
+
+export component AppWindow inherits Window {
+    title: "Sotto: Shelf loses entries after a crash";
+    no-frame: true;
+    min-width: 820px;
+    min-height: 560px;
+    preferred-width: 1280px;
+    preferred-height: 800px;
+    default-font-family: Fonts.ui;
+    default-font-size: Theme.type-body;
+    background: Theme.canvas;
+
+    // The thread
+    in property <[Row]> rows;
+    in property <int> copied-row: -1;
+    in-out property <bool> following <=> transcript.following;
+    in property <bool> busy;
+    in property <string> stream-status;
+    callback toggle-activity(int);
+    callback copy-row(int);
+    callback link(string);
+    callback jump-to-latest();
+
+    // The composer
+    in property <int> composer-variant: 0;
+    in-out property <string> composer-text <=> composer.text;
+    in property <[PillRect]> pills;
+    in property <bool> composer-rtl;
+    in property <string> model-name;
+    in property <string> effort;
+    in property <string> permission;
+    in property <[MenuItem]> models;
+    in property <[MenuItem]> efforts;
+    in property <[MenuItem]> permissions;
+    in property <int> model-index;
+    in property <int> effort-index;
+    in property <int> permission-index;
+    out property <length> composer-editor-width: composer.editor-width;
+    out property <length> composer-line-height: composer.line-height;
+    callback composer-edited(string);
+    callback pill-key(string, bool, int, int) -> KeyAction;
+    callback caret-moved(int, int);
+    callback composition-changed(string);
+    callback send();
+    callback attach();
+    callback pick-model(int);
+    callback pick-effort(int);
+    callback pick-permission(int);
+    callback composer-layout-changed();
+    public function measure-at(offset: int) -> Point { return composer.measure-at(offset); }
+    public function place-cursor(anchor: int, cursor: int) { composer.place-cursor(anchor, cursor); }
+    public function focus-composer() { composer.take-focus(); }
+    public function scroll-transcript-by(d: length) { transcript.scroll-by(d); }
+
+    // The terminal
+    in property <[TermRow]> term-rows;
+    in property <int> term-cursor-col;
+    in property <int> term-cursor-row;
+    in property <bool> term-cursor-shown: true;
+    in property <string> term-title: "Terminal";
+    in property <string> term-text;
+    out property <length> term-cell-width: terminal.cell-width;
+    out property <length> term-cell-height: terminal.cell-height;
+    callback term-key(KeyEvent) -> bool;
+    callback term-resized(length, length, length, length);
+    callback term-pointer(int, int, int);
+    callback term-wheel(int);
+    callback term-copy();
+    callback term-paste();
+
+    // The web pane
+    in property <image> web-frame;
+    in property <string> web-title;
+    callback web-key(string, bool, bool) -> bool;
+    callback web-focus-changed(bool, bool);
+    callback web-pointer(length, length, bool);
+    callback web-resized(length, length);
+
+    // The window
+    in-out property <bool> tools-shown: true;
+    callback toggle-theme();
+    callback drag-window();
+    callback minimise();
+    callback maximise();
+    callback close-window();
+
+    // Copy any text: a hidden text input holds it, selects it and copies through Slint's own clipboard.
+    public function copy-text(text: string) {
+        clipboard.text = text;
+        clipboard.select-all();
+        clipboard.copy();
+    }
+    clipboard := TextInput { visible: false; enabled: true; accessible-role: none; }
+
+    property <int> region: 0;
+    // F6 and Shift+F6 move between the transcript, the composer, the browser and the terminal.
+    function cycle(step: int) {
+        let count = root.tools-shown ? 4 : 2;
+        root.region = Math.mod(root.region + step + count, count);
+        if root.region == 0 { transcript.take-focus(); }
+        if root.region == 1 { composer.take-focus(); }
+        if root.region == 2 { web.take-focus(); }
+        if root.region == 3 { terminal.take-focus(); }
+    }
+
+    keys := FocusScope {
+        capture-key-pressed(event) => {
+            if event.text == Key.F6 {
+                root.region = transcript.has-focus ? 0 : composer.editor-focused ? 1 : web.has-focus ? 2 : terminal.has-focus ? 3 : root.region;
+                root.cycle(event.modifiers.shift ? -1 : 1);
+                return accept;
+            }
+            reject
+        }
+
+        VerticalLayout {
+            // The drag strip: the thread's name, the theme and the window's own controls.
+            strip := Rectangle {
+                height: 44px;
+                background: Theme.toolbar;
+                accessible-role: window-title-bar;
+                accessible-label: root.title;
+                TouchArea {
+                    pointer-event(event) => {
+                        if event.button == PointerEventButton.left && event.kind == PointerEventKind.down { root.drag-window(); }
+                    }
+                    double-clicked => { root.maximise(); }
+                }
+                HorizontalLayout {
+                    padding-left: 14px;
+                    padding-right: 6px;
+                    spacing: 8px;
+                    Icon { path: Icons.spark; ink: Theme.provider-claude-mark; size: 16px; y: (parent.height - self.height) / 2; }
+                    Text { text: "Shelf loses entries after a crash"; font-size: Theme.type-body; font-weight: 600; color: Theme.toolbar-text; vertical-alignment: center; overflow: elide; accessible-role: text; }
+                    Text { text: "/ lantern"; font-size: Theme.type-small; color: Theme.text-quiet; vertical-alignment: center; accessible-role: none; }
+                    Rectangle { horizontal-stretch: 1; }
+                    QuietButton {
+                        y: (parent.height - self.height) / 2;
+                        height: 30px;
+                        icon: Icons.panel;
+                        label: root.tools-shown ? "Hide tools" : "Show tools";
+                        show-label: false;
+                        clicked => { root.tools-shown = !root.tools-shown; }
+                    }
+                    QuietButton {
+                        y: (parent.height - self.height) / 2;
+                        height: 30px;
+                        icon: Theme.dark ? Icons.sun : Icons.moon;
+                        label: Theme.dark ? "Use the light theme" : "Use the dark theme";
+                        show-label: false;
+                        clicked => { root.toggle-theme(); }
+                    }
+                    Rectangle { width: 1px; height: 18px; y: (parent.height - self.height) / 2; background: Theme.toolbar-border; }
+                    WindowButton { y: (parent.height - self.height) / 2; icon: Icons.minimise; name: "Minimise"; clicked => { root.minimise(); } }
+                    WindowButton { y: (parent.height - self.height) / 2; icon: Icons.maximise; name: "Maximise"; clicked => { root.maximise(); } }
+                    WindowButton { y: (parent.height - self.height) / 2; icon: Icons.close; name: "Close"; danger: true; clicked => { root.close-window(); } }
+                }
+                Rectangle { y: parent.height - 1px; height: 1px; background: Theme.toolbar-border; }
+            }
+
+            HorizontalLayout {
+                // The thread pane: the transcript and, under it, the composer.
+                thread := Rectangle {
+                    horizontal-stretch: 1;
+                    min-width: 420px;
+                    preferred-width: 600px;
+                    accessible-role: main;
+                    accessible-label: "Thread";
+                    VerticalLayout {
+                        transcript := Transcript {
+                            rows: root.rows;
+                            copied-row: root.copied-row;
+                            toggle-activity(i) => { root.toggle-activity(i); }
+                            copy-row(i) => { root.copy-row(i); }
+                            link(u) => { root.link(u); }
+                        }
+                        // Jump to latest, once the reader has scrolled away from a reply that is still coming.
+                        // A zero-height row between the transcript and the composer, so it comes before the composer
+                        // in the focus order, as it does to the eye.
+                        Rectangle {
+                            height: 0px;
+                            if !transcript.following: Rectangle {
+                        x: (parent.width - self.width) / 2;
+                        y: -self.height - 14px;
+                        width: jump-row.preferred-width;
+                        height: 32px;
+                        border-radius: 16px;
+                        background: Theme.surface-overlay;
+                        border-width: 1px;
+                        border-color: Theme.border-faint;
+                        drop-shadow-blur: 12px;
+                        drop-shadow-color: #00000033;
+                        accessible-role: button;
+                        accessible-label: "Jump to latest";
+                        accessible-action-default => { root.jump-to-latest(); transcript.scroll-to-end(); }
+                        jump-row := HorizontalLayout {
+                            padding-left: 12px;
+                            padding-right: 14px;
+                            spacing: 6px;
+                            Icon { path: Icons.arrow-down; ink: Theme.text; size: 14px; y: (parent.height - self.height) / 2; }
+                            Text { text: "Jump to latest"; color: Theme.text; font-size: Theme.type-small; vertical-alignment: center; accessible-role: none; }
+                        }
+                        TouchArea { clicked => { transcript.following = true; root.jump-to-latest(); transcript.scroll-to-end(); } }
+                        jump-fs := FocusScope {
+                            key-pressed(event) => {
+                                if event.text == Key.Return || event.text == " " { transcript.following = true; root.jump-to-latest(); transcript.scroll-to-end(); return accept; }
+                                reject
+                            }
+                        }
+                        FocusRing { width: parent.width + 6px; height: parent.height + 6px; shown: jump-fs.has-focus; radius: 16px; }
+                    }
+                        }
+                        Rectangle {
+                            height: composer.preferred-height + 22px;
+                            composer := Composer {
+                                x: (parent.width - self.width) / 2;
+                                y: 6px;
+                                width: Math.min(820px, parent.width - 48px);
+                                height: self.preferred-height;
+                                variant: root.composer-variant;
+                                pills: root.pills;
+                                rtl: root.composer-rtl;
+                                busy: root.busy;
+                                status: root.stream-status;
+                                model-name: root.model-name;
+                                effort: root.effort;
+                                permission: root.permission;
+                                models: root.models;
+                                efforts: root.efforts;
+                                permissions: root.permissions;
+                                model-index: root.model-index;
+                                effort-index: root.effort-index;
+                                permission-index: root.permission-index;
+                                edited(t) => { root.composer-edited(t); }
+                                pill-key(k, s, a, c) => { return root.pill-key(k, s, a, c); }
+                                caret-moved(a, c) => { root.caret-moved(a, c); }
+                                composition-changed(t) => { root.composition-changed(t); }
+                                send => { root.send(); }
+                                attach => { root.attach(); }
+                                pick-model(i) => { root.pick-model(i); }
+                                pick-effort(i) => { root.pick-effort(i); }
+                                pick-permission(i) => { root.pick-permission(i); }
+                                layout-changed => { root.composer-layout-changed(); }
+                            }
+                        }
+                    }
+                }
+
+                if root.tools-shown: Rectangle { width: 1px; background: Theme.toolbar-border; }
+
+                // Tools: the browser above the terminal.
+                tools := Rectangle {
+                    visible: root.tools-shown;
+                    horizontal-stretch: root.tools-shown ? 0.5 : 0;
+                    min-width: root.tools-shown ? 300px : 0px;
+                    max-width: root.tools-shown ? 560px : 0px;
+                    preferred-width: root.tools-shown ? 300px : 0px;
+                    background: Theme.surface;
+                    accessible-role: complementary;
+                    accessible-label: "Tools";
+                    VerticalLayout {
+                        web := WebPane {
+                            vertical-stretch: 1;
+                            min-height: 170px;
+                            preferred-height: 200px;
+                            frame: root.web-frame;
+                            page-title: root.web-title;
+                            key(t, s, c) => { return root.web-key(t, s, c); }
+                            focus-changed(f, b) => { root.web-focus-changed(f, b); }
+                            pointer(x, y, p) => { root.web-pointer(x, y, p); }
+                            resized(w, h) => { root.web-resized(w, h); }
+                        }
+                        Rectangle { height: 1px; background: Theme.toolbar-border; }
+                        HorizontalLayout {
+                            height: 30px;
+                            padding-left: 12px;
+                            spacing: 6px;
+                            Icon { path: Icons.terminal; ink: Theme.text-quiet; size: 13px; y: (parent.height - self.height) / 2; }
+                            Text { text: root.term-title; color: Theme.text-quiet; font-size: Theme.type-caption; vertical-alignment: center; overflow: elide; accessible-role: none; }
+                        }
+                        terminal := TerminalPane {
+                            vertical-stretch: 1;
+                            min-height: 120px;
+                            preferred-height: 200px;
+                            rows: root.term-rows;
+                            cursor-col: root.term-cursor-col;
+                            cursor-row: root.term-cursor-row;
+                            cursor-shown: root.term-cursor-shown;
+                            title: root.term-title;
+                            screen-text: root.term-text;
+                            key(e) => { return root.term-key(e); }
+                            resized(w, h, cw, ch) => { root.term-resized(w, h, cw, ch); }
+                            pointer(k, c, r) => { root.term-pointer(k, c, r); }
+                            wheel(n) => { root.term-wheel(n); }
+                            copy-selection => { root.term-copy(); }
+                            paste => { root.term-paste(); }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

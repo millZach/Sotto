@@ -1,0 +1,219 @@
+// Shared pieces: motion, fonts, icons and the small controls every surface uses.
+import { Theme } from "generated/theme.slint";
+
+// Reduced motion, read from the system by Rust (org.gnome.desktop.interface enable-animations).
+export global Motion {
+    in-out property <bool> reduced: false;
+    // A duration that collapses to nothing when motion is reduced.
+    public pure function d(ms: duration) -> duration { return self.reduced ? 0ms : ms; }
+}
+
+export global Fonts {
+    in-out property <string> ui: "Figtree";
+    in-out property <string> mono: "JetBrainsMono Nerd Font";
+}
+
+// Icon paths from Lucide (ISC), drawn on a 24-unit grid, the set Sotto already ships.
+export global Icons {
+    out property <string> paperclip: "M21.44 11.05 12.25 20.24 A6 6 0 0 1 3.76 11.75 L12.33 3.18 A4 4 0 1 1 18 8.84 L9.41 17.41 A2 2 0 0 1 6.58 14.58 L15.07 6.1";
+    out property <string> chevron-right: "M9 18 L15 12 L9 6";
+    out property <string> chevron-down: "M6 9 L12 15 L18 9";
+    out property <string> arrow-up: "M5 12 L12 5 L19 12 M12 19 L12 5";
+    out property <string> arrow-down: "M12 5 L12 19 M19 12 L12 19 L5 12";
+    out property <string> close: "M18 6 L6 18 M6 6 L18 18";
+    out property <string> minimise: "M5 12 L19 12";
+    out property <string> maximise: "M5 5 L19 5 L19 19 L5 19 Z";
+    out property <string> copy: "M9 9 L21 9 L21 21 L9 21 Z M5 15 L3 15 L3 3 L15 3 L15 5";
+    out property <string> check: "M20 6 L9 17 L4 12";
+    out property <string> moon: "M12 3 A6 6 0 0 0 21 12 A9 9 0 1 1 12 3 Z";
+    out property <string> sun: "M12 8 A4 4 0 1 0 12.01 8 Z M12 2 L12 4 M12 20 L12 22 M4.93 4.93 L6.34 6.34 M17.66 17.66 L19.07 19.07 M2 12 L4 12 M20 12 L22 12 M6.34 17.66 L4.93 19.07 M19.07 4.93 L17.66 6.34";
+    out property <string> terminal: "M4 17 L10 11 L4 5 M12 19 L20 19";
+    out property <string> globe: "M12 2 A10 10 0 1 0 12.01 2 Z M2 12 L22 12 M12 2 A15 15 0 0 1 12 22 A15 15 0 0 1 12 2 Z";
+    out property <string> shield: "M20 13 C20 18 16.5 20.5 12.34 21.95 A1 1 0 0 1 11.67 21.94 C7.5 20.5 4 18 4 13 L4 6 A1 1 0 0 1 5 5 C7 5 9.5 3.8 11.24 2.28 A1.17 1.17 0 0 1 12.76 2.28 C14.51 3.81 17 5 19 5 A1 1 0 0 1 20 6 Z";
+    out property <string> quote: "M6 8 L10 8 L10 12 C10 15 8.5 16.5 6 17 M14 8 L18 8 L18 12 C18 15 16.5 16.5 14 17";
+    out property <string> spark: "M12 3 L12 21 M3 12 L21 12 M5.64 5.64 L18.36 18.36 M18.36 5.64 L5.64 18.36";
+    out property <string> gauge: "M12 14 L16 10 M3.34 19 A10 10 0 1 1 20.66 19";
+    out property <string> stop: "M7 7 L17 7 L17 17 L7 17 Z";
+    out property <string> panel: "M3 3 L21 3 L21 21 L3 21 Z M15 3 L15 21";
+}
+
+export component Icon inherits Path {
+    in property <string> path;
+    in property <color> ink: Theme.text;
+    in property <length> size: 16px;
+    commands: self.path;
+    viewbox-width: 24;
+    viewbox-height: 24;
+    width: self.size;
+    height: self.size;
+    stroke: self.ink;
+    stroke-width: 1.75px;
+    fill: transparent;
+    accessible-role: none;
+}
+
+// The focus ring: two pixels of the theme's focus colour just outside the control.
+export component FocusRing inherits Rectangle {
+    in property <bool> shown;
+    in property <length> radius: Theme.radius-control;
+    x: -3px;
+    y: -3px;
+    border-radius: self.radius + 3px;
+    border-width: self.shown ? 2px : 0px;
+    border-color: Theme.focus-ring;
+    background: transparent;
+}
+
+// A quiet button: icon, text or both. Its accessible name says what a press does.
+export component QuietButton inherits Rectangle {
+    in property <string> label;
+    in property <string> icon;
+    in property <string> name: self.label;
+    in property <bool> show-label: true;
+    in property <length> icon-size: 16px;
+    in property <color> ink: Theme.text-2;
+    in property <length> pad: 8px;
+    in property <bool> pressed-look;
+    callback clicked();
+    forward-focus: fs;
+    accessible-role: button;
+    accessible-label: root.name;
+    accessible-action-default => { root.clicked(); }
+    border-radius: Theme.radius-row;
+    background: touch.has-hover || root.pressed-look ? Theme.hover : transparent;
+    animate background { duration: Motion.d(120ms); }
+    min-height: 28px;
+    min-width: 28px;
+    HorizontalLayout {
+        padding-left: root.pad;
+        padding-right: root.pad;
+        spacing: 6px;
+        alignment: center;
+        if root.icon != "": Icon { path: root.icon; ink: root.ink; size: root.icon-size; y: (parent.height - self.height) / 2; }
+        if root.show-label && root.label != "": Text {
+            text: root.label;
+            color: root.ink;
+            font-size: Theme.type-small;
+            vertical-alignment: center;
+            accessible-role: none;
+        }
+    }
+    touch := TouchArea { clicked => { fs.focus(); root.clicked(); } }
+    fs := FocusScope {
+        key-pressed(event) => {
+            if event.text == Key.Return || event.text == " " { root.clicked(); return accept; }
+            reject
+        }
+    }
+    FocusRing { width: parent.width + 6px; height: parent.height + 6px; shown: fs.has-focus; radius: root.border-radius; }
+}
+
+// A chip under the composer that opens a menu.
+export component Chip inherits Rectangle {
+    in property <string> icon;
+    in property <string> label;
+    in property <string> name;
+    in property <color> ink: Theme.text-quiet;
+    in property <bool> outlined: false;
+    // A chip that opens a menu says its current value with its name; Attach is a plain button.
+    in property <bool> menu: true;
+    callback clicked();
+    out property <bool> has-focus: fs.has-focus;
+    public function take-focus() { fs.focus(); }
+    forward-focus: fs;
+    horizontal-stretch: 0;
+    accessible-role: combobox;
+    accessible-label: root.menu ? root.name + ", " + root.label : root.name;
+    accessible-value: root.menu ? root.label : "";
+    accessible-action-default => { root.clicked(); }
+    accessible-expandable: root.menu;
+    height: 28px;
+    border-radius: Theme.radius-control;
+    border-width: root.outlined ? 1px : 0px;
+    border-color: Theme.field-border;
+    background: touch.has-hover ? Theme.hover : transparent;
+    animate background { duration: Motion.d(120ms); }
+    HorizontalLayout {
+        padding-left: 8px;
+        padding-right: 8px;
+        spacing: 6px;
+        if root.icon != "": Icon { path: root.icon; ink: root.ink; size: 14px; y: (parent.height - self.height) / 2; }
+        // Elided rather than overflowing, so the row fits a narrow window.
+        Text { text: root.label; color: root.ink; font-size: Theme.type-small; vertical-alignment: center; overflow: elide; min-width: 0; accessible-role: none; }
+    }
+    touch := TouchArea { clicked => { fs.focus(); root.clicked(); } }
+    fs := FocusScope {
+        key-pressed(event) => {
+            if event.text == Key.Return || event.text == " " || event.text == Key.DownArrow { root.clicked(); return accept; }
+            reject
+        }
+    }
+    FocusRing { width: parent.width + 6px; height: parent.height + 6px; shown: fs.has-focus; radius: root.border-radius; }
+}
+
+export struct MenuItem { label: string, detail: string }
+
+// A menu opened from a chip. Up and Down move, Enter picks, Escape closes and gives the focus back.
+export component ChipMenu inherits PopupWindow {
+    in property <[MenuItem]> items;
+    in property <int> current;
+    in property <string> title;
+    callback picked(int);
+    callback dismissed();
+    property <int> hover: root.current;
+    close-policy: close-on-click-outside;
+    width: 240px;
+    Rectangle {
+        background: Theme.surface-overlay;
+        border-radius: Theme.radius-inset;
+        border-width: 1px;
+        border-color: Theme.border-faint;
+        drop-shadow-blur: 24px;
+        drop-shadow-color: #0000004d;
+        drop-shadow-offset-y: 8px;
+        fs := FocusScope {
+            accessible-role: list;
+            accessible-label: root.title;
+            accessible-delegate-focus: root.hover;
+            init => { self.focus(); }
+            key-pressed(event) => {
+                if event.text == Key.Escape { root.close(); root.dismissed(); return accept; }
+                if event.text == Key.DownArrow { root.hover = Math.min(root.items.length - 1, root.hover + 1); return accept; }
+                if event.text == Key.UpArrow { root.hover = Math.max(0, root.hover - 1); return accept; }
+                if event.text == Key.Return || event.text == " " { root.picked(root.hover); root.close(); root.dismissed(); return accept; }
+                if event.text == Key.Tab || event.text == Key.Backtab { root.close(); root.dismissed(); return accept; }
+                reject
+            }
+            VerticalLayout {
+                padding: 6px;
+                spacing: 2px;
+                HorizontalLayout { padding-left: 8px; Text { text: root.title; color: Theme.text-quiet; font-size: Theme.type-caption; height: 22px; vertical-alignment: center; accessible-role: none; } }
+                for item[i] in root.items: Rectangle {
+                    height: 34px;
+                    border-radius: Theme.radius-row;
+                    background: i == root.hover ? Theme.hover : transparent;
+                    accessible-role: list-item;
+                    accessible-label: item.label;
+                    accessible-description: item.detail;
+                    accessible-item-selectable: true;
+                    accessible-item-selected: i == root.current;
+                    accessible-item-index: i;
+                    accessible-item-count: root.items.length;
+                    accessible-action-default => { root.picked(i); root.close(); root.dismissed(); }
+                    HorizontalLayout {
+                        padding-left: 10px;
+                        padding-right: 10px;
+                        spacing: 8px;
+                        Text { text: item.label; color: Theme.text; font-size: Theme.type-small; vertical-alignment: center; horizontal-stretch: 1; accessible-role: none; }
+                        Text { text: item.detail; color: Theme.text-quiet; font-size: Theme.type-caption; vertical-alignment: center; accessible-role: none; }
+                        if i == root.current: Icon { path: Icons.check; ink: Theme.accent-text; size: 14px; y: (parent.height - self.height) / 2; }
+                    }
+                    TouchArea {
+                        moved => { root.hover = i; }
+                        clicked => { root.picked(i); root.close(); root.dismissed(); }
+                    }
+                }
+            }
+        }
+    }
+}

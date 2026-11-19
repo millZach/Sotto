@@ -1,0 +1,802 @@
+[
+ {
+  "role": "user",
+  "text": "Why does the export button lose focus after I press Escape?"
+ },
+ {
+  "role": "assistant",
+  "text": "Fixed. the export button kept a stale ref after the dialog closed, so focus went back to the page body. It now returns to the button that opened it."
+ },
+ {
+  "role": "user",
+  "text": "Why does the shelf search lose focus after I press Escape?"
+ },
+ {
+  "role": "assistant",
+  "text": "Fixed. the shelf search kept a stale ref after the dialog closed, so focus went back to the page body. It now returns to the button that opened it."
+ },
+ {
+  "role": "user",
+  "text": "Can you look at the onboarding card? It feels slow when the list is long."
+ },
+ {
+  "role": "assistant",
+  "text": "I looked at the onboarding card. The list re-sorted on every keystroke; it now sorts once when the filter settles, and typing stays smooth with 5,000 entries."
+ },
+ {
+  "role": "user",
+  "text": "یہ keyboard focus in the list اردو میں ٹھیک نظر نہیں آ رہا۔ Please check the right-to-left layout."
+ },
+ {
+  "role": "assistant",
+  "text": "میں نے keyboard focus in the list دیکھا۔ The layout now flips for اردو, the icons mirror, and mixed lines like \"Saved 3 فائلیں\" read correctly."
+ },
+ {
+  "role": "user",
+  "text": "Please tidy the copy on the import dialog. It still says \"click here\"."
+ },
+ {
+  "role": "assistant",
+  "text": "Done. the import dialog now says what a press does:\n\n- **Export shelf** instead of \"Click here to export\"\n- **Choose a folder** instead of \"Browse\""
+ },
+ {
+  "role": "user",
+  "text": "Why does autosave lose focus after I press Escape?"
+ },
+ {
+  "role": "assistant",
+  "text": "Fixed. autosave kept a stale ref after the dialog closed, so focus went back to the page body. It now returns to the button that opened it."
+ },
+ {
+  "role": "user",
+  "text": "Why does the tray menu lose focus after I press Escape?"
+ },
+ {
+  "role": "assistant",
+  "text": "Fixed. the tray menu kept a stale ref after the dialog closed, so focus went back to the page body. It now returns to the button that opened it."
+ },
+ {
+  "role": "user",
+  "text": "Check the release notes at the smallest window size."
+ },
+ {
+  "role": "assistant",
+  "text": "At 820 by 560, the release notes clipped the last button. I let the row wrap, and nothing overflows now in either theme."
+ },
+ {
+  "role": "user",
+  "text": "Make the tray menu work from the keyboard alone."
+ },
+ {
+  "role": "assistant",
+  "text": "It does now. Tab reaches every control in the tray menu in reading order, the arrow keys move inside the list, and `Escape` closes the menu."
+ },
+ {
+  "role": "user",
+  "text": "Why does the crash harness lose focus after I press Escape?"
+ },
+ {
+  "role": "assistant",
+  "text": "Fixed. the crash harness kept a stale ref after the dialog closed, so focus went back to the page body. It now returns to the button that opened it."
+ },
+ {
+  "role": "user",
+  "text": "Is the settings page covered by the end-to-end suite?"
+ },
+ {
+  "role": "assistant",
+  "text": "Partly. the settings page has two journeys, opening and closing, but nothing covers the error path. I added one that unplugs the fake server mid-request."
+ },
+ {
+  "role": "user",
+  "text": "یہ the dark theme اردو میں ٹھیک نظر نہیں آ رہا۔ Please check the right-to-left layout."
+ },
+ {
+  "role": "assistant",
+  "text": "میں نے the dark theme دیکھا۔ The layout now flips for اردو, the icons mirror, and mixed lines like \"Saved 3 فائلیں\" read correctly."
+ },
+ {
+  "role": "user",
+  "text": "Can you look at autosave? It feels slow when the list is long."
+ },
+ {
+  "role": "assistant",
+  "text": "I looked at autosave. The list re-sorted on every keystroke; it now sorts once when the filter settles, and typing stays smooth with 5,000 entries."
+ },
+ {
+  "role": "user",
+  "text": "Is the tray menu covered by the end-to-end suite?"
+ },
+ {
+  "role": "assistant",
+  "text": "Partly. the tray menu has two journeys, opening and closing, but nothing covers the error path. I added one that unplugs the fake server mid-request."
+ },
+ {
+  "role": "user",
+  "text": "Is the import dialog covered by the end-to-end suite?"
+ },
+ {
+  "role": "assistant",
+  "text": "Partly. the import dialog has two journeys, opening and closing, but nothing covers the error path. I added one that unplugs the fake server mid-request."
+ },
+ {
+  "role": "user",
+  "text": "Check the crash harness at the smallest window size."
+ },
+ {
+  "role": "assistant",
+  "text": "At 820 by 560, the crash harness clipped the last button. I let the row wrap, and nothing overflows now in either theme."
+ },
+ {
+  "role": "user",
+  "text": "Check autosave at the smallest window size."
+ },
+ {
+  "role": "assistant",
+  "text": "At 820 by 560, autosave clipped the last button. I let the row wrap, and nothing overflows now in either theme."
+ },
+ {
+  "role": "user",
+  "text": "هل يمكنك مراجعة the release notes؟ The Arabic labels are cut off on the right."
+ },
+ {
+  "role": "assistant",
+  "text": "راجعت the release notes. The labels were aligned left; they now follow the text direction, and the numbers stay in order: ٣ من ١٢ ملفات."
+ },
+ {
+  "role": "user",
+  "text": "Can you look at keyboard focus in the list? It feels slow when the list is long."
+ },
+ {
+  "role": "assistant",
+  "text": "I looked at keyboard focus in the list. The list re-sorted on every keystroke; it now sorts once when the filter settles, and typing stays smooth with 5,000 entries."
+ },
+ {
+  "role": "user",
+  "text": "Can you look at the release notes? It feels slow when the list is long."
+ },
+ {
+  "role": "assistant",
+  "text": "I looked at the release notes. The list re-sorted on every keystroke; it now sorts once when the filter settles, and typing stays smooth with 5,000 entries."
+ },
+ {
+  "role": "user",
+  "text": "Please tidy the copy on the sync badge. It still says \"click here\"."
+ },
+ {
+  "role": "assistant",
+  "text": "Done. the sync badge now says what a press does:\n\n- **Export shelf** instead of \"Click here to export\"\n- **Choose a folder** instead of \"Browse\""
+ },
+ {
+  "role": "user",
+  "text": "هل يمكنك مراجعة the export button؟ The Arabic labels are cut off on the right."
+ },
+ {
+  "role": "assistant",
+  "text": "راجعت the export button. The labels were aligned left; they now follow the text direction, and the numbers stay in order: ٣ من ١٢ ملفات."
+ },
+ {
+  "role": "user",
+  "text": "Check the release notes at the smallest window size."
+ },
+ {
+  "role": "assistant",
+  "text": "At 820 by 560, the release notes clipped the last button. I let the row wrap, and nothing overflows now in either theme."
+ },
+ {
+  "role": "user",
+  "text": "یہ the release notes اردو میں ٹھیک نظر نہیں آ رہا۔ Please check the right-to-left layout."
+ },
+ {
+  "role": "assistant",
+  "text": "میں نے the release notes دیکھا۔ The layout now flips for اردو, the icons mirror, and mixed lines like \"Saved 3 فائلیں\" read correctly."
+ },
+ {
+  "role": "user",
+  "text": "What changed in the release notes since last week?"
+ },
+ {
+  "role": "assistant",
+  "text": "Three commits touched the release notes: the wording change, a focus fix, and a rename of `ShelfRow` to `EntryRow`. Nothing that changes behaviour."
+ },
+ {
+  "role": "user",
+  "text": "هل يمكنك مراجعة the release notes؟ The Arabic labels are cut off on the right."
+ },
+ {
+  "role": "assistant",
+  "text": "راجعت the release notes. The labels were aligned left; they now follow the text direction, and the numbers stay in order: ٣ من ١٢ ملفات."
+ },
+ {
+  "role": "user",
+  "text": "Why does the import dialog lose focus after I press Escape?"
+ },
+ {
+  "role": "assistant",
+  "text": "Fixed. the import dialog kept a stale ref after the dialog closed, so focus went back to the page body. It now returns to the button that opened it."
+ },
+ {
+  "role": "user",
+  "text": "Is the tray menu covered by the end-to-end suite?"
+ },
+ {
+  "role": "assistant",
+  "text": "Partly. the tray menu has two journeys, opening and closing, but nothing covers the error path. I added one that unplugs the fake server mid-request."
+ },
+ {
+  "role": "user",
+  "text": "What changed in the release notes since last week?"
+ },
+ {
+  "role": "assistant",
+  "text": "Three commits touched the release notes: the wording change, a focus fix, and a rename of `ShelfRow` to `EntryRow`. Nothing that changes behaviour."
+ },
+ {
+  "role": "user",
+  "text": "Why does the onboarding card lose focus after I press Escape?"
+ },
+ {
+  "role": "assistant",
+  "text": "Fixed. the onboarding card kept a stale ref after the dialog closed, so focus went back to the page body. It now returns to the button that opened it."
+ },
+ {
+  "role": "user",
+  "text": "Make the empty state work from the keyboard alone."
+ },
+ {
+  "role": "assistant",
+  "text": "It does now. Tab reaches every control in the empty state in reading order, the arrow keys move inside the list, and `Escape` closes the menu."
+ },
+ {
+  "role": "user",
+  "text": "یہ the crash harness اردو میں ٹھیک نظر نہیں آ رہا۔ Please check the right-to-left layout."
+ },
+ {
+  "role": "assistant",
+  "text": "میں نے the crash harness دیکھا۔ The layout now flips for اردو, the icons mirror, and mixed lines like \"Saved 3 فائلیں\" read correctly."
+ },
+ {
+  "role": "user",
+  "text": "هل يمكنك مراجعة the sync badge؟ The Arabic labels are cut off on the right."
+ },
+ {
+  "role": "assistant",
+  "text": "راجعت the sync badge. The labels were aligned left; they now follow the text direction, and the numbers stay in order: ٣ من ١٢ ملفات."
+ },
+ {
+  "role": "user",
+  "text": "Why does the settings page lose focus after I press Escape?"
+ },
+ {
+  "role": "assistant",
+  "text": "Fixed. the settings page kept a stale ref after the dialog closed, so focus went back to the page body. It now returns to the button that opened it."
+ },
+ {
+  "role": "user",
+  "text": "Check the empty state at the smallest window size."
+ },
+ {
+  "role": "assistant",
+  "text": "At 820 by 560, the empty state clipped the last button. I let the row wrap, and nothing overflows now in either theme."
+ },
+ {
+  "role": "user",
+  "text": "Make the import dialog work from the keyboard alone."
+ },
+ {
+  "role": "assistant",
+  "text": "It does now. Tab reaches every control in the import dialog in reading order, the arrow keys move inside the list, and `Escape` closes the menu."
+ },
+ {
+  "role": "user",
+  "text": "Run the unit tests for the shelf search and tell me what fails."
+ },
+ {
+  "role": "assistant",
+  "text": "Ran the tests for the shelf search: 31 passed, 2 failed. Both failures are the same snapshot that still has the old wording; I updated it and they pass now."
+ },
+ {
+  "role": "user",
+  "text": "Can you look at the title field? It feels slow when the list is long."
+ },
+ {
+  "role": "assistant",
+  "text": "I looked at the title field. The list re-sorted on every keystroke; it now sorts once when the filter settles, and typing stays smooth with 5,000 entries."
+ },
+ {
+  "role": "user",
+  "text": "Make keyboard focus in the list work from the keyboard alone."
+ },
+ {
+  "role": "assistant",
+  "text": "It does now. Tab reaches every control in keyboard focus in the list in reading order, the arrow keys move inside the list, and `Escape` closes the menu."
+ },
+ {
+  "role": "user",
+  "text": "Make keyboard focus in the list work from the keyboard alone."
+ },
+ {
+  "role": "assistant",
+  "text": "It does now. Tab reaches every control in keyboard focus in the list in reading order, the arrow keys move inside the list, and `Escape` closes the menu."
+ },
+ {
+  "role": "user",
+  "text": "هل يمكنك مراجعة keyboard focus in the list؟ The Arabic labels are cut off on the right."
+ },
+ {
+  "role": "assistant",
+  "text": "راجعت keyboard focus in the list. The labels were aligned left; they now follow the text direction, and the numbers stay in order: ٣ من ١٢ ملفات."
+ },
+ {
+  "role": "user",
+  "text": "Is the shelf search covered by the end-to-end suite?"
+ },
+ {
+  "role": "assistant",
+  "text": "Partly. the shelf search has two journeys, opening and closing, but nothing covers the error path. I added one that unplugs the fake server mid-request."
+ },
+ {
+  "role": "user",
+  "text": "Why does the settings page lose focus after I press Escape?"
+ },
+ {
+  "role": "assistant",
+  "text": "Fixed. the settings page kept a stale ref after the dialog closed, so focus went back to the page body. It now returns to the button that opened it."
+ },
+ {
+  "role": "user",
+  "text": "Please tidy the copy on the onboarding card. It still says \"click here\"."
+ },
+ {
+  "role": "assistant",
+  "text": "Done. the onboarding card now says what a press does:\n\n- **Export shelf** instead of \"Click here to export\"\n- **Choose a folder** instead of \"Browse\""
+ },
+ {
+  "role": "user",
+  "text": "Why does the upload queue lose focus after I press Escape?"
+ },
+ {
+  "role": "assistant",
+  "text": "Fixed. the upload queue kept a stale ref after the dialog closed, so focus went back to the page body. It now returns to the button that opened it."
+ },
+ {
+  "role": "user",
+  "text": "Check the title field at the smallest window size."
+ },
+ {
+  "role": "assistant",
+  "text": "At 820 by 560, the title field clipped the last button. I let the row wrap, and nothing overflows now in either theme."
+ },
+ {
+  "role": "user",
+  "text": "What changed in the shelf search since last week?"
+ },
+ {
+  "role": "assistant",
+  "text": "Three commits touched the shelf search: the wording change, a focus fix, and a rename of `ShelfRow` to `EntryRow`. Nothing that changes behaviour."
+ },
+ {
+  "role": "user",
+  "text": "Why does the onboarding card lose focus after I press Escape?"
+ },
+ {
+  "role": "assistant",
+  "text": "Fixed. the onboarding card kept a stale ref after the dialog closed, so focus went back to the page body. It now returns to the button that opened it."
+ },
+ {
+  "role": "user",
+  "text": "What changed in the release notes since last week?"
+ },
+ {
+  "role": "assistant",
+  "text": "Three commits touched the release notes: the wording change, a focus fix, and a rename of `ShelfRow` to `EntryRow`. Nothing that changes behaviour."
+ },
+ {
+  "role": "user",
+  "text": "Is the import dialog covered by the end-to-end suite?"
+ },
+ {
+  "role": "assistant",
+  "text": "Partly. the import dialog has two journeys, opening and closing, but nothing covers the error path. I added one that unplugs the fake server mid-request."
+ },
+ {
+  "role": "user",
+  "text": "Check the tray menu at the smallest window size."
+ },
+ {
+  "role": "assistant",
+  "text": "At 820 by 560, the tray menu clipped the last button. I let the row wrap, and nothing overflows now in either theme."
+ },
+ {
+  "role": "user",
+  "text": "Please tidy the copy on the onboarding card. It still says \"click here\"."
+ },
+ {
+  "role": "assistant",
+  "text": "Done. the onboarding card now says what a press does:\n\n- **Export shelf** instead of \"Click here to export\"\n- **Choose a folder** instead of \"Browse\""
+ },
+ {
+  "role": "user",
+  "text": "Check the import dialog at the smallest window size."
+ },
+ {
+  "role": "assistant",
+  "text": "At 820 by 560, the import dialog clipped the last button. I let the row wrap, and nothing overflows now in either theme."
+ },
+ {
+  "role": "user",
+  "text": "هل يمكنك مراجعة the release notes؟ The Arabic labels are cut off on the right."
+ },
+ {
+  "role": "assistant",
+  "text": "راجعت the release notes. The labels were aligned left; they now follow the text direction, and the numbers stay in order: ٣ من ١٢ ملفات."
+ },
+ {
+  "role": "user",
+  "text": "Make the export button work from the keyboard alone."
+ },
+ {
+  "role": "assistant",
+  "text": "It does now. Tab reaches every control in the export button in reading order, the arrow keys move inside the list, and `Escape` closes the menu."
+ },
+ {
+  "role": "user",
+  "text": "یہ the title field اردو میں ٹھیک نظر نہیں آ رہا۔ Please check the right-to-left layout."
+ },
+ {
+  "role": "assistant",
+  "text": "میں نے the title field دیکھا۔ The layout now flips for اردو, the icons mirror, and mixed lines like \"Saved 3 فائلیں\" read correctly."
+ },
+ {
+  "role": "user",
+  "text": "Make autosave work from the keyboard alone."
+ },
+ {
+  "role": "assistant",
+  "text": "It does now. Tab reaches every control in autosave in reading order, the arrow keys move inside the list, and `Escape` closes the menu."
+ },
+ {
+  "role": "user",
+  "text": "هل يمكنك مراجعة the empty state؟ The Arabic labels are cut off on the right."
+ },
+ {
+  "role": "assistant",
+  "text": "راجعت the empty state. The labels were aligned left; they now follow the text direction, and the numbers stay in order: ٣ من ١٢ ملفات."
+ },
+ {
+  "role": "user",
+  "text": "Please tidy the copy on the title field. It still says \"click here\"."
+ },
+ {
+  "role": "assistant",
+  "text": "Done. the title field now says what a press does:\n\n- **Export shelf** instead of \"Click here to export\"\n- **Choose a folder** instead of \"Browse\""
+ },
+ {
+  "role": "user",
+  "text": "What changed in the release notes since last week?"
+ },
+ {
+  "role": "assistant",
+  "text": "Three commits touched the release notes: the wording change, a focus fix, and a rename of `ShelfRow` to `EntryRow`. Nothing that changes behaviour."
+ },
+ {
+  "role": "user",
+  "text": "Why does the crash harness lose focus after I press Escape?"
+ },
+ {
+  "role": "assistant",
+  "text": "Fixed. the crash harness kept a stale ref after the dialog closed, so focus went back to the page body. It now returns to the button that opened it."
+ },
+ {
+  "role": "user",
+  "text": "Please tidy the copy on the title field. It still says \"click here\"."
+ },
+ {
+  "role": "assistant",
+  "text": "Done. the title field now says what a press does:\n\n- **Export shelf** instead of \"Click here to export\"\n- **Choose a folder** instead of \"Browse\""
+ },
+ {
+  "role": "user",
+  "text": "Run the unit tests for the tray menu and tell me what fails."
+ },
+ {
+  "role": "assistant",
+  "text": "Ran the tests for the tray menu: 31 passed, 2 failed. Both failures are the same snapshot that still has the old wording; I updated it and they pass now."
+ },
+ {
+  "role": "user",
+  "text": "Please tidy the copy on the settings page. It still says \"click here\"."
+ },
+ {
+  "role": "assistant",
+  "text": "Done. the settings page now says what a press does:\n\n- **Export shelf** instead of \"Click here to export\"\n- **Choose a folder** instead of \"Browse\""
+ },
+ {
+  "role": "user",
+  "text": "هل يمكنك مراجعة the empty state؟ The Arabic labels are cut off on the right."
+ },
+ {
+  "role": "assistant",
+  "text": "راجعت the empty state. The labels were aligned left; they now follow the text direction, and the numbers stay in order: ٣ من ١٢ ملفات."
+ },
+ {
+  "role": "user",
+  "text": "Is the tray menu covered by the end-to-end suite?"
+ },
+ {
+  "role": "assistant",
+  "text": "Partly. the tray menu has two journeys, opening and closing, but nothing covers the error path. I added one that unplugs the fake server mid-request."
+ },
+ {
+  "role": "user",
+  "text": "Run the unit tests for the empty state and tell me what fails."
+ },
+ {
+  "role": "assistant",
+  "text": "Ran the tests for the empty state: 31 passed, 2 failed. Both failures are the same snapshot that still has the old wording; I updated it and they pass now."
+ },
+ {
+  "role": "user",
+  "text": "Why does the import dialog lose focus after I press Escape?"
+ },
+ {
+  "role": "assistant",
+  "text": "Fixed. the import dialog kept a stale ref after the dialog closed, so focus went back to the page body. It now returns to the button that opened it."
+ },
+ {
+  "role": "user",
+  "text": "Run the unit tests for keyboard focus in the list and tell me what fails."
+ },
+ {
+  "role": "assistant",
+  "text": "Ran the tests for keyboard focus in the list: 31 passed, 2 failed. Both failures are the same snapshot that still has the old wording; I updated it and they pass now."
+ },
+ {
+  "role": "user",
+  "text": "Please tidy the copy on the onboarding card. It still says \"click here\"."
+ },
+ {
+  "role": "assistant",
+  "text": "Done. the onboarding card now says what a press does:\n\n- **Export shelf** instead of \"Click here to export\"\n- **Choose a folder** instead of \"Browse\""
+ },
+ {
+  "role": "user",
+  "text": "Please tidy the copy on the settings page. It still says \"click here\"."
+ },
+ {
+  "role": "assistant",
+  "text": "Done. the settings page now says what a press does:\n\n- **Export shelf** instead of \"Click here to export\"\n- **Choose a folder** instead of \"Browse\""
+ },
+ {
+  "role": "user",
+  "text": "Check the settings page at the smallest window size."
+ },
+ {
+  "role": "assistant",
+  "text": "At 820 by 560, the settings page clipped the last button. I let the row wrap, and nothing overflows now in either theme."
+ },
+ {
+  "role": "user",
+  "text": "یہ the export button اردو میں ٹھیک نظر نہیں آ رہا۔ Please check the right-to-left layout."
+ },
+ {
+  "role": "assistant",
+  "text": "میں نے the export button دیکھا۔ The layout now flips for اردو, the icons mirror, and mixed lines like \"Saved 3 فائلیں\" read correctly."
+ },
+ {
+  "role": "user",
+  "text": "Check the onboarding card at the smallest window size."
+ },
+ {
+  "role": "assistant",
+  "text": "At 820 by 560, the onboarding card clipped the last button. I let the row wrap, and nothing overflows now in either theme."
+ },
+ {
+  "role": "user",
+  "text": "Why does the upload queue lose focus after I press Escape?"
+ },
+ {
+  "role": "assistant",
+  "text": "Fixed. the upload queue kept a stale ref after the dialog closed, so focus went back to the page body. It now returns to the button that opened it."
+ },
+ {
+  "role": "user",
+  "text": "Please tidy the copy on the release notes. It still says \"click here\"."
+ },
+ {
+  "role": "assistant",
+  "text": "Done. the release notes now says what a press does:\n\n- **Export shelf** instead of \"Click here to export\"\n- **Choose a folder** instead of \"Browse\""
+ },
+ {
+  "role": "user",
+  "text": "هل يمكنك مراجعة the shelf search؟ The Arabic labels are cut off on the right."
+ },
+ {
+  "role": "assistant",
+  "text": "راجعت the shelf search. The labels were aligned left; they now follow the text direction, and the numbers stay in order: ٣ من ١٢ ملفات."
+ },
+ {
+  "role": "user",
+  "text": "یہ the crash harness اردو میں ٹھیک نظر نہیں آ رہا۔ Please check the right-to-left layout."
+ },
+ {
+  "role": "assistant",
+  "text": "میں نے the crash harness دیکھا۔ The layout now flips for اردو, the icons mirror, and mixed lines like \"Saved 3 فائلیں\" read correctly."
+ },
+ {
+  "role": "user",
+  "text": "هل يمكنك مراجعة autosave؟ The Arabic labels are cut off on the right."
+ },
+ {
+  "role": "assistant",
+  "text": "راجعت autosave. The labels were aligned left; they now follow the text direction, and the numbers stay in order: ٣ من ١٢ ملفات."
+ },
+ {
+  "role": "user",
+  "text": "هل يمكنك مراجعة keyboard focus in the list؟ The Arabic labels are cut off on the right."
+ },
+ {
+  "role": "assistant",
+  "text": "راجعت keyboard focus in the list. The labels were aligned left; they now follow the text direction, and the numbers stay in order: ٣ من ١٢ ملفات."
+ },
+ {
+  "role": "user",
+  "text": "هل يمكنك مراجعة the settings page؟ The Arabic labels are cut off on the right."
+ },
+ {
+  "role": "assistant",
+  "text": "راجعت the settings page. The labels were aligned left; they now follow the text direction, and the numbers stay in order: ٣ من ١٢ ملفات."
+ },
+ {
+  "role": "user",
+  "text": "Is the settings page covered by the end-to-end suite?"
+ },
+ {
+  "role": "assistant",
+  "text": "Partly. the settings page has two journeys, opening and closing, but nothing covers the error path. I added one that unplugs the fake server mid-request."
+ },
+ {
+  "role": "user",
+  "text": "Is the release notes covered by the end-to-end suite?"
+ },
+ {
+  "role": "assistant",
+  "text": "Partly. the release notes has two journeys, opening and closing, but nothing covers the error path. I added one that unplugs the fake server mid-request."
+ },
+ {
+  "role": "user",
+  "text": "Is the settings page covered by the end-to-end suite?"
+ },
+ {
+  "role": "assistant",
+  "text": "Partly. the settings page has two journeys, opening and closing, but nothing covers the error path. I added one that unplugs the fake server mid-request."
+ },
+ {
+  "role": "user",
+  "text": "Why does the release notes lose focus after I press Escape?"
+ },
+ {
+  "role": "assistant",
+  "text": "Fixed. the release notes kept a stale ref after the dialog closed, so focus went back to the page body. It now returns to the button that opened it."
+ },
+ {
+  "role": "user",
+  "text": "هل يمكنك مراجعة the title field؟ The Arabic labels are cut off on the right."
+ },
+ {
+  "role": "assistant",
+  "text": "راجعت the title field. The labels were aligned left; they now follow the text direction, and the numbers stay in order: ٣ من ١٢ ملفات."
+ },
+ {
+  "role": "user",
+  "text": "Please tidy the copy on the crash harness. It still says \"click here\"."
+ },
+ {
+  "role": "assistant",
+  "text": "Done. the crash harness now says what a press does:\n\n- **Export shelf** instead of \"Click here to export\"\n- **Choose a folder** instead of \"Browse\""
+ },
+ {
+  "role": "user",
+  "text": "What changed in the dark theme since last week?"
+ },
+ {
+  "role": "assistant",
+  "text": "Three commits touched the dark theme: the wording change, a focus fix, and a rename of `ShelfRow` to `EntryRow`. Nothing that changes behaviour."
+ },
+ {
+  "role": "user",
+  "text": "یہ the shelf search اردو میں ٹھیک نظر نہیں آ رہا۔ Please check the right-to-left layout."
+ },
+ {
+  "role": "assistant",
+  "text": "میں نے the shelf search دیکھا۔ The layout now flips for اردو, the icons mirror, and mixed lines like \"Saved 3 فائلیں\" read correctly."
+ },
+ {
+  "role": "user",
+  "text": "Run the unit tests for the empty state and tell me what fails."
+ },
+ {
+  "role": "assistant",
+  "text": "Ran the tests for the empty state: 31 passed, 2 failed. Both failures are the same snapshot that still has the old wording; I updated it and they pass now."
+ },
+ {
+  "role": "user",
+  "text": "Check the onboarding card at the smallest window size."
+ },
+ {
+  "role": "assistant",
+  "text": "At 820 by 560, the onboarding card clipped the last button. I let the row wrap, and nothing overflows now in either theme."
+ },
+ {
+  "role": "user",
+  "text": "Please tidy the copy on autosave. It still says \"click here\"."
+ },
+ {
+  "role": "assistant",
+  "text": "Done. autosave now says what a press does:\n\n- **Export shelf** instead of \"Click here to export\"\n- **Choose a folder** instead of \"Browse\""
+ },
+ {
+  "role": "user",
+  "text": "هل يمكنك مراجعة the export button؟ The Arabic labels are cut off on the right."
+ },
+ {
+  "role": "assistant",
+  "text": "راجعت the export button. The labels were aligned left; they now follow the text direction, and the numbers stay in order: ٣ من ١٢ ملفات."
+ },
+ {
+  "role": "user",
+  "text": "Run the unit tests for the crash harness and tell me what fails."
+ },
+ {
+  "role": "assistant",
+  "text": "Ran the tests for the crash harness: 31 passed, 2 failed. Both failures are the same snapshot that still has the old wording; I updated it and they pass now."
+ },
+ {
+  "role": "user",
+  "text": "What changed in the title field since last week?"
+ },
+ {
+  "role": "assistant",
+  "text": "Three commits touched the title field: the wording change, a focus fix, and a rename of `ShelfRow` to `EntryRow`. Nothing that changes behaviour."
+ },
+ {
+  "role": "user",
+  "text": "یہ the tray menu اردو میں ٹھیک نظر نہیں آ رہا۔ Please check the right-to-left layout."
+ },
+ {
+  "role": "assistant",
+  "text": "میں نے the tray menu دیکھا۔ The layout now flips for اردو, the icons mirror, and mixed lines like \"Saved 3 فائلیں\" read correctly."
+ },
+ {
+  "role": "user",
+  "text": "Is the upload queue covered by the end-to-end suite?"
+ },
+ {
+  "role": "assistant",
+  "text": "Partly. the upload queue has two journeys, opening and closing, but nothing covers the error path. I added one that unplugs the fake server mid-request."
+ },
+ {
+  "role": "user",
+  "text": "Is the dark theme covered by the end-to-end suite?"
+ },
+ {
+  "role": "assistant",
+  "text": "Partly. the dark theme has two journeys, opening and closing, but nothing covers the error path. I added one that unplugs the fake server mid-request."
+ },
+ {
+  "role": "user",
+  "text": "Check autosave at the smallest window size."
+ },
+ {
+  "role": "assistant",
+  "text": "At 820 by 560, autosave clipped the last button. I let the row wrap, and nothing overflows now in either theme."
+ },
+ {
+  "role": "user",
+  "text": "Make the export button work from the keyboard alone."
+ },
+ {
+  "role": "assistant",
+  "text": "It does now. Tab reaches every control in the export button in reading order, the arrow keys move inside the list, and `Escape` closes the menu."
+ }
+]

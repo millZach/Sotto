@@ -1,0 +1,25 @@
+[package]
+name = "sotto-slint-composer-web"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "MIT"
+description = "The bake-off's composer and its three variants, compiled to WebAssembly so they open in a browser."
+
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[dependencies]
+slint = { version = "=1.19.0", default-features = false, features = ["std", "backend-winit", "renderer-femtovg", "compat-1-2"] }
+wasm-bindgen = "=0.2.128"
+web-sys = { version = "0.3", features = ["Window", "console"] }
+
+[build-dependencies]
+slint-build = "=1.19.0"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+strip = true

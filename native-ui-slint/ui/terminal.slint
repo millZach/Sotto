@@ -1,0 +1,108 @@
+// The terminal pane: a grid of cells from alacritty_terminal, drawn as runs of one style each.
+import { Theme } from "generated/theme.slint";
+import { Fonts, FocusRing } from "base.slint";
+
+export struct TermRun { col: int, len: int, text: string, fg: color, bg: color, has-bg: bool, bold: bool, italic: bool, underline: bool }
+export struct TermRow { runs: [TermRun] }
+
+export component TerminalPane inherits Rectangle {
+    in property <[TermRow]> rows;
+    in property <int> cursor-col;
+    in property <int> cursor-row;
+    in property <bool> cursor-shown: true;
+    in property <string> title: "Terminal";
+    in property <string> screen-text;
+    in property <length> font-size: 13px;
+    out property <length> cell-width: probe.preferred-width / 10;
+    out property <length> cell-height: Math.round(probe.preferred-height * 1.2 / 1px) * 1px;
+    out property <bool> has-focus: fs.has-focus;
+    callback key(KeyEvent) -> bool;
+    callback resized(length, length, length, length);
+    callback pointer(int, int, int);     // kind (0 down, 1 drag, 2 up, 3 double), column, row
+    callback wheel(int);                 // lines, positive scrolls back
+    callback copy-selection();
+    callback paste();
+    public function take-focus() { fs.focus(); }
+    forward-focus: fs;
+    background: Theme.terminal-background;
+    accessible-role: text-input;
+    accessible-label: root.title;
+    accessible-description: "Shell. Tab goes to the shell; F6 leaves the terminal.";
+    accessible-value: root.screen-text;
+    accessible-read-only: false;
+
+    changed width => { root.resized(grid.width, grid.height, root.cell-width, root.cell-height); }
+    changed height => { root.resized(grid.width, grid.height, root.cell-width, root.cell-height); }
+    changed cell-width => { root.resized(grid.width, grid.height, root.cell-width, root.cell-height); }
+
+    // Ten cells of the mono face give the cell width; the line height is 1.2 times the font's.
+    probe := Text { text: "0000000000"; font-family: Fonts.mono; font-size: root.font-size; visible: false; accessible-role: none; }
+
+    grid := Rectangle {
+        x: 10px;
+        y: 8px;
+        width: parent.width - 20px;
+        height: parent.height - 16px;
+        clip: true;
+        for row[r] in root.rows: Rectangle {
+            y: r * root.cell-height;
+            height: root.cell-height;
+            for run in row.runs: Rectangle {
+                x: run.col * root.cell-width;
+                width: run.len * root.cell-width;
+                background: run.has-bg ? run.bg : transparent;
+                Text {
+                    x: 0;
+                    text: run.text;
+                    color: run.fg;
+                    font-family: Fonts.mono;
+                    font-size: root.font-size;
+                    font-weight: run.bold ? 700 : 400;
+                    font-italic: run.italic;
+                    vertical-alignment: center;
+                    accessible-role: none;
+                }
+                if run.underline: Rectangle { y: parent.height - 2px; height: 1px; background: run.fg; }
+            }
+        }
+        if root.cursor-shown: Rectangle {
+            x: root.cursor-col * root.cell-width;
+            y: root.cursor-row * root.cell-height;
+            width: fs.has-focus ? root.cell-width : root.cell-width;
+            height: root.cell-height;
+            background: fs.has-focus ? Theme.terminal-cursor : transparent;
+            border-width: fs.has-focus ? 0 : 1px;
+            border-color: Theme.terminal-cursor;
+            opacity: fs.has-focus ? 0.85 : 1;
+        }
+        TouchArea {
+            mouse-cursor: text;
+            pointer-event(event) => {
+                if event.button == PointerEventButton.left && event.kind == PointerEventKind.down {
+                    fs.focus();
+                    root.pointer(0, Math.floor(self.mouse-x / root.cell-width), Math.floor(self.mouse-y / root.cell-height));
+                }
+                if event.button == PointerEventButton.left && event.kind == PointerEventKind.up {
+                    root.pointer(2, Math.floor(self.mouse-x / root.cell-width), Math.floor(self.mouse-y / root.cell-height));
+                }
+            }
+            moved => {
+                if self.pressed { root.pointer(1, Math.floor(self.mouse-x / root.cell-width), Math.floor(self.mouse-y / root.cell-height)); }
+            }
+            scroll-event(event) => {
+                root.wheel(event.delta-y > 0 ? 3 : -3);
+                accept
+            }
+        }
+    }
+    fs := FocusScope {
+        key-pressed(event) => {
+            if event.text == Key.F6 { return reject; }
+            if event.modifiers.control && event.modifiers.shift && (event.text == "C" || event.text == "c") { root.copy-selection(); return accept; }
+            if event.modifiers.control && event.modifiers.shift && (event.text == "V" || event.text == "v") { root.paste(); return accept; }
+            if root.key(event) { return accept; }
+            reject
+        }
+    }
+    FocusRing { x: 1px; y: 1px; width: parent.width - 2px; height: parent.height - 2px; shown: fs.has-focus; radius: Theme.radius-inset; }
+}

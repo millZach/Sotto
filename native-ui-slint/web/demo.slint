@@ -1,0 +1,112 @@
+// The composer alone, with its three variants and both themes, for a browser.
+import "../../apps/ios/Sotto/Resources/Figtree.ttf";
+import "../../apps/ios/Sotto/Resources/Figtree-SemiBold.ttf";
+import { Theme } from "../ui/generated/theme.slint";
+import { Composer, PillRect, KeyAction } from "../ui/composer.slint";
+import { Fonts, QuietButton, MenuItem, Icons } from "../ui/base.slint";
+
+export { Theme, PillRect, KeyAction, MenuItem }
+
+component Segment inherits Rectangle {
+    in property <string> label;
+    in property <bool> on;
+    callback clicked();
+    height: 32px;
+    border-radius: Theme.radius-row;
+    background: root.on ? Theme.surface-overlay : touch.has-hover ? Theme.hover : transparent;
+    border-width: root.on ? 1px : 0px;
+    border-color: Theme.border-faint;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-checkable: true;
+    accessible-checked: root.on;
+    accessible-action-default => { root.clicked(); }
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 12px;
+        Text { text: root.label; color: root.on ? Theme.text : Theme.text-quiet; font-size: Theme.type-small; vertical-alignment: center; accessible-role: none; }
+    }
+    touch := TouchArea { clicked => { root.clicked(); } }
+}
+
+export component AppWindow inherits Window {
+    title: "Sotto composer, three variants (Slint, WebAssembly)";
+    background: Theme.canvas;
+    default-font-family: Fonts.ui;
+    default-font-size: Theme.type-body;
+    // No preferred size: the page sizes the canvas (CSS 100%), and Slint follows it.
+    preferred-width: 0px;
+    preferred-height: 0px;
+    in-out property <int> composer-variant: 0;
+    in-out property <string> composer-text <=> composer.text;
+    in property <[PillRect]> pills;
+    in property <bool> composer-rtl;
+    in property <[MenuItem]> models;
+    in property <[MenuItem]> efforts;
+    in property <[MenuItem]> permissions;
+    in-out property <int> model-index;
+    in-out property <int> effort-index;
+    in-out property <int> permission-index;
+    out property <length> composer-editor-width: composer.editor-width;
+    callback composer-edited(string);
+    callback pill-key(string, bool, int, int) -> KeyAction;
+    callback caret-moved(int, int);
+    callback attach();
+    callback composer-layout-changed();
+    public function measure-at(offset: int) -> Point { return composer.measure-at(offset); }
+    public function place-cursor(anchor: int, cursor: int) { composer.place-cursor(anchor, cursor); }
+    public function focus-composer() { composer.take-focus(); }
+
+    property <bool> narrow: root.width < 560px;
+    VerticalLayout {
+        padding: root.narrow ? 12px : 20px;
+        spacing: 12px;
+        HorizontalLayout {
+            spacing: 6px;
+            alignment: start;
+            Segment { label: root.narrow ? "A · Card" : "A · Card"; on: root.composer-variant == 0; clicked => { root.composer-variant = 0; root.composer-layout-changed(); } }
+            Segment { label: root.narrow ? "B · Floating" : "B · Floating card"; on: root.composer-variant == 1; clicked => { root.composer-variant = 1; root.composer-layout-changed(); } }
+            Segment { label: "C · Slim bar"; on: root.composer-variant == 2; clicked => { root.composer-variant = 2; root.composer-layout-changed(); } }
+        }
+        HorizontalLayout {
+            alignment: start;
+            Segment { label: Theme.dark ? "Use the light theme" : "Use the dark theme"; on: false; clicked => { Theme.dark = !Theme.dark; root.composer-layout-changed(); } }
+        }
+        Text {
+            text: "This is the real Slint composer from the bake-off, compiled to WebAssembly. Type, press Backspace beside a pill, move past one with the arrow keys, attach a file, and open the chips.";
+            wrap: word-wrap;
+            color: Theme.text-quiet;
+            font-size: Theme.type-small;
+        }
+        Rectangle { vertical-stretch: 1; }
+        Rectangle {
+            height: composer.preferred-height + 12px;
+            composer := Composer {
+                x: (parent.width - self.width) / 2;
+                width: Math.min(820px, parent.width);
+                height: self.preferred-height;
+                variant: root.composer-variant;
+                pills: root.pills;
+                rtl: root.composer-rtl;
+                models: root.models;
+                efforts: root.efforts;
+                permissions: root.permissions;
+                model-index: root.model-index;
+                effort-index: root.effort-index;
+                permission-index: root.permission-index;
+                model-name: root.models[root.model-index].label;
+                effort: root.efforts[root.effort-index].label;
+                permission: root.permissions[root.permission-index].label;
+                status: "Opus 5.5 is ready";
+                edited(t) => { root.composer-edited(t); }
+                pill-key(k, s, a, c) => { return root.pill-key(k, s, a, c); }
+                caret-moved(a, c) => { root.caret-moved(a, c); }
+                attach => { root.attach(); }
+                pick-model(i) => { root.model-index = i; }
+                pick-effort(i) => { root.effort-index = i; }
+                pick-permission(i) => { root.permission-index = i; }
+                layout-changed => { root.composer-layout-changed(); }
+            }
+        }
+    }
+}

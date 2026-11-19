@@ -1,0 +1,91 @@
+// The web pane region. The page is a surface drawn by another renderer (a stand-in on its own
+// thread here, where Chromium will paint), handed to Slint as an image each frame and clipped to
+// rounded corners. Keys go to the page while the region has the focus; Tab moves through the
+// page's own controls and then out of the region, as it would leave a browser's page.
+import { Theme } from "generated/theme.slint";
+import { Icons, Icon, FocusRing, QuietButton } from "base.slint";
+
+export component WebPane inherits Rectangle {
+    in property <image> frame;
+    in property <string> address: "localhost:5173/shelf";
+    in property <string> page-title;
+    in property <string> page-focus;  // what the page has focused, for the accessible description
+    out property <bool> has-focus: fs.has-focus;
+    out property <length> surface-width: surface.width;
+    out property <length> surface-height: surface.height;
+    out property <float> scale: 1;
+    callback key(string, bool, bool) -> bool;   // text, shift, control: true when the page used it
+    callback focus-changed(bool, bool);         // focused, entered backwards
+    callback pointer(length, length, bool);     // x, y in the surface, pressed
+    callback resized(length, length);
+    public function take-focus() { fs.focus(); }
+    forward-focus: fs;
+    background: Theme.surface;
+    accessible-role: region;
+    accessible-label: "Browser: " + root.page-title;
+
+    changed width => { root.resized(surface.width, surface.height); }
+    changed height => { root.resized(surface.width, surface.height); }
+
+    VerticalLayout {
+        padding: 8px;
+        spacing: 8px;
+        HorizontalLayout {
+            height: 30px;
+            spacing: 8px;
+            Rectangle {
+                horizontal-stretch: 1;
+                border-radius: Theme.radius-control;
+                background: Theme.surface-sunken;
+                border-width: 1px;
+                border-color: Theme.border-faint;
+                HorizontalLayout {
+                    padding-left: 10px;
+                    spacing: 6px;
+                    Icon { path: Icons.globe; ink: Theme.text-quiet; size: 13px; y: (parent.height - self.height) / 2; }
+                    Text { text: root.address; color: Theme.text-2; font-size: Theme.type-caption; vertical-alignment: center; overflow: elide; accessible-role: text; accessible-label: "Address " + root.address; }
+                }
+            }
+        }
+        surface := Rectangle {
+            border-radius: Theme.radius-inset;
+            clip: true;
+            background: #ffffff;
+            Image {
+                width: parent.width;
+                height: parent.height;
+                source: root.frame;
+                image-fit: fill;
+                accessible-role: none;
+            }
+            TouchArea {
+                clicked => { fs.focus(); root.pointer(self.mouse-x, self.mouse-y, true); }
+            }
+            // The rounded clip above is the point of this region: the foreign surface never pokes past its corners.
+            Rectangle {
+                border-radius: Theme.radius-inset;
+                border-width: 1px;
+                border-color: Theme.border-faint;
+            }
+        }
+    }
+    fs := FocusScope {
+        accessible-role: none;
+        focus-gained(reason) => { root.focus-changed(true, false); }
+        focus-lost(reason) => { root.focus-changed(false, false); }
+        key-pressed(event) => {
+            if event.text == Key.F6 { return reject; }
+            if root.key(event.text, event.modifiers.shift, event.modifiers.control) { return accept; }
+            reject
+        }
+    }
+    Rectangle {
+        x: surface.x - 3px;
+        y: surface.y - 3px;
+        width: surface.width + 6px;
+        height: surface.height + 6px;
+        border-radius: Theme.radius-inset + 3px;
+        border-width: fs.has-focus ? 2px : 0px;
+        border-color: Theme.focus-ring;
+    }
+}

@@ -1,0 +1,43 @@
+[package]
+name = "sotto-slint-bakeoff"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "MIT"
+description = "Sotto's native UI bake-off, Slint half (issue #2689). A prototype; never merges into main."
+
+[[bin]]
+name = "sotto-slint"
+path = "src/main.rs"
+
+[features]
+default = []
+# Slint's live preview: the .slint files are reloaded from disk while the app runs.
+live-preview = ["slint/live-preview"]
+
+[dependencies]
+slint = { version = "=1.19.0", default-features = false, features = [
+    "std",
+    "backend-winit",
+    "renderer-femtovg",
+    "renderer-skia",
+    "accessibility",
+    "compat-1-2",
+    "unstable-winit-030",
+] }
+pulldown-cmark = { version = "0.13", default-features = false }
+syntect = { version = "5.3", default-features = false, features = ["default-fancy"] }
+alacritty_terminal = "0.26"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+fontdue = "0.9"
+libc = "0.2"
+
+[build-dependencies]
+slint-build = "=1.19.0"
+
+[profile.release]
+debug = false
+strip = true
+lto = "thin"
+codegen-units = 4
