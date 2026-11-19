@@ -62,7 +62,7 @@ it.each([
   const env = runtime.env()
   const launchEnv = { ...env, PATH: sharedPath.filter(folder => layout !== 'venv' || folder !== bin).join(delimiter) }
   expect(await readHermesVersion(executable, env)).toBe('0.23.0')
-  const command = hermesAcpCommand(executable, [], layout === 'venv')
+  const command = hermesAcpCommand(executable, [], layout === 'venv' ? 'win32' : 'linux')
   const rpc = new HermesRpc(command.executable, command.args, root, env, 1000, () => {}, () => {}, executable)
   await runtime.project(executable, root, [])
 
@@ -132,12 +132,13 @@ it('finds the official installer’s Linux launcher past an Omarchy stub that ru
   expect(await findHermesExecutable({ HOME: root, PATH: localBin }, { home: root, platform: 'linux', loginShellPath: async () => localBin })).toBe(await realpath(join(official, 'hermes')))
 })
 
-it('starts the stock ChatGPT ACP process with Sotto’s inventory fallback', async () => {
+it('starts every Windows ACP process with Sotto’s inventory fallback and the stock one elsewhere', async () => {
   root = await mkdtemp(join(tmpdir(), 'sotto-hermes-acp-'))
   const executable = join(root, 'hermes')
-  expect(hermesAcpCommand(executable, [], false)).toEqual({ executable, args: ['acp'] })
-  expect(hermesAcpCommand(executable, ['fixture.cjs'], true)).toEqual({ executable, args: ['fixture.cjs', 'acp'] })
-  const command = hermesAcpCommand(executable, [], true)
+  expect(hermesAcpCommand(executable, [], 'darwin')).toEqual({ executable, args: ['acp'] })
+  expect(hermesAcpCommand(executable, [], 'linux')).toEqual({ executable, args: ['acp'] })
+  expect(hermesAcpCommand(executable, ['fixture.cjs'], 'win32')).toEqual({ executable, args: ['fixture.cjs', 'acp'] })
+  const command = hermesAcpCommand(executable, [], 'win32')
   expect(command.executable).toBe(executable)
   expect(command.args.slice(0, -1)).toEqual(['--run-module', 'timeit', '--number', '1', '--repeat', '1'])
   expect(command.args.at(-1)).toContain('model_catalog.build_model_state = current_model_only')

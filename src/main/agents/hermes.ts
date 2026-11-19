@@ -440,9 +440,7 @@ export class HermesAcpHost implements ProviderHost {
       patchRevision, mode: alias.runtimeMode, closing: false, replaying: false, model: undefined, effort: undefined, tools: new Map() }
     const project = this.state.projects.find(project => project.id === alias.projectId)
     const home = await this.runtime.project(executable, project?.path ?? cwd, this.servers, stops, this.chatGptModels[0])
-    // Hermes builds an editor picker during session creation. Its cold Windows inventory can block the session ID.
-    const skipChatGptInventory = process.platform === 'win32' && isHermesChatGptModel(alias.modelId)
-    const command = hermesAcpCommand(executable, this.options.executableArgs ?? [], skipChatGptInventory)
+    const command = hermesAcpCommand(executable, this.options.executableArgs ?? [])
     const rpc = this.spawn(executable, command, cwd, home, frame => this.frame(id, connection, frame), () => this.processLost(id, connection))
     ;(connection as { rpc: HermesRpc }).rpc = rpc
     try { this.readHarnessImages(connection, await this.handshake(rpc)) }
