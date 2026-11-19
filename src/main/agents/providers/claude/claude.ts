@@ -211,6 +211,12 @@ const CLAUDE_QUESTIONS = questionInstructions('AskUserQuestion', false)
 /** Watcher's question tool is Sotto's own (#2228): AskUserQuestion held Watcher's turn until the user answered. */
 const WATCHER_CLOSED_TOOLS = ['--disallowedTools', APPROVAL_SURFACE_TOOL]
 /**
+ * Claude Code 2.1.328 offers its task tools (TaskCreate, TaskUpdate), which are the thread's plan checklist, to current
+ * models such as Opus 5.5 only when this is set. Watcher's tools are chosen for it (#2228) and a council judge has none,
+ * so neither is given them.
+ */
+const PLAN_TOOLS_ENVIRONMENT = { CLAUDE_CODE_ENABLE_TODO_TOOLS: '1' }
+/**
  * The server may return prose a model writes between tool calls as narration: a thinking block in place of the text
  * (`claudeNarration`). Asked for no thinking text, the block comes back empty and the reply is lost; summarized, it holds
  * the server's summary of that prose, which Sotto shows as the reply. Claude Code's own default asks for summaries of
@@ -1714,7 +1720,7 @@ export class ClaudeStreamJsonHost implements ProviderHost {
     try {
       this.configurationGuards.get(id)?.()
       runtime = { requests: new Map(), answered: new Set(), answerWrites: new Map(), clientRevision: this.clientRevision, watcher: !!profile, mode: alias.runtimeMode ?? 'approval-required', takesNotes: !alias.councilJudge && (!!profile || this.workerRoles?.overseerNote !== undefined), subagentMode: roles?.subagents?.widest,
-        ...(effort.ultracode && effort.effortLevel ? { ultracodeEffort: effort.effortLevel as UltracodeEffort } : {}), protocol: new ClaudeProtocol(this.executable, args, alias.cwd, { ...this.client.environment(), ...(toolTimeoutMs ? { MCP_TOOL_TIMEOUT: String(toolTimeoutMs) } : {}) }, this.options.requestTimeoutMs ?? 15000,
+        ...(effort.ultracode && effort.effortLevel ? { ultracodeEffort: effort.effortLevel as UltracodeEffort } : {}), protocol: new ClaudeProtocol(this.executable, args, alias.cwd, { ...this.client.environment(), ...(profile || alias.councilJudge ? {} : PLAN_TOOLS_ENVIRONMENT), ...(toolTimeoutMs ? { MCP_TOOL_TIMEOUT: String(toolTimeoutMs) } : {}) }, this.options.requestTimeoutMs ?? 15000,
       frame => {
         if (this.runtimes.get(id) === runtime) this.frame(id, frame)
         // A spare keeps a bounded handful of frames for the send that adopts it; one that says more is let go.

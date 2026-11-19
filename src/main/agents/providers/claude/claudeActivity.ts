@@ -16,6 +16,17 @@ const json = (value: unknown): string | undefined => value === undefined ? undef
 const MAX_TRANSCRIPT_TARGETS = 64
 /** The tool call and task an agent is known by, either of which may be missing. */
 type AgentKeys = { tool?: string | undefined; task?: string | undefined }
+/**
+ * Claude Code's task tools (2.1.328), which keep the session's plan as tasks it creates and updates one call at a time.
+ * TaskStop stops background work and is no part of the plan.
+ */
+const PLAN_TASK_TOOLS = new Set(['TaskCreate', 'TaskUpdate', 'TaskList', 'TaskGet'])
+/** One of the session's tasks as Claude's task tools last left it. */
+type PlanTask = { subject: string; status: unknown; active?: string | undefined }
+/** How many applied task calls are remembered, so a transcript read that delivers one again changes nothing. */
+const MAX_APPLIED_TASK_CALLS = 512
+/** A task tool call of the main thread, waiting on its result. */
+type TaskCall = { name: string; input: Record<string, unknown> | undefined }
 /** An activity row holds at most 200 agents: the workflow's own and this many of its agents. */
 const MAX_WORKFLOW_AGENTS = 199
 const iso = (value: unknown): string | undefined => typeof value === 'number' && Number.isFinite(value) && value > 0 ? new Date(value).toISOString() : undefined
@@ -90,6 +101,16 @@ export class ClaudeActivity {
   /** How many of each workflow's agents are waiting for a place to start, by the workflow's observed id. */
   private readonly queuedAgents = new Map<string, number>()
   private readonly thinking = new ClaudeThinking()
+  /** The tasks of the turn's plan by id: those open when it began and those it made or changed. */
+  private readonly planTasks = new Map<string, PlanTask>()
+  /** Tasks an earlier turn finished, by id: they are that turn's plan, kept only so a call that opens one again can name it. */
+  private readonly finishedTasks = new Map<string, PlanTask>()
+  /** The main thread's task tool calls waiting on their results, by tool call id. */
+  private readonly taskCalls = new Map<string, TaskCall>()
+  /** Task calls whose results are applied, oldest first: the live stream and the transcript read both deliver them. */
+  private readonly appliedTaskCalls = new Set<string>()
+  /** The turn the plan is shown for. */
+  private planTurn: string | undefined
   /**
    * `capture` keeps a tool result's pictures in the thread media store and answers their handles (ADR-0170); absent while
    * the `inline-media` Owl feature is off, when a row carries none.
@@ -148,6 +169,8 @@ export class ClaudeActivity {
       if (typeof block.id !== 'string' || typeof block.name !== 'string') return
       const input = object(block.input)
       const name = block.name
+      // A task call changes the plan once its result says it did. It is not a step of its own: the turn's plan row is.
+      if (!parentTool && PLAN_TASK_TOOLS.has(name)) { if (!this.appliedTaskCalls.has(block.id)) this.taskCalls.set(block.id, { name, input }); return }
       const old = findAgentActivity(previous, `claude-tool-${block.id}`) ?? this.readActivity?.(`claude-tool-${block.id}`)
       const kind = /^(Bash|PowerShell|Shell)$/u.test(name) ? 'command' : /^(Write|Edit|MultiEdit|NotebookEdit)$/u.test(name) ? 'file-change'
         : /^(Agent|Task)$/u.test(name) ? 'subagent' : /^Todo(Write|Update)$/u.test(name) ? 'plan' : 'tool'
@@ -198,6 +221,15 @@ export class ClaudeActivity {
             ? { startedAt: new Date(Date.parse(observedAt) - durationMs).toISOString(), completedAt: observedAt, timingSource: 'provider' as const, durationMs } : {}
           rows.push(claudeThinkingRow(place, claudeThinkingId(replyId, index), 'completed', words, timed))
         }
+      }
+      if (block.type === 'tool_result' && typeof block.tool_use_id === 'string' && this.appliedTaskCalls.has(block.tool_use_id)) continue
+      if (block.type === 'tool_result' && typeof block.tool_use_id === 'string' && this.taskCalls.has(block.tool_use_id)) {
+        const plan = this.taskResult(previous, this.taskCalls.get(block.tool_use_id)!, block, object(frame.tool_use_result) ?? object(frame.toolUseResult), turnId, base)
+        this.taskCalls.delete(block.tool_use_id)
+        this.appliedTaskCalls.add(block.tool_use_id)
+        if (this.appliedTaskCalls.size > MAX_APPLIED_TASK_CALLS) this.appliedTaskCalls.delete(this.appliedTaskCalls.values().next().value!)
+        if (plan) rows.push(plan)
+        continue
       }
       if (block.type === 'tool_result' && typeof block.tool_use_id === 'string') {
         const old = findAgentActivity(previous, `claude-tool-${block.tool_use_id}`) ?? this.readActivity?.(`claude-tool-${block.tool_use_id}`)
@@ -280,6 +312,7 @@ export class ClaudeActivity {
     // A turn that ends with a block still open (stopped mid-thought) settles its row, and those of subagents it ran in the foreground.
     if (frame.type === 'result' && !parentTool) rows.push(...this.thinking.turnEnded(turnEnd ?? (frame.is_error === true ? 'failed' : 'completed'), observedAt))
     // A call still being written when its turn ended, cut by a stop or a steer, was never made, and nothing will answer it.
+    if (frame.type === 'result' && !parentTool) this.taskCalls.clear()
     if (frame.type === 'result' && !parentTool) for (const [key, open] of this.blocks) {
       if (!key.startsWith('main:')) continue
       this.blocks.delete(key)
@@ -418,6 +451,69 @@ export class ClaudeActivity {
     const byTask = entry.task ? this.agentsByTask.get(entry.task) : undefined
     const byTool = entry.tool ? this.agentsByTool.get(entry.tool) : undefined
     return byTask?.id === id ? byTask : byTool?.id === id ? byTool : this.workflowMembers.get(id)
+  }
+  /**
+   * The turn's plan row after a task call's result. Claude Code 2.1.328 keeps one task list for the whole session, so a
+   * turn's checklist is the work still open when it began and what it makes or changes; a task an earlier turn finished
+   * stays with that turn, and shows again only if this turn changes it. Each result costs the size of the turn's plan,
+   * however many tasks the session has finished. A failed call changed nothing. TaskCreate's result names the new task's
+   * id; TaskUpdate names one by id, with a status of pending, in_progress, completed or deleted; TaskList and TaskGet
+   * answer with the tasks as they are, which a projector that started partway through a session learns the list from.
+   */
+  private taskResult(previous: readonly AgentActivity[], call: TaskCall, block: ClaudeFrame, result: Record<string, unknown> | undefined,
+    turnId: string, place: Omit<AgentActivity, 'id' | 'kind' | 'status' | 'title'>): AgentActivity | undefined {
+    if (block.is_error === true) return undefined
+    // A projector made partway through a session (Sotto started again, or the CLI reconnected) picks the plan up from the
+    // newest plan row it was given, whose steps carry Claude's task ids.
+    if (this.planTurn === undefined) {
+      const last = previous.findLast(row => row.kind === 'plan' && row.id.startsWith('claude-plan-') && row.steps?.some(step => step.id))
+      if (last) {
+        this.planTurn = last.turnId
+        for (const step of last.steps!) if (step.id) this.planTasks.set(step.id, { subject: step.text, status: step.status === 'running' ? 'in_progress' : step.status, ...(step.active ? { active: step.active } : {}) })
+      }
+    }
+    if (this.planTurn !== turnId) {
+      this.planTurn = turnId
+      for (const [id, task] of this.planTasks) if (task.status === 'completed') { this.planTasks.delete(id); this.finishedTasks.set(id, task) }
+    }
+    const { input } = call
+    const known = (id: string, task: Record<string, unknown> | undefined): PlanTask | undefined => {
+      const old = this.planTasks.get(id) ?? this.finishedTasks.get(id)
+      const subject = text(task?.subject) ?? old?.subject
+      if (!subject) return undefined
+      const active = text(task?.activeForm) ?? old?.active
+      return { subject, status: task?.status ?? old?.status ?? 'pending', ...(active ? { active } : {}) }
+    }
+    // A call that makes or changes a task puts it in the turn's plan. A read leaves a task an earlier turn finished where it is.
+    const put = (id: string, task: PlanTask | undefined, changed: boolean): void => {
+      if (!task) return
+      const planned = changed || task.status !== 'completed' || this.planTasks.has(id)
+      this.planTasks.delete(id); this.finishedTasks.delete(id)
+      const into = planned ? this.planTasks : this.finishedTasks
+      into.set(id, task)
+    }
+    if (call.name === 'TaskCreate') {
+      const made = object(result?.task)
+      const id = typeof made?.id === 'string' ? made.id : /^Task #(\S+) created/u.exec(claudeText(block.content))?.[1]
+      if (id) put(id, known(id, { ...input, ...made, status: 'pending' }), true)
+    } else if (call.name === 'TaskUpdate' && typeof input?.taskId === 'string') {
+      if (input.status === 'deleted') { this.planTasks.delete(input.taskId); this.finishedTasks.delete(input.taskId) }
+      else put(input.taskId, known(input.taskId, input), true)
+    } else if (call.name === 'TaskList' && Array.isArray(result?.tasks)) {
+      const listed = result.tasks.flatMap(value => { const task = object(value); return typeof task?.id === 'string' ? [{ id: task.id, task: known(task.id, task), planned: this.planTasks.has(task.id) }] : [] })
+      this.planTasks.clear(); this.finishedTasks.clear()
+      for (const { id, task, planned } of listed) if (task) (planned || task.status !== 'completed' ? this.planTasks : this.finishedTasks).set(id, task)
+    } else if (call.name === 'TaskGet') {
+      const got = object(result?.task)
+      if (typeof got?.id === 'string') put(got.id, known(got.id, got), false)
+    }
+    // Claude numbers its tasks; a task opened again keeps its place among them.
+    const steps = planSteps([...this.planTasks].sort(([a], [b]) => Number(a) - Number(b) || 0)
+      .map(([taskId, task]) => ({ text: task.subject, status: task.status, active: task.active, id: taskId })))
+    const id = `claude-plan-${turnId}`
+    const old = findAgentActivity(previous, id)
+    // The row keeps where and when the turn's plan first appeared; only its steps change.
+    return steps.length || old ? { ...place, ...old, id, sequence: 0, kind: 'plan', status: 'running', title: 'Plan', steps } : undefined
   }
   private watchTranscript(agent: ObservedAgent, transcript: ClaudeSubagentTranscript, tool: string | undefined, task: string | undefined): void {
     if (agent.model || !CLAUDE_TRANSCRIPT_ID.test(transcript.agentId) || (transcript.runId !== undefined && !CLAUDE_TRANSCRIPT_ID.test(transcript.runId))) return
