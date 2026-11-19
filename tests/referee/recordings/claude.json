@@ -3490,13 +3490,122 @@
    }
   },
   {
-   "say": "plain reads the shell",
+   "say": "plain reads the events",
    "by": "plain",
-   "sent": {"id":"plain-5","op":"shell","session":"<secret>","v":1},
+   "sent": {"afterSeq":0,"id":"plain-5","op":"events","session":"<secret>","threadId":"<id:6>","v":1},
    "clients": {
     "desktop": {"frames":[],"held":[]},
     "iphone": {"frames":[],"held":[]},
-    "plain": {"frames":[{"id":"plain-5","ok":true,"result":{"$shellPatch":[]},"v":1}],"held":[]}
+    "plain": {
+     "frames": [
+      {
+       "id": "plain-5",
+       "ok": true,
+       "result": {
+        "events": [
+         {
+          "event": {
+           "at": "<time>",
+           "kind": "message-added",
+           "message": {"commandId":"<id:8>","createdAt":"<time>","id":"<id:9>","role":"user","text":"Referee prompt one"}
+          },
+          "seq": 1,
+          "threadId": "<id:6>"
+         },
+         {
+          "event": {
+           "at": "<time>",
+           "kind": "message-added",
+           "message": {"createdAt":"<time>","id":"<id:11>","role":"assistant","text":"Referee reply one","turnMessageId":"<id:9>"}
+          },
+          "seq": 2,
+          "threadId": "<id:6>"
+         },
+         {
+          "event": {
+           "at": "<time>",
+           "kind": "message-added",
+           "message": {"commandId":"<id:13>","createdAt":"<time>","id":"<id:12>","role":"user","text":"Referee prompt two"}
+          },
+          "seq": 3,
+          "threadId": "<id:6>"
+         },
+         {
+          "event": {
+           "at": "<time>",
+           "attribution": {"clientId":"<id:3>","transport":"socket","user":"Referee iphone"},
+           "kind": "answer-given",
+           "requestId": "<id:17>"
+          },
+          "seq": 4,
+          "threadId": "<id:6>"
+         },
+         {
+          "event": {
+           "at": "<time>",
+           "kind": "message-added",
+           "message": {"createdAt":"<time>","id":"<id:18>","role":"assistant","text":"Referee reply two","turnMessageId":"<id:12>"}
+          },
+          "seq": 5,
+          "threadId": "<id:6>"
+         },
+         {
+          "event": {
+           "at": "<time>",
+           "kind": "message-added",
+           "message": {"commandId":"<id:20>","createdAt":"<time>","id":"<id:19>","role":"user","text":"Referee prompt three"}
+          },
+          "seq": 6,
+          "threadId": "<id:6>"
+         },
+         {
+          "event": {
+           "approved": true,
+           "at": "<time>",
+           "attribution": {"clientId":"<id:4>","transport":"socket","user":"Referee plain"},
+           "kind": "answer-given",
+           "requestId": "<id:24>"
+          },
+          "seq": 7,
+          "threadId": "<id:6>"
+         },
+         {
+          "event": {
+           "at": "<time>",
+           "kind": "message-added",
+           "message": {"createdAt":"<time>","id":"<id:25>","role":"assistant","text":"Referee reply three","turnMessageId":"<id:19>"}
+          },
+          "seq": 8,
+          "threadId": "<id:6>"
+         },
+         {
+          "event": {
+           "at": "<time>",
+           "kind": "message-added",
+           "message": {"commandId":"<id:27>","createdAt":"<time>","id":"<id:28>","role":"user","text":"Referee prompt four"}
+          },
+          "seq": 9,
+          "threadId": "<id:6>"
+         }
+        ],
+        "hasMore": false,
+        "latestSeq": 9
+       },
+       "v": 1
+      }
+     ],
+     "held": []
+    }
+   }
+  },
+  {
+   "say": "plain reads the shell",
+   "by": "plain",
+   "sent": {"id":"plain-6","op":"shell","session":"<secret>","v":1},
+   "clients": {
+    "desktop": {"frames":[],"held":[]},
+    "iphone": {"frames":[],"held":[]},
+    "plain": {"frames":[{"id":"plain-6","ok":true,"result":{"$shellPatch":[]},"v":1}],"held":[]}
    }
   },
   {
