@@ -1,0 +1,24 @@
+[
+ {
+  "cycle": 0,
+  "electron_processes_left_2s_after": [],
+  "exit": "exit status: 0",
+  "first_frame_in_window_ms": 897.45334,
+  "fps": 59.7,
+  "helper_processes": 9,
+  "helper_pss_mb": 349,
+  "process_types": [
+   "browser",
+   "browser",
+   "browser",
+   "browser",
+   "browser",
+   "browser",
+   "browser",
+   "browser",
+   "browser"
+  ],
+  "stop_ms": 65.881111,
+  "window_pss_mb": 167
+ }
+]

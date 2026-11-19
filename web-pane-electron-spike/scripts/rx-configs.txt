@@ -1,0 +1,16 @@
+# version  name                   format   switches
+cef        cef-control            argb     -
+43.8.3     wayland-vulkan         argb     --ozone-platform=wayland --enable-features=Vulkan
+43.8.3     wayland-angle-vk       argb     --ozone-platform=wayland --use-angle=vulkan --enable-features=Vulkan
+43.8.3     wayland-angle-vk-gmb   argb     --ozone-platform=wayland --use-angle=vulkan --enable-features=Vulkan --enable-native-gpu-memory-buffers --enable-zero-copy
+43.8.3     wayland-angle-vk-f16   rgbaf16  --ozone-platform=wayland --use-angle=vulkan --enable-features=Vulkan
+43.8.3     wayland-graphite       argb     --ozone-platform=wayland --use-angle=vulkan --enable-features=Vulkan,SkiaGraphite
+43.8.3     wayland-blocklist-off  argb     --ozone-platform=wayland --use-angle=vulkan --enable-features=Vulkan --ignore-gpu-blocklist
+43.8.3     xwayland-angle-vk      argb     --ozone-platform=x11 --use-angle=vulkan --enable-features=Vulkan
+45.4.1     wayland-vulkan         argb     --ozone-platform=wayland --enable-features=Vulkan
+45.4.1     wayland-angle-vk       argb     --ozone-platform=wayland --use-angle=vulkan --enable-features=Vulkan
+45.4.1     wayland-angle-vk-gmb   argb     --ozone-platform=wayland --use-angle=vulkan --enable-features=Vulkan --enable-native-gpu-memory-buffers --enable-zero-copy
+45.4.1     wayland-angle-vk-f16   rgbaf16  --ozone-platform=wayland --use-angle=vulkan --enable-features=Vulkan
+45.4.1     wayland-graphite       argb     --ozone-platform=wayland --use-angle=vulkan --enable-features=Vulkan,SkiaGraphite
+45.4.1     wayland-blocklist-off  argb     --ozone-platform=wayland --use-angle=vulkan --enable-features=Vulkan --ignore-gpu-blocklist
+45.4.1     xwayland-angle-vk      argb     --ozone-platform=x11 --use-angle=vulkan --enable-features=Vulkan

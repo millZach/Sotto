@@ -1,0 +1,116 @@
+{
+ "electron": "43.8.3",
+ "config": "wayland-angle-vk",
+ "first": {
+  "ev": "state",
+  "ms": 1125,
+  "state": {
+   "rafFrames": 44,
+   "video": {
+    "currentTime": 0.725333,
+    "paused": false,
+    "readyState": 4,
+    "error": null,
+    "videoDecodedBytes": 10795,
+    "audioDecodedBytes": 11885,
+    "quality": {
+     "totalVideoFrames": 27,
+     "droppedVideoFrames": 2
+    },
+    "audioRmsMax": 0.0179031409816686,
+    "audioContext": "running"
+   },
+   "canPlayType": {
+    "h264": "probably",
+    "aac": "probably",
+    "h264aac": "probably",
+    "hevc": "no",
+    "vp9": "probably",
+    "opus": "probably"
+   },
+   "field": "",
+   "active": "BODY",
+   "events": []
+  },
+  "stats": {
+   "paints": 43,
+   "withTexture": 43,
+   "withoutTexture": 0,
+   "sendErrors": 0,
+   "released": 43,
+   "releasedUnacked": 0,
+   "formats": {
+    "bgra": 43
+   },
+   "planes": {
+    "1": 43
+   },
+   "modifiers": {
+    "0": 43
+   },
+   "roundTripUs": {
+    "n": 43,
+    "p50": 779,
+    "p95": 1022,
+    "max": 2441
+   },
+   "held": 0
+  }
+ },
+ "last": {
+  "ev": "state",
+  "ms": 6125,
+  "state": {
+   "rafFrames": 344,
+   "video": {
+    "currentTime": 5.717333,
+    "paused": false,
+    "readyState": 4,
+    "error": null,
+    "videoDecodedBytes": 37179,
+    "audioDecodedBytes": 71889,
+    "quality": {
+     "totalVideoFrames": 177,
+     "droppedVideoFrames": 2
+    },
+    "audioRmsMax": 0.01806120543068638,
+    "audioContext": "running"
+   },
+   "canPlayType": {
+    "h264": "probably",
+    "aac": "probably",
+    "h264aac": "probably",
+    "hevc": "no",
+    "vp9": "probably",
+    "opus": "probably"
+   },
+   "field": "",
+   "active": "BODY",
+   "events": []
+  },
+  "stats": {
+   "paints": 343,
+   "withTexture": 343,
+   "withoutTexture": 0,
+   "sendErrors": 0,
+   "released": 343,
+   "releasedUnacked": 0,
+   "formats": {
+    "bgra": 343
+   },
+   "planes": {
+    "1": 343
+   },
+   "modifiers": {
+    "0": 343
+   },
+   "roundTripUs": {
+    "n": 343,
+    "p50": 752,
+    "p95": 1526,
+    "max": 2441
+   },
+   "held": 0
+  }
+ }
+}

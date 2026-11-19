@@ -1,0 +1,18 @@
+[package]
+name = "wpe-receiver"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "Throwaway spike: a Rust window drawing an Electron helper's off-screen frames, received as dmabufs"
+
+[dependencies]
+wgpu = "30"
+winit = "0.30"
+pollster = "0.4"
+bytemuck = { version = "1", features = ["derive"] }
+serde_json = "1"
+libc = "0.2"
+ash = "0.38"
+
+[profile.release]
+debug = false

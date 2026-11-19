@@ -1,0 +1,19 @@
+# name             format   shared  switches
+software-baseline  argb     0       --ozone-platform=wayland
+wayland            argb     1       --ozone-platform=wayland
+wayland-vulkan     argb     1       --ozone-platform=wayland --enable-features=Vulkan
+wayland-angle-vk   argb     1       --ozone-platform=wayland --use-angle=vulkan --enable-features=Vulkan
+wayland-angle-egl  argb     1       --ozone-platform=wayland --use-angle=gl-egl
+wayland-f16        rgbaf16  1       --ozone-platform=wayland
+wayland-nv12       nv12     1       --ozone-platform=wayland
+xwayland           argb     1       --ozone-platform=x11
+xwayland-vulkan    argb     1       --ozone-platform=x11 --enable-features=Vulkan
+xwayland-angle-vk  argb     1       --ozone-platform=x11 --use-angle=vulkan --enable-features=Vulkan
+xwayland-angle-egl argb     1       --ozone-platform=x11 --use-angle=gl-egl
+xwayland-vk-f16    rgbaf16  1       --ozone-platform=x11 --enable-features=Vulkan
+xwayland-vk-nv12   nv12     1       --ozone-platform=x11 --enable-features=Vulkan
+headless           argb     1       --ozone-platform=headless
+headless-vulkan    argb     1       --ozone-platform=headless --enable-features=Vulkan
+wayland-angle-vk-nv12 nv12  1       --ozone-platform=wayland --use-angle=vulkan --enable-features=Vulkan
+default-ozone      argb     1       --use-angle=vulkan --enable-features=Vulkan
+default-ozone-plain argb    1       --enable-features=Vulkan

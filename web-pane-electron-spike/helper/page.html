@@ -1,0 +1,53 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>electron helper spike</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #f4f1ea; font: 16px sans-serif; overflow: hidden; }
+  #box { position: absolute; top: 60px; left: 0; width: 120px; height: 120px; border-radius: 16px; }
+  #count { position: absolute; top: 8px; right: 16px; font: 600 22px monospace; }
+  input { position: absolute; left: 20px; top: 8px; width: 300px; height: 26px; font-size: 16px; }
+  video { position: absolute; left: 20px; top: 200px; width: 640px; height: 360px; background: #000; }
+</style>
+<input id="field" placeholder="type here">
+<div id="count">0</div>
+<div id="box"></div>
+<video id="v" src="clip.mp4" autoplay loop playsinline></video>
+<script>
+  const box = document.getElementById('box'), count = document.getElementById('count'), v = document.getElementById('v')
+  let n = 0
+  function tick(t) {
+    n++
+    box.style.transform = `translateX(${(Math.sin(t / 700) * 0.5 + 0.5) * (innerWidth - 140)}px)`
+    box.style.background = `hsl(${(t / 10) % 360} 80% 50%)`
+    count.textContent = n
+    requestAnimationFrame(tick)
+  }
+  requestAnimationFrame(tick)
+  const events = []
+  for (const type of ['mousedown', 'click', 'keydown', 'input', 'focus', 'blur'])
+    document.addEventListener(type, e => { if (events.length < 200) events.push({ type, trusted: e.isTrusted, key: e.key, target: e.target.id || e.target.tagName, x: e.clientX, y: e.clientY }) }, true)
+  // Decoded audio samples, measured before the output: the AAC track feeds an analyser.
+  let analyser = null, rmsMax = 0
+  function hookAudio() {
+    if (analyser) return
+    try {
+      const ctx = new AudioContext()
+      const src = ctx.createMediaElementSource(v)
+      analyser = ctx.createAnalyser(); analyser.fftSize = 2048
+      src.connect(analyser); analyser.connect(ctx.destination)
+      const buf = new Float32Array(analyser.fftSize)
+      setInterval(() => { analyser.getFloatTimeDomainData(buf); let s = 0; for (const x of buf) s += x * x; rmsMax = Math.max(rmsMax, Math.sqrt(s / buf.length)) }, 100)
+    } catch (e) { events.push({ type: 'audio-error', key: String(e) }) }
+  }
+  v.addEventListener('playing', hookAudio)
+  window.__state = () => ({
+    rafFrames: n,
+    video: { currentTime: v.currentTime, paused: v.paused, readyState: v.readyState, error: v.error && v.error.message,
+      videoDecodedBytes: v.webkitVideoDecodedByteCount, audioDecodedBytes: v.webkitAudioDecodedByteCount,
+      quality: v.getVideoPlaybackQuality && (({ totalVideoFrames, droppedVideoFrames }) => ({ totalVideoFrames, droppedVideoFrames }))(v.getVideoPlaybackQuality()),
+      audioRmsMax: rmsMax, audioContext: analyser ? analyser.context.state : null },
+    canPlayType: Object.fromEntries(Object.entries({ h264: 'video/mp4; codecs="avc1.4D401E"', aac: 'audio/mp4; codecs="mp4a.40.2"', h264aac: 'video/mp4; codecs="avc1.4D401E, mp4a.40.2"', hevc: 'video/mp4; codecs="hvc1.1.6.L93.B0"', vp9: 'video/webm; codecs="vp9"', opus: 'audio/webm; codecs="opus"' }).map(([k, t]) => [k, v.canPlayType(t) || 'no'])),
+    field: document.getElementById('field').value, active: document.activeElement && (document.activeElement.id || document.activeElement.tagName),
+    events,
+  })
+</script>

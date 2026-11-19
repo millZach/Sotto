@@ -1,0 +1,235 @@
+{
+ "adapter": "NVIDIA GeForce RTX 4060",
+ "cycles": [
+  {
+   "cycle": 0,
+   "electron_processes_left_2s_after": [],
+   "exit": "exit status: 0",
+   "first_frame_in_window_ms": 682.245455,
+   "fps": 60.2,
+   "helper_processes": 10,
+   "helper_pss_mb": 469,
+   "process_types": [
+    "browser",
+    "utility",
+    "zygote",
+    "zygote",
+    "zygote",
+    "zygote",
+    "zygote",
+    "zygote",
+    "zygote",
+    "zygote"
+   ],
+   "stop_ms": 106.29913,
+   "window_pss_mb": 129
+  }
+ ],
+ "distinct_sample_hashes": 12,
+ "frames": 363,
+ "import_and_copy_us": {
+  "max": 4473,
+  "n": 363,
+  "p50": 719,
+  "p95": 1421
+ },
+ "import_errors": [],
+ "pixel_samples": 12,
+ "samples": [
+  {
+   "cycle": 0,
+   "first_px": [
+    118,
+    118,
+    118,
+    255
+   ],
+   "frame": 30,
+   "hash": "0964565d47374f48",
+   "mean": 183.9,
+   "modifier": "0x300000000606014",
+   "nonblack": 495,
+   "of": 640,
+   "size": "1280x800"
+  },
+  {
+   "cycle": 0,
+   "first_px": [
+    118,
+    118,
+    118,
+    255
+   ],
+   "frame": 60,
+   "hash": "0e5023d7f3f83cb7",
+   "mean": 183.3,
+   "modifier": "0x300000000606014",
+   "nonblack": 495,
+   "of": 640,
+   "size": "1280x800"
+  },
+  {
+   "cycle": 0,
+   "first_px": [
+    118,
+    118,
+    118,
+    255
+   ],
+   "frame": 90,
+   "hash": "5f584f0643d8bd65",
+   "mean": 184.0,
+   "modifier": "0x300000000606014",
+   "nonblack": 495,
+   "of": 640,
+   "size": "1280x800"
+  },
+  {
+   "cycle": 0,
+   "first_px": [
+    118,
+    118,
+    118,
+    255
+   ],
+   "frame": 120,
+   "hash": "c91478422bbbca3b",
+   "mean": 183.6,
+   "modifier": "0x300000000606014",
+   "nonblack": 495,
+   "of": 640,
+   "size": "1280x800"
+  },
+  {
+   "cycle": 0,
+   "first_px": [
+    118,
+    118,
+    118,
+    255
+   ],
+   "frame": 150,
+   "hash": "4c712e5d3dbe82cf",
+   "mean": 183.5,
+   "modifier": "0x300000000606014",
+   "nonblack": 495,
+   "of": 640,
+   "size": "1280x800"
+  },
+  {
+   "cycle": 0,
+   "first_px": [
+    118,
+    118,
+    118,
+    255
+   ],
+   "frame": 180,
+   "hash": "5a213b25fd58a12c",
+   "mean": 183.7,
+   "modifier": "0x300000000606014",
+   "nonblack": 495,
+   "of": 640,
+   "size": "1280x800"
+  },
+  {
+   "cycle": 0,
+   "first_px": [
+    118,
+    118,
+    118,
+    255
+   ],
+   "frame": 210,
+   "hash": "5574d6976a8ceb46",
+   "mean": 183.4,
+   "modifier": "0x300000000606014",
+   "nonblack": 495,
+   "of": 640,
+   "size": "1280x800"
+  },
+  {
+   "cycle": 0,
+   "first_px": [
+    118,
+    118,
+    118,
+    255
+   ],
+   "frame": 240,
+   "hash": "9010e7063e7df24b",
+   "mean": 184.1,
+   "modifier": "0x300000000606014",
+   "nonblack": 495,
+   "of": 640,
+   "size": "1280x800"
+  },
+  {
+   "cycle": 0,
+   "first_px": [
+    118,
+    118,
+    118,
+    255
+   ],
+   "frame": 270,
+   "hash": "c52b4ee38630f584",
+   "mean": 183.2,
+   "modifier": "0x300000000606014",
+   "nonblack": 495,
+   "of": 640,
+   "size": "1280x800"
+  },
+  {
+   "cycle": 0,
+   "first_px": [
+    118,
+    118,
+    118,
+    255
+   ],
+   "frame": 300,
+   "hash": "9c1ba6af6c284696",
+   "mean": 183.8,
+   "modifier": "0x300000000606014",
+   "nonblack": 495,
+   "of": 640,
+   "size": "1280x800"
+  },
+  {
+   "cycle": 0,
+   "first_px": [
+    118,
+    118,
+    118,
+    255
+   ],
+   "frame": 330,
+   "hash": "3b16c4ea85de5f46",
+   "mean": 183.6,
+   "modifier": "0x300000000606014",
+   "nonblack": 495,
+   "of": 640,
+   "size": "1280x800"
+  },
+  {
+   "cycle": 0,
+   "first_px": [
+    118,
+    118,
+    118,
+    255
+   ],
+   "frame": 360,
+   "hash": "ff45a80f20340359",
+   "mean": 183.4,
+   "modifier": "0x300000000606014",
+   "nonblack": 495,
+   "of": 640,
+   "size": "1280x800"
+  }
+ ],
+ "samples_with_nonblack": 12,
+ "switches": "-",
+ "view": "1280x800"
+}
