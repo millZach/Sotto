@@ -88,9 +88,12 @@ const configArguments = Object.entries({ model_provider: 'openai', approval_poli
 // Codex 0.156.1 keeps request_user_input in Default mode behind this feature.
 // Set it on creation and resume, without changing the user's global Codex config.
 // Watcher's is off (#2228): its question held Watcher's turn until the user answered, and Watcher asks with Sotto's ask_user.
+// Codex 0.170.0 offers update_plan, whose `turn/plan/updated` is the thread's plan checklist, only with `tools.update_plan.enabled`.
+// Watcher's tools are chosen for it (#2228), so it is not given one more.
 async function threadConfig(tools: BrowserAgentTools | undefined, threadId: string, reasoningEffort?: string, threadTools: readonly ScopedThreadTools[] = [], watcher = false): Promise<{ config: Record<string, unknown> }> {
   const browser = await browserCodexConfig(tools, threadId, reasoningEffort)
-  const config: Record<string, unknown> = { ...(browser.config as Record<string, unknown> | undefined), 'features.default_mode_request_user_input': !watcher }
+  const config: Record<string, unknown> = { ...(browser.config as Record<string, unknown> | undefined), 'features.default_mode_request_user_input': !watcher,
+    ...(watcher ? {} : { 'tools.update_plan.enabled': true }) }
   // Each of Sotto's scoped servers that answers for this thread: the host setup tools while its setup runs (ADR-0035)
   // and the visual tool while visuals are on (ADR-0056). Like the browser's, they carry no native prompt: adding a host
   // asks the user in the thread itself, and a visual changes nothing outside it. A host check can wait 5 minutes.
