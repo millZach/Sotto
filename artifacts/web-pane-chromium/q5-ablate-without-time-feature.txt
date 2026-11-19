@@ -1,0 +1,8 @@
+marks: [{'mark': 'initialized, no page', 'ms': 0.690619}, {'mark': 'opening one page', 'ms': 240000.90587}, {'mark': 'page loaded=true', 'ms': 240141.723832}, {'mark': 'closing', 'ms': 241141.847212}]
+NetLog requests (first seen s after start, count):
+      0.0s  x1   GET http://clients2.google.com/time/1/current
+NetLog host lookups:
+      0.0s  clients2.google.com
+DNS questions in the capture (first time):
+Packets to service ports:
+      6  2607:f8b0:400a:800::200e.80 TCP

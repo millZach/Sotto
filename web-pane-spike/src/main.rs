@@ -4,7 +4,10 @@
 mod cefapp;
 mod embed;
 mod hub;
+#[cfg(target_os = "linux")]
+mod remote;
 mod runs;
+mod wire;
 
 use cef::*;
 use cefapp::{Config, Seal, set_config};
@@ -78,6 +81,10 @@ fn main() -> ExitCode {
         return ExitCode::from(code.max(0) as u8);
     }
 
+    #[cfg(target_os = "linux")]
+    if mode == "helper" {
+        return remote::run_helper(&args, &mut app);
+    }
     if mode == "embed" || mode == "child" {
         return embed::run(&args, &mut app, &mode);
     }

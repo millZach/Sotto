@@ -1,0 +1,33 @@
+marks: [{'mark': 'initialized, no page', 'ms': 0.150106}, {'mark': 'opening one page', 'ms': 240000.239255}, {'mark': 'page loaded=true', 'ms': 240094.166021}, {'mark': 'closing', 'ms': 241094.239327}]
+NetLog requests (first seen s after start, count):
+      0.0s  x21  POST https://update.googleapis.com/service/update2/json
+      0.3s  x1   GET http://edgedl.me.gvt1.com/edgedl/diffgen-puffin/ceofaddefefcbblgcgnibnonglccbfja/aee9afe03763f65f53cc0e53
+    180.2s  x1   GET http://edgedl.me.gvt1.com/edgedl/release2/chrome_component/acqexsh26ysyu3zxeotqtsp63idq_4.10.3112.0/oimom
+    184.5s  x1   GET http://edgedl.me.gvt1.com/edgedl/diffgen-puffin/gcmjkmgdlgnkkcocmoeiminaijmmjnii/6bf09eb90ed9ee14632b09da
+    186.8s  x1   GET http://edgedl.me.gvt1.com/edgedl/diffgen-puffin/ninodabcejpeglfjbkhdplaoglpcbffj/d48966c8ee65ceba51749b9e
+    189.2s  x1   GET http://edgedl.me.gvt1.com/edgedl/release2/chrome_component/adhr77yzjz2qlqkv6thtqq2efneq_2026.10.12.1/kiab
+    191.7s  x1   GET http://edgedl.me.gvt1.com/edgedl/release2/chrome_component/V3P1l2hLvLw_7/7_all_sslErrorAssistant.crx3
+    194.2s  x1   GET http://edgedl.me.gvt1.com/edgedl/diffgen-puffin/obedbbhbpmojnkanicioggnmelmoomoc/e40bb820d29fb9a9bf8935fa
+    198.0s  x1   GET http://edgedl.me.gvt1.com/edgedl/diffgen-puffin/khaoiebndkojlmppeemjhbpbandiljpe/acbfc9c9cf8793ed2fc41209
+    201.2s  x1   GET http://edgedl.me.gvt1.com/edgedl/release2/chrome_component/ad44ln6gxo3yqr3z5knw3ajp5bca_10914/hfnkpimlhhg
+    205.8s  x1   GET http://edgedl.me.gvt1.com/edgedl/release2/chrome_component/acpeapixpwuzscfa5h5j5m7c4xaa_2025.6.16.0/niikh
+    209.9s  x1   GET http://edgedl.me.gvt1.com/edgedl/release2/chrome_component/acaldksiunzh56452py2db5mnbpa_120.0.6050.0/jamh
+    214.4s  x1   GET http://edgedl.me.gvt1.com/edgedl/release2/chrome_component/adibsui7526bkzxrryewxzccgpxq_1839/efniojlnjndm
+    218.9s  x1   GET http://edgedl.me.gvt1.com/edgedl/diffgen-puffin/jflookgnkcckhobaglndicnbbgbonegd/0cf1155b4d9e26e773c8df0f
+    223.5s  x1   GET http://edgedl.me.gvt1.com/edgedl/release2/chrome_component/acrx7ouhu6es4mtakecyfqbyef2q_1.1.0.3/laoigpbln
+    228.0s  x1   GET http://edgedl.me.gvt1.com/edgedl/release2/chrome_component/j2hxfei2occ5siitujtlwgp6xi_3/ojhpjlocmbogdgmfp
+    228.3s  x1   GET http://edgedl.me.gvt1.com/edgedl/release2/chrome_component/ac55zopqc7vere3bm2pinwvz3d6q_4/hajigopbbjhghbf
+    228.5s  x1   GET http://edgedl.me.gvt1.com/edgedl/release2/chrome_component/l5vix5qkshcvl7bpliorcru2xm_8.5419.4434/pficcdd
+    228.8s  x1   GET http://edgedl.me.gvt1.com/edgedl/diffgen-puffin/ggkkehgbnfjpeggfpleeakpidbkibbmn/c4dacdb28122ddeb772f8502
+    229.2s  x1   GET http://edgedl.me.gvt1.com/edgedl/diffgen-puffin/bjbcblmdcnggnibecjikpoljcgkbgphl/a94f415e84d9aa291f0afb5a
+NetLog host lookups:
+      0.0s  update.googleapis.com
+      0.3s  edgedl.me.gvt1.com
+DNS questions in the capture (first time):
+Packets to service ports:
+   2207  2600:1900:4110:86f::.80 TCP
+    105  2607:f8b0:400a:803::200e.443 UDP
+     60  2605:59c8:1f8:d508:daee:46b3:e881:ab99.49262 UDP
+     42  2605:59c8:1f8:d508:daee:46b3:e881:ab99.49497 UDP
+     26  2605:59c8:1f8:d508:daee:46b3:e881:ab99.46511 UDP
+     24  2607:f8b0:400a:803::200e.443 TCP

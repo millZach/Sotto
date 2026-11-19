@@ -1,0 +1,88 @@
+layers: {'csp': True, 'deny': True, 'filter': True, 'no_rtc': True, 'proxy': True, 'webrtc_policy': True}
+  page: origin => sotto-visual://page secure=false
+  page: globals => RTCPeerConnection=function WebTransport=undefined serviceWorker=undefined SharedWorker=function
+  page: fetch 127.0.0.1 => refused TypeError Failed to fetch
+  page: xhr 127.0.0.1 => refused Error xhr error
+  page: websocket 127.0.0.1 => refused Error ws error
+  page: eventsource 127.0.0.1 => refused Error sse error
+  page: beacon 127.0.0.1 => resolved true
+  page: img 127.0.0.1 => refused Error img error
+  page: webtransport 127.0.0.1 => refused ReferenceError WebTransport is not defined
+  page: webrtc stun 127.0.0.1 => resolved gathered []
+  page: webrtc turn udp 127.0.0.1 => refused Error no RTCPeerConnection
+  page: webrtc turn tcp 127.0.0.1 => refused Error no RTCPeerConnection
+  page: fetch 10.99.0.1 => refused TypeError Failed to fetch
+  page: xhr 10.99.0.1 => refused Error xhr error
+  page: websocket 10.99.0.1 => refused Error ws error
+  page: eventsource 10.99.0.1 => refused Error sse error
+  page: beacon 10.99.0.1 => resolved true
+  page: img 10.99.0.1 => refused Error img error
+  page: webtransport 10.99.0.1 => refused ReferenceError WebTransport is not defined
+  page: webrtc stun 10.99.0.1 => refused Error no RTCPeerConnection
+  page: webrtc turn udp 10.99.0.1 => refused Error no RTCPeerConnection
+  page: webrtc turn tcp 10.99.0.1 => refused Error no RTCPeerConnection
+  page: webrtc stun by name => refused Error no RTCPeerConnection
+  page: fetch by name => refused TypeError Failed to fetch
+  page: worker blob => refused Error worker error 
+  page: worker data => refused Error worker error
+  page: shared worker => refused SecurityError Failed to construct 'SharedWorker': Access to shared workers is denied to origin 'null'.
+  page: service worker => refused TypeError Cannot read properties of undefined (reading 'register')
+  page: about:blank iframe fetch => refused SecurityError Failed to read a named property 'fetch' from 'Window': Blocked a frame with origin "null" from acces
+  page: about:blank iframe rtc => refused SecurityError Failed to read a named property 'RTCPeerConnection' from 'Window': Blocked a frame with origin "null" 
+  page: srcdoc iframe => resolved inserted
+  page: window.open => resolved null
+  page: window.open blank then write => resolved null
+  page: click target=_blank => resolved clicked
+  page: a ping => resolved clicked
+  page: a download data => resolved clicked
+  page: a download http => resolved clicked
+  page: blob download => resolved clicked
+  page: form post blank => resolved submitted
+  page: permission getUserMedia => refused TypeError Cannot read properties of undefined (reading 'getUserMedia')
+  page: permission geolocation => refused Error denied 1
+  page: permission notifications => resolved denied
+  page: permission clipboard read => refused TypeError Cannot read properties of undefined (reading 'readText')
+  page: permission clipboard write => refused TypeError Cannot read properties of undefined (reading 'writeText')
+  page: permission midi => refused TypeError navigator.requestMIDIAccess is not a function
+  page: permission storage persist => refused TypeError Cannot read properties of undefined (reading 'persist')
+  page: permission localStorage => refused SecurityError Failed to read the 'localStorage' property from 'Window': The document is sandboxed and lacks the 'al
+  page: permission indexedDB => refused SecurityError Failed to execute 'open' on 'IDBFactory': access to the Indexed Database API is denied in this context.
+  page: permission cookie => refused SecurityError Failed to set the 'cookie' property on 'Document': The document is sandboxed and lacks the 'allow-same-orig
+  page: permission alert => resolved returned
+  page: permission fullscreen => refused TypeError Disallowed by permissions policy
+  page: permission screen capture => refused TypeError Cannot read properties of undefined (reading 'getDisplayMedia')
+  page: permission usb => refused TypeError Cannot read properties of undefined (reading 'requestDevice')
+  page: permission serial => refused TypeError Cannot read properties of undefined (reading 'requestPort')
+  page: permission hid => refused TypeError Cannot read properties of undefined (reading 'requestDevice')
+  page: permission bluetooth => refused TypeError Cannot read properties of undefined (reading 'requestDevice')
+  page: permission idle detection => refused ReferenceError IdleDetector is not defined
+  page: permission wake lock => refused TypeError Cannot read properties of undefined (reading 'request')
+  page: permission local fonts => refused ReferenceError queryLocalFonts is not defined
+  page: permission window management => refused ReferenceError getScreenDetails is not defined
+  page: permission storage access => refused NotAllowedError requestStorageAccess not allowed
+  page: permission copy command => resolved execCommand copy=false
+  page: redirect => refused TypeError Failed to fetch
+  page: mailto => resolved set
+  page: top navigation => resolved set
+  page: location assign => resolved set
+  page: form post => resolved submitted
+  page: still here after meta refresh time => sotto-visual://page/18e961e1da49d5ed#here
+refused by layer: {'dead-proxy': 5, 'navigation': 5}
+    navigation main=true redirect=0 http://10.99.0.1:8765/canary/download
+    navigation main=true redirect=0 mailto:a@example.com
+    navigation main=true redirect=0 http://10.99.0.1:8765/canary/top-nav
+    navigation main=true redirect=0 http://10.99.0.1:8765/canary/location
+    navigation main=true redirect=0 sotto-visual://page/18e961e1da49d5ed
+second load of the address: None
+canary-loopback: 0 hits {}
+canary-link: 0 hits {}
+dns: 0 hits {}
+link.pcap flows:
+      4  10.99.0 > 224.0.0.22 igmp
+lo.pcap flows:
+     16  127.0.0.1 > 127.0.0.1.40847 TCP
+      4  127.0.0.1 > 127.0.0.1.41912 TCP
+      3  127.0.0.1 > 127.0.0.1.41886 TCP
+      3  127.0.0.1 > 127.0.0.1.41896 TCP
+      3  127.0.0.1 > 127.0.0.1.41906 TCP
+      3  127.0.0.1 > 127.0.0.1.41926 TCP

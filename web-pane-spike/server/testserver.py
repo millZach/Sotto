@@ -34,7 +34,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         pass
 
     def _record(self):
-        log("http", method=self.command, path=self.path, peer=self.client_address[0],
+        log("http", method=self.command, path=self.path, peer=self.client_address[0], ua=(self.headers.get("User-Agent") or "")[:60] if self.path.startswith("/canary/ua") else None,
             local=self.connection.getsockname()[0], canary=self.path.startswith("/canary"))
 
     def do_GET(self):

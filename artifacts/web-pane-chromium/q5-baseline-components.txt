@@ -1,0 +1,20 @@
+ActorSafetyLists | listdata.json | 9.8200.9609
+AmountExtractionHeuristicRegexes | Amount Extraction Heuristic Regexes | 4
+CaptchaProviders | captcha_providers.json | 8.5419.4434
+CertificateRevocation | crl-set-13271329500484810572.data | 10914
+FileTypePolicies | fileTypePolicies | 159.0.8152.0
+MEIPreload | MEI Preload | 1.1.0.3
+OnDeviceHeadSuggestModel | OnDeviceHeadSuggestENUS500000 | 20251024.824731831.14
+OptimizationGuideModelsManifest | Model Manifest | 1.20261018.2
+OptimizationHints | Optimization Hints | 781
+PKIMetadata | pkiMetadata | 1839
+PrivacySandboxAttestationsPreloaded | Privacy Sandbox Attestations | 2025.6.16.0
+SSLErrorAssistant | sslErrorAssistant | 7
+SafetyTips | safetyTips | 3092
+TrustTokenKeyCommitments | trustToken | 2026.10.12.1
+WasmTtsEngine | WASM TTS Engine | 20261029.1
+WidevineCdm | WidevineCdm | 4.10.3112.0
+ZxcvbnData | zxcvbnData | 3
+hyphen-data | hyphens-data | 120.0.6050.0
+146M	.
+Crowd Deny | Crowd Deny | 2026.11.12.125

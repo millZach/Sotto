@@ -1,0 +1,2 @@
+/home/zach/.cache/sotto-tmp/runs/reinit/stderr.log:REINIT trying initialize after shutdown
+exit 139 (SIGSEGV) on the second initialize after shutdown

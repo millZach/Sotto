@@ -1,0 +1,51 @@
+marks: [{'mark': 'initialized, no page', 'ms': 0.144009}, {'mark': 'opening one page', 'ms': 300000.32205899997}, {'mark': 'page loaded=true', 'ms': 300032.85667}, {'mark': 'closing', 'ms': 600035.2456360001}]
+NetLog requests (first seen s after start, count):
+      0.0s  x1   GET http://clients2.google.com/time/1/current
+      0.0s  x1   GET https://redirector.gvt1.com/edgedl/chrome/dict/en-us-10-2.bdic
+      0.0s  x22  POST https://update.googleapis.com/service/update2/json
+      0.1s  x1   GET https://www.google.com/async/folae
+      0.3s  x1   GET https://rr1---sn-nx57ynze.gvt1.com/edgedl/chrome/dict/en-us-10-2.bdic
+      0.3s  x1   GET http://edgedl.me.gvt1.com/edgedl/diffgen-puffin/ceofaddefefcbblgcgnibnonglccbfja/aee9afe03763f65f53cc0e53
+    180.3s  x1   GET http://edgedl.me.gvt1.com/edgedl/release2/chrome_component/acqexsh26ysyu3zxeotqtsp63idq_4.10.3112.0/oimom
+    188.6s  x1   GET http://edgedl.me.gvt1.com/edgedl/diffgen-puffin/obedbbhbpmojnkanicioggnmelmoomoc/e40bb820d29fb9a9bf8935fa
+    196.9s  x1   GET http://edgedl.me.gvt1.com/edgedl/diffgen-puffin/gcmjkmgdlgnkkcocmoeiminaijmmjnii/6bf09eb90ed9ee14632b09da
+    197.0s  x1   GET https://safebrowsing.googleapis.com/v4/threatListUpdates:fetch
+    203.1s  x1   GET http://edgedl.me.gvt1.com/edgedl/release2/chrome_component/di2dotgitskdmiero33s2lyydq_781/lmelglejhemejgi
+    209.5s  x1   GET http://edgedl.me.gvt1.com/edgedl/release2/chrome_component/adhr77yzjz2qlqkv6thtqq2efneq_2026.10.12.1/kiab
+    216.0s  x1   GET http://edgedl.me.gvt1.com/edgedl/diffgen-puffin/ninodabcejpeglfjbkhdplaoglpcbffj/d48966c8ee65ceba51749b9e
+    222.7s  x1   GET http://edgedl.me.gvt1.com/edgedl/release2/chrome_component/acpeapixpwuzscfa5h5j5m7c4xaa_2025.6.16.0/niikh
+    229.4s  x1   GET http://edgedl.me.gvt1.com/edgedl/diffgen-puffin/khaoiebndkojlmppeemjhbpbandiljpe/acbfc9c9cf8793ed2fc41209
+    236.1s  x1   GET http://edgedl.me.gvt1.com/edgedl/release2/chrome_component/ad44ln6gxo3yqr3z5knw3ajp5bca_10914/hfnkpimlhhg
+    245.3s  x1   GET http://edgedl.me.gvt1.com/edgedl/release2/chrome_component/V3P1l2hLvLw_7/7_all_sslErrorAssistant.crx3
+    253.5s  x1   GET http://edgedl.me.gvt1.com/edgedl/release2/chrome_component/acrx7ouhu6es4mtakecyfqbyef2q_1.1.0.3/laoigpbln
+    261.7s  x1   GET http://edgedl.me.gvt1.com/edgedl/release2/chrome_component/adibsui7526bkzxrryewxzccgpxq_1839/efniojlnjndm
+    270.0s  x1   GET http://edgedl.me.gvt1.com/edgedl/diffgen-puffin/jflookgnkcckhobaglndicnbbgbonegd/0cf1155b4d9e26e773c8df0f
+    278.5s  x1   GET http://edgedl.me.gvt1.com/edgedl/diffgen-puffin/ggkkehgbnfjpeggfpleeakpidbkibbmn/c4dacdb28122ddeb772f8502
+    278.7s  x1   GET http://edgedl.me.gvt1.com/edgedl/release2/chrome_component/j2hxfei2occ5siitujtlwgp6xi_3/ojhpjlocmbogdgmfp
+    279.4s  x1   GET http://edgedl.me.gvt1.com/edgedl/release2/chrome_component/acaldksiunzh56452py2db5mnbpa_120.0.6050.0/jamh
+    280.6s  x1   GET http://edgedl.me.gvt1.com/edgedl/release2/chrome_component/ac55zopqc7vere3bm2pinwvz3d6q_4/hajigopbbjhghbf
+    281.6s  x1   GET http://edgedl.me.gvt1.com/edgedl/release2/chrome_component/l5vix5qkshcvl7bpliorcru2xm_8.5419.4434/pficcdd
+    282.6s  x1   GET http://edgedl.me.gvt1.com/edgedl/diffgen-puffin/bjbcblmdcnggnibecjikpoljcgkbgphl/a94f415e84d9aa291f0afb5a
+NetLog host lookups:
+      0.0s  clients2.google.com
+      0.0s  redirector.gvt1.com
+      0.0s  update.googleapis.com
+      0.2s  www.google.com
+      0.3s  rr1---sn-nx57ynze.gvt1.com
+      0.3s  edgedl.me.gvt1.com
+    197.0s  safebrowsing.googleapis.com
+DNS questions in the capture (first time):
+Packets to service ports:
+   2769  2600:1900:4110:86f::.80 TCP
+    389  2605:59c8:1f8:d508:daee:46b3:e881:ab99.44066 UDP
+    101  2607:f8b0:400a:809::200e.443 UDP
+     86  2607:f8b0:400a:5::6.443 UDP
+     54  2605:59c8:1f8:d508:daee:46b3:e881:ab99.36918 UDP
+     45  2605:59c8:1f8:d508:daee:46b3:e881:ab99.53894 UDP
+     34  2607:f8b0:400a:808::200e.443 TCP
+     31  2607:f8b0:400e:c00::65.443 TCP
+     26  2605:59c8:1f8:d508:daee:46b3:e881:ab99.36516 UDP
+     20  2001:4860:482d:7700::.443 TCP
+     14  2607:f8b0:400e:c06::5f.443 TCP
+     10  2607:f8b0:400a:5::6.443 TCP
+      7  2607:f8b0:400a:808::200e.80 TCP

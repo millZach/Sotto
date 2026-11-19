@@ -45,6 +45,6 @@ cpu() { local t=0; for p in $(tree $APP); do s=$(awk '{print $14+$15}' /proc/$p/
 pss() { local t=0; for p in $(tree $APP); do s=$(awk '/^Pss:/{print $2}' /proc/$p/smaps_rollup 2>/dev/null || echo 0); t=$((t + s)); done; echo $t; }
 C0=$(cpu); sleep 10; C1=$(cpu)
 echo "{\"tree_cpu_ticks_10s\": $((C1 - C0)), \"clk_tck\": $(getconf CLK_TCK), \"tree_pss_kb\": $(pss), \"processes\": $(tree $APP | wc -l)}" > "$RUN/cpu.json"
-cat "$RUN/cpu.json"
+cat "$RUN/cpu.json"; python3 -I "$(dirname "$0")/pss_tree.py" $APP > "$RUN/pss.json"
 wait $APP || true
 echo "embed done"

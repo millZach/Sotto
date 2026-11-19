@@ -1,0 +1,864 @@
+{
+  "console": [
+    "deliberate console error",
+    "deliberate console error",
+    "Uncaught Error: deliberate exception"
+  ],
+  "hub": {
+    "accelerated_paints": 0,
+    "first_paint_ms": 139.739325,
+    "loads": [
+      {
+        "status": 200,
+        "t": 131.508985,
+        "url": "http://127.0.0.1:8765/cdp.html"
+      },
+      {
+        "status": 200,
+        "t": 151.826836,
+        "url": "http://127.0.0.1:8765/cdp.html?again"
+      }
+    ],
+    "notes": [
+      "context initialized at 0 ms",
+      "browser created at 9 ms",
+      "browser closed at 23916 ms"
+    ],
+    "paints": 32,
+    "refused": []
+  },
+  "initialize_ms": 0.024209,
+  "rows": [
+    {
+      "method": "Network.enable",
+      "ms": 4.6,
+      "ok": true,
+      "result": {}
+    },
+    {
+      "method": "Runtime.enable",
+      "ms": 0.3,
+      "ok": true,
+      "result": {}
+    },
+    {
+      "check": "Network.responseReceived carries the 404",
+      "detail": {
+        "count": 1
+      },
+      "pass": true
+    },
+    {
+      "check": "Network.loadingFailed for the refused connection",
+      "detail": [
+        "net::ERR_UNSAFE_PORT"
+      ],
+      "pass": true
+    },
+    {
+      "check": "Runtime.exceptionThrown",
+      "detail": [
+        "Error: deliberate exception\n    at http://127.0.0.1:8765/cdp.html?again:28:26"
+      ],
+      "pass": true
+    },
+    {
+      "check": "Runtime.consoleAPICalled type error",
+      "detail": {
+        "count": 1
+      },
+      "pass": true
+    },
+    {
+      "check": "Codecs the page can play (informational: h264 and aac matter for Electron parity)",
+      "detail": "{\"h264\":\"no\",\"aac\":\"no\",\"hevc\":\"no\",\"vp9\":\"probably\",\"av1\":\"probably\",\"opus\":\"probably\",\"mp3\":\"probably\"}",
+      "pass": false
+    },
+    {
+      "method": "Emulation.setDeviceMetricsOverride",
+      "ms": 0.5,
+      "ok": true,
+      "result": {}
+    },
+    {
+      "check": "setDeviceMetricsOverride gives a 1000x700 viewport",
+      "detail": [
+        1000,
+        700
+      ],
+      "pass": true
+    },
+    {
+      "method": "Emulation.clearDeviceMetricsOverride",
+      "ms": 0.3,
+      "ok": true,
+      "result": {}
+    },
+    {
+      "check": "clearDeviceMetricsOverride gives back the 1280x800 view",
+      "detail": [
+        1280,
+        800
+      ],
+      "pass": true
+    },
+    {
+      "method": "Accessibility.getFullAXTree",
+      "ms": 4.2,
+      "ok": true,
+      "result": "{\"nodes\":[{\"backendDOMNodeId\":5,\"childIds\":[\"7\"],\"chromeRole\":{\"type\":\"internalRole\",\"value\":144},\"frameId\":\"F0E46890020AD9E15C3A9947633E9C46\",\"ignored\":false,\"name\":{\"sources\":[{\"attribute\":\"aria-labelledby\",\"type\":\"relatedElement\"},{\"attribute\":\"aria-label\",\"type\":\"attribute\"},{\"attribute\":\"aria-label\",\"superseded\":true,\"type\":\"attribute\"},{\"nativeSource\":\"title\",\"type\":\"relatedElement\",\"value\":{\"type\":\"computedString\",\"value\":\"CDP test page\"}}],\"type\":\"computedString\",\"value\":\"CDP test page\"},\"nodeId\":\"5\",\"properties\":[{\"name\":\"focusable\",\"value\":{\"type\":\"booleanOrUndefined\",\"value\":true}},… (8988 bytes)"
+    },
+    {
+      "check": "AX tree has button 'Press me', heading and the text field",
+      "detail": {
+        "nodes": 20,
+        "sample": [
+          "RootWebArea:CDP test page",
+          "heading:Page automation test",
+          "navigation:Main",
+          "button:Press me",
+          "textbox:Type here",
+          "generic:",
+          "StaticText:Page automation test",
+          "link:Link one",
+          "StaticText:Press",
+          "generic:",
+          "heading:Deep heading",
+          "InlineTextBox:Page automation test",
+          "StaticText:Link one",
+          "InlineTextBox:Press"
+        ]
+      },
+      "pass": true
+    },
+    {
+      "method": "Runtime.evaluate",
+      "ms": 1.0,
+      "ok": true,
+      "result": {
+        "result": {
+          "type": "object",
+          "value": [
+            {
+              "height": 37,
+              "name": "Page automation test",
+              "tag": "h1",
+              "width": 1233,
+              "x": 16,
+              "y": 37.4375
+            },
+            {
+              "height": 17,
+              "name": "Link one",
+              "tag": "a",
+              "width": 60.5,
+              "x": 16,
+              "y": 95.875
+            },
+            {
+              "height": 60,
+              "name": "Press me",
+              "tag": "button",
+              "width": 200,
+              "x": 40,
+              "y": 120
+            },
+            {
+              "height": 24,
+              "name": "Type here",
+              "tag": "input",
+              "width": 308,
+              "x": 40,
+              "y": 200
+            },
+            {
+              "height": 28,
+              "name": "Deep heading",
+              "tag": "h2",
+              "width": 1233,
+              "x": 16,
+              "y": 1013.875
+            }
+          ]
+        }
+      }
+    },
+    {
+      "check": "Runtime.evaluate returnByValue gives the element list",
+      "detail": null,
+      "pass": true
+    },
+    {
+      "method": "Page.getLayoutMetrics",
+      "ms": 0.3,
+      "ok": true,
+      "result": {
+        "contentSize": {
+          "height": 3430,
+          "width": 1265,
+          "x": 0,
+          "y": 0
+        },
+        "cssContentSize": {
+          "height": 3430,
+          "width": 1265,
+          "x": 0,
+          "y": 0
+        },
+        "cssLayoutViewport": {
+          "clientHeight": 800,
+          "clientWidth": 1265,
+          "pageX": 0,
+          "pageY": 0
+        },
+        "cssVisualViewport": {
+          "clientHeight": 800,
+          "clientWidth": 1265,
+          "offsetX": 0,
+          "offsetY": 0,
+          "pageX": 0,
+          "pageY": 0,
+          "scale": 1,
+          "zoom": 1
+        },
+        "layoutViewport": {
+          "clientHeight": 800,
+          "clientWidth": 1265,
+          "pageX": 0,
+          "pageY": 0
+        },
+        "visualViewport": {
+          "clientHeight": 800,
+          "clientWidth": 1265,
+          "offsetX": 0,
+          "offsetY": 0,
+          "pageX": 0,
+          "pageY": 0,
+          "scale": 1,
+          "zoom": 1
+        }
+      }
+    },
+    {
+      "check": "Page.getLayoutMetrics cssVisualViewport is the view less its scrollbar",
+      "detail": {
+        "clientHeight": 800,
+        "clientWidth": 1265,
+        "offsetX": 0,
+        "offsetY": 0,
+        "pageX": 0,
+        "pageY": 0,
+        "scale": 1,
+        "zoom": 1
+      },
+      "pass": true
+    },
+    {
+      "method": "Page.captureScreenshot",
+      "ms": 44.9,
+      "ok": true,
+      "result": "{\"data\":\"iVBORw0KGgoAAAANSUhEUgAABQAAAAMgCAYAAAB8mM/7AAAQAElEQVR4nOzdC7ytc5348e/JJbeG4xIld8IopKFiyG2QLqoJLylKFzU1TWpiNOlmGkOa+iuNpKKSUolMNJLOiKYrhUIoZCjX4964nf/zXc86rPPstS/nOMfZ+3ve79frZ5/1rGevvfbaa5/X63z8fs/vSQEAAAAAlPWkAAAAAADKEgABAAAAoDABEAAAAAAKEwABAAAAoDABEAAAAAAKEwABAAAAoDABEAAAAAAKEwABAAAAoDABEAAAAAAKEwABAAAAoDABEAAAAAAKEwABAAAAoDABEAAAAAAKEwABAAAAoDABEAAAAAAKEwABAAAAoDABEAAAAAAKEwABAAAAoDABEAAAAAAKEwABAAAAoDABEAAAAAAKEwABAAAAoDABEAAAAAAKEwABAAAAoDABEAAAAAAKEwABAAAAoDABEAAAAAAKEwABAAAAoDABEAAAAAAKEwABAAAAoDABEAAAAAAKEwABAAAAoDABEAAAAAAKEwABAAAAoDABEAAAAAAKEwABAAAAoDABEAAAAAAKEwABAAAAoDA… (18199 bytes)"
+    },
+    {
+      "check": "PNG screenshot is 1280x800",
+      "detail": [
+        1280,
+        800
+      ],
+      "pass": true
+    },
+    {
+      "method": "Page.captureScreenshot",
+      "ms": 32.5,
+      "ok": true,
+      "result": "{\"data\":\"/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAoHBwgHBgoICAgLCgoLDhgQDg0NDh0VFhEYIx8lJCIfIiEmKzcvJik0KSEiMEExNDk7Pj4+JS5ESUM8SDc9Pjv/2wBDAQoLCw4NDhwQEBw7KCIoOzs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozs7Ozv/wAARCAGQAoADASIAAhEBAxEB/8QAGwABAQEBAQEBAQAAAAAAAAAAAAcIBgMFAQT/xAA4EAEAAQIBBwkHBAIDAAAAAAAAAQIDBAYREhdVlNEFFBghVFaSk9IHEzE1UXOxIjJBcWGBI4KR/8QAFgEBAQEAAAAAAAAAAAAAAAAAAAED/8QAIBEBAAICAAcBAAAAAAAAAAAAAAECAxESEzJRcaHh8P/aAAwDAQACEQMRAD8AjIAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA… (3835 bytes)"
+    },
+    {
+      "check": "JPEG screenshot at scale 0.5 returns data",
+      "detail": null,
+      "pass": true
+    },
+    {
+      "method": "Page.captureScreenshot",
+      "ms": 47.2,
+      "ok": true,
+      "result": "{\"data\":\"iVBORw0KGgoAAAANSUhEUgAAAMgAAAA8CAYAAAAjW/WRAAAEGElEQVR4nOzcWyh8WwDH8R9/hBeXiJL7PYUXPJB7nD8PSiGXKELyQkIeeJmkREpIIpRL8SAUJ+ZBkpQHhXKEOkpRyFBmSuGctU7mnPnrLNP8Sfr/PjXtPXvNzNN8Z++1do0N/tba2rrs4OAQrNPpAkH0i3N2dj4xGAxHGo3mu5WIIzIy8rf09HQQ0T+0Wi12d3d/t3Z0dAxjHESmRBOiDZubmxs/ENErog1rENH/YiBECgyESIGBECkwECIFBkKkwECIFBgIkQIDIVJgIEQKDIRIgYEQKTAQIgUGQqTAQIgUGAiRAgMhUmAgRAoMhEiBgfykvb09uLi4mDw8PDyQkJCArq4uPDw8gL4uG9C7aGtrQ0xMjNy/u7vDxsYGBgcHsb+/j7GxMdDXxEDeSWhoqDxrvMjKyoK9vT16enpwfHyMoKAg0NfDS6wPlJycLLenp6dyW1lZierqakxOTiIqKgpLS0vy+NnZGQoKChAYGIiwsDCUlJTg+vra+DnPz88YGhqS/9Xk4+ODzMxMtLe34/Hx0axxshw… (1511 bytes)"
+    },
+    {
+      "check": "Region screenshot is 200x60",
+      "detail": [
+        200,
+        60
+      ],
+      "pass": true
+    },
+    {
+      "method": "DOM.getNodeForLocation",
+      "ms": 0.5,
+      "ok": true,
+      "result": {
+        "backendNodeId": 15,
+        "frameId": "F0E46890020AD9E15C3A9947633E9C46"
+      }
+    },
+    {
+      "method": "DOM.describeNode",
+      "ms": 0.2,
+      "ok": true,
+      "result": {
+        "node": {
+          "attributes": [
+            "id",
+            "target",
+            "aria-label",
+            "Press me"
+          ],
+          "backendNodeId": 15,
+          "childNodeCount": 1,
+          "children": [
+            {
+              "backendNodeId": 23,
+              "localName": "",
+              "nodeId": 0,
+              "nodeName": "#text",
+              "nodeType": 3,
+              "nodeValue": "Press",
+              "parentId": 0
+            }
+          ],
+          "localName": "button",
+          "nodeId": 0,
+          "nodeName": "BUTTON",
+          "nodeType": 1,
+          "nodeValue": ""
+        }
+      }
+    },
+    {
+      "check": "getNodeForLocation(140,150) is the button",
+      "detail": "BUTTON",
+      "pass": true
+    },
+    {
+      "check": "getNodeForLocation off the page errors with 'No node found'",
+      "detail": {
+        "code": -32000,
+        "message": "No node found at given location"
+      },
+      "pass": true
+    },
+    {
+      "method": "Input.dispatchMouseEvent",
+      "ms": 0.7,
+      "ok": true,
+      "result": {}
+    },
+    {
+      "method": "Input.dispatchMouseEvent",
+      "ms": 0.6,
+      "ok": true,
+      "result": {}
+    },
+    {
+      "check": "Click reaches the button as a trusted click",
+      "detail": [
+        {
+          "t": 751,
+          "trusted": true,
+          "type": "click",
+          "x": 140,
+          "y": 150
+        }
+      ],
+      "pass": true
+    },
+    {
+      "method": "Input.dispatchMouseEvent",
+      "ms": 0.7,
+      "ok": true,
+      "result": {}
+    },
+    {
+      "method": "Input.dispatchMouseEvent",
+      "ms": 0.3,
+      "ok": true,
+      "result": {}
+    },
+    {
+      "method": "Runtime.evaluate",
+      "ms": 0.6,
+      "ok": true,
+      "result": {
+        "result": {
+          "className": "HTMLInputElement",
+          "description": "input#field",
+          "objectId": "-3010472054767964378.2.2",
+          "subtype": "node",
+          "type": "object"
+        }
+      }
+    },
+    {
+      "method": "DOM.describeNode",
+      "ms": 0.2,
+      "ok": true,
+      "result": {
+        "node": {
+          "attributes": [
+            "id",
+            "field",
+            "type",
+            "text",
+            "placeholder",
+            "Type here"
+          ],
+          "backendNodeId": 4,
+          "childNodeCount": 0,
+          "localName": "input",
+          "nodeId": 0,
+          "nodeName": "INPUT",
+          "nodeType": 1,
+          "nodeValue": "",
+          "shadowRoots": [
+            {
+              "backendNodeId": 25,
+              "childNodeCount": 2,
+              "localName": "",
+              "nodeId": 0,
+              "nodeName": "#document-fragment",
+              "nodeType": 11,
+              "nodeValue": "",
+              "shadowRootType": "user-agent"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "method": "Runtime.releaseObjectGroup",
+      "ms": 0.2,
+      "ok": true,
+      "result": {}
+    },
+    {
+      "check": "Focused node after clicking the field is the INPUT",
+      "detail": "INPUT",
+      "pass": true
+    },
+    {
+      "method": "Input.insertText",
+      "ms": 18.6,
+      "ok": true,
+      "result": {}
+    },
+    {
+      "check": "insertText types Unicode into the field",
+      "detail": "héllo wörld 日本語",
+      "pass": true
+    },
+    {
+      "check": "insertText fires a trusted input event",
+      "detail": 1,
+      "pass": true
+    },
+    {
+      "method": "Input.dispatchKeyEvent",
+      "ms": 0.5,
+      "ok": true,
+      "result": {}
+    },
+    {
+      "method": "Input.dispatchKeyEvent",
+      "ms": 0.2,
+      "ok": true,
+      "result": {}
+    },
+    {
+      "method": "Input.dispatchKeyEvent",
+      "ms": 0.9,
+      "ok": true,
+      "result": {}
+    },
+    {
+      "method": "Input.dispatchKeyEvent",
+      "ms": 0.7,
+      "ok": true,
+      "result": {}
+    },
+    {
+      "method": "Input.dispatchKeyEvent",
+      "ms": 0.4,
+      "ok": true,
+      "result": {}
+    },
+    {
+      "method": "Input.dispatchKeyEvent",
+      "ms": 0.2,
+      "ok": true,
+      "result": {}
+    },
+    {
+      "method": "Input.dispatchKeyEvent",
+      "ms": 0.7,
+      "ok": true,
+      "result": {}
+    },
+    {
+      "method": "Input.dispatchKeyEvent",
+      "ms": 0.2,
+      "ok": true,
+      "result": {}
+    },
+    {
+      "check": "Keys arrive as trusted keydowns",
+      "detail": [
+        "Enter",
+        "Backspace",
+        "Escape",
+        "ArrowDown"
+      ],
+      "pass": true
+    },
+    {
+      "check": "Backspace removed one character",
+      "detail": "héllo wörld 日本",
+      "pass": true
+    },
+    {
+      "method": "Input.dispatchMouseEvent",
+      "ms": 14.4,
+      "ok": true,
+      "result": {}
+    },
+    {
+      "method": "Runtime.evaluate",
+      "ms": 34.1,
+      "ok": true,
+      "result": {
+        "result": {
+          "type": "undefined"
+        }
+      }
+    },
+    {
+      "check": "Wheel scrolls the page",
+      "detail": {
+        "scrollY": 500,
+        "settle_ms": 34.1
+      },
+      "pass": true
+    },
+    {
+      "check": "Hit test on the scrolled page (pageY added) finds the deep heading",
+      "detail": {
+        "node": "H2",
+        "pageY": 500.0
+      },
+      "pass": true
+    },
+    {
+      "method": "Accessibility.getPartialAXTree",
+      "ms": 0.3,
+      "ok": true,
+      "result": "{\"nodes\":[{\"backendDOMNodeId\":15,\"childIds\":[\"23\"],\"chromeRole\":{\"type\":\"internalRole\",\"value\":9},\"ignored\":false,\"name\":{\"sources\":[{\"attribute\":\"aria-labelledby\",\"type\":\"relatedElement\"},{\"attribute\":\"aria-label\",\"attributeValue\":{\"type\":\"string\",\"value\":\"Press me\"},\"type\":\"attribute\",\"value\":{\"type\":\"computedString\",\"value\":\"Press me\"}},{\"nativeSource\":\"label\",\"superseded\":true,\"type\":\"relatedElement\"},{\"superseded\":true,\"type\":\"contents\",\"value\":{\"type\":\"computedString\",\"value\":\"Press\"}},{\"attribute\":\"title\",\"superseded\":true,\"type\":\"attribute\"}],\"type\":\"computedString\",\"value\":\"Press me\"}… (819 bytes)"
+    },
+    {
+      "check": "getPartialAXTree names the button",
+      "detail": {
+        "sources": [
+          {
+            "attribute": "aria-labelledby",
+            "type": "relatedElement"
+          },
+          {
+            "attribute": "aria-label",
+            "attributeValue": {
+              "type": "string",
+              "value": "Press me"
+            },
+            "type": "attribute",
+            "value": {
+              "type": "computedString",
+              "value": "Press me"
+            }
+          },
+          {
+            "nativeSource": "label",
+            "superseded": true,
+            "type": "relatedElement"
+          },
+          {
+            "superseded": true,
+            "type": "contents",
+            "value": {
+              "type": "computedString",
+              "value": "Press"
+            }
+          },
+          {
+            "attribute": "title",
+            "superseded": true,
+            "type": "attribute"
+          }
+        ],
+        "type": "computedString",
+        "value": "Press me"
+      },
+      "pass": true
+    },
+    {
+      "method": "DOM.getBoxModel",
+      "ms": 0.1,
+      "ok": true,
+      "result": {
+        "model": {
+          "border": [
+            40,
+            120,
+            240,
+            120,
+            240,
+            180,
+            40,
+            180
+          ],
+          "content": [
+            48,
+            123,
+            232,
+            123,
+            232,
+            177,
+            48,
+            177
+          ],
+          "height": 60,
+          "margin": [
+            40,
+            120,
+            240,
+            120,
+            240,
+            180,
+            40,
+            180
+          ],
+          "padding": [
+            42,
+            122,
+            238,
+            122,
+            238,
+            178,
+            42,
+            178
+          ],
+          "width": 200
+        }
+      }
+    },
+    {
+      "check": "getBoxModel border quad at (40,120) 200x60",
+      "detail": [
+        40,
+        120,
+        240,
+        120,
+        240,
+        180,
+        40,
+        180
+      ],
+      "pass": true
+    },
+    {
+      "method": "DOM.getOuterHTML",
+      "ms": 0.1,
+      "ok": true,
+      "result": {
+        "outerHTML": "<button id=\"target\" aria-label=\"Press me\">Press</button>"
+      }
+    },
+    {
+      "check": "getOuterHTML is the button's markup",
+      "detail": "<button id=\"target\" aria-label=\"Press me\">Press</button>",
+      "pass": true
+    },
+    {
+      "method": "DOM.enable",
+      "ms": 0.1,
+      "ok": true,
+      "result": {}
+    },
+    {
+      "method": "DOM.getDocument",
+      "ms": 0.1,
+      "ok": true,
+      "result": {
+        "root": {
+          "backendNodeId": 5,
+          "baseURL": "http://127.0.0.1:8765/cdp.html?again",
+          "childNodeCount": 2,
+          "compatibilityMode": "NoQuirksMode",
+          "documentURL": "http://127.0.0.1:8765/cdp.html?again",
+          "isScrollable": true,
+          "localName": "",
+          "nodeId": 1,
+          "nodeName": "#document",
+          "nodeType": 9,
+          "nodeValue": "",
+          "xmlVersion": ""
+        }
+      }
+    },
+    {
+      "method": "Overlay.enable",
+      "ms": 0.1,
+      "ok": true,
+      "result": {}
+    },
+    {
+      "method": "Overlay.setInspectMode",
+      "ms": 8.1,
+      "ok": true,
+      "result": {}
+    },
+    {
+      "check": "Point mode via host input: hover reports a node",
+      "detail": 2,
+      "pass": true
+    },
+    {
+      "check": "Point mode via host input: click reports the node and does not reach the page",
+      "detail": {
+        "click_reached_page": false,
+        "picked": [
+          {
+            "backendNodeId": 15
+          }
+        ]
+      },
+      "pass": true
+    },
+    {
+      "check": "Point mode via host input: picked node is the button",
+      "detail": "BUTTON",
+      "pass": true
+    },
+    {
+      "method": "Overlay.setInspectMode",
+      "ms": 0.2,
+      "ok": true,
+      "result": {}
+    },
+    {
+      "method": "Overlay.hideHighlight",
+      "ms": 0.5,
+      "ok": true,
+      "result": {}
+    },
+    {
+      "method": "Overlay.setInspectMode",
+      "ms": 2.9,
+      "ok": true,
+      "result": {}
+    },
+    {
+      "check": "Point mode via cdp input: hover reports a node",
+      "detail": 2,
+      "pass": true
+    },
+    {
+      "check": "Point mode via cdp input: click reports the node and does not reach the page",
+      "detail": {
+        "click_reached_page": false,
+        "picked": [
+          {
+            "backendNodeId": 15
+          }
+        ]
+      },
+      "pass": true
+    },
+    {
+      "check": "Point mode via cdp input: picked node is the button",
+      "detail": "BUTTON",
+      "pass": true
+    },
+    {
+      "method": "Overlay.setInspectMode",
+      "ms": 0.3,
+      "ok": true,
+      "result": {}
+    },
+    {
+      "method": "Overlay.hideHighlight",
+      "ms": 0.2,
+      "ok": true,
+      "result": {}
+    },
+    {
+      "check": "describeNode by nodeId after getDocument",
+      "detail": "#document",
+      "pass": true
+    },
+    {
+      "check": "Hidden page: wheel answers (informational)",
+      "detail": {
+        "error": {
+          "message": "no answer in 20 s"
+        },
+        "ms": 20000.1
+      },
+      "pass": false
+    },
+    {
+      "check": "Hidden page: screenshot answers (informational)",
+      "detail": {
+        "error": null,
+        "ms": 37.6
+      },
+      "pass": true
+    },
+    {
+      "check": "Hidden page shown just for the wheel (CEF's prepareCapture) answers",
+      "detail": {
+        "error": null,
+        "ms": 2.1
+      },
+      "pass": true
+    },
+    {
+      "check": "Dropping the observer registration ends the session and its emulation (informational)",
+      "detail": {
+        "after": 900,
+        "before": 900
+      },
+      "pass": false
+    },
+    {
+      "method": "Emulation.setTouchEmulationEnabled",
+      "ms": 0.2,
+      "ok": true,
+      "result": {}
+    },
+    {
+      "method": "Emulation.setEmitTouchEventsForMouse",
+      "ms": 0.8,
+      "ok": true,
+      "result": {}
+    },
+    {
+      "method": "Input.dispatchTouchEvent",
+      "ms": 9.4,
+      "ok": true,
+      "result": {}
+    },
+    {
+      "method": "Input.dispatchTouchEvent",
+      "ms": 17.8,
+      "ok": true,
+      "result": {}
+    }
+  ]
+}

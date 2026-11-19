@@ -1,0 +1,5 @@
+layers: none (no seal). The page never finished loading: every subresource waited on the canary, so the run timed out before writing its record.
+link.pcap flows:
+    121 10.99.0.2 > 10.99.0.1.8765
+      2 Request who-has 10.99.0.1
+      2 Reply 10.99.0.1 is-at

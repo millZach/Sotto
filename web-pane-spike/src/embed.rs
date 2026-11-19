@@ -10,6 +10,7 @@
 
 use crate::cefapp::{self, SpikeClient};
 use crate::hub::hub;
+use crate::wire::Msg;
 use cef::*;
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -28,23 +29,27 @@ const MARGIN: f64 = 20.0;
 const RADIUS: f32 = 14.0;
 
 #[derive(Default)]
-struct Timings {
-    import_us: Vec<u64>,
-    first_frame_ms: Option<f64>,
-    formats: Vec<String>,
-    errors: Vec<String>,
+pub struct Timings {
+    pub import_us: Vec<u64>,
+    pub first_frame_ms: Option<f64>,
+    pub formats: Vec<String>,
+    pub errors: Vec<String>,
+    pub cycles: Vec<serde_json::Value>,
 }
 
-struct Shared {
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-    texture: Mutex<Option<wgpu::Texture>>,
-    timings: Mutex<Timings>,
-    view: Mutex<(i32, i32)>,
+pub struct Shared {
+    pub device: wgpu::Device,
+    pub queue: wgpu::Queue,
+    pub texture: Mutex<Option<wgpu::Texture>>,
+    pub timings: Mutex<Timings>,
+    pub view: Mutex<(i32, i32)>,
     scale: Mutex<f32>,
-    proxy: Mutex<Option<EventLoopProxy<()>>>,
-    frames: AtomicU64,
+    pub proxy: Mutex<Option<EventLoopProxy<()>>>,
+    pub frames: AtomicU64,
     accelerated: bool,
+    /// Set when the page runs in a helper process (WP_REMOTE): the socket to it.
+    pub remote: Mutex<Option<i32>>,
+    pub view_pub: (),
 }
 
 struct SendShared(Arc<Shared>);
@@ -196,9 +201,36 @@ fn page_rect(window: &Window) -> (f64, f64, f64, f64) {
     (LEFT, TOP, (size.width - LEFT - MARGIN).max(50.0), (size.height - TOP - MARGIN).max(50.0))
 }
 
+/// Applies one input record to a browser host. The in-process window and the helper process both use it.
+pub fn apply_to_host(host: &BrowserHost, m: &Msg, view: &Mutex<(i32, i32)>) {
+    use crate::wire::*;
+    let event = cef::MouseEvent { x: m.i(1), y: m.i(2), modifiers: 0 };
+    match m.kind() {
+        MOVE => host.send_mouse_move_event(Some(&event), m.i(3)),
+        CLICK => host.send_mouse_click_event(Some(&event), MouseButtonType::from(sys::cef_mouse_button_type_t::MBT_LEFT), m.i(3), 1),
+        WHEEL => host.send_mouse_wheel_event(Some(&event), m.i(3), m.i(4)),
+        FOCUS => host.set_focus(m.i(1)),
+        RESIZE => { *view.lock().unwrap() = (m.i(1), m.i(2)); host.was_resized(); }
+        KEY => {
+            let stage = m.i(1);
+            let mut k = cef::KeyEvent { windows_key_code: m.i(2), native_key_code: m.i(2), ..Default::default() };
+            k.type_ = KeyEventType::from(match stage { 0 => sys::cef_key_event_type_t::KEYEVENT_RAWKEYDOWN, 1 => sys::cef_key_event_type_t::KEYEVENT_CHAR, _ => sys::cef_key_event_type_t::KEYEVENT_KEYUP });
+            if stage == 1 { k.character = m.0[3] as u16; k.unmodified_character = m.0[3] as u16; k.windows_key_code = m.0[3] as i32; }
+            host.send_key_event(Some(&k));
+        }
+        _ => {}
+    }
+}
+
 impl EmbedApp {
     fn host(&self) -> Option<BrowserHost> {
         self.browser.as_ref().and_then(|b| b.host())
+    }
+    /// One input record to the page, wherever it runs.
+    fn send(&self, m: Msg) -> bool {
+        #[cfg(target_os = "linux")]
+        if let Some(sock) = *self.shared.remote.lock().unwrap() { return crate::wire::send(sock, &m, None) }
+        match self.host() { Some(host) => { apply_to_host(&host, &m, &self.shared.view); true } None => false }
     }
     fn resize_view(&mut self) {
         let Some(gfx) = &self.gfx else { return };
@@ -208,6 +240,10 @@ impl EmbedApp {
         let fixed = std::env::var("WP_VIEW").ok().and_then(|v| { let (a, b) = v.split_once('x')?; Some((a.parse().ok()?, b.parse().ok()?)) });
         *self.shared.view.lock().unwrap() = fixed.unwrap_or((w.round() as i32, h.round() as i32));
         *self.shared.scale.lock().unwrap() = gfx.window.scale_factor() as f32;
+        let (vw, vh) = *self.shared.view.lock().unwrap();
+        #[cfg(target_os = "linux")]
+        if let Some(sock) = *self.shared.remote.lock().unwrap() { crate::wire::send(sock, &Msg::new(crate::wire::RESIZE, &[vw as u32, vh as u32]), None); return }
+        let _ = (vw, vh);
         if let Some(host) = self.host() { host.was_resized(); }
     }
     fn draw(&mut self) {
@@ -249,6 +285,10 @@ impl EmbedApp {
         self.shared.queue.present(frame);
         gfx.present_us.push(start.elapsed().as_micros() as u64);
     }
+    #[cfg(target_os = "linux")]
+    fn shared_handle(&self) -> crate::remote::Handle {
+        crate::remote::Handle(self.shared.clone())
+    }
     fn log(&mut self, e: String) {
         if self.events.len() < 400 { self.events.push(format!("{:.0} {e}", self.began.elapsed().as_secs_f64() * 1000.0)); }
     }
@@ -270,7 +310,7 @@ impl EmbedApp {
             "first_frame_ms": t.first_frame_ms,
             "import_us": { "p50": pct(&import, 0.5), "p95": pct(&import, 0.95), "max": import.last().copied().unwrap_or(0), "n": import.len() },
             "present_us": { "p50": pct(&present, 0.5), "p95": pct(&present, 0.95), "n": present.len() },
-            "formats": t.formats, "errors": t.errors,
+            "formats": t.formats, "errors": t.errors, "cycles": t.cycles,
             "events": self.events,
             "page_console": hub().console.lock().unwrap().iter().filter(|m| m.starts_with("EVT")).cloned().collect::<Vec<_>>(),
             "window": self.gfx.as_ref().map(|g| { let s = g.window.inner_size(); (s.width, s.height, g.window.scale_factor()) }),
@@ -336,6 +376,12 @@ impl ApplicationHandler for EmbedApp {
         self.gfx = Some(Gfx { window: window.clone(), surface, config, pipeline, layout, sampler, uniforms, placeholder, present_us: Vec::new() });
         self.resize_view();
 
+        #[cfg(target_os = "linux")]
+        if std::env::var("WP_REMOTE").is_ok() {
+            crate::remote::start_controller(self.shared_handle(), window.clone());
+            window.request_redraw();
+            return;
+        }
         // The page: CEF off screen, its frames into the shared slot.
         let window_info = WindowInfo { windowless_rendering_enabled: 1, shared_texture_enabled: self.shared.accelerated as i32, ..Default::default() };
         let settings = BrowserSettings { windowless_frame_rate: 60, ..Default::default() };
@@ -371,8 +417,8 @@ impl ApplicationHandler for EmbedApp {
             }
             WindowEvent::Focused(f) => {
                 self.log(format!("window focused={f}"));
-                if !f { if let Some(h) = self.host() { h.set_focus(0); } }
-                else if self.focused { if let Some(h) = self.host() { h.set_focus(1); } }
+                if !f { self.send(Msg::new(crate::wire::FOCUS, &[0])); }
+                else if self.focused { self.send(Msg::new(crate::wire::FOCUS, &[1])); }
             }
             WindowEvent::CursorMoved { position, .. } => {
                 let Some(g) = &self.gfx else { return };
@@ -380,9 +426,9 @@ impl ApplicationHandler for EmbedApp {
                 self.cursor = (p.x, p.y);
                 let (x, y, w, h) = page_rect(&g.window);
                 let inside = p.x >= x && p.y >= y && p.x < x + w && p.y < y + h;
-                let event = cef::MouseEvent { x: (p.x - x) as i32, y: (p.y - y) as i32, modifiers: 0 };
-                if inside { if let Some(host) = self.host() { host.send_mouse_move_event(Some(&event), 0); } }
-                else if self.inside { if let Some(host) = self.host() { host.send_mouse_move_event(Some(&event), 1); } }
+                let (px, py) = ((p.x - x) as i32 as u32, (p.y - y) as i32 as u32);
+                if inside { self.send(Msg::new(crate::wire::MOVE, &[px, py, 0])); }
+                else if self.inside { self.send(Msg::new(crate::wire::MOVE, &[px, py, 1])); }
                 if inside != self.inside { self.log(format!("pointer {} the page at {:.0},{:.0}", if inside { "entered" } else { "left" }, p.x, p.y)); }
                 self.inside = inside;
             }
@@ -391,12 +437,11 @@ impl ApplicationHandler for EmbedApp {
                 let (x, y, _, _) = page_rect(&g.window);
                 let (cx, cy) = self.cursor;
                 if self.inside {
-                    if !self.focused { self.focused = true; if let Some(h) = self.host() { h.set_focus(1); } self.log("page took focus".into()); }
-                    let event = cef::MouseEvent { x: (cx - x) as i32, y: (cy - y) as i32, modifiers: 0 };
-                    if let Some(host) = self.host() { host.send_mouse_click_event(Some(&event), MouseButtonType::from(sys::cef_mouse_button_type_t::MBT_LEFT), (state == ElementState::Released) as i32, 1); }
+                    if !self.focused { self.focused = true; self.send(Msg::new(crate::wire::FOCUS, &[1])); self.log("page took focus".into()); }
+                    self.send(Msg::new(crate::wire::CLICK, &[(cx - x) as i32 as u32, (cy - y) as i32 as u32, (state == ElementState::Released) as u32]));
                     self.log(format!("click {:?} forwarded at page {:.0},{:.0}", state, cx - x, cy - y));
                 } else if state == ElementState::Pressed {
-                    if self.focused { self.focused = false; if let Some(h) = self.host() { h.set_focus(0); } self.log("native UI took focus".into()); }
+                    if self.focused { self.focused = false; self.send(Msg::new(crate::wire::FOCUS, &[0])); self.log("native UI took focus".into()); }
                 }
                 if let Some(g) = &self.gfx { g.window.request_redraw(); }
             }
@@ -405,30 +450,21 @@ impl ApplicationHandler for EmbedApp {
                 let Some(g) = &self.gfx else { return };
                 let (x, y, _, _) = page_rect(&g.window);
                 let (dx, dy) = match delta { MouseScrollDelta::LineDelta(a, b) => (a * 40.0, b * 40.0), MouseScrollDelta::PixelDelta(p) => (p.x as f32, p.y as f32) };
-                let event = cef::MouseEvent { x: (self.cursor.0 - x) as i32, y: (self.cursor.1 - y) as i32, modifiers: 0 };
-                if let Some(host) = self.host() { host.send_mouse_wheel_event(Some(&event), dx as i32, dy as i32); }
+                self.send(Msg::new(crate::wire::WHEEL, &[(self.cursor.0 - x) as i32 as u32, (self.cursor.1 - y) as i32 as u32, dx as i32 as u32, dy as i32 as u32]));
                 self.log(format!("wheel {dx},{dy} forwarded"));
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 if !self.focused { self.log(format!("key {:?} kept by native UI", event.logical_key)); return }
                 let Some((code, ch)) = vk(&event.logical_key) else { return };
-                let Some(host) = self.host() else { self.log("key: no browser".into()); return };
-                let mut k = cef::KeyEvent { windows_key_code: code, native_key_code: code, ..Default::default() };
                 if event.state == ElementState::Pressed {
-                    k.type_ = KeyEventType::from(sys::cef_key_event_type_t::KEYEVENT_RAWKEYDOWN);
-                    host.send_key_event(Some(&k));
+                    self.send(Msg::new(crate::wire::KEY, &[0, code as u32]));
                     if let Some(c) = ch {
                         let mut c16 = [0u16; 2];
                         c.encode_utf16(&mut c16);
-                        k.type_ = KeyEventType::from(sys::cef_key_event_type_t::KEYEVENT_CHAR);
-                        k.windows_key_code = c16[0] as i32;
-                        k.character = c16[0];
-                        k.unmodified_character = c16[0];
-                        host.send_key_event(Some(&k));
+                        self.send(Msg::new(crate::wire::KEY, &[1, code as u32, c16[0] as u32]));
                     }
                 } else {
-                    k.type_ = KeyEventType::from(sys::cef_key_event_type_t::KEYEVENT_KEYUP);
-                    host.send_key_event(Some(&k));
+                    self.send(Msg::new(crate::wire::KEY, &[2, code as u32]));
                 }
                 self.log(format!("key {:?} {:?} forwarded", event.logical_key, event.state));
             }
@@ -441,15 +477,27 @@ pub fn run(args: &cef::args::Args, app: &mut cef::App, mode: &str) -> ExitCode {
     if mode == "child" { return run_child(args, app); }
     let accelerated = std::env::var("WP_PATH").map(|p| p != "software").unwrap_or(true);
     // wgpu first: the Vulkan device CEF's dmabufs are imported into.
-    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor { backends: wgpu::Backends::VULKAN, ..wgpu::InstanceDescriptor::new_without_display_handle() });
+    // The importer cef-rs ships: dmabuf into Vulkan on Linux, D3D11 shared handles into D3D12 on Windows, IOSurface
+    // into Metal on macOS.
+    #[cfg(target_os = "linux")]
+    let backends = wgpu::Backends::VULKAN;
+    #[cfg(target_os = "windows")]
+    let backends = wgpu::Backends::DX12;
+    #[cfg(target_os = "macos")]
+    let backends = wgpu::Backends::METAL;
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor { backends, ..wgpu::InstanceDescriptor::new_without_display_handle() });
     let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default())).expect("adapter");
     let info = adapter.get_info();
     eprintln!("[embed] adapter {} {:?} driver {}", info.name, info.backend, info.driver_info);
+    #[cfg(target_os = "linux")]
     let features = if accelerated { wgpu::Features::VULKAN_EXTERNAL_MEMORY_DMA_BUF } else { wgpu::Features::empty() };
+    #[cfg(not(target_os = "linux"))]
+    let features = wgpu::Features::empty();
     let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor { required_features: features, ..Default::default() })).expect("device");
 
     let config = cefapp::config();
     let run_dir = std::env::var("WP_RUN_DIR").unwrap_or(".".into());
+    let remote = std::env::var("WP_REMOTE").is_ok();
     let settings = Settings {
         windowless_rendering_enabled: 1,
         multi_threaded_message_loop: 1,
@@ -458,13 +506,16 @@ pub fn run(args: &cef::args::Args, app: &mut cef::App, mode: &str) -> ExitCode {
         log_severity: LogSeverity::from(sys::cef_log_severity_t::LOGSEVERITY_WARNING),
         ..Default::default()
     };
-    if initialize(Some(args.as_main_args()), Some(&settings), Some(app), std::ptr::null_mut()) != 1 {
-        eprintln!("CEF initialize failed");
-        return ExitCode::from(2);
+    // In the helper-process shape this process never starts CEF: the page lives in a child it starts and ends.
+    if !remote {
+        if initialize(Some(args.as_main_args()), Some(&settings), Some(app), std::ptr::null_mut()) != 1 {
+            eprintln!("CEF initialize failed");
+            return ExitCode::from(2);
+        }
+        hub().wait_ready(Duration::from_secs(20));
     }
-    hub().wait_ready(Duration::from_secs(20));
 
-    let shared = Arc::new(Shared { device, queue, texture: Mutex::new(None), timings: Mutex::new(Timings::default()), view: Mutex::new((1000, 700)), scale: Mutex::new(1.0), proxy: Mutex::new(None), frames: AtomicU64::new(0), accelerated });
+    let shared = Arc::new(Shared { device, queue, texture: Mutex::new(None), timings: Mutex::new(Timings::default()), view: Mutex::new((1000, 700)), scale: Mutex::new(1.0), proxy: Mutex::new(None), frames: AtomicU64::new(0), accelerated, remote: Mutex::new(None), view_pub: () });
     let event_loop = EventLoop::new().unwrap();
     *shared.proxy.lock().unwrap() = Some(event_loop.create_proxy());
     let seconds: u64 = std::env::var("WP_EMBED_SECONDS").ok().and_then(|s| s.parse().ok()).unwrap_or(0);
@@ -472,6 +523,8 @@ pub fn run(args: &cef::args::Args, app: &mut cef::App, mode: &str) -> ExitCode {
     event_loop.set_control_flow(ControlFlow::Wait);
     let _ = event_loop.run_app(&mut app_state);
     app_state.write_stats();
+    #[cfg(target_os = "linux")]
+    if remote { crate::remote::stop_all(); return ExitCode::SUCCESS }
     if let Some(host) = app_state.host() { host.close_browser(1); }
     let deadline = Instant::now() + Duration::from_secs(5);
     while !hub().closed.load(Ordering::SeqCst) && Instant::now() < deadline { std::thread::sleep(Duration::from_millis(20)); }
@@ -497,6 +550,8 @@ impl ApplicationHandler for ChildApp {
         use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
         let handle = window.window_handle().map(|h| h.as_raw());
         let parent = match handle {
+            #[cfg(target_os = "windows")]
+            Ok(RawWindowHandle::Win32(h)) => h.hwnd.get() as u64,
             Ok(RawWindowHandle::Xlib(h)) => h.window as u64,
             Ok(RawWindowHandle::Xcb(h)) => h.window.get() as u64,
             Ok(other) => { hub().note(format!("winit window is {other:?}: CEF on Linux takes only an X11 window as parent")); 0 }

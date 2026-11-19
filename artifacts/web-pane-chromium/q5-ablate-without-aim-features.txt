@@ -1,0 +1,8 @@
+marks: [{'mark': 'initialized, no page', 'ms': 0.09345400000000001}, {'mark': 'opening one page', 'ms': 240000.26207}, {'mark': 'page loaded=true', 'ms': 240086.436701}, {'mark': 'closing', 'ms': 241086.518746}]
+NetLog requests (first seen s after start, count):
+      0.1s  x1   GET https://www.google.com/async/folae
+NetLog host lookups:
+      0.2s  www.google.com
+DNS questions in the capture (first time):
+Packets to service ports:
+     19  2001:4860:4826:7700::.443 TCP

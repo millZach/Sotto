@@ -1,0 +1,128 @@
+layers: {'csp': False, 'deny': True, 'filter': True, 'no_rtc': False, 'proxy': True, 'webrtc_policy': True}
+  page: origin => sotto-visual://page secure=false
+  page: globals => RTCPeerConnection=function WebTransport=undefined serviceWorker=undefined SharedWorker=function
+  page: fetch 127.0.0.1 => refused TypeError Failed to fetch
+  page: xhr 127.0.0.1 => refused Error timeout
+  page: websocket 127.0.0.1 => refused Error ws error
+  page: eventsource 127.0.0.1 => refused Error sse error
+  page: beacon 127.0.0.1 => resolved true
+  page: img 127.0.0.1 => refused Error img error
+  page: webtransport 127.0.0.1 => refused ReferenceError WebTransport is not defined
+  page: webrtc stun 127.0.0.1 => resolved gathered []
+  page: webrtc turn udp 127.0.0.1 => resolved gathered []
+  page: webrtc turn tcp 127.0.0.1 => resolved gathered []
+  page: fetch 10.99.0.1 => refused TypeError Failed to fetch
+  page: xhr 10.99.0.1 => refused Error timeout
+  page: websocket 10.99.0.1 => refused Error ws error
+  page: eventsource 10.99.0.1 => refused Error sse error
+  page: beacon 10.99.0.1 => resolved true
+  page: img 10.99.0.1 => refused Error img error
+  page: webtransport 10.99.0.1 => refused ReferenceError WebTransport is not defined
+  page: webrtc stun 10.99.0.1 => resolved gathered []
+  page: webrtc turn udp 10.99.0.1 => resolved gathered []
+  page: webrtc turn tcp 10.99.0.1 => resolved gathered []
+  page: webrtc stun by name => resolved gathered []
+  page: fetch by name => refused TypeError Failed to fetch
+  page: worker blob => resolved fetch failed TypeError: Failed to fetch
+  page: worker data => resolved fetch failed
+  page: shared worker => resolved fetch failed
+  page: service worker => refused TypeError Cannot read properties of undefined (reading 'register')
+  page: about:blank iframe fetch => refused TypeError Failed to fetch
+  page: about:blank iframe rtc => resolved gathered []
+  page: srcdoc iframe => resolved inserted
+  page: window.open => resolved null
+  page: window.open blank then write => resolved null
+  page: click target=_blank => resolved clicked
+  page: a ping => resolved clicked
+  page: a download data => resolved clicked
+  page: a download http => resolved clicked
+  page: blob download => resolved clicked
+  page: form post blank => resolved submitted
+  page: permission getUserMedia => refused TypeError Cannot read properties of undefined (reading 'getUserMedia')
+  page: permission geolocation => refused Error denied 1
+  page: permission notifications => resolved denied
+  page: permission clipboard read => refused TypeError Cannot read properties of undefined (reading 'readText')
+  page: permission clipboard write => refused TypeError Cannot read properties of undefined (reading 'writeText')
+  page: permission midi => refused TypeError navigator.requestMIDIAccess is not a function
+  page: permission storage persist => refused TypeError Cannot read properties of undefined (reading 'persist')
+  page: permission localStorage => resolved stored
+  page: permission indexedDB => resolved opened
+  page: permission cookie => resolved cookie=
+  page: permission alert => resolved returned
+  page: permission fullscreen => refused TypeError Permissions check failed
+  page: permission screen capture => refused TypeError Cannot read properties of undefined (reading 'getDisplayMedia')
+  page: permission usb => refused TypeError Cannot read properties of undefined (reading 'requestDevice')
+  page: permission serial => refused TypeError Cannot read properties of undefined (reading 'requestPort')
+  page: permission hid => refused TypeError Cannot read properties of undefined (reading 'requestDevice')
+  page: permission bluetooth => refused TypeError Cannot read properties of undefined (reading 'requestDevice')
+  page: permission idle detection => refused ReferenceError IdleDetector is not defined
+  page: permission wake lock => refused TypeError Cannot read properties of undefined (reading 'request')
+  page: permission local fonts => refused ReferenceError queryLocalFonts is not defined
+  page: permission window management => refused ReferenceError getScreenDetails is not defined
+  page: permission storage access => refused NotAllowedError requestStorageAccess not allowed
+  page: permission copy command => resolved execCommand copy=false
+  page: redirect => refused TypeError Failed to fetch
+  page: mailto => resolved set
+  page: top navigation => resolved set
+  page: location assign => resolved set
+  page: form post => resolved submitted
+  page: still here after meta refresh time => sotto-visual://page/18e961d067838b9b#here
+refused by layer: {'request-filter': 27, 'dead-proxy': 12, 'navigation': 8, 'download': 2, 'dialog': 1}
+    request-filter http://10.99.0.1:8765/canary/preload
+    request-filter http://10.99.0.1:8765/canary/stylesheet
+    request-filter http://10.99.0.1:8765/canary/css-import
+    request-filter http://10.99.0.1:8765/canary/img
+    request-filter http://127.0.0.1:8765/canary/img-loopback
+    request-filter http://10.99.0.1:8765/canary/prefetch
+    navigation main=false redirect=0 http://10.99.0.1:8765/canary/iframe
+    request-filter http://10.99.0.1:8765/canary/css-bg
+    request-filter http://10.99.0.1:8765/canary/font
+    request-filter http://10.99.0.1:8765/canary/video
+    navigation main=false redirect=0 http://10.99.0.1:8765/canary/object
+    request-filter http://127.0.0.1:8765/canary/fetch
+    request-filter http://127.0.0.1:8765/canary/xhr
+    request-filter http://127.0.0.1:8765/canary/sse
+    request-filter http://127.0.0.1:8765/canary/beacon
+    request-filter http://127.0.0.1:8765/canary/img-js
+    request-filter http://10.99.0.1:8765/canary/fetch
+    request-filter http://10.99.0.1:8765/canary/xhr
+    request-filter http://10.99.0.1:8765/canary/sse
+    request-filter http://10.99.0.1:8765/canary/beacon
+    request-filter http://10.99.0.1:8765/canary/img-js
+    request-filter http://wpspike-fetch.example.com/
+    request-filter http://10.99.0.1:8765/canary/worker-fetch
+    request-filter http://10.99.0.1:8765/canary/worker2
+    request-filter http://10.99.0.1:8765/canary/blank-iframe
+    request-filter http://10.99.0.1:8765/canary/srcdoc
+    request-filter http://10.99.0.1:8765/canary/srcdoc-fetch
+    request-filter http://10.99.0.1:8765/canary/ping
+    navigation main=true redirect=0 http://10.99.0.1:8765/canary/download
+    download data:text/plain,hello
+    download blob:sotto-visual://page/2d3fea19-626d-463b-b66c-85f4aa425aff
+    dialog sotto-visual://page/18e961d067838b9b#here hi
+    request-filter http://10.99.0.1:8765/redirect-to-canary
+    navigation main=true redirect=0 mailto:a@example.com
+    navigation main=true redirect=0 http://10.99.0.1:8765/canary/top-nav
+    navigation main=true redirect=0 http://10.99.0.1:8765/canary/location
+    navigation main=true redirect=0 http://10.99.0.1:8765/canary/form-post
+    navigation main=true redirect=0 sotto-visual://page/18e961d067838b9b
+second load of the address: None
+canary-loopback: 0 hits {}
+canary-link: 0 hits {}
+dns: 0 hits {}
+link.pcap flows:
+      4  10.99.0 > 224.0.0.22 igmp
+lo.pcap flows:
+     42  127.0.0.1 > 127.0.0.1.33819 TCP
+      4  127.0.0.1 > 127.0.0.1.32960 TCP
+      4  127.0.0.1 > 127.0.0.1.32968 TCP
+      4  127.0.0.1 > 127.0.0.1.32992 TCP
+      4  127.0.0.1 > 127.0.0.1.32994 TCP
+      4  127.0.0.1 > 127.0.0.1.45652 TCP
+      4  127.0.0.1 > 127.0.0.1.45684 TCP
+      3  127.0.0.1 > 127.0.0.1.32952 TCP
+      3  127.0.0.1 > 127.0.0.1.32954 TCP
+      3  127.0.0.1 > 127.0.0.1.32962 TCP
+      3  127.0.0.1 > 127.0.0.1.32976 TCP
+      3  127.0.0.1 > 127.0.0.1.45658 TCP
+      3  127.0.0.1 > 127.0.0.1.45672 TCP

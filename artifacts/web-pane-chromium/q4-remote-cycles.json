@@ -1,0 +1,105 @@
+{
+ "cycles": [
+  {
+   "cycle": 0,
+   "exit": "exit status: 0",
+   "first_frame_in_window_ms": 1835.2958429999999,
+   "frames": 184,
+   "helper_processes": 10,
+   "helper_processes_left": [],
+   "helper_pss_mb": 376,
+   "stop_ms": 217.954429,
+   "window_pss_mb_after_stop": 122,
+   "window_pss_mb_before_first": 121,
+   "window_pss_mb_while_showing": 108
+  },
+  {
+   "cycle": 1,
+   "exit": "exit status: 0",
+   "first_frame_in_window_ms": 701.226443,
+   "frames": 183,
+   "helper_processes": 10,
+   "helper_processes_left": [],
+   "helper_pss_mb": 315,
+   "stop_ms": 202.58280200000002,
+   "window_pss_mb_after_stop": 131,
+   "window_pss_mb_before_first": 121,
+   "window_pss_mb_while_showing": 112
+  },
+  {
+   "cycle": 2,
+   "exit": "exit status: 0",
+   "first_frame_in_window_ms": 317.507502,
+   "frames": 183,
+   "helper_processes": 10,
+   "helper_processes_left": [],
+   "helper_pss_mb": 324,
+   "stop_ms": 97.22465600000001,
+   "window_pss_mb_after_stop": 131,
+   "window_pss_mb_before_first": 121,
+   "window_pss_mb_while_showing": 114
+  },
+  {
+   "cycle": 3,
+   "exit": "exit status: 0",
+   "first_frame_in_window_ms": 288.200231,
+   "frames": 183,
+   "helper_processes": 10,
+   "helper_processes_left": [],
+   "helper_pss_mb": 324,
+   "stop_ms": 111.47525499999999,
+   "window_pss_mb_after_stop": 131,
+   "window_pss_mb_before_first": 121,
+   "window_pss_mb_while_showing": 114
+  },
+  {
+   "cycle": 4,
+   "exit": "exit status: 0",
+   "first_frame_in_window_ms": 312.016102,
+   "frames": 184,
+   "helper_processes": 10,
+   "helper_processes_left": [],
+   "helper_pss_mb": 323,
+   "stop_ms": 146.999647,
+   "window_pss_mb_after_stop": 131,
+   "window_pss_mb_before_first": 121,
+   "window_pss_mb_while_showing": 114
+  }
+ ],
+ "errors": [],
+ "first_frame_ms": null,
+ "formats": [
+  "remote accelerated 1280x800 modifier=0x300000000606014"
+ ],
+ "fps": 16.67270338680612,
+ "frames": 917,
+ "import_us": {
+  "max": 33278,
+  "n": 917,
+  "p50": 823,
+  "p95": 3237
+ },
+ "page_console": [],
+ "path": "accelerated",
+ "present_us": {
+  "n": 922,
+  "p50": 361,
+  "p95": 2384
+ },
+ "seconds": 55.000078795,
+ "window": [
+  419,
+  196,
+  1.0
+ ],
+ "helper0": {
+  "alive_ms": 4841,
+  "frames_sent": 184,
+  "page_console": [],
+  "round_trip_us": {
+   "max": 7834,
+   "p50": 888,
+   "p95": 4502
+  }
+ }
+}

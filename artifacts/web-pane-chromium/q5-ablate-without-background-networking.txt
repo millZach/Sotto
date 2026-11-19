@@ -1,0 +1,8 @@
+marks: [{'mark': 'initialized, no page', 'ms': 0.13503500000000002}, {'mark': 'opening one page', 'ms': 240000.245656}, {'mark': 'page loaded=true', 'ms': 240117.05977700002}, {'mark': 'closing', 'ms': 241117.138764}]
+NetLog requests (first seen s after start, count):
+     79.0s  x1   GET https://safebrowsing.googleapis.com/v4/threatListUpdates:fetch
+NetLog host lookups:
+     79.0s  safebrowsing.googleapis.com
+DNS questions in the capture (first time):
+Packets to service ports:
+     17  2607:f8b0:400a:803::200a.443 TCP

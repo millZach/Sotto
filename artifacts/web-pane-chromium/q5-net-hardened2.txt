@@ -1,0 +1,5 @@
+marks: [{'mark': 'initialized, no page', 'ms': 0.16802899999999998}, {'mark': 'opening one page', 'ms': 420008.581485}, {'mark': 'page loaded=true', 'ms': 420128.30040400004}, {'mark': 'closing', 'ms': 600128.495643}]
+NetLog requests (first seen s after start, count):
+NetLog host lookups:
+DNS questions in the capture (first time):
+Packets to service ports:

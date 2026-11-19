@@ -1,0 +1,1 @@
+webpane | Sotto web pane spike (child window) [21, 21] [419, 448] xwayland

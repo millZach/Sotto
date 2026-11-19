@@ -1,0 +1,120 @@
+{
+ "errors": [],
+ "first_frame_ms": 1276.311139,
+ "formats": [
+  "accelerated ColorType(CEF_COLOR_TYPE_BGRA_8888) 1280x800 planes=1 modifier=0x300000000606014"
+ ],
+ "fps": 57.687299992722735,
+ "frames": 1846,
+ "import_us": {
+  "max": 21993,
+  "n": 1846,
+  "p50": 1114,
+  "p95": 1424
+ },
+ "page_console": [
+  "EVT mousedown 60,20 trusted=true",
+  "EVT keydown h trusted=true",
+  "EVT input value=h",
+  "EVT keydown e trusted=true",
+  "EVT input value=he",
+  "EVT keydown l trusted=true",
+  "EVT input value=hel",
+  "EVT keydown l trusted=true",
+  "EVT input value=hell",
+  "EVT keydown o trusted=true",
+  "EVT input value=hello",
+  "EVT keydown   trusted=true",
+  "EVT input value=hello ",
+  "EVT keydown p trusted=true",
+  "EVT input value=hello p",
+  "EVT keydown a trusted=true",
+  "EVT input value=hello pa",
+  "EVT keydown n trusted=true",
+  "EVT input value=hello pan",
+  "EVT keydown e trusted=true",
+  "EVT input value=hello pane",
+  "EVT keydown z trusted=true",
+  "EVT input value=hello panez",
+  "EVT keydown z trusted=true",
+  "EVT input value=hello panezz"
+ ],
+ "path": "accelerated",
+ "present_us": {
+  "n": 1848,
+  "p50": 2556,
+  "p95": 2805
+ },
+ "seconds": 32.000110947,
+ "window": [
+  419,
+  196,
+  1.0
+ ],
+ "cpu": {
+  "tree_cpu_ticks_10s": 251,
+  "clk_tck": 100,
+  "tree_pss_kb": 498134,
+  "processes": 11
+ },
+ "pss": {
+  "total_mb": 486.6,
+  "processes": [
+   {
+    "pid": 2518975,
+    "type": "browser (the app)",
+    "pss_mb": 0.3
+   },
+   {
+    "pid": 2518977,
+    "type": "browser (the app)",
+    "pss_mb": 181.4
+   },
+   {
+    "pid": 2519021,
+    "type": "utility network.mojom.NetworkService",
+    "pss_mb": 29.4
+   },
+   {
+    "pid": 2518995,
+    "type": "zygote",
+    "pss_mb": 9.0
+   },
+   {
+    "pid": 2518998,
+    "type": "zygote",
+    "pss_mb": 3.6
+   },
+   {
+    "pid": 2519061,
+    "type": "zygote",
+    "pss_mb": 67.0
+   },
+   {
+    "pid": 2519060,
+    "type": "zygote",
+    "pss_mb": 21.4
+   },
+   {
+    "pid": 2519037,
+    "type": "zygote",
+    "pss_mb": 6.6
+   },
+   {
+    "pid": 2518994,
+    "type": "zygote",
+    "pss_mb": 11.1
+   },
+   {
+    "pid": 2519019,
+    "type": "zygote",
+    "pss_mb": 136.0
+   },
+   {
+    "pid": 2519081,
+    "type": "zygote",
+    "pss_mb": 20.8
+   }
+  ]
+ }
+}

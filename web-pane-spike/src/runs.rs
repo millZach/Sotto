@@ -414,8 +414,11 @@ pub fn run_iphone() -> Value {
     std::thread::sleep(Duration::from_millis(800));
     let y = eval("scrollY");
     rows.check("Swipe up scrolls the page", y.as_f64().unwrap_or(0.0) > 100.0, y);
+    // Let the fling finish before putting the page back, or later taps land on a page still moving.
+    let mut last = -1.0;
+    for _ in 0..50 { let now = eval("scrollY").as_f64().unwrap_or(0.0); if now == last { break } last = now; std::thread::sleep(Duration::from_millis(200)); }
     eval("scrollTo(0,0); true");
-    std::thread::sleep(Duration::from_millis(200));
+    std::thread::sleep(Duration::from_millis(300));
 
     // The pane's own pointer: a mouse click through CEF's input path, with touch emitted for the mouse.
     clear_log();

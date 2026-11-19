@@ -1,0 +1,88 @@
+layers: {'csp': False, 'deny': False, 'filter': False, 'no_rtc': False, 'proxy': True, 'webrtc_policy': True}
+  page: origin => sotto-visual://page secure=false
+  page: globals => RTCPeerConnection=function WebTransport=undefined serviceWorker=undefined SharedWorker=function
+  page: fetch 127.0.0.1 => refused TypeError Failed to fetch
+  page: xhr 127.0.0.1 => refused Error xhr error
+  page: websocket 127.0.0.1 => refused Error ws error
+  page: eventsource 127.0.0.1 => refused Error sse error
+  page: beacon 127.0.0.1 => resolved true
+  page: img 127.0.0.1 => refused Error img error
+  page: webtransport 127.0.0.1 => refused ReferenceError WebTransport is not defined
+  page: webrtc stun 127.0.0.1 => resolved gathered []
+  page: webrtc turn udp 127.0.0.1 => resolved gathered []
+  page: webrtc turn tcp 127.0.0.1 => resolved gathered []
+  page: fetch 10.99.0.1 => refused TypeError Failed to fetch
+  page: xhr 10.99.0.1 => refused Error xhr error
+  page: websocket 10.99.0.1 => refused Error ws error
+  page: eventsource 10.99.0.1 => refused Error sse error
+  page: beacon 10.99.0.1 => resolved true
+  page: img 10.99.0.1 => refused Error img error
+  page: webtransport 10.99.0.1 => refused ReferenceError WebTransport is not defined
+  page: webrtc stun 10.99.0.1 => resolved gathered []
+  page: webrtc turn udp 10.99.0.1 => resolved gathered []
+  page: webrtc turn tcp 10.99.0.1 => resolved gathered []
+  page: webrtc stun by name => resolved gathered []
+  page: fetch by name => refused TypeError Failed to fetch
+  page: worker blob => resolved fetch failed TypeError: Failed to fetch
+  page: worker data => resolved fetch failed
+  page: shared worker => resolved fetch failed
+  page: service worker => refused TypeError Cannot read properties of undefined (reading 'register')
+  page: about:blank iframe fetch => refused TypeError Failed to fetch
+  page: about:blank iframe rtc => resolved gathered []
+  page: srcdoc iframe => resolved inserted
+  page: window.open => resolved null
+  page: window.open blank then write => resolved null
+  page: click target=_blank => resolved clicked
+  page: a ping => resolved clicked
+  page: a download data => resolved clicked
+  page: a download http => resolved clicked
+  page: blob download => resolved clicked
+  page: form post blank => resolved submitted
+  page: permission getUserMedia => refused TypeError Cannot read properties of undefined (reading 'getUserMedia')
+  page: permission geolocation => refused Error denied 1
+  page: permission notifications => resolved denied
+  page: permission clipboard read => refused TypeError Cannot read properties of undefined (reading 'readText')
+  page: permission clipboard write => refused TypeError Cannot read properties of undefined (reading 'writeText')
+  page: permission midi => refused TypeError navigator.requestMIDIAccess is not a function
+  page: permission storage persist => refused TypeError Cannot read properties of undefined (reading 'persist')
+  page: permission localStorage => resolved stored
+  page: permission indexedDB => resolved opened
+  page: permission cookie => resolved cookie=
+  page: permission alert => resolved returned
+refused by layer: {'dead-proxy': 48, 'scheme': 1, 'external-protocol': 1}
+    scheme no page at sotto-visual://page/18e961be219b7caf
+    external-protocol sotto-visual://page/18e961be219b7caf
+second load of the address: {'status': 0, 'url': 'sotto-visual://page/18e961be219b7caf'}
+canary-loopback: 0 hits {}
+canary-link: 0 hits {}
+dns: 0 hits {}
+link.pcap flows:
+      4  10.99.0 > 224.0.0.22 igmp
+      1  fe80::b0e1:3cff:fee9:f39f > ff02::2 ICMP6,
+      1  fe80::f8e5:1dff:feaf:aea3 > ff02::2 ICMP6,
+lo.pcap flows:
+    162  127.0.0.1 > 127.0.0.1.46113 TCP
+      4  127.0.0.1 > 127.0.0.1.51790 TCP
+      4  127.0.0.1 > 127.0.0.1.51818 TCP
+      4  127.0.0.1 > 127.0.0.1.51882 TCP
+      4  127.0.0.1 > 127.0.0.1.51904 TCP
+      4  127.0.0.1 > 127.0.0.1.51906 TCP
+      4  127.0.0.1 > 127.0.0.1.51938 TCP
+      4  127.0.0.1 > 127.0.0.1.51956 TCP
+      4  127.0.0.1 > 127.0.0.1.51984 TCP
+      4  127.0.0.1 > 127.0.0.1.52006 TCP
+      4  127.0.0.1 > 127.0.0.1.52018 TCP
+      4  127.0.0.1 > 127.0.0.1.52076 TCP
+      4  127.0.0.1 > 127.0.0.1.52090 TCP
+      4  127.0.0.1 > 127.0.0.1.52104 TCP
+      4  127.0.0.1 > 127.0.0.1.52116 TCP
+      4  127.0.0.1 > 127.0.0.1.41622 TCP
+      4  127.0.0.1 > 127.0.0.1.50510 TCP
+      3  127.0.0.1 > 127.0.0.1.51716 TCP
+      3  127.0.0.1 > 127.0.0.1.51728 TCP
+      3  127.0.0.1 > 127.0.0.1.51742 TCP
+      3  127.0.0.1 > 127.0.0.1.51758 TCP
+      3  127.0.0.1 > 127.0.0.1.51762 TCP
+      3  127.0.0.1 > 127.0.0.1.51764 TCP
+      3  127.0.0.1 > 127.0.0.1.51780 TCP
+      3  127.0.0.1 > 127.0.0.1.51788 TCP

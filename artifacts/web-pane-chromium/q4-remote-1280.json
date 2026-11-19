@@ -1,0 +1,89 @@
+{
+ "cycles": [
+  {
+   "cycle": 0,
+   "exit": "exit status: 0",
+   "first_frame_in_window_ms": 574.8428700000001,
+   "frames": 900,
+   "helper_processes": 10,
+   "helper_processes_left": [],
+   "helper_pss_mb": 364,
+   "stop_ms": 106.33813,
+   "window_pss_mb_after_stop": 128,
+   "window_pss_mb_before_first": 125,
+   "window_pss_mb_while_showing": 111
+  }
+ ],
+ "errors": [],
+ "first_frame_ms": null,
+ "formats": [
+  "remote accelerated 1280x800 modifier=0x300000000606014"
+ ],
+ "fps": 29.99569849085448,
+ "frames": 900,
+ "import_us": {
+  "max": 68891,
+  "n": 900,
+  "p50": 1035,
+  "p95": 2793
+ },
+ "page_console": [],
+ "path": "accelerated",
+ "present_us": {
+  "n": 888,
+  "p50": 397,
+  "p95": 2550
+ },
+ "seconds": 30.004302126,
+ "window": [
+  419,
+  196,
+  1.0
+ ],
+ "helper0": {
+  "alive_ms": 15564,
+  "frames_sent": 900,
+  "page_console": [
+   "EVT mousedown 60,20 trusted=true",
+   "EVT keydown a trusted=true",
+   "EVT input value=a",
+   "EVT keydown c trusted=true",
+   "EVT input value=ac",
+   "EVT keydown r trusted=true",
+   "EVT input value=acr",
+   "EVT keydown o trusted=true",
+   "EVT input value=acro",
+   "EVT keydown s trusted=true",
+   "EVT input value=acros",
+   "EVT keydown s trusted=true",
+   "EVT input value=across",
+   "EVT keydown   trusted=true",
+   "EVT input value=across ",
+   "EVT keydown t trusted=true",
+   "EVT input value=across t",
+   "EVT keydown h trusted=true",
+   "EVT input value=across th",
+   "EVT keydown e trusted=true",
+   "EVT input value=across the",
+   "EVT keydown   trusted=true",
+   "EVT input value=across the ",
+   "EVT keydown s trusted=true",
+   "EVT input value=across the s",
+   "EVT keydown o trusted=true",
+   "EVT input value=across the so",
+   "EVT keydown c trusted=true",
+   "EVT input value=across the soc",
+   "EVT keydown k trusted=true",
+   "EVT input value=across the sock",
+   "EVT keydown e trusted=true",
+   "EVT input value=across the socke",
+   "EVT keydown t trusted=true",
+   "EVT input value=across the socket"
+  ],
+  "round_trip_us": {
+   "max": 68960,
+   "p50": 1125,
+   "p95": 3174
+  }
+ }
+}

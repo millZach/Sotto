@@ -1,0 +1,15 @@
+marks: [{'mark': 'initialized, no page', 'ms': 0.137878}, {'mark': 'opening one page', 'ms': 300000.71880000003}, {'mark': 'page loaded=true', 'ms': 300264.808049}, {'mark': 'closing', 'ms': 600272.761639}]
+NetLog requests (first seen s after start, count):
+      0.0s  x3   POST https://update.googleapis.com/service/update2/json
+      0.1s  x1   GET https://www.google.com/async/folae
+      0.5s  x1   GET http://edgedl.me.gvt1.com/edgedl/diffgen-puffin/ceofaddefefcbblgcgnibnonglccbfja/aee9afe03763f65f53cc0e53
+    180.0s  x2   POST http://update.googleapis.com/service/update2/json
+NetLog host lookups:
+      0.0s  update.googleapis.com
+      0.3s  www.google.com
+      0.5s  edgedl.me.gvt1.com
+DNS questions in the capture (first time):
+Packets to service ports:
+     12  2607:f8b0:400a:809::200e.443 TCP
+     11  2001:4860:4827:7700::.443 TCP
+      9  2600:1900:4110:86f::.80 TCP

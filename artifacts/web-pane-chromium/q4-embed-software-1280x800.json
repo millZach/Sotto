@@ -1,0 +1,57 @@
+{
+ "errors": [],
+ "first_frame_ms": 519.9784910000001,
+ "formats": [
+  "software BGRA 1280x800"
+ ],
+ "fps": 59.0936433618272,
+ "frames": 1891,
+ "import_us": {
+  "max": 3224,
+  "n": 1891,
+  "p50": 1459,
+  "p95": 2873
+ },
+ "page_console": [
+  "EVT mousedown 60,20 trusted=true",
+  "EVT keydown h trusted=true",
+  "EVT input value=h",
+  "EVT keydown e trusted=true",
+  "EVT input value=he",
+  "EVT keydown l trusted=true",
+  "EVT input value=hel",
+  "EVT keydown l trusted=true",
+  "EVT input value=hell",
+  "EVT keydown o trusted=true",
+  "EVT input value=hello",
+  "EVT keydown   trusted=true",
+  "EVT input value=hello ",
+  "EVT keydown p trusted=true",
+  "EVT input value=hello p",
+  "EVT keydown a trusted=true",
+  "EVT input value=hello pa",
+  "EVT keydown n trusted=true",
+  "EVT input value=hello pan",
+  "EVT keydown e trusted=true",
+  "EVT input value=hello pane",
+  "EVT window blur"
+ ],
+ "path": "software",
+ "present_us": {
+  "n": 1892,
+  "p50": 1659,
+  "p95": 3573
+ },
+ "seconds": 32.000057746,
+ "window": [
+  419,
+  448,
+  1.0
+ ],
+ "cpu": {
+  "tree_cpu_ticks_10s": 283,
+  "clk_tck": 100,
+  "tree_pss_kb": 509249,
+  "processes": 11
+ }
+}

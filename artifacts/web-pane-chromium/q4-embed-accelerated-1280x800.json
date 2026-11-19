@@ -1,0 +1,59 @@
+{
+ "errors": [],
+ "first_frame_ms": 277.62993,
+ "formats": [
+  "accelerated ColorType(CEF_COLOR_TYPE_BGRA_8888) 1280x800 planes=1 modifier=0x300000000606014"
+ ],
+ "fps": 59.56233331853286,
+ "frames": 1906,
+ "import_us": {
+  "max": 23570,
+  "n": 1906,
+  "p50": 877,
+  "p95": 4700
+ },
+ "page_console": [
+  "EVT mousedown 60,20 trusted=true",
+  "EVT keydown h trusted=true",
+  "EVT input value=h",
+  "EVT keydown e trusted=true",
+  "EVT input value=he",
+  "EVT keydown l trusted=true",
+  "EVT input value=hel",
+  "EVT keydown l trusted=true",
+  "EVT input value=hell",
+  "EVT keydown o trusted=true",
+  "EVT input value=hello",
+  "EVT keydown   trusted=true",
+  "EVT input value=hello ",
+  "EVT keydown p trusted=true",
+  "EVT input value=hello p",
+  "EVT keydown a trusted=true",
+  "EVT input value=hello pa",
+  "EVT keydown n trusted=true",
+  "EVT input value=hello pan",
+  "EVT keydown e trusted=true",
+  "EVT input value=hello pane",
+  "EVT wheel 40",
+  "EVT wheel 40",
+  "EVT window blur"
+ ],
+ "path": "accelerated",
+ "present_us": {
+  "n": 1906,
+  "p50": 1480,
+  "p95": 4892
+ },
+ "seconds": 32.00008955,
+ "window": [
+  894,
+  448,
+  1.0
+ ],
+ "cpu": {
+  "tree_cpu_ticks_10s": 239,
+  "clk_tck": 100,
+  "tree_pss_kb": 564692,
+  "processes": 11
+ }
+}
