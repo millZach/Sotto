@@ -1,0 +1,15 @@
+{
+  "toolkit": "slint 1.19.0",
+  "backend": "winit-femtovg",
+  "wayland": true,
+  "scale": 1,
+  "physical_size": [1280, 800],
+  "launch_ms": 610.7,
+  "stream_ms": 21452.0,
+  "stream_frames": 1275,
+  "frame_interval_ms": { "n": 1274, "median": 16.69, "p95": 20.94, "p99": 31.43, "max": 46.90, "mean": 16.82, "over_16_7": 625, "over_33_3": 9 },
+  "render_ms": { "n": 1275, "median": 1.07, "p95": 8.36, "p99": 11.99, "max": 17.82, "mean": 2.02, "over_16_7": 1, "over_33_3": 0 },
+  "typing_ms": { "n": 58, "median": 2.82, "p95": 11.33, "p99": 12.82, "max": 12.88, "mean": 4.53, "over_16_7": 0, "over_33_3": 0 },
+  "web_page_paint_ms": { "n": 117, "median": 0.52, "p95": 0.85, "p99": 1.15, "max": 1.57, "mean": 0.52, "over_16_7": 0, "over_33_3": 0 },
+  "memory_after_stream": { "pss_kib": 133293, "rss_kib": 170908 }
+}

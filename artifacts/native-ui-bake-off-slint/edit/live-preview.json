@@ -1,0 +1,52 @@
+{
+ "poll_interval_ms": 30.0,
+ "region": "400,689 40x6",
+ "file": "ui/composer.slint",
+ "runs": [
+  {
+   "run": 1,
+   "edit_to_screen": {
+    "ms": 691.789829,
+    "lower_bound_ms": 661.728098,
+    "captures": 24,
+    "grim_ms_median": 17.669492
+   },
+   "revert_to_screen": {
+    "ms": 781.852558,
+    "lower_bound_ms": 751.783378,
+    "captures": 27,
+    "grim_ms_median": 12.839047
+   }
+  },
+  {
+   "run": 2,
+   "edit_to_screen": {
+    "ms": 691.730446,
+    "lower_bound_ms": 661.662017,
+    "captures": 24,
+    "grim_ms_median": 17.286639
+   },
+   "revert_to_screen": {
+    "ms": 811.827171,
+    "lower_bound_ms": 781.768768,
+    "captures": 28,
+    "grim_ms_median": 17.969807
+   }
+  },
+  {
+   "run": 3,
+   "edit_to_screen": {
+    "ms": 661.639849,
+    "lower_bound_ms": 631.574011,
+    "captures": 23,
+    "grim_ms_median": 17.253521
+   },
+   "revert_to_screen": {
+    "ms": 781.90477,
+    "lower_bound_ms": 751.841349,
+    "captures": 27,
+    "grim_ms_median": 18.1018
+   }
+  }
+ ]
+}

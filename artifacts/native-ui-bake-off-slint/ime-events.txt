@@ -1,0 +1,7 @@
+# fcitx5 with Mozc and Pinyin into the composer: winit IME events the app logged (SOTTO_TRACE_KEYS=1)
+im=mozc
+im=pinyin
+      2 event=ime kind=commit
+      1 event=ime kind=enabled
+     21 event=ime kind=preedit
+     17 event=ime-preedit

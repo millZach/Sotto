@@ -1,0 +1,4 @@
+run 1 build_ms=10662 event=first-frame launch_ms=11441.9 since_window_created_ms=695.8 scale=1 physical=1800x1200 wayland=true
+run 1 build_ms=8814 event=first-frame launch_ms=9547.7 since_window_created_ms=645.6 scale=1 physical=1800x1200 wayland=true
+run 2 build_ms=8385 event=first-frame launch_ms=9101.5 since_window_created_ms=645.1 scale=1 physical=1800x1200 wayland=true
+run 2 build_ms=9678 event=first-frame launch_ms=10405.6 since_window_created_ms=656.2 scale=1 physical=1800x1200 wayland=true

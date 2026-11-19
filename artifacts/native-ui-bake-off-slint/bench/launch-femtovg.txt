@@ -1,0 +1,6 @@
+event=first-frame launch_ms=628.9 since_window_created_ms=602.8 scale=1 physical=1800x1200 wayland=true
+event=first-frame launch_ms=611.4 since_window_created_ms=584.0 scale=1 physical=1800x1200 wayland=true
+event=first-frame launch_ms=625.8 since_window_created_ms=595.5 scale=1 physical=1800x1200 wayland=true
+event=first-frame launch_ms=634.4 since_window_created_ms=606.0 scale=1 physical=1800x1200 wayland=true
+event=first-frame launch_ms=639.4 since_window_created_ms=611.3 scale=1 physical=1800x1200 wayland=true
+event=first-frame launch_ms=629.6 since_window_created_ms=600.8 scale=1 physical=1800x1200 wayland=true

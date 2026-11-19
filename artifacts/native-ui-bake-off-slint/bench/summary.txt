@@ -1,0 +1,12 @@
+## femtovg
+femtovg-1.json load 9.74 4.05 2.41 | frames n 1280 med 16.7 p95 25.0 p99 32.4 max 52.6 mean 17.03 >25 65 >33.3 9 | render med 1.26 p95 11.46 p99 16.20 max 24.0 | typing n 58 med 4.3 p95 16.7 p99 17.7 max 19.5 | PSS 127.1 RSS 167.0 MiB
+femtovg-2.json load 8.28 4.25 2.53 | frames n 1279 med 16.7 p95 23.9 p99 31.7 max 53.7 mean 17.02 >25 45 >33.3 11 | render med 1.17 p95 11.29 p99 14.39 max 24.6 | typing n 58 med 3.8 p95 15.2 p99 17.9 max 36.1 | PSS 133.5 RSS 167.2 MiB
+femtovg-3.json load 6.68 4.26 2.59 | frames n 1274 med 16.7 p95 20.9 p99 31.4 max 46.9 mean 16.82 >25 28 >33.3 9 | render med 1.07 p95 8.36 p99 11.99 max 17.8 | typing n 58 med 2.7 p95 11.3 p99 12.8 max 12.9 | PSS 130.2 RSS 166.9 MiB
+median of runs: n 1279.00, f_med 16.72, f_p95 23.94, f_p99 31.70, f_max 52.56, f_mean 17.02, over25 45.00, over33 9.00, r_med 1.17, r_p95 11.29, r_p99 14.39, r_max 23.96, t_n 58.00, t_med 3.78, t_p95 15.18, t_p99 17.70, t_max 19.46, pss 130.17, rss 167.00, launch 683.50
+launch runs [628.9, 611.4, 625.8, 634.4, 639.4, 629.6] -> median of runs 2..n 629.6 ms (first run 628.9)
+## skia-opengl
+skia-opengl-1.json load 5.40 4.20 2.63 | frames n 1257 med 16.6 p95 19.7 p99 24.6 max 45.8 mean 16.67 >25 13 >33.3 5 | render med 1.36 p95 2.85 p99 4.05 max 10.3 | typing n 58 med 2.9 p95 5.7 p99 6.2 max 8.3 | PSS 198.8 RSS 230.4 MiB
+skia-opengl-2.json load 6.36 4.58 2.81 | frames n 1233 med 16.7 p95 17.9 p99 20.5 max 37.6 mean 16.67 >25 6 >33.3 1 | render med 1.12 p95 2.21 p99 2.48 max 3.9 | typing n 58 med 2.4 p95 3.6 p99 8.4 max 13.1 | PSS 142.1 RSS 170.9 MiB
+skia-opengl-3.json load 5.12 4.44 2.81 | frames n 1239 med 16.7 p95 18.1 p99 20.7 max 46.5 mean 16.67 >25 6 >33.3 3 | render med 1.12 p95 2.31 p99 2.77 max 3.7 | typing n 58 med 2.2 p95 3.3 p99 3.4 max 4.4 | PSS 161.4 RSS 170.8 MiB
+median of runs: n 1239.00, f_med 16.66, f_p95 18.11, f_p99 20.72, f_max 45.76, f_mean 16.67, over25 6.00, over33 3.00, r_med 1.12, r_p95 2.31, r_p99 2.77, r_max 3.87, t_n 58.00, t_med 2.43, t_p95 3.61, t_p99 6.15, t_max 8.31, pss 161.42, rss 170.91, launch 633.90
+launch runs [620.3, 627.6, 627.6, 629.9, 624.3, 628.4] -> median of runs 2..n 627.6 ms (first run 620.3)

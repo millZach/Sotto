@@ -1,0 +1,12 @@
+# Reduced motion: GNOME enable-animations flipped on a private bus while the reply streamed
+# The breathing dot of "Writing a reply": mean green level of a 6x6 box at its brightest pixel, six captures per phase,
+# or "dim" when no pixel passed the accent threshold (the dot at the low point of its breath).
+set true -> true
+set false -> false
+set true -> true
+event=reduced-motion value=false source=gsettings
+event=reduced-motion value=true source=gsettings-monitor
+event=reduced-motion value=false source=gsettings-monitor
+motion 82 67 92 52 92 47
+reduced 92 92 92 92 92 92
+restored 53 92 55 89 65 90

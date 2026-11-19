@@ -1,0 +1,61 @@
+/home/zach/.sotto/thread-worktrees/ca88b36e-e998-4c2a-9dfe-2c6012cd1db6/native-ui-slint/tools/atspi-dump.py:20: DeprecationWarning: Atspi.Accessible.get_text is deprecated
+  if t: text = t.get_text(0, min(80, t.get_character_count()))
+application: 'sotto-slint'
+  frame: 'Sotto: Shelf loses entries after a crash'
+    title bar: 'Sotto: Shelf loses entries after a crash'
+      unknown: ''
+      label: 'Shelf loses entries after a crash'
+      button: 'Hide tools' [focusable]
+        unknown: ''
+      button: 'Use the light theme' [focusable]
+        unknown: ''
+      button: 'Minimise' [focusable]
+        unknown: ''
+      button: 'Maximise' [focusable]
+        unknown: ''
+      button: 'Close' [focusable]
+        unknown: ''
+    landmark: 'Thread'
+      list box: 'Transcript'
+        list item: 'Mostly nothing, which is the point. Typing in a long title on a slow disk should feel smoo' [focusable]
+          label: 'Mostly nothing, which is the point. Typing in a long title on a slow disk should feel smoo'
+        list item: 'To see the size of the change at a glance, and to check nothing outside the two folders mo' [focusable]
+          label: 'To see the size of the change at a glance, and to check nothing outside the two folders mo'
+        list item: 'Shell code, 2 lines. Enter copies it. git diff --stat main -- src/shelf src/sync' [focusable]
+          panel: 'Shell code, 2 lines'
+            button: 'Copy the Shell code' [focusable]
+              unknown: ''
+            label: "git diff --stat main -- src/shelf src/sync\ngit diff --stat main -- . ':!src/shelf' ':!src/"
+        list item: 'Ran git diff --stat main -- src/shelf src/sync, folded. Enter opens it.' [focusable]
+          button: 'Ran git diff --stat main -- src/shelf src/sync' desc='src/shelf/defaults.ts            |   3 +-' [focusable]
+            unknown: ''
+        list item: 'Heading level 2: What I did not change' [focusable]
+          label: 'Heading level 2: What I did not change'
+        list item: 'The upload path in src/sync/upload.ts still reads shelf.list() and does not know about the' [focusable]
+          label: 'The upload path in src/sync/upload.ts still reads shelf.list() and does not know about the'
+        list item: 'Heading level 2: What I could not check' [focusable]
+          label: 'Heading level 2: What I could not check'
+        list item: 'I ran the crash harness on Linux only. The rename and append guarantees I relied on hold o' [focusable]
+          label: 'I ran the crash harness on Linux only. The rename and append guarantees I relied on hold o'
+        list item: 'If this looks right, the next step is to run the harness on the Windows build machine, the' [focusable]
+          label: 'If this looks right, the next step is to run the harness on the Windows build machine, the'
+      form: 'Composer'
+        unknown: ''
+        unknown: ''
+        entry: 'Message' [focused,focusable]
+        button: 'Attach a file' [focusable]
+          unknown: ''
+        combo box: 'Permissions, Ask before edits' [focusable]
+          unknown: ''
+        combo box: 'Model, Opus 5.5' [focusable]
+          unknown: ''
+        combo box: 'Effort, High' [focusable]
+          unknown: ''
+        button: 'Send' [focusable]
+          unknown: ''
+    landmark: 'Tools'
+      landmark: 'Browser: Lantern shelf preview'
+        unknown: ''
+        label: 'Address localhost:5173/shelf'
+      unknown: ''
+      entry: 'zach@forge:~' desc='Shell. Tab goes to the shell; F6 leaves the terminal.' [focusable]

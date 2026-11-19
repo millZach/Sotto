@@ -1,0 +1,37 @@
+{
+ "poll_interval_ms": 30.0,
+ "region": "0,600 840x200",
+ "file": "ui/app.slint",
+ "runs": [
+  {
+   "run": 1,
+   "edit_to_screen": {
+    "ms": 691.675017,
+    "lower_bound_ms": 661.611818,
+    "captures": 24,
+    "grim_ms_median": 18.451732
+   },
+   "revert_to_screen": {
+    "ms": 752.057686,
+    "lower_bound_ms": 721.997348,
+    "captures": 26,
+    "grim_ms_median": 18.685248
+   }
+  },
+  {
+   "run": 2,
+   "edit_to_screen": {
+    "ms": 691.780602,
+    "lower_bound_ms": 661.717031,
+    "captures": 24,
+    "grim_ms_median": 18.390735
+   },
+   "revert_to_screen": {
+    "ms": 751.801277,
+    "lower_bound_ms": 721.734143,
+    "captures": 26,
+    "grim_ms_median": 18.908154
+   }
+  }
+ ]
+}
