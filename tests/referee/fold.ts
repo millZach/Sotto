@@ -11,6 +11,7 @@ import type { AgentThreadDetail, AgentThreadDetailDelta } from '../../src/shared
 import { applyAgentThreadDetailDelta } from '../../src/shared/agentThreadDetail'
 import { withKeptPartsPutBack, type HeldParts } from '../../src/shared/keptParts'
 import { createThreadReassembly } from '../../src/shared/threadReassembly'
+import { describeDifferences, equal } from './diff'
 
 type Json = Record<string, unknown>
 
@@ -152,9 +153,12 @@ export class ClientFold {
   private detailPush(frame: Json): void {
     if (typeof frame.threadId !== 'string') { this.problem('A detail push names no thread.'); return }
     const held = this.held.details[frame.threadId]
-    // A host sends a whole thread once for each revision: never an older one, and never the one the client holds again.
+    // A host never sends a whole thread older than the one the client holds. It may send the one the client holds again,
+    // as the TypeScript host does after a Devin send with attached files (#2699), which changes nothing so long as it
+    // is that revision exactly: a revision names what the thread holds.
     if (isObject(frame.detail) && held && typeof held.revision === 'number' && typeof frame.detail.revision === 'number' && frame.detail.revision <= held.revision) {
-      this.problem(`A detail push for thread ${frame.threadId} carries revision ${frame.detail.revision}, which is not newer than revision ${held.revision}, which the client holds.`)
+      if (frame.detail.revision < held.revision) this.problem(`A detail push for thread ${frame.threadId} carries revision ${frame.detail.revision}, which is older than revision ${held.revision}, which the client holds.`)
+      else if (!equal(frame.detail, held)) this.problem(`A detail push for thread ${frame.threadId} carries revision ${held.revision} again, which the client holds, with something else in it: ${describeDifferences(held, frame.detail).slice(0, 3).join('; ')}.`)
       return
     }
     this.held.details[frame.threadId] = isObject(frame.detail) ? clone(frame.detail) : null
