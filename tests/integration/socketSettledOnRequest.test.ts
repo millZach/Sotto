@@ -69,7 +69,8 @@ describe('settled threads on request', () => {
 
   it('finds a held-back thread by what was said in it, once the host reads its words', async () => {
     await settledThreads()
-    const held = await phone([...PROVIDERS, 'settled-threads-on-request'])
+    const held = await phone([...PROVIDERS, 'settled-threads-on-request', 'thread-words'])
+    const older = await phone([...PROVIDERS, 'settled-threads-on-request'])
     const page = await held.call('page', { op: 'settled-threads' }) as { result: { threads: AgentThread[] } }
     const stars = page.result.threads.find(thread => thread.title === 'Owl stars')!
     const words = vi.spyOn(fixture.host.service, 'threadWords').mockResolvedValue({ found: [{ threadId: stars.id, messageId: 'u0', role: 'user', quote: 'Make the invoice blink.', more: 0 }] })
@@ -78,6 +79,10 @@ describe('settled threads on request', () => {
     expect(words).toHaveBeenCalledExactlyOnceWith('invoice')
     // The phone's own read of the quotes, a moment later, is answered from the same read of the store.
     expect(await held.call('quotes', { op: 'thread-words', query: 'invoice' })).toMatchObject({ ok: true, result: { found: [{ threadId: stars.id }] } })
+    expect(words).toHaveBeenCalledTimes(1)
+    // A phone whose hello did not accept thread-words cannot quote such a thread, so its search finds only what titles say.
+    const plain = await older.call('plain', { op: 'settled-threads', query: 'invoice' }) as { result: { threads: AgentThread[] } }
+    expect(plain.result.threads).toEqual([])
     expect(words).toHaveBeenCalledTimes(1)
   })
 

@@ -177,6 +177,11 @@ interface Peer { browserWatches?: Map<string, { ticket: number; stop?: () => voi
    * until it connects again, so a thread settled while it watches stays where Undo can reach it.
    */
   settledOnRequest?: boolean; listed?: Set<string>
+  /**
+   * Whether its hello accepted `thread-words`: its `settled-threads` search also finds threads by what was said in them,
+   * which it can quote. An older phone, which cannot, is sent the threads its search's words name, as before.
+   */
+  threadWords?: boolean
   /** Whether its hello accepted `usable-models`: its catalog leaves out models that are not ready and nothing names. */
   usableModels?: boolean
   /**
@@ -669,6 +674,18 @@ export async function startSocketServer(options: SocketServerOptions) {
   /** A thread a phone is not shown: Watcher's own, and the ones Watcher's phone exclusions name. */
   const hiddenFromPhone = (peer: Peer, threadId: string): boolean => isPhonePeer(peer) && (service.watcherPhoneExclusions?.().threadIds.includes(threadId) || ['watcher', 'watcher-history'].includes(service.threadKind?.(threadId) ?? service.shell().host.threads.find(row => row.id === threadId)?.kind ?? ''))
   const hiddenThread = (peer: Peer, threadId: string): boolean => unknownProviderThread(peer, threadId) || hiddenFromPhone(peer, threadId)
+  /**
+   * `hiddenThread` for many threads at once, as a search names them: Watcher's phone exclusions read once, and the shell
+   * walked at most once for the kinds the host cannot say alone, so a page of matches costs the same however long the list.
+   */
+  const visibleTo = (peer: Peer): ((match: { readonly threadId: string }) => boolean) => {
+    const phone = isPhonePeer(peer)
+    const excluded = phone ? new Set(service.watcherPhoneExclusions?.().threadIds ?? []) : undefined
+    let kinds: Map<string, string | undefined> | undefined
+    const kind = (threadId: string): string => service.threadKind?.(threadId)
+      ?? (kinds ??= new Map(service.shell().host.threads.map(row => [row.id, row.kind]))).get(threadId) ?? ''
+    return ({ threadId }) => !unknownProviderThread(peer, threadId) && !(phone && (excluded!.has(threadId) || kind(threadId) === 'watcher' || kind(threadId) === 'watcher-history'))
+  }
   /** A project of a provider this peer does not know, by its provider as the host holds it (its scoped ID is read as well). */
   const unknownProviderProject = (peer: Peer, projectId: string): boolean => {
     const provider = service.projectProvider?.(projectId)
@@ -1783,6 +1800,7 @@ export async function startSocketServer(options: SocketServerOptions) {
         peer.keptParts = peer.threadRecords !== undefined && (request.accepts?.includes('kept-parts') ?? false) && offers(peer, 'kept-parts'); peer.keptBase = null
         peer.providerModeLists = (request.accepts?.includes('provider-mode-lists') ?? false) && offers(peer, 'provider-mode-lists')
         peer.settledOnRequest = (request.accepts?.includes('settled-threads-on-request') ?? false) && offers(peer, 'settled-threads-on-request')
+        peer.threadWords = (request.accepts?.includes('thread-words') ?? false) && offers(peer, 'thread-words')
         peer.usableModels = (request.accepts?.includes('usable-models') ?? false) && offers(peer, 'usable-models')
         // A hello again keeps where each window stands; one that no longer accepts the feature is sent whole threads.
         peer.stepWindows = (request.accepts?.includes('step-window') ?? false) && offers(peer, 'step-window') ? peer.stepWindows ?? new Map() : undefined
@@ -1872,8 +1890,8 @@ export async function startSocketServer(options: SocketServerOptions) {
         if (!peer.settledOnRequest) throw new Refusal('invalid_request')
         // The phone's own form of every thread, of which those its list leaves out are read a page at a time.
         const whole = shell(peer, service.shell(), true), held = heldBack(peer, whole)
-        // A search also finds the settled threads whose words hold it, where this listener offers thread-words.
-        const said = request.query?.trim() && offers(peer, 'thread-words') ? await threadWordsFor(request.query) : null
+        // A search also finds the settled threads whose words hold it, for a phone that accepted thread-words and can quote them.
+        const said = request.query?.trim() && peer.threadWords ? await threadWordsFor(request.query) : null
         const found = said ? new Set(said.found.map(match => match.threadId)) : undefined
         return settledPage(whole.host.threads.filter(thread => held.has(thread.id)), whole.host.projects, { ...request, found }) satisfies HostSettledThreadsPage
       }
@@ -2024,7 +2042,7 @@ export async function startSocketServer(options: SocketServerOptions) {
       case 'thread-words': {
         if (!offers(peer, 'thread-words') || !service.threadWords) throw new Refusal('invalid_request')
         const read = await threadWordsFor(request.query)
-        return read === null ? null : { found: read.found.filter(match => !hiddenThread(peer, match.threadId)) }
+        return read === null ? null : { found: read.found.filter(visibleTo(peer)) }
       }
       case 'thread-prompts':
         if (!offers(peer, 'thread-prompts') || !service.threadPrompts) throw new Refusal('invalid_request')

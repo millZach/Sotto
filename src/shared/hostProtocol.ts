@@ -236,9 +236,9 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * the messages the window holds, and sends no `throughMessageId`.
  * `thread-words`: the host answers `thread-words` with the threads whose messages hold a search's words, from its thread
  * store, for Search threads (Zach's picks of November 19, 2026): the user's messages and the agents' replies, wake-ups
- * left out, each with a quote of its newest match. Its `settled-threads` search then also finds the settled threads it
- * holds back whose words match. Offered to every client of a host that keeps a store; a client whose host does not list it
- * searches what the thread's row says, as before.
+ * left out, each with a quote of its newest match. For a phone whose hello accepts it, its `settled-threads` search
+ * then also finds the settled threads it holds back whose words match. Offered to every client of a host that keeps a
+ * store; a client whose host does not list it searches what the thread's row says, as before.
  * `host-update`: the host updates itself when a desktop asks (ADR-0088): `host-update` runs one step of a host update on
  * the host, the way the launch script runs it over SSH, and `host-update-step` pushes say which step it is on to a client
  * that accepts the feature. Offered only to a client the launch script recorded as a desktop whose `remote-answer` policy

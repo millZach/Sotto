@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { THREAD_WORDS_HOST_WAIT_MS } from '../../../src/shared/threadWords'
 import type { BrowserEvent } from '../../../src/shared/browser'
 import type { HostBrowserFrame } from '../../../src/shared/hostBrowser'
 import { serialize } from 'node:v8'
@@ -587,6 +588,18 @@ describe('desktop host routing', () => {
     router.add({ ...remote.connection, service: { ...remote.connection.service, threadWords: there }, available: () => false })
     expect(await router.threadWords({ query: 'purge' })).toEqual({ found: [match(hostEntityKey(LOCAL, 'thread'), 'purge here')] })
     expect(there).toHaveBeenCalledTimes(2)
+  })
+  it('shows every other host’s word matches without one that has not answered in time', async () => {
+    vi.useFakeTimers()
+    try {
+      const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+      const here = vi.fn(async () => ({ found: [{ threadId: 'thread', messageId: 'u0', role: 'user' as const, quote: 'purge', more: 0 }] }))
+      router.add({ ...local.connection, service: { ...local.connection.service, threadWords: here } })
+      router.add({ ...remote.connection, service: { ...remote.connection.service, threadWords: () => new Promise<never>(() => undefined) } })
+      const read = router.threadWords({ query: 'purge' })
+      await vi.advanceTimersByTimeAsync(THREAD_WORDS_HOST_WAIT_MS)
+      expect((await read)?.found.map(match => match.threadId)).toEqual([hostEntityKey(LOCAL, 'thread')])
+    } finally { vi.useRealTimers() }
   })
   it('reads a paired host\'s Files, Changes and Agents by its own IDs and hands every ID back as the window\'s key (ADR-0025, October 5 amendment)', async () => {
     const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')

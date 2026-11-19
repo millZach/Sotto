@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import type { AgentMessage } from '../../../src/shared/agents'
-import { agentThreadWordsSchema, THREAD_WORDS_MOST, THREAD_WORDS_QUOTE, threadWordQuote, threadWordsQuery } from '../../../src/shared/threadWords'
+import { agentThreadWordsSchema, THREAD_WORDS_MOST, THREAD_WORDS_QUOTE, threadWordHit, threadWordQuote, threadWordsQuery } from '../../../src/shared/threadWords'
 import { ThreadStore } from '../../../src/main/agents/threadStore'
 
 const open: ThreadStore[] = []
@@ -96,5 +96,12 @@ describe('a quote and a search as the store reads them', () => {
     const cut = threadWordQuote(`${'a'.repeat(THREAD_WORDS_QUOTE - 1)}😀 more`, 0, false)
     expect(cut).toBe(`${'a'.repeat(THREAD_WORDS_QUOTE - 1)}…`)
     expect(threadWordsQuery(`  ${'b'.repeat(199)}😀tail  `)).toBe('b'.repeat(199))
+  })
+
+  it('finds the search in a quote whose spaces were run together, and says when the quote does not show it', () => {
+    // The store matched "purge   timer"; the quote holds it on one line.
+    expect(threadWordHit('…the Purge timer runs', '  purge   timer ')).toEqual({ start: 5, length: 11 })
+    expect(threadWordHit('…cut before the', 'the match')).toBeUndefined()
+    expect(threadWordHit('anything', '   ')).toBeUndefined()
   })
 })

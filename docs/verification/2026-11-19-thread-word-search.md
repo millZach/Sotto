@@ -9,6 +9,7 @@ November 19, 2026, on forge, for [ADR-0209](../adr/0209-search-threads-reads-wha
 - Typing "zebra crossing timer" in Search threads finds it. Nothing the row says holds the phrase, so before this change the search could not find it (not run on `main`; the spec's own check that *Nothing matches* is absent stands for it). The row quotes "You: Keep the zebra crossing timer paragraph short.", the phrase marked, and **1 more in this thread** for the reply.
 - From the first key to the quoted row: 240, 319 and 229 ms over three runs, of which 200 ms is the wait after typing stops.
 - "routing" matches **Thread routing** by its title and **Release notes 1.4** by a reply. The title match lists first and has no quote; the word match quotes "Codex: The routing table is in the release notes."
+- Nothing in a quoted row moves, so reduced motion changes nothing in it; the captures were taken with animations off.
 - At the 820x560 minimum, the sidebar opened over the thread holds the quoted row inside the list.
 
 Captures, dark and light: `artifacts/thread-word-search/found-1600-*.png`, `found-1280-*.png` (the phrase found) and `found-820-*.png` (the "routing" search at the minimum).

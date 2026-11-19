@@ -742,8 +742,8 @@ export function groupByStatus(open: readonly ProjectFolder[], pinned?: ReadonlyM
  * The Snoozed shelf's rows as one flat list, newest activity first, for the sidebar by status (ADR-0201, Zach's call of
  * November 10, 2026).
  */
-export function snoozedShelfRows(folders: readonly ProjectFolder[]): ThreadRow[] {
-  return folders.flatMap(item => item.rows).sort((first, second) => byActivity({ activityAt: first.activityAt, id: first.thread.id }, { activityAt: second.activityAt, id: second.thread.id }))
+export function snoozedShelfRows(folders: readonly ProjectFolder[], wordOnly: ReadonlySet<string> = NO_WORD_ONLY): ThreadRow[] {
+  return folders.flatMap(item => item.rows).sort((first, second) => titleMatchesFirst(wordOnly, first, second) || byActivity({ activityAt: first.activityAt, id: first.thread.id }, { activityAt: second.activityAt, id: second.thread.id }))
 }
 
 /**

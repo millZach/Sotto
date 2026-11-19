@@ -5,7 +5,7 @@ import { t } from '@lingui/core/macro'
 import { CascadedSettles, delegatedElsewhere, LeftTally, restoreLeftWords, settledWithParent, settleLeftWords, stopLeftWords, type DelegatedElsewhere } from './crossMachineCascade'
 import type { StopLeft } from '../agents/delegationRelayHost'
 import type { AgentThreadPrompts, AgentThreadPromptsRequest } from '../../shared/threadPrompts'
-import { THREAD_WORDS_HOSTS, THREAD_WORDS_MOST, type AgentThreadWords, type AgentThreadWordsRequest } from '../../shared/threadWords'
+import { THREAD_WORDS_HOST_WAIT_MS, THREAD_WORDS_HOSTS, THREAD_WORDS_MOST, type AgentThreadWords, type AgentThreadWordsRequest } from '../../shared/threadWords'
 import type { AgentActivity } from '../../shared/agentActivity'
 import { startsThread, THREAD_STARTS_UNSUPPORTED } from '../../shared/threadStarts'
 import { incomingRefBranch } from '../../shared/bringChangesBack'
@@ -1447,13 +1447,17 @@ export class DesktopHostRouter {
   /**
    * The threads whose messages hold a search's words, for Search threads (Zach's pick of November 19, 2026): each host
    * searches its own store, this computer's and every connected paired host's at once, and the threads come back by the
-   * keys the window knows them by. A host that cannot say, or is disconnected, adds none; null only when none could say.
+   * keys the window knows them by. A host that cannot say, is disconnected, or has not answered within
+   * `THREAD_WORDS_HOST_WAIT_MS`, adds none; null only when none could say.
    */
   async threadWords(request: AgentThreadWordsRequest): Promise<AgentThreadWords | null> {
     const asked = [...this.hosts.values()].map(({ connection, run }) => ({ connection, run }))
       .filter(({ connection }) => connection.service.threadWords !== undefined && connection.available?.() !== false).slice(0, THREAD_WORDS_HOSTS)
     const answers = await Promise.all(asked.map(async ({ connection, run }) => {
-      const answer = await connection.service.threadWords!(request.query).catch(() => null)
+      let timer: ReturnType<typeof setTimeout> | undefined
+      const late = new Promise<null>(resolve => { timer = setTimeout(() => resolve(null), THREAD_WORDS_HOST_WAIT_MS) })
+      const answer = await Promise.race([connection.service.threadWords!(request.query).catch(() => null), late])
+      clearTimeout(timer)
       // An answer from a connection a reconnect has since replaced names that connection's threads, not the new one's.
       if (answer === null || run !== this.hosts.get(connection.hostId)?.run) return null
       return answer.found.map(match => ({ ...match, threadId: hostEntityKey(connection.hostId, match.threadId) }))

@@ -1,6 +1,6 @@
 import React, { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { ThreadWordQuotesContext, useThreadWordQuote, type ThreadWords } from './useThreadWords'
-import type { ThreadWordMatch } from '../../../shared/threadWords'
+import { threadWordHit, type ThreadWordMatch } from '../../../shared/threadWords'
 import { createPortal } from 'react-dom'
 import { plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
@@ -356,14 +356,13 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
 function WordQuote({ id, match, query, provider }: { readonly id: string; readonly match: ThreadWordMatch; readonly query: string; readonly provider: string }): ReactNode {
   const { t } = useLingui()
   const who = match.role === 'user' ? t({ message: 'You', comment: 'Before a quote of the user\'s own message, under a thread a search found by it: "You: …".' }) : provider
-  const at = match.quote.toLocaleLowerCase().indexOf(query.toLocaleLowerCase())
-  const lengthKept = match.quote.toLocaleLowerCase().length === match.quote.length
-  const words = at >= 0 && lengthKept
-    ? <>{match.quote.slice(0, at)}<mark className="thread-nav__hit">{match.quote.slice(at, at + query.length)}</mark>{match.quote.slice(at + query.length)}</>
+  const hit = threadWordHit(match.quote, query)
+  const words = hit
+    ? <>{match.quote.slice(0, hit.start)}<mark className="thread-nav__hit">{match.quote.slice(hit.start, hit.start + hit.length)}</mark>{match.quote.slice(hit.start + hit.length)}</>
     : match.quote
   const more = match.more
   return <span id={id} className="thread-nav__quote">
-    <span className="thread-nav__quote-words"><span className="thread-nav__quote-who">{t({ message: `${who}:`, comment: '{who} is "You" or the provider\'s name, before a quote of their message.' })}</span> {words}</span>
+    <span className="thread-nav__quote-words tt-paragraph"><span className="thread-nav__quote-who">{t({ message: `${who}:`, comment: '{who} is "You" or the provider\'s name, before a quote of their message.' })}</span> {words}</span>
     {more > 0 ? <span className="thread-nav__quote-more">{plural(more, { other: `${{ others: shownCount(more) }} more in this thread` })}</span> : null}
   </span>
 }
@@ -888,7 +887,7 @@ export function ThreadSidebar({ state, command, organization, query, threadWords
     return groups
   }, [byStatus, held.open, held.placed, renamingIds, organization.wordOnly])
   const statusGaps = useMemo(() => new Map([...gaps].filter(([threadId]) => held.placed.has(threadId))), [gaps, held.placed])
-  const snoozedFlat = useMemo(() => byStatus ? snoozedShelfRows(organization.snoozed ?? []) : undefined, [byStatus, organization.snoozed])
+  const snoozedFlat = useMemo(() => byStatus ? snoozedShelfRows(organization.snoozed ?? [], organization.wordOnly) : undefined, [byStatus, organization.snoozed, organization.wordOnly])
   // The open threads in the sidebar's order, which moving between threads follows.
   const openOrder = useMemo(() => {
     if (!byStatus) return organization.open.flatMap(folder => folder.rows)

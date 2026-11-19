@@ -35,10 +35,31 @@ export type ThreadWordMatch = z.infer<typeof threadWordMatchSchema>
 /** One host's answer. */
 export const agentThreadWordsSchema = z.object({ found: z.array(threadWordMatchSchema).max(THREAD_WORDS_MOST) }).strict()
 export type AgentThreadWords = z.infer<typeof agentThreadWordsSchema>
-/** The most hosts whose answers the desktop joins for its window: this computer and its paired hosts. */
-export const THREAD_WORDS_HOSTS = 16
+/**
+ * The most hosts whose answers the desktop joins for its window: this computer and its paired hosts, of which a desktop
+ * keeps at most 20 (`remote-hosts.json`), with room to spare.
+ */
+export const THREAD_WORDS_HOSTS = 32
+/**
+ * How long the desktop waits for one host's answer before it shows the others without it: a stalled socket would
+ * otherwise hold every computer's matches for its own two-minute deadline.
+ */
+export const THREAD_WORDS_HOST_WAIT_MS = 3_000
 /** The desktop's answer to its window: every host's threads found, joined. */
 export const joinedThreadWordsSchema = z.object({ found: z.array(threadWordMatchSchema).max(THREAD_WORDS_MOST * THREAD_WORDS_HOSTS) }).strict()
+
+/**
+ * Where a quote shows the search, which the quote may hold with its spaces run together: the start and length of the
+ * match in `quote`, or undefined when the quote does not show it (cut off before it, or a match only the case of a letter
+ * outside ASCII would make).
+ */
+export function threadWordHit(quote: string, query: string): { readonly start: number; readonly length: number } | undefined {
+  const needle = query.trim().replace(/\s+/gu, ' ').toLocaleLowerCase()
+  const lower = quote.toLocaleLowerCase()
+  if (needle === '' || lower.length !== quote.length) return undefined
+  const start = lower.indexOf(needle)
+  return start < 0 ? undefined : { start, length: needle.length }
+}
 
 /** A search as the store matches it: trimmed, cut to the longest it takes, never ending on half a character. */
 export function threadWordsQuery(query: string): string {
