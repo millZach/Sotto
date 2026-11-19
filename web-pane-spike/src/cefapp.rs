@@ -241,6 +241,21 @@ wrap_life_span_handler! {
             }
             hub().note(format!("browser created at {:.0} ms", hub().ms()));
         }
+        fn do_close(&self, browser: Option<&mut Browser>) -> ::std::os::raw::c_int {
+            // A windowed browser parented into another process's window (WP_PARENT_HWND): returning false would make
+            // CEF send WM_CLOSE to the top-level window, which is Sotto's own window. Destroy only CEF's child instead.
+            #[cfg(target_os = "windows")]
+            if std::env::var("WP_PARENT_HWND").is_ok() {
+                if let Some(host) = browser.and_then(|b| b.host()) {
+                    let hwnd = host.window_handle();
+                    unsafe { windows_sys::Win32::UI::WindowsAndMessaging::DestroyWindow(hwnd.0 as _); }
+                    hub().note("do_close: destroyed CEF's child window instead of closing the parent");
+                    return 1;
+                }
+            }
+            let _ = browser;
+            0
+        }
         fn on_before_close(&self, _browser: Option<&mut Browser>) {
             OBSERVER.with(|o| *o.borrow_mut() = None);
             BROWSER.with(|slot| *slot.borrow_mut() = None);

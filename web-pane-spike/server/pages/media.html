@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Media probe</title></head><body>
+<script>
+// Plays each clip and says what happened: whether it reached "playing" and advanced, or failed with which error.
+// The clips are served from ?media=<origin> (made with ffmpeg at run time, not kept in the repository).
+const base = new URLSearchParams(location.search).get('media') || '/media';
+window.probe = async () => {
+  const one = (src) => new Promise(done => {
+    const v = document.createElement('video'); v.muted = true; v.src = src; document.body.appendChild(v);
+    const t = setTimeout(() => done({ src, result: 'timeout', readyState: v.readyState, time: v.currentTime }), 6000);
+    v.onerror = () => { clearTimeout(t); done({ src, result: 'error', code: v.error && v.error.code, message: v.error && v.error.message }); };
+    v.onplaying = () => setTimeout(() => { clearTimeout(t); done({ src, result: 'playing', time: v.currentTime, width: v.videoWidth }); }, 600);
+    v.play().catch(e => {});
+  });
+  const types = { mse_h264: MediaSource.isTypeSupported('video/mp4; codecs="avc1.42E01E"'), mse_aac: MediaSource.isTypeSupported('audio/mp4; codecs="mp4a.40.2"'), mse_vp9: MediaSource.isTypeSupported('video/webm; codecs="vp9"') };
+  const caps = await navigator.mediaCapabilities.decodingInfo({ type: 'file', video: { contentType: 'video/mp4; codecs="avc1.42E01E"', width: 320, height: 240, bitrate: 500000, framerate: 30 } }).then(r => r.supported);
+  return JSON.stringify({ types, mediaCapabilities_h264: caps, clips: [await one(base + '/h264-aac.mp4'), await one(base + '/vp9-opus.webm')] });
+};
+</script></body></html>

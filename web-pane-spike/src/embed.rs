@@ -50,6 +50,8 @@ pub struct Shared {
     /// Set when the page runs in a helper process (WP_REMOTE): the socket to it.
     pub remote: Mutex<Option<i32>>,
     pub view_pub: (),
+    /// The wgpu adapter the window draws with (on a hybrid laptop, CEF's GPU process must open the same one).
+    pub adapter: String,
 }
 
 struct SendShared(Arc<Shared>);
@@ -80,7 +82,7 @@ wrap_render_handler! {
                 Ok(texture) => {
                     let us = start.elapsed().as_micros() as u64;
                     let mut t = s.timings.lock().unwrap();
-                    if t.first_frame_ms.is_none() { t.first_frame_ms = Some(hub().ms()); t.formats.push(format!("accelerated {:?} {}x{} planes={} modifier={:#x}", info.format, texture.width(), texture.height(), info.plane_count, info.modifier)); }
+                    if t.first_frame_ms.is_none() { t.first_frame_ms = Some(hub().ms()); t.formats.push(format!("accelerated {:?} {}x{} {}", info.format, texture.width(), texture.height(), plane_note(info))); }
                     t.import_us.push(us);
                     drop(t);
                     *s.texture.lock().unwrap() = Some(texture);
@@ -136,10 +138,11 @@ struct Uniforms {
     radius: f32,
     focused: f32,
     rect: [f32; 4],
+    menu: [f32; 4],
 }
 
 const SHADER: &str = r#"
-struct U { viewport: vec2<f32>, radius: f32, focused: f32, rect: vec4<f32> };
+struct U { viewport: vec2<f32>, radius: f32, focused: f32, rect: vec4<f32>, menu: vec4<f32> };
 @group(0) @binding(0) var page: texture_2d<f32>;
 @group(0) @binding(1) var samp: sampler;
 @group(0) @binding(2) var<uniform> u: U;
@@ -166,6 +169,8 @@ fn rounded(p: vec2<f32>, half: vec2<f32>, r: f32) -> f32 {
   // A focus ring outside the rounded edge when the page has the keyboard.
   let ring = u.focused * clamp(1.0 - abs(d - 3.0) / 1.5, 0.0, 1.0);
   let col = mix(bg, c, aa);
+  let inmenu = px.x >= u.menu.x && px.y >= u.menu.y && px.x < u.menu.x + u.menu.z && px.y < u.menu.y + u.menu.w;
+  if (inmenu) { return vec4(0.95, 0.62, 0.20, 1.0); }
   return vec4(mix(col, vec3(0.35, 0.55, 1.0), ring), 1.0);
 }
 "#;
@@ -228,6 +233,8 @@ impl EmbedApp {
     }
     /// One input record to the page, wherever it runs.
     fn send(&self, m: Msg) -> bool {
+        #[cfg(target_os = "windows")]
+        if let Some(sent) = crate::remote_win::send(&m) { return sent }
         #[cfg(target_os = "linux")]
         if let Some(sock) = *self.shared.remote.lock().unwrap() { return crate::wire::send(sock, &m, None) }
         match self.host() { Some(host) => { apply_to_host(&host, &m, &self.shared.view); true } None => false }
@@ -239,10 +246,13 @@ impl EmbedApp {
         // when the nested display is smaller than one.
         let fixed = std::env::var("WP_VIEW").ok().and_then(|v| { let (a, b) = v.split_once('x')?; Some((a.parse().ok()?, b.parse().ok()?)) });
         *self.shared.view.lock().unwrap() = fixed.unwrap_or((w.round() as i32, h.round() as i32));
-        *self.shared.scale.lock().unwrap() = gfx.window.scale_factor() as f32;
+        // WP_SCALE fixes the page's device scale factor (1 for the cost matrix, to match Linux); otherwise the display's.
+        *self.shared.scale.lock().unwrap() = std::env::var("WP_SCALE").ok().and_then(|v| v.parse().ok()).unwrap_or(gfx.window.scale_factor() as f32);
         let (vw, vh) = *self.shared.view.lock().unwrap();
         #[cfg(target_os = "linux")]
         if let Some(sock) = *self.shared.remote.lock().unwrap() { crate::wire::send(sock, &Msg::new(crate::wire::RESIZE, &[vw as u32, vh as u32]), None); return }
+        #[cfg(target_os = "windows")]
+        if crate::remote_win::send(&Msg::new(crate::wire::RESIZE, &[vw as u32, vh as u32])).is_some() { return }
         let _ = (vw, vh);
         if let Some(host) = self.host() { host.was_resized(); }
     }
@@ -256,7 +266,7 @@ impl EmbedApp {
         let start = Instant::now();
         let scale = gfx.window.scale_factor() as f32;
         let (x, y, w, h) = page_rect(&gfx.window);
-        let u = Uniforms { viewport: [gfx.config.width as f32, gfx.config.height as f32], radius: RADIUS * scale, focused: self.focused as i32 as f32, rect: [x as f32 * scale, y as f32 * scale, w as f32 * scale, h as f32 * scale] };
+        let u = Uniforms { viewport: [gfx.config.width as f32, gfx.config.height as f32], radius: RADIUS * scale, focused: self.focused as i32 as f32, rect: [x as f32 * scale, y as f32 * scale, w as f32 * scale, h as f32 * scale], menu: if std::env::var("WP_MENU").is_ok() { [200.0 * scale, 40.0 * scale, 220.0 * scale, 160.0 * scale] } else { [0.0; 4] } };
         self.shared.queue.write_buffer(&gfx.uniforms, 0, bytemuck::bytes_of(&u));
         let page = self.shared.texture.lock().unwrap().clone().unwrap_or_else(|| gfx.placeholder.clone());
         let view = page.create_view(&wgpu::TextureViewDescriptor::default());
@@ -313,6 +323,9 @@ impl EmbedApp {
             "formats": t.formats, "errors": t.errors, "cycles": t.cycles,
             "events": self.events,
             "page_console": hub().console.lock().unwrap().iter().filter(|m| m.starts_with("EVT")).cloned().collect::<Vec<_>>(),
+            "adapter": self.shared.adapter,
+            "page_scale": *self.shared.scale.lock().unwrap(),
+            "view": *self.shared.view.lock().unwrap(),
             "window": self.gfx.as_ref().map(|g| { let s = g.window.inner_size(); (s.width, s.height, g.window.scale_factor()) }),
         });
         let dir = std::env::var("WP_RUN_DIR").unwrap_or(".".into());
@@ -379,6 +392,16 @@ impl ApplicationHandler for EmbedApp {
         #[cfg(target_os = "linux")]
         if std::env::var("WP_REMOTE").is_ok() {
             crate::remote::start_controller(self.shared_handle(), window.clone());
+            window.request_redraw();
+            return;
+        }
+        #[cfg(target_os = "windows")]
+        if std::env::var("WP_REMOTE").is_ok() {
+            use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
+            let hwnd = match window.window_handle().map(|h| h.as_raw()) { Ok(RawWindowHandle::Win32(h)) => h.hwnd.get() as u64, _ => 0 };
+            let (x, y, w, h) = page_rect(&window);
+            let s = window.scale_factor();
+            crate::remote_win::start_controller(self.shared.clone(), window.clone(), hwnd, ((x * s) as i32, (y * s) as i32, (w * s) as i32, (h * s) as i32));
             window.request_redraw();
             return;
         }
@@ -486,8 +509,11 @@ pub fn run(args: &cef::args::Args, app: &mut cef::App, mode: &str) -> ExitCode {
     #[cfg(target_os = "macos")]
     let backends = wgpu::Backends::METAL;
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor { backends, ..wgpu::InstanceDescriptor::new_without_display_handle() });
-    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default())).expect("adapter");
+    // WP_POWER=high asks for the discrete GPU on a hybrid laptop; the default is the adapter the OS lists first.
+    let power_preference = if std::env::var("WP_POWER").as_deref() == Ok("high") { wgpu::PowerPreference::HighPerformance } else if std::env::var("WP_POWER").as_deref() == Ok("low") { wgpu::PowerPreference::LowPower } else { wgpu::PowerPreference::None };
+    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions { power_preference, ..Default::default() })).expect("adapter");
     let info = adapter.get_info();
+    let adapter_name = format!("{} ({:?}, {:?})", info.name, info.backend, info.device_type);
     eprintln!("[embed] adapter {} {:?} driver {}", info.name, info.backend, info.driver_info);
     #[cfg(target_os = "linux")]
     let features = if accelerated { wgpu::Features::VULKAN_EXTERNAL_MEMORY_DMA_BUF } else { wgpu::Features::empty() };
@@ -515,7 +541,7 @@ pub fn run(args: &cef::args::Args, app: &mut cef::App, mode: &str) -> ExitCode {
         hub().wait_ready(Duration::from_secs(20));
     }
 
-    let shared = Arc::new(Shared { device, queue, texture: Mutex::new(None), timings: Mutex::new(Timings::default()), view: Mutex::new((1000, 700)), scale: Mutex::new(1.0), proxy: Mutex::new(None), frames: AtomicU64::new(0), accelerated, remote: Mutex::new(None), view_pub: () });
+    let shared = Arc::new(Shared { device, queue, texture: Mutex::new(None), timings: Mutex::new(Timings::default()), view: Mutex::new((1000, 700)), scale: Mutex::new(1.0), proxy: Mutex::new(None), frames: AtomicU64::new(0), accelerated, remote: Mutex::new(None), view_pub: (), adapter: adapter_name });
     let event_loop = EventLoop::new().unwrap();
     *shared.proxy.lock().unwrap() = Some(event_loop.create_proxy());
     let seconds: u64 = std::env::var("WP_EMBED_SECONDS").ok().and_then(|s| s.parse().ok()).unwrap_or(0);
@@ -525,6 +551,8 @@ pub fn run(args: &cef::args::Args, app: &mut cef::App, mode: &str) -> ExitCode {
     app_state.write_stats();
     #[cfg(target_os = "linux")]
     if remote { crate::remote::stop_all(); return ExitCode::SUCCESS }
+    #[cfg(target_os = "windows")]
+    if remote { crate::remote_win::stop_all(); return ExitCode::SUCCESS }
     if let Some(host) = app_state.host() { host.close_browser(1); }
     let deadline = Instant::now() + Duration::from_secs(5);
     while !hub().closed.load(Ordering::SeqCst) && Instant::now() < deadline { std::thread::sleep(Duration::from_millis(20)); }
@@ -560,12 +588,12 @@ impl ApplicationHandler for ChildApp {
         hub().note(format!("parent window id {parent:#x}"));
         let (x, y, w, h) = page_rect(&window);
         let s = window.scale_factor();
+        // set_as_child also sets the Windows style (WS_CHILD | WS_VISIBLE | ...); without it CEF makes a hidden
+        // top-level window owned by the parent, not a child.
         let window_info = WindowInfo {
-            parent_window: parent as _,
-            bounds: Rect { x: (x * s) as i32, y: (y * s) as i32, width: (w * s) as i32, height: (h * s) as i32 },
             runtime_style: RuntimeStyle::from(sys::cef_runtime_style_t::CEF_RUNTIME_STYLE_ALLOY),
             ..Default::default()
-        };
+        }.set_as_child(parent_handle(parent), &Rect { x: (x * s) as i32, y: (y * s) as i32, width: (w * s) as i32, height: (h * s) as i32 });
         let settings = BrowserSettings::default();
         let mut client = SpikeClient::new(None);
         let url = std::env::var("WP_URL").unwrap_or_else(|_| "http://127.0.0.1:8765/anim.html".into());
@@ -573,7 +601,7 @@ impl ApplicationHandler for ChildApp {
         let deadline = Instant::now() + Duration::from_secs(10);
         while cefapp::LAST_BROWSER.lock().unwrap().is_none() && Instant::now() < deadline { std::thread::sleep(Duration::from_millis(5)); }
         self.browser = cefapp::LAST_BROWSER.lock().unwrap().as_ref().map(|b| b.0.clone());
-        hub().note(format!("windowed browser created={} handle={:#x}", self.browser.is_some(), self.browser.as_ref().and_then(|b| b.host()).map(|h| h.window_handle() as u64).unwrap_or(0)));
+        hub().note(format!("windowed browser created={} handle={:#x}", self.browser.is_some(), self.browser.as_ref().and_then(|b| b.host()).map(|h| handle_value(h.window_handle())).unwrap_or(0)));
         self.window = Some(window);
         let _ = &self.note;
     }
@@ -625,3 +653,20 @@ fn run_child(args: &cef::args::Args, app: &mut cef::App) -> ExitCode {
 
 #[allow(dead_code)]
 fn _unused(_s: SendShared) {}
+
+#[cfg(target_os = "linux")]
+fn plane_note(info: &AcceleratedPaintInfo) -> String { format!("planes={} modifier={:#x}", info.plane_count, info.modifier) }
+#[cfg(target_os = "windows")]
+fn plane_note(info: &AcceleratedPaintInfo) -> String { format!("nt-handle={:p}", info.shared_texture_handle) }
+#[cfg(target_os = "macos")]
+fn plane_note(_info: &AcceleratedPaintInfo) -> String { "iosurface".into() }
+
+/// CEF's native window handle: an X11 id on Linux, an HWND on Windows.
+#[cfg(target_os = "windows")]
+pub fn parent_handle(v: u64) -> cef::sys::HWND { cef::sys::HWND(v as *mut _) }
+#[cfg(not(target_os = "windows"))]
+pub fn parent_handle(v: u64) -> std::os::raw::c_ulong { v as _ }
+#[cfg(target_os = "windows")]
+pub fn handle_value(h: cef::sys::HWND) -> u64 { h.0 as u64 }
+#[cfg(not(target_os = "windows"))]
+pub fn handle_value(h: std::os::raw::c_ulong) -> u64 { h as u64 }

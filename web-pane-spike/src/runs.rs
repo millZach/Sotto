@@ -551,6 +551,16 @@ pub fn run_pane() -> Value {
     json!({ "started_ms": started, "first_paint_ms": first, "paints": hub().paints.load(Ordering::Relaxed) + hub().accelerated_paints.load(Ordering::Relaxed) })
 }
 
+/// One page and one expression: opens WP_URL, waits WP_WAIT_MS, evaluates WP_EVAL (awaiting a promise), records it.
+pub fn run_eval() -> Value {
+    let url = std::env::var("WP_URL").unwrap_or_else(|_| format!("{}/idle.html", base()));
+    if !open(&url, (800, 600), None) { return json!({ "error": "page did not load" }) }
+    std::thread::sleep(Duration::from_millis(std::env::var("WP_WAIT_MS").ok().and_then(|v| v.parse().ok()).unwrap_or(500)));
+    let result = eval(&std::env::var("WP_EVAL").unwrap_or_else(|_| "document.title".into()));
+    close_and_quit();
+    json!({ "url": url, "result": result })
+}
+
 pub fn close_and_quit() {
     close_browser();
     let deadline = Instant::now() + Duration::from_secs(10);

@@ -14,6 +14,8 @@ pub const KEY: u32 = 6;
 pub const FOCUS: u32 = 7;
 pub const RESIZE: u32 = 8;
 pub const SOFTWARE: u32 = 9;
+/// Windows windowed helper: its page finished loading (no frames cross in that shape).
+pub const LOADED: u32 = 10;
 
 /// Sixteen little-endian u32 fields; field 0 is the kind. Frames carry u64s split over two fields.
 #[derive(Clone, Copy, Default, Debug)]
@@ -30,13 +32,13 @@ impl Msg {
     pub fn u64_at(&self, i: usize) -> u64 { self.0[i] as u64 | ((self.0[i + 1] as u64) << 32) }
     pub fn i(&self, i: usize) -> i32 { self.0[i] as i32 }
     #[allow(dead_code)]
-    fn bytes(&self) -> [u8; 64] {
+    pub fn bytes(&self) -> [u8; 64] {
         let mut b = [0u8; 64];
         for (i, v) in self.0.iter().enumerate() { b[i * 4..i * 4 + 4].copy_from_slice(&v.to_le_bytes()); }
         b
     }
     #[allow(dead_code)]
-    fn from_bytes(b: &[u8; 64]) -> Msg {
+    pub fn from_bytes(b: &[u8; 64]) -> Msg {
         let mut m = [0u32; 16];
         for (i, v) in m.iter_mut().enumerate() { *v = u32::from_le_bytes(b[i * 4..i * 4 + 4].try_into().unwrap()); }
         Msg(m)

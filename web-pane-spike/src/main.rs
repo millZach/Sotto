@@ -4,8 +4,12 @@
 mod cefapp;
 mod embed;
 mod hub;
+#[cfg(target_os = "windows")]
+mod osr;
 #[cfg(target_os = "linux")]
 mod remote;
+#[cfg(target_os = "windows")]
+mod remote_win;
 mod runs;
 mod wire;
 
@@ -85,6 +89,10 @@ fn main() -> ExitCode {
     if mode == "helper" {
         return remote::run_helper(&args, &mut app);
     }
+    #[cfg(target_os = "windows")]
+    if mode == "helper" {
+        return remote_win::run_helper(&args, &mut app);
+    }
     if mode == "embed" || mode == "child" {
         return embed::run(&args, &mut app, &mode);
     }
@@ -121,6 +129,9 @@ fn main() -> ExitCode {
             "seal" => runs::run_seal(cefapp::config().seal.unwrap()),
             "net" => runs::run_net(),
             "pane" => runs::run_pane(),
+            "eval" => runs::run_eval(),
+            #[cfg(target_os = "windows")]
+            "osr" => osr::run_osr(),
             other => serde_json::json!({ "error": format!("unknown mode {other}") }),
         };
         result

@@ -5,7 +5,7 @@ from urllib.parse import urlsplit
 run = sys.argv[1]
 t0 = None
 try:
-    raw = open(f'{run}/netlog.json').read()
+    raw = open(f'{run}/netlog.json', encoding='utf-8').read()
     if not raw.rstrip().endswith('}'):
         raw = raw.rstrip().rstrip(',') + ']}'
     log = json.loads(raw)
@@ -31,7 +31,8 @@ try:
     for h, t in hosts.items(): print(f'  {(t - t0)/1000:7.1f}s  {h}')
 except FileNotFoundError:
     print('no netlog')
-out = subprocess.run(['tcpdump', '-nn', '-r', f'{run}/net.pcap', 'ip or ip6'], capture_output=True, text=True).stdout
+import os
+out = subprocess.run(['tcpdump', '-nn', '-r', f'{run}/net.pcap', 'ip or ip6'], capture_output=True, text=True).stdout if os.path.exists(f'{run}/net.pcap') else ''  # no capture on Windows without elevation
 dns, flows = collections.OrderedDict(), collections.Counter()
 for line in out.splitlines():
     m = re.search(r'(A|AAAA|HTTPS|SVCB|PTR)\? (\S+)\.? ', line)
