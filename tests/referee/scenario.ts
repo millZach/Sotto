@@ -160,8 +160,6 @@ export const HELD_OUT: Readonly<Partial<Record<ScenarioName, { readonly provider
     reason: 'After the host starts again, whether the turn the restart stopped is sent the resume note, and whether it goes before or after the clients observe the thread again, differ from run to run (#2710).' },
   'lost-acknowledgement': { providers: new Set(['claude']),
     reason: 'Once the turn whose acknowledgement came late ends, Claude Code\'s thread summary counts one activity in some runs and none in others, with the same detail (#2698).' },
-  pictures: { providers: new Set(['codex', 'claude', 'muse', 'opencode', 'cursor']),
-    reason: 'After a send with a picture, the host can send the whole detail again at the revision the client holds, with the picture\'s preview added (#2699).' },
 }
 
 /** Why a provider's script is held out, or undefined when it is recorded and replayed. */
