@@ -61,9 +61,12 @@ export function threadWordHit(quote: string, query: string): { readonly start: n
   return start < 0 ? undefined : { start, length: needle.length }
 }
 
-/** A search as the store matches it: trimmed, cut to the longest it takes, never ending on half a character. */
+/**
+ * A search as the store matches it: trimmed, each run of spaces and line breaks made one space, as a quote shows them,
+ * and cut to the longest it takes, never ending on half a character.
+ */
 export function threadWordsQuery(query: string): string {
-  const trimmed = query.trim()
+  const trimmed = query.trim().replace(/\s+/gu, ' ')
   if (trimmed.length <= THREAD_WORDS_QUERY) return trimmed
   const code = trimmed.charCodeAt(THREAD_WORDS_QUERY - 1)
   return trimmed.slice(0, code >= 0xd800 && code <= 0xdbff ? THREAD_WORDS_QUERY - 1 : THREAD_WORDS_QUERY).trim()

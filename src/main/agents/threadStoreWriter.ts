@@ -300,7 +300,10 @@ export class ThreadStoreWriterOnWorker implements ThreadStoreWriter {
   /** On the worker, behind every write sent before it, as `readPrompts` is; with writes held unsent, the caller reads on main. */
   readWords(query: string): Promise<WordsReadBack> | undefined {
     const worker = this.store.writer
-    if (!worker || this.held > 0 || this.switching || this.recovering) return undefined
+    if (!worker) return undefined
+    // While writes are held behind a switch or a recovery, a read of every message would run on main and hold the window;
+    // the search finds what the rows say this once instead.
+    if (this.held > 0 || this.switching || this.recovering) return Promise.resolve({ unreadable: true })
     return new Promise(resolve => { worker.readWords(query, resolve) })
   }
 

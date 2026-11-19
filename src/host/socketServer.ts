@@ -675,16 +675,20 @@ export async function startSocketServer(options: SocketServerOptions) {
   const hiddenFromPhone = (peer: Peer, threadId: string): boolean => isPhonePeer(peer) && (service.watcherPhoneExclusions?.().threadIds.includes(threadId) || ['watcher', 'watcher-history'].includes(service.threadKind?.(threadId) ?? service.shell().host.threads.find(row => row.id === threadId)?.kind ?? ''))
   const hiddenThread = (peer: Peer, threadId: string): boolean => unknownProviderThread(peer, threadId) || hiddenFromPhone(peer, threadId)
   /**
-   * `hiddenThread` for many threads at once, as a search names them: Watcher's phone exclusions read once, and the shell
-   * walked at most once for the kinds the host cannot say alone, so a page of matches costs the same however long the list.
+   * `hiddenThread` for many threads at once, as a search names them: Watcher's phone exclusions read once, and each
+   * thread's kind asked of the host without a walk of its list, so a page of matches costs the same however long the list.
    */
   const visibleTo = (peer: Peer): ((match: { readonly threadId: string }) => boolean) => {
     const phone = isPhonePeer(peer)
     const excluded = phone ? new Set(service.watcherPhoneExclusions?.().threadIds ?? []) : undefined
-    let kinds: Map<string, string | undefined> | undefined
-    const kind = (threadId: string): string => service.threadKind?.(threadId)
-      ?? (kinds ??= new Map(service.shell().host.threads.map(row => [row.id, row.kind]))).get(threadId) ?? ''
-    return ({ threadId }) => !unknownProviderThread(peer, threadId) && !(phone && (excluded!.has(threadId) || kind(threadId) === 'watcher' || kind(threadId) === 'watcher-history'))
+    return ({ threadId }) => {
+      if (unknownProviderThread(peer, threadId)) return false
+      if (!phone) return true
+      if (excluded!.has(threadId)) return false
+      const kind = service.threadKind?.(threadId)
+      // A thread whose kind the host cannot say alone is read as `hiddenThread` reads it.
+      return kind === undefined ? !hiddenFromPhone(peer, threadId) : kind !== 'watcher' && kind !== 'watcher-history'
+    }
   }
   /** A project of a provider this peer does not know, by its provider as the host holds it (its scoped ID is read as well). */
   const unknownProviderProject = (peer: Peer, projectId: string): boolean => {
@@ -1566,14 +1570,23 @@ export async function startSocketServer(options: SocketServerOptions) {
    * for the quotes and `settled-threads` for the settled threads it was not sent, and both answer from one read of the
    * store. Never kept past a moment, so a thread that says the words later is found by the next search.
    */
-  let lastWords: { readonly query: string; readonly at: number; readonly read: Promise<AgentThreadWords | null> } | undefined
+  let lastWords: { query: string; at: number | undefined; read: Promise<AgentThreadWords | null> } | undefined
   const threadWordsFor = (query: string): Promise<AgentThreadWords | null> => {
     const needle = threadWordsQuery(query), now = Date.now()
     if (needle === '' || !service.threadWords) return Promise.resolve(null)
-    if (lastWords && lastWords.query === needle && now - lastWords.at < THREAD_WORDS_REUSE_MS) return lastWords.read
-    const read = service.threadWords(needle).catch(() => null)
-    lastWords = { query: needle, at: now, read }
-    return read
+    // A read still on its way answers too; a finished one answers for a few seconds after it finished, and a failed one not at all.
+    if (lastWords && lastWords.query === needle && (lastWords.at === undefined || now - lastWords.at < THREAD_WORDS_REUSE_MS)) return lastWords.read
+    const entry: { query: string; at: number | undefined; read: Promise<AgentThreadWords | null> } = { query: needle, at: undefined, read: Promise.resolve(null) }
+    entry.read = service.threadWords(needle).then(found => {
+      if (lastWords === entry) entry.at = Date.now()
+      if (found === null && lastWords === entry) lastWords = undefined
+      return found
+    }, () => {
+      if (lastWords === entry) lastWords = undefined
+      return null
+    })
+    lastWords = entry
+    return entry.read
   }
   /** A large read, one at a time per peer, on the guard a preview takes. */
   const oneAtATime = async <T>(peer: Peer, read: () => Promise<T>): Promise<T> => {

@@ -32,9 +32,10 @@ public extension Wire {
     static let threadWordsFeature = "thread-words"
     /// The longest search a computer reads, counted as it counts, in UTF-16 units.
     static let threadWordsLongest = 200
-    /// A search as a computer reads it: trimmed, and cut to the longest it takes without cutting a character in two.
+    /// A search as a computer reads it: trimmed, each run of spaces and line breaks made one space, as a quote shows them,
+    /// and cut to the longest it takes without cutting a character in two.
     static func threadWordsQuery(_ query: String) -> String {
-        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = query.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
         guard trimmed.utf16.count > threadWordsLongest else { return trimmed }
         var cut = "", units = 0
         for character in trimmed {

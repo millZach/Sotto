@@ -1043,9 +1043,13 @@ export class ThreadStore {
     // index instead, which took the owner's store twice as long (November 19, 2026, 114 ms against 51 ms).
     const threads = this.statement(`WITH hits AS MATERIALIZED (SELECT m.thread_id, m.message_id, m.position, m.created_at FROM messages m
         WHERE m.role IN ('user', 'assistant') AND m.text LIKE ? ESCAPE '\\')
-      SELECT h.thread_id AS thread_id, COUNT(*) AS hits, MAX(h.created_at) AS newest, MAX(h.position) AS last FROM hits h
-        WHERE NOT EXISTS (SELECT 1 FROM wake_ups w WHERE w.thread_id = h.thread_id AND w.message_id = h.message_id)
-        GROUP BY h.thread_id ORDER BY newest DESC LIMIT ${THREAD_WORDS_MOST}`).all(pattern)
+      SELECT g.thread_id AS thread_id, g.hits AS hits, g.last AS last FROM (
+        SELECT h.thread_id AS thread_id, COUNT(*) AS hits, MAX(h.position) AS last FROM hits h
+          WHERE NOT EXISTS (SELECT 1 FROM wake_ups w WHERE w.thread_id = h.thread_id AND w.message_id = h.message_id)
+          GROUP BY h.thread_id) g
+      -- A thread's newest match is its last in the conversation, the one it quotes, and threads are ordered by when that was said.
+      JOIN messages n ON n.thread_id = g.thread_id AND n.position = g.last
+      ORDER BY n.created_at DESC LIMIT ${THREAD_WORDS_MOST}`).all(pattern)
     const stretch = THREAD_WORDS_BEFORE + THREAD_WORDS_QUOTE + 1
     const from = `max(0, instr(lower(text), lower($needle)) - 1 - ${THREAD_WORDS_BEFORE})`
     const newest = this.statement(`SELECT role, message_id, length(text) AS size, ${from} AS start, substr(text, ${from} + 1, ${stretch}) AS stretch

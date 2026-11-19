@@ -4131,7 +4131,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * The threads whose messages hold `query`, for Search threads: the user's messages and the agents' replies, wake-ups
    * left out, each found thread with a quote of its newest match. Only threads this host lists are named; a thread the
    * store still holds words of after it was deleted is not. Read on the store worker, as `threadPrompts` is, and on main
-   * only with no worker. Null when the store cannot answer. Read only when a search asks, and never published.
+   * only with no worker. Null when the store cannot answer, and while a worker's writes are held. Read only when a search asks, and never published.
    */
   async threadWords(query: string): Promise<AgentThreadWords | null> {
     if (this.storeUnavailable) return null

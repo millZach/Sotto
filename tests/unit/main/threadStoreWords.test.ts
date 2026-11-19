@@ -76,6 +76,14 @@ describe('Search threads’ read of what was said', () => {
     expect(times).toEqual([...times].sort((first, second) => second - first))
   })
 
+  it('quotes the match it orders the thread by: its last in the conversation, whatever the clock says', async () => {
+    const target = await store()
+    // The later message carries the earlier time, as a provider's corrected timestamp can.
+    add(target, 'clock', [message('u0', 'user', 'purge first', 30), message('u1', 'user', 'purge later', 10)])
+    add(target, 'between', [message('u0', 'user', 'purge between', 20)])
+    expect(target.threadWords('purge').found.map(match => [match.threadId, match.messageId])).toEqual([['between', 'u0'], ['clock', 'u1']])
+  })
+
   it('quotes a long message around its match, on one line, cut at both ends', async () => {
     const target = await store()
     const long = `${'Opening words. '.repeat(30)}Here the\n\nneedle sits${' and the message goes on'.repeat(30)}`
@@ -96,6 +104,7 @@ describe('a quote and a search as the store reads them', () => {
     const cut = threadWordQuote(`${'a'.repeat(THREAD_WORDS_QUOTE - 1)}😀 more`, 0, false)
     expect(cut).toBe(`${'a'.repeat(THREAD_WORDS_QUOTE - 1)}…`)
     expect(threadWordsQuery(`  ${'b'.repeat(199)}😀tail  `)).toBe('b'.repeat(199))
+    expect(threadWordsQuery(' purge  \n timer ')).toBe('purge timer')
   })
 
   it('finds the search in a quote whose spaces were run together, and says when the quote does not show it', () => {

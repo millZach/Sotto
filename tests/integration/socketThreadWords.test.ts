@@ -59,6 +59,11 @@ describe('Search threads’ words over the socket', () => {
       await phone.call('again', { op: 'thread-words', query: 'purge' })
       expect(read).toHaveBeenCalledTimes(1)
       expect(await phone.call('empty', { op: 'thread-words', query: '   ' })).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+      // A read that failed is not kept: the next search reads the store again.
+      read.mockRejectedValueOnce(new Error('store busy'))
+      expect(await phone.call('failed', { op: 'thread-words', query: 'pilot' })).toMatchObject({ ok: true, result: null })
+      expect(await phone.call('retried', { op: 'thread-words', query: 'pilot' })).toMatchObject({ ok: true, result: { found: [] } })
+      expect(read).toHaveBeenCalledTimes(3)
     } finally { phone.frames.close(); await server.close() }
   })
 

@@ -16,6 +16,7 @@ final class ThreadWordsTests: XCTestCase {
 
     func testTheRequestCarriesTheTrimmedSearchCutToWhatAComputerTakes() {
         XCTAssertEqual(Wire.threadWords(query: "  rust port \n"), ["op": .string("thread-words"), "query": .string("rust port")])
+        XCTAssertEqual(Wire.threadWordsQuery("purge  \n timer"), "purge timer", "Runs of spaces are one space, as the quote shows them")
         XCTAssertNil(Wire.threadWords(query: "   "), "A search with no words asks nothing, which a computer would refuse")
         let long = Wire.threadWords(query: String(repeating: "a", count: 250))
         XCTAssertEqual(long?["query"]?.string, String(repeating: "a", count: 200))
