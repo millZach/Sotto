@@ -27,6 +27,27 @@ type PlanTask = { subject: string; status: unknown; active?: string | undefined 
 const MAX_APPLIED_TASK_CALLS = 512
 /** A task tool call of the main thread, waiting on its result. */
 type TaskCall = { name: string; input: Record<string, unknown> | undefined }
+/** How many tasks earlier turns finished are remembered. */
+const MAX_FINISHED_TASKS = 500
+/** TaskCreate's answer, "Task #4 created successfully: Create d.txt", in a transcript line that carries no result of its own. */
+const TASK_CREATED = /^Task #(\S+) created successfully: (.+)$/u
+
+/**
+ * The task call a result answers when its call was never seen, read from the result's own shape as Claude Code 2.1.328
+ * writes it: TaskCreate's id and subject, TaskUpdate's task id and the status it moved to, TaskList's tasks. A TaskUpdate
+ * whose line carries no result says nothing of what changed, so it changes nothing, and is still no tool step. TaskGet's
+ * answer is not read this way.
+ */
+function orphanTaskCall(block: ClaudeFrame, result: Record<string, unknown> | undefined): TaskCall | undefined {
+  const content = claudeText(block.content).trim()
+  const made = object(result?.task)
+  const created = TASK_CREATED.exec(content)
+  if (created && (made === undefined || (typeof made.id === 'string' && typeof made.subject === 'string'))) return { name: 'TaskCreate', input: { subject: text(made?.subject) ?? created[2] } }
+  const moved = object(result?.statusChange)?.to
+  if (/^Updated task #\S+/u.test(content)) return { name: 'TaskUpdate', input: result?.success === true && typeof result.taskId === 'string' && typeof moved === 'string' ? { taskId: result.taskId, status: moved } : {} }
+  if (/^#\S+ \[/u.test(content) && Array.isArray(result?.tasks) && result.tasks.every(task => typeof object(task)?.id === 'string' && typeof object(task)?.subject === 'string')) return { name: 'TaskList', input: {} }
+  return undefined
+}
 /** An activity row holds at most 200 agents: the workflow's own and this many of its agents. */
 const MAX_WORKFLOW_AGENTS = 199
 const iso = (value: unknown): string | undefined => typeof value === 'number' && Number.isFinite(value) && value > 0 ? new Date(value).toISOString() : undefined
@@ -223,8 +244,14 @@ export class ClaudeActivity {
         }
       }
       if (block.type === 'tool_result' && typeof block.tool_use_id === 'string' && this.appliedTaskCalls.has(block.tool_use_id)) continue
-      if (block.type === 'tool_result' && typeof block.tool_use_id === 'string' && this.taskCalls.has(block.tool_use_id)) {
-        const plan = this.taskResult(previous, this.taskCalls.get(block.tool_use_id)!, block, object(frame.tool_use_result) ?? object(frame.toolUseResult), turnId, base)
+      // A task call this projector never saw, made before it started partway through a turn, is known by its result. Its
+      // words are read first, so a result that is no task's looks up no row.
+      const orphan = block.type === 'tool_result' && typeof block.tool_use_id === 'string' && !parentTool && !this.taskCalls.has(block.tool_use_id)
+        ? orphanTaskCall(block, object(frame.tool_use_result) ?? object(frame.toolUseResult)) : undefined
+      const taskCall = block.type === 'tool_result' && typeof block.tool_use_id === 'string' ? this.taskCalls.get(block.tool_use_id)
+        ?? (orphan && !findAgentActivity(previous, `claude-tool-${block.tool_use_id}`) && !this.readActivity?.(`claude-tool-${block.tool_use_id}`) ? orphan : undefined) : undefined
+      if (taskCall && typeof block.tool_use_id === 'string') {
+        const plan = this.taskResult(previous, taskCall, block, object(frame.tool_use_result) ?? object(frame.toolUseResult), turnId, base)
         this.taskCalls.delete(block.tool_use_id)
         this.appliedTaskCalls.add(block.tool_use_id)
         if (this.appliedTaskCalls.size > MAX_APPLIED_TASK_CALLS) this.appliedTaskCalls.delete(this.appliedTaskCalls.values().next().value!)
@@ -475,6 +502,8 @@ export class ClaudeActivity {
     if (this.planTurn !== turnId) {
       this.planTurn = turnId
       for (const [id, task] of this.planTasks) if (task.status === 'completed') { this.planTasks.delete(id); this.finishedTasks.set(id, task) }
+      // The oldest finished tasks go first: one opened again that far back reads as a new task when Claude names it.
+      for (const id of this.finishedTasks.keys()) { if (this.finishedTasks.size <= MAX_FINISHED_TASKS) break; this.finishedTasks.delete(id) }
     }
     const { input } = call
     const known = (id: string, task: Record<string, unknown> | undefined): PlanTask | undefined => {
@@ -494,8 +523,9 @@ export class ClaudeActivity {
     }
     if (call.name === 'TaskCreate') {
       const made = object(result?.task)
-      const id = typeof made?.id === 'string' ? made.id : /^Task #(\S+) created/u.exec(claudeText(block.content))?.[1]
-      if (id) put(id, known(id, { ...input, ...made, status: 'pending' }), true)
+      const id = typeof made?.id === 'string' ? made.id : TASK_CREATED.exec(claudeText(block.content).trim())?.[1]
+      // Making a task never moves an existing one back, should a create be delivered again.
+      if (id) put(id, known(id, { ...input, ...made, status: this.planTasks.get(id)?.status ?? this.finishedTasks.get(id)?.status ?? 'pending' }), true)
     } else if (call.name === 'TaskUpdate' && typeof input?.taskId === 'string') {
       if (input.status === 'deleted') { this.planTasks.delete(input.taskId); this.finishedTasks.delete(input.taskId) }
       else put(input.taskId, known(input.taskId, input), true)

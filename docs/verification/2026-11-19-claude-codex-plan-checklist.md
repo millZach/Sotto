@@ -27,6 +27,12 @@ On the laptop, 493 Claude threads and 408 Codex threads held no plan record at a
 
 After the Claude turn, its fold reads "Worked for 41s · 9 steps · Ran 3 commands, used ToolSearch, plan 3 of 3 done". The task calls are not counted as tools of their own. ToolSearch is Claude Code loading its task tools, which it keeps behind a search ([claude-ended.png](../../artifacts/plan-checklist-claude-codex/claude-ended.png)). Each state is in `claude.json` and `codex.json` beside the pictures.
 
+## After Bug Bot's review
+
+- **Codex never sends a plan after its turn ends.** The worry was that a late `turn/plan/updated`, arriving after `turn/completed`, would be dropped and leave the checklist part done. A probe drove `codex app-server` straight, with the setting on, and told the agent to make its plan update the very last thing it did. The order on the wire was: plan, command, plan, command, plan (both completed), the closing reply, then `turn/completed`. `update_plan` is a tool call inside the turn, so its notification always comes first on that one ordered stream. Sotto was left as it is.
+- **Claude's task ids are strings.** All 28 task results in the real two-turn transcript carry string ids, `"1"` to `"5"`, so a list of numeric ids that would empty the checklist does not happen on Claude Code 2.1.328. Left as it is.
+- **A result whose call was never seen is read.** The same real transcript, given to a fresh projector from the line after the first `TaskCreate` call, gives the same two plans as reading it whole. Turn one is a, b and c done, and turn two is d and e done, without turn one's tasks. Every task result made no tool row. The one "Tool result" row left is ToolSearch's, whose call came before the cut, as any result without its call reads.
+
 ## Where else it shows
 
 The iPhone draws no checklist for any provider. A phone's activity summaries leave plan steps on the host (ADR-0025), and its step run names a plan record "Planning". A Claude or Codex thread now gives it that step, as a Devin thread does. A desktop paired with a host draws the host's records with the same renderer, and the host runs the same adapters, so it shows the same checklist. That was not run separately.

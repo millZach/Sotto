@@ -97,6 +97,33 @@ describe('plans as checklists', () => {
       expect(shown(next, 'two')).toEqual([{ text: 'Patch', status: 'running' }])
     })
 
+    // The result lines of a real Sonnet 5.5 transcript, met without their calls by a projector that started between them.
+    it('reads a task result whose call it never saw, and makes no tool row of it', () => {
+      const rows = run(new ClaudeActivity(), 'one', [...create('c1', '1', 'Read'), ...create('c2', '2', 'Patch')])
+      const again = new ClaudeActivity()
+      const line = (id: string, content: string, result: Record<string, unknown> | null) =>
+        ({ type: 'user', message: { content: [{ type: 'tool_result', tool_use_id: id, content }] }, toolUseResult: result })
+      const next = run(again, 'one', [
+        line('u1', 'Updated task #1 status', { success: true, taskId: '1', updatedFields: ['status'], statusChange: { from: 'pending', to: 'in_progress' } }),
+        line('c3', 'Task #3 created successfully: Test', null),
+        // A transcript line with no result says nothing of what changed.
+        line('u2', 'Updated task #2 status', null),
+      ], rows)
+      expect(shown(next, 'one')).toEqual([{ text: 'Read', status: 'running' }, { text: 'Patch', status: 'pending' }, { text: 'Test', status: 'pending' }])
+      expect(next.some(row => row.id.startsWith('claude-tool-'))).toBe(false)
+      // A result whose call was seen, such as a command that printed those words, stays that call's own row.
+      const echoed = run(again, 'one', [{ type: 'assistant', message: { content: [{ type: 'tool_use', id: 'b1', name: 'Bash', input: { command: 'echo' } }] } },
+        line('b1', 'Task #9 created successfully: Not a task', null)], next)
+      expect(shown(echoed, 'one')).toHaveLength(3)
+      expect(echoed.find(row => row.id === 'claude-tool-b1')).toMatchObject({ kind: 'command', status: 'completed' })
+    })
+
+    it('never moves a task back when its create is delivered again under another call', () => {
+      const projector = new ClaudeActivity()
+      const rows = run(projector, 'one', [...create('c1', '1', 'Read'), ...update('u1', '1', 'in_progress')])
+      expect(shown(run(projector, 'one', create('c1-again', '1', 'Read'), rows), 'one')).toEqual([{ text: 'Read', status: 'running', active: 'Reading' }])
+    })
+
     it('leaves a subagent’s task calls as its own tool rows', () => {
       const rows = new ClaudeActivity().apply([], { ...call('sub', 'TaskCreate', { subject: 'Look' }), parent_tool_use_id: 'agent' }, 'one', 'message', '/project')
       expect(rows).toEqual([expect.objectContaining({ id: 'claude-tool-sub', kind: 'tool', title: 'TaskCreate' })])
