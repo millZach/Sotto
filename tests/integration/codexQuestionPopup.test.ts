@@ -48,9 +48,10 @@ it('surfaces an actionable Codex question while its turn continues', async () =>
 it('preserves effective native project instructions before Sotto question guidance', async () => {
   const native = 'Keep the synthetic project naming rule.'
   const { fixture } = await projectFixture({ developerInstructions: native })
-  const reads = (await fixture.driver.requests()).filter(record => record.method === 'config/read')
-  expect(reads).toHaveLength(1)
-  expect(reads[0]!.params).toEqual({ cwd: fixture.root, includeLayers: false })
+  // The read without a folder is for Computer Use's servers (codexComputerUseHelper.ts); the instructions are the project's.
+  const reads = (await fixture.driver.requests()).filter(record => record.method === 'config/read').map(record => record.params)
+  expect(reads).toEqual(expect.arrayContaining([{ cwd: fixture.root, includeLayers: false }, { includeLayers: false }]))
+  expect(reads).toHaveLength(2)
   const start = (await fixture.driver.requests()).find(record => record.method === 'thread/start')!
   expect(start.params?.developerInstructions).toEqual(expect.stringMatching(/^Keep the synthetic project naming rule\.[\s\S]*request_user_input/))
 })
