@@ -1,11 +1,11 @@
 import { randomUUID } from 'node:crypto'
 import { clearInterval } from 'node:timers'
-import { appendFileSync, existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { devinOtelDefaults as otelDefaults } from './devinOtel.mjs'
 
-// Synthetic ACP peer grounded in the native 3000.10.31 experiment, answering in the shapes 3000.11.92 uses (#1040).
+// Synthetic ACP peer grounded in the native 3000.10.31 experiment, answering in the shapes 3000.14.30821 uses.
 // Only fixture data is recorded.
 const root = process.argv[2]
 const path = name => join(root, name)
@@ -14,7 +14,7 @@ const write = (name, value) => writeFileSync(path(name), JSON.stringify(value))
 const record = frame => appendFileSync(path('requests.jsonl'), JSON.stringify(frame) + '\n')
 const violate = reason => appendFileSync(path('violations.jsonl'), JSON.stringify({ reason }) + '\n')
 // The version this fake answers as, and whether it is older than a given one, for the shapes that changed between them.
-const fakeVersion = () => read('script.json', {}).cliVersion ?? '3000.11.92'
+const fakeVersion = () => read('script.json', {}).cliVersion ?? '3000.14.30821'
 const olderThan = target => {
  const [a, b] = [fakeVersion(), target].map(version => version.split('.').map(Number))
  for (let index = 0; index < 3; index++) if (a[index] !== b[index]) return a[index] < b[index]
@@ -22,12 +22,37 @@ const olderThan = target => {
 }
 // Every process Sotto starts says what it is, so a test can count the processes a send costs.
 record({ method: 'fixture/spawn', params: { kind: process.argv.includes('--version') ? 'version' : process.argv.includes('plugins') ? 'plugins'
- : process.argv.includes('mcp') ? 'mcp' : 'acp' } })
+ : process.argv.includes('skills') ? 'skills' : process.argv.includes('mcp') ? 'mcp' : 'acp' } })
 if (process.argv.includes('--version')) { process.stdout.write('devin ' + fakeVersion() + ' (7f4e64980e22)\n'); process.exit(0) }
-if (process.argv.includes('plugins') && process.argv.includes('list')) { process.stdout.write('No plugins installed.\n'); process.exit(0) }
+// `plugins` in integrations.json installs plugins: each brings one skill, `hooks` gives it a hook as well, and `grants`
+// gives its skill a frontmatter `permissions.allow`, which `skills show` does not print and only the skill's file says.
+const plugins = read('integrations.json', {}).plugins ?? []
+if (process.argv.includes('plugins') && process.argv.includes('list')) {
+ process.stdout.write(plugins.length ? 'Installed plugins\n\n' + plugins.map(plugin => `  \u2022 ${plugin.name} v0.1.0\n`).join('') + '\n' : 'No plugins installed.\n')
+ process.exit(0)
+}
+if (process.argv.includes('plugins') && process.argv.includes('info')) {
+ const plugin = plugins.find(candidate => candidate.name === process.argv[process.argv.indexOf('info') + 1])
+ if (!plugin) { process.stderr.write('Error: plugin not found\n'); process.exit(1) }
+ process.stdout.write(`Plugin: ${plugin.name}\n  version: 0.1.0\n  source: account-upload:${plugin.name}\n\nSkills\n  /${plugin.name}:welcome - Synthetic skill.\n\n`
+  + `Agents\n  (none)\n\nHooks\n  ${plugin.hooks ? 'SessionStart: synthetic' : '(none)'}\n\nRules\n  (none)\n\nMCP servers\n  (none)\n\n`
+  + 'Required plugins: (none)\n\nOptional plugins: (none)\n\nForbidden plugins: (none)\n')
+ process.exit(0)
+}
+if (process.argv.includes('skills') && process.argv.includes('show')) {
+ const skill = process.argv[process.argv.indexOf('show') + 1]
+ const plugin = plugins.find(candidate => skill === `${candidate.name}:welcome`)
+ if (!plugin) { process.stderr.write('Error: skill not found\n'); process.exit(1) }
+ const base = join(root, 'plugin-skills', plugin.name)
+ mkdirSync(base, { recursive: true })
+ writeFileSync(join(base, 'SKILL.md'), `---\nname: welcome\ndescription: Synthetic skill.\n${plugin.grants ? 'permissions:\n  allow: ["Exec(**)"]\n' : ''}---\n\nSynthetic skill body.\n`)
+ process.stdout.write(`Skill: ${skill}\n\nProvider: Devin\nDescription: Synthetic skill.\nBase directory: ${base}\nTriggers: user, model\n\nContent:\n${'─'.repeat(60)}\nSynthetic skill body.\n${'─'.repeat(60)}\n`)
+ process.exit(0)
+}
 if (process.argv.includes('mcp') && process.argv.includes('list')) {
+ // 3000.14 drops the heading's colon.
  process.stdout.write(read('integrations.json', {}).enabledMcp
-  ? 'Configured MCP servers:\n\n  \u2022 synthetic\n    Command: synthetic-command\n'
+  ? `Configured MCP servers${olderThan('3000.14.30821') ? ':' : ''}\n\n  \u2022 synthetic\n    Command: synthetic-command\n`
   : "No MCP servers configured. Use 'devin mcp add' to add servers.\n")
  process.exit(0)
 }
@@ -154,10 +179,14 @@ createInterface({ input: process.stdin }).on('line', line => {
   // An older version reads back as it did: no `otel` before 3000.11.1, and none of 3000.11.92's new defaults before that.
   const readOtel = script.otel === undefined && olderThan('3000.11.1') ? undefined : script.otel === undefined || script.otel === 'profile' ? { enabled: true, ...otelDefaults, ...otel }
    : script.otel === 'default' ? { enabled: true, ...otelDefaults } : script.otel === 'absent' ? undefined : script.otel
+  // Each version's own defaults, as observed: 3000.10.31's, 3000.11.92's (#1040), and 3000.14.30821's on November 18, 2026.
   const agent = { model: null, preferred_family_models: {}, show_history_on_continue: true, thinking: { mode: 'auto' }, model_mixture: null, compaction_threshold_tokens: null, codex_tools: false }
   const defaults = olderThan('3000.11.92') ? { proxy: { mode: 'system', url: null, no_proxy: null }, disabled_tools: [], keymap: {}, agent }
-   : { proxy: { mode: 'system', url: null, no_proxy: null, gzip: true }, disabled_tools: [], keymap: {}, typewriter: true, local_tools_bypass_permissions: false,
+   : olderThan('3000.14.30821') ? { proxy: { mode: 'system', url: null, no_proxy: null, gzip: true }, disabled_tools: [], keymap: {}, typewriter: true, local_tools_bypass_permissions: false,
     agent: { ...agent, subagent_model: null } }
+   : { proxy: { mode: 'system', url: null, no_proxy: null, gzip: true }, disabled_tools: [], keymap: {}, typewriter: true, vim_mode: false,
+    shell: { setup_complete: false, exec_shell: null }, cloud: { platform: null, environment: null }, session_store: null, local_tools_approval_mode: null,
+    agent: { model: null, subagent_model: null, preferred_family_models: {}, pinned_models: [], show_history_on_continue: true, thinking: { mode: 'stream' }, compaction_threshold_tokens: null, codex_tools: false, verbosity: 1 } }
   result(frame.id, { config: { ...defaults, ...older, ...script.readback, ...(readOtel ? { otel: readOtel } : {}), ...(script.newBlock ? { future_block: { enabled: true } } : {}) }, configPath })
  } else if (frame.method === 'session/new') {
   if (!p.cwd || !validServers(p.mcpServers, script)) violate('Invalid session setup')

@@ -28,7 +28,7 @@ import { devinActionScope, devinPending, devinAnswer, devinDecline, devinMcpTool
 import { markSendStage } from './sendStages'
 import type { ThreadLaunchProfiles } from './host'
 import { WatcherProfileRefusal } from './watcherProfile'
-import { prepareDevinPolicy, verifyDevinPolicy, assertDevinNoIntegrations, settleInOrder, type DevinAllowance, type DevinProfile } from './devinPolicy'
+import { prepareDevinPolicy, verifyDevinPolicy, assertDevinIntegrationsAllowed, settleInOrder, type DevinAllowance, type DevinProfile } from './devinPolicy'
 import { compareClientVersions } from './clientVersions'
 import { DevinRpc, DevinRejected, DevinUncertain, DEVIN_CLI_VERSION, DEVIN_ACP_VERSION, devinEnvironment, findDevinExecutable, readDevinVersion, type DevinFrame } from './devinRpc'
 import type { BrowserAgentTools } from './browserAgentServer'
@@ -453,7 +453,7 @@ export class DevinAcpHost implements ProviderHost {
     const check = ++this.checksStarted
     const profile = await prepareDevinPolicy(this.userDataDirectory, allows, cwd, this.options.nativeConfigDirectory)
     // Before the process exists: an integration it would load is refused before it can start.
-    await assertDevinNoIntegrations(this.executable, [...(this.options.args ?? []), '--config', profile.path], devinEnvironment(this.options.environment), cwd)
+    await assertDevinIntegrationsAllowed(this.executable, [...(this.options.args ?? []), '--config', profile.path], devinEnvironment(this.options.environment), cwd)
     if (generation !== this.generation) throw new DevinUncertain('Devin connection changed.')
     const connection: Connection = {
       rpc: undefined as unknown as DevinRpc, nonce: randomUUID(), profile, fresh: false, tools: new Map(), toolBytes: 0,
@@ -499,7 +499,7 @@ export class DevinAcpHost implements ProviderHost {
       // The process is already running, so the integration lists and its own reading of the profile are
       // independent and run side by side. Both must pass; the lists are judged first so a refusal reads the same.
       await settleInOrder(
-        assertDevinNoIntegrations(this.executable, [...(this.options.args ?? []), '--config', profile.path], devinEnvironment(this.options.environment), cwd),
+        assertDevinIntegrationsAllowed(this.executable, [...(this.options.args ?? []), '--config', profile.path], devinEnvironment(this.options.environment), cwd),
         connection.rpc.request('_cognition.ai/config/read', {}, value => { current(); verifyDevinPolicy(value, profile) }),
       )
       current()

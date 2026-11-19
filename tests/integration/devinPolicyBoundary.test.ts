@@ -53,6 +53,18 @@ it('refuses integrations enabled while the owner sat idle before a follow-up', a
   expect(await prompts()).toHaveLength(1)
 })
 
+// A hook shows in the plugin's info; a skill's grant only in the skill's own file, which `skills show` names.
+it.each(['hooks', 'grants'])('sends with a plugin that brings only skills, and refuses the next send once a plugin brings %s', async brings => {
+  // The account plugin 3000.14 installed by itself on November 18, 2026, brings one skill and nothing else.
+  await writeFile(join(f.root, 'integrations.json'), JSON.stringify({ plugins: [{ name: 'devin-playbooks' }] }))
+  const id = await settledThread()
+  // Fifth, so it is read after the first four, in a second batch.
+  const skills = ['devin-playbooks', 'two', 'three', 'four'].map(name => ({ name }))
+  await writeFile(join(f.root, 'integrations.json'), JSON.stringify({ plugins: [...skills, { name: 'widened', [brings]: true }] }))
+  await expect(send(id)).rejects.toThrow('Devin has a plugin that brings more than skills, or a skill that lets tools run without asking, or Sotto could not confirm what its plugins bring. Your thread is kept. Remove Devin plugins with hooks, rules, agents, MCP servers or skills that allow tools, then reconnect.')
+  expect(await prompts()).toHaveLength(1)
+})
+
 it('refuses integrations activated by an observer replay before the next follow-up', async () => {
   const id = await settledThread()
   await f.script({ enableMcpAfterLoad: true })
@@ -133,13 +145,13 @@ it('still refuses when the catalog folder itself carries native configuration', 
 
 it('connects to a client newer than the checked version and records which one it checked (ADR-0042)', async () => {
   f.host.disconnect(); await f.host.closed()
-  await f.script({ cliVersion: '3000.12.02' })
+  await f.script({ cliVersion: '3000.15.2' })
   const snapshot = await f.host.connect()
   expect(snapshot.connected).toBe(true)
   expect(snapshot.verifiedVersion).toBe(DEVIN_CLI_VERSION)
 })
 
-it.each(['2999.1.1', '3000.10.31', '3000.11.3'])('names the checked CLI version when the installed version %s is older than it', async version => {
+it.each(['2999.1.1', '3000.10.31', '3000.11.3', '3000.11.92', '3000.13.4'])('names the checked CLI version when the installed version %s is older than it', async version => {
   f.host.disconnect(); await f.host.closed()
   await f.script({ cliVersion: version })
   const snapshot = await f.host.connect()

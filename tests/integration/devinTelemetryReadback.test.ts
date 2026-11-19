@@ -55,7 +55,7 @@ it('says a Devin reporting a settings block Sotto has not checked is newer, and 
   await f.driver.completeTurn(id, 'Finished')
   await expect.poll(async () => (await f.host.snapshot()).threads.find(thread => thread.id === id)?.status).toBe('idle')
   // The update lands between two sends: the second one's own check refuses it, before its prompt.
-  await f.script({ newBlock: true, cliVersion: '3000.12.0' })
+  await f.script({ newBlock: true, cliVersion: '3000.15.0' })
   const newer = `This Devin version is newer than the one Sotto checked, and it has settings Sotto has not checked. Nothing was sent, and your threads are kept. Use Devin CLI ${DEVIN_CLI_VERSION} until Sotto checks this version.`
   await expect(send(id)).rejects.toThrow(newer)
   expect(await methods('session/prompt')).toHaveLength(1)

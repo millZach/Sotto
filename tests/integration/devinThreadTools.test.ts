@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
 import { afterEach, describe, expect, it } from 'vitest'
+import { DEVIN_CLI_VERSION } from '../../src/main/agents/devinRpc'
 import { BrowserAgentServer } from '../../src/main/agents/browserAgentServer'
 import { VISUAL_MCP_SERVER, VisualToolServer } from '../../src/main/agents/visualTools'
 import { browserToolDefinitions } from '../../src/main/tools/browserAgentTools'
@@ -71,14 +72,14 @@ describe('Devin thread tools', () => {
     expect(await send(f, id)).toEqual({ accepted: true })
   })
 
-  it.each(['3000.10.31', '3000.11.3'])('refuses a thread on a Devin replaced by %s after connecting, before any session is given Sotto’s servers', async version => {
+  it.each(['3000.10.31', '3000.11.3', '3000.11.92'])('refuses a thread on a Devin replaced by %s after connecting, before any session is given Sotto’s servers', async version => {
     const f = withTools(await devinFixture(undefined, undefined, undefined, {}, new Map(), { productionPace: true }))
     cleanup.push(() => f.cleanup())
     expect((await f.host.connect()).connected).toBe(true)
     await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
     await f.script({ cliVersion: version })
     await expect(f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: randomUUID(), projectId: f.projectId, modelId: f.modelId, title: 'Downgraded' }))
-      .rejects.toThrow('This Devin version is older than the one Sotto checked. Nothing was sent, and your threads are kept. Use Devin CLI 3000.11.92 or newer, then reconnect Devin.')
+      .rejects.toThrow(`This Devin version is older than the one Sotto checked. Nothing was sent, and your threads are kept. Use Devin CLI ${DEVIN_CLI_VERSION} or newer, then reconnect Devin.`)
     // Only the catalog session from connecting: the downgraded process opened none.
     expect(await given(f, 'session/new')).toEqual([[]])
   })

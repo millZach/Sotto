@@ -3,10 +3,12 @@ import { mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
-import { assertDevinWorkingDirectory, DEVIN_SOTTO_SERVERS, devinPolicyPath, prepareDevinPolicy, verifyDevinMcpList, verifyDevinPluginList, verifyDevinPolicy } from '../../../src/main/agents/devinPolicy'
+import { assertDevinWorkingDirectory, DEVIN_SOTTO_SERVERS, devinPolicyPath, prepareDevinPolicy, verifyDevinMcpList, verifyDevinPluginInfo, verifyDevinPluginList, verifyDevinPolicy, verifyDevinSkillFile, verifyDevinSkillShow } from '../../../src/main/agents/devinPolicy'
 import { DEVIN_CLI_VERSION, DevinRefusal } from '../../../src/main/agents/devinRpc'
 import { devinOtelDefaults as otelDefaults } from '../../fixtures/devinOtel.mjs'
 import { setup } from '../../fixtures/devinPolicyFixture'
+
+const without = (value: Record<string, unknown>, key: string) => Object.fromEntries(Object.entries(value).filter(([name]) => name !== key))
 
 it('writes only its owned profile and confirms the native normalized readback', async () => {
   const { userData, cwd, nativeConfig } = await setup()
@@ -18,6 +20,20 @@ it('writes only its owned profile and confirms the native normalized readback', 
   expect(config.permissions.allow).toEqual(DEVIN_SOTTO_SERVERS.map(server => `mcp__${server}__*`))
   expect(config.permissions.ask).toContain('exec')
   expect(Object.values(config.read_config_from).every(value => value === false)).toBe(true)
+})
+
+it('turns off every import 3000.14 offers, runs the session in its own process and starts it in the normal mode', async () => {
+  const { userData, cwd, nativeConfig } = await setup()
+  for (const allows of ['nothing', 'edits', 'everything'] as const) {
+    const config = JSON.parse(await readFile((await prepareDevinPolicy(userData, allows, cwd, nativeConfig)).path, 'utf8'))
+    // The ten sources Devin's documentation lists, each of which imports when it is left unset.
+    expect(config.read_config_from).toEqual({ agents_standard: false, cursor: false, windsurf: false, claude: false, copilot: false, codex: false, kiro: false, opencode: false, zed: false, cloud: false })
+    expect(config).toMatchObject({ process_model: 'in-process', permission_mode: 'normal' })
+    // A readback that leaves an import unset, or the daemon or another mode in, does not confirm the profile.
+    for (const change of [{ read_config_from: { ...config.read_config_from, codex: null } }, { process_model: 'daemon' }, { process_model: null }, { permission_mode: 'dangerous' }]) {
+      expect(() => verifyDevinPolicy({ config: { ...config, ...change }, configPath: devinPolicyPath(userData, allows) }, { path: devinPolicyPath(userData, allows), allows })).toThrow(/did not confirm/u)
+    }
+  }
 })
 
 it('writes one profile per allowance and asks about everything the allowance does not cover', async () => {
@@ -37,7 +53,7 @@ it('writes one profile per allowance and asks about everything the allowance doe
   expect(everything.permissions.allow).toEqual(expect.arrayContaining(['edit', 'exec', 'Fetch(*)']))
   // Each allowance gets a file of its own, and the asking one keeps the name a profile had before allowances.
   expect((await prepareDevinPolicy(userData, 'nothing', cwd, nativeConfig)).path).toBe(devinPolicyPath(userData, 'nothing'))
-  expect(devinPolicyPath(userData, 'nothing')).toMatch(/approval-policy-v5\.json$/u)
+  expect(devinPolicyPath(userData, 'nothing')).toMatch(/approval-policy-v6\.json$/u)
   expect(new Set([devinPolicyPath(userData, 'nothing'), devinPolicyPath(userData, 'edits'), devinPolicyPath(userData, 'everything')]).size).toBe(3)
 })
 
@@ -114,9 +130,73 @@ it('refuses wrong paths, rules, imports and missing protocol fields without expo
   }
 })
 
-it('accepts only the pinned empty plugin-list response', () => {
-  expect(() => verifyDevinPluginList('No plugins installed.\r\n')).not.toThrow()
-  for (const output of ['', 'Installed plugins\nexample', 'warning\nNo plugins installed.']) expect(() => verifyDevinPluginList(output)).toThrow()
+it('reads the names from an empty or pinned plugin list and refuses any other output', () => {
+  expect(verifyDevinPluginList('No plugins installed.\r\n')).toEqual([])
+  // As 3000.14.30821 prints the account plugin it installs by itself.
+  expect(verifyDevinPluginList('Installed plugins\r\n\r\n  • devin-playbooks v0.1.0\r\n\r\n')).toEqual(['devin-playbooks'])
+  expect(verifyDevinPluginList('Installed plugins\n\n  • one v1\n  • two v0.2.0-beta\n')).toEqual(['one', 'two'])
+  const many = 'Installed plugins\n\n' + Array.from({ length: 17 }, (_, index) => `  • plugin-${index} v1.0.0\n`).join('')
+  // Any number of plugins is read; how many are read at once is the check's own concern.
+  expect(verifyDevinPluginList(many)).toHaveLength(17)
+  for (const output of ['', 'Installed plugins', 'Installed plugins\nexample', 'warning\nNo plugins installed.', 'Installed plugins\n\n  • one v1 (blocked)\n',
+    'Installed plugins\n\n  • --config v1\n', 'Installed plugins\n\n  • one v1\n  • one v1\n', 'Installed plugins:\n\n  • one v1\n']) {
+    expect(() => verifyDevinPluginList(output), output).toThrow(/brings more than skills/u)
+  }
+})
+
+it('lets a plugin through only when it brings nothing but skills, as 3000.14 prints its info', () => {
+  const info = ['Plugin: devin-playbooks', '  version: 0.1.0', '  source: account-upload:devin_playbooks', '', 'Skills',
+    "  /devin-playbooks:hi-i-m-devin - Hi, I'm Devin. Overview.", '', 'Agents', '  (none)', '', 'Hooks', '  (none)', '', 'Rules', '  (none)', '',
+    'MCP servers', '  (none)', '', 'Required plugins: (none)', '', 'Optional plugins: (none)', '', 'Forbidden plugins: (none)', ''].join('\r\n')
+  expect(verifyDevinPluginInfo(info, 'devin-playbooks')).toEqual(['devin-playbooks:hi-i-m-devin'])
+  expect(verifyDevinPluginInfo(info.replace("  /devin-playbooks:hi-i-m-devin - Hi, I'm Devin. Overview.", '  (none)'), 'devin-playbooks')).toEqual([])
+  expect(verifyDevinPluginInfo(info.replace('Overview.\r\n', 'Overview.\r\n  /devin-playbooks:second\r\n'), 'devin-playbooks')).toEqual(['devin-playbooks:hi-i-m-devin', 'devin-playbooks:second'])
+  // A skill named for another plugin, or as an option, or twice, is not one Sotto can read.
+  for (const skill of ['  /other:hi', '  /devin-playbooks:--config', "  /devin-playbooks:hi-i-m-devin - Hi, I'm Devin. Overview."]) {
+    expect(() => verifyDevinPluginInfo(info.replace('Overview.\r\n', `Overview.\r\n${skill}\r\n`), 'devin-playbooks'), skill).toThrow(/brings more than skills/u)
+  }
+  for (const [section, entry] of [['Agents', '  reviewer'], ['Hooks', '  SessionStart: private-value'], ['Rules', '  private-rule'], ['MCP servers', '  private-server']]) {
+    expect(() => verifyDevinPluginInfo(info.replace(`${section}\r\n  (none)`, `${section}\r\n${entry}`), 'devin-playbooks'), section).toThrow(/brings more than skills/u)
+  }
+  for (const output of [info.replace('Required plugins: (none)', 'Required plugins: other'), info.replace('Forbidden plugins: (none)\r\n', ''),
+    info.replace('Hooks\r\n  (none)\r\n', ''), info.replace('Rules\r\n  (none)', 'Rules'), info.replace('Skills\r\n', 'Skills\r\n  (none)\r\n'),
+    info + 'warning\r\n', info + 'Hooks\r\n  (none)\r\n', info.replace('  version: 0.1.0', 'version: 0.1.0'), '',
+    // Metadata other than one version and one source, above the sections or among them.
+    info.replace('  source:', '  extra_capabilities: hooks\r\n  source:'), info.replace('  source: account-upload:devin_playbooks\r\n', ''),
+    info.replace('  source:', '  version: 0.2.0\r\n  source:'), info.replace('Agents', '  version: 0.1.0\r\nAgents')]) {
+    expect(() => verifyDevinPluginInfo(output, 'devin-playbooks')).toThrow(/brings more than skills/u)
+  }
+  // Another plugin's info is not this one's.
+  expect(() => verifyDevinPluginInfo(info, 'other')).toThrow(/brings more than skills/u)
+})
+
+it('reads a plugin skill’s base directory from skills show, and refuses any detail that lets tools run', () => {
+  const base = 'C:\\Users\\private\\AppData\\Roaming\\devin\\cli\\plugins_cache\\cache\\account-upload_devin_playbooks-455304b6\\f36d\\skills\\hi-i-m-devin'
+  // As 3000.14.30821 prints it on November 18, 2026.
+  const show = ['Skill: devin-playbooks:hi-i-m-devin', '', 'Provider: Devin', "Description: Hi, I'm Devin. Overview.", `Base directory: ${base}`, 'Triggers: user, model', '',
+    'Content:', '\u2500'.repeat(60), '## Overview', 'Allowed tools: words in the content are content', '\u2500'.repeat(60), ''].join('\r\n')
+  expect(verifyDevinSkillShow(show, 'devin-playbooks:hi-i-m-devin')).toBe(base)
+  for (const output of [show.replace('Triggers: user, model', 'Triggers: user, model\r\nAllowed tools: exec, edit'), show.replace(`Base directory: ${base}\r\n`, ''),
+    show.replace(`Base directory: ${base}`, 'Base directory: relative\\skills'), show.replace('Content:', 'Contents:'), show.replace('Provider: Devin', 'Provider: Devin\r\nProvider: Other'), '']) {
+    expect(() => verifyDevinSkillShow(output, 'devin-playbooks:hi-i-m-devin')).toThrow(/skill that lets tools run without asking/u)
+  }
+  expect(() => verifyDevinSkillShow(show, 'devin-playbooks:other')).toThrow(/skill that lets tools run without asking/u)
+})
+
+it('lets a skill file through only when its frontmatter sets nothing that runs tools or changes what runs the skill', () => {
+  const plain = '---\r\nname: hi-i-m-devin\r\ndescription: "Hi, I\'m Devin. Overview."\r\n---\r\n\r\n## Overview\r\nallowed-tools: in the body is only text\r\n'
+  expect(() => verifyDevinSkillFile(plain)).not.toThrow()
+  expect(() => verifyDevinSkillFile('\uFEFF' + plain)).not.toThrow()
+  // A byte order mark does not hide the frontmatter.
+  expect(() => verifyDevinSkillFile('\uFEFF---\nname: x\nallowed-tools: [exec]\n---\n')).toThrow(/skill that lets tools run without asking/u)
+  expect(() => verifyDevinSkillFile('## No frontmatter\nallowed-tools: [exec]\n')).not.toThrow()
+  expect(() => verifyDevinSkillFile('---\nname: x\n# a comment\nargument-hint: <path>\ntriggers:\n  - user\n  - model\ndescription: >\n  folded\n---\n')).not.toThrow()
+  // Devin's skill reference: each of these approves tools while the skill runs or changes what runs it.
+  for (const field of ['allowed-tools: [exec, edit]', 'permissions:\n  allow: ["Exec(**)"]', 'model: opus', 'agent: reviewer', 'subagent: true',
+    '"allowed-tools": [exec]', '{allowed-tools: [exec]}', '<<: *grants', '- exec', 'unknown-field: value']) {
+    expect(() => verifyDevinSkillFile(`---\nname: x\n${field}\n---\nBody\n`), field).toThrow(/skill that lets tools run without asking/u)
+  }
+  expect(() => verifyDevinSkillFile('---\nname: x\ndescription: never closed\n')).toThrow(/skill that lets tools run without asking/u)
 })
 
 // Devin resolves `.devin` from the working folder upwards only; the pinned CLI
@@ -162,6 +242,14 @@ it('reads the Source line 3000.11.92 adds to each server, and still refuses an e
   }
 })
 
+it('reads the heading 3000.14 prints without its colon, and still refuses an enabled server', () => {
+  const disabled = 'Configured MCP servers\r\n\r\n  ✗ private-name  (disabled)\r\n    Command: private-value\r\n    Source: private-file\r\n\r\n'
+  expect(() => verifyDevinMcpList(disabled)).not.toThrow()
+  for (const output of [disabled.replace('✗', '•'), disabled.replace('Configured MCP servers', 'Configured MCP servers;'), 'Configured MCP servers\r\n']) {
+    expect(() => verifyDevinMcpList(output)).toThrow(/enabled MCP servers/u)
+  }
+})
+
 it('says a Devin that reads back an older CLI’s defaults is older than the one Sotto checked', async () => {
   const { userData, cwd, nativeConfig } = await setup()
   const profile = await prepareDevinPolicy(userData, 'nothing', cwd, nativeConfig)
@@ -175,15 +263,42 @@ it('says a Devin that reads back an older CLI’s defaults is older than the one
   expect(() => verifyDevinPolicy({ config: { ...config, agent, shell: { setup_complete: true } }, configPath: profile.path }, profile)).toThrow(/did not confirm/u)
 })
 
-it('confirms the defaults 3000.11.92 reads back, and refuses any of them changed', async () => {
+it('says a Devin reading back 3000.11.92’s defaults is older, and refuses them changed', async () => {
   const { userData, cwd, nativeConfig } = await setup()
   const profile = await prepareDevinPolicy(userData, 'nothing', cwd, nativeConfig)
   const config = JSON.parse(await readFile(profile.path, 'utf8'))
   const agent = { model: null, subagent_model: null, preferred_family_models: {}, show_history_on_continue: true, thinking: { mode: 'auto' }, model_mixture: null, compaction_threshold_tokens: null, codex_tools: false }
   const read = { ...config, proxy: { mode: 'system', url: null, no_proxy: null, gzip: true }, agent, typewriter: true, local_tools_bypass_permissions: false }
+  const older = `This Devin version is older than the one Sotto checked. Nothing was sent, and your threads are kept. Use Devin CLI ${DEVIN_CLI_VERSION} or newer, then reconnect Devin.`
+  for (const shape of [read, { ...read, agent: without(agent, 'subagent_model') },
+    { ...config, shell: { setup_complete: false, startup_messages_remaining: 10, exec_shell: null } }]) {
+    expect(() => verifyDevinPolicy({ config: shape, configPath: profile.path }, profile)).toThrow(older)
+  }
+  // `devin connect` sessions started in Bypass Permissions, a subagent model of its own, or a model mixture.
+  for (const change of [{ local_tools_bypass_permissions: true }, { agent: { ...agent, subagent_model: 'other-model' } }, { agent: { ...agent, model_mixture: 'mixture' } }]) {
+    expect(() => verifyDevinPolicy({ config: { ...read, ...change }, configPath: profile.path }, profile)).toThrow(/did not confirm/u)
+  }
+})
+
+it('confirms the defaults 3000.14.30821 reads back, and refuses any of them changed', async () => {
+  const { userData, cwd, nativeConfig } = await setup()
+  const profile = await prepareDevinPolicy(userData, 'nothing', cwd, nativeConfig)
+  const config = JSON.parse(await readFile(profile.path, 'utf8'))
+  // Read back from the installed 3000.14.30821 on November 18, 2026, with the version 6 profile.
+  const agent = { model: null, subagent_model: null, preferred_family_models: {}, pinned_models: [], show_history_on_continue: true, thinking: { mode: 'stream' }, compaction_threshold_tokens: null, codex_tools: false, verbosity: 1 }
+  const read = { ...config, agent, shell: { setup_complete: false, exec_shell: null }, theme_mode: null, theme_auto_detect: 'ask', pty_for_noninteractive_exec: false,
+    skip_home_directory_warning: false, show_path: true, include_gitignored_files: false, respect_gitignore: false, attribution: true, disabled_tools: [], unicode_mode: null,
+    legacy_terminal: false, disable_osc: null, skip_workspace_trust: false, notify: null,
+    sandbox: { allowed_domains: [], denied_domains: [], network_mode: 'full', excluded: { allow: [], ask: [], deny: [] } },
+    proxy: { mode: 'system', url: null, no_proxy: null, gzip: true }, devin: { org_id: null }, cloud: { platform: null, environment: null },
+    otel: { enabled: false, ...otelDefaults }, mouse_capture: false, vim_mode: false, local_tools_approval_mode: null, show_hints: true, typewriter: true,
+    session_store: null, keymap: {} }
   expect(() => verifyDevinPolicy({ config: read, configPath: profile.path }, profile)).not.toThrow()
-  // `devin connect` sessions started in Bypass Permissions, a subagent model of its own, or a proxy setting changed.
-  for (const change of [{ local_tools_bypass_permissions: true }, { agent: { ...agent, subagent_model: 'other-model' } }, { proxy: { ...read.proxy, url: 'https://example.invalid' } }]) {
+  // An approval mode for local tools, another session store, a Devin Cloud platform, pinned models, an agent block
+  // missing one of its fields, or a verbosity that is not a number.
+  for (const change of [{ local_tools_approval_mode: 'bypass' }, { session_store: 'files' }, { cloud: { platform: 'private', environment: null } },
+    { agent: { ...agent, pinned_models: ['private-model'] } }, { agent: without(agent, 'verbosity') }, { agent: { ...agent, verbosity: 'all' } },
+    { shell: { setup_complete: true, exec_shell: null } }, { vim_mode: { private: true } }]) {
     expect(() => verifyDevinPolicy({ config: { ...read, ...change }, configPath: profile.path }, profile)).toThrow(/did not confirm/u)
   }
 })
