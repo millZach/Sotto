@@ -32,7 +32,8 @@ export struct Row {
 // The width prose runs to: about 42em of the reading size, as rich-messages.css sets it.
 global Measure {
     out property <length> prose: 42 * 16px;
-    out property <length> column: 880px;
+    // The same 760px column the composer takes (threads.css, the transcript and the compose padding).
+    out property <length> column: 760px;
 }
 
 component AuthorLine inherits HorizontalLayout {

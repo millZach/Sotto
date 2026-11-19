@@ -106,11 +106,22 @@ Where Slint's frames go long: the 191-line diff and the long code blocks are eac
 
 ## Three composers for design review
 
-- **A, the card**: the baseline's composer. One card, chips and Send inside it under the text.
+- **A, the card**: the baseline's composer. One card, chips and Send inside it under the text. Zach picked it; it is now drawn to today's composer (below).
 - **B, the floating card**: a larger corner (the overlay radius), a hairline and a soft shadow, Send inside the card, and the chips in an outlined tray under it with the stream's word count.
 - **C, the slim bar**: a pill-shaped bar with Send beside the text, and the chips as plain words in a tray under it.
 
 Edit to screen for each, with live preview, by switching the composer's `variant` in `app.slint`: B 692 ms (two runs, 692 and 692), C 662 ms (662 and 662), back to A 752 to 782 ms. [m] Building them took me one sitting: A first (most of the time went into the pill, below), then B and C as about 60 lines of conditional layout on the same component.
+
+### Zach's pick: A, matched to today's composer
+
+On November 19 Zach picked A and asked for an exact match of today's composer. Today's composer is Zach's two-row composer (ADR-0168, ADR-0172; the quiet composer, sent to stable), so A was redrawn to it. An agent built today's Electron Sotto (0.1.43 at `83edcf6ce`), opened an idle Claude thread with the fake CLI, and dumped every element of `form.thread-prompt` with its box and computed styles, in both themes and with each menu open (`native-ui-slint/composer-reference/`). A now follows those numbers: the 760px column 20px above the pane's foot, the 20px corner, padding 14/10/8/16 inside a 1px border, 15px Figtree at a 22.5px line, the 30px attach button, the shield chip, the model as Claude's own mark and name, the effort as a word with the speed's bolt, the effort offer ("→ High") from a port of today's `draftEffortScore`, the 32px disc with its rest, live and pointed-at fills, the three menus (permissions, effort with its Standard and Fast switch, the model picker with search, note and switches), and today's labels and order. The icons are Lucide's own paths with round caps, and Claude's mark is the filled shape Sotto draws. `native-ui-slint/tools/match.sh` captures each state in Slint cropped exactly as the reference is and compares them (`artifacts/native-ui-bake-off-slint/composer-match/`).
+
+What still differs, and why [m]:
+
+- Text rasterisation. Skia in Slint draws the same glyphs a little heavier and brighter than Chromium on Linux; most of the 2 to 10% of pixels that differ by more than 24 levels are glyph edges. Positions agree to a pixel or two.
+- The font file. Today's window draws the variable Figtree Sotto bundles (`src/shared/fonts/*.woff2`). Decompressed to TrueType, Slint 1.19 read it as a single 300-weight face and emboldened it artificially for 400, so A uses the static Regular, SemiBold and Bold files instead; a line of the prompt then measures 694 px in Slint against 695 px in Chromium.
+- Line breaks. Today's editor is `white-space: break-spaces`, where a line's trailing space must fit; Slint lets it hang. The Slint editor is one space narrower so the lines break in the same places.
+- Not copied: the attachment row today's composer shows under the prompt (A keeps the bake-off's inline pills), Steer and Queue on the disc, and the Full access shield's gold sheen.
 
 ### The link, and Slint in a browser
 

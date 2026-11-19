@@ -1,5 +1,9 @@
 // The composer: text with inline pills, chips under it and one round send button.
 //
+// Variant A is today's composer (Zach's two-row composer, ADR-0168 and ADR-0172), drawn to the numbers of
+// native-ui-slint/composer-reference/ (captured from Electron Sotto 0.1.43 at 83edcf6ce): quietComposer.css,
+// threadChips.css and threads.css. B and C are the design-review alternatives.
+//
 // Slint's TextInput cannot hold a widget inside its text, so a pill is its label in the text,
 // bounded by two invisible markers (U+2064 or U+2063), with a rounded rectangle drawn behind it.
 // Rust finds the pills, and a hidden twin TextInput with the same text and width measures where
@@ -7,33 +11,41 @@
 // Rust also makes each pill act as one character: Backspace removes all of it, and the arrow
 // keys step over it.
 import { Theme } from "generated/theme.slint";
-import { Motion, Fonts, Icons, Icon, Chip, ChipMenu, MenuItem, FocusRing } from "base.slint";
+import { Motion, Fonts, Icons, Icon, MenuItem, FocusRing } from "base.slint";
 
 export struct PillRect { x: length, y: length, width: length, kind: int }
 export struct KeyAction { handled: bool, anchor: int, cursor: int, accept: bool }
 
+// The disc: Send, or Stop while a reply streams. Today's is 32px, the pill's ink when there is something to send.
 component SendButton inherits Rectangle {
     in property <bool> busy;
     in property <bool> can-send;
     callback clicked();
+    property <bool> live: root.busy || root.can-send;
     forward-focus: fs;
     width: 32px;
     height: 32px;
     border-radius: 16px;
-    background: root.busy || root.can-send ? Theme.pill : Theme.surface-overlay;
+    background: !root.live ? Theme.disc-off : touch.has-hover ? Theme.disc-hover : Theme.pill;
     animate background { duration: Motion.d(120ms); }
     accessible-role: button;
     accessible-label: root.busy ? "Stop the reply" : "Send";
-    accessible-enabled: root.busy || root.can-send;
+    accessible-enabled: root.live;
     accessible-action-default => { root.clicked(); }
-    Icon {
-        path: root.busy ? Icons.stop : Icons.arrow-up;
-        ink: root.busy || root.can-send ? Theme.pill-ink : Theme.text-quiet;
-        size: root.busy ? 14px : 16px;
+    if root.busy: Rectangle {
+        width: 10px; height: 10px; border-radius: 2px;
+        x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
+        background: Theme.pill-ink;
+    }
+    if !root.busy: Icon {
+        path: Icons.arrow-up;
+        weight: 2.4;
+        ink: root.live ? Theme.pill-ink : Theme.text-quiet;
+        size: 16px;
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
     }
-    TouchArea { clicked => { root.clicked(); } }
+    touch := TouchArea { clicked => { if root.live { root.clicked(); } } }
     fs := FocusScope {
         key-pressed(event) => {
             if event.text == Key.Return || event.text == " " { root.clicked(); return accept; }
@@ -43,6 +55,272 @@ component SendButton inherits Rectangle {
     FocusRing { width: parent.width + 6px; height: parent.height + 6px; shown: fs.has-focus; radius: 16px; }
 }
 
+// A control in today's footer: no fill and no edge at rest, the hover wash when pointed at or open (threadChips.css).
+component FooterChip inherits Rectangle {
+    in property <string> icon;
+    in property <bool> icon-filled;
+    in property <float> icon-grid-w: 24;
+    in property <float> icon-grid-h: 24;
+    in property <length> icon-size: 14px;
+    in property <color> icon-ink: root.ink;
+    in property <float> icon-opacity: 1;
+    in property <string> label;
+    in property <string> trailing-icon;
+    in property <float> trailing-opacity: 1;
+    in property <length> trailing-size: 11px;
+    in property <color> ink: Theme.text-quiet;
+    in property <color> hover-ink: Theme.text;
+    in property <length> pad-start: 7px;
+    in property <length> pad-end: 7px;
+    in property <length> gap: 6px;
+    in property <length> radius: Theme.radius-control;
+    in property <bool> open;
+    in property <string> name;
+    in property <string> value;
+    in property <bool> menu: true;
+    callback clicked();
+    out property <bool> has-focus: fs.has-focus;
+    public function take-focus() { fs.focus(); }
+    property <bool> lit: touch.has-hover || root.open;
+    forward-focus: fs;
+    horizontal-stretch: 0;
+    height: 28px;
+    border-radius: root.radius;
+    background: root.lit ? Theme.hover : transparent;
+    animate background { duration: Motion.d(120ms); }
+    accessible-role: button;
+    accessible-label: root.value == "" ? root.name : root.name + ", " + root.value;
+    accessible-expandable: root.menu;
+    accessible-expanded: root.open;
+    accessible-action-default => { root.clicked(); }
+    HorizontalLayout {
+        padding-left: root.pad-start;
+        padding-right: root.pad-end;
+        spacing: root.gap;
+        if root.icon != "": Icon {
+            path: root.icon; filled: root.icon-filled; grid-w: root.icon-grid-w; grid-h: root.icon-grid-h;
+            ink: root.icon-ink; size: root.icon-size; opacity: root.icon-opacity; y: (parent.height - self.height) / 2;
+        }
+        if root.label != "": Text {
+            text: root.label;
+            color: root.lit ? root.hover-ink : root.ink;
+            font-size: Theme.type-small;
+            vertical-alignment: center;
+            overflow: elide;
+            min-width: 0;
+            accessible-role: none;
+        }
+        if root.trailing-icon != "": Icon {
+            path: root.trailing-icon; size: root.trailing-size; ink: root.lit ? root.hover-ink : root.ink;
+            opacity: root.trailing-opacity; y: (parent.height - self.height) / 2;
+        }
+    }
+    touch := TouchArea { clicked => { fs.focus(); root.clicked(); } }
+    fs := FocusScope {
+        key-pressed(event) => {
+            if event.text == Key.Return || event.text == " " || (root.menu && event.text == Key.UpArrow) { root.clicked(); return accept; }
+            reject
+        }
+    }
+    FocusRing { width: parent.width + 6px; height: parent.height + 6px; shown: fs.has-focus; radius: root.radius; }
+}
+
+// The rows of a footer menu: 32px, the row corner, 10px in; the chosen row in the accent's ink with a check.
+component MenuRows inherits VerticalLayout {
+    in property <[MenuItem]> items;
+    in property <int> current;
+    in-out property <int> hover: -1;
+    callback picked(int);
+    for item[i] in root.items: Rectangle {
+        height: 32px;
+        border-radius: Theme.radius-row;
+        background: i == root.hover ? Theme.hover : transparent;
+        accessible-role: list-item;
+        accessible-label: item.label;
+        accessible-item-selectable: true;
+        accessible-item-selected: i == root.current;
+        accessible-item-index: i;
+        accessible-item-count: root.items.length;
+        accessible-action-default => { root.picked(i); }
+        Text {
+            x: 10px;
+            text: item.label;
+            color: i == root.current ? Theme.activity : i == root.hover ? Theme.text : Theme.text-2;
+            font-size: Theme.type-small;
+            vertical-alignment: center;
+            height: parent.height;
+            accessible-role: none;
+        }
+        if i == root.current: Icon { path: Icons.check; ink: Theme.activity; size: 14px; x: parent.width - 10px - 14px; y: (parent.height - self.height) / 2; }
+        TouchArea {
+            moved => { root.hover = i; }
+            clicked => { root.picked(i); }
+        }
+    }
+}
+
+// A footer menu that opens above its control (threadChips.css .thread-chip-menu__list): the raised surface, a field
+// hairline, the inset corner and a long soft shadow. Up and Down move, Enter picks, Escape closes and gives the focus
+// back. With `speeds`, the effort menu's Standard and Fast switch sits under the levels.
+component FooterMenu inherits PopupWindow {
+    in property <[MenuItem]> items;
+    in property <int> current;
+    in property <string> title;
+    in property <bool> speeds;
+    in property <int> speed;
+    callback picked(int);
+    callback picked-speed(int);
+    callback dismissed();
+    property <int> hover: -1;
+    close-policy: close-on-click-outside;
+    height: 2px + 12px + root.items.length * 32px + (root.speeds ? 6px + 34px : 0px);
+    Rectangle {
+        background: Theme.surface-elevated;
+        border-radius: Theme.radius-inset;
+        border-width: 1px;
+        border-color: Theme.field-border;
+        drop-shadow-blur: 48px;
+        drop-shadow-offset-y: 16px;
+        drop-shadow-color: Theme.dark ? #000000ba : #1616162e;
+        fs := FocusScope {
+            accessible-role: list;
+            accessible-label: root.title;
+            accessible-delegate-focus: root.hover < 0 ? Math.max(0, root.current) : root.hover;
+            init => { self.focus(); }
+            focus-lost(reason) => { root.dismissed(); }
+            key-pressed(event) => {
+                if event.text == Key.Escape { root.close(); root.dismissed(); return accept; }
+                if event.text == Key.DownArrow { root.hover = Math.min(root.items.length - 1, root.hover < 0 ? Math.max(0, root.current) : root.hover + 1); return accept; }
+                if event.text == Key.UpArrow { root.hover = Math.max(0, root.hover < 0 ? Math.max(0, root.current) : root.hover - 1); return accept; }
+                if (event.text == Key.Return || event.text == " ") && root.hover >= 0 { root.picked(root.hover); root.close(); root.dismissed(); return accept; }
+                if event.text == Key.Tab || event.text == Key.Backtab { root.close(); root.dismissed(); return accept; }
+                reject
+            }
+            VerticalLayout {
+                padding: 7px;
+                spacing: 0px;
+                MenuRows {
+                    items: root.items;
+                    current: root.current;
+                    hover <=> root.hover;
+                    picked(i) => { root.picked(i); root.close(); root.dismissed(); }
+                }
+                if root.speeds: Rectangle {
+                    height: 6px + 34px;
+                    Rectangle {
+                        x: 2px; y: 6px; width: parent.width - 4px; height: 34px;
+                        border-radius: Theme.radius-row;
+                        background: Theme.speeds-track;
+                        HorizontalLayout {
+                            padding: 2px;
+                            spacing: 2px;
+                            for s[i] in ["Standard", "Fast"]: Rectangle {
+                                border-radius: Theme.radius-control;
+                                background: i == root.speed ? Theme.surface-elevated : transparent;
+                                border-width: i == root.speed ? 1px : 0px;
+                                border-color: Theme.border-faint;
+                                accessible-role: radio-button;
+                                accessible-label: s;
+                                accessible-checked: i == root.speed;
+                                accessible-action-default => { root.picked-speed(i); }
+                                Text { text: s; font-size: Theme.type-caption; font-weight: i == root.speed ? 600 : 400; color: i == root.speed ? Theme.text : Theme.text-quiet; horizontal-alignment: center; vertical-alignment: center; accessible-role: none; }
+                                TouchArea { clicked => { root.picked-speed(i); } }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// The model picker (modelPicker.css): a search field, the provider's models, a note, and the two routing switches.
+component ModelPicker inherits PopupWindow {
+    in property <[MenuItem]> items;
+    in property <int> current;
+    callback picked(int);
+    callback dismissed();
+    property <int> hover: -1;
+    close-policy: close-on-click-outside;
+    width: 300px;
+    height: 248px;
+    Rectangle {
+        background: Theme.surface-overlay;
+        border-radius: Theme.radius-card;
+        border-width: 1px;
+        border-color: Theme.field-border;
+        drop-shadow-blur: 48px;
+        drop-shadow-offset-y: 16px;
+        drop-shadow-color: Theme.dark ? #000000ba : #1616162e;
+        clip: true;
+        VerticalLayout {
+            padding: 1px;
+            // The search field
+            Rectangle {
+                height: 40px;
+                Icon { path: Icons.search; ink: Theme.text-quiet; size: 15px; x: 12px; y: (parent.height - self.height) / 2; }
+                Rectangle {
+                    x: 35px; y: 6px; width: 219px; height: 28px;
+                    border-radius: Theme.radius-control;
+                    border-width: search.has-focus ? 2px : 0px;
+                    border-color: Theme.focus-ring;
+                    search := TextInput {
+                        x: 4px; width: parent.width - 8px; height: parent.height;
+                        font-size: Theme.type-small; color: Theme.text;
+                        vertical-alignment: center;
+                        accessible-label: "Search Claude Code models";
+                        init => { self.focus(); }
+                        key-pressed(event) => {
+                            if event.text == Key.Escape { root.close(); root.dismissed(); return accept; }
+                            if event.text == Key.DownArrow { root.hover = Math.min(root.items.length - 1, root.hover + 1); return accept; }
+                            if event.text == Key.UpArrow { root.hover = Math.max(0, root.hover - 1); return accept; }
+                            if event.text == Key.Return && root.hover >= 0 { root.picked(root.hover); root.close(); root.dismissed(); return accept; }
+                            reject
+                        }
+                    }
+                    if search.text == "": Text { x: 4px; height: parent.height; text: "Search Claude Code models"; color: Theme.text-hint; font-size: Theme.type-small; vertical-alignment: center; accessible-role: none; }
+                }
+                Rectangle {
+                    x: parent.width - 6px - 28px; y: 6px; width: 28px; height: 28px; border-radius: Theme.radius-row;
+                    background: close-touch.has-hover ? Theme.hover : transparent;
+                    accessible-role: button; accessible-label: "Close";
+                    accessible-action-default => { root.close(); root.dismissed(); }
+                    Icon { path: Icons.close; ink: Theme.text-quiet; size: 15px; x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; }
+                    close-touch := TouchArea { clicked => { root.close(); root.dismissed(); } }
+                }
+            }
+            Rectangle { height: 1px; background: Theme.border-faint; }
+            VerticalLayout {
+                padding: 6px;
+                MenuRows {
+                    items: root.items;
+                    current: root.current;
+                    hover <=> root.hover;
+                    picked(i) => { root.picked(i); root.close(); root.dismissed(); }
+                }
+            }
+            HorizontalLayout {
+                padding-left: 12px; padding-right: 12px; padding-top: 7px; padding-bottom: 7px;
+                Text { text: "This thread stays with Claude Code."; color: Theme.text-quiet; font-size: Theme.type-caption; wrap: word-wrap; accessible-role: text; }
+            }
+            Rectangle { height: 1px; background: Theme.border-faint; }
+            VerticalLayout {
+                padding-left: 16px; padding-right: 12px; padding-top: 6px; padding-bottom: 6px;
+                for label in ["Dynamic", "Model routing"]: Rectangle {
+                    height: 26px;
+                    accessible-role: switch; accessible-label: label; accessible-checked: false;
+                    Text { x: 0; width: parent.width - 40px; text: label; color: Theme.text; font-size: Theme.type-small; vertical-alignment: center; height: parent.height; accessible-role: none; }
+                    Rectangle {
+                        x: parent.width - 30px; y: 4px; width: 30px; height: 18px; border-radius: 9px;
+                        background: Theme.surface-sunken; border-width: 1px; border-color: Theme.field-border;
+                        Rectangle { x: 3px; y: 3px; width: 12px; height: 12px; border-radius: 6px; background: Theme.text-quiet; }
+                    }
+                }
+            }
+        }
+    }
+}
+
 // The editable text, its pills and the twin that measures them.
 component PillEditor inherits Rectangle {
     in-out property <string> text <=> input.text;
@@ -50,8 +328,13 @@ component PillEditor inherits Rectangle {
     in property <bool> rtl;
     in property <length> font-size: Theme.type-reading;
     in property <string> placeholder: "Write a follow-up";
-    in property <length> max-visible-height: 200px;
+    in property <length> max-visible-height: 220px;
+    in property <length> min-visible-height: 0px;
+    // Today's prompt: 15px at a CSS line height of 1.5, so 22.5px; Slint's factor multiplies the font's own line height.
+    in property <float> line-factor: 1.5 * root.font-size / Math.max(1px, root.line-height);
     out property <length> line-height: input.font-metrics.ascent - input.font-metrics.descent;
+    property <length> space-width: space-probe.preferred-width;
+    space-probe := Text { text: " "; font-size: root.font-size; visible: false; accessible-role: none; }
     out property <bool> has-focus: input.has-focus;
     out property <int> cursor: input.cursor-position-byte-offset;
     out property <int> anchor: input.anchor-position-byte-offset;
@@ -68,7 +351,7 @@ component PillEditor inherits Rectangle {
     }
     public function take-focus() { input.focus(); }
     public function place-cursor(anchor: int, cursor: int) { input.set-selection-offsets(anchor, cursor); }
-    preferred-height: Math.min(root.max-visible-height, input.preferred-height);
+    preferred-height: Math.max(root.min-visible-height, Math.min(root.max-visible-height, input.preferred-height));
     min-height: root.line-height;
     forward-focus: input;
 
@@ -79,7 +362,8 @@ component PillEditor inherits Rectangle {
         // Pills sit behind the text, at the positions the twin reports.
         for p in root.pills: Rectangle {
             x: p.x - 3px;
-            y: p.y - 1px;
+            // The caret's rectangle spans the whole line box; the glyphs sit in its middle.
+            y: p.y + (root.line-height * root.line-factor - root.line-height) / 2 - 1px;
             width: p.width + 6px;
             height: root.line-height + 2px;
             border-radius: Theme.radius-tag;
@@ -95,9 +379,11 @@ component PillEditor inherits Rectangle {
             }
         }
         twin := TextInput {
-            width: parent.width;
+            y: 0;
+            width: parent.width - root.space-width;
             text: input.text;
             font-size: root.font-size;
+            line-height-factor: root.line-factor;
             wrap: word-wrap;
             single-line: false;
             read-only: true;
@@ -108,8 +394,13 @@ component PillEditor inherits Rectangle {
             cursor-position-changed(p) => { root.measured = p; }
         }
         input := TextInput {
-            width: parent.width;
+            // Pinned to the top: a sized child of a plain element is centred, which would float one line in the middle.
+            y: 0;
+            // Today's editor is white-space: break-spaces, where a line's trailing space must fit too; Slint hangs it.
+            // One space's width less keeps the same line breaks.
+            width: parent.width - root.space-width;
             font-size: root.font-size;
+            line-height-factor: root.line-factor;
             color: Theme.text;
             wrap: word-wrap;
             single-line: false;
@@ -142,9 +433,12 @@ component PillEditor inherits Rectangle {
         }
         if input.text == "" && input.preedit-text == "": Text {
             width: parent.width;
+            y: 0;
             text: root.placeholder;
+            vertical-alignment: top;
             color: Theme.text-hint;
             font-size: root.font-size;
+            line-height-factor: root.line-factor;
             horizontal-alignment: root.rtl ? right : left;
             accessible-role: none;
         }
@@ -152,21 +446,24 @@ component PillEditor inherits Rectangle {
 }
 
 export component Composer inherits Rectangle {
-    // 0: the card (as in the baseline), 1: the floating two-row card, 2: the slim bar.
+    // 0: today's composer, 1: the floating card, 2: the slim bar.
     in property <int> variant: 0;
     in-out property <string> text <=> editor.text;
     in property <[PillRect]> pills;
     in property <bool> rtl;
     in property <bool> busy;
     in property <string> model-name: "Opus 5.5";
-    in property <string> effort: "High";
-    in property <string> permission: "Ask before edits";
+    in property <string> effort: "Default";
+    in property <string> permission: "Ask for approval";
     in property <[MenuItem]> models;
     in property <[MenuItem]> efforts;
     in property <[MenuItem]> permissions;
     in property <int> model-index;
-    in property <int> effort-index;
+    in property <int> effort-index: -1;
     in property <int> permission-index;
+    in property <int> speed-index: 0;
+    // The level the draft seems to want (ADR-0172 decision 4), or "" for none.
+    in property <string> offer;
     in property <string> status;
     out property <bool> editor-focused: editor.has-focus;
     out property <length> editor-width: editor.content-width;
@@ -179,7 +476,9 @@ export component Composer inherits Rectangle {
     callback attach();
     callback pick-model(int);
     callback pick-effort(int);
+    callback pick-speed(int);
     callback pick-permission(int);
+    callback take-offer();
     callback layout-changed();
     public function measure-at(offset: int) -> Point { return editor.measure-at(offset); }
     public function take-focus() { editor.take-focus(); }
@@ -190,47 +489,56 @@ export component Composer inherits Rectangle {
     accessible-label: "Composer";
 
     property <bool> can-send: editor.text != "";
-    property <length> radius: root.variant == 1 ? Theme.radius-overlay : root.variant == 2 ? 22px : Theme.radius-card;
-    property <length> pad-l: root.variant == 2 ? 18px : 16px;
-    property <length> pad-r: root.variant == 2 ? 6px + 32px + 10px : 12px;
-    property <length> pad-t: root.variant == 2 ? 11px : 14px;
-    property <length> pad-b: root.variant == 2 ? 11px : root.variant == 1 ? 10px + 32px + 6px : 6px;
+    // 1 the permissions menu, 2 the model picker, 3 the effort menu: its control keeps the hover wash while it is open.
+    property <int> open: 0;
+    property <length> radius: root.variant == 2 ? 22px : Theme.radius-overlay;
+    // Today's: padding 14px 10px 8px 16px inside a 1px transparent border, the prompt 6px short of the right edge.
+    property <length> pad-l: root.variant == 2 ? 18px : 17px;
+    property <length> pad-r: root.variant == 2 ? 6px + 32px + 10px : root.variant == 0 ? 11px + 6px : 12px;
+    property <length> pad-t: root.variant == 2 ? 11px : 15px;
+    property <length> pad-b: root.variant == 2 ? 11px : root.variant == 1 ? 10px + 32px + 6px : 0px;
 
-    model-menu := ChipMenu {
-        title: "Model";
-        items: root.models;
-        current: root.model-index;
-        x: model-chip.x + chips.x;
-        y: chips.y - self.height - 6px;
-        picked(i) => { root.pick-model(i); }
-        dismissed => { model-chip.take-focus(); }
-    }
-    effort-menu := ChipMenu {
-        title: "Effort";
-        items: root.efforts;
-        current: root.effort-index;
-        x: Math.min(effort-chip.x + chips.x, root.width - self.width);
-        y: chips.y - self.height - 6px;
-        picked(i) => { root.pick-effort(i); }
-        dismissed => { effort-chip.take-focus(); }
-    }
-    permission-menu := ChipMenu {
+    permission-menu := FooterMenu {
         title: "Permissions";
         items: root.permissions;
         current: root.permission-index;
-        x: permission-chip.x + chips.x;
-        y: chips.y - self.height - 6px;
+        width: 180px;
+        x: footer.x + permission-chip.x;
+        // Above the chips: their top edge is 2px into the 32px footer row.
+        y: footer.y + footer.padding-top + 2px - self.height - 6px;
         picked(i) => { root.pick-permission(i); }
-        dismissed => { permission-chip.take-focus(); }
+        dismissed => { root.open = 0; }
+    }
+    effort-menu := FooterMenu {
+        title: "Effort";
+        items: root.efforts;
+        current: root.effort-index;
+        speeds: true;
+        speed: root.speed-index;
+        width: 318px;
+        x: footer.x + effort-chip.x + effort-chip.width - self.width;
+        // Above the chips: their top edge is 2px into the 32px footer row.
+        y: footer.y + footer.padding-top + 2px - self.height - 6px;
+        picked(i) => { root.pick-effort(i); }
+        picked-speed(i) => { root.pick-speed(i); }
+        dismissed => { root.open = 0; }
+    }
+    model-menu := ModelPicker {
+        items: root.models;
+        current: root.model-index;
+        x: footer.x + model-chip.x;
+        // Above the chips: their top edge is 2px into the 32px footer row.
+        y: footer.y + footer.padding-top + 2px - self.height - 6px;
+        picked(i) => { root.pick-model(i); }
+        dismissed => { root.open = 0; }
     }
 
-    // The card's surface. In the baseline card it holds the chips too; the other two keep them outside.
+    // The card. Today's and the floating card hold the footer; the slim bar keeps it outside.
     Rectangle {
-        // A sized child of a plain element is centred by default: pin it to the top.
         x: 0;
         y: 0;
         width: root.width;
-        height: root.variant == 0 ? root.height : area.height;
+        height: root.variant == 2 ? area.height : root.height;
         background: root.variant == 2 ? Theme.surface-elevated : Theme.composer-card;
         border-radius: root.radius;
         border-width: root.variant == 1 ? 1px : editor.has-focus && root.variant == 2 ? 1px : 0px;
@@ -241,38 +549,114 @@ export component Composer inherits Rectangle {
     }
 
     VerticalLayout {
-        spacing: root.variant == 0 ? 0px : 6px;
+        spacing: 0px;
         area := Rectangle {
             height: editor.preferred-height + root.pad-t + root.pad-b;
             editor := PillEditor {
-                x: root.pad-l;
-                y: root.pad-t;
+                // 1px up and left of the content box: Slint draws Figtree's glyphs a pixel lower and further in than Chromium.
+                x: root.pad-l - (root.variant == 0 ? 1px : 0px);
+                y: root.pad-t - (root.variant == 0 ? 1px : 0px);
                 width: parent.width - root.pad-l - root.pad-r;
                 height: self.preferred-height;
                 pills: root.pills;
                 rtl: root.rtl;
-                placeholder: root.busy ? "Write a follow-up to queue it" : "Write a follow-up";
+                min-visible-height: root.variant == 0 ? 45px : 0px;
+                placeholder: root.busy ? "Claude is working. Write a follow-up to queue it." : "What would you like to do next?";
                 edited(t) => { root.edited(t); }
                 pill-key(k, s, a, c) => { return root.pill-key(k, s, a, c); }
                 caret-moved(a, c) => { root.caret-moved(a, c); }
                 composition-changed(t) => { root.composition-changed(t); }
                 submit => { root.send(); }
             }
-            if root.variant == 1: SendButton { x: parent.width - 12px - 32px; y: parent.height - 10px - 32px; busy: root.busy; can-send: root.can-send; clicked => { root.send(); } }
             if root.variant == 2: SendButton { x: parent.width - 6px - 32px; y: (parent.height - 32px) / 2; busy: root.busy; can-send: root.can-send; clicked => { root.send(); } }
         }
-        chips := HorizontalLayout {
-            padding-left: root.variant == 0 ? 10px : 8px;
-            padding-right: root.variant == 0 ? 10px : 8px;
-            padding-bottom: root.variant == 0 ? 10px : 0px;
-            spacing: 4px;
-            attach-chip := Chip { menu: false; accessible-role: button; icon: Icons.paperclip; label: root.variant == 0 ? "" : "Attach"; name: "Attach a file"; outlined: root.variant == 1; clicked => { root.attach(); } }
-            permission-chip := Chip { icon: Icons.shield; label: root.permission; name: "Permissions"; outlined: root.variant == 1; clicked => { permission-menu.show(); } }
+        // Today's footer, 6px under the prompt: attach at the start, its 30px button pulled 8px into the padding; at the end
+        // the shield, the model as its mark and name, the effort as a word with the speed's bolt, then the disc, 4px apart.
+        footer := HorizontalLayout {
+            padding-left: root.variant == 2 ? 10px : 9px;
+            padding-right: root.variant == 2 ? 8px : 11px;
+            padding-top: root.variant == 2 ? 4px : 6px;
+            padding-bottom: root.variant == 2 ? 0px : 9px;
+            spacing: 0px;
+            height: 32px + self.padding-top + self.padding-bottom;
+            attach-chip := FooterChip {
+                menu: false;
+                name: "Attach a file";
+                icon: Icons.paperclip;
+                icon-size: 16px;
+                width: 30px;
+                height: 30px;
+                pad-start: 7px;
+                pad-end: 7px;
+                radius: Theme.radius-row;
+                clicked => { root.attach(); }
+            }
             Rectangle { horizontal-stretch: 1; }
-            if root.variant != 0: Text { text: root.status; color: Theme.text-quiet; font-size: Theme.type-caption; vertical-alignment: center; accessible-role: none; }
-            model-chip := Chip { icon: Icons.spark; label: root.model-name; name: "Model"; outlined: root.variant == 1; clicked => { model-menu.show(); } }
-            effort-chip := Chip { icon: Icons.gauge; label: root.effort; name: "Effort"; outlined: root.variant == 1; clicked => { effort-menu.show(); } }
-            if root.variant == 0: SendButton { busy: root.busy; can-send: root.can-send; clicked => { root.send(); } }
+            if root.variant != 0 && root.status != "": Text { text: root.status; color: Theme.text-quiet; font-size: Theme.type-caption; vertical-alignment: center; accessible-role: none; }
+            permission-chip := FooterChip {
+                name: "Permissions";
+                value: root.permission;
+                icon: Icons.shield;
+                label: root.permission;
+                ink: Theme.text-quiet;
+                open: root.open == 1;
+                clicked => { root.open = 1; permission-menu.show(); }
+            }
+            Rectangle { width: 4px; }
+            model-chip := FooterChip {
+                name: "Model";
+                value: root.model-name;
+                icon: Icons.claude;
+                icon-filled: true;
+                icon-grid-w: 256;
+                icon-grid-h: 257;
+                icon-size: 13px;
+                icon-ink: Theme.provider-claude-mark;
+                label: root.model-name;
+                ink: Theme.text;
+                pad-start: 7px;
+                pad-end: 4px;
+                gap: 5px;
+                radius: Theme.radius-row;
+                open: root.open == 2;
+                clicked => { root.open = 2; model-menu.show(); }
+            }
+            effort-chip := FooterChip {
+                name: "Effort";
+                value: root.effort;
+                label: root.effort;
+                trailing-icon: Icons.zap;
+                trailing-opacity: root.speed-index == 0 ? 0.55 : 1;
+                ink: Theme.text-2;
+                pad-start: 4px;
+                pad-end: 8px;
+                gap: 5px;
+                radius: Theme.radius-row;
+                open: root.open == 3;
+                clicked => { root.open = 3; effort-menu.show(); }
+            }
+            // The offer (quietComposer.css .split-chip-effort__suggest): after the word, 4px into it, a muted arrow and the
+            // level in the accent on its wash; one press sets it.
+            if root.offer != "": Rectangle {
+                width: 2px + 12px + 5px + offer-word.preferred-width + 14px + 4px - 4px;
+                height: 32px;
+                accessible-role: button;
+                accessible-label: "Use " + root.offer + " effort, suggested for this draft";
+                accessible-action-default => { root.take-offer(); }
+                Icon { path: Icons.arrow-right; ink: Theme.text-quiet; size: 12px; x: 2px - 4px; y: (parent.height - self.height) / 2; }
+                Rectangle {
+                    x: 2px - 4px + 12px + 5px;
+                    y: (parent.height - self.height) / 2;
+                    height: 22px;
+                    width: offer-word.preferred-width + 14px;
+                    border-radius: Theme.radius-control;
+                    background: Theme.offer-wash;
+                    offer-word := Text { text: root.offer; color: Theme.accent-text; font-size: Theme.type-small; font-weight: 600; horizontal-alignment: center; vertical-alignment: center; accessible-role: none; }
+                }
+                TouchArea { clicked => { root.take-offer(); } }
+            }
+            if root.variant != 2: Rectangle { width: 4px; }
+            if root.variant != 2: SendButton { busy: root.busy; can-send: root.can-send; clicked => { root.send(); } }
         }
     }
 }

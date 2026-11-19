@@ -23,7 +23,7 @@ const TOKENS: &[&str] = &[
     "terminal-foreground", "terminal-cursor", "terminal-selection", "toolbar", "toolbar-text",
     "toolbar-border", "toolbar-control-hover", "accent-surface", "accent-surface-text", "scrollbar",
     "scrollbar-hover", "table-stripe", "provider-claude-mark", "overlay", "kbd", "reading-text", "reading-text-2", "reading-bubble-text",
-    "reading-code-text", "reading-hairline", "composer-text-faint",
+    "reading-code-text", "reading-hairline", "composer-text-faint", "accent-border", "activity",
 ];
 
 /// Reading-surface colours from feature stylesheets: (name, dark expression, light expression).
@@ -37,6 +37,12 @@ const EXTRA: &[(&str, &str, &str)] = &[
     ("code-comment", "var(--tt-text-muted)", ""),
     ("code-meta", "var(--tt-text-muted)", ""),
     ("code-chip", "color-mix(in oklab, var(--tt-text) 5%, transparent)", ""),
+    // agents/threads.css and quietComposer.css: the send disc at rest with nothing typed, pointed at, and the effort offer's
+    // wash; the speed switch's track (split-chip-effort__speeds).
+    ("disc-off", "color-mix(in oklab, var(--tt-pill) 16%, var(--tt-composer-card))", ""),
+    ("disc-hover", "color-mix(in oklab, var(--tt-pill) 84%, var(--tt-composer-card))", ""),
+    ("offer-wash", "color-mix(in srgb, var(--tt-accent) 10%, transparent)", ""),
+    ("speeds-track", "color-mix(in oklab, var(--tt-text) 6%, transparent)", ""),
     // tools/changes.css, .changes-diff__rows (light-dark(): light first, dark second)
     ("diff-added", "color-mix(in srgb, var(--tt-success) 9%, transparent)", "color-mix(in srgb, var(--tt-success) 10%, transparent)"),
     ("diff-removed", "color-mix(in srgb, var(--tt-error) 9%, transparent)", "color-mix(in srgb, var(--tt-error) 9%, transparent)"),

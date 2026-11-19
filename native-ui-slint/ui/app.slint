@@ -1,4 +1,7 @@
 // Sotto's thread screen, built in Slint for the native UI bake-off (issue #2689).
+// Figtree (OFL-1.1) as static Regular, SemiBold and Bold. Today's window draws the variable font Sotto bundles
+// (src/shared/fonts/*.woff2); decompressed to TrueType, Slint 1.19 reads it as one 300-weight face and emboldens it
+// artificially for 400, so the static files are the closer match.
 import "../../apps/ios/Sotto/Resources/Figtree.ttf";
 import "../../apps/ios/Sotto/Resources/Figtree-SemiBold.ttf";
 import "../../apps/ios/Sotto/Resources/Figtree-Bold.ttf";
@@ -71,6 +74,8 @@ export component AppWindow inherits Window {
     in property <int> model-index;
     in property <int> effort-index;
     in property <int> permission-index;
+    in property <int> speed-index;
+    in property <string> effort-offer;
     out property <length> composer-editor-width: composer.editor-width;
     out property <length> composer-line-height: composer.line-height;
     callback composer-edited(string);
@@ -82,6 +87,8 @@ export component AppWindow inherits Window {
     callback pick-model(int);
     callback pick-effort(int);
     callback pick-permission(int);
+    callback pick-speed(int);
+    callback take-offer();
     callback composer-layout-changed();
     public function measure-at(offset: int) -> Point { return composer.measure-at(offset); }
     public function place-cursor(anchor: int, cursor: int) { composer.place-cursor(anchor, cursor); }
@@ -247,11 +254,12 @@ export component AppWindow inherits Window {
                     }
                         }
                         Rectangle {
-                            height: composer.preferred-height + 22px;
+                            // threads.css .thread-workspace__compose: padding 10px max(24px, (100% - 760px) / 2) 20px.
+                            height: composer.preferred-height + 10px + 20px;
                             composer := Composer {
                                 x: (parent.width - self.width) / 2;
-                                y: 6px;
-                                width: Math.min(820px, parent.width - 48px);
+                                y: 10px;
+                                width: Math.min(760px, parent.width - 48px);
                                 height: self.preferred-height;
                                 variant: root.composer-variant;
                                 pills: root.pills;
@@ -267,6 +275,10 @@ export component AppWindow inherits Window {
                                 model-index: root.model-index;
                                 effort-index: root.effort-index;
                                 permission-index: root.permission-index;
+                                speed-index: root.speed-index;
+                                offer: root.effort-offer;
+                                pick-speed(i) => { root.pick-speed(i); }
+                                take-offer => { root.take-offer(); }
                                 edited(t) => { root.composer-edited(t); }
                                 pill-key(k, s, a, c) => { return root.pill-key(k, s, a, c); }
                                 caret-moved(a, c) => { root.caret-moved(a, c); }

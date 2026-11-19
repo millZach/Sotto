@@ -142,6 +142,56 @@ pub fn initial_text() -> SharedString {
     .into()
 }
 
+/// The kinds of hard work a draft may name, from today's `effortSuggestion.ts` (`HARD_WORK`), each a match at a word's
+/// start: (alternatives, whole word only).
+const HARD_WORK: &[(&[&str], bool)] = &[
+    (&["refactor"], false), (&["debug"], false), (&["investigat"], false), (&["why"], true), (&["redesign"], false),
+    (&["architect"], false), (&["migrat"], false), (&["root cause"], true), (&["race condition"], false),
+    (&["regression"], false), (&["flaky", "flaki"], false), (&["deadlock"], false), (&["concurren"], false),
+    (&["performance"], true), (&["optimis", "optimiz"], false), (&["security"], true), (&["audit"], false),
+    (&["end-to-end", "end to end", "end-to end", "end to-end"], true), (&["entire"], true),
+    (&["whole app", "whole codebase", "whole repo"], true), (&["thorough"], false), (&["comprehensive"], true),
+    (&["buggy"], true), (&["not working"], true), (&["crash"], false), (&["broken"], true),
+];
+
+fn names(text: &str, alternatives: &[&str], whole: bool) -> bool {
+    let is_word = |c: Option<char>| c.is_some_and(|c| c.is_alphanumeric() || c == '_');
+    alternatives.iter().any(|alt| {
+        text.match_indices(alt).any(|(at, m)| {
+            let before = text[..at].chars().next_back();
+            let after = text[at + m.len()..].chars().next();
+            !is_word(before) && (!whole || !is_word(after))
+        })
+    })
+}
+
+/// How much thought a draft seems to ask for, as today's `draftEffortScore` reads it: each kind of hard work it names
+/// (at most three), one for three or more lines, one for more than 140 characters.
+pub fn draft_effort_score(text: &str) -> usize {
+    let plain: String = text.chars().filter(|c| *c != FILE && *c != QUOTE && *c != '\u{2060}').map(|c| if c == '\u{00A0}' { ' ' } else { c }).collect();
+    let trimmed = plain.trim();
+    if trimmed.chars().count() < 14 {
+        return 0;
+    }
+    let lower = trimmed.to_lowercase();
+    let named = HARD_WORK.iter().filter(|(alts, whole)| names(&lower, alts, *whole)).count();
+    let lines = trimmed.split('\n').filter(|l| !l.trim().is_empty()).count();
+    named.min(3) + usize::from(lines >= 3) + usize::from(trimmed.chars().count() > 140)
+}
+
+/// The level a draft suggests on the provider's default effort (`effort_index` -1), as today's `suggestedEffortIndex`
+/// does with no default set: one level above Medium for a score of 1 or 2, two for 3 or more, never Ultracode.
+/// Levels are Low, Medium, High, XHigh, Max, Ultracode. Nothing changes until the user takes the offer.
+pub fn suggested_effort(text: &str, effort_index: i32) -> &'static str {
+    const LEVELS: [&str; 5] = ["Low", "Medium", "High", "XHigh", "Max"];
+    let score = draft_effort_score(text);
+    let steps = if score >= 3 { 2 } else if score >= 1 { 1 } else { 0 };
+    let base = 1; // Medium
+    let current = if effort_index >= 0 { effort_index as usize } else { base };
+    let index = (base + steps).min(LEVELS.len() - 1);
+    if steps == 0 || index <= current { "" } else { LEVELS[index] }
+}
+
 pub fn attach_names() -> [&'static str; 4] {
     ["shelf.journal", "compact-bench.txt", "receipts.rs", "autosave.ts"]
 }

@@ -32,6 +32,9 @@ pub struct Args {
     pub launch_only: bool,
     pub out: Option<String>,
     pub scroll_up_after: Option<u64>,
+    /// The composer's text at start, instead of the demo text with its two pills.
+    pub composer_text: Option<String>,
+    pub no_focus: bool,
 }
 
 fn args() -> Args {
@@ -57,6 +60,8 @@ fn args() -> Args {
             "--launch-only" => a.launch_only = true,
             "--out" => a.out = it.next(),
             "--scroll-up-after" => a.scroll_up_after = it.next().and_then(|s| s.parse().ok()),
+            "--composer-text" => a.composer_text = it.next(),
+            "--no-focus" => a.no_focus = true,
             other => eprintln!("unknown argument {other}"),
         }
     }
@@ -107,16 +112,19 @@ fn main() {
     }
 
     // The composer.
-    ui.set_models(menu(&[("Opus 5.5", "Claude"), ("Sonnet 5.5", "Claude"), ("Haiku 5.5", "Claude"), ("Fable 5.2", "Claude")]));
-    ui.set_efforts(menu(&[("Low", "Quick"), ("Medium", ""), ("High", "Default"), ("Max", "Slowest")]));
-    ui.set_permissions(menu(&[("Ask before edits", "Default"), ("Allow edits", "In this folder"), ("Plan only", "No changes")]));
+    // Today's catalogue for a Claude thread (composer-reference/README.md): three models, five levels and Ultracode,
+    // the provider's default effort until one is chosen, and Standard or Fast.
+    ui.set_models(menu(&[("Opus 5.5", ""), ("Sonnet 5.5", ""), ("Haiku 5.5", "")]));
+    ui.set_efforts(menu(&[("Low", ""), ("Medium", ""), ("High", ""), ("XHigh", ""), ("Max", ""), ("Ultracode", "")]));
+    ui.set_permissions(menu(&[("Ask for approval", ""), ("Allow edits", ""), ("Auto", ""), ("Full access", "")]));
     ui.set_model_index(0);
-    ui.set_effort_index(2);
+    ui.set_effort_index(-1);
     ui.set_permission_index(0);
     ui.set_model_name("Opus 5.5".into());
-    ui.set_effort("High".into());
-    ui.set_permission("Ask before edits".into());
-    ui.set_composer_text(composer::initial_text());
+    ui.set_effort("Default".into());
+    ui.set_permission("Ask for approval".into());
+    ui.set_composer_text(args.composer_text.clone().map(Into::into).unwrap_or_else(composer::initial_text));
+    ui.set_effort_offer(composer::suggested_effort(&ui.get_composer_text(), -1).into());
     let pills: Rc<RefCell<Vec<composer::Pill>>> = Rc::new(RefCell::new(composer::parse(&ui.get_composer_text()).0));
     let metrics = metrics::Metrics::new(launch_t0, args.clone(), backend);
 
@@ -132,6 +140,7 @@ fn main() {
                 ui.set_composer_text(cleaned.into());
             }
             ui.set_composer_rtl(markdown::starts_rtl(&ui.get_composer_text()));
+            ui.set_effort_offer(composer::suggested_effort(&ui.get_composer_text(), ui.get_effort_index()).into());
             *pills.borrow_mut() = found;
             composer::measure(&ui, &pills.borrow());
         });
@@ -209,6 +218,19 @@ fn main() {
             ui.set_effort_index(i);
             if let Some(item) = ui.get_efforts().row_data(i as usize) {
                 ui.set_effort(item.label);
+            }
+            ui.set_effort_offer("".into());
+        });
+        let w = ui.as_weak();
+        ui.on_pick_speed(move |i| w.unwrap().set_speed_index(i));
+        let w = ui.as_weak();
+        ui.on_take_offer(move || {
+            let ui = w.unwrap();
+            let offer = ui.get_effort_offer();
+            if let Some(i) = (0..ui.get_efforts().row_count()).find(|&i| ui.get_efforts().row_data(i).is_some_and(|m| m.label == offer)) {
+                ui.set_effort_index(i as i32);
+                ui.set_effort(offer);
+                ui.set_effort_offer("".into());
             }
         });
         let w = ui.as_weak();
@@ -434,14 +456,17 @@ fn main() {
         let pills = pills.clone();
         let start = start_stream.clone();
         let stream = args.stream && !args.finished;
+        let focus = !args.no_focus;
         let scroll_up = args.scroll_up_after;
         slint::Timer::single_shot(Duration::from_millis(300), move || {
             if let Some(ui) = w.upgrade() {
                 composer::measure(&ui, &pills.borrow());
                 // A thread opens with the composer ready to type in, as Sotto's does.
-                ui.invoke_focus_composer();
-                let end = ui.get_composer_text().len() as i32;
-                ui.invoke_place_cursor(end, end);
+                if focus {
+                    ui.invoke_focus_composer();
+                    let end = ui.get_composer_text().len() as i32;
+                    ui.invoke_place_cursor(end, end);
+                }
             }
         });
         if stream {

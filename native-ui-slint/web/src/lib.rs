@@ -5,7 +5,7 @@ mod composer;
 
 slint::include_modules!();
 
-use slint::{ComponentHandle, ModelRc, VecModel};
+use slint::{ComponentHandle, Model, ModelRc, VecModel};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::Duration;
@@ -31,11 +31,23 @@ fn menu(items: &[(&str, &str)]) -> ModelRc<MenuItem> {
 #[wasm_bindgen(start)]
 pub fn main() {
     let ui = AppWindow::new().expect("create the window");
-    ui.set_models(menu(&[("Opus 5.5", "Claude"), ("Sonnet 5.5", "Claude"), ("Haiku 5.5", "Claude"), ("Fable 5.2", "Claude")]));
-    ui.set_efforts(menu(&[("Low", "Quick"), ("Medium", ""), ("High", "Default"), ("Max", "Slowest")]));
-    ui.set_permissions(menu(&[("Ask before edits", "Default"), ("Allow edits", "In this folder"), ("Plan only", "No changes")]));
-    ui.set_effort_index(2);
+    ui.set_models(menu(&[("Opus 5.5", ""), ("Sonnet 5.5", ""), ("Haiku 5.5", "")]));
+    ui.set_efforts(menu(&[("Low", ""), ("Medium", ""), ("High", ""), ("XHigh", ""), ("Max", ""), ("Ultracode", "")]));
+    ui.set_permissions(menu(&[("Ask for approval", ""), ("Allow edits", ""), ("Auto", ""), ("Full access", "")]));
     ui.set_composer_text(composer::initial_text());
+    ui.set_effort_offer(composer::suggested_effort(&ui.get_composer_text(), -1).into());
+    {
+        let w = ui.as_weak();
+        ui.on_take_offer(move || {
+            let ui = w.unwrap();
+            let offer = ui.get_effort_offer();
+            let efforts = ui.get_efforts();
+            if let Some(i) = (0..efforts.row_count()).find(|&i| efforts.row_data(i).is_some_and(|m| m.label == offer)) {
+                ui.set_effort_index(i as i32);
+                ui.set_effort_offer("".into());
+            }
+        });
+    }
     let pills = Rc::new(RefCell::new(composer::parse(&ui.get_composer_text()).0));
     {
         let w = ui.as_weak();
@@ -47,6 +59,7 @@ pub fn main() {
                 ui.set_composer_text(cleaned.into());
             }
             ui.set_composer_rtl(starts_rtl(&ui.get_composer_text()));
+            ui.set_effort_offer(composer::suggested_effort(&ui.get_composer_text(), ui.get_effort_index()).into());
             *pills.borrow_mut() = found;
             composer::measure(&ui, &pills.borrow());
         });

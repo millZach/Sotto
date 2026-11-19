@@ -45,7 +45,10 @@ export component AppWindow inherits Window {
     in property <[MenuItem]> efforts;
     in property <[MenuItem]> permissions;
     in-out property <int> model-index;
-    in-out property <int> effort-index;
+    in-out property <int> effort-index: -1;
+    in-out property <int> speed-index: 0;
+    in property <string> effort-offer;
+    callback take-offer();
     in-out property <int> permission-index;
     out property <length> composer-editor-width: composer.editor-width;
     callback composer-edited(string);
@@ -95,15 +98,19 @@ export component AppWindow inherits Window {
                 effort-index: root.effort-index;
                 permission-index: root.permission-index;
                 model-name: root.models[root.model-index].label;
-                effort: root.efforts[root.effort-index].label;
+                effort: root.effort-index < 0 ? "Default" : root.efforts[root.effort-index].label;
+                speed-index: root.speed-index;
+                offer: root.effort-offer;
+                pick-speed(i) => { root.speed-index = i; }
+                take-offer => { root.take-offer(); }
                 permission: root.permissions[root.permission-index].label;
-                status: "Opus 5.5 is ready";
+                status: "";
                 edited(t) => { root.composer-edited(t); }
                 pill-key(k, s, a, c) => { return root.pill-key(k, s, a, c); }
                 caret-moved(a, c) => { root.caret-moved(a, c); }
                 attach => { root.attach(); }
                 pick-model(i) => { root.model-index = i; }
-                pick-effort(i) => { root.effort-index = i; }
+                pick-effort(i) => { root.effort-index = i; root.composer-edited(root.composer-text); }
                 pick-permission(i) => { root.permission-index = i; }
                 layout-changed => { root.composer-layout-changed(); }
             }

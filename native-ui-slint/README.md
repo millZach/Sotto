@@ -26,4 +26,5 @@ Live preview: `SLINT_LIVE_PREVIEW=1 cargo build --features live-preview`, run th
 - `web/`: the composer alone, compiled to WebAssembly for the design review link.
 - `tools/`: nested Hyprland (`nested-up.sh`, `nested-down.sh`), window sizing and captures (`win.sh`, `run-shot.sh`, `captures.sh`), measurements (`bench.sh`, `launch.sh`, `edit_poll.py`, `rebuild_time.sh`, `summarize.py`), and the private-bus checks (`private-session.sh` with `a11y-session.sh`, `ime-session.sh`, `motion-session.sh`). Run the checks only through `private-session.sh`: it gives the bus daemon a private home, so nothing reaches the user's real settings.
 - `electron-baseline/`: how today's Electron Sotto was measured the same way, and its results.
+- `composer-reference/`: today's composer as Electron draws it (every element's box and computed style, in both themes and with each menu open), which composer A is matched to; `tools/match.sh` captures the same states in Slint and compares them. Flags for that: `--composer-text "<text>"` and `--no-focus`.
 - `CRATES.md`: every crate in the build with its licence.
