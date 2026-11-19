@@ -74,8 +74,15 @@ export function watchThreadChanges(host: AgentHost, historyFromEvents: boolean, 
   }
 }
 
-/** New provider adapters must pass these behavioural checks with observable fake effects. */
-export function describeAdapterContract(name: string, factory: (session?: AdapterSessionOptions) => Promise<AdapterFixture>, skips: AdapterContractSkips): void {
+/**
+ * New provider adapters must pass these behavioural checks with observable fake effects. `cannotCross` names the cases a
+ * fixture that reaches its adapter only through a host's socket cannot run, by case name, each with its reason
+ * (`tests/referee/socketFixture.ts`); every other case runs as written.
+ */
+export function describeAdapterContract(name: string, factory: (session?: AdapterSessionOptions) => Promise<AdapterFixture>, skips: AdapterContractSkips,
+  cannotCross: Readonly<Record<string, string>> = {}): void {
+  /** Call first in each case's setup, before any fixture is made. */
+  const skipUncrossable = (context: TestContext): void => { const reason = cannotCross[context.task.name]; if (reason) context.skip(reason) }
   describe(`${name} thread interface contract`, () => {
     let f: AdapterFixture
     let sessionId: string
@@ -94,6 +101,7 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
       return record.result?.decision === 'accept' ? true : record.result?.decision === 'decline' ? false : undefined
     }
     beforeEach(async context => {
+      skipUncrossable(context)
       skipUnsupportedFixture(context)
       f = await factory(); await f.host.connect()
       await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
@@ -463,6 +471,7 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
   // Lazy provider sessions. Sotto is not managing threads in the beta (ADR-0012), so the watched set is
   // mostly the thread on screen; everything else waits for an action.
   describe(`${name} lazy provider sessions`, () => {
+    beforeEach(skipUncrossable)
     let f: AdapterFixture
     let sessionId: string
     // Short enough to watch a sweep happen, and asserted on the stop itself rather than on elapsed time.
@@ -623,6 +632,7 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
   // refuses it falls back to starting the session again; a lost answer is left for the coordinator's saved
   // intent to reconcile. Runs where the fixture offers `liveSettings`.
   describe(`${name} settings on a live session`, () => {
+    beforeEach(skipUncrossable)
     let f: AdapterFixture
     let sessionId: string
     type Change = { reasoningEffort?: string; runtimeMode?: AgentRuntimeMode }
@@ -736,7 +746,7 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
       await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: sessionId, projectId: f.projectId, modelId: f.modelId, title: 'Settings thread' })
       f.host.observeThreads?.([sessionId])
     }
-    beforeEach(async context => { skipUnsupportedFixture(context); f = await factory() })
+    beforeEach(async context => { skipUncrossable(context); skipUnsupportedFixture(context); f = await factory() })
     afterEach(async () => { const previous = f; f = undefined!; await previous?.cleanup() })
     /** A permission setting this thread is not on: the provider's own mode where it names its own, otherwise one of Sotto's. */
     const change = async (): Promise<Partial<Settings> | undefined> => {
@@ -798,6 +808,7 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
   // the adapter reads the new version and moves each thread to the new client as it goes idle. Runs where the
   // adapter takes the news and the fixture can install a newer client.
   describe(`${name} client update`, () => {
+    beforeEach(skipUncrossable)
     let f: AdapterFixture
     let sessionId: string
     const thread = async () => (await f.host.snapshot()).threads.find(t => t.id === sessionId)!

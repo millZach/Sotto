@@ -2,7 +2,8 @@
 // hello a real client of its kind sends, taking turns to act, while a fake provider plays its part.
 import { PROVIDER_LABELS, publicProviderEntityId } from '../../src/shared/agents'
 import type { Held } from './fold'
-import type { DriverAction, RefereeProvider } from './providers'
+import { createHash } from 'node:crypto'
+import { LOSES_ACKNOWLEDGEMENT, type DriverAction, type RefereeProvider } from './providers'
 
 /** The clients a recording holds, in the order their material is compared. */
 export const CLIENTS = ['desktop', 'iphone', 'plain'] as const
@@ -45,12 +46,15 @@ export interface StepContext {
   readonly data: string
   /** What the client that acts holds now. */
   readonly held: Held
+  /** The handles the host answered the acting client's staging with, in order. */
+  readonly staged: readonly Record<string, unknown>[]
 }
 
 export interface Step {
   /** What the step does, in words, for the recording and for a failure. */
   readonly say: string
-  readonly by: ClientName | 'fake'
+  /** `host`: the host process is stopped and started again over the same data folder, and every client opens a new session. */
+  readonly by: ClientName | 'fake' | 'host'
   /** For a client's step: the request beside `v`, `id` and `session`. */
   readonly request?: (context: StepContext) => Record<string, unknown>
   /** For the fake's step: the action it takes. */
@@ -61,7 +65,7 @@ export interface Step {
    * names the last thing the step changes, so nothing it causes is still on its way when the next step starts. A replay
    * waits instead for every client to hold what the recording holds.
    */
-  readonly until?: (held: Held, context: Omit<StepContext, 'held'> & { readonly client: ClientName }) => boolean
+  readonly until?: (held: Held, context: Omit<StepContext, 'held' | 'staged'> & { readonly client: ClientName }) => boolean
 }
 
 type Thread = {
@@ -86,9 +90,10 @@ export const started = (provider: RefereeProvider) => (held: Held): boolean => {
   return read && rows.some(row => row.id === provider && row.connection === 'connected') && rows.every(row => row.connection !== 'connecting')
 }
 /** A command's lane closes a publish after its answer: the shell stops naming it busy. Every command step waits for that. */
-const lanesIdle = (held: Held): boolean => held.shell?.globalLaneBusy !== true && ((held.shell?.busyThreadIds ?? []) as unknown[]).length === 0
-/** Each send is acknowledged by its provider, which the delivery records with the time it took. */
-const deliveriesSettled = (held: Held): boolean => ((held.shell?.deliveries ?? []) as { providerLatencyMs?: unknown }[]).every(delivery => delivery.providerLatencyMs !== undefined)
+export const lanesIdle = (held: Held): boolean => held.shell?.globalLaneBusy !== true && ((held.shell?.busyThreadIds ?? []) as unknown[]).length === 0
+/** Each send is acknowledged by its provider, which the delivery records with the time it took, or refused before it. */
+export const deliveriesSettled = (held: Held): boolean => ((held.shell?.deliveries ?? []) as { status?: string; providerLatencyMs?: unknown }[])
+  .every(delivery => delivery.status === 'failed' || delivery.providerLatencyMs !== undefined)
 /**
  * The providers whose turn record names the prompt it follows (`afterMessageId`) from the start of the turn. Codex names it
  * a publish after the record first shows, Grok Build once the turn ends, and Devin never.
@@ -109,6 +114,12 @@ const sent = (provider: RefereeProvider, text: string) => (held: Held, { client 
   return record !== undefined && named && deliveriesSettled(held) && lanesIdle(held)
 }
 /** A turn is over once the thread is idle with the reply, and no record of it is still running: a turn's closes a moment later. */
+/**
+ * A turn the host first could not confirm is over once its thread's record shows the reply too: the record catches up a
+ * publish after the detail there.
+ */
+const recordEnded = (text: string) => (held: Held): boolean => ended(text)(held)
+  && ((threadOf(held) as { summary?: { lastAssistant?: { text?: string } } } | undefined)?.summary?.lastAssistant?.text ?? '').includes(text) && lanesIdle(held)
 const ended = (text: string) => (held: Held): boolean => threadOf(held)?.status === 'idle' && textOf(held).includes(text)
   && activitiesOf(held).every(record => record.status !== 'running')
 /**
@@ -132,13 +143,54 @@ const requestOf = (held: Held): string => {
 /** Every client step that sends a command also waits for its lane to close. */
 const commandStep = (step: Step): Step => ({ ...step, until: (held, context) => lanesIdle(held) && (step.until?.(held, context) ?? true) })
 
-/** One provider's script. Every text in it is the referee's own; nothing comes from a real account. */
-export function script(provider: RefereeProvider): Step[] {
+/**
+ * The scripts a provider is recorded with, each its own recording: `main`, every provider's whole conversation; `restart`,
+ * the host stopped and started again during a turn; `lost-acknowledgement`, a prompt whose acknowledgement comes after the
+ * adapter stopped waiting; `attachments`, a send carrying a staged text file; `pictures`, one carrying a staged picture.
+ */
+export const SCENARIOS = ['main', 'restart', 'lost-acknowledgement', 'attachments', 'pictures'] as const
+export type ScenarioName = typeof SCENARIOS[number]
+
+/**
+ * The scripts the TypeScript host does not play the same way from run to run, so none is recorded or replayed until its
+ * issue is fixed: each names the issue and what differs. A replay says it skipped each one, and why.
+ */
+export const HELD_OUT: Readonly<Partial<Record<ScenarioName, { readonly providers: ReadonlySet<RefereeProvider>; readonly reason: string }>>> = {
+  restart: { providers: new Set(['codex', 'claude', 'grok', 'devin', 'muse', 'opencode', 'cursor']),
+    reason: 'After the host starts again, a client that observes the thread can be sent a delta from an older revision than the whole detail it was just sent, and is not sent the thread whole again (#2700).' },
+  'lost-acknowledgement': { providers: new Set(['claude']),
+    reason: 'Once the turn whose acknowledgement came late ends, Claude Code\'s thread summary counts one activity in some runs and none in others, with the same detail (#2698).' },
+  pictures: { providers: new Set(['codex', 'claude', 'muse', 'opencode', 'cursor']),
+    reason: 'After a send with a picture, the host can send the whole detail again at the revision the client holds, with the picture\'s preview added (#2699).' },
+}
+
+/** Why a provider's script is held out, or undefined when it is recorded and replayed. */
+export const heldOut = (provider: RefereeProvider, scenario: ScenarioName): string | undefined =>
+  HELD_OUT[scenario]?.providers.has(provider) ? HELD_OUT[scenario]!.reason : undefined
+
+/** Where a script is recorded: `main` as the provider alone, any other after it. */
+export const recordingName = (provider: RefereeProvider, scenario: ScenarioName): string => scenario === 'main' ? provider : `${provider}-${scenario}`
+
+/** The providers whose fake's model reads images; Grok Build's and Devin's read none. */
+const READS_IMAGES: ReadonlySet<RefereeProvider> = new Set(['codex', 'claude', 'muse', 'opencode', 'cursor'])
+
+/** A tiny PNG and a short text file, each the referee's own. */
+const PIXEL = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+const NOTES = Buffer.from('Referee notes\nsecond line\n')
+
+/**
+ * One provider's script for a scenario, or undefined where the scenario does not apply to it: only a fake that loses an
+ * acknowledgement through its files has one lost. Every text in it is the referee's own; nothing comes from a real account.
+ */
+export function script(provider: RefereeProvider, scenario: ScenarioName = 'main'): Step[] | undefined {
   const send = (by: ClientName, text: string): Step => commandStep({ say: `${by} sends "${text}"`, by, request: command({ type: 'manual-send', threadId: THREAD, text }), until: sent(provider, text) })
   const complete = (text: string): Step => ({ say: `the fake ends the turn with "${text}"`, by: 'fake', drive: () => ({ type: 'complete', thread: THREAD, text }), until: ended(text) })
   const projectOf = (held: Held, data: string): { id: string; path: string } | undefined => ((held.shell?.host as { projects?: { id: string; path: string }[] } | undefined)?.projects ?? []).find(item => item.path === data)
-  return [
-    ...CLIENTS.map((by): Step => ({ say: `${by} says hello`, by, request: () => ({ op: 'hello', ...PROFILES[by].hello }), until: started(provider) })),
+  const hellos = CLIENTS.map((by): Step => ({ say: `${by} says hello`, by, request: () => ({ op: 'hello', ...PROFILES[by].hello }), until: started(provider) }))
+  // The first observe has the host read the thread's folder with Git, which its record shows once that is done.
+  const observes = CLIENTS.map((by): Step => ({ say: `${by} observes the thread`, by, request: () => ({ op: 'observe', threadIds: [THREAD] }), until: held => threadOf(held)?.worktree?.git !== undefined }))
+  const opening: Step[] = [
+    ...hellos,
     commandStep({ say: `desktop turns ${provider} on`, by: 'desktop', request: command({ type: 'configure', patch: { enabledProviders: [provider], provider } }),
       until: held => {
         const configuration = held.shell?.configuration as { provider?: string; enabledProviders?: string[] } | undefined
@@ -154,8 +206,62 @@ export function script(provider: RefereeProvider): Step[] {
       if (!project) throw new Error('The desktop holds no project for the data folder.')
       return { op: 'command', command: { type: 'create-thread', threadId: THREAD, projectId: project.id, title: 'Referee thread', titleSource: 'user', modelId: publicProviderEntityId(provider, 'model', FAKE_MODELS[provider]), workingCopy: 'shared', managed: false } }
     }, until: held => threadOf(held)?.status === 'idle' }),
-    // The first observe has the host read the thread's folder with Git, which its record shows once that is done.
-    ...CLIENTS.map((by): Step => ({ say: `${by} observes the thread`, by, request: () => ({ op: 'observe', threadIds: [THREAD] }), until: held => threadOf(held)?.worktree?.git !== undefined })),
+    ...observes,
+  ]
+  const reads: Step[] = [
+    { say: 'desktop reads the thread', by: 'desktop', request: () => ({ op: 'detail', threadId: THREAD }) },
+    { say: 'plain reads the shell', by: 'plain', request: () => ({ op: 'shell' }) },
+  ]
+  if (scenario === 'restart') return [
+    ...opening,
+    send('desktop', 'Referee prompt one'),
+    // Every client is gone while the host is down, and comes back on a new session, saying hello and observing again.
+    { say: 'the host stops and starts again', by: 'host' },
+    ...hellos,
+    ...CLIENTS.map((by): Step => ({ say: `${by} observes the thread again`, by, request: () => ({ op: 'observe', threadIds: [THREAD] }),
+      until: (held, { client }) => (client !== by || held.details[THREAD] !== undefined) && lanesIdle(held) && deliveriesSettled(held) })),
+    ...provider === 'cursor' ? [
+      // Cursor's host sends the turn the restart stopped Sotto's resume note (ADR-0076) while the fake still answers the
+      // prompt from before it, so the reply ends that prompt and the note runs as a turn of its own, which the fake ends next.
+      { say: 'the fake answers the prompt from before the restart with "Referee reply one"', by: 'fake', drive: () => ({ type: 'complete', thread: THREAD, text: 'Referee reply one' }),
+        until: held => textOf(held).includes('Referee reply one') && lanesIdle(held) && activitiesOf(held).some(record => record.kind === 'turn' && record.status === 'running') },
+      complete('Referee reply to the resume note'),
+    ] satisfies Step[] : [complete('Referee reply one')],
+    ...reads,
+  ]
+  if (scenario === 'lost-acknowledgement') return LOSES_ACKNOWLEDGEMENT[provider] && [
+    ...opening,
+    { say: 'the fake will acknowledge the next prompt late', by: 'fake', drive: () => ({ type: 'lose-acknowledgement' }) },
+    // The send is over once the host has settled what became of it: the delivery says, and the lane is closed.
+    commandStep({ say: 'desktop sends "Referee prompt one"', by: 'desktop', request: command({ type: 'manual-send', threadId: THREAD, text: 'Referee prompt one' }),
+      until: held => textOf(held).includes('Referee prompt one') && ((held.shell?.deliveries ?? []) as { status?: string }[]).every(delivery => delivery.status !== 'submitting' && delivery.status !== 'queued') }),
+    { say: 'the fake acknowledges prompts again', by: 'fake', drive: () => ({ type: 'acknowledge-again' }) },
+    { ...complete('Referee reply one'), until: recordEnded('Referee reply one') },
+    ...reads,
+  ]
+  // A send carrying what the desktop staged: the turn it starts, or, for a model that reads no picture, the host's refusal of
+  // the send whole, saying why, before its provider hears anything.
+  const sendStaged = (say: string, until: NonNullable<Step['until']>): Step => commandStep({ say, by: 'desktop',
+    request: ({ staged }) => ({ op: 'command', command: { type: 'manual-send', threadId: THREAD, text: 'Referee prompt one', attachments: staged } }), until })
+  const refused: NonNullable<Step['until']> = held => ((held.shell?.deliveries ?? []) as { status?: string }[]).some(delivery => delivery.status === 'failed')
+  if (scenario === 'attachments') return [
+    ...opening,
+    { say: 'desktop stages a text file', by: 'desktop', request: () => ({ op: 'stage-file-part', part: { uploadId: '00000000-0000-4000-8000-0000000000f1', index: 0, count: 1,
+      name: 'Referee notes.txt', mimeType: 'text/plain', sizeBytes: NOTES.byteLength, digest: createHash('sha256').update(NOTES).digest('hex'), data: NOTES.toString('base64') } }) },
+    sendStaged('desktop sends "Referee prompt one" with it', sent(provider, 'Referee prompt one')),
+    complete('Referee reply one'),
+    ...reads,
+  ]
+  if (scenario === 'pictures') return [
+    ...opening,
+    { say: 'desktop stages a picture', by: 'desktop', request: () => ({ op: 'stage-attachment', image: { name: 'Referee.png', mimeType: 'image/png', data: PIXEL } }) },
+    ...READS_IMAGES.has(provider)
+      ? [sendStaged('desktop sends "Referee prompt one" with it', sent(provider, 'Referee prompt one')), complete('Referee reply one')]
+      : [sendStaged('desktop sends "Referee prompt one" with it, which the model refuses', refused)],
+    ...reads,
+  ]
+  return [
+    ...opening,
     // A turn, from the desktop.
     send('desktop', 'Referee prompt one'),
     complete('Referee reply one'),
@@ -178,7 +284,7 @@ export function script(provider: RefereeProvider): Step[] {
     // Claude Code's adapter hears a reply twice, from the CLI's output and from its transcript, and which comes first
     // differs from run to run; when the transcript wins, the history gains a message-replaced event that repeats the
     // message word for word. So the TypeScript host's event history for a Claude thread is not the same on every run,
-    // and is not a record a host in another language can be held to until that is settled.
+    // and is not a record a host in another language can be held to until that is settled (#2698).
     ...provider === 'claude' ? [] : [{ say: 'plain reads the events', by: 'plain', request: () => ({ op: 'events', afterSeq: 0, threadId: THREAD }) } satisfies Step],
     { say: 'plain reads the shell', by: 'plain', request: () => ({ op: 'shell' }) },
     { say: 'desktop sends an operation the host does not have', by: 'desktop', request: () => ({ op: 'referee-no-such-operation' }) },

@@ -75,7 +75,7 @@ export async function http(port: number, method: 'GET' | 'POST', path: string, o
  * Pairs one client and opens its session the way the launch script and a phone do (docs/host-protocol.md, "HTTP"): a
  * pairing code from the admin route, the pairing, a session, and the remote-answer policy a person grants on the host.
  */
-export async function pairClient(port: number, data: string, name: string): Promise<{ session: string; clientId: string; exchanges: HttpExchange[] }> {
+export async function pairClient(port: number, data: string, name: string): Promise<{ session: string; token: string; clientId: string; exchanges: HttpExchange[] }> {
   const listener = JSON.parse(await readFile(join(data, 'host-listener.json'), 'utf8')) as { adminToken?: unknown }
   if (typeof listener.adminToken !== 'string') throw new Error('The host wrote no admin bearer in host-listener.json.')
   const admin = listener.adminToken
@@ -95,7 +95,15 @@ export async function pairClient(port: number, data: string, name: string): Prom
   const paired = await step('POST', '/v1/pair', { body: { v: 1, code, name } })
   const opened = await step('POST', '/v1/session', { bearer: String(paired.token) })
   await step('POST', '/v1/admin/allow-answers', { bearer: admin, body: { clientId: paired.clientId } })
-  return { session: String(opened.session), clientId: String(paired.clientId), exchanges }
+  return { session: String(opened.session), token: String(paired.token), clientId: String(paired.clientId), exchanges }
+}
+
+/** Opens a new session for a client paired before, as a client does when its host has started again. */
+export async function openSession(port: number, token: string): Promise<string> {
+  const opened = await http(port, 'POST', '/v1/session', { bearer: token })
+  const session = (opened.body as { session?: unknown } | null)?.session
+  if (opened.status !== 200 || typeof session !== 'string') throw new Error(`POST /v1/session answered ${opened.status}.`)
+  return session
 }
 
 /** The extension offer the desktop's client sends (`socketHostService.ts`), so compressed messages are read as it reads them. */
