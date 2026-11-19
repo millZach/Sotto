@@ -47,18 +47,27 @@ const permissionsFor = (allows: DevinAllowance): { allow: string[]; deny: string
 
 // The profile's own version, in its file name. Version 2 added `otel`, version 3 lets Sotto's own tools through, version 4
 // added `sotto_watcher` (#2073 added it without a new version) and the to-do list's tool, and version 5 takes that tool away
-// with the list (ADR-0188, reversed): an owned profile is never rewritten (a changed one is refused), so changing what it
-// says means a new file. Earlier files are left where they are, unused.
-const PROFILE_VERSION = 5
+// with the list (ADR-0188, reversed), and version 6 pins off what Devin CLI 3000.14 added: three more imports, the
+// background daemon and a starting permission mode. An owned profile is never rewritten (a changed one is refused), so
+// changing what it says means a new file. Earlier files are left where they are, unused.
+const PROFILE_VERSION = 6
 // `version` below is Devin's own config schema version, not the profile's.
 const policyFor = (allows: DevinAllowance): Record<string, unknown> => ({
   version: 1,
   permissions: permissionsFor(allows),
-  read_config_from: { agents_standard: false, cursor: false, windsurf: false, claude: false, copilot: false, opencode: false, zed: false },
+  // Every import Devin offers, off. An unset one imports: 3000.14 reads `codex`, `kiro` and `cloud` back as `null` under a
+  // profile that leaves them out, and an import can bring MCP servers with it (Cursor's did, enabled, in a profile that left
+  // `cursor` unset). `cloud` keeps the Devin Cloud account's MCP servers and personal plugins out of the session.
+  read_config_from: { agents_standard: false, cursor: false, windsurf: false, claude: false, copilot: false, codex: false, kiro: false, opencode: false, zed: false, cloud: false },
   hooks: {}, mcpServers: {}, auto_update: false, subagents_enabled: false,
   // OpenTelemetry export, from Devin CLI 3000.11.1. Off, so the promise does not rest on no endpoint being set.
-  // 3000.10.31, the floor before 3000.11.92, accepted the key and dropped it from its readback.
   otel: { enabled: false },
+  // From 3000.13.4 local sessions run in a background daemon shared by every `devin` command and outliving its client by
+  // about ten minutes. Sotto's session is the process it starts and closes, so it runs in that process.
+  process_model: 'in-process',
+  // The mode a new session starts in, from 3000.12.17: Devin's default, written down. What runs unasked is still the
+  // permissions above (ADR-0022).
+  permission_mode: 'normal',
 })
 // 3000.11.3 reads `otel` back with every field filled in with its default. It reports the pinned `enabled: false`,
 // but has also been seen reporting its own default, `enabled: true`, while the profile pins it off. Both are accepted,
@@ -86,28 +95,39 @@ function compareOtel(value: unknown): 'matches' | 'telemetry' | 'newer' {
 // Native config/read expands the user profile with defaults. Only these known
 // fields may accompany the exact owned settings; routing and execution defaults
 // must remain unchanged. On-disk profiles still accept no extra fields at all.
-// 3000.11.92 adds `proxy.gzip` (compressed API requests, on by default) and `local_tools_bypass_permissions`, which
-// would start `devin connect` sessions in Bypass Permissions and must read back off.
+// 3000.11.92 added `proxy.gzip` (compressed API requests, on by default). 3000.14 reads back three blocks 3000.11.92 did
+// not, each at its default: `cloud` (no Devin Cloud platform or environment), `session_store` (unset: Devin's own
+// database) and `local_tools_approval_mode`. That last one is undocumented and replaced `local_tools_bypass_permissions`
+// in the readback, the setting that would start `devin connect` sessions in Bypass Permissions, so it must read back
+// unset, as its predecessor had to read back off. `shell` no longer reads back `startup_messages_remaining`.
 const normalizedRoutes: Record<string, unknown> = {
   proxy: { mode: 'system', url: null, no_proxy: null, gzip: true },
   devin: { org_id: null },
-  shell: { setup_complete: false, startup_messages_remaining: 10, exec_shell: null },
+  shell: { setup_complete: false, exec_shell: null },
   sandbox: { allowed_domains: [], denied_domains: [], network_mode: 'full', excluded: { allow: [], ask: [], deny: [] } },
-  disabled_tools: [], keymap: {}, local_tools_bypass_permissions: false,
+  cloud: { platform: null, environment: null },
+  disabled_tools: [], keymap: {}, session_store: null, local_tools_approval_mode: null,
 }
 const presentationFields = new Set(['typewriter', 'theme_mode', 'theme_auto_detect', 'pty_for_noninteractive_exec', 'skip_home_directory_warning',
   'show_path', 'include_gitignored_files', 'respect_gitignore', 'attribution', 'unicode_mode', 'legacy_terminal', 'disable_osc',
-  'skip_workspace_trust', 'notify', 'mouse_capture', 'show_hints'])
+  'skip_workspace_trust', 'notify', 'mouse_capture', 'show_hints', 'vim_mode'])
 
 /** How a readback compares with the owned profile. `newer` is a top-level block Sotto has never checked. */
 type Readback = 'matches' | 'differs' | 'telemetry' | 'newer' | 'older'
 /**
- * The defaults a Devin CLI older than the floor reads back where 3000.11.92 reads back more: its proxy block without
- * `gzip`, and its agent block without `subagent_model`. Connecting checks the version once, but every Devin process
- * reads its profile back, so a CLI replaced by an older one after connecting is caught here, before a session is made.
+ * The defaults a Devin CLI older than the floor reads back where the floor reads back something else. Connecting checks
+ * the version once, but every Devin process reads its profile back, so a CLI replaced by an older one after connecting
+ * is caught here, before a session is made. Before 3000.11.92 the proxy block had no `gzip`; 3000.11.92 read back
+ * `local_tools_bypass_permissions` and a `shell` block with `startup_messages_remaining`, and its agent block had
+ * `model_mixture` (removed in 3000.11.205) and neither `pinned_models` nor `verbosity`.
  */
 const OLDER_PROXY = { mode: 'system', url: null, no_proxy: null }
-const AGENT_FIELDS = ['model', 'subagent_model', 'preferred_family_models', 'show_history_on_continue', 'thinking', 'model_mixture', 'compaction_threshold_tokens', 'codex_tools']
+const OLDER_SHELL = { setup_complete: false, startup_messages_remaining: 10, exec_shell: null }
+const OLDER_AGENT_FIELDS = [
+  ['model', 'preferred_family_models', 'show_history_on_continue', 'thinking', 'model_mixture', 'compaction_threshold_tokens', 'codex_tools'],
+  ['model', 'subagent_model', 'preferred_family_models', 'show_history_on_continue', 'thinking', 'model_mixture', 'compaction_threshold_tokens', 'codex_tools'],
+].map(fields => fields.sort())
+const AGENT_FIELDS = ['model', 'subagent_model', 'preferred_family_models', 'pinned_models', 'show_history_on_continue', 'thinking', 'compaction_threshold_tokens', 'codex_tools', 'verbosity'].sort()
 
 function compareNormalizedProfile(config: Record<string, unknown>, policy: Record<string, unknown>): Readback {
   if (!Object.entries(policy).every(([key, value]) => key === 'otel' || isDeepStrictEqual(config[key], value))) return 'differs'
@@ -119,13 +139,15 @@ function compareNormalizedProfile(config: Record<string, unknown>, policy: Recor
   for (const [key, value] of Object.entries(config)) {
     if (Object.hasOwn(policy, key)) continue
     if (key === 'proxy' && isDeepStrictEqual(value, OLDER_PROXY)) older = true
+    else if (key === 'shell' && isDeepStrictEqual(value, OLDER_SHELL)) older = true
+    else if (key === 'local_tools_bypass_permissions') { if (value !== false) return 'differs'; older = true }
     else if (Object.hasOwn(normalizedRoutes, key)) { if (!isDeepStrictEqual(value, normalizedRoutes[key])) return 'differs' }
     else if (key === 'agent') {
       const agent = object(value)
       const fields = agent ? Object.keys(agent).sort() : []
-      if (isDeepStrictEqual(fields, AGENT_FIELDS.filter(field => field !== 'subagent_model').sort())) older = true
-      else if (!isDeepStrictEqual(fields, [...AGENT_FIELDS].sort()) || agent!.subagent_model !== null) return 'differs'
-      if (!agent || agent.model !== null || !isDeepStrictEqual(agent.preferred_family_models, {}) || agent.model_mixture !== null
+      if (OLDER_AGENT_FIELDS.some(shape => isDeepStrictEqual(fields, shape))) { if (agent!.model_mixture !== null) return 'differs'; older = true }
+      else if (!isDeepStrictEqual(fields, AGENT_FIELDS) || !isDeepStrictEqual(agent!.pinned_models, []) || !Number.isSafeInteger(agent!.verbosity)) return 'differs'
+      if (!agent || agent.model !== null || (Object.hasOwn(agent, 'subagent_model') && agent.subagent_model !== null) || !isDeepStrictEqual(agent.preferred_family_models, {})
         || agent.compaction_threshold_tokens !== null || agent.codex_tools !== false || typeof agent.show_history_on_continue !== 'boolean') return 'differs'
       const thinking = object(agent.thinking)
       if (!thinking || Object.keys(thinking).length !== 1 || typeof thinking.mode !== 'string') return 'differs'
@@ -241,18 +263,65 @@ export function verifyDevinPolicy(result: unknown, profile: DevinProfile): void 
   if (readback !== 'matches') throw new DevinRefusal('Devin did not confirm the Sotto approval profile. Your thread is kept. Reconnect with the supported Devin version.')
 }
 
-/** Version-pinned CLI output, deliberately fail-closed instead of parsing names. */
-export function verifyDevinPluginList(stdout: string): void {
-  if (stdout.trim() !== 'No plugins installed.') {
-    throw new Error('Devin has plugins or could not confirm an empty plugin list. Your thread is kept. Sotto currently requires Devin without plugins.')
+const PLUGIN_REFUSAL = 'Devin has a plugin that brings more than skills, or Sotto could not confirm what its plugins bring. Your thread is kept. Remove Devin plugins that have hooks, rules, agents or MCP servers, then reconnect.'
+/** More plugins than this is refused rather than checked, so one check starts a bounded number of processes. */
+const MAX_PLUGINS = 16
+const PLUGIN_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u
+
+/**
+ * The names `plugins list` reports, from its version-pinned output; anything else, a blocked plugin's line included, is
+ * refused. 3000.14 can install a plugin of the user's Devin account by itself (`devin-playbooks`, one welcome skill), so
+ * a list is no longer always empty. What each one brings is read with `plugins info` (`verifyDevinPluginInfo`).
+ */
+export function verifyDevinPluginList(stdout: string): string[] {
+  const text = stdout.trim()
+  if (text === 'No plugins installed.') return []
+  const [heading, ...lines] = text.split(/\r?\n/u)
+  const names: string[] = []
+  let valid = heading === 'Installed plugins'
+  for (const line of lines) {
+    if (line === '') continue
+    const match = /^ {2}• (\S+) v\S+$/u.exec(line)
+    if (match && PLUGIN_NAME.test(match[1]!) && !names.includes(match[1]!)) names.push(match[1]!)
+    else valid = false
   }
+  if (!valid || names.length === 0 || names.length > MAX_PLUGINS) throw new Error(PLUGIN_REFUSAL)
+  return names
+}
+
+const PLUGIN_SECTIONS = ['Skills', 'Agents', 'Hooks', 'Rules', 'MCP servers'] as const
+const PLUGIN_LISTS = ['Required plugins: (none)', 'Optional plugins: (none)', 'Forbidden plugins: (none)']
+/**
+ * A plugin Sotto lets a Devin session load brings only skills: text the model may read, whose tool calls ask like any
+ * other (Zach's call, November 18, 2026, ADR-0017). Its agents, hooks, rules and MCP servers must each read `(none)`, as
+ * must the plugins it requires, offers or forbids. The output is never kept or put in an error.
+ */
+export function verifyDevinPluginInfo(stdout: string, name: string): void {
+  const lines = stdout.trimEnd().split(/\r?\n/u)
+  let valid = lines.shift() === `Plugin: ${name}`
+  const seen = new Set<string>()
+  let section: string | undefined
+  let entries = 0
+  const close = () => { if (section !== undefined && entries === 0) valid = false }
+  for (const line of lines) {
+    if (line === '') continue
+    if ((PLUGIN_SECTIONS as readonly string[]).includes(line) && !seen.has(line)) { close(); section = line; seen.add(line); entries = 0 }
+    else if (PLUGIN_LISTS.includes(line) && !seen.has(line)) { close(); section = undefined; seen.add(line) }
+    else if (section === undefined && seen.size === 0 && /^ {2}[a-z_]+: [^\r\n]+$/u.test(line)) continue
+    else if (section !== undefined && line === '  (none)' && entries === 0) entries = -1
+    else if (section === 'Skills' && entries >= 0 && /^ {2}\/\S+(?: - [^\r\n]*)?$/u.test(line)) entries++
+    else valid = false
+  }
+  close()
+  if (!valid || seen.size !== PLUGIN_SECTIONS.length + PLUGIN_LISTS.length) throw new Error(PLUGIN_REFUSAL)
 }
 
 
 /** `mcp list` prints command/URL fields, which may contain secrets. Parse only
  * fixed structure, retain nothing, and never include the output in an error.
  * The pinned CLI marks disabled servers with U+2717; enabled servers use U+2022.
- * From 3000.11.92 a server may also have one `Source:` line, naming the file or plugin it came from.
+ * From 3000.11.92 a server may also have one `Source:` line, naming the file or plugin it came from. 3000.14 drops the
+ * colon from the heading.
  */
 export function verifyDevinMcpList(stdout: string): void {
   const text = stdout.trimEnd()
@@ -261,7 +330,7 @@ export function verifyDevinMcpList(stdout: string): void {
   let servers = 0
   let details = 0
   let sources = 0
-  let valid = lines.shift() === 'Configured MCP servers:'
+  let valid = /^Configured MCP servers:?$/u.test(lines.shift() ?? '')
   for (const line of lines) {
     if (line === '') continue
     if (/^ {2}\u2717 [^\r\n]+ \(disabled\)$/u.test(line)) {
@@ -292,9 +361,14 @@ function nativeList(executable: string, args: readonly string[], environment: No
   })
 }
 
-/** argsPrefix must include --config and the owned profile. Runs no model prompt. */
-export async function assertDevinNoPlugins(executable: string, argsPrefix: readonly string[], environment: NodeJS.ProcessEnv, cwd?: string): Promise<void> {
-  verifyDevinPluginList(await nativeList(executable, [...argsPrefix, 'plugins', 'list'], environment, cwd))
+/** argsPrefix must include --config and the owned profile. Runs no model prompt. Each plugin's info is read side by side. */
+export async function assertDevinSkillOnlyPlugins(executable: string, argsPrefix: readonly string[], environment: NodeJS.ProcessEnv, cwd?: string): Promise<void> {
+  const names = verifyDevinPluginList(await nativeList(executable, [...argsPrefix, 'plugins', 'list'], environment, cwd))
+  const infos = await Promise.allSettled(names.map(name => nativeList(executable, [...argsPrefix, 'plugins', 'info', name], environment, cwd)))
+  infos.forEach((info, index) => {
+    if (info.status === 'rejected') throw info.reason
+    verifyDevinPluginInfo(info.value, names[index]!)
+  })
 }
 
 /**
@@ -309,12 +383,12 @@ export async function settleInOrder<A, B>(first: Promise<A>, second: Promise<B>)
 }
 
 /**
- * Allow an empty native MCP registry or entries all explicitly disabled. The two lists are independent reads that
- * change nothing, so they run side by side and are judged plugins first (`settleInOrder`).
+ * Allow an empty native MCP registry or entries all explicitly disabled, and plugins that bring only skills. The two
+ * lists are independent reads that change nothing, so they run side by side and are judged plugins first (`settleInOrder`).
  */
 export async function assertDevinNoIntegrations(executable: string, argsPrefix: readonly string[], environment: NodeJS.ProcessEnv, cwd?: string): Promise<void> {
   const [, mcp] = await settleInOrder(
-    assertDevinNoPlugins(executable, argsPrefix, environment, cwd),
+    assertDevinSkillOnlyPlugins(executable, argsPrefix, environment, cwd),
     nativeList(executable, [...argsPrefix, 'mcp', 'list'], environment, cwd),
   )
   verifyDevinMcpList(mcp)
