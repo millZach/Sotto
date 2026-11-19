@@ -90,9 +90,13 @@ export function hermesPythonCommand(executable: string, script: string): { execu
     : { executable, args: ['--run-module', 'timeit', '--number', '1', '--repeat', '1', script] }
 }
 
-/** Sotto already supplies the picker. A ChatGPT thread can initially load on a saved model server. */
-export function hermesAcpCommand(executable: string, prefixArgs: readonly string[], skipChatGptInventory: boolean): { executable: string; args: string[] } {
-  if (!skipChatGptInventory || prefixArgs.length) return { executable, args: [...prefixArgs, 'acp'] }
+/**
+ * Hermes builds an editor picker while it answers `session/new`. On Windows, a fresh profile's picker stamps Hermes's
+ * version with `git rev-parse HEAD`, which can hang past its own timeout and hold back the session ID for good, for
+ * every model. Sotto supplies the picker itself, so on Windows the session answers with the current model only.
+ */
+export function hermesAcpCommand(executable: string, prefixArgs: readonly string[], platform: NodeJS.Platform = process.platform): { executable: string; args: string[] } {
+  if (platform !== 'win32' || prefixArgs.length) return { executable, args: [...prefixArgs, 'acp'] }
   return hermesPythonCommand(executable, `import gc
 import sys
 from acp_adapter import model_catalog
