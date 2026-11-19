@@ -1,6 +1,8 @@
 //! The helper-process link: one SOCK_SEQPACKET socket pair between the window process and the CEF helper.
 //! Frames go up as a dmabuf file descriptor (SCM_RIGHTS) and a 64-byte record; the window copies the frame and acks,
 //! so the helper can hand the buffer back to CEF. Input goes down as 64-byte records.
+//! macOS has no SOCK_SEQPACKET for Unix sockets, so there the pair is a stream of fixed 64-byte records, and frames
+//! cross separately, as Mach messages (remote_mac.rs).
 
 #[cfg(unix)]
 use std::os::fd::RawFd;
@@ -48,7 +50,18 @@ impl Msg {
 #[cfg(unix)]
 pub fn pair() -> (RawFd, RawFd) {
     let mut fds = [0; 2];
+    #[cfg(target_os = "linux")]
     let r = unsafe { libc::socketpair(libc::AF_UNIX, libc::SOCK_SEQPACKET | libc::SOCK_CLOEXEC, 0, fds.as_mut_ptr()) };
+    #[cfg(not(target_os = "linux"))]
+    let r = unsafe {
+        let r = libc::socketpair(libc::AF_UNIX, libc::SOCK_STREAM, 0, fds.as_mut_ptr());
+        for fd in fds {
+            libc::fcntl(fd, libc::F_SETFD, libc::FD_CLOEXEC);
+            let one: libc::c_int = 1;
+            libc::setsockopt(fd, libc::SOL_SOCKET, libc::SO_NOSIGPIPE, &one as *const _ as *const libc::c_void, std::mem::size_of::<libc::c_int>() as libc::socklen_t);
+        }
+        r
+    };
     assert_eq!(r, 0, "socketpair");
     (fds[0], fds[1])
 }
@@ -66,15 +79,19 @@ pub fn send(sock: RawFd, msg: &Msg, fd: Option<RawFd>) -> bool {
         unsafe {
             let space = libc::CMSG_SPACE(std::mem::size_of::<RawFd>() as u32) as usize;
             header.msg_control = control.as_mut_ptr() as *mut _;
-            header.msg_controllen = space;
+            header.msg_controllen = space as _;
             let cmsg = libc::CMSG_FIRSTHDR(&header);
             (*cmsg).cmsg_level = libc::SOL_SOCKET;
             (*cmsg).cmsg_type = libc::SCM_RIGHTS;
-            (*cmsg).cmsg_len = libc::CMSG_LEN(std::mem::size_of::<RawFd>() as u32) as usize;
+            (*cmsg).cmsg_len = libc::CMSG_LEN(std::mem::size_of::<RawFd>() as u32) as _;
             std::ptr::write_unaligned(libc::CMSG_DATA(cmsg) as *mut RawFd, fd);
         }
     }
-    unsafe { libc::sendmsg(sock, &header, libc::MSG_NOSIGNAL) == 64 }
+    #[cfg(target_os = "linux")]
+    let flags = libc::MSG_NOSIGNAL;
+    #[cfg(not(target_os = "linux"))]
+    let flags = 0;
+    unsafe { libc::sendmsg(sock, &header, flags) == 64 }
 }
 
 /// Receives one record and the file descriptor it carried, if any. None when the other side is gone.
@@ -87,8 +104,12 @@ pub fn recv(sock: RawFd) -> Option<(Msg, Option<RawFd>)> {
     header.msg_iov = &mut iov;
     header.msg_iovlen = 1;
     header.msg_control = control.as_mut_ptr() as *mut _;
-    header.msg_controllen = control.len();
-    let n = unsafe { libc::recvmsg(sock, &mut header, libc::MSG_CMSG_CLOEXEC) };
+    header.msg_controllen = control.len() as _;
+    #[cfg(target_os = "linux")]
+    let flags = libc::MSG_CMSG_CLOEXEC;
+    #[cfg(not(target_os = "linux"))]
+    let flags = libc::MSG_WAITALL;
+    let n = unsafe { libc::recvmsg(sock, &mut header, flags) };
     if n != 64 { return None }
     let mut fd = None;
     unsafe {

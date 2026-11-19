@@ -4,10 +4,14 @@
 mod cefapp;
 mod embed;
 mod hub;
-#[cfg(target_os = "windows")]
+#[cfg(target_os = "macos")]
+mod mac;
+#[cfg(any(target_os = "windows", target_os = "macos"))]
 mod osr;
 #[cfg(target_os = "linux")]
 mod remote;
+#[cfg(target_os = "macos")]
+mod remote_mac;
 #[cfg(target_os = "windows")]
 mod remote_win;
 mod runs;
@@ -58,7 +62,24 @@ fn dead_proxy() -> u16 {
 
 fn main() -> ExitCode {
     let args = cef::args::Args::new();
+    // macOS: a helper app runs CEF's sandbox before it loads the framework, unless the browser turned it off; then
+    // every process loads the framework from the bundle before its first CEF call, and makes NSApp CEF's kind.
+    #[cfg(target_os = "macos")]
+    let _sandbox = {
+        let argv: Vec<String> = std::env::args().collect();
+        (argv.iter().any(|a| a.starts_with("--type=")) && !argv.iter().any(|a| a == "--no-sandbox")).then(|| {
+            let mut sandbox = cef::sandbox::Sandbox::new();
+            sandbox.initialize(args.as_main_args());
+            sandbox
+        })
+    };
+    #[cfg(target_os = "macos")]
+    let _framework = mac::load_framework();
     let _ = api_hash(sys::CEF_API_VERSION_LAST, 0);
+    #[cfg(target_os = "macos")]
+    if !mac::setup_application() {
+        eprintln!("NSApp is not the spike's CefAppProtocol application");
+    }
     let cmd = args.as_cmd_line().unwrap();
     let is_browser = cmd.has_switch(Some(&CefString::from("type"))) != 1;
     let mode = env("WP_MODE").unwrap_or_else(|| "cdp".into());
@@ -92,6 +113,10 @@ fn main() -> ExitCode {
     #[cfg(target_os = "windows")]
     if mode == "helper" {
         return remote_win::run_helper(&args, &mut app);
+    }
+    #[cfg(target_os = "macos")]
+    if mode == "helper" {
+        return remote_mac::run_helper(&args, &mut app);
     }
     if mode == "embed" || mode == "child" {
         return embed::run(&args, &mut app, &mode);
@@ -130,8 +155,9 @@ fn main() -> ExitCode {
             "net" => runs::run_net(),
             "pane" => runs::run_pane(),
             "eval" => runs::run_eval(),
-            #[cfg(target_os = "windows")]
+            #[cfg(any(target_os = "windows", target_os = "macos"))]
             "osr" => osr::run_osr(),
+            "windowed" => runs::run_windowed(),
             other => serde_json::json!({ "error": format!("unknown mode {other}") }),
         };
         result

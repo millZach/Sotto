@@ -569,3 +569,33 @@ pub fn close_and_quit() {
     }
     on_ui(|| quit_message_loop());
 }
+
+// ------------------------------------------------------------------ question 4 on macOS: the accessibility control
+
+/// CEF's own native window (Alloy style, no parent, so CEF makes a top-level window) with the command test page, held
+/// WP_HOLD_S seconds while an outside walker reads the window's accessibility tree. The control for the off-screen pane:
+/// what a screen reader gets when Chromium has a native view of its own. Prints WINDOW_READY when the page loaded.
+pub fn run_windowed() -> Value {
+    let url = std::env::var("WP_URL").unwrap_or_else(|_| format!("{}/cdp.html", base()));
+    let hold: u64 = std::env::var("WP_HOLD_S").ok().and_then(|v| v.parse().ok()).unwrap_or(20);
+    let seen = hub().load_count();
+    let target = url.clone();
+    on_ui(move || {
+        let window_info = WindowInfo {
+            bounds: Rect { x: 80, y: 80, width: 1000, height: 700 },
+            runtime_style: RuntimeStyle::from(sys::cef_runtime_style_t::CEF_RUNTIME_STYLE_ALLOY),
+            ..Default::default()
+        };
+        let settings = BrowserSettings::default();
+        let mut client = SpikeClient::new(None);
+        let created = browser_host_create_browser(Some(&window_info), Some(&mut client), Some(&CefString::from(target.as_str())), Some(&settings), None, None);
+        if created == 0 { hub().note("windowed: browser_host_create_browser returned 0"); }
+    });
+    let loaded = hub().wait_load(seen, Duration::from_secs(30)).is_some();
+    println!("WINDOW_READY {loaded} pid {}", std::process::id());
+    use std::io::Write as _;
+    let _ = std::io::stdout().flush();
+    std::thread::sleep(Duration::from_secs(hold));
+    close_and_quit();
+    json!({ "url": url, "loaded": loaded, "hold_s": hold, "hub": hub().summary() })
+}

@@ -1,7 +1,7 @@
 //! Question 4, the part the Linux half left: what an off-screen pane leaves Sotto to build. WP_MODE=osr opens
 //! server/pages/osr.html off screen at device scale WP_SCALE (default 1.5, this laptop's) and checks, for each of
 //! `<select>` pop-ups, cursors, drag and drop, file pickers, IME composition, context menus and the accessibility
-//! tree, whether CEF hands the app a callback and whether the page sees the result.
+//! tree, whether CEF hands the app a callback and whether the page sees the result. Runs on Windows and macOS.
 
 use crate::cefapp::*;
 use crate::hub::hub;
@@ -10,6 +10,12 @@ use serde_json::{Value as Json, json};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
+
+/// CEF's native cursor handle: an HCURSOR on Windows, an NSCursor pointer on macOS.
+#[cfg(target_os = "windows")]
+type CursorHandle = sys::HCURSOR;
+#[cfg(target_os = "macos")]
+type CursorHandle = *mut u8;
 
 static SEEN: Mutex<Vec<Json>> = Mutex::new(Vec::new());
 static VIEW_PAINT: Mutex<Option<(i32, i32)>> = Mutex::new(None);
@@ -114,7 +120,7 @@ wrap_render_handler! {
 wrap_display_handler! {
     struct OsrDisplay {}
     impl DisplayHandler {
-        fn on_cursor_change(&self, _browser: Option<&mut Browser>, _cursor: sys::HCURSOR, type_: CursorType, _info: Option<&CursorInfo>) -> ::std::os::raw::c_int {
+        fn on_cursor_change(&self, _browser: Option<&mut Browser>, _cursor: CursorHandle, type_: CursorType, _info: Option<&CursorInfo>) -> ::std::os::raw::c_int {
             rec("on_cursor_change", json!(format!("{:?}", type_.as_ref())));
             0
         }

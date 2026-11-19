@@ -7,6 +7,12 @@
 //!
 //! `child`: CEF's windowed mode, its own native child window parented to the winit window at a rectangle. On Linux
 //! CEF takes an X11 window as parent, so this runs the winit window under XWayland.
+//!
+//! macOS: CEF must run on the main thread there (no multi-threaded message loop), so the in-process window pumps CEF
+//! itself (`external_message_pump`, `do_message_loop_work` between winit's event pumps). With WP_REMOTE the window
+//! never starts CEF and runs winit as usual. WP_SHOT=<file.bmp> saves what the window drew after WP_SHOT_FRAMES page
+//! frames; WP_SELF_INPUT=1 sends a click into the page's field and types into it, through the same path as winit's
+//! input, once the first frame shows.
 
 use crate::cefapp::{self, SpikeClient};
 use crate::hub::hub;
@@ -199,6 +205,9 @@ struct EmbedApp {
     events: Vec<String>,
     began: Instant,
     exit_written: bool,
+    shot_taken: bool,
+    input_plan: Option<(Instant, Vec<(Duration, Msg)>)>,
+    log_once_done: bool,
 }
 
 fn page_rect(window: &Window) -> (f64, f64, f64, f64) {
@@ -237,6 +246,8 @@ impl EmbedApp {
         if let Some(sent) = crate::remote_win::send(&m) { return sent }
         #[cfg(target_os = "linux")]
         if let Some(sock) = *self.shared.remote.lock().unwrap() { return crate::wire::send(sock, &m, None) }
+        #[cfg(target_os = "macos")]
+        if let Some(sent) = crate::remote_mac::send(&m) { return sent }
         match self.host() { Some(host) => { apply_to_host(&host, &m, &self.shared.view); true } None => false }
     }
     fn resize_view(&mut self) {
@@ -253,6 +264,8 @@ impl EmbedApp {
         if let Some(sock) = *self.shared.remote.lock().unwrap() { crate::wire::send(sock, &Msg::new(crate::wire::RESIZE, &[vw as u32, vh as u32]), None); return }
         #[cfg(target_os = "windows")]
         if crate::remote_win::send(&Msg::new(crate::wire::RESIZE, &[vw as u32, vh as u32])).is_some() { return }
+        #[cfg(target_os = "macos")]
+        if crate::remote_mac::send(&Msg::new(crate::wire::RESIZE, &[vw as u32, vh as u32])).is_some() { return }
         let _ = (vw, vh);
         if let Some(host) = self.host() { host.was_resized(); }
     }
@@ -294,6 +307,96 @@ impl EmbedApp {
         gfx.window.pre_present_notify();
         self.shared.queue.present(frame);
         gfx.present_us.push(start.elapsed().as_micros() as u64);
+        let want: u64 = std::env::var("WP_SHOT_FRAMES").ok().and_then(|v| v.parse().ok()).unwrap_or(90);
+        if !self.shot_taken && self.shared.frames.load(Ordering::Relaxed) >= want {
+            if let Ok(path) = std::env::var("WP_SHOT") {
+                self.shot_taken = true;
+                let result = self.save_shot(&path, &bind);
+                self.log(format!("self shot {path}: {result:?}"));
+            }
+        }
+    }
+    /// Draws the same pass into an offscreen texture and writes it as a 32-bit BMP: the window's own picture, for
+    /// runners that do not grant screen recording.
+    fn save_shot(&self, path: &str, bind: &wgpu::BindGroup) -> Result<(), String> {
+        let Some(gfx) = &self.gfx else { return Err("no window".into()) };
+        let (w, h) = (gfx.config.width, gfx.config.height);
+        let device = &self.shared.device;
+        let target = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("shot"), size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 }, mip_level_count: 1, sample_count: 1,
+            dimension: wgpu::TextureDimension::D2, format: gfx.config.format, usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC, view_formats: &[],
+        });
+        let row = (w * 4).div_ceil(256) * 256;
+        let buffer = device.create_buffer(&wgpu::BufferDescriptor { label: Some("shot"), size: (row * h) as u64, usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ, mapped_at_creation: false });
+        let view = target.create_view(&wgpu::TextureViewDescriptor::default());
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: None,
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment { view: &view, resolve_target: None, ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::BLACK), store: wgpu::StoreOp::Store }, depth_slice: None })],
+                ..Default::default()
+            });
+            pass.set_pipeline(&gfx.pipeline);
+            pass.set_bind_group(0, bind, &[]);
+            pass.draw(0..3, 0..1);
+        }
+        encoder.copy_texture_to_buffer(
+            wgpu::TexelCopyTextureInfo { texture: &target, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
+            wgpu::TexelCopyBufferInfo { buffer: &buffer, layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(row), rows_per_image: Some(h) } },
+            wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+        );
+        self.shared.queue.submit(Some(encoder.finish()));
+        let slice = buffer.slice(..);
+        let (tx, rx) = std::sync::mpsc::channel();
+        slice.map_async(wgpu::MapMode::Read, move |r| { let _ = tx.send(r); });
+        let _ = device.poll(wgpu::PollType::wait_indefinitely());
+        rx.recv_timeout(Duration::from_secs(5)).map_err(|e| e.to_string())?.map_err(|e| e.to_string())?;
+        let data = slice.get_mapped_range().map_err(|e| format!("{e:?}"))?;
+        let mut bmp = Vec::with_capacity(54 + (w * h * 4) as usize);
+        let size = 54 + w * h * 4;
+        bmp.extend_from_slice(b"BM"); bmp.extend_from_slice(&size.to_le_bytes()); bmp.extend_from_slice(&[0; 4]); bmp.extend_from_slice(&54u32.to_le_bytes());
+        bmp.extend_from_slice(&40u32.to_le_bytes()); bmp.extend_from_slice(&(w as i32).to_le_bytes()); bmp.extend_from_slice(&(-(h as i32)).to_le_bytes());
+        bmp.extend_from_slice(&1u16.to_le_bytes()); bmp.extend_from_slice(&32u16.to_le_bytes()); bmp.extend_from_slice(&[0; 24]);
+        let bgra = matches!(gfx.config.format, wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb);
+        for y in 0..h as usize {
+            let line = &data[y * row as usize..y * row as usize + (w * 4) as usize];
+            for px in line.chunks_exact(4) {
+                if bgra { bmp.extend_from_slice(&[px[0], px[1], px[2], 255]); } else { bmp.extend_from_slice(&[px[2], px[1], px[0], 255]); }
+            }
+        }
+        drop(data);
+        buffer.unmap();
+        std::fs::write(path, bmp).map_err(|e| e.to_string())
+    }
+    /// WP_SELF_INPUT: once the page shows, a click into its field (at 100,20 in the page, where anim.html puts it) and
+    /// "across the socket" typed, each through `send`, the path winit's events take.
+    fn self_input(&mut self) {
+        if std::env::var("WP_SELF_INPUT").is_err() || self.shared.frames.load(Ordering::Relaxed) == 0 { return }
+        let now = Instant::now();
+        if self.input_plan.is_none() {
+            let mut plan: Vec<(Duration, Msg)> = Vec::new();
+            let at = |ms: u64| Duration::from_millis(1500 + ms);
+            plan.push((at(0), Msg::new(crate::wire::FOCUS, &[1])));
+            plan.push((at(10), Msg::new(crate::wire::MOVE, &[100, 20, 0])));
+            plan.push((at(20), Msg::new(crate::wire::CLICK, &[100, 20, 0])));
+            plan.push((at(60), Msg::new(crate::wire::CLICK, &[100, 20, 1])));
+            for (i, c) in "across the socket".chars().enumerate() {
+                let code = if c.is_ascii_alphanumeric() { c.to_ascii_uppercase() as u32 } else { c as u32 };
+                let t = 300 + i as u64 * 40;
+                plan.push((at(t), Msg::new(crate::wire::KEY, &[0, code])));
+                plan.push((at(t + 5), Msg::new(crate::wire::KEY, &[1, code, c as u32])));
+                plan.push((at(t + 10), Msg::new(crate::wire::KEY, &[2, code])));
+            }
+            plan.push((at(1200), Msg::new(crate::wire::WHEEL, &[200, 200, 0, (-120i32) as u32])));
+            self.input_plan = Some((now, plan));
+            self.focused = true;
+            self.log("self input planned".into());
+        }
+        let (began, plan) = self.input_plan.take().unwrap();
+        let (due, rest): (Vec<_>, Vec<_>) = plan.into_iter().partition(|(t, _)| began + *t <= now);
+        for (_, m) in due { let ok = self.send(m); if !ok { self.log(format!("self input not sent: kind {}", m.kind())); } }
+        if !rest.is_empty() { self.log_once_done = false; } else if !self.log_once_done { self.log_once_done = true; self.log("self input sent".into()); }
+        self.input_plan = Some((began, rest));
     }
     #[cfg(target_os = "linux")]
     fn shared_handle(&self) -> crate::remote::Handle {
@@ -395,6 +498,12 @@ impl ApplicationHandler for EmbedApp {
             window.request_redraw();
             return;
         }
+        #[cfg(target_os = "macos")]
+        if std::env::var("WP_REMOTE").is_ok() {
+            crate::remote_mac::start_controller(self.shared.clone(), window.clone());
+            window.request_redraw();
+            return;
+        }
         #[cfg(target_os = "windows")]
         if std::env::var("WP_REMOTE").is_ok() {
             use winit::raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -410,10 +519,20 @@ impl ApplicationHandler for EmbedApp {
         let settings = BrowserSettings { windowless_frame_rate: 60, ..Default::default() };
         let mut client = SpikeClient::new(Some(EmbedRender::new(SharedRef(self.shared.clone()))));
         let url = std::env::var("WP_URL").unwrap_or_else(|_| "http://127.0.0.1:8765/anim.html".into());
-        let created = browser_host_create_browser(Some(&window_info), Some(&mut client), Some(&CefString::from(url.as_str())), Some(&settings), None, None);
-        let deadline = Instant::now() + Duration::from_secs(10);
-        while cefapp::LAST_BROWSER.lock().unwrap().is_none() && Instant::now() < deadline { std::thread::sleep(Duration::from_millis(5)); }
-        self.browser = cefapp::LAST_BROWSER.lock().unwrap().as_ref().map(|b| b.0.clone());
+        // macOS: this is CEF's UI thread (the main thread, pumped by hand), so create the browser here and now.
+        #[cfg(target_os = "macos")]
+        let created = {
+            self.browser = browser_host_create_browser_sync(Some(&window_info), Some(&mut client), Some(&CefString::from(url.as_str())), Some(&settings), None, None);
+            -1
+        };
+        #[cfg(not(target_os = "macos"))]
+        let created = {
+            let created = browser_host_create_browser(Some(&window_info), Some(&mut client), Some(&CefString::from(url.as_str())), Some(&settings), None, None);
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while cefapp::LAST_BROWSER.lock().unwrap().is_none() && Instant::now() < deadline { std::thread::sleep(Duration::from_millis(5)); }
+            self.browser = cefapp::LAST_BROWSER.lock().unwrap().as_ref().map(|b| b.0.clone());
+            created
+        };
         self.log(format!("browser create asked={created} created={}", self.browser.is_some()));
         window.request_redraw();
     }
@@ -423,6 +542,7 @@ impl ApplicationHandler for EmbedApp {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        self.self_input();
         if let Some(deadline) = self.deadline {
             if Instant::now() >= deadline { self.write_stats(); event_loop.exit(); }
             else { event_loop.set_control_flow(ControlFlow::WaitUntil(deadline)); }
@@ -526,7 +646,12 @@ pub fn run(args: &cef::args::Args, app: &mut cef::App, mode: &str) -> ExitCode {
     let remote = std::env::var("WP_REMOTE").is_ok();
     let settings = Settings {
         windowless_rendering_enabled: 1,
+        #[cfg(not(target_os = "macos"))]
         multi_threaded_message_loop: 1,
+        #[cfg(target_os = "macos")]
+        external_message_pump: 1,
+        #[cfg(target_os = "macos")]
+        no_sandbox: std::env::var("WP_NO_SANDBOX").is_ok() as i32,
         root_cache_path: CefString::from(config.root_cache.as_str()),
         log_file: CefString::from(format!("{run_dir}/cef.log").as_str()),
         log_severity: LogSeverity::from(sys::cef_log_severity_t::LOGSEVERITY_WARNING),
@@ -538,24 +663,50 @@ pub fn run(args: &cef::args::Args, app: &mut cef::App, mode: &str) -> ExitCode {
             eprintln!("CEF initialize failed");
             return ExitCode::from(2);
         }
+        // macOS: nothing happens in CEF unless this thread pumps it, the context's start included.
+        #[cfg(target_os = "macos")]
+        {
+            let deadline = Instant::now() + Duration::from_secs(20);
+            while !hub().wait_ready(Duration::ZERO) && Instant::now() < deadline { do_message_loop_work(); std::thread::sleep(Duration::from_millis(2)); }
+        }
+        #[cfg(not(target_os = "macos"))]
         hub().wait_ready(Duration::from_secs(20));
     }
 
     let shared = Arc::new(Shared { device, queue, texture: Mutex::new(None), timings: Mutex::new(Timings::default()), view: Mutex::new((1000, 700)), scale: Mutex::new(1.0), proxy: Mutex::new(None), frames: AtomicU64::new(0), accelerated, remote: Mutex::new(None), view_pub: (), adapter: adapter_name });
-    let event_loop = EventLoop::new().unwrap();
+    #[cfg_attr(not(target_os = "macos"), allow(unused_mut))]
+    let mut event_loop = EventLoop::new().unwrap();
     *shared.proxy.lock().unwrap() = Some(event_loop.create_proxy());
     let seconds: u64 = std::env::var("WP_EMBED_SECONDS").ok().and_then(|s| s.parse().ok()).unwrap_or(0);
-    let mut app_state = EmbedApp { shared: shared.clone(), instance, gfx: None, browser: None, inside: false, focused: false, cursor: (0.0, 0.0), deadline: (seconds > 0).then(|| Instant::now() + Duration::from_secs(seconds)), events: Vec::new(), began: Instant::now(), exit_written: false };
+    let mut app_state = EmbedApp { shared: shared.clone(), instance, gfx: None, browser: None, inside: false, focused: false, cursor: (0.0, 0.0), deadline: (seconds > 0).then(|| Instant::now() + Duration::from_secs(seconds)), events: Vec::new(), began: Instant::now(), exit_written: false, shot_taken: false, input_plan: None, log_once_done: false };
     event_loop.set_control_flow(ControlFlow::Wait);
+    #[cfg(target_os = "macos")]
+    if !remote {
+        // CEF's work and winit's events take turns on the main thread.
+        use winit::platform::pump_events::{EventLoopExtPumpEvents, PumpStatus};
+        loop {
+            do_message_loop_work();
+            if let PumpStatus::Exit(_) = event_loop.pump_app_events(Some(Duration::from_millis(2)), &mut app_state) { break }
+        }
+    } else {
+        let _ = event_loop.run_app(&mut app_state);
+    }
+    #[cfg(not(target_os = "macos"))]
     let _ = event_loop.run_app(&mut app_state);
     app_state.write_stats();
     #[cfg(target_os = "linux")]
     if remote { crate::remote::stop_all(); return ExitCode::SUCCESS }
     #[cfg(target_os = "windows")]
     if remote { crate::remote_win::stop_all(); return ExitCode::SUCCESS }
+    #[cfg(target_os = "macos")]
+    if remote { crate::remote_mac::stop_all(); return ExitCode::SUCCESS }
     if let Some(host) = app_state.host() { host.close_browser(1); }
     let deadline = Instant::now() + Duration::from_secs(5);
-    while !hub().closed.load(Ordering::SeqCst) && Instant::now() < deadline { std::thread::sleep(Duration::from_millis(20)); }
+    while !hub().closed.load(Ordering::SeqCst) && Instant::now() < deadline {
+        #[cfg(target_os = "macos")]
+        do_message_loop_work();
+        std::thread::sleep(Duration::from_millis(20));
+    }
     *shared.proxy.lock().unwrap() = None;
     drop(app_state);
     shutdown();
@@ -661,12 +812,16 @@ fn plane_note(info: &AcceleratedPaintInfo) -> String { format!("nt-handle={:p}",
 #[cfg(target_os = "macos")]
 fn plane_note(_info: &AcceleratedPaintInfo) -> String { "iosurface".into() }
 
-/// CEF's native window handle: an X11 id on Linux, an HWND on Windows.
+/// CEF's native window handle: an X11 id on Linux, an HWND on Windows, an NSView pointer on macOS.
 #[cfg(target_os = "windows")]
 pub fn parent_handle(v: u64) -> cef::sys::HWND { cef::sys::HWND(v as *mut _) }
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "linux")]
 pub fn parent_handle(v: u64) -> std::os::raw::c_ulong { v as _ }
+#[cfg(target_os = "macos")]
+pub fn parent_handle(v: u64) -> *mut std::os::raw::c_void { v as _ }
 #[cfg(target_os = "windows")]
 pub fn handle_value(h: cef::sys::HWND) -> u64 { h.0 as u64 }
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "linux")]
 pub fn handle_value(h: std::os::raw::c_ulong) -> u64 { h as u64 }
+#[cfg(target_os = "macos")]
+pub fn handle_value(h: *mut std::os::raw::c_void) -> u64 { h as u64 }
