@@ -1,0 +1,3684 @@
+{
+ "format": 1,
+ "provider": "codex",
+ "sottoVersion": "0.1.44-owl.20261118.2",
+ "setup": {
+  "desktop": {
+   "http": [
+    {
+     "method": "GET",
+     "path": "/v1/health",
+     "status": 200,
+     "body": {
+      "features": [
+       "client-liveness", "message-aliases", "detail-delta", "git-refs", "git-changed-files", "git-pull-request", "git-pull-request-list",
+       "attachment-staging", "host-folders", "provider-sign-in", "client-updates", "activity-summaries", "model-catalog-revision",
+       "thread-files", "thread-file-links", "thread-linked-files", "thread-changes", "subagents", "answer-receipts", "answer-check",
+       "atomic-send", "draft-revisions", "background-refresh", "watcher-control", "watcher-reads", "usage-dashboard",
+       "watcher-standing-watch", "usage-history", "watcher-work-settled", "watcher-outcomes", "host-facts", "watcher-muse", "thread-starts",
+       "provider-opencode", "activity-bodies", "failure-seen", "usage-muse-opencode", "client-update-outcomes", "pull-request-view",
+       "agents-view", "provider-cursor", "watcher-cursor", "usage-background-refresh", "client-update-not-listed", "thread-prompts",
+       "file-staging", "attachment-files", "project-origins", "host-delegation", "thread-delete", "delegation-views", "branch-moves",
+       "bring-changes-back", "delegation-relay", "watcher-check-queue", "watcher-check-stop", "check-queue-views", "project-setup",
+       "delegation-relay-send", "delegation-remote", "delegation-branch-starts", "pull-request-confirmation", "watcher-new-owner",
+       "thread-move", "worker-swarms", "every-agent-picture", "thread-move-source", "thread-move-keep", "changed-thread-records",
+       "thread-media", "thread-media-video", "next-prompts", "reply-thread-records", "provider-mode-lists", "settled-threads-on-request",
+       "usable-models", "product-events", "watcher-tell", "command-changed-thread-records", "step-window", "thread-snooze", "watcher-ready",
+       "browser", "provider-deepseek", "video-staging", "provider-pi", "provider-hermes", "project-git-init", "plugin-account-copies",
+       "plugin-github-sign-in", "plugin-mail-copies", "plugin-meshy-copies", "watcher-progress", "kept-parts", "plugin-meshy-spending",
+       "plugin-meshy-models", "plugin-meshy-phone", "plugin-elevenlabs-copies", "plugin-elevenlabs-spending", "plugin-elevenlabs-sounds"
+      ],
+      "hostId": "<id:1>",
+      "pid": "<pid>",
+      "port": "<port>",
+      "sottoVersion": "0.1.44-owl.20261118.2",
+      "status": "ready",
+      "v": 1
+     }
+    },
+    {"method":"POST","path":"/v1/admin/pairing-code","status":200,"body":{"code":"<secret>","expiresAt":"<time>","hostId":"<id:1>","v":1}},
+    {"method":"POST","path":"/v1/pair","status":200,"body":{"clientId":"<id:2>","hostId":"<id:1>","token":"<secret>","v":1}},
+    {
+     "method": "POST",
+     "path": "/v1/session",
+     "status": 200,
+     "body": {"clientId":"<id:2>","expiresAt":"<time>","hostId":"<id:1>","session":"<secret>","v":1}
+    },
+    {"method":"POST","path":"/v1/admin/allow-answers","status":200,"body":{"hostId":"<id:1>","ok":true,"v":1}}
+   ],
+   "extensions": "permessage-deflate; server_no_context_takeover; client_no_context_takeover"
+  },
+  "iphone": {
+   "http": [
+    {
+     "method": "GET",
+     "path": "/v1/health",
+     "status": 200,
+     "body": {
+      "features": [
+       "client-liveness", "message-aliases", "detail-delta", "git-refs", "git-changed-files", "git-pull-request", "git-pull-request-list",
+       "attachment-staging", "host-folders", "provider-sign-in", "client-updates", "activity-summaries", "model-catalog-revision",
+       "thread-files", "thread-file-links", "thread-linked-files", "thread-changes", "subagents", "answer-receipts", "answer-check",
+       "atomic-send", "draft-revisions", "background-refresh", "watcher-control", "watcher-reads", "usage-dashboard",
+       "watcher-standing-watch", "usage-history", "watcher-work-settled", "watcher-outcomes", "host-facts", "watcher-muse", "thread-starts",
+       "provider-opencode", "activity-bodies", "failure-seen", "usage-muse-opencode", "client-update-outcomes", "pull-request-view",
+       "agents-view", "provider-cursor", "watcher-cursor", "usage-background-refresh", "client-update-not-listed", "thread-prompts",
+       "file-staging", "attachment-files", "project-origins", "host-delegation", "thread-delete", "delegation-views", "branch-moves",
+       "bring-changes-back", "delegation-relay", "watcher-check-queue", "watcher-check-stop", "check-queue-views", "project-setup",
+       "delegation-relay-send", "delegation-remote", "delegation-branch-starts", "pull-request-confirmation", "watcher-new-owner",
+       "thread-move", "worker-swarms", "every-agent-picture", "thread-move-source", "thread-move-keep", "changed-thread-records",
+       "thread-media", "thread-media-video", "next-prompts", "reply-thread-records", "provider-mode-lists", "settled-threads-on-request",
+       "usable-models", "product-events", "watcher-tell", "command-changed-thread-records", "step-window", "thread-snooze", "watcher-ready",
+       "browser", "provider-deepseek", "video-staging", "provider-pi", "provider-hermes", "project-git-init", "plugin-account-copies",
+       "plugin-github-sign-in", "plugin-mail-copies", "plugin-meshy-copies", "watcher-progress", "kept-parts", "plugin-meshy-spending",
+       "plugin-meshy-models", "plugin-meshy-phone", "plugin-elevenlabs-copies", "plugin-elevenlabs-spending", "plugin-elevenlabs-sounds"
+      ],
+      "hostId": "<id:1>",
+      "pid": "<pid>",
+      "port": "<port>",
+      "sottoVersion": "0.1.44-owl.20261118.2",
+      "status": "ready",
+      "v": 1
+     }
+    },
+    {"method":"POST","path":"/v1/admin/pairing-code","status":200,"body":{"code":"<secret>","expiresAt":"<time>","hostId":"<id:1>","v":1}},
+    {"method":"POST","path":"/v1/pair","status":200,"body":{"clientId":"<id:3>","hostId":"<id:1>","token":"<secret>","v":1}},
+    {
+     "method": "POST",
+     "path": "/v1/session",
+     "status": 200,
+     "body": {"clientId":"<id:3>","expiresAt":"<time>","hostId":"<id:1>","session":"<secret>","v":1}
+    },
+    {"method":"POST","path":"/v1/admin/allow-answers","status":200,"body":{"hostId":"<id:1>","ok":true,"v":1}}
+   ],
+   "extensions": "permessage-deflate; server_no_context_takeover; client_no_context_takeover"
+  },
+  "plain": {
+   "http": [
+    {
+     "method": "GET",
+     "path": "/v1/health",
+     "status": 200,
+     "body": {
+      "features": [
+       "client-liveness", "message-aliases", "detail-delta", "git-refs", "git-changed-files", "git-pull-request", "git-pull-request-list",
+       "attachment-staging", "host-folders", "provider-sign-in", "client-updates", "activity-summaries", "model-catalog-revision",
+       "thread-files", "thread-file-links", "thread-linked-files", "thread-changes", "subagents", "answer-receipts", "answer-check",
+       "atomic-send", "draft-revisions", "background-refresh", "watcher-control", "watcher-reads", "usage-dashboard",
+       "watcher-standing-watch", "usage-history", "watcher-work-settled", "watcher-outcomes", "host-facts", "watcher-muse", "thread-starts",
+       "provider-opencode", "activity-bodies", "failure-seen", "usage-muse-opencode", "client-update-outcomes", "pull-request-view",
+       "agents-view", "provider-cursor", "watcher-cursor", "usage-background-refresh", "client-update-not-listed", "thread-prompts",
+       "file-staging", "attachment-files", "project-origins", "host-delegation", "thread-delete", "delegation-views", "branch-moves",
+       "bring-changes-back", "delegation-relay", "watcher-check-queue", "watcher-check-stop", "check-queue-views", "project-setup",
+       "delegation-relay-send", "delegation-remote", "delegation-branch-starts", "pull-request-confirmation", "watcher-new-owner",
+       "thread-move", "worker-swarms", "every-agent-picture", "thread-move-source", "thread-move-keep", "changed-thread-records",
+       "thread-media", "thread-media-video", "next-prompts", "reply-thread-records", "provider-mode-lists", "settled-threads-on-request",
+       "usable-models", "product-events", "watcher-tell", "command-changed-thread-records", "step-window", "thread-snooze", "watcher-ready",
+       "browser", "provider-deepseek", "video-staging", "provider-pi", "provider-hermes", "project-git-init", "plugin-account-copies",
+       "plugin-github-sign-in", "plugin-mail-copies", "plugin-meshy-copies", "watcher-progress", "kept-parts", "plugin-meshy-spending",
+       "plugin-meshy-models", "plugin-meshy-phone", "plugin-elevenlabs-copies", "plugin-elevenlabs-spending", "plugin-elevenlabs-sounds"
+      ],
+      "hostId": "<id:1>",
+      "pid": "<pid>",
+      "port": "<port>",
+      "sottoVersion": "0.1.44-owl.20261118.2",
+      "status": "ready",
+      "v": 1
+     }
+    },
+    {"method":"POST","path":"/v1/admin/pairing-code","status":200,"body":{"code":"<secret>","expiresAt":"<time>","hostId":"<id:1>","v":1}},
+    {"method":"POST","path":"/v1/pair","status":200,"body":{"clientId":"<id:4>","hostId":"<id:1>","token":"<secret>","v":1}},
+    {
+     "method": "POST",
+     "path": "/v1/session",
+     "status": 200,
+     "body": {"clientId":"<id:4>","expiresAt":"<time>","hostId":"<id:1>","session":"<secret>","v":1}
+    },
+    {"method":"POST","path":"/v1/admin/allow-answers","status":200,"body":{"hostId":"<id:1>","ok":true,"v":1}}
+   ],
+   "extensions": null
+  }
+ },
+ "steps": [
+  {
+   "say": "desktop says hello",
+   "by": "desktop",
+   "sent": {
+    "accepts": [
+     "client-liveness", "detail-delta", "message-aliases", "client-updates", "client-update-not-listed", "answer-receipts", "usage-history",
+     "usage-muse-opencode", "model-catalog-revision", "host-update", "activity-bodies", "changed-thread-records", "kept-parts",
+     "plugin-meshy-spending", "plugin-elevenlabs-spending", "provider-opencode", "provider-cursor", "provider-deepseek", "provider-pi",
+     "provider-hermes"
+    ],
+    "afterSeq": 9007199254740991,
+    "id": "desktop-1",
+    "op": "hello",
+    "session": "<secret>",
+    "v": 1
+   },
+   "clients": {
+    "desktop": {
+     "frames": [
+      {
+       "id": "desktop-1",
+       "ok": true,
+       "result": {
+        "capabilities": {"mayAnswer":true},
+        "clientId": "<id:2>",
+        "events": [],
+        "features": [
+         "client-liveness", "message-aliases", "detail-delta", "git-refs", "git-changed-files", "git-pull-request", "git-pull-request-list",
+         "attachment-staging", "host-folders", "provider-sign-in", "client-updates", "activity-summaries", "model-catalog-revision",
+         "thread-files", "thread-file-links", "thread-linked-files", "thread-changes", "subagents", "answer-receipts", "answer-check",
+         "atomic-send", "draft-revisions", "background-refresh", "usage-dashboard", "usage-history", "host-facts", "thread-starts",
+         "provider-opencode", "activity-bodies", "failure-seen", "usage-muse-opencode", "client-update-outcomes", "pull-request-view",
+         "agents-view", "provider-cursor", "usage-background-refresh", "client-update-not-listed", "thread-prompts", "file-staging",
+         "attachment-files", "project-origins", "thread-delete", "bring-changes-back", "project-setup", "pull-request-confirmation",
+         "worker-swarms", "changed-thread-records", "thread-media", "thread-media-video", "next-prompts", "reply-thread-records",
+         "provider-mode-lists", "settled-threads-on-request", "usable-models", "product-events", "command-changed-thread-records",
+         "step-window", "thread-snooze", "browser", "provider-deepseek", "video-staging", "provider-pi", "provider-hermes",
+         "project-git-init", "kept-parts", "plugin-meshy-phone"
+        ],
+        "hasMore": false,
+        "hostId": "<id:1>",
+        "latestSeq": 9007199254740991,
+        "phoneAccess": {"phones":0,"status":"off"},
+        "shell": {
+         "activeProjectId": null,
+         "activeThreadId": null,
+         "assignments": [],
+         "clientCapabilities": {"mayAnswer":true},
+         "clientUpdates": [{"behind":false,"canInstall":false,"channel":"unknown","checkedAt":"<time>","id":"codex","installed":"0.154.0","state":"idle"}],
+         "composing": false,
+         "configuration": {
+          "checkClientUpdates": true,
+          "claudeUltracodeEffort": "xhigh",
+          "defaultModelId": "",
+          "enabled": false,
+          "enabledProviders": ["codex","claude","grok","devin","muse","opencode","cursor","hermes"],
+          "followupLimit": 5,
+          "grokSpeechVoice": "altair",
+          "membershipEndpoint": "",
+          "museDisableSandbox": false,
+          "newThreadModelId": "",
+          "newThreadReasoningEffort": "",
+          "orbColor": "teal",
+          "projectsDirectory": "",
+          "provider": "codex",
+          "reasoning": "none",
+          "reasoningEffort": "",
+          "reasoningModel": "",
+          "speak": false,
+          "speechProvider": "grok",
+          "speechVoice": "F1",
+          "wakeModelDirectory": "",
+          "wakeRuntimeDirectory": ""
+         },
+         "connection": "connected",
+         "credentials": {"grokSpeech":false,"reasoning":false,"secure":false},
+         "deliveredDrafts": [],
+         "deliveries": [],
+         "draft": "",
+         "draftAttachments": [],
+         "draftRequestId": null,
+         "draftThreadId": null,
+         "error": null,
+         "followupReceipts": [],
+         "followups": [],
+         "globalLaneBusy": false,
+         "historyEnabled": true,
+         "host": {
+          "capabilities": {
+           "compact": true,
+           "configureThread": true,
+           "interrupt": true,
+           "messageOrigin": true,
+           "observe": true,
+           "permissions": true,
+           "projects": true,
+           "questions": true,
+           "reconcile": true,
+           "skills": true,
+           "steer": true,
+           "submit": true,
+           "threads": true
+          },
+          "connected": true,
+          "hostId": "<id:1>",
+          "models": [
+           {
+            "defaultReasoningEffort": "low",
+            "id": "native:codex:model:fixture-model",
+            "name": "Fixture Codex",
+            "provider": "Codex",
+            "providerId": "codex",
+            "ready": true,
+            "reasoningEfforts": ["low","high"],
+            "runtimeModes": ["approval-required","auto-accept-edits","auto","full-access"],
+            "supportsImages": true
+           }
+          ],
+          "modelsRevision": "<revision>",
+          "name": "Codex",
+          "projects": [],
+          "providers": [
+           {
+            "capabilities": {
+             "compact": true,
+             "configureThread": true,
+             "interrupt": true,
+             "messageOrigin": true,
+             "observe": true,
+             "permissions": true,
+             "projects": true,
+             "questions": true,
+             "reconcile": true,
+             "skills": true,
+             "steer": true,
+             "submit": true,
+             "threads": true
+            },
+            "connection": "connected",
+            "id": "codex",
+            "name": "Codex",
+            "version": "codex/0.154.0"
+           },
+           {
+            "capabilities": {
+             "interrupt": false,
+             "messageOrigin": false,
+             "observe": false,
+             "permissions": false,
+             "projects": false,
+             "questions": false,
+             "reconcile": false,
+             "submit": false,
+             "threads": false
+            },
+            "connection": "error",
+            "error": "Claude Code is available in Sotto Owl; it is not in this build.",
+            "id": "claude",
+            "name": "Claude Code",
+            "version": ""
+           },
+           {
+            "capabilities": {
+             "interrupt": false,
+             "messageOrigin": false,
+             "observe": false,
+             "permissions": false,
+             "projects": false,
+             "questions": false,
+             "reconcile": false,
+             "submit": false,
+             "threads": false
+            },
+            "connection": "error",
+            "error": "Grok Build is available in Sotto Owl; it is not in this build.",
+            "id": "grok",
+            "name": "Grok Build",
+            "version": ""
+           },
+           {
+            "capabilities": {
+             "interrupt": false,
+             "messageOrigin": false,
+             "observe": false,
+             "permissions": false,
+             "projects": false,
+             "questions": false,
+             "reconcile": false,
+             "submit": false,
+             "threads": false
+            },
+            "connection": "error",
+            "error": "Devin is available in Sotto Owl; it is not in this build.",
+            "id": "devin",
+            "name": "Devin",
+            "version": ""
+           },
+           {
+            "capabilities": {
+             "interrupt": false,
+             "messageOrigin": false,
+             "observe": false,
+             "permissions": false,
+             "projects": false,
+             "questions": false,
+             "reconcile": false,
+             "submit": false,
+             "threads": false
+            },
+            "connection": "error",
+            "error": "Muse is available in Sotto Owl; it is not in this build.",
+            "id": "muse",
+            "name": "Muse",
+            "version": ""
+           },
+           {
+            "capabilities": {
+             "interrupt": false,
+             "messageOrigin": false,
+             "observe": false,
+             "permissions": false,
+             "projects": false,
+             "questions": false,
+             "reconcile": false,
+             "submit": false,
+             "threads": false
+            },
+            "connection": "error",
+            "error": "OpenCode is available in Sotto Owl; it is not in this build.",
+            "id": "opencode",
+            "name": "OpenCode",
+            "version": ""
+           },
+           {
+            "capabilities": {
+             "interrupt": false,
+             "messageOrigin": false,
+             "observe": false,
+             "permissions": false,
+             "projects": false,
+             "questions": false,
+             "reconcile": false,
+             "submit": false,
+             "threads": false
+            },
+            "connection": "error",
+            "error": "Cursor is available in Sotto Owl; it is not in this build.",
+            "id": "cursor",
+            "name": "Cursor",
+            "version": ""
+           },
+           {
+            "capabilities": {
+             "interrupt": false,
+             "messageOrigin": false,
+             "observe": false,
+             "permissions": false,
+             "projects": false,
+             "questions": false,
+             "reconcile": false,
+             "submit": false,
+             "threads": false
+            },
+            "connection": "error",
+            "error": "Hermes is available in Sotto Owl; it is not in this build.",
+            "id": "hermes",
+            "name": "Hermes",
+            "version": ""
+           }
+          ],
+          "threads": [],
+          "version": ""
+         },
+         "hostId": "<id:1>",
+         "membership": {"expiresAt":null,"label":"","status":"beta"},
+         "notice": "",
+         "obsoleteDrafts": [],
+         "pendingRequest": "",
+         "providerUpgrade": null,
+         "queue": [],
+         "reasoningAccounts": [],
+         "speech": {"id":0,"text":""},
+         "threadDraftPersistence": [],
+         "threadDrafts": [],
+         "voice": {"action":"none","error":null,"revision":0,"status":"off"}
+        },
+        "sottoVersion": "0.1.44-owl.20261118.2"
+       },
+       "v": 1
+      }
+     ],
+     "held": [
+      {
+       "path": ["shell"],
+       "value": {
+        "activeProjectId": null,
+        "activeThreadId": null,
+        "assignments": [],
+        "clientCapabilities": {"mayAnswer":true},
+        "clientUpdates": [{"behind":false,"canInstall":false,"channel":"unknown","checkedAt":"<time>","id":"codex","installed":"0.154.0","state":"idle"}],
+        "composing": false,
+        "configuration": {
+         "checkClientUpdates": true,
+         "claudeUltracodeEffort": "xhigh",
+         "defaultModelId": "",
+         "enabled": false,
+         "enabledProviders": ["codex","claude","grok","devin","muse","opencode","cursor","hermes"],
+         "followupLimit": 5,
+         "grokSpeechVoice": "altair",
+         "membershipEndpoint": "",
+         "museDisableSandbox": false,
+         "newThreadModelId": "",
+         "newThreadReasoningEffort": "",
+         "orbColor": "teal",
+         "projectsDirectory": "",
+         "provider": "codex",
+         "reasoning": "none",
+         "reasoningEffort": "",
+         "reasoningModel": "",
+         "speak": false,
+         "speechProvider": "grok",
+         "speechVoice": "F1",
+         "wakeModelDirectory": "",
+         "wakeRuntimeDirectory": ""
+        },
+        "connection": "connected",
+        "credentials": {"grokSpeech":false,"reasoning":false,"secure":false},
+        "deliveredDrafts": [],
+        "deliveries": [],
+        "draft": "",
+        "draftAttachments": [],
+        "draftRequestId": null,
+        "draftThreadId": null,
+        "error": null,
+        "followupReceipts": [],
+        "followups": [],
+        "globalLaneBusy": false,
+        "historyEnabled": true,
+        "host": {
+         "capabilities": {
+          "compact": true,
+          "configureThread": true,
+          "interrupt": true,
+          "messageOrigin": true,
+          "observe": true,
+          "permissions": true,
+          "projects": true,
+          "questions": true,
+          "reconcile": true,
+          "skills": true,
+          "steer": true,
+          "submit": true,
+          "threads": true
+         },
+         "connected": true,
+         "hostId": "<id:1>",
+         "models": [
+          {
+           "defaultReasoningEffort": "low",
+           "id": "native:codex:model:fixture-model",
+           "name": "Fixture Codex",
+           "provider": "Codex",
+           "providerId": "codex",
+           "ready": true,
+           "reasoningEfforts": ["low","high"],
+           "runtimeModes": ["approval-required","auto-accept-edits","auto","full-access"],
+           "supportsImages": true
+          }
+         ],
+         "modelsRevision": "<revision>",
+         "name": "Codex",
+         "projects": [],
+         "providers": [
+          {
+           "capabilities": {
+            "compact": true,
+            "configureThread": true,
+            "interrupt": true,
+            "messageOrigin": true,
+            "observe": true,
+            "permissions": true,
+            "projects": true,
+            "questions": true,
+            "reconcile": true,
+            "skills": true,
+            "steer": true,
+            "submit": true,
+            "threads": true
+           },
+           "connection": "connected",
+           "id": "codex",
+           "name": "Codex",
+           "version": "codex/0.154.0"
+          },
+          {
+           "capabilities": {
+            "interrupt": false,
+            "messageOrigin": false,
+            "observe": false,
+            "permissions": false,
+            "projects": false,
+            "questions": false,
+            "reconcile": false,
+            "submit": false,
+            "threads": false
+           },
+           "connection": "error",
+           "error": "Claude Code is available in Sotto Owl; it is not in this build.",
+           "id": "claude",
+           "name": "Claude Code",
+           "version": ""
+          },
+          {
+           "capabilities": {
+            "interrupt": false,
+            "messageOrigin": false,
+            "observe": false,
+            "permissions": false,
+            "projects": false,
+            "questions": false,
+            "reconcile": false,
+            "submit": false,
+            "threads": false
+           },
+           "connection": "error",
+           "error": "Grok Build is available in Sotto Owl; it is not in this build.",
+           "id": "grok",
+           "name": "Grok Build",
+           "version": ""
+          },
+          {
+           "capabilities": {
+            "interrupt": false,
+            "messageOrigin": false,
+            "observe": false,
+            "permissions": false,
+            "projects": false,
+            "questions": false,
+            "reconcile": false,
+            "submit": false,
+            "threads": false
+           },
+           "connection": "error",
+           "error": "Devin is available in Sotto Owl; it is not in this build.",
+           "id": "devin",
+           "name": "Devin",
+           "version": ""
+          },
+          {
+           "capabilities": {
+            "interrupt": false,
+            "messageOrigin": false,
+            "observe": false,
+            "permissions": false,
+            "projects": false,
+            "questions": false,
+            "reconcile": false,
+            "submit": false,
+            "threads": false
+           },
+           "connection": "error",
+           "error": "Muse is available in Sotto Owl; it is not in this build.",
+           "id": "muse",
+           "name": "Muse",
+           "version": ""
+          },
+          {
+           "capabilities": {
+            "interrupt": false,
+            "messageOrigin": false,
+            "observe": false,
+            "permissions": false,
+            "projects": false,
+            "questions": false,
+            "reconcile": false,
+            "submit": false,
+            "threads": false
+           },
+           "connection": "error",
+           "error": "OpenCode is available in Sotto Owl; it is not in this build.",
+           "id": "opencode",
+           "name": "OpenCode",
+           "version": ""
+          },
+          {
+           "capabilities": {
+            "interrupt": false,
+            "messageOrigin": false,
+            "observe": false,
+            "permissions": false,
+            "projects": false,
+            "questions": false,
+            "reconcile": false,
+            "submit": false,
+            "threads": false
+           },
+           "connection": "error",
+           "error": "Cursor is available in Sotto Owl; it is not in this build.",
+           "id": "cursor",
+           "name": "Cursor",
+           "version": ""
+          },
+          {
+           "capabilities": {
+            "interrupt": false,
+            "messageOrigin": false,
+            "observe": false,
+            "permissions": false,
+            "projects": false,
+            "questions": false,
+            "reconcile": false,
+            "submit": false,
+            "threads": false
+           },
+           "connection": "error",
+           "error": "Hermes is available in Sotto Owl; it is not in this build.",
+           "id": "hermes",
+           "name": "Hermes",
+           "version": ""
+          }
+         ],
+         "threads": [],
+         "version": ""
+        },
+        "hostId": "<id:1>",
+        "membership": {"expiresAt":null,"label":"","status":"beta"},
+        "notice": "",
+        "obsoleteDrafts": [],
+        "pendingRequest": "",
+        "providerUpgrade": null,
+        "queue": [],
+        "reasoningAccounts": [],
+        "speech": {"id":0,"text":""},
+        "threadDraftPersistence": [],
+        "threadDrafts": [],
+        "voice": {"action":"none","error":null,"revision":0,"status":"off"}
+       }
+      }
+     ]
+    },
+    "iphone": {"frames":[],"held":[]},
+    "plain": {"frames":[],"held":[]}
+   }
+  },
+  {
+   "say": "iphone says hello",
+   "by": "iphone",
+   "sent": {
+    "accepts": [
+     "detail-delta", "client-liveness", "activity-summaries", "model-catalog-revision", "provider-opencode", "provider-cursor",
+     "provider-deepseek", "changed-thread-records", "reply-thread-records", "provider-mode-lists", "settled-threads-on-request",
+     "usable-models", "command-changed-thread-records", "step-window", "thread-media-edge", "kept-parts", "plugin-meshy-phone"
+    ],
+    "afterSeq": 9007199254740991,
+    "id": "iphone-1",
+    "op": "hello",
+    "session": "<secret>",
+    "v": 1
+   },
+   "clients": {
+    "desktop": {"frames":[],"held":[]},
+    "iphone": {
+     "frames": [
+      {
+       "id": "iphone-1",
+       "ok": true,
+       "result": {
+        "capabilities": {"mayAnswer":true},
+        "clientId": "<id:3>",
+        "events": [],
+        "features": [
+         "client-liveness", "message-aliases", "detail-delta", "git-refs", "git-changed-files", "git-pull-request", "git-pull-request-list",
+         "attachment-staging", "host-folders", "provider-sign-in", "client-updates", "activity-summaries", "model-catalog-revision",
+         "thread-files", "thread-file-links", "thread-linked-files", "thread-changes", "subagents", "answer-receipts", "answer-check",
+         "atomic-send", "draft-revisions", "background-refresh", "usage-dashboard", "usage-history", "host-facts", "thread-starts",
+         "provider-opencode", "activity-bodies", "failure-seen", "usage-muse-opencode", "client-update-outcomes", "pull-request-view",
+         "agents-view", "provider-cursor", "usage-background-refresh", "client-update-not-listed", "thread-prompts", "file-staging",
+         "attachment-files", "project-origins", "thread-delete", "bring-changes-back", "project-setup", "pull-request-confirmation",
+         "worker-swarms", "changed-thread-records", "thread-media", "thread-media-video", "next-prompts", "reply-thread-records",
+         "provider-mode-lists", "settled-threads-on-request", "usable-models", "product-events", "command-changed-thread-records",
+         "step-window", "thread-snooze", "browser", "provider-deepseek", "video-staging", "provider-pi", "provider-hermes",
+         "project-git-init", "kept-parts", "plugin-meshy-phone"
+        ],
+        "hasMore": false,
+        "hostId": "<id:1>",
+        "latestSeq": 9007199254740991,
+        "phoneAccess": {"phones":0,"status":"off"},
+        "shell": {
+         "activeProjectId": null,
+         "activeThreadId": null,
+         "assignments": [],
+         "clientCapabilities": {"mayAnswer":true},
+         "clientUpdates": [{"behind":false,"canInstall":false,"channel":"unknown","checkedAt":"<time>","id":"codex","installed":"0.154.0","state":"idle"}],
+         "composing": false,
+         "configuration": {
+          "checkClientUpdates": true,
+          "claudeUltracodeEffort": "xhigh",
+          "defaultModelId": "",
+          "enabled": false,
+          "enabledProviders": ["codex","claude","grok","devin","muse","opencode","cursor"],
+          "followupLimit": 5,
+          "grokSpeechVoice": "altair",
+          "membershipEndpoint": "",
+          "museDisableSandbox": false,
+          "newThreadModelId": "",
+          "newThreadReasoningEffort": "",
+          "orbColor": "teal",
+          "projectsDirectory": "",
+          "provider": "codex",
+          "reasoning": "none",
+          "reasoningEffort": "",
+          "reasoningModel": "",
+          "speak": false,
+          "speechProvider": "grok",
+          "speechVoice": "F1",
+          "wakeModelDirectory": "",
+          "wakeRuntimeDirectory": ""
+         },
+         "connection": "connected",
+         "credentials": {"grokSpeech":false,"reasoning":false,"secure":false},
+         "deliveredDrafts": [],
+         "deliveries": [],
+         "draft": "",
+         "draftAttachments": [],
+         "draftRequestId": null,
+         "draftThreadId": null,
+         "error": null,
+         "followupReceipts": [],
+         "followups": [],
+         "globalLaneBusy": false,
+         "historyEnabled": true,
+         "host": {
+          "capabilities": {
+           "compact": true,
+           "configureThread": true,
+           "interrupt": true,
+           "messageOrigin": true,
+           "observe": true,
+           "permissions": true,
+           "projects": true,
+           "questions": true,
+           "reconcile": true,
+           "skills": true,
+           "steer": true,
+           "submit": true,
+           "threads": true
+          },
+          "connected": true,
+          "hostId": "<id:1>",
+          "models": [
+           {
+            "defaultReasoningEffort": "low",
+            "id": "native:codex:model:fixture-model",
+            "name": "Fixture Codex",
+            "provider": "Codex",
+            "providerId": "codex",
+            "ready": true,
+            "reasoningEfforts": ["low","high"],
+            "runtimeModes": ["approval-required","auto-accept-edits","auto","full-access"],
+            "supportsImages": true
+           }
+          ],
+          "modelsRevision": "<revision>",
+          "name": "Codex",
+          "projects": [],
+          "providers": [
+           {
+            "capabilities": {
+             "compact": true,
+             "configureThread": true,
+             "interrupt": true,
+             "messageOrigin": true,
+             "observe": true,
+             "permissions": true,
+             "projects": true,
+             "questions": true,
+             "reconcile": true,
+             "skills": true,
+             "steer": true,
+             "submit": true,
+             "threads": true
+            },
+            "connection": "connected",
+            "id": "codex",
+            "name": "Codex",
+            "version": "codex/0.154.0"
+           },
+           {
+            "capabilities": {
+             "interrupt": false,
+             "messageOrigin": false,
+             "observe": false,
+             "permissions": false,
+             "projects": false,
+             "questions": false,
+             "reconcile": false,
+             "submit": false,
+             "threads": false
+            },
+            "connection": "error",
+            "error": "Claude Code is available in Sotto Owl; it is not in this build.",
+            "id": "claude",
+            "name": "Claude Code",
+            "version": ""
+           },
+           {
+            "capabilities": {
+             "interrupt": false,
+             "messageOrigin": false,
+             "observe": false,
+             "permissions": false,
+             "projects": false,
+             "questions": false,
+             "reconcile": false,
+             "submit": false,
+             "threads": false
+            },
+            "connection": "error",
+            "error": "Grok Build is available in Sotto Owl; it is not in this build.",
+            "id": "grok",
+            "name": "Grok Build",
+            "version": ""
+           },
+           {
+            "capabilities": {
+             "interrupt": false,
+             "messageOrigin": false,
+             "observe": false,
+             "permissions": false,
+             "projects": false,
+             "questions": false,
+             "reconcile": false,
+             "submit": false,
+             "threads": false
+            },
+            "connection": "error",
+            "error": "Devin is available in Sotto Owl; it is not in this build.",
+            "id": "devin",
+            "name": "Devin",
+            "version": ""
+           },
+           {
+            "capabilities": {
+             "interrupt": false,
+             "messageOrigin": false,
+             "observe": false,
+             "permissions": false,
+             "projects": false,
+             "questions": false,
+             "reconcile": false,
+             "submit": false,
+             "threads": false
+            },
+            "connection": "error",
+            "error": "Muse is available in Sotto Owl; it is not in this build.",
+            "id": "muse",
+            "name": "Muse",
+            "version": ""
+           },
+           {
+            "capabilities": {
+             "interrupt": false,
+             "messageOrigin": false,
+             "observe": false,
+             "permissions": false,
+             "projects": false,
+             "questions": false,
+             "reconcile": false,
+             "submit": false,
+             "threads": false
+            },
+            "connection": "error",
+            "error": "OpenCode is available in Sotto Owl; it is not in this build.",
+            "id": "opencode",
+            "name": "OpenCode",
+            "version": ""
+           },
+           {
+            "capabilities": {
+             "interrupt": false,
+             "messageOrigin": false,
+             "observe": false,
+             "permissions": false,
+             "projects": false,
+             "questions": false,
+             "reconcile": false,
+             "submit": false,
+             "threads": false
+            },
+            "connection": "error",
+            "error": "Cursor is available in Sotto Owl; it is not in this build.",
+            "id": "cursor",
+            "name": "Cursor",
+            "version": ""
+           }
+          ],
+          "threads": [],
+          "version": ""
+         },
+         "hostId": "<id:1>",
+         "membership": {"expiresAt":null,"label":"","status":"beta"},
+         "notice": "",
+         "obsoleteDrafts": [],
+         "pendingRequest": "",
+         "providerUpgrade": null,
+         "queue": [],
+         "reasoningAccounts": [],
+         "settledHeldBack": 0,
+         "speech": {"id":0,"text":""},
+         "threadDraftPersistence": [],
+         "threadDrafts": [],
+         "threadRecordsRevision": 1,
+         "voice": {"action":"none","error":null,"revision":0,"status":"off"}
+        },
+        "sottoVersion": "0.1.44-owl.20261118.2"
+       },
+       "v": 1
+      }
+     ],
+     "held": [
+      {
+       "path": ["shell"],
+       "value": {
+        "activeProjectId": null,
+        "activeThreadId": null,
+        "assignments": [],
+        "clientCapabilities": {"mayAnswer":true},
+        "clientUpdates": [{"behind":false,"canInstall":false,"channel":"unknown","checkedAt":"<time>","id":"codex","installed":"0.154.0","state":"idle"}],
+        "composing": false,
+        "configuration": {
+         "checkClientUpdates": true,
+         "claudeUltracodeEffort": "xhigh",
+         "defaultModelId": "",
+         "enabled": false,
+         "enabledProviders": ["codex","claude","grok","devin","muse","opencode","cursor"],
+         "followupLimit": 5,
+         "grokSpeechVoice": "altair",
+         "membershipEndpoint": "",
+         "museDisableSandbox": false,
+         "newThreadModelId": "",
+         "newThreadReasoningEffort": "",
+         "orbColor": "teal",
+         "projectsDirectory": "",
+         "provider": "codex",
+         "reasoning": "none",
+         "reasoningEffort": "",
+         "reasoningModel": "",
+         "speak": false,
+         "speechProvider": "grok",
+         "speechVoice": "F1",
+         "wakeModelDirectory": "",
+         "wakeRuntimeDirectory": ""
+        },
+        "connection": "connected",
+        "credentials": {"grokSpeech":false,"reasoning":false,"secure":false},
+        "deliveredDrafts": [],
+        "deliveries": [],
+        "draft": "",
+        "draftAttachments": [],
+        "draftRequestId": null,
+        "draftThreadId": null,
+        "error": null,
+        "followupReceipts": [],
+        "followups": [],
+        "globalLaneBusy": false,
+        "historyEnabled": true,
+        "host": {
+         "capabilities": {
+          "compact": true,
+          "configureThread": true,
+          "interrupt": true,
+          "messageOrigin": true,
+          "observe": true,
+          "permissions": true,
+          "projects": true,
+          "questions": true,
+          "reconcile": true,
+          "skills": true,
+          "steer": true,
+          "submit": true,
+          "threads": true
+         },
+         "connected": true,
+         "hostId": "<id:1>",
+         "models": [
+          {
+           "defaultReasoningEffort": "low",
+           "id": "native:codex:model:fixture-model",
+           "name": "Fixture Codex",
+           "provider": "Codex",
+           "providerId": "codex",
+           "ready": true,
+           "reasoningEfforts": ["low","high"],
+           "runtimeModes": ["approval-required","auto-accept-edits","auto","full-access"],
+           "supportsImages": true
+          }
+         ],
+         "modelsRevision": "<revision>",
+         "name": "Codex",
+         "projects": [],
+         "providers": [
+          {
+           "capabilities": {
+            "compact": true,
+            "configureThread": true,
+            "interrupt": true,
+            "messageOrigin": true,
+            "observe": true,
+            "permissions": true,
+            "projects": true,
+            "questions": true,
+            "reconcile": true,
+            "skills": true,
+            "steer": true,
+            "submit": true,
+            "threads": true
+           },
+           "connection": "connected",
+           "id": "codex",
+           "name": "Codex",
+           "version": "codex/0.154.0"
+          },
+          {
+           "capabilities": {
+            "interrupt": false,
+            "messageOrigin": false,
+            "observe": false,
+            "permissions": false,
+            "projects": false,
+            "questions": false,
+            "reconcile": false,
+            "submit": false,
+            "threads": false
+           },
+           "connection": "error",
+           "error": "Claude Code is available in Sotto Owl; it is not in this build.",
+           "id": "claude",
+           "name": "Claude Code",
+           "version": ""
+          },
+          {
+           "capabilities": {
+            "interrupt": false,
+            "messageOrigin": false,
+            "observe": false,
+            "permissions": false,
+            "projects": false,
+            "questions": false,
+            "reconcile": false,
+            "submit": false,
+            "threads": false
+           },
+           "connection": "error",
+           "error": "Grok Build is available in Sotto Owl; it is not in this build.",
+           "id": "grok",
+           "name": "Grok Build",
+           "version": ""
+          },
+          {
+           "capabilities": {
+            "interrupt": false,
+            "messageOrigin": false,
+            "observe": false,
+            "permissions": false,
+            "projects": false,
+            "questions": false,
+            "reconcile": false,
+            "submit": false,
+            "threads": false
+           },
+           "connection": "error",
+           "error": "Devin is available in Sotto Owl; it is not in this build.",
+           "id": "devin",
+           "name": "Devin",
+           "version": ""
+          },
+          {
+           "capabilities": {
+            "interrupt": false,
+            "messageOrigin": false,
+            "observe": false,
+            "permissions": false,
+            "projects": false,
+            "questions": false,
+            "reconcile": false,
+            "submit": false,
+            "threads": false
+           },
+           "connection": "error",
+           "error": "Muse is available in Sotto Owl; it is not in this build.",
+           "id": "muse",
+           "name": "Muse",
+           "version": ""
+          },
+          {
+           "capabilities": {
+            "interrupt": false,
+            "messageOrigin": false,
+            "observe": false,
+            "permissions": false,
+            "projects": false,
+            "questions": false,
+            "reconcile": false,
+            "submit": false,
+            "threads": false
+           },
+           "connection": "error",
+           "error": "OpenCode is available in Sotto Owl; it is not in this build.",
+           "id": "opencode",
+           "name": "OpenCode",
+           "version": ""
+          },
+          {
+           "capabilities": {
+            "interrupt": false,
+            "messageOrigin": false,
+            "observe": false,
+            "permissions": false,
+            "projects": false,
+            "questions": false,
+            "reconcile": false,
+            "submit": false,
+            "threads": false
+           },
+           "connection": "error",
+           "error": "Cursor is available in Sotto Owl; it is not in this build.",
+           "id": "cursor",
+           "name": "Cursor",
+           "version": ""
+          }
+         ],
+         "threads": [],
+         "version": ""
+        },
+        "hostId": "<id:1>",
+        "membership": {"expiresAt":null,"label":"","status":"beta"},
+        "notice": "",
+        "obsoleteDrafts": [],
+        "pendingRequest": "",
+        "providerUpgrade": null,
+        "queue": [],
+        "reasoningAccounts": [],
+        "settledHeldBack": 0,
+        "speech": {"id":0,"text":""},
+        "threadDraftPersistence": [],
+        "threadDrafts": [],
+        "voice": {"action":"none","error":null,"revision":0,"status":"off"}
+       }
+      }
+     ]
+    },
+    "plain": {"frames":[],"held":[]}
+   }
+  },
+  {
+   "say": "plain says hello",
+   "by": "plain",
+   "sent": {"accepts":["provider-opencode","provider-cursor"],"id":"plain-1","op":"hello","session":"<secret>","v":1},
+   "clients": {
+    "desktop": {"frames":[],"held":[]},
+    "iphone": {"frames":[],"held":[]},
+    "plain": {
+     "frames": [
+      {
+       "id": "plain-1",
+       "ok": true,
+       "result": {
+        "capabilities": {"mayAnswer":true},
+        "clientId": "<id:4>",
+        "events": [],
+        "features": [
+         "client-liveness", "message-aliases", "detail-delta", "git-refs", "git-changed-files", "git-pull-request", "git-pull-request-list",
+         "attachment-staging", "host-folders", "provider-sign-in", "client-updates", "activity-summaries", "model-catalog-revision",
+         "thread-files", "thread-file-links", "thread-linked-files", "thread-changes", "subagents", "answer-receipts", "answer-check",
+         "atomic-send", "draft-revisions", "background-refresh", "usage-dashboard", "usage-history", "host-facts", "thread-starts",
+         "provider-opencode", "activity-bodies", "failure-seen", "usage-muse-opencode", "client-update-outcomes", "pull-request-view",
+         "agents-view", "provider-cursor", "usage-background-refresh", "client-update-not-listed", "thread-prompts", "file-staging",
+         "attachment-files", "project-origins", "thread-delete", "bring-changes-back", "project-setup", "pull-request-confirmation",
+         "worker-swarms", "changed-thread-records", "thread-media", "thread-media-video", "next-prompts", "reply-thread-records",
+         "provider-mode-lists", "settled-threads-on-request", "usable-models", "product-events", "command-changed-thread-records",
+         "step-window", "thread-snooze", "browser", "provider-deepseek", "video-staging", "provider-pi", "provider-hermes",
+         "project-git-init", "kept-parts", "plugin-meshy-phone"
+        ],
+        "hasMore": false,
+        "hostId": "<id:1>",
+        "latestSeq": 9007199254740991,
+        "phoneAccess": {"phones":0,"status":"off"},
+        "shell": {
+         "activeProjectId": null,
+         "activeThreadId": null,
+         "assignments": [],
+         "clientCapabilities": {"mayAnswer":true},
+         "clientUpdates": [{"behind":false,"canInstall":false,"channel":"unknown","checkedAt":"<time>","id":"codex","installed":"0.154.0","state":"idle"}],
+         "composing": false,
+         "configuration": {
+          "checkClientUpdates": true,
+          "claudeUltracodeEffort": "xhigh",
+          "defaultModelId": "",
+          "enabled": false,
+          "enabledProviders": ["codex","claude","grok","devin","muse","opencode","cursor"],
+          "followupLimit": 5,
+          "grokSpeechVoice": "altair",
+          "membershipEndpoint": "",
+          "museDisableSandbox": false,
+          "newThreadModelId": "",
+          "newThreadReasoningEffort": "",
+          "orbColor": "teal",
+          "projectsDirectory": "",
+          "provider": "codex",
+          "reasoning": "none",
+          "reasoningEffort": "",
+          "reasoningModel": "",
+          "speak": false,
+          "speechProvider": "grok",
+          "speechVoice": "F1",
+          "wakeModelDirectory": "",
+          "wakeRuntimeDirectory": ""
+         },
+         "connection": "connected",
+         "credentials": {"grokSpeech":false,"reasoning":false,"secure":false},
+         "deliveredDrafts": [],
+         "deliveries": [],
+         "draft": "",
+         "draftAttachments": [],
+         "draftRequestId": null,
+         "draftThreadId": null,
+         "error": null,
+         "followupReceipts": [],
+         "followups": [],
+         "globalLaneBusy": false,
+         "historyEnabled": true,
+         "host": {
+          "capabilities": {
+           "compact": true,
+           "configureThread": true,
+           "interrupt": true,
+           "messageOrigin": true,
+           "observe": true,
+           "permissions": true,
+           "projects": true,
+           "questions": true,
+           "reconcile": true,
+           "skills": true,
+           "steer": true,
+           "submit": true,
+           "threads": true
+          },
+          "connected": true,
+          "hostId": "<id:1>",
+          "models": [
+           {
+            "defaultReasoningEffort": "low",
+            "id": "native:codex:model:fixture-model",
+            "name": "Fixture Codex",
+            "provider": "Codex",
+            "providerId": "codex",
+            "ready": true,
+            "reasoningEfforts": ["low","high"],
+            "runtimeModes": ["approval-required","auto-accept-edits","auto","full-access"],
+            "supportsImages": true
+           }
+          ],
+          "name": "Codex",
+          "projects": [],
+          "providers": [
+           {
+            "capabilities": {
+             "compact": true,
+             "configureThread": true,
+             "interrupt": true,
+             "messageOrigin": true,
+             "observe": true,
+             "permissions": true,
+             "projects": true,
+             "questions": true,
+             "reconcile": true,
+             "skills": true,
+             "steer": true,
+             "submit": true,
+             "threads": true
+            },
+            "connection": "connected",
+            "id": "codex",
+            "name": "Codex",
+            "version": "codex/0.154.0"
+           },
+           {
+            "capabilities": {
+             "interrupt": false,
+             "messageOrigin": false,
+             "observe": false,
+             "permissions": false,
+             "projects": false,
+             "questions": false,
+             "reconcile": false,
+             "submit": false,
+             "threads": false
+            },
+            "connection": "error",
+            "error": "Claude Code is available in Sotto Owl; it is not in this build.",
+            "id": "claude",
+            "name": "Claude Code",
+            "version": ""
+           },
+           {
+            "capabilities": {
+             "interrupt": false,
+             "messageOrigin": false,
+             "observe": false,
+             "permissions": false,
+             "projects": false,
+             "questions": false,
+             "reconcile": false,
+             "submit": false,
+             "threads": false
+            },
+            "connection": "error",
+            "error": "Grok Build is available in Sotto Owl; it is not in this build.",
+            "id": "grok",
+            "name": "Grok Build",
+            "version": ""
+           },
+           {
+            "capabilities": {
+             "interrupt": false,
+             "messageOrigin": false,
+             "observe": false,
+             "permissions": false,
+             "projects": false,
+             "questions": false,
+             "reconcile": false,
+             "submit": false,
+             "threads": false
+            },
+            "connection": "error",
+            "error": "Devin is available in Sotto Owl; it is not in this build.",
+            "id": "devin",
+            "name": "Devin",
+            "version": ""
+           },
+           {
+            "capabilities": {
+             "interrupt": false,
+             "messageOrigin": false,
+             "observe": false,
+             "permissions": false,
+             "projects": false,
+             "questions": false,
+             "reconcile": false,
+             "submit": false,
+             "threads": false
+            },
+            "connection": "error",
+            "error": "Muse is available in Sotto Owl; it is not in this build.",
+            "id": "muse",
+            "name": "Muse",
+            "version": ""
+           },
+           {
+            "capabilities": {
+             "interrupt": false,
+             "messageOrigin": false,
+             "observe": false,
+             "permissions": false,
+             "projects": false,
+             "questions": false,
+             "reconcile": false,
+             "submit": false,
+             "threads": false
+            },
+            "connection": "error",
+            "error": "OpenCode is available in Sotto Owl; it is not in this build.",
+            "id": "opencode",
+            "name": "OpenCode",
+            "version": ""
+           },
+           {
+            "capabilities": {
+             "interrupt": false,
+             "messageOrigin": false,
+             "observe": false,
+             "permissions": false,
+             "projects": false,
+             "questions": false,
+             "reconcile": false,
+             "submit": false,
+             "threads": false
+            },
+            "connection": "error",
+            "error": "Cursor is available in Sotto Owl; it is not in this build.",
+            "id": "cursor",
+            "name": "Cursor",
+            "version": ""
+           }
+          ],
+          "threads": [],
+          "version": ""
+         },
+         "hostId": "<id:1>",
+         "membership": {"expiresAt":null,"label":"","status":"beta"},
+         "notice": "",
+         "obsoleteDrafts": [],
+         "pendingRequest": "",
+         "providerUpgrade": null,
+         "queue": [],
+         "reasoningAccounts": [],
+         "speech": {"id":0,"text":""},
+         "threadDraftPersistence": [],
+         "threadDrafts": [],
+         "voice": {"action":"none","error":null,"revision":0,"status":"off"}
+        },
+        "sottoVersion": "0.1.44-owl.20261118.2"
+       },
+       "v": 1
+      }
+     ],
+     "held": [
+      {
+       "path": ["shell"],
+       "value": {
+        "activeProjectId": null,
+        "activeThreadId": null,
+        "assignments": [],
+        "clientCapabilities": {"mayAnswer":true},
+        "clientUpdates": [{"behind":false,"canInstall":false,"channel":"unknown","checkedAt":"<time>","id":"codex","installed":"0.154.0","state":"idle"}],
+        "composing": false,
+        "configuration": {
+         "checkClientUpdates": true,
+         "claudeUltracodeEffort": "xhigh",
+         "defaultModelId": "",
+         "enabled": false,
+         "enabledProviders": ["codex","claude","grok","devin","muse","opencode","cursor"],
+         "followupLimit": 5,
+         "grokSpeechVoice": "altair",
+         "membershipEndpoint": "",
+         "museDisableSandbox": false,
+         "newThreadModelId": "",
+         "newThreadReasoningEffort": "",
+         "orbColor": "teal",
+         "projectsDirectory": "",
+         "provider": "codex",
+         "reasoning": "none",
+         "reasoningEffort": "",
+         "reasoningModel": "",
+         "speak": false,
+         "speechProvider": "grok",
+         "speechVoice": "F1",
+         "wakeModelDirectory": "",
+         "wakeRuntimeDirectory": ""
+        },
+        "connection": "connected",
+        "credentials": {"grokSpeech":false,"reasoning":false,"secure":false},
+        "deliveredDrafts": [],
+        "deliveries": [],
+        "draft": "",
+        "draftAttachments": [],
+        "draftRequestId": null,
+        "draftThreadId": null,
+        "error": null,
+        "followupReceipts": [],
+        "followups": [],
+        "globalLaneBusy": false,
+        "historyEnabled": true,
+        "host": {
+         "capabilities": {
+          "compact": true,
+          "configureThread": true,
+          "interrupt": true,
+          "messageOrigin": true,
+          "observe": true,
+          "permissions": true,
+          "projects": true,
+          "questions": true,
+          "reconcile": true,
+          "skills": true,
+          "steer": true,
+          "submit": true,
+          "threads": true
+         },
+         "connected": true,
+         "hostId": "<id:1>",
+         "models": [
+          {
+           "defaultReasoningEffort": "low",
+           "id": "native:codex:model:fixture-model",
+           "name": "Fixture Codex",
+           "provider": "Codex",
+           "providerId": "codex",
+           "ready": true,
+           "reasoningEfforts": ["low","high"],
+           "runtimeModes": ["approval-required","auto-accept-edits","auto","full-access"],
+           "supportsImages": true
+          }
+         ],
+         "name": "Codex",
+         "projects": [],
+         "providers": [
+          {
+           "capabilities": {
+            "compact": true,
+            "configureThread": true,
+            "interrupt": true,
+            "messageOrigin": true,
+            "observe": true,
+            "permissions": true,
+            "projects": true,
+            "questions": true,
+            "reconcile": true,
+            "skills": true,
+            "steer": true,
+            "submit": true,
+            "threads": true
+           },
+           "connection": "connected",
+           "id": "codex",
+           "name": "Codex",
+           "version": "codex/0.154.0"
+          },
+          {
+           "capabilities": {
+            "interrupt": false,
+            "messageOrigin": false,
+            "observe": false,
+            "permissions": false,
+            "projects": false,
+            "questions": false,
+            "reconcile": false,
+            "submit": false,
+            "threads": false
+           },
+           "connection": "error",
+           "error": "Claude Code is available in Sotto Owl; it is not in this build.",
+           "id": "claude",
+           "name": "Claude Code",
+           "version": ""
+          },
+          {
+           "capabilities": {
+            "interrupt": false,
+            "messageOrigin": false,
+            "observe": false,
+            "permissions": false,
+            "projects": false,
+            "questions": false,
+            "reconcile": false,
+            "submit": false,
+            "threads": false
+           },
+           "connection": "error",
+           "error": "Grok Build is available in Sotto Owl; it is not in this build.",
+           "id": "grok",
+           "name": "Grok Build",
+           "version": ""
+          },
+          {
+           "capabilities": {
+            "interrupt": false,
+            "messageOrigin": false,
+            "observe": false,
+            "permissions": false,
+            "projects": false,
+            "questions": false,
+            "reconcile": false,
+            "submit": false,
+            "threads": false
+           },
+           "connection": "error",
+           "error": "Devin is available in Sotto Owl; it is not in this build.",
+           "id": "devin",
+           "name": "Devin",
+           "version": ""
+          },
+          {
+           "capabilities": {
+            "interrupt": false,
+            "messageOrigin": false,
+            "observe": false,
+            "permissions": false,
+            "projects": false,
+            "questions": false,
+            "reconcile": false,
+            "submit": false,
+            "threads": false
+           },
+           "connection": "error",
+           "error": "Muse is available in Sotto Owl; it is not in this build.",
+           "id": "muse",
+           "name": "Muse",
+           "version": ""
+          },
+          {
+           "capabilities": {
+            "interrupt": false,
+            "messageOrigin": false,
+            "observe": false,
+            "permissions": false,
+            "projects": false,
+            "questions": false,
+            "reconcile": false,
+            "submit": false,
+            "threads": false
+           },
+           "connection": "error",
+           "error": "OpenCode is available in Sotto Owl; it is not in this build.",
+           "id": "opencode",
+           "name": "OpenCode",
+           "version": ""
+          },
+          {
+           "capabilities": {
+            "interrupt": false,
+            "messageOrigin": false,
+            "observe": false,
+            "permissions": false,
+            "projects": false,
+            "questions": false,
+            "reconcile": false,
+            "submit": false,
+            "threads": false
+           },
+           "connection": "error",
+           "error": "Cursor is available in Sotto Owl; it is not in this build.",
+           "id": "cursor",
+           "name": "Cursor",
+           "version": ""
+          }
+         ],
+         "threads": [],
+         "version": ""
+        },
+        "hostId": "<id:1>",
+        "membership": {"expiresAt":null,"label":"","status":"beta"},
+        "notice": "",
+        "obsoleteDrafts": [],
+        "pendingRequest": "",
+        "providerUpgrade": null,
+        "queue": [],
+        "reasoningAccounts": [],
+        "speech": {"id":0,"text":""},
+        "threadDraftPersistence": [],
+        "threadDrafts": [],
+        "voice": {"action":"none","error":null,"revision":0,"status":"off"}
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "say": "desktop turns codex on",
+   "by": "desktop",
+   "sent": {
+    "command": {"patch":{"enabledProviders":["codex"],"provider":"codex"},"type":"configure"},
+    "id": "desktop-2",
+    "op": "command",
+    "session": "<secret>",
+    "v": 1
+   },
+   "clients": {
+    "desktop": {
+     "frames": [
+      {
+       "id": "desktop-2",
+       "ok": true,
+       "result": {
+        "$shellPatch": [
+         {"path":["configuration","disconnectedProviders"],"value":["claude","grok","devin","muse","opencode","cursor","hermes"]},
+         {"path":["configuration","enabledProviders",7],"remove":true},
+         {"path":["configuration","enabledProviders",6],"remove":true},
+         {"path":["configuration","enabledProviders",5],"remove":true},
+         {"path":["configuration","enabledProviders",4],"remove":true},
+         {"path":["configuration","enabledProviders",3],"remove":true},
+         {"path":["configuration","enabledProviders",2],"remove":true},
+         {"path":["configuration","enabledProviders",1],"remove":true},
+         {"path":["host","providers",1,"error"],"remove":true},
+         {"path":["host","providers",1,"connection"],"value":"disconnected"},
+         {"path":["host","providers",2,"error"],"remove":true},
+         {"path":["host","providers",2,"connection"],"value":"disconnected"},
+         {"path":["host","providers",3,"error"],"remove":true},
+         {"path":["host","providers",3,"connection"],"value":"disconnected"},
+         {"path":["host","providers",4,"error"],"remove":true},
+         {"path":["host","providers",4,"connection"],"value":"disconnected"},
+         {"path":["host","providers",5,"error"],"remove":true},
+         {"path":["host","providers",5,"connection"],"value":"disconnected"},
+         {"path":["host","providers",6,"error"],"remove":true},
+         {"path":["host","providers",6,"connection"],"value":"disconnected"},
+         {"path":["host","providers",7,"error"],"remove":true},
+         {"path":["host","providers",7,"connection"],"value":"disconnected"}
+        ]
+       },
+       "v": 1
+      }
+     ],
+     "held": [
+      {"path":["shell","configuration","disconnectedProviders"],"value":["claude","grok","devin","muse","opencode","cursor","hermes"]},
+      {"path":["shell","configuration","enabledProviders",7],"remove":true},
+      {"path":["shell","configuration","enabledProviders",6],"remove":true},
+      {"path":["shell","configuration","enabledProviders",5],"remove":true},
+      {"path":["shell","configuration","enabledProviders",4],"remove":true},
+      {"path":["shell","configuration","enabledProviders",3],"remove":true},
+      {"path":["shell","configuration","enabledProviders",2],"remove":true},
+      {"path":["shell","configuration","enabledProviders",1],"remove":true},
+      {"path":["shell","host","providers",1,"error"],"remove":true},
+      {"path":["shell","host","providers",1,"connection"],"value":"disconnected"},
+      {"path":["shell","host","providers",2,"error"],"remove":true},
+      {"path":["shell","host","providers",2,"connection"],"value":"disconnected"},
+      {"path":["shell","host","providers",3,"error"],"remove":true},
+      {"path":["shell","host","providers",3,"connection"],"value":"disconnected"},
+      {"path":["shell","host","providers",4,"error"],"remove":true},
+      {"path":["shell","host","providers",4,"connection"],"value":"disconnected"},
+      {"path":["shell","host","providers",5,"error"],"remove":true},
+      {"path":["shell","host","providers",5,"connection"],"value":"disconnected"},
+      {"path":["shell","host","providers",6,"error"],"remove":true},
+      {"path":["shell","host","providers",6,"connection"],"value":"disconnected"},
+      {"path":["shell","host","providers",7,"error"],"remove":true},
+      {"path":["shell","host","providers",7,"connection"],"value":"disconnected"}
+     ]
+    },
+    "iphone": {
+     "frames": [],
+     "held": [
+      {"path":["shell","configuration","disconnectedProviders"],"value":["claude","grok","devin","muse","opencode","cursor"]},
+      {"path":["shell","configuration","enabledProviders",6],"remove":true},
+      {"path":["shell","configuration","enabledProviders",5],"remove":true},
+      {"path":["shell","configuration","enabledProviders",4],"remove":true},
+      {"path":["shell","configuration","enabledProviders",3],"remove":true},
+      {"path":["shell","configuration","enabledProviders",2],"remove":true},
+      {"path":["shell","configuration","enabledProviders",1],"remove":true},
+      {"path":["shell","host","providers",1,"error"],"remove":true},
+      {"path":["shell","host","providers",1,"connection"],"value":"disconnected"},
+      {"path":["shell","host","providers",2,"error"],"remove":true},
+      {"path":["shell","host","providers",2,"connection"],"value":"disconnected"},
+      {"path":["shell","host","providers",3,"error"],"remove":true},
+      {"path":["shell","host","providers",3,"connection"],"value":"disconnected"},
+      {"path":["shell","host","providers",4,"error"],"remove":true},
+      {"path":["shell","host","providers",4,"connection"],"value":"disconnected"},
+      {"path":["shell","host","providers",5,"error"],"remove":true},
+      {"path":["shell","host","providers",5,"connection"],"value":"disconnected"},
+      {"path":["shell","host","providers",6,"error"],"remove":true},
+      {"path":["shell","host","providers",6,"connection"],"value":"disconnected"}
+     ]
+    },
+    "plain": {
+     "frames": [],
+     "held": [
+      {"path":["shell","configuration","disconnectedProviders"],"value":["claude","grok","devin","muse","opencode","cursor"]},
+      {"path":["shell","configuration","enabledProviders",6],"remove":true},
+      {"path":["shell","configuration","enabledProviders",5],"remove":true},
+      {"path":["shell","configuration","enabledProviders",4],"remove":true},
+      {"path":["shell","configuration","enabledProviders",3],"remove":true},
+      {"path":["shell","configuration","enabledProviders",2],"remove":true},
+      {"path":["shell","configuration","enabledProviders",1],"remove":true},
+      {"path":["shell","host","providers",1,"error"],"remove":true},
+      {"path":["shell","host","providers",1,"connection"],"value":"disconnected"},
+      {"path":["shell","host","providers",2,"error"],"remove":true},
+      {"path":["shell","host","providers",2,"connection"],"value":"disconnected"},
+      {"path":["shell","host","providers",3,"error"],"remove":true},
+      {"path":["shell","host","providers",3,"connection"],"value":"disconnected"},
+      {"path":["shell","host","providers",4,"error"],"remove":true},
+      {"path":["shell","host","providers",4,"connection"],"value":"disconnected"},
+      {"path":["shell","host","providers",5,"error"],"remove":true},
+      {"path":["shell","host","providers",5,"connection"],"value":"disconnected"},
+      {"path":["shell","host","providers",6,"error"],"remove":true},
+      {"path":["shell","host","providers",6,"connection"],"value":"disconnected"}
+     ]
+    }
+   }
+  },
+  {
+   "say": "desktop connects codex",
+   "by": "desktop",
+   "sent": {"command":{"provider":"codex","type":"connect"},"id":"desktop-3","op":"command","session":"<secret>","v":1},
+   "clients": {
+    "desktop": {
+     "frames": [{"id":"desktop-3","ok":true,"result":{"$shellPatch":[{"path":["notice"],"value":"Codex connected"}]},"v":1}],
+     "held": [{"path":["shell","notice"],"value":"Codex connected"}]
+    },
+    "iphone": {"frames":[],"held":[{"path":["shell","notice"],"value":"Codex connected"}]},
+    "plain": {"frames":[],"held":[{"path":["shell","notice"],"value":"Codex connected"}]}
+   }
+  },
+  {
+   "say": "desktop adds the data folder as a project",
+   "by": "desktop",
+   "sent": {
+    "command": {"path":"<data>","provider":"codex","title":"Referee project","type":"create-project","useExisting":true},
+    "id": "desktop-4",
+    "op": "command",
+    "session": "<secret>",
+    "v": 1
+   },
+   "clients": {
+    "desktop": {
+     "frames": [
+      {
+       "id": "desktop-4",
+       "ok": true,
+       "result": {
+        "$shellPatch": [
+         {
+          "path": ["host","projects",0],
+          "value": {"hostId":"<id:1>","id":"<id:5>","path":"<data>","providerId":"codex","title":"Referee project","workspaceSettledAt":null}
+         },
+         {"path":["notice"],"value":"Created Referee project in <data>."}
+        ]
+       },
+       "v": 1
+      }
+     ],
+     "held": [
+      {
+       "path": ["shell","host","projects",0],
+       "value": {"hostId":"<id:1>","id":"<id:5>","path":"<data>","providerId":"codex","title":"Referee project","workspaceSettledAt":null}
+      },
+      {"path":["shell","notice"],"value":"Created Referee project in <data>."}
+     ]
+    },
+    "iphone": {
+     "frames": [],
+     "held": [
+      {
+       "path": ["shell","host","projects",0],
+       "value": {"hostId":"<id:1>","id":"<id:5>","path":"<data>","providerId":"codex","title":"Referee project","workspaceSettledAt":null}
+      },
+      {"path":["shell","notice"],"value":"Created Referee project in <data>."}
+     ]
+    },
+    "plain": {
+     "frames": [],
+     "held": [
+      {
+       "path": ["shell","host","projects",0],
+       "value": {"hostId":"<id:1>","id":"<id:5>","path":"<data>","providerId":"codex","title":"Referee project","workspaceSettledAt":null}
+      },
+      {"path":["shell","notice"],"value":"Created Referee project in <data>."}
+     ]
+    }
+   }
+  },
+  {
+   "say": "desktop makes the thread",
+   "by": "desktop",
+   "sent": {
+    "command": {
+     "managed": false,
+     "modelId": "native:codex:model:fixture-model",
+     "projectId": "<id:5>",
+     "threadId": "<id:6>",
+     "title": "Referee thread",
+     "titleSource": "user",
+     "type": "create-thread",
+     "workingCopy": "shared"
+    },
+    "id": "desktop-5",
+    "op": "command",
+    "session": "<secret>",
+    "v": 1
+   },
+   "clients": {
+    "desktop": {
+     "frames": [
+      {
+       "id": "desktop-5",
+       "ok": true,
+       "result": {
+        "$shellPatch": [
+         {
+          "path": ["host","threads",0],
+          "value": {
+           "hostId": "<id:1>",
+           "id": "<id:6>",
+           "messages": [],
+           "modelId": "native:codex:model:fixture-model",
+           "nativeSessionStarted": false,
+           "projectId": "<id:5>",
+           "providerId": "codex",
+           "reasoningEffort": "low",
+           "requests": [],
+           "snoozedUntil": null,
+           "status": "idle",
+           "summary": {"activityCount":0,"messageCount":0},
+           "title": "Referee thread",
+           "titleSource": "user",
+           "workingDirectory": "<data>",
+           "workspaceSettledAt": null,
+           "worktree": {"dirty":false,"mode":"shared","path":"<data>","status":"ready"}
+          }
+         },
+         {"path":["notice"],"value":"Opened Referee thread."}
+        ]
+       },
+       "v": 1
+      }
+     ],
+     "held": [
+      {
+       "path": ["shell","host","threads",0],
+       "value": {
+        "hostId": "<id:1>",
+        "id": "<id:6>",
+        "messages": [],
+        "modelId": "native:codex:model:fixture-model",
+        "nativeSessionStarted": false,
+        "projectId": "<id:5>",
+        "providerId": "codex",
+        "reasoningEffort": "low",
+        "requests": [],
+        "snoozedUntil": null,
+        "status": "idle",
+        "summary": {"activityCount":0,"messageCount":0},
+        "title": "Referee thread",
+        "titleSource": "user",
+        "workingDirectory": "<data>",
+        "workspaceSettledAt": null,
+        "worktree": {"dirty":false,"mode":"shared","path":"<data>","status":"ready"}
+       }
+      },
+      {"path":["shell","notice"],"value":"Opened Referee thread."}
+     ]
+    },
+    "iphone": {
+     "frames": [],
+     "held": [
+      {
+       "path": ["shell","host","threads",0],
+       "value": {
+        "hostId": "<id:1>",
+        "id": "<id:6>",
+        "messages": [],
+        "modelId": "native:codex:model:fixture-model",
+        "nativeSessionStarted": false,
+        "projectId": "<id:5>",
+        "providerId": "codex",
+        "reasoningEffort": "low",
+        "requests": [],
+        "snoozedUntil": null,
+        "status": "idle",
+        "summary": {"activityCount":0,"messageCount":0},
+        "title": "Referee thread",
+        "titleSource": "user",
+        "workingDirectory": "<data>",
+        "workspaceSettledAt": null,
+        "worktree": {"dirty":false,"mode":"shared","path":"<data>","status":"ready"}
+       }
+      },
+      {"path":["shell","notice"],"value":"Opened Referee thread."}
+     ]
+    },
+    "plain": {
+     "frames": [],
+     "held": [
+      {
+       "path": ["shell","host","threads",0],
+       "value": {
+        "hostId": "<id:1>",
+        "id": "<id:6>",
+        "messages": [],
+        "modelId": "native:codex:model:fixture-model",
+        "nativeSessionStarted": false,
+        "projectId": "<id:5>",
+        "providerId": "codex",
+        "reasoningEffort": "low",
+        "requests": [],
+        "snoozedUntil": null,
+        "status": "idle",
+        "summary": {"activityCount":0,"messageCount":0},
+        "title": "Referee thread",
+        "titleSource": "user",
+        "workingDirectory": "<data>",
+        "workspaceSettledAt": null,
+        "worktree": {"dirty":false,"mode":"shared","path":"<data>","status":"ready"}
+       }
+      },
+      {"path":["shell","notice"],"value":"Opened Referee thread."}
+     ]
+    }
+   }
+  },
+  {
+   "say": "desktop observes the thread",
+   "by": "desktop",
+   "sent": {"id":"desktop-6","op":"observe","session":"<secret>","threadIds":["<id:6>"],"v":1},
+   "clients": {
+    "desktop": {
+     "frames": [{"id":"desktop-6","ok":true,"result":null,"v":1}],
+     "held": [
+      {"path":["details","<id:6>"],"value":{"messages":[],"revision":"<revision>","threadId":"<id:6>"}},
+      {
+       "path": ["shell","host","threads",0,"worktree","git"],
+       "value": {
+        "ahead": 0,
+        "aheadOfDefault": null,
+        "behind": 0,
+        "branch": null,
+        "changedFiles": 0,
+        "defaultBranch": null,
+        "deletions": 0,
+        "dirty": false,
+        "fetchedAt": null,
+        "hasRemote": false,
+        "insertions": 0,
+        "isDefaultBranch": false,
+        "isRepository": false,
+        "pullRequest": null,
+        "readAt": "<time>",
+        "upstream": null
+       }
+      }
+     ]
+    },
+    "iphone": {
+     "frames": [],
+     "held": [
+      {
+       "path": ["shell","host","threads",0,"worktree","git"],
+       "value": {
+        "ahead": 0,
+        "aheadOfDefault": null,
+        "behind": 0,
+        "branch": null,
+        "changedFiles": 0,
+        "defaultBranch": null,
+        "deletions": 0,
+        "dirty": false,
+        "fetchedAt": null,
+        "hasRemote": false,
+        "insertions": 0,
+        "isDefaultBranch": false,
+        "isRepository": false,
+        "pullRequest": null,
+        "readAt": "<time>",
+        "upstream": null
+       }
+      }
+     ]
+    },
+    "plain": {
+     "frames": [],
+     "held": [
+      {
+       "path": ["shell","host","threads",0,"worktree","git"],
+       "value": {
+        "ahead": 0,
+        "aheadOfDefault": null,
+        "behind": 0,
+        "branch": null,
+        "changedFiles": 0,
+        "defaultBranch": null,
+        "deletions": 0,
+        "dirty": false,
+        "fetchedAt": null,
+        "hasRemote": false,
+        "insertions": 0,
+        "isDefaultBranch": false,
+        "isRepository": false,
+        "pullRequest": null,
+        "readAt": "<time>",
+        "upstream": null
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "say": "iphone observes the thread",
+   "by": "iphone",
+   "sent": {"id":"iphone-2","op":"observe","session":"<secret>","threadIds":["<id:6>"],"v":1},
+   "clients": {
+    "desktop": {"frames":[],"held":[]},
+    "iphone": {
+     "frames": [{"id":"iphone-2","ok":true,"result":null,"v":1}],
+     "held": [{"path":["details","<id:6>"],"value":{"messages":[],"revision":"<revision>","threadId":"<id:6>"}}]
+    },
+    "plain": {"frames":[],"held":[]}
+   }
+  },
+  {
+   "say": "plain observes the thread",
+   "by": "plain",
+   "sent": {"id":"plain-2","op":"observe","session":"<secret>","threadIds":["<id:6>"],"v":1},
+   "clients": {
+    "desktop": {"frames":[],"held":[]},
+    "iphone": {"frames":[],"held":[]},
+    "plain": {
+     "frames": [{"id":"plain-2","ok":true,"result":null,"v":1}],
+     "held": [{"path":["details","<id:6>"],"value":{"messages":[],"revision":"<revision>","threadId":"<id:6>"}}]
+    }
+   }
+  },
+  {
+   "say": "desktop sends \"Referee prompt one\"",
+   "by": "desktop",
+   "sent": {
+    "command": {"text":"Referee prompt one","threadId":"<id:6>","type":"manual-send"},
+    "id": "desktop-7",
+    "op": "command",
+    "session": "<secret>",
+    "v": 1
+   },
+   "clients": {
+    "desktop": {
+     "frames": [
+      {
+       "id": "desktop-7",
+       "ok": true,
+       "result": {
+        "$shellPatch": [
+         {"path":["deliveredDrafts",0],"value":{"draftId":"<id:7>","threadId":"<id:6>"}},
+         {
+          "path": ["deliveries",0],
+          "value": {
+           "commandId": "<id:8>",
+           "createdAt": "<time>",
+           "draftId": "<id:7>",
+           "localFeedbackMs": "<ms>",
+           "messageId": "<id:9>",
+           "providerLatencyMs": "<ms>",
+           "status": "accepted",
+           "threadId": "<id:6>",
+           "updatedAt": "<time>"
+          }
+         },
+         {"path":["host","threads",0,"summary"],"remove":true},
+         {"path":["host","threads",0,"kind"],"value":"project"},
+         {"path":["host","threads",0,"manualCompactionSupported"],"value":true},
+         {"path":["host","threads",0,"nativeSessionStarted"],"value":true},
+         {"path":["host","threads",0,"providerSessionOpen"],"value":true},
+         {"path":["host","threads",0,"runtimeMode"],"value":"auto-accept-edits"},
+         {"path":["host","threads",0,"status"],"value":"running"},
+         {
+          "path": ["host","threads",0,"subagentSummary"],
+          "value": {"completed":0,"failed":0,"interrupted":0,"total":0,"unknown":0,"working":0}
+         },
+         {"path":["notice"],"value":"Sent to Referee thread."}
+        ]
+       },
+       "v": 1
+      }
+     ],
+     "held": [
+      {
+       "path": ["details","<id:6>","activities"],
+       "value": [
+        {
+         "afterMessageId": "<id:9>",
+         "id": "codex-activity-<id:10>",
+         "kind": "turn",
+         "sequence": 0,
+         "startedAt": "<time>",
+         "status": "running",
+         "timingSource": "provider",
+         "title": "Working",
+         "turnId": "<id:11>"
+        }
+       ]
+      },
+      {
+       "path": ["details","<id:6>","messages",0],
+       "value": {"commandId":"<id:8>","createdAt":"<time>","id":"<id:9>","role":"user","text":"Referee prompt one"}
+      },
+      {"path":["shell","deliveredDrafts",0],"value":{"draftId":"<id:7>","threadId":"<id:6>"}},
+      {
+       "path": ["shell","deliveries",0],
+       "value": {
+        "commandId": "<id:8>",
+        "createdAt": "<time>",
+        "draftId": "<id:7>",
+        "localFeedbackMs": "<ms>",
+        "messageId": "<id:9>",
+        "providerLatencyMs": "<ms>",
+        "status": "accepted",
+        "threadId": "<id:6>",
+        "updatedAt": "<time>"
+       }
+      },
+      {"path":["shell","host","threads",0,"activities"],"value":[]},
+      {"path":["shell","host","threads",0,"kind"],"value":"project"},
+      {"path":["shell","host","threads",0,"lastTurn"],"value":{"id":"<id:11>","status":"running"}},
+      {"path":["shell","host","threads",0,"lastUserMessageId"],"value":"<id:9>"},
+      {"path":["shell","host","threads",0,"manualCompactionSupported"],"value":true},
+      {"path":["shell","host","threads",0,"nativeSessionStarted"],"value":true},
+      {"path":["shell","host","threads",0,"providerSessionOpen"],"value":true},
+      {"path":["shell","host","threads",0,"runtimeMode"],"value":"auto-accept-edits"},
+      {"path":["shell","host","threads",0,"status"],"value":"running"},
+      {
+       "path": ["shell","host","threads",0,"subagentSummary"],
+       "value": {"completed":0,"failed":0,"interrupted":0,"total":0,"unknown":0,"working":0}
+      },
+      {"path":["shell","host","threads",0,"summary","activityCount"],"value":1},
+      {"path":["shell","host","threads",0,"summary","lastMessageAt"],"value":"<time>"},
+      {"path":["shell","host","threads",0,"summary","lastUser"],"value":{"createdAt":"<time>","id":"<id:9>","text":"Referee prompt one"}},
+      {"path":["shell","host","threads",0,"summary","messageCount"],"value":1},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"value":"<time>"},
+      {"path":["shell","notice"],"value":"Sent to Referee thread."}
+     ]
+    },
+    "iphone": {
+     "frames": [],
+     "held": [
+      {
+       "path": ["details","<id:6>","activities"],
+       "value": [
+        {
+         "id": "codex-activity-<id:10>",
+         "kind": "turn",
+         "sequence": 0,
+         "startedAt": "<time>",
+         "status": "running",
+         "title": "Working",
+         "turnId": "<id:11>"
+        }
+       ]
+      },
+      {
+       "path": ["details","<id:6>","messages",0],
+       "value": {"commandId":"<id:8>","createdAt":"<time>","id":"<id:9>","role":"user","text":"Referee prompt one"}
+      },
+      {"path":["shell","deliveredDrafts",0],"value":{"draftId":"<id:7>","threadId":"<id:6>"}},
+      {
+       "path": ["shell","deliveries",0],
+       "value": {
+        "commandId": "<id:8>",
+        "createdAt": "<time>",
+        "draftId": "<id:7>",
+        "localFeedbackMs": "<ms>",
+        "messageId": "<id:9>",
+        "providerLatencyMs": "<ms>",
+        "status": "accepted",
+        "threadId": "<id:6>",
+        "updatedAt": "<time>"
+       }
+      },
+      {"path":["shell","host","threads",0,"activities"],"value":[]},
+      {"path":["shell","host","threads",0,"kind"],"value":"project"},
+      {"path":["shell","host","threads",0,"lastTurn"],"value":{"id":"<id:11>","status":"running"}},
+      {"path":["shell","host","threads",0,"lastUserMessageId"],"value":"<id:9>"},
+      {"path":["shell","host","threads",0,"manualCompactionSupported"],"value":true},
+      {"path":["shell","host","threads",0,"nativeSessionStarted"],"value":true},
+      {"path":["shell","host","threads",0,"providerSessionOpen"],"value":true},
+      {"path":["shell","host","threads",0,"runtimeMode"],"value":"auto-accept-edits"},
+      {"path":["shell","host","threads",0,"status"],"value":"running"},
+      {
+       "path": ["shell","host","threads",0,"subagentSummary"],
+       "value": {"completed":0,"failed":0,"interrupted":0,"total":0,"unknown":0,"working":0}
+      },
+      {"path":["shell","host","threads",0,"summary","activityCount"],"value":1},
+      {"path":["shell","host","threads",0,"summary","lastMessageAt"],"value":"<time>"},
+      {"path":["shell","host","threads",0,"summary","lastUser"],"value":{"createdAt":"<time>","id":"<id:9>","text":"Referee prompt one"}},
+      {"path":["shell","host","threads",0,"summary","messageCount"],"value":1},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"value":"<time>"},
+      {"path":["shell","notice"],"value":"Sent to Referee thread."}
+     ]
+    },
+    "plain": {
+     "frames": [],
+     "held": [
+      {
+       "path": ["details","<id:6>","activities"],
+       "value": [
+        {
+         "afterMessageId": "<id:9>",
+         "id": "codex-activity-<id:10>",
+         "kind": "turn",
+         "sequence": 0,
+         "startedAt": "<time>",
+         "status": "running",
+         "timingSource": "provider",
+         "title": "Working",
+         "turnId": "<id:11>"
+        }
+       ]
+      },
+      {
+       "path": ["details","<id:6>","messages",0],
+       "value": {"commandId":"<id:8>","createdAt":"<time>","id":"<id:9>","role":"user","text":"Referee prompt one"}
+      },
+      {"path":["shell","deliveredDrafts",0],"value":{"draftId":"<id:7>","threadId":"<id:6>"}},
+      {
+       "path": ["shell","deliveries",0],
+       "value": {
+        "commandId": "<id:8>",
+        "createdAt": "<time>",
+        "draftId": "<id:7>",
+        "localFeedbackMs": "<ms>",
+        "messageId": "<id:9>",
+        "providerLatencyMs": "<ms>",
+        "status": "accepted",
+        "threadId": "<id:6>",
+        "updatedAt": "<time>"
+       }
+      },
+      {"path":["shell","host","threads",0,"activities"],"value":[]},
+      {"path":["shell","host","threads",0,"kind"],"value":"project"},
+      {"path":["shell","host","threads",0,"lastTurn"],"value":{"id":"<id:11>","status":"running"}},
+      {"path":["shell","host","threads",0,"lastUserMessageId"],"value":"<id:9>"},
+      {"path":["shell","host","threads",0,"manualCompactionSupported"],"value":true},
+      {"path":["shell","host","threads",0,"nativeSessionStarted"],"value":true},
+      {"path":["shell","host","threads",0,"providerSessionOpen"],"value":true},
+      {"path":["shell","host","threads",0,"runtimeMode"],"value":"auto-accept-edits"},
+      {"path":["shell","host","threads",0,"status"],"value":"running"},
+      {
+       "path": ["shell","host","threads",0,"subagentSummary"],
+       "value": {"completed":0,"failed":0,"interrupted":0,"total":0,"unknown":0,"working":0}
+      },
+      {"path":["shell","host","threads",0,"summary","activityCount"],"value":1},
+      {"path":["shell","host","threads",0,"summary","lastMessageAt"],"value":"<time>"},
+      {"path":["shell","host","threads",0,"summary","lastUser"],"value":{"createdAt":"<time>","id":"<id:9>","text":"Referee prompt one"}},
+      {"path":["shell","host","threads",0,"summary","messageCount"],"value":1},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"value":"<time>"},
+      {"path":["shell","notice"],"value":"Sent to Referee thread."}
+     ]
+    }
+   }
+  },
+  {
+   "say": "the fake ends the turn with \"Referee reply one\"",
+   "by": "fake",
+   "sent": {"text":"Referee reply one","thread":"<id:6>","type":"complete"},
+   "clients": {
+    "desktop": {
+     "frames": [],
+     "held": [
+      {"path":["details","<id:6>","activities",0,"completedAt"],"value":"<time>"},
+      {"path":["details","<id:6>","activities",0,"status"],"value":"completed"},
+      {"path":["details","<id:6>","activities",0,"title"],"value":"Turn completed"},
+      {"path":["details","<id:6>","messages",1],"value":{"createdAt":"<time>","id":"<id:12>","role":"assistant","text":"Referee reply one"}},
+      {"path":["shell","host","threads",0,"lastTurn","status"],"value":"completed"},
+      {"path":["shell","host","threads",0,"status"],"value":"idle"},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"remove":true},
+      {
+       "path": ["shell","host","threads",0,"summary","lastAssistant"],
+       "value": {"createdAt":"<time>","id":"<id:12>","text":"Referee reply one"}
+      },
+      {"path":["shell","host","threads",0,"summary","messageCount"],"value":2}
+     ]
+    },
+    "iphone": {
+     "frames": [],
+     "held": [
+      {"path":["details","<id:6>","activities",0,"status"],"value":"completed"},
+      {"path":["details","<id:6>","activities",0,"title"],"value":"Turn completed"},
+      {"path":["details","<id:6>","messages",1],"value":{"createdAt":"<time>","id":"<id:12>","role":"assistant","text":"Referee reply one"}},
+      {"path":["shell","host","threads",0,"lastTurn","status"],"value":"completed"},
+      {"path":["shell","host","threads",0,"status"],"value":"idle"},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"remove":true},
+      {
+       "path": ["shell","host","threads",0,"summary","lastAssistant"],
+       "value": {"createdAt":"<time>","id":"<id:12>","text":"Referee reply one"}
+      },
+      {"path":["shell","host","threads",0,"summary","messageCount"],"value":2}
+     ]
+    },
+    "plain": {
+     "frames": [],
+     "held": [
+      {"path":["details","<id:6>","activities",0,"completedAt"],"value":"<time>"},
+      {"path":["details","<id:6>","activities",0,"status"],"value":"completed"},
+      {"path":["details","<id:6>","activities",0,"title"],"value":"Turn completed"},
+      {"path":["details","<id:6>","messages",1],"value":{"createdAt":"<time>","id":"<id:12>","role":"assistant","text":"Referee reply one"}},
+      {"path":["shell","host","threads",0,"lastTurn","status"],"value":"completed"},
+      {"path":["shell","host","threads",0,"status"],"value":"idle"},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"remove":true},
+      {
+       "path": ["shell","host","threads",0,"summary","lastAssistant"],
+       "value": {"createdAt":"<time>","id":"<id:12>","text":"Referee reply one"}
+      },
+      {"path":["shell","host","threads",0,"summary","messageCount"],"value":2}
+     ]
+    }
+   }
+  },
+  {
+   "say": "iphone sends \"Referee prompt two\"",
+   "by": "iphone",
+   "sent": {
+    "command": {"text":"Referee prompt two","threadId":"<id:6>","type":"manual-send"},
+    "id": "iphone-3",
+    "op": "command",
+    "session": "<secret>",
+    "v": 1
+   },
+   "clients": {
+    "desktop": {
+     "frames": [],
+     "held": [
+      {
+       "path": ["details","<id:6>","activities",1],
+       "value": {
+        "afterMessageId": "<id:13>",
+        "id": "codex-activity-<id:14>",
+        "kind": "turn",
+        "sequence": 1,
+        "startedAt": "<time>",
+        "status": "running",
+        "timingSource": "provider",
+        "title": "Working",
+        "turnId": "<id:15>"
+       }
+      },
+      {
+       "path": ["details","<id:6>","messages",2],
+       "value": {"commandId":"<id:16>","createdAt":"<time>","id":"<id:13>","role":"user","text":"Referee prompt two"}
+      },
+      {"path":["shell","deliveredDrafts",1],"value":{"draftId":"<id:17>","threadId":"<id:6>"}},
+      {
+       "path": ["shell","deliveries",1],
+       "value": {
+        "commandId": "<id:16>",
+        "createdAt": "<time>",
+        "draftId": "<id:17>",
+        "localFeedbackMs": "<ms>",
+        "messageId": "<id:13>",
+        "providerLatencyMs": "<ms>",
+        "status": "accepted",
+        "threadId": "<id:6>",
+        "updatedAt": "<time>"
+       }
+      },
+      {"path":["shell","host","threads",0,"lastTurn","id"],"value":"<id:15>"},
+      {"path":["shell","host","threads",0,"lastTurn","status"],"value":"running"},
+      {"path":["shell","host","threads",0,"lastUserMessageId"],"value":"<id:13>"},
+      {"path":["shell","host","threads",0,"status"],"value":"running"},
+      {"path":["shell","host","threads",0,"summary","activityCount"],"value":2},
+      {"path":["shell","host","threads",0,"summary","lastUser","id"],"value":"<id:13>"},
+      {"path":["shell","host","threads",0,"summary","lastUser","text"],"value":"Referee prompt two"},
+      {"path":["shell","host","threads",0,"summary","messageCount"],"value":3},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"value":"<time>"}
+     ]
+    },
+    "iphone": {
+     "frames": [
+      {
+       "id": "iphone-3",
+       "ok": true,
+       "result": {
+        "$shellPatch": [
+         {"path":["deliveredDrafts",1],"value":{"draftId":"<id:17>","threadId":"<id:6>"}},
+         {
+          "path": ["deliveries",1],
+          "value": {
+           "commandId": "<id:16>",
+           "createdAt": "<time>",
+           "draftId": "<id:17>",
+           "localFeedbackMs": "<ms>",
+           "messageId": "<id:13>",
+           "providerLatencyMs": "<ms>",
+           "status": "accepted",
+           "threadId": "<id:6>",
+           "updatedAt": "<time>"
+          }
+         },
+         {"path":["host","threads",0,"activities"],"remove":true},
+         {"path":["host","threads",0,"lastTurn"],"remove":true},
+         {"path":["host","threads",0,"lastUserMessageId"],"remove":true},
+         {"path":["host","threads",0,"summary"],"remove":true},
+         {"path":["host","threads",0,"status"],"value":"running"}
+        ]
+       },
+       "v": 1
+      }
+     ],
+     "held": [
+      {
+       "path": ["details","<id:6>","activities",1],
+       "value": {
+        "id": "codex-activity-<id:14>",
+        "kind": "turn",
+        "sequence": 1,
+        "startedAt": "<time>",
+        "status": "running",
+        "title": "Working",
+        "turnId": "<id:15>"
+       }
+      },
+      {
+       "path": ["details","<id:6>","messages",2],
+       "value": {"commandId":"<id:16>","createdAt":"<time>","id":"<id:13>","role":"user","text":"Referee prompt two"}
+      },
+      {"path":["shell","deliveredDrafts",1],"value":{"draftId":"<id:17>","threadId":"<id:6>"}},
+      {
+       "path": ["shell","deliveries",1],
+       "value": {
+        "commandId": "<id:16>",
+        "createdAt": "<time>",
+        "draftId": "<id:17>",
+        "localFeedbackMs": "<ms>",
+        "messageId": "<id:13>",
+        "providerLatencyMs": "<ms>",
+        "status": "accepted",
+        "threadId": "<id:6>",
+        "updatedAt": "<time>"
+       }
+      },
+      {"path":["shell","host","threads",0,"lastTurn","id"],"value":"<id:15>"},
+      {"path":["shell","host","threads",0,"lastTurn","status"],"value":"running"},
+      {"path":["shell","host","threads",0,"lastUserMessageId"],"value":"<id:13>"},
+      {"path":["shell","host","threads",0,"status"],"value":"running"},
+      {"path":["shell","host","threads",0,"summary","activityCount"],"value":2},
+      {"path":["shell","host","threads",0,"summary","lastUser","id"],"value":"<id:13>"},
+      {"path":["shell","host","threads",0,"summary","lastUser","text"],"value":"Referee prompt two"},
+      {"path":["shell","host","threads",0,"summary","messageCount"],"value":3},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"value":"<time>"}
+     ]
+    },
+    "plain": {
+     "frames": [],
+     "held": [
+      {
+       "path": ["details","<id:6>","activities",1],
+       "value": {
+        "afterMessageId": "<id:13>",
+        "id": "codex-activity-<id:14>",
+        "kind": "turn",
+        "sequence": 1,
+        "startedAt": "<time>",
+        "status": "running",
+        "timingSource": "provider",
+        "title": "Working",
+        "turnId": "<id:15>"
+       }
+      },
+      {
+       "path": ["details","<id:6>","messages",2],
+       "value": {"commandId":"<id:16>","createdAt":"<time>","id":"<id:13>","role":"user","text":"Referee prompt two"}
+      },
+      {"path":["shell","deliveredDrafts",1],"value":{"draftId":"<id:17>","threadId":"<id:6>"}},
+      {
+       "path": ["shell","deliveries",1],
+       "value": {
+        "commandId": "<id:16>",
+        "createdAt": "<time>",
+        "draftId": "<id:17>",
+        "localFeedbackMs": "<ms>",
+        "messageId": "<id:13>",
+        "providerLatencyMs": "<ms>",
+        "status": "accepted",
+        "threadId": "<id:6>",
+        "updatedAt": "<time>"
+       }
+      },
+      {"path":["shell","host","threads",0,"lastTurn","id"],"value":"<id:15>"},
+      {"path":["shell","host","threads",0,"lastTurn","status"],"value":"running"},
+      {"path":["shell","host","threads",0,"lastUserMessageId"],"value":"<id:13>"},
+      {"path":["shell","host","threads",0,"status"],"value":"running"},
+      {"path":["shell","host","threads",0,"summary","activityCount"],"value":2},
+      {"path":["shell","host","threads",0,"summary","lastUser","id"],"value":"<id:13>"},
+      {"path":["shell","host","threads",0,"summary","lastUser","text"],"value":"Referee prompt two"},
+      {"path":["shell","host","threads",0,"summary","messageCount"],"value":3},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"value":"<time>"}
+     ]
+    }
+   }
+  },
+  {
+   "say": "the fake asks a question",
+   "by": "fake",
+   "sent": {"text":"Which colour?","thread":"<id:6>","type":"question"},
+   "clients": {
+    "desktop": {
+     "frames": [],
+     "held": [
+      {
+       "path": ["shell","host","threads",0,"requests",0],
+       "value": {
+        "context": {"toolCallId":"<id:18>","toolName":"item/tool/requestUserInput"},
+        "id": "rpc:<id:19>:1001",
+        "kind": "question",
+        "options": [{"id":"Blue","label":"Blue"}],
+        "questions": [
+         {
+          "allowFreeText": false,
+          "header": "Choice",
+          "id": "choice",
+          "multiSelect": false,
+          "options": [{"description":"Blue option","id":"Blue","label":"Blue"}],
+          "prose": true,
+          "question": "Which colour?",
+          "skippable": true
+         }
+        ],
+        "since": "<time>",
+        "skippable": true,
+        "text": "Which colour?"
+       }
+      }
+     ]
+    },
+    "iphone": {
+     "frames": [],
+     "held": [
+      {
+       "path": ["shell","host","threads",0,"requests",0],
+       "value": {
+        "context": {"toolCallId":"<id:18>","toolName":"item/tool/requestUserInput"},
+        "id": "rpc:<id:19>:1001",
+        "kind": "question",
+        "options": [{"id":"Blue","label":"Blue"}],
+        "questions": [
+         {
+          "allowFreeText": false,
+          "header": "Choice",
+          "id": "choice",
+          "multiSelect": false,
+          "options": [{"description":"Blue option","id":"Blue","label":"Blue"}],
+          "prose": true,
+          "question": "Which colour?",
+          "skippable": true
+         }
+        ],
+        "since": "<time>",
+        "skippable": true,
+        "text": "Which colour?"
+       }
+      }
+     ]
+    },
+    "plain": {
+     "frames": [],
+     "held": [
+      {
+       "path": ["shell","host","threads",0,"requests",0],
+       "value": {
+        "context": {"toolCallId":"<id:18>","toolName":"item/tool/requestUserInput"},
+        "id": "rpc:<id:19>:1001",
+        "kind": "question",
+        "options": [{"id":"Blue","label":"Blue"}],
+        "questions": [
+         {
+          "allowFreeText": false,
+          "header": "Choice",
+          "id": "choice",
+          "multiSelect": false,
+          "options": [{"description":"Blue option","id":"Blue","label":"Blue"}],
+          "prose": true,
+          "question": "Which colour?",
+          "skippable": true
+         }
+        ],
+        "since": "<time>",
+        "skippable": true,
+        "text": "Which colour?"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "say": "iphone answers it",
+   "by": "iphone",
+   "sent": {
+    "command": {"answer":"Blue","requestId":"rpc:<id:19>:1001","threadId":"<id:6>","type":"answer"},
+    "id": "iphone-4",
+    "op": "command",
+    "session": "<secret>",
+    "v": 1
+   },
+   "clients": {
+    "desktop": {
+     "frames": [],
+     "held": [{"path":["shell","host","threads",0,"requests",0],"remove":true},{"path":["shell","notice"],"value":"Answered Referee thread."}]
+    },
+    "iphone": {
+     "frames": [
+      {
+       "id": "iphone-4",
+       "ok": true,
+       "result": {"$shellPatch":[{"path":["host","threads",0,"requests",0],"remove":true},{"path":["notice"],"value":"Answered Referee thread."}]},
+       "v": 1
+      }
+     ],
+     "held": [{"path":["shell","host","threads",0,"requests",0],"remove":true},{"path":["shell","notice"],"value":"Answered Referee thread."}]
+    },
+    "plain": {
+     "frames": [],
+     "held": [{"path":["shell","host","threads",0,"requests",0],"remove":true},{"path":["shell","notice"],"value":"Answered Referee thread."}]
+    }
+   }
+  },
+  {
+   "say": "the fake ends the turn with \"Referee reply two\"",
+   "by": "fake",
+   "sent": {"text":"Referee reply two","thread":"<id:6>","type":"complete"},
+   "clients": {
+    "desktop": {
+     "frames": [],
+     "held": [
+      {"path":["details","<id:6>","activities",1,"completedAt"],"value":"<time>"},
+      {"path":["details","<id:6>","activities",1,"status"],"value":"completed"},
+      {"path":["details","<id:6>","activities",1,"title"],"value":"Turn completed"},
+      {"path":["details","<id:6>","messages",3],"value":{"createdAt":"<time>","id":"<id:20>","role":"assistant","text":"Referee reply two"}},
+      {"path":["shell","host","threads",0,"lastTurn","status"],"value":"completed"},
+      {"path":["shell","host","threads",0,"status"],"value":"idle"},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"remove":true},
+      {"path":["shell","host","threads",0,"summary","lastAssistant","id"],"value":"<id:20>"},
+      {"path":["shell","host","threads",0,"summary","lastAssistant","text"],"value":"Referee reply two"},
+      {"path":["shell","host","threads",0,"summary","messageCount"],"value":4}
+     ]
+    },
+    "iphone": {
+     "frames": [],
+     "held": [
+      {"path":["details","<id:6>","activities",1,"status"],"value":"completed"},
+      {"path":["details","<id:6>","activities",1,"title"],"value":"Turn completed"},
+      {"path":["details","<id:6>","messages",3],"value":{"createdAt":"<time>","id":"<id:20>","role":"assistant","text":"Referee reply two"}},
+      {"path":["shell","host","threads",0,"lastTurn","status"],"value":"completed"},
+      {"path":["shell","host","threads",0,"status"],"value":"idle"},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"remove":true},
+      {"path":["shell","host","threads",0,"summary","lastAssistant","id"],"value":"<id:20>"},
+      {"path":["shell","host","threads",0,"summary","lastAssistant","text"],"value":"Referee reply two"},
+      {"path":["shell","host","threads",0,"summary","messageCount"],"value":4}
+     ]
+    },
+    "plain": {
+     "frames": [],
+     "held": [
+      {"path":["details","<id:6>","activities",1,"completedAt"],"value":"<time>"},
+      {"path":["details","<id:6>","activities",1,"status"],"value":"completed"},
+      {"path":["details","<id:6>","activities",1,"title"],"value":"Turn completed"},
+      {"path":["details","<id:6>","messages",3],"value":{"createdAt":"<time>","id":"<id:20>","role":"assistant","text":"Referee reply two"}},
+      {"path":["shell","host","threads",0,"lastTurn","status"],"value":"completed"},
+      {"path":["shell","host","threads",0,"status"],"value":"idle"},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"remove":true},
+      {"path":["shell","host","threads",0,"summary","lastAssistant","id"],"value":"<id:20>"},
+      {"path":["shell","host","threads",0,"summary","lastAssistant","text"],"value":"Referee reply two"},
+      {"path":["shell","host","threads",0,"summary","messageCount"],"value":4}
+     ]
+    }
+   }
+  },
+  {
+   "say": "plain sends \"Referee prompt three\"",
+   "by": "plain",
+   "sent": {
+    "command": {"text":"Referee prompt three","threadId":"<id:6>","type":"manual-send"},
+    "id": "plain-3",
+    "op": "command",
+    "session": "<secret>",
+    "v": 1
+   },
+   "clients": {
+    "desktop": {
+     "frames": [],
+     "held": [
+      {
+       "path": ["details","<id:6>","activities",2],
+       "value": {
+        "afterMessageId": "<id:21>",
+        "id": "codex-activity-<id:22>",
+        "kind": "turn",
+        "sequence": 2,
+        "startedAt": "<time>",
+        "status": "running",
+        "timingSource": "provider",
+        "title": "Working",
+        "turnId": "<id:23>"
+       }
+      },
+      {
+       "path": ["details","<id:6>","messages",4],
+       "value": {"commandId":"<id:24>","createdAt":"<time>","id":"<id:21>","role":"user","text":"Referee prompt three"}
+      },
+      {"path":["shell","deliveredDrafts",2],"value":{"draftId":"<id:25>","threadId":"<id:6>"}},
+      {
+       "path": ["shell","deliveries",2],
+       "value": {
+        "commandId": "<id:24>",
+        "createdAt": "<time>",
+        "draftId": "<id:25>",
+        "localFeedbackMs": "<ms>",
+        "messageId": "<id:21>",
+        "providerLatencyMs": "<ms>",
+        "status": "accepted",
+        "threadId": "<id:6>",
+        "updatedAt": "<time>"
+       }
+      },
+      {"path":["shell","host","threads",0,"lastTurn","id"],"value":"<id:23>"},
+      {"path":["shell","host","threads",0,"lastTurn","status"],"value":"running"},
+      {"path":["shell","host","threads",0,"lastUserMessageId"],"value":"<id:21>"},
+      {"path":["shell","host","threads",0,"status"],"value":"running"},
+      {"path":["shell","host","threads",0,"summary","activityCount"],"value":3},
+      {"path":["shell","host","threads",0,"summary","lastUser","id"],"value":"<id:21>"},
+      {"path":["shell","host","threads",0,"summary","lastUser","text"],"value":"Referee prompt three"},
+      {"path":["shell","host","threads",0,"summary","messageCount"],"value":5},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"value":"<time>"},
+      {"path":["shell","notice"],"value":"Sent to Referee thread."}
+     ]
+    },
+    "iphone": {
+     "frames": [],
+     "held": [
+      {
+       "path": ["details","<id:6>","activities",2],
+       "value": {
+        "id": "codex-activity-<id:22>",
+        "kind": "turn",
+        "sequence": 2,
+        "startedAt": "<time>",
+        "status": "running",
+        "title": "Working",
+        "turnId": "<id:23>"
+       }
+      },
+      {
+       "path": ["details","<id:6>","messages",4],
+       "value": {"commandId":"<id:24>","createdAt":"<time>","id":"<id:21>","role":"user","text":"Referee prompt three"}
+      },
+      {"path":["shell","deliveredDrafts",2],"value":{"draftId":"<id:25>","threadId":"<id:6>"}},
+      {
+       "path": ["shell","deliveries",2],
+       "value": {
+        "commandId": "<id:24>",
+        "createdAt": "<time>",
+        "draftId": "<id:25>",
+        "localFeedbackMs": "<ms>",
+        "messageId": "<id:21>",
+        "providerLatencyMs": "<ms>",
+        "status": "accepted",
+        "threadId": "<id:6>",
+        "updatedAt": "<time>"
+       }
+      },
+      {"path":["shell","host","threads",0,"lastTurn","id"],"value":"<id:23>"},
+      {"path":["shell","host","threads",0,"lastTurn","status"],"value":"running"},
+      {"path":["shell","host","threads",0,"lastUserMessageId"],"value":"<id:21>"},
+      {"path":["shell","host","threads",0,"status"],"value":"running"},
+      {"path":["shell","host","threads",0,"summary","activityCount"],"value":3},
+      {"path":["shell","host","threads",0,"summary","lastUser","id"],"value":"<id:21>"},
+      {"path":["shell","host","threads",0,"summary","lastUser","text"],"value":"Referee prompt three"},
+      {"path":["shell","host","threads",0,"summary","messageCount"],"value":5},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"value":"<time>"},
+      {"path":["shell","notice"],"value":"Sent to Referee thread."}
+     ]
+    },
+    "plain": {
+     "frames": [
+      {
+       "id": "plain-3",
+       "ok": true,
+       "result": {
+        "$shellPatch": [
+         {"path":["deliveredDrafts",2],"value":{"draftId":"<id:25>","threadId":"<id:6>"}},
+         {
+          "path": ["deliveries",2],
+          "value": {
+           "commandId": "<id:24>",
+           "createdAt": "<time>",
+           "draftId": "<id:25>",
+           "localFeedbackMs": "<ms>",
+           "messageId": "<id:21>",
+           "providerLatencyMs": "<ms>",
+           "status": "accepted",
+           "threadId": "<id:6>",
+           "updatedAt": "<time>"
+          }
+         },
+         {"path":["host","threads",0,"activities"],"remove":true},
+         {"path":["host","threads",0,"lastTurn"],"remove":true},
+         {"path":["host","threads",0,"lastUserMessageId"],"remove":true},
+         {"path":["host","threads",0,"summary"],"remove":true},
+         {"path":["host","threads",0,"status"],"value":"running"},
+         {"path":["notice"],"value":"Sent to Referee thread."}
+        ]
+       },
+       "v": 1
+      }
+     ],
+     "held": [
+      {
+       "path": ["details","<id:6>","activities",2],
+       "value": {
+        "afterMessageId": "<id:21>",
+        "id": "codex-activity-<id:22>",
+        "kind": "turn",
+        "sequence": 2,
+        "startedAt": "<time>",
+        "status": "running",
+        "timingSource": "provider",
+        "title": "Working",
+        "turnId": "<id:23>"
+       }
+      },
+      {
+       "path": ["details","<id:6>","messages",4],
+       "value": {"commandId":"<id:24>","createdAt":"<time>","id":"<id:21>","role":"user","text":"Referee prompt three"}
+      },
+      {"path":["shell","deliveredDrafts",2],"value":{"draftId":"<id:25>","threadId":"<id:6>"}},
+      {
+       "path": ["shell","deliveries",2],
+       "value": {
+        "commandId": "<id:24>",
+        "createdAt": "<time>",
+        "draftId": "<id:25>",
+        "localFeedbackMs": "<ms>",
+        "messageId": "<id:21>",
+        "providerLatencyMs": "<ms>",
+        "status": "accepted",
+        "threadId": "<id:6>",
+        "updatedAt": "<time>"
+       }
+      },
+      {"path":["shell","host","threads",0,"lastTurn","id"],"value":"<id:23>"},
+      {"path":["shell","host","threads",0,"lastTurn","status"],"value":"running"},
+      {"path":["shell","host","threads",0,"lastUserMessageId"],"value":"<id:21>"},
+      {"path":["shell","host","threads",0,"status"],"value":"running"},
+      {"path":["shell","host","threads",0,"summary","activityCount"],"value":3},
+      {"path":["shell","host","threads",0,"summary","lastUser","id"],"value":"<id:21>"},
+      {"path":["shell","host","threads",0,"summary","lastUser","text"],"value":"Referee prompt three"},
+      {"path":["shell","host","threads",0,"summary","messageCount"],"value":5},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"value":"<time>"},
+      {"path":["shell","notice"],"value":"Sent to Referee thread."}
+     ]
+    }
+   }
+  },
+  {
+   "say": "the fake asks for a permission",
+   "by": "fake",
+   "sent": {"text":"Run the referee build?","thread":"<id:6>","type":"permission"},
+   "clients": {
+    "desktop": {
+     "frames": [],
+     "held": [
+      {
+       "path": ["shell","host","threads",0,"requests",0],
+       "value": {
+        "context": {
+         "command": "Run the referee build?",
+         "cwd": "<data>",
+         "details": "permissions.network.enabled: true",
+         "summary": "Fixture title",
+         "summaryAsk": "answered",
+         "toolCallId": "<id:26>",
+         "toolName": "item/commandExecution/requestApproval"
+        },
+        "id": "rpc:<id:19>:1002",
+        "kind": "permission",
+        "options": [{"id":"accept","label":"Allow"},{"id":"decline","label":"Deny"}],
+        "permissionChoices": [{"id":"accept","kind":"allow-once","label":"Allow once"},{"id":"decline","kind":"deny","label":"Deny"}],
+        "since": "<time>",
+        "text": "Run the referee build?"
+       }
+      }
+     ]
+    },
+    "iphone": {
+     "frames": [],
+     "held": [
+      {
+       "path": ["shell","host","threads",0,"requests",0],
+       "value": {
+        "context": {
+         "command": "Run the referee build?",
+         "cwd": "<data>",
+         "details": "permissions.network.enabled: true",
+         "summary": "Fixture title",
+         "summaryAsk": "answered",
+         "toolCallId": "<id:26>",
+         "toolName": "item/commandExecution/requestApproval"
+        },
+        "id": "rpc:<id:19>:1002",
+        "kind": "permission",
+        "options": [{"id":"accept","label":"Allow"},{"id":"decline","label":"Deny"}],
+        "permissionChoices": [{"id":"accept","kind":"allow-once","label":"Allow once"},{"id":"decline","kind":"deny","label":"Deny"}],
+        "since": "<time>",
+        "text": "Run the referee build?"
+       }
+      }
+     ]
+    },
+    "plain": {
+     "frames": [],
+     "held": [
+      {
+       "path": ["shell","host","threads",0,"requests",0],
+       "value": {
+        "context": {
+         "command": "Run the referee build?",
+         "cwd": "<data>",
+         "details": "permissions.network.enabled: true",
+         "summary": "Fixture title",
+         "summaryAsk": "answered",
+         "toolCallId": "<id:26>",
+         "toolName": "item/commandExecution/requestApproval"
+        },
+        "id": "rpc:<id:19>:1002",
+        "kind": "permission",
+        "options": [{"id":"accept","label":"Allow"},{"id":"decline","label":"Deny"}],
+        "permissionChoices": [{"id":"accept","kind":"allow-once","label":"Allow once"},{"id":"decline","kind":"deny","label":"Deny"}],
+        "since": "<time>",
+        "text": "Run the referee build?"
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "say": "plain allows it",
+   "by": "plain",
+   "sent": {
+    "command": {"answer":"","approved":true,"requestId":"rpc:<id:19>:1002","threadId":"<id:6>","type":"answer"},
+    "id": "plain-4",
+    "op": "command",
+    "session": "<secret>",
+    "v": 1
+   },
+   "clients": {
+    "desktop": {
+     "frames": [],
+     "held": [{"path":["shell","host","threads",0,"requests",0],"remove":true},{"path":["shell","notice"],"value":"Answered Referee thread."}]
+    },
+    "iphone": {
+     "frames": [],
+     "held": [{"path":["shell","host","threads",0,"requests",0],"remove":true},{"path":["shell","notice"],"value":"Answered Referee thread."}]
+    },
+    "plain": {
+     "frames": [
+      {
+       "id": "plain-4",
+       "ok": true,
+       "result": {"$shellPatch":[{"path":["host","threads",0,"requests",0],"remove":true},{"path":["notice"],"value":"Answered Referee thread."}]},
+       "v": 1
+      }
+     ],
+     "held": [{"path":["shell","host","threads",0,"requests",0],"remove":true},{"path":["shell","notice"],"value":"Answered Referee thread."}]
+    }
+   }
+  },
+  {
+   "say": "the fake ends the turn with \"Referee reply three\"",
+   "by": "fake",
+   "sent": {"text":"Referee reply three","thread":"<id:6>","type":"complete"},
+   "clients": {
+    "desktop": {
+     "frames": [],
+     "held": [
+      {"path":["details","<id:6>","activities",2,"completedAt"],"value":"<time>"},
+      {"path":["details","<id:6>","activities",2,"status"],"value":"completed"},
+      {"path":["details","<id:6>","activities",2,"title"],"value":"Turn completed"},
+      {
+       "path": ["details","<id:6>","messages",5],
+       "value": {"createdAt":"<time>","id":"<id:27>","role":"assistant","text":"Referee reply three"}
+      },
+      {"path":["shell","host","threads",0,"lastTurn","status"],"value":"completed"},
+      {"path":["shell","host","threads",0,"status"],"value":"idle"},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"remove":true},
+      {"path":["shell","host","threads",0,"summary","lastAssistant","id"],"value":"<id:27>"},
+      {"path":["shell","host","threads",0,"summary","lastAssistant","text"],"value":"Referee reply three"},
+      {"path":["shell","host","threads",0,"summary","messageCount"],"value":6}
+     ]
+    },
+    "iphone": {
+     "frames": [],
+     "held": [
+      {"path":["details","<id:6>","activities",2,"status"],"value":"completed"},
+      {"path":["details","<id:6>","activities",2,"title"],"value":"Turn completed"},
+      {
+       "path": ["details","<id:6>","messages",5],
+       "value": {"createdAt":"<time>","id":"<id:27>","role":"assistant","text":"Referee reply three"}
+      },
+      {"path":["shell","host","threads",0,"lastTurn","status"],"value":"completed"},
+      {"path":["shell","host","threads",0,"status"],"value":"idle"},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"remove":true},
+      {"path":["shell","host","threads",0,"summary","lastAssistant","id"],"value":"<id:27>"},
+      {"path":["shell","host","threads",0,"summary","lastAssistant","text"],"value":"Referee reply three"},
+      {"path":["shell","host","threads",0,"summary","messageCount"],"value":6}
+     ]
+    },
+    "plain": {
+     "frames": [],
+     "held": [
+      {"path":["details","<id:6>","activities",2,"completedAt"],"value":"<time>"},
+      {"path":["details","<id:6>","activities",2,"status"],"value":"completed"},
+      {"path":["details","<id:6>","activities",2,"title"],"value":"Turn completed"},
+      {
+       "path": ["details","<id:6>","messages",5],
+       "value": {"createdAt":"<time>","id":"<id:27>","role":"assistant","text":"Referee reply three"}
+      },
+      {"path":["shell","host","threads",0,"lastTurn","status"],"value":"completed"},
+      {"path":["shell","host","threads",0,"status"],"value":"idle"},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"remove":true},
+      {"path":["shell","host","threads",0,"summary","lastAssistant","id"],"value":"<id:27>"},
+      {"path":["shell","host","threads",0,"summary","lastAssistant","text"],"value":"Referee reply three"},
+      {"path":["shell","host","threads",0,"summary","messageCount"],"value":6}
+     ]
+    }
+   }
+  },
+  {
+   "say": "desktop sends \"Referee prompt four\"",
+   "by": "desktop",
+   "sent": {
+    "command": {"text":"Referee prompt four","threadId":"<id:6>","type":"manual-send"},
+    "id": "desktop-8",
+    "op": "command",
+    "session": "<secret>",
+    "v": 1
+   },
+   "clients": {
+    "desktop": {
+     "frames": [
+      {
+       "id": "desktop-8",
+       "ok": true,
+       "result": {
+        "$shellPatch": [
+         {"path":["deliveredDrafts",3],"value":{"draftId":"<id:28>","threadId":"<id:6>"}},
+         {
+          "path": ["deliveries",3],
+          "value": {
+           "commandId": "<id:29>",
+           "createdAt": "<time>",
+           "draftId": "<id:28>",
+           "localFeedbackMs": "<ms>",
+           "messageId": "<id:30>",
+           "providerLatencyMs": "<ms>",
+           "status": "accepted",
+           "threadId": "<id:6>",
+           "updatedAt": "<time>"
+          }
+         },
+         {"path":["host","threads",0,"activities"],"remove":true},
+         {"path":["host","threads",0,"lastTurn"],"remove":true},
+         {"path":["host","threads",0,"lastUserMessageId"],"remove":true},
+         {"path":["host","threads",0,"summary"],"remove":true},
+         {"path":["host","threads",0,"status"],"value":"running"},
+         {"path":["notice"],"value":"Sent to Referee thread."}
+        ]
+       },
+       "v": 1
+      }
+     ],
+     "held": [
+      {
+       "path": ["details","<id:6>","activities",3],
+       "value": {
+        "afterMessageId": "<id:30>",
+        "id": "codex-activity-<id:31>",
+        "kind": "turn",
+        "sequence": 3,
+        "startedAt": "<time>",
+        "status": "running",
+        "timingSource": "provider",
+        "title": "Working",
+        "turnId": "<id:32>"
+       }
+      },
+      {
+       "path": ["details","<id:6>","messages",6],
+       "value": {"commandId":"<id:29>","createdAt":"<time>","id":"<id:30>","role":"user","text":"Referee prompt four"}
+      },
+      {"path":["shell","deliveredDrafts",3],"value":{"draftId":"<id:28>","threadId":"<id:6>"}},
+      {
+       "path": ["shell","deliveries",3],
+       "value": {
+        "commandId": "<id:29>",
+        "createdAt": "<time>",
+        "draftId": "<id:28>",
+        "localFeedbackMs": "<ms>",
+        "messageId": "<id:30>",
+        "providerLatencyMs": "<ms>",
+        "status": "accepted",
+        "threadId": "<id:6>",
+        "updatedAt": "<time>"
+       }
+      },
+      {"path":["shell","host","threads",0,"lastTurn","id"],"value":"<id:32>"},
+      {"path":["shell","host","threads",0,"lastTurn","status"],"value":"running"},
+      {"path":["shell","host","threads",0,"lastUserMessageId"],"value":"<id:30>"},
+      {"path":["shell","host","threads",0,"status"],"value":"running"},
+      {"path":["shell","host","threads",0,"summary","activityCount"],"value":4},
+      {"path":["shell","host","threads",0,"summary","lastUser","id"],"value":"<id:30>"},
+      {"path":["shell","host","threads",0,"summary","lastUser","text"],"value":"Referee prompt four"},
+      {"path":["shell","host","threads",0,"summary","messageCount"],"value":7},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"value":"<time>"},
+      {"path":["shell","notice"],"value":"Sent to Referee thread."}
+     ]
+    },
+    "iphone": {
+     "frames": [],
+     "held": [
+      {
+       "path": ["details","<id:6>","activities",3],
+       "value": {
+        "id": "codex-activity-<id:31>",
+        "kind": "turn",
+        "sequence": 3,
+        "startedAt": "<time>",
+        "status": "running",
+        "title": "Working",
+        "turnId": "<id:32>"
+       }
+      },
+      {
+       "path": ["details","<id:6>","messages",6],
+       "value": {"commandId":"<id:29>","createdAt":"<time>","id":"<id:30>","role":"user","text":"Referee prompt four"}
+      },
+      {"path":["shell","deliveredDrafts",3],"value":{"draftId":"<id:28>","threadId":"<id:6>"}},
+      {
+       "path": ["shell","deliveries",3],
+       "value": {
+        "commandId": "<id:29>",
+        "createdAt": "<time>",
+        "draftId": "<id:28>",
+        "localFeedbackMs": "<ms>",
+        "messageId": "<id:30>",
+        "providerLatencyMs": "<ms>",
+        "status": "accepted",
+        "threadId": "<id:6>",
+        "updatedAt": "<time>"
+       }
+      },
+      {"path":["shell","host","threads",0,"lastTurn","id"],"value":"<id:32>"},
+      {"path":["shell","host","threads",0,"lastTurn","status"],"value":"running"},
+      {"path":["shell","host","threads",0,"lastUserMessageId"],"value":"<id:30>"},
+      {"path":["shell","host","threads",0,"status"],"value":"running"},
+      {"path":["shell","host","threads",0,"summary","activityCount"],"value":4},
+      {"path":["shell","host","threads",0,"summary","lastUser","id"],"value":"<id:30>"},
+      {"path":["shell","host","threads",0,"summary","lastUser","text"],"value":"Referee prompt four"},
+      {"path":["shell","host","threads",0,"summary","messageCount"],"value":7},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"value":"<time>"},
+      {"path":["shell","notice"],"value":"Sent to Referee thread."}
+     ]
+    },
+    "plain": {
+     "frames": [],
+     "held": [
+      {
+       "path": ["details","<id:6>","activities",3],
+       "value": {
+        "afterMessageId": "<id:30>",
+        "id": "codex-activity-<id:31>",
+        "kind": "turn",
+        "sequence": 3,
+        "startedAt": "<time>",
+        "status": "running",
+        "timingSource": "provider",
+        "title": "Working",
+        "turnId": "<id:32>"
+       }
+      },
+      {
+       "path": ["details","<id:6>","messages",6],
+       "value": {"commandId":"<id:29>","createdAt":"<time>","id":"<id:30>","role":"user","text":"Referee prompt four"}
+      },
+      {"path":["shell","deliveredDrafts",3],"value":{"draftId":"<id:28>","threadId":"<id:6>"}},
+      {
+       "path": ["shell","deliveries",3],
+       "value": {
+        "commandId": "<id:29>",
+        "createdAt": "<time>",
+        "draftId": "<id:28>",
+        "localFeedbackMs": "<ms>",
+        "messageId": "<id:30>",
+        "providerLatencyMs": "<ms>",
+        "status": "accepted",
+        "threadId": "<id:6>",
+        "updatedAt": "<time>"
+       }
+      },
+      {"path":["shell","host","threads",0,"lastTurn","id"],"value":"<id:32>"},
+      {"path":["shell","host","threads",0,"lastTurn","status"],"value":"running"},
+      {"path":["shell","host","threads",0,"lastUserMessageId"],"value":"<id:30>"},
+      {"path":["shell","host","threads",0,"status"],"value":"running"},
+      {"path":["shell","host","threads",0,"summary","activityCount"],"value":4},
+      {"path":["shell","host","threads",0,"summary","lastUser","id"],"value":"<id:30>"},
+      {"path":["shell","host","threads",0,"summary","lastUser","text"],"value":"Referee prompt four"},
+      {"path":["shell","host","threads",0,"summary","messageCount"],"value":7},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"value":"<time>"},
+      {"path":["shell","notice"],"value":"Sent to Referee thread."}
+     ]
+    }
+   }
+  },
+  {
+   "say": "desktop stops the turn",
+   "by": "desktop",
+   "sent": {"command":{"threadId":"<id:6>","type":"interrupt"},"id":"desktop-9","op":"command","session":"<secret>","v":1},
+   "clients": {
+    "desktop": {
+     "frames": [
+      {
+       "id": "desktop-9",
+       "ok": true,
+       "result": {
+        "$shellPatch": [
+         {"path":["host","threads",0,"lastTurn","status"],"value":"interrupted"},
+         {"path":["host","threads",0,"status"],"value":"idle"},
+         {"path":["host","threads",0,"summary","runningTurnStartedAt"],"remove":true}
+        ]
+       },
+       "v": 1
+      }
+     ],
+     "held": [
+      {"path":["details","<id:6>","activities",3,"completedAt"],"value":"<time>"},
+      {"path":["details","<id:6>","activities",3,"status"],"value":"interrupted"},
+      {"path":["details","<id:6>","activities",3,"title"],"value":"Turn interrupted"},
+      {"path":["shell","host","threads",0,"lastTurn","status"],"value":"interrupted"},
+      {"path":["shell","host","threads",0,"status"],"value":"idle"},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"remove":true}
+     ]
+    },
+    "iphone": {
+     "frames": [],
+     "held": [
+      {"path":["details","<id:6>","activities",3,"status"],"value":"interrupted"},
+      {"path":["details","<id:6>","activities",3,"title"],"value":"Turn interrupted"},
+      {"path":["shell","host","threads",0,"lastTurn","status"],"value":"interrupted"},
+      {"path":["shell","host","threads",0,"status"],"value":"idle"},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"remove":true}
+     ]
+    },
+    "plain": {
+     "frames": [],
+     "held": [
+      {"path":["details","<id:6>","activities",3,"completedAt"],"value":"<time>"},
+      {"path":["details","<id:6>","activities",3,"status"],"value":"interrupted"},
+      {"path":["details","<id:6>","activities",3,"title"],"value":"Turn interrupted"},
+      {"path":["shell","host","threads",0,"lastTurn","status"],"value":"interrupted"},
+      {"path":["shell","host","threads",0,"status"],"value":"idle"},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"remove":true}
+     ]
+    }
+   }
+  },
+  {
+   "say": "desktop reads the thread",
+   "by": "desktop",
+   "sent": {"id":"desktop-10","op":"detail","session":"<secret>","threadId":"<id:6>","v":1},
+   "clients": {
+    "desktop": {
+     "frames": [
+      {
+       "id": "desktop-10",
+       "ok": true,
+       "result": {
+        "activities": [
+         {
+          "afterMessageId": "<id:9>",
+          "completedAt": "<time>",
+          "id": "codex-activity-<id:10>",
+          "kind": "turn",
+          "sequence": 0,
+          "startedAt": "<time>",
+          "status": "completed",
+          "timingSource": "provider",
+          "title": "Turn completed",
+          "turnId": "<id:11>"
+         },
+         {
+          "afterMessageId": "<id:13>",
+          "completedAt": "<time>",
+          "id": "codex-activity-<id:14>",
+          "kind": "turn",
+          "sequence": 1,
+          "startedAt": "<time>",
+          "status": "completed",
+          "timingSource": "provider",
+          "title": "Turn completed",
+          "turnId": "<id:15>"
+         },
+         {
+          "afterMessageId": "<id:21>",
+          "completedAt": "<time>",
+          "id": "codex-activity-<id:22>",
+          "kind": "turn",
+          "sequence": 2,
+          "startedAt": "<time>",
+          "status": "completed",
+          "timingSource": "provider",
+          "title": "Turn completed",
+          "turnId": "<id:23>"
+         },
+         {
+          "afterMessageId": "<id:30>",
+          "completedAt": "<time>",
+          "id": "codex-activity-<id:31>",
+          "kind": "turn",
+          "sequence": 3,
+          "startedAt": "<time>",
+          "status": "interrupted",
+          "timingSource": "provider",
+          "title": "Turn interrupted",
+          "turnId": "<id:32>"
+         }
+        ],
+        "messages": [
+         {"commandId":"<id:8>","createdAt":"<time>","id":"<id:9>","role":"user","text":"Referee prompt one"},
+         {"createdAt":"<time>","id":"<id:12>","role":"assistant","text":"Referee reply one"},
+         {"commandId":"<id:16>","createdAt":"<time>","id":"<id:13>","role":"user","text":"Referee prompt two"},
+         {"createdAt":"<time>","id":"<id:20>","role":"assistant","text":"Referee reply two"},
+         {"commandId":"<id:24>","createdAt":"<time>","id":"<id:21>","role":"user","text":"Referee prompt three"},
+         {"createdAt":"<time>","id":"<id:27>","role":"assistant","text":"Referee reply three"},
+         {"commandId":"<id:29>","createdAt":"<time>","id":"<id:30>","role":"user","text":"Referee prompt four"}
+        ],
+        "revision": "<revision>",
+        "threadId": "<id:6>"
+       },
+       "v": 1
+      }
+     ],
+     "held": []
+    },
+    "iphone": {"frames":[],"held":[]},
+    "plain": {"frames":[],"held":[]}
+   }
+  },
+  {
+   "say": "iphone reads the thread",
+   "by": "iphone",
+   "sent": {"id":"iphone-5","op":"detail","session":"<secret>","threadId":"<id:6>","v":1},
+   "clients": {
+    "desktop": {"frames":[],"held":[]},
+    "iphone": {
+     "frames": [
+      {
+       "id": "iphone-5",
+       "ok": true,
+       "result": {
+        "activities": [
+         {
+          "id": "codex-activity-<id:10>",
+          "kind": "turn",
+          "sequence": 0,
+          "startedAt": "<time>",
+          "status": "completed",
+          "title": "Turn completed",
+          "turnId": "<id:11>"
+         },
+         {
+          "id": "codex-activity-<id:14>",
+          "kind": "turn",
+          "sequence": 1,
+          "startedAt": "<time>",
+          "status": "completed",
+          "title": "Turn completed",
+          "turnId": "<id:15>"
+         },
+         {
+          "id": "codex-activity-<id:22>",
+          "kind": "turn",
+          "sequence": 2,
+          "startedAt": "<time>",
+          "status": "completed",
+          "title": "Turn completed",
+          "turnId": "<id:23>"
+         },
+         {
+          "id": "codex-activity-<id:31>",
+          "kind": "turn",
+          "sequence": 3,
+          "startedAt": "<time>",
+          "status": "interrupted",
+          "title": "Turn interrupted",
+          "turnId": "<id:32>"
+         }
+        ],
+        "messages": [
+         {"commandId":"<id:8>","createdAt":"<time>","id":"<id:9>","role":"user","text":"Referee prompt one"},
+         {"createdAt":"<time>","id":"<id:12>","role":"assistant","text":"Referee reply one"},
+         {"commandId":"<id:16>","createdAt":"<time>","id":"<id:13>","role":"user","text":"Referee prompt two"},
+         {"createdAt":"<time>","id":"<id:20>","role":"assistant","text":"Referee reply two"},
+         {"commandId":"<id:24>","createdAt":"<time>","id":"<id:21>","role":"user","text":"Referee prompt three"},
+         {"createdAt":"<time>","id":"<id:27>","role":"assistant","text":"Referee reply three"},
+         {"commandId":"<id:29>","createdAt":"<time>","id":"<id:30>","role":"user","text":"Referee prompt four"}
+        ],
+        "revision": "<revision>",
+        "threadId": "<id:6>"
+       },
+       "v": 1
+      }
+     ],
+     "held": []
+    },
+    "plain": {"frames":[],"held":[]}
+   }
+  },
+  {
+   "say": "plain reads the events",
+   "by": "plain",
+   "sent": {"afterSeq":0,"id":"plain-5","op":"events","session":"<secret>","threadId":"<id:6>","v":1},
+   "clients": {
+    "desktop": {"frames":[],"held":[]},
+    "iphone": {"frames":[],"held":[]},
+    "plain": {
+     "frames": [
+      {
+       "id": "plain-5",
+       "ok": true,
+       "result": {
+        "events": [
+         {
+          "event": {
+           "at": "<time>",
+           "kind": "message-added",
+           "message": {"commandId":"<id:8>","createdAt":"<time>","id":"<id:9>","role":"user","text":"Referee prompt one"}
+          },
+          "seq": 1,
+          "threadId": "<id:6>"
+         },
+         {
+          "event": {
+           "at": "<time>",
+           "kind": "message-added",
+           "message": {"createdAt":"<time>","id":"<id:12>","role":"assistant","text":"Referee reply one"}
+          },
+          "seq": 2,
+          "threadId": "<id:6>"
+         },
+         {
+          "event": {
+           "at": "<time>",
+           "kind": "message-added",
+           "message": {"commandId":"<id:16>","createdAt":"<time>","id":"<id:13>","role":"user","text":"Referee prompt two"}
+          },
+          "seq": 3,
+          "threadId": "<id:6>"
+         },
+         {
+          "event": {
+           "at": "<time>",
+           "attribution": {"clientId":"<id:3>","transport":"socket","user":"Referee iphone"},
+           "kind": "answer-given",
+           "requestId": "rpc:<id:19>:1001"
+          },
+          "seq": 4,
+          "threadId": "<id:6>"
+         },
+         {
+          "event": {
+           "at": "<time>",
+           "kind": "message-added",
+           "message": {"createdAt":"<time>","id":"<id:20>","role":"assistant","text":"Referee reply two"}
+          },
+          "seq": 5,
+          "threadId": "<id:6>"
+         },
+         {
+          "event": {
+           "at": "<time>",
+           "kind": "message-added",
+           "message": {"commandId":"<id:24>","createdAt":"<time>","id":"<id:21>","role":"user","text":"Referee prompt three"}
+          },
+          "seq": 6,
+          "threadId": "<id:6>"
+         },
+         {
+          "event": {
+           "approved": true,
+           "at": "<time>",
+           "attribution": {"clientId":"<id:4>","transport":"socket","user":"Referee plain"},
+           "kind": "answer-given",
+           "requestId": "rpc:<id:19>:1002"
+          },
+          "seq": 7,
+          "threadId": "<id:6>"
+         },
+         {
+          "event": {
+           "at": "<time>",
+           "kind": "message-added",
+           "message": {"createdAt":"<time>","id":"<id:27>","role":"assistant","text":"Referee reply three"}
+          },
+          "seq": 8,
+          "threadId": "<id:6>"
+         },
+         {
+          "event": {
+           "at": "<time>",
+           "kind": "message-added",
+           "message": {"commandId":"<id:29>","createdAt":"<time>","id":"<id:30>","role":"user","text":"Referee prompt four"}
+          },
+          "seq": 9,
+          "threadId": "<id:6>"
+         }
+        ],
+        "hasMore": false,
+        "latestSeq": 9
+       },
+       "v": 1
+      }
+     ],
+     "held": []
+    }
+   }
+  },
+  {
+   "say": "plain reads the shell",
+   "by": "plain",
+   "sent": {"id":"plain-6","op":"shell","session":"<secret>","v":1},
+   "clients": {
+    "desktop": {"frames":[],"held":[]},
+    "iphone": {"frames":[],"held":[]},
+    "plain": {"frames":[{"id":"plain-6","ok":true,"result":{"$shellPatch":[]},"v":1}],"held":[]}
+   }
+  },
+  {
+   "say": "desktop sends an operation the host does not have",
+   "by": "desktop",
+   "sent": {"id":"desktop-11","op":"referee-no-such-operation","session":"<secret>","v":1},
+   "clients": {
+    "desktop": {
+     "frames": [
+      {
+       "error": {"code":"invalid_request","message":"This request is not supported. Update this client and try again."},
+       "id": "desktop-11",
+       "ok": false,
+       "v": 1
+      }
+     ],
+     "held": []
+    },
+    "iphone": {"frames":[],"held":[]},
+    "plain": {"frames":[],"held":[]}
+   }
+  },
+  {
+   "say": "iphone sends a command field the allow-list lacks",
+   "by": "iphone",
+   "sent": {"command":{"refereeField":true,"threadId":"<id:6>","type":"interrupt"},"id":"iphone-6","op":"command","session":"<secret>","v":1},
+   "clients": {
+    "desktop": {"frames":[],"held":[]},
+    "iphone": {
+     "frames": [
+      {
+       "error": {"code":"invalid_request","message":"This request is not supported. Update this client and try again."},
+       "id": "iphone-6",
+       "ok": false,
+       "v": 1
+      }
+     ],
+     "held": []
+    },
+    "plain": {"frames":[],"held":[]}
+   }
+  }
+ ]
+}

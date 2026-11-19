@@ -424,6 +424,10 @@ jobs:
         run: npm ci
       - name: Shared socket contract and native host lifecycle
         run: npm run test:socket
+      # The TypeScript host replayed against its own recorded frames (tests/referee/), and three hosts changed on purpose
+      # that it must fail: the referee a host in another language is held to (docs/plans/2026-11-14-rust-native-port.md).
+      - name: Referee harness
+        run: npm run test:referee
       - name: Package and verify the extracted host archive
         run: npm run package:host
       # The runner image may not carry sshd. The test runs its own on a loopback port as the runner

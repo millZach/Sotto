@@ -64,6 +64,9 @@ const active = new Map()
 const pending = new Map()
 const handled = new Set()
 let serial = 0
+// Unique to this process, as the process ID was, and random on every run, so a recording of what a host shows names it as
+// an ID rather than a number that differs between runs (tests/referee/normalise.ts).
+const processToken = randomUUID()
 const nativePath = id => `native-${id}.json`
 const ownerPath = id => `owner-${id}.json`
 function owner(id) {
@@ -278,7 +281,7 @@ const control = setInterval(() => {
   // A call to one of the session's MCP tools, asked about as the asking profiles' `mcp__*` rule makes Devin ask. Which field
   // carries the tool's name has not been seen on a real turn: `nameIn` puts it in the meta, the title or neither.
   if (command.type === 'mcp-permission') {
-   const id = `${process.pid}-${++serial}`
+   const id = `${processToken}-${++serial}`
    pending.set(id, { kind: 'permission', sessionId })
    update(sessionId, { sessionUpdate: 'tool_call', toolCallId: id, kind: 'other', title: command.nameIn === 'title' ? command.tool : 'MCP tool', rawInput: command.input,
     _meta: { ...(command.nameIn === 'meta' ? { 'cognition.ai/toolName': command.tool } : {}), ...(command.truncated ? { 'cognition.ai/toolInputTruncated': true } : {}) } })
@@ -287,7 +290,7 @@ const control = setInterval(() => {
     { optionId: 'deny-once', name: 'Deny', kind: 'reject_once' }] } })
   }
   if (command.type === 'permission' || command.type === 'question') {
-   const id = `${process.pid}-${++serial}`
+   const id = `${processToken}-${++serial}`
    pending.set(id, { kind: command.type, sessionId })
    if (command.type === 'permission') {
     update(sessionId, { sessionUpdate: 'tool_call', toolCallId: id, kind: 'execute', title: command.text, rawInput: { command: command.text } })
