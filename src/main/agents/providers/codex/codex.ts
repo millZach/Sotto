@@ -43,6 +43,7 @@ import { answerRequest, declineRequest, pendingRequest, type CodexPendingRequest
 import { needsPerson, unreadableRequest } from '../../nativeRequests'
 import { effortAfterChange, speedAfterChange, speedRuns, validatePromptAttachments, validateThreadOptions } from '../../threadOptions'
 import { CodexActivityProjection, codexItemSchema } from './codexActivity'
+import { computerUseHelperServers } from './codexComputerUseHelper'
 import { ProviderUnavailable } from '../../providerProblem'
 import { SessionReaper, busyHolds, type HeldSession } from '../../sessionReaper'
 import type { RunMark } from '../../detachedRunScan'
@@ -353,6 +354,8 @@ export class CodexAppServerHost implements ProviderHost {
     if (generation !== this.generation) throw new Error('Codex connection changed.')
     const configuration = await threadConfig(profile ? undefined : this.browserTools, id, effort,
       profile ? watcherThreadTools(this.threadTools) : this.threadTools, Boolean(profile))
+    if (!profile) await this.addComputerUseHelper(configuration.config)
+    if (generation !== this.generation) throw new Error('Codex connection changed.')
     if (profile) {
       configuration.config.mcp_servers = { ...(configuration.config.mcp_servers as Record<string, unknown> | undefined),
         [profile.server.name]: { url: profile.server.url, enabled: true,
@@ -361,6 +364,16 @@ export class CodexAppServerHost implements ProviderHost {
           tools: Object.fromEntries(profile.toolNames.map(name => [name, { approval_mode: 'approve' }])) } }
     }
     return configuration
+  }
+  /**
+   * Computer Use starts Codex's own helper rather than needing the Codex app open (`codexComputerUseHelper.ts`). This
+   * adds to a thread's config and never holds back a start: a config Sotto cannot read leaves Codex's own transport.
+   */
+  private async addComputerUseHelper(config: Record<string, unknown>): Promise<void> {
+    let effective: unknown
+    try { await this.rpc('config/read', { includeLayers: false }, value => { effective = value }) } catch { return }
+    const servers = await computerUseHelperServers(this.codexHome(), effective)
+    if (Object.keys(servers).length) config.mcp_servers = { ...(config.mcp_servers as Record<string, unknown> | undefined), ...servers }
   }
   /** `providerError` is false for an earlier Watcher conversation, whose refusal says nothing about Codex itself. */
   private stopUnverifiedProfile(id: string, reason: string, providerError = true): void {
