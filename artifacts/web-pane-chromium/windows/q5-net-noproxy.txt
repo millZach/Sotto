@@ -1,0 +1,10 @@
+NetLog span: 155 s
+Requests (first seen s after start, count):
+      0.0s  x2   POST http://127.0.0.1:9/
+    150.0s  x1   GET http://127.0.0.1:8765/idle.html
+    150.1s  x1   GET http://127.0.0.1:8765/favicon.ico
+Host lookups: {'http://127.0.0.1:9': 1, 'http://127.0.0.1:8765': 1}
+System proxy config CEF read: {"new_config": {}}
+Proxy auto-detection events: {'PROXY_CONFIG_CHANGED': 2}
+Sockets held by the tree at any 2 s poll (Get-NetTCPConnection, Get-NetUDPEndpoint):
+  (none)

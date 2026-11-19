@@ -1,0 +1,363 @@
+{
+  "callbacks": [
+    {
+      "callback": "on_cursor_change",
+      "detail": "CT_HAND",
+      "ms": 887
+    },
+    {
+      "callback": "on_cursor_change",
+      "detail": "CT_IBEAM",
+      "ms": 1188
+    },
+    {
+      "callback": "on_cursor_change",
+      "detail": "CT_POINTER",
+      "ms": 1488
+    },
+    {
+      "callback": "on_popup_show",
+      "detail": 1,
+      "ms": 1495
+    },
+    {
+      "callback": "on_popup_size",
+      "detail": [
+        20,
+        40,
+        200,
+        82
+      ],
+      "ms": 1495
+    },
+    {
+      "callback": "on_paint PET_POPUP",
+      "detail": {
+        "h": 123,
+        "w": 300
+      },
+      "ms": 1524
+    },
+    {
+      "callback": "on_popup_show",
+      "detail": 0,
+      "ms": 2244
+    },
+    {
+      "callback": "on_cursor_change",
+      "detail": "CT_IBEAM",
+      "ms": 2745
+    },
+    {
+      "callback": "on_ime_composition_range_changed",
+      "detail": {
+        "first_character_bounds": [
+          [
+            23,
+            87,
+            15,
+            18
+          ],
+          [
+            38,
+            87,
+            16,
+            18
+          ],
+          [
+            54,
+            87,
+            16,
+            18
+          ]
+        ],
+        "range": [
+          0,
+          3
+        ]
+      },
+      "ms": 3073
+    },
+    {
+      "callback": "on_cursor_change",
+      "detail": "CT_POINTER",
+      "ms": 3648
+    },
+    {
+      "callback": "start_dragging",
+      "detail": {
+        "fragment_text": "from the page",
+        "ops": -1,
+        "x": 406,
+        "y": 339
+      },
+      "ms": 3651
+    },
+    {
+      "callback": "on_file_dialog",
+      "detail": {
+        "filters": [],
+        "mode": "FILE_DIALOG_OPEN",
+        "title": null
+      },
+      "ms": 5100
+    },
+    {
+      "callback": "run_context_menu",
+      "detail": {
+        "at": [
+          500,
+          450
+        ],
+        "items": 5
+      },
+      "ms": 5901
+    }
+  ],
+  "hub": {
+    "accelerated_paints": 0,
+    "first_paint_ms": 467.3428,
+    "loads": [
+      {
+        "status": 200,
+        "t": 383.49870000000004,
+        "url": "http://127.0.0.1:8765/osr.html"
+      }
+    ],
+    "notes": [
+      "context initialized at 0 ms",
+      "browser created at 21 ms",
+      "browser closed at 8706 ms"
+    ],
+    "paints": 16,
+    "refused": []
+  },
+  "initialize_ms": 0.315,
+  "rows": [
+    {
+      "check": "Device scale factor: page's devicePixelRatio and the painted buffer follow screen_info",
+      "detail": {
+        "devicePixelRatio": 1.5,
+        "expected": [
+          1200,
+          900
+        ],
+        "paint": [
+          1200,
+          900
+        ]
+      },
+      "pass": true
+    },
+    {
+      "check": "Cursors: on_cursor_change gives a hand over the link and an I-beam over the field",
+      "detail": [
+        "CT_HAND",
+        "CT_IBEAM"
+      ],
+      "pass": true
+    },
+    {
+      "check": "<select>: CEF reports the pop-up (on_popup_show, on_popup_size) and paints it as PET_POPUP",
+      "detail": {
+        "popup_paints": 1,
+        "show": [
+          {
+            "callback": "on_popup_show",
+            "detail": 1,
+            "ms": 1495
+          }
+        ],
+        "size": [
+          {
+            "callback": "on_popup_size",
+            "detail": [
+              20,
+              40,
+              200,
+              82
+            ],
+            "ms": 1495
+          }
+        ]
+      },
+      "pass": true
+    },
+    {
+      "check": "<select>: Down then Enter, sent to the browser while the pop-up shows, chooses Banana",
+      "detail": {
+        "popup_events": [
+          {
+            "callback": "on_popup_show",
+            "detail": 1,
+            "ms": 1495
+          },
+          {
+            "callback": "on_popup_show",
+            "detail": 0,
+            "ms": 2244
+          }
+        ],
+        "value": "Banana"
+      },
+      "pass": true
+    },
+    {
+      "check": "IME: ime_set_composition gives compositionstart/update with the text, ime_commit_text gives compositionend and the value",
+      "detail": {
+        "events": [
+          {
+            "data": "",
+            "type": "compositionstart"
+          },
+          {
+            "data": "にほん",
+            "type": "compositionupdate"
+          },
+          {
+            "composing": true,
+            "type": "input",
+            "value": "にほん"
+          },
+          {
+            "data": "日本",
+            "type": "compositionupdate"
+          },
+          {
+            "composing": true,
+            "type": "input",
+            "value": "日本"
+          },
+          {
+            "data": "日本",
+            "type": "compositionend"
+          }
+        ],
+        "value": "日本",
+        "while_composing": "にほん"
+      },
+      "pass": true
+    },
+    {
+      "check": "IME: CEF reports where the composition is (on_ime_composition_range_changed), so the pane can place the candidate window",
+      "detail": [
+        {
+          "callback": "on_ime_composition_range_changed",
+          "detail": {
+            "first_character_bounds": [
+              [
+                23,
+                87,
+                15,
+                18
+              ],
+              [
+                38,
+                87,
+                16,
+                18
+              ],
+              [
+                54,
+                87,
+                16,
+                18
+              ]
+            ],
+            "range": [
+              0,
+              3
+            ]
+          },
+          "ms": 3073
+        }
+      ],
+      "pass": true
+    },
+    {
+      "check": "Drag from the page: CEF calls start_dragging with the page's data; the pane must run the OS drag itself",
+      "detail": {
+        "page": [
+          {
+            "type": "dragstart"
+          }
+        ],
+        "start_dragging": [
+          {
+            "callback": "start_dragging",
+            "detail": {
+              "fragment_text": "from the page",
+              "ops": -1,
+              "x": 406,
+              "y": 339
+            },
+            "ms": 3651
+          }
+        ]
+      },
+      "pass": true
+    },
+    {
+      "check": "Drop into the page: drag_target_* calls deliver a drop event with the text",
+      "detail": [
+        {
+          "files": 0,
+          "text": "dropped from outside",
+          "type": "drop"
+        }
+      ],
+      "pass": true
+    },
+    {
+      "check": "File picker: on_file_dialog is called and the file the handler returns reaches the page",
+      "detail": {
+        "on_file_dialog": [
+          {
+            "callback": "on_file_dialog",
+            "detail": {
+              "filters": [],
+              "mode": "FILE_DIALOG_OPEN",
+              "title": null
+            },
+            "ms": 5100
+          }
+        ],
+        "page": [
+          {
+            "names": [
+              "icudtl.dat"
+            ],
+            "type": "file change"
+          }
+        ]
+      },
+      "pass": true
+    },
+    {
+      "check": "Context menu: run_context_menu is called with a menu model",
+      "detail": [
+        {
+          "callback": "run_context_menu",
+          "detail": {
+            "at": [
+              500,
+              450
+            ],
+            "items": 5
+          },
+          "ms": 5901
+        }
+      ],
+      "pass": true
+    },
+    {
+      "check": "Accessibility: on_accessibility_tree_change delivers the tree (the button's name is in it) and its updates",
+      "detail": {
+        "bytes": 12930,
+        "location_events": 0,
+        "tree_events": 2
+      },
+      "pass": true
+    }
+  ]
+}

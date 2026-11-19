@@ -1,0 +1,41 @@
+{
+  "adapter": "Intel(R) Graphics (Dx12, IntegratedGpu)",
+  "cycles": [],
+  "errors": [],
+  "events": [
+    "162 browser create asked=1 created=true",
+    "184 resized 1898x1061",
+    "204 resized 1920x1200",
+    "221 resized 1920x1200"
+  ],
+  "first_frame_ms": 407.2832,
+  "formats": [
+    "software BGRA 1280x800"
+  ],
+  "fps": 59.30043424308773,
+  "frames": 1780,
+  "import_us": {
+    "max": 12591,
+    "n": 1780,
+    "p50": 1993,
+    "p95": 2764
+  },
+  "page_console": [],
+  "page_scale": 1.0,
+  "path": "software",
+  "present_us": {
+    "n": 1781,
+    "p50": 637,
+    "p95": 1073
+  },
+  "seconds": 30.0166436,
+  "view": [
+    1280,
+    800
+  ],
+  "window": [
+    1920,
+    1200,
+    1.5
+  ]
+}

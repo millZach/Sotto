@@ -1,0 +1,5 @@
+shot ok=True 1942x1256 -> D:\sotto-webpane-work\runs\childx\parent.png
+400DA0 CefBrowserWindow pid=90200 1530x1086
+350DB4 Chrome_WidgetWin_1 pid=90200 1530x1086
+D31098 Chrome_RenderWidgetHostHWND pid=90200 1530x1086
+

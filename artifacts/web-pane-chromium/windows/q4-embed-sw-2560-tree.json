@@ -1,0 +1,62 @@
+{
+    "processes":  6,
+    "private_ws_mb":  533.1,
+    "commit_mb":  661.2,
+    "cpu_percent_of_one_core":  163,
+    "rows":  [
+                 {
+                     "pid":  102220,
+                     "type":  "\"D:\\sotto-webpane-work\\dist\\webpane.exe\"",
+                     "private_ws_mb":  313.3,
+                     "ws_mb":  420.5,
+                     "commit_mb":  364.7,
+                     "cpu_ms":  7578,
+                     "gpu_driver":  "igd12umd64.dll"
+                 },
+                 {
+                     "pid":  100824,
+                     "type":  "gpu-process",
+                     "private_ws_mb":  182.3,
+                     "ws_mb":  307.4,
+                     "commit_mb":  233.5,
+                     "cpu_ms":  7906,
+                     "gpu_driver":  "igd10iumd64.dll"
+                 },
+                 {
+                     "pid":  100860,
+                     "type":  "utility",
+                     "private_ws_mb":  6.7,
+                     "ws_mb":  34.1,
+                     "commit_mb":  13.5,
+                     "cpu_ms":  0,
+                     "gpu_driver":  ""
+                 },
+                 {
+                     "pid":  22812,
+                     "type":  "utility",
+                     "private_ws_mb":  3.1,
+                     "ws_mb":  19.9,
+                     "commit_mb":  7.5,
+                     "cpu_ms":  0,
+                     "gpu_driver":  ""
+                 },
+                 {
+                     "pid":  78400,
+                     "type":  "renderer",
+                     "private_ws_mb":  7.8,
+                     "ws_mb":  33.5,
+                     "commit_mb":  14.4,
+                     "cpu_ms":  0,
+                     "gpu_driver":  ""
+                 },
+                 {
+                     "pid":  88200,
+                     "type":  "renderer",
+                     "private_ws_mb":  19.9,
+                     "ws_mb":  63.8,
+                     "commit_mb":  27.6,
+                     "cpu_ms":  812,
+                     "gpu_driver":  ""
+                 }
+             ]
+}

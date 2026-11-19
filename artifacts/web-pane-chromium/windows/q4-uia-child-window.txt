@@ -1,0 +1,13 @@
+Window 'Sotto web pane spike (child window)' [Window Class]
+  Pane '' [CefBrowserWindow]
+    Pane '' [Chrome_WidgetWin_1]
+      Pane '' [RootView]
+        Pane '' [CefNativeContentsView]
+          Document 'CDP test page' []
+            Text 'Page automation test' []
+            Group 'Main' []
+              Hyperlink 'Link one' []
+            Button 'Press me' []
+            Edit 'Type here' []
+            Text 'Deep heading' []
+elements=12 has_press_me=True

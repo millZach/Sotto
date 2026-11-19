@@ -1,0 +1,19 @@
+Extensions other programs registered for Google Chrome in the Windows registry, as CEF's default profile took them.
+IDs and product names left out: they say what is installed on this laptop.
+
+extension 1: location 6 (6 = EXTERNAL_REGISTRY), disable_reasons [8192] (8192 = DISABLE_EXTERNAL_EXTENSION, not yet approved),
+  from_webstore True, update_url https://clients2.google.com/service/update2/crx, manifest v3
+  content scripts on 56 URL patterns, every http and https site among them: True, host permissions ['<all_urls>']
+  permissions include: ['tabs', 'downloads', 'nativeMessaging', 'webRequest', 'scripting', 'cookies', 'declarativeNetRequest']
+extension 2: location 6 (6 = EXTERNAL_REGISTRY), disable_reasons [8192] (8192 = DISABLE_EXTERNAL_EXTENSION, not yet approved),
+  from_webstore True, update_url https://clients2.google.com/service/update2/crx, manifest v3
+  content scripts on 2 URL patterns, every http and https site among them: True, host permissions ['<all_urls>']
+  permissions include: ['declarativeNetRequest', 'downloads', 'nativeMessaging', 'scripting', 'tabs', 'webRequest']
+
+run cdp: 3 folders (the 2 extensions and CEF's Temp) in the profile
+run net-hardened: 0 extension folder(s) in the profile
+run seal-all-hardened: 0 extension folder(s) in the profile
+run seal-none: 2 extension folder(s) in the profile
+
+seal-none's NetLog (CEF defaults) shows the fetch: chromewebstore.googleapis.com (2 requests) and the CRX download from clients2.googleusercontent.com (2); seal-all-hardened and net-hardened show neither.
+Every default run's log: 2 lines 'external_registry_loader_win.cc: Missing value path for key Software\Google\Chrome\Extensions\<id>' (entries with an update URL and no local file).

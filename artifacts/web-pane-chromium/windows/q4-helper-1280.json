@@ -1,0 +1,93 @@
+{
+  "adapter": "Intel(R) Graphics (Dx12, IntegratedGpu)",
+  "cycles": [
+    {
+      "child_window": false,
+      "cycle": 0,
+      "duplicate_handle_us": {
+        "p50": 3,
+        "p95": 6
+      },
+      "exit": "exit code: 0",
+      "first_frame_in_window_ms": 772.4891,
+      "frames": 1503,
+      "helper_commit_mb": 278,
+      "helper_private_ws_mb": 219,
+      "helper_processes": 6,
+      "killed": false,
+      "pipes_connected_ms": 12.7961,
+      "processes_left_2s_after_stop": [],
+      "stop_ms": 416.32730000000004,
+      "window_private_ws_mb_after_stop": 281,
+      "window_private_ws_mb_before_first": 278,
+      "window_private_ws_mb_while_showing": 281
+    }
+  ],
+  "errors": [],
+  "events": [
+    "140 resized 1898x1061",
+    "152 resized 1920x1200",
+    "165 resized 1920x1200",
+    "6793 pointer entered the page at 320,77",
+    "7128 page took focus",
+    "7128 click Pressed forwarded at page 80,21",
+    "7193 click Released forwarded at page 80,21",
+    "7742 key Character(\"h\") Pressed forwarded",
+    "7762 key Character(\"h\") Released forwarded",
+    "7792 key Character(\"e\") Pressed forwarded",
+    "7826 key Character(\"e\") Released forwarded",
+    "7859 key Character(\"l\") Pressed forwarded",
+    "7892 key Character(\"l\") Released forwarded",
+    "7928 key Character(\"l\") Pressed forwarded",
+    "7959 key Character(\"l\") Released forwarded",
+    "7992 key Character(\"o\") Pressed forwarded",
+    "8026 key Character(\"o\") Released forwarded",
+    "8059 key Named(Space) Pressed forwarded",
+    "8093 key Named(Space) Released forwarded",
+    "8111 key Character(\"p\") Pressed forwarded",
+    "8142 key Character(\"p\") Released forwarded",
+    "8176 key Character(\"a\") Pressed forwarded",
+    "8209 key Character(\"a\") Released forwarded",
+    "8242 key Character(\"n\") Pressed forwarded",
+    "8276 key Character(\"n\") Released forwarded",
+    "8293 key Character(\"e\") Pressed forwarded",
+    "8326 key Character(\"e\") Released forwarded",
+    "10676 pointer left the page at 120,301",
+    "10892 native UI took focus",
+    "11392 key Character(\"z\") kept by native UI",
+    "11426 key Character(\"z\") kept by native UI",
+    "11459 key Character(\"z\") kept by native UI",
+    "11481 key Character(\"z\") kept by native UI",
+    "35950 pointer entered the page at 579,767"
+  ],
+  "first_frame_ms": null,
+  "formats": [
+    "remote accelerated 1280x800 (NT handle duplicated across processes)"
+  ],
+  "fps": 37.59975174763908,
+  "frames": 1504,
+  "import_us": {
+    "max": 16231,
+    "n": 1504,
+    "p50": 2226,
+    "p95": 5616
+  },
+  "page_console": [],
+  "page_scale": 1.0,
+  "path": "accelerated",
+  "present_us": {
+    "n": 1507,
+    "p50": 543,
+    "p95": 1137
+  },
+  "seconds": 40.0002641,
+  "view": [
+    1280,
+    800
+  ],
+  "window": [
+    1920,
+    1200,
+    1.5
+  ]
+}

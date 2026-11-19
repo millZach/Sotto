@@ -1,0 +1,60 @@
+{
+  "adapter": "Intel(R) Graphics (Dx12, IntegratedGpu)",
+  "cycles": [
+    {
+      "child_window": true,
+      "cycle": 0,
+      "duplicate_handle_us": {
+        "p50": 0,
+        "p95": 0
+      },
+      "exit": "exit code: 0",
+      "first_frame_in_window_ms": 1322.3039999999999,
+      "frames": 0,
+      "helper_commit_mb": 198,
+      "helper_private_ws_mb": 143,
+      "helper_processes": 6,
+      "killed": false,
+      "pipes_connected_ms": 54.3186,
+      "processes_left_2s_after_stop": [],
+      "stop_ms": 628.8534,
+      "window_private_ws_mb_after_stop": 278,
+      "window_private_ws_mb_before_first": 278,
+      "window_private_ws_mb_while_showing": 278
+    }
+  ],
+  "errors": [],
+  "events": [
+    "277 resized 1898x1061",
+    "314 resized 1920x1200",
+    "361 resized 1920x1200"
+  ],
+  "first_frame_ms": null,
+  "formats": [],
+  "fps": 0.0,
+  "frames": 0,
+  "import_us": {
+    "max": 0,
+    "n": 0,
+    "p50": 0,
+    "p95": 0
+  },
+  "page_console": [],
+  "page_scale": 1.5,
+  "path": "accelerated",
+  "present_us": {
+    "n": 5,
+    "p50": 1308,
+    "p95": 5570
+  },
+  "seconds": 30.0055807,
+  "view": [
+    1020,
+    724
+  ],
+  "window": [
+    1920,
+    1200,
+    1.5
+  ]
+}

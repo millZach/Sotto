@@ -1,0 +1,48 @@
+{
+  "adapter": "NVIDIA GeForce RTX 5070 Laptop GPU (Dx12, DiscreteGpu)",
+  "cycles": [],
+  "errors": [
+    "Platform-specific error: Failed to open Windows shared texture on D3D12: The parameter is incorrect. (0x80070057)",
+    "Platform-specific error: Failed to open Windows shared texture on D3D12: The parameter is incorrect. (0x80070057)",
+    "Platform-specific error: Failed to open Windows shared texture on D3D12: The parameter is incorrect. (0x80070057)",
+    "Platform-specific error: Failed to open Windows shared texture on D3D12: The parameter is incorrect. (0x80070057)",
+    "Platform-specific error: Failed to open Windows shared texture on D3D12: The parameter is incorrect. (0x80070057)"
+  ],
+  "events": [
+    "395 browser create asked=1 created=true",
+    "434 resized 1898x1061",
+    "474 resized 1920x1200",
+    "503 resized 1920x1200"
+  ],
+  "first_frame_ms": null,
+  "formats": [],
+  "fps": 0.0,
+  "frames": 0,
+  "import_us": {
+    "max": 0,
+    "n": 0,
+    "p50": 0,
+    "p95": 0
+  },
+  "page_console": [
+    "EVT window focus",
+    "EVT window focus"
+  ],
+  "page_scale": 1.0,
+  "path": "accelerated",
+  "present_us": {
+    "n": 2,
+    "p50": 10630,
+    "p95": 10630
+  },
+  "seconds": 26.0004378,
+  "view": [
+    1280,
+    800
+  ],
+  "window": [
+    1920,
+    1200,
+    1.5
+  ]
+}

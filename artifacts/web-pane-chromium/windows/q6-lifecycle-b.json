@@ -1,0 +1,44 @@
+[
+    {
+        "run":  0,
+        "first_files":  true,
+        "first_paint_wall_ms":  1520,
+        "pane_line":  "FIRST_PAINT 368.1",
+        "processes_showing":  6,
+        "private_ws_mb_showing":  190.5,
+        "commit_mb_showing":  245.2,
+        "processes_no_browser":  5,
+        "private_ws_mb_no_browser":  169,
+        "stop_ms":  601,
+        "exit":  0,
+        "left":  0
+    },
+    {
+        "run":  1,
+        "first_files":  false,
+        "first_paint_wall_ms":  852,
+        "pane_line":  "FIRST_PAINT 434.3",
+        "processes_showing":  6,
+        "private_ws_mb_showing":  191.2,
+        "commit_mb_showing":  244.5,
+        "processes_no_browser":  5,
+        "private_ws_mb_no_browser":  165.5,
+        "stop_ms":  440,
+        "exit":  0,
+        "left":  0
+    },
+    {
+        "run":  2,
+        "first_files":  false,
+        "first_paint_wall_ms":  751,
+        "pane_line":  "FIRST_PAINT 418.8",
+        "processes_showing":  6,
+        "private_ws_mb_showing":  190.1,
+        "commit_mb_showing":  249.7,
+        "processes_no_browser":  5,
+        "private_ws_mb_no_browser":  166,
+        "stop_ms":  679,
+        "exit":  0,
+        "left":  0
+    }
+]

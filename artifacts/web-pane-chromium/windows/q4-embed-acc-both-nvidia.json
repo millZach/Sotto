@@ -1,0 +1,44 @@
+{
+  "adapter": "NVIDIA GeForce RTX 5070 Laptop GPU (Dx12, DiscreteGpu)",
+  "cycles": [],
+  "errors": [],
+  "events": [
+    "317 browser create asked=1 created=true",
+    "367 resized 1898x1061",
+    "407 resized 1920x1200",
+    "447 resized 1920x1200"
+  ],
+  "first_frame_ms": 602.763,
+  "formats": [
+    "accelerated ColorType(CEF_COLOR_TYPE_BGRA_8888) 1280x800 nt-handle=0x1628"
+  ],
+  "fps": 58.7942664108256,
+  "frames": 1529,
+  "import_us": {
+    "max": 13169,
+    "n": 1529,
+    "p50": 2795,
+    "p95": 4203
+  },
+  "page_console": [
+    "EVT window focus",
+    "EVT window focus"
+  ],
+  "page_scale": 1.0,
+  "path": "accelerated",
+  "present_us": {
+    "n": 1529,
+    "p50": 835,
+    "p95": 2048
+  },
+  "seconds": 26.0059372,
+  "view": [
+    1280,
+    800
+  ],
+  "window": [
+    1920,
+    1200,
+    1.5
+  ]
+}

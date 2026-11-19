@@ -1,0 +1,9 @@
+layers: {'csp': False, 'deny': False, 'filter': False, 'no_rtc': False, 'proxy': False, 'webrtc_policy': False}
+refused by layer: {'dialog': 1, 'scheme': 1, 'external-protocol': 1}
+second load of the address: {'status': 0, 'url': 'sotto-visual://page/18e966f7149ae394'}
+page verdicts: 67 lines
+canary-loopback: 20 hits {('tcp', 8766): 2, ('udp', 8767): 18}
+canary-forge: 24 hits {('tcp', 8766): 2, ('udp', 8767): 20, ('http', '/canary/download'): 1, ('http', '/favicon.ico'): 1}
+NetLog: requests the page started to non-loopback hosts (before any layer stopped them): {'http://clients2.google.com:': 1, 'https://clients2.google.com:': 1, 'https://update.googleapis.com:': 5, 'https://www.google.com:': 2, 'http://100.106.126.4:8765': 26, 'http://edgedl.me.gvt1.com:': 1, 'https://clients2.googleusercontent.com:': 2, 'ws://100.106.126.4:8766': 1, 'https://chromewebstore.googleapis.com:': 2, 'http://wpspike-fetch.example.com:': 1}
+NetLog: host lookups outside loopback: {'wpad:80': 14, 'http://clients2.google.com': 2, 'https://update.googleapis.com': 5, 'https://clients2.google.com': 2, 'https://www.google.com': 5, 'http://100.106.126.4:8765': 1, 'http://edgedl.me.gvt1.com': 2, 'https://clients2.googleusercontent.com': 4, 'https://chromewebstore.googleapis.com': 4, 'http://wpspike-fetch.example.com': 2}
+NetLog: SOCKS connects to the dead proxy: 0

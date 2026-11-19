@@ -1,0 +1,2 @@
+Window 'Sotto web pane spike' [Window Class]
+elements=1 has_press_me=False

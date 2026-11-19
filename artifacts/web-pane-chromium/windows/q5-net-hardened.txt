@@ -1,0 +1,10 @@
+NetLog span: 605 s
+Requests (first seen s after start, count):
+      0.0s  x2   POST http://127.0.0.1:9/
+    600.1s  x1   GET http://127.0.0.1:8765/idle.html
+    600.3s  x1   GET http://127.0.0.1:8765/favicon.ico
+Host lookups: {'wpad:80': 12, 'http://127.0.0.1:9': 1, 'http://127.0.0.1:8765': 1}
+System proxy config CEF read: {"new_config": {"auto_detect": true, "from_system": true}}
+Proxy auto-detection events: {'PROXY_CONFIG_CHANGED': 2, 'PAC_FILE_DECIDER': 12, 'PAC_FILE_DECIDER_FETCH_PAC_SCRIPT': 12, 'WPAD_DHCP_WIN_FETCH': 12, 'WPAD_DHCP_WIN_GET_ADAPTERS': 12, 'WPAD_DHCP_WIN_ON_FETCHER_DONE': 6, 'PAC_FILE_DECIDER_FALLING_BACK_TO_NEXT_PAC_SOURCE': 6}
+Sockets held by the tree at any 2 s poll (Get-NetTCPConnection, Get-NetUDPEndpoint):
+  (none)

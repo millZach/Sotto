@@ -1,0 +1,41 @@
+{
+  "adapter": "Intel(R) Graphics (Dx12, IntegratedGpu)",
+  "cycles": [],
+  "errors": [],
+  "events": [
+    "181 browser create asked=1 created=true",
+    "225 resized 1898x1061",
+    "273 resized 1920x1200",
+    "305 resized 1920x1200"
+  ],
+  "first_frame_ms": 575.7161,
+  "formats": [
+    "accelerated ColorType(CEF_COLOR_TYPE_BGRA_8888) 1280x800 nt-handle=0x12f8"
+  ],
+  "fps": 58.944937990658296,
+  "frames": 1769,
+  "import_us": {
+    "max": 16557,
+    "n": 1769,
+    "p50": 1534,
+    "p95": 2196
+  },
+  "page_console": [],
+  "page_scale": 1.0,
+  "path": "accelerated",
+  "present_us": {
+    "n": 1770,
+    "p50": 480,
+    "p95": 850
+  },
+  "seconds": 30.0110588,
+  "view": [
+    1280,
+    800
+  ],
+  "window": [
+    1920,
+    1200,
+    1.5
+  ]
+}

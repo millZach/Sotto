@@ -1,0 +1,9 @@
+layers: {'csp': True, 'deny': True, 'filter': True, 'no_rtc': False, 'proxy': False, 'webrtc_policy': False}
+refused by layer: {'navigation': 5}
+second load of the address: None
+page verdicts: 68 lines
+canary-loopback: 26 hits {('udp', 8767): 25, ('tcp', 8766): 1}
+canary-forge: 25 hits {('udp', 8767): 24, ('tcp', 8766): 1}
+NetLog: requests the page started to non-loopback hosts (before any layer stopped them): {'http://clients2.google.com:': 1, 'https://clients2.google.com:': 1, 'https://update.googleapis.com:': 2, 'https://www.google.com:': 2, 'https://clients2.googleusercontent.com:': 2, 'http://edgedl.me.gvt1.com:': 1, 'https://chromewebstore.googleapis.com:': 2}
+NetLog: host lookups outside loopback: {'wpad:80': 12, 'https://clients2.google.com': 2, 'https://www.google.com': 5, 'http://clients2.google.com': 2, 'https://update.googleapis.com': 4, 'https://clients2.googleusercontent.com': 4, 'http://edgedl.me.gvt1.com': 2, 'https://chromewebstore.googleapis.com': 4}
+NetLog: SOCKS connects to the dead proxy: 0

@@ -1,0 +1,5 @@
+{
+  "initialize_ms": 0.094,
+  "result": "{\"types\":{\"mse_h264\":false,\"mse_aac\":false,\"mse_vp9\":true},\"mediaCapabilities_h264\":false,\"clips\":[{\"src\":\"http://127.0.0.1:8770/h264-aac.mp4\",\"result\":\"error\",\"code\":4,\"message\":\"\"},{\"src\":\"http://127.0.0.1:8770/vp9-opus.webm\",\"result\":\"playing\",\"time\":0.562377,\"width\":320}]}",
+  "url": "http://127.0.0.1:8765/media.html?media=http://127.0.0.1:8770"
+}

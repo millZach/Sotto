@@ -1,0 +1,146 @@
+{
+  "adapter": "Intel(R) Graphics (Dx12, IntegratedGpu)",
+  "cycles": [
+    {
+      "child_window": false,
+      "cycle": 0,
+      "duplicate_handle_us": {
+        "p50": 3,
+        "p95": 7
+      },
+      "exit": "exit code: 0",
+      "first_frame_in_window_ms": 796.0752,
+      "frames": 184,
+      "helper_commit_mb": 221,
+      "helper_private_ws_mb": 160,
+      "helper_processes": 7,
+      "killed": false,
+      "pipes_connected_ms": 16.7921,
+      "processes_left_2s_after_stop": [],
+      "stop_ms": 990.5761,
+      "window_private_ws_mb_after_stop": 280,
+      "window_private_ws_mb_before_first": 278,
+      "window_private_ws_mb_while_showing": 282
+    },
+    {
+      "child_window": false,
+      "cycle": 1,
+      "duplicate_handle_us": {
+        "p50": 4,
+        "p95": 7
+      },
+      "exit": "exit code: 0",
+      "first_frame_in_window_ms": 776.9506,
+      "frames": 184,
+      "helper_commit_mb": 223,
+      "helper_private_ws_mb": 163,
+      "helper_processes": 7,
+      "killed": false,
+      "pipes_connected_ms": 16.9916,
+      "processes_left_2s_after_stop": [],
+      "stop_ms": 677.0638,
+      "window_private_ws_mb_after_stop": 280,
+      "window_private_ws_mb_before_first": 278,
+      "window_private_ws_mb_while_showing": 280
+    },
+    {
+      "child_window": false,
+      "cycle": 2,
+      "duplicate_handle_us": {
+        "p50": 3,
+        "p95": 6
+      },
+      "exit": "exit code: 0",
+      "first_frame_in_window_ms": 811.7072,
+      "frames": 183,
+      "helper_commit_mb": 221,
+      "helper_private_ws_mb": 163,
+      "helper_processes": 7,
+      "killed": false,
+      "pipes_connected_ms": 16.023200000000003,
+      "processes_left_2s_after_stop": [],
+      "stop_ms": 768.0228999999999,
+      "window_private_ws_mb_after_stop": 280,
+      "window_private_ws_mb_before_first": 278,
+      "window_private_ws_mb_while_showing": 280
+    },
+    {
+      "child_window": false,
+      "cycle": 3,
+      "duplicate_handle_us": {
+        "p50": 5,
+        "p95": 8
+      },
+      "exit": "exit code: 0",
+      "first_frame_in_window_ms": 833.8033,
+      "frames": 184,
+      "helper_commit_mb": 221,
+      "helper_private_ws_mb": 162,
+      "helper_processes": 7,
+      "killed": false,
+      "pipes_connected_ms": 16.4935,
+      "processes_left_2s_after_stop": [],
+      "stop_ms": 706.5543,
+      "window_private_ws_mb_after_stop": 280,
+      "window_private_ws_mb_before_first": 278,
+      "window_private_ws_mb_while_showing": 280
+    },
+    {
+      "child_window": false,
+      "cycle": 4,
+      "duplicate_handle_us": {
+        "p50": 5,
+        "p95": 7
+      },
+      "exit": "exit code: 0",
+      "first_frame_in_window_ms": 823.63,
+      "frames": 183,
+      "helper_commit_mb": 224,
+      "helper_private_ws_mb": 165,
+      "helper_processes": 7,
+      "killed": false,
+      "pipes_connected_ms": 37.8221,
+      "processes_left_2s_after_stop": [],
+      "stop_ms": 678.1532,
+      "window_private_ws_mb_after_stop": 280,
+      "window_private_ws_mb_before_first": 278,
+      "window_private_ws_mb_while_showing": 280
+    }
+  ],
+  "errors": [],
+  "events": [
+    "164 resized 1898x1061",
+    "176 resized 1920x1200",
+    "190 resized 1920x1200"
+  ],
+  "first_frame_ms": null,
+  "formats": [
+    "remote accelerated 1280x800 (NT handle duplicated across processes)"
+  ],
+  "fps": 20.42205394449772,
+  "frames": 919,
+  "import_us": {
+    "max": 6539,
+    "n": 919,
+    "p50": 1532,
+    "p95": 2536
+  },
+  "page_console": [],
+  "page_scale": 1.0,
+  "path": "accelerated",
+  "present_us": {
+    "n": 926,
+    "p50": 523,
+    "p95": 968
+  },
+  "seconds": 45.0003708,
+  "view": [
+    1280,
+    800
+  ],
+  "window": [
+    1920,
+    1200,
+    1.5
+  ]
+}

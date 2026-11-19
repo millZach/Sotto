@@ -1,0 +1,235 @@
+{
+  "hub": {
+    "accelerated_paints": 0,
+    "first_paint_ms": 377.43870000000004,
+    "loads": [
+      {
+        "status": 200,
+        "t": 358.3865,
+        "url": "http://127.0.0.1:8765/idle.html"
+      },
+      {
+        "status": 200,
+        "t": 392.168,
+        "url": "http://127.0.0.1:8765/iphone.html"
+      }
+    ],
+    "notes": [
+      "context initialized at 0 ms",
+      "browser created at 22 ms",
+      "browser closed at 5298 ms"
+    ],
+    "paints": 54,
+    "refused": []
+  },
+  "initialize_ms": 0.0572,
+  "rows": [
+    {
+      "method": "Emulation.setUserAgentOverride",
+      "ms": 1.1,
+      "ok": true,
+      "result": {}
+    },
+    {
+      "method": "Network.enable",
+      "ms": 1.0,
+      "ok": true,
+      "result": {}
+    },
+    {
+      "method": "Runtime.enable",
+      "ms": 0.7,
+      "ok": true,
+      "result": {}
+    },
+    {
+      "method": "Emulation.setTouchEmulationEnabled",
+      "ms": 0.2,
+      "ok": true,
+      "result": {}
+    },
+    {
+      "method": "Emulation.setEmitTouchEventsForMouse",
+      "ms": 0.2,
+      "ok": true,
+      "result": {}
+    },
+    {
+      "method": "Emulation.setScrollbarsHidden",
+      "ms": 0.2,
+      "ok": true,
+      "result": {}
+    },
+    {
+      "check": "Lays out at 393x852",
+      "detail": {
+        "coarse": true,
+        "dpr": 1,
+        "hover": false,
+        "innerHeight": 852,
+        "innerWidth": 393,
+        "maxTouchPoints": 5,
+        "ontouchstart": true,
+        "platform": "iPhone",
+        "screenH": 852,
+        "screenW": 393,
+        "ua": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
+        "uaDataMobile": false
+      },
+      "pass": true
+    },
+    {
+      "check": "navigator.userAgent is iOS Safari's",
+      "detail": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1",
+      "pass": true
+    },
+    {
+      "check": "A touch screen: maxTouchPoints 5, ontouchstart, pointer coarse",
+      "detail": {
+        "coarse": true,
+        "hover": false,
+        "maxTouchPoints": 5,
+        "ontouchstart": true
+      },
+      "pass": true
+    },
+    {
+      "method": "Input.dispatchTouchEvent",
+      "ms": 13.2,
+      "ok": true,
+      "result": {}
+    },
+    {
+      "method": "Input.dispatchTouchEvent",
+      "ms": 11.0,
+      "ok": true,
+      "result": {}
+    },
+    {
+      "check": "Tap at (110,200) reaches the pad at (110,200) as a trusted touch",
+      "detail": {
+        "target": "pad",
+        "trusted": true,
+        "type": "touchstart",
+        "x": 110,
+        "y": 200
+      },
+      "pass": true
+    },
+    {
+      "check": "Tap also gives the page a click (tap gesture)",
+      "detail": [
+        "pointerdown",
+        "touchstart",
+        "touchend",
+        "mousedown",
+        "click"
+      ],
+      "pass": true
+    },
+    {
+      "method": "Input.dispatchTouchEvent",
+      "ms": 0.8,
+      "ok": true,
+      "result": {}
+    },
+    {
+      "method": "Input.dispatchTouchEvent",
+      "ms": 33.9,
+      "ok": true,
+      "result": {}
+    },
+    {
+      "check": "Swipe up scrolls the page",
+      "detail": 888,
+      "pass": true
+    },
+    {
+      "check": "A pointer click through CEF's mouse input arrives as touch (emitTouchEventsForMouse) (informational)",
+      "detail": [
+        "pointerdown@110,200",
+        "mousedown@110,200",
+        "click@110,200"
+      ],
+      "pass": false
+    },
+    {
+      "check": "The pane's pointer sent as CEF touch input arrives as a trusted touch on the pad",
+      "detail": [
+        "pointerdown@110,200",
+        "touchstart@110,200",
+        "touchend@null,null",
+        "mousedown@110,200",
+        "click@110,200"
+      ],
+      "pass": true
+    },
+    {
+      "check": "At page zoom 0.75 in a 295x639 view, layout is still 393 wide",
+      "detail": {
+        "dpr": 0.75,
+        "innerHeight": 852,
+        "innerWidth": 393
+      },
+      "pass": true
+    },
+    {
+      "check": "Zoomed: CDP touch at (110,200) lands at (110,200) on the pad",
+      "detail": {
+        "target": "pad",
+        "trusted": true,
+        "type": "touchstart",
+        "x": 110,
+        "y": 200
+      },
+      "pass": true
+    },
+    {
+      "check": "Zoomed: a 393x852 screenshot is still 393x852",
+      "detail": [
+        393,
+        852
+      ],
+      "pass": true
+    },
+    {
+      "check": "Zoomed: the pane's touch at view (82,150) lands at CSS (~110,~200) on the pad",
+      "detail": [
+        {
+          "target": "pad",
+          "trusted": true,
+          "type": "pointerdown",
+          "x": 109.33333587646484,
+          "y": 200
+        },
+        {
+          "target": "pad",
+          "trusted": true,
+          "type": "touchstart",
+          "x": 109.33333587646484,
+          "y": 200
+        },
+        {
+          "target": "pad",
+          "trusted": true,
+          "type": "touchend"
+        },
+        {
+          "target": "pad",
+          "trusted": true,
+          "type": "mousedown",
+          "x": 109,
+          "y": 200
+        },
+        {
+          "target": "pad",
+          "trusted": true,
+          "type": "click",
+          "x": 109,
+          "y": 200
+        }
+      ],
+      "pass": true
+    }
+  ]
+}
