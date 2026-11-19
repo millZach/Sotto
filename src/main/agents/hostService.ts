@@ -1,4 +1,5 @@
 import type { AgentThreadPrompts } from '../../shared/threadPrompts'
+import type { AgentThreadWords } from '../../shared/threadWords'
 import { startHandoverPrefix } from '../../shared/threadStarts'
 import type { AgentActivity } from '../../shared/agentActivity'
 import { userInfo } from 'node:os'
@@ -293,6 +294,11 @@ export interface HostService {
    * Null when the host cannot read its store, or keeps none.
    */
   threadPrompts?(threadId: string, beforeMessageId: string): Promise<AgentThreadPrompts | null>
+  /**
+   * The threads whose messages hold `query`, from this host's thread store, for Search threads: each with a quote of its
+   * newest match. Null when the host cannot read its store, or keeps none.
+   */
+  threadWords?(query: string): Promise<AgentThreadWords | null>
   /** Everything in the log after this sequence number, for a client catching up after a reconnection. */
   events(afterSeq: number, threadId?: string, limit?: number): StoredThreadEvent[]
   subscribe(listener: (state: AgentState) => void): () => void
@@ -526,7 +532,9 @@ export class LocalHostService implements HostService {
     /** Continuing agents and forking at a reply (#1028), present only when the host's Owl answer turns them on. */
     threadStarts?: { startHandover(threadId: string): { readonly text: string } | undefined }
     /** The prompts the thread store holds above a pane's window, for the message scrubber (ADR-0109). */
-    prompts?: { threadPrompts(threadId: string, beforeMessageId: string): AgentThreadPrompts | null | Promise<AgentThreadPrompts | null> }
+    prompts?: { threadPrompts(threadId: string, beforeMessageId: string): AgentThreadPrompts | null | Promise<AgentThreadPrompts | null>
+      /** The threads whose messages hold a search's words, for Search threads. */
+      threadWords?(query: string): AgentThreadWords | null | Promise<AgentThreadWords | null> }
     /** The iPhone's pull request sheet (#1281), true only when the host's Owl answer turns it on. */
     pullRequestView?: boolean
     /** Deleting settled threads (ADR-0140), true only when the host's Owl answer turns clearing on. */
@@ -702,6 +710,9 @@ export class LocalHostService implements HostService {
   }
   async threadPrompts(threadId: string, beforeMessageId: string): Promise<AgentThreadPrompts | null> {
     return (await this.options.prompts?.threadPrompts(threadId, beforeMessageId)) ?? null
+  }
+  async threadWords(query: string): Promise<AgentThreadWords | null> {
+    return (await this.options.prompts?.threadWords?.(query)) ?? null
   }
   hostFacts(): Promise<HostMachineReport> {
     if (!this.options.facts) return Promise.reject(new Error('This host does not report its machine facts.'))

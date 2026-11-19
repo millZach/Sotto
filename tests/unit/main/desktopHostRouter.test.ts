@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { THREAD_WORDS_HOST_WAIT_MS } from '../../../src/shared/threadWords'
 import type { BrowserEvent } from '../../../src/shared/browser'
 import type { HostBrowserFrame } from '../../../src/shared/hostBrowser'
 import { serialize } from 'node:v8'
@@ -565,6 +566,40 @@ describe('desktop host routing', () => {
     router.add({ ...remote.connection, service: { ...remote.connection.service, threadPrompts }, available: () => false })
     expect(await router.threadPrompts({ threadId: hostEntityKey(REMOTE, 'thread'), beforeMessageId: 'u3' })).toBeNull()
     expect(threadPrompts).toHaveBeenCalledOnce()
+  })
+  it('asks every host what was said in its threads at once, keys each thread as the window does, and drops a host that cannot say', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+    const match = (threadId: string, quote: string) => ({ threadId, messageId: 'u0', role: 'user' as const, quote, more: 0 })
+    const here = vi.fn(async () => ({ found: [match('thread', 'purge here')] }))
+    const there = vi.fn(async () => ({ found: [match('thread', 'purge on forge')] }))
+    // No host that can say: the window searches what rows say.
+    router.add(local.connection)
+    expect(await router.threadWords({ query: 'purge' })).toBeNull()
+    router.remove(LOCAL)
+    router.add({ ...local.connection, service: { ...local.connection.service, threadWords: here } })
+    router.add({ ...remote.connection, service: { ...remote.connection.service, threadWords: there } })
+    expect(await router.threadWords({ query: 'purge' })).toEqual({ found: [match(hostEntityKey(LOCAL, 'thread'), 'purge here'), match(hostEntityKey(REMOTE, 'thread'), 'purge on forge')] })
+    expect(here).toHaveBeenCalledExactlyOnceWith('purge')
+    expect(there).toHaveBeenCalledExactlyOnceWith('purge')
+    // A host that fails, and one that is disconnected, add nothing; the others still answer.
+    there.mockRejectedValueOnce(new Error('socket closed'))
+    expect(await router.threadWords({ query: 'purge' })).toEqual({ found: [match(hostEntityKey(LOCAL, 'thread'), 'purge here')] })
+    router.remove(REMOTE)
+    router.add({ ...remote.connection, service: { ...remote.connection.service, threadWords: there }, available: () => false })
+    expect(await router.threadWords({ query: 'purge' })).toEqual({ found: [match(hostEntityKey(LOCAL, 'thread'), 'purge here')] })
+    expect(there).toHaveBeenCalledTimes(2)
+  })
+  it('shows every other host’s word matches without one that has not answered in time', async () => {
+    vi.useFakeTimers()
+    try {
+      const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+      const here = vi.fn(async () => ({ found: [{ threadId: 'thread', messageId: 'u0', role: 'user' as const, quote: 'purge', more: 0 }] }))
+      router.add({ ...local.connection, service: { ...local.connection.service, threadWords: here } })
+      router.add({ ...remote.connection, service: { ...remote.connection.service, threadWords: () => new Promise<never>(() => undefined) } })
+      const read = router.threadWords({ query: 'purge' })
+      await vi.advanceTimersByTimeAsync(THREAD_WORDS_HOST_WAIT_MS)
+      expect((await read)?.found.map(match => match.threadId)).toEqual([hostEntityKey(LOCAL, 'thread')])
+    } finally { vi.useRealTimers() }
   })
   it('reads a paired host\'s Files, Changes and Agents by its own IDs and hands every ID back as the window\'s key (ADR-0025, October 5 amendment)', async () => {
     const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
