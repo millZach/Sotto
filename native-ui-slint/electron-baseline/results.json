@@ -1,0 +1,717 @@
+{
+ "subject": "Electron Sotto (origin/main 61f9e269b, package 0.1.43, Electron 43.8.3 / Chromium 150) on forge, Wayland-native in a nested Hyprland at 1280x800, scale 1",
+ "medians_of_runs": {
+  "frame_interval_ms": {
+   "median": 16.7,
+   "p95": 17.9,
+   "p99": 19.3,
+   "max": 99.9,
+   "mean": 16.78,
+   "over_16_7": 484,
+   "over_33_3": 2,
+   "n": 1166
+  },
+  "frame_interval_callback_clock_ms": {
+   "median": 16.6,
+   "p95": 22.3,
+   "p99": 27.7,
+   "max": 114.8,
+   "mean": 16.78,
+   "over_16_7": 552,
+   "over_33_3": 4,
+   "n": 1166
+  },
+  "longtasks_during_stream": {
+   "count": 1,
+   "total_ms": 110,
+   "max_ms": 110
+  },
+  "typing_ms": {
+   "median": 12.3,
+   "p95": 23.3,
+   "p99": 23.9,
+   "max": 25.7,
+   "mean": 12.6,
+   "over_16_7": 16,
+   "over_33_3": 0,
+   "n": 60
+  },
+  "typing_from_event_timestamp_ms": {
+   "median": 14,
+   "p95": 25.0,
+   "p99": 27.0,
+   "max": 30.5,
+   "mean": 14.21,
+   "over_16_7": 23,
+   "over_33_3": 0,
+   "n": 60
+  },
+  "event_timing_keydown_duration_ms": {
+   "median": 56,
+   "p95": 64,
+   "p99": 64,
+   "max": 64,
+   "mean": 53.33,
+   "over_16_7": 60,
+   "over_33_3": 57,
+   "n": 60
+  },
+  "memory_5s_after_stream": {
+   "total_pss_mib": 753.1,
+   "total_rss_mib": 1274.5,
+   "by_type_pss_mib": {
+    "main (browser)": 225.8,
+    "zygote (no sandbox)": 11.2,
+    "zygote": 13.7,
+    "utility (network.mojom.NetworkService)": 22.9,
+    "gpu": 138.8,
+    "broker": 17.1,
+    "renderer": 327.2
+   },
+   "by_type_rss_mib": {
+    "main (browser)": 317.3,
+    "zygote (no sandbox)": 57.9,
+    "zygote": 72.3,
+    "utility (network.mojom.NetworkService)": 75.2,
+    "gpu": 255.2,
+    "broker": 39.6,
+    "renderer": 471.9
+   },
+   "main_window_renderer_pss_mib": 266.7,
+   "main_window_renderer_rss_mib": 340.4,
+   "excluded_fake_provider_pss_mib": 26.8
+  },
+  "launch_to_first_raf_ms": 2163.2,
+  "launch_to_after_paint_ms": 2209.8,
+  "launch_to_thread_in_dom_ms": 2145.7,
+  "edit_to_screen_hmr_ms": 90.89,
+  "edit_to_screen_hmr_lower_bound_ms": 60.82,
+  "edit_to_first_frame_full_rebuild_ms": 42254.1,
+  "full_rebuild_build_only_ms": 40567
+ },
+ "binary_size": {
+  "sotto_bin_package": {
+   "version": "0.1.38-1 (Electron 43.1.0)",
+   "pacman_installed_size": "369.98 MiB",
+   "du_files_bytes": 387951880,
+   "du_files_human": "371M"
+  },
+  "source_build": {
+   "version": "0.1.43 at 61f9e269b",
+   "out_bytes": 47747053,
+   "out_human": "47M",
+   "electron_dist_bytes": 331425769,
+   "electron_dist_human": "317M",
+   "electron_dist_version": "43.8.3"
+  }
+ },
+ "runs": {
+  "stream": [
+   {
+    "run": "stream-1",
+    "conditions": {
+     "loadavg": "12.26 12.93 10.52 10/1305 2585364",
+     "mem_available_kib": "8607332",
+     "started": "2026-11-19T00:01:21-08:00"
+    },
+    "stream_ms": 19586.2,
+    "stream_ticks": 1225,
+    "tick_lateness_ms": {
+     "median": -0.2836250000000291,
+     "p99": 1.5174699999988661,
+     "max": 3.590527000000293
+    },
+    "frame_interval_ms": {
+     "n": 1170,
+     "median": 16.7,
+     "p95": 17.9,
+     "p99": 18.7,
+     "max": 50.0,
+     "mean": 16.72,
+     "over_16_7": 482,
+     "over_33_3": 1
+    },
+    "frame_interval_callback_clock_ms": {
+     "n": 1170,
+     "median": 16.6,
+     "p95": 22.3,
+     "p99": 26.7,
+     "max": 78.0,
+     "mean": 16.72,
+     "over_16_7": 552,
+     "over_33_3": 3
+    },
+    "longtasks": {
+     "count": 1,
+     "total_ms": 73,
+     "max_ms": 73
+    },
+    "typing_ms": {
+     "n": 60,
+     "median": 11.8,
+     "p95": 21.8,
+     "p99": 22.0,
+     "max": 25.7,
+     "mean": 11.27,
+     "over_16_7": 13,
+     "over_33_3": 0
+    },
+    "typing_from_event_timestamp_ms": {
+     "n": 60,
+     "median": 12.2,
+     "p95": 22.0,
+     "p99": 26.1,
+     "max": 33.0,
+     "mean": 12.4,
+     "over_16_7": 15,
+     "over_33_3": 0
+    },
+    "keys_seen": 60,
+    "composer_text_length": 60,
+    "event_timing_keydown_ms": {
+     "n": 60,
+     "median": 56,
+     "p95": 64,
+     "p99": 64,
+     "max": 64,
+     "mean": 53.33,
+     "over_16_7": 60,
+     "over_33_3": 57
+    },
+    "event_timing_all_names": [
+     "beforeinput",
+     "input",
+     "keydown",
+     "keypress",
+     "keyup"
+    ],
+    "event_timing_errors": [],
+    "viewport": [
+     1280,
+     800,
+     1
+    ],
+    "memory_5s_after": {
+     "total_pss_kib": 776643,
+     "total_rss_kib": 1322356,
+     "process_count": 9,
+     "by_type": {
+      "main (browser)": {
+       "count": 1,
+       "pss_kib": 231270,
+       "rss_kib": 324916
+      },
+      "zygote (no sandbox)": {
+       "count": 1,
+       "pss_kib": 11517,
+       "rss_kib": 59288
+      },
+      "zygote": {
+       "count": 2,
+       "pss_kib": 13864,
+       "rss_kib": 74052
+      },
+      "utility (network.mojom.NetworkService)": {
+       "count": 1,
+       "pss_kib": 23414,
+       "rss_kib": 77008
+      },
+      "gpu": {
+       "count": 1,
+       "pss_kib": 142099,
+       "rss_kib": 261360
+      },
+      "broker": {
+       "count": 1,
+       "pss_kib": 19446,
+       "rss_kib": 42508
+      },
+      "renderer": {
+       "count": 2,
+       "pss_kib": 335033,
+       "rss_kib": 483224
+      }
+     },
+     "main_window_renderer": {
+      "pss_kib": 273053,
+      "rss_kib": 348612
+     },
+     "excluded": [
+      {
+       "program": "node --import",
+       "pss": 25805,
+       "rss": 68396
+      }
+     ]
+    }
+   },
+   {
+    "run": "stream-2",
+    "conditions": {
+     "loadavg": "16.96 13.94 10.93 25/1536 2587932",
+     "mem_available_kib": "6031880",
+     "started": "2026-11-19T00:01:53-08:00"
+    },
+    "stream_ms": 19584.0,
+    "stream_ticks": 1225,
+    "tick_lateness_ms": {
+     "median": -0.30269399999997404,
+     "p99": 1.8413990000008198,
+     "max": 3.4410210000000916
+    },
+    "frame_interval_ms": {
+     "n": 1166,
+     "median": 16.7,
+     "p95": 17.9,
+     "p99": 19.3,
+     "max": 100.0,
+     "mean": 16.78,
+     "over_16_7": 484,
+     "over_33_3": 2
+    },
+    "frame_interval_callback_clock_ms": {
+     "n": 1166,
+     "median": 16.6,
+     "p95": 23.0,
+     "p99": 27.8,
+     "max": 124.3,
+     "mean": 16.78,
+     "over_16_7": 553,
+     "over_33_3": 4
+    },
+    "longtasks": {
+     "count": 1,
+     "total_ms": 110,
+     "max_ms": 110
+    },
+    "typing_ms": {
+     "n": 60,
+     "median": 12.3,
+     "p95": 23.3,
+     "p99": 23.9,
+     "max": 24.6,
+     "mean": 12.6,
+     "over_16_7": 16,
+     "over_33_3": 0
+    },
+    "typing_from_event_timestamp_ms": {
+     "n": 60,
+     "median": 14.8,
+     "p95": 25.0,
+     "p99": 27.0,
+     "max": 30.5,
+     "mean": 14.21,
+     "over_16_7": 23,
+     "over_33_3": 0
+    },
+    "keys_seen": 60,
+    "composer_text_length": 60,
+    "event_timing_keydown_ms": {
+     "n": 60,
+     "median": 48,
+     "p95": 64,
+     "p99": 64,
+     "max": 64,
+     "mean": 50.8,
+     "over_16_7": 60,
+     "over_33_3": 57
+    },
+    "event_timing_all_names": [
+     "beforeinput",
+     "input",
+     "keydown",
+     "keypress",
+     "keyup"
+    ],
+    "event_timing_errors": [],
+    "viewport": [
+     1280,
+     800,
+     1
+    ],
+    "memory_5s_after": {
+     "total_pss_kib": 655454,
+     "total_rss_kib": 1188456,
+     "process_count": 9,
+     "by_type": {
+      "main (browser)": {
+       "count": 1,
+       "pss_kib": 227627,
+       "rss_kib": 318604
+      },
+      "zygote (no sandbox)": {
+       "count": 1,
+       "pss_kib": 11787,
+       "rss_kib": 59248
+      },
+      "zygote": {
+       "count": 2,
+       "pss_kib": 14152,
+       "rss_kib": 74224
+      },
+      "utility (network.mojom.NetworkService)": {
+       "count": 1,
+       "pss_kib": 23908,
+       "rss_kib": 77892
+      },
+      "gpu": {
+       "count": 1,
+       "pss_kib": 149692,
+       "rss_kib": 261716
+      },
+      "broker": {
+       "count": 1,
+       "pss_kib": 17538,
+       "rss_kib": 40548
+      },
+      "renderer": {
+       "count": 2,
+       "pss_kib": 210750,
+       "rss_kib": 356224
+      }
+     },
+     "main_window_renderer": {
+      "pss_kib": 134874,
+      "rss_kib": 209184
+     },
+     "excluded": [
+      {
+       "program": "node --import",
+       "pss": 27464,
+       "rss": 69988
+      }
+     ]
+    }
+   },
+   {
+    "run": "stream-3",
+    "conditions": {
+     "loadavg": "17.10 14.44 11.21 31/1464 2590372",
+     "mem_available_kib": "5626092",
+     "started": "2026-11-19T00:02:25-08:00"
+    },
+    "stream_ms": 19584.2,
+    "stream_ticks": 1225,
+    "tick_lateness_ms": {
+     "median": -0.36453999999957887,
+     "p99": 1.775234000000637,
+     "max": 13.19733300000371
+    },
+    "frame_interval_ms": {
+     "n": 1162,
+     "median": 16.7,
+     "p95": 17.9,
+     "p99": 19.8,
+     "max": 99.9,
+     "mean": 16.83,
+     "over_16_7": 524,
+     "over_33_3": 5
+    },
+    "frame_interval_callback_clock_ms": {
+     "n": 1162,
+     "median": 16.6,
+     "p95": 21.9,
+     "p99": 27.7,
+     "max": 114.8,
+     "mean": 16.83,
+     "over_16_7": 541,
+     "over_33_3": 5
+    },
+    "longtasks": {
+     "count": 1,
+     "total_ms": 114,
+     "max_ms": 114
+    },
+    "typing_ms": {
+     "n": 60,
+     "median": 12.3,
+     "p95": 27.7,
+     "p99": 29.6,
+     "max": 29.9,
+     "mean": 13.93,
+     "over_16_7": 21,
+     "over_33_3": 0
+    },
+    "typing_from_event_timestamp_ms": {
+     "n": 60,
+     "median": 14,
+     "p95": 28.0,
+     "p99": 30.1,
+     "max": 30.5,
+     "mean": 15.44,
+     "over_16_7": 25,
+     "over_33_3": 0
+    },
+    "keys_seen": 60,
+    "composer_text_length": 60,
+    "event_timing_keydown_ms": {
+     "n": 60,
+     "median": 56,
+     "p95": 64,
+     "p99": 64,
+     "max": 64,
+     "mean": 54.27,
+     "over_16_7": 60,
+     "over_33_3": 58
+    },
+    "event_timing_all_names": [
+     "beforeinput",
+     "input",
+     "keydown",
+     "keypress",
+     "keyup"
+    ],
+    "event_timing_errors": [],
+    "viewport": [
+     1280,
+     800,
+     1
+    ],
+    "memory_5s_after": {
+     "total_pss_kib": 771187,
+     "total_rss_kib": 1305048,
+     "process_count": 9,
+     "by_type": {
+      "main (browser)": {
+       "count": 1,
+       "pss_kib": 237041,
+       "rss_kib": 330592
+      },
+      "zygote (no sandbox)": {
+       "count": 1,
+       "pss_kib": 11379,
+       "rss_kib": 58708
+      },
+      "zygote": {
+       "count": 2,
+       "pss_kib": 14010,
+       "rss_kib": 73976
+      },
+      "utility (network.mojom.NetworkService)": {
+       "count": 1,
+       "pss_kib": 13482,
+       "rss_kib": 66860
+      },
+      "gpu": {
+       "count": 1,
+       "pss_kib": 139489,
+       "rss_kib": 252448
+      },
+      "broker": {
+       "count": 1,
+       "pss_kib": 12958,
+       "rss_kib": 31408
+      },
+      "renderer": {
+       "count": 2,
+       "pss_kib": 342828,
+       "rss_kib": 491056
+      }
+     },
+     "main_window_renderer": {
+      "pss_kib": 279329,
+      "rss_kib": 354876
+     },
+     "excluded": [
+      {
+       "program": "node --import",
+       "pss": 28005,
+       "rss": 70588
+      }
+     ]
+    }
+   }
+  ],
+  "launch": [
+   {
+    "run": "launch-0",
+    "conditions": {
+     "loadavg": "16.68 14.64 11.38 21/1435 2594224",
+     "mem_available_kib": "6197296",
+     "started": "2026-11-19T00:02:59-08:00"
+    },
+    "launch_to_first_raf_ms": 1884.8,
+    "launch_to_first_raf_frame_timestamp_ms": 1807.0,
+    "launch_to_after_paint_ms": 1910.7,
+    "launch_to_thread_in_dom_ms": 1868.8,
+    "viewport": [
+     1800,
+     1200,
+     1
+    ]
+   },
+   {
+    "run": "launch-1",
+    "conditions": {
+     "loadavg": "16.31 14.60 11.39 28/1427 2594534",
+     "mem_available_kib": "6139212",
+     "started": "2026-11-19T00:03:01-08:00"
+    },
+    "launch_to_first_raf_ms": 1833.9,
+    "launch_to_first_raf_frame_timestamp_ms": 1757.5,
+    "launch_to_after_paint_ms": 1868.2,
+    "launch_to_thread_in_dom_ms": 1815.6,
+    "viewport": [
+     1800,
+     1200,
+     1
+    ]
+   },
+   {
+    "run": "launch-2",
+    "conditions": {
+     "loadavg": "16.31 14.60 11.39 9/1429 2594826",
+     "mem_available_kib": "6265804",
+     "started": "2026-11-19T00:03:04-08:00"
+    },
+    "launch_to_first_raf_ms": 2163.2,
+    "launch_to_first_raf_frame_timestamp_ms": 2085.1,
+    "launch_to_after_paint_ms": 2209.8,
+    "launch_to_thread_in_dom_ms": 2145.7,
+    "viewport": [
+     1800,
+     1200,
+     1
+    ]
+   },
+   {
+    "run": "launch-3",
+    "conditions": {
+     "loadavg": "17.08 14.79 11.46 41/1429 2595399",
+     "mem_available_kib": "5997092",
+     "started": "2026-11-19T00:03:06-08:00"
+    },
+    "launch_to_first_raf_ms": 2181.6,
+    "launch_to_first_raf_frame_timestamp_ms": 2088.7,
+    "launch_to_after_paint_ms": 2246.4,
+    "launch_to_thread_in_dom_ms": 2164.1,
+    "viewport": [
+     1800,
+     1200,
+     1
+    ]
+   }
+  ],
+  "hmr": [
+   {
+    "run": "hmr-1",
+    "conditions": {
+     "loadavg": "16.98 14.94 11.62 7/1563 2599043",
+     "mem_available_kib": "9104704",
+     "started": "2026-11-19T00:03:35-08:00"
+    },
+    "poll_interval_ms": 30.0,
+    "region": "420,676 40x8",
+    "runs": [
+     {
+      "run": 1,
+      "edit_to_screen": {
+       "ms": 90.893273,
+       "lower_bound_ms": 60.819796,
+       "captures": 4,
+       "grim_ms_median": 8.259215
+      },
+      "revert_to_screen": {
+       "ms": 121.067902,
+       "lower_bound_ms": 91.004462,
+       "captures": 5,
+       "grim_ms_median": 9.450934
+      }
+     },
+     {
+      "run": 2,
+      "edit_to_screen": {
+       "ms": 91.047798,
+       "lower_bound_ms": 60.977279,
+       "captures": 4,
+       "grim_ms_median": 12.124771
+      },
+      "revert_to_screen": {
+       "ms": 90.986423,
+       "lower_bound_ms": 60.942756,
+       "captures": 4,
+       "grim_ms_median": 11.614346
+      }
+     },
+     {
+      "run": 3,
+      "edit_to_screen": {
+       "ms": 61.160572,
+       "lower_bound_ms": 31.093229,
+       "captures": 3,
+       "grim_ms_median": 9.086857
+      },
+      "revert_to_screen": {
+       "ms": 61.010594,
+       "lower_bound_ms": 30.94469,
+       "captures": 3,
+       "grim_ms_median": 11.018892
+      }
+     }
+    ]
+   }
+  ],
+  "rebuild": [
+   {
+    "run": "rebuild-1",
+    "conditions": {
+     "loadavg": "20.40 16.29 12.26 21/1448 2604656",
+     "mem_available_kib": "6976076",
+     "started": "2026-11-19T00:04:26-08:00"
+    },
+    "edit_to_first_raf_ms": 46442.5,
+    "edit_to_after_paint_ms": 46476.1,
+    "build_ms": 44335,
+    "launch_to_first_raf_ms": 2098.3,
+    "launch_to_first_raf_frame_timestamp_ms": 2073.9,
+    "launch_to_after_paint_ms": 2131.9,
+    "launch_to_thread_in_dom_ms": 2077.3,
+    "viewport": [
+     1800,
+     1200,
+     1
+    ]
+   },
+   {
+    "run": "rebuild-2",
+    "conditions": {
+     "loadavg": "20.19 16.87 12.65 6/1586 2607938",
+     "mem_available_kib": "5796900",
+     "started": "2026-11-19T00:05:13-08:00"
+    },
+    "edit_to_first_raf_ms": 41062.8,
+    "edit_to_after_paint_ms": 41107.5,
+    "build_ms": 38962,
+    "launch_to_first_raf_ms": 2094.2,
+    "launch_to_first_raf_frame_timestamp_ms": 2022.8,
+    "launch_to_after_paint_ms": 2138.9,
+    "launch_to_thread_in_dom_ms": 2079.7,
+    "viewport": [
+     1800,
+     1200,
+     1
+    ]
+   },
+   {
+    "run": "rebuild-3",
+    "conditions": {
+     "loadavg": "21.69 17.66 13.12 38/1651 2611098",
+     "mem_available_kib": "4874012",
+     "started": "2026-11-19T00:05:55-08:00"
+    },
+    "edit_to_first_raf_ms": 42254.1,
+    "edit_to_after_paint_ms": 42281.5,
+    "build_ms": 40567,
+    "launch_to_first_raf_ms": 1679.6,
+    "launch_to_first_raf_frame_timestamp_ms": 1654.1,
+    "launch_to_after_paint_ms": 1707.0,
+    "launch_to_thread_in_dom_ms": 1660.5,
+    "viewport": [
+     1800,
+     1200,
+     1
+    ]
+   }
+  ]
+ }
+}

@@ -1,0 +1,7 @@
+{
+ "composer": "DIV.tiptap ProseMirror prompt-editor ProseMirror-focused",
+ "editable": true,
+ "innerWidth": 1280,
+ "innerHeight": 800,
+ "devicePixelRatio": 1
+}

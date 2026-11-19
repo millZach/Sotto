@@ -1,0 +1,51 @@
+{
+ "poll_interval_ms": 30.0,
+ "region": "420,676 40x8",
+ "runs": [
+  {
+   "run": 1,
+   "edit_to_screen": {
+    "ms": 90.893273,
+    "lower_bound_ms": 60.819796,
+    "captures": 4,
+    "grim_ms_median": 8.259215
+   },
+   "revert_to_screen": {
+    "ms": 121.067902,
+    "lower_bound_ms": 91.004462,
+    "captures": 5,
+    "grim_ms_median": 9.450934
+   }
+  },
+  {
+   "run": 2,
+   "edit_to_screen": {
+    "ms": 91.047798,
+    "lower_bound_ms": 60.977279,
+    "captures": 4,
+    "grim_ms_median": 12.124771
+   },
+   "revert_to_screen": {
+    "ms": 90.986423,
+    "lower_bound_ms": 60.942756,
+    "captures": 4,
+    "grim_ms_median": 11.614346
+   }
+  },
+  {
+   "run": 3,
+   "edit_to_screen": {
+    "ms": 61.160572,
+    "lower_bound_ms": 31.093229,
+    "captures": 3,
+    "grim_ms_median": 9.086857
+   },
+   "revert_to_screen": {
+    "ms": 61.010594,
+    "lower_bound_ms": 30.94469,
+    "captures": 3,
+    "grim_ms_median": 11.018892
+   }
+  }
+ ]
+}

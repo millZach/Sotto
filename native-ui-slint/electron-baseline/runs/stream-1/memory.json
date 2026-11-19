@@ -1,0 +1,177 @@
+{
+ "total_pss_kib": 776643,
+ "total_rss_kib": 1322356,
+ "process_count": 9,
+ "by_type": {
+  "main (browser)": {
+   "count": 1,
+   "pss_kib": 231270,
+   "rss_kib": 324916
+  },
+  "zygote (no sandbox)": {
+   "count": 1,
+   "pss_kib": 11517,
+   "rss_kib": 59288
+  },
+  "zygote": {
+   "count": 2,
+   "pss_kib": 13864,
+   "rss_kib": 74052
+  },
+  "utility (network.mojom.NetworkService)": {
+   "count": 1,
+   "pss_kib": 23414,
+   "rss_kib": 77008
+  },
+  "gpu": {
+   "count": 1,
+   "pss_kib": 142099,
+   "rss_kib": 261360
+  },
+  "broker": {
+   "count": 1,
+   "pss_kib": 19446,
+   "rss_kib": 42508
+  },
+  "renderer": {
+   "count": 2,
+   "pss_kib": 335033,
+   "rss_kib": 483224
+  }
+ },
+ "processes": [
+  {
+   "pid": 2585371,
+   "type": "main (browser)",
+   "rss": 324916,
+   "pss": 231270,
+   "pss_anon": 173412,
+   "pss_file": 52644,
+   "pss_shmem": 5214,
+   "private_clean": 22836,
+   "private_dirty": 177604,
+   "swap": 0,
+   "swappss": 0
+  },
+  {
+   "pid": 2585378,
+   "type": "zygote (no sandbox)",
+   "rss": 59288,
+   "pss": 11517,
+   "pss_anon": 3999,
+   "pss_file": 7517,
+   "pss_shmem": 0,
+   "private_clean": 32,
+   "private_dirty": 768,
+   "swap": 0,
+   "swappss": 0
+  },
+  {
+   "pid": 2585379,
+   "type": "zygote",
+   "rss": 59636,
+   "pss": 10441,
+   "pss_anon": 2868,
+   "pss_file": 7572,
+   "pss_shmem": 0,
+   "private_clean": 8,
+   "private_dirty": 200,
+   "swap": 0,
+   "swappss": 0
+  },
+  {
+   "pid": 2585431,
+   "type": "utility (network.mojom.NetworkService)",
+   "rss": 77008,
+   "pss": 23414,
+   "pss_anon": 11612,
+   "pss_file": 11767,
+   "pss_shmem": 34,
+   "private_clean": 808,
+   "private_dirty": 11612,
+   "swap": 0,
+   "swappss": 0
+  },
+  {
+   "pid": 2585429,
+   "type": "gpu",
+   "rss": 261360,
+   "pss": 142099,
+   "pss_anon": 80481,
+   "pss_file": 61294,
+   "pss_shmem": 322,
+   "private_clean": 11568,
+   "private_dirty": 89500,
+   "swap": 0,
+   "swappss": 0
+  },
+  {
+   "pid": 2585382,
+   "type": "zygote",
+   "rss": 14416,
+   "pss": 3423,
+   "pss_anon": 2951,
+   "pss_file": 472,
+   "pss_shmem": 0,
+   "private_clean": 0,
+   "private_dirty": 272,
+   "swap": 0,
+   "swappss": 0
+  },
+  {
+   "pid": 2585475,
+   "type": "broker",
+   "rss": 42508,
+   "pss": 19446,
+   "pss_anon": 15477,
+   "pss_file": 3968,
+   "pss_shmem": 0,
+   "private_clean": 24,
+   "private_dirty": 3604,
+   "swap": 0,
+   "swappss": 0
+  },
+  {
+   "pid": 2585539,
+   "type": "renderer",
+   "rss": 348612,
+   "pss": 273053,
+   "pss_anon": 237742,
+   "pss_file": 34233,
+   "pss_shmem": 1078,
+   "private_clean": 6292,
+   "private_dirty": 235372,
+   "swap": 0,
+   "swappss": 0
+  },
+  {
+   "pid": 2585677,
+   "type": "renderer",
+   "rss": 134612,
+   "pss": 61980,
+   "pss_anon": 35413,
+   "pss_file": 25833,
+   "pss_shmem": 734,
+   "private_clean": 132,
+   "private_dirty": 33044,
+   "swap": 0,
+   "swappss": 0
+  }
+ ],
+ "excluded_non_electron_children": [
+  {
+   "pid": 2586066,
+   "type": null,
+   "rss": 68396,
+   "pss": 25805,
+   "pss_anon": 18580,
+   "pss_file": 7225,
+   "pss_shmem": 0,
+   "private_clean": 68,
+   "private_dirty": 18596,
+   "swap": 0,
+   "swappss": 0,
+   "program": "node --import"
+  }
+ ]
+}

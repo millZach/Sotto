@@ -1,0 +1,66 @@
+{
+ "thread": [
+  {
+   "id": "host:0228160a-58da-4e30-a2aa-9aa873680c4d:e39a2732-a102-418b-b653-8ba4835bb586",
+   "status": "idle",
+   "messages": 214
+  }
+ ],
+ "versions": {
+  "electron": "43.8.3",
+  "chrome": "150.0.7871.250",
+  "node": "24.22.0"
+ },
+ "gpu": {
+  "2d_canvas": "enabled",
+  "direct_rendering_display_compositor": "disabled_off_ok",
+  "gpu_compositing": "enabled",
+  "multiple_raster_threads": "enabled_on",
+  "opengl": "enabled_on",
+  "rasterization": "enabled",
+  "raw_draw": "disabled_off_ok",
+  "skia_graphite": "disabled_off",
+  "trees_in_viz": "disabled_off",
+  "video_decode": "enabled",
+  "video_encode": "disabled_software",
+  "vulkan": "enabled_on",
+  "webgl": "enabled",
+  "webgpu": "enabled",
+  "webgpu_on_vk_via_gl_interop": "enabled",
+  "webnn": "disabled_off"
+ },
+ "ozone": "wayland",
+ "mainWindowRendererPid": 2590784,
+ "metrics": [
+  {
+   "pid": 2590385,
+   "type": "Browser",
+   "name": null,
+   "serviceName": null
+  },
+  {
+   "pid": 2590727,
+   "type": "GPU",
+   "name": null,
+   "serviceName": "GPU"
+  },
+  {
+   "pid": 2590729,
+   "type": "Utility",
+   "name": "Network Service",
+   "serviceName": "network.mojom.NetworkService"
+  },
+  {
+   "pid": 2590784,
+   "type": "Tab",
+   "name": null,
+   "serviceName": null
+  },
+  {
+   "pid": 2590885,
+   "type": "Tab",
+   "name": null,
+   "serviceName": null
+  }
+ ]
+}

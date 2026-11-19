@@ -1,0 +1,14 @@
+{
+ "origin": 1795075385337.7,
+ "foundAt": 892.2000000476837,
+ "rafTs": 831.552,
+ "rafNow": 909.7000000476837,
+ "paint": 956.2999999523163,
+ "innerWidth": 1800,
+ "innerHeight": 1200,
+ "devicePixelRatio": 1,
+ "foundEpochMs": 1795075386229.9,
+ "rafEpochMs": 1795075386169.252,
+ "rafCallbackEpochMs": 1795075386247.4,
+ "paintEpochMs": 1795075386294
+}
