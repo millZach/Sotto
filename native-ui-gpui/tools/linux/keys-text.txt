@@ -1,0 +1,22 @@
+# The composer's text events while typing, then the transcript's nodes with a heading on screen.
+@cmd python3 $here/atspi-probe.py listen sotto 14 > $out/events-composer.txt 2>&1 &
+@sleep 1
+-d 120 "check the ledger"
+-k Left
+-M ctrl -k Left -m ctrl
+-k BackSpace
+@sleep 2
+@cmd python3 $here/atspi-probe.py tree sotto > $out/probe-typing.txt 2>&1
+@sleep 14
+-M shift -k F6 -m shift
+-k Prior
+-k Prior
+@sleep 1
+@shot text-transcript
+@cmd python3 $here/atspi-probe.py tree sotto > $out/probe-transcript.txt 2>&1
+@cmd orca StructuralNavigator NextHeading
+@cmd orca StructuralNavigator NextParagraph
+@cmd orca FlatReviewPresenter PresentLine
+@cmd orca ObjectNavigator MoveToFirstChild
+@cmd orca ObjectNavigator MoveToNextSibling
+@cmd orca ObjectNavigator MoveToNextSibling

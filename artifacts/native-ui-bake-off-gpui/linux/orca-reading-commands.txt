@@ -1,0 +1,46 @@
+(before the first key)
+    "Screen reader on."
+    "Sotto (GPUI)"
+    "Sotto embedded"
+    "landmark Thread: Harbor scheduler"
+    "Composer form"
+    "Message entry Ask for a change, or reply"
+> wtype -M shift -k F6 -m shift
+    "leaving form."
+    "Transcript log"
+> wtype (cmd) orca StructuralNavigator NextHeading
+    "No more headings."
+> wtype (cmd) orca StructuralNavigator PreviousHeading
+    "No more headings."
+> wtype (cmd) orca StructuralNavigator ListHeadings
+    "Headings: 0 items found"
+> wtype (cmd) orca StructuralNavigator NextParagraph
+    "No more paragraphs."
+> wtype (cmd) orca StructuralNavigator NextTable
+    "No more tables."
+> wtype (cmd) orca TableNavigator MoveDown
+    "Not in a table."
+> wtype (cmd) orca TableNavigator MoveRight
+    "Not in a table."
+> wtype (cmd) orca StructuralNavigator NextListItem
+    "No more list items."
+> wtype (cmd) orca StructuralNavigator NextLink
+    "No more links."
+> wtype (cmd) orca FlatReviewPresenter PresentLine
+    "Sotto (GPUI)"
+> wtype (cmd) orca FlatReviewPresenter GoNextLine
+> wtype (cmd) orca FlatReviewPresenter GoNextLine
+> wtype (cmd) orca FlatReviewPresenter ToggleFlatReviewMode
+    "Leaving flat review."
+> wtype (cmd) orca SayAllPresenter SayAll
+> wtype -k F6
+    "Composer form"
+    "Message entry Ask for a change, or reply"
+> wtype -d 120 check the ledger
+> wtype -k Left
+> wtype -k Left
+> wtype -M ctrl -k Left -m ctrl
+> wtype -k Home
+> wtype -k BackSpace
+> wtype -k End
+    "Screen reader off."

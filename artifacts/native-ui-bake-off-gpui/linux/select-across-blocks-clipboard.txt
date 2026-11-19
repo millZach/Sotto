@@ -1,0 +1,8 @@
+After, run 3
+1,000
+2.1 ms
+2.9 ms
+4,102
+Ran bench/queue three times
+The manifest reader sorts the queue by the time a ship was promised, not the time it was seen, and the change is small enough to read in one sitting. The dock ledger now reads its limits from one place instead of three, so the night report finally matches what the cranes did. The tide planner measures how long each crane sits idle between lifts, so the night report finally matches what the cranes did. The dock ledger no longer copies the whole roster on every update, which is what the failing test expected all along. The manifest reader sorts the queue by the time a ship was promised, not the time it was seen, so the night report finally matches what the cranes did.
+That is everything. The suite is green, the bench is faster, and the limits live in one file. See the review checklist before mergin

@@ -1,0 +1,15 @@
+{
+  "long_frames_at_ms_work_ms_reply_char": [],
+  "stream_ms": 20400,
+  "frames": 1309,
+  "streaming_frames": 1309,
+  "frame_work_ms": {"count": 1309, "median": 1.44, "p95": 2.95, "p99": 5.17, "max": 29.33},
+  "frame_interval_ms": {"count": 1308, "median": 16.64, "p95": 17.10, "p99": 18.20, "max": 39.04},
+  "frame_end_interval_ms": {"count": 1308, "median": 16.62, "p95": 17.70, "p99": 19.61, "max": 23.97},
+  "frames_over_33ms_end": 0,
+  "frames_over_33ms_start": 1,
+  "key_to_paint_ms": {"count": 58, "median": 1.94, "p95": 3.74, "p99": 4.14, "max": 4.41},
+  "first_paint_ms": 239.7,
+  "rss_mib": 299.9,
+  "pss_mib": 261.3
+}

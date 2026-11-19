@@ -1,0 +1,6 @@
+first-frame launch_ms=402.8 from=SOTTO_LAUNCH_T0
+first-frame launch_ms=242.6 from=SOTTO_LAUNCH_T0
+first-frame launch_ms=236.9 from=SOTTO_LAUNCH_T0
+first-frame launch_ms=256.2 from=SOTTO_LAUNCH_T0
+first-frame launch_ms=251.2 from=SOTTO_LAUNCH_T0
+first-frame launch_ms=225.3 from=SOTTO_LAUNCH_T0

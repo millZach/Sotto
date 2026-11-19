@@ -1,0 +1,12 @@
+09:37:33.511 set true -> true
+09:37:41.149 set false -> false
+09:37:46.632 set true -> true
+
+first-frame launch_ms=592.9 from=main
+reduced-motion source=portal enable-animations=true
+reduced-motion changed enable-animations=false
+reduced-motion changed enable-animations=true
+
+motion: composer caret: [18, 18, 18, 18, 18, 0, 18] | Writing a reply: [319, 122, 156, 321, 0, 304, 249] | stand-in page stripe: [220, 210, 218, 228, 228, 228, 228] | strip note: [0, 0, 0, 0, 0, 0, 0]
+reduced: composer caret: [0, 0, 0, 0, 0, 0, 0] | Writing a reply: [0, 0, 0, 0, 0, 0, 0] | stand-in page stripe: [0, 0, 0, 0, 0, 0, 0] | strip note: [0, 0, 0, 0, 0, 0, 0]
+restored: composer caret: [18, 18, 18, 18, 18, 18, 18] | Writing a reply: [0, 319, 191, 97, 325, 0, 260] | stand-in page stripe: [228, 228, 220, 210, 218, 228, 228] | strip note: [0, 0, 0, 0, 0, 0, 0]

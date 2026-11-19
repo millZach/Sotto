@@ -1,0 +1,5 @@
+loadavg 4.04 6.30 7.41 4/958 4138888
+run 1 build_ms=2415 first-frame launch_ms=3555.8 from=SOTTO_LAUNCH_T0
+run 1 build_ms=4427 first-frame launch_ms=5095.6 from=SOTTO_LAUNCH_T0
+run 2 build_ms=5394 first-frame launch_ms=6037.6 from=SOTTO_LAUNCH_T0
+run 2 build_ms=4160 first-frame launch_ms=4796.4 from=SOTTO_LAUNCH_T0

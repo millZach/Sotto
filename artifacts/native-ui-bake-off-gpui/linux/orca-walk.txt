@@ -1,0 +1,69 @@
+(before the first key)
+    "Screen reader on."
+    "Sotto (GPUI)"
+    "Sotto embedded"
+    "landmark Thread: Harbor scheduler"
+    "Composer form"
+    "Message entry Ask for a change, or reply"
+> wtype -k Tab
+    "Attach a file or quote a reply button"
+> wtype -k Tab
+    "Permissions: Ask first button"
+> wtype -k Return
+    "leaving form."
+    "Permissions menu"
+    "Ask first radio menu item selected"
+> wtype -k Down
+    "Allow edits radio menu item not selected"
+> wtype -k Escape
+    "landmark Thread: Harbor scheduler"
+    "Composer form"
+    "Permissions: Ask first button"
+> wtype -k Tab
+    "Model: Sonnet 4.5 button"
+> wtype -k Tab
+    "Effort: High button"
+> wtype -k Tab
+    "Stop the reply button"
+> wtype -k Tab
+    "leaving form."
+    "landmark Tools"
+    "landmark Web page"
+    "Page surface panel"
+    "Page surface"
+    "Show the page as a Texture selected radio button"
+> wtype -k Tab
+    "Browse mode"
+    "Web page (stand-in, texture surface) document frame Stand-in page. Field: empty. Booked 0 times."
+> wtype -k Tab
+> wtype -k Tab
+    "landmark Terminal, bash"
+> wtype -k F6
+    "landmark Thread: Harbor scheduler"
+    "Transcript log"
+> wtype -k Tab
+    "Ran npm run lint. Collapsed button"
+> wtype -k Return
+    "Ran npm run lint. Expanded"
+> wtype -k Return
+    "Ran npm run lint. Collapsed"
+> wtype -k Tab
+    "Ran bench/queue three times. Collapsed button"
+> wtype -k Tab
+    "Composer form"
+    "Message entry Ask for a change, or reply"
+> wtype -M shift -k Tab -m shift
+    "leaving form."
+    "Ran bench/queue three times. Collapsed button"
+> wtype -M shift -k Tab -m shift
+    "Ran npm run lint. Collapsed button"
+> wtype -M shift -k Tab -m shift
+    "Transcript log"
+> wtype -M shift -k F6 -m shift
+    "landmark Tools"
+    "landmark Terminal, bash"
+> wtype -M shift -k F6 -m shift
+    "Browse mode"
+    "landmark Web page"
+    "Web page (stand-in, texture surface) document frame Stand-in page. Field: empty. Booked 0 times."
+    "Screen reader off."

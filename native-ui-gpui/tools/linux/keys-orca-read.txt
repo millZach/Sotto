@@ -1,0 +1,29 @@
+# Wait for the reply to finish, go to the transcript, and drive Orca's own commands over its D-Bus remote control
+# (Orca on Hyprland cannot grab its keys). Then typing echo in the composer.
+@sleep 20
+-M shift -k F6 -m shift
+@shot oread-00-transcript
+@cmd orca StructuralNavigator NextHeading
+@cmd orca StructuralNavigator PreviousHeading
+@cmd orca StructuralNavigator ListHeadings
+@cmd orca StructuralNavigator NextParagraph
+@cmd orca StructuralNavigator NextTable
+@cmd orca TableNavigator MoveDown
+@cmd orca TableNavigator MoveRight
+@cmd orca StructuralNavigator NextListItem
+@cmd orca StructuralNavigator NextLink
+@cmd orca FlatReviewPresenter PresentLine
+@cmd orca FlatReviewPresenter GoNextLine
+@cmd orca FlatReviewPresenter GoNextLine
+@cmd orca FlatReviewPresenter ToggleFlatReviewMode
+@cmd orca SayAllPresenter SayAll
+@sleep 6
+-k F6
+-d 120 "check the ledger"
+-k Left
+-k Left
+-M ctrl -k Left -m ctrl
+-k Home
+-k BackSpace
+-k End
+@shot oread-10-composer

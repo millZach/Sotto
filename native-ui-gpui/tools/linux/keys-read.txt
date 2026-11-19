@@ -1,0 +1,25 @@
+# Shift sent as modifier state, then typing, then reading the transcript with Orca's review keys.
+-M shift -k Tab -m shift
+-M shift -k Tab -m shift
+@shot read-02-shift-tab
+-M shift -k Tab -m shift
+-k Tab
+-k Tab
+-k Tab
+-d 90 "check the ledger"
+@sleep 1
+-k F6
+-k F6
+-k F6
+-k Prior
+-k Prior
+-k Prior
+@shot read-pageup
+@tree pageup
+-k KP_Up
+-k KP_Page_Up
+-k KP_Page_Up
+-k KP_Page_Up
+-k KP_Add
+@sleep 6
+-k Control_L

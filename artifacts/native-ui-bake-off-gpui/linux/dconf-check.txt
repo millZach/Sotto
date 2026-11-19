@@ -1,0 +1,4 @@
+# Live dconf database, before the first session (09:07) and after the last (stopped)
+before: 58f9b03bc481892fd5779727da035ea20bb04235e4e2e319a64dab10ff294408, mtime 2026-11-19 07:43:11.170391364 -0800 1453
+after:  58f9b03bc481892fd5779727da035ea20bb04235e4e2e319a64dab10ff294408, mtime 2026-11-19 07:43:11.170391364 -0800 1453
+dconf dump / identical: yes

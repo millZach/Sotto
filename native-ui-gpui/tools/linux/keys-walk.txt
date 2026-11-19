@@ -1,0 +1,39 @@
+# Focus starts in the composer. Forward along the composer's row, a chip's menu, the tools; F6 between regions;
+# into the transcript and its folded rows; Shift+Tab back.
+@shot walk-00-start
+-k Tab
+-k Tab
+@shot walk-02-permissions
+-k Return
+@shot walk-03-menu-open
+-k Down
+-k Escape
+@shot walk-05-menu-closed
+-k Tab
+-k Tab
+-k Tab
+-k Tab
+-k Tab
+-k Tab
+@shot walk-11-page-button
+-k Tab
+@shot walk-12-terminal
+-k F6
+@shot walk-13-f6-transcript
+-k Tab
+@shot walk-14-first-row
+-k Return
+@sleep 0.6
+@shot walk-15-row-open
+@tree row-open
+-k Return
+-k Tab
+-k Tab
+-M shift -k Tab -m shift
+-M shift -k Tab -m shift
+-M shift -k Tab -m shift
+@shot walk-21-back
+-M shift -k F6 -m shift
+-M shift -k F6 -m shift
+@shot walk-23-shift-f6
+@tree end

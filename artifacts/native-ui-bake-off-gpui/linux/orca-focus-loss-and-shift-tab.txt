@@ -1,0 +1,54 @@
+(before the first key)
+    "Screen reader on."
+    "Sotto (GPUI)"
+    "Sotto embedded"
+    "landmark Thread: Harbor scheduler"
+    "Composer form"
+    "Message entry Ask for a change, or reply"
+> wtype -M shift -k Tab -m shift
+    "leaving form."
+    "Edited src/harbor/scheduler.ts. Collapsed button"
+    "Sotto (GPUI) frame"
+> wtype -M shift -k Tab -m shift
+    "Sotto TypeScript code: const limits = loadLimits("
+    "landmark Thread: Harbor scheduler"
+    "Transcript log"
+    "Switch to the light theme button"
+> wtype -M shift -k Tab -m shift
+    "Composer variant panel"
+    "Composer variant"
+    "Composer variant C not selected radio button"
+> wtype -k Tab
+    "Switch to the light theme button"
+> wtype -k Tab
+    "landmark Thread: Harbor scheduler"
+    "Transcript log"
+> wtype -k Tab
+    "Ran npm test -- tests/harbor. Collapsed button"
+    "Sotto (GPUI) frame"
+    "Sotto embedded"
+    "landmark Thread: Harbor scheduler"
+    "Transcript log"
+> wtype -d 90 check the ledger
+> wtype -k F6
+    "Composer form"
+    "Message entry Ask for a change, or reply"
+> wtype -k F6
+    "Browse mode"
+    "leaving form."
+    "landmark Tools"
+    "landmark Web page"
+    "Web page (stand-in, texture surface) document frame Stand-in page. Field: empty. Booked 0 times."
+> wtype -k F6
+    "landmark Terminal, bash"
+> wtype -k Prior
+> wtype -k Prior
+> wtype -k Prior
+> wtype -k KP_Up
+> wtype -k KP_Page_Up
+> wtype -k KP_Page_Up
+> wtype -k KP_Page_Up
+> wtype -k KP_Add
+    "[zach@forge ~]$ +"
+> wtype -k Control_L
+    "Screen reader off."

@@ -1,0 +1,43 @@
+# AT-SPI events from the app over 14 s while the reply streamed and 'check the ledger', Left, Ctrl+Left, BackSpace were typed into the composer
+# counts by event type:
+    937 object:state-changed:defunct
+    836 object:property-change:accessible-name
+    239 object:children-changed:add
+     47 object:children-changed:remove
+     32 object:text-changed:insert
+      2 object:text-changed:delete
+# the composer's events:
+09:25:08 object:text-changed:insert detail1=0 detail2=1 any='c' on entry 'Message'
+09:25:08 object:text-changed:insert detail1=0 detail2=1 any='c' on entry 'Message'
+09:25:08 object:text-changed:insert detail1=1 detail2=1 any='h' on entry 'Message'
+09:25:08 object:text-changed:insert detail1=1 detail2=1 any='h' on entry 'Message'
+09:25:08 object:text-changed:insert detail1=2 detail2=1 any='e' on entry 'Message'
+09:25:08 object:text-changed:insert detail1=2 detail2=1 any='e' on entry 'Message'
+09:25:08 object:text-changed:insert detail1=3 detail2=1 any='c' on entry 'Message'
+09:25:08 object:text-changed:insert detail1=3 detail2=1 any='c' on entry 'Message'
+09:25:08 object:text-changed:insert detail1=4 detail2=1 any='k' on entry 'Message'
+09:25:08 object:text-changed:insert detail1=4 detail2=1 any='k' on entry 'Message'
+09:25:08 object:text-changed:insert detail1=5 detail2=1 any=' ' on entry 'Message'
+09:25:08 object:text-changed:insert detail1=5 detail2=1 any=' ' on entry 'Message'
+09:25:09 object:text-changed:insert detail1=6 detail2=1 any='t' on entry 'Message'
+09:25:09 object:text-changed:insert detail1=6 detail2=1 any='t' on entry 'Message'
+09:25:09 object:text-changed:insert detail1=7 detail2=1 any='h' on entry 'Message'
+09:25:09 object:text-changed:insert detail1=7 detail2=1 any='h' on entry 'Message'
+09:25:09 object:text-changed:insert detail1=8 detail2=1 any='e' on entry 'Message'
+09:25:09 object:text-changed:insert detail1=8 detail2=1 any='e' on entry 'Message'
+09:25:09 object:text-changed:insert detail1=9 detail2=1 any=' ' on entry 'Message'
+09:25:09 object:text-changed:insert detail1=9 detail2=1 any=' ' on entry 'Message'
+09:25:09 object:text-changed:insert detail1=10 detail2=1 any='l' on entry 'Message'
+09:25:09 object:text-changed:insert detail1=10 detail2=1 any='l' on entry 'Message'
+09:25:09 object:text-changed:insert detail1=11 detail2=1 any='e' on entry 'Message'
+09:25:09 object:text-changed:insert detail1=11 detail2=1 any='e' on entry 'Message'
+09:25:09 object:text-changed:insert detail1=12 detail2=1 any='d' on entry 'Message'
+09:25:09 object:text-changed:insert detail1=12 detail2=1 any='d' on entry 'Message'
+09:25:09 object:text-changed:insert detail1=13 detail2=1 any='g' on entry 'Message'
+09:25:09 object:text-changed:insert detail1=13 detail2=1 any='g' on entry 'Message'
+09:25:10 object:text-changed:insert detail1=14 detail2=1 any='e' on entry 'Message'
+09:25:10 object:text-changed:insert detail1=14 detail2=1 any='e' on entry 'Message'
+09:25:10 object:text-changed:insert detail1=15 detail2=1 any='r' on entry 'Message'
+09:25:10 object:text-changed:insert detail1=15 detail2=1 any='r' on entry 'Message'
+09:25:13 object:text-changed:delete detail1=9 detail2=1 any=' ' on entry 'Message'
+09:25:13 object:text-changed:delete detail1=9 detail2=1 any=' ' on entry 'Message'

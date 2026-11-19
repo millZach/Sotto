@@ -1,0 +1,46 @@
+application: 'sotto-gpui'
+  frame: 'Sotto (GPUI)'
+    embedded: 'Sotto'
+      title bar: 'Sotto'
+        panel: 'Composer variant'
+          radio button: 'Composer variant A' [focusable]
+          radio button: 'Composer variant B' [focusable]
+          radio button: 'Composer variant C' [focusable]
+        button: 'Switch to the light theme' [focusable]
+        button: 'Minimize'
+        button: 'Maximize'
+        button: 'Close'
+      landmark: 'Thread: Harbor scheduler'
+        log: 'Transcript' [focusable]
+          button: 'Ran npm test -- tests/harbor. Collapsed' [focusable]
+            label: 'Ran npm test -- tests/harbor'
+          paragraph: 'Each berth worker sorts the queue by the time a ship was promised, not the time it was see'
+          paragraph: 'Three things had to hold for the rule to be right:'
+          list item: 'Ships keep the order they were promised.'
+          list item: 'Two ships promised the same second are ordered by name.'
+          list item: 'A ship seen early never jumps the queue.'
+          list item: 'Not even when its berth is already free.'
+          list item: 'Not even after a restart.'
+          list item: 'A full berth stops the retries.'
+          list item: 'The reason names when a berth will be free.'
+          list item: 'Nothing is booked twice.'
+          list item: 'The ledger refuses a hand-off that goes back in time.'
+          button: 'Edited src/harbor/scheduler.ts. Collapsed' [focusable]
+            label: 'Edited src/harbor/scheduler.ts'
+          paragraph: 'The dock ledger stops retrying once the berth says it is full, which is what the failing t'
+          status bar: 'Writing a reply'
+        form: 'Composer'
+          entry: 'Message' [focused,focusable]
+            entry: 'Message'
+          button: 'Attach a file or quote a reply' [focusable]
+          button: 'Permissions: Ask first' [focusable]
+          button: 'Model: Sonnet 4.5' [focusable]
+          button: 'Effort: High' [focusable]
+          button: 'Stop the reply' [focusable]
+      landmark: 'Tools'
+        landmark: 'Web page'
+          panel: 'Page surface'
+            radio button: 'Show the page as a Texture' [focusable]
+          document frame: 'Web page (stand-in, texture surface)' desc='Stand-in page. Field: empty. Booked 0 times.' [focusable]
+        landmark: 'Terminal, bash'
+          terminal: 'Terminal output' desc='[zach@forge ~]$' [focusable]
