@@ -84,7 +84,7 @@ impl TerminalView {
             .unwrap_or_else(|| program.clone());
         let options = tty::Options {
             shell: Some(tty::Shell::new(program, args)),
-            working_directory: std::env::var("USERPROFILE").ok().map(Into::into),
+            working_directory: std::env::var(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).ok().map(Into::into),
             drain_on_exit: true,
             env: Default::default(),
             #[cfg(windows)]

@@ -1,8 +1,10 @@
 //! The web pane region: how GPUI hosts a surface it does not draw.
 //!
 //! A separate spike proves the Chromium component. Here a stand-in page is drawn
-//! by another renderer (Windows GDI, on its own thread) and shown two ways, the
-//! two ways CEF can be embedded on Windows:
+//! by another renderer on its own thread (Windows GDI; on Linux a few lines of
+//! software rasterising with swash for the glyphs) and shown two ways on
+//! Windows, the two ways CEF can be embedded there (on Linux, the texture only:
+//! GPUI's Wayland and X11 backends have no child surface to give):
 //!
 //! - **Texture**: the other renderer hands GPUI a BGRA frame (what CEF's
 //!   off-screen rendering gives), and GPUI draws it as an image with rounded
@@ -436,8 +438,157 @@ mod renderer {
     }
 
     #[cfg(not(windows))]
-    pub fn draw(_page: &Page, w: u32, h: u32, _tick: u64) -> Option<Vec<u8>> {
-        Some(vec![200; (w * h * 4) as usize])
+    pub fn draw(page: &Page, w: u32, h: u32, tick: u64) -> Option<Vec<u8>> {
+        Some(super::soft::render_to_bgra(page, w, h, tick))
+    }
+}
+
+#[cfg(not(windows))]
+mod soft {
+    //! Drawing the stand-in page in software: filled rectangles, and glyphs rasterised by swash
+    //! from the app's own Figtree, into a BGRA buffer, the way Chromium's off-screen mode hands a
+    //! host its frames. No shaping (the page's words are plain Latin).
+    use super::Page;
+    use swash::{
+        FontRef,
+        scale::{Render, ScaleContext, Source},
+        zeno::{Format, Vector},
+    };
+
+    static REGULAR: &[u8] = include_bytes!("../assets/fonts/Figtree-400.ttf");
+    static BOLD: &[u8] = include_bytes!("../assets/fonts/Figtree-600.ttf");
+
+    type Rgb = [u8; 3];
+
+    struct Canvas {
+        w: i32,
+        h: i32,
+        px: Vec<u8>,
+        cx: ScaleContext,
+    }
+
+    impl Canvas {
+        fn fill(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, c: Rgb) {
+            for y in y0.max(0)..y1.min(self.h) {
+                for x in x0.max(0)..x1.min(self.w) {
+                    let i = ((y * self.w + x) * 4) as usize;
+                    self.px[i..i + 4].copy_from_slice(&[c[2], c[1], c[0], 255]);
+                }
+            }
+        }
+
+        fn measure(&self, font: &[u8], s: &str, size: f32) -> f32 {
+            let font = FontRef::from_index(font, 0).unwrap();
+            let charmap = font.charmap();
+            let metrics = font.glyph_metrics(&[]).scale(size);
+            s.chars().map(|ch| metrics.advance_width(charmap.map(ch))).sum()
+        }
+
+        /// One line of text with its baseline at `y`; returns the x it ended at.
+        fn text(&mut self, font: &[u8], s: &str, mut x: f32, y: f32, size: f32, c: Rgb) -> f32 {
+            let font = FontRef::from_index(font, 0).unwrap();
+            let charmap = font.charmap();
+            let metrics = font.glyph_metrics(&[]).scale(size);
+            let mut scaler = self.cx.builder(font).size(size).hint(false).build();
+            for ch in s.chars() {
+                let gid = charmap.map(ch);
+                let fract = x.fract();
+                if let Some(img) = Render::new(&[Source::Outline])
+                    .format(Format::Alpha)
+                    .offset(Vector::new(fract, 0.))
+                    .render(&mut scaler, gid)
+                {
+                    let left = x.floor() as i32 + img.placement.left;
+                    let top = y.round() as i32 - img.placement.top;
+                    for gy in 0..img.placement.height as i32 {
+                        for gx in 0..img.placement.width as i32 {
+                            let a = img.data[(gy * img.placement.width as i32 + gx) as usize] as u32;
+                            let (px, py) = (left + gx, top + gy);
+                            if a == 0 || px < 0 || py < 0 || px >= self.w || py >= self.h {
+                                continue;
+                            }
+                            let i = ((py * self.w + px) * 4) as usize;
+                            for (k, ch) in [c[2], c[1], c[0]].into_iter().enumerate() {
+                                let under = self.px[i + k] as u32;
+                                self.px[i + k] = ((ch as u32 * a + under * (255 - a)) / 255) as u8;
+                            }
+                        }
+                    }
+                }
+                x += metrics.advance_width(gid);
+            }
+            x
+        }
+
+        /// Greedy word wrap inside `width`; returns the baseline after the last line.
+        fn paragraph(&mut self, font: &[u8], s: &str, x: f32, mut y: f32, width: f32, size: f32, c: Rgb) -> f32 {
+            let mut line = String::new();
+            for word in s.split(' ') {
+                let candidate = if line.is_empty() { word.to_string() } else { format!("{line} {word}") };
+                if !line.is_empty() && self.measure(font, &candidate, size) > width {
+                    self.text(font, &line, x, y, size, c);
+                    y += size * 1.45;
+                    line = word.to_string();
+                } else {
+                    line = candidate;
+                }
+            }
+            self.text(font, &line, x, y, size, c);
+            y + size * 1.45
+        }
+    }
+
+    pub fn render_to_bgra(page: &Page, w: u32, h: u32, tick: u64) -> Vec<u8> {
+        let (bg, ink, muted, field, ring, button): (Rgb, Rgb, Rgb, Rgb, Rgb, Rgb) = if page.dark {
+            ([28, 30, 34], [236, 238, 240], [160, 166, 172], [44, 47, 52], [94, 196, 186], [94, 196, 186])
+        } else {
+            ([255, 255, 255], [30, 32, 36], [96, 100, 108], [242, 243, 245], [18, 120, 112], [18, 120, 112])
+        };
+        let (w, h) = (w as i32, h as i32);
+        let mut c = Canvas { w, h, px: vec![0; (w * h * 4) as usize], cx: ScaleContext::new() };
+        let s = (h as f32 / 400.).clamp(0.6, 3.0);
+        let p = |v: f32| v * s;
+        c.fill(0, 0, w, h, bg);
+        // A live stripe that moves, so a stale frame shows.
+        let stripe_x = ((tick % 8) as i32) * w / 8;
+        c.fill(stripe_x, 0, stripe_x + w / 8, p(3.) as i32, ring);
+        c.text(REGULAR, "harbor.example", p(24.), p(36.), p(13.), muted);
+        c.text(BOLD, "Berth status", p(24.), p(78.), p(26.), ink);
+        c.paragraph(
+            REGULAR,
+            "A stand-in page drawn in software on its own thread. The Chromium component replaces it.",
+            p(24.),
+            p(112.),
+            w as f32 - p(48.),
+            p(14.),
+            muted,
+        );
+        let fy = (h as f32 * 0.42) as i32;
+        let fh = (h as f32 * 0.14) as i32;
+        let (fl, fr) = ((w as f32 * 0.06) as i32, (w as f32 * 0.7) as i32);
+        if page.focus == 1 {
+            c.fill(fl - 2, fy - 2, fr + 2, fy + fh + 2, ring);
+        }
+        c.fill(fl, fy, fr, fy + fh, field);
+        let mid = fy as f32 + fh as f32 / 2. + p(15.) * 0.35;
+        if page.text.is_empty() {
+            c.text(REGULAR, "Ship name", fl as f32 + p(10.), mid, p(15.), muted);
+        } else {
+            let end = c.text(REGULAR, &page.text, fl as f32 + p(10.), mid, p(15.), ink);
+            if page.focus == 1 {
+                c.fill(end as i32 + 1, mid as i32 - p(12.) as i32, end as i32 + 2, mid as i32 + p(3.) as i32, ink);
+            }
+        }
+        let (bl, br) = ((w as f32 * 0.72) as i32, (w as f32 * 0.94) as i32);
+        if page.focus == 2 {
+            c.fill(bl - 3, fy - 3, br + 3, fy + fh + 3, ink);
+        }
+        c.fill(bl, fy, br, fy + fh, button);
+        let label_w = c.measure(BOLD, "Book a berth", p(14.));
+        c.text(BOLD, "Book a berth", (bl + br) as f32 / 2. - label_w / 2., fy as f32 + fh as f32 / 2. + p(14.) * 0.35, p(14.), bg);
+        let status = if page.presses == 0 { "No bookings yet.".to_string() } else { format!("Booked {} times.", page.presses) };
+        c.text(REGULAR, &status, p(24.), (fy + fh) as f32 + p(32.), p(13.), muted);
+        c.px
     }
 }
 

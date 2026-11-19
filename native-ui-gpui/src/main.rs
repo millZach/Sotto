@@ -12,6 +12,9 @@
 //! - `SOTTO_GPUI_METRICS=path.json` writes frame and typing timings there when the stream ends.
 //! - `SOTTO_GPUI_EXIT_AFTER_STREAM=1` quits five seconds after the stream ends (after the memory sample).
 //! - `SOTTO_GPUI_REDUCE_MOTION=1` forces reduced motion on, whatever the system says.
+//! - `SOTTO_GPUI_MEMORY_AFTER_MS=5000` samples memory that long after the stream ends (default 3000).
+//! - `SOTTO_LAUNCH_T0=$(date +%s%N)` measures launch from the launcher's clock rather than from `main`.
+//! - `SOTTO_GPUI_TRACE_FOCUS=1` logs each change of focus.
 
 mod composer;
 mod content;
@@ -147,6 +150,22 @@ impl Root {
                     w.blur_page()
                 }
             });
+        })
+        .detach();
+
+        // A focused row that scrolls out of the virtualised transcript is dropped with its focus
+        // handle, and GPUI then sends keys to the window's root, above every handler here, so
+        // Tab and F6 would do nothing. Put focus back on the nearest thing that still exists
+        // (the transcript, for a row), or the composer. Found on forge: Shift+Tab from the
+        // composer onto a folded row while the reply streams.
+        cx.on_focus_lost(window, |this, window, cx| {
+            let restore = window.focus_lost_restore_target(cx);
+            if std::env::var_os("SOTTO_GPUI_TRACE_FOCUS").is_some() {
+                eprintln!("focus-lost restore-target={}", if restore.is_some() { "ancestor" } else { "composer" });
+            }
+            let target = restore.unwrap_or_else(|| this.composer.read(cx).focus.clone());
+            window.focus(&target, cx);
+            cx.notify();
         })
         .detach();
 
@@ -318,7 +337,7 @@ impl Root {
                     metrics.borrow_mut().stream_ended();
                     let exit = std::env::var("SOTTO_GPUI_EXIT_AFTER_STREAM").is_ok_and(|v| v == "1");
                     // Memory is sampled three seconds after the stream ends, once the last frames settle.
-                    cx.background_executor().timer(Duration::from_secs(3)).await;
+                    cx.background_executor().timer(metrics::memory_wait()).await;
                     metrics.borrow_mut().sample_memory();
                     metrics.borrow_mut().write();
                     if exit {
@@ -511,6 +530,16 @@ impl Root {
                 .items_center()
                 .justify_center()
                 .hover(move |s| if close { s.bg(gpui::rgb(0xc42b1c)) } else { s.bg(t.hover.hsla()) })
+                // Windows answers these areas in its own hit test. GPUI's Wayland and X11
+                // backends ignore the areas, so on Linux the buttons do their own work.
+                .when(cfg!(not(windows)), |d| {
+                    d.on_click(move |_, window, _| match area {
+                        WindowControlArea::Min => window.minimize_window(),
+                        WindowControlArea::Max => window.zoom_window(),
+                        WindowControlArea::Close => window.remove_window(),
+                        _ => {}
+                    })
+                })
                 .child(icon(path, ink, 16.))
         };
         let dark = self.mode == Mode::Dark;
@@ -531,6 +560,17 @@ impl Root {
                 div()
                     .id("drag")
                     .window_control_area(WindowControlArea::Drag)
+                    // On Linux the compositor moves the window only when asked: a press in the
+                    // strip starts the move, a double press maximises or restores.
+                    .when(cfg!(not(windows)), |d| {
+                        d.on_mouse_down(MouseButton::Left, |event, window, _| {
+                            if event.click_count == 2 {
+                                window.zoom_window();
+                            } else {
+                                window.start_window_move();
+                            }
+                        })
+                    })
                     .flex_1()
                     .h_full()
                     .flex()
@@ -950,7 +990,9 @@ impl Root {
                             .rounded(px(6.))
                             .bg(t.surface.hsla())
                             .child(surface_switch("surface-texture", "Texture", Surface::Texture))
-                            .child(surface_switch("surface-child", "Child window", Surface::ChildWindow)),
+                            // A child window is the Win32 embedding path; GPUI's Linux backend has no
+                            // subsurface to offer, so on Linux the page is a texture only.
+                            .when(cfg!(windows), |d| d.child(surface_switch("surface-child", "Child window", Surface::ChildWindow))),
                     ),
             )
             .child(
@@ -1087,6 +1129,21 @@ mod menu_actions {
 impl Render for Root {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.metrics.borrow_mut().begin_frame(self.transcript.read(cx).streaming);
+        if std::env::var_os("SOTTO_GPUI_TRACE_FOCUS").is_some() {
+            let now = format!(
+                "{:?} transcript={} composer={}",
+                window.focused(cx),
+                self.transcript.read(cx).focus.contains_focused(window, cx),
+                self.composer.read(cx).focus.is_focused(window)
+            );
+            thread_local!(static LAST: RefCell<String> = RefCell::new(String::new()));
+            LAST.with(|l| {
+                if *l.borrow() != now {
+                    eprintln!("focus {now}");
+                    *l.borrow_mut() = now;
+                }
+            });
+        }
         if let Some(key_at) = self.composer.update(cx, |c, _| c.last_key_at.take()) {
             self.metrics.borrow_mut().key(key_at);
         }
@@ -1153,6 +1210,7 @@ impl Render for Root {
             .on_action(cx.listener(|this, _: &FocusNext, window, cx| {
                 this.last_direction_forward = true;
                 window.focus_next(cx);
+        
             }))
             .on_action(cx.listener(|this, _: &FocusPrev, window, cx| {
                 this.last_direction_forward = false;

@@ -55,6 +55,8 @@ pub struct ComposerText {
     /// When the last key reached the composer, for the typing-latency log.
     pub last_key_at: Option<Instant>,
     pub on_submit: Option<Box<dyn Fn(&mut Window, &mut App)>>,
+    /// Where the caret was last drawn, in the window, so the input method hears when it moves.
+    ime_caret: std::cell::Cell<Option<Point<Pixels>>>,
 }
 
 struct Layout {
@@ -132,6 +134,7 @@ impl ComposerText {
             layout: Rc::new(RefCell::new(None)),
             last_key_at: None,
             on_submit: None,
+            ime_caret: std::cell::Cell::new(None),
         }
     }
 
@@ -843,6 +846,17 @@ impl Element for ComposerElement {
                 for rect in range_rects(&layout, input.selected.clone()) {
                     quads.push((rect, self.look.selection.opacity(0.9), px(2.), None));
                 }
+            }
+        }
+        // Wayland's text-input is told where the caret is, not asked (Windows asks when a
+        // composition starts), so say so whenever it moves: typing, arrows, a resize, a
+        // scroll. Without this the candidate window opened where the composer was when it
+        // first took focus (found on forge with fcitx5).
+        if input.focus.is_focused(window) {
+            let at = if placeholder { layout.bounds.origin } else { layout.position_for(input.cursor()) };
+            if input.ime_caret.get() != Some(at) {
+                input.ime_caret.set(Some(at));
+                window.invalidate_character_coordinates();
             }
         }
         let caret = (input.selected.is_empty() && self.caret_visible && input.focus.is_focused(window)).then(|| {

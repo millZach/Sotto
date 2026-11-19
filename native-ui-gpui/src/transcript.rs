@@ -340,7 +340,13 @@ impl Transcript {
     }
 
     fn scroll(&mut self, by: Pixels, cx: &mut Context<Self>) {
-        self.list.scroll_by(by);
+        // Not `ListState::scroll_by`: with bottom alignment and the list at its end (no anchor),
+        // it measures from one past the last item, so any step shorter than the viewport lands
+        // where too little is left to fill it and the list snaps back to the end. Keys did
+        // nothing at the end of the transcript (found on forge). The scrollbar offset is measured
+        // from the real top.
+        let offset = self.list.scroll_px_offset_for_scrollbar();
+        self.list.set_offset_from_scrollbar(gpui::point(offset.x, offset.y - by));
         cx.notify();
     }
 

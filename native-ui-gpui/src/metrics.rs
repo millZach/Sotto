@@ -7,8 +7,14 @@
 //! - A frame's interval is the time between the starts of consecutive frames.
 //! - A key's latency is the time from the composer receiving the key to the end
 //!   of the paint of the first frame that includes it.
-//! - Memory is the process's working set and private bytes, three seconds after
-//!   the stream ends.
+//! - Memory is the process's working set and private bytes on Windows, and its
+//!   RSS and PSS from `/proc/self/smaps_rollup` on Linux, three seconds after the
+//!   stream ends (`SOTTO_GPUI_MEMORY_AFTER_MS` changes the wait).
+//! - With `SOTTO_LAUNCH_T0` set to the wall clock in nanoseconds just before the
+//!   process started (`date +%s%N`), launch is from then to the end of the first
+//!   paint; without it, from the start of `main`.
+//! - The end interval is the time between the ends of consecutive frames' paint,
+//!   the way the Slint half measures its frames (`AfterRendering`).
 
 use std::{
     path::PathBuf,
@@ -17,9 +23,20 @@ use std::{
 };
 
 static PROCESS_START: OnceLock<Instant> = OnceLock::new();
+static LAUNCH_T0: OnceLock<Option<Duration>> = OnceLock::new();
 
 pub fn mark_process_start() {
     let _ = PROCESS_START.set(Instant::now());
+    // How long before `main` the launcher took its timestamp, on the wall clock.
+    let before_main = std::env::var("SOTTO_LAUNCH_T0").ok().and_then(|v| v.trim().parse::<u128>().ok()).and_then(|t0| {
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).ok()?.as_nanos();
+        Some(Duration::from_nanos(now.checked_sub(t0)? as u64))
+    });
+    let _ = LAUNCH_T0.set(before_main);
+}
+
+pub fn memory_wait() -> Duration {
+    Duration::from_millis(std::env::var("SOTTO_GPUI_MEMORY_AFTER_MS").ok().and_then(|v| v.parse().ok()).unwrap_or(3000))
 }
 
 struct Frame {
@@ -69,7 +86,11 @@ impl Metrics {
             frame.end = Some(now);
         }
         if self.first_paint.is_none() {
-            self.first_paint = PROCESS_START.get().map(|s| now - *s);
+            let before_main = LAUNCH_T0.get().copied().flatten().unwrap_or_default();
+            self.first_paint = PROCESS_START.get().map(|s| now - *s + before_main);
+            if let Some(d) = self.first_paint {
+                eprintln!("first-frame launch_ms={:.1} from={}", d.as_secs_f64() * 1000., if before_main.is_zero() { "main" } else { "SOTTO_LAUNCH_T0" });
+            }
         }
         for key in self.pending_keys.drain(..) {
             self.key_latencies.push(now - key);
@@ -95,6 +116,23 @@ impl Metrics {
         let during: Vec<&Frame> = self.frames.iter().filter(|f| f.start >= start && f.start <= end && f.end.is_some()).collect();
         let mut work: Vec<f64> = during.iter().map(|f| (f.end.unwrap() - f.start).as_secs_f64() * 1000.).collect();
         let mut intervals: Vec<f64> = during.windows(2).map(|w| (w[1].start - w[0].start).as_secs_f64() * 1000.).collect();
+        let mut end_intervals: Vec<f64> =
+            during.windows(2).map(|w| (w[1].end.unwrap() - w[0].end.unwrap()).as_secs_f64() * 1000.).collect();
+        let over_33 = end_intervals.iter().filter(|v| **v > 33.3).count();
+        let over_33_start = intervals.iter().filter(|v| **v > 33.3).count();
+        // The raw series, for summaries across runs.
+        let raw_path = path.with_extension("raw.json");
+        let list = |v: &[f64]| v.iter().map(|x| format!("{x:.3}")).collect::<Vec<_>>().join(",");
+        let _ = std::fs::write(
+            &raw_path,
+            format!(
+                "{{\"frame_interval_ms\": [{}], \"frame_end_interval_ms\": [{}], \"frame_work_ms\": [{}], \"key_to_paint_ms\": [{}]}}\n",
+                list(&intervals),
+                list(&end_intervals),
+                list(&during.iter().map(|f| (f.end.unwrap() - f.start).as_secs_f64() * 1000.).collect::<Vec<_>>()),
+                list(&self.key_latencies.iter().map(|d| d.as_secs_f64() * 1000.).collect::<Vec<_>>()),
+            ),
+        );
         let mut keys: Vec<f64> = self.key_latencies.iter().map(|d| d.as_secs_f64() * 1000.).collect();
         let summary = |v: &mut Vec<f64>| -> String {
             if v.is_empty() {
@@ -122,16 +160,21 @@ impl Metrics {
             })
             .collect();
         let json = format!(
-            "{{\n  \"long_frames_at_ms_work_ms_reply_char\": [{}],\n  \"stream_ms\": {:.0},\n  \"frames\": {},\n  \"streaming_frames\": {},\n  \"frame_work_ms\": {},\n  \"frame_interval_ms\": {},\n  \"key_to_paint_ms\": {},\n  \"first_paint_ms\": {},\n  \"working_set_mb\": {},\n  \"private_mb\": {}\n}}\n",
+            "{{\n  \"long_frames_at_ms_work_ms_reply_char\": [{}],\n  \"stream_ms\": {:.0},\n  \"frames\": {},\n  \"streaming_frames\": {},\n  \"frame_work_ms\": {},\n  \"frame_interval_ms\": {},\n  \"frame_end_interval_ms\": {},\n  \"frames_over_33ms_end\": {},\n  \"frames_over_33ms_start\": {},\n  \"key_to_paint_ms\": {},\n  \"first_paint_ms\": {},\n  \"{}\": {},\n  \"{}\": {}\n}}\n",
             long.join(", "),
             (end - start).as_secs_f64() * 1000.,
             during.len(),
             streaming_frames,
             summary(&mut work),
             summary(&mut intervals),
+            summary(&mut end_intervals),
+            over_33,
+            over_33_start,
             summary(&mut keys),
             self.first_paint.map(|d| format!("{:.1}", d.as_secs_f64() * 1000.)).unwrap_or("null".into()),
+            MEMORY_NAMES.0,
             self.memory.map(|m| format!("{:.1}", m.0 as f64 / 1048576.)).unwrap_or("null".into()),
+            MEMORY_NAMES.1,
             self.memory.map(|m| format!("{:.1}", m.1 as f64 / 1048576.)).unwrap_or("null".into()),
         );
         let _ = std::fs::write(path, json);
@@ -153,7 +196,23 @@ fn process_memory() -> Option<(u64, u64)> {
     Some((counters.WorkingSetSize as u64, counters.PrivateUsage as u64))
 }
 
+#[cfg(windows)]
+const MEMORY_NAMES: (&str, &str) = ("working_set_mb", "private_mb");
 #[cfg(not(windows))]
+const MEMORY_NAMES: (&str, &str) = ("rss_mib", "pss_mib");
+
+/// RSS and PSS of this process alone (the terminal's shell is its own process and not counted).
+#[cfg(target_os = "linux")]
+fn process_memory() -> Option<(u64, u64)> {
+    let text = std::fs::read_to_string("/proc/self/smaps_rollup").ok()?;
+    let field = |name: &str| -> Option<u64> {
+        let line = text.lines().find(|l| l.starts_with(name))?;
+        Some(line.split_whitespace().nth(1)?.parse::<u64>().ok()? * 1024)
+    };
+    Some((field("Rss:")?, field("Pss:")?))
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
 fn process_memory() -> Option<(u64, u64)> {
     None
 }
