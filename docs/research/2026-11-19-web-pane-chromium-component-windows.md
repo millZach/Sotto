@@ -187,11 +187,14 @@ pktmon stop; pktmon etl2pcap D:\sotto-webpane-work\net.etl --out D:\sotto-webpan
 $others = "0.0.0.0-100.106.126.3", "100.106.126.5-126.255.255.255", "128.0.0.0-255.255.255.255", "::2-ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff"
 New-NetFirewallRule -DisplayName "wp-seal" -Direction Outbound -Program D:\sotto-webpane-work\dist\webpane.exe -RemoteAddress $others -Action Block
 auditpol /set /subcategory:"Filtering Platform Packet Drop" /failure:enable
-# start the canary on forge as section 7 says, then:
+# The canary on forge (setsid -f, or the ssh session stays open), then the run:
+ssh forge "mkdir -p /tmp/wp-canary/pages"; scp web-pane-spike\server\testserver.py forge:/tmp/wp-canary/
+ssh forge "cd /tmp/wp-canary && setsid -f python3 -I testserver.py --pages pages --bind 100.106.126.4 > canary.log 2>&1 < /dev/null"
 powershell -File web-pane-spike\scripts\seal.ps1 seal-firewalled "csp,filter,proxy,webrtc,deny" D:\sotto-webpane-work\seal\hostile-forge.html -Hardened
 Get-WinEvent -FilterHashtable @{LogName='Security'; Id=5152; StartTime=(Get-Date).AddMinutes(-5)} | Where-Object { $_.Message -match 'webpane' } | Measure-Object
 # Remove the rule and the audit setting afterwards:
 Remove-NetFirewallRule -DisplayName "wp-seal"; auditpol /set /subcategory:"Filtering Platform Packet Drop" /failure:disable
+ssh forge "pkill -f 'testserver[.]py --pages pages --bind 100'; rm -rf /tmp/wp-canary"
 ```
 
 The drop log (event 5152) is the measure: every packet it records from `webpane.exe` is an attempt that got past the page's own layers. The canary on forge says whether anything reached the one address left open [d][i].
