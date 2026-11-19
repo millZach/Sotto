@@ -264,8 +264,8 @@ export function verifyDevinPolicy(result: unknown, profile: DevinProfile): void 
 }
 
 const PLUGIN_REFUSAL = 'Devin has a plugin that brings more than skills, or Sotto could not confirm what its plugins bring. Your thread is kept. Remove Devin plugins that have hooks, rules, agents or MCP servers, then reconnect.'
-/** More plugins than this is refused rather than checked, so one check starts a bounded number of processes. */
-const MAX_PLUGINS = 16
+/** How many `plugins info` reads one check runs at a time. */
+const PLUGIN_READS_AT_ONCE = 4
 const PLUGIN_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u
 
 /**
@@ -285,20 +285,30 @@ export function verifyDevinPluginList(stdout: string): string[] {
     if (match && PLUGIN_NAME.test(match[1]!) && !names.includes(match[1]!)) names.push(match[1]!)
     else valid = false
   }
-  if (!valid || names.length === 0 || names.length > MAX_PLUGINS) throw new Error(PLUGIN_REFUSAL)
+  if (!valid || names.length === 0) throw new Error(PLUGIN_REFUSAL)
   return names
 }
 
 const PLUGIN_SECTIONS = ['Skills', 'Agents', 'Hooks', 'Rules', 'MCP servers'] as const
 const PLUGIN_LISTS = ['Required plugins: (none)', 'Optional plugins: (none)', 'Forbidden plugins: (none)']
+const PLUGIN_METADATA = [/^ {2}version: \S+$/u, /^ {2}source: \S+$/u]
 /**
  * A plugin Sotto lets a Devin session load brings only skills: text the model may read, whose tool calls ask like any
  * other (Zach's call, November 18, 2026, ADR-0017). Its agents, hooks, rules and MCP servers must each read `(none)`, as
- * must the plugins it requires, offers or forbids. The output is never kept or put in an error.
+ * must the plugins it requires, offers or forbids. Above them come its `version` and `source`, once each, and nothing
+ * else. The output is never kept or put in an error.
  */
 export function verifyDevinPluginInfo(stdout: string, name: string): void {
   const lines = stdout.trimEnd().split(/\r?\n/u)
   let valid = lines.shift() === `Plugin: ${name}`
+  const metadata = PLUGIN_METADATA.map(() => false)
+  /** Whether the line is a metadata field not yet seen; a repeated one is not. */
+  const firstMetadata = (line: string): boolean => {
+    const index = PLUGIN_METADATA.findIndex(field => field.test(line))
+    if (index < 0 || metadata[index]) return false
+    metadata[index] = true
+    return true
+  }
   const seen = new Set<string>()
   let section: string | undefined
   let entries = 0
@@ -307,13 +317,13 @@ export function verifyDevinPluginInfo(stdout: string, name: string): void {
     if (line === '') continue
     if ((PLUGIN_SECTIONS as readonly string[]).includes(line) && !seen.has(line)) { close(); section = line; seen.add(line); entries = 0 }
     else if (PLUGIN_LISTS.includes(line) && !seen.has(line)) { close(); section = undefined; seen.add(line) }
-    else if (section === undefined && seen.size === 0 && /^ {2}[a-z_]+: [^\r\n]+$/u.test(line)) continue
+    else if (section === undefined && seen.size === 0 && firstMetadata(line)) continue
     else if (section !== undefined && line === '  (none)' && entries === 0) entries = -1
     else if (section === 'Skills' && entries >= 0 && /^ {2}\/\S+(?: - [^\r\n]*)?$/u.test(line)) entries++
     else valid = false
   }
   close()
-  if (!valid || seen.size !== PLUGIN_SECTIONS.length + PLUGIN_LISTS.length) throw new Error(PLUGIN_REFUSAL)
+  if (!valid || !metadata.every(Boolean) || seen.size !== PLUGIN_SECTIONS.length + PLUGIN_LISTS.length) throw new Error(PLUGIN_REFUSAL)
 }
 
 
@@ -361,14 +371,20 @@ function nativeList(executable: string, args: readonly string[], environment: No
   })
 }
 
-/** argsPrefix must include --config and the owned profile. Runs no model prompt. Each plugin's info is read side by side. */
+/**
+ * argsPrefix must include --config and the owned profile. Runs no model prompt. Plugins' info is read a few at a time,
+ * judged in the list's order, and the first refusal ends the check.
+ */
 export async function assertDevinSkillOnlyPlugins(executable: string, argsPrefix: readonly string[], environment: NodeJS.ProcessEnv, cwd?: string): Promise<void> {
   const names = verifyDevinPluginList(await nativeList(executable, [...argsPrefix, 'plugins', 'list'], environment, cwd))
-  const infos = await Promise.allSettled(names.map(name => nativeList(executable, [...argsPrefix, 'plugins', 'info', name], environment, cwd)))
-  infos.forEach((info, index) => {
-    if (info.status === 'rejected') throw info.reason
-    verifyDevinPluginInfo(info.value, names[index]!)
-  })
+  for (let start = 0; start < names.length; start += PLUGIN_READS_AT_ONCE) {
+    const batch = names.slice(start, start + PLUGIN_READS_AT_ONCE)
+    const infos = await Promise.allSettled(batch.map(name => nativeList(executable, [...argsPrefix, 'plugins', 'info', name], environment, cwd)))
+    infos.forEach((info, index) => {
+      if (info.status === 'rejected') throw info.reason
+      verifyDevinPluginInfo(info.value, batch[index]!)
+    })
+  }
 }
 
 /**
@@ -386,7 +402,7 @@ export async function settleInOrder<A, B>(first: Promise<A>, second: Promise<B>)
  * Allow an empty native MCP registry or entries all explicitly disabled, and plugins that bring only skills. The two
  * lists are independent reads that change nothing, so they run side by side and are judged plugins first (`settleInOrder`).
  */
-export async function assertDevinNoIntegrations(executable: string, argsPrefix: readonly string[], environment: NodeJS.ProcessEnv, cwd?: string): Promise<void> {
+export async function assertDevinIntegrationsAllowed(executable: string, argsPrefix: readonly string[], environment: NodeJS.ProcessEnv, cwd?: string): Promise<void> {
   const [, mcp] = await settleInOrder(
     assertDevinSkillOnlyPlugins(executable, argsPrefix, environment, cwd),
     nativeList(executable, [...argsPrefix, 'mcp', 'list'], environment, cwd),

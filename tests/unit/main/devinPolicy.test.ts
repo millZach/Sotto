@@ -136,8 +136,10 @@ it('reads the names from an empty or pinned plugin list and refuses any other ou
   expect(verifyDevinPluginList('Installed plugins\r\n\r\n  • devin-playbooks v0.1.0\r\n\r\n')).toEqual(['devin-playbooks'])
   expect(verifyDevinPluginList('Installed plugins\n\n  • one v1\n  • two v0.2.0-beta\n')).toEqual(['one', 'two'])
   const many = 'Installed plugins\n\n' + Array.from({ length: 17 }, (_, index) => `  • plugin-${index} v1.0.0\n`).join('')
+  // Any number of plugins is read; how many are read at once is the check's own concern.
+  expect(verifyDevinPluginList(many)).toHaveLength(17)
   for (const output of ['', 'Installed plugins', 'Installed plugins\nexample', 'warning\nNo plugins installed.', 'Installed plugins\n\n  • one v1 (blocked)\n',
-    'Installed plugins\n\n  • --config v1\n', 'Installed plugins\n\n  • one v1\n  • one v1\n', 'Installed plugins:\n\n  • one v1\n', many]) {
+    'Installed plugins\n\n  • --config v1\n', 'Installed plugins\n\n  • one v1\n  • one v1\n', 'Installed plugins:\n\n  • one v1\n']) {
     expect(() => verifyDevinPluginList(output), output).toThrow(/brings more than skills/u)
   }
 })
@@ -154,7 +156,10 @@ it('lets a plugin through only when it brings nothing but skills, as 3000.14 pri
   }
   for (const output of [info.replace('Required plugins: (none)', 'Required plugins: other'), info.replace('Forbidden plugins: (none)\r\n', ''),
     info.replace('Hooks\r\n  (none)\r\n', ''), info.replace('Rules\r\n  (none)', 'Rules'), info.replace('Skills\r\n', 'Skills\r\n  (none)\r\n'),
-    info + 'warning\r\n', info + 'Hooks\r\n  (none)\r\n', info.replace('  version: 0.1.0', 'version: 0.1.0'), '']) {
+    info + 'warning\r\n', info + 'Hooks\r\n  (none)\r\n', info.replace('  version: 0.1.0', 'version: 0.1.0'), '',
+    // Metadata other than one version and one source, above the sections or among them.
+    info.replace('  source:', '  extra_capabilities: hooks\r\n  source:'), info.replace('  source: account-upload:devin_playbooks\r\n', ''),
+    info.replace('  source:', '  version: 0.2.0\r\n  source:'), info.replace('Agents', '  version: 0.1.0\r\nAgents')]) {
     expect(() => verifyDevinPluginInfo(output, 'devin-playbooks')).toThrow(/brings more than skills/u)
   }
   // Another plugin's info is not this one's.

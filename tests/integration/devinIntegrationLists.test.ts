@@ -3,7 +3,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
-import { assertDevinNoIntegrations } from '../../src/main/agents/devinPolicy'
+import { assertDevinIntegrationsAllowed } from '../../src/main/agents/devinPolicy'
 import { setup } from '../fixtures/devinPolicyFixture'
 
 it('bounds native integration checks and keeps subprocess output out of failures', async () => {
@@ -12,10 +12,10 @@ it('bounds native integration checks and keeps subprocess output out of failures
   const profile = join(root, 'profile.json')
   await writeFile(profile, '{}')
   await writeFile(script, "console.log(process.argv.includes('plugins') ? 'No plugins installed.' : \"No MCP servers configured. Use 'devin mcp add' to add servers.\")")
-  await expect(assertDevinNoIntegrations(process.execPath, [script, '--config', profile], {}, root)).resolves.toBeUndefined()
-  await expect(assertDevinNoIntegrations(process.execPath, [script], {}, root)).rejects.toThrow(/require the Sotto/u)
+  await expect(assertDevinIntegrationsAllowed(process.execPath, [script, '--config', profile], {}, root)).resolves.toBeUndefined()
+  await expect(assertDevinIntegrationsAllowed(process.execPath, [script], {}, root)).rejects.toThrow(/require the Sotto/u)
   await writeFile(script, "console.error('PRIVATE_PROVIDER_OUTPUT'); process.exit(1)")
-  await expect(assertDevinNoIntegrations(process.execPath, [script, '--config', profile], {}, root)).rejects.toThrow('Sotto could not check Devin integrations. Your thread is kept. Check the supported Devin installation and reconnect.')
+  await expect(assertDevinIntegrationsAllowed(process.execPath, [script, '--config', profile], {}, root)).rejects.toThrow('Sotto could not check Devin integrations. Your thread is kept. Check the supported Devin installation and reconnect.')
 })
 
 it('runs both integration lists side by side and names the plugin refusal first however they finish', async () => {
@@ -41,6 +41,6 @@ const wait = setInterval(() => {
   appendFileSync(${JSON.stringify(log)}, (met ? 'met ' : 'alone ') + kind + '\\n')
   setTimeout(answer, kind === 'plugins' ? 50 : 0)
 }, 5)`)
-  await expect(assertDevinNoIntegrations(process.execPath, [script, '--config', profile], {}, root)).rejects.toThrow(/plugins/u)
+  await expect(assertDevinIntegrationsAllowed(process.execPath, [script, '--config', profile], {}, root)).rejects.toThrow(/plugins/u)
   expect((await readFile(log, 'utf8')).trim().split('\n').sort()).toEqual(['met mcp', 'met plugins'])
 })

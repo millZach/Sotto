@@ -57,7 +57,9 @@ it('sends with a plugin that brings only skills, and refuses the next send once 
   // The account plugin 3000.14 installed by itself on November 18, 2026, brings one skill and nothing else.
   await writeFile(join(f.root, 'integrations.json'), JSON.stringify({ plugins: [{ name: 'devin-playbooks' }] }))
   const id = await settledThread()
-  await writeFile(join(f.root, 'integrations.json'), JSON.stringify({ plugins: [{ name: 'devin-playbooks' }, { name: 'hooked', hooks: true }] }))
+  // Fifth, so it is read after the first four, in a second batch.
+  const skills = ['devin-playbooks', 'two', 'three', 'four'].map(name => ({ name }))
+  await writeFile(join(f.root, 'integrations.json'), JSON.stringify({ plugins: [...skills, { name: 'hooked', hooks: true }] }))
   await expect(send(id)).rejects.toThrow('Devin has a plugin that brings more than skills, or Sotto could not confirm what its plugins bring. Your thread is kept. Remove Devin plugins that have hooks, rules, agents or MCP servers, then reconnect.')
   expect(await prompts()).toHaveLength(1)
 })
