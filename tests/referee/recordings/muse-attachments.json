@@ -2351,6 +2351,7 @@
       {"path":["shell","host","threads",0,"summary","lastMessageAt"],"value":"<time>"},
       {"path":["shell","host","threads",0,"summary","lastUser"],"value":{"createdAt":"<time>","id":"<id:11>","text":"Referee prompt one"}},
       {"path":["shell","host","threads",0,"summary","messageCount"],"value":1},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"value":"<time>"},
       {"path":["shell","notice"],"value":"Sent to Referee thread."}
      ]
     },
@@ -2403,6 +2404,7 @@
       {"path":["shell","host","threads",0,"summary","lastMessageAt"],"value":"<time>"},
       {"path":["shell","host","threads",0,"summary","lastUser"],"value":{"createdAt":"<time>","id":"<id:11>","text":"Referee prompt one"}},
       {"path":["shell","host","threads",0,"summary","messageCount"],"value":1},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"value":"<time>"},
       {"path":["shell","notice"],"value":"Sent to Referee thread."}
      ]
     },
@@ -2467,6 +2469,7 @@
       {"path":["shell","host","threads",0,"summary","lastMessageAt"],"value":"<time>"},
       {"path":["shell","host","threads",0,"summary","lastUser"],"value":{"createdAt":"<time>","id":"<id:11>","text":"Referee prompt one"}},
       {"path":["shell","host","threads",0,"summary","messageCount"],"value":1},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"value":"<time>"},
       {"path":["shell","notice"],"value":"Sent to Referee thread."}
      ]
     }
@@ -2489,6 +2492,7 @@
       },
       {"path":["shell","host","threads",0,"lastTurn","status"],"value":"completed"},
       {"path":["shell","host","threads",0,"status"],"value":"idle"},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"remove":true},
       {"path":["shell","host","threads",0,"summary","activityCount"],"value":1},
       {
        "path": ["shell","host","threads",0,"summary","lastAssistant"],
@@ -2508,6 +2512,7 @@
       },
       {"path":["shell","host","threads",0,"lastTurn","status"],"value":"completed"},
       {"path":["shell","host","threads",0,"status"],"value":"idle"},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"remove":true},
       {"path":["shell","host","threads",0,"summary","activityCount"],"value":1},
       {
        "path": ["shell","host","threads",0,"summary","lastAssistant"],
@@ -2528,6 +2533,7 @@
       },
       {"path":["shell","host","threads",0,"lastTurn","status"],"value":"completed"},
       {"path":["shell","host","threads",0,"status"],"value":"idle"},
+      {"path":["shell","host","threads",0,"summary","runningTurnStartedAt"],"remove":true},
       {"path":["shell","host","threads",0,"summary","activityCount"],"value":1},
       {
        "path": ["shell","host","threads",0,"summary","lastAssistant"],

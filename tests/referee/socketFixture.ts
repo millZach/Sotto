@@ -39,7 +39,7 @@ export const CANNOT_CROSS: Readonly<Record<string, string>> = {
   'sends a staged image through the handle contract, reading its bytes only at the provider boundary (ADR-0031)':
     'It counts how often the handle\'s bytes are read inside the host. Across the socket the client reads them itself to stage the image, so the count says nothing of the host.',
   'resumes the same thread and messages after restart during a run':
-    'It holds the adapter\'s restored thread equal to the one before, field for field. Across the socket the host\'s coordinator stands between them: it decides what a turn the restart stopped becomes (ADR-0076) and when a watched session opens again, so the thread a client is shown after a restart is the coordinator\'s. The referee\'s restart script holds a host to the TypeScript host\'s thread across a restart instead, once #2700 lets it be recorded; the attached-file cases here read messages back across one.',
+    'It holds the adapter\'s restored thread equal to the one before, field for field. Across the socket the host\'s coordinator stands between them: it decides what a turn the restart stopped becomes (ADR-0076) and when a watched session opens again, so the thread a client is shown after a restart is the coordinator\'s. The referee\'s restart script holds a host to the TypeScript host\'s thread across a restart instead, once #2710 lets it be recorded; the attached-file cases here read messages back across one.',
   // Lazy provider sessions.
   ...Object.fromEntries([
     'connects without starting a session, and starts one when the thread enters the watched set',

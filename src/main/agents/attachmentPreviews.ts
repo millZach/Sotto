@@ -225,6 +225,13 @@ export class AttachmentPreviews {
       }
     })
   }
+  /**
+   * Each message an entry names now, keyed as `live()` keys them: what a send that pushes older entries out under the size
+   * limit let go, read before and after it, so their markers go out as a change (#2699). Bounded by the entries.
+   */
+  messages(): Map<string, { readonly threadId: string; readonly messageId: string }> {
+    return new Map(this.entries.map(entry => [JSON.stringify([entry.threadId, entry.messageId]), { threadId: entry.threadId, messageId: entry.messageId }]))
+  }
   /** Entries retention and the privacy setting still allow, keyed by thread and message. */
   private live(): Map<string, Entry> {
     const now = this.now()

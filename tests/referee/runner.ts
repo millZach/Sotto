@@ -244,6 +244,7 @@ export async function runScenario(options: RunOptions): Promise<RunResult> {
         const id = `${actor.name}-${++actor.next}`
         const frame: Record<string, unknown> = { v: 1, id, session: actor.session, ...step.request(context) }
         actor.pending.set(id, frame); waitingOn = id
+        if (frame.op === 'observe') actor.fold.observing(frame.threadIds as string[])
         if (frame.op === 'command' && (frame.command as { type?: unknown } | undefined)?.type === 'manual-send') actor.sends.add(id)
         actor.socket.send(frame)
         sent = normaliser.value(frame)

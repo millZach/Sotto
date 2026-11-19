@@ -11,7 +11,8 @@ import { AgentControl } from '../../../src/main/agents/control'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
 import type { AgentHostCommand, AgentHostResult } from '../../../src/main/agents/host'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
-import { agentAttachmentPreviewSchema, type AgentAttachmentHandle, type AgentHostSnapshot } from '../../../src/shared/agents'
+import { agentAttachmentPreviewSchema, type AgentAttachmentHandle, type AgentHostSnapshot, type AgentThreadDetail, type AgentThreadDetailUpdate } from '../../../src/shared/agents'
+import { applyAgentThreadDetailDelta, isAgentThreadDetailDelta } from '../../../src/shared/agentThreadDetail'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 import { handleOf, PIXEL_DATA_URL, PIXEL_PNG, stageInto } from '../../fixtures/stagedImages'
 import { testCredentials } from '../../fixtures/testCredentials'
@@ -141,6 +142,9 @@ describe('app-owned submitted attachment previews', () => {
     expect(writing.mock.calls.at(-1)![0]).toMatchObject({ version: 2, entries: expect.any(Array) })
     expect((writing.mock.calls.at(-1)![0] as { entries: unknown[] }).entries).toHaveLength(MAX_ATTACHMENT_PREVIEW_BYTES / size)
     expect(store.digests().has('0'.repeat(64))).toBe(false)
+    // What it names now says which message lost its previews, so the coordinator can send that message again (#2699).
+    expect(store.messages().has(JSON.stringify(['workshop', 'message']))).toBe(false)
+    expect(store.messages().get(JSON.stringify(['workshop', 'message-10']))).toEqual({ threadId: 'workshop', messageId: 'message-10' })
   })
   it('clears old previews when history is disabled and never retroactively persists history-off submissions', async () => {
     const root = await directory(); let enabled = true
@@ -212,13 +216,13 @@ class FixtureHost extends E2EAgentHost {
   }
   async acknowledge() { await super.execute(this.attempts.at(-1)!) }
 }
-async function fixture() {
+async function fixture({ attachAnyFile = false }: { attachAnyFile?: boolean } = {}) {
   const root = await directory(); const host = new FixtureHost(); let enabled = true
   const credentials = await testCredentials(root, { mode: 'unavailable' })
 
   const create = () => {
     const control = createAgentControl({ schedule: immediatePublishScheduler, directory: root, host, credentials, reasoner: e2eAgentReasoner, historyEnabled: () => enabled,
-    })
+      ...(attachAnyFile ? { attachAnyFile: true } : {}) })
     controls.add(control); return control
   }
   let control = create(); await control.start(); await stageInto(control, PIXEL_PNG); await control.command({ type: 'connect' })
@@ -226,6 +230,28 @@ async function fixture() {
     async restart() { control.dispose(); await control.privacyChanged(); controls.delete(control); control = create(); await control.start() } }
 }
 const send = { type: 'manual-send' as const, threadId: 'workshop', text: '', attachments: [image] }
+
+/**
+ * One thread's detail as a listener holds it from the updates it is sent, read strictly: a whole no newer than the one
+ * held, or a delta that does not follow it, is noted rather than taken.
+ */
+function heldDetail(control: AgentControl, threadId: string) {
+  const seen = { detail: null as AgentThreadDetail | null, updates: [] as AgentThreadDetailUpdate[], problems: [] as string[] }
+  control.subscribeThreadDetail(update => {
+    if (update.threadId !== threadId) return
+    seen.updates.push(update)
+    const held = seen.detail
+    if (!isAgentThreadDetailDelta(update)) {
+      if (held && update.revision <= held.revision) seen.problems.push(`a whole at revision ${update.revision} while holding ${held.revision}`)
+      else seen.detail = update
+      return
+    }
+    const applied = held && applyAgentThreadDetailDelta(held, update)
+    if (!applied) seen.problems.push(`a delta from ${update.baseRevision} while holding ${String(held?.revision)}`)
+    else seen.detail = applied
+  })
+  return seen
+}
 
 /** Every value the preview store is asked to write, so a test can say nothing reached its file. */
 function previewWrites() {
@@ -278,19 +304,50 @@ describe('coordinator attachment dispatch boundary', () => {
     await f.restart(); await f.control.command({ type: 'connect' })
     expect(attachment(f.control.get().host)?.preview).toBeDefined()
   })
-  it('sends the preview marker to a window that already holds the echoed message', async () => {
+  it('sends the preview marker to a window that already holds the echoed message, as a delta at a new revision (#2699)', async () => {
     const f = await fixture()
     // The fixture provider echoes the user message before execute returns, as a native adapter can.
-    const held = new Map<string, AgentHostSnapshot['threads'][number]['messages'][number]>()
-    f.control.subscribeThreadDetail(update => {
-      if (update.threadId !== 'workshop') return
-      if ('messages' in update) { held.clear(); for (const message of update.messages) held.set(message.id, message) }
-      else for (const item of update.messageDeltas) if ('message' in item) held.set(item.message.id, item.message)
-    })
+    const seen = heldDetail(f.control, 'workshop')
     await f.control.command({ type: 'observe-threads', threadIds: ['workshop'] })
     expect((await f.control.command(send)).error).toBeNull()
     const messageId = f.control.get().host.threads[0]!.messages.at(-1)!.id
-    expect(held.get(messageId)?.attachments?.[0]?.preview).toEqual({ available: true })
+    expect(seen.detail?.messages.find(message => message.id === messageId)?.attachments?.[0]?.preview).toEqual({ available: true })
+    // The window held the echo without its marker at one revision, and was sent the marker at the next, in a delta.
+    const echoed = seen.updates.findIndex(update => isAgentThreadDetailDelta(update) && update.messageDeltas.some(item => 'message' in item && item.message.id === messageId))
+    const marked = seen.updates.findIndex(update => isAgentThreadDetailDelta(update)
+      && update.messageDeltas.some(item => 'message' in item && item.message.id === messageId && item.message.attachments?.[0]?.preview !== undefined))
+    expect(echoed).toBeGreaterThan(-1)
+    expect(marked).toBeGreaterThan(echoed)
+    expect(seen.updates.slice(echoed).filter(update => !isAgentThreadDetailDelta(update))).toEqual([])
+    expect(seen.problems).toEqual([])
+    expect(seen.detail).toEqual(f.control.threadDetail('workshop'))
+  })
+  it('sends a window the thread whole at a new revision, without its markers, when history is turned off (#2699)', async () => {
+    const f = await fixture()
+    const seen = heldDetail(f.control, 'workshop')
+    await f.control.command({ type: 'observe-threads', threadIds: ['workshop'] })
+    expect((await f.control.command(send)).error).toBeNull()
+    const marked = seen.detail!
+    await f.disableHistory()
+    f.control.threadDetail('workshop')
+    expect(seen.problems).toEqual([])
+    expect(seen.detail!.revision).toBeGreaterThan(marked.revision)
+    expect(seen.detail!.messages.flatMap(message => message.attachments ?? []).some(attachment => attachment.preview !== undefined)).toBe(false)
+  })
+  it('sends nothing again once a send with files alone is taken, whose message a window already holds (#2699)', async () => {
+    const f = await fixture({ attachAnyFile: true })
+    const file = await f.control.stageAttachment({ name: 'notes.txt', mimeType: 'text/plain', bytes: Buffer.from('Notes') })
+    const seen = heldDetail(f.control, 'workshop')
+    await f.control.command({ type: 'observe-threads', threadIds: ['workshop'] })
+    expect((await f.control.command({ ...send, text: 'Read this', attachments: [file] })).error).toBeNull()
+    const messageId = f.control.get().host.threads[0]!.messages.at(-1)!.id
+    // The echo brought the message and its file's tile; recording the file for that tile changes nothing it shows.
+    const echoed = seen.updates.findIndex(update => isAgentThreadDetailDelta(update) && update.messageDeltas.some(item => 'message' in item && item.message.id === messageId))
+    expect(echoed).toBeGreaterThan(-1)
+    expect(seen.detail?.messages.find(message => message.id === messageId)?.attachments).toEqual([{ id: file.id, name: 'notes.txt', mimeType: 'text/plain', sizeBytes: 5 }])
+    expect(seen.updates.slice(echoed).filter(update => !isAgentThreadDetailDelta(update))).toEqual([])
+    expect(seen.problems).toEqual([])
+    expect(seen.detail).toEqual(f.control.threadDetail('workshop'))
   })
   it.each(['reject', 'throw'] as const)('writes nothing to the preview store after a definitive provider %s and keeps the unsent draft', async outcome => {
     const f = await fixture(); f.host.outcome = outcome

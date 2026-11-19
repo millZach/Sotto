@@ -664,6 +664,68 @@ describe('thread detail over the socket', () => {
     } finally { await client.close(); await server.close() }
   })
 
+  it('sends a thread whole, not a delta that starts before it, when a change waiting out its window began before the whole an observe sent (#2700)', async () => {
+    // Every coalescing window stays open until the test closes it.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    const { stream, server, client, session } = await streamingHost()
+    const phoneSession = session()
+    const phone = await rawPeer(server.descriptor.port, phoneSession)
+    // Answered without polling: a poll moves fake timers on, which would close the window this test holds open.
+    const answered = async (id: string): Promise<void> => { while (!phone.messages.some(item => item.id === id)) await new Promise(resolve => setImmediate(resolve)) }
+    const step = (revision: number, text: string): void => {
+      stream.current = { threadId: 'streaming', revision, messages: [message(stream.current.messages[0]!.text + text)] }
+      stream.emit(delta(revision - 1, revision, text))
+    }
+    try {
+      await phone.call('hello', { op: 'hello', accepts: ['detail-delta'] })
+      // The thread changes while the desktop observes it: 1 to 2 goes at once and opens its window, and 2 to 3 waits it out.
+      step(2, ', one')
+      step(3, ', two')
+      // The phone starts observing it then, and is sent it whole at 3. The next change joins the one waiting: 2 to 4.
+      phone.frames.send({ v: 1, id: 'observe', session: phoneSession, op: 'observe', threadIds: ['streaming'] })
+      await answered('observe')
+      step(4, ', three')
+      vi.advanceTimersByTime(AGENT_STATE_PUBLISH_INTERVAL_MS)
+      step(5, ', four')
+      vi.advanceTimersByTime(AGENT_STATE_PUBLISH_INTERVAL_MS)
+      vi.advanceTimersByTime(AGENT_STATE_PUBLISH_INTERVAL_MS)
+      vi.useRealTimers()
+      await expect.poll(() => client.threadDetail('streaming')?.revision).toBe(5)
+      await phone.call('settled', { op: 'receipt', commandId: 'settled' })
+      // Read in order as the phone does: every delta starts from the revision it holds, and it ends holding the thread.
+      let held: AgentThreadDetail | null = null
+      const unfollowed: string[] = []
+      for (const item of phone.messages) {
+        if (item.event === 'detail' && item.threadId === 'streaming') held = item.detail as AgentThreadDetail
+        else if (item.event === 'detail-delta' && item.threadId === 'streaming') {
+          const next = item.delta as AgentThreadDetailDelta
+          const applied: AgentThreadDetail | null = held && applyAgentThreadDetailDelta(held, next)
+          if (!applied) unfollowed.push(`${next.baseRevision} to ${next.revision} while holding ${String(held?.revision)}`)
+          held = applied ?? held
+        }
+      }
+      expect(unfollowed).toEqual([])
+      expect(held).toEqual(stream.current)
+    } finally { vi.useRealTimers(); phone.frames.close(); await client.close(); await server.close() }
+  })
+
+  it('does not send a client a whole detail again at the revision it holds (#2699)', async () => {
+    const { stream, server, session } = await streamingHost()
+    const phone = await rawPeer(server.descriptor.port, session())
+    const wholes = () => phone.messages.filter(item => item.event === 'detail' && item.threadId === 'streaming')
+    try {
+      await phone.call('hello', { op: 'hello', accepts: ['detail-delta'] })
+      await phone.call('observe', { op: 'observe', threadIds: ['streaming'] })
+      expect(wholes()).toHaveLength(1)
+      // The service publishes the thread whole at the revision the phone holds, and then a change: only the change goes.
+      stream.emit(structuredClone(stream.current))
+      stream.current = { threadId: 'streaming', revision: 2, messages: [message('Hello, world')] }
+      stream.emit(delta(1, 2, ', world'))
+      await expect.poll(() => phone.messages.some(item => item.event === 'detail-delta' && item.threadId === 'streaming')).toBe(true)
+      expect(wholes()).toHaveLength(1)
+    } finally { phone.frames.close(); await server.close() }
+  })
+
   it('finishes a reconnect with an observed thread too large to send, reporting the thread instead of failing the connection', async () => {
     const { stream, server, client, pushErrors, connected } = await streamingHost()
     try {
