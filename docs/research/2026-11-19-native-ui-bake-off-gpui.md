@@ -204,6 +204,11 @@ D:\sotto-cargo-target\release\sotto-gpui.exe
 2. **Narrator.** Press Ctrl+Win+Enter, then Tab through the window and use Narrator's scan mode (Caps Lock+Space) over the transcript. Listen for: the composer read as "Message, edit", chips by name and whether they are expanded, activity rows as buttons with "collapsed", headings with levels. Ctrl+Win+Enter turns it off.
 3. **IME.** Settings → Time & language → Language & region → Add a language → Japanese (and Chinese, simplified). Click in the composer, press Win+Space to pick Japanese, Alt+` to turn the IME on, type `nihongo`, press Space: the candidates should appear under the text you are typing. Remove the languages afterwards if you do not want Alt+Shift switching.
 
+## Zach's picks (November 19, 2026)
+
+- **Composer: variant A**, with the note that "it is not a perfect match to today's composer". A is the closest of the three to today's layout but was drawn from the baseline captures and the brief's chip row, not measured against `composer.css`, so its padding, chip spacing, hint size and the model chip's provider mark differ from Electron's. Matching it exactly is ordinary styling work in either toolkit, not a toolkit limit.
+- **Feel: passes.** He ran the window on this laptop.
+
 ## My view
 
 I would build Sotto's whole window in GPUI if the bake-off is about feel and weight: it streams without a dropped frame, types as fast as the screen allows, starts in under half a second and uses a third of the memory, and its accessibility is real today. What would hurt most is text: right to left on Windows has to be fixed in the toolkit, and the editor, Markdown view and selection Zed keeps in GPL crates have to be written again, which is months of careful work. Close behind is the edit loop: nine seconds and lost state where React and CSS take a tenth of a second.
