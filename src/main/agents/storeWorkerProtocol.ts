@@ -6,6 +6,7 @@
 import type { MessagePort } from 'node:worker_threads'
 import type { AgentActivity } from '../../shared/agentActivity'
 import type { AgentThreadPrompts } from '../../shared/threadPrompts'
+import type { AgentThreadWords } from '../../shared/threadWords'
 import type { ThreadStoreWrite } from './threadStoreWriter'
 
 /**
@@ -61,6 +62,7 @@ export type WorkerRequest =
   | { readonly kind: 'read-activities'; readonly read: number; readonly threadId: string; readonly version: number }
   | { readonly kind: 'read-more'; readonly read: number }
   | { readonly kind: 'read-prompts'; readonly read: number; readonly threadId: string; readonly beforeMessageId: string; readonly wakeUps: readonly string[] }
+  | { readonly kind: 'read-words'; readonly read: number; readonly query: string }
   | { readonly kind: 'stop' }
 
 /**
@@ -101,5 +103,15 @@ export interface WorkerPromptsAnswer {
   readonly answer?: AgentThreadPrompts | undefined
 }
 
+/**
+ * The worker's answer to Search threads' read of what was said (`read-words`): which read it answers, and the threads
+ * found, or none when it could not read them. Every message is read once, about 0.1 s on the owner's store, so it holds
+ * the worker rather than main.
+ */
+export interface WorkerWordsAnswer {
+  readonly wordsRead: number
+  readonly answer?: AgentThreadWords | undefined
+}
+
 /** Whatever the worker posts main: a write's answer or a read's. */
-export type WorkerMessage = WorkerAnswer | WorkerReadAnswer | WorkerPromptsAnswer
+export type WorkerMessage = WorkerAnswer | WorkerReadAnswer | WorkerPromptsAnswer | WorkerWordsAnswer

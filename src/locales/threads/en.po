@@ -733,6 +733,10 @@ msgstr "{more, plural, one {Show {threads} more settled thread} other {Show {thr
 msgid "{more, plural, one {Show {threads} more} other {Show {threads} more}}"
 msgstr "{more, plural, one {Show {threads} more} other {Show {threads} more}}"
 
+#: src/renderer/src/agents/ThreadSidebar.tsx
+msgid "{more, plural, other {{others} more in this thread}}"
+msgstr "{more, plural, other {{others} more in this thread}}"
+
 #: src/renderer/src/agents/ScreenshotInput.tsx
 msgid "{most, plural, one {Attach up to # screenshot at a time.} other {Attach up to # screenshots at a time.}}"
 msgstr "{most, plural, one {Attach up to # screenshot at a time.} other {Attach up to # screenshots at a time.}}"
@@ -1467,6 +1471,11 @@ msgstr "{Who} waits up to {limit} for it."
 #: src/renderer/src/agents/delegationWords.ts
 msgid "{Who} waits up to {limit} for it. {waited} so far."
 msgstr "{Who} waits up to {limit} for it. {waited} so far."
+
+#. {who} is "You" or the provider's name, before a quote of their message.
+#: src/renderer/src/agents/ThreadSidebar.tsx
+msgid "{who}:"
+msgstr "{who}:"
 
 #. {whole} lists the parts of a handover, such as "the task and the result".
 #: src/renderer/src/agents/ThreadStart.tsx
@@ -11127,12 +11136,14 @@ msgstr "Wrote {subject}"
 msgid "XHigh"
 msgstr "XHigh"
 
+#. Before a quote of the user's own message, under a thread a search found by it: "You: …".
 #. Who sent a thread's last message.
 #. Who wrote a message: the user.
 #. Who wrote a message: the user.
 #. Who wrote a message: the user.
 #: src/renderer/src/agents/MessageScrubber.tsx
 #: src/renderer/src/agents/threadFacts.ts
+#: src/renderer/src/agents/ThreadSidebar.tsx
 #: src/renderer/src/agents/ThreadTranscript.tsx
 msgid "You"
 msgstr "You"

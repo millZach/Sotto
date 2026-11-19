@@ -1,4 +1,5 @@
 import React, { useCallback, useMemo, useState, type ReactNode } from 'react'
+import { useThreadWords } from './useThreadWords'
 import { useLingui } from '@lingui/react/macro'
 import { useOwlFeature } from '../state/owlFeature'
 import { useListedRows } from './unsentThreads'
@@ -56,7 +57,9 @@ export function PageSidebar({ now: fixedNow }: {
   // Snoozed threads (ADR-0175; Owl only) sit on their own shelf until they wake.
   const snoozes = useThreadSnoozes(state?.host.threads)
   useWakeWhenNeeded(rows, snoozes)
-  const organization = useShared(useMemo(() => state === null ? { open: [], settled: [], needsYou: EMPTY_NEEDS_YOU, matching: 0 } : organizeWorkspace(state, sidebarRows, query, state.activeProjectId, delegation, now, swarms, snoozes), [state, sidebarRows, query, delegation, now, swarms, snoozes, words]))
+  // Search threads also looks through what was said in each thread, on every computer, once typing pauses.
+  const threadWords = useThreadWords(query)
+  const organization = useShared(useMemo(() => state === null ? { open: [], settled: [], needsYou: EMPTY_NEEDS_YOU, matching: 0 } : organizeWorkspace(state, sidebarRows, query, state.activeProjectId, delegation, now, swarms, snoozes, threadWords?.matches), [state, sidebarRows, query, delegation, now, swarms, snoozes, words, threadWords]))
   const navigate = app?.actions.navigate
   const command = agents.command
   const openThread = useCallback((threadId: string): void => {
@@ -75,7 +78,7 @@ export function PageSidebar({ now: fixedNow }: {
       <SidebarFoot />
     </aside>
   }
-  return <ThreadSidebar state={state} command={command} organization={organization} query={query} liveClock={fixedNow === undefined} onQuery={setQuery}
+  return <ThreadSidebar state={state} command={command} organization={organization} query={query} threadWords={threadWords} liveClock={fixedNow === undefined} onQuery={setQuery}
     onOpen={openThread} onNewThread={startNewThread} currentThreadId={null} openThreadIds={NO_PANES} onOpenBeside={noop} onDragThread={noop} title={null}
     restartThreads={published?.host.threads} />
 }

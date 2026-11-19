@@ -83,6 +83,8 @@ function assertConfiguration(provider: keyof typeof factories, records: Recorded
       const config = params!.config as { mcp_servers: Record<string, unknown> }
       expect(config).toMatchObject({ 'features.default_mode_request_user_input': false })
       expect(config).not.toHaveProperty('windows.sandbox')
+      // Watcher's tools are chosen for it, so it is not given Codex's update_plan as threads are.
+      expect(config).not.toHaveProperty(['tools.update_plan.enabled'])
       expect(Object.keys(config.mcp_servers).sort()).toEqual([...names].sort())
       expect(config.mcp_servers.sotto_threads).toMatchObject({ enabled_tools: ['list_threads'], default_tools_approval_mode: 'prompt',
         tools: { list_threads: { approval_mode: 'approve' } } })
@@ -104,6 +106,8 @@ function assertConfiguration(provider: keyof typeof factories, records: Recorded
       expect(args.some(arg => arg.includes('sotto_visual'))).toBe(false)
       expect(args).toContain('mcp__sotto_pull_requests__fixture_tool')
       for (const denied of ['--tools', '--safe-mode', '--restricted', '--strict-mcp-config', '--setting-sources']) expect(args).not.toContain(denied)
+      // Watcher's tools are chosen for it, so Sotto does not turn Claude Code's task tools on for it as for threads.
+      expect((record.params!.frame as { planTools: unknown }).planTools).toBeNull()
     }
     for (const record of records.filter(record => record.method === 'watcher-launch')) {
       expect((record.params!.frame as { serverNames: string[] }).serverNames.sort()).toEqual([...names].sort())

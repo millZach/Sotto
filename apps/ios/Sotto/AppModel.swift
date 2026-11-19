@@ -59,7 +59,9 @@ extension AppModel {
         if let kept = listed.groups[key] { return kept }
         // Each search typed is its own key; a list that stays the same while the user types keeps only the latest few.
         if listed.groups.count >= 8 { listed.groups = [:] }
-        let groups = BenchProbe.time("list.focusThreads") { FocusThreads(lists, show: show, query: query, opened: opened, holding: holding) }
+        // While Threads is searched, the threads the computers found by what was said in them are found too.
+        let words = query.isEmpty ? [:] : threadWords.matches(for: query)
+        let groups = BenchProbe.time("list.focusThreads") { FocusThreads(lists, show: show, query: query, opened: opened, holding: holding, words: words) }
         listed.groups[key] = groups
         if let wake = groups.nextSnoozeWake, snoozeWakeAt == nil || wake < snoozeWakeAt! {
             snoozeWakeAt = wake
@@ -1410,6 +1412,11 @@ struct RailAsk: Equatable {
     @Published private(set) var olderSettledFailed = false
     /// What Threads' search last asked the computers for among their held-back settled threads, and what each found.
     @Published private(set) var settledSearch = SettledSearch()
+    /// What Threads' search last read of what was said in each computer's threads (`thread-words`), and the search it
+    /// answers. The lists are grouped again with it.
+    @Published private(set) var threadWords = ThreadWordsSearch() { didSet { if threadWords != oldValue { listed = Listed() } } }
+    /// The search last sent to the computers for what was said, so an answer to one the field has left is dropped.
+    private var threadWordsAsked = ""
     /// A thread opened here that its computer's list does not carry yet, such as a settled one from a notification.
     /// It stays open until the list carries it, which it does once the computer hears it is open.
     private var openedUnlisted: ThreadRef?
@@ -2816,6 +2823,46 @@ struct RailAsk: Equatable {
     func settledSearchRows(query: String, show: ComputerFilter) -> [HostedThread] {
         guard settledSearch.query == query.trimmingCharacters(in: .whitespacesAndNewlines) else { return [] }
         return ThreadGroups.older(lists, read: settledSearch.found, show: show)
+    }
+
+    // MARK: What was said in the threads, for Threads' search
+
+    func offersThreadWords(_ hostID: String) -> Bool { live[hostID]?.features.contains(Wire.threadWordsFeature) == true }
+    /// The computers Threads' search asks what was said in their threads: admitted by the strip, reachable, offering the read.
+    func threadWordsSources(show: ComputerFilter) -> [String] {
+        computers.map(\.hostID).filter { show.admits($0) && online($0) && offersThreadWords($0) }
+    }
+    /// Asks each computer that offers it for the threads whose messages hold `query`, as Threads' search is typed. Each
+    /// computer searches its own threads, and all are asked at once, each answer showing as it comes, so one slow to answer
+    /// holds back none of the others. An empty search clears what was found. An answer to a search the field has since left
+    /// is dropped, and until a computer's new answer comes, the list keeps its last one's matches that still hold the search
+    /// (`ThreadWordsSearch.matches`). A computer that can't answer finds nothing, as one without the read does.
+    func searchThreadWords(_ query: String, show: ComputerFilter) async {
+        let words = Wire.threadWordsQuery(query)
+        threadWordsAsked = words
+        // With no search, or no computer to ask, nothing is asked and nothing changes on the page.
+        let sources = threadWordsSources(show: show)
+        guard let operation = Wire.threadWords(query: words), !sources.isEmpty else {
+            if threadWords != ThreadWordsSearch() { threadWords = ThreadWordsSearch() }
+            return
+        }
+        // A computer no longer asked has nothing to say of this search.
+        var asked = threadWords
+        asked.keep(Set(sources))
+        if asked != threadWords { threadWords = asked }
+        await withTaskGroup(of: Void.self) { group in
+            for hostID in sources { group.addTask { await self.readThreadWords(on: hostID, operation, for: words) } }
+        }
+    }
+    /// One computer's answer to Threads' search for `words`, taken unless the field has left that search or the answer came
+    /// over a connection that has since been replaced, as the settled search leaves one out.
+    private func readThreadWords(on hostID: String, _ operation: [String: JSONValue], for words: String) async {
+        guard let connection = connections[hostID] else { return }
+        let epoch = generations[hostID]
+        let found: [ThreadWordMatch]
+        do { found = try await connection.call(operation, as: Optional<ThreadWordsAnswer>.self)?.found ?? [] } catch { found = [] }
+        guard threadWordsAsked == words, generations[hostID] == epoch, !Task.isCancelled else { return }
+        threadWords.take(found, for: words, from: hostID)
     }
     func mayAnswer(_ hostID: String) -> Bool { live[hostID]?.mayAnswer ?? false }
     /// The thread the user is reading now: the open thread while the app is on screen, or Watcher's own while its tab is.

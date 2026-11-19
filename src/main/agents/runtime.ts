@@ -985,7 +985,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ...(options.pluginElevenLabsSpending && options.pluginAccountCopies && options.runsAs === 'headless-host' ? { pluginElevenLabsSpending: options.pluginElevenLabsSpending } : {}),
     ...(options.pluginMeshyModels && options.pluginAccountCopies && options.runsAs === 'headless-host' ? { pluginMeshyModels: options.pluginMeshyModels } : {}),
     ...(options.pluginElevenLabsSounds && options.pluginAccountCopies && options.runsAs === 'headless-host' ? { pluginElevenLabsSounds: options.pluginElevenLabsSounds } : {}),
-    prompts: { threadPrompts: (threadId, beforeMessageId) => agentHost.threadPrompts(threadId, beforeMessageId) },
+    prompts: { threadPrompts: (threadId, beforeMessageId) => agentHost.threadPrompts(threadId, beforeMessageId), threadWords: query => agentHost.threadWords(query) },
     ...(options.threadStartsEnabled === true ? { threadStarts: { startHandover: (threadId: string) => agentHost.startHandover(threadId) } } : {}),
     ...(options.pullRequestViewEnabled === true ? { pullRequestView: true } : {}),
     ...(options.clearThreadsEnabled === true ? { threadDelete: true } : {}),

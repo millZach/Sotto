@@ -923,15 +923,16 @@ struct ThreadListSections: View, Equatable {
         let delegated = asking.flatMap { $0.ref == row.ref ? nil : $0 }
         // A delegated thread has no row of its own: the row its delegation is reached from is marked while it shows.
         let marked = chosen.map { groups.rowID(for: $0) == row.id } ?? false
-        return ThreadListRow(row: row, kind: kind, asking: delegated, watched: isWatched, chosen: marked,
+        return ThreadListRow(row: row, kind: kind, asking: delegated, quote: groups.quote(row), watched: isWatched, chosen: marked,
                              canWatch: watch.changeable.contains(row.id), shelf: shelfOffers[row.id], identifier: identifier,
                              open: { open(row.ref); if let delegated { open(delegated.ref) } },
                              setWatched: { on in setWatched(row, on) },
                              shelve: { action in shelve(row, action) })
             .equatable()
     }
-    /// It draws from these alone: the rows' threads, which section each is in, who asks and what they wait on, what
-    /// Watcher and the shelf offer for each, the chosen one and its identifiers. It watches no model, so `drawn` must name everything
+    /// It draws from these alone: the rows' threads, which section each is in, who asks and what they wait on, the quote
+    /// of what was said in a thread the search found only by that, what Watcher and the shelf offer for each, the chosen
+    /// one and its identifiers. It watches no model, so `drawn` must name everything
     /// a row shows, or a row keeps old words. The closures never change what it draws. A list held from one moment is
     /// the same list, so two of the same hold are equal without reading their rows.
     static func == (lhs: ThreadListSections, rhs: ThreadListSections) -> Bool {
@@ -943,7 +944,8 @@ struct ThreadListSections: View, Equatable {
             rows.map { row in
                 let thread = row.thread
                 let asking = groups.asking(row)
-                return [section, row.id, thread.title, thread.status, ThreadState(thread).rawValue, "\(thread.requests.count)",
+                let said = groups.quote(row).map { "\($0.match.role.rawValue)|\($0.match.more)|\($0.query)|\($0.match.quote)" } ?? ""
+                return [section, row.id, thread.title, thread.status, ThreadState(thread).rawValue, "\(thread.requests.count)", said,
                         thread.providerId ?? "", row.project ?? "", row.computer, "\(row.status)",
                         thread.summary?.runningTurnStartedAt ?? "", thread.summary?.lastMessageAt ?? "", thread.snoozedUntil ?? "", thread.updatedAt ?? "",
                         asking.id, asking.thread.title, ThreadState(asking.thread).rawValue,
@@ -1027,6 +1029,8 @@ struct ThreadListRow: View, Equatable {
     let kind: Kind
     /// The delegated thread whose request a Needs you row stands for, when it isn't the row's own.
     var asking: HostedThread? = nil
+    /// What was said in the thread, when Threads' search found it only by that: a quote of it under the name.
+    var quote: ThreadWordQuote? = nil
     let watched: Bool
     let chosen: Bool
     let canWatch: Bool
@@ -1038,9 +1042,10 @@ struct ThreadListRow: View, Equatable {
     let setWatched: (Bool) -> Void
     let shelve: (AppModel.ShelfAction) -> Void
     @Environment(\.dynamicTypeSize) private var typeSize
-    /// What the row draws: the thread's title, state, place and times, its section, light and chip.
+    /// What the row draws: the thread's title, state, place and times, its section, light and chip, and a quote of what was
+    /// said in it.
     static func == (lhs: ThreadListRow, rhs: ThreadListRow) -> Bool {
-        lhs.row.id == rhs.row.id && lhs.kind == rhs.kind && lhs.asking?.id == rhs.asking?.id && lhs.watched == rhs.watched && lhs.chosen == rhs.chosen
+        lhs.row.id == rhs.row.id && lhs.kind == rhs.kind && lhs.asking?.id == rhs.asking?.id && lhs.quote == rhs.quote && lhs.watched == rhs.watched && lhs.chosen == rhs.chosen
             && lhs.canWatch == rhs.canWatch && lhs.shelf == rhs.shelf && lhs.identifier == rhs.identifier
             && lhs.words(duo: false) == rhs.words(duo: false) && lhs.words(duo: true) == rhs.words(duo: true) && lhs.label == rhs.label
             && lhs.row.thread.summary?.runningTurnStartedAt == rhs.row.thread.summary?.runningTurnStartedAt
@@ -1109,7 +1114,8 @@ struct ThreadListRow: View, Equatable {
             else if row.failed { spoken = "\(row.thread.title), \(state.words), \(place)" }
             else { spoken = "\(row.thread.title), \(place)" }
         }
-        return watched ? String(localized: "\(spoken), watched by Watcher", comment: "%@ is what VoiceOver reads of the thread before this: its title and where it runs.") : spoken
+        let heard = SaidQuote.heard(spoken, quote, provider: Words.provider(row.thread.providerId))
+        return watched ? String(localized: "\(heard), watched by Watcher", comment: "%@ is what VoiceOver reads of the thread before this: its title and where it runs.") : heard
     }
     var body: some View {
         let _ = BenchProbe.body("ThreadListRow")
@@ -1169,6 +1175,7 @@ struct ThreadListRow: View, Equatable {
                         Text(verbatim: row.thread.title).font(.sotto(.body, unread ? .bold : .semibold))
                             .foregroundStyle(chosen ? Palette.accentText : Palette.ink).lineLimit(large ? 4 : 1)
                     }
+                    if let quote { SaidQuote(quote: quote, provider: Words.provider(row.thread.providerId), lines: large ? 4 : 2) }
                     HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
                         PlaceLine(providerID: row.thread.providerId, watched: watched, text: line,
                                   tone: row.failed ? Palette.dangerText : Palette.muted, lines: large ? 3 : 1)
@@ -1197,6 +1204,66 @@ struct ThreadListRow: View, Equatable {
         .accessibilityAddTraits(chosen ? [.isButton, .isSelected] : .isButton)
         .accessibilityHint("Opens the thread")
         .accessibilityIdentifier("\(identifier)\(row.id)")
+    }
+}
+
+/// The quote under a row Threads' search found only by what was said in its thread (Zach's pick A, November 19, 2026):
+/// whose words they were, the search's words marked in them, at most two lines, then how many other messages of the
+/// thread match too. VoiceOver reads it after the row's own words (`heard`).
+struct SaidQuote: View {
+    let quote: ThreadWordQuote
+    /// The thread's agent, whose reply a quote of an agent's words is.
+    let provider: String
+    var lines = 2
+    @Environment(\.sottoTheme) private var theme
+    var body: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            // The quote is a message, so in Arabic and Urdu it runs from the right edge of its box.
+            Text(Self.line(quote, provider: provider, theme: theme))
+                .font(.sotto(.small))
+                .lineLimit(lines)
+                .fixedSize(horizontal: false, vertical: true)
+                .paragraphDirection()
+            if quote.match.more > 0 {
+                Text(Self.more(quote.match.more)).font(.sotto(.caption)).foregroundStyle(Palette.muted).lineLimit(1)
+            }
+        }
+    }
+    /// Whose words the quote is, as it says before them: "You:", or the agent's name for its reply.
+    static func who(_ quote: ThreadWordQuote, provider: String) -> String {
+        let name = quote.match.role == .user
+            ? String(localized: "You", comment: "Before a quote of the user's own message, under a thread a search found by it: “You: …”.")
+            : provider
+        return String(localized: "thread-words.who", defaultValue: "\(name):",
+                      comment: "%@ is “You” or the agent's name, such as Codex, before a quote of their message under a thread a search found by it.")
+    }
+    /// How many other messages of the thread hold the search.
+    static func more(_ count: Int) -> String {
+        String(localized: "\(count) more in this thread", comment: "Under a quote of the message a search found in a thread: how many other messages of that thread match too.")
+    }
+    /// The quote's line: whose words in the muted ink, then the words, with the search's words in the accent's text colour.
+    static func line(_ quote: ThreadWordQuote, provider: String, theme: ThemeSwatch) -> AttributedString {
+        var line = AttributedString(who(quote, provider: provider) + " ")
+        var muted = AttributeContainer()
+        muted[AttributeScopes.SwiftUIAttributes.ForegroundColorAttribute.self] = theme.color(.muted)
+        line.mergeAttributes(muted)
+        var words = AttributeContainer()
+        words[AttributeScopes.SwiftUIAttributes.ForegroundColorAttribute.self] = theme.color(.ink)
+        var hit = AttributeContainer()
+        hit[AttributeScopes.SwiftUIAttributes.ForegroundColorAttribute.self] = theme.color(.accentText)
+        hit[AttributeScopes.SwiftUIAttributes.FontAttribute.self] = Font.sotto(.small, .semibold)
+        for part in quote.parts {
+            var piece = AttributedString(part.text)
+            piece.mergeAttributes(part.hit ? hit : words)
+            line.append(piece)
+        }
+        return line
+    }
+    /// A row's words as VoiceOver reads them, followed by the quote of what was said in its thread when there is one.
+    static func heard(_ spoken: String, _ quote: ThreadWordQuote?, provider: String) -> String {
+        guard let quote else { return spoken }
+        let said = "\(spoken), \(who(quote, provider: provider)) \(quote.match.quote)"
+        return quote.match.more > 0 ? "\(said), \(more(quote.match.more))" : said
     }
 }
 
