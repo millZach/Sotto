@@ -2381,6 +2381,7 @@
       },
       {"path":["shell","host","threads",0,"lastTurn","status"],"value":"completed"},
       {"path":["shell","host","threads",0,"status"],"value":"idle"},
+      {"path":["shell","host","threads",0,"summary","activityCount"],"value":1},
       {
        "path": ["shell","host","threads",0,"summary","lastAssistant"],
        "value": {"createdAt":"<time>","id":"<id:11>","text":"Referee reply one"}
@@ -2409,6 +2410,7 @@
       },
       {"path":["shell","host","threads",0,"lastTurn","status"],"value":"completed"},
       {"path":["shell","host","threads",0,"status"],"value":"idle"},
+      {"path":["shell","host","threads",0,"summary","activityCount"],"value":1},
       {
        "path": ["shell","host","threads",0,"summary","lastAssistant"],
        "value": {"createdAt":"<time>","id":"<id:11>","text":"Referee reply one"}
@@ -2440,6 +2442,7 @@
       },
       {"path":["shell","host","threads",0,"lastTurn","status"],"value":"completed"},
       {"path":["shell","host","threads",0,"status"],"value":"idle"},
+      {"path":["shell","host","threads",0,"summary","activityCount"],"value":1},
       {
        "path": ["shell","host","threads",0,"summary","lastAssistant"],
        "value": {"createdAt":"<time>","id":"<id:11>","text":"Referee reply one"}

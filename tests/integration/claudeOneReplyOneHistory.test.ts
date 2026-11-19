@@ -1,11 +1,12 @@
 // @vitest-environment node
 // One Claude reply gives one history (#2698). Claude Code reports a reply up to three times: its stream opens the reply at
 // the moment Sotto hears it, then the finished message comes on the CLI's output and as a line of its transcript, both
-// dated by the CLI. When the CLI's date fell in another millisecond from the stream's, the history gained a
-// message-replaced event that repeated the words. A reply keeps the time it was first recorded with, the time it began
-// (Zach's pick, November 19, 2026). Here the CLI's date is a fixed instant long past, so the two dates always differ, and
-// each order is scripted rather than left to timing. The thread's monitoring was the same kind of difference: every CLI
-// frame wrote an empty list when no monitoring task ran, and a stop removed it.
+// dated by the CLI. A reply ends with the CLI's own time, so that one read back after a restart matches the saved one
+// (docs/research/issue-22-claude-native-verification.md), and moving it there is one message-replaced event, whichever
+// of the CLI's output and the transcript comes first; the second report changes nothing. Here the CLI's date is a fixed
+// instant long past, so it always differs from the stream's, and each order is scripted rather than left to timing. The
+// thread's monitoring was another difference: every CLI frame wrote an empty list when no monitoring task ran, and a stop
+// removed it.
 import { randomUUID } from 'node:crypto'
 import { appendFile, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -46,18 +47,22 @@ async function threadWithPrompt() {
 }
 type Running = Awaited<ReturnType<typeof threadWithPrompt>>
 
-/** A reply's lines: its stream, the finished message as the CLI prints and saves it, and the turn's result. */
-function reply(session: string, text: string) {
+/**
+ * A reply's lines: its stream, the finished message as the CLI prints and saves it, and the turn's result. The saved line
+ * carries the CLI's date. The printed one carries it too unless `printed` is `undated`: Anthropic's frame for a printed
+ * message names no date, and the fake prints one.
+ */
+function reply(session: string, text: string, printed: 'dated' | 'undated' = 'dated') {
   const id = randomUUID()
-  const finished = { type: 'assistant', uuid: randomUUID(), session_id: session, timestamp: DATED, message: { id, role: 'assistant', content: [{ type: 'text', text }] } }
+  const finished = { type: 'assistant', uuid: randomUUID(), session_id: session, message: { id, role: 'assistant', content: [{ type: 'text', text }] } }
   return {
     id,
     stream: [
       { type: 'stream_event', session_id: session, event: { type: 'message_start', message: { id, role: 'assistant' } } },
       { type: 'stream_event', session_id: session, event: { type: 'content_block_delta', delta: { type: 'text_delta', text } } },
     ],
-    finished,
-    line: JSON.stringify({ ...finished, parentUuid: null, isSidechain: false, sessionId: session }) + '\n',
+    finished: printed === 'dated' ? { ...finished, timestamp: DATED } : finished,
+    line: JSON.stringify({ ...finished, timestamp: DATED, parentUuid: null, isSidechain: false, sessionId: session }) + '\n',
     result: { type: 'result', subtype: 'success', session_id: session, is_error: false, result: text },
   }
 }
@@ -80,25 +85,48 @@ async function read({ f, save }: Running, ...said: Reply[]): Promise<void> {
 }
 
 /** The kinds of event written about one message, in order. */
-const about = (events: readonly ThreadEvent[], messageId: string): string[] => events.filter(event =>
+const messageEventKinds = (events: readonly ThreadEvent[], messageId: string): string[] => events.filter(event =>
   (event.kind === 'message-added' || event.kind === 'message-replaced') && event.message.id === messageId
   || event.kind === 'message-text-appended' && event.messageId === messageId).map(event => event.kind)
 
-it.each([
-  { order: 'the CLI prints the finished reply before Sotto reads it from the transcript', finish: async (running: Running, said: Reply) => { await print(running, said); await read(running, said) } },
-  { order: 'Sotto reads the finished reply from the transcript before the CLI prints it', finish: async (running: Running, said: Reply) => { await read(running, said); await print(running, said) } },
-])('records a streamed reply once, at the time it began, when $order', async ({ finish }) => {
+/**
+ * One turn played to its end with the finished reply heard in the order named, as what a client can compare between two
+ * runs: every event the thread was given, each message named by its role and dated by whose clock its date came from,
+ * and the reply as the record holds it.
+ */
+async function play(order: 'printed first' | 'saved first', printed: 'dated' | 'undated') {
   const running = await threadWithPrompt()
   const { f, events, session } = running
-  const said = reply(session, 'Hello from the referee.')
+  const said = reply(session, 'Hello from the referee.', printed)
   await stream(running, said)
-  const opened = events.find(event => event.kind === 'message-added' && event.message.id === said.id)
-  await finish(running, said)
+  if (order === 'printed first') { await print(running, said); await read(running, said) }
+  else {
+    await read(running, said)
+    // The transcript alone moved the reply, before the CLI printed anything of it.
+    expect(messageEventKinds(events, said.id)).toEqual(['message-added', 'message-replaced'])
+    await print(running, said)
+  }
+  const clock = (at: string) => at === DATED ? 'the CLI' : 'Sotto'
+  const history = events.map(event => event.kind === 'message-added' || event.kind === 'message-replaced'
+    ? { kind: event.kind, role: event.message.role, text: event.message.text, dated: clock(event.message.createdAt), turn: event.message.turnMessageId }
+    : { kind: event.kind })
+  const message = (await f.host.snapshot()).threads.find(thread => thread.id === 'thread')!.messages.find(value => value.id === said.id)!
+  return { history, reply: { text: message.text, dated: clock(message.createdAt), turn: message.turnMessageId } }
+}
 
-  expect(about(events, said.id)).toEqual(['message-added'])
-  const message = (await f.host.snapshot()).threads.find(thread => thread.id === 'thread')!.messages.find(value => value.id === said.id)
-  expect(message).toMatchObject({ text: 'Hello from the referee.', createdAt: opened?.kind === 'message-added' ? opened.message.createdAt : 'missing' })
-  expect(message?.createdAt).not.toBe(DATED)
+it.each(['dated', 'undated'] as const)('gives one history whichever finished report comes first, with the printed reply %s', async printed => {
+  const printedFirst = await play('printed first', printed)
+  const savedFirst = await play('saved first', printed)
+  expect(savedFirst).toEqual(printedFirst)
+  // The reply ends on the CLI's date and its turn, and moving it there is one replacement with the same words.
+  expect(printedFirst).toEqual({
+    history: [
+      { kind: 'message-added', role: 'user', text: 'Say hello', dated: 'Sotto', turn: undefined },
+      { kind: 'message-added', role: 'assistant', text: 'Hello from the referee.', dated: 'Sotto', turn: 'prompt' },
+      { kind: 'message-replaced', role: 'assistant', text: 'Hello from the referee.', dated: 'the CLI', turn: 'prompt' },
+    ],
+    reply: { text: 'Hello from the referee.', dated: 'the CLI', turn: 'prompt' },
+  })
 })
 
 it('records nothing more when an earlier reply\'s transcript line is read after the next reply has begun', async () => {
@@ -113,8 +141,8 @@ it('records nothing more when an earlier reply\'s transcript line is read after 
   await read(running, first, second)
   await print(running, second)
 
-  expect(about(events, first.id)).toEqual(['message-added'])
-  expect(about(events, second.id)).toEqual(['message-added'])
+  expect(messageEventKinds(events, first.id)).toEqual(['message-added', 'message-replaced'])
+  expect(messageEventKinds(events, second.id)).toEqual(['message-added', 'message-replaced'])
 })
 
 it('records nothing more when the transcript is read again from its first byte after a restart', async () => {
@@ -135,10 +163,15 @@ it('records nothing more when the transcript is read again from its first byte a
   await f.adapter.restoreThreadHistory([{ threadId: 'thread', messages: before.messages, activities: before.activities ?? [] }])
   await f.host.connect()
   await f.adapter.pollSessionLogs()
+  const snapshot = (await f.host.snapshot()).threads.find(thread => thread.id === 'thread')!
+  f.adapter.disconnect(); await f.adapter.closed()
 
+  // The read went through the whole transcript, the reply's line with it, and wrote nothing.
+  const length = (await readFile(claudeTranscriptPath(f.root, running.session))).byteLength
+  expect((JSON.parse(await readFile(join(f.root, 'claude-threads.json'), 'utf8')) as Record<string, { transcriptCursor?: { offset: number } }>).thread!.transcriptCursor?.offset).toBe(length)
   expect(events.filter(event => event.kind !== 'answer-given')).toEqual([])
-  expect((await f.host.snapshot()).threads.find(thread => thread.id === 'thread')!.messages.find(message => message.id === said.id)?.createdAt)
-    .toBe(before.messages.find(message => message.id === said.id)?.createdAt)
+  expect(before.messages.find(message => message.id === said.id)?.createdAt).toBe(DATED)
+  expect(snapshot.messages.find(message => message.id === said.id)?.createdAt).toBe(DATED)
 })
 
 it('carries no monitoring on a thread with no monitoring task, through a turn and a stop whose result comes after it', async () => {

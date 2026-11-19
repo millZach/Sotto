@@ -2233,9 +2233,14 @@ export class ClaudeStreamJsonHost implements ProviderHost {
     const turnMessageId = !fromLog && !this.nativeTakeovers.has(id) && frame.type === 'assistant' && turn?.status === 'running' ? turn.messageId : undefined
     // Claude Code marks a reply it made of an API error, live with `error` and in its log with `isApiErrorMessage` (#2234).
     const providerError = frame.type === 'assistant' && (typeof frame.error === 'string' || frame.isApiErrorMessage === true)
-    this.addMessage(id, { id: origin?.messageId ?? alias.forkMessageIds?.[uuid] ?? providerId, role: frame.type as 'user' | 'assistant', text,
+    const messageId = origin?.messageId ?? alias.forkMessageIds?.[uuid] ?? providerId
+    // A reply ends on the CLI's own date, which its transcript line carries. The reply the CLI prints may carry none, and
+    // then a reply the record holds keeps the date it has rather than taking the moment Sotto heard it, so the reply ends
+    // on the same date with the same events whichever of the two Sotto reads first (#2698).
+    const dated = typeof frame.timestamp === 'string' ? frame.timestamp : frame.type === 'assistant' ? this.messageLog.recordedAt(id, messageId) : undefined
+    this.addMessage(id, { id: messageId, role: frame.type as 'user' | 'assistant', text,
       ...(turnMessageId === undefined ? {} : { turnMessageId }), ...(providerError ? { providerError: true as const } : {}),
-      createdAt: origin?.createdAt ?? (typeof frame.timestamp === 'string' ? frame.timestamp : new Date().toISOString()), ...(origin ? { commandId: origin.commandId, ...(origin.attachments ? { attachments: origin.attachments } : {}) } : {}) })
+      createdAt: origin?.createdAt ?? dated ?? new Date().toISOString(), ...(origin ? { commandId: origin.commandId, ...(origin.attachments ? { attachments: origin.attachments } : {}) } : {}) })
   }
   private usageContext(id: string, frame: ClaudeFrame, replay: boolean): NativeUsageContext {
     const group = this.usageGroups.get(id)
@@ -2557,14 +2562,6 @@ export class ClaudeStreamJsonHost implements ProviderHost {
       // holds it whole, an earlier block is not a change to it: recording one would shrink the reply on screen.
       const held = replay.words?.get(message.id)
       if (held !== undefined && held.length > message.text.length && held.startsWith(message.text)) return
-    }
-    // Claude Code reports one reply up to three times: its stream opens it, dated when Sotto hears it, then the finished
-    // message comes on the CLI's output and as a transcript line, dated by the CLI. A reply the record holds keeps the
-    // time it was recorded with, so a later report, in either order or read back after a restart, records the same words
-    // again as no change (#2698). Every caller hands over a message of its own, so the time is set on it in place.
-    if (message.role === 'assistant') {
-      const recorded = this.messageLog.recordedAt(id, message.id)
-      if (recorded !== undefined) message.createdAt = recorded
     }
     this.messageLog.add(id, message)
   }

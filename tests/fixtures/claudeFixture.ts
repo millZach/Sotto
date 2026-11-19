@@ -30,7 +30,7 @@ export async function savedClaudeThreads(root: string, count: number, transcript
 
 export { storedClaudeOrigins } from './claudeOrigins'
 
-/** Where the fake CLI saves a session's transcript, for a thread working in the fixture's own folder. */
+/** Where the fake CLI saves a provider session's transcript, for a thread working in the fixture's own folder. */
 export function claudeTranscriptPath(root: string, session: string): string {
   return join(root, 'home', 'projects', root.replace(/[^a-zA-Z0-9]/gu, '-'), `${session}.jsonl`)
 }

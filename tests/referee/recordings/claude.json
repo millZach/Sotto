@@ -3527,10 +3527,19 @@
          {
           "event": {
            "at": "<time>",
+           "kind": "message-replaced",
+           "message": {"createdAt":"<time>","id":"<id:11>","role":"assistant","text":"Referee reply one","turnMessageId":"<id:9>"}
+          },
+          "seq": 3,
+          "threadId": "<id:6>"
+         },
+         {
+          "event": {
+           "at": "<time>",
            "kind": "message-added",
            "message": {"commandId":"<id:13>","createdAt":"<time>","id":"<id:12>","role":"user","text":"Referee prompt two"}
           },
-          "seq": 3,
+          "seq": 4,
           "threadId": "<id:6>"
          },
          {
@@ -3540,7 +3549,7 @@
            "kind": "answer-given",
            "requestId": "<id:17>"
           },
-          "seq": 4,
+          "seq": 5,
           "threadId": "<id:6>"
          },
          {
@@ -3549,7 +3558,16 @@
            "kind": "message-added",
            "message": {"createdAt":"<time>","id":"<id:18>","role":"assistant","text":"Referee reply two","turnMessageId":"<id:12>"}
           },
-          "seq": 5,
+          "seq": 6,
+          "threadId": "<id:6>"
+         },
+         {
+          "event": {
+           "at": "<time>",
+           "kind": "message-replaced",
+           "message": {"createdAt":"<time>","id":"<id:18>","role":"assistant","text":"Referee reply two","turnMessageId":"<id:12>"}
+          },
+          "seq": 7,
           "threadId": "<id:6>"
          },
          {
@@ -3558,7 +3576,7 @@
            "kind": "message-added",
            "message": {"commandId":"<id:20>","createdAt":"<time>","id":"<id:19>","role":"user","text":"Referee prompt three"}
           },
-          "seq": 6,
+          "seq": 8,
           "threadId": "<id:6>"
          },
          {
@@ -3569,7 +3587,7 @@
            "kind": "answer-given",
            "requestId": "<id:24>"
           },
-          "seq": 7,
+          "seq": 9,
           "threadId": "<id:6>"
          },
          {
@@ -3578,7 +3596,16 @@
            "kind": "message-added",
            "message": {"createdAt":"<time>","id":"<id:25>","role":"assistant","text":"Referee reply three","turnMessageId":"<id:19>"}
           },
-          "seq": 8,
+          "seq": 10,
+          "threadId": "<id:6>"
+         },
+         {
+          "event": {
+           "at": "<time>",
+           "kind": "message-replaced",
+           "message": {"createdAt":"<time>","id":"<id:25>","role":"assistant","text":"Referee reply three","turnMessageId":"<id:19>"}
+          },
+          "seq": 11,
           "threadId": "<id:6>"
          },
          {
@@ -3587,12 +3614,12 @@
            "kind": "message-added",
            "message": {"commandId":"<id:27>","createdAt":"<time>","id":"<id:28>","role":"user","text":"Referee prompt four"}
           },
-          "seq": 9,
+          "seq": 12,
           "threadId": "<id:6>"
          }
         ],
         "hasMore": false,
-        "latestSeq": 9
+        "latestSeq": 12
        },
        "v": 1
       }

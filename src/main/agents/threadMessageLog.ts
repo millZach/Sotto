@@ -234,7 +234,7 @@ export class ThreadMessageLog {
     return last === undefined ? undefined : { ...last }
   }
   lastTextMessageId(threadId: string): string | undefined { return this.track(threadId).lastTextId }
-  /** The time a recorded message carries, while its words are in hand or it is the newest of its role. Read without a copy. */
+  /** The date a recorded message carries, while its words are in hand or it is the newest of its role. Read without a copy. */
   recordedAt(threadId: string, messageId: string): string | undefined {
     const track = this.tracks.get(threadId)
     if (!track?.ids.has(messageId)) return undefined
