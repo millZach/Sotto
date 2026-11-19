@@ -114,9 +114,11 @@ pub fn start(ui: &AppWindow, dark: bool) -> std::io::Result<Rc<RefCell<Terminal>
     env.insert("TERM".into(), "xterm-256color".into());
     env.insert("COLORTERM".into(), "truecolor".into());
     let options = tty::Options {
-        shell: None,
-        working_directory: std::env::var_os("HOME").map(Into::into),
+        shell: shell(),
+        working_directory: std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).map(Into::into),
         drain_on_exit: false,
+        #[cfg(windows)]
+        escape_args: false,
         env,
     };
     let window = WindowSize { num_lines: 24, num_cols: 80, cell_width: 8, cell_height: 16 };
@@ -130,6 +132,23 @@ pub fn start(ui: &AppWindow, dark: bool) -> std::io::Result<Rc<RefCell<Terminal>
     let t = Rc::new(RefCell::new(Terminal { term, notifier, listener, ui: ui.as_weak(), size, cell: (8.0, 16.0), dark, rows, timer: None, selecting: false }));
     TERMINAL.with(|cell| *cell.borrow_mut() = Some(t.clone()));
     Ok(t)
+}
+
+/// The shell Sotto picks today. Linux and macOS: `$SHELL` (alacritty_terminal's default when this is `None`).
+/// Windows: `pwsh.exe` when it is on PATH, else Windows PowerShell; alacritty_terminal runs it on ConPTY.
+fn shell() -> Option<tty::Shell> {
+    if !cfg!(windows) {
+        return None;
+    }
+    // As src/main/terminals/shell.ts: the first pwsh.exe on PATH, else %SystemRoot%'s Windows PowerShell.
+    let pwsh = std::env::var_os("PATH").and_then(|p| std::env::split_paths(&p).map(|dir| dir.join("pwsh.exe")).find(|c| c.is_file()));
+    let program = pwsh.unwrap_or_else(|| {
+        let root = std::env::var_os("SystemRoot").unwrap_or_else(|| r"C:\Windows".into());
+        std::path::PathBuf::from(root).join("System32").join("WindowsPowerShell").join("v1.0").join("powershell.exe")
+    });
+    let name = program.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    eprintln!("event=terminal-shell program={name}");
+    Some(tty::Shell::new(program.to_string_lossy().into_owned(), Vec::new()))
 }
 
 fn rgb(c: u32) -> slint::Color {

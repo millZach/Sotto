@@ -13,6 +13,11 @@ export component WebPane inherits Rectangle {
     out property <bool> has-focus: fs.has-focus;
     out property <length> surface-width: surface.width;
     out property <length> surface-height: surface.height;
+    // Where the surface sits in the window, for a native child window laid over it (Windows experiment).
+    out property <length> surface-x: surface.absolute-position.x;
+    out property <length> surface-y: surface.absolute-position.y;
+    // 0: the page as an image (default); 1: a Win32 child window over the surface; 2: a shared D3D11 texture.
+    in property <int> surface-mode: 0;
     out property <float> scale: 1;
     callback key(string, bool, bool) -> bool;   // text, shift, control: true when the page used it
     callback focus-changed(bool, bool);         // focused, entered backwards
@@ -56,6 +61,14 @@ export component WebPane inherits Rectangle {
                 height: parent.height;
                 source: root.frame;
                 image-fit: fill;
+                accessible-role: none;
+            }
+            if root.surface-mode == 1: Text {
+                text: "A child window should cover this. If you can read this, it does not show.";
+                color: #333333;
+                wrap: word-wrap;
+                horizontal-alignment: center;
+                vertical-alignment: center;
                 accessible-role: none;
             }
             TouchArea {

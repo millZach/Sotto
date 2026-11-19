@@ -232,7 +232,12 @@ pub fn install(ui: &AppWindow, m: Rc<RefCell<Metrics>>) {
     let w = ui.as_weak();
     let mm = m.clone();
     ui.window()
-        .set_rendering_notifier(move |state, _| match state {
+        .set_rendering_notifier(move |state, api| {
+            #[cfg(windows)]
+            crate::winsurface::on_render(&state, api);
+            #[cfg(not(windows))]
+            let _ = api;
+            match state {
             slint::RenderingState::BeforeRendering => mm.borrow_mut().before = Some(Instant::now()),
             slint::RenderingState::AfterRendering => {
                 let after = Instant::now();
@@ -242,7 +247,7 @@ pub fn install(ui: &AppWindow, m: Rc<RefCell<Metrics>>) {
                 }
             }
             _ => {}
-        })
+        }})
         .unwrap_or_else(|e| eprintln!("event=no-rendering-notifier error={e:?}"));
     let mk = m.clone();
     let trace = std::env::var_os("SOTTO_TRACE_KEYS").is_some();

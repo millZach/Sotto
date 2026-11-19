@@ -118,6 +118,11 @@ export component AppWindow inherits Window {
     callback web-focus-changed(bool, bool);
     callback web-pointer(length, length, bool);
     callback web-resized(length, length);
+    in property <int> web-surface-mode: 0;
+    out property <length> web-surface-x: web.surface-x;
+    out property <length> web-surface-y: web.surface-y;
+    out property <length> web-surface-width: web.surface-width;
+    out property <length> web-surface-height: web.surface-height;
 
     // The window
     in-out property <bool> tools-shown: true;
@@ -312,6 +317,7 @@ export component AppWindow inherits Window {
                             min-height: 170px;
                             preferred-height: 200px;
                             frame: root.web-frame;
+                            surface-mode: root.web-surface-mode;
                             page-title: root.web-title;
                             key(t, s, c) => { return root.web-key(t, s, c); }
                             focus-changed(f, b) => { root.web-focus-changed(f, b); }

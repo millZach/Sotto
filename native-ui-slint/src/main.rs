@@ -9,6 +9,8 @@ mod motion;
 mod terminal;
 mod thread;
 mod webpane;
+#[cfg(windows)]
+mod winsurface;
 
 slint::include_modules!();
 
@@ -24,6 +26,8 @@ pub struct Args {
     pub variant: i32,
     pub light: bool,
     pub size: Option<(f32, f32)>,
+    /// The window's top-left corner in physical desktop pixels, set before the first frame.
+    pub position: Option<(i32, i32)>,
     pub no_tools: bool,
     pub stream: bool,
     pub finished: bool,
@@ -35,6 +39,10 @@ pub struct Args {
     /// The composer's text at start, instead of the demo text with its two pills.
     pub composer_text: Option<String>,
     pub no_focus: bool,
+    /// Stream the reply again half a second after each one ends (for typing while it streams).
+    pub loop_stream: bool,
+    /// The web pane's surface: image (default), or on Windows child or shared (src/winsurface.rs).
+    pub web_surface: String,
 }
 
 fn args() -> Args {
@@ -49,6 +57,7 @@ fn args() -> Args {
                     a.size = Some((w, h));
                 }
             }
+            "--position" => a.position = it.next().and_then(|s| s.split_once(',').and_then(|(x, y)| Some((x.parse().ok()?, y.parse().ok()?)))),
             "--no-tools" => a.no_tools = true,
             "--stream" => a.stream = true,
             "--finished" => a.finished = true,
@@ -62,6 +71,11 @@ fn args() -> Args {
             "--scroll-up-after" => a.scroll_up_after = it.next().and_then(|s| s.parse().ok()),
             "--composer-text" => a.composer_text = it.next(),
             "--no-focus" => a.no_focus = true,
+            "--web-surface" => a.web_surface = it.next().unwrap_or_default(),
+            "--loop" => {
+                a.loop_stream = true;
+                a.stream = true;
+            }
             other => eprintln!("unknown argument {other}"),
         }
     }
@@ -94,10 +108,18 @@ fn main() {
     let ui = AppWindow::new().expect("create the window");
     let backend = metrics::backend_name();
     ui.global::<Theme>().set_dark(!args.light);
+    // Sotto's --tt-font-mono is 'Spline Sans Mono', ui-monospace, …, Consolas: Spline Sans Mono is not bundled, so
+    // Electron on Windows draws Consolas, and so does this build there.
+    if cfg!(windows) {
+        ui.global::<Fonts>().set_mono("Consolas".into());
+    }
     ui.set_composer_variant(args.variant);
     ui.set_tools_shown(!args.no_tools);
     if let Some((w, h)) = args.size {
         ui.window().set_size(slint::LogicalSize::new(w, h));
+    }
+    if let Some((x, y)) = args.position {
+        ui.window().set_position(slint::PhysicalPosition::new(x, y));
     }
 
     // Reduced motion, from the system, and kept in step with it.
@@ -250,6 +272,7 @@ fn main() {
         let thread = thread.clone();
         let timer = stream_timer.clone();
         let m = metrics.clone();
+        let loop_stream = args.loop_stream;
         Rc::new(move || {
             let ui = w.unwrap();
             thread.borrow_mut().start_reply();
@@ -260,6 +283,8 @@ fn main() {
             let thread = thread.clone();
             let m = m.clone();
             let t0 = Instant::now();
+            // The timer stops itself once the reply is whole.
+            let this_timer = Rc::downgrade(&timer);
             timer.start(slint::TimerMode::Repeated, Duration::from_millis(16), move || {
                 let Some(ui) = w.upgrade() else { return };
                 let more = thread.borrow_mut().step();
@@ -267,9 +292,20 @@ fn main() {
                 let words = thread::REPLY[..streamed].split_whitespace().count();
                 ui.set_stream_status(format!("{words} words").into());
                 if !more {
+                    if let Some(t) = this_timer.upgrade() {
+                        t.stop();
+                    }
                     ui.set_busy(false);
                     ui.set_stream_status(format!("{words} words in {:.1} s", t0.elapsed().as_secs_f32()).into());
                     m.borrow_mut().stream_ended(&ui);
+                    if loop_stream {
+                        let w = w.clone();
+                        slint::Timer::single_shot(Duration::from_millis(500), move || {
+                            if let Some(ui) = w.upgrade() {
+                                ui.invoke_send();
+                            }
+                        });
+                    }
                 }
             });
         })
@@ -377,6 +413,10 @@ fn main() {
     }
     let web_frames = web.frames;
     let web_timer = slint::Timer::default();
+    let image_frames = args.web_surface.is_empty() || args.web_surface == "image";
+    let reduced_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(ui.global::<Motion>().get_reduced()));
+    #[cfg(windows)]
+    let _surface_timer = winsurface::start(&ui, winsurface::mode_from(&args.web_surface), reduced_flag.clone());
     {
         let w = ui.as_weak();
         let m = metrics.clone();
@@ -384,6 +424,9 @@ fn main() {
             let mut latest = None;
             while let Ok(f) = web_frames.try_recv() {
                 latest = Some(f);
+            }
+            if !image_frames {
+                return;
             }
             if let (Some(f), Some(ui)) = (latest, w.upgrade()) {
                 m.borrow_mut().web_frame(f.rendered_in);
@@ -439,7 +482,9 @@ fn main() {
         // Reduced motion reaches the page too.
         let web_state = web_state.clone();
         let w = ui.as_weak();
+        let reduced_flag = reduced_flag.clone();
         motion::on_change(move |reduced| {
+            reduced_flag.store(reduced, std::sync::atomic::Ordering::Relaxed);
             let mut s = web_state.lock().unwrap();
             s.reduced_motion = reduced;
             s.version += 1;

@@ -24,6 +24,8 @@ slint = { version = "=1.19.0", default-features = false, features = [
     "accessibility",
     "compat-1-2",
     "unstable-winit-030",
+    # Gives the rendering notifier a graphics API for Skia over wgpu, the default renderer, so it can be measured.
+    "unstable-wgpu-30",
 ] }
 pulldown-cmark = { version = "0.13", default-features = false }
 syntect = { version = "5.3", default-features = false, features = ["default-fancy"] }
@@ -31,7 +33,27 @@ alacritty_terminal = "0.26"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 fontdue = "0.9"
+
+[target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+# Windows: the web pane's child-window and shared-texture experiments (src/winsurface.rs). Already in the
+# build through Slint's winit backend; MIT OR Apache-2.0.
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Graphics_Direct2D",
+    "Win32_Graphics_Direct2D_Common",
+    "Win32_Graphics_DirectWrite",
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_Dxgi",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Security",
+    "Win32_System_LibraryLoader",
+    "Win32_UI_WindowsAndMessaging",
+] }
 
 [build-dependencies]
 slint-build = "=1.19.0"
