@@ -45,6 +45,7 @@ export const AGENT_START_HANDOVER = 'sotto:agents:start-handover'
 export const AGENT_ACTIVITY_BODY = 'sotto:agents:activity-body'
 export { everyProvider, providerIdSchema, type ProviderId } from './providerIds'
 import type { AgentThreadPrompts, AgentThreadPromptsRequest } from './threadPrompts'
+import type { AgentThreadWords, AgentThreadWordsRequest } from './threadWords'
 /** How many thread providers Sotto has: the cap on every list that names each provider at most once. */
 export const PROVIDER_COUNT = providerIdSchema.options.length
 /** Absent on older live snapshots; ordinary threads have the project kind. */
@@ -1793,6 +1794,8 @@ export interface AgentBridge {
   activityBody?(request: AgentActivityBodyRequest): Promise<AgentActivity | null>
   /** Every message the user sent above the window a pane holds, for the message scrubber (ADR-0109); null when the host cannot say. */
   threadPrompts?(request: AgentThreadPromptsRequest): Promise<AgentThreadPrompts | null>
+  /** The threads whose messages hold a search's words, on every computer, for Search threads. Null when none could say. */
+  threadWords?(request: AgentThreadWordsRequest): Promise<AgentThreadWords | null>
   /** Whole details and the deltas between them; a delta the window cannot apply sends it back to `threadDetail`. */
   onThreadDetail?(listener: (update: AgentThreadDetailUpdate) => void): () => void
   /**

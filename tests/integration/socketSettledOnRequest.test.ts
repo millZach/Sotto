@@ -3,7 +3,7 @@
  * A phone that accepts `settled-threads-on-request` is sent only threads that are not settled, and reads settled ones
  * with `settled-threads` when the user opens the Settled shelf or searches (ADR-0028, November 1 part 2).
  */
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { SocketFrames } from '../../src/host/socketFrames'
 import type { AgentHostSnapshot, AgentThread } from '../../src/shared/agents'
 import { PROVIDER_HOST_FEATURES } from '../../src/shared/hostProtocol'
@@ -12,7 +12,7 @@ import { useSocketHostFixture } from '../fixtures/socketHostFixture'
 
 const fixture = useSocketHostFixture()
 const raws: SocketFrames[] = []
-afterEach(() => { for (const frames of raws.splice(0)) frames.close() })
+afterEach(() => { vi.restoreAllMocks(); for (const frames of raws.splice(0)) frames.close() })
 
 const ago = (days: number): string => new Date(Date.now() - days * 86_400_000).toISOString()
 interface Listed { host: { threads: AgentThread[] }; settledHeldBack?: number }
@@ -65,6 +65,20 @@ describe('settled threads on request', () => {
     expect(second.result.next).toBeNull()
     const found = await held.call('found', { op: 'settled-threads', query: 'billing' }) as { result: { threads: AgentThread[] } }
     expect(found.result.threads.map(thread => thread.title)).toEqual(['Billing reconcile', 'Billing export'])
+  })
+
+  it('finds a held-back thread by what was said in it, once the host reads its words', async () => {
+    await settledThreads()
+    const held = await phone([...PROVIDERS, 'settled-threads-on-request'])
+    const page = await held.call('page', { op: 'settled-threads' }) as { result: { threads: AgentThread[] } }
+    const stars = page.result.threads.find(thread => thread.title === 'Owl stars')!
+    const words = vi.spyOn(fixture.host.service, 'threadWords').mockResolvedValue({ found: [{ threadId: stars.id, messageId: 'u0', role: 'user', quote: 'Make the invoice blink.', more: 0 }] })
+    const found = await held.call('found', { op: 'settled-threads', query: 'invoice' }) as { result: { threads: AgentThread[] } }
+    expect(found.result.threads.map(thread => thread.title)).toEqual(['Owl stars'])
+    expect(words).toHaveBeenCalledExactlyOnceWith('invoice')
+    // The phone's own read of the quotes, a moment later, is answered from the same read of the store.
+    expect(await held.call('quotes', { op: 'thread-words', query: 'invoice' })).toMatchObject({ ok: true, result: { found: [{ threadId: stars.id }] } })
+    expect(words).toHaveBeenCalledTimes(1)
   })
 
   it('lists a held-back thread while the phone has it open', async () => {

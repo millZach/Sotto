@@ -157,4 +157,25 @@ describe('the workspace over the store worker', () => {
     expect(await host.threadPrompts(WORKSHOP, 'u4')).toEqual(read)
     expect(onMain).toHaveBeenCalledTimes(1)
   })
+
+  it('reads Search threads’ words on the worker rather than on main, and on main once the worker has gone', async () => {
+    const { adapter, host, store, writes } = await workspace()
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    adapter.publish(added('u0', 'Check the purge timer', 'user'))
+    host.workspaceSnapshot()
+    await writes.confirmed()
+    const onMain = vi.spyOn(ThreadStore.prototype, 'threadWords')
+    // Posted behind a write the read must follow, so it finds the words that write adds.
+    adapter.publish(added('a0', 'The purge runs 90 s before the pilot.'))
+    const read = await host.threadWords('PURGE')
+    expect(read).toEqual({ found: [{ threadId: WORKSHOP, messageId: 'a0', role: 'assistant', quote: 'The purge runs 90 s before the pilot.', more: 1 }] })
+    expect(onMain).not.toHaveBeenCalled()
+    void store.worker!.terminate()
+    for (let waited = 0; store.worker !== undefined; waited++) {
+      if (waited > 200) throw new Error('The worker never went')
+      await delay(20)
+    }
+    expect(await host.threadWords('PURGE')).toEqual(read)
+    expect(onMain).toHaveBeenCalledTimes(1)
+  })
 })

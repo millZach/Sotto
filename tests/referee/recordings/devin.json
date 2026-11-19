@@ -26,7 +26,8 @@
        "usable-models", "product-events", "watcher-tell", "command-changed-thread-records", "step-window", "thread-snooze", "watcher-ready",
        "browser", "provider-deepseek", "video-staging", "provider-pi", "provider-hermes", "project-git-init", "plugin-account-copies",
        "plugin-github-sign-in", "plugin-mail-copies", "plugin-meshy-copies", "watcher-progress", "kept-parts", "plugin-meshy-spending",
-       "plugin-meshy-models", "plugin-meshy-phone", "plugin-elevenlabs-copies", "plugin-elevenlabs-spending", "plugin-elevenlabs-sounds"
+       "plugin-meshy-models", "plugin-meshy-phone", "plugin-elevenlabs-copies", "plugin-elevenlabs-spending", "plugin-elevenlabs-sounds",
+       "thread-words"
       ],
       "hostId": "<id:1>",
       "pid": "<pid>",
@@ -71,7 +72,8 @@
        "usable-models", "product-events", "watcher-tell", "command-changed-thread-records", "step-window", "thread-snooze", "watcher-ready",
        "browser", "provider-deepseek", "video-staging", "provider-pi", "provider-hermes", "project-git-init", "plugin-account-copies",
        "plugin-github-sign-in", "plugin-mail-copies", "plugin-meshy-copies", "watcher-progress", "kept-parts", "plugin-meshy-spending",
-       "plugin-meshy-models", "plugin-meshy-phone", "plugin-elevenlabs-copies", "plugin-elevenlabs-spending", "plugin-elevenlabs-sounds"
+       "plugin-meshy-models", "plugin-meshy-phone", "plugin-elevenlabs-copies", "plugin-elevenlabs-spending", "plugin-elevenlabs-sounds",
+       "thread-words"
       ],
       "hostId": "<id:1>",
       "pid": "<pid>",
@@ -116,7 +118,8 @@
        "usable-models", "product-events", "watcher-tell", "command-changed-thread-records", "step-window", "thread-snooze", "watcher-ready",
        "browser", "provider-deepseek", "video-staging", "provider-pi", "provider-hermes", "project-git-init", "plugin-account-copies",
        "plugin-github-sign-in", "plugin-mail-copies", "plugin-meshy-copies", "watcher-progress", "kept-parts", "plugin-meshy-spending",
-       "plugin-meshy-models", "plugin-meshy-phone", "plugin-elevenlabs-copies", "plugin-elevenlabs-spending", "plugin-elevenlabs-sounds"
+       "plugin-meshy-models", "plugin-meshy-phone", "plugin-elevenlabs-copies", "plugin-elevenlabs-spending", "plugin-elevenlabs-sounds",
+       "thread-words"
       ],
       "hostId": "<id:1>",
       "pid": "<pid>",
@@ -177,7 +180,7 @@
          "worker-swarms", "changed-thread-records", "thread-media", "thread-media-video", "next-prompts", "reply-thread-records",
          "provider-mode-lists", "settled-threads-on-request", "usable-models", "product-events", "command-changed-thread-records",
          "step-window", "thread-snooze", "browser", "provider-deepseek", "video-staging", "provider-pi", "provider-hermes",
-         "project-git-init", "kept-parts", "plugin-meshy-phone"
+         "project-git-init", "kept-parts", "plugin-meshy-phone", "thread-words"
         ],
         "hasMore": false,
         "hostId": "<id:1>",
@@ -821,7 +824,7 @@
          "worker-swarms", "changed-thread-records", "thread-media", "thread-media-video", "next-prompts", "reply-thread-records",
          "provider-mode-lists", "settled-threads-on-request", "usable-models", "product-events", "command-changed-thread-records",
          "step-window", "thread-snooze", "browser", "provider-deepseek", "video-staging", "provider-pi", "provider-hermes",
-         "project-git-init", "kept-parts", "plugin-meshy-phone"
+         "project-git-init", "kept-parts", "plugin-meshy-phone", "thread-words"
         ],
         "hasMore": false,
         "hostId": "<id:1>",
@@ -1421,7 +1424,7 @@
          "worker-swarms", "changed-thread-records", "thread-media", "thread-media-video", "next-prompts", "reply-thread-records",
          "provider-mode-lists", "settled-threads-on-request", "usable-models", "product-events", "command-changed-thread-records",
          "step-window", "thread-snooze", "browser", "provider-deepseek", "video-staging", "provider-pi", "provider-hermes",
-         "project-git-init", "kept-parts", "plugin-meshy-phone"
+         "project-git-init", "kept-parts", "plugin-meshy-phone", "thread-words"
         ],
         "hasMore": false,
         "hostId": "<id:1>",

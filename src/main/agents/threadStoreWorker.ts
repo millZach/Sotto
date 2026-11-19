@@ -8,7 +8,7 @@ import type { MessagePort } from 'node:worker_threads'
 import { workerData } from 'node:worker_threads'
 import type { AgentActivity } from '../../shared/agentActivity'
 import { immutableActivities, ownBuiltActivity } from './activitySnapshots'
-import { CHECKPOINT, CONTROL, LIFE, READ_PIECE_RECORDS, type StoreWorkerData, type WireActivityEntry, type WireWrite, type WorkerAnswer, type WorkerPromptsAnswer, type WorkerReadAnswer, type WorkerRequest } from './storeWorkerProtocol'
+import { CHECKPOINT, CONTROL, LIFE, READ_PIECE_RECORDS, type StoreWorkerData, type WireActivityEntry, type WireWrite, type WorkerAnswer, type WorkerPromptsAnswer, type WorkerReadAnswer, type WorkerWordsAnswer, type WorkerRequest } from './storeWorkerProtocol'
 import { ThreadStore } from './threadStore'
 import { applyWrite, writeThreads, type ActivityListEntry, type ThreadStoreWrite, type ThreadStoreWriteOutcome } from './threadStoreWriter'
 
@@ -144,6 +144,11 @@ function promptsRead(request: Extract<WorkerRequest, { kind: 'read-prompts' }>):
   } catch { return { promptsRead: request.read } }
 }
 
+/** Search threads' read of what was said. One that fails answers with none, and main says so. */
+function wordsRead(request: Extract<WorkerRequest, { kind: 'read-words' }>): WorkerWordsAnswer {
+  try { return { wordsRead: request.read, answer: store.threadWords(request.query) } } catch { return { wordsRead: request.read } }
+}
+
 /** The next piece of a list main is receiving; one the worker does not hold answers as a read it could not make. */
 function readMore(read: number): WorkerReadAnswer {
   const left = readsLeft.get(read)
@@ -216,6 +221,7 @@ if (Atomics.compareExchange(control, CONTROL.LIFE, STARTING, OPEN) === STARTING)
     if (request.kind === 'read-activities') { port.postMessage(readBack(request)); return }
     if (request.kind === 'read-more') { port.postMessage(readMore(request.read)); return }
     if (request.kind === 'read-prompts') { port.postMessage(promptsRead(request)); return }
+    if (request.kind === 'read-words') { port.postMessage(wordsRead(request)); return }
     Atomics.store(control, APPLYING, request.id)
     let outcome: ThreadStoreWriteOutcome & { memory?: true }
     try { outcome = apply(request.write) } catch (error) { outcome = { failed: new Set(writeThreads(request.write as ThreadStoreWrite)), error } }

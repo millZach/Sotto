@@ -6,6 +6,7 @@ import { dynamicNoteText, dynamicSessionAfterCompaction, isDynamicThread, overse
 import { compactionPending } from '../../shared/compaction'
 import { withKeptMessageMetadata } from '../../shared/agents'
 import type { AgentThreadPrompts } from '../../shared/threadPrompts'
+import type { AgentThreadWords } from '../../shared/threadWords'
 import { watcherAsksSchema, type WatcherAsk } from '../../shared/watcherAsks'
 import { catalogWithoutHeld, heldProviderOfThreadRecord } from './heldProviderGate'
 import { heldProviderRefusal, heldProvidersOf, type HeldProviders } from '../../shared/heldProviders'
@@ -4125,6 +4126,30 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       const skip = new Set([...ownWakeUps, ...this.threadStore.wakeUps(threadId), ...this.threadStore.hiddenWakeUps(threadId)])
       return this.threadStore.promptsBefore(threadId, beforeMessageId, skip)
     } catch { return null }
+  }
+  /**
+   * The threads whose messages hold `query`, for Search threads: the user's messages and the agents' replies, wake-ups
+   * left out, each found thread with a quote of its newest match. Only threads this host lists are named; a thread the
+   * store still holds words of after it was deleted is not. Read on the store worker, as `threadPrompts` is, and on main
+   * only with no worker. Null when the store cannot answer. Read only when a search asks, and never published.
+   */
+  async threadWords(query: string): Promise<AgentThreadWords | null> {
+    if (this.storeUnavailable) return null
+    // What waits to be written is posted first, so the read, behind it, finds the messages a publish just added.
+    await this.settled()
+    if (this.storeUnavailable) return null
+    let read: AgentThreadWords | null = null
+    const offMain = this.writes.readWords?.(query)
+    if (offMain) {
+      const answer = await offMain
+      if ('words' in answer) read = answer.words
+      else if ('unreadable' in answer) return null
+    }
+    if (read === null) {
+      if (this.storeUnavailable) return null
+      try { read = this.threadStore.threadWords(query) } catch { return null }
+    }
+    return { found: read.found.filter(match => { const thread = this.threadById(match.threadId); return thread !== undefined && this.visible(thread) }) }
   }
   /** A thread no pane is looking at goes back to its summary alone. */
   private unloadWindow(threadId: string): void {

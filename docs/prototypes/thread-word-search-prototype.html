@@ -1,0 +1,132 @@
+<!doctype html>
+<!-- PROTOTYPE — throwaway. Question: how should Search threads show a thread found by its words, not its title?
+     Three ways, on the same eighteen threads: A = a quote line under the row, title matches first; B = one list by
+     recency with a quiet "in its words" mark and the quote in the tooltip; C = today's rows for title matches, then a
+     separate "In what was said" group of quote rows. The bar switches desktop sidebar / iPhone, light / dark, whose
+     words count, and whether settled threads are searched. Type in the search field; try "rust", "worktree", "flake",
+     "pencil". Nothing here talks to Sotto. -->
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Search threads by their words — prototype</title>
+<style>
+:root{--canvas:oklch(0.115 0.008 265);--pane:oklch(0.145 0.008 265);--sidebar:oklch(0.205 0.004 265);--card:oklch(0.245 0.006 265);
+--inset:oklch(0.29 0.008 265);--text:oklch(0.985 0.005 280);--text2:oklch(0.86 0.01 265);--muted:oklch(0.72 0.014 265);
+--hair:oklch(0.305 0.02 265);--accent:oklch(0.714 0.104 183);--hit:color-mix(in oklch,var(--accent) 30%,transparent);--btn:oklch(0.27 0.006 265);
+--attn:oklch(0.772 0.173 65);--success:oklch(0.76 0.15 155)}
+body.light{--canvas:oklch(0.978 0.004 85);--pane:oklch(0.99 0.003 85);--sidebar:oklch(0.945 0.007 85);--card:oklch(0.975 0.004 85);
+--inset:oklch(0.91 0.01 85);--text:oklch(0.235 0.014 75);--text2:oklch(0.36 0.014 75);--muted:oklch(0.47 0.014 75);
+--hair:oklch(0.86 0.012 80);--accent:oklch(0.53 0.095 186);--hit:color-mix(in oklch,var(--accent) 22%,transparent);--btn:oklch(0.93 0.01 85);
+--attn:oklch(0.6 0.16 50);--success:oklch(0.5 0.13 155)}
+*{box-sizing:border-box}html,body{margin:0}
+body{background:var(--canvas);color:var(--text);font:14px/1.35 Figtree,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+button,input{font:inherit;color:inherit}
+.bar{position:sticky;top:0;z-index:5;display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;padding:8px 12px;background:#111;color:#eee;font-size:12.5px;border-bottom:1px solid #333}
+.bar b{color:#ffcf5a}.seg{display:inline-flex;border:1px solid #444;border-radius:6px;overflow:hidden}
+.seg button{background:#1d1d1d;border:0;padding:5px 9px;cursor:pointer;color:#ccc}.seg button[aria-pressed=true]{background:#e9e9e9;color:#111;font-weight:600}
+.bar label{display:inline-flex;gap:5px;align-items:center;color:#bbb}
+.note{max-width:900px;margin:14px auto 0;padding:0 14px;color:var(--muted);font-size:13px}
+.note strong{color:var(--text)}
+.stage{display:flex;justify-content:center;padding:14px 10px 60px}
+/* desktop */
+.window{display:flex;width:900px;max-width:100%;height:640px;border:1px solid var(--hair);border-radius:10px;overflow:hidden;background:var(--pane)}
+.side{flex:none;width:300px;max-width:100%;display:flex;flex-direction:column;background:var(--sidebar);border-right:1px solid var(--hair)}
+.paneR{flex:1;padding:20px;color:var(--muted)}
+@media (max-width:640px){.paneR{display:none}.side{width:100%}.window{height:auto;min-height:560px}}
+/* phone */
+.phone{width:390px;max-width:100%;min-height:720px;border:1px solid var(--hair);border-radius:38px;background:var(--pane);padding:54px 0 20px;display:flex;flex-direction:column}
+.phone h1{font-size:30px;margin:0 18px 10px}
+.search{display:flex;align-items:center;gap:8px;margin:10px 8px 8px;height:34px;padding:0 10px;border:1px solid var(--hair);border-radius:8px;background:color-mix(in oklch,var(--canvas) 40%,transparent)}
+.phone .search{margin:0 14px 10px;height:40px;border-radius:12px;background:var(--card);border:0}
+.search input{flex:1;border:0;background:transparent;outline:0;min-width:0}
+.list{flex:1;overflow:auto;padding:2px 6px 10px}
+.phone .list{padding:0 14px}
+.gh{padding:10px 8px 4px;font-size:12px;font-weight:600;color:var(--muted);display:flex;gap:6px}
+.phone .gh{font-size:13px;padding:14px 4px 6px;text-transform:none}
+.row{display:flex;gap:9px;align-items:flex-start;padding:7px 8px;border-radius:7px;cursor:pointer}
+.row:hover{background:var(--btn)}
+.phone .row{padding:11px 4px;border-bottom:1px solid var(--hair);border-radius:0}
+.ring{flex:none;width:11px;height:11px;margin-top:3px;border-radius:50%;border:1.5px solid var(--hair)}
+.ring[data-s=working]{border-color:var(--accent)}.ring[data-s=needs]{border:2px solid var(--attn)}.ring[data-s=unread]{border-color:var(--success);background:radial-gradient(circle,var(--success) 0 28%,transparent 30%)}
+.body{flex:1;min-width:0}
+.t{display:flex;gap:6px;align-items:baseline}.t span{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.t time{flex:none;font-size:12px;color:var(--muted)}
+.sub{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.quote{font-size:12.5px;color:var(--text2);margin-top:2px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.quote .who{color:var(--muted)}
+mark{background:var(--hit);color:inherit;border-radius:3px;padding:0 1px}
+.inwords{flex:none;font-size:11px;color:var(--muted);border:1px solid var(--hair);border-radius:999px;padding:0 6px}
+.more{font-size:12px;color:var(--muted);margin-top:1px}
+.empty{padding:14px 10px;color:var(--muted)}
+.settled{font-size:11px;color:var(--muted)}
+.reading{padding:4px 10px;font-size:12px;color:var(--muted)}
+</style></head><body>
+<div class="bar"><b>PROTOTYPE</b>
+ <span class="seg" id="variant"><button data-v="A">A · Quote under the row</button><button data-v="B">B · One list, mark</button><button data-v="C">C · Separate group</button></span>
+ <span class="seg" id="surface"><button data-v="desktop">Desktop</button><button data-v="phone">iPhone</button></span>
+ <span class="seg" id="theme"><button data-v="dark">Dark</button><button data-v="light">Light</button></span>
+ <label><input type="checkbox" id="mine" checked> Your messages</label>
+ <label><input type="checkbox" id="replies" checked> Agents' replies</label>
+ <label><input type="checkbox" id="tools"> Steps (commands, tool output)</label>
+ <label><input type="checkbox" id="settled" checked> Settled threads</label>
+</div>
+<p class="note">Type in <strong>Search threads</strong>. Try <strong>rust</strong>, <strong>worktree</strong>, <strong>flake</strong>, <strong>pencil</strong>. Today only titles, project, provider, model, the status line and your last message are searched; here every message is. On the laptop's real store (994 threads, 76,000 messages) a search of every message takes about 0.1 s, so results from the words would arrive just after the title matches.</p>
+<div class="stage" id="stage"></div>
+<script>
+const T=[
+ {t:'Port the composer to Slint',p:'Sotto',s:'working',at:'now',msgs:[['you','Start the Rust port with the composer only, keep Electron for the rest.'],['agent','The Slint composer builds; the caret moves right in RTL text.']],steps:['cargo build --release']},
+ {t:'Fix CI flake in host contract',p:'Sotto',s:'unread',at:'9:40',msgs:[['you','The hostServiceContract test failed again on Windows.'],['agent','It is a flake: the socket closes before the acknowledgement. I scripted the lost acknowledgement instead of a shorter deadline.']],steps:['npm test -- hostServiceContract']},
+ {t:'Mark up on iPhone',p:'Sotto',s:'needs',at:'9:12',msgs:[['you','Make the Move tool work with the Pencil too.'],['agent','Moving with the Pencil now drags the mark; finger scrolls.']],steps:[]},
+ {t:'Release 0.1.43',p:'Sotto',s:'',at:'Tue',msgs:[['you','Cut stable from main.'],['agent','Stable 0.1.43 is published. The Mac half came from stable-mac.yml.']],steps:['npm run release:check']},
+ {t:'Thread list feels slow',p:'Sotto',s:'',at:'Mon',msgs:[['you','Opening the sidebar is slow with a thousand threads.'],['agent','Most of the time is in sorting; worktree lookups are cached now.']],steps:['git worktree list']},
+ {t:'Boiler sequence review',p:'Plant controls',s:'',at:'Mon',msgs:[['you','Check the purge timer in the boiler sequence.'],['agent','The purge runs 90 s before the pilot, as the manual says.']],steps:[]},
+ {t:'New thread',p:'Game',s:'',at:'Sun',msgs:[['you','Make the owl sprite blink every few seconds.'],['agent','The owl blinks on a random 3–6 s timer.']],steps:[]},
+ {t:'Clean up worktrees',p:'Sotto',s:'',at:'Nov 12',settled:true,msgs:[['you','Remove every worktree that is merged.'],['agent','Removed 31 worktrees, 42 GB back. Two had unmerged work and stay.']],steps:['git worktree remove .worktrees/fix-x']},
+ {t:'Research leaving Electron',p:'Sotto',s:'',at:'Nov 4',settled:true,msgs:[['you','How long would a Rust rewrite take?'],['agent','About 14 weeks, not one. Heap-snapshot the Node host first.']],steps:[]},
+ {t:'iPhone send jump',p:'Sotto',s:'',at:'Nov 5',settled:true,msgs:[['you','The thread jumps 16 points after Send.'],['agent','The caption line caused it; your pick A fixed it.']],steps:[]},
+ {t:'Teams Watchers',p:'Sotto',s:'',at:'Nov 3',settled:true,msgs:[['you','Link my Watcher with Drake’s.'],['agent','The link is one-way for now; share the laptop back to finish it.']],steps:[]},
+ {t:'Paired host terminal',p:'Sotto',s:'',at:'Nov 2',settled:true,msgs:[['you','Open a terminal on forge from the desktop.'],['agent','ssh -tt from the desktop; the host archive stays free of node-pty.']],steps:['ssh -tt forge']},
+];
+const st={variant:'A',surface:'desktop',theme:'dark',q:''};
+const esc=s=>s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+function hl(text,q){const i=text.toLowerCase().indexOf(q);if(i<0)return esc(text);const a=Math.max(0,i-40);return (a?'…':'')+esc(text.slice(a,i))+'<mark>'+esc(text.slice(i,i+q.length))+'</mark>'+esc(text.slice(i+q.length))}
+function search(){
+ const q=st.q.trim().toLowerCase(),inc=id=>document.getElementById(id).checked;
+ const pool=T.filter(x=>inc('settled')||!x.settled);
+ if(!q)return{title:pool.filter(x=>!x.settled),words:[]};
+ const title=[],words=[];
+ for(const x of pool){
+  if((x.t+' '+x.p).toLowerCase().includes(q)){title.push(x);continue}
+  const hits=[];
+  for(const [who,text] of x.msgs){if((who==='you'?inc('mine'):inc('replies'))&&text.toLowerCase().includes(q))hits.push([who==='you'?'You':'Claude',text])}
+  if(inc('tools'))for(const s of x.steps)if(s.toLowerCase().includes(q))hits.push(['Step',s]);
+  if(hits.length)words.push({...x,hits});
+ }
+ return{title,words};
+}
+const ring=x=>`<span class="ring" data-s="${x.s}"></span>`;
+function rowPlain(x,q){return `<div class="row">${ring(x)}<div class="body"><div class="t"><span>${q?hl(x.t,q):esc(x.t)}</span><time>${x.at}</time></div><div class="sub">${esc(x.p)}${x.settled?' · <span class="settled">Settled</span>':''}</div></div></div>`}
+function rowQuote(x,q){const [who,text]=x.hits[0];return `<div class="row">${ring(x)}<div class="body"><div class="t"><span>${esc(x.t)}</span><time>${x.at}</time></div><div class="quote"><span class="who">${who}:</span> ${hl(text,q)}</div>${x.hits.length>1?`<div class="more">${x.hits.length-1} more in this thread</div>`:''}<div class="sub">${esc(x.p)}${x.settled?' · <span class="settled">Settled</span>':''}</div></div></div>`}
+function rowMark(x,q){const [who,text]=x.hits[0];return `<div class="row" title="${esc(who+': '+text)}">${ring(x)}<div class="body"><div class="t"><span>${esc(x.t)}</span><span class="inwords">in its words</span><time>${x.at}</time></div><div class="sub">${esc(x.p)}${x.settled?' · <span class="settled">Settled</span>':''}</div></div></div>`}
+function list(){
+ const q=st.q.trim().toLowerCase(),{title,words}=search();
+ if(!q)return title.map(x=>rowPlain(x,'')).join('');
+ if(!title.length&&!words.length)return `<p class="empty">Nothing matches "${esc(st.q)}".</p>`;
+ if(st.variant==='A')return title.map(x=>rowPlain(x,q)).join('')+words.map(x=>rowQuote(x,q)).join('');
+ if(st.variant==='B'){const order=t=>T.indexOf(t);return [...title.map(x=>({x,f:rowPlain})),...words.map(x=>({x,f:rowMark}))].sort((a,b)=>order(a.x)-order(b.x)).map(({x,f})=>f(x,q)).join('')}
+ return (title.length?`<div class="gh">Titles <span>${title.length}</span></div>`+title.map(x=>rowPlain(x,q)).join(''):'')+
+  (words.length?`<div class="gh">In what was said <span>${words.length}</span></div>`+words.map(x=>rowQuote(x,q)).join(''):'');
+}
+function render(){
+ document.body.classList.toggle('light',st.theme==='light');
+ for(const id of ['variant','surface','theme'])for(const b of document.querySelectorAll(`#${id} button`))b.setAttribute('aria-pressed',String(b.dataset.v===st[id]));
+ const field=`<label class="search"><span aria-hidden="true">⌕</span><input id="q" type="search" placeholder="Search threads" aria-label="Search threads" value="${esc(st.q)}"></label>`;
+ const stage=document.getElementById('stage');
+ stage.innerHTML=st.surface==='desktop'
+  ?`<div class="window"><div class="side">${field}<div class="list" id="list">${list()}</div></div><div class="paneR">Thread pane</div></div>`
+  :`<div class="phone"><h1>Threads</h1>${field}<div class="list" id="list">${list()}</div></div>`;
+ const input=document.getElementById('q');input.oninput=e=>{st.q=e.target.value;document.getElementById('list').innerHTML=list()};
+ return input;
+}
+for(const id of ['variant','surface','theme'])document.getElementById(id).onclick=e=>{const v=e.target.dataset.v;if(!v)return;st[id]=v;const i=render();if(st.q)i.focus()};
+for(const id of ['mine','replies','tools','settled'])document.getElementById(id).onchange=()=>{document.getElementById('list').innerHTML=list()};
+st.q='rust';render();
+</script></body></html>

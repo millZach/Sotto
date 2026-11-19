@@ -421,13 +421,26 @@ function matchesThreadQuery(row: ThreadRow, query: string): boolean {
 }
 
 /**
- * The rows a search leaves on the page. `matching` is what the query found;
- * `listed` adds pending requests, which stay visible whatever you type.
+ * The rows a search leaves on the page. `matching` is what the query found, in the row or, with `words`, in what was said
+ * in the thread (`wordOnly`, those found only there); `listed` adds pending requests, which stay visible whatever you type.
  */
-export function listThreads(rows: readonly ThreadRow[], query: string): { readonly matching: ThreadRow[]; readonly listed: ThreadRow[] } {
-  const matching = rows.filter(row => matchesThreadQuery(row, query))
+export function listThreads(rows: readonly ThreadRow[], query: string, words?: ReadonlyMap<string, unknown>): { readonly matching: ThreadRow[]; readonly listed: ThreadRow[]; readonly wordOnly: ReadonlySet<string> } {
+  const wordOnly = new Set<string>()
+  const matching = rows.filter(row => {
+    if (matchesThreadQuery(row, query)) return true
+    if (query.trim() === '' || !words?.has(row.thread.id)) return false
+    wordOnly.add(row.thread.id)
+    return true
+  })
   const matched = new Set(matching)
-  return { matching, listed: rows.filter(row => row.attention || matched.has(row)) }
+  return { matching, listed: rows.filter(row => row.attention || matched.has(row)), wordOnly }
+}
+
+const NO_WORD_ONLY: ReadonlySet<string> = new Set()
+
+/** A search's own order: a row found in its title or its other words before one found only in what was said in it. */
+function titleMatchesFirst(wordOnly: ReadonlySet<string>, first: ThreadRow, second: ThreadRow): number {
+  return wordOnly.size ? Number(wordOnly.has(first.thread.id)) - Number(wordOnly.has(second.thread.id)) : 0
 }
 
 /** Open work and Settled history (workspace-settled, provider-settled or archived); unknown activity sorts last. */
@@ -488,6 +501,11 @@ export interface WorkspaceOrganization {
    * while the Owl list keeps delegation off.
    */
   readonly listedAs?: ReadonlyMap<string, string>
+  /**
+   * The rows a search found only in what was said in the thread, never in the row itself (Zach's pick A of November 19,
+   * 2026): each lists after the rows found by their own words and shows a quote of its match. Absent with no such row.
+   */
+  readonly wordOnly?: ReadonlySet<string>
 }
 
 const byActivity = (first: { readonly activityAt: number; readonly id: string }, second: { readonly activityAt: number; readonly id: string }): number => {
@@ -648,8 +666,9 @@ export function describeNeedsYou(rows: readonly ThreadRow[], now: number): Needs
   }
 }
 
-function folder(id: string, project: AgentProject | undefined, rows: readonly ThreadRow[], settled: boolean): ProjectFolder {
-  const sorted = [...rows].sort((first, second) => byActivity({ activityAt: first.activityAt, id: first.thread.id }, { activityAt: second.activityAt, id: second.thread.id }))
+function folder(id: string, project: AgentProject | undefined, rows: readonly ThreadRow[], settled: boolean, wordOnly: ReadonlySet<string> = NO_WORD_ONLY): ProjectFolder {
+  const sorted = [...rows].sort((first, second) => titleMatchesFirst(wordOnly, first, second)
+    || byActivity({ activityAt: first.activityAt, id: first.thread.id }, { activityAt: second.activityAt, id: second.thread.id }))
   return {
     id, project, title: project?.title ?? rows[0]?.provider ?? t`Project`, settled, rows: sorted,
     working: rows.filter(row => row.state === 'working').length,
@@ -702,7 +721,7 @@ export interface StatusGroups {
  * row in the group it was in, whatever its thread does meanwhile: a held gap's (ADR-0167), whose place must not move.
  */
 export type StatusGroupName = keyof StatusGroups
-export function groupByStatus(open: readonly ProjectFolder[], pinned?: ReadonlyMap<string, StatusGroupName>): StatusGroups {
+export function groupByStatus(open: readonly ProjectFolder[], pinned?: ReadonlyMap<string, StatusGroupName>, wordOnly: ReadonlySet<string> = NO_WORD_ONLY): StatusGroups {
   const rows = open.flatMap(item => item.rows)
   // Each row's time read once, not on every comparison.
   const moved = new Map(rows.map(row => {
@@ -710,7 +729,7 @@ export function groupByStatus(open: readonly ProjectFolder[], pinned?: ReadonlyM
     const times = [parse(lastMessageAt), parse(runningTurnStartedAt)].filter(Number.isFinite)
     return [row, times.length ? Math.max(...times) : Number.NaN]
   }))
-  const order = (first: ThreadRow, second: ThreadRow): number => Number(second.connected) - Number(first.connected)
+  const order = (first: ThreadRow, second: ThreadRow): number => titleMatchesFirst(wordOnly, first, second) || Number(second.connected) - Number(first.connected)
     || byActivity({ activityAt: moved.get(first)!, id: first.thread.id }, { activityAt: moved.get(second)!, id: second.thread.id })
   const groupOf = (row: ThreadRow): StatusGroupName => pinned?.get(row.thread.id) ?? (row.state === 'working' && row.connected ? 'working' : 'recent')
   return {
@@ -755,9 +774,9 @@ export const SETTLED_SHELF_PAGE = 30
  * time, a project's or a thread's and the ones it delegated, keep the order of their last activity; one whose
  * settlement names no time comes last. A settled project with no thread has no row here.
  */
-export function settledShelfRows(folders: readonly ProjectFolder[]): SettledShelfRow[] {
+export function settledShelfRows(folders: readonly ProjectFolder[], wordOnly: ReadonlySet<string> = NO_WORD_ONLY): SettledShelfRow[] {
   return folders.flatMap(item => item.rows).map(row => ({ row, settledAt: settledAtOf(row) }))
-    .sort((first, second) => byActivity({ activityAt: first.settledAt, id: '' }, { activityAt: second.settledAt, id: '' })
+    .sort((first, second) => titleMatchesFirst(wordOnly, first.row, second.row) || byActivity({ activityAt: first.settledAt, id: '' }, { activityAt: second.settledAt, id: '' })
       || byActivity({ activityAt: first.row.activityAt, id: first.row.thread.id }, { activityAt: second.row.activityAt, id: second.row.thread.id }))
 }
 
@@ -770,11 +789,11 @@ export function settledShelfRows(folders: readonly ProjectFolder[]): SettledShel
  * that delegated to it, whose row says when it waits on you. The Needs you queue is described from the same rows
  * before the search narrows them, so searching never changes it (ADR-0135).
  */
-export function organizeWorkspace(state: AgentState, allRows: readonly ThreadRow[], query: string, activeProjectId: string | null = null, delegation = false, now: number = Date.now(), swarms = false, snoozes?: ReadonlyMap<string, number>): WorkspaceOrganization {
+export function organizeWorkspace(state: AgentState, allRows: readonly ThreadRow[], query: string, activeProjectId: string | null = null, delegation = false, now: number = Date.now(), swarms = false, snoozes?: ReadonlyMap<string, number>, words?: ReadonlyMap<string, unknown>): WorkspaceOrganization {
   const settledIds = delegation ? new Set(allRows.filter(row => row.settledBy !== null).map(row => row.thread.id)) : undefined
   const tops = delegation ? delegationTops(state.host.threads, threadId => settledIds!.has(threadId), swarms) : undefined
   const rows = tops?.size ? withoutDelegated(allRows, tops, now) : allRows
-  const { matching, listed } = listThreads(rows, query)
+  const { matching, listed, wordOnly } = listThreads(rows, query, words)
   const isListed = new Set(listed)
   const needle = query.trim().toLocaleLowerCase()
   const projectMatches = (project: AgentProject): boolean => needle !== '' && `${project.title} ${project.path}`.toLocaleLowerCase().includes(needle)
@@ -794,7 +813,7 @@ export function organizeWorkspace(state: AgentState, allRows: readonly ThreadRow
     const nameMatch = project !== undefined && projectMatches(project)
     const shown = nameMatch ? all : all.filter(row => isListed.has(row))
     if (isWorkspaceThreadSettled({ workspaceSettledAt: null }, project)) {
-      if (shown.length || nameMatch || (needle === '' && all.length === 0)) settled.push(folder(id, project, shown, true))
+      if (shown.length || nameMatch || (needle === '' && all.length === 0)) settled.push(folder(id, project, shown, true, wordOnly))
       continue
     }
     const unsettled = shown.filter(row => row.settledBy === null)
@@ -802,10 +821,10 @@ export function organizeWorkspace(state: AgentState, allRows: readonly ThreadRow
     const openRows = asleep.length ? unsettled.filter(row => !asleep.includes(row)) : unsettled
     const settledRows = shown.filter(row => row.settledBy !== null)
     const emptyOpen = needle === '' && (all.length === 0 || id === activeProjectId) && openRows.length === 0
-    if (openRows.length || emptyOpen || (nameMatch && !settledRows.length && !asleep.length)) open.push(folder(id, project, openRows, false))
-    if (asleep.length) snoozed.push(folder(id, project, asleep, false))
-    if (settledRows.length) settled.push(folder(id, project, settledRows, false))
+    if (openRows.length || emptyOpen || (nameMatch && !settledRows.length && !asleep.length)) open.push(folder(id, project, openRows, false, wordOnly))
+    if (asleep.length) snoozed.push(folder(id, project, asleep, false, wordOnly))
+    if (settledRows.length) settled.push(folder(id, project, settledRows, false, wordOnly))
   }
   const ordered = (folders: ProjectFolder[]): ProjectFolder[] => folders.sort((first, second) => byActivity(first, second))
-  return { open: ordered(open), ...snoozes?.size ? { snoozed: ordered(snoozed) } : {}, settled: ordered(settled), needsYou: describeNeedsYou(rows, now), matching: matching.length, ...(tops ? { listedAs: tops } : {}) }
+  return { open: ordered(open), ...snoozes?.size ? { snoozed: ordered(snoozed) } : {}, settled: ordered(settled), needsYou: describeNeedsYou(rows, now), matching: matching.length, ...(tops ? { listedAs: tops } : {}), ...(wordOnly.size ? { wordOnly } : {}) }
 }

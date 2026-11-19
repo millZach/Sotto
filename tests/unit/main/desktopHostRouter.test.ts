@@ -566,6 +566,28 @@ describe('desktop host routing', () => {
     expect(await router.threadPrompts({ threadId: hostEntityKey(REMOTE, 'thread'), beforeMessageId: 'u3' })).toBeNull()
     expect(threadPrompts).toHaveBeenCalledOnce()
   })
+  it('asks every host what was said in its threads at once, keys each thread as the window does, and drops a host that cannot say', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+    const match = (threadId: string, quote: string) => ({ threadId, messageId: 'u0', role: 'user' as const, quote, more: 0 })
+    const here = vi.fn(async () => ({ found: [match('thread', 'purge here')] }))
+    const there = vi.fn(async () => ({ found: [match('thread', 'purge on forge')] }))
+    // No host that can say: the window searches what rows say.
+    router.add(local.connection)
+    expect(await router.threadWords({ query: 'purge' })).toBeNull()
+    router.remove(LOCAL)
+    router.add({ ...local.connection, service: { ...local.connection.service, threadWords: here } })
+    router.add({ ...remote.connection, service: { ...remote.connection.service, threadWords: there } })
+    expect(await router.threadWords({ query: 'purge' })).toEqual({ found: [match(hostEntityKey(LOCAL, 'thread'), 'purge here'), match(hostEntityKey(REMOTE, 'thread'), 'purge on forge')] })
+    expect(here).toHaveBeenCalledExactlyOnceWith('purge')
+    expect(there).toHaveBeenCalledExactlyOnceWith('purge')
+    // A host that fails, and one that is disconnected, add nothing; the others still answer.
+    there.mockRejectedValueOnce(new Error('socket closed'))
+    expect(await router.threadWords({ query: 'purge' })).toEqual({ found: [match(hostEntityKey(LOCAL, 'thread'), 'purge here')] })
+    router.remove(REMOTE)
+    router.add({ ...remote.connection, service: { ...remote.connection.service, threadWords: there }, available: () => false })
+    expect(await router.threadWords({ query: 'purge' })).toEqual({ found: [match(hostEntityKey(LOCAL, 'thread'), 'purge here')] })
+    expect(there).toHaveBeenCalledTimes(2)
+  })
   it('reads a paired host\'s Files, Changes and Agents by its own IDs and hands every ID back as the window\'s key (ADR-0025, October 5 amendment)', async () => {
     const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
     const key = hostEntityKey(REMOTE, 'thread'), workspaceId = 'a'.repeat(64)

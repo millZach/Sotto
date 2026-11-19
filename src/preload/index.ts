@@ -90,6 +90,7 @@ import { systemSettingsPaneSchema } from '../shared/systemSettings'
 import { MEMORY_GET, MEMORY_COMMAND, MEMORY_CHANGED, memorySnapshotSchema, memoryCommandSchema, type MemoryBridge } from '../shared/memory'
 import { agentActivitySchema } from '../shared/agentActivity'
 import { AGENT_THREAD_PROMPTS, agentThreadPromptsRequestSchema, agentThreadPromptsSchema } from '../shared/threadPrompts'
+import { AGENT_THREAD_WORDS, agentThreadWordsRequestSchema, joinedThreadWordsSchema } from '../shared/threadWords'
 import { AGENT_THREAD_MEDIA, agentThreadMediaResultSchema, agentThreadMediaWindowRequestSchema, AGENT_ATTACHMENT_CONTENT, AGENT_ATTACHMENT_PREVIEW, AGENT_ATTACHMENT_STAGE, AGENT_ATTACHMENT_STAGE_FILE, VIDEO_HAS_NO_PATH, agentAttachmentContentRequestSchema, agentAttachmentContentResultSchema, agentAttachmentHandleSchema, agentAttachmentStageRequestSchema, agentAttachmentStageFileRequestSchema, agentAttachmentPreviewRequestSchema, agentAttachmentPreviewResultSchema, AGENT_GET, AGENT_COMMAND, AGENT_STATE, AGENT_E2E, AGENT_THREAD_DETAIL, AGENT_THREAD_DETAIL_GET, AGENT_START_HANDOVER, AGENT_ACTIVITY_BODY, agentActivityBodyRequestSchema, agentStartHandoverSchema, agentThreadDetailRequestSchema, agentThreadDetailResultSchema, agentStateSchema, agentCommandSchema, agentCommandReceiptSchema, agentCommandChangedThreadRecordsReceiptSchema } from '../shared/agents'
 
 import {
@@ -256,6 +257,7 @@ const dictationKeyRoleSchema = z.enum(['press', 'hold'])
 const startHandoverResultSchema = agentStartHandoverSchema.nullable()
 const activityBodyResultSchema = agentActivitySchema.nullable()
 const threadPromptsResultSchema = agentThreadPromptsSchema.nullable()
+const threadWordsResultSchema = joinedThreadWordsSchema.nullable()
 const usageClearResultsSchema = usageClearResultSchema.array().max(USAGE_HOSTS_MAX)
 const cursorSignInReadSchema = cursorSignInViewSchema.nullable()
 const fileListingResultSchema = filesResultSchema(fileListingSchema)
@@ -412,6 +414,7 @@ function createAgentBridge(renderer: IpcRendererAdapter): import('../shared/agen
     activityBody: async (request: import('../shared/agents').AgentActivityBodyRequest) => invokeParsed(renderer, AGENT_ACTIVITY_BODY, activityBodyResultSchema, agentActivityBodyRequestSchema.parse(request)),
     // The prompts above a pane's window, for the message scrubber (ADR-0109).
     threadPrompts: async (request: import('../shared/threadPrompts').AgentThreadPromptsRequest) => invokeParsed(renderer, AGENT_THREAD_PROMPTS, threadPromptsResultSchema, agentThreadPromptsRequestSchema.parse(request)),
+    threadWords: async (request: import('../shared/threadWords').AgentThreadWordsRequest) => invokeParsed(renderer, AGENT_THREAD_WORDS, threadWordsResultSchema, agentThreadWordsRequestSchema.parse(request)),
     // Whole details and the deltas between them share this channel, so the shape they share is the guard.
     onThreadDetail: (listener: (update: import('../shared/agents').AgentThreadDetailUpdate) => void) => subscribe(renderer, AGENT_THREAD_DETAIL,
       trustedState<import('../shared/agents').AgentThreadDetailUpdate>('threadId'), listener),

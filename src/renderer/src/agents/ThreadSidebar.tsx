@@ -1,4 +1,6 @@
 import React, { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { ThreadWordQuotesContext, useThreadWordQuote, type ThreadWords } from './useThreadWords'
+import type { ThreadWordMatch } from '../../../shared/threadWords'
 import { createPortal } from 'react-dom'
 import { plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
@@ -218,6 +220,9 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
   const statusId = useId()
   const timeId = useId()
   const detailsId = useId()
+  const quoteId = useId()
+  // A search that found this thread only by what was said in it quotes the match under its name (Zach's pick A).
+  const wordQuote = useThreadWordQuote(row.thread.id)
   const copy = describeWorkingCopy(row.thread, row.project)
   const WorkingCopyIcon = copy.status === 'pending' || copy.status === 'error' ? FolderGit2 : copy.branch || copy.repositoryRoot ? GitBranch : Folder
   const branch = copy.status === 'ready' ? copy.branch : undefined
@@ -256,7 +261,7 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
   // A resting row with nothing more to say takes one line, its name and a muted time, with no ring, mark or word (Zach's
   // pick C, ADR-0135, November 5, 2026); its word stays in its description. A row out of reach, watched or snoozed still
   // has something to say on its second line, so it keeps two.
-  const stepsBack = resting && row.connected && !watched && snoozedUntil === undefined
+  const stepsBack = resting && row.connected && !watched && snoozedUntil === undefined && wordQuote === undefined
   const inQueue = queued && row.state === 'needs'
   // Every row's name is one line (Zach, November 7, 2026): one that does not fit is cut at a word's end, and the whole name
   // stays its tooltip and its spoken name. The look names what sets the name's weight, so a change of weight measures again.
@@ -269,9 +274,9 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
     </span>
   </li>{swarm}</>
   return <><li ref={rowItem} className="thread-nav__row thread-nav__row--details" data-current={current || undefined} data-open={open && !current ? true : undefined} data-resting={resting || undefined}
-    data-steps-back={stepsBack || undefined} data-in-queue={inQueue ? id : undefined}
+    data-steps-back={stepsBack || undefined} data-in-queue={inQueue ? id : undefined} data-quoted={wordQuote ? true : undefined}
     onContextMenu={event => { event.preventDefault(); rowButton.current?.focus(); setMenu(rowMenuPlace(event)) }}>
-    <button ref={rowButton} type="button" className="thread-nav__item tt-focusable" aria-label={title} title={title} aria-describedby={[statusId, timeId, detailsId].join(' ')} aria-current={current ? 'page' : undefined} draggable
+    <button ref={rowButton} type="button" className="thread-nav__item tt-focusable" aria-label={title} title={title} aria-describedby={[...wordQuote ? [quoteId] : [], statusId, timeId, detailsId].join(' ')} aria-current={current ? 'page' : undefined} draggable
       aria-keyshortcuts={besideAvailable ? panes.openBesideChord?.label.keys : undefined} {...{ [ROVING_KEY]: `thread:${id}` }}
       onClick={event => { if (besideAvailable && (event.ctrlKey || event.metaKey)) panes.onOpenBeside(row.thread.id); else onOpen(row.thread.id) }}
       onKeyDown={event => threadKeyDown(event, offers, panes, { openBeside, openMenu: () => setMenu('beside'), rename: () => setRenaming(true) })}
@@ -295,6 +300,7 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
         : settledAt !== undefined ? <span id={timeId} className="thread-nav__time" />
         : <RowTime row={row} live={liveClock} id={timeId} />}
       <span id={detailsId} className="tt-visually-hidden">{copyDetails}</span>
+      {wordQuote ? <WordQuote id={quoteId} match={wordQuote.match} query={wordQuote.query} provider={row.provider} /> : null}
       <span className="thread-nav__metadata">
         {/* The mark stands for the provider's name; the status below says the name for a screen reader, and hovering says it here. */}
         <span className="thread-nav__provider" title={[row.provider, row.model?.name].filter(Boolean).join(' · ')}>
@@ -342,6 +348,25 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
       onDone={restore => { setPicking(false); if (restore) rowButton.current?.focus() }} /> : null}
   </li>{swarm}</>
 })
+
+/**
+ * The quote under a row a search found only by what was said in its thread: whose words, the match marked, and how many
+ * other messages match, as Zach picked (A, November 19, 2026). The quote is the row's description's first part.
+ */
+function WordQuote({ id, match, query, provider }: { readonly id: string; readonly match: ThreadWordMatch; readonly query: string; readonly provider: string }): ReactNode {
+  const { t } = useLingui()
+  const who = match.role === 'user' ? t({ message: 'You', comment: 'Before a quote of the user\'s own message, under a thread a search found by it: "You: …".' }) : provider
+  const at = match.quote.toLocaleLowerCase().indexOf(query.toLocaleLowerCase())
+  const lengthKept = match.quote.toLocaleLowerCase().length === match.quote.length
+  const words = at >= 0 && lengthKept
+    ? <>{match.quote.slice(0, at)}<mark className="thread-nav__hit">{match.quote.slice(at, at + query.length)}</mark>{match.quote.slice(at + query.length)}</>
+    : match.quote
+  const more = match.more
+  return <span id={id} className="thread-nav__quote">
+    <span className="thread-nav__quote-words"><span className="thread-nav__quote-who">{t({ message: `${who}:`, comment: '{who} is "You" or the provider\'s name, before a quote of their message.' })}</span> {words}</span>
+    {more > 0 ? <span className="thread-nav__quote-more">{plural(more, { other: `${{ others: shownCount(more) }} more in this thread` })}</span> : null}
+  </span>
+}
 
 /**
  * One place in a folder or a status group: the row, or the held gap of a settled one (ADR-0167), the settled row's height
@@ -693,7 +718,7 @@ function NeedsAttentionLine({ failures, command }: { readonly failures: ReturnTy
 }
 
 /** The Threads sidebar: project folders of open work, then the Settled shelf. */
-export function ThreadSidebar({ state, command, organization, query, liveClock = true, onQuery, onOpen: openThread, onNewThread: newThread,
+export function ThreadSidebar({ state, command, organization, query, threadWords, liveClock = true, onQuery, onOpen: openThread, onNewThread: newThread,
   currentThreadId, listedThreadId, openThreadIds, onOpenBeside: openBeside, onDragThread, title, newThreadError, onDismissNewThreadError, newThreadShortcut, shortcutsLive = false, restartThreads }: PaneActions & {
   readonly state: AgentState
   /**
@@ -704,6 +729,8 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   readonly command: Command
   readonly organization: WorkspaceOrganization
   readonly query: string
+  /** The threads the search found by what was said in them, whose rows show a quote of it. */
+  readonly threadWords?: ThreadWords | undefined
   /** The hidden page heading the frame carries; `null` beside a page that has its own. */
   readonly title?: string | null
   /** False where the page holds its clock still (a capture run); working rows then keep the time they were given. */
@@ -856,18 +883,18 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
     const pinned = pinnedGroups.current
     const holding = (id: string): boolean => held.placed.has(id) || renamingIds.has(id)
     for (const id of [...pinned.keys()]) if (!holding(id)) pinned.delete(id)
-    const groups = groupByStatus(held.open, pinned)
+    const groups = groupByStatus(held.open, pinned, organization.wordOnly)
     for (const id of [...held.placed.keys(), ...renamingIds]) if (!pinned.has(id)) pinned.set(id, groups.working.some(row => row.thread.id === id) ? 'working' : 'recent')
     return groups
-  }, [byStatus, held.open, held.placed, renamingIds])
+  }, [byStatus, held.open, held.placed, renamingIds, organization.wordOnly])
   const statusGaps = useMemo(() => new Map([...gaps].filter(([threadId]) => held.placed.has(threadId))), [gaps, held.placed])
   const snoozedFlat = useMemo(() => byStatus ? snoozedShelfRows(organization.snoozed ?? []) : undefined, [byStatus, organization.snoozed])
   // The open threads in the sidebar's order, which moving between threads follows.
   const openOrder = useMemo(() => {
     if (!byStatus) return organization.open.flatMap(folder => folder.rows)
-    const groups = groupByStatus(organization.open)
+    const groups = groupByStatus(organization.open, undefined, organization.wordOnly)
     return [...groups.working, ...groups.recent]
-  }, [byStatus, organization.open])
+  }, [byStatus, organization.open, organization.wordOnly])
   // A gap whose thread came back (Undo, the shelf's Restore) goes at once, rather than waiting for the pointer to leave.
   const heldSettled = useRef(new Set<string>())
   useEffect(() => {
@@ -989,7 +1016,10 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   const snoozedShown = snoozedOpen || searching
   // By status each shelf is one list with no project folder (ADR-0201): Snoozed newest activity first, Settled newest
   // settled first. Settled's is put in order only while the shelf is open, so a folded shelf costs an update nothing.
-  const settledFlat = useMemo(() => byStatus && settledShown ? settledShelfRows(settled) : undefined, [byStatus, settledShown, settled])
+  // The rows a search found only by what was said in them show a quote of it (Zach's pick A, November 19, 2026).
+  const wordQuotes = useMemo(() => threadWords && organization.wordOnly ? { query: threadWords.query, matches: threadWords.matches, wordOnly: organization.wordOnly } : null,
+    [threadWords, organization.wordOnly])
+  const settledFlat = useMemo(() => byStatus && settledShown ? settledShelfRows(settled, organization.wordOnly) : undefined, [byStatus, settledShown, settled, organization.wordOnly])
   const shelfFacts = { panes, liveClock, onOpen, command, settle: settleFromList, busyThreadIds: state.busyThreadIds, queuedIds, hosts }
   let owlRail: ReactNode = null
   if (railOn) {
@@ -1038,7 +1068,7 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   // answers it from its own project's pen instead, so the top button's aria-keyshortcuts stands down then.
   const suffix = newThreadShortcut?.suffix
   const topShortcut = newThreadShortcut ? { title: t({ message: `New thread ${suffix}`, comment: '{suffix} names the keyboard shortcut.' }), keys: currentThreadId === null ? newThreadShortcut.keys : undefined } : undefined
-  return <SidebarFrame state={state} command={command} label={t`Thread sidebar`} query={query} searchPlaceholder={t`Search threads`} onQuery={onQuery}
+  return <ThreadWordQuotesContext.Provider value={wordQuotes}><SidebarFrame state={state} command={command} label={t`Thread sidebar`} query={query} searchPlaceholder={t`Search threads`} onQuery={onQuery}
     onNew={() => onNewThread()} newLabel={t`New thread`} NewIcon={SquarePen} newShortcut={topShortcut} title={title}
     extraError={newThreadError} onDismissExtraError={onDismissNewThreadError} onProjectAdded={onNewThread} notice={<WorkingThreadsLine threads={state.host.threads} />}
     toast={<SettleToast command={command} threads={state.host.threads} list={threadList} platform={platform} />}
@@ -1092,5 +1122,5 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
       {/* The worktree question after a Settle. The rail is too narrow to hold it and the list it would sit in is hidden, so
           while the sidebar is collapsed it stands over the window. */}
       {collapsed && settleDialog ? createPortal(settleDialog, document.body) : settleDialog}
-  </SidebarFrame>
+  </SidebarFrame></ThreadWordQuotesContext.Provider>
 }

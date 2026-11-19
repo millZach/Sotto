@@ -5,6 +5,7 @@ import { t } from '@lingui/core/macro'
 import { CascadedSettles, delegatedElsewhere, LeftTally, restoreLeftWords, settledWithParent, settleLeftWords, stopLeftWords, type DelegatedElsewhere } from './crossMachineCascade'
 import type { StopLeft } from '../agents/delegationRelayHost'
 import type { AgentThreadPrompts, AgentThreadPromptsRequest } from '../../shared/threadPrompts'
+import { THREAD_WORDS_HOSTS, THREAD_WORDS_MOST, type AgentThreadWords, type AgentThreadWordsRequest } from '../../shared/threadWords'
 import type { AgentActivity } from '../../shared/agentActivity'
 import { startsThread, THREAD_STARTS_UNSUPPORTED } from '../../shared/threadStarts'
 import { incomingRefBranch } from '../../shared/bringChangesBack'
@@ -57,7 +58,7 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   subscribeBrowserFrames?(listener: (frame: HostBrowserFrame) => void): () => void
   name: string
   kind: 'local' | 'remote'
-  service: Pick<HostService, 'subscribeWatcherTell' | 'answerWatcherTell' | 'shell' | 'activeSelection' | 'replyView' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'supportsWatcherOutcomes' | 'supportsWatcherCheckQueue' | 'supportsWatcherMuse' | 'supportsWatcherCursor' | 'supportsHostFacts' | 'supportsWorkerSwarms' | 'hostFacts' | 'supportsProjectOrigins' | 'projectOrigins' | 'supportsHostDelegation' | 'desktopDefaults' | 'supportsPluginGitHubSignIn' | 'pluginGitHubSignIn' | 'supportsPluginAccountCopies' | 'supportsPluginMailCopies' | 'supportsPluginMeshySpending' | 'sharePluginMeshySpending' | 'subscribePluginMeshySpending' | 'supportsPluginElevenLabsSpending' | 'sharePluginElevenLabsSpending' | 'subscribePluginElevenLabsSpending' | 'supportsPluginMeshyModels' | 'pluginMeshyModels' | 'supportsPluginElevenLabsSounds' | 'pluginElevenLabsSounds' | 'keepPluginAccountCopy' | 'removePluginAccountCopy' | 'pluginAccountCopies' | 'supportsBranchMoves' | 'branchMove' | 'supportsThreadMove' | 'supportsThreadMoveSource' | 'supportsThreadMoveKeep' | 'threadMove' | 'supportsThreadStarts' | 'supportsFailureSeen' | 'startHandover' | 'supportsThreadDelete' | 'supportsProjectGitInit' | 'supportsBringBack' | 'threadPrompts' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads' | 'supportsDelegationViews' | 'delegationViews' | 'delegationBrief' | 'subscribeDelegationViews' | 'supportsCheckQueueViews' | 'checkQueue' | 'subscribeCheckQueue' | 'supportsNextPrompts' | 'nextPrompts' | 'subscribeNextPrompts' | 'setNextPromptsWanted' | 'tellProductEventAnswer' | 'supportsDelegationRelay' | 'subscribeDelegationRelay' | 'answerDelegationRelay' | 'delegationRelayNews' | 'delegationRelayName' | 'supportsWatcherCheckStop' | 'supportsWatcherNewOwner' | 'supportsProjectSetup' | 'setUpProject' | 'supportsDelegationRemote' | 'delegationRemoteAsk' | 'subscribeDelegationRemoteNews' | 'supportsDelegationBranchStarts'>
+  service: Pick<HostService, 'subscribeWatcherTell' | 'answerWatcherTell' | 'shell' | 'activeSelection' | 'replyView' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'supportsWatcherOutcomes' | 'supportsWatcherCheckQueue' | 'supportsWatcherMuse' | 'supportsWatcherCursor' | 'supportsHostFacts' | 'supportsWorkerSwarms' | 'hostFacts' | 'supportsProjectOrigins' | 'projectOrigins' | 'supportsHostDelegation' | 'desktopDefaults' | 'supportsPluginGitHubSignIn' | 'pluginGitHubSignIn' | 'supportsPluginAccountCopies' | 'supportsPluginMailCopies' | 'supportsPluginMeshySpending' | 'sharePluginMeshySpending' | 'subscribePluginMeshySpending' | 'supportsPluginElevenLabsSpending' | 'sharePluginElevenLabsSpending' | 'subscribePluginElevenLabsSpending' | 'supportsPluginMeshyModels' | 'pluginMeshyModels' | 'supportsPluginElevenLabsSounds' | 'pluginElevenLabsSounds' | 'keepPluginAccountCopy' | 'removePluginAccountCopy' | 'pluginAccountCopies' | 'supportsBranchMoves' | 'branchMove' | 'supportsThreadMove' | 'supportsThreadMoveSource' | 'supportsThreadMoveKeep' | 'threadMove' | 'supportsThreadStarts' | 'supportsFailureSeen' | 'startHandover' | 'supportsThreadDelete' | 'supportsProjectGitInit' | 'supportsBringBack' | 'threadPrompts' | 'threadWords' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads' | 'supportsDelegationViews' | 'delegationViews' | 'delegationBrief' | 'subscribeDelegationViews' | 'supportsCheckQueueViews' | 'checkQueue' | 'subscribeCheckQueue' | 'supportsNextPrompts' | 'nextPrompts' | 'subscribeNextPrompts' | 'setNextPromptsWanted' | 'tellProductEventAnswer' | 'supportsDelegationRelay' | 'subscribeDelegationRelay' | 'answerDelegationRelay' | 'delegationRelayNews' | 'delegationRelayName' | 'supportsWatcherCheckStop' | 'supportsWatcherNewOwner' | 'supportsProjectSetup' | 'setUpProject' | 'supportsDelegationRemote' | 'delegationRemoteAsk' | 'subscribeDelegationRemoteNews' | 'supportsDelegationBranchStarts'>
   refreshRequestAnswer?(decisionId: string, target: HostAnswerTarget): Promise<void>
   detail(threadId: string): AgentThreadDetail | null | Promise<AgentThreadDetail | null>
   preview(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
@@ -1442,6 +1443,23 @@ export class DesktopHostRouter {
     const { connection, id } = this.target(request.threadId)
     if (!connection.service.threadPrompts || connection.available?.() === false) return null
     return connection.service.threadPrompts(id!, request.beforeMessageId)
+  }
+  /**
+   * The threads whose messages hold a search's words, for Search threads (Zach's pick of November 19, 2026): each host
+   * searches its own store, this computer's and every connected paired host's at once, and the threads come back by the
+   * keys the window knows them by. A host that cannot say, or is disconnected, adds none; null only when none could say.
+   */
+  async threadWords(request: AgentThreadWordsRequest): Promise<AgentThreadWords | null> {
+    const asked = [...this.hosts.values()].map(({ connection, run }) => ({ connection, run }))
+      .filter(({ connection }) => connection.service.threadWords !== undefined && connection.available?.() !== false).slice(0, THREAD_WORDS_HOSTS)
+    const answers = await Promise.all(asked.map(async ({ connection, run }) => {
+      const answer = await connection.service.threadWords!(request.query).catch(() => null)
+      // An answer from a connection a reconnect has since replaced names that connection's threads, not the new one's.
+      if (answer === null || run !== this.hosts.get(connection.hostId)?.run) return null
+      return answer.found.map(match => ({ ...match, threadId: hostEntityKey(connection.hostId, match.threadId) }))
+    }))
+    if (answers.every(answer => answer === null)) return null
+    return { found: answers.flatMap(answer => (answer ?? []).slice(0, THREAD_WORDS_MOST)) }
   }
   /**
    * Where a thread on a paired host's terminal would start, from what its host last published (ADR-0183). It asks the host
