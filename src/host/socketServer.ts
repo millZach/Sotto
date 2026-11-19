@@ -1160,6 +1160,7 @@ export async function startSocketServer(options: SocketServerOptions) {
   // record whose signature changed is carried cut again, so a growing command's delta carries its new cut.
   // A client still owed its first copy of a thread is sent no delta: the copy it is about to be sent is current.
   // A delta no newer than what the client holds is already covered, and a whole it was sent ahead goes no second time.
+  // One that does not start from what the client holds goes as the thread whole, so every delta it is sent follows.
   /** The latest whole detail the service published for each thread that has not gone out yet. */
   const waiting = new Map<string, AgentThreadDetail>()
   /** What one update becomes for each kind of peer, made once however many peers are sent it. */
@@ -1184,6 +1185,10 @@ export async function startSocketServer(options: SocketServerOptions) {
     const held = peer.held.get(threadId)
     if (peer.opening.has(threadId) || held !== undefined && update.revision <= held) return
     if (!peer.deltas) { sendWhole(peer, threadId, made.whole()); return }
+    // A delta that starts before the revision the client holds, and ends past it, goes as the thread whole instead (#2700):
+    // the client could not apply it. The coalescing window makes one when an observe's whole is read while a change waits
+    // out its window, and a later change joins that one, so its base is older than the whole.
+    if (held !== undefined && held !== update.baseRevision) { sendWhole(peer, threadId, made.whole()); return }
     const cut = peer.stepWindows?.get(threadId)
     const delta = cut ? deltaInStepWindow(made.delta(peer), cut) : made.delta(peer)
     if (cut) { const grown = stepWindowAfterDelta(cut, delta); if (grown !== cut) peer.stepWindows!.set(threadId, grown) }

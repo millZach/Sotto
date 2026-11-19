@@ -157,7 +157,7 @@ export type ScenarioName = typeof SCENARIOS[number]
  */
 export const HELD_OUT: Readonly<Partial<Record<ScenarioName, { readonly providers: ReadonlySet<RefereeProvider>; readonly reason: string }>>> = {
   restart: { providers: new Set(['codex', 'claude', 'grok', 'devin', 'muse', 'opencode', 'cursor']),
-    reason: 'After the host starts again, a client that observes the thread can be sent a delta from an older revision than the whole detail it was just sent, and is not sent the thread whole again (#2700).' },
+    reason: 'After the host starts again, whether the turn the restart stopped is sent the resume note, and whether it goes before or after the clients observe the thread again, differ from run to run (#2710).' },
   'lost-acknowledgement': { providers: new Set(['claude']),
     reason: 'Once the turn whose acknowledgement came late ends, Claude Code\'s thread summary counts one activity in some runs and none in others, with the same detail (#2698).' },
   pictures: { providers: new Set(['codex', 'claude', 'muse', 'opencode', 'cursor']),
