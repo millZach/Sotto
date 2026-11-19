@@ -9,13 +9,23 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { buildNodeRefereeHost } from '../referee/nodeHost'
 import { NORMALISATION_RULES } from '../referee/normalise'
 import { runScenario, type Recording, type Tamper } from '../referee/runner'
-import { THREAD } from '../referee/scenario'
+import { HELD_OUT, THREAD } from '../referee/scenario'
+import { REFEREE_PROVIDERS } from '../referee/providers'
+import { CANNOT_CROSS, cannotCrossFor } from '../referee/socketFixture'
 import type { HostCommand } from '../referee/wire'
 
 // Each rule is a place a wrong host could hide, so the note a reader of the recordings reads names every one.
 it('names every normalisation rule in the verification note', async () => {
   const note = await readFile(resolve('docs/verification/2026-11-19-referee-harness.md'), 'utf8')
   expect(NORMALISATION_RULES.map(rule => rule.name).filter(name => !note.includes(`| ${name} |`))).toEqual([])
+})
+
+// So is each contract case that does not cross the socket, and each script held out of the replays.
+it('names every contract case that cannot cross the socket, and every held-out script, in the verification note', async () => {
+  const note = (await readFile(resolve('docs/verification/2026-11-19-referee-harness.md'), 'utf8')).replace(/\s+/gu, ' ')
+  const named = [...Object.keys(CANNOT_CROSS), ...REFEREE_PROVIDERS.flatMap(provider => Object.keys(cannotCrossFor(provider)))]
+  expect([...new Set(named)].filter(name => !note.includes(name))).toEqual([])
+  expect(Object.keys(HELD_OUT).filter(scenario => !note.includes(`\`${scenario}\``))).toEqual([])
 })
 
 /** A wrong host fails at its first wrong step once this passes; a right one never waits on it. */
