@@ -1472,13 +1472,19 @@ export function summarizeThread(thread: { readonly messages: readonly AgentMessa
       lastMessageAt = message.createdAt
     }
   }
-  const running = activities.filter(record => record.kind === 'turn' && record.status === 'running')
-    .sort((first, second) => first.sequence - second.sequence).at(-1)
+  const runningTurnStartedAt = runningTurnStart(activities)
   return { messageCount: messages.length, activityCount: activities.length,
     ...(lastMessageAt === undefined ? {} : { lastMessageAt }),
     ...(lastUser === undefined ? {} : { lastUser: cut(lastUser) }),
     ...(lastAssistant === undefined ? {} : { lastAssistant: cut(lastAssistant) }),
-    ...(running?.startedAt === undefined ? {} : { runningTurnStartedAt: running.startedAt }) }
+    ...(runningTurnStartedAt === undefined ? {} : { runningTurnStartedAt }) }
+}
+/** When the turn a thread's activity records say is running began: the start of the latest running activity record of a turn, or none. */
+export function runningTurnStart(activities: readonly AgentActivity[] | undefined): string | undefined {
+  let running: AgentActivity | undefined
+  // The last of the highest sequence, as a stable sort by sequence would end.
+  for (const record of activities ?? []) if (record.kind === 'turn' && record.status === 'running' && (!running || record.sequence >= running.sequence)) running = record
+  return running?.startedAt
 }
 /**
  * Whether a thread's provider writes Sotto's short text for it: its title, its branch name and its Git

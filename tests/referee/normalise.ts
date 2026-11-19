@@ -20,7 +20,6 @@ export const NORMALISATION_RULES: readonly NormalisationRule[] = [
   { name: 'detail revisions', why: 'A thread detail\'s revision counts the host\'s updates to it, and how many there are depends on how the provider\'s events were batched. In a detail (an object with threadId, messages and revision) it is written <revision>; the referee checks as each arrives that revisions only increase and that every delta follows the revision held.' },
   { name: 'catalog revisions', why: 'A shell names its model catalog by a revision the host counts up each time the catalog changes, and how many times it changes while providers connect at start differs from run to run. `host.modelsRevision` is written <revision>; the referee checks as each shell arrives that a catalog left out names a revision the client was sent.' },
   { name: 'answer echoes', why: 'A send\'s answer carries the shell as it is when the command returns, and the provider\'s acknowledgement may land before or after that. It writes the thread record\'s lastUserMessageId, lastTurn, activities and summary, and for OpenCode, whose echo settles a send before its acknowledgement, its status (the host service contract\'s `sendAnswerRunning`). In the answer to a `manual-send` only, those four fields, and for OpenCode the status, are left out of its thread records; the same fields are compared in what every client holds once the step is over. Every other command\'s answer is compared whole.' },
-  { name: 'stale running turn', why: 'The TypeScript host sometimes keeps summary.runningTurnStartedAt on a thread record after its turn has ended, until the thread next changes, and on other runs clears it (#2697). On a thread record whose status is not running, that one field is left out. Take the rule out once that is fixed.' },
   { name: 'empty monitoring', why: 'Claude Code\'s adapter writes a thread\'s monitoring as an empty list when it last read the thread from the CLI\'s output, and leaves it out when it last read it from the transcript, and which comes last differs from run to run (#2698). An empty list and none mean the same to a client, so `monitoring: []` on a thread record is left out.' },
   { name: 'key order', why: 'A JSON object\'s keys have no order the protocol promises, and the host builds some objects in a different order from run to run, so keys are put in order before anything is named or compared.' },
   { name: 'times', why: 'Wall-clock instants differ on every run. An ISO-8601 instant becomes <time>, and so does a number between 10^12 and 10^13, which is an instant in milliseconds from 2001 to 2286; nothing the protocol counts reaches that size.' },
@@ -83,12 +82,8 @@ export class Normaliser {
         : LATENCY_KEYS.has(key) && typeof item === 'number' ? '<ms>'
           : (detail && key === 'revision') || (key === 'modelsRevision' && typeof item === 'number') ? '<revision>' : this.value(item, secretKeys)
     }
-    // A thread record: what it says about itself, as the two rules above describe.
-    if ('id' in out && 'projectId' in out && 'modelId' in out) {
-      if (Array.isArray(out.monitoring) && out.monitoring.length === 0) delete out.monitoring
-      const summary = out.summary as Record<string, unknown> | undefined
-      if (out.status !== 'running' && summary && typeof summary === 'object' && 'runningTurnStartedAt' in summary) out.summary = without(summary, ['runningTurnStartedAt'])
-    }
+    // A thread record: what it says about itself, as the empty monitoring rule describes.
+    if ('id' in out && 'projectId' in out && 'modelId' in out && Array.isArray(out.monitoring) && out.monitoring.length === 0) delete out.monitoring
     return out
   }
 
