@@ -1,0 +1,4 @@
+after deleting the item:
+after one page with use-mock-keychain:
+after one page with CEF's defaults:
+   1     "svce"<blob>="Chromium Safe Storage"

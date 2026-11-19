@@ -36,12 +36,23 @@ def netlog(run):
 
 PROC = re.compile(r'proc ([^:,()]+?):(\d+)')
 EPROC = re.compile(r'eproc ([^:,()]+?):(\d+)')
-FLOW = re.compile(r'\) (IP6?) (\S+?)\.(\d+) > (\S+?)\.(\d+): (\S+)')
+FLOW = re.compile(r'\) (IP6?) (\S+)\.(\d+) > (\S+)\.(\d+): (\S+)')
+
+def local_addresses():
+    """This machine's own addresses: traffic to them stays on the machine (macOS routes it over lo0)."""
+    import subprocess
+    try: out = subprocess.run(['/sbin/ifconfig'], capture_output=True, text=True).stdout
+    except OSError: out = ''
+    found = set(re.findall(r'inet6? ([0-9a-f.:]+)', out))
+    found |= set(os.environ.get('WP_LOCAL', '').split(','))
+    return {a for a in found if a}
 
 def pktap(run, name='pktap.txt'):
     path = f'{run}/{name}'
     if not os.path.exists(path): print(f'{name}: none'); return
     by_proc, flows, unattributed, total = collections.Counter(), collections.Counter(), 0, 0
+    local = local_addresses()
+    off_machine = collections.Counter()
     for line in open(path, errors='replace'):
         total += 1
         m = PROC.search(line); e = EPROC.search(line); f = FLOW.search(line)
@@ -56,10 +67,14 @@ def pktap(run, name='pktap.txt'):
             dst, port = f.group(4), f.group(5)
             src = f.group(2)
             far = dst if not LOOPBACK.match(dst) else (src if not LOOPBACK.match(src) else None)
-            if far: flows[(who, f.group(1), far, port if far == dst else f.group(3))] += 1
+            if far in local: far = src if src not in local and not LOOPBACK.match(src) else None
+            if far:
+                fport = port if far == dst else f.group(3)
+                flows[(who, f.group(1), far, fport)] += 1
     print(f'{name}: {total} packet lines on the runner; packets from or for the spike\'s processes by process: {dict(by_proc)}')
     print(f'{name}: lines with no process attached: {unattributed}')
-    print(f'{name}: the spike\'s packets to or from outside loopback (process, family, far address, far port): {len(flows)} flows')
+    print(f'{name}: this machine\'s addresses, counted as local: {sorted(local)}')
+    print(f'{name}: the spike\'s packets to or from another machine (process, family, far address, far port): {len(flows)} flows, {sum(flows.values())} packets')
     for (who, fam, far, port), c in flows.most_common(40): print(f'  {c:6d}  {who:28s} {fam} {far} port {port}')
 
 def pflog(run):
@@ -67,7 +82,7 @@ def pflog(run):
     if not os.path.exists(path): print('pf log: none'); return
     acts = collections.Counter()
     for line in open(path, errors='replace'):
-        m = re.search(r'(pass|block) (in|out) on (\S+): (?:IP6? )?(\S+?)\.(\d+) > (\S+?)\.(\d+)', line)
+        m = re.search(r'(pass|block) (in|out) on (\S+): (?:IP6? )?(\S+)\.(\d+) > (\S+)\.(\d+):', line)
         if m: acts[(m.group(1), m.group(3), m.group(6), m.group(7))] += 1
     print(f'pf log (the spike\'s group): {sum(acts.values())} packets')
     for (a, ifn, dst, port), c in acts.most_common(40): print(f'  {c:6d}  {a} on {ifn} to {dst} port {port}')

@@ -1,0 +1,31 @@
+NetLog span: 601 s
+NetLog requests (first seen s, count):
+      0.3s  x2   POST http://127.0.0.1:9/
+    540.2s  x1   GET http://127.0.0.1:8765/idle.html
+    540.5s  x1   GET http://127.0.0.1:8765/favicon.ico
+NetLog host lookups: {'http://127.0.0.1:9': 1, 'http://127.0.0.1:8765': 1}
+NetLog proxy detection / DoH events: {}
+pktap.txt: 3352 packet lines on the runner; packets from or for the spike's processes by process: {'webpane Helper': 28}
+pktap.txt: lines with no process attached: 38
+pktap.txt: this machine's addresses, counted as local: ['192.168.64.6']
+pktap.txt: the spike's packets to or from another machine (process, family, far address, far port): 0 flows, 0 packets
+pf log (the spike's group): 28 packets
+      14  pass on lo0 to 127.0.0.1 port 8765
+       7  pass on lo0 to 127.0.0.1 port 49360
+       7  pass on lo0 to 127.0.0.1 port 49361
+pf rules and counters:
+  No ALTQ support in kernel
+  ALTQ related functions disabled
+  @0 pass out log (all) quick proto tcp all group = 3901 flags S/SA keep state
+    [ Owner : nil          Priority : 0     ]
+    [ Evaluations: 2310      Packets: 28        Bytes: 3797        States: 2     ]
+    [ Inserted: uid 0 pid 14197 ]
+  @1 pass out log (all) quick proto udp all group = 3901 keep state
+    [ Owner : nil          Priority : 0     ]
+    [ Evaluations: 1233      Packets: 0         Bytes: 0           States: 0     ]
+    [ Inserted: uid 0 pid 14197 ]
+keychain.txt:
+before:
+   1     "svce"<blob>="Chromium Safe Storage"
+after:
+   1     "svce"<blob>="Chromium Safe Storage"

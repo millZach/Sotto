@@ -1,0 +1,13 @@
+PASS Lays out at 393x852 
+PASS navigator.userAgent is iOS Safari's 
+PASS A touch screen: maxTouchPoints 5, ontouchstart, pointer coarse 
+PASS Tap at (110,200) reaches the pad at (110,200) as a trusted touch 
+PASS Tap also gives the page a click (tap gesture) 
+PASS Swipe up scrolls the page 
+FAIL A pointer click through CEF's mouse input arrives as touch (emitTouchEventsForMouse) (informational) ["pointerdown@110,200", "mousedown@110,200", "click@110,200"]
+PASS The pane's pointer sent as CEF touch input arrives as a trusted touch on the pad 
+PASS At page zoom 0.75 in a 295x639 view, layout is still 393 wide 
+PASS Zoomed: CDP touch at (110,200) lands at (110,200) on the pad 
+PASS Zoomed: a 393x852 screenshot is still 393x852 
+PASS Zoomed: the pane's touch at view (82,150) lands at CSS (~110,~200) on the pad 
+11 of 12 checks passed; 7 distinct commands

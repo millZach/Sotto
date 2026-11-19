@@ -1,0 +1,10 @@
+ProductName:		macOS
+ProductVersion:		26.7.2
+BuildVersion:		25G332
+arm64
+Apple M1 (Virtual)
+3
+7516192768
+csrutil: System Integrity Protection status: disabled.
+user: runner groups: staff everyone localaccounts _appserverusr admin _appserveradm _webdeveloper _appstore _lpadmin _lpoperator _developer _analyticsusers com.apple.access_ftp com.apple.access_screensharing com.apple.access_ssh com.apple.access_remote_ae com.apple.sharepoint.group.1
+console user: runner

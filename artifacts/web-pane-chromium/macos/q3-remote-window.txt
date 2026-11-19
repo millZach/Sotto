@@ -1,0 +1,4 @@
+window 64 x=0 y=31 w=1024 h=674 title='Sotto web pane spike'
+clicked at screen 600,259
+clicked at screen 340,135
+typed 10 characters

@@ -1,0 +1,12 @@
+PASS Device scale factor: page's devicePixelRatio and the painted buffer follow screen_info 
+PASS Cursors: on_cursor_change gives a hand over the link and an I-beam over the field 
+PASS <select>: CEF reports the pop-up (on_popup_show, on_popup_size) and paints it as PET_POPUP 
+FAIL <select>: Down then Enter, sent to the browser while the pop-up shows, chooses Banana {"popup_events": [{"callback": "on_popup_show", "detail": 1, "ms": 2121}], "value": "Apple"}
+FAIL IME: ime_set_composition gives compositionstart/update with the text, ime_commit_text gives compositionend and the value {"events": [], "value": "", "while_composing": ""}
+FAIL IME: CEF reports where the composition is (on_ime_composition_range_changed), so the pane can place the candidate window []
+PASS Drag from the page: CEF calls start_dragging with the page's data; the pane must run the OS drag itself 
+PASS Drop into the page: drag_target_* calls deliver a drop event with the text 
+PASS File picker: on_file_dialog is called and the file the handler returns reaches the page 
+PASS Context menu: run_context_menu is called with a menu model 
+PASS Accessibility: on_accessibility_tree_change delivers the tree (the button's name is in it) and its updates 
+8 of 11 checks passed; 0 distinct commands

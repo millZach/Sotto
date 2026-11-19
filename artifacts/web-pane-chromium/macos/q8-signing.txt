@@ -1,0 +1,50 @@
+== the framework as published
+Executable=/Users/runner/work/_temp/wp/webpane.app/Contents/Frameworks/Chromium Embedded Framework.framework/Chromium Embedded Framework
+Identifier=Chromium Embedded Framework
+Format=bundle with Mach-O thin (arm64)
+CodeDirectory v=20400 size=1845624 flags=0x20002(adhoc,linker-signed) hashes=57672+0 location=embedded
+Hash type=sha256 size=32
+CandidateCDHash sha256=206678306c85eb11d9de02e36e24e0a2eb3cfd2a
+CandidateCDHashFull sha256=206678306c85eb11d9de02e36e24e0a2eb3cfd2af82519957eda601556278161
+Hash choices=sha256
+CMSDigest=206678306c85eb11d9de02e36e24e0a2eb3cfd2af82519957eda601556278161
+CMSDigestType=2
+CDHash=206678306c85eb11d9de02e36e24e0a2eb3cfd2a
+Signature=adhoc
+Info.plist=not bound
+TeamIdentifier=not set
+Sealed Resources=none
+Internal requirements=none
+== verify
+/Users/runner/work/_temp/wp/webpane.app/Contents/Frameworks/Chromium Embedded Framework.framework: code has no resources but signature indicates they must be present
+== entitlements
+Executable=/Users/runner/work/_temp/wp/webpane.app/Contents/Frameworks/Chromium Embedded Framework.framework/Chromium Embedded Framework
+== libcef_sandbox.dylib
+Identifier=libcef_sandbox.dylib
+CodeDirectory v=20400 size=664 flags=0x20002(adhoc,linker-signed) hashes=17+0 location=embedded
+Signature=adhoc
+TeamIdentifier=not set
+== libvk_swiftshader.dylib
+Identifier=libvk_swiftshader.dylib
+CodeDirectory v=20400 size=126712 flags=0x20002(adhoc,linker-signed) hashes=3956+0 location=embedded
+Signature=adhoc
+TeamIdentifier=not set
+== libvulkan.dylib
+Identifier=libvulkan.dylib
+CodeDirectory v=20400 size=3976 flags=0x20002(adhoc,linker-signed) hashes=121+0 location=embedded
+Signature=adhoc
+TeamIdentifier=not set
+== the spike's binary (linker signature only)
+Executable=/Users/runner/work/_temp/wp/webpane.app/Contents/MacOS/webpane
+Identifier=webpane
+Format=app bundle with Mach-O thin (arm64)
+CodeDirectory v=20400 size=59368 flags=0x20002(adhoc,linker-signed) hashes=1852+0 location=embedded
+Signature=adhoc
+Info.plist=not bound
+TeamIdentifier=not set
+Sealed Resources=none
+Internal requirements=none
+== Gatekeeper's view of the unsigned bundle
+/Users/runner/work/_temp/wp/webpane.app: code has no resources but signature indicates they must be present
+== CEF's helper entitlements shipped in the distribution?
+none at the top of the distribution

@@ -1,0 +1,2 @@
+[embed] adapter Apple Paravirtual device Metal driver 
+[7495:28933:1119/161254.258904:ERROR:gpu/command_buffer/service/shared_image/shared_image_manager.cc:260] SharedImageManager::ProduceSkia: Trying to Produce a Skia representation from a non-existent mailbox.

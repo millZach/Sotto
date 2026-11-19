@@ -1,6 +1,6 @@
 # Web pane spike (issue #2690)
 
-Throwaway code for stage 0, item 2 of the Rust port plan. It lives on `prototype/web-pane-chromium` and never merges. The findings are in `docs/research/2026-11-19-web-pane-chromium-component.md` (Linux) and `docs/research/2026-11-19-web-pane-chromium-component-windows.md` (Windows); the evidence is in `artifacts/web-pane-chromium/` and `artifacts/web-pane-chromium/windows/`.
+Throwaway code for stage 0, item 2 of the Rust port plan. It lives on `prototype/web-pane-chromium` and never merges. The findings are in `docs/research/2026-11-19-web-pane-chromium-component.md` (Linux), `docs/research/2026-11-19-web-pane-chromium-component-windows.md` (Windows) and `docs/research/2026-11-19-web-pane-chromium-component-macos.md` (macOS, on a GitHub runner); the evidence is in `artifacts/web-pane-chromium/` and its `windows/` and `macos/` folders.
 
 One binary, `webpane`, built on CEF 156.0.31 (Chromium 156.0.8078.100) through the `cef` crate 156.7.0 (tauri-apps/cef-rs). CEF starts the same binary for its own child processes. `WP_MODE` picks the run:
 
@@ -13,9 +13,10 @@ One binary, `webpane`, built on CEF 156.0.31 (Chromium 156.0.8078.100) through t
 | `pane` | One page; prints `FIRST_PAINT`, closes on a line on stdin, quits on the next | 6 |
 | `embed` | A winit + wgpu window with the page drawn at a rectangle with rounded corners; `WP_PATH=accelerated` (shared texture) or `software`; `WP_REMOTE=1` puts CEF in a helper process; on Windows `WP_REMOTE=child` makes the helper put CEF's own child window into this window's HWND | 4, 6 |
 | `child` | CEF's own native child window parented to the winit window | 4 |
-| `helper` | The helper process `embed` starts with `WP_REMOTE` (Linux: a socket pair; Windows: two named pipes) | 4, 6 |
-| `osr` | Windows: `server/pages/osr.html` off screen at scale `WP_SCALE` (1.5), checking `<select>`, cursors, drag and drop, the file picker, IME, the context menu and the accessibility feed | 4 |
-| `eval` | One page (`WP_URL`), one expression (`WP_EVAL`) after `WP_WAIT_MS`; used for `server/pages/media.html` | 8 |
+| `helper` | The helper process `embed` starts with `WP_REMOTE` (Linux: a socket pair; Windows: two named pipes; macOS: Mach messages carrying each IOSurface, and a socket pair for input) | 4, 6 |
+| `osr` | Windows and macOS: `server/pages/osr.html` off screen at scale `WP_SCALE` (1.5), checking `<select>`, cursors, drag and drop, the file picker, IME, the context menu and the accessibility feed | 4 |
+| `eval` | One page (`WP_URL`), one expression (`WP_EVAL`) after `WP_WAIT_MS`; used for `server/pages/media.html` with the clips in `server/media/` | 8 |
+| `windowed` | CEF's own native window with `server/pages/cdp.html`, held `WP_HOLD_S`, as the accessibility control for an outside walk | 4 |
 
 Settings come from the environment: `WP_RUN_DIR` (where records go), `WP_CACHE` (CEF's root cache), `WP_SWITCHES` (Chromium switches, `;`-separated), `WP_PREFS` (a `Preferences` file seeded into the profile), `WP_URL`, `WP_BASE` (the test server), `WP_VIEW=WxH` (fixed page size in `embed`), `WP_SCALE` (the page's device scale factor), `WP_POWER=high|low` (which GPU wgpu asks for), `WP_MENU=1` (a stand-in native menu over the page's corner), `WP_NO_SANDBOX`.
 
@@ -57,4 +58,15 @@ Every run sets `WP_NO_SANDBOX=1`: the CEF sandbox on Windows needs the `bootstra
 
 The spike's input on Windows is posted window messages, not the real keyboard: a posted key and its character both arrive in a CEF child window, so each letter shows twice there. Coordinates are logical pixels because PowerShell is not DPI-aware and Windows scales posted mouse messages for it.
 
-macOS also needs cef-rs's `library_loader` call at the top of `main` and an app bundle with the helper apps (`bundle-cef-app`); neither is in this code.
+## Build and run on macOS
+
+Run on GitHub's hosted `macos-26` runner on November 19, 2026, through `.github/workflows/web-pane-spike-mac.yml`, which the branch's last commit removed again (the macOS note says how to put it back). On an Apple silicon Mac with Rust and Xcode's command line tools it runs the same way:
+
+```sh
+export CEF_PATH=$HOME/.cache/sotto-cef CARGO_TARGET_DIR=$HOME/.cache/sotto-cargo-target
+cargo build --release
+bash scripts/mac/bundle.sh "$CARGO_TARGET_DIR/release/webpane" "$CEF_PATH"/156.0.31/cef_macos_aarch64 /tmp/wp   # webpane.app with the framework and five helper apps
+bash scripts/mac/ci.sh /tmp/wp/webpane.app "$CEF_PATH"/156.0.31/cef_macos_aarch64 /tmp/wp/out cdp iphone embed   # or no phases for all of them
+```
+
+The binary loads the framework through cef-rs's library loader and makes an NSApplication that speaks `CefAppProtocol` (`src/mac.rs`); the helper link is `src/remote_mac.rs`. `scripts/mac/ci.sh` needs passwordless `sudo` for `pf`, `tcpdump` and `purge`, which runners have; on a Mac at a desk, run the phases that need none (`cdp iphone sandbox osr media embed remote ax lifecycle static`). `tools/macprobe.swift` walks a process's accessibility tree and posts real clicks and keys; it needs the Accessibility permission. `WP_SHOT=<file.bmp>` makes the `embed` window save its own frame; `WP_SELF_INPUT=1` makes it click and type into the page through its own input path.

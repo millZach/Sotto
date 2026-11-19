@@ -1,0 +1,32 @@
+layers: {'csp': True, 'deny': True, 'filter': True, 'no_rtc': False, 'proxy': True, 'webrtc_policy': True}
+refused by layer: {'dead-proxy': 6, 'navigation': 5}
+second load of the address: None
+page verdicts: 68 lines; DONE seen: True
+canary server.log: 0 hits {}
+canary canary-second.log: 0 hits {}
+DNS questions on the machine naming the hostile page's hosts: {}
+NetLog span: 35 s
+NetLog requests (first seen s, count):
+      0.3s  x1   POST http://127.0.0.1:9/
+NetLog host lookups: {'http://127.0.0.1:9': 1}
+NetLog proxy detection / DoH events: {}
+pktap.txt: 1551 packet lines on the runner; packets from or for the spike's processes by process: {'webpane Helper': 43, 'webpane': 36}
+pktap.txt: lines with no process attached: 41
+pktap.txt: this machine's addresses, counted as local: ['192.168.64.2']
+pktap.txt: the spike's packets to or from another machine (process, family, far address, far port): 0 flows, 0 packets
+pf log (the spike's group): 0 packets
+pf rules and counters:
+  No ALTQ support in kernel
+  ALTQ related functions disabled
+  @0 pass quick on lo0 all no state
+    [ Owner : nil          Priority : 0     ]
+    [ Evaluations: 997       Packets: 86        Bytes: 4652        States: 0     ]
+    [ Inserted: uid 0 pid 2857 ]
+  @1 block drop out log quick proto tcp all group = 3901
+    [ Owner : nil          Priority : 0     ]
+    [ Evaluations: 911       Packets: 0         Bytes: 0           States: 0     ]
+    [ Inserted: uid 0 pid 2857 ]
+  @2 block drop out log quick proto udp all group = 3901
+    [ Owner : nil          Priority : 0     ]
+    [ Evaluations: 465       Packets: 0         Bytes: 0           States: 0     ]
+    [ Inserted: uid 0 pid 2857 ]

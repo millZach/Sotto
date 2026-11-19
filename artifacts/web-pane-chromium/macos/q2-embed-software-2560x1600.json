@@ -1,0 +1,43 @@
+{
+  "adapter": "Apple Paravirtual device (Metal, IntegratedGpu)",
+  "cycles": [],
+  "errors": [],
+  "events": [
+    "393 browser create asked=-1 created=true",
+    "478 resized 1280x800",
+    "478 window focused=false",
+    "478 resized 1024x645",
+    "584 window focused=true",
+    "3095 self shot /Users/runner/work/_temp/out/runs/embed-software-2560x1600/shot.bmp: Ok(())"
+  ],
+  "first_frame_ms": 1126.828833,
+  "formats": [
+    "software BGRA 2560x1600"
+  ],
+  "fps": 51.48178767408795,
+  "frames": 1030,
+  "import_us": {
+    "max": 78154,
+    "n": 1030,
+    "p50": 9028,
+    "p95": 18067
+  },
+  "page_console": [],
+  "page_scale": 1.0,
+  "path": "software",
+  "present_us": {
+    "n": 816,
+    "p50": 1422,
+    "p95": 3722
+  },
+  "seconds": 20.00707525,
+  "view": [
+    2560,
+    1600
+  ],
+  "window": [
+    1024,
+    645,
+    1.0
+  ]
+}

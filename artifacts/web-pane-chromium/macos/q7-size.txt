@@ -1,0 +1,42 @@
+== archive
+-rw-r--r--  1 runner  staff  134916866 Nov 19 16:08 /Users/runner/wp-cache/cef/156.0.31/cef_binary_156.0.31+ge603d97+chromium-156.0.8078.100_macosarm64_minimal.tar.bz2
+1bd39ff38db20baa5b52768919d6599aafb4aacbc7fd192458496749a0630ee8  /Users/runner/wp-cache/cef/156.0.31/cef_binary_156.0.31+ge603d97+chromium-156.0.8078.100_macosarm64_minimal.tar.bz2
+== framework binary
+3088635f27b47e3a3d39ca86f43aa10935af861e61c78bc6c135e342a294191e  /Users/runner/work/_temp/wp/webpane.app/Contents/Frameworks/Chromium Embedded Framework.framework/Chromium Embedded Framework
+-rwxr-xr-x  1 runner  staff  238066432 Nov 18 05:11 /Users/runner/work/_temp/wp/webpane.app/Contents/Frameworks/Chromium Embedded Framework.framework/Chromium Embedded Framework
+== sizes (KB)
+334592	/Users/runner/work/_temp/wp/webpane.app/Contents/Frameworks/Chromium Embedded Framework.framework
+16504	/Users/runner/work/_temp/wp/webpane.app/Contents/Frameworks/Chromium Embedded Framework.framework/Libraries
+85600	/Users/runner/work/_temp/wp/webpane.app/Contents/Frameworks/Chromium Embedded Framework.framework/Resources
+379424	/Users/runner/work/_temp/wp/webpane.app
+locales:      220 folders, 51432	total
+== compressed, all locales
+ 129154788
+== installed, en.lproj only (KB)
+298460	/Users/runner/work/_temp/fw-en/Chromium Embedded Framework.framework
+== compressed, en.lproj only
+ 117812532
+== files
+ 220 ./Resources/*.lproj/...
+   1 ./Resources/v8_context_snapshot.arm64.bin
+   1 ./Resources/resources.pak
+   1 ./Resources/Info.plist
+   1 ./Resources/icudtl.dat
+   1 ./Resources/gpu_shader_cache.bin
+   1 ./Resources/chrome_200_percent.pak
+   1 ./Resources/chrome_100_percent.pak
+   1 ./Libraries/vk_swiftshader_icd.json
+   1 ./Libraries/libvulkan.dylib
+   1 ./Libraries/libvk_swiftshader.dylib
+   1 ./Libraries/libcef_sandbox.dylib
+   1 ./Chromium Embedded Framework
+== libraries
+total 33008
+-rwxr-xr-x  1 runner  staff     69200 Nov 18 05:11 libcef_sandbox.dylib
+-rwxr-xr-x  1 runner  staff  16326576 Nov 18 05:11 libvk_swiftshader.dylib
+-rwxr-xr-x  1 runner  staff    499488 Nov 18 05:11 libvulkan.dylib
+-rw-r--r--  1 runner  staff       110 Nov 18 05:11 vk_swiftshader_icd.json
+== architecture
+Non-fat file: /Users/runner/work/_temp/wp/webpane.app/Contents/Frameworks/Chromium Embedded Framework.framework/Chromium Embedded Framework is architecture: arm64
+== stripped?
+    5244

@@ -1,0 +1,3 @@
+keychain items naming Chromium, CEF or the spike before any run:
+after one run with CEF's defaults (cdp, no use-mock-keychain):
+   1     "svce"<blob>="Chromium Safe Storage"

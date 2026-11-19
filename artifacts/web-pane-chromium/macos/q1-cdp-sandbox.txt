@@ -1,0 +1,59 @@
+PASS Network.responseReceived carries the 404 
+PASS Network.loadingFailed for the refused connection 
+PASS Runtime.exceptionThrown 
+PASS Runtime.consoleAPICalled type error 
+FAIL Codecs the page can play (informational: h264 and aac matter for Electron parity) "{\"h264\":\"no\",\"aac\":\"no\",\"hevc\":\"no\",\"vp9\":\"probably\",\"av1\":\"probably\",\"opus\":\"probably\",\"mp3\":\"probably\"}"
+PASS setDeviceMetricsOverride gives a 1000x700 viewport 
+PASS clearDeviceMetricsOverride gives back the 1280x800 view 
+PASS AX tree has button 'Press me', heading and the text field 
+PASS Runtime.evaluate returnByValue gives the element list 
+PASS Page.getLayoutMetrics cssVisualViewport is the view less its scrollbar 
+PASS PNG screenshot is 1280x800 
+PASS JPEG screenshot at scale 0.5 returns data 
+PASS Region screenshot is 200x60 
+PASS getNodeForLocation(140,150) is the button 
+PASS getNodeForLocation off the page errors with 'No node found' 
+PASS Click reaches the button as a trusted click 
+PASS Focused node after clicking the field is the INPUT 
+PASS insertText types Unicode into the field 
+PASS insertText fires a trusted input event 
+PASS Keys arrive as trusted keydowns 
+PASS Backspace removed one character 
+PASS Wheel scrolls the page 
+PASS Hit test on the scrolled page (pageY added) finds the deep heading 
+PASS getPartialAXTree names the button 
+PASS getBoxModel border quad at (40,120) 200x60 
+PASS getOuterHTML is the button's markup 
+PASS Point mode via host input: hover reports a node 
+PASS Point mode via host input: click reports the node and does not reach the page 
+PASS Point mode via host input: picked node is the button 
+PASS Point mode via cdp input: hover reports a node 
+PASS Point mode via cdp input: click reports the node and does not reach the page 
+PASS Point mode via cdp input: picked node is the button 
+PASS describeNode by nodeId after getDocument 
+FAIL Hidden page: wheel answers (informational) {"error": {"message": "no answer in 20 s"}, "ms": 20074.0}
+PASS Hidden page: screenshot answers (informational) 
+PASS Hidden page shown just for the wheel (CEF's prepareCapture) answers 
+FAIL Dropping the observer registration ends the session and its emulation (informational) {"after": 900, "before": 900}
+34 of 37 checks passed; 25 distinct commands
+processes with --no-sandbox while it ran: see stderr
+[check] PASS Point mode via host input: picked node is the button
+[cdp] Overlay.setInspectMode ok 0.7 ms
+[cdp] Overlay.hideHighlight ok 0.9 ms
+[cdp] Overlay.setInspectMode ok 1.4 ms
+[check] PASS Point mode via cdp input: hover reports a node
+[check] PASS Point mode via cdp input: click reports the node and does not reach the page
+[check] PASS Point mode via cdp input: picked node is the button
+[cdp] Overlay.setInspectMode ok 0.6 ms
+[cdp] Overlay.hideHighlight ok 0.3 ms
+[check] PASS describeNode by nodeId after getDocument
+[check] FAIL Hidden page: wheel answers (informational)
+[check] PASS Hidden page: screenshot answers (informational)
+[check] PASS Hidden page shown just for the wheel (CEF's prepareCapture) answers
+[check] FAIL Dropping the observer registration ends the session and its emulation (informational)
+[cdp] Emulation.setTouchEmulationEnabled ok 1.3 ms
+[cdp] Emulation.setEmitTouchEventsForMouse ok 17.7 ms
+[cdp] Input.dispatchTouchEvent ok 51.3 ms
+[cdp] Input.dispatchTouchEvent ok 52.7 ms
+[note] browser closed at 25450 ms
+wrote /Users/runner/work/_temp/out/runs/cdp-sandbox/cdp.json

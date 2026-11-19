@@ -1,0 +1,142 @@
+{
+  "adapter": "Apple Paravirtual device (Metal, IntegratedGpu)",
+  "cycles": [
+    {
+      "bundle_processes_left": [],
+      "cycle": 0,
+      "exit": "exit status: 0",
+      "first_frame_in_window_ms": 1698.838375,
+      "frames": 143,
+      "helper_footprint_mb": 220,
+      "helper_processes": 6,
+      "helper_processes_left": [],
+      "killed": false,
+      "lookup_us": {
+        "p50": 24,
+        "p95": 60
+      },
+      "mach_service": "bootstrap_check_in",
+      "stop_ms": 279.74958300000003,
+      "window_footprint_mb_after_stop": 39,
+      "window_footprint_mb_before_first": 25,
+      "window_footprint_mb_while_showing": 43
+    },
+    {
+      "bundle_processes_left": [],
+      "cycle": 1,
+      "exit": "exit status: 0",
+      "first_frame_in_window_ms": 1216.0665,
+      "frames": 128,
+      "helper_footprint_mb": 212,
+      "helper_processes": 6,
+      "helper_processes_left": [],
+      "killed": false,
+      "lookup_us": {
+        "p50": 31,
+        "p95": 78
+      },
+      "mach_service": "bootstrap_check_in",
+      "stop_ms": 185.21258400000002,
+      "window_footprint_mb_after_stop": 39,
+      "window_footprint_mb_before_first": 25,
+      "window_footprint_mb_while_showing": 43
+    },
+    {
+      "bundle_processes_left": [],
+      "cycle": 2,
+      "exit": "exit status: 0",
+      "first_frame_in_window_ms": 1226.8100419999998,
+      "frames": 110,
+      "helper_footprint_mb": 213,
+      "helper_processes": 6,
+      "helper_processes_left": [],
+      "killed": false,
+      "lookup_us": {
+        "p50": 27,
+        "p95": 55
+      },
+      "mach_service": "bootstrap_check_in",
+      "stop_ms": 232.540167,
+      "window_footprint_mb_after_stop": 39,
+      "window_footprint_mb_before_first": 25,
+      "window_footprint_mb_while_showing": 43
+    },
+    {
+      "bundle_processes_left": [],
+      "cycle": 3,
+      "exit": "exit status: 0",
+      "first_frame_in_window_ms": 973.653209,
+      "frames": 120,
+      "helper_footprint_mb": 216,
+      "helper_processes": 6,
+      "helper_processes_left": [],
+      "killed": false,
+      "lookup_us": {
+        "p50": 28,
+        "p95": 73
+      },
+      "mach_service": "bootstrap_check_in",
+      "stop_ms": 286.37800000000004,
+      "window_footprint_mb_after_stop": 39,
+      "window_footprint_mb_before_first": 25,
+      "window_footprint_mb_while_showing": 47
+    },
+    {
+      "bundle_processes_left": [],
+      "cycle": 4,
+      "exit": "exit status: 0",
+      "first_frame_in_window_ms": 1239.9915830000002,
+      "frames": 101,
+      "helper_footprint_mb": 214,
+      "helper_processes": 6,
+      "helper_processes_left": [],
+      "killed": false,
+      "lookup_us": {
+        "p50": 27,
+        "p95": 61
+      },
+      "mach_service": "bootstrap_check_in",
+      "stop_ms": 291.204083,
+      "window_footprint_mb_after_stop": 39,
+      "window_footprint_mb_before_first": 25,
+      "window_footprint_mb_while_showing": 43
+    }
+  ],
+  "errors": [],
+  "events": [
+    "326 resized 1280x800",
+    "326 window focused=false",
+    "326 resized 1024x645",
+    "344 window focused=true"
+  ],
+  "first_frame_ms": null,
+  "formats": [
+    "remote accelerated 1280x800 iosurface 1280x800 over Mach"
+  ],
+  "fps": 8.039108302107131,
+  "frames": 603,
+  "import_us": {
+    "max": 79674,
+    "n": 603,
+    "p50": 5915,
+    "p95": 15417
+  },
+  "page_console": [],
+  "page_scale": 1.0,
+  "path": "accelerated",
+  "present_us": {
+    "n": 582,
+    "p50": 420,
+    "p95": 7640
+  },
+  "seconds": 75.008319,
+  "view": [
+    1280,
+    800
+  ],
+  "window": [
+    1024,
+    645,
+    1.0
+  ]
+}

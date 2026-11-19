@@ -1,0 +1,90 @@
+{
+  "adapter": "Apple Paravirtual device (Metal, IntegratedGpu)",
+  "cycles": [
+    {
+      "bundle_processes_left": [],
+      "cycle": 0,
+      "exit": "exit status: 0",
+      "first_frame_in_window_ms": 1389.6603750000002,
+      "frames": 1247,
+      "helper_footprint_mb": 240,
+      "helper_processes": 6,
+      "helper_processes_left": [],
+      "killed": false,
+      "lookup_us": {
+        "p50": 28,
+        "p95": 98
+      },
+      "mach_service": "bootstrap_check_in",
+      "stop_ms": 377.631375,
+      "window_footprint_mb_after_stop": 40,
+      "window_footprint_mb_before_first": 26,
+      "window_footprint_mb_while_showing": 49
+    }
+  ],
+  "errors": [],
+  "events": [
+    "342 resized 1280x800",
+    "342 window focused=false",
+    "342 resized 1024x642",
+    "369 window focused=true",
+    "1687 self input planned",
+    "4391 self input sent",
+    "8292 self shot /Users/runner/work/_temp/out/runs/remote-input/shot.bmp: Ok(())",
+    "22656 pointer entered the page at 600,196",
+    "22781 click Pressed forwarded at page 360,140",
+    "22936 click Released forwarded at page 360,140",
+    "23940 click Pressed forwarded at page 100,16",
+    "24066 click Released forwarded at page 100,16",
+    "24874 key Character(\" \") Pressed forwarded",
+    "24967 key Character(\"a\") Released forwarded",
+    "25009 key Character(\"r\") Pressed forwarded",
+    "25061 key Character(\"a\") Released forwarded",
+    "25158 key Character(\"e\") Pressed forwarded",
+    "25258 key Character(\"a\") Released forwarded",
+    "25361 key Character(\"a\") Pressed forwarded",
+    "25428 key Character(\"a\") Released forwarded",
+    "25503 key Character(\"l\") Pressed forwarded",
+    "25601 key Character(\"a\") Released forwarded",
+    "25682 key Character(\" \") Pressed forwarded",
+    "25759 key Character(\"a\") Released forwarded",
+    "25846 key Character(\"k\") Pressed forwarded",
+    "25879 key Character(\"a\") Released forwarded",
+    "25984 key Character(\"e\") Pressed forwarded",
+    "26047 key Character(\"a\") Released forwarded",
+    "26092 key Character(\"y\") Pressed forwarded",
+    "26183 key Character(\"a\") Released forwarded",
+    "26296 key Character(\"s\") Pressed forwarded",
+    "26497 key Character(\"a\") Released forwarded"
+  ],
+  "first_frame_ms": null,
+  "formats": [
+    "remote accelerated 1280x800 iosurface 1280x800 over Mach"
+  ],
+  "fps": 31.168582393879444,
+  "frames": 1248,
+  "import_us": {
+    "max": 164594,
+    "n": 1248,
+    "p50": 7348,
+    "p95": 49916
+  },
+  "page_console": [],
+  "page_scale": 1.0,
+  "path": "accelerated",
+  "present_us": {
+    "n": 1196,
+    "p50": 470,
+    "p95": 11384
+  },
+  "seconds": 40.040319583,
+  "view": [
+    1280,
+    800
+  ],
+  "window": [
+    1024,
+    642,
+    1.0
+  ]
+}

@@ -1,0 +1,118 @@
+NetLog span: 301 s
+NetLog requests (first seen s, count):
+      0.4s  x1   GET http://clients2.google.com/time/1/current
+      0.5s  x1   GET https://clients2.google.com/service/update2/crx
+      0.5s  x1   GET https://www.google.com/async/folae
+      0.5s  x21  POST https://update.googleapis.com/service/update2/json
+      0.7s  x1   GET https://clients2.googleusercontent.com/crx/blobs/ARGaeZIT2TBxIcS0QI2oU93K06jZWcws9eCHWgZaNVt_rbpah
+      0.8s  x1   GET http://edgedl.me.gvt1.com/edgedl/diffgen-puffin/ceofaddefefcbblgcgnibnonglccbfja/aee9
+    181.0s  x1   POST https://chromewebstore.googleapis.com/v2/items/ghbmnnjooekpmoecnnnilnnbdlolhkhi:fetchItemSnippet
+    184.0s  x1   GET http://edgedl.me.gvt1.com/edgedl/release2/chrome_component/acpeapixpwuzscfa5h5j5m7c4x
+    186.0s  x1   GET http://edgedl.me.gvt1.com/edgedl/diffgen-puffin/gcmjkmgdlgnkkcocmoeiminaijmmjnii/6bf0
+    188.3s  x1   GET http://edgedl.me.gvt1.com/edgedl/diffgen-puffin/obedbbhbpmojnkanicioggnmelmoomoc/e40b
+    191.9s  x1   GET http://edgedl.me.gvt1.com/edgedl/release2/chrome_component/di2dotgitskdmiero33s2lyydq
+    195.4s  x1   GET http://edgedl.me.gvt1.com/edgedl/release2/chrome_component/adhr77yzjz2qlqkv6thtqq2efn
+    199.1s  x1   GET http://edgedl.me.gvt1.com/edgedl/diffgen-puffin/ninodabcejpeglfjbkhdplaoglpcbffj/d489
+    203.3s  x1   GET http://edgedl.me.gvt1.com/edgedl/release2/chrome_component/V3P1l2hLvLw_7/7_all_sslErr
+    207.7s  x1   GET http://edgedl.me.gvt1.com/edgedl/release2/chrome_component/ad44ln6gxo3yqr3z5knw3ajp5b
+    208.1s  x1   GET http://edgedl.me.gvt1.com/edgedl/diffgen-puffin/khaoiebndkojlmppeemjhbpbandiljpe/b46e
+    208.6s  x1   GET http://edgedl.me.gvt1.com/edgedl/release2/chrome_component/acrx7ouhu6es4mtakecyfqbyef
+    209.1s  x1   GET http://edgedl.me.gvt1.com/edgedl/diffgen-puffin/jflookgnkcckhobaglndicnbbgbonegd/0cf1
+    209.9s  x1   GET http://edgedl.me.gvt1.com/edgedl/release2/chrome_component/j2hxfei2occ5siitujtlwgp6xi
+    210.9s  x1   GET http://edgedl.me.gvt1.com/edgedl/diffgen-puffin/bjbcblmdcnggnibecjikpoljcgkbgphl/a94f
+    213.1s  x1   GET http://edgedl.me.gvt1.com/edgedl/release2/chrome_component/l5vix5qkshcvl7bpliorcru2xm
+    215.0s  x1   GET http://edgedl.me.gvt1.com/edgedl/release2/chrome_component/ac55zopqc7vere3bm2pinwvz3d
+    216.9s  x1   GET http://edgedl.me.gvt1.com/edgedl/diffgen-puffin/ggkkehgbnfjpeggfpleeakpidbkibbmn/c4da
+    219.2s  x1   GET http://edgedl.me.gvt1.com/edgedl/release2/chrome_component/adibsui7526bkzxrryewxzccgp
+    240.4s  x1   GET http://127.0.0.1:8765/idle.html
+    240.7s  x1   GET http://127.0.0.1:8765/favicon.ico
+    270.5s  x1   GET https://safebrowsing.googleapis.com/v4/threatListUpdates:fetch
+NetLog host lookups: {'http://clients2.google.com': 2, 'https://clients2.google.com': 2, 'https://update.googleapis.com': 6, 'https://www.google.com': 3, 'https://clients2.googleusercontent.com': 3, 'http://edgedl.me.gvt1.com': 3, 'https://chromewebstore.googleapis.com': 3, 'http://127.0.0.1:8765': 2, 'https://safebrowsing.googleapis.com': 3}
+NetLog proxy detection / DoH events: {}
+pktap.txt: 56229 packet lines on the runner; packets from or for the spike's processes by process: {'webpane Helper': 13875, 'kernel_task (for webpane Helper)': 295}
+pktap.txt: lines with no process attached: 478
+pktap.txt: this machine's addresses, counted as local: ['192.168.64.6']
+pktap.txt: the spike's packets to or from another machine (process, family, far address, far port): 17 flows, 14144 packets
+   13225  webpane Helper               IP 34.104.35.123 port 80
+     295  webpane Helper               IP 142.251.108.138 port 443
+     253  kernel_task                  IP 34.104.35.123 port 80
+     173  webpane Helper               IP 142.251.218.65 port 443
+      40  webpane Helper               IP 192.168.64.1 port 53
+      32  webpane Helper               IP 172.217.116.4 port 443
+      32  webpane Helper               IP 74.125.199.95 port 443
+      29  webpane Helper               IP 142.251.150.119 port 443
+      15  webpane Helper               IP 142.251.218.174 port 443
+      15  kernel_task                  IP 142.251.218.174 port 443
+       9  kernel_task                  IP 142.251.218.174 port 80
+       8  webpane Helper               IP 142.251.218.174 port 80
+       8  kernel_task                  IP 142.251.108.138 port 443
+       7  kernel_task                  IP 142.251.150.119 port 443
+       1  kernel_task                  IP 142.251.218.65 port 443
+       1  kernel_task                  IP 172.217.116.4 port 443
+       1  kernel_task                  IP 74.125.199.95 port 443
+pf log (the spike's group): 2461 packets
+    1004  pass on en0 to 192.168.64.6 port 49273
+     486  pass on en0 to 34.104.35.123 port 80
+     421  pass on en0 to 192.168.64.6 port 49322
+     142  pass on en0 to 142.251.108.138 port 443
+      68  pass on en0 to 192.168.64.6 port 61451
+      57  pass on en0 to 192.168.64.6 port 59711
+      37  pass on en0 to 142.251.218.65 port 443
+      25  pass on en0 to 192.168.64.6 port 49272
+      23  pass on en0 to 192.168.64.6 port 49271
+      20  pass on en0 to 192.168.64.1 port 53
+      19  pass on en0 to 142.251.150.119 port 443
+      17  pass on en0 to 172.217.116.4 port 443
+      16  pass on en0 to 74.125.199.95 port 443
+      15  pass on en0 to 142.251.218.174 port 443
+      13  pass on lo0 to 127.0.0.1 port 8765
+      11  pass on en0 to 192.168.64.6 port 58097
+      11  pass on en0 to 192.168.64.6 port 49326
+      10  pass on en0 to 192.168.64.6 port 49319
+       9  pass on en0 to 192.168.64.6 port 49268
+       8  pass on en0 to 142.251.218.174 port 80
+       7  pass on lo0 to 127.0.0.1 port 49324
+       6  pass on en0 to 192.168.64.6 port 49269
+       6  pass on lo0 to 127.0.0.1 port 49325
+       5  pass on en0 to 192.168.64.6 port 49267
+       5  pass on en0 to 192.168.64.6 port 49270
+       1  pass on en0 to 192.168.64.6 port 46106
+       1  pass on en0 to 192.168.64.6 port 26632
+       1  pass on en0 to 192.168.64.6 port 61109
+       1  pass on en0 to 192.168.64.6 port 18365
+       1  pass on en0 to 192.168.64.6 port 46122
+       1  pass on en0 to 192.168.64.6 port 48079
+       1  pass on en0 to 192.168.64.6 port 35592
+       1  pass on en0 to 192.168.64.6 port 32321
+       1  pass on en0 to 192.168.64.6 port 31456
+       1  pass on en0 to 192.168.64.6 port 43561
+       1  pass on en0 to 192.168.64.6 port 43754
+       1  pass on en0 to 192.168.64.6 port 12668
+       1  pass on en0 to 192.168.64.6 port 50534
+       1  pass on en0 to 192.168.64.6 port 28954
+       1  pass on en0 to 192.168.64.6 port 45205
+pf rules and counters:
+  No ALTQ support in kernel
+  ALTQ related functions disabled
+  @0 pass out log (all) quick proto tcp all group = 3901 flags S/SA keep state
+    [ Owner : nil          Priority : 0     ]
+    [ Evaluations: 11849     Packets: 2175      Bytes: 20806820    States: 4     ]
+    [ Inserted: uid 0 pid 4516 ]
+  @1 pass out log (all) quick proto udp all group = 3901 keep state
+    [ Owner : nil          Priority : 0     ]
+    [ Evaluations: 5271      Packets: 289       Bytes: 96482       States: 2     ]
+    [ Inserted: uid 0 pid 4516 ]
+keychain.txt:
+before:
+   1     "svce"<blob>="Chromium Safe Storage"
+after:
+   1     "svce"<blob>="Chromium Safe Storage"
+extensions.txt:
+profile extension folders:
+ls: /Users/runner/work/_temp/out/runs/net-default/cache/profile/Extensions: No such file or directory
+Preferences extension entries:
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    import json,sys; p=json.load(open(sys.argv[1])); s=p.get('extensions',{}).get('settings',{}); print(len(s), 'entries'); [print(' ', k[:6]+'…', v.get('location'), v.get('disable_reasons'), v.get('from_webstore')) for k,v in s.items()]
+                                 ~~~~^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Users/runner/work/_temp/out/runs/net-default/cache/profile/Preferences'

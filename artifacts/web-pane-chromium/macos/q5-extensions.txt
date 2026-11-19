@@ -1,0 +1,21 @@
+== ext-user-chrome (planted in: /Users/runner/Library/Application Support/Google/Chrome)
+Web Store and extension downloads in the NetLog: 0
+extension folders in the profile: 0
+profile files: cache/Default/Preferences
+== ext-user-chromium (planted in: /Users/runner/Library/Application Support/Chromium)
+Web Store and extension downloads in the NetLog: 0
+extension folders in the profile: 0
+profile files: cache/Default/Preferences
+== ext-system-chrome (planted in: /Library/Application Support/Google/Chrome)
+Web Store and extension downloads in the NetLog: 42
+extension folders in the profile: 3
+profile files: cache/Default/Preferences
+== ext-system-chromium (planted in: /Library/Application Support/Chromium)
+Web Store and extension downloads in the NetLog: 0
+extension folders in the profile: 0
+profile files: cache/Default/Preferences
+== ext-hardened-all (planted in: ALL)
+Web Store and extension downloads in the NetLog: 0
+extension folders in the profile: 0
+profile files: cache/Default/Preferences
+cache/profile/Preferences

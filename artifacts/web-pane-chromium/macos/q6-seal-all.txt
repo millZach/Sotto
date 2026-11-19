@@ -1,0 +1,41 @@
+layers: {'csp': True, 'deny': True, 'filter': True, 'no_rtc': False, 'proxy': True, 'webrtc_policy': True}
+refused by layer: {'dead-proxy': 6, 'navigation': 5}
+second load of the address: None
+page verdicts: 68 lines; DONE seen: True
+canary server.log: 0 hits {}
+canary canary-second.log: 0 hits {}
+DNS questions on the machine naming the hostile page's hosts: {}
+NetLog span: 36 s
+NetLog requests (first seen s, count):
+      1.3s  x1   GET http://clients2.google.com/time/1/current
+      1.4s  x2   GET https://www.google.com/async/folae
+      1.7s  x1   POST https://update.googleapis.com/service/update2/json
+NetLog host lookups: {'http://clients2.google.com': 2, 'https://www.google.com': 3, 'https://update.googleapis.com': 3}
+NetLog proxy detection / DoH events: {}
+pktap.txt: 4267 packet lines on the runner; packets from or for the spike's processes by process: {'webpane Helper': 42, 'webpane': 36, 'mDNSResponder (for webpane Helper)': 6}
+pktap.txt: lines with no process attached: 259
+pktap.txt: this machine's addresses, counted as local: ['192.168.64.2']
+pktap.txt: the spike's packets to or from another machine (process, family, far address, far port): 1 flows, 6 packets
+       6  mDNSResponder                IP 192.168.64.1 port 53
+pf log (the spike's group): 102 packets
+      18  block on en0 to 142.251.218.174 port 80
+      18  block on en0 to 142.251.157.119 port 443
+      18  block on en0 to 142.251.108.113 port 443
+      18  block on en0 to 142.251.152.119 port 443
+      18  block on en0 to 142.251.108.101 port 443
+      12  block on en0 to 192.168.64.1 port 53
+pf rules and counters:
+  No ALTQ support in kernel
+  ALTQ related functions disabled
+  @0 pass quick on lo0 all no state
+    [ Owner : nil          Priority : 0     ]
+    [ Evaluations: 2968      Packets: 276       Bytes: 49554       States: 0     ]
+    [ Inserted: uid 0 pid 2027 ]
+  @1 block drop out log quick proto tcp all group = 3901
+    [ Owner : nil          Priority : 0     ]
+    [ Evaluations: 2692      Packets: 90        Bytes: 5760        States: 0     ]
+    [ Inserted: uid 0 pid 2027 ]
+  @2 block drop out log quick proto udp all group = 3901
+    [ Owner : nil          Priority : 0     ]
+    [ Evaluations: 1375      Packets: 12        Bytes: 768         States: 0     ]
+    [ Inserted: uid 0 pid 2027 ]

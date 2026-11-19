@@ -1,0 +1,38 @@
+{
+ "seconds": 10.0,
+ "tree_cpu_percent_of_one_core": 75.4,
+ "processes": 6,
+ "footprint_mb": 464.8,
+ "by_process": [
+  {
+   "name": "webpane",
+   "footprint_mb": 99.1,
+   "cpu_s": 4.37
+  },
+  {
+   "name": "webpane Helper",
+   "footprint_mb": 253.9,
+   "cpu_s": 1.91
+  },
+  {
+   "name": "webpane Helper",
+   "footprint_mb": 23.6,
+   "cpu_s": 0.03
+  },
+  {
+   "name": "webpane Helper",
+   "footprint_mb": 21.7,
+   "cpu_s": 0.0
+  },
+  {
+   "name": "webpane Helper (Renderer)",
+   "footprint_mb": 27.7,
+   "cpu_s": 0.01
+  },
+  {
+   "name": "webpane Helper (Renderer)",
+   "footprint_mb": 38.8,
+   "cpu_s": 1.22
+  }
+ ]
+}

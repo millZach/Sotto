@@ -1,0 +1,57 @@
+seal-none (no layer). The run did not finish within its 150 s limit (with no layer the page never finished loading, as on Linux), so it wrote no seal.json; canary hits are counted for 17:18:13 to 17:20:50 UTC.
+canary server.log: 23 hits {('tcp', 8766): 2, ('udp', 8767): 21}
+canary canary-second.log: 25 hits {('tcp', 8766): 2, ('udp', 8767): 22, ('http', '/canary/download'): 1}
+DNS questions on the machine naming the hostile page's hosts:  1 wpspike-fetch.example.com; 1 wpspike-stun.example.com;
+NetLog span: 79 s
+NetLog requests (first seen s, count):
+      0.2s  x1   GET http://clients2.google.com/time/1/current
+      0.3s  x2   GET https://www.google.com/async/folae
+      0.3s  x1   POST https://update.googleapis.com/service/update2/json
+      0.6s  x1   GET http://192.168.64.6:8765/canary/preload
+      0.6s  x1   GET http://192.168.64.6:8765/canary/stylesheet
+      0.6s  x1   GET http://192.168.64.6:8765/canary/css-import
+      0.6s  x1   GET http://192.168.64.6:8765/canary/img
+      0.6s  x1   GET http://127.0.0.1:8765/canary/img-loopback
+      0.6s  x1   GET http://192.168.64.6:8765/canary/prefetch
+      0.7s  x1   GET http://192.168.64.6:8765/canary/iframe
+      0.7s  x1   GET http://192.168.64.6:8765/canary/video
+     35.7s  x1   GET http://127.0.0.1:8765/canary/fetch
+     35.7s  x1   GET http://192.168.64.6:8765/canary/css-bg
+     35.7s  x2   GET http://192.168.64.6:8765/canary/font
+     35.7s  x1   GET http://127.0.0.1:8765/canary/xhr
+     35.9s  x1   GET http://192.168.64.6:8765/canary/object
+     35.9s  x1   GET ws://127.0.0.1:8766/
+     35.9s  x1   GET http://127.0.0.1:8765/canary/sse
+     35.9s  x1   POST http://127.0.0.1:8765/canary/beacon
+     35.9s  x1   GET http://127.0.0.1:8765/canary/img-js
+     42.1s  x1   GET http://192.168.64.6:8765/canary/fetch
+     42.1s  x1   GET http://192.168.64.6:8765/canary/xhr
+     42.1s  x1   GET ws://192.168.64.6:8766/
+     42.1s  x1   GET http://192.168.64.6:8765/canary/sse
+     42.1s  x1   GET http://192.168.64.6:8765/canary/img-js
+     42.1s  x1   POST http://192.168.64.6:8765/canary/beacon
+     50.3s  x1   GET http://wpspike-fetch.example.com/
+     53.4s  x1   GET http://192.168.64.6:8765/canary/worker-fetch
+     53.4s  x1   GET http://192.168.64.6:8765/canary/worker2
+     53.5s  x1   GET http://192.168.64.6:8765/canary/shared-worker
+     53.5s  x1   GET http://192.168.64.6:8765/canary/blank-iframe
+     56.0s  x1   GET http://192.168.64.6:8765/canary/srcdoc
+     56.0s  x1   GET http://192.168.64.6:8765/canary/srcdoc-fetch
+     57.1s  x1   POST http://192.168.64.6:8765/canary/ping
+     57.2s  x1   GET http://192.168.64.6:8765/canary/download
+     57.2s  x1   GET http://192.168.64.6:8765/favicon.ico
+NetLog host lookups: {'http://clients2.google.com': 2, 'https://www.google.com': 4, 'https://update.googleapis.com': 2, 'http://127.0.0.1:8765': 1, 'http://192.168.64.6:8765': 1, 'http://wpspike-fetch.example.com': 2}
+NetLog proxy detection / DoH events: {}
+pf log (the spike's group): 310 packets
+      44  block on en0 to 142.251.157.119 port 443
+      44  block on en0 to 142.251.154.119 port 443
+      24  block on en0 to 192.168.64.1 port 53
+      22  block on en0 to 142.251.219.174 port 80
+      22  block on en0 to 192.178.142.101 port 443
+      22  block on en0 to 192.178.142.100 port 443
+      22  block on en0 to 192.178.142.102 port 443
+      22  block on en0 to 142.251.153.119 port 443
+      22  block on en0 to 142.251.150.119 port 443
+      22  block on en0 to 192.178.142.113 port 443
+      22  block on en0 to 142.251.152.119 port 443
+      22  block on en0 to 142.251.156.119 port 443

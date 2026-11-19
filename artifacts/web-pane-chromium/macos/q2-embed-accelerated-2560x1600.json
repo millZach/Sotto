@@ -1,0 +1,43 @@
+{
+  "adapter": "Apple Paravirtual device (Metal, IntegratedGpu)",
+  "cycles": [],
+  "errors": [],
+  "events": [
+    "537 browser create asked=-1 created=true",
+    "773 window focused=true",
+    "894 resized 1280x800",
+    "894 window focused=false",
+    "896 resized 1024x642",
+    "4600 self shot /Users/runner/work/_temp/out/runs/embed-accelerated-2560x1600/shot.bmp: Ok(())"
+  ],
+  "first_frame_ms": 2082.3394999999996,
+  "formats": [
+    "accelerated ColorType(CEF_COLOR_TYPE_BGRA_8888) 2560x1600 iosurface"
+  ],
+  "fps": 38.63854600680909,
+  "frames": 773,
+  "import_us": {
+    "max": 90758,
+    "n": 773,
+    "p50": 17363,
+    "p95": 39008
+  },
+  "page_console": [],
+  "page_scale": 1.0,
+  "path": "accelerated",
+  "present_us": {
+    "n": 774,
+    "p50": 489,
+    "p95": 1121
+  },
+  "seconds": 20.005928791,
+  "view": [
+    2560,
+    1600
+  ],
+  "window": [
+    1024,
+    642,
+    1.0
+  ]
+}

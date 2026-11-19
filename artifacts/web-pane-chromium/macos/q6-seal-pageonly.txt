@@ -1,0 +1,41 @@
+layers: {'csp': True, 'deny': True, 'filter': True, 'no_rtc': False, 'proxy': False, 'webrtc_policy': False}
+refused by layer: {'navigation': 5}
+second load of the address: None
+page verdicts: 68 lines; DONE seen: True
+canary server.log: 26 hits {('udp', 8767): 25, ('tcp', 8766): 1}
+canary canary-second.log: 25 hits {('udp', 8767): 24, ('tcp', 8766): 1}
+DNS questions on the machine naming the hostile page's hosts: {}
+NetLog span: 35 s
+NetLog requests (first seen s, count):
+      0.2s  x1   GET http://clients2.google.com/time/1/current
+      0.3s  x2   GET https://www.google.com/async/folae
+      0.3s  x1   POST https://update.googleapis.com/service/update2/json
+NetLog host lookups: {'http://clients2.google.com': 2, 'https://update.googleapis.com': 3, 'https://www.google.com': 5}
+NetLog proxy detection / DoH events: {}
+pktap.txt: 215 packet lines on the runner; packets from or for the spike's processes by process: {'webpane Helper': 85, 'mDNSResponder (for webpane Helper)': 6}
+pktap.txt: lines with no process attached: 15
+pktap.txt: this machine's addresses, counted as local: ['192.168.64.6']
+pktap.txt: the spike's packets to or from another machine (process, family, far address, far port): 1 flows, 6 packets
+       6  mDNSResponder                IP 192.168.64.1 port 53
+pf log (the spike's group): 146 packets
+      36  block on en0 to 142.251.151.119 port 443
+      36  block on en0 to 142.251.157.119 port 443
+      20  block on en0 to 192.168.64.1 port 53
+      18  block on en0 to 142.251.218.174 port 80
+      18  block on en0 to 142.251.108.100 port 443
+      18  block on en0 to 142.251.108.139 port 443
+pf rules and counters:
+  No ALTQ support in kernel
+  ALTQ related functions disabled
+  @0 pass out quick on lo0 all flags S/SA keep state
+    [ Owner : nil          Priority : 0     ]
+    [ Evaluations: 290       Packets: 85        Bytes: 4504        States: 8     ]
+    [ Inserted: uid 0 pid 38705 ]
+  @1 block drop out log quick proto tcp all group = 3901
+    [ Owner : nil          Priority : 0     ]
+    [ Evaluations: 214       Packets: 126       Bytes: 8064        States: 0     ]
+    [ Inserted: uid 0 pid 38705 ]
+  @2 block drop out log quick proto udp all group = 3901
+    [ Owner : nil          Priority : 0     ]
+    [ Evaluations: 71        Packets: 20        Bytes: 1288        States: 0     ]
+    [ Inserted: uid 0 pid 38705 ]

@@ -1,0 +1,1 @@
+[embed] adapter Apple Paravirtual device Metal driver 
