@@ -53,7 +53,7 @@ export function heldBackSettled(threads: readonly AgentThread[], projects: reado
  * more follow. A cursor names a place in the order, so a page after a thread that has since been restored or reopened
  * starts where that thread was.
  */
-export function settledPage(held: readonly AgentThread[], projects: readonly AgentProject[], { after, query, limit = SETTLED_PAGE_DEFAULT }: { after?: string | undefined; query?: string | undefined; limit?: number | undefined }): { threads: AgentThread[]; next: string | null } {
+export function settledPage(held: readonly AgentThread[], projects: readonly AgentProject[], { after, query, limit = SETTLED_PAGE_DEFAULT, found }: { after?: string | undefined; query?: string | undefined; limit?: number | undefined; found?: ReadonlySet<string> | undefined }): { threads: AgentThread[]; next: string | null } {
   const byProject = new Map(projects.map(project => [project.id, project]))
   const words = query?.trim().toLocaleLowerCase()
   const cursor = after ? readCursor(after) : undefined
@@ -63,7 +63,8 @@ export function settledPage(held: readonly AgentThread[], projects: readonly Age
   for (const thread of held) {
     const since = settledSince(thread, byProject.get(thread.projectId)) ?? Number.NEGATIVE_INFINITY
     if (cursor && !follows(since, thread.id, cursor)) continue
-    if (words && !`${thread.title} ${byProject.get(thread.projectId)?.title ?? ''} ${thread.providerId ?? ''}`.toLocaleLowerCase().includes(words)) continue
+    // A search matches the row's words, or, with `found`, what was said in the thread (`thread-words`).
+    if (words && !found?.has(thread.id) && !`${thread.title} ${byProject.get(thread.projectId)?.title ?? ''} ${thread.providerId ?? ''}`.toLocaleLowerCase().includes(words)) continue
     if (best.length > size && !precedes(since, thread.id, best[size]!)) continue
     let at = best.length
     while (at > 0 && precedes(since, thread.id, best[at - 1]!)) at--

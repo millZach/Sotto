@@ -18,6 +18,7 @@ import type { SubagentRole } from '../../shared/workerRoles'
 import type { UsageQuotaRead, UsageTokenObservation } from '../../shared/usageDashboard'
 import type { UsageHistorySink, UsageRecordedUserMessage } from './usageHistory/sink'
 import type { AgentThreadPrompts } from '../../shared/threadPrompts'
+import type { AgentThreadWords } from '../../shared/threadWords'
 import type { MergedSettleExpectation } from './worktreeCleanup'
 import type { HeldSession } from './sessionReaper'
 import type { RunMark } from './detachedRunScan'
@@ -531,6 +532,11 @@ export interface AgentHost extends ProviderHost {
    * Read when a pane asks, never published. Null when the store cannot answer. Absent on hosts that keep no store.
    */
   threadPrompts?(threadId: string, beforeMessageId: string): AgentThreadPrompts | null | Promise<AgentThreadPrompts | null>
+  /**
+   * The threads whose messages hold `query`, from the thread store, for Search threads. Read when a search asks, never
+   * published. Null when the store cannot answer. Absent on hosts that keep no store.
+   */
+  threadWords?(query: string): AgentThreadWords | null | Promise<AgentThreadWords | null>
   /**
    * The records of `activities` a pane is given beside the thread's loaded history window: the work of a
    * turn above the window waits there with its messages. A view for the thread detail alone; the records

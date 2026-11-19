@@ -422,6 +422,17 @@
 .thread-nav__row--details:has(> .thread-nav__row-actions > :nth-child(4)) { --thread-row-actions-width: 104px; }
 .thread-nav__row--details:is(:hover, :has(:focus-visible)) .thread-nav__standing { padding-right: calc(var(--thread-row-actions-width, 26px) - 10px); }
 .thread-nav__row--details:is(:hover, :has(:focus-visible)) .thread-nav__branch { padding-right: 104px; }
+/* A row a search found only by what was said in its thread quotes the match under its name (Zach's pick A, November 19,
+   2026): whose words and the match marked, at most two lines, then how many other messages match. Its status and branch
+   move down a line. */
+.thread-nav__quote { grid-row: 2; grid-column: 2 / -1; display: flex; flex-direction: column; min-width: 0; color: var(--tt-text-2); font-size: var(--tt-type-small); line-height: 18px; }
+.thread-nav__quote-words { display: -webkit-box; overflow: hidden; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.thread-nav__quote-who, .thread-nav__quote-more { color: var(--tt-text-muted); }
+.thread-nav__hit { border-radius: var(--tt-radius-mark); background: var(--tt-accent-wash); color: inherit; box-shadow: 0 0 0 1px var(--tt-accent-wash); }
+.thread-nav__row--details[data-quoted] :is(.thread-nav__provider, .thread-nav__standing) { grid-row: 3; }
+.thread-nav .thread-nav__row--details[data-quoted] .thread-nav__time { grid-area: 1 / 3; }
+.thread-nav__row--details[data-quoted] .thread-nav__title { grid-area: 1 / 2; }
+.thread-nav__row--details[data-quoted] .thread-nav__branch { grid-row: 4; }
 /* A resting row steps back to one line (Zach's pick C, ADR-0135, November 5, 2026): its name and, at the line's end, its
    time in the muted ink, with no ring, no mark and no word, so what is moving or waiting stands out down a long list. The
    ring keeps its column, so every name still starts on one edge. The word leaves the screen and stays in the row's

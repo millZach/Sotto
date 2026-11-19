@@ -733,6 +733,10 @@ msgstr ""
 msgid "{more, plural, one {Show {threads} more} other {Show {threads} more}}"
 msgstr ""
 
+#: src/renderer/src/agents/ThreadSidebar.tsx
+msgid "{more, plural, other {{others} more in this thread}}"
+msgstr ""
+
 #: src/renderer/src/agents/ScreenshotInput.tsx
 msgid "{most, plural, one {Attach up to # screenshot at a time.} other {Attach up to # screenshots at a time.}}"
 msgstr ""
@@ -1466,6 +1470,11 @@ msgstr ""
 #. {Who} is "This thread" or the title of the thread that delegated.
 #: src/renderer/src/agents/delegationWords.ts
 msgid "{Who} waits up to {limit} for it. {waited} so far."
+msgstr ""
+
+#. {who} is "You" or the provider's name, before a quote of their message.
+#: src/renderer/src/agents/ThreadSidebar.tsx
+msgid "{who}:"
 msgstr ""
 
 #. {whole} lists the parts of a handover, such as "the task and the result".
@@ -11127,12 +11136,14 @@ msgstr ""
 msgid "XHigh"
 msgstr ""
 
+#. Before a quote of the user's own message, under a thread a search found by it: "You: …".
 #. Who sent a thread's last message.
 #. Who wrote a message: the user.
 #. Who wrote a message: the user.
 #. Who wrote a message: the user.
 #: src/renderer/src/agents/MessageScrubber.tsx
 #: src/renderer/src/agents/threadFacts.ts
+#: src/renderer/src/agents/ThreadSidebar.tsx
 #: src/renderer/src/agents/ThreadTranscript.tsx
 msgid "You"
 msgstr ""

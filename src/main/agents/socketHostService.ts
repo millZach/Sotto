@@ -2,6 +2,7 @@ import type { ProductEventPermission } from '../../shared/hostProtocol'
 import { i18n } from '@lingui/core'
 import { msg, t } from '@lingui/core/macro'
 import type { AgentThreadPrompts } from '../../shared/threadPrompts'
+import type { AgentThreadWords } from '../../shared/threadWords'
 import { startsThread } from '../../shared/threadStarts'
 import { createHash, randomBytes, randomUUID } from 'node:crypto'
 import { createReadStream } from 'node:fs'
@@ -31,7 +32,7 @@ import { immutableModels } from './activitySnapshots'
 import { CONNECT_FAILURES, WordedError, type FailureWords } from '../hosts/hostFailureWords'
 import { createThreadReassembly, type ThreadReassembly } from '../../shared/threadReassembly'
 import { withKeptPartsPutBack, type HeldParts } from '../../shared/keptParts'
-import { commandFromProtocolV1, protocolAgentCommandSchema, protocolAgentStateSchema, managementCommandRefusal, LEGACY_MANAGEMENT_ALLOWED_COMMANDS, LEGACY_MANAGEMENT_UPDATE, hostAttachmentContentSchema, hostIsNewer, hostIsOlder, hostHealthFeatures, hostPairingSchema, hostSessionSchema, hostHelloSchema, hostEventPageSchema, hostResponseSchema, hostPushSchema, hostReceiptSchema, hostStartHandoverSchema, hostActivityBodySchema, hostThreadPromptsSchema, PROVIDER_HOST_FEATURES, HOST_FILE_PART_BYTES } from '../../shared/hostProtocol'
+import { commandFromProtocolV1, protocolAgentCommandSchema, protocolAgentStateSchema, managementCommandRefusal, LEGACY_MANAGEMENT_ALLOWED_COMMANDS, LEGACY_MANAGEMENT_UPDATE, hostAttachmentContentSchema, hostIsNewer, hostIsOlder, hostHealthFeatures, hostPairingSchema, hostSessionSchema, hostHelloSchema, hostEventPageSchema, hostResponseSchema, hostPushSchema, hostReceiptSchema, hostStartHandoverSchema, hostActivityBodySchema, hostThreadPromptsSchema, hostThreadWordsSchema, PROVIDER_HOST_FEATURES, HOST_FILE_PART_BYTES } from '../../shared/hostProtocol'
 import type { AgentActivity } from '../../shared/agentActivity'
 import { hostBrowserResultSchemas, type HostBrowserFrame, type HostBrowserMethod, type HostBrowserRequest, type HostBrowserResult } from '../../shared/hostBrowser'
 import type { BrowserEvent } from '../../shared/browser'
@@ -2003,6 +2004,17 @@ export class SocketHostService implements HostService {
     const prompts = this.read(hostThreadPromptsSchema, await this.call({ op: 'thread-prompts', threadId, beforeMessageId }))
     this.sameGeneration(generation)
     return prompts
+  }
+  /**
+   * The threads on this host whose messages hold a search's words, for Search threads (`thread-words`). Null from a host
+   * that does not list it, whose threads a search finds by what their rows say, and while it is disconnected.
+   */
+  async threadWords(query: string): Promise<AgentThreadWords | null> {
+    if (!this.features.includes('thread-words')) return null
+    const generation = this.generation
+    const words = this.read(hostThreadWordsSchema, await this.call({ op: 'thread-words', query }))
+    this.sameGeneration(generation)
+    return words
   }
   get supportsUsage(): boolean { return this.features.includes('usage-dashboard') }
   async usageRead(query: UsageLocalQuery): Promise<UsageLocalHostRead> {

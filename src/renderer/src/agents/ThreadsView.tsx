@@ -1,4 +1,5 @@
 import { focusedComposerField } from './promptSelection'
+import { useThreadWords } from './useThreadWords'
 import { Marked } from '../components/marks'
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { msg } from '@lingui/core/macro'
@@ -184,7 +185,9 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, paneTools = f
   // Snoozed threads (ADR-0175; Owl only) sit on their own shelf until they wake.
   const snoozes = useThreadSnoozes(state?.host.threads)
   useWakeWhenNeeded(rows, snoozes)
-  const organization = useShared(useMemo(() => state === null ? { open: [], settled: [], needsYou: EMPTY_NEEDS_YOU, matching: 0 } : organizeWorkspace(state, sidebarRows, query, state.activeProjectId, delegation, now, swarms, snoozes), [state, sidebarRows, query, delegation, now, swarms, snoozes, words]))
+  // Search threads also looks through what was said in each thread, on every computer, once typing pauses.
+  const threadWords = useThreadWords(query)
+  const organization = useShared(useMemo(() => state === null ? { open: [], settled: [], needsYou: EMPTY_NEEDS_YOU, matching: 0 } : organizeWorkspace(state, sidebarRows, query, state.activeProjectId, delegation, now, swarms, snoozes, threadWords?.matches), [state, sidebarRows, query, delegation, now, swarms, snoozes, words, threadWords]))
   const originalStored = useSplitLayout(layoutStore)
   const stored = useMemo(() => qualifyLegacyLayout(originalStored, state?.hostId), [originalStored, state?.hostId])
   useEffect(() => { if (stored !== originalStored) layoutStore.set(stored) }, [stored, originalStored, layoutStore])
@@ -376,7 +379,7 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, paneTools = f
       onClose={() => setChooser(null)}
       onCreating={start => { setChooser(null); handleCreationStart(start, chooser.carried) }}
       onCreated={() => { setChooser(null); focusNewComposer() }} />}
-    <ThreadSidebar state={state} command={command} organization={organization} query={query} liveClock={fixedNow === undefined} onQuery={setQuery} onOpen={openThread} onNewThread={openNewThread}
+    <ThreadSidebar state={state} command={command} organization={organization} query={query} threadWords={threadWords} liveClock={fixedNow === undefined} onQuery={setQuery} onOpen={openThread} onNewThread={openNewThread}
       currentThreadId={focusedId} listedThreadId={listedThreadId} openThreadIds={paneIds} onOpenBeside={openBeside} onDragThread={setDragging}
       newThreadError={shownWords(newThreadError)} onDismissNewThreadError={dismissNewThreadError} newThreadShortcut={newThreadShortcutLabel} shortcutsLive
       restartThreads={published?.host.threads} />

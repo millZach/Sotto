@@ -11,6 +11,7 @@ import { isImmutableActivities, isImmutableActivity, ownBuiltActivity } from './
 import { clonePlainData } from './cloneHostSnapshot'
 import { agentVisualSchema, type AgentVisual } from '../../shared/visuals'
 import { clipText, promptReplyText, THREAD_PROMPT_REPLY_HEAD, THREAD_PROMPT_REPLY_TAIL, THREAD_PROMPT_TEXT, THREAD_PROMPTS_MOST, type AgentThreadPrompt, type AgentThreadPrompts } from '../../shared/threadPrompts'
+import { THREAD_WORDS_BEFORE, THREAD_WORDS_MORE, THREAD_WORDS_MOST, THREAD_WORDS_QUOTE, threadWordQuote, threadWordsQuery, type AgentThreadWords, type ThreadWordMatch } from '../../shared/threadWords'
 import { watcherOwnChangeSchema, watcherObservedChangesSchema } from '../../shared/watcherChanges'
 import { watcherAsksSchema, type WatcherAsk } from '../../shared/watcherAsks'
 import { visitUserMessageInstants, type StoredUserMessageInstant } from './usageHistory/sottoPrompts'
@@ -1025,6 +1026,44 @@ export class ThreadStore {
       }
     }
     return { prompts, ...(start !== undefined && Number(from) > 0 ? { next: String(start.message_id) } : {}) }
+  }
+
+  /**
+   * The threads whose messages hold `query`, for Search threads (Zach's picks of November 19, 2026): the user's messages
+   * and the agents' replies, never a wake-up, matched as SQLite's LIKE matches, ignoring the case of ASCII letters. The
+   * newest matches lead, at most `THREAD_WORDS_MOST` threads, each with a quote of its newest matching message and how many
+   * others match. Every message is read once, about 0.1 s on the owner's 76,000 (November 19, 2026), so it runs on the
+   * store worker; only the quotes' stretches leave the store.
+   */
+  threadWords(query: string): AgentThreadWords {
+    const needle = threadWordsQuery(query)
+    if (needle === '') return { found: [] }
+    const pattern = `%${needle.replace(/[\\%_]/gu, mark => `\\${mark}`)}%`
+    // The matching messages are read in one pass over the table first: grouped as it is read, SQLite walks the threads'
+    // index instead, which took the owner's store twice as long (November 19, 2026, 114 ms against 51 ms).
+    const threads = this.statement(`WITH hits AS MATERIALIZED (SELECT m.thread_id, m.message_id, m.position, m.created_at FROM messages m
+        WHERE m.role IN ('user', 'assistant') AND m.text LIKE ? ESCAPE '\\')
+      SELECT g.thread_id AS thread_id, g.hits AS hits, g.last AS last FROM (
+        SELECT h.thread_id AS thread_id, COUNT(*) AS hits, MAX(h.position) AS last FROM hits h
+          WHERE NOT EXISTS (SELECT 1 FROM wake_ups w WHERE w.thread_id = h.thread_id AND w.message_id = h.message_id)
+          GROUP BY h.thread_id) g
+      -- A thread's newest match is its last in the conversation, the one it quotes, and threads are ordered by when that was said.
+      JOIN messages n ON n.thread_id = g.thread_id AND n.position = g.last
+      ORDER BY n.created_at DESC LIMIT ${THREAD_WORDS_MOST}`).all(pattern)
+    const stretch = THREAD_WORDS_BEFORE + THREAD_WORDS_QUOTE + 1
+    const from = `max(0, instr(lower(text), lower($needle)) - 1 - ${THREAD_WORDS_BEFORE})`
+    const newest = this.statement(`SELECT role, message_id, length(text) AS size, ${from} AS start, substr(text, ${from} + 1, ${stretch}) AS stretch
+      FROM messages WHERE thread_id = $thread AND position = $position`)
+    const found: ThreadWordMatch[] = []
+    for (const thread of threads) {
+      const threadId = String(thread.thread_id)
+      const hit = newest.get({ needle, thread: threadId, position: Number(thread.last) })
+      if (!hit) continue
+      const start = Number(hit.start)
+      found.push({ threadId, messageId: String(hit.message_id), role: hit.role === 'user' ? 'user' : 'assistant',
+        quote: threadWordQuote(String(hit.stretch ?? ''), start, start + stretch >= Number(hit.size)), more: Math.min(THREAD_WORDS_MORE, Math.max(0, Number(thread.hits) - 1)) })
+    }
+    return { found }
   }
 
   /** How many turns run from this message to the newest, counting its own, or undefined when the store does not hold it. */
