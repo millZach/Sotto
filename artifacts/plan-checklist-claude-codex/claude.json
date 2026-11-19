@@ -1,0 +1,106 @@
+{
+  "model": "Sonnet 5.5",
+  "states": [
+    [
+      {
+        "text": "Create a.txt",
+        "status": "pending"
+      }
+    ],
+    [
+      {
+        "text": "Create a.txt",
+        "status": "pending"
+      },
+      {
+        "text": "Create b.txt",
+        "status": "pending"
+      }
+    ],
+    [
+      {
+        "text": "Create a.txt",
+        "status": "pending"
+      },
+      {
+        "text": "Create b.txt",
+        "status": "pending"
+      },
+      {
+        "text": "Create c.txt",
+        "status": "pending"
+      }
+    ],
+    [
+      {
+        "text": "Create a.txt",
+        "status": "running"
+      },
+      {
+        "text": "Create b.txt",
+        "status": "pending"
+      },
+      {
+        "text": "Create c.txt",
+        "status": "pending"
+      }
+    ],
+    [
+      {
+        "text": "Create a.txt",
+        "status": "completed"
+      },
+      {
+        "text": "Create b.txt",
+        "status": "pending"
+      },
+      {
+        "text": "Create c.txt",
+        "status": "pending"
+      }
+    ],
+    [
+      {
+        "text": "Create a.txt",
+        "status": "completed"
+      },
+      {
+        "text": "Create b.txt",
+        "status": "running"
+      },
+      {
+        "text": "Create c.txt",
+        "status": "pending"
+      }
+    ],
+    [
+      {
+        "text": "Create a.txt",
+        "status": "completed"
+      },
+      {
+        "text": "Create b.txt",
+        "status": "completed"
+      },
+      {
+        "text": "Create c.txt",
+        "status": "running"
+      }
+    ],
+    [
+      {
+        "text": "Create a.txt",
+        "status": "completed"
+      },
+      {
+        "text": "Create b.txt",
+        "status": "completed"
+      },
+      {
+        "text": "Create c.txt",
+        "status": "completed"
+      }
+    ]
+  ],
+  "foldMentionsPlan": true
+}

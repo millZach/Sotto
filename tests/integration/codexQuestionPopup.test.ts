@@ -30,7 +30,8 @@ async function requestResult(fixture: Awaited<ReturnType<typeof codexFixture>>, 
 it('surfaces an actionable Codex question while its turn continues', async () => {
   const { fixture, threadId } = await projectFixture()
   const start = (await fixture.driver.requests()).find(record => record.method === 'thread/start')!
-  expect(start.params?.config).toMatchObject({ 'features.default_mode_request_user_input': true })
+  // The plan checklist's update_plan is on for a project thread (Codex 0.170.0 keeps it behind this).
+  expect(start.params?.config).toMatchObject({ 'features.default_mode_request_user_input': true, 'tools.update_plan.enabled': true })
   expect(start.params?.developerInstructions).toContain('request_user_input')
   const question = 'Which control should I put first in the toolbar?'
   await fixture.script({ questionWhenAvailable: question })
@@ -106,7 +107,7 @@ it('re-enables the native Default-mode question tool when resuming an older thre
   resumed.host.observeThreads?.([threadId])
   await expect.poll(() => resumed.adapter.resumedThreads().includes(threadId)).toBe(true)
   const resume = (await resumed.driver.requests()).findLast(record => record.method === 'thread/resume')!
-  expect(resume.params?.config).toMatchObject({ 'features.default_mode_request_user_input': true })
+  expect(resume.params?.config).toMatchObject({ 'features.default_mode_request_user_input': true, 'tools.update_plan.enabled': true })
   expect((await resumed.driver.requests()).findLast(record => record.method === 'config/read')?.params).toEqual({ cwd: fixture.root, includeLayers: false })
   expect(resume.params?.developerInstructions).toEqual(expect.stringMatching(/^Keep the synthetic project naming rule\.[\s\S]*request_user_input/))
   await resumed.script({ questionWhenAvailable: 'Choose a new layout?' })

@@ -1,0 +1,62 @@
+{
+  "model": "GPT-6.2-Sol",
+  "states": [
+    [
+      {
+        "text": "Create a.txt",
+        "status": "pending"
+      },
+      {
+        "text": "Create b.txt",
+        "status": "pending"
+      },
+      {
+        "text": "Create c.txt",
+        "status": "pending"
+      }
+    ],
+    [
+      {
+        "text": "Create a.txt",
+        "status": "completed"
+      },
+      {
+        "text": "Create b.txt",
+        "status": "pending"
+      },
+      {
+        "text": "Create c.txt",
+        "status": "pending"
+      }
+    ],
+    [
+      {
+        "text": "Create a.txt",
+        "status": "completed"
+      },
+      {
+        "text": "Create b.txt",
+        "status": "completed"
+      },
+      {
+        "text": "Create c.txt",
+        "status": "pending"
+      }
+    ],
+    [
+      {
+        "text": "Create a.txt",
+        "status": "completed"
+      },
+      {
+        "text": "Create b.txt",
+        "status": "completed"
+      },
+      {
+        "text": "Create c.txt",
+        "status": "completed"
+      }
+    ]
+  ],
+  "foldMentionsPlan": true
+}
