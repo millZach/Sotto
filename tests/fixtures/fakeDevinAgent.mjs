@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { clearInterval } from 'node:timers'
-import { appendFileSync, existsSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createInterface } from 'node:readline'
 import { devinOtelDefaults as otelDefaults } from './devinOtel.mjs'
@@ -22,9 +22,10 @@ const olderThan = target => {
 }
 // Every process Sotto starts says what it is, so a test can count the processes a send costs.
 record({ method: 'fixture/spawn', params: { kind: process.argv.includes('--version') ? 'version' : process.argv.includes('plugins') ? 'plugins'
- : process.argv.includes('mcp') ? 'mcp' : 'acp' } })
+ : process.argv.includes('skills') ? 'skills' : process.argv.includes('mcp') ? 'mcp' : 'acp' } })
 if (process.argv.includes('--version')) { process.stdout.write('devin ' + fakeVersion() + ' (7f4e64980e22)\n'); process.exit(0) }
-// `plugins` in integrations.json installs plugins: each brings one skill, and `hooks` gives it a hook as well.
+// `plugins` in integrations.json installs plugins: each brings one skill, `hooks` gives it a hook as well, and `grants`
+// gives its skill a frontmatter `permissions.allow`, which `skills show` does not print and only the skill's file says.
 const plugins = read('integrations.json', {}).plugins ?? []
 if (process.argv.includes('plugins') && process.argv.includes('list')) {
  process.stdout.write(plugins.length ? 'Installed plugins\n\n' + plugins.map(plugin => `  \u2022 ${plugin.name} v0.1.0\n`).join('') + '\n' : 'No plugins installed.\n')
@@ -36,6 +37,16 @@ if (process.argv.includes('plugins') && process.argv.includes('info')) {
  process.stdout.write(`Plugin: ${plugin.name}\n  version: 0.1.0\n  source: account-upload:${plugin.name}\n\nSkills\n  /${plugin.name}:welcome - Synthetic skill.\n\n`
   + `Agents\n  (none)\n\nHooks\n  ${plugin.hooks ? 'SessionStart: synthetic' : '(none)'}\n\nRules\n  (none)\n\nMCP servers\n  (none)\n\n`
   + 'Required plugins: (none)\n\nOptional plugins: (none)\n\nForbidden plugins: (none)\n')
+ process.exit(0)
+}
+if (process.argv.includes('skills') && process.argv.includes('show')) {
+ const skill = process.argv[process.argv.indexOf('show') + 1]
+ const plugin = plugins.find(candidate => skill === `${candidate.name}:welcome`)
+ if (!plugin) { process.stderr.write('Error: skill not found\n'); process.exit(1) }
+ const base = join(root, 'plugin-skills', plugin.name)
+ mkdirSync(base, { recursive: true })
+ writeFileSync(join(base, 'SKILL.md'), `---\nname: welcome\ndescription: Synthetic skill.\n${plugin.grants ? 'permissions:\n  allow: ["Exec(**)"]\n' : ''}---\n\nSynthetic skill body.\n`)
+ process.stdout.write(`Skill: ${skill}\n\nProvider: Devin\nDescription: Synthetic skill.\nBase directory: ${base}\nTriggers: user, model\n\nContent:\n${'─'.repeat(60)}\nSynthetic skill body.\n${'─'.repeat(60)}\n`)
  process.exit(0)
 }
 if (process.argv.includes('mcp') && process.argv.includes('list')) {

@@ -3,7 +3,7 @@ import { mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 
 import { join } from 'node:path'
 import { expect, it } from 'vitest'
-import { assertDevinWorkingDirectory, DEVIN_SOTTO_SERVERS, devinPolicyPath, prepareDevinPolicy, verifyDevinMcpList, verifyDevinPluginInfo, verifyDevinPluginList, verifyDevinPolicy } from '../../../src/main/agents/devinPolicy'
+import { assertDevinWorkingDirectory, DEVIN_SOTTO_SERVERS, devinPolicyPath, prepareDevinPolicy, verifyDevinMcpList, verifyDevinPluginInfo, verifyDevinPluginList, verifyDevinPolicy, verifyDevinSkillFile, verifyDevinSkillShow } from '../../../src/main/agents/devinPolicy'
 import { DEVIN_CLI_VERSION, DevinRefusal } from '../../../src/main/agents/devinRpc'
 import { devinOtelDefaults as otelDefaults } from '../../fixtures/devinOtel.mjs'
 import { setup } from '../../fixtures/devinPolicyFixture'
@@ -148,9 +148,13 @@ it('lets a plugin through only when it brings nothing but skills, as 3000.14 pri
   const info = ['Plugin: devin-playbooks', '  version: 0.1.0', '  source: account-upload:devin_playbooks', '', 'Skills',
     "  /devin-playbooks:hi-i-m-devin - Hi, I'm Devin. Overview.", '', 'Agents', '  (none)', '', 'Hooks', '  (none)', '', 'Rules', '  (none)', '',
     'MCP servers', '  (none)', '', 'Required plugins: (none)', '', 'Optional plugins: (none)', '', 'Forbidden plugins: (none)', ''].join('\r\n')
-  expect(() => verifyDevinPluginInfo(info, 'devin-playbooks')).not.toThrow()
-  expect(() => verifyDevinPluginInfo(info.replace("  /devin-playbooks:hi-i-m-devin - Hi, I'm Devin. Overview.", '  (none)'), 'devin-playbooks')).not.toThrow()
-  expect(() => verifyDevinPluginInfo(info.replace('Overview.\r\n', 'Overview.\r\n  /devin-playbooks:second\r\n'), 'devin-playbooks')).not.toThrow()
+  expect(verifyDevinPluginInfo(info, 'devin-playbooks')).toEqual(['devin-playbooks:hi-i-m-devin'])
+  expect(verifyDevinPluginInfo(info.replace("  /devin-playbooks:hi-i-m-devin - Hi, I'm Devin. Overview.", '  (none)'), 'devin-playbooks')).toEqual([])
+  expect(verifyDevinPluginInfo(info.replace('Overview.\r\n', 'Overview.\r\n  /devin-playbooks:second\r\n'), 'devin-playbooks')).toEqual(['devin-playbooks:hi-i-m-devin', 'devin-playbooks:second'])
+  // A skill named for another plugin, or as an option, or twice, is not one Sotto can read.
+  for (const skill of ['  /other:hi', '  /devin-playbooks:--config', "  /devin-playbooks:hi-i-m-devin - Hi, I'm Devin. Overview."]) {
+    expect(() => verifyDevinPluginInfo(info.replace('Overview.\r\n', `Overview.\r\n${skill}\r\n`), 'devin-playbooks'), skill).toThrow(/brings more than skills/u)
+  }
   for (const [section, entry] of [['Agents', '  reviewer'], ['Hooks', '  SessionStart: private-value'], ['Rules', '  private-rule'], ['MCP servers', '  private-server']]) {
     expect(() => verifyDevinPluginInfo(info.replace(`${section}\r\n  (none)`, `${section}\r\n${entry}`), 'devin-playbooks'), section).toThrow(/brings more than skills/u)
   }
@@ -164,6 +168,35 @@ it('lets a plugin through only when it brings nothing but skills, as 3000.14 pri
   }
   // Another plugin's info is not this one's.
   expect(() => verifyDevinPluginInfo(info, 'other')).toThrow(/brings more than skills/u)
+})
+
+it('reads a plugin skill’s base directory from skills show, and refuses any detail that lets tools run', () => {
+  const base = 'C:\\Users\\private\\AppData\\Roaming\\devin\\cli\\plugins_cache\\cache\\account-upload_devin_playbooks-455304b6\\f36d\\skills\\hi-i-m-devin'
+  // As 3000.14.30821 prints it on November 18, 2026.
+  const show = ['Skill: devin-playbooks:hi-i-m-devin', '', 'Provider: Devin', "Description: Hi, I'm Devin. Overview.", `Base directory: ${base}`, 'Triggers: user, model', '',
+    'Content:', '\u2500'.repeat(60), '## Overview', 'Allowed tools: words in the content are content', '\u2500'.repeat(60), ''].join('\r\n')
+  expect(verifyDevinSkillShow(show, 'devin-playbooks:hi-i-m-devin')).toBe(base)
+  for (const output of [show.replace('Triggers: user, model', 'Triggers: user, model\r\nAllowed tools: exec, edit'), show.replace(`Base directory: ${base}\r\n`, ''),
+    show.replace(`Base directory: ${base}`, 'Base directory: relative\\skills'), show.replace('Content:', 'Contents:'), show.replace('Provider: Devin', 'Provider: Devin\r\nProvider: Other'), '']) {
+    expect(() => verifyDevinSkillShow(output, 'devin-playbooks:hi-i-m-devin')).toThrow(/skill that lets tools run without asking/u)
+  }
+  expect(() => verifyDevinSkillShow(show, 'devin-playbooks:other')).toThrow(/skill that lets tools run without asking/u)
+})
+
+it('lets a skill file through only when its frontmatter sets nothing that runs tools or changes what runs the skill', () => {
+  const plain = '---\r\nname: hi-i-m-devin\r\ndescription: "Hi, I\'m Devin. Overview."\r\n---\r\n\r\n## Overview\r\nallowed-tools: in the body is only text\r\n'
+  expect(() => verifyDevinSkillFile(plain)).not.toThrow()
+  expect(() => verifyDevinSkillFile('\uFEFF' + plain)).not.toThrow()
+  // A byte order mark does not hide the frontmatter.
+  expect(() => verifyDevinSkillFile('\uFEFF---\nname: x\nallowed-tools: [exec]\n---\n')).toThrow(/skill that lets tools run without asking/u)
+  expect(() => verifyDevinSkillFile('## No frontmatter\nallowed-tools: [exec]\n')).not.toThrow()
+  expect(() => verifyDevinSkillFile('---\nname: x\n# a comment\nargument-hint: <path>\ntriggers:\n  - user\n  - model\ndescription: >\n  folded\n---\n')).not.toThrow()
+  // Devin's skill reference: each of these approves tools while the skill runs or changes what runs it.
+  for (const field of ['allowed-tools: [exec, edit]', 'permissions:\n  allow: ["Exec(**)"]', 'model: opus', 'agent: reviewer', 'subagent: true',
+    '"allowed-tools": [exec]', '{allowed-tools: [exec]}', '<<: *grants', '- exec', 'unknown-field: value']) {
+    expect(() => verifyDevinSkillFile(`---\nname: x\n${field}\n---\nBody\n`), field).toThrow(/skill that lets tools run without asking/u)
+  }
+  expect(() => verifyDevinSkillFile('---\nname: x\ndescription: never closed\n')).toThrow(/skill that lets tools run without asking/u)
 })
 
 // Devin resolves `.devin` from the working folder upwards only; the pinned CLI

@@ -263,8 +263,8 @@ export function verifyDevinPolicy(result: unknown, profile: DevinProfile): void 
   if (readback !== 'matches') throw new DevinRefusal('Devin did not confirm the Sotto approval profile. Your thread is kept. Reconnect with the supported Devin version.')
 }
 
-const PLUGIN_REFUSAL = 'Devin has a plugin that brings more than skills, or Sotto could not confirm what its plugins bring. Your thread is kept. Remove Devin plugins that have hooks, rules, agents or MCP servers, then reconnect.'
-/** How many `plugins info` reads one check runs at a time. */
+const PLUGIN_REFUSAL = 'Devin has a plugin that brings more than skills, or a skill that lets tools run without asking, or Sotto could not confirm what its plugins bring. Your thread is kept. Remove Devin plugins with hooks, rules, agents, MCP servers or skills that allow tools, then reconnect.'
+/** How many plugin or skill reads one check runs at a time. */
 const PLUGIN_READS_AT_ONCE = 4
 const PLUGIN_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u
 
@@ -293,12 +293,13 @@ const PLUGIN_SECTIONS = ['Skills', 'Agents', 'Hooks', 'Rules', 'MCP servers'] as
 const PLUGIN_LISTS = ['Required plugins: (none)', 'Optional plugins: (none)', 'Forbidden plugins: (none)']
 const PLUGIN_METADATA = [/^ {2}version: \S+$/u, /^ {2}source: \S+$/u]
 /**
- * A plugin Sotto lets a Devin session load brings only skills: text the model may read, whose tool calls ask like any
- * other (Zach's call, November 18, 2026, ADR-0017). Its agents, hooks, rules and MCP servers must each read `(none)`, as
- * must the plugins it requires, offers or forbids. Above them come its `version` and `source`, once each, and nothing
- * else. The output is never kept or put in an error.
+ * A plugin Sotto lets a Devin session load brings only skills (Zach's call, November 18, 2026, ADR-0017). Its agents,
+ * hooks, rules and MCP servers must each read `(none)`, as must the plugins it requires, offers or forbids. Above them
+ * come its `version` and `source`, once each, and nothing else. Returns the skills' names, each `plugin:skill`, which
+ * `verifyDevinSkillFile` then reads, since a skill can let tools run unasked. The output is never kept or put in an error.
  */
-export function verifyDevinPluginInfo(stdout: string, name: string): void {
+export function verifyDevinPluginInfo(stdout: string, name: string): string[] {
+  const skills: string[] = []
   const lines = stdout.trimEnd().split(/\r?\n/u)
   let valid = lines.shift() === `Plugin: ${name}`
   const metadata = PLUGIN_METADATA.map(() => false)
@@ -319,11 +320,80 @@ export function verifyDevinPluginInfo(stdout: string, name: string): void {
     else if (PLUGIN_LISTS.includes(line) && !seen.has(line)) { close(); section = undefined; seen.add(line) }
     else if (section === undefined && seen.size === 0 && firstMetadata(line)) continue
     else if (section !== undefined && line === '  (none)' && entries === 0) entries = -1
-    else if (section === 'Skills' && entries >= 0 && /^ {2}\/\S+(?: - [^\r\n]*)?$/u.test(line)) entries++
+    else if (section === 'Skills' && entries >= 0 && skillLine(line, name, skills)) entries++
     else valid = false
   }
   close()
   if (!valid || !metadata.every(Boolean) || seen.size !== PLUGIN_SECTIONS.length + PLUGIN_LISTS.length) throw new Error(PLUGIN_REFUSAL)
+  return skills
+}
+
+/** Whether the line names a new skill of this plugin, `/plugin:skill` and its description; adds it to `skills` if so. */
+function skillLine(line: string, plugin: string, skills: string[]): boolean {
+  const match = /^ {2}\/(\S+)(?: - [^\r\n]*)?$/u.exec(line)
+  const skill = match?.[1]
+  if (!skill || !skill.startsWith(`${plugin}:`) || !PLUGIN_NAME.test(skill.slice(plugin.length + 1)) || skills.includes(skill)) return false
+  skills.push(skill)
+  return true
+}
+
+/**
+ * `skills show` for one plugin skill, as 3000.14.30821 prints it: the skill's name, then its provider, description, base
+ * directory and triggers, then its content. Any other detail above the content, such as the `Allowed tools:` line a skill
+ * that lets tools run unasked gets, is refused. Returns the base directory, where the skill's own file is read.
+ */
+export function verifyDevinSkillShow(stdout: string, skill: string): string {
+  const lines = stdout.split(/\r?\n/u)
+  let valid = lines.shift() === `Skill: ${skill}`
+  const fields = new Map<string, string>()
+  let content = false
+  for (const line of lines) {
+    if (line === 'Content:') { content = true; break }
+    if (line === '') continue
+    const match = /^(Provider|Description|Base directory|Triggers): ([^\r\n]*)$/u.exec(line)
+    if (match && !fields.has(match[1]!)) fields.set(match[1]!, match[2]!)
+    else valid = false
+  }
+  const base = fields.get('Base directory')
+  if (!valid || !content || !base || !isAbsolute(base)) throw new Error(PLUGIN_REFUSAL)
+  return base
+}
+
+/**
+ * The fields a skill's frontmatter may carry and still let nothing run unasked. Devin's skill reference: `allowed-tools`
+ * and `permissions` approve tools while an inline skill runs, added to the session's own permissions, and `model`,
+ * `agent` and `subagent` change what runs the skill. `skills show` prints only the first of those, so the file is read.
+ */
+const SKILL_FIELDS = new Set(['name', 'description', 'argument-hint', 'triggers'])
+const MAX_SKILL_BYTES = 256 * 1024
+/**
+ * A skill file whose frontmatter, if it has one, sets only `SKILL_FIELDS`. A line at the top of the frontmatter that is
+ * not one of those fields, written plainly, is refused, so a quoted, flowed or merged key is refused rather than read.
+ * Lines indented under a field, list items and comments belong to it. The file is never kept or put in an error.
+ */
+export function verifyDevinSkillFile(text: string): void {
+  const lines = text.replace(/^\uFEFF/u, '').split(/\r?\n/u)
+  const start = lines.findIndex(line => line.trim() !== '')
+  if (start < 0 || lines[start]!.trimEnd() !== '---') return
+  const end = lines.findIndex((line, index) => index > start && line.trimEnd() === '---')
+  if (end < 0) throw new Error(PLUGIN_REFUSAL)
+  for (const line of lines.slice(start + 1, end)) {
+    if (line.trim() === '' || /^\s/u.test(line) || /^#/u.test(line)) continue
+    const field = /^([A-Za-z][A-Za-z0-9_-]*):(?:\s|$)/u.exec(line)?.[1]
+    if (!field || !SKILL_FIELDS.has(field)) throw new Error(PLUGIN_REFUSAL)
+  }
+}
+
+async function readSkillFile(base: string): Promise<string> {
+  const path = join(base, 'SKILL.md')
+  try {
+    const status = await lstat(path)
+    if (!status.isFile() || status.size > MAX_SKILL_BYTES) throw new Error('not a skill file')
+    return await readFile(path, 'utf8')
+  } catch (error) {
+    // The cause carries the errno; the message the user reads never does, nor the file's path or contents.
+    throw new Error(PLUGIN_REFUSAL, { cause: error })
+  }
 }
 
 
@@ -372,19 +442,28 @@ function nativeList(executable: string, args: readonly string[], environment: No
 }
 
 /**
- * argsPrefix must include --config and the owned profile. Runs no model prompt. Plugins' info is read a few at a time,
- * judged in the list's order, and the first refusal ends the check.
+ * argsPrefix must include --config and the owned profile. Runs no model prompt. Each plugin's info, then each of its
+ * skills' details and file, are read a few at a time, judged in the list's order, and the first refusal ends the check.
  */
 export async function assertDevinSkillOnlyPlugins(executable: string, argsPrefix: readonly string[], environment: NodeJS.ProcessEnv, cwd?: string): Promise<void> {
   const names = verifyDevinPluginList(await nativeList(executable, [...argsPrefix, 'plugins', 'list'], environment, cwd))
-  for (let start = 0; start < names.length; start += PLUGIN_READS_AT_ONCE) {
-    const batch = names.slice(start, start + PLUGIN_READS_AT_ONCE)
-    const infos = await Promise.allSettled(batch.map(name => nativeList(executable, [...argsPrefix, 'plugins', 'info', name], environment, cwd)))
-    infos.forEach((info, index) => {
-      if (info.status === 'rejected') throw info.reason
-      verifyDevinPluginInfo(info.value, batch[index]!)
-    })
+  const skills = (await inBatches(names, async name => verifyDevinPluginInfo(await nativeList(executable, [...argsPrefix, 'plugins', 'info', name], environment, cwd), name))).flat()
+  await inBatches(skills, async skill => {
+    const base = verifyDevinSkillShow(await nativeList(executable, [...argsPrefix, 'skills', 'show', skill], environment, cwd), skill)
+    verifyDevinSkillFile(await readSkillFile(base))
+  })
+}
+
+/** Runs `read` over the items a few at a time and gives the results in order; the first refusal, in order, is thrown. */
+async function inBatches<T, R>(items: readonly T[], read: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = []
+  for (let start = 0; start < items.length; start += PLUGIN_READS_AT_ONCE) {
+    for (const outcome of await Promise.allSettled(items.slice(start, start + PLUGIN_READS_AT_ONCE).map(read))) {
+      if (outcome.status === 'rejected') throw outcome.reason
+      results.push(outcome.value)
+    }
   }
+  return results
 }
 
 /**

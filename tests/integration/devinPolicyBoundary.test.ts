@@ -53,14 +53,15 @@ it('refuses integrations enabled while the owner sat idle before a follow-up', a
   expect(await prompts()).toHaveLength(1)
 })
 
-it('sends with a plugin that brings only skills, and refuses the next send once a plugin brings a hook', async () => {
+// A hook shows in the plugin's info; a skill's grant only in the skill's own file, which `skills show` names.
+it.each(['hooks', 'grants'])('sends with a plugin that brings only skills, and refuses the next send once a plugin brings %s', async brings => {
   // The account plugin 3000.14 installed by itself on November 18, 2026, brings one skill and nothing else.
   await writeFile(join(f.root, 'integrations.json'), JSON.stringify({ plugins: [{ name: 'devin-playbooks' }] }))
   const id = await settledThread()
   // Fifth, so it is read after the first four, in a second batch.
   const skills = ['devin-playbooks', 'two', 'three', 'four'].map(name => ({ name }))
-  await writeFile(join(f.root, 'integrations.json'), JSON.stringify({ plugins: [...skills, { name: 'hooked', hooks: true }] }))
-  await expect(send(id)).rejects.toThrow('Devin has a plugin that brings more than skills, or Sotto could not confirm what its plugins bring. Your thread is kept. Remove Devin plugins that have hooks, rules, agents or MCP servers, then reconnect.')
+  await writeFile(join(f.root, 'integrations.json'), JSON.stringify({ plugins: [...skills, { name: 'widened', [brings]: true }] }))
+  await expect(send(id)).rejects.toThrow('Devin has a plugin that brings more than skills, or a skill that lets tools run without asking, or Sotto could not confirm what its plugins bring. Your thread is kept. Remove Devin plugins with hooks, rules, agents, MCP servers or skills that allow tools, then reconnect.')
   expect(await prompts()).toHaveLength(1)
 })
 
