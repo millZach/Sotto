@@ -1,0 +1,3 @@
+# libcef.so sits beside the executable, as an install would put it; no LD_LIBRARY_PATH needed (and sudo strips it).
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-C", "link-args=-Wl,-rpath,$ORIGIN"]

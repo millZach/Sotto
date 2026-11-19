@@ -1,0 +1,14 @@
+{
+  "browser": { "enable_spellchecking": false },
+  "spellcheck": { "dictionaries": [], "dictionary": "", "use_spelling_service": false },
+  "safebrowsing": { "enabled": false, "enhanced": false, "scout_reporting_enabled": false },
+  "search": { "suggest_enabled": false },
+  "translate": { "enabled": false },
+  "alternate_error_pages": { "enabled": false },
+  "net": { "network_prediction_options": 2 },
+  "credentials_enable_service": false,
+  "autofill": { "enabled": false, "profile_enabled": false, "credit_card_enabled": false },
+  "url_keyed_anonymized_data_collection": { "enabled": false },
+  "domain_reliability": { "allowed_by_policy": false },
+  "optimization_guide": { "model_execution": { "enabled": false } }
+}

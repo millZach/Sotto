@@ -1,0 +1,9 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Animation</title>
+<style> html,body{margin:0;height:100%;background:#202830;color:#eee;font:20px sans-serif}
+ .box{position:absolute;width:120px;height:120px;border-radius:16px;background:#4a9;animation:move 2s linear infinite alternate}
+ @keyframes move{from{left:0;top:40px;transform:rotate(0)}to{left:calc(100% - 120px);top:calc(100% - 160px);transform:rotate(360deg)}}
+ input{position:absolute;left:20px;top:8px;width:300px;font-size:18px}
+</style></head><body><input id="in" placeholder="Click and type"><div class="box"></div><div id="n" style="position:absolute;right:12px;top:10px"></div>
+<script>let f=0;(function tick(){document.getElementById('n').textContent=++f;requestAnimationFrame(tick)})();
+const say=m=>console.log('EVT '+m);document.addEventListener('mousedown',e=>say('mousedown '+e.clientX+','+e.clientY+' trusted='+e.isTrusted));document.addEventListener('keydown',e=>say('keydown '+e.key+' trusted='+e.isTrusted));document.getElementById('in').addEventListener('input',e=>say('input value='+e.target.value));addEventListener('wheel',e=>say('wheel '+e.deltaY));addEventListener('focus',()=>say('window focus'));addEventListener('blur',()=>say('window blur'));</script></body></html>

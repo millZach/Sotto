@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>CDP test page</title>
+<style>
+ body { font: 16px sans-serif; margin: 0; padding: 16px; }
+ #tall { height: 2400px; background: linear-gradient(#eef, #fee); }
+ button, input, textarea { font-size: 16px; }
+ #target { position: absolute; left: 40px; top: 120px; width: 200px; height: 60px; }
+ #field { position: absolute; left: 40px; top: 200px; width: 300px; }
+</style></head>
+<body>
+<h1>Page automation test</h1>
+<nav aria-label="Main"><a href="#one">Link one</a></nav>
+<button id="target" aria-label="Press me">Press</button>
+<input id="field" type="text" placeholder="Type here">
+<div id="tall"><h2 id="deep" style="margin-top:900px">Deep heading</h2></div>
+<script>
+window.log = [];
+const rec = (type, extra) => window.log.push(Object.assign({ type, t: performance.now(), trusted: true }, extra));
+document.getElementById('target').addEventListener('click', e => rec('click', { trusted: e.isTrusted, x: e.clientX, y: e.clientY }));
+document.addEventListener('keydown', e => rec('keydown', { key: e.key, code: e.code, trusted: e.isTrusted }));
+document.addEventListener('keyup', e => rec('keyup', { key: e.key, trusted: e.isTrusted }));
+document.getElementById('field').addEventListener('input', e => rec('input', { value: e.target.value, trusted: e.isTrusted }));
+addEventListener('wheel', e => rec('wheel', { dy: e.deltaY, trusted: e.isTrusted }));
+addEventListener('scroll', () => rec('scroll', { y: scrollY }));
+document.addEventListener('touchstart', e => rec('touchstart', { n: e.touches.length, trusted: e.isTrusted }));
+document.addEventListener('touchend', e => rec('touchend', { trusted: e.isTrusted }));
+console.error('deliberate console error');
+setTimeout(() => { throw new Error('deliberate exception'); }, 50);
+const img = new Image(); img.src = "/missing/picture.png"; const refused = new Image(); refused.src = "http://127.0.0.1:9/refused.png";
+</script>
+</body></html>

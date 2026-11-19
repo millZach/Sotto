@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>iPhone test page</title>
+<style> body { margin: 0; font: 16px sans-serif; } #pad { position:absolute; left:100px; top:190px; width:40px; height:40px; background:#c33 } #list { height: 3000px; background: linear-gradient(#cfc,#ccf) } </style></head>
+<body><div id="pad"></div><div id="list"></div>
+<script>
+window.log = [];
+const rec = (type, e) => window.log.push({ type, trusted: e.isTrusted, x: e.touches && e.touches[0] ? e.touches[0].clientX : e.clientX, y: e.touches && e.touches[0] ? e.touches[0].clientY : e.clientY, target: e.target.id || e.target.tagName });
+['touchstart','touchmove','touchend','click','mousedown','pointerdown'].forEach(n => document.addEventListener(n, e => rec(n, e), { passive: true }));
+addEventListener('scroll', () => window.log.push({ type: 'scroll', y: scrollY }));
+window.facts = () => ({ ua: navigator.userAgent, maxTouchPoints: navigator.maxTouchPoints, coarse: matchMedia('(pointer: coarse)').matches, hover: matchMedia('(hover: hover)').matches, ontouchstart: 'ontouchstart' in window, innerWidth, innerHeight, dpr: devicePixelRatio, screenW: screen.width, screenH: screen.height, platform: navigator.platform, uaDataMobile: navigator.userAgentData ? navigator.userAgentData.mobile : null });
+</script></body></html>

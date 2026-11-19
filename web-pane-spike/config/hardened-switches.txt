@@ -1,0 +1,13 @@
+disable-background-networking
+disable-component-update
+disable-domain-reliability
+disable-client-side-phishing-detection
+safebrowsing-disable-auto-update
+disable-sync
+no-pings
+disable-default-apps
+no-first-run
+no-default-browser-check
+metrics-recording-only
+disable-breakpad
+disable-features=OptimizationHints,OptimizationHintsFetching,OptimizationGuideModelDownloading,OptimizationTargetPrediction,OnDeviceModelService,MediaRouter,DialMediaRouteProvider,GlobalMediaControls,Translate,AutofillServerCommunication,CertificateTransparencyComponentUpdater,NetworkTimeServiceQuerying,InterestFeedContentSuggestions

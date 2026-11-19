@@ -1028,3 +1028,5 @@ artifacts/watcher-header-820/*
 
 # Approved API prototype: only HTML and JSON travel with the implementation.
 design/add-an-api/shots/
+# web pane spike (prototype/web-pane-chromium): Cargo lock and output stay outside npm's view
+/web-pane-spike/target/

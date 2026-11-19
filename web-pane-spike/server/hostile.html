@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Hostile page</title>
+<!-- Served by the spike on sotto-visual://page/<token>. Every way out it knows, against the loopback canary
+     (127.0.0.1) and the canary across the namespace's only link (10.99.0.1), and names only the DNS logger hears. -->
+<link rel="dns-prefetch" href="//wpspike-dnsprefetch.example.com">
+<link rel="preconnect" href="http://wpspike-preconnect.example.com">
+<link rel="preconnect" href="http://10.99.0.1:8765">
+<link rel="prefetch" href="http://10.99.0.1:8765/canary/prefetch">
+<link rel="preload" as="image" href="http://10.99.0.1:8765/canary/preload">
+<link rel="stylesheet" href="http://10.99.0.1:8765/canary/stylesheet">
+<link rel="manifest" href="http://10.99.0.1:8765/canary/manifest">
+<style>
+ @import url("http://10.99.0.1:8765/canary/css-import");
+ body { background: url("http://10.99.0.1:8765/canary/css-bg"); font: 14px sans-serif; }
+ @font-face { font-family: x; src: url("http://10.99.0.1:8765/canary/font"); }
+ p { font-family: x; }
+</style>
+<meta http-equiv="refresh" content="25;url=http://10.99.0.1:8765/canary/meta-refresh">
+</head><body><p>Hostile page</p>
+<a id="dl" href="data:text/plain,hello" download="x.txt">download data</a>
+<a id="dl2" href="http://10.99.0.1:8765/canary/download" download>download http</a>
+<a id="ping" href="#here" ping="http://10.99.0.1:8765/canary/ping">ping</a>
+<a id="blank" href="http://10.99.0.1:8765/canary/target-blank" target="_blank">blank</a>
+<form id="f" method="post" action="http://10.99.0.1:8765/canary/form-post"><input name="a" value="b"></form>
+<form id="f2" method="post" action="http://10.99.0.1:8765/canary/form-blank" target="_blank"><input name="a" value="b"></form>
+<img src="http://10.99.0.1:8765/canary/img" alt="">
+<img src="http://127.0.0.1:8765/canary/img-loopback" alt="">
+<iframe src="http://10.99.0.1:8765/canary/iframe" title="frame"></iframe>
+<video src="http://10.99.0.1:8765/canary/video"></video>
+<object data="http://10.99.0.1:8765/canary/object"></object>
+<script>
+const out = (name, outcome) => console.log('TRY ' + name + ' => ' + outcome);
+const H = ['127.0.0.1', '10.99.0.1'];
+async function attempt(name, fn, ms = 3000) {
+  try {
+    const r = await Promise.race([fn(), new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
+    out(name, 'resolved ' + String(r).slice(0, 120));
+  } catch (e) { out(name, 'refused ' + ((e && e.name) || '') + ' ' + String((e && e.message) || e).slice(0, 120)); }
+}
+function rtcWith(R, url, turn) {
+  return new Promise((res, rej) => {
+    const pc = new R({ iceServers: [turn ? { urls: url, username: 'u', credential: 'p' } : { urls: url }] });
+    const seen = [];
+    pc.onicecandidate = e => { if (e.candidate) seen.push(e.candidate.type + ':' + (e.candidate.address || '?')); else res('gathered [' + seen.join(' ') + ']'); };
+    pc.createDataChannel('x');
+    pc.createOffer().then(o => pc.setLocalDescription(o)).catch(rej);
+    setTimeout(() => res('gathering timed out [' + seen.join(' ') + ']'), 2500);
+  });
+}
+function rtc(url, turn) { if (!window.RTCPeerConnection) return Promise.reject(new Error('no RTCPeerConnection')); return rtcWith(RTCPeerConnection, url, turn); }
+(async () => {
+  out('origin', String(location.origin) + ' secure=' + isSecureContext);
+  out('globals', 'RTCPeerConnection=' + typeof window.RTCPeerConnection + ' WebTransport=' + typeof window.WebTransport + ' serviceWorker=' + typeof navigator.serviceWorker + ' SharedWorker=' + typeof window.SharedWorker);
+  for (const h of H) {
+    await attempt('fetch ' + h, () => fetch(`http://${h}:8765/canary/fetch`, { mode: 'no-cors' }).then(r => r.type));
+    await attempt('xhr ' + h, () => new Promise((res, rej) => { const x = new XMLHttpRequest(); x.open('GET', `http://${h}:8765/canary/xhr`); x.onload = () => res(x.status); x.onerror = () => rej(new Error('xhr error')); x.send(); }));
+    await attempt('websocket ' + h, () => new Promise((res, rej) => { const w = new WebSocket(`ws://${h}:8766/`); w.onopen = () => res('open'); w.onerror = () => rej(new Error('ws error')); }));
+    await attempt('eventsource ' + h, () => new Promise((res, rej) => { const e = new EventSource(`http://${h}:8765/canary/sse`); e.onopen = () => res('open'); e.onerror = () => { e.close(); rej(new Error('sse error')); }; }));
+    await attempt('beacon ' + h, async () => navigator.sendBeacon(`http://${h}:8765/canary/beacon`, 'x'));
+    await attempt('img ' + h, () => new Promise((res, rej) => { const i = new Image(); i.onload = () => res('loaded'); i.onerror = () => rej(new Error('img error')); i.src = `http://${h}:8765/canary/img-js`; }));
+    await attempt('webtransport ' + h, async () => { const t = new WebTransport(`https://${h}:8767/`); await t.ready; return 'ready'; });
+    await attempt('webrtc stun ' + h, () => rtc(`stun:${h}:8767`));
+    await attempt('webrtc turn udp ' + h, () => rtc(`turn:${h}:8767?transport=udp`, true));
+    await attempt('webrtc turn tcp ' + h, () => rtc(`turn:${h}:8766?transport=tcp`, true));
+  }
+  await attempt('webrtc stun by name', () => rtc('stun:wpspike-stun.example.com:3478'));
+  await attempt('fetch by name', () => fetch('http://wpspike-fetch.example.com/', { mode: 'no-cors' }).then(r => r.type));
+  await attempt('worker blob', () => new Promise((res, rej) => { const w = new Worker(URL.createObjectURL(new Blob(["fetch('http://10.99.0.1:8765/canary/worker-fetch').then(()=>postMessage('fetched'),e=>postMessage('fetch failed '+e))"]))); w.onmessage = e => res(e.data); w.onerror = e => rej(new Error('worker error ' + (e.message || ''))); }));
+  await attempt('worker data', () => new Promise((res, rej) => { const w = new Worker("data:text/javascript,fetch('http://10.99.0.1:8765/canary/worker2').then(()=>postMessage('fetched'),e=>postMessage('fetch failed'))"); w.onmessage = e => res(e.data); w.onerror = () => rej(new Error('worker error')); }));
+  await attempt('shared worker', () => new Promise((res, rej) => { const w = new SharedWorker(URL.createObjectURL(new Blob(["onconnect=e=>fetch('http://10.99.0.1:8765/canary/shared-worker').then(()=>e.ports[0].postMessage('fetched'),()=>e.ports[0].postMessage('fetch failed'))"]))); w.port.onmessage = e => res(e.data); w.onerror = () => rej(new Error('shared worker error')); }));
+  await attempt('service worker', () => navigator.serviceWorker.register('/sw.js').then(() => 'registered'));
+  await attempt('about:blank iframe fetch', () => { const f = document.createElement('iframe'); document.body.appendChild(f); return f.contentWindow.fetch('http://10.99.0.1:8765/canary/blank-iframe', { mode: 'no-cors' }).then(r => r.type); });
+  await attempt('about:blank iframe rtc', async () => { const f = document.createElement('iframe'); document.body.appendChild(f); const R = f.contentWindow.RTCPeerConnection; if (!R) throw new Error('no RTCPeerConnection in frame'); return rtcWith(R, 'stun:10.99.0.1:8767'); });
+  await attempt('srcdoc iframe', () => new Promise(res => { const f = document.createElement('iframe'); f.srcdoc = "<img src='http://10.99.0.1:8765/canary/srcdoc'><script>fetch('http://10.99.0.1:8765/canary/srcdoc-fetch')<\/script>"; document.body.appendChild(f); setTimeout(() => res('inserted'), 1000); }));
+  await attempt('window.open', async () => String(window.open('http://10.99.0.1:8765/canary/window-open')));
+  await attempt('window.open blank then write', async () => { const w = window.open(''); if (!w) return 'null'; w.document.write("<img src='http://10.99.0.1:8765/canary/popup-write'>"); return 'wrote'; });
+  await attempt('click target=_blank', async () => { document.getElementById('blank').click(); return 'clicked'; });
+  await attempt('a ping', async () => { document.getElementById('ping').click(); return 'clicked'; });
+  await attempt('a download data', async () => { document.getElementById('dl').click(); return 'clicked'; });
+  await attempt('a download http', async () => { document.getElementById('dl2').click(); return 'clicked'; });
+  await attempt('blob download', async () => { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['x'])); a.download = 'b.txt'; document.body.appendChild(a); a.click(); return 'clicked'; });
+  await attempt('form post blank', async () => { document.getElementById('f2').submit(); return 'submitted'; });
+  for (const [name, fn] of [
+    ['getUserMedia', () => navigator.mediaDevices.getUserMedia({ audio: true, video: true }).then(() => 'granted')],
+    ['geolocation', () => new Promise((res, rej) => navigator.geolocation.getCurrentPosition(() => res('granted'), e => rej(new Error('denied ' + e.code))))],
+    ['notifications', () => Notification.requestPermission()],
+    ['clipboard read', () => navigator.clipboard.readText()],
+    ['clipboard write', () => navigator.clipboard.writeText('x').then(() => 'written')],
+    ['midi', () => navigator.requestMIDIAccess({ sysex: true }).then(() => 'granted')],
+    ['storage persist', () => navigator.storage.persist()],
+    ['localStorage', async () => { localStorage.setItem('a', 'b'); return 'stored'; }],
+    ['indexedDB', () => new Promise((res, rej) => { const r = indexedDB.open('x'); r.onsuccess = () => res('opened'); r.onerror = () => rej(new Error('idb error')); })],
+    ['cookie', async () => { document.cookie = 'a=b'; return 'cookie=' + document.cookie; }],
+    ['alert', async () => { alert('hi'); return 'returned'; }],
+    ['fullscreen', () => document.documentElement.requestFullscreen().then(() => 'full')],
+    ['screen capture', () => navigator.mediaDevices.getDisplayMedia().then(() => 'granted')],
+    ['usb', () => navigator.usb.requestDevice({ filters: [] }).then(() => 'granted')],
+    ['serial', () => navigator.serial.requestPort().then(() => 'granted')],
+    ['hid', () => navigator.hid.requestDevice({ filters: [] }).then(() => 'granted')],
+    ['bluetooth', () => navigator.bluetooth.requestDevice({ acceptAllDevices: true }).then(() => 'granted')],
+    ['idle detection', () => IdleDetector.requestPermission()],
+    ['wake lock', () => navigator.wakeLock.request('screen').then(() => 'locked')],
+    ['local fonts', () => queryLocalFonts().then(f => 'fonts ' + f.length)],
+    ['window management', () => getScreenDetails().then(() => 'granted')],
+    ['storage access', () => document.requestStorageAccess().then(() => 'granted')],
+    ['copy command', async () => 'execCommand copy=' + document.execCommand('copy')],
+  ]) await attempt('permission ' + name, fn, 2500);
+  await attempt('redirect', () => fetch('http://10.99.0.1:8765/redirect-to-canary', { mode: 'no-cors' }).then(r => r.type));
+  await attempt('mailto', async () => { location.href = 'mailto:a@example.com'; return 'set'; }, 1500);
+  await attempt('top navigation', async () => { top.location = 'http://10.99.0.1:8765/canary/top-nav'; return 'set'; }, 1500);
+  await attempt('location assign', async () => { location.href = 'http://10.99.0.1:8765/canary/location'; return 'set'; }, 1500);
+  await attempt('form post', async () => { document.getElementById('f').submit(); return 'submitted'; }, 1500);
+  await new Promise(r => setTimeout(r, 26000 - performance.now()));
+  out('still here after meta refresh time', location.href);
+  console.log('DONE');
+})();
+</script></body></html>
