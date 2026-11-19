@@ -1,0 +1,2573 @@
+{
+ "format": 1,
+ "provider": "claude",
+ "scenario": "pictures",
+ "sottoVersion": "0.1.44-owl.20261118.2",
+ "setup": {
+  "desktop": {
+   "http": [
+    {
+     "method": "GET",
+     "path": "/v1/health",
+     "status": 200,
+     "body": {
+      "features": [
+       "client-liveness", "message-aliases", "detail-delta", "git-refs", "git-changed-files", "git-pull-request", "git-pull-request-list",
+       "attachment-staging", "host-folders", "provider-sign-in", "client-updates", "activity-summaries", "model-catalog-revision",
+       "thread-files", "thread-file-links", "thread-linked-files", "thread-changes", "subagents", "answer-receipts", "answer-check",
+       "atomic-send", "draft-revisions", "background-refresh", "watcher-control", "watcher-reads", "usage-dashboard",
+       "watcher-standing-watch", "usage-history", "watcher-work-settled", "watcher-outcomes", "host-facts", "watcher-muse", "thread-starts",
+       "provider-opencode", "activity-bodies", "failure-seen", "usage-muse-opencode", "client-update-outcomes", "pull-request-view",
+       "agents-view", "provider-cursor", "watcher-cursor", "usage-background-refresh", "client-update-not-listed", "thread-prompts",
+       "file-staging", "attachment-files", "project-origins", "host-delegation", "thread-delete", "delegation-views", "branch-moves",
+       "bring-changes-back", "delegation-relay", "watcher-check-queue", "watcher-check-stop", "check-queue-views", "project-setup",
+       "delegation-relay-send", "delegation-remote", "delegation-branch-starts", "pull-request-confirmation", "watcher-new-owner",
+       "thread-move", "worker-swarms", "every-agent-picture", "thread-move-source", "thread-move-keep", "changed-thread-records",
+       "thread-media", "thread-media-video", "next-prompts", "reply-thread-records", "provider-mode-lists", "settled-threads-on-request",
+       "usable-models", "product-events", "watcher-tell", "command-changed-thread-records", "step-window", "thread-snooze", "watcher-ready",
+       "browser", "provider-deepseek", "video-staging", "provider-pi", "provider-hermes", "project-git-init", "plugin-account-copies",
+       "plugin-github-sign-in", "plugin-mail-copies", "plugin-meshy-copies", "watcher-progress", "kept-parts", "plugin-meshy-spending",
+       "plugin-meshy-models", "plugin-meshy-phone", "plugin-elevenlabs-copies", "plugin-elevenlabs-spending", "plugin-elevenlabs-sounds",
+       "thread-words"
+      ],
+      "hostId": "<id:1>",
+      "pid": "<pid>",
+      "port": "<port>",
+      "sottoVersion": "0.1.44-owl.20261118.2",
+      "status": "ready",
+      "v": 1
+     }
+    },
+    {"method":"POST","path":"/v1/admin/pairing-code","status":200,"body":{"code":"<secret>","expiresAt":"<time>","hostId":"<id:1>","v":1}},
+    {"method":"POST","path":"/v1/pair","status":200,"body":{"clientId":"<id:2>","hostId":"<id:1>","token":"<secret>","v":1}},
+    {
+     "method": "POST",
+     "path": "/v1/session",
+     "status": 200,
+     "body": {"clientId":"<id:2>","expiresAt":"<time>","hostId":"<id:1>","session":"<secret>","v":1}
+    },
+    {"method":"POST","path":"/v1/admin/allow-answers","status":200,"body":{"hostId":"<id:1>","ok":true,"v":1}}
+   ],
+   "extensions": "permessage-deflate; server_no_context_takeover; client_no_context_takeover"
+  },
+  "iphone": {
+   "http": [
+    {
+     "method": "GET",
+     "path": "/v1/health",
+     "status": 200,
+     "body": {
+      "features": [
+       "client-liveness", "message-aliases", "detail-delta", "git-refs", "git-changed-files", "git-pull-request", "git-pull-request-list",
+       "attachment-staging", "host-folders", "provider-sign-in", "client-updates", "activity-summaries", "model-catalog-revision",
+       "thread-files", "thread-file-links", "thread-linked-files", "thread-changes", "subagents", "answer-receipts", "answer-check",
+       "atomic-send", "draft-revisions", "background-refresh", "watcher-control", "watcher-reads", "usage-dashboard",
+       "watcher-standing-watch", "usage-history", "watcher-work-settled", "watcher-outcomes", "host-facts", "watcher-muse", "thread-starts",
+       "provider-opencode", "activity-bodies", "failure-seen", "usage-muse-opencode", "client-update-outcomes", "pull-request-view",
+       "agents-view", "provider-cursor", "watcher-cursor", "usage-background-refresh", "client-update-not-listed", "thread-prompts",
+       "file-staging", "attachment-files", "project-origins", "host-delegation", "thread-delete", "delegation-views", "branch-moves",
+       "bring-changes-back", "delegation-relay", "watcher-check-queue", "watcher-check-stop", "check-queue-views", "project-setup",
+       "delegation-relay-send", "delegation-remote", "delegation-branch-starts", "pull-request-confirmation", "watcher-new-owner",
+       "thread-move", "worker-swarms", "every-agent-picture", "thread-move-source", "thread-move-keep", "changed-thread-records",
+       "thread-media", "thread-media-video", "next-prompts", "reply-thread-records", "provider-mode-lists", "settled-threads-on-request",
+       "usable-models", "product-events", "watcher-tell", "command-changed-thread-records", "step-window", "thread-snooze", "watcher-ready",
+       "browser", "provider-deepseek", "video-staging", "provider-pi", "provider-hermes", "project-git-init", "plugin-account-copies",
+       "plugin-github-sign-in", "plugin-mail-copies", "plugin-meshy-copies", "watcher-progress", "kept-parts", "plugin-meshy-spending",
+       "plugin-meshy-models", "plugin-meshy-phone", "plugin-elevenlabs-copies", "plugin-elevenlabs-spending", "plugin-elevenlabs-sounds",
+       "thread-words"
+      ],
+      "hostId": "<id:1>",
+      "pid": "<pid>",
+      "port": "<port>",
+      "sottoVersion": "0.1.44-owl.20261118.2",
+      "status": "ready",
+      "v": 1
+     }
+    },
+    {"method":"POST","path":"/v1/admin/pairing-code","status":200,"body":{"code":"<secret>","expiresAt":"<time>","hostId":"<id:1>","v":1}},
+    {"method":"POST","path":"/v1/pair","status":200,"body":{"clientId":"<id:3>","hostId":"<id:1>","token":"<secret>","v":1}},
+    {
+     "method": "POST",
+     "path": "/v1/session",
+     "status": 200,
+     "body": {"clientId":"<id:3>","expiresAt":"<time>","hostId":"<id:1>","session":"<secret>","v":1}
+    },
+    {"method":"POST","path":"/v1/admin/allow-answers","status":200,"body":{"hostId":"<id:1>","ok":true,"v":1}}
+   ],
+   "extensions": "permessage-deflate; server_no_context_takeover; client_no_context_takeover"
+  },
+  "plain": {
+   "http": [
+    {
+     "method": "GET",
+     "path": "/v1/health",
+     "status": 200,
+     "body": {
+      "features": [
+       "client-liveness", "message-aliases", "detail-delta", "git-refs", "git-changed-files", "git-pull-request", "git-pull-request-list",
+       "attachment-staging", "host-folders", "provider-sign-in", "client-updates", "activity-summaries", "model-catalog-revision",
+       "thread-files", "thread-file-links", "thread-linked-files", "thread-changes", "subagents", "answer-receipts", "answer-check",
+       "atomic-send", "draft-revisions", "background-refresh", "watcher-control", "watcher-reads", "usage-dashboard",
+       "watcher-standing-watch", "usage-history", "watcher-work-settled", "watcher-outcomes", "host-facts", "watcher-muse", "thread-starts",
+       "provider-opencode", "activity-bodies", "failure-seen", "usage-muse-opencode", "client-update-outcomes", "pull-request-view",
+       "agents-view", "provider-cursor", "watcher-cursor", "usage-background-refresh", "client-update-not-listed", "thread-prompts",
+       "file-staging", "attachment-files", "project-origins", "host-delegation", "thread-delete", "delegation-views", "branch-moves",
+       "bring-changes-back", "delegation-relay", "watcher-check-queue", "watcher-check-stop", "check-queue-views", "project-setup",
+       "delegation-relay-send", "delegation-remote", "delegation-branch-starts", "pull-request-confirmation", "watcher-new-owner",
+       "thread-move", "worker-swarms", "every-agent-picture", "thread-move-source", "thread-move-keep", "changed-thread-records",
+       "thread-media", "thread-media-video", "next-prompts", "reply-thread-records", "provider-mode-lists", "settled-threads-on-request",
+       "usable-models", "product-events", "watcher-tell", "command-changed-thread-records", "step-window", "thread-snooze", "watcher-ready",
+       "browser", "provider-deepseek", "video-staging", "provider-pi", "provider-hermes", "project-git-init", "plugin-account-copies",
+       "plugin-github-sign-in", "plugin-mail-copies", "plugin-meshy-copies", "watcher-progress", "kept-parts", "plugin-meshy-spending",
+       "plugin-meshy-models", "plugin-meshy-phone", "plugin-elevenlabs-copies", "plugin-elevenlabs-spending", "plugin-elevenlabs-sounds",
+       "thread-words"
+      ],
+      "hostId": "<id:1>",
+      "pid": "<pid>",
+      "port": "<port>",
+      "sottoVersion": "0.1.44-owl.20261118.2",
+      "status": "ready",
+      "v": 1
+     }
+    },
+    {"method":"POST","path":"/v1/admin/pairing-code","status":200,"body":{"code":"<secret>","expiresAt":"<time>","hostId":"<id:1>","v":1}},
+    {"method":"POST","path":"/v1/pair","status":200,"body":{"clientId":"<id:4>","hostId":"<id:1>","token":"<secret>","v":1}},
+    {
+     "method": "POST",
+     "path": "/v1/session",
+     "status": 200,
+     "body": {"clientId":"<id:4>","expiresAt":"<time>","hostId":"<id:1>","session":"<secret>","v":1}
+    },
+    {"method":"POST","path":"/v1/admin/allow-answers","status":200,"body":{"hostId":"<id:1>","ok":true,"v":1}}
+   ],
+   "extensions": null
+  }
+ },
+ "steps": [
+  {
+   "say": "desktop says hello",
+   "by": "desktop",
+   "sent": {
+    "accepts": [
+     "client-liveness", "detail-delta", "message-aliases", "client-updates", "client-update-not-listed", "answer-receipts", "usage-history",
+     "usage-muse-opencode", "model-catalog-revision", "host-update", "activity-bodies", "changed-thread-records", "kept-parts",
+     "plugin-meshy-spending", "plugin-elevenlabs-spending", "provider-opencode", "provider-cursor", "provider-deepseek", "provider-pi",
+     "provider-hermes"
+    ],
+    "afterSeq": 9007199254740991,
+    "id": "desktop-1",
+    "op": "hello",
+    "session": "<secret>",
+    "v": 1
+   },
+   "clients": {
+    "desktop": {
+     "frames": [
+      {
+       "id": "desktop-1",
+       "ok": true,
+       "result": {
+        "capabilities": {"mayAnswer":true},
+        "clientId": "<id:2>",
+        "events": [],
+        "features": [
+         "client-liveness", "message-aliases", "detail-delta", "git-refs", "git-changed-files", "git-pull-request", "git-pull-request-list",
+         "attachment-staging", "host-folders", "provider-sign-in", "client-updates", "activity-summaries", "model-catalog-revision",
+         "thread-files", "thread-file-links", "thread-linked-files", "thread-changes", "subagents", "answer-receipts", "answer-check",
+         "atomic-send", "draft-revisions", "background-refresh", "usage-dashboard", "usage-history", "host-facts", "thread-starts",
+         "provider-opencode", "activity-bodies", "failure-seen", "usage-muse-opencode", "client-update-outcomes", "pull-request-view",
+         "agents-view", "provider-cursor", "usage-background-refresh", "client-update-not-listed", "thread-prompts", "file-staging",
+         "attachment-files", "project-origins", "thread-delete", "bring-changes-back", "project-setup", "pull-request-confirmation",
+         "worker-swarms", "changed-thread-records", "thread-media", "thread-media-video", "next-prompts", "reply-thread-records",
+         "provider-mode-lists", "settled-threads-on-request", "usable-models", "product-events", "command-changed-thread-records",
+         "step-window", "thread-snooze", "browser", "provider-deepseek", "video-staging", "provider-pi", "provider-hermes",
+         "project-git-init", "kept-parts", "plugin-meshy-phone", "thread-words"
+        ],
+        "hasMore": false,
+        "hostId": "<id:1>",
+        "latestSeq": 9007199254740991,
+        "phoneAccess": {"phones":0,"status":"off"},
+        "shell": {
+         "activeProjectId": null,
+         "activeThreadId": null,
+         "assignments": [],
+         "clientCapabilities": {"mayAnswer":true},
+         "composing": false,
+         "configuration": {
+          "checkClientUpdates": true,
+          "claudeUltracodeEffort": "xhigh",
+          "defaultModelId": "",
+          "enabled": false,
+          "enabledProviders": ["codex","claude","grok","devin","muse","opencode","cursor","hermes"],
+          "followupLimit": 5,
+          "grokSpeechVoice": "altair",
+          "membershipEndpoint": "",
+          "museDisableSandbox": false,
+          "newThreadModelId": "",
+          "newThreadReasoningEffort": "",
+          "orbColor": "teal",
+          "projectsDirectory": "",
+          "provider": "codex",
+          "reasoning": "none",
+          "reasoningEffort": "",
+          "reasoningModel": "",
+          "speak": false,
+          "speechProvider": "grok",
+          "speechVoice": "F1",
+          "wakeModelDirectory": "",
+          "wakeRuntimeDirectory": ""
+         },
+         "connection": "connected",
+         "credentials": {"grokSpeech":false,"reasoning":false,"secure":false},
+         "deliveredDrafts": [],
+         "deliveries": [],
+         "draft": "",
+         "draftAttachments": [],
+         "draftRequestId": null,
+         "draftThreadId": null,
+         "error": null,
+         "followupReceipts": [],
+         "followups": [],
+         "globalLaneBusy": false,
+         "historyEnabled": true,
+         "host": {
+          "capabilities": {
+           "compact": true,
+           "configureThread": true,
+           "interrupt": true,
+           "messageOrigin": true,
+           "observe": true,
+           "permissions": true,
+           "projects": true,
+           "questions": true,
+           "reconcile": true,
+           "skills": true,
+           "steer": true,
+           "submit": true,
+           "threads": true
+          },
+          "connected": true,
+          "hostId": "<id:1>",
+          "models": [
+           {
+            "id": "native:claude:model:fixture-model",
+            "name": "Fixture Claude",
+            "provider": "Claude Code",
+            "providerId": "claude",
+            "ready": true,
+            "reasoningEfforts": ["low","high"],
+            "runtimeModes": ["approval-required","auto-accept-edits","auto","full-access"],
+            "supportsImages": true
+           }
+          ],
+          "modelsRevision": "<revision>",
+          "name": "Claude Code",
+          "projects": [],
+          "providers": [
+           {
+            "capabilities": {
+             "interrupt": false,
+             "messageOrigin": false,
+             "observe": false,
+             "permissions": false,
+             "projects": false,
+             "questions": false,
+             "reconcile": false,
+             "submit": false,
+             "threads": false
+            },
+            "connection": "error",
+            "error": "Codex is available in Sotto Owl; it is not in this build.",
+            "id": "codex",
+            "name": "Codex",
+            "version": ""
+           },
+           {
+            "account": "Claude Max",
+            "capabilities": {
+             "compact": true,
+             "configureThread": true,
+             "interrupt": true,
+             "messageOrigin": true,
+             "observe": true,
+             "permissions": true,
+             "projects": true,
+             "questions": true,
+             "reconcile": true,
+             "skills": true,
+             "steer": true,
+             "submit": true,
+             "threads": true
+            },
+            "connection": "connected",
+            "id": "claude",
+            "name": "Claude Code",
+            "version": ""
+           },
+           {
+            "capabilities": {
+             "interrupt": false,
+             "messageOrigin": false,
+             "observe": false,
+             "permissions": false,
+             "projects": false,
+             "questions": false,
+             "reconcile": false,
+             "submit": false,
+             "threads": false
+            },
+            "connection": "error",
+            "error": "Grok Build is available in Sotto Owl; it is not in this build.",
+            "id": "grok",
+            "name": "Grok Build",
+            "version": ""
+           },
+           {
+            "capabilities": {
+             "interrupt": false,
+             "messageOrigin": false,
+             "observe": false,
+             "permissions": false,
+             "projects": false,
+             "questions": false,
+             "reconcile": false,
+             "submit": false,
+             "threads": false
+            },
+            "connection": "error",
+            "error": "Devin is available in Sotto Owl; it is not in this build.",
+            "id": "devin",
+            "name": "Devin",
+            "version": ""
+           },
+           {
+            "capabilities": {
+             "interrupt": false,
+             "messageOrigin": false,
+             "observe": false,
+             "permissions": false,
+             "projects": false,
+             "questions": false,
+             "reconcile": false,
+             "submit": false,
+             "threads": false
+            },
+            "connection": "error",
+            "error": "Muse is available in Sotto Owl; it is not in this build.",
+            "id": "muse",
+            "name": "Muse",
+            "version": ""
+           },
+           {
+            "capabilities": {
+             "interrupt": false,
+             "messageOrigin": false,
+             "observe": false,
+             "permissions": false,
+             "projects": false,
+             "questions": false,
+             "reconcile": false,
+             "submit": false,
+             "threads": false
+            },
+            "connection": "error",
+            "error": "OpenCode is available in Sotto Owl; it is not in this build.",
+            "id": "opencode",
+            "name": "OpenCode",
+            "version": ""
+           },
+           {
+            "capabilities": {
+             "interrupt": false,
+             "messageOrigin": false,
+             "observe": false,
+             "permissions": false,
+             "projects": false,
+             "questions": false,
+             "reconcile": false,
+             "submit": false,
+             "threads": false
+            },
+            "connection": "error",
+            "error": "Cursor is available in Sotto Owl; it is not in this build.",
+            "id": "cursor",
+            "name": "Cursor",
+            "version": ""
+           },
+           {
+            "capabilities": {
+             "interrupt": false,
+             "messageOrigin": false,
+             "observe": false,
+             "permissions": false,
+             "projects": false,
+             "questions": false,
+             "reconcile": false,
+             "submit": false,
+             "threads": false
+            },
+            "connection": "error",
+            "error": "Hermes is available in Sotto Owl; it is not in this build.",
+            "id": "hermes",
+            "name": "Hermes",
+            "version": ""
+           }
+          ],
+          "threads": [],
+          "version": ""
+         },
+         "hostId": "<id:1>",
+         "membership": {"expiresAt":null,"label":"","status":"beta"},
+         "notice": "",
+         "obsoleteDrafts": [],
+         "pendingRequest": "",
+         "providerUpgrade": null,
+         "queue": [],
+         "reasoningAccounts": [],
+         "speech": {"id":0,"text":""},
+         "threadDraftPersistence": [],
+         "threadDrafts": [],
+         "voice": {"action":"none","error":null,"revision":0,"status":"off"}
+        },
+        "sottoVersion": "0.1.44-owl.20261118.2"
+       },
+       "v": 1
+      }
+     ],
+     "held": [
+      {
+       "path": ["shell"],
+       "value": {
+        "activeProjectId": null,
+        "activeThreadId": null,
+        "assignments": [],
+        "clientCapabilities": {"mayAnswer":true},
+        "composing": false,
+        "configuration": {
+         "checkClientUpdates": true,
+         "claudeUltracodeEffort": "xhigh",
+         "defaultModelId": "",
+         "enabled": false,
+         "enabledProviders": ["codex","claude","grok","devin","muse","opencode","cursor","hermes"],
+         "followupLimit": 5,
+         "grokSpeechVoice": "altair",
+         "membershipEndpoint": "",
+         "museDisableSandbox": false,
+         "newThreadModelId": "",
+         "newThreadReasoningEffort": "",
+         "orbColor": "teal",
+         "projectsDirectory": "",
+         "provider": "codex",
+         "reasoning": "none",
+         "reasoningEffort": "",
+         "reasoningModel": "",
+         "speak": false,
+         "speechProvider": "grok",
+         "speechVoice": "F1",
+         "wakeModelDirectory": "",
+         "wakeRuntimeDirectory": ""
+        },
+        "connection": "connected",
+        "credentials": {"grokSpeech":false,"reasoning":false,"secure":false},
+        "deliveredDrafts": [],
+        "deliveries": [],
+        "draft": "",
+        "draftAttachments": [],
+        "draftRequestId": null,
+        "draftThreadId": null,
+        "error": null,
+        "followupReceipts": [],
+        "followups": [],
+        "globalLaneBusy": false,
+        "historyEnabled": true,
+        "host": {
+         "capabilities": {
+          "compact": true,
+          "configureThread": true,
+          "interrupt": true,
+          "messageOrigin": true,
+          "observe": true,
+          "permissions": true,
+          "projects": true,
+          "questions": true,
+          "reconcile": true,
+          "skills": true,
+          "steer": true,
+          "submit": true,
+          "threads": true
+         },
+         "connected": true,
+         "hostId": "<id:1>",
+         "models": [
+          {
+           "id": "native:claude:model:fixture-model",
+           "name": "Fixture Claude",
+           "provider": "Claude Code",
+           "providerId": "claude",
+           "ready": true,
+           "reasoningEfforts": ["low","high"],
+           "runtimeModes": ["approval-required","auto-accept-edits","auto","full-access"],
+           "supportsImages": true
+          }
+         ],
+         "modelsRevision": "<revision>",
+         "name": "Claude Code",
+         "projects": [],
+         "providers": [
+          {
+           "capabilities": {
+            "interrupt": false,
+            "messageOrigin": false,
+            "observe": false,
+            "permissions": false,
+            "projects": false,
+            "questions": false,
+            "reconcile": false,
+            "submit": false,
+            "threads": false
+           },
+           "connection": "error",
+           "error": "Codex is available in Sotto Owl; it is not in this build.",
+           "id": "codex",
+           "name": "Codex",
+           "version": ""
+          },
+          {
+           "account": "Claude Max",
+           "capabilities": {
+            "compact": true,
+            "configureThread": true,
+            "interrupt": true,
+            "messageOrigin": true,
+            "observe": true,
+            "permissions": true,
+            "projects": true,
+            "questions": true,
+            "reconcile": true,
+            "skills": true,
+            "steer": true,
+            "submit": true,
+            "threads": true
+           },
+           "connection": "connected",
+           "id": "claude",
+           "name": "Claude Code",
+           "version": ""
+          },
+          {
+           "capabilities": {
+            "interrupt": false,
+            "messageOrigin": false,
+            "observe": false,
+            "permissions": false,
+            "projects": false,
+            "questions": false,
+            "reconcile": false,
+            "submit": false,
+            "threads": false
+           },
+           "connection": "error",
+           "error": "Grok Build is available in Sotto Owl; it is not in this build.",
+           "id": "grok",
+           "name": "Grok Build",
+           "version": ""
+          },
+          {
+           "capabilities": {
+            "interrupt": false,
+            "messageOrigin": false,
+            "observe": false,
+            "permissions": false,
+            "projects": false,
+            "questions": false,
+            "reconcile": false,
+            "submit": false,
+            "threads": false
+           },
+           "connection": "error",
+           "error": "Devin is available in Sotto Owl; it is not in this build.",
+           "id": "devin",
+           "name": "Devin",
+           "version": ""
+          },
+          {
+           "capabilities": {
+            "interrupt": false,
+            "messageOrigin": false,
+            "observe": false,
+            "permissions": false,
+            "projects": false,
+            "questions": false,
+            "reconcile": false,
+            "submit": false,
+            "threads": false
+           },
+           "connection": "error",
+           "error": "Muse is available in Sotto Owl; it is not in this build.",
+           "id": "muse",
+           "name": "Muse",
+           "version": ""
+          },
+          {
+           "capabilities": {
+            "interrupt": false,
+            "messageOrigin": false,
+            "observe": false,
+            "permissions": false,
+            "projects": false,
+            "questions": false,
+            "reconcile": false,
+            "submit": false,
+            "threads": false
+           },
+           "connection": "error",
+           "error": "OpenCode is available in Sotto Owl; it is not in this build.",
+           "id": "opencode",
+           "name": "OpenCode",
+           "version": ""
+          },
+          {
+           "capabilities": {
+            "interrupt": false,
+            "messageOrigin": false,
+            "observe": false,
+            "permissions": false,
+            "projects": false,
+            "questions": false,
+            "reconcile": false,
+            "submit": false,
+            "threads": false
+           },
+           "connection": "error",
+           "error": "Cursor is available in Sotto Owl; it is not in this build.",
+           "id": "cursor",
+           "name": "Cursor",
+           "version": ""
+          },
+          {
+           "capabilities": {
+            "interrupt": false,
+            "messageOrigin": false,
+            "observe": false,
+            "permissions": false,
+            "projects": false,
+            "questions": false,
+            "reconcile": false,
+            "submit": false,
+            "threads": false
+           },
+           "connection": "error",
+           "error": "Hermes is available in Sotto Owl; it is not in this build.",
+           "id": "hermes",
+           "name": "Hermes",
+           "version": ""
+          }
+         ],
+         "threads": [],
+         "version": ""
+        },
+        "hostId": "<id:1>",
+        "membership": {"expiresAt":null,"label":"","status":"beta"},
+        "notice": "",
+        "obsoleteDrafts": [],
+        "pendingRequest": "",
+        "providerUpgrade": null,
+        "queue": [],
+        "reasoningAccounts": [],
+        "speech": {"id":0,"text":""},
+        "threadDraftPersistence": [],
+        "threadDrafts": [],
+        "voice": {"action":"none","error":null,"revision":0,"status":"off"}
+       }
+      }
+     ]
+    },
+    "iphone": {"frames":[],"held":[]},
+    "plain": {"frames":[],"held":[]}
+   }
+  },
+  {
+   "say": "iphone says hello",
+   "by": "iphone",
+   "sent": {
+    "accepts": [
+     "detail-delta", "client-liveness", "activity-summaries", "model-catalog-revision", "provider-opencode", "provider-cursor",
+     "provider-deepseek", "changed-thread-records", "reply-thread-records", "provider-mode-lists", "settled-threads-on-request",
+     "usable-models", "command-changed-thread-records", "step-window", "thread-media-edge", "kept-parts", "plugin-meshy-phone"
+    ],
+    "afterSeq": 9007199254740991,
+    "id": "iphone-1",
+    "op": "hello",
+    "session": "<secret>",
+    "v": 1
+   },
+   "clients": {
+    "desktop": {"frames":[],"held":[]},
+    "iphone": {
+     "frames": [
+      {
+       "id": "iphone-1",
+       "ok": true,
+       "result": {
+        "capabilities": {"mayAnswer":true},
+        "clientId": "<id:3>",
+        "events": [],
+        "features": [
+         "client-liveness", "message-aliases", "detail-delta", "git-refs", "git-changed-files", "git-pull-request", "git-pull-request-list",
+         "attachment-staging", "host-folders", "provider-sign-in", "client-updates", "activity-summaries", "model-catalog-revision",
+         "thread-files", "thread-file-links", "thread-linked-files", "thread-changes", "subagents", "answer-receipts", "answer-check",
+         "atomic-send", "draft-revisions", "background-refresh", "usage-dashboard", "usage-history", "host-facts", "thread-starts",
+         "provider-opencode", "activity-bodies", "failure-seen", "usage-muse-opencode", "client-update-outcomes", "pull-request-view",
+         "agents-view", "provider-cursor", "usage-background-refresh", "client-update-not-listed", "thread-prompts", "file-staging",
+         "attachment-files", "project-origins", "thread-delete", "bring-changes-back", "project-setup", "pull-request-confirmation",
+         "worker-swarms", "changed-thread-records", "thread-media", "thread-media-video", "next-prompts", "reply-thread-records",
+         "provider-mode-lists", "settled-threads-on-request", "usable-models", "product-events", "command-changed-thread-records",
+         "step-window", "thread-snooze", "browser", "provider-deepseek", "video-staging", "provider-pi", "provider-hermes",
+         "project-git-init", "kept-parts", "plugin-meshy-phone", "thread-words"
+        ],
+        "hasMore": false,
+        "hostId": "<id:1>",
+        "latestSeq": 9007199254740991,
+        "phoneAccess": {"phones":0,"status":"off"},
+        "shell": {
+         "activeProjectId": null,
+         "activeThreadId": null,
+         "assignments": [],
+         "clientCapabilities": {"mayAnswer":true},
+         "composing": false,
+         "configuration": {
+          "checkClientUpdates": true,
+          "claudeUltracodeEffort": "xhigh",
+          "defaultModelId": "",
+          "enabled": false,
+          "enabledProviders": ["codex","claude","grok","devin","muse","opencode","cursor"],
+          "followupLimit": 5,
+          "grokSpeechVoice": "altair",
+          "membershipEndpoint": "",
+          "museDisableSandbox": false,
+          "newThreadModelId": "",
+          "newThreadReasoningEffort": "",
+          "orbColor": "teal",
+          "projectsDirectory": "",
+          "provider": "codex",
+          "reasoning": "none",
+          "reasoningEffort": "",
+          "reasoningModel": "",
+          "speak": false,
+          "speechProvider": "grok",
+          "speechVoice": "F1",
+          "wakeModelDirectory": "",
+          "wakeRuntimeDirectory": ""
+         },
+         "connection": "connected",
+         "credentials": {"grokSpeech":false,"reasoning":false,"secure":false},
+         "deliveredDrafts": [],
+         "deliveries": [],
+         "draft": "",
+         "draftAttachments": [],
+         "draftRequestId": null,
+         "draftThreadId": null,
+         "error": null,
+         "followupReceipts": [],
+         "followups": [],
+         "globalLaneBusy": false,
+         "historyEnabled": true,
+         "host": {
+          "capabilities": {
+           "compact": true,
+           "configureThread": true,
+           "interrupt": true,
+           "messageOrigin": true,
+           "observe": true,
+           "permissions": true,
+           "projects": true,
+           "questions": true,
+           "reconcile": true,
+           "skills": true,
+           "steer": true,
+           "submit": true,
+           "threads": true
+          },
+          "connected": true,
+          "hostId": "<id:1>",
+          "models": [
+           {
+            "id": "native:claude:model:fixture-model",
+            "name": "Fixture Claude",
+            "provider": "Claude Code",
+            "providerId": "claude",
+            "ready": true,
+            "reasoningEfforts": ["low","high"],
+            "runtimeModes": ["approval-required","auto-accept-edits","auto","full-access"],
+            "supportsImages": true
+           }
+          ],
+          "modelsRevision": "<revision>",
+          "name": "Claude Code",
+          "projects": [],
+          "providers": [
+           {
+            "capabilities": {
+             "interrupt": false,
+             "messageOrigin": false,
+             "observe": false,
+             "permissions": false,
+             "projects": false,
+             "questions": false,
+             "reconcile": false,
+             "submit": false,
+             "threads": false
+            },
+            "connection": "error",
+            "error": "Codex is available in Sotto Owl; it is not in this build.",
+            "id": "codex",
+            "name": "Codex",
+            "version": ""
+           },
+           {
+            "account": "Claude Max",
+            "capabilities": {
+             "compact": true,
+             "configureThread": true,
+             "interrupt": true,
+             "messageOrigin": true,
+             "observe": true,
+             "permissions": true,
+             "projects": true,
+             "questions": true,
+             "reconcile": true,
+             "skills": true,
+             "steer": true,
+             "submit": true,
+             "threads": true
+            },
+            "connection": "connected",
+            "id": "claude",
+            "name": "Claude Code",
+            "version": ""
+           },
+           {
+            "capabilities": {
+             "interrupt": false,
+             "messageOrigin": false,
+             "observe": false,
+             "permissions": false,
+             "projects": false,
+             "questions": false,
+             "reconcile": false,
+             "submit": false,
+             "threads": false
+            },
+            "connection": "error",
+            "error": "Grok Build is available in Sotto Owl; it is not in this build.",
+            "id": "grok",
+            "name": "Grok Build",
+            "version": ""
+           },
+           {
+            "capabilities": {
+             "interrupt": false,
+             "messageOrigin": false,
+             "observe": false,
+             "permissions": false,
+             "projects": false,
+             "questions": false,
+             "reconcile": false,
+             "submit": false,
+             "threads": false
+            },
+            "connection": "error",
+            "error": "Devin is available in Sotto Owl; it is not in this build.",
+            "id": "devin",
+            "name": "Devin",
+            "version": ""
+           },
+           {
+            "capabilities": {
+             "interrupt": false,
+             "messageOrigin": false,
+             "observe": false,
+             "permissions": false,
+             "projects": false,
+             "questions": false,
+             "reconcile": false,
+             "submit": false,
+             "threads": false
+            },
+            "connection": "error",
+            "error": "Muse is available in Sotto Owl; it is not in this build.",
+            "id": "muse",
+            "name": "Muse",
+            "version": ""
+           },
+           {
+            "capabilities": {
+             "interrupt": false,
+             "messageOrigin": false,
+             "observe": false,
+             "permissions": false,
+             "projects": false,
+             "questions": false,
+             "reconcile": false,
+             "submit": false,
+             "threads": false
+            },
+            "connection": "error",
+            "error": "OpenCode is available in Sotto Owl; it is not in this build.",
+            "id": "opencode",
+            "name": "OpenCode",
+            "version": ""
+           },
+           {
+            "capabilities": {
+             "interrupt": false,
+             "messageOrigin": false,
+             "observe": false,
+             "permissions": false,
+             "projects": false,
+             "questions": false,
+             "reconcile": false,
+             "submit": false,
+             "threads": false
+            },
+            "connection": "error",
+            "error": "Cursor is available in Sotto Owl; it is not in this build.",
+            "id": "cursor",
+            "name": "Cursor",
+            "version": ""
+           }
+          ],
+          "threads": [],
+          "version": ""
+         },
+         "hostId": "<id:1>",
+         "membership": {"expiresAt":null,"label":"","status":"beta"},
+         "notice": "",
+         "obsoleteDrafts": [],
+         "pendingRequest": "",
+         "providerUpgrade": null,
+         "queue": [],
+         "reasoningAccounts": [],
+         "settledHeldBack": 0,
+         "speech": {"id":0,"text":""},
+         "threadDraftPersistence": [],
+         "threadDrafts": [],
+         "threadRecordsRevision": 1,
+         "voice": {"action":"none","error":null,"revision":0,"status":"off"}
+        },
+        "sottoVersion": "0.1.44-owl.20261118.2"
+       },
+       "v": 1
+      }
+     ],
+     "held": [
+      {
+       "path": ["shell"],
+       "value": {
+        "activeProjectId": null,
+        "activeThreadId": null,
+        "assignments": [],
+        "clientCapabilities": {"mayAnswer":true},
+        "composing": false,
+        "configuration": {
+         "checkClientUpdates": true,
+         "claudeUltracodeEffort": "xhigh",
+         "defaultModelId": "",
+         "enabled": false,
+         "enabledProviders": ["codex","claude","grok","devin","muse","opencode","cursor"],
+         "followupLimit": 5,
+         "grokSpeechVoice": "altair",
+         "membershipEndpoint": "",
+         "museDisableSandbox": false,
+         "newThreadModelId": "",
+         "newThreadReasoningEffort": "",
+         "orbColor": "teal",
+         "projectsDirectory": "",
+         "provider": "codex",
+         "reasoning": "none",
+         "reasoningEffort": "",
+         "reasoningModel": "",
+         "speak": false,
+         "speechProvider": "grok",
+         "speechVoice": "F1",
+         "wakeModelDirectory": "",
+         "wakeRuntimeDirectory": ""
+        },
+        "connection": "connected",
+        "credentials": {"grokSpeech":false,"reasoning":false,"secure":false},
+        "deliveredDrafts": [],
+        "deliveries": [],
+        "draft": "",
+        "draftAttachments": [],
+        "draftRequestId": null,
+        "draftThreadId": null,
+        "error": null,
+        "followupReceipts": [],
+        "followups": [],
+        "globalLaneBusy": false,
+        "historyEnabled": true,
+        "host": {
+         "capabilities": {
+          "compact": true,
+          "configureThread": true,
+          "interrupt": true,
+          "messageOrigin": true,
+          "observe": true,
+          "permissions": true,
+          "projects": true,
+          "questions": true,
+          "reconcile": true,
+          "skills": true,
+          "steer": true,
+          "submit": true,
+          "threads": true
+         },
+         "connected": true,
+         "hostId": "<id:1>",
+         "models": [
+          {
+           "id": "native:claude:model:fixture-model",
+           "name": "Fixture Claude",
+           "provider": "Claude Code",
+           "providerId": "claude",
+           "ready": true,
+           "reasoningEfforts": ["low","high"],
+           "runtimeModes": ["approval-required","auto-accept-edits","auto","full-access"],
+           "supportsImages": true
+          }
+         ],
+         "modelsRevision": "<revision>",
+         "name": "Claude Code",
+         "projects": [],
+         "providers": [
+          {
+           "capabilities": {
+            "interrupt": false,
+            "messageOrigin": false,
+            "observe": false,
+            "permissions": false,
+            "projects": false,
+            "questions": false,
+            "reconcile": false,
+            "submit": false,
+            "threads": false
+           },
+           "connection": "error",
+           "error": "Codex is available in Sotto Owl; it is not in this build.",
+           "id": "codex",
+           "name": "Codex",
+           "version": ""
+          },
+          {
+           "account": "Claude Max",
+           "capabilities": {
+            "compact": true,
+            "configureThread": true,
+            "interrupt": true,
+            "messageOrigin": true,
+            "observe": true,
+            "permissions": true,
+            "projects": true,
+            "questions": true,
+            "reconcile": true,
+            "skills": true,
+            "steer": true,
+            "submit": true,
+            "threads": true
+           },
+           "connection": "connected",
+           "id": "claude",
+           "name": "Claude Code",
+           "version": ""
+          },
+          {
+           "capabilities": {
+            "interrupt": false,
+            "messageOrigin": false,
+            "observe": false,
+            "permissions": false,
+            "projects": false,
+            "questions": false,
+            "reconcile": false,
+            "submit": false,
+            "threads": false
+           },
+           "connection": "error",
+           "error": "Grok Build is available in Sotto Owl; it is not in this build.",
+           "id": "grok",
+           "name": "Grok Build",
+           "version": ""
+          },
+          {
+           "capabilities": {
+            "interrupt": false,
+            "messageOrigin": false,
+            "observe": false,
+            "permissions": false,
+            "projects": false,
+            "questions": false,
+            "reconcile": false,
+            "submit": false,
+            "threads": false
+           },
+           "connection": "error",
+           "error": "Devin is available in Sotto Owl; it is not in this build.",
+           "id": "devin",
+           "name": "Devin",
+           "version": ""
+          },
+          {
+           "capabilities": {
+            "interrupt": false,
+            "messageOrigin": false,
+            "observe": false,
+            "permissions": false,
+            "projects": false,
+            "questions": false,
+            "reconcile": false,
+            "submit": false,
+            "threads": false
+           },
+           "connection": "error",
+           "error": "Muse is available in Sotto Owl; it is not in this build.",
+           "id": "muse",
+           "name": "Muse",
+           "version": ""
+          },
+          {
+           "capabilities": {
+            "interrupt": false,
+            "messageOrigin": false,
+            "observe": false,
+            "permissions": false,
+            "projects": false,
+            "questions": false,
+            "reconcile": false,
+            "submit": false,
+            "threads": false
+           },
+           "connection": "error",
+           "error": "OpenCode is available in Sotto Owl; it is not in this build.",
+           "id": "opencode",
+           "name": "OpenCode",
+           "version": ""
+          },
+          {
+           "capabilities": {
+            "interrupt": false,
+            "messageOrigin": false,
+            "observe": false,
+            "permissions": false,
+            "projects": false,
+            "questions": false,
+            "reconcile": false,
+            "submit": false,
+            "threads": false
+           },
+           "connection": "error",
+           "error": "Cursor is available in Sotto Owl; it is not in this build.",
+           "id": "cursor",
+           "name": "Cursor",
+           "version": ""
+          }
+         ],
+         "threads": [],
+         "version": ""
+        },
+        "hostId": "<id:1>",
+        "membership": {"expiresAt":null,"label":"","status":"beta"},
+        "notice": "",
+        "obsoleteDrafts": [],
+        "pendingRequest": "",
+        "providerUpgrade": null,
+        "queue": [],
+        "reasoningAccounts": [],
+        "settledHeldBack": 0,
+        "speech": {"id":0,"text":""},
+        "threadDraftPersistence": [],
+        "threadDrafts": [],
+        "voice": {"action":"none","error":null,"revision":0,"status":"off"}
+       }
+      }
+     ]
+    },
+    "plain": {"frames":[],"held":[]}
+   }
+  },
+  {
+   "say": "plain says hello",
+   "by": "plain",
+   "sent": {"accepts":["provider-opencode","provider-cursor"],"id":"plain-1","op":"hello","session":"<secret>","v":1},
+   "clients": {
+    "desktop": {"frames":[],"held":[]},
+    "iphone": {"frames":[],"held":[]},
+    "plain": {
+     "frames": [
+      {
+       "id": "plain-1",
+       "ok": true,
+       "result": {
+        "capabilities": {"mayAnswer":true},
+        "clientId": "<id:4>",
+        "events": [],
+        "features": [
+         "client-liveness", "message-aliases", "detail-delta", "git-refs", "git-changed-files", "git-pull-request", "git-pull-request-list",
+         "attachment-staging", "host-folders", "provider-sign-in", "client-updates", "activity-summaries", "model-catalog-revision",
+         "thread-files", "thread-file-links", "thread-linked-files", "thread-changes", "subagents", "answer-receipts", "answer-check",
+         "atomic-send", "draft-revisions", "background-refresh", "usage-dashboard", "usage-history", "host-facts", "thread-starts",
+         "provider-opencode", "activity-bodies", "failure-seen", "usage-muse-opencode", "client-update-outcomes", "pull-request-view",
+         "agents-view", "provider-cursor", "usage-background-refresh", "client-update-not-listed", "thread-prompts", "file-staging",
+         "attachment-files", "project-origins", "thread-delete", "bring-changes-back", "project-setup", "pull-request-confirmation",
+         "worker-swarms", "changed-thread-records", "thread-media", "thread-media-video", "next-prompts", "reply-thread-records",
+         "provider-mode-lists", "settled-threads-on-request", "usable-models", "product-events", "command-changed-thread-records",
+         "step-window", "thread-snooze", "browser", "provider-deepseek", "video-staging", "provider-pi", "provider-hermes",
+         "project-git-init", "kept-parts", "plugin-meshy-phone", "thread-words"
+        ],
+        "hasMore": false,
+        "hostId": "<id:1>",
+        "latestSeq": 9007199254740991,
+        "phoneAccess": {"phones":0,"status":"off"},
+        "shell": {
+         "activeProjectId": null,
+         "activeThreadId": null,
+         "assignments": [],
+         "clientCapabilities": {"mayAnswer":true},
+         "composing": false,
+         "configuration": {
+          "checkClientUpdates": true,
+          "claudeUltracodeEffort": "xhigh",
+          "defaultModelId": "",
+          "enabled": false,
+          "enabledProviders": ["codex","claude","grok","devin","muse","opencode","cursor"],
+          "followupLimit": 5,
+          "grokSpeechVoice": "altair",
+          "membershipEndpoint": "",
+          "museDisableSandbox": false,
+          "newThreadModelId": "",
+          "newThreadReasoningEffort": "",
+          "orbColor": "teal",
+          "projectsDirectory": "",
+          "provider": "codex",
+          "reasoning": "none",
+          "reasoningEffort": "",
+          "reasoningModel": "",
+          "speak": false,
+          "speechProvider": "grok",
+          "speechVoice": "F1",
+          "wakeModelDirectory": "",
+          "wakeRuntimeDirectory": ""
+         },
+         "connection": "connected",
+         "credentials": {"grokSpeech":false,"reasoning":false,"secure":false},
+         "deliveredDrafts": [],
+         "deliveries": [],
+         "draft": "",
+         "draftAttachments": [],
+         "draftRequestId": null,
+         "draftThreadId": null,
+         "error": null,
+         "followupReceipts": [],
+         "followups": [],
+         "globalLaneBusy": false,
+         "historyEnabled": true,
+         "host": {
+          "capabilities": {
+           "compact": true,
+           "configureThread": true,
+           "interrupt": true,
+           "messageOrigin": true,
+           "observe": true,
+           "permissions": true,
+           "projects": true,
+           "questions": true,
+           "reconcile": true,
+           "skills": true,
+           "steer": true,
+           "submit": true,
+           "threads": true
+          },
+          "connected": true,
+          "hostId": "<id:1>",
+          "models": [
+           {
+            "id": "native:claude:model:fixture-model",
+            "name": "Fixture Claude",
+            "provider": "Claude Code",
+            "providerId": "claude",
+            "ready": true,
+            "reasoningEfforts": ["low","high"],
+            "runtimeModes": ["approval-required","auto-accept-edits","auto","full-access"],
+            "supportsImages": true
+           }
+          ],
+          "name": "Claude Code",
+          "projects": [],
+          "providers": [
+           {
+            "capabilities": {
+             "interrupt": false,
+             "messageOrigin": false,
+             "observe": false,
+             "permissions": false,
+             "projects": false,
+             "questions": false,
+             "reconcile": false,
+             "submit": false,
+             "threads": false
+            },
+            "connection": "error",
+            "error": "Codex is available in Sotto Owl; it is not in this build.",
+            "id": "codex",
+            "name": "Codex",
+            "version": ""
+           },
+           {
+            "account": "Claude Max",
+            "capabilities": {
+             "compact": true,
+             "configureThread": true,
+             "interrupt": true,
+             "messageOrigin": true,
+             "observe": true,
+             "permissions": true,
+             "projects": true,
+             "questions": true,
+             "reconcile": true,
+             "skills": true,
+             "steer": true,
+             "submit": true,
+             "threads": true
+            },
+            "connection": "connected",
+            "id": "claude",
+            "name": "Claude Code",
+            "version": ""
+           },
+           {
+            "capabilities": {
+             "interrupt": false,
+             "messageOrigin": false,
+             "observe": false,
+             "permissions": false,
+             "projects": false,
+             "questions": false,
+             "reconcile": false,
+             "submit": false,
+             "threads": false
+            },
+            "connection": "error",
+            "error": "Grok Build is available in Sotto Owl; it is not in this build.",
+            "id": "grok",
+            "name": "Grok Build",
+            "version": ""
+           },
+           {
+            "capabilities": {
+             "interrupt": false,
+             "messageOrigin": false,
+             "observe": false,
+             "permissions": false,
+             "projects": false,
+             "questions": false,
+             "reconcile": false,
+             "submit": false,
+             "threads": false
+            },
+            "connection": "error",
+            "error": "Devin is available in Sotto Owl; it is not in this build.",
+            "id": "devin",
+            "name": "Devin",
+            "version": ""
+           },
+           {
+            "capabilities": {
+             "interrupt": false,
+             "messageOrigin": false,
+             "observe": false,
+             "permissions": false,
+             "projects": false,
+             "questions": false,
+             "reconcile": false,
+             "submit": false,
+             "threads": false
+            },
+            "connection": "error",
+            "error": "Muse is available in Sotto Owl; it is not in this build.",
+            "id": "muse",
+            "name": "Muse",
+            "version": ""
+           },
+           {
+            "capabilities": {
+             "interrupt": false,
+             "messageOrigin": false,
+             "observe": false,
+             "permissions": false,
+             "projects": false,
+             "questions": false,
+             "reconcile": false,
+             "submit": false,
+             "threads": false
+            },
+            "connection": "error",
+            "error": "OpenCode is available in Sotto Owl; it is not in this build.",
+            "id": "opencode",
+            "name": "OpenCode",
+            "version": ""
+           },
+           {
+            "capabilities": {
+             "interrupt": false,
+             "messageOrigin": false,
+             "observe": false,
+             "permissions": false,
+             "projects": false,
+             "questions": false,
+             "reconcile": false,
+             "submit": false,
+             "threads": false
+            },
+            "connection": "error",
+            "error": "Cursor is available in Sotto Owl; it is not in this build.",
+            "id": "cursor",
+            "name": "Cursor",
+            "version": ""
+           }
+          ],
+          "threads": [],
+          "version": ""
+         },
+         "hostId": "<id:1>",
+         "membership": {"expiresAt":null,"label":"","status":"beta"},
+         "notice": "",
+         "obsoleteDrafts": [],
+         "pendingRequest": "",
+         "providerUpgrade": null,
+         "queue": [],
+         "reasoningAccounts": [],
+         "speech": {"id":0,"text":""},
+         "threadDraftPersistence": [],
+         "threadDrafts": [],
+         "voice": {"action":"none","error":null,"revision":0,"status":"off"}
+        },
+        "sottoVersion": "0.1.44-owl.20261118.2"
+       },
+       "v": 1
+      }
+     ],
+     "held": [
+      {
+       "path": ["shell"],
+       "value": {
+        "activeProjectId": null,
+        "activeThreadId": null,
+        "assignments": [],
+        "clientCapabilities": {"mayAnswer":true},
+        "composing": false,
+        "configuration": {
+         "checkClientUpdates": true,
+         "claudeUltracodeEffort": "xhigh",
+         "defaultModelId": "",
+         "enabled": false,
+         "enabledProviders": ["codex","claude","grok","devin","muse","opencode","cursor"],
+         "followupLimit": 5,
+         "grokSpeechVoice": "altair",
+         "membershipEndpoint": "",
+         "museDisableSandbox": false,
+         "newThreadModelId": "",
+         "newThreadReasoningEffort": "",
+         "orbColor": "teal",
+         "projectsDirectory": "",
+         "provider": "codex",
+         "reasoning": "none",
+         "reasoningEffort": "",
+         "reasoningModel": "",
+         "speak": false,
+         "speechProvider": "grok",
+         "speechVoice": "F1",
+         "wakeModelDirectory": "",
+         "wakeRuntimeDirectory": ""
+        },
+        "connection": "connected",
+        "credentials": {"grokSpeech":false,"reasoning":false,"secure":false},
+        "deliveredDrafts": [],
+        "deliveries": [],
+        "draft": "",
+        "draftAttachments": [],
+        "draftRequestId": null,
+        "draftThreadId": null,
+        "error": null,
+        "followupReceipts": [],
+        "followups": [],
+        "globalLaneBusy": false,
+        "historyEnabled": true,
+        "host": {
+         "capabilities": {
+          "compact": true,
+          "configureThread": true,
+          "interrupt": true,
+          "messageOrigin": true,
+          "observe": true,
+          "permissions": true,
+          "projects": true,
+          "questions": true,
+          "reconcile": true,
+          "skills": true,
+          "steer": true,
+          "submit": true,
+          "threads": true
+         },
+         "connected": true,
+         "hostId": "<id:1>",
+         "models": [
+          {
+           "id": "native:claude:model:fixture-model",
+           "name": "Fixture Claude",
+           "provider": "Claude Code",
+           "providerId": "claude",
+           "ready": true,
+           "reasoningEfforts": ["low","high"],
+           "runtimeModes": ["approval-required","auto-accept-edits","auto","full-access"],
+           "supportsImages": true
+          }
+         ],
+         "name": "Claude Code",
+         "projects": [],
+         "providers": [
+          {
+           "capabilities": {
+            "interrupt": false,
+            "messageOrigin": false,
+            "observe": false,
+            "permissions": false,
+            "projects": false,
+            "questions": false,
+            "reconcile": false,
+            "submit": false,
+            "threads": false
+           },
+           "connection": "error",
+           "error": "Codex is available in Sotto Owl; it is not in this build.",
+           "id": "codex",
+           "name": "Codex",
+           "version": ""
+          },
+          {
+           "account": "Claude Max",
+           "capabilities": {
+            "compact": true,
+            "configureThread": true,
+            "interrupt": true,
+            "messageOrigin": true,
+            "observe": true,
+            "permissions": true,
+            "projects": true,
+            "questions": true,
+            "reconcile": true,
+            "skills": true,
+            "steer": true,
+            "submit": true,
+            "threads": true
+           },
+           "connection": "connected",
+           "id": "claude",
+           "name": "Claude Code",
+           "version": ""
+          },
+          {
+           "capabilities": {
+            "interrupt": false,
+            "messageOrigin": false,
+            "observe": false,
+            "permissions": false,
+            "projects": false,
+            "questions": false,
+            "reconcile": false,
+            "submit": false,
+            "threads": false
+           },
+           "connection": "error",
+           "error": "Grok Build is available in Sotto Owl; it is not in this build.",
+           "id": "grok",
+           "name": "Grok Build",
+           "version": ""
+          },
+          {
+           "capabilities": {
+            "interrupt": false,
+            "messageOrigin": false,
+            "observe": false,
+            "permissions": false,
+            "projects": false,
+            "questions": false,
+            "reconcile": false,
+            "submit": false,
+            "threads": false
+           },
+           "connection": "error",
+           "error": "Devin is available in Sotto Owl; it is not in this build.",
+           "id": "devin",
+           "name": "Devin",
+           "version": ""
+          },
+          {
+           "capabilities": {
+            "interrupt": false,
+            "messageOrigin": false,
+            "observe": false,
+            "permissions": false,
+            "projects": false,
+            "questions": false,
+            "reconcile": false,
+            "submit": false,
+            "threads": false
+           },
+           "connection": "error",
+           "error": "Muse is available in Sotto Owl; it is not in this build.",
+           "id": "muse",
+           "name": "Muse",
+           "version": ""
+          },
+          {
+           "capabilities": {
+            "interrupt": false,
+            "messageOrigin": false,
+            "observe": false,
+            "permissions": false,
+            "projects": false,
+            "questions": false,
+            "reconcile": false,
+            "submit": false,
+            "threads": false
+           },
+           "connection": "error",
+           "error": "OpenCode is available in Sotto Owl; it is not in this build.",
+           "id": "opencode",
+           "name": "OpenCode",
+           "version": ""
+          },
+          {
+           "capabilities": {
+            "interrupt": false,
+            "messageOrigin": false,
+            "observe": false,
+            "permissions": false,
+            "projects": false,
+            "questions": false,
+            "reconcile": false,
+            "submit": false,
+            "threads": false
+           },
+           "connection": "error",
+           "error": "Cursor is available in Sotto Owl; it is not in this build.",
+           "id": "cursor",
+           "name": "Cursor",
+           "version": ""
+          }
+         ],
+         "threads": [],
+         "version": ""
+        },
+        "hostId": "<id:1>",
+        "membership": {"expiresAt":null,"label":"","status":"beta"},
+        "notice": "",
+        "obsoleteDrafts": [],
+        "pendingRequest": "",
+        "providerUpgrade": null,
+        "queue": [],
+        "reasoningAccounts": [],
+        "speech": {"id":0,"text":""},
+        "threadDraftPersistence": [],
+        "threadDrafts": [],
+        "voice": {"action":"none","error":null,"revision":0,"status":"off"}
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "say": "desktop turns claude on",
+   "by": "desktop",
+   "sent": {
+    "command": {"patch":{"enabledProviders":["claude"],"provider":"claude"},"type":"configure"},
+    "id": "desktop-2",
+    "op": "command",
+    "session": "<secret>",
+    "v": 1
+   },
+   "clients": {
+    "desktop": {
+     "frames": [
+      {
+       "id": "desktop-2",
+       "ok": true,
+       "result": {
+        "$shellPatch": [
+         {"path":["configuration","disconnectedProviders"],"value":["codex","grok","devin","muse","opencode","cursor","hermes"]},
+         {"path":["configuration","enabledProviders",0],"value":"claude"},
+         {"path":["configuration","enabledProviders",7],"remove":true},
+         {"path":["configuration","enabledProviders",6],"remove":true},
+         {"path":["configuration","enabledProviders",5],"remove":true},
+         {"path":["configuration","enabledProviders",4],"remove":true},
+         {"path":["configuration","enabledProviders",3],"remove":true},
+         {"path":["configuration","enabledProviders",2],"remove":true},
+         {"path":["configuration","enabledProviders",1],"remove":true},
+         {"path":["configuration","provider"],"value":"claude"},
+         {"path":["host","providers",0,"error"],"remove":true},
+         {"path":["host","providers",0,"connection"],"value":"disconnected"},
+         {"path":["host","providers",2,"error"],"remove":true},
+         {"path":["host","providers",2,"connection"],"value":"disconnected"},
+         {"path":["host","providers",3,"error"],"remove":true},
+         {"path":["host","providers",3,"connection"],"value":"disconnected"},
+         {"path":["host","providers",4,"error"],"remove":true},
+         {"path":["host","providers",4,"connection"],"value":"disconnected"},
+         {"path":["host","providers",5,"error"],"remove":true},
+         {"path":["host","providers",5,"connection"],"value":"disconnected"},
+         {"path":["host","providers",6,"error"],"remove":true},
+         {"path":["host","providers",6,"connection"],"value":"disconnected"},
+         {"path":["host","providers",7,"error"],"remove":true},
+         {"path":["host","providers",7,"connection"],"value":"disconnected"}
+        ]
+       },
+       "v": 1
+      }
+     ],
+     "held": [
+      {"path":["shell","configuration","disconnectedProviders"],"value":["codex","grok","devin","muse","opencode","cursor","hermes"]},
+      {"path":["shell","configuration","enabledProviders",0],"value":"claude"},
+      {"path":["shell","configuration","enabledProviders",7],"remove":true},
+      {"path":["shell","configuration","enabledProviders",6],"remove":true},
+      {"path":["shell","configuration","enabledProviders",5],"remove":true},
+      {"path":["shell","configuration","enabledProviders",4],"remove":true},
+      {"path":["shell","configuration","enabledProviders",3],"remove":true},
+      {"path":["shell","configuration","enabledProviders",2],"remove":true},
+      {"path":["shell","configuration","enabledProviders",1],"remove":true},
+      {"path":["shell","configuration","provider"],"value":"claude"},
+      {"path":["shell","host","providers",0,"error"],"remove":true},
+      {"path":["shell","host","providers",0,"connection"],"value":"disconnected"},
+      {"path":["shell","host","providers",2,"error"],"remove":true},
+      {"path":["shell","host","providers",2,"connection"],"value":"disconnected"},
+      {"path":["shell","host","providers",3,"error"],"remove":true},
+      {"path":["shell","host","providers",3,"connection"],"value":"disconnected"},
+      {"path":["shell","host","providers",4,"error"],"remove":true},
+      {"path":["shell","host","providers",4,"connection"],"value":"disconnected"},
+      {"path":["shell","host","providers",5,"error"],"remove":true},
+      {"path":["shell","host","providers",5,"connection"],"value":"disconnected"},
+      {"path":["shell","host","providers",6,"error"],"remove":true},
+      {"path":["shell","host","providers",6,"connection"],"value":"disconnected"},
+      {"path":["shell","host","providers",7,"error"],"remove":true},
+      {"path":["shell","host","providers",7,"connection"],"value":"disconnected"}
+     ]
+    },
+    "iphone": {
+     "frames": [],
+     "held": [
+      {"path":["shell","configuration","disconnectedProviders"],"value":["codex","grok","devin","muse","opencode","cursor"]},
+      {"path":["shell","configuration","enabledProviders",0],"value":"claude"},
+      {"path":["shell","configuration","enabledProviders",6],"remove":true},
+      {"path":["shell","configuration","enabledProviders",5],"remove":true},
+      {"path":["shell","configuration","enabledProviders",4],"remove":true},
+      {"path":["shell","configuration","enabledProviders",3],"remove":true},
+      {"path":["shell","configuration","enabledProviders",2],"remove":true},
+      {"path":["shell","configuration","enabledProviders",1],"remove":true},
+      {"path":["shell","configuration","provider"],"value":"claude"},
+      {"path":["shell","host","providers",0,"error"],"remove":true},
+      {"path":["shell","host","providers",0,"connection"],"value":"disconnected"},
+      {"path":["shell","host","providers",2,"error"],"remove":true},
+      {"path":["shell","host","providers",2,"connection"],"value":"disconnected"},
+      {"path":["shell","host","providers",3,"error"],"remove":true},
+      {"path":["shell","host","providers",3,"connection"],"value":"disconnected"},
+      {"path":["shell","host","providers",4,"error"],"remove":true},
+      {"path":["shell","host","providers",4,"connection"],"value":"disconnected"},
+      {"path":["shell","host","providers",5,"error"],"remove":true},
+      {"path":["shell","host","providers",5,"connection"],"value":"disconnected"},
+      {"path":["shell","host","providers",6,"error"],"remove":true},
+      {"path":["shell","host","providers",6,"connection"],"value":"disconnected"}
+     ]
+    },
+    "plain": {
+     "frames": [],
+     "held": [
+      {"path":["shell","configuration","disconnectedProviders"],"value":["codex","grok","devin","muse","opencode","cursor"]},
+      {"path":["shell","configuration","enabledProviders",0],"value":"claude"},
+      {"path":["shell","configuration","enabledProviders",6],"remove":true},
+      {"path":["shell","configuration","enabledProviders",5],"remove":true},
+      {"path":["shell","configuration","enabledProviders",4],"remove":true},
+      {"path":["shell","configuration","enabledProviders",3],"remove":true},
+      {"path":["shell","configuration","enabledProviders",2],"remove":true},
+      {"path":["shell","configuration","enabledProviders",1],"remove":true},
+      {"path":["shell","configuration","provider"],"value":"claude"},
+      {"path":["shell","host","providers",0,"error"],"remove":true},
+      {"path":["shell","host","providers",0,"connection"],"value":"disconnected"},
+      {"path":["shell","host","providers",2,"error"],"remove":true},
+      {"path":["shell","host","providers",2,"connection"],"value":"disconnected"},
+      {"path":["shell","host","providers",3,"error"],"remove":true},
+      {"path":["shell","host","providers",3,"connection"],"value":"disconnected"},
+      {"path":["shell","host","providers",4,"error"],"remove":true},
+      {"path":["shell","host","providers",4,"connection"],"value":"disconnected"},
+      {"path":["shell","host","providers",5,"error"],"remove":true},
+      {"path":["shell","host","providers",5,"connection"],"value":"disconnected"},
+      {"path":["shell","host","providers",6,"error"],"remove":true},
+      {"path":["shell","host","providers",6,"connection"],"value":"disconnected"}
+     ]
+    }
+   }
+  },
+  {
+   "say": "desktop connects claude",
+   "by": "desktop",
+   "sent": {"command":{"provider":"claude","type":"connect"},"id":"desktop-3","op":"command","session":"<secret>","v":1},
+   "clients": {
+    "desktop": {
+     "frames": [{"id":"desktop-3","ok":true,"result":{"$shellPatch":[{"path":["notice"],"value":"Claude Code connected"}]},"v":1}],
+     "held": [{"path":["shell","notice"],"value":"Claude Code connected"}]
+    },
+    "iphone": {"frames":[],"held":[{"path":["shell","notice"],"value":"Claude Code connected"}]},
+    "plain": {"frames":[],"held":[{"path":["shell","notice"],"value":"Claude Code connected"}]}
+   }
+  },
+  {
+   "say": "desktop adds the data folder as a project",
+   "by": "desktop",
+   "sent": {
+    "command": {"path":"<data>","provider":"claude","title":"Referee project","type":"create-project","useExisting":true},
+    "id": "desktop-4",
+    "op": "command",
+    "session": "<secret>",
+    "v": 1
+   },
+   "clients": {
+    "desktop": {
+     "frames": [
+      {
+       "id": "desktop-4",
+       "ok": true,
+       "result": {
+        "$shellPatch": [
+         {
+          "path": ["host","projects",0],
+          "value": {
+           "hostId": "<id:1>",
+           "id": "native:claude:project:<id:5>",
+           "path": "<data>",
+           "providerId": "claude",
+           "title": "Referee project",
+           "workspaceSettledAt": null
+          }
+         },
+         {"path":["notice"],"value":"Created Referee project in <data>."}
+        ]
+       },
+       "v": 1
+      }
+     ],
+     "held": [
+      {
+       "path": ["shell","host","projects",0],
+       "value": {
+        "hostId": "<id:1>",
+        "id": "native:claude:project:<id:5>",
+        "path": "<data>",
+        "providerId": "claude",
+        "title": "Referee project",
+        "workspaceSettledAt": null
+       }
+      },
+      {"path":["shell","notice"],"value":"Created Referee project in <data>."}
+     ]
+    },
+    "iphone": {
+     "frames": [],
+     "held": [
+      {
+       "path": ["shell","host","projects",0],
+       "value": {
+        "hostId": "<id:1>",
+        "id": "native:claude:project:<id:5>",
+        "path": "<data>",
+        "providerId": "claude",
+        "title": "Referee project",
+        "workspaceSettledAt": null
+       }
+      },
+      {"path":["shell","notice"],"value":"Created Referee project in <data>."}
+     ]
+    },
+    "plain": {
+     "frames": [],
+     "held": [
+      {
+       "path": ["shell","host","projects",0],
+       "value": {
+        "hostId": "<id:1>",
+        "id": "native:claude:project:<id:5>",
+        "path": "<data>",
+        "providerId": "claude",
+        "title": "Referee project",
+        "workspaceSettledAt": null
+       }
+      },
+      {"path":["shell","notice"],"value":"Created Referee project in <data>."}
+     ]
+    }
+   }
+  },
+  {
+   "say": "desktop makes the thread",
+   "by": "desktop",
+   "sent": {
+    "command": {
+     "managed": false,
+     "modelId": "native:claude:model:fixture-model",
+     "projectId": "native:claude:project:<id:5>",
+     "threadId": "<id:6>",
+     "title": "Referee thread",
+     "titleSource": "user",
+     "type": "create-thread",
+     "workingCopy": "shared"
+    },
+    "id": "desktop-5",
+    "op": "command",
+    "session": "<secret>",
+    "v": 1
+   },
+   "clients": {
+    "desktop": {
+     "frames": [
+      {
+       "id": "desktop-5",
+       "ok": true,
+       "result": {
+        "$shellPatch": [
+         {
+          "path": ["host","threads",0],
+          "value": {
+           "hostId": "<id:1>",
+           "id": "<id:6>",
+           "messages": [],
+           "modelId": "native:claude:model:fixture-model",
+           "nativeSessionStarted": false,
+           "projectId": "native:claude:project:<id:5>",
+           "providerId": "claude",
+           "requests": [],
+           "snoozedUntil": null,
+           "status": "idle",
+           "summary": {"activityCount":0,"messageCount":0},
+           "title": "Referee thread",
+           "titleSource": "user",
+           "workingDirectory": "<data>",
+           "workspaceSettledAt": null,
+           "worktree": {"dirty":false,"mode":"shared","path":"<data>","status":"ready"}
+          }
+         },
+         {"path":["notice"],"value":"Opened Referee thread."}
+        ]
+       },
+       "v": 1
+      }
+     ],
+     "held": [
+      {
+       "path": ["shell","host","threads",0],
+       "value": {
+        "hostId": "<id:1>",
+        "id": "<id:6>",
+        "messages": [],
+        "modelId": "native:claude:model:fixture-model",
+        "nativeSessionStarted": false,
+        "projectId": "native:claude:project:<id:5>",
+        "providerId": "claude",
+        "requests": [],
+        "snoozedUntil": null,
+        "status": "idle",
+        "summary": {"activityCount":0,"messageCount":0},
+        "title": "Referee thread",
+        "titleSource": "user",
+        "workingDirectory": "<data>",
+        "workspaceSettledAt": null,
+        "worktree": {"dirty":false,"mode":"shared","path":"<data>","status":"ready"}
+       }
+      },
+      {"path":["shell","notice"],"value":"Opened Referee thread."}
+     ]
+    },
+    "iphone": {
+     "frames": [],
+     "held": [
+      {
+       "path": ["shell","host","threads",0],
+       "value": {
+        "hostId": "<id:1>",
+        "id": "<id:6>",
+        "messages": [],
+        "modelId": "native:claude:model:fixture-model",
+        "nativeSessionStarted": false,
+        "projectId": "native:claude:project:<id:5>",
+        "providerId": "claude",
+        "requests": [],
+        "snoozedUntil": null,
+        "status": "idle",
+        "summary": {"activityCount":0,"messageCount":0},
+        "title": "Referee thread",
+        "titleSource": "user",
+        "workingDirectory": "<data>",
+        "workspaceSettledAt": null,
+        "worktree": {"dirty":false,"mode":"shared","path":"<data>","status":"ready"}
+       }
+      },
+      {"path":["shell","notice"],"value":"Opened Referee thread."}
+     ]
+    },
+    "plain": {
+     "frames": [],
+     "held": [
+      {
+       "path": ["shell","host","threads",0],
+       "value": {
+        "hostId": "<id:1>",
+        "id": "<id:6>",
+        "messages": [],
+        "modelId": "native:claude:model:fixture-model",
+        "nativeSessionStarted": false,
+        "projectId": "native:claude:project:<id:5>",
+        "providerId": "claude",
+        "requests": [],
+        "snoozedUntil": null,
+        "status": "idle",
+        "summary": {"activityCount":0,"messageCount":0},
+        "title": "Referee thread",
+        "titleSource": "user",
+        "workingDirectory": "<data>",
+        "workspaceSettledAt": null,
+        "worktree": {"dirty":false,"mode":"shared","path":"<data>","status":"ready"}
+       }
+      },
+      {"path":["shell","notice"],"value":"Opened Referee thread."}
+     ]
+    }
+   }
+  },
+  {
+   "say": "desktop observes the thread",
+   "by": "desktop",
+   "sent": {"id":"desktop-6","op":"observe","session":"<secret>","threadIds":["<id:6>"],"v":1},
+   "clients": {
+    "desktop": {
+     "frames": [{"id":"desktop-6","ok":true,"result":null,"v":1}],
+     "held": [
+      {"path":["details","<id:6>"],"value":{"messages":[],"revision":"<revision>","threadId":"<id:6>"}},
+      {
+       "path": ["shell","host","threads",0,"worktree","git"],
+       "value": {
+        "ahead": 0,
+        "aheadOfDefault": null,
+        "behind": 0,
+        "branch": null,
+        "changedFiles": 0,
+        "defaultBranch": null,
+        "deletions": 0,
+        "dirty": false,
+        "fetchedAt": null,
+        "hasRemote": false,
+        "insertions": 0,
+        "isDefaultBranch": false,
+        "isRepository": false,
+        "pullRequest": null,
+        "readAt": "<time>",
+        "upstream": null
+       }
+      }
+     ]
+    },
+    "iphone": {
+     "frames": [],
+     "held": [
+      {
+       "path": ["shell","host","threads",0,"worktree","git"],
+       "value": {
+        "ahead": 0,
+        "aheadOfDefault": null,
+        "behind": 0,
+        "branch": null,
+        "changedFiles": 0,
+        "defaultBranch": null,
+        "deletions": 0,
+        "dirty": false,
+        "fetchedAt": null,
+        "hasRemote": false,
+        "insertions": 0,
+        "isDefaultBranch": false,
+        "isRepository": false,
+        "pullRequest": null,
+        "readAt": "<time>",
+        "upstream": null
+       }
+      }
+     ]
+    },
+    "plain": {
+     "frames": [],
+     "held": [
+      {
+       "path": ["shell","host","threads",0,"worktree","git"],
+       "value": {
+        "ahead": 0,
+        "aheadOfDefault": null,
+        "behind": 0,
+        "branch": null,
+        "changedFiles": 0,
+        "defaultBranch": null,
+        "deletions": 0,
+        "dirty": false,
+        "fetchedAt": null,
+        "hasRemote": false,
+        "insertions": 0,
+        "isDefaultBranch": false,
+        "isRepository": false,
+        "pullRequest": null,
+        "readAt": "<time>",
+        "upstream": null
+       }
+      }
+     ]
+    }
+   }
+  },
+  {
+   "say": "iphone observes the thread",
+   "by": "iphone",
+   "sent": {"id":"iphone-2","op":"observe","session":"<secret>","threadIds":["<id:6>"],"v":1},
+   "clients": {
+    "desktop": {"frames":[],"held":[]},
+    "iphone": {
+     "frames": [{"id":"iphone-2","ok":true,"result":null,"v":1}],
+     "held": [{"path":["details","<id:6>"],"value":{"messages":[],"revision":"<revision>","threadId":"<id:6>"}}]
+    },
+    "plain": {"frames":[],"held":[]}
+   }
+  },
+  {
+   "say": "plain observes the thread",
+   "by": "plain",
+   "sent": {"id":"plain-2","op":"observe","session":"<secret>","threadIds":["<id:6>"],"v":1},
+   "clients": {
+    "desktop": {"frames":[],"held":[]},
+    "iphone": {"frames":[],"held":[]},
+    "plain": {
+     "frames": [{"id":"plain-2","ok":true,"result":null,"v":1}],
+     "held": [{"path":["details","<id:6>"],"value":{"messages":[],"revision":"<revision>","threadId":"<id:6>"}}]
+    }
+   }
+  },
+  {
+   "say": "desktop stages a picture",
+   "by": "desktop",
+   "sent": {
+    "id": "desktop-7",
+    "image": {
+     "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+     "mimeType": "image/png",
+     "name": "Referee.png"
+    },
+    "op": "stage-attachment",
+    "session": "<secret>",
+    "v": 1
+   },
+   "clients": {
+    "desktop": {
+     "frames": [
+      {
+       "id": "desktop-7",
+       "ok": true,
+       "result": {
+        "digest": "c414cd0e204de974f73753c7e28d7638e7b3691bb8b1a2bab6b25bb7fed7ce77",
+        "id": "<id:7>",
+        "mimeType": "image/png",
+        "name": "Referee.png",
+        "sizeBytes": 70
+       },
+       "v": 1
+      }
+     ],
+     "held": []
+    },
+    "iphone": {"frames":[],"held":[]},
+    "plain": {"frames":[],"held":[]}
+   }
+  },
+  {
+   "say": "desktop sends \"Referee prompt one\" with it",
+   "by": "desktop",
+   "sent": {
+    "command": {
+     "attachments": [
+      {
+       "digest": "c414cd0e204de974f73753c7e28d7638e7b3691bb8b1a2bab6b25bb7fed7ce77",
+       "id": "<id:7>",
+       "mimeType": "image/png",
+       "name": "Referee.png",
+       "sizeBytes": 70
+      }
+     ],
+     "text": "Referee prompt one",
+     "threadId": "<id:6>",
+     "type": "manual-send"
+    },
+    "id": "desktop-8",
+    "op": "command",
+    "session": "<secret>",
+    "v": 1
+   },
+   "clients": {
+    "desktop": {
+     "frames": [
+      {
+       "id": "desktop-8",
+       "ok": true,
+       "result": {
+        "$shellPatch": [
+         {"path":["deliveredDrafts",0],"value":{"draftId":"<id:8>","threadId":"<id:6>"}},
+         {
+          "path": ["deliveries",0],
+          "value": {
+           "commandId": "<id:9>",
+           "createdAt": "<time>",
+           "draftId": "<id:8>",
+           "localFeedbackMs": "<ms>",
+           "messageId": "<id:10>",
+           "providerLatencyMs": "<ms>",
+           "status": "accepted",
+           "threadId": "<id:6>",
+           "updatedAt": "<time>"
+          }
+         },
+         {"path":["host","threads",0,"summary"],"remove":true},
+         {"path":["host","threads",0,"kind"],"value":"project"},
+         {"path":["host","threads",0,"manualCompactionSupported"],"value":false},
+         {"path":["host","threads",0,"nativeSessionStarted"],"value":true},
+         {"path":["host","threads",0,"providerSessionOpen"],"value":true},
+         {"path":["host","threads",0,"resumeCompactionDismissed"],"value":false},
+         {"path":["host","threads",0,"runtimeMode"],"value":"approval-required"},
+         {"path":["host","threads",0,"status"],"value":"running"},
+         {
+          "path": ["host","threads",0,"subagentSummary"],
+          "value": {"completed":0,"failed":0,"interrupted":0,"total":0,"unknown":0,"working":0}
+         },
+         {"path":["notice"],"value":"Sent to Referee thread."}
+        ]
+       },
+       "v": 1
+      }
+     ],
+     "held": [
+      {
+       "path": ["details","<id:6>","activities"],
+       "value": [
+        {
+         "afterMessageId": "<id:10>",
+         "id": "claude-turn-<id:10>",
+         "kind": "turn",
+         "sequence": 0,
+         "startedAt": "<time>",
+         "status": "running",
+         "timingSource": "observed",
+         "title": "Working",
+         "turnId": "<id:10>"
+        }
+       ]
+      },
+      {
+       "path": ["details","<id:6>","messages",0],
+       "value": {
+        "attachments": [{"id":"<id:7>","mimeType":"image/png","name":"Referee.png","preview":{"available":true},"sizeBytes":70}],
+        "commandId": "<id:9>",
+        "createdAt": "<time>",
+        "id": "<id:10>",
+        "role": "user",
+        "text": "Referee prompt one"
+       }
+      },
+      {"path":["shell","deliveredDrafts",0],"value":{"draftId":"<id:8>","threadId":"<id:6>"}},
+      {
+       "path": ["shell","deliveries",0],
+       "value": {
+        "commandId": "<id:9>",
+        "createdAt": "<time>",
+        "draftId": "<id:8>",
+        "localFeedbackMs": "<ms>",
+        "messageId": "<id:10>",
+        "providerLatencyMs": "<ms>",
+        "status": "accepted",
+        "threadId": "<id:6>",
+        "updatedAt": "<time>"
+       }
+      },
+      {"path":["shell","host","threads",0,"activities"],"value":[]},
+      {"path":["shell","host","threads",0,"kind"],"value":"project"},
+      {"path":["shell","host","threads",0,"lastTurn"],"value":{"id":"<id:11>","messageId":"<id:10>","status":"running"}},
+      {"path":["shell","host","threads",0,"lastUserMessageId"],"value":"<id:10>"},
+      {"path":["shell","host","threads",0,"manualCompactionSupported"],"value":false},
+      {"path":["shell","host","threads",0,"nativeSessionStarted"],"value":true},
+      {"path":["shell","host","threads",0,"providerSessionOpen"],"value":true},
+      {"path":["shell","host","threads",0,"resumeCompactionDismissed"],"value":false},
+      {"path":["shell","host","threads",0,"runtimeMode"],"value":"approval-required"},
+      {"path":["shell","host","threads",0,"status"],"value":"running"},
+      {
+       "path": ["shell","host","threads",0,"subagentSummary"],
+       "value": {"completed":0,"failed":0,"interrupted":0,"total":0,"unknown":0,"working":0}
+      },
+      {"path":["shell","host","threads",0,"summary","lastMessageAt"],"value":"<time>"},
+      {"path":["shell","host","threads",0,"summary","lastUser"],"value":{"createdAt":"<time>","id":"<id:10>","text":"Referee prompt one"}},
+      {"path":["shell","host","threads",0,"summary","messageCount"],"value":1},
+      {"path":["shell","notice"],"value":"Sent to Referee thread."}
+     ]
+    },
+    "iphone": {
+     "frames": [],
+     "held": [
+      {
+       "path": ["details","<id:6>","activities"],
+       "value": [
+        {"id":"claude-turn-<id:10>","kind":"turn","sequence":0,"startedAt":"<time>","status":"running","title":"Working","turnId":"<id:10>"}
+       ]
+      },
+      {
+       "path": ["details","<id:6>","messages",0],
+       "value": {
+        "attachments": [{"id":"<id:7>","mimeType":"image/png","name":"Referee.png","preview":{"available":true},"sizeBytes":70}],
+        "commandId": "<id:9>",
+        "createdAt": "<time>",
+        "id": "<id:10>",
+        "role": "user",
+        "text": "Referee prompt one"
+       }
+      },
+      {"path":["shell","deliveredDrafts",0],"value":{"draftId":"<id:8>","threadId":"<id:6>"}},
+      {
+       "path": ["shell","deliveries",0],
+       "value": {
+        "commandId": "<id:9>",
+        "createdAt": "<time>",
+        "draftId": "<id:8>",
+        "localFeedbackMs": "<ms>",
+        "messageId": "<id:10>",
+        "providerLatencyMs": "<ms>",
+        "status": "accepted",
+        "threadId": "<id:6>",
+        "updatedAt": "<time>"
+       }
+      },
+      {"path":["shell","host","threads",0,"activities"],"value":[]},
+      {"path":["shell","host","threads",0,"kind"],"value":"project"},
+      {"path":["shell","host","threads",0,"lastTurn"],"value":{"id":"<id:11>","messageId":"<id:10>","status":"running"}},
+      {"path":["shell","host","threads",0,"lastUserMessageId"],"value":"<id:10>"},
+      {"path":["shell","host","threads",0,"manualCompactionSupported"],"value":false},
+      {"path":["shell","host","threads",0,"nativeSessionStarted"],"value":true},
+      {"path":["shell","host","threads",0,"providerSessionOpen"],"value":true},
+      {"path":["shell","host","threads",0,"resumeCompactionDismissed"],"value":false},
+      {"path":["shell","host","threads",0,"runtimeMode"],"value":"approval-required"},
+      {"path":["shell","host","threads",0,"status"],"value":"running"},
+      {
+       "path": ["shell","host","threads",0,"subagentSummary"],
+       "value": {"completed":0,"failed":0,"interrupted":0,"total":0,"unknown":0,"working":0}
+      },
+      {"path":["shell","host","threads",0,"summary","lastMessageAt"],"value":"<time>"},
+      {"path":["shell","host","threads",0,"summary","lastUser"],"value":{"createdAt":"<time>","id":"<id:10>","text":"Referee prompt one"}},
+      {"path":["shell","host","threads",0,"summary","messageCount"],"value":1},
+      {"path":["shell","notice"],"value":"Sent to Referee thread."}
+     ]
+    },
+    "plain": {
+     "frames": [],
+     "held": [
+      {
+       "path": ["details","<id:6>","activities"],
+       "value": [
+        {
+         "afterMessageId": "<id:10>",
+         "id": "claude-turn-<id:10>",
+         "kind": "turn",
+         "sequence": 0,
+         "startedAt": "<time>",
+         "status": "running",
+         "timingSource": "observed",
+         "title": "Working",
+         "turnId": "<id:10>"
+        }
+       ]
+      },
+      {
+       "path": ["details","<id:6>","messages",0],
+       "value": {
+        "attachments": [{"id":"<id:7>","mimeType":"image/png","name":"Referee.png","preview":{"available":true},"sizeBytes":70}],
+        "commandId": "<id:9>",
+        "createdAt": "<time>",
+        "id": "<id:10>",
+        "role": "user",
+        "text": "Referee prompt one"
+       }
+      },
+      {"path":["shell","deliveredDrafts",0],"value":{"draftId":"<id:8>","threadId":"<id:6>"}},
+      {
+       "path": ["shell","deliveries",0],
+       "value": {
+        "commandId": "<id:9>",
+        "createdAt": "<time>",
+        "draftId": "<id:8>",
+        "localFeedbackMs": "<ms>",
+        "messageId": "<id:10>",
+        "providerLatencyMs": "<ms>",
+        "status": "accepted",
+        "threadId": "<id:6>",
+        "updatedAt": "<time>"
+       }
+      },
+      {"path":["shell","host","threads",0,"activities"],"value":[]},
+      {"path":["shell","host","threads",0,"kind"],"value":"project"},
+      {"path":["shell","host","threads",0,"lastTurn"],"value":{"id":"<id:11>","messageId":"<id:10>","status":"running"}},
+      {"path":["shell","host","threads",0,"lastUserMessageId"],"value":"<id:10>"},
+      {"path":["shell","host","threads",0,"manualCompactionSupported"],"value":false},
+      {"path":["shell","host","threads",0,"nativeSessionStarted"],"value":true},
+      {"path":["shell","host","threads",0,"providerSessionOpen"],"value":true},
+      {"path":["shell","host","threads",0,"resumeCompactionDismissed"],"value":false},
+      {"path":["shell","host","threads",0,"runtimeMode"],"value":"approval-required"},
+      {"path":["shell","host","threads",0,"status"],"value":"running"},
+      {
+       "path": ["shell","host","threads",0,"subagentSummary"],
+       "value": {"completed":0,"failed":0,"interrupted":0,"total":0,"unknown":0,"working":0}
+      },
+      {"path":["shell","host","threads",0,"summary","lastMessageAt"],"value":"<time>"},
+      {"path":["shell","host","threads",0,"summary","lastUser"],"value":{"createdAt":"<time>","id":"<id:10>","text":"Referee prompt one"}},
+      {"path":["shell","host","threads",0,"summary","messageCount"],"value":1},
+      {"path":["shell","notice"],"value":"Sent to Referee thread."}
+     ]
+    }
+   }
+  },
+  {
+   "say": "the fake ends the turn with \"Referee reply one\"",
+   "by": "fake",
+   "sent": {"text":"Referee reply one","thread":"<id:6>","type":"complete"},
+   "clients": {
+    "desktop": {
+     "frames": [],
+     "held": [
+      {"path":["details","<id:6>","activities",0,"completedAt"],"value":"<time>"},
+      {"path":["details","<id:6>","activities",0,"status"],"value":"completed"},
+      {"path":["details","<id:6>","activities",0,"title"],"value":"Turn completed"},
+      {
+       "path": ["details","<id:6>","messages",1],
+       "value": {"createdAt":"<time>","id":"<id:12>","role":"assistant","text":"Referee reply one","turnMessageId":"<id:10>"}
+      },
+      {"path":["shell","host","threads",0,"lastTurn","status"],"value":"completed"},
+      {"path":["shell","host","threads",0,"status"],"value":"idle"},
+      {"path":["shell","host","threads",0,"summary","activityCount"],"value":1},
+      {
+       "path": ["shell","host","threads",0,"summary","lastAssistant"],
+       "value": {"createdAt":"<time>","id":"<id:12>","text":"Referee reply one"}
+      },
+      {"path":["shell","host","threads",0,"summary","messageCount"],"value":2}
+     ]
+    },
+    "iphone": {
+     "frames": [],
+     "held": [
+      {"path":["details","<id:6>","activities",0,"status"],"value":"completed"},
+      {"path":["details","<id:6>","activities",0,"title"],"value":"Turn completed"},
+      {
+       "path": ["details","<id:6>","messages",1],
+       "value": {"createdAt":"<time>","id":"<id:12>","role":"assistant","text":"Referee reply one","turnMessageId":"<id:10>"}
+      },
+      {"path":["shell","host","threads",0,"lastTurn","status"],"value":"completed"},
+      {"path":["shell","host","threads",0,"status"],"value":"idle"},
+      {"path":["shell","host","threads",0,"summary","activityCount"],"value":1},
+      {
+       "path": ["shell","host","threads",0,"summary","lastAssistant"],
+       "value": {"createdAt":"<time>","id":"<id:12>","text":"Referee reply one"}
+      },
+      {"path":["shell","host","threads",0,"summary","messageCount"],"value":2}
+     ]
+    },
+    "plain": {
+     "frames": [],
+     "held": [
+      {"path":["details","<id:6>","activities",0,"completedAt"],"value":"<time>"},
+      {"path":["details","<id:6>","activities",0,"status"],"value":"completed"},
+      {"path":["details","<id:6>","activities",0,"title"],"value":"Turn completed"},
+      {
+       "path": ["details","<id:6>","messages",1],
+       "value": {"createdAt":"<time>","id":"<id:12>","role":"assistant","text":"Referee reply one","turnMessageId":"<id:10>"}
+      },
+      {"path":["shell","host","threads",0,"lastTurn","status"],"value":"completed"},
+      {"path":["shell","host","threads",0,"status"],"value":"idle"},
+      {"path":["shell","host","threads",0,"summary","activityCount"],"value":1},
+      {
+       "path": ["shell","host","threads",0,"summary","lastAssistant"],
+       "value": {"createdAt":"<time>","id":"<id:12>","text":"Referee reply one"}
+      },
+      {"path":["shell","host","threads",0,"summary","messageCount"],"value":2}
+     ]
+    }
+   }
+  },
+  {
+   "say": "desktop reads the thread",
+   "by": "desktop",
+   "sent": {"id":"desktop-9","op":"detail","session":"<secret>","threadId":"<id:6>","v":1},
+   "clients": {
+    "desktop": {
+     "frames": [
+      {
+       "id": "desktop-9",
+       "ok": true,
+       "result": {
+        "activities": [
+         {
+          "afterMessageId": "<id:10>",
+          "completedAt": "<time>",
+          "id": "claude-turn-<id:10>",
+          "kind": "turn",
+          "sequence": 0,
+          "startedAt": "<time>",
+          "status": "completed",
+          "timingSource": "observed",
+          "title": "Turn completed",
+          "turnId": "<id:10>"
+         }
+        ],
+        "messages": [
+         {
+          "attachments": [{"id":"<id:7>","mimeType":"image/png","name":"Referee.png","preview":{"available":true},"sizeBytes":70}],
+          "commandId": "<id:9>",
+          "createdAt": "<time>",
+          "id": "<id:10>",
+          "role": "user",
+          "text": "Referee prompt one"
+         },
+         {"createdAt":"<time>","id":"<id:12>","role":"assistant","text":"Referee reply one","turnMessageId":"<id:10>"}
+        ],
+        "revision": "<revision>",
+        "threadId": "<id:6>"
+       },
+       "v": 1
+      }
+     ],
+     "held": []
+    },
+    "iphone": {"frames":[],"held":[]},
+    "plain": {"frames":[],"held":[]}
+   }
+  },
+  {
+   "say": "plain reads the shell",
+   "by": "plain",
+   "sent": {"id":"plain-3","op":"shell","session":"<secret>","v":1},
+   "clients": {
+    "desktop": {"frames":[],"held":[]},
+    "iphone": {"frames":[],"held":[]},
+    "plain": {"frames":[{"id":"plain-3","ok":true,"result":{"$shellPatch":[]},"v":1}],"held":[]}
+   }
+  }
+ ]
+}

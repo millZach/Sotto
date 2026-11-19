@@ -234,6 +234,7 @@ export class SocketAgentHost implements AgentHost {
 
   observeThreads(threadIds: readonly string[]): void {
     this.observed = [...threadIds]
+    this.fold.observing(threadIds)
     void this.request({ op: 'observe', threadIds: [...threadIds] }).catch(() => undefined)
   }
 

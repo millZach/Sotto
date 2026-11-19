@@ -36,6 +36,12 @@ export class ClientFold {
   private catalog: { revision: number; models: unknown; lists: unknown } | null = null
   private lastSeq = -1
   readonly held: Held = { shell: undefined, details: {}, events: [] }
+  /**
+   * Threads whose detail the host keeps current for this client no longer: let go by an `observe` that left them out, or
+   * held from before a hello. A host sends one whole again when it is observed again, at whatever revision, so the next
+   * whole is taken as it comes.
+   */
+  private readonly letGo = new Set<string>()
   /** Each thing a client could not have read, in words, in the order it was found. */
   readonly problems: string[] = []
 
@@ -87,6 +93,7 @@ export class ClientFold {
     this.replyRecords(shell, 'The hello answer')
     this.events(result, 'The hello answer')
     this.held.shell = shell
+    for (const threadId of Object.keys(this.held.details)) this.letGo.add(threadId)
     return { ...result, shell: { ...shell, ...(typeof (result.shell as Json).threadRecordsRevision === 'number' ? { threadRecordsRevision: (result.shell as Json).threadRecordsRevision } : {}) } }
   }
 
@@ -150,15 +157,20 @@ export class ClientFold {
     }
   }
 
+  /** The client sends `observe` with these threads: each it held and leaves out is let go. */
+  observing(threadIds: readonly string[]): void {
+    for (const threadId of Object.keys(this.held.details)) if (!threadIds.includes(threadId)) this.letGo.add(threadId)
+  }
+
   private detailPush(frame: Json): void {
     if (typeof frame.threadId !== 'string') { this.problem('A detail push names no thread.'); return }
-    const held = this.held.details[frame.threadId]
-    // A host never sends a whole thread older than the one the client holds. It may send the one the client holds again,
-    // as the TypeScript host does after a Devin send with attached files (#2699), which changes nothing so long as it
-    // is that revision exactly: a revision names what the thread holds.
+    const held = this.letGo.delete(frame.threadId) ? undefined : this.held.details[frame.threadId]
+    // A host never sends a whole thread at a revision the client holds or older: a thread it holds is sent again only once
+    // it has moved on (#2699), since a revision names what the thread holds.
     if (isObject(frame.detail) && held && typeof held.revision === 'number' && typeof frame.detail.revision === 'number' && frame.detail.revision <= held.revision) {
       if (frame.detail.revision < held.revision) this.problem(`A detail push for thread ${frame.threadId} carries revision ${frame.detail.revision}, which is older than revision ${held.revision}, which the client holds.`)
       else if (!equal(frame.detail, held)) this.problem(`A detail push for thread ${frame.threadId} carries revision ${held.revision} again, which the client holds, with something else in it: ${describeDifferences(held, frame.detail).slice(0, 3).join('; ')}.`)
+      else this.problem(`A detail push for thread ${frame.threadId} carries revision ${held.revision} again, which the client holds, unchanged.`)
       return
     }
     this.held.details[frame.threadId] = isObject(frame.detail) ? clone(frame.detail) : null
