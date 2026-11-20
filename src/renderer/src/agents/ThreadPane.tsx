@@ -139,20 +139,26 @@ function useComposerFloat(compose: React.RefObject<HTMLDivElement | null>, slim:
     const element = compose.current
     const pane = element?.parentElement
     if (!element || !pane || typeof ResizeObserver === 'undefined') return
+    // Only a value that changed is written: writing the same one still marks the page's layout as needing to be redone.
+    const write = (name: string, value: string): void => { if (pane.style.getPropertyValue(name) !== value) pane.style.setProperty(name, value) }
     measure.current = () => {
       const card = element.querySelector<HTMLElement>(':scope > .thread-prompt')
       if (card != null && slimMoving(card)) return
+      // Everything is read before anything is written. A read after a write makes the browser lay the whole page out again
+      // there and then, and a switch to another thread did that three times in its commit (#2733).
       // The composer's height to the fraction of a pixel, as it is laid out. The transcript fills what the composer's room
       // leaves, so a room rounded up past the composer, as whole pixels at 150% display scaling can be, runs the transcript
       // past the pane's foot and gives the pane a scroll bar of its own.
-      pane.style.setProperty('--thread-compose-measured', `${element.getBoundingClientRect().height}px`)
-      pane.style.setProperty('--thread-compose-shown', `${shownHeight(element)}px`)
-      if (card != null && !element.hasAttribute('data-slim')) {
-        // The full card's height and how far its foot stands above the composer's, to the fraction of a pixel, so
-        // Watcher's night scene keeps the card's place exactly while it is slim, whatever the row under it does.
-        const box = card.getBoundingClientRect()
-        pane.style.setProperty('--thread-prompt-full', `${box.height}px`)
-        pane.style.setProperty('--thread-prompt-foot', `${element.getBoundingClientRect().bottom - box.bottom}px`)
+      const composer = element.getBoundingClientRect()
+      const shown = shownHeight(element)
+      // The full card's height and how far its foot stands above the composer's, to the fraction of a pixel, so
+      // Watcher's night scene keeps the card's place exactly while it is slim, whatever the row under it does.
+      const box = card != null && !element.hasAttribute('data-slim') ? card.getBoundingClientRect() : null
+      write('--thread-compose-measured', `${composer.height}px`)
+      write('--thread-compose-shown', `${shown}px`)
+      if (box !== null) {
+        write('--thread-prompt-full', `${box.height}px`)
+        write('--thread-prompt-foot', `${composer.bottom - box.bottom}px`)
       }
     }
     const observer = new ResizeObserver(() => measure.current())
@@ -164,8 +170,13 @@ function useComposerFloat(compose: React.RefObject<HTMLDivElement | null>, slim:
       for (const name of ['--thread-compose-measured', '--thread-compose-shown', '--thread-prompt-full', '--thread-prompt-foot']) pane.style.removeProperty(name)
     }
   }, [compose])
-  // Slim or full, the composer's own box keeps its height; what shows of it changes.
-  useLayoutEffect(() => { measure.current() }, [slim])
+  // Slim or full, the composer's own box keeps its height; what shows of it changes. A pane just drawn, as for a switch to
+  // another thread, is measured by the observer's first report, after the frame's own layout, rather than here mid-commit.
+  const drawn = useRef(false)
+  useLayoutEffect(() => {
+    if (!drawn.current) { drawn.current = true; return }
+    measure.current()
+  }, [slim])
   return useCallback(() => measure.current(), [])
 }
 
