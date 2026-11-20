@@ -51,7 +51,7 @@ Where the 19 s went, each figure the minute's total:
 | The preload receiving broadcasts | 1,672 | the `onState` subscription: its zod parse, `mapHostReferences` and about 700 ms of copying across the bridge |
 | Measuring the composer in a layout effect | 456 | `ThreadPane.tsx`, `getBoundingClientRect` forcing layout |
 | The reply editor's decorations | 408 | ProseMirror's `applyOuterDeco` |
-| Writing the shell cache | about 1,000 | `writeShellCache`, a `JSON.stringify` of the whole shell every 2 s |
+| Writing the shell cache | about 1,000 | `writeShellCache`, a `JSON.stringify` of the whole shell every 2 s. The owner's shell is 4.08 MB as text, over the cache's 1,000,000-character limit, so every write is thrown away and the cache stays empty |
 
 One of the 1.36 s tasks right after a click: the urgent commit of the selection's answer 350 ms, of which the structural
 sharing 257 ms; the preload's parse of a reply 158 ms; a broadcast 116 ms; 292 ms of native time and 59 ms of garbage
@@ -63,8 +63,13 @@ One pull request each, in this order (Zach's pick, November 20):
 
 1. **Time each switch** (this note's pull request). The window notes each switch in `thread-switch-diagnostics.jsonl`:
    milliseconds from the press to the handler (`inputMs`), to main's answer drawn (`replyMs`), to the history held
-   (`historyMs`) and to the first frame painted with it (`paintedMs`). Every fix below is measured by the median and the
-   90th percentile of `paintedMs` over a day of Zach's own switches, before and after its Owl, beside its own benchmark.
+   (`historyMs`), to the start of the frame that paints it (`frameMs`) and to the first task after that frame
+   (`paintedMs`). Beside them, how many commits the switch took, what their structural sharing cost (`shareMs`) and what
+   it had to walk: thread records that arrived new (`newThreadRecords`) and the state's other fields by name
+   (`newFields`). The code alone does not say why one sharing took 257 to 688 ms in the window when a benchmark on a copy
+   of the owner's workspace takes 38 ms with every one of its 1,070 thread records new and 1 ms with three; these say
+   which. Every fix below is measured by the median and the 90th percentile of `paintedMs` over a day of Zach's own
+   switches, before and after its Owl, beside its own benchmark.
 2. **Share only what changed.** Find what the structural sharing walks again on every commit and hand it over by
    identity, as #1330 did for unchanged thread records.
 3. **A click redraws only the selection**, and the composer is measured when its size changes.

@@ -339,11 +339,12 @@ describe('registerMainActivityIpc', () => {
     expect(() => handlers.get(MAIN_ACTIVITY_READ)!(event(other))).toThrow('Open Settings in the main Sotto window.')
     await expect(Promise.resolve().then(() => handlers.get(MAIN_ACTIVITY_COMMAND)!(event(main), { type: 'delete-everything' }))).rejects.toThrow()
     // A thread switch the main window timed is noted; another window's, or one carrying more than numbers, is refused.
-    const timing = { inputMs: 4, replyMs: 120, historyMs: 300, paintedMs: 640, held: false, remote: false, messages: 80, activities: 2_000, threads: 1_065 }
+    const timing = { inputMs: 4, replyMs: 120, historyMs: 300, frameMs: 610, paintedMs: 640, held: false, remote: false, messages: 80, activities: 2_000, threads: 1_065, commits: 3, shareMs: 260, newThreadRecords: 6, newFields: ['deliveries', 'host.projects'] }
     handlers.get(MAIN_ACTIVITY_THREAD_SWITCH)!(event(main), timing)
     expect(switches).toEqual([timing])
     expect(() => handlers.get(MAIN_ACTIVITY_THREAD_SWITCH)!(event(other), timing)).toThrow('Open Settings in the main Sotto window.')
     expect(() => handlers.get(MAIN_ACTIVITY_THREAD_SWITCH)!(event(main), { ...timing, title: 'Private words' })).toThrow()
+    expect(() => handlers.get(MAIN_ACTIVITY_THREAD_SWITCH)!(event(main), { ...timing, newFields: ['Private words'] })).toThrow()
     expect(switches).toHaveLength(1)
     cleanup()
     expect(handlers.size).toBe(0)

@@ -8,7 +8,20 @@ import { agentShell, defaultAgentConfiguration, EMPTY_AGENT_HOST, type AgentBrid
 import type { ThreadSwitchTiming } from '../../../src/shared/mainActivity'
 
 const sotto = window as unknown as { sotto?: unknown }
-afterEach(() => { cleanup(); delete sotto.sotto; vi.restoreAllMocks() })
+afterEach(() => { cleanup(); delete sotto.sotto; document.body.innerHTML = ''; vi.restoreAllMocks() })
+
+/** The window's animation frames, held until the test runs them, then the task after them. */
+function frames() {
+  const queued: FrameRequestCallback[] = []
+  vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => { queued.push(callback); return queued.length })
+  return async (): Promise<void> => {
+    await act(async () => {
+      for (const callback of queued.splice(0)) callback(performance.now())
+      // The clock's task after the frame was queued before this one, so it has run once this resolves.
+      await new Promise(resolve => setTimeout(resolve, 0))
+    })
+  }
+}
 
 const message = (id: string): AgentMessage => ({ id, role: 'assistant', text: `Reply ${id}`, createdAt: '2026-11-20T18:29:00.000Z' })
 const thread = (id: string, messages: AgentMessage[]): AgentThread =>
@@ -38,19 +51,25 @@ describe('timing a thread switch in the window', () => {
         : { threadId, revision: 1, messages: threads.find(item => item.id === threadId)!.messages }),
       onThreadDetail: () => () => undefined,
     }
+    // The switched-to thread's pane is on screen, as on the Threads page.
+    document.body.innerHTML = '<div class="threads-view"><section class="thread-pane" data-thread-id="second"></section></div>'
+    const paint = frames()
     const { result } = renderHook(() => useAgentConnection(bridge))
     await waitFor(() => { expect(result.current.state?.activeThreadId).toBe('first') })
     await act(async () => { await result.current.command({ type: 'select-thread', threadId: 'first' }) })
     await act(async () => { await result.current.command({ type: 'select-thread', threadId: 'second' }) })
     // The selection is drawn, and the thread shows as loading until its history comes.
     expect(result.current.state?.host.threads.find(item => item.id === 'second')?.historyStatus).toBe('loading')
-    await new Promise(resolve => setTimeout(resolve, 50))
+    await paint()
     expect(reports).toEqual([])
     await act(async () => { history.resolve({ threadId: 'second', revision: 1, messages: threads[1]!.messages }) })
-    await waitFor(() => { expect(reports).toHaveLength(1) })
+    await paint()
+    expect(reports).toHaveLength(1)
     const [timing] = reports
     expect(timing).toMatchObject({ held: false, remote: false, messages: 2, activities: 0, threads: 2 })
     expect(timing!.replyMs).toBeLessThanOrEqual(timing!.historyMs)
-    expect(timing!.historyMs).toBeLessThanOrEqual(timing!.paintedMs)
+    expect(timing!.historyMs).toBeLessThanOrEqual(timing!.frameMs)
+    expect(timing!.frameMs).toBeLessThanOrEqual(timing!.paintedMs)
+    expect(timing!.commits).toBeGreaterThan(0)
   })
 })

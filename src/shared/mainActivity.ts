@@ -83,16 +83,30 @@ export const threadSwitchTimingSchema = z.object({
   replyMs: milliseconds,
   /** To the window holding the thread's history; the same as `inputMs` when it already held it. */
   historyMs: milliseconds,
-  /** To the first frame painted after the commit that drew the thread with its history. */
+  /** To the start of the frame that paints the thread with its history, just before its layout and paint. */
+  frameMs: milliseconds,
+  /**
+   * To the first moment the window ran again once that frame was painted. The paint lies between `frameMs` and this; a task
+   * the window ran straight after the paint counts towards this too.
+   */
   paintedMs: milliseconds,
   /** The window already held this thread's history when the press came. */
   held: z.boolean(),
   /** The thread is on another computer. */
   remote: z.boolean(),
-  /** How much was drawn: the thread's messages and activity records, and the threads the window lists. */
+  /** How much the window held: the thread's messages and activity records (the transcript draws the newest of them), and the threads it lists. */
   messages: z.number().int().nonnegative().max(1_000_000),
   activities: z.number().int().nonnegative().max(1_000_000),
   threads: z.number().int().nonnegative().max(1_000_000),
+  /**
+   * Where the window's time went meanwhile: how many commits the switch took, the milliseconds their structural sharing
+   * cost, and what arrived as new objects for it to walk: thread records that were not the ones held, and the state's
+   * other fields by their names in Sotto's code (`deliveries`, `host.projects`).
+   */
+  commits: z.number().int().nonnegative().max(1_000_000),
+  shareMs: milliseconds,
+  newThreadRecords: z.number().int().nonnegative().max(100_000_000),
+  newFields: z.array(z.string().regex(/^(?:host\.)?[A-Za-z]{1,64}$/u)).max(32),
 }).strict()
 export type ThreadSwitchTiming = z.infer<typeof threadSwitchTimingSchema>
 

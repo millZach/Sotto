@@ -14,7 +14,7 @@ async function directory(): Promise<string> {
   return root
 }
 
-const timing = { inputMs: 4, replyMs: 120, historyMs: 300, paintedMs: 640, held: false, remote: false, messages: 80, activities: 2_000, threads: 1_065 }
+const timing = { inputMs: 4, replyMs: 120, historyMs: 300, frameMs: 610, paintedMs: 640, held: false, remote: false, messages: 80, activities: 2_000, threads: 1_065, commits: 3, shareMs: 260, newThreadRecords: 6, newFields: ['deliveries', 'host.projects'] }
 
 describe('the window’s thread switches noted on this computer', () => {
   it('appends one line per switch in the order heard, and stops at the run’s limit', async () => {

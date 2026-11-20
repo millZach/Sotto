@@ -5,13 +5,13 @@ import type { ThreadSwitchTiming } from '../../shared/mainActivity'
 
 /**
  * Where the window's thread switches are noted (#2733), one JSON line each: when, and the milliseconds from the press to
- * main's answer drawn, the history held and the first frame painted with it, beside how much was drawn. A CPU profile shows
+ * main's answer drawn, the history held and the first frame painted with it, beside how much the window held. A CPU profile shows
  * what the window spent its time on but not when a thread appeared, so this file is what puts a number on a slow switch,
  * and on each change made to speed it up. It holds no thread's ID, title or words.
  */
 export const THREAD_SWITCHES_FILE = 'thread-switch-diagnostics.jsonl'
-/** How many lines one run writes at most: a busy day's switches, and never a file that grows without end. */
-export const THREAD_SWITCHES_PER_RUN = 500
+/** How many lines one run writes at most: several busy days' switches (221 on November 19), and never a file without end. */
+export const THREAD_SWITCHES_PER_RUN = 2_000
 
 export type AppendLine = (path: string, line: string) => Promise<void>
 

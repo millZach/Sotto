@@ -86,7 +86,10 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     const activity = window.sotto?.mainActivity
     if (activity?.reportThreadSwitch === undefined) return null
     return new ThreadSwitchClock({ now: () => performance.now(), frame: callback => { requestAnimationFrame(callback) },
-      later: callback => { setTimeout(callback, 0) }, report: timing => activity.reportThreadSwitch?.(timing) })
+      later: callback => { setTimeout(callback, 0) },
+      shown: threadId => document.visibilityState === 'visible'
+        && document.querySelector(`.threads-view .thread-pane[data-thread-id="${CSS.escape(threadId)}"]:not([data-hidden])`) !== null,
+      report: timing => activity.reportThreadSwitch?.(timing) })
   }, [])
   // Read when shown, so a change of language rewords it; the provider subscribes to the language for that alone.
   useInterfaceLanguageState()
@@ -176,11 +179,14 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     const commit = (): void => setSnapshot(current => {
       // The cached shell is replaced outright, never reconciled: its identities belong to the last run.
       if (current?.session !== session || current.state.stale === true) return { session, state: assembled, received }
+      // While a switch is timed, what the sharing cost and what it had to walk count towards it (#2733).
+      const timed = switches?.timing() === true, started = timed ? performance.now() : 0
       const state = session.share(current.state, assembled)
+      if (timed) switches?.shared(performance.now() - started, current.state, assembled)
       return state === current.state ? current : { session, state, received }
     })
     if (options.urgent === true) commit(); else startTransition(commit)
-  }, [session, assemble, detail])
+  }, [session, assemble, detail, switches])
   /** A shell held for its frame commits now: the detail that follows it lands in the same commit. */
   const commitPendingShell = useCallback((options: { urgent?: boolean } = {}): void => {
     if (detail.frame !== 0) { cancelAnimationFrame(detail.frame); detail.frame = 0 }
@@ -267,8 +273,9 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     if (request.type === 'observe-threads') detail.viewed = new Set(request.threadIds)
     const asks = request.type === 'observe-threads' ? request.threadIds : request.type === 'select-thread' ? [request.threadId] : []
     // A switch to another thread is timed from the press that asked for it, before anything else happens (#2733).
-    if (request.type === 'select-thread' && switches !== null && request.threadId !== detail.shell?.activeThreadId) {
-      switches.start(request.threadId, { held: detail.held.has(request.threadId), threads: detail.shell?.host.threads.length ?? 0 }, window.event)
+    if (request.type === 'select-thread' && switches !== null) {
+      if (request.threadId === detail.shell?.activeThreadId) switches.cancel()
+      else switches.start(request.threadId, { held: detail.held.has(request.threadId), threads: detail.shell?.host.threads.length ?? 0 }, window.event)
     }
     const run = async (): Promise<AgentState | null> => {
       if (bridge === undefined || !session.current) return null
