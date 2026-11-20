@@ -55,7 +55,6 @@ The agent stopped before it wrote its report, so its last round of checks was no
 
 ## Open questions
 
-- **The provider's own memory in owlet folders.** With Watcher-style notes picked, should Claude's auto memory, Hermes' two files and Codex's memories stay on in an owlet's folder, or be turned off there? Left on, they keep what Sotto's notes refuse, such as a rule taken from mail.
 - **The notes' name and ADR.** They need a glossary word that isn't "memory", and an ADR on whether they sit outside ADR-0013's gate, as Watcher state does.
 - **Sending a lapsed change later.** A run while away ends with the card lapsed and says what it wanted to send. How the user sends it later is open; telling the owlet "send it", which asks again on a new card, is one idea.
 - **Events beyond the first three.** CI goes red, a new issue or comment, and new mail are in. Vercel deploy failures were left out; nothing else has been decided.
@@ -98,12 +97,13 @@ The agent stopped before it wrote its report, so its last round of checks was no
 - **A limit on runs:** "No limit".
 - **How runs sit in its thread:** "All in its one thread". Every run is more turns in the same long chat.
 - **Memory between runs:** "We should research how other open source projects do agents and handle memory"
-- **What memory to use** (asked with the four options in [the memory research](</home/zach/.sotto/thread-worktrees/1cc5ffa0-2e97-4c27-9587-5db10ca8b21e/docs/research/2026-11-19-owlet-memory-open-source.md>)): "C. Watcher-style notes (suggested)". An owlet keeps two capped lists, as Watcher keeps its state. One holds the user's standing rules for it, in the user's words. The other holds what it found out, each line marked with the run and the kind of source it came from. A rule is kept only in a run the user started. A run that read mail keeps only lines marked as found in mail. Sotto gives the lines back after each compaction, and the user can see and edit them. It needs an ADR and a glossary word other than "memory". Whether the provider's own memory stays on in owlet folders is still open.
+- **What memory to use** (asked with the four options in [the memory research](</home/zach/.sotto/thread-worktrees/1cc5ffa0-2e97-4c27-9587-5db10ca8b21e/docs/research/2026-11-19-owlet-memory-open-source.md>)): "C. Watcher-style notes (suggested)". An owlet keeps two capped lists, as Watcher keeps its state. One holds the user's standing rules for it, in the user's words. The other holds what it found out, each line marked with the run and the kind of source it came from. A rule is kept only in a run the user started. A run that read mail keeps only lines marked as found in mail. Sotto gives the lines back after each compaction, and the user can see and edit them. It needs an ADR and a glossary word other than "memory".
 - **First slice:** "Page and setup only". Runs happen only when asked, and schedules and events come in the next slice.
 - **Naming:** "Keep Owlets, and draw them". Owlets keep their name and get an owl mark of their own, kept clearly different from Watcher's room owls. The glossary entry still has to separate them from Owl features and the Owl track.
 - **iPhone:** "Also set up and edit". The paired iPhone can talk to owlets, answer their cards, and make and change them.
 - **Watcher:** "Fully separate". Watcher neither sees nor steers owlet threads, and owlets aren't in Watcher's room.
 - **Sidebar rows** (asked with R1, R2 and R3 open): "I like R2, so that is what I would choose". Each row shows the owlet's own mark, its name with its role beside it, and under them its home computer and either what just happened or its next run. Newest first, as Recent is on the Threads page.
+- **The provider's own memory in owlet folders:** "Off in owlet folders (suggested)". Claude Code's auto memory, Codex's memories and any other provider memory are off in an owlet's folder from the first slice. Until the notes come, an owlet remembers only its chat, and nothing it reads reaches other threads through a provider's shared memory.
 
 ## Suggested first slice
 
@@ -111,7 +111,7 @@ A suggestion for Zach to accept or change, shaped by his pick "Page and setup on
 
 1. **An Owl feature** in `src/shared/owlFeatures.ts`, as the first brainstorm chose.
 2. **The Owlets page** with the sidebar look and R2 rows, on the desktop and the paired iPhone.
-3. **Setup and edit:** name, role, home computer, model, permission mode, plugin accounts. Sotto makes the owlet's folder (`Owlets/<name>`) and its one project-bound thread, so ADR-0010 stands.
+3. **Setup and edit:** name, role, home computer, model, permission mode, plugin accounts. Sotto makes the owlet's folder (`Owlets/<name>`) and its one project-bound thread, so ADR-0010 stands. The provider's own memory is off in that folder.
 4. **Runs only when asked.** Talking to an owlet is more turns in its one thread, with the same tools, cards and permission mode as any thread.
 5. **Needs you and an unread mark** for an owlet with a card waiting or news unread. No push.
 
