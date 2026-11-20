@@ -695,7 +695,25 @@ export class MuseMspHost implements ProviderHost {
    * thread marks them all. What goes through the message log and the open-session set is marked by them.
    */
   private changed(id: string): void { this.threadChanges.mark(id) }
-  private emit(streaming = false): void { this.publisher.publish(streaming); this.stopOutdated() }
+  private emit(streaming = false): void { this.publisher.publish(streaming); this.stopOutdated(); for (const wake of this.turnEndWaits) wake() }
+  /** Each stop waiting for the turn it stopped to end (`untilStoppedTurnEnds`), woken whenever an update is published. */
+  private readonly turnEndWaits = new Set<() => void>()
+  /**
+   * Resolves once `turnId` has ended in thread `id`'s record, its process has gone or the connection has changed. Muse
+   * answers a stop with `interruptQueued` and ends the turn after it, so a stop that returned on that answer showed the
+   * thread still running whenever the turn's end was read later (#2720). Muse that never ends it is given the deadline it
+   * has to answer any request, and the stop then answers as it did before it waited, with the turn still running.
+   */
+  private untilStoppedTurnEnds(id: string, turnId: string, entry: ThreadProcess, generation: number): Promise<void> {
+    const ended = (): boolean => this.activeTurns.get(id)?.turnId !== turnId || this.processes.get(id) !== entry || generation !== this.generation
+    if (ended()) return Promise.resolve()
+    return new Promise(resolve => {
+      const done = (): void => { clearTimeout(timer); this.turnEndWaits.delete(wake); resolve() }
+      const wake = (): void => { if (ended()) done() }
+      const timer = setTimeout(done, this.options.requestTimeoutMs ?? 15_000)
+      this.turnEndWaits.add(wake)
+    })
+  }
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
   subscribeActivitySnapshots(listener: (snapshot: AgentHostSnapshot) => void, options?: ActivitySubscriptionOptions): () => void {
     return this.activityListeners.add(listener, options)
@@ -2238,6 +2256,8 @@ export class MuseMspHost implements ProviderHost {
           await entry.rpc.request('turn/interrupt', {
             commandId: museCommandId(), sessionId: alias.museSessionId, ...(active ? { turnId: active.turnId } : {}),
           })
+          // The stop returns with the turn ended in the thread's record, as Claude Code's and Codex's do, unless Muse never ends it.
+          if (active) await this.untilStoppedTurnEnds(command.threadId, active.turnId, entry, generation)
         } else if (command.type === 'compact-thread') {
           await this.open(command.threadId); this.assertGeneration(generation)
           if (!alias.museSessionId) throw new MuseUncertain('Muse has not confirmed this thread’s session.')

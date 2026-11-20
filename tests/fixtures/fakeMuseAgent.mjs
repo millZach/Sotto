@@ -24,6 +24,8 @@ import { join } from 'node:path'
 // says `permissionStateHidden`. `session/read` serves a stored session without attaching it.
 // `parkSetModel` holds one session/setModel for the model it names until a `release-set-model` action answers it,
 // saying nothing.
+// `parkInterruptEnd` answers one turn/interrupt, says `session/contextUsage` of `parkInterruptEnd` tokens, and holds the
+// turn's end until a `release-interrupt-end` action, so a reader of the usage knows the answer was read before the end.
 // `silentSetModel` accepts a model change without session/modelChanged, as an answer can arrive without one.
 // `moveDuringApprovalMode` and `moveDuringResume` each move the session to the model they name once, saying so with
 // session/modelChanged before answering session/setApprovalMode or session/resume: a resume's description is then older
@@ -169,7 +171,7 @@ function completeReply(session, text) {
   endTurn(session)
   if (hostUsage && read('script.json', {}).usageChanged) notify('usage/changed', hostUsage)
 }
-let seenAction, pendingListReply, parkedSetModel
+let seenAction, pendingListReply, parkedSetModel, parkedInterruptEnd
 function check() {
   if (ephemeral) return
   const action = read('control.json', undefined)
@@ -213,6 +215,7 @@ function check() {
     turnId: session.activeTurnId ?? null, recordedAt: stamp(), tool: action.tool ?? 'read_file', callId: `call-${randomUUID()}`, args: '{}' })
   else if (action.type === 'exit') process.exit(0)
   else if (action.type === 'release-set-model') { const answer = parkedSetModel; parkedSetModel = undefined; answer?.() }
+  else if (action.type === 'release-interrupt-end') { const end = parkedInterruptEnd; parkedInterruptEnd = undefined; end?.() }
   else if (action.type === 'malformed') notify('item/delta', { sessionId: session.sessionId, itemId: 1 })
   else if (action.type === 'usage') {
     // How full the context is, then token counts that arrive after it.
@@ -463,6 +466,12 @@ createInterface({ input: process.stdin }).on('line', line => {
     for (const approval of session.pendingApprovals ?? []) notify('approval/resolved', { approvalId: approval.approvalId, sessionId: session.sessionId, decision: 'cancelled', resolvedBy: 'policy' })
     for (const input of session.pendingInputs ?? []) notify('userInput/settled', { userInputId: input.userInputId, sessionId: session.sessionId, outcome: 'cancelled' })
     session.pendingApprovals = []; session.pendingInputs = []; save()
+    if (script.parkInterruptEnd) {
+      writeFileSync(path('script.json'), JSON.stringify({ ...script, parkInterruptEnd: undefined }))
+      notify('session/contextUsage', { sessionId: session.sessionId, usedTokens: script.parkInterruptEnd })
+      parkedInterruptEnd = () => endTurn(session, 'cancelled')
+      return
+    }
     endTurn(session, 'cancelled')
   } else if (frame.method === 'approval/listPending') {
     const session = hold(p.sessionId); if (!session) { fail('sessionNotFound', 'Unknown session'); return }
