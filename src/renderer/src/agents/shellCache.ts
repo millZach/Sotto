@@ -98,15 +98,22 @@ export function readShellCache(store: ShellCacheStorage | null = storage()): Age
   } catch { return null }
 }
 
+/**
+ * What a write did: kept the shell, found it too large to be worth keeping and cleared the cache, cleared it because local
+ * history is off or the store refused it, or found no store at all.
+ */
+export type ShellCacheWrite = 'written' | 'too-large' | 'cleared' | 'unavailable'
+
 /** Keeps the newest shell, or clears the cache when the user is not keeping local history. */
-export function writeShellCache(state: AgentState, store: ShellCacheStorage | null = storage()): void {
-  if (store === null) return
-  if (state.historyEnabled === false) { clearShellCache(store); return }
+export function writeShellCache(state: AgentState, store: ShellCacheStorage | null = storage()): ShellCacheWrite {
+  if (store === null) return 'unavailable'
+  if (state.historyEnabled === false) { clearShellCache(store); return 'cleared' }
   try {
     const serialized = JSON.stringify(cacheableShell(state))
-    if (serialized.length > MAX_CACHE_BYTES) { clearShellCache(store); return }
+    if (serialized.length > MAX_CACHE_BYTES) { clearShellCache(store); return 'too-large' }
     store.setItem(SHELL_CACHE_KEY, serialized)
-  } catch { clearShellCache(store) }
+    return 'written'
+  } catch { clearShellCache(store); return 'cleared' }
 }
 
 export function clearShellCache(store: ShellCacheStorage | null = storage()): void {

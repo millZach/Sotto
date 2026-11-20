@@ -10,6 +10,7 @@ import { askedAtOf, threadRevisionOf, wrapAgentBridge } from './agentStateCatalo
 import { clearShellCache, readShellCache, writeShellCache } from './shellCache'
 import type { AppSettings } from '../../../shared/settings'
 import { createStateSharing } from './stateSharing'
+import { ThreadSwitchClock } from './threadSwitchClock'
 import { ThreadDraftStore } from './threadDraftStore'
 import { approximateDetailBytes } from './detailCacheSize'
 import { requestAnswerStore } from './requests/requestAnswers'
@@ -29,7 +30,13 @@ export interface AgentConnection {
 /** How many threads' histories the window keeps once it stops looking at them. */
 const DETAIL_CACHE_LIMIT = 16
 /** At most one cache write per this long; the shell arrives as often as a provider streams. */
-const SHELL_CACHE_INTERVAL_MS = 2_000
+export const SHELL_CACHE_INTERVAL_MS = 2_000
+/**
+ * A shell found too large for the cache is serialized again only this long after, or at once when the window lists fewer
+ * threads. The cache is empty meanwhile, so nothing in it can go stale. On November 20, 2026 the owner's 4 MB shell was
+ * serialized every 2 s only to be thrown away, about 1 s of the window a minute (#2733).
+ */
+export const SHELL_CACHE_RETRY_MS = 60_000
 /** Commands that only ask what an action would do; their answers stay with the dialog that asked. */
 const PREVIEW_COMMANDS: ReadonlySet<AgentCommand['type']> = new Set(['preview-reclaim-thread-worktree', 'preview-delete-thread', 'preview-clear-threads'])
 /** Said when main gave no reason in words: a code, a schema failure or nothing at all. */
@@ -80,6 +87,16 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
   /** The draft store the window's commits feed, which a state held while the window is hidden feeds directly. */
   const draftsRef = useRef<ThreadDraftStore | null>(null)
   const [snapshot, setSnapshot] = useState<{ session: typeof session; state: AgentState; received: number } | null>(null)
+  /** Times each switch to another thread and hands it to main to note (#2733); only the main window has the bridge for it. */
+  const switches = useMemo(() => {
+    const activity = window.sotto?.mainActivity
+    if (activity?.reportThreadSwitch === undefined) return null
+    return new ThreadSwitchClock({ now: () => performance.now(), frame: callback => { requestAnimationFrame(callback) },
+      later: callback => { setTimeout(callback, 0) },
+      shown: threadId => document.visibilityState === 'visible'
+        && document.querySelector(`.threads-view .thread-pane[data-thread-id="${CSS.escape(threadId)}"]:not([data-hidden])`) !== null,
+      report: timing => activity.reportThreadSwitch?.(timing) })
+  }, [])
   // Read when shown, so a change of language rewords it; the provider subscribes to the language for that alone.
   useInterfaceLanguageState()
   const [failure, setFailure] = useState<{ session: typeof session; error: LaterWords } | null>(null)
@@ -168,11 +185,14 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     const commit = (): void => setSnapshot(current => {
       // The cached shell is replaced outright, never reconciled: its identities belong to the last run.
       if (current?.session !== session || current.state.stale === true) return { session, state: assembled, received }
+      // While a switch is timed, what the sharing cost and what it had to walk count towards it (#2733).
+      const timed = switches?.timing() === true, started = timed ? performance.now() : 0
       const state = session.share(current.state, assembled)
+      if (timed) switches?.shared(performance.now() - started, current.state, assembled)
       return state === current.state ? current : { session, state, received }
     })
     if (options.urgent === true) commit(); else startTransition(commit)
-  }, [session, assemble, detail])
+  }, [session, assemble, detail, switches])
   /** A shell held for its frame commits now: the detail that follows it lands in the same commit. */
   const commitPendingShell = useCallback((options: { urgent?: boolean } = {}): void => {
     if (detail.frame !== 0) { cancelAnimationFrame(detail.frame); detail.frame = 0 }
@@ -197,6 +217,7 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
       next = update
     }
     detail.held.set(next.threadId, next)
+    switches?.historyHeld(next.threadId)
     // A history that arrives unasked, for work main wants this window to see land, starts as recent as its
     // arrival. After that only a look moves it: a streamed chunk is not the user coming back to a thread.
     if (!detail.used.has(next.threadId)) detail.used.set(next.threadId, ++detail.clock)
@@ -257,6 +278,11 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     // from the copy the observation brings rather than reading the thread from its host again (#996).
     if (request.type === 'observe-threads') detail.viewed = new Set(request.threadIds)
     const asks = request.type === 'observe-threads' ? request.threadIds : request.type === 'select-thread' ? [request.threadId] : []
+    // A switch to another thread is timed from the press that asked for it, before anything else happens (#2733).
+    if (request.type === 'select-thread' && switches !== null) {
+      if (request.threadId === detail.shell?.activeThreadId) switches.cancel()
+      else switches.start(request.threadId, { held: detail.held.has(request.threadId), threads: detail.shell?.host.threads.length ?? 0 }, window.event)
+    }
     const run = async (): Promise<AgentState | null> => {
       if (bridge === undefined || !session.current) return null
       const version = session.observed
@@ -298,6 +324,7 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
             // queued (#306): the reply, or the newer state that landed in its place, commits before the answer goes back.
             // A draft save's reply is background news and stays a transition.
             if (urgent) flushSync(land); else land()
+            if (request.type === 'select-thread') switches?.replyDrawn(request.threadId)
           }
         }
         return visibleWatcherState(next, watcherEnabledRef.current)
@@ -326,7 +353,7 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     else { operation = session.tail.then(run); session.tail = operation }
     for (const threadId of asks) requestDetail(threadId)
     return operation
-  }, [bridge, session, receiveState, commitPendingShell, detail, requestDetail])
+  }, [bridge, session, receiveState, commitPendingShell, detail, requestDetail, switches])
   const threadDrafts = useMemo(() => new ThreadDraftStore(command), [command])
   draftsRef.current = threadDrafts
   const state = snapshot?.session === session ? snapshot.state : null
@@ -394,14 +421,22 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     }
   }, [bridge, session, threadDrafts, receiveState, commitPendingShell, detail])
   // Keep the newest shell for the next start, at most once every couple of seconds. Nothing is kept
-  // while Keep local history is off, and a stale shell is never written back over itself.
+  // while Keep local history is off, and a stale shell is never written back over itself. A shell too large to keep is
+  // not serialized again until it might fit (`SHELL_CACHE_RETRY_MS`).
   const cached = useRef<number | null>(null)
+  const tooLarge = useRef<{ readonly threads: number; readonly at: number } | null>(null)
   useEffect(() => {
     if (state === null || state.stale === true) return
-    if (state.historyEnabled === false) { clearShellCache(); return }
-    const now = performance.now()
-    const write = (): void => { cached.current = performance.now(); writeShellCache(state) }
-    const remaining = cached.current === null ? 0 : SHELL_CACHE_INTERVAL_MS - (now - cached.current)
+    if (state.historyEnabled === false) { tooLarge.current = null; clearShellCache(); return }
+    const write = (): void => {
+      const at = performance.now()
+      cached.current = at
+      tooLarge.current = writeShellCache(state) === 'too-large' ? { threads: state.host.threads.length, at } : null
+    }
+    const big = tooLarge.current
+    const due = big !== null && state.host.threads.length >= big.threads ? big.at + SHELL_CACHE_RETRY_MS
+      : cached.current === null ? Number.NEGATIVE_INFINITY : cached.current + SHELL_CACHE_INTERVAL_MS
+    const remaining = due - performance.now()
     if (remaining <= 0) { write(); return }
     const timer = window.setTimeout(write, remaining)
     return () => window.clearTimeout(timer)
@@ -413,6 +448,8 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
   // In arrival order with what a hidden window hands the store directly: an older state committing late is not handed over.
   const committedAt = snapshot?.session === session ? snapshot.received : 0
   useLayoutEffect(() => { detail.drawn = committedAt }, [committedAt, detail])
+  // A switch being timed ends at the frame painted after the commit that shows its thread with its history (#2733).
+  useLayoutEffect(() => { if (state !== null) switches?.committed(state) }, [state, switches])
   useLayoutEffect(() => {
     if (shownState === null || shownState.stale === true || committedAt < detail.draftsFed) return
     detail.draftsFed = committedAt
