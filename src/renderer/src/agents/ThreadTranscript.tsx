@@ -102,9 +102,11 @@ export interface ActivityContext {
   readonly onSeek?: ((message: HTMLElement) => void) | undefined
 }
 
-function ActivityGroups({ groups, context, outcome, bare }: {
+function ActivityGroups({ groups, context, outcome, bare, opened }: {
   readonly groups: readonly ActivityGroup[] | undefined; readonly context: ActivityContext; readonly outcome?: AgentActivity['status'] | undefined
   readonly bare?: boolean | undefined
+  /** Drawn inside a Watcher reply's header the user opened, so each group starts open. */
+  readonly opened?: boolean | undefined
 }): ReactNode {
   return groups?.map(group => {
     const compaction = compactionOf(group)
@@ -114,7 +116,7 @@ function ActivityGroups({ groups, context, outcome, bare }: {
       ? <CompactionLine key={group.key} record={compaction} />
       : group.turnId === context.liveTurn ? <LiveBrowserLines key={group.key} group={group} connected={context.connected} onDisclosure={context.onDisclosure} />
       : <ActivityGroupView key={group.key} group={group} live={false} threadRunning={context.running}
-        connected={context.connected} provider={context.provider} onDisclosure={context.onDisclosure} outcome={outcome} bare={bare} threadId={context.threadId} />
+        connected={context.connected} provider={context.provider} onDisclosure={context.onDisclosure} outcome={outcome} bare={bare} opened={opened} threadId={context.threadId} />
   }) ?? null
 }
 
@@ -411,7 +413,7 @@ const MessageArticle = memo(function MessageArticle({ message, provider, writing
       </button> : null}</header>
     {work ? <TurnFailureReason turn={lifecycle} /> : null}
     {work && activity ? <Fold open={workOpen}><div id={workId} className="thread-message__work-body">
-      <ActivityGroups groups={folded(workGroups)} context={activity} outcome={lifecycle?.status} /></div></Fold> : null}
+      <ActivityGroups groups={folded(workGroups)} context={activity} outcome={lifecycle?.status} opened /></div></Fold> : null}
     <MessageContent text={markdown} streaming={writing} commands={message.role === 'assistant'} skills={message.role === 'user' && !wakeUp} />
     <AttachmentPreviews attachments={message.attachments ?? []} origin={threadId === undefined ? undefined : { threadId, messageId: message.id }} />
     {speaker === 'watcher' && message.role === 'assistant' && !writing ? <WatcherOwnChangeFor message={message} /> : null}
