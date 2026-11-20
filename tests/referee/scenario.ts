@@ -158,8 +158,6 @@ export type ScenarioName = typeof SCENARIOS[number]
 export const HELD_OUT: Readonly<Partial<Record<ScenarioName, { readonly providers: ReadonlySet<RefereeProvider>; readonly reason: string }>>> = {
   restart: { providers: new Set(['codex', 'claude', 'grok', 'devin', 'muse', 'opencode', 'cursor']),
     reason: 'After the host starts again, whether the turn the restart stopped is sent the resume note, and whether it goes before or after the clients observe the thread again, differ from run to run (#2710).' },
-  'lost-acknowledgement': { providers: new Set(['claude']),
-    reason: 'Once the turn whose acknowledgement came late ends, Claude Code\'s thread summary counts one activity in some runs and none in others, with the same detail (#2698).' },
 }
 
 /** Why a provider's script is held out, or undefined when it is recorded and replayed. */
@@ -279,11 +277,7 @@ export function script(provider: RefereeProvider, scenario: ScenarioName = 'main
     // Reads, and two requests a host refuses.
     { say: 'desktop reads the thread', by: 'desktop', request: () => ({ op: 'detail', threadId: THREAD }) },
     { say: 'iphone reads the thread', by: 'iphone', request: () => ({ op: 'detail', threadId: THREAD }) },
-    // Claude Code's adapter hears a reply twice, from the CLI's output and from its transcript, and which comes first
-    // differs from run to run; when the transcript wins, the history gains a message-replaced event that repeats the
-    // message word for word. So the TypeScript host's event history for a Claude thread is not the same on every run,
-    // and is not a record a host in another language can be held to until that is settled (#2698).
-    ...provider === 'claude' ? [] : [{ say: 'plain reads the events', by: 'plain', request: () => ({ op: 'events', afterSeq: 0, threadId: THREAD }) } satisfies Step],
+    { say: 'plain reads the events', by: 'plain', request: () => ({ op: 'events', afterSeq: 0, threadId: THREAD }) },
     { say: 'plain reads the shell', by: 'plain', request: () => ({ op: 'shell' }) },
     { say: 'desktop sends an operation the host does not have', by: 'desktop', request: () => ({ op: 'referee-no-such-operation' }) },
     { say: 'iphone sends a command field the allow-list lacks', by: 'iphone', request: command({ type: 'interrupt', threadId: THREAD, refereeField: true }) },

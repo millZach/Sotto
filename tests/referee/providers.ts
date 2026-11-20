@@ -25,6 +25,8 @@ interface FakeLayout {
   /** `shared`: one `control.json` naming its session by `identity`. `session`: `control-<native>.json`. */
   readonly control: 'shared' | 'session'
   readonly identity?: 'threadId' | 'sessionId'
+  /** What the fake is told beside every `complete`. */
+  readonly complete?: { readonly datedBeforeStream: true }
 }
 
 /**
@@ -34,7 +36,9 @@ interface FakeLayout {
  */
 export const REFEREE_FAKES = {
   codex: { record: 'codex-threads.json', native: 'codexThreadId', control: 'shared', identity: 'threadId' },
-  claude: { record: 'claude-threads.json', native: 'sessionId', control: 'session' },
+  // Claude Code dates a finished reply once it is finished, never in the millisecond Sotto heard its stream open; the fake
+  // can finish within that millisecond, so it is told to date the reply before the stream began instead (#2698).
+  claude: { record: 'claude-threads.json', native: 'sessionId', control: 'session', complete: { datedBeforeStream: true } },
   grok: { record: 'grok-threads.json', native: 'grokSessionId', control: 'shared', identity: 'sessionId' },
   devin: { record: 'devin-threads.json', native: 'devinSessionId', control: 'session' },
   muse: { record: 'muse-threads.json', native: 'museSessionId', control: 'shared', identity: 'sessionId' },
@@ -140,6 +144,6 @@ export async function drive(data: string, provider: RefereeProvider, action: Dri
   const layout: FakeLayout = REFEREE_FAKES[provider]
   const native = await nativeSession(data, provider, action.thread)
   const value = Object.fromEntries(Object.entries(action).filter(([key]) => key !== 'thread'))
-  const body = { id: randomUUID(), ...(layout.identity ? { [layout.identity]: native } : {}), ...value }
+  const body = { id: randomUUID(), ...(layout.identity ? { [layout.identity]: native } : {}), ...value, ...(action.type === 'complete' ? layout.complete : {}) }
   await writeFile(join(data, layout.control === 'shared' ? 'control.json' : `control-${native}.json`), JSON.stringify(body))
 }
