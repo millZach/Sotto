@@ -4,7 +4,7 @@ import { PluginSecretLocked } from './accounts'
 import { commentOnGitHub, describeGitHubIssue, openGitHubIssue, setGitHubIssueState } from './github/changes'
 import { readGitHub } from './github/read'
 import { mailServersOf } from './mail/accounts'
-import { openMail, searchMail, type MailOptions, type MailServer, type MailSignIn } from './mail/read'
+import { fetchMailFile, openMail, searchMail, type MailOptions, type MailServer, type MailSignIn } from './mail/read'
 import { sendMail } from './mail/send'
 import type { PluginChangeAnswer, PluginChangeWait } from './pendingChanges'
 import type { PluginElevenLabsHandlers } from './elevenlabs/tool'
@@ -48,6 +48,11 @@ export interface PluginToolWiring {
     readonly options: MailOptions
     /** Whether this computer keeps Proton Mail accounts, as the desktop does and a paired host never does. */
     readonly keepsBridgeAccounts?: boolean
+    /**
+     * A thread's working folder on this computer, which a file from an email is saved in, or null. Left out, no
+     * thread here has a folder to save one in, and is told so.
+     */
+    readonly folderOf?: (threadId: string) => Promise<string | null>
   }
   /**
    * Making 3D models with Meshy, on a computer whose threads can, except for whether a key can be read, which is asked
@@ -108,6 +113,8 @@ export function pluginToolHandlers(wiring: PluginToolWiring): PluginToolHandlers
       providerOf: mail.providerOf, keepsBridgeAccounts: mail.keepsBridgeAccounts === true,
       search: async (account, search) => { const reach = mailSignIn(account); return typeof reach === 'string' ? reach : searchMail(reach.server, reach.signIn, search, mail.options) },
       open: async (account, id) => { const reach = mailSignIn(account); return typeof reach === 'string' ? reach : openMail(reach.server, reach.signIn, { id }, mail.options) },
+      fetchFile: async (account, id, file, timeoutMs) => { const reach = mailSignIn(account); return typeof reach === 'string' ? reach : fetchMailFile(reach.server, reach.signIn, { id, file }, { ...mail.options, timeoutMs }) },
+      folderOf: async threadId => mail.folderOf ? await mail.folderOf(threadId) : null,
       sendTrouble: account => { const reach = mailSignIn(account); return typeof reach === 'string' ? reach : null },
       // A send goes to the account's sending server, with the same sign-in as a read.
       send: async (account, draft) => {

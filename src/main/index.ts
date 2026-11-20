@@ -1605,7 +1605,10 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     ...(meshyTools ? { meshy: meshyTools } : {}),
     ...(elevenLabsTools ? { elevenlabs: elevenLabsTools } : {}),
     // What a thread reads from mail goes to its provider, which the card that asks names.
-    ...(mailGrants ? { mail: { grants: mailGrants, options: mailOptions, keepsBridgeAccounts: true, providerOf: (threadId: string) => {
+    // A file from an email is saved in the thread's own working folder, as Files and the terminal find it.
+    ...(mailGrants ? { mail: { grants: mailGrants, options: mailOptions, keepsBridgeAccounts: true,
+      folderOf: async (threadId: string) => { const found = await files.resolveWorkspace(threadId); return found.ok ? found.value.workingDirectory : null },
+      providerOf: (threadId: string) => {
       const thread = agentControl.watcherSnapshot().threads.find(item => item.id === threadId)
       return thread?.providerId ? PROVIDER_LABELS[thread.providerId] : ''
     } } } : {}),

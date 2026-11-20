@@ -1,8 +1,9 @@
+import { createHash } from 'node:crypto'
 import { isIP } from 'node:net'
 import type { Duplex } from 'node:stream'
 import { connect as connectTls } from 'node:tls'
 import { atomOf, IMAP_LITERAL_MAX, ImapClosed, ImapConnection, ImapProtocolError, listOf, textOf, type ImapAnswer, type ImapArg, type ImapItem } from './imapWire'
-import { attachedParts, decodeMailboxName, decodePart, htmlToText, mailHeaders, mailParts, readableText, textPart } from './message'
+import { attachedParts, decodedSize, decodeFile, decodeMailboxName, decodePart, htmlToText, mailHeaders, mailParts, readableText, textPart, type MailPart } from './message'
 import { isMailCertificate, isThisComputer, MailCertificateChanged, MailTlsBroken, plainToThisComputer, startTls, type MailCertificate } from './startTls'
 
 /**
@@ -10,8 +11,9 @@ import { isMailCertificate, isThisComputer, MailCertificateChanged, MailTlsBroke
  * read is a connection of its own, from sign-in to goodbye, to the one server it is given and no other. Nothing
  * here can change a mailbox: a mailbox is opened for reading only (`EXAMINE`), a message is read without being
  * marked as read (`BODY.PEEK`), and there is no command here that sends, moves, flags or deletes. A file that came
- * with a message is named and never fetched. The password goes to the server and nowhere else: it is in no error
- * and no result.
+ * with a message is named when the message is opened, and fetched only when one is asked for by its id, to be saved
+ * (ADR-0205, November 19, 2026), the same way: with `BODY.PEEK`, in a mailbox opened for reading. The password goes to
+ * the server and nowhere else: it is in no error and no result.
  */
 
 /**
@@ -36,6 +38,15 @@ export interface MailOptions {
 }
 
 export const MAIL_TIMEOUT_MS = 30_000
+/** The most a file saved from a message may be, once decoded (Zach's pick, November 19, 2026). */
+export const MAIL_FILE_MAX_BYTES = 25 * 1024 * 1024
+/**
+ * How long fetching one file may take, from connecting to its last byte: a 25 MB file is about 34 MB as base64, which
+ * needs about 2 Mbit/s to come in this time.
+ */
+export const MAIL_FILE_TIMEOUT_MS = 3 * 60_000
+/** How far past a file's size as written its literal may run: a server's count of a part can be a little off. */
+const FILE_SLACK_BYTES = 64 * 1024
 /** How many messages a search lists when it does not say, and the most it lists. */
 export const MAIL_SEARCH_DEFAULT = 20
 export const MAIL_SEARCH_MAX = 50
@@ -54,11 +65,12 @@ const LISTED_MAX = 50
  * or did not answer in time. `mailbox`: the account has no such mailbox; `mailboxes` names the ones it has. `moved`:
  * the mailbox was rebuilt since the search, so its messages have new names. `gone`: the message is no longer there.
  * `failed`: the server answered something else. `certificate`: the server showed another certificate than the one
- * kept for it, so nothing was sent to it. `said` is the server's own words for it, where it gave any.
+ * kept for it, so nothing was sent to it. `file`: the message lists no file by that id. `encoding`: the file is
+ * written in a way this does not decode. `said` is the server's own words for it, where it gave any.
  */
 export interface MailFailure {
   readonly ok: false
-  readonly reason: 'input' | 'refused' | 'busy' | 'unreachable' | 'mailbox' | 'moved' | 'gone' | 'failed' | 'certificate'
+  readonly reason: 'input' | 'refused' | 'busy' | 'unreachable' | 'mailbox' | 'moved' | 'gone' | 'failed' | 'certificate' | 'file' | 'encoding'
   readonly said?: string
   readonly mailboxes?: readonly string[]
 }
@@ -92,20 +104,32 @@ export interface MailSummary {
   /** Its whole size in bytes, files included. */
   readonly size: number
 }
-export interface MailFile { readonly name: string | null; readonly type: string; readonly size: number }
+/** A file that came with a message. */
+export interface MailFile {
+  /** What it is saved by, with the message's id: it names the file's place in this message and in no other. */
+  readonly id: string
+  readonly name: string | null
+  readonly type: string
+  /** About how many bytes it is once decoded (`decodedSize`). */
+  readonly size: number
+}
 export interface MailMessage extends MailSummary {
   readonly cc: string
   /** The message's text. From its HTML where it has no plain text, which `fromHtml` says. */
   readonly text: string
   readonly fromHtml: boolean
   readonly truncated: boolean
-  /** The files that came with it, by name. Their contents are not read. */
+  /** The files that came with it, by name. Their contents are not read here; one is fetched by its id to be saved. */
   readonly files: readonly MailFile[]
 }
 /** A sign-in that was taken, with the certificate a STARTTLS server showed, for it to be kept. */
 export type MailCheck = { readonly ok: true; readonly certificate?: MailCertificate } | MailFailure
 export type MailFound = { readonly ok: true; readonly mailbox: string; /** How many messages matched; `messages` is the newest of them. */ readonly found: number; readonly messages: readonly MailSummary[] } | MailFailure
 export type MailOpened = { readonly ok: true; readonly mailbox: string; readonly message: MailMessage } | MailFailure
+/** A file larger than a thread may save, refused before it was fetched, or once decoded. */
+export interface MailFileTooLarge { readonly ok: false; readonly reason: 'too-large'; readonly name: string | null; readonly type: string; readonly size: number }
+/** One file fetched from a message and decoded, to be saved. */
+export type MailFileFetched = { readonly ok: true; readonly name: string | null; readonly type: string; readonly section: string; readonly bytes: Buffer } | MailFileTooLarge | MailFailure
 
 /** TLS to a mail server from the first byte, which a read and a send both use. */
 export const mailOverTls: MailConnect = (server, signal) => new Promise((resolve, reject) => {
@@ -148,7 +172,7 @@ const BUSY_WORDS = /too many|throttl|temporar|try again later|rate limit/iu
  * Signs in, does one piece of work, and says goodbye. A connection that fails or runs out of time is `unreachable`;
  * a server that says something this cannot read is `failed`.
  */
-async function signedIn<Result extends { readonly ok: true }>(server: MailServer, signIn: MailSignIn, options: MailOptions, work: (imap: ImapConnection, certificate?: MailCertificate) => Promise<Result | MailFailure>): Promise<Result | MailFailure> {
+async function signedIn<Result extends { readonly ok: boolean }>(server: MailServer, signIn: MailSignIn, options: MailOptions, work: (imap: ImapConnection, certificate?: MailCertificate) => Promise<Result | MailFailure>): Promise<Result | MailFailure> {
   if (!mayReach(server)) return failure('input')
   const result = await inSession(server, signIn, options, work)
   if (!isFailure(result) || result.said === undefined) return result
@@ -159,7 +183,7 @@ async function signedIn<Result extends { readonly ok: true }>(server: MailServer
   return { ...result, said: result.said.slice(0, SAID_MAX) }
 }
 
-async function inSession<Result extends { readonly ok: true }>(server: MailServer, signIn: MailSignIn, options: MailOptions, work: (imap: ImapConnection, certificate?: MailCertificate) => Promise<Result | MailFailure>): Promise<Result | MailFailure> {
+async function inSession<Result extends { readonly ok: boolean }>(server: MailServer, signIn: MailSignIn, options: MailOptions, work: (imap: ImapConnection, certificate?: MailCertificate) => Promise<Result | MailFailure>): Promise<Result | MailFailure> {
   const controller = new AbortController()
   const stop = (): void => controller.abort()
   const timer = setTimeout(stop, options.timeoutMs ?? MAIL_TIMEOUT_MS)
@@ -350,6 +374,19 @@ function messageNamed(id: string): { readonly validity: number; readonly uid: nu
   return { validity: Number(found[1]), uid: Number(found[2]), raw }
 }
 
+/**
+ * A file's id: where it is in the message (its IMAP section) and the start of a digest of the message's own id, so it
+ * names that place in this message and is refused with any other.
+ */
+/** The first 8 hex digits of the SHA-256 of a message's id. */
+const messageDigest = (messageId: string): string => createHash('sha256').update(messageId, 'utf8').digest('hex').slice(0, 8)
+const fileId = (messageId: string, section: string): string => `${section}-${messageDigest(messageId)}`
+function fileNamed(messageId: string, id: string): string | null {
+  // A section is as deep as a message's structure may nest (`imapWire`'s lists go 64 deep).
+  const found = /^(\d{1,4}(?:\.\d{1,4}){0,63})-([0-9a-f]{8})$/u.exec(id)
+  return found && found[2] === messageDigest(messageId) ? found[1]! : null
+}
+
 /** The mailbox a search means, by what it is for or by its own name. */
 async function mailboxFor(imap: ImapConnection, wanted: string | undefined): Promise<NamedMailbox | MailFailure> {
   if (wanted === undefined || wanted.trim().toLowerCase() === 'inbox') return { raw: 'INBOX', name: 'INBOX' }
@@ -450,7 +487,8 @@ export function searchMail(server: MailServer, signIn: MailSignIn, search: MailS
 
 /**
  * Opens one message a search listed, in the mailbox the search found it in: its header lines, its text, and the names
- * of the files that came with it. The message stays unread, and no file's contents are fetched.
+ * of the files that came with it, each with the id it is saved by. The message stays unread, and no file's contents
+ * are fetched: `fetchMailFile` fetches one.
  */
 export function openMail(server: MailServer, signIn: MailSignIn, message: { readonly id: string }, options: MailOptions = {}): Promise<MailOpened> {
   if (isLearning(server)) return Promise.resolve(failure('input'))
@@ -481,8 +519,54 @@ export function openMail(server: MailServer, signIn: MailSignIn, message: { read
       text = whole.slice(0, MAIL_TEXT_MAX_CHARS)
       truncated = cut || whole.length > MAIL_TEXT_MAX_CHARS
     }
-    const files = attachedParts(parts, chosen).slice(0, LISTED_MAX).map(part => ({ name: part.name, type: part.type, size: part.size }))
+    const files = attachedParts(parts, chosen).slice(0, LISTED_MAX).map(part => ({ id: fileId(message.id, part.section), name: part.name, type: part.type, size: decodedSize(part) }))
     const { listed, cc } = summary(mailbox, uid, values)
     return { ok: true, mailbox: mailbox.name, message: { ...listed, cc, text, fromHtml: chosen?.type === 'text/html', truncated, files } }
+  })
+}
+
+/**
+ * Fetches one file a message listed, by the id its opening gave it, and decodes it to be saved (ADR-0205, November 19,
+ * 2026). It is found in the message's structure as opening found it, among the files and never the message's text,
+ * and fetched with `BODY.PEEK` in a mailbox opened for reading, so the message stays unread. A file larger than
+ * `MAIL_FILE_MAX_BYTES` is refused before it is fetched, by its size as written, and again once decoded. The
+ * connection takes one literal of about the file's size as written and no more.
+ */
+export function fetchMailFile(server: MailServer, signIn: MailSignIn, wanted: { readonly id: string; readonly file: string }, options: MailOptions = {}): Promise<MailFileFetched> {
+  if (isLearning(server)) return Promise.resolve(failure('input'))
+  const named = messageNamed(wanted.id)
+  if (!named) return Promise.resolve(failure('input'))
+  const section = fileNamed(wanted.id, wanted.file)
+  if (!section) return Promise.resolve(failure('file'))
+  const { validity, uid } = named
+  return signedIn<Extract<MailFileFetched, { ok: true }> | MailFileTooLarge>(server, signIn, { ...options, timeoutMs: options.timeoutMs ?? MAIL_FILE_TIMEOUT_MS }, async imap => {
+    const mailbox = await examine(imap, { raw: named.raw, name: decodeMailboxName(named.raw) })
+    if (isFailure(mailbox)) return mailbox
+    // A mailbox that was rebuilt numbers its messages afresh, so the number may now be another message's.
+    if (mailbox.validity !== validity) return failure('moved')
+    const read = await imap.run('UID', 'FETCH', String(uid), '(UID BODYSTRUCTURE)')
+    if (read.status !== 'OK') return failure('failed', read.text)
+    const values = fetched(read).get(uid)
+    if (!values) return failure('gone')
+    const parts = mailParts(values.get('BODYSTRUCTURE'))
+    // Only a part the message lists as a file: never its text, and never one past those listed.
+    const part: MailPart | undefined = attachedParts(parts, textPart(parts)).slice(0, LISTED_MAX).find(each => each.section === section)
+    if (!part) return failure('file')
+    const about = { name: part.name, type: part.type }
+    if (decodedSize(part) > MAIL_FILE_MAX_BYTES) return { ok: false, reason: 'too-large', ...about, size: decodedSize(part) }
+    if (decodeFile(Buffer.alloc(0), part.encoding) === null) return failure('encoding', part.encoding)
+    // The file comes as one literal of its size as written. A server that sends more than a little over that is cut off.
+    imap.allowLiteral(part.size + FILE_SLACK_BYTES)
+    const body = await imap.run('UID', 'FETCH', String(uid), `(BODY.PEEK[${section}])`)
+    if (body.status !== 'OK') return failure('failed', body.text)
+    const answered = fetched(body).get(uid)
+    // A message deleted while its structure was read comes back with nothing.
+    if (!answered) return failure('gone')
+    const bytes = startingWith(answered, `BODY[${section}]`)
+    if (!Buffer.isBuffer(bytes)) return failure('failed')
+    const decoded = decodeFile(bytes, part.encoding)
+    if (decoded === null) return failure('encoding', part.encoding)
+    if (decoded.length > MAIL_FILE_MAX_BYTES) return { ok: false, reason: 'too-large', ...about, size: decoded.length }
+    return { ok: true, ...about, section, bytes: decoded }
   })
 }

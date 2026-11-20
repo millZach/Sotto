@@ -16,6 +16,8 @@ export interface FakeMailLeaf {
   readonly body: string | Buffer
   readonly disposition?: 'attachment' | 'inline'
   readonly filename?: string
+  /** The size its structure claims, in place of its body's, as a server's count can be off or a file can be large. */
+  readonly size?: number
 }
 export interface FakeMailMultipart { readonly multipart: string; readonly parts: readonly FakeMailBody[] }
 export type FakeMailBody = FakeMailLeaf | FakeMailMultipart
@@ -77,7 +79,7 @@ function structure(body: FakeMailBody): Buffer {
   if (isMultipart(body)) return cat('(', ...body.parts.map(structure), ' ', written(body.multipart), ' ("boundary" "made-up") NIL NIL NIL)')
   const [kind = 'text', subtype = 'plain'] = body.type.split('/')
   const params = Object.entries(body.params ?? {})
-  const size = bytesOf(body).length
+  const size = body.size ?? bytesOf(body).length
   return cat('(', written(kind), ' ', written(subtype), ' ',
     params.length === 0 ? 'NIL' : cat('(', ...params.flatMap(([key, value], index) => [index === 0 ? '' : ' ', written(key), ' ', written(value)]), ')'),
     ' NIL NIL ', written(body.encoding ?? '7bit'), ` ${size}`, kind === 'text' ? ` ${bytesOf(body).toString('latin1').split('\n').length}` : '', ' NIL ',

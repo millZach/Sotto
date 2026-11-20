@@ -1014,6 +1014,10 @@ msgid "Issue: {title}"
 msgstr ""
 
 #: src/main/plugins/changeWords.ts
+msgid "It can also save the files that came with them in this thread’s folder, up to 25 MB each."
+msgstr ""
+
+#: src/main/plugins/changeWords.ts
 msgid "It cannot send, move or delete mail. Every thread asks for itself."
 msgstr ""
 

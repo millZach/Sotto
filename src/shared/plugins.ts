@@ -176,12 +176,13 @@ export const PLUGINS_RECENT_USE = 'sotto:plugins:recent-use'
  * (ADR-0205, decision 10). Those from `comment` on are changes: a comment posted, an issue opened, closed or
  * reopened, a deployment's build cancelled, a deployment promoted to production, and production rolled back. Then
  * two reads of a mail account, a search and a message opened, and an email sent, which is a change. Never who an
- * email went to or what it said. Then a 3D model made with Meshy: never its words or its photo. Last, a sound made
- * with ElevenLabs, by its kind alone, speech, a sound effect or music: never its words, its voice or its name.
+ * email went to or what it said. Then a 3D model made with Meshy: never its words or its photo. Then a sound made
+ * with ElevenLabs, by its kind alone, speech, a sound effect or music: never its words, its voice or its name. Last, a
+ * file saved from an email, a read: never its name or what was in it.
  */
 export const PLUGIN_READ_KINDS = ['issues', 'pull-requests', 'repository', 'commits', 'checks', 'releases', 'search', 'account', 'deployments', 'projects', 'domains', 'logs', 'other',
   'comment', 'deployment-cancel', 'issue-open', 'issue-close', 'issue-reopen', 'deployment-promote', 'deployment-rollback', 'mail-search', 'mail-message', 'mail-send', '3d-model',
-  'sound-speech', 'sound-effect', 'sound-music'] as const
+  'sound-speech', 'sound-effect', 'sound-music', 'mail-file'] as const
 export type PluginReadKind = typeof PLUGIN_READ_KINDS[number]
 
 /**

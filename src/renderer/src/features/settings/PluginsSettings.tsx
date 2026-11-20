@@ -390,7 +390,7 @@ function useAccountWords(plugin: AccountPluginId): AccountWords {
   }
   if (isBridgePlugin(plugin)) {
     return {
-      about: t`Search, read and send mail through Proton Mail Bridge on this computer, which comes with a paid Proton plan. Each thread asks you once, in the thread, before it reads an account’s mail, and what it reads goes to that thread’s provider. A thread asks you before each email it sends, and shows you the whole email first. It cannot move or delete mail, and a message it reads stays unread for you. To make a thread ask again, open its ··· menu and press Ask before this thread reads the account.`,
+      about: t`Search, read and send mail through Proton Mail Bridge on this computer, which comes with a paid Proton plan. Each thread asks you once, in the thread, before it reads an account’s mail, and what it reads goes to that thread’s provider. A thread that may read an account can also save the files that came with its messages in the thread’s folder, up to 25 MB each. A thread asks you before each email it sends, and shows you the whole email first. It cannot move or delete mail, and a message it reads stays unread for you. To make a thread ask again, open its ··· menu and press Ask before this thread reads the account.`,
       add: t`Add a Proton Mail account`, addAnother: t`Add another Proton Mail account`,
       secretLabel: t`Bridge password`,
       secretDescription: t`The password in Bridge, under this account’s Mailbox details. It is not your Proton password. Sotto checks it with Bridge before saving it, and never shows it again.`,
@@ -424,7 +424,7 @@ function useAccountWords(plugin: AccountPluginId): AccountWords {
   }
   if (isMailPlugin(plugin)) {
     return {
-      about: t`Search and read mail with an app password. Each thread asks you once, in the thread, before it reads an account’s mail, and what it reads goes to that thread’s provider. A thread asks you before each email it sends, and shows you the whole email first. It cannot move or delete mail, and a message it reads stays unread for you. To make a thread ask again, open its ··· menu and press Ask before this thread reads the account.`,
+      about: t`Search and read mail with an app password. Each thread asks you once, in the thread, before it reads an account’s mail, and what it reads goes to that thread’s provider. A thread that may read an account can also save the files that came with its messages in the thread’s folder, up to 25 MB each. A thread asks you before each email it sends, and shows you the whole email first. It cannot move or delete mail, and a message it reads stays unread for you. To make a thread ask again, open its ··· menu and press Ask before this thread reads the account.`,
       add: t`Add a Gmail account`, addAnother: t`Add another Gmail account`,
       secretLabel: t`App password`,
       secretDescription: t`Sixteen characters, made at ${GOOGLE_APP_PASSWORDS_PAGE}. It needs 2-Step Verification on the Google account. Sotto checks it with Gmail before saving it, and never shows it again.`,
@@ -998,7 +998,7 @@ function RecentUse({ name, uses, elsewhere }: {
     'issue-open': t`Opened an issue`, 'issue-close': t`Closed an issue`, 'issue-reopen': t`Reopened an issue`,
     'deployment-promote': t`Promoted a deployment to production`, 'deployment-rollback': t`Rolled production back`,
     'mail-search': t`Searched mail`, 'mail-message': t`Read a message`, 'mail-send': t`Sent an email`, '3d-model': t`Made a 3D model`,
-    'sound-speech': t`Made speech`, 'sound-effect': t`Made a sound effect`, 'sound-music': t`Made music`,
+    'sound-speech': t`Made speech`, 'sound-effect': t`Made a sound effect`, 'sound-music': t`Made music`, 'mail-file': t`Saved a file from an email`,
   }
   // A change that was not made: what the agent asked to do, since nothing was done.
   const asked: Partial<Record<PluginReadKind, string>> = {
@@ -1006,7 +1006,7 @@ function RecentUse({ name, uses, elsewhere }: {
     'issue-open': t`Asked to open an issue`, 'issue-close': t`Asked to close an issue`, 'issue-reopen': t`Asked to reopen an issue`,
     'deployment-promote': t`Asked to promote a deployment to production`, 'deployment-rollback': t`Asked to roll production back`,
     'mail-search': t`Asked to search mail`, 'mail-message': t`Asked to read a message`, 'mail-send': t`Asked to send an email`, '3d-model': t`Asked to make a 3D model`,
-    'sound-speech': t`Asked to make speech`, 'sound-effect': t`Asked to make a sound effect`, 'sound-music': t`Asked to make music`,
+    'sound-speech': t`Asked to make speech`, 'sound-effect': t`Asked to make a sound effect`, 'sound-music': t`Asked to make music`, 'mail-file': t`Asked to save a file from an email`,
   }
   // A change asks each time, and so does a thread's first read of a mail account: both can end with the user's no.
   const changed = (use: ShownPluginUse): boolean => use.tool !== 'plugin_read' || use.outcome === 'denied' || use.outcome === 'lapsed'
@@ -1016,7 +1016,8 @@ function RecentUse({ name, uses, elsewhere }: {
       {shown.map(use => <li key={use.id}>
         <time dateTime={use.at}>{whenUsed(new Date(use.at))}</time>
         <span>
-          {use.outcome === 'done' || !changed(use) ? what[use.kind] : asked[use.kind] ?? what[use.kind]}{' '}
+          {/* A file from an email that was not saved is said to have been asked for, as a change that was not made is (#2727). */}
+          {use.outcome === 'done' || (!changed(use) && use.kind !== 'mail-file') ? what[use.kind] : asked[use.kind] ?? what[use.kind]}{' '}
           <span className="plugin-use__thread">{use.threadTitle === null ? t`in a thread that is gone` : t`in “${use.threadTitle}”`}</span>
           {use.outcome === 'refused' ? <>{' '}<Trans>Sotto refused it.</Trans></>
             : use.outcome === 'failed' ? <>{' '}{changed(use) ? <Trans>You allowed it, and it failed.</Trans> : <Trans>It failed.</Trans>}</>

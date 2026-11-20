@@ -117,7 +117,7 @@ export function hostPlugins(options: {
   readonly paired: (clientId: string) => boolean
   /**
    * One of the host's threads' working folder, found as the host's Files finds it, or null, or `busy` while Files is
-   * too busy to say. Left out, no thread here makes a 3D model.
+   * too busy to say. Left out, no thread here makes a 3D model, a sound or saves a file from an email.
    */
   readonly folderOf?: (threadId: string) => Promise<string | null | 'busy'>
   /** Places a 3D model's line in its thread, as the desktop does. False when it could not be placed. */
@@ -265,6 +265,8 @@ export function hostPlugins(options: {
       grants: mailGrants,
       providerOf: threadId => { const provider = thread(threadId)?.providerId; return provider ? PROVIDER_LABELS[provider] : '' },
       options: { signal: stop.signal, ...(options.standIns?.mailConnect ? { connect: options.standIns.mailConnect } : {}) },
+      // A file from an email is saved in the host's thread's own folder, as a sound is.
+      ...(folderOf ? { folderOf } : {}),
     },
   }))
   return {

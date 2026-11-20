@@ -1529,6 +1529,10 @@ msgid "Asked to roll production back"
 msgstr "Asked to roll production back"
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Asked to save a file from an email"
+msgstr "Asked to save a file from an email"
+
+#: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Asked to search mail"
 msgstr "Asked to search mail"
 
@@ -6061,6 +6065,10 @@ msgstr "Save name"
 msgid "Save token"
 msgstr "Save token"
 
+#: src/renderer/src/features/settings/PluginsSettings.tsx
+msgid "Saved a file from an email"
+msgstr "Saved a file from an email"
+
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Saves transcripts on this computer to search and reuse. With it off, Sotto saves no text but still keeps each dictation's time, length, word count and app name. Turning it off deletes saved checkpoints right away."
 msgstr "Saves transcripts on this computer to search and reuse. With it off, Sotto saves no text but still keeps each dictation's time, length, word count and app name. Turning it off deletes saved checkpoints right away."
@@ -6082,8 +6090,8 @@ msgid "Screenshots, pictures it looks at and picture and video files it writes s
 msgstr "Screenshots, pictures it looks at and picture and video files it writes show in the thread on their own. Off, you see only what you ask it to show you and images you ask it to make."
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
-msgid "Search and read mail with an app password. Each thread asks you once, in the thread, before it reads an account’s mail, and what it reads goes to that thread’s provider. A thread asks you before each email it sends, and shows you the whole email first. It cannot move or delete mail, and a message it reads stays unread for you. To make a thread ask again, open its ··· menu and press Ask before this thread reads the account."
-msgstr "Search and read mail with an app password. Each thread asks you once, in the thread, before it reads an account’s mail, and what it reads goes to that thread’s provider. A thread asks you before each email it sends, and shows you the whole email first. It cannot move or delete mail, and a message it reads stays unread for you. To make a thread ask again, open its ··· menu and press Ask before this thread reads the account."
+msgid "Search and read mail with an app password. Each thread asks you once, in the thread, before it reads an account’s mail, and what it reads goes to that thread’s provider. A thread that may read an account can also save the files that came with its messages in the thread’s folder, up to 25 MB each. A thread asks you before each email it sends, and shows you the whole email first. It cannot move or delete mail, and a message it reads stays unread for you. To make a thread ask again, open its ··· menu and press Ask before this thread reads the account."
+msgstr "Search and read mail with an app password. Each thread asks you once, in the thread, before it reads an account’s mail, and what it reads goes to that thread’s provider. A thread that may read an account can also save the files that came with its messages in the thread’s folder, up to 25 MB each. A thread asks you before each email it sends, and shows you the whole email first. It cannot move or delete mail, and a message it reads stays unread for you. To make a thread ask again, open its ··· menu and press Ask before this thread reads the account."
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Search community themes"
@@ -6110,8 +6118,8 @@ msgid "Search transcripts already uses {keys}. Pick other keys."
 msgstr "Search transcripts already uses {keys}. Pick other keys."
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
-msgid "Search, read and send mail through Proton Mail Bridge on this computer, which comes with a paid Proton plan. Each thread asks you once, in the thread, before it reads an account’s mail, and what it reads goes to that thread’s provider. A thread asks you before each email it sends, and shows you the whole email first. It cannot move or delete mail, and a message it reads stays unread for you. To make a thread ask again, open its ··· menu and press Ask before this thread reads the account."
-msgstr "Search, read and send mail through Proton Mail Bridge on this computer, which comes with a paid Proton plan. Each thread asks you once, in the thread, before it reads an account’s mail, and what it reads goes to that thread’s provider. A thread asks you before each email it sends, and shows you the whole email first. It cannot move or delete mail, and a message it reads stays unread for you. To make a thread ask again, open its ··· menu and press Ask before this thread reads the account."
+msgid "Search, read and send mail through Proton Mail Bridge on this computer, which comes with a paid Proton plan. Each thread asks you once, in the thread, before it reads an account’s mail, and what it reads goes to that thread’s provider. A thread that may read an account can also save the files that came with its messages in the thread’s folder, up to 25 MB each. A thread asks you before each email it sends, and shows you the whole email first. It cannot move or delete mail, and a message it reads stays unread for you. To make a thread ask again, open its ··· menu and press Ask before this thread reads the account."
+msgstr "Search, read and send mail through Proton Mail Bridge on this computer, which comes with a paid Proton plan. Each thread asks you once, in the thread, before it reads an account’s mail, and what it reads goes to that thread’s provider. A thread that may read an account can also save the files that came with its messages in the thread’s folder, up to 25 MB each. A thread asks you before each email it sends, and shows you the whole email first. It cannot move or delete mail, and a message it reads stays unread for you. To make a thread ask again, open its ··· menu and press Ask before this thread reads the account."
 
 #: src/renderer/src/features/settings/PluginsSettings.tsx
 msgid "Searched {name}"

@@ -37,6 +37,22 @@ describe('a mail server’s answers as they arrive (ADR-0205)', () => {
     expect(() => answers(line, Buffer.alloc(1_000_001, 0x61))).toThrow(ImapProtocolError)
   })
 
+  it('takes a larger literal only once widened for it, and joins one that comes in many pieces whole (#2727)', () => {
+    // A file saved from an email is tens of megabytes in thousands of pieces: its pieces are joined once, at its end.
+    const size = IMAP_LITERAL_MAX * 3
+    expect(() => answers(new ImapFrames(), `* 1 FETCH (BODY[2] {${size}}\r\n`)).toThrow(ImapProtocolError)
+    const widened = new ImapFrames()
+    widened.literalMax = size
+    const file = Buffer.alloc(size)
+    for (let at = 0; at < size; at += 1) file[at] = (at * 31) & 0xff
+    expect(answers(widened, `* 1 FETCH (UID 12 BODY[2] {${size}}\r\n`)).toEqual([])
+    for (let at = 0; at < size; at += 16_384) expect(answers(widened, file.subarray(at, at + 16_384))).toEqual([])
+    const [whole, done] = answers(widened, ')\r\nS3 OK Success\r\n')
+    expect(whole![0]).toBe('* 1 FETCH (UID 12 BODY[2] ')
+    expect(Buffer.compare(whole![1] as Buffer, file)).toBe(0)
+    expect([whole![2], done]).toEqual([')', ['S3 OK Success']])
+  })
+
   it('reads atoms, strings and lists, and keeps what stands in an atom’s square brackets whole', () => {
     const [verb, marks, delimiter, name] = imapItems(['LIST (\\HasNoChildren \\All) "/" "[Gmail]/All \\"Mail\\""'])
     expect(atomOf(verb)).toBe('LIST')

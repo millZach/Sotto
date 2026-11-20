@@ -52,7 +52,7 @@ function tools(options: { answers?: PluginChangeAnswer[]; sent?: MailSent | Mail
     },
     ...(options.noMail ? {} : { mail: {
       granted: async () => true, copyOf: () => 0, grant: async () => true, threadOpen: () => true, providerOf: () => 'Claude Code',
-      search: never, open: never,
+      search: never, open: never, fetchFile: never, folderOf: async () => null,
       sendTrouble: () => options.trouble ?? null,
       send: async (account, draft) => { sends.push({ account: account.name, draft }); return options.sent ?? SENT },
     } }),

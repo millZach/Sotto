@@ -19,7 +19,7 @@ export class ImapClosed extends Error {}
  * matched, and a mailbox can hold hundreds of thousands.
  */
 const LINE_MAX = 4_000_000
-/** The largest literal read. A message's text is asked for in a piece no larger than this. */
+/** The largest literal read, unless a connection is widened for one piece. A message's text is asked for in a piece no larger than this. */
 export const IMAP_LITERAL_MAX = 1_000_000
 /** The most read from one connection, whatever it is. */
 const SESSION_MAX = 24_000_000
@@ -31,35 +31,56 @@ const STATUS_LINE = /^\S+ (?:OK|NO|BAD|BYE|PREAUTH)(?: |$)/iu
 /**
  * What a server sends, cut into whole answers as it arrives: each answer is its text, with every literal as bytes
  * where it stood. It keeps its place between arrivals, so a long answer that comes in many pieces is looked through
- * once and not once for every piece.
+ * once and not once for every piece, and the pieces of a literal are joined once, when the last of it has come: a file
+ * saved from a message is tens of megabytes in thousands of pieces, and joining them as each came would copy it
+ * thousands of times.
  */
 export class ImapFrames {
   private buffer: Buffer = Buffer.alloc(0)
+  /** What has arrived and is not yet joined to `buffer`. */
+  private queued: Buffer[] = []
+  private queuedBytes = 0
   private parts: (string | Buffer)[] = []
   /** How many bytes of a literal are awaited, or -1 while the end of a line is. */
   private literal = -1
   /** How far the awaited line has been looked through for its end. */
   private looked = 0
+  /** The largest literal taken. A connection widens it for one large piece of a message (`ImapConnection.allowLiteral`). */
+  literalMax = IMAP_LITERAL_MAX
 
   add(chunk: Buffer): void {
-    this.buffer = this.buffer.length === 0 ? chunk : Buffer.concat([this.buffer, chunk])
+    this.queued.push(chunk)
+    this.queuedBytes += chunk.length
   }
 
   /** Whether anything has arrived that has not been read as an answer. */
   get pending(): boolean {
-    return this.buffer.length > 0 || this.parts.length > 0 || this.literal >= 0
+    return this.buffer.length > 0 || this.queuedBytes > 0 || this.parts.length > 0 || this.literal >= 0
+  }
+
+  /** Joins what has arrived to what was held, in one copy. */
+  private gather(): void {
+    if (this.queued.length === 0) return
+    this.buffer = this.buffer.length === 0 && this.queued.length === 1 ? this.queued[0]! : Buffer.concat([this.buffer, ...this.queued], this.buffer.length + this.queuedBytes)
+    this.queued = []
+    this.queuedBytes = 0
   }
 
   /** The next whole answer, or null while more has to arrive. */
   next(): (string | Buffer)[] | null {
     for (;;) {
       if (this.literal >= 0) {
-        if (this.buffer.length < this.literal) return null
-        this.parts.push(Buffer.from(this.buffer.subarray(0, this.literal)))
+        if (this.buffer.length + this.queuedBytes < this.literal) return null
+        this.gather()
+        const bytes = this.buffer.subarray(0, this.literal)
+        // A literal of the usual size is copied out, so it holds on to nothing else that arrived with it. A larger one
+        // is most of what arrived, and is handed on as it stands rather than copied a second time.
+        this.parts.push(this.literal > IMAP_LITERAL_MAX ? bytes : Buffer.from(bytes))
         this.buffer = this.buffer.subarray(this.literal)
         this.literal = -1
         continue
       }
+      this.gather()
       const end = this.buffer.indexOf('\r\n', this.looked)
       if ((end < 0 ? this.buffer.length : end) > LINE_MAX) throw new ImapProtocolError('A line was too long.')
       if (end < 0) {
@@ -80,7 +101,7 @@ export class ImapFrames {
         this.parts = []
         return whole
       }
-      if (Number(digits) > IMAP_LITERAL_MAX) throw new ImapProtocolError('A literal was too long.')
+      if (Number(digits) > this.literalMax) throw new ImapProtocolError('A literal was too long.')
       this.parts.push(line.slice(0, open))
       this.literal = Number(digits)
     }
@@ -194,13 +215,15 @@ function statusOf(parts: readonly (string | Buffer)[]): (ImapStatus & { readonly
 export class ImapConnection {
   private readonly frames = new ImapFrames()
   private received = 0
+  /** The most read from this connection, which `allowLiteral` raises. */
+  private sessionMax = SESSION_MAX
   private failure: Error | null = null
   private wake: (() => void) | null = null
   private tags = 0
   private readonly ended = (): void => this.fail(new ImapClosed())
   private readonly heard = (chunk: Buffer): void => {
     this.received += chunk.length
-    if (this.received > SESSION_MAX) return this.fail(new ImapProtocolError('The server sent too much.'))
+    if (this.received > this.sessionMax) return this.fail(new ImapProtocolError('The server sent too much.'))
     this.frames.add(chunk)
     this.wake?.()
   }
@@ -233,6 +256,16 @@ export class ImapConnection {
     this.signal.removeEventListener('abort', this.ended)
     this.failure = new ImapClosed()
     return this.socket
+  }
+
+  /**
+   * Lets this connection take one literal of up to `bytes`, and that many more bytes in all, as one file saved from a
+   * message needs: it is asked for by its own size, which is known before it is fetched (ADR-0205). Called before the
+   * command that fetches it.
+   */
+  allowLiteral(bytes: number): void {
+    this.frames.literalMax = Math.max(this.frames.literalMax, bytes)
+    this.sessionMax += bytes
   }
 
   /** What the server says first. */

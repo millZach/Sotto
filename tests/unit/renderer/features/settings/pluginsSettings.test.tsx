@@ -812,7 +812,7 @@ it('lists Gmail under Mail, and adds an account by its name, its address and an 
   expect(document.querySelector('[data-setting="plugin-gmail"]')).toContainElement(gmailRow())
   fireEvent.click(gmailRow())
   // The row says what a thread may do with mail, and that each thread asks first.
-  expect(document.getElementById(gmailRow().getAttribute('aria-controls')!)).toHaveTextContent('Each thread asks you once, in the thread, before it reads an account’s mail, and what it reads goes to that thread’s provider. A thread asks you before each email it sends, and shows you the whole email first. It cannot move or delete mail, and a message it reads stays unread for you. To make a thread ask again, open its ··· menu and press Ask before this thread reads the account.')
+  expect(document.getElementById(gmailRow().getAttribute('aria-controls')!)).toHaveTextContent('Each thread asks you once, in the thread, before it reads an account’s mail, and what it reads goes to that thread’s provider. A thread that may read an account can also save the files that came with its messages in the thread’s folder, up to 25 MB each. A thread asks you before each email it sends, and shows you the whole email first. It cannot move or delete mail, and a message it reads stays unread for you. To make a thread ask again, open its ··· menu and press Ask before this thread reads the account.')
   fireEvent.click(screen.getByRole('button', { name: 'Add a Gmail account' }))
   const form = screen.getByRole('form', { name: 'Add a Gmail account' })
   expect(within(form).getByLabelText('Name')).toHaveFocus()
@@ -909,6 +909,19 @@ it('says of a use of mail what was read, and of a first read you did not allow w
   ])
 })
 
+it('says a file was saved from an email, or only asked for when it was not saved, and never which (#2727)', async () => {
+  const mail = { plugin: 'gmail' as const, accountId: personal.id, threadTitle: 'Tax papers', kind: 'mail-file' as const }
+  const uses = [use(1, { ...mail }), use(2, { ...mail, outcome: 'denied' }), use(3, { ...mail, outcome: 'refused' })]
+  await act(async () => { render(<PluginsSettings bridge={vercelBridge([personal], { recentUse: async () => uses })} />) })
+  fireEvent.click(gmailRow())
+  const items = within(within(screen.getByRole('region', { name: 'Gmail account Personal' })).getByRole('region', { name: 'Recent use' })).getAllByRole('listitem')
+  expect(items.map(item => item.querySelector('span')!.textContent)).toEqual([
+    'Saved a file from an email in “Tax papers”',
+    'Asked to save a file from an email in “Tax papers” You said no.',
+    'Asked to save a file from an email in “Tax papers” Sotto refused it.',
+  ])
+})
+
 it('says an email was sent, or only asked for, and never calls one that may have gone a failure', async () => {
   // Zach's pick on November 14, 2026 (#2494): an email whose answer never came may be in someone's inbox.
   const sent = { plugin: 'gmail' as const, accountId: personal.id, threadTitle: 'Reply to the accountant', tool: 'mail_send' as const, kind: 'mail-send' as const }
@@ -943,6 +956,8 @@ it('adds a Proton Mail account through Bridge, with Bridge’s own ports filled 
   expect(within(form).getByLabelText('IMAP port')).toHaveValue('1143')
   expect(within(form).getByLabelText('SMTP port')).toHaveValue('1025')
   expect(form).toHaveTextContent('The password in Bridge, under this account’s Mailbox details. It is not your Proton password.')
+  // Zach's pick of November 19, 2026 (#2727, variant A), as on Gmail's row.
+  expect(document.getElementById(protonRow().getAttribute('aria-controls')!)).toHaveTextContent('A thread that may read an account can also save the files that came with its messages in the thread’s folder, up to 25 MB each.')
   fireEvent.change(within(form).getByLabelText('Name'), { target: { value: 'Private' } })
   fireEvent.change(within(form).getByLabelText('Proton address'), { target: { value: 'reader@proton.example' } })
   fireEvent.change(within(form).getByLabelText('Bridge password'), { target: { value: APP_PASSWORD } })
