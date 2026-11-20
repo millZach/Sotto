@@ -2,6 +2,8 @@
 
 Issue #2688, stage 0 item 3 of the move to Rust (`docs/plans/2026-11-14-rust-native-port.md`, in #2687). The rule it serves: the TypeScript host is the referee, and a host in another language has to match it at the socket before it replaces it. This is the means of checking that. No Rust host exists yet; this note says what one must do to be checked.
 
+The move to Rust was stopped on November 19, 2026 (the plan's first section). The harness stays in CI as the check that the TypeScript host still sends what it recorded, and what this note says about a host in another language is kept for whoever next builds one.
+
 It has two halves. The recorded frames (#2696): a script played against a host and compared with what the TypeScript host sent. And the adapter contract across the socket (this note's second part): `tests/integration/adapterContract.ts`, every adapter's behavioural contract, run against a host started by a command line instead of an adapter in process.
 
 ## What it does

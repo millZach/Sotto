@@ -1,5 +1,29 @@
 # Moving Sotto to Rust and a native window
 
+## Stopped on November 19, 2026
+
+Zach stopped the whole conversion on November 19, 2026, and lifted the feature freeze with it. No Rust was written. Everything under "The plan as it stood" is kept as a record of what was decided and why; none of it is in force.
+
+He stopped it when the bake-off's results were put to him for the toolkit pick. His reason was that there were too many workarounds to get features Sotto already has. He was then asked whether that covered the whole move or only the native window, and asked himself about a Rust backend under Tauri; he chose to stop all of it.
+
+What the pick had in front of it:
+
+- **GPUI** ran on the Windows laptop and on forge, and Zach passed its feel. It failed three must-pass rows: Arabic and Urdu on Windows came out reversed and unjoined, Orca could not read the transcript's text or typing, and the right-to-left caret in the composer was wrong on Linux. Narrator was not listened to and Japanese input on Windows was not checked. The editor, the Markdown view and selection would have had to be written again, because Zed keeps its own in GPL crates. An edit took 6 to 14 seconds to reach the screen.
+- **Slint** ran on forge only and passed every must-pass row there. It was built on Windows but not measured there. Its built-in text cannot select across blocks in a transcript, its inline pill is a workaround, and its free licence asks for "Made with Slint" in an About screen or on the download page.
+- **The web pane** would have needed Chromium as a component in a helper process, an accessibility bridge of Sotto's own, and H.264 and AAC given up.
+- **Tauri with a Rust backend** keeps the React window, so none of that applies, but the two research notes linked below found its own costs: no change in feel on Windows, three engines instead of one, the browser tools lost on Mac and Linux without Chromium, and WebView2's data sent to Microsoft against the README. Nothing was built for it.
+
+What stays from stage 0:
+
+- **The referee harness** and the adapter contract across the socket (`docs/verification/2026-11-19-referee-harness.md`). `npm run test:referee` still runs in CI. It now holds the TypeScript host to its own recordings, and no other host is planned.
+- **The host faults it found, all fixed:** #2697, #2698, #2699, #2700 and #2720.
+- **Stable.** The 47 Owl features sent to stable on November 18 stay there, and stable takes features again as ADR-0072 says.
+- **The builds and their notes**, on `prototype/native-ui-gpui`, `prototype/native-ui-slint`, `prototype/web-pane-chromium` and `prototype/web-pane-electron-helper`. They never merge.
+
+What ends: the feature freeze (`AGENTS.md` carries its rule from before November 18 again), the pick to give up H.264 and AAC in a web pane, and the direction ADR, which was never written.
+
+## The plan as it stood
+
 This plan takes Sotto off Electron, Node and TypeScript on Windows, Apple silicon macOS and Linux, and keeps every feature it has today. The backend becomes one Rust core. The window becomes a native Rust UI. A Chromium component stays for the panes that show web pages, and for nothing else. The iPhone and Android clients do not change and keep speaking host protocol version 1.
 
 Zach picked this direction on November 14, 2026, on three question cards, after asking for a fresh reading and saying that time is not a limit on the conversion. On November 17 he added three more picks: one repository, a stable frozen at today's Owl, and no feature work until the port is done. The freeze began on November 18: stable 0.1.43 carries every Owl feature, and Owl 0.1.44-owl.20261118.2 is the newest Owl it names. No Rust is written yet.
