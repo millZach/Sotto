@@ -63,7 +63,7 @@ import { COUNCIL_CHANGED, COUNCIL_COMMAND, COUNCIL_ESTIMATE, COUNCIL_READ, COUNC
 import { MAIN_CHECKOUT_CHANGED, MAIN_CHECKOUT_CHANGES, MAIN_CHECKOUT_COMMAND, MAIN_CHECKOUT_READ, MAIN_CHECKOUT_RENDERER_ARGUMENT, mainCheckoutChangesSchema, mainCheckoutCommandSchema,
   mainCheckoutStateSchema, type MainCheckoutBridge } from '../shared/mainCheckout'
 import { GLASS_WINDOW_CHANGED, GLASS_WINDOW_SET, glassWindowRequestSchema, glassWindowResultSchema, parseGlassWindowArguments, type GlassWindowBridge, type GlassWindowState } from '../shared/glassWindow'
-import { MAIN_ACTIVITY_CHANGED, MAIN_ACTIVITY_COMMAND, MAIN_ACTIVITY_READ, MAIN_ACTIVITY_RENDERER_ARGUMENT, mainActivityCommandSchema, mainActivityStateSchema, type MainActivityBridge } from '../shared/mainActivity'
+import { MAIN_ACTIVITY_CHANGED, MAIN_ACTIVITY_COMMAND, MAIN_ACTIVITY_READ, MAIN_ACTIVITY_RENDERER_ARGUMENT, MAIN_ACTIVITY_THREAD_SWITCH, mainActivityCommandSchema, mainActivityStateSchema, threadSwitchTimingSchema, type MainActivityBridge } from '../shared/mainActivity'
 import { INTERFACE_LANGUAGE_CHANGED, INTERFACE_LANGUAGE_GET, interfaceLanguageStateSchema, parseInterfaceLanguageArgument, type InterfaceLanguageBridge } from '../shared/interfaceLanguageBridge'
 import type { InterfaceLanguageState } from '../shared/interfaceLanguages'
 import { DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT, NOTIFICATION_OPENED, NOTIFICATION_TEST, notificationOpeningSchema, notificationTestResultSchema, type NotificationsBridge } from '../shared/desktopNotifications'
@@ -602,6 +602,8 @@ export function createSottoBridge(
       read: async () => invokeParsed(renderer, MAIN_ACTIVITY_READ, mainActivityStateSchema),
       command: async command => invokeParsed(renderer, MAIN_ACTIVITY_COMMAND, mainActivityStateSchema, mainActivityCommandSchema.parse(command)),
       onChanged: listener => subscribe(renderer, MAIN_ACTIVITY_CHANGED, mainActivityStateSchema, listener),
+      // A timing that does not reach main is lost, and nothing the user did waits on it (#2733).
+      reportThreadSwitch: timing => { void renderer.invoke(MAIN_ACTIVITY_THREAD_SWITCH, threadSwitchTimingSchema.parse(timing)).catch(() => undefined) },
     }) } : {}),
     ...(glassWindow !== null ? { glassWindow: Object.freeze<GlassWindowBridge>({
       material: glassWindow.material,
