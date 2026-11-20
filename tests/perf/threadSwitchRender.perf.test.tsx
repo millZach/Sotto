@@ -4,7 +4,7 @@
  * the selection's answer landing: the same state with another thread selected, shared against the last as the window
  * shares it. Reports the median time of a switch, React's render time for the page, and the sidebar's and the composer's
  * part of it, and how many reads of layout the switch makes before it paints (`getBoundingClientRect`, `getComputedStyle`,
- * and an element's client or offset size), each of which makes the browser lay the page out there and then, in the middle
+ * and an element's client, offset or scroll size), each of which makes the browser lay the page out there and then, in the middle
  * of the commit. React's work only otherwise: jsdom lays out and paints nothing. Uses a copy of an explicitly selected data
  * folder.
  *
@@ -79,7 +79,7 @@ describe('thread switch render cost', async () => {
       vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) { count(); return box.call(this) })
       const computed = window.getComputedStyle.bind(window)
       vi.spyOn(window, 'getComputedStyle').mockImplementation((element, pseudo) => { count(); return computed(element, pseudo) })
-      for (const [owner, names] of [[Element.prototype, ['clientWidth', 'clientHeight']], [HTMLElement.prototype, ['offsetWidth', 'offsetHeight']]] as const) {
+      for (const [owner, names] of [[Element.prototype, ['clientWidth', 'clientHeight', 'scrollHeight']], [HTMLElement.prototype, ['offsetWidth', 'offsetHeight']]] as const) {
         for (const name of names) {
           const getter = Object.getOwnPropertyDescriptor(owner, name)!.get!
           Object.defineProperty(owner, name, { configurable: true, get(this: Element) { count(); return getter.call(this) as number } })
