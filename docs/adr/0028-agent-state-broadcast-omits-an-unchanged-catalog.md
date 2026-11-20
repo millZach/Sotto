@@ -246,6 +246,7 @@ base. Only the main window may send a command, and only it is broadcast to, so t
 
 **The preload still checks what crosses.** The changed records are parsed against the thread schema, as every record of
 a whole reply was, and the base, revision, removals and order structurally (`agentCommandChangedThreadRecordsReceiptSchema`).
+Superseded by the November 20, 2026 amendment below: the answer is checked for its shape, and its catalogs by their schema.
 
 **The page puts the threads back from the broadcast it holds, and moves nothing it holds.** The subscription's
 reassembly (`createThreadReassembly`) reads the reply's changed records against its held records with `peek` and keeps them

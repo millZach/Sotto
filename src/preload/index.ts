@@ -296,9 +296,10 @@ interface PayloadCheck<Output> {
  * bridge: revalidating every thread's history costs more than the whole rest of the trip from main
  * to the window, many times a second while an agent works. A structural check is what this side
  * needs — it is the shape of the payload, not its trustworthiness, that could still surprise us.
- * Every other channel keeps its schema.
+ * A command's answer, a thread's history and a whole read are the same payloads, checked the same way (`invokeTrusted`,
+ * ADR-0028's November 20, 2026 amendment). Every other channel keeps its schema.
  */
-function trustedState<Output>(key: string): PayloadCheck<Output> {
+export function trustedState<Output>(key: string): PayloadCheck<Output> {
   return {
     safeParse: value => typeof value === 'object' && value !== null && key in value
       ? { success: true, data: value as Output }
@@ -322,7 +323,7 @@ async function invokeTrusted<Output>(renderer: IpcRendererAdapter, channel: stri
  * A command's answer checked as a state is (`trustedState`), and its model catalogs by their own schema: an answer names
  * each catalog by its revision and never carries one whole (ADR-0028), so one that does is refused here as it always was.
  */
-function trustedReceipt<Output extends { readonly host: unknown }>(): PayloadCheck<Output> {
+export function trustedReceipt<Output extends { readonly host: unknown }>(): PayloadCheck<Output> {
   const state = trustedState<Output>('host')
   return {
     safeParse: value => {
@@ -337,7 +338,7 @@ function trustedReceipt<Output extends { readonly host: unknown }>(): PayloadChe
 }
 
 /** A thread's history as `trustedState` checks one, or none: main answers null for a thread it does not hold. */
-function trustedDetail(): PayloadCheck<import('../shared/agents').AgentThreadDetail | null> {
+export function trustedDetail(): PayloadCheck<import('../shared/agents').AgentThreadDetail | null> {
   const detail = trustedState<import('../shared/agents').AgentThreadDetail>('threadId')
   return { safeParse: value => value === null ? { success: true, data: null } : detail.safeParse(value) }
 }
