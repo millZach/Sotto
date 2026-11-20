@@ -393,6 +393,25 @@ const open = async () => {
 const thread = async (f: Awaited<ReturnType<typeof museFixture>>, id: string) =>
   (await f.host.snapshot()).threads.find(candidate => candidate.id === id)!
 
+it('answers a stop once Muse has ended the turn, when the end comes after Muse answers the stop (#2720)', async () => {
+  const { f, id } = await open()
+  try {
+    await f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'stopped', text: 'Synthetic prompt' })
+    expect((await thread(f, id)).status).toBe('running')
+    // Muse answers `interruptQueued`, then says a context reading, and holds the turn's end. Its frames are read in order,
+    // so once the reading shows, the stop's answer has been read and only the end is still to come.
+    await f.script({ parkInterruptEnd: 4321 })
+    let answered: { status: string; lastTurn: string | undefined } | undefined
+    const stopping = f.host.execute({ type: 'interrupt', threadId: id, commandId: randomUUID() })
+      .then(async () => { const shown = await thread(f, id); answered = { status: shown.status, lastTurn: shown.lastTurn?.status } })
+    await expect.poll(async () => (await thread(f, id)).usage?.contextUsed).toBe(4321)
+    expect(answered).toBeUndefined()
+    await f.action(id, { type: 'release-interrupt-end' })
+    await stopping
+    expect(answered).toEqual({ status: 'idle', lastTurn: 'interrupted' })
+  } finally { await f.cleanup() }
+})
+
 it('recovers missed history after a view gap without blocking its resume reply or duplicating messages', async () => {
   const { f, id } = await open()
   try {

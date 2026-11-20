@@ -45,9 +45,12 @@ const ANSWER_DEADLINE_MS = 30_000
 
 export class SocketAgentHost implements AgentHost {
   private readonly fold = new ClientFold()
-  /** The shell the client shows: the newest of a push's and a command answer's, as the desktop's client keeps it. */
+  /**
+   * The shell the client shows: whichever of a push and a command answer crossed last. Both are folded as they arrive, in
+   * the order they crossed, so an answer is never laid over a push that came after it (#2723).
+   */
   private shell: Json | undefined
-  private readonly pending = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void }>()
+  private readonly pending = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void; foldAnswer: ((result: unknown) => unknown) | undefined }>()
   private next = 0
   private delivered = 0
   private readonly listeners = new Set<(snapshot: AgentHostSnapshot) => void>()
@@ -74,10 +77,17 @@ export class SocketAgentHost implements AgentHost {
    * caller across a restart of the host, whose threads keep the IDs they had.
    */
   static async open(port: number, session: string, provider: RefereeProvider, names: ContractNames = newContractNames()): Promise<SocketAgentHost> {
-    const host = new SocketAgentHost(await openSocket(port, session, DESKTOP_DEFLATE_OFFER), session, provider, names)
-    const hello = host.fold.hello(await host.request({ op: 'hello', afterSeq: 0, accepts: HELLO_ACCEPTS }))
-    host.shell = isObject(hello?.shell) ? hello.shell : undefined
-    host.publish()
+    return SocketAgentHost.onSocket(await openSocket(port, session, DESKTOP_DEFLATE_OFFER), session, provider, names)
+  }
+
+  /** Says hello on a socket already open. Its own test hands it a socket it writes to itself. */
+  static async onSocket(socket: Socket, session: string, provider: RefereeProvider, names: ContractNames = newContractNames()): Promise<SocketAgentHost> {
+    const host = new SocketAgentHost(socket, session, provider, names)
+    await host.request({ op: 'hello', afterSeq: 0, accepts: HELLO_ACCEPTS }, result => {
+      const hello = host.fold.hello(result)
+      host.shell = isObject(hello?.shell) ? hello.shell : undefined
+      return hello
+    })
     return host
   }
 
@@ -94,7 +104,16 @@ export class SocketAgentHost implements AgentHost {
       if (frame.ok === false) {
         const error = isObject(frame.error) ? frame.error : {}
         waiting.reject(new Error(typeof error.message === 'string' ? error.message : `The host refused the request (${String(error.code)}).`))
-      } else waiting.resolve(frame.result)
+        return
+      }
+      if (!waiting.foldAnswer) { waiting.resolve(frame.result); return }
+      // Folded here, before any frame that crossed after it: an answer can carry the model catalog the next push names only
+      // by its revision (#2721), and a push after it shows a newer state than it does (#2723). Awaiting the answer first
+      // would fold every frame that arrived in the same read ahead of it.
+      let result: unknown
+      try { result = waiting.foldAnswer(frame.result); this.publish() }
+      catch (error) { waiting.reject(error instanceof Error ? error : new Error(String(error))); return }
+      waiting.resolve(result)
       return
     }
     if (typeof frame.event !== 'string') return
@@ -117,24 +136,30 @@ export class SocketAgentHost implements AgentHost {
     for (const wake of this.changed) wake()
   }
 
-  private request(frame: Json): Promise<unknown> {
+  /**
+   * Sends a request. `foldAnswer`, for an answer that changes what the client holds, folds it as it arrives, and what it
+   * gives back is what the request resolves to.
+   */
+  private request(frame: Json, foldAnswer?: (result: unknown) => unknown): Promise<unknown> {
     const id = `contract-${++this.next}`
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => { this.pending.delete(id); reject(new Error(`The host did not answer ${String(frame.op)} within ${ANSWER_DEADLINE_MS} ms.`)) }, ANSWER_DEADLINE_MS)
-      this.pending.set(id, { resolve: value => { clearTimeout(timer); resolve(value) }, reject: error => { clearTimeout(timer); reject(error) } })
+      this.pending.set(id, { foldAnswer, resolve: value => { clearTimeout(timer); resolve(value) }, reject: error => { clearTimeout(timer); reject(error) } })
       this.socket.send({ v: 1, id, session: this.session, ...frame })
     })
   }
 
   /**
-   * Sends a client command and holds its answer as the desktop's client does. A refused command throws its sentence,
+   * Sends a client command and holds its answer as the shell from the moment it arrives. A refused command throws its sentence,
    * unless `refusals` is `kept`, for a send, whose delivery says what became of it.
    */
   private async command(command: Json, refusals: 'thrown' | 'kept' = 'thrown'): Promise<Json> {
-    const answer = this.fold.commandAnswer(await this.request({ op: 'command', command }))
+    const answer = await this.request({ op: 'command', command }, result => {
+      const folded = this.fold.commandAnswer(result)
+      if (isObject(folded)) this.shell = folded
+      return folded
+    })
     if (!isObject(answer)) throw new Error('The host answered a command with no shell.')
-    this.shell = answer
-    this.publish()
     if (refusals === 'thrown' && typeof answer.error === 'string' && answer.error) throw new Error(answer.error)
     return answer
   }
