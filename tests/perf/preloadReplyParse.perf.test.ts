@@ -1,7 +1,8 @@
 // @vitest-environment node
 /**
  * What the preload spends checking main's answers before the window sees them (#2733): a thread's history as the window
- * asks for it when a thread is picked, and a command's answer, each copied as the IPC copies it, then parsed with its
+ * asks for it when a thread is picked, a command's answer, and a whole read of the state, which the owner's window made
+ * 26 times in a minute of switching on November 20, 2026, each copied as the IPC copies it, then parsed with its
  * schema as the preload did, and checked as it does now: for its shape alone, as the state channels already are, with a
  * command's answer's catalogs parsed by their own small schema (ADR-0028). Uses an explicitly
  * selected data folder: `workspace.json`, and the stored histories in its `threads.sqlite`, which is only read.
@@ -19,7 +20,7 @@ import { upperMedian as median } from './support/statistics.mjs'
 import { stateAround } from './support/transcriptState'
 import { ThreadStore } from '../../src/main/agents/threadStore'
 import { AgentStateBroadcaster } from '../../src/main/agents/agentStateBroadcast'
-import { agentCommandChangedThreadRecordsReceiptSchema, agentModelCatalogRevisionSchema, agentThreadDetailResultSchema, agentShell, type AgentHostSnapshot } from '../../src/shared/agents'
+import { agentCommandChangedThreadRecordsReceiptSchema, agentModelCatalogRevisionSchema, agentStateSchema, agentThreadDetailResultSchema, agentShell, type AgentHostSnapshot } from '../../src/shared/agents'
 
 const RUNS = 9
 
@@ -65,7 +66,10 @@ describe('the preload’s checks of main’s answers', async () => {
       const receipt = wire(broadcaster.encodeChangedThreadRecordsReceipt(next))
       const answer = { kb: Math.round(serialize(receipt).byteLength / 1024), parseMs: round(time(() => { agentCommandChangedThreadRecordsReceiptSchema.parse(receipt) }), 2),
         checkMs: round(time(() => { void (shaped(receipt, 'host') && agentModelCatalogRevisionSchema.safeParse((receipt as { host: { models: unknown } }).host.models).success) }), 3) }
-      console.info(`preload reply parse: ${JSON.stringify({ threads: workspace.snapshot.threads.length, histories, selectionAnswer: answer })}`)
+      // A whole read: every thread record and every catalog in full.
+      const read = wire(state)
+      const wholeRead = { kb: Math.round(serialize(read).byteLength / 1024), parseMs: round(time(() => { agentStateSchema.parse(read) }), 2), checkMs: round(time(() => { void shaped(read, 'host') }), 3) }
+      console.info(`preload reply parse: ${JSON.stringify({ threads: workspace.snapshot.threads.length, histories, selectionAnswer: answer, wholeRead })}`)
     }, 600_000)
   })
 })

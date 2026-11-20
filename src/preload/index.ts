@@ -418,7 +418,7 @@ function validatedRoutedCommand(command: import('../shared/agents').AgentCommand
 
 function createAgentBridge(renderer: IpcRendererAdapter): import('../shared/agents').AgentWireBridge {
   return Object.freeze({
-    get: async () => invokeParsed(renderer, AGENT_GET, agentStateSchema),
+    get: async () => invokeTrusted(renderer, AGENT_GET, trustedState<import('../shared/agents').AgentState>('host')),
     attachmentPreview: async (request: import('../shared/agents').AgentAttachmentPreviewRequest) =>
       invokeParsed(renderer, AGENT_ATTACHMENT_PREVIEW, agentAttachmentPreviewResultSchema, agentAttachmentPreviewRequestSchema.parse(request)),
     // A tile or the viewer reads one picture a thread's record names (ADR-0170).
@@ -1003,7 +1003,7 @@ export function createSottoPopupBridge(
     modelRouterEnabled,
     getSettings: async () => invokeParsed(renderer, SETTINGS_GET, settingsSchema),
     onSettingsChanged: listener => subscribe(renderer, SETTINGS_CHANGED, settingsChangedSchema, listener),
-    shell: async () => invokeParsed(renderer, AGENT_GET, agentStateSchema),
+    shell: async () => invokeTrusted(renderer, AGENT_GET, trustedState<import('../shared/agents').AgentState>('host')),
     threadDetail: async threadId => invokeTrusted(renderer, AGENT_THREAD_DETAIL_GET, trustedDetail(), agentThreadDetailRequestSchema.parse(threadId)),
     onThreadDetail: listener => subscribe(renderer, AGENT_THREAD_DETAIL, trustedState<import('../shared/agents').AgentThreadDetailUpdate>('threadId'), listener),
     onThread: listener => subscribe(renderer, POPUP_THREAD, popupThreadSchema, listener),
