@@ -321,9 +321,9 @@ describe('registerMainActivityIpc', () => {
     expect(ipc.removeHandler).not.toHaveBeenCalled()
   })
 
-  it('answers only the main window, and checks every command', async () => {
+  it('answers only the main window, and checks every command and thread switch', async () => {
     const { registerMainActivityIpc } = await import('../../../src/main/performance/mainActivityIpc')
-    const { MAIN_ACTIVITY_COMMAND, MAIN_ACTIVITY_READ } = await import('../../../src/shared/mainActivity')
+    const { MAIN_ACTIVITY_COMMAND, MAIN_ACTIVITY_READ, MAIN_ACTIVITY_THREAD_SWITCH } = await import('../../../src/shared/mainActivity')
     const { service } = await harness()
     const handlers = new Map<string, (event: unknown, ...args: unknown[]) => unknown>()
     const ipc = { handle: (channel: string, listener: (event: never, ...args: unknown[]) => unknown) => { handlers.set(channel, listener as never) }, removeHandler: (channel: string) => { handlers.delete(channel) } }
@@ -331,11 +331,20 @@ describe('registerMainActivityIpc', () => {
     const main = { id: 1, mainFrame: frame, getURL: () => frame.url, isDestroyed: () => false }
     const other = { id: 2, mainFrame: frame, getURL: () => frame.url, isDestroyed: () => false }
     const event = (sender: object) => ({ sender, senderFrame: frame })
-    const cleanup = registerMainActivityIpc(ipc as never, service, () => [{ role: 'main', webContents: main as never, url: 'file:///app/out/renderer/index.html' }], () => null)
-    expect([...handlers.keys()].sort()).toEqual([MAIN_ACTIVITY_COMMAND, MAIN_ACTIVITY_READ].sort())
+    const switches: unknown[] = []
+    const cleanup = registerMainActivityIpc(ipc as never, service, () => [{ role: 'main', webContents: main as never, url: 'file:///app/out/renderer/index.html' }], () => null,
+      timing => switches.push(timing))
+    expect([...handlers.keys()].sort()).toEqual([MAIN_ACTIVITY_COMMAND, MAIN_ACTIVITY_READ, MAIN_ACTIVITY_THREAD_SWITCH].sort())
     await expect(Promise.resolve(handlers.get(MAIN_ACTIVITY_READ)!(event(main)))).resolves.toMatchObject({ recording: { phase: 'idle' } })
     expect(() => handlers.get(MAIN_ACTIVITY_READ)!(event(other))).toThrow('Open Settings in the main Sotto window.')
     await expect(Promise.resolve().then(() => handlers.get(MAIN_ACTIVITY_COMMAND)!(event(main), { type: 'delete-everything' }))).rejects.toThrow()
+    // A thread switch the main window timed is noted; another window's, or one carrying more than numbers, is refused.
+    const timing = { inputMs: 4, replyMs: 120, historyMs: 300, paintedMs: 640, held: false, remote: false, messages: 80, activities: 2_000, threads: 1_065 }
+    handlers.get(MAIN_ACTIVITY_THREAD_SWITCH)!(event(main), timing)
+    expect(switches).toEqual([timing])
+    expect(() => handlers.get(MAIN_ACTIVITY_THREAD_SWITCH)!(event(other), timing)).toThrow('Open Settings in the main Sotto window.')
+    expect(() => handlers.get(MAIN_ACTIVITY_THREAD_SWITCH)!(event(main), { ...timing, title: 'Private words' })).toThrow()
+    expect(switches).toHaveLength(1)
     cleanup()
     expect(handlers.size).toBe(0)
   })

@@ -10,6 +10,7 @@ import { askedAtOf, threadRevisionOf, wrapAgentBridge } from './agentStateCatalo
 import { clearShellCache, readShellCache, writeShellCache } from './shellCache'
 import type { AppSettings } from '../../../shared/settings'
 import { createStateSharing } from './stateSharing'
+import { ThreadSwitchClock } from './threadSwitchClock'
 import { ThreadDraftStore } from './threadDraftStore'
 import { approximateDetailBytes } from './detailCacheSize'
 import { requestAnswerStore } from './requests/requestAnswers'
@@ -80,6 +81,13 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
   /** The draft store the window's commits feed, which a state held while the window is hidden feeds directly. */
   const draftsRef = useRef<ThreadDraftStore | null>(null)
   const [snapshot, setSnapshot] = useState<{ session: typeof session; state: AgentState; received: number } | null>(null)
+  /** Times each switch to another thread and hands it to main to note (#2733); only the main window has the bridge for it. */
+  const switches = useMemo(() => {
+    const activity = window.sotto?.mainActivity
+    if (activity?.reportThreadSwitch === undefined) return null
+    return new ThreadSwitchClock({ now: () => performance.now(), frame: callback => { requestAnimationFrame(callback) },
+      later: callback => { setTimeout(callback, 0) }, report: timing => activity.reportThreadSwitch?.(timing) })
+  }, [])
   // Read when shown, so a change of language rewords it; the provider subscribes to the language for that alone.
   useInterfaceLanguageState()
   const [failure, setFailure] = useState<{ session: typeof session; error: LaterWords } | null>(null)
@@ -197,6 +205,7 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
       next = update
     }
     detail.held.set(next.threadId, next)
+    switches?.historyHeld(next.threadId)
     // A history that arrives unasked, for work main wants this window to see land, starts as recent as its
     // arrival. After that only a look moves it: a streamed chunk is not the user coming back to a thread.
     if (!detail.used.has(next.threadId)) detail.used.set(next.threadId, ++detail.clock)
@@ -257,6 +266,10 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     // from the copy the observation brings rather than reading the thread from its host again (#996).
     if (request.type === 'observe-threads') detail.viewed = new Set(request.threadIds)
     const asks = request.type === 'observe-threads' ? request.threadIds : request.type === 'select-thread' ? [request.threadId] : []
+    // A switch to another thread is timed from the press that asked for it, before anything else happens (#2733).
+    if (request.type === 'select-thread' && switches !== null && request.threadId !== detail.shell?.activeThreadId) {
+      switches.start(request.threadId, { held: detail.held.has(request.threadId), threads: detail.shell?.host.threads.length ?? 0 }, window.event)
+    }
     const run = async (): Promise<AgentState | null> => {
       if (bridge === undefined || !session.current) return null
       const version = session.observed
@@ -298,6 +311,7 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
             // queued (#306): the reply, or the newer state that landed in its place, commits before the answer goes back.
             // A draft save's reply is background news and stays a transition.
             if (urgent) flushSync(land); else land()
+            if (request.type === 'select-thread') switches?.replyDrawn(request.threadId)
           }
         }
         return visibleWatcherState(next, watcherEnabledRef.current)
@@ -326,7 +340,7 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     else { operation = session.tail.then(run); session.tail = operation }
     for (const threadId of asks) requestDetail(threadId)
     return operation
-  }, [bridge, session, receiveState, commitPendingShell, detail, requestDetail])
+  }, [bridge, session, receiveState, commitPendingShell, detail, requestDetail, switches])
   const threadDrafts = useMemo(() => new ThreadDraftStore(command), [command])
   draftsRef.current = threadDrafts
   const state = snapshot?.session === session ? snapshot.state : null
@@ -413,6 +427,8 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
   // In arrival order with what a hidden window hands the store directly: an older state committing late is not handed over.
   const committedAt = snapshot?.session === session ? snapshot.received : 0
   useLayoutEffect(() => { detail.drawn = committedAt }, [committedAt, detail])
+  // A switch being timed ends at the frame painted after the commit that shows its thread with its history (#2733).
+  useLayoutEffect(() => { if (state !== null) switches?.committed(state) }, [state, switches])
   useLayoutEffect(() => {
     if (shownState === null || shownState.stale === true || committedAt < detail.draftsFed) return
     detail.draftsFed = committedAt

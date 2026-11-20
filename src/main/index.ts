@@ -317,6 +317,7 @@ import { MainActivityService, type MainActivityLogEvent } from './performance/ma
 import { HangWatchdog, WindowHangWatch, type HangWatchdogLogEvent } from './performance/hangWatchdog'
 import { saveHangRecording, updateHangRecording } from './performance/hangRecording'
 import { registerMainActivityIpc } from './performance/mainActivityIpc'
+import { threadSwitchTimings } from './performance/threadSwitchTimings'
 import { registerMainCheckoutIpc } from './agents/mainCheckoutIpc'
 import type { MainCheckoutEvent } from './agents/mainCheckout'
 import { MAIN_CHECKOUT_CHANGED, MAIN_CHECKOUT_RENDERER_ARGUMENT } from '../shared/mainCheckout'
@@ -2792,9 +2793,11 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       const unsubscribeHostNextPrompts = nextPromptEnabled ? hostRouter.subscribeNextPrompts(entry => windows.sendToMain(NEXT_PROMPT_CHANGED, entry)) : undefined
       const cleanupNotifications = registerNotificationIpc(ipcMain, desktopNotifier, () => windows.getTrustedRenderers())
       const cleanupPopup = popup === null ? () => undefined : registerPopupIpc(ipcMain, popup.ipc, () => trustedRenderers())
-      // A recording profiles the main window that asked, through its own debugger (ADR-0098).
+      // A recording profiles the main window that asked, through its own debugger (ADR-0098). The window's thread switches
+      // are noted beside the recordings (#2733).
       const cleanupMainActivity = registerMainActivityIpc(ipcMain, mainActivity, () => windows.getTrustedRenderers(),
-        event => { const sender = BrowserWindow.getAllWindows().find(window => window.webContents === event.sender)?.webContents; return sender ? windowProfiler(sender.debugger) : null })
+        event => { const sender = BrowserWindow.getAllWindows().find(window => window.webContents === event.sender)?.webContents; return sender ? windowProfiler(sender.debugger) : null },
+        threadSwitchTimings(userDataPath))
       // The see-through window (ADR-0150): only while Glass's Owl feature is on, so stable registers nothing.
       const cleanupGlassWindow = registerGlassWindowIpc(ipcMain, glassThemeEnabled ? on => windows.setMainWindowSeeThrough(on) : null, () => windows.getTrustedRenderers())
       // Keep main up to date (ADR-0142): only while its Owl feature is on, so stable registers nothing.

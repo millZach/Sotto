@@ -9,6 +9,8 @@ export const MAIN_ACTIVITY_READ = 'sotto:main-activity:read'
 export const MAIN_ACTIVITY_COMMAND = 'sotto:main-activity:command'
 export const MAIN_ACTIVITY_CHANGED = 'sotto:main-activity:changed'
 export const MAIN_ACTIVITY_RENDERER_ARGUMENT = '--sotto-main-activity-enabled'
+/** The window's timing of one thread switch, from the press to the first frame painted with its history (#2733). */
+export const MAIN_ACTIVITY_THREAD_SWITCH = 'sotto:main-activity:thread-switch'
 
 /** One bar a second over the last minute. */
 export const MAIN_LOOP_WINDOW_SECONDS = 60
@@ -70,10 +72,36 @@ export const mainActivityCommandSchema = z.discriminatedUnion('type', [
 ])
 export type MainActivityCommand = z.infer<typeof mainActivityCommandSchema>
 
+/**
+ * One thread switch as the window timed it (#2733): milliseconds from the press that asked for the thread, on the
+ * window's own clock, to each step. Numbers and two facts about the thread, never its ID, its title or anything said in it.
+ */
+export const threadSwitchTimingSchema = z.object({
+  /** From the press to the window's own handler: how long the press waited for the window to be free. */
+  inputMs: milliseconds,
+  /** To the commit that drew main's answer to the selection. */
+  replyMs: milliseconds,
+  /** To the window holding the thread's history; the same as `inputMs` when it already held it. */
+  historyMs: milliseconds,
+  /** To the first frame painted after the commit that drew the thread with its history. */
+  paintedMs: milliseconds,
+  /** The window already held this thread's history when the press came. */
+  held: z.boolean(),
+  /** The thread is on another computer. */
+  remote: z.boolean(),
+  /** How much was drawn: the thread's messages and activity records, and the threads the window lists. */
+  messages: z.number().int().nonnegative().max(1_000_000),
+  activities: z.number().int().nonnegative().max(1_000_000),
+  threads: z.number().int().nonnegative().max(1_000_000),
+}).strict()
+export type ThreadSwitchTiming = z.infer<typeof threadSwitchTimingSchema>
+
 export interface MainActivityBridge {
   read(): Promise<MainActivityState>
   command(command: MainActivityCommand): Promise<MainActivityState>
   onChanged(listener: (state: MainActivityState) => void): () => void
+  /** Hands main one thread switch's timing to note on this computer; nothing comes back. */
+  reportThreadSwitch?(timing: ThreadSwitchTiming): void
 }
 
 /**

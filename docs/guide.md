@@ -1404,6 +1404,8 @@ Sotto also records a hang by itself, with no press. When main stops answering fo
 
 A hang recording cannot see inside a long native call, and a read of the thread history is one. So when such a read holds main for a quarter of a second or more, Sotto adds a line to `store-read-diagnostics.jsonl` in its data folder: when, which of Sotto's own queries it was, and how many milliseconds it took. The query is Sotto's code with every value left out, so a line holds nothing a thread said. At most 200 lines are written in one run, and the file never leaves this computer.
 
+A CPU profile shows what the window spent its time on, but not when a thread you picked appeared. So each time you switch the main window to another thread, Sotto adds a line to `thread-switch-diagnostics.jsonl` in the same folder: when, and how many milliseconds passed from your press to the window handling it, to main's answer drawn, to the thread's history held and to the first frame painted with it, with whether the history was already held, whether the thread is on another computer, and how many messages, activity records and threads were drawn. A line holds no thread's name or ID and nothing a thread said. A switch you leave before it paints is not counted. At most 500 lines are written in one run, and the file never leaves this computer.
+
 **Attach to a thread** opens a new thread in the current project, or asks which project when it is on another computer, with a draft that names the recording's folder and files; nothing is sent until you send it. **Show in folder** opens the folder with the recording selected. **Close** puts the button away; the recording stays in its folder.
 
 ## Delegation between threads
