@@ -78,8 +78,6 @@ export interface ActivityGroupViewProps {
    * straight under that line, with no heading and no fold of their own.
    */
   readonly bare?: boolean | undefined
-  /** The group is drawn inside a fold the user opened, so it starts open and the press shows the turn's steps. */
-  readonly opened?: boolean | undefined
   /** The thread the group is drawn in, so a press on it is kept for the window's life; without one it holds while drawn. */
   readonly threadId?: string | undefined
 }
@@ -599,16 +597,17 @@ const ActivityRow = memo(function ActivityRow({ node, connected, provider, quiet
 /**
  * The work a provider reported after one message. Live, it lists its rows, which is how the working line shows the
  * running turn's steps once opened; settled, it folds to a single line, failures and all, and opens on a press (Zach's
- * pick, docs/prototypes/turn-steps-glow-prototype.html). Inside a fold, which draws it once the user opens the fold, it
- * starts open, so the press shows the turn's steps; anywhere else it starts folded. Nothing here can act on the provider
- * or its agents.
+ * pick, docs/prototypes/turn-steps-glow-prototype.html). It starts folded, inside an opened fold too, so a press on a turn's
+ * line opens no group under it, and a press on the group opens that group alone (Zach's pick b of
+ * docs/prototypes/groups-in-an-opened-fold-prototype.html, November 19, 2026). Nothing here can act on the provider or its
+ * agents.
  */
-export const ActivityGroupView = memo(function ActivityGroupView({ group, live, threadRunning, connected, provider, onDisclosure, outcome, bare = false, opened = false, threadId }: ActivityGroupViewProps): ReactNode {
+export const ActivityGroupView = memo(function ActivityGroupView({ group, live, threadRunning, connected, provider, onDisclosure, outcome, bare = false, threadId }: ActivityGroupViewProps): ReactNode {
   const { t } = useLingui()
   // A press is kept for the thread's group, so the group is drawn again as the user left it (ADR-0134, November 19 amendment).
   const [choice, setChoice] = useGroupSteps(threadId, group.key)
   const listId = useId()
-  const expanded = choice ?? (live || opened)
+  const expanded = choice ?? live
   const headline = turnHeadline(group.turn, threadRunning)
   const summary = groupSummary(group.records)
   const lineCounts = recordsLineCounts(group.records)

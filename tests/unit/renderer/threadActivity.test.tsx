@@ -128,7 +128,7 @@ describe('settled activity in the transcript', () => {
     expect(untouched).toHaveAttribute('aria-expanded', 'false')
   })
 
-  it('keeps a group the user folded inside an opened turn folded when the thread is shown again or works again', () => {
+  it('opens only the group pressed inside an opened turn, and keeps each group as it was left', () => {
     // A long turn whose agent keeps working after its turn ended, as a loop of wake-ups does: one Worked for line, and a
     // group of commands after each reply (the "Run model gauntlet" thread, November 19, 2026).
     const activities = [
@@ -151,35 +151,43 @@ describe('settled activity in the transcript', () => {
     })
     const groups = (transcript: HTMLElement): string[] => within(transcript).getAllByRole('button', { name: 'Ran 2 commands' }).map(group => group.getAttribute('aria-expanded')!)
     const { live, transcript } = mount(stateWith(loop('idle')))
+    // Opening the turn opens none of its groups, and a press on one opens that one alone (Zach's pick b, November 19:
+    // "all of the commands unfold when I expand one of them").
     fireEvent.click(within(transcript).getByRole('button', { name: /^Worked for/u }))
-    // Inside the fold the user opened, each group starts open (Zach's pick, November 15); the user folds the first.
-    expect(groups(transcript)).toEqual(['true', 'true'])
-    fireEvent.click(within(transcript).getAllByRole('button', { name: 'Ran 2 commands' })[0]!)
+    expect(groups(transcript)).toEqual(['false', 'false'])
+    expect(within(transcript).queryByRole('button', { name: /^ls results/u })).not.toBeInTheDocument()
+    fireEvent.click(within(transcript).getAllByRole('button', { name: 'Ran 2 commands' })[1]!)
     expect(groups(transcript)).toEqual(['false', 'true'])
-    // The agent works again, and the turn ends again: the group stays as the user left it.
+    // The agent works again and the turn takes its running layout, then folds again once it stops: each group stays as
+    // the user left it.
     const publish = (patch: Partial<AgentThread>): void => act(() => {
       live.publish({ host: { ...live.state.host, threads: live.state.host.threads.map(thread => thread.id === THREAD ? { ...thread, ...patch } : thread) } })
     })
     publish(loop('running'))
+    expect(within(transcript).queryByRole('button', { name: /^Worked for .* · /u })).not.toBeInTheDocument()
+    expect(groups(transcript)).toEqual(['false', 'true'])
     publish(loop('idle'))
     expect(within(transcript).getByRole('button', { name: /^Worked for/u })).toHaveAttribute('aria-expanded', 'true')
     expect(groups(transcript)).toEqual(['false', 'true'])
-    // Shown again, the same.
+    // Shown again, the same, and folding the turn and opening it again moves no group.
     cleanup()
     const again = mount(stateWith(loop('idle')))
     expect(within(again.transcript).getByRole('button', { name: /^Worked for/u })).toHaveAttribute('aria-expanded', 'true')
     expect(groups(again.transcript)).toEqual(['false', 'true'])
-    // Folding the turn and opening it again leaves the group as it was.
     const fold = within(again.transcript).getByRole('button', { name: /^Worked for/u })
     fireEvent.click(fold)
     fireEvent.click(fold)
     expect(groups(again.transcript)).toEqual(['false', 'true'])
-    // After a restart, an opened turn's groups start open again.
+    // A group the user folds again stays folded.
+    fireEvent.click(within(again.transcript).getAllByRole('button', { name: 'Ran 2 commands' })[1]!)
+    cleanup()
+    expect(groups(mount(stateWith(loop('idle'))).transcript)).toEqual(['false', 'false'])
+    // After a restart, every group starts folded again.
     cleanup()
     stepsChoices.clear()
     const restarted = mount(stateWith(loop('idle')))
     fireEvent.click(within(restarted.transcript).getByRole('button', { name: /^Worked for/u }))
-    expect(groups(restarted.transcript)).toEqual(['true', 'true'])
+    expect(groups(restarted.transcript)).toEqual(['false', 'false'])
   })
 
   it('says an edit once: the press beside the line goes while the fold is open, and the count while the row is', () => {
