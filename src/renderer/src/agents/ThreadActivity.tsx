@@ -605,7 +605,7 @@ const ActivityRow = memo(function ActivityRow({ node, connected, provider, quiet
 export const ActivityGroupView = memo(function ActivityGroupView({ group, live, threadRunning, connected, provider, onDisclosure, outcome, bare = false, threadId }: ActivityGroupViewProps): ReactNode {
   const { t } = useLingui()
   // A press is kept for the thread's group, so the group is drawn again as the user left it (ADR-0134, November 19 amendment).
-  const [choice, setChoice] = useGroupSteps(threadId, group.key)
+  const [choice, setChoice] = useGroupSteps(threadId, group.turnId, group.anchorMessageId)
   const listId = useId()
   const expanded = choice ?? live
   const headline = turnHeadline(group.turn, threadRunning)

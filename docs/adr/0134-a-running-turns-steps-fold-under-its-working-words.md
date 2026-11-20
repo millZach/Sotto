@@ -69,7 +69,7 @@ Zach reported, on a long thread, that he kept folding the steps and found them a
 
 **Groups start folded, inside an opened fold too.** Opening a **Worked for** line or a Watcher reply's header shows the turn's replies with each group folded to its line, as the running layout shows them, and a press on a group opens that group alone. A fold that holds a single group and no replies still shows its steps straight under the line, with no line of its own. This replaces the November 15 amendment's **A press shows its turn's steps**.
 
-**A press on a group is kept for the group.** Sotto keeps a press on a group by thread and group for the window's life, as it keeps a press on a turn's line, so a group stays as you left it when its thread is shown again, when its turn is drawn again, as when the agent starts or stops working, and when you fold and open the turn around it. After a restart every group starts folded. This replaces the November 15 amendment's "the group keeps that state only while its fold stays open".
+**A press on a group is kept for the group.** Sotto keeps a press on a group by thread, turn and the reply the group follows for the window's life, as it keeps a press on a turn's line, so a group stays as you left it when its thread is shown again, when its turn is drawn again, as when the agent starts or stops working, when you fold and open the turn around it, and when its oldest steps leave the thread's history. After a restart every group starts folded. This replaces the November 15 amendment's "the group keeps that state only while its fold stays open".
 
 The turn's own fold is unchanged: while the agent works, a turn takes its running layout, and `docs/prototypes/self-started-work-prototype.html` records Zach's answer to keep that.
 

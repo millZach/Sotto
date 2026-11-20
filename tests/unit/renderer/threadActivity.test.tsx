@@ -129,17 +129,17 @@ describe('settled activity in the transcript', () => {
   })
 
   it('opens only the group pressed inside an opened turn, and keeps each group as it was left', () => {
-    // A long turn whose agent keeps working after its turn ended, as a loop of wake-ups does: one Worked for line, and a
-    // group of commands after each reply (the "Run model gauntlet" thread, November 19, 2026).
-    const activities = [
-      lifecycle({ status: 'completed', durationMs: 60_000, afterMessageId: 'ask' }),
-      activity({ id: 'start', command: 'npm run gauntlet', afterMessageId: 'ask' }),
-      activity({ id: 'tail-1', command: 'tail gauntlet.log', afterMessageId: 'check-1' }),
-      activity({ id: 'ls-1', command: 'ls results', afterMessageId: 'check-1' }),
-      activity({ id: 'tail-2', command: 'tail gauntlet.log', afterMessageId: 'check-2' }),
-      activity({ id: 'ls-2', command: 'ls results', afterMessageId: 'check-2' }),
+    // A long Claude Code turn whose agent keeps working after its turn ended, as a loop of wake-ups does: one Worked for
+    // line, and a group of commands after each reply. Claude's turn is its prompt's ID (the "Run model gauntlet" thread,
+    // November 19, 2026).
+    const step = (id: string, command: string, afterMessageId: string): AgentActivity => activity({ id, turnId: 'ask', command, afterMessageId })
+    const all = [
+      lifecycle({ turnId: 'ask', status: 'completed', durationMs: 60_000, afterMessageId: 'ask' }),
+      step('start', 'npm run gauntlet', 'ask'),
+      step('tail-1', 'tail gauntlet.log', 'check-1'), step('ls-1', 'ls results', 'check-1'), step('du-1', 'du -sh results', 'check-1'),
+      step('tail-2', 'tail gauntlet.log', 'check-2'), step('ls-2', 'ls results', 'check-2'),
     ]
-    const loop = (status: AgentThread['status']): Partial<AgentThread> => ({
+    const loop = (status: AgentThread['status'], activities = all): Partial<AgentThread> => ({
       status,
       activities,
       messages: [
@@ -149,44 +149,52 @@ describe('settled activity in the transcript', () => {
         { id: 'done', role: 'assistant', text: 'Uploaded the results.', createdAt: iso(-50_000) },
       ],
     })
-    const groups = (transcript: HTMLElement): string[] => within(transcript).getAllByRole('button', { name: 'Ran 2 commands' }).map(group => group.getAttribute('aria-expanded')!)
+    const groups = (transcript: HTMLElement): string[] => within(transcript).queryAllByRole('button', { name: /^Ran \d commands$/u }).map(group => group.getAttribute('aria-expanded')!)
+    const turnFold = (transcript: HTMLElement): HTMLElement | null => within(transcript).queryByRole('button', { name: /^Worked for .* · /u })
     const { live, transcript } = mount(stateWith(loop('idle')))
     // Opening the turn opens none of its groups, and a press on one opens that one alone (Zach's pick b, November 19:
     // "all of the commands unfold when I expand one of them").
-    fireEvent.click(within(transcript).getByRole('button', { name: /^Worked for/u }))
+    fireEvent.click(turnFold(transcript)!)
     expect(groups(transcript)).toEqual(['false', 'false'])
-    expect(within(transcript).queryByRole('button', { name: /^ls results/u })).not.toBeInTheDocument()
-    fireEvent.click(within(transcript).getAllByRole('button', { name: 'Ran 2 commands' })[1]!)
-    expect(groups(transcript)).toEqual(['false', 'true'])
-    // The agent works again and the turn takes its running layout, then folds again once it stops: each group stays as
-    // the user left it.
+    expect(within(transcript).queryByRole('button', { name: /^du -sh results/u })).not.toBeInTheDocument()
+    fireEvent.click(within(transcript).getByRole('button', { name: 'Ran 3 commands' }))
+    expect(groups(transcript)).toEqual(['true', 'false'])
+    // The agent works again: the turn's replies stand in view and its steps are under the working line, open as the turn
+    // was left. Once it stops, the turn folds again with each group as the user left it.
     const publish = (patch: Partial<AgentThread>): void => act(() => {
       live.publish({ host: { ...live.state.host, threads: live.state.host.threads.map(thread => thread.id === THREAD ? { ...thread, ...patch } : thread) } })
     })
     publish(loop('running'))
-    expect(within(transcript).queryByRole('button', { name: /^Worked for .* · /u })).not.toBeInTheDocument()
-    expect(groups(transcript)).toEqual(['false', 'true'])
+    expect(turnFold(transcript)).not.toBeInTheDocument()
+    expect(groups(transcript)).toEqual([])
+    expect(within(transcript).getByRole('button', { name: /, 6 steps so far$/u })).toHaveAttribute('aria-expanded', 'true')
     publish(loop('idle'))
-    expect(within(transcript).getByRole('button', { name: /^Worked for/u })).toHaveAttribute('aria-expanded', 'true')
-    expect(groups(transcript)).toEqual(['false', 'true'])
+    expect(turnFold(transcript)).toHaveAttribute('aria-expanded', 'true')
+    expect(groups(transcript)).toEqual(['true', 'false'])
+    // The group's first step leaving the thread's history does not move it.
+    publish(loop('idle', all.filter(record => record.id !== 'tail-1')))
+    expect(within(transcript).getAllByRole('button', { name: /^Ran 2 commands$/u }).map(group => group.getAttribute('aria-expanded'))).toEqual(['true', 'false'])
     // Shown again, the same, and folding the turn and opening it again moves no group.
     cleanup()
     const again = mount(stateWith(loop('idle')))
-    expect(within(again.transcript).getByRole('button', { name: /^Worked for/u })).toHaveAttribute('aria-expanded', 'true')
-    expect(groups(again.transcript)).toEqual(['false', 'true'])
-    const fold = within(again.transcript).getByRole('button', { name: /^Worked for/u })
-    fireEvent.click(fold)
-    fireEvent.click(fold)
-    expect(groups(again.transcript)).toEqual(['false', 'true'])
+    expect(turnFold(again.transcript)).toHaveAttribute('aria-expanded', 'true')
+    expect(groups(again.transcript)).toEqual(['true', 'false'])
+    fireEvent.click(turnFold(again.transcript)!)
+    fireEvent.click(turnFold(again.transcript)!)
+    expect(groups(again.transcript)).toEqual(['true', 'false'])
     // A group the user folds again stays folded.
-    fireEvent.click(within(again.transcript).getAllByRole('button', { name: 'Ran 2 commands' })[1]!)
+    fireEvent.click(within(again.transcript).getByRole('button', { name: 'Ran 3 commands' }))
     cleanup()
     expect(groups(mount(stateWith(loop('idle'))).transcript)).toEqual(['false', 'false'])
-    // After a restart, every group starts folded again.
+    // After a restart, a press on the working line opens the turn once it ends, and still none of its groups.
     cleanup()
     stepsChoices.clear()
-    const restarted = mount(stateWith(loop('idle')))
-    fireEvent.click(within(restarted.transcript).getByRole('button', { name: /^Worked for/u }))
+    const restarted = mount(stateWith(loop('running')))
+    fireEvent.click(within(restarted.transcript).getByRole('button', { name: /, 6 steps so far$/u }))
+    act(() => {
+      restarted.live.publish({ host: { ...restarted.live.state.host, threads: restarted.live.state.host.threads.map(thread => thread.id === THREAD ? { ...thread, ...loop('idle') } : thread) } })
+    })
+    expect(turnFold(restarted.transcript)).toHaveAttribute('aria-expanded', 'true')
     expect(groups(restarted.transcript)).toEqual(['false', 'false'])
   })
 
