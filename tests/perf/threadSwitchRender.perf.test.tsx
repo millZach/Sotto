@@ -48,7 +48,9 @@ const NOW = Date.parse('2026-11-20T18:30:00Z')
 
 describe('thread switch render cost', async () => {
   const dataDirectory = await perfDataDirectory()
-  afterAll(() => { cleanup() })
+  /** Layout getters put back as they were once the run ends. */
+  const restore: (() => void)[] = []
+  afterAll(() => { cleanup(); for (const put of restore.splice(0)) put(); vi.unstubAllGlobals() })
   describe('requires SOTTO_PERF_BENCH=1 and SOTTO_PERF_DATA containing workspace.json', () => {
     it.skipIf(dataDirectory === null)('reports what one switch to another thread renders', async () => {
       const workspace = JSON.parse(await readFile(join(dataDirectory!, 'workspace.json'), 'utf8')) as { snapshot: AgentHostSnapshot }
@@ -77,10 +79,12 @@ describe('thread switch render cost', async () => {
       vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) { count(); return box.call(this) })
       const computed = window.getComputedStyle.bind(window)
       vi.spyOn(window, 'getComputedStyle').mockImplementation((element, pseudo) => { count(); return computed(element, pseudo) })
-      for (const name of ['clientWidth', 'clientHeight', 'offsetWidth', 'offsetHeight'] as const) {
-        const owner = name.startsWith('client') ? Element.prototype : HTMLElement.prototype
-        const getter = Object.getOwnPropertyDescriptor(owner, name)!.get!
-        vi.spyOn(owner, name, 'get').mockImplementation(function (this: Element) { count(); return getter.call(this) as number })
+      for (const [owner, names] of [[Element.prototype, ['clientWidth', 'clientHeight']], [HTMLElement.prototype, ['offsetWidth', 'offsetHeight']]] as const) {
+        for (const name of names) {
+          const getter = Object.getOwnPropertyDescriptor(owner, name)!.get!
+          Object.defineProperty(owner, name, { configurable: true, get(this: Element) { count(); return getter.call(this) as number } })
+          restore.push(() => { Object.defineProperty(owner, name, { configurable: true, get: getter }) })
+        }
       }
       const rendered = render(view())
       const samples: number[] = []
