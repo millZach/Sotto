@@ -2,7 +2,8 @@ import { listOf, textOf, type ImapItem } from './imapWire'
 
 /**
  * A mail message as a person reads it, from what a mail server holds: header lines in their own words, the part of
- * the message that is its text, and the files that came with it by name. Nothing here reaches a network.
+ * the message that is its text, and the files that came with it by name, and one such file's bytes once it is fetched
+ * to be saved (ADR-0205, November 19, 2026). Nothing here reaches a network.
  */
 
 /** Text from bytes in the character set a message names. One Sotto does not know is read as UTF-8. */
@@ -175,7 +176,47 @@ export function decodePart(bytes: Buffer, part: Pick<MailPart, 'encoding' | 'cha
   return text.slice(0, end)
 }
 
-const ENTITIES: Readonly<Record<string, string>> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: '\'', nbsp: ' ' }
+/**
+ * About how many bytes a file is once decoded, from its size as written. Base64 is read as written in lines of 76
+ * with their line ends, as RFC 2045 has it, so a file written that way is counted to the byte and one written without
+ * line ends a little under. Every other way of writing a file is counted as written.
+ */
+export function decodedSize(part: Pick<MailPart, 'encoding' | 'size'>): number {
+  return part.encoding === 'base64' ? Math.ceil(part.size / 78 * 57) : part.size
+}
+
+const HEX = (code: number): number => code >= 0x30 && code <= 0x39 ? code - 0x30 : code >= 0x41 && code <= 0x46 ? code - 0x37 : code >= 0x61 && code <= 0x66 ? code - 0x57 : -1
+/** Quoted-printable's bytes, read straight from bytes into bytes: a file can be tens of megabytes, too many for a list of numbers. */
+function quotedPrintableBytes(bytes: Buffer): Buffer {
+  const out = Buffer.allocUnsafe(bytes.length)
+  let length = 0
+  for (let at = 0; at < bytes.length; at += 1) {
+    const code = bytes[at]!
+    if (code !== 0x3d) { out[length++] = code; continue }
+    const high = at + 2 < bytes.length ? HEX(bytes[at + 1]!) : -1
+    const low = high < 0 ? -1 : HEX(bytes[at + 2]!)
+    if (low >= 0) { out[length++] = high * 16 + low; at += 2; continue }
+    // A soft line break: the line goes on.
+    if (bytes[at + 1] === 0x0d && bytes[at + 2] === 0x0a) { at += 2; continue }
+    if (bytes[at + 1] === 0x0a) { at += 1; continue }
+    out[length++] = code
+  }
+  return out.subarray(0, length)
+}
+
+/**
+ * A file's bytes from the part as the server sent it: base64 and quoted-printable decoded, and 7bit, 8bit and binary
+ * as they stand. Null for any other way of writing it, which this does not read.
+ */
+export function decodeFile(bytes: Buffer, encoding: string): Buffer | null {
+  // Node's base64 leaves out the line ends and spaces between the letters.
+  if (encoding === 'base64') return Buffer.from(bytes.toString('latin1'), 'base64')
+  if (encoding === 'quoted-printable') return quotedPrintableBytes(bytes)
+  if (encoding === '' || encoding === '7bit' || encoding === '8bit' || encoding === 'binary') return bytes
+  return null
+}
+
+const ENTITIES: Readonly<Record<string, string>> ={ amp: '&', lt: '<', gt: '>', quot: '"', apos: '\'', nbsp: ' ' }
 
 /** HTML without what a page never shows: comments, scripts, styles and its head. One that never closes takes the rest with it. */
 function withoutHidden(html: string): string {

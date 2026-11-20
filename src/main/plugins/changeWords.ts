@@ -56,6 +56,8 @@ function wordMailRead(change: MailRead): PluginChangeCard {
     target: named,
     details: [
       t`This thread can search this account’s mail and read its messages, until you stop it or the thread is settled.`,
+      // Zach's pick on November 19, 2026, variant A: its own line. Watcher's card is unchanged, since Watcher has no folder to save in.
+      t`It can also save the files that came with them in this thread’s folder, up to 25 MB each.`,
       provider ? t`What it reads goes to ${provider}, as everything a thread reads does.` : t`What it reads goes to this thread’s provider, as everything a thread reads does.`,
       t`This does not let it send: each email it wants to send asks you first. It cannot move or delete mail. Every other thread asks for itself.`,
     ].join('\n'),

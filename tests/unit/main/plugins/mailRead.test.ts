@@ -1,7 +1,8 @@
 // @vitest-environment node
+import { createHash } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { checkMailSignIn, MAIL_TEXT_MAX_CHARS, openMail, searchMail, type MailOptions, type MailSearch } from '../../../../src/main/plugins/mail/read'
-import { startFakeImapServer, type FakeImapOptions, type FakeImapServer, type FakeMailbox } from '../../../fixtures/fakeImapServer'
+import { checkMailSignIn, fetchMailFile, MAIL_FILE_MAX_BYTES, MAIL_TEXT_MAX_CHARS, openMail, searchMail, type MailOptions, type MailSearch } from '../../../../src/main/plugins/mail/read'
+import { startFakeImapServer, type FakeImapOptions, type FakeImapServer, type FakeMailBody, type FakeMailbox } from '../../../fixtures/fakeImapServer'
 
 /** A made-up account on a made-up server: nothing here is a real address or password. */
 const ADDRESS = 'reader@example.com'
@@ -11,6 +12,8 @@ const SERVER = { host: 'imap.mail.example', port: 993 }
 const b64 = (text: string): string => Buffer.from(text, 'utf8').toString('base64')
 /** A message's name as a search gives it: its mailbox's rebuild count, its number there, and the mailbox by the server's name for it. */
 const named = (validity: number, uid: number, mailbox = 'INBOX'): string => `${validity}-${uid}-${Buffer.from(mailbox, 'utf8').toString('base64url')}`
+/** A file's id as opening a message gives it: its section, and the start of a digest of the message's id. */
+const fileOf = (message: string, section: string): string => `${section}-${createHash('sha256').update(message, 'utf8').digest('hex').slice(0, 8)}`
 
 function mailboxes(): FakeMailbox[] {
   return [
@@ -236,7 +239,7 @@ describe('opening a message (ADR-0205)', () => {
     await expect(openMail(SERVER, SIGN_IN, { id: named(7, 12) }, reach)).resolves.toEqual({ ok: true, mailbox: 'INBOX', message: {
       id: named(7, 12), date: '2026-11-12T14:30:00.000Z', from: 'Zoë Example <zoe@example.com>', to: ADDRESS, cc: 'ann@example.com', subject: 'Rechnung für Oktober', unread: true, size: expect.any(Number),
       text: 'Die Rechnung für Oktober liegt bei.\n', fromHtml: false, truncated: false,
-      files: [{ name: 'Rechnung für Oktober.pdf', type: 'application/pdf', size: b64('made-up pdf bytes').length }],
+      files: [{ id: fileOf(named(7, 12), '2'), name: 'Rechnung für Oktober.pdf', type: 'application/pdf', size: 18 }], // About its 17 bytes once decoded.
     } })
     const commands = await sent(fake)
     expect(commands).toEqual([...SIGNED_IN, 'EXAMINE INBOX', `UID FETCH 12 (UID FLAGS INTERNALDATE RFC822.SIZE BODYSTRUCTURE ${HEADERS})`, 'UID FETCH 12 (BODY.PEEK[1.1]<0.400000>)', 'LOGOUT'])
@@ -279,5 +282,84 @@ describe('opening a message (ADR-0205)', () => {
   it('stops reading a server that sends more than a message’s text can be', async () => {
     const { reach } = await mail({ claimedBytes: 2_000_000 })
     await expect(openMail(SERVER, SIGN_IN, { id: named(7, 11) }, reach)).resolves.toEqual({ ok: false, reason: 'failed' })
+  })
+})
+
+describe('saving a file that came with a message (ADR-0205, #2727)', () => {
+  /** A message in the inbox with the given files after its text, numbered from 2. */
+  const withFiles = (...files: FakeMailBody[]): FakeMailbox[] => [{ name: 'INBOX', validity: 7, messages: [
+    { uid: 21, received: '19-Nov-2026 08:00:00 +0000', headers: { From: 'Ann Example <ann@example.com>', To: ADDRESS, Subject: 'Photos' },
+      body: { multipart: 'mixed', parts: [{ type: 'text/plain', body: 'Here they are.' }, ...files] } },
+  ] }]
+  const id = named(7, 21)
+
+  it('fetches a base64 file whole with BODY.PEEK, in a mailbox opened for reading, and leaves the message unread', async () => {
+    const { fake, boxes, reach } = await mail()
+    const opened = await openMail(SERVER, SIGN_IN, { id: named(7, 12) }, reach)
+    const file = opened.ok ? opened.message.files[0]!.id : ''
+    await expect(fetchMailFile(SERVER, SIGN_IN, { id: named(7, 12), file }, reach)).resolves.toEqual({
+      ok: true, name: 'Rechnung für Oktober.pdf', type: 'application/pdf', section: '2', bytes: Buffer.from('made-up pdf bytes') })
+    const commands = await sent(fake)
+    expect(commands.slice(-4)).toEqual(['EXAMINE INBOX', 'UID FETCH 12 (UID BODYSTRUCTURE)', 'UID FETCH 12 (BODY.PEEK[2])', 'LOGOUT'])
+    // Nothing that could change the mailbox was sent, and every fetch of a part was a peek.
+    expect(commands.some(command => /^(?:SELECT|STORE|UID STORE|APPEND|EXPUNGE|COPY|UID COPY|DELETE|CREATE|RENAME)\b/u.test(command) || command.includes('BODY['))).toBe(false)
+    expect(boxes[0]!.messages[1]!.seen).toBeUndefined()
+  })
+
+  it('decodes quoted-printable, takes 7bit as it stands, and fetches a file larger than a message’s text in one piece', async () => {
+    const photo = Buffer.alloc(3_000_000)
+    for (let at = 0; at < photo.length; at += 1) photo[at] = (at * 131) & 0xff
+    const { reach } = await mail({ mailboxes: withFiles(
+      { type: 'text/plain', params: { charset: 'utf-8' }, encoding: 'quoted-printable', body: 'Gr=C3=BC=C3=9Fe=\r\n aus K=C3=B6ln', disposition: 'attachment', filename: 'note.txt' },
+      { type: 'text/csv', encoding: '7bit', body: 'a,b\r\n1,2\r\n', disposition: 'attachment', filename: 'sums.csv' },
+      { type: 'image/jpeg', encoding: 'base64', body: photo.toString('base64').replace(/.{76}/gu, '$&\r\n'), disposition: 'attachment', filename: 'IMG_4640.jpeg' },
+    ) })
+    await expect(fetchMailFile(SERVER, SIGN_IN, { id, file: fileOf(id, '2') }, reach)).resolves.toMatchObject({ ok: true, name: 'note.txt', bytes: Buffer.from('Grüße aus Köln') })
+    await expect(fetchMailFile(SERVER, SIGN_IN, { id, file: fileOf(id, '3') }, reach)).resolves.toMatchObject({ ok: true, type: 'text/csv', bytes: Buffer.from('a,b\r\n1,2\r\n') })
+    const big = await fetchMailFile(SERVER, SIGN_IN, { id, file: fileOf(id, '4') }, reach)
+    expect(big.ok && Buffer.compare(big.bytes, photo)).toBe(0)
+    // Opening the message lists each by about its size once decoded: base64 in lines of 76 to the byte, and the rest as written.
+    const opened = await openMail(SERVER, SIGN_IN, { id }, reach)
+    expect(opened.ok && opened.message.files.map(file => [file.name, file.size])).toEqual([['note.txt', 32], ['sums.csv', 10], ['IMG_4640.jpeg', photo.length]])
+  })
+
+  it('refuses a file over 25 MB by its size before fetching it', async () => {
+    const { fake, reach } = await mail({ mailboxes: withFiles({ type: 'video/quicktime', encoding: 'base64', body: b64('made-up'), size: 84_000_000, disposition: 'attachment', filename: 'IMG_9001.mov' }) })
+    await expect(fetchMailFile(SERVER, SIGN_IN, { id, file: fileOf(id, '2') }, reach)).resolves.toEqual({
+      ok: false, reason: 'too-large', name: 'IMG_9001.mov', type: 'video/quicktime', size: Math.ceil(84_000_000 / 78 * 57) })
+    expect((await sent(fake)).filter(command => command.includes('BODY.PEEK'))).toEqual([])
+  })
+
+  it('refuses a file that is over 25 MB once decoded, though its size as written passed', async () => {
+    // Base64 with no line ends is a little larger than its size as written says.
+    const file = Buffer.alloc(MAIL_FILE_MAX_BYTES + 1, 0x61)
+    const { reach } = await mail({ mailboxes: withFiles({ type: 'application/octet-stream', encoding: 'base64', body: file.toString('base64'), disposition: 'attachment', filename: 'big.bin' }) })
+    await expect(fetchMailFile(SERVER, SIGN_IN, { id, file: fileOf(id, '2') }, reach)).resolves.toEqual({
+      ok: false, reason: 'too-large', name: 'big.bin', type: 'application/octet-stream', size: MAIL_FILE_MAX_BYTES + 1 })
+  })
+
+  it('refuses an id that is not one of the message’s files, or is another message’s, and a file it cannot decode', async () => {
+    const { fake, reach } = await mail({ mailboxes: withFiles({ type: 'application/pdf', encoding: 'x-uuencode', body: 'begin 644 a.pdf', disposition: 'attachment', filename: 'a.pdf' }) })
+    // Another message's file, or one in no form an opening gives, is refused before anything is sent.
+    await expect(fetchMailFile(SERVER, SIGN_IN, { id, file: fileOf(named(7, 12), '2') }, reach)).resolves.toEqual({ ok: false, reason: 'file' })
+    await expect(fetchMailFile(SERVER, SIGN_IN, { id, file: '2' }, reach)).resolves.toEqual({ ok: false, reason: 'file' })
+    expect(fake.commands).toEqual([])
+    // The message's own text is not a file, and neither is a part it does not have.
+    await expect(fetchMailFile(SERVER, SIGN_IN, { id, file: fileOf(id, '1') }, reach)).resolves.toEqual({ ok: false, reason: 'file' })
+    await expect(fetchMailFile(SERVER, SIGN_IN, { id, file: fileOf(id, '9') }, reach)).resolves.toEqual({ ok: false, reason: 'file' })
+    await expect(fetchMailFile(SERVER, SIGN_IN, { id, file: fileOf(id, '2') }, reach)).resolves.toEqual({ ok: false, reason: 'encoding', said: 'x-uuencode' })
+    expect((await sent(fake)).filter(command => command.includes('BODY.PEEK'))).toEqual([])
+  })
+
+  it('says when the message is gone, and when its mailbox was rebuilt since it was opened', async () => {
+    const { fake, reach } = await mail()
+    await expect(fetchMailFile(SERVER, SIGN_IN, { id: named(7, 99), file: fileOf(named(7, 99), '2') }, reach)).resolves.toEqual({ ok: false, reason: 'gone' })
+    await expect(fetchMailFile(SERVER, SIGN_IN, { id: named(6, 12), file: fileOf(named(6, 12), '2') }, reach)).resolves.toEqual({ ok: false, reason: 'moved' })
+    expect(fake.commands.filter(command => command.includes('BODY.PEEK'))).toEqual([])
+  })
+
+  it('stops reading a server that sends more than the file’s size', async () => {
+    const { reach } = await mail({ claimedBytes: 5_000_000 })
+    await expect(fetchMailFile(SERVER, SIGN_IN, { id: named(7, 12), file: fileOf(named(7, 12), '2') }, reach)).resolves.toEqual({ ok: false, reason: 'failed' })
   })
 })

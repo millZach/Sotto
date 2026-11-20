@@ -89,6 +89,8 @@ it('names Watcher on the card its own mail read waits on, and leaves every other
     action: 'Read Gmail mail',
     target: 'Personal',
     details: ['This thread can search this account’s mail and read its messages, until you stop it or the thread is settled.',
+      // Zach's pick of November 19, 2026 (#2727, variant A): a line of its own, which Watcher's card does not have.
+      'It can also save the files that came with them in this thread’s folder, up to 25 MB each.',
       'What it reads goes to Claude Code, as everything a thread reads does.',
       // Zach's words of November 14, 2026 (#2494): reading does not let a thread send, and each email asks.
       'This does not let it send: each email it wants to send asks you first. It cannot move or delete mail. Every other thread asks for itself.'].join('\n'),

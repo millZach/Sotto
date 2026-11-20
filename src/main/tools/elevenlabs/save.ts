@@ -122,9 +122,9 @@ export async function saveSound(answer: Response, target: { readonly root: strin
  * Gives a whole part file a name, never over a file already there, and never so that the name holds part of a sound:
  * a second link to it where the disk allows one. Where it does not, the name is taken first as an empty file of
  * Sotto's own, and a whole copy of the part file is moved over it in one step (Sol's review). False when the name is
- * taken.
+ * taken. A file saved from an email is named the same way.
  */
-async function publish(partPath: string, path: string): Promise<boolean> {
+export async function publish(partPath: string, path: string): Promise<boolean> {
   const taken = (error: unknown): boolean => typeof error === 'object' && error !== null && 'code' in error && error.code === 'EEXIST'
   try { await link(partPath, path); return true } catch (error) { if (taken(error)) return false }
   try { await (await open(path, 'wx', 0o644)).close() } catch (error) {

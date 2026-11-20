@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { imapItems } from '../../../../src/main/plugins/mail/imapWire'
-import { attachedParts, decodeMailboxName, decodePart, decodeWords, htmlToText, mailHeaders, mailParts, readableText, textPart } from '../../../../src/main/plugins/mail/message'
+import { attachedParts, decodedSize, decodeFile, decodeMailboxName, decodePart, decodeWords, htmlToText, mailHeaders, mailParts, readableText, textPart } from '../../../../src/main/plugins/mail/message'
 
 const b64 = (text: string): string => Buffer.from(text, 'utf8').toString('base64')
 /** A message's structure as a server writes it, read the way an answer is. */
@@ -77,6 +77,26 @@ describe('a mail message as a person reads it (ADR-0205)', () => {
     expect(decodePart(Buffer.from('Gr=C3=BC=C3=9Fe=\r\n aus K=C3=B6ln'), { encoding: 'quoted-printable', charset: 'UTF-8' }, false)).toBe('Grüße aus Köln')
     expect(decodePart(Buffer.from([0x63, 0x61, 0x66, 0xe9]), { encoding: '8bit', charset: 'iso-8859-1' }, false)).toBe('café')
     expect(decodePart(Buffer.from('1 = 1 and a=b'), { encoding: 'quoted-printable', charset: null }, false)).toBe('1 = 1 and a=b')
+  })
+
+  it('decodes a file’s bytes from base64 and quoted-printable, and takes 7bit, 8bit and binary as they stand (#2727)', () => {
+    const bytes = Buffer.from([0x00, 0xff, 0x3d, 0x0d, 0x0a, 0x80, 0x41])
+    // Base64 with line ends between its letters, and without.
+    expect(decodeFile(Buffer.from(bytes.toString('base64').replace(/.{1,4}/gu, '$&\r\n')), 'base64')).toEqual(bytes)
+    expect(decodeFile(Buffer.from(bytes.toString('base64')), 'base64')).toEqual(bytes)
+    expect(decodeFile(Buffer.from('=00=FF=3D=0D=0A=\r\n=80A'), 'quoted-printable')).toEqual(bytes)
+    // A soft line break ends nothing, and an equals sign with nothing whole after it stays.
+    expect(decodeFile(Buffer.from('a=\nb=4'), 'quoted-printable')).toEqual(Buffer.from('ab=4'))
+    for (const encoding of ['7bit', '8bit', 'binary', '']) expect(decodeFile(bytes, encoding)).toBe(bytes)
+    expect(decodeFile(bytes, 'x-uuencode')).toBeNull()
+  })
+
+  it('counts about a file’s size once decoded: base64 in lines of 76 to the byte, the rest as written (#2727)', () => {
+    const file = Buffer.alloc(57 * 1000, 7)
+    const wrapped = file.toString('base64').replace(/.{76}/gu, '$&\r\n')
+    expect(decodedSize({ encoding: 'base64', size: wrapped.length })).toBe(file.length)
+    expect(decodedSize({ encoding: 'quoted-printable', size: 900 })).toBe(900)
+    expect(decodedSize({ encoding: '7bit', size: 12 })).toBe(12)
   })
 
   it('drops a last character that a cut left unfinished, and does not show it as damage', () => {
