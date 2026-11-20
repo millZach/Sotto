@@ -105,12 +105,12 @@ export function readShellCache(store: ShellCacheStorage | null = storage()): Age
 export type ShellCacheWrite = 'written' | 'too-large' | 'cleared' | 'unavailable'
 
 /** Keeps the newest shell, or clears the cache when the user is not keeping local history. */
-export function writeShellCache(state: AgentState, store: ShellCacheStorage | null = storage(), limit = MAX_CACHE_BYTES): ShellCacheWrite {
+export function writeShellCache(state: AgentState, store: ShellCacheStorage | null = storage()): ShellCacheWrite {
   if (store === null) return 'unavailable'
   if (state.historyEnabled === false) { clearShellCache(store); return 'cleared' }
   try {
     const serialized = JSON.stringify(cacheableShell(state))
-    if (serialized.length > limit) { clearShellCache(store); return 'too-large' }
+    if (serialized.length > MAX_CACHE_BYTES) { clearShellCache(store); return 'too-large' }
     store.setItem(SHELL_CACHE_KEY, serialized)
     return 'written'
   } catch { clearShellCache(store); return 'cleared' }

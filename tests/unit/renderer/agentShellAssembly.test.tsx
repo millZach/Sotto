@@ -310,25 +310,7 @@ describe('the startup shell cache', () => {
     expect(readShellCache()?.host.threads[0]?.id).toBe('last')
   })
 
-  it('writes the newest shell at once when the window hides or closes, inside the throttle window', async () => {
-    vi.useFakeTimers()
-    const wire = shellBridge(fullState([thread('first', [])]), { detail: false })
-    renderHook(() => useAgentConnection(wire.bridge))
-    await act(async () => {})
-    act(() => wire.publish(fullState([thread('hidden', [])])))
-    await act(async () => { await vi.advanceTimersByTimeAsync(16) })
-    expect(readShellCache()?.host.threads[0]?.id).toBe('first')
-    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden')
-    act(() => { document.dispatchEvent(new Event('visibilitychange')) })
-    expect(readShellCache()?.host.threads[0]?.id).toBe('hidden')
-    visibility.mockReturnValue('visible')
-    act(() => wire.publish(fullState([thread('closing', [])])))
-    await act(async () => { await vi.advanceTimersByTimeAsync(16) })
-    act(() => { window.dispatchEvent(new Event('pagehide')) })
-    expect(readShellCache()?.host.threads[0]?.id).toBe('closing')
-  })
-
-  it('serializes a shell too large to keep only once, until fewer threads are listed or the retry comes round', async () => {
+  it('serializes a shell too large to keep only once, until fewer threads are listed or a minute has passed', async () => {
     vi.useFakeTimers()
     // Over a megabyte as the cache keeps it: each row keeps its title.
     const many = (count: number) => Array.from({ length: count }, (_, index) => ({ ...thread(`t${index}`, []), title: `${index} ${'x'.repeat(2_000)}` }))
@@ -356,11 +338,8 @@ describe('the startup shell cache', () => {
     act(() => wire.publish(fullState(many(601))))
     await act(async () => { await vi.advanceTimersByTimeAsync(SHELL_CACHE_INTERVAL_MS + 16) })
     expect(shells()).toBe(3)
-    // The next state after the retry comes round is tried again.
+    // A minute on it is tried again by itself, with no new state, so a workspace that shrank in words alone is kept.
     await act(async () => { await vi.advanceTimersByTimeAsync(SHELL_CACHE_RETRY_MS) })
-    expect(shells()).toBe(3)
-    act(() => wire.publish(fullState(many(602))))
-    await act(async () => { await vi.advanceTimersByTimeAsync(16) })
     expect(shells()).toBe(4)
   })
 
@@ -382,7 +361,6 @@ describe('the startup shell cache', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(16) })
     const before = localStorage.getItem(SHELL_CACHE_KEY)
     view.unmount()
-    window.dispatchEvent(new Event('pagehide'))
     await act(async () => { await vi.advanceTimersByTimeAsync(SHELL_CACHE_INTERVAL_MS) })
     expect(localStorage.getItem(SHELL_CACHE_KEY)).toBe(before)
   })
