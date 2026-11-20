@@ -28,8 +28,17 @@ export interface AgentConnection {
 
 /** How many threads' histories the window keeps once it stops looking at them. */
 const DETAIL_CACHE_LIMIT = 16
-/** At most one cache write per this long; the shell arrives as often as a provider streams. */
-const SHELL_CACHE_INTERVAL_MS = 2_000
+/**
+ * At most one cache write per this long while the window is shown; the shell arrives as often as a provider streams. The
+ * window hiding or closing writes the newest at once, so a restart still paints what the window showed last (#2733).
+ */
+export const SHELL_CACHE_INTERVAL_MS = 60_000
+/**
+ * A shell found too large for the cache is not even serialized again until the window lists fewer threads, or this long
+ * has passed: on November 20, 2026 the owner's 4 MB shell was serialized every 2 s only to be thrown away, about 1 s of
+ * the window a minute (#2733).
+ */
+export const SHELL_CACHE_RETRY_MS = 10 * 60_000
 /** Commands that only ask what an action would do; their answers stay with the dialog that asked. */
 const PREVIEW_COMMANDS: ReadonlySet<AgentCommand['type']> = new Set(['preview-reclaim-thread-worktree', 'preview-delete-thread', 'preview-clear-threads'])
 /** Said when main gave no reason in words: a code, a schema failure or nothing at all. */
@@ -393,19 +402,36 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
       window.removeEventListener('beforeunload', flush)
     }
   }, [bridge, session, threadDrafts, receiveState, commitPendingShell, detail])
-  // Keep the newest shell for the next start, at most once every couple of seconds. Nothing is kept
-  // while Keep local history is off, and a stale shell is never written back over itself.
+  // Keep the newest shell for the next start, at most once a minute while shown and at once when the window hides or
+  // closes. Nothing is kept while Keep local history is off, and a stale shell is never written back over itself. A shell
+  // too large to keep is not serialized again until it could fit (`SHELL_CACHE_RETRY_MS`).
   const cached = useRef<number | null>(null)
+  const tooLarge = useRef<{ readonly threads: number; readonly at: number } | null>(null)
+  /** The newest state still to be written, which the window hiding or closing writes at once. */
+  const unwritten = useRef<AgentState | null>(null)
+  const writeCache = useCallback((shell: AgentState): void => {
+    unwritten.current = null
+    const now = performance.now(), big = tooLarge.current, threads = shell.host.threads.length
+    if (big !== null && threads >= big.threads && now - big.at < SHELL_CACHE_RETRY_MS) return
+    cached.current = now
+    tooLarge.current = writeShellCache(shell) === 'too-large' ? { threads, at: now } : null
+  }, [])
   useEffect(() => {
     if (state === null || state.stale === true) return
-    if (state.historyEnabled === false) { clearShellCache(); return }
-    const now = performance.now()
-    const write = (): void => { cached.current = performance.now(); writeShellCache(state) }
-    const remaining = cached.current === null ? 0 : SHELL_CACHE_INTERVAL_MS - (now - cached.current)
-    if (remaining <= 0) { write(); return }
-    const timer = window.setTimeout(write, remaining)
+    if (state.historyEnabled === false) { unwritten.current = null; tooLarge.current = null; clearShellCache(); return }
+    unwritten.current = state
+    const remaining = cached.current === null ? 0 : SHELL_CACHE_INTERVAL_MS - (performance.now() - cached.current)
+    if (remaining <= 0) { writeCache(state); return }
+    const timer = window.setTimeout(() => writeCache(state), remaining)
     return () => window.clearTimeout(timer)
-  }, [state])
+  }, [state, writeCache])
+  useEffect(() => {
+    const flush = (): void => { const shell = unwritten.current; if (shell !== null) writeCache(shell) }
+    const hidden = (): void => { if (document.visibilityState === 'hidden') flush() }
+    document.addEventListener('visibilitychange', hidden)
+    window.addEventListener('pagehide', flush)
+    return () => { unwritten.current = null; document.removeEventListener('visibilitychange', hidden); window.removeEventListener('pagehide', flush) }
+  }, [writeCache])
   // Both published and command-returned snapshots reach the store before paint,
   // including while the Threads page is absent.
   // The cached shell carries no draft evidence and must not be read as any: what a previous run saw
