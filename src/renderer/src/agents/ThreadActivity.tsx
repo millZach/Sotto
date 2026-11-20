@@ -24,7 +24,7 @@ import { shownCount, shownLineCount } from '../state/interfaceNumbers'
 import { focusComposerFrom, TurnFailureReason, useOwnServerTurnActions, type OwnServerTurnActions } from './OwnServerTurn'
 import { retryingWords, stillWaitingNote, stillWaitingWords, stopName, stopWords } from './ownServerTurnWords'
 import { heardFrom, LiveServerMark } from './ServerMark'
-import { chooseSteps, stepsOpen } from './stepsOpen'
+import { chooseSteps, stepsOpen, useGroupSteps } from './stepsOpen'
 import {
   browserLineName, browserLinesByTurn, browserRunWords, browserStepWords, foldBrowserRuns, linesStartingIn, PLACE, plainWords, sentenceWords, stepUnfinished, turnBrowserLines,
   type ActivityItem, type BrowserLinesStore, type BrowserRun, type BrowserVerb, type BrowserWords, type TurnLinesView,
@@ -80,6 +80,8 @@ export interface ActivityGroupViewProps {
   readonly bare?: boolean | undefined
   /** The group is drawn inside a fold the user opened, so it starts open and the press shows the turn's steps. */
   readonly opened?: boolean | undefined
+  /** The thread the group is drawn in, so a press on it is kept for the window's life; without one it holds while drawn. */
+  readonly threadId?: string | undefined
 }
 
 /** Whole seconds while the clock runs, so the number does not flicker through tenths. */
@@ -601,9 +603,10 @@ const ActivityRow = memo(function ActivityRow({ node, connected, provider, quiet
  * starts open, so the press shows the turn's steps; anywhere else it starts folded. Nothing here can act on the provider
  * or its agents.
  */
-export const ActivityGroupView = memo(function ActivityGroupView({ group, live, threadRunning, connected, provider, onDisclosure, outcome, bare = false, opened = false }: ActivityGroupViewProps): ReactNode {
+export const ActivityGroupView = memo(function ActivityGroupView({ group, live, threadRunning, connected, provider, onDisclosure, outcome, bare = false, opened = false, threadId }: ActivityGroupViewProps): ReactNode {
   const { t } = useLingui()
-  const [choice, setChoice] = useState<boolean | null>(null)
+  // A press is kept for the thread's group, so the group is drawn again as the user left it (ADR-0134, November 19 amendment).
+  const [choice, setChoice] = useGroupSteps(threadId, group.key)
   const listId = useId()
   const expanded = choice ?? (live || opened)
   const headline = turnHeadline(group.turn, threadRunning)
