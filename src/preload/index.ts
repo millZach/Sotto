@@ -91,7 +91,7 @@ import { MEMORY_GET, MEMORY_COMMAND, MEMORY_CHANGED, memorySnapshotSchema, memor
 import { agentActivitySchema } from '../shared/agentActivity'
 import { AGENT_THREAD_PROMPTS, agentThreadPromptsRequestSchema, agentThreadPromptsSchema } from '../shared/threadPrompts'
 import { AGENT_THREAD_WORDS, agentThreadWordsRequestSchema, joinedThreadWordsSchema } from '../shared/threadWords'
-import { AGENT_THREAD_MEDIA, agentThreadMediaResultSchema, agentThreadMediaWindowRequestSchema, AGENT_ATTACHMENT_CONTENT, AGENT_ATTACHMENT_PREVIEW, AGENT_ATTACHMENT_STAGE, AGENT_ATTACHMENT_STAGE_FILE, VIDEO_HAS_NO_PATH, agentAttachmentContentRequestSchema, agentAttachmentContentResultSchema, agentAttachmentHandleSchema, agentAttachmentStageRequestSchema, agentAttachmentStageFileRequestSchema, agentAttachmentPreviewRequestSchema, agentAttachmentPreviewResultSchema, AGENT_GET, AGENT_COMMAND, AGENT_STATE, AGENT_E2E, AGENT_THREAD_DETAIL, AGENT_THREAD_DETAIL_GET, AGENT_START_HANDOVER, AGENT_ACTIVITY_BODY, agentActivityBodyRequestSchema, agentStartHandoverSchema, agentThreadDetailRequestSchema, agentThreadDetailResultSchema, agentStateSchema, agentCommandSchema, agentCommandReceiptSchema, agentCommandChangedThreadRecordsReceiptSchema } from '../shared/agents'
+import { AGENT_THREAD_MEDIA, agentThreadMediaResultSchema, agentThreadMediaWindowRequestSchema, AGENT_ATTACHMENT_CONTENT, AGENT_ATTACHMENT_PREVIEW, AGENT_ATTACHMENT_STAGE, AGENT_ATTACHMENT_STAGE_FILE, VIDEO_HAS_NO_PATH, agentAttachmentContentRequestSchema, agentAttachmentContentResultSchema, agentAttachmentHandleSchema, agentAttachmentStageRequestSchema, agentAttachmentStageFileRequestSchema, agentAttachmentPreviewRequestSchema, agentAttachmentPreviewResultSchema, AGENT_GET, AGENT_COMMAND, AGENT_STATE, AGENT_E2E, AGENT_THREAD_DETAIL, AGENT_THREAD_DETAIL_GET, AGENT_START_HANDOVER, AGENT_ACTIVITY_BODY, agentActivityBodyRequestSchema, agentStartHandoverSchema, agentThreadDetailRequestSchema, agentStateSchema, agentCommandSchema, agentModelCatalogRevisionSchema } from '../shared/agents'
 
 import {
   APP_HIDE,
@@ -306,6 +306,42 @@ function trustedState<Output>(key: string): PayloadCheck<Output> {
   }
 }
 
+/**
+ * An answer from main that is one of the state channels' own payloads, a command's answer (a state) or a thread's history,
+ * checked for its shape as they are (`trustedState`), and refused when it is not that shape. The same states and histories
+ * already reach the window this way as broadcasts and pushes. Parsing them whole cost the owner's window about 2 s a minute
+ * on November 20, 2026, up to tens of milliseconds for one history of 2,000 activity records (#2733).
+ */
+async function invokeTrusted<Output>(renderer: IpcRendererAdapter, channel: string, check: PayloadCheck<Output>, ...args: unknown[]): Promise<Output> {
+  const checked = check.safeParse(await renderer.invoke(channel, ...args))
+  if (!checked.success) throw new Error('AGENT_REPLY_UNEXPECTED')
+  return checked.data
+}
+
+/**
+ * A command's answer checked as a state is (`trustedState`), and its model catalogs by their own schema: an answer names
+ * each catalog by its revision and never carries one whole (ADR-0028), so one that does is refused here as it always was.
+ */
+function trustedReceipt<Output extends { readonly host: unknown }>(): PayloadCheck<Output> {
+  const state = trustedState<Output>('host')
+  return {
+    safeParse: value => {
+      const checked = state.safeParse(value)
+      if (!checked.success) return checked
+      const host = checked.data.host as { models?: unknown; clientHosts?: readonly { models?: unknown }[] } | null
+      const revisions = typeof host === 'object' && host !== null && agentModelCatalogRevisionSchema.safeParse(host.models).success
+        && (host.clientHosts === undefined || (Array.isArray(host.clientHosts) && host.clientHosts.every(client => agentModelCatalogRevisionSchema.safeParse(client?.models).success)))
+      return revisions ? checked : { success: false }
+    },
+  }
+}
+
+/** A thread's history as `trustedState` checks one, or none: main answers null for a thread it does not hold. */
+function trustedDetail(): PayloadCheck<import('../shared/agents').AgentThreadDetail | null> {
+  const detail = trustedState<import('../shared/agents').AgentThreadDetail>('threadId')
+  return { safeParse: value => value === null ? { success: true, data: null } : detail.safeParse(value) }
+}
+
 function subscribe<Output>(
   renderer: IpcRendererAdapter,
   channel: string,
@@ -408,7 +444,7 @@ function createAgentBridge(renderer: IpcRendererAdapter): import('../shared/agen
     gitPullRequest: async (request: import('../shared/gitPullRequests').GitPullRequestRequest) => invokeParsed(renderer, AGENT_GIT_PULL_REQUEST, gitPullRequestResultSchema, gitPullRequestRequestSchema.parse(request)),
     gitPullRequestList: async (request: import('../shared/gitPullRequests').GitPullRequestListRequest) => invokeParsed(renderer, AGENT_GIT_PULL_REQUEST_LIST, gitPullRequestListResultSchema, gitPullRequestListRequestSchema.parse(request)),
     hostFolders: async (request: import('../shared/hostFolders').HostFoldersClientRequest) => invokeParsed(renderer, AGENT_HOST_FOLDERS, hostFoldersResultSchema, hostFoldersClientRequestSchema.parse(request)),
-    threadDetail: async (threadId: string) => invokeParsed(renderer, AGENT_THREAD_DETAIL_GET, agentThreadDetailResultSchema, agentThreadDetailRequestSchema.parse(threadId)),
+    threadDetail: async (threadId: string) => invokeTrusted(renderer, AGENT_THREAD_DETAIL_GET, trustedDetail(), agentThreadDetailRequestSchema.parse(threadId)),
     startHandover: async (threadId: string) => invokeParsed(renderer, AGENT_START_HANDOVER, startHandoverResultSchema, agentThreadDetailRequestSchema.parse(threadId)),
     // One record of a remote thread whole, for a row whose body its host sent cut (ADR-0025, October 18 amendment).
     activityBody: async (request: import('../shared/agents').AgentActivityBodyRequest) => invokeParsed(renderer, AGENT_ACTIVITY_BODY, activityBodyResultSchema, agentActivityBodyRequestSchema.parse(request)),
@@ -421,8 +457,8 @@ function createAgentBridge(renderer: IpcRendererAdapter): import('../shared/agen
     // A command's answer is a receipt (issue #323): its catalogs are named by catalog revision, and the page
     // puts them back from what the broadcast sent it, the same way it does for an omitted broadcast catalog.
     // See src/renderer/src/agents/agentStateCatalogs.ts.
-    command: async (command: import('../shared/agents').AgentCommand) => invokeParsed(renderer, AGENT_COMMAND, agentCommandReceiptSchema, validatedRoutedCommand(command)),
-    commandWithChangedThreadRecords: async (command: import('../shared/agents').AgentCommand) => invokeParsed(renderer, AGENT_COMMAND, agentCommandChangedThreadRecordsReceiptSchema, validatedRoutedCommand(command), { changedThreadRecords: true }),
+    command: async (command: import('../shared/agents').AgentCommand) => invokeTrusted(renderer, AGENT_COMMAND, trustedReceipt<import('../shared/agents').AgentCommandReceipt>(), validatedRoutedCommand(command)),
+    commandWithChangedThreadRecords: async (command: import('../shared/agents').AgentCommand) => invokeTrusted(renderer, AGENT_COMMAND, trustedReceipt<import('../shared/agents').AgentCommandChangedThreadRecordsReceipt>(), validatedRoutedCommand(command), { changedThreadRecords: true }),
     // The broadcast may omit a model catalog this window already has (issue #286), and carries only the
     // thread records that changed since this window's last broadcast (issue #1330), coded as
     // AgentStateBroadcast rather than AgentState. This crosses to the page unreassembled on purpose:
@@ -968,12 +1004,12 @@ export function createSottoPopupBridge(
     getSettings: async () => invokeParsed(renderer, SETTINGS_GET, settingsSchema),
     onSettingsChanged: listener => subscribe(renderer, SETTINGS_CHANGED, settingsChangedSchema, listener),
     shell: async () => invokeParsed(renderer, AGENT_GET, agentStateSchema),
-    threadDetail: async threadId => invokeParsed(renderer, AGENT_THREAD_DETAIL_GET, agentThreadDetailResultSchema, agentThreadDetailRequestSchema.parse(threadId)),
+    threadDetail: async threadId => invokeTrusted(renderer, AGENT_THREAD_DETAIL_GET, trustedDetail(), agentThreadDetailRequestSchema.parse(threadId)),
     onThreadDetail: listener => subscribe(renderer, AGENT_THREAD_DETAIL, trustedState<import('../shared/agents').AgentThreadDetailUpdate>('threadId'), listener),
     onThread: listener => subscribe(renderer, POPUP_THREAD, popupThreadSchema, listener),
     command: async command => {
       if (!POPUP_COMMAND_TYPES.has(command.type)) return Promise.reject(new Error('AGENT_POPUP_COMMAND_REFUSED'))
-      return invokeParsed(renderer, AGENT_COMMAND, agentCommandReceiptSchema, validatedRoutedCommand(command))
+      return invokeTrusted(renderer, AGENT_COMMAND, trustedReceipt<import('../shared/agents').AgentCommandReceipt>(), validatedRoutedCommand(command))
     },
     openExternalLink: async url => invokeParsed(renderer, EXTERNAL_LINK_OPEN, commandResultSchema, externalLinkSchema.parse(url)),
     stageAttachment: async request => invokeParsed(renderer, AGENT_ATTACHMENT_STAGE, agentAttachmentHandleSchema, agentAttachmentStageRequestSchema.parse(request)),
