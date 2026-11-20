@@ -115,7 +115,8 @@ pub fn start(ui: &AppWindow, dark: bool) -> std::io::Result<Rc<RefCell<Terminal>
     env.insert("COLORTERM".into(), "truecolor".into());
     let options = tty::Options {
         shell: shell(),
-        working_directory: std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).map(Into::into),
+        // SOTTO_TERM_CWD stands in for the thread's project folder, where Sotto opens a terminal; else home.
+        working_directory: std::env::var_os("SOTTO_TERM_CWD").or_else(|| std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })).map(Into::into),
         drain_on_exit: false,
         #[cfg(windows)]
         escape_args: false,

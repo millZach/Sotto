@@ -1,0 +1,8 @@
+dark-1b-typed vs Electron (composer-reference): pixels differing by more than 24 of 255: 6081 of 122008 (5.0%)
+dark-1b-typed vs Slint on Linux: pixels differing by more than 24 of 255: 3683 of 122008 (3.0%)
+dark-1a-empty vs Electron (composer-reference): pixels differing by more than 24 of 255: 2649 of 122008 (2.2%)
+dark-1a-empty vs Slint on Linux: pixels differing by more than 24 of 255: 1224 of 122008 (1.0%)
+light-1b-typed vs Electron (composer-reference): pixels differing by more than 24 of 255: 5821 of 122008 (4.8%)
+light-1b-typed vs Slint on Linux: pixels differing by more than 24 of 255: 3761 of 122008 (3.1%)
+light-1a-empty vs Electron (composer-reference): pixels differing by more than 24 of 255: 2617 of 122008 (2.1%)
+light-1a-empty vs Slint on Linux: pixels differing by more than 24 of 255: 1174 of 122008 (1.0%)

@@ -43,6 +43,8 @@ pub struct Args {
     pub loop_stream: bool,
     /// The web pane's surface: image (default), or on Windows child or shared (src/winsurface.rs).
     pub web_surface: String,
+    /// Open the window without taking the foreground (measurement runs on a desktop someone is using).
+    pub no_activate: bool,
 }
 
 fn args() -> Args {
@@ -71,6 +73,7 @@ fn args() -> Args {
             "--scroll-up-after" => a.scroll_up_after = it.next().and_then(|s| s.parse().ok()),
             "--composer-text" => a.composer_text = it.next(),
             "--no-focus" => a.no_focus = true,
+            "--no-activate" => a.no_activate = true,
             "--web-surface" => a.web_surface = it.next().unwrap_or_default(),
             "--loop" => {
                 a.loop_stream = true;
@@ -105,6 +108,18 @@ fn main() {
     let launch_t0 = metrics::launch_t0();
     let args = args();
     slint::set_xdg_app_id("dev.sotto.SlintBakeoff").ok();
+    {
+        // SLINT_BACKEND, when set, still wins: BackendSelector reads it for whatever is not chosen here.
+        let mut selector = slint::BackendSelector::new();
+        #[cfg(windows)]
+        if std::env::var_os("SLINT_BACKEND").is_none() {
+            selector = selector.backend_name("winit".into()).renderer_name(metrics::WINDOWS_RENDERER.into());
+        }
+        if args.no_activate {
+            selector = selector.with_winit_window_attributes_hook(|a| a.with_active(false));
+        }
+        selector.select().expect("choose Slint's backend");
+    }
     let ui = AppWindow::new().expect("create the window");
     let backend = metrics::backend_name();
     ui.global::<Theme>().set_dark(!args.light);
@@ -146,6 +161,8 @@ fn main() {
     ui.set_effort("Default".into());
     ui.set_permission("Ask for approval".into());
     ui.set_composer_text(args.composer_text.clone().map(Into::into).unwrap_or_else(composer::initial_text));
+    // The text the composer opens with sets its alignment too, not only an edit.
+    ui.set_composer_rtl(markdown::starts_rtl(&ui.get_composer_text()));
     ui.set_effort_offer(composer::suggested_effort(&ui.get_composer_text(), -1).into());
     let pills: Rc<RefCell<Vec<composer::Pill>>> = Rc::new(RefCell::new(composer::parse(&ui.get_composer_text()).0));
     let metrics = metrics::Metrics::new(launch_t0, args.clone(), backend);

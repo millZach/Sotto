@@ -40,8 +40,20 @@ pub fn launch_t0() -> Option<u128> {
     std::env::var("SOTTO_LAUNCH_T0").ok()?.parse().ok()
 }
 
+/// The renderer this build asks for on Windows when SLINT_BACKEND is not set. Slint's own default there
+/// is Skia over wgpu, which on this laptop picks a Vulkan adapter that Skia cannot use and falls back
+/// to Skia's software renderer (docs/research/2026-11-19-native-ui-bake-off-slint-windows.md).
+#[cfg(windows)]
+pub const WINDOWS_RENDERER: &str = "skia-opengl";
+
 pub fn backend_name() -> String {
-    std::env::var("SLINT_BACKEND").unwrap_or_else(|_| "winit (default renderer)".into())
+    if let Ok(b) = std::env::var("SLINT_BACKEND") {
+        return b;
+    }
+    #[cfg(windows)]
+    return format!("winit-{WINDOWS_RENDERER} (this build's Windows default)");
+    #[cfg(not(windows))]
+    "winit (default renderer)".into()
 }
 
 impl Metrics {
