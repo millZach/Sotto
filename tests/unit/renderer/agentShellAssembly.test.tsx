@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { handleOf } from '../../fixtures/stagedImages'
 
-import { useAgentConnection } from '../../../src/renderer/src/agents/AgentContext'
+import { SHELL_CACHE_INTERVAL_MS, SHELL_CACHE_RETRY_MS, useAgentConnection } from '../../../src/renderer/src/agents/AgentContext'
 import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftStore'
 import { requestAnswerStore } from '../../../src/renderer/src/agents/requests/requestAnswers'
 import { SHELL_CACHE_KEY, cacheableShell, readShellCache, writeShellCache } from '../../../src/renderer/src/agents/shellCache'
@@ -304,8 +304,43 @@ describe('the startup shell cache', () => {
     act(() => wire.publish(fullState([thread('second', [])])))
     act(() => wire.publish(fullState([thread('last', [])])))
     await act(async () => { await vi.advanceTimersByTimeAsync(16) })
-    await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+    await act(async () => { await vi.advanceTimersByTimeAsync(SHELL_CACHE_INTERVAL_MS / 2) })
+    expect(readShellCache()?.host.threads[0]?.id).toBe('first')
+    await act(async () => { await vi.advanceTimersByTimeAsync(SHELL_CACHE_INTERVAL_MS) })
     expect(readShellCache()?.host.threads[0]?.id).toBe('last')
+  })
+
+  it('serializes a shell too large to keep only once, until fewer threads are listed or a minute has passed', async () => {
+    vi.useFakeTimers()
+    // Over a megabyte as the cache keeps it: each row keeps its title.
+    const many = (count: number) => Array.from({ length: count }, (_, index) => ({ ...thread(`t${index}`, []), title: `${index} ${'x'.repeat(2_000)}` }))
+    const wire = shellBridge(fullState(many(600)), { detail: false })
+    const stringify = vi.spyOn(JSON, 'stringify')
+    const shells = () => stringify.mock.calls.filter(([value]) => typeof value === 'object' && value !== null && 'host' in value).length
+    renderHook(() => useAgentConnection(wire.bridge))
+    await act(async () => {})
+    expect(shells()).toBe(1)
+    expect(localStorage.getItem(SHELL_CACHE_KEY)).toBeNull()
+    for (let round = 0; round < 3; round++) {
+      act(() => wire.publish(fullState(many(600 + round))))
+      await act(async () => { await vi.advanceTimersByTimeAsync(SHELL_CACHE_INTERVAL_MS + 16) })
+    }
+    expect(shells()).toBe(1)
+    // Fewer threads may fit: it is tried again, and a small enough shell is kept.
+    act(() => wire.publish(fullState([thread('small', [])])))
+    await act(async () => { await vi.advanceTimersByTimeAsync(SHELL_CACHE_INTERVAL_MS + 16) })
+    expect(shells()).toBe(2)
+    expect(readShellCache()?.host.threads[0]?.id).toBe('small')
+    // Grown too large again, it is tried once more only after the retry.
+    act(() => wire.publish(fullState(many(600))))
+    await act(async () => { await vi.advanceTimersByTimeAsync(SHELL_CACHE_INTERVAL_MS + 16) })
+    expect(shells()).toBe(3)
+    act(() => wire.publish(fullState(many(601))))
+    await act(async () => { await vi.advanceTimersByTimeAsync(SHELL_CACHE_INTERVAL_MS + 16) })
+    expect(shells()).toBe(3)
+    // A minute on it is tried again by itself, with no new state, so a workspace that shrank in words alone is kept.
+    await act(async () => { await vi.advanceTimersByTimeAsync(SHELL_CACHE_RETRY_MS) })
+    expect(shells()).toBe(4)
   })
 
   it('never writes a pending shell after history is turned off or the connection unmounts', async () => {
@@ -318,7 +353,7 @@ describe('the startup shell cache', () => {
     act(() => wire.publish(fullState([thread('pending', [])])))
     act(() => wire.publish({ ...state, historyEnabled: false }))
     await act(async () => { await vi.advanceTimersByTimeAsync(16) })
-    await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+    await act(async () => { await vi.advanceTimersByTimeAsync(SHELL_CACHE_INTERVAL_MS) })
     expect(readShellCache()).toBeNull()
     act(() => wire.publish(state))
     await act(async () => { await vi.advanceTimersByTimeAsync(16) })
@@ -326,7 +361,7 @@ describe('the startup shell cache', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(16) })
     const before = localStorage.getItem(SHELL_CACHE_KEY)
     view.unmount()
-    await act(async () => { await vi.advanceTimersByTimeAsync(2000) })
+    await act(async () => { await vi.advanceTimersByTimeAsync(SHELL_CACHE_INTERVAL_MS) })
     expect(localStorage.getItem(SHELL_CACHE_KEY)).toBe(before)
   })
 

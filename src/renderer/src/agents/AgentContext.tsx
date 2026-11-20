@@ -30,7 +30,13 @@ export interface AgentConnection {
 /** How many threads' histories the window keeps once it stops looking at them. */
 const DETAIL_CACHE_LIMIT = 16
 /** At most one cache write per this long; the shell arrives as often as a provider streams. */
-const SHELL_CACHE_INTERVAL_MS = 2_000
+export const SHELL_CACHE_INTERVAL_MS = 2_000
+/**
+ * A shell found too large for the cache is serialized again only this long after, or at once when the window lists fewer
+ * threads. The cache is empty meanwhile, so nothing in it can go stale. On November 20, 2026 the owner's 4 MB shell was
+ * serialized every 2 s only to be thrown away, about 1 s of the window a minute (#2733).
+ */
+export const SHELL_CACHE_RETRY_MS = 60_000
 /** Commands that only ask what an action would do; their answers stay with the dialog that asked. */
 const PREVIEW_COMMANDS: ReadonlySet<AgentCommand['type']> = new Set(['preview-reclaim-thread-worktree', 'preview-delete-thread', 'preview-clear-threads'])
 /** Said when main gave no reason in words: a code, a schema failure or nothing at all. */
@@ -415,14 +421,22 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     }
   }, [bridge, session, threadDrafts, receiveState, commitPendingShell, detail])
   // Keep the newest shell for the next start, at most once every couple of seconds. Nothing is kept
-  // while Keep local history is off, and a stale shell is never written back over itself.
+  // while Keep local history is off, and a stale shell is never written back over itself. A shell too large to keep is
+  // not serialized again until it might fit (`SHELL_CACHE_RETRY_MS`).
   const cached = useRef<number | null>(null)
+  const tooLarge = useRef<{ readonly threads: number; readonly at: number } | null>(null)
   useEffect(() => {
     if (state === null || state.stale === true) return
-    if (state.historyEnabled === false) { clearShellCache(); return }
-    const now = performance.now()
-    const write = (): void => { cached.current = performance.now(); writeShellCache(state) }
-    const remaining = cached.current === null ? 0 : SHELL_CACHE_INTERVAL_MS - (now - cached.current)
+    if (state.historyEnabled === false) { tooLarge.current = null; clearShellCache(); return }
+    const write = (): void => {
+      const at = performance.now()
+      cached.current = at
+      tooLarge.current = writeShellCache(state) === 'too-large' ? { threads: state.host.threads.length, at } : null
+    }
+    const big = tooLarge.current
+    const due = big !== null && state.host.threads.length >= big.threads ? big.at + SHELL_CACHE_RETRY_MS
+      : cached.current === null ? Number.NEGATIVE_INFINITY : cached.current + SHELL_CACHE_INTERVAL_MS
+    const remaining = due - performance.now()
     if (remaining <= 0) { write(); return }
     const timer = window.setTimeout(write, remaining)
     return () => window.clearTimeout(timer)
