@@ -177,28 +177,49 @@ export function decodePart(bytes: Buffer, part: Pick<MailPart, 'encoding' | 'cha
 }
 
 /**
- * About how many bytes a file is once decoded, from its size as written. Base64 is read as written in lines of 76
- * with their line ends, as RFC 2045 has it, so a file written that way is counted to the byte and one written without
- * line ends a little under. Every other way of writing a file is counted as written.
+ * About how many bytes a file is once decoded, from its size as written, and never more than it is when written as
+ * mail programs write it. Base64 is read as written in lines of 76 with their line ends, as RFC 2045 has it, so a file
+ * written that way is counted to the byte, a part line at its end a byte or two under, and one written without line
+ * ends a little under. Every other way of writing a file is counted as written, which for quoted-printable is more
+ * than the file.
  */
 export function decodedSize(part: Pick<MailPart, 'encoding' | 'size'>): number {
-  return part.encoding === 'base64' ? Math.ceil(part.size / 78 * 57) : part.size
+  return part.encoding === 'base64' ? Math.floor(part.size / 78 * 57) : part.size
 }
 
 const HEX = (code: number): number => code >= 0x30 && code <= 0x39 ? code - 0x30 : code >= 0x41 && code <= 0x46 ? code - 0x37 : code >= 0x61 && code <= 0x66 ? code - 0x57 : -1
-/** Quoted-printable's bytes, read straight from bytes into bytes: a file can be tens of megabytes, too many for a list of numbers. */
+const isBlank = (code: number | undefined): boolean => code === 0x20 || code === 0x09
+/**
+ * Quoted-printable's bytes, read straight from bytes into bytes: a file can be tens of megabytes, too many for a list
+ * of numbers. Spaces and tabs at a line's end were added on the way and are left out, as RFC 2045 says, but for those
+ * the sender wrote as `=20` or `=09`.
+ */
 function quotedPrintableBytes(bytes: Buffer): Buffer {
   const out = Buffer.allocUnsafe(bytes.length)
   let length = 0
+  /** Where written bytes may no longer be taken back: the start of the line, or past the last one written as `=XX`. */
+  let kept = 0
   for (let at = 0; at < bytes.length; at += 1) {
     const code = bytes[at]!
+    if (code === 0x0a) {
+      // A line's end: the blanks before it go, and its CR LF or LF stays.
+      const cr = length > kept && out[length - 1] === 0x0d
+      if (cr) length -= 1
+      while (length > kept && isBlank(out[length - 1])) length -= 1
+      if (cr) out[length++] = 0x0d
+      out[length++] = code
+      kept = length
+      continue
+    }
     if (code !== 0x3d) { out[length++] = code; continue }
     const high = at + 2 < bytes.length ? HEX(bytes[at + 1]!) : -1
     const low = high < 0 ? -1 : HEX(bytes[at + 2]!)
-    if (low >= 0) { out[length++] = high * 16 + low; at += 2; continue }
-    // A soft line break: the line goes on.
-    if (bytes[at + 1] === 0x0d && bytes[at + 2] === 0x0a) { at += 2; continue }
-    if (bytes[at + 1] === 0x0a) { at += 1; continue }
+    if (low >= 0) { out[length++] = high * 16 + low; kept = length; at += 2; continue }
+    // A soft line break, with any blanks added before its end: the line goes on.
+    let end = at + 1
+    while (isBlank(bytes[end])) end += 1
+    if (bytes[end] === 0x0d && bytes[end + 1] === 0x0a) { at = end + 1; continue }
+    if (bytes[end] === 0x0a) { at = end; continue }
     out[length++] = code
   }
   return out.subarray(0, length)

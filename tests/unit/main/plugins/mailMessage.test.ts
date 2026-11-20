@@ -87,6 +87,8 @@ describe('a mail message as a person reads it (ADR-0205)', () => {
     expect(decodeFile(Buffer.from('=00=FF=3D=0D=0A=\r\n=80A'), 'quoted-printable')).toEqual(bytes)
     // A soft line break ends nothing, and an equals sign with nothing whole after it stays.
     expect(decodeFile(Buffer.from('a=\nb=4'), 'quoted-printable')).toEqual(Buffer.from('ab=4'))
+    // Blanks at a line's end were added on the way and go, unless the sender wrote them as =20 or =09 (RFC 2045, 6.7).
+    expect(decodeFile(Buffer.from('one \t\r\ntwo=20\r\nthree= \r\nfour=09 \n'), 'quoted-printable')).toEqual(Buffer.from('one\r\ntwo \r\nthreefour\t\n'))
     for (const encoding of ['7bit', '8bit', 'binary', '']) expect(decodeFile(bytes, encoding)).toBe(bytes)
     expect(decodeFile(bytes, 'x-uuencode')).toBeNull()
   })

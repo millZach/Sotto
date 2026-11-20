@@ -909,7 +909,7 @@ it('says of a use of mail what was read, and of a first read you did not allow w
   ])
 })
 
-it('says a file was saved from an email, or only asked for, and never which (#2727)', async () => {
+it('says a file was saved from an email, or only asked for when it was not saved, and never which (#2727)', async () => {
   const mail = { plugin: 'gmail' as const, accountId: personal.id, threadTitle: 'Tax papers', kind: 'mail-file' as const }
   const uses = [use(1, { ...mail }), use(2, { ...mail, outcome: 'denied' }), use(3, { ...mail, outcome: 'refused' })]
   await act(async () => { render(<PluginsSettings bridge={vercelBridge([personal], { recentUse: async () => uses })} />) })
@@ -918,7 +918,7 @@ it('says a file was saved from an email, or only asked for, and never which (#27
   expect(items.map(item => item.querySelector('span')!.textContent)).toEqual([
     'Saved a file from an email in “Tax papers”',
     'Asked to save a file from an email in “Tax papers” You said no.',
-    'Saved a file from an email in “Tax papers” Sotto refused it.',
+    'Asked to save a file from an email in “Tax papers” Sotto refused it.',
   ])
 })
 

@@ -1016,7 +1016,8 @@ function RecentUse({ name, uses, elsewhere }: {
       {shown.map(use => <li key={use.id}>
         <time dateTime={use.at}>{whenUsed(new Date(use.at))}</time>
         <span>
-          {use.outcome === 'done' || !changed(use) ? what[use.kind] : asked[use.kind] ?? what[use.kind]}{' '}
+          {/* A file from an email that was not saved is said to have been asked for, as a change that was not made is (#2727). */}
+          {use.outcome === 'done' || (!changed(use) && use.kind !== 'mail-file') ? what[use.kind] : asked[use.kind] ?? what[use.kind]}{' '}
           <span className="plugin-use__thread">{use.threadTitle === null ? t`in a thread that is gone` : t`in “${use.threadTitle}”`}</span>
           {use.outcome === 'refused' ? <>{' '}<Trans>Sotto refused it.</Trans></>
             : use.outcome === 'failed' ? <>{' '}{changed(use) ? <Trans>You allowed it, and it failed.</Trans> : <Trans>It failed.</Trans>}</>

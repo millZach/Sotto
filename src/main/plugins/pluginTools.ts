@@ -9,7 +9,7 @@ import { ThreadToolServer, type ScopedThreadTools, type ThreadMcpServer, type Th
 import { GITHUB_COMMENT_MAX, GITHUB_OWNER, GITHUB_REPO, GITHUB_TITLE_MAX, type GitHubChange, type GitHubIssue } from './github/changes'
 import { GITHUB_PATH_MAX, GITHUB_QUERY_MAX, GITHUB_READ_MAX_CHARS, gitHubReadKind, type GitHubRead } from './github/read'
 import { draftProblem, MAIL_RECIPIENTS_MAX, MAIL_SEND_TEXT_MAX, MAIL_SUBJECT_MAX, type MailDraft } from './mail/compose'
-import { MAIL_FILE_MAX_BYTES, MAIL_SEARCH_DEFAULT, MAIL_SEARCH_MAX, MAIL_TERM_MAX, type MailFailure, type MailFileFetched, type MailFound, type MailOpened, type MailSearch } from './mail/read'
+import { MAIL_FILE_MAX_BYTES, MAIL_FILE_TIMEOUT_MS, MAIL_SEARCH_DEFAULT, MAIL_SEARCH_MAX, MAIL_TERM_MAX, type MailFailure, type MailFileFetched, type MailFound, type MailOpened, type MailSearch } from './mail/read'
 import { MAIL_FILE_FOLDER, mailFileName, saveMailFile, type SavedMailFile } from './mail/save'
 import type { MailSendFailure, MailSent } from './mail/send'
 import { endedWords, folderProblem, makeModelDefinition, makeModelInputSchema, MODEL_COST, modelPaths, NOTHING_MADE, photoWords, type PluginMeshyHandlers } from './meshy/tool'
@@ -54,8 +54,11 @@ const mailSearchSchema = z.object({
 /** Longer than any message id a search gives. */
 const MAIL_MESSAGE_ID_MAX = 1_500
 /** Longer than any file id an opened message gives. */
-const MAIL_FILE_ID_MAX = 100
+const MAIL_FILE_ID_MAX = 400
 const MAIL_FOLDER_MAX = 260
+/** What a save keeps of its call's time to write the file and answer, and the least a fetch is started with. */
+const FILE_ANSWER_ROOM_MS = 15_000
+const FILE_FETCH_MIN_MS = 20_000
 /** The most a file saved from an email may be, as the user is told it. */
 const MAIL_FILE_LIMIT = `${MAIL_FILE_MAX_BYTES / 1024 / 1024} MB`
 const readInputSchema = z.object({
@@ -194,7 +197,7 @@ export interface PluginMailHandlers {
   /** Opens one message a search listed. */
   open(account: PluginAccount, id: string): Promise<MailOpened | SecretTrouble>
   /** Fetches one file an opened message listed, by its id, decoded and no larger than a thread may save. */
-  fetchFile(account: PluginAccount, id: string, file: string): Promise<MailFileFetched | SecretTrouble>
+  fetchFile(account: PluginAccount, id: string, file: string, timeoutMs: number): Promise<MailFileFetched | SecretTrouble>
   /** The thread's working folder on this computer, which a file from an email is saved in, or null when Sotto cannot find one. */
   folderOf(threadId: string): Promise<string | null>
   /** Why the account's password cannot be read for a send, or null when it can: said before the user is asked. */
@@ -1049,7 +1052,7 @@ export class PluginToolServer implements ScopedThreadTools {
     if (saving) {
       const folderOfThread = await mail.folderOf(threadId).catch(() => null)
       root = folderOfThread === null ? null : await realpath(folderOfThread).catch(() => null)
-      if (!root) return text(`Sotto cannot find this thread's folder on this computer, so there is nowhere to save a file from an email. ${NOTHING_SAVED}`, true)
+      if (!root) return text(`Sotto cannot find this thread's folder on this computer, so there is nowhere to save a file from an email. ${NOTHING_SAVED} Tell the user, who can download it from their mail.`, true)
     }
     const account = await this.accountOf(threadId, plugin, named, saving ? NOTHING_SAVED : NOTHING_READ)
     if ('content' in account) return account
@@ -1088,7 +1091,7 @@ export class PluginToolServer implements ScopedThreadTools {
       }
       if (!await usable()) return changed('before it could be read')
     }
-    if (saving && root) return this.saveMailFile(threadId, mail, account, saving, root, kept)
+    if (saving && root) return this.saveMailFile(threadId, mail, account, saving, root, kept, call)
     const result = 'message' in wanted ? await mail.open(account, wanted.message) : await mail.search(account, wanted.search)
     // The user may have stopped this thread reading the account, or settled it, while the mail server was answering.
     // A grant that ended then covers nothing: what came back is not handed over, and the thread asks again.
@@ -1101,9 +1104,11 @@ export class PluginToolServer implements ScopedThreadTools {
     await kept(result.ok ? 'done' : result.reason === 'input' ? 'refused' : 'failed')
     if (!result.ok) return text(mailFailure(result, plugin, account.name, 'message' in wanted), true)
     if ('message' in result) {
-      const { text: words, truncated, ...about } = result.message
-      // Each file it lists can be saved by its id, except by Watcher, which has no folder to save it in.
-      const files = about.files.length > 0 && !this.isWatcher(threadId)
+      const { text: words, truncated, ...listed } = result.message
+      // Each file it lists can be saved by its id, except by Watcher, which has no folder to save it in and is told no id.
+      const watcher = this.isWatcher(threadId)
+      const about = watcher ? { ...listed, files: listed.files.map(file => ({ name: file.name, type: file.type, size: file.size })) } : listed
+      const files = about.files.length > 0 && !watcher
         ? `\n\n[To save one of its files in this thread's folder, call ${PLUGIN_READ_TOOL} again with this "message" and the file's "id" as "file".]` : ''
       return text(`${MAIL_IS_DATA}\n\n${JSON.stringify({ mailbox: result.mailbox, ...about })}\n\n${words.trimEnd()}${truncated ?'\n\n[The message is longer than this tool hands over, and was cut here.]' : ''}${files}`)
     }
@@ -1117,10 +1122,14 @@ export class PluginToolServer implements ScopedThreadTools {
    * A file over the limit is refused before it is fetched. Nothing is written over a file that is there already.
    */
   private async saveMailFile(threadId: string, mail: PluginMailHandlers, account: PluginAccount, wanted: { readonly message: string; readonly file: string; readonly folder: string }, root: string,
-    kept: (outcome: PluginUseReport['outcome']) => Promise<void>): Promise<ThreadToolResult> {
+    kept: (outcome: PluginUseReport['outcome']) => Promise<void>, call: Call): Promise<ThreadToolResult> {
     const service = PLUGIN_NAMES[account.plugin]
     const plugin = account.plugin as MailPluginId
-    const fetched = await mail.fetchFile(account, wanted.message, wanted.file)
+    // The fetch has what is left of the call's time, less a little to save the file and answer: a first save can have
+    // waited most of it on the card. With too little left, the grant is kept and the agent asks again.
+    const left = Math.min(MAIL_FILE_TIMEOUT_MS, (call.context.waitMs ?? this.timeoutMs) - (Date.now() - call.started) - FILE_ANSWER_ROOM_MS)
+    if (left < FILE_FETCH_MIN_MS) return text(`Too little of this call's time is left to fetch the file. ${NOTHING_SAVED} Call ${PLUGIN_READ_TOOL} again with the same "message" and "file"; the user will not be asked again.`, true)
+    const fetched = await mail.fetchFile(account, wanted.message, wanted.file, left)
     if (!await mail.granted(threadId, account.id).catch(() => false)) {
       await kept('refused')
       return text(`The user stopped this thread reading the ${service} account "${account.name}" while the file was being fetched, so it was not saved. Call ${PLUGIN_READ_TOOL} again if it should still be saved; the user will be asked again.`, true)
@@ -1138,7 +1147,7 @@ export class PluginToolServer implements ScopedThreadTools {
     let saved: SavedMailFile
     try { saved = await saveMailFile(fetched.bytes, { root, folder: wanted.folder, name: mailFileName(fetched) }) } catch {
       await kept('failed')
-      return text(`The folder "${wanted.folder}" is not inside the thread's folder, or the file could not be saved there. ${NOTHING_SAVED}`, true)
+      return text(`The folder "${wanted.folder}" is not inside the thread's folder, or the file could not be saved there. ${NOTHING_SAVED} Give a "folder" inside the thread's folder, or tell the user.`, true)
     }
     await kept('done')
     const already = saved.renamed ? ` A file of that name was already there and is kept.` : ''

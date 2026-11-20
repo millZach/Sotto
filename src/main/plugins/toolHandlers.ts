@@ -113,7 +113,7 @@ export function pluginToolHandlers(wiring: PluginToolWiring): PluginToolHandlers
       providerOf: mail.providerOf, keepsBridgeAccounts: mail.keepsBridgeAccounts === true,
       search: async (account, search) => { const reach = mailSignIn(account); return typeof reach === 'string' ? reach : searchMail(reach.server, reach.signIn, search, mail.options) },
       open: async (account, id) => { const reach = mailSignIn(account); return typeof reach === 'string' ? reach : openMail(reach.server, reach.signIn, { id }, mail.options) },
-      fetchFile: async (account, id, file) => { const reach = mailSignIn(account); return typeof reach === 'string' ? reach : fetchMailFile(reach.server, reach.signIn, { id, file }, mail.options) },
+      fetchFile: async (account, id, file, timeoutMs) => { const reach = mailSignIn(account); return typeof reach === 'string' ? reach : fetchMailFile(reach.server, reach.signIn, { id, file }, { ...mail.options, timeoutMs }) },
       folderOf: async threadId => mail.folderOf ? await mail.folderOf(threadId) : null,
       sendTrouble: account => { const reach = mailSignIn(account); return typeof reach === 'string' ? reach : null },
       // A send goes to the account's sending server, with the same sign-in as a read.

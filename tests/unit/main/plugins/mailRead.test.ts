@@ -239,7 +239,7 @@ describe('opening a message (ADR-0205)', () => {
     await expect(openMail(SERVER, SIGN_IN, { id: named(7, 12) }, reach)).resolves.toEqual({ ok: true, mailbox: 'INBOX', message: {
       id: named(7, 12), date: '2026-11-12T14:30:00.000Z', from: 'Zoë Example <zoe@example.com>', to: ADDRESS, cc: 'ann@example.com', subject: 'Rechnung für Oktober', unread: true, size: expect.any(Number),
       text: 'Die Rechnung für Oktober liegt bei.\n', fromHtml: false, truncated: false,
-      files: [{ id: fileOf(named(7, 12), '2'), name: 'Rechnung für Oktober.pdf', type: 'application/pdf', size: 18 }], // About its 17 bytes once decoded.
+      files: [{ id: fileOf(named(7, 12), '2'), name: 'Rechnung für Oktober.pdf', type: 'application/pdf', size: 'made-up pdf bytes'.length }],
     } })
     const commands = await sent(fake)
     expect(commands).toEqual([...SIGNED_IN, 'EXAMINE INBOX', `UID FETCH 12 (UID FLAGS INTERNALDATE RFC822.SIZE BODYSTRUCTURE ${HEADERS})`, 'UID FETCH 12 (BODY.PEEK[1.1]<0.400000>)', 'LOGOUT'])
@@ -318,15 +318,15 @@ describe('saving a file that came with a message (ADR-0205, #2727)', () => {
     await expect(fetchMailFile(SERVER, SIGN_IN, { id, file: fileOf(id, '3') }, reach)).resolves.toMatchObject({ ok: true, type: 'text/csv', bytes: Buffer.from('a,b\r\n1,2\r\n') })
     const big = await fetchMailFile(SERVER, SIGN_IN, { id, file: fileOf(id, '4') }, reach)
     expect(big.ok && Buffer.compare(big.bytes, photo)).toBe(0)
-    // Opening the message lists each by about its size once decoded: base64 in lines of 76 to the byte, and the rest as written.
+    // Opening the message lists each by about its size once decoded: base64 in lines of 76 within a byte or two, and the rest as written.
     const opened = await openMail(SERVER, SIGN_IN, { id }, reach)
-    expect(opened.ok && opened.message.files.map(file => [file.name, file.size])).toEqual([['note.txt', 32], ['sums.csv', 10], ['IMG_4640.jpeg', photo.length]])
+    expect(opened.ok && opened.message.files.map(file => [file.name, file.size])).toEqual([['note.txt', 32], ['sums.csv', 10], ['IMG_4640.jpeg', photo.length - 1]])
   })
 
   it('refuses a file over 25 MB by its size before fetching it', async () => {
     const { fake, reach } = await mail({ mailboxes: withFiles({ type: 'video/quicktime', encoding: 'base64', body: b64('made-up'), size: 84_000_000, disposition: 'attachment', filename: 'IMG_9001.mov' }) })
     await expect(fetchMailFile(SERVER, SIGN_IN, { id, file: fileOf(id, '2') }, reach)).resolves.toEqual({
-      ok: false, reason: 'too-large', name: 'IMG_9001.mov', type: 'video/quicktime', size: Math.ceil(84_000_000 / 78 * 57) })
+      ok: false, reason: 'too-large', name: 'IMG_9001.mov', type: 'video/quicktime', size: Math.floor(84_000_000 / 78 * 57) })
     expect((await sent(fake)).filter(command => command.includes('BODY.PEEK'))).toEqual([])
   })
 

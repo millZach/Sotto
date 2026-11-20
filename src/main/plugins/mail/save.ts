@@ -7,7 +7,9 @@ import { isInside, modelFolder } from '../../tools/meshy/download'
  * A file that came with an email, saved in its thread's folder (ADR-0205, November 19, 2026). It is written to a part
  * file of Sotto's own inside the folder the thread asked for, which is inside the thread's working folder, and given
  * its name only once it is whole: never over a file that is already there, and never through a folder swapped for a
- * link elsewhere. Its name is the sender's, made safe to write: a sender chooses it, so it can say anything.
+ * link elsewhere. Its name is the sender's, made safe to write: a sender chooses it, so it can say anything. One gap
+ * remains, as for a sound: a folder moved out of the thread's folder while the file is written takes Sotto's part file
+ * with it. Nothing is named there, and the file is refused.
  */
 export const MAIL_FILE_FOLDER = 'mail-files'
 /** How many names are tried before a file is refused for want of one: "name.ext", then "name (2).ext" and on. */

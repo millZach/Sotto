@@ -415,7 +415,7 @@ describe('saving a file that came with an email through plugin_read (ADR-0205, #
     const watcher = await tools({ root }).read('watcher', SAVE)
     expect(said(watcher)).toBe('Watcher has no project folder, so it cannot save files from an email. Nothing was saved. Start or steer a thread to save one.')
     const nowhere = tools({ root: null })
-    expect(said(await nowhere.read('one', SAVE))).toBe('Sotto cannot find this thread\'s folder on this computer, so there is nowhere to save a file from an email. Nothing was saved.')
+    expect(said(await nowhere.read('one', SAVE))).toBe('Sotto cannot find this thread\'s folder on this computer, so there is nowhere to save a file from an email. Nothing was saved. Tell the user, who can download it from their mail.')
     expect([nowhere.asked, nowhere.fetches]).toEqual([[], []])
     expect(said(await tools({ root, fetched: { ok: false, reason: 'file' } }).read('one', SAVE))).toBe('That message lists no file with that id. Open the message again with "message" alone to see its files and their ids. Nothing was saved.')
     expect(said(await tools({ root, fetched: { ok: false, reason: 'moved' } }).read('one', SAVE))).toBe('That mailbox has been rebuilt since the search, so its messages have new ids. Search again. Nothing was saved.')
@@ -424,6 +424,19 @@ describe('saving a file that came with an email through plugin_read (ADR-0205, #
     const t = tools({ root })
     expect(said(await t.read('one', { file: SAVE.file }))).toContain('To save one of its files, give that "message" and the file\'s "id" as "file"')
     expect(said(await t.read('one', { message: SAVE.message, folder: 'x' }))).toContain('To save one of its files')
+    expect(t.fetches).toEqual([])
+  })
+
+  it('gives Watcher no file ids, since it cannot save one, and asks again only for a call with too little time left', async () => {
+    const root = await threadFolder()
+    const t = tools({ root })
+    const watcherRead = said(await t.read('watcher', { message: SAVE.message }))
+    expect(JSON.parse(watcherRead.split('\n\n')[1]!).files).toEqual([{ name: 'menu.pdf', type: 'application/pdf', size: 5000 }])
+    expect(watcherRead).not.toContain('To save one of its files')
+    // A thread whose client waits less than a fetch needs, once the card is behind it, is told to call again.
+    await t.read('one', { search: {} })
+    const short = await t.read('one', SAVE, { waitMs: 30_000 })
+    expect(said(short)).toBe(`Too little of this call's time is left to fetch the file. Nothing was saved. Call ${PLUGIN_READ_TOOL} again with the same "message" and "file"; the user will not be asked again.`)
     expect(t.fetches).toEqual([])
   })
 

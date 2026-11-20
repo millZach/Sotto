@@ -75,11 +75,13 @@ test('A thread that may read a Gmail account saves the file that came with a mes
       await form.getByLabel('App password').fill(PASSWORD)
       await form.getByRole('button', { name: 'Add account' }).click()
       await expect(panel.getByRole('region', { name: 'Gmail account Personal' })).toContainText(`${ADDRESS}. App password saved`)
-      for (const mode of ['dark', 'light'] as const) {
+      for (const [mode, width, height] of [['dark', 1280, 800], ['light', 1280, 800], ['dark', 1600, 1000], ['dark', 820, 560]] as const) {
         await page.evaluate(async appearance => { await window.sotto!.updateSettings({ appearance }) }, mode)
-        await resizeContentWindow(launched, 1280, 800, [800, 540])
+        await resizeContentWindow(launched, width, height, [800, 540])
         await row.scrollIntoViewIfNeeded()
-        await shot(page, `gmail-row-${mode}-1280x800`)
+        // Nothing on the page is wider than the room it sits in.
+        expect(await page.evaluate(() => { const scroll = document.querySelector<HTMLElement>('.settings-scroll')!; return scroll.scrollWidth <= scroll.clientWidth + 1 }), `row ${width}x${height}`).toBe(true)
+        await shot(page, `gmail-row-${mode}-${width}x${height}`)
       }
       await page.evaluate(async () => { await window.sotto!.updateSettings({ appearance: 'dark' }) })
 
@@ -91,7 +93,7 @@ test('A thread that may read a Gmail account saves the file that came with a mes
       await expect(request).toHaveCount(1, { timeout: 30_000 })
       const details = request.locator('.agent-request__details')
       await expect(details).toContainText(CARD_LINE)
-      for (const [mode, width, height] of [['dark', 1280, 800], ['light', 1280, 800], ['dark', 820, 560]] as const) {
+      for (const [mode, width, height] of [['dark', 1280, 800], ['light', 1280, 800], ['dark', 1600, 1000], ['dark', 820, 560]] as const) {
         await page.evaluate(async appearance => { await window.sotto!.updateSettings({ appearance }) }, mode)
         await resizeWindow(launched, width, height)
         const [cardBox, paneBox] = [await request.boundingBox(), await pane.boundingBox()]
@@ -109,7 +111,9 @@ test('A thread that may read a Gmail account saves the file that came with a mes
       await read(page, threadId, { plugin: 'gmail', message })
       const opened = await answered(page)
       const file = (JSON.parse(opened.text.split('\n\n')[1]!) as { files: { id: string; name: string; size: number }[] }).files[0]!
-      expect([file.name, file.size]).toEqual(['IMG_4640.jpeg', photo.length])
+      // Its size is about its size once decoded, counted from its size as written.
+      expect(file.name).toBe('IMG_4640.jpeg')
+      expect(Math.abs(file.size - photo.length)).toBeLessThanOrEqual(3)
       expect(opened.text).toContain('To save one of its files in this thread\'s folder')
 
       // Saved under the thread's grant: no card, the file in mail-files in the thread's folder, the message unread.

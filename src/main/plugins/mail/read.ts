@@ -378,11 +378,13 @@ function messageNamed(id: string): { readonly validity: number; readonly uid: nu
  * A file's id: where it is in the message (its IMAP section) and the start of a digest of the message's own id, so it
  * names that place in this message and is refused with any other.
  */
-const tieOf = (messageId: string): string => createHash('sha256').update(messageId, 'utf8').digest('hex').slice(0, 8)
-const fileId = (messageId: string, section: string): string => `${section}-${tieOf(messageId)}`
+/** The first 8 hex digits of the SHA-256 of a message's id. */
+const messageDigest = (messageId: string): string => createHash('sha256').update(messageId, 'utf8').digest('hex').slice(0, 8)
+const fileId = (messageId: string, section: string): string => `${section}-${messageDigest(messageId)}`
 function fileNamed(messageId: string, id: string): string | null {
-  const found = /^(\d{1,4}(?:\.\d{1,4}){0,15})-([0-9a-f]{8})$/u.exec(id)
-  return found && found[2] === tieOf(messageId) ? found[1]! : null
+  // A section is as deep as a message's structure may nest (`imapWire`'s lists go 64 deep).
+  const found = /^(\d{1,4}(?:\.\d{1,4}){0,63})-([0-9a-f]{8})$/u.exec(id)
+  return found && found[2] === messageDigest(messageId) ? found[1]! : null
 }
 
 /** The mailbox a search means, by what it is for or by its own name. */
@@ -557,7 +559,10 @@ export function fetchMailFile(server: MailServer, signIn: MailSignIn, wanted: { 
     imap.allowLiteral(part.size + FILE_SLACK_BYTES)
     const body = await imap.run('UID', 'FETCH', String(uid), `(BODY.PEEK[${section}])`)
     if (body.status !== 'OK') return failure('failed', body.text)
-    const bytes = startingWith(fetched(body).get(uid) ?? new Map<string, ImapItem>(), `BODY[${section}]`)
+    const answered = fetched(body).get(uid)
+    // A message deleted while its structure was read comes back with nothing.
+    if (!answered) return failure('gone')
+    const bytes = startingWith(answered, `BODY[${section}]`)
     if (!Buffer.isBuffer(bytes)) return failure('failed')
     const decoded = decodeFile(bytes, part.encoding)
     if (decoded === null) return failure('encoding', part.encoding)
