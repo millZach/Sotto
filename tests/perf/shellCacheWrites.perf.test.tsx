@@ -35,15 +35,13 @@ describe('shell cache writes', async () => {
       const bridge: AgentBridge = { get: async () => agentShell(stateOf(0)), command: async () => agentShell(stateOf(0)),
         onState: listener => { listeners.add(listener); return () => listeners.delete(listener) } }
       vi.useFakeTimers()
-      // Every serialization of a whole shell, timed on the real clock: what the cache spends.
+      // Every serialization of a whole shell is counted; the fake clock the throttle runs on cannot time one, so the last is
+      // timed on the real clock afterwards.
       const stringify = JSON.stringify.bind(JSON)
-      let writes = 0, ms = 0, chars = 0
+      let writes = 0, last: unknown
       vi.spyOn(JSON, 'stringify').mockImplementation(((value: unknown, ...rest: never[]) => {
-        if (typeof value !== 'object' || value === null || !('host' in value)) return stringify(value, ...rest)
-        const started = performance.now()
-        const text = stringify(value, ...rest)
-        writes += 1; ms += performance.now() - started; chars = text.length
-        return text
+        if (typeof value === 'object' && value !== null && 'host' in value) { writes += 1; last = value }
+        return stringify(value, ...rest)
       }) as typeof JSON.stringify)
       renderHook(() => useAgentConnection(bridge))
       await act(async () => {})
@@ -51,7 +49,11 @@ describe('shell cache writes', async () => {
         act(() => { for (const listener of listeners) listener(agentShell(stateOf(tick))) })
         await act(async () => { await vi.advanceTimersByTimeAsync(1_000 / ARRIVALS_PER_SECOND) })
       }
-      const report = { threads: workspace.snapshot.threads.length, shellChars: chars, writesPerMinute: writes, msPerMinute: round(ms, 1), msPerWrite: round(ms / Math.max(1, writes), 1) }
+      vi.useRealTimers()
+      const samples = Array.from({ length: 9 }, () => { const started = performance.now(); stringify(last); return performance.now() - started }).sort((a, b) => a - b)
+      const msPerWrite = samples[4]!
+      const report = { threads: workspace.snapshot.threads.length, shellChars: stringify(last).length, writesPerMinute: writes,
+        msPerWrite: round(msPerWrite, 1), msPerMinute: round(writes * msPerWrite, 1) }
       console.info(`shell cache writes: ${JSON.stringify(report)}`)
       expect(writes).toBeGreaterThan(0)
     }, 600_000)
