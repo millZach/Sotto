@@ -92,6 +92,8 @@ const STATUS_LABELS: Record<SubmissionStatus, MessageDescriptor> = {
 
 export interface ActivityContext {
   readonly liveTurn: string | null
+  /** The thread drawn, so a press on one of its groups is kept for it. */
+  readonly threadId?: string | undefined
   readonly running: boolean
   readonly connected: boolean
   readonly provider: string
@@ -103,7 +105,7 @@ export interface ActivityContext {
 function ActivityGroups({ groups, context, outcome, bare, opened }: {
   readonly groups: readonly ActivityGroup[] | undefined; readonly context: ActivityContext; readonly outcome?: AgentActivity['status'] | undefined
   readonly bare?: boolean | undefined
-  /** Drawn inside a fold the user opened, so each group starts open. */
+  /** Drawn inside a Watcher reply's header the user opened, so each group starts open. */
   readonly opened?: boolean | undefined
 }): ReactNode {
   return groups?.map(group => {
@@ -114,7 +116,7 @@ function ActivityGroups({ groups, context, outcome, bare, opened }: {
       ? <CompactionLine key={group.key} record={compaction} />
       : group.turnId === context.liveTurn ? <LiveBrowserLines key={group.key} group={group} connected={context.connected} onDisclosure={context.onDisclosure} />
       : <ActivityGroupView key={group.key} group={group} live={false} threadRunning={context.running}
-        connected={context.connected} provider={context.provider} onDisclosure={context.onDisclosure} outcome={outcome} bare={bare} opened={opened} />
+        connected={context.connected} provider={context.provider} onDisclosure={context.onDisclosure} outcome={outcome} bare={bare} opened={opened} threadId={context.threadId} />
   }) ?? null
 }
 
@@ -556,12 +558,12 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
     {turn.user ? article(turn.user) : null}
     <TurnWork records={records} headline={workHeadline(lifecycle, context.running, startedAt, moments)} steps={steps.length} did={workSummary(records)} sayOnce={sayOnce} delegated={<DelegatedWorkSummary views={delegations} />} moment={moment} quiet={quiet} open={workOpen} setOpen={setWorkOpen} turn={lifecycle} failed={lifecycle?.status === 'failed'}
       changes={turnChanges(groups)} onDisclosure={context.onDisclosure} onSeek={context.onSeek} lifted={lifted} who={speaker === 'watcher' ? 'Watcher' : provider}>
-      <ActivityGroups groups={folded(opening)} context={context} outcome={lifecycle?.status} bare={bare} opened />
+      <ActivityGroups groups={folded(opening)} context={context} outcome={lifecycle?.status} bare={bare} />
       {everything.filter(message => message !== final).map(message => <React.Fragment key={message.id}>
         {message === turn.user || unfolded.has(message) ? null : article(message)}
-        <ActivityGroups groups={folded(placement.after.get(message.id))} context={context} outcome={lifecycle?.status} bare={bare} opened />
+        <ActivityGroups groups={folded(placement.after.get(message.id))} context={context} outcome={lifecycle?.status} bare={bare} />
       </React.Fragment>)}
-      <ActivityGroups groups={folded(placement.after.get(final.id))} context={context} outcome={lifecycle?.status} bare={bare} opened />
+      <ActivityGroups groups={folded(placement.after.get(final.id))} context={context} outcome={lifecycle?.status} bare={bare} />
       <DelegatedWork views={delegations} />
     </TurnWork>
     <ThreadMediaTiles groups={groups} threadId={threadId} who={speaker === 'watcher' ? 'Watcher' : provider} />
@@ -1342,8 +1344,8 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   // The thread a step's pictures are read from, and who wrote its turns, for the viewer's callouts.
   const pictureThread = useMemo<StepPicturesThread>(() => ({ threadId: thread.id, who: watcher ? 'Watcher' : row.provider }), [thread.id, watcher, row.provider])
   useLayoutEffect(() => { browserStore?.update(thread.activities, liveTurn, thread.messages) }, [browserStore, thread.activities, liveTurn, thread.messages])
-  const activity = useMemo<ActivityContext>(() => ({ liveTurn, running: thread.status === 'running', connected: row.connected, provider: row.provider, onDisclosure, onSeek }),
-    [liveTurn, thread.status, row.connected, row.provider, onDisclosure, onSeek])
+  const activity = useMemo<ActivityContext>(() => ({ liveTurn, threadId: thread.id, running: thread.status === 'running', connected: row.connected, provider: row.provider, onDisclosure, onSeek }),
+    [liveTurn, thread.id, thread.status, row.connected, row.provider, onDisclosure, onSeek])
   // A remote thread's rows read a body its host kept back from that host, by the name the window shows (ADR-0025, October
   // 18 amendment). This computer's threads have no such body, and their rows are given nothing.
   const bodyHostName = thread.remoteHost === true ? threadHostName(state, thread) : undefined

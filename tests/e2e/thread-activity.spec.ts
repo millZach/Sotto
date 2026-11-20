@@ -70,10 +70,17 @@ test('settled turn folds its work above the final reply, failures and all, and o
     await work.focus()
     await page.keyboard.press('Enter')
     await expect(work).toHaveAttribute('aria-expanded', 'true')
-    // Its groups open with it, since the fold was opened by hand; a failed step shows with the rest of its group.
+    // Its groups start folded, and a press opens each alone (ADR-0134, November 19 amendment); a failed step shows with the
+    // rest of its group.
     const summary = log.getByRole('button', { name: 'Ran 2 commands, 1 reasoning summary' })
-    await expect(summary).toHaveAttribute('aria-expanded', 'true')
+    await expect(summary).toHaveAttribute('aria-expanded', 'false')
     const later = log.getByRole('button', { name: /^Ran 2 commands, changed 2 files, 1 agent action/ })
+    await expect(later).toHaveAttribute('aria-expanded', 'false')
+    await expect(log.getByRole('button', { name: 'npm run lint, Exit 1' })).toHaveCount(0)
+    await summary.click()
+    await expect(summary).toHaveAttribute('aria-expanded', 'true')
+    await expect(later).toHaveAttribute('aria-expanded', 'false')
+    await later.click()
     await expect(later).toHaveAttribute('aria-expanded', 'true')
     await expect(log.getByRole('button', { name: 'npm run lint, Exit 1' })).toHaveCount(1)
     // Opened, messages keep their order and count; activity sits between them.
@@ -226,6 +233,7 @@ test('the shipped minimum width and reduced motion keep rows readable without si
   try {
     const log = transcript(page)
     await log.getByRole('button', { name: /^Worked for/ }).click()
+    await log.getByRole('button', { name: /^Ran 2 commands, changed 2 files, 1 agent action/ }).click()
     await log.getByRole('button', { name: 'npm test -- --run tests/unit/wavStream.test.ts, completed in 4.2s' }).click()
     expect(await overflow(page)).toBeLessThanOrEqual(0)
     const label = log.locator('.thread-activity__row[data-kind="command"] .thread-activity__label').last()
