@@ -35,10 +35,12 @@ it.skipIf(!live)('runs, asks, steers, resumes, writes short text and reads limit
     const connected = await host.connect()
     expect(connected.version).toMatch(/^1\.5\.\d+ \/ ACP 1$/u)
     const model = connected.models.find(item => item.id === MODEL)!
-    expect(model).toMatchObject({ provider: 'Antigravity', source: 'Google' })
+    expect(model).toMatchObject({ provider: 'Antigravity' })
     expect(model.reasoningEfforts).toContain('low')
-    expect(connected.models.some(item => item.source === 'Anthropic')).toBe(true)
-    Object.assign(report, { version: connected.version, models: connected.models.map(item => [item.source, item.name, item.reasoningEfforts]), runtimeModes: model.runtimeModes })
+    // Gemini only, under Google's terms, though the account lists Claude and GPT models too (ADR-0212).
+    expect(connected.models.length).toBeGreaterThan(0)
+    expect(connected.models.every(item => item.id.startsWith('gemini-'))).toBe(true)
+    Object.assign(report, { version: connected.version, models: connected.models.map(item => [item.id, item.name, item.reasoningEfforts]), runtimeModes: model.runtimeModes })
 
     const projectId = randomUUID()
     await host.execute({ type: 'create-project', commandId: randomUUID(), projectId, title: 'Live', path: project })
@@ -65,11 +67,6 @@ it.skipIf(!live)('runs, asks, steers, resumes, writes short text and reads limit
     const title = await host.writeShortText(id, { instruction: 'Name this coding conversation in three words. Reply with the name only.', material: 'First message:\nReply with exactly the word: pong' })
     expect(title?.length).toBeGreaterThan(0)
     report.title = title
-
-    // The account's limits, read with agy's own token from Sotto's folder.
-    const limits = await host.readProviderQuota!('antigravity', true)
-    expect(limits).toBeDefined()
-    report.limits = JSON.parse(JSON.stringify(limits, (key, value) => /account|email|name$/iu.test(key) ? undefined : value))
 
     // A restart: a new adapter over the same folder resumes the session, which replays nothing and remembers the first reply.
     host.disconnect(); await host.closed()

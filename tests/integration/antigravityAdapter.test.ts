@@ -26,14 +26,16 @@ describe('Antigravity ACP adapter', () => {
   const processes = async () => (await f!.requests()).filter(record => record.method === 'fixture/process').map(record => record.params as { args: string[]; environment: Record<string, unknown>; cwd: string })
   const answers = async () => (await f!.requests()).filter(record => record.method === undefined && String(record.id).startsWith('antigravity-')).map(record => record.result?.outcome)
 
-  it('reads the account’s models, each with its own thinking levels, grouped by maker', async () => {
+  it('reads the account’s Gemini models only, each with its own thinking levels, and never switches agy to another', async () => {
     f = await antigravityFixture()
     const snapshot = await f.host.connect()
+    // The fake lists Claude Sonnet 5.5 too, as real agy lists Claude and GPT models; Google's terms keep them out (ADR-0212).
     expect(snapshot.models.map(model => [model.id, model.source, model.reasoningEfforts])).toEqual([
-      ['gemini-3.8-flash', 'Google', ['low', 'medium', 'high']],
-      ['gemini-4-carbon', 'Google', ['low', 'high']],
-      ['claude-sonnet-5-5', 'Anthropic', []],
+      ['gemini-3.8-flash', undefined, ['low', 'medium', 'high']],
+      ['gemini-4-carbon', undefined, ['low', 'high']],
     ])
+    const switched = (await f.requests()).filter(record => record.method === 'session/set_config_option' && (record.params as { configId?: string }).configId === 'model')
+    expect(switched.map(record => (record.params as { value: string }).value)).toEqual(['gemini-4-carbon'])
     expect(snapshot.models[0]).toMatchObject({ provider: 'Antigravity', recommended: true, runtimeModes: ['approval-required', 'auto-accept-edits', 'auto', 'full-access'] })
     expect(snapshot.version).toContain('1.5.13')
   })

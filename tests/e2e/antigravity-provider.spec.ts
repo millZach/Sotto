@@ -131,11 +131,13 @@ test('signs Antigravity in four ways from its row, groups its models by maker, a
     await expect(googleSignIn).toHaveCount(0)
     await expect(list.getByRole('alert')).toHaveCount(0)
 
-    // The opened, connected row at every size, in both appearances.
+    // The opened, connected row at every size, in both appearances, with its notice that the Google account carries the risk.
+    const risk = panel.getByRole('note', { name: 'Your Google account carries the risk', exact: true })
     for (const appearance of APPEARANCES) for (const [width, height] of SIZES) {
       await page.evaluate(value => window.sotto!.updateSettings({ appearance: value }), appearance)
       await resizeWindow(launched, width, height)
       await expect(methods).toBeVisible()
+      await expect(risk).toBeVisible()
       await showRow(row)
       await page.screenshot({ animations: 'disabled', path: join(evidence, `row-${width}-${appearance}.png`) })
       if (width === 820) expect(await clipped(page, '.providers-settings'), `Providers at ${width} in ${appearance}`).toEqual([])
@@ -150,46 +152,41 @@ test('signs Antigravity in four ways from its row, groups its models by maker, a
     const prepared = await page.evaluate(async path => {
       const state = await window.sotto!.agents!.get()
       const antigravity = state.host.models.filter(candidate => candidate.providerId === 'antigravity')
-      const makers = [...new Set(antigravity.map(candidate => candidate.source))]
-      const model = antigravity.find(candidate => candidate.source === 'Google')
-      if (!model) return { error: 'no Google model', makers }
+      const ids = antigravity.map(candidate => candidate.id)
+      const model = antigravity[0]
+      if (!model) return { error: 'no Antigravity model', ids }
       await window.sotto!.agents!.command({ type: 'configure', patch: { newThreadModelId: model.id } })
       const created = await window.sotto!.agents!.command({ type: 'create-project', provider: 'antigravity', title: 'Antigravity project', path, useExisting: true })
-      return { error: created.error, makers }
+      return { error: created.error, ids }
     }, projectPath)
-    expect(prepared).toEqual({ error: null, makers: ['Google', 'Anthropic'] })
-    journey.makers = prepared.makers
+    // The fake lists Claude Sonnet 5.5 too; Google's terms keep Antigravity to Gemini (ADR-0212).
+    expect(prepared).toEqual({ error: null, ids: ['gemini-3.8-flash', 'gemini-4-carbon'] })
+    journey.models = prepared.ids
     await resizeWindow(launched, 1280, 800)
     await openThreads(page)
     await page.getByRole('button', { name: 'New thread in Antigravity project', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'New thread', exact: true })).toBeVisible()
 
-    // The menu opens on Antigravity's model makers, then a maker's models with Makers to step back.
+    // The menu lists Antigravity's Gemini models as one list, with no makers to choose between.
     const chip = page.getByRole('combobox', { name: 'Thread model', exact: true })
     await expect(chip.locator('svg.provider-mark')).toHaveAttribute('data-provider', 'antigravity')
     const menu = page.getByRole('dialog', { name: 'Choose model', exact: true })
-    const makers = menu.getByRole('group', { name: 'Antigravity’s model makers', exact: true })
+
     for (const appearance of APPEARANCES) for (const [width, height] of SIZES) {
       await page.evaluate(value => window.sotto!.updateSettings({ appearance: value }), appearance)
       await resizeWindow(launched, width, height)
       await chip.focus()
       await page.keyboard.press('Enter')
-      await expect(makers).toBeVisible()
-      await expect(makers.getByRole('button')).toHaveText([/^Google/u, /^Anthropic/u])
+      await expect(menu.getByRole('group', { name: 'Antigravity’s model makers', exact: true })).toHaveCount(0)
+      const gemini = menu.getByRole('option').filter({ hasText: /^Gemini/u })
+      await expect(gemini).toHaveText([/^Gemini 3\.8 Flash/u, /^Gemini 4 Carbon/u])
+      await expect(menu.getByRole('option', { name: /Claude/u })).toHaveCount(0)
       const foot = menu.getByText('Every model here runs through Antigravity, on your Google account.', { exact: false })
       await expect(foot).toBeVisible()
       await page.screenshot({ animations: 'disabled', path: join(evidence, `models-${width}-${appearance}.png`) })
       if (width === 820) expect(await clipped(page, '.model-picker'), `model menu at ${width} in ${appearance}`).toEqual([])
       await measure('menu foot', foot, width, appearance)
-      await measure('maker', makers.getByRole('button').first(), width, appearance)
-      await makers.getByRole('button', { name: /^Show Anthropic models/u }).focus()
-      await page.keyboard.press('Enter')
-      const anthropic = menu.getByRole('listbox', { name: /^Anthropic models/u })
-      await expect(anthropic.getByRole('option')).toHaveText(['Claude Sonnet 5.5'])
-      await expect(menu.getByRole('button', { name: 'Back to Antigravity’s model makers', exact: true })).toHaveText('Makers')
-      await measure('model name', anthropic.getByRole('option').first(), width, appearance)
-      await page.keyboard.press('Escape')
-      await expect(makers.getByRole('button', { name: /^Show Anthropic models/u })).toBeFocused()
+      await measure('model name', gemini.first(), width, appearance)
       await page.keyboard.press('Escape')
       await expect(menu).toBeHidden()
       await expect(chip).toBeFocused()
